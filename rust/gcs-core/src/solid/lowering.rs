@@ -520,8 +520,8 @@ fn ball_centres(sk: &Sketch, terms: &[RegionTerm], faces: &Faces, r: f64) -> boo
 }
 
 /// Why an entry that recognised a region does not build it.
-fn unbuilt<T>(why: &str) -> Result<T, String> {
-    Err(format!("{why}: no exact construction is made of it yet"))
+fn unbuilt(why: &str) -> String {
+    format!("{why}: no exact construction is made of it yet")
 }
 
 /// From a face toward a region (its outward normal `n`): into the material at a convex edge, the
@@ -559,7 +559,7 @@ fn build(body: &super::faces::BodyFaces, f: &Faces, section: Section) -> Result<
     for (vertex, at) in body.vertices_among(&refs) {
         let one = |g: &Vec<usize>| match g[..] { [fi] => Some(fi), _ => None };
         let Some(ids) = at.iter().map(one).collect::<Option<Vec<usize>>>() else {
-            return unbuilt("a corner where two pieces of one face meet");
+            return Err(unbuilt("a corner where two pieces of one face meet"));
         };
         let (corner, toward) = corner_at(body, &ids, vertex, f.within, r)?;
         corners.push((corner, toward, ids));
@@ -589,7 +589,7 @@ fn build(body: &super::faces::BodyFaces, f: &Faces, section: Section) -> Result<
         let cell = [corner.vertex, corner.centre].into_iter().chain(feet).chain(touches);
         let runs_within = runs.iter().all(|r| r.hull().into_iter().all(|p| within(p, &r.within)));
         if !runs_within || !cell.into_iter().all(|p| within(p, &[])) {
-            return unbuilt("a ball larger than the edges it rounds");
+            return Err(unbuilt("a ball larger than the edges it rounds"));
         }
     }
     pieces.extend(corners.into_iter().map(|(c, ..)| Piece::Corner(c)));
@@ -608,11 +608,11 @@ fn corner_at(body: &super::faces::BodyFaces, ids: &[usize], vertex: V, within: b
     -> Result<(Corner, [V; 3]), String> {
     let faces: Vec<Surf> = ids.iter().map(|&fi| Surf::of(body, fi)
         .ok_or_else(|| "a corner where a face neither a plane, a cylinder, a cone nor a sphere meets two others".to_string()))
-        .collect::<Result<_, _>>().or_else(|e| unbuilt(&e))?;
+        .collect::<Result<_, _>>().map_err(|e| unbuilt(&e))?;
     let faces = [faces[0], faces[1], faces[2]];
     let tangents: [V; 3] = std::array::from_fn(|i| toward(body.normal(ids[i], vertex), within));
     if dot(tangents[0], cross(tangents[1], tangents[2])).abs() <= 1e-9 {
-        return unbuilt("a corner whose faces share a direction");
+        return Err(unbuilt("a corner whose faces share a direction"));
     }
     // the signed distance from each surface (positive away from the material) the centre stands at
     let want = if within { -r } else { r };
@@ -621,11 +621,11 @@ fn corner_at(body: &super::faces::BodyFaces, ids: &[usize], vertex: V, within: b
     let centre = crate::roots::newton_onto::<3>(start, r,
         |c| Some(std::array::from_fn(|i| { let (s, g) = body.side_grad(ids[i], c); (g, s - want) })),
         |at| at.iter().all(|(_, m)| m.abs() <= 1e-13 * size))
-        .map_or_else(|| unbuilt("a corner where no ball touches all three faces"), Ok)?;
+        .ok_or_else(|| unbuilt("a corner where no ball touches all three faces"))?;
     let toward: [V; 3] = std::array::from_fn(|i| toward(body.side_grad(ids[i], centre).1, within));
     let columns = std::array::from_fn(|i| [toward[0][i], toward[1][i], toward[2][i]]);
     if crate::brep::ssi::solve3(columns, sub(centre, vertex)).iter().any(|&m| !(m > 1e-9)) {
-        return unbuilt("a corner whose ball stands beyond one of its faces' edges");
+        return Err(unbuilt("a corner whose ball stands beyond one of its faces' edges"));
     }
     Ok((Corner { vertex, centre, r, faces }, toward))
 }
@@ -660,7 +660,9 @@ fn run(body: &super::faces::BodyFaces, ga: &[usize], gb: &[usize], within: bool,
             Ok(Piece::Rolled(match section {
                 Section::Round(r) => Rolled { at, r, flat: None, ends, cuts: Vec::new() },
                 Section::Flat { la, lb } => {
-                    let &[f0, f1] = body.faces_of(e) else { return unbuilt("an edge not between two faces") };
+                    let &[f0, f1] = body.faces_of(e) else {
+                        return Err(unbuilt("an edge not between two faces"));
+                    };
                     let (fa, fb) = if ga.contains(&f0) { (f0, f1) } else { (f1, f0) };
                     let na = body.normal(fa, at);
                     let t = toward(body.normal(fb, at), within);
@@ -674,7 +676,9 @@ fn run(body: &super::faces::BodyFaces, ga: &[usize], gb: &[usize], within: bool,
     let ends = body.end_sides(&edges, &all);
     let mut pieces = Vec::new();
     for &edge in &edges {
-        let &[f0, f1] = body.faces_of(edge) else { return unbuilt("an edge not between two faces") };
+        let &[f0, f1] = body.faces_of(edge) else {
+            return Err(unbuilt("an edge not between two faces"));
+        };
         let (fa, fb) = if ga.contains(&f0) { (f0, f1) } else { (f1, f0) };
         pieces.extend(piece(body, edge, fa, fb, within, section, &ends)?);
     }
@@ -750,19 +754,19 @@ fn piece(body: &super::faces::BodyFaces, edge: u32, fa: usize, fb: usize, within
                         let (a, b) = (dot(n, rim), way * dot(n, cross(axis, rim)));
                         let c = dot(n, sub(q, rim)) - d;
                         reach = reach.max(first_over(a, b, c)
-                            .ok_or_else(|| unbuilt::<()>("a stretch of a circle its end does not cut off").unwrap_err())?);
+                            .ok_or_else(|| unbuilt("a stretch of a circle its end does not cut off"))?);
                     }
                 }
                 for kept in &bent {
                     let (mut entry, mut exit) = (0.0_f64, std::f64::consts::TAU);
                     for &q in &hull {
                         let [first, back] = dwell(|phi| kept.away(turned(q, phi)))
-                            .ok_or_else(|| unbuilt::<()>("a stretch of a circle its curved end does not cut off").unwrap_err())?;
+                            .ok_or_else(|| unbuilt("a stretch of a circle its curved end does not cut off"))?;
                         entry = entry.max(first);
                         exit = exit.min(back);
                     }
                     if !(entry < exit) {
-                        return unbuilt("a stretch of a circle its curved end does not cut off");
+                        return Err(unbuilt("a stretch of a circle its curved end does not cut off"));
                     }
                     reach = reach.max(entry + 0.25 * (exit - entry));
                 }
@@ -771,7 +775,7 @@ fn piece(body: &super::faces::BodyFaces, edge: u32, fa: usize, fb: usize, within
                 kepts.extend(bent);
             }
             if to - from >= std::f64::consts::TAU {
-                return unbuilt("a stretch of a circle carried on round its whole turn");
+                return Err(unbuilt("a stretch of a circle carried on round its whole turn"));
             }
         }
         let mut section = section_at(from)?;
@@ -779,7 +783,7 @@ fn piece(body: &super::faces::BodyFaces, edge: u32, fa: usize, fb: usize, within
         section.kept = kepts;
         return Ok(Some(Piece::Ring(Ring { section, axis_origin: centre, axis, angle: to - from })));
     }
-    let Some([p0, p1]) = body.segment(edge) else { return unbuilt("a curved edge") };
+    let Some([p0, p1]) = body.segment(edge) else { return Err(unbuilt("a curved edge")) };
     let length = norm(sub(p1, p0));
     let along = scale(sub(p1, p0), 1.0 / length);
     // each face as the section sees it: a plane its line, a cylinder about a line along the edge
@@ -792,7 +796,7 @@ fn piece(body: &super::faces::BodyFaces, edge: u32, fa: usize, fb: usize, within
             Some((o, d, radius)) if norm(cross(d, along)) <= 1e-9 => Ok(Trace::Circle {
                 centre: add(o, scale(d, dot(sub(p0, o), d))), radius, normal: body.normal(fi, p0),
             }),
-            _ => unbuilt("an edge beside a curved face not turned about a line along it"),
+            _ => Err(unbuilt("an edge beside a curved face not turned about a line along it")),
         }
     };
     let traces = [trace(fa)?, trace(fb)?];
@@ -813,7 +817,7 @@ fn piece(body: &super::faces::BodyFaces, edge: u32, fa: usize, fb: usize, within
     for &(n, d) in &halves {
         let slope = dot(n, along);
         if slope.abs() < 1e-6 {
-            return unbuilt("a run carried on along the face it ends on");
+            return Err(unbuilt("a run carried on along the face it ends on"));
         }
         for &q in &outline {
             let s = (d - dot(n, q)) / slope;
@@ -839,7 +843,7 @@ fn piece(body: &super::faces::BodyFaces, edge: u32, fa: usize, fb: usize, within
             } else {
                 let deepest = lines.iter().flatten().map(|l| l[0]).fold(f64::NEG_INFINITY, f64::max);
                 if !lines.iter().all(|l| l.is_some_and(|l| deepest <= l[1])) {
-                    return unbuilt("a run its curved end does not cut off");
+                    return Err(unbuilt("a run its curved end does not cut off"));
                 }
                 deepest
             };
@@ -865,7 +869,9 @@ fn ends_at(body: &super::faces::BodyFaces, ends: &[(usize, f64)], p: V) -> Resul
         match Surf::of(body, c) {
             Some(Surf::Plane { origin, normal }) => planes.push((scale(normal, sign), sign * dot(normal, origin))),
             Some(face) => bent.push(Kept { face, inside: sign * body.side(c, face.within()) < 0.0 }),
-            None => return unbuilt("an edge cut off by a face neither a plane, a cylinder, a cone nor a sphere"),
+            None => {
+                return Err(unbuilt("an edge cut off by a face neither a plane, a cylinder, a cone nor a sphere"))
+            }
         }
     }
     Ok((planes, bent))
@@ -983,7 +989,7 @@ impl Corner2 {
     /// The ball of radius `r` in the corner: its centre, and where it touches `a` and `b`.
     fn ball(&self, r: f64) -> Result<(V, V, V), String> {
         let (ta, tb, arc) = crate::brep::corners::ball(&self.steps[0], &self.steps[1], self.side, r)
-            .or_else(|e| unbuilt(&e))?;
+            .map_err(|e| unbuilt(&e))?;
         let crate::brep::planar::Seg::Arc { c, .. } = arc else { unreachable!("a ball's arc") };
         Ok((self.lift(c), self.lift(self.steps[0].point(ta)), self.lift(self.steps[1].point(tb))))
     }
@@ -994,7 +1000,7 @@ impl Corner2 {
         use crate::brep::planar::Seg;
         // (a Cartesian oval is no construction left to make: no rational curve holds it)
         let (ta, tb, cut) = crate::brep::corners::sum(&self.steps[0], &self.steps[1], self.side, [la, lb])
-            .map_err(|e| if e.contains("no rational curve") { e } else { unbuilt::<()>(&e).unwrap_err() })?;
+            .map_err(|e| if e.contains("no rational curve") { e } else { unbuilt(&e) })?;
         let (qa, qb) = (self.lift(self.steps[0].point(ta)), self.lift(self.steps[1].point(tb)));
         Ok((qa, qb, match cut {
             Seg::Conic { m, w, .. } => Stroke::Conic { a: qa, m: self.lift(m), b: qb, w },
@@ -1009,7 +1015,7 @@ impl Corner2 {
 fn cut(p0: V, along: V, traces: [Trace; 2], within: bool, section: Section) -> Result<Run, String> {
     let (ua, ub) = (toward(traces[0].normal(), within), toward(traces[1].normal(), within));
     if 1.0 + dot(ua, ub) <= 1e-9 {
-        return unbuilt("faces folded back on one another");
+        return Err(unbuilt("faces folded back on one another"));
     }
     let size = match section { Section::Round(r) => r, Section::Flat { la, lb } => la.max(lb) };
     let corner = Corner2::new(p0, along, traces, [ua, ub], 8.0 * size)?;

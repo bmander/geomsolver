@@ -307,7 +307,7 @@ impl BodyFaces {
 
     /// Whether face `c` carries one of `faces` on across a seam at `v` (model units): their
     /// outward normals there one, so they meet tangent and the edge between them is none.
-    pub fn continues(&self, c: usize, faces: &[usize], v: V) -> bool {
+    fn continues(&self, c: usize, faces: &[usize], v: V) -> bool {
         let q = self.q(v);
         let n = self.outward(c, q);
         faces.iter().any(|&f| norm(sub(self.outward(f, q), n)) < TANGENT)
