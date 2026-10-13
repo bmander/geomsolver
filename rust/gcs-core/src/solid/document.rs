@@ -28,6 +28,11 @@ pub fn reads_own(sk: &Sketch, si: usize, unit: f64) -> Vec<f64> {
     reads_where(sk, si, unit, &|_| true)
 }
 
+/// What a key holds for a number it cannot read (a placement whose motion refuses, a motion that
+/// is not there): never a NaN, since a key must equal itself and `Vec<f64>`'s equality never holds
+/// over one, which would build the solid again at every ask.
+const UNREAD: f64 = f64::MAX;
+
 /// `reads`, leaving out every solid but `si` that `skip` says and what only they reach.
 fn reads_where(sk: &Sketch, si: usize, unit: f64, skip: &dyn Fn(usize) -> bool) -> Vec<f64> {
     let mut v = vec![unit];
@@ -61,7 +66,7 @@ fn reads_where(sk: &Sketch, si: usize, unit: f64, skip: &dyn Fn(usize) -> bool) 
                         v.extend(pose.point([0.;3]));
                         for i in 0..3 { let mut p = [0.;3]; p[i] = 1.; v.extend(pose.vector(p)); }
                     }
-                    Err(_) => v.push(f64::NAN),
+                    Err(_) => v.push(UNREAD),
                 }
             }
             // a region: each term's numbers and where what it measures stands
@@ -72,9 +77,9 @@ fn reads_where(sk: &Sketch, si: usize, unit: f64, skip: &dyn Fn(usize) -> bool) 
                     let hi = [f64::from(t.hi.is_some()), t.hi.unwrap_or(0.0)];
                     // an unknown's as solved; one nothing determines reads as a number no other
                     // key holds, and the solid refuses it where it is evaluated
-                    let lo = t.lo.read(sk).unwrap_or(f64::MAX);
+                    let lo = t.lo.read(sk).unwrap_or(UNREAD);
                     let grow = t.grow.as_ref().map_or(Some(0.0), |g| g.read(sk));
-                    v.extend([t.cmp as u8 as f64, lo, hi[0], hi[1], grow.unwrap_or(f64::MAX)]);
+                    v.extend([t.cmp as u8 as f64, lo, hi[0], hi[1], grow.unwrap_or(UNREAD)]);
                     for e in t.shape.entities() {
                         match e.kind {
                             crate::model::EntKind::Point => v.extend(sk.world_point(e.i())),
@@ -195,32 +200,32 @@ fn motion_reads(sk: &Sketch,motion: u32,values: &mut Vec<f64>) {
     let mut seen = std::collections::BTreeSet::new();
     while let Some(i) = pending.pop() {
         if !seen.insert(i) { continue; }
-        let Some(m) = sk.motions.get(i as usize) else { values.push(f64::NAN); continue; };
+        let Some(m) = sk.motions.get(i as usize) else { values.push(UNREAD); continue; };
         values.push(i as f64);
         // a number written as a measurement is read as it now comes to, so the key moves
         // exactly when the measured geometry does (`MotionE::rotation`)
         match m.def {
             crate::model::MotionDef::Rotation {axis,..} => {
-                let (ratio,phase,advance) = m.rotation(sk).unwrap_or((f64::NAN,f64::NAN,f64::NAN));
+                let (ratio,phase,advance) = m.rotation(sk).unwrap_or((UNREAD,UNREAD,UNREAD));
                 values.extend([0.,axis as f64,ratio,phase,advance]);
                 if let Some(axis) = sk.lines.get(axis as usize) {
                     for p in [axis.p1,axis.p2] { values.extend(sk.world_point(p as usize)); }
-                } else { values.push(f64::NAN); }
+                } else { values.push(UNREAD); }
             }
             crate::model::MotionDef::Translation {axis,..} => {
-                values.extend([2.,axis as f64,m.advance(sk).unwrap_or(f64::NAN)]);
+                values.extend([2.,axis as f64,m.advance(sk).unwrap_or(UNREAD)]);
                 if let Some(axis) = sk.lines.get(axis as usize) {
                     for p in [axis.p1,axis.p2] { values.extend(sk.world_point(p as usize)); }
-                } else { values.push(f64::NAN); }
+                } else { values.push(UNREAD); }
             }
             crate::model::MotionDef::Turn {centre,..} => {
-                let (ratio,phase,_) = m.rotation(sk).unwrap_or((f64::NAN,f64::NAN,f64::NAN));
+                let (ratio,phase,_) = m.rotation(sk).unwrap_or((UNREAD,UNREAD,UNREAD));
                 values.extend([3.,centre as f64,ratio,phase]);
                 if (centre as usize) < sk.points.len() {
                     values.extend(sk.world_point(centre as usize));
                     let b = sk.plane_of(centre as usize).map(|i| sk.basis(i));
                     values.extend(b.map_or([0.,0.,1.],|b| b.normal()));
-                } else { values.push(f64::NAN); }
+                } else { values.push(UNREAD); }
             }
             crate::model::MotionDef::Relative {source,observer} => {
                 values.extend([1.,source as f64,observer as f64]);
