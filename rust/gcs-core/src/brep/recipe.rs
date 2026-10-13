@@ -84,6 +84,21 @@ pub fn node_named(n: &Json,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64
             prism(&profile,from-pad,to+pad)
         }
         "body" => body(n,built,built_names,floor),
+        "region" => {
+            // a region in general position (`solid::bounded`, #238): the common of the primitives
+            // it keeps within, less those it keeps outside, each bounded past its material
+            let mut solid: Option<Brep> = None;
+            for piece in field(n,"pieces")?.arr() {
+                let b = node_named(piece,built,built_names,floor)?;
+                let keep = matches!(field(piece,"keep")?,Json::Bool(true));
+                solid = Some(match solid {
+                    None if keep => b,
+                    None => return Err("recipe: a region's first piece is one it keeps within".into()),
+                    Some(s) => combined(&s,&b,if keep { Op::Common } else { Op::Cut },floor)?,
+                });
+            }
+            solid.ok_or_else(|| "recipe: a region of no pieces".to_string())
+        }
         "lowered" => {
             // a region set's pieces (`solid::lowering`, #194): each run a prism or a revolution,
             // each corner the ball's patch built where it stands; those joined (a run ending in the section a

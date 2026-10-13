@@ -55,7 +55,7 @@ const projects: Example[] = [{
     + 'boss filleted where it stands, and a disc whose round and chamfer are built exactly. None '
     + 'is a kernel feature: `round` and `chamfer` are words of the standard library over faces '
     + 'read as sets, and by_hand.sv writes its own round in twenty lines. regions.sv shows solids '
-    + 'that are sets read point by point. Then the fillet stack\'s parts: a cast pad, a turned '
+    + 'that are sets, each built exactly: an egg by its foci, a bicylinder, a Voronoi cell. Then the fillet stack\'s parts: a cast pad, a turned '
     + 'knob, a rail, a pipe tee\'s crotch, a drilled pipe\'s rim, tangent chains round a slot and '
     + 'a pocket, rounds that run out onto a face or into a post, the seams of two rods made one, '
     + 'and a D-shaped shaft rounded all over, all built exactly too. The README says '

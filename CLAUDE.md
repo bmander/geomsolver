@@ -258,8 +258,19 @@ designs, both members) are the gates.
 `SpatialField` leaf (each term its surface's exact signed distance, the largest; a box's enclosure
 the centre's value within its half-diagonal), its support the box of the planes every term lies
 within (`polytope_box`, refused unbounded). Evaluated as sweeps are (`sweeps_among`: the field's
-surface) unless the lowering table builds it (below); else no exact construction (`cad.rs` says so,
-naming the region). `tests/region_general.rs` is the gate.
+surface) unless the lowering table builds it (below) or **the common of its terms** does (#238,
+`solid::bounded`: every term a ball, a cylinder, a cone narrower than square or a half-space, no
+offset — each a primitive bounded past the support, kept within in common, kept outside taken
+away; the recipe's `"region"` node, `"pieces"` each with `"keep"`; gated by agreement with the
+field, `Sketch::bounded_cache`); else no exact construction (`cad.rs` says so, naming the region).
+**A sum of distances the meridian folds** (#238, `region::foci`): from one point, or two alike in
+weight, on its axis (the line through them chooses it when nothing else does) — a ball, an
+ellipsoid's half ellipse (two `Seg::Conic` quarters), the plane midway, or a hyperboloid's lobe
+(`lobe`: hyperbolic conic arcs, `w = cosh`, a unit of `u` each); held to the field as rounds are
+(`agrees`). A conic's `Seg::param` tells a hyperbola's other branch off its arc (both ends'
+barycentric coordinates below nothing). `tests/region_general.rs` and `tests/region_exact.rs`
+(closed forms to 1e-9) are the gates; `brep_census.rs::exact_census` (ignored) sorts every corpus
+object by its route.
 **A bound on measurements** (#183 F3): `distance(p, f1) + distance(p, f2) <= 10mm` in a set's
 body is `StmtKind::Measured`, **parsed once** (#190, `parser/measured.rs`, where a statement calls
 a measurement and compares outside every bracket, `compared_ahead`): each side a

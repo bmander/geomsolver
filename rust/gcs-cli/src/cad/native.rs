@@ -292,6 +292,16 @@ impl Session {
                         }
                     }
                     id
+                } else if field(node,"kind").as_str() == "region" {
+                    // a region in general position (`solid::bounded`, #238): the common of the
+                    // primitives it keeps within, less those it keeps outside
+                    let mut id = None;
+                    for piece in field(node,"pieces").arr() {
+                        let p = self.primitive(piece,&shapes)?;
+                        let keep = matches!(field(piece,"keep"),Json::Bool(true));
+                        id = Some(match id { None => p,Some(s) => self.boolean(s,p,if keep { "bound" } else { "cut" })? });
+                    }
+                    id.ok_or("a region of no pieces")?
                 } else if field(node,"kind").as_str() == "placed" {
                     let matrix: Vec<_> = field(node,"matrix").arr().iter().map(Json::as_f64).collect();
                     self.result(unsafe { solvent_cad_transform(self.0,

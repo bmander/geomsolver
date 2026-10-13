@@ -123,10 +123,12 @@ impl Seg {
             Seg::Conic {a,m,b,..} => {
                 // (1 − t)² : 2wt(1 − t) : t² are the point's barycentric coordinates in the
                 // control triangle, so `t / (1 − t)` is the root of their ends' ratio, turned
-                // negative off the arc (the middle's coordinate below nothing)
+                // negative off the arc (the middle's coordinate below nothing) — or, a hyperbola's
+                // (`w > 1`), on its other branch, where the weights' sum is below nothing and so
+                // are both ends' coordinates
                 let ([l0,l1,l2],_) = barycentric(a,m,b,p);
                 let (s0,s2) = (l0.abs().sqrt(),l2.abs().sqrt());
-                if l1 >= 0. { s2/(s0+s2).max(1e-300) } else { let k = s2/s0.max(1e-300); -k/(1.-k) }
+                if l1 >= 0. && !(l0 < 0. && l2 < 0.) { s2/(s0+s2).max(1e-300) } else { let k = s2/s0.max(1e-300); -k/(1.-k) }
             }
         }
     }

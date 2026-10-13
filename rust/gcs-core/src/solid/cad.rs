@@ -216,23 +216,29 @@ fn recipe_with(sk: &Sketch,root: usize,static_only: bool) -> Result<StaticRecipe
             }
             // a region: its meridian turned once about its axis (§6.21)
             SolidDef::Region {terms,..} => {
+                // in general position: the common of its terms' primitives, where they are ones that
+                // construction makes (#238)
                 if super::region::in_general(sk,i) {
-                    let what = if terms.iter().any(|t| super::faces::reads_faces(&t.shape)) {
-                        "a region over a body's faces that no entry of the lowering table builds"
-                    } else {
-                        "a region whose terms share no axis"
+                    let Some(b) = super::bounded::built(sk,i) else {
+                        let what = if terms.iter().any(|t| super::faces::reads_faces(&t.shape)) {
+                            "a region over a body's faces that no entry of the lowering table builds"
+                        } else {
+                            "a region in general position over a sum of measurements, an offset or a wide cone"
+                        };
+                        return Err(format!("`{}`: {what} is read by the field; no exact construction is made of it yet",
+                            sk.solid_name(i)));
                     };
-                    return Err(format!("`{}`: {what} is read by the field; no exact construction is made of it yet",
-                        sk.solid_name(i)));
+                    b.map_err(|e| format!("`{}`: {e}",sk.solid_name(i)))?.node(scale)?
+                } else {
+                    let m = super::region::meridian(sk,i)?;
+                    let name = |t: u32| m.name(t);
+                    let p = crate::brep::recipe::region_profile(&m.region,m.origin,m.seam,m.axis,&name);
+                    object([
+                        ("kind","revolve".into()),("profile",p.to_json(scale)?),
+                        ("origin",vector(m.origin.map(|v| v*scale))),("axis",vector(m.axis)),
+                        ("angle",std::f64::consts::TAU.into()),
+                    ])
                 }
-                let m = super::region::meridian(sk,i)?;
-                let name = |t: u32| m.name(t);
-                let p = crate::brep::recipe::region_profile(&m.region,m.origin,m.seam,m.axis,&name);
-                object([
-                    ("kind","revolve".into()),("profile",p.to_json(scale)?),
-                    ("origin",vector(m.origin.map(|v| v*scale))),("axis",vector(m.axis)),
-                    ("angle",std::f64::consts::TAU.into()),
-                ])
             }
             SolidDef::Prism {face,from,to} => object([
                 ("kind","prism".into()),("profile",profile(sk,*face as usize,scale)?),

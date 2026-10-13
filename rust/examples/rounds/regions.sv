@@ -1,6 +1,7 @@
-// Solids that are sets: each is the points `p` a body of bounds holds, and none is a sweep. Their
-// terms share no axis, so no meridian folds them: the field reads each point by point, its
-// surface the place where the largest of the terms' signed distances is nothing.
+// Solids that are sets: each is the points `p` a body of bounds holds, and none is a sweep. Each
+// is built exactly: the egg and the cell are turned about the line through their points (an
+// ellipse, and a half disc cut by the plane midway between the centres), and the bicylinder, whose
+// cylinders share no axis, is the common of the two.
 //
 // - `egg` is a bound on a sum of measurements: the points whose distances from two foci add to at
 //   most 10mm, an ellipsoid of revolution with semi-axes 5 and 4.

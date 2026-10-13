@@ -150,11 +150,14 @@ fn turning(edges: &[Edge]) -> Result<(f64,bool),String> {
     Ok((direction,convex))
 }
 
-fn convex(edges: &[Edge],direction: f64) -> Result<PlanarField,String> {
+fn convex(edges: &[Edge],direction: f64,join: f64) -> Result<PlanarField,String> {
     let mut constraints = Vec::new();
     let mut radius = 0_f64;
     let circular_section =
         edges.iter().filter(|e| !matches!(e,Edge::Line {axis:true,..})).count() == 1;
+    // a meridian's loop (it has an edge on the axis) lies where `r ≥ 0`: a sector's side along the
+    // axis bounds only what no revolution reaches, and on the axis past it would read nothing
+    let revolved = edges.iter().any(|e| matches!(e,Edge::Line {axis:true,..}));
     for e in edges {
         radius = radius.max(e.reach());
         let field = match *e {
@@ -171,14 +174,21 @@ fn convex(edges: &[Edge],direction: f64) -> Result<PlanarField,String> {
                 else {
                     let (a,b) = if direction > 0. { (e.at(0.),e.at(1.)) }
                         else { (e.at(1.),e.at(0.)) };
+                    let along = |p: [f64;2]| revolved && center[0].abs() <= join && p[0].abs() <= join;
+                    let (on_a,on_b) = (along(a),along(b));
                     let a = delta(a,center); let b = delta(b,center);
                     let before = PlanarField::half_plane(center,[-a[1],a[0]]).map_err(failure)?;
                     let after = PlanarField::half_plane(center,[b[1],-b[0]]).map_err(failure)?;
                     // The circle constrains its angular sector only. Extending
                     // the whole disk would cut away distant parts of a fillet's profile.
-                    let outside = if sweep.abs() <= PI { before.union(after) }
-                        else { before.intersection(after) }.map_err(failure)?;
-                    disk.union(outside).map_err(failure)?
+                    let outside = match (on_a,on_b) {
+                        (true,true) => None,
+                        (true,false) => Some(after),
+                        (false,true) => Some(before),
+                        _ if sweep.abs() <= PI => Some(before.union(after).map_err(failure)?),
+                        _ => Some(before.intersection(after).map_err(failure)?),
+                    };
+                    match outside { Some(o) => disk.union(o).map_err(failure)?,None => disk }
                 }
             }
             Edge::Conic {..} => unreachable!("a loop with a conic is read by its boundary distance"),
@@ -486,7 +496,7 @@ impl PlanarField {
     pub(crate) fn from_loop(edges: &[Edge],join: f64) -> Result<Self,String> {
         let edges = ordered(edges,join)?;
         let (direction,is_convex) = turning(&edges)?;
-        if is_convex { return convex(&edges,direction); }
+        if is_convex { return convex(&edges,direction,join); }
         let profile = Profile::new(edges)?;
         Ok(Self {node:Node::Profile(profile),depth:1,uses:[true;2]})
     }
