@@ -114,6 +114,12 @@ fn out_json(v: Json) -> *mut u8 {
     out_str(v.dump(None))
 }
 
+/// An entry point whose answer is JSON: `f`'s, written out, or null with the reason where the
+/// core panicked — `guard` and `out_json` together, the shape of most of the ragged answers.
+fn json_out(f: impl FnOnce() -> Json) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || out_json(f()))
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn gcs_str_len(p: *const u8) -> u32 {
     if p.is_null() {
@@ -230,8 +236,8 @@ fn solid_at(s: &Sketch, idx: i32) -> Option<usize> {
 /// The constraint-type and kernel registry — everything a front end needs to be generic.
 #[no_mangle]
 pub extern "C" fn gcs_registry_json() -> *mut u8 {
-    guard(std::ptr::null_mut(), move || {
-        out_json(report::registry_json())
+    json_out(move || {
+        report::registry_json()
     })
 }
 
@@ -1215,9 +1221,9 @@ pub unsafe extern "C" fn gcs_entity_radius_param(h: *mut Sketch, kind: i32, idx:
 /// The classes an entity carries, as a JSON array of strings.
 #[no_mangle]
 pub unsafe extern "C" fn gcs_entity_class(h: *mut Sketch, kind: i32, idx: i32) -> *mut u8 {
-    guard(std::ptr::null_mut(), move || {
+    json_out(move || {
         let c = sk(h).class_of(ent(kind, idx));
-        out_json(Json::Arr(c.0.into_iter().map(Json::Str).collect()))
+        Json::Arr(c.0.into_iter().map(Json::Str).collect())
     })
 }
 
@@ -1241,7 +1247,7 @@ pub unsafe extern "C" fn gcs_entity_set_class(
 /// the same seam callout layout and curve tessellation sit on.
 #[no_mangle]
 pub unsafe extern "C" fn gcs_entity_style(h: *mut Sketch, kind: i32, idx: i32) -> *mut u8 {
-    guard(std::ptr::null_mut(), move || out_json(style_json(&sk(h).style_of(ent(kind, idx)))))
+    json_out(move || style_json(&sk(h).style_of(ent(kind, idx))))
 }
 
 /// Every resolved style in one document, in `primitives()` order per kind, plus the sheet's own
@@ -1249,7 +1255,7 @@ pub unsafe extern "C" fn gcs_entity_style(h: *mut Sketch, kind: i32, idx: i32) -
 /// geometry changes every frame, and this is what lets the first be read at the first's rate.
 #[no_mangle]
 pub unsafe extern "C" fn gcs_styles_json(h: *mut Sketch) -> *mut u8 {
-    guard(std::ptr::null_mut(), move || {
+    json_out(move || {
         let s = sk(h);
         let of = |k: EntKind| -> Json {
             Json::Arr(
@@ -1258,7 +1264,7 @@ pub unsafe extern "C" fn gcs_styles_json(h: *mut Sketch) -> *mut u8 {
                     .collect(),
             )
         };
-        out_json(json::object([
+        json::object([
             ("epoch", Json::Int(s.style_epoch as i64)),
             ("line", of(EntKind::Line)),
             ("circle", of(EntKind::Circle)),
@@ -1266,7 +1272,7 @@ pub unsafe extern "C" fn gcs_styles_json(h: *mut Sketch) -> *mut u8 {
             ("spline", of(EntKind::Spline)),
             ("plane", of(EntKind::Plane)),
             ("curve", of(EntKind::Curve)),
-        ]))
+        ])
     })
 }
 
@@ -1275,7 +1281,7 @@ pub unsafe extern "C" fn gcs_styles_json(h: *mut Sketch) -> *mut u8 {
 /// own, but its ink is shared by every callout in the document — which is what a class is.
 #[no_mangle]
 pub unsafe extern "C" fn gcs_style_named(h: *mut Sketch, name: *const u8, len: usize) -> *mut u8 {
-    guard(std::ptr::null_mut(), move || out_json(style_json(&sk(h).style_named(as_str(name, len)))))
+    json_out(move || style_json(&sk(h).style_named(as_str(name, len))))
 }
 
 /// Bumped whenever the sheet or a class changes, so a caller may cache the table above.
@@ -1456,8 +1462,8 @@ pub unsafe extern "C" fn gcs_sketch_set_constraints(
 
 #[no_mangle]
 pub unsafe extern "C" fn gcs_constraints_json(h: *mut Sketch) -> *mut u8 {
-    guard(std::ptr::null_mut(), move || {
-        out_json(report::constraints_json(sk(h)))
+    json_out(move || {
+        report::constraints_json(sk(h))
     })
 }
 
@@ -1565,7 +1571,7 @@ pub unsafe extern "C" fn gcs_constraint_set_dimension(
 /// the names it reads and its error if it could not be computed.
 #[no_mangle]
 pub unsafe extern "C" fn gcs_exprs_json(h: *mut Sketch) -> *mut u8 {
-    guard(std::ptr::null_mut(), move || out_json(report::exprs_json(sk(h))))
+    json_out(move || report::exprs_json(sk(h)))
 }
 
 /// A drag target's (tx, ty) — the one mutation the hot path performs.
@@ -1763,8 +1769,8 @@ pub unsafe extern "C" fn gcs_overview_json(
     el: f64,
     shaded: i32,
 ) -> *mut u8 {
-    guard(std::ptr::null_mut(), move || {
-        out_json(report::overview_json(sk(h), unit, az, el, shaded != 0))
+    json_out(move || {
+        report::overview_json(sk(h), unit, az, el, shaded != 0)
     })
 }
 
@@ -1773,7 +1779,7 @@ pub unsafe extern "C" fn gcs_overview_json(
 /// what refines a round surface to the zoom it is looked at.
 #[no_mangle]
 pub unsafe extern "C" fn gcs_derived_json(h: *mut Sketch, unit: f64) -> *mut u8 {
-    guard(std::ptr::null_mut(), move || out_json(report::derived_json(sk(h), unit)))
+    json_out(move || report::derived_json(sk(h), unit))
 }
 
 /// 1 where the projected pictures are the same at every pixel length (`renderer::detail_free`):
@@ -1869,12 +1875,12 @@ pub unsafe extern "C" fn gcs_sketch_defer_fields(h: *mut Sketch, on: i32) {
 /// same for the same drawing on any core, so a page compares keys and decides nothing else.
 #[no_mangle]
 pub unsafe extern "C" fn gcs_sketch_field_jobs(h: *mut Sketch) -> *mut u8 {
-    guard(std::ptr::null_mut(), move || {
-        out_json(Json::Arr(sk(h).field_jobs().into_iter().map(|j| Json::Obj(vec![
+    json_out(move || {
+        Json::Arr(sk(h).field_jobs().into_iter().map(|j| Json::Obj(vec![
             ("solid".into(), Json::Int(j.solid as i64)),
             ("name".into(), Json::Str(j.name)),
             ("key".into(), Json::Str(format!("{:016x}", j.key))),
-        ])).collect()))
+        ])).collect())
     })
 }
 
@@ -1979,15 +1985,15 @@ pub unsafe extern "C" fn gcs_exact_builder_step(b: *mut ExactBuilder) -> i32 {
 /// stages run and in all, and the last thing a stage said (or null).
 #[no_mangle]
 pub unsafe extern "C" fn gcs_exact_builder_progress(b: *mut ExactBuilder) -> *mut u8 {
-    guard(std::ptr::null_mut(), move || {
+    json_out(move || {
         let b = &(*b).0;
         let (done, total) = b.stages();
-        out_json(Json::Obj(vec![
+        Json::Obj(vec![
             ("doing".into(), Json::Str(b.doing())),
             ("done".into(), Json::Int(done as i64)),
             ("total".into(), Json::Int(total as i64)),
             ("said".into(), b.said().map_or(Json::Null, Json::Str)),
-        ]))
+        ])
     })
 }
 
@@ -2083,9 +2089,9 @@ pub unsafe extern "C" fn gcs_field_mesher_triangles(m: *mut Mesher, out: *mut u3
 /// (`FieldProgress`; `doing` is the words a host shows, `FieldProgress::doing`).
 #[no_mangle]
 pub unsafe extern "C" fn gcs_field_mesher_progress(m: *mut Mesher) -> *mut u8 {
-    guard(std::ptr::null_mut(), move || {
+    json_out(move || {
         let p = (*m).mesher.progress();
-        out_json(Json::Obj(vec![
+        Json::Obj(vec![
             ("doing".into(), Json::Str(p.doing())),
             ("phase".into(), Json::Str(p.phase.into())),
             ("stage".into(), Json::Str(p.refine.stage.word().into())),
@@ -2099,7 +2105,7 @@ pub unsafe extern "C" fn gcs_field_mesher_progress(m: *mut Mesher) -> *mut u8 {
             ("fraction".into(), Json::Num(p.fraction)),
             ("within".into(), Json::Num(p.within)),
             ("failed".into(), Json::Bool(p.failed)),
-        ]))
+        ])
     })
 }
 
@@ -2279,9 +2285,9 @@ pub unsafe extern "C" fn gcs_solid_provisional(h: *mut Sketch, idx: i32) -> i32 
 /// bore is a hole in a part and not a part beside it, and this is the rule that says so.
 #[no_mangle]
 pub unsafe extern "C" fn gcs_solid_objects_json(h: *mut Sketch) -> *mut u8 {
-    guard(std::ptr::null_mut(), move || {
+    json_out(move || {
         let s = sk(h);
-        out_json(Json::Arr(
+        Json::Arr(
             gcs_core::overview::objects(s)
                 .into_iter()
                 .map(|i| {
@@ -2291,7 +2297,7 @@ pub unsafe extern "C" fn gcs_solid_objects_json(h: *mut Sketch) -> *mut u8 {
                     ])
                 })
                 .collect(),
-        ))
+        )
     })
 }
 
@@ -2314,16 +2320,24 @@ pub unsafe extern "C" fn gcs_solid_mesh_unit(h: *mut Sketch, idx: i32) -> f64 {
 pub unsafe extern "C" fn gcs_overview3d_json(h: *mut Sketch, unit: f64, layer: i32) -> *mut u8 {
     use gcs_core::overview::Layer;
     let layer = match layer { 1 => Layer::Datums, 2 => Layer::Objects, _ => Layer::All };
-    guard(std::ptr::null_mut(), move || out_json(report::overview3d_json(sk(h), unit, layer)))
+    json_out(move || report::overview3d_json(sk(h), unit, layer))
 }
 
 /* -- the workspace: every view standing on its plane, seen by one orthographic eye --------- */
+
+/// The sketch behind `h` and the eye at bearing `az`, elevation `el` that sees it: where every
+/// question asked where the eye sees things starts (`workspace::Projection`).
+unsafe fn seen<'a>(h: *mut Sketch, az: f64, el: f64)
+    -> (&'a Sketch, gcs_core::overview::workspace::Projection) {
+    let s: &Sketch = sk(h);
+    (s, gcs_core::overview::workspace::Projection::new(s, az, el))
+}
 
 /// What of the workspace does not depend on the eye (`overview::workspace::Views`): each view's
 /// place and the eye square on to it, and the view every point and drawn entity stands in.
 #[no_mangle]
 pub unsafe extern "C" fn gcs_workspace_json(h: *mut Sketch) -> *mut u8 {
-    guard(std::ptr::null_mut(), move || out_json(report::workspace_json(sk(h))))
+    json_out(move || report::workspace_json(sk(h)))
 }
 
 /// Each view's map of its page onto the eye's picture plane at bearing `az` and elevation `el`
@@ -2363,8 +2377,7 @@ pub unsafe extern "C" fn gcs_workspace_space_points(h: *mut Sketch, az: f64, el:
 pub unsafe extern "C" fn gcs_workspace_pick(h: *mut Sketch, unit: f64, az: f64, el: f64,
                                             x: f64, y: f64, tol: f64, out: *mut f64) -> i32 {
     guard(0, move || {
-        let s = sk(h);
-        let proj = gcs_core::overview::workspace::Projection::new(s, az, el);
+        let (s, proj) = seen(h, az, el);
         match gcs_core::overview::workspace::pick(s, &proj, (x, y), tol, unit) {
             Some(e) => {
                 write(out, &[kind_id(e.kind) as f64, e.i() as f64]);
@@ -2380,10 +2393,9 @@ pub unsafe extern "C" fn gcs_workspace_pick(h: *mut Sketch, unit: f64, az: f64, 
 #[no_mangle]
 pub unsafe extern "C" fn gcs_workspace_pick_solid_json(h: *mut Sketch, az: f64, el: f64,
                                                        x: f64, y: f64) -> *mut u8 {
-    guard(std::ptr::null_mut(), move || {
-        let s = sk(h);
-        let proj = gcs_core::overview::workspace::Projection::new(s, az, el);
-        out_json(match gcs_core::overview::workspace::pick_solid(s, &proj, (x, y)) {
+    json_out(move || {
+        let (s, proj) = seen(h, az, el);
+        match gcs_core::overview::workspace::pick_solid(s, &proj, (x, y)) {
             Some(hit) => json::object([
                 ("solid", Json::Int(hit.solid as i64)),
                 ("face", Json::Str(hit.face)),
@@ -2391,7 +2403,7 @@ pub unsafe extern "C" fn gcs_workspace_pick_solid_json(h: *mut Sketch, az: f64, 
                 ("at", Json::Arr(hit.at.iter().map(|&x| Json::Num(x)).collect())),
             ]),
             None => Json::Null,
-        })
+        }
     })
 }
 
@@ -2399,16 +2411,16 @@ pub unsafe extern "C" fn gcs_workspace_pick_solid_json(h: *mut Sketch, az: f64, 
 /// by, bz]…]}…]` — `workspace::solid_edges`.
 #[no_mangle]
 pub unsafe extern "C" fn gcs_workspace_solid_edges_json(h: *mut Sketch, solid: i32) -> *mut u8 {
-    guard(std::ptr::null_mut(), move || {
+    json_out(move || {
         let edges = index(solid).map_or(Vec::new(), |i| {
             gcs_core::overview::workspace::solid_edges(sk(h), i)
         });
-        out_json(Json::Arr(edges.into_iter().map(|e| json::object([
+        Json::Arr(edges.into_iter().map(|e| json::object([
             ("faces", Json::Arr(vec![Json::Str(e.faces.0), Json::Str(e.faces.1)])),
             ("segs", Json::Arr(e.segs.iter().map(|[a, b]| {
                 Json::Arr(a.iter().chain(b).map(|&x| Json::Num(x)).collect())
             }).collect())),
-        ])).collect()))
+        ])).collect())
     })
 }
 
@@ -2427,17 +2439,16 @@ pub unsafe extern "C" fn gcs_workspace_round_size(h: *mut Sketch, solid: i32) ->
 #[no_mangle]
 pub unsafe extern "C" fn gcs_workspace_pick_edge_json(h: *mut Sketch, az: f64, el: f64,
                                                       x: f64, y: f64, tol: f64) -> *mut u8 {
-    guard(std::ptr::null_mut(), move || {
-        let s = sk(h);
-        let proj = gcs_core::overview::workspace::Projection::new(s, az, el);
-        out_json(match gcs_core::overview::workspace::pick_edge(s, &proj, (x, y), tol) {
+    json_out(move || {
+        let (s, proj) = seen(h, az, el);
+        match gcs_core::overview::workspace::pick_edge(s, &proj, (x, y), tol) {
             Some(hit) => json::object([
                 ("solid", Json::Int(hit.solid as i64)),
                 ("faces", Json::Arr(vec![Json::Str(hit.faces.0), Json::Str(hit.faces.1)])),
                 ("at", Json::Arr(hit.at.iter().map(|&x| Json::Num(x)).collect())),
             ]),
             None => Json::Null,
-        })
+        }
     })
 }
 
@@ -2452,11 +2463,10 @@ fn pt(p: (f64, f64)) -> Json {
 #[no_mangle]
 pub unsafe extern "C" fn gcs_workspace_extrude_handle_json(h: *mut Sketch, az: f64, el: f64,
                                                            solid: i32) -> *mut u8 {
-    guard(std::ptr::null_mut(), move || {
-        use gcs_core::overview::workspace::{extrude_handle, Projection};
-        let s = sk(h);
-        let proj = Projection::new(s, az, el);
-        out_json(match solid_at(s, solid).and_then(|i| extrude_handle(s, &proj, i)) {
+    json_out(move || {
+        use gcs_core::overview::workspace::extrude_handle;
+        let (s, proj) = seen(h, az, el);
+        match solid_at(s, solid).and_then(|i| extrude_handle(s, &proj, i)) {
             Some(k) => json::object([
                 ("base", pt(k.base)),
                 ("tip", k.tip.map_or(Json::Null, pt)),
@@ -2464,7 +2474,7 @@ pub unsafe extern "C" fn gcs_workspace_extrude_handle_json(h: *mut Sketch, az: f
                 ("thick", Json::Num(k.thick)),
             ]),
             None => Json::Null,
-        })
+        }
     })
 }
 
@@ -2474,9 +2484,8 @@ pub unsafe extern "C" fn gcs_workspace_extrude_handle_json(h: *mut Sketch, az: f
 pub unsafe extern "C" fn gcs_workspace_extent_at(h: *mut Sketch, az: f64, el: f64, solid: i32,
                                                  x: f64, y: f64) -> f64 {
     guard(f64::NAN, move || {
-        use gcs_core::overview::workspace::{extent_at, Projection};
-        let s = sk(h);
-        let proj = Projection::new(s, az, el);
+        use gcs_core::overview::workspace::extent_at;
+        let (s, proj) = seen(h, az, el);
         solid_at(s, solid).and_then(|i| extent_at(s, &proj, i, (x, y))).unwrap_or(f64::NAN)
     })
 }
@@ -2488,11 +2497,10 @@ pub unsafe extern "C" fn gcs_workspace_extent_at(h: *mut Sketch, az: f64, el: f6
 #[no_mangle]
 pub unsafe extern "C" fn gcs_workspace_turn_handle_json(h: *mut Sketch, az: f64, el: f64,
                                                         solid: i32) -> *mut u8 {
-    guard(std::ptr::null_mut(), move || {
-        use gcs_core::overview::workspace::{turn_handle, Projection};
-        let s = sk(h);
-        let proj = Projection::new(s, az, el);
-        out_json(match solid_at(s, solid).and_then(|i| turn_handle(s, &proj, i)) {
+    json_out(move || {
+        use gcs_core::overview::workspace::turn_handle;
+        let (s, proj) = seen(h, az, el);
+        match solid_at(s, solid).and_then(|i| turn_handle(s, &proj, i)) {
             Some(k) => json::object([
                 ("base", pt(k.base)),
                 ("arc", Json::Arr(k.arc.into_iter().map(pt).collect())),
@@ -2500,7 +2508,7 @@ pub unsafe extern "C" fn gcs_workspace_turn_handle_json(h: *mut Sketch, az: f64,
                 ("turn", Json::Num(k.turn)),
             ]),
             None => Json::Null,
-        })
+        }
     })
 }
 
@@ -2510,9 +2518,8 @@ pub unsafe extern "C" fn gcs_workspace_turn_handle_json(h: *mut Sketch, az: f64,
 pub unsafe extern "C" fn gcs_workspace_turn_at(h: *mut Sketch, az: f64, el: f64, solid: i32,
                                                x: f64, y: f64, near: f64) -> f64 {
     guard(f64::NAN, move || {
-        use gcs_core::overview::workspace::{turn_at, Projection};
-        let s = sk(h);
-        let proj = Projection::new(s, az, el);
+        use gcs_core::overview::workspace::turn_at;
+        let (s, proj) = seen(h, az, el);
         solid_at(s, solid).and_then(|i| turn_at(s, &proj, i, (x, y), near)).unwrap_or(f64::NAN)
     })
 }
@@ -2522,18 +2529,17 @@ pub unsafe extern "C" fn gcs_workspace_turn_at(h: *mut Sketch, az: f64, el: f64,
 #[no_mangle]
 pub unsafe extern "C" fn gcs_workspace_offset_handle_json(h: *mut Sketch, az: f64, el: f64,
                                                           id: u32) -> *mut u8 {
-    guard(std::ptr::null_mut(), move || {
-        use gcs_core::overview::workspace::{offset_handle, Projection};
-        let s = sk(h);
-        let proj = Projection::new(s, az, el);
-        out_json(match offset_handle(s, &proj, id) {
+    json_out(move || {
+        use gcs_core::overview::workspace::offset_handle;
+        let (s, proj) = seen(h, az, el);
+        match offset_handle(s, &proj, id) {
             Some(k) => json::object([
                 ("base", pt(k.base)),
                 ("tip", k.tip.map_or(Json::Null, pt)),
                 ("distance", Json::Num(k.distance)),
             ]),
             None => Json::Null,
-        })
+        }
     })
 }
 
@@ -2543,9 +2549,8 @@ pub unsafe extern "C" fn gcs_workspace_offset_handle_json(h: *mut Sketch, az: f6
 pub unsafe extern "C" fn gcs_workspace_offset_at(h: *mut Sketch, az: f64, el: f64, id: u32,
                                                  x: f64, y: f64) -> f64 {
     guard(f64::NAN, move || {
-        use gcs_core::overview::workspace::{offset_at, Projection};
-        let s = sk(h);
-        let proj = Projection::new(s, az, el);
+        use gcs_core::overview::workspace::offset_at;
+        let (s, proj) = seen(h, az, el);
         offset_at(s, &proj, id, (x, y)).unwrap_or(f64::NAN)
     })
 }
@@ -2556,8 +2561,7 @@ pub unsafe extern "C" fn gcs_workspace_offset_at(h: *mut Sketch, az: f64, el: f6
 pub unsafe extern "C" fn gcs_workspace_panes_at(h: *mut Sketch, az: f64, el: f64, x: f64, y: f64,
                                                 out: *mut f64, cap: usize) -> i32 {
     guard(-1, move || {
-        let s = sk(h);
-        let proj = gcs_core::overview::workspace::Projection::new(s, az, el);
+        let (s, proj) = seen(h, az, el);
         let hits = gcs_core::overview::workspace::panes_at(s, &proj, (x, y));
         for (k, &i) in hits.iter().take(cap).enumerate() {
             write(out.add(k), &[i as f64]);
@@ -2571,8 +2575,7 @@ pub unsafe extern "C" fn gcs_workspace_panes_at(h: *mut Sketch, az: f64, el: f64
 pub unsafe extern "C" fn gcs_workspace_nearest_point(h: *mut Sketch, az: f64, el: f64,
                                                      x: f64, y: f64, out_dist: *mut f64) -> i32 {
     guard(-1, move || {
-        let s = sk(h);
-        let proj = gcs_core::overview::workspace::Projection::new(s, az, el);
+        let (s, proj) = seen(h, az, el);
         let (i, d) = gcs_core::overview::workspace::nearest_point(s, &proj, (x, y));
         *out_dist = d;
         i.map_or(-1, |v| v as i32)
@@ -2585,8 +2588,7 @@ pub unsafe extern "C" fn gcs_workspace_nearest_point(h: *mut Sketch, az: f64, el
 pub unsafe extern "C" fn gcs_workspace_bounds(h: *mut Sketch, unit: f64, az: f64, el: f64,
                                               out: *mut f64) -> i32 {
     guard(0, move || {
-        let s = sk(h);
-        let proj = gcs_core::overview::workspace::Projection::new(s, az, el);
+        let (s, proj) = seen(h, az, el);
         match gcs_core::overview::workspace::bounds(s, &proj, unit) {
             Some((x0, y0, x1, y1)) => {
                 write(out, &[x0, y0, x1, y1]);
@@ -2601,8 +2603,8 @@ pub unsafe extern "C" fn gcs_workspace_bounds(h: *mut Sketch, unit: f64, az: f64
 #[no_mangle]
 pub unsafe extern "C" fn gcs_workspace_overlapping_json(h: *mut Sketch, unit: f64, az: f64, el: f64,
                                                              x0: f64, y0: f64, x1: f64, y1: f64) -> *mut u8 {
-    guard(std::ptr::null_mut(), move || {
-        out_json(report::workspace_overlapping_json(sk(h), unit, az, el, (x0, y0), (x1, y1)))
+    json_out(move || {
+        report::workspace_overlapping_json(sk(h), unit, az, el, (x0, y0), (x1, y1))
     })
 }
 
@@ -2614,8 +2616,7 @@ pub unsafe extern "C" fn gcs_workspace_callout_pick(h: *mut Sketch, unit: f64, a
                                                     x: f64, y: f64, tol_px: f64,
                                                     out_view: *mut i32) -> i32 {
     guard(-1, move || {
-        let s = sk(h);
-        let proj = gcs_core::overview::workspace::Projection::new(s, az, el);
+        let (s, proj) = seen(h, az, el);
         match callout::pick_seen(s, unit, &proj, (x, y), tol_px) {
             Some((id, view)) => {
                 *out_view = view.map_or(-1, |v| v as i32);
@@ -2630,8 +2631,8 @@ pub unsafe extern "C" fn gcs_workspace_callout_pick(h: *mut Sketch, unit: f64, a
 /// the layout is screen-constant through it.
 #[no_mangle]
 pub unsafe extern "C" fn gcs_callouts_json(h: *mut Sketch, unit: f64) -> *mut u8 {
-    guard(std::ptr::null_mut(), move || {
-        out_json(report::callouts_json(sk(h), unit))
+    json_out(move || {
+        report::callouts_json(sk(h), unit)
     })
 }
 
@@ -2640,9 +2641,9 @@ pub unsafe extern "C" fn gcs_callouts_json(h: *mut Sketch, unit: f64) -> *mut u8
 pub unsafe extern "C" fn gcs_selected_callouts_json(h: *mut Sketch, unit: f64,
     ids: *const u32, count: usize) -> *mut u8
 {
-    guard(std::ptr::null_mut(), move || {
+    json_out(move || {
         let ids = if count == 0 { &[] } else { std::slice::from_raw_parts(ids, count) };
-        out_json(report::selected_callouts_json(sk(h), unit, Some(ids)))
+        report::selected_callouts_json(sk(h), unit, Some(ids))
     })
 }
 
@@ -2716,11 +2717,11 @@ pub extern "C" fn gcs_placed(x: f64, px: f64) -> f64 {
 
 #[no_mangle]
 pub unsafe extern "C" fn gcs_branches_json(h: *mut Sketch) -> *mut u8 {
-    guard(std::ptr::null_mut(), move || {
+    json_out(move || {
         let s = sk(h);
-        out_json(Json::Obj(
+        Json::Obj(
             s.branches.iter().map(|(k, &v)| (k.clone(), Json::Int(v as i64))).collect(),
-        ))
+        )
     })
 }
 
@@ -2770,9 +2771,9 @@ pub unsafe extern "C" fn gcs_copy(h: *mut Sketch, ents: *const u8, ents_len: usi
 #[no_mangle]
 pub unsafe extern "C" fn gcs_paste(h: *mut Sketch, clip: *mut Sketch, dx: f64,
                                    dy: f64) -> *mut u8 {
-    guard(std::ptr::null_mut(), move || {
+    json_out(move || {
         let made = io::paste(sk(h), &*clip, dx, dy);
-        out_json(Json::Arr(made.into_iter().map(report::ent_json).collect()))
+        Json::Arr(made.into_iter().map(report::ent_json).collect())
     })
 }
 
@@ -2802,8 +2803,8 @@ pub unsafe extern "C" fn gcs_example(name: *const u8, len: usize) -> *mut Sketch
 
 #[no_mangle]
 pub extern "C" fn gcs_cases_json() -> *mut u8 {
-    guard(std::ptr::null_mut(), move || {
-        out_json(Json::Arr(
+    json_out(move || {
+        Json::Arr(
             examples::CASES
                 .iter()
                 .map(|(label, key, desc)| {
@@ -2814,7 +2815,7 @@ pub extern "C" fn gcs_cases_json() -> *mut u8 {
                     ])
                 })
                 .collect(),
-        ))
+        )
     })
 }
 
@@ -3035,9 +3036,9 @@ pub unsafe extern "C" fn gcs_system_refresh_consts(s: *mut System, h: *mut Sketc
 /// The structural Jacobian as a bipartite graph, plus row → constraint id.
 #[no_mangle]
 pub unsafe extern "C" fn gcs_system_structure_json(s: *mut System) -> *mut u8 {
-    guard(std::ptr::null_mut(), move || {
+    json_out(move || {
         let (adj, row_c) = (*s).structure();
-        out_json(json::object([
+        json::object([
             (
                 "adj",
                 Json::Arr(
@@ -3048,7 +3049,7 @@ pub unsafe extern "C" fn gcs_system_structure_json(s: *mut System) -> *mut u8 {
             ),
             ("rowC", Json::Arr(row_c.iter().map(|&c| Json::Int(c as i64)).collect())),
             ("nFree", Json::Int((*s).n_free as i64)),
-        ]))
+        ])
     })
 }
 
@@ -3313,11 +3314,11 @@ pub unsafe extern "C" fn gcs_diagnose_json(
     opts: *const u8,
     opts_len: usize,
 ) -> *mut u8 {
-    guard(std::ptr::null_mut(), move || {
+    json_out(move || {
         let s = sk(h);
         let o = diagnose_options(&as_json(opts, opts_len));
         let d = diagnose::diagnose(s, o);
-        out_json(report::diagnosis_json(s, &d))
+        report::diagnosis_json(s, &d)
     })
 }
 
@@ -3329,11 +3330,11 @@ pub unsafe extern "C" fn gcs_diagnose_with_json(
     opts: *const u8,
     opts_len: usize,
 ) -> *mut u8 {
-    guard(std::ptr::null_mut(), move || {
+    json_out(move || {
         let s = sk(h);
         let o = diagnose_options(&as_json(opts, opts_len));
         let d = diagnose::diagnose_with(s, &mut *sys, o);
-        out_json(report::diagnosis_json(s, &d))
+        report::diagnosis_json(s, &d)
     })
 }
 
@@ -3344,7 +3345,7 @@ pub unsafe extern "C" fn gcs_minimal_conflict_set_json(
     cands_len: usize,
     tol: f64,
 ) -> *mut u8 {
-    guard(std::ptr::null_mut(), move || {
+    json_out(move || {
         let s = sk(h);
         let cv = as_json(cands, cands_len);
         let list: Vec<u32> = cv.arr().iter().map(|v| v.as_i64() as u32).collect();
@@ -3355,25 +3356,25 @@ pub unsafe extern "C" fn gcs_minimal_conflict_set_json(
             Method::DogLeg,
             60,
         );
-        out_json(Json::Arr(out.iter().map(|&c| Json::Int(c as i64)).collect()))
+        Json::Arr(out.iter().map(|&c| Json::Int(c as i64)).collect())
     })
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn gcs_violated_json(h: *mut Sketch, tol: f64) -> *mut u8 {
-    guard(std::ptr::null_mut(), move || {
+    json_out(move || {
         let s = sk(h);
         let mut sys = System::new(s);
         let v = diagnose::violated_constraints(s, &mut sys, tol);
-        out_json(Json::Arr(v.iter().map(|&c| Json::Int(c as i64)).collect()))
+        Json::Arr(v.iter().map(|&c| Json::Int(c as i64)).collect())
     })
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn gcs_distance_rigidity_json(h: *mut Sketch) -> *mut u8 {
-    guard(std::ptr::null_mut(), move || {
+    json_out(move || {
         let (clusters, redundant) = diagnose::distance_rigidity(sk(h));
-        out_json(json::object([
+        json::object([
             (
                 "clusters",
                 Json::Arr(
@@ -3384,7 +3385,7 @@ pub unsafe extern "C" fn gcs_distance_rigidity_json(h: *mut Sketch) -> *mut u8 {
                 ),
             ),
             ("redundant", Json::Arr(redundant.iter().map(|&c| Json::Int(c as i64)).collect())),
-        ]))
+        ])
     })
 }
 
@@ -3412,10 +3413,10 @@ pub unsafe extern "C" fn gcs_hopcroft_karp_json(
     adj_len: usize,
     n_right: i32,
 ) -> *mut u8 {
-    guard(std::ptr::null_mut(), move || {
+    json_out(move || {
         let a = adj_from(&as_json(adj, adj_len));
         let (l, r) = gcs_core::graph::hopcroft_karp(&a, n_right as usize);
-        out_json(json::object([("mateL", i_arr(&l)), ("mateR", i_arr(&r))]))
+        json::object([("mateL", i_arr(&l)), ("mateR", i_arr(&r))])
     })
 }
 
@@ -3426,10 +3427,10 @@ pub unsafe extern "C" fn gcs_dulmage_mendelsohn_json(
     adj_len: usize,
     n_cols: i32,
 ) -> *mut u8 {
-    guard(std::ptr::null_mut(), move || {
+    json_out(move || {
         let a = adj_from(&as_json(adj, adj_len));
         let d = gcs_core::graph::dulmage_mendelsohn(&a, n_cols as usize);
-        out_json(json::object([
+        json::object([
             ("mateRow", i_arr(&d.mate_row)),
             ("mateCol", i_arr(&d.mate_col)),
             ("overRows", u_arr(&d.over_rows)),
@@ -3441,7 +3442,7 @@ pub unsafe extern "C" fn gcs_dulmage_mendelsohn_json(
             ("rank", Json::Int(d.rank as i64)),
             ("nRedundant", Json::Int(d.n_redundant)),
             ("nFree", Json::Int(d.n_free)),
-        ]))
+        ])
     })
 }
 
@@ -3452,7 +3453,7 @@ pub unsafe extern "C" fn gcs_pebble_game_json(
     edges: *const u8,
     edges_len: usize,
 ) -> *mut u8 {
-    guard(std::ptr::null_mut(), move || {
+    json_out(move || {
         let e: Vec<(usize, usize)> = as_json(edges, edges_len)
             .arr()
             .iter()
@@ -3462,13 +3463,13 @@ pub unsafe extern "C" fn gcs_pebble_game_json(
             })
             .collect();
         let r = gcs_core::graph::pebble_game(n as usize, &e);
-        out_json(json::object([
+        json::object([
             ("independent", u_arr(&r.independent)),
             ("redundant", u_arr(&r.redundant)),
             ("components", Json::Arr(r.components.iter().map(|c| u_arr(c)).collect())),
             ("dof", Json::Int(r.dof as i64)),
             ("isRigid", Json::Bool(r.is_rigid())),
-        ]))
+        ])
     })
 }
 
@@ -3479,28 +3480,28 @@ pub unsafe extern "C" fn gcs_bipartite_components_json(
     adj_len: usize,
     n_cols: i32,
 ) -> *mut u8 {
-    guard(std::ptr::null_mut(), move || {
+    json_out(move || {
         let a = adj_from(&as_json(adj, adj_len));
         let c = gcs_core::graph::bipartite_components(&a, n_cols as usize);
-        out_json(json::object([
+        json::object([
             ("compRow", u_arr(&c.comp_row)),
             ("compCol", u_arr(&c.comp_col)),
             ("count", Json::Int(c.count as i64)),
-        ]))
+        ])
     })
 }
 
 /// A random Laman graph's edges by Henneberg construction — the property-test generator.
 #[no_mangle]
 pub extern "C" fn gcs_henneberg_edges_json(n: i32, seed: u32) -> *mut u8 {
-    guard(std::ptr::null_mut(), move || {
+    json_out(move || {
         let mut rng = gcs_core::rng::Rng::new(seed);
         let e = gcs_core::fixtures::henneberg_edges(n.max(2) as usize, &mut rng);
-        out_json(Json::Arr(
+        Json::Arr(
             e.iter()
                 .map(|&(a, b)| Json::Arr(vec![Json::Int(a as i64), Json::Int(b as i64)]))
                 .collect(),
-        ))
+        )
     })
 }
 
@@ -3508,10 +3509,10 @@ pub extern "C" fn gcs_henneberg_edges_json(n: i32, seed: u32) -> *mut u8 {
 
 #[no_mangle]
 pub unsafe extern "C" fn gcs_witness_json(h: *mut Sketch, seed: u32) -> *mut u8 {
-    guard(std::ptr::null_mut(), move || {
+    json_out(move || {
         let s = sk(h);
         let w = witness::analyze(s, None, seed);
-        out_json(report::witness_json(s, &w))
+        report::witness_json(s, &w)
     })
 }
 
@@ -3527,8 +3528,8 @@ pub unsafe extern "C" fn gcs_make_witness(h: *mut Sketch, seed: u32, out: *mut f
 
 #[no_mangle]
 pub unsafe extern "C" fn gcs_graph_json(h: *mut Sketch) -> *mut u8 {
-    guard(std::ptr::null_mut(), move || {
-        out_json(report::graph_json(&cgraph::build(sk(h))))
+    json_out(move || {
+        report::graph_json(&cgraph::build(sk(h)))
     })
 }
 
@@ -3558,15 +3559,15 @@ pub unsafe extern "C" fn gcs_plan_solver_system(p: *mut PlanSolver) -> *mut Syst
 
 #[no_mangle]
 pub unsafe extern "C" fn gcs_plan_solver_plan_json(p: *mut PlanSolver) -> *mut u8 {
-    guard(std::ptr::null_mut(), move || {
-        out_json(report::plan_json(&(*p).plan))
+    json_out(move || {
+        report::plan_json(&(*p).plan)
     })
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn gcs_plan_solver_graph_json(p: *mut PlanSolver) -> *mut u8 {
-    guard(std::ptr::null_mut(), move || {
-        out_json(report::graph_json(&(*p).plan.graph))
+    json_out(move || {
+        report::graph_json(&(*p).plan.graph)
     })
 }
 
@@ -3578,10 +3579,10 @@ pub unsafe extern "C" fn gcs_plan_solver_solve(
     fallback: i32,
     method: i32,
 ) -> *mut u8 {
-    guard(std::ptr::null_mut(), move || {
+    json_out(move || {
         let m = if method == 1 { Method::Lm } else { Method::DogLeg };
         let r = (*p).solve(sk(h), tol, fallback != 0, m);
-        out_json(report::plan_result_json(&r))
+        report::plan_result_json(&r)
     })
 }
 
@@ -3652,7 +3653,7 @@ pub unsafe extern "C" fn gcs_enumerate_step_json(
     seed: u32,
     max_paths: i32,
 ) -> *mut u8 {
-    guard(std::ptr::null_mut(), move || {
+    json_out(move || {
         let s = sk(h);
         let ps = &mut *p;
         let locate = if locate_point < 0 {
@@ -3671,7 +3672,7 @@ pub unsafe extern "C" fn gcs_enumerate_step_json(
                 ..Default::default()
             },
         );
-        out_json(report::alternatives_json(&alts))
+        report::alternatives_json(&alts)
     })
 }
 
@@ -3926,10 +3927,10 @@ pub unsafe extern "C" fn gcs_plan_drag_flip_list(d: *mut PlanDragH, out: *mut i3
 
 #[no_mangle]
 pub unsafe extern "C" fn gcs_plan_drag_branches_json(d: *mut PlanDragH) -> *mut u8 {
-    guard(std::ptr::null_mut(), move || {
+    json_out(move || {
         let plan = plan_of(d);
         let b: BTreeMap<String, i32> = (*d).d.branches(plan);
-        out_json(Json::Obj(b.into_iter().map(|(k, v)| (k, Json::Int(v as i64))).collect()))
+        Json::Obj(b.into_iter().map(|(k, v)| (k, Json::Int(v as i64))).collect())
     })
 }
 
@@ -4074,9 +4075,9 @@ pub extern "C" fn gcs_module_forget() {
 /// followed too.  A parse error costs nothing here: the `use` lines that did parse are listed.
 #[no_mangle]
 pub unsafe extern "C" fn gcs_program_uses(ptr: *const u8, len: usize) -> *mut u8 {
-    guard(std::ptr::null_mut(), move || {
+    json_out(move || {
         let (prog, _) = syntax::parse(as_str(ptr, len));
-        out_json(Json::Arr(prog.uses.iter().map(|u| Json::Str(u.name.clone())).collect()))
+        Json::Arr(prog.uses.iter().map(|u| Json::Str(u.name.clone())).collect())
     })
 }
 
@@ -4147,7 +4148,7 @@ pub unsafe extern "C" fn gcs_elab_text(h: *mut Elaborated) -> *mut u8 {
 /// cannot disagree about where line 12 is.
 #[no_mangle]
 pub unsafe extern "C" fn gcs_elab_report(h: *mut Elaborated) -> *mut u8 {
-    guard(std::ptr::null_mut(), move || {
+    json_out(move || {
         let e = &*h;
         let diags: Vec<Json> = e
             .diags
@@ -4196,12 +4197,12 @@ pub unsafe extern "C" fn gcs_elab_report(h: *mut Elaborated) -> *mut u8 {
                 ])
             })
             .collect();
-        out_json(json::object([
+        json::object([
             ("ok", Json::Bool(e.ok())),
             ("diagnostics", Json::Arr(diags)),
             ("entities", Json::Arr(ents)),
             ("constraints", Json::Arr(cons)),
-        ]))
+        ])
     })
 }
 
@@ -4523,11 +4524,11 @@ pub unsafe extern "C" fn gcs_elab_sketch_on_face(h: *mut Elaborated, s: *mut Ske
 #[no_mangle]
 pub unsafe extern "C" fn gcs_elab_face_plane_json(h: *mut Elaborated, s: *mut Sketch, solid: i32,
                                                   ptr: *const u8, len: usize) -> *mut u8 {
-    guard(std::ptr::null_mut(), move || {
-        let face = std::str::from_utf8(std::slice::from_raw_parts(ptr, len)).unwrap_or_default();
+    json_out(move || {
+        let face = as_str(ptr, len);
         let found = index(solid)
             .and_then(|i| gcs_core::edit::face_plane(&*h, sk(s), i, face));
-        out_json(found.map_or(Json::Null, Json::Str))
+        found.map_or(Json::Null, Json::Str)
     })
 }
 
@@ -4584,12 +4585,12 @@ pub unsafe extern "C" fn gcs_elab_add_rounds(h: *mut Elaborated, s: *mut Sketch,
 #[no_mangle]
 pub unsafe extern "C" fn gcs_elab_region_json(h: *mut Elaborated, s: *mut Sketch, plane: i32,
                                               x: f64, y: f64, unit: f64) -> *mut u8 {
-    guard(std::ptr::null_mut(), move || {
+    json_out(move || {
         use gcs_core::overview::region;
         let plane = index(plane);
         let names = |n: Vec<String>| Json::Arr(n.into_iter().map(Json::Str).collect());
         let refused = |why: String| json::object([("refused", Json::Str(why))]);
-        out_json(match region::region_at(sk(s), plane, (x, y), unit) {
+        match region::region_at(sk(s), plane, (x, y), unit) {
             Ok(None) => Json::Null,
             Err(why) => refused(why),
             Ok(Some(r)) => match region::written(&(*h).map, &r) {
@@ -4602,7 +4603,7 @@ pub unsafe extern "C" fn gcs_elab_region_json(h: *mut Elaborated, s: *mut Sketch
                         .collect())).collect())),
                 ]),
             },
-        })
+        }
     })
 }
 
