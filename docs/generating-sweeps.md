@@ -156,7 +156,8 @@ best-effort basis. The refusal names the condition row and the witness. The tumb
 and tilted cylinders, the thin plate, the dumbbell and every prism sweep but a rack's with its
 caps clear and a pocketed prism's under a planar motion are outside the classes. Their fixtures stay
 in the tree as **negative controls**: each must
-produce its refusal.
+produce its refusal. `docs/general-sweeps.md` (#239) is the census of their envelopes, and of the
+corpus's swept stock, for deciding whether a class should take them.
 
 ## Acceptance
 

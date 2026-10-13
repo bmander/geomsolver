@@ -994,7 +994,10 @@ Phase 0: `SOLVENT_ABI_TRACE=FILE` logs native entry points, Boolean face pairs
 Manifold arrangement (`--stl-backend manifold`, `solid::sweep_candidates`), CGAL Mesh_3, the Ju et
 al. experiment, and the candidate construction (contact covers, meridian charts,
 `envelope::edge_contact`, `solid::tool_faces`, `rust/examples/swept_boundary/`). Git history keeps
-them; do not revive them without a new plan.
+them; do not revive them without a new plan. **The general sweep census** (#239, [doc](docs/general-sweeps.md),
+`tests/sweep_census.rs`, a measurement only): each tool face's contact condition sampled over the
+roll, read for roots per point, sheets, folds (E3's sign), crossings and what the field puts on
+the boundary; its assertions hold the doc's findings.
 `solid::MaterialField` composes static and swept operands; its evaluator keeps every sweep query's
 domain, witness, enclosure and status. Budgets apply per sweep query; exhausted operands are never
 omitted; memo includes the input box; indexed clones share a capped pose cache; cached visits

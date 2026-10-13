@@ -865,6 +865,9 @@ fitted to traced contacts); OCCT never built one. The certified general swept bo
 attempt at the rest and was removed. These solids stay on the field mesher — an STL of the
 material field, gated by the field agreement — and their STEP stays refused by name. A B-rep for
 them is a research plan of its own, not a rung of this one.
+`docs/general-sweeps.md` (#239) measures that plan's first question: every such sweep the corpus
+and the old negative controls write has at most one contact per tool point, and its folds and
+crossings are buried. What each lacks is its end caps.
 
 ## Sizing (revised 2026-09-30, from what was built and measured)
 

@@ -71,8 +71,10 @@ construction tool := solid(face(e0, e1, e2), from: -1.5mm, to: 1.5mm)
 /// A dumbbell along z: a bar of radius 0.25 from z = -1 to 1 about the
 /// vertical through (3, 0), with balls of radius 0.5 at z = -1 and 1
 /// (two concave crease circles where the bar enters each ball).
-pub const DUMBBELL: &str = "unit mm
+pub const DUMBBELL: &str = "\
+unit mm
 use std
+in std.front {
 construction centerline spindle := line(std.origin, hint((0, 1)))
 fix((0, 1)) spindle.p2
 private c0 := point
@@ -87,8 +89,7 @@ private bottom := line(c0, c1)
 private wall := line(c1, c2)
 private top := line(c2, c3)
 private ax := line(c3, c0)
-construction bar := solid(face(bottom, wall, top, ax), about: ax)
-construction tool := solid(bar)
+construction tool := solid(face(bottom, wall, top, ax), about: ax)
 private ca := point hint((3, 1))
 ca distance(3mm, along: u) std.front
 ca distance(1mm, along: v) std.front
@@ -100,7 +101,6 @@ da parallel spindle
 private ma := arc(center: ca, start: ba, end: ta)
 radius(0.5mm) ma
 construction ball_a := solid(face(ma, da), about: da)
-ball_a on tool
 private cb := point hint((3, -1))
 cb distance(3mm, along: u) std.front
 cb distance(-1mm, along: v) std.front
@@ -112,7 +112,9 @@ db parallel spindle
 private mb := arc(center: cb, start: bb, end: tb)
 radius(0.5mm) mb
 construction ball_b := solid(face(mb, db), about: db)
-ball_b on tool
+}
+ball_a union tool
+ball_b union tool
 ";
 
 /// A cylinder of radius 1 and height 2 whose axis is tilted `degrees` from the vertical in the
