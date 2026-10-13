@@ -112,4 +112,10 @@ export function fmt(v: number, sig = 4): string {
   return takeStr(core().gcs_fmt_g(v, sig));
 }
 
+/** A place the pointer gave, to the digits the zoom justifies: `x` on the decade grid no coarser
+ *  than `px`, the page length one screen pixel stands for. */
+export function placed(x: number, px: number): number {
+  return core().gcs_placed(x, px);
+}
+
 export { ENTITY_KINDS, expand };

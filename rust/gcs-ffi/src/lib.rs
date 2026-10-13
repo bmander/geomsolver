@@ -2652,6 +2652,13 @@ pub extern "C" fn gcs_fmt_g(v: f64, sig: i32) -> *mut u8 {
     })
 }
 
+/// A place the pointer gave, to the digits a pixel of `px` page units justifies
+/// (`edit::placed`).
+#[no_mangle]
+pub extern "C" fn gcs_placed(x: f64, px: f64) -> f64 {
+    guard(x, move || gcs_core::edit::placed(x, px))
+}
+
 /* -- branches (document state) --------------------------------------------- */
 
 #[no_mangle]

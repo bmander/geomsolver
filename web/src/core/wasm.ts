@@ -264,6 +264,7 @@ export interface Abi {
   gcs_dimension_pair_kind(ax: number, ay: number, bx: number, by: number,
                           px: number, py: number): number;
   gcs_fmt_g(v: number, sig: number): number;
+  gcs_placed(x: number, px: number): number;
 
   gcs_branches_json(h: number): number;
   gcs_branches_set_json(h: number, p: number, n: number): void;

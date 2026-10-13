@@ -1058,6 +1058,47 @@ test('a gesture beside a component leaves the component written', () => {
   assert.ok(/p0 := point hint\(\(200, 0\)\)/.test(view.source), view.source);
 });
 
+test('a sketch writes the digits its zoom justifies, and no more', () => {
+  const view = docView('a := point hint((0, 0))\n');
+  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  // a press at a canvas pixel: where it falls on the page has every digit a double holds
+  const press = (sx: number, sy: number) => {
+    cv.fire('pointerdown', pointer(sx, sy));
+    cv.fire('pointerup', pointer(sx, sy));
+  };
+  const hint = (name: string) => {
+    const m = new RegExp(`${name} := [^\\n]*hint\\(([^)]*)\\)`).exec(view.source);
+    assert.ok(m, `${name} has a hint:\n${view.source}`);
+    return m[1].replace(/[(]/g, '').split(',').map((s) => s.replace(/^.*:/, '').trim());
+  };
+  const decimals = (s: string) => (s.split('.')[1] ?? '').length;
+  for (const [scale, digits] of [[6, 1], [600, 3], [0.06, 0]] as const) {
+    view.cam.scale = scale;
+    view.cam.originX = 80.37;
+    view.cam.originY = 500.21;
+    const px = 1 / scale;
+    view.setTool('point');
+    press(331, 217);
+    const p = view.sketch.points.at(-1)!;
+    const [x, y] = view.s2w(331, 217);
+    assert.ok(Math.abs(p.x.value - x) <= px / 2 && Math.abs(p.y.value - y) <= px / 2,
+              'the place moved less than half a pixel');
+    const [hx, hy] = hint(view.doc.nameOf(p)!);
+    for (const s of [hx, hy]) {
+      assert.ok(decimals(s) <= digits, `${s} at ${scale} pixels a unit:\n${view.source}`);
+    }
+    assert.deepEqual([Number(hx), Number(hy)], p.xy, 'the source says where the drawing is');
+    // a circle's radius is a length the gesture measured: the same digits
+    view.setTool('circle');
+    press(331, 217);
+    press(402, 263);
+    const c = view.sketch.circles.at(-1)!;
+    const [r] = hint(view.doc.nameOf(c)!);
+    assert.ok(decimals(r) <= digits, `r: ${r} at ${scale}:\n${view.source}`);
+    view.setTool('select');
+  }
+});
+
 
 /* -- views: the current plane, membership and projection ----------------------------------
  *
@@ -1640,10 +1681,12 @@ test('a point on a plane seen at an angle drags along that plane', () => {
   const to: [number, number] = [at[0] + 30, at[1] - 10];
   drag(view, at, to);
   const moved = pointNamed(view, 'a');
-  // where the pointer let go, read on the top plane, is where the point now is
+  // where the pointer let go, read on the top plane, is where the point now is — to the digits
+  // a pixel of that plane justifies, so within half of one each way
   const want = view.inView(view.viewOf(moved), () => view.s2w(...to))!;
-  assert.ok(closeTo(moved.xy, want, 1e-4), `${moved.xy} ${want}`);
-  assert.ok(closeTo(view.seen(moved), to, 1e-3), 'and it is seen under the pointer');
+  const px = view.camOf(view.viewOf(moved))!.pixel;
+  assert.ok(closeTo(moved.xy, want, px / 2 + 1e-9), `${moved.xy} ${want}`);
+  assert.ok(closeTo(view.seen(moved), to, 1), 'and it is seen under the pointer');
   assert.equal(moved.plane, planeNamed(view, 'top'));
 });
 

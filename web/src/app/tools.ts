@@ -145,7 +145,7 @@ export function snapOrNew(v: SketchView, sp: [number, number]): Point {
   const on = v.pickPoint(sp[0], sp[1]);
   if (on) return on;
   const n0 = v.sketch.points.length;
-  const p = v.sketch.point(...v.s2w(sp[0], sp[1]));
+  const p = v.sketch.point(...v.place(sp[0], sp[1]));
   joinPlane(v, n0);
   return p;
 }
@@ -155,7 +155,7 @@ export function snapOrNew(v: SketchView, sp: [number, number]): Point {
  *  the geometry should be held to it rather than merely built near it. */
 export function pickPlace(v: SketchView, sp: [number, number]): Place {
   const on = v.pickPoint(sp[0], sp[1]);
-  return { at: on ? on.xy : v.s2w(sp[0], sp[1]), on };
+  return { at: on ? on.xy : v.place(sp[0], sp[1]), on };
 }
 
 /** Seed a fresh `Rectangle` instance's corners where the gesture drew them.  The dragged span
@@ -247,13 +247,13 @@ export function toolClick(v: SketchView, sp: [number, number],
       v.pendingFit = [pickPlace(v, sp)];
     } else {
       const [x0, y0] = v.pendingFit[0].at;
-      const [x1, y1] = v.s2w(sp[0], sp[1]);
+      const [x1, y1] = v.place(sp[0], sp[1]);
       v.pendingFit = [];
       // the instance joins the current plane whole — `in top` on its one statement —
       // reaching every point the component makes, which per-point membership cannot
       const e = v.doc.addRectangle(
-        Math.abs(x1 - x0) || 1,
-        Math.abs(y1 - y0) || 1,
+        v.placeLength(Math.abs(x1 - x0)) || 1,
+        v.placeLength(Math.abs(y1 - y0)) || 1,
         (v.plane && v.doc.nameOf(v.plane)) || '',
       );
       if (v.apply(e, `${e.names[0]}: Rectangle`)) {
@@ -266,7 +266,7 @@ export function toolClick(v: SketchView, sp: [number, number],
     } else {
       const [x, y] = v.s2w(sp[0], sp[1]);
       const c = v.pending[0];
-      sk.circle(c, Math.hypot(x - c.x.value, y - c.y.value) || 1);
+      sk.circle(c, v.placeLength(Math.hypot(x - c.x.value, y - c.y.value)) || 1);
       v.pending = [];
     }
   } else if (v.tool === 'arc3') {

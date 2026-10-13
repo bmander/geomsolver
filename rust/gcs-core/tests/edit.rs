@@ -152,6 +152,37 @@ fn drawing_a_point_appends_one_statement() {
     assert_eq!(back.sketch.points.len(), 4 + STD_POINTS);
 }
 
+/// A click is good to a pixel, so the seed it writes carries the digits the zoom justifies and no
+/// more: on the decade grid no coarser than a pixel, which moves it less than half a pixel and
+/// prints as that decimal.
+#[test]
+fn a_click_writes_the_digits_its_pixel_justifies() {
+    // six pixels a unit: a pixel is a sixth, so tenths
+    let px = 1.0 / 6.0;
+    let (x, y) = (edit::placed(12.345_678_9, px), edit::placed(-3.049_999_9, px));
+    assert_eq!((x, y), (12.3, -3.0));
+    let e = edit::add_point(&prog_of(DOC), x, y);
+    assert!(e.text.contains("p0 := point hint((12.3, -3))"), "{}", e.text);
+    // every grid, fine and coarse: within half a pixel, and written in the pixel's own digits
+    for (v, px, text) in [
+        (12.345_678_9, 0.001_7, "12.346"),
+        (12.345_678_9, 0.017, "12.35"),
+        (12.345_678_9, 0.17, "12.3"),
+        (12.345_678_9, 1.7, "12"),
+        (1234.5, 17.0, "1230"),
+        (0.3, 0.1, "0.3"),          // `3 × 0.1` is not the double nearest 0.3; a third is
+        (-0.04, 0.17, "0"),         // nor is `-0`
+    ] {
+        let p = edit::placed(v, px);
+        assert!((p - v).abs() <= px / 2.0 + 1e-12, "{v} at {px} moved to {p}");
+        assert_eq!(gcs_core::syntax::num(p), text, "{v} at a pixel of {px}");
+    }
+    // a pixel of no size, or no place, leaves it as it is
+    assert_eq!(edit::placed(12.345, 0.0), 12.345);
+    assert_eq!(edit::placed(12.345, f64::INFINITY), 12.345);
+    assert!(edit::placed(f64::NAN, 0.1).is_nan());
+}
+
 #[test]
 fn drawing_into_a_preview_keeps_new_geometry_inside_it() {
     for src in [
