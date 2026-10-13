@@ -1085,6 +1085,12 @@ pub fn assemble<'a>(pieces: impl IntoIterator<Item = &'a Piece>) -> Assembly {
                 continue;
             }
             let (at, cut) = (angle_of(c.vertex), angle_of(c.centre));
+            // a corner at one end of this stretch (or within what it was carried on past it), not
+            // one standing on another stretch of the same circle
+            let at = if at > std::f64::consts::TAU - 1e-9 { at - std::f64::consts::TAU } else { at };
+            if at > g.angle + 1e-9 {
+                continue;
+            }
             if at <= 0.5 * g.angle {
                 // at its start: turned on to the corner's section
                 let turn = crate::brep::geom::Rigid::turn(g.axis_origin, g.axis, cut);

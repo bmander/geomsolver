@@ -800,3 +800,30 @@ fn rounds_meeting_at_a_vertex_of_both_kinds_touch_along_a_line() {
     let why = refused(&e, "bar");
     assert!(why.contains("touches itself along a line") && why.contains("no manifold file describes it"), "{why}");
 }
+
+/// Two overlapping bores through a round slab 40 across and 10 deep.
+const BORES: &str = "unit mm\nuse std (round)\nin std.front {\n\
+    o := point\nfix((5, 0)) o\nrim := circle(center: o) hint(r: 20)\nradius(20mm) rim\n\
+    c1 := point\nc2 := point\nfix((0, 0)) c1\nfix((14, 0)) c2\n\
+    big := circle(center: c1) hint(r: 10)\nsmall := circle(center: c2) hint(r: 8)\n\
+    radius(10mm) big\nradius(8mm) small\n}\n\
+    block := solid(face(rim), from: 0mm, to: 10mm)\n\
+    left := solid(face(big), from: 0mm, to: 10mm)\nright := solid(face(small), from: 0mm, to: 10mm)\n\
+    left cut block\nright cut block\n";
+
+/// **A corner where two curved faces meet** (#218's 4): the two bores' slab rounded all over.
+/// Where the cusp between the bores reaches a face of the block, three convex edges meet — the
+/// cusp (a line between two cylinders) and each bore's rim (a circle where a plane meets a
+/// cylinder) — and the ball touching the face and both walls rounds the corner: its cell over a
+/// plane and two cylinders, the cusp's run and each rim's stretch of a ring cut short at its
+/// sections there and glued (a ring's stretch to the corner at its own end of it, never to one
+/// standing on another stretch of the same circle). Built, exported, and held to the field.
+#[test]
+fn a_corner_where_two_bores_meet_a_face_is_rounded() {
+    let e = solved(&format!("{BORES}round(r: 1mm) block\n"));
+    lowered(&e);
+    let b = exported(&e, "block");
+    let k = kinds(&b);
+    assert!(k.get("sphere").is_some_and(|&n| n >= 4) && k.contains_key("torus"), "{k:?}");
+    agrees_with_field(&e, "block", 0.01);
+}
