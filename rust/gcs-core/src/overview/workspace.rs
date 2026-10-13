@@ -103,6 +103,15 @@ pub fn space_points(sk: &Sketch, az: f64, el: f64) -> Vec<Option<(f64, f64)>> {
         .collect()
 }
 
+/// Where in space a point drawn in no plane is put, seen by the eye at `az`, `el` at `at` on its
+/// picture plane: on the plane through the world origin square to the eye's ray — the depth the
+/// eye cannot see is left at nought, and is the constraints' to say, as a drag in space leaves it
+/// (`PlanDrag::seen`).  `space_points` sees it at `at` again.
+pub fn unseen(az: f64, el: f64, at: (f64, f64)) -> [f64; 3] {
+    let (right, up) = eye(az, el);
+    std::array::from_fn(|k| right[k] * at.0 + up[k] * at.1)
+}
+
 impl Views {
     pub fn new(sk: &Sketch) -> Views {
         let placements = placements(sk);

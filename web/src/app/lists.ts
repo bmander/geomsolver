@@ -270,7 +270,8 @@ export function refreshStatus(): void {
       : unsolved ? `⚠ NOT CONVERGED${r ? `  max|r|=${r.maxResidual.toExponential(1)}` : ''}`
       : `DOF ${d ? d.dof : view.sketch.freeIndices().length}`;
   // and where the next point goes, while that is somewhere other than the page
-  stats(view.plane ? `${state}   ·   drawing in ${planeName(view.plane)}` : state);
+  stats(view.plane ? `${state}   ·   drawing in ${planeName(view.plane)}`
+    : view.openSpace ? `${state}   ·   drawing in space` : state);
   refreshMeasure();
 }
 

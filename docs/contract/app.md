@@ -149,7 +149,14 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   `std.side`, `std.top`, then the document's planes; `choosePlane` sets `v.plane` and swings the
   eye square on (`workspace::look_at`).  A standard plane the document lacks is `pendingPlane`
   until a tool's first press adds `use std` (`edit::add_use`, `ensurePlane`) — choosing writes
-  nothing.  A double-click on a pane (select tool, nothing drawn under the pointer) chooses its
+  nothing.  The chooser's first entry, **None** (value `''`, `drawInSpace`), is drawing in space:
+  `v.openSpace`, no plane current and the eye left where it is; a click is read on the eye's
+  picture plane (`toolCam`, the eye's own camera) and mints a point in space where it was seen,
+  nought deep (`workspace::unseen`, `gcs_sketch_point_seen`, `Sketch.pointSeen`), written
+  `pN := point hint((x, y, z))` with no `in`.  Only Point and Line draw there (`drawsInSpace`; a
+  circle, arc or curve over a point in space is E060, a region is bounded on a plane); the rest
+  say to choose a plane.  It outlasts an edit and an undo, and a load, a chosen plane or a lone
+  plane selected ends it.  A double-click on a pane (select tool, nothing drawn under the pointer) chooses its
   plane without turning the eye (`choosePlane(name, false)`): `workspace::panes_at` lists them
   nearest the eye first, `paneAt` takes the first the chooser offers.  Callouts are drawn for the
   current plane's place only (`showsCallouts`), and the one being written or focused.  Right-drag

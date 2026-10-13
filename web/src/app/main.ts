@@ -545,20 +545,22 @@ view.onEditConstraint = (c) => editValue(c);
 
 /* -- the plane being drawn on ------------------------------------------------- */
 
-/** The chooser follows the view: the planes on offer and the one being drawn on.  Rebuilt only
- *  when the list itself changed, so a repaint does not close it under the pointer. */
+/** The chooser follows the view: None — drawing in space, its value `''` — then the planes on
+ *  offer, and the one being drawn on.  Rebuilt only when the list itself changed, so a repaint
+ *  does not close it under the pointer. */
 function refreshPlanes(): void {
-  const names = view.planeChoices();
+  const names = ['', ...view.planeChoices()];
   const current = view.planeName;
   if (!names.includes(current)) names.push(current);
   const shown = [...planeSelect.options].map((o) => o.value);
   if (shown.length !== names.length || names.some((n, i) => shown[i] !== n)) {
-    planeSelect.replaceChildren(...names.map((n) => new Option(n, n)));
+    planeSelect.replaceChildren(...names.map((n) => new Option(n || 'None', n)));
   }
   planeSelect.value = current;
 }
 planeSelect.addEventListener('change', () => {
-  view.choosePlane(planeSelect.value);
+  if (planeSelect.value) view.choosePlane(planeSelect.value);
+  else view.drawInSpace();
   planeSelect.blur();              // the keys are the drawing's again: a tool letter, Escape
 });
 view.onDimension = onDimension;
