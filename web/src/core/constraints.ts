@@ -432,7 +432,7 @@ export let SplineTangentLine: ConstraintCtor;
 export let SplineCurvature: ConstraintCtor;
 /** How far `q` stands from `p` along a direction, `(p, q, t, d, along)`: `t` an axis or a line,
  *  or left null with `along` a word the core reads it off — `x` and `y` the run and the rise in
- *  the points' view (`docs/ordinate-plan.md`).  Its form is the core's. */
+ *  the points' view (Solvent [0.46]).  Its form is the core's. */
 export let Ordinate: ConstraintCtor;
 /** The ordinate's zero, `(p, q, t, along)`: the two level along `t` — `p level(up) q`. */
 export let Level: ConstraintCtor;

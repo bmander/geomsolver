@@ -60,8 +60,7 @@ conversion error within that budget. Historical 0.001 mm surface/contact checks 
 remain tighter component checks; the earlier 0.05 mm inspection meshes are not accepted
 against the new end-to-end target.
 The Rust exporters still use the test adapter. Public Solvent solid integration, continuous
-engagement/material coverage and end-to-end export accuracy remain on the
-[current roadmap](../../docs/spiral-bevel-roadmap.md#current-critical-path).
+engagement/material coverage and end-to-end export accuracy remain open.
 
 The first fresh [workflow result](workflow-results.json) completed all existing checks and
 both wrong-phase controls in 626 seconds. Both original inspection STLs reproduced their

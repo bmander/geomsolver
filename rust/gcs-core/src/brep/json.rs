@@ -1,6 +1,6 @@
-//! A B-rep handed over as JSON by a native kernel (`gcs-cli/backend/dump.cpp`; phase 1 of
-//! docs/rust-kernel-plan.md): its vertices, its edges on their curves, its faces on their surfaces
-//! with loops of oriented uses, each use carrying its curve in the face's parameters, read at the
+//! A B-rep handed over as JSON by a native kernel (`gcs-cli/backend/dump.cpp`): its vertices, its
+//! edges on their curves, its faces on their surfaces with loops
+//! of oriented uses, each use carrying its curve in the face's parameters, read at the
 //! edge's own parameter (`Pcurve::Curve`). Each face is dumped as its forward self; a reversed one's
 //! loops are turned here to run as this B-rep's do.
 //!

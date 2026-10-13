@@ -1,4 +1,4 @@
-//! A plane in space, and the fold line two planes share (`docs/planes-plan.md`).
+//! A plane in space, and the fold line two planes share (#81).
 //!
 //! A plane is an orthonormal basis `(u, v)` with `n = u × v` toward the viewer, and the point
 //! `o` in space its own origin stands at.  A point drawn in it at `(a, b)` stands at

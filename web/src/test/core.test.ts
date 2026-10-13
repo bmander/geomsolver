@@ -1717,7 +1717,7 @@ test('a circle against a curve is a curvature constraint', () => {
 });
 
 /** Points drawn in a front plane of their own: what a run, a rise or a level reads its axes off
- *  (`docs/ordinate-plan.md`) — a 2D sketch with no plane has none to name. */
+ *  (Solvent [0.46]) — a 2D sketch with no plane has none to name. */
 function drawnInFront(sk: Sketch, ...pts: Point[]): Plane {
   const f = sk.plane([1, 0, 0], [0, 0, 1]);
   for (const p of pts) p.plane = f;

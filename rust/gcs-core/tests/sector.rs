@@ -1,4 +1,4 @@
-//! One sector of an indexed body (`solid::sector`, docs/native-speed-plan.md): the indexing read
+//! One sector of an indexed body (`solid::sector`): the indexing read
 //! off the placements' poses, and the sector's side through the gaps the cuts leave, on synthetic
 //! cuts whose gaps are known — a spiral band, as a spiral bevel's tooth space turns across its face.
 use gcs_core::envelope::Motion;

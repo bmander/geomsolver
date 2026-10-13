@@ -1,4 +1,4 @@
-//! **Which plane a relation is read in** (`docs/planes-plan.md`): a relation whose points are
+//! **Which plane a relation is read in** (#81): a relation whose points are
 //! all drawn in one plane is the 2D relation it always was — which, the lift being rigid, is the
 //! same statement as the one in space but where the plane's says which way (an angle turns
 //! counter-clockwise, a `side:` is a side) — and any other is the relation in space, over the

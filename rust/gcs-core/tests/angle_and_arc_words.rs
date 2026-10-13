@@ -1,7 +1,7 @@
-//! Two words the spiral-bevel layout asked for (`docs/spiral-bevel-layout-plan.md`, language
-//! changes 4 and 6): an angle stated as another angle, `l1 angle(l3, l4) l2`, and an arc's length
-//! along itself, `length(L) a`.  Each is checked against a closed form the document never
-//! states, with its free twin and its printed spelling; their refusals are in `refusals.rs`.
+//! Two words the spiral-bevel layout asked for: an angle stated as another angle, `l1 angle(l3,
+//! l4) l2`, and an arc's length along itself, `length(L) a`.  Each is checked against a closed
+//! form the document never states, with its free twin and its printed spelling; their refusals
+//! are in `refusals.rs`.
 
 use gcs_core::constraints::CKind;
 use gcs_core::io;

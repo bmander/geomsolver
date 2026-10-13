@@ -1,4 +1,4 @@
-//! A body built as one sector (docs/native-speed-plan.md, by this kernel alone): where every
+//! A body built as one sector (by this kernel alone): where every
 //! swept cut is a turn of one placement about one axis and the blank reads alike under that turn,
 //! the blank between a side through the gaps the cuts leave (`solid::sector`) and that side turned
 //! by a pitch, cut by the placements that fall in it, its cells judged by the material field, and

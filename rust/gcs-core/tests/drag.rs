@@ -488,7 +488,7 @@ fn guards_are_renumbered_into_the_part_or_dropped() {
     d.end();
 }
 
-/// **A drag is not rescued** (docs/iteration-limit-rescue-plan.md): its pull and polish run with
+/// **A drag is not rescued**: its pull and polish run with
 /// `retry` off and deliberately short iteration caps, where stopping at the cap is the point, so
 /// the one-shot solve's rescue of a pose that stopped on its limit never reaches them.  Every
 /// frame of a `Drag` (the pull and polish alone) on three figures — a rectangle with fillets, a

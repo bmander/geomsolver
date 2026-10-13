@@ -1,4 +1,4 @@
-//! The generating-sweep harness (docs/generating-sweeps-robustness.md): every case runs the real
+//! The generating-sweep harness: every case runs the real
 //! `solventc` in a child process with a wall-clock budget and a stage trace
 //! (`SOLVENT_STAGE_TRACE`), so a failure is located at the stage that met it and a stuck stage
 //! is a recorded result, not a hung suite. A case either exports with agreement, or is refused

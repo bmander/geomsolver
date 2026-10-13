@@ -1,4 +1,4 @@
-//! A plane over two axes and a place in space (`docs/planes-plan.md`), and the hidden points in
+//! A plane over two axes and a place in space (#81), and the hidden points in
 //! space a spatial relation reads: what a plane's axes and origin cost in freedoms, that none of
 //! it moves a number until a solve moves the plane, and the relations in space over them.
 use gcs_core::constraints::CKind;

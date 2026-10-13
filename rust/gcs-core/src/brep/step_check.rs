@@ -1,5 +1,5 @@
 //! The STEP file an export writes, verified against the solid it was written from without the
-//! kernel's reader (docs/native-speed-plan.md, phase 6). The solid is a valid closed solid already
+//! kernel's reader. The solid is a valid closed solid already
 //! (the construction checked it); what is left to know is that the file says it. So the file is
 //! parsed here, a run of entities on each core: every entity must parse and every `#` reference
 //! resolve; the solid's topology is walked from the shape representation down (solids, shells,

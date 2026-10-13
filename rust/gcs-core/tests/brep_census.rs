@@ -1,5 +1,5 @@
-//! The corpus's solids as the Rust kernel's rung 1 will meet them (docs/rust-kernel-plan.md,
-//! phase 0 for the ladder): every object's CAD recipe, the analytic surfaces its operands bring,
+//! The corpus's solids as the Rust kernel's rung 1 will meet them: every object's CAD recipe, the
+//! analytic surfaces its operands bring,
 //! and every Boolean whose operands share a surface — a flush bore, a boss `on` its stock, a mate,
 //! coaxial cylinders of one radius. A report, ignored:
 //! `cargo test brep_census -- --ignored --nocapture`.

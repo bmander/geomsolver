@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Phase 0's tables (docs/rust-kernel-plan.md) from the native kernel's probe logs
+"""Phase 0's tables from the native kernel's probe logs
 (`backend/probe.hpp`): time per stage and entry point, every Boolean's intersecting face pairs by
 surface kind, and the exported shapes. Each argument is one export's log:
 

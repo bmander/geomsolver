@@ -98,7 +98,7 @@ pub enum Code {
     /// a declaration over a built-in name (§3.3, §5): the built-in is what an expression reads
     W112,
     /// two planes lying on one another, each with geometry drawn in it: one plane in space
-    /// (§6.7, `docs/planes-plan.md`)
+    /// (§6.7, #81)
     W113,
     /// a free curve whose length nothing holds and no length makes its energy stationary in: it
     /// has no shape to settle on (§9.10)

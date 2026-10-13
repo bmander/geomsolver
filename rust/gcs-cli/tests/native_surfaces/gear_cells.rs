@@ -92,7 +92,7 @@ fn single_space(member: &str,expected: f64) {
 #[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 170 s: a native pinion tooth space built and measured")]
 fn generic_sheet_reproduces_the_pinion_tooth_space() { single_space("pinion",120.708817); }
 
-/// Phase 1 of docs/generating-sweeps-plan.md: one pinion space through the
+/// One pinion space through the
 /// same construction at the offset `SOLVENT_INSPECT_OFFSET` (millimetres),
 /// reporting rather than asserting what it builds and how the field judges
 /// both sides of its sheet. No recorded volume exists for a hypoid.
@@ -134,7 +134,7 @@ fn the_native_space_at_an_offset_against_its_field() {
 }
 
 /// It failed its fit contract (73 µm, 62 degrees) until a sheet's rows stopped before a margin
-/// column's leap (docs/native-hypoid-plan.md); two rows fewer, it fits within 3.5 µm.
+/// column's leap; two rows fewer, it fits within 3.5 µm.
 #[test]
 #[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 140 s: a native gear tooth space built and measured")]
 fn generic_sheet_reproduces_the_gear_tooth_space() { single_space("gear",117.137321); }
