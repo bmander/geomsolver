@@ -398,8 +398,9 @@ by `recipe::kept_by_solid`: `post.sv`, a D's flat, a quarter ball); a face along
 another curved end refused, `unbuilt`), `Ring` (a circle where a
 plane meets a coaxial cylinder or cone: the section in the meridian at its start turned through its
 angle, `Ring::angle`; a sphere centred on the axis is a circle in the meridian (`Trace::Circle`,
-`knob.sv`'s neck); a stretch only where its ends are seams or planes through the axis at its
-ends' meridians), a run and a stretch going on from one
+`knob.sv`'s neck); a stretch ends at seams, at planes through the axis at its ends' meridians,
+or at a plane not through it — carried on round until its whole section has crossed it, and kept
+within it, #218: a D's rim at its flat), a run and a stretch going on from one
 another **glued** at their shared section (a face going on tangent across a seam is no end,
 `BodyFaces::continues`, the field's and the lowering's one rule),
 `Corner` (three planes at any convex or concave corner, #218: the ball `r` from each by a 3×3

@@ -427,6 +427,29 @@ fn a_run_cut_off_at_both_ends_by_the_round_it_lies_within() {
     close(props::volume(&b), (PI * big * big - segment) * 20.0 - run);
 }
 
+/// **A ring's stretch cut off by a plane at its end** (#218's 2): the D-shaped shaft's top rim
+/// rounded — round its round, from one end of the flat to the other. The flat is no plane through
+/// the axis, so the stretch is carried on round past each end and kept within the flat. A point
+/// of the section `ρ = 10 − u` from the axis is kept over the turn where `ρ cos θ <= 6`, `2π −
+/// 2 acos(6/ρ)` of it: the section turned through that much at each radius.
+#[test]
+fn a_rings_stretch_cut_off_by_a_flat_at_its_ends() {
+    let e = solved("unit mm\nuse std (round)\nin std.top {\n\
+        o := point\nt := point\ns := point\nfix((0, 0)) o\nfix((6, 8)) t\nfix((6, -8)) s\n\
+        rim := arc(center: o, start: t, end: s) hint(r: 10)\nflat := line(s, t)\n}\n\
+        shaft := solid(face(rim, flat), from: 0mm, to: 20mm)\nshaft.near round(r: 2mm) shaft.rim\n");
+    assert_eq!(lowered(&e).0, 1);
+    let b = exported(&e, "shaft");
+    let (r, big, c): (f64, f64, f64) = (2.0, 10.0, 6.0);
+    let ring = simpson(|t: f64| {
+        let u = r * (1.0 - t.cos());
+        let rho = big - u;
+        (r - r * t.sin()) * rho * (2.0 * PI - 2.0 * (c / rho).acos()) * r * t.sin()
+    }, 0.0, PI / 2.0, 4000);
+    let segment = big * big * (c / big).acos() - c * (big * big - c * c).sqrt();
+    close(props::volume(&b), (PI * big * big - segment) * 20.0 - ring);
+}
+
 /// And within a ball: a quarter of a ball of 10 (its half disc turned a quarter turn), the edge
 /// where its two flats meet rounded. The edge runs through the centre from pole to pole, ending on
 /// the sphere at both: the run carried on out of the ball and kept within it. At `(a, b)` from the

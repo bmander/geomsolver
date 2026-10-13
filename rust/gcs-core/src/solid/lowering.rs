@@ -20,7 +20,8 @@
 //! on a cylinder or a sphere is carried on into it and kept on its side of that solid (`Kept`). A face
 //! going on tangent from one of the run's is no end (a seam), so a round along an obround's flat
 //! side stops at the section the ring round its half circle starts from, and the two are glued
-//! there; a ring's stretch is turned through its circle's angle.
+//! there; a ring's stretch is turned through its circle's angle, and on round past an end on a
+//! plane not through its axis until its section has crossed it, kept within it.
 //!
 //! | the region's body | built as |
 //! |---|---|
@@ -542,18 +543,60 @@ fn piece(body: &super::faces::BodyFaces, edge: u32, fa: usize, fb: usize, within
         let meridian = |&(n, d): &(V, f64)| dot(n, axis).abs() <= 1e-9
             && (dot(n, centre) - d).abs() <= 1e-9 * (1.0 + norm(centre))
             && dot(n, body.middle(edge)) < d;
-        if !closed && (!own([p0, p1]).iter().all(meridian) || !own_bent([p0, p1]).is_empty()) {
-            return unbuilt("a stretch of a circle cut off by a face at its end");
+        if !closed && !own_bent([p0, p1]).is_empty() {
+            return unbuilt("a stretch of a circle cut off by a curved face at its end");
         }
-        let radial = radial_at(t0);
         // in the meridian a plane, a cylinder and a cone are lines, a sphere a circle about its
         // centre (on the axis, so in every meridian)
-        let trace = |fi: usize| match body.sphere(fi) {
-            Some((centre, radius)) => Trace::Circle { centre, radius, normal: body.normal(fi, p0) },
-            None => Trace::Line(body.normal(fi, p0)),
+        let trace = |fi: usize, p: V| match body.sphere(fi) {
+            Some((centre, radius)) => Trace::Circle { centre, radius, normal: body.normal(fi, p) },
+            None => Trace::Line(body.normal(fi, p)),
         };
-        let section = cut(p0, cross(axis, radial), [trace(fa), trace(fb)], within, section)?;
-        return Ok(Some(Piece::Ring(Ring { section, axis_origin: centre, axis, angle: t1 - t0 })));
+        let section_at = |t: f64| {
+            let p = add(centre, scale(radial_at(t), radius));
+            cut(p, cross(axis, radial_at(t)), [trace(fa, p), trace(fb, p)], within, section)
+        };
+        // at an end standing on a plane not through the axis (a D's round rim ending at its flat):
+        // carried on round past it until the whole section has crossed that plane, and kept within
+        // it (#218's 2) — the section's hull turned, each point's first crossing (`n·x` along a
+        // turn is a sinusoid, so once over the plane it stays over for less than a whole turn)
+        let (mut from, mut to, mut halves) = (t0, t1, Vec::new());
+        if !closed {
+            for (k, p, t) in [(0, p0, t0), (1, p1, t1)] {
+                let at: Vec<(V, f64)> = own([p, p]).into_iter().filter(|h| !meridian(h)).collect();
+                if at.is_empty() {
+                    continue;
+                }
+                let way = if k == 0 { -1.0 } else { 1.0 };
+                let hull = section_at(t)?.section_hull();
+                let mut reach: f64 = 0.0;
+                for &(n, d) in &at {
+                    for &q in &hull {
+                        let over = |phi: f64| {
+                            dot(n, crate::brep::geom::Rigid::turn(centre, axis, way * phi).point(q)) - d
+                        };
+                        let steps = 720;
+                        let step = std::f64::consts::TAU / steps as f64;
+                        let Some(j) = (0..=steps).find(|&j| over(j as f64 * step) > 0.0) else {
+                            return unbuilt("a stretch of a circle its end does not cut off");
+                        };
+                        let phi = if j == 0 { 0.0 } else {
+                            let (a, b) = ((j - 1) as f64 * step, j as f64 * step);
+                            crate::roots::bracketed_root(|x| Some(over(x)), a, over(a), b, over(b), 1e-15)
+                        };
+                        reach = reach.max(phi);
+                    }
+                }
+                if k == 0 { from -= reach } else { to += reach }
+                halves.extend(at);
+            }
+            if to - from >= std::f64::consts::TAU {
+                return unbuilt("a stretch of a circle carried on round its whole turn");
+            }
+        }
+        let mut section = section_at(from)?;
+        section.within = halves;
+        return Ok(Some(Piece::Ring(Ring { section, axis_origin: centre, axis, angle: to - from })));
     }
     let Some([p0, p1]) = body.segment(edge) else { return unbuilt("a curved edge") };
     let length = norm(sub(p1, p0));
@@ -982,10 +1025,12 @@ impl Assembly {
             ]))
         }).collect::<Result<Vec<_>, String>>()?;
         for g in &self.rings {
+            let within = g.section.within.iter()
+                .map(|&(n, d)| object([("at", vector(scale(n, d * by))), ("normal", vector(n))])).collect();
             pieces.push(object([
                 ("kind", "revolve".into()), ("profile", profile(&g.section)?.to_json(by)?),
                 ("origin", vector(scale(g.axis_origin, by))), ("axis", vector(g.axis)),
-                ("angle", g.angle.into()),
+                ("angle", g.angle.into()), ("within", Json::Arr(within)),
             ]));
         }
         let corners = self.corners.iter().map(|c| object([
