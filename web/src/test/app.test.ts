@@ -2230,7 +2230,7 @@ test('a Boolean tool takes the body to change, then its tools, and writes them a
   assert.equal(view.tool, 'select');
 });
 
-test('a Boolean starts from the bodies selected, and Enter writes it; Intersect is `bound`', () => {
+test('a Boolean starts from the bodies selected, and Enter writes it; Intersect is `common`', () => {
   const view = combining();
   view.pickSolid(view.solidAt(...seenAt(view, [10, 0, 10]))!);
   view.pickSolid(view.solidAt(...seenAt(view, [30, 0, 20]))!, true);
@@ -2241,11 +2241,11 @@ test('a Boolean starts from the bodies selected, and Enter writes it; Intersect 
   assert.ok(view.source.endsWith('peg union block\nside union block\n'), view.source);
   assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
   view.undo();
-  view.setTool('bound');
+  view.setTool('common');
   clickSeen(view, [10, 0, 10]);
   clickSeen(view, [30, 0, 20]);
   view.finishCurve();
-  assert.ok(view.source.endsWith('peg bound block\n'), view.source);
+  assert.ok(view.source.endsWith('peg common block\n'), view.source);
   assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
 });
 

@@ -379,7 +379,7 @@ fn tint_word(
             if builtin(w, prev, next, false) {
                 return (Some(Tint::Builtin), Next::Word);
             }
-            if (w == "cut" || w == "union" || w == "bound" || w == "minimizes" || w == "maximizes")
+            if (w == "cut" || w == "union" || w == "common" || w == "minimizes" || w == "maximizes")
                 && prev != Some(&Tok::P('.'))
             {
                 return (Some(Tint::Relation), Next::Word);

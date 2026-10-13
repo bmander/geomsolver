@@ -226,12 +226,14 @@ component ConeThrough(about: line, q: point, lean: Angle) := { p |
   spine angle(abs(lean)) g
 }
 
-// The plane square to the line `along` at the ordinate `d` along it from `o`: the points `d` from
-// `o` along `along` (§6.21), a set and nothing drawn.  Its inside is behind it, the side `along`
-// points away from (`p inside top` is at most `d`).
+// The half-space behind the plane square to the line `along` at the ordinate `d` along it from
+// `o`: its surface is the points `d` from `o` along `along` (§6.21), a set and nothing drawn.  Its
+// inside is behind that plane, the side `along` points away from (`p inside top` is at most `d`
+// along); its points are not level with `o`, which `o level(along) p` says.  Through 0.83 it was
+// `std.Level` (#270).
 //
-//   top := std.Level(c, cut_ax, d: 2mm)
-component Level(o: point, along: line, d: Length) := { p | o distance(d, along: along) p }
+//   top := std.HalfSpace(c, cut_ax, d: 2mm)
+component HalfSpace(o: point, along: line, d: Length) := { p | o distance(d, along: along) p }
 
 // The set `S` offset by `d`: the points `d` outside its surface (§6.21) — a sphere's, a
 // cylinder's or a cone's grown by `d` — a set and nothing drawn.  `p inside std.Offset(S, d)` is

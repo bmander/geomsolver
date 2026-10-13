@@ -117,7 +117,7 @@ private bt := line(b2, b3)
 private ba := line(b3, b0)
 }}
 construction holder := solid(face(bb, bw, bt, ba), from: -5mm, to: 5mm)
-holder bound part
+holder common part
 ",sphere(2.),cradle_roll(2.5,Observer::Parallel),indexed_ring(6,3.5,4.2,1.7,2.3)));
     let recipe = cad::recipe_static(&boxed.sketch,fixtures::solid(&boxed,"part")).unwrap();
     let why = session.construct_meridian(&recipe.recipe).unwrap().expect_err("a prism bounds the ring");

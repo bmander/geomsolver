@@ -101,7 +101,7 @@ const SOLID_TOOLS = [
   ['Extrude', 'extrude', 'u'], ['Revolve', 'revolve', 'q'],
   ['Union', 'union', 'm', `Join bodies: ${BOOLEAN}`],
   ['Cut', 'cut', 'z', `Cut a body with others: ${BOOLEAN}`],
-  ['Intersect', 'bound', 'y', `Keep what bodies share (bound): ${BOOLEAN}`],
+  ['Intersect', 'common', 'y', `Keep what bodies share (common): ${BOOLEAN}`],
   ['Fillet', 'fillet', '⇧f', `Round edges of a solid (std's \`round\`): ${EDGES}`],
   ['Chamfer', 'chamfer', '⇧c', `Cut edges of a solid flat (std's \`chamfer\`): ${EDGES}`],
 ] as [string, Tool, string, string?][];

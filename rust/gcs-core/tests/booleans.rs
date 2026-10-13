@@ -1,5 +1,5 @@
 //! **Union, Cut, Intersect** (#162 F4): a target body and one or more tool bodies picked in the
-//! workspace, written `tool union|cut|bound target` as one splice — and shown before it is written
+//! workspace, written `tool union|cut|common target` as one splice — and shown before it is written
 //! by `Sketch::preview_body`, which joins the tools by the elaborator's own step on a copy of the
 //! drawing and leaves the drawing as it was.
 
@@ -95,7 +95,7 @@ fn the_preview_is_what_the_statements_make() {
     let cases = [
         (BodyWord::Union, vec!["boss"], PLATE + BOSS - BOSS_IN),
         (BodyWord::Cut, vec!["boss"], PLATE - BOSS_IN),
-        (BodyWord::Bound, vec!["boss"], BOSS_IN),
+        (BodyWord::Common, vec!["boss"], BOSS_IN),
         (BodyWord::Cut, vec!["boss", "bore"], PLATE - BOSS_IN - BORE_IN),
     ];
     for (word, tools, want) in cases {

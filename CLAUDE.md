@@ -152,8 +152,9 @@ owns `.apex`/`.spine` (the apex held by the angle between `about` and the genera
 `lean` or its supplement by which way it opens, and the spine from it to `q`'s foot on `about`, so
 the cone is held at any size, #214; half `abs(lean)`), one per instance, and a region reading it
 shares the `Cone` term's line.
-`std.Level(o, along, d)` is an ordinate along a line: `RegionShape::Plane { along: EntRef }` takes
-a plane (its `n`), a line or an axis (`RegionShape::normal`). A reach to `{ q | q outside S }`
+`std.HalfSpace(o, along, d)` (`std.Level` through 0.83, #270) is an ordinate along a line:
+`RegionShape::Plane { along: EntRef }` takes a plane (its `n`), a line or an axis
+(`RegionShape::normal`). A reach to `{ q | q outside S }`
 measures from `S`, sides turned (`Walk::side_of_set`, in `expand_reach`), so `std.Rounded(beyond,
 tip, r)` lowers. A region tool's faces are its meridian's steps (`RevolvedSurface::meridian_loops`,
 `SweepContacts::read`'s `Region` arm); the cutter reads its `revolve` recipe as any. A region's tip
@@ -814,12 +815,14 @@ binds a solid and motion. `solid::ExtrudedField` is the prism leaf (interval Gra
 and axis tolerance, `turning` checks one turn and convexity; convex loops are half-planes and
 sectors, others `Node::Profile` (ray-parity sign only when the box clears every wall, else
 `[-d, d]`). Partial revolutions and lofts refuse.
-**The body rule's third side (0.22):** `tip bound body` keeps what lies within `tip`: a solid is its
-stock, plus `union`, minus what `cut`s it, within what `bound`s it. `SolidDef::Body` carries
-`bound`; `Term::Inter`; facets, fields and the CAD recipe (`"bound"`, `BRepAlgoAPI_Common`) all
-evaluate it. Union first; `cut` and `bound` commute; a swept solid may only be `cut`. `bound` and
-`union` (0.32) are body words, not names; `coincident` between two solids is refused. Spiral bevel
-(**one file, `spiral_bevel/hypoid.sv`**, #217: no `project`, no `hint` — every root chosen by a
+**The body rule's third side (0.22):** `tip common body` keeps what the body has in common with
+`tip`: a solid is its stock, plus `union`, minus what `cut`s it, within what it is in `common`
+with. The word was `bound` through 0.83 (#270: a bound is a dimension choosing a root); `X bound B`
+is refused naming `common` (`parser/statements.rs`), and `bound` stays reserved. The Rust names
+keep the old word: `SolidDef::Body` carries `bound`; `Term::Inter`; facets, fields and the CAD
+recipe (`"bound"`, `BRepAlgoAPI_Common`) all evaluate it. Union first; `cut` and `common` commute;
+a swept solid may only be `cut`. `common` and `union` (0.32) are body words, not names;
+`coincident` between two solids is refused. Spiral bevel (**one file, `spiral_bevel/hypoid.sv`**, #217: no `project`, no `hint` — every root chosen by a
 word, the layout solved from them alone; README walks it). **The pair is one component**,
 `pair := HypoidPair(std.top, std.y, std.z, …)` over the root's `param`s (std's datums its
 arguments, its unknowns `mn`, `rp`, `pa` formals the call leaves out), its steps components below
@@ -960,7 +963,7 @@ graded by length and never crowds a vertex it must pass, a cone at its apex writ
 envelope(apex, under: rotor_turn, …)`); `generate::chosen` skips a stationary root. A generated
 curve over whole turns of its motion is closed (`Sketch::curve_closed`), a face's lone loop, split
 at its middle for the recipe. The rotor is a cut: its blank less the housing's wall swept over the
-period (`bound` by a sweep keeps the union's, another set). A pocketed prism under a planar motion
+period (`common` with a sweep keeps the union's, another set). A pocketed prism under a planar motion
 is admitted by rows P1–P5 (`solid::planar_class`): the pocket's inner envelope over a whole period
 (`envelope::planar::InnerEnvelope`, over a formula or generated source: contact roots per sample,
 kept where inside every pose, corners where an image recurs), built as the blank in common with
@@ -1881,7 +1884,7 @@ Conventions:
   everything that `cut`s it**, over primitives that are faces swept — no stateful feature tree.
   Both groups are *sets*, filled anywhere in any order (P2).  A design needing the other order
   (a pocket with a boss in it) **names the intermediate**.
-  **A swept solid takes features too** (§6.9, [0.31]): the first `union`/`cut`/`bound` naming one
+  **A swept solid takes features too** (§6.9, [0.31]): the first `union`/`cut`/`common` naming one
   makes it the body over its own sweep (`program/solids.rs`'s body pass) — the name keeps its
   index, and the sweep moves to a stock of the same name (`SourceMap::also_made`), which
   `operand_paths` gives no step, so `plate.near` stays its name.
@@ -2017,7 +2020,7 @@ Conventions:
   statement's own `about:` kept; an expression written whole the way it already turns).
   `tests/revolve.rs` is the gate.
 - **Union, Cut, Intersect** (#162 F4): Boolean tools (`m`, `z`, `y`; `view.ts::combines`, Intersect
-  is `bound`) over **the solid selection, in click order**: the first body clicked is the target,
+  is `common`) over **the solid selection, in click order**: the first body clicked is the target,
   each after it a tool (clicked again, let go), a click back on the target or Enter
   (`finishCombine`) writes `tool word target` for every tool in one splice
   (`edit::add_body_word` takes a list), the target left picked; Escape lets the tools go, then the

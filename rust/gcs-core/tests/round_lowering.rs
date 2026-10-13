@@ -1038,7 +1038,7 @@ fn a_rolled_run_is_cut_off_by_both_its_ends_faces() {
 #[test]
 fn a_rolled_run_onto_a_curved_face_is_cut_off_by_its_solid() {
     let drum = "in std.top {\n  dc := point\n  fix((40, -12)) dc\n  drum_k := circle(center: dc) hint(r: 60)\n  radius(60mm) drum_k\n}\n\
-        drum := solid(face(drum_k), from: -1mm, to: 40mm)\ndrum bound vent\n";
+        drum := solid(face(drum_k), from: -1mm, to: 40mm)\ndrum common vent\n";
     let e = solved(&vent(98.0, -12.0, drum));
     assert_eq!(lowered(&e).0, 1);
     let b = exported(&e, "vent");

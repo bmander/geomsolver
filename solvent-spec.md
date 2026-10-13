@@ -1,6 +1,15 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.83 — October 2026**
+**Specification, Draft 0.84 — October 2026**
+
+**[0.84] The body rule's intersection is `common`, and a half-space is `std.HalfSpace`.** `tip
+common body` keeps what a body has in common with `tip` (§6.9), the word the Boolean is named by;
+through 0.83 it was `bound`, which is also what a dimension that chooses a root is (§9.6), so a
+region solid used to keep a body was a bound twice over. `X bound B` is a syntax error naming
+`common`, and `bound` stays a word no name or relation word may be. `std.Level(o, along, d)`, the
+half-space behind the plane `d` along a line from a point, is `std.HalfSpace(o, along, d)`: its
+points are not level with `o`, which is what `a level(t) b` says (§9.2). Entries below keep the
+spellings of their day.
 
 **[0.83] A relation word's parameter may be an entity.** A parameter read where an entity
 stands in the word's body — an operand, an entity in a relation's parentheses, a declaration's
@@ -811,7 +820,7 @@ Every statement belongs to exactly one class. The classification is normative be
 
 | Class | Statements | Affects solution set? |
 |---|---|---|
-| **Declaration** | entity declarations, `param`, groups (`{…}`, §8.1), curves (§6.5), instance declarations, **[0.18]** the body rule (`union`, `cut` and `bound` over two solids, §6.9) **[0.32]** | introduces entities/aliases |
+| **Declaration** | entity declarations, `param`, groups (`{…}`, §8.1), curves (§6.5), instance declarations, **[0.18]** the body rule (`union`, `cut` and **[0.84]** `common` over two solids, §6.9) **[0.32]** | introduces entities/aliases |
 | **Constraint** | relations (prefix and infix words, §9.2), `==` equations, **pinned seeds (`==`, §4.3) [0.2]**, orientation predicates, arc-branch and tangency-side decorations, `ring` symmetry, gauge statements | **yes** |
 | **Seed** *(was Hint)* | the `hint` statement (§11), **and every seed written inline in a `hint(…)` clause (§4.3, §6.4) [0.2] [0.7]** | **no (P3)** |
 | **Structure** | `repeat`/`cycle` blocks, `path` declarations (net of their derived constraints, §10.4), **[0.18]** `view` and `section` (§6.11), which ask for a picture and declare nothing — **[0.20]** in a `.svd` drawing, never in model source | organizational |
@@ -1341,7 +1350,7 @@ where they share none it is read point by point (below). That is judged where th
 evaluated, on the solved drawing, as a face's loop is: a cylinder alone, or bounds with no point in
 common, are refused there. A set whose body states
 anything but bounds (a disc's plane) is **E040**. A region solid is a solid like any: `cut`,
-`bound`, `union`, swept and placed. **[0.63]** A bound's number may read one unknown of the drawing
+`common`, `union`, swept and placed. **[0.63]** A bound's number may read one unknown of the drawing
 (`std.Sphere(c, r: hint(50mm))` with `q coincident` it): the solid reads it as solved, and refuses one
 nothing determines. A cone's half is the unsigned angle its row reads, so one solved past a half
 turn is the cone it reads as. **[0.64]** A bound offset (`p inside(d) S`, §6.21) is the set's surface
@@ -1404,19 +1413,19 @@ block := solid(face(mouth, side_r, lid, side_l), from: face, to: back)
 - **A through prism** is written `tool := solid(section, through: target)`. Its target MUST be a solid (**E080**); it spans the target in both directions along the section's own plane normal. The extent is evaluated after the sketch is solved: recursively collect the target's stock and additions, ignoring all cuts, project a conservative bound of that material along the normal, and pad both ends outside the material at the kernel's tolerance. The target may be a swept solid or a body. Changes to its material geometry or placement change the extent; subtractive tools do not enlarge it. `through:` cannot be mixed with any other sweep label, and does not itself subtract anything. Apply the tool separately with `tool cut body`.
 - **A guided loft/sweep** is written `duct := solid(section, along: guide)` or `transition := solid(start_section, end_section, along: guide)`. The guide MUST be a directed line (`p1` to `p2`) or open circular arc (`start` to `end`, counter-clockwise in its own plane); other kinds are **E081**. The start section MUST lie in the plane through the guide start perpendicular to its tangent. An explicit end section MUST likewise lie at the guide end perpendicular to its tangent. These are checked after solving; the constructor does not reposition or constrain the sections. With one section, the end section is implicitly the transported start. A line transports by translation; an arc transports by rotation about its center and plane normal. With two sections, corresponding boundary points interpolate linearly in that transported frame. Sections must have equal numbers of holes, paired in written order, and corresponding loops must have equal numbers of source edges. Edges pair in counter-clockwise traversal order starting with the first source edge; circle/arc tessellation counts may differ. Each point of an edge pairs with the point of its partner at the same fraction along it: a line's by length, an arc's by angle, and a spline's or a curve stretch's by its own parameter **[0.28]**. Whole circles pair by radial direction in the transported frame, independently of the end plane’s drawing axes. Crossed or collapsed sampled sections, intersecting holes, and sections touching or crossing the bend axis are refused. `along:` cannot be combined with any other sweep label. It owns no unknown: editing the guide or either section changes the evaluated solid.
 - **A revolution** turns a face about `about:` a line or an axis, which MUST be one of the two (**E081**) and MUST lie in the **face's own plane** (E081) — a line drawn in another view names a direction this face knows nothing about. **[0.67]** A line lies there by membership; an axis where it is one of the plane's own axes (`std.z` on `std.front`), or, held entirely by `fix` (the plane too), where it stands now — else, placed by the solve, where the solid is evaluated, which refuses the solid if it does not. `sweep:` is how far and is a **magnitude**, a full turn where the document writes none; **which way is a word, not a sign** (§9.2, §9.4): `sense: cw | ccw`, right-handed about the line's own `p1 → p2` (an axis's own direction) unless `cw` is written, and a negative `sweep:` is **E040** at the value, in the words of the selector that replaces it.
-- **A body** names its **stock** in the brackets and takes its features from the **[0.32]** `union`, `cut` and **[0.22]** `bound` statements that name it. A solid whose brackets hold solids and no face is a body. **[0.31]** A swept solid that a `union`, `cut` or `bound` statement names is a body too, whose stock is its own sweep: the name means the sweep with its features wherever it is read, the sweep's faces keep their names (`plate.near`, not `plate.plate.near`), and a feature's are reached through it (`plate.hub.near`). A document wanting the bare sweep and the finished part under two names writes `body := solid(plate)` and puts the features on `body`.
+- **A body** names its **stock** in the brackets and takes its features from the **[0.32]** `union`, `cut` and **[0.22]** `common` **[0.84]** statements that name it. A solid whose brackets hold solids and no face is a body. **[0.31]** A swept solid that a `union`, `cut` or `common` statement names is a body too, whose stock is its own sweep: the name means the sweep with its features wherever it is read, the sweep's faces keep their names (`plate.near`, not `plate.plate.near`), and a feature's are reached through it (`plate.hub.near`). A document wanting the bare sweep and the finished part under two names writes `body := solid(plate)` and puts the features on `body`.
 
 **The body rule, and the whole of it.**
 
-> **A solid is its stock, plus everything in `union` with it, minus everything that `cut`s it, within everything that `bound`s it.**
+> **A solid is its stock, plus everything in `union` with it, minus everything that `cut`s it, within everything it is in `common` with.**
 
-As a point set, with `union(s)`, `cut(s)` and **[0.22]** `bound(s)` the three **sets** of statements naming `s`, and `S(s)` its stock:
+As a point set, with `union(s)`, `cut(s)` and **[0.22]** `common(s)` the three **sets** of statements naming `s`, and `S(s)` its stock:
 
 ```
-B(s) = ( S(s) ∪ ⋃ { B(x) : x union s } ) ∖ ⋃ { B(y) : y cut s } ∩ ⋂ { B(z) : z bound s }
+B(s) = ( S(s) ∪ ⋃ { B(x) : x union s } ) ∖ ⋃ { B(y) : y cut s } ∩ ⋂ { B(z) : z common s }
 ```
 
-Union first, and none of the three groups is ordered; difference and intersection commute, so the last two need no order between them either. `tip bound blank` keeps of the blank what lies within the tip cone, which is what a rim inside a cone is, and what `blank ∖ (blank ∖ tip)` used to spell in two statements and an intermediate. `union`, `cut` and `bound` are Declaration-class (§4.2, §9.2): each says what its right operand *is*, contributes no residual, and enters no solve. A solid that reaches itself through its operands is **E041** — "made of itself" — reported at the body statement that closes the cycle where one does, which then contributes nothing.
+Union first, and none of the three groups is ordered; difference and intersection commute, so the last two need no order between them either. `tip common blank` keeps of the blank what lies within the tip cone, which is what a rim inside a cone is, and what `blank ∖ (blank ∖ tip)` used to spell in two statements and an intermediate. `union`, `cut` and `common` are Declaration-class (§4.2, §9.2): each says what its right operand *is*, contributes no residual, and enters no solve. **[0.84]** Through 0.83 `common` was spelled `bound`, which a document MUST NOT write now: an implementation refuses it naming `common`. A solid that reaches itself through its operands is **E041** — "made of itself" — reported at the body statement that closes the cycle where one does, which then contributes nothing.
 
 **Extent dependencies are separate from Boolean operands.** A through prism reads only the target's additive material sources for its bounds; it does not read the target's final Boolean result. Therefore `tool := solid(section, through: body)` together with `tool cut body` is valid and unordered. Genuine material/extent cycles, such as using that tool as the body's stock or adding it in `union` with the same body, are **E041**. A cutter remains a finite named solid with its own reports and faces. Its padded caps are numerical extent boundaries, not design datums.
 
@@ -2323,7 +2332,7 @@ The collapses are where the saving is: **`coincident` is fifteen constraints, `d
 
 **`ccw` and `cw` keep a call.** Under the general rule they would be `a ccw(c) b`, which reorders three points that are symmetric: the predicate is about the *triangle*, not about a pair with a decoration. The call is a third fixity of the same table — every operand in the parentheses — and not a statement kind of its own. **[0.15]** The gauges and the orientation predicates are entries of the operator table like every other constraint: read by the one relation grammar, so a class, a placement and the chain's lookahead treat them as any other word, and settled by the word alone, since `fix(r == 25) c` names a number and `ccw(a, b, c)` has no operand outside its parentheses. They hold parameters or record a root choice rather than adding an equation, so a `claim` on one is refused (E040): a claim is judged by rank, and they add no row.
 
-**[0.18] The body rule is written in this grammar and is not a constraint.** **[0.32]** `boss union cyl`, `bore cut cyl` and **[0.22]** `tip bound cyl` are **Declaration**-class (§4.2): each says what its right operand *is* (§6.9), contributes no residual, and takes no part in a solve, a decomposition or any partition of work. None relates geometry or has a residual to be settled into, so each is read by the word alone. None is in the constraint library of §9.3, and none may be `claim`ed: a claim is judged by rank and these add no row, which is the rule already stated for the gauges. `claim a cut b` and `claim a union b` are refused where they are written, neither being a constraint word. (0.18–0.31 spelled the union `on`, settled by the kinds of its operands; `coincident` between two solids is now refused as any constraint word is over operands it does not relate.)
+**[0.18] The body rule is written in this grammar and is not a constraint.** **[0.32]** `boss union cyl`, `bore cut cyl` and **[0.22]** `tip common cyl` (**[0.84]**; `bound` before) are **Declaration**-class (§4.2): each says what its right operand *is* (§6.9), contributes no residual, and takes no part in a solve, a decomposition or any partition of work. None relates geometry or has a residual to be settled into, so each is read by the word alone. None is in the constraint library of §9.3, and none may be `claim`ed: a claim is judged by rank and these add no row, which is the rule already stated for the gauges. `claim a cut b` and `claim a union b` are refused where they are written, neither being a constraint word. (0.18–0.31 spelled the union `on`, settled by the kinds of its operands; `coincident` between two solids is now refused as any constraint word is over operands it does not relate.)
 
 **[0.24] Across planes, the same word is the relation in space.** A relation's operands are read in the planes their points are drawn in (§6.7). Within one plane it is the 2D relation, and the lift is rigid, so the 2D relation *is* the relation in space. **[0.42]** Where they differ, or where any point stands in space, the word means its relation between the points' lifts: `coincident`, `distance` between two points (the true length), a point and a line (to the infinite line) or two lines (the common perpendicular — a magnitude, **[0.78]** both sides roots, chosen by a bound or the seed), `coincident` a line or a circle, `angle` (unsigned, 0 to 180°), `parallel`, `perpendicular` and `equal` (true lengths), and **[0.25]** `midpoint` (of the line in space) and `symmetry` (the half turn about the line in space, which on the line's own plane is the mirror). No selector says so. `sense:` and `side:` name a turn and a side *in a plane* and are **E040** there; a word that has no meaning in space — `horizontal`, `vertical`, a run or a rise (**[0.46]** a direction named by the view's word: name the axis, `along: std.x`), `tangent` between drawn figures, a curve's contacts — is **E062**. **[0.82]** A point at a fraction of a line or an arc (`coincident(t == …)`) is a place in space too: the fraction of the way between the line's ends' places, or of the arc's turn read in the plane it is drawn in. A radius and a ring's width read only radii, which the lift carries unchanged, so they mean the same in any plane; `along: u`/`v`/`n` are measured from a plane in space wherever the point is (§6.7); and `project` relates two planes by definition. A relation over an axis or a plane is in space whatever plane its points are drawn in.
 
@@ -2711,7 +2720,7 @@ when design.tip_relief > 0mm {
   n := views.FoldedView(p, trace.normal)
   pinion_inner := Topping(tooth.inner, cutter.ax, n.view, …)
   pinion_outer := Topping(tooth.outer, cutter.ax, n.view, …)
-  pinion_top := std.Level(cutter.ax.p1, cutter.ax, d: -design.addendum * normal_module / 2)
+  pinion_top := std.HalfSpace(cutter.ax.p1, cutter.ax, d: -design.addendum * normal_module / 2)
   pinion_topping := crown.tooth.Tooth(pinion_inner.cone, pinion_outer.cone, cutter.tooth_base,
     pinion_top, grow: 0mm, …)
 }
@@ -3252,8 +3261,9 @@ face_arg       = ref | ("edges" | "holes" | "on") ":" ref ;  (* planar/spatial r
 solid_decl     = "solid" "(" solid_term ")" ;
 solid_term     = ref [ "," ref ] { "," sweep_arg }                     (* a face swept *)
                | ref { "," ref } ;                         (* a body: its stock, then solids *)
-body_rel       = ref ( "union" | "cut" | "bound" ) ref ;  (* the body rule, §6.9 — each its own
-                                                     word: `bound` [0.22], `union` [0.32] *)
+body_rel       = ref ( "union" | "cut" | "common" ) ref ; (* the body rule, §6.9 — each its own
+                                                     word: `common` [0.84] (`bound` [0.22]),
+                                                     `union` [0.32] *)
 
 (* §6.10: `against`, the 0.18 mate, is retired [0.42]. *)
 
@@ -3329,7 +3339,7 @@ addop          = "+" | "-" ;
 mulop          = "*" | "/" ;
 ```
 
-Parsing note: a statement is told by its first tokens. `NAME :=` is a definition, and the token after `:=` settles which: `{` a group, `over` in the statement a curve, a call an instance, an element keyword or a prefix word a chain, anything else a value (§6.3). `param` opens an input and `in REF {` a block of membership. A constraint word opens a prefix relation, or a call for `ccw`/`cw`, which also appear as orientation keywords after `:` in `path`, where context disambiguates. Otherwise a `ref` comes first, and the word after it, read by a lookahead past the dotted path, is a constraint word, `@`, or `cut`, `bound` [0.22] or `union` [0.32], which relate no geometry and have no residual for the operator machinery to settle them into. **[0.18]** `view`, `section` and `dimensions` open a statement and are therefore not names; **[0.20]** model source refuses them as presentation (§13.2). **[0.69]** A statement opening on a measurement, or comparing two sides by `<=` or `>=` outside every bracket, is a bound on measurements (`measured`).
+Parsing note: a statement is told by its first tokens. `NAME :=` is a definition, and the token after `:=` settles which: `{` a group, `over` in the statement a curve, a call an instance, an element keyword or a prefix word a chain, anything else a value (§6.3). `param` opens an input and `in REF {` a block of membership. A constraint word opens a prefix relation, or a call for `ccw`/`cw`, which also appear as orientation keywords after `:` in `path`, where context disambiguates. Otherwise a `ref` comes first, and the word after it, read by a lookahead past the dotted path, is a constraint word, `@`, or `cut`, `common` [0.84] (`bound` [0.22]) or `union` [0.32], which relate no geometry and have no residual for the operator machinery to settle them into. **[0.18]** `view`, `section` and `dimensions` open a statement and are therefore not names; **[0.20]** model source refuses them as presentation (§13.2). **[0.69]** A statement opening on a measurement, or comparing two sides by `<=` or `>=` outside every bracket, is a bound on measurements (`measured`).
 
 **[0.2] Note on a number read verbatim.** After the `:=` of a value (0.2–0.6: the `==` after a predicate's closing parenthesis, which §9.2 retired), an implementation MAY take the rest of the logical line verbatim rather than tokenizing it, and hand that text to whatever evaluates dimension expressions. This is not laziness: `3 1/2` is three and a half and `31/2` is a division, and that rule belongs to one tokenizer. Two copies of it are two rules the moment one is edited. An `==` *inside* an argument list is the pin of §4.3 and is lexed normally; the two never meet. **[0.7]** A trailing `hint(…)` ends the verbatim region, since it is a clause of the statement and not part of the number.
 

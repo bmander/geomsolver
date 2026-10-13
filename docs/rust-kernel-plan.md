@@ -635,7 +635,7 @@ body), and the OCCT path already refuses part of what it allows:
 | the same with a **traced or formula curve** (an involute, `std.Ellipse`) | refused | 2 |
 | **loft** along a guide (`solid_loft`) | refused (`solid::cad`: "does not yet support along-guide lofts") | 2 |
 | a swept cut of the generating class | built, on our sheets | phases 1–5 |
-| **any other continuous sweep**: swept stock (`swept_tumble`, `swept_spring`, `swept_torus`), a sweep `union`ed or `bound`, nested sweeps, tools outside rows T1–E4 | refused; field mesh only | outside the ladder |
+| **any other continuous sweep**: swept stock (`swept_tumble`, `swept_spring`, `swept_torus`), a sweep `union`ed or kept in `common`, nested sweeps, tools outside rows T1–E4 | refused; field mesh only | outside the ladder |
 
 A kernel that climbs rungs 1 and 2 covers more than OCCT covers here today — OCCT could build
 splines and lofts; nothing ever handed them to it.
