@@ -4,7 +4,7 @@
   "private": true,
   "license": "MIT",
   "type": "module",
-  "description": "Geometric constraint solver in the browser: C core compiled to WebAssembly, TypeScript front end, HTML5-canvas sketcher.",
+  "description": "Geometric constraint solver in the browser: Rust core compiled to WebAssembly, TypeScript binding, 3D-workspace sketcher.",
   "scripts": {
     "build": "tsc -p tsconfig.json && node tools/copy-wasm.js && node tools/copy-examples.js && npm run bundle",
     "watch": "tsc -p tsconfig.json --watch",
