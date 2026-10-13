@@ -8,6 +8,7 @@ import { editDimension } from './commands.js';
 import { invalidateRows } from './lists.js';
 import { view } from './shell.js';
 import { toast } from './ui.js';
+import { roundsEdges } from './view.js';
 import type { LiveDim, LiveExtent, Rounding } from './view.js';
 
 /** A dimension's number as a person reads and writes it: what it was written as if it was
@@ -209,9 +210,6 @@ const roundBox = new NumberBox('a round\'s radius, or how far a chamfer\'s flat 
   + 'face: a number, or an expression over the document\'s numbers.\nClick more edges or faces '
   + 'first if you like.\nEnter to write it, Esc to let them go',
   (commit, keepOpen) => finishRound(commit, keepOpen));
-/** What the box was last told to offer: written when nobody types over it. */
-let roundOffered = '';
-
 /** The edge tool's number.  Enter writes the word over what was picked, keeping the box open on a
  *  refusal; Esc lets the picks go; a click away (another edge, perhaps) keeps what was typed for
  *  the Enter that follows. */
@@ -225,11 +223,11 @@ function finishRound(commit: boolean, keepOpen = false): void {
     return;
   }
   if (!keepOpen) {
-    const word = view.tool === 'chamfer' ? 'chamfer' : 'round';
-    if (text) view.roundSize[word] = text;
+    const word = roundsEdges(view.tool);
+    if (word && text) view.roundSize[word] = text;
     return;
   }
-  const why = view.finishRound(text || roundOffered);
+  const why = view.finishRound(text);
   if (why) toast(why);
 }
 
@@ -237,7 +235,6 @@ function finishRound(commit: boolean, keepOpen = false): void {
  *  offers — or nulls when nothing is.  Wired onto the view in `main`. */
 export function onRound(r: Rounding | null, at: [number, number] | null, size: string): void {
   if (!r) return roundBox.close();
-  roundOffered = size;
   roundBox.show(size);
   roundBox.place(at);
   roundBox.focus();

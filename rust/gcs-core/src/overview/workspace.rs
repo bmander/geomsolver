@@ -432,19 +432,27 @@ pub struct EdgeHit {
 /// meets a face nearer the viewer than it, by more than a thousandth of the object.
 pub fn pick_edge(sk: &Sketch, proj: &Projection, at: (f64, f64), tol: f64) -> Option<EdgeHit> {
     let toward = proj.toward();
+    let foot = [0, 1, 2].map(|k| at.0 * proj.right[k] + at.1 * proj.up[k]);
     let mut near: Vec<(f64, EdgeHit, f64)> = Vec::new();
     for i in super::objects(sk) {
         let Ok(solid) = sk.evaluated_solid(i, crate::solid::ApproximationPolicy::Mesh) else {
             continue;
         };
+        // culled by its box, as `pick_solid` is, grown by the reach of a pick
         let w = solid.world_bounds();
+        if !w.grown(tol).meets(foot, toward, f64::NEG_INFINITY) {
+            continue;
+        }
         let slack = 1e-3 * (0..3).fold(0f64, |m, k| m.max(w.hi[k] - w.lo[k]));
+        // the solid stands translated, and seeing is linear: its origin is seen once
+        let o = solid.origin().0;
+        let (ox, oy) = proj.seen(o);
         for e in solid.face_edges() {
             // the place on this edge nearest the pointer, as the eye sees it
             let mut best: Option<(f64, [f64; 3])> = None;
             for &[a, b] in &e.segs {
-                let [a, b] = [a, b].map(|p| solid.to_world(crate::solid::LocalPoint(p)).0);
                 let (sa, sb) = (proj.seen(a), proj.seen(b));
+                let (sa, sb) = ((sa.0 + ox, sa.1 + oy), (sb.0 + ox, sb.1 + oy));
                 let d = (sb.0 - sa.0, sb.1 - sa.1);
                 let len2 = d.0 * d.0 + d.1 * d.1;
                 let t = if len2 > 0.0 {
@@ -454,7 +462,7 @@ pub fn pick_edge(sk: &Sketch, proj: &Projection, at: (f64, f64), tol: f64) -> Op
                 };
                 let gap = (sa.0 + t * d.0 - at.0).dhypot(sa.1 + t * d.1 - at.1);
                 if gap <= tol && best.is_none_or(|(g, _)| gap < g) {
-                    best = Some((gap, std::array::from_fn(|k| a[k] + t * (b[k] - a[k]))));
+                    best = Some((gap, crate::space::add(crate::space::lerp(a, b, t), o)));
                 }
             }
             if let Some((gap, p)) = best {

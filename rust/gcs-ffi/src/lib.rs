@@ -2342,28 +2342,30 @@ pub unsafe extern "C" fn gcs_workspace_pick_solid_json(h: *mut Sketch, az: f64, 
     })
 }
 
-/// Where two faces of object `solid` meet, in space: `{size, edges: [{faces: [a, b], segs: [[ax,
-/// ay, az, bx, by, bz]…]}…]}`, `size` a round's to start from — `workspace::solid_edges`,
-/// `edit::round_size`.
+/// Where two faces of object `solid` meet, in space: `[{faces: [a, b], segs: [[ax, ay, az, bx,
+/// by, bz]…]}…]` — `workspace::solid_edges`.
 #[no_mangle]
 pub unsafe extern "C" fn gcs_workspace_solid_edges_json(h: *mut Sketch, solid: i32) -> *mut u8 {
     guard(std::ptr::null_mut(), move || {
-        let s = sk(h);
-        let Ok(solid) = usize::try_from(solid) else {
-            return out_json(Json::Null);
-        };
-        let edges = gcs_core::overview::workspace::solid_edges(s, solid).into_iter().map(|e| {
-            json::object([
-                ("faces", Json::Arr(vec![Json::Str(e.faces.0), Json::Str(e.faces.1)])),
-                ("segs", Json::Arr(e.segs.iter().map(|[a, b]| {
-                    Json::Arr(a.iter().chain(b).map(|&x| Json::Num(x)).collect())
-                }).collect())),
-            ])
-        }).collect();
-        out_json(json::object([
-            ("size", gcs_core::edit::round_size(s, solid).map_or(Json::Null, Json::Num)),
-            ("edges", Json::Arr(edges)),
-        ]))
+        let edges = usize::try_from(solid).map_or(Vec::new(), |i| {
+            gcs_core::overview::workspace::solid_edges(sk(h), i)
+        });
+        out_json(Json::Arr(edges.into_iter().map(|e| json::object([
+            ("faces", Json::Arr(vec![Json::Str(e.faces.0), Json::Str(e.faces.1)])),
+            ("segs", Json::Arr(e.segs.iter().map(|[a, b]| {
+                Json::Arr(a.iter().chain(b).map(|&x| Json::Num(x)).collect())
+            }).collect())),
+        ])).collect()))
+    })
+}
+
+/// The size a round or chamfer on object `solid` starts from, or NaN for none —
+/// `edit::round_size`.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_workspace_round_size(h: *mut Sketch, solid: i32) -> f64 {
+    guard(f64::NAN, move || {
+        let size = usize::try_from(solid).ok().and_then(|i| gcs_core::edit::round_size(sk(h), i));
+        size.unwrap_or(f64::NAN)
     })
 }
 

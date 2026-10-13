@@ -22,9 +22,10 @@ import { mesh, objects, preview } from '../core/mesh.js';
 import type { Face, Mesh } from '../core/mesh.js';
 import { overview3 } from '../core/overview.js';
 import { solidEdges } from '../core/workspace.js';
+import type { SolidEdge } from '../core/workspace.js';
 import type { Item3 } from '../core/overview.js';
 import { COL, chromeOf, inkOf } from './paint.js';
-import type { Combining, Rounding, SketchView } from './view.js';
+import type { Combining, SketchView } from './view.js';
 
 /** The box's own ink.  Chrome, as the 2D painter's palette is: the core says how squarely a face
  *  meets the light and what kind of thing each polyline is, and what colour that is belongs
@@ -110,8 +111,9 @@ export class Box3D {
   /** **The edges an edge tool has picked**, and the one under the pointer, lit over everything:
    *  rebuilt when what is picked or hovered changes, or the objects are re-cut. */
   private readonly litEdges = new THREE.Group();
-  /** What the lit edges were built for; undefined where they must be built again. */
-  private litKey: string | null | undefined = undefined;
+  private litKey: string | null = null;
+  /** Each object's edges, as the core gave them, kept until the objects are re-cut. */
+  private readonly edgesOf = new Map<number, SolidEdge[]>();
 
   constructor(readonly canvas: HTMLCanvasElement | null) {
     this.scene.background = new THREE.Color(INK.bg);
@@ -148,7 +150,7 @@ export class Box3D {
       if (objects) {
         this.buildObjects(v, overview3(v.sketch, 0, 'objects'));
         this.preview.key = null;          // a preview is of the objects as they stood
-        this.litKey = undefined;          // and so are the edges lit on them
+        this.forgetLit();                 // and so are the edges lit on them
       }
       this.built = {
         sketch: v.sketch, solid: v.showSolid,
@@ -164,7 +166,7 @@ export class Box3D {
     const hover = v.hoverEdge;
     const lit = r || hover
       ? JSON.stringify([r && [r.solid, r.edges], hover && [hover.solid, hover.faces]]) : null;
-    if (lit !== this.litKey) this.buildLit(v, r, lit);
+    if (lit !== this.litKey) this.buildLit(v, lit);
     this.aim(v);
     this.chrome(v, c);
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -310,18 +312,13 @@ export class Box3D {
 
   /** The edges an edge tool has picked, and the one under the pointer, as fat lines drawn over
    *  the material: the core's stretches of each, read once per change. */
-  private buildLit(v: SketchView, r: Rounding | null, key: string | null): void {
+  private buildLit(v: SketchView, key: string | null): void {
     release(this.litEdges);
     this.litKey = key;
-    const hover = v.hoverEdge;
-    const of = new Map<number, ReturnType<typeof solidEdges>['edges']>();
-    const edgesOf = (solid: number) => {
-      if (!of.has(solid)) of.set(solid, solidEdges(v.sketch, solid).edges);
-      return of.get(solid)!;
-    };
     const draw = (solid: number, pairs: [string, string][], color: string, px: number) => {
+      if (!this.edgesOf.has(solid)) this.edgesOf.set(solid, solidEdges(v.sketch, solid));
       const pts: number[] = [];
-      for (const e of edgesOf(solid)) {
+      for (const e of this.edgesOf.get(solid)!) {
         if (!pairs.some(([a, b]) => e.faces[0] === a && e.faces[1] === b)) continue;
         for (const seg of e.segs) pts.push(...seg);
       }
@@ -334,8 +331,15 @@ export class Box3D {
       line.renderOrder = 10;
       this.litEdges.add(line);
     };
-    if (r) draw(r.solid, r.edges, COL.sel, EDGE_PX.picked);
-    if (hover) draw(hover.solid, [hover.faces], COL.highlight, EDGE_PX.hover);
+    if (v.rounding) draw(v.rounding.solid, v.rounding.edges, COL.sel, EDGE_PX.picked);
+    if (v.hoverEdge) draw(v.hoverEdge.solid, [v.hoverEdge.faces], COL.highlight, EDGE_PX.hover);
+  }
+
+  /** The lit edges let go, with the edges they were read from: the objects were re-cut. */
+  private forgetLit(): void {
+    release(this.litEdges);
+    this.litKey = null;
+    this.edgesOf.clear();
   }
 
   /** **What the app says about the scene, written per frame.**  The selection and the plane being
@@ -437,9 +441,8 @@ export class Box3D {
     release(this.datums);
     release(this.objects);
     release(this.previewed);
-    release(this.litEdges);
     this.preview = { key: null, shown: false };
-    this.litKey = undefined;
+    this.forgetLit();
   }
 }
 

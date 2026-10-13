@@ -22,7 +22,7 @@ import { PlanDrag } from '../core/decompose.js';
 import { solve } from '../core/system.js';
 import { DimAlt, SketchView } from '../app/view.js';
 import type { SolidPick } from '../app/view.js';
-import { pickEdgeSeen, solidEdges } from '../core/workspace.js';
+import { pickEdgeSeen, roundSize, solidEdges } from '../core/workspace.js';
 import type { SolidEdge } from '../core/workspace.js';
 import { contains, corners, toImage, toWorld } from '../app/underlay.js';
 import type { Bitmap } from '../app/underlay.js';
@@ -2282,7 +2282,8 @@ test('the Fillet tool picks edges a click at a time, and Enter writes them as st
   view.setTool('fillet');
   assert.ok(said.some((m) => /click edges of a solid to round them/.test(m)), said.join('\n'));
   const block = view.doc.solids().find((s) => s.name === 'block')!;
-  const { size, edges } = solidEdges(view.sketch, block.index);
+  const edges = solidEdges(view.sketch, block.index);
+  const size = roundSize(view.sketch, block.index);
   assert.equal(edges.length, 12, 'a box\'s twelve edges, each named by its two faces');
   // the edges the eye sees: a click at the middle of one picks it
   const { az, el } = view.orbit;

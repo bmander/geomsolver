@@ -1865,7 +1865,7 @@ Conventions:
   (`SketchView.rounding`; another object starts over), the number asked beside the last click
   (`dimbox`'s `roundBox`, focused, the pointer-down's default prevented so it keeps the
   keyboard); Enter writes `edit::add_rounds`: the mesh's paths mapped to the document's through
-  the operand routes (`plate.near` on `pad` is `pad.plate.near`, checked against `face_paths`; a
+  the operand routes (`EvaluatedSolid::face_route`, the report's too; `plate.near` on `pad` is `pad.plate.near`, checked against `face_paths`; a
   round's own faces have no name to write), `F round(r: d) body` per face, `a round(r: d) b` per
   edge no face covers, `round(r: d) body` for every face, `use std` made to name the word — one
   splice, held to the elaborator over both places (the library's errors are said at the `use`).

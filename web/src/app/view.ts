@@ -44,7 +44,7 @@ import type { Bitmap, Underlay } from './underlay.js';
 import {
   NOWHERE, PAGE, boundsSeen, calloutSeen, extentAt, extrudeHandle, lookOf, maps, nearestSeen,
   offsetAt, offsetHandle, ofView, panesSeen, pickSeen, pickSolidSeen, placeOf, spacePoints,
-  pickEdgeSeen, solidEdges, turnAt, turnHandle, workspace,
+  pickEdgeSeen, roundSize, turnAt, turnHandle, workspace,
 } from '../core/workspace.js';
 import type { EdgeHit, ExtrudeHandle, TurnHandle } from '../core/workspace.js';
 import type { View, Workspace } from '../core/workspace.js';
@@ -164,9 +164,10 @@ export interface Rounding {
   edges: [string, string][];
 }
 
-/** `n` things, said: `2 edges`, `1 face`, nothing for none. */
-function count(n: number, thing: string): string {
-  return n ? `${n} ${thing}${n === 1 ? '' : 's'}` : '';
+/** What an edge tool has picked, said: `2 edges and 1 face` (`sep` between). */
+function picked(r: Rounding, sep: string): string {
+  const count = (n: number, thing: string) => (n ? `${n} ${thing}${n === 1 ? '' : 's'}` : '');
+  return [count(r.edges.length, 'edge'), count(r.faces.length, 'face')].filter(Boolean).join(sep);
 }
 
 /** What a Boolean tool's status line asks for next, by its word: the target, then its tools. */
@@ -1336,16 +1337,14 @@ export class SketchView {
    *  over one body's faces.  The number is then asked beside the click (`onRound`), and Enter
    *  writes it (`finishRound`). */
   roundAt(sx: number, sy: number): void {
-    const word = roundsEdges(this.tool);
-    if (!word) return;
-    const { az, el } = this.orbit;
-    const edge = pickEdgeSeen(this.sketch, az, el, ...this.eye(sx, sy), this.world(this.pickPx));
+    const edge = this.edgeAt(sx, sy);
     const face = edge ? null : this.solidAt(sx, sy);
     const solid = edge?.solid ?? face?.index;
-    const name = solid === undefined ? undefined
-      : this.doc.solids().find((s) => s.index === solid)?.name;
+    const name = face?.name
+      ?? (edge && this.doc.solids().find((s) => s.index === edge.solid)?.name);
     if (solid === undefined || !name || (face && !face.face)) {
-      this.onStatus(`click an edge of a solid to ${word} it, or a face for every edge of it`);
+      this.onStatus(`click an edge of a solid to ${roundsEdges(this.tool)} it, or a face for every `
+                    + 'edge of it');
       return;
     }
     const was = this.rounding;
@@ -1367,15 +1366,19 @@ export class SketchView {
 
   /** The edge a click would pick with an edge tool down, lit — or nothing. */
   hoverRound(sx: number, sy: number): EdgeHit | null {
-    const { az, el } = this.orbit;
-    this.hoverEdge = roundsEdges(this.tool)
-      ? pickEdgeSeen(this.sketch, az, el, ...this.eye(sx, sy), this.world(this.pickPx)) : null;
+    this.hoverEdge = roundsEdges(this.tool) ? this.edgeAt(sx, sy) : null;
     return this.hoverEdge;
   }
 
+  /** The edge of an object the eye sees under a canvas point, within a pick's reach. */
+  private edgeAt(sx: number, sy: number): EdgeHit | null {
+    const { az, el } = this.orbit;
+    return pickEdgeSeen(this.sketch, az, el, ...this.eye(sx, sy), this.world(this.pickPx));
+  }
+
   /** **Write what the edge tool picked** at `size` (the radius, or the flat's leg — what was
-   *  typed, else the size it was offered at): the library's word over the faces, one splice and one undo
-   *  step, the tool left down for the next.  The core's words where it refuses, and null where it
+   *  typed, else the size it was offered at): the library's word over the faces, one splice and
+   *  one undo step, the tool left down for the next.  The core's words where it refuses, and null where it
    *  wrote. */
   finishRound(size?: string): string | null {
     const word = roundsEdges(this.tool);
@@ -1390,11 +1393,9 @@ export class SketchView {
       this.onStatus(e.refused);
       return e.refused;
     }
-    const what = [count(r.edges.length, 'edge'), count(r.faces.length, 'face')]
-      .filter(Boolean).join(' and ');
     this.roundSize[word] = text;
     const done = word === 'round' ? 'rounded' : 'chamfered';
-    if (!this.apply(e, `${r.name}: ${what} ${done} at ${text}`)) {
+    if (!this.apply(e, `${r.name}: ${picked(r, ' and ')} ${done} at ${text}`)) {
       return null;
     }
     this.endRound();
@@ -1416,7 +1417,7 @@ export class SketchView {
    *  the object's least extent (the core's). */
   private roundOffer(word: EdgeWord, r: Rounding): string {
     if (this.roundSize[word]) return this.roundSize[word];
-    const size = solidEdges(this.sketch, r.solid).size;
+    const size = roundSize(this.sketch, r.solid);
     return size === null ? '1' : io.fmt(size, 6);
   }
 
@@ -1431,10 +1432,8 @@ export class SketchView {
                     + 'every edge of it');
       return;
     }
-    const what = [count(r.edges.length, 'edge'), count(r.faces.length, 'face')]
-      .filter(Boolean).join(', ');
     const size = word === 'round' ? 'the radius' : 'how far the flat runs along each face';
-    this.onStatus(`${r.name}: ${what} — click more, then type ${size} and Enter `
+    this.onStatus(`${r.name}: ${picked(r, ', ')} — click more, then type ${size} and Enter `
                   + '(Esc lets them go)');
     const at = this.roundClick;
     this.onRound(r, at && [at[0] + 12, at[1] + 12], this.roundOffer(word, r));

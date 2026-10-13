@@ -554,6 +554,17 @@ impl EvaluatedSolid {
     pub fn round_features(&self) -> &[RoundFeature] {
         &self.round
     }
+    /// A face's path from this solid, from the path its boundary names it by (the primitive's own
+    /// name first, `plate.near`): the route to that primitive, then the face — `plate.near` on a
+    /// body made of `plate`, `near` on the primitive itself.  `None` for a face no primitive's
+    /// name begins.
+    pub fn face_route(&self, path: &str) -> Option<String> {
+        let (primitive, route) = self.paths.iter()
+            .filter(|(p, _)| path.strip_prefix(p.as_str()).is_some_and(|r| r.starts_with('.')))
+            .max_by_key(|(p, _)| p.len())?;
+        let face = &path[primitive.len() + 1..];
+        Some(if route.is_empty() { face.to_string() } else { format!("{route}.{face}") })
+    }
     pub fn provenance_paths(&self) -> &BTreeMap<String, String> {
         &self.paths
     }

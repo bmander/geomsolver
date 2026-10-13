@@ -1548,71 +1548,67 @@ fn rounds_edit(
         return Err(format!("nothing to {}: pick edges or faces of `{body}`", word.as_str()));
     }
     let evaluated = sk.evaluated_solid(solid, crate::solid::ApproximationPolicy::Mesh)?;
-    let all: Vec<&str> = evaluated.mesh().groups.iter().map(|g| g.path.as_str()).collect();
     let meets = evaluated.face_edges();
     // the faces the document can name, by their paths from the object (`face_paths`, the walk the
     // words' own `repeat` reads)
     let named: std::collections::BTreeSet<String> = crate::solid::faces::face_paths(sk, solid)
-        .iter()
-        .map(|f| format!("{body}.{}", f.text())).filter(|p| !p.contains('#')).collect();
-    // a face as the source writes it: one of this object's, by its path from the object
+        .iter().map(|f| f.text()).filter(|p| !p.contains('#')).collect();
+    // every face of the object, by its mesh's path, and as the source writes it where it can
+    let all: Vec<(&str, Option<String>)> = evaluated.mesh().groups.iter().map(|g| {
+        (g.path.as_str(), evaluated.face_route(&g.path).filter(|r| named.contains(r)))
+    }).collect();
     let written = |f: &str| -> Result<String, String> {
-        if !all.contains(&f) {
-            return Err(format!("`{f}` is no face of `{body}`"));
+        match all.iter().find(|(p, _)| *p == f) {
+            None => Err(format!("`{f}` is no face of `{body}`")),
+            Some((_, None)) => {
+                Err(format!("this face of `{body}` has no name the document can write"))
+            }
+            Some((_, Some(route))) => Ok(format!("{body}.{route}")),
         }
-        face_path(&body, evaluated.provenance_paths(), f).filter(|p| named.contains(p))
-            .ok_or_else(|| format!("this face of `{body}` has no name the document can write"))
     };
-    let mut picked: Vec<&str> = Vec::new();
+    let mut picked: Vec<(&str, String)> = Vec::new();
     for f in faces {
-        written(f)?;
-        if !picked.contains(&f.as_str()) {
-            picked.push(f);
+        if !picked.iter().any(|(p, _)| p == f) {
+            picked.push((f, written(f)?));
         }
     }
-    let mut stmts: Vec<String> = Vec::new();
     let said = |a: &str, b: &str| format!("{a} {}({}: {size}) {b}", word.as_str(), word.key());
-    let whole = all.iter().filter(|f| written(f).is_ok()).all(|f| picked.contains(f));
-    if whole {
+    let mut stmts: Vec<String> = Vec::new();
+    if all.iter().all(|(f, w)| w.is_none() || picked.iter().any(|(p, _)| p == f)) {
         stmts.push(format!("{}({}: {size}) {body}", word.as_str(), word.key()));
     } else {
-        for f in &picked {
-            stmts.push(said(&written(f)?, &body));
-        }
+        stmts.extend(picked.iter().map(|(_, w)| said(w, &body)));
         let mut seen: Vec<(&str, &str)> = Vec::new();
         for (a, b) in edges {
             let (wa, wb) = (written(a)?, written(b)?);
+            // in the order `face_edges` names a pair, whichever way a caller gave it
             let pair = if a <= b { (a.as_str(), b.as_str()) } else { (b.as_str(), a.as_str()) };
             if !meets.iter().any(|e| (e.faces.0.as_str(), e.faces.1.as_str()) == pair) {
                 return Err(format!("`{wa}` and `{wb}` do not meet at an edge"));
             }
-            if picked.contains(&pair.0) || picked.contains(&pair.1) || seen.contains(&pair) {
-                continue;
+            let covered = picked.iter().any(|(p, _)| *p == pair.0 || *p == pair.1);
+            if !covered && !seen.contains(&pair) {
+                seen.push(pair);
+                stmts.push(said(&wa, &wb));
             }
-            seen.push(pair);
-            stmts.push(said(&wa, &wb));
         }
     }
     let (at, lead) = append_at(prog);
-    let with = format!("{lead}{}", stmts.join("\n"));
-    // the statements and the import, each where it lands once the other is in
-    let mut written = vec![Splice { at, with }];
-    written.extend(imports(prog, "std", word.as_str()));
-    let mut regions: Vec<Span> = written.iter().map(|w| {
-        let before: usize =
-            written.iter().filter(|o| o.at.lo < w.at.lo).map(|o| o.with.len()).sum();
-        let lo = w.at.lo as usize + before;
-        Span::new(lo, lo + w.with.len())
-    }).collect();
-    // what the word's own body refuses is said at the `use` that brought the library in, which
-    // stands before anything appended
-    if let Some(u) = prog.uses.iter().find(|u| u.name == "std" && u.span.hi <= at.lo) {
-        let grown: usize = written.iter()
-            .filter(|w| u.span.contains(w.at.lo) || w.at.lo == u.span.hi)
-            .map(|w| w.with.len()).sum();
-        regions.push(Span::new(u.span.lo as usize, u.span.hi as usize + grown));
+    let appended = Splice { at, with: format!("{lead}{}", stmts.join("\n")) };
+    // what the word's own body refuses is said at the `use` that brought the library in: the
+    // statements and the `use` are both what this edit wrote, each where it lands once the other
+    // is in
+    let (import, mut used) = imports(prog, word.as_str());
+    let grown = import.as_ref().map_or(0, |i| i.with.len());
+    let shift = |lo: u32, by: usize, past: u32| lo as usize + if past <= lo { by } else { 0 };
+    let lo = shift(at.lo, grown, import.as_ref().map_or(u32::MAX, |i| i.at.lo));
+    let mut regions = vec![Span::new(lo, lo + appended.with.len())];
+    if let Some(u) = used.as_mut() {
+        let lo = shift(u.lo, appended.with.len(), at.lo + 1);
+        regions.push(Span::new(lo, lo + (u.hi - u.lo) as usize + grown));
     }
-    checked_in(prog, splice(prog.text(), written), &regions, Vec::new())
+    let text = splice(prog.text(), [Some(appended), import].into_iter().flatten().collect());
+    checked_in(prog, text, &regions, Vec::new())
 }
 
 /// A round or chamfer's size to start from on object `solid`: a tenth of its least extent, to one
@@ -1625,46 +1621,24 @@ pub fn round_size(sk: &Sketch, solid: usize) -> Option<f64> {
     least.is_finite().then(|| round_sig(least / 10.0, 1))
 }
 
-/// A face of object `object` as the document names it, from the path its mesh names it by
-/// (`plate.near`, the primitive's own name first): the object, the route from it to that
-/// primitive (`routes`, `operand_paths`), then the face — `pad.plate.near`, and `block.near` for
-/// a primitive that is the object itself.  `None` for a face no primitive's name begins.
-fn face_path(object: &str, routes: &std::collections::BTreeMap<String, String>, path: &str)
-    -> Option<String> {
-    let (prim, route) = routes.iter()
-        .filter(|(k, _)| path.strip_prefix(k.as_str()).is_some_and(|r| r.starts_with('.')))
-        .max_by_key(|(k, _)| k.len())?;
-    let face = &path[prim.len() + 1..];
-    Some(match route.is_empty() {
-        true => format!("{object}.{face}"),
-        false => format!("{object}.{route}.{face}"),
-    })
-}
-
-/// The splice that has the document's `use MODULE` name `word` bare (§14.4): its list grown,
-/// one written (`use std` becomes `use std (round)`), or a line of its own where `add_use` would
-/// put one.  `None` where the document already says it.
-fn imports(prog: &Program, module: &str, word: &str) -> Option<Splice> {
+/// The splice that has the document's `use std` name `word` bare (§14.4) — its list grown, one
+/// written (`use std` becomes `use std (round)`), or a line of its own where `add_use` would put
+/// one; `None` where it already does — and the span of the `use std` the document writes.
+fn imports(prog: &Program, word: &str) -> (Option<Splice>, Option<Span>) {
     let text = prog.text();
-    let used = prog.uses.iter().find(|u| u.name == module && (u.span.hi as usize) <= text.len());
-    if let Some(u) = used {
-        if u.names.iter().any(|n| n.text == word) {
-            return None;
-        }
-        let (lo, hi) = (u.span.lo as usize, u.span.hi as usize);
-        let written = text[lo..hi].trim_end();
-        let at = match written.rfind(')') {
-            Some(k) if !u.names.is_empty() => {
-                Splice { at: Span::new(lo + k, lo + k), with: format!(", {word}") }
-            }
-            _ => {
-                let end = lo + written.len();
-                Splice { at: Span::new(end, end), with: format!(" ({word})") }
-            }
-        };
-        return Some(at);
+    let Some(u) = prog.uses.iter().find(|u| u.name == "std" && (u.span.hi as usize) <= text.len())
+    else {
+        return (Some(use_line(prog, &format!("use std ({word})"))), None);
+    };
+    if u.names.iter().any(|n| n.text == word) {
+        return (None, Some(u.span));
     }
-    Some(use_line(prog, &format!("use {module} ({word})")))
+    let (lo, hi) = (u.span.lo as usize, u.span.hi as usize);
+    let (at, with) = match u.names.last() {
+        Some(n) => (n.span.hi as usize, format!(", {word}")),
+        None => (lo + text[lo..hi].trim_end().len(), format!(" ({word})")),
+    };
+    (Some(Splice { at: Span::new(at, at), with }), Some(u.span))
 }
 
 /// One constraint, written the way the registry names it.

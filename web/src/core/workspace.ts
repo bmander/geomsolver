@@ -137,10 +137,15 @@ export interface SolidEdge {
   segs: number[][];
 }
 
-/** Object `solid`'s edges, and the size a round or chamfer on it starts from. */
-export function solidEdges(sk: Sketch, solid: number): { size: number | null; edges: SolidEdge[] } {
-  return takeJson<{ size: number | null; edges: SolidEdge[] } | null>(
-    core().gcs_workspace_solid_edges_json(sk.handle, solid)) ?? { size: null, edges: [] };
+/** Object `solid`'s edges. */
+export function solidEdges(sk: Sketch, solid: number): SolidEdge[] {
+  return takeJson<SolidEdge[] | null>(core().gcs_workspace_solid_edges_json(sk.handle, solid)) ?? [];
+}
+
+/** The size a round or chamfer on object `solid` starts from, or null. */
+export function roundSize(sk: Sketch, solid: number): number | null {
+  const size = core().gcs_workspace_round_size(sk.handle, solid);
+  return Number.isFinite(size) ? size : null;
 }
 
 /** The arrow a prism is sized by, as the eye sees it, and what it says: from its face's middle to
