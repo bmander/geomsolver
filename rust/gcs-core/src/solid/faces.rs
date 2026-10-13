@@ -302,6 +302,14 @@ impl BodyFaces {
         Some((self.back(f.o), f.z, r / self.mm))
     }
 
+    /// Face `fi`'s cone, where it lies on one: a point of its axis, the axis's unit direction,
+    /// its radius at that point (model units) and its half-angle, the radius growing along the
+    /// axis by its tangent (a drafted circle's side, #245).
+    pub fn cone(&self, fi: usize) -> Option<(V, V, f64, f64)> {
+        let crate::brep::geom::Surface::Cone(f, r, a) = &self.loc.b.faces[fi].surface else { return None };
+        Some((self.back(f.o), f.z, r / self.mm, *a))
+    }
+
     /// Face `fi`'s sphere, where it lies on one: its centre and radius (model units).
     pub fn sphere(&self, fi: usize) -> Option<(V, f64)> {
         let crate::brep::geom::Surface::Sphere(f, r) = &self.loc.b.faces[fi].surface else { return None };
@@ -433,6 +441,39 @@ impl Reading {
     /// The side of the face whose patch is nearest `p`, and its gradient.
     pub fn side_grad(&self, p: V) -> (f64, V) {
         self.nearest(p).map_or((f64::INFINITY, [0.0, 0.0, 1.0]), |fi| self.body.side_grad(fi, p))
+    }
+
+    /// Where the faces lie on more than one surface and every crease between those is convex (a
+    /// drafted side's pieces either side of its parting plane, #245): one face on each surface.
+    /// Within such faces the material is within every surface's side, and a point within them at
+    /// least `d` off them is at least `d` off each surface, so either condition holds surface by
+    /// surface — where the nearest piece's surface would turn from one to the other across the
+    /// crease, and a projection onto it with it. `None` where the faces are one surface's, or
+    /// meet otherwise.
+    pub fn convex_pieces(&self) -> Option<Vec<usize>> {
+        let b = &self.body.loc.b;
+        let same = |x: usize, y: usize| {
+            let (fx, fy) = (&b.faces[x], &b.faces[y]);
+            let tol = 1e-9 * (1.0 + norm(fx.surface.frame().o) + norm(fy.surface.frame().o));
+            fx.reversed == fy.reversed && crate::brep::ssi::same(&fx.surface, &fy.surface, tol)
+        };
+        let mut pieces: Vec<usize> = Vec::new();
+        for &fi in &self.faces {
+            if !pieces.iter().any(|&q| same(q, fi)) {
+                pieces.push(fi);
+            }
+        }
+        if pieces.len() < 2 {
+            return None;
+        }
+        for &fa in &self.faces {
+            for &fb in self.faces.iter().filter(|&&fb| fb > fa && !same(fa, fb)) {
+                if self.body.edges_between(&[fa], &[fb]).into_iter().any(|e| self.body.convex(e) != Some(true)) {
+                    return None;
+                }
+            }
+        }
+        Some(pieces)
     }
 }
 

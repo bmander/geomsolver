@@ -31,7 +31,7 @@ pub(super) fn surfaces(sk: &mut Sketch, res: &mut Resolver, map: &mut SourceMap,
             // motion keeping the prism's view generates from in the drawing (`extruded_envelopes`)
             let (face,sweep) = match sk.solids[solid.i()].def {
                 SolidDef::Revolve {face,ref sweep,..} => (face,Some(sweep.value)),
-                SolidDef::Prism {face,..} => (face,None),
+                SolidDef::Prism {face,draft:None,..} => (face,None),
                 _ => return Err("analytic surface references require an unmodified revolution or prism".into()),
             };
             if !sk.faces[face as usize].boundaries().any(|(edges,_)| edges.contains(&edge)) {

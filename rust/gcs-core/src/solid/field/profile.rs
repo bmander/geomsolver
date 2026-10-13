@@ -491,6 +491,24 @@ impl PlanarField {
         Ok(Self {node:Node::Profile(profile),depth:1,uses:[true;2]})
     }
 
+    /// Whether moving this profile's field by a number moves each side as a draft does (#245):
+    /// where every loop is convex and made of lines and whole circles, the field is the largest
+    /// of exact distances from each side's line or circle (a hole's turned round), so its level
+    /// `-d` is each side moved `d`. A concave corner's level would be rounded, and an arc's
+    /// sector bounded by lines through its centre would move too: refused, naming why.
+    pub(crate) fn draftable(loops: &[Vec<Edge>],join: f64) -> Result<(),String> {
+        for l in loops {
+            let edges = ordered(l,join)?;
+            if !turning(&edges)?.1 {
+                return Err("the field reads a drafted prism only where each of its loops is convex".into());
+            }
+            if edges.iter().any(|e| matches!(e,Edge::Conic {..}) || matches!(e,Edge::Arc {sweep,..} if sweep.abs() < TAU)) {
+                return Err("the field reads a drafted prism only where its sides are lines and whole circles".into());
+            }
+        }
+        Ok(())
+    }
+
     /// One outer loop with every further loop subtracted as a hole.
     pub(crate) fn from_loops(loops: &[Vec<Edge>],join: f64) -> Result<Self,String> {
         let mut loops = loops.iter();

@@ -3,7 +3,7 @@
 #[allow(unused_imports)]
 use crate::fmath::Det;
 use super::boolean::{boolean,Op};
-use super::build::{loft,prism,revolve,Guide,Profile};
+use super::build::{drafted,loft,prism,revolve,Guide,Profile};
 use super::geom::{widen,Rigid,V,EMPTY};
 use super::topo::Brep;
 use crate::json::Json;
@@ -47,7 +47,8 @@ pub fn node_named(n: &Json,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64
         built.get(&field(n,k)?.as_i64()).ok_or(format!("recipe: `{k}` not built before its user"))
     };
     match kind {
-        "prism" => prism(&Profile::from_json(field(n,"profile")?)?,field(n,"from")?.as_f64(),field(n,"to")?.as_f64()),
+        "prism" => drafted(&Profile::from_json(field(n,"profile")?)?,field(n,"from")?.as_f64(),field(n,"to")?.as_f64(),
+            n.get("draft").map_or(0.,Json::as_f64)),
         "revolve" => revolve(&Profile::from_json(field(n,"profile")?)?,vec3(field(n,"origin")?),
             vec3(field(n,"axis")?),field(n,"angle")?.as_f64()),
         "loft" => {
@@ -221,13 +222,15 @@ fn surface_of(j: &Json) -> Result<super::geom::Surface,String> {
     Ok(match field(j,"kind")?.as_str() {
         "plane" => Surface::Plane(Frame::about(vec3(field(j,"origin")?),vec3(field(j,"normal")?))),
         "cylinder" => Surface::Cylinder(Frame::about(vec3(field(j,"origin")?),vec3(field(j,"axis")?)),radius()?),
+        "cone" => Surface::Cone(Frame::about(vec3(field(j,"origin")?),vec3(field(j,"axis")?)),radius()?,field(j,"half")?.as_f64()),
         "sphere" => Surface::Sphere(Frame::about(vec3(field(j,"origin")?),[0.,0.,1.]),radius()?),
         k => return Err(format!("recipe: a face on a surface of kind `{k}`")),
     })
 }
 
-/// `piece` kept within (`inside`) or outside the solid a cylinder or a sphere bounds: in common with
-/// it, or less it, the cylinder long enough to reach past the piece either way.
+/// `piece` kept within (`inside`) or outside the solid a cylinder, a cone or a sphere bounds: in
+/// common with it, or less it, the cylinder or the cone long enough to reach past the piece either
+/// way (a cone short of its apex).
 pub fn kept_by_solid(piece: &Brep,surface: &super::geom::Surface,inside: bool,floor: f64) -> Result<Brep,String> {
     use crate::space::{add,distance,dot,scale,sub};
     use super::build::ProfileEdge;
@@ -242,6 +245,18 @@ pub fn kept_by_solid(piece: &Brep,surface: &super::geom::Surface,inside: bool,fl
             let reach = distance(lo,hi)+radius;
             let circle = ProfileEdge::Arc {frame:Frame::about(foot,f.z),r:radius,span:None};
             prism(&Profile {origin:foot,normal:f.z,loops:vec![vec![circle]],names:Vec::new()},-reach,reach)?
+        }
+        Surface::Cone(f,radius,half) => {
+            // a frustum about the axis, lofted between its circles either side of the middle's foot
+            let h = dot(sub(middle,f.o),f.z);
+            let reach = distance(lo,hi)+radius;
+            let at = |k: f64| -> Result<Profile,String> {
+                let (o,r) = (add(f.o,scale(f.z,h+k)),radius+(h+k)*half.dtan());
+                if !(r > 0.) { return Err("a piece kept by a cone reaching past its apex".into()) }
+                Ok(Profile {origin:o,normal:f.z,loops:vec![vec![ProfileEdge::Arc {frame:Frame::about(o,f.z),r,span:None}]],
+                    names:Vec::new()})
+            };
+            loft(&at(-reach)?,Some(&at(reach)?),&Guide::Line {delta:scale(f.z,2.*reach)})?
         }
         Surface::Sphere(f,radius) => {
             // a half disc turned once about a line through the centre

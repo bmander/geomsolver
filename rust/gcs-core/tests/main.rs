@@ -24,6 +24,7 @@ mod rounds;
 mod face_names;
 mod rounds_examples;
 mod conrod;
+mod draft;
 mod offsets;
 mod offset_corners;
 mod evaluated_solid;

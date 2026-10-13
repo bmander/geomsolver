@@ -1051,7 +1051,18 @@ pub fn set_sweep(e: &Elaborated, prog: &Program, solid: usize, how: &SolidSweep)
 }
 
 fn sweep_edit(e: &Elaborated, prog: &Program, solid: usize, how: &SolidSweep) -> Result<Edit, String> {
-    resweep(e, prog, solid, |_| how.sweep())
+    // a draft written on the solid stays: the gesture sizes the extrusion, never its taper
+    resweep(e, prog, solid, |was| {
+        let draft = match was {
+            syntax::Sweep::Prism { draft, .. } | syntax::Sweep::Depth { draft, .. } => draft.clone(),
+            _ => None,
+        };
+        Ok(match how.sweep()? {
+            syntax::Sweep::Prism { from, to, .. } => syntax::Sweep::Prism { from, to, draft },
+            syntax::Sweep::Depth { depth, .. } => syntax::Sweep::Depth { depth, draft },
+            s => s,
+        })
+    })
 }
 
 /// Rewrite how far revolution `solid` turns, about what it turns about: `angle` the text written,

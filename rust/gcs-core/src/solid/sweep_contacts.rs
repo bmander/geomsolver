@@ -47,7 +47,8 @@ impl ExtrudedSurface {
     /// Edge `edge` of prism `solid`'s profile, its face's lifted as the prism's recipe lifts it.
     pub fn read(sk: &Sketch,solid: usize,edge: EntRef) -> Result<Self,String> {
         let solid = sk.solids.get(solid).ok_or("no such solid")?;
-        let SolidDef::Prism {face,from,to} = &solid.def else { return Err("an extruded patch requires a prism".into()) };
+        let SolidDef::Prism {face,from,to,draft} = &solid.def else { return Err("an extruded patch requires a prism".into()) };
+        if draft.is_some() { return Err("an extruded patch requires a prism with no draft".into()) }
         let profile = sk.faces.get(*face as usize).ok_or("no such profile")?;
         let name = profile.edges.iter().zip(&profile.edge_names)
             .chain(profile.holes.iter().flat_map(|h| h.edges.iter().zip(&h.edge_names)))

@@ -1295,12 +1295,13 @@ pub enum Sweep {
     Placed { motion: Ref, at: Arg },
     /// The continuous union of a solid under a finite motion interval.
     Swept { motion: Ref, from: Arg, to: Arg },
-    /// `from: a, to: b` — signed ordinates along the plane's normal.
-    Prism { from: Arg, to: Arg },
+    /// `from: a, to: b` — signed ordinates along the plane's normal; `draft: θ` tapers the sides
+    /// from the face's own plane, the parting plane (#245).
+    Prism { from: Arg, to: Arg, draft: Option<Arg> },
     /// One section repeated, or two sections interpolated, along a directed guide.
     Along { guide: Ref },
     /// A positive magnitude, kept until elaboration can validate its evaluated expression.
-    Depth { depth: Arg },
+    Depth { depth: Arg, draft: Option<Arg> },
     /// Span the target's stock and additions along the section normal.
     Through { body: Ref },
     /// `about: ax` — a full turn about a line in the face's own plane, or `sweep:` of one,
@@ -1323,8 +1324,8 @@ impl Sweep {
         match self {
             Sweep::Placed { at, .. } => vec![at],
             Sweep::Swept { from, to, .. } => vec![from,to],
-            Sweep::Prism { from, to } => vec![from, to],
-            Sweep::Depth { depth } => vec![depth],
+            Sweep::Prism { from, to, draft } => [from, to].into_iter().chain(draft).collect(),
+            Sweep::Depth { depth, draft } => std::iter::once(depth).chain(draft).collect(),
             Sweep::Revolve { sweep, .. } => sweep.iter_mut().collect(),
             Sweep::Body | Sweep::Through { .. } | Sweep::Along { .. } | Sweep::Region { .. } => {
                 Vec::new()

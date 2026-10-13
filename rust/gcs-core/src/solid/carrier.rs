@@ -43,7 +43,7 @@ pub fn carrier(sk: &Sketch, solid: usize, path: &str) -> Result<Carrier, String>
     if steps.next().is_some() {
         return Err(format!("`{path}` names no face"));
     }
-    let SolidDef::Prism { face: fi, from, to } = &sk.solids[at].def else {
+    let SolidDef::Prism { face: fi, from, to, draft } = &sk.solids[at].def else {
         return Err(format!("`{path}`: only a prism's faces are drawn on yet"));
     };
     let f = &sk.faces[*fi as usize];
@@ -60,6 +60,7 @@ pub fn carrier(sk: &Sketch, solid: usize, path: &str) -> Result<Carrier, String>
             let middle = add(profile.lift(cx, cy), scale(n, d));
             Ok(Carrier { basis: Basis { o: add(profile.o, scale(n, d)), ..profile }, middle })
         }
+        _ if draft.is_some() => Err(format!("`{path}` is a drafted side: sketch on a cap")),
         edge => {
             let k = f.edge_names.iter().position(|e| e == edge)
                 .ok_or_else(|| format!("`{path}` names no face"))?;

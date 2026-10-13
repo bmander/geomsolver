@@ -42,8 +42,8 @@ pub fn asks(sk: &Sketch,swept: usize) -> bool {
 /// The stretch along unit `n` a prism standing square to it spans in space.
 pub(crate) fn prism(sk: &Sketch,id: usize,n: V) -> Result<[f64;2],Failure> {
     let solid = &sk.solids[id];
-    let SolidDef::Prism {face,from,to} = &solid.def else {
-        return Err((Condition::Prisms,format!("`{}` is no prism",solid.name),None))
+    let SolidDef::Prism {face,from,to,draft:None} = &solid.def else {
+        return Err((Condition::Prisms,format!("`{}` is no prism with square sides",solid.name),None))
     };
     let basis = match sk.faces[*face as usize].plane() {
         Ok(Some(p)) => sk.basis(p as usize),

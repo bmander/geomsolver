@@ -4,7 +4,7 @@ model m from "rod.sv"
 
 sheet rod {
   size (420mm, 297mm)
-  label "CONNECTING ROD, FORGED  140 mm centres, rounded and chamfered in Solvent" at (14mm, 16mm)
+  label "CONNECTING ROD, FORGED  140 mm centres, drafted 3°, rounded and chamfered in Solvent" at (14mm, 16mm)
   view swing(m.rod) from front at (100mm, 205mm) scale 1
   view side(m.rod) from right at (190mm, 205mm) scale 1
   section across(m.rod) from top cut m.across at (330mm, 235mm) scale 1.6

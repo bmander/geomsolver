@@ -1063,6 +1063,12 @@ k := Par(o).p over u in (-2mm, 2mm)
 - **Prism**, along the face's normal: `depth: 30mm` is the material *behind* the visible face,
   `from: -30mm, to: 0mm`; write `from:`/`to:` when the face is not at an end. `through: body` spans
   the target's stock and additions both ways and follows the solve.
+- **Draft**: `draft: 3deg` beside `from:`/`to:` or `depth:` tapers the sides from the face's own
+  plane (the parting plane, ordinate 0): the section at `h` is the face moved `|h| tan 3°` into its
+  material, so the sides lean away from that plane on both sides of it, a hole widening as the
+  outside narrows. Lines' sides stay planes and circles' become cones; faces keep their names, a
+  side crossing the plane two pieces of one name. An arc meeting a side at an angle (not tangent)
+  is refused by the exact kernel. `conrod/rod.sv` drafts its eyes and shank.
 - **Revolution**, about a line or axis **in the face's own plane**: `about: ax` is a full turn,
   `sweep: 90deg` a partial one (caps `start` and `end`), `sense: cw` reverses it. An axis lies in
   the plane when it is one of the plane's own (`about: std.z` on `std.front`) or the solve puts it

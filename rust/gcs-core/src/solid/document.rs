@@ -96,10 +96,11 @@ fn reads_where(sk: &Sketch, si: usize, unit: f64, skip: &dyn Fn(usize) -> bool) 
                 if let Some(f) = end { face_reads(sk, *f, &mut v); }
                 loft::reads(sk, *guide, &mut v);
             }
-            SolidDef::Prism { face, from, to } => {
+            SolidDef::Prism { face, from, to, draft } => {
                 v.push(0.0);
                 v.push(from.value);
                 v.push(to.value);
+                v.push(draft.as_ref().map_or(0.0, |d| d.value));
                 face_reads(sk, *face, &mut v);
             }
             SolidDef::Through { face, body } => {
@@ -512,10 +513,14 @@ fn build(
     let mut term = Term::Empty;
     for (i, p) in polys.into_iter().map(local).enumerate() {
         let built = match &sol.def {
-            SolidDef::Prism { from, to, .. } => prism(&p, from.value, to.value, &name),
+            // a draft shrinks the outer loop and grows each hole: their prisms are subtracted
+            SolidDef::Prism { from, to, draft, .. } => {
+                let taper = draft.as_ref().map_or(0.0, |d| d.value.dtan());
+                prism(&p, from.value, to.value, if i == 0 { taper } else { -taper }, &name)
+            }
             SolidDef::Through { .. } => {
                 let (lo, hi) = through_extent.expect("through extent was resolved before sweeping");
-                prism(&p, lo, hi, &name)
+                prism(&p, lo, hi, 0.0, &name)
             }
             SolidDef::Revolve { face, axis, sweep, sense } => {
                 let Some(ab) = sk.revolve_axis(*face, *axis) else { return Term::Empty };

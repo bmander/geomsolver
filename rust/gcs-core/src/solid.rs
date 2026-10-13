@@ -472,9 +472,21 @@ fn validate_at(sk: &Sketch, si: usize, unit: f64) -> Result<std::collections::BT
                 pending.push((*source as usize,false));
                 continue;
             }
-            SolidDef::Prism { face, from, to } => {
+            SolidDef::Prism { face, from, to, draft } => {
                 if !from.value.is_finite() || !to.value.is_finite() || from.value == to.value {
                     return Err(fail("a prism needs two distinct finite ordinates"));
+                }
+                // a draft that takes a side to nothing, or past it, is no solid of those sides
+                if let Some(d) = draft {
+                    let taper = d.value.dtan();
+                    let polys = face_polys(sk, *face as usize, unit).map_err(|m| fail(&m))?;
+                    for (k, p) in polys.iter().enumerate() {
+                        let t = if k == 0 { taper } else { -taper };
+                        if let Some(i) = primitive::drafted_away(&p.pts, from.value, to.value, t) {
+                            return Err(fail(&format!("a draft of `{}` takes the side `{}` to nothing \
+                                within the prism's ordinates", d.text, p.names[p.of[i].0])));
+                        }
+                    }
                 }
                 *face
             }

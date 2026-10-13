@@ -81,6 +81,16 @@ pub(super) fn build_solid(
             if !v.c.is_finite() { return Err(format!("`{what}` must be finite")); }
             Ok(Extent { text: text.trim().to_string(), value: v.c })
         };
+    // a prism's draft (#245): an angle, leaning its sides less than square to the face
+    let draft = |a: &Option<crate::syntax::Arg>| -> Result<Option<Extent>, (Code, String)> {
+        let Some(a) = a else { return Ok(None) };
+        let e = ext(a, "draft", crate::units::Dim::ANGLE).map_err(|m| (Code::E103, m))?;
+        if e.value.abs() >= 90.0 {
+            return Err((Code::E080, format!("a draft of `{}` leans a side flat: a draft is less \
+                                              than a right angle", e.text)));
+        }
+        Ok((e.value != 0.0).then(|| Extent { text: e.text, value: e.value.to_radians() }))
+    };
     let def = match sweep {
         // a region: the bounds its set put on the probe, gathered as they were stated (§6.21)
         crate::syntax::Sweep::Region { probe } => {
@@ -167,8 +177,12 @@ pub(super) fn build_solid(
             }
             SolidDef::Through { face, body: target.idx }
         }
-        crate::syntax::Sweep::Depth { depth } => {
+        crate::syntax::Sweep::Depth { depth, draft: written } => {
             let face = one_face(&ops, st, &mut say)?;
+            let draft = match draft(written) {
+                Ok(d) => d,
+                Err((code, m)) => { say(code, st.span, m); return None; }
+            };
             let d = match ext(depth, "depth", crate::units::Dim::LENGTH) {
                 Ok(d) => d,
                 Err(m) => { say(Code::E103, st.span, m); return None; }
@@ -182,10 +196,15 @@ pub(super) fn build_solid(
                 face,
                 from: Extent { text: format!("-({})", d.text), value: -d.value },
                 to: Extent::at(0.0),
+                draft,
             }
         }
-        crate::syntax::Sweep::Prism { from, to } => {
+        crate::syntax::Sweep::Prism { from, to, draft: written } => {
             let Some(face) = one_face(&ops, st, &mut say) else { return None };
+            let draft = match draft(written) {
+                Ok(d) => d,
+                Err((code, m)) => { say(code, st.span, m); return None; }
+            };
             let (a, b) = match (
                 ext(from, "from", crate::units::Dim::LENGTH),
                 ext(to, "to", crate::units::Dim::LENGTH),
@@ -200,7 +219,7 @@ pub(super) fn build_solid(
                 say(Code::E080, st.span, "a prism swept nowhere is no solid".into());
                 return None;
             }
-            SolidDef::Prism { face, from: a, to: b }
+            SolidDef::Prism { face, from: a, to: b, draft }
         }
         crate::syntax::Sweep::Revolve { axis, sweep, sense } => {
             let Some(face) = one_face(&ops, st, &mut say) else { return None };

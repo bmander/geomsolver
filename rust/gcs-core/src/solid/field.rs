@@ -2,6 +2,8 @@
 //! set is closure({x | f(x)<0}); a zero value alone is not a boundary certificate.
 //! These are explicit field constructions, not implicit conversions of mesh CSG.
 use crate::interval::{Error,Interval as I};
+#[allow(unused_imports)]
+use crate::fmath::Det;
 mod profile;
 mod spatial;
 mod document;
@@ -297,7 +299,11 @@ impl RevolvedField {
 #[derive(Clone,Debug)]
 pub struct ExtrudedField { profile:PlanarField,origin:V,frame:[V;3],range:I,
     /// The origin's and the frame's midpoints, `frame_of`'s, worked out once.
-    plain:[[f64;3];4] }
+    plain:[[f64;3];4],
+    /// A draft's tangent and cosine (#245; 0 and 1 where there is none): the sides at depth `w`
+    /// read as the profile's field plus `|w| tan`, times the cosine, so the field stays
+    /// one-Lipschitz and is a tilted side's exact distance where the profile's is its line's.
+    draft:[f64;2] }
 
 impl ExtrudedField {
     /// `range` holds the two ordinates in either order; a zero thickness is refused.
@@ -319,13 +325,29 @@ impl ExtrudedField {
             u[0].mul(v[1])?.sub(u[1].mul(v[0])?)?];
         let origin = point(origin)?;
         let plain = [origin.map(mid),u.map(mid),v.map(mid),n.map(mid)];
-        Ok(Self {profile,origin,frame:[u,v,n],range,plain})
+        Ok(Self {profile,origin,frame:[u,v,n],range,plain,draft:[0.,1.]})
+    }
+
+    /// Its sides tapered by `angle` (radians) from the profile's plane (#245): the section at
+    /// depth `w` is where the profile's field is at most `-|w| tan angle`. Exactly the draft where
+    /// the profile's field moves its sides so (`PlanarField::draftable`, its caller's to ask).
+    pub fn drafted(mut self,angle: f64) -> Self {
+        if angle != 0. { self.draft = [angle.dtan(),angle.dcos()]; }
+        self
+    }
+
+    /// The sides' value at a frame point: the profile's, drafted.
+    fn side(&self,value: f64,depth: f64) -> f64 {
+        let [t,c] = self.draft;
+        if t == 0. { value } else { (value+depth.abs()*t)*c }
     }
 
     /// A finite world box enclosing all regularized material, when the profile
     /// construction gives one; `None` is an unknown support, not unboundedness.
     pub fn support_bounds(&self) -> Result<Option<V>,Error> {
         let Some(radius) = self.profile.radius_bound()? else { return Ok(None); };
+        // a draft leaning out grows the section, a sharp corner's furthest: not bounded here
+        if self.draft[0] < 0. { return Ok(None); }
         let disk = I::new(-radius,radius)?;
         let mut result = self.origin;
         // |a u_k + b v_k| <= sqrt(a^2 + b^2) for orthonormal u, v.
@@ -337,7 +359,7 @@ impl ExtrudedField {
     pub fn value(&self,p: [f64;3]) -> f64 {
         let c = self.frame_of(p);
         let [lo,hi] = self.range.bounds();
-        self.profile.value([c[0],c[1]]).max((lo-c[2]).max(c[2]-hi))
+        self.side(self.profile.value([c[0],c[1]]),c[2]).max((lo-c[2]).max(c[2]-hi))
     }
 
     /// A point in the frame's (u, v, depth).
@@ -355,6 +377,7 @@ impl ExtrudedField {
         let [lo,hi] = self.range.bounds();
         let n = self.profile.piece_count();
         let side = self.profile.value_piece([c[0],c[1]],&mut 0);
+        let side = (self.side(side.0,c[2]),side.1);
         [side,(lo-c[2],n),(c[2]-hi,n+1)].into_iter().fold((f64::NEG_INFINITY,0),|a,b| if b.0 > a.0 { b } else { a })
     }
     pub fn carrier(&self,p: [f64;3],piece: usize) -> Option<f64> {
@@ -362,7 +385,7 @@ impl ExtrudedField {
         let [lo,hi] = self.range.bounds();
         let n = self.profile.piece_count();
         if piece == n { Some(lo-c[2]) } else if piece == n+1 { Some(c[2]-hi) }
-        else { self.profile.carrier([c[0],c[1]],piece,&mut 0) }
+        else { self.profile.carrier([c[0],c[1]],piece,&mut 0).map(|v| self.side(v,c[2])) }
     }
 
     pub fn bounds(&self,p: V) -> Result<I,Error> {
@@ -374,6 +397,13 @@ impl ExtrudedField {
         }
         let [lo,hi] = self.range.bounds();
         let slab = max(I::point(lo)?.sub(c[2])?,c[2].sub(I::point(hi)?)?);
-        Ok(max(self.profile.bounds([c[0],c[1]])?,slab))
+        let mut side = self.profile.bounds([c[0],c[1]])?;
+        let [t,cos] = self.draft;
+        if t != 0. {
+            let [a,b] = c[2].bounds();
+            let depth = if a >= 0. { c[2] } else if b <= 0. { c[2].neg() } else { I::new(0.,(-a).max(b))? };
+            side = side.add(depth.mul(I::point(t)?)?)?.mul(I::point(cos)?)?;
+        }
+        Ok(max(side,slab))
     }
 }

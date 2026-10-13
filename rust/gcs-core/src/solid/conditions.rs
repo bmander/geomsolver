@@ -78,9 +78,15 @@ impl SetDistance {
                 }
             });
         }
+        // the faces the set's point is within: a distance off one of those in pieces is read
+        // piece by piece (`Reading::convex_pieces`)
+        let within: Vec<crate::model::FaceRef> = terms.iter().filter_map(|t| match &t.shape {
+            RegionShape::FaceSide { face } if t.cmp == Cmp::Le => Some(crate::model::FaceRef { surface: false, ..face.clone() }),
+            _ => None,
+        }).collect();
         let mut conds = Vec::new();
         for t in terms {
-            conds.extend(conditions(sk, t, read)?);
+            conds.extend(conditions(sk, t, read, &within)?);
         }
         Ok(SetDistance::Conditions(conds))
     }
@@ -109,8 +115,10 @@ fn shift(m: Fv, k: f64, sign: f64) -> Fv {
     Arc::new(move |x| { let (v, g) = m(x); (sign * (v - k), scale(g, sign)) })
 }
 
-/// A term of a set measured from, as conditions on its point.
-fn conditions(sk: &Sketch, t: &RegionTerm, read: &mut Read) -> Result<Vec<Cond>, String> {
+/// A term of a set measured from, as conditions on its point, `within` the faces the set says
+/// its point is within.
+fn conditions(sk: &Sketch, t: &RegionTerm, read: &mut Read, within: &[crate::model::FaceRef])
+    -> Result<Vec<Cond>, String> {
     let lo = t.lo.value(sk)?;
     let grow = t.grow.as_ref().map_or(Ok(0.0), |g| g.value(sk))?;
     let hi = t.hi.unwrap_or(lo);
@@ -127,6 +135,13 @@ fn conditions(sk: &Sketch, t: &RegionTerm, read: &mut Read) -> Result<Vec<Cond>,
     match &t.shape {
         RegionShape::FaceSide { face } => {
             let r = Arc::new(super::faces::reading(sk, face, read)?);
+            // within faces on several surfaces meeting convex: within each surface's side
+            if let (Cmp::Le, Some(pieces)) = (t.cmp, r.convex_pieces()) {
+                return Ok(pieces.into_iter().flat_map(|fi| {
+                    let body = r.body.clone();
+                    held(Arc::new(move |x| body.side_grad(fi, x)))
+                }).collect());
+            }
             Ok(held(Arc::new(move |x| r.side_grad(x))))
         }
         RegionShape::Measured { of } => {
@@ -140,6 +155,18 @@ fn conditions(sk: &Sketch, t: &RegionTerm, read: &mut Read) -> Result<Vec<Cond>,
                     // on the surface: its side is nothing, a smooth condition
                     if t.cmp == Cmp::Le && lo == 0.0 && grow == 0.0 {
                         return Ok(vec![Cond { f: Arc::new(move |x| r.side_grad(x)), eq: true }]);
+                    }
+                    // at least a distance off faces on several surfaces meeting convex, within them:
+                    // off each (outside them, another piece's surface runs on past the crease)
+                    let inside = within.contains(&crate::model::FaceRef { surface: false, ..f.clone() });
+                    if let (Cmp::Ge, true, Some(pieces)) = (t.cmp, inside, r.convex_pieces()) {
+                        return Ok(pieces.into_iter().flat_map(|fi| {
+                            let body = r.body.clone();
+                            held(Arc::new(move |x| {
+                                let (s, g) = body.side_grad(fi, x);
+                                (c * s.abs(), scale(g, c * s.signum()))
+                            }))
+                        }).collect());
                     }
                     Arc::new(move |x| {
                         let (s, g) = r.side_grad(x);
@@ -363,7 +390,7 @@ impl Rest {
             match on_face(t, sk) {
                 Some((f, true)) => fm.push(patch(f)),
                 None if matches!(t.shape, RegionShape::Ends { .. }) => {
-                    within.extend(conditions(sk, t, read).ok()?)
+                    within.extend(conditions(sk, t, read, &[]).ok()?)
                 }
                 _ => return None,
             }

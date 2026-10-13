@@ -369,8 +369,10 @@ fn sweep_parts(s: &Sweep) -> Vec<String> {
             write_ref(&mut text, body);
             vec![text]
         },
-        Sweep::Prism { from, to } => vec![format!("from: {}", dim(from)), format!("to: {}", dim(to))],
-        Sweep::Depth { depth } => vec![format!("depth: {}", dim(depth))],
+        Sweep::Prism { from, to, draft } => [format!("from: {}", dim(from)), format!("to: {}", dim(to))]
+            .into_iter().chain(draft.iter().map(|d| format!("draft: {}", dim(d)))).collect(),
+        Sweep::Depth { depth, draft } => std::iter::once(format!("depth: {}", dim(depth)))
+            .chain(draft.iter().map(|d| format!("draft: {}", dim(d)))).collect(),
         Sweep::Revolve { axis, sweep, sense } => {
             let mut about = String::from("about: ");
             write_ref(&mut about, axis);
