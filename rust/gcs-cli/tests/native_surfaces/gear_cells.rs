@@ -58,9 +58,9 @@ fn sides_agree(cad: &Cad,part: c_int,blank: c_int,sheet: &native::sweep_boundary
 /// reproduce its recorded volume and agree with the declared field.
 fn single_space(member: &str,expected: f64) {
     let e = read_gears();
-    let removal = e.map.ent_named(&format!("{member}.cut.removal")).unwrap().i();
-    let blank_id = e.map.ent_named(&format!("{member}.blank")).unwrap().i();
-    let single_id = e.map.ent_named(&format!("{member}.single")).unwrap().i();
+    let removal = e.map.ent_named(&format!("pair.{member}.cut.removal")).unwrap().i();
+    let blank_id = e.map.ent_named(&format!("pair.{member}.blank")).unwrap().i();
+    let single_id = e.map.ent_named(&format!("pair.{member}.single")).unwrap().i();
     let cad = Cad::new();
     let blank = cad.0.construct(&gcs_core::solid::cad::recipe(&e.sketch,blank_id).unwrap()).unwrap();
     let blank_volume = cad.0.volume(blank).unwrap();
@@ -102,12 +102,12 @@ fn the_native_space_at_an_offset_against_its_field() {
     let e = read_gears_with(&|text| fixtures::gear::configure(&text,&knobs));
     // `SOLVENT_INSPECT_MEMBER`: pinion by default.
     let member = std::env::var("SOLVENT_INSPECT_MEMBER").unwrap_or("pinion".into());
-    let id = |n: &str| e.map.ent_named(&format!("{member}.{n}")).unwrap().i();
+    let id = |n: &str| e.map.ent_named(&format!("pair.{member}.{n}")).unwrap().i();
     let cad = Cad::new();
     let blank = cad.0.construct(&gcs_core::solid::cad::recipe(&e.sketch,id("blank")).unwrap()).unwrap();
     let blank_volume = cad.0.volume(blank).unwrap();
     let started = std::time::Instant::now();
-    let built = native::sweep_boundary::swept_sheet(&cad.0,&e.sketch,id("removal"),blank,&Millimetres::<SpatialField>::read(&e.sketch,id("blank"),1e-10).unwrap(),None);
+    let built = native::sweep_boundary::swept_sheet(&cad.0,&e.sketch,id("cut.removal"),blank,&Millimetres::<SpatialField>::read(&e.sketch,id("blank"),1e-10).unwrap(),None);
     let (face,sheet,error) = match built {
         Ok(b) => b,
         Err(refusal) => { eprintln!("offset {offset}: sheet refused: {refusal}"); return; }
@@ -183,8 +183,8 @@ fn a_cutter_with_a_motion_independent_contact_condition_is_refused() {
 fn a_roll_that_leaves_the_cutter_in_the_blank_is_refused() {
     // The gear's cutter still overlaps its blank at 35 degrees of roll.
     let e = read_gears_with(&|text| fixtures::gear::roll(&text,"gear",35.));
-    let removal = e.map.ent_named("gear.cut.removal").unwrap().i();
-    let blank_id = e.map.ent_named("gear.blank").unwrap().i();
+    let removal = e.map.ent_named("pair.gear.cut.removal").unwrap().i();
+    let blank_id = e.map.ent_named("pair.gear.blank").unwrap().i();
     let cad = Cad::new();
     let blank = cad.0.construct(&gcs_core::solid::cad::recipe(&e.sketch,blank_id).unwrap()).unwrap();
     let error = native::sweep_boundary::swept_sheet(&cad.0,&e.sketch,removal,blank,&Millimetres::<SpatialField>::read(&e.sketch,blank_id,1e-10).unwrap(),None).unwrap_err();
@@ -196,8 +196,8 @@ fn a_roll_that_leaves_the_cutter_in_the_blank_is_refused() {
 #[test]
 fn the_static_recipe_lists_swept_cuts_with_their_poses() {
     let e = read_gears();
-    let body = e.map.ent_named("pinion.body").unwrap().i();
-    let removal = e.map.ent_named("pinion.cut.removal").unwrap().i();
+    let body = e.map.ent_named("pair.pinion.body").unwrap().i();
+    let removal = e.map.ent_named("pair.pinion.cut.removal").unwrap().i();
     let recipe = gcs_core::solid::cad::recipe_static(&e.sketch,body).unwrap();
     assert_eq!(recipe.sweeps.len(),24);
     assert!(recipe.sweeps.iter().all(|s| s.swept == removal));
@@ -216,7 +216,7 @@ fn the_static_recipe_lists_swept_cuts_with_their_poses() {
 
 fn whole_member(member: &str,expected: f64) {
     let e = read_gears();
-    let body = e.map.ent_named(&format!("{member}.body")).unwrap().i();
+    let body = e.map.ent_named(&format!("pair.{member}.body")).unwrap().i();
     let cad = Cad::new();
     let started = std::time::Instant::now();
     let recipe = gcs_core::solid::cad::recipe_static(&e.sketch,body).unwrap();
@@ -246,8 +246,8 @@ fn whole_gear_through_the_generic_construction() { whole_member("gear",20284.109
 #[ignore = "measurement: cost of one material probe against the whole gear body field"]
 fn measure_gear_probe_cost() {
     let e = read_gears();
-    let body_id = e.map.ent_named("gear.body").unwrap().i();
-    let single_id = e.map.ent_named("gear.single").unwrap().i();
+    let body_id = e.map.ent_named("pair.gear.body").unwrap().i();
+    let single_id = e.map.ent_named("pair.gear.single").unwrap().i();
     let points = [("tooth space",[53.78966032067442,-2.8070521623123743,0.09038416472908987]),
         ("material",[-11.929242531843038,-39.35479647066296,-36.23791869602705])];
     for (label,id) in [("single",single_id),("body",body_id)] {
@@ -279,11 +279,11 @@ fn where_a_sheet_misses_its_contacts() {
     let knobs = design_knobs(offset);
     let e = read_gears_with(&|text| fixtures::gear::configure(&text,&knobs));
     let member = std::env::var("SOLVENT_INSPECT_MEMBER").unwrap_or("gear".into());
-    let id = |n: &str| e.map.ent_named(&format!("{member}.{n}")).unwrap().i();
+    let id = |n: &str| e.map.ent_named(&format!("pair.{member}.{n}")).unwrap().i();
     let cad = Cad::new();
     let blank = cad.0.construct(&gcs_core::solid::cad::recipe(&e.sketch,id("blank")).unwrap()).unwrap();
     let field = Millimetres::<SpatialField>::read(&e.sketch,id("blank"),1e-10).unwrap();
-    let (_face,sheet,error) = native::sweep_boundary::swept_sheet(&cad.0,&e.sketch,id("removal"),blank,&field,None).unwrap();
+    let (_face,sheet,error) = native::sweep_boundary::swept_sheet(&cad.0,&e.sketch,id("cut.removal"),blank,&field,None).unwrap();
     eprintln!("sheet {}x{}, withheld error {error:.4}",sheet.rows,sheet.columns);
     // Each grid cell's own normal (from its diagonals) against the contact normals at its
     // corners: a sheared or folded grid shows as cells where they disagree.

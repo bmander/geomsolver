@@ -22,7 +22,7 @@ impl Pieces {
     fn read(pair: &Pair,rack: &str) -> Self {
         use gcs_core::brep::planar::Seg;
         let sk = &pair.model.sketch;
-        let ax = &sk.lines[pair.model.map.ent_named("cut_ax").unwrap().i()];
+        let ax = &sk.lines[pair.model.map.ent_named("pair.mill.ax").unwrap().i()];
         let origin = sk.world_point(ax.p1 as usize);
         let end = sk.world_point(ax.p2 as usize);
         let axis: [f64;3] = std::array::from_fn(|k| end[k]-origin[k]);
@@ -129,7 +129,7 @@ fn whole_mate(pair: &Pair,rack: &str) -> (PlanarField,[f64;3],[f64;3],String) {
         let z = (0..3).map(|k| q[k]*unit[k]).sum::<f64>();
         (0..3).map(|k| (q[k]-z*unit[k]).powi(2)).sum::<f64>().sqrt()
     };
-    let (ri,ro) = (radius(point("inner_pitch")),radius(point("outer_pitch")));
+    let (ri,ro) = (radius(point("pair.mill.inner_pitch")),radius(point("pair.mill.outer_pitch")));
     // the outer mate's other flank is the tooth's inner one moved out by two pitch gaps; the
     // inner mate's, its outer one moved in
     let (from,shift) = if rack == "gear_outer" { ("inner",2.*(ro-ri)) } else { ("outer",2.*(ri-ro)) };
@@ -345,5 +345,5 @@ fn functional_motion_definition(pair: &Pair,member: usize) -> String {
         format!("{{\"origin\":{origin:?},\"axis\":{axis:?},\"ratio\":{ratio},\"phase\":{phase}}}")
     };
     format!("{{\"source\":{},\"observer\":{}}}",
-        rotation("crown_roll"),rotation(&format!("{member_name}_roll")))
+        rotation("pair.crown_roll"),rotation(&format!("pair.{member_name}_roll")))
 }

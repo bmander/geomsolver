@@ -55,7 +55,7 @@ fn a_sweep_outside_the_generating_class_is_refused_with_its_row() {
     let output = dir.join("pinion.stl");
     std::fs::write(&output,"old STL").unwrap();
     let result = run(&[document.to_str().unwrap(),"--stl",output.to_str().unwrap(),
-        "--solid","pinion.body","--no-diagnose"]);
+        "--solid","pair.pinion.body","--no-diagnose"]);
     let stderr = String::from_utf8_lossy(&result.stderr);
     assert_eq!(result.status.code(),Some(1),"{stderr}");
     assert!(stderr.contains("outside the generating-sweep class (E2"),"{stderr}");
@@ -232,7 +232,7 @@ fn fabricated(member: &str) {
     std::fs::create_dir_all(&dir).unwrap();
     let (stl,step) = (dir.join(format!("{member}.stl")),dir.join(format!("{member}.step")));
     let (stl,step) = (stl.to_str().unwrap(),step.to_str().unwrap());
-    let body = format!("{member}.body");
+    let body = format!("pair.{member}.body");
     let result = run(&[&doc("spiral_bevel/hypoid.sv"),"--solid",&body,"--stl",stl,"--step",step,"--tolerance","0.01mm",
         "--verify-step","full","--no-diagnose"]);
     let stderr = String::from_utf8_lossy(&result.stderr);

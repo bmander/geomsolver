@@ -6,13 +6,16 @@ blanks, the generating crown and the motions that roll it through each blank. Ev
 follows from lines, angles, incidence and the stated numbers; no constraint, and no value that
 feeds one, computes a point with `sin` and `cos`.
 
-**One file, `hypoid.sv`**, under two hundred statement lines, read top to bottom in the steps a
-designer takes. **No point is seeded.** Every root the layout could take is chosen by a word —
-a bound (`foot inside std.top`, `pinion_foot outside std.top`, `A distance(>= 0, along: v)
-std.top`), a sense (`sense: cw`), an ordinate's sign — and the layout solves from those words
-alone: the block-triangular order constructs it a block at a time, searching each block's roots
-for the one its bounds say (#217). Nothing is `hint`ed at all; three numbers are declared unknown
-(`param mn: Length`, `rp`, `pa`) and the solve finds them.
+**One file, `hypoid.sv`.** Its head is the pair as a designer states it — the `param`s — and
+one call, `pair := HypoidPair(std.top, std.y, std.z, …)`, passing them on by name. The component
+`HypoidPair` reads as the steps a designer takes, each a component of its own below it, so every
+name the pair makes is under `pair` (`pair.pinion.body`, `pair.gear_cone.M`, `pair.mill.ax`).
+**No point is seeded.** Every root the layout could take is chosen by a word — a bound (`foot
+inside P` in the gear's cone, `foot outside P` in the pinion's, `A distance(>= 0, along: v) P`),
+a sense (`sense: cw`), an ordinate's sign — and the layout solves from those words alone: the
+block-triangular order constructs it a block at a time, searching each block's roots for the one
+its bounds say (#217). Nothing is `hint`ed at all; three numbers are unknown — `HypoidPair`'s
+formals `mn`, `rp` and `pa`, which the call leaves out — and the solve finds them.
 
 The layout stands on the pitch plane P, `std.top`, with the gear apex O at its origin. The gear's
 right triangle O–M–F and the pinion's axes stand in space square to P on their generators; each
@@ -23,14 +26,14 @@ normal section, square to P on the trace normal C → M.
 
 | Step | In `hypoid.sv` | Constructs |
 |---|---|---|
-| 1 | the `param`s, the proportions | the stated pair: teeth, module, shafts, shift, spiral, allowances, roll limits; the cone distance R and the depths in normal modules |
-| 2 | O, M, F | the gear's pitch cone: the right triangle O–M–F, standing square to P on O → M |
-| 2 | C, H | the tooth trace about the cutter centre C, and the normal module, O's distance from MC over R / m |
-| 2 | A, V | the pinion's cone, solved against the gear's by the shafts and the equal normal pitch |
-| 3 | `Blank` | each member's blank, one region: within its pitch cone grown by the addendum (`std.Offset`) and its heel sphere, outside its toe sphere and its pitch cone shrunk by the back depth; the end relief its tip's toe and heel corners chamfered in the same region (`std.Chamfered`); its faces `tip`, `heel`, `toe` and `back` |
-| 4 | the pitch points, `cut_ax` | the crown tooth's pitch points a quarter pitch either side of M; the face mill, its axis through C, the two flank cones through the pitch points, and the levels the crowns' tips and bases stand at; the space cutter's reach |
-| 4 | `Tooth`, `Space` | the pinion's generator, the crown tooth, a region between the flank cones and two levels, its tip's edges rounded (`std.Rounded`), each flank grown a quarter of the backlash; the gear's, its space cutter, the tooth's mate on the same cones |
-| 5 | the motions, `Generated`, `Member` | the rolls and the generating motions; each member its blank less its crown swept and indexed at every tooth |
+| 1 | the `param`s; `HypoidPair`'s proportions | the stated pair: teeth, module, shafts, shift, spiral, allowances, roll limits; the cone distance R and the depths in normal modules |
+| 2 | `GearCone` (`pair.gear_cone`): O, M, `foot` | the gear's pitch cone: the right triangle O–M–F, standing square to P on O → M; the crown's axis up at O |
+| 2 | `ToothTrace` (`pair.trace`): C, H | the tooth trace about the cutter centre C, and the normal module, O's distance from MC over R / m |
+| 2 | `PinionCone` (`pair.pinion_cone`): A, V | the pinion's cone, solved against the gear's by the shafts and the equal normal pitch |
+| 3 | `Blank` (`pair.gear_blank`, `pair.pinion_blank`) | each member's blank, one region: within its pitch cone grown by the addendum (`std.Offset`) and its heel sphere, outside its toe sphere and its pitch cone shrunk by the back depth; the end relief its tip's toe and heel corners chamfered in the same region (`std.Chamfered`); its faces `tip`, `heel`, `toe` and `back` |
+| 4 | `FaceMill` (`pair.mill`) | the crown tooth's pitch points a quarter pitch either side of M; the face mill, its axis `ax` through C, the two flank cones through the pitch points, and the levels the crowns' tips and bases stand at; the space cutter's reach |
+| 4 | `Tooth`, `Space` (`pair.tooth`, `pair.gear_space`) | the pinion's generator, the crown tooth, a region between the flank cones and two levels, its tip's edges rounded (`std.Rounded`), each flank grown a quarter of the backlash; the gear's, its space cutter, the tooth's mate on the same cones |
+| 5 | the motions, `Generated`, `Member` (`pair.pinion`, `pair.gear`) | the rolls and the generating motions; each member its blank less its crown swept and indexed at every tooth |
 | — | `Topping`, `when tip_relief > 0mm` | the tip relief: a topping beside each crown flank (a kink on the flank in N, the cone through it turned by the relief angle), cut the same way |
 
 The normal module is stated nowhere: the trace constructs it, and every depth reads it. As
@@ -40,14 +43,14 @@ a common apex. The allowances — 0.05 mm normal backlash, 0.2 mm tip relief and
 — are each zero for the conjugate, sharp-edged pair, which is what the test suites record
 (`fixtures::gear` sets the document's own inputs for them).
 
-The app opens `hypoid.sv` as the example `spiral_bevel` (the members are `pinion.body` and
-`gear.body`), and the glass box (⌘B) shows them refining from their material fields; `crown.svd`
+The app opens `hypoid.sv` as the example `spiral_bevel` (the members are `pair.pinion.body` and
+`pair.gear.body`), and the glass box (⌘B) shows them refining from their material fields; `crown.svd`
 draws the crown tooth. The layout's checks read the same file
 (`gcs-core/tests/hypoid_layout.rs`, `region_blank.rs`, which holds each member's region blank to
 its own faces).
 
 A built member's faces are named, as any body's are: its blank's by the sets its region's body
-uses (`pinion.body`'s `material.tip`, `material.heel`, `material.toe`, `material.back`), and
+uses (`pair.pinion.body`'s `material.tip`, `material.heel`, `material.toe`, `material.back`), and
 each face a tooth space leaves by the crown face that made it (`indexed.outer`,
 `indexed.outer_round`, `indexed.tip`; the gear's by its space cutter's, `indexed.outer_crown.inner`
 and `indexed.neighbor.outer`). The generating-system checks (`gcs-core/tests/envelope/paired.rs`)
@@ -65,12 +68,12 @@ fitted generated faces) and its STL, both held to 10 µm of the exact surface:
 make solventc OCCT=1
 mkdir -p build/exports
 for m in pinion gear; do
-  build/solventc rust/examples/spiral_bevel/hypoid.sv --solid $m.body --tolerance \
+  build/solventc rust/examples/spiral_bevel/hypoid.sv --solid pair.$m.body --tolerance \
     --step build/exports/hypoid-$m.step --stl build/exports/hypoid-$m.stl --no-diagnose
 done
 # every exact face within 10 µm, or exit 1
 for f in pinion.step pinion.stl gear.step gear.stl; do
-  build/solventc rust/examples/spiral_bevel/hypoid.sv --solid ${f%%.*}.body --tolerance \
+  build/solventc rust/examples/spiral_bevel/hypoid.sv --solid pair.${f%%.*}.body --tolerance \
     --measure build/exports/hypoid-$f --no-diagnose
 done
 # the pair from the two STLs: shafts, overlap, flank clearance, backlash, contact pattern
@@ -101,7 +104,7 @@ private construction geometry; it grants no access from other source):
 
 ```sh
 build/solventc rust/examples/spiral_bevel/hypoid.sv --no-diagnose \
-  --solid gear_space.body --step build/exports/solvent-gear-space.step
+  --solid pair.gear_space.body --step build/exports/solvent-gear-space.step
 ```
 
 This is a common-crown construction with a stated backlash and tip and end relief, not a

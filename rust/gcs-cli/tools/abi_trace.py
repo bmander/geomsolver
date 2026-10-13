@@ -3,7 +3,7 @@
 (`backend/probe.hpp`): time per stage and entry point, every Boolean's intersecting face pairs by
 surface kind, and the exported shapes. Each argument is one export's log:
 
-    SOLVENT_ABI_TRACE=pinion.abi build/solventc rust/examples/spiral_bevel/gears.sv \
+    SOLVENT_ABI_TRACE=pinion.abi build/solventc rust/examples/spiral_bevel/hypoid.sv \
         --solid pair.pinion.body --tolerance --kernel occt --step p.step --stl p.stl
     python3 rust/gcs-cli/tools/abi_trace.py pinion.abi
 

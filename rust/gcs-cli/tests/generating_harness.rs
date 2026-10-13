@@ -346,7 +346,7 @@ fn gear(name: &str,member: &str,offset: f64,shift: f64,spiral: f64,one: bool,arg
         let pair = std::fs::read_to_string(&document).unwrap();
         std::fs::write(&document,fixtures::gear::one_space(&pair)).unwrap();
     }
-    Case {name:name.into(),dir,entry:"hypoid.sv".into(),solid:format!("{member}.body"),
+    Case {name:name.into(),dir,entry:"hypoid.sv".into(),solid:format!("pair.{member}.body"),
         arguments:arguments.iter().map(|a| a.to_string()).collect(),expect,truth:None,budget:Duration::from_secs(420)}
 }
 

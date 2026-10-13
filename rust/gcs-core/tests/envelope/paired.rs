@@ -102,7 +102,7 @@ impl Built {
     }
 
     fn of(model: &program::Elaborated,member: &str,teeth: [u32;2]) -> Built {
-        let body = model.map.ent_named(&format!("{member}.body")).unwrap().i();
+        let body = model.map.ent_named(&format!("pair.{member}.body")).unwrap().i();
         let faces = gcs_core::solid::faces::BodyFaces::read(&model.sketch,body)
             .unwrap_or_else(|why| panic!("teeth {teeth:?}: {why}"));
         let n = faces.paths().len();
@@ -130,9 +130,9 @@ type CutterFace = (String,RevolvedSurface,Option<f64>);
 fn cutter_faces(model: &program::Elaborated,solid: usize) -> Vec<Option<CutterFace>> {
     use gcs_core::brep::planar::Seg;
     let sk = &model.sketch;
-    let ax = &sk.lines[model.map.ent_named("cut_ax").unwrap().i()];
+    let ax = &sk.lines[model.map.ent_named("pair.mill.ax").unwrap().i()];
     let up = space::sub(sk.world_point(ax.p2 as usize),sk.world_point(ax.p1 as usize));
-    let mean = sk.world_point(model.map.ent_named("M").unwrap().i());
+    let mean = sk.world_point(model.map.ent_named("pair.gear_cone.M").unwrap().i());
     let m = gcs_core::solid::region::meridian(sk,solid).unwrap();
     let surfaces = RevolvedSurface::meridian_loops(&m,&sk.solids[solid].name);
     let ([steps],[faces]) = (m.region.loops.as_slice(),surfaces.as_slice()) else { panic!("a cutter is one loop") };
@@ -194,7 +194,7 @@ impl Pair {
         let rm = module*teeth_f[0].hypot(teeth_f[1])/2.;
         let theta = (35f64-90.).to_radians();
         let offset = [rm-0.8*rm*theta.cos(),-0.8*rm*theta.sin(),0.];
-        let motion_families = ["pinion_generation","gear_generation"].map(|name|
+        let motion_families = ["pair.pinion_generation","pair.gear_generation"].map(|name|
             gcs_core::motion::Family::read(sk,model.map.ent_named(name).unwrap().i()).unwrap());
         let tolerance = SeamTolerance {position:module*1e-8,normal:1e-8,axis:module*1e-10};
         let edge_tolerance = EdgeTolerance {junction:tolerance,point:gcs_core::seam::BoundarySeamTolerance {
@@ -206,7 +206,7 @@ impl Pair {
         let (mut seams,mut boundary_seams,mut surface_seams) = (BTreeMap::new(),BTreeMap::new(),BTreeMap::new());
         let (mut corners,mut edges,mut faces) = (BTreeMap::new(),BTreeMap::new(),BTreeMap::new());
         for (m,member) in ["pinion","gear"].into_iter().enumerate() {
-            let body = model.map.ent_named(&format!("{member}.body")).unwrap().i();
+            let body = model.map.ent_named(&format!("pair.{member}.body")).unwrap().i();
             let built = Built::read(member,teeth);
             // each built face's role: a cut face by what the checks call its cutter face, a blank
             // face by its term
@@ -348,7 +348,7 @@ impl Pair {
                     }
                 }
                 // its edges, between those corners along the seams, sliced along the member's axis
-                let axis = &sk.lines[model.map.ent_named(&format!("{member}_ax")).unwrap().i()];
+                let axis = &sk.lines[model.map.ent_named(&fixtures::gear::axis(member)).unwrap().i()];
                 let along: [f64;3] = { let (a,b) = (sk.world_point(axis.p1 as usize),sk.world_point(axis.p2 as usize)); std::array::from_fn(|k| b[k]-a[k]) };
                 let point = |name: &str,u: Option<f64>| {
                     let c = corners[&format!("{label}.{name}")];
@@ -442,8 +442,8 @@ impl Pair {
     /// or `gear_inner`: the crown tooth, and its mate's two sides of the gear's space cutter (the
     /// outer mate's region, closed at the reach's cap, and the inner's, its neighbour unturned).
     fn crown(rack: &str) -> &'static str {
-        match rack { "pinion" => "tooth.crown", "gear_outer" => "gear_space.outer_crown",
-            "gear_inner" => "gear_space.inner_crown", _ => panic!("no rack section `{rack}`") }
+        match rack { "pinion" => "pair.tooth.crown", "gear_outer" => "pair.gear_space.outer_crown",
+            "gear_inner" => "pair.gear_space.inner_crown", _ => panic!("no rack section `{rack}`") }
     }
 
     /// The flank's `u` where it meets its round, which is also the round's where it meets the
@@ -828,7 +828,7 @@ fn the_gears_inner_mate_is_its_space_cutters_neighbour_one_tooth_over() {
     use gcs_core::solid::faces::{face_source,FacePath,FaceSource};
     let pair = Pair::read([24,48],2.);
     let sk = &pair.model.sketch;
-    let body = pair.model.map.ent_named("gear.body").unwrap().i();
+    let body = pair.model.map.ent_named("pair.gear.body").unwrap().i();
     let FaceSource::Swept {surface,motion,within,..} = face_source(sk,body,&FacePath::new("indexed","neighbor.outer")).unwrap()
         else { panic!("the neighbour's flank is a cut face") };
     assert!(within.point([1.,2.,3.]).iter().zip([1.,2.,3.]).any(|(a,b)| (a-b).abs() > 1e-3),"the neighbour is turned");

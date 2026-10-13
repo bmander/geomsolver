@@ -225,7 +225,7 @@ fn a_through_cut_crosses_its_stock_whichever_way_the_stocks_circle_starts() {
 #[test]
 fn the_relieved_pinion_is_built_by_sectors() {
     let e = fixtures::gear::read_as_configured();
-    let body = fixtures::solid(&e,"pinion.body");
+    let body = fixtures::solid(&e,"pair.pinion.body");
     let lines = std::sync::Mutex::new(Vec::new());
     let say = Say {stage:&|l: &str| lines.lock().unwrap().push(l.to_string()),mark:&|_| {}};
     let exact = export::exact(&e.sketch,body,None,None,&say).unwrap();

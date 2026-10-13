@@ -39,10 +39,10 @@ struct Closed { apex: V, axis: V, half: f64, toe: f64, heel: f64, tip: f64, back
 
 impl Closed {
     fn read(e: &Elaborated, m: &str) -> Closed {
-        let (apex, foot) = line(e, &format!("{m}_ax"));
+        let (apex, foot) = line(e, &fixtures::gear::axis(m));
         let axis = unit(sub(foot, apex));
         // the line the blank is built on, apex to mean point
-        let generator = if m == "gear" { "generator" } else { "pitch_line" };
+        let generator = if m == "gear" { "pair.gear_cone.generator" } else { "pair.pinion_cone.pitch_line" };
         let (from, mean) = line(e, generator);
         assert!(norm(sub(from, apex)) < 1e-9 * norm(sub(mean, apex)), "{m}: its pitch line runs from its apex");
         let to_mean = sub(mean, apex);
@@ -50,15 +50,15 @@ impl Closed {
         let unknown = |name: &str| e.sketch.params[e.sketch.free_vars[name] as usize].value;
         // the spheres' radii: the face span's ends, half the face width either side of the mean
         // point along the generator
-        let width = 0.2 * norm(sub(point(e, "M"), point(e, "O")));
+        let width = 0.2 * norm(sub(point(e, "pair.gear_cone.M"), point(e, "pair.gear_cone.O")));
         let to_mean = norm(sub(mean, apex));
         let radius = |end: &str| {
-            let r = unknown(&format!("{m}_blank.{end}.r"));
+            let r = unknown(&format!("pair.{m}_blank.{end}.r"));
             let want = to_mean + if end == "toe" { -width / 2.0 } else { width / 2.0 };
             assert!((r - want).abs() < 1e-9 * to_mean, "{m}'s {end} sphere: {r} against {want}");
             r
         };
-        let nm = unknown("mn");
+        let nm = unknown("pair.mn");
         Closed { apex, axis, half, toe: radius("toe"), heel: radius("heel"), tip: nm, back: -4.0 * nm }
     }
 
@@ -108,7 +108,7 @@ fn the_blank_is_held_to_its_own_faces() {
         let e = fixtures::gear::read(&text);
         for m in ["gear", "pinion"] {
             let closed = Closed::read(&e, m);
-            let region = named(&e, &format!("{m}_blank.material"));
+            let region = named(&e, &format!("pair.{m}_blank.material"));
             let x = e.sketch.exact_solid(region).unwrap_or_else(|why| panic!("{label} {m}: {why}"));
             // its faces, each on its closed form
             let mut faces: Vec<&str> = x.named.iter().map(|(_, f)| f.as_str()).collect();

@@ -81,7 +81,7 @@ fn a_swept_bodys_faces_lie_on_what_their_names_say() {
     let sk = &e.sketch;
     for (member,cut) in [("pinion",["inner","inner_round","tip","outer_round","outer"]),
         ("gear",["outer_crown.inner","outer_crown.inner_round","outer_crown.tip","neighbor.outer_round","neighbor.outer"])] {
-        let body = fixtures::solid(&e,&format!("{member}.body"));
+        let body = fixtures::solid(&e,&format!("pair.{member}.body"));
         let faces = BodyFaces::read(sk,body).unwrap_or_else(|why| panic!("{member}: {why}"));
         let named: Vec<String> = faces.paths().iter().map(|p| p.text()).collect();
         // every face the build named, and the definitions name it too
