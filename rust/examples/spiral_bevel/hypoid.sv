@@ -230,7 +230,7 @@ component Blank(rim: line, ax: line, design: group) {
   pitch := std.Cone(ax)
   rim.p2 coincident pitch
   tip := std.Offset(pitch, d: design.addendum)
-  back := { q | q outside(design.back) pitch }
+  back := { q | q distance(<= design.back, side: inside) pitch }
   beyond_toe := { q | q outside toe }
   region := { p | p inside tip; p inside heel; p outside toe; p inside back
                   p inside std.Chamfered(tip, beyond_toe, la: design.relief, lb: design.relief)
@@ -283,7 +283,7 @@ component FaceMill(P: plane, gear: group, trace: group, R: Length, mean_module: 
 // is the offset of the envelope), above the level `lo` and below `hi`, its tip's edges rounded by
 // `r`; and its solid, `crown`. Each set names the face it bounds.
 component Tooth(a: set, b: set, lo: set, hi: set, grow: Length, r: Length) {
-  inner := { q | q outside(grow) a }
+  inner := { q | q distance(<= grow, side: inside) a }
   outer := std.Offset(b, d: grow)
   base := { q | q outside lo }
   tip := { q | q inside hi }
@@ -298,7 +298,7 @@ component Tooth(a: set, b: set, lo: set, hi: set, grow: Length, r: Length) {
 // `step`, each cone grown by `grow`, above `lo` and below `hi`, its tips' edges rounded. The
 // outer mate is `outer_crown`, the inner `inner_crown`, turned `neighbor`.
 component Space(a: set, b: set, lo: set, hi: set, cap: set, step: motion, grow: Length, r: Length) {
-  inner := { q | q outside(grow) a }
+  inner := { q | q distance(<= grow, side: inside) a }
   outer := std.Offset(b, d: grow)
   tip := { q | q outside lo }
   base := { q | q inside hi }

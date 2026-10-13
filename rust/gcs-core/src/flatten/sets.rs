@@ -698,8 +698,9 @@ impl<'a> Walk<'a> {
 
     /// **A point's distance from a set, and a side of a set grown** (§6.21, F4): `p distance(d,
     /// side: outside) S` is `p` the signed distance `d` from `S`'s surface, positive on its
-    /// outside, where its measure exceeds its number; `p inside(d) S` is within `S` grown by `d`
-    /// and `p outside(d) S` within its outside grown by `d` — a bound on that signed distance.
+    /// outside, where its measure exceeds its number; `p distance(<= d, side: outside) S` is
+    /// within `S` grown by `d` and `side: inside` within its outside grown by `d` — a bound on
+    /// that signed distance (`inside(d)` is retired, #266).
     /// One meaning, said three ways, by what `S`'s body measures and where `p` is:
     ///
     /// * a **distance** (a sphere, a cylinder, a level): the signed distance is the measure less
@@ -1024,13 +1025,9 @@ pub(super) fn may_use(w: &crate::syntax::Written) -> bool {
 }
 
 /// Whether a written relation measures from a set's surface (F4): a distance with a side only a
-/// surface has (`side: outside`), or a side of one grown (`inside(d)`) — so a plain distance
-/// never enters the walk of a set's uses.
+/// surface has (`side: outside`) — so a plain distance never enters the walk of a set's uses.
 fn reaches(w: &crate::syntax::Written) -> bool {
-    match w.word.text.as_str() {
-        "distance" => matches!(w.sel("side").as_deref(), Some("outside" | "inside")),
-        word => crate::constraints::plane_side_word(word).is_some() && !w.args.is_empty(),
-    }
+    w.word.text == "distance" && matches!(w.sel("side").as_deref(), Some("outside" | "inside"))
 }
 
 /// Whether a set is a **region** (§6.21, §9.6): its body bounds a number, or says its point is
@@ -1116,13 +1113,13 @@ fn written_of(st: &Stmt) -> Option<&crate::syntax::Written> {
 }
 
 /// A set's body as `inside` or `outside` reads it (§6.21, §9.6), rewritten in place: its **one
-/// dimension** a bound running `side` (`inside` at most its number, `outside` at least), a
-/// region's own bound kept or turned round, and every other statement as written, so a disc is
-/// its circle's plane and a bound.  A body stating no number of its own is read as written by
-/// `inside`; `outside` turns round its one side of another set (`{ q | q outside toe }`, `{ q |
-/// q inside(1mm) S }`), and of several is no complement it can say: that is a union, a choice
-/// of root.  Every side is a bound here (`lowered`), so turning one is turning its `Cmp`.  `at`
-/// is the use's word, where the bound is written.
+/// dimension** a bound running `side` (`inside` at most its number, `outside` at least), a region's
+/// own bound kept or turned round, and every other statement as written, so a disc is its circle's
+/// plane and a bound.  A body stating no number of its own is read as written by `inside`;
+/// `outside` turns round its one side of another set (`{ q | q outside toe }`, `{ q | q distance(<=
+/// 1mm, side: outside) S }`), and of several is no complement it can say: that is a union, a choice
+/// of root.  Every side is a bound here (`lowered`), so turning one is turning its `Cmp`.  `at` is
+/// the use's word, where the bound is written.
 fn region_body(
     body: &mut [Stmt],
     side: crate::syntax::Cmp,
@@ -1132,8 +1129,8 @@ fn region_body(
 ) -> Result<(), String> {
     use crate::syntax::{Cmp, OpArg};
     let is_dim = |a: &OpArg| matches!(a, OpArg::Dim(..));
-    // a side of another set, grown or not (`p inside(1mm) S`, a bounded distance from it), is a
-    // use of it, not a number of this one's; a distance from one is (`std.Offset`'s body)
+    // a side of another set, grown or not (a bounded distance from it), is a use of it, not a
+    // number of this one's; a distance from one is (`std.Offset`'s body)
     let side_of = |w: &crate::syntax::Written| reaches(w) && w.bound().is_some();
     // a bound on measurements is a number of this one's, a bound already (#183 F3)
     let measured = |st: &Stmt| matches!(st.kind, StmtKind::Measured(_));
@@ -1152,7 +1149,7 @@ fn region_body(
     }
     // the outside of a set of one side of another is that side turned round: outside `{ q | q
     // outside toe }` is inside `toe` (#183, a region's own side as `std.Chamfered` takes it),
-    // outside `{ q | q inside(1mm) S }` beyond `S` grown (#192)
+    // outside `{ q | q distance(<= 1mm, side: outside) S }` beyond `S` grown (#192)
     if dims.is_empty() && side == Cmp::Ge {
         let uses: Vec<usize> = (0..body.len()).filter(|&i| written_of(&body[i]).is_some_and(may_use)).collect();
         let others = body.iter().filter(|st| matches!(st.kind, StmtKind::Relation(_) | StmtKind::Measured(_))).count();
