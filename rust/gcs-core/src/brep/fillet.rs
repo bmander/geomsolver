@@ -307,39 +307,7 @@ pub fn roll(b: &Brep,at: V,r: f64,tol: f64) -> Result<Rolled,String> {
         // the corner stands `r / cos(w / 2)` from the centre, `w` the angle between the contacts
         reach = reach.max(r/(0.5*w).dcos());
     }
-    // **a ball no larger than each face holds**: the band of a face it rolls on — where it stands
-    // nearer the other face's surface than its contact does — crossed by none of the face's other
-    // edges. Read against the other surface offset to the band's height (`curve_surface`)
-    let ending: std::collections::BTreeSet<usize> = ends.iter().flat_map(|s| s.faces.iter().copied()).collect();
-    for k in 0..2 {
-        let o = 1-k;
-        let contact = |u: f64| { let (c,e) = frame_at(u); add(c,scale(e[k],r)) };
-        let height = (0..=256).map(|i| sides[o]*surfaces[o].implicit(contact(i as f64/256.))).fold(0_f64,f64::max)*1.01+tol;
-        let level = surfaces[o].offset(sides[o]*height).ok_or_else(|| format!("the band of {} cannot be read",names()))?;
-        // an end's face cuts the fillet off: the ball crosses its edges with these two; and an
-        // edge between two faces of one side is no edge to it
-        let skip = |e: usize| match uses[e].as_slice() {
-            [x,y] => ending.contains(&x.0) || ending.contains(&y.0) || sides_faces[k].contains(&x.0) && sides_faces[k].contains(&y.0),
-            _ => false,
-        };
-        for &fi in &sides_faces[k] {
-            let face = &b.faces[fi];
-            let seams = face.seams();
-            for c in face.loops.iter().flatten() {
-                if chain.contains(&(c.edge as usize)) || seams.contains(&c.edge) || skip(c.edge as usize) { continue }
-                let g = &b.edges[c.edge as usize];
-                let EdgeCurve::Curve(gc) = &g.curve else { continue };
-                let at_start = sides[o]*surfaces[o].implicit(gc.point(g.t[0]));
-                let crosses = match super::query::curve_surface(gc,g.t,&level,tol) {
-                    super::query::Meets::At(roots) => !roots.is_empty(),
-                    super::query::Meets::Along => true,
-                };
-                if crosses || (at_start > tol && at_start < height) {
-                    return Err(format!("the ball of {} is larger than `{}` can hold",names(),face.name));
-                }
-            }
-        }
-    }
+    holds_ball(b,&uses,&sides_faces,&chain,&ends,&frame_at,&surfaces,sides,r,tol,&names())?;
     // fitted to the bar asked, or as near it as the densest net comes, no worse than a ten-millionth
     // of the boundary: its contacts are read at what was measured (`Edge::tol`)
     let bar = tol.max(1e-7*b.size());
@@ -378,6 +346,48 @@ pub fn roll(b: &Brep,at: V,r: f64,tol: f64) -> Result<Rolled,String> {
     };
     let contacts = [net.column(0),net.column(net.poles[0].len()-1)];
     Ok(Rolled {piece,chain,spine:spine_fit,contacts,concave,r,reach,trims})
+}
+
+/// **A ball no larger than each face holds**: the band of a face it rolls on — where it stands
+/// nearer the other face's surface than its contact does — crossed by none of the face's other
+/// edges. Read against the other surface offset to the band's height (`curve_surface`); `frame_at`
+/// the ball's centre and the directions to its contacts along the canal.
+#[allow(clippy::too_many_arguments)]
+fn holds_ball(b: &Brep,uses: &[Vec<(usize,usize,usize)>],sides_faces: &[Vec<usize>;2],chain: &[usize],ends: &[Stop],
+    frame_at: &dyn Fn(f64) -> (V,[V;2]),surfaces: &[Surface;2],sides: [f64;2],r: f64,tol: f64,names: &str)
+    -> Result<(),String> {
+    let names = || names.to_string();
+    let ending: std::collections::BTreeSet<usize> = ends.iter().flat_map(|s| s.faces.iter().copied()).collect();
+    for k in 0..2 {
+        let o = 1-k;
+        let contact = |u: f64| { let (c,e) = frame_at(u); add(c,scale(e[k],r)) };
+        let height = (0..=256).map(|i| sides[o]*surfaces[o].implicit(contact(i as f64/256.))).fold(0_f64,f64::max)*1.01+tol;
+        let level = surfaces[o].offset(sides[o]*height).ok_or_else(|| format!("the band of {} cannot be read",names()))?;
+        // an end's face cuts the fillet off: the ball crosses its edges with these two; and an
+        // edge between two faces of one side is no edge to it
+        let skip = |e: usize| match uses[e].as_slice() {
+            [x,y] => ending.contains(&x.0) || ending.contains(&y.0) || sides_faces[k].contains(&x.0) && sides_faces[k].contains(&y.0),
+            _ => false,
+        };
+        for &fi in &sides_faces[k] {
+            let face = &b.faces[fi];
+            let seams = face.seams();
+            for c in face.loops.iter().flatten() {
+                if chain.contains(&(c.edge as usize)) || seams.contains(&c.edge) || skip(c.edge as usize) { continue }
+                let g = &b.edges[c.edge as usize];
+                let EdgeCurve::Curve(gc) = &g.curve else { continue };
+                let at_start = sides[o]*surfaces[o].implicit(gc.point(g.t[0]));
+                let crosses = match super::query::curve_surface(gc,g.t,&level,tol) {
+                    super::query::Meets::At(roots) => !roots.is_empty(),
+                    super::query::Meets::Along => true,
+                };
+                if crosses || (at_start > tol && at_start < height) {
+                    return Err(format!("the ball of {} is larger than `{}` can hold",names(),face.name));
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 /// **A chamfer's flat cut along a traced run** (#218's 6): where two analytic faces meet on a loop
