@@ -1322,6 +1322,9 @@ pub enum Sweep {
     Placed { motion: Ref, at: Arg },
     /// The continuous union of a solid under a finite motion interval.
     Swept { motion: Ref, from: Arg, to: Arg },
+    /// The same over the roll about 0 during which it meets `body`'s material (#271): `under: m,
+    /// through: body`, the roll found after the solve as a `through:` prism's extent is.
+    Rolled { motion: Ref, body: Ref },
     /// `from: a, to: b` — signed ordinates along the plane's normal; `draft: θ` tapers the sides
     /// from the face's own plane, the parting plane (#245).
     Prism { from: Arg, to: Arg, draft: Option<Arg> },
@@ -1354,9 +1357,8 @@ impl Sweep {
             Sweep::Prism { from, to, draft } => [from, to].into_iter().chain(draft).collect(),
             Sweep::Depth { depth, draft } => std::iter::once(depth).chain(draft).collect(),
             Sweep::Revolve { sweep, .. } => sweep.iter_mut().collect(),
-            Sweep::Body | Sweep::Through { .. } | Sweep::Along { .. } | Sweep::Region { .. } => {
-                Vec::new()
-            }
+            Sweep::Body | Sweep::Through { .. } | Sweep::Along { .. } | Sweep::Region { .. }
+                | Sweep::Rolled { .. } => Vec::new(),
         }
     }
 
@@ -1376,26 +1378,29 @@ impl Sweep {
         }
     }
 
-    /// The revolution axis or through-extent target, for walks that rewrite references.
-    pub fn reference_mut(&mut self) -> Option<&mut Ref> {
+    /// The revolution axis, the motion, the through-extent target: what it names, for walks
+    /// that rewrite references.
+    pub fn references_mut(&mut self) -> Vec<&mut Ref> {
         match self {
-            Sweep::Placed { motion, .. } | Sweep::Swept { motion, .. } => Some(motion),
-            Sweep::Revolve { axis, .. } => Some(axis),
-            Sweep::Through { body } => Some(body),
-            Sweep::Along { guide } => Some(guide),
-            Sweep::Region { probe } => Some(probe),
-            Sweep::Prism { .. } | Sweep::Depth { .. } | Sweep::Body => None,
+            Sweep::Placed { motion, .. } | Sweep::Swept { motion, .. } => vec![motion],
+            Sweep::Rolled { motion, body } => vec![motion, body],
+            Sweep::Revolve { axis, .. } => vec![axis],
+            Sweep::Through { body } => vec![body],
+            Sweep::Along { guide } => vec![guide],
+            Sweep::Region { probe } => vec![probe],
+            Sweep::Prism { .. } | Sweep::Depth { .. } | Sweep::Body => Vec::new(),
         }
     }
 
-    pub fn reference(&self) -> Option<&Ref> {
+    pub fn references(&self) -> Vec<&Ref> {
         match self {
-            Sweep::Placed { motion, .. } | Sweep::Swept { motion, .. } => Some(motion),
-            Sweep::Revolve { axis, .. } => Some(axis),
-            Sweep::Through { body } => Some(body),
-            Sweep::Along { guide } => Some(guide),
-            Sweep::Region { probe } => Some(probe),
-            Sweep::Prism { .. } | Sweep::Depth { .. } | Sweep::Body => None,
+            Sweep::Placed { motion, .. } | Sweep::Swept { motion, .. } => vec![motion],
+            Sweep::Rolled { motion, body } => vec![motion, body],
+            Sweep::Revolve { axis, .. } => vec![axis],
+            Sweep::Through { body } => vec![body],
+            Sweep::Along { guide } => vec![guide],
+            Sweep::Region { probe } => vec![probe],
+            Sweep::Prism { .. } | Sweep::Depth { .. } | Sweep::Body => Vec::new(),
         }
     }
 }

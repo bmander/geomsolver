@@ -64,7 +64,7 @@ construction rack_tooth := solid(tooth, from: -width - 2mm, to: 2mm)
 turn := motion(about: o, ratio: 1)
 rack := motion(along: slide, advance: 2 * pi * rp)
 cutting := motion(rack, relative_to: turn)
-construction space := solid(rack_tooth, under: cutting, from: -60deg, to: 60deg)
+construction space := solid(rack_tooth, under: cutting, through: gear)
 
 // The same motion draws on the sketch what it cuts in the solid: the envelope of the rack's flank
 // is the tooth's involute, and the envelope of its tip corner the root fillet, curves of the

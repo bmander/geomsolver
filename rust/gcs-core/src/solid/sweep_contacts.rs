@@ -164,7 +164,7 @@ pub struct TimedContact {
 impl SweepContacts {
     pub fn read(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<Self,String> {
         super::validate(sk,solid)?;
-        let SolidDef::Swept {source,motion,from,to} = &sk.solids[solid].def else {
+        let SolidDef::Swept {source,motion,..} = &sk.solids[solid].def else {
             return Err("contact construction requires a continuous swept solid".into());
         };
         let source_field = SpatialField::read(sk,*source as usize,axis_tolerance)?;
@@ -247,7 +247,7 @@ impl SweepContacts {
             }
         }
         Ok(Self {source:source_field,patches,edges,motion:Family::read(sk,*motion as usize)?,
-            roll:[from.value,to.value]})
+            roll:super::roll::interval(sk,solid)?})
     }
     pub fn edges(&self) -> &[PatchEdge] { &self.edges }
     pub fn patches(&self) -> &[ToolSurface] { &self.patches }

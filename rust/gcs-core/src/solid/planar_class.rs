@@ -67,7 +67,7 @@ pub(crate) struct Pocket { pub stock: usize,pub pocket: usize,pub curve: usize,p
 
 /// `swept`'s tool read as a pocketed stock, else refused at P2 by name.
 pub(crate) fn pocket(sk: &Sketch,swept: usize) -> Result<Pocket,Failure> {
-    let SolidDef::Swept {source,motion,from,to} = &sk.solids[swept].def else {
+    let SolidDef::Swept {source,motion,..} = &sk.solids[swept].def else {
         return Err((Condition::Prisms,"not a sweep".into(),None))
     };
     let tool = &sk.solids[*source as usize];
@@ -82,7 +82,8 @@ pub(crate) fn pocket(sk: &Sketch,swept: usize) -> Result<Pocket,Failure> {
         [(edges,_)] if edges.len() == 1 && edges[0].kind == EntKind::Curve => edges[0].i(),
         _ => return Err((Condition::Prisms,format!("`{}`'s profile is not one closed curve",sk.solids[pocket].name),None)),
     };
-    Ok(Pocket {stock,pocket,curve,motion:*motion as usize,roll:[from.value,to.value]})
+    let roll = super::roll::interval(sk,swept).map_err(|m| (Condition::Prisms,m,None))?;
+    Ok(Pocket {stock,pocket,curve,motion:*motion as usize,roll})
 }
 
 /// What the class reads of one sweep, the same at every placement: the pocket, its plane, both

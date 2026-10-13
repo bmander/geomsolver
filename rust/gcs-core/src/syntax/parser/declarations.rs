@@ -43,14 +43,22 @@ pub(crate) fn sweep_of(p: SweepParts) -> Result<Sweep, String> {
                     `depth:`, and nothing else".into());
     }
     if p.under.is_some() || p.at.is_some() {
-        if p.depth.is_some() || p.about.is_some() || p.through.is_some()
-            || p.along.is_some() || p.sweep.is_some() || p.sense.is_some() {
-            return Err("a named motion uses `at:` or angular `from:`/`to:`, without other sweep labels".into());
+        if p.depth.is_some() || p.about.is_some() || p.along.is_some() || p.sweep.is_some()
+            || p.sense.is_some() || p.through.is_some() && (p.at.is_some() || p.from.is_some() || p.to.is_some()) {
+            return Err("a named motion uses `at:`, angular `from:`/`to:` or `through:` a body, without other \
+                        sweep labels".into());
+        }
+        // the roll the tool takes through a body's material (#271)
+        if let Some(body) = p.through {
+            return match p.under {
+                Some(motion) => Ok(Sweep::Rolled {motion,body}),
+                None => Err("a named motion needs `under:`".into()),
+            };
         }
         return match (p.under,p.at,p.from,p.to) {
             (Some(motion),Some(at),None,None) => Ok(Sweep::Placed {motion,at}),
             (Some(motion),None,Some(from),Some(to)) => Ok(Sweep::Swept {motion,from,to}),
-            _ => Err("a named motion needs `under:` and either `at:` or both `from:` and `to:`".into()),
+            _ => Err("a named motion needs `under:` and either `at:`, both `from:` and `to:`, or `through:`".into()),
         };
     }
     if let Some(guide) = p.along {

@@ -4,6 +4,13 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.88] A sweep may roll through what it cuts.** `removal := solid(tool, under: m, through:
+body)` sweeps `tool` under the motion `m` over the whole roll about 0 during which it meets
+`body`'s material — its stock and additions, never its cuts, as a through prism spans them — so a
+generating sweep states no roll limit: within the window that clears the blank at both ends, the
+cut does not depend on one (§6.9). The roll is found after the solve, conservatively (it may run a
+little past where the tool first clears, never short of it), and is one interval for every reader.
+
 **[0.87] Two sets touching at a point have one spelling.** `std.TangentCones(k1, k2, m)` is
 retired: its whole body was `k1 tangent(at: m) k2` (§6.21), a second name for a relation the
 language already says, and as a component it read as making something when it only states a

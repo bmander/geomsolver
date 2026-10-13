@@ -218,9 +218,11 @@ fn read(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<Snapshot,String>
                 }
                 SolidDef::Placed {source,motion,at} => get(*source)
                     .transformed(&Family::read(sk,*motion as usize)?,at.value).map_err(error)?,
-                SolidDef::Swept {source,motion,from,to} => Snapshot::Swept(SweptField::new(
-                    get(*source).static_field()?,Family::read(sk,*motion as usize)?,
-                    I::new(from.value,to.value).map_err(error)?).into()),
+                SolidDef::Swept {source,motion,..} => {
+                    let [from,to] = crate::solid::roll::interval(sk,i)?;
+                    Snapshot::Swept(SweptField::new(get(*source).static_field()?,
+                        Family::read(sk,*motion as usize)?,I::new(from,to).map_err(error)?).into())
+                }
                 SolidDef::Body {stock,on,through,bound} => {
                     let mut body = get(*stock);
                     // **the stratum** (#183 F6): a term reading this body's faces acts on the body

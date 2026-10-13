@@ -14,6 +14,7 @@ mod round_lowering;
 mod bounds;
 mod words_alone;
 mod tangent_at;
+mod roll_through;
 mod set_regions;
 mod region_blank;
 mod swept_faces;

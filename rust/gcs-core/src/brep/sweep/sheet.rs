@@ -53,14 +53,15 @@ impl SweptCut {
     pub fn read(sk: &Sketch,swept: usize) -> Result<SweptCut,ExportRefusal> {
         let name = sk.solids[swept].name.clone();
         let scale = cad::millimetres(sk).at(Stage::Clearance)?;
-        let SolidDef::Swept {source,motion,from,to} = &sk.solids[swept].def else {
+        let SolidDef::Swept {source,motion,..} = &sk.solids[swept].def else {
             return Err(ExportRefusal::at(Stage::Clearance,format!("`{name}` is not a continuous sweep")))
         };
         let recipe = cad::recipe(sk,*source as usize).at(Stage::Clearance)?;
         let family = Family::read(sk,*motion as usize).at(Stage::Clearance)?;
+        let limits = crate::solid::roll::interval(sk,swept).at(Stage::Clearance)?;
         let contacts = SweepContacts::read(sk,swept,cad::AXIS_TOLERANCE);
         let routes = crate::solid::operand_paths(sk,*source as usize);
-        Ok(SweptCut {name,scale,recipe,family,limits:[from.value,to.value],contacts,routes})
+        Ok(SweptCut {name,scale,recipe,family,limits,contacts,routes})
     }
 }
 

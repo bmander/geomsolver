@@ -38,6 +38,7 @@ pub mod cad;
 pub mod region;
 pub mod bounded;
 pub mod canal;
+pub mod roll;
 pub mod lowering;
 pub mod faces;
 pub mod conditions;
@@ -88,7 +89,7 @@ pub(crate) use raycast::RayIndex;
 use section::face_polys;
 pub use evaluated::{ApproximationPolicy, EvaluatedSolid, LocalPoint, WorldPoint, PagePoint, PageFrame, RoundFeature};
 
-use crate::model::{EntKind, EntRef, Sense, Sketch, SolidDef};
+use crate::model::{EntKind, EntRef, Roll, Sense, Sketch, SolidDef};
 use crate::plane::{self, Basis};
 use std::collections::BTreeMap;
 
@@ -463,13 +464,17 @@ fn validate_at(sk: &Sketch, si: usize, unit: f64) -> Result<std::collections::BT
         pending.push((i, true));
         let fail = |why: &str| format!("`{}`: {why}", s.name);
         let face = match &s.def {
-            SolidDef::Swept { source, motion, from, to } => {
-                if !from.value.is_finite() || !to.value.is_finite() || from.value >= to.value {
-                    return Err(fail("a continuous motion sweep needs finite increasing angular bounds"));
+            SolidDef::Swept { motion, roll, .. } => {
+                if let Roll::Stated { from, to } = roll {
+                    if !from.value.is_finite() || !to.value.is_finite() || from.value >= to.value {
+                        return Err(fail("a continuous motion sweep needs finite increasing angular bounds"));
+                    }
                 }
                 let family = crate::motion::Family::read(sk,*motion as usize)?;
-                family.at(from.value)?; family.at(to.value)?;
-                pending.push((*source as usize,false));
+                // its tool, and a body's material its roll through it is found against (#271)
+                pending.extend(evaluation_operands(sk, i)?.into_iter().rev().map(|o| (o as usize, false)));
+                let [from, to] = roll::interval(sk, i)?;
+                family.at(from)?; family.at(to)?;
                 continue;
             }
             SolidDef::Placed { source, motion, at } => {

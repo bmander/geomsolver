@@ -65,7 +65,7 @@ in std.front {
 }
 construction pin := solid(pin_section, about: qa)
 
-// Everything the pin passes through while the wheel turns 35 degrees either way.
-construction space := solid(pin, under: roll, from: -35deg, to: 35deg)
+// Everything the pin passes through while it meets the wheel's blank, found after the solve.
+construction space := solid(pin, under: roll, through: wheel)
 wheel := solid(blank)
 space cut wheel

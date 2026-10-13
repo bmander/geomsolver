@@ -71,7 +71,7 @@ pub fn is_canal(sk: &Sketch, i: usize) -> bool {
 /// The ball's sweep `swept` is, read off its tool's recipe and its motion where both are what the
 /// tube needs: `None` where they are not, an error where they cannot be read.
 fn read(sk: &Sketch, swept: usize) -> Option<Result<Canal, String>> {
-    let SolidDef::Swept { source, motion, from, to } = &sk.solids[swept].def else { return None };
+    let SolidDef::Swept { source, motion, .. } = &sk.solids[swept].def else { return None };
     let family = crate::motion::Family::read(sk, *motion as usize).ok()?;
     let turn = family.turning()?;
     let scale_mm = super::cad::millimetres(sk).ok()?;
@@ -85,12 +85,16 @@ fn read(sk: &Sketch, swept: usize) -> Option<Result<Canal, String>> {
         .find(|&(l, k)| matches!(profile.loops[l][k], crate::brep::build::ProfileEdge::Arc { .. }))
         .map_or(String::new(), |(l, k)| profile.name(l, k));
     // where the roll starts, and the turn and the step it takes to its end
-    let at = match family.at(from.value) {
+    let [from, to] = match super::roll::interval(sk, swept) {
+        Ok(roll) => roll,
+        Err(e) => return Some(Err(e)),
+    };
+    let at = match family.at(from) {
         Ok(pose) => pose,
         Err(e) => return Some(Err(e)),
     };
     let centre = at.point(c);
-    let tau = to.value - from.value;
+    let tau = to - from;
     let (angle, advance) = (turn.ratio * tau, turn.advance * tau / TAU);
     // the tube meets itself nowhere: its centre's path off the axis by more than the radius, and a
     // helix of more than a turn climbing more than its diameter a turn

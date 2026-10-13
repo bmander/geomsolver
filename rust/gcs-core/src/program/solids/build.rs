@@ -116,7 +116,8 @@ pub(super) fn build_solid(
             }
             SolidDef::Region { probe: p.idx, terms }
         }
-        crate::syntax::Sweep::Placed { motion, .. } | crate::syntax::Sweep::Swept { motion, .. } => {
+        crate::syntax::Sweep::Placed { motion, .. } | crate::syntax::Sweep::Swept { motion, .. }
+            | crate::syntax::Sweep::Rolled { motion, .. } => {
             if ops.len() != 1 || ops[0].kind != EntKind::Solid {
                 say(Code::E080,st.span,"a named motion needs one source solid".into());
                 return None;
@@ -146,7 +147,19 @@ pub(super) fn build_solid(
                         }
                         (Err(message),_) | (_,Err(message)) => { say(Code::E103,st.span,message); return None; }
                     };
-                    SolidDef::Swept {source:ops[0].idx,motion:m.idx,from,to}
+                    SolidDef::Swept {source:ops[0].idx,motion:m.idx,roll:crate::model::Roll::Stated {from,to}}
+                }
+                // the roll through a body's material (#271): found after the solve
+                crate::syntax::Sweep::Rolled {body,..} => {
+                    let Some(target) = res.lookup(body) else {
+                        say(Code::E101, body.span, format!("no such entity: `{}`", body.root.text));
+                        return None;
+                    };
+                    if target.kind != EntKind::Solid {
+                        say(Code::E080, body.span, "`through:` requires a solid to roll through".into());
+                        return None;
+                    }
+                    SolidDef::Swept {source:ops[0].idx,motion:m.idx,roll:crate::model::Roll::Through {body:target.idx}}
                 }
                 _ => unreachable!(),
             }

@@ -12,9 +12,6 @@ mod faces;
 mod caps;
 mod swept;
 
-/// The checks' roll: the envelopes are verified over ±35 degrees; each member's removal sweep
-/// (`Generated`) rolls at least that far.
-const ROLL_SPAN: f64 = 35.;
 
 struct Pair {
     model: program::Elaborated,
@@ -199,7 +196,6 @@ impl Pair {
         let tolerance = SeamTolerance {position:module*1e-8,normal:1e-8,axis:module*1e-10};
         let edge_tolerance = EdgeTolerance {junction:tolerance,point:gcs_core::seam::BoundarySeamTolerance {
             normal_velocity:module*1e-10,incidence:module*1e-10,trim:module*1e-8}};
-        let roll = ROLL_SPAN.to_radians();
         let mut walls: [BTreeMap<String,RevolvedSurface>;2] = Default::default();
         let mut blanks = [0;2];
         let (mut regions,mut envelopes,mut surfaces) = (BTreeMap::new(),BTreeMap::new(),BTreeMap::new());
@@ -211,6 +207,9 @@ impl Pair {
             // each built face's role: a cut face by what the checks call its cutter face, a blank
             // face by its term
             let mut roles = Vec::new();
+            // the removal's roll, the one its tool takes through the blank (`through:`, #271): the
+            // envelopes are verified over it, as the sweep made them
+            let mut roll: Option<[f64;2]> = None;
             for path in &built.paths {
                 let source = face_source(sk,body,path).unwrap_or_else(|why| panic!("`{}`: {why}",path.text()));
                 roles.push(match source {
@@ -220,7 +219,9 @@ impl Pair {
                         Role::Wall(path.face.clone())
                     }
                     FaceSource::Swept {solid,roll: swept,..} => {
-                        assert!(swept[0] <= -roll && swept[1] >= roll,"{member}: the removal rolls {swept:?}, under ±{ROLL_SPAN} degrees");
+                        assert!(swept[0] < 0. && swept[1] > 0.,"{member}: the removal rolls {swept:?}, not about 0");
+                        assert!(roll.is_none_or(|r| r == swept),"{member}: two removals roll {roll:?} and {swept:?}");
+                        roll = Some(swept);
                         // the checks' names: the crown tooth's section for the pinion, the gear's
                         // outer and inner mates' (the space cutter's own crown and its neighbour)
                         let rack = if m == 0 { "pinion" } else if path.face.starts_with("outer_crown.") { "gear_outer" } else { "gear_inner" };
@@ -235,6 +236,7 @@ impl Pair {
             // where the cutter's own placements put it before they turn it — the gear's inner mate
             // is its space cutter's neighbour, one crown pitch round, so its faces are the envelopes
             // of the space one tooth over, by the symmetry the indexing turns through
+            let roll = roll.unwrap_or_else(|| panic!("{member}: no face of the removal"));
             let fi_of = |r: &Role| (0..roles.len()).filter(|&i| roles[i] == *r).collect::<Vec<_>>();
             let meets = |a: &[usize],b: &[usize]| a.iter().any(|&x| b.iter().any(|&y| built.meets.contains(&(x.min(y),x.max(y)))));
             let tips = fi_of(&Role::Wall("tip".into()));
@@ -300,7 +302,7 @@ impl Pair {
                 root_face.get_or_insert(bottom[0]);
                 assert_eq!(root_face,Some(bottom[0]),"{member}: the space has one bottom");
                 for (l,s,e) in [(&label,&flank,flank_sweep),(&round_label,&round,round_sweep),(&root_label,&root,root_sweep)] {
-                    let env = envelope::GeneratedEnvelope::new(format!("{l}_envelope"),s.clone(),motion_families[m].clone(),[-roll,roll]).unwrap();
+                    let env = envelope::GeneratedEnvelope::new(format!("{l}_envelope"),s.clone(),motion_families[m].clone(),roll).unwrap();
                     regions.insert(l.clone(),gcs_core::patch::TrimmedPatch::of_envelope(format!("{l}_region"),env.clone(),vec![blank.clone()],vec![]));
                     envelopes.insert(l.clone(),env);
                     surfaces.insert(l.clone(),(s.clone(),solid,e));
