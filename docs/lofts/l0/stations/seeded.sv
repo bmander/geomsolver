@@ -10,10 +10,9 @@ use std (on_u)
 // The plane square to the line `g` at the fraction `s` of the way from its start to its end: its
 // origin there, its normal along `g`, and its `v` held along `up` (any direction square to `g`).
 // Along a straight guide every station is the first one moved, so nothing turns.
-component OnLine(g: line, up: axis, run: Length, s: Scalar) {
+component OnLine(g: line, up: axis, s: Scalar) {
   m := point
-  m coincident g
-  g.p1 distance(run * s, along: g) m
+  m coincident(t == s) g
   n := plane(u: hint(dir: (1, 0, 0)), v: hint(dir: (0, 1, 0)))
   n.origin coincident m
   g perpendicular n.u
@@ -25,13 +24,10 @@ component OnLine(g: line, up: axis, run: Length, s: Scalar) {
 // running out from the centre to the arc, its `v` along `up`, the normal of the plane the arc is
 // drawn in. Square to the arc's tangent, and turned about the axis as the arc turns: along a guide
 // in one plane this is the rotation-minimising frame.
-component OnArc(g: arc, view: plane, up: axis, sweep: Angle, s: Scalar) {
-  in view {
-    m := point
-    m coincident g
-    out := line(g.center, m)
-    (from := line(g.center, g.start)) angle(sweep * s, sense: ccw) out
-  }
+component OnArc(g: arc, up: axis, s: Scalar) {
+  m := point
+  m coincident(t == s) g
+  out := line(g.center, m)
   n := plane
   n.origin coincident m
   n.u parallel out

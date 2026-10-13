@@ -72,6 +72,11 @@ fn all_constraints(seed: u32) -> Sketch {
     let kc = sk.circle(cpc, rng.uniform(1.0, 11.0), "kc");
     let kb = sk.circle(cpb, rng.uniform(1.0, 11.0), "kb");
     let (me1, me2) = (EntRef::line(m1), EntRef::line(m2));
+    // and an arc drawn in the solved view, for a point at a fraction of its turn in space
+    let (kas, kae) = (pt(&mut sk, &mut rng), pt(&mut sk, &mut rng));
+    sk.set_plane(kas, Some(pc));
+    sk.set_plane(kae, Some(pc));
+    let ka = EntRef::arc(sk.arc(cpc, kas, kae, "ka"));
     // and two axes, their directions knocked off the unit sphere — the first placed, so its
     // point is free and read, the second read only as a direction
     let dir = |rng: &mut Rng| [rng.uniform(-1.0, 1.0), rng.uniform(-1.0, 1.0), rng.uniform(-1.0, 1.0)];
@@ -208,6 +213,15 @@ fn all_constraints(seed: u32) -> Sketch {
             vec![e(qe), e(le1), Arg::Num(4.0), Arg::Str("left".into())],
         ),
         Constraint::new(CKind::AnnularDistance, vec![e(ce1), e(ae), Arg::Num(1.5)]),
+        // a point at a fraction of a line's run and of an arc's turn (#248), and in space —
+        // across views, and a point in space of its own
+        Constraint::new(CKind::PointAlongLine, vec![e(pe), e(le1), Arg::Num(0.3)]),
+        Constraint::new(CKind::PointAlongLine, vec![e(qe), e(le2), Arg::Num(1.4)]),
+        Constraint::new(CKind::PointAlongArc, vec![e(pe), e(ae), Arg::Num(0.4)]),
+        Constraint::new(CKind::PointAlongLine3, vec![e(qe), e(me1), Arg::Num(0.6)]),
+        Constraint::new(CKind::PointAlongLine3, vec![e(s3), e(me2), Arg::Num(-0.2)]),
+        Constraint::new(CKind::PointAlongArc3, vec![e(qe), e(ka), Arg::Num(0.7)]),
+        Constraint::new(CKind::PointAlongArc3, vec![e(s3), e(ka), Arg::Num(0.2)]),
         Constraint::point_on_spline(&sk, pe, spe),
         Constraint::point_on_spline(&sk, qe, spe),
         Constraint::spline_tangent_line(&sk, spe, le1),

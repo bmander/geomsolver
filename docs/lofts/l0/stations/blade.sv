@@ -6,8 +6,8 @@ unit mm
 use std (horizontal, vertical, above, below)
 use lofts
 
-component Blade(g: line, up: axis, plan: plane, port: line, starboard: line, t: Length, run: Length, s: Scalar) {
-  st := lofts.OnLine(g, up: up, run: run, s: s)
+component Blade(g: line, up: axis, plan: plane, port: line, starboard: line, t: Length, s: Scalar) {
+  st := lofts.OnLine(g, up: up, s: s)
   l := point in st.n, plan
   r := point in st.n, plan
   l coincident port
@@ -42,4 +42,4 @@ in std.top {
   port_rail := line(l0, l1)
   starboard_rail := line(r0, r1)
 }
-blade := Blade(spine, std.z, std.top, port_rail, starboard_rail, t: 3mm, run: 50mm, s: 0.5)
+blade := Blade(spine, std.z, std.top, port_rail, starboard_rail, t: 3mm, s: 0.5)

@@ -121,9 +121,14 @@ pub enum K {
     DragSeen,
     // a line lying on an axis
     LineOnAxis,
+    // a point at a fraction of a line's run and of an arc's turn, in a view and in space (#248)
+    PointAlongLine,
+    PointAlongArc,
+    PointAlongLine3,
+    PointAlongArc3,
 }
 
-pub const N_KERNELS: usize = 84;
+pub const N_KERNELS: usize = 88;
 
 #[derive(Clone, Copy)]
 pub struct Kernel {
@@ -2693,6 +2698,9 @@ pub(crate) trait Num:
     /// The root, its derivatives taken as zero where it is zero.
     fn sqrt(self) -> Self;
     fn cos(self) -> Self;
+    fn sin(self) -> Self;
+    /// The bearing of `(x, y)`, on (−π, π].
+    fn atan2(y: Self, x: Self) -> Self;
 }
 
 impl<const N: usize> Num for Dual<N> {
@@ -2708,6 +2716,19 @@ impl<const N: usize> Num for Dual<N> {
     fn cos(self) -> Self {
         self.map(self.v.dcos(), -self.v.dsin())
     }
+    fn sin(self) -> Self {
+        self.map(self.v.dsin(), self.v.dcos())
+    }
+    fn atan2(y: Self, x: Self) -> Self {
+        let q = x.v * x.v + y.v * y.v;
+        let mut g = [0.0; N];
+        if q > 0.0 {
+            for k in 0..N {
+                g[k] = (x.v * y.g[k] - y.v * x.g[k]) / q;
+            }
+        }
+        Dual { v: y.v.datan2(x.v), g }
+    }
 }
 
 impl Num for Jet {
@@ -2722,6 +2743,12 @@ impl Num for Jet {
     }
     fn cos(self) -> Self {
         self.sin_cos().1
+    }
+    fn sin(self) -> Self {
+        self.sin_cos().0
+    }
+    fn atan2(y: Self, x: Self) -> Self {
+        Jet::atan2(y, x)
     }
 }
 
@@ -3147,6 +3174,91 @@ fn line_on_axis_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
     dual_jac::<12, 4, 6>(n, v, k, j, line_on_axis_rows)
 }
 
+/* -- a point at a fraction of a line's run and of an arc's turn (#248) ------------------------
+ *
+ * The contact owns its place `t`, as a spline's does: unpinned it is the point's own unknown, two
+ * rows against one column; pinned (`t == 0.25`) it states where along.  A line's runs from `p1`
+ * (0) to `p2` (1) and on past either, as `coincident` on a line means its whole extension; an
+ * arc's from `start` to `end` by angle, counter-clockwise, over the sweep `arc_length` reads. */
+
+/// Columns of `point_along_line`: (p, a, b, t).  `p − (a + t·(b − a))`.  Degree 1.
+fn point_along_line_rows<T: Num>(v: &[T], _k: &[f64]) -> [T; 2] {
+    let t = v[6];
+    [0, 1].map(|c| v[c] - (v[2 + c] + t * (v[4 + c] - v[2 + c])))
+}
+
+fn point_along_line_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    dual_res::<7, 2, 0>(n, v, k, r, point_along_line_rows)
+}
+
+fn point_along_line_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    dual_jac::<7, 2, 0>(n, v, k, j, point_along_line_rows)
+}
+
+/// The bearing from the centre `(cx, cy)` at the fraction `t` of the turn from the start's
+/// bearing to the end's, counter-clockwise over the sweep in (0, 2π] (`arc_sweep`'s reading).
+fn bearing_along<T: Num>(c: [T; 2], s: [T; 2], e: [T; 2], t: T) -> T {
+    const TURN: f64 = 2.0 * std::f64::consts::PI;
+    let a = T::atan2(s[1] - c[1], s[0] - c[0]);
+    let b = T::atan2(e[1] - c[1], e[0] - c[0]);
+    let mut sweep = b - a;
+    if sweep.val() <= 0.0 {
+        sweep = sweep + T::cst(TURN);
+    }
+    a + t * sweep
+}
+
+/// Columns of `point_along_arc`: (p, c, s, e, r, t) — the point, the arc's centre, start and end,
+/// its radius, and the fraction.  `p − (c + r·(cos φ, sin φ))`, φ the bearing `t` of the way
+/// round.  Degree 1.
+fn point_along_arc_rows<T: Num>(v: &[T], _k: &[f64]) -> [T; 2] {
+    let (c, s, e) = ([v[2], v[3]], [v[4], v[5]], [v[6], v[7]]);
+    let phi = bearing_along(c, s, e, v[9]);
+    [v[0] - (c[0] + v[8] * phi.cos()), v[1] - (c[1] + v[8] * phi.sin())]
+}
+
+fn point_along_arc_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    dual_res::<10, 2, 0>(n, v, k, r, point_along_arc_rows)
+}
+
+fn point_along_arc_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    dual_jac::<10, 2, 0>(n, v, k, j, point_along_arc_rows)
+}
+
+/// Columns of `point_along_line3`: (X, A, B, t) — hidden points.  `X − (A + t·(B − A))`.  Degree 1.
+fn point_along_line3_rows<T: Num>(v: &[T], _k: &[f64]) -> [T; 3] {
+    let t = v[9];
+    [0, 1, 2].map(|c| v[c] - (v[3 + c] + t * (v[6 + c] - v[3 + c])))
+}
+
+fn point_along_line3_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    dual_res::<10, 3, 0>(n, v, k, r, point_along_line3_rows)
+}
+
+fn point_along_line3_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    dual_jac::<10, 3, 0>(n, v, k, j, point_along_line3_rows)
+}
+
+/// Columns of `point_along_arc3`: (X, C, r, du, dv, c, s, e, t) — the point's hidden point, the
+/// centre's, the radius, the arc's plane's axes, then the centre, start and end as drawn in it and
+/// the fraction.  `X − (C + r·(cos φ û + sin φ v̂))`, φ read in the plane as `point_along_arc`
+/// reads it.  Degree 1.
+fn point_along_arc3_rows<T: Num>(v: &[T], _k: &[f64]) -> [T; 3] {
+    let (x, c3, r) = (vec3(v, 0), vec3(v, 3), v[6]);
+    let (u, w, _) = frame(vec3(v, 7), vec3(v, 10));
+    let phi = bearing_along([v[13], v[14]], [v[15], v[16]], [v[17], v[18]], v[19]);
+    let (cs, sn) = (r * phi.cos(), r * phi.sin());
+    [0, 1, 2].map(|t| x[t] - (c3[t] + cs * u[t] + sn * w[t]))
+}
+
+fn point_along_arc3_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    dual_res::<20, 3, 0>(n, v, k, r, point_along_arc3_rows)
+}
+
+fn point_along_arc3_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    dual_jac::<20, 3, 0>(n, v, k, j, point_along_arc3_rows)
+}
+
 /// Columns of `axis_parallel_plane`: (d, du, dv).  `d̂·n̂`: square to the plane's normal.  Degree 0.
 fn axis_parallel_plane_rows<T: Num>(v: &[T], _k: &[f64]) -> [T; 1] {
     let (_, _, n) = frame(vec3(v, 3), vec3(v, 6));
@@ -3398,6 +3510,10 @@ pub(crate) fn num_form(name: &str) -> Option<JetForm> {
         "axis_coincident" => form!(axis_coincident_rows),
         "plane_parallel" => form!(plane_parallel_rows),
         "line_on_axis" => form!(line_on_axis_rows),
+        "point_along_line" => form!(point_along_line_rows),
+        "point_along_arc" => form!(point_along_arc_rows),
+        "point_along_line3" => form!(point_along_line3_rows),
+        "point_along_arc3" => form!(point_along_arc3_rows),
         _ => None,
     }
 }
@@ -3580,6 +3696,10 @@ pub static KERNELS: [Kernel; N_KERNELS] = [
     Kernel { name: "plane_parallel", n_res: 2, n_par: 12, degree: 0, n_const: 6, res: plane_parallel_res, jac: plane_parallel_jac, const_jac: None },
     Kernel { name: "drag_seen", n_res: 2, n_par: 3, degree: 1, n_const: 9, res: drag_seen_res, jac: drag_seen_jac, const_jac: None },
     Kernel { name: "line_on_axis", n_res: 4, n_par: 12, degree: 1, n_const: 6, res: line_on_axis_res, jac: line_on_axis_jac, const_jac: None },
+    Kernel { name: "point_along_line", n_res: 2, n_par: 7, degree: 1, n_const: 0, res: point_along_line_res, jac: point_along_line_jac, const_jac: None },
+    Kernel { name: "point_along_arc", n_res: 2, n_par: 10, degree: 1, n_const: 0, res: point_along_arc_res, jac: point_along_arc_jac, const_jac: None },
+    Kernel { name: "point_along_line3", n_res: 3, n_par: 10, degree: 1, n_const: 0, res: point_along_line3_res, jac: point_along_line3_jac, const_jac: None },
+    Kernel { name: "point_along_arc3", n_res: 3, n_par: 20, degree: 1, n_const: 0, res: point_along_arc3_res, jac: point_along_arc3_jac, const_jac: None },
 ];
 
 /// One row of a kernel: residual and Jacobian for a single constraint's local values.  The

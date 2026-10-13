@@ -14,8 +14,8 @@ component Section(c: point, size: Length, wall: Length) {
   profile := face(outer.loop, holes: inner.loop)
 }
 
-component Elbow(g: arc, view: plane, up: axis, sweep: Angle, size: Length, wall: Length, s: Scalar) {
-  st := lofts.OnArc(g, view, up: up, sweep: sweep, s: s)
+component Elbow(g: arc, up: axis, size: Length, wall: Length, s: Scalar) {
+  st := lofts.OnArc(g, up: up, s: s)
   sec := Section(st.n.origin, size: size, wall: wall) in st.n
 }
 
@@ -31,4 +31,4 @@ in std.top {
   guide := arc(center: turn_center, start: entry, end: exit)
   radius(bend_radius) guide
 }
-body := Elbow(guide, std.top, std.z, sweep: bend_angle, size: 18mm, wall: 2mm, s: 0.5)
+body := Elbow(guide, std.z, size: 18mm, wall: 2mm, s: 0.5)

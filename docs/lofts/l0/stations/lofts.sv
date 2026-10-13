@@ -1,7 +1,7 @@
 // L0 (#243), the station probe: `../lofts.sv` in today's spelling, so each program's section can
 // be solved at one station (`s: 0.5`) before the family exists. Where it differs from the target
-// it says what today lacks: a fraction along a line or an arc (the run or the sweep passed in),
-// the plane an arc or a spline is drawn in (passed in), the tangent at a point of a spline.
+// it says what today lacks: the plane a spline is drawn in (passed in), the tangent at a point of
+// a spline. A fraction along a line or an arc is the contact's own `t` (#248), as the target's.
 //
 // A loft is a face of a component as one of its numbers runs (`solid(I.f over s in (0, 1))`).
 // The words here only say where a station stands on its path. What the section is at that station
@@ -12,10 +12,9 @@ use std (on_u)
 // The plane square to the line `g` at the fraction `s` of the way from its start to its end: its
 // origin there, its normal along `g`, and its `v` held along `up` (any direction square to `g`).
 // Along a straight guide every station is the first one moved, so nothing turns.
-component OnLine(g: line, up: axis, run: Length, s: Scalar) {
+component OnLine(g: line, up: axis, s: Scalar) {
   m := point
-  m coincident g
-  g.p1 distance(run * s, along: g) m
+  m coincident(t == s) g
   n := plane
   n.origin coincident m
   g perpendicular n.u
@@ -27,13 +26,10 @@ component OnLine(g: line, up: axis, run: Length, s: Scalar) {
 // running out from the centre to the arc, its `v` along `up`, the normal of the plane the arc is
 // drawn in. Square to the arc's tangent, and turned about the axis as the arc turns: along a guide
 // in one plane this is the rotation-minimising frame.
-component OnArc(g: arc, view: plane, up: axis, sweep: Angle, s: Scalar) {
-  in view {
-    m := point
-    m coincident g
-    out := line(g.center, m)
-    (from := line(g.center, g.start)) angle(sweep * s, sense: ccw) out
-  }
+component OnArc(g: arc, up: axis, s: Scalar) {
+  m := point
+  m coincident(t == s) g
+  out := line(g.center, m)
   n := plane
   n.origin coincident m
   n.u parallel out

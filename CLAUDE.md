@@ -1379,6 +1379,19 @@ Conventions:
   `SharedPlace`: the unknown and its curve) for every contact on that curve (E040 otherwise, and
   for a name a dimension also reads: `Fault::Place`). `remove` retires it with its last owner;
   `graft` and `lift` read `Sketch::owned_arg`, the JSON `"shared"`. `tests/shared_contact.rs`.
+  **A point at a fraction of a line's run or an arc's turn** (#248, 0.79): `m coincident(t == 0.25)
+  g` is `PointAlongLine` / `PointAlongArc` (twins in space `PointAlongLine3` / `PointAlongArc3`,
+  `reading::in_space` carrying the place), chosen in `infix_op` only where `t` is written (a pin or
+  a seed, `relations::settle`'s `sel`), so plain `coincident` pays no column; kernels written once
+  over `Num` (`bearing_along`: the arc's sweep as `arc_sweep` reads it). `CKind::fraction_slots` /
+  `Constraint::fraction_contact` are the reading: `seed_param` (the point's foot, its bearing),
+  `contact_speed` (the run's length), `System::new`'s scale. A line's runs on past its ends (as
+  `PointOnLine`); an arc's is clamped to `[0, 1]` (`clamp_contacts`, and `solve_rehomed` rehomes
+  for it) and a pin outside is E040 (`constraints::on_the_arc`, asked by `validate` and before
+  `seed_omitted`); a circle with `t` is E040. A shared fraction may span lines and arcs
+  (`shared_on_one_curve`), never a curve's parameter. A traced body takes a line's fraction pinned
+  (`compile_trace`: the pin a `w` tape column; the flattener keeps a pin's text in symbolic mode,
+  `settle_arg`). `tests/fractions.rs` is the gate (with the lofts probes' stations).
 - **The core owns every algorithm.**  A change to the model, a constraint type, diagnosis,
   decomposition or the solvers lands in `rust/gcs-core/` with a Rust test in
   `rust/gcs-core/tests/` — **a new file there is listed in `tests/main.rs`** (one binary,

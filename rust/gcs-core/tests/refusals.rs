@@ -650,3 +650,29 @@ fn a_count_that_is_not_whole_is_refused() {
     assert!(d.is_empty(), "{d:?}");
     assert_eq!(e.sketch.points.len(), std_points + 3);
 }
+
+/// #248 — **a fraction past an end**: a line's `t` runs on along the line's extension, as
+/// `coincident` on a line always has (an external division, `t == 1.5`, is a place), while an
+/// arc's turn from `start` to `end` is all there is of it, so `t == 1.5` on an arc is a point it
+/// does not reach, refused where it is written; and a circle has no start, so no fraction at all.
+#[test]
+fn a_fraction_past_an_end_runs_on_a_line_and_is_refused_on_an_arc() {
+    use crate::common::refused;
+    let arc = "use std\nin std.front {\n  c := point\n  fix((0, 0)) c\n  e := point\n  fix((10, 0)) e\n  \
+               q := point\n  fix((0, 10)) q\n  k := arc(center: c, start: e, end: q)\n";
+    let (e, d) = read(&format!("{arc}  a := point\n  fix((20, 0)) a\n  g := line(c, a)\n  \
+                                x := point\n  x coincident(t == 1.5) g\n  \
+                                y := point\n  y coincident(t == -0.25) g\n}}\n"));
+    assert!(d.is_empty(), "{d:?}");
+    let mut sk = e.sketch;
+    assert!(solve(&mut sk, SolveOpts::default()).success);
+    let at = |n: &str| sk.point_xy(e.map.ent_named(n).unwrap().i());
+    assert!((at("x").0 - 30.0).abs() < 1e-9 && (at("y").0 + 5.0).abs() < 1e-9);
+    refused(&format!("{arc}  n := point\n  n coincident(t == 1.5) k\n}}\n"),
+            "E040", "`t == 1.5` is off k: a fraction of an arc's turn runs from 0", "n coincident(t == 1.5) k");
+    refused(&format!("{arc}  n := point\n  n coincident(t == -0.5) k\n}}\n"),
+            "E040", "`t == -0.5` is off k", "n coincident(t == -0.5) k");
+    refused("use std\nin std.front {\n  c := point\n  r := circle(center: c) hint(r: 5)\n  \
+             w := point\n  w coincident(t == 0.5) r\n}\n",
+            "E040", "a circle has no start or end, so no fraction of its turn", "t");
+}

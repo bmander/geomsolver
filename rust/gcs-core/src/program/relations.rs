@@ -57,14 +57,24 @@ pub(crate) fn settle(
             // and `t perpendicular P` and `P perpendicular t` are one statement — the operands are
             // put in the order the kind names them
             let symmetric = matches!(word, "coincident" | "parallel" | "perpendicular");
-            if symmetric && crate::constraints::infix_op(word, a, b, &|n| w.sel(n)).is_none() {
-                if let Some(k) = crate::constraints::infix_op(word, b, a, &|n| w.sel(n)) {
+            // a selector by name, or a place pinned or seeded (`t == 0.25`, `hint(t: 0.3)`):
+            // where a contact's place is written is what makes it a fraction of a run (#248)
+            let sel = |n: &str| {
+                w.sel(n).or_else(|| w.slots().any(|(k, _)| k.text == n).then(String::new))
+            };
+            if word == "coincident" && b == EntKind::Circle && sel("t").is_some() {
+                let at = w.slots().find(|(k, _)| k.text == "t").map_or(w.word.span, |(k, _)| k.span);
+                return Err((at, "a circle has no start or end, so no fraction of its turn: \
+                    draw an arc, whose `t` runs from its start to its end".to_string()));
+            }
+            if symmetric && crate::constraints::infix_op(word, a, b, &sel).is_none() {
+                if let Some(k) = crate::constraints::infix_op(word, b, a, &sel) {
                     let mut swapped = w.clone();
                     swapped.ops.swap(0, 1);
                     return Ok((k, swapped.assemble(k)?));
                 }
             }
-            crate::constraints::infix_op(word, a, b, &|n| w.sel(n)).ok_or_else(|| {
+            crate::constraints::infix_op(word, a, b, &sel).ok_or_else(|| {
                 (w.word.span, format!("`{word}` does not relate {} to {}", a.a(), b.a()))
             })?
         }
@@ -532,6 +542,10 @@ pub(super) fn constrain(
     // lives, shared with the document reader and the bindings' constraint records — and what
     // the model refuses once they are in, in its own words, given this statement's span
     let name = |e: EntRef| map.name_of(e).cloned().unwrap_or_else(|| io::entity_name(e));
+    if let Err(message) = crate::constraints::on_the_arc(ckind, &args, &name) {
+        diags.push(Diag { code: Code::E040, span: st.span, stmt: Some(st.id), message });
+        return None;
+    }
     if let Err(message) = io::seed_omitted_named(sk, ckind, &mut args, |i| left_out[i], &name) {
         diags.push(Diag { code: Code::E061, span: st.span, stmt: Some(st.id), message });
         return None;

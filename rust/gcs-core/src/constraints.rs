@@ -86,6 +86,18 @@ pub enum CKind {
     PointOnSpline,
     SplineTangentLine,
     SplineCurvature,
+    /// **A point at a fraction of a line's run** (`m coincident(t == 0.25) g`, #248): `m = p1 +
+    /// t·(p2 − p1)`, the contact owning its place `t` as a spline's does — unpinned, an unknown
+    /// seeded where the point stands (two rows against one column, the net one equation a point
+    /// on a line is worth); pinned, the place.  Like `coincident` on a line, it runs on past
+    /// either end: `t == 1.5` is the point half a run beyond `p2`.  Written only where `t` is:
+    /// `m coincident g` stays `PointOnLine` and pays no column.
+    PointAlongLine,
+    /// **A point at a fraction of an arc's turn** (#248): `t` of the way round from `start` to
+    /// `end`, counter-clockwise, by angle — on the arc and nowhere else, so an unpinned `t` is
+    /// held to `[0, 1]` as a spline's is to its knots (`curve::clamp_contacts`), and a pinned one
+    /// outside it is refused (`validate`).  A circle has no start, so no fraction.
+    PointAlongArc,
     /// **An ordinate** (`docs/ordinate-plan.md`): how far `q` stands from `p` along a directed
     /// line, `(q − p)·t̂ − d`.  One statement whatever the direction is — a view's own axis (the
     /// run and the rise), a drawn line, an axis in space, a plane's normal — and which kernel reads
@@ -166,6 +178,12 @@ pub enum CKind {
     PointOnLine3,
     /// Two lines of equal true length.
     EqualLength3,
+    /// `PointAlongLine` across views: the point's hidden point at the fraction `t` of the way
+    /// between the line's ends' (#248).  Three rows against the one column.
+    PointAlongLine3,
+    /// `PointAlongArc` across views: the point's hidden point at the fraction `t` of the arc's
+    /// turn, read in the plane the arc is drawn in and stood in space there (#248).
+    PointAlongArc3,
     /// `P coincident l`: a line on a plane in space, both its ends.
     LineOnPlane,
     /// A point the midpoint of a line drawn in another view, in space.
@@ -257,7 +275,7 @@ impl FamilyKernel {
 }
 
 /// Every concrete constraint type, in the order the registry lists them.
-pub const ALL_KINDS: [CKind; 66] = [
+pub const ALL_KINDS: [CKind; 70] = [
     CKind::Coincident,
     CKind::Distance,
     CKind::Midpoint,
@@ -324,6 +342,10 @@ pub const ALL_KINDS: [CKind; 66] = [
     CKind::CurveLength,
     CKind::Stationary,
     CKind::CurveTouchesLine,
+    CKind::PointAlongLine,
+    CKind::PointAlongArc,
+    CKind::PointAlongLine3,
+    CKind::PointAlongArc3,
 ];
 
 /// **The words a direction may be written as** (`docs/ordinate-plan.md`): `along:` an ordinate
@@ -522,6 +544,10 @@ pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option
         // incidence, and two points being one: what it means is the kinds of its operands
         "coincident" => match (a, b) {
             (Point, Point) => CKind::Coincident,
+            // at a fraction of the way along where the place is written (`t == 0.25`, or a
+            // seed for it), and only there: no `t`, no column (#248)
+            (Point, Line) if sel("t").is_some() => CKind::PointAlongLine,
+            (Point, Arc) if sel("t").is_some() => CKind::PointAlongArc,
             (Point, Line) => CKind::PointOnLine,
             (Point, k) if round(k) => CKind::PointOnCircle,
             (Point, Spline) => CKind::PointOnSpline,
@@ -975,6 +1001,10 @@ impl CKind {
             CKind::PointOnSpline => "PointOnSpline",
             CKind::SplineTangentLine => "SplineTangentLine",
             CKind::SplineCurvature => "SplineCurvature",
+            CKind::PointAlongLine => "PointAlongLine",
+            CKind::PointAlongArc => "PointAlongArc",
+            CKind::PointAlongLine3 => "PointAlongLine3",
+            CKind::PointAlongArc3 => "PointAlongArc3",
             CKind::Ordinate => "Ordinate",
             CKind::Level => "Level",
             CKind::PointOnCurve => "PointOnCurve",
@@ -1144,6 +1174,13 @@ impl CKind {
             }
             CKind::Symmetric => &[("p", S::Point), ("q", S::Point), ("line", S::Line)],
             CKind::PointOnSpline => &[("p", S::Point), ("spline", S::Spline), ("t", S::Param)],
+            // the fraction is the contact's own unknown, as a spline's parameter is
+            CKind::PointAlongLine | CKind::PointAlongLine3 => {
+                &[("p", S::Point), ("line", S::Line), ("t", S::Param)]
+            }
+            CKind::PointAlongArc | CKind::PointAlongArc3 => {
+                &[("p", S::Point), ("arc", S::Arc), ("t", S::Param)]
+            }
             CKind::PointOnCurve | CKind::PointOnExtrusion => &[("p", S::Point), ("curve", S::Curve), ("t", S::Param)],
             CKind::CurveTangentLine => &[("curve", S::Curve), ("line", S::Line), ("t", S::Param)],
             CKind::CurveCurvature => {
@@ -1241,6 +1278,11 @@ impl CKind {
             | CKind::CurveCurvature
             | CKind::SplineTangentLine
             | CKind::SplineCurvature
+            // a fraction of a run or a turn
+            | CKind::PointAlongLine
+            | CKind::PointAlongArc
+            | CKind::PointAlongLine3
+            | CKind::PointAlongArc3
             => Some(Dim::SCALAR),
             _ => None,
         }
@@ -1272,7 +1314,12 @@ impl CKind {
             | CKind::PointOnCircle
             | CKind::PointOnSpline
             | CKind::PointOnCurve
-            | CKind::PointOnExtrusion => ("coincident", Infix),
+            | CKind::PointOnExtrusion
+            // and at a fraction of the way along, told apart by its `t`
+            | CKind::PointAlongLine
+            | CKind::PointAlongArc
+            | CKind::PointAlongLine3
+            | CKind::PointAlongArc3 => ("coincident", Infix),
             CKind::CurveTangentLine => ("tangent", Infix),
             CKind::CurveCurvature => ("curvature", Infix),
             CKind::CurveTouchesLine => ("touches", Infix),
@@ -1564,6 +1611,16 @@ impl CKind {
         self.contact_on(SpecKind::Spline)
     }
 
+    /// A contact at a fraction of a line's run or an arc's turn (#248): the slot naming the line
+    /// or the arc, and the one holding the fraction.
+    pub fn fraction_slots(self) -> Option<(usize, usize)> {
+        match self {
+            CKind::PointAlongLine | CKind::PointAlongLine3 => self.contact_on(SpecKind::Line),
+            CKind::PointAlongArc | CKind::PointAlongArc3 => self.contact_on(SpecKind::Arc),
+            _ => None,
+        }
+    }
+
     /// Whether this kind's kernel is built from the sketch at a width of its operands' (a
     /// spline length's control-point count) rather than registered: `Constraint::kernel_key`
     /// names it, and nothing may ask `kernel()` for it.
@@ -1637,6 +1694,10 @@ impl CKind {
             // second-order screen to look for
             | CKind::PointOnCurve
             | CKind::PointOnExtrusion
+            | CKind::PointAlongLine
+            | CKind::PointAlongArc
+            | CKind::PointAlongLine3
+            | CKind::PointAlongArc3
             | CKind::Ordinate
             | CKind::Level
             // a projection is a linear tie between two images: no contact, no double root
@@ -1749,6 +1810,10 @@ impl CKind {
             CKind::PointOnSpline => K::PointOnSpline,
             CKind::SplineTangentLine => K::SplineTangentLine,
             CKind::SplineCurvature => K::SplineCurvature,
+            CKind::PointAlongLine => K::PointAlongLine,
+            CKind::PointAlongArc => K::PointAlongArc,
+            CKind::PointAlongLine3 => K::PointAlongLine3,
+            CKind::PointAlongArc3 => K::PointAlongArc3,
             // an ordinate's kernel is its form's (`Constraint::kernel`); the kind's own is the run,
             // and a level's the line kernel that reads a pair of points' heights alike
             CKind::Ordinate => K::OrdinateU,
@@ -1860,6 +1925,10 @@ impl CKind {
             | CKind::CurveCurvature
             | CKind::SplineTangentLine
             | CKind::SplineCurvature
+            | CKind::PointAlongLine
+            | CKind::PointAlongArc
+            | CKind::PointAlongLine3
+            | CKind::PointAlongArc3
             | CKind::Level
             | CKind::Project
             | CKind::Lift
@@ -1906,6 +1975,8 @@ impl CKind {
                 | CKind::PointOnCircle3
                 | CKind::ProjectSolved
                 | CKind::PointOnLine3
+                | CKind::PointAlongLine3
+                | CKind::PointAlongArc3
                 | CKind::EqualLength3
                 | CKind::LineOnPlane
                 | CKind::Midpoint3
@@ -2977,6 +3048,16 @@ impl Constraint {
         }
     }
 
+    /// A contact at a fraction of a line's run or an arc's turn (#248) and the Param holding
+    /// the fraction — once added.
+    pub fn fraction_contact(&self) -> Option<(EntRef, u32)> {
+        let (e, t) = self.kind.fraction_slots()?;
+        match self.args[t] {
+            Arg::Param(p) => Some((self.args[e].ent(), p)),
+            _ => None,
+        }
+    }
+
     /// The spline a curve contact touches and the parameter it currently sits at — also before
     /// `Sketch::add`, while the slot still holds the seed number rather than a Param.
     fn spline_contact(&self, sk: &Sketch) -> Option<(usize, f64)> {
@@ -3158,6 +3239,25 @@ impl Constraint {
                 [pt_at(a.center), pt_at(a.start), pt_at(a.end), vec![rad(0)]].concat()
             }
             CKind::PointOnCircle => [pt(0), centre(1), vec![rad(1)]].concat(),
+            // the point, the line's ends, and the fraction
+            CKind::PointAlongLine => [pt(0), ln(1), vec![self.args[2].param()]].concat(),
+            // the point, the arc's centre, start and end, its radius, and the fraction
+            CKind::PointAlongArc => {
+                let a = &sk.arcs[e(1).i()];
+                [pt(0), pt_at(a.center), pt_at(a.start), pt_at(a.end), vec![rad(1)],
+                    vec![self.args[2].param()]].concat()
+            }
+            // the hidden points, then the fraction
+            CKind::PointAlongLine3 => [self.lifted_columns(sk), vec![self.args[2].param()]].concat(),
+            // the point and the centre in space, the radius, the arc's plane's axes, then the
+            // arc as drawn there and the fraction
+            CKind::PointAlongArc3 => {
+                let a = &sk.arcs[e(1).i()];
+                let v = self.attitude_read(sk).expect("an arc in space is drawn in a plane");
+                [self.lifted_columns(sk), vec![rad(1)], plane_columns(sk, v)[3..].to_vec(),
+                    pt_at(a.center), pt_at(a.start), pt_at(a.end), vec![self.args[2].param()]]
+                    .concat()
+            }
             CKind::Radius => vec![rad(0)],
             CKind::EqualRadius | CKind::AnnularDistance => vec![rad(0), rad(1)],
             CKind::TangentLineCircle => [ln(0), centre(1), vec![rad(1)]].concat(),
@@ -3301,7 +3401,7 @@ impl Constraint {
             CKind::Coincident3 | CKind::Distance3 | CKind::ProjectSolved => {
                 vec![e(0).i(), e(1).i()]
             }
-            CKind::PointLine3 | CKind::PointOnLine3 | CKind::Midpoint3 => {
+            CKind::PointLine3 | CKind::PointOnLine3 | CKind::Midpoint3 | CKind::PointAlongLine3 => {
                 [vec![e(0).i()], ends(1).to_vec()].concat()
             }
             CKind::PointOnPlane => vec![e(0).i()],
@@ -3322,7 +3422,7 @@ impl Constraint {
             | CKind::PlaneParallel
             | CKind::PlaneDistance => Vec::new(),
             CKind::LineOnPlane | CKind::LineOnAxis => ends(0).to_vec(),
-            CKind::PointOnCircle3 => vec![e(0).i(), sk.round_center(e(1))],
+            CKind::PointOnCircle3 | CKind::PointAlongArc3 => vec![e(0).i(), sk.round_center(e(1))],
             CKind::PointOnExtrusion | CKind::PointOnAxis => vec![e(0).i()],
             CKind::Symmetric3 => [vec![e(0).i(), e(1).i()], ends(2).to_vec()].concat(),
             // a direction's operands: a line's ends are lifted, and an axis is in space already
@@ -3410,7 +3510,7 @@ impl Constraint {
     pub fn attitude_read(&self, sk: &Sketch) -> Option<usize> {
         match self.kind {
             CKind::Lift | CKind::PointOnPlane | CKind::LineOnPlane => Some(self.args[1].ent().i()),
-            CKind::PointOnCircle3 => {
+            CKind::PointOnCircle3 | CKind::PointAlongArc3 => {
                 sk.plane_of(sk.round_center(self.args[1].ent()))
             }
             _ => None,
@@ -3521,8 +3621,69 @@ pub fn seed_param(sk: &Sketch, kind: CKind, args: &[Arg], i: usize) -> f64 {
             let (cx, cy) = sk.point_xy(sk.round_center(args[1].ent()));
             crate::curve::closest(sk, args[0].ent().i(), cx, cy).0
         }
+        // a fraction starts where the point stands: its foot on the line, its bearing round the
+        // arc — each read where the point stands in space, so a point in another view is read
+        // where it is
+        (CKind::PointAlongLine | CKind::PointAlongLine3, 2) => {
+            let l = &sk.lines[args[1].ent().i()];
+            let (a, b) = (sk.world_point(l.p1 as usize), sk.world_point(l.p2 as usize));
+            let (d, w) = (crate::space::sub(b, a), crate::space::sub(sk.world_point(args[0].ent().i()), a));
+            let dd = crate::space::dot(d, d);
+            if dd > 0.0 { crate::space::dot(w, d) / dd } else { 0.0 }
+        }
+        (CKind::PointAlongArc | CKind::PointAlongArc3, 2) => {
+            let i = args[1].ent().i();
+            let (a0, a1) = sk.arc_angles(i);
+            let c = sk.round_center(args[1].ent());
+            let view = sk.plane_of(c);
+            let (cx, cy) = sk.on_view_sheet(sk.world_point(c), view);
+            let (px, py) = sk.on_view_sheet(sk.world_point(args[0].ent().i()), view);
+            arc_fraction((py - cy).datan2(px - cx), a0, a1 - a0)
+        }
         _ => 0.0,
     }
+}
+
+/// **An arc's fraction is on the arc** (#248): its turn from `start` to `end` is all there is of
+/// it, so a place pinned past either end is a point the arc does not reach.  A line's runs on, as
+/// `coincident` on a line always has.  Asked by `validate`, and by the elaborator before it, which
+/// says it as a value refused (E040) rather than a relation the model cannot hold.
+pub fn on_the_arc(kind: CKind, args: &[Arg], name: &dyn Fn(EntRef) -> String) -> Result<(), String> {
+    if !matches!(kind, CKind::PointAlongArc | CKind::PointAlongArc3) {
+        return Ok(());
+    }
+    match args.get(2) {
+        Some(Arg::Seed { value, pinned: true })
+            if !(-ARC_FRACTION_SLACK..=1.0 + ARC_FRACTION_SLACK).contains(value) =>
+        {
+            Err(format!(
+                "`t == {}` is off {}: a fraction of an arc's turn runs from 0 at its start to 1 \
+                 at its end",
+                crate::syntax::num(*value),
+                name(args[1].ent())
+            ))
+        }
+        _ => Ok(()),
+    }
+}
+
+/// How far past an end of an arc a pinned fraction may be written and still be read as on it: a
+/// number a formula came to (`1 - s` at `s == 1`) is one rounding off, never a design.
+const ARC_FRACTION_SLACK: f64 = 1e-12;
+
+/// The fraction of an arc's turn a bearing `phi` stands at, the arc starting at the bearing `a0`
+/// and sweeping `sweep` counter-clockwise: on `[0, 1]`, a bearing off the arc read at the end it
+/// is nearer by angle.
+pub fn arc_fraction(phi: f64, a0: f64, sweep: f64) -> f64 {
+    const TURN: f64 = 2.0 * std::f64::consts::PI;
+    if sweep <= 0.0 {
+        return 0.0;
+    }
+    let past = (phi - a0).rem_euclid(TURN);
+    if past <= sweep {
+        return past / sweep;
+    }
+    if past - sweep <= TURN - past { 1.0 } else { 0.0 }
 }
 
 /// An entity slot the core fills when the caller leaves it out — the entity counterpart of
@@ -3656,7 +3817,9 @@ fn validate_ordinate(
 /// The curve a contact's parameter runs along — a spline or a language curve, whichever the
 /// contact names — and `None` for a kind whose own unknown runs along nothing.
 pub(crate) fn contact_carrier(kind: CKind, args: &[Arg]) -> Option<EntRef> {
-    let (e, _) = kind.contact_on(SpecKind::Spline).or_else(|| kind.contact_on(SpecKind::Curve))?;
+    let (e, _) = kind.contact_on(SpecKind::Spline)
+        .or_else(|| kind.contact_on(SpecKind::Curve))
+        .or_else(|| kind.fraction_slots())?;
     Some(args[e].ent())
 }
 
@@ -3684,7 +3847,12 @@ fn shared_on_one_curve(
         return Err(format!("`{name}` is a free variable a dimension reads, and a place along a \
             curve is another unknown"));
     }
+    // **a fraction is one place along any run** (#248): `[0, 1]` from one end to the other on
+    // every line and arc alike, so two of them sharing it is similar figures — but not a place
+    // along a curve's own parameter, whose interval is the curve's
+    let fraction = |e: EntRef| matches!(e.kind, EntKind::Line | EntKind::Arc);
     match sk.shared.get(name) {
+        Some(place) if fraction(place.along) && fraction(here) => Ok(()),
         Some(place) if place.along != here => Err(format!(
             "`{name}` is a place along {}, and a contact on {} cannot share it",
             named(place.along),
@@ -3704,6 +3872,7 @@ pub fn validate(
     name: &dyn Fn(EntRef) -> String,
 ) -> Result<(), String> {
     shared_on_one_curve(sk, kind, args, name)?;
+    on_the_arc(kind, args, name)?;
     match kind {
         // a curvature reads the curve's second derivative, which a trace gives exactly only
         // where every row of its block has a Taylor form (`taylor.rs`): a residual by difference
@@ -3852,7 +4021,10 @@ pub fn param_scale(sk: &Sketch, kind: CKind, args: &[Arg], i: usize) -> f64 {
     // Whichever family the contact runs along, the question is the same one, so it is asked once
     // and answered by the entity the slot actually names.  A hidden unknown that runs along
     // nothing is a length already.
-    match kind.contact_slots().or_else(|| kind.contact_on(SpecKind::Curve)) {
+    match kind.contact_slots()
+        .or_else(|| kind.contact_on(SpecKind::Curve))
+        .or_else(|| kind.fraction_slots())
+    {
         Some((e, t)) if t == i => contact_speed(sk, args[e].ent()),
         _ => 1.0,
     }
@@ -3865,6 +4037,13 @@ pub fn contact_speed(sk: &Sketch, e: EntRef) -> f64 {
     match e.kind {
         // a free curve runs over [0, 1] at its length's speed; another curve's parameter is its own
         EntKind::Curve => sk.curves[e.i()].length.map_or(1.0, |l| sk.params[l as usize].value.abs().max(1e-9)),
+        // a fraction is worth the whole run: a line's length, an arc's along itself
+        EntKind::Line => {
+            let l = &sk.lines[e.i()];
+            let d = crate::space::sub(sk.world_point(l.p2 as usize), sk.world_point(l.p1 as usize));
+            crate::space::dot(d, d).sqrt().max(1e-9)
+        }
+        EntKind::Arc => sk.arc_length(e.i()).max(1e-9),
         _ => crate::curve::speed(sk, e.i()),
     }
 }

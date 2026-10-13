@@ -8,8 +8,8 @@ unit mm
 use std (horizontal, vertical)
 use seeded
 
-component Body(g: line, up: axis, front: plane, rail: spline, run: Length, s: Scalar) {
-  st := seeded.OnLine(g, up: up, run: run, s: s)
+component Body(g: line, up: axis, front: plane, rail: spline, s: Scalar) {
+  st := seeded.OnLine(g, up: up, s: s)
   rim := point in st.n, front
   rim coincident rail
   in st.n {
@@ -39,4 +39,4 @@ in std.front {
   distance(30mm) foot
   vertical (lip := line(k1, r2))
 }
-bottle := Body(axis_line, std.y, std.front, rail, run: 90mm, s: 0.5)
+bottle := Body(axis_line, std.y, std.front, rail, s: 0.5)

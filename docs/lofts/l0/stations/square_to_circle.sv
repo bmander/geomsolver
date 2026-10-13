@@ -8,8 +8,8 @@ unit mm
 use std (coords)
 use lofts
 
-component Transition(g: line, up: axis, run: Length, half: Length, s: Scalar) {
-  st := lofts.OnLine(g, up: up, run: run, s: s)
+component Transition(g: line, up: axis, half: Length, s: Scalar) {
+  st := lofts.OnLine(g, up: up, s: s)
   in st.n {
     c0 := point
     c1 := point
@@ -38,4 +38,4 @@ in std.top {
   fix((0mm, 30mm)) e
   guide := line(o, e)
 }
-transition := Transition(guide, std.z, run: 30mm, half: 10mm, s: 0.5)
+transition := Transition(guide, std.z, half: 10mm, s: 0.5)

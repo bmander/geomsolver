@@ -546,7 +546,10 @@ impl System {
         let mut speed: BTreeMap<EntRef, f64> = BTreeMap::new();
         let mut scale_of: BTreeMap<u32, f64> = BTreeMap::new();
         for c in &sk.constraints {
-            if let Some((e, t)) = c.parametric_contact().or_else(|| c.family_contact()) {
+            if let Some((e, t)) = c.parametric_contact()
+                .or_else(|| c.family_contact())
+                .or_else(|| c.fraction_contact())
+            {
                 let v = *speed
                     .entry(e)
                     .or_insert_with(|| crate::constraints::contact_speed(sk, e));
