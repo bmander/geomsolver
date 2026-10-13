@@ -17,6 +17,7 @@ pub mod json;
 pub mod pattern;
 pub mod planar;
 pub mod corners;
+pub mod plane2;
 pub mod section;
 pub mod sweep;
 pub mod export;

@@ -15,26 +15,12 @@ use super::planar::{Region, Seg, Step};
 use crate::fmath::Det;
 use std::f64::consts::TAU;
 
-type P = [f64; 2];
-
-fn sub(a: P, b: P) -> P { [a[0] - b[0], a[1] - b[1]] }
-fn add(a: P, b: P) -> P { [a[0] + b[0], a[1] + b[1]] }
-fn scale(a: P, k: f64) -> P { [a[0] * k, a[1] * k] }
-fn dot(a: P, b: P) -> f64 { a[0] * b[0] + a[1] * b[1] }
-fn cross(a: P, b: P) -> f64 { a[0] * b[1] - a[1] * b[0] }
-fn norm(a: P) -> f64 { a[0].dhypot(a[1]) }
-fn dist(a: P, b: P) -> f64 { norm(sub(a, b)) }
-fn unit(a: P) -> P { scale(a, 1.0 / norm(a)) }
-fn left(a: P) -> P { [-a[1], a[0]] }
+use super::plane2::{self, add, cross, dist, dot, left, norm, scale, sub, unit, Touch, P};
 
 // -- the prototype -----------------------------------------------------------------------------
 
 /// The line or circle a step lies on: what is offset and crossed.
-#[derive(Clone, Copy, Debug)]
-pub enum Carrier {
-    Line { p: P, d: P },
-    Circle { c: P, r: f64 },
-}
+pub use super::plane2::Carrier;
 
 impl Carrier {
     pub fn of(s: &Seg) -> Carrier {
@@ -65,41 +51,7 @@ impl Carrier {
     }
     /// Where two carriers cross, in closed form.
     pub fn meet(self, other: Carrier) -> Vec<P> {
-        match (self, other) {
-            (Carrier::Line { p, d }, Carrier::Line { p: q, d: e }) => {
-                let den = cross(d, e);
-                if den.abs() < 1e-15 {
-                    return Vec::new();
-                }
-                vec![add(p, scale(d, cross(sub(q, p), e) / den))]
-            }
-            (Carrier::Line { p, d }, Carrier::Circle { c, r })
-            | (Carrier::Circle { c, r }, Carrier::Line { p, d }) => {
-                let f = sub(p, c);
-                let (b, k) = (dot(f, d), dot(f, f) - r * r);
-                let disc = b * b - k;
-                if disc < 0.0 {
-                    return Vec::new();
-                }
-                let w = disc.sqrt();
-                vec![add(p, scale(d, -b - w)), add(p, scale(d, -b + w))]
-            }
-            (Carrier::Circle { c, r }, Carrier::Circle { c: c2, r: r2 }) => {
-                let between = dist(c, c2);
-                if between == 0.0 {
-                    return Vec::new();
-                }
-                let along = (between * between + r * r - r2 * r2) / (2.0 * between);
-                let h2 = r * r - along * along;
-                if h2 < 0.0 {
-                    return Vec::new();
-                }
-                let u = unit(sub(c2, c));
-                let m = add(c, scale(u, along));
-                let h = h2.sqrt();
-                vec![add(m, scale(left(u), h)), add(m, scale(left(u), -h))]
-            }
-        }
+        plane2::meet(self, other, Touch::Exact).unwrap_or_default()
     }
 }
 

@@ -5,6 +5,7 @@
 use crate::fmath::Det;
 use super::geom::{Curve,Surface,Uv,V};
 use super::topo::{unwrap,Brep,EdgeCurve,Face};
+use super::plane2::{chord,Chord,Touch};
 use crate::space::{add,distance,norm,scale};
 
 /// Where a point stands against a face or a solid.
@@ -44,10 +45,10 @@ pub fn curve_curve(a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2],tol: f64) -> Opti
         }
         if dot(sub(p,o),z).abs() > tol { return Vec::new(); }
         let foot = add(p,scale(d,dot(sub(o,p),d)));
-        match half_chord(distance(foot,o),r,tol) {
-            None => Vec::new(),
-            Some(0.) => vec![foot],
-            Some(half) => vec![add(foot,scale(d,-half)),add(foot,scale(d,half))],
+        match chord(distance(foot,o),r,Touch::Sagitta(tol)) {
+            Chord::Miss => Vec::new(),
+            Chord::Touch => vec![foot],
+            Chord::Cross(half) => vec![add(foot,scale(d,-half)),add(foot,scale(d,half))],
         }
     };
     let on = |c: &Curve,q: V| match *c {
@@ -223,7 +224,7 @@ pub fn curve_surface(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) 
 }
 
 /// A line through `p` along the unit `d`, over `[t0, t1]`, against the cylinder of radius `r` about
-/// `c`'s axis, in closed form: across the axis it is a chord of the circle (`half_chord`, one touch at the foot where it is
+/// `c`'s axis, in closed form: across the axis it is a chord of the circle (`plane2::chord`, one touch at the foot where it is
 /// tangent). A line along the axis lies in the surface or misses it.
 fn line_cylinder(p: V,d: V,[t0,t1]: [f64;2],c: &super::geom::Frame,r: f64,tol: f64) -> Meets {
     use crate::space::{dot,sub};
@@ -234,23 +235,12 @@ fn line_cylinder(p: V,d: V,[t0,t1]: [f64;2],c: &super::geom::Frame,r: f64,tol: f
         return if (norm(w)-r).abs() <= tol { Meets::Along } else { Meets::At(Vec::new()) }
     }
     let foot = -dot(w,e)/ee;
-    let roots = match half_chord(norm(add(w,scale(e,foot))),r,tol) {
-        None => Vec::new(),
-        Some(0.) => vec![(foot,true)],
-        Some(half) => { let half = half/ee.sqrt(); vec![(foot-half,false),(foot+half,false)] }
+    let roots = match chord(norm(add(w,scale(e,foot))),r,Touch::Sagitta(tol)) {
+        Chord::Miss => Vec::new(),
+        Chord::Touch => vec![(foot,true)],
+        Chord::Cross(half) => { let half = half/ee.sqrt(); vec![(foot-half,false),(foot+half,false)] }
     };
     Meets::At(roots.into_iter().filter(|&(t,_)| t >= t0-tol && t <= t1+tol).map(|(t,k)| (t.clamp(t0,t1),k)).collect())
-}
-
-/// Half the chord a line at `h` from a circle's centre cuts from it, radius `r`: none where it
-/// passes clear, 0 where it touches. A tangent line meets the circle once: two roots `half` either
-/// side of the foot stand off the circle by `half² / 2r`, so where that is within the tolerance
-/// they are the one touch (taken apart, the square root of a rounding puts each a long way from
-/// it, and a sampled search finds the double root only to the square root of the tolerance).
-fn half_chord(h: f64,r: f64,tol: f64) -> Option<f64> {
-    if h > r+tol { return None }
-    let half2 = (r*r-h*h).max(0.);
-    Some(if half2 <= 2.*r*tol { 0. } else { half2.sqrt() })
 }
 
 /// A face's box in space, from its edges and a grid across its parameters, grown by what the
