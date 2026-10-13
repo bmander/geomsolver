@@ -701,7 +701,7 @@ impl TangentAt {
 /// rank-deficient at every solution — and this is the one table saying how.  A chain knows the
 /// contact by threading (one link's exit, the next one's entry; `syntax`'s `joint_relation`)
 /// and the app by which end it finds already there (`commands.ts::cTangent`, through the
-/// registry's `tangentAt`), so it takes both sides and either may name the point.
+/// registry's `tangencyAt`), so it takes both sides and either may name the point.
 ///
 /// A side names the contact by its own end as it runs there (`EntKind::ends`, matched over
 /// every `Run`, so a kind given ends says how it runs and a new way stops the build here): a
@@ -710,7 +710,7 @@ impl TangentAt {
 /// collinear (`parallel`).  Two round things already touch where they meet, so there is no
 /// regular form left: `None`, as for every pair it does not name — the caller says why in its
 /// own terms.
-pub fn tangent_at(a: Touch, b: Touch) -> Option<TangentAt> {
+pub fn tangency_at(a: Touch, b: Touch) -> Option<TangentAt> {
     use crate::model::Run;
     let run = |t: Touch| t.kind.and_then(EntKind::ends).map(|e| e.run);
     // what a side not known yet may turn out to be is elaboration's to refuse

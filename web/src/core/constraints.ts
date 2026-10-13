@@ -58,11 +58,11 @@ export interface CurveInfo {
   minCtrl: number;
 }
 
-/** One entry of the core's tangency table (`constraints::tangent_at`, #5): two kinds touching
+/** One entry of the core's tangency table (`constraints::tangency_at`, #5): two kinds touching
  *  at a point the drawing already holds — each side's end by its word, `null` where the point
  *  is on it but none of its ends — and the regular constraint that says so, its operands
  *  `swap`ped or not, `at` naming an end of the one written first. */
-interface TangentAtEntry {
+interface TangencyEntry {
   a: string;
   aEnd: string | null;
   b: string;
@@ -75,7 +75,7 @@ interface TangentAtEntry {
 interface Registry {
   types: TypeEntry[];
   kernels: KernelEntry[];
-  tangentAt: TangentAtEntry[];
+  tangencyAt: TangencyEntry[];
   curve: CurveInfo;
 }
 
@@ -494,10 +494,10 @@ export function build(name: string, args: unknown[]): Constraint {
  *  end of each that point is, `null` where it is on its rim — or `null` where there is no
  *  regular form.  The form is the core's table, asked rather than kept here: unstated at its
  *  contact, a held point on the rim plus the bare tangency is a double root. */
-export function tangentAt(
+export function tangencyAt(
   a: Primitive, aEnd: string | null, b: Primitive, bEnd: string | null,
 ): Constraint | null {
-  const e = REGISTRY().tangentAt.find((t) =>
+  const e = REGISTRY().tangencyAt.find((t) =>
     t.a === a.kind && t.aEnd === aEnd && t.b === b.kind && t.bEnd === bEnd);
   if (!e) return null;
   const [x, y] = e.swap ? [b, a] : [a, b];

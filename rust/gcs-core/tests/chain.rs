@@ -1508,15 +1508,15 @@ p := point hint((40, 40))
 }
 ";
 
-/// **One table says which regular tangency a contact means** (#5): `constraints::tangent_at`,
-/// asked by the chain's joints and — through the registry's `tangentAt` — by the app's Tangent
+/// **One table says which regular tangency a contact means** (#5): `constraints::tangency_at`,
+/// asked by the chain's joints and — through the registry's `tangencyAt` — by the app's Tangent
 /// button.  An arc's own end is read first, then a line's (against a circle or an arc's rim, so
 /// a line end held on an arc's rim is no double root either); two lines are collinear; two
 /// round things have no form left.  The `at:` word always names an end of the operand written
 /// first, and every entry settles, through `infix_op`, to the kind whose words take it.
 #[test]
 fn one_table_names_the_regular_tangency() {
-    use gcs_core::constraints::{tangent_at, TangentAt, Touch};
+    use gcs_core::constraints::{tangency_at, TangentAt, Touch};
     use gcs_core::json::Json;
     use gcs_core::model::EntKind::{self, Arc, Circle, Line, Spline};
     let side = |k: EntKind, end: Option<&str>| Touch {
@@ -1527,7 +1527,7 @@ fn one_table_names_the_regular_tangency() {
         }),
     };
     let form = |a: Touch, b: Touch| {
-        tangent_at(a, b).map(|t| (t.kind(a.kind.unwrap(), b.kind.unwrap()).unwrap(), t.swap, t.at))
+        tangency_at(a, b).map(|t| (t.kind(a.kind.unwrap(), b.kind.unwrap()).unwrap(), t.swap, t.at))
     };
     // a line into an arc's start: the arc's end names it, the arc written first
     assert_eq!(
@@ -1550,29 +1550,29 @@ fn one_table_names_the_regular_tangency() {
         );
     }
     assert_eq!(
-        tangent_at(side(Line, Some("p2")), side(Line, Some("p1"))),
+        tangency_at(side(Line, Some("p2")), side(Line, Some("p1"))),
         Some(TangentAt { word: "parallel", swap: false, at: None })
     );
     // no regular form: two round things, a rim against a rim, a spline (its contact owns a
     // parameter, a form of its own)
-    assert_eq!(tangent_at(side(Arc, Some("end")), side(Arc, Some("start"))), None);
-    assert_eq!(tangent_at(side(Arc, Some("end")), side(Circle, None)), None);
-    assert_eq!(tangent_at(side(Line, None), side(Circle, None)), None);
-    assert_eq!(tangent_at(side(Line, Some("p1")), side(Spline, None)), None);
+    assert_eq!(tangency_at(side(Arc, Some("end")), side(Arc, Some("start"))), None);
+    assert_eq!(tangency_at(side(Arc, Some("end")), side(Circle, None)), None);
+    assert_eq!(tangency_at(side(Line, None), side(Circle, None)), None);
+    assert_eq!(tangency_at(side(Line, Some("p1")), side(Spline, None)), None);
     // a side not known yet takes the form its declared neighbour names
     let unknown = Touch { kind: None, end: None };
     assert_eq!(
-        tangent_at(side(Arc, Some("end")), unknown),
+        tangency_at(side(Arc, Some("end")), unknown),
         Some(TangentAt { word: "tangent", swap: false, at: Some("end") })
     );
     assert_eq!(
-        tangent_at(unknown, side(Line, Some("p1"))),
+        tangency_at(unknown, side(Line, Some("p1"))),
         Some(TangentAt { word: "tangent", swap: true, at: Some("p1") })
     );
 
     // and the registry publishes exactly these entries, by word, for a front end to ask
     let reg = gcs_core::report::registry_json();
-    let entries = reg.get("tangentAt").expect("published").arr();
+    let entries = reg.get("tangencyAt").expect("published").arr();
     // a word of an entry, `None` where it is null
     fn word<'a>(t: &'a Json, k: &str) -> Option<&'a str> {
         t.get(k).filter(|j| matches!(j, Json::Str(_))).map(Json::as_str)

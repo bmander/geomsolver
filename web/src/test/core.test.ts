@@ -236,22 +236,22 @@ test('a tangency at a line end on the circle is stated regular', () => {
 });
 
 test('the binding asks the core which regular tangency a contact means', () => {
-  // the core's table (`constraints::tangent_at`, #5), read through the registry: an arc's own
+  // the core's table (`constraints::tangency_at`, #5), read through the registry: an arc's own
   // end first, then a line's against a rim; two round things have no form
   const sk = new Sketch();
   const c = sk.point(0, 0, true);
   const k = sk.circle(c, 17);
   const ln = sk.line(sk.point(17, 0), sk.point(17, 30));
   const a = sk.arc(c, ln.p1, sk.point(0, 17));
-  const atRim = C.tangentAt(k, null, ln, 'p1');
+  const atRim = C.tangencyAt(k, null, ln, 'p1');
   assert.ok(C.isType(atRim, 'TangentLineCircleAt'));
   assert.deepEqual(atRim!.args, [ln, k, 'p1']);
-  const atEnd = C.tangentAt(a, 'start', ln, 'p1');
+  const atEnd = C.tangencyAt(a, 'start', ln, 'p1');
   assert.ok(C.isType(atEnd, 'TangentArcLine'));
   assert.deepEqual(atEnd!.args, [a, ln, 'start']);
   // a line end on an arc's rim, none of its ends, is the line's end too
-  assert.ok(C.isType(C.tangentAt(a, null, ln, 'p2'), 'TangentLineCircleAt'));
-  assert.equal(C.tangentAt(a, 'end', k, null), null);
+  assert.ok(C.isType(C.tangencyAt(a, null, ln, 'p2'), 'TangentLineCircleAt'));
+  assert.equal(C.tangencyAt(a, 'end', k, null), null);
 });
 
 test('a tangential contact stated the old way is rigid, not under', () => {

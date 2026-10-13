@@ -1,7 +1,7 @@
 //! Chain parsing, boundary threading, and relation desugaring.
 
 use super::P;
-use crate::constraints::{is_operator, tangent_at, Fixity, Touch};
+use crate::constraints::{is_operator, tangency_at, Fixity, Touch};
 use crate::model::EntKind;
 use crate::style::Classes;
 use crate::syntax::lexer::Tok;
@@ -991,7 +991,7 @@ impl<'a> P<'a> {
     }
 
     /// Lower a joint word for the operand kinds.  A threaded `tangent` is the regular form the
-    /// core's table gives for the shared point (`constraints::tangent_at`), never chosen here.
+    /// core's table gives for the shared point (`constraints::tangency_at`), never chosen here.
     fn joint_relation(
         &mut self,
         word: &str,
@@ -1038,7 +1038,7 @@ impl<'a> P<'a> {
         if word == "tangent" {
             // the joint knows the shared point — one link's exit, the next one's entry — so the
             // tangency is stated *at* it, in the regular form the core's one table says
-            // (`constraints::tangent_at`).  A side that only names an element is a kind not
+            // (`constraints::tangency_at`).  A side that only names an element is a kind not
             // known yet: the declared side names the point, and elaboration refuses a name of a
             // kind the form does not take
             let touch = |k: Option<EntKind>, exit: bool| Touch {
@@ -1046,7 +1046,7 @@ impl<'a> P<'a> {
                 end: k.and_then(|k| k.ends()).map(|e| if exit { e.exit } else { e.entry }),
             };
             let ended = |k: Option<EntKind>| k.filter(|k| k.ends().is_some());
-            match tangent_at(touch(lk, true), touch(rk, false)) {
+            match tangency_at(touch(lk, true), touch(rk, false)) {
                 Some(t) => {
                     let (x, y) = if t.swap { (rref, lref) } else { (lref, rref) };
                     let args = t.at.map_or_else(|| extra.to_vec(), end);

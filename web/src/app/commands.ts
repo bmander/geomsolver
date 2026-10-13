@@ -270,18 +270,18 @@ function cTangent(): void {
      * rank-deficient at every solution.  What is asked here is only *where* they meet — an end
      * of the line that is an end of the arc, else one the sketch already says is on the rim
      * (the core's question, as the constraints bar asks it) — and which form that point means
-     * is the core's table (`C.tangentAt`), the one a chain's joint reads. */
+     * is the core's table (`C.tangencyAt`), the one a chain's joint reads. */
     const lineEnds = [['p1', ln.p1], ['p2', ln.p2]] as const;
     if (cc instanceof Arc) {
       for (const [lw, p] of lineEnds) {
         const aw = p === cc.start ? 'start' : p === cc.end ? 'end' : null;
-        const c = aw && C.tangentAt(cc, aw, ln, lw);
+        const c = aw && C.tangencyAt(cc, aw, ln, lw);
         if (c) return view.addConstraints(c);
       }
     }
     const on = (p: Point) => C.stating(view.sketch, new C.PointOnCircle(p, cc)) !== null;
     for (const [lw, p] of lineEnds) {
-      const c = on(p) && C.tangentAt(cc, null, ln, lw);
+      const c = on(p) && C.tangencyAt(cc, null, ln, lw);
       if (c) return view.addConstraints(c);
     }
     view.addConstraints(new C.TangentLineCircle(ln, cc));
