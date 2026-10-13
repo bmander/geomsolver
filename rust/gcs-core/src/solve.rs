@@ -307,6 +307,60 @@ pub enum BlockMode {
 /// whole-system polish does from there, with a norm the whole vector's size behind its `xtol`.
 const BLOCK_XTOL: f64 = 1e-15;
 
+impl SolveOpts {
+    /// Whether this is a document's solve, not a drag's frame: it retries (`retry`) and writes
+    /// its answer back (`writeback`), so it may be recovered, read again where it ends and
+    /// steered.
+    pub fn document(&self) -> bool {
+        self.retry && self.writeback
+    }
+}
+
+/// What a failed document solve is tried again under, in order, each only while the solve has
+/// not succeeded (`System::solve`): at the drawing's own size, then with its charts gauged where
+/// it ended.  Each says whether it applies, setting up the sketch the system is compiled from
+/// again, and where that solve starts and what is put back where it fails (`Recovery`).
+const RECOVERIES: [fn(&System, &mut Sketch, &[f64]) -> Option<Recovery>; 2] =
+    [System::resized, System::recharted];
+
+/// One recovery of a failed document solve (`RECOVERIES`): the system compiled again where the
+/// sketch stands, solved on from `from` (where it stands, when `None`), and kept only where that
+/// succeeds; else `back` puts the sketch back as it was (`System::recompiled`).
+struct Recovery {
+    from: Option<Vec<f64>>,
+    back: Back,
+}
+
+/// What a recovery that fails puts back (`Recovery::back`).
+enum Back {
+    /// The pose the failed solve ended at.
+    Pose(Vec<f64>),
+    /// The whole sketch, where the recovery changed more than its pose.
+    Sketch(Box<Sketch>),
+}
+
+/// How a DogLeg document solve that did not come out is tried again (`System::solve_compiled`),
+/// each in turn where it is wanted (`System::wants`), on what the tries before it left.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Retry {
+    /// The block pass, after a DogLeg that did not settle, under `BlockMode::Rescue`
+    /// (`System::block_rescue`).
+    Rescue,
+    /// The plain whole-system DogLeg from the start, after a failure under `BlockMode::First`,
+    /// which ran the block pass already; the better pose kept.
+    DogLeg,
+    /// LM from the start, after a failure.  DogLeg is a local method, and a squared kernel's full
+    /// Gauss–Newton step can overshoot clean out of the solution's basin — a rectangle carrying
+    /// its redundant perpendiculars, asked for its second side length, stalls in a residual
+    /// minimum that is no solution.  LM's damping takes the gradient path and converges; the
+    /// stall itself is a stationary point, so the retry is from the start the first run had, and
+    /// the better pose is kept.
+    Lm,
+}
+
+/// The retries, in the order they are tried.
+const RETRIES: [Retry; 3] = [Retry::Rescue, Retry::DogLeg, Retry::Lm];
+
 impl Default for SolveOpts {
     fn default() -> SolveOpts {
         SolveOpts {
@@ -338,17 +392,20 @@ impl System {
     /// This is the one place the rule lives, so every caller gets it — the one-shot `solve`, the
     /// plan solver's fallback and a front end that compiled a system for itself alike.
     pub fn solve(&mut self, sk: &mut Sketch, opts: SolveOpts) -> SolveResult {
-        // a document solve over bounds starts where it may be steered back to (§9.6)
-        let steers =
-            opts.retry && opts.writeback && sk.constraints.iter().any(|c| c.bound.is_some());
-        let resizes = opts.retry && opts.writeback;
-        let start = if steers || resizes { sk.get_x() } else { Vec::new() };
+        // a document solve over bounds starts where it may be steered back to (§9.6), and one
+        // that fails is tried again from there (`RECOVERIES`)
+        let steers = opts.document() && sk.constraints.iter().any(|c| c.bound.is_some());
+        let start = if opts.document() { sk.get_x() } else { Vec::new() };
         let mut res = self.solve_unsteered(sk, opts);
-        if resizes && !res.success {
-            res = self.resized(sk, opts, &start, res);
-        }
-        if resizes && !res.success {
-            res = self.recharted(sk, opts, res);
+        if opts.document() {
+            for recovery in RECOVERIES {
+                if res.success {
+                    break;
+                }
+                if let Some(again) = recovery(self, sk, &start) {
+                    res = self.recompiled(sk, opts, res, again);
+                }
+            }
         }
         if !steers || !res.success {
             return res;
@@ -364,19 +421,12 @@ impl System {
     /// first block that places something at the drawing's size.  A document solve that fails
     /// where it ends at another size, more than `RESIZE` either way, is compiled again there and
     /// solved again from where it began; kept where it succeeds, else the first stands.
-    fn resized(
-        &mut self,
-        sk: &mut Sketch,
-        opts: SolveOpts,
-        start: &[f64],
-        res: SolveResult,
-    ) -> SolveResult {
+    fn resized(&self, sk: &mut Sketch, start: &[f64]) -> Option<Recovery> {
         let (was, now) = (self.extent.max(1.0), sk.extent());
         if !(now > RESIZE * was || now * RESIZE < was) {
-            return res;
+            return None;
         }
-        let kept = sk.get_x();
-        self.recompiled(sk, opts, res, |sk| { sk.set_x(start); }, |sk| { sk.set_x(&kept); })
+        Some(Recovery { from: Some(start.to_vec()), back: Back::Pose(sk.get_x()) })
     }
 
     /// **A chart is gauged where the solve ends** (#217): a set's derivative along a chart
@@ -388,37 +438,43 @@ impl System {
     /// solve that fails is gauged again where it ends (`Sketch::charts_moved`) and, where a
     /// chart changed, compiled again and solved on from there; kept where it succeeds, else the
     /// first stands, its charts as they were.
-    fn recharted(&mut self, sk: &mut Sketch, opts: SolveOpts, res: SolveResult) -> SolveResult {
+    fn recharted(&self, sk: &mut Sketch, _start: &[f64]) -> Option<Recovery> {
         let moved = sk.charts_moved();
         if moved.is_empty() {
-            return res;
+            return None;
         }
         let before = sk.clone();
         for (d, c) in moved {
             sk.set_chart(d, c); // which tangents are free: compiled with them
         }
-        self.recompiled(sk, opts, res, |_| {}, |sk| *sk = before)
+        Some(Recovery { from: None, back: Back::Sketch(Box::new(before)) })
     }
 
-    /// A system compiled where `sk` stands, then `prepare` the sketch and solve on it: kept where
-    /// that succeeds, else the system that was is put back, `undo` puts back the sketch it stood
-    /// on, and `res` stands (`resized`, `recharted`).
+    /// A system compiled where `sk` stands — as the recovery left it — then solved on from the
+    /// recovery's start: kept where that succeeds, else the system that was is put back, the
+    /// sketch it stood on with it, and `res` stands.
     fn recompiled(
         &mut self,
         sk: &mut Sketch,
         opts: SolveOpts,
         res: SolveResult,
-        prepare: impl FnOnce(&mut Sketch),
-        undo: impl FnOnce(&mut Sketch),
+        again: Recovery,
     ) -> SolveResult {
         let compiled = std::mem::replace(self, System::new(sk));
-        prepare(sk);
-        let again = self.solve_unsteered(sk, opts);
-        if again.success {
-            return again;
+        if let Some(from) = &again.from {
+            sk.set_x(from);
+        }
+        let solved = self.solve_unsteered(sk, opts);
+        if solved.success {
+            return solved;
         }
         *self = compiled;
-        undo(sk);
+        match again.back {
+            Back::Pose(x) => {
+                sk.set_x(&x);
+            }
+            Back::Sketch(before) => *sk = *before,
+        }
         self.resync(sk);
         res
     }
@@ -525,7 +581,7 @@ impl System {
         // a seed far from the drawing, every point unseeded, can end on such a root, which is no
         // root of the drawing's.  So a document solve that succeeds re-reads its constants there
         // (`refresh_consts`) and, where its rows no longer hold, solves on from where it stopped.
-        if opts.retry && opts.writeback && reads_pose(sk) {
+        if opts.document() && reads_pose(sk) {
             for _ in 0..REFRAMES {
                 if !res.success {
                     break;
@@ -599,33 +655,24 @@ impl System {
         };
         // the pose `self`'s x was last evaluated at is `z`'s, until a retry that is not kept
         let mut in_step = true;
-        if opts.retry && dogleg && !res.settled() {
-            // With fewer than two blocks the pass would be this DogLeg again, from the same start.
-            if opts.blocks == BlockMode::Rescue && self.block_order().blocks.len() >= 2 {
-                in_step = self.block_rescue(sk, &z0, &mut z, &mut res, &mut rel, &opts);
-            } else if opts.blocks == BlockMode::First && !res.success {
-                // `First` ran the block pass already: its retry is the plain DogLeg
-                let mut z2 = z0.clone();
-                let (res2, rel2) = self.minimise(&mut z2, Method::DogLeg, &opts);
-                if res2.success || rel2 < rel || rel.is_nan() {
-                    (z, res, rel, in_step) = (z2, res2, rel2, true);
-                } else {
-                    in_step = false;
+        if opts.retry && dogleg {
+            for retry in RETRIES {
+                if !self.wants(retry, &res, &opts) {
+                    continue;
                 }
-            }
-        }
-        // DogLeg is a local method, and a squared kernel's full Gauss–Newton step can overshoot
-        // clean out of the solution's basin — a rectangle carrying its redundant perpendiculars,
-        // asked for its second side length, stalls in a residual minimum that is no solution.
-        // LM's damping takes the gradient path and converges; the stall itself is a stationary
-        // point, so the retry is from the start the first run had, and the better pose is kept.
-        if opts.retry && dogleg && !res.success {
-            let mut z2 = z0;
-            let (res2, rel2) = self.minimise(&mut z2, Method::Lm, &opts);
-            if res2.success || rel2 < rel || rel.is_nan() {
-                (z, res, in_step) = (z2, res2, true);
-            } else {
-                in_step = false;
+                in_step = match retry {
+                    Retry::Rescue => self.block_rescue(sk, &z0, &mut z, &mut res, &mut rel, &opts),
+                    Retry::DogLeg | Retry::Lm => {
+                        let method = if retry == Retry::Lm { Method::Lm } else { Method::DogLeg };
+                        let mut z2 = z0.clone();
+                        let (res2, rel2) = self.minimise(&mut z2, method, &opts);
+                        let kept = res2.success || rel2 < rel || rel.is_nan();
+                        if kept {
+                            (z, res, rel) = (z2, res2, rel2);
+                        }
+                        kept
+                    }
+                };
             }
         }
         if !in_step {
@@ -636,6 +683,20 @@ impl System {
             sk.set_x(&x);
         }
         res
+    }
+
+    /// Whether a DogLeg solve ending at `res` is tried again by `retry` (`RETRIES`).
+    fn wants(&mut self, retry: Retry, res: &SolveResult, opts: &SolveOpts) -> bool {
+        match retry {
+            // with fewer than two blocks the pass would be this DogLeg again, from the same start
+            Retry::Rescue => {
+                opts.blocks == BlockMode::Rescue
+                    && !res.settled()
+                    && self.block_order().blocks.len() >= 2
+            }
+            Retry::DogLeg => opts.blocks == BlockMode::First && !res.success,
+            Retry::Lm => !res.success,
+        }
     }
 
     /// The block-triangular rescue of a whole-system DogLeg that did not settle: the block pass
@@ -735,7 +796,8 @@ impl System {
                         // the root the words say, or else what the block's own start came to
                         let first: Vec<f64> = b.cols.iter().map(|&c| z[c]).collect();
                         let mut found = false;
-                        for attempt in s.attempts(self, z, b, &start, &solved, &decided) {
+                        let mut attempts = s.attempts(self, z, b, &start, &decided);
+                        while let Some(attempt) = attempts.next(s, self, &solved) {
                             let (mut fine, mut info) = self.solve_block(&sub, z, &attempt, opts);
                             if !fine {
                                 (fine, info) = self.follow_block(&sub, z, &attempt, opts);
@@ -1041,17 +1103,16 @@ impl Search {
 
     /// Where block `b` may start again, its own start (`start`, with `z` the block's solution)
     /// having come to no root or to one a bound it decides refuses: carried across each such bound
-    /// from its solution and from its start, then scattered.
-    fn attempts(
+    /// from its solution and from its start, then scattered — each made only when the one before
+    /// it was not kept (`Attempts::next`).
+    fn attempts<'b>(
         &mut self,
         sys: &System,
         z: &[f64],
-        b: &SolveBlock,
+        b: &'b SolveBlock,
         start: &[f64],
-        solved: &std::collections::BTreeSet<usize>,
         decided: &[usize],
-    ) -> Vec<Vec<f64>> {
-        let mut out = Vec::new();
+    ) -> Attempts<'b> {
         let mut from_start = z.to_vec();
         for (k, &c) in b.cols.iter().enumerate() {
             from_start[c] = start[k];
@@ -1070,70 +1131,157 @@ impl Search {
             self.points.iter().filter(|(_, c)| c.iter().any(own)).map(|&(p, _)| p).collect();
         let turning: Vec<[usize; 3]> =
             self.axes.iter().filter(|d| d.iter().any(own)).copied().collect();
-        for x in [&x_solved, &x_start] {
-            for &(ci, aim) in &broken {
-                self.sk.set_x(x);
-                let before: Vec<[f64; 3]> =
-                    moving.iter().map(|&p| self.sk.world_point(p)).collect();
-                let Some(q) = across(&mut self.sk, ci, aim, &self.free) else { continue };
-                out.push(self.block_of(sys, b));
-                // and the block mirrored across the plane the point was carried through: the
-                // other hand of what it is, where the point alone comes back to where it was
-                let Some(k) = moving.iter().position(|&p| p == q) else { continue };
-                let (from, to) = (before[k], self.sk.world_point(q));
-                let Some(n) = space::normalised(space::sub(to, from)) else {
-                    continue;
-                };
-                let mid = space::lerp(from, to, 0.5);
-                let mirror = |w: [f64; 3]| {
-                    space::sub(w, space::scale(n, 2.0 * space::dot(space::sub(w, mid), n)))
-                };
-                self.sk.set_x(x);
-                for (&p, &w) in moving.iter().zip(&before) {
-                    self.place(p, mirror(w));
-                }
-                for d in &turning {
-                    let v = d.map(|c| self.sk.params[sys.free[c] as usize].value);
-                    let v = space::sub(v, space::scale(n, 2.0 * space::dot(v, n)));
-                    for (&c, x) in d.iter().zip(v) {
-                        self.sk.params[sys.free[c] as usize].value = x;
-                    }
-                }
-                out.push(self.block_of(sys, b));
-            }
+        Attempts {
+            b,
+            x_start,
+            x_solved,
+            broken,
+            moving,
+            turning,
+            crossing: 0,
+            mirrored: None,
+            scatter: None,
+            restart: 0,
+        }
+    }
+}
+
+/// The starts a block's root is searched from (`Search::attempts`), in order: each bound the
+/// block's solution breaks crossed from the solution, then from its start — each crossing
+/// followed by the block mirrored across the plane its point was carried through — and then
+/// `RESTARTS` starts scattered about what the blocks before it placed.  Made one at a time, off
+/// the poses taken where the search began, so a root found early costs none of the rest.
+struct Attempts<'b> {
+    b: &'b SolveBlock,
+    x_start: Vec<f64>,
+    x_solved: Vec<f64>,
+    /// Each bound the block's solution breaks, with where its point aims.
+    broken: Vec<(usize, f64)>,
+    /// The points the block moves and the axes it turns.
+    moving: Vec<usize>,
+    turning: Vec<[usize; 3]>,
+    /// The next crossing: the solution's for each broken bound, then the start's.
+    crossing: usize,
+    /// The block mirrored, made with the crossing before it and tried after it.
+    mirrored: Option<Vec<f64>>,
+    /// The scattered starts' centre and size, once read: `None` before, `Some(None)` where the
+    /// block has none.
+    scatter: Option<Option<([f64; 3], f64)>>,
+    /// The next scattered start.
+    restart: usize,
+}
+
+impl Attempts<'_> {
+    /// The next start, or `None` where every one has been tried; `solved` the columns the blocks
+    /// before placed.
+    fn next(
+        &mut self,
+        s: &mut Search,
+        sys: &System,
+        solved: &std::collections::BTreeSet<usize>,
+    ) -> Option<Vec<f64>> {
+        let b = self.b;
+        if let Some(m) = self.mirrored.take() {
+            return Some(m);
+        }
+        let n = self.broken.len();
+        while self.crossing < 2 * n {
+            let x = if self.crossing < n { &self.x_solved } else { &self.x_start };
+            let (ci, aim) = self.broken[self.crossing % n];
+            self.crossing += 1;
+            s.sk.set_x(x);
+            let before: Vec<[f64; 3]> =
+                self.moving.iter().map(|&p| s.sk.world_point(p)).collect();
+            let Some(q) = across(&mut s.sk, ci, aim, &s.free) else { continue };
+            let crossed = s.block_of(sys, b);
+            // and the block mirrored across the plane the point was carried through: the other
+            // hand of what it is, where the point alone comes back to where it was
+            self.mirrored = self.mirror(s, sys, x, q, &before);
+            return Some(crossed);
         }
         // scattered: its points about what the blocks before it placed, at that size
-        if (moving.is_empty() && turning.is_empty()) || b.cols.len() > DENSE_MAX {
-            return out;
+        let scatter = match self.scatter {
+            Some(scatter) => scatter,
+            None => {
+                let none = (self.moving.is_empty() && self.turning.is_empty())
+                    || b.cols.len() > DENSE_MAX;
+                let spread = (!none).then(|| Self::spread(s, sys, &self.x_solved, solved));
+                *self.scatter.insert(spread)
+            }
+        };
+        let (centre, size) = scatter?;
+        if self.restart >= RESTARTS {
+            return None;
         }
-        self.sk.set_x(&x_solved);
-        let placed: Vec<[f64; 3]> = self.points.iter()
+        let k = self.restart;
+        self.restart += 1;
+        let seed = 0x2170_0000 ^ (k as u32).wrapping_mul(2_654_435_761);
+        let mut rng = crate::rng::Rng::new(seed);
+        s.sk.set_x(&self.x_start);
+        for &p in &self.moving {
+            let w = [0, 1, 2].map(|i| centre[i] + size * rng.uniform(-1.0, 1.0));
+            s.place(p, w);
+        }
+        for d in &self.turning {
+            let v = [0, 1, 2].map(|_| rng.uniform(-1.0, 1.0));
+            let v = space::normalised(v).unwrap_or([0.0, 0.0, 1.0]);
+            for (&c, x) in d.iter().zip(v) {
+                s.sk.params[sys.free[c] as usize].value = x;
+            }
+        }
+        Some(s.block_of(sys, b))
+    }
+
+    /// The block mirrored across the plane point `q` was carried through from `before` (the
+    /// moving points where they stood at pose `x`), its axes turned with it; `None` where `q` is
+    /// none of the block's or did not move.
+    fn mirror(
+        &self,
+        s: &mut Search,
+        sys: &System,
+        x: &[f64],
+        q: usize,
+        before: &[[f64; 3]],
+    ) -> Option<Vec<f64>> {
+        let k = self.moving.iter().position(|&p| p == q)?;
+        let (from, to) = (before[k], s.sk.world_point(q));
+        let n = space::normalised(space::sub(to, from))?;
+        let mid = space::lerp(from, to, 0.5);
+        let mirror =
+            |w: [f64; 3]| space::sub(w, space::scale(n, 2.0 * space::dot(space::sub(w, mid), n)));
+        s.sk.set_x(x);
+        for (&p, &w) in self.moving.iter().zip(before) {
+            s.place(p, mirror(w));
+        }
+        for d in &self.turning {
+            let v = d.map(|c| s.sk.params[sys.free[c] as usize].value);
+            let v = space::sub(v, space::scale(n, 2.0 * space::dot(v, n)));
+            for (&c, x) in d.iter().zip(v) {
+                s.sk.params[sys.free[c] as usize].value = x;
+            }
+        }
+        Some(s.block_of(sys, self.b))
+    }
+
+    /// Where the scattered starts are spread: the centre and size of the points the blocks before
+    /// placed (`solved`), at the block's solution `x_solved`; the drawing's extent where they
+    /// have none.
+    fn spread(
+        s: &mut Search,
+        sys: &System,
+        x_solved: &[f64],
+        solved: &std::collections::BTreeSet<usize>,
+    ) -> ([f64; 3], f64) {
+        s.sk.set_x(x_solved);
+        let placed: Vec<[f64; 3]> = s.points.iter()
             .filter(|(_, c)| c.iter().all(|c| solved.contains(c)))
-            .map(|&(p, _)| self.sk.world_point(p))
+            .map(|&(p, _)| s.sk.world_point(p))
             .collect();
         let n = placed.len().max(1) as f64;
         let centre = space::scale(placed.iter().fold([0.0; 3], |a, &w| space::add(a, w)), 1.0 / n);
         let size =
             placed.iter().map(|&w| space::norm(space::sub(w, centre))).fold(0.0, f64::max);
-        let size = if size > 0.0 { size } else { sys.extent.max(1.0) };
-        for k in 0..RESTARTS {
-            let seed = 0x2170_0000 ^ (k as u32).wrapping_mul(2_654_435_761);
-            let mut rng = crate::rng::Rng::new(seed);
-            self.sk.set_x(&x_start);
-            for &p in &moving {
-                let w = [0, 1, 2].map(|i| centre[i] + size * rng.uniform(-1.0, 1.0));
-                self.place(p, w);
-            }
-            for d in &turning {
-                let v = [0, 1, 2].map(|_| rng.uniform(-1.0, 1.0));
-                let v = space::normalised(v).unwrap_or([0.0, 0.0, 1.0]);
-                for (&c, x) in d.iter().zip(v) {
-                    self.sk.params[sys.free[c] as usize].value = x;
-                }
-            }
-            out.push(self.block_of(sys, b));
-        }
-        out
+        (centre, if size > 0.0 { size } else { sys.extent.max(1.0) })
     }
 }
 
