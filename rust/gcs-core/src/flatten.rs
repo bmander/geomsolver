@@ -44,7 +44,7 @@ use crate::lowering::Lowered;
 
 pub(crate) use values::{substitute_with, value_aff, value_read};
 use values::{free, typed, value_of, substitute, reads_geometry};
-use resolve::{lookup, lookup_raw};
+use resolve::Lookup;
 use crate::syntax::ref_text;
 
 /// No set walked as a set for want of an element: `Walk::unlowered` where nothing was.

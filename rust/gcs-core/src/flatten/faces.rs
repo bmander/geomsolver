@@ -95,7 +95,7 @@ impl Walk<'_> {
             let StmtKind::Relation(r) = &st.kind else { continue };
             let Some(w) = r.form.written().filter(|w| sets::may_use(w)) else { continue };
             for (k, op) in w.ops.iter().enumerate() {
-                if let Some((abs, rest)) = lookup_raw(op, sc, &self.names, &alias, self.units) {
+                if let Some((abs, rest)) = self.look(&alias).raw(op, sc) {
                     if !rest.is_empty() && !self.sets.contains_key(&abs) {
                         wanted.push((i, k, op.span, abs, rest));
                     }
@@ -162,7 +162,7 @@ impl Walk<'_> {
             operands: BTreeMap::new(),
         };
         let abs = |r: &Ref, sc: &Scope| {
-            lookup_raw(r, sc, &self.names, alias, self.units)
+            self.look(alias).raw(r, sc)
                 .filter(|(_, rest)| rest.is_empty())
                 .map(|(a, _)| a)
         };
@@ -250,7 +250,7 @@ impl Walk<'_> {
         // the face swept: one named, or one written in place, `solid(face(ab, bc, …), …)`
         let (face_abs, items, face_sc, plane) = match decl.children.first().map(Vec::as_slice) {
             Some([Kid::Ref(r)]) => {
-                let face_abs = lookup_raw(r, sc, &self.names, alias, self.units)
+                let face_abs = self.look(alias).raw(r, sc)
                     .filter(|(_, rest)| rest.is_empty())
                     .map(|(a, _)| a)
                     .ok_or_else(|| format!("`{said}`: `{}` names no face", ref_text(r)))?;
@@ -271,7 +271,7 @@ impl Walk<'_> {
         let plane_key = keys::face_plane(&face_abs);
         if self.names.insert(plane_key.clone()) {
             let edges = items.iter().filter_map(|r| {
-                lookup_raw(r, &face_sc, &self.names, alias, self.units).map(|(a, rest)| {
+                self.look(alias).raw(r, &face_sc).map(|(a, rest)| {
                     std::iter::once(a).chain(rest).collect::<Vec<_>>().join(".")
                 })
             });
@@ -306,7 +306,7 @@ impl Walk<'_> {
                     return Err(format!("`{said}` names no face: `{}` has `near`, `far` and a side \
                                         for each edge it names", public_path(&solid)));
                 };
-                let e_abs = lookup_raw(e, &face_sc, &self.names, alias, self.units)
+                let e_abs = self.look(alias).raw(e, &face_sc)
                     .filter(|(_, r)| r.is_empty())
                     .map(|(a, _)| a);
                 if !e_abs.as_ref().is_some_and(|a| t.lines.contains(a)) {

@@ -129,9 +129,9 @@ untyped group) and `bind` makes the formal **a group of its own** (`Walk::typed`
 argument's, a nested interface a group again; the numbers by `interface_numbers`, each of its
 dimension), the whole argument kept under `{key}#given` for `conform` (from `resolve`: members
 present, sets and groups of their sort; an entity's kind by `relations::kinds` via
-`Expansion::kinds`, as a `path` formal's). So an undeclared member is no name: `lookup` refuses a
-field left past a typed group (`Scope::typed`, given with `access`), `missing_ref` names the
-interface, and nothing handed on carries more. A member missing at the call is `failed`, its
+`Expansion::kinds`, as a `path` formal's). So an undeclared member is no name: `Lookup::find`
+refuses a field left past a typed group (`Scope::typed`, given with `access`), `Lookup::missing`
+names the interface, and nothing handed on carries more. A member missing at the call is `failed`, its
 reads silenced (`read_through`); a relation reading one is not stated. Text faults are
 `interfaces::check` (E071/E001/E101/E003). `hypoid.sv`'s `Gear`, `Trace`, `BlankDesign`;
 `tests/interfaces.rs` is the gate.

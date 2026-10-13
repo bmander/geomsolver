@@ -9,37 +9,30 @@ use crate::syntax::Member;
 /// same `lookup` every reference goes through, so a formal reads as the actual it aliases and a
 /// name inside a block's copy reads as that copy's.  The scalar (`x`, `y`, `r`, `b`) stays on the
 /// end, since it is the build's question and not a name.
-fn rescope_seeds(
-    k: &mut StmtKind,
-    sc: &Scope,
-    names_seen: &BTreeSet<String>,
-    alias: &BTreeMap<String, String>,
-    units: Units,
-    bad: &mut Vec<(Code, Span, String)>,
-) {
+fn rescope_seeds(k: &mut StmtKind, sc: &Scope, look: Lookup, bad: &mut Vec<(Code, Span, String)>) {
     let StmtKind::Decl(d) = k else { return };
     let mut names: BTreeMap<String, String> = BTreeMap::new();
     for i in 0..d.seed_text.len() {
         let span = d.seed_spans.get(i).copied().unwrap_or_default();
         if let Some(t) = d.seed_text[i].as_deref() {
-            rescope_text(t, span, sc, names_seen, alias, units, &mut names, bad);
+            rescope_text(t, span, sc, look, &mut names, bad);
         }
     }
     for kid in d.children.iter().flatten() {
         if let crate::syntax::Kid::Hint(ks) = kid {
             for i in 0..3 {
                 if let Some(t) = ks.text[i].as_deref() {
-                    rescope_text(t, ks.spans[i], sc, names_seen, alias, units, &mut names, bad);
+                    rescope_text(t, ks.spans[i], sc, look, &mut names, bad);
                 }
             }
             if let Some((t, span)) = ks.dir.as_ref().and_then(|d| d.turn.as_ref()) {
-                rescope_text(t, *span, sc, names_seen, alias, units, &mut names, bad);
+                rescope_text(t, *span, sc, look, &mut names, bad);
             }
         }
     }
     // a place's numbers are texts over the same names — `atan2(k2.center.y - k1.center.y, …)`
     for (t, span) in d.seed_at.iter().flat_map(|a| a.texts()) {
-        rescope_text(t, *span, sc, names_seen, alias, units, &mut names, bad);
+        rescope_text(t, *span, sc, look, &mut names, bad);
     }
     d.seed_names = names.into_iter().collect();
 }
@@ -48,18 +41,15 @@ fn rescope_seeds(
 /// name of what it denotes by the same `lookup` every reference goes through, and written back
 /// into the text: a formal reads as its actual and a name inside a block copy as that copy's
 /// (`side.#282.0.small`, which the expression lexer reads as one name for this reason).
-#[allow(clippy::too_many_arguments)]
 fn rescope_measures(
     text: &mut String,
     span: Span,
     sc: &Scope,
-    names_seen: &BTreeSet<String>,
-    alias: &BTreeMap<String, String>,
+    look: Lookup,
     solids: &BTreeSet<String>,
-    units: Units,
     bad: &mut Vec<(Code, Span, String)>,
 ) {
-    let Ok(p) = expr::parse_in(text, units) else { return };
+    let Ok(p) = expr::parse_in(text, look.units) else { return };
     let mut to: BTreeMap<String, String> = BTreeMap::new();
     for (_, args) in p.body.measures() {
         for a in args {
@@ -67,7 +57,7 @@ fn rescope_measures(
                 continue;
             }
             let segs: Vec<&str> = a.split('.').collect();
-            match resolve_dotted(&segs, span, sc, names_seen, alias, units) {
+            match resolve_dotted(&segs, span, sc, look) {
                 Ok((abs, mut rest)) => {
                     // a face's surface, read here: spelled by a segment the source cannot write,
                     // so the elaborator reads the member and not the word (#188)
@@ -88,18 +78,15 @@ fn rescope_measures(
 }
 
 /// One kept seed text — see `rescope_seeds`: each dotted name in it, resolved.
-#[allow(clippy::too_many_arguments)]
 fn rescope_text(
     t: &str,
     span: Span,
     sc: &Scope,
-    names_seen: &BTreeSet<String>,
-    alias: &BTreeMap<String, String>,
-    units: Units,
+    look: Lookup,
     names: &mut BTreeMap<String, String>,
     bad: &mut Vec<(Code, Span, String)>,
 ) {
-    let Ok(p) = expr::parse_in(t, units) else { return };
+    let Ok(p) = expr::parse_in(t, look.units) else { return };
     for dep in p.body.deps() {
         if names.contains_key(&dep) {
             continue;
@@ -109,7 +96,7 @@ fn rescope_text(
             continue;
         }
         let scalar = segs.pop().unwrap_or_default();
-        match resolve_dotted(&segs, span, sc, names_seen, alias, units) {
+        match resolve_dotted(&segs, span, sc, look) {
             Ok((abs, rest)) => {
                 let full = std::iter::once(abs).chain(rest).collect::<Vec<_>>().join(".");
                 names.insert(dep.clone(), format!("{full}.{scalar}"));
@@ -122,20 +109,14 @@ fn rescope_text(
 /// A dotted name an expression reads (`gen_g`, `k.center`), resolved as the reference it spells
 /// by the same `lookup` every reference goes through: the absolute name of what it denotes and
 /// the fields past it, or the words for why nothing is.
-fn resolve_dotted(
-    segs: &[&str],
-    span: Span,
-    sc: &Scope,
-    names_seen: &BTreeSet<String>,
-    alias: &BTreeMap<String, String>,
-    units: Units,
-) -> Result<(String, Vec<String>), (Code, String)> {
+fn resolve_dotted(segs: &[&str], span: Span, sc: &Scope, look: Lookup)
+    -> Result<(String, Vec<String>), (Code, String)> {
     let r = Ref {
         root: Name { text: segs[0].to_string(), span },
         path: segs[1..].iter().map(|f| Seg::Field(Name::new(*f))).collect(),
         span,
     };
-    lookup(&r, sc, names_seen, alias, units).ok_or_else(|| missing_ref(&r, sc, names_seen, alias, units))
+    look.find(&r, sc).ok_or_else(|| look.missing(&r, sc))
 }
 
 /// The absolute name `name` has inside copy `k` of whichever block declares it, under
@@ -181,201 +162,210 @@ fn copy_of(
     found
 }
 
-/// An alias may denote a child (`f.origin`), including a child of another alias.
-/// Keep the field suffix while resolving its declared root; it is not a second entity.
-fn alias_target(
-    target: &str,
-    tail: &[String],
-    names: &BTreeSet<String>,
-    alias: &BTreeMap<String, String>,
-) -> Option<(String, Vec<String>)> {
-    let mut segs: Vec<String> = target.split('.').map(str::to_string).chain(tail.iter().cloned()).collect();
-    for _ in 0..MAX_DEPTH {
-        let mut replaced = false;
-        for take in (1..=segs.len()).rev() {
-            let key = segs[..take].join(".");
-            if names.contains(&key) {
-                return Some((key, segs[take..].to_vec()));
-            }
-            if let Some(next) = alias.get(&key) {
-                if next == &key { continue; }
-                segs = next.split('.').map(str::to_string).chain(segs[take..].iter().cloned()).collect();
-                replaced = true;
-                break;
-            }
-        }
-        if !replaced { return None; }
-    }
-    None
-}
-
-/// The absolute name a reference denotes, and whatever field path is left over.
-///
-/// Greedy on the dotted name: `t.lead` is one name if something declared it, and `c0.center` is
-/// the entity `c0` and its field `center`.  Which it is cannot be told from the spelling, only
-/// from what exists — so the longest match that names something wins.
-pub(super) fn lookup_raw(
-    r: &Ref,
-    sc: &Scope,
-    names: &BTreeSet<String>,
-    alias: &BTreeMap<String, String>,
-    units: Units,
-) -> Option<(String, Vec<String>)> {
-    // `p[k]` names *which copy* of a repeated statement, so it is resolved before anything else
-    // and the rest of the path is read against the copy it picks.  The index may stand on the
-    // root or on a dotted name — `l.p[1]` is copy 1 of the `p` a block inside the instance `l`
-    // declares, which is how a component's repetition is reached from outside (#45.3) — and
-    // what stands before it is the *container* the block was walked under, never a field: an
-    // index selects a copy of the block a name was declared in, and a field of a copy is still
-    // a field, so it comes after.  Only once — a copy of a copy is a thing no statement makes.
-    if let Some(at) = r.path.iter().position(|s| matches!(s, Seg::Index(_))) {
-        let Seg::Index(text) = &r.path[at] else { unreachable!() };
-        if r.path[at + 1..].iter().any(|s| matches!(s, Seg::Index(_))) {
-            return None;
-        }
-        let k = match value_of(text, &sc.vals, units) {
-            Ok(v) if v.is_finite() && v >= 0.0 && v.round() == v => v as usize,
-            _ => return None,
-        };
-        let mut segs: Vec<&str> = vec![r.root.text.as_str()];
-        for s in &r.path[..at] {
-            if let Seg::Field(f) = s {
-                segs.push(f.text.as_str());
-            }
-        }
-        let leaf = segs.pop()?;
-        let abs = if segs.is_empty() {
-            copy_of("", leaf, k, sc, names)?
-        } else {
-            // A layout argument may alias an instance whose body contains the repetition.
-            // Resolve that container in the caller's scope before selecting its copy.
-            let container = Ref { root: r.root.clone(), path: r.path[..at - 1].to_vec(), span: r.span };
-            let (root, rest) = lookup_raw(&container, sc, names, alias, units)?;
-            let prefix = std::iter::once(root).chain(rest).collect::<Vec<_>>().join(".");
-            let scope = Scope { prefixes: vec![format!("{prefix}.")], ..sc.clone() };
-            copy_of("", leaf, k, &scope, names)?
-        };
-        // a member is no name (#188): the caller keeps it
-        let rest: Vec<String> = r.path[at + 1..]
-            .iter()
-            .filter_map(|s| match s {
-                Seg::Field(f) => Some(f.text.clone()),
-                Seg::Index(t) => Some(t.clone()),
-                Seg::Member(_) => None,
-            })
-            .collect();
-        // greedy under the copy, as below: `cyl[0].small` is the entity `…cyl.small` and no
-        // field, where `p[1].x` is the entity `…p` and its field
-        for take in (1..=rest.len()).rev() {
-            let cand = format!("{abs}.{}", rest[..take].join("."));
-            if names.contains(&cand) {
-                return Some((cand, rest[take..].to_vec()));
-            }
-            if let Some(t) = alias.get(&cand) {
-                return alias_target(t, &rest[take..], names, alias);
-            }
-        }
-        return Some((abs, rest));
-    }
-
-    let mut segs: Vec<String> = vec![r.root.text.clone()];
-    for s in &r.path {
-        match s {
-            Seg::Field(f) => segs.push(f.text.clone()),
-            Seg::Index(t) => segs.push(t.clone()),
-            Seg::Member(_) => {}
-        }
-    }
-    // `next` and `prev` name the sibling copy, so the rest of the path is read in *its* scope
-    let mut prefixes = sc.prefixes.clone();
-    if (segs[0] == "next" || segs[0] == "prev") && segs.len() > 1 {
-        let c = sc.cyc.as_ref()?;
-        let k = match segs[0].as_str() {
-            "next" => (c.k + 1) % c.n,
-            _ => (c.k + c.n - 1) % c.n,
-        };
-        segs.remove(0);
-        prefixes = vec![format!("{}{}.", c.prefix, k)];
-    }
-    for take in (1..=segs.len()).rev() {
-        let cand = segs[..take].join(".");
-        let rest: Vec<String> = segs[take..].to_vec();
-        for p in &prefixes {
-            let abs = format!("{p}{cand}");
-            if names.contains(&abs) {
-                return Some((abs, rest));
-            }
-            if let Some(t) = alias.get(&abs) {
-                return alias_target(t, &rest, names, alias);
-            }
-        }
-        if !sc.closed {
-            if names.contains(&cand) { return Some((cand, rest)); }
-            if let Some(t) = alias.get(&cand) { return alias_target(t, &rest, names, alias); }
-        }
-    }
-    None
-}
-
 fn under_member(target: &str, member: &str) -> bool {
     target == member || target.strip_prefix(member).is_some_and(|s| s.starts_with('.'))
 }
 
-/// Explicit entity arguments grant access to that entity. Passing a layout grants its
-/// public interface, not access to private members further inside it.
-fn private_member(r: &Ref, sc: &Scope, target: &str, alias: &BTreeMap<String, String>) -> Option<String> {
-    let mut paths = vec![r.root.text.clone()];
-    for seg in &r.path {
-        let Seg::Field(f) = seg else { break };
-        paths.push(format!("{}.{}", paths.last().unwrap(), f.text));
-    }
-    for member in std::iter::successors(Some(target), |name| name.rsplit_once('.').map(|(parent, _)| parent)) {
-        let Some(owner) = sc.access.get(member) else { continue };
-        if sc.owner == *owner || sc.owner.starts_with(&format!("{member}.")) { continue; }
-        let granted = paths.iter().any(|p| {
-            sc.prefixes.iter().map(String::as_str).chain((!sc.closed).then_some(""))
-                .any(|prefix| alias.get(&format!("{prefix}{p}"))
-                    .is_some_and(|actual| under_member(actual, member)))
-        });
-        if !granted { return Some(crate::program::public_path(member)); }
-    }
-    None
+/// What a reference is resolved against: the names declared so far, the aliases resolved
+/// (`Walk::alias_table`) and the units an index is read in — the one context every reference's
+/// lookup reads (`Walk::look`).
+#[derive(Clone, Copy)]
+pub(super) struct Lookup<'l> {
+    pub names: &'l BTreeSet<String>,
+    pub alias: &'l BTreeMap<String, String>,
+    pub units: Units,
 }
 
-pub(super) fn lookup(r: &Ref, sc: &Scope, names: &BTreeSet<String>, alias: &BTreeMap<String, String>, units: Units)
-    -> Option<(String, Vec<String>)>
-{
-    let found = lookup_raw(r, sc, names, alias, units)?;
-    // a group an interface types holds what it declares and nothing past it (§8.1 [0.84])
-    if !found.1.is_empty() && sc.typed.contains_key(&found.0) {
-        return None;
+impl Lookup<'_> {
+    /// An alias may denote a child (`f.origin`), including a child of another alias.
+    /// Keep the field suffix while resolving its declared root; it is not a second entity.
+    pub(super) fn alias_target(&self, target: &str, tail: &[String])
+        -> Option<(String, Vec<String>)> {
+        let Lookup { names, alias, .. } = *self;
+        let mut segs: Vec<String> =
+            target.split('.').map(str::to_string).chain(tail.iter().cloned()).collect();
+        for _ in 0..MAX_DEPTH {
+            let mut replaced = false;
+            for take in (1..=segs.len()).rev() {
+                let key = segs[..take].join(".");
+                if names.contains(&key) {
+                    return Some((key, segs[take..].to_vec()));
+                }
+                if let Some(next) = alias.get(&key) {
+                    if next == &key { continue; }
+                    let tail = segs[take..].iter().cloned();
+                    segs = next.split('.').map(str::to_string).chain(tail).collect();
+                    replaced = true;
+                    break;
+                }
+            }
+            if !replaced { return None; }
+        }
+        None
     }
-    private_member(r, sc, &found.0, alias).is_none().then_some(found)
-}
 
-fn missing_ref(r: &Ref, sc: &Scope, names: &BTreeSet<String>, alias: &BTreeMap<String, String>, units: Units)
-    -> (Code, String)
-{
-    if let Some((target, rest)) = lookup_raw(r, sc, names, alias, units) {
-        if let (Some(shape), Some(member)) = (sc.typed.get(&target), rest.first()) {
-            return (Code::E101, format!(
-                "`{}` reads `{member}`, which `{shape}` does not declare: add it to the \
-                 interface, or pass it on its own", ref_text(r)
+    /// The absolute name a reference denotes, and whatever field path is left over.
+    ///
+    /// Greedy on the dotted name: `t.lead` is one name if something declared it, and
+    /// `c0.center` is the entity `c0` and its field `center`.  Which it is cannot be told from
+    /// the spelling, only from what exists — so the longest match that names something wins.
+    pub(super) fn raw(&self, r: &Ref, sc: &Scope) -> Option<(String, Vec<String>)> {
+        let Lookup { names, alias, units } = *self;
+        // `p[k]` names *which copy* of a repeated statement, so it is resolved before anything
+        // else and the rest of the path is read against the copy it picks.  The index may stand
+        // on the root or on a dotted name — `l.p[1]` is copy 1 of the `p` a block inside the
+        // instance `l` declares, which is how a component's repetition is reached from outside
+        // (#45.3) — and what stands before it is the *container* the block was walked under,
+        // never a field: an index selects a copy of the block a name was declared in, and a
+        // field of a copy is still a field, so it comes after.  Only once — a copy of a copy is
+        // a thing no statement makes.
+        if let Some(at) = r.path.iter().position(|s| matches!(s, Seg::Index(_))) {
+            let Seg::Index(text) = &r.path[at] else { unreachable!() };
+            if r.path[at + 1..].iter().any(|s| matches!(s, Seg::Index(_))) {
+                return None;
+            }
+            let k = match value_of(text, &sc.vals, units) {
+                Ok(v) if v.is_finite() && v >= 0.0 && v.round() == v => v as usize,
+                _ => return None,
+            };
+            let mut segs: Vec<&str> = vec![r.root.text.as_str()];
+            for s in &r.path[..at] {
+                if let Seg::Field(f) = s {
+                    segs.push(f.text.as_str());
+                }
+            }
+            let leaf = segs.pop()?;
+            let abs = if segs.is_empty() {
+                copy_of("", leaf, k, sc, names)?
+            } else {
+                // A layout argument may alias an instance whose body contains the repetition.
+                // Resolve that container in the caller's scope before selecting its copy.
+                let path = r.path[..at - 1].to_vec();
+                let container = Ref { root: r.root.clone(), path, span: r.span };
+                let (root, rest) = self.raw(&container, sc)?;
+                let prefix = std::iter::once(root).chain(rest).collect::<Vec<_>>().join(".");
+                let scope = Scope { prefixes: vec![format!("{prefix}.")], ..sc.clone() };
+                copy_of("", leaf, k, &scope, names)?
+            };
+            // a member is no name (#188): the caller keeps it
+            let rest: Vec<String> = r.path[at + 1..]
+                .iter()
+                .filter_map(|s| match s {
+                    Seg::Field(f) => Some(f.text.clone()),
+                    Seg::Index(t) => Some(t.clone()),
+                    Seg::Member(_) => None,
+                })
+                .collect();
+            // greedy under the copy, as below: `cyl[0].small` is the entity `…cyl.small` and no
+            // field, where `p[1].x` is the entity `…p` and its field
+            for take in (1..=rest.len()).rev() {
+                let cand = format!("{abs}.{}", rest[..take].join("."));
+                if names.contains(&cand) {
+                    return Some((cand, rest[take..].to_vec()));
+                }
+                if let Some(t) = alias.get(&cand) {
+                    return self.alias_target(t, &rest[take..]);
+                }
+            }
+            return Some((abs, rest));
+        }
+
+        let mut segs: Vec<String> = vec![r.root.text.clone()];
+        for s in &r.path {
+            match s {
+                Seg::Field(f) => segs.push(f.text.clone()),
+                Seg::Index(t) => segs.push(t.clone()),
+                Seg::Member(_) => {}
+            }
+        }
+        // `next` and `prev` name the sibling copy, so the rest of the path is read in *its* scope
+        let mut prefixes = sc.prefixes.clone();
+        if (segs[0] == "next" || segs[0] == "prev") && segs.len() > 1 {
+            let c = sc.cyc.as_ref()?;
+            let k = match segs[0].as_str() {
+                "next" => (c.k + 1) % c.n,
+                _ => (c.k + c.n - 1) % c.n,
+            };
+            segs.remove(0);
+            prefixes = vec![format!("{}{}.", c.prefix, k)];
+        }
+        for take in (1..=segs.len()).rev() {
+            let cand = segs[..take].join(".");
+            let rest: Vec<String> = segs[take..].to_vec();
+            for p in &prefixes {
+                let abs = format!("{p}{cand}");
+                if names.contains(&abs) {
+                    return Some((abs, rest));
+                }
+                if let Some(t) = alias.get(&abs) {
+                    return self.alias_target(t, &rest);
+                }
+            }
+            if !sc.closed {
+                if names.contains(&cand) { return Some((cand, rest)); }
+                if let Some(t) = alias.get(&cand) { return self.alias_target(t, &rest); }
+            }
+        }
+        None
+    }
+
+    /// Explicit entity arguments grant access to that entity. Passing a layout grants its
+    /// public interface, not access to private members further inside it.
+    pub(super) fn private(&self, r: &Ref, sc: &Scope, target: &str) -> Option<String> {
+        let alias = self.alias;
+        let mut paths = vec![r.root.text.clone()];
+        for seg in &r.path {
+            let Seg::Field(f) = seg else { break };
+            paths.push(format!("{}.{}", paths.last().unwrap(), f.text));
+        }
+        let owners =
+            std::iter::successors(Some(target), |name| name.rsplit_once('.').map(|(up, _)| up));
+        for member in owners {
+            let Some(owner) = sc.access.get(member) else { continue };
+            if sc.owner == *owner || sc.owner.starts_with(&format!("{member}.")) { continue; }
+            let granted = paths.iter().any(|p| {
+                sc.prefixes.iter().map(String::as_str).chain((!sc.closed).then_some(""))
+                    .any(|prefix| alias.get(&format!("{prefix}{p}"))
+                        .is_some_and(|actual| under_member(actual, member)))
+            });
+            if !granted { return Some(crate::program::public_path(member)); }
+        }
+        None
+    }
+
+    /// `raw`, unless what it finds is a member private to where `r` is read.
+    pub(super) fn find(&self, r: &Ref, sc: &Scope) -> Option<(String, Vec<String>)> {
+        let found = self.raw(r, sc)?;
+        // a group an interface types holds what it declares and nothing past it (§8.1 [0.84])
+        if !found.1.is_empty() && sc.typed.contains_key(&found.0) {
+            return None;
+        }
+        self.private(r, sc, &found.0).is_none().then_some(found)
+    }
+
+    /// Why `find` found nothing for `r`: the code and the words.
+    pub(super) fn missing(&self, r: &Ref, sc: &Scope) -> (Code, String) {
+        if let Some((target, rest)) = self.raw(r, sc) {
+            if let (Some(shape), Some(member)) = (sc.typed.get(&target), rest.first()) {
+                return (Code::E101, format!(
+                    "`{}` reads `{member}`, which `{shape}` does not declare: add it to the \
+                     interface, or pass it on its own", ref_text(r)
+                ));
+            }
+            if let Some(member) = self.private(r, sc, &target) {
+                return (Code::E101, format!("`{}` names private member `{member}`", ref_text(r)));
+            }
+        }
+        // `next` and `prev` name a sibling copy, which only a `cycle` has (§12.1)
+        let word = r.root.text.as_str();
+        if (word == "next" || word == "prev") && !r.path.is_empty() && sc.cyc.is_none() {
+            return (Code::E020, format!(
+                "`{word}` names the {} copy round a `cycle`, and no `cycle` closes the copies here",
+                if word == "next" { "next" } else { "previous" }
             ));
         }
-        if let Some(member) = private_member(r, sc, &target, alias) {
-            return (Code::E101, format!("`{}` names private member `{member}`", ref_text(r)));
-        }
+        (Code::E101, format!("no such entity: `{}`", ref_text(r)))
     }
-    // `next` and `prev` name a sibling copy, which only a `cycle` has (§12.1)
-    let word = r.root.text.as_str();
-    if (word == "next" || word == "prev") && !r.path.is_empty() && sc.cyc.is_none() {
-        return (Code::E020, format!(
-            "`{word}` names the {} copy round a `cycle`, and no `cycle` closes the copies here",
-            if word == "next" { "next" } else { "previous" }
-        ));
-    }
-    (Code::E101, format!("no such entity: `{}`", ref_text(r)))
 }
 
 /// A reference a statement or a call's argument makes, resolved: as written, where, and what it
@@ -386,20 +376,18 @@ pub(super) struct Seen {
     abs: String,
 }
 
-/// What a reference may resolve to once the walk is done: every name declared, every alias
-/// resolved, the sets (no entity of the drawing), the solids, the operands an application found naming
-/// nothing (said once already), and the units numbers are read in.
+/// What a reference may resolve to once the walk is done: every name declared and every alias
+/// resolved, read in the document's units (`look`), the sets (no entity of the drawing), the
+/// solids, and the operands an application found naming nothing (said once already).
 #[derive(Clone, Copy)]
 struct Known<'k> {
-    names: &'k BTreeSet<String>,
-    alias: &'k BTreeMap<String, String>,
+    look: Lookup<'k>,
     sets: &'k BTreeSet<String>,
     /// Every solid declared, by absolute name: what a member `surface` or `body` is read past.
     solids: &'k BTreeSet<String>,
     failed: &'k BTreeSet<String>,
     /// The names bound to what a call or a use wrote (`Walk::arguments`).
     arguments: &'k BTreeSet<String>,
-    units: Units,
     /// Set where a reference names nothing that was said elsewhere, or reads past what an
     /// interface declares: the relation is not stated, so it is not said again.
     unresolved: &'k std::cell::Cell<bool>,
@@ -433,7 +421,7 @@ fn rewrite(
     bad: &mut Vec<(Code, Span, String)>,
     seen: &std::cell::RefCell<Vec<Seen>>,
 ) {
-    let Known { names, alias, sets, solids, failed, arguments, units, unresolved, normals } = known;
+    let Known { look, sets, solids, failed, arguments, unresolved, normals } = known;
     // only a ring's representative is judged by what it reads (E021)
     let judged = sc.ring.as_ref().is_some_and(|r| !r.turned);
     // a member read already (a set's `ends`, `sets::measured_sets`) is kept; `surface` and
@@ -447,7 +435,7 @@ fn rewrite(
         });
         read.map(Seg::Member)
     };
-    let fix = |r: &mut Ref, bad: &mut Vec<(Code, Span, String)>| match lookup(r, sc, names, alias, units)
+    let fix = |r: &mut Ref, bad: &mut Vec<(Code, Span, String)>| match look.find(r, sc)
     {
         // a set is no entity: what it means is said where it is used (§6.21)
         Some((abs, rest)) if rest.is_empty() && sets.contains(&abs) => bad.push((
@@ -480,10 +468,10 @@ fn rewrite(
         None if read_through(r, sc, failed) => unresolved.set(true),
         None => {
             // past what an interface declares (§8.1 [0.84]): said here, and only here
-            let past = lookup_raw(r, sc, names, alias, units)
+            let past = look.raw(r, sc)
                 .is_some_and(|(t, rest)| !rest.is_empty() && sc.typed.contains_key(&t));
             unresolved.set(unresolved.get() || past);
-            let (code, why) = missing_ref(r, sc, names, alias, units);
+            let (code, why) = look.missing(r, sc);
             bad.push((code, r.span, why))
         }
     };
@@ -520,14 +508,14 @@ fn rewrite(
                 match (&sc.in_plane, from_instance) {
                     (Some(ip), true) => {
                         let outer = Scope { owner: ip.owner.clone(), prefixes: ip.prefixes.clone(), closed: ip.closed, ..sc.clone() };
-                        match lookup(r, &outer, names, alias, units) {
+                        match look.find(r, &outer) {
                             Some((abs, rest)) => {
                                 r.root = Name { text: abs, span: r.root.span };
                                 r.path =
                                     rest.into_iter().map(|f| Seg::Field(Name::new(f))).collect();
                             }
                             None => {
-                                let (code, why) = missing_ref(r, &outer, names, alias, units);
+                                let (code, why) = look.missing(r, &outer);
                                 bad.push((code, r.span, why))
                             }
                         }
@@ -548,7 +536,7 @@ fn rewrite(
                 // the scope it was written in; the sheet reads it by absolute name
                 for a in motion.args_mut() {
                     if let crate::syntax::Arg::Dim { text, span } = a {
-                        rescope_measures(text, *span, sc, names, alias, solids, units, bad);
+                        rescope_measures(text, *span, sc, look, solids, bad);
                     }
                 }
             }
@@ -598,7 +586,7 @@ fn rewrite(
             // the body holds the same references, so one that names nothing is said there
             if let Some(w) = rel.word.as_mut() {
                 for r in w.ops.iter_mut() {
-                    if let Some((abs, rest)) = lookup(r, sc, names, alias, units) {
+                    if let Some((abs, rest)) = look.find(r, sc) {
                         r.root = Name { text: abs, span: r.root.span };
                         r.path = rest.into_iter().map(|f| Seg::Field(Name::new(f))).collect();
                     }
@@ -631,7 +619,7 @@ fn rewrite(
                         // is nothing is a direction word misspelt, which the elaborator says
                         // what `along:` takes about
                         crate::syntax::OpArg::Named(_, crate::syntax::Arg::Ref(r)) => {
-                            if lookup(r, sc, names, alias, units).is_some() {
+                            if look.find(r, sc).is_some() {
                                 fix(r, bad)
                             }
                         }
@@ -644,12 +632,18 @@ fn rewrite(
     }
 }
 impl<'a> Walk<'a> {
+    /// A reference resolved against the names declared so far and `alias`, the walk's aliases
+    /// as `alias_table` resolved them.
+    pub(super) fn look<'l>(&'l self, alias: &'l BTreeMap<String, String>) -> Lookup<'l> {
+        Lookup { names: &self.names, alias, units: self.units }
+    }
+
     /// Every alias the walk has made, resolved to the absolute name it denotes — transitively,
     /// since a formal may be bound to another instance's formal.
     pub(super) fn alias_table(&self) -> BTreeMap<String, String> {
         let mut alias: BTreeMap<String, String> = BTreeMap::new();
         for (abs, r, sc) in &self.aliases {
-            if let Some((target, rest)) = self.found(lookup_raw(r, sc, &self.names, &alias, self.units)) {
+            if let Some((target, rest)) = self.found(self.look(&alias).raw(r, sc)) {
                 let to = std::iter::once(target).chain(rest).collect::<Vec<_>>().join(".");
                 alias.insert(abs.clone(), to);
             }
@@ -659,7 +653,7 @@ impl<'a> Walk<'a> {
             let keys: Vec<String> = alias.keys().cloned().collect();
             for k in keys {
                 let v = alias[&k].clone();
-                if let Some((root, rest)) = alias_target(&v, &[], &self.names, &alias) {
+                if let Some((root, rest)) = self.look(&alias).alias_target(&v, &[]) {
                     let next = std::iter::once(root).chain(rest).collect::<Vec<_>>().join(".");
                     if next != v {
                         alias.insert(k, next);
@@ -696,7 +690,7 @@ impl<'a> Walk<'a> {
         let StmtKind::Block(b) = &p.st.kind else { return None };
         let over = b.over.as_ref()?;
         let sc = self.pending_scope(p);
-        let (abs, rest) = lookup(&over.chain, &sc, &self.names, alias, self.units)?;
+        let (abs, rest) = self.look(alias).find(&over.chain, &sc)?;
         if !rest.is_empty() {
             return None;
         }
@@ -727,7 +721,7 @@ impl<'a> Walk<'a> {
         let sc = self.pending_scope(p);
         // the faces a path names, by the rule a region's reading of them is (`FacePath::matches`)
         let faces_of = |r: &Ref| -> Option<Vec<String>> {
-            let (abs, rest) = lookup(r, &sc, &self.names, alias, self.units)?;
+            let (abs, rest) = self.look(alias).find(r, &sc)?;
             let all = self.faces.get(&abs)?;
             Some(all.iter().filter(|f| f.matches(&rest)).map(|f| format!("{abs}.{}", f.text()))
                 .collect())
@@ -738,7 +732,7 @@ impl<'a> Walk<'a> {
             if name.path.is_empty() && name.root.text == over.var.text {
                 return Some(me.to_string());
             }
-            let (abs, rest) = lookup(name, &sc, &self.names, alias, self.units)?;
+            let (abs, rest) = self.look(alias).find(name, &sc)?;
             Some(std::iter::once(abs).chain(rest).collect::<Vec<_>>().join("."))
         };
         let keeps = |face: &str| over.when.iter().all(|w| {
@@ -788,13 +782,13 @@ impl<'a> Walk<'a> {
             let r = &over.chain;
             // a block over a solid's faces, whose faces the elaborator names once it has built
             // the solid (#183 F4): none made this pass
-            if let Some((abs, _)) = lookup(r, &sc, &self.names, &alias, self.units)
+            if let Some((abs, _)) = self.look(&alias).find(r, &sc)
                 .filter(|(abs, _)| self.solid_named(abs))
             {
                 self.face_repeats.insert(abs);
                 continue;
             }
-            match lookup(r, &sc, &self.names, &alias, self.units) {
+            match self.look(&alias).find(r, &sc) {
                 Some(_) => self.err(
                     Code::E103,
                     r.span,
@@ -807,7 +801,7 @@ impl<'a> Walk<'a> {
                     ),
                 ),
                 None => {
-                    let (code, msg) = missing_ref(r, &sc, &self.names, &alias, self.units);
+                    let (code, msg) = self.look(&alias).missing(r, &sc);
                     self.err(code, r.span, msg)
                 }
             }
@@ -874,12 +868,12 @@ impl<'a> Walk<'a> {
         // place in the body that reads it (#103)
         let mut failed: BTreeSet<String> = BTreeSet::new();
         for (key, r, sc) in self.aliases.clone() {
-            let raw = lookup_raw(&r, &sc, &self.names, &alias, self.units);
+            let raw = self.look(&alias).raw(&r, &sc);
             // read past what an interface declares (§8.1 [0.84]), as the argument is written
             let past = raw.as_ref().is_some_and(|(t, rest)| !rest.is_empty() && self.typed.contains_key(t));
             match self.found(raw) {
                 Some((target, _)) => {
-                    if let Some(member) = private_member(&r, &sc, &target, &alias) {
+                    if let Some(member) = self.look(&alias).private(&r, &sc, &target) {
                         self.once(Code::E101, r.span, format!("`{}` names private member `{member}`", ref_text(&r)));
                     }
                 }
@@ -889,7 +883,7 @@ impl<'a> Walk<'a> {
                     failed.insert(key);
                 }
                 None if past || self.use_aliases.contains(&key) => {
-                    let (code, why) = missing_ref(&r, &sc, &self.names, &alias, self.units);
+                    let (code, why) = self.look(&alias).missing(&r, &sc);
                     self.once(code, r.span, why);
                     failed.insert(key);
                 }
@@ -958,7 +952,7 @@ impl<'a> Walk<'a> {
             // dotted name a dimension may read that is no declaration's
             let known =
                 || sc.prefixes.iter().any(|p| self.unknowns.contains_key(&format!("{p}{name}")));
-            match lookup_raw(&r, &sc, &self.names, &alias, self.units) {
+            match self.look(&alias).raw(&r, &sc) {
                 Some((abs, rest)) if !rest.is_empty() && !self.group_names.contains(&abs) => {
                     refused.push(span);
                     self.err(
@@ -984,8 +978,8 @@ impl<'a> Walk<'a> {
         // block, by the prefix its copies' names start with
         let mut about: BTreeMap<String, String> = BTreeMap::new();
         for (prefix, r, sc, n, span) in std::mem::take(&mut self.rings) {
-            let Some((abs, rest)) = lookup(&r, &sc, &self.names, &alias, self.units) else {
-                let (code, why) = missing_ref(&r, &sc, &self.names, &alias, self.units);
+            let Some((abs, rest)) = self.look(&alias).find(&r, &sc) else {
+                let (code, why) = self.look(&alias).missing(&r, &sc);
                 self.err(code, r.span, why);
                 continue;
             };
@@ -1019,8 +1013,10 @@ impl<'a> Walk<'a> {
             }
             let mut bad: Vec<(Code, Span, String)> = Vec::new();
             let seen = std::cell::RefCell::new(Vec::new());
+            let look = self.look(&alias);
+            let (sets, solids, failed, arguments) = (&sets, &solids, &failed, &self.arguments);
             let unresolved = std::cell::Cell::new(false);
-            let known = Known { names: &self.names, alias: &alias, sets: &sets, solids: &solids, failed: &failed, arguments: &self.arguments, units: self.units, unresolved: &unresolved, normals: &normals };
+            let known = Known { look, sets, solids, failed, arguments, unresolved: &unresolved, normals: &normals };
             rewrite(&mut st.kind, &sc, known, &mut bad, &seen);
             if let StmtKind::Decl(d) = &st.kind {
                 // a centre the circle names, or `None` for one it mints (`c.center`)
@@ -1056,7 +1052,7 @@ impl<'a> Walk<'a> {
             // statement's references were.  Not in a trace block, whose kept texts are read
             // off the block's own variable table by the formals' names.
             if self.sym.is_none() {
-                rescope_seeds(&mut st.kind, &sc, &self.names, &alias, self.units, &mut bad);
+                rescope_seeds(&mut st.kind, &sc, self.look(&alias), &mut bad);
             }
             let clean = bad.is_empty();
             for (code, span, msg) in bad {
@@ -1103,7 +1099,7 @@ impl<'a> Walk<'a> {
             if !self.arguments.contains(key) || through_argument(r, sc, &self.arguments) {
                 continue;
             }
-            if let Some((abs, rest)) = lookup(r, sc, &self.names, &alias, self.units) {
+            if let Some((abs, rest)) = self.look(&alias).find(r, sc) {
                 let abs = std::iter::once(abs).chain(rest).collect::<Vec<_>>().join(".");
                 let seen = Seen { written: ref_text(r), span: r.span, abs };
                 judged.push((ring.prefix.clone(), vec![seen]));

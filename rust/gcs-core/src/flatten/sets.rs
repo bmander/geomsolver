@@ -331,7 +331,7 @@ impl<'a> Walk<'a> {
     /// A reference read where `sc` reads it, made absolute — `None` where it names a set or
     /// nothing.
     fn absolute(&self, r: &Ref, sc: &Scope, alias: &BTreeMap<String, String>) -> Option<Ref> {
-        let (abs, rest) = lookup(r, sc, &self.names, alias, self.units)?;
+        let (abs, rest) = self.look(alias).find(r, sc)?;
         if rest.is_empty() && self.sets.contains_key(&abs) {
             return None;
         }
@@ -352,7 +352,7 @@ impl<'a> Walk<'a> {
         let w = rel.form.written().filter(|w| may_use(w))?;
         let mut found: Vec<(usize, String)> = Vec::new();
         for (i, r) in w.ops.iter().enumerate() {
-            let Some((abs, rest)) = lookup_raw(r, sc, &self.names, alias, self.units)
+            let Some((abs, rest)) = self.look(alias).raw(r, sc)
                 .filter(|(abs, _)| self.sets.contains_key(abs)) else { continue };
             if rest.is_empty() {
                 found.push((i, abs));
@@ -474,7 +474,7 @@ impl<'a> Walk<'a> {
         alias: &BTreeMap<String, String>,
     ) -> Option<Vec<(Stmt, Vec<PathStep>, Scope)>> {
         let set_of = |me: &Self, r: &Ref| -> Option<(String, Vec<String>)> {
-            let (abs, rest) = lookup_raw(r, sc, &me.names, alias, me.units)?;
+            let (abs, rest) = me.look(alias).raw(r, sc)?;
             me.sets.contains_key(&abs).then_some((abs, rest))
         };
         // the sets the statement reads, by the reference as written: a measurement's argument
@@ -505,7 +505,7 @@ impl<'a> Walk<'a> {
                     return None;
                 }
                 // a name declared as written is itself, whatever it is called
-                if lookup_raw(s, sc, &self.names, alias, self.units).is_some_and(|(_, r)| r.is_empty()) {
+                if self.look(alias).raw(s, sc).is_some_and(|(_, r)| r.is_empty()) {
                     return None;
                 }
                 let mut set = s.clone();
@@ -795,7 +795,7 @@ impl<'a> Walk<'a> {
     fn side_of_set(&self, abs: &str, alias: &BTreeMap<String, String>) -> Option<(String, bool)> {
         let site = self.sets.get(abs)?;
         let (other, outside) = site.shape.side_of.as_ref()?;
-        let (abs, rest) = lookup_raw(other, &site.scope, &self.names, alias, self.units)?;
+        let (abs, rest) = self.look(alias).raw(other, &site.scope)?;
         (rest.is_empty() && self.sets.contains_key(&abs)).then_some((abs, *outside))
     }
 
@@ -901,7 +901,7 @@ impl<'a> Walk<'a> {
             return self.once(Code::E040, at, m);
         }
         let distance = written_of(&lit.body[i]).is_some_and(|m| m.word.text == "distance");
-        let probe = lookup_raw(&w.ops[1 - k], su.u.scope, &self.names, alias, self.units)
+        let probe = self.look(alias).raw(&w.ops[1 - k], su.u.scope)
             .is_some_and(|(p, rest)| rest.is_empty() && self.probes.contains(&p));
         let reached = Reached {
             lit: lit.clone(),

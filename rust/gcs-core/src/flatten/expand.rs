@@ -805,7 +805,7 @@ impl Walk<'_> {
         }
         let units = self.units;
         let at = |r: &Ref, sc: &Scope, names: &BTreeSet<String>| {
-            super::resolve::lookup(r, sc, names, alias, units)
+            Lookup { names, alias, units }.find(r, sc)
                 .and_then(|(abs, rest)| rest.is_empty().then_some(abs))
         };
         // every declaration walked, by its absolute name, and the standard datums, walked after
@@ -893,7 +893,7 @@ impl Walk<'_> {
         };
         // a plain name declared in scope, as a family's instance is (`taken := solid(run)`), is
         // read off the names without the alias table, which a region asked for per solid would
-        // build afresh each time (`lookup_raw`'s order: each prefix, then the bare name)
+        // build afresh each time (`Lookup::raw`'s order: each prefix, then the bare name)
         let plain = set.path.is_empty() && !matches!(set.root.text.as_str(), "next" | "prev");
         let candidates = sc.prefixes.iter().map(|p| format!("{p}{}", set.root.text))
             .chain((!sc.closed).then(|| set.root.text.clone()));
@@ -903,7 +903,7 @@ impl Walk<'_> {
             Some(abs) if self.names.contains(&abs) => Some((abs, Vec::new())),
             _ => {
                 let alias = self.alias_table();
-                super::resolve::lookup_raw(set, sc, &self.names, &alias, self.units)
+                self.look(&alias).raw(set, sc)
             }
         };
         let Some((abs, rest)) = found else { return None };
