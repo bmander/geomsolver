@@ -75,6 +75,19 @@ pub unsafe extern "C" fn gcs_workspace_json(h: *mut Sketch) -> *mut u8 {
     json_out(move || report::workspace_json(sk(h)))
 }
 
+/// The eye at bearing `az` and elevation `el` (radians): its picture plane's right, its up and
+/// toward the viewer, three doubles each into `out` (`workspace::eye_frame`).  Returns 0.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_workspace_eye(az: f64, el: f64, out: *mut f64) -> i32 {
+    guard(-1, move || {
+        let [right, up, toward] = gcs_core::overview::workspace::eye_frame(az, el);
+        write(out, &right);
+        write(out.add(3), &up);
+        write(out.add(6), &toward);
+        0
+    })
+}
+
 /// Each view's map of its page onto the eye's picture plane at bearing `az` and elevation `el`
 /// (radians), six doubles each, the page first: writes at most `cap` views and returns how many
 /// there are.  Asked per frame, so a buffer and not JSON.

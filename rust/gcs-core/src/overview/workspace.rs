@@ -83,6 +83,14 @@ fn placements(sk: &Sketch) -> Vec<Basis> {
     all
 }
 
+/// The eye at bearing `az` and elevation `el` (radians): its picture plane's right and up, and
+/// toward the viewer (`Projection::toward`) — the one basis everything is seen in, and what a
+/// front end with a camera of its own (the box's) sets it from, so its picture is the picking's.
+pub fn eye_frame(az: f64, el: f64) -> [[f64; 3]; 3] {
+    let (right, up) = eye(az, el);
+    [right, up, cross(right, up)]
+}
+
 /// Every view's map onto the picture plane of the eye at `az`, `el` (radians), the page first —
 /// what a front end asks per frame, so it reads the planes and nothing else.
 pub fn maps(sk: &Sketch, az: f64, el: f64) -> Vec<Map> {

@@ -22,7 +22,7 @@ import { PlanDrag } from '../core/decompose.js';
 import { solve } from '../core/system.js';
 import { DimAlt, SketchView } from '../app/view.js';
 import type { SolidPick } from '../app/view.js';
-import { pickEdgeSeen, roundSize, solidEdges } from '../core/workspace.js';
+import { eyeFrame, pickEdgeSeen, roundSize, solidEdges } from '../core/workspace.js';
 import { overview3 } from '../core/overview.js';
 import type { SolidEdge } from '../core/workspace.js';
 import { contains, corners, toImage, toWorld } from '../app/underlay.js';
@@ -2071,8 +2071,7 @@ test('a plane is picked by its pane\'s frame and dragged where the eye sees it, 
   const now = plane().frame3;
   const to = view.seen(plane().origin);
   assert.ok(Math.hypot(to[0] - from[0] - 40, to[1] - from[1] - 25) < 1e-6, `seen at ${to}`);
-  const { az, el } = view.orbit;
-  const toward = [Math.cos(az) * Math.cos(el), Math.sin(az) * Math.cos(el), Math.sin(el)];
+  const { toward } = eyeFrame(view.orbit.az, view.orbit.el);
   const depth = toward.reduce((d, t, k) => d + t * (now.o[k] - o[k]), 0);
   assert.ok(Math.abs(depth) < 1e-6, `moved ${depth} along the line of sight`);
   for (const [a, b] of [[u, now.u], [v, now.v]]) {

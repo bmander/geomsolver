@@ -4,6 +4,7 @@
 import assert from 'node:assert/strict';
 
 import { Document } from '../core/program.js';
+import { eyeFrame } from '../core/workspace.js';
 import { SketchView } from '../app/view.js';
 import { canvasOf, fakeCanvas, pointer } from './canvas.js';
 
@@ -33,9 +34,7 @@ export function clickWith(view: SketchView, x: number, y: number,
 
 /** The canvas point where the eye, from the view's orbit, sees a point in space. */
 export function seenAt(view: SketchView, x: [number, number, number]): [number, number] {
-  const { az, el } = view.orbit;
-  const right = [-Math.sin(az), Math.cos(az), 0];
-  const up = [-Math.cos(az) * Math.sin(el), -Math.sin(az) * Math.sin(el), Math.cos(el)];
+  const { right, up } = eyeFrame(view.orbit.az, view.orbit.el);
   const dot = (a: number[]) => a[0] * x[0] + a[1] * x[1] + a[2] * x[2];
   return [view.cam.originX + dot(right) * view.cam.scale,
           view.cam.originY - dot(up) * view.cam.scale];
