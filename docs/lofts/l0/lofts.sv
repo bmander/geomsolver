@@ -5,7 +5,7 @@
 // The words here only say where a station stands on its path. What the section is at that station
 // (its shape, its twist, its scale, the rails it follows) is the writer's component, drawn in the
 // station's plane.
-use std (on_u)
+use std (on_u, square)
 
 // The plane square to the line `g` at the fraction `s` of the way from its start to its end: its
 // origin there, its normal along `g`, and its `v` held along `up` (any direction square to `g`).
@@ -15,9 +15,7 @@ component OnLine(g: line, up: axis, s: Scalar) {
   m coincident(t == s) g
   n := plane
   n.origin coincident m
-  g perpendicular n.u
-  n.u perpendicular up
-  n.v parallel up
+  n square(up: up) g
 }
 
 // The plane square to the arc `g` at the fraction `s` of its turn: through the arc's axis, its `u`
@@ -45,9 +43,7 @@ component OnSpline(g: spline, up: axis, s: Scalar) {
   g tangent(at: m) tl
   n := plane
   n.origin coincident m
-  tl perpendicular n.u
-  n.u perpendicular up
-  n.v parallel up
+  n square(up: up) tl
 }
 
 // A screw's station: the plane through the axis `ax` turned `360deg · turns · s` from `base.u` and

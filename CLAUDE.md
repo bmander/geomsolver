@@ -55,7 +55,8 @@ frame turned within a plane (`.axes` the plane, `.u` the line o→t). No coordin
 helper: model contours with alignments, incidences, symmetry and dimensions — `std`'s words
 `offset`, `right_of`/`left_of`/`above`/`below`, `coords`, `on_u`/`on_v` are pairs of those
 dimensions (an ordinate and an ordinate or a level) said as one statement, still dimensions;
-`skew` and `turned` are the same for two lines (#103's corpus pass). Components have no
+`skew` and `turned` are the same for two lines (#103's corpus pass), `P square(up: d) l` the three
+statements a plane square to a line takes (#250). Components have no
 implicit frame; `instance := Part(f) in view` supplies membership. Aliases keep subentity paths
 (`f.origin`). Calls may omit `name :=`; anonymous keys stay out of user-facing names. E.g. `cyl
 := Cylinder(std.Turned(std.origin, up), fw: components.dims.fwA, dims:
@@ -108,7 +109,11 @@ b := b distance(d, along: up) a` at a file's top level (`syntax::WordDef`, `Prog
 parsed by `parser/definitions.rs`: `word_definition_ahead`, `defined_prefix_ahead` before a call,
 `word_args` keeping labelled texts). The flattener applies a use (`flatten/words.rs`,
 `Walk::apply_word`, over `flatten/apply.rs`, #103): params by label (E004/E040), a number
-parameter bound in the body's scope, a word parameter where a word stands, operands aliased,
+parameter bound in the body's scope, a word parameter where a word stands, an **entity parameter**
+(`Param::Entity`, read where an entity stands: `n square(up: std.z) g`, #250) aliased as an operand
+is — its text read as a reference at the use (`syntax::reference_at`), a direction word put in
+place unless a name there is spelt so (`names_here`: a formal `up` given on) — and one only passed
+whole to another word (`Param::Passed`) decided by what it is given, operands aliased,
 every relation's span moved to the use's word (a parameter's dimension to its argument, so
 `written` and `edit::set_dimension`'s `word_dimension` read it); nested words resolve from the
 definition's file, a cycle is E003, an unknown word E102 naming the import. `Relation::word` (`Worded`) rides to

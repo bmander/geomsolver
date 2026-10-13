@@ -1,8 +1,10 @@
 //! **Relation words** (§9.9): a statement written with a word a file defines is that word's body
 //! **applied** (#103, `flatten::apply`): its operands are the word's bound variables, each an
 //! alias of what the statement wrote; its parameters, given by label, are numbers bound in the
-//! body's scope or selector words put where the body's words stand; and the body is closed over
-//! them as a component's is.  A body is one relation, or several and the declarations they need.
+//! body's scope, selector words put where the body's words stand, or entities, each an alias of
+//! the reference given as an operand is (`n square(up: std.z) g`, #250); and the body is closed
+//! over them as a component's is.  A body is one relation, or several and the declarations they
+//! need.
 //!
 //! What the application makes is the statement's: its id, span, placement and classes, every
 //! place in it the word's as written — so a fault inside it is said where the word is used — and
@@ -16,12 +18,21 @@ use std::rc::Rc;
 use crate::constraints::{builtin_word, Fixity};
 use crate::syntax::{Arg, OpArg, Relation, WordDef, Worded, Written};
 
-/// How a word's parameter is read in its body: a number bound in its scope, or a selector word
-/// put where a word stands (`side: s`, `level(s)`).
+/// How a word's parameter is read in its body: a number bound in its scope, a selector word put
+/// where a word stands (`side: s`), or an entity (#250).
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum Param {
     Number,
     Word,
+    /// Read where an entity stands — an operand (`P.v parallel up`), an entity in the
+    /// parentheses (`level(w)`, `along: w`), a declaration's child — and bound at the use as an
+    /// alias of the reference given (`up: std.z`), as an operand is; given a direction word
+    /// (`w: up`), that word is put where it stands.
+    Entity,
+    /// Read only as the whole of another defined word's argument (`a twice(e) b := a square(up:
+    /// e) b`): what it is is the inner word's to say, so the use decides by what it is given —
+    /// a number where the text is one, else a direction word or a reference.
+    Passed,
 }
 
 /// Every reference a written relation holds: its operands, the entities in its parentheses and a
@@ -83,30 +94,61 @@ fn param_kinds(def: &WordDef) -> Result<BTreeMap<String, Param>, (Span, String)>
         if !def.params.iter().any(|p| p.text == name) {
             return Ok(());
         }
-        match out.insert(name.to_string(), how) {
-            Some(was) if was != how => Err((span, format!(
-                "`{name}` is read as a number and as a word in `{}`; a parameter is one or the \
-                 other",
-                def.word.text
-            ))),
-            _ => Ok(()),
-        }
+        let now = match (out.get(name).copied(), how) {
+            (None, h) | (Some(Param::Passed), h) => h,
+            (Some(was), Param::Passed) => was,
+            (Some(was), h) if was == h => h,
+            (Some(Param::Number), _) | (Some(_), Param::Number) => {
+                return Err((span, format!(
+                    "`{name}` is read as a number and as a word or an entity in `{}`; a \
+                     parameter is one or the other",
+                    def.word.text
+                )))
+            }
+            // a selector and where an entity stands: a word, put in both places
+            _ => Param::Word,
+        };
+        out.insert(name.to_string(), now);
+        Ok(())
     };
     for w in relations(def) {
         let mut w = w.clone();
         for a in &w.args {
-            match a {
-                OpArg::Named(_, Arg::Word(v)) => said(v, Param::Word, def.word.span)?,
-                OpArg::Ent(r) | OpArg::Named(_, Arg::Ref(r)) if r.path.is_empty() => {
-                    said(&r.root.text, Param::Word, r.span)?
+            if let OpArg::Named(_, Arg::Word(v)) = a {
+                said(v, Param::Word, def.word.span)?
+            }
+        }
+        for r in refs_mut(&mut w) {
+            said(&r.root.text, Param::Entity, r.span)?
+        }
+        // a defined word's argument that is only a parameter's name is passed on to it
+        let defined = !builtin_word(&w.word.text, w.fixity);
+        for a in &w.args {
+            if let OpArg::Named(_, Arg::Dim { text, span }) = a {
+                if defined && crate::syntax::is_name(text.trim()) {
+                    said(text.trim(), Param::Passed, *span)?
                 }
-                _ => {}
             }
         }
         for (text, span) in texts_mut(&mut w) {
+            if defined && crate::syntax::is_name(text.trim()) {
+                continue;
+            }
             for name in reads(text) {
                 said(&name, Param::Number, *span)?;
             }
+        }
+    }
+    // what a declaration is made of, and the curve an energy is over
+    for st in &def.body {
+        match &st.kind {
+            StmtKind::Decl(d) => {
+                for r in d.children.iter().flatten().flat_map(|k| k.refs()) {
+                    said(&r.root.text, Param::Entity, r.span)?
+                }
+            }
+            StmtKind::Minimize(m) => said(&m.curve.root.text, Param::Entity, m.curve.span)?,
+            _ => {}
         }
     }
     for p in &def.params {
@@ -166,7 +208,11 @@ pub(crate) fn faults(def: &WordDef) -> Vec<(Code, Span, String)> {
         let root = r.root.text.as_str();
         def.operands.iter().any(|o| o.text == root)
             || locals.contains(root)
-            || (r.path.is_empty() && kinds.get(root) == Some(&Param::Word))
+            || match kinds.get(root) {
+                Some(Param::Entity | Param::Passed) => true,
+                Some(Param::Word) => r.path.is_empty(),
+                _ => false,
+            }
             || r.direction_word().is_some()
     };
     for st in &def.body {
@@ -179,7 +225,15 @@ pub(crate) fn faults(def: &WordDef) -> Vec<(Code, Span, String)> {
                         out.push((Code::E101, r.span, reach(&crate::syntax::ref_text(r))));
                     }
                 }
+                // an operand or a local passed whole to another word, as an entity (#250)
+                let defined = !builtin_word(&w.word.text, w.fixity);
                 for (text, span) in texts_mut(&mut w) {
+                    let whole = text.trim();
+                    if defined && crate::syntax::is_name(whole)
+                        && (def.operands.iter().any(|o| o.text == whole) || locals.contains(whole))
+                    {
+                        continue;
+                    }
                     for name in reads(text) {
                         if !def.params.iter().any(|p| p.text == name) {
                             out.push((Code::E101, *span, reach(&name)));
@@ -250,39 +304,66 @@ impl<'a> Walk<'a> {
         let Some(kinds) = self.word_kinds(k) else { return true };
         let def = &self.prog.words[k];
         let Some(values) = self.word_args(def, &kinds, used) else { return true };
-        // the numbers, bound as the body's own, worked out where the statement is written
+        // the numbers, bound as the body's own, worked out where the statement is written; the
+        // entities, each the reference given or a direction word put where it stands (#250)
         let mut vals: BTreeMap<String, Aff> = BTreeMap::new();
         let mut dims: BTreeMap<String, Span> = BTreeMap::new();
+        let mut words: BTreeMap<&str, &str> = BTreeMap::new();
+        let mut entities: Vec<(&str, Ref)> = Vec::new();
         for (name, (text, span)) in &values {
-            if kinds.get(name) != Some(&Param::Number) {
-                continue;
-            }
-            match value_aff(text, &scope.vals, self.units) {
-                Ok(v) => {
+            let kind = kinds.get(name).copied().unwrap_or(Param::Number);
+            let number = match kind {
+                Param::Number => Some(value_aff(text, &scope.vals, self.units)),
+                Param::Passed => value_aff(text, &scope.vals, self.units).ok().map(Ok),
+                _ => None,
+            };
+            match number {
+                Some(Ok(v)) => {
                     vals.insert(name.clone(), v);
                     dims.insert(name.clone(), *span);
                 }
-                Err(e) => {
+                Some(Err(e)) => {
                     self.once(Code::E103, *span, format!("`{text}`: {e}"));
                     return true;
                 }
+                None if kind == Param::Word
+                    || (crate::constraints::Toward::of(text).is_some()
+                        && !self.names_here(text, scope)) =>
+                {
+                    words.insert(name.as_str(), text.as_str());
+                }
+                None => match crate::syntax::reference_at(text, span.lo as usize) {
+                    Some(r) => entities.push((name.as_str(), r)),
+                    None => {
+                        let m = format!(
+                            "`{name}` is an entity in `{}`: a name or a direction word, not \
+                             `{text}`",
+                            def.word.text
+                        );
+                        self.once(Code::E040, *span, m);
+                        return true;
+                    }
+                },
             }
         }
-        // the selector words, put where the body's words stand
-        let words: BTreeMap<&str, &str> = values
-            .iter()
-            .filter(|(n, _)| kinds.get(*n) == Some(&Param::Word))
-            .map(|(n, (t, _))| (n.as_str(), t.as_str()))
-            .collect();
         let mut body = def.body.clone();
         for st in body.iter_mut() {
             let StmtKind::Relation(r) = &mut st.kind else { continue };
             let Some(w) = r.form.written_mut() else { continue };
             for a in w.args.iter_mut() {
-                if let OpArg::Named(_, Arg::Word(v)) = a {
-                    if let Some(given) = words.get(v.as_str()) {
-                        *v = given.to_string();
+                match a {
+                    OpArg::Named(_, Arg::Word(v)) => {
+                        if let Some(given) = words.get(v.as_str()) {
+                            *v = given.to_string();
+                        }
                     }
+                    // passed on to another word as it stands
+                    OpArg::Named(_, Arg::Dim { text, .. }) => {
+                        if let Some(given) = words.get(text.trim()) {
+                            *text = given.to_string();
+                        }
+                    }
+                    _ => {}
                 }
             }
             for r in refs_mut(w) {
@@ -297,6 +378,9 @@ impl<'a> Walk<'a> {
         let app = self.begin(&u, &closure);
         for (operand, given) in def.operands.iter().zip(&used.ops) {
             self.bind_to_use(&app, &operand.text, given.clone(), &u);
+        }
+        for (name, given) in entities {
+            self.bind_to_use(&app, name, given, &u);
         }
         let walks = [self.inherited_twin(&app, &u).into()];
         let worded = Worded {
@@ -366,6 +450,15 @@ impl<'a> Walk<'a> {
             }
         }
         Some(values)
+    }
+
+    /// Whether `name` is something declared or bound where `scope` reads it — a formal called
+    /// `up` given on (`square(up: up)`) is that formal, not the direction word.
+    fn names_here(&self, name: &str, scope: &Scope) -> bool {
+        scope.prefixes.iter().any(|p| {
+            let key = format!("{p}{name}");
+            self.names.contains(&key) || self.aliases.iter().any(|(a, _, _)| *a == key)
+        })
     }
 
     /// How each parameter of word `k` is read in its body, worked out once a walk; `None` for a
