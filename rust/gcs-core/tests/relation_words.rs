@@ -202,6 +202,180 @@ fn a_word_is_defined_at_the_top_of_a_file() {
     assert!(errs.iter().any(|e| e.message.contains("the relation alone")), "{errs:?}");
 }
 
+/* -- entity parameters (#250) ------------------------------------------------------------- */
+
+/// Two lines drawn in the front plane, free to turn, and a third held level.
+const LINES: &str = "\
+in std.front {
+  a := point hint((0, 0))
+  fix((0, 0)) a
+  b := point hint((9, 2))
+  c := point hint((0, 5))
+  d := point hint((7, 9))
+  h0 := point hint((0, -5))
+  fix((0, -5)) h0
+  h1 := point hint((8, -4))
+  h := line(h0, h1)
+  h0 level(up) h1
+  h0 distance(8) h1
+  l1 := line(a, b)
+  l2 := line(c, d)
+";
+
+/// How far line `l` turns from the page's right, in the front plane: the sine of its rise.
+fn rise(sk: &gcs_core::model::Sketch, e: &Elaborated, l: &str) -> f64 {
+    let (p, q) = crate::common::ends(sk, ent(e, l));
+    let d = crate::common::unit([q[0] - p[0], q[1] - p[1], q[2] - p[2]]);
+    d[2]
+}
+
+/// A word's labelled parameter may be an entity: bound as an alias in the body, as an operand
+/// is, whatever it is given — a line by its name, an axis by its path.
+#[test]
+fn an_entity_parameter_is_bound_as_an_operand_is() {
+    let word = "a both(along) b := {\n  a parallel along\n  b parallel along\n}\n";
+    for given in ["h", "std.x"] {
+        let src = format!("use std\n{word}{LINES}  l1 both(along: {given}) l2\n}}\n");
+        let e = read(&src);
+        let mut sk = e.sketch.clone();
+        let r = solve(&mut sk, SolveOpts::default());
+        assert!(r.success, "{given}: {}", r.message);
+        assert!(rise(&sk, &e, "l1").abs() < 1e-9 && rise(&sk, &e, "l2").abs() < 1e-9, "{given}");
+        // described as written
+        assert!(said(&e).contains(&format!("l1 both(along: {given}) l2")), "{:?}", said(&e));
+    }
+    // and a direction word stands where the parameter does, as it did before
+    let word = "a toward(w) b := a level(w) b";
+    let e = read(&format!("use std\n{word}\n{POINTS}  p toward(w: std.z) q\n}}\n"));
+    let at = solved_at(&e, &["p", "q"]);
+    assert!(at[1][2].abs() < 1e-9, "{at:?}");
+}
+
+/// One that names nothing is said once, at the argument; one that is no name is refused there.
+#[test]
+fn an_entity_parameter_naming_nothing_is_said_at_the_argument() {
+    let word = "a both(along) b := {\n  a parallel along\n  b parallel along\n}\n";
+    let src = format!("use std\n{word}{LINES}  l1 both(along: nobody) l2\n}}\n");
+    let (prog, _, _) = gcs_core::library::parse_linked(&src);
+    let e = elaborate(&prog);
+    let at: Vec<&str> = e.errors()
+        .filter(|d| d.code.as_str() == "E101")
+        .map(|d| d.span.slice(prog.text()))
+        .collect();
+    assert_eq!(at, ["nobody"], "{:?}", e.diags);
+    refused(
+        &format!("use std\n{word}{LINES}  l1 both(along: 3 + 4) l2\n}}\n"),
+        "E040",
+        "`along` is an entity in `both`",
+        "3 + 4",
+    );
+}
+
+/// A parameter passed on whole to another word is what that word reads it as: an entity here, a
+/// number in the other; and an operand passed on so is an entity.
+#[test]
+fn a_parameter_passed_on_is_what_the_inner_word_reads() {
+    let src = format!("\
+use std
+a both(along) b := {{
+  a parallel along
+  b parallel along
+}}
+a level_with(e) b := a both(along: e) b
+a alongside b := a both(along: b) a
+p up_by(d) q := p distance(d, along: up) q
+p raised(e) q := p up_by(d: e) q
+{LINES}  l1 level_with(e: h) l1
+  l2 alongside h
+  c raised(e: 5) a
+}}
+");
+    let e = read(&src);
+    let mut sk = e.sketch.clone();
+    assert!(solve(&mut sk, SolveOpts::default()).success);
+    assert!(rise(&sk, &e, "l1").abs() < 1e-9 && rise(&sk, &e, "l2").abs() < 1e-9, "{:?}", said(&e));
+    let z = |n: &str| sk.world_point(ent(&e, n).i())[2];
+    assert!((z("a") - z("c") - 5.0).abs() < 1e-9);
+}
+
+/// A guide `g` along the front plane's right, held, and a plane through its start.
+fn square_src(stated: &str) -> String {
+    format!("\
+use std (square)
+in std.front {{
+  a := point hint((0, 0))
+  b := point hint((10, 0))
+  fix((0, 0)) a
+  fix((10, 0)) b
+  g := line(a, b)
+}}
+n := plane(u: hint(dir: (0, 1, 0.2)), v: hint(dir: (0.1, 0, 1)))
+n.origin coincident a
+{stated}
+")
+}
+
+/// **`P square(up: d) l`** (#250): a plane square to `l`, its `v` along `d` — the three
+/// statements a plane's unsquared axes take, said once.  Through a point, nothing is left to move,
+/// and it solves where the three written out do.
+#[test]
+fn square_stands_a_plane_square_to_a_line() {
+    let worded = read(&square_src("n square(up: std.z) g"));
+    let three = "n.v parallel std.z\nn.u perpendicular g\nn.u perpendicular std.z";
+    let written = read(&square_src(three));
+    let mut at = Vec::new();
+    for e in [&worded, &written] {
+        let mut sk = e.sketch.clone();
+        let r = solve(&mut sk, SolveOpts::default());
+        assert!(r.success, "{}", r.message);
+        let d = gcs_core::diagnose::diagnose(&mut sk, Default::default());
+        assert_eq!(d.dof, 0, "{}", gcs_core::diagnose::summary(&d));
+        assert_eq!(d.n_equations, d.structural_rank, "{}", gcs_core::diagnose::summary(&d));
+        let b = sk.basis(ent(e, "n").i());
+        assert!((b.normal()[0].abs() - 1.0).abs() < 1e-9, "its normal along g: {:?}", b.normal());
+        assert!((b.v[2].abs() - 1.0).abs() < 1e-9, "its v along up: {:?}", b.v);
+        at.push((b.o, b.u, b.v));
+    }
+    let close = |a: [f64; 3], b: [f64; 3]| (0..3).all(|i| (a[i] - b[i]).abs() < 1e-9);
+    let alike = close(at[0].0, at[1].0) && close(at[0].1, at[1].1) && close(at[0].2, at[1].2);
+    assert!(alike, "{at:?}");
+    assert!(said(&worded).contains(&"n square(up: std.z) g".to_string()), "{:?}", said(&worded));
+}
+
+/// A formal named as a direction word is, given on, the formal (`square(up: up)`), and a
+/// component standing a plane square to its guide says it once.
+#[test]
+fn a_formal_given_on_is_the_formal_not_the_direction_word() {
+    let station = "\
+component Station(g: line, at: point, up: axis) {
+  n := plane(u: hint(dir: (0, 1, 0.2)), v: hint(dir: (0.1, 0, 1)))
+  n.origin coincident at
+  n square(up: up) g
+}
+";
+    let src = square_src("").replace("n := plane", "st := Station(g, a, up: std.z)\nn := plane");
+    let e = read(&format!("{station}{src}"));
+    let mut sk = e.sketch.clone();
+    assert!(solve(&mut sk, SolveOpts::default()).success);
+    let b = sk.basis(ent(&e, "st.n").i());
+    assert!((b.normal()[0].abs() - 1.0).abs() < 1e-9 && (b.v[2].abs() - 1.0).abs() < 1e-9, "{b:?}");
+}
+
+/// `up` square to `l` is the drawing's to keep, and no conflict where it is not: the three
+/// statements still hold the plane, its normal `l`'s part square to `up`.
+#[test]
+fn square_to_a_line_up_is_not_square_to_leans_with_it() {
+    let e = read(&square_src("n square(up: std.z) g").replace("fix((10, 0)) b", "fix((10, 3)) b"));
+    let mut sk = e.sketch.clone();
+    assert!(solve(&mut sk, SolveOpts::default()).success);
+    let d = gcs_core::diagnose::diagnose(&mut sk, Default::default());
+    assert_eq!(d.dof, 0, "{}", gcs_core::diagnose::summary(&d));
+    assert_eq!(d.n_equations, d.structural_rank, "{}", gcs_core::diagnose::summary(&d));
+    let b = sk.basis(ent(&e, "n").i());
+    assert!((b.normal()[0].abs() - 1.0).abs() < 1e-9, "{:?}", b.normal());
+    assert!((b.v[2].abs() - 1.0).abs() < 1e-9, "{:?}", b.v);
+}
+
 /* -- imports ------------------------------------------------------------------------------- */
 
 fn shelf() -> BTreeMap<&'static str, &'static str> {

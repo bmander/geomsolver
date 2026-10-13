@@ -1,6 +1,6 @@
 // L0 (#243): the library words that cannot be written yet, apart from `lofts.sv` so that what
 // they need (README, findings 5 and 8) does not stop the programs that do not use them.
-use std
+use std (square)
 use lofts
 
 // The one word the three above stand in for: the plane square to any path `g` — a line, an arc, a
@@ -20,9 +20,7 @@ component On(g: path, up: axis, s: Scalar) {
   distance(10mm) tl
   n := plane
   n.origin coincident m
-  tl perpendicular n.u
-  n.u perpendicular up
-  n.v parallel up
+  n square(up: up) tl
 }
 
 // Today's `solid(a, b, along: g)` as a word (L3): the section at `s` is `a`'s walk with every

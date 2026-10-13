@@ -101,6 +101,44 @@ pub fn parse_from(src: &str, base: usize, first_id: u32) -> (Program, Vec<SynErr
     model_only(parse_at(src, base, first_id, ParseLimits::default()))
 }
 
+/// **A value's text read as a reference** (`std.z`, `f[0].p1`), or `None` where it is anything
+/// else.  `at` is where the text starts in the program, so the reference's spans are its own: a
+/// relation word's argument is kept as text (`word_args`), and one its word reads as an entity is
+/// read here, where it is applied (#250).
+pub(crate) fn reference_at(text: &str, at: usize) -> Option<Ref> {
+    let (lexed, errs) = lex(text);
+    if !errs.is_empty() {
+        return None;
+    }
+    let mut st = P {
+        src: text,
+        limits: ParseLimits::default(),
+        statements: 0,
+        exhausted: false,
+        t: lexed.toks,
+        i: 0,
+        errs: Vec::new(),
+        in_body: 0,
+        open: None,
+        in_blocks: Vec::new(),
+        in_comp: false,
+        in_preview: false,
+    };
+    let mut r = st.refr()?;
+    if !st.done() || !st.errs.is_empty() {
+        return None;
+    }
+    let moved = |s: Span| Span::new(s.lo as usize + at, s.hi as usize + at);
+    r.span = moved(r.span);
+    r.root.span = moved(r.root.span);
+    for seg in r.path.iter_mut() {
+        if let Seg::Field(n) = seg {
+            n.span = moved(n.span);
+        }
+    }
+    Some(r)
+}
+
 /// Read retired mixed model/drawing syntax for explicit migration of historical documents.
 /// Hosts must use `parse` for .sv model files. This entry does not opt a model into presentation.
 pub fn parse_legacy(src: &str) -> (Program, Vec<SynErr>) {

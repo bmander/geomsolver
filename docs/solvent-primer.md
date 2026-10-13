@@ -634,7 +634,9 @@ a apart(d) b := {                                // what the body declares, each
 ```
 
 Parameters are given by label (`above(d: 7)`; positional is E004, a missing or unknown label E040);
-a word parameter stands where a selector or direction would (`side: s`, `level(s)`). The body reads
+a word parameter stands where a selector or direction would (`side: s`, `level(s)`), and one read
+where an entity stands is given a reference (`n square(up: std.z) g`), an alias in the body as an
+operand is (E101 at the argument where it names nothing). The body reads
 only its operands, their members and the parameters (E101 otherwise); it may write other words and
 use sets. An unknown word is E102; culprits and errors read as the word (`p horizontal q`), and a
 dimension passed as a parameter draws and edits at the argument. An infix word relates its operands
@@ -649,6 +651,7 @@ p coords(du: 20, dv: 5) P        // 20 along P.u and 5 along P.v from P's origin
 p on_u(d: 20) P                  // on P's u axis, 20 out; on_v
 a skew(theta: 90deg, e: 20mm) b  // two lines crossed: the angle and the common perpendicular
 a turned(theta: 180deg) b        // a the length of b, turned from it
+n square(up: std.z) g            // plane n square to line g, its v along up (up square to g)
 hangs(L: 150mm) rope             // a hanging rope's length and energy (1.10)
 ```
 

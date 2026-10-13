@@ -64,6 +64,17 @@ a turned(theta) b := {
   a equal b
 }
 
+// A plane square to a line or an axis, its `v` along a direction (#250): `n square(up: std.z) g`
+// — `n`'s `v` along `up`, its `u` square to `up` and to `g`, so with `up` square to `g` its
+// normal runs along `g`.  A plane's own axes are not held square to one another (§6.7), so it
+// takes all three to say.  `up` square to `g` is the drawing's to keep: where it is not, the
+// normal is `g`'s part square to `up`.
+P square(up) l := {
+  P.v parallel up
+  P.u perpendicular l
+  P.u perpendicular up
+}
+
 // A rope hanging (#121): a curve `L` long that makes its height, integrated along it, least —
 // `hangs(L: 150mm) rope` of a free curve `rope := curve(a, b)`.  The view's down is the way it
 // falls.  What it comes to is the catenary, which nothing here says.

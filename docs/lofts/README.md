@@ -108,7 +108,10 @@ fixtures.
    stations): `n.u` swung about `n.v`, which is what §6.7 says a plane is. Each word now states
    `n.u perpendicular up` or `n.v perpendicular n.u`. A std word for "the plane square to this
    direction, its `v` along that one" would say it once; it is useful beyond lofts (any datum
-   square to a line).
+   square to a line). **Done (#250):** `std`'s `P square(up: d) l`, over a relation word's
+   parameter that is an entity; `OnLine`, `OnSpline` and `pending.On` say it so. With `up` not
+   square to the guide it is no conflict: the plane leans, its normal the guide's part square to
+   `up`.
 
 5. **One station word over any path** (`pending.On`) needs three things (the first and the
    third done, #251 — `path` and `g tangent(at: m) l` over every kind, `tests/tangent_at.rs`; the
@@ -208,7 +211,7 @@ fixtures.
 - **Before L1 (language, each its own small issue):**
   - ~~finding 2 (`t` on a line's and an arc's contact)~~, done in #248;
   - ~~finding 3 (a point in space on a planar curve)~~, done in #249 (splines, curves) and #248 (arcs);
-  - finding 4 (a std word for a square frame);
+  - ~~finding 4 (a std word for a square frame)~~, done in #250;
   - finding 5 (`path` type, the At-form of a spline's and a curve's tangency);
   - ~~finding 7 (seed reading geometry for a plane; E061 after placement)~~, done in #252.
 
