@@ -240,10 +240,12 @@ pub fn roll(b: &Brep,at: V,r: f64,tol: f64) -> Result<Rolled,String> {
         };
         let length = spine.period().unwrap_or(ceiling-floor);
         let step = if length.is_finite() { length/2048. } else { r/64. };
+        // the section: the ball's centre, its arc, and the corner across it
         let past = |t: f64,e: &Trim| {
             let c = spine.point(t);
-            let w = dot(toward(0,c),toward(1,c)).clamp(-1.,1.).dacos();
-            dot(sub(c,e.o),e.keep) < -(r/(0.5*w).dcos()+0.1*r)
+            let ends = [toward(0,c),toward(1,c)];
+            let corner = across(c,ends,r);
+            (0..=8).map(|k| add(c,scale(slerp(ends[0],ends[1],k as f64/8.),r))).chain([c,corner]).all(|x| e.beyond(x,0.1*r))
         };
         let room = |lo: f64,hi: f64| lo >= floor && hi <= ceiling && spine.period().is_none_or(|p| hi-lo < p);
         while !past(lo,&ends[0].trim) { lo -= step; if !room(lo,hi) { break } }
@@ -330,22 +332,9 @@ pub fn roll(b: &Brep,at: V,r: f64,tol: f64) -> Result<Rolled,String> {
     if net_err > bar { return Err(format!("the canal between {} misses its fit by {net_err:e}",names())); }
     let (spine_fit,spine_err) = fit_curve(&c_at,3,64,tol).ok_or("the spine could not be fitted")?;
     if spine_err > bar { return Err(format!("the spine between {} misses its fit by {spine_err:e}",names())); }
-    // **a run cut off by planes lies on their kept sides but where it is run on past them**: each
-    // span of the spine stands farther than the corner reaches on each plane's kept side, by its
-    // poles' hull (so nothing between samples is missed), but for those leading from an end in that
-    // plane until they do
-    let trims: Vec<Trim> = ends.iter().map(|e| e.trim).collect();
-    let d = spine_fit.degree;
-    let spans: Vec<usize> = (d..spine_fit.poles.len()).filter(|&j| spine_fit.knots[j+1] > spine_fit.knots[j]).collect();
-    for e in &trims {
-        let clear: Vec<bool> = spans.iter().map(|&j| spine_fit.poles[j-d..=j].iter().all(|&q| dot(sub(q,e.o),e.keep) > reach+tol)).collect();
-        let lead = if e.beside(&trims[0],tol) { clear.iter().take_while(|&&c| !c).count() } else { 0 };
-        let trail = if e.beside(&trims[1],tol) { clear.iter().rev().take_while(|&&c| !c).count() } else { 0 };
-        if lead+trail >= clear.len() || clear[lead..clear.len()-trail].iter().any(|&c| !c) {
-            return Err(format!("the fillet of {} comes back across the plane of `{}` it ends at",names(),
-                b.faces[ends.iter().find(|s| s.trim.beside(e,tol)).unwrap().faces[0]].name));
-        }
-    }
+    // (each end cuts the whole piece off: the set keeps a point on its side of every face at either
+    // end, `crease.ends`, wherever along the run it stands)
+    let trims: Vec<Trim> = ends.iter().map(|e| e.trim.clone()).collect();
     let reversed = [face_a.reversed,face_b.reversed];
     let piece = if ends.is_empty() { build(b,&chain,&net,&strips,reversed,concave,tol,net_err)? } else {
         let meeting = super::geom::Traced {a:surfaces[0].clone(),b:surfaces[1].clone(),pts:Vec::new(),closed:false};
@@ -473,7 +462,7 @@ pub fn flat_along(b: &Brep,at: V,legs: [f64;2],on_a: Option<V>,tol: f64) -> Resu
         let wide = legs[0].max(legs[1]);
         let past = |t: f64,e: &Trim| {
             let (q,d) = way_at(t);
-            std::iter::once(q).chain(legs_at(q,d)).all(|x| dot(sub(x,e.o),e.keep) < -0.1*wide)
+            std::iter::once(q).chain(legs_at(q,d)).all(|x| e.beyond(x,0.1*wide))
         };
         let room = |lo: f64,hi: f64| lo >= floor && hi <= ceiling && edge.period().is_none_or(|pd| hi-lo < pd);
         while !past(lo,&ends[0].trim) { lo -= step; if !room(lo,hi) { break } }
@@ -537,7 +526,7 @@ pub fn flat_along(b: &Brep,at: V,legs: [f64;2],on_a: Option<V>,tol: f64) -> Resu
     let middle = frame_at(0.5).0;
     let reversed = [face_a.reversed,face_b.reversed];
     if ends.is_empty() { return build_with(b,&chain,&net,&strips,reversed,concave,tol,net_err,Some(middle)) }
-    let trims: Vec<Trim> = ends.iter().map(|e| e.trim).collect();
+    let trims: Vec<Trim> = ends.iter().map(|e| e.trim.clone()).collect();
     let section = |u: f64| { let (e,t,_) = frame_at(u); (e,t) };
     let corner = |u: f64| frame_at(u).0;
     let run = build_open(b,&chain,&net,&strips,&meet,&section,&corner,[ends[0].trim.vertex,ends[1].trim.vertex],reversed,concave,
@@ -546,9 +535,10 @@ pub fn flat_along(b: &Brep,at: V,legs: [f64;2],on_a: Option<V>,tol: f64) -> Resu
 }
 
 /// Where a run of `b`'s edges `chain` between the faces `sides_faces` ends, at its vertex `v`: the
-/// other faces there, which lie in one plane and cut the run off (`Trim`, kept on the side the run
-/// lies on), and which neither face runs on into smoothly — `m[k]` the way from face `k` toward the
-/// region there — or the run is refused, naming why.
+/// other faces there, each cutting the run off (`Trim`: a plane, or a cylinder's, a cone's or a
+/// sphere's solid, kept on the side the run lies on), and none of which either face runs on into
+/// smoothly — `m[k]` the way from face `k` toward the region there — or the run is refused, naming
+/// why.
 #[allow(clippy::too_many_arguments)]
 fn end_at(b: &Brep,uses: &[Vec<(usize,usize,usize)>],sides_faces: &[Vec<usize>;2],chain: &[usize],v: u32,m: [V;2],tol: f64,
     names: &str) -> Result<(Trim,Vec<usize>),String> {
@@ -557,41 +547,70 @@ fn end_at(b: &Brep,uses: &[Vec<(usize,usize,usize)>],sides_faces: &[Vec<usize>;2
     let faces: Vec<usize> = (0..b.edges.len()).filter(|&e| b.edges[e].v.contains(&v))
         .flat_map(|e| uses[e].iter().map(|u| u.0)).filter(|f| !sides_faces.iter().any(|s| s.contains(f)))
         .collect::<std::collections::BTreeSet<_>>().into_iter().collect();
-    let &first = faces.first().ok_or_else(|| format!("the run of {} ends where nothing meets it",names()))?;
-    let Surface::Plane(fr) = b.faces[first].surface else {
-        return Err(format!("the fillet of {} runs out onto `{}` ({}): a fillet ending on a curved face is rung 3",
-            names(),b.faces[first].name,b.faces[first].surface.kind()));
-    };
-    if let Some(&f) = faces.iter().find(|&&f| !super::ssi::same(&b.faces[f].surface,&b.faces[first].surface,tol)) {
-        return Err(format!("the fillet of {} ends where `{}` and `{}` meet: a fillet ending at a corner is rung 3",
-            names(),b.faces[first].name,b.faces[f].name));
-    }
-    // not a face either runs on into smoothly (a chain of traced and straight edges)
-    if m.iter().any(|&n| 1.-dot(n,fr.z).abs() <= 1e-9) {
-        return Err(format!("the fillet of {} runs on smoothly into `{}`: a chain of traced and straight edges is rung 3",
-            names(),b.faces[first].name));
-    }
-    // the side the run lies on, along its edge leaving the vertex
+    if faces.is_empty() { return Err(format!("the run of {} ends where nothing meets it",names())) }
+    // the run's way leaving the vertex, along its edge
     let e = &b.edges[*chain.iter().find(|&&e| b.edges[e].v.contains(&v)).unwrap()];
     let EdgeCurve::Curve(c) = &e.curve else { return Err(format!("{} meet at a point",names())) };
     let leaving = if e.v[0] == v { unit(c.tangent(e.t[0])) } else { scale(unit(c.tangent(e.t[1])),-1.) };
-    let s = dot(leaving,fr.z);
-    if s.abs() < MIN_TURN.dsin() {
-        return Err(format!("the fillet of {} meets `{}` along it",names(),b.faces[first].name));
+    // each surface the faces there lie on, once: a plane, or a curved face's solid
+    let mut cuts: Vec<Cut> = Vec::new();
+    for &f in &faces {
+        let face = &b.faces[f];
+        let n = unit(face.surface.gradient(p));
+        // not a face either side runs on into smoothly (a chain of traced and straight edges)
+        if m.iter().any(|&w| 1.-dot(w,n).abs() <= 1e-9) {
+            return Err(format!("the fillet of {} runs on smoothly into `{}`: a chain of traced and straight edges is rung 3",
+                names(),face.name));
+        }
+        let s = dot(leaving,n);
+        if s.abs() < MIN_TURN.dsin() {
+            return Err(format!("the fillet of {} meets `{}` along it",names(),face.name));
+        }
+        let cut = match face.surface {
+            Surface::Plane(fr) => Cut::Plane {o:p,keep:if dot(leaving,fr.z) > 0. { fr.z } else { scale(fr.z,-1.) }},
+            Surface::Cylinder(..) | Surface::Cone(..) | Surface::Sphere(..) => Cut::Solid {surface:face.surface.clone(),inside:s < 0.},
+            _ => return Err(format!("the fillet of {} runs out onto `{}` ({}), which cuts nothing off yet",names(),face.name,
+                face.surface.kind())),
+        };
+        if !cuts.iter().any(|k| k.same(&cut,tol)) { cuts.push(cut); }
     }
-    Ok((Trim {vertex:v,o:p,keep:if s > 0. { fr.z } else { scale(fr.z,-1.) }},faces))
+    Ok((Trim {vertex:v,o:p,cuts},faces))
 }
 
-/// Where a run that ends is cut off: the vertex it ends at (at `o`), and the normal there of the
-/// plane cutting it off, toward the run.
-#[derive(Clone,Copy,Debug)]
-pub struct Trim { pub vertex: u32,pub o: V,pub keep: V }
+/// What cuts a run off where it ends (#218's 7): a plane through `o`, the run kept on the side
+/// `keep` points to; or the solid a curved face's surface bounds (a cylinder, a cone or a sphere),
+/// the run kept within it (`inside`) or outside it.
+#[derive(Clone,Debug)]
+pub enum Cut { Plane { o: V,keep: V },Solid { surface: Surface,inside: bool } }
+
+impl Cut {
+    /// How far within the side kept `x` stands (negative beyond it): a plane's distance, a curved
+    /// surface's signed distance.
+    fn kept(&self,x: V) -> f64 {
+        match self {
+            Cut::Plane {o,keep} => dot(sub(x,*o),*keep),
+            Cut::Solid {surface,inside} => if *inside { -surface.implicit(x) } else { surface.implicit(x) },
+        }
+    }
+
+    /// Whether `other` cuts the same way.
+    fn same(&self,other: &Cut,tol: f64) -> bool {
+        match (self,other) {
+            (Cut::Plane {o,keep},Cut::Plane {o: p,keep: k}) => dot(*keep,*k) >= 1.-1e-9 && dot(sub(*p,*o),*keep).abs() <= tol,
+            (Cut::Solid {surface,inside},Cut::Solid {surface: s,inside: i}) => inside == i && super::ssi::same(surface,s,tol),
+            _ => false,
+        }
+    }
+}
+
+/// Where a run that ends is cut off: the vertex it ends at (at `o`), and what cuts it off there —
+/// every face at that end but the two it runs between, the run kept on its side of each.
+#[derive(Clone,Debug)]
+pub struct Trim { pub vertex: u32,pub o: V,pub cuts: Vec<Cut> }
 
 impl Trim {
-    /// Whether `other` is cut off by the same plane, the same side kept.
-    fn beside(&self,other: &Trim,tol: f64) -> bool {
-        dot(self.keep,other.keep) >= 1.-1e-9 && dot(sub(other.o,self.o),self.keep).abs() <= tol
-    }
+    /// Whether `x` stands beyond the run's end there by more than `margin`: beyond one of its cuts.
+    fn beyond(&self,x: V,margin: f64) -> bool { self.cuts.iter().any(|c| c.kept(x) < -margin) }
 }
 
 /// An end of a run that ends: where it is cut off, the spine's parameter at the ball over its
@@ -701,14 +720,18 @@ fn build_open(b: &Brep,chain: &[usize],net: &Net,surfaces: &[Surface;2],meeting:
     Ok(out)
 }
 
-/// A run's piece cut off at each plane its ends are cut off by, kept on the run's side
-/// (`recipe::kept`).
+/// A run's piece cut off by what each end is cut off by, kept on the run's side: a plane's
+/// half-space (`recipe::kept`), a curved face's solid (`recipe::kept_by_solid`).
 fn trimmed(mut piece: Brep,trims: &[Trim]) -> Result<Brep,String> {
     let tol = 1e-9*piece.size();
-    for (i,t) in trims.iter().enumerate() {
-        if trims[..i].iter().any(|u| u.beside(t,tol)) { continue }
-        piece = super::recipe::kept(&piece,t.o,t.keep,0.)
-            .map_err(|m| format!("a fillet's run cannot be cut off where it ends: {m}"))?;
+    let mut done: Vec<&Cut> = Vec::new();
+    for cut in trims.iter().flat_map(|t| &t.cuts) {
+        if done.iter().any(|c| c.same(cut,tol)) { continue }
+        done.push(cut);
+        piece = match cut {
+            Cut::Plane {o,keep} => super::recipe::kept(&piece,*o,*keep,0.),
+            Cut::Solid {surface,inside} => super::recipe::kept_by_solid(&piece,surface,*inside,0.),
+        }.map_err(|m| format!("a fillet's run cannot be cut off where it ends: {m}"))?;
     }
     Ok(piece)
 }

@@ -1007,3 +1007,75 @@ fn chamfers_that_run_out_onto_a_face_are_cut_off() {
         - sloped_flat(4.0, [98.0, -12.0], [35.0, 0.25], 1.0, RIM, &[([1.0, 0.0, 0.0], 100.0)]);
     near_quadrature(props::volume(&exported(&e, "vent")), vent);
 }
+
+/// `runout.sv`'s vent with only its hole and its rim, the hole at `(hx, hy)`, and `more` after.
+fn vent(hx: f64, hy: f64, more: &str) -> String {
+    let src = include_str!("../../examples/rounds/runout.sv");
+    let lug = src.index_of("wedge := solid(side_f");
+    let mut out = src[..lug].replace("fix((98, -12)) hc", &format!("fix(({hx}, {hy})) hc"));
+    out.push_str("block := solid(other_f, from: 0mm, to: 24mm)\nhole := solid(face(hole_k), from: -1mm, to: 30mm)\n\
+        vent := solid(block)\nhole cut vent\n");
+    out.push_str(more);
+    out.push_str("vent.block.vt round(r: 1mm) vent.hole\n");
+    out
+}
+
+trait IndexOf { fn index_of(&self, what: &str) -> usize; }
+impl IndexOf for str { fn index_of(&self, what: &str) -> usize { self.find(what).expect(what) } }
+
+/// `∫ f` over `[a, b]` by Simpson's rule over `n` (even) steps.
+fn simpson_n(f: &dyn Fn(f64) -> f64, a: f64, b: f64, n: usize) -> f64 {
+    let h = (b - a) / n as f64;
+    (0..=n).map(|k| f(a + h * k as f64) * if k == 0 || k == n { 1.0 } else if k % 2 == 1 { 4.0 } else { 2.0 }).sum::<f64>() * h / 3.0
+}
+
+/// **A rolled run cut off by a face its other end stands on** (#218's 7): the vent's hole moved so
+/// its circle passes through the block's corner where its end (x = 100) and its side (y = −24)
+/// meet, the hole taking the end there. The rim's run ends on the end face at one end and the side
+/// at the other, and the corner it leaves at stands on the end face's plane: each end's face cuts
+/// the whole piece off, as the set keeps a point on its side of every face at either end
+/// (`crease.ends`) wherever along the run it stands. The hole takes a segment of its disc (the
+/// chord x = 100 at `r/√2` from its centre); the rim is #85's quadrature clipped by both planes
+/// (`sloped_clipped`), to 1e-6.
+#[test]
+fn a_rolled_run_is_cut_off_by_both_its_ends_faces() {
+    let k = 4.0 / 2f64.sqrt();
+    let (hx, hy) = (100.0 + k, -24.0 + k);
+    let e = solved(&vent(hx, hy, ""));
+    assert_eq!(lowered(&e).0, 1);
+    let b = exported(&e, "vent");
+    let wedge = 40.0 * 15.0 * 24.0;
+    let (seg, off) = segment(4.0, k);
+    let rim = crate::fillet_definition::sloped_clipped(4.0, [hx, hy], [35.0, 0.25], 1.0, crate::fillet_definition::RIM,
+        &[([1.0, 0.0, 0.0], 100.0), ([0.0, -1.0, 0.0], 24.0)], &[]);
+    near_quadrature(props::volume(&b), wedge - seg * (35.0 - 0.25 * (hx - off)) - rim);
+}
+
+/// **A rolled run that runs out onto a curved face** (#218's 2, #110): the vent's block bounded by an
+/// upright drum of radius 60 about (40, −12), so its end is a cylinder the hole breaks out of. The
+/// rim's run ends on the drum at both ends: carried on into it and kept within its solid. The block
+/// within the drum and the hole within both by Simpson's rule over y (the hole's about its own
+/// centre, `y = −12 + 4 sin θ`, split where the circles cross); the rim #85's quadrature clipped by
+/// the drum, to 1e-6.
+#[test]
+fn a_rolled_run_onto_a_curved_face_is_cut_off_by_its_solid() {
+    let drum = "in std.top {\n  dc := point\n  fix((40, -12)) dc\n  drum_k := circle(center: dc) hint(r: 60)\n  radius(60mm) drum_k\n}\n\
+        drum := solid(face(drum_k), from: -1mm, to: 40mm)\ndrum bound vent\n";
+    let e = solved(&vent(98.0, -12.0, drum));
+    assert_eq!(lowered(&e).0, 1);
+    let b = exported(&e, "vent");
+    // the wedge's top `z = 35 − x/4` over the block within the drum
+    let reach = |y: f64| 40.0 + (3600.0 - (y + 12.0) * (y + 12.0)).sqrt();
+    let under = |x0: f64, x1: f64| 35.0 * (x1 - x0) - (x1 * x1 - x0 * x0) / 8.0;
+    let block = simpson_n(&|y| under(60.0, reach(y).min(100.0)), -24.0, 0.0, 200_000);
+    // the hole within the drum: across its disc, `y = −12 + 4 sin θ`
+    let hole = simpson_n(&|t: f64| {
+        let (sn, cs) = t.sin_cos();
+        let y = -12.0 + 4.0 * sn;
+        let half = 4.0 * cs;
+        under(98.0 - half, (98.0 + half).min(reach(y))) * 4.0 * cs
+    }, -PI / 2.0, PI / 2.0, 200_000);
+    let rim = crate::fillet_definition::sloped_clipped(4.0, [98.0, -12.0], [35.0, 0.25], 1.0, crate::fillet_definition::RIM,
+        &[], &[([40.0, -12.0], 60.0)]);
+    near_quadrature(props::volume(&b), block - hole - rim);
+}

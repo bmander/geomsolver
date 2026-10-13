@@ -767,13 +767,14 @@ fn rolled(c: &dyn Fn(f64) -> V, toward: [&dyn Fn(V) -> V; 2], hit: [&dyn Fn(V, V
 /// left; the sections stand at the middles of their steps, never on a plane a section lies in.
 fn rolled_within(c: &dyn Fn(f64) -> V, toward: [&dyn Fn(V) -> V; 2],
                  hit: [&dyn Fn(V, V) -> f64; 2], r: f64, within: Option<(V, f64)>) -> f64 {
-    rolled_over(c, [0.0, 2.0 * PI], toward, hit, r, within.as_slice())
+    rolled_over(c, [0.0, 2.0 * PI], toward, hit, r, within.as_slice(), &[])
 }
 
 /// `rolled_within` along the stretch `span` of an open spine `c(φ)`, kept within every half-space
-/// `n · x ≤ k` of `within`: a run carried on past both its ends and cut off by the faces there.
+/// `n · x ≤ k` of `within` and every upright cylinder (about `(x, y)`, of a radius) of `drums`: a
+/// run carried on past both its ends and cut off by the faces there.
 pub(crate) fn rolled_over(c: &dyn Fn(f64) -> V, span: [f64; 2], toward: [&dyn Fn(V) -> V; 2],
-                 hit: [&dyn Fn(V, V) -> f64; 2], r: f64, within: &[(V, f64)]) -> f64 {
+                 hit: [&dyn Fn(V, V) -> f64; 2], r: f64, within: &[(V, f64)], drums: &[([f64; 2], f64)]) -> f64 {
     let (n_phi, n_psi) = (720, 96);
     let gauss: Vec<(f64, f64)> = (0..n_psi).map(|i| {
         let mut x = (PI * (i as f64 + 0.75) / (n_psi as f64 + 0.5)).cos();
@@ -837,6 +838,17 @@ pub(crate) fn rolled_over(c: &dyn Fn(f64) -> V, span: [f64; 2], toward: [&dyn Fn
                         lo = lo.max(room / along);
                     }
                 }
+                for &([cx, cy], radius) in drums {
+                    let (ox, oy) = (p[0] - cx, p[1] - cy);
+                    let (a, b, c) = (d[0] * d[0] + d[1] * d[1], 2.0 * (ox * d[0] + oy * d[1]), ox * ox + oy * oy - radius * radius);
+                    let disc = b * b - 4.0 * a * c;
+                    if a < 1e-300 || disc < 0.0 {
+                        if c > 0.0 { hi = lo; }
+                        continue;
+                    }
+                    lo = lo.max((-b - disc.sqrt()) / (2.0 * a));
+                    hi = hi.min((-b + disc.sqrt()) / (2.0 * a));
+                }
                 if hi <= lo {
                     continue;
                 }
@@ -897,16 +909,24 @@ pub(crate) const RIM: f64 = -1.0;
 /// plane `z = h0 − s x`, the material below it — a boss's root (`ROOT`) or a hole's rim (`RIM`)
 /// — kept within `n · x ≤ k`: carried on past the face it ends on and cut off there
 /// (`x0/runout.sv`'s boss and vent).
-pub(crate) fn sloped(radius: f64, [cx, cy]: [f64; 2], [h0, s]: [f64; 2], r: f64, side: f64,
+pub(crate) fn sloped(radius: f64, at: [f64; 2], slope: [f64; 2], r: f64, side: f64,
                      within: Option<(V, f64)>) -> f64 {
+    sloped_clipped(radius, at, slope, r, side, within.as_slice(), &[])
+}
+
+/// `sloped` kept within every half-space of `within` and every upright cylinder of `drums`: a run
+/// that ends at a corner of two faces, or runs out onto a curved face (#218's 7).
+pub(crate) fn sloped_clipped(radius: f64, [cx, cy]: [f64; 2], [h0, s]: [f64; 2], r: f64, side: f64,
+                     within: &[(V, f64)], drums: &[([f64; 2], f64)]) -> f64 {
     let n = unit([s, 0.0, 1.0]);
     let lift = side * r / n[2];
-    rolled_within(
+    rolled_over(
         &|phi: f64| {
             let (sn, co) = phi.sin_cos();
             let x = cx + (radius + r) * co;
             [x, cy + (radius + r) * sn, h0 - s * x + lift]
         },
+        [0.0, 2.0 * PI],
         [&|_: V| scale(n, -side), &|p: V| unit([cx - p[0], cy - p[1], 0.0])],
         [&|o: V, w: V| {
             let d = dot(w, n);
@@ -915,6 +935,7 @@ pub(crate) fn sloped(radius: f64, [cx, cy]: [f64; 2], [h0, s]: [f64; 2], r: f64,
             &|o, w| ray_cylinder(o, w, [cx, cy, 0.0], 2, radius)],
         r,
         within,
+        drums,
     )
 }
 
@@ -947,6 +968,7 @@ pub(crate) fn frustum_generator(r0: f64, slope: f64, [z0, z1]: [f64; 2], r: f64)
             }],
         r,
         &[([0.0, 0.0, -1.0], -z0), ([0.0, 0.0, 1.0], z1)],
+        &[],
     )
 }
 
