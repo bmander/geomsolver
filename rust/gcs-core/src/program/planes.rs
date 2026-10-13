@@ -113,31 +113,39 @@ pub(super) fn tie_twins(sk: &mut Sketch, map: &SourceMap, diags: &mut Vec<Diag>)
 
 /// A point drawn in two planes that are parallel, where they stand once placed: they meet on no
 /// line, so the point can be on both only were they one (E061, the rule `project` states).
-pub(super) fn parallel_twins(sk: &Sketch, map: &SourceMap, diags: &mut Vec<Diag>) {
+/// Judged only of planes turned as the statements say (`placed`, from `views::place`): one that
+/// merely starts at its seed is judged where the solve leaves it (`views::degenerate`).
+pub(super) fn parallel_twins(sk: &Sketch, map: &SourceMap, placed: &[bool], diags: &mut Vec<Diag>) {
+    let placed = |pl: usize| placed.get(pl).copied().unwrap_or(false);
     for (&p, ts) in &sk.twins {
-        let Some(first) = sk.plane_of(p) else { continue };
-        let n = sk.basis(first).normal();
+        let Some(first) = sk.plane_of(p).filter(|&pl| placed(pl)) else { continue };
         for &t in ts {
-            let Some(other) = sk.plane_of(t).filter(|&q| q != first) else { continue };
-            let m = sk.basis(other).normal();
-            if crate::space::norm(crate::space::cross(n, m)) > crate::plane::PARALLEL_TOL {
-                continue;
-            }
-            let site = map.site_of(EntRef::point(p));
-            let name = |e: EntRef| map.name_of(e).cloned().unwrap_or_else(|| io::entity_name(e));
-            diags.push(Diag {
-                code: Code::E061,
-                span: site.map(|s| s.span).unwrap_or_default(),
-                stmt: site.map(|s| s.stmt),
-                message: format!(
-                    "`{}` and `{}` are parallel, and meet on no line `{}` could be on",
-                    name(EntRef::plane(first)),
-                    name(EntRef::plane(other)),
-                    name(EntRef::point(p)),
-                ),
-            });
+            let Some(other) = sk.plane_of(t).filter(|&q| q != first && placed(q)) else { continue };
+            diags.extend(twin_parallel(sk, map, p, first, other));
         }
     }
+}
+
+/// E061 for point `p`, drawn in `first` and `other`, where the two stand parallel.
+pub(super) fn twin_parallel(sk: &Sketch, map: &SourceMap, p: usize, first: usize, other: usize)
+    -> Option<Diag> {
+    let (n, m) = (sk.basis(first).normal(), sk.basis(other).normal());
+    if crate::space::norm(crate::space::cross(n, m)) > crate::plane::PARALLEL_TOL {
+        return None;
+    }
+    let site = map.site_of(EntRef::point(p));
+    let name = |e: EntRef| map.name_of(e).cloned().unwrap_or_else(|| io::entity_name(e));
+    Some(Diag {
+        code: Code::E061,
+        span: site.map(|s| s.span).unwrap_or_default(),
+        stmt: site.map(|s| s.stmt),
+        message: format!(
+            "`{}` and `{}` are parallel, and meet on no line `{}` could be on",
+            name(EntRef::plane(first)),
+            name(EntRef::plane(other)),
+            name(EntRef::point(p)),
+        ),
+    })
 }
 
 /// **A plane is a set, and `in` is membership of it** (§6.7, #105): `q coincident P`, said of a

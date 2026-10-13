@@ -13,12 +13,14 @@ use std (on_u)
 
 // The plane square to the line `g` at the fraction `s` of the way from its start to its end: its
 // origin there, its normal along `g`, and its `v` held along `up` (any direction square to `g`).
-// Along a straight guide every station is the first one moved, so nothing turns.
+// Along a straight guide every station is the first one moved, so nothing turns. The plane starts
+// as it ends, read off the guide and `up`: `v` along `up`, and `u` that turned back a quarter about
+// `g`, so its normal runs along `g` (README, finding 7).
 component OnLine(g: line, up: axis, run: Length, s: Scalar) {
   m := point
   m coincident g
   g.p1 distance(run * s, along: g) m
-  n := plane
+  n := plane(u: hint(dir: up, turn: -90deg, about: g), v: hint(dir: up))
   n.origin coincident m
   g perpendicular n.u
   n.u perpendicular up

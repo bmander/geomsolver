@@ -594,9 +594,7 @@ fn elaborate_in(
     // Only then — a document whose places are all in their own planes settles once.
     // A plane placed over seeds read through another plane is read through in turn, so the two
     // alternate until the seeds stand still — a few rounds, one per plane a chain of them crosses.
-    views::place(&mut sk);
-    // a point drawn in planes that never meet is on none of them at once (§6.7)
-    planes::parallel_twins(&sk, &map, &mut diags);
+    let mut placed = views::place(&mut sk);
     if crosses_views(&sk, &res, &deferred) {
         for _ in 0..4 {
             let before: Vec<f64> = sk.params.iter().map(|p| p.value).collect();
@@ -607,13 +605,17 @@ fn elaborate_in(
             diags.splice(settled, again);
             settled = found;
             // and the planes placed again over the points the seeds moved
-            views::place(&mut sk);
+            placed = views::place(&mut sk);
             let moved = sk.params.iter().zip(&before).any(|(p, &b)| (p.value - b).abs() > 1e-12 * (1.0 + b.abs()));
             if !moved {
                 break;
             }
         }
     }
+
+    // a point drawn in planes that never meet is on none of them at once (§6.7): judged of the
+    // planes placed, and of the rest where the solve leaves them (`views::degenerate`)
+    planes::parallel_twins(&sk, &map, &placed, &mut diags);
 
     // a ring's copies where their representatives' seeds put them, whatever a seed said of a copy
     sk.settle_turns();

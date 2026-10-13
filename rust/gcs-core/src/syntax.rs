@@ -1446,6 +1446,30 @@ pub struct KidSeed {
     pub span: Span,
     /// The slot is an axis's (a plane's `u:` and `v:`), so the seed is its direction, `dir:`.
     pub axis: bool,
+    /// `hint(dir: up)`: the direction given as geometry, in place of the three numbers.
+    pub dir: Option<DirRef>,
+}
+
+/// `hint(dir: g)`, `hint(dir: up, turn: -90deg, about: g)` — a direction given as geometry: an
+/// axis's own, a line's from its `p1` to its `p2`, a plane's normal (`P.n`), read in space where
+/// each stands, and turned `turn:` (counter-clockwise looking down it) about a second one.  The
+/// place seed (`AtRef`) for directions (§6.4): it reads seeds, never solved values, and a solve
+/// writes nothing back over it.
+#[derive(Clone, Debug)]
+pub struct DirRef {
+    pub what: Ref,
+    pub about: Option<Ref>,
+    pub turn: Option<(String, Span)>,
+}
+
+impl DirRef {
+    pub fn refs(&self) -> impl Iterator<Item = &Ref> {
+        std::iter::once(&self.what).chain(self.about.iter())
+    }
+
+    pub fn refs_mut(&mut self) -> impl Iterator<Item = &mut Ref> {
+        std::iter::once(&mut self.what).chain(self.about.iter_mut())
+    }
 }
 
 /// `hint(at: c, bearing: u + phase)` — a place given as geometry: at a point, or at the edge

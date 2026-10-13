@@ -398,3 +398,109 @@ Q := plane(u: l, v: m)
         .collect::<Vec<_>>();
     assert_eq!(values(&a), values(&b));
 }
+
+/// Which way plane `p`'s axis `key` (`u` or `v`) runs, as seeded.
+fn axis_dir(e: &Elaborated, p: &str, key: &str) -> [f64; 3] {
+    let pl = &e.sketch.planes[e.map.ent_named(p).unwrap_or_else(|| panic!("no `{p}`")).i()];
+    let a = if key == "u" { pl.u } else { pl.v };
+    e.sketch.axes[a as usize].d.map(|q| e.sketch.params[q as usize].value)
+}
+
+fn along(got: [f64; 3], want: [f64; 3], what: &str) {
+    assert!(got.iter().zip(want).all(|(g, w)| (g - w).abs() < 1e-9), "{what}: {got:?}, not {want:?}");
+}
+
+/// **A direction seed may name geometry** (§6.4, #252): `hint(dir: up)` is an axis's own way,
+/// `hint(dir: g)` a line's from its start to its end where each stands in space (`g` drawn in
+/// the front, read in space), `hint(dir: P.n)` a plane's normal, and `turn:` `about:` turns
+/// one about another — so a plane standing square to a guide starts square to it.  The place
+/// seed for directions: it reads seeds, and a commit never writes one back.
+#[test]
+fn a_plane_is_seeded_from_an_axis_and_a_line_in_another_view() {
+    let guide = "use std\nin std.front {\n  a := point hint((0, 0))\n  b := point hint((0, 10))\n  \
+                 g := line(a, b)\n}\n";
+    // `g` runs up the front, world z; the plane square to it with its `v` along `std.y`
+    let e = read(&format!("{guide}n := plane(u: hint(dir: std.y, turn: -90deg, about: g), \
+                           v: hint(dir: std.y))\nm := plane(u: hint(dir: g), v: hint(dir: std.front.n))\n"));
+    along(axis_dir(&e, "n", "u"), [1.0, 0.0, 0.0], "n.u, y turned back a quarter about z");
+    along(axis_dir(&e, "n", "v"), [0.0, 1.0, 0.0], "n.v, along std.y");
+    along(axis_dir(&e, "m", "u"), [0.0, 0.0, 1.0], "m.u, along g in space");
+    along(axis_dir(&e, "m", "v"), [0.0, -1.0, 0.0], "m.v, the front's normal");
+    // a line drawn in a plane the statements place is read once that plane is placed: `P`
+    // starts turned off the side plane and is put on it, so `g` runs along z, not `P`'s seed
+    let e = read("use std\nP := plane(u: hint(dir: (0.3, 0, 1)), v: hint(dir: (0, 1, 0.2)))\n\
+                  P.origin coincident std.origin\nP.u parallel std.z\nP.v parallel std.y\n\
+                  in P {\n  a := point hint((0, 0))\n  b := point hint((10, 0))\n  g := line(a, b)\n}\n\
+                  m := plane(u: hint(dir: g))\n");
+    let u = axis_dir(&e, "m", "u");
+    assert!(u[0].abs() < 1e-9 && u[1].abs() < 1e-9 && (u[2].abs() - 1.0).abs() < 1e-9, "{u:?}");
+    // a solve writes nothing back over a direction given as geometry
+    let src = format!("{guide}in std.front {{\n  c := point hint((5, 10))\n  h := line(a, c)\n}}\n\
+                       n := plane(v: hint(dir: h))\nn.v parallel std.z\n");
+    let e = read(&src);
+    let mut sk = e.sketch.clone();
+    gcs_core::solve::solve(&mut sk, Default::default());
+    let out = edit::commit_seeds(&e, &sk, &e.program);
+    assert!(out.text.contains("n := plane(v: hint(dir: h))"), "{}", out.text);
+    // though `n.v` stands along z, not along `h`
+    let solved = axis_dir(&e, "n", "v");
+    assert!((solved[2].abs() - 1.0).abs() < 1e-9, "{solved:?}");
+    // what a direction may read is checked
+    refused(&format!("{guide}n := plane(u: hint(dir: a))\n"), "not a point's");
+    refused(&format!("{guide}n := plane(u: hint(dir: nobody))\n"), "nobody");
+}
+
+/// The keys of a direction given as geometry are checked where they are written.
+#[test]
+fn a_direction_seed_is_spelled_one_way() {
+    let fails = |src: &str, needle: &str| {
+        let (_, errs) = parse(src);
+        assert!(errs.iter().any(|e| e.message.contains(needle)), "expected `{needle}`: {errs:?}");
+    };
+    fails("use std\nn := plane(u: hint(dir: std.y, turn: 90deg))\n", "both or neither");
+    fails("use std\nn := plane(u: hint(dir: std.y, about: std.z))\n", "both or neither");
+    fails("use std\nn := plane(u: hint(dir: std.y, dir.x: 1))\n", "carries no number");
+    fails("use std\nn := plane(u: hint(dir: (1, 0, 0), turn: 90deg, about: std.z))\n", "turn a direction");
+    fails("use std\nt := axis hint(dir: std.y)\n", "seeds a plane's axis");
+    // and the printer spells it back as written
+    let src = "use std\nn := plane(u: hint(dir: std.y, turn: -90deg, about: std.z), v: hint(dir: std.y))\n";
+    let (mut prog, errs) = parse(src);
+    assert!(errs.is_empty(), "{errs:?}");
+    let flat = gcs_core::syntax::render_flat(&mut prog).expect("prints");
+    assert!(flat.contains("hint(dir: std.y, turn: -90deg, about: std.z)"), "{flat}");
+}
+
+/// The loft station probes (`docs/lofts/l0/stations/`, #243 L0): every station along a line,
+/// the bottle's included — its rim drawn in the station's plane and in the front at once — solves
+/// over the one library at DOF 0, `OnLine` seeding its plane from the guide and `up` (#252).
+#[test]
+fn every_line_station_solves_over_the_one_library() {
+    let lofts = include_str!("../../../docs/lofts/l0/stations/lofts.sv");
+    let stations = [
+        ("bottle", include_str!("../../../docs/lofts/l0/stations/bottle.sv")),
+        ("body", include_str!("../../../docs/lofts/l0/stations/reducer.sv")),
+        ("blade", include_str!("../../../docs/lofts/l0/stations/blade.sv")),
+        ("pyramid", include_str!("../../../docs/lofts/l0/stations/pyramid.sv")),
+        ("transition", include_str!("../../../docs/lofts/l0/stations/square_to_circle.sv")),
+        ("duct", include_str!("../../../docs/lofts/l0/stations/twisted_duct.sv")),
+    ];
+    for (name, src) in stations {
+        let (mut prog, errs) = parse(src);
+        assert!(errs.is_empty(), "{name}: {errs:?}");
+        let linked = gcs_core::modules::link(&mut prog, &mut |m| {
+            (m == "lofts").then(|| lofts.to_string()).or_else(|| gcs_core::library::resolve(m))
+        });
+        assert!(linked.is_empty(), "{name}: {linked:?}");
+        let mut e = elaborate(&prog);
+        assert!(e.ok(), "{name}: {:?}", e.errors().map(|d| d.message.clone()).collect::<Vec<_>>());
+        let r = gcs_core::solve::solve(&mut e.sketch, Default::default());
+        assert!(r.success, "{name}: {}", r.message);
+        let d = gcs_core::diagnose::diagnose(&mut e.sketch, Default::default());
+        assert_eq!(d.dof, 0, "{name}");
+        // the plane square to its guide, its `v` along `up` as the word says, not against it
+        let pl = &e.sketch.planes[e.map.ent_named(&format!("{name}.st.n")).expect("st.n").i()];
+        let v = e.sketch.axes[pl.v as usize].d.map(|q| e.sketch.params[q as usize].value);
+        let up = if name == "bottle" { [0.0, 1.0, 0.0] } else { [0.0, 0.0, 1.0] };
+        along(v, up, name);
+    }
+}
