@@ -40,7 +40,11 @@ shared axes it would sit on them. `P.origin coincident p`, `P coincident p`, `P 
 (one row along P's normal); `P parallel Q` (`PlaneParallel`, normals alike either way, two
 rows; no plane–plane angle yet); `fix(origin == (x, y, z)) P`. A plane's child slot takes a seed,
 `plane(u: hint(dir: (x, y, z)))` (`KidSeed` carries x, y, z; a point's refuses z), and
-`commit_seeds` writes a minted axis's direction back there.
+`commit_seeds` writes a minted axis's direction back there. **Or read off geometry** (0.79, #252):
+`hint(dir: up)` an axis, a line `p1`→`p2` in space, `P.n`; `turn: θ, about: g` turns it
+(`KidSeed::dir`, `syntax::DirRef`; `Deferred::Dir`, `entities::direction_of`, read again after
+`views::place` where it reads what that places, `crosses_views`); never written back. The loft
+station `OnLine` seeds `n` so (`docs/lofts/l0/stations/lofts.sv`); `tests/seeds.rs` is the gate.
 An origin already on one axis is placed in fewer rows than three (`P.origin coincident
 std.front`), or the structural count sees a redundancy. W113 warns of two planes lying on one
 another. `views::place`
@@ -67,7 +71,8 @@ hinges, `against`, the role rule, page placement, `std.ThreeViews`.
 flattener declares a hidden **twin** per further plane beside it (`Walk::twins_of`, key `O@1`,
 `hint(at: O)`, `Expansion::twins`); the elaborator records them (`Sketch::twins`) and, after the
 relations, ties each (`planes::tie_twins`, E040 a plane twice; `planes::parallel_twins` E061 after
-`views::place`): `Sketch::tie_twin`'s two intrinsic rows, the twin on the point's plane and
+`views::place`, of the planes it placed — `place` says which — and of a plane only seeded where the
+solve leaves it, `views::degenerate`'s twin row, #252): `Sketch::tie_twin`'s two intrinsic rows, the twin on the point's plane and
 `Project`, then `Sketch::hold_twins`' point on the twin's plane — left out where a line the plane is
 built along (`axes_along`'s `Parallel3`) ends at the point or has it stated on it, a dependency the
 structural count cannot see (#88). The crown's normal section N is square so. A point is read where its reader

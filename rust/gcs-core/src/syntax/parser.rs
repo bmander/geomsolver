@@ -26,8 +26,8 @@ struct Hint {
     value: Option<f64>,
     text: String,
     span: Span,
-    /// `at: REF`, `toward: REF`, `along: REF` — the keys whose value is a *reference* and not a
-    /// number: a place (§6.4).
+    /// `at: REF`, `toward: REF`, `along: REF`, `about: REF`, `dir: REF` — the keys whose value is
+    /// a *reference* and not a number: a place, or a direction (§6.4).
     /// Read wherever the clause stands, since the grammar is the clause's own; which tables
     /// take one is the caller's question, and a declaration's is the only one that does.
     place: Option<Ref>,
@@ -417,10 +417,13 @@ impl<'a> P<'a> {
                     self.fail(&format!("a hint names what it seeds: `hint({eg})`"));
                     return None;
                 };
-                if ["at", "toward", "along"].contains(&key.as_str()) {
+                // a direction given as geometry, `dir: up`, as against its numbers, `dir: (0,
+                // 0, 1)`
+                let dir = key == "dir" && !self.tuple_ahead();
+                if dir || ["at", "toward", "along", "about"].contains(&key.as_str()) {
                     // a place, not a number — `at: pin`, `at: k` — so it is read as a
                     // reference; a pair of numbers is the point's own place, and says so
-                    if self.peek() == Some(&Tok::P('(')) {
+                    if !dir && self.peek() == Some(&Tok::P('(')) {
                         self.fail(&format!(
                             "`{key}:` names a place; a point's own is `hint((x, y))`"
                         ));

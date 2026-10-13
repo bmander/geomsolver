@@ -9,7 +9,7 @@ use crate::ir::{Decl, Kid, Statement as Stmt};
 use crate::model::{EntKind, EntRef, Field, Sketch};
 use crate::rng::Rng;
 use crate::style::Classes;
-use crate::syntax::{AtRef, Program, Span, StmtId};
+use crate::syntax::{AtRef, DirRef, Program, Seg, Span, StmtId};
 use crate::{curve, expr, io};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -485,6 +485,9 @@ fn build_plane(
                     _ => None,
                 };
                 let dir = match seed {
+                    // a direction read off geometry is read once everything has its seed; until
+                    // then the axis starts as an unseeded one does
+                    Some(s) if s.dir.is_some() => if k == 0 { [1.0, 0.0, 0.0] } else { [0.0, 0.0, 1.0] },
                     // what an expression comes to is settled later, as a named axis's is
                     Some(s) if s.v.iter().any(|&x| x != 0.0) || s.text.iter().any(|t| t.is_some()) => s.v,
                     Some(s) => {
@@ -498,6 +501,15 @@ fn build_plane(
                     None => [0.0, 0.0, 1.0],
                 };
                 axes[k] = sk.axis(dir, &format!("{show}.{key}"));
+                if let Some(dir) = seed.and_then(|s| s.dir.as_ref()) {
+                    deferred.push(Deferred::Dir {
+                        axis: axes[k],
+                        dir: dir.clone(),
+                        names: d.seed_names.clone(),
+                        span: seed.map_or(st.span, |s| s.span),
+                        stmt: st.id,
+                    });
+                }
                 for (j, t) in seed.iter().flat_map(|s| s.text.iter().enumerate()) {
                     let (Some(t), Some(s)) = (t, seed) else { continue };
                     deferred.push(Deferred::Text {
@@ -722,6 +734,8 @@ pub(super) enum Deferred {
         stmt: StmtId,
     },
     At { point: usize, at: AtRef, names: Vec<(String, String)>, span: Span, stmt: StmtId },
+    /// A plane's axis seeded along a direction read off geometry, `hint(dir: up)`.
+    Dir { axis: usize, dir: DirRef, names: Vec<(String, String)>, span: Span, stmt: StmtId },
     /// An arc's radius the source left unwritten: its centre to its start, as `Sketch::arc`
     /// first computed it.
     Radius { arc: usize },
@@ -843,6 +857,14 @@ pub(super) fn settle_deferred(
                 });
                 (*span, *stmt, r)
             }
+            Deferred::Dir { axis, dir, names, span, stmt } => {
+                let r = direction_of(sk, res, dir, names).map(|d| {
+                    for (p, v) in sk.axes[*axis].d.into_iter().zip(d) {
+                        seeds.write(sk, p, v);
+                    }
+                });
+                (*span, *stmt, r)
+            }
             Deferred::Height { point, text: Some(text), names, span, stmt, .. } => {
                 // refused already where the point is drawn in a plane (`places`)
                 let Some(param) = sk.points[*point].z else { continue };
@@ -907,6 +929,55 @@ fn place_of(
             .to_string());
     }
     Ok(sk.world_point(e.i()).to_vec())
+}
+
+/// Which way `hint(dir: …)` points, in space and of unit length: an axis's own seed, a line's
+/// from its `p1` to its `p2` where each end stands, a plane's normal (`P.n`) — turned `turn:`
+/// about a second of these, counter-clockwise looking down it (Rodrigues).
+fn direction_of(
+    sk: &Sketch,
+    res: &Resolver,
+    d: &DirRef,
+    names: &[(String, String)],
+) -> Result<[f64; 3], String> {
+    use crate::space::{add, cross, dot, norm, scale};
+    let read = |r: &crate::syntax::Ref| -> Result<[f64; 3], String> {
+        // a plane stands for its normal by the word `n`, as an ordinate reads one
+        let normal = matches!(r.path.last(), Some(Seg::Field(f)) if f.text == "n");
+        let e = if normal {
+            let root = *res.of.get(&r.root.text)
+                .ok_or_else(|| format!("no such entity: `{}`", r.root.text))?;
+            follow(sk, root, &r.path[..r.path.len() - 1])?
+        } else {
+            place(sk, res, r)?
+        };
+        let v = match e.kind {
+            EntKind::Plane if normal => sk.basis(e.i()).normal(),
+            EntKind::Axis => sk.axes[e.i()].d.map(|p| sk.params[p as usize].value),
+            EntKind::Line => {
+                let l = &sk.lines[e.i()];
+                crate::space::sub(sk.world_point(l.p2 as usize), sk.world_point(l.p1 as usize))
+            }
+            k => {
+                return Err(format!(
+                    "a direction is an axis's, a line's or a plane's normal (`P.n`), not {}'s",
+                    k.a()
+                ));
+            }
+        };
+        let n = norm(v);
+        if n.is_nan() || n <= 1e-12 {
+            return Err(format!("`{}` points nowhere yet", r.root.text));
+        }
+        Ok(scale(v, 1.0 / n))
+    };
+    let v = read(&d.what)?;
+    let (Some(about), Some(turn)) = (&d.about, &d.turn) else { return Ok(v) };
+    let k = read(about)?;
+    // a turn is an angle, and what it comes to is in degrees, as a place's is
+    let (s, c) = step_by(sk, res, &Some(turn.clone()), 0.0, names)?.to_radians().dsin_cos();
+    let turned = add(add(scale(v, c), scale(cross(k, v), s)), scale(k, dot(k, v) * (1.0 - c)));
+    Ok(scale(turned, 1.0 / norm(turned)))
 }
 
 /// The two points a place's step runs between: from `e` toward a point (`toward:`), or a line's
@@ -1027,6 +1098,9 @@ fn seed_in(sk: &Sketch, p: usize, view: Option<usize>) -> (f64, f64) {
 /// settled again once memberships and the views' poses are in (`program::build`).
 pub(super) fn crosses_views(sk: &Sketch, res: &Resolver, deferred: &[Deferred]) -> bool {
     deferred.iter().any(|d| {
+        if let Deferred::Dir { dir, .. } = d {
+            return dir.refs().any(|r| reads_unplaced(sk, res, r));
+        }
         let Deferred::At { point, at, .. } = d else { return false };
         let view = sk.plane_of(*point);
         let point_of = |e: EntRef| match e.kind {
@@ -1048,6 +1122,26 @@ pub(super) fn crosses_views(sk: &Sketch, res: &Resolver, deferred: &[Deferred]) 
             .chain(at.along.iter().flat_map(line_ends))
             .any(|p| sk.plane_of(p) != view)
     })
+}
+
+/// Whether a direction read off `r` reads through what the document places: an axis or a
+/// plane not held, or a line with an end drawn in such a plane.
+fn reads_unplaced(sk: &Sketch, res: &Resolver, r: &crate::syntax::Ref) -> bool {
+    let normal = matches!(r.path.last(), Some(Seg::Field(f)) if f.text == "n");
+    let e = match normal {
+        true => res.of.get(&r.root.text).and_then(|&e| follow(sk, e, &r.path[..r.path.len() - 1]).ok()),
+        false => place(sk, res, r).ok(),
+    };
+    let in_unplaced = |p: u32| sk.plane_of(p as usize).is_some_and(|pl| !sk.plane_fixed(pl));
+    match e {
+        Some(e) if e.kind == EntKind::Plane => !sk.plane_fixed(e.i()),
+        Some(e) if e.kind == EntKind::Axis => !super::views::held(sk, &sk.axes[e.i()].d),
+        Some(e) if e.kind == EntKind::Line => {
+            let l = &sk.lines[e.i()];
+            in_unplaced(l.p1) || in_unplaced(l.p2)
+        }
+        _ => false,
+    }
 }
 
 fn set_class(sk: &mut Sketch, e: EntRef, c: Classes) {

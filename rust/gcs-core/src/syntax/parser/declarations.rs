@@ -6,7 +6,7 @@ use crate::style::{Classes, Style};
 use crate::syntax::lexer::Tok;
 use crate::syntax::words::trails_decl;
 use crate::syntax::{
-    decl_head, Arg, AtRef, Decl, DeclName, Kid, KidSeed, Membership, Name, Ref, Sense, Span, StmtKind, StyleRule, Sweep,
+    decl_head, Arg, AtRef, Decl, DeclName, DirRef, Kid, KidSeed, Membership, Name, Ref, Sense, Span, StmtKind, StyleRule, Sweep,
     Weight,
 };
 
@@ -430,7 +430,16 @@ impl<'a> P<'a> {
                         let slot = match h.key.as_str() {
                             "at" => &mut at,
                             "toward" => &mut toward,
-                            _ => &mut along,
+                            "along" => &mut along,
+                            _ => {
+                                let m = format!(
+                                    "`{}:` reads a direction off geometry, which seeds a plane's \
+                                     axis: `plane(v: hint(dir: up))`; `{}` seeds its scalars",
+                                    h.key, kind.as_str()
+                                );
+                                self.fail_at(h.at, &m);
+                                continue;
+                            }
                         };
                         if slot.is_some() {
                             self.fail_at(h.at, &format!("`{}:` is written twice", h.key));
@@ -834,7 +843,30 @@ impl<'a> P<'a> {
     /// `hint(dir: (1, 0, 0))`.
     fn kid_seed(&mut self, lo: usize, axis: bool) -> Option<KidSeed> {
         let mut k = KidSeed { axis, ..KidSeed::default() };
+        // a direction given as geometry: what it reads, what it turns about, and by how much
+        let (mut what, mut about, mut turn) = (None, None, None);
+        let mut numbers: Option<Span> = None;
         for h in self.hint_body("(0, 0)")? {
+            if axis {
+                let slot = match h.key.as_str() {
+                    "dir" if h.place.is_some() => Some(&mut what),
+                    "about" => Some(&mut about),
+                    "turn" => {
+                        if turn.replace((h.text, h.span)).is_some() {
+                            self.fail_at(h.at, "`turn:` is written twice");
+                        }
+                        continue;
+                    }
+                    _ => None,
+                };
+                if let Some(slot) = slot {
+                    if slot.replace(h.place.expect("a direction's keys are references")).is_some() {
+                        self.fail_at(h.at, &format!("`{}:` is written twice", h.key));
+                    }
+                    continue;
+                }
+            }
+            numbers.get_or_insert(h.at);
             let i = match (axis, h.key.as_str()) {
                 (false, "x") | (true, "dir.x") => 0,
                 (false, "y") | (true, "dir.y") => 1,
@@ -856,6 +888,28 @@ impl<'a> P<'a> {
             k.spans[i] = h.span;
         }
         k.span = Span::new(lo, self.prev_hi());
+        match what {
+            Some(what) => {
+                if let Some(at) = numbers {
+                    self.fail_at(at, "`dir:` names the direction; a clause with it carries no \
+                                      number but how far it is turned, `turn:`");
+                    return None;
+                }
+                if about.is_some() != turn.is_some() {
+                    let sp = about.as_ref().map(|r| r.span).or(turn.as_ref().map(|t| t.1));
+                    self.fail_at(sp.unwrap_or(k.span), "a direction is turned `turn:` an angle \
+                                                       `about:` a line or an axis: both or neither");
+                    return None;
+                }
+                k.dir = Some(DirRef { what, about, turn });
+            }
+            None if about.is_some() || turn.is_some() => {
+                self.fail_at(k.span, "`turn:` and `about:` turn a direction read off geometry, \
+                                      `hint(dir: up, turn: 90deg, about: g)`");
+                return None;
+            }
+            None => {}
+        }
         Some(k)
     }
 
