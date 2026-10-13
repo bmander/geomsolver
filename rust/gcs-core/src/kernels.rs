@@ -652,28 +652,36 @@ fn drag_jac(n: usize, _v: &[f64], k: &[f64], j: &mut [f64]) {
     }
 }
 
-/// (x,y,z), K = (tx,ty,w, right, up): the soft drag target of a point in space, which the eye sees
-/// at (right·X, up·X).  Two rows, so the depth along the eye's line of sight is left to whatever
-/// else holds the point: a free one keeps it (the step is minimum-norm), one on a line slides.
+/// (x,y,z), K = (tx,ty,w, right, up, out, depth): the soft drag target of a point in space, which
+/// the eye sees at (right·X, up·X), and a third row `SEEN_DEPTH` as weak holding it at the depth
+/// along the line of sight it was taken hold at.  Free, it keeps that depth outright — as a lone
+/// point's minimum-norm step would, and a plane's origin's, tied to its axes, would not; held to
+/// a line or a sphere, it slides, the two rows across the picture plane outweighing the third.
 fn drag_seen_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
     for i in 0..n {
-        let (x, k) = (&v[3 * i..3 * i + 3], &k[9 * i..9 * i + 9]);
-        let (right, up) = (&k[3..6], &k[6..9]);
+        let (x, k) = (&v[3 * i..3 * i + 3], &k[13 * i..13 * i + 13]);
+        let (right, up, out) = (&k[3..6], &k[6..9], &k[9..12]);
         let dot = |d: &[f64]| d[0] * x[0] + d[1] * x[1] + d[2] * x[2];
-        r[2 * i] = k[2] * (dot(right) - k[0]);
-        r[2 * i + 1] = k[2] * (dot(up) - k[1]);
+        r[3 * i] = k[2] * (dot(right) - k[0]);
+        r[3 * i + 1] = k[2] * (dot(up) - k[1]);
+        r[3 * i + 2] = SEEN_DEPTH * k[2] * (dot(out) - k[12]);
     }
 }
 
 fn drag_seen_jac(n: usize, _v: &[f64], k: &[f64], j: &mut [f64]) {
     for i in 0..n {
-        let k = &k[9 * i..9 * i + 9];
+        let k = &k[13 * i..13 * i + 13];
         for c in 0..3 {
-            j[6 * i + c] = k[2] * k[3 + c];
-            j[6 * i + 3 + c] = k[2] * k[6 + c];
+            j[9 * i + c] = k[2] * k[3 + c];
+            j[9 * i + 3 + c] = k[2] * k[6 + c];
+            j[9 * i + 6 + c] = SEEN_DEPTH * k[2] * k[9 + c];
         }
     }
 }
+
+/// How weakly a point dragged where it is seen is held at its depth, against the two rows that
+/// put it under the pointer.
+const SEEN_DEPTH: f64 = 1e-3;
 
 /* -- line orientation ------------------------------------------------------ */
 /* (a1x,a1y,b1x,b1y,a2x,a2y,b2x,b2y) */
@@ -3800,7 +3808,7 @@ pub static KERNELS: [Kernel; N_KERNELS] = [
     Kernel { name: "plane_distance_free", n_res: 1, n_par: 13, degree: 1, n_const: 2, res: plane_distance_free_res, jac: plane_distance_free_jac, const_jac: None },
     Kernel { name: "axis_coincident", n_res: 4, n_par: 12, degree: 1, n_const: 7, res: axis_coincident_res, jac: axis_coincident_jac, const_jac: None },
     Kernel { name: "plane_parallel", n_res: 2, n_par: 12, degree: 0, n_const: 6, res: plane_parallel_res, jac: plane_parallel_jac, const_jac: None },
-    Kernel { name: "drag_seen", n_res: 2, n_par: 3, degree: 1, n_const: 9, res: drag_seen_res, jac: drag_seen_jac, const_jac: None },
+    Kernel { name: "drag_seen", n_res: 3, n_par: 3, degree: 1, n_const: 13, res: drag_seen_res, jac: drag_seen_jac, const_jac: None },
     Kernel { name: "line_on_axis", n_res: 4, n_par: 12, degree: 1, n_const: 6, res: line_on_axis_res, jac: line_on_axis_jac, const_jac: None },
     Kernel { name: "spline_tangent_at", n_res: 1, n_par: N_PAR_SPLINE_LINE, degree: 1, n_const: SPAN_C, res: spline_tangent_at_res, jac: spline_tangent_at_jac, const_jac: None },
     Kernel { name: "point_along_line", n_res: 2, n_par: 7, degree: 1, n_const: 0, res: point_along_line_res, jac: point_along_line_jac, const_jac: None },

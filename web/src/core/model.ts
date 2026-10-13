@@ -532,6 +532,14 @@ export class Sketch {
     return this.points[i];
   }
 
+  /** A point in space, in no plane, where the eye at bearing `az` and elevation `el` (radians)
+   *  sees `(x, y)` on its picture plane — nought deep, the constraints' to say the rest. */
+  pointSeen(az: number, el: number, x: number, y: number): Point {
+    const i = core().gcs_sketch_point_seen(this.handle, az, el, x, y);
+    if (i < 0) throw new Error(lastError() || 'no point in space');
+    return this.points[i];
+  }
+
   line(p1: Point, p2: Point): Line {
     // the index first: `this.lines[...]` would evaluate the getter before the core has the line
     const i = core().gcs_sketch_line(this.handle, p1.index, p2.index);

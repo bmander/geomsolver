@@ -568,6 +568,62 @@ fn a_point_in_space_follows_the_pointer_where_the_eye_sees_it() {
     assert!(sk.constraints.iter().all(|c| !c.soft), "the drag target left behind");
 }
 
+/// **A plane is dragged where the eye sees it, as a point in space is**: the drag takes hold of its
+/// origin, which is held at the plane's (0, 0), and moves where the plane stands — its own three
+/// numbers — so the plane keeps its attitude and its depth along the line of sight, and what is
+/// drawn on it goes with it.
+#[test]
+fn a_plane_follows_the_pointer_by_its_origin_where_the_eye_sees_it() {
+    let e = crate::common::read(
+        "use std\nv0 := plane(u: hint(dir: (1, 0, 0)), v: hint(dir: (0, 0, 1))) \
+         hint(origin: (0, -10, 0))\np := point hint((5, 5)) in v0\nfix((5, 5)) p\n",
+    );
+    let mut sk = e.sketch.clone();
+    solve(&mut sk, SolveOpts::default());
+    let v0 = crate::common::ent(&e, "v0").i();
+    let p = crate::common::ent(&e, "p").i();
+    let origin = sk.planes[v0].origin as usize;
+    assert!(sk.points[origin].z.is_none(), "an origin is drawn in its plane");
+    let eye = (0.6, 0.4);
+    let (start, toward) = seen_by(eye, sk.basis(v0).o);
+    let depth = |x: [f64; 3]| toward.iter().zip(x).map(|(a, b)| a * b).sum::<f64>();
+    let d0 = depth(sk.basis(v0).o);
+    let n0 = sk.basis(v0).normal();
+    let off = |sk: &Sketch| {
+        let (w, o) = (sk.world_point(p), sk.basis(v0).o);
+        [w[0] - o[0], w[1] - o[1], w[2] - o[2]]
+    };
+    let rel = off(&sk);
+    let mut ps = PlanSolver::new(&sk, true);
+    let mut d = PlanDrag::seen(&mut sk, Some(&mut ps), origin, start.0, start.1, eye, 0.05);
+    for &(x, y) in &circle_path(start.0 + 3.0, start.1, 3.0, 12) {
+        let r = d.move_to(&mut sk, Some(&ps.plan), x, y);
+        assert!(r.success, "{r:?}");
+        let b = sk.basis(v0);
+        let (at, _) = seen_by(eye, b.o);
+        assert!((at.0 - x).abs() < 1e-6 && (at.1 - y).abs() < 1e-6, "seen at {at:?}, not {x}, {y}");
+        let dd = depth(b.o) - d0;
+        assert!(dd.abs() < 1e-6, "the drag moved the plane {dd} in depth, to {:?}", b.o);
+        let n = b.normal();
+        assert!(n.iter().zip(n0).all(|(a, b)| (a - b).abs() < 1e-9), "turned: {n:?} {n0:?}");
+        assert!(off(&sk).iter().zip(rel).all(|(a, b)| (a - b).abs() < 1e-9), "p was left behind");
+    }
+    d.end();
+    assert!(sk.constraints.iter().all(|c| !c.soft), "the drag target left behind");
+    let may_turn = |sk: &Sketch| {
+        let pl = &sk.planes[v0];
+        let d = [pl.u, pl.v].map(|r| sk.axes[r as usize].d);
+        d.into_iter().flatten().any(|q| !sk.params[q as usize].fixed)
+    };
+    assert!(may_turn(&sk), "the plane's axes were left held");
+    // and where it was left is written into its `hint(origin: …)`, reading back to the same place
+    let out = gcs_core::edit::commit_seeds(&e, &sk, &e.program);
+    let back = crate::common::read(&out.text);
+    let (was, now) = (sk.basis(v0).o, back.sketch.basis(crate::common::ent(&back, "v0").i()).o);
+    let same = was.iter().zip(now).all(|(a, b)| (a - b).abs() < 1e-6);
+    assert!(same, "{was:?} {now:?}\n{}", out.text);
+}
+
 /// A point in space held to a sphere about a fixed one slides over it, read where the eye sees
 /// the pointer: the distance holds every frame, and the pointer is met wherever the sphere's
 /// outline reaches it.

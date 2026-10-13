@@ -1327,6 +1327,8 @@ pub struct Drag {
     /// The eye's picture plane (right, up), for a point in space dragged where it is seen
     /// (`Drag::seen`); `None` for a point dragged on its own page.
     eye: Option<([f64; 3], [f64; 3])>,
+    /// The axis directions a dragged plane is held to while it is carried, let go at `end`.
+    turning: Vec<u32>,
 }
 
 impl Drag {
@@ -1346,7 +1348,11 @@ impl Drag {
 
     /// A drag of a point in space, read where the eye at bearing `az` and elevation `el` sees it:
     /// (`x`, `y`) and every later target are on the eye's picture plane, and how deep the point
-    /// stands along the line of sight is the constraints' to say (`CKind::DragSeen`).
+    /// stands along the line of sight is the constraints' to say, else where it was taken hold
+    /// of (`CKind::DragSeen`).  A plane's origin is dragged so, moving where the plane stands:
+    /// the plane is **carried, not turned** — its axes' directions are held while the drag lasts
+    /// (`turning`), since its axes stand through its origin and a step would otherwise spread
+    /// into turning them as much as into moving it.
     #[allow(clippy::too_many_arguments)]
     pub fn seen(
         sk: &mut Sketch,
@@ -1359,9 +1365,24 @@ impl Drag {
         guards: Vec<Triangle>,
         max_step_rel: f64,
     ) -> Drag {
-        let target = Constraint::drag_seen(EntRef::point(point), x, y, weight, az, el);
-        let eye = Some(crate::overview::eye(az, el));
-        Drag::with(sk, point, target, eye, method, guards, max_step_rel)
+        let (right, up) = crate::overview::eye(az, el);
+        let depth = crate::space::dot(crate::space::cross(right, up), sk.world_point(point));
+        let target = Constraint::drag_seen(EntRef::point(point), x, y, weight, (az, el), depth);
+        let eye = Some((right, up));
+        let turning = match (sk.points[point].z, sk.plane_of_origin(point)) {
+            (None, Some(pl)) => {
+                let p = &sk.planes[pl];
+                let d = [p.u, p.v].map(|r| sk.axes[r as usize].d);
+                d.into_iter().flatten().filter(|&q| !sk.params[q as usize].fixed).collect()
+            }
+            _ => Vec::new(),
+        };
+        for &q in &turning {
+            sk.params[q as usize].fixed = true;
+        }
+        let mut d = Drag::with(sk, point, target, eye, method, guards, max_step_rel);
+        d.turning = turning;
+        d
     }
 
     fn with(
@@ -1377,7 +1398,8 @@ impl Drag {
         let signs = guards.iter().map(|t| orientation(sk, t.0, t.1, t.2) >= 0.0).collect();
         let last_good = sk.get_x();
         let pp = PullPolish::new(sk, target, method);
-        Drag { pp, point, guards, flips: Vec::new(), signs, max_step, last_good, eye }
+        let turning = Vec::new();
+        Drag { pp, point, guards, flips: Vec::new(), signs, max_step, last_good, eye, turning }
     }
 
     /// Where the dragged point is, as the targets read it: on its page, or where the eye sees it.
@@ -1462,7 +1484,10 @@ impl Drag {
     }
 
     pub fn end(&mut self, sk: &mut Sketch) {
-        self.pp.end(sk)
+        self.pp.end(sk);
+        for q in self.turning.drain(..) {
+            sk.params[q as usize].fixed = false;
+        }
     }
 }
 

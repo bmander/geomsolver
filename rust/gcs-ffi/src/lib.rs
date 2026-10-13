@@ -383,6 +383,17 @@ pub unsafe extern "C" fn gcs_sketch_point(
     })
 }
 
+/// A **point in space**, in no plane, where the eye at `az`, `el` (radians) sees `(x, y)` on its
+/// picture plane (`workspace::unseen`): what a tool mints with no plane chosen.  Its index.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_sketch_point_seen(h: *mut Sketch, az: f64, el: f64, x: f64,
+                                               y: f64) -> i32 {
+    guard(-1, move || {
+        let at = gcs_core::overview::workspace::unseen(az, el, (x, y));
+        sk(h).point3(at, false, "") as i32
+    })
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn gcs_sketch_line(h: *mut Sketch, p1: i32, p2: i32) -> i32 {
     guard(-1, move || {

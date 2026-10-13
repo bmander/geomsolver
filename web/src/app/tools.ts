@@ -141,9 +141,16 @@ export function cancelTool(v: SketchView): void {
   }
   if (v.tool !== 'select') setTool(v, 'select');
 }
+/** Whether a tool can draw with no plane chosen: what it mints stands in space. */
+export function drawsInSpace(tool: Tool): boolean {
+  return tool === 'point' || tool === 'line';
+}
+
 export function snapOrNew(v: SketchView, sp: [number, number]): Point {
   const on = v.pickPoint(sp[0], sp[1]);
   if (on) return on;
+  // in no plane: in space, where the eye sees the click
+  if (v.openSpace) return v.sketch.pointSeen(v.orbit.az, v.orbit.el, ...v.s2w(sp[0], sp[1]));
   const n0 = v.sketch.points.length;
   const p = v.sketch.point(...v.place(sp[0], sp[1]));
   joinPlane(v, n0);
@@ -210,6 +217,12 @@ export function toolClick(v: SketchView, sp: [number, number],
   // a standard plane chosen before the document had it is brought in by the first press: the
   // document gains `use std`, and what the press makes is drawn on the plane it now has
   if (!v.ensurePlane()) return;
+  // drawing in space, only a point and a line: a circle, an arc and a curve are drawn in a plane
+  // (E060), and a region to sweep is bounded on one
+  if (v.openSpace && !drawsInSpace(v.tool)) {
+    v.onStatus(`the ${v.tool} tool draws on a plane — choose one to sketch on`);
+    return;
+  }
   // a plane seen edge on has no place on it under the pointer (`toolView` is the one read)
   if (!v.viewCam().readable()) {
     v.onStatus(`${v.planeName} is seen edge on — turn the view, or choose the plane again to face it`);

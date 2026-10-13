@@ -118,6 +118,7 @@ export interface Abi {
                          tp: number, tn: number): number;
   gcs_sketch_counts(h: number, out: number): void;
   gcs_sketch_point(h: number, x: number, y: number, fixed: number, name: number, nameLen: number): number;
+  gcs_sketch_point_seen(h: number, az: number, el: number, x: number, y: number): number;
   gcs_sketch_line(h: number, p1: number, p2: number): number;
   gcs_sketch_circle(h: number, center: number, r: number, name: number, nameLen: number): number;
   gcs_sketch_arc(h: number, c: number, s: number, e: number, name: number, nameLen: number): number;

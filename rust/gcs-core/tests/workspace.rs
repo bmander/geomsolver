@@ -2,7 +2,9 @@
 //! orthographic eye, with what is under the pointer asked where the eye sees it — because views
 //! that lie on top of one another on the page are nowhere near one another in space.
 use gcs_core::model::{EntKind, EntRef, Sketch};
-use gcs_core::overview::workspace::{apply, look_at, nearest_point, overlapping, panes_at, pick, Projection};
+use gcs_core::overview::workspace::{
+    apply, look_at, nearest_point, overlapping, panes_at, pick, space_points, unseen, Projection,
+};
 use gcs_core::{callout, library, program};
 use std::f64::consts::{FRAC_PI_2, PI};
 
@@ -73,6 +75,34 @@ fn a_map_is_the_lift_seen_by_the_eye() {
         let (x, y) = gcs_core::overview::workspace::space_points(sk, az, el)[p].unwrap();
         close((x, y), seen([10.0, 4.0, 0.0], az, el));
     }
+}
+
+/// **Drawing in no plane** (the chooser's None): `unseen` stands the point where the eye saw the
+/// click, at nought deep, and the source says it as a point in space — three numbers, no `in` —
+/// which elaborates back to the same place.
+#[test]
+fn a_point_drawn_in_no_plane_stands_in_space_where_it_was_seen() {
+    for (az, el) in [(-FRAC_PI_2, 0.0), (0.3, 0.4), (-2.0, -0.7), (1.0, 1.2)] {
+        let at = unseen(az, el, (12.0, -5.0));
+        close(seen(at, az, el), (12.0, -5.0));
+        // nought deep: on the plane through the origin square to the eye's ray
+        let toward = [az.cos() * el.cos(), az.sin() * el.cos(), el.sin()];
+        assert!((0..3).map(|k| at[k] * toward[k]).sum::<f64>().abs() < 1e-12, "{at:?}");
+    }
+    let mut e = build("unit mm\nuse std\n");
+    let (az, el) = (0.3, 0.4);
+    let at = unseen(az, el, (12.0, -5.0));
+    let p = e.sketch.point3(at, false, "");
+    close(space_points(&e.sketch, az, el)[p].unwrap(), (12.0, -5.0));
+    let sk = std::mem::take(&mut e.sketch);
+    let out = gcs_core::edit::reconcile(&mut e, &sk);
+    let line = out.text.lines().find(|l| l.starts_with("p0 := ")).unwrap_or_default();
+    assert!(line.starts_with("p0 := point hint((") && !line.contains(" in "), "{}", out.text);
+    let again = build(&out.text);
+    let q = again.map.ent_named("p0").unwrap().i();
+    assert!(again.sketch.plane_of(q).is_none() && again.sketch.points[q].z.is_some());
+    let w = again.sketch.world_point(q);
+    assert!((0..3).all(|k| (w[k] - at[k]).abs() < 1e-6), "{w:?} != {at:?}");
 }
 
 /// `look_at` turns the eye square on to a plane, with the plane's `u` to the right: its map is
@@ -417,4 +447,53 @@ fn the_scene_comes_in_a_datum_layer_and_an_object_layer() {
     assert!(!objects.is_empty() && objects.iter().all(|it| part(it) == "Solid"));
     let creases = |s: &[gcs_core::overview::Item3]| s.iter().filter(|it| part(it) == "Solid").count();
     assert_eq!(creases(&objects), creases(&all));
+}
+
+/// A plane is picked by its pane's frame, where the box draws it — beneath the drawing and the
+/// axes, and not inside the pane, where a press lands on what is drawn there or starts a band.
+/// A place is one pane, its first plane's, and one seen edge on is not picked.
+#[test]
+fn a_plane_is_picked_by_its_panes_frame() {
+    let e = build(AXES);
+    let sk = &e.sketch;
+    let named = |n: &str| Some(e.map.ent_named(n).unwrap());
+    let (az, el) = (-FRAC_PI_2, 0.0);
+    let proj = Projection::new(sk, az, el);
+    // the front's pane, from the front: its frame's corners, and the middle of each side
+    let front = proj.views.place(Some(plane(&e, "std.front")));
+    assert_eq!(front, proj.views.place(Some(plane(&e, "std.up"))), "one place");
+    let frame: Vec<(f64, f64)> = gcs_core::overview::scene3d(sk, 0.0)
+        .iter()
+        .find(|i| i.of == named("std.front") && matches!(i.what, gcs_core::overview::Part::Face))
+        .expect("the front's pane")
+        .pts
+        .iter()
+        .map(|&x| seen(x, az, el))
+        .collect();
+    let span = |k: fn(&(f64, f64)) -> f64| {
+        let (lo, hi) = (f64::INFINITY, f64::NEG_INFINITY);
+        frame.iter().map(k).fold((lo, hi), |m, v| (m.0.min(v), m.1.max(v)))
+    };
+    let ((x0, x1), (y0, y1)) = (span(|p| p.0), span(|p| p.1));
+    let mid = ((x0 + x1) / 2.0, (y0 + y1) / 2.0);
+    for at in [(mid.0, y1), (x1, mid.1), (mid.0, y1 + 0.3), (x0 - 0.3, mid.1 + 7.0)] {
+        assert_eq!(pick(sk, &proj, at, 0.5, 0.01), named("std.front"), "{at:?} on {frame:?}");
+    }
+    // inside the pane, off everything drawn: nothing — and well off the frame, nothing
+    assert_eq!(pick(sk, &proj, (mid.0, mid.1 + 7.0), 0.5, 0.01), None);
+    assert_eq!(pick(sk, &proj, (x1 + 5.0, mid.1), 0.5, 0.01), None);
+    // the side and the top are seen edge on from the front: their frames are lines, not picked
+    // even where the line falls; std.x, drawn along the top's, outranks it
+    let picked = pick(sk, &proj, (x0 + 1.0, 0.0), 0.5, 0.01);
+    assert!(picked != named("std.top") && picked != named("std.side"), "{picked:?}");
+    // from three quarters, the top's pane is a pane, picked by its frame
+    let (az, el) = (0.6, 0.5);
+    let proj = Projection::new(sk, az, el);
+    let top = gcs_core::overview::scene3d(sk, 0.0)
+        .into_iter()
+        .find(|i| i.of == named("std.top") && matches!(i.what, gcs_core::overview::Part::Face))
+        .expect("the top's pane");
+    // the far corner, off every axis
+    let on = seen(top.pts[2], az, el);
+    assert_eq!(pick(sk, &proj, on, 0.5, 0.01), named("std.top"));
 }
