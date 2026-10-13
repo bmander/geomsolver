@@ -34,9 +34,11 @@ export interface Mesh {
 }
 
 /** The mesh of solid `idx`, refined to `unit` — the world length of one screen pixel, or
- *  `REPORT_UNIT` for a file that should not depend on the zoom. */
+ *  `REPORT_UNIT` for a file that should not depend on the zoom.  Throws with the core's reason
+ *  where the solid does not evaluate (a revolution whose axis crosses its profile). */
 export function mesh(sk: Sketch, idx: number, unit: number): Mesh {
-  const faces = takeJson<Face[]>(core().gcs_solid_faces_json(sk.handle, idx, unit));
+  const faces = takeJson<Face[] | null>(core().gcs_solid_faces_json(sk.handle, idx, unit));
+  if (!faces) throw new Error(lastError());
   const n = faces.reduce((a, f) => a + f.count, 0) * 9;
   const positions = readInto(n, (p, cap) => core().gcs_solid_mesh(sk.handle, idx, unit, p, cap));
   const normals = readInto(n, (p, cap) => core().gcs_solid_normals(sk.handle, idx, unit, p, cap));

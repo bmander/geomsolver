@@ -1325,6 +1325,22 @@ test('a solid crosses the ABI as a mesh a viewer can use', () => {
   }
 });
 
+test('a solid that does not evaluate is refused with the core\'s reason, its neighbours meshed', () => {
+  // the triangle turned about `std.x`, which crosses it: the box once threw on the null face
+  // table on every paint, and the page stopped drawing
+  const src = [
+    'use std', 'in std.front {', 'a := point hint((-0.4, 0))', 'b := point hint((0.28, -0.4))',
+    'c := point hint((0.28, 0.38))', 'ab := line(a, b)', 'bc := line(b, c)', 'ca := line(c, a)', '}',
+    'f0 := face(ab, bc, ca)', 'b0 := solid(f0, about: bc, sweep: 271)',
+    'f1 := face(ab, bc, ca)', 'b1 := solid(f1, about: std.x)', '',
+  ].join('\n');
+  const doc = Document.read(src);
+  assert.ok(doc.ok, JSON.stringify(doc.diagnostics));
+  const at = (name: string) => objects(doc.sketch).find((o) => o.name === name)!.index;
+  assert.ok(mesh(doc.sketch, at('b0'), 0).positions.length > 0);
+  assert.throws(() => mesh(doc.sketch, at('b1'), 0), /`b1`: the revolution axis crosses the profile/);
+});
+
 test('a named component chain reaches the browser as the same swept mesh', () => {
   const src = [
     'unit mm', 'use std', 'use components.parts', 'in std.front {', 'O := point', 'fix((0, 0)) O',
