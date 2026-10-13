@@ -74,7 +74,7 @@ export interface SweepSpec {
 /** Which way a revolution turns about its axis: right-handed (`ccw`, the default) or not. */
 export type Sense = 'cw' | 'ccw';
 
-export type BodyWord = 'union' | 'cut' | 'bound';
+export type BodyWord = 'union' | 'cut' | 'common';
 
 
 /** A region of the drawing (`Document.regionAt`): the edges of its outer loop and of each hole in
@@ -435,7 +435,7 @@ export class Document {
     return edit(withStr(angle, (p, n) => core().gcs_elab_set_turn(this.h, solid, p, n)));
   }
 
-  /** The body rule: `what union body`, `what cut body`, `what bound body` — a statement for each
+  /** The body rule: `what union body`, `what cut body`, `what common body` — a statement for each
    *  solid in `what`, in one splice (a Boolean gesture's tools). */
   addBodyWord(word: BodyWord, what: string[], body: string): Edit {
     return edit(

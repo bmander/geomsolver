@@ -215,20 +215,27 @@ impl<'a> P<'a> {
             // **past the dotted path, not past one token**: an operand may be a dotted path, so
             // the word after it is further away than one token — the lookahead `past_ref`
             _ if self.past_ref(self.i).and_then(|j| self.t.get(j)).is_some_and(
-                |(t, _)| matches!(t, Tok::Ident(w) if w == "cut" || w == "union" || w == "bound" || w == "through"),
+                |(t, _)| matches!(t, Tok::Ident(w) if w == "cut" || w == "union" || w == "common" || w == "bound"
+                    || w == "through"),
             ) =>
             {
                 let lo = self.here().lo as usize;
                 let what = self.refr()?;
                 let Some(Tok::Ident(w)) = self.peek().cloned() else {
-                    self.fail("a body statement is `X union B`, `X cut B` or `X bound B`");
+                    self.fail("a body statement is `X union B`, `X cut B` or `X common B`");
                     return None;
                 };
                 if w == "through" {
                     self.fail("Boolean `through` is now `cut`: write `X cut B`; `through:` specifies a cutter's extent");
                     return None;
                 }
-                let word = BodyWord::parse(&w).unwrap_or(BodyWord::Bound);
+                // through 0.84 the intersection was `bound`, the word a dimension's bound is (#270)
+                if w == "bound" {
+                    self.fail("the body word `bound` is now `common`: write `X common B`, the body keeping what \
+                               it has in common with `X`");
+                    return None;
+                }
+                let word = BodyWord::parse(&w).unwrap_or(BodyWord::Common);
                 self.i += 1;
                 let body = self.refr()?;
                 self.end_of_stmt();

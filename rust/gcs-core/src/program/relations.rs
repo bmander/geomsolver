@@ -787,7 +787,7 @@ fn region_term(sk: &Sketch, c: &Constraint, probe: usize, grow: Option<crate::mo
             let from = ent(0);
             let normal = matches!(&c.args[4], CArg::Str(w) if w == "n");
             // along a plane's normal from its origin (`inside`/`outside` the plane), or along a
-            // line or an axis from any point (`std.Level`)
+            // line or an axis from any point (`std.HalfSpace`)
             let along = match c.args[2] {
                 CArg::Ent(t) if matches!(t.kind, EntKind::Line | EntKind::Axis) => Some(t),
                 _ => sk.plane_of_origin(from.i()).filter(|_| normal).map(EntRef::plane),

@@ -258,7 +258,7 @@ private ring2 := circle(center: tc2) hint(r: 0.5)
 radius(0.5mm) ring2
 }}
 construction other := solid(face(ring2), about: taxis)
-other bound tool
+other common tool
 ",b=h-1.,t=h+1.,lo=h-0.2,hi=h+0.2)
 }
 
@@ -299,7 +299,7 @@ private meridian2 := arc(center: center2, start: bottom2, end: top2)
 radius(1mm) meridian2
 }}
 construction other := solid(face(meridian2, diameter2), about: diameter2)
-other bound tool
+other common tool
 ",b1=h1-1.,t1=h1+1.,b2=h2-1.,t2=h2+1.))
 }
 

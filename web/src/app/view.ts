@@ -132,7 +132,7 @@ export interface Place {
 
 export type Tool =
   'select' | 'point' | 'line' | 'rect' | 'circle' | 'arc' | 'arc3' | 'spline' | 'splinefit'
-  | 'extrude' | 'revolve' | 'union' | 'cut' | 'bound' | 'fillet' | 'chamfer';
+  | 'extrude' | 'revolve' | 'union' | 'cut' | 'common' | 'fillet' | 'chamfer';
 
 /** Whether a tool makes a solid of the closed region a click is inside (Extrude, Revolve): it
  *  washes the region under the pointer, and draws no snap. */
@@ -141,9 +141,9 @@ export function sweepsRegion(tool: Tool): boolean {
 }
 
 /** The body word a Boolean tool writes (Union, Cut, Intersect — #162 F4), or null for any other
- *  tool.  Intersect is the body rule's `bound`. */
+ *  tool.  Intersect is the body rule's `common`. */
 export function combines(tool: Tool): BodyWord | null {
-  return tool === 'union' || tool === 'cut' || tool === 'bound' ? tool : null;
+  return tool === 'union' || tool === 'cut' || tool === 'common' ? tool : null;
 }
 
 /** The library word an edge tool writes along a solid's edges (Fillet, Chamfer), or null for any
@@ -174,7 +174,7 @@ function picked(r: Rounding, sep: string): string {
 const COMBINE = {
   union: { target: 'the body to join others to', tools: 'join to it', done: 'joined' },
   cut: { target: 'the body to cut', tools: 'cut it with', done: 'cut' },
-  bound: { target: 'the body to intersect', tools: 'intersect it with', done: 'intersected' },
+  common: { target: 'the body to intersect', tools: 'intersect it with', done: 'intersected' },
 } as const;
 
 /** A Boolean about to be written: the body it is written on, its word and the tools it joins. */

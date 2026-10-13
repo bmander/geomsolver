@@ -117,7 +117,7 @@ NAME := face(EDGE, ..., holes: LOOP)    a planar region                         
 NAME := solid(FACE, SWEEP...)           a face swept: depth:/from:/to:/through:, about:, along:
 NAME := solid(SOLID) | solid(SET)       a body over a stock; the points of a region
 NAME := solid(SOLID, under: MOTION, at: E | from: E, to: E)   placed by, or swept through, a motion
-REF union REF | REF cut REF | REF bound REF   material added to, removed from, kept within a body
+REF union REF | REF cut REF | REF common REF  material added to, removed from, shared with a body
 NAME := motion | envelope | surface | patch | seam | vertex | edge(...)              (1.15)
 WORD[(ARGS)] REF | REF WORD[(ARGS)] REF [hint(SLOT: E, ...)]   a constraint          (1.5)
 claim CONSTRAINT                        judged, never solved for                     (1.11)
@@ -1009,7 +1009,8 @@ unbound as an unknown (`r: hint(10mm)`; the solve writes it back):
   growing `tan(lean)` along `ax` (negative narrows it); its inside is always nearer `ax`. Its apex
   is the instance's (`inner.apex`), made once: a family's body makes once whatever reads nothing
   of its point.
-- `top := std.Level(o, ax, d: 2mm)`: the plane `d` along `ax` from `o`; inside is behind it.
+- `top := std.HalfSpace(o, ax, d: 2mm)`: the half-space behind the plane `d` along `ax` from `o`
+  (its surface that plane); inside is behind it, so `p inside top` is at most `d` along `ax`.
 
 `p coincident ball` puts a point on any of them and `l tangent shaft` makes a line touch one.
 `sphere_cone_cylinder.sv` shows one of each; 2.14 lays out pitch cones.
@@ -1044,9 +1045,9 @@ needs no bound; a round's radius may read an unknown of the drawing (`r: 0.3 * m
 ### 1.14 Faces and solids
 
 **A solid is a term, never a step.** A solid is a face swept, or a stock **plus everything in
-`union` with it, minus everything that `cut`s it, within everything that `bound`s it**. The order
-lives inside the term, never between statements: `bore cut body` may be written fifty lines above
-`body := solid(…)`. **Nothing about a solid is solved for**: it owns no parameters, numeric
+`union` with it, minus everything that `cut`s it, within everything it is in `common` with**. The
+order lives inside the term, never between statements: `bore cut body` may be written fifty lines
+above `body := solid(…)`. **Nothing about a solid is solved for**: it owns no parameters, numeric
 extents are worked out at elaboration, and the geometry swept is the drawing, solved as usual.
 
 #### Faces
@@ -1215,8 +1216,9 @@ bore cut body
   face names. Write `body := solid(stock)` only when the bare sweep and the part both need names.
 - **`cut` with `through:`**: `pinhole := solid(face(hole), through: body)` then `pinhole cut body`.
   `through:` only makes the cutter.
-- **`tip bound body`** keeps only what lies within `tip`. Union comes first; `cut` and `bound`
-  commute.
+- **`tip common body`** keeps only what the body has in common with `tip`. Union comes first;
+  `cut` and `common` commute. (Through 0.84 the word was `bound`, now refused: a bound is a
+  dimension that chooses a root, §1.11.)
 - **Name intermediates the sets cannot express.** A boss standing in a pocket's floor is not
   `pocket cut body` + `boss union body` — that is stock ∪ boss − pocket, and the pocket eats the
   boss. Name the pocketed shell, then add the boss to it:
@@ -1405,7 +1407,7 @@ cam). A point's envelope is its path: `bore := envelope(apex, under: rotor_turn,
 
 **The rotor is a cut**: the largest rotor turning in a bore is the blank less everything the
 housing's wall sweeps through — `swept := solid(housing, under: housing_turn, from: 0deg, to:
-1080deg)`, `swept cut rotor` (`bound` by a sweep keeps the union's inside, a different set).
+1080deg)`, `swept cut rotor` (`common` with a sweep keeps the union's inside, a different set).
 
 **A prism's side** is named as a revolution's is, `side := surface(rack_tooth, edge: rack_flank)`;
 under a motion keeping its view, `envelope(side, under: cutting, …)` is the planar envelope

@@ -96,7 +96,7 @@ fn combine(sk: &Sketch,body: usize,part: &mut dyn FnMut(usize) -> Result<Brep,Ex
             cut from, and build `{}` from it",solid.name,sk.solids[c as usize].name,solid.name)))
     }
     let mut built = part(*stock as usize)?;
-    for (operands,op,word) in [(on,Op::Union,"union"),(through,Op::Cut,"cut"),(bound,Op::Common,"bound")] {
+    for (operands,op,word) in [(on,Op::Union,"union"),(through,Op::Cut,"cut"),(bound,Op::Common,"common")] {
         for &o in operands {
             let operand = part(o as usize)?;
             built = super::recipe::combined(&built,&operand,op,0.)

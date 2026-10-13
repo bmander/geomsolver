@@ -1457,7 +1457,7 @@ fn seed_round(v: [f64; 3]) -> [f64; 3] {
     v.map(|x| if x.abs() <= 1e-6 * big { 0.0 } else { round_sig(x, 9) })
 }
 
-/// `what union body`, `what cut body`, `what bound body` — the body rule, a statement for each
+/// `what union body`, `what cut body`, `what common body` — the body rule, a statement for each
 /// solid in `what`, written as one splice (§6.9): a Boolean gesture joins several tools at once.
 pub fn add_body_word(prog: &Program, word: syntax::BodyWord, what: &[&str], body: &str) -> Edit {
     if what.is_empty() {

@@ -81,7 +81,7 @@ continuous cutter sweep at each tooth index (`Generated`). The gear
 cutter is `Space`, regions about the cutter's axis on the flank cones the crown
 tooth stands on (#214): its outer mate beyond the tooth's outer cone, closed by a cylinder about
 the axis (`reach`), bounded by its inner mate, within the inner cone and turned one crown
-pitch (`neighbor bound body`, the body rule's intersection, spec 0.22). The finite radial closure
+pitch (`neighbor common body`, the body rule's intersection, spec 0.22 and 0.85). The finite radial closure
 lies beyond the reachable blank under every apex-centered generating rotation. No private member access rule or gear-specific compiler
 operation is added. The analytic faces the generating-system checks read (surfaces,
 envelopes, regions, seams, vertices, edges, faces) are made of their parts from the members as
