@@ -29,53 +29,112 @@ use super::*;
 /// extends its own map onto the statements just written, and `Kind` is only a report.
 pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
     let prog = e.program.clone();
-    let prog = &prog;
+    Edit::refused_or(&prog, reconciled(e, sk, &prog))
+}
+
+type Names = std::collections::BTreeMap<EntRef, String>;
+
+/// `reconcile`'s phases, in order, over `prog`, the program as it was elaborated: an `Err` is a
+/// gesture the source cannot follow, said with its cause.
+fn reconciled(e: &mut Elaborated, sk: &Sketch, prog: &Program) -> Result<Edit, String> {
     let mut names = Vec::new();
-    let mut adds: Vec<StmtKind> = Vec::new();
-    // what an appended statement was written *for*, so the map can be extended onto it without
-    // elaborating anything
-    let mut made: Vec<Made> = Vec::new();
-
-    // what the elaboration made, per kind, is the high-water mark: past it is new
-    let mut high: std::collections::BTreeMap<EntKind, usize> = std::collections::BTreeMap::new();
-    for r in e.map.of_entity.keys() {
-        let n = high.entry(r.kind).or_insert(0);
-        *n = (*n).max(r.i() + 1);
-    }
-    // a name for each new entity first, so a line drawn between two new points can refer to them
-    let mut minted: std::collections::BTreeMap<EntRef, String> = std::collections::BTreeMap::new();
     let mut taken = taken_names(prog);
-    // a plane's origin is the plane's own, minted with it and never declared apart: it is
-    // called `P.origin` after its plane
-    let origin_of = |r: EntRef| {
-        (r.kind == EntKind::Point)
-            .then(|| sk.plane_of_origin(r.i()))
-            .flatten()
-    };
-    for r in sk.primitives() {
-        if r.i() < high.get(&r.kind).copied().unwrap_or(0) || origin_of(r).is_some() {
-            continue;
-        }
-        minted.insert(r, next_name(&mut taken, r.kind));
-    }
-
-    /* An **anonymous declaration** (issue #33) has no name a statement can say: the `#`-keyed
-     * name it resolves by is the elaboration's, not the source's.  So whatever a new statement
-     * is about to reach for is named *now* — a real name minted and spliced into the
-     * declaration, at the empty span the parser recorded where one would go — the same bargain
-     * `commit_seeds` strikes with an unwritten `hint(…)` clause.  On demand, and only on
-     * demand: an anonymous element nothing references stays unnamed. */
-    let mut named: Vec<Splice> = Vec::new();
-    let mut renamed: std::collections::BTreeMap<EntRef, String> = std::collections::BTreeMap::new();
+    // a name for each new entity first, so a line drawn between two new points can refer to them
+    let minted = new_entities(e, sk, &mut taken);
     // **What the sketch holds fixed, walked once**: the naming pass below must know what a gauge
     // will have to name, and `gauges` writes those same holds out as statements further down.
     // Two walks were two readings of one question — and the walk is not cheap, `root_declared`
     // ending in a scan of the root body.
     let held = held_refs(sk, &|r| root_declared(e, prog, r));
-    // Everything a statement this reconcile appends will have to *say the name of*.  Small: a
-    // gesture states one or two constraints, and every entity that already has a written name
-    // falls out at the first test below.
-    let mut needed: std::collections::BTreeSet<EntRef> = std::collections::BTreeSet::new();
+    let mut needed = needed(e, sk, &minted, &held);
+    let memberships = memberships(e, sk, prog, &mut needed)?;
+    let (named, renamed) = name_anonymous(e, sk, prog, needed, &minted, &mut taken, &mut names)?;
+    let said = Said { sk, e, minted: &minted, renamed: &renamed };
+
+    let mut adds: Vec<StmtKind> = Vec::new();
+    // what an appended statement was written *for*, so the map can be extended onto it without
+    // elaborating anything
+    let mut made: Vec<Made> = Vec::new();
+    declarations(&said, &mut adds, &mut made, &mut names);
+    relations(&said, &mut adds, &mut made);
+    let mut doomed = withdrawn(e, sk, prog);
+    // Presentation stays in the drawing/editor, never in model source.
+    // memberships, worked out above and written now that every plane has a name: the clause
+    // replaced where it stands, written where the parser said one would go, or taken out
+    // with the space in front of it
+    let flags: Vec<Splice> = memberships.iter().map(|(d, now)| {
+        let with = now.map(|p| format!(" in {}", said.name_of(EntRef::plane(p))));
+        clause_splice(prog.text(), d.membership.span(), with)
+    }).collect();
+    gauges(&said, prog, &held, &mut adds, &mut made, &mut doomed);
+
+    if adds.is_empty() && doomed.is_empty() && flags.is_empty() && named.is_empty() {
+        // nothing structural: the drawing only moved, and the seeds record where to
+        let seeds = commit_seeds(e, sk, prog);
+        if seeds.kind != Kind::None {
+            e.retext(&seeds.text);
+        }
+        return Ok(seeds);
+    }
+
+    let text = splice(prog.text(), composed(prog, &doomed, &adds, flags, named)?);
+    if !e.adopt(&text, &made) {
+        return Err("the drawing could not be written down".into());
+    }
+    // an entity just named in place resolves by that name from here on — and is *called* it,
+    // which it was called nothing until now, so a later reconcile in this same elaboration
+    // reads a name and not the key it elaborated under
+    for (r, n) in &renamed {
+        e.map.bind(n, *r, syntax::Named::Written);
+    }
+    // and now the seeds, against the source that finally has statements for everything
+    let after = e.program.clone();
+    let seeds = commit_seeds(e, sk, &after);
+    let text = if seeds.kind == Kind::None { text } else { seeds.text };
+    if seeds.kind != Kind::None {
+        e.retext(&text);
+    }
+    Ok(Edit { text, kind: Kind::Structural, names, refused: None, kept: 0 })
+}
+
+/// A plane's origin is the plane's own, minted with it and never declared apart: it is called
+/// `P.origin` after its plane.  The plane, for a point that is one's origin.
+fn origin_of(sk: &Sketch, r: EntRef) -> Option<usize> {
+    (r.kind == EntKind::Point).then(|| sk.plane_of_origin(r.i())).flatten()
+}
+
+/// A fresh name for each entity the sketch has past what the elaboration made — the high-water
+/// mark, per kind: past it is new — but a plane's origin.
+fn new_entities(
+    e: &Elaborated,
+    sk: &Sketch,
+    taken: &mut std::collections::BTreeSet<String>,
+) -> Names {
+    let mut high: std::collections::BTreeMap<EntKind, usize> = std::collections::BTreeMap::new();
+    for r in e.map.of_entity.keys() {
+        let n = high.entry(r.kind).or_insert(0);
+        *n = (*n).max(r.i() + 1);
+    }
+    let mut minted = Names::new();
+    for r in sk.primitives() {
+        if r.i() < high.get(&r.kind).copied().unwrap_or(0) || origin_of(sk, r).is_some() {
+            continue;
+        }
+        minted.insert(r, next_name(taken, r.kind));
+    }
+    minted
+}
+
+/// Everything a statement this reconcile appends will have to *say the name of*.  Small: a
+/// gesture states one or two constraints, and every entity that already has a written name falls
+/// out at the first test in `name_anonymous`.
+fn needed(
+    e: &Elaborated,
+    sk: &Sketch,
+    minted: &Names,
+    held: &[(EntRef, Vec<(&'static str, f64)>)],
+) -> std::collections::BTreeSet<EntRef> {
+    let mut needed = std::collections::BTreeSet::new();
     // a new constraint names its entities…
     for c in sk.user_constraints() {
         if e.map.of_constraint.contains_key(&c.id) {
@@ -97,10 +156,22 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
     }
     // …a gauge names what it holds…
     needed.extend(held.iter().map(|(r, _)| *r));
-    /* …and a membership names its plane.  `point a in top` is neither an entity nor a
-     * constraint, so nothing above notices it: it is read off the sketch and compared with
-     * what the statement says, declaration by declaration, the way a class is — but worked out
-     * *here*, since the plane it will name may be one nothing has named yet. */
+    needed
+}
+
+/* …and a membership names its plane.  `point a in top` is neither an entity nor a constraint, so
+ * nothing above notices it: it is read off the sketch and compared with what the statement says,
+ * declaration by declaration, the way a class is — but worked out *here*, since the plane it will
+ * name may be one nothing has named yet. */
+
+/// Each root declaration whose plane the drawing changed, and the plane it is on now (`None`: in
+/// none), the plane it names added to `needed`.
+fn memberships<'p>(
+    e: &Elaborated,
+    sk: &Sketch,
+    prog: &'p Program,
+    needed: &mut std::collections::BTreeSet<EntRef>,
+) -> Result<Vec<(&'p Decl, Option<usize>)>, String> {
     let mut memberships: Vec<(&Decl, Option<usize>)> = Vec::new();
     // a drawing with no view in it has no membership to write, and the walk below is a scan of
     // the root body per entity — so the question is asked once, of the sketch, first
@@ -144,14 +215,11 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
         // the clause is not this statement's to rewrite — a block's, or an enclosing
         // instance's — and which it is is the membership's to say, not this sentence's
         if !d.membership.editable() {
-            return Edit::none(
-                prog,
-                Some(format!(
-                    "that point is {}, so its plane is not this statement's to change; \
-                     move the statement in the source instead",
-                    d.membership.cause()
-                )),
-            );
+            return Err(format!(
+                "that point is {}, so its plane is not this statement's to change; \
+                 move the statement in the source instead",
+                d.membership.cause()
+            ));
         }
         // a declaration with no clause whose every point is declared elsewhere — `l := line(a, b)`
         // — says nothing about planes; its points' own declarations do.  **Before the straddle
@@ -168,23 +236,44 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
         // clause cannot say two, so the gesture is refused with the cause rather than written
         // wrong.  Only reachable where the statement mints or seeds a point of its own.
         if now.is_none() && sk.children(*r).iter().any(|k| sk.plane_of(k.i()).is_some()) {
-            return Edit::none(
-                prog,
-                Some(format!(
-                    "the points of `{}` are on different planes, which one statement cannot say",
-                    d.name.shown().map_or_else(|| d.kind.as_str().to_string(), |n| n.text.clone())
-                )),
-            );
+            return Err(format!(
+                "the points of `{}` are on different planes, which one statement cannot say",
+                d.name.shown().map_or_else(|| d.kind.as_str().to_string(), |n| n.text.clone())
+            ));
         }
         if let Some(p) = now {
             needed.insert(EntRef::plane(p));
         }
         memberships.push((d, now));
     }
+    Ok(memberships)
+}
+
+/* An **anonymous declaration** (issue #33) has no name a statement can say: the `#`-keyed name
+ * it resolves by is the elaboration's, not the source's.  So whatever a new statement is about to
+ * reach for is named *now* — a real name minted and spliced into the declaration, at the empty
+ * span the parser recorded where one would go — the same bargain `commit_seeds` strikes with an
+ * unwritten `hint(…)` clause.  On demand, and only on demand: an anonymous element nothing
+ * references stays unnamed. */
+
+/// The splices naming each declaration a statement this reconcile writes has to name and the
+/// source calls nothing, and the name each entity it made is then called; each name given pushed
+/// onto `names`.  Refused, with the cause, where nothing can be named.
+fn name_anonymous(
+    e: &Elaborated,
+    sk: &Sketch,
+    prog: &Program,
+    needed: std::collections::BTreeSet<EntRef>,
+    minted: &Names,
+    taken: &mut std::collections::BTreeSet<String>,
+    names: &mut Vec<String>,
+) -> Result<(Vec<Splice>, Names), String> {
+    let mut named: Vec<Splice> = Vec::new();
+    let mut renamed = Names::new();
     // a plane's origin is said through its plane's name
     let needed: std::collections::BTreeSet<EntRef> = needed
         .into_iter()
-        .map(|r| match origin_of(r) {
+        .map(|r| match origin_of(sk, r) {
             Some(p) if e.map.writable_name(r).is_none() => EntRef::plane(p),
             _ => r,
         })
@@ -194,8 +283,8 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
             continue; // new (its statement carries the name), or its statement already named
         }
         if let Some(member) = e.map.name_of(*r).and_then(|name| e.map.private_from_root(name)) {
-            return Edit::none(prog, Some(format!(
-                "`{member}` is private to its component; add the relation inside that component")));
+            return Err(format!(
+                "`{member}` is private to its component; add the relation inside that component"));
         }
         if e.map.writable_name(*r).is_some() {
             continue; // the source already calls it something a statement may say
@@ -206,14 +295,9 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
         // it; the alternative was writing the prefix out for `adopt` to fail on half a function
         // later, with the cause lost.
         if e.map.name_of(*r).is_some() {
-            return Edit::none(
-                prog,
-                Some(
-                    "that is one copy of a block, and only the flattener has a name for it; \
-                     write the statement inside the block, where it holds for every copy"
-                        .into(),
-                ),
-            );
+            return Err("that is one copy of a block, and only the flattener has a name for it; \
+                        write the statement inside the block, where it holds for every copy"
+                .into());
         }
         let Some(site) = e.map.of_entity.get(r) else { continue };
         if site.path.0.iter().any(|step| match step {
@@ -221,21 +305,15 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
                 Some(StmtKind::Instance(i)) if i.name.text.starts_with('#')),
             _ => false,
         }) {
-            return Edit::none(prog, Some(
-                "give the component call a name before referring to its geometry".into()));
+            return Err("give the component call a name before referring to its geometry".into());
         }
         if !site.path.0.is_empty() || !in_root(prog, site.stmt) {
             // Nothing calls it and there is no statement of the root's to put a name on: it is
             // anonymous inside a component or a block, so refuse now with the cause rather than
             // later with none.
-            return Edit::none(
-                prog,
-                Some(
-                    "that is anonymous inside a component or a block, so no statement \
-                     can name it; give its declaration a name there first"
-                        .into(),
-                ),
-            );
+            return Err("that is anonymous inside a component or a block, so no statement \
+                        can name it; give its declaration a name there first"
+                .into());
         }
         // Made by a statement that is no declaration — a set drawn as its element (#105) — so
         // there is no `name := ` to put on it: refused with the cause, where carrying on wrote
@@ -245,7 +323,7 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
             let in_place = st.is_some_and(|s| matches!(s.chained, syntax::Chained::Link)
                 && matches!(s.kind, StmtKind::Set(_) | StmtKind::Instance(_)));
             // a named call's geometry is writable and never reaches here: an unnamed one's is
-            return Edit::none(prog, Some(if in_place {
+            return Err(if in_place {
                 "that is a set written in place, so no statement can name it; define the set \
                  by name (`k := { p | … }`) and use it by that name".into()
             } else if matches!(st.map(|s| &s.kind), Some(StmtKind::Instance(_))) {
@@ -253,7 +331,7 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
             } else {
                 "no declaration made that, so no statement can name it; give it a name in the \
                  source first".into()
-            }));
+            });
         };
         if d.name.shown().is_some() {
             continue; // named since the map was made
@@ -264,7 +342,7 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
         // find a name where this one left the source saying a name.
         let mut made_ents = e.map.ents_made_by(site.stmt);
         let Some(parent) = made_ents.next() else { continue };
-        let name = next_name(&mut taken, d.kind);
+        let name = next_name(taken, d.kind);
         // `name := ` before the statement's value, or round a chain link's declaration, since
         // `:=` binds looser than `->` (`Decl::mint_close`)
         match d.mint_close {
@@ -292,85 +370,115 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
             }
         }
     }
+    Ok((named, renamed))
+}
 
-    // the elaboration's own name for an entity it made — what a new statement has to refer to.
-    // Never a key: the map files one under `by_name` alone, so what it *calls* an entity is a
-    // name a statement may say or nothing at all.
-    let plain = |r: EntRef| -> String {
-        minted
+/// What a statement this reconcile writes calls an entity: the name minted for a new one, the one
+/// just given an anonymous declaration's, or the elaboration's own.
+struct Said<'a> {
+    sk: &'a Sketch,
+    e: &'a Elaborated,
+    minted: &'a Names,
+    renamed: &'a Names,
+}
+
+impl Said<'_> {
+    /// The elaboration's own name for an entity it made — what a new statement has to refer to.
+    /// Never a key: the map files one under `by_name` alone, so what it *calls* an entity is a
+    /// name a statement may say or nothing at all.
+    fn plain(&self, r: EntRef) -> String {
+        self.minted
             .get(&r)
             .cloned()
-            .or_else(|| renamed.get(&r).cloned())
-            .or_else(|| e.map.name_of(r).cloned())
+            .or_else(|| self.renamed.get(&r).cloned())
+            .or_else(|| self.e.map.name_of(r).cloned())
             .unwrap_or_else(|| syntax::entity_name(r))
-    };
-    let name_of = |r: EntRef| -> String {
-        match origin_of(r) {
-            Some(p) if e.map.name_of(r).is_none() => format!("{}.origin", plain(EntRef::plane(p))),
-            _ => plain(r),
-        }
-    };
+    }
 
+    /// `plain`, a plane's origin said through its plane's name.
+    fn name_of(&self, r: EntRef) -> String {
+        match origin_of(self.sk, r) {
+            Some(p) if self.e.map.name_of(r).is_none() => {
+                format!("{}.origin", self.plain(EntRef::plane(p)))
+            }
+            _ => self.plain(r),
+        }
+    }
+}
+
+/// A declaration for each new entity, under the name minted for it.
+fn declarations(said: &Said, adds: &mut Vec<StmtKind>, made: &mut Vec<Made>, names: &mut Vec<String>) {
+    let sk = said.sk;
     for r in sk.primitives() {
-        let Some(name) = minted.get(&r) else { continue };
+        let Some(name) = said.minted.get(&r) else { continue };
         let mut d = crate::program::lift_decl(sk, r);
         d.name = syntax::DeclName::Written(syntax::Name::new(name.clone()));
-        rename_children(&mut d, sk, r, &name_of);
+        rename_children(&mut d, sk, r, &|k| said.name_of(k));
         // the plane its points are on, by the name the document calls it
         d.membership = crate::program::plane_of_entity(sk, r)
-            .map(|p| syntax::Membership::lifted(syntax::Ref::new(name_of(EntRef::plane(p)))))
+            .map(|p| syntax::Membership::lifted(syntax::Ref::new(said.name_of(EntRef::plane(p)))))
             .unwrap_or_default();
         names.push(name.clone());
         made.push(Made::Ent(r));
         adds.push(StmtKind::Decl(d));
     }
+}
 
-    // constraints: an id the map does not know is new, one it knows that is gone was removed
-    let live: std::collections::BTreeSet<u32> =
-        sk.user_constraints().iter().map(|c| c.id).collect();
+/// A relation for each constraint the map does not know: new.
+fn relations(said: &Said, adds: &mut Vec<StmtKind>, made: &mut Vec<Made>) {
+    let sk = said.sk;
     for c in sk.user_constraints() {
-        if e.map.of_constraint.contains_key(&c.id) {
+        if said.e.map.of_constraint.contains_key(&c.id) {
             continue;
         }
         let mut rel = crate::program::lift_relation(sk, c);
         // a lift names entities positionally (`P3`); the document calls them what it calls them
         for (a, ca) in rel.form.canonical_args_mut().iter_mut().zip(c.args.iter()) {
             if let (Some(syntax::Arg::Ref(r)), crate::constraints::Arg::Ent(er)) = (a, ca) {
-                *r = syntax::Ref::new(name_of(*er));
+                *r = syntax::Ref::new(said.name_of(*er));
             }
         }
         made.push(Made::Con(c.id));
         adds.push(StmtKind::Relation(rel));
     }
-    let mut doomed: std::collections::BTreeSet<crate::syntax::StmtId> =
-        std::collections::BTreeSet::new();
+}
+
+/// The root statements whose every constraint is gone: one the map knows that the sketch no
+/// longer has was removed — and a statement that made two things is only gone when both are.
+fn withdrawn(e: &Elaborated, sk: &Sketch, prog: &Program)
+    -> std::collections::BTreeSet<crate::syntax::StmtId> {
+    let live: std::collections::BTreeSet<u32> =
+        sk.user_constraints().iter().map(|c| c.id).collect();
+    let mut doomed = std::collections::BTreeSet::new();
     for (id, site) in e.map.of_constraint.iter() {
         if !live.contains(id) && site.path.0.is_empty() && in_root(prog, site.stmt) {
             doomed.insert(site.stmt);
         }
     }
-    // a statement that made two things is only gone when both are
     for (_, site) in e.map.of_constraint.iter().filter(|(id, _)| live.contains(id)) {
         doomed.remove(&site.stmt);
     }
     for site in e.map.of_entity.values() {
         doomed.remove(&site.stmt);
     }
+    doomed
+}
 
-    // Presentation stays in the drawing/editor, never in model source.
-    let mut flags: Vec<Splice> = Vec::new();
-    // memberships, worked out above and written now that every plane has a name: the clause
-    // replaced where it stands, written where the parser said one would go, or taken out
-    // with the space in front of it
-    for (d, now) in memberships {
-        let with = now.map(|p| format!(" in {}", name_of(EntRef::plane(p))));
-        flags.push(clause_splice(prog.text(), d.membership.span(), with));
-    }
-    // `fix((0, 0)) p`: a statement per held entity, added and taken away — the holds
-    // walked once, above, and named here now that there is a name for each
+/// `fix((0, 0)) p`: a statement per held entity, added and taken away — the holds walked once,
+/// in `reconciled`, and named here now that there is a name for each.
+fn gauges(
+    said: &Said,
+    prog: &Program,
+    held: &[(EntRef, Vec<(&'static str, f64)>)],
+    adds: &mut Vec<StmtKind>,
+    made: &mut Vec<Made>,
+    doomed: &mut std::collections::BTreeSet<crate::syntax::StmtId>,
+) {
     let held_now: std::collections::BTreeMap<GaugeKey, (EntRef, &[(&str, f64)])> =
         held.iter()
-            .map(|(r, h)| (gauge_key_of(name_of(*r), h.iter().map(|(f, _)| *f)), (*r, h.as_slice())))
+            .map(|(r, h)| {
+                (gauge_key_of(said.name_of(*r), h.iter().map(|(f, _)| *f)), (*r, h.as_slice()))
+            })
             .collect();
     let held_was: std::collections::BTreeSet<GaugeKey> = prog
         .root()
@@ -385,7 +493,7 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
         let StmtKind::Relation(r) = &st.kind else { continue };
         let Some(k) = gauge_key(r) else { continue };
         // only a name this elaboration made: a gauge over something a component made stays
-        if e.map.ent_named(&k.0).is_none() {
+        if said.e.map.ent_named(&k.0).is_none() {
             continue;   // a gauge over something a component made is the component's, not ours
         }
         if !held_now.contains_key(&k) {
@@ -396,37 +504,27 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
         if held_was.contains(k) {
             continue;
         }
-        let point = crate::program::point_len(sk, r);
+        let point = crate::program::point_len(said.sk, r);
         adds.push(StmtKind::Relation(crate::program::lift_gauge(&k.0, r.kind, point, h)));
         made.push(Made::Gauge);
     }
+}
 
-    if adds.is_empty() && doomed.is_empty() && flags.is_empty() && named.is_empty() {
-        // nothing structural: the drawing only moved, and the seeds record where to
-        let seeds = commit_seeds(e, sk, prog);
-        if seeds.kind != Kind::None {
-            e.retext(&seeds.text);
-        }
-        return seeds;
-    }
-
+/// Every splice of the reconcile, in the order they must be applied.
+fn composed(
+    prog: &Program,
+    doomed: &std::collections::BTreeSet<crate::syntax::StmtId>,
+    adds: &[StmtKind],
+    flags: Vec<Splice>,
+    named: Vec<Splice>,
+) -> Result<Vec<Splice>, String> {
     // composed, so a joint whose every word fell at once — both relations of one run
     // withdrawn together — is unwritten as one splice rather than left as two links with
     // nothing between them; a statement with no splice is dropped, and `adopt` is the net
     let mut edits: Vec<Splice> =
-        doomed_splices(prog.text(), &prog.root().body, &doomed).into_iter().flatten().collect();
+        doomed_splices(prog.text(), &prog.root().body, doomed).into_iter().flatten().collect();
     if !adds.is_empty() {
-        let (at, lead) = append_at(prog);
-        let mut line = String::new();
-        for (i, k) in adds.iter().enumerate() {
-            // the first joins what is already there the way `append` does; each one after it
-            // starts a line of its own, or they would all run together on one
-            line.push_str(if i == 0 { lead.as_str() } else { "\n" });
-            if let Err(e) = syntax::write_stmt_to(&mut line, k) {
-                return Edit::none(prog, Some(e.to_string()));
-            }
-        }
-        edits.push(Splice { at, with: line });
+        edits.push(appending(prog, adds)?);
     }
     // after the append, deliberately: insertions at one offset land in *reverse* application
     // order, and `splice`'s stable sort applies equal offsets in this vec's order — so where
@@ -435,24 +533,7 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
     // minted name lands against its keyword with everything else after it
     edits.extend(flags);
     edits.extend(named);
-    let text = splice(prog.text(), edits);
-    if !e.adopt(&text, &made) {
-        return Edit::none(prog, Some("the drawing could not be written down".into()));
-    }
-    // an entity just named in place resolves by that name from here on — and is *called* it,
-    // which it was called nothing until now, so a later reconcile in this same elaboration
-    // reads a name and not the key it elaborated under
-    for (r, n) in &renamed {
-        e.map.bind(n, *r, syntax::Named::Written);
-    }
-    // and now the seeds, against the source that finally has statements for everything
-    let after = e.program.clone();
-    let seeds = commit_seeds(e, sk, &after);
-    let text = if seeds.kind == Kind::None { text } else { seeds.text };
-    if seeds.kind != Kind::None {
-        e.retext(&text);
-    }
-    Edit { text, kind: Kind::Structural, names, refused: None, kept: 0 }
+    Ok(edits)
 }
 
 /// A lifted declaration refers to its children by their *positional* names (`P3`, `C0`); the
