@@ -241,20 +241,165 @@ fn a_leaning_rim_runs_out_at_every_corner() {
     assert_eq!(kinds(&b), [("cylinder", 4), ("plane", 6)].into());
 }
 
-/// **What no entry builds stays the field's**: the leaning block rounded all over — at the corners
-/// of its leaning side three faces meet not square to one another, which no entry builds yet. The
-/// export is refused, naming why, and the field still reads it.
+/// **Corners not square** (#218's 3): the leaning block rounded all over. Where its leaning side
+/// meets the top and the bottom, three faces meet at a slant; the ball touching all three stands
+/// `r` from each (a 3×3 solve), and its cell — the trihedron cut by the three sections through it
+/// square to the edges — less the ball is the corner's piece, each run cut short at its section
+/// there. The body is the shrunk prism grown by the ball (Steiner): `V + S r + r² Σ L(π − θ)/2 +
+/// 4πr³/3` over the prism of the trapezoid inset by `r`, `h − 2r` deep.
 #[test]
-fn a_round_no_entry_builds_is_refused_by_name() {
+fn a_leaning_block_rounded_all_over_is_steiners_exactly() {
     let src = BLOCK.replace("fix((40, 24)) b2", "fix((30, 24)) b2");
     let e = solved(&format!("{src}round(r: 2mm) block\n"));
-    let body = ent(&e, "block").i();
+    let b = exported(&e, "block");
+    let r = 2.0;
+    // the east side `24x + 10z = 960` moved in by `r` (its normal 26 long), the others square
+    let east = |z: f64| (960.0 - 26.0 * r - 10.0 * z) / 24.0;
+    let (lo, hi) = (r, 24.0 - r);
+    let (bottom, top) = (east(lo) - r, east(hi) - r);
+    let area = (bottom + top) / 2.0 * (hi - lo);
+    let slant = ((bottom - top).powi(2) + (hi - lo).powi(2)).sqrt();
+    let (perimeter, h) = (bottom + top + (hi - lo) + slant, 12.0 - 2.0 * r);
+    let want = area * h + (2.0 * area + perimeter * h) * r + PI * r * r * (h + perimeter / 2.0)
+        + 4.0 * PI * r * r * r / 3.0;
+    close(props::volume(&b), want);
+    assert_eq!(kinds(&b), [("cylinder", 12), ("plane", 6), ("sphere", 8)].into());
+}
+
+/// Of two discs of radii `a` and `b`, centres `d` apart, the lens they share.
+fn lens(a: f64, b: f64, d: f64) -> f64 {
+    let half = |a: f64, b: f64| ((d * d + a * a - b * b) / (2.0 * d * a)).acos();
+    a * a * half(a, b) + b * b * half(b, a)
+        - 0.5 * ((-d + a + b) * (d + a - b) * (d - a + b) * (d + a + b)).sqrt()
+}
+
+/// Of two discs of radii `a` and `b`, centres `d` apart, the fill a ball of radius `r` outside
+/// both leaves at one of the cusps where their circles cross: the triangle of the three centres
+/// less each disc's sector in it, the half lens in it counted once.
+fn cusp_fill(a: f64, b: f64, d: f64, r: f64) -> f64 {
+    let (sa, sb) = (a + r, b + r);
+    let alpha = ((d * d + sa * sa - sb * sb) / (2.0 * d * sa)).acos();
+    let beta = ((d * d + sb * sb - sa * sa) / (2.0 * d * sb)).acos();
+    let gamma = PI - alpha - beta;
+    let triangle = 0.5 * d * sa * alpha.sin();
+    triangle - 0.5 * (a * a * alpha + b * b * beta + r * r * gamma) + lens(a, b, d) / 2.0
+}
+
+/// **A round between two curved faces** (#218's 5), `twin.sv`: two parallel rods overlapping,
+/// made one, the two straight seams where their walls meet filled. In the section both walls are
+/// circles, and the ball stands where the two circles grown by `r` meet: each seam's fill a prism
+/// of two arcs and the ball's.
+#[test]
+fn a_seam_between_two_rods_is_filled_exactly() {
+    let e = solved(include_str!("../../examples/rounds/twin.sv"));
+    assert_eq!(lowered(&e).0, 1);
+    let b = exported(&e, "bar");
+    let (big, small, d, r) = (10.0, 8.0, 14.0, 2.0);
+    let section = PI * (big * big + small * small) - lens(big, small, d) + 2.0 * cusp_fill(big, small, d, r);
+    close(props::volume(&b), section * 40.0);
+    // (the union leaves the caps in pieces)
+    assert_eq!(kinds(&b).keys().copied().collect::<Vec<_>>(), ["cylinder", "plane"]);
+}
+
+/// The same rods as two bores through a block, overlapping: the cusps where the bores' walls meet
+/// are convex, so the same word rounds them away — the ball within the material, outside both
+/// bores.
+#[test]
+fn a_cusp_between_two_bores_is_rounded_away() {
+    let e = solved("unit mm\nuse std (round)\nin std.front {\n\
+        a := point\nb := point\nc := point\nd := point\n\
+        fix((-20, -20)) a\nfix((30, -20)) b\nfix((30, 20)) c\nfix((-20, 20)) d\n\
+        (ab := line(a, b)) -> (bc := line(b, c)) -> (cd := line(c, d)) -> (da := line(d, a)) -> close\n\
+        c1 := point\nc2 := point\nfix((0, 0)) c1\nfix((14, 0)) c2\n\
+        big := circle(center: c1) hint(r: 10)\nsmall := circle(center: c2) hint(r: 8)\n\
+        radius(10mm) big\nradius(8mm) small\n}\n\
+        block := solid(face(ab, bc, cd, da), from: 0mm, to: 40mm)\n\
+        left := solid(face(big), from: 0mm, to: 40mm)\nright := solid(face(small), from: 0mm, to: 40mm)\n\
+        left cut block\nright cut block\nblock.right.small round(r: 2mm) block.left.big\n");
+    let b = exported(&e, "block");
+    // at each cusp the material outside both bores that the ball cannot reach: the same figure
+    // as the twin bar's fill
+    let (big, small, d, r) = (10.0, 8.0, 14.0, 2.0);
+    let bores = PI * (big * big + small * small) - lens(big, small, d);
+    close(props::volume(&b), (50.0 * 40.0 - bores - 2.0 * cusp_fill(big, small, d, r)) * 40.0);
+}
+
+/// **What no entry builds stays the field's**: the twin bar's seams chamfered. Between two circles
+/// a flat's sum of distances is a Cartesian oval, no conic, which no entry builds: the export is
+/// refused, naming why, and the field still reads it.
+#[test]
+fn a_round_no_entry_builds_is_refused_by_name() {
+    let src = include_str!("../../examples/rounds/twin.sv").replace("use std (round)", "use std (chamfer)")
+        .replace("bar.right.small round(r: r) bar.left.big", "bar.right.small chamfer(d: 1mm) bar.left.big");
+    let e = solved(&src);
+    let body = ent(&e, "bar").i();
     let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
     let refusal = export::exact(&e.sketch, body, None, None, &say).err().expect("refused");
-    assert!(format!("{refusal:?}").contains("a corner whose faces are not square to one another: no exact \
+    assert!(format!("{refusal:?}").contains("a flat between two curved faces, a Cartesian oval: no exact \
         construction is made of it yet"), "{refusal:?}");
     let field = MaterialField::read(&e.sketch, body, 1e-10).unwrap();
-    assert!(field.side([20.0, 0.2, 0.2]) > 0.0 && field.side([20.0, 6.0, 6.0]) < 0.0);
+    // (the front plane's normal, toward the viewer, is −y: the bar stands at y in (−40, 0))
+    assert!(field.side([0.0, -20.0, 0.0]) < 0.0 && field.side([7.0, -20.0, 20.0]) > 0.0);
+}
+
+/// **A chamfer beside a curved face** (#218's 6): `rail.sv`'s fills chamfered instead. In the
+/// section the rod is a circle about `c` on the plate's top, and the flat — `d_rod + d_top = d` —
+/// is the conic `(ρ − 6) + ρ sin θ = d` about `c`, from the top `d` out along it to the rod `d` up:
+/// `ρ(θ) = (6 + d)/(1 + sin θ)` for `0 ≤ θ ≤ asin(d/6)`, its area beside the rod `∫ (ρ² − 36)/2 dθ`
+/// in closed form (`t = tan(θ/2)`, `∫ dθ/(1 + sin θ)² = −2/u + 2/u² − 4/(3u³)` with `u = 1 + t`).
+/// Built as a prism over a rational quadratic, an extrusion face.
+#[test]
+fn a_chamfer_beside_a_rod_is_a_conic_prism() {
+    let src = include_str!("../../examples/rounds/rail.sv").replace("use std (round)", "use std (round, chamfer)")
+        .replace("rail.rod round(r: r) rail.plate", "rail.rod chamfer(d: 2mm) rail.plate");
+    let e = solved(&src);
+    assert_eq!(lowered(&e).0, 1);
+    let b = exported(&e, "rail");
+    let (r, d): (f64, f64) = (6.0, 2.0);
+    let end = (d / r).asin();
+    let anti = |theta: f64| {
+        let u = 1.0 + (theta / 2.0).tan();
+        -2.0 / u + 2.0 / (u * u) - 4.0 / (3.0 * u * u * u)
+    };
+    let area = 0.5 * (r + d) * (r + d) * (anti(end) - anti(0.0)) - 0.5 * r * r * end;
+    close(props::volume(&b), 60.0 * 10.0 * 40.0 + PI * r * r / 2.0 * 40.0 + 2.0 * 40.0 * area);
+    assert_eq!(kinds(&b).get("extrusion"), Some(&2), "{:?}", kinds(&b));
+}
+
+/// Simpson's rule over `n` (even) steps of `[a, b]`: on a smooth integrand, to roundoff at a few
+/// thousand steps.
+fn simpson(f: impl Fn(f64) -> f64, a: f64, b: f64, n: usize) -> f64 {
+    let h = (b - a) / n as f64;
+    let inner: f64 = (1..n).map(|k| f(a + h * k as f64) * if k % 2 == 1 { 4.0 } else { 2.0 }).sum();
+    (f(a) + f(b) + inner) * h / 3.0
+}
+
+/// `knob.sv` chamfered instead (#218's 6, about an axis): the root's flat between the disc's top
+/// and the rod is a cone (its triangle turned, Pappus), and the neck's between the rod and the
+/// ball the conic `(x − 4) + (|q − c| − 8) = d` of the meridian turned — in polar about the
+/// ball's centre `ρ = (12 + d)/(1 + cos φ)` out to where it meets the rod and the ball, from the
+/// ball (`ρ = 8`) or the rod (`ρ = 4 / cos φ`), whichever stands farther; turned, Pappus over
+/// `∫∫ x ρ dρ dφ`.
+#[test]
+fn a_knobs_neck_chamfered_is_a_conic_turned() {
+    let src = include_str!("../../examples/rounds/knob.sv").replace("use std (round)", "use std (chamfer)")
+        .replace("knob.rod round(r: 2mm) knob.disc", "knob.rod chamfer(d: 2mm) knob.disc")
+        .replace("knob.rod round(r: 1.5mm) knob.ball", "knob.rod chamfer(d: 1.5mm) knob.ball");
+    let e = solved(&src);
+    let b = exported(&e, "knob");
+    let (rod, big, d) = (4.0, 8.0, 1.5);
+    let unrounded = crate::fillet_meridian::knob_rounded([0.0, 44.0], big, rod, 1.5)
+        - root_ring(rod, 2.0) - crate::fillet_meridian::knob_neck([0.0, 44.0], big, rod, 1.5);
+    let root = 2.0 * PI * (rod + 2.0 / 3.0) * 2.0;
+    let hi = |phi: f64| (big + rod + d) / (1.0 + phi.cos());
+    let moment = |phi: f64, lo: f64| (hi(phi).powi(3) - lo.powi(3)) / 3.0 * phi.cos();
+    // below the ball's equator: from the conic meeting the rod, through the edge, to its meeting the
+    // ball
+    let (from, edge, to) = (-(rod / (big + d)).acos(), -(rod / big).acos(), -((rod + d) / big).acos());
+    let neck = simpson(|phi| moment(phi, rod / phi.cos()), from, edge, 4000)
+        + simpson(|phi| moment(phi, big), edge, to, 4000);
+    close(props::volume(&b), unrounded + root + 2.0 * PI * neck);
+    assert_eq!(kinds(&b).get("cone"), Some(&1), "{:?}", kinds(&b));
 }
 
 /// A round section's area beside a square corner (`square_run`), and how far its centroid stands

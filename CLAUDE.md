@@ -385,8 +385,11 @@ one bound saying the section — a ball's `centres` set or a flat's sum), **neve
 `BodyFaces::plane`/`cylinder`/`segment`/`circle`/`coaxial`/`normal`) into **pieces**, one per edge
 where a face reference names a face in pieces (`run`: every edge between the two groups, each kept
 within the whole run's ends, as the field reads them): `Run` (the section along a straight edge
-between planes, or a plane and a cylinder about a line along it — the section's `Trace`s a line and
-a circle, the ball where their offsets meet — carried on past each end until the plane faces it
+between planes, or a plane and a cylinder, or two cylinders, about lines along it — the section's
+`Trace`s lines and circles, the ball where their offsets meet (`twin.sv`), a chamfer's flat beside
+a circle the conic its sum of distances makes (`bowed`, `Stroke::Conic`, a rational quadratic
+profile edge: an extrusion face; turned in a ring, a revolution's; between two circles a
+Cartesian oval, refused) — carried on past each end until the plane faces it
 ends on cut it off (#195's meaning: a square one is the prism's end, one at a slant a half-space it
 is kept within, `Run::within`, the recipe's `"within"` as a point and a normal; a run-out); a face
 along the edge or a curved end refused, `unbuilt`), `Ring` (a circle where a
@@ -396,8 +399,9 @@ angle, `Ring::angle`; a sphere centred on the axis is a circle in the meridian (
 ends' meridians), a run and a stretch going on from one
 another **glued** at their shared section (a face going on tangent across a seam is no end,
 `BodyFaces::continues`, the field's and the lowering's one rule),
-`Corner` (three square planes: the cell less the ball, `brep::fillet::corner`, plus each edge's
-run), `Rolled` (along an edge no line or coaxial circle carries — a tee's crotch, a bore's rim, a
+`Corner` (three planes at any convex or concave corner, #218: the ball `r` from each by a 3×3
+solve, the vertex within its normal cone; the cell less the ball, `brep::fillet::corner`, plus
+each edge's run, cut short at its section even where it ran out past a slanted end), `Rolled` (along an edge no line or coaxial circle carries — a tee's crotch, a bore's rim, a
 run-out across a slope: the ball rolled along the whole run, `brep::fillet::roll`, its canal
 fitted, carried past an end and cut off by the plane there; the recipe's `"rolled"` rolled against
 the body's stratum, rebuilt from the `"stratum"` terms `cad.rs` writes beside it, the gate's
@@ -417,13 +421,13 @@ this needs (ported from #79–#110): edges along a face cut where they cross its
 `trace_beside`/`unseen_beside`), equal crossing cylinders' ellipses split where they cross
 (`boolean::crossings_among`), `query::line_cylinder`, `Surface::offset`, a fitted edge read at its
 own `tol`. `cad::shifted` (the app's exact solid, built about its own origin) moves a lowered
-node's pieces, corners and balls with the rest (`shifted_node`). Open: curved ends at a corner (a
-run-out onto a curved face, #110), corners not square, runs between two curved faces, a run
+node's pieces, corners and balls with the rest (`shifted_node`). Open (#218): curved ends at a corner (a
+run-out onto a curved face, #110), corners where curved faces meet, a run
 mitred against a ring's stretch on one cylinder (the union of coincident cylinder faces: a groove
 rounded at its ends), a flat along a traced edge, a rolled round beside other pieces in one
 region, the OCCT oracle. `tests/round_lowering.rs` is the gate (every volume the closed form's to
 1e-9, a rolled one #85's quadrature's to 1e-6: `slot.sv`, `pad.sv`, `rail.sv`, `knob.sv`,
-`tee.sv`, `bore.sv`, `runout.sv`).
+`tee.sv`, `bore.sv`, `runout.sv`, `twin.sv`).
 **Distance from a set, offsets (§6.21, 0.64, #145 F4):** `p distance(d, side: outside|inside) S`
 (`distance` is a set use, `may_use`), `p inside(d) S` / `p outside(d) S` and `std.Offset(S, d)` are
 one bound on the signed distance from `S`'s surface (`Reach`: cmp toward the outside, whether

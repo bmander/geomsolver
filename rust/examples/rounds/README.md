@@ -61,6 +61,7 @@ The fillet stack's examples (#195), each the stack's program written with the wo
 | `bore.sv` | **A rim a cut made.** A solid pipe drilled square into its wall, the bore's rim rounded off, said of the one body that is drilled. Built exactly: rolled against the pipe as the cut leaves it. |
 | `slot.sv` | **Tangent chains.** An obround boss's foot and a rounded pocket's rim: where two faces meet tangent there is no edge, so the runs carry on round the ends with no step. Built exactly: runs and stretches of rings, glued at the sections they share. |
 | `runout.sv` | **Runs that end on a face.** A boss's root on a slope cut off at a slant by the face it runs onto, and a hole's rim cut off where the hole breaks out of a wedge's end: carried on past the edge's end, and cut off by that face however it stands. Built exactly: each ball rolled on past its edge's end and cut off at the face's plane. |
+| `twin.sv` | **Between two curved faces.** Two rods side by side, overlapping, made one: their walls meet in two straight seams, and in a section both are circles. Built exactly: the ball stands where the two circles grown by its radius meet, each seam's fill a prism of three arcs (the closed form's volume to 1e-9). Chamfered instead, a flat between two circles is a Cartesian oval, which no entry builds: refused by name. |
 
 `rust/gcs-core/tests/rounds_examples.rs` holds each file to what its comments say, the suggested
 edits included, and the stack's examples to the stack's closed forms and #85's quadrature, each
