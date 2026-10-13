@@ -168,7 +168,7 @@ fn all_constraints(seed: u32) -> Sketch {
         Constraint::new(CKind::Midpoint, vec![e(pe), e(le1)]),
         Constraint::drag_target(pe, 1.0, 2.0, 0.3),
         // a point in space, seen by an eye turned three quarters round and lifted
-        Constraint::drag_seen(s3, 1.0, 2.0, 0.3, 0.6, 0.4),
+        Constraint::drag_seen(s3, 1.0, 2.0, 0.3, (0.6, 0.4), 1.5),
         Constraint::one_line(CKind::Horizontal, le1),
         Constraint::one_line(CKind::Vertical, le1),
         Constraint::two_line(CKind::Parallel, le1, le2),

@@ -130,9 +130,25 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   with `selected` and the picture, carried across an edit by name; Delete removes it, `box3d`
   lights the face and washes the rest.  **Axes are picked where the box draws them**
   (`overview::axis_segment`, one rule for both), beneath every drawn figure and never seen end
-  on; the TS `Axis` proxy is kind id 16 (`kindOf` decodes a pick).  **Plane (`n`) and Axis
-  (`x`) are buttons that drop a datum at once** (`SketchView.addDatum` → `edit::add_datum`, one
-  checked splice): free with nothing selected (set off the plane being drawn on), else
+  on; the TS `Axis` proxy is kind id 16 (`kindOf` decodes a pick).  **A plane is picked by its
+  pane's frame** (`workspace::nearest_pane`), beneath the axes: the place's one pane, the frame
+  `overview::pane` draws, never seen edge on — and never its inside, where a press lands on what
+  is drawn or starts a band (a double-click on the frame chooses the plane, as one inside it
+  does).  The frame runs just outside what is drawn, so `whatIsAt` offers it last — beneath an
+  object's face and the traced picture — and a press on the frame of a plane that cannot move
+  selects it but, moved, is the band it would have been on bare canvas.  **A plane that can move
+  is dragged as a point in space is**: the press takes hold of its origin (`PlanDrag` seen, the
+  pointer offset by where the frame was grabbed), and `DragSeen` on a plane's origin moves where
+  the plane stands, its own `o`.  `Drag::seen` holds the plane's axis directions while it lasts
+  (its axes stand through its origin, so a step would spread into turning them), so the plane is
+  **carried, not turned**, and what is drawn on it goes with it; `DragSeen`'s weak third row
+  keeps the depth the drag took hold at, so it is not slid along the line of sight, while a point
+  held to a line or a sphere still slides.  The seeds land in `hint(origin: …)`.  Gates:
+  `a_plane_follows_the_pointer_by_its_origin_where_the_eye_sees_it` (`tests/drag.rs`),
+  `a_plane_is_picked_by_its_panes_frame` (`tests/workspace.rs`), `app.test.ts`.  **Plane (`n`)
+  and Axis (`x`) are buttons that drop a datum at once** (`SketchView.addDatum` →
+  `edit::add_datum`, one checked splice): free with nothing selected (set off the plane being
+  drawn on), else
   constrained to the selection by the table on `add_datum` — a plane through a point, three
   points, a point square to a ray, two rays, parallel to a plane; an axis through a point or
   two, along a line, a plane's normal, where two planes meet — every relation an ordinary
@@ -145,8 +161,9 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   Points in space stand in no view: seen where they are (`Projection::point`; per frame
   `workspace::space_points`, `gcs_workspace_space_points`, stroked through the eye's own
   camera), drawn and picked, and dragged where the eye sees them (`PlanDrag::seen`, numeric:
-  `CKind::DragSeen`, two soft rows across the picture plane, so depth is the constraints' and a
-  free point keeps its own).  A view opens drawing on `std.front`
+  `CKind::DragSeen`, two soft rows across the picture plane and a third a thousandth as strong
+  holding the depth it was taken hold at, so depth is the constraints' and a free point keeps
+  its own).  A view opens drawing on `std.front`
   (`drawOnFront`), and File ▸ New is `use std`.  `workspace::Views` is what does not depend on
   the eye — each view placed in space (slot 0 a 2D sketch's front plane, `Basis::page`), the view
   each point and entity stands in (a curve, owning no point, its tool's: `Sketch::curve_view`), and each view's **place** (the first view on the same plane in

@@ -305,10 +305,12 @@ pub fn nearest_point(sk: &Sketch, proj: &Projection, at: (f64, f64)) -> (Option<
 ///
 /// **The drawing outranks a datum**: an axis, which has no figure, is picked only where nothing
 /// drawn is in reach — along the line the box draws it as, and never seen end on, where it
-/// would read as a dot under everything else.
+/// would read as a dot under everything else.  A plane, beneath its axes, is picked by its pane's
+/// frame (`nearest_pane`).
 pub fn pick(sk: &Sketch, proj: &Projection, at: (f64, f64), tol: f64, unit: f64) -> Option<EntRef> {
     crate::model::pick_by(sk, nearest_point(sk, proj, at), tol, |e| proj.reach(sk, e, at, tol, unit))
         .or_else(|| nearest_axis(sk, proj, at, tol))
+        .or_else(|| nearest_pane(sk, proj, at, tol))
 }
 
 /// The axis whose drawn line, seen, passes nearest `at` within `tol`.  Two lying on one another
@@ -334,6 +336,37 @@ fn nearest_axis(sk: &Sketch, proj: &Projection, at: (f64, f64), tol: f64) -> Opt
 /// seen as good as exactly edge on and no more.
 const EDGE_ON: f64 = 1e6;
 
+/// Whether plane `i`'s pane is seen face on enough to be landed on (`EDGE_ON`).
+fn pane_readable(proj: &Projection, i: usize) -> bool {
+    let m = proj.map(Some(i));
+    let det = m[0] * m[4] - m[1] * m[3];
+    let k = m[0].dhypot(m[3]).max(m[1].dhypot(m[4]));
+    det.abs() > 0.0 && k * k / det.abs() < EDGE_ON
+}
+
+/// The plane whose pane's frame, seen, passes nearest `at` within `tol` — a plane is picked where
+/// the box draws it, as an axis is, and by its frame alone, so a press inside a pane still lands
+/// on what is drawn there, or starts a band.  A place is one pane, its first plane's
+/// (`overview::places`), and one seen edge on is no place to land (`panes_at`'s rule).  Two
+/// frames one distance apart but for rounding go to the first declared.
+fn nearest_pane(sk: &Sketch, proj: &Projection, at: (f64, f64), tol: f64) -> Option<EntRef> {
+    let views = super::views(sk);
+    let places = super::places(sk);
+    let least = sk.extent() * super::LEAST_SIDE;
+    let mut best: Option<(f64, usize)> = None;
+    for i in (0..sk.planes.len()).filter(|&i| places[i] == i && pane_readable(proj, i)) {
+        let basis = sk.basis(i);
+        let (x0, y0, x1, y1) = super::pane(sk, i, &views, &places, least);
+        let c = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)].map(|(x, y)| proj.seen(basis.lift(x, y)));
+        let d = (0..4).map(|k| crate::model::seg_distance(at, c[k], c[(k + 1) % 4]))
+            .fold(f64::INFINITY, f64::min);
+        if d <= tol && best.is_none_or(|(e, _)| d < e - 1e-9 * tol) {
+            best = Some((d, i));
+        }
+    }
+    best.map(|(_, i)| EntRef::plane(i))
+}
+
 /// The planes whose panes `at` on the eye's picture plane falls inside, the one nearest the eye
 /// first (ties in plane order) — what a double-click on a pane asks.  The pane is `pane`'s, the
 /// same rule the box draws it by, and its whole face answers, not only its frame.
@@ -344,12 +377,11 @@ pub fn panes_at(sk: &Sketch, proj: &Projection, at: (f64, f64)) -> Vec<usize> {
     let toward = proj.toward();
     let mut hits: Vec<(f64, usize)> = Vec::new();
     for i in 0..sk.planes.len() {
-        let m = proj.map(Some(i));
-        let det = m[0] * m[4] - m[1] * m[3];
-        let k = m[0].dhypot(m[3]).max(m[1].dhypot(m[4]));
-        if !(det.abs() > 0.0 && k * k / det.abs() < EDGE_ON) {
+        if !pane_readable(proj, i) {
             continue;
         }
+        let m = proj.map(Some(i));
+        let det = m[0] * m[4] - m[1] * m[3];
         // where the eye's ray through `at` meets the plane, in its own coordinates
         let (x, y) = (at.0 - m[2], at.1 - m[5]);
         let (px, py) = ((m[4] * x - m[1] * y) / det, (-m[3] * x + m[0] * y) / det);
