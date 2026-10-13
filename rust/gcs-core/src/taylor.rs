@@ -387,10 +387,7 @@ fn ordinate_line_free(v: &[Jet], k: &[f64], r: &mut [Jet]) {
 }
 
 fn arc_sweep(v: &[Jet]) -> Jet {
-    let (ux, uy) = (v[2] - v[0], v[3] - v[1]);
-    let (wx, wy) = (v[4] - v[0], v[5] - v[1]);
-    let th = Jet::atan2(wy, wx) - Jet::atan2(uy, ux);
-    if th.0[0] <= 0.0 { th.shift(TURN) } else { th }
+    crate::kernels::arc_bearings(v).1
 }
 
 fn distance(v: &[Jet], k: &[f64], r: &mut [Jet]) {

@@ -364,48 +364,10 @@ fn compile_trace(
                 ),
             ));
         }
-        // **a point at a fraction of a line's run** (#248): the place is the block's to state,
-        // as every number in it is — pinned, and read as a dimension over `u` is, a column a
-        // tape computes (`w`); the point and the line's ends are the block's own columns
-        if r.kind == CKind::PointAlongLine {
-            let place = match r.args.get(2).and_then(|a| a.as_ref()) {
-                Some(Arg::Seed { value, pinned: true }) => constant(*value),
-                Some(Arg::SeedExpr { text, pinned: true, span }) => tape(text, *span)?,
-                Some(Arg::Tie { name, span, .. }) if vars.contains(name) => tape(name, *span)?,
-                _ => {
-                    return Err((st.span, "`t` must be pinned in a trace block, `t == u`: a \
-                        trace block infers nothing, and a point anywhere on the line is \
-                        `coincident` with no `t`".to_string()))
-                }
-            };
-            let mut cols: Vec<u32> = Vec::new();
-            for (i, kind) in [(0, SpecKind::Point), (1, SpecKind::Line)] {
-                let Some(Arg::Ref(rf)) = r.args.get(i).and_then(|a| a.as_ref()) else {
-                    let name = spec[i].0;
-                    return Err((st.span, format!("`{name}` must be stated: a trace block infers nothing")));
-                };
-                let e = ent_arg(&sk, scope.get(&rf.root.text).copied(), kind, rf)
-                    .map_err(|(_, m)| (rf.span, m))?;
-                let e = e.ent();
-                let ps = match e.kind {
-                    EntKind::Line => sk.line_params(e.i()).to_vec(),
-                    _ => sk.point_params(e.i()).to_vec(),
-                };
-                for p in ps {
-                    let Some(&s) = slot.get(&p) else {
-                        return Err((st.span, "trace lowering lost a column".to_string()));
-                    };
-                    cols.push(s as u32);
-                }
-            }
-            // every declaration was consumed in pass 1, so `n_q` is final here
-            cols.push((n_outer + n_q + w.len()) as u32);
-            w.push(place);
-            let kid = crate::kernels::K::PointAlongLine as usize;
-            rows.push(Row { kid, cols, consts: Vec::new() });
-            continue;
-        }
-        if r.kind.soft_by_default() || r.kind.built() || spec.iter().any(|(_, k)| k.is_param()) {
+        // a contact's place is the block's to state only where it is a fraction of a drawn
+        // run (#248): a spline or a curve is no entity a block draws or is written over
+        let placed = spec.iter().any(|(_, k)| k.is_param()) && r.kind.fraction_slots().is_none();
+        if r.kind.soft_by_default() || r.kind.built() || placed {
             return Err((st.span, format!("{} cannot appear in a trace block", r.kind.name())));
         }
         // the block is lowered through a scratch sketch of one plane, which has no place in
@@ -480,6 +442,26 @@ fn compile_trace(
                 (k, Some(Arg::Dim { text, span })) if k.is_dimension() => {
                     dim = Some((*k, tape(text, *span)?));
                     cargs.push(CArg::Num(0.0));
+                }
+                // **a place along a run** (#248) is stated as every number in the block is:
+                // pinned, and read as a dimension over `u` is, a column a tape computes (`w`),
+                // standing in a scratch Param the constraint's columns name
+                (k, given) if k.is_param() => {
+                    let place = match given {
+                        Some(Arg::Seed { value, pinned: true }) => constant(*value),
+                        Some(Arg::SeedExpr { text, pinned: true, span }) => tape(text, *span)?,
+                        Some(Arg::Tie { name, span, .. }) if vars.contains(name) => tape(name, *span)?,
+                        _ => {
+                            return Err((st.span, format!("`{name}` must be pinned in a trace \
+                                block, `{name} == u`: a trace block infers nothing, and a point \
+                                anywhere on the run is `coincident` with no `{name}`")))
+                        }
+                    };
+                    let p = sk.param(0.0, false, name) as u32;
+                    // every declaration was consumed in pass 1, so `n_q` is final here
+                    slot.insert(p, n_outer + n_q + w.len());
+                    w.push(place);
+                    cargs.push(CArg::Param(p));
                 }
                 // a slot the core would read off the geometry (a tangency's side or sense) is
                 // required too: there is no drawn geometry here to read it from, and a default

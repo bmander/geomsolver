@@ -675,4 +675,7 @@ fn a_fraction_past_an_end_runs_on_a_line_and_is_refused_on_an_arc() {
     refused("use std\nin std.front {\n  c := point\n  r := circle(center: c) hint(r: 5)\n  \
              w := point\n  w coincident(t == 0.5) r\n}\n",
             "E040", "a circle has no start or end, so no fraction of its turn", "t");
+    refused("use std\nin std.front {\n  c := point\n  r := circle(center: c) hint(r: 5)\n  \
+             w := point\n  r coincident(t == 0.5) w\n}\n",
+            "E040", "a circle has no start or end, so no fraction of its turn", "t");
 }

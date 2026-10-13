@@ -718,9 +718,9 @@ pub fn clamp_contacts(sk: &mut Sketch) -> Vec<u32> {
         let c = &sk.constraints[i];
         let on_spline = c.curve_contact().map(|(s, t)| (EntRef::spline(s), t));
         // and a fraction of an arc's turn, which is on the arc from 0 to 1 (#248); a line's runs
-        // on past its ends, as `coincident` on a line does
-        let on_arc = || c.fraction_contact().filter(|(e, _)| e.kind == EntKind::Arc);
-        let Some((e, t)) = on_spline.or_else(|| c.family_contact()).or_else(on_arc) else {
+        // on past its ends, as `coincident` on a line does, so it has no domain below
+        let found = on_spline.or_else(|| c.family_contact()).or_else(|| c.fraction_contact());
+        let Some((e, t)) = found else {
             continue;   // an ellipse's parameter is an angle, and wraps
         };
         // a family's instance may run its interval either way (`over (-u0, -u1)` is a flank

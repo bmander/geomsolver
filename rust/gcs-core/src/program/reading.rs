@@ -214,7 +214,7 @@ pub(super) fn in_space(
         } else if s.is_dimension() {
             out.push(dim.clone().expect("the two kinds state the same number"));
             left_out.push(false);
-        } else if let (true, Some(a)) = (s.is_param(), &place) {
+        } else if let Some(a) = place.as_ref().filter(|_| s.is_param()) {
             out.push(a.clone());
             left_out.push(false);
         } else {

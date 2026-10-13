@@ -13,7 +13,7 @@ use crate::fmath::Det;
 use crate::constraints::Constraint;
 use crate::kernels::{self, Kernel, KernelKey};
 use crate::linalg::{rank_and_nullspace_with, rrqr_with, Mat, RankNull, Tol};
-use crate::model::{EntRef, Sketch};
+use crate::model::{EntKind, EntRef, Sketch};
 use crate::sparse::Ata;
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -161,6 +161,9 @@ pub struct System {
     /// and not from a parameter that may since have moved to another span.  Empty for a sketch
     /// with no curves in it, which is the check every curve path is behind.
     spans: BTreeMap<u32, usize>,
+    /// Whether a free contact's place is held to an arc's turn (#248): a bound beside the spans
+    /// that `solve` brings a contact back within (`curve::clamp_contacts`).
+    on_arcs: bool,
     pub csr_indptr: Vec<i32>,
     pub csr_indices: Vec<i32>,
     pub nnz: usize,
@@ -545,11 +548,10 @@ impl System {
         // the seed recorded, which is the stall the scaling exists to prevent.
         let mut speed: BTreeMap<EntRef, f64> = BTreeMap::new();
         let mut scale_of: BTreeMap<u32, f64> = BTreeMap::new();
+        let mut on_arcs = false;
         for c in &sk.constraints {
-            if let Some((e, t)) = c.parametric_contact()
-                .or_else(|| c.family_contact())
-                .or_else(|| c.fraction_contact())
-            {
+            if let Some((e, t)) = c.place() {
+                on_arcs |= e.kind == EntKind::Arc && !sk.params[t as usize].fixed;
                 let v = *speed
                     .entry(e)
                     .or_insert_with(|| crate::constraints::contact_speed(sk, e));
@@ -679,6 +681,7 @@ impl System {
             blocks,
             cids,
             spans,
+            on_arcs,
             csr_indptr,
             csr_indices,
             nnz,
@@ -700,6 +703,11 @@ impl System {
     /// path is behind.
     pub fn spans(&self) -> &BTreeMap<u32, usize> {
         &self.spans
+    }
+
+    /// Whether a free contact's place is held to an arc's turn (#248).
+    pub fn on_arcs(&self) -> bool {
+        self.on_arcs
     }
 
     // -- constants -----------------------------------------------------------

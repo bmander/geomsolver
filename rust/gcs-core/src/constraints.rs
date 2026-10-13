@@ -1621,6 +1621,13 @@ impl CKind {
         }
     }
 
+    /// The slots of a contact's place along whatever it runs along — a spline, a curve, a line's
+    /// or an arc's run — the one reading of what a shared place is on, what one unit of it is
+    /// worth, and what a compile scales its column by.
+    pub fn place_on(self) -> Option<(usize, usize)> {
+        self.contact_slots().or_else(|| self.contact_on(SpecKind::Curve)).or_else(|| self.fraction_slots())
+    }
+
     /// Whether this kind's kernel is built from the sketch at a width of its operands' (a
     /// spline length's control-point count) rather than registered: `Constraint::kernel_key`
     /// names it, and nothing may ask `kernel()` for it.
@@ -3029,11 +3036,22 @@ impl Constraint {
     /// because it gates the span machinery; this is the reading for questions about the
     /// parameter itself — chiefly what one unit of it is worth in world length.
     pub fn parametric_contact(&self) -> Option<(EntRef, u32)> {
-        let (e, t) = self.kind.contact_slots()?;
+        self.contact_at(self.kind.contact_slots())
+    }
+
+    /// The entity and the allocated Param at a contact's two slots, once added.
+    fn contact_at(&self, slots: Option<(usize, usize)>) -> Option<(EntRef, u32)> {
+        let (e, t) = slots?;
         match self.args[t] {
             Arg::Param(p) => Some((self.args[e].ent(), p)),
             _ => None,
         }
+    }
+
+    /// Whatever this constraint's place runs along — a spline, a curve, a line's or an arc's run —
+    /// and the Param holding where (`CKind::place_on`).
+    pub fn place(&self) -> Option<(EntRef, u32)> {
+        self.contact_at(self.kind.place_on())
     }
 
     /// A contact on a curve *family* instance (`PointOnCurve`) and the Param holding where
@@ -3041,21 +3059,13 @@ impl Constraint {
     /// shares with a spline and not with an ellipse: a bounded parameter, clamped to the
     /// `over (a, b)` its instance declared (`curve::clamp_contacts`).
     pub fn family_contact(&self) -> Option<(EntRef, u32)> {
-        let (e, t) = self.kind.contact_on(SpecKind::Curve)?;
-        match self.args[t] {
-            Arg::Param(p) => Some((self.args[e].ent(), p)),
-            _ => None,
-        }
+        self.contact_at(self.kind.contact_on(SpecKind::Curve))
     }
 
     /// A contact at a fraction of a line's run or an arc's turn (#248) and the Param holding
     /// the fraction — once added.
     pub fn fraction_contact(&self) -> Option<(EntRef, u32)> {
-        let (e, t) = self.kind.fraction_slots()?;
-        match self.args[t] {
-            Arg::Param(p) => Some((self.args[e].ent(), p)),
-            _ => None,
-        }
+        self.contact_at(self.kind.fraction_slots())
     }
 
     /// The spline a curve contact touches and the parameter it currently sits at — also before
@@ -3674,11 +3684,8 @@ const ARC_FRACTION_SLACK: f64 = 1e-12;
 /// The fraction of an arc's turn a bearing `phi` stands at, the arc starting at the bearing `a0`
 /// and sweeping `sweep` counter-clockwise: on `[0, 1]`, a bearing off the arc read at the end it
 /// is nearer by angle.
-pub fn arc_fraction(phi: f64, a0: f64, sweep: f64) -> f64 {
+fn arc_fraction(phi: f64, a0: f64, sweep: f64) -> f64 {
     const TURN: f64 = 2.0 * std::f64::consts::PI;
-    if sweep <= 0.0 {
-        return 0.0;
-    }
     let past = (phi - a0).rem_euclid(TURN);
     if past <= sweep {
         return past / sweep;
@@ -3814,12 +3821,10 @@ fn validate_ordinate(
     Ok(())
 }
 
-/// The curve a contact's parameter runs along — a spline or a language curve, whichever the
-/// contact names — and `None` for a kind whose own unknown runs along nothing.
+/// What a contact's parameter runs along — a spline, a language curve, a line's or an arc's run,
+/// whichever the contact names — and `None` for a kind whose own unknown runs along nothing.
 pub(crate) fn contact_carrier(kind: CKind, args: &[Arg]) -> Option<EntRef> {
-    let (e, _) = kind.contact_on(SpecKind::Spline)
-        .or_else(|| kind.contact_on(SpecKind::Curve))
-        .or_else(|| kind.fraction_slots())?;
+    let (e, _) = kind.place_on()?;
     Some(args[e].ent())
 }
 
@@ -4021,10 +4026,7 @@ pub fn param_scale(sk: &Sketch, kind: CKind, args: &[Arg], i: usize) -> f64 {
     // Whichever family the contact runs along, the question is the same one, so it is asked once
     // and answered by the entity the slot actually names.  A hidden unknown that runs along
     // nothing is a length already.
-    match kind.contact_slots()
-        .or_else(|| kind.contact_on(SpecKind::Curve))
-        .or_else(|| kind.fraction_slots())
-    {
+    match kind.place_on() {
         Some((e, t)) if t == i => contact_speed(sk, args[e].ent()),
         _ => 1.0,
     }
@@ -4040,8 +4042,7 @@ pub fn contact_speed(sk: &Sketch, e: EntRef) -> f64 {
         // a fraction is worth the whole run: a line's length, an arc's along itself
         EntKind::Line => {
             let l = &sk.lines[e.i()];
-            let d = crate::space::sub(sk.world_point(l.p2 as usize), sk.world_point(l.p1 as usize));
-            crate::space::dot(d, d).sqrt().max(1e-9)
+            crate::space::distance(sk.world_point(l.p2 as usize), sk.world_point(l.p1 as usize)).max(1e-9)
         }
         EntKind::Arc => sk.arc_length(e.i()).max(1e-9),
         _ => crate::curve::speed(sk, e.i()),

@@ -57,13 +57,12 @@ pub(crate) fn settle(
             // and `t perpendicular P` and `P perpendicular t` are one statement — the operands are
             // put in the order the kind names them
             let symmetric = matches!(word, "coincident" | "parallel" | "perpendicular");
-            // a selector by name, or a place pinned or seeded (`t == 0.25`, `hint(t: 0.3)`):
-            // where a contact's place is written is what makes it a fraction of a run (#248)
-            let sel = |n: &str| {
-                w.sel(n).or_else(|| w.slots().any(|(k, _)| k.text == n).then(String::new))
-            };
-            if word == "coincident" && b == EntKind::Circle && sel("t").is_some() {
-                let at = w.slots().find(|(k, _)| k.text == "t").map_or(w.word.span, |(k, _)| k.span);
+            // a selector by name, and a contact's place where it is written, pinned or seeded
+            // (`t == 0.25`, `hint(t: 0.3)`): what makes a point on a run a fraction of it (#248)
+            let place = w.slots().find(|(k, _)| k.text == "t").map(|(k, _)| k.span);
+            let sel = |n: &str| w.sel(n).or_else(|| (n == "t" && place.is_some()).then(String::new));
+            let circle = matches!((a, b), (EntKind::Point, EntKind::Circle) | (EntKind::Circle, EntKind::Point));
+            if let (true, Some(at)) = (word == "coincident" && circle, place) {
                 return Err((at, "a circle has no start or end, so no fraction of its turn: \
                     draw an arc, whose `t` runs from its start to its end".to_string()));
             }
