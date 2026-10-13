@@ -801,6 +801,11 @@ eye's picture plane; depth stays the constraints'.
   plane by a statement is held there by a row, and `project` reads each point in its own plane.
   A point whose seed has a `z`, that a `fix` holds whole, or that is claimed on the plane, stays
   in space.
+- **A point on a curve drawn in a plane is in that plane**: `m coincident g`, `g` a spline or a
+  traced curve drawn in `P` and `m` standing in space, draws `m` in `P` as `m coincident P` would,
+  and `g tangent l` draws a line's free ends there — so a word handed `g` need not be handed its
+  plane. Neither curve has a contact in space, so a point kept there (a `z` seed, a `fix`) is
+  E062, saying what keeps it. A circle or an arc keeps its contact in space.
 - **A point may be drawn in two planes**: `O := point in P, G` lies on their common line, and each
   plane's geometry reads it as its own (`arc(center: O)` drawn in `G` is `G`'s). It is what two
   views tied by `project` say, said once. The same plane twice is E040, parallel planes E061.

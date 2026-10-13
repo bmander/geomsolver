@@ -1,7 +1,8 @@
 // L0 (#243), the station probe: `../lofts.sv` in today's spelling, so each program's section can
 // be solved at one station (`s: 0.5`) before the family exists. Where it differs from the target
 // it says what today lacks: a fraction along a line or an arc (the run or the sweep passed in),
-// the plane an arc or a spline is drawn in (passed in). The tangent at a point of a spline is the
+// the plane an arc is drawn in (passed in). A spline's point is drawn in the spline's plane by
+// being on it (#249), so `OnSpline` is handed no plane; the tangent at a point of a spline is the
 // target's, `g tangent(at: m) tl` (#251).
 //
 // A loft is a face of a component as one of its numbers runs (`solid(I.f over s in (0, 1))`).
@@ -44,13 +45,11 @@ component OnArc(g: arc, view: plane, up: axis, sweep: Angle, s: Scalar) {
 // The plane square to the spline `g` where its parameter is `s`: the tangent there drawn as a line
 // from `m`, the plane square to it, its `v` along `up` (the normal of the plane `g` is drawn in, so
 // again rotation-minimising for a guide in one plane).
-component OnSpline(g: spline, view: plane, up: axis, s: Scalar) {
-  in view {
-    m := point
-    m coincident(t == s) g
-    q := point
-    tl := line(m, q)
-  }
+component OnSpline(g: spline, up: axis, s: Scalar) {
+  m := point
+  m coincident(t == s) g
+  q := point
+  tl := line(m, q)
   g tangent(at: m) tl
   // drawn a length, or `q` slides along it (finding 13: a direction has no word without one)
   distance(10mm) tl
