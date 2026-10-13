@@ -1,8 +1,9 @@
 // L0 (#243), the station probe: `../lofts.sv` in today's spelling, so each program's section can
 // be solved at one station (`s: 0.5`) before the family exists. Where it differs from the target
-// it says what today lacks: the plane a spline is drawn in (passed in). A fraction along a line or
-// an arc is the contact's own `t` (#248), and the tangent at a point of a spline is
-// `g tangent(at: m) tl` (#251), as the target's.
+// it says what today lacks. A fraction along a line or an arc is the contact's own `t` (#248),
+// and a spline's point is drawn in the spline's plane by being on it (#249), so no station is
+// handed a run, a sweep or a plane; the tangent at a point of a spline is the target's,
+// `g tangent(at: m) tl` (#251).
 //
 // A loft is a face of a component as one of its numbers runs (`solid(I.f over s in (0, 1))`).
 // The words here only say where a station stands on its path. What the section is at that station
@@ -12,11 +13,13 @@ use std (on_u)
 
 // The plane square to the line `g` at the fraction `s` of the way from its start to its end: its
 // origin there, its normal along `g`, and its `v` held along `up` (any direction square to `g`).
-// Along a straight guide every station is the first one moved, so nothing turns.
+// Along a straight guide every station is the first one moved, so nothing turns. The plane starts
+// as it ends, read off the guide and `up`: `v` along `up`, and `u` that turned back a quarter about
+// `g`, so its normal runs along `g` (README, finding 7).
 component OnLine(g: line, up: axis, s: Scalar) {
   m := point
   m coincident(t == s) g
-  n := plane
+  n := plane(u: hint(dir: up, turn: -90deg, about: g), v: hint(dir: up))
   n.origin coincident m
   g perpendicular n.u
   n.u perpendicular up
@@ -40,13 +43,11 @@ component OnArc(g: arc, up: axis, s: Scalar) {
 // The plane square to the spline `g` where its parameter is `s`: the tangent there drawn as a line
 // from `m`, the plane square to it, its `v` along `up` (the normal of the plane `g` is drawn in, so
 // again rotation-minimising for a guide in one plane).
-component OnSpline(g: spline, view: plane, up: axis, s: Scalar) {
-  in view {
-    m := point
-    m coincident(t == s) g
-    q := point
-    tl := line(m, q)
-  }
+component OnSpline(g: spline, up: axis, s: Scalar) {
+  m := point
+  m coincident(t == s) g
+  q := point
+  tl := line(m, q)
   g tangent(at: m) tl
   // drawn a length, or `q` slides along it (finding 13: a direction has no word without one)
   distance(10mm) tl

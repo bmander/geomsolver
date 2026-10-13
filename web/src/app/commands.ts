@@ -265,19 +265,24 @@ function cTangent(): void {
   }
   if (lines.length === 1 && circles.length === 1) {
     const ln = lines[0], cc = circles[0];
+    /* A point the two already share is where the tangency will land, so it is stated *at* that
+     * point: the pair (point on the rim, bare tangency) says the same thing as a double root,
+     * rank-deficient at every solution.  What is asked here is only *where* they meet — an end
+     * of the line that is an end of the arc, else one the sketch already says is on the rim
+     * (the core's question, as the constraints bar asks it) — and which form that point means
+     * is the core's table (`C.tangencyAt`), the one a chain's joint reads. */
+    const lineEnds = [['p1', ln.p1], ['p2', ln.p2]] as const;
     if (cc instanceof Arc) {
-      const ends = new Set([ln.p1, ln.p2]);
-      if (ends.has(cc.start)) return view.addConstraints(new C.TangentArcLine(cc, ln, 'start'));
-      if (ends.has(cc.end)) return view.addConstraints(new C.TangentArcLine(cc, ln, 'end'));
-    } else {
-      // a line end the user has already put on this circle is where the tangency will land, so
-      // it is stated *at* that point — the pair (PointOnCircle, TangentLineCircle) says the
-      // same thing as a double root, rank-deficient at every solution.  Whether the sketch
-      // already says a point is on the circle is the core's question, the same one the
-      // constraints bar asks before offering to edit a dimension.
-      const on = (p: Point) => C.stating(view.sketch, new C.PointOnCircle(p, cc)) !== null;
-      if (on(ln.p1)) return view.addConstraints(new C.TangentLineCircleAt(ln, cc, 'p1'));
-      if (on(ln.p2)) return view.addConstraints(new C.TangentLineCircleAt(ln, cc, 'p2'));
+      for (const [lw, p] of lineEnds) {
+        const aw = p === cc.start ? 'start' : p === cc.end ? 'end' : null;
+        const c = aw && C.tangencyAt(cc, aw, ln, lw);
+        if (c) return view.addConstraints(c);
+      }
+    }
+    const on = (p: Point) => C.stating(view.sketch, new C.PointOnCircle(p, cc)) !== null;
+    for (const [lw, p] of lineEnds) {
+      const c = on(p) && C.tangencyAt(cc, null, ln, lw);
+      if (c) return view.addConstraints(c);
     }
     view.addConstraints(new C.TangentLineCircle(ln, cc));
   } else if (circles.length === 2 && !lines.length) {

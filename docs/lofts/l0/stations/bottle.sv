@@ -6,10 +6,10 @@
 // Closed form: none (the rail is a cubic); the volume is π∫r² dz, held to quadrature.
 unit mm
 use std (horizontal, vertical)
-use seeded
+use lofts
 
 component Body(g: line, up: axis, front: plane, rail: spline, s: Scalar) {
-  st := seeded.OnLine(g, up: up, s: s)
+  st := lofts.OnLine(g, up: up, s: s)
   rim := point in st.n, front
   rim coincident rail
   in st.n {

@@ -43,7 +43,7 @@ fixtures.
 | [`twisted_duct.sv`](l0/twisted_duct.sv) | `solid_twist.sv` | a twist law; 1260° in one statement | 16000 at any twist (Cavalieri) | DOF 0, corner turned 630° |
 | [`spring.sv`](l0/spring.sv) | — | a wire square to a helix; an axial thread under a screw | 9π·√(400π² + 25); 240π | DOF 0, lead angle, rise 10 |
 | [`pipe.sv`](l0/pipe.sv) | — | a chain of lines and tangent arcs as one path | 16π(60 + 25π) | *pending: `path`* |
-| [`bottle.sv`](l0/bottle.sv) | — | smooth through three sections; end tangents | quadrature | DOF 0 (seeded, finding 7) |
+| [`bottle.sv`](l0/bottle.sv) | — | smooth through three sections; end tangents | quadrature | DOF 0, R 28.59 at 45 |
 | [`blade.sv`](l0/blade.sv) | — | two rails in plan holding the width | 2100 | DOF 0, rails at ±7 |
 | [`square_to_circle.sv`](l0/square_to_circle.sv) | — | a square to a circle, one section | 8000 + 1000π | DOF 0, corners ±5, R5 |
 | [`pyramid.sv`](l0/pyramid.sv) | — | a loft to a point | 4000 | DOF 0, half 5 |
@@ -80,7 +80,7 @@ fixtures.
      (finding 8) and any expression in `s` (`twist * (3 * s^2 - 2 * s^3)`), since `s` is a column
      the station holds fixed, not a free name of the drawing (which is affine only).
 
-2. **A point at a fraction of a line's or an arc's run.** *Done (#248, Solvent 0.81).*
+2. **A point at a fraction of a line's or an arc's run.** *Done (#248, Solvent 0.82).*
    - `m coincident(t == s) g` was refused on a line and on an arc ("`coincident` has no slot `t`").
      A spline's contact has `t`, and so does a curve's.
    - A line's and an arc's point contact now take `t` too, as a fraction from `p1` to `p2` (on past
@@ -90,14 +90,18 @@ fixtures.
 
 3. **A point in space on a curve drawn in a plane.**
    - `m coincident(t == s) g` with `g` an arc or a spline in `std.top` and `m` in space is E062.
-     *An arc's is read in space since #248* (the elbow's `OnArc` passes no `view`); a spline's
-     still is E062.
+     *An arc's is read in space since #248* (`PointAlongArc3`: the elbow's `OnArc` passes no
+     `view`).
      The station's point must be drawn in the guide's plane.
    - A closed component cannot name the plane its argument is drawn in, so the probe passes it
      (`view: plane`).
    - Options:
      - read such a contact in space, as 0.74 reads `gear.M coincident q` (the twin rule);
      - or give a drawn entity a member naming its plane (`g.plane`).
+   - **Done for a spline and a traced curve** (#249): a point in space said on one is drawn in its
+     plane (membership, §6.21's one rule), and a line said tangent to one has its free ends drawn
+     there, so the probe's `OnSpline` takes no `view:`. With an arc's fraction read in space
+     (#248), neither does `OnArc`: no station word is handed a plane.
 
 4. **A plane's own axes are not held square, and every station word has to say so.** The first
    drafts of `OnLine` and `OnHelix` came out DOF 1 and DOF 4 (the reducer's and the spring's
@@ -134,15 +138,18 @@ fixtures.
    - The alternative, a family per link unioned (`repeat e in route { … }`), needs kind dispatch
      (finding 8) and names a wall once per link.
 
-7. **Seeding the first station.**
-   - The station plane's attitude must start near its answer: the bottle's twin rim point is judged
+7. **Seeding the first station.** *Done (#252, Solvent 0.81).*
+   - The station plane's attitude must start near its answer: the bottle's twin rim point was judged
      against the seeded plane before the solve (E061, "`bottle.st.n` and `std.front` are parallel").
-   - A literal seed in the word cannot serve every guide: seeding it for the bottle breaks the
-     reducer and the blade (`stations/seeded.sv` is the bottle's alone).
-   - Proposals:
-     - L1 seeds station 0 from the guide's tangent (a seed that reads geometry, §6.4, extended to
-       `hint(dir: …)`), and every later station from its neighbour;
-     - E061's twin judgement waits for planes the solve places (`views::place`).
+   - A literal seed in the word cannot serve every guide: seeding it for the bottle broke the
+     reducer and the blade (a `stations/seeded.sv` was the bottle's alone).
+   - Now:
+     - a direction seed reads geometry (§6.4): `OnLine` seeds `n` from its guide and `up`,
+       `plane(u: hint(dir: up, turn: -90deg, about: g), v: hint(dir: up))`, so every station
+       starts square to its guide, and the bottle and every other station solve over the one
+       library. L1 seeds every later station from its neighbour;
+     - E061's twin judgement waits for planes the solve places: judged once `views::place` has
+       placed them, else where the solve leaves them.
 
 8. **The generic two-face loft is not writable** (`two_faces.sv`, `pending.Ruled`). CAD's
    "loft these two sketches" needs, in a word's body:
@@ -200,10 +207,10 @@ fixtures.
 
 - **Before L1 (language, each its own small issue):**
   - ~~finding 2 (`t` on a line's and an arc's contact)~~, done in #248;
-  - finding 3 (a point in space on a planar curve);
+  - ~~finding 3 (a point in space on a planar curve)~~, done in #249 (splines, curves) and #248 (arcs);
   - finding 4 (a std word for a square frame);
   - finding 5 (`path` type, the At-form of a spline's and a curve's tangency);
-  - finding 7 (seed reading geometry for a plane; E061 after placement).
+  - ~~finding 7 (seed reading geometry for a plane; E061 after placement)~~, done in #252.
 
   Each has a use outside lofts.
 - **L1 (the family):**

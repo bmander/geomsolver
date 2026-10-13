@@ -40,7 +40,11 @@ shared axes it would sit on them. `P.origin coincident p`, `P coincident p`, `P 
 (one row along P's normal); `P parallel Q` (`PlaneParallel`, normals alike either way, two
 rows; no plane–plane angle yet); `fix(origin == (x, y, z)) P`. A plane's child slot takes a seed,
 `plane(u: hint(dir: (x, y, z)))` (`KidSeed` carries x, y, z; a point's refuses z), and
-`commit_seeds` writes a minted axis's direction back there.
+`commit_seeds` writes a minted axis's direction back there. **Or read off geometry** (0.81, #252):
+`hint(dir: up)` an axis, a line `p1`→`p2` in space, `P.n`; `turn: θ, about: g` turns it
+(`KidSeed::dir`, `syntax::DirRef`; `Deferred::Dir`, `entities::direction_of`, read again after
+`views::place` where it reads what that places, `crosses_views`); never written back. The loft
+station `OnLine` seeds `n` so (`docs/lofts/l0/stations/lofts.sv`); `tests/seeds.rs` is the gate.
 An origin already on one axis is placed in fewer rows than three (`P.origin coincident
 std.front`), or the structural count sees a redundancy. W113 warns of two planes lying on one
 another. `views::place`
@@ -67,7 +71,8 @@ hinges, `against`, the role rule, page placement, `std.ThreeViews`.
 flattener declares a hidden **twin** per further plane beside it (`Walk::twins_of`, key `O@1`,
 `hint(at: O)`, `Expansion::twins`); the elaborator records them (`Sketch::twins`) and, after the
 relations, ties each (`planes::tie_twins`, E040 a plane twice; `planes::parallel_twins` E061 after
-`views::place`): `Sketch::tie_twin`'s two intrinsic rows, the twin on the point's plane and
+`views::place`, of the planes it placed — `place` says which — and of a plane only seeded where the
+solve leaves it, `views::degenerate`'s twin row, #252): `Sketch::tie_twin`'s two intrinsic rows, the twin on the point's plane and
 `Project`, then `Sketch::hold_twins`' point on the twin's plane — left out where a line the plane is
 built along (`axes_along`'s `Parallel3`) ends at the point or has it stated on it, a dependency the
 structural count cannot see (#88). The crown's normal section N is square so. A point is read where its reader
@@ -528,7 +533,13 @@ it. `q coincident P` (or `l coincident P`, its ends) of a point standing in spac
 `PointE.plane` (`planes::incidences`, after `memberships`, in statement order; the statement
 then states nothing, `drawn` in `program.rs`), the rows `in P` makes. Kept in space, a row:
 a point with a `Deferred::Height` seed, held by a `fix`, a dual's point (`along.point`), a
-ring's, or claimed. **A set whose body is a circle's is the circle**, the one entry so far of
+ring's, or claimed. **A point on a curve drawn in a plane is in it** (#249): `m coincident g` (pins
+allowed), `g` a spline or a traced curve (`planes::drawn_plane`, not an extrusion) drawn in `P`, draws a
+point in space in `P`, and `g tangent l` (either way round, `at:` too, #251) a line's free ends —
+read off the kind `relations::settle` gives, so a word the operands do not take draws nothing; the
+statement stays the 2D contact. A
+kept point is E062 naming what keeps it (`kept`'s cause), its statement returned apart from the
+lowered ones and skipped; a circle or an arc keeps `PointOnCircle3`. `tests/curve_membership.rs`. **A set whose body is a circle's is the circle**, the one entry so far of
 **`lowering.rs`**, the table of what a set may be drawn as (#140): `lowering::shape` reads `{ p
 | p coincident X; p distance(r) Y }` (the flattener's and `edit::set_dimension`'s one reader),
 and `lower_circle` (in `set_made`, outside applications) emits `circle(center: Y)` under the
@@ -1425,7 +1436,7 @@ Conventions:
   `SharedPlace`: the unknown and its curve) for every contact on that curve (E040 otherwise, and
   for a name a dimension also reads: `Fault::Place`). `remove` retires it with its last owner;
   `graft` and `lift` read `Sketch::owned_arg`, the JSON `"shared"`. `tests/shared_contact.rs`.
-  **A point at a fraction of a line's run or an arc's turn** (#248, 0.81): `m coincident(t == 0.25)
+  **A point at a fraction of a line's run or an arc's turn** (#248, 0.82): `m coincident(t == 0.25)
   g` is `PointAlongLine` / `PointAlongArc` (twins in space `PointAlongLine3` / `PointAlongArc3`,
   `reading::in_space` carrying the place), chosen in `infix_op` only where `t` is written (a pin or
   a seed, `relations::settle`'s `sel`), so plain `coincident` pays no column; kernels written once
@@ -1524,17 +1535,22 @@ Conventions:
   tolerance; the `Tol`-taking factorisations are `pub(crate)`.  (`decompose::deficiency` and
   `homotopy` keep a relative rank on their own synthetic matrices.)  `jacobian_dense` stays the
   raw `∂r/∂z` for solvers and finite-difference checks.
-- A tangency whose contact the drawing already holds to the curve is stated *at* that point, or
-  it is a double root: `PointOnCircle(p, C)` + `TangentLineCircle(L, C)` with p an endpoint of L
-  is rank-deficient at *every* solution.  `TangentLineCircleAt(line, circle, at)` (the
-  `tangent_arc_line` kernel) is regular, and `commands::cTangent` states it whenever the line has
-  an end already on the circle.  For degenerate pairs that still arise, the diagnosis and the
-  witness settle-test the surplus motions: step along a null direction, settle, and a motion that
-  walks back is `shaky` — out of the DOF, "blocked at second order", never painted under- or
-  over-constrained.  `numeric_rank` already includes them; nothing adds `shaky` back.  Every
-  guard is inside `witness::screen`: at a solution, a tangency present, removals capped at what
-  the matching cannot account for, at most `SCREEN_MAX`.  A double root's singular value is as
-  small as a real freedom's, so a candidate is recognised only by trying it.
+- A tangency whose contact the drawing already holds to the curve is stated *at* that point, or it
+  is a double root: `PointOnCircle(p, C)` + `TangentLineCircle(L, C)` with p an endpoint of L is
+  rank-deficient at *every* solution.  `TangentLineCircleAt(line, circle, at)` (the
+  `tangent_arc_line` kernel) is regular.  **Which At-form a contact means is one table**,
+  `constraints::tangency_at` (#5: an arc's own end first, `TangentArcLine`; then a line's against a
+  rim, `TangentLineCircleAt`; two lines `parallel`; two round things none; `at:` always an end of
+  the operand written first), matched over every `Run` a kind given ends must name
+  (`EntKind::ends`), so a new way to run stops the build there.  A chain's threaded joint asks it,
+  and `commands::cTangent` through the registry's `tangencyAt` (`C.tangencyAt`) once it finds where
+  the two already meet.  For degenerate pairs that still arise, the diagnosis and the witness
+  settle-test the surplus motions: step along a null direction, settle, and a motion that walks back
+  is `shaky` — out of the DOF, "blocked at second order", never painted under- or over-constrained.
+  `numeric_rank` already includes them; nothing adds `shaky` back.  Every guard is inside
+  `witness::screen`: at a solution, a tangency present, removals capped at what the matching cannot
+  account for, at most `SCREEN_MAX`.  A double root's singular value is as small as a real
+  freedom's, so a candidate is recognised only by trying it.
   **The tangent at a point of any path** (#251): `g tangent(at: m) l`, the parser reading `at:`
   as a point unless it is `start`/`end`/`p1`/`p2` — of a spline `SplineTangentAt` (the
   `spline_tangent_at` kernel, `spline_tangent_line`'s direction row alone), of a curve

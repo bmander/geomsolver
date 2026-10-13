@@ -1056,7 +1056,9 @@ pub(super) fn instance_part(lit: &SetLit) -> (Vec<Stmt>, SetLit) {
                 for kid in d.children.iter().flatten() {
                     match kid {
                         Kid::Ref(r) => out.push(&r.root.text),
-                        Kid::Hint(_) => {}
+                        Kid::Hint(ks) => {
+                            out.extend(ks.dir.iter().flat_map(|d| d.refs()).map(|r| r.root.text.as_str()));
+                        }
                         _ => return None,
                     }
                 }

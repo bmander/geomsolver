@@ -692,6 +692,77 @@ pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option
     })
 }
 
+/// One side of a tangency at a point the drawing already holds (#5): what it is — `None` for a
+/// name whose kind elaboration has yet to say — and which of its ends the point is, as
+/// `EntKind::ends` indexes them; `None` where the point lies on it but is none of its ends.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Touch {
+    pub kind: Option<EntKind>,
+    pub end: Option<usize>,
+}
+
+/// A tangency stated at its contact: `word` between the two sides — in the order they were
+/// asked, or `swap`ped — with `at:` naming an end **of the operand written first**.  The two
+/// At-forms name the contact from opposite sides (`arc tangent line at: end` the arc's end,
+/// `line tangent circle at: p2` the line's), and that rule is what lets one entry say both.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TangentAt {
+    pub word: &'static str,
+    pub swap: bool,
+    pub at: Option<&'static str>,
+}
+
+impl TangentAt {
+    /// The constraint it settles to between sides of kinds `a` and `b`, by `infix_op` over the
+    /// operands as written — so the entry says a word and a selector, never a second name.
+    pub fn kind(self, a: EntKind, b: EntKind) -> Option<CKind> {
+        let (x, y) = if self.swap { (b, a) } else { (a, b) };
+        let at = self.at;
+        infix_op(self.word, x, y, &|k| if k == "at" { at.map(str::to_string) } else { None })
+    }
+}
+
+/// **Which regular tangency two things touching at a held point mean** (#5).  A tangency whose
+/// contact the drawing already holds must be stated *at* that point, or it is a double root —
+/// rank-deficient at every solution — and this is the one table saying how.  A chain knows the
+/// contact by threading (one link's exit, the next one's entry; `syntax`'s `joint_relation`)
+/// and the app by which end it finds already there (`commands.ts::cTangent`, through the
+/// registry's `tangencyAt`), so it takes both sides and either may name the point.
+///
+/// A side names the contact by its own end as it runs there (`EntKind::ends`, matched over
+/// every `Run`, so a kind given ends says how it runs and a new way stops the build here): a
+/// round end against a straight side first (`TangentArcLine`), then a straight end against a
+/// round side (`TangentLineCircleAt`, a circle or an arc's rim); two straight runs meeting are
+/// collinear (`parallel`).  Two round things already touch where they meet, so there is no
+/// regular form left: `None`, as for every pair it does not name — the caller says why in its
+/// own terms.
+pub fn tangency_at(a: Touch, b: Touch) -> Option<TangentAt> {
+    use crate::model::Run;
+    let run = |t: Touch| t.kind.and_then(EntKind::ends).map(|e| e.run);
+    // what a side not known yet may turn out to be is elaboration's to refuse
+    let straight = |t: Touch| t.kind.is_none() || run(t) == Some(Run::Straight);
+    let round = |t: Touch| {
+        matches!(t.kind, None | Some(EntKind::Circle)) || run(t) == Some(Run::Round)
+    };
+    if run(a) == Some(Run::Straight) && run(b) == Some(Run::Straight) {
+        return (a.end.is_some() || b.end.is_some())
+            .then_some(TangentAt { word: "parallel", swap: false, at: None });
+    }
+    // `side`'s own end names the contact, ranked: a round end before a straight one
+    let named = |side: Touch, other: Touch, swap: bool| {
+        let k = side.kind?;
+        let ends = k.ends()?;
+        let at = k.end_name(side.end?)?;
+        let (rank, fits) = match ends.run {
+            Run::Round => (0, straight(other)),
+            Run::Straight => (1, round(other)),
+        };
+        fits.then_some((rank, TangentAt { word: "tangent", swap, at: Some(at) }))
+    };
+    let both = [named(a, b, false), named(b, a, true)];
+    both.into_iter().flatten().min_by_key(|(rank, _)| *rank).map(|(_, t)| t)
+}
+
 /// **Whether the language itself has a word of this fixity** (§9.9): what a relation word may
 /// not be defined as.  Read off the tables that settle a statement — `infix_op` and `prefix_op`
 /// over every pair of kinds, the gauges, the calls and the words about solids — so a word the
