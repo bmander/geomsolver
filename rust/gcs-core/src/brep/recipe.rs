@@ -126,7 +126,15 @@ pub fn node_named(n: &Json,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64
                 let tol = (1e-9*stratum.size()).max(floor);
                 for k in rolled {
                     let (at,r) = (vec3(field(k,"at")?),field(k,"radius")?.as_f64());
-                    pieces.push(super::fillet::roll(&stratum,at,r,tol).map_err(|e| format!("a rolled round: {e}"))?.piece);
+                    // a chamfer's flat cut along the run instead (#218's 6)
+                    pieces.push(match k.get("legs") {
+                        Some(legs) => {
+                            let legs = legs.arr();
+                            let ([la,lb],on) = ([legs[0].as_f64(),legs[1].as_f64()],vec3(field(k,"on")?));
+                            super::fillet::flat_along(&stratum,at,[la,lb],Some(on),tol).map_err(|e| format!("a flat along a run: {e}"))?
+                        }
+                        None => super::fillet::roll(&stratum,at,r,tol).map_err(|e| format!("a rolled round: {e}"))?.piece,
+                    });
                 }
             }
             let joins: Vec<[usize;2]> = field(n,"joins")?.arr().iter()

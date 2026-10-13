@@ -285,6 +285,21 @@ pub enum Piece {
 pub struct Rolled {
     pub at: V,
     pub r: f64,
+    /// A chamfer's flat cut along the run instead (#218's 6): its legs, on the face `on` stands
+    /// beside and on the other, each from the other face's surface (`brep::fillet::flat_along`).
+    pub flat: Option<([f64; 2], V)>,
+}
+
+impl Rolled {
+    /// Its piece, against the stratum `b` (millimetres, `mm` of them a model unit, `q` a point of
+    /// the model in its space).
+    fn build(&self, b: &crate::brep::topo::Brep, mm: f64, q: impl Fn(V) -> V, tol: f64)
+        -> Result<crate::brep::topo::Brep, String> {
+        match self.flat {
+            None => Ok(crate::brep::fillet::roll(b, q(self.at), self.r * mm, tol)?.piece),
+            Some(([la, lb], on)) => crate::brep::fillet::flat_along(b, q(self.at), [la * mm, lb * mm], Some(q(on)), tol),
+        }
+    }
 }
 
 /// The faces a region rounds or cuts at, and whether it lies within all of them (a convex edge's
@@ -628,12 +643,23 @@ fn run(body: &super::faces::BodyFaces, ga: &[usize], gb: &[usize], within: bool,
         }),
     };
     if edges.iter().any(|&e| !carried(e)) {
-        let Section::Round(r) = section else { return unbuilt("a flat along a traced edge") };
-        // a piece for each run of them (two generators of a half cone: two runs)
-        return Ok(body.runs(&edges).into_iter().filter_map(|run| {
+        // a piece for each run of them (two generators of a half cone: two runs): a ball rolled
+        // along it, or a flat cut along it — its legs told apart by a point beside face `a`'s
+        return body.runs(&edges).into_iter().filter(|run| body.convex(run[0]) == Some(within)).map(|run| {
             let e = run[0];
-            (body.convex(e) == Some(within)).then(|| Piece::Rolled(Rolled { at: body.middle(e), r }))
-        }).collect());
+            let at = body.middle(e);
+            Ok(Piece::Rolled(match section {
+                Section::Round(r) => Rolled { at, r, flat: None },
+                Section::Flat { la, lb } => {
+                    let &[f0, f1] = body.faces_of(e) else { return unbuilt("an edge not between two faces") };
+                    let (fa, fb) = if ga.contains(&f0) { (f0, f1) } else { (f1, f0) };
+                    let na = body.normal(fa, at);
+                    let t = toward(body.normal(fb, at), within);
+                    let w = normalised(sub(t, scale(na, dot(t, na)))).ok_or("faces meeting tangent")?;
+                    Rolled { at, r: 0.0, flat: Some(([la, lb], add(at, scale(w, 0.5 * la)))) }
+                }
+            }))
+        }).collect();
     }
     let all: Vec<usize> = ga.iter().chain(gb).copied().collect();
     let ends = body.end_sides(&edges, &all);
@@ -1056,7 +1082,7 @@ pub fn assemble<'a>(pieces: impl IntoIterator<Item = &'a Piece>) -> Assembly {
         Piece::Run(r) => norm(r.origin) + r.span[0].abs().max(r.span[1].abs()),
         Piece::Ring(g) => norm(g.section.origin) + norm(g.axis_origin),
         Piece::Corner(c) => norm(c.vertex) + c.r,
-        Piece::Rolled(k) => norm(k.at) + k.r,
+        Piece::Rolled(k) => norm(k.at) + k.r + k.flat.map_or(0.0, |([la, lb], _)| la.max(lb)),
     }).fold(1.0, f64::max);
     let near = |p: V, q: V| distance(p, q) <= 1e-9 * size;
     let same_stroke = |a: &Stroke, b: &Stroke| match (a, b) {
@@ -1084,7 +1110,8 @@ pub fn assemble<'a>(pieces: impl IntoIterator<Item = &'a Piece>) -> Assembly {
             Piece::Corner(c) if !out.corners.iter().any(|d| near(c.vertex, d.vertex) && near(c.centre, d.centre)) => {
                 out.corners.push(c.clone())
             }
-            Piece::Rolled(k) if !out.rolled.iter().any(|j| near(j.at, k.at) && (j.r - k.r).abs() <= 1e-9 * size) => {
+            Piece::Rolled(k) if !out.rolled.iter().any(|j| near(j.at, k.at) && (j.r - k.r).abs() <= 1e-9 * size
+                && j.flat.is_some() == k.flat.is_some()) => {
                 out.rolled.push(k.clone());
             }
             _ => {}
@@ -1205,8 +1232,14 @@ impl Assembly {
             ("radius", (c.r * by).into()), ("faces", Json::Arr(c.faces.iter().map(|f| f.json(by)).collect())),
         ])).collect();
         let joins = self.joins.iter().map(|j| Json::Arr(j.iter().map(|&k| k.into()).collect())).collect();
-        let rolled = self.rolled.iter()
-            .map(|k| object([("at", vector(scale(k.at, by))), ("radius", (k.r * by).into())])).collect();
+        let rolled = self.rolled.iter().map(|k| {
+            let mut o = object([("at", vector(scale(k.at, by))), ("radius", (k.r * by).into())]);
+            if let Some(([la, lb], on)) = k.flat {
+                o.set("legs", Json::Arr(vec![(la * by).into(), (lb * by).into()]));
+                o.set("on", vector(scale(on, by)));
+            }
+            o
+        }).collect();
         Ok(object([("kind", "lowered".into()), ("pieces", Json::Arr(pieces)), ("corners", Json::Arr(corners)),
             ("joins", Json::Arr(joins)), ("rolled", Json::Arr(rolled))]))
     }
@@ -1241,7 +1274,7 @@ fn gate(sk: &Sketch, solid: usize, pieces: &[Piece], body: &super::faces::BodyFa
         let tol = 1e-9 * stratum.size().max(1.0);
         let mut all: Option<crate::brep::topo::Brep> = None;
         for k in rolled {
-            let piece = crate::brep::fillet::roll(stratum, body.q(k.at), k.r * mm, tol)?.piece;
+            let piece = k.build(stratum, mm, |p| body.q(p), tol)?;
             all = Some(match all {
                 None => piece,
                 Some(b) => crate::brep::recipe::combined(&b, &piece, crate::brep::boolean::Op::Union, 0.0)?,

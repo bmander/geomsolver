@@ -963,3 +963,47 @@ fn a_frustums_generators_are_rolled() {
     let want = 392.0 * PI - 2.0 * crate::fillet_definition::frustum_generator(10.0, 1.0 / 3.0, [0.0, 12.0], 1.0);
     near_quadrature(props::volume(&b), want);
 }
+
+/// **A flat along a traced edge** (#218's 6): `tee.sv`'s crotch and `bore.sv`'s rim chamfered
+/// instead of rounded. No line or circle carries either edge: the flat — where the two walls'
+/// distances, each over the other's leg, sum to one — is sectioned square to the edge between its
+/// two legs (each wall met with the other grown by the leg) and fitted, its strips on the walls
+/// built as a rolled round's are (`brep::fillet::flat_along`). Each held to a quadrature over its
+/// sections square to the edge (`fillet_definition::{tee_flat, bore_flat}`) to 1e-6.
+#[test]
+fn chamfers_along_traced_edges_are_flats_fitted() {
+    let ex = |s: &str| s.replace("use std (round)", "use std (chamfer)").replace("round(r: r)", "chamfer(d: 1mm)");
+    let e = solved(&ex(include_str!("../../examples/rounds/tee.sv")));
+    assert_eq!(lowered(&e).0, 1);
+    let want = PI * 100.0 * 60.0 + PI * 36.0 * 25.0 - inside_crossing(10.0, 6.0)
+        + crate::fillet_definition::tee_flat(10.0, 6.0, 1.0);
+    near_quadrature(props::volume(&exported(&e, "tee")), want);
+    let e = solved(&ex(include_str!("../../examples/rounds/bore.sv")));
+    assert_eq!(lowered(&e).0, 1);
+    let want = PI * 100.0 * 60.0 - inside_crossing(10.0, 6.0) - crate::fillet_definition::bore_flat(10.0, 6.0, 1.0);
+    near_quadrature(props::volume(&exported(&e, "pipe")), want);
+}
+
+/// The same along runs that end: `runout.sv` chamfered. The lug's root and the vent's rim are each
+/// cut on past the face their edge ends on and cut off by its plane, as their rolled rounds are:
+/// held to the flat's quadrature over sections clipped by that plane (`sloped_flat`), on
+/// `rounds_that_run_out_onto_a_face_are_rolled_and_cut_off`'s solids, to 1e-6.
+#[test]
+fn chamfers_that_run_out_onto_a_face_are_cut_off() {
+    use crate::fillet_definition::{sloped_flat, RIM, ROOT};
+    let src = include_str!("../../examples/rounds/runout.sv").replace("use std (round)", "use std (chamfer)")
+        .replace("round(r: 2mm)", "chamfer(d: 1mm)").replace("round(r: 1mm)", "chamfer(d: 1mm)");
+    let e = solved(&src);
+    assert_eq!(lowered(&e).0, 2);
+    let wedge = 40.0 * 15.0 * 24.0;
+    let (seg, _) = segment(6.0, 3.0);
+    let lug = wedge + PI * 36.0 * 30.0 - 15.0 * (PI * 36.0 - seg)
+        + sloped_flat(6.0, [20.0, -3.0], [20.0, 0.25], 1.0, ROOT, &[([0.0, 1.0, 0.0], 0.0)]);
+    near_quadrature(props::volume(&exported(&e, "lug")), lug);
+    let (seg, off) = segment(4.0, 2.0);
+    let short = PI * 16.0 - seg;
+    let x = (98.0 * PI * 16.0 - (98.0 + off) * seg) / short;
+    let vent = wedge - (35.0 - 0.25 * x) * short
+        - sloped_flat(4.0, [98.0, -12.0], [35.0, 0.25], 1.0, RIM, &[([1.0, 0.0, 0.0], 100.0)]);
+    near_quadrature(props::volume(&exported(&e, "vent")), vent);
+}

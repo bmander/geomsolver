@@ -349,7 +349,7 @@ fn shifted_node(n: &Json,by: [f64;3]) -> Json {
         let pieces = Json::Arr(pieces.iter().map(|p| shifted_node(p,by)).collect());
         n.set("pieces",pieces);
     }
-    for (key,at) in [("corners",&["vertex","centre"][..]),("rolled",&["at"][..]),("within",&["at"][..]),("kept",&["origin"][..])] {
+    for (key,at) in [("corners",&["vertex","centre"][..]),("rolled",&["at","on"][..]),("within",&["at"][..]),("kept",&["origin"][..])] {
         if let Some(Json::Arr(list)) = n.get(key) {
             let list = Json::Arr(list.iter().map(|c| {
                 let mut c = points(c,at);

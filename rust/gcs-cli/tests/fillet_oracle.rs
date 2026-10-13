@@ -64,7 +64,7 @@ fn edge_of(p: &Piece) -> Option<(V,f64,bool)> {
             // half way round its turn
             Some((Rigid::turn(g.axis_origin,g.axis,0.5*g.angle).point(g.section.origin),s,chamfer))
         }
-        Piece::Rolled(k) => Some((k.at,k.r,false)),
+        Piece::Rolled(k) => Some(match k.flat { None => (k.at,k.r,false),Some(([la,_],_)) => (k.at,la,true) }),
         Piece::Corner(_) => None,
     }
 }
