@@ -115,14 +115,14 @@ component HypoidPair(P: plane, across: axis, up: axis, pinion_teeth: Int, gear_t
       lean: inner_lean)
     pinion_outer := Topping(tooth.outer, mill.ax, N, mill.to_outer, height: -depth,
       lean: outer_lean)
-    pinion_top := std.Level(trace.C, mill.ax, d: -addendum / 2)
+    pinion_top := std.HalfSpace(trace.C, mill.ax, d: -addendum / 2)
     construction pinion_topping := Tooth(pinion_inner.cone, pinion_outer.cone, mill.tooth_base,
       pinion_top, grow: 0mm, r: rounding)
     gear_outer := Topping(gear_space.inner, mill.ax, N, mill.to_outer, height: depth,
       lean: outer_lean)
     gear_inner := Topping(gear_space.outer, mill.ax, N, mill.to_inner, height: depth,
       lean: inner_lean)
-    gear_top := std.Level(trace.C, mill.ax, d: addendum / 2)
+    gear_top := std.HalfSpace(trace.C, mill.ax, d: addendum / 2)
     construction gear_topping := Space(gear_outer.cone, gear_inner.cone, gear_top,
       mill.mate_base, mill.reach, crown_neighbor, grow: 0mm, r: rounding)
     pinion_relief := Generated(pinion.body, pinion_topping.crown, pinion_generation,
@@ -133,6 +133,15 @@ component HypoidPair(P: plane, across: axis, up: axis, pinion_teeth: Int, gear_t
 }
 
 // -- the pitch cones and the tooth trace -------------------------------------------------------
+// What the steps below read of one another, each an interface: the gear's cone as the trace, the
+// pinion's cone and the face mill read it, the trace as the pinion's cone and the mill read it,
+// and the proportions a blank is cut to. A step is handed the instance, and reads only these.
+interface Gear {
+  O: point, M: point, generator: line, ax: line, to_apex: line, to_foot: line, crown_ax: line
+}
+interface Trace { C: point, normal: line, to_heading: line }
+interface BlankDesign { width: Length, addendum: Length, back: Length, relief: Length }
+
 // The gear's pitch cone: its apex O at P's origin and M on P's u axis beyond it; the gear's right
 // triangle O–M–F stands square to P on the generator O → M, F (`foot`) the foot of M on the gear's
 // axis `ax` below P, level with O along `across`, its legs the two pitch radii at M. The pitch angle and the
@@ -164,7 +173,7 @@ component GearCone(P: plane, across: axis, pinion_teeth: Int, gear_teeth: Int,
 // along MC at H (said as parallel, not as square to the heading, which a heading of no length
 // would be). The normal module `mn` is the module seen square to the trace: how far from MC a
 // point one module from M toward O stands, so O, R / m modules from M, stands R / m times as far.
-component ToothTrace(P: plane, gear: group, R: Length, spiral_angle: Angle, mean_module: Length,
+component ToothTrace(P: plane, gear: Gear, R: Length, spiral_angle: Angle, mean_module: Length,
     mn: Length) {
   C := point in P
   H := point in P
@@ -186,7 +195,7 @@ component ToothTrace(P: plane, gear: group, R: Length, spiral_angle: Angle, mean
 // cos(spiral); a virtual axis leaves V at the bevel pinion's pitch angle `pa`, the angle at M in
 // the gear's triangle, and the pinion's pitch radius `rp` is one distance from M both axes keep.
 // With no offset, A and V are O and the two axes one.
-component PinionCone(P: plane, up: axis, gear: group, trace: group, shaft_angle: Angle,
+component PinionCone(P: plane, up: axis, gear: Gear, trace: Trace, shaft_angle: Angle,
     offset: Length, rp: Length, pa: Angle) {
   A := point in P
   V := point in P
@@ -222,7 +231,7 @@ component PinionCone(P: plane, up: axis, gear: group, trace: group, shaft_angle:
 // short of M and the heel half the face width beyond it. The end relief chamfers the tip's toe
 // and heel corners `relief` each way (`std.Chamfered`); a relief of nothing cuts nothing. Each
 // set the region uses names the face it bounds: `material.tip`, `.heel`, `.toe` and `.back`.
-component Blank(rim: line, ax: line, design: group) {
+component Blank(rim: line, ax: line, design: BlankDesign) {
   toe := std.Sphere(rim.p1)
   heel := std.Sphere(rim.p1)
   rim.p2 distance(design.width / 2, side: outside) toe
@@ -247,7 +256,7 @@ component Blank(rim: line, ax: line, design: group) {
 // it are where the crowns' tips and bases stand. `reach`, how far the gear's space cutter
 // reaches: the cylinder about the axis through the point a little over the cone distance past O
 // on the line from C through it, clear of every blank point.
-component FaceMill(P: plane, gear: group, trace: group, R: Length, mean_module: Length,
+component FaceMill(P: plane, gear: Gear, trace: Trace, R: Length, mean_module: Length,
     pressure: Angle, pressure_shift: Angle, dedendum: Length, base: Length) {
   ahead := arc(center: gear.O, start: gear.M) in P
   behind := arc(center: gear.O, end: gear.M) in P
@@ -266,10 +275,10 @@ component FaceMill(P: plane, gear: group, trace: group, R: Length, mean_module: 
   trace.C distance(0.8 * R, along: gear.crown_ax) ax.p2
   inner_flank := std.ConeThrough(ax, inner_pitch, lean: pressure + pressure_shift)
   outer_flank := std.ConeThrough(ax, outer_pitch, lean: pressure_shift - pressure)
-  tooth_tip := std.Level(trace.C, ax, d: dedendum)
-  tooth_base := std.Level(trace.C, ax, d: -base)
-  mate_tip := std.Level(trace.C, ax, d: -dedendum)
-  mate_base := std.Level(trace.C, ax, d: base)
+  tooth_tip := std.HalfSpace(trace.C, ax, d: dedendum)
+  tooth_base := std.HalfSpace(trace.C, ax, d: -base)
+  mate_tip := std.HalfSpace(trace.C, ax, d: -dedendum)
+  mate_base := std.HalfSpace(trace.C, ax, d: base)
   cap := point in P
   to_cap := line(trace.C, gear.O)
   cap coincident to_cap
@@ -310,7 +319,7 @@ component Space(a: set, b: set, lo: set, hi: set, cap: set, step: motion, grow: 
   private construction inner_crown := solid(far)
   private construction neighbor := solid(inner_crown, under: step, at: 0deg)
   body := solid(outer_crown)
-  neighbor bound body
+  neighbor common body
 }
 
 // -- generation --------------------------------------------------------------------------------

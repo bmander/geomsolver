@@ -2072,7 +2072,7 @@ pub unsafe extern "C" fn gcs_field_mesher_free(m: *mut Mesher) {
 }
 
 /// **What a Boolean would make of a body, before it is written** (#162 F4): `{target, word:
-/// "union" | "cut" | "bound", tools: [index…]}` in, `Sketch::preview_body`'s mesh out as `{faces,
+/// "union" | "cut" | "common", tools: [index…]}` in, `Sketch::preview_body`'s mesh out as `{faces,
 /// positions, normals}` — the shape `gcs_solid_mesh`'s three calls give apart, in world
 /// coordinates, in one JSON answer: it is asked once a pick, never per frame.  Null with the
 /// cause where it is refused.
@@ -4462,7 +4462,7 @@ pub unsafe extern "C" fn gcs_elab_face_plane_json(h: *mut Elaborated, s: *mut Sk
     })
 }
 
-/// The body rule, `{word: "union" | "cut" | "bound", what: [..], body}`, a statement for each
+/// The body rule, `{word: "union" | "cut" | "common", what: [..], body}`, a statement for each
 /// solid in `what`, in one splice: `edit::add_body_word`.
 #[no_mangle]
 pub unsafe extern "C" fn gcs_elab_add_body_word(h: *mut Elaborated, ptr: *const u8, len: usize) -> *mut u8 {

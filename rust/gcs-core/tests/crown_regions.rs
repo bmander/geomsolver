@@ -1,9 +1,9 @@
 //! **What a crown written as regions needs of the core** (#209, #145 step 4b): `std.ConeThrough`,
 //! the cone about a line through a point, its radius growing `tan(lean)` along the line, against
 //! its closed form, its apex the instance's (a family's body split by its point, §6.21, F3);
-//! `std.Level`, a half-space along a line; a round at a corner where the region is outside a set
-//! (`{ q | q outside inner }`, a distance from it is from `inner`'s surface); the tip land said as
-//! a bound between the land's ends, choosing the root as the drawn section's tip bound does; and
+//! `std.HalfSpace`, a half-space along a line; a round at a corner where the region is outside a
+//! set (`{ q | q outside inner }`, a distance from it is from `inner`'s surface); the tip land said
+//! as a bound between the land's ends, choosing the root as the drawn section's tip bound does; and
 //! a crown tooth region — two cones, two levels, its tip rounded — admitted to the generating
 //! class and swept through a region blank, built exactly and written within 10 µm.
 use gcs_core::brep::geom::Surface;
@@ -101,8 +101,8 @@ fix((20, 0.7853981633974483, 0)) qi
 fix((20, -0.7853981633974483, 0)) qo
 inner := std.ConeThrough(cut_ax, qi, lean: -20deg)
 outer := std.ConeThrough(cut_ax, qo, lean: 20deg)
-back := std.Level(c, cut_ax, d: 1.5mm)
-point_ := std.Level(c, cut_ax, d: -1.25mm)
+back := std.HalfSpace(c, cut_ax, d: 1.5mm)
+point_ := std.HalfSpace(c, cut_ax, d: -1.25mm)
 beyond := { x | x outside inner }
 above := { x | x outside point_ }
 ";
@@ -196,8 +196,8 @@ in std.front {
   fix((16.4, -1.25)) eb
   ea := point hint((16.9, -1.25))
 }
-tip := std.Level(ax.p1, ax, d: -1.25mm)
-back := std.Level(ax.p1, ax, d: 1.5mm)
+tip := std.HalfSpace(ax.p1, ax, d: -1.25mm)
+back := std.HalfSpace(ax.p1, ax, d: 1.5mm)
 ea coincident tip
 ea distance(0.6mm) eb
 inner := std.ConeThrough(ax, ea, lean: -20deg)
@@ -342,7 +342,7 @@ fn a_point_is_put_on_a_sides_surface() {
 fn an_offset_of_nothing_is_the_set() {
     let src = format!("{AXIS}k := std.ConeThrough(ax, q, lean: 20deg)\nnone := std.Offset(k, d: 0mm)\n\
         in std.front {{\n  m := point hint((18, 4))\n}}\nm coincident none\nax.p1 distance(4mm, along: ax) m\n\
-        lid := std.Level(ax.p1, ax, d: 6mm)\nfloor := {{ x | x outside std.Level(ax.p1, ax, d: -6mm) }}\n\
+        lid := std.HalfSpace(ax.p1, ax, d: 6mm)\nfloor := {{ x | x outside std.HalfSpace(ax.p1, ax, d: -6mm) }}\n\
         grown := {{ p | p inside none; p inside lid; p inside floor }}\n\
         plain := {{ p | p inside k; p inside lid; p inside floor }}\n\
         a := solid(grown)\nb := solid(plain)\n");

@@ -245,6 +245,7 @@ impl<'a> Walk<'a> {
                         closed: true,
                         forbidden,
                         groups: comp.formals.iter().filter(|f| matches!(f.ty, Ty::Group | Ty::Set)).map(|f| f.name.text.clone()).collect(),
+                        typed: scope.typed.clone(),
                         cyc: None,
                         // a ring's copy reaches into the instances written in it
                         ring: scope.ring.clone(),
@@ -709,6 +710,7 @@ impl<'a> Walk<'a> {
                 pass: scope.pass.clone(),
                 written: None,
                 held: scope.held,
+                typed: scope.typed.clone(),
             };
             let mut p2 = path.to_vec();
             p2.push(PathStep::Copy { block: st.id, index: k as u32 });

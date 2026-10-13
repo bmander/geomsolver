@@ -119,6 +119,11 @@ pub fn link(prog: &mut Program, resolve: &mut dyn FnMut(&str) -> Option<String>)
             d.module = Some(k);
             d
         }));
+        // and its interfaces (§8.1 [0.84]); one defined twice is `interfaces::check`'s
+        prog.interfaces.extend(mp.interfaces.into_iter().map(|mut f| {
+            f.module = Some(k);
+            f
+        }));
         prog.modules.push(Module { name, text, base, via, root, uses: mp.uses });
     }
     localize(prog, &mut diags);

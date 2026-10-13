@@ -163,6 +163,27 @@ pub struct Formal {
     pub name: Name,
     pub ty: Ty,
     pub span: Span,
+    /// The interface a `group` formal (or member) is typed by, as written — `Gear`, `spiral.Gear`
+    /// — where it names one rather than the word `group` (§8.1 [0.84]).  `ty` is then `Group`,
+    /// so everything that binds or reads a group reads this one; the interface is what the call
+    /// is checked against and all the body may read through it.
+    pub interface: Option<Name>,
+}
+
+/// **A group's shape, named** (§8.1 [0.84]): `interface Gear { O: point, M: point, ax: line,
+/// pitch: Length }`, written at the top of a file as a component is.  A formal typed by it
+/// (`gear: Gear`) is a `group` formal the call must give every member to, each of its type —
+/// a group or an instance, whatever else it carries — and the body may read through it only
+/// what it declares.  Structural: nothing says it is a `Gear`, it only has to have one's members.
+#[derive(Clone, Debug)]
+pub struct Interface {
+    pub name: Name,
+    /// The members, each written as a formal is, `name: type`; a member may itself be typed by
+    /// an interface (`cone: Cone`).
+    pub members: Vec<Formal>,
+    pub span: Span,
+    /// Which of the program's `modules` it was read from; `None` for one the document wrote.
+    pub module: Option<usize>,
 }
 
 /// The spec's §3.1 value types, plus the entity kinds this model actually has.
@@ -334,7 +355,7 @@ pub enum StmtKind {
     Block(Block),
     /// Parse a style block, retaining property spans for diagnostics.
     Style(StyleRule),
-    /// A body operation (§6.9): `cut` subtracts, `union` unites, `bound` intersects.
+    /// A body operation (§6.9): `cut` subtracts, `union` unites, `common` intersects.
     /// Relations are folded into the stock body after declarations are built.
     SolidRel(SolidRel),
     /// `claim over crank.theta in (0deg, 360deg) { … }` — the claims in the body, judged as the
@@ -623,27 +644,27 @@ pub enum BodyWord {
     /// `bore cut cyl` — the body rule's subtraction (§6.9). Relations are folded into
     /// the stock body after declarations are built.
     Cut,
-    /// `tip bound cyl` — the body rule's intersection: the body keeps what lies within
-    /// every solid that bounds it.
-    Bound,
+    /// `tip common cyl` — the body rule's intersection: the body keeps what it has in common
+    /// with every solid stated so.  Through 0.84 the word was `bound` (#270).
+    Common,
 }
 
 impl BodyWord {
     /// The word as written, or `None` for one that is not a body word.
     pub fn parse(w: &str) -> Option<BodyWord> {
-        [BodyWord::Union, BodyWord::Cut, BodyWord::Bound].into_iter().find(|b| b.as_str() == w)
+        [BodyWord::Union, BodyWord::Cut, BodyWord::Common].into_iter().find(|b| b.as_str() == w)
     }
 
     pub fn as_str(self) -> &'static str {
         match self {
             BodyWord::Union => "union",
             BodyWord::Cut => "cut",
-            BodyWord::Bound => "bound",
+            BodyWord::Common => "common",
         }
     }
 }
 
-/// A body operation (§6.9): `cut` subtracts, `union` unites, `bound` intersects.
+/// A body operation (§6.9): `cut` subtracts, `union` unites, `common` intersects.
 /// Relations are folded into the stock body after declarations are built.
 #[derive(Clone, Debug)]
 pub struct SolidRel {
@@ -1314,7 +1335,7 @@ pub enum Sweep {
     /// `sense: cw` the other way round.
     Revolve { axis: Ref, sweep: Option<Arg>, sense: Sense },
     /// `body := solid(block)` — a stock, or a term: what it is made of is in the list, and the
-    /// `union`/`cut`/`bound` statements say the rest.
+    /// `union`/`cut`/`common` statements say the rest.
     Body,
     /// `blank := solid(R)`, R a set — the points inside it (§6.21): written as a `Body` over the
     /// set, and made this by the flattener, which applies the set to the hidden `probe` point

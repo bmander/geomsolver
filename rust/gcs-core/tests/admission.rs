@@ -206,7 +206,7 @@ private bt := line(b2, b3)
 private ba := line(b3, b0)
 }
 construction holder := solid(face(bb, bw, bt, ba), from: -5mm, to: 5mm)
-holder bound part
+holder common part
 ";
     let [revolved,sampled] = [ring(""),ring(boxed)].map(|source| admit(&source).unwrap());
     let (a,b) = (&revolved.sweeps()[0],&sampled.sweeps()[0]);

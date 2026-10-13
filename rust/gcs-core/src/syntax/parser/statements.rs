@@ -77,6 +77,11 @@ impl<'a> P<'a> {
                 self.fail("a `use` stands at the top of a document, not inside a body");
                 None
             }
+            "interface" => {
+                self.fail("an `interface` stands at the top of a file, not inside a body");
+                self.skip_block();
+                None
+            }
             "preview" => {
                 self.fail("a `preview` stands at the top of a document, not inside a body");
                 self.i += 1;
@@ -210,20 +215,27 @@ impl<'a> P<'a> {
             // **past the dotted path, not past one token**: an operand may be a dotted path, so
             // the word after it is further away than one token — the lookahead `past_ref`
             _ if self.past_ref(self.i).and_then(|j| self.t.get(j)).is_some_and(
-                |(t, _)| matches!(t, Tok::Ident(w) if w == "cut" || w == "union" || w == "bound" || w == "through"),
+                |(t, _)| matches!(t, Tok::Ident(w) if w == "cut" || w == "union" || w == "common" || w == "bound"
+                    || w == "through"),
             ) =>
             {
                 let lo = self.here().lo as usize;
                 let what = self.refr()?;
                 let Some(Tok::Ident(w)) = self.peek().cloned() else {
-                    self.fail("a body statement is `X union B`, `X cut B` or `X bound B`");
+                    self.fail("a body statement is `X union B`, `X cut B` or `X common B`");
                     return None;
                 };
                 if w == "through" {
                     self.fail("Boolean `through` is now `cut`: write `X cut B`; `through:` specifies a cutter's extent");
                     return None;
                 }
-                let word = BodyWord::parse(&w).unwrap_or(BodyWord::Bound);
+                // through 0.84 the intersection was `bound`, the word a dimension's bound is (#270)
+                if w == "bound" {
+                    self.fail("the body word `bound` is now `common`: write `X common B`, the body keeping what \
+                               it has in common with `X`");
+                    return None;
+                }
+                let word = BodyWord::parse(&w).unwrap_or(BodyWord::Common);
                 self.i += 1;
                 let body = self.refr()?;
                 self.end_of_stmt();
@@ -511,6 +523,60 @@ impl<'a> P<'a> {
             return None;
         };
         Some(ty)
+    }
+
+    /// A formal's type, or the interface it names (§8.1 [0.84]): a type word, else a name —
+    /// dotted for a module's, `spiral.Gear` — which makes it a `group` formal typed by that
+    /// interface.  Whether the name is one is the flattener's to say, once modules are linked.
+    fn formal_or_interface(&mut self) -> Option<(Ty, Option<Name>)> {
+        let word = self.word_at(self.i).map(str::to_string);
+        if word.as_deref().is_some_and(|w| Ty::parse(w).is_some() || w.eq_ignore_ascii_case("frame")) {
+            return self.formal_type().map(|ty| (ty, None));
+        }
+        Some((Ty::Group, Some(self.component_name()?)))
+    }
+
+    /// `name: type` — a component's formal, or an interface's member, written alike.
+    fn formal(&mut self) -> Option<Formal> {
+        let name = self.ident()?;
+        if !self.want_p(':') {
+            return None;
+        }
+        let (ty, interface) = self.formal_or_interface()?;
+        let span = Span::new(name.span.lo as usize, self.prev_hi());
+        Some(Formal { name, ty, span, interface })
+    }
+
+    /// `interface Gear { O: point, M: point, ax: line }` — a group's shape, named (§8.1 [0.84]):
+    /// its members written as formals are, separated by commas or line breaks.
+    pub(super) fn interface(&mut self) -> Option<super::super::Interface> {
+        let lo = self.here().lo as usize;
+        self.i += 1; // `interface`
+        let name = self.ident()?;
+        if Ty::parse(&name.text).is_some() {
+            self.fail_at(name.span, &format!(
+                "`{}` is a type of the language's own: an interface takes a name of its own",
+                name.text
+            ));
+            return None;
+        }
+        if !self.want_p('{') {
+            return None;
+        }
+        let mut members = Vec::new();
+        loop {
+            self.skip_ends();
+            if self.eat_p('}') {
+                break;
+            }
+            members.push(self.formal()?);
+            if !self.eat_p(',') && !matches!(self.peek(), Some(Tok::Nl) | Some(Tok::P('}'))) {
+                self.fail("expected `,`, a line break or `}` after an interface's member");
+                return None;
+            }
+        }
+        self.end_of_stmt();
+        Some(super::super::Interface { name, members, span: Span::new(lo, self.prev_hi()), module: None })
     }
 
     /// An input's type: a formal's, and a number — `Length`, `Angle`, `Scalar` or `Int`.
@@ -860,13 +926,7 @@ impl<'a> P<'a> {
         let mut formals = Vec::new();
         if self.eat_p('(') {
             while !self.eat_p(')') {
-                let fname = self.ident()?;
-                if !self.want_p(':') {
-                    return None;
-                }
-                let ty = self.formal_type()?;
-                let span = Span::new(fname.span.lo as usize, self.prev_hi());
-                formals.push(Formal { name: fname, ty, span });
+                formals.push(self.formal()?);
                 if !self.eat_p(',') && self.peek() != Some(&Tok::P(')')) {
                     self.fail("expected `,` or `)`");
                     return None;
@@ -1129,7 +1189,7 @@ impl<'a> P<'a> {
 
     /// Step over a refused block: the rest of its header line and, where one opens there, the
     /// balanced braces after it — however many lines they span.
-    fn skip_block(&mut self) {
+    pub(super) fn skip_block(&mut self) {
         let mut depth = 0i32;
         while !self.done() {
             match self.peek() {

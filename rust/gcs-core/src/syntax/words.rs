@@ -8,10 +8,11 @@ use crate::model::EntKind;
 // `port`, `frame` and `ellipse` are retired and `ring` is not yet (bmander/geomsolver#47), and
 // each is kept here only so a document written with it is told what to write instead of reading
 // the word as a name
-pub(super) const OPENERS: [&str; 17] = [
+pub(super) const OPENERS: [&str; 18] = [
     "preview",
     "claim",
     "component",
+    "interface",
     "port",
     "unit",
     "style",
@@ -178,7 +179,7 @@ pub fn is_name(s: &str) -> bool {
 }
 
 /// The words of the body rule (§6.9), which no name may be.
-const BODY_WORDS: [&str; 3] = ["cut", "union", "bound"];
+const BODY_WORDS: [&str; 3] = ["cut", "union", "common"];
 
 /// What a curve is stationary for (#121), `rope minimizes …`; no name either.
 pub(super) const ENERGY_WORDS: [&str; 2] = ["minimizes", "maximizes"];
@@ -192,7 +193,7 @@ pub fn reserved_word(s: &str) -> bool {
         || TRAILERS.contains(&s)
         || BODY_WORDS.contains(&s)
         || ENERGY_WORDS.contains(&s)
-        || ["through", "next", "prev"].contains(&s)
+        || ["through", "bound", "next", "prev"].contains(&s)
         || MODIFIERS.contains(&s)
         || OPENERS.contains(&s)
 }

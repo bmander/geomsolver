@@ -155,7 +155,7 @@ pub(super) fn solids(
             continue;
         }
         if a.idx == b.idx {
-            say(at, format!("`{}` is {} itself", into.root.text, word.as_str()));
+            say(at, format!("`{0} {1} {0}` joins a solid to itself", into.root.text, word.as_str()));
             continue;
         }
         // **a swept solid that takes a feature is the body over its own sweep**: the name keeps

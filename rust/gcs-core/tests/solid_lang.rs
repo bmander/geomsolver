@@ -257,38 +257,41 @@ fn a_swept_solid_takes_features_as_the_body_over_its_own_sweep() {
     assert_volume(volume(&through, "stock"), body);
     let over = read(&format!("{parts}bore cut stock\nwhole := solid(stock)\n"));
     assert_volume(volume(&over, "whole"), body);
-    refused(&format!("{parts}stock cut stock\n"), Code::E080, "is cut itself");
+    refused(&format!("{parts}stock cut stock\n"), Code::E080, "`stock cut stock` joins a solid to itself");
 }
 
 #[test]
-fn a_body_keeps_what_lies_within_everything_that_bounds_it() {
-    // `bound` is the body rule's third side: the block within the bore is the bore's own
-    // polygon (what `cut` takes out of it), and it is a set like the other two
+fn a_body_keeps_what_it_has_in_common_with_each_solid() {
+    // `common` is the body rule's third side: the block in common with the bore is the bore's
+    // own polygon (what `cut` takes out of it), and it is a set like the other two
     let stock = format!("{RECT}{HOLE}stock := solid(sec, depth: 30mm)\nbore := solid(hole_f, depth: 30mm)\n");
-    let within = volume(&read(&format!("{stock}body := solid(stock)\nbore bound body\n")), "body");
-    let before = volume(&read(&format!("{stock}bore bound body\nbody := solid(stock)\n")), "body");
+    let within = volume(&read(&format!("{stock}body := solid(stock)\nbore common body\n")), "body");
+    let before = volume(&read(&format!("{stock}bore common body\nbody := solid(stock)\n")), "body");
     let cut = volume(&read(&format!("{stock}body := solid(stock)\nbore cut body\n")), "body");
     assert!((within - before).abs() < 1e-9, "one body, whichever order: {within} vs {before}");
     assert!((within + cut - 72000.0).abs() < 1e-6, "within plus cut is the stock: {within} + {cut}");
     assert!(within > 2300.0 && within < 2400.0, "the bore's own polygon: {within}");
-    // difference and intersection commute, so a body bounded and cut is the same either way
+    // difference and intersection commute, so a body kept in common and cut is the same either way
     let both = format!(
         "{RECT}{HOLE}in std.front {{\nq := point hint((30, 20))\na distance(30, along: x) q\na distance(20, along: y) q\n\
          wide := circle(center: q) hint(r: 15)\nradius(15) wide\n}}\nwide_f := face(wide)\n\
          stock := solid(sec, depth: 30mm)\nbore := solid(hole_f, depth: 30mm)\ndisc := solid(wide_f, depth: 30mm)\n\
-         body := solid(stock)\ndisc bound body\nbore cut body\n"
+         body := solid(stock)\ndisc common body\nbore cut body\n"
     );
     let disc = volume(&read(&both), "body");
     let annulus = volume(&read(&format!("{RECT}{HOLE}in std.front {{\nq := point hint((30, 20))\na distance(30, along: x) q\n\
          a distance(20, along: y) q\nwide := circle(center: q) hint(r: 15)\nradius(15) wide\n}}\nwide_f := face(wide)\n\
          bore := solid(hole_f, depth: 30mm)\ndisc := solid(wide_f, depth: 30mm)\nbody := solid(disc)\nbore cut body\n")), "body");
-    assert!((disc - annulus).abs() < 1e-6, "bounded then cut is the annulus: {disc} vs {annulus}");
+    assert!((disc - annulus).abs() < 1e-6, "in common then cut is the annulus: {disc} vs {annulus}");
     refused(
-        &format!("{RECT}s := solid(sec, depth: 3mm)\nx := solid(s)\ny := solid(x)\nx bound y\ny bound x\n"),
+        &format!("{RECT}s := solid(sec, depth: 3mm)\nx := solid(s)\ny := solid(x)\nx common y\ny common x\n"),
         Code::E041,
         "made of itself",
     );
-    refused(&format!("{RECT}s := solid(sec, depth: 3mm)\nx := solid(s)\nx bound x\n"), Code::E080, "is bound itself");
+    refused(&format!("{RECT}s := solid(sec, depth: 3mm)\nx := solid(s)\nx common x\n"), Code::E080, "`x common x` joins a solid to itself");
+    // through 0.84 the word was `bound`, which is also what a dimension's bound is (#270): the
+    // old spelling is refused where it is written, naming the new
+    refused(&format!("{stock}body := solid(stock)\nbore bound body\n"), Code::E100, "now `common`: write `X common B`");
 }
 
 #[test]
