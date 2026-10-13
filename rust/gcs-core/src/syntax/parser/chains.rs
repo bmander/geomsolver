@@ -2,7 +2,7 @@
 
 use super::P;
 use crate::constraints::{is_operator, tangent_at, Fixity, Touch};
-use crate::model::{EntKind, Field};
+use crate::model::EntKind;
 use crate::style::Classes;
 use crate::syntax::lexer::Tok;
 use crate::syntax::names::refs_eq;
@@ -98,12 +98,7 @@ struct OpenEnd {
 }
 /// What the field at a boundary slot is called, for a message about it.
 fn boundary_name(k: EntKind, slot: usize) -> &'static str {
-    k.fields()
-        .iter()
-        .filter(|(_, f)| *f != Field::Scalar)
-        .nth(slot)
-        .map(|(n, _)| *n)
-        .unwrap_or("end")
+    k.end_name(slot).unwrap_or("end")
 }
 
 /// How one of a joint's words records its spelling: a word with siblings spans itself alone
@@ -805,7 +800,7 @@ impl<'a> P<'a> {
             });
             return None;
         };
-        let Some((en, ex)) = kind.ends() else {
+        let Some(ends) = kind.ends() else {
             self.errs.push(SynErr {
                 span: link.span_of_name(),
                 message: format!(
@@ -815,7 +810,7 @@ impl<'a> P<'a> {
             });
             return None;
         };
-        let slot = if entry { en } else { ex };
+        let slot = if entry { ends.entry } else { ends.exit };
         let declared = slot_ref(link, slot);
         let entity = link.entity();
         let boundary = match &declared {
@@ -913,8 +908,8 @@ impl<'a> P<'a> {
         // only *names* an element has no list to read or fill — its boundary is its own
         // declaration's business — so the declared side must say where the two meet, usually
         // by the existing element's own child (`(l := line(a, k.start)) -> tangent k`).
-        let exit = links[li].kind().and_then(|k| k.ends()).map(|(_, ex)| ex);
-        let entry = links[ri].kind().and_then(|k| k.ends()).map(|(en, _)| en);
+        let exit = links[li].kind().and_then(|k| k.ends()).map(|e| e.exit);
+        let entry = links[ri].kind().and_then(|k| k.ends()).map(|e| e.entry);
         // a joint threads a *name*: it welds two links to one point, and only a name says
         // which (`slot_ref`'s rule).
         let slot = |i: usize, k: Option<usize>| k.and_then(|k| slot_ref(&links[i], k));
@@ -1048,36 +1043,32 @@ impl<'a> P<'a> {
             // kind the form does not take
             let touch = |k: Option<EntKind>, exit: bool| Touch {
                 kind: k,
-                end: k.and_then(|k| k.ends()).map(|(en, ex)| if exit { ex } else { en }),
+                end: k.and_then(|k| k.ends()).map(|e| if exit { e.exit } else { e.entry }),
             };
             let ended = |k: Option<EntKind>| k.filter(|k| k.ends().is_some());
             match tangent_at(touch(lk, true), touch(rk, false)) {
                 Some(t) => {
                     let (x, y) = if t.swap { (rref, lref) } else { (lref, rref) };
-                    let args = match t.at {
-                        Some(w) => end(w),
-                        None => extra.to_vec(),
-                    };
+                    let args = t.at.map_or_else(|| extra.to_vec(), end);
                     return written(t.word, vec![x.clone(), y.clone()], args);
                 }
                 // two arcs meeting at a corner already touch there, so `TangentCircleCircle`
                 // would be a row that is zero at every solution — a *tangency between names* is
-                // a real statement, but at a shared corner there is nothing left for it to say
+                // a real statement, but at a shared corner there is nothing left for it to say.
+                // A side with no ends threads nothing, which `thread` has said already
                 None => {
-                    // a side with no ends threads nothing, which `thread` has said already
-                    let (Some(a), Some(b)) = (ended(lk), ended(rk)) else {
-                        return written(word, vec![lref.clone(), rref.clone()], extra.to_vec());
-                    };
-                    self.errs.push(SynErr {
-                        span: at,
-                        message: format!(
-                            "`tangent` does not join {} to {} at a corner: they already meet \
-                             there, and there is no regular form left to state",
-                            a.a(),
-                            b.a()
-                        ),
-                    });
-                    return None;
+                    if let (Some(a), Some(b)) = (ended(lk), ended(rk)) {
+                        self.errs.push(SynErr {
+                            span: at,
+                            message: format!(
+                                "`tangent` does not join {} to {} at a corner: they already \
+                                 meet there, and there is no regular form left to state",
+                                a.a(),
+                                b.a()
+                            ),
+                        });
+                        return None;
+                    }
                 }
             }
         }

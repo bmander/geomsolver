@@ -841,31 +841,23 @@ pub fn registry_json() -> Json {
     let mut forms = Vec::new();
     let sides = |k: EntKind| {
         let mut ends = vec![None];
-        if let Some((en, ex)) = k.ends() {
-            ends.extend([Some(en), Some(ex)]);
+        if let Some(e) = k.ends() {
+            ends.extend([Some(e.entry), Some(e.exit)]);
         }
-        ends.into_iter().map(move |end| Touch { kind: Some(k), end })
+        ends.into_iter().map(move |end| (k, Touch { kind: Some(k), end }))
     };
-    for a in EntKind::ALL.iter().flat_map(|&k| sides(k)) {
-        for b in EntKind::ALL.iter().flat_map(|&k| sides(k)) {
-            if a.end.is_none() && b.end.is_none() {
-                continue;
-            }
-            let (Some(ka), Some(kb)) = (a.kind, b.kind) else { continue };
+    for (ka, a) in EntKind::ALL.iter().flat_map(|&k| sides(k)) {
+        for (kb, b) in EntKind::ALL.iter().flat_map(|&k| sides(k)) {
             let Some(t) = tangent_at(a, b) else { continue };
             let Some(kind) = t.kind(ka, kb) else { continue };
-            let end = |k: EntKind, e: Option<usize>| match e.and_then(|e| k.end_name(e)) {
-                Some(w) => Json::Str(w.to_string()),
-                None => Json::Null,
-            };
             forms.push(object([
                 ("a", ka.as_str().into()),
-                ("aEnd", end(ka, a.end)),
+                ("aEnd", a.end.and_then(|e| ka.end_name(e)).into()),
                 ("b", kb.as_str().into()),
-                ("bEnd", end(kb, b.end)),
+                ("bEnd", b.end.and_then(|e| kb.end_name(e)).into()),
                 ("type", kind.name().into()),
                 ("swap", t.swap.into()),
-                ("at", t.at.map(|w| Json::Str(w.to_string())).unwrap_or(Json::Null)),
+                ("at", t.at.into()),
             ]));
         }
     }

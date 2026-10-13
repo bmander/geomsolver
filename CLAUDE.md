@@ -1461,22 +1461,22 @@ Conventions:
   tolerance; the `Tol`-taking factorisations are `pub(crate)`.  (`decompose::deficiency` and
   `homotopy` keep a relative rank on their own synthetic matrices.)  `jacobian_dense` stays the
   raw `∂r/∂z` for solvers and finite-difference checks.
-- A tangency whose contact the drawing already holds to the curve is stated *at* that point, or
-  it is a double root: `PointOnCircle(p, C)` + `TangentLineCircle(L, C)` with p an endpoint of L
-  is rank-deficient at *every* solution.  `TangentLineCircleAt(line, circle, at)` (the
+- A tangency whose contact the drawing already holds to the curve is stated *at* that point, or it
+  is a double root: `PointOnCircle(p, C)` + `TangentLineCircle(L, C)` with p an endpoint of L is
+  rank-deficient at *every* solution.  `TangentLineCircleAt(line, circle, at)` (the
   `tangent_arc_line` kernel) is regular.  **Which At-form a contact means is one table**,
-  `constraints::tangent_at` (#5: an arc's own end first, `TangentArcLine`; then a line's
-  against a rim, `TangentLineCircleAt`; two lines `parallel`; two round things none; `at:` always
-  an end of the operand written first), matched over every kind so one given ends stops the
-  build there.  A chain's threaded joint asks it, and `commands::cTangent` through the registry's
-  `tangentAt` (`C.tangentAt`) once it finds where the two already meet.  For degenerate pairs
-  that still arise, the diagnosis and the witness settle-test the surplus motions: step along a
-  null direction, settle, and a motion that walks back is `shaky` — out of the DOF, "blocked at
-  second order", never painted under- or over-constrained.  `numeric_rank` already includes
-  them; nothing adds `shaky` back.  Every guard is inside `witness::screen`: at a solution, a
-  tangency present, removals capped at what the matching cannot account for, at most
-  `SCREEN_MAX`.  A double root's singular value is as small as a real freedom's, so a candidate
-  is recognised only by trying it.
+  `constraints::tangent_at` (#5: an arc's own end first, `TangentArcLine`; then a line's against a
+  rim, `TangentLineCircleAt`; two lines `parallel`; two round things none; `at:` always an end of
+  the operand written first), matched over every `Run` a kind given ends must name
+  (`EntKind::ends`), so a new way to run stops the build there.  A chain's threaded joint asks it,
+  and `commands::cTangent` through the registry's `tangentAt` (`C.tangentAt`) once it finds where
+  the two already meet.  For degenerate pairs that still arise, the diagnosis and the witness
+  settle-test the surplus motions: step along a null direction, settle, and a motion that walks back
+  is `shaky` — out of the DOF, "blocked at second order", never painted under- or over-constrained.
+  `numeric_rank` already includes them; nothing adds `shaky` back.  Every guard is inside
+  `witness::screen`: at a solution, a tangency present, removals capped at what the matching cannot
+  account for, at most `SCREEN_MAX`.  A double root's singular value is as small as a real
+  freedom's, so a candidate is recognised only by trying it.
 - `Horizontal`/`Vertical` level a line; a `Level` along a view's own axis levels a *pair of
   points* with the same line kernels, and `cgraph` gives it a `virtual_line` in the ground
   x-axis's direction class, so a levelled pair decomposes rather than falling to the residue.

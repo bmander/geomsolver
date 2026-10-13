@@ -16,6 +16,22 @@ pub struct Param {
     pub scale: f64,
 }
 
+/// Where an element of a kind with ends is entered and left (`EntKind::ends`), and how it runs
+/// between them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Ends {
+    pub entry: usize,
+    pub exit: usize,
+    pub run: Run,
+}
+
+/// How an element runs between its ends: what a tangency at one of them is stated against.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Run {
+    Straight,
+    Round,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum EntKind {
     Point,
@@ -193,11 +209,12 @@ impl EntKind {
     /// `fields()` and written down somewhere else are two integers that go stale the first time
     /// a field is reordered — silently, and in the direction of a wrong drawing.  Matched
     /// exhaustively for the same reason every other table here is: a new kind with ends must
-    /// stop the build and be given an arm.
-    pub fn ends(self) -> Option<(usize, usize)> {
+    /// stop the build and be given an arm — and say how it runs between them, which is what
+    /// `constraints::tangent_at` reads to state a tangency at one of them.
+    pub fn ends(self) -> Option<Ends> {
         match self {
-            EntKind::Line => Some((0, 1)),
-            EntKind::Arc => Some((1, 2)),
+            EntKind::Line => Some(Ends { entry: 0, exit: 1, run: Run::Straight }),
+            EntKind::Arc => Some(Ends { entry: 1, exit: 2, run: Run::Round }),
             EntKind::Point
             | EntKind::Circle
             | EntKind::Axis
@@ -213,8 +230,8 @@ impl EntKind {
     /// field's own name, so an `at:` word and a dotted boundary are spelled alike.  `None` for
     /// an index that is no end of the kind.
     pub fn end_name(self, slot: usize) -> Option<&'static str> {
-        let (en, ex) = self.ends()?;
-        if slot != en && slot != ex {
+        let ends = self.ends()?;
+        if slot != ends.entry && slot != ends.exit {
             return None;
         }
         self.fields().iter().filter(|(_, f)| *f != Field::Scalar).nth(slot).map(|(n, _)| *n)

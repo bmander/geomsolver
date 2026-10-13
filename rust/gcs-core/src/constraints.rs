@@ -670,57 +670,38 @@ impl TangentAt {
 /// and the app by which end it finds already there (`commands.ts::cTangent`, through the
 /// registry's `tangentAt`), so it takes both sides and either may name the point.
 ///
-/// An arc's own end is read first (`TangentArcLine`), then a line's (`TangentLineCircleAt`,
-/// against a circle or an arc's rim); two lines meeting tangent are collinear (`parallel`).
-/// Two round things already touch where they meet, so there is no regular form left: `None`,
-/// as for every pair it does not name — the caller says why in its own terms.
+/// A side names the contact by its own end as it runs there (`EntKind::ends`, matched over
+/// every `Run`, so a kind given ends says how it runs and a new way stops the build here): a
+/// round end against a straight side first (`TangentArcLine`), then a straight end against a
+/// round side (`TangentLineCircleAt`, a circle or an arc's rim); two straight runs meeting are
+/// collinear (`parallel`).  Two round things already touch where they meet, so there is no
+/// regular form left: `None`, as for every pair it does not name — the caller says why in its
+/// own terms.
 pub fn tangent_at(a: Touch, b: Touch) -> Option<TangentAt> {
-    use EntKind::{Arc, Circle, Line};
-    /// How a side can name the contact by its own end: matched over every kind, so a kind
-    /// given ends (`EntKind::ends`) stops the build here as well and is given its form.
-    enum End {
-        Line(&'static str),
-        Arc(&'static str),
+    use crate::model::Run;
+    let run = |t: Touch| t.kind.and_then(EntKind::ends).map(|e| e.run);
+    // what a side not known yet may turn out to be is elaboration's to refuse
+    let straight = |t: Touch| t.kind.is_none() || run(t) == Some(Run::Straight);
+    let round = |t: Touch| {
+        matches!(t.kind, None | Some(EntKind::Circle)) || run(t) == Some(Run::Round)
+    };
+    if run(a) == Some(Run::Straight) && run(b) == Some(Run::Straight) {
+        return (a.end.is_some() || b.end.is_some())
+            .then_some(TangentAt { word: "parallel", swap: false, at: None });
     }
-    fn by_end(t: Touch) -> Option<End> {
-        let k = t.kind?;
-        let w = k.end_name(t.end?)?;
-        Some(match k {
-            EntKind::Line => End::Line(w),
-            EntKind::Arc => End::Arc(w),
-            EntKind::Point
-            | EntKind::Circle
-            | EntKind::Axis
-            | EntKind::Spline
-            | EntKind::Plane
-            | EntKind::Curve
-            | EntKind::Face
-            | EntKind::Solid
-            | EntKind::Surface
-            | EntKind::Motion
-            | EntKind::Envelope
-            | EntKind::Patch
-            | EntKind::Seam
-            | EntKind::Vertex
-            | EntKind::Edge => return None,
-        })
-    }
-    // a line's other side, or a side whose kind is not known yet (elaboration refuses it then)
-    let straight = |t: Touch| matches!(t.kind, None | Some(Line));
-    // what a line's end can be tangent against: a rim, or a side not known yet
-    let round = |t: Touch| matches!(t.kind, None | Some(Circle | Arc));
-    let at = |swap, w| Some(TangentAt { word: "tangent", swap, at: Some(w) });
-    match (by_end(a), by_end(b)) {
-        // two straight runs meeting tangent share a point and a direction: collinear
-        (Some(_), _) | (_, Some(_)) if a.kind == Some(Line) && b.kind == Some(Line) => {
-            Some(TangentAt { word: "parallel", swap: false, at: None })
-        }
-        (Some(End::Arc(w)), _) if straight(b) => at(false, w),
-        (_, Some(End::Arc(w))) if straight(a) => at(true, w),
-        (Some(End::Line(w)), _) if round(b) => at(false, w),
-        (_, Some(End::Line(w))) if round(a) => at(true, w),
-        _ => None,
-    }
+    // `side`'s own end names the contact, ranked: a round end before a straight one
+    let named = |side: Touch, other: Touch, swap: bool| {
+        let k = side.kind?;
+        let ends = k.ends()?;
+        let at = k.end_name(side.end?)?;
+        let (rank, fits) = match ends.run {
+            Run::Round => (0, straight(other)),
+            Run::Straight => (1, round(other)),
+        };
+        fits.then_some((rank, TangentAt { word: "tangent", swap, at: Some(at) }))
+    };
+    let both = [named(a, b, false), named(b, a, true)];
+    both.into_iter().flatten().min_by_key(|(rank, _)| *rank).map(|(_, t)| t)
 }
 
 /// **Whether the language itself has a word of this fixity** (§9.9): what a relation word may

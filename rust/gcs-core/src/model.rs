@@ -27,7 +27,7 @@ mod turns;
 mod duals;
 
 pub use entities::{
-    Param, EntKind, Field, EntRef, PointE, LineE, CircleE, AxisE, ArcE, SplineE,
+    Param, EntKind, Ends, Run, Field, EntRef, PointE, LineE, CircleE, AxisE, ArcE, SplineE,
     PlaneE,
     LiftE, article,
 };

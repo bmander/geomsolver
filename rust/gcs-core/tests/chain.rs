@@ -1517,12 +1517,13 @@ p := point hint((40, 40))
 #[test]
 fn one_table_names_the_regular_tangency() {
     use gcs_core::constraints::{tangent_at, TangentAt, Touch};
+    use gcs_core::json::Json;
     use gcs_core::model::EntKind::{self, Arc, Circle, Line, Spline};
     let side = |k: EntKind, end: Option<&str>| Touch {
         kind: Some(k),
         end: end.map(|w| {
-            let (en, ex) = k.ends().unwrap();
-            [en, ex].into_iter().find(|&e| k.end_name(e) == Some(w)).unwrap()
+            let e = k.ends().unwrap();
+            [e.entry, e.exit].into_iter().find(|&e| k.end_name(e) == Some(w)).unwrap()
         }),
     };
     let form = |a: Touch, b: Touch| {
@@ -1572,46 +1573,40 @@ fn one_table_names_the_regular_tangency() {
     // and the registry publishes exactly these entries, by word, for a front end to ask
     let reg = gcs_core::report::registry_json();
     let entries = reg.get("tangentAt").expect("published").arr();
+    // a word of an entry, `None` where it is null
+    fn word<'a>(t: &'a Json, k: &str) -> Option<&'a str> {
+        t.get(k).filter(|j| matches!(j, Json::Str(_))).map(Json::as_str)
+    }
     let find = |a: &str, ae: Option<&str>, b: &str, be: Option<&str>| {
-        let word = |j: Option<&gcs_core::json::Json>| match j {
-            Some(gcs_core::json::Json::Str(s)) => Some(s.clone()),
-            _ => None,
-        };
         entries
             .iter()
             .find(|t| {
-                word(t.get("a")).as_deref() == Some(a)
-                    && word(t.get("aEnd")).as_deref() == ae
-                    && word(t.get("b")).as_deref() == Some(b)
-                    && word(t.get("bEnd")).as_deref() == be
+                word(t, "a") == Some(a)
+                    && word(t, "aEnd") == ae
+                    && word(t, "b") == Some(b)
+                    && word(t, "bEnd") == be
             })
-            .map(|t| (word(t.get("type")).unwrap(), word(t.get("at"))))
+            .map(|t| (word(t, "type").unwrap(), word(t, "at")))
     };
     assert_eq!(
         find("arc", Some("start"), "line", Some("p1")),
-        Some(("TangentArcLine".to_string(), Some("start".to_string())))
+        Some(("TangentArcLine", Some("start")))
     );
     assert_eq!(
         find("line", Some("p2"), "circle", None),
-        Some(("TangentLineCircleAt".to_string(), Some("p2".to_string())))
+        Some(("TangentLineCircleAt", Some("p2")))
     );
     assert_eq!(
         find("arc", None, "line", Some("p1")),
-        Some(("TangentLineCircleAt".to_string(), Some("p1".to_string())))
+        Some(("TangentLineCircleAt", Some("p1")))
     );
     assert_eq!(find("arc", Some("end"), "arc", Some("start")), None);
     // every entry's selector is one its kind's `at` slot takes
     for t in entries {
-        let kind = CKind::from_name(&word_of(t.get("type"))).unwrap();
-        if let Some(gcs_core::json::Json::Str(w)) = t.get("at") {
+        let kind = CKind::from_name(word(t, "type").unwrap()).unwrap();
+        if let Some(w) = word(t, "at") {
             let slot = kind.spec().iter().position(|(n, _)| *n == "at").unwrap();
-            assert!(kind.words(slot).unwrap().contains(&w.as_str()), "{kind:?} at: {w}");
-        }
-    }
-    fn word_of(j: Option<&gcs_core::json::Json>) -> String {
-        match j {
-            Some(gcs_core::json::Json::Str(s)) => s.clone(),
-            _ => String::new(),
+            assert!(kind.words(slot).unwrap().contains(&w), "{kind:?} at: {w}");
         }
     }
 }
