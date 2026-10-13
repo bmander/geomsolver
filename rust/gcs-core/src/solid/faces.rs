@@ -616,7 +616,7 @@ pub fn face_source(sk: &Sketch, body: usize, path: &FacePath) -> Result<FaceSour
     let s = &sk.solids[p];
     let name = format!("{}.{}", s.name, path.face);
     match &s.def {
-        SolidDef::Swept { source, motion, from, to } => {
+        SolidDef::Swept { source, motion, .. } => {
             // the cutter's face, by its own path in the cutter (`outer_crown.inner`), where the
             // cutter's placements put it
             let (route, face) = path.face.rsplit_once('.').unwrap_or(("", path.face.as_str()));
@@ -626,7 +626,8 @@ pub fn face_source(sk: &Sketch, body: usize, path: &FacePath) -> Result<FaceSour
                 None => format!("`{}` sweeps a face that is no face of revolution", s.name),
             })?;
             let motion = crate::motion::Family::read(sk, *motion as usize)?;
-            Ok(FaceSource::Swept { surface, solid, within, motion, roll: [from.value, to.value], pose })
+            let roll = super::roll::interval(sk, p)?;
+            Ok(FaceSource::Swept { surface, solid, within, motion, roll, pose })
         }
         _ => {
             let surface = revolved(sk, p, &path.face, pose, name)

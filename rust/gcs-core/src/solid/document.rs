@@ -41,9 +41,18 @@ fn reads_where(sk: &Sketch, si: usize, unit: f64, skip: &dyn Fn(usize) -> bool) 
         v.push(s as f64);
         name_read(&sol.name, &mut v);
         match &sol.def {
-            SolidDef::Swept { source, motion, from, to } => {
+            SolidDef::Swept { source, motion, roll: crate::model::Roll::Stated { from, to } } => {
                 v.extend([6.,*source as f64,*motion as f64,from.value,to.value]);
                 motion_reads(sk,*motion,&mut v);
+            }
+            // a roll through a body reads its material, never its cuts (`material_sources`)
+            SolidDef::Swept { source, motion, roll: crate::model::Roll::Through { body } } => {
+                v.extend([8.,*source as f64,*motion as f64,*body as f64]);
+                motion_reads(sk,*motion,&mut v);
+                match material_sources(sk, *body) {
+                    Ok(sources) => stack.extend(sources),
+                    Err(_) => v.push(f64::MAX),
+                }
             }
             SolidDef::Placed { source, motion, at } => {
                 v.extend([5.,*source as f64,*motion as f64,at.value]);
@@ -223,7 +232,7 @@ fn motion_reads(sk: &Sketch,motion: u32,values: &mut Vec<f64>) {
 
 /// Primitive material sources for a target: stock and additions, recursively, never cuts.
 /// Keeping this walk separate allows a cutter to span the body it cuts without a cycle.
-fn material_sources(sk: &Sketch, target: u32) -> Result<Vec<u32>, String> {
+pub(crate) fn material_sources(sk: &Sketch, target: u32) -> Result<Vec<u32>, String> {
     let mut pending = vec![(target, false)];
     let mut active = std::collections::BTreeSet::new();
     let mut seen = std::collections::BTreeSet::new();
@@ -248,6 +257,10 @@ pub(crate) fn evaluation_operands(sk: &Sketch, i: usize) -> Result<Vec<u32>, Str
     let s = sk.solids.get(i).ok_or_else(|| format!("no solid at index {i}"))?;
     match s.def {
         SolidDef::Through { body, .. } => material_sources(sk, body),
+        // a roll through a body reads its tool and the body's material (#271)
+        SolidDef::Swept { source, roll: crate::model::Roll::Through { body }, .. } => {
+            Ok(std::iter::once(source).chain(material_sources(sk, body)?).collect())
+        }
         _ => Ok(s.operands()),
     }
 }

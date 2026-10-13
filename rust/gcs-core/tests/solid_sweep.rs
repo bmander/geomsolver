@@ -46,11 +46,12 @@ fn material(sk: &gcs_core::model::Sketch,i: usize,p: [f64;3]) -> [f64;2] {
 fn continuous_sweep_source_has_the_full_interval_and_endpoint_caps() {
     let e = read(include_str!("../../examples/solid_generating_sweep.sv"));
     let i = e.map.ent_named("removal.body").unwrap().i();
-    let SolidDef::Swept {from,to,..} = &e.sketch.solids[i].def else { panic!() };
-    assert!((from.value+std::f64::consts::PI/3.).abs() < 1e-12);
-    assert!((to.value-std::f64::consts::PI/3.).abs() < 1e-12);
+    assert!(matches!(e.sketch.solids[i].def,SolidDef::Swept {..}));
+    let [from,to] = solid::roll::interval(&e.sketch,i).unwrap();
+    assert!((from+std::f64::consts::PI/3.).abs() < 1e-12);
+    assert!((to-std::f64::consts::PI/3.).abs() < 1e-12);
     for p in [[3_f64,0.,0.],[-3.,0.,0.],[0.,3.,0.],[4.,2.,1.],[0.;3]] {
-        let angle = p[1].atan2(p[0]).clamp(from.value,to.value);
+        let angle = p[1].atan2(p[0]).clamp(from,to);
         let expected = (p[0]-3.*angle.cos()).hypot(p[1]-3.*angle.sin()).hypot(p[2])-1.;
         let got = material(&e.sketch,i,p);
         assert!(got[0] <= expected+1e-12 && got[1] >= expected-1e-12,"{p:?}: {got:?}, {expected}");

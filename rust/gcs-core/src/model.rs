@@ -34,7 +34,7 @@ pub use entities::{
 pub use curves::{CURVE_STEPS, CurveDef, CurveBody, CurveE, Extremal, Home, Trim, extremal_def, whole};
 pub use spatial::{
     FaceLoop, FaceSupport, FaceE, Length, SolidRequirement, SolidClaim, SolidBearing, Sweep,
-    DerivedE, Extent, Sense, SolidDef, SolidE, SeamE, EdgeE, VertexE, PatchE, EnvelopeE, SurfaceE,
+    DerivedE, Extent, Roll, Sense, SolidDef, SolidE, SeamE, EdgeE, VertexE, PatchE, EnvelopeE, SurfaceE,
     RegionShape, RegionTerm, TermNumber, Way, FaceRef, Target, turn_of,
     MotionDef, MotionE,
 };
@@ -198,6 +198,9 @@ pub struct Sketch {
     pub(crate) canal_cache: std::cell::RefCell<
         BTreeMap<usize, (Vec<f64>, Option<Result<std::rc::Rc<crate::solid::canal::Canal>, String>>)>,
     >,
+    /// Each sweep's roll through a body (`solid::roll::interval`, #271), against `solid::reads`:
+    /// admission, the field and the exact construction each ask it.
+    pub(crate) roll_cache: std::cell::RefCell<BTreeMap<usize, (Vec<f64>, Result<[f64; 2], String>)>>,
     /// Each body's faces as regions read them (`solid::faces::BodyFaces`, #183), against
     /// `solid::reads`: every round over one body reads the same stratum.
     pub faces_cache: std::cell::RefCell<

@@ -355,6 +355,12 @@ fn sweep_parts(s: &Sweep) -> Vec<String> {
             write_ref(&mut text,motion);
             vec![text,format!("from: {}",dim(from)),format!("to: {}",dim(to))]
         }
+        Sweep::Rolled {motion,body} => {
+            let (mut under,mut through) = (String::from("under: "),String::from("through: "));
+            write_ref(&mut under,motion);
+            write_ref(&mut through,body);
+            vec![under,through]
+        }
         Sweep::Placed {motion,at} => {
             let mut text = String::from("under: ");
             write_ref(&mut text,motion);

@@ -1897,7 +1897,7 @@ fn mentions(st: &Stmt, names: &std::collections::BTreeSet<String>) -> Vec<String
                 }
             }
             // a solid goes with what it is swept about, through, along or under
-            if let Some(r) = d.sweep.as_ref().and_then(syntax::Sweep::reference) {
+            for r in d.sweep.as_ref().map(syntax::Sweep::references).unwrap_or_default() {
                 look(r);
             }
         }

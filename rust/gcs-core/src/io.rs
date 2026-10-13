@@ -1165,6 +1165,8 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         for (i, s) in src.solids.iter().enumerate() {
             let required = match s.def {
                 crate::model::SolidDef::Through { body, .. } => vec![body],
+                crate::model::SolidDef::Swept { source, roll: crate::model::Roll::Through { body }, .. } =>
+                    vec![source, body],
                 _ => s.operands(),
             };
             if retained[i] && required.iter().any(|&r| !retained[r as usize]) {
@@ -1186,9 +1188,12 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         let face = |f: u32| face_map[f as usize].unwrap() as u32;
         let sol = |s: &u32| solid_map[*s as usize].unwrap() as u32;
         let def = match &so.def {
-            crate::model::SolidDef::Swept { source, motion, from, to } => {
+            crate::model::SolidDef::Swept { source, motion, roll } => {
                 crate::model::SolidDef::Swept {source:sol(source),
-                    motion:motion_map[*motion as usize].unwrap() as u32,from:from.clone(),to:to.clone()}
+                    motion:motion_map[*motion as usize].unwrap() as u32,roll:match roll {
+                        crate::model::Roll::Through { body } => crate::model::Roll::Through { body: sol(body) },
+                        stated => stated.clone(),
+                    }}
             }
             crate::model::SolidDef::Placed { source, motion, at } => {
                 crate::model::SolidDef::Placed { source:sol(source),

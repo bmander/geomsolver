@@ -242,6 +242,17 @@ impl Extent {
     }
 }
 
+/// **How far a sweep rolls** (§6.9, #271): an interval of its motion's parameter stated (`from:`
+/// / `to:`, radians), or `through: body` — the roll about 0 during which the tool meets the body's
+/// material, its stock and additions (never its cuts, so a sweep cutting the body it rolls through
+/// is no cycle), found after the solve (`solid::roll`).  Every reader asks `solid::roll::interval`,
+/// never the extents, so the exact construction, admission and the field read one interval.
+#[derive(Clone, Debug)]
+pub enum Roll {
+    Stated { from: Extent, to: Extent },
+    Through { body: u32 },
+}
+
 /// Which way a partial revolution turns — a word, never a sign (§9.2).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Sense {
@@ -255,8 +266,9 @@ pub enum Sense {
 pub enum SolidDef {
     /// A rigid instance of another solid at one angle of a named motion family.
     Placed { source: u32, motion: u32, at: Extent },
-    /// Continuous material swept under a named motion; angular extents are radians.
-    Swept { source: u32, motion: u32, from: Extent, to: Extent },
+    /// Continuous material swept under a named motion over its roll (`Roll`): an interval
+    /// stated, or the one its tool takes through a body.
+    Swept { source: u32, motion: u32, roll: Roll },
     /// A face swept along its plane's normal, between two signed coordinates along it.  `from`
     /// and `to` are ordinates and their signs are arithmetic; `depth: d` is the draughtsman's
     /// spelling of `from: -d, to: 0`, the material behind the face the view shows.

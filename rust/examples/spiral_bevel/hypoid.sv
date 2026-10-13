@@ -28,17 +28,12 @@ param spiral_angle := 25deg
 param backlash := 0.05mm
 param tip_relief := 0.2mm
 param end_relief := 0.2mm
-// How far each member rolls through its crown, clear of its blank at both limits.
-param pinion_roll_limit := 35deg
-param gear_roll_limit := 45deg
-
 // The pair on the pitch plane P, `std.top`, with `std.y` (the gear's axis stands square to it)
 // and `std.z`, up from P: `pair.pinion.body` and `pair.gear.body` are the members.
 pair := HypoidPair(std.top, std.y, std.z, pinion_teeth: pinion_teeth, gear_teeth: gear_teeth,
   mean_module: mean_module, shaft_angle: shaft_angle, offset: offset,
   pressure_shift: pressure_shift, spiral_angle: spiral_angle, backlash: backlash,
-  tip_relief: tip_relief, end_relief: end_relief, pinion_roll_limit: pinion_roll_limit,
-  gear_roll_limit: gear_roll_limit)
+  tip_relief: tip_relief, end_relief: end_relief)
 
 // -- the pair ----------------------------------------------------------------------------------
 // The steps a designer takes, each a component below: the pitch cones and the tooth trace through
@@ -48,8 +43,8 @@ pair := HypoidPair(std.top, std.y, std.z, pinion_teeth: pinion_teeth, gear_teeth
 // sets; and the bevel pinion's pitch angle, `pa`, read off the gear's triangle.
 component HypoidPair(P: plane, across: axis, up: axis, pinion_teeth: Int, gear_teeth: Int,
     mean_module: Length, shaft_angle: Angle, offset: Length, pressure_shift: Angle,
-    spiral_angle: Angle, backlash: Length, tip_relief: Length, end_relief: Length,
-    pinion_roll_limit: Angle, gear_roll_limit: Angle, mn: Length, rp: Length, pa: Angle) {
+    spiral_angle: Angle, backlash: Length, tip_relief: Length, end_relief: Length, mn: Length,
+    rp: Length, pa: Angle) {
   // The proportions. The mean cone distance R (the crown's tooth count times half the module)
   // sizes only the cutter (0.8 R), the face width (0.2 R) and the gear space cutter's reach; the
   // depths are in normal modules.
@@ -99,9 +94,8 @@ component HypoidPair(P: plane, across: axis, up: axis, pinion_teeth: Int, gear_t
   construction gear_space := Space(mill.outer_flank, mill.inner_flank, mill.mate_tip,
     mill.mate_base, mill.reach, crown_neighbor, grow: backlash / 4, r: rounding)
   pinion := Member(pinion_blank.material, tooth.crown, pinion_generation, pinion_index,
-    n: pinion_teeth, roll: pinion_roll_limit)
-  gear := Member(gear_blank.material, gear_space.body, gear_generation, gear_index,
-    n: gear_teeth, roll: gear_roll_limit)
+    n: pinion_teeth)
+  gear := Member(gear_blank.material, gear_space.body, gear_generation, gear_index, n: gear_teeth)
 
   // The tip relief: a topping beside each crown flank, the kinks drawn in the normal section N
   // (square to P on the trace normal, through the cutter's axis) a depth `tip_relief` short of
@@ -126,9 +120,9 @@ component HypoidPair(P: plane, across: axis, up: axis, pinion_teeth: Int, gear_t
     construction gear_topping := Space(gear_outer.cone, gear_inner.cone, gear_top,
       mill.mate_base, mill.reach, crown_neighbor, grow: 0mm, r: rounding)
     pinion_relief := Generated(pinion.body, pinion_topping.crown, pinion_generation,
-      pinion_index, n: pinion_teeth, roll: pinion_roll_limit)
+      pinion_index, n: pinion_teeth)
     gear_relief := Generated(gear.body, gear_topping.body, gear_generation, gear_index,
-      n: gear_teeth, roll: gear_roll_limit)
+      n: gear_teeth)
   }
 }
 
@@ -323,18 +317,20 @@ component Space(a: set, b: set, lo: set, hi: set, cap: set, step: motion, grow: 
 }
 
 // -- generation --------------------------------------------------------------------------------
-// A cut generated in `body`: `tool` swept under the generating roll `under` from -`roll` to
-// `roll`, indexed by `index` at each of `n` teeth. A member is its blank less its crown's cut.
-component Generated(body: solid, tool: solid, under: motion, index: motion, n: Int, roll: Angle) {
-  construction removal := solid(tool, under: under, from: -roll, to: roll)
+// A cut generated in `body`: `tool` swept under the generating roll `under` through `body` — the
+// whole roll about 0 during which it meets the body's material, clear of it at both ends, found
+// once the layout is solved — indexed by `index` at each of `n` teeth. A member is its blank less
+// its crown's cut.
+component Generated(body: solid, tool: solid, under: motion, index: motion, n: Int) {
+  construction removal := solid(tool, under: under, through: body)
   repeat n as i {
     private construction indexed := solid(removal, under: index, at: i * 360deg / n)
     indexed cut body
   }
 }
-component Member(blank: solid, tool: solid, under: motion, index: motion, n: Int, roll: Angle) {
+component Member(blank: solid, tool: solid, under: motion, index: motion, n: Int) {
   body := solid(blank)
-  cut := Generated(body, tool, under, index, n: n, roll: roll)
+  cut := Generated(body, tool, under, index, n: n)
 }
 
 // -- the tip relief ----------------------------------------------------------------------------

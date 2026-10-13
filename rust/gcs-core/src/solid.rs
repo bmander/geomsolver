@@ -38,6 +38,7 @@ pub mod cad;
 pub mod region;
 pub mod bounded;
 pub mod canal;
+pub mod roll;
 pub mod lowering;
 pub mod faces;
 pub mod conditions;
@@ -463,13 +464,20 @@ fn validate_at(sk: &Sketch, si: usize, unit: f64) -> Result<std::collections::BT
         pending.push((i, true));
         let fail = |why: &str| format!("`{}`: {why}", s.name);
         let face = match &s.def {
-            SolidDef::Swept { source, motion, from, to } => {
-                if !from.value.is_finite() || !to.value.is_finite() || from.value >= to.value {
-                    return Err(fail("a continuous motion sweep needs finite increasing angular bounds"));
+            SolidDef::Swept { source, motion, roll } => {
+                if let crate::model::Roll::Stated { from, to } = roll {
+                    if !from.value.is_finite() || !to.value.is_finite() || from.value >= to.value {
+                        return Err(fail("a continuous motion sweep needs finite increasing angular bounds"));
+                    }
                 }
                 let family = crate::motion::Family::read(sk,*motion as usize)?;
-                family.at(from.value)?; family.at(to.value)?;
                 pending.push((*source as usize,false));
+                // a roll through a body: its material is read to find it (#271)
+                if let crate::model::Roll::Through { body } = roll {
+                    pending.extend(document::material_sources(sk, *body)?.into_iter().rev().map(|o| (o as usize, false)));
+                }
+                let [from, to] = roll::interval(sk, i)?;
+                family.at(from)?; family.at(to)?;
                 continue;
             }
             SolidDef::Placed { source, motion, at } => {

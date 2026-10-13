@@ -556,7 +556,7 @@ fn rewrite(
                 fix(r, bad);
             }
             // a revolution's axis is a line of the body like any other name it writes
-            if let Some(r) = d.sweep.as_mut().and_then(|s| s.reference_mut()) {
+            for r in d.sweep.as_mut().map(|s| s.references_mut()).unwrap_or_default() {
                 fix(r, bad);
             }
             if let Some(motion) = d.motion.as_mut() {

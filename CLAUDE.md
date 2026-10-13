@@ -885,6 +885,24 @@ ball is a ball turned about an axis leaning off the path (`half_ball`, kept by `
 plane through a sphere's parameter pole is a meeting this kernel's Booleans do not split.
 `swept_groove.sv`, `swept_spring.sv`, `solid_generating_sweep.sv`; `tests/canal.rs` (Pappus, to
 1e-9) is the gate. Field-path tests sweep the ball along a line instead (`solid_sweep.rs::slid`).
+**A sweep's roll through what it cuts** (#271, §6.9 [0.85]): `solid(tool, under: m, through: body)`
+is `SolidDef::Swept { roll: model::Roll::Through { body } }` (`Roll::Stated` is `from:`/`to:`),
+the roll about 0 during which the tool meets the body's material (`document::material_sources`:
+stock and additions, never cuts, so `removal` cutting `body` is no cycle; `evaluation_operands`
+reads them). **Every reader asks `solid::roll::interval`**, never the extents (admission's
+`SweepContacts`, the field's `SweptField`, `SweptCut` here and in the CLI, `faces::face_source`,
+`canal`, `planar_class`), memoised against `solid::reads` (`Sketch::roll_cache`). Found by
+marching out from 0 a `STEP` (1°) at a time, both ways and a few steps ahead on every core, to the
+first step the tool is proved clear over (`roll::clear`: the tool's support and the step split
+by branch and bound, a box dropped where the tool's field encloses it empty or the step's
+`Family::bounds` carry it where the body's field encloses it clear, the step halved where poses
+smear a box past its size; a centre in both at the middle pose ends a step early): conservative,
+a few degrees past first clearance, never short, so E1 holds by construction. Refused naming why
+(no meeting at 0, not clear within two turns, a tool with no bounded support). The spiral bevel,
+the rack cuts and the lantern state no roll; the drill's flute and the Wankel's period are design.
+`fixtures::gear::roll` restates one member's roll (negative controls). `tests/roll_through.rs` is
+the gate (two balls parting at `2 asin(1/3)`; the pair at 10:48 admitted; in the slow tier each
+member built as its stated roll built it).
 **Continuous motion solids:** `removal := solid(tool, under: generating, from: -30deg, to: 30deg)`
 is the union over the whole interval, not posed meshes; `at:` and intervals exclusive.
 `MaterialField::read` promotes static DAGs when a sweep appears; nested sweeps refused; caches

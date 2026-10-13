@@ -116,7 +116,7 @@ NAME := CHAIN                           a chain joined by `->`, named as a trave
 NAME := face(EDGE, ..., holes: LOOP)    a planar region                              (1.14)
 NAME := solid(FACE, SWEEP...)           a face swept: depth:/from:/to:/through:, about:, along:
 NAME := solid(SOLID) | solid(SET)       a body over a stock; the points of a region
-NAME := solid(SOLID, under: MOTION, at: E | from: E, to: E)   placed by, or swept through, a motion
+NAME := solid(SOLID, under: MOTION, at: E | from: E, to: E | through: BODY)   placed by, or swept through, a motion
 REF union REF | REF cut REF | REF bound REF   material added to, removed from, kept within a body
 NAME := motion | envelope | surface | patch | seam | vertex | edge(...)              (1.15)
 WORD[(ARGS)] REF | REF WORD[(ARGS)] REF [hint(SLOT: E, ...)]   a constraint          (1.5)
@@ -1389,7 +1389,11 @@ length(pinion_radius))` turns at the solved ratio, and editing a radius re-times
 **A motion moves a solid**: `solid(tool, under: indexing, at: 90deg)` is one copy at a constant
 angle (`solid_indexed_pattern.sv`); `solid(tool, under: turn, from: -75deg, to: 75deg)` is the
 union of the tool over the whole interval, a continuous sweep meshed from its material field
-(`swept_torus.sv`). `at:` and `from:`/`to:` are exclusive, a sweep of a sweep is refused, and for an
+(`swept_torus.sv`). `solid(tool, under: generating, through: body)` rolls the tool over the whole
+roll about 0 during which it meets `body`'s stock and additions (never its cuts, so it may cut
+`body`), found after the solve and clear of the body at both ends — a generating cut states no roll
+limit (`spiral_bevel/hypoid.sv`'s `Generated`). `at:`, `from:`/`to:` and `through:` are exclusive,
+a sweep of a sweep is refused, and for an
 exact export a swept solid may only be `cut`. Exact exports cover the generating classes
 ([generating-sweeps](generating-sweeps.md)): revolved tools cutting gears (`lantern_generation.sv`,
 `spiral_bevel/`), a wheel carried along a screw (`twist_drill/`), a pocketed prism under a planar

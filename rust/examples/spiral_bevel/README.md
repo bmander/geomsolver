@@ -32,14 +32,14 @@ the instance and may read nothing else of it.
 
 | Step | In `hypoid.sv` | Constructs |
 |---|---|---|
-| 1 | the `param`s; `HypoidPair`'s proportions | the stated pair: teeth, module, shafts, shift, spiral, allowances, roll limits; the cone distance R and the depths in normal modules |
+| 1 | the `param`s; `HypoidPair`'s proportions | the stated pair: teeth, module, shafts, shift, spiral, allowances; the cone distance R and the depths in normal modules |
 | 2 | `GearCone` (`pair.gear_cone`): O, M, `foot` | the gear's pitch cone: the right triangle O–M–F, standing square to P on O → M; the crown's axis up at O |
 | 2 | `ToothTrace` (`pair.trace`): C, H | the tooth trace about the cutter centre C, and the normal module, O's distance from MC over R / m |
 | 2 | `PinionCone` (`pair.pinion_cone`): A, V | the pinion's cone, solved against the gear's by the shafts and the equal normal pitch |
 | 3 | `Blank` (`pair.gear_blank`, `pair.pinion_blank`) | each member's blank, one region: within its pitch cone grown by the addendum (`std.Offset`) and its heel sphere, outside its toe sphere and its pitch cone shrunk by the back depth; the end relief its tip's toe and heel corners chamfered in the same region (`std.Chamfered`); its faces `tip`, `heel`, `toe` and `back` |
 | 4 | `FaceMill` (`pair.mill`) | the crown tooth's pitch points a quarter pitch either side of M; the face mill, its axis `ax` through C, the two flank cones through the pitch points, and the levels the crowns' tips and bases stand at; the space cutter's reach |
 | 4 | `Tooth`, `Space` (`pair.tooth`, `pair.gear_space`) | the pinion's generator, the crown tooth, a region between the flank cones and two levels, its tip's edges rounded (`std.Rounded`), each flank grown a quarter of the backlash; the gear's, its space cutter, the tooth's mate on the same cones |
-| 5 | the motions, `Generated`, `Member` (`pair.pinion`, `pair.gear`) | the rolls and the generating motions; each member its blank less its crown swept and indexed at every tooth |
+| 5 | the motions, `Generated`, `Member` (`pair.pinion`, `pair.gear`) | the rolls and the generating motions; each member its blank less its crown swept through it (`through: body`: the whole roll during which the crown meets the blank, found after the solve, so no roll limit is stated) and indexed at every tooth |
 | — | `Topping`, `when tip_relief > 0mm` | the tip relief: a topping beside each crown flank (a kink on the flank in N, the cone through it turned by the relief angle), cut the same way |
 
 The normal module is stated nowhere: the trace constructs it, and every depth reads it. As

@@ -89,9 +89,32 @@ pub fn publish_blank(text: &str,extra: &str) -> String {
 /// (`pair.gear_cone.ax`, `pair.pinion_cone.ax`).
 pub fn axis(member: &str) -> String { format!("pair.{member}_cone.ax") }
 
-/// `text` with a member's roll limit in degrees (`pinion`, `gear`).
+/// `text` with a member's cut (`pinion`, `gear`; not its tip relief's) rolled from `-degrees` to
+/// `degrees`, stated, in place of the roll its tool takes through its blank (`through:`, #271):
+/// the negative controls, a roll too short or too long. The member is made by copies of `Member`
+/// and `Generated` as `text` has them, taking the roll.
 pub fn roll(text: &str,member: &str,degrees: f64) -> String {
-    configure(text,&[(&format!("{member}_roll_limit"),degrees)])
+    let component = |name: &str| -> String {
+        let head = format!("\ncomponent {name}(");
+        let at = text.find(&head).unwrap_or_else(|| panic!("the pair has a component `{name}`"))+1;
+        let end = at+text[at..].find("\n}\n").expect("a component ends at a closing brace")+3;
+        text[at..end].to_string()
+    };
+    let formal = "n: Int) {";
+    let member_copy = component("Member").replacen("component Member(","component RolledMember(",1)
+        .replacen(formal,"n: Int, roll: Angle) {",1).replacen("Generated(","RolledGenerated(",1)
+        .replacen("n: n)","n: n, roll: roll)",1);
+    let generated = component("Generated");
+    assert!(generated.contains("through: body)"),"the cut rolls through its body");
+    let generated_copy = generated.replacen("component Generated(","component RolledGenerated(",1)
+        .replacen(formal,"n: Int, roll: Angle) {",1).replacen("through: body)","from: -roll, to: roll)",1);
+    let call = format!("{member} := Member(");
+    let at = text.find(&call).unwrap_or_else(|| panic!("the pair makes `{member}` by `Member`"));
+    let count = format!("n: {member}_teeth)");
+    let end = at+text[at..].find(&count).expect("the member's call ends at its tooth count")+count.len();
+    let rolled = text[at..end].replacen("Member(","RolledMember(",1)
+        .replacen(&count,&format!("n: {member}_teeth, roll: {degrees}deg)"),1);
+    format!("{}{rolled}{}\n{member_copy}{generated_copy}",&text[..at],&text[end..])
 }
 
 /// Write the pair into `dir` as `hypoid.sv` at a design (`design`: the offset in millimetres, the
