@@ -722,11 +722,6 @@ export class Sketch {
     return this.constraints.filter((c) => !(c.intrinsic || c.soft));
   }
 
-  /** Everything that must be satisfied (excludes soft ones such as drag targets). */
-  hardConstraints(): Constraint[] {
-    return this.constraints.filter((c) => !c.soft);
-  }
-
   constraintById(id: number): Constraint | undefined {
     this.syncConstraints();
     return this.byId.get(id);
