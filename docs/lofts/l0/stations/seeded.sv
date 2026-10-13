@@ -41,13 +41,11 @@ component OnArc(g: arc, view: plane, up: axis, sweep: Angle, s: Scalar) {
 // The plane square to the spline `g` where its parameter is `s`: the tangent there drawn as a line
 // from `m`, the plane square to it, its `v` along `up` (the normal of the plane `g` is drawn in, so
 // again rotation-minimising for a guide in one plane).
-component OnSpline(g: spline, view: plane, up: axis, s: Scalar) {
-  in view {
-    m := point
-    m coincident(t == s) g
-    q := point
-    tl := line(m, q)
-  }
+component OnSpline(g: spline, up: axis, s: Scalar) {
+  m := point
+  m coincident(t == s) g
+  q := point
+  tl := line(m, q)
   g tangent(t == s) tl
   n := plane
   n.origin coincident m

@@ -498,7 +498,11 @@ it. `q coincident P` (or `l coincident P`, its ends) of a point standing in spac
 `PointE.plane` (`planes::incidences`, after `memberships`, in statement order; the statement
 then states nothing, `drawn` in `program.rs`), the rows `in P` makes. Kept in space, a row:
 a point with a `Deferred::Height` seed, held by a `fix`, a dual's point (`along.point`), a
-ring's, or claimed. **A set whose body is a circle's is the circle**, the one entry so far of
+ring's, or claimed. **A point on a curve drawn in a plane is in it** (#249): `m coincident g` (pins
+allowed), `g` a spline or a traced curve (`curve_view`, not an extrusion) drawn in `P`, draws a
+point in space in `P`, and `g tangent l` a line's free ends; the statement stays the 2D contact. A
+kept point is E062 naming what keeps it (`kept`'s cause), the statement then skipped; a circle or
+an arc keeps `PointOnCircle3`. `tests/curve_membership.rs`. **A set whose body is a circle's is the circle**, the one entry so far of
 **`lowering.rs`**, the table of what a set may be drawn as (#140): `lowering::shape` reads `{ p
 | p coincident X; p distance(r) Y }` (the flattener's and `edit::set_dimension`'s one reader),
 and `lower_circle` (in `set_made`, outside applications) emits `circle(center: Y)` under the

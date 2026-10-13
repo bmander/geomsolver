@@ -289,6 +289,31 @@ fn a_gesture_writes_no_clause_a_coincident_says() {
     assert!(kinds(&again).is_empty());
 }
 
+/// A curve drawn in a plane is read the same way (#249): a point standing in space said on a
+/// spline drawn in `side` is drawn in `side`, the contact the plane's own, and a gesture on it
+/// writes no `in` clause, the statement saying where it is.
+#[test]
+fn a_point_on_a_spline_in_a_plane_is_drawn_in_it() {
+    let src = format!("{SIDE}in side {{\n  k := point hint((0, 0))\n  k2 := point hint((30, 0))\n\
+                       k3 := point hint((40, 20))\n  g := spline(a, k, k2, k3)\n}}\n\
+                       p := point hint((20, 10))\np coincident g hint(t: 0.5)\n");
+    let mut e = read(&src);
+    assert_eq!(plane_of(&e, "p"), Some(ent(&e, "side").i()));
+    assert_eq!(kinds(&e), vec![CKind::PointOnSpline]);
+    let mut sk = solved(&e);
+    assert!(off_side(&sk, &e, "p") < 1e-9);
+    let k = ent(&e, "k").i();
+    let x = sk.points[k].x as usize;
+    sk.params[x].value += 2.0;
+    assert!(solve(&mut sk, SolveOpts::default()).success);
+    let out = edit::reconcile(&mut e, &sk);
+    assert!(out.refused.is_none(), "{:?}", out.refused);
+    let said = out.text.lines().find(|l| l.starts_with("p :=")).unwrap().to_string();
+    assert!(!said.contains(" in "), "{}", out.text);
+    let again = read(&out.text);
+    assert_eq!(plane_of(&again, "p"), Some(ent(&again, "side").i()));
+}
+
 /// A set drawn as a circle has no clause of its own to write a solve into, and a gesture adds
 /// nothing about it: its text stands as written.
 #[test]

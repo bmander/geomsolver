@@ -476,7 +476,9 @@ fn elaborate_in(
     // line has its hidden axis held along it
     memberships(&mut sk, &res, &map, &body, &skip, &mut diags);
     // and `q coincident P` of a point in space is its membership of `P`, said another way
-    let drawn = planes::incidences(&mut sk, &res, &mut map, &stating, &deferred, &expansion.rings);
+    let drawn = planes::incidences(
+        &mut sk, &res, &mut map, &stating, &deferred, &expansion.rings, &mut diags,
+    );
     // and a set drawn as an element is one only where what it reads says so (`lowering`)
     let ent = |r: &crate::syntax::Ref| {
         res.lookup(r).and_then(|e| resolve::follow(&sk, e, &r.path).ok())

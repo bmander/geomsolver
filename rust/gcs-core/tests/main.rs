@@ -128,6 +128,7 @@ mod seeds;
 mod sets;
 mod applied;
 mod membership;
+mod curve_membership;
 mod millimetres;
 mod face_sets;
 mod plane_tangent;
