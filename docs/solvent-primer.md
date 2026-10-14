@@ -115,7 +115,7 @@ in REF { statement* }                   every declaration inside is drawn in REF
 NAME := { p | statement* }              a set: the points satisfying the body        (1.13)
 NAME := CHAIN                           a chain joined by `->`, named as a traversal (1.7)
 NAME := face(EDGE, ..., holes: LOOP)    a planar region                              (1.14)
-NAME := solid(FACE, SWEEP...)           a face swept: depth:/from:/to:/through:, about:, along:
+NAME := solid(FACE, SWEEP...)           a face swept: depth:/from:/to:/through:, about:
 NAME := solid(Comp(ARGS).FACE over F in (E, E))   a face family: the face as the formal F runs
 NAME := solid(SOLID) | solid(SET)       a body over a stock; the points of a region
 NAME := solid()                         an empty body: what is in `union` with it (0.99)
@@ -1175,20 +1175,21 @@ k := Par(o).p over u in (-2mm, 2mm)
   `sweep: 90deg` a partial one (caps `start` and `end`), `sense: cw` reverses it. An axis lies in
   the plane when it is one of the plane's own (`about: std.z` on `std.front`) or the solve puts it
   there (else E081).
-- **Guided sweep or loft** along a directed line or circular arc: `solid(section, along: guide)`,
-  `solid(inlet.profile, outlet.profile, along: guide)`. Sections stand square to the guide's
-  tangents; holes pair in written order; caps are `start` and `end` (`solid_elbow`, `solid_loft`).
-- **Face family** (0.97): `body := solid(Reducer(guide, std.z, inlet: 24mm, outlet: 12mm, wall:
-  2mm).sec.profile over s in (0, 1))` is the face `sec.profile` of the instance as its formal `s`
-  runs (`docs/lofts/l0/reducer.sv`). The instance is written in place, leaves `s` unbound and is
-  never drawn; it is solved at every station, `s` a number there, so its body may use any
-  expression in `s` and read a number of the geometry it was given (`rim.r`). Write *where the section stands* and *what it is* as constraints in the
-  component: a plane square to the guide at `t == s` (`docs/lofts/l0/lofts.sv`'s `OnLine`,
-  `OnArc`, `OnHelix`), the section drawn in it, its sizes and turns reading `s`. Every station
-  inside the interval must solve to DOF 0 with the section's shape intact; an end may shrink to a
-  point (a pyramid's apex). Caps `start` and `end`, walls named by the section's edges
-  (`body.sec.ab`). Seed the section where it belongs at the middle of the interval: a branch the
-  drawn station takes is the one every station keeps (`docs/lofts/l0/`).
+- **Face family** (0.97) — a loft, or a sweep along a path: `body := solid(Reducer(guide, std.z,
+  inlet: 24mm, outlet: 12mm, wall: 2mm).sec.profile over s in (0, 1))` is the face `sec.profile` of
+  the instance as its formal `s` runs (`solid_loft`, `solid_elbow`, `solid_bend`, `solid_twist`).
+  There is no `along:` (0.100): a loft is written this way. The instance is written in place, leaves
+  `s` unbound and is never drawn; it is solved at every station, `s` a number there, so its body may
+  use any expression in `s` and read a number of the geometry it was given (`rim.r`). Write *where
+  the section stands* and *what it is* as constraints in the component: a station word of `std` for
+  the plane square to the guide at `s` — `std.OnLine(g, up: up, s: s)` on a line, `std.OnArc` an
+  arc, `std.OnSpline` a spline, `std.On` any of a line, a spline or a traced curve, `std.Screwed`
+  and `std.OnHelix` along a screw — then the section drawn `in st.n`, its sizes and turns reading
+  `s`. A component is closed over its arguments, so the station's `up` (`std.z`) is passed in as an
+  `axis` formal. Every station inside the interval must solve to DOF 0 with the section's shape
+  intact; an end may shrink to a point (a pyramid's apex). Caps `start` and `end`, walls named by
+  the section's edges (`body.sec.ab`). Seed the section where it belongs at the middle of the
+  interval: a branch the drawn station takes is the one every station keeps (`docs/lofts/l0/`).
 
 ```
 unit mm
@@ -2136,7 +2137,7 @@ first; `gear_trace.sv` is the deepest; `engine.sv` and its `engine/` modules are
 | arc-length and equal-angle constraints | [belt wrap](../rust/examples/belt_wrap.sv), [reflection](../rust/examples/reflection.sv) |
 | traced mechanisms and curves | [Jansen](../rust/examples/jansen.sv), [Peaucellier](../rust/examples/peaucellier.sv), [gear trace](../rust/examples/gear_trace.sv) |
 | repeated features and components | [flange](../rust/examples/solid_flange.sv) |
-| guided sweeps and lofts | [elbow](../rust/examples/solid_elbow.sv), [loft](../rust/examples/solid_loft.sv) |
+| lofts and sweeps along a path | [elbow](../rust/examples/solid_elbow.sv), [reducer](../rust/examples/solid_loft.sv), [bend](../rust/examples/solid_bend.sv), [square to diamond](../rust/examples/solid_twist.sv) |
 | a reusable solid with a preview | [cylinder component](../rust/examples/vtwin/components/cylinder.sv), [its drawing](../rust/examples/vtwin/cylinder.svd) |
 | views and projection | [bracket](../rust/examples/bracket.sv) |
 | layouts in space | [skew axes](../rust/examples/skew_axes.sv), [spatial surfaces](../rust/examples/sphere_cone_cylinder.sv), [hypoid pitch cones](../rust/examples/hypoid_pitch_cones.sv), [sundials](../rust/examples/sundial/horizontal.sv) |

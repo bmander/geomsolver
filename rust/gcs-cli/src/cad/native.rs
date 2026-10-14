@@ -127,8 +127,6 @@ impl Session {
                 (profile,lo-pad,hi+pad)
             }
             Node::Revolve {profile,..} => (profile,0.,0.),
-            Node::Loft {..} => return Err("native CAD export does not yet support along-guide lofts; the core's kernel builds them \
-                (`--kernel rust`)".into()),
             _ => return Err("unsupported CAD primitive".into()),
         };
         let n = profile.normal;

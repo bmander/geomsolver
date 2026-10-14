@@ -37,21 +37,6 @@ pub(super) fn build_solid(
         Sweep::Placed { .. } | Sweep::Swept { .. } | Sweep::Rolled { .. } => {
             under_motion(sk, res, sweep, &ops, st, &mut say)?
         }
-        Sweep::Along { guide } => {
-            if !(1..=2).contains(&ops.len()) || ops.iter().any(|e| e.kind != EntKind::Face) {
-                say(Code::E080, st.span, "`along:` requires one start face and an optional end face".into());
-                return None;
-            }
-            let Some(g) = res.entity(sk, guide) else {
-                say(Code::E101, guide.span, "no such guide geometry".into());
-                return None;
-            };
-            if !matches!(g.kind, EntKind::Line | EntKind::Arc) {
-                say(Code::E081, guide.span, "`along:` requires a directed line or circular arc".into());
-                return None;
-            }
-            SolidDef::Loft { face: ops[0].idx, end: ops.get(1).map(|e| e.idx), guide: g }
-        }
         Sweep::Through { body } => {
             let face = one_face(&ops, st, &mut say)?;
             let Some(target) = res.lookup(body) else {

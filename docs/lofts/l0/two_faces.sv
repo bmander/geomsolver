@@ -6,7 +6,6 @@
 // A½ the area of the mid section (the square and the diamond averaged corner by corner).
 unit mm
 use std
-use lofts
 use pending
 length := 40mm
 

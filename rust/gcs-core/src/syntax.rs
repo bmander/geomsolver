@@ -1156,8 +1156,6 @@ pub enum Sweep {
     /// `from: a, to: b` — signed ordinates along the plane's normal; `draft: θ` tapers the sides
     /// from the face's own plane, the parting plane (#245).
     Prism { from: Arg, to: Arg, draft: Option<Arg> },
-    /// One section repeated, or two sections interpolated, along a directed guide.
-    Along { guide: Ref },
     /// A positive magnitude, kept until elaboration can validate its evaluated expression.
     Depth { depth: Arg, draft: Option<Arg> },
     /// Span the target's stock and additions along the section normal.
@@ -1207,7 +1205,7 @@ impl Sweep {
             Sweep::Prism { from, to, draft } => [from, to].into_iter().chain(draft).collect(),
             Sweep::Depth { depth, draft } => std::iter::once(depth).chain(draft).collect(),
             Sweep::Revolve { sweep, .. } => sweep.iter_mut().collect(),
-            Sweep::Body | Sweep::Through { .. } | Sweep::Along { .. } | Sweep::Region { .. }
+            Sweep::Body | Sweep::Through { .. } | Sweep::Region { .. }
                 | Sweep::Rolled { .. } | Sweep::Family(_) => Vec::new(),
         }
     }
@@ -1236,7 +1234,6 @@ impl Sweep {
             Sweep::Rolled { motion, body } => vec![motion, body],
             Sweep::Revolve { axis, .. } => vec![axis],
             Sweep::Through { body } => vec![body],
-            Sweep::Along { guide } => vec![guide],
             Sweep::Region { probe } => vec![probe],
             Sweep::Prism { .. } | Sweep::Depth { .. } | Sweep::Body
                 | Sweep::Family(_) => Vec::new(),
@@ -1249,7 +1246,6 @@ impl Sweep {
             Sweep::Rolled { motion, body } => vec![motion, body],
             Sweep::Revolve { axis, .. } => vec![axis],
             Sweep::Through { body } => vec![body],
-            Sweep::Along { guide } => vec![guide],
             Sweep::Region { probe } => vec![probe],
             Sweep::Prism { .. } | Sweep::Depth { .. } | Sweep::Body
                 | Sweep::Family(_) => Vec::new(),

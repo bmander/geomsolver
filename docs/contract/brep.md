@@ -8,8 +8,8 @@ says where a rule came from.
 MIT: its code is never translated, only its behaviour and conventions studied. `gcs_core::brep`:
 `geom` (surfaces parameterised as OCCT/STEP do, closed-form inverses, signed distances, `Traced`
 intersections), `topo` (`Brep`: oriented uses with pcurves, degenerate poles; `check`, `pinches`),
-`build` (prisms, revolutions, lofts of line/arc/circle/spline profiles), `props` (volume by Green's
-theorem), `query`, `ssi` (closed forms, else traced), `boolean` (split, arrange, classify,
+`build` (prisms, drafted prisms, revolutions and canals of line/arc/circle/spline profiles),
+`props` (volume by Green's theorem), `query`, `ssi` (closed forms, else traced), `boolean` (split, arrange, classify,
 assemble), `mesh` (constrained Delaunay refined to a measured sag), `step` (AP214 with pcurves and
 seam curves), `recipe`. A traced pair is seeded where edges cross faces; between analytic
 surfaces `ssi::unseen` then searches one face for curves no edge reaches (cells proved clear by
@@ -102,8 +102,11 @@ STEP writes a sheet as the net fitted within `step::FIT` (`family_net`, cubic al
 quintic along `s`: a cubic through 512 rows misses a 3½-turn auger by 1e-6), rails and rims as
 cubics within it.
 Rung 2 is done: `Curve::BSpline` (`brep::nurbs`), `Surface::Extrusion`/`Revolution`, a face's
-stretch of a traced or formula curve (`k from p to q`, `CurveE::trim`, `cad::FIT_MM`), lofts
-(`Surface::Blend`, `Curve::Iso` rails, `step::FIT`) paired at equal parameter fractions.
+stretch of a traced or formula curve (`k from p to q`, `CurveE::trim`, `cad::FIT_MM`), and a
+section carried to its own image (`build::ruled`: a drafted prism's offset, a canal's screwed disc;
+`Surface::Blend`, `Curve::Iso` rails, `step::FIT`), each edge joined to the edge it became at equal
+parameter fractions.  Two sections drawn apart are no input to it (#243 L3): what a section becomes
+along a path is the face family's (`brep::family`).
 `curve_surface` drops roots off the surface. The meter reads a static body by `accuracy::Exact` and
 a field taking splines as chords within `CHORD_SLACK`. Edge sampling and `curve::tessellate` test
 quarter points (a midpoint misses a cubic's S-bend).

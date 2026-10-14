@@ -156,7 +156,7 @@ pub enum Surface {
     /// `C(v)` turned by `u` about the axis through `o` along `z`: the curve lies in the half-plane
     /// of `x` (`y = 0`, `x ≥ 0` in the frame).
     Revolution(Frame,Arc<Curve>),
-    /// A loft's face between two section edges (`Blend`), its frame the start section's.
+    /// A swept section's face between an edge and its image (`Blend`), its frame the section's.
     Blend(Frame,Arc<Blend>),
     /// A tensor B-spline over its knots' domain (a generating sheet as the native kernel fits it);
     /// its frame is the page's, carrying nothing.
@@ -166,12 +166,11 @@ pub enum Surface {
     Family(Frame,Arc<super::family::Sheet>),
 }
 
-/// What carries a loft's blended section along its guide as `v` runs from 0 to 1: a step along a
-/// line, a turn by `angle` about the axis through `center` along the unit `axis`, or a screw — that
-/// turn and a step of `advance` along the axis with it (#238: a ball's normal disc carried along a
-/// helix).
+/// What carries a blended section as `v` runs from 0 to 1: a step along a line (a drafted prism's),
+/// or a screw — a turn by `angle` about the axis through `center` along the unit `axis` and a step
+/// of `advance` along it (#238: a ball's normal disc carried along a helix).
 #[derive(Clone,Copy,Debug,PartialEq)]
-pub enum Carry { Line { delta: V },Arc { center: V,axis: V,angle: f64 },Screw { center: V,axis: V,angle: f64,advance: f64 } }
+pub enum Carry { Line { delta: V },Screw { center: V,axis: V,angle: f64,advance: f64 } }
 
 impl Carry {
     /// `p` turned by `angle` about the unit `axis` through the origin, by Rodrigues' formula: the
@@ -184,7 +183,6 @@ impl Carry {
     pub fn at(&self,p: V,v: f64) -> V {
         match *self {
             Carry::Line {delta} => add(p,scale(delta,v)),
-            Carry::Arc {center,axis,angle} => add(center,Carry::turn(axis,angle*v,sub(p,center))),
             Carry::Screw {center,axis,angle,advance} =>
                 add(add(center,Carry::turn(axis,angle*v,sub(p,center))),scale(axis,advance*v)),
         }
@@ -193,31 +191,28 @@ impl Carry {
     pub fn dir(&self,d: V,v: f64) -> V {
         match *self {
             Carry::Line {..} => d,
-            Carry::Arc {axis,angle,..} | Carry::Screw {axis,angle,..} => Carry::turn(axis,angle*v,d),
+            Carry::Screw {axis,angle,..} => Carry::turn(axis,angle*v,d),
         }
     }
     /// `d/dv` of `at(p, v)` for a fixed `p`, at the carried point `q = at(p, v)`.
     fn rate(&self,q: V) -> V {
         match *self {
             Carry::Line {delta} => delta,
-            Carry::Arc {center,axis,angle} => scale(cross(axis,sub(q,center)),angle),
             Carry::Screw {center,axis,angle,advance} => add(scale(cross(axis,sub(q,center)),angle),scale(axis,advance)),
         }
     }
     pub fn moved(&self,m: &Rigid) -> Carry {
         match *self {
             Carry::Line {delta} => Carry::Line {delta:m.vector(delta)},
-            Carry::Arc {center,axis,angle} => Carry::Arc {center:m.point(center),axis:m.vector(axis),angle},
             Carry::Screw {center,axis,angle,advance} => Carry::Screw {center:m.point(center),axis:m.vector(axis),angle,advance},
         }
     }
 }
 
-/// A loft's face between one edge of its start section and the edge written in the same place in
-/// its end section: `S(u, v) = carry_v((1 − v) A(a₀ + u Δa) + v B(b₀ + u Δb))`, each edge at the
-/// same fraction `u` of its own parameter, `B` the end edge carried back to the start (Solvent
-/// §6.9, as the faceted kernel's `solid::loft` pairs them). A whole-circle pair runs round once,
-/// periodic in `u`.
+/// A swept section's face between one of its edges and that edge's image in the section it is
+/// carried to (`build::ruled`): `S(u, v) = carry_v((1 − v) A(a₀ + u Δa) + v B(b₀ + u Δb))`, each
+/// edge at the same fraction `u` of its own parameter, `B` the image carried back to the start. A
+/// whole-circle pair runs round once, periodic in `u`.
 #[derive(Clone,Debug,PartialEq)]
 pub struct Blend { pub a: Curve,pub ta: [f64;2],pub b: Curve,pub tb: [f64;2],pub carry: Carry,pub closed: bool }
 
@@ -269,7 +264,7 @@ impl Blend {
     fn feature(&self) -> f64 {
         let edge = |c: &Curve| match c { Curve::Circle(_,r) => *r,Curve::BSpline(_) => least_radius(c),_ => f64::INFINITY };
         let mut f = edge(&self.a).min(edge(&self.b));
-        if let Carry::Arc {center,axis,..} | Carry::Screw {center,axis,..} = self.carry {
+        if let Carry::Screw {center,axis,..} = self.carry {
             for k in 0..=8 { for j in 0..=2 {
                 let x = self.d1([k as f64/8.,j as f64/2.]).0;
                 f = f.min(norm(cross(sub(x,center),axis)));
@@ -473,7 +468,7 @@ impl Surface {
             Surface::Torus(..) => [Some(TAU),Some(TAU)],
         }
     }
-    /// Whether every coordinate is affine along `v` (a plane, cylinder, cone, extrusion, or a loft
+    /// Whether every coordinate is affine along `v` (a plane, cylinder, cone, extrusion, or a blend
     /// carried along a line), so that over any face its extremes lie on the face's boundary: the
     /// line in `v` through an inner point leaves the face across it.
     fn ruled(&self) -> bool {
@@ -488,7 +483,7 @@ impl Surface {
     /// About its axis a coordinate of a sphere, torus or revolution is sinusoidal in `u`, so a
     /// face's inner extremes lie on the meridians where it turns (or anywhere, where it does not
     /// turn with `u`, or on the axis: the middle one): each within the range is boxed over its `v`.
-    /// A loft carried round an axis is boxed by the ring its sections turn in; a B-spline by the
+    /// A blend screwed about an axis is boxed by the ring its sections turn in; a B-spline by the
     /// poles reaching the range.
     pub fn bounds_over(&self,range: impl FnOnce() -> [[f64;2];2]) -> Box3 {
         if self.ruled() { return EMPTY }
@@ -496,9 +491,8 @@ impl Surface {
             let mut sections = b.a.bounds(b.ta);
             widen(&mut sections,b.b.bounds(b.tb));
             return match b.carry {
-                Carry::Arc {center,axis,..} => swept(center,axis,sections),
                 Carry::Screw {center,axis,advance,..} => screwed(center,axis,advance,sections),
-                Carry::Line {..} => unreachable!("a loft carried along a line is ruled"),
+                Carry::Line {..} => unreachable!("a blend carried along a line is ruled"),
             }
         }
         let [u,v] = range();
@@ -1068,9 +1062,10 @@ impl Curve {
     }
     /// A box about the curve over `[t0, t1]`, never smaller than it: exact for a line, circle and
     /// ellipse (their ends and the turning points between), the poles of a B-spline reaching the
-    /// interval (their hull), a loft's rail by its ends where it is carried along a line and by the ring about the
-    /// axis it turns round otherwise. A traced curve is its points' box grown by twice the largest
-    /// sagitta measured at its chords' midpoints: the one bound measured rather than proved, since
+    /// interval (their hull), a blend's rail by its ends where it is carried along a line and by the
+    /// ring about the axis it is screwed round otherwise. A traced curve is its points' box grown by
+    /// twice the largest sagitta measured at its chords' midpoints: the one bound measured rather
+    /// than proved, since
     /// what bounds a trace's sag is the spacing it was traced at.
     pub fn bounds(&self,[t0,t1]: [f64;2]) -> Box3 {
         let (t0,t1) = (t0.min(t1),t0.max(t1));
@@ -1083,10 +1078,6 @@ impl Curve {
             Curve::Iso(ref b,u) => match b.carry {
                 Carry::Line {..} => hull([t0,t1].map(|v| b.d1([u,v]).0)),
                 // before it is carried, the rail is the straight line between its sections
-                Carry::Arc {center,axis,..} => {
-                    let ((a,_,_),(z,_,_)) = b.ends(u);
-                    swept(center,axis,hull([t0,t1].map(|v| add(scale(a,1.-v),scale(z,v)))))
-                }
                 Carry::Screw {center,axis,advance,..} => {
                     let ((a,_,_),(z,_,_)) = b.ends(u);
                     screwed(center,axis,advance,hull([t0,t1].map(|v| add(scale(a,1.-v),scale(z,v)))))

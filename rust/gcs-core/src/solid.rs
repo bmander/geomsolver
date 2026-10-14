@@ -71,7 +71,6 @@ pub(crate) use field::RegionField;
 pub use field::BoundaryComponent;
 mod raycast;
 mod section;
-mod loft;
 pub(crate) mod family;
 pub(crate) mod surface;
 mod sweep_contacts;
@@ -494,10 +493,6 @@ fn validate_at(sk: &Sketch, si: usize, unit: f64) -> Result<std::collections::BT
                 *face
             }
             SolidDef::Revolve { face, .. } => *face,
-            SolidDef::Loft { face, end, guide } => {
-                loft::prepare(sk, *face, *end, *guide, unit).map_err(|m| fail(&m))?;
-                continue;
-            }
             SolidDef::Family { .. } => {
                 family::built(sk, i, unit).map_err(|m| fail(&m))?;
                 continue;

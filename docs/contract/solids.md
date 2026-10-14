@@ -208,7 +208,7 @@ placement carries inside the blank; CLI test readers zero the offset.
   over between stations; an end may lose an edge or the whole section (its samples run together
   within the flatness).  **And ahead**: every sample of each station on the far side of the one
   before's plane, the way the family moves, else the swept volume crosses itself.  Faceted
-  (`Family::primitive`): caps by `loft::cap`'s strips, none at a vanished end; walls the quads
+  (`Family::primitive`): caps by `profile::cap`'s strips, none at a vanished end; walls the quads
   between stations, flat as one facet, gently bent as two, twisted past the flatness **fanned
   from the middle** (four triangles, which hold a ruled patch's volume where a diagonal errs to
   one side); a wall is `smooth` where its facets do not lie in one plane; the caps' strips welded
@@ -232,6 +232,20 @@ placement carries inside the blank; CLI test readers zero the offset.
   native OCCT host refuses the node (its lofts are the oracle at L10).  `tests/face_family.rs` is
   the gate: the L0 programs (`docs/lofts/l0/`) against their closed forms, every one to 1e-9 off
   the B-rep (`props::volume`, `Brep::check`), a slab cut by the twisted duct, STEP read back.
+- **A loft is library words over the family** (§6.9 [0.100], `rust/lib/std.sv`; #243 L3).  The
+  station words say only where a station stands: `std.OnLine` (a fraction of a line's run),
+  `std.OnArc` (of an arc's turn), `std.OnSpline` (a spline's parameter), `std.On` (any `path` its
+  tangency at a point of reads in space: a line, a spline, a traced curve; an arc's is E062 until
+  L4), `std.Screwed` and `std.OnHelix` — each a component holding a plane `n` square to its path,
+  its `v` along `up`.  The section is the writer's component drawn `in st.n`, reading `s`; two
+  sections correspond by being one.  **No Rust reads a word's name**, and there is no loft
+  constructor: `SolidDef::Loft`, `Sweep::Along` and `solid/loft.rs` are gone, and `along:` in a
+  solid's brackets is refused at the key saying what to write (`parser::declarations::sweep_arg`).
+  `brep::build::ruled` joins a section only to its own image (a drafted prism's offset, a canal's
+  screwed disc), edge for edge; the recipe has no `loft` node.  The two-face word (pairing two
+  sketches drawn apart) returns at L8 (finding 8).  `tests/loft.rs` is the gate: `solid_loft`,
+  `solid_elbow`, `solid_bend` and `solid_twist` at their closed forms off the B-rep to 1e-9, their
+  walls by name and kind, `std.On` agreeing with each kind's word.
 - **A face closes itself** (§6.8, `program::build_face`; issue #49).  The brackets hold a *walk*,
   and an item may be a **point**, with `-> close` sealing the run back to the first item.  Where
   two neighbours do not meet, `build_face` mints the straight line between them, class

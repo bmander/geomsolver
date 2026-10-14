@@ -1,5 +1,5 @@
-// A hollow duct that narrows as it bends: an inlet and an outlet lofted along a constrained arc,
-// each section blended into the next while it turns about the bend's axis.
+// A hollow duct that narrows as it bends: one hollow square section carried round a constrained
+// arc, its half size running from the inlet's to the outlet's as it turns about the bend's axis.
 unit mm
 use std (horizontal)
 bend_radius := 30mm
@@ -8,16 +8,20 @@ outlet_half := 6mm
 wall := 2mm
 bend_angle := 90deg
 
-in std.front {
-  center := point hint((bend_radius, 0mm))
-  std.origin horizontal center
-  std.origin distance(bend_radius) center
-  outer := std.CenteredRectangle(center, w: 2 * inlet_half, h: 2 * inlet_half)
-  inner := std.CenteredRectangle(center, w: 2 * (inlet_half - wall), h: 2 * (inlet_half - wall))
-  inlet := face(outer.loop, holes: inner.loop)
+component Section(c: point, size: Length, wall: Length) {
+  private outer := std.CenteredRectangle(c, w: size, h: size)
+  private inner := std.CenteredRectangle(c, w: size - 2 * wall, h: size - 2 * wall)
+  profile := face(outer.loop, holes: inner.loop)
 }
 
-// The guide is drawn in plan, the top plane; each section stands perpendicular to its tangent at its end.
+// The section at station `s`: square to the guide there, its half size the inlet's mixed with the
+// outlet's.
+component Bend(g: arc, up: axis, inlet: Length, outlet: Length, wall: Length, s: Scalar) {
+  st := std.OnArc(g, up: up, s: s)
+  sec := Section(st.n.origin, size: 2 * (inlet + (outlet - inlet) * s), wall: wall) in st.n
+}
+
+// The guide is drawn in plan, the top plane.
 in std.top {
   turn_center := point
   fix((0mm, 0mm)) turn_center
@@ -30,13 +34,4 @@ in std.top {
   construction centerline guide := arc(center: turn_center, start: entry, end: exit)
   radius(bend_radius) guide
 }
-
-// The outlet's plane, the side plane, holds the bend's axis and the radius to the exit.
-in std.side {
-  out_center := point
-  fix((bend_radius, 0mm)) out_center
-  out_outer := std.CenteredRectangle(out_center, w: 2 * outlet_half, h: 2 * outlet_half)
-  out_inner := std.CenteredRectangle(out_center, w: 2 * (outlet_half - wall), h: 2 * (outlet_half - wall))
-}
-outlet := face(out_outer.loop, holes: out_inner.loop)
-body := solid(inlet, outlet, along: guide)
+body := solid(Bend(guide, std.z, inlet: inlet_half, outlet: outlet_half, wall: wall).sec.profile over s in (0, 1))

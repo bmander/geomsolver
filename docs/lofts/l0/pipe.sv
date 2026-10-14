@@ -2,16 +2,14 @@
 // straight, a quarter turn left about R25, 20 mm, a quarter turn right about R25, 20 mm.
 // A chain is one path: the station runs over it link by link (`s` from 0 to 5, link k at
 // s ∈ [k, k + 1]), the frame square to whichever link it is on, so the joints need no gluing.
-// One word, `lofts.On`, stands on any path; see the README's findings on what that asks.
+// One word, `std.On`, stands on any path; see the README's findings on what that asks.
 // Closed form: a section square to its path with its centroid on it sweeps its area times the
 // path's length: V = π·4² · (3·20 + 2·25π/2) = 16π(60 + 25π) mm³.
 unit mm
 use std (horizontal, vertical)
-use lofts
-use pending
 
 component Tube(g: path, up: axis, r: Length, s: Scalar) {
-  st := pending.On(g, up: up, s: s)
+  st := std.On(g, up: up, s: s)
   in st.n {
     k := circle(center: st.n.origin)
     radius(r) k

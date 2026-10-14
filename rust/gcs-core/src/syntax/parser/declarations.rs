@@ -20,7 +20,6 @@ pub(crate) struct SweepParts {
     pub(crate) depth: Option<Arg>,
     pub(crate) about: Option<Ref>,
     pub(crate) through: Option<Ref>,
-    pub(crate) along: Option<Ref>,
     pub(crate) sweep: Option<Arg>,
     pub(crate) sense: Option<Sense>,
     pub(crate) draft: Option<Arg>,
@@ -37,13 +36,13 @@ fn sweep_label(l: &str) -> bool {
 pub(crate) fn sweep_of(p: SweepParts) -> Result<Sweep, String> {
     // **draft** (#245) tapers a prism's sides from the plane its face is drawn in, the parting
     // plane: nothing else is swept along a normal
-    if p.draft.is_some() && (p.under.is_some() || p.at.is_some() || p.along.is_some()
+    if p.draft.is_some() && (p.under.is_some() || p.at.is_some()
         || p.through.is_some() || p.about.is_some() || p.depth.is_none() && p.from.is_none() && p.to.is_none()) {
         return Err("`draft:` tapers a prism's sides from its face's plane: say `from:`/`to:` or \
                     `depth:`, and nothing else".into());
     }
     if p.under.is_some() || p.at.is_some() {
-        if p.depth.is_some() || p.about.is_some() || p.along.is_some() || p.sweep.is_some()
+        if p.depth.is_some() || p.about.is_some() || p.sweep.is_some()
             || p.sense.is_some() || p.through.is_some() && (p.at.is_some() || p.from.is_some() || p.to.is_some()) {
             return Err("a named motion uses `at:`, angular `from:`/`to:` or `through:` a body, without other \
                         sweep labels".into());
@@ -60,13 +59,6 @@ pub(crate) fn sweep_of(p: SweepParts) -> Result<Sweep, String> {
             (Some(motion),None,Some(from),Some(to)) => Ok(Sweep::Swept {motion,from,to}),
             _ => Err("a named motion needs `under:` and either `at:`, both `from:` and `to:`, or `through:`".into()),
         };
-    }
-    if let Some(guide) = p.along {
-        if p.from.is_some() || p.to.is_some() || p.depth.is_some() || p.about.is_some()
-            || p.through.is_some() || p.sweep.is_some() || p.sense.is_some() {
-            return Err("`along:` cannot be combined with other sweep extents".into());
-        }
-        return Ok(Sweep::Along { guide });
     }
     if let Some(body) = p.through {
         if p.from.is_some() || p.to.is_some() || p.depth.is_some() || p.about.is_some()
@@ -828,9 +820,13 @@ impl<'a> P<'a> {
                 if parts.under.is_some() { return twice(self); }
                 parts.under = Some(self.refr()?);
             }
+            // retired (#243, L3): a loft is a face family, its section a component standing on
+            // its guide, caught here so a document written against 0.99 says what to write
             "along" => {
-                if parts.along.is_some() { return twice(self); }
-                parts.along = Some(self.refr()?);
+                self.fail("`along:` is retired: a loft is a section drawn at a station of its guide, \
+                           swept as the station runs — `solid(I(g, …).f over s in (0, 1))`, `I` \
+                           standing `std.OnLine(g, up: …, s: s)` or `std.OnArc` (spec §6.9)");
+                return None;
             }
             "through" => {
                 if parts.through.is_some() { return twice(self); }

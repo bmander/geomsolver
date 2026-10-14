@@ -481,8 +481,7 @@ pub(crate) fn face_polys(m: &Meridian, unit: f64) -> Vec<crate::solid::profile::
                 }
             }
         }
-        let curved = vec![None; names.len()];
-        crate::solid::profile::FacePoly { pts, of, names, basis, curved }
+        crate::solid::profile::FacePoly { pts, of, names, basis }
     }).collect()
 }
 

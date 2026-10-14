@@ -58,8 +58,8 @@ views. Open them from `File ▸ Open examples…`, or render a sheet with
 | --- | --- |
 | [Mounting flange](../rust/examples/solid_flange.sv) | a revolved stepped section, a bolt pattern of through cuts |
 | [V-belt pulley](../rust/examples/solid_pulley.sv) | a full revolution, a revolved groove cut away |
-| [Hollow duct elbow](../rust/examples/solid_elbow.sv) | a hollow section swept along a constrained arc |
-| [Hollow reducer](../rust/examples/solid_loft.sv) | two hollow sections lofted along a line |
+| [Hollow duct elbow](../rust/examples/solid_elbow.sv) | a hollow section carried round a constrained arc |
+| [Hollow reducer](../rust/examples/solid_loft.sv) | a hollow section run along a line, its size read from the station |
 | [Pocketed tray](../rust/examples/solid_tray.sv) | named contours, a blind pocket, nested bodies, repeated bosses |
 | [Indexed pattern](../rust/examples/solid_indexed_pattern.sv) | one cutter placed at the poses of a named motion |
 | [Generating sweep](../rust/examples/solid_generating_sweep.sv) | material removed over a continuous motion |

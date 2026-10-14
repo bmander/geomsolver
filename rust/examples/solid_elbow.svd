@@ -3,7 +3,7 @@ model m from "solid_elbow.sv"
 sheet elbow {
   size (297mm, 210mm)
   label "HOLLOW DUCT ELBOW" at (14mm, 18mm)
-  label "Hollow section / constrained arc guide / implicit end section" at (14mm, 28mm)
+  label "Hollow section / constrained arc guide / one section at every station" at (14mm, 28mm)
   label "FRONT" at (42mm, 42mm)
   label "PLAN" at (42mm, 104mm)
   label "ISOMETRIC" at (175mm, 42mm)

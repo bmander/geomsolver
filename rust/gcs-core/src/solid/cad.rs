@@ -323,15 +323,6 @@ impl<'a> Walk<'a> {
                         * if *sense == Sense::Cw { -1. } else { 1. }).into()),
                 ])
             }
-            SolidDef::Loft {face,end,guide} => {
-                // the start section, the end section (at the guide's end, where there is one) and the
-                // guide; each section's loops in written order, each loop's edges in written order —
-                // the order a loft pairs them in
-                let mut node = object([("kind","loft".into()),("profile",profile(sk,*face as usize,w)?),
-                    ("guide",super::loft::guide_json(sk,*guide,w)?)]);
-                if let Some(end) = end { node.set("end",profile(sk,*end as usize,w)?); }
-                node
-            }
             // its walls exact (#243 L2): the interval's pieces, the stations each is solved at, and
             // each wall's edge's numbers at every one of them
             SolidDef::Family {..} => super::family::json(&super::family::walls(sk,i)
