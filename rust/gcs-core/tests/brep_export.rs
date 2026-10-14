@@ -241,3 +241,28 @@ fn the_relieved_pinion_is_built_by_sectors() {
         "the two conic bands, a piece in each sector");
     exact.solid.check(1e-6).unwrap();
 }
+
+/// The pair with a 20-tooth pinion: at the gear's heel a corner of the cutter grazes the blank's
+/// end relief at some stations and is a fan the sheet's rows stop before at others
+/// (`contact_trace::charted`), so the cut's fitted sheet ends a few microns inside the blank, where
+/// it divides nothing. Carried on past it by its own surface (`sweep::sheet`), the sector splits
+/// into its cells, is turned into every copy, and agrees with its field.
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 10 s: the 20-tooth pair's gear built and measured")]
+fn a_sheet_ending_in_the_blank_is_carried_out_of_it() {
+    let e = fixtures::gear::read(&fixtures::gear::configure(&fixtures::gear::source(),&[("pinion_teeth",20.)]));
+    let body = fixtures::solid(&e,"pair.gear.body");
+    let lines = std::sync::Mutex::new(Vec::new());
+    let say = Say {stage:&|l: &str| lines.lock().unwrap().push(l.to_string()),mark:&|_| {}};
+    let exact = export::exact(&e.sketch,body,None,None,&say).unwrap_or_else(|r| panic!("{r:?}\n{}",lines.lock().unwrap().join("\n")));
+    let said = lines.lock().unwrap().join("\n");
+    assert!(said.contains("`pair.gear.cut.removal`: the fitted sheet's edge is in the blank by up to"),"{said}");
+    assert!(said.contains("carried on past it by its own surface"),"{said}");
+    assert!(said.contains("classified 1 material and 4 removed cells"),"{said}");
+    assert!(said.contains("turned the sector into 48 copies"),"{said}");
+    exact.solid.check(1e-6).unwrap();
+    let stl = export::stl(&e.sketch,body,&exact,None,&say).unwrap();
+    gcs_core::mesh::stl_shells(&stl).unwrap();
+    let said = lines.lock().unwrap().join("\n");
+    assert!(said.contains(" 0 disagree"),"{said}");
+}
