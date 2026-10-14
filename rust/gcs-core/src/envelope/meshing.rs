@@ -43,11 +43,12 @@
 //! of the two members touches first.
 
 use super::held::{self, col3, cross, dot, frames, local, unit, vadd, vsub, Layout, Step, STEP};
-use crate::kernels::{curve_widths, Dual, Kernel, Num};
+use crate::kernels::{Dual, Kernel, Num};
 use crate::linalg::Mat;
+use std::ops::Range;
 
 /// Constants before the flanks'.
-pub const HEADER: usize = 4;
+const HEADER: usize = 4;
 /// The unknowns a contact owns: the phase, the lag and the two places.
 pub const UNKNOWNS: usize = 8;
 /// The rows at a phase: the shared point, the shared normal, and each flank's own.
@@ -59,18 +60,20 @@ pub const LEAD: usize = 3;
 
 /// A meshing's constants read back.
 #[derive(Clone, Debug)]
-pub struct Mesh {
-    pub lead: usize,
-    /// The pinion's flank (the observer's) and the gear's (the source's).
-    pub flanks: [Layout; 2],
-    pub steps: Vec<Step>,
+struct Mesh {
+    lead: usize,
+    /// The pinion's flank (the observer's) and the gear's (the source's), and where each one's
+    /// constants are.
+    flanks: [Layout; 2],
+    consts: [Range<usize>; 2],
+    steps: Vec<Step>,
     /// The steps the gear's and the pinion's turns are.
-    pub source: usize,
-    pub observer: usize,
+    source: usize,
+    observer: usize,
 }
 
 impl Mesh {
-    pub fn read(k: &[f64]) -> Option<Mesh> {
+    fn read(k: &[f64]) -> Option<Mesh> {
         if k.len() < HEADER {
             return None;
         }
@@ -79,12 +82,12 @@ impl Mesh {
         if k.len() != HEADER + n1 + n2 + STEP * ns {
             return None;
         }
-        let k1 = &k[HEADER..HEADER + n1];
-        let k2 = &k[HEADER + n1..HEADER + n1 + n2];
-        let flank = |k: &[f64]| Layout::read_any(k).filter(|l| l.lead == 0);
+        let consts = [HEADER..HEADER + n1, HEADER + n1..HEADER + n1 + n2];
+        let flank = |r: &Range<usize>| Layout::read_any(&k[r.clone()]).filter(|l| l.lead == 0);
+        let flanks = [flank(&consts[0])?, flank(&consts[1])?];
         let steps = held::read_steps(&k[HEADER + n1 + n2..])?;
         let Some(&Step::Relative { source, observer }) = steps.last() else { return None };
-        Some(Mesh { lead, flanks: [flank(k1)?, flank(k2)?], steps, source, observer })
+        Some(Mesh { lead, flanks, consts, steps, source, observer })
     }
 
     /// The columns of flank `i`'s source and motion.
@@ -93,19 +96,26 @@ impl Mesh {
     }
 
     /// Every column a contact reads.
-    pub fn width(&self) -> usize {
+    fn width(&self) -> usize {
         let flanks = self.flank_width(0) + self.flank_width(1);
         self.lead + UNKNOWNS + flanks + held::steps_width(&self.steps)
     }
 
-    pub fn rows(&self) -> usize {
+    fn rows(&self) -> usize {
         self.lead + ROWS
+    }
+
+    /// The pinion's pose at the phase, and the gear's at the phase and the lag (radians): each
+    /// step's turn worked out only as far as the one asked for.
+    fn poses<T: Num>(&self, motion: &[T], phase: T, gear: T) -> [held::Frame<T>; 2] {
+        let pose = |i: usize, t: T| frames(&self.steps[..=i], motion, t)[i];
+        [pose(self.observer, phase), pose(self.source, gear)]
     }
 }
 
 /// A meshing's constants: the lead's width, each flank's constants (`held::Parts::consts_at(0)`)
 /// and the mesh's steps.
-pub fn consts(lead: usize, flanks: [&[f64]; 2], steps: &[Step]) -> Vec<f64> {
+fn consts(lead: usize, flanks: [&[f64]; 2], steps: &[Step]) -> Vec<f64> {
     let mut k = vec![lead as f64, flanks[0].len() as f64, flanks[1].len() as f64,
                      steps.len() as f64];
     k.extend_from_slice(flanks[0]);
@@ -150,8 +160,7 @@ fn at<T: Num>(m: &Mesh, cols: &[T]) -> At<T> {
     };
     let (f1, f2) = (flank(0), flank(1));
     let motion = &cols[from..];
-    let (r1, p1) = frames(&m.steps, motion, phase)[m.observer];
-    let (r2, p2) = frames(&m.steps, motion, phase + lag)[m.source];
+    let [(r1, p1), (r2, p2)] = m.poses(motion, phase, phase + lag);
     let x1 = vadd(rotate(&r1, f1.x), p1);
     let x2 = vadd(rotate(&r2, f2.x), p2);
     let lever = dot(vsub(x2, col3(motion, 0)), vsub(x2, col3(motion, 0))).sqrt();
@@ -201,51 +210,12 @@ pub(crate) fn rows<T: Num>(cols: &[T], k: &[f64], out: &mut [T]) -> Option<()> {
 
 /* -- the kernel ------------------------------------------------------------------------------ */
 
-/// Columns differentiated per pass.
-const PASS: usize = 8;
-
 fn res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
-    let (n_par, n_const) = curve_widths(n, v, k);
-    let m = if n > 0 { r.len() / n } else { 0 };
-    for i in 0..n {
-        let out = &mut r[m * i..m * (i + 1)];
-        let (cols, kc) = (&v[n_par * i..n_par * (i + 1)], &k[n_const * i..n_const * (i + 1)]);
-        if rows::<f64>(cols, kc, out).is_none() {
-            out.fill(f64::NAN);
-        }
-    }
+    held::block_res(n, v, k, r, LEAD + ROWS, rows);
 }
 
 fn jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
-    let (n_par, n_const) = curve_widths(n, v, k);
-    if n == 0 || n_par == 0 {
-        return;
-    }
-    let m = j.len() / (n * n_par);
-    let mut cols = vec![Dual::<PASS>::cst(0.0); n_par];
-    let mut out = vec![Dual::<PASS>::cst(0.0); m];
-    for i in 0..n {
-        let x = &v[n_par * i..n_par * (i + 1)];
-        let kc = &k[n_const * i..n_const * (i + 1)];
-        let block = &mut j[m * n_par * i..m * n_par * (i + 1)];
-        for start in (0..n_par).step_by(PASS) {
-            for (q, col) in cols.iter_mut().enumerate() {
-                *col = Dual::cst(x[q]);
-                if (start..start + PASS).contains(&q) {
-                    col.g[q - start] = 1.0;
-                }
-            }
-            if rows(&cols, kc, &mut out).is_none() {
-                block.fill(f64::NAN);
-                break;
-            }
-            for (row, val) in out.iter().enumerate() {
-                for q in start..(start + PASS).min(n_par) {
-                    block[row * n_par + q] = val.g[q - start];
-                }
-            }
-        }
-    }
+    held::block_jac(n, v, k, j, LEAD + ROWS, rows);
 }
 
 /// The kernel of a point on a meshing at a block's widths (`system::build_kernel`).
@@ -354,8 +324,6 @@ pub struct Sample {
     pub gear_error: Option<f64>,
     /// The contact in the fixed frame: a point of the path of contact.
     pub position: [f64; 3],
-    /// The pinion's flank's unit normal there, in the fixed frame.
-    pub normal: [f64; 3],
     /// The contact on each flank, in its own member: a point of each bearing.
     pub on_pinion: [f64; 3],
     pub on_gear: [f64; 3],
@@ -404,10 +372,7 @@ impl Meshing {
             .ok_or("the meshing's parts are not a meshing")?;
         m.anchor = sk.constraints.iter().find_map(|c| {
             c.meshing_of().filter(|e| e.i() == index)?;
-            let x: Vec<f64> = c.args[2..2 + UNKNOWNS].iter().map(|a| match a {
-                crate::constraints::Arg::Param(q) => sk.params[*q as usize].value,
-                _ => f64::NAN,
-            }).collect();
+            let x: Vec<f64> = c.args[2..2 + UNKNOWNS].iter().map(|a| a.value(sk)).collect();
             x.iter().all(|v| v.is_finite()).then(|| Place::of(&x))
         });
         Ok(m)
@@ -421,13 +386,17 @@ impl Meshing {
         x.iter().chain(&self.parts).copied().collect()
     }
 
-    /// The rows at the unknowns `x`.
-    pub fn residuals(&self, x: &[f64; UNKNOWNS]) -> [f64; ROWS] {
+    /// The rows at the unknowns `x`: NaN where the constants are not a meshing's.
+    fn residuals(&self, x: &[f64; UNKNOWNS]) -> [f64; ROWS] {
         let mut out = [f64::NAN; ROWS];
-        if rows::<f64>(&self.cols(x), &self.k, &mut out).is_none() {
-            out = [f64::NAN; ROWS];
-        }
+        let _ = rows::<f64>(&self.cols(x), &self.k, &mut out);
         out
+    }
+
+    /// The columns past the unknowns of flank `i`, and of the mesh's motion.
+    fn flank_parts(&self, mesh: &Mesh, i: usize) -> &[f64] {
+        let w0 = mesh.flank_width(0);
+        if i == 0 { &self.parts[..w0] } else { &self.parts[w0..w0 + mesh.flank_width(1)] }
     }
 
     /// The contact at `phase`, solved from `start` (its phase ignored): the lag and the two places
@@ -463,7 +432,7 @@ impl Meshing {
     }
 
     /// The contact at the unknowns `x`, where its rows vanish there.
-    pub fn sample(&self, x: &[f64; UNKNOWNS]) -> Option<Sample> {
+    fn sample(&self, x: &[f64; UNKNOWNS]) -> Option<Sample> {
         let r = self.residuals(x);
         let residual = r.iter().fold(0.0f64, |a, v| a.max(v.abs()));
         if !(residual <= 1e-8 * self.scale) {
@@ -480,7 +449,6 @@ impl Meshing {
             place,
             gear_error: self.ratio.map(|r| r * place.lag),
             position: f.x[0],
-            normal: unit(f.n[0]),
             on_pinion: f.member[0],
             on_gear: f.member[1],
             line,
@@ -527,11 +495,11 @@ impl Meshing {
         let start = self.anchor.ok_or("no point is held to it, so no trace starts")?;
         let phases = self.phases(n);
         let samples = self.trace(&start, &phases);
-        Ok(Trace { phases, samples, ratio: self.ratio })
+        Ok(Trace { phases, samples })
     }
 
     /// `n + 1` phases evenly over the meshing's interval, in degrees.
-    pub fn phases(&self, n: usize) -> Vec<f64> {
+    fn phases(&self, n: usize) -> Vec<f64> {
         let [a, b] = self.roll;
         (0..=n).map(|i| a + (b - a) * i as f64 / n.max(1) as f64).collect()
     }
@@ -543,8 +511,6 @@ impl Meshing {
 pub struct Trace {
     pub phases: Vec<f64>,
     pub samples: Vec<Option<Sample>>,
-    /// The gear's turn's ratio, where its turn is about a line at one.
-    pub ratio: Option<f64>,
 }
 
 impl Trace {
@@ -566,7 +532,7 @@ impl Trace {
     /// How long the path of contact is, as the polyline through the samples found.
     pub fn path_length(&self) -> f64 {
         let p: Vec<[f64; 3]> = self.found().map(|s| s.position).collect();
-        p.windows(2).map(|w| crate::space::distance(w[0], w[1])).sum()
+        crate::space::polyline_length(&p)
     }
 }
 
@@ -618,45 +584,37 @@ impl crate::newton::TrustRegion for AtPhase<'_> {
         out.copy_from_slice(&self.j.mul_vec(v));
     }
     fn gn_step(&mut self, r: &[f64], _g: &[f64], p: &mut [f64]) {
-        if !self.j.data.iter().all(|x| x.is_finite()) {
-            p.fill(0.0);
-            return;
-        }
-        let neg: Vec<f64> = r.iter().map(|v| -v).collect();
-        let (step, _) = crate::linalg::min_norm_solve(&self.j, &neg, 1e-10);
-        p.copy_from_slice(&step);
+        crate::newton::dense_gn_step(&self.j, r, p, 1e-10);
     }
 }
 
-/// Where a point `p` (in the fixed frame) starts on a meshing: the phase given in degrees (a pin's,
-/// a seed's),
-/// no lag, and each flank's place nearest `p` seen from its member at that phase — a generated
-/// flank's by `held::seed` over its roll, a formed one's over a coarse grid of its source — then
-/// the contact solved there from those.  `rolls` are the flanks' roll intervals (a formed one's
-/// unread).  `None` where nothing is finite.
-pub fn seed(m: &Meshing, flanks: [&[f64]; 2], parts: [&[f64]; 2], rolls: [[f64; 2]; 2], p: [f64; 3],
-            phase: f64) -> Option<Place> {
+/// Where a point `p` (in the fixed frame) starts on a meshing: the phase given in degrees (a
+/// pin's, a seed's), no lag, and each flank's place nearest `p` seen from its member at that
+/// phase — a generated flank's by `held::seed` over its roll, a formed one's over a coarse grid of
+/// its source — then the contact solved there from those.  `rolls` are the flanks' roll
+/// intervals (a formed one's unread).  `None` where nothing is finite.
+pub fn seed(m: &Meshing, rolls: [[f64; 2]; 2], p: [f64; 3], phase: f64) -> Option<Place> {
     let mesh = m.mesh();
-    let w = parts[0].len() + parts[1].len();
-    let motion = &m.parts[w..];
-    let (r1, p1) = frames(&mesh.steps, motion, phase.to_radians())[mesh.observer];
-    let (r2, p2) = frames(&mesh.steps, motion, phase.to_radians())[mesh.source];
-    let back = |r: [[f64; 3]; 3], t: [f64; 3]| {
+    let motion = &m.parts[mesh.flank_width(0) + mesh.flank_width(1)..];
+    let phase_r = phase.to_radians();
+    let poses = mesh.poses(motion, phase_r, phase_r);
+    // `p` seen from flank `i`'s member
+    let seen = |i: usize| -> [f64; 3] {
+        let (r, t) = poses[i];
         let d = vsub(p, t);
-        std::array::from_fn(|i| r[0][i] * d[0] + r[1][i] * d[1] + r[2][i] * d[2])
+        std::array::from_fn(|c| r[0][c] * d[0] + r[1][c] * d[1] + r[2][c] * d[2])
     };
-    let place = |i: usize, q: [f64; 3]| -> Option<[f64; 3]> {
-        let l = &mesh.flanks[i];
+    let place = |i: usize| -> Option<[f64; 3]> {
+        let (l, parts) = (&mesh.flanks[i], m.flank_parts(&mesh, i));
         if l.steps.is_empty() {
-            still_seed(l, parts[i], q)
+            still_seed(l, parts, seen(i))
         } else {
-            let mut k = flanks[i].to_vec();
+            let mut k = m.k[mesh.consts[i].clone()].to_vec();
             k[0] = LEAD as f64;
-            held::seed(&k, parts[i], q, rolls[i])
+            held::seed(&k, parts, seen(i), rolls[i])
         }
     };
-    let (pinion, gear) = (place(0, back(r1, p1))?, place(1, back(r2, p2))?);
-    let start = Place { phase, lag: 0.0, pinion, gear };
+    let start = Place { phase, lag: 0.0, pinion: place(0)?, gear: place(1)? };
     Some(m.at(phase, &start).map_or(start, |s| s.place))
 }
 
@@ -669,13 +627,7 @@ fn still_seed(l: &Layout, parts: &[f64], q: [f64; 3]) -> Option<[f64; 3]> {
         f.x.iter().all(|x| x.is_finite()).then_some(f.x)
     };
     let reach = crate::space::distance(q, [parts[0], parts[1], parts[2]]).max(1e-3);
-    let us: Vec<f64> = match l.source {
-        held::Source::Line => vec![-0.5, 0.0, 0.25, 0.5, 0.75, 1.0, 1.5],
-        held::Source::Round => (0..12).map(|i| i as f64 * std::f64::consts::TAU / 12.0).collect(),
-        held::Source::Cone | held::Source::Cylinder => {
-            (-6..=6).map(|i| i as f64 * reach / 3.0).collect()
-        }
-    };
+    let us = held::meridian_spans(l.source, reach);
     let mut best: Option<([f64; 2], f64)> = None;
     for &u in &us {
         for b in 0..36 {
@@ -742,12 +694,6 @@ impl crate::newton::TrustRegion for Nearest<'_> {
         out.copy_from_slice(&self.j.mul_vec(v));
     }
     fn gn_step(&mut self, r: &[f64], _g: &[f64], p: &mut [f64]) {
-        if !self.j.data.iter().all(|x| x.is_finite()) {
-            p.fill(0.0);
-            return;
-        }
-        let neg: Vec<f64> = r.iter().map(|v| -v).collect();
-        let (step, _) = crate::linalg::min_norm_solve(&self.j, &neg, 1e-12);
-        p.copy_from_slice(&step);
+        crate::newton::dense_gn_step(&self.j, r, p, 1e-12);
     }
 }

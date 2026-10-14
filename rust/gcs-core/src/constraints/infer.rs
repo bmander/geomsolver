@@ -552,24 +552,20 @@ fn envelope_place(sk: &Sketch, e: usize, p: usize) -> Option<[f64; 3]> {
 /// Where a point on a meshing would start were it stated now, the point standing at `at` and its
 /// phase where it stands (#283): what a document solve that fails seeds it again with
 /// (`solve`'s recoveries).
-pub fn meshing_seed(sk: &Sketch, c: &Constraint, at: [f64; 3]) -> Option<[f64; 8]> {
+pub fn meshing_seed(sk: &Sketch, c: &Constraint, at: [f64; 3]) -> Option<[f64; crate::envelope::meshing::UNKNOWNS]> {
     let m = c.meshing_of()?;
-    let phase = match c.args.get(2)? {
-        Arg::Param(q) => sk.params[*q as usize].value,
-        _ => return None,
-    };
-    meshing_place(sk, m.i(), at, phase)
+    meshing_place(sk, m.i(), at, c.args.get(2)?.value(sk))
 }
 
 /// Where on meshing `m` a solve holding a point at `at` to it at `phase` starts (#283):
 /// `envelope::meshing::seed` over its parts as the drawing stands — the phase, the lag and the two
 /// places — remembered for the last question, since a contact's eight unknowns ask it eight times.
-fn meshing_place(sk: &Sketch, m: usize, at: [f64; 3], phase: f64) -> Option<[f64; 8]> {
+fn meshing_place(sk: &Sketch, m: usize, at: [f64; 3], phase: f64) -> Option<[f64; crate::envelope::meshing::UNKNOWNS]> {
     use crate::envelope::meshing::{seed, Meshing, Parts};
     use crate::model::Flank;
     use std::cell::RefCell;
     thread_local! {
-        static LAST: RefCell<Option<(Vec<f64>, [f64; 8])>> = const { RefCell::new(None) };
+        static LAST: RefCell<Option<(Vec<f64>, [f64; crate::envelope::meshing::UNKNOWNS])>> = const { RefCell::new(None) };
     }
     let parts = Parts::of(sk, m).ok()?;
     let e = &sk.meshings[m];
@@ -586,9 +582,7 @@ fn meshing_place(sk: &Sketch, m: usize, at: [f64; 3], phase: f64) -> Option<[f64
         return Some(x);
     }
     let mesh = Meshing::new(k, values, e.roll)?;
-    let flanks = parts.flanks.each_ref().map(|f| f.consts_at(0));
-    let own = parts.flanks.each_ref().map(|f| f.values(sk));
-    let x = seed(&mesh, [&flanks[0], &flanks[1]], [&own[0], &own[1]], rolls, at, phase)?.values();
+    let x = seed(&mesh, rolls, at, phase)?.values();
     LAST.with(|l| *l.borrow_mut() = Some((key, x)));
     Some(x)
 }

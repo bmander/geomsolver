@@ -50,16 +50,7 @@ pub(super) fn held_envelopes(sk: &mut Sketch, res: &mut Resolver, map: &mut Sour
             res.of.remove(&d.name.key().text);
             continue;
         };
-        let held = match res.lookup(source) {
-            // a set applied to its hidden point: the point held, as a region's probe is
-            Some(p) if p.kind == EntKind::Point && crate::flatten::is_probe(&source.root.text) => {
-                for q in sk.point_all_params(p.i()) {
-                    sk.params[q as usize].fixed = true;
-                }
-                Held::Set {probe:p.idx,shape:None}
-            }
-            _ => revolution(sk,res,&decls,source).unwrap_or_else(Held::Not),
-        };
+        let held = source_held(sk,res,&decls,source).unwrap_or_else(Held::Not);
         let name = d.name.key().text.clone();
         let e = EntRef::new(EntKind::Envelope,sk.envelopes.len());
         sk.envelopes.push(EnvelopeE {surface:None,motion:motion.idx,roll,name:name.clone(),
@@ -86,6 +77,7 @@ pub(super) fn held_meshings(sk: &mut Sketch, res: &mut Resolver, map: &mut Sourc
     for st in body {
         let Operation::Decl(d) = &st.kind else { continue };
         if d.kind != EntKind::Meshing || skip.contains(&st.id) { continue; }
+        let name = d.name.key().text.clone();
         let operand = |i: usize| -> Result<&crate::syntax::Ref,String> {
             match d.children.get(i).map(Vec::as_slice) {
                 Some([Kid::Ref(r)]) => Ok(r),
@@ -95,17 +87,10 @@ pub(super) fn held_meshings(sk: &mut Sketch, res: &mut Resolver, map: &mut Sourc
         let flank = |sk: &mut Sketch, i: usize| -> Result<Flank,String> {
             let r = operand(i)?;
             match res.lookup(r) {
-                // a set applied to its hidden point: the point held, as an envelope's is
-                Some(p) if p.kind == EntKind::Point && crate::flatten::is_probe(&r.root.text) => {
-                    for q in sk.point_all_params(p.i()) {
-                        sk.params[q as usize].fixed = true;
-                    }
-                    Ok(Flank::Formed(Held::Set {probe:p.idx,shape:None}))
-                }
                 Some(e) if e.kind == EntKind::Envelope && e.i() < sk.envelopes.len() => {
                     Ok(Flank::Envelope(e.idx))
                 }
-                _ => revolution(sk,res,&decls,r).map(Flank::Formed).map_err(|_| format!(
+                _ => source_held(sk,res,&decls,r).map(Flank::Formed).map_err(|_| format!(
                     "`{}` is no flank the solve reads: a meshing turns an envelope in space, a cone \
                      or a cylinder set, or a named side of a revolution (`surface(rev, e)`)",
                     r.root.text)),
@@ -116,10 +101,8 @@ pub(super) fn held_meshings(sk: &mut Sketch, res: &mut Resolver, map: &mut Sourc
             let m = res.lookup(operand(2)?)
                 .filter(|e| e.kind == EntKind::Motion && e.i() < sk.motions.len())
                 .ok_or("a meshing turns its flanks `under:` a motion")?;
-            Ok(MeshingE {flanks,motion:m.idx,roll:roll(sk,d)?,name:d.name.key().text.clone(),
-                class:d.class.clone()})
+            Ok(MeshingE {flanks,motion:m.idx,roll:roll(sk,d)?,name:name.clone(),class:d.class.clone()})
         })();
-        let name = d.name.key().text.clone();
         match built {
             Ok(m) => {
                 let e = EntRef::new(EntKind::Meshing,sk.meshings.len());
@@ -133,6 +116,22 @@ pub(super) fn held_meshings(sk: &mut Sketch, res: &mut Resolver, map: &mut Sourc
                 res.of.remove(&name);
             }
         }
+    }
+}
+
+/// What the solve reads a source operand as, before any relation (#283): a set applied to its
+/// hidden point — the point held, as a region's probe is, its shape stated later (`set_shape`) —
+/// or a revolution's named side.  Why not, where it is neither.
+fn source_held(sk: &mut Sketch, res: &Resolver, decls: &BTreeMap<&str,&Decl>, r: &crate::syntax::Ref)
+    -> Result<Held,String> {
+    match res.lookup(r) {
+        Some(p) if p.kind == EntKind::Point && crate::flatten::is_probe(&r.root.text) => {
+            for q in sk.point_all_params(p.i()) {
+                sk.params[q as usize].fixed = true;
+            }
+            Ok(Held::Set {probe:p.idx,shape:None})
+        }
+        _ => revolution(sk,res,decls,r),
     }
 }
 
@@ -188,7 +187,7 @@ impl Reader {
 
 /// What reads the hidden point a constraint reads, where it reads one: an operand, or a line's
 /// end — what a set's body states at its envelope's (or its meshing flank's) point (#283).
-pub(super) fn probe_envelope(sk: &Sketch, c: &Constraint) -> Option<Reader> {
+pub(super) fn probe_reader(sk: &Sketch, c: &Constraint) -> Option<Reader> {
     let envelopes = sk.envelopes.iter().enumerate().filter_map(|(i,e)| match e.held {
         Held::Set {probe,..} => Some((probe as usize,Reader::Envelope(i))),
         _ => None,

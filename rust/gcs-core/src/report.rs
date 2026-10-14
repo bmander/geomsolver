@@ -951,9 +951,7 @@ pub const MESHING_STEPS: usize = 24;
 /// contact is — or why it could not be traced.
 pub fn meshing_text(sk: &Sketch, i: usize) -> String {
     let name = &sk.meshings[i].name;
-    use crate::envelope::meshing::Meshing;
-    let trace = Meshing::named(sk, i).and_then(|m| m.traced(MESHING_STEPS));
-    let t = match trace {
+    let t = match meshing_trace(sk, i) {
         Ok(t) => t,
         Err(why) => return format!("{name}: not traced — {why}"),
     };
@@ -968,8 +966,9 @@ pub fn meshing_text(sk: &Sketch, i: usize) -> String {
         _ => "point and line contact",
     };
     let deg = |v: f64| format!("{}°", crate::io::reading(SpecKind::Scalar, v));
-    let what = if t.ratio.is_some() { "the gear's angle" } else { "the gear's lag" };
-    let (first, last) = (t.phases[0], t.phases[t.phases.len() - 1]);
+    let ratio = t.found().any(|s| s.gear_error.is_some());
+    let what = if ratio { "the gear's angle" } else { "the gear's lag" };
+    let (first, last) = (t.phases[0], *t.phases.last().expect("a trace has a phase"));
     let path = crate::io::reading(SpecKind::Length, t.path_length());
     let mut text = format!("{name}: {contact}; transmission error ({what}) {} … {} over the phase \
                             {} … {}, the path of contact {path} long", deg(lo), deg(hi), deg(first),
@@ -980,15 +979,18 @@ pub fn meshing_text(sk: &Sketch, i: usize) -> String {
     text
 }
 
+/// Meshing `i` traced over its phase for a report, from the first point held to it.
+fn meshing_trace(sk: &Sketch, i: usize) -> Result<crate::envelope::meshing::Trace, String> {
+    crate::envelope::meshing::Meshing::named(sk, i).and_then(|m| m.traced(MESHING_STEPS))
+}
+
 /// Every meshing's trace (#283): by name, each phase in degrees with the lag, the gear's angle
 /// error, the contact in the fixed frame, and whether it is a line contact — or why it could not
 /// be traced.
 pub fn meshings_json(sk: &Sketch) -> Json {
     let one = |i: usize| -> Json {
         let name = Json::Str(sk.meshings[i].name.clone());
-        use crate::envelope::meshing::Meshing;
-        let trace = Meshing::named(sk, i).and_then(|m| m.traced(MESHING_STEPS));
-        match trace {
+        match meshing_trace(sk, i) {
             Err(why) => object([("name", name), ("error", Json::Str(why))]),
             Ok(t) => {
                 let rows = t.phases.iter().zip(&t.samples).map(|(&phase, s)| match s {
@@ -997,7 +999,7 @@ pub fn meshings_json(sk: &Sketch) -> Json {
                         ("phase", Json::Num(phase)),
                         ("lag", Json::Num(s.place.lag)),
                         ("gear_error", s.gear_error.map_or(Json::Null, Json::Num)),
-                        ("position", Json::Arr(s.position.iter().map(|&x| Json::Num(x)).collect())),
+                        ("position", floats(&s.position)),
                         ("line", Json::Bool(s.line)),
                     ]),
                 }).collect();

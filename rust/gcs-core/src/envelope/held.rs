@@ -425,7 +425,7 @@ pub(crate) fn vadd<F: Copy + Add<Output = F>>(a: [F; 3], b: [F; 3]) -> [F; 3] {
 pub(crate) fn vsub<F: Copy + Sub<Output = F>>(a: [F; 3], b: [F; 3]) -> [F; 3] {
     [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
 }
-pub(crate) fn vscale<F: Copy + Mul<Output = F>>(a: [F; 3], k: F) -> [F; 3] {
+fn vscale<F: Copy + Mul<Output = F>>(a: [F; 3], k: F) -> [F; 3] {
     [a[0] * k, a[1] * k, a[2] * k]
 }
 
@@ -705,24 +705,36 @@ pub(crate) fn rows<T: Num>(c: Contact, cols: &[T], k: &[f64], out: &mut [T]) -> 
 /* -- the kernels ------------------------------------------------------------------------------ */
 
 /// Columns differentiated per pass.
-const PASS: usize = 8;
+pub(crate) const PASS: usize = 8;
 
 fn res<const C: u8>(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
     let c = Contact::ALL[C as usize];
+    block_res(n, v, k, r, c.rows(), |x, kc, out| rows(c, x, kc, out));
+}
+
+fn jac<const C: u8>(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    let c = Contact::ALL[C as usize];
+    block_jac(n, v, k, j, c.rows(), |x, kc, out| rows(c, x, kc, out));
+}
+
+/// A kernel's residuals over `n` blocks of `m` rows, each written by `rows` over its block's
+/// columns and constants — a kernel built at its block's widths (`curve_widths`), NaN where
+/// `rows` cannot read them: the envelope contacts', and a point on a meshing's (#283).
+pub(crate) fn block_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64], m: usize,
+                        rows: impl Fn(&[f64], &[f64], &mut [f64]) -> Option<()>) {
     let (n_par, n_const) = curve_widths(n, v, k);
-    let m = c.rows();
     for i in 0..n {
         let out = &mut r[m * i..m * (i + 1)];
-        if rows::<f64>(c, &v[n_par * i..n_par * (i + 1)], &k[n_const * i..n_const * (i + 1)], out).is_none() {
+        if rows(&v[n_par * i..n_par * (i + 1)], &k[n_const * i..n_const * (i + 1)], out).is_none() {
             out.fill(f64::NAN);
         }
     }
 }
 
-fn jac<const C: u8>(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
-    let c = Contact::ALL[C as usize];
+/// `block_res`'s Jacobian, exact by forward differentiation, `PASS` columns a pass.
+pub(crate) fn block_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64], m: usize,
+                        rows: impl Fn(&[Dual<PASS>], &[f64], &mut [Dual<PASS>]) -> Option<()>) {
     let (n_par, n_const) = curve_widths(n, v, k);
-    let m = c.rows();
     let mut cols = vec![Dual::<PASS>::cst(0.0); n_par];
     let mut out = vec![Dual::<PASS>::cst(0.0); m];
     for i in 0..n {
@@ -736,7 +748,7 @@ fn jac<const C: u8>(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
                     col.g[q - start] = 1.0;
                 }
             }
-            if rows(c, &cols, kc, &mut out).is_none() {
+            if rows(&cols, kc, &mut out).is_none() {
                 block.fill(f64::NAN);
                 break;
             }
@@ -808,14 +820,8 @@ pub fn seed(k: &[f64], parts: &[f64], p: [f64; 3], roll: [f64; 2]) -> Option<[f6
     tr.cols[..3].copy_from_slice(&p);
     tr.cols[l.lead + 3..].copy_from_slice(parts);
     let cost = |r: [f64; 4]| r.iter().map(|x| x * x).sum::<f64>();
-    // the meridian's spans: a fraction of a line, a turn round a circle, and along a cone's or a
-    // cylinder's generator as far either way as the point is from the axis's start
     let reach = crate::space::distance(p, [parts[0], parts[1], parts[2]]).max(1e-3);
-    let us: Vec<f64> = match l.source {
-        Source::Line => vec![-0.5, 0.0, 0.25, 0.5, 0.75, 1.0, 1.5],
-        Source::Round => (0..12).map(|i| i as f64 * std::f64::consts::TAU / 12.0).collect(),
-        Source::Cone | Source::Cylinder => (-6..=6).map(|i| i as f64 * reach / 3.0).collect(),
-    };
+    let us = meridian_spans(l.source, reach);
     let mut best: Option<([f64; 3], f64)> = None;
     let n_roll = 25;
     for a in 0..n_roll {
@@ -837,6 +843,17 @@ pub fn seed(k: &[f64], parts: &[f64], p: [f64; 3], roll: [f64; 2]) -> Option<[f6
     crate::newton::dogleg(&mut tr, &mut z, &mut r, tol, 100, 400);
     let x = [z[0], z[1], z[2]];
     tr.at(x).iter().all(|v| v.is_finite()).then_some(x)
+}
+
+/// Where a seed's coarse grid samples a source's meridian: a fraction of a line, a turn round a
+/// circle, and along a cone's or a cylinder's generator as far either way as `reach`, how far the
+/// point sought is from the axis's start.
+pub(crate) fn meridian_spans(source: Source, reach: f64) -> Vec<f64> {
+    match source {
+        Source::Line => vec![-0.5, 0.0, 0.25, 0.5, 0.75, 1.0, 1.5],
+        Source::Round => (0..12).map(|i| i as f64 * std::f64::consts::TAU / 12.0).collect(),
+        Source::Cone | Source::Cylinder => (-6..=6).map(|i| i as f64 * reach / 3.0).collect(),
+    }
 }
 
 /// A point contact's four rows over its place alone, the rest of its columns held: what `seed`
@@ -891,13 +908,7 @@ impl crate::newton::TrustRegion for Seeding<'_> {
         out.copy_from_slice(&self.j.mul_vec(v));
     }
     fn gn_step(&mut self, r: &[f64], _g: &[f64], p: &mut [f64]) {
-        if !self.j.data.iter().all(|x| x.is_finite()) {
-            p.fill(0.0);
-            return;
-        }
-        let neg: Vec<f64> = r.iter().map(|v| -v).collect();
-        let (step, _) = crate::linalg::min_norm_solve(&self.j, &neg, 1e-12);
-        p.copy_from_slice(&step);
+        crate::newton::dense_gn_step(&self.j, r, p, 1e-12);
     }
 }
 
@@ -920,7 +931,7 @@ pub struct Parts {
 
 /// One part of the columns.
 #[derive(Clone, Copy, Debug)]
-pub(crate) enum Col {
+enum Col {
     /// A point's lift: three columns.
     Lift(usize),
     /// One number.
@@ -1049,10 +1060,6 @@ impl Parts {
         width(&self.cols)
     }
 
-    /// Whether it is generated under a motion, rather than its source standing still.
-    pub fn generated(&self) -> bool {
-        !self.steps.is_empty()
-    }
 }
 
 /// A motion the solve reads apart from any source (#283, `envelope::meshing`): its steps and the

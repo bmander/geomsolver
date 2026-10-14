@@ -712,7 +712,7 @@ fn region_or_row(
     };
     // what a set's body states at its envelope's hidden point is the surface the envelope reads
     // (#283), never a row
-    if let Some(e) = super::envelopes::probe_envelope(&cx.sk, &c) {
+    if let Some(e) = super::envelopes::probe_reader(&cx.sk, &c) {
         let read = match grow {
             Some(_) => Err("an envelope's set is a surface, not one grown from another".into()),
             None => super::envelopes::set_shape(&mut cx.sk, &c, e),

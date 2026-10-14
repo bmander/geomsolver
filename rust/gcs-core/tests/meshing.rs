@@ -9,7 +9,7 @@ use gcs_core::constraints::CKind;
 use gcs_core::envelope::meshing::{Meshing, Sample, Trace};
 use gcs_core::model::Sketch;
 use gcs_core::solve;
-use gcs_core::space::{add, cross, dot, norm, scale, sub};
+use gcs_core::space::{add, cross, dot, norm, scale, sub, unit};
 
 fn solved(src: &str) -> gcs_core::program::Elaborated {
     let mut e = build(src);
@@ -86,10 +86,6 @@ fn off_cone(x: [f64; 3], a: [f64; 3], d: [f64; 3], half: f64) -> f64 {
     let h = dot(w, d);
     let rho = norm(sub(w, scale(d, h)));
     rho * half.to_radians().cos() - h * half.to_radians().sin()
-}
-
-fn unit(x: [f64; 3]) -> [f64; 3] {
-    scale(x, 1.0 / norm(x))
 }
 
 /// Where a sample says the two touch, read against the poses and the gear's cone apart from the
