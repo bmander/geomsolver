@@ -56,7 +56,15 @@ conjugate points as sign changes of `det ∂p/∂λ₀`, the Hessian in pegs' pl
 is `Diagnosis::extrema` (`unsolved` where no shape is found), reported by the CLI, the JSON
 (`[id, verdict, asked]`) and the app's marks. `length(L) s` on a spline stays `SplineLength`
 (`integral.rs`). `std.hangs(L) k` is a word. `tests/{extremal,catenary,slide,minimize,spline_length}.rs`
-are the gates.
+are the gates. **A free curve is an edge** [0.95]: it runs between the two points it is written
+with, so `Sketch::curve_ends` (a stretch's trim, else a free curve's `args`) is its ends for
+`edge_ends`, the face walk, the profile, material fields and the CAD fit, and it stands in a face
+whole (`face(rope, deck)`); a stretch of it from its own end is E080 naming that form. **A
+stretch of a free curve is that curve, cut**: `Sketch::curve_shape` reads it through `trim.of`,
+and `settle_variational` settles no stretch as a free curve of its own (one would be a second
+curve with no energy, so no shape). A curve with no shape sweeps nothing (`curve_polyline_within`
+empty) and its face is refused, never walked
+(`catenary::a_hanging_rope_and_its_chord_are_a_face`).
 
 - A parametric curve (`curve.rs`) is *linear in its control points*, `C(t) = Σ Bᵢ(t) Pᵢ` (every
   B-spline).  A contact carries its own curve parameter as a `Param` slot and says

@@ -4,6 +4,16 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.95] A free curve is an edge of a face.** `rope := curve(a, b)` runs from `a` to `b`, so it
+stands in a face whole, between those two points, as a line or a clamped spline does (§6.8):
+`face(rope, deck)`, `face(rope, -> close)` — a hanging rope and its chord swept into a solid.
+Through 0.94 a free curve was read as every other curve, with no ends of its own, so naming it
+alone was E080 asking for a stretch, and the stretch `rope from a to b`, asking `a` to be held
+on the curve, could only be reached by pegging the rope at its own ends. A stretch from a free
+curve's own end is now E080 naming the whole curve instead, and a stretch between two points
+held on one (`rope from m to n`) is that curve cut, where it had been read as a second free curve
+with no energy and so no shape.
+
 **[0.94] Two flanks meshing are a locus.** `contact := meshing(pinion_flank, gear_flank, under:
 mesh, from:, to:)` turns the first flank with the pinion — `mesh`'s observer, `mesh :=
 motion(gear_turn, relative_to: pinion_turn)` — and the second with the gear, each an envelope in
