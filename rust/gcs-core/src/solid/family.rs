@@ -32,6 +32,8 @@ use crate::io::Part;
 use crate::space::sub;
 use crate::syntax::num;
 use plane::{cross, dot, norm};
+use crate::brep::family::Run;
+use crate::brep::recipe::{Family as Walls, FamilyWall};
 use std::collections::BTreeSet;
 use std::rc::Rc;
 
@@ -315,8 +317,24 @@ impl Reading {
 
 /// Put the part back where station `st` stood.
 fn restore(sk: &mut Sketch, st: &Station) {
-    for (p, &v) in sk.params.iter_mut().zip(&st.x) {
+    put(sk, &st.x);
+}
+
+/// Put the part's parameters at `x`.
+fn put(sk: &mut Sketch, x: &[f64]) {
+    for (p, &v) in sk.params.iter_mut().zip(x) {
         p.value = v;
+    }
+}
+
+/// Start the part's solve at `s` where the stations solved at `a` and `b` (each its running
+/// number and its parameters) carry it, along the line through them.
+fn carry(sk: &mut Sketch, (sa, xa): (f64, &[f64]), (sb, xb): (f64, &[f64]), s: f64) {
+    let k = (s - sb) / (sb - sa);
+    for ((p, &xa), &xb) in sk.params.iter_mut().zip(xa).zip(xb) {
+        if !p.fixed {
+            p.value = xb + k * (xb - xa);
+        }
     }
 }
 
@@ -405,12 +423,7 @@ fn run(
         // the solve starts where the last two stations carry it
         restore(sk, prev);
         if let [.., a, b] = trail.as_slice() {
-            let k = (s - b.s) / (b.s - a.s);
-            for ((p, &xa), &xb) in sk.params.iter_mut().zip(&a.x).zip(&b.x) {
-                if !p.fixed {
-                    p.value = xb + k * (xb - xa);
-                }
-            }
+            carry(sk, (a.s, &a.x), (b.s, &b.x), s);
         }
         let settled = rd.settle(sk, s).and_then(|mut sys| {
             let st = rd.station(sk, s, counts)?;
@@ -849,94 +862,87 @@ const LONGEST_PIECE: f64 = 0.25;
 /// most.
 const CHECKED_AT: f64 = 0.94;
 
-/// **A face family's walls, exact** (#243 L2): the interval cut into pieces, each piece's six
-/// stations (`brep::family::NODES`), and each wall's edge's numbers at every one of them, in model
-/// units — what `brep::family` reads its sheets from.
-#[derive(Clone, Debug)]
-pub(crate) struct Walls {
-    pub spans: Vec<[f64; 2]>,
-    pub at: Vec<[f64; 6]>,
-    /// Per loop, per edge in walk order: its kind, its wall's name, whether it runs round alone,
-    /// and its numbers at each node (piece by piece).
-    pub loops: Vec<Vec<(crate::brep::family::Run, String, bool, Vec<Vec<f64>>)>>,
-    /// How short an edge's run at an end is for it to have vanished there: the sheet's flatness
-    /// the faceted family was judged at.
-    pub vanish: f64,
+/// Per loop, per edge in walk order, what the edge is (`brep::family::Run`) and whether it runs
+/// round alone.
+type Runs = Vec<Vec<(Run, bool)>>;
+
+/// Per loop, per edge in walk order, the edge's numbers where the part stands
+/// (`brep::family::Run`).
+type Numbers = Vec<Vec<Vec<f64>>>;
+
+/// A station the walls are read from: its running number, the part's parameters there, and its
+/// edges' numbers.
+#[derive(Clone)]
+struct Node {
+    s: f64,
+    x: Vec<f64>,
+    numbers: Numbers,
 }
 
-/// Each edge's numbers (`brep::family::Run`) where the part stands: on its plane's page, lifted.
-fn numbers(sk: &Sketch, rd: &Reading) -> Result<Vec<Vec<Vec<f64>>>, String> {
+/// What each edge is, and whether it runs round alone; a traced curve has no exact wall yet.
+fn runs(sk: &Sketch, rd: &Reading) -> Result<Runs, String> {
+    rd.loops.iter().map(|walked| walked.iter().map(|w| Ok(match w.edge.kind {
+        EntKind::Line => (Run::Line, false),
+        EntKind::Circle => (Run::Round, true),
+        EntKind::Arc => (Run::Round, false),
+        EntKind::Spline => {
+            let sp = &sk.splines[w.edge.i()];
+            let (knots, weights) = (sp.knots.clone(), sp.weights.clone());
+            (Run::Spline { degree: crate::curve::DEGREE, knots, weights }, false)
+        }
+        _ => return Err("a face family's section holds a traced curve, whose wall has no exact \
+                         surface yet".to_string()),
+    })).collect()).collect()
+}
+
+/// Each edge's numbers where the part stands: on its plane's page, lifted.
+fn numbers(sk: &Sketch, rd: &Reading) -> Result<Numbers, String> {
     let plane = sk.faces[rd.face].plane()?;
     let basis = plane.map_or(Basis::page(), |p| sk.basis(p as usize));
     let point = |q: (f64, f64)| basis.lift(q.0, q.1);
     let vector = |x: f64, y: f64| sub(basis.lift(x, y), basis.lift(0.0, 0.0));
-    let mut out = Vec::new();
-    for walked in &rd.loops {
-        let mut edges = Vec::new();
-        for w in walked {
-            let mut n: Vec<f64> = Vec::new();
-            match w.edge.kind {
-                EntKind::Line => {
-                    let l = &sk.lines[w.edge.i()];
-                    let to = if l.p1 == w.from { l.p2 } else { l.p1 };
-                    n.extend(point(sk.point_xy(w.from as usize)));
-                    n.extend(point(sk.point_xy(to as usize)));
-                }
-                EntKind::Circle | EntKind::Arc => {
-                    let c = sk.point_xy(sk.round_center(w.edge));
-                    let r = sk.radius_value(w.edge).abs();
-                    let (start, sweep) = if w.edge.kind == EntKind::Circle {
-                        (0.0, std::f64::consts::TAU)
-                    } else {
-                        let arc = &sk.arcs[w.edge.i()];
-                        let (a0, a1) = sk.arc_angles(w.edge.i());
-                        if w.from == arc.start { (a0, a1 - a0) } else { (a1, a0 - a1) }
-                    };
-                    let (sn, cs) = start.dsin_cos();
-                    n.extend(point(c));
-                    n.extend(vector(r * cs, r * sn));
-                    n.extend(vector(-r * sn, r * cs));
-                    n.push(sweep);
-                }
-                EntKind::Spline => {
-                    let sp = &sk.splines[w.edge.i()];
-                    for &c in &sp.ctrl {
-                        n.extend(point(sk.point_xy(c as usize)));
-                    }
-                    let [t0, t1] = super::profile::curved_span(sk, w.edge, w.from)
-                        .map_or_else(|| { let (a, b) = sk.curve_domain(w.edge.i()); [a, b] }, |(_, t)| t);
-                    n.extend([t0, t1]);
-                }
-                _ => return Err("a face family's section holds a traced curve, whose wall has no \
-                                 exact surface yet".into()),
+    Ok(rd.loops.iter().map(|walked| walked.iter().map(|w| {
+        let mut n: Vec<f64> = Vec::new();
+        match w.edge.kind {
+            EntKind::Line => {
+                let l = &sk.lines[w.edge.i()];
+                let to = if l.p1 == w.from { l.p2 } else { l.p1 };
+                n.extend(point(sk.point_xy(w.from as usize)));
+                n.extend(point(sk.point_xy(to as usize)));
             }
-            edges.push(n);
+            EntKind::Circle | EntKind::Arc => {
+                let c = sk.point_xy(sk.round_center(w.edge));
+                let r = sk.radius_value(w.edge).abs();
+                // where the walk enters it and how far it turns, as `sample` reads it
+                let (start, sweep) = if w.edge.kind == EntKind::Circle {
+                    (0.0, std::f64::consts::TAU)
+                } else {
+                    let arc = &sk.arcs[w.edge.i()];
+                    let (a0, a1) = sk.arc_angles(w.edge.i());
+                    if w.from == arc.start { (a0, a1 - a0) } else { (a1, a0 - a1) }
+                };
+                let (sn, cs) = start.dsin_cos();
+                n.extend(point(c));
+                n.extend(vector(r * cs, r * sn));
+                n.extend(vector(-r * sn, r * cs));
+                n.push(sweep);
+            }
+            // a spline (`runs` refuses anything else)
+            _ => {
+                for &c in &sk.splines[w.edge.i()].ctrl {
+                    n.extend(point(sk.point_xy(c as usize)));
+                }
+                let whole = || { let (a, b) = sk.curve_domain(w.edge.i()); [a, b] };
+                let span = super::profile::curved_span(sk, w.edge, w.from);
+                n.extend(span.map_or_else(whole, |(_, t)| t));
+            }
         }
-        out.push(edges);
-    }
-    Ok(out)
-}
-
-/// What each edge is (`brep::family::Run`), and whether it runs round alone.
-fn runs(sk: &Sketch, rd: &Reading) -> Vec<Vec<(crate::brep::family::Run, bool)>> {
-    use crate::brep::family::Run;
-    rd.loops.iter().map(|walked| walked.iter().map(|w| match w.edge.kind {
-        EntKind::Line => (Run::Line, false),
-        EntKind::Circle => (Run::Round, true),
-        EntKind::Arc => (Run::Round, false),
-        _ => {
-            let sp = &sk.splines[w.edge.i().min(sk.splines.len().saturating_sub(1))];
-            let run = Run::Spline {
-                degree: crate::curve::DEGREE, knots: sp.knots.clone(), weights: sp.weights.clone(),
-            };
-            (run, false)
-        }
-    }).collect()).collect()
+        n
+    }).collect()).collect())
 }
 
 /// How far the edges of `got` stand from those of `want`, at five places along each.
-fn apart(runs: &[Vec<(crate::brep::family::Run, bool)>], got: &[Vec<Vec<f64>>],
-         want: &[Vec<Vec<f64>>]) -> f64 {
+fn apart(runs: &Runs, got: &Numbers, want: &Numbers) -> f64 {
     let mut worst = 0.0f64;
     for (l, edges) in runs.iter().enumerate() {
         for (e, (run, _)) in edges.iter().enumerate() {
@@ -950,97 +956,82 @@ fn apart(runs: &[Vec<(crate::brep::family::Run, bool)>], got: &[Vec<Vec<f64>>],
     worst
 }
 
-/// One piece of the interval as run: its span the way it was run, its nodes and the edges'
-/// numbers at each.
-struct Piece {
-    span: [f64; 2],
-    at: [f64; 6],
-    numbers: Vec<Vec<Vec<Vec<f64>>>>,
+/// The section's size where the part stands, by the spread of its edges.
+fn spread(runs: &Runs, numbers: &Numbers) -> f64 {
+    let (mut lo, mut hi) = ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
+    for (edges, kinds) in numbers.iter().zip(runs) {
+        for (n, (run, _)) in edges.iter().zip(kinds) {
+            for j in 0..=4 {
+                let p = run.at(n, j as f64 / 4.0).0;
+                for k in 0..3 {
+                    lo[k] = lo[k].min(p[k]);
+                    hi[k] = hi[k].max(p[k]);
+                }
+            }
+        }
+    }
+    norm(sub(hi, lo))
 }
 
-/// The pieces from the station the part stands at (`start`, solved there) on to the end `to`, each
-/// as long as its polynomials stay within `tol` of a station solved between its nodes; an end that
-/// will not solve read as its limit (the last piece's nodes stop `LIMIT_GAP` short of it).
-fn pieces(sk: &mut Sketch, rd: &Reading, runs: &[Vec<(crate::brep::family::Run, bool)>],
-          start: &Station, to: f64, tol: f64) -> Result<Vec<Piece>, String> {
+/// One piece of the interval as run: its span the way it was run, and its six nodes.
+struct Piece {
+    span: [f64; 2],
+    nodes: Vec<Node>,
+}
+
+/// The pieces from the node the part stands at (`start`) on to the end `to`, each as long as its
+/// polynomials stay within `tol` of a station solved between its nodes; an end that will not solve
+/// read as its limit (the last piece's nodes stop `LIMIT_GAP` short of it).
+fn pieces(sk: &mut Sketch, rd: &Reading, runs: &Runs, start: Node, to: f64, tol: f64)
+    -> Result<Vec<Piece>, String> {
     use crate::brep::family::NODES;
     let dir = (to - start.s).signum();
     let (longest, finest) = (rd.span * LONGEST_PIECE, rd.span * FINEST);
     let mut h = rd.span * COARSEST;
-    let mut here = start.clone();
-    let mut here_numbers = numbers(sk, rd)?;
+    let mut here = start;
+    // the node before `here`, so each solve starts where the two carry it
+    let mut before: Option<Node> = None;
     let mut out = Vec::new();
-    // the station before `here`, to start each solve where the two carry it
-    let mut before: Option<Station> = None;
-    loop {
+    while (to - here.s) * dir > rd.span * 1e-12 {
         let left = (to - here.s) * dir;
-        if left <= rd.span * 1e-12 {
-            break;
-        }
         let step = h.min(left);
         let end = if step >= left { to } else { here.s + dir * step };
         let mut limit = false;
-        let piece = 'tries: loop {
+        let kept = 'tries: loop {
             // the nodes, the last stopping short of an end read as its limit
             let reach = if limit { end - dir * rd.span * LIMIT_GAP } else { end };
-            let at: [f64; 6] = NODES.map(|t| here.s + (reach - here.s) * (t + 1.0) / 2.0);
-            let mut solved: Vec<Station> = vec![here.clone()];
-            let mut nums = vec![here_numbers.clone()];
-            let mut failed = None;
+            let at = NODES.map(|t| here.s + (reach - here.s) * (t + 1.0) / 2.0);
+            let mut nodes = vec![here.clone()];
             for (i, &s) in at.iter().enumerate().skip(1) {
-                restore(sk, solved.last().unwrap());
-                let prev = if solved.len() >= 2 { Some(&solved[solved.len() - 2]) } else { before.as_ref() };
-                if let Some(a) = prev {
-                    let b = solved.last().unwrap();
-                    let k = (s - b.s) / (b.s - a.s);
-                    for ((p, &xa), &xb) in sk.params.iter_mut().zip(&a.x).zip(&b.x) {
-                        if !p.fixed {
-                            p.value = xb + k * (xb - xa);
-                        }
-                    }
+                let last = nodes.last().unwrap();
+                put(sk, &last.x);
+                if let Some(a) = if i >= 2 { nodes.get(i - 2) } else { before.as_ref() } {
+                    carry(sk, (a.s, &a.x), (last.s, &last.x), s);
                 }
                 match rd.settle(sk, s) {
-                    Ok(_) => {
-                        solved.push(Station { s, x: sk.get_x(), ..here.clone() });
-                        nums.push(numbers(sk, rd)?);
-                    }
-                    Err(why) => { failed = Some((i, s, why)); break; }
+                    Ok(_) => nodes.push(Node { s, x: sk.get_x(), numbers: numbers(sk, rd)? }),
+                    // an end that will not solve is read as its limit
+                    Err(_) if i == 5 && end == to && !limit => { limit = true; continue 'tries; }
+                    Err(_) if step > finest && !limit => { h = step / 2.0; break 'tries None; }
+                    Err(why) => return Err(format!("the station at {} {why}", num(s))),
                 }
-            }
-            if let Some((i, s, why)) = failed {
-                restore(sk, &here);
-                if i == 5 && end == to && !limit {
-                    limit = true;
-                    continue 'tries;
-                }
-                if step > finest && !limit {
-                    h = step / 2.0;
-                    break 'tries None;
-                }
-                return Err(format!("the station at {} {why}", num(s)));
             }
             // a station solved between the last two nodes, held to the polynomials
             let s = here.s + (reach - here.s) * CHECKED_AT;
-            restore(sk, &solved[5]);
-            let carried = weights(&at, s);
-            for ((p, &x4), &x5) in sk.params.iter_mut().zip(&solved[4].x).zip(&solved[5].x) {
-                if !p.fixed {
-                    p.value = x4 + (x5 - x4) * (s - at[4]) / (at[5] - at[4]);
-                }
-            }
-            let check = rd.settle(sk, s).and_then(|_| numbers(sk, rd));
-            restore(sk, &solved[5]);
-            let check = match check {
+            put(sk, &nodes[5].x);
+            carry(sk, (nodes[4].s, &nodes[4].x), (nodes[5].s, &nodes[5].x), s);
+            let check = match rd.settle(sk, s).and_then(|_| numbers(sk, rd)) {
                 Ok(c) => c,
                 Err(_) if step > finest => { h = step / 2.0; break 'tries None; }
                 Err(why) => return Err(format!("the station at {} {why}", num(s))),
             };
-            let interpolated: Vec<Vec<Vec<f64>>> = check.iter().enumerate().map(|(l, edges)| {
+            let w = weights(&at, s);
+            let carried: Numbers = check.iter().enumerate().map(|(l, edges)| {
                 edges.iter().enumerate().map(|(e, n)| (0..n.len()).map(|q| {
-                    (0..6).map(|i| carried[i] * nums[i][l][e][q]).sum()
+                    (0..6).map(|i| w[i] * nodes[i].numbers[l][e][q]).sum()
                 }).collect()).collect()
             }).collect();
-            let miss = apart(runs, &interpolated, &check);
+            let miss = apart(runs, &carried, &check);
             let grow = if miss > 0.0 { 0.9 * (tol / miss).powf(1.0 / 6.0) } else { 2.0 };
             if miss > tol && step > finest && !limit {
                 h = step * grow.clamp(0.1, 0.5);
@@ -1052,29 +1043,25 @@ fn pieces(sk: &mut Sketch, rd: &Reading, runs: &[Vec<(crate::brep::family::Run, 
                                    num(here.s), num(end), num(miss)));
             }
             h = (step * grow.clamp(0.5, 2.0)).clamp(finest, longest);
-            before = Some(solved[4].clone());
-            here = solved[5].clone();
-            here.s = at[5];
-            here_numbers = nums[5].clone();
-            break 'tries Some(Piece { span: [solved[0].s, end], at, numbers: nums });
+            break 'tries Some(Piece { span: [here.s, end], nodes });
         };
-        if let Some(p) = piece {
-            // past an end read as its limit, nothing is left to run
-            let done = p.span[1] == to;
-            out.push(p);
-            if done {
-                break;
-            }
-        } else {
-            restore(sk, &here);
+        let Some(piece) = kept else { continue };
+        // past an end read as its limit, nothing is left to run
+        if piece.span[1] == to {
+            out.push(piece);
+            break;
         }
+        before = Some(piece.nodes[4].clone());
+        here = piece.nodes[5].clone();
+        out.push(piece);
     }
     Ok(out)
 }
 
-/// **The family's walls, exact**: the faceted family judged first (its stations' topology, their
-/// rank, the swept volume), then the station run from the middle to each end in pieces whose
-/// polynomials hold to a station solved between their nodes within `EXACT` of the section's size.
+/// **The family's walls, exact** (#243 L2), as the recipe's `family` node carries them (in model
+/// units): the faceted family judged first (its stations' topology, their rank, the swept volume),
+/// then the station run from the middle to each end in pieces whose polynomials hold to a station
+/// solved between their nodes within `EXACT` of the section's size.
 pub(crate) fn walls(sk: &Sketch, si: usize) -> Result<Walls, String> {
     let fam = built(sk, si, REPORT_UNIT)?;
     let SolidDef::Family { face, station, held, from, to } = &sk.solids[si].def else {
@@ -1089,90 +1076,66 @@ pub(crate) fn walls(sk: &Sketch, si: usize) -> Result<Walls, String> {
     let (loops, names) = walk_face(&part.sketch, pf, &prefix)?;
     let rd = Reading { face: pf, held: held_param, loops, outer, tol: fam.tol, span: b - a };
     let ps = &mut part.sketch;
+    let runs = runs(ps, &rd)?;
     let mid = ps.params[held_param as usize].value;
     rd.settle(ps, mid).map_err(|why| format!("the station at {} {why}", num(mid)))?;
-    let runs = runs(ps, &rd);
-    let counts: Vec<Vec<usize>> = rd.loops.iter().map(|l| vec![1; l.len()]).collect();
-    let centre = rd.station(ps, mid, &counts)?;
-    // the section's size, by its corners' spread
-    let (mut lo, mut hi) = ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
-    for (edges, kinds) in numbers(ps, &rd)?.iter().zip(&runs) {
-        for (n, (run, _)) in edges.iter().zip(kinds) {
-            for j in 0..=4 {
-                let p = run.at(n, j as f64 / 4.0).0;
-                for k in 0..3 {
-                    lo[k] = lo[k].min(p[k]);
-                    hi[k] = hi[k].max(p[k]);
-                }
-            }
-        }
-    }
-    let size = norm(sub(hi, lo)).max(f64::MIN_POSITIVE);
-    let tol = EXACT * size;
-    let up = pieces(ps, &rd, &runs, &centre, b, tol)?;
-    restore(ps, &centre);
-    let down = pieces(ps, &rd, &runs, &centre, a, tol)?;
-    let mut spans = Vec::new();
-    let mut at = Vec::new();
-    let mut per_piece: Vec<Vec<Vec<Vec<Vec<f64>>>>> = Vec::new();
-    for p in down.into_iter().rev() {
-        spans.push([p.span[1], p.span[0]]);
-        let mut nodes = p.at;
-        nodes.reverse();
-        at.push(nodes);
-        let mut nums = p.numbers;
-        nums.reverse();
-        per_piece.push(nums);
-    }
-    for p in up {
-        spans.push(p.span);
-        at.push(p.at);
-        per_piece.push(p.numbers);
-    }
-    // the pieces meet where they were run from
-    for k in 1..spans.len() {
-        spans[k][0] = spans[k - 1][1];
-    }
-    let mut wall_names = names.into_iter();
-    let loops = runs.iter().enumerate().map(|(l, edges)| edges.iter().enumerate().map(|(e, (run, closed))| {
-        let nodes = per_piece.iter().flat_map(|nums| nums.iter().map(move |n| n[l][e].clone())).collect();
-        (run.clone(), wall_names.next().unwrap_or_default(), *closed, nodes)
-    }).collect()).collect();
-    Ok(Walls { spans, at, loops, vanish: fam.tol })
+    let centre = Node { s: mid, x: ps.get_x(), numbers: numbers(ps, &rd)? };
+    let tol = EXACT * spread(&runs, &centre.numbers).max(f64::MIN_POSITIVE);
+    let up = pieces(ps, &rd, &runs, centre.clone(), b, tol)?;
+    let down = pieces(ps, &rd, &runs, centre, a, tol)?;
+    // the pieces in order of the running number, each run down turned round
+    let ordered = down.into_iter().rev().map(|mut p| {
+        p.span.reverse();
+        p.nodes.reverse();
+        p
+    }).chain(up).collect::<Vec<_>>();
+    let spans = ordered.iter().map(|p| p.span).collect();
+    let at = ordered.iter().map(|p| std::array::from_fn(|i| p.nodes[i].s)).collect();
+    let mut names = names.into_iter();
+    let loops = runs.iter().enumerate().map(|(l, edges)| {
+        edges.iter().enumerate().map(|(e, (run, closed))| FamilyWall {
+            name: names.next().unwrap_or_default(),
+            run: run.clone(),
+            closed: *closed,
+            nodes: ordered.iter().flat_map(|p| &p.nodes).map(|n| n.numbers[l][e].clone())
+                .collect(),
+        }).collect()
+    }).collect();
+    Ok(Walls { spans, at, vanish: fam.tol, loops })
 }
 
-impl Walls {
-    /// The `family` node of a recipe (`brep::recipe::Node::Family`): every point in millimetres
-    /// about the origin written about, every direction in millimetres, an arc's sweep and a
-    /// spline's span as they stand.
-    pub(crate) fn json(&self, w: &crate::brep::recipe::Writer) -> crate::json::Json {
-        use crate::json::{object, Json};
-        let numbers = |run: &crate::brep::family::Run, n: &[f64]| -> Json {
-            let (pts, dirs, _) = run.shape(n.len());
-            let mut out = n.to_vec();
-            for i in 0..pts + dirs {
-                let v: V = std::array::from_fn(|k| n[3 * i + k] * w.scale);
-                let v = if i < pts { w.moved(v) } else { v };
-                out[3 * i..3 * i + 3].copy_from_slice(&v);
+/// A face family's walls as the recipe writes them (`walls`): every point in millimetres about the
+/// origin written about, every direction in millimetres, an arc's sweep and a spline's span as
+/// they stand.
+pub(crate) fn json(f: &Walls, w: &crate::brep::recipe::Writer) -> crate::json::Json {
+    use crate::json::{object, Json};
+    let numbers = |run: &Run, n: &[f64]| -> Json {
+        let (pts, dirs, _) = run.shape(n.len());
+        let mut out = n.to_vec();
+        for i in 0..pts + dirs {
+            let v: V = std::array::from_fn(|k| n[3 * i + k] * w.scale);
+            let v = if i < pts { w.moved(v) } else { v };
+            out[3 * i..3 * i + 3].copy_from_slice(&v);
+        }
+        Json::Arr(out.into_iter().map(Json::from).collect())
+    };
+    let list = |xs: &[f64]| Json::Arr(xs.iter().map(|&x| x.into()).collect());
+    let loops = f.loops.iter().map(|walls| Json::Arr(walls.iter().map(|wall| {
+        let mut o = object([("name", wall.name.clone().into()), ("run", wall.run.kind().into()),
+            ("closed", Json::Bool(wall.closed)),
+            ("nodes", Json::Arr(wall.nodes.iter().map(|n| numbers(&wall.run, n)).collect()))]);
+        if let Run::Spline { degree, knots, weights } = &wall.run {
+            o.set("degree", (*degree).into());
+            o.set("knots", list(knots));
+            if let Some(ws) = weights {
+                o.set("weights", list(ws));
             }
-            Json::Arr(out.into_iter().map(Json::from).collect())
-        };
-        let list = |xs: &[f64]| Json::Arr(xs.iter().map(|&x| x.into()).collect());
-        let loops = self.loops.iter().map(|edges| Json::Arr(edges.iter().map(|(run, name, closed, nodes)| {
-            let mut o = object([("name", name.clone().into()), ("run", run.kind().into()),
-                ("closed", Json::Bool(*closed)),
-                ("nodes", Json::Arr(nodes.iter().map(|n| numbers(run, n)).collect()))]);
-            if let crate::brep::family::Run::Spline { degree, knots, weights } = run {
-                o.set("degree", (*degree).into());
-                o.set("knots", list(knots));
-                if let Some(ws) = weights { o.set("weights", list(ws)); }
-            }
-            o
-        }).collect())).collect();
-        object([("kind", "family".into()),
-            ("spans", Json::Arr(self.spans.iter().map(|s| list(s)).collect())),
-            ("at", Json::Arr(self.at.iter().map(|s| list(s)).collect())),
-            ("vanish", (self.vanish * w.scale).into()),
-            ("loops", Json::Arr(loops))])
-    }
+        }
+        o
+    }).collect())).collect();
+    object([("kind", "family".into()),
+        ("spans", Json::Arr(f.spans.iter().map(|s| list(s)).collect())),
+        ("at", Json::Arr(f.at.iter().map(|s| list(s)).collect())),
+        ("vanish", (f.vanish * w.scale).into()),
+        ("loops", Json::Arr(loops))])
 }

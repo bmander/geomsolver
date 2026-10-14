@@ -110,18 +110,19 @@ impl Stations {
     pub fn span(&self) -> [f64;2] { [self.spans[0][0],self.spans[self.spans.len()-1][1]] }
     /// The piece holding `s`, the end ones taking what lies past them.
     fn piece(&self,s: f64) -> usize { self.spans.partition_point(|sp| sp[1] < s).min(self.spans.len()-1) }
-    /// The weights of the six nodes of piece `j` that read a number, its rate and its second rate
-    /// at `s` (the polynomial through them, and its derivatives in `s`).
-    fn weights(&self,j: usize,s: f64) -> [[f64;6];3] {
+    /// The weights of the six nodes of piece `j` that read a number and its rate at `s` (the
+    /// polynomial through them, and its derivative in `s`).
+    fn weights(&self,j: usize,s: f64) -> [[f64;6];2] {
         let sp = self.spans[j];
         let (mid,half) = ((sp[0]+sp[1])/2.,(sp[1]-sp[0])/2.);
         let t = (s-mid)/half;
-        let mut mono = [[0.;6];3];
+        // tᵏ and its derivative in `s`, k t^(k−1) / half
+        let mut mono = [[0.;6];2];
+        let mut power = 1.;
         for k in 0..6 {
-            let kf = k as f64;
-            mono[0][k] = t.dpowi(k as i32);
-            if k >= 1 { mono[1][k] = kf*t.dpowi(k as i32-1)/half; }
-            if k >= 2 { mono[2][k] = kf*(kf-1.)*t.dpowi(k as i32-2)/(half*half); }
+            mono[0][k] = power;
+            if k+1 < 6 { mono[1][k+1] = (k+1) as f64*power/half; }
+            power *= t;
         }
         std::array::from_fn(|d| std::array::from_fn(|i| (0..6).map(|k| mono[d][k]*self.inv[j][k][i]).sum()))
     }
@@ -183,23 +184,29 @@ impl Sheet {
         if !ok || nodes.len() != 6*stations.spans.len() || nodes.iter().any(|n| n.len() != len || n.iter().any(|x| !x.is_finite())) {
             return Err(format!("a face family's {} wall has numbers of the wrong count",run.kind()))
         }
-        let mut sheet = Sheet {run,stations,nodes,closed,boxes:Vec::new()};
-        sheet.boxes = sheet.stations.spans.iter().map(|&sp| sheet.bounds(sp)).collect();
-        Ok(sheet)
+        Ok(Sheet {run,stations,nodes,closed,boxes:Vec::new()}.boxed())
     }
+    /// The sheet with its pieces' boxes read off its numbers.
+    fn boxed(mut self) -> Sheet {
+        self.boxes = self.stations.spans.iter().map(|&sp| self.bounds(sp)).collect();
+        self
+    }
+    /// Whole-circle walls run round once: `u` periodic with period 1.
+    pub fn period(&self) -> Option<f64> { self.closed.then_some(1.) }
     /// The interval the wall runs over.
     pub fn span(&self) -> [f64;2] { self.stations.span() }
-    /// The edge's numbers at `s`, their rates and (where `need` is 2) their second rates.
-    pub fn numbers(&self,s: f64,need: usize) -> [Vec<f64>;3] {
+    /// The edge's numbers at `s`, and (where `rates`) how fast they run there.
+    fn read(&self,s: f64,rates: bool) -> [Vec<f64>;2] {
         let j = self.stations.piece(s);
         let w = self.stations.weights(j,s);
         let nodes = &self.nodes[6*j..6*j+6];
         let len = nodes[0].len();
-        std::array::from_fn(|d| if d > need { Vec::new() } else {
+        std::array::from_fn(|d| if d == 1 && !rates { Vec::new() } else {
             (0..len).map(|q| (0..6).map(|i| w[d][i]*nodes[i][q]).sum()).collect()
         })
     }
-    fn spline(&self,n: &[f64]) -> BSpline { self.run.spline(n) }
+    /// The edge's numbers at `s`.
+    pub fn numbers(&self,s: f64) -> Vec<f64> { let [n,_] = self.read(s,false); n }
     /// The edge with numbers `n` at the fraction `u` of its run: the point, `∂/∂u` and `∂²/∂u²`.
     pub fn at(&self,n: &[f64],u: f64) -> (V,V,V) { self.run.at(n,u) }
     /// `∂S/∂s` at `u` where the numbers are `n` and run at `dn`.
@@ -216,13 +223,13 @@ impl Sheet {
                 let k = n.len();
                 let t = n[k-2]+u*(n[k-1]-n[k-2]);
                 let dt = dn[k-2]+u*(dn[k-1]-dn[k-2]);
-                add(self.spline(dn).point(t),scale(self.spline(n).d2(t).1,dt))
+                add(self.run.spline(dn).point(t),scale(self.run.spline(n).d2(t).1,dt))
             }
         }
     }
     /// `S`, `S_u`, `S_s`.
     pub fn d1(&self,[u,s]: Uv) -> (V,V,V) {
-        let [n,dn,_] = self.numbers(s,1);
+        let [n,dn] = self.read(s,true);
         let (x,xu,_) = self.at(&n,u);
         (x,xu,self.rate(&n,&dn,u))
     }
@@ -236,7 +243,7 @@ impl Sheet {
         (x,d,scale(sub(self.d1([u,hi]).2,self.d1([u,lo]).2),1./(hi-lo)))
     }
     /// A rim: the edge at station `s`, `C`, `C'` and `C''` in `u`.
-    pub fn rim(&self,u: f64,s: f64) -> (V,V,V) { self.at(&self.numbers(s,0)[0],u) }
+    pub fn rim(&self,u: f64,s: f64) -> (V,V,V) { self.at(&self.numbers(s),u) }
     /// The point of the wall nearest `p`: Gauss–Newton from the last foot this thread found on it
     /// where that settles near `p` (a mesh asks of one corner after the next); else from the
     /// nearest of a grid — `u` in sixteenths, `s` at each piece's ends and quarters — read piece by
@@ -258,7 +265,7 @@ impl Sheet {
                 let sp = self.stations.spans[j];
                 for k in 0..=4 {
                     let s = sp[0]+(sp[1]-sp[0])*k as f64/4.;
-                    let n = &self.numbers(s,0)[0];
+                    let n = &self.numbers(s);
                     for i in 0..=16 {
                         let u = i as f64/16.;
                         let d = distance(self.at(n,u).0,p);
@@ -319,7 +326,7 @@ impl Sheet {
     }
     /// The fraction `u` of the rim at `s` nearest `p`.
     pub fn rim_inverse(&self,s: f64,p: V) -> f64 {
-        let n = &self.numbers(s,0)[0];
+        let n = &self.numbers(s);
         let mut best = (f64::INFINITY,0.);
         for j in 0..=64 {
             let u = j as f64/64.;
@@ -379,7 +386,7 @@ impl Sheet {
     }
     /// A box about the rim at `s` over `[u0, u1]`, never smaller.
     pub fn rim_bounds(&self,s: f64,[u0,u1]: [f64;2]) -> Box3 {
-        let n = &self.numbers(s,0)[0];
+        let n = &self.numbers(s);
         match self.run {
             Run::Line => hull([u0,u1].map(|u| self.at(n,u).0)),
             Run::Round => {
@@ -387,7 +394,7 @@ impl Sheet {
                 let reach: V = std::array::from_fn(|k| n[3+k].dhypot(n[6+k]));
                 (sub(c,reach),add(c,reach))
             }
-            Run::Spline {..} => hull(self.spline(n).poles),
+            Run::Spline {..} => hull(self.run.spline(n).poles),
         }
     }
     /// Where, strictly inside `span` of parameter `k` (0 for `u`, 1 for `s`), the wall stops being
@@ -399,7 +406,7 @@ impl Sheet {
         let n = &self.nodes[0];
         let (t0,t1) = (n[n.len()-2],n[n.len()-1]);
         let (lo,hi) = (span[0].min(span[1]),span[0].max(span[1]));
-        let mut out: Vec<f64> = self.spline(n).breaks([t0.min(t1),t0.max(t1)]).into_iter()
+        let mut out: Vec<f64> = self.run.spline(n).breaks([t0.min(t1),t0.max(t1)]).into_iter()
             .map(|t| (t-t0)/(t1-t0)).filter(|&u| u > lo && u < hi).collect();
         out.sort_by(f64::total_cmp);
         out
@@ -412,7 +419,7 @@ impl Sheet {
             match self.run {
                 Run::Line => {}
                 Run::Round => f = f.min(norm(v3(n,3))),
-                Run::Spline {..} => { let (lo,hi) = hull(self.spline(n).poles); f = f.min(distance(lo,hi)/16.) }
+                Run::Spline {..} => { let (lo,hi) = hull(self.run.spline(n).poles); f = f.min(distance(lo,hi)/16.) }
             }
         }
         for (j,sp) in self.stations.spans.iter().enumerate() {
@@ -437,10 +444,17 @@ impl Sheet {
             for i in pts..pts+dirs { let d = m.vector(v3(n,3*i)); out[3*i..3*i+3].copy_from_slice(&d); }
             out
         }).collect();
-        let mut sheet = Sheet {nodes,..self.clone()};
-        sheet.boxes = sheet.stations.spans.iter().map(|&sp| sheet.bounds(sp)).collect();
-        sheet
+        Sheet {nodes,..self.clone()}.boxed()
     }
+}
+
+/// A round edge's numbers as a circle where they are one — its radius vectors as long as each other
+/// and square, within `rel` of the radius — its centre, its axis (right-handed from the start
+/// toward the quarter turn) and its radius.
+fn circle(n: &[f64],rel: f64) -> Option<(V,V,f64)> {
+    let (c,r0,r9) = (v3(n,0),v3(n,3),v3(n,6));
+    let r = norm(r0);
+    (r > 0. && (norm(r9)-r).abs() <= rel*r && dot(r0,r9).abs() <= rel*r*r).then(|| (c,unit(cross(r0,r9)),r))
 }
 
 /// A wall of a family as the solid is built from it: its sheet and its name.
@@ -450,28 +464,24 @@ pub struct Wall { pub sheet: Arc<Sheet>,pub name: String }
 /// The rim of `sheet` at `s` as an edge's curve and its parameters: a line or a circle where it is
 /// one (so the caps and what meets them read it in closed form), else the sheet's own rim.
 fn rim_curve(sheet: &Arc<Sheet>,s: f64) -> (Curve,[f64;2]) {
-    let n = &sheet.numbers(s,0)[0];
+    let n = &sheet.numbers(s);
     match sheet.run {
         Run::Line => {
             let (a,b) = (v3(n,0),v3(n,3));
             (Curve::Line {p:a,d:unit(sub(b,a))},[0.,distance(a,b)])
         }
-        Run::Round => {
-            let (c,r0,r9,sweep) = (v3(n,0),v3(n,3),v3(n,6),n[9]);
-            let r = norm(r0);
-            let round = (norm(r9)-r).abs() <= 1e-12*r && dot(r0,r9).abs() <= 1e-12*r*r;
-            if round && r > 0. {
-                let z = scale(cross(r0,r9),sweep.signum());
-                (Curve::Circle(Frame::new(c,z,r0),r),[0.,sweep.abs()])
-            } else { (Curve::Rim(sheet.clone(),s),[0.,1.]) }
-        }
+        Run::Round => match circle(n,1e-12) {
+            // its frame turned the way it is walked, so its angle grows along it
+            Some((c,z,r)) => (Curve::Circle(Frame::new(c,scale(z,n[9].signum()),v3(n,3)),r),[0.,n[9].abs()]),
+            None => (Curve::Rim(sheet.clone(),s),[0.,1.]),
+        },
         Run::Spline {..} => (Curve::Rim(sheet.clone(),s),[0.,1.]),
     }
 }
 
 /// The length of the rim at `s`, by its polygon of sixty-four chords.
 fn rim_length(sheet: &Sheet,s: f64) -> f64 {
-    let n = &sheet.numbers(s,0)[0];
+    let n = &sheet.numbers(s);
     (0..64).map(|j| distance(sheet.at(n,j as f64/64.).0,sheet.at(n,(j+1) as f64/64.).0)).sum()
 }
 
@@ -485,7 +495,7 @@ fn newell(pts: &[V]) -> V {
 
 /// A loop's points at station `s`, sixteen an edge.
 fn loop_points(walls: &[Wall],s: f64) -> Vec<V> {
-    walls.iter().flat_map(|w| { let n = w.sheet.numbers(s,0)[0].clone(); (0..16).map(move |j| w.sheet.at(&n,j as f64/16.).0) })
+    walls.iter().flat_map(|w| { let n = w.sheet.numbers(s); (0..16).map(move |j| w.sheet.at(&n,j as f64/16.).0) })
         .collect()
 }
 
@@ -681,12 +691,7 @@ fn analytic(sheet: &Sheet,tol: f64) -> Option<Surface> {
             turned_line(nodes,tol)
         }
         Run::Round => {
-            let circle = |n: &[f64]| -> Option<(V,V,f64)> {
-                let (c,r0,r9) = (v3(n,0),v3(n,3),v3(n,6));
-                let r = norm(r0);
-                ((norm(r9)-r).abs() <= 1e-9*r && dot(r0,r9).abs() <= 1e-9*r*r).then(|| (c,unit(cross(r0,r9)),r))
-            };
-            let all: Vec<(V,V,f64)> = nodes.iter().map(|n| circle(n)).collect::<Option<_>>()?;
+            let all: Vec<(V,V,f64)> = nodes.iter().map(|n| circle(n,1e-9)).collect::<Option<_>>()?;
             let (c0,z0,r0) = all[0];
             let (c1,z1,_) = all[all.len()-1];
             if norm(cross(z0,z1)) <= 1e-9 {
@@ -751,6 +756,3 @@ fn turned_line(nodes: &[Vec<f64>],tol: f64) -> Option<Surface> {
     let (z,h0,dh) = if hb > ha { (z,ha,hb-ha) } else { (scale(z,-1.),-ha,ha-hb) };
     Some(Surface::Cone(Frame::new(add(centre,scale(z,h0)),z,x),ra,(rb-ra).datan2(dh)))
 }
-
-/// Whole-circle walls run round once: `u` periodic with period 1.
-pub fn period(sheet: &Sheet) -> Option<f64> { sheet.closed.then_some(1.) }

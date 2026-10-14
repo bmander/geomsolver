@@ -383,8 +383,8 @@ fn a_station_reads_the_geometry_it_was_given() {
 fn walls_lie_on_the_surfaces_their_numbers_say() {
     let all = |e: &Elaborated, name: &str, want: &[&str]| {
         let k = kinds(e, name);
-        let walls: Vec<&str> = k.iter().filter(|(n, _)| !n.ends_with(".start") && !n.ends_with(".end"))
-            .map(|(_, &kind)| kind).collect();
+        let cap = |n: &str| n.ends_with(".start") || n.ends_with(".end");
+        let walls: Vec<&str> = k.iter().filter(|(n, _)| !cap(n)).map(|(_, &kind)| kind).collect();
         assert!(!walls.is_empty() && walls.iter().all(|k| want.contains(k)), "{name}: {k:?}");
         k
     };
@@ -403,10 +403,9 @@ fn walls_lie_on_the_surfaces_their_numbers_say() {
 /// slab's faces cut along curves traced where they meet the duct's twisted walls.
 #[test]
 fn a_family_cuts_like_any_solid() {
-    let auger = "// Three and a half turns: no pairing can say this.\n\
-                 auger := solid(TwistedSquare(guide, std.z, half: 10mm, twist: 1260deg).f over s in (0, 1))\n";
-    assert!(TWISTED.contains(auger));
-    let src = TWISTED.replace(auger, "") + "in std.top {\n  m := point\n  fix((0mm, 20mm)) m\n}\n\
+    // the duct alone: the auger, written last, left off
+    let auger = TWISTED.find("// Three and a half turns").expect("the auger");
+    let src = TWISTED[..auger].to_string() + "in std.top {\n  m := point\n  fix((0mm, 20mm)) m\n}\n\
         r := std.CenteredRectangle(m, w: 60mm, h: 20mm) in std.top\nslab := face(r.loop)\n\
         block := solid(slab, from: -30mm, to: 30mm)\nduct cut block\n";
     let e = family(&src);

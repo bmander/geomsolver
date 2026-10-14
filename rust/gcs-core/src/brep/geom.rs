@@ -467,7 +467,7 @@ impl Surface {
             Surface::Plane(_) | Surface::Extrusion(..) => [None,None],
             Surface::Revolution(..) => [Some(TAU),None],
             Surface::Blend(_,b) => [b.closed.then_some(1.),None],
-            Surface::Family(_,w) => [super::family::period(w),None],
+            Surface::Family(_,w) => [w.period(),None],
             Surface::BSpline(..) => [None,None],
             Surface::Cylinder(..) | Surface::Cone(..) | Surface::Sphere(..) => [Some(TAU),None],
             Surface::Torus(..) => [Some(TAU),Some(TAU)],
@@ -893,7 +893,7 @@ impl Curve {
     pub fn period(&self) -> Option<f64> {
         match self {
             Curve::Line {..} | Curve::BSpline(..) | Curve::Iso(..) | Curve::Rail(..) => None,
-            Curve::Rim(ref w,_) => super::family::period(w),
+            Curve::Rim(ref w,_) => w.period(),
             Curve::Traced(c) => c.closed.then(|| c.segments() as f64),
             _ => Some(TAU),
         }

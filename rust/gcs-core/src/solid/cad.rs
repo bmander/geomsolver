@@ -334,8 +334,8 @@ impl<'a> Walk<'a> {
             }
             // its walls exact (#243 L2): the interval's pieces, the stations each is solved at, and
             // each wall's edge's numbers at every one of them
-            SolidDef::Family {..} => super::family::walls(sk,i)
-                .map_err(|e| format!("`{}`: {e}",solid.name))?.json(w),
+            SolidDef::Family {..} => super::family::json(&super::family::walls(sk,i)
+                .map_err(|e| format!("`{}`: {e}",solid.name))?,w),
         })
     }
 }
