@@ -239,6 +239,9 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   per-kind polyline walk `svg::entity` and the workspace share, refined to `curve::flatness`.
   **Every plane is a pane**, drawn in or not; `overview::pane` is the *one* rule for its reach
   (geometry and origin, grown a little, never thinner than `LEAST_SIDE`), so face and axes agree.
+  **The workspace is at least `WORKSPACE_MM` (125 mm, about five inches) across**: no pane is
+  narrower, an axis reaches half of it either side (`axis_reach`), and a drawing with nothing
+  drawn but at one place — a blank sheet — opens framed on its panes (`workspace::bounds`).
   **A place is one pane** (`overview::places`, `Basis::coplanar`): planes standing on one plane
   in space (`std.up` on `std.front`) are drawn as the first one's pane, reaching over what is
   drawn on any of them, so drawing on the front leaves no second frame behind

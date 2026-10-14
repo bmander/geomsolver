@@ -794,8 +794,10 @@ fn segment_meets_box(p: (f64, f64), q: (f64, f64), (x0, y0, x1, y1): Box2) -> bo
 
 /// The extent of everything the workspace shows, on the eye's picture plane — every drawn figure,
 /// and the box round each object seen from here (its eight corners), since a solid reaches past
-/// the profiles it is made from: a turned section draws half of what it makes.  `None` when
-/// nothing is drawn.
+/// the profiles it is made from: a turned section draws half of what it makes.  A drawing with
+/// nothing drawn but at one place — a blank sheet's `std.origin` — is framed on its panes, the
+/// workspace (`overview::WORKSPACE_MM`), rather than on a point.  `None` when nothing is drawn
+/// and there is no pane.
 pub fn bounds(sk: &Sketch, proj: &Projection, unit: f64) -> Option<Box2> {
     let mut b: Box2 = (f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
     for e in sk.drawn() {
@@ -812,6 +814,18 @@ pub fn bounds(sk: &Sketch, proj: &Projection, unit: f64) -> Option<Box2> {
         for k in 0..8 {
             let pick = |a: usize| if k >> a & 1 == 0 { w.lo[a] } else { w.hi[a] };
             grow(&mut b, proj.seen([pick(0), pick(1), pick(2)]));
+        }
+    }
+    if !(b.0 < b.2 || b.1 < b.3) {
+        let views = super::views(sk);
+        let places = super::places(sk);
+        let least = sk.extent() * super::LEAST_SIDE;
+        for i in (0..sk.planes.len()).filter(|&i| places[i] == Some(i)) {
+            let basis = sk.basis(i);
+            let (x0, y0, x1, y1) = super::pane(sk, i, &views, &places, least);
+            for (x, y) in [(x0, y0), (x1, y0), (x1, y1), (x0, y1)] {
+                grow(&mut b, proj.seen(basis.lift(x, y)));
+            }
         }
     }
     (b.0 <= b.2).then_some(b)
