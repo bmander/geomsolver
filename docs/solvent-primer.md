@@ -1510,8 +1510,9 @@ under a motion keeping its view, `envelope(side, under: cutting, …)` is the pl
 extruded, and `p coincident flank` from any view is one equation. Draw the prism's face `in` a view
 and name the edge in it.
 
-**An envelope in space is held to by the solve** where its source is a cone or a cylinder set
-(`std.Cone`, `std.ConeThrough` with its lean stated, `std.Cylinder`) or a revolution's side turned
+**An envelope in space is held to by the solve** where its source is a cone, a cylinder or a
+plane set (`std.Cone`, `std.ConeThrough` with its lean stated, `std.Cylinder`, `std.HalfSpace`) or
+a revolution's side turned
 from a line, an arc or a circle, under turns about lines, screws, slides and `relative_to:`
 (`spiral_bevel/mean_point.sv`):
 
@@ -1525,7 +1526,9 @@ pinion_flank curvature(at: M) profile                 // its section by profile'
 ```
 
 The source's geometry, its number and the motion's axes are columns, so the cone's half solves from
-what is stated at `M`. The `at:` relations read the place of the `coincident` holding `M`, which must
+what is stated at `M`. A plane sliding along its own normal relative to a turn sweeps an involute
+helicoid: `spiral_bevel/phillips.sv`'s rack, `std.HalfSpace(P, L, d: 0mm)` under
+`motion(slide, relative_to: pinion_turn)`. The `at:` relations read the place of the `coincident` holding `M`, which must
 be stated. A set's envelope is only held to: it has no chart after the solve.
 
 **Two flanks meshing are a locus** (`spiral_bevel/contact.sv`): tooth contact analysis. The first

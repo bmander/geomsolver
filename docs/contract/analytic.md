@@ -31,13 +31,17 @@ of its source (`model::Held`): a revolution's side read off the declarations (`H
 its `about:` line or axis and its line, arc or circle edge; the side itself bound after the solids
 into `EnvelopeE::surface`), or a set's (`Held::Set`: the hidden point `{envelope}#probe` the
 flattener applied it to, held; its `SetShape` read off the one relation the body states there by
-`set_shape` — `Angle3` seen from a line's start a cone, `PointLine3` a cylinder — never a row; an
+`set_shape` — `Angle3` seen from a line's start a cone, `PointLine3` a cylinder, an `Ordinate`
+along a line from a point a plane (`SetKind::Plane`, `SetShape::origin` that point, the number
+signed toward the probe, #326) — never a row; an
 unknown its number reads is bound for the contacts, `expr::bind_free` and `evaluate`). One whose
 motion or roll is unreadable is left to the late pass, its name dropped so no relation holds to a
 wrong index; one whose source is unreadable is `Held::Not(why)`, evaluated after the solve as before.
 `envelope::held` is the evaluator: the moving point at a place `[u, v, t]` over `kernels::Num` in
 second-order Taylor arithmetic (`H2`), the source a revolution of a meridian element (`Source`:
-line, cone, cylinder, round) and the motion the steps `motion::Family` reads (rotations, screws,
+line, cone, cylinder, round) or a plane (`Source::Plane`, columns `[a, b, o]`: the point `o + x·d`
+moved `u` and `v` along `across(d, ref)` and `d ×` it — no turn, both lengths; the seeds' grid
+samples `v` as `u` there, `held::turn_spans`, and reaches from `o`, `held::reach`) and the motion the steps `motion::Family` reads (rotations, screws,
 translations, relatives; a planar turn and a measured number refused), so a residual is exact and
 a Jacobian exact by forward differentiation (`kernels::Dual`, eight columns a pass). `Parts::of`
 reads the columns (lifts, an axis's place and direction, a free number) and constants (`Layout`,
@@ -54,7 +58,13 @@ over the roll interval then `newton::dogleg` on the four rows (`Seeding`), remem
 contact's three slots. A set's
 envelope has no chart after the solve (`GeneratedEnvelope::named` refuses it; `program::solid_diagnostics`
 skips it); an envelope's `surface` and `motion` are read by name (`resolve::follow`), the surface
-off the declaration until bound. `tests/held_envelopes.rs` is the gate — the frame against
+off the declaration until bound. A plane's envelope under a slide along its normal relative to a turn is the member's involute
+helicoid: `tests/phillips.rs` holds it to the helicoid's own equations, and Phillips' pair
+(`spiral_bevel/phillips.sv`) to a point contact on the line of action with no lag, a pair whose
+racks slide at different speeds to the lag that closes their gap (`δ = (σ/σ' − 1)φ`), and the pair
+misaligned after its flanks are made — the gear half a millimetre further off, or its shaft
+turned half a degree — to a constant lag (−0.307° and 0.0066° of the gear: Phillips' claim, which
+holds). `tests/held_envelopes.rs` is the gate — the frame against
 `GeneratedEnvelope` to 1e-12, held points against the snapshot and `motion::Family`, the normal,
 tangent and osculating circle against closed forms and a three-point section fit under a skew
 screw mesh, the mean-point lean (`spiral_bevel/mean_point.sv`) — with

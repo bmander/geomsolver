@@ -1332,7 +1332,13 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             crate::model::Held::Set {probe,shape} => {
                 use crate::model::SetShape;
                 let shape = shape.as_ref()
-                    .map(|s| line(s.axis).map(|axis| SetShape {axis,..s.clone()}).ok_or(()))
+                    .map(|s| {
+                        let origin = match s.origin {
+                            Some(o) => Some(pt_map[o as usize].ok_or(())? as u32),
+                            None => None,
+                        };
+                        line(s.axis).map(|axis| SetShape {axis,origin,..s.clone()}).ok_or(())
+                    })
                     .transpose();
                 match (pt_map[*probe as usize],shape) {
                     (Some(probe),Ok(shape)) => crate::model::Held::Set {probe:probe as u32,shape},

@@ -765,12 +765,12 @@ fn still_seed(l: &Layout, parts: &[f64], q: [f64; 3]) -> Option<[f64; 3]> {
         let f = local(l, &c, false);
         f.x.iter().all(|x| x.is_finite()).then_some(f.x)
     };
-    let reach = crate::space::distance(q, [parts[0], parts[1], parts[2]]).max(1e-3);
+    let reach = held::reach(l.source, parts, q);
     let us = held::meridian_spans(l.source, reach);
+    let vs = held::turn_spans(l.source, reach, 36);
     let mut best: Option<([f64; 2], f64)> = None;
     for &u in &us {
-        for b in 0..36 {
-            let v = b as f64 * std::f64::consts::TAU / 36.0;
+        for &v in &vs {
             if let Some(x) = point(u, v) {
                 let d = crate::space::distance(x, q);
                 if best.is_none_or(|(_, c)| d < c) {

@@ -55,6 +55,10 @@ pub enum Source {
     Cylinder = 3,
     /// A circle about a centre in a plane (a revolution's arc or circle): `[a, b, c, r, U, V]`.
     Round = 4,
+    /// A plane square to the axis, its number along the axis from a point `o` (`std.HalfSpace`'s
+    /// face, #326): `[a, b, o]`. Not a revolution: its place is `[u, v]` along two directions
+    /// in it, both lengths, so its normal is the axis's direction everywhere.
+    Plane = 5,
 }
 
 impl Source {
@@ -64,6 +68,7 @@ impl Source {
             2 => Source::Cone,
             3 => Source::Cylinder,
             4 => Source::Round,
+            5 => Source::Plane,
             _ => return None,
         })
     }
@@ -74,6 +79,7 @@ impl Source {
             Source::Line => 12,
             Source::Cone | Source::Cylinder => 6,
             Source::Round => 16,
+            Source::Plane => 9,
         }
     }
 }
@@ -481,6 +487,12 @@ fn surface<T: Num>(l: &Layout, s: &[T], u: H2<T>, v: H2<T>) -> [H2<T>; 3] {
         let x = if free { s[l.source.width()] } else { zero() };
         T::cst(c) + T::cst(m) * x
     };
+    if l.source == Source::Plane {
+        // the plane through `o` moved its number along the axis, `u` and `v` along it
+        let o = vadd(col3(s, 6), vscale(d, number()));
+        let e2 = cross(d, e1);
+        return vadd(lift(o), vadd(vscale(lift(e1), u), vscale(lift(e2), v)));
+    }
     let meridian: [H2<T>; 3] = match l.source {
         Source::Line => {
             let (p1, p2) = (col3(s, 6), col3(s, 9));
@@ -504,6 +516,7 @@ fn surface<T: Num>(l: &Layout, s: &[T], u: H2<T>, v: H2<T>) -> [H2<T>; 3] {
             let rr = H2::cst(r);
             vadd(lift(c), vadd(vscale(lift(uo), cu * rr), vscale(lift(vo), su * rr)))
         }
+        Source::Plane => unreachable!("a plane is no revolution"),
     };
     // Rodrigues: w cos v + (d × w) sin v + d (d·w)(1 − cos v)
     let w = vsub(meridian, lift(a));
@@ -854,16 +867,16 @@ pub fn seed(k: &[f64], parts: &[f64], p: [f64; 3], roll: [f64; 2]) -> Option<[f6
     tr.cols[..3].copy_from_slice(&p);
     tr.cols[l.lead + 3..].copy_from_slice(parts);
     let cost = |r: [f64; 4]| r.iter().map(|x| x * x).sum::<f64>();
-    let reach = crate::space::distance(p, [parts[0], parts[1], parts[2]]).max(1e-3);
+    let reach = reach(l.source, parts, p);
     let us = meridian_spans(l.source, reach);
+    let vs = turn_spans(l.source, reach, 24);
     let mut best: Option<([f64; 3], f64)> = None;
     let n_roll = 25;
     for a in 0..n_roll {
         let t = roll[0] + (roll[1] - roll[0]) * a as f64 / (n_roll - 1) as f64;
         // the motion's pose at this roll, read once for every place of it
         let posed = pose(&l, &tr.cols[l.lead + 3 + l.source_width()..], H2::var(t, 2, false));
-        for b in 0..24 {
-            let v = b as f64 * std::f64::consts::TAU / 24.0;
+        for &v in &vs {
             for &u in &us {
                 let r = tr.posed(&l, [u, v, t], &posed);
                 if r.iter().all(|x| x.is_finite()) && best.is_none_or(|(_, c)| cost(r) < c) {
@@ -888,8 +901,26 @@ pub(crate) fn meridian_spans(source: Source, reach: f64) -> Vec<f64> {
     match source {
         Source::Line => vec![-0.5, 0.0, 0.25, 0.5, 0.75, 1.0, 1.5],
         Source::Round => (0..12).map(|i| i as f64 * std::f64::consts::TAU / 12.0).collect(),
-        Source::Cone | Source::Cylinder => (-6..=6).map(|i| i as f64 * reach / 3.0).collect(),
+        Source::Cone | Source::Cylinder | Source::Plane => {
+            (-6..=6).map(|i| i as f64 * reach / 3.0).collect()
+        }
     }
+}
+
+/// Where a seed's coarse grid samples round a source's axis, `n` turns of a revolution — or, on a
+/// plane, its second direction as its first is sampled.
+pub(crate) fn turn_spans(source: Source, reach: f64, n: usize) -> Vec<f64> {
+    match source {
+        Source::Plane => meridian_spans(source, reach),
+        _ => (0..n).map(|b| b as f64 * std::f64::consts::TAU / n as f64).collect(),
+    }
+}
+
+/// How far a point sought, `p`, is from where a source's place starts — its axis's start, or a
+/// plane's point — over the source's columns `parts`: how far a seed's grid reaches.
+pub(crate) fn reach(source: Source, parts: &[f64], p: [f64; 3]) -> f64 {
+    let at = if source == Source::Plane { 6 } else { 0 };
+    crate::space::distance(p, [parts[at], parts[at + 1], parts[at + 2]]).max(1e-3)
 }
 
 /// A point contact's four rows over its place alone, the rest of its columns held: what `seed`
@@ -1055,8 +1086,13 @@ impl Parts {
                 let source = match shape.kind {
                     SetKind::Cone => Source::Cone,
                     SetKind::Cylinder => Source::Cylinder,
+                    SetKind::Plane => Source::Plane,
                 };
                 cols.extend(ends(shape.axis)?.map(Col::Lift));
+                if source == Source::Plane {
+                    let o = shape.origin.ok_or("a plane's set names the point it is measured from")?;
+                    cols.push(Col::Lift(o as usize));
+                }
                 let (n, free) = number(&shape.number)?;
                 cols.extend(free.map(Col::One));
                 (source, 0, n, shape.reference)

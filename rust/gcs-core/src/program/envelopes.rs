@@ -91,8 +91,8 @@ pub(super) fn held_meshings(sk: &mut Sketch, res: &mut Resolver, map: &mut Sourc
                     Ok(Flank::Envelope(e.idx))
                 }
                 _ => source_held(sk,res,&decls,r).map(Flank::Formed).map_err(|_| format!(
-                    "`{}` is no flank the solve reads: a meshing turns an envelope in space, a cone \
-                     or a cylinder set, or a named side of a revolution (`surface(rev, e)`)",
+                    "`{}` is no flank the solve reads: a meshing turns an envelope in space, a cone, \
+                     a cylinder or a plane set, or a named side of a revolution (`surface(rev, e)`)",
                     r.root.text)),
             }
         };
@@ -139,8 +139,8 @@ fn source_held(sk: &mut Sketch, res: &Resolver, decls: &BTreeMap<&str,&Decl>, r:
 /// `rev := solid(face, about: ax)` is `e` turned about `ax`.  Why not, where it is not one.
 fn revolution(sk: &Sketch, res: &Resolver, decls: &BTreeMap<&str,&Decl>, source: &crate::syntax::Ref)
     -> Result<Held,String> {
-    let not = "the solve reads the envelope of a cone or a cylinder set, or of a named side of a \
-               revolution (`surface(rev, e)`)";
+    let not = "the solve reads the envelope of a cone, a cylinder or a plane set, or of a named side \
+               of a revolution (`surface(rev, e)`)";
     let sd = decls.get(source.root.text.as_str()).filter(|x| x.kind == EntKind::Surface && source.path.is_empty())
         .ok_or(not)?;
     let (Some([Kid::Ref(solid)]),Some([Kid::Ref(edge)])) =
@@ -205,7 +205,8 @@ pub(super) fn probe_reader(sk: &Sketch, c: &Constraint) -> Option<Reader> {
 
 /// What a set's body states at a reader's point, read as the surface it is (#283) — by the
 /// constraint's kind, as a region's terms are: the angle from a line seen from its start a cone,
-/// a distance from a line a cylinder.  Never a row.
+/// a distance from a line a cylinder, a distance along a line from a point a plane (#326).  Never
+/// a row.
 pub(super) fn set_shape(sk: &mut Sketch, c: &Constraint, e: Reader) -> Result<(),String> {
     let Held::Set {probe,shape:None} = *e.held(sk) else {
         return Err("an envelope's set states one surface at its point".into());
@@ -235,10 +236,31 @@ pub(super) fn set_shape(sk: &mut Sketch, c: &Constraint, e: Reader) -> Result<()
             (SetKind::Cone,super::regions::cone_axis(sk,c,probe as usize)?,SpecKind::Angle)
         }
         CKind::PointLine3 => (SetKind::Cylinder,ent(1),SpecKind::Length),
-        _ => return Err(format!("the solve reads the envelope of a cone's or a cylinder's surface, and \
-                                 this set states `{kind}` at its point")),
+        // a distance along a line from a point (`std.HalfSpace`, #326): the plane square to the
+        // line that far along it, the probe on either side of the statement
+        CKind::Ordinate if matches!(c.args[2],CArg::Ent(t) if t.kind == EntKind::Line)
+            && ent(0).kind == EntKind::Point && ent(1).kind == EntKind::Point => {
+            (SetKind::Plane,ent(2),SpecKind::Length)
+        }
+        CKind::Ordinate => return Err("a plane an envelope reads is measured along a line from a \
+                                       point".into()),
+        _ => return Err(format!("the solve reads the envelope of a cone's or a cylinder's surface, \
+                                 or a plane's, and this set states `{kind}` at its point")),
     };
-    let shape = SetShape {kind,axis:axis.idx,number:number(&c.args[2],spec)?,stood:c.args[2].num(),
+    // where the number sits among the arguments, and which way it runs: an ordinate's from its
+    // first point to its second, so the plane is the probe's side of the first point's
+    let (at,sign) = match c.kind {
+        CKind::Ordinate => (3,if ent(1).i() == probe as usize { 1.0 } else { -1.0 }
+            * c.side().unwrap_or(1.0)),
+        _ => (2,1.0),
+    };
+    let origin = (kind == SetKind::Plane).then(|| {
+        if ent(1).i() == probe as usize { ent(0).idx } else { ent(1).idx }
+    });
+    let mut number = number(&c.args[at],spec)?;
+    number.c *= sign;
+    if let Some((_,m)) = &mut number.free { *m *= sign; }
+    let shape = SetShape {kind,axis:axis.idx,origin,number,stood:sign * c.args[at].num(),
         reference:reference(sk,axis.i())};
     // an unknown the number reads is a column of every contact with the envelope, so it is one
     // now, whether or not a row of the drawing reads it too (`expr::evaluate` keeps it bound)

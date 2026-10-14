@@ -4,6 +4,16 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.102] A plane is an envelope's source.** `envelope(std.HalfSpace(o, l, d: x), under: m, …)`
+is held to by the solve (§6.15.3): the plane square to `l` at `x` along it from `o`, its place two
+lengths in it and the roll, its normal `l`'s everywhere. Under a slide along its normal relative
+to a turn its envelope is an involute helicoid, so Phillips' spatial involute gearing is two of
+them — each member's flank the plane square to the line of action sliding along it at the
+members' common speed, seen from the member — meshed point to point along that line with no
+transmission error (`spiral_bevel/phillips.sv`). A plane may stand as a formed flank of a meshing
+too (§6.15.4). Through 0.101 the solve read cones and cylinders only, and a plane's envelope was
+E040. (Issue #326, R1.)
+
 **[0.101] A step: one number per run.** `step(u: s) (ab := line)` says where a line's end
 stands, one ordinate at a time — `du`, `dv` from its start, `u`, `v` from the frame's origin — and
 keeps the ordinate it does not name, so a stepped outline is a chain of runs, each a station or a

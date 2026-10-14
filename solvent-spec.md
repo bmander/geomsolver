@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.101 — October 2026**
+**Specification, Draft 0.102 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -1231,8 +1231,9 @@ pinion_flank curvature(at: M) profile
 ```
 
 An envelope in space is **held to by the solve** where it knows the source before any relation:
-a **set** — a cone (`std.Cone`, and `std.ConeThrough` with its lean stated) or a cylinder
-(`std.Cylinder`), the operand of `envelope` read as what its body states at its point (§6.21) —
+a **set** — a cone (`std.Cone`, and `std.ConeThrough` with its lean stated), a cylinder
+(`std.Cylinder`) or a plane (`std.HalfSpace`'s face, a distance along a line from a point,
+**[0.102]**), the operand of `envelope` read as what its body states at its point (§6.21) —
 or a **named side of a revolution** turned from a line, an arc or a circle (`surface(rev, e)`),
 under a motion built of turns about lines, screws, slides along lines and `relative_to:`. Its
 numbers — the source's axis and edge, a cone's half or a cylinder's radius where that is an
@@ -1241,7 +1242,8 @@ along — are columns of every relation holding something to it, so what makes t
 from what the envelope is held to: a cutter's lean from a contact a designer states.
 
 - `p coincident flank`: a point in space, drawn in any view. The relation owns a **place** `[u,
-  v, t]` — along the source's meridian, round its axis, and the motion's roll — where the moving
+  v, t]` — along the source's meridian, round its axis (on a plane, two lengths along two
+  directions in it), and the motion's roll — where the moving
   source is at `p` and `F = 0` (§6.15): four rows against three unknowns, the one equation a point
   on a surface is worth. It starts where the envelope passes nearest `p`.
 - `flank tangent(at: p) l`, `l` a line or an axis: `l` runs in the envelope's tangent plane at
@@ -1269,8 +1271,13 @@ apex) is degenerate, as a cone whose spine has no length is. A source the solve 
 sphere, a region, an offset, a lean or a radius that is no number times one unknown plus a
 number (`std.ConeThrough`'s `abs(lean)` over an unknown lean) — leaves the envelope evaluated
 after the solve where it is a revolution's side, and a relation holding something to it is
-refused naming why (**E061**); a set the body reads as no cone or cylinder is **E040** where it
-is applied. A set's envelope has no chart after the solve: it is only held to.
+refused naming why (**E061**); a set the body reads as no cone, cylinder or plane is **E040**
+where it is applied. A set's envelope has no chart after the solve: it is only held to.
+
+A plane's envelope under a slide along its own normal relative to a turn is an **involute
+helicoid** (**[0.102]**): the rack of Phillips' spatial involute gearing, each member's flank the
+plane square to the line of action sliding along it as fast as the members move along it, seen
+from the member (`spiral_bevel/phillips.sv`).
 
 #### 6.15.4 The meshing of two flanks **[0.94]**
 
@@ -1284,8 +1291,9 @@ R coincident(t == 10deg, lag == 0.01) contact
 `meshing` is tooth contact analysis, a locus. Its first flank turns with `mesh`'s observer (the
 pinion's turn) and its second with its source (the gear's): the motion the pair runs at, which
 must be a relative one (**E080** otherwise). A flank is an envelope in space the solve holds to
-(§6.15.3) — **generated** — or what such an envelope reads as its source, a cone or a cylinder
-set or a named side of a revolution, standing still in its member — **formed**; anything else is
+(§6.15.3) — **generated** — or what such an envelope reads as its source, a cone, a cylinder or
+a plane set or a named side of a revolution, standing still in its member — **formed**; anything
+else is
 **E080**. At each **phase** of the pinion, its roll, the contact is where the two flanks share a
 point and a normal with the gear turned to the ratio's roll plus a **lag**: the transmission error
 as a roll of the mesh (the gear's own angle is off by its ratio times it). A conjugate pair touches

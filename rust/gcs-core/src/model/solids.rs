@@ -437,7 +437,10 @@ pub struct SetShape {
     pub kind: SetKind,
     /// The line it is about.
     pub axis: u32,
-    /// A cone's half angle or a cylinder's radius, in the kernels' units: stated, or affine in an
+    /// A plane's point, from which its number runs along the axis (#326); `None` for a
+    /// revolution.
+    pub origin: Option<u32>,
+    /// A cone's half angle, a cylinder's radius or a plane's distance along its axis, in the kernels' units: stated, or affine in an
     /// unknown of the drawing — which the envelope's contacts read as a column, so it is bound
     /// even where no other row reads it (`expr::evaluate`).
     pub number: TermNumber,
@@ -467,6 +470,9 @@ pub enum SetKind {
     Cone,
     /// The distance `number` from the line `axis` (`std.Cylinder`).
     Cylinder,
+    /// The distance `number` along the line `axis` from the point `origin` (`std.HalfSpace`'s
+    /// face, #326): a plane square to the line.
+    Plane,
 }
 
 #[derive(Clone, Debug)]
