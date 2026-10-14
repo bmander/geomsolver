@@ -207,7 +207,8 @@ fn bench_meshing() {
     };
     let tr = time(&mut || (k.res)(1, &v, &kc, &mut r));
     let tj = time(&mut || (k.jac)(1, &v, &kc, &mut j));
-    println!("{:<16}{:>4} columns | residual {tr:8.2} µs | Jacobian {tj:8.2} µs", "contact", v.len());
+    let w = v.len();
+    println!("contact         {w:>4} columns | residual {tr:8.2} µs | Jacobian {tj:8.2} µs");
 }
 
 fn main() {
