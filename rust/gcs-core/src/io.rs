@@ -1304,12 +1304,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         let held = match &e.held {
             crate::model::Held::Not(why) => crate::model::Held::Not(why.clone()),
             crate::model::Held::Revolution {axis,edge} => {
-                let edge = match edge.kind {
-                    EntKind::Line => line_map[edge.i()].map(EntRef::line),
-                    EntKind::Arc => arc_map[edge.i()].map(EntRef::arc),
-                    EntKind::Circle => circle_map[edge.i()].map(EntRef::circle),
-                    _ => None,
-                };
+                let edge = measured_ent(*edge);
                 let axis = match axis.kind {
                     EntKind::Line => line_map[axis.i()].map(EntRef::line),
                     EntKind::Axis => axis_map[axis.i()].map(EntRef::axis),
@@ -1322,10 +1317,11 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             }
             crate::model::Held::Set {probe,shape} => {
                 use crate::model::SetShape;
-                let shape = shape.as_ref().map(|s| line(s.axis).map(|axis| SetShape {axis,..s.clone()}));
+                let shape = shape.as_ref()
+                    .map(|s| line(s.axis).map(|axis| SetShape {axis,..s.clone()}).ok_or(()))
+                    .transpose();
                 match (pt_map[*probe as usize],shape) {
-                    (Some(probe),None) => crate::model::Held::Set {probe:probe as u32,shape:None},
-                    (Some(probe),Some(Some(shape))) => crate::model::Held::Set {probe:probe as u32,shape:Some(shape)},
+                    (Some(probe),Ok(shape)) => crate::model::Held::Set {probe:probe as u32,shape},
                     _ => gone(),
                 }
             }

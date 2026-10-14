@@ -211,7 +211,7 @@ pub(super) fn planar_envelopes(sk: &mut Sketch, res: &mut Resolver, map: &mut So
         // an envelope of a spatial operand is the spatial one, built after the solve — and so is
         // a set's, its operand the hidden point the set is applied to (#283)
         let probe = matches!(d.children.first().map(Vec::as_slice),
-                             Some([Kid::Ref(r)]) if r.root.text.ends_with("#probe"));
+                             Some([Kid::Ref(r)]) if crate::flatten::is_probe(&r.root.text));
         if probe {
             continue;
         }

@@ -9,11 +9,8 @@ use super::*;
 pub fn seed_param(sk: &Sketch, kind: CKind, args: &[Arg], i: usize) -> f64 {
     // a place on an envelope starts where the envelope passes nearest the point: the contact's,
     // or the point a tangent is at (#283)
-    if kind.envelope_contact().is_some() {
-        let (env, at, first) = match kind {
-            CKind::PointOnEnvelope => (1, 0, 2),
-            _ => (0, 2, 3),
-        };
+    if let Some((env, first)) = kind.contact_on(SpecKind::Envelope) {
+        let at = if kind == CKind::PointOnEnvelope { 0 } else { 2 };
         let (Some(Arg::Ent(e)), Some(Arg::Ent(p))) = (args.get(env), args.get(at)) else { return 0.0 };
         return envelope_place(sk, e.i(), p.i()).map_or(0.0, |x| x[i - first]);
     }
@@ -505,7 +502,7 @@ fn envelope_place(sk: &Sketch, e: usize, p: usize) -> Option<[f64; 3]> {
         static LAST: RefCell<Option<(Vec<f64>, [f64; 3])>> = const { RefCell::new(None) };
     }
     let parts = Parts::of(sk, e).ok()?;
-    let k = parts.consts(Contact::Point, 0);
+    let k = parts.consts(Contact::Point);
     let values = parts.values(sk);
     let at = sk.lifted(p);
     let roll = sk.envelopes[e].roll;

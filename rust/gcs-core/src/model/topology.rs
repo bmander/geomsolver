@@ -58,14 +58,13 @@ impl Sketch {
             }
             EntKind::Envelope => {
                 let v = &self.envelopes[e.i()];
+                // a revolution's side is what the surface is already written over
                 let held = match &v.held {
-                    crate::model::Held::Not(_) => Vec::new(),
-                    // what the surface is already written over
-                    crate::model::Held::Revolution {..} => Vec::new(),
                     crate::model::Held::Set {probe,shape} => {
                         let axis = shape.as_ref().map(|s| EntRef::line(s.axis as usize));
                         std::iter::once(EntRef::point(*probe as usize)).chain(axis).collect()
                     }
+                    crate::model::Held::Not(_) | crate::model::Held::Revolution {..} => Vec::new(),
                 };
                 v.surface.map(|s| EntRef::new(EntKind::Surface,s as usize)).into_iter()
                     .chain([EntRef::new(EntKind::Motion,v.motion as usize)]).chain(held).collect()

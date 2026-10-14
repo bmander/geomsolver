@@ -78,19 +78,17 @@ pub(crate) fn settle(
             // end, apart from it
             let at_point = w.sel("at").is_some_and(|s| s.is_empty());
             let curved = matches!(b, EntKind::Spline | EntKind::Curve);
-            // and an envelope in space is named first by whatever touches it (#283)
-            let enveloped = b == EntKind::Envelope && matches!(a, EntKind::Line | EntKind::Axis
-                | EntKind::Plane | EntKind::Circle | EntKind::Arc);
-            let curve_last = (word == "tangent"
+            let curve_last = word == "tangent"
                 && a == EntKind::Line
-                && (curved || (at_point && b != EntKind::Line)))
-                || (matches!(word, "tangent" | "curvature") && enveloped);
+                && (curved || (at_point && b != EntKind::Line));
             if curve_last {
                 let mut swapped = w.clone();
                 swapped.ops.swap(0, 1);
                 return settle(&swapped, kind_of);
             }
-            if symmetric && crate::constraints::infix_op(word, a, b, &sel).is_none() {
+            // and an envelope in space is named first by whatever touches it (#283)
+            let either_way = symmetric || b == EntKind::Envelope;
+            if either_way && crate::constraints::infix_op(word, a, b, &sel).is_none() {
                 if let Some(k) = crate::constraints::infix_op(word, b, a, &sel) {
                     let mut swapped = w.clone();
                     swapped.ops.swap(0, 1);

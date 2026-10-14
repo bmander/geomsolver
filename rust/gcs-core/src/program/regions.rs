@@ -28,11 +28,32 @@ pub(super) fn probe_of(sk: &Sketch, c: &Constraint, probes: &Probes) -> Option<u
     if probes.terms.is_empty() {
         return None;
     }
+    points_read(sk, c).find(|p| probes.terms.contains_key(p))
+}
+
+/// The points a constraint reads, as a probe is read: each operand a point, and each edge's ends.
+pub(super) fn points_read<'a>(sk: &'a Sketch, c: &Constraint) -> impl Iterator<Item = usize> + 'a {
     c.entities().into_iter().flat_map(|e| match e.kind {
         EntKind::Point => vec![e.i()],
         _ => crate::model::edge_ends(sk, e)
             .map_or(Vec::new(), |(a, b)| vec![a as usize, b as usize]),
-    }).find(|p| probes.terms.contains_key(p))
+    })
+}
+
+/// The axis of the cone an `Angle3` at a probe states: the angle from a line seen from its start,
+/// the probe on the other line, which begins where the axis does.
+pub(super) fn cone_axis(sk: &Sketch, c: &Constraint, probe: usize) -> Result<EntRef, String> {
+    let ends = |l: EntRef| [sk.lines[l.i()].p1 as usize, sk.lines[l.i()].p2 as usize];
+    let (a, g) = (c.args[0].ent(), c.args[1].ent());
+    let (axis, seen) = if ends(g).contains(&probe) { (a, g) } else { (g, a) };
+    // the apex one point, though the axis drawn in a view takes its twin there (§6.7)
+    let apex = ends(seen).into_iter().find(|&p| p != probe);
+    if !apex.is_some_and(|p| sk.twinned(p, ends(axis)[0])) {
+        return Err("a cone's angle is seen from its axis's start: the line to the point begins \
+                    where the axis does"
+            .to_string());
+    }
+    Ok(axis)
 }
 
 /// What a bound on a region solid's probe bounds (§6.21), read off the constraint's **kind** and
@@ -62,19 +83,7 @@ pub(super) fn region_term(sk: &Sketch, c: &Constraint, probe: usize, grow: Optio
         CKind::PointLineDistance | CKind::PointLine3 => {
             RegionShape::Cylinder { line: ent(1).i() as u32 }
         }
-        CKind::Angle3 => {
-            let ends = |l: EntRef| [sk.lines[l.i()].p1 as usize, sk.lines[l.i()].p2 as usize];
-            let (a, g) = (ent(0), ent(1));
-            let (axis, seen) = if ends(g).contains(&probe) { (a, g) } else { (g, a) };
-            // the apex one point, though the axis drawn in a view takes its twin there (§6.7)
-            let apex = ends(seen).into_iter().find(|&p| p != probe);
-            if !apex.is_some_and(|p| sk.twinned(p, ends(axis)[0])) {
-                return Err("a cone's angle is seen from its axis's start: the line to the point \
-                            begins where the axis does"
-                    .to_string());
-            }
-            RegionShape::Cone { axis: axis.i() as u32 }
-        }
+        CKind::Angle3 => RegionShape::Cone { axis: cone_axis(sk, c, probe)?.i() as u32 },
         CKind::Ordinate => {
             let from = ent(0);
             let normal = matches!(&c.args[4], CArg::Str(w) if w == "n");

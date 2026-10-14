@@ -210,14 +210,12 @@ pub fn evaluate(sk: &mut Sketch) -> Vec<ExprItem> {
     }
     // a set's number an envelope's contacts read as a column (#283) is bound whether or not a row
     // of the drawing reads it, starting where the set's text stood
-    let held: Vec<(String, f64, f64)> = sk.envelopes.iter().enumerate().filter_map(|(i, e)| {
+    let held: Vec<(String, f64)> = sk.envelopes.iter().enumerate().filter_map(|(i, e)| {
         let crate::model::Held::Set { shape: Some(s), .. } = &e.held else { return None };
-        let (name, m) = s.number.free.clone()?;
         let read = sk.constraints.iter().any(|c| c.envelope_of().is_some_and(|x| x.i() == i));
-        let seed = sk.declared.get(&name).and_then(|d| d.seed).unwrap_or((s.stood - s.number.c) / m);
-        (read && m != 0.0).then(|| (name, seed, m.abs()))
+        s.unknown(&sk.declared).filter(|_| read)
     }).collect();
-    for (name, seed, _) in held {
+    for (name, seed) in held {
         if !bound.contains_key(&name) {
             free_param(sk, &name, seed);
             bound.insert(name, 1.0);

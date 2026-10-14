@@ -39,13 +39,14 @@ wrong index; one whose source is unreadable is `Held::Not(why)`, evaluated after
 second-order Taylor arithmetic (`H2`), the source a revolution of a meridian element (`Source`:
 line, cone, cylinder, round) and the motion the steps `motion::Family` reads (rotations, screws,
 translations, relatives; a planar turn and a measured number refused), so a residual is exact and
-a Jacobian exact by forward differentiation (`Tan`, eight columns a pass). `Parts::of` reads the
-columns (lifts, an axis's place and direction, a free number) and constants (`Layout`, `HEADER`,
-`STEP`); a set's turn starts at `SetShape::reference`, read once. The kinds `PointOnEnvelope`
-(four rows, three owned), `EnvelopeTangentAt` (one), `EnvelopeNormalAt` and `EnvelopePlaneAt`
-(two) and `EnvelopeCurvatureAt` (three: Meusnier, `x + (n − (n·m)m)/κₙ`, `κₙ` from `−dn·dX` along
-two directions of the place square to `∇g`) are built at their widths (`KernelKey::Envelope`); the
-four with `at:` share the contact's place (`solver.md`, #251). Seeds: `held::seed`, a coarse search
+a Jacobian exact by forward differentiation (`kernels::Dual`, eight columns a pass). `Parts::of`
+reads the columns (lifts, an axis's place and direction, a free number) and constants (`Layout`,
+`HEADER`, `STEP`); a set's turn starts at `SetShape::reference`, read once. The kinds
+`PointOnEnvelope` (four rows, three owned), `EnvelopeTangentAt` (one), `EnvelopeNormalAt` and
+`EnvelopePlaneAt` (two, each its own `Contact`) and `EnvelopeCurvatureAt` (three: Meusnier,
+`x + (n − (n·m)m)/κₙ`, `κₙ` from `−dn·dX` along two directions of the place square to `∇g`) are
+built at their widths (`KernelKey::Envelope`); the four with `at:` share the contact's place
+(`solver.md`, #251). Seeds: `held::seed`, a coarse search
 over the roll interval then `newton::dogleg` on the four rows (`Seeding`), remembered across a
 contact's three slots. A set's
 envelope has no chart after the solve (`GeneratedEnvelope::named` refuses it; `program::solid_diagnostics`

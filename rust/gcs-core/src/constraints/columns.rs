@@ -52,9 +52,8 @@ impl Constraint {
 
     fn own_consts_on(&self, sk: &Sketch, span: Option<usize>) -> Vec<f64> {
         // an envelope contact's: its source and its motion, read off the sketch (#283)
-        if let (Some(c), Some(e)) = (self.kind.envelope_contact(), self.envelope_of()) {
-            let mode = if self.kind == CKind::EnvelopePlaneAt { 1 } else { 0 };
-            return crate::envelope::held::Parts::of(sk, e.i()).map(|p| p.consts(c, mode)).unwrap_or_default();
+        if let Some(c) = self.kind.envelope_contact() {
+            return self.envelope_parts(sk).map(|p| p.consts(c)).unwrap_or_default();
         }
         if self.kind == CKind::Stationary {
             return crate::variational::pack(sk, self.id);
@@ -589,9 +588,7 @@ impl Constraint {
                         ([lift(c), vec![rad(1)], plane_columns(sk, v)[3..].to_vec()].concat(), 3)
                     }
                 };
-                let parts = self.envelope_of()
-                    .and_then(|e| crate::envelope::held::Parts::of(sk, e.i()).ok())
-                    .map(|p| p.columns(sk)).unwrap_or_default();
+                let parts = self.envelope_parts(sk).map(|p| p.columns(sk)).unwrap_or_default();
                 let at: Vec<u32> = (place..place + 3).map(|i| self.args[i].param()).collect();
                 [lead, at, parts].concat()
             }
@@ -735,9 +732,7 @@ impl Constraint {
                     CKind::EnvelopeCurvatureAt => vec![sk.round_center(e(1))],
                     _ => Vec::new(),
                 };
-                let parts = self.envelope_of()
-                    .and_then(|e| crate::envelope::held::Parts::of(sk, e.i()).ok())
-                    .map(|p| p.lifted()).unwrap_or_default();
+                let parts = self.envelope_parts(sk).map(|p| p.lifted()).unwrap_or_default();
                 [lead, parts].concat()
             }
             CKind::Symmetric3 => [vec![e(0).i(), e(1).i()], ends(2).to_vec()].concat(),

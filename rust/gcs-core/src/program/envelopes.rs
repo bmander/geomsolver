@@ -50,7 +50,7 @@ pub(super) fn held_envelopes(sk: &mut Sketch, res: &mut Resolver, map: &mut Sour
         };
         let held = match res.lookup(source) {
             // a set applied to its hidden point: the point held, as a region's probe is
-            Some(p) if p.kind == EntKind::Point && source.root.text.ends_with("#probe") => {
+            Some(p) if p.kind == EntKind::Point && crate::flatten::is_probe(&source.root.text) => {
                 for q in sk.point_all_params(p.i()) {
                     sk.params[q as usize].fixed = true;
                 }
@@ -109,20 +109,17 @@ pub(super) fn probe_envelope(sk: &Sketch, c: &Constraint) -> Option<usize> {
         _ => None,
     }).collect();
     if probes.is_empty() { return None; }
-    c.entities().into_iter().flat_map(|e| match e.kind {
-        EntKind::Point => vec![e.i()],
-        _ => crate::model::edge_ends(sk,e).map_or(Vec::new(),|(a,b)| vec![a as usize,b as usize]),
-    }).find_map(|p| probes.iter().find(|(q,_)| *q == p).map(|&(_,i)| i))
+    super::regions::points_read(sk,c)
+        .find_map(|p| probes.iter().find(|(q,_)| *q == p).map(|&(_,i)| i))
 }
 
 /// What a set's body states at envelope `e`'s point, read as the surface it is (#283) — by the
 /// constraint's kind, as a region's terms are: the angle from a line seen from its start a cone,
 /// a distance from a line a cylinder.  Never a row.
 pub(super) fn set_shape(sk: &mut Sketch, c: &Constraint, e: usize) -> Result<(),String> {
-    let Held::Set {probe,shape:None} = sk.envelopes[e].held.clone() else {
+    let Held::Set {probe,shape:None} = sk.envelopes[e].held else {
         return Err("an envelope's set states one surface at its point".into());
     };
-    let probe = probe as usize;
     if c.bound.is_some() {
         return Err("an envelope's set is a surface its point is on, not a side of one".into());
     }
@@ -140,38 +137,25 @@ pub(super) fn set_shape(sk: &mut Sketch, c: &Constraint, e: usize) -> Result<(),
         format!("an envelope's set's number is stated, or a number times one unknown of the drawing \
                  and a number{text}")
     });
-    let shape = match c.kind {
+    let (kind,axis,spec) = match c.kind {
         CKind::Angle3 => {
-            let (a,g) = (ent(0),ent(1));
-            if a.kind != EntKind::Line || g.kind != EntKind::Line {
+            if ent(0).kind != EntKind::Line || ent(1).kind != EntKind::Line {
                 return Err("a cone an envelope reads is about a line, seen from its start".into());
             }
-            let ends = |l: EntRef| [sk.lines[l.i()].p1 as usize,sk.lines[l.i()].p2 as usize];
-            let (axis,seen) = if ends(g).contains(&probe) { (a,g) } else { (g,a) };
-            let apex = ends(seen).into_iter().find(|&p| p != probe);
-            if !apex.is_some_and(|p| sk.twinned(p,ends(axis)[0])) {
-                return Err("a cone's angle is seen from its axis's start: the line to the point \
-                            begins where the axis does".into());
-            }
-            SetShape {kind:SetKind::Cone,axis:axis.idx,number:number(&c.args[2],SpecKind::Angle)?,
-                stood:c.args[2].num(),reference:reference(sk,axis.i())}
+            (SetKind::Cone,super::regions::cone_axis(sk,c,probe as usize)?,SpecKind::Angle)
         }
-        CKind::PointLine3 => {
-            let axis = ent(1);
-            SetShape {kind:SetKind::Cylinder,axis:axis.idx,number:number(&c.args[2],SpecKind::Length)?,
-                stood:c.args[2].num(),reference:reference(sk,axis.i())}
-        }
+        CKind::PointLine3 => (SetKind::Cylinder,ent(1),SpecKind::Length),
         _ => return Err(format!("the solve reads the envelope of a cone's or a cylinder's surface, and \
                                  this set states `{kind}` at its point")),
     };
+    let shape = SetShape {kind,axis:axis.idx,number:number(&c.args[2],spec)?,stood:c.args[2].num(),
+        reference:reference(sk,axis.i())};
     // an unknown the number reads is a column of every contact with the envelope, so it is one
     // now, whether or not a row of the drawing reads it too (`expr::evaluate` keeps it bound)
-    // — starting where it was seeded (`half: hint(20deg)`), else where the set's text stood
-    if let Some((name,m)) = shape.number.free.clone().filter(|(_,m)| *m != 0.0) {
-        let seed = sk.declared.get(&name).and_then(|d| d.seed).unwrap_or((shape.stood-shape.number.c)/m);
+    if let Some((name,seed)) = shape.unknown(&sk.declared) {
         crate::expr::bind_free(sk,&name,seed);
     }
-    sk.envelopes[e].held = Held::Set {probe:probe as u32,shape:Some(shape)};
+    sk.envelopes[e].held = Held::Set {probe,shape:Some(shape)};
     Ok(())
 }
 

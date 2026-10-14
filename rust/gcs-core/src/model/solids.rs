@@ -415,6 +415,16 @@ pub struct SetShape {
     pub reference: [f64; 3],
 }
 
+impl SetShape {
+    /// The unknown its number reads, where it reads one, and where that unknown starts: where it
+    /// was seeded (`half: hint(20deg)`), else where the set's text stood.
+    pub fn unknown(&self, declared: &BTreeMap<String, Declared>) -> Option<(String, f64)> {
+        let (name, m) = self.number.free.clone().filter(|(_, m)| *m != 0.0)?;
+        let seed = declared.get(&name).and_then(|d| d.seed);
+        Some((name, seed.unwrap_or((self.stood - self.number.c) / m)))
+    }
+}
+
 /// Which surface a set is, as an envelope reads it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SetKind {

@@ -89,7 +89,7 @@ fn a_revolutions_sides_read_as_the_snapshot_does() {
         let surface = RevolvedSurface::named(&sk, sk.envelopes[i].surface.unwrap() as usize).unwrap();
         let parts = Parts::of(&sk, i).unwrap();
         assert_eq!(parts.source, if round { held::Source::Round } else { held::Source::Line });
-        let k = parts.consts(Contact::Point, 0);
+        let k = parts.consts(Contact::Point);
         let values = parts.values(&sk);
         for _ in 0..40 {
             let (u, v, t) = (rng.uniform(0.05, 0.95), rng.uniform(0.05, 0.95), rng.uniform(-0.9, 0.9));
@@ -145,7 +145,7 @@ r coincident f2
         let p = sk.world_point(c.args[0].ent().i());
         assert!(near(p, want, 1e-9), "{point}: {p:?} {want:?}");
         let parts = Parts::of(&sk, i).unwrap();
-        let ours = held::read(&parts.consts(Contact::Point, 0), &parts.values(&sk), [place[0], place[1], place[2]]).unwrap();
+        let ours = held::read(&parts.consts(Contact::Point), &parts.values(&sk), [place[0], place[1], place[2]]).unwrap();
         assert!(near(ours.position, p, 1e-9), "{point}: {:?} {p:?}", ours.position);
         assert!(ours.normal_velocity.abs() < 1e-9, "{point}: {}", ours.normal_velocity);
         // and the snapshot, in its own chart, agrees
@@ -418,7 +418,7 @@ fn the_face_mills_lean_solves_from_the_pressure_angle_at_the_mean_point() {
         // the profile: three points of the pinion flank's section by `section`
         let i = envelope(sk, "pinion_flank");
         let parts = Parts::of(sk, i).unwrap();
-        let (k, values) = (parts.consts(Contact::Point, 0), parts.values(sk));
+        let (k, values) = (parts.consts(Contact::Point), parts.values(sk));
         let plane = e.map.ent_named("section").unwrap().i();
         let basis = sk.basis(plane);
         let normal = cross(basis.u, basis.v);

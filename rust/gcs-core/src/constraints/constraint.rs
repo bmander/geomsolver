@@ -374,10 +374,9 @@ impl Constraint {
             return Key::Stationary(self.id);
         }
         // an envelope contact's kernel is its block's widths' (#283)
-        if let (Some(c), Some(e)) = (self.kind.envelope_contact(), self.envelope_of()) {
-            use crate::envelope::held::{Parts, HEADER, STEP};
-            let (n_par, n_const) = Parts::of(sk, e.i())
-                .map_or((0, 0), |p| (p.width(c), HEADER + STEP * p.steps.len()));
+        if let Some(c) = self.kind.envelope_contact() {
+            let parts = self.envelope_parts(sk);
+            let (n_par, n_const) = parts.map_or((0, 0), |p| (p.width(c), p.n_const()));
             return Key::Envelope { fk: c as u8, n_par, n_const };
         }
         match (self.kind.family_kernel(), self.curve_of()) {
@@ -405,11 +404,16 @@ impl Constraint {
 
     /// The envelope a contact with one is on (#283) — the spec's `Envelope` slot.
     pub fn envelope_of(&self) -> Option<EntRef> {
-        let i = self.kind.spec().iter().position(|&(_, k)| k == SpecKind::Envelope)?;
-        match self.args.get(i)? {
+        let (e, _) = self.kind.contact_on(SpecKind::Envelope)?;
+        match self.args.get(e)? {
             Arg::Ent(e) if e.kind == EntKind::Envelope => Some(*e),
             _ => None,
         }
+    }
+
+    /// What a contact reads of its envelope (`envelope::held::Parts`), where the solve can read it.
+    pub fn envelope_parts(&self, sk: &Sketch) -> Option<crate::envelope::held::Parts> {
+        crate::envelope::held::Parts::of(sk, self.envelope_of()?.i()).ok()
     }
 
     /// The curve a per-definition kernel is over — the spec's `Curve` slot, wherever it stands.
@@ -532,11 +536,11 @@ impl Constraint {
             None if self.kind == CKind::Stationary => 0,
             // its curve's problem's: never a row of the drawing's
             None if self.kind == CKind::CurveTouchesLine => 0,
-            // an envelope contact's: a fact about the contact it states (#283)
-            None if self.kind.envelope_contact().is_some() => {
-                self.kind.envelope_contact().map_or(0, |c| c.rows())
-            }
-            None => kernels::kernel(self.kernel()).n_res,
+            None => match self.kind.envelope_contact() {
+                // an envelope contact's: a fact about the contact it states (#283)
+                Some(c) => c.rows(),
+                None => kernels::kernel(self.kernel()).n_res,
+            },
         }
     }
 

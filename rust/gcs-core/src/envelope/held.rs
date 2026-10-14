@@ -14,13 +14,13 @@
 //! curvature needs no second solve: along a direction `w` in `ker ∇g` of the place, the shape
 //! operator is `−dn·dX` read over the place, `dn` and `dX` the derivatives of the moved normal and
 //! point.  So everything is written once, over `kernels::Num`, as a truncated second-order Taylor
-//! series in the place (`H2`): the residual over `f64`, and the Jacobian over tangents (`Tan`),
+//! series in the place (`H2`): the residual over `f64`, and the Jacobian over tangents (`Dual`),
 //! eight columns a pass — exact, no differences.
 //!
 //! **Layout.** A contact's columns are `[lead…, u, v, t, source…, motion…]`: what the contact
 //! states about (a point's lift, a line's ends, a plane's axes, a circle), the place, the source
 //! (`Source`), and two lifted ends per axis the motion turns about or slides along.  Its constants
-//! are `[lead, mode, source, axis, c, m, free, ref×3, steps, (code, at, source, observer, ratio,
+//! are `[lead, source, axis, c, m, free, ref×3, steps, (code, at, source, observer, ratio,
 //! phase, advance)×steps]` (`HEADER`, `STEP`): the source's axis as two points (`axis` 0, a line's
 //! ends) or a point and a direction (1, an axis's), its number `c + m·x` (a cone's half angle, a
 //! cylinder's radius; `x` its last column where `free`), a direction its axis does not run along
@@ -32,13 +32,13 @@
 //! that the material is on either side.
 
 use crate::fmath::Det;
-use crate::kernels::{Kernel, Num};
-use std::ops::{Add, Div, Mul, Sub};
+use crate::kernels::{curve_widths, Dual, Kernel, Num};
+use std::ops::{Add, Mul, Sub};
 
 /* -- the layout ------------------------------------------------------------------------------ */
 
 /// Constants before the motion's steps.
-pub const HEADER: usize = 11;
+pub const HEADER: usize = 10;
 /// Constants per step of the motion.
 pub const STEP: usize = 7;
 
@@ -85,23 +85,26 @@ pub enum Contact {
     Point = 0,
     /// `l tangent(at: p) flank`: the line runs in the tangent plane. Lead: two points along it.
     Tangent = 1,
-    /// `l perpendicular(at: p) flank` (lead mode 0, two points along it) and `P tangent(at: p)
-    /// flank` (mode 1, the plane's two axes): the direction along the normal.
+    /// `l perpendicular(at: p) flank`: the line runs along the normal. Lead: two points along it.
     Normal = 2,
     /// `flank curvature(at: p) k`: the circle osculates the envelope's section by its plane at
     /// `p`, which is in that plane (drawn there, or stated).  Lead: the centre's lift, the radius,
     /// the plane's two axes.
     Curvature = 3,
+    /// `P tangent(at: p) flank`: the plane's normal runs along the envelope's. Lead: the plane's
+    /// two axes.
+    Plane = 4,
 }
 
 impl Contact {
-    pub const ALL: [Contact; 4] = [Contact::Point, Contact::Tangent, Contact::Normal, Contact::Curvature];
+    pub const ALL: [Contact; 5] =
+        [Contact::Point, Contact::Tangent, Contact::Normal, Contact::Curvature, Contact::Plane];
 
     pub fn rows(self) -> usize {
         match self {
             Contact::Point => 4,
             Contact::Tangent => 1,
-            Contact::Normal => 2,
+            Contact::Normal | Contact::Plane => 2,
             Contact::Curvature => 3,
         }
     }
@@ -110,7 +113,7 @@ impl Contact {
     pub fn lead(self) -> usize {
         match self {
             Contact::Point => 3,
-            Contact::Tangent | Contact::Normal => 6,
+            Contact::Tangent | Contact::Normal | Contact::Plane => 6,
             Contact::Curvature => 10,
         }
     }
@@ -120,6 +123,7 @@ impl Contact {
             Contact::Point => "point_on_envelope",
             Contact::Tangent => "envelope_tangent_at",
             Contact::Normal => "envelope_normal_at",
+            Contact::Plane => "envelope_plane_at",
             Contact::Curvature => "envelope_curvature_at",
         }
     }
@@ -128,7 +132,7 @@ impl Contact {
     fn degree(self) -> u32 {
         match self {
             Contact::Point | Contact::Curvature => 1,
-            Contact::Tangent | Contact::Normal => 0,
+            Contact::Tangent | Contact::Normal | Contact::Plane => 0,
         }
     }
 }
@@ -146,9 +150,9 @@ pub enum Step {
 
 /// The constants of one contact, built from its parts (the inverse of `Layout::read`).
 #[allow(clippy::too_many_arguments)]
-pub fn consts(lead: usize, mode: f64, source: Source, axis: u8, number: (f64, f64, bool), reference: [f64; 3],
+pub fn consts(lead: usize, source: Source, axis: u8, number: (f64, f64, bool), reference: [f64; 3],
               steps: &[Step]) -> Vec<f64> {
-    let mut k = vec![lead as f64, mode, source as i64 as f64, axis as f64,
+    let mut k = vec![lead as f64, source as i64 as f64, axis as f64,
                      number.0, number.1, if number.2 { 1.0 } else { 0.0 },
                      reference[0], reference[1], reference[2], steps.len() as f64];
     for s in steps {
@@ -165,7 +169,6 @@ pub fn consts(lead: usize, mode: f64, source: Source, axis: u8, number: (f64, f6
 #[derive(Clone, Debug)]
 pub struct Layout {
     pub lead: usize,
-    pub mode: u8,
     pub source: Source,
     /// The source's axis as two points (0) or a point and a direction (1).
     pub axis: u8,
@@ -179,8 +182,8 @@ impl Layout {
         if k.len() < HEADER {
             return None;
         }
-        let source = Source::of(k[2])?;
-        let n = k[10];
+        let source = Source::of(k[1])?;
+        let n = k[9];
         if !(n >= 1.0 && n <= 64.0) || k.len() != HEADER + STEP * n as usize {
             return None;
         }
@@ -196,11 +199,10 @@ impl Layout {
         }
         Some(Layout {
             lead: k[0] as usize,
-            mode: k[1] as u8,
             source,
-            axis: k[3] as u8,
-            number: (k[4], k[5], k[6] != 0.0),
-            reference: [k[7], k[8], k[9]],
+            axis: k[2] as u8,
+            number: (k[3], k[4], k[5] != 0.0),
+            reference: [k[6], k[7], k[8]],
             steps,
         })
     }
@@ -244,95 +246,38 @@ impl Num for f64 {
     }
 }
 
-/// A number and its rate along `W` columns at once: forward differentiation, exact.
-#[derive(Clone, Copy, Debug)]
-pub struct Tan<const W: usize> {
-    pub v: f64,
-    pub g: [f64; W],
-}
-
-impl<const W: usize> Tan<W> {
-    fn map(self, v: f64, d: f64) -> Self {
-        Tan { v, g: self.g.map(|x| x * d) }
-    }
-}
-
-impl<const W: usize> Add for Tan<W> {
-    type Output = Self;
-    fn add(self, o: Self) -> Self {
-        Tan { v: self.v + o.v, g: std::array::from_fn(|i| self.g[i] + o.g[i]) }
-    }
-}
-impl<const W: usize> Sub for Tan<W> {
-    type Output = Self;
-    fn sub(self, o: Self) -> Self {
-        Tan { v: self.v - o.v, g: std::array::from_fn(|i| self.g[i] - o.g[i]) }
-    }
-}
-impl<const W: usize> Mul for Tan<W> {
-    type Output = Self;
-    fn mul(self, o: Self) -> Self {
-        Tan { v: self.v * o.v, g: std::array::from_fn(|i| self.v * o.g[i] + self.g[i] * o.v) }
-    }
-}
-impl<const W: usize> Div for Tan<W> {
-    type Output = Self;
-    fn div(self, o: Self) -> Self {
-        let q = self.v / o.v;
-        Tan { v: q, g: std::array::from_fn(|i| (self.g[i] - q * o.g[i]) / o.v) }
-    }
-}
-impl<const W: usize> Num for Tan<W> {
-    fn cst(v: f64) -> Self {
-        Tan { v, g: [0.0; W] }
-    }
-    fn val(self) -> f64 {
-        self.v
-    }
-    fn sqrt(self) -> Self {
-        let s = self.v.max(0.0).sqrt();
-        // no rate where the root is zero: a degenerate figure, which a row reads as itself
-        self.map(s, if s > 0.0 { 0.5 / s } else { 0.0 })
-    }
-    fn sin_cos(self) -> (Self, Self) {
-        let (s, c) = self.v.dsin_cos();
-        (self.map(s, c), self.map(c, -s))
-    }
-    fn atan2(y: Self, x: Self) -> Self {
-        let q = x.v * x.v + y.v * y.v;
-        let q = if q > 0.0 { q } else { 1.0 };
-        Tan { v: y.v.datan2(x.v), g: std::array::from_fn(|i| (x.v * y.g[i] - y.v * x.g[i]) / q) }
-    }
-}
-
 fn zero<T: Num>() -> T {
     T::cst(0.0)
 }
 
 /// A number and its first two derivatives in the place `[u, v, t]`: `f(x + δ) ≈ v + g·δ +
-/// δ·h·δ/2`.
+/// δ·h·δ/2` — `h` carried only where the place's variables ask for it (`second`), since only
+/// a curvature reads it: otherwise left zero, and `v` and `g` the same either way.
 #[derive(Clone, Copy, Debug)]
 struct H2<T> {
     v: T,
     g: [T; 3],
     h: [[T; 3]; 3],
+    second: bool,
 }
 
 impl<T: Num> H2<T> {
     fn cst(v: T) -> Self {
-        H2 { v, g: [zero(); 3], h: [[zero(); 3]; 3] }
+        H2 { v, g: [zero(); 3], h: [[zero(); 3]; 3], second: false }
     }
-    fn var(v: T, i: usize) -> Self {
+    fn var(v: T, i: usize, second: bool) -> Self {
         let mut x = Self::cst(v);
         x.g[i] = T::cst(1.0);
+        x.second = second;
         x
     }
     /// `f(self)`, where `f`, `f'` and `f''` at the value are given.
     fn chain(self, f0: T, f1: T, f2: T) -> Self {
         let mut r = Self::cst(f0);
+        r.second = self.second;
         for i in 0..3 {
             r.g[i] = f1 * self.g[i];
-            for j in i..3 {
+            for j in (i..3).filter(|_| self.second) {
                 let x = f1 * self.h[i][j] + f2 * self.g[i] * self.g[j];
                 r.h[i][j] = x;
                 r.h[j][i] = x;
@@ -345,7 +290,15 @@ impl<T: Num> H2<T> {
         (self.chain(s, c, zero::<T>() - s), self.chain(c, zero::<T>() - s, zero::<T>() - c))
     }
     fn scale(self, k: T) -> Self {
-        H2 { v: self.v * k, g: self.g.map(|x| x * k), h: self.h.map(|r| r.map(|x| x * k)) }
+        let h = if self.second { self.h.map(|r| r.map(|x| x * k)) } else { self.h };
+        H2 { v: self.v * k, g: self.g.map(|x| x * k), h, second: self.second }
+    }
+    /// `h` combined term by term, where either operand carries one.
+    fn hessian(self, o: Self, f: impl Fn(T, T) -> T) -> [[T; 3]; 3] {
+        if !(self.second || o.second) {
+            return self.h;
+        }
+        std::array::from_fn(|i| std::array::from_fn(|j| f(self.h[i][j], o.h[i][j])))
     }
     /// The derivative along the `i`th of the place, to first order.
     fn d(&self, i: usize) -> H1<T> {
@@ -359,7 +312,8 @@ impl<T: Num> Add for H2<T> {
         H2 {
             v: self.v + o.v,
             g: std::array::from_fn(|i| self.g[i] + o.g[i]),
-            h: std::array::from_fn(|i| std::array::from_fn(|j| self.h[i][j] + o.h[i][j])),
+            h: self.hessian(o, |a, b| a + b),
+            second: self.second || o.second,
         }
     }
 }
@@ -369,7 +323,8 @@ impl<T: Num> Sub for H2<T> {
         H2 {
             v: self.v - o.v,
             g: std::array::from_fn(|i| self.g[i] - o.g[i]),
-            h: std::array::from_fn(|i| std::array::from_fn(|j| self.h[i][j] - o.h[i][j])),
+            h: self.hessian(o, |a, b| a - b),
+            second: self.second || o.second,
         }
     }
 }
@@ -377,9 +332,10 @@ impl<T: Num> Mul for H2<T> {
     type Output = Self;
     fn mul(self, o: Self) -> Self {
         let mut r = H2::cst(self.v * o.v);
+        r.second = self.second || o.second;
         for i in 0..3 {
             r.g[i] = self.v * o.g[i] + self.g[i] * o.v;
-            for j in i..3 {
+            for j in (i..3).filter(|_| r.second) {
                 let x = self.v * o.h[i][j] + self.h[i][j] * o.v + self.g[i] * o.g[j] + self.g[j] * o.g[i];
                 r.h[i][j] = x;
                 r.h[j][i] = x;
@@ -572,7 +528,7 @@ fn pose<T: Num>(l: &Layout, m: &[T], t: H2<T>) -> Pose<T> {
         };
         poses.push(next);
     }
-    *poses.last().expect("a motion has a step")
+    poses.pop().expect("a motion has a step")
 }
 
 /// What the rows read at a place: the moving point, its normal and the meshing equation, each
@@ -589,10 +545,12 @@ pub(crate) struct Local<T> {
     pub dg: [T; 3],
 }
 
-/// The local frame at the place in columns `lead..lead + 3`.
-pub(crate) fn local<T: Num>(l: &Layout, cols: &[T]) -> Local<T> {
+/// The local frame at the place in columns `lead..lead + 3`; `dn` and `dg` only where `second`
+/// asks for them (a curvature), else zero.
+pub(crate) fn local<T: Num>(l: &Layout, cols: &[T], second: bool) -> Local<T> {
     let at = l.lead;
-    let (u, v, t) = (H2::var(cols[at], 0), H2::var(cols[at + 1], 1), H2::var(cols[at + 2], 2));
+    let var = |i: usize| H2::var(cols[at + i], i, second);
+    let (u, v, t) = (var(0), var(1), var(2));
     let s = &cols[at + 3..at + 3 + l.source_width()];
     let m = &cols[at + 3 + l.source_width()..];
     let x = pose(l, m, t).apply(surface(l, s, u, v));
@@ -654,7 +612,7 @@ pub(crate) fn rows<T: Num>(c: Contact, cols: &[T], k: &[f64], out: &mut [T]) -> 
     if l.lead != c.lead() || cols.len() != l.width() || out.len() != c.rows() {
         return None;
     }
-    let f = local(&l, cols);
+    let f = local(&l, cols, c == Contact::Curvature);
     match c {
         Contact::Point => {
             let p = col3(cols, 0);
@@ -667,9 +625,9 @@ pub(crate) fn rows<T: Num>(c: Contact, cols: &[T], k: &[f64], out: &mut [T]) -> 
             let d = unit(vsub(col3(cols, 3), col3(cols, 0)));
             out[0] = dot(d, f.n);
         }
-        Contact::Normal => {
+        Contact::Normal | Contact::Plane => {
             let (a, b) = (col3(cols, 0), col3(cols, 3));
-            let d = unit(if l.mode == 1 { cross(a, b) } else { vsub(b, a) });
+            let d = unit(if c == Contact::Plane { cross(a, b) } else { vsub(b, a) });
             let t1 = unit(f.dx[0]);
             let t2 = cross(f.n, t1);
             out[0] = dot(d, t1);
@@ -705,13 +663,9 @@ pub(crate) fn rows<T: Num>(c: Contact, cols: &[T], k: &[f64], out: &mut [T]) -> 
 /// Columns differentiated per pass.
 const PASS: usize = 8;
 
-fn widths(n: usize, v: &[f64], k: &[f64]) -> (usize, usize) {
-    if n == 0 { (0, 0) } else { (v.len() / n, k.len() / n) }
-}
-
 fn res<const C: u8>(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
     let c = Contact::ALL[C as usize];
-    let (n_par, n_const) = widths(n, v, k);
+    let (n_par, n_const) = curve_widths(n, v, k);
     let m = c.rows();
     for i in 0..n {
         let out = &mut r[m * i..m * (i + 1)];
@@ -723,17 +677,17 @@ fn res<const C: u8>(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
 
 fn jac<const C: u8>(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
     let c = Contact::ALL[C as usize];
-    let (n_par, n_const) = widths(n, v, k);
+    let (n_par, n_const) = curve_widths(n, v, k);
     let m = c.rows();
-    let mut cols = vec![Tan::<PASS>::cst(0.0); n_par];
-    let mut out = vec![Tan::<PASS>::cst(0.0); m];
+    let mut cols = vec![Dual::<PASS>::cst(0.0); n_par];
+    let mut out = vec![Dual::<PASS>::cst(0.0); m];
     for i in 0..n {
         let x = &v[n_par * i..n_par * (i + 1)];
         let kc = &k[n_const * i..n_const * (i + 1)];
         let block = &mut j[m * n_par * i..m * n_par * (i + 1)];
         for start in (0..n_par).step_by(PASS) {
             for (q, col) in cols.iter_mut().enumerate() {
-                *col = Tan::cst(x[q]);
+                *col = Dual::cst(x[q]);
                 if (start..start + PASS).contains(&q) {
                     col.g[q - start] = 1.0;
                 }
@@ -759,6 +713,7 @@ pub fn kernel(c: Contact, n_par: usize, n_const: usize) -> Kernel {
         Contact::Tangent => (res::<1>, jac::<1>),
         Contact::Normal => (res::<2>, jac::<2>),
         Contact::Curvature => (res::<3>, jac::<3>),
+        Contact::Plane => (res::<4>, jac::<4>),
     };
     Kernel { name: c.name(), n_res: c.rows(), n_par, n_const, degree: c.degree(), res, jac, const_jac: None, form: None }
 }
@@ -773,9 +728,6 @@ pub struct Reading {
     pub normal: [f64; 3],
     pub velocity: [f64; 3],
     pub normal_velocity: f64,
-    /// `∂X/∂u`, `∂X/∂v`.
-    pub du: [f64; 3],
-    pub dv: [f64; 3],
 }
 
 /// Read the envelope's frame at `place` over `parts` — the source's columns, then the motion's —
@@ -788,15 +740,13 @@ pub fn read(k: &[f64], parts: &[f64], place: [f64; 3]) -> Option<Reading> {
     let mut cols = vec![0.0; l.lead];
     cols.extend(place);
     cols.extend_from_slice(parts);
-    let f = local(&l, &cols);
+    let f = local(&l, &cols, false);
     let all = f.x.iter().chain(f.n.iter()).chain(f.dx.iter().flatten()).all(|x| x.is_finite());
     all.then_some(Reading {
         position: f.x,
         normal: f.n,
         velocity: f.dx[2],
         normal_velocity: f.g,
-        du: f.dx[0],
-        dv: f.dx[1],
     })
 }
 
@@ -816,7 +766,7 @@ pub fn seed(k: &[f64], parts: &[f64], p: [f64; 3], roll: [f64; 2]) -> Option<[f6
     let cost = |r: [f64; 4]| r.iter().map(|x| x * x).sum::<f64>();
     // the meridian's spans: a fraction of a line, a turn round a circle, and along a cone's or a
     // cylinder's generator as far either way as the point is from the axis's start
-    let reach = norm3(vsub(p, [parts[0], parts[1], parts[2]])).max(1e-3);
+    let reach = crate::space::distance(p, [parts[0], parts[1], parts[2]]).max(1e-3);
     let us: Vec<f64> = match l.source {
         Source::Line => vec![-0.5, 0.0, 0.25, 0.5, 0.75, 1.0, 1.5],
         Source::Round => (0..12).map(|i| i as f64 * std::f64::consts::TAU / 12.0).collect(),
@@ -843,10 +793,6 @@ pub fn seed(k: &[f64], parts: &[f64], p: [f64; 3], roll: [f64; 2]) -> Option<[f6
     crate::newton::dogleg(&mut tr, &mut z, &mut r, tol, 100, 400);
     let x = [z[0], z[1], z[2]];
     tr.at(x).iter().all(|v| v.is_finite()).then_some(x)
-}
-
-fn norm3(a: [f64; 3]) -> f64 {
-    dot(a, a).sqrt()
 }
 
 /// A point contact's four rows over its place alone, the rest of its columns held: what `seed`
@@ -882,15 +828,11 @@ impl crate::newton::TrustRegion for Seeding<'_> {
         out.copy_from_slice(&if finite { r } else { [f64::INFINITY; 4] });
     }
     fn jacobian_at(&mut self, z: &[f64]) {
-        let cols: Vec<Tan<3>> = self.cols.iter().enumerate().map(|(q, &x)| match q {
-            3..=5 => {
-                let mut t = Tan::cst(z[q - 3]);
-                t.g[q - 3] = 1.0;
-                t
-            }
-            _ => Tan::cst(x),
+        let cols: Vec<Dual<3>> = self.cols.iter().enumerate().map(|(q, &x)| match q {
+            3..=5 => Dual::var(z[q - 3], q - 3),
+            _ => Dual::cst(x),
         }).collect();
-        let mut out = [Tan::<3>::cst(0.0); 4];
+        let mut out = [Dual::<3>::cst(0.0); 4];
         let ok = rows(Contact::Point, &cols, self.k, &mut out).is_some();
         for (row, v) in out.iter().enumerate() {
             for q in 0..3 {
@@ -1047,8 +989,13 @@ impl Parts {
     }
 
     /// A contact's constants over these parts.
-    pub fn consts(&self, c: Contact, mode: u8) -> Vec<f64> {
-        consts(c.lead(), mode as f64, self.source, self.axis, self.number, self.reference, &self.steps)
+    pub fn consts(&self, c: Contact) -> Vec<f64> {
+        consts(c.lead(), self.source, self.axis, self.number, self.reference, &self.steps)
+    }
+
+    /// How many constants a contact reads (`consts`).
+    pub fn n_const(&self) -> usize {
+        HEADER + STEP * self.steps.len()
     }
 
     /// How many columns a contact of kind `c` reads.

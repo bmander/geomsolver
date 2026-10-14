@@ -1261,7 +1261,8 @@ impl CKind {
         Some(match self {
             CKind::PointOnEnvelope => Contact::Point,
             CKind::EnvelopeTangentAt => Contact::Tangent,
-            CKind::EnvelopeNormalAt | CKind::EnvelopePlaneAt => Contact::Normal,
+            CKind::EnvelopeNormalAt => Contact::Normal,
+            CKind::EnvelopePlaneAt => Contact::Plane,
             CKind::EnvelopeCurvatureAt => Contact::Curvature,
             _ => return None,
         })
