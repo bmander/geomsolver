@@ -8,8 +8,8 @@ use crate::syntax::words::{self, over_chain, set_at, Brackets, BLOCKS, ENERGY_WO
 use crate::syntax::{
     Arg, Block, BlockKind, BodyWord, Branch, Chained, ClaimOver, Component, CurveSpec, CurveTarget,
     Decl, DeclName, EdgesOf, DerivedDecl, Formal, InBlock, InstArg, InstVal, Instance, Membership,
-    Input, Name, OpenJoint, ParamDecl, Ref, SetLit, SolidRel, Source, Span, Stmt, StmtKind, SynErr,
-    Ty, Use,
+    Input, Name, OpArg, OpenJoint, ParamDecl, Ref, SetLit, SolidRel, Source, Span, Stmt, StmtKind,
+    SynErr, Ty, Use,
 };
 
 /// What a `when` is, said where one is written otherwise (#210).
@@ -41,6 +41,19 @@ fn stamp_plane(stmts: &mut [Stmt], plane: &Ref, errs: &mut Vec<SynErr>) {
                 }
             }
             StmtKind::Block(b) => stamp_plane(&mut b.body, plane, errs),
+            // a step measured in no frame of its own is measured in the view its line is drawn
+            // in (#330): the block's plane, handed on as a reference — which no source writes,
+            // a written `from:` being kept as its text — so the flattener tells the two apart
+            StmtKind::Relation(r) => {
+                let Some(w) = r.form.written_mut() else { continue };
+                if !w.is_step()
+                    || w.args.iter().any(|a| matches!(a, OpArg::Named(n, _) if n.text == "from"))
+                {
+                    continue;
+                }
+                let from = Name { text: "from".into(), span: Span::at(plane.span.lo as usize) };
+                w.args.push(OpArg::Named(from, Arg::Ref(plane.clone())));
+            }
             // the instance joins whole: the flattener carries the plane into its expansion
             StmtKind::Instance(inst) => {
                 if !inst.membership.join(plane, Source::Block) {

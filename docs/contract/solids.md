@@ -250,7 +250,7 @@ placement carries inside the blank; CLI test readers zero the offset.
   sketches drawn apart) returns at L8 (finding 8).  `tests/loft.rs` is the gate: `solid_loft`,
   `solid_elbow`, `solid_bend` and `solid_twist` at their closed forms off the B-rep to 1e-9, their
   walls by name and kind, `std.On` agreeing with each kind's word.
-- **A chain is one path** (§6.9 [0.101], #243 L4, finding 6).  A `path` formal of a family's
+- **A chain is one path** (§6.9 [0.102], #243 L4, finding 6).  A `path` formal of a family's
   instance given a named open chain (`flatten::chain_argument`, the chain found among the
   statements walked so far) makes the family **legs**, one per link its interval reaches
   (`walk_legs`): the instance walked again under `#f12_k` with the formal given link `k`, its own

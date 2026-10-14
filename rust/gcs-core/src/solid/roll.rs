@@ -72,16 +72,20 @@ fn through(sk: &Sketch, source: usize, motion: usize, body: usize) -> Result<[f6
     // way is its end, and a step past it asked meanwhile is only wasted
     let ahead = crate::par::threads().clamp(1, 4) as u32;
     let mut ends: [Option<f64>; 2] = [None, None];
+    // where each way's last step not clear ended, which its next steps are walked toward first
+    let mut toward: [Option<Hint>; 2] = [None, None];
     let mut k = 0_u32;
     while ends.iter().any(Option::is_none) {
         let asks: Vec<(usize, u32)> = (0..2).filter(|&w| ends[w].is_none())
             .flat_map(|w| (k..k + ahead).map(move |j| (w, j))).collect();
         let answers = crate::par::map(&asks, |&(w, j)| {
             let [a, b] = [j, j + 1].map(|n| WAYS[w] * f64::from(n) * STEP);
-            clear(&tool, support, &blank, &family, [a.min(b), a.max(b)])
+            march(&tool, support, &blank, &family, [a.min(b), a.max(b)], toward[w])
         });
-        for (&(w, j), clear) in asks.iter().zip(answers) {
-            if ends[w].is_none() && clear? {
+        for (&(w, j), answer) in asks.iter().zip(answers) {
+            let (clear, ended) = answer?;
+            toward[w] = ended.or(toward[w]);
+            if ends[w].is_none() && clear {
                 ends[w] = Some(WAYS[w] * f64::from(j) * STEP);
             }
         }
@@ -106,50 +110,110 @@ fn through(sk: &Sketch, source: usize, motion: usize, body: usize) -> Result<[f6
 /// pose, or where the splitting runs out.
 pub fn clear(tool: &SpatialField, support: [I; 3], blank: &SpatialField,
              family: &crate::motion::Family, span: [f64; 2]) -> Result<bool, String> {
+    march(tool, support, blank, family, span, None).map(|(clear, _)| clear)
+}
+
+/// **A step not clear is found where the step before ended** (#271): `clear`'s boxes make one
+/// tree, each box's halves fixed by the box, and its answer is whether a box of it ends the march
+/// or there are more than `BOXES` of them — however the tree is walked.  A step the tool has not
+/// cleared ends where its splitting runs out, near where the step before it ended (`Hint`), and a
+/// march taking the halves in their own order walks to it through hundreds of boxes dropped on
+/// the way; so where a box is halved, the half toward that end is walked first.  The answer is the
+/// march's (a pose that cannot be read is an error wherever it is met); only the boxes asked
+/// before it are fewer.  `clear`, with where it ended where it is not clear.
+fn march(tool: &SpatialField, support: [I; 3], blank: &SpatialField,
+         family: &crate::motion::Family, span: [f64; 2], toward: Option<Hint>)
+         -> Result<(bool, Option<Hint>), String> {
     // a span's enclosed poses and its middle pose, asked once for every box under it
     let poses = |span: [f64; 2]| -> Result<Poses, String> {
         let enclosed = I::new(span[0], span[1]).and_then(|s| family.bounds(s)).ok();
         Ok(Poses { span, enclosed, middle: family.at(0.5 * (span[0] + span[1]))? })
     };
+    let ended = |cell: [I; 3], at: &Poses| Hint {
+        point: cell.map(I::mid),
+        at: (0.5 * (at.span[0] + at.span[1]) - span[0]) / (span[1] - span[0]),
+    };
     let mut boxes = vec![(support, poses(span)?, 0_u32)];
     let mut asked = 0;
-    while let Some((cell, at, depth)) = boxes.pop() {
+    while let Some(node) = boxes.pop() {
         asked += 1;
         if asked > BOXES {
-            return Ok(false);
+            return Ok((false, None));
         }
-        // no tool here, or the tool here carried clear of the blank over the whole span
-        if tool.bounds(cell).is_ok_and(|t| t.bounds()[0] > 0.0) {
-            continue;
-        }
-        let posed = at.enclosed.and_then(|m| m.point(cell).ok());
-        if posed.is_some_and(|p| blank.bounds(p).is_ok_and(|k| k.bounds()[0] > 0.0)) {
-            continue;
-        }
-        let c = cell.map(I::mid);
-        if tool.value(c) < 0.0 && blank.value(at.middle.point(c)) < 0.0 {
-            return Ok(false);
-        }
-        if depth == DEPTH {
-            return Ok(false);
-        }
-        if posed.is_some_and(|p| widest(&p) > 2.0 * widest(&cell)) {
-            let m = 0.5 * (at.span[0] + at.span[1]);
-            for half in [[at.span[0], m], [m, at.span[1]]] {
-                boxes.push((cell, poses(half)?, depth + 1));
-            }
-            continue;
-        }
-        let k = (0..3).max_by(|&i, &j| side(cell[i]).total_cmp(&side(cell[j]))).expect("three sides");
-        let [lo, hi] = cell[k].bounds();
-        let m = cell[k].mid();
-        for half in [I::new(lo, m), I::new(m, hi)] {
-            let mut next = cell;
-            next[k] = half.map_err(fault)?;
-            boxes.push((next, at, depth + 1));
+        match visit(tool, blank, &poses, &node)? {
+            Visit::Dropped => {}
+            Visit::Ends => return Ok((false, Some(ended(node.0, &node.1)))),
+            // the half toward where the step before ended on top, to be walked first
+            Visit::Halves([a, b]) => match toward {
+                Some(h) if !second(&[a, b], h, span) => boxes.extend([b, a]),
+                _ => boxes.extend([a, b]),
+            },
         }
     }
-    Ok(true)
+    Ok((true, None))
+}
+
+/// A box of `clear`'s march: its cell of the tool's support, the poses over its span, its depth.
+type Node = ([I; 3], Poses, u32);
+
+/// What one box of the march comes to.
+enum Visit {
+    /// No tool in it, or the tool in it carried clear of the blank over its whole span.
+    Dropped,
+    /// Material of both at its centre at its span's middle pose, or its splitting run out.
+    Ends,
+    /// Its two halves, in the order the march stacks them.
+    Halves([Node; 2]),
+}
+
+/// One box of `clear`'s march, put to its tests.
+fn visit(tool: &SpatialField, blank: &SpatialField,
+         poses: &impl Fn([f64; 2]) -> Result<Poses, String>, node: &Node) -> Result<Visit, String> {
+    let (cell, at, depth) = (node.0, &node.1, node.2);
+    // no tool here, or the tool here carried clear of the blank over the whole span
+    if tool.bounds(cell).is_ok_and(|t| t.bounds()[0] > 0.0) {
+        return Ok(Visit::Dropped);
+    }
+    let posed = at.enclosed.and_then(|m| m.point(cell).ok());
+    if posed.is_some_and(|p| blank.bounds(p).is_ok_and(|k| k.bounds()[0] > 0.0)) {
+        return Ok(Visit::Dropped);
+    }
+    let c = cell.map(I::mid);
+    if tool.value(c) < 0.0 && blank.value(at.middle.point(c)) < 0.0 {
+        return Ok(Visit::Ends);
+    }
+    if depth == DEPTH {
+        return Ok(Visit::Ends);
+    }
+    if posed.is_some_and(|p| widest(&p) > 2.0 * widest(&cell)) {
+        let m = 0.5 * (at.span[0] + at.span[1]);
+        let half = |span: [f64; 2]| -> Result<Node, String> { Ok((cell, poses(span)?, depth + 1)) };
+        return Ok(Visit::Halves([half([at.span[0], m])?, half([m, at.span[1]])?]));
+    }
+    let k = (0..3).max_by(|&i, &j| side(cell[i]).total_cmp(&side(cell[j]))).expect("three sides");
+    let [lo, hi] = cell[k].bounds();
+    let m = cell[k].mid();
+    let half = |h: Result<I, crate::interval::Error>| -> Result<Node, String> {
+        let mut next = cell;
+        next[k] = h.map_err(fault)?;
+        Ok((next, *at, depth + 1))
+    };
+    Ok(Visit::Halves([half(I::new(lo, m))?, half(I::new(m, hi))?]))
+}
+
+/// Where a step's march ended (`march`): the centre of the box, and its span's middle as a
+/// fraction of the step's.
+#[derive(Clone, Copy)]
+struct Hint { point: [f64; 3], at: f64 }
+
+/// Whether the march's dive toward `h`, in a step over `span`, takes a box's second half: the
+/// side its cell was halved on, or its span where that was.
+fn second(halves: &[Node; 2], h: Hint, span: [f64; 2]) -> bool {
+    let [a, b] = halves;
+    match (0..3).find(|&i| a.0[i] != b.0[i]) {
+        Some(i) => h.point[i] >= b.0[i].bounds()[0],
+        None => span[0] + h.at * (span[1] - span[0]) >= b.1.span[0],
+    }
 }
 
 /// The poses over one span of a step: enclosed (`None` where they cannot be), and the middle one.

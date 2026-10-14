@@ -526,14 +526,37 @@ pub fn contact_speed(sk: &Sketch, e: EntRef) -> f64 {
     }
 }
 
+/// How many seeds of each kind are remembered (`Recent`).
+const SEEDS_KEPT: usize = 32;
+
+/// **The last few seeds, remembered** (#283): a seed of a place on an envelope or a meshing is a
+/// search over a grid of thousands of its points, and the same question comes again — a
+/// contact's unknowns each ask it, the elaborator's passes ask its contacts again, a solve steered
+/// by a bound passes its blocks again from where the first began, and a block pass seeds each
+/// contact its block holds as the blocks come up.  An answer is a function of its question
+/// alone, so remembered it is the same to the bit; the newest `SEEDS_KEPT`, each thread its own.
+struct Recent<T>(Vec<(Vec<f64>, T)>);
+
+impl<T: Copy> Recent<T> {
+    fn get(&self, key: &[f64]) -> Option<T> {
+        self.0.iter().find(|(k, _)| k == key).map(|(_, x)| *x)
+    }
+
+    fn put(&mut self, key: Vec<f64>, x: T) {
+        if self.0.len() == SEEDS_KEPT {
+            self.0.remove(0);
+        }
+        self.0.push((key, x));
+    }
+}
+
 /// Where on envelope `e` a solve holding point `p` to it starts (#283): `envelope::held::seed`
-/// over the envelope's parts as the drawing stands, remembered for the last question, since a
-/// contact's three unknowns ask it three times.
+/// over the envelope's parts as the drawing stands, remembered (`Recent`).
 fn envelope_place(sk: &Sketch, e: usize, p: usize) -> Option<[f64; 3]> {
     use crate::envelope::held::{seed, Contact, Parts};
     use std::cell::RefCell;
     thread_local! {
-        static LAST: RefCell<Option<(Vec<f64>, [f64; 3])>> = const { RefCell::new(None) };
+        static SEEDS: RefCell<Recent<[f64; 3]>> = const { RefCell::new(Recent(Vec::new())) };
     }
     let parts = Parts::of(sk, e).ok()?;
     let k = parts.consts(Contact::Point);
@@ -541,11 +564,11 @@ fn envelope_place(sk: &Sketch, e: usize, p: usize) -> Option<[f64; 3]> {
     let at = sk.lifted(p);
     let roll = sk.envelopes[e].roll;
     let key: Vec<f64> = k.iter().chain(&values).chain(&at).chain(&roll).copied().collect();
-    if let Some(x) = LAST.with(|l| l.borrow().as_ref().filter(|(k, _)| *k == key).map(|(_, x)| *x)) {
+    if let Some(x) = SEEDS.with(|s| s.borrow().get(&key)) {
         return Some(x);
     }
     let x = seed(&k, &values, at, roll)?;
-    LAST.with(|l| *l.borrow_mut() = Some((key, x)));
+    SEEDS.with(|s| s.borrow_mut().put(key, x));
     Some(x)
 }
 
@@ -559,13 +582,14 @@ pub fn meshing_seed(sk: &Sketch, c: &Constraint, at: [f64; 3]) -> Option<[f64; c
 
 /// Where on meshing `m` a solve holding a point at `at` to it at `phase` starts (#283):
 /// `envelope::meshing::seed` over its parts as the drawing stands — the phase, the lag and the two
-/// places — remembered for the last question, since a contact's eight unknowns ask it eight times.
+/// places — remembered (`Recent`).
 fn meshing_place(sk: &Sketch, m: usize, at: [f64; 3], phase: f64) -> Option<[f64; crate::envelope::meshing::UNKNOWNS]> {
     use crate::envelope::meshing::{seed, Meshing, Parts};
     use crate::model::Flank;
     use std::cell::RefCell;
     thread_local! {
-        static LAST: RefCell<Option<(Vec<f64>, [f64; crate::envelope::meshing::UNKNOWNS])>> = const { RefCell::new(None) };
+        static SEEDS: RefCell<Recent<[f64; crate::envelope::meshing::UNKNOWNS]>> =
+            const { RefCell::new(Recent(Vec::new())) };
     }
     let parts = Parts::of(sk, m).ok()?;
     let e = &sk.meshings[m];
@@ -577,12 +601,11 @@ fn meshing_place(sk: &Sketch, m: usize, at: [f64; 3], phase: f64) -> Option<[f64
     });
     let key: Vec<f64> = k.iter().chain(&values).chain(&at).chain(rolls.iter().flatten())
         .chain(&[phase]).copied().collect();
-    let last = LAST.with(|l| l.borrow().as_ref().filter(|(k, _)| *k == key).map(|(_, x)| *x));
-    if let Some(x) = last {
+    if let Some(x) = SEEDS.with(|s| s.borrow().get(&key)) {
         return Some(x);
     }
     let mesh = Meshing::new(k, values, e.roll)?;
     let x = seed(&mesh, rolls, at, phase)?.values();
-    LAST.with(|l| *l.borrow_mut() = Some((key, x)));
+    SEEDS.with(|s| s.borrow_mut().put(key, x));
     Some(x)
 }

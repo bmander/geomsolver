@@ -16,7 +16,7 @@ Solvent. Rust grows only three kinds of things:
 **Verdict: a station word stands on every guide drawn in a plane, and a chain of lines and arcs
 is one path.** [`l0/pipe.sv`](l0/pipe.sv), the program L0 could not write, is a 4 mm pipe along a
 U of three straights and two quarter turns, one `std.On` over all five links, at the sum of its
-pieces' Pappus to a part in 10⁹ (Solvent 0.101, `rust/gcs-core/tests/paths.rs`):
+pieces' Pappus to a part in 10⁹ (Solvent 0.102, `rust/gcs-core/tests/paths.rs`):
 
 | solid | what it exercises | closed form (mm³) |
 |---|---|---|

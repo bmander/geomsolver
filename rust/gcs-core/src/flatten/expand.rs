@@ -688,6 +688,10 @@ impl<'a> Walk<'a> {
         path: &[PathStep],
         depth: usize,
     ) {
+        // a step is the ordinates and levels it is short for, stated where it stands (#330)
+        if self.walk_step(rel, st, scope, vals, path) {
+            return;
+        }
         // a word a file defines is its body, applied where the statement stands
         if self.apply_word(st, rel, path, scope, depth) {
             return;
@@ -1095,7 +1099,7 @@ impl<'a> Walk<'a> {
     /// consumer that turns an id back into source — `Elaborated::retext`, `adopt`, `edit::remove`
     /// — would find nothing there.  The multiplicity that a fresh id used to hide is exactly what
     /// `commit_seeds` needs to see: an id reached more than once has no single pose to record.
-    fn emit(&mut self, kind: StmtKind, st: &Stmt, scope: &Scope, path: &[PathStep]) {
+    pub(super) fn emit(&mut self, kind: StmtKind, st: &Stmt, scope: &Scope, path: &[PathStep]) {
         let stmt = Stmt { id: st.id, kind, span: st.span, chained: st.chained };
         self.out.push((stmt, path.to_vec(), scope.clone()));
     }

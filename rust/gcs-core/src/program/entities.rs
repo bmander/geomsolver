@@ -196,6 +196,7 @@ fn children(
         // the dotted path *is* the point's name — there is no other — so it is what the map
         // binds; the sketch carries what a reader is shown
         let i = sk.point(x, y, false, &label[k]);
+        deferred.push(Deferred::Scattered { point: i });
         kids.push(i);
         anon.push((dotted[k].clone(), EntRef::point(i)));
     }
@@ -211,6 +212,7 @@ fn children(
             if let Some(name) = d.kind.children_arity().and(dotted.get(slot)) {
                 let (x, y) = scatter(sk.points.len());
                 let i = sk.point(x, y, false, label.get(slot).unwrap_or(name));
+                deferred.push(Deferred::Scattered { point: i });
                 kids.push(i);
                 anon.push((name.clone(), EntRef::point(i)));
             }
@@ -362,7 +364,9 @@ fn make(
         EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge | EntKind::Meshing => return None,
         EntKind::Point if unseeded => {
             let (x, y) = scatter(sk.points.len());
-            sk.point(x, y, false, &show)
+            let p = sk.point(x, y, false, &show);
+            deferred.push(Deferred::Scattered { point: p });
+            p
         }
         EntKind::Point => {
             let p = sk.point(seed(0), seed(1), false, &show);
@@ -800,6 +804,9 @@ pub(super) enum Deferred {
     /// An arc's radius the source left unwritten: its centre to its start, as `Sketch::arc`
     /// first computed it.
     Radius { arc: usize },
+    /// A point the source wrote no seed for, started where a minted child is (`scatter`): one a
+    /// step may place instead (`walk_seeds`, #330).
+    Scattered { point: usize },
 }
 
 /// The seed a dotted name reads: `pin.x`, `k.center.y`, `base.r`, `e.b` — `dotted` as the
@@ -892,6 +899,77 @@ impl<'h> Seeds<'h> {
     }
 }
 
+/// **Seeds that follow a walk** (#330): a corner a step places, and that the source wrote no seed
+/// for, starts where the step says — from where the line's start stands, or from the frame's
+/// origin — worked out in statement order, which along a chain is the walk's.  So a chain of
+/// steps starts as the outline it states and its seeds follow its numbers, with nothing restated
+/// in a `hint`.  Twice round, so a closed walk whose first corner its last step places starts
+/// there.  Only a step in the view the line is drawn in is walked: one measured in a frame of its
+/// own is read in space, and its corner left where it was minted.
+pub(super) fn walk_seeds(sk: &mut Sketch, deferred: &[Deferred], held: &BTreeSet<u32>) {
+    use crate::constraints::{step_word, Arg, CKind, OrdinateForm as F};
+    let steps: Vec<usize> = (0..sk.constraints.len())
+        .filter(|&i| {
+            let c = &sk.constraints[i];
+            !c.claim && c.word.as_ref().is_some_and(|w| step_word(&w.word))
+        })
+        .collect();
+    if steps.is_empty() {
+        return;
+    }
+    let scattered: BTreeSet<usize> = deferred
+        .iter()
+        .filter_map(|d| match *d {
+            Deferred::Scattered { point } => Some(point),
+            _ => None,
+        })
+        .collect();
+    let seeds = Seeds::new(sk, held);
+    for _ in 0..2 {
+        for &i in &steps {
+            let c = &sk.constraints[i];
+            let (Some(Arg::Ent(p)), Some(Arg::Ent(q))) = (c.args.first(), c.args.get(1)) else {
+                continue;
+            };
+            let (p, q) = (p.i(), q.i());
+            if !scattered.contains(&q) {
+                continue;
+            }
+            let form = match c.kind.form_slot().and_then(|k| c.args.get(k)) {
+                Some(Arg::Int(f)) => F::from_int(*f),
+                _ => continue,
+            };
+            let at = sk.point_xy(p);
+            // a number the flattener left naming something reads an unknown, which has no place
+            // to start from yet: walked at its provisional zero, the line would start collapsed
+            // onto its own start, a stationary point of every direction read off it
+            let unknown = |t: &str| {
+                crate::expr::parse_in(t, sk.units).map_or(true, |p| !p.body.deps().is_empty())
+            };
+            // an ordinate's number, read only of an ordinate: a level's slot there is its word
+            let number = || match c.args.get(3) {
+                Some(Arg::Expr(x)) if unknown(&x.text) => None,
+                a => a.map(|a| a.value(sk)),
+            };
+            let (axis, value) = match (c.kind, form) {
+                (CKind::Ordinate, F::PageU) => (0, number().map(|d| at.0 + d)),
+                (CKind::Ordinate, F::PageV) => (1, number().map(|d| at.1 + d)),
+                (CKind::Ordinate, F::CoordU) => (0, number()),
+                (CKind::Ordinate, F::CoordV) => (1, number()),
+                (CKind::Level, F::PageU | F::CoordU) => (0, Some(at.0)),
+                (CKind::Level, F::PageV | F::CoordV) => (1, Some(at.1)),
+                _ => continue,
+            };
+            let (Some(v), Some(&param)) =
+                (value, sk.entity_params(EntRef::point(q)).get(axis))
+            else {
+                continue;
+            };
+            seeds.write(sk, param, v);
+        }
+    }
+}
+
 /// Seeds that read geometry, worked out in statement order — never over a number a `fix` holds,
 /// which was applied first.
 /// `held`: the parameters left where they stand — a point a bound carried across (§9.6), whose
@@ -932,7 +1010,9 @@ pub(super) fn settle_deferred(
                 let r = seed_eval(sk, res, text, names).map(|v| seeds.write(sk, param, v));
                 (*span, *stmt, r.map_err(|e| format!("`{text}`: {e}")))
             }
-            Deferred::Along { .. } | Deferred::Height { .. } => continue,
+            Deferred::Along { .. } | Deferred::Height { .. } | Deferred::Scattered { .. } => {
+                continue
+            }
             Deferred::Radius { arc } => {
                 let a = &sk.arcs[*arc];
                 let ((cx, cy), (sx, sy)) =

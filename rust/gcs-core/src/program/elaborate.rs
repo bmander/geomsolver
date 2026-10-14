@@ -87,6 +87,7 @@ pub(super) fn elaborate_in(
     let extruded = prism_sides(&mut cx, &flat);
     let (generated, held_in_space) = held_envelopes(&mut cx, &flat, &planar, &extruded);
     constraints(&mut cx, &flat, &drawn, &kept_off);
+    walked(&mut cx, &deferred, &held);
     twins(&mut cx, &flat);
     place_planes(&mut cx, &deferred, &held, settled);
     solids_and_surfaces(&mut cx, &flat, faces, &generated, &held_in_space)?;
@@ -534,6 +535,13 @@ fn constraints(
             repeated(&mut cx.sk, id, st, &mut arrays);
         }
     }
+}
+
+/// **The corners a walk of steps places**, seeded where the steps say once their relations are
+/// stated and read (`walk_seeds`, #330): after every written seed, so a seed reading a corner
+/// reads its provisional start, as one reading a seed written below does.
+fn walked(cx: &mut Elab<'_>, deferred: &[Deferred], held: &BTreeSet<u32>) {
+    entities::walk_seeds(&mut cx.sk, deferred, held);
 }
 
 /// Once the relations are stated: what each `path` formal was given runs along something, and

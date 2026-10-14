@@ -98,7 +98,11 @@ first step the tool is proved clear over (`roll::clear`: the tool's support and 
 by branch and bound, a box dropped where the tool's field encloses it empty or the step's
 `Family::bounds` carry it where the body's field encloses it clear, the step halved where poses
 smear a box past its size; a centre in both at the middle pose ends a step early): conservative,
-a few degrees past first clearance, never short, so E1 holds by construction. Refused naming why
+a few degrees past first clearance, never short, so E1 holds by construction. The boxes are one
+tree whatever order they are walked in, so the answer is the order's to choose freely: each step
+walks first the halves toward where the way's step before ended (`roll::march`), and a step the
+tool has not cleared ends in a few dozen boxes, not hundreds (the same rolls, a fraction of the
+time; a document's workers each find them before their first surface). Refused naming why
 (no meeting at 0, not clear within two turns, a tool with no bounded support). The spiral bevel,
 the rack cuts and the lantern state no roll; the drill's flute and the Wankel's period are design.
 `fixtures::gear::roll` restates one member's roll (negative controls). `tests/roll_through.rs` is
