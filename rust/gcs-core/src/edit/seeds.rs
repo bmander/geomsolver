@@ -490,7 +490,7 @@ fn unknown_seeds(sk: &Sketch, prog: &Program, map: &crate::program::SourceMap) -
                     else {
                         continue;
                     };
-                    // a point the instance owns, seeded where the call wrote its place (§5 [0.94])
+                    // a point the instance owns, seeded where the call wrote its place (§5 [0.95])
                     if f.within.is_some() {
                         let named = map.ent_named(&format!("{}.{}", inst.name.text, l.text));
                         out.extend(named.and_then(|e| owned_splice(sk, prog, text, *span, e)));

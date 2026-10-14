@@ -139,7 +139,7 @@ fn a_plane_in_a_body_holds_of_a_point_drawn_in_it() {
             "m coincident std.front");
 }
 
-/// A circle as a family whose centre is a point formal drawn in its plane (§5 [0.94]).
+/// A circle as a family whose centre is a point formal drawn in its plane (§5 [0.95]).
 const CIRCLE: &str = "\
 unit mm
 use std

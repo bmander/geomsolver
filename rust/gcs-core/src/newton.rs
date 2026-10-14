@@ -176,6 +176,18 @@ pub trait TrustRegion {
     }
 }
 
+/// The Gauss–Newton step of a small dense `TrustRegion` whose `jacobian_at` filled `j`: the
+/// minimum-norm solution of `J p ≈ −r` at `rcond`, or no step where `J` is not finite.
+pub(crate) fn dense_gn_step(j: &crate::linalg::Mat, r: &[f64], p: &mut [f64], rcond: f64) {
+    if !j.data.iter().all(|x| x.is_finite()) {
+        p.fill(0.0);
+        return;
+    }
+    let neg: Vec<f64> = r.iter().map(|v| -v).collect();
+    let (step, _) = crate::linalg::min_norm_solve(j, &neg, rcond);
+    p.copy_from_slice(&step);
+}
+
 /// The stopping tolerances a trust-region run is given.
 #[derive(Clone, Copy, Debug)]
 pub struct Tol {

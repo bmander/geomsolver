@@ -258,14 +258,16 @@ impl<'a> Walk<'a> {
         }
         self.stamp_scope_plane(&mut d2, scope);
         let twins = self.twins_of(&d2, &d.name.key().text);
-        let region = self.region_of(&mut d2, &d.name.key().text, scope)
-            .or_else(|| self.envelope_of(&mut d2, &d.name.key().text, scope));
+        let region: Vec<_> = match self.region_of(&mut d2, &d.name.key().text, scope) {
+            Some(r) => vec![r],
+            None => self.envelope_of(&mut d2, &d.name.key().text, scope),
+        };
         self.emit(StmtKind::Decl(d2), st, scope, path);
         for twin in twins {
             self.emit(StmtKind::Decl(twin), st, scope, path);
         }
-        // a region solid's probe, and its set applied to it
-        if let Some((probe, inside)) = region {
+        // a region solid's probe, and its set applied to it; an envelope's or a meshing's
+        for (probe, inside) in region {
             self.emit(StmtKind::Decl(probe), st, scope, path);
             self.emit(StmtKind::Relation(inside), st, scope, path);
         }
@@ -389,7 +391,7 @@ impl<'a> Walk<'a> {
         };
         self.instantiating.push((comp, sub_vals.clone()));
         // a point formal drawn in a plane and left out is the instance's own point there, made
-        // by the call (§5 [0.94]) — in its formal's plane, whatever plane the instance is in
+        // by the call (§5 [0.95]) — in its formal's plane, whatever plane the instance is in
         let owned = self.owned_points(comp, inst, st, vals);
         if !owned.is_empty() {
             let mut at_call = sc.clone();
@@ -992,7 +994,7 @@ impl Walk<'_> {
         if d.kind != crate::model::EntKind::Solid || !matches!(d.sweep, Some(Sweep::Body)) {
             return None;
         }
-        let set = self.set_operand(d, sc)?;
+        let set = self.set_operand(d, 0, sc)?;
         let at = Span::at(d.name.span().lo as usize);
         let key = keys::probe(&d.name.key().text);
         self.names.insert(key.clone());
@@ -1007,25 +1009,32 @@ impl Walk<'_> {
     /// is the envelope of `S`'s surface — the operand made a hidden point keyed `{flank}#probe`
     /// (held, in space) and `probe coincident S` stated beside it, so the set's body is applied to
     /// the probe as any use applies it, and what it states there is the surface the envelope reads
-    /// (a cone's angle, a cylinder's distance: `program::envelopes`), never a row.
-    /// `None` for any other declaration.
+    /// (a cone's angle, a cylinder's distance: `program::envelopes`), never a row.  A meshing's
+    /// flank that is a set is read the same way, its two keyed `{contact}#first#probe` and
+    /// `{contact}#second#probe`.  Empty for any other declaration.
     fn envelope_of(&mut self, d: &mut Decl, local: &str, sc: &Scope)
-        -> Option<(Decl, crate::syntax::Relation)> {
-        if d.kind != crate::model::EntKind::Envelope {
-            return None;
+        -> Vec<(Decl, crate::syntax::Relation)> {
+        let slots: &[(usize, &str)] = match d.kind {
+            crate::model::EntKind::Envelope => &[(0, "")],
+            crate::model::EntKind::Meshing => &[(0, "#first"), (1, "#second")],
+            _ => return Vec::new(),
+        };
+        let mut made = Vec::new();
+        for &(i, which) in slots {
+            let Some(set) = self.set_operand(d, i, sc) else { continue };
+            let at = Span::at(d.name.span().lo as usize);
+            let key = keys::probe(&format!("{}{which}", d.name.key().text));
+            self.names.insert(key.clone());
+            let probe = keys::probe(&format!("{local}{which}"));
+            d.children[i] = vec![Kid::Ref(Ref::new(&probe))];
+            made.push((super::sets::probe(key, at), applied(&probe, set, "coincident", at)));
         }
-        let set = self.set_operand(d, sc)?;
-        let at = Span::at(d.name.span().lo as usize);
-        let key = keys::probe(&d.name.key().text);
-        self.names.insert(key.clone());
-        let probe = keys::probe(local);
-        d.children[0] = vec![Kid::Ref(Ref::new(&probe))];
-        Some((super::sets::probe(key, at), applied(&probe, set, "coincident", at)))
+        made
     }
 
-    /// The set a declaration's first operand names, where it names one.
-    fn set_operand(&mut self, d: &Decl, sc: &Scope) -> Option<Ref> {
-        let [Kid::Ref(set)] = d.children.first().map(Vec::as_slice).unwrap_or(&[]) else {
+    /// The set a declaration's `i`th operand names, where it names one.
+    fn set_operand(&mut self, d: &Decl, i: usize, sc: &Scope) -> Option<Ref> {
+        let [Kid::Ref(set)] = d.children.get(i).map(Vec::as_slice).unwrap_or(&[]) else {
             return None;
         };
         // a plain name declared in scope, as a family's instance is (`taken := solid(run)`), is

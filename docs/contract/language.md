@@ -158,7 +158,7 @@ group registered so `Bar(design.bar)` binds); an instance may pass as a layout g
 formal** (`Ty::Set`, #191) takes a set — named, or a family's instance, which is both a set and an
 instance — and a `group` formal no named set; each refusal is E103 at the argument
 (`Checks::groups`, checked in `resolve` against `sets` / `group_names`). Only a number may be
-left out of a call ([0.94]): an entity, path, group or set formal left out is E103 at the call
+left out of a call ([0.95]): an entity, path, group or set formal left out is E103 at the call
 (`Walk::bind`) — but for **a point formal drawn in a plane formal**, `center: point in on`
 (`Formal::within`), which the instance then owns: `Walk::owned_points` declares it as its body
 would, `center := point in on`, under the call's own statement (so the call deletes and

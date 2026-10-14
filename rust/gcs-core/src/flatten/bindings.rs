@@ -514,7 +514,7 @@ fn arg_of<'i>(comp: &Component, inst: &'i crate::syntax::Instance, f: &crate::sy
 }
 
 impl Walk<'_> {
-    /// **The points an instance owns** (§5 [0.94]): each `point in P` formal its call leaves out
+    /// **The points an instance owns** (§5 [0.95]): each `point in P` formal its call leaves out
     /// or only seeds, declared as its body would declare it — `center := point in on`, under the
     /// formal's name, seeded by `center: hint((x, y))` in the plane's coordinates — and made by
     /// the call's own statement, so the call is what deletes and describes it.

@@ -69,6 +69,21 @@ impl Sketch {
                 v.surface.map(|s| EntRef::new(EntKind::Surface,s as usize)).into_iter()
                     .chain([EntRef::new(EntKind::Motion,v.motion as usize)]).chain(held).collect()
             }
+            // a meshing's motion and flanks: an envelope, or a source read as an envelope's is
+            EntKind::Meshing => {
+                use crate::model::{Flank, Held};
+                let m = &self.meshings[e.i()];
+                let flanks = m.flanks.iter().flat_map(|f| match f {
+                    Flank::Envelope(v) => vec![EntRef::new(EntKind::Envelope,*v as usize)],
+                    Flank::Formed(Held::Set {probe,shape}) => {
+                        let axis = shape.as_ref().map(|s| EntRef::line(s.axis as usize));
+                        std::iter::once(EntRef::point(*probe as usize)).chain(axis).collect()
+                    }
+                    Flank::Formed(Held::Revolution {axis,edge}) => vec![*axis,*edge],
+                    Flank::Formed(Held::Not(_)) => Vec::new(),
+                });
+                std::iter::once(EntRef::new(EntKind::Motion,m.motion as usize)).chain(flanks).collect()
+            }
             // what a motion measures is what it is written over, as much as its axis is
             EntKind::Motion => { let m = &self.motions[e.i()]; match m.def {
                 MotionDef::Rotation {axis,..} | MotionDef::Translation {axis,..} => std::iter::once(EntRef::line(axis as usize))
@@ -165,7 +180,7 @@ impl Sketch {
             // is its term, and a term missing an operand is not that solid
             EntKind::Point | EntKind::Line | EntKind::Circle | EntKind::Arc
             | EntKind::Axis
-            | EntKind::Plane | EntKind::Curve | EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge => {
+            | EntKind::Plane | EntKind::Curve | EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge | EntKind::Meshing => {
                 children.len()
             }
         }
@@ -254,6 +269,7 @@ impl Sketch {
             EntKind::Seam => self.seams.len(),
             EntKind::Vertex => self.vertices.len(),
             EntKind::Edge => self.edges.len(),
+            EntKind::Meshing => self.meshings.len(),
             EntKind::Point => self.points.len(),
             EntKind::Line => self.lines.len(),
             EntKind::Circle => self.circles.len(),

@@ -12,6 +12,7 @@
 use crate::fmath::Det;
 mod named;
 pub mod held;
+pub mod meshing;
 pub mod planar;
 pub use named::GeneratedEnvelope;
 

@@ -193,3 +193,43 @@ pair is drawn at; and the pinion flank's profile circle at M — the osculating 
 by the normal plane — is the circle through three points of that section a micron apart (21.17 mm
 at the stated design). Restating `hypoid.sv`'s `pressure_shift`, cutter radius and roll ratios as
 unknowns is the issue's next step.
+
+## Contact analysis: the meshing of two flanks
+
+Issue #283's step 3 makes the contact of a pair a locus. `meshing(pinion_flank, gear_flank, under:
+mesh, from:, to:)` turns the first flank with the pinion and the second with the gear, the mesh's
+observer and source. Each flank is an envelope in space or a source standing still (a formed
+gear's cone). At each phase of the pinion it finds the turn of the gear at which the two share a
+point and a normal: the gear's **lag** behind the ratio is the transmission error. A point held to
+it owns the phase and the lag, both pinnable (`Q coincident(t == 0deg, lag == 0) contact`), so a
+stated transmission error is a row of the drawing. After the solve the contact is traced over the
+phase into the transmission error, the path of contact and the bearing on each flank; `solventc`
+reports it (the specification's §6.15.4).
+
+**`contact.sv`** analyses a pair at the mean point. The mesh is `mean_point.sv`'s and the gear is
+formed by the face mill. The pinion is cut by a cutter `grown` times the gear's about M (the
+lengthwise mismatch that localises a bearing) at a roll `roll` times the mesh's. The two cones
+share the generator through M and their normal along it and nothing else, so:
+
+- the pair touches at a point, and the bearing runs along that generator;
+- the pinion is conjugate to the gear at the modified ratio, so the gear lags `(roll − 1)` times
+  the phase, exactly.
+
+```sh
+build/solventc rust/examples/spiral_bevel/contact.sv
+#   bearing: point contact; transmission error (the gear's angle) -0.0375° … 0.0375° over the
+#   phase -15° … 15°, the path of contact 12.6455 long
+```
+
+`gcs-core/tests/meshing.rs` holds the meshing to closed forms:
+
+- a conjugate pair transmits without error, along a line;
+- a pair cut at another ratio transmits at that ratio;
+- `contact.sv`'s bearing lies on the generator, at three designs.
+
+For a cutter turned 2° about the contact normal at M, which touches the gear at M only, it holds
+the meshing to a check computed apart from it. The lag at each phase is the turn of the gear that
+closes the gap between the two members: the pinion's flank's nearest approach to the gear's cone,
+from the cone's equation and the poses alone. The contact found by Newton is local. A pair a
+little off conjugate holds its contact only weakly along the bearing, so it is found only from
+near it; a failed solve seeds the contact again with the flanks where the solve left them.

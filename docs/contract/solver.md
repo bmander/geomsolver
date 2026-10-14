@@ -244,7 +244,11 @@ version ([0.n], see the [language changelog](../solvent-changelog.md)) says wher
   solves on.
   **A chart is gauged where a failed solve ends** (`System::recharted`, `Sketch::charts_moved`):
   one chosen where an unseeded point started can lie in the tangent plane the solve ends at;
-  changed, the system is compiled again and solved on, kept only where it succeeds. An angle's
+  changed, the system is compiled again and solved on, kept only where it succeeds. **A point on
+  a meshing is seeded again where a failed solve ends** (`System::remeshed`, #283): seeded at
+  `Sketch::add`, where the flanks' sources stood before any relation placed them, its lag and
+  places are sought again with the flanks where the solve left them and the point where it began
+  (`constraints::meshing_seed`; a pin kept), and solved on, kept only where that succeeds. An angle's
   bound is held to the relative tolerance itself, not the length one read as radians
   (`bound_reading`): an offset's side about a far apex is a turn of 1e-4.
   `Parallel3` frames across its second operand where that is held and the first not. **A skew

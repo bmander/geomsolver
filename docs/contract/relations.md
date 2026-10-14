@@ -77,13 +77,14 @@ came from.
   place a slot is spelled, read by both printers, as `hint_of` is for the clause around it.
   **The shape is the library's**: every user-facing kind has one or two entity slots, always first
   in spec order, with `Symmetric` the single three-slot exception.  Several kinds share a word —
-  **`coincident` is fifteen kinds, `distance` nine, `tangent` nine** (twins in space included; a set's uses besides) — and `horizontal`/`vertical` are
+  **`coincident` is sixteen kinds, `distance` nine, `tangent` nine** (twins in space included; a set's uses besides) — and `horizontal`/`vertical` are
   two each with the *fixity* doing the work.  **Over an envelope in space** (#283, [0.90]) a point
   is `coincident`, and at a point held there a line or an axis `tangent` (`EnvelopeTangentAt`) or
   `perpendicular` (`EnvelopeNormalAt`), a plane `tangent` (`EnvelopePlaneAt`) and a circle or arc
   `curvature` (`EnvelopeCurvatureAt`): the parser reads `at:` after `perpendicular` and `curvature`
   as a point, as after `tangent` (`op_args`), and `settle` names the envelope first whatever was
-  written first (`curve_last`, the symmetric swap).
+  written first (`curve_last`, the symmetric swap).  **On a meshing** (#283, [0.94]) a point is
+  `coincident` (`PointOnMeshing`), its phase and lag slots pinned by `t ==` and `lag ==`.
   **What a word means is the kinds of its operands, and a name does not carry its kind until
   elaboration** — so the parser resolves *nothing*: it produces a `syntax::Written` and
   `program::settle` turns it into a `CKind` plus arguments in spec order, through

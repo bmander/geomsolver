@@ -4,11 +4,11 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
-**[0.94] A set's body holds of a point of its plane; a call gives every entity, or owns a
+**[0.95] A set's body holds of a point of its plane; a call gives every entity, or owns a
 point.** A plane's membership stated by a set's body (§6.21) of a point drawn in that plane
 already — or twinned there — holds by construction and states no row, so a body meeting a
 sphere with a plane, `{ p | p coincident ball; p coincident std.front }`, takes a point of the
-front onto the circle the front cuts. Through 0.93 the row was refused as asking nothing
+front onto the circle the front cuts. Through 0.94 the row was refused as asking nothing
 (**E061**), which the same words said of the point directly still are (§6.7). And a call that
 leaves out an entity formal is **E103** at the call (a missing point argument, say), as a set or
 group formal left out already was (§5): before, it was said only where the body read the formal,
@@ -18,6 +18,18 @@ nothing. The one exception is new: **a point formal drawn in a plane formal**,
 there (`k.center`), seeded by `center: hint((x, y))` and written back there by a solve — so a set
 family's parameters are its formals whether the call gives them or not, and
 `Circle(std.front, r: 25)` is a circle with a centre of its own.
+
+**[0.94] Two flanks meshing are a locus.** `contact := meshing(pinion_flank, gear_flank, under:
+mesh, from:, to:)` turns the first flank with the pinion — `mesh`'s observer, `mesh :=
+motion(gear_turn, relative_to: pinion_turn)` — and the second with the gear, each an envelope in
+space the solve holds to or a cone, a cylinder or a revolution's side standing still in its member
+(a formed gear's flank), and is where they touch: at each phase of the pinion, the gear turned to
+the ratio's roll plus a lag, the transmission error (§6.15.4). `p coincident contact` holds a
+point to the path of contact, owning the phase `t`, the lag `lag` (degrees) and a place on each
+flank, so a pin states either — `coincident(t == 0deg, lag == 0.01)` — and a number that makes a
+flank solves from it. After the solve the contact is traced over the phase, and `solventc` reports
+each meshing's contact, transmission error and path (`spiral_bevel/contact.sv`, #283). `meshing`
+is an element keyword: `generation/spur_mesh.sv`'s motion called it is `mesh`.
 
 **[0.93] A document naming no unit is in millimetres.** Without a `unit` line a document is
 read exactly as under `unit mm` (§3.3.2): a bare number in a `Length` slot is a millimetre, a

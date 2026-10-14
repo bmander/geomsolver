@@ -237,7 +237,7 @@ pub fn ordinate_word(kind: CKind, args: &[Arg]) -> &str {
 /// cannot be made from the kinds alone.  `None` is "this word does not relate those two", which
 /// the caller reports with the kinds in it.
 pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option<String>) -> Option<CKind> {
-    use EntKind::{Arc, Circle, Curve, Envelope, Line, Plane, Point, Axis, Spline};
+    use EntKind::{Arc, Circle, Curve, Envelope, Line, Meshing, Plane, Point, Axis, Spline};
     let round = |k: EntKind| matches!(k, Circle | Arc);
     // an axis is in space, so a direction relation naming one is the relation in space
     let axes = |a: EntKind, b: EntKind| matches!((a, b), (Axis, Axis | Line) | (Line, Axis));
@@ -256,6 +256,8 @@ pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option
             (Point, Curve) => CKind::PointOnCurve,
             // an envelope in space, whatever view the point is drawn in (#283)
             (Point, Envelope) => CKind::PointOnEnvelope,
+            // the path of contact of two flanks, in the fixed frame (#283)
+            (Point, Meshing) => CKind::PointOnMeshing,
             // in space whatever view the point is in: a plane is a place, not a picture
             (Point, Plane) => CKind::PointOnPlane,
             (Line, Plane) => CKind::LineOnPlane,
