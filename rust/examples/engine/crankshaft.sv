@@ -76,13 +76,13 @@ component WebSide(o: point, x0: Length, x1: Length, top: point, bottom: point) {
   c := point hint((o.x + x1, bottom.y))
   d := point hint((o.x + x0, bottom.y))
   (ab := line(a, b)) -> (bc := line(b, c)) -> (cd := line(c, d)) -> (da := line(d, a)) -> close
-  o distance(x0, along: x) a
+  o distance(x0, along: u) a
   top horizontal a
-  o distance(x1, along: x) b
+  o distance(x1, along: u) b
   top horizontal b
-  o distance(x1, along: x) c
+  o distance(x1, along: u) c
   bottom horizontal c
-  o distance(x0, along: x) d
+  o distance(x0, along: u) d
   bottom horizontal d
 }
 
@@ -125,13 +125,13 @@ component Crankshaft(end: plane, side: plane, o: point, ax: line, o_s: point,
       k := i * (3 - i) / 2
       ph := dims.theta + 180deg * k
       pin_s := point hint((o_s.x + xc, o_s.y + dims.R * cos(ph)))
-      o_s distance(xc, along: x) pin_s
+      o_s distance(xc, along: u) pin_s
       pin := engine.parts.Box(pin_s, x0: -wpin / 2, y0: -dims.rp, x1: wpin / 2, y1: dims.rp)
       // the throw's crown and heel at this cylinder, their heights the end view's
       ct := point hint((o_s.x + xc, o_s.y + (dims.R + eP) * cos(ph)))
       hb := point hint((o_s.x + xc, o_s.y - rcw * cos(ph)))
-      o_s distance(xc, along: x) ct
-      o_s distance(xc, along: x) hb
+      o_s distance(xc, along: u) ct
+      o_s distance(xc, along: u) hb
       wl := WebSide(o_s, x0: xc - dims.P / 2 + wj / 2, x1: xc - wpin / 2, top: ct, bottom: hb)
       wr := WebSide(o_s, x0: xc + wpin / 2, x1: xc + dims.P / 2 - wj / 2, top: ct, bottom: hb)
     }
@@ -144,8 +144,8 @@ component Crankshaft(end: plane, side: plane, o: point, ax: line, o_s: point,
       seal := engine.parts.Box(o_s, x0: dims.back - 25mm + wj / 2, y0: -dims.rseal, x1: dims.back + 8mm, y1: dims.rseal)
       flange := engine.parts.Box(o_s, x0: dims.back + 8mm, y0: -dims.rflange, x1: dims.back + 8mm + dims.wflange, y1: dims.rflange)
       flywheel := engine.parts.Box(o_s, x0: dims.back + 8mm + dims.wflange, y0: -dims.rfw, x1: dims.back + 8mm + dims.wflange + dims.wfw, y1: dims.rfw)
-      claim journal[0].a distance(wj, along: x) journal[0].b
-      claim pin[0].a distance(wpin, along: x) pin[0].b
+      claim journal[0].a distance(wj, along: u) journal[0].b
+      claim pin[0].a distance(wpin, along: u) pin[0].b
     }
   }
 

@@ -101,12 +101,12 @@ function cCoincident(): void {
  *  The pair is ordered so the number reads positive: a run or a rise is signed from the first
  *  point to the second, so which of the two comes first is what its sign says. */
 function pairDim(kind: PairDimension, a: Point, b: Point): Constraint {
-  // a run measures x and a rise measures y — an ordinate along the view's axis, the word naming
-  // it; a length has no axis of its own, and no sign
+  // a run measures the view's u and a rise its v — an ordinate along the view's axis, the word
+  // naming it; a length has no axis of its own, and no sign
   const axis = kind === 'run' ? 0 : kind === 'rise' ? 1 : null;
   if (axis === null) return C.build('Distance', [a, b, distanceBetween(a, b)]);
   const [p, q] = b.xy[axis] < a.xy[axis] ? [b, a] : [a, b];
-  return C.build('Ordinate', [p, q, null, q.xy[axis] - p.xy[axis], axis === 0 ? 'x' : 'y']);
+  return C.build('Ordinate', [p, q, null, q.xy[axis] - p.xy[axis], axis === 0 ? 'u' : 'v']);
 }
 
 /** Put a dimension on the selection — the one path all six dimension buttons take.

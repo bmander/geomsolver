@@ -233,7 +233,7 @@ component Part(d: group) {
   a := point
   fix((0, 0)) a
   b := point hint((length, 0))
-  a distance(length, along: x) b
+  a distance(length, along: u) b
   a horizontal b
 }
 in std.front {

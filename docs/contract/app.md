@@ -287,9 +287,9 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   direction, puts a head where each point falls on that line and runs an extension line out to
   each point.  `Pen::aligned` is the case where the direction is the pair's own; a run or a rise
   passes a page axis instead.
-- A dimension between two points is three — `Distance`, and an `Ordinate` `along: x` or `y` —
+- A dimension between two points is three — `Distance`, and an `Ordinate` `along: u` or `v` —
   *stated by where the number is put*: `callout::pair_dimension` (`PairDimension`) picks the
-  line (pair's own, page x, page y) nearest the direction from the pair's middle to the
+  line (pair's own, the view's u, its v) nearest the direction from the pair's middle to the
   placement; bisector borders, no threshold, a tie to the length.  The front end asks
   (`gcs_dimension_pair_kind` → 0 length, 1 run, 2 rise) and swaps the constraint as the pointer moves
   (`SketchView.startDimension`, where a dimension is written: stated at once, number edited on

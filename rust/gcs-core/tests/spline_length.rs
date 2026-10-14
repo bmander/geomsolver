@@ -69,7 +69,7 @@ fn a_stated_length_bends_the_curve_to_it() {
                k0 := point\nk1 := point hint((10, 5))\nk2 := point hint((20, 8))\n\
                k3 := point hint((30, 4))\nk4 := point\n\
                fix((0, 0)) k0\nfix((40, 0)) k4\n\
-               k1 distance(12) k0\nk3 distance(12) k4\nk2 level(x) k1\n\
+               k1 distance(12) k0\nk3 distance(12) k4\nk2 level(u) k1\n\
                s := spline(k0, k1, k2, k3, k4)\nlength(55) s\n}\n";
     let e = solved(src);
     let l = polyline_length(&e, 0);
@@ -89,7 +89,7 @@ fn a_free_length_is_read_off_the_fixed_curve() {
                s := spline(k0, k1, k2, k3)\n\
                m0 := point\nm1 := point hint((10, 30))\nm2 := point hint((20, 30))\nm3 := point\n\
                fix((0, 20)) m0\nfix((30, 20)) m3\n\
-               m1 level(y) m2\nm2 distance(10, along: x) m1\n\
+               m1 level(v) m2\nm2 distance(10, along: u) m1\n\
                t := spline(m0, m1, m2, m3)\n}\n\
                param L: Length hint(40)\nlength(L) s\nlength(L) t\n";
     let e = solved(src);

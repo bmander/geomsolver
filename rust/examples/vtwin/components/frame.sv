@@ -58,9 +58,9 @@ component FrameBlank(o: point, dims: group) {
   (bottom := line(p0.p, p1.p)) -> (edge_r := line(p1.p, p2.p)) -> (cham_r := line(p2.p, p3.p)) ->
     (topline := line(p3.p, p4.p)) -> (cham_l := line(p4.p, p5.p)) -> (edge_l := line(p5.p, p0.p)) -> close
   claim p0.p distance(2 * dims.fx) p1.p
-  claim p1.p distance(dims.fy1 - dims.fy0, along: y) p3.p
-  claim p3.p distance(dims.fch, along: x) p2.p
-  claim p2.p distance(dims.fch, along: y) p3.p
+  claim p1.p distance(dims.fy1 - dims.fy0, along: v) p3.p
+  claim p3.p distance(dims.fch, along: u) p2.p
+  claim p2.p distance(dims.fch, along: v) p3.p
   // the shaft's hole, and the bearings' pocket behind
   sh := circle(center: o) hint(r: dims.shafthole / 2)
   radius(dims.shafthole / 2) sh
@@ -154,14 +154,14 @@ component FrameInlet(o: point, dims: group) {
   plug_body := components.parts.Box(o, x0: -dims.mplug_body_d / 2, y0: coupling_top, x1: dims.mplug_body_d / 2, y1: plug_top)
   plug_nose := components.parts.Box(o, x0: -dims.mplug_nose_d / 2, y0: plug_top, x1: dims.mplug_nose_d / 2, y1: plug_top + dims.mplug_nose_l)
   claim boss.a distance(dims.bossw) boss.b
-  claim boss.a distance(dims.bossh - dims.fy1, along: y) boss.d
+  claim boss.a distance(dims.bossh - dims.fy1, along: v) boss.d
   claim cplh.a distance(dims.cplhole) cplh.b
-  claim cplh.a distance(dims.cplin, along: y) cplh.d
+  claim cplh.a distance(dims.cplin, along: v) cplh.d
   claim passage.a distance(dims.wch) passage.b
   tb := components.parts.At(o, dx: 0mm, dy: dims.Ty)
   tbore := circle(center: tb.p) hint(r: barbore / 2)
   radius(barbore / 2) tbore
-  claim o distance(dims.Ty, along: y) tb.p
+  claim o distance(dims.Ty, along: v) tb.p
   claim radius(barbore / 2) tbore
 
   // The coupling bore turns about an axis in the page; the other features are sweeps.

@@ -92,7 +92,7 @@ fn a_line_solves_tangent_to_a_curve() {
 fn a_circle_solves_osculating_a_curve() {
     let src = format!(
         "{INVOLUTE}in std.front {{\nk := point hint((5, 20))\nosc := circle(center: k) hint(r: 15)\n\
-         inv curvature osc hint(t: 60)\no distance(12, along: x) k\n}}\n"
+         inv curvature osc hint(t: 60)\no distance(12, along: u) k\n}}\n"
     );
     let mut e = build(&src);
     fd_jacobian(&e.sketch, 1e-5);
@@ -144,7 +144,7 @@ fn a_line_solves_tangent_to_a_traced_curve() {
 fn a_circle_solves_osculating_a_traced_curve() {
     let src = format!(
         "{UNWIND}in std.front {{\nk := point hint((5, 20))\nosc := circle(center: k) hint(r: 15)\n\
-         inv curvature osc hint(t: 60)\no distance(12, along: x) k\n}}\n"
+         inv curvature osc hint(t: 60)\no distance(12, along: u) k\n}}\n"
     );
     let mut e = build(&src);
     let r = solve(&mut e.sketch, SolveOpts::default());

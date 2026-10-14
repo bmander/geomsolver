@@ -214,7 +214,7 @@ whichever is written first (`l tangent g` is `g tangent l`).
 | word | fixity | operands and options |
 |---|---|---|
 | `coincident` | infix | two points; a point to a line, circle, arc, spline or curve; in space, a point, line or axis to a plane, a point or line to an axis, two axes; a point to a set (1.13) |
-| `distance` | infix | two points (length; with `along:`, an **ordinate**: signed from the first to the second along an axis, a line, or a view's word `x`/`y`/`right`/`left`/`up`/`down`); a point and a line, or two lines (a magnitude, `side:` picks the side); two concentric circles or arcs; a point and a plane (`along: u`/`v`/`n`); two planes (along the first's normal) |
+| `distance` | infix | two points (length; with `along:`, an **ordinate**: signed from the first to the second along an axis, a line, or the view's own `u`/`v`, `right`/`left`/`up`/`down` with the sign said); a point and a line, or two lines (a magnitude, `side:` picks the side); two concentric circles or arcs; a point and a plane (`along: u`/`v`/`n`); two planes (along the first's normal) |
 | `distance` | prefix | a line: its length |
 | `tangent` | infix | line–circle/arc (`at: p1`/`p2` for tangency at that end; `side:` the centre's side); circle/arc–circle/arc (`external: true/false`); arc–line (`at: start`/`end`); spline or curve–line; any path–line `at:` a point a relation holds on the path (below); a line or set to a set (1.13) |
 | `equal` | infix | two lines (length) or two circles/arcs (radius) |
@@ -238,7 +238,7 @@ whichever is written first (`l tangent g` is `g tangent l`).
 | `p distance(12) ax` | 12 from line `ax`, **either side**; the seed picks |
 | `p distance(12, side: left) ax` | left of `ax`'s direction `p1 → p2`; `right` likewise |
 | `l1 distance(6, side: left) l2` | `l2`'s `p1` lies left of `l1` |
-| `a distance(60, along: x) b` | `b.x − a.x = 60`; `along: y` is the rise; `right`, `up`, … say it as a word |
+| `a distance(60, along: u) b` | `b.x − a.x = 60`, the run along the view's `u`; `along: v` is the rise, along its `v` (world z in `std.front`); `right`, `up`, … say it as a word |
 | `a distance(60, along: t) b` | `(b − a)·t̂ = 60` along axis or line `t` |
 | `a level(t) b` | level along `t`; `std`'s `a horizontal b` is `a level(up) b` |
 | `l1 angle(30) l2` | 30° **counter-clockwise** from `l1`'s direction to `l2`'s |
@@ -301,8 +301,8 @@ their places in space; no selector is needed:
 | `a midpoint l`, `a symmetry(l) b` | the midpoint in space; a half turn about the line |
 | `a distance(20, along: std.z) b` | how far apart along the axis, in space |
 
-A word with no meaning in space — `horizontal`, a view's own `along: x` (name the axis instead,
-`along: std.x`), `tangent` between drawn figures, the angle-equals-angle form — is **E062** across
+A word with no meaning in space — `horizontal`, a view's own `along: u` between two points (name
+the axis instead, `along: std.x`), `tangent` between drawn figures, the angle-equals-angle form — is **E062** across
 views; `sense:` and `side:` there are **E040**. Radii mean the same in every view.
 
 ### 1.6 Values, unknowns and units
@@ -1172,7 +1172,7 @@ in std.front {
   ax := vertical line(q0, q1)
   fix((0, 0)) q0
   q0 distance(10) q1
-  q0 distance(10, along: x) p0
+  q0 distance(10, along: u) p0
   q0 horizontal p0
   p0 distance(4) p1
   p1 distance(6) p2
@@ -1204,8 +1204,8 @@ Add to the 60 × 40 plate, inside its `in std.front` block:
 
 ```
 o := point hint((30, 20))
-a distance(30, along: x) o
-a distance(20, along: y) o
+a distance(30, along: u) o
+a distance(20, along: v) o
 hole := circle(center: o) hint(r: 5)
 radius(5) hole
 hole_f := face(hole)
@@ -1802,14 +1802,14 @@ in std.front {
   Af := point
   fix((0, 0)) Af
   Bf := point hint((60, 40))
-  Af distance(60, along: x) Bf
-  Af distance(40, along: y) Bf
+  Af distance(60, along: u) Bf
+  Af distance(40, along: v) Bf
 }
 in std.top {
   At := point
   fix((0, 0)) At
   Bt := point
-  At distance(30, along: y) Bt
+  At distance(30, along: v) Bt
 }
 in std.side {
   Ar := point

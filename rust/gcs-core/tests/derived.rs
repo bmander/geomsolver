@@ -127,7 +127,7 @@ fn a_view_in_the_plane_a_face_was_drawn_in_is_the_face_itself() {
 fn a_bore_along_the_eye_is_two_hidden_lines_in_the_view_beside_it() {
     let src = format!(
         "{RECT}in std.front {{\no := point hint((30, 20))\n\
-         a distance(30, along: x) o\na distance(20, along: y) o\n\
+         a distance(30, along: u) o\na distance(20, along: v) o\n\
          hole := circle(center: o) hint(r: 8)\nradius(8) hole\n}}\nhole_f := face(hole)\n\
          stock := solid(sec, depth: 30mm)\nbore := solid(hole_f, depth: 30mm)\n\
          body := solid(stock)\nbore cut body\nview(body) in std.side\n"
@@ -154,7 +154,7 @@ fn a_cylinder_is_two_lines_at_every_zoom() {
     // silhouette, never by the facets the kernel happens to have cut it into
     let src = format!(
         "{RECT}in std.front {{\no := point hint((30, 20))\n\
-         a distance(30, along: x) o\na distance(20, along: y) o\n\
+         a distance(30, along: u) o\na distance(20, along: v) o\n\
          rim := circle(center: o) hint(r: 10)\nradius(10) rim\n}}\nrf := face(rim)\n\
          cyl := solid(rf, depth: 25mm)\nview(cyl) in std.side\n"
     );
@@ -172,7 +172,7 @@ fn a_cylinder_is_two_lines_at_every_zoom() {
 fn a_section_shows_the_cut() {
     let src = format!(
         "{RECT}in std.front {{\no := point hint((30, 20))\n\
-         a distance(30, along: x) o\na distance(20, along: y) o\n\
+         a distance(30, along: u) o\na distance(20, along: v) o\n\
          hole := circle(center: o) hint(r: 8)\nradius(8) hole\n}}\nhole_f := face(hole)\n\
          stock := solid(sec, depth: 30mm)\nbore := solid(hole_f, depth: 30mm)\n\
          body := solid(stock)\nbore cut body\nsection(body, at: std.front) in std.front\n"

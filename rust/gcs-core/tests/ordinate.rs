@@ -117,7 +117,7 @@ fn level_across_views_is_the_same_height() {
 fn a_views_words_are_its_own_axes() {
     let e = read(&format!(
         "{VIEWS}in std.front {{\nd := point hint((1, 1))\n}}\n\
-         a distance(20, along: x) a2\na distance(-15, along: y) a2\nd level(up) a\n\
+         a distance(20, along: u) a2\na distance(-15, along: v) a2\nd level(up) a\n\
          d vertical a2\nb distance(5, along: u) std.top\nc level(v) std.side\n"
     ));
     use OrdinateForm::*;
@@ -141,8 +141,8 @@ fn a_views_words_are_its_own_axes() {
     assert_eq!(
         said(&e),
         vec![
-            "a distance(20, along: x) a2",
-            "a distance(-15, along: y) a2",
+            "a distance(20, along: u) a2",
+            "a distance(-15, along: v) a2",
             "d level(up) a",
             "d vertical a2",
             "b distance(5, along: u) std.top",
@@ -170,7 +170,7 @@ fn along_a_planes_normal_is_a_height_off_it() {
 #[test]
 fn an_ordinate_survives_a_document_and_a_lift() {
     let e = read(&format!(
-        "{VIEWS}a distance(25, along: std.x) b\na distance(20, along: x) a2\nb level(std.y) c\n"
+        "{VIEWS}a distance(25, along: std.x) b\na distance(20, along: u) a2\nb level(std.y) c\n"
     ));
     let back = io::loads(&io::dumps(&e.sketch, None)).unwrap();
     let f = |sk: &Sketch| -> Vec<Option<OrdinateForm>> {
@@ -186,10 +186,10 @@ fn an_ordinate_survives_a_document_and_a_lift() {
 fn a_page_word_needs_both_points_in_one_view() {
     refused(&format!("{VIEWS}a horizontal b\n"), "E062", "no meaning in space", "a horizontal b");
     refused(
-        &format!("{VIEWS}a distance(5, along: x) b\n"),
+        &format!("{VIEWS}a distance(5, along: u) b\n"),
         "E062",
         "no meaning in space",
-        "a distance(5, along: x) b",
+        "a distance(5, along: u) b",
     );
 }
 
@@ -200,19 +200,92 @@ fn a_direction_is_an_axis_or_a_line_never_a_plane() {
     refused(&format!("{VIEWS}a level(n) std.side\n"), "E040", "is on the plane", "a level(n) std.side");
 }
 
+/// A plane's normal is said against the plane; between two points it is no direction.  (Its
+/// `u` and `v` between two points are the view's, which `u_and_v_are_the_plane_at_hands` holds.)
 #[test]
 fn a_planes_own_words_are_against_the_plane() {
-    refused(&format!("{VIEWS}a distance(5, along: u) a2\n"), "E040", "own direction", "along");
+    refused(&format!("{VIEWS}a distance(5, along: n) a2\n"), "E040", "own direction", "along");
     refused(&format!("{VIEWS}a distance(5, along: std.x) std.top\n"), "E040", "one of its own", "along");
+    let page_word = format!("{VIEWS}b distance(5, along: right) std.top\n");
+    refused(&page_word, "E040", "one of its own", "along");
+}
+
+/// **One vocabulary for a view's directions** (#268): a view is a plane, so `u` and `v` are the
+/// plane at hand's — the plane operand's against one, else the view both points are drawn in —
+/// and `right` and `up` are the same two with the sign said.  Between two points of
+/// `std.front`, `along: v` is the front's `v`, world z — what `along: up` measures — and never
+/// the world's y.
+#[test]
+fn u_and_v_are_the_plane_at_hands() {
+    let e = read(&format!(
+        "{VIEWS}a distance(20, along: u) a2\na distance(15, along: v) a2\n\
+         a2 level(u) std.front.origin\nb distance(5, along: u) std.top\n"
+    ));
+    use OrdinateForm::*;
+    assert_eq!(
+        forms(&e),
+        vec![
+            (CKind::Ordinate, PageU),
+            (CKind::Ordinate, PageV),
+            (CKind::Level, PageU),
+            (CKind::Ordinate, CoordU),
+        ]
+    );
+    let sk = solved(&e);
+    let (a, a2) = (at(&e, &sk, "a"), at(&e, &sk, "a2"));
+    // the run along world x, the rise along world z (the front's `v`), nothing along world y
+    assert!((a2[0] - a[0] - 20.0).abs() < 1e-9, "{a:?} {a2:?}");
+    assert!((a2[2] - a[2] - 15.0).abs() < 1e-9, "{a:?} {a2:?}");
+    assert!((a2[1] - a[1]).abs() < 1e-9, "{a:?} {a2:?}");
+    // and the word reads back as written, between points and against a plane alike
+    assert_eq!(
+        said(&e),
+        vec![
+            "a distance(20, along: u) a2",
+            "a distance(15, along: v) a2",
+            "a2 level(u) std.front.origin",
+            "b distance(5, along: u) std.top",
+        ]
+    );
+    // `u` is `right` and `v` is `up`, the sign unsaid: the same ordinate, the same solution
+    let signed = read(&format!(
+        "{VIEWS}a distance(20, along: right) a2\na distance(15, along: up) a2\n"
+    ));
+    let sk2 = solved(&signed);
+    let (b, b2) = (at(&signed, &sk2, "a"), at(&signed, &sk2, "a2"));
+    for k in 0..3 {
+        assert!(((a2[k] - a[k]) - (b2[k] - b[k])).abs() < 1e-9, "{k}: {a:?} {a2:?} {b:?} {b2:?}");
+    }
+}
+
+/// `x` and `y` are retired (#268): between two points of `std.front` they read as the world's
+/// letters and meant the view's, so `along: y` was world z.  Each is refused at the key, naming
+/// what it became — and, no longer a word, is free to be a name.
+#[test]
+fn x_and_y_are_no_longer_direction_words() {
+    for (old, now) in [("x", "u"), ("y", "v")] {
+        let want = format!(
+            "`{old}` is no longer a direction word: a view's own directions are `u` and `v`, as a \
+             plane's are, and `right`, `left`, `up` and `down` say the sign — write `{now}`"
+        );
+        refused(&format!("{VIEWS}a distance(5, along: {old}) a2\n"), "E040", &want, "along");
+        refused(&format!("{VIEWS}a level({old}) a2\n"), "E040", &want, old);
+    }
+    // a direction by that name is a reference like any other
+    let e = read(&format!(
+        "{VIEWS}x := axis hint(dir: (1, 0, 0))\nfix(dir == (1, 0, 0)) x\n\
+         a distance(5, along: x) a2\n"
+    ));
+    assert_eq!(said(&e), vec!["a distance(5, along: x) a2".to_string()]);
 }
 
 #[test]
 fn a_zero_written_so_is_a_level() {
-    refused(&format!("{VIEWS}a distance(0mm, along: y) a2\n"), "E040", "`a level(y) a2`", "0mm");
+    refused(&format!("{VIEWS}a distance(0mm, along: v) a2\n"), "E040", "`a level(v) a2`", "0mm");
     refused(&format!("{VIEWS}b distance(0, along: v) std.top\n"), "E040", "`b level(v) std.top`", "0");
     refused(&format!("{VIEWS}a distance(0, along: std.x) b\n"), "E040", "`a level(std.x) b`", "0");
     // a zero a name stands for is a dimension like any other
-    let e = read(&format!("{VIEWS}w := 0mm\na distance(w, along: x) a2\n"));
+    let e = read(&format!("{VIEWS}w := 0mm\na distance(w, along: u) a2\n"));
     assert_eq!(forms(&e), vec![(CKind::Ordinate, OrdinateForm::PageU)]);
 }
 
@@ -231,7 +304,7 @@ fn a_direction_word_that_names_a_direction_is_refused() {
         "also the name of a direction",
         "a level(up) a2",
     );
-    let e = read(&format!("{VIEWS}in std.front {{\nx := point hint((2, 2))\n}}\nx distance(4, along: x) a\n"));
+    let e = read(&format!("{VIEWS}in std.front {{\nu := point hint((2, 2))\n}}\nu distance(4, along: u) a\n"));
     assert_eq!(forms(&e), vec![(CKind::Ordinate, OrdinateForm::PageU)]);
 }
 
@@ -251,7 +324,7 @@ fn along_a_views_normal_between_its_own_points_is_refused() {
 fn every_form_can_be_written_free() {
     let e = read(&format!(
         "{VIEWS}param s: Length hint(5)\nin std.front {{\nl := line(hint((0, 0)), hint((3, 4)))\n}}\n\
-         a distance(s, along: x) a2\na distance(s, along: y) a2\na distance(s, along: l) a2\n\
+         a distance(s, along: u) a2\na distance(s, along: v) a2\na distance(s, along: l) a2\n\
          a distance(s, along: std.x) b\na distance(s, along: n) std.top\n"
     ));
     let mut seen = Vec::new();

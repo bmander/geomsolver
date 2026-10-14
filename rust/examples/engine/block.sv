@@ -33,7 +33,7 @@ component EngineBlock(end: plane, side: plane, top: plane, o: point, o_s: point,
     wall_l := line(bl0, bl1.p)
     wall_r := line(br0, br1.p)
     bl0 offset(dx: -dims.D / 2, dy: dims.deck) o
-    o distance(dims.deck, along: y) br0
+    o distance(dims.deck, along: v) br0
     bl0 distance(dims.D) br0
     // the outline: deck, walls, skirt, pan rail
     d_l := point hint((o.x - dims.hw, o.y + dims.deck))
@@ -48,10 +48,10 @@ component EngineBlock(end: plane, side: plane, top: plane, o: point, o_s: point,
       (kr := line(k_r.p, pr_r)) -> (railline := line(pr_r, pr_l)) -> (kl := line(pr_l, k_l.p)) ->
       (sk_l := line(k_l.p, s_l.p)) -> (b_l := line(s_l.p, d_l)) -> close
     d_l offset(dx: -dims.hw, dy: dims.deck) o
-    o distance(dims.deck, along: y) d_r
+    o distance(dims.deck, along: v) d_r
     d_l distance(2 * dims.hw) d_r
     pr_l offset(dx: -dims.kw, dy: dims.rail) o
-    o distance(dims.rail, along: y) pr_r
+    o distance(dims.rail, along: v) pr_r
     pr_l distance(2 * dims.kw) pr_r
     // the main bearing behind the section: the shell round the journal, hidden, and the cap
     // below the parting line at the crank's axis
@@ -72,8 +72,8 @@ component EngineBlock(end: plane, side: plane, top: plane, o: point, o_s: point,
     (su_r := line(pr_r, sh_r.p)) -> (ss_r := line(sh_r.p, sp_r)) -> (sb := line(sp_r, sp_l)) ->
       (ss_l := line(sp_l, sh_l.p)) -> (su_l := line(sh_l.p, pr_l))
     sp_l offset(dx: -60, dy: dims.sump) o
-    o distance(60, along: x) sp_r
-    sp_r distance(-dims.sump, along: y) o
+    o distance(60, along: u) sp_r
+    sp_r distance(-dims.sump, along: v) o
   }
 
   // -- across the axis: the casting edge on -----------------------------------------------
@@ -86,9 +86,9 @@ component EngineBlock(end: plane, side: plane, top: plane, o: point, o_s: point,
     blockfront := line(bfl, rfl)
     blockback := line(bfr, rfr)
     rl := line(rfl, rfr)
-    o_s distance(dims.front, along: x) bfl
-    o_s distance(dims.front, along: x) rfl
-    o_s distance(dims.back, along: x) rfr
+    o_s distance(dims.front, along: u) bfl
+    o_s distance(dims.front, along: u) rfl
+    o_s distance(dims.back, along: u) rfr
     horizontal dl
     horizontal rl
     bfl distance(dims.back - dims.front) bfr
@@ -101,12 +101,12 @@ component EngineBlock(end: plane, side: plane, top: plane, o: point, o_s: point,
     (s1 := line(q_a, q_b)) -> (s2 := line(q_b, q_c)) -> (s3 := line(q_c, q_d)) -> (s4 := line(q_d, q_e))
     q_a coincident rl
     q_e coincident rl
-    o_s distance(dims.front + 15mm, along: x) q_a
-    o_s distance(dims.back - 10mm, along: x) q_e
-    o_s distance(dims.front + 45mm, along: x) q_b
-    q_d distance(45, along: y) q_b
-    o_s distance(dims.front + 150mm, along: x) q_c
-    o_s distance(dims.back - 40mm, along: x) q_d
+    o_s distance(dims.front + 15mm, along: u) q_a
+    o_s distance(dims.back - 10mm, along: u) q_e
+    o_s distance(dims.front + 45mm, along: u) q_b
+    q_d distance(45, along: v) q_b
+    o_s distance(dims.front + 150mm, along: u) q_c
+    o_s distance(dims.back - 40mm, along: u) q_d
     horizontal s3
     // the four bores, their walls down from the deck
     repeat 4 as i {
@@ -119,12 +119,12 @@ component EngineBlock(end: plane, side: plane, top: plane, o: point, o_s: point,
       wall_r := line(wr0, wr1)
       wl0 coincident dl
       wr0 coincident dl
-      ax.p distance(-dims.D / 2, along: x) wl0
-      ax.p distance(dims.D / 2, along: x) wr0
-      ax.p distance(-dims.D / 2, along: x) wl1
-      ax.p distance(dims.D / 2, along: x) wr1
-      wl0 distance(-dims.wall, along: y) wl1
-      wr0 distance(-dims.wall, along: y) wr1
+      ax.p distance(-dims.D / 2, along: u) wl0
+      ax.p distance(dims.D / 2, along: u) wr0
+      ax.p distance(-dims.D / 2, along: u) wl1
+      ax.p distance(dims.D / 2, along: u) wr1
+      wl0 distance(-dims.wall, along: v) wl1
+      wr0 distance(-dims.wall, along: v) wr1
     }
     // the five bulkheads and their main bearings
     repeat 5 as j {

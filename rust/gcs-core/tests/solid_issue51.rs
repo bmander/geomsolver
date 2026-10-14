@@ -138,7 +138,7 @@ fn sweep_bounds_use_the_inferred_variable_dimension_and_user_units() {
     let src = source("sweep_possible")
         .replace("c := circle(center:o)", "q := point\nfix((1, 0)) q\nc := circle(center:o)")
         .replace(
-            "o distance(reach,along:x) p",
+            "o distance(reach,along:u) p",
             "datum := line(o,q)\nradial := line(o,p)\ndatum angle(reach) radial",
         )
         .replace("param reach: Length", "param reach: Angle")

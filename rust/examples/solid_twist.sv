@@ -38,6 +38,6 @@ in std.top {
   exit := point hint((0mm, length))
   construction centerline guide := line(entry, exit)
   vertical guide
-  entry distance(length, along: y) exit
+  entry distance(length, along: v) exit
 }
 body := solid(face(a0, a1, a2, a3, -> close), face(b0, b1, b2, b3, -> close), along: guide)

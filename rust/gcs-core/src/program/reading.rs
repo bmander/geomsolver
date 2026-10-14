@@ -123,10 +123,12 @@ pub(super) fn in_space(
 ) -> Result<Option<(CKind, Vec<Arg>, Vec<bool>)>, (bool, String)> {
     // an ordinate is one statement in a view and in space — its form says which kernel reads it
     // (`constraints::OrdinateForm`) — but a direction said as a view's own word is an axis of
-    // the view both points are drawn in, and across views there is none
+    // the view both points are drawn in, and across views there is none.  `u` and `v` are the
+    // plane at hand's: the plane operand's where one was written (`against_plane`), else the view's
     if kind.word_slot().is_some() {
         let word = crate::constraints::ordinate_word(kind, args);
-        if crate::constraints::Toward::of(word).is_some_and(|t| !t.of_plane()) {
+        let in_view = crate::constraints::Toward::of(word).is_some_and(|t| t.in_view().is_some());
+        if in_view && !crate::constraints::against_plane(sk, word, args[0].ent(), &args[2]) {
             let (p, q) = (args[0].ent().i(), args[1].ent().i());
             if crate::constraints::shared_view(sk, p, q).is_none() {
                 return Err((false, format!(

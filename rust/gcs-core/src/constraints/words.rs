@@ -5,14 +5,16 @@ use super::*;
 
 /// **The words a direction may be written as** (`docs/ordinate-plan.md`): `along:` an ordinate
 /// is measured on, and what `level` keeps level.  A direction is otherwise a reference — an axis
-/// or a drawn line — and these name the ones a drawing has without naming them: the axes of the
-/// view both points are drawn in (`x`, `y`, and with the sign said, `right`, `left`, `up`,
-/// `down`), or, against a plane, its own `u`, `v` and normal (`n`).  One table, read by the
-/// parser (a word here is a word, never a name), by `infix_op`, by the elaborator's refusal and
-/// by the inference of the direction itself (`infer_entity`); the signs are `side_words`'.
-pub const ALONG: [(&str, Toward); 9] = [
-    ("x", Toward::PageU),
-    ("y", Toward::PageV),
+/// or a drawn line — and these name the ones a drawing has without naming them: **the plane at
+/// hand's own `u` and `v`** — the plane operand's, against one, else the view both points are
+/// drawn in (a view is a plane, §6.7) — its normal `n` (against a plane only), and the view's
+/// two with the sign said in the word, `right`, `left`, `up`, `down`.  One vocabulary for a
+/// view's directions (#268): `x` and `y`, which named the view's `u` and `v` by a second set of
+/// letters and read as the world's when they were not (in `std.front`, `y` was world z), are
+/// retired, and `RETIRED` says so where one is written.  One table, read by the parser (a word
+/// here is a word, never a name), by `infix_op`, by the elaborator's refusal and by the
+/// inference of the direction itself (`infer_entity`); the signs are `side_words`'.
+pub const ALONG: [(&str, Toward); 7] = [
     ("u", Toward::PlaneU),
     ("v", Toward::PlaneV),
     // a point's signed distance along a plane's normal, in space whatever views it is in
@@ -23,6 +25,16 @@ pub const ALONG: [(&str, Toward); 9] = [
     ("up", Toward::PageV),
     ("down", Toward::PageV),
 ];
+
+/// The direction words `ALONG` no longer has, and the one each is now written as (#268).  A name
+/// is free to be a name, so `along: x` reads `x` as a reference where the scope has one; where it
+/// names nothing the refusal says what the word became, at the key.
+pub const RETIRED: [(&str, &str); 2] = [("x", "u"), ("y", "v")];
+
+/// What a retired direction word is written as now, if `word` is one (`RETIRED`).
+pub fn retired_word(word: &str) -> Option<&'static str> {
+    RETIRED.iter().find(|(w, _)| *w == word).map(|(_, now)| *now)
+}
 
 /// The words alone, in `ALONG`'s order: what the registry publishes and `words` offers.
 pub const ALONG_WORDS: [&str; ALONG.len()] = {
@@ -39,10 +51,16 @@ pub const ALONG_WORDS: [&str; ALONG.len()] = {
 /// the plane's an ordinate is measured against.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Toward {
+    /// `right`, `left`: the view's `u`, the sign said in the word.
     PageU,
+    /// `up`, `down`: the view's `v`.
     PageV,
+    /// `u`: the plane operand's own `u` against a plane, else the `u` of the view both points
+    /// are drawn in (`in_view`) — one direction, whichever plane is at hand.
     PlaneU,
+    /// `v`: likewise.
     PlaneV,
+    /// `n`: a plane's normal, against the plane only.
     PlaneN,
 }
 
@@ -52,9 +70,37 @@ impl Toward {
         ALONG.iter().find(|(w, _)| *w == word).map(|(_, t)| *t)
     }
 
-    /// Whether the word names a plane's own direction, so the second operand is that plane.
+    /// Whether the word may name a plane's own direction, so the second operand may be that
+    /// plane: `u` and `v` (which with no plane operand are the view's, `in_view`) and `n`.
     pub fn of_plane(self) -> bool {
         matches!(self, Toward::PlaneU | Toward::PlaneV | Toward::PlaneN)
+    }
+
+    /// The axis of the view both points are drawn in that the word names there, with no plane
+    /// operand (`PageU` or `PageV`): `u`, `right` and `left` its `u`, `v`, `up` and `down` its
+    /// `v`.  `None` for `n`, which is a plane's normal and never a view's direction.
+    pub fn in_view(self) -> Option<Toward> {
+        match self {
+            Toward::PageU | Toward::PlaneU => Some(Toward::PageU),
+            Toward::PageV | Toward::PlaneV => Some(Toward::PageV),
+            Toward::PlaneN => None,
+        }
+    }
+}
+
+/// **Whether an ordinate's word is read against a plane** — `q distance(d, along: u) P`, which
+/// `program::relations::ordinate_operands` rewrote from `P.origin` along `P.u` — rather than in
+/// the view both of its points are drawn in.  `n` always is; `u` and `v` are where the first
+/// point is a plane's origin and the direction that plane's own axis, which the page reading
+/// written from a view's own origin also is, and there the two readings are one ordinate.
+pub fn against_plane(sk: &Sketch, word: &str, p: EntRef, t: &Arg) -> bool {
+    let Some(toward) = Toward::of(word).filter(|t| t.of_plane()) else { return false };
+    let Some(pl) = sk.plane_of_origin(p.i()) else { return toward == Toward::PlaneN };
+    match (toward, t) {
+        (Toward::PlaneU, Arg::Ent(t)) => *t == EntRef::axis(sk.planes[pl].u as usize),
+        (Toward::PlaneV, Arg::Ent(t)) => *t == EntRef::axis(sk.planes[pl].v as usize),
+        (Toward::PlaneN, _) => true,
+        _ => false,
     }
 }
 
@@ -167,7 +213,7 @@ pub fn shared_view(sk: &Sketch, p: usize, q: usize) -> Option<usize> {
     sk.plane_of(p).filter(|&v| sk.plane_of(q) == Some(v))
 }
 
-/// The word an ordinate's direction was named by — `x`, `up`, `u` … — or `""` where it was named
+/// The word an ordinate's direction was named by — `u`, `up`, `n` … — or `""` where it was named
 /// by reference, and for every other kind.
 pub fn ordinate_word(kind: CKind, args: &[Arg]) -> &str {
     match kind.word_slot().and_then(|w| args.get(w)) {

@@ -32,6 +32,6 @@ in std.top {
   exit := point hint((0mm, length))
   construction centerline guide := line(entry, exit)
   vertical guide
-  entry distance(length, along: y) exit
+  entry distance(length, along: v) exit
 }
 body := solid(inlet.profile, outlet.profile, along: guide)

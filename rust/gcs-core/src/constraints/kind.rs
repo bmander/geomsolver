@@ -977,9 +977,9 @@ impl CKind {
             (CKind::TangentArcLine, 2) => &["start", "end"][..],
             (CKind::TangentLineCircleAt, 2) => &["p1", "p2"][..],
             // the directions of `side_words`, and — for the run and the rise — the *axis* word
-            // beside them, which names no direction: `along: x` is the magnitude form, either way
-            // along the page's x, and the seed picks (§9.2).  `every_direction_is_a_word` holds
-            // the two tables together.
+            // beside them, which says no sense: `along: u` is measured along the view's `u`,
+            // signed from the first point to the second (§9.2).  `every_direction_is_a_word`
+            // holds the two tables together.
             (CKind::PointLineDistance, 3) | (CKind::ParallelDistance, 3) => &["left", "right"][..],
             (CKind::TangentLineCircle, 2) => &["left", "right"][..],
             (CKind::Ordinate, 4) | (CKind::Level, 3) => &ALONG_WORDS[..],

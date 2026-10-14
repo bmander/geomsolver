@@ -153,7 +153,7 @@ component ConRod(end: plane, side: plane, secv: plane,
       bd := engine.parts.At(pin_s, dx: -wB / 2, dy: eB)
       (b1 := line(ba, bb)) -> (b2 := line(bb, bc.p)) -> (b3 := line(bc.p, bd.p)) -> (b4 := line(bd.p, ba)) -> close
       ba offset(dx: -wB / 2, dy: -eB) pin_s
-      pin_s distance(-eB, along: y) bb
+      pin_s distance(-eB, along: v) bb
       ba distance(wB) bb
       pa := engine.parts.At(pin_s, dx: -wB / 2, dy: 0mm)
       pb := engine.parts.At(pin_s, dx: wB / 2, dy: 0mm)
@@ -168,7 +168,7 @@ component ConRod(end: plane, side: plane, secv: plane,
       sd := engine.parts.At(sm_s, dx: -wS / 2, dy: eS)
       (s1 := line(sa, sb)) -> (s2 := line(sb, sc.p)) -> (s3 := line(sc.p, sd.p)) -> (s4 := line(sd.p, sa)) -> close
       sa offset(dx: -wS / 2, dy: -eS) sm_s
-      sm_s distance(-eS, along: y) sb
+      sm_s distance(-eS, along: v) sb
       sa distance(wS) sb
       // the shank's flanges between them
       ka := point hint((pin_s.x - fl / 2, pin_s.y + eB))
@@ -178,7 +178,7 @@ component ConRod(end: plane, side: plane, secv: plane,
       k1 := line(ka, kd)
       k2 := line(kb, kc)
       ka offset(dx: -fl / 2, dy: eB) pin_s
-      pin_s distance(eB, along: y) kb
+      pin_s distance(eB, along: v) kb
       ka distance(fl) kb
       kc offset(dx: fl / 2, dy: -eS) sm_s
       kd offset(dx: -fl / 2, dy: -eS) sm_s
@@ -208,14 +208,14 @@ component ConRod(end: plane, side: plane, secv: plane,
       (a1 := line(q0.p, q1)) -> (a2 := line(q1, q2)) -> (a3 := line(q2, q3)) -> (a4 := line(q3, q4.p)) ->
         (a5 := line(q4.p, q5.p)) -> (a6 := line(q5.p, q6.p)) -> (a7 := line(q6.p, q7)) -> (a8 := line(q7, q8.p)) ->
         (a9 := line(q8.p, q9.p)) -> (a10 := line(q9.p, q10.p)) -> (a11 := line(q10.p, q11.p)) -> (a12 := line(q11.p, q0.p)) -> close
-      at distance(-hM, along: y) q1
+      at distance(-hM, along: v) q1
       q0.p distance(fl) q1
-      at distance(fl / 2, along: x) q2
-      q1 distance(ft, along: y) q2
-      at distance(-hM + ft, along: y) q3
+      at distance(fl / 2, along: u) q2
+      q1 distance(ft, along: v) q2
+      at distance(-hM + ft, along: v) q3
       q10.p distance(wt) q3
-      at distance(-fl / 2, along: x) q7
-      q0.p distance(2 * hM, along: y) q7
+      at distance(-fl / 2, along: u) q7
+      q0.p distance(2 * hM, along: v) q7
     }
   }
 }

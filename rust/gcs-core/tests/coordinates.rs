@@ -147,7 +147,7 @@ fn an_external_constraint_moves_the_datum_through_an_aliased_component_point() {
     let mut e = build("unit mm\nuse std\ncomponent Offset(f: plane, p: point) {\n\
         p distance(3mm, along: u) f\np distance(-2mm, along: v) f\n}\n\
         in std.front {\no := point hint((10, 20))\nq := point hint((14, 20))\n\
-        f := std.Turned(o, q)\nhorizontal f.u\no distance(4mm, along: x) q\n\
+        f := std.Turned(o, q)\nhorizontal f.u\no distance(4mm, along: u) q\n\
         p := point\nfix((23, 28)) p\n}\ni := Offset(f.axes, p)\n");
     solved(&mut e.sketch);
     close(e.sketch.point_xy(e.map.ent_named("o").unwrap().i()), (20.0, 30.0));
@@ -200,7 +200,9 @@ fn zero_ordinates_are_regular_and_claims_remain_assertions() {
 
 #[test]
 fn datum_axes_require_a_datum_and_lengths() {
-    for relation in ["p distance(2mm, along: u) q", "p distance(2mm, along: x) f", "p distance(2deg, along: u) f", "p distance(2mm, along: z) f"] {
+    // (`u` between two points of a view is the view's own, #268: only `n` needs a plane)
+    for relation in ["p distance(2mm, along: n) q", "p distance(2mm, along: right) f",
+                     "p distance(2deg, along: u) f", "p distance(2mm, along: z) f"] {
         let source = format!("unit mm\nuse std\nin std.front {{\np := point\nq := point\n}}\n\
             f := plane(u: std.x, v: std.y)\n{relation}\n");
         let (p, errs) = crate::common::parse(&source);

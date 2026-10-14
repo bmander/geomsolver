@@ -430,7 +430,14 @@ fn arguments(
                     other => crate::syntax::sel_text(other),
                 };
                 let message = no_direction(&what);
-                cx.diags.push(Diag::within(Code::E040, where_(a), st.id, message));
+                // a retired word is said at the key, as every word the slot will not take is
+                // (#268); `level(x)` has none, and is said at the word
+                let at = match crate::constraints::retired_word(&what) {
+                    Some(_) => r.written.and_then(|w| w.key_span("along")),
+                    None => None,
+                };
+                let at = at.unwrap_or_else(|| where_(a));
+                cx.diags.push(Diag::within(Code::E040, at, st.id, message));
                 return None;
             }
             Err((code, msg)) => {
@@ -869,7 +876,8 @@ fn bound_of(
 
 /// **An ordinate's operands, read** (`docs/ordinate-plan.md`): a plane's own direction is
 /// measured from its origin, so `q distance(d, along: u) P` is the ordinate from `P.origin` to
-/// `q` along `P.u` (`P`'s normal for `n`) and the arguments are rewritten so; a direction written
+/// `q` along `P.u` (`P`'s normal for `n`) and the arguments are rewritten so — between two points
+/// `u` and `v` are the view's they are both drawn in, the plane at hand (#268); a direction written
 /// as a reference is an axis or a line, never a plane; a word of the table that is also the name
 /// of a direction in scope is refused as the two readings it has; and a number written as zero is
 /// a level, not a dimension.
@@ -944,7 +952,9 @@ fn ordinate_operands(
                 spell("n")
             )));
         }
-        (None, Some(t)) if t.of_plane() => {
+        // `u` and `v` between two points are the view's they are drawn in (`Toward::in_view`);
+        // a normal is a plane's alone
+        (None, Some(t)) if t.in_view().is_none() => {
             return Err((at_key, format!(
                 "`{word}` is a plane's own direction, measured from its origin: the plane is the \
                  second operand, `p {} P`",
@@ -970,7 +980,7 @@ fn ordinate_operands(
     Ok(())
 }
 
-/// What an ordinate of zero says, in the words its statement wrote: `a level(y) b` for the
+/// What an ordinate of zero says, in the words its statement wrote: `a level(v) b` for the
 /// view's own axis, `p level(u) P` for a plane's own word, `a level(t) b` for a reference.
 fn level_spelling(w: Option<&crate::syntax::Written>, word: &str) -> String {
     use crate::constraints::Toward;
@@ -1004,6 +1014,13 @@ fn written_zero(text: &str, units: crate::units::Units) -> bool {
 
 /// What `along:` is, refusing what it is not.
 fn no_direction(what: &str) -> String {
+    // a retired word is said as what it became: `x` is the view's `u`, `y` its `v` (#268)
+    if let Some(now) = crate::constraints::retired_word(what) {
+        return format!(
+            "`{what}` is no longer a direction word: a view's own directions are `u` and `v`, as \
+             a plane's are, and `right`, `left`, `up` and `down` say the sign — write `{now}`"
+        );
+    }
     let words = crate::syntax::one_of(&crate::constraints::ALONG_WORDS);
     format!("`along` is a direction — {words}, an axis or a line — not `{what}`")
 }

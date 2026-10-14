@@ -47,8 +47,8 @@ sec := face(ab, bc, cd, da)
 const HOLE: &str = "\
 in std.front {
 o := point hint((30, 20))
-a distance(30, along: x) o
-a distance(20, along: y) o
+a distance(30, along: u) o
+a distance(20, along: v) o
 hole := circle(center: o) hint(r: 5)
 radius(5) hole
 }
@@ -261,14 +261,14 @@ fn a_body_keeps_what_it_has_in_common_with_each_solid() {
     assert!(within > 2300.0 && within < 2400.0, "the bore's own polygon: {within}");
     // difference and intersection commute, so a body kept in common and cut is the same either way
     let both = format!(
-        "{RECT}{HOLE}in std.front {{\nq := point hint((30, 20))\na distance(30, along: x) q\na distance(20, along: y) q\n\
+        "{RECT}{HOLE}in std.front {{\nq := point hint((30, 20))\na distance(30, along: u) q\na distance(20, along: v) q\n\
          wide := circle(center: q) hint(r: 15)\nradius(15) wide\n}}\nwide_f := face(wide)\n\
          stock := solid(sec, depth: 30mm)\nbore := solid(hole_f, depth: 30mm)\ndisc := solid(wide_f, depth: 30mm)\n\
          body := solid(stock)\ndisc common body\nbore cut body\n"
     );
     let disc = volume(&read(&both), "body");
-    let annulus = volume(&read(&format!("{RECT}{HOLE}in std.front {{\nq := point hint((30, 20))\na distance(30, along: x) q\n\
-         a distance(20, along: y) q\nwide := circle(center: q) hint(r: 15)\nradius(15) wide\n}}\nwide_f := face(wide)\n\
+    let annulus = volume(&read(&format!("{RECT}{HOLE}in std.front {{\nq := point hint((30, 20))\na distance(30, along: u) q\n\
+         a distance(20, along: v) q\nwide := circle(center: q) hint(r: 15)\nradius(15) wide\n}}\nwide_f := face(wide)\n\
          bore := solid(hole_f, depth: 30mm)\ndisc := solid(wide_f, depth: 30mm)\nbody := solid(disc)\nbore cut body\n")), "body");
     assert!((disc - annulus).abs() < 1e-6, "in common then cut is the annulus: {disc} vs {annulus}");
     refused(
@@ -289,8 +289,8 @@ fn a_boss_is_united_with_its_body() {
         "{RECT}in std.front {{\ne := point hint((20, 10))\nf := point hint((40, 10))\n\
          g := point hint((40, 30))\nh := point hint((20, 30))\n\
          (ef := line(e, f)) -> (fg := line(f, g)) -> (gh := line(g, h)) -> (he := line(h, e)) -> close\n\
-         a distance(20, along: x) e\na distance(10, along: y) e\n\
-         a distance(40, along: x) g\na distance(30, along: y) g\n\
+         a distance(20, along: u) e\na distance(10, along: v) e\n\
+         a distance(40, along: u) g\na distance(30, along: v) g\n\
          horizontal ef\nvertical fg\nhorizontal gh\nvertical he\n}}\n\
          boss_f := face(ef, fg, gh, he)\n\
          block := solid(sec, depth: 30mm)\nboss := solid(boss_f, from: 0mm, to: 10mm)\n\
@@ -320,7 +320,7 @@ fix((0, 0)) q0
 vertical ax
 horizontal e0
 vertical e1
-p0 distance(10, along: x) q0
+p0 distance(10, along: u) q0
 p0 horizontal q0
 p0 distance(4) p1
 p1 distance(6) p2

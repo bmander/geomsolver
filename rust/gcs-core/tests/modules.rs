@@ -294,7 +294,7 @@ a := point
 b := point hint((100, 0))
 l := lib.over.Long(a, b, twice: lib.over.twice)
 fix((0, 0)) a
-b distance(lib.over.twice, along: y) a
+b distance(lib.over.twice, along: v) a
 }
 ");
     assert!(linked.is_empty(), "{linked:?}");

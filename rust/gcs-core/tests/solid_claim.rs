@@ -87,17 +87,17 @@ p := point hint((10, 0))
 }
 param reach: Length
 in std.front {
-o distance(reach, along: x) p
+o distance(reach, along: u) p
 o horizontal p
 q := point hint((14, 0))
-p distance(4, along: x) q
+p distance(4, along: u) q
 p horizontal q
 r := point hint((14, 4))
 q vertical r
-q distance(4, along: y) r
+q distance(4, along: v) r
 s := point hint((10, 4))
 p vertical s
-p distance(4, along: y) s
+p distance(4, along: v) s
 (e0 := line(p, q)) -> (e1 := line(q, r)) -> (e2 := line(r, s)) -> (e3 := line(s, p)) -> close
 arm_f := face(e0, e1, e2, e3)
 arm := solid(arm_f, depth: 3mm)

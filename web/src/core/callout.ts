@@ -88,7 +88,7 @@ export function reset(sk: Sketch, id: number): boolean {
 }
 
 /** The three dimensions between two points: the length (`Distance`), and the run and the rise —
- *  an `Ordinate` along the view's `x` and `y`. */
+ *  an `Ordinate` along the view's `u` and `v`. */
 export type PairDimension = 'length' | 'run' | 'rise';
 
 /** Which of the three dimensions between two points a callout dropped at `at` states: the
@@ -105,5 +105,5 @@ export function pairDimension(a: readonly [number, number], b: readonly [number,
 export function pairOf(c: Constraint): PairDimension | null {
   if (c.typeName === 'Distance') return 'length';
   if (c.typeName !== 'Ordinate') return null;
-  return c.along === 'x' ? 'run' : c.along === 'y' ? 'rise' : null;
+  return c.along === 'u' ? 'run' : c.along === 'v' ? 'rise' : null;
 }

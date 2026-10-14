@@ -653,8 +653,13 @@ fn trace_ordinate(
             let p = ent(0).filter(|e| e.kind == EntKind::Point).ok_or_else(in_space)?;
             TraceOrdinate::Coordinate(p.i(), usize::from(word == Some(Toward::PlaneV)))
         }
-        (None, Some(Toward::PageU), _) => TraceOrdinate::Form(OrdinateForm::PageU),
-        (None, Some(Toward::PageV), _) => TraceOrdinate::Form(OrdinateForm::PageV),
+        // between two points `u` and `v` are the view's, as `right` and `up` are
+        (None, Some(t), _) if t.in_view() == Some(Toward::PageU) => {
+            TraceOrdinate::Form(OrdinateForm::PageU)
+        }
+        (None, Some(t), _) if t.in_view() == Some(Toward::PageV) => {
+            TraceOrdinate::Form(OrdinateForm::PageV)
+        }
         (None, None, Some(t)) if t.kind == EntKind::Line => {
             TraceOrdinate::Form(OrdinateForm::InView)
         }

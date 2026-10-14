@@ -186,7 +186,7 @@ fix((0, 0)) a
 ab := line(a, b)
 horizontal ab
 a distance(60) b at (10, -20)
-claim a distance(60, along: x) b at (10, 20)
+claim a distance(60, along: u) b at (10, 20)
 ";
     let out = gcs_core::svg::render(&read(src), 400.0);
     assert!(out.contains("(60)"), "the claim is drawn as a reference dimension:\n{out}");

@@ -690,8 +690,8 @@ fn where_a_dimension_is_put_is_which_dimension_it_is() {
     // a level pair reads the same either way, so the length wins the tie
     assert_eq!(pair_dimension((0.0, 0.0), (40.0, 0.0), (20.0, 30.0)), D::Length);
     assert_eq!(pair_dimension((0.0, 0.0), (40.0, 0.0), (60.0, 0.0)), D::Rise);
-    // and the run and the rise are an ordinate along the view's `x` and `y`
-    assert_eq!((D::Run.along(), D::Rise.along(), D::Length.along()), (Some("x"), Some("y"), None));
+    // and the run and the rise are an ordinate along the view's `u` and `v` (#268)
+    assert_eq!((D::Run.along(), D::Rise.along(), D::Length.along()), (Some("u"), Some("v"), None));
 }
 
 /// A run is drawn along the page, whatever the pair is doing: the dimension line is horizontal

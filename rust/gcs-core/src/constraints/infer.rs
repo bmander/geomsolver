@@ -145,8 +145,9 @@ pub fn infer_entity(
             })
         }
         // an ordinate's direction said in a word: an axis of the view both points are drawn in.
-        // The plane's own words never reach here from a document — the elaborator names the
-        // plane's axis — and from a record they are a plane's, with no plane to read them off
+        // Against a plane the elaborator names the plane's axis, so a word left to infer is the
+        // view's — `u` and `v` as much as `right` and `up` — and `n` is a plane's, with no plane
+        // to read it off
         (CKind::Ordinate | CKind::Level, 2) => {
             let w = ordinate_word(kind, args);
             let toward = Toward::of(w).ok_or_else(|| {
@@ -154,16 +155,16 @@ pub fn infer_entity(
                     crate::syntax::one_of(&ALONG_WORDS))
             })?;
             let (p, q) = (args[0].ent(), args[1].ent());
-            match (toward, shared_view(sk, p.i(), q.i())) {
-                (Toward::PageU, Some(v)) => Ok(EntRef::axis(sk.planes[v].u as usize)),
-                (Toward::PageV, Some(v)) => Ok(EntRef::axis(sk.planes[v].v as usize)),
-                (Toward::PageU | Toward::PageV, None) => Err(format!(
+            match (toward.in_view(), shared_view(sk, p.i(), q.i())) {
+                (Some(Toward::PageV), Some(v)) => Ok(EntRef::axis(sk.planes[v].v as usize)),
+                (Some(_), Some(v)) => Ok(EntRef::axis(sk.planes[v].u as usize)),
+                (Some(_), None) => Err(format!(
                     "`{w}` is a direction of the view both points are drawn in, and {} and {} \
                      are not drawn in one: name the axis",
                     name(p),
                     name(q)
                 )),
-                _ => Err(format!("`{w}` is a direction of a plane, which the ordinate is \
+                (None, _) => Err(format!("`{w}` is a direction of a plane, which the ordinate is \
                     measured from: `{} distance(d, along: {w}) P`", name(q))),
             }
         }
@@ -191,10 +192,20 @@ fn validate_ordinate(
             Toward::PlaneV => t == EntRef::axis(sk.planes[pl].v as usize),
             _ => t == EntRef::plane(pl),
         });
-        if !on {
+        // or, `u` and `v` with no plane operand, the axis of the view both points are drawn in
+        let in_view = shared_view(sk, p.i(), q.i()).is_some_and(|v| match toward {
+            Toward::PlaneU => t == EntRef::axis(sk.planes[v].u as usize),
+            Toward::PlaneV => t == EntRef::axis(sk.planes[v].v as usize),
+            _ => false,
+        });
+        if !on && !in_view {
+            let view = match toward {
+                Toward::PlaneN => "",
+                _ => ", or the view's both points are drawn in",
+            };
             return Err(format!(
                 "`along: {word}` is a plane's own direction, measured from its origin: \
-                 `{} distance(d, along: {word}) P`",
+                 `{} distance(d, along: {word}) P`{view}",
                 name(q)
             ));
         }

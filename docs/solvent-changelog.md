@@ -4,6 +4,16 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.90] One vocabulary for a view's directions.** A view is a plane (§6.7), so its own
+directions are said as a plane's are: between two points drawn in one view, `along: u` is the
+run and `along: v` the rise — the view's `u` and `v` — as against a plane they are that plane's
+(§9.2). `right`, `left`, `up` and `down` stay, the same two with the sign said. Through 0.89 the
+run and the rise were `along: x` and `along: y`, which named the view's `u` and `v` by the world's
+letters and read as the world's where they were not: in `std.front`, `along: y` was world z while
+`along: std.y` was world y. `x` and `y` are no longer direction words: a name in scope by either
+is a reference like any other, and one naming nothing is **E040** at the key, saying what the word
+became. (Issue #268.)
+
 **[0.89] A plane's normal is a member.** `P.normal` is the axis along `P.u × P.v` through
 `P.origin`, read wherever an axis is: `l parallel P.normal`, `t perpendicular std.front.normal`,
 `Q := plane(u: P.normal, v: P.u)`, `hint(dir: P.normal)` (§6.7). It adds no freedom and is never

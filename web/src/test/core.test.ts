@@ -1289,7 +1289,7 @@ test('a solid crosses the ABI as a mesh a viewer can use', () => {
     '(ab := line(a, b)) -> (bc := line(b, c)) -> (cd := line(c, d)) -> (da := line(d, a)) -> close',
     'horizontal ab', 'vertical bc', 'a distance(60) b', 'a distance(40) d', 'fix((0, 0)) a',
     'o := point hint((30, 20))',
-    'a distance(30, along: x) o', 'a distance(20, along: y) o',
+    'a distance(30, along: u) o', 'a distance(20, along: v) o',
     'hole := circle(center: o) hint(r: 8)', 'radius(8) hole', '}',
     'sec := face(ab, bc, cd, da)', 'hole_f := face(hole)',
     'stock := solid(sec, depth: 30mm)', 'bore := solid(hole_f, through: body)',

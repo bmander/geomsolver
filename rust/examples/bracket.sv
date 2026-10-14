@@ -53,9 +53,9 @@ in std.front {
     vertical (de := line(Df, Ef)) -> (ef := line(Ef, Ff)) -> vertical (fa := line(Ff, Af))
   Af distance(width) Bf
   Bf distance(base) Cf
-  Af distance(leg, along: x) Df
-  Af distance(rise, along: y) Ef
-  Af distance(toe, along: y) Ff
+  Af distance(leg, along: u) Df
+  Af distance(rise, along: v) Ef
+  Af distance(toe, along: v) Ff
 }
 
 // the top view: the footprint, the upright's ridge, and the one dimension the front cannot
@@ -72,7 +72,7 @@ in std.top {
   ridge_t := vertical line(Et, E2t)
   At horizontal Et
   A2t horizontal E2t
-  At distance(depth, along: y) A2t
+  At distance(depth, along: v) A2t
   Bf project Bt
   Ef project Et
   Ft := point

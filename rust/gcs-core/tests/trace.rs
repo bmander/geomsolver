@@ -640,7 +640,7 @@ fn a_branch_is_a_stated_fact() {
 component rim(c: circle, datum: line, u: Angle) {
   t := point
   t coincident c
-  c.center distance(c.r * cos(u), along: x) t
+  c.center distance(c.r * cos(u), along: u) t
   ccw(datum.p1, datum.p2, t)
 }
 ";

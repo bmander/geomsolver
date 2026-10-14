@@ -90,7 +90,7 @@ in std.top {
   }
   // the first apex on the line of centres, `clearance` in from the generating one
   hub horizontal tip[0]
-  tip[0] distance(clearance, along: x) apex
+  tip[0] distance(clearance, along: u) apex
 }
 arc_rotor := solid(face(flank[0], flank[1], flank[2]), from: 0mm, to: W)
 arc_rotor_at := solid(arc_rotor, under: rotor_turn, at: 0deg)

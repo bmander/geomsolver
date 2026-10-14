@@ -208,7 +208,7 @@ fn angular_coverage_and_failure_reports_keep_degrees() {
     let src = fixture()
         .replace("c := circle(center:o)", "q := point\nfix((1, 0)) q\nc := circle(center:o)")
         .replace(
-            "o distance(reach,along:x) p",
+            "o distance(reach,along:u) p",
             "datum := line(o,q)\nradial := line(o,p)\ndatum angle(reach) radial",
         )
         .replace("param reach: Length", "param reach: Angle")
@@ -225,7 +225,7 @@ fn angular_coverage_and_failure_reports_keep_degrees() {
 #[test]
 fn a_counterexample_refutes_a_sweep_with_uncertain_contact_and_successful_poses() {
     let src = round_claim("clear(-100mm)")
-        .replace("fix((2, 0)) b\n", "a distance(reach,along:x) b\na horizontal b\n")
+        .replace("fix((2, 0)) b\n", "a distance(reach,along:u) b\na horizontal b\n")
         .replace("use std\n", "use std (horizontal)\nparam reach: Length\n")
         .replace(
             "claim result clear(-100mm) other",

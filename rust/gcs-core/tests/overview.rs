@@ -436,8 +436,8 @@ in std.front {
   a distance(40) d
   fix((0, 0)) a
   o := point hint((30, 20))
-  a distance(30, along: x) o
-  a distance(20, along: y) o
+  a distance(30, along: u) o
+  a distance(20, along: v) o
   hole := circle(center: o) hint(r: 8)
   radius(8) hole
 }

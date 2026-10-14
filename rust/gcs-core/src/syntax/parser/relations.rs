@@ -172,7 +172,7 @@ impl<'a> P<'a> {
                 (Some(Tok::Ident(n)), Some(Tok::P(':'))) => {
                     let name = Name { text: n, span: self.here() };
                     self.i += 2;
-                    // a direction is a word (`along: x`) or what it names (`along: std.x`): a
+                    // a direction is a word (`along: u`) or what it names (`along: std.x`): a
                     // word of the table is a word, unless it opens a path — and no selector word
                     // is a path, so a path is a reference whatever its key (`at: v1.origin`)
                     let along = name.text == "along" && self.reference_ahead();
@@ -272,7 +272,7 @@ impl<'a> P<'a> {
         Some(OpArg::Slot { key: name, arg: seed_arg(value, text, span, true) })
     }
 
-    /// A selector's value: `side: -1`, `at: start`, `external: true`, `along: x`.
+    /// A selector's value: `side: -1`, `at: start`, `external: true`, `along: u`.
     /// Whether what follows `along:` is a reference rather than one of the direction words: a
     /// name outside `constraints::ALONG`, or any name a path goes on from.
     fn reference_ahead(&self) -> bool {
