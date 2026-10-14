@@ -323,9 +323,9 @@ fix((7, 3)) o
 part := Bar(design.bar)
 }
 ";
-    let place = solved(&format!("design := {{bar: {{at: o, size: {{length: 20}}}}}}\n{tail}"));
+    let place = solved(&format!("design := {{bar: {{at: o, size: {{length: 20mm}}}}}}\n{tail}"));
     let named = solved(&format!(
-        "size := {{length: 20}}\nbar := {{at: o, size: size}}\ndesign := {{bar: bar}}\n{tail}"));
+        "size := {{length: 20mm}}\nbar := {{at: o, size: size}}\ndesign := {{bar: bar}}\n{tail}"));
     let at = |e: &program::Elaborated| e.sketch.point_xy(e.map.ent_named("part.tip").unwrap().i());
     assert_eq!(at(&place), at(&named));
 }

@@ -38,36 +38,22 @@ pub const BOUND: [&str; 4] = ["p.x", "p.y", "t.x", "t.y"];
 /// compiles, and the power of length it carries (`degree`).
 pub fn integrand(text: &str, units: crate::units::Units) -> Result<u32, String> {
     crate::extremal::Lagrangian::compile(&[(1.0, text)], false, units)?;
-    degree(&crate::expr::parse_in(text, units)?.body, units)
+    degree(&crate::expr::parse_in(text, units)?.body)
 }
 
 /// The power of length an integrand carries — `p.y` is one, a length's integrand none — so the
-/// transversality row is of that degree.  Where the document names a unit the point is a length
-/// (`Units::read_length`) and the integrand is dimension-checked, refused where it mixes
-/// dimensions or is an angle; any power of length is an energy (a speed `sqrt(h - p.y)`, a
-/// slowness `1 / sqrt(h - p.y)`, a hyperbolic weight `1 / p.y`), and the row's tolerance takes
-/// the nearest whole one, none under zero.  Where it names none every number is plain, and the
-/// degree is read off how the integrand grows with the point.
-fn degree(body: &Ast, units: crate::units::Units) -> Result<u32, String> {
-    let at = |s: f64| -> Result<crate::expr::Aff, String> {
-        let dim = units.read_length();
-        let env: BTreeMap<String, crate::expr::Aff> = BOUND
-            .iter()
-            .zip([
-                crate::expr::Aff::of_dim(1.3 * s, dim),
-                crate::expr::Aff::of_dim(0.7 * s, dim),
-                crate::expr::Aff::num(0.6),
-                crate::expr::Aff::num(0.8),
-            ])
-            .map(|(k, v)| (k.to_string(), v))
-            .collect();
-        crate::expr::eval(body, &env).map_err(String::from)
-    };
-    if units.length.is_none() {
-        let d = (at(2.0)?.c / at(1.0)?.c).abs().log2().round();
-        return Ok(if d.is_finite() { d.clamp(0.0, 4.0) as u32 } else { 1 });
-    }
-    let a = at(1.0)?;
+/// transversality row is of that degree.  The point is a length and the integrand is
+/// dimension-checked, refused where it mixes dimensions or is an angle; any power of length is
+/// an energy (a speed `sqrt(h - p.y)`, a slowness `1 / sqrt(h - p.y)`, a hyperbolic weight
+/// `1 / p.y`), and the row's tolerance takes the nearest whole one, none under zero.
+fn degree(body: &Ast) -> Result<u32, String> {
+    let length = |v: f64| crate::expr::Aff::of_dim(v, crate::units::Dim::LENGTH);
+    let env: BTreeMap<String, crate::expr::Aff> = BOUND
+        .iter()
+        .zip([length(1.3), length(0.7), crate::expr::Aff::num(0.6), crate::expr::Aff::num(0.8)])
+        .map(|(k, v)| (k.to_string(), v))
+        .collect();
+    let a = crate::expr::eval(body, &env).map_err(String::from)?;
     if !a.dim.ang.is_zero() {
         return Err("an integrand is a length or a power of one, never an angle".into());
     }

@@ -29,7 +29,7 @@ fn two_energies_over_one_curve_add() {
 #[test]
 fn an_integrand_reads_the_scope() {
     let whole = solved(ROPE);
-    let e = solved(&ROPE.replace("rope minimizes integral(p.y over p)", "h := 7\nrope minimizes integral(q.y - h over q)"));
+    let e = solved(&ROPE.replace("rope minimizes integral(p.y over p)", "h := 7mm\nrope minimizes integral(q.y - h over q)"));
     // a constant added to the height is the length's multiplier moved, not the shape
     assert!(same(&samples(&whole.sketch, 0), &samples(&e.sketch, 0)) < 1e-9);
 }

@@ -41,7 +41,7 @@ component Rung(a: point, len: Length) {
   e := line(a, b)
   a distance(len) b
   repeat 2 as i {
-    q := point hint((a.x, a.y + 10 * (i + 1)))
+    q := point hint((a.x, a.y + 10mm * (i + 1)))
   }
 }
 in std.front {

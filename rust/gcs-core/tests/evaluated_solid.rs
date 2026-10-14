@@ -249,7 +249,7 @@ fn curved_mesh_policy_keeps_its_own_cost_and_glb_reports_precision_failure() {
         &e.sketch.evaluated_solid(i, Policy::Mesh).unwrap()
     ));
     // Unit conversion can make otherwise valid local geometry unrepresentable in float32.
-    e.sketch.units.length.as_mut().unwrap().1 = 1e-47;
+    e.sketch.units.length.1 = 1e-47;
     assert!(gltf::checked_glb(&e.sketch, &[i], Policy::Mesh)
         .unwrap_err()
         .contains("float32 GLB"));

@@ -27,8 +27,6 @@ pub struct Measured {
     body: Ast,
     /// What each measured name denotes.
     pub ents: BTreeMap<String, EntRef>,
-    /// What a length reads as (`Units::read_length`).
-    length: Dim,
 }
 
 /// Which of a motion's numbers an expression stands for.
@@ -118,8 +116,7 @@ impl Measured {
                 ));
             }
         }
-        let length = units.read_length();
-        let out = Measured { text: text.trim().to_string(), body: p.body, ents, length };
+        let out = Measured { text: text.trim().to_string(), body: p.body, ents };
         // the dimension is a fact about the text, not about where the geometry stands: checked
         // once here over stand-in numbers of the right kinds, so a wrong one is refused at
         // elaboration and never discovered by the first read
@@ -136,7 +133,7 @@ impl Measured {
     fn dim_of(&self, m: Measure) -> Dim {
         match m {
             Measure::Angle => Dim::ANGLE,
-            Measure::Length | Measure::Radius | Measure::Distance => self.length,
+            Measure::Length | Measure::Radius | Measure::Distance => Dim::LENGTH,
         }
     }
 

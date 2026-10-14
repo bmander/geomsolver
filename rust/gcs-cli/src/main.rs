@@ -660,7 +660,7 @@ fn length(text: &str) -> Option<Result<(f64,Option<f64>),String>> {
 /// document's unit.
 fn tolerance(sk: &Sketch,opts: &Opts) -> Result<Option<gcs_core::solid::export::Tolerance>,String> {
     let Some((value,per)) = opts.tolerance else { return Ok(None) };
-    let per = match per { Some(p) => p, None => gcs_core::solid::cad::millimetres(sk)? };
+    let per = match per { Some(p) => p, None => gcs_core::solid::cad::millimetres(sk) };
     gcs_core::solid::export::Tolerance::new(value*per).map(Some)
 }
 

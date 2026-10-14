@@ -823,7 +823,7 @@ fn seed_read(sk: &Sketch, res: &Resolver, dotted: &str) -> Result<(f64, crate::u
         )
     })?;
     let p = *sk.entity_params(e).get(at).ok_or_else(|| format!("`{dotted}` has no seed yet"))?;
-    Ok((sk.params[p as usize].value, sk.units.read_length()))
+    Ok((sk.params[p as usize].value, crate::units::Dim::LENGTH))
 }
 
 /// An expression over geometry's seeds, come to its number.  `names` is what each dotted name

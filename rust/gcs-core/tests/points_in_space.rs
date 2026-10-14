@@ -79,7 +79,7 @@ fn a_point_in_space_is_seeded_where_its_place_stands() {
 /// A seed reads a point in space's third coordinate as it reads the other two.
 #[test]
 fn a_seed_reads_the_height_of_a_point_in_space() {
-    let e = read("use std\nq := point hint((1, 2, 7))\nr := point hint((q.x, q.y, q.z + 1))\n");
+    let e = read("use std\nq := point hint((1, 2, 7))\nr := point hint((q.x, q.y, q.z + 1mm))\n");
     let r = ent(&e, "r").i();
     assert_eq!(e.sketch.world_point(r), [1.0, 2.0, 8.0]);
     // and a point drawn in a plane still has two
