@@ -66,7 +66,11 @@ sector once (`mesh::mesh_with`) and shares seam points by index. Full verificati
 back by OCCT and measures it by `props` (1e-5; OCCT's volume held only to 1e-4).
 **Phases 3–5 (the gear without OCCT):** `brep::sweep` builds an admitted swept body: blank from its
 meridian region (`brep::planar`, `recipe::meridian`), cutters sectioned exactly (`brep::section`,
-`planar::Chart`), sheets traced and fitted (`sweep::sheet`, `nurbs::interpolate_net`), blank split
+`planar::Chart`), sheets traced and fitted (`sweep::sheet`, `nurbs::interpolate_net`; a fitted
+edge still in the blank between its nodes — a cutter's corner grazing it at stations where it is
+elsewhere a fan the rows stop before, `contact_trace::charted` — is carried on past it by its own
+surface, `Net::extended`, only where what that puts in the blank is within the fit's bar, else left
+as it is: an edge in the blank divides nothing; `brep_export.rs`'s 20-tooth gear), blank split
 (`boolean::split`), cells judged by the field (`sweep::sector`; else `sector::whole`), sector
 patterned. `brep::export::{exact,step,stl}` is shared by `solventc` and `app/export-worker.ts`
 (`gcs_solid_exact`), so native and wasm files are byte-identical: the core's trigonometry, `exp`,

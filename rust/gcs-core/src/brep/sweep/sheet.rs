@@ -34,6 +34,11 @@ const LOCAL_TRUST: f64 = 0.005;
 pub const MOST_REFINEMENTS: usize = 4;
 pub const MOST_ROWS: usize = 480;
 pub const MOST_COLUMNS: usize = 400;
+/// How many points each span of a fitted sheet's edge between two of its nodes is read at, for
+/// whether the edge is in the blank; and the lengths a side in the blank is carried on by, in
+/// its end span's lengths, the shortest first.
+const EDGE_READS: usize = 8;
+const CARRIED: [f64;5] = [0.25,0.5,1.,2.,4.];
 
 /// A swept cut as its sheet is built: what the sketch says of it, read where the sketch is, so
 /// that the sheets can be built side by side.
@@ -98,6 +103,100 @@ impl Fitted {
         }).collect();
         crate::brep::build::sheets(nets)
     }
+}
+
+/// The sides of a sheet face `build::sheet` made (its edges in order: the start of `v`, the end of
+/// `u`, the end of `v`, the start of `u`), each as the parameter it ends (0 `u`, 1 `v`) and whether
+/// at the end of it.
+const SIDES: [(usize,bool);4] = [(1,false),(0,true),(1,true),(0,false)];
+
+/// The points of a sheet face's edges in the blank, with the side each is on (`SIDES`): each edge
+/// read at `EDGE_READS` points a span of the most `nodes` an edge of the grid has.
+fn edge_in_blank(face: &Brep,nodes: usize,inside: Inside) -> Result<Vec<(usize,V)>,String> {
+    let n = EDGE_READS*nodes.max(2);
+    let points: Vec<(usize,V)> = face.edges.iter().enumerate().flat_map(|(side,e)| (0..=n).map(move |k| {
+        (side,e.point(e.t[0]+(e.t[1]-e.t[0])*k as f64/n as f64,&face.vertices))
+    })).collect();
+    let within = inside(&points.iter().map(|(_,p)| *p).collect::<Vec<_>>())?;
+    Ok(points.into_iter().zip(within).filter(|(_,w)| *w).map(|(p,_)| p).collect())
+}
+
+/// A fitted sheet whose edge is in the blank carried out of it by its own surface. The grid's edge
+/// nodes leave the blank, but where a corner of the cutter grazes the blank at some stations and
+/// at others is a fan the rows stop before (`contact_trace::charted`), the edge between them stays
+/// in it, and a sheet whose edge is in the blank divides nothing there. Each side in the blank is
+/// continued past it by its end span's polynomial (`Net::extended`), the shortest of `CARRIED`
+/// that leaves the blank, where everything the continuation puts in the blank is within
+/// `allowance` of the blank's surface: what it bounds there in place of the corner's own sweep.
+/// Otherwise the sheet is left as it is.
+fn carry_out(name: &str,fitted: &mut Fitted,inside: Inside,near: &(dyn Fn(V) -> f64+Sync),allowance: f64,say: &Say)
+    -> Result<(),String> {
+    let nodes = fitted.sheet.rows.max(fitted.sheet.columns);
+    let within = edge_in_blank(&fitted.face,nodes,inside)?;
+    if within.is_empty() { return Ok(()) }
+    let at = |p: V| p.map(|x| (x*1e4).round()/1e4);
+    let depth = within.iter().map(|(_,p)| -near(*p)).fold(0_f64,f64::max);
+    let sides: std::collections::BTreeSet<usize> = within.iter().map(|(side,_)| *side).collect();
+    let Some(Surface::BSpline(_,net)) = fitted.face.faces.first().map(|f| &f.surface) else { return Ok(()) };
+    // each side's end span, the length it is carried by a multiple of
+    let span = |k: usize,high: bool| -> f64 {
+        let (knots,p) = if k == 0 { (&net.uknots,net.du) } else { (&net.vknots,net.dv) };
+        let count = if k == 0 { net.poles.len() } else { net.poles[0].len() };
+        let [a,z] = [knots[p],knots[count]];
+        if high { z-knots[..count].iter().copied().filter(|&x| x < z).fold(a,f64::max) }
+        else { knots[p+1..].iter().copied().filter(|&x| x > a).fold(z,f64::min)-a }
+    };
+    let carried = |net: &crate::brep::nurbs::Net,multiple: f64| -> Option<crate::brep::nurbs::Net> {
+        sides.iter().try_fold(net.clone(),|n,&side| { let (k,high) = SIDES[side]; n.extended(k,high,multiple*span(k,high)) })
+    };
+    for multiple in CARRIED {
+        let Some(wider) = carried(net,multiple) else { return Ok(()) };
+        let face = crate::brep::build::sheet(wider.clone())?;
+        if !edge_in_blank(&face,nodes,inside)?.is_empty() { continue }
+        // the strips added, read for how deep they are in the blank
+        let [[u0,u1],[v0,v1]] = net.domain();
+        let [[w0,w1],[x0,x1]] = wider.domain();
+        let n = EDGE_READS*nodes.max(2);
+        let strip: Vec<V> = sides.iter().flat_map(|&side| {
+            let (k,high) = SIDES[side];
+            let (lo,hi) = match (k,high) { (0,true) => (u1,w1),(0,false) => (w0,u0),(_,true) => (v1,x1),_ => (x0,v0) };
+            let wider = &wider;
+            (0..=EDGE_READS).flat_map(move |i| (0..=n).map(move |j| {
+                let (across,along) = (lo+(hi-lo)*i as f64/EDGE_READS as f64,j as f64/n as f64);
+                if k == 0 { wider.point(across,x0+(x1-x0)*along) } else { wider.point(w0+(w1-w0)*along,across) }
+            }))
+        }).collect();
+        let deepest = inside(&strip)?.into_iter().zip(&strip).filter(|(w,_)| *w).map(|(_,p)| -near(*p)).fold(depth,f64::max);
+        if deepest > allowance {
+            (say.stage)(&format!("`{name}`: the fitted sheet's edge is in the blank (at {:?}), and carrying it out puts the \
+                sheet {deepest:.4} mm into it, against {allowance} mm; left as it is",at(within[0].1)));
+            return Ok(())
+        }
+        // the faces the cutter's faces made: a side across the bands (`v`) carried on in each, one along
+        // them (`u`) in the first or the last
+        let count = fitted.faces.faces.len();
+        let nets: Vec<(crate::brep::nurbs::Net,String)> = fitted.faces.faces.iter().enumerate().map(|(i,f)| {
+            let Surface::BSpline(_,band) = &f.surface else { return Err("a sheet's face is not a B-spline".to_string()) };
+            let band = sides.iter().try_fold((**band).clone(),|b,&side| {
+                let (k,high) = SIDES[side];
+                if k == 0 && (if high { i+1 != count } else { i != 0 }) { return Some(b) }
+                b.extended(k,high,multiple*span(k,high))
+            }).ok_or("a sheet's face is rational")?;
+            Ok((band,f.name.clone()))
+        }).collect::<Result<_,String>>()?;
+        fitted.faces = if count < 2 {
+            let mut faces = crate::brep::build::sheet(nets[0].0.clone())?;
+            faces.faces[0].name = nets[0].1.clone();
+            faces
+        } else { crate::brep::build::sheets(nets)? };
+        fitted.face = face;
+        (say.stage)(&format!("`{name}`: the fitted sheet's edge is in the blank by up to {depth:.4} mm (at {:?}), where a corner of \
+            the cutter grazes it; carried on past it by its own surface, {deepest:.4} mm into the blank at most",at(within[0].1)));
+        return Ok(())
+    }
+    (say.stage)(&format!("`{name}`: the fitted sheet's edge is in the blank (at {:?}), and carrying it on does not take it out; \
+        left as it is",at(within[0].1)));
+    Ok(())
 }
 
 /// A sheet face's points and outward normals on an `nu × nv` grid of its parameters, row-major.
@@ -366,6 +465,7 @@ pub fn swept_sheet(cut: &SweptCut,inside: Inside,near: &(dyn Fn(V) -> f64+Sync),
                     crate::solid::faces::FacePath::new(cut.routes.get(&key).map_or("",String::as_str),&face).text()
                 };
                 fitted.faces = fitted.named(kind,&face_name).at(Stage::Fit)?;
+                carry_out(name,&mut fitted,inside,near,tolerance.map_or(FIT_DISTANCE,|t| t.fit()),say).at(Stage::Sheet)?;
                 (say.stage)(&format!("`{name}`: the sheet's faces, by the cutter's: {}",
                     fitted.faces.faces.iter().map(|f| if f.name.is_empty() { "(unnamed)" } else { f.name.as_str() }).collect::<Vec<_>>().join(", ")));
                 return Ok(fitted)

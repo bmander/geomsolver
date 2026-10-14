@@ -326,6 +326,45 @@ fn segment<const N: usize>(knots: &[f64],poles: &[Vec<[f64;N]>],p: usize,a: f64,
     (knots,q[first..first+count].to_vec())
 }
 
+/// A clamped B-spline of degree `p` along its first index carried on past the end of its domain
+/// (`high`, else its start) by `by`, exactly: its end span's polynomial continued, a Bézier piece
+/// joined at the old end with that knot `p` times, so the curve over the old domain is unchanged.
+fn extend<const N: usize>(knots: &[f64],poles: &[Vec<[f64;N]>],p: usize,high: bool,by: f64) -> (Vec<f64>,Vec<Vec<[f64;N]>>) {
+    if !high {
+        // the start is the end of the curve read backwards
+        let back: Vec<f64> = knots.iter().rev().map(|k| -k).collect();
+        let rows: Vec<Vec<[f64;N]>> = poles.iter().rev().cloned().collect();
+        let (k,q) = extend(&back,&rows,p,true,by);
+        return (k.iter().rev().map(|k| -k).collect(),q.into_iter().rev().collect())
+    }
+    let n = poles.len();
+    let z = knots[n];
+    let a = knots[..n].iter().copied().filter(|&k| k < z).fold(f64::NEG_INFINITY,f64::max);
+    // the end span alone, a Bézier piece over [a, z]; de Casteljau at s > 1 gives the same polynomial's
+    // piece over [a, z + by], and at the old end splitting that leaves the piece over [z, z + by]
+    let (_,bezier) = segment(knots,poles,p,a,z);
+    let lerp = |x: &Vec<[f64;N]>,y: &Vec<[f64;N]>,t: f64| -> Vec<[f64;N]> {
+        x.iter().zip(y).map(|(x,y)| std::array::from_fn(|c| (1.-t)*x[c]+t*y[c])).collect()
+    };
+    let casteljau = |rows: &[Vec<[f64;N]>],t: f64| -> (Vec<Vec<[f64;N]>>,Vec<Vec<[f64;N]>>) {
+        let (mut left,mut right,mut level) = (Vec::new(),Vec::new(),rows.to_vec());
+        while !level.is_empty() {
+            left.push(level[0].clone());
+            right.push(level[level.len()-1].clone());
+            level = level.windows(2).map(|w| lerp(&w[0],&w[1],t)).collect();
+        }
+        right.reverse();
+        (left,right)
+    };
+    let (longer,_) = casteljau(&bezier,(z+by-a)/(z-a));
+    let (_,beyond) = casteljau(&longer,(z-a)/(z+by-a));
+    let mut k = knots[..knots.len()-1].to_vec();
+    k.extend(std::iter::repeat_n(z+by,p+1));
+    let mut q = poles.to_vec();
+    q.extend(beyond.into_iter().skip(1));
+    (k,q)
+}
+
 /// A tensor-product B-spline surface: `poles[i][j]` the pole at `u` index `i` and `v` index `j`, and
 /// for a rational one `weights[i][j]` its weight.
 #[derive(Clone,Debug,PartialEq)]
@@ -456,6 +495,22 @@ impl Net {
         let (vknots,cols) = segment(&self.vknots,&cols,self.dv,v0,v1);
         let poles = (0..cols[0].len()).map(|i| cols.iter().map(|c| c[i]).collect()).collect();
         Net {du:self.du,dv:self.dv,uknots,vknots,poles,weights:None}
+    }
+    /// The surface carried on past its domain by its own polynomials (`extend`): `by` along `u` (`k`
+    /// 0) or `v` (`k` 1), past the end (`high`) or before the start. The same surface over the old
+    /// domain. None for a rational net.
+    pub fn extended(&self,k: usize,high: bool,by: f64) -> Option<Net> {
+        if self.weights.is_some() { return None }
+        let mut net = self.clone();
+        if k == 0 {
+            (net.uknots,net.poles) = extend(&self.uknots,&self.poles,self.du,high,by);
+        } else {
+            let cols: Vec<Vec<V>> = (0..self.poles[0].len()).map(|j| self.poles.iter().map(|r| r[j]).collect()).collect();
+            let (knots,cols) = extend(&self.vknots,&cols,self.dv,high,by);
+            net.vknots = knots;
+            net.poles = (0..cols[0].len()).map(|i| cols.iter().map(|c| c[i]).collect()).collect();
+        }
+        Some(net)
     }
     /// The poles whose basis reaches `[u0, u1] × [v0, v1]` (clamped into the domain): their hull
     /// holds the surface there.
