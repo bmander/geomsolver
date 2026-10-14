@@ -717,11 +717,12 @@ fn jac<const C: u8>(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
     block_jac(n, v, k, j, c.rows(), |x, kc, out| rows(c, x, kc, out));
 }
 
-/// A kernel's residuals over `n` blocks of `m` rows, each written by `rows` over its block's
-/// columns and constants — a kernel built at its block's widths (`curve_widths`), NaN where
-/// `rows` cannot read them: the envelope contacts', and a point on a meshing's (#283).
+/// A kernel's `m` outputs a block over `n` blocks, each written by `rows` over its block's columns
+/// and constants — a kernel built at its block's widths (`curve_widths`), NaN where `rows` cannot
+/// read them: the envelope contacts' and a point on a meshing's (#283) residuals, and with `m`
+/// their rows times their columns, their Jacobians (`block_jac`, `meshing::jac`).
 pub(crate) fn block_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64], m: usize,
-                        rows: impl Fn(&[f64], &[f64], &mut [f64]) -> Option<()>) {
+                        mut rows: impl FnMut(&[f64], &[f64], &mut [f64]) -> Option<()>) {
     let (n_par, n_const) = curve_widths(n, v, k);
     for i in 0..n {
         let out = &mut r[m * i..m * (i + 1)];
@@ -734,29 +735,33 @@ pub(crate) fn block_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64], m: usize,
 /// `block_res`'s Jacobian, exact by forward differentiation, `PASS` columns a pass.
 pub(crate) fn block_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64], m: usize,
                         rows: impl Fn(&[Dual<PASS>], &[f64], &mut [Dual<PASS>]) -> Option<()>) {
-    let (n_par, n_const) = curve_widths(n, v, k);
+    let (n_par, _) = curve_widths(n, v, k);
     let mut cols = vec![Dual::<PASS>::cst(0.0); n_par];
     let mut out = vec![Dual::<PASS>::cst(0.0); m];
-    for i in 0..n {
-        let x = &v[n_par * i..n_par * (i + 1)];
-        let kc = &k[n_const * i..n_const * (i + 1)];
-        let block = &mut j[m * n_par * i..m * n_par * (i + 1)];
+    block_res(n, v, k, j, m * n_par, |x, kc, block| {
         for start in (0..n_par).step_by(PASS) {
-            for (q, col) in cols.iter_mut().enumerate() {
-                *col = Dual::cst(x[q]);
-                if (start..start + PASS).contains(&q) {
-                    col.g[q - start] = 1.0;
-                }
-            }
-            if rows(&cols, kc, &mut out).is_none() {
-                block.fill(f64::NAN);
-                break;
-            }
-            for (row, val) in out.iter().enumerate() {
-                for q in start..(start + PASS).min(n_par) {
-                    block[row * n_par + q] = val.g[q - start];
-                }
-            }
+            seed_pass(&mut cols, x, start);
+            rows(&cols, kc, &mut out)?;
+            scatter_pass(&out, block, start);
+        }
+        Some(())
+    });
+}
+
+/// `x` as numbers carrying their derivatives in columns `start..start + PASS`.
+pub(crate) fn seed_pass(cols: &mut [Dual<PASS>], x: &[f64], start: usize) {
+    for (q, col) in cols.iter_mut().enumerate() {
+        let seeded = (start..start + PASS).contains(&q);
+        *col = if seeded { Dual::var(x[q], q - start) } else { Dual::cst(x[q]) };
+    }
+}
+
+/// A pass's rows `out` into the row-major Jacobian `j`, at columns `start..start + PASS`.
+pub(crate) fn scatter_pass(out: &[Dual<PASS>], j: &mut [f64], start: usize) {
+    let w = j.len() / out.len();
+    for (row, val) in out.iter().enumerate() {
+        for q in start..(start + PASS).min(w) {
+            j[row * w + q] = val.g[q - start];
         }
     }
 }
