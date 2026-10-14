@@ -1119,7 +1119,8 @@ The face and solid added nothing to the rectangle's six unknowns and six equatio
   *edges* is E080 (edges out of order), and so is an edge between two gaps.
 - **A curve stands in a face as a stretch**, `k from a to b`, between two points held on it by
   contacts; one stretch closed by `-> close` is a loop with its chord. A clamped spline ends at its
-  end control points, so it is an ordinary edge.
+  end control points, so it is an ordinary edge, and so is a free curve (`rope := curve(a, b)`) at
+  the two points it is written with: `face(rope, deck)` or `face(rope, -> close)` (1.10).
 
 ```
 unit mm

@@ -552,3 +552,56 @@ fn the_library_hyperbolic_path_is_a_semicircle_arc() {
     let o = samples(&e.sketch, 0).into_iter().map(|(x, y)| ((x - x0).hypot(y) - rho).abs()).fold(0.0, f64::max);
     assert!(o < 1e-9, "off the arc by {o}");
 }
+
+/// [0.96] **A free curve is an edge**: it runs between the two points it is written with, so it
+/// stands in a face whole.  The hanging rope and its chord swept 10 deep are the catenary's area
+/// below the chord, ten times, whichever way the loop is written, in the mesh and the exact
+/// kernel alike.  A stretch of it between two points held on it is the same curve, cut (once
+/// shapeless, a second free curve with no energy, and a panic); a stretch from its own end is
+/// refused naming the whole curve.
+#[test]
+fn a_hanging_rope_and_its_chord_are_a_face() {
+    let y = catenary((0.0, 0.0), (100.0, 0.0), 150.0);
+    // Simpson's rule on the closed form over `[lo, hi]`, below the level `top`
+    let below = |lo: f64, hi: f64, top: f64| {
+        let (n, h) = (20000, (hi - lo) / 20000.0);
+        h / 3.0 * (0..=n).map(|k| {
+            let w = if k == 0 || k == n { 1.0 } else if k % 2 == 1 { 4.0 } else { 2.0 };
+            w * (top - y(lo + k as f64 * h))
+        }).sum::<f64>()
+    };
+    let deck = ROPE.replace("}\nrope", "  deck := line(b, a)\n}\nrope");
+    let volume = |e: &Elaborated| gcs_core::report::positions(&e.sketch, &e.map).into_iter()
+        .find(|(n, _)| n == "s.volume").expect("no `s.volume` in the report").1;
+    let exact = |e: &Elaborated| {
+        // the exact kernel reads the rope as a B-spline fitted within `FIT_MM` of it
+        let root = (0..e.sketch.solids.len()).find(|&i| e.sketch.solids[i].name == "s").unwrap();
+        let recipe = gcs_core::solid::cad::recipe(&e.sketch, root).unwrap();
+        let b = gcs_core::brep::recipe::build(&recipe).unwrap();
+        b.check(1e-9).unwrap();
+        gcs_core::brep::props::volume(&b)
+    };
+    let fit = 150.0 * 10.0 * gcs_core::solid::cad::FIT_MM;
+    let want = 10.0 * below(0.0, 100.0, 0.0);
+    for face in ["face(rope, deck)", "face(deck, rope)", "face(rope, -> close)"] {
+        let e = solved(&format!("{deck}s := solid({face}, depth: 10)\n"));
+        let v = volume(&e);
+        assert!((v - want).abs() < 1e-5 * want, "{face}: {v} against {want}");
+        let x = exact(&e);
+        assert!((x - want).abs() <= fit, "{face}: exact {x} against {want}");
+    }
+    // the stretch between the points over x = 30 and x = 70, and its chord
+    let stretch = ROPE.replace("}\nrope", "  m := point hint((30, -40))\n  \
+        n := point hint((70, -40))\n  m coincident rope\n  n coincident rope\n  \
+        fix(x == 30) m\n  fix(x == 70) n\n}\nrope");
+    let e = solved(&format!("{stretch}s := solid(face(rope from m to n, -> close), depth: 10)\n"));
+    let want = 10.0 * below(30.0, 70.0, y(30.0));
+    let v = volume(&e);
+    assert!((v - want).abs() < 1e-5 * want, "stretch: {v} against {want}");
+    let x = exact(&e);
+    assert!((x - want).abs() <= fit, "stretch: exact {x} against {want}");
+    // and the rope's own end is no point held on it
+    let (_, d) = read(&format!("{deck}s := solid(face(rope from a to b, deck), depth: 10)\n"));
+    let named = |m: &String| m.starts_with("E080") && m.contains("`a` is an end of `rope`");
+    assert!(d.iter().any(named), "{d:?}");
+}

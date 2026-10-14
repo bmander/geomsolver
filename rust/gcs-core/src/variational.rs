@@ -119,7 +119,11 @@ impl Sketch {
     /// refused, by constraint id: an energy over anything but a free curve, a held row pressing
     /// one that is not a peg, a touch of anything but a held line by a free curve.
     pub fn settle_variational(&mut self) -> Vec<(u32, String)> {
-        let free: Vec<usize> = (0..self.curves.len()).filter(|&i| self.curve_extremal(i)).collect();
+        // a face's stretch of a free curve is no free curve of its own: it is the one it was cut
+        // from, read there (`Sketch::curve_shape`)
+        let free: Vec<usize> = (0..self.curves.len())
+            .filter(|&i| self.curve_extremal(i) && self.curves[i].trim.is_none())
+            .collect();
         let mut faults = Vec::new();
         let mut energies: BTreeMap<usize, Energy> =
             free.iter().map(|&i| (i, Energy { curve: i, free_len: true, ..Energy::default() })).collect();
