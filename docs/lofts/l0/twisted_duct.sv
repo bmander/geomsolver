@@ -6,12 +6,11 @@
 // turn and under any law.
 unit mm
 use std (on_u, coords)
-use lofts
 length := 40mm
 
 // The square at station `s`, turned `twist · s` from the station's own `u`.
 component TwistedSquare(g: line, up: axis, half: Length, twist: Angle, s: Scalar) {
-  st := lofts.OnLine(g, up: up, s: s)
+  st := std.OnLine(g, up: up, s: s)
   in st.n {
     k := point
     k on_u(d: half) st.n

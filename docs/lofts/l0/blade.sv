@@ -4,10 +4,9 @@
 // Closed form: the width runs linearly, so V = 3 · 50 · (20 + 8)/2 = 2100 mm³.
 unit mm
 use std (horizontal, vertical, above, below)
-use lofts
 
 component Blade(g: line, up: axis, plan: plane, port: line, starboard: line, t: Length, s: Scalar) {
-  st := lofts.OnLine(g, up: up, s: s)
+  st := std.OnLine(g, up: up, s: s)
   l := point in st.n, plan
   r := point in st.n, plan
   l coincident port

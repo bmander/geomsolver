@@ -244,7 +244,7 @@ impl Walk<'_> {
             }
             _ => {
                 return Err(format!("`{said}`: only a prism's faces are sets yet — a revolution's, \
-                                    a loft's and a sweep's are not"));
+                                    a face family's and a sweep's are not"));
             }
         };
         // the face swept: one named, or one written in place, `solid(face(ab, bc, …), …)`

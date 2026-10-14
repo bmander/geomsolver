@@ -1,4 +1,5 @@
-// A hollow duct elbow: carry one hollow section along a constrained arc.
+// A hollow duct elbow: one hollow square section carried round a constrained arc, the station's
+// plane through the bend's axis at every fraction of its turn.
 unit mm
 use std (horizontal)
 bend_radius := 30mm
@@ -6,16 +7,19 @@ half_size := 9mm
 wall := 2mm
 bend_angle := 90deg
 
-in std.front {
-  center := point hint((bend_radius, 0mm))
-  std.origin horizontal center
-  std.origin distance(bend_radius) center
-  outer := std.CenteredRectangle(center, w: 2 * half_size, h: 2 * half_size)
-  inner := std.CenteredRectangle(center, w: 2 * (half_size - wall), h: 2 * (half_size - wall))
-  annulus := face(outer.loop, holes: inner.loop)
+component Section(c: point, size: Length, wall: Length) {
+  private outer := std.CenteredRectangle(c, w: size, h: size)
+  private inner := std.CenteredRectangle(c, w: size - 2 * wall, h: size - 2 * wall)
+  profile := face(outer.loop, holes: inner.loop)
 }
 
-// The guide is drawn in plan, the top plane; the section stands perpendicular to its start tangent.
+// The section at station `s`: square to the guide there, its `v` along the bend's axis.
+component Elbow(g: arc, up: axis, size: Length, wall: Length, s: Scalar) {
+  st := std.OnArc(g, up: up, s: s)
+  sec := Section(st.n.origin, size: size, wall: wall) in st.n
+}
+
+// The guide is drawn in plan, the top plane.
 in std.top {
   turn_center := point
   fix((0mm, 0mm)) turn_center
@@ -28,4 +32,4 @@ in std.top {
   construction centerline guide := arc(center: turn_center, start: entry, end: exit)
   radius(bend_radius) guide
 }
-body := solid(annulus, along: guide)
+body := solid(Elbow(guide, std.z, size: 2 * half_size, wall: wall).sec.profile over s in (0, 1))

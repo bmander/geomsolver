@@ -4,7 +4,7 @@
 //! library module (`rust/lib/`) on its own.  `common::corpus` and `fixtures::examples` skip a
 //! document that does not elaborate and the tools reading them are ignored, so without this gate
 //! an example could stop elaborating unseen; one referenced by no other test (`parametric_torus`,
-//! `solid_bend`, `solid_twist`, `swept_tumble`) is held here alone.
+//! `swept_tumble`) is held here alone.
 //!
 //! A document that does not elaborate today is listed in `KNOWN`, with what it says, so the gate
 //! passes and catches any other: one that starts failing fails here, and one on the list that

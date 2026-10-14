@@ -1,6 +1,6 @@
-//! The primitives, built with their topology whole: a profile swept along its normal (a prism),
-//! turned about a line in its plane (a revolution), or lofted along a guide to a second section,
-//! from the loops of lines, arcs, circles and B-splines the CAD recipe carries
+//! The primitives, built with their topology whole: a profile swept along its normal (a prism,
+//! drafted or not), turned about a line in its plane (a revolution), or a ball's disc screwed along
+//! a helix (a canal), from the loops of lines, arcs, circles and B-splines the CAD recipe carries
 //! (`solid::cad::recipe`).
 #[allow(unused_imports)]
 use crate::fmath::Det;
@@ -261,7 +261,7 @@ const PARTING: &str = "#parting";
 /// from its own plane, the parting plane (#245): the section at ordinate `h` is the profile moved
 /// `|h| tan draft` into its material (`offset`), so a straight side is a plane and a circle's a
 /// cone, each leaning away from the plane either side of it. A prism crossing the plane is two
-/// lofts (`ruled`), one each side, glued at the section they share; its sides there are two faces
+/// pieces (`ruled`), one each side, glued at the section they share; its sides there are two faces
 /// of one name, its caps named as a prism's.
 pub fn drafted(p: &Profile,from: f64,to: f64,draft: f64) -> Result<Brep,String> {
     if draft == 0. { return prism(p,from,to) }
@@ -295,7 +295,7 @@ pub fn drafted(p: &Profile,from: f64,to: f64,draft: f64) -> Result<Brep,String> 
 /// outside, a hole's), each corner where the moved sides either side of it meet. Where those are
 /// two lines the corner is their crossing; where the sides go on tangent the corner moves square
 /// to both. An arc meeting another side at an angle is refused (its cone and the side's plane meet
-/// along a curve, which no loft carries), as is a spline, and a side the move takes to nothing.
+/// along a curve, which `ruled` does not carry), as is a spline, and a side the move takes to nothing.
 fn offset(p: &Profile,d: f64) -> Result<Profile,String> {
     if d == 0. { return Ok(p.clone()) }
     let n = unit(p.normal);
@@ -532,20 +532,13 @@ pub fn revolve(p: &Profile,origin: V,axis: V,angle: f64) -> Result<Brep,String> 
     Ok(b)
 }
 
-/// What a loft follows: a line (the step from its start to its end), or an arc (its centre, the
-/// axis it turns about right-handedly and the angle it turns through). Where it starts is the
-/// start section's business, which the faceted kernel checks against it (`solid::loft`).
-#[derive(Clone,Copy,Debug)]
-pub enum Guide { Line { delta: V },Arc { center: V,axis: V,angle: f64 },
-    /// A helix: the arc's turn and a step of `advance` along its axis with it (#238).
-    Screw { center: V,axis: V,angle: f64,advance: f64 } }
-
 /// **The tube a ball sweeps** (#238): the ball of radius `r` about `c` carried by the screw about the
 /// line through `origin` along `axis` — a turn by `angle` and a step of `advance` along it (none, a
 /// turn) — is the points within `r` of the path its centre runs, and those are the ball's disc
 /// square to the path carried along it (a point's nearest point on the path inside it lies in the
 /// disc there) with the ball where the path starts and where it ends: the disc turned (a torus's
-/// stretch, a whole torus past a whole turn) or lofted along the helix (`Guide::Screw`), each end's
+/// stretch, a whole torus past a whole turn) or carried along the helix to its own image there
+/// (`ruled`, a screw's `Blend`), each end's
 /// half ball beyond its disc united with it. Every face is named `name`. The caller's to know the
 /// tube meets itself nowhere: the path's centre stands off the axis by more than `r`, and a helix
 /// of more than a turn climbs more than `2 r` a turn.
@@ -570,9 +563,9 @@ pub fn canal(c: V,r: f64,origin: V,axis: V,angle: f64,advance: f64,name: &str) -
     if advance == 0. && angle.abs() >= TAU-1e-12 {
         return Ok(named(revolve(&disc,origin,a,TAU*angle.signum())?))
     }
-    let tube = if advance == 0. { revolve(&disc,origin,a,angle)? }
-        else { loft(&disc,None,&Guide::Screw {center:origin,axis:a,angle,advance})? };
     let end = screw(origin,a,angle,advance);
+    let tube = if advance == 0. { revolve(&disc,origin,a,angle)? }
+        else { ruled(&disc,&disc.moved(&end),Carry::Screw {center:origin,axis:a,angle,advance})? };
     let union = |s: &Brep,b: Brep| super::boolean::combined(s,&named(b),super::boolean::Op::Union,0.);
     Ok(union(&union(&named(tube),half_ball(c,scale(t,-1.),w,r)?)?,half_ball(c,t,w,r)?.moved(&end))?)
 }
@@ -605,80 +598,38 @@ fn screw(c: V,a: V,angle: f64,advance: f64) -> Rigid {
     Rigid::turn(c,a,angle).then(&Rigid {r:Rigid::identity().r,t:scale(a,advance)})
 }
 
-/// A section swept along a guide, or lofted from it to a second section at the guide's end (Solvent
-/// §6.9: the start section square to the guide at its start, the end square to it at its end).
-/// Without an end section a line's sweep is a prism and an arc's a revolution about its axis, and a
-/// screw's carries the start section to its own image at the guide's end; with one, each start edge
-/// is joined to the end edge written in its place (`ruled`).
-pub fn loft(start: &Profile,end: Option<&Profile>,guide: &Guide) -> Result<Brep,String> {
-    match (guide,end) {
-        (Guide::Line {delta,..},None) => {
-            // a prism, its caps (the last two faces, at its lower height and its upper) named as a
-            // sweep's are: `start` where the section stands, `end` where the guide takes it
-            let d = dot(*delta,unit(start.normal));
-            let mut b = prism(start,0.,d)?;
-            let n = b.faces.len();
-            let (lower,upper) = if d > 0. { ("start","end") } else { ("end","start") };
-            b.faces[n-2].name = lower.into();
-            b.faces[n-1].name = upper.into();
-            Ok(b)
-        }
-        (Guide::Arc {center,axis,angle,..},None) => revolve(start,*center,*axis,*angle),
-        (Guide::Line {delta,..},Some(end)) => ruled(start,end,Carry::Line {delta:*delta}),
-        (Guide::Arc {center,axis,angle,..},Some(end)) =>
-            ruled(start,end,Carry::Arc {center:*center,axis:unit(*axis),angle:*angle}),
-        (&Guide::Screw {center,axis,angle,advance},end) => {
-            let carry = Carry::Screw {center,axis:unit(axis),angle,advance};
-            let end = match end {
-                Some(end) => end.clone(),
-                None => start.moved(&screw(center,unit(axis),angle,advance)),
-            };
-            ruled(start,&end,carry)
-        }
-    }
-}
-
-/// The loft of `start` to `end` as `carry` takes the section along its guide: every point of a
-/// start edge joined to the point of the end edge written in its place at the same fraction of its
-/// own parameter (an arc's by angle), blended while carried (`Blend`). Carried along a line, edges
-/// that are coplanar lines join in a plane and coaxial circles and arcs in step in a cone or a
-/// cylinder, and the rails between them are straight; everything else is a `Blend`, and turned
-/// about an axis the rails are its iso-curves.
+/// The solid `start` sweeps to `end` as `carry` takes it, `end` the start's own image edge for
+/// edge — its offset (a drafted prism's next section) or itself screwed (a canal's disc): every
+/// point of a start edge joined to the point of the edge it became at the same fraction of its own
+/// parameter (an arc's by angle), blended while carried (`Blend`). Two sections drawn apart are no
+/// input: what a section becomes along a path is the face family's to say (#243 L3). Carried along
+/// a line, edges that are coplanar lines join in a plane and coaxial circles and arcs in step in a
+/// cone or a cylinder, and the rails between them are straight; everything else is a `Blend`, and
+/// screwed about an axis the rails are its iso-curves.
 fn ruled(start: &Profile,end: &Profile,carry: Carry) -> Result<Brep,String> {
     let n = unit(start.normal);
     // what carries the end section back to the start, and the direction a line carries along
     let (back,line) = match carry {
         Carry::Line {delta} => (Rigid {r:Rigid::identity().r,t:scale(delta,-1.)},Some(unit(delta))),
-        Carry::Arc {center,axis,angle} => (Rigid::turn(center,axis,-angle),None),
         Carry::Screw {center,axis,angle,advance} => (screw(center,axis,-angle,-advance),None),
     };
     let tol = tolerance(start.size()+end.size()+norm(sub(end.origin,start.origin)));
     let frame = Frame::about(start.origin,n);
     let starts = walks(start,&|q| { let l = frame.local(q); [l[0],l[1]] })?;
     let ends = walks(end,&|q| { let l = frame.local(back.point(q)); [l[0],l[1]] })?;
-    if starts.len() != ends.len() { return Err("a loft's sections must have as many holes".into()) }
+    if starts.len() != ends.len() { return Err("a swept section's image has another number of holes".into()) }
     let mut b = Brep::default();
     let (mut start_loops,mut end_loops) = (Vec::new(),Vec::new());
     for (li,(sw,ew)) in starts.iter().zip(&ends).enumerate() {
         let m = sw.len();
-        if ew.len() != m { return Err(format!("a loft's loop {li} has {} edges at its start and {} at its end",m,ew.len())) }
-        // the end's steps in the start walk's order, by source edge
-        let mut ew: Vec<Seg> = sw.iter().map(|s| ew.iter().find(|x| x.source == s.source).cloned()
-            .ok_or("a loft's sections must have their edges written in corresponding order")).collect::<Result<_,_>>()?;
-        // a whole circle is joined radially: the end's starts where the start's does, seen from the
-        // start circle's centre with the end carried back to it
-        if m == 1 {
-            if let (Curve::Circle(fa,_),Curve::Circle(fb,rb)) = (&sw[0].curve,&ew[0].curve) {
-                let fb = fb.moved(&back);
-                let d = sub(sw[0].start(),fa.o);
-                let d = unit(sub(d,scale(fa.z,dot(d,fa.z))));
-                let t0 = Curve::Circle(fb,*rb).inverse(add(fb.o,scale(d,*rb)));
-                ew[0].t = if ew[0].forward() { [t0,t0+TAU] } else { [t0+TAU,t0] };
-            }
-        }
+        if ew.len() != m { return Err(format!("a swept section's loop {li} has {} edges and its image {}",m,ew.len())) }
+        // the image's steps in the start walk's order, each edge by the edge it is the image of
+        // (a whole circle's image keeps its frame, so it starts where the circle does)
+        let ew: Vec<Seg> = sw.iter().map(|s| ew.iter().find(|x| x.source == s.source).cloned()
+            .ok_or("a swept section's image has lost an edge")).collect::<Result<_,_>>()?;
         for k in 0..m {
             if distance(ew[k].end(),ew[(k+1)%m].start()) > 1e3*tol {
-                return Err("a loft's sections must have their edges written in corresponding order".into())
+                return Err("a swept section's image does not run edge for edge with it".into())
             }
         }
         let pv: Vec<u32> = sw.iter().map(|s| b.vertex(s.start())).collect();
@@ -749,8 +700,8 @@ fn ruled(start: &Profile,end: &Profile,carry: Carry) -> Result<Brep,String> {
         start_loops.push((0..m).map(|k| use_of(se[k],&sw[k],true,on_plane())).collect::<Vec<_>>());
         end_loops.push((0..m).map(|k| use_of(ee[k],&ew[k],true,on_plane())).collect::<Vec<_>>());
     }
-    // the caps: the start's material toward the guide, the end's behind it. The guide leaves the
-    // start along the way the carry moves the section (read at one of its corners, off any axis)
+    // the caps: the start's material the way the carry moves it, the end's behind it (that way
+    // read at one of the section's corners, off any axis)
     let corner = starts[0][0].start();
     let forward = {
         let step = sub(carry.at(corner,1e-6),corner);
@@ -789,7 +740,7 @@ fn analytic_ruled(a: &Seg,z: &Seg,e: V,outward: V,tol: f64) -> Option<(Surface,b
             Some((Surface::Plane(Frame::new(p0,normal,sub(p1,p0))),false))
         }
         (Curve::Circle(fa,ra),Curve::Circle(fb,rb)) => {
-            // coaxial along the guide, and joined at the same angles
+            // coaxial along the line they are carried along, and joined at the same angles
             let h = dot(sub(fb.o,fa.o),e);
             let off = norm(sub(sub(fb.o,fa.o),scale(e,h)));
             let radial = |p: V,c: V| { let d = sub(p,c); unit(sub(d,scale(e,dot(d,e)))) };

@@ -6,10 +6,9 @@
 // = 8000 + 1000π mm³.
 unit mm
 use std (coords)
-use lofts
 
 component Transition(g: line, up: axis, half: Length, s: Scalar) {
-  st := lofts.OnLine(g, up: up, s: s)
+  st := std.OnLine(g, up: up, s: s)
   in st.n {
     h := half * (1 - s)
     r := half * s

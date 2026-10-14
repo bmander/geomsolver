@@ -478,3 +478,114 @@ component Chamfered(a: set, b: set, la: Length, lb: Length) := { p |
   out_b := { q | q outside b }
   la * distance(p, out_a) + lb * distance(p, out_b) >= la * lb
 }
+
+// -- stations of a face family (#243 L3) --------------------------------------------------------
+//
+// A loft or a sweep is a face of a component as one of its numbers runs (§6.9):
+// `solid(I(…).f over s in (0, 1))`.  These words only say where a station stands on its path: a
+// plane `n` square to the path where its parameter is `s`, its `v` along `up`.  What the section
+// is at that station — its shape, its twist, its scale, the rails it follows — is the writer's
+// component, drawn `in st.n` and reading `s`:
+//
+//   component Reducer(g: line, inlet: Length, outlet: Length, s: Scalar) {
+//     st := std.OnLine(g, up: std.z, s: s)
+//     sec := Section(st.n.origin, size: inlet + (outlet - inlet) * s) in st.n
+//   }
+//   body := solid(Reducer(guide, inlet: 24mm, outlet: 12mm).sec.profile over s in (0, 1))
+//
+// The edge `ab` at one station is `ab` at every other, so two sections correspond by being one.
+
+// The plane square to the line `g` at the fraction `s` of the way from its start to its end: its
+// origin there, its normal along `g`, and its `v` held along `up` (any direction square to `g`).
+// Along a straight guide every station is the first one moved, so nothing turns.  It starts as it
+// ends, read off the guide and `up`: `v` along `up`, and `u` that turned back a quarter about `g`.
+component OnLine(g: line, up: axis, s: Scalar) {
+  m := point
+  m coincident(t == s) g
+  n := plane(u: hint(dir: up, turn: -90deg, about: g), v: hint(dir: up))
+  n.origin coincident m
+  n square(up: up) g
+}
+
+// The plane square to the arc `g` at the fraction `s` of its turn: through the arc's axis, its `u`
+// running out from the centre to the arc, its `v` along `up`, the normal of the plane the arc is
+// drawn in.  Square to the arc's tangent, and turned about the axis as the arc turns: along a
+// guide in one plane this is the rotation-minimising frame.
+component OnArc(g: arc, up: axis, s: Scalar) {
+  m := point
+  m coincident(t == s) g
+  out := line(g.center, m)
+  n := plane
+  n.origin coincident m
+  n.u parallel out
+  n.v parallel up
+}
+
+// The plane square to the spline `g` where its parameter is `s`: the tangent there drawn as a line
+// from `m`, the plane square to it, its `v` along `up` (the normal of the plane `g` is drawn in,
+// so again rotation-minimising for a guide in one plane).  The tangent is drawn 10 mm long, or its
+// far end would slide along it.
+component OnSpline(g: spline, up: axis, s: Scalar) {
+  m := point
+  m coincident(t == s) g
+  q := point
+  tl := line(m, q)
+  g tangent(at: m) tl
+  length(10mm) tl
+  n := plane
+  n.origin coincident m
+  n square(up: up) tl
+}
+
+// The plane square to any path `g` — a line, an arc, a spline or a traced curve — where its
+// parameter is `s`, its `v` along `up`: `OnSpline`'s statements over a `path`.  A line's and an
+// arc's `s` is the fraction of its run (an arc's by angle), a spline's its own parameter.
+component On(g: path, up: axis, s: Scalar) {
+  m := point
+  m coincident(t == s) g
+  q := point
+  tl := line(m, q)
+  g tangent(at: m) tl
+  length(10mm) tl
+  n := plane
+  n.origin coincident m
+  n square(up: up) tl
+}
+
+// A screw's station: the plane through the axis `ax` turned `360deg · turns · s` from `base.u`
+// and risen `pitch · turns · s` along it.  Its `u` runs out from the axis, its `v` along it.  A
+// section drawn in it is an axial section (a thread's): carried by the screw, it sweeps the
+// thread.  `base` is the plane square to the axis at the screw's start, its origin on the axis.
+component Screwed(ax: axis, base: plane, pitch: Length, turns: Scalar, s: Scalar) {
+  in base {
+    k := point
+    out := line(base.origin, k)
+    length(10mm) out
+    zero := point
+    zero on_u(d: 10mm) base
+    ref := line(base.origin, zero)
+    ref angle(360deg * turns * s, sense: ccw) out
+  }
+  n := plane
+  n.u parallel out
+  n.v parallel ax
+  base.origin distance(pitch * turns * s, along: ax) n.origin
+  n.origin coincident ax
+}
+
+// A helix's normal station: the plane square to the helix of radius `r` about `ax`, rising `pitch`
+// a turn, at `turns · s` turns from `base.u`.  A section drawn in it (a spring's wire) is carried
+// along the helix, square to it at every station.
+component OnHelix(ax: axis, base: plane, r: Length, pitch: Length, turns: Scalar, s: Scalar) {
+  sc := Screwed(ax, base, pitch: pitch, turns: turns, s: s)
+  in sc.n {
+    m := point
+    m on_u(d: r) sc.n
+  }
+  n := plane
+  n.origin coincident m
+  n.u parallel sc.n.u
+  n.v perpendicular n.u
+  // the helix leans from square to the axis by its lead angle
+  n.v angle(atan(pitch / (2 * pi * r))) sc.n.v
+}

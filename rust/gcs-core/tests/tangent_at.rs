@@ -4,9 +4,9 @@
 //! judged by its kind (E103). `g tangent(at: m) l` is the line along `g` where a relation already
 //! holds `m` on it: of a spline or a curve one row reading the place of the contact holding `m`
 //! (#70's shared place, never a second unknown), of a circle or an arc the radius to `m` square
-//! to the line, of a line `parallel`. So one station word stands over any guide (`docs/lofts/l0/
-//! pending.sv`'s `On`), each station solved at DOF 0 with every equation independent — where the
-//! tangency pinned beside the contact restates the point.
+//! to the line, of a line `parallel`. So one station word stands over any guide (`std.On`,
+//! drafted in `docs/lofts/l0/pending.sv`), each station solved at DOF 0 with every equation
+//! independent — where the tangency pinned beside the contact restates the point.
 
 use crate::common::{read, refused};
 use gcs_core::constraints::CKind;
@@ -42,8 +42,8 @@ in std.top {
 }
 ";
 
-/// `pending.On` as today's spelling can say it of a point drawn in the guide's view (#248, #249
-/// are its own issues): the plane square to any path `g` where `m` is on it.
+/// `std.On` as #251's spelling said it of a point drawn in the guide's view (#248, #249 were its
+/// own issues): the plane square to any path `g` where `m` is on it.
 const ON: &str = "\
 component On(g: path, view: plane, up: axis) {
   in view {

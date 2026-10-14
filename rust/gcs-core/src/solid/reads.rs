@@ -124,12 +124,6 @@ fn reads_where(sk: &Sketch, si: usize, unit: f64, skip: &dyn Fn(usize) -> bool) 
                     }));
                 }
             }
-            SolidDef::Loft { face, end, guide } => {
-                v.extend([4.0, end.map_or(-1.0, |f| f as f64)]);
-                face_reads(sk, *face, &mut v);
-                if let Some(f) = end { face_reads(sk, *f, &mut v); }
-                loft::reads(sk, *guide, &mut v);
-            }
             SolidDef::Prism { face, from, to, draft } => {
                 v.push(0.0);
                 v.push(from.value);

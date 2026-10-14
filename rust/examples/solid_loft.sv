@@ -1,4 +1,6 @@
-// A hollow reducer: two square sections joined along a dimensioned centerline.
+// A hollow reducer: one hollow square section run along a dimensioned centerline, its size the
+// inlet's mixed with the outlet's as the station runs. The edge `ab` at one station is `ab` at
+// every other, so the two ends correspond by being one section.
 unit mm
 use std
 length := 40mm
@@ -7,31 +9,24 @@ outlet_size := 12mm
 wall := 2mm
 
 component Section(c: point, size: Length, wall: Length) {
-  private construction outer := std.CenteredRectangle(c, w: size, h: size)
-  private construction inner := std.CenteredRectangle(c, w: size - 2 * wall, h: size - 2 * wall)
+  private outer := std.CenteredRectangle(c, w: size, h: size)
+  private inner := std.CenteredRectangle(c, w: size - 2 * wall, h: size - 2 * wall)
   profile := face(outer.loop, holes: inner.loop)
 }
 
-end_plane := plane
-fix(origin == (0mm, length, 0mm)) end_plane
-fix(dir == (1, 0, 0)) end_plane.u
-fix(dir == (0, 0, 1)) end_plane.v
-in std.front {
-  inlet_center := point hint((0mm, 0mm))
-  inlet_center coincident std.origin
-  inlet := Section(inlet_center, size: inlet_size, wall: wall)
+// The section at station `s`: drawn in the plane square to the guide there, its size running
+// from the inlet's to the outlet's.
+component Reducer(g: line, up: axis, inlet: Length, outlet: Length, wall: Length, s: Scalar) {
+  st := std.OnLine(g, up: up, s: s)
+  sec := Section(st.n.origin, size: inlet + (outlet - inlet) * s, wall: wall) in st.n
 }
-in end_plane {
-  outlet_center := point hint((0mm, 0mm))
-  outlet_center coincident end_plane.origin
-  outlet := Section(outlet_center, size: outlet_size, wall: wall)
-}
+
 in std.top {
-  entry := point hint((0mm, 0mm))
-  entry coincident std.top.origin
+  entry := point
+  fix((0mm, 0mm)) entry
   exit := point hint((0mm, length))
   construction centerline guide := line(entry, exit)
   vertical guide
-  entry distance(length, along: v) exit
+  length(length) guide
 }
-body := solid(inlet.profile, outlet.profile, along: guide)
+body := solid(Reducer(guide, std.z, inlet: inlet_size, outlet: outlet_size, wall: wall).sec.profile over s in (0, 1))

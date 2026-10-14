@@ -3,7 +3,7 @@
 #[allow(unused_imports)]
 use crate::fmath::Det;
 use super::boolean::{combined,Op};
-use super::build::{cut_before,drafted,kept,kept_by_solid,loft,prism,revolve,Profile};
+use super::build::{cut_before,drafted,kept,kept_by_solid,prism,revolve,Profile};
 use super::geom::{tolerance,tolerance_over,widen,Rigid,V,EMPTY};
 use super::topo::Brep;
 use super::{KernelError,Kind};
@@ -49,10 +49,6 @@ impl Node {
         match self {
             Node::Prism {profile,from,to,draft} => Ok(drafted(&Profile::of(profile)?,*from,*to,draft.unwrap_or(0.))?),
             Node::Revolve {profile,origin,axis,angle} => Ok(revolve(&Profile::of(profile)?,*origin,*axis,*angle)?),
-            Node::Loft {profile,end,guide} => {
-                let end = end.as_ref().map(Profile::of).transpose()?;
-                Ok(loft(&Profile::of(profile)?,end.as_ref(),guide)?)
-            }
             Node::Placed {source,matrix} => {
                 let source = built.get(source).ok_or("recipe: `source` not built before its user")?;
                 Ok(source.moved(&Rigid::from_rows(matrix)))

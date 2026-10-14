@@ -183,7 +183,7 @@ class StepTests(unittest.TestCase):
                 "--step", str(step), "--no-diagnose"], text=True, capture_output=True,
                 env=dict(os.environ, SOLVENT_CAD_PYTHON="/no-python-subprocess-allowed"))
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn("along-guide lofts", result.stderr)
+            self.assertIn("does not build a face family", result.stderr)
             self.assertEqual(step.read_text(), "existing export")
 
     def test_continuous_sweep_refusal_preserves_both_exports(self):

@@ -247,11 +247,6 @@ fn build(
         for c in bound { t = Term::Inter(Box::new(t), Box::new(operand(c))); }
         return t;
     }
-    if let SolidDef::Loft { face, end, guide } = sol.def {
-        let Ok(loft) = loft::prepare(sk, face, end, guide, unit) else { return Term::Empty };
-        prims.push(loft.primitive(origin, &name));
-        return Term::Prim(prims.len()-1);
-    }
     if let SolidDef::Family { .. } = sol.def {
         let Ok(family) = super::family::built(sk, si as usize, unit) else { return Term::Empty };
         prims.push(family.primitive(origin, &name));
@@ -320,7 +315,7 @@ fn build(
                 let Some(ab) = sk.revolve_axis(*face, *axis) else { return Term::Empty };
                 revolve(&p, ab, sweep.value, *sense, unit, &name)
             }
-            SolidDef::Body { .. } | SolidDef::Loft { .. } | SolidDef::Placed { .. }
+            SolidDef::Body { .. } | SolidDef::Placed { .. }
                 | SolidDef::Swept { .. } | SolidDef::Region { .. }
                 | SolidDef::Family { .. } => unreachable!(),
         };

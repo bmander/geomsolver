@@ -125,7 +125,7 @@ binds a solid and motion. `solid::ExtrudedField` is the prism leaf (interval Gra
 (`solid/field/profile.rs`, exact, no tessellation): `ordered` joins within the larger of roundoff
 and axis tolerance, `turning` checks one turn and convexity; convex loops are half-planes and
 sectors, others `Node::Profile` (ray-parity sign only when the box clears every wall, else
-`[-d, d]`). Partial revolutions and lofts refuse.
+`[-d, d]`). Partial revolutions and face families refuse.
 
 `SolveOpts::acceptance_tol` controls hard-row success and the DogLeg-to-LM retry; `tol` controls
 stopping; defaults keep interactive behavior. Analytic callers request accuracy instead of

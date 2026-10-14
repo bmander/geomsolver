@@ -6,12 +6,14 @@
 //! interval, a polynomial in the running number between them (`brep::family`), lowered to a plane,
 //! a cylinder, a cone or a torus where its numbers say it is one.
 //!
-//! The fixtures are the L0 target programs (`docs/lofts/l0/`), over the library they were written
-//! against (`docs/lofts/l0/lofts.sv`), and the gates are their closed forms: a reduced section is
-//! its prismatoid, a twisted prism A·L at any twist and under any law (Cavalieri), a scaled one a
-//! frustum and a pyramid, a bend and a thread Pappus, a wire square to its helix A × the helix's
-//! length, a smooth loft π∫r² by a quadrature exact for its rail's degree — each read off the exact
-//! B-rep (`props::volume`, its boundary checked by `Brep::check`) to a part in 10⁹.
+//! The fixtures are the L0 target programs (`docs/lofts/l0/`), over the station words they were
+//! written with (`std.OnLine` and its kin since L3, drafted in L0's `lofts.sv`), and the gates are
+//! their closed forms: a reduced section is its prismatoid, a twisted prism A·L at any twist and
+//! under any law (Cavalieri), a scaled one a frustum and a pyramid, a bend and a thread Pappus, a
+//! wire square to its helix A × the helix's length, a smooth loft π∫r² by a quadrature exact for
+//! its rail's degree — each read off the exact B-rep (`props::volume`, its boundary checked by
+//! `Brep::check`) to a part in 10⁹.
+
 
 use gcs_core::model::{EntKind, SolidDef};
 use gcs_core::program::{elaborate, Elaborated};
@@ -21,7 +23,6 @@ use std::f64::consts::PI;
 
 use crate::common::parse;
 
-const LOFTS: &str = include_str!("../../../docs/lofts/l0/lofts.sv");
 const REDUCER: &str = include_str!("../../../docs/lofts/l0/reducer.sv");
 const ELBOW: &str = include_str!("../../../docs/lofts/l0/elbow.sv");
 const TWISTED: &str = include_str!("../../../docs/lofts/l0/twisted_duct.sv");
@@ -31,15 +32,12 @@ const SPRING: &str = include_str!("../../../docs/lofts/l0/spring.sv");
 const BOTTLE: &str = include_str!("../../../docs/lofts/l0/bottle.sv");
 const BLADE: &str = include_str!("../../../docs/lofts/l0/blade.sv");
 
-/// `src` linked as `solventc` links an L0 program (`lofts` beside it, then the library),
-/// elaborated: the diagnostics' words, and what was made.
+/// `src` linked as `solventc` links an L0 program (the library), elaborated: the diagnostics'
+/// words, and what was made.
 fn read(src: &str) -> (Elaborated, Vec<String>) {
     let (mut prog, errs) = parse(src);
     assert!(errs.is_empty(), "{errs:?}");
-    let linked = gcs_core::modules::link(&mut prog, &mut |name| match name {
-        "lofts" => Some(LOFTS.to_string()),
-        _ => gcs_core::library::resolve(name),
-    });
+    let linked = gcs_core::modules::link(&mut prog, &mut gcs_core::library::resolve);
     assert!(linked.is_empty(), "{:?}", linked.iter().map(|d| &d.message).collect::<Vec<_>>());
     let e = elaborate(&prog);
     let said = e.errors().map(|d| d.message.clone()).collect();
@@ -331,10 +329,9 @@ fn a_family_inside_a_component() {
 const CONE: &str = "\
 unit mm
 use std
-use lofts
 
 component Disc(g: line, up: axis, rim: circle, s: Scalar) {
-  st := lofts.OnLine(g, up: up, s: s)
+  st := std.OnLine(g, up: up, s: s)
   in st.n {
     k := circle(center: st.n.origin)
     radius(rim.r * (1 - s / 2)) k

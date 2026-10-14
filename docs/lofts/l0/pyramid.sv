@@ -3,10 +3,9 @@
 // Closed form: V = 20² · 30 / 3 = 4000 mm³.
 unit mm
 use std
-use lofts
 
 component Shrinking(g: line, up: axis, size: Length, s: Scalar) {
-  st := lofts.OnLine(g, up: up, s: s)
+  st := std.OnLine(g, up: up, s: s)
   sq := std.CenteredRectangle(st.n.origin, w: size * (1 - s), h: size * (1 - s)) in st.n
   f := face(sq.loop)
 }

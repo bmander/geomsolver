@@ -112,11 +112,6 @@ impl Sketch {
                         }
                     }
                     SolidDef::Prism { face, .. } => v.push(EntRef::face(*face as usize)),
-                    SolidDef::Loft { face, end, guide } => {
-                        v.push(EntRef::face(*face as usize));
-                        v.extend(end.iter().map(|&f| EntRef::face(f as usize)));
-                        v.push(*guide);
-                    }
                     // the station, every entity of it: deleting one takes the family with it
                     SolidDef::Family { face, station, .. } => {
                         v.push(EntRef::face(*face as usize));

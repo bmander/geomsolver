@@ -141,10 +141,11 @@ fn every_node_the_kernel_builds_is_occts() {
                 let sub = object([("schema",1.into()),("units","mm".into()),("root",id.into()),
                     ("nodes",Json::Arr(nodes[..=i].to_vec()))]);
                 let (v,faces) = (volume(&b),b.faces.len());
-                // OCCT builds no lofts: for one (and what is built of it) the faceted kernel is the reference
+                // OCCT builds no face family (#243 L10): for one (and what is built of it) the faceted
+                // kernel is the reference
                 let theirs = match session.construct(&sub) {
                     Ok(t) => Some(t),
-                    Err(err) if err.contains("along-guide lofts") => { eprintln!("{label}: {v:.9} mm³ (OCCT builds no lofts)"); None }
+                    Err(err) if err.contains("face family") => { eprintln!("{label}: {v:.9} mm³ (OCCT builds no face families)"); None }
                     // nor a lowered round (`tests/fillet_oracle.rs` holds those to OCCT's fillet)
                     Err(err) if err.contains("lowered round") => { eprintln!("{label}: {v:.9} mm³ (OCCT builds no lowered rounds)"); None }
                     // nor a ball's tube (`tests/canal.rs` holds those to Pappus)

@@ -8,11 +8,10 @@
 //     its area times its centroid's circle per turn (Pappus): V = 4 · 2π·10 · 3 = 240π mm³.
 unit mm
 use std (on_u)
-use lofts
 
 component Coil(ax: axis, base: plane, r: Length, wire: Length, pitch: Length, turns: Scalar,
                s: Scalar) {
-  st := lofts.OnHelix(ax, base, r: r, pitch: pitch, turns: turns, s: s)
+  st := std.OnHelix(ax, base, r: r, pitch: pitch, turns: turns, s: s)
   in st.n {
     w := circle(center: st.n.origin)
     radius(wire) w
@@ -22,7 +21,7 @@ component Coil(ax: axis, base: plane, r: Length, wire: Length, pitch: Length, tu
 
 component Thread(ax: axis, base: plane, r: Length, size: Length, pitch: Length, turns: Scalar,
                  s: Scalar) {
-  st := lofts.Screwed(ax, base, pitch: pitch, turns: turns, s: s)
+  st := std.Screwed(ax, base, pitch: pitch, turns: turns, s: s)
   in st.n {
     c := point
     c on_u(d: r) st.n

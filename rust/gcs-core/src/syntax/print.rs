@@ -377,11 +377,6 @@ fn sweep_parts(s: &Sweep) -> Vec<String> {
             text.push_str(&format!(" over {} in ({}, {})", f.swept.text, f.domain.0, f.domain.1));
             vec![text]
         }
-        Sweep::Along { guide } => {
-            let mut text = String::from("along: ");
-            write_ref(&mut text, guide);
-            vec![text]
-        },
         Sweep::Through { body } => {
             let mut text = String::from("through: ");
             write_ref(&mut text, body);

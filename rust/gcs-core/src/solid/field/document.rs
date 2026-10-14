@@ -261,7 +261,7 @@ fn read(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<Snapshot,String>
                     if let Some(cut) = union(&through_late)? { body = body.combine(cut,BodyWord::Cut).map_err(error)?; }
                     body
                 }
-                SolidDef::Loft {..} | SolidDef::Family {..} => return Err("material fields \
+                SolidDef::Family {..} => return Err("material fields \
                     currently require prisms, full revolutions, Boolean bodies or named motions"
                     .into()),
             })

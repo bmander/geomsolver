@@ -1,415 +1,211 @@
-//! Directed guides unify a repeated section and an explicit two-section transition.
-use gcs_core::{
-    io,
-    model::EntRef,
-    program,
-    solid::{ApproximationPolicy::Report, WorldPoint},
-    syntax,
-};
-use crate::common::parsed::read;
+//! **Today's loft is library words** (#243 L3): the reducer, the elbow, the narrowing bend and the
+//! square-to-diamond duct, each one section drawn at a station of its guide (`std.OnLine`,
+//! `std.OnArc`) and swept as the station runs — `solid(I(…).f over s in (0, 1))` — at the volume
+//! `solid(a[, b], along: g)` gave them, read off the exact B-rep to a part in 10⁹, and with its
+//! caps and its walls by name.  `along:` is retired, refused saying what to write; the station
+//! words stand on any path the family runs over (`std.On`, `std.OnSpline`).
+use gcs_core::program::Elaborated;
+use gcs_core::solid::ApproximationPolicy::Report;
+use std::collections::BTreeMap;
+use std::f64::consts::PI;
 
-const SECTIONS: &str = "unit mm
-use std
-back := plane
-fix(origin == (0, 20, 0)) back
-fix(dir == (1, 0, 0)) back.u
-fix(dir == (0, 0, 1)) back.v
-in std.top {
-  a := point hint((0, 0))
-  b := point hint((0, 20))
-  guide := line(a, b)
-}
-in std.front {
-  c := point hint((0, 0))
-  outer := circle(center: c) hint(r: 10)
-  inner := circle(center: c) hint(r: 5)
-  section := face(outer, holes: inner)
-}
-in back {
-  ec := point hint((0, 0))
-  eo := circle(center: ec) hint(r: 6)
-  ei := circle(center: ec) hint(r: 3)
-  end_section := face(eo, holes: ei)
-}
-";
+use crate::common::parsed::determined;
 
-fn evaluated(e: &program::Elaborated, name: &str) -> std::rc::Rc<gcs_core::solid::EvaluatedSolid> {
-    e.sketch
-        .evaluated_solid(e.map.ent_named(name).unwrap().i(), Report)
-        .unwrap()
+const REDUCER: &str = include_str!("../../examples/solid_loft.sv");
+const ELBOW: &str = include_str!("../../examples/solid_elbow.sv");
+const BEND: &str = include_str!("../../examples/solid_bend.sv");
+const TWIST: &str = include_str!("../../examples/solid_twist.sv");
+
+fn index(e: &Elaborated, name: &str) -> usize {
+    e.map.ent_named(name).unwrap_or_else(|| panic!("no solid `{name}`")).i()
 }
 
+/// The volume of the solid `name` off its exact B-rep, its boundary checked first.
+fn exact(e: &Elaborated, name: &str) -> f64 {
+    let x = e.sketch.exact_solid(index(e, name)).unwrap_or_else(|m| panic!("`{name}`: {m}"));
+    x.brep.check(1e-9 * x.brep.size()).unwrap_or_else(|k| panic!("`{name}`: {}", k.msg));
+    gcs_core::brep::props::volume(&x.brep) / x.mm.powi(3)
+}
+
+/// The kinds of the exact solid `name`'s surfaces, by face name.
+fn kinds(e: &Elaborated, name: &str) -> BTreeMap<String, Vec<&'static str>> {
+    let x = e.sketch.exact_solid(index(e, name)).unwrap();
+    let mut out: BTreeMap<String, Vec<&'static str>> = BTreeMap::new();
+    for f in &x.brep.faces { out.entry(f.name.clone()).or_default().push(f.surface.kind()); }
+    out
+}
+
+/// `got` within `rel` of `want`, said with both.
+fn near(got: f64, want: f64, rel: f64, what: &str) {
+    assert!((got - want).abs() <= rel * want.abs(), "{what}: {got} against {want} (±{rel})");
+}
+
+/// A hollow square's walls by name, under the section's path in the instance: the outer
+/// rectangle's four edges, as the face's own boundary names them, and its hole's.
+fn hollow_walls(body: &str) -> Vec<String> {
+    let mut v = Vec::new();
+    for ring in ["", "inner.loop."] {
+        for edge in ["ab", "bc", "cd", "da"] { v.push(format!("{body}.sec.{ring}{edge}")); }
+    }
+    v
+}
+
+/// **Each of today's four lofts is its closed form**, solved at DOF 0: the reducer its prismatoid
+/// (its area linear in `s`), the elbow Pappus, the narrowing bend Pappus differentially (its area
+/// linear in the turn, its centroid on the arc), and the square run to a diamond its prismatoid
+/// (its corners linear in `s`, so its area quadratic and Simpson exact).
 #[test]
-fn sweep_and_loft_preserve_holes_caps_and_closed_meshes() {
-    let e = read(&format!("{SECTIONS}sweep := solid(section, along: guide)\nloft := solid(section, end_section, along: guide)\n"));
-    for (name, want) in [
-        ("sweep", 1500.0 * std::f64::consts::PI),
-        ("loft", 980.0 * std::f64::consts::PI),
+fn todays_lofts_are_running_sections_at_their_closed_forms() {
+    // the twisted duct's section halfway: the square's corners and the diamond's averaged
+    let middle = 4.0 * (5.0 * 5.0 + 11.0 * 11.0) / 2.0;
+    for (what, src, want) in [
+        ("reducer", REDUCER, 40.0 * (8.0 * 18.0 - 16.0)),
+        ("elbow", ELBOW, (18.0 * 18.0 - 14.0 * 14.0) * 30.0 * PI / 2.0),
+        // A(s) = 16 h − 16 with h = 9 − 3s, so ∫A = 104
+        ("bend", BEND, 104.0 * 30.0 * PI / 2.0),
+        ("twist", TWIST, 40.0 / 6.0 * (400.0 + 4.0 * middle + 288.0)),
     ] {
-        let s = evaluated(&e, name);
-        assert!(
-            (s.volume() - want).abs() / want < 0.003,
-            "{name}: {} != {want}",
-            s.volume()
-        );
-        assert!(!s.contains_world(WorldPoint([0.0, 10.0, 0.0])));
-        assert!(s.contains_world(WorldPoint([7.0, 10.0, 0.0])));
-        for face in ["start", "end", "outer", "inner"] {
-            assert!(
-                s.surviving_faces().contains(&format!("{name}.{face}")),
-                "{face}"
-            );
-        }
-        assert_eq!(super::solid::unpaired(s.mesh()), 0, "{name}");
-        assert!(s.stl().unwrap().len() > 84);
+        let e = determined(src);
+        near(exact(&e, "body"), want, 1e-9, what);
+        // and the faceted evaluation, within its chords
+        let s = e.sketch.evaluated_solid(index(&e, "body"), Report).unwrap();
+        near(s.volume(), want, 1e-3, what);
+        assert_eq!(super::solid::unpaired(s.mesh()), 0, "{what}");
+        let faces = s.surviving_faces();
+        let has = |cap: &str| faces.iter().any(|f| f == cap);
+        assert!(has("body.start") && has("body.end"), "{what}: {faces:?}");
     }
 }
 
+/// **The walls are the section's edges, in the kinds a loft's were**: the reducer's planes, the
+/// elbow's planes and cylinders, and the bend's and the twisted duct's sheets, one wall each edge.
 #[test]
-fn guide_and_end_section_changes_invalidate_cache_and_copy_retains_dependencies() {
-    let mut e = read(&format!(
-        "{SECTIONS}body := solid(section, end_section, along: guide)\n"
-    ));
-    let before = evaluated(&e, "body").volume();
-    let r = e.sketch.circles[e.map.ent_named("eo").unwrap().i()].radius as usize;
-    e.sketch.params[r].value = 8.0;
-    assert!(evaluated(&e, "body").volume() > before);
-    let copied = io::copy(&e.sketch, &[e.map.ent_named("body").unwrap()]);
-    assert_eq!(copied.solids.len(), 1);
-    assert!(
-        (copied.evaluated_solid(0, Report).unwrap().volume() - evaluated(&e, "body").volume())
-            .abs()
-            < 1e-7
-    );
-    // pasted where it stood: an offset moves each point within its own plane, and the guide and
-    // the sections stand in three
-    let mut dest = gcs_core::model::Sketch::new();
-    io::paste(&mut dest, &copied, 0.0, 0.0);
-    assert!(
-        (dest.evaluated_solid(0, Report).unwrap().volume() - evaluated(&e, "body").volume()).abs()
-            < 1e-7
-    );
-    // Guide placement is a dependency even though the solid owns no solver parameters.
-    let b = e.map.ent_named("b").unwrap().i();
-    let py = e.sketch.point_params(b)[1] as usize;
-    e.sketch.params[py].value = 30.0;
-    assert!(e
-        .sketch
-        .evaluated_solid(e.map.ent_named("body").unwrap().i(), Report)
-        .unwrap_err()
-        .contains("end section"));
-}
-
-#[test]
-fn malformed_guides_and_mismatched_sections_are_diagnosed() {
-    for (old, new, needle) in [
-        ("hint((0, 20))", "hint((0, 0))", "distinct"),
-        ("(0, 20, 0)) back", "(0, 21, 0)) back", "end section"),
-        ("guide := line(a, b)", "guide := line(b, a)", "start section"),
-        (
-            "end_section := face(eo, holes: ei)",
-            "end_section := face(eo)",
-            "numbers of holes",
-        ),
-    ] {
-        let src =
-            format!("{SECTIONS}body := solid(section, end_section, along: guide)\n").replace(old, new);
-        let (p, err) = crate::common::parse(&src);
-        assert!(err.is_empty());
-        let e = program::elaborate(&p);
-        let errors = program::solid_diagnostics(&e.sketch, &e.map);
-        assert!(
-            errors.iter().any(|d| d.message.contains(needle)),
-            "{needle}: {errors:?}"
-        );
+fn the_walls_are_named_by_the_section_and_keep_their_kinds() {
+    // narrowing as it turns, none of the bend's walls stays on one surface
+    for (what, src, flat, round, sheets) in
+        [("reducer", REDUCER, 8, 0, 0), ("elbow", ELBOW, 4, 4, 0), ("bend", BEND, 0, 0, 8)] {
+        let k = kinds(&determined(src), "body");
+        let walls: Vec<&'static str> = hollow_walls("body").iter()
+            .map(|w| match k.get(w).map(Vec::as_slice) {
+                Some([kind]) => *kind,
+                other => panic!("{what}: wall `{w}` is {other:?}: {k:?}"),
+            })
+            .collect();
+        let count = |kind: &str| walls.iter().filter(|w| **w == kind).count();
+        let counts = (count("plane"), count("cylinder"), count("family"));
+        assert_eq!(counts, (flat, round, sheets), "{what}: {k:?}");
+        assert_eq!(k.len(), 10, "{what}: the walls and the two caps: {k:?}");
     }
-    for tail in [
-        ", depth: 3mm",
-        ", through: body",
-        ", about: guide",
-        ", along: guide",
-    ] {
-        let (_, errs) = crate::common::parse(&format!(
-            "{SECTIONS}body := solid(section, along: guide{tail})\n"
-        ));
-        assert!(!errs.is_empty());
-    }
+    let k = kinds(&determined(TWIST), "body");
+    assert_eq!(k.len(), 6, "{k:?}");
+    assert_eq!(k.values().filter(|v| **v == ["family"]).count(), 4, "{k:?}");
 }
 
+/// **The words follow their guide**: a longer reducer is longer by its area, a bend through half
+/// the angle half the elbow, a bigger radius Pappus again.
 #[test]
-fn arc_sweep_follows_solved_radius_and_transports_the_profile() {
-    let src = "unit mm
-use std
-in std.top {
- center := point hint((0, 0))
- a := point hint((30, 0))
- b := point hint((0, 30))
- guide := arc(center: center, start: a, end: b) hint(r: 30)
-}
-in std.front {
- c := point hint((30, 0))
- outer := circle(center: c) hint(r: 5)
- inner := circle(center: c) hint(r: 3)
- section := face(outer, holes: inner)
-}
-body := solid(section, along: guide)
-";
-    let mut e = read(src);
-    let s = e
-        .sketch
-        .evaluated_solid(0, gcs_core::solid::ApproximationPolicy::View { unit: 0.2 })
-        .unwrap();
-    let want = 0.5 * std::f64::consts::PI * 30.0 * 16.0 * std::f64::consts::PI;
-    assert!(
-        (s.volume() - want).abs() / want < 0.004,
-        "{} != {want}",
-        s.volume()
-    );
-    assert_eq!(super::solid::unpaired(s.mesh()), 0);
-    let k = 0.5_f64.sqrt();
-    assert!(!s.contains_world(WorldPoint([30.0 * k, 30.0 * k, 0.0])));
-    assert!(s.contains_world(WorldPoint([34.0 * k, 34.0 * k, 0.0])));
-    let g = e.map.ent_named("guide").unwrap().i();
-    e.sketch.params[e.sketch.arcs[g].radius as usize].value = 31.0;
-    assert!(e.sketch.evaluated_solid(0, Report).is_err());
-    assert!(io::copy(&read(src).sketch, &[EntRef::solid(0)])
-        .evaluated_solid(0, gcs_core::solid::ApproximationPolicy::View { unit: 0.2 })
-        .is_ok());
+fn the_sections_follow_their_guide() {
+    let e = determined(&REDUCER.replace("length := 40mm", "length := 60mm"));
+    near(exact(&e, "body"), 60.0 * 128.0, 1e-9, "a longer reducer");
+    let e = determined(&ELBOW.replace("bend_angle := 90deg", "bend_angle := 45deg"));
+    near(exact(&e, "body"), 128.0 * 30.0 * PI / 4.0, 1e-9, "half the bend");
+    let e = determined(&ELBOW.replace("bend_radius := 30mm", "bend_radius := 40mm"));
+    near(exact(&e, "body"), 128.0 * 40.0 * PI / 2.0, 1e-9, "a wider bend");
 }
 
+/// **A running section is a Boolean operand**: the reducer cut across its middle keeps the half
+/// where it is widest, 40 · ∫₀^½ (176 − 96 s) ds = 3040 mm³.
 #[test]
-fn reversed_and_rotated_guides_keep_the_same_loft_and_source_round_trips() {
-    let src = format!("{SECTIONS}body := solid(end_section, section, along: guide)\n")
-        .replace("guide := line(a, b)", "guide := line(b, a)");
-    let mut e = read(&src);
-    let want = evaluated(&e, "body").volume();
-    let (mut p, errors) = crate::common::parse("body := solid(end_section, section, along: guide)\n");
-    assert!(errors.is_empty());
-    let printed = syntax::render_flat(&mut p).unwrap();
-    let rebuilt = format!(
-        "{}{printed}",
-        SECTIONS.replace("guide := line(a, b)", "guide := line(b, a)")
-    );
-    assert!((evaluated(&read(&rebuilt), "body").volume() - want).abs() < 1e-7);
-    let committed = gcs_core::edit::commit_seeds(&e, &e.sketch, &e.program);
-    assert!(committed
-        .text
-        .contains("body := solid(end_section, section, along: guide)"));
-    let k = 0.5_f64.sqrt();
-    let rotate = |p: [f64; 3]| [p[0], k * (p[1] - p[2]), k * (p[1] + p[2])];
-    crate::common::move_space(&mut e.sketch, rotate, [100.0, -70.0, 50.0]);
-    let s = evaluated(&e, "body");
-    assert!((s.volume() - want).abs() < 1e-6);
-    assert_eq!(super::solid::unpaired(s.mesh()), 0);
-}
-
-#[test]
-fn a_straight_sweep_resizes_with_the_line_and_can_be_a_boolean_operand() {
-    let src=format!("{SECTIONS}sweep := solid(section, along: guide)\ncutter := solid(face(outer), depth: 10mm)\nbody := solid(sweep)\ncutter cut body\n");
-    let mut e = read(&src);
-    let sweep = evaluated(&e, "sweep").volume();
-    assert!((evaluated(&e, "body").volume() - sweep * 0.5).abs() < 1e-6);
-    let b = e.map.ent_named("b").unwrap().i();
-    let by = e.sketch.point_params(b)[1] as usize;
-    e.sketch.params[by].value = 30.0;
-    assert!((evaluated(&e, "sweep").volume() - sweep * 1.5).abs() < 1e-6);
-    let copy = io::without(&e.sketch, &[e.map.ent_named("guide").unwrap()], &[]);
-    assert!(copy
-        .solids
-        .iter()
-        .all(|s| s.name != "body" && s.name != "sweep"));
-}
-
-#[test]
-fn an_explicit_arc_end_section_changes_size_in_the_transported_frame() {
-    let src = "unit mm
-use std
-in std.top {
- center := point hint((0, 0))
- a := point hint((30, 0))
- b := point hint((0, 30))
- guide := arc(center: center, start: a, end: b) hint(r: 30)
-}
-in std.front {
- c := point hint((30, 0))
- outer := circle(center: c) hint(r: 5)
- section := face(outer)
-}
-in std.side {
- ec := point hint((30, 0))
- eo := circle(center: ec) hint(r: 4)
- end_section := face(eo)
-}
-body := solid(section, end_section, along: guide)
-";
-    let e = read(src);
-    let s = e
-        .sketch
-        .evaluated_solid(0, gcs_core::solid::ApproximationPolicy::View { unit: 0.1 })
-        .unwrap();
-    let want = 305.0 * std::f64::consts::PI.powi(2);
-    assert!(
-        (s.volume() - want).abs() / want < 0.004,
-        "{} != {want}",
-        s.volume()
-    );
-    assert_eq!(super::solid::unpaired(s.mesh()), 0);
-}
-
-#[test]
-fn guide_constructor_references_follow_components_and_inline_faces() {
-    let src = format!(
-        "{SECTIONS}
-component Duct(section: face, guide: line) {{ body := solid(section, along: guide) }}
-x := Duct(section, guide)
-inline := solid(face(outer, holes: inner), along: guide)
-"
-    );
-    let e = read(&src);
-    assert!((evaluated(&e, "x.body").volume() - evaluated(&e, "inline").volume()).abs() < 1e-7);
-    for (args, needle) in [
-        (
-            "section, end_section, section, along: guide",
-            "optional end face",
-        ),
-        ("section, along: outer", "directed line or circular arc"),
-        ("section, along: absent", "no such guide"),
-    ] {
-        let (p, errs) = crate::common::parse(&format!("{SECTIONS}bad := solid({args})\n"));
-        assert!(errs.is_empty());
-        let e = program::elaborate(&p);
-        assert!(
-            e.diags.iter().any(|d| d.message.contains(needle)),
-            "{:?}",
-            e.diags
-        );
-    }
-}
-
-#[test]
-fn concave_sections_with_multiple_holes_have_closed_caps() {
-    let src = format!(
-        "{}in std.front {{
-p0 := point hint((0, 0))
-p1 := point hint((10, 0))
-p2 := point hint((10, 5))
-p3 := point hint((5, 5))
-p4 := point hint((5, 10))
-p5 := point hint((0, 10))
-h0 := point hint((7, 2))
-h1 := point hint((2, 7))
-hole0 := circle(center: h0) hint(r: 1)
-hole1 := circle(center: h1) hint(r: 1)
-outline := (e0 := line(p0, p1)) -> (e1 := line(p1, p2)) -> (e2 := line(p2, p3)) -> (e3 := line(p3, p4)) -> (e4 := line(p4, p5)) -> (e5 := line(p5, p0)) -> close
-section := face(outline, holes: hole0, hole1)
-}}
-body := solid(section, along: guide)
-",
-        SECTIONS.split("in std.front {").next().unwrap()
-    );
-    let e = read(&src);
-    let s = evaluated(&e, "body");
-    let want = (75.0 - 2.0 * std::f64::consts::PI) * 20.0;
-    assert!((s.volume() - want).abs() / want < 0.001);
-    for (p, inside) in [
-        ([7.0, 10.0, 7.0], false),
-        ([7.0, 10.0, 2.0], false),
-        ([2.0, 10.0, 7.0], false),
-        ([2.0, 10.0, 2.0], true),
-    ] {
-        assert_eq!(s.contains_world(WorldPoint(p)), inside);
-    }
-    assert_eq!(super::solid::unpaired(s.mesh()), 0);
-    assert!(s.stl().unwrap().len() > 84);
-}
-
-#[test]
-fn strip_caps_publish_the_complete_outer_and_inner_rims() {
-    let e = read(&format!("{SECTIONS}body := solid(section, along: guide)\n"));
-    let s = evaluated(&e, "body");
-    let length: f64 = s
-        .edges()
-        .iter()
-        .filter(|edge| !edge.smooth && edge.a[1].abs() < 1e-8 && edge.b[1].abs() < 1e-8)
-        .map(|edge| {
-            (0..3)
-                .map(|k| (edge.b[k] - edge.a[k]).powi(2))
-                .sum::<f64>()
-                .sqrt()
-        })
-        .sum();
-    let want = 2.0 * std::f64::consts::PI * (10.0 + 5.0);
-    assert!((length - want).abs() < 0.02, "cap rims: {length} != {want}");
-}
-
-#[test]
-fn an_opposite_end_plane_normal_does_not_twist_circular_sections() {
-    let mut e = read(&format!(
-        "{SECTIONS}body := solid(section, end_section, along: guide)\n"
-    ));
-    let before = evaluated(&e, "body").volume();
-    let p = e.map.ent_named("back").unwrap().i();
-    let (sn, cs) = 97.0_f64.to_radians().sin_cos();
-    let b = e.sketch.basis(p);
-    crate::common::set_basis(&mut e.sketch, p, gcs_core::plane::Basis { u: [cs, 0.0, sn], v: [sn, 0.0, -cs], ..b });
-    let after = evaluated(&e, "body");
-    assert!((after.volume() - before).abs() < 1e-7);
-    assert_eq!(super::solid::unpaired(after.mesh()), 0);
-}
-
-/// Each start edge joins the end edge written in its place, in both kernels: an end section written
-/// the other way round is refused by the faceted kernel and the exact one alike, rather than lofted
-/// by one and refused by the other.
-#[test]
-fn an_end_section_written_the_other_way_round_is_refused_by_both_kernels() {
-    let square = |order: &str| format!("unit mm
-use std
-back := plane
-fix(origin == (0, 20, 0)) back
-fix(dir == (1, 0, 0)) back.u
-fix(dir == (0, 0, 1)) back.v
-in std.top {{
-  a := point
-  b := point
-  fix((0, 0)) a
-  fix((0, 20)) b
-  guide := line(a, b)
-}}
+fn a_running_section_is_a_boolean_operand() {
+    let src = format!("{REDUCER}
 in std.front {{
-  s0 := point
-  s1 := point
-  s2 := point
-  s3 := point
-  fix((-5, -5)) s0
-  fix((5, -5)) s1
-  fix((5, 5)) s2
-  fix((-5, 5)) s3
+  q0 := point
+  q1 := point
+  q2 := point
+  q3 := point
+  fix((-50mm, -50mm)) q0
+  fix((50mm, -50mm)) q1
+  fix((50mm, 50mm)) q2
+  fix((-50mm, 50mm)) q3
 }}
-in back {{
-  e0 := point
-  e1 := point
-  e2 := point
-  e3 := point
-  fix((-3, -3)) e0
-  fix((3, -3)) e1
-  fix((3, 3)) e2
-  fix((-3, 3)) e3
-}}
-body := solid(face(s0, s1, s2, s3, -> close), face({order}, -> close), along: guide)
+cutter := solid(face(q0, q1, q2, q3, -> close), from: -60mm, to: -20mm)
+kept := solid(body)
+cutter cut kept
 ");
-    let exact = |e: &program::Elaborated| {
-        let mut sk = e.sketch.clone();
-        gcs_core::solve::solve(&mut sk, gcs_core::solve::SolveOpts::default());
-        gcs_core::solid::cad::recipe(&sk, 0).and_then(|r| gcs_core::brep::recipe::build(&r))
+    let e = determined(&src);
+    near(exact(&e, "kept"), 3040.0, 1e-9, "the reducer cut");
+    let s = e.sketch.evaluated_solid(index(&e, "kept"), Report).unwrap();
+    near(s.volume(), 3040.0, 1e-6, "the reducer cut, faceted");
+}
+
+/// **`along:` is retired**: refused where it is written, saying what a loft is now.
+#[test]
+fn along_is_retired_saying_what_to_write() {
+    for src in ["body := solid(section, along: guide)\n", "body := solid(a, b, along: guide)\n"] {
+        let (_, errs) = crate::common::parse(src);
+        assert!(errs.iter().any(|e| e.message.contains("`along:` is retired")
+                && e.message.contains("over s in (0, 1)") && e.message.contains("std.OnLine")),
+                "{src}: {errs:?}");
+    }
+}
+
+/// A tube of radius 3 along `guide` through the station word `word` of its kind, the whole
+/// drawing: the guides are a line 40 long, a quarter arc of radius 30 and a cubic Bézier, in plan.
+fn tube(word: &str, kind: &str, guide: &str) -> String {
+    format!("unit mm
+use std
+
+component Tube(g: {kind}, up: axis, s: Scalar) {{
+  st := std.{word}(g, up: up, s: s)
+  in st.n {{
+    k := circle(center: st.n.origin)
+    radius(3mm) k
+  }}
+  f := face(k)
+}}
+
+in std.top {{
+  l0 := point
+  l1 := point
+  fix((-60mm, 0mm)) l0
+  fix((-60mm, 40mm)) l1
+  straight := line(l0, l1)
+  c := point
+  e := point
+  x := point
+  fix((0mm, 0mm)) c
+  fix((30mm, 0mm)) e
+  fix((0mm, 30mm)) x
+  bend := arc(center: c, start: e, end: x)
+  k0 := point
+  k1 := point
+  k2 := point
+  k3 := point
+  fix((60mm, 0mm)) k0
+  fix((60mm, 20mm)) k1
+  fix((80mm, 30mm)) k2
+  fix((100mm, 30mm)) k3
+  curvy := spline(k0, k1, k2, k3)
+}}
+tube := solid(Tube({guide}, std.z).f over s in (0, 1))
+")
+}
+
+/// **One word over any path**: `std.On` stands where `std.OnLine` and `std.OnSpline` do, so a tube
+/// along a line is the same solid by either, π·3²·40, and along a spline too; `std.OnArc`'s tube
+/// round a quarter of radius 30 is Pappus, π·3²·30·π/2.
+#[test]
+fn on_stands_where_each_kind_s_word_does() {
+    let vol = |word: &str, kind: &str, guide: &str| {
+        exact(&determined(&tube(word, kind, guide)), "tube")
     };
-    // written alike, both build the frustum
-    let alike = read(&square("e0, e1, e2, e3"));
-    assert!(evaluated(&alike, "body").volume() > 0.);
-    assert!(exact(&alike).is_ok());
-    // written the other way round, both refuse it, saying why
-    let reversed = read(&square("e0, e3, e2, e1"));
-    let faceted = reversed.sketch.evaluated_solid(reversed.map.ent_named("body").unwrap().i(), Report);
-    assert!(faceted.as_ref().is_err_and(|e| e.contains("corresponding order")), "{:?}", faceted.map(|s| s.volume()));
-    let e = exact(&reversed).unwrap_err();
-    assert!(e.contains("corresponding order"), "{e}");
+    near(vol("On", "path", "straight"), 9.0 * PI * 40.0, 1e-9, "On along a line");
+    near(vol("OnLine", "line", "straight"), 9.0 * PI * 40.0, 1e-9, "OnLine");
+    near(vol("OnArc", "arc", "bend"), 9.0 * PI * 30.0 * PI / 2.0, 1e-9, "OnArc");
+    let (on, by) = (vol("On", "path", "curvy"), vol("OnSpline", "spline", "curvy"));
+    near(on, by, 1e-9, "On and OnSpline along a spline");
+    // a tube's section square to its path, its centroid on it: longer than the chord, shorter
+    // than the control polygon
+    let chord = (40.0f64 * 40.0 + 30.0 * 30.0).sqrt();
+    assert!(on > 9.0 * PI * chord && on < 9.0 * PI * (20.0 + 500.0f64.sqrt() + 20.0), "{on}");
 }

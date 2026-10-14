@@ -4,7 +4,6 @@
 //! stand, an arc's angles and a normal unnormalised), since the native host hands them on as they
 //! are; this kernel reads it into its own `Profile` (`Profile::of`). What cannot be read is a
 //! `Kind::Recipe` error naming the field.
-use crate::brep::build::Guide;
 use crate::brep::geom::{Frame,Surface,V};
 use crate::brep::{vec3,KernelError,Kind};
 use crate::json::Json;
@@ -48,8 +47,6 @@ pub enum Node {
     Prism { profile: Section,from: f64,to: f64,draft: Option<f64> },
     /// A profile turned by `angle` (radians) about the line through `origin` along `axis`.
     Revolve { profile: Section,origin: V,axis: V,angle: f64 },
-    /// A profile carried along a guide, to the `end` section where there is one.
-    Loft { profile: Section,end: Option<Section>,guide: Guide },
     /// The node `source` moved by the row-major 3x4 `matrix`.
     Placed { source: i64,matrix: [f64;12] },
     /// A prism spanning the material of the nodes `sources` along its profile's normal.
@@ -149,15 +146,6 @@ impl Node {
                 draft:n.get("draft").map(Json::as_f64)},
             "revolve" => Node::Revolve {profile:profile()?,origin:point(n,"origin")?,axis:point(n,"axis")?,
                 angle:number(n,"angle")?},
-            "loft" => {
-                let g = field(n,"guide")?;
-                let guide = match field(g,"kind")?.as_str() {
-                    "line" => Guide::Line {delta:point(g,"delta")?},
-                    "arc" => Guide::Arc {center:point(g,"center")?,axis:point(g,"axis")?,angle:number(g,"angle")?},
-                    k => return Err(unread(format!("recipe: a guide of kind `{k}`"))),
-                };
-                Node::Loft {profile:profile()?,end:n.get("end").map(Section::read).transpose()?,guide}
-            }
             "placed" => {
                 let m = field(n,"matrix")?.arr();
                 if m.len() != 12 { return Err(unread("recipe: a placement's `matrix` is not three rows of four".into())) }
@@ -179,7 +167,7 @@ impl Node {
     /// The node's kind, as the recipe spells it.
     pub fn kind(&self) -> &'static str {
         match self {
-            Node::Prism {..} => "prism",Node::Revolve {..} => "revolve",Node::Loft {..} => "loft",
+            Node::Prism {..} => "prism",Node::Revolve {..} => "revolve",
             Node::Placed {..} => "placed",Node::Through {..} => "through",Node::Body(_) => "body",
             Node::Canal {..} => "canal",Node::Region(_) => "region",Node::Lowered(_) => "lowered",
             Node::Family(_) => "family",
