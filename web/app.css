@@ -156,6 +156,10 @@ label.check { display: inline-flex; align-items: center; gap: 4px; cursor: point
 .claim-proved      { background: rgba(46, 139, 66, 0.13); }
 .claim-refuted     { background: rgba(214, 39, 40, 0.20); }
 .claim-independent { background: rgba(230, 149, 0, 0.17); }
+/* a claim about solids, judged in the worker: held as measured, or undecided where the faceting
+   cannot say (refuted is a claim's own wash) */
+.claim-held        { background: rgba(46, 139, 66, 0.13); }
+.claim-undecided   { background: rgba(230, 149, 0, 0.17); }
 /* An energy's verdict (#121): the extremum its statement asked for, or a saddle, the other one,
    or no verdict at all. */
 .extremum-asked    { background: rgba(46, 139, 66, 0.13); }
@@ -248,6 +252,10 @@ footer.unsolved #toast { color: #8a0000; }
 footer #refine { float: right; margin-left: 16px; color: var(--text); }
 footer #refine.failed { color: #a03b46; }
 footer #refine.finished { color: var(--muted); }
+/* the claims about solids being judged in a worker, beside the refinement: refuted stays red */
+footer #claims { float: right; margin-left: 16px; color: var(--text); }
+footer #claims.failed { color: #a03b46; }
+footer #claims.finished { color: var(--muted); }
 
 dialog {
   border: 1px solid var(--line); border-radius: 9px; padding: 0;

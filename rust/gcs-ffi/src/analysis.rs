@@ -25,7 +25,94 @@ fn diagnose_options(v: &Json) -> DiagnoseOptions {
     if let Some(x) = v.get("numericMax") {
         o.numeric_max = x.as_i64() as usize;
     }
+    if let Some(x) = v.get("solidClaims") {
+        o.solid_claims = x.as_bool();
+    }
     o
+}
+
+/* -- claims about solids, judged a pose at a time --------------------------- */
+
+/// A drawing's claims about solids being judged (`diagnose::ClaimJudge`), with the drawing it
+/// judges: a copy, so the judge outlives nothing it reads.
+pub struct ClaimJudge {
+    sketch: Sketch,
+    judge: diagnose::ClaimJudge,
+}
+
+/// The drawing's claims about solids, judged or not: `[{ "stmt", "text" }]`, each claim's statement
+/// and its words as the report says them (`claim a clear(1mm) b`) — what a page lists as waiting.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_sketch_solid_claims_json(h: *mut Sketch) -> *mut u8 {
+    json_out(move || {
+        let s = sk(h);
+        Json::Arr(s.solid_claims.iter().map(|c| json::object([
+            ("stmt", Json::Int(c.stmt() as i64)),
+            ("text", Json::Str(io::describe_solid_claim(s, c))),
+        ])).collect())
+    })
+}
+
+/// Start judging the claims about solids of this sketch, at the pose it stands in.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_claim_judge_new(h: *mut Sketch) -> *mut ClaimJudge {
+    guard(std::ptr::null_mut(), move || {
+        let sketch = sk(h).clone();
+        let judge = diagnose::ClaimJudge::new(&sketch);
+        Box::into_raw(Box::new(ClaimJudge { sketch, judge }))
+    })
+}
+
+/// Judge the next pose: 1 once every claim is judged, 0 while some are not, −1 on a panic.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_claim_judge_step(j: *mut ClaimJudge) -> i32 {
+    guard(-1, move || {
+        let j = &mut *j;
+        j.judge.step(&j.sketch) as i32
+    })
+}
+
+/// Where the judging stands: `{ "doing", "fraction", "claim", "claims", "pose", "poses", "stmt" }`
+/// — the words a host shows (`ClaimProgress::doing`), and the claim in hand's statement or null.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_claim_judge_progress(j: *mut ClaimJudge) -> *mut u8 {
+    json_out(move || {
+        let j = &*j;
+        let p = j.judge.progress(&j.sketch);
+        json::object([
+            ("doing", Json::Str(p.doing())),
+            ("fraction", Json::Num(p.fraction())),
+            ("claim", Json::Int(p.claim as i64)),
+            ("claims", Json::Int(p.claims as i64)),
+            ("pose", Json::Int(p.pose as i64)),
+            ("poses", Json::Int(p.poses as i64)),
+            ("stmt", p.stmt.map_or(Json::Null, |s| Json::Int(s as i64))),
+        ])
+    })
+}
+
+/// The verdicts so far, each `report::solid_claim_json` with `"stmt"` (its statement) and
+/// `"line"` (the report's own words, `report::solid_claim_text`) beside it.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_claim_judge_verdicts_json(j: *mut ClaimJudge) -> *mut u8 {
+    json_out(move || {
+        let j = &*j;
+        Json::Arr(j.judge.verdicts().iter().map(|v| {
+            let mut o = gcs_core::report::solid_claim_json(v);
+            o.set("stmt", Json::Int(v.stmt() as i64));
+            o.set("line", Json::Str(gcs_core::report::solid_claim_text(v)));
+            o
+        }).collect())
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn gcs_claim_judge_free(j: *mut ClaimJudge) {
+    guard((), move || {
+        if !j.is_null() {
+            drop(Box::from_raw(j));
+        }
+    })
 }
 
 #[no_mangle]

@@ -3,7 +3,7 @@
 import * as C from '../core/constraints.js';
 import { exampleCases } from './example-catalog.js';
 import * as remote from './remote.js';
-import { awaitSurfaces, loaded, loading, opened, painted } from './loading.js';
+import { awaitSurfaces, buildingObjects, loaded, loading, opened, painted } from './loading.js';
 import { openProject } from './program.js';
 import * as io from '../core/io.js';
 import { applyAlternative, enumerateStep, isCurrent } from '../core/homotopy.js';
@@ -61,8 +61,8 @@ export async function openExample(key: string, navigation: 'push' | 'replace' | 
     loading(`fetching ${key}…`);
     const bundle = await remote.drawing(key, file);
     if (request !== exampleRequest) return;
-    // the solve holds the thread, so the modal saying so is painted first
-    loading(`solving ${bundle.source}…`);
+    // the reading holds the thread, so the modal saying so is painted first
+    loading(`reading ${bundle.source}…`);
     await painted();
     if (request !== exampleRequest) return;
     const updateUrl = (selected: string | undefined, method: 'push' | 'replace') => {
@@ -73,8 +73,15 @@ export async function openExample(key: string, navigation: 'push' | 'replace' | 
       if (url.href !== location.href) history[method === 'push' ? 'pushState' : 'replaceState'](null, '', url);
     };
     awaitSurfaces();
-    openProject(bundle, { directory: bundle.directory, entry: bundle.entry,
-      onSelect: (path) => updateUrl(path, 'replace') });
+    buildingObjects();
+    view.hold();
+    try {
+      openProject(bundle, { directory: bundle.directory, entry: bundle.entry,
+        onSelect: (path) => updateUrl(path, 'replace') });
+    } finally {
+      // each object built in turn, the modal saying which, and the view let go however it went
+      await view.buildObjects(loading, painted);
+    }
     opened();
     if (navigation !== 'none') {
       updateUrl(file || bundle.key !== key ? bundle.source : undefined, navigation);

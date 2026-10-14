@@ -126,6 +126,21 @@ placement carries inside the blank; CLI test readers zero the offset.
   variables** (never a `param`), reporting the *worst* pose; it is **sampling** at `SWEEP_STEPS`
   and says so.  Claims are read **after phase 4** (a free variable is what `expr::evaluate`
   allocates), and the interval **in the unknown's own units**, never converted as an angle.
+  **Claims are judged a pose at a time, and a page's are judged off its thread**
+  (`diagnose::ClaimJudge`): `step` judges the next pose (a claim over a sweep is `SWEEP_STEPS + 1`,
+  one at a pose is one) and `progress` says which claim of how many and which pose in the core's
+  words (`ClaimProgress::doing`); `judge_solids` is the same judge run to the end, each claim in
+  `progress::during`, so the CLI and a page cannot disagree.  A claim reads the solved pose and
+  enters nothing above it, so `DiagnoseOptions::solid_claims: false` leaves `solid_claims` empty
+  and every other word of the diagnosis as it was.  The page's diagnosis does so (`solidClaims:
+  false`) and `app/claim-judging.ts` runs a `claims` job in its own instance of the mesh worker —
+  the drawing's text, its pose and the claims as the page's core names them
+  (`gcs_sketch_solid_claims_json`; a worker that names others refuses) — a newer drawing or pose
+  ending it at its next pose.  The footer says where it stands (a spinner, the core's words, a bar,
+  a clock); the verdict washes the claim's statement as a claim's does (`.claim-held`,
+  `.claim-refuted`, `.claim-undecided`; `Document.spanOfStatement`).  Gates:
+  `a_judge_stepped_a_pose_at_a_time_comes_to_the_verdicts`,
+  `a_diagnosis_asked_not_to_judge_solids_says_the_rest_unchanged`, `claim-judging.test.ts`.
 - **A solid leaves as glTF, and that is the format this kernel's data already is** (`gltf.rs`):
   positions, normals and a named group per face — `mesh::Mesh` — in a header and two chunks, one
   JSON from `json.rs`; no ZIP, no dependency.  STEP is a B-rep, which this kernel is not.

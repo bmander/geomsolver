@@ -80,6 +80,7 @@ export interface Abi {
   gcs_elab_take_sketch(h: number): number;
   gcs_elab_text(h: number): number;
   gcs_elab_report(h: number): number;
+  gcs_elab_stmt_span(h: number, stmt: number, out: number): number;
   gcs_elab_retext(h: number, p: number, n: number): number;
   gcs_elab_commit_seeds(h: number, sk: number): number;
   gcs_elab_describe(h: number, sk: number, id: number): number;
@@ -237,6 +238,12 @@ export interface Abi {
   gcs_exact_builder_progress(b: number): number;
   gcs_exact_builder_surface(b: number): number;
   gcs_exact_builder_free(b: number): void;
+  gcs_sketch_solid_claims_json(h: number): number;
+  gcs_claim_judge_new(h: number): number;
+  gcs_claim_judge_step(j: number): number;
+  gcs_claim_judge_progress(j: number): number;
+  gcs_claim_judge_verdicts_json(j: number): number;
+  gcs_claim_judge_free(j: number): void;
   gcs_solid_glb(h: number, idx: number, unit: number): number;
   gcs_solid_objects_json(h: number): number;
   gcs_solid_unbuilt_json(h: number): number;

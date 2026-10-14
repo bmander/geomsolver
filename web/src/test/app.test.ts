@@ -2605,3 +2605,35 @@ test('a plane set off another is sized by its arrow, written once, in the plane\
   view.undo();
   assert.ok(!view.source.includes('v0'), `the plane and its sizing are one undo step\n${view.source}`);
 });
+
+test('an opening held builds its objects one at a time, saying which, and tells the shell once',
+     async () => {
+  const view = docView('use std\n');
+  let changed = 0;
+  view.onChanged = () => changed++;
+  view.hold();
+  assert.ok(view.load(PROJECTED_CIRCLE + 'in std.front {\nc := point hint((40, 0))\n'
+    + 'rim2 := circle(center: c) hint(r: 5)\n}\npost := solid(face(rim2), depth: 20)\n'));
+  assert.equal(changed, 0,
+    'held: nothing told the shell, which would evaluate every object at once');
+  const said: [string, number][] = [];
+  let paints = 0;
+  await view.buildObjects((what, fraction) => said.push([what, fraction]),
+    async () => { paints++; });
+  assert.deepEqual(said, [['building body (1 of 2)', 0], ['building post (2 of 2)', 0.5]]);
+  assert.equal(paints, 2, 'the page paints before each');
+  assert.equal(changed, 1, 'let go, the shell is told once');
+  view.release();
+  assert.equal(changed, 1, 'and a view not held has nothing to let go');
+
+  // an opening overtaken by another lets go of nothing of the other's
+  view.hold();
+  let go: () => void = () => {};
+  const first = view.buildObjects(() => {}, () => new Promise((then) => { go = then; }));
+  view.hold();
+  go();
+  await first;
+  assert.equal(changed, 1, 'the second opening still holds');
+  await view.buildObjects(() => {}, async () => {});
+  assert.equal(changed, 2);
+});
