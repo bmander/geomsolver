@@ -908,6 +908,15 @@ impl<'h> Seeds<'h> {
 /// own is read in space, and its corner left where it was minted.
 pub(super) fn walk_seeds(sk: &mut Sketch, deferred: &[Deferred], held: &BTreeSet<u32>) {
     use crate::constraints::{step_word, Arg, CKind, OrdinateForm as F};
+    let steps: Vec<usize> = (0..sk.constraints.len())
+        .filter(|&i| {
+            let c = &sk.constraints[i];
+            !c.claim && c.word.as_ref().is_some_and(|w| step_word(&w.word))
+        })
+        .collect();
+    if steps.is_empty() {
+        return;
+    }
     let scattered: BTreeSet<usize> = deferred
         .iter()
         .filter_map(|d| match *d {
@@ -915,15 +924,6 @@ pub(super) fn walk_seeds(sk: &mut Sketch, deferred: &[Deferred], held: &BTreeSet
             _ => None,
         })
         .collect();
-    let steps: Vec<usize> = (0..sk.constraints.len())
-        .filter(|&i| {
-            let c = &sk.constraints[i];
-            !c.claim && c.word.as_ref().is_some_and(|w| step_word(&w.word))
-        })
-        .collect();
-    if scattered.is_empty() || steps.is_empty() {
-        return;
-    }
     let seeds = Seeds::new(sk, held);
     for _ in 0..2 {
         for &i in &steps {
@@ -946,15 +946,16 @@ pub(super) fn walk_seeds(sk: &mut Sketch, deferred: &[Deferred], held: &BTreeSet
             let unknown = |t: &str| {
                 crate::expr::parse_in(t, sk.units).map_or(true, |p| !p.body.deps().is_empty())
             };
-            let d = |k: usize| match c.args.get(k) {
+            // an ordinate's number, read only of an ordinate: a level's slot there is its word
+            let number = || match c.args.get(3) {
                 Some(Arg::Expr(x)) if unknown(&x.text) => None,
                 a => a.map(|a| a.value(sk)),
             };
             let (axis, value) = match (c.kind, form) {
-                (CKind::Ordinate, F::PageU) => (0, d(3).map(|d| at.0 + d)),
-                (CKind::Ordinate, F::PageV) => (1, d(3).map(|d| at.1 + d)),
-                (CKind::Ordinate, F::CoordU) => (0, d(3)),
-                (CKind::Ordinate, F::CoordV) => (1, d(3)),
+                (CKind::Ordinate, F::PageU) => (0, number().map(|d| at.0 + d)),
+                (CKind::Ordinate, F::PageV) => (1, number().map(|d| at.1 + d)),
+                (CKind::Ordinate, F::CoordU) => (0, number()),
+                (CKind::Ordinate, F::CoordV) => (1, number()),
                 (CKind::Level, F::PageU | F::CoordU) => (0, Some(at.0)),
                 (CKind::Level, F::PageV | F::CoordV) => (1, Some(at.1)),
                 _ => continue,

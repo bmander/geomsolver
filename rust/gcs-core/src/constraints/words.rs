@@ -534,6 +534,10 @@ pub fn step_word(w: &str) -> bool {
     w == "step"
 }
 
+/// A step's labels along each axis of its frame, in the order it states its relations (`u`, then
+/// `v`): the ordinate from the frame's origin, and the one from the line's start.
+pub const STEP_AXES: [(&str, &str); 2] = [("u", "du"), ("v", "dv")];
+
 /// The same for a word standing *before* its one operand.  **`length` measures one thing**, of
 /// every kind of path (#269): a line's is sugar for the distance between its ends, which is why
 /// it is here and not in the table above, and so a word over `g: path` states `length(L) g`

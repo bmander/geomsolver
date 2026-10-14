@@ -188,7 +188,8 @@ came from.
   ordinate it does not name kept.  It is **no operator and no `CKind`**: `constraints::step_word`
   admits it as a prefix (`syntax::words::prefix_word`, so a chain's link takes it) and reserves it
   from definition (`builtin_word`), its parentheses read as a defined word's are (`word_args`,
-  every value kept as text), and a formal may still be called `step`.  The flattener expands it
+  every value kept as text), and a formal may still be called `step`.  `Written::is_step` is
+  the one test of a relation for it, and `constraints::STEP_AXES` the one table of its labels.  The flattener expands it
   where it stands, in the statement's own scope (`flatten::steps`, `Walk::walk_step`, asked
   before `apply_word`): one `Written` per axis of the frame, `u` then `v` — `distance(d, along:)`
   from `l.p1` or from `P.origin`, or a `level` for an ordinate kept or written as a literal zero
@@ -197,7 +198,7 @@ came from.
   argument by the constraint's place among the statement's (`step_dimension`).  **The frame** is
   `from: P` (read by reference, along `P.u`/`P.v`), or the view the line is drawn in, which the
   parser hands on from the `in` block (`stamp_plane` adds `from:` as an `Arg::Ref`, a form no
-  source writes, read along the page's words `u`/`v`, `right`/`up`); a step with neither is E040.
+  source writes, read along the page's words `u` and `v`); a step with neither is E040.
   **Seeds follow the walk**: every point minted with no seed is recorded (`Deferred::Scattered`),
   and once the relations are stated `entities::walk_seeds` sets each such corner a step places
   from its line's start or the view's origin, in statement order, twice round — over a page or a

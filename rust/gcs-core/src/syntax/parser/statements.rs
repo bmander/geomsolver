@@ -46,8 +46,7 @@ fn stamp_plane(stmts: &mut [Stmt], plane: &Ref, errs: &mut Vec<SynErr>) {
             // a written `from:` being kept as its text — so the flattener tells the two apart
             StmtKind::Relation(r) => {
                 let Some(w) = r.form.written_mut() else { continue };
-                if w.fixity != crate::constraints::Fixity::Prefix
-                    || !crate::constraints::step_word(&w.word.text)
+                if !w.is_step()
                     || w.args.iter().any(|a| matches!(a, OpArg::Named(n, _) if n.text == "from"))
                 {
                     continue;

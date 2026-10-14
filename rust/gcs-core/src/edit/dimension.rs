@@ -24,9 +24,7 @@ pub fn set_dimension(e: &Elaborated, prog: &Program, cid: u32, attr: &str, text:
     // family's instance, the number its call gives the formal the body reads
     let dim = match &st.kind {
         StmtKind::Relation(rel) => match &rel.form {
-            syntax::RelationForm::Written(w) if crate::constraints::step_word(&w.word.text) => {
-                step_dimension(e, site.stmt, cid, w)
-            }
+            syntax::RelationForm::Written(w) if w.is_step() => step_dimension(e, site.stmt, cid, w),
             syntax::RelationForm::Written(w) => w.args.iter().find_map(|a| match a {
                 syntax::OpArg::Dim(text, span) => Some((*span, text.clone())),
                 _ => None,
@@ -83,7 +81,7 @@ fn step_dimension(e: &Elaborated, stmt: syntax::StmtId, cid: u32, w: &syntax::Wr
             _ => None,
         })
         .position(|id| id == cid)?;
-    let (abs, rel) = [("u", "du"), ("v", "dv")].get(k).copied()?;
+    let (abs, rel) = crate::constraints::STEP_AXES.get(k).copied()?;
     w.args.iter().find_map(|a| match a {
         syntax::OpArg::Named(n, syntax::Arg::Dim { text, span })
             if n.text == abs || n.text == rel => Some((*span, text.clone())),
