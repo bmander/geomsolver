@@ -284,7 +284,8 @@ fn geometry(cx: &mut Elab<'_>, flat: &Flat<'_>) -> Vec<Deferred> {
                 continue;
             }
             let mut anon: Vec<(String, EntRef)> = Vec::new();
-            match build(sk, res, d, st, diags, &mut anon, &mut deferred, p, &flat.expansion.instances) {
+            let insts = &flat.expansion.instances;
+            match build(sk, res, d, st, diags, &mut anon, &mut deferred, p, insts) {
                 Some(e) => {
                     map.bind(&d.name.key().text, e, d.name.named());
                     map.record(st, Made::Ent(e));
@@ -345,7 +346,8 @@ fn memberships(
     }
     // the points region solids' sets are applied to, whose bounds are the solids' terms (§6.21)
     cx.probes = Probes {
-        terms: expansion.probes.iter().filter_map(|key| cx.res.of.get(key)).map(|p| (p.i(), Vec::new()))
+        terms: expansion.probes.iter().filter_map(|key| cx.res.of.get(key))
+            .map(|p| (p.i(), Vec::new()))
             .collect(),
         idle: BTreeMap::new(),
     };
@@ -449,7 +451,9 @@ fn prism_sides(cx: &mut Elab<'_>, flat: &Flat<'_>) -> BTreeSet<StmtId> {
 
 /// **Phase 3: constraints, in statement order** — but the holds, stated already (`holds`), and
 /// the incidences drawn as memberships or kept in space (`memberships`).
-fn constraints(cx: &mut Elab<'_>, flat: &Flat<'_>, drawn: &BTreeSet<usize>, kept_off: &BTreeSet<usize>) {
+fn constraints(
+    cx: &mut Elab<'_>, flat: &Flat<'_>, drawn: &BTreeSet<usize>, kept_off: &BTreeSet<usize>,
+) {
     let mut arrays = BTreeSet::new();
     for (i, st) in flat.stating.iter().enumerate() {
         // an energy's terms are constraints of their own, stationary together (#121)
@@ -497,7 +501,9 @@ fn twins(cx: &mut Elab<'_>, flat: &Flat<'_>) {
 /// then — a document whose places are all in their own planes settles once.  A plane placed over
 /// seeds read through another plane is read through in turn, so the two alternate until the
 /// seeds stand still — a few rounds, one per plane a chain of them crosses.
-fn place_planes(cx: &mut Elab<'_>, deferred: &[Deferred], held: &BTreeSet<u32>, mut settled: Range<usize>) {
+fn place_planes(
+    cx: &mut Elab<'_>, deferred: &[Deferred], held: &BTreeSet<u32>, mut settled: Range<usize>,
+) {
     let mut placed = views::place(&mut cx.sk);
     if crosses_views(&cx.sk, &cx.res, deferred) {
         for _ in 0..4 {
@@ -545,8 +551,10 @@ fn solids_and_surfaces(
     // the faces of the solids a block runs over, named for the next pass (#183 F4)
     let unnamed: BTreeMap<String, Vec<FacePath>> = flat.expansion.face_repeats.iter()
         .filter(|abs| !faces.contains_key(*abs))
-        .filter_map(|abs| res.of.get(abs).filter(|e| e.kind == EntKind::Solid && e.i() < sk.solids.len())
-            .map(|e| (abs.clone(), crate::solid::faces::face_paths(sk, e.i()))))
+        .filter_map(|abs| {
+            res.of.get(abs).filter(|e| e.kind == EntKind::Solid && e.i() < sk.solids.len())
+                .map(|e| (abs.clone(), crate::solid::faces::face_paths(sk, e.i())))
+        })
         .collect();
     if !unnamed.is_empty() {
         return Err(Again::Faces(unnamed));
