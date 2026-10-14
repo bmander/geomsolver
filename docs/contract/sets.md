@@ -136,7 +136,7 @@ R`; `constrain` takes every bound landing on a probe as a `RegionTerm` instead o
 as unsigned, a cone's half, is kept within a half turn by `expr::sync_free`), and `build_solid`
 moves them into the solid and holds the probe. `solid::region::meridian` folds the terms' (r, z)
 regions in a box by `brep::planar::boolean` (coaxial, bounded, nonempty, else refused where
-evaluated), memoised against `solid::reads` (`Sketch::meridian_cache`); every evaluator reads it —
+evaluated), memoised against `solid::reads` (`Caches::meridian`); every evaluator reads it —
 the recipe a `revolve`
 (`recipe::region_profile`, `Profile::to_json`), the field `RevolvedRegion::of_meridian` (also
 `read`, so patches trim by it), facets `region::face_polys` turned by `primitive::revolve`,
@@ -156,7 +156,7 @@ surface) unless the lowering table builds it ([rounds.md](rounds.md)) or **the c
 `solid::bounded`: every term a ball, a cylinder, a cone narrower than square or a half-space, no
 offset — each a primitive bounded past the support, kept within in common, kept outside taken
 away; the recipe's `"region"` node, `"pieces"` each with `"keep"`; gated by agreement with the
-field, `Sketch::bounded_cache`); else no exact construction (`cad.rs` says so, naming the region).
+field, `Caches::bounded`); else no exact construction (`cad.rs` says so, naming the region).
 
 **A sum of distances the meridian folds** (#238, `region::meridian::foci`): from one point, or two alike in
 weight, on its axis (the line through them chooses it when nothing else does) — a ball, an

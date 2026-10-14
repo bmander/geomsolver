@@ -206,7 +206,7 @@ fn sampled_pose(sk: &Sketch, c: &SolidClaim, sw: &Sweep, t: f64) -> SolidPose {
         let p = scratch.params.get_mut(p as usize).ok_or("invalid sweep parameter reference")?;
         p.value = t;
         p.fixed = true;
-        scratch.solid_cache.borrow_mut().clear();
+        scratch.caches.solid.borrow_mut().clear();
         let solved = crate::solve::solve(&mut scratch, Default::default());
         if !solved.success {
             return Err(format!("solve failed: {}", solved.message));

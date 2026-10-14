@@ -42,12 +42,12 @@ impl Canal {
 /// Sweep `swept` built as a ball's tube, where its tool is a ball and its motion one turn about one
 /// axis and the tube meets itself nowhere (`None` otherwise, a sweep of another kind): the
 /// construction, or why it stands not — its gate refused it.  Remembered against `solid::reads`
-/// (`Sketch::canal_cache`).
+/// (`Caches::canal`).
 pub fn built(sk: &Sketch, swept: usize) -> Option<Result<Rc<Canal>, String>> {
     if !matches!(sk.solids.get(swept)?.def, SolidDef::Swept { .. }) {
         return None;
     }
-    sk.canal_cache.get_or(swept, super::MemoKey::of(sk, swept), || read(sk, swept).map(|c| {
+    sk.caches.canal.get_or(swept, super::MemoKey::of(sk, swept), || read(sk, swept).map(|c| {
         let c = c?;
         gate(sk, swept, &c)?;
         Ok(Rc::new(c))

@@ -101,14 +101,14 @@ impl Bounded {
 /// Region solid `solid` built as the common of its terms, where it is read in general position
 /// and every term is one this construction makes (`None` otherwise): the construction, or why it
 /// stands not — its gate refused it, or it holds nowhere.  Remembered against `solid::reads`
-/// (`Sketch::bounded_cache`).
+/// (`Caches::bounded`).
 pub fn built(sk: &Sketch, solid: usize) -> Option<Result<Rc<Bounded>, String>> {
     let SolidDef::Region { terms, .. } = &sk.solids.get(solid)?.def else { return None };
     // a region over a body's faces is the lowering table's
     if super::faces::terms_read_faces(terms) {
         return None;
     }
-    sk.bounded_cache.get_or(solid, super::MemoKey::of(sk, solid), || {
+    sk.caches.bounded.get_or(solid, super::MemoKey::of(sk, solid), || {
         construction(sk, solid).map(|b| b.and_then(|b| {
             gate(sk, solid, &b)?;
             Ok(Rc::new(b))

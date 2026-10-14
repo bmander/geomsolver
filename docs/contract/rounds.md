@@ -15,7 +15,7 @@ own faces under its route, `FacePath`) and elaborates again (`program::Again::Fa
 stratum** (F6): a body's terms that read its faces (`faces::readers_of`) are left out of the
 boundary they read and applied last by the field (`document.rs`: fills, then cuts). A face path
 is matched against `solid::exact`'s names (`BodyFaces` is built from `exact::build`, shifted to its
-origin; cached in `Sketch::faces_cache`); one naming nothing holds nowhere, and a region over it is
+origin; cached in `Caches::faces`); one naming nothing holds nowhere, and a region over it is
 `RegionField::empty`, no term of a body. `std.sv`: `Run`, `Fill`, `Corner`, `CornerFill`, `Flat`,
 `FlatFill` (sets over faces) and the words `A round(r: …) B`, `round(r: …) X`, `A chamfer(d: …) B`,
 `chamfer(d: …) X`; in a region's body `std.Rounded(a, b, r)` and `std.Chamfered(a, b, la, lb)`
@@ -93,8 +93,8 @@ against `BodyFaces::brep` brought back by `BodyFaces::back`); no pieces where th
 or an edge turns the other way. **The gate**: the
 pieces' B-rep held to the region's own field (`agreement`, by area; empty only where the field
 reads empty), and holding what the field reads just inside each edge (`beside_edges`: a probe of
-the boundary built sees nothing of a piece never built), before anything reads them. Memoised against the region's own terms (`document::reads_own`)
-and the stratum's `Arc` (`Sketch::lowering_cache`; a key over `solid::reads` walks every round of
+the boundary built sees nothing of a piece never built), before anything reads them. Memoised against the region's own terms (`solid::reads::reads_own`)
+and the stratum's `Arc` (`Caches::lowering`; a key over `solid::reads` walks every round of
 the body), asked once a recipe. `cad.rs` builds a body's lowered regions in one set as one recipe node, `"lowered"`
 (`assemble`: each distinct piece once, a run cut short at a corner's section and **glued** there,
 `boolean::glued`; the rest unioned — two runs crossing are a mitre), the first region standing for

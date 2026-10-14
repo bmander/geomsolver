@@ -79,7 +79,7 @@ and a sweep may stand alone. Refused (left the field's) where the tube would mee
 centre within the radius of the axis, or a helix past a turn climbing no more than the diameter a
 turn. The recipe's `"canal"` node (`centre`, `radius`, axis `origin`/`axis`, `angle`, `advance`,
 the ball's `face` naming every face; native OCCT refuses it by name); gated by agreement with the
-sweep's field (`Sketch::canal_cache`); `cad::contains_sweep`, `swept_cut` and `sweeps_among` read
+sweep's field (`Caches::canal`); `cad::contains_sweep`, `swept_cut` and `sweeps_among` read
 such a sweep as static material. Seams run off the path's plane (`build::SEAM`) and each half
 ball is a ball turned about an axis leaning off the path (`half_ball`, kept by `build::kept`): a
 plane through a sphere's parameter pole is a meeting this kernel's Booleans do not split.
@@ -92,7 +92,7 @@ the roll about 0 during which the tool meets the body's material (`document::mat
 stock and additions, never cuts, so `removal` cutting `body` is no cycle; `evaluation_operands`
 reads them). **Every reader asks `solid::roll::interval`**, never the extents (admission's
 `SweepContacts`, the field's `SweptField`, `SweptCut` here and in the CLI, `faces::face_source`,
-`canal`, `planar_class`), memoised against `solid::reads` (`Sketch::roll_cache`). Found by
+`canal`, `planar_class`), memoised against `solid::reads` (`Caches::roll`). Found by
 marching out from 0 a `STEP` (1°) at a time, both ways and a few steps ahead on every core, to the
 first step the tool is proved clear over (`roll::clear`: the tool's support and the step split
 by branch and bound, a box dropped where the tool's field encloses it empty or the step's

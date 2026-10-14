@@ -103,11 +103,11 @@ pub fn terms_read_faces(terms: &[RegionTerm]) -> bool {
     terms.iter().any(|t| reads_faces(&t.shape))
 }
 
-/// `BodyFaces::read`, remembered against what it reads (`Sketch::faces_cache`): the stratum, so
+/// `BodyFaces::read`, remembered against what it reads (`Caches::faces`): the stratum, so
 /// a round's own numbers do not build its body again.
 pub fn cached(sk: &Sketch, body: usize) -> Result<std::sync::Arc<BodyFaces>, String> {
     let key = super::MemoKey::except(sk, body, &readers_of(sk, body));
-    sk.faces_cache.get_or(body, key, || BodyFaces::read(sk, body).map(std::sync::Arc::new))
+    sk.caches.faces.get_or(body, key, || BodyFaces::read(sk, body).map(std::sync::Arc::new))
 }
 
 /// The strata of the bodies whose faces region terms `terms` read (`cached`'s, each body once, in

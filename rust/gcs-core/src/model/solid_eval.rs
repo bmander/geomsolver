@@ -118,11 +118,11 @@ impl Sketch {
         let policy = if crate::solid::has_sweep(self, i) { crate::solid::ApproximationPolicy::Mesh } else { policy };
         let key = crate::solid::reads(self, i, 0.0);
         let slot = (i, policy.cache_key());
-        if let Some((old, value)) = self.solid_cache.borrow().get(&slot) {
+        if let Some((old, value)) = self.caches.solid.borrow().get(&slot) {
             if *old == key { return value.clone(); }
         }
         let value = crate::solid::EvaluatedSolid::evaluate(self, i, policy).map(std::rc::Rc::new);
-        let mut cache = self.solid_cache.borrow_mut();
+        let mut cache = self.caches.solid.borrow_mut();
         cache.retain(|(index, _), (old, _)| *index != i || *old == key);
         // Bound zoom-history memory without evicting report and mesh entries.
         if cache.keys().filter(|(index, (kind, _))| *index == i && *kind == 2).count() >= 8 {
@@ -136,19 +136,20 @@ impl Sketch {
     /// for the geometry it reads, whatever approximation asks.
     pub fn exact_solid(&self, i: usize) -> Result<std::rc::Rc<crate::solid::Exact>, String> {
         let key = crate::solid::MemoKey::of(self, i);
-        self.exact_cache.get_or(i, key, || crate::solid::build_exact(self, i).map(std::rc::Rc::new))
+        let build = || crate::solid::build_exact(self, i).map(std::rc::Rc::new);
+        self.caches.exact.get_or(i, key, build)
     }
 
     /// Give swept solid `i` its exact B-rep, built elsewhere (`brep::export::supply_exact`) against
     /// the drawing as it stands now: its evaluation then reads the B-rep, as a static solid's does
     /// (`EvaluatedSolid::from_brep`), until the drawing changes.
     pub fn supply_exact_solid(&self, i: usize, exact: crate::solid::Exact) {
-        self.exact_cache.put(i, crate::solid::MemoKey::of(self, i), Ok(std::rc::Rc::new(exact)));
+        self.caches.exact.put(i, crate::solid::MemoKey::of(self, i), Ok(std::rc::Rc::new(exact)));
     }
 
     /// The exact B-rep supplied for swept solid `i` against the drawing as it stands, if any.
     pub fn supplied_exact_solid(&self, i: usize) -> Option<std::rc::Rc<crate::solid::Exact>> {
-        self.exact_cache.get(i, &crate::solid::MemoKey::of(self, i)).and_then(Result::ok)
+        self.caches.exact.get(i, &crate::solid::MemoKey::of(self, i)).and_then(Result::ok)
     }
 
     /// **What a host meshing swept solids elsewhere has to mesh** (`FieldMeshing::Deferred`): the
@@ -192,7 +193,7 @@ impl Sketch {
         }
         let key = crate::solid::reads(self, i, 0.0);
         self.field_surfaces.borrow_mut().insert(i, (key, std::rc::Rc::new(surface)));
-        self.solid_cache.borrow_mut().retain(|(index, _), _| *index != i);
+        self.caches.solid.borrow_mut().retain(|(index, _), _| *index != i);
         Ok(())
     }
 
