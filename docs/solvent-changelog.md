@@ -4,15 +4,20 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
-**[0.94] A set's body holds of a point of its plane; a call gives every entity.** A plane's
-membership stated by a set's body (§6.21) of a point drawn in that plane already — or twinned
-there — holds by construction and states no row, so a body meeting a sphere with a plane, `{ p |
-p coincident ball; p coincident std.front }`, takes a point of the front onto the circle the
-front cuts. Through 0.93 the row was refused as asking nothing (**E061**), which the same words
-said of the point directly still are (§6.7). And a call that leaves out an entity formal is
-**E103** at the call (a missing point argument, say), as a set or group formal left out
-already was (§5): before, it was said only where the body read the formal, and nowhere for an
-instance of a set family nothing used, so `std.Sphere(r: 5)` was silently nothing.
+**[0.94] A set's body holds of a point of its plane; a call gives every entity, or owns a
+point.** A plane's membership stated by a set's body (§6.21) of a point drawn in that plane
+already — or twinned there — holds by construction and states no row, so a body meeting a
+sphere with a plane, `{ p | p coincident ball; p coincident std.front }`, takes a point of the
+front onto the circle the front cuts. Through 0.93 the row was refused as asking nothing
+(**E061**), which the same words said of the point directly still are (§6.7). And a call that
+leaves out an entity formal is **E103** at the call (a missing point argument, say), as a set or
+group formal left out already was (§5): before, it was said only where the body read the formal,
+and nowhere for an instance of a set family nothing used, so `std.Sphere(r: 5)` was silently
+nothing. The one exception is new: **a point formal drawn in a plane formal**,
+`center: point in on`, may be left out, and the instance then owns a point of its own drawn
+there (`k.center`), seeded by `center: hint((x, y))` and written back there by a solve — so a set
+family's parameters are its formals whether the call gives them or not, and
+`Circle(std.front, r: 25)` is a circle with a centre of its own.
 
 **[0.93] A document naming no unit is in millimetres.** Without a `unit` line a document is
 read exactly as under `unit mm` (§3.3.2): a bare number in a `Length` slot is a millimetre, a

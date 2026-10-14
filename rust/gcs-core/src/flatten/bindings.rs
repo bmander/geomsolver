@@ -135,6 +135,16 @@ impl<'a> Walk<'a> {
     /// once, before anything is bound.
     fn check_call(&mut self, comp: &Component, inst: &crate::syntax::Instance) {
         use crate::syntax::Ty;
+        // a point formal is drawn in a plane formal of the same component
+        for f in &comp.formals {
+            let Some(w) = &f.within else { continue };
+            let plane = Ty::Ent(crate::model::EntKind::Plane);
+            if !comp.formals.iter().any(|g| g.name.text == w.text && g.ty == plane) {
+                self.err(Code::E103, inst.span, format!(
+                    "`{}` is drawn in `{}`, which is no `plane` formal of `{}`",
+                    f.name.text, w.text, inst.component.text));
+            }
+        }
         let mut labelled: Option<&str> = None;
         let mut positional = 0usize;
         let mut given = BTreeSet::new();
@@ -235,6 +245,9 @@ impl<'a> Walk<'a> {
                     self.checks.groups.push((key, a.span, *ty));
                     super::copy_members(vals, &actual, &f.name.text, &mut sub);
                 }
+                // a point formal drawn in a plane, only seeded: the instance's own point,
+                // made where the instance is walked (`owned_points`)
+                (Ty::Ent(_), InstVal::Hint(..)) if f.within.is_some() => {}
                 (Ty::Group | Ty::Set | Ty::Ent(_) | Ty::Path, InstVal::Hint(..)) => self.err(Code::E103, a.span,
                     format!("`{}` is not a number, so there is nothing to seed", f.name.text)),
                 // `beta: hint(15deg)` — the formal stays unbound, an unknown of the drawing like
@@ -309,18 +322,18 @@ impl<'a> Walk<'a> {
         // — and inside a traced component the name is no column of the curve, which is how a nested
         // instance's unbound formal is reported rather than captured by an outer one's.
         for f in &comp.formals {
-            // only a number may be left out, an unknown of the drawing (below): an entity, a
-            // group or a set left out is said at the call, and not where the body reads it — or
-            // nowhere, for a set family's instance nothing uses (§6.21)
+            // only a number may be left out, an unknown of the drawing (below), or a point drawn
+            // in a plane, the instance's own (`owned_points`): an entity, a group or a set left
+            // out is said at the call, and not where the body reads it — or nowhere, for a set
+            // family's instance nothing uses (§6.21)
             let what = match f.ty {
                 Ty::Set => Some("set"),
                 Ty::Group => Some("group"),
                 Ty::Path => Some("path"),
-                Ty::Ent(k) => Some(k.as_str()),
+                Ty::Ent(k) if f.within.is_none() => Some(k.as_str()),
                 _ => None,
             };
-            if let Some(what) = what.filter(|_| !inst.args.iter().enumerate().any(|(i, a)|
-                a.label.as_ref().map_or_else(|| comp.formals.get(i).is_some_and(|p| p.name.text == f.name.text), |l| l.text == f.name.text))) {
+            if let Some(what) = what.filter(|_| arg_of(comp, inst, f).is_none()) {
                 self.err(Code::E103, inst.span, format!("missing {what} argument `{}`", f.name.text));
             }
             // a side left unbound is not an unknown of the drawing: the *statement* it reaches
@@ -489,6 +502,81 @@ impl<'a> Walk<'a> {
                 }
             }
         }
+    }
+}
+
+/// The argument a call gives formal `f`: by its label, or by its place before every label.
+fn arg_of<'i>(comp: &Component, inst: &'i crate::syntax::Instance, f: &crate::syntax::Formal)
+    -> Option<&'i crate::syntax::InstArg> {
+    inst.args.iter().enumerate().find(|(i, a)| a.label.as_ref().map_or_else(
+        || comp.formals.get(*i).is_some_and(|p| p.name.text == f.name.text),
+        |l| l.text == f.name.text)).map(|(_, a)| a)
+}
+
+impl Walk<'_> {
+    /// **The points an instance owns** (§5 [0.94]): each `point in P` formal its call leaves out
+    /// or only seeds, declared as its body would declare it — `center := point in on`, under the
+    /// formal's name, seeded by `center: hint((x, y))` in the plane's coordinates — and made by
+    /// the call's own statement, so the call is what deletes and describes it.
+    pub(super) fn owned_points(&mut self, comp: &Component, inst: &crate::syntax::Instance,
+        st: &Stmt, vals: &BTreeMap<String, Aff>) -> Vec<Stmt> {
+        use crate::syntax::{Chained, DeclName, InstVal, Membership};
+        let mut out = Vec::new();
+        for f in &comp.formals {
+            // one drawn in no plane formal is refused at the call (`check_call`), and not made
+            let plane_ty = Ty::Ent(crate::model::EntKind::Plane);
+            let Some(plane) = f.within.as_ref()
+                .filter(|w| comp.formals.iter().any(|g| g.name.text == w.text && g.ty == plane_ty))
+            else {
+                continue;
+            };
+            let seed = match arg_of(comp, inst, f) {
+                None => [0.0; 2],
+                Some(a) => match &a.value {
+                    InstVal::Hint(text, _) => match self.seed_point(text, vals) {
+                        Ok(seed) => seed,
+                        Err(m) => {
+                            self.err(Code::E103, a.span, format!("`{}`: {m}", f.name.text));
+                            [0.0; 2]
+                        }
+                    },
+                    // given: the formal aliases what it was given (`bind`)
+                    _ => continue,
+                },
+            };
+            // said, where anything is, at the call
+            let at = Span::at(st.span.lo as usize);
+            let name = Name { text: f.name.text.clone(), span: at };
+            let mut d = Decl::point(DeclName::Written(name), seed, None);
+            let root = Name { text: plane.text.clone(), span: at };
+            let on = Ref { root, path: Vec::new(), span: at };
+            d.membership = Membership::written_at(on, Span::default());
+            let kind = StmtKind::Decl(d);
+            out.push(Stmt { id: st.id, kind, span: st.span, chained: Chained::No });
+        }
+        out
+    }
+
+    /// A point's seed as a call writes it, `(x, y)`: two lengths in the plane it is drawn in.
+    fn seed_point(&self, text: &str, vals: &BTreeMap<String, Aff>) -> Result<[f64; 2], String> {
+        let said = "a point's seed is its place in its plane, `hint((x, y))`";
+        let inner = text.trim().strip_prefix('(').and_then(|t| t.strip_suffix(')')).ok_or(said)?;
+        // split at the commas outside any bracket an expression opens: two coordinates
+        let (mut parts, mut depth, mut from) = (Vec::new(), 0i32, 0);
+        for (i, c) in inner.char_indices() {
+            match c {
+                '(' | '[' => depth += 1,
+                ')' | ']' => depth -= 1,
+                ',' if depth == 0 => {
+                    parts.push(&inner[from..i]);
+                    from = i + 1;
+                }
+                _ => {}
+            }
+        }
+        parts.push(&inner[from..]);
+        let [x, y] = parts.as_slice() else { return Err(said.to_string()) };
+        Ok([self.seed_number(x, Ty::Length, vals)?, self.seed_number(y, Ty::Length, vals)?])
     }
 }
 

@@ -172,6 +172,10 @@ pub struct Formal {
     /// so everything that binds or reads a group reads this one; the interface is what the call
     /// is checked against and all the body may read through it.
     pub interface: Option<Name>,
+    /// The plane formal a `point` formal is drawn in, `center: point in on` (§5 [0.94]): such a
+    /// formal may be left out of a call, and the instance then owns a point of its own drawn
+    /// there, `k.center`, as if its body began `center := point in on`.
+    pub within: Option<Name>,
 }
 
 /// **A group's shape, named** (§8.1 [0.84]): `interface Gear { O: point, M: point, ax: line,
