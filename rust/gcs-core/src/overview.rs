@@ -340,6 +340,8 @@ pub fn scene3d_of(sk: &Sketch, unit: f64, layer: Layer) -> Vec<Item3> {
             items.push(Item3 { of, in_plane: of, what: Part::Axis, pts: arm.to_vec() });
         }
     }
+    // the axes already drawn, each as its line: a later one lying on one of them is not drawn again
+    let mut lines: Vec<([f64; 3], [f64; 3])> = Vec::new();
     for e in sk.drawn().into_iter().filter(|_| datums) {
         if matches!(e.kind, EntKind::Point | EntKind::Plane) {
             continue;
@@ -350,11 +352,23 @@ pub fn scene3d_of(sk: &Sketch, unit: f64, layer: Layer) -> Vec<Item3> {
         let plane = entity_view(sk, e, &views);
         let in_plane = plane.map(EntRef::plane);
         // an axis is in space and in no view: its line across the drawing's reach, and a head at
-        // the end it points to
+        // the end it points to.  One lying on an axis already drawn (`std.back` is `std.x`
+        // reversed) is that line, drawn once, the first declared's: a second head at the other
+        // end would read as one axis pointing both ways, and a click there picks the first
+        // (`workspace::nearest_axis`) anyway
         if e.kind == EntKind::Axis {
-            use crate::space::{across, add, scale};
+            use crate::space::{across, add, cross, norm, scale, sub};
             let reach = axis_reach(sk);
             let Some((tail, tip, d)) = axis_segment(sk, e.i(), reach) else { continue };
+            let foot = scale(add(tail, tip), 0.5);
+            let tol = 1e-9 * reach;
+            let on = |&(p, q): &([f64; 3], [f64; 3])| {
+                norm(cross(d, q)) < 1e-9 && norm(cross(sub(foot, p), q)) < tol
+            };
+            if lines.iter().any(on) {
+                continue;
+            }
+            lines.push((foot, d));
             items.push(Item3 { of: Some(e), in_plane: None, what: Part::Drawn, pts: vec![tail, tip] });
             let u = across(d).0;
             let head = reach * 0.04;
