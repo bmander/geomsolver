@@ -290,7 +290,7 @@ fn sphere_sd(q: V) -> f64 { (q[0]-3.).hypot(q[1]).hypot(q[2]-2.)-1. }
 fn torus_sd(q: V) -> f64 { (((q[0]-3.).hypot(q[1])-1.).hypot(q[2]-2.))-0.5 }
 
 #[test]
-#[ignore]
+#[ignore = "a tool, minutes: the harness's fixtures, each a child solventc (build/harness/)"]
 fn fixtures() {
     let cases = vec![
         // Skew axes, as a generator's: the regular case and a tangent face.
@@ -351,7 +351,7 @@ fn gear(name: &str,member: &str,offset: f64,shift: f64,spiral: f64,one: bool,arg
 }
 
 #[test]
-#[ignore]
+#[ignore = "a tool, minutes: the harness's controls, each a child solventc (build/harness/)"]
 fn controls() {
     let cases = vec![
         gear("bevel pinion space","pinion",0.,0.,35.,true,&[],Expect::Export),
@@ -369,7 +369,7 @@ fn controls() {
 /// `SOLVENT_HARNESS_GRID=offsets;shifts;spirals` (comma lists; millimetres, then degrees)
 /// replaces the default grid.
 #[test]
-#[ignore]
+#[ignore = "a tool, minutes: the design space, each case a child solventc (build/harness/)"]
 fn design_space() {
     let grid = std::env::var("SOLVENT_HARNESS_GRID").unwrap_or("0,15,20,25;0,5,10;35,25".into());
     let parts: Vec<Vec<f64>> = grid.split(';').map(|g| g.split(',').map(|v| v.trim().parse().unwrap()).collect()).collect();

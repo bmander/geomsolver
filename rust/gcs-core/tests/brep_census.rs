@@ -152,7 +152,7 @@ fn revolve(node: &Json, out: &mut Vec<Surf>, edges: &mut BTreeMap<String, usize>
 }
 
 #[test]
-#[ignore]
+#[ignore = "a tool: the corpus's B-rep census, printed"]
 fn brep_census() {
     let mut refusals: BTreeMap<String, Vec<String>> = BTreeMap::new();
     let mut nodes: BTreeMap<String, usize> = BTreeMap::new();
@@ -254,7 +254,7 @@ fn brep_census() {
 /// fails its check (or the Boolean that refuses) printed face by face.
 /// `BREP_FILE=vtwin/components/disc.sv BREP_SOLID=disc.body cargo test brep_body_debug -- --ignored --nocapture`
 #[test]
-#[ignore]
+#[ignore = "a tool: BREP_FILE and BREP_SOLID name the body to build a Boolean at a time"]
 fn brep_body_debug() {
     use gcs_core::brep::boolean::{boolean,Op};
     use gcs_core::brep::topo::{Brep,EdgeCurve};
@@ -365,7 +365,7 @@ fn an_involute_tooth_is_its_closed_form() {
 /// (OCCT's reading of a STEP, `PATH.read`), `BREP_SHIFT:=d` measures it moved (which a closed
 /// boundary's volume does not see), `BREP_BAR:=mm` meshes it to that sag.
 #[test]
-#[ignore]
+#[ignore = "a tool: BREP_JSON names the native kernel's dump to read"]
 fn brep_json_debug() {
     let path = std::env::var("BREP_JSON").unwrap();
     let started = std::time::Instant::now();
@@ -458,7 +458,7 @@ fn brep_json_debug() {
 /// the facet term (static, its build refused) — and why each that is not exact is refused. A
 /// report, ignored: `cargo test exact_census -- --ignored --nocapture` (minutes).
 #[test]
-#[ignore]
+#[ignore = "a tool, minutes: every corpus solid sorted by the route its evaluation takes"]
 fn exact_census() {
     use gcs_core::brep::{export, sweep::Say};
     let mut routes: BTreeMap<&str, usize> = BTreeMap::new();
