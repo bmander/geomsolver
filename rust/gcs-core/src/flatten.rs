@@ -40,6 +40,7 @@ pub use faces::{FaceAxis, FacePlane};
 
 pub(crate) use words::faults as word_faults;
 pub(crate) use interfaces::check as interface_faults;
+pub(crate) use keys::is_probe;
 use crate::lowering::Lowered;
 
 pub(crate) use values::{substitute_with, value_aff, value_read};

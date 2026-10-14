@@ -199,7 +199,7 @@ private top := point hint((3, {t}))
 private diameter := line(bottom, top)
 center midpoint diameter
 diameter parallel spindle
-distance(2mm) diameter
+length(2mm) diameter
 private meridian := arc(center: center, start: bottom, end: top)
 radius(1mm) meridian
 }}

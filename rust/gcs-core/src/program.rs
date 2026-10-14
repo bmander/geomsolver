@@ -63,6 +63,8 @@ pub fn solid_diagnostics(sk: &crate::model::Sketch, map: &SourceMap) -> Vec<Diag
     diags.extend(views::degenerate(sk, map));
     diags.extend(views::coplanar(sk, map));
     for i in 0..sk.envelopes.len() {
+        // a set's envelope has no side to read after the solve: its contacts are its rows (#283)
+        if sk.envelopes[i].surface.is_none() { continue; }
         if let Err(message) = crate::envelope::GeneratedEnvelope::named(sk,i) {
             let site = map.site_of(crate::model::EntRef::new(crate::model::EntKind::Envelope,i));
             diags.push(Diag::new(Code::E080,site.map(|s| s.span).unwrap_or_default(),

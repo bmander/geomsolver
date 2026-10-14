@@ -258,7 +258,8 @@ impl<'a> Walk<'a> {
         }
         self.stamp_scope_plane(&mut d2, scope);
         let twins = self.twins_of(&d2, &d.name.key().text);
-        let region = self.region_of(&mut d2, &d.name.key().text, scope);
+        let region = self.region_of(&mut d2, &d.name.key().text, scope)
+            .or_else(|| self.envelope_of(&mut d2, &d.name.key().text, scope));
         self.emit(StmtKind::Decl(d2), st, scope, path);
         for twin in twins {
             self.emit(StmtKind::Decl(twin), st, scope, path);
@@ -602,12 +603,14 @@ impl<'a> Walk<'a> {
         span: Span,
     ) {
         // An unbound numeric formal is a solver unknown, but a hint still needs a
-        // starting value. Read its provisional zero only in hints; constraints keep
-        // the symbolic value. Traced components retain their parameterized seeds.
+        // starting value. Read it only in hints — where the unknown's own seed says it starts
+        // (`lean: hint(20deg)`), else at zero; constraints keep the symbolic value. Traced
+        // components retain their parameterized seeds.
         let provisional;
         let vals = if self.sym.is_none() && vals.values().any(|v| v.free.is_some()) {
             provisional = vals.iter().map(|(name, value)| {
-                (name.clone(), Aff::of_dim(value.c, value.dim))
+                let seed = value.free.as_ref().and_then(|n| self.unknowns.get(n)).and_then(|d| d.seed);
+                (name.clone(), Aff::of_dim(value.c + seed.map_or(0.0, |s| value.m * s), value.dim))
             }).collect();
             &provisional
         } else {
@@ -981,6 +984,39 @@ impl Walk<'_> {
         if d.kind != crate::model::EntKind::Solid || !matches!(d.sweep, Some(Sweep::Body)) {
             return None;
         }
+        let set = self.set_operand(d, sc)?;
+        let at = Span::at(d.name.span().lo as usize);
+        let key = keys::probe(&d.name.key().text);
+        self.names.insert(key.clone());
+        self.sets.probes.push(key.clone());
+        let probe = keys::probe(local);
+        d.children.clear();
+        d.sweep = Some(Sweep::Region { probe: Ref::new(&probe) });
+        Some((super::sets::probe(key, at), applied(&probe, set, "inside", at)))
+    }
+
+    /// **A set's envelope** (#283): `flank := envelope(S, under: m, …)`, its first operand a set,
+    /// is the envelope of `S`'s surface — the operand made a hidden point keyed `{flank}#probe`
+    /// (held, in space) and `probe coincident S` stated beside it, so the set's body is applied to
+    /// the probe as any use applies it, and what it states there is the surface the envelope reads
+    /// (a cone's angle, a cylinder's distance: `program::envelopes`), never a row.
+    /// `None` for any other declaration.
+    fn envelope_of(&mut self, d: &mut Decl, local: &str, sc: &Scope)
+        -> Option<(Decl, crate::syntax::Relation)> {
+        if d.kind != crate::model::EntKind::Envelope {
+            return None;
+        }
+        let set = self.set_operand(d, sc)?;
+        let at = Span::at(d.name.span().lo as usize);
+        let key = keys::probe(&d.name.key().text);
+        self.names.insert(key.clone());
+        let probe = keys::probe(local);
+        d.children[0] = vec![Kid::Ref(Ref::new(&probe))];
+        Some((super::sets::probe(key, at), applied(&probe, set, "coincident", at)))
+    }
+
+    /// The set a declaration's first operand names, where it names one.
+    fn set_operand(&mut self, d: &Decl, sc: &Scope) -> Option<Ref> {
         let [Kid::Ref(set)] = d.children.first().map(Vec::as_slice).unwrap_or(&[]) else {
             return None;
         };
@@ -1003,23 +1039,7 @@ impl Walk<'_> {
         if !rest.is_empty() || !self.sets.made.contains_key(&abs) {
             return None;
         }
-        let set = set.clone();
-        let at = Span::at(d.name.span().lo as usize);
-        let key = keys::probe(&d.name.key().text);
-        self.names.insert(key.clone());
-        self.sets.probes.push(key.clone());
-        let probe = keys::probe(&local);
-        d.children.clear();
-        d.sweep = Some(Sweep::Region { probe: Ref::new(&probe) });
-        let point = super::sets::probe(key, at);
-        let inside = crate::syntax::Written {
-            word: Name { text: "inside".to_string(), span: set.span },
-            fixity: crate::constraints::Fixity::Infix,
-            ops: vec![Ref::new(&probe), set],
-            args: Vec::new(),
-            span: at,
-        };
-        Some((point, crate::syntax::Relation::of(crate::syntax::RelationForm::Written(inside))))
+        Some(set.clone())
     }
 }
 
@@ -1046,4 +1066,16 @@ impl super::values::Names for Asked<'_, '_> {
     fn faces(&self, name: &str) -> Option<Vec<String>> {
         self.walk.faces_named(&Ref::dotted(name, Span::default()), self.scope, self.alias())
     }
+}
+
+/// `probe word set`, stated by the walk at `at`: how a probe has its set applied to it.
+fn applied(probe: &str, set: Ref, word: &str, at: Span) -> crate::syntax::Relation {
+    let written = crate::syntax::Written {
+        word: Name { text: word.to_string(), span: set.span },
+        fixity: crate::constraints::Fixity::Infix,
+        ops: vec![Ref::new(probe), set],
+        args: Vec::new(),
+        span: at,
+    };
+    crate::syntax::Relation::of(crate::syntax::RelationForm::Written(written))
 }

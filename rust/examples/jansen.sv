@@ -46,29 +46,29 @@ component Leg(axle: point, pivot: point, theta: Angle) {
   knee := point hint((-27, -46))
   rod_j := line(pin, top)
   rod_k := line(pin, knee)
-  distance(j) rod_j
-  distance(k) rod_k
+  length(j) rod_j
+  length(k) rod_k
 
   // the upper triangle, one rigid body swinging on the pivot
   back := point hint((-75, 8))
   (ub := line(pivot, top)) -> (ue := line(top, back)) -> (ud := line(back, pivot)) -> close
-  distance(b) ub
-  distance(e) ue
-  distance(d) ud
+  length(b) ub
+  length(e) ue
+  length(d) ud
 
   // the rocker from the pivot to the knee, and the tie from the back down to the heel
   heel := point hint((-59, -28))
   rod_c := line(pivot, knee)
   rod_f := line(back, heel)
-  distance(c) rod_c
-  distance(f) rod_f
+  length(c) rod_c
+  length(f) rod_f
 
   // the lower triangle: the foot, with the toe at the bottom
   toe := point hint((-43, -92))
   (lg := line(knee, heel)) -> (lh := line(heel, toe)) -> (li := line(toe, knee)) -> close
-  distance(g) lg
-  distance(h) lh
-  distance(i) li
+  length(g) lg
+  length(h) lh
+  length(i) li
 
   // which of each joint's two poses — each holds through the whole turn of the crank
   ccw(pivot, pin, top)      // the top above the pin-to-pivot line, the knee below it

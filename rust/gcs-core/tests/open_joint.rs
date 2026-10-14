@@ -1,6 +1,6 @@
 //! A block body may end mid-joint: the chain threads to the next copy (issue #38).
 //!
-//! `cycle N { distance(d) line -> angle(a) }` is N sides, each welded to the next at a corner
+//! `cycle N { length(d) line -> angle(a) }` is N sides, each welded to the next at a corner
 //! that may also state relations, the last wrapping to the first — the polygon, with no
 //! `close`, no names and no written points.  What is worth testing is the two halves of the
 //! bargain: the parser records the open joint on the block (and refuses it everywhere it can
@@ -42,7 +42,7 @@ fn kinds(sk: &gcs_core::model::Sketch, k: CKind) -> usize {
 /// exactly N points, head to tail round the cycle, and the drawing solves.
 #[test]
 fn a_cycle_of_one_link_is_a_polygon() {
-    let e = read("cycle 4 {\n  distance(50) line -> angle(90)\n}\n");
+    let e = read("cycle 4 {\n  length(50) line -> angle(90)\n}\n");
     let mut sk = e.sketch;
     assert_eq!((sk.lines.len(), sk.points.len()), (4, 4 + STD_POINTS), "welds, not coincident pairs");
     assert_eq!((kinds(&sk, CKind::Distance), kinds(&sk, CKind::Angle)), (4, 4));
@@ -58,7 +58,7 @@ fn a_cycle_of_one_link_is_a_polygon() {
 /// polyline of N sides — N+1 points, N−1 corners — rather than an error.
 #[test]
 fn a_repeat_ends_open() {
-    let e = read("repeat 4 {\n  distance(50) line -> angle(90)\n}\n");
+    let e = read("repeat 4 {\n  length(50) line -> angle(90)\n}\n");
     let mut sk = e.sketch;
     assert_eq!((sk.lines.len(), sk.points.len()), (4, 5 + STD_POINTS), "an open polyline");
     assert_eq!(kinds(&sk, CKind::Distance), 4, "the prefix is each copy's own");
@@ -183,7 +183,7 @@ fn removing_one_stated_corner_edits_nothing() {
 /// the bargain every expanded statement strikes, unchanged by the joint.
 #[test]
 fn a_seed_inside_the_block_stays_unwritten() {
-    let src = "cycle 4 {\n  distance(50) line -> angle(90)\n}\n";
+    let src = "cycle 4 {\n  length(50) line -> angle(90)\n}\n";
     let (prog, errs) = parse(src);
     assert!(errs.is_empty());
     let mut e = elaborate(&prog);
@@ -276,7 +276,7 @@ fn a_repeat_weld_runs_through_the_declared_points() {
 /// the `}` exactly as at a line's end.
 #[test]
 fn a_one_line_body_reads() {
-    let e = read("cycle 4 { distance(50) line -> angle(90) }\n");
+    let e = read("cycle 4 { length(50) line -> angle(90) }\n");
     assert_eq!((e.sketch.lines.len(), e.sketch.points.len()), (4, 4 + STD_POINTS));
     assert_eq!(kinds(&e.sketch, CKind::Angle), 4);
     let e = read("cycle 2 { line }\n");
@@ -286,9 +286,9 @@ fn a_one_line_body_reads() {
         let at = src.find(word).expect("the word is in the text") as u32;
         highlight(src).into_iter().find(|(_, s)| s.lo == at).map(|(t, _)| t)
     };
-    let one_line = "cycle 4 { distance(50) line -> angle(90) }";
+    let one_line = "cycle 4 { length(50) line -> angle(90) }";
     assert_eq!(tint_of(one_line, "angle"), Some(Tint::Relation), "at the closing brace");
-    let split = "cycle 4 {\n  distance(50) line -> angle(90)\n}\n";
+    let split = "cycle 4 {\n  length(50) line -> angle(90)\n}\n";
     assert_eq!(tint_of(split, "angle"), Some(Tint::Relation), "at the line's end");
 }
 

@@ -7,6 +7,13 @@ use super::*;
 /// `infers_arg`: the core reads it off the geometry, so no binding ever has to name a curve
 /// parameter.  A document that saved one passes the saved number instead and never comes here.
 pub fn seed_param(sk: &Sketch, kind: CKind, args: &[Arg], i: usize) -> f64 {
+    // a place on an envelope starts where the envelope passes nearest the point: the contact's,
+    // or the point a tangent is at (#283)
+    if let Some((env, first)) = kind.contact_on(SpecKind::Envelope) {
+        let at = if kind == CKind::PointOnEnvelope { 0 } else { 2 };
+        let (Some(Arg::Ent(e)), Some(Arg::Ent(p))) = (args.get(env), args.get(at)) else { return 0.0 };
+        return envelope_place(sk, e.i(), p.i()).map_or(0.0, |x| x[i - first]);
+    }
     match (kind, i) {
         // where the curve already comes nearest the thing it is being tied to: a curve can meet
         // a point or a line in several places, and the nearest is the branch the user drew
@@ -309,6 +316,18 @@ pub fn validate(
 ) -> Result<(), String> {
     shared_on_one_curve(sk, kind, args, name)?;
     on_the_arc(kind, args, name)?;
+    // an envelope a contact holds to is one whose source and motion the solve can read (#283),
+    // and a circle osculating it is drawn in a plane
+    if kind.envelope_contact().is_some() {
+        let c = Constraint::new(kind, args.to_vec());
+        let e = c.envelope_of().ok_or("an envelope contact names an envelope")?;
+        crate::envelope::held::Parts::of(sk, e.i())
+            .map_err(|why| format!("the solve cannot hold anything to {}: {why}", name(e)))?;
+        if kind == CKind::EnvelopeCurvatureAt && sk.plane_of(sk.round_center(args[1].ent())).is_none() {
+            return Err(format!("{} is drawn in no plane, so it has no section of {} to osculate",
+                               name(args[1].ent()), name(e)));
+        }
+    }
     match kind {
         // a curvature reads the curve's second derivative, which a trace gives exactly only
         // where every row of its block has a Taylor form (`taylor.rs`): a residual by difference
@@ -471,4 +490,27 @@ pub fn contact_speed(sk: &Sketch, e: EntRef) -> f64 {
         EntKind::Arc => sk.arc_length(e.i()).max(1e-9),
         _ => crate::curve::speed(sk, e.i()),
     }
+}
+
+/// Where on envelope `e` a solve holding point `p` to it starts (#283): `envelope::held::seed`
+/// over the envelope's parts as the drawing stands, remembered for the last question, since a
+/// contact's three unknowns ask it three times.
+fn envelope_place(sk: &Sketch, e: usize, p: usize) -> Option<[f64; 3]> {
+    use crate::envelope::held::{seed, Contact, Parts};
+    use std::cell::RefCell;
+    thread_local! {
+        static LAST: RefCell<Option<(Vec<f64>, [f64; 3])>> = const { RefCell::new(None) };
+    }
+    let parts = Parts::of(sk, e).ok()?;
+    let k = parts.consts(Contact::Point);
+    let values = parts.values(sk);
+    let at = sk.lifted(p);
+    let roll = sk.envelopes[e].roll;
+    let key: Vec<f64> = k.iter().chain(&values).chain(&at).chain(&roll).copied().collect();
+    if let Some(x) = LAST.with(|l| l.borrow().as_ref().filter(|(k, _)| *k == key).map(|(_, x)| *x)) {
+        return Some(x);
+    }
+    let x = seed(&k, &values, at, roll)?;
+    LAST.with(|l| *l.borrow_mut() = Some((key, x)));
+    Some(x)
 }

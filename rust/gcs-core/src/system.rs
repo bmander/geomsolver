@@ -515,6 +515,9 @@ pub fn build_kernel(sk: &Sketch, key: KernelKey) -> Kernel {
         KernelKey::Dual(inner) => kernels::dual_kernel(inner),
         KernelKey::SplineLength { n, free } => kernels::spline_length_kernel(n, free),
         KernelKey::Stationary(cid) => crate::variational::kernel(sk, cid),
+        KernelKey::Envelope { fk, n_par, n_const } => {
+            crate::envelope::held::kernel(crate::envelope::held::Contact::ALL[fk as usize], n_par, n_const)
+        }
     }
 }
 

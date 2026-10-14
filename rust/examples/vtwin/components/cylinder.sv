@@ -65,8 +65,8 @@ component Cylinder(f: group, fw: Length, dims: group) {
   lid perpendicular ax
   side_l parallel ax
   side_r parallel ax
-  distance(2 * hw) mouth
-  distance(top_u - mouth_u) side_l
+  length(2 * hw) mouth
+  length(top_u - mouth_u) side_l
   m0 midpoint mouth
   m0 coincident ax
   m0 distance(mouth_u, along: u) f.axes
@@ -88,7 +88,7 @@ component Cylinder(f: group, fw: Length, dims: group) {
   trap2 perpendicular ax
   t0 coincident side_l
   t3 coincident side_l
-  distance(trapw) trap1
+  length(trapw) trap1
   t1 distance(trapd, side: right) ax
   t0 distance(trapw / 2, along: u) f.axes
   h0 coincident lid

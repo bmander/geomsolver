@@ -97,8 +97,8 @@ component IntakePassage(f: group, dims: group) {
   bc perpendicular ax
   cd parallel ax
   da perpendicular ax
-  distance(dims.rpl - dims.rman) ab
-  distance(dims.wch) bc
+  length(dims.rpl - dims.rman) ab
+  length(dims.wch) bc
   a distance(dims.wch / 2, side: right) ax
   a distance(dims.rman, along: u) f.axes
 }

@@ -10,7 +10,7 @@ face path) runs over its faces (F4): set aside, and where the faces are not give
 names them once the solids are built (`solid::faces::face_paths`, structural: each primitive's
 own faces under its route, `FacePath`) and elaborates again (`program::Again::Faces`,
 `flatten::expand_faces`, `Walk::face_links`); a `when` in the body keeps a copy — `when f in X
-and f != g` (F8; 0.90, #267: `Walk::faces_named`, `Walk::stands_for`, the `if` retired). A relation word's body may hold blocks, instances, sets and body statements (F5,
+and f != g` (F8; 0.91, #267: `Walk::faces_named`, `Walk::stands_for`, the `if` retired). A relation word's body may hold blocks, instances, sets and body statements (F5,
 `parser/definitions.rs`); `A.body` in a body statement is the solid a face path is of. **The
 stratum** (F6): a body's terms that read its faces (`faces::readers_of`) are left out of the
 boundary they read and applied last by the field (`document.rs`: fills, then cuts). A face path

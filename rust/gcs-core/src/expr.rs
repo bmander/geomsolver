@@ -6,7 +6,7 @@ mod names;
 mod parser;
 
 pub use document::{evaluate, has_expr, set_dimension, sync_free, ExprError, ExprItem, Fault};
-pub(crate) use document::{eval_declared, with_declared};
+pub(crate) use document::{bind_free, eval_declared, with_declared};
 pub use eval::{decide, eval, eval_measured, to_arg_units, to_user_units, Aff, Measurer};
 pub use names::{measure_call, name_at, NameScan, LEXER};
 pub use parser::{is_literal, literal, names_unit, notation, parse, parse_condition_in, parse_in};

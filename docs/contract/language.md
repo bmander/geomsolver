@@ -109,7 +109,7 @@ The parser refuses `as` and a trailing joint; the measured-bound sniff skips a s
 opener word starts. `commit_seeds` writes into a root `when`'s body. The hypoid's tip relief is
 one (`hypoid.sv`). `tests/when.rs` is the gate.
 
-**`when` is the one conditional (0.90, #267).** Two names that are not numbers compare by
+**`when` is the one conditional (0.91, #267).** Two names that are not numbers compare by
 **identity**: `a == b`/`a != b` (`Cond::Cmp` over two `Ast::Var`, a side not in `vals`) holds as
 `Walk::stands_for` resolves them — the absolute name through every alias, so a formal is what
 its call gave and a face repeat's binder its face — and `c in B` (`Cond::In`, made by

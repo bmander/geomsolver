@@ -373,6 +373,12 @@ impl Constraint {
         if matches!(self.kind, CKind::Stationary | CKind::CurveTouchesLine) {
             return Key::Stationary(self.id);
         }
+        // an envelope contact's kernel is its block's widths' (#283)
+        if let Some(c) = self.kind.envelope_contact() {
+            let parts = self.envelope_parts(sk);
+            let (n_par, n_const) = parts.map_or((0, 0), |p| (p.width(c), p.n_const()));
+            return Key::Envelope { fk: c as u8, n_par, n_const };
+        }
         match (self.kind.family_kernel(), self.curve_of()) {
             (Some(fk), Some(e)) => Key::Family { def: sk.curves[e.i()].def as usize, fk: fk as u8 },
             _ => Key::Static(self.kernel_id()),
@@ -394,6 +400,20 @@ impl Constraint {
             CKind::PointOnCurve if sk.is_peg(self.id) => 0,
             _ => self.n_residuals(),
         }
+    }
+
+    /// The envelope a contact with one is on (#283) — the spec's `Envelope` slot.
+    pub fn envelope_of(&self) -> Option<EntRef> {
+        let (e, _) = self.kind.contact_on(SpecKind::Envelope)?;
+        match self.args.get(e)? {
+            Arg::Ent(e) if e.kind == EntKind::Envelope => Some(*e),
+            _ => None,
+        }
+    }
+
+    /// What a contact reads of its envelope (`envelope::held::Parts`), where the solve can read it.
+    pub fn envelope_parts(&self, sk: &Sketch) -> Option<crate::envelope::held::Parts> {
+        crate::envelope::held::Parts::of(sk, self.envelope_of()?.i()).ok()
     }
 
     /// The curve a per-definition kernel is over — the spec's `Curve` slot, wherever it stands.
@@ -516,7 +536,11 @@ impl Constraint {
             None if self.kind == CKind::Stationary => 0,
             // its curve's problem's: never a row of the drawing's
             None if self.kind == CKind::CurveTouchesLine => 0,
-            None => kernels::kernel(self.kernel()).n_res,
+            None => match self.kind.envelope_contact() {
+                // an envelope contact's: a fact about the contact it states (#283)
+                Some(c) => c.rows(),
+                None => kernels::kernel(self.kernel()).n_res,
+            },
         }
     }
 
@@ -541,23 +565,34 @@ impl Constraint {
 
     /// A tangent at a point already on its curve (#251): the slot holding its place, the point
     /// and the curve — the contact holding that point there owns the place (`Sketch::add`).
-    pub fn tangent_at(&self) -> Option<(usize, usize, EntRef)> {
-        match self.kind {
-            CKind::SplineTangentAt | CKind::CurveTangentAt => match (&self.args[0], &self.args[2]) {
-                (Arg::Ent(on), Arg::Ent(at)) => Some((3, at.i(), *on)),
-                _ => None,
-            },
+    pub fn tangent_at(&self) -> Option<(&'static [usize], usize, EntRef)> {
+        let slots: &'static [usize] = match self.kind {
+            CKind::SplineTangentAt | CKind::CurveTangentAt => &[3],
+            // an envelope's place is three numbers, all the contact's (#283)
+            CKind::EnvelopeTangentAt
+            | CKind::EnvelopeNormalAt
+            | CKind::EnvelopePlaneAt
+            | CKind::EnvelopeCurvatureAt => &[3, 4, 5],
+            _ => return None,
+        };
+        match (&self.args[0], &self.args[2]) {
+            (Arg::Ent(on), Arg::Ent(at)) => Some((slots, at.i(), *on)),
             _ => None,
         }
     }
 
-    /// A contact holding a point on a spline or a curve — the point, the curve and its place,
-    /// once allocated: what a tangent at that point reads its place from (#251).
-    pub fn holds_on(&self) -> Option<(usize, EntRef, u32)> {
-        let on_curve = matches!(self.kind, CKind::PointOnSpline | CKind::PointOnCurve);
-        match &self.args[..] {
-            [Arg::Ent(at), Arg::Ent(on), Arg::Param(p), ..] if on_curve && self.states_rows() => {
-                Some((at.i(), *on, *p))
+    /// A contact holding a point on a spline, a curve or an envelope — the point, what it is on
+    /// and its place, once allocated: what a tangent at that point reads its place from (#251).
+    pub fn holds_on(&self) -> Option<(usize, EntRef, Vec<u32>)> {
+        if !self.states_rows() {
+            return None;
+        }
+        match (self.kind, &self.args[..]) {
+            (CKind::PointOnSpline | CKind::PointOnCurve, [Arg::Ent(at), Arg::Ent(on), Arg::Param(p), ..]) => {
+                Some((at.i(), *on, vec![*p]))
+            }
+            (CKind::PointOnEnvelope, [Arg::Ent(at), Arg::Ent(on), Arg::Param(u), Arg::Param(v), Arg::Param(t)]) => {
+                Some((at.i(), *on, vec![*u, *v, *t]))
             }
             _ => None,
         }

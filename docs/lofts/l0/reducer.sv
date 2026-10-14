@@ -27,6 +27,6 @@ in std.top {
   exit := point hint((0mm, 40mm))
   guide := line(entry, exit)
   vertical guide
-  distance(length) guide
+  length(length) guide
 }
 body := solid(Reducer(guide, std.z, inlet: 24mm, outlet: 12mm, wall: 2mm).sec.profile over s in (0, 1))

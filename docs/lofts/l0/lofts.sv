@@ -44,7 +44,7 @@ component OnSpline(g: spline, up: axis, s: Scalar) {
   tl := line(m, q)
   g tangent(at: m) tl
   // drawn a length, or `q` slides along it (finding 13: a direction has no word without one)
-  distance(10mm) tl
+  length(10mm) tl
   n := plane
   n.origin coincident m
   n square(up: up) tl
@@ -58,7 +58,7 @@ component Screwed(ax: axis, base: plane, pitch: Length, turns: Scalar, s: Scalar
   in base {
     k := point
     out := line(base.origin, k)
-    distance(10mm) out
+    length(10mm) out
     r0 := point
     r0 on_u(d: 10mm) base
     ref := line(base.origin, r0)

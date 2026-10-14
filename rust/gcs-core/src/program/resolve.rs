@@ -136,7 +136,12 @@ pub(super) fn follow_building(
     // two declarations naming their parts through each other would walk forever; the cap is
     // far past any real document, so hitting it is the cycle
     for _ in 0..64 {
-        if path.is_empty() || e.i() < sk.count(e.kind) {
+        // an envelope built before the solids (#283) has its revolution's side bound after them:
+        // until then its side is read off its declaration, as an envelope not yet built is
+        let unbound = e.kind == EntKind::Envelope
+            && matches!(path.first(), Some(Seg::Field(f)) if f.text == "surface")
+            && sk.envelopes.get(e.i()).is_some_and(|v| v.surface.is_none());
+        if path.is_empty() || (e.i() < sk.count(e.kind) && !unbound) {
             return follow(sk, e, &path);
         }
         let Seg::Field(f) = &path[0] else {
@@ -217,6 +222,20 @@ pub(super) fn follow(sk: &Sketch, mut e: EntRef, path: &[Seg]) -> Result<EntRef,
                 }
                 None => return Err("a plane's normal is not built yet".to_string()),
             }
+        }
+        // an envelope's side is bound after the solids, and a set's has none (#283): its two
+        // parts are read by name, not by where they stand among its children
+        if e.kind == EntKind::Envelope && e.i() < sk.envelopes.len() {
+            let v = &sk.envelopes[e.i()];
+            e = match f.text.as_str() {
+                "surface" => match v.surface {
+                    Some(s) => EntRef::new(EntKind::Surface, s as usize),
+                    None => return Err(format!("`{}` has no revolution's side to name", v.name)),
+                },
+                "motion" => EntRef::new(EntKind::Motion, v.motion as usize),
+                _ => return Err(format!("an envelope has surface, motion, not `{}`", f.text)),
+            };
+            continue;
         }
         let fields = e.kind.fields();
         let mut at = 0usize;
