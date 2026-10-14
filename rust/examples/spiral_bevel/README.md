@@ -170,3 +170,26 @@ levers (17.7 and 22.0 mm here): 38–46 µm for the stated 50 µm, the files' sa
 This is a common-crown construction with a stated backlash and tip and end relief, not a
 production acceptance result; [the roadmap](../../../docs/spiral-bevel-roadmap.md) holds the
 generating-system evidence and the outstanding engagement checks.
+
+## The lean at the mean point: an envelope the solve sees
+
+Step 2 of #283 brings envelopes in space into the solve. The envelope of a cone or a cylinder set
+(`std.Cone`, `std.ConeThrough` with its lean stated, `std.Cylinder`), or of a revolution's side,
+under a motion of turns about lines, screws and `relative_to:`, is no longer only read after the
+solve: a point is held to it (`M coincident flank`), and at that point a line along its normal
+(`perpendicular(at: M)`), a line or a plane touching it (`tangent(at: M)`) and the circle
+osculating its section by a plane (`curvature(at: M)`). The source's geometry, its number where
+that is unknown and the motion's axes are columns of each, so a cutter's numbers solve from a
+contact a designer states (the specification's §6.15.3).
+
+**`mean_point.sv`** states that contact for a face mill. The mesh is the hypoid's at its mean point
+reduced to its kinematics — crossed helical gears on square shafts, the pitch surfaces touching
+at M and the teeth running along the sliding there — with the face mill's axis leaning `tilt` from
+the pitch plane's normal. The pinion's flank is the gear's cone generated under the mesh, held to
+M with its normal at the pressure angle to the pitch plane; nothing states the lean, which is
+`flank.half`, an unknown. It solves to the pressure angle less the tilt, the closed form at this
+mesh (20° less 5° is 15°, at every design `held_envelopes.rs` tries), the contact at the roll the
+pair is drawn at; and the pinion flank's profile circle at M — the osculating circle of its section
+by the normal plane — is the circle through three points of that section a micron apart (21.17 mm
+at the stated design). Restating `hypoid.sv`'s `pressure_shift`, cutter radius and roll ratios as
+unknowns is the issue's next step.

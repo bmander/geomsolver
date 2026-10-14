@@ -387,3 +387,121 @@ f1 curvature(at: p) osc
         assert!(kinds(&first).iter().any(|x| x == k), "{k}");
     }
 }
+
+/// `spiral_bevel/mean_point.sv` (#283 step 2): the face mill's lean solves from the pressure angle
+/// stated at the mean point, on the pinion's flank — the envelope of the gear's under the mesh.
+/// Its axis leans `tilt` from the pitch plane's normal in the plane of that normal and the teeth's
+/// normal, so the blades lean the pressure angle less the tilt, at each design; the contact is at
+/// the roll the pair is drawn at, M on the gear's cone itself. The pinion flank's profile circle
+/// is its section's: the circle through three points of that section a hair apart, each found by
+/// the envelope's equation and the section's plane — the moving source's reading, not its
+/// curvature.
+#[test]
+fn the_face_mills_lean_solves_from_the_pressure_angle_at_the_mean_point() {
+    let text = include_str!("../../examples/spiral_bevel/mean_point.sv");
+    for (pressure, tilt) in [(20.0, 5.0), (25.0, 3.0), (18.0, 8.0)] {
+        let src = fixtures::gear::configure(text, &[("pressure", pressure), ("tilt", tilt)]);
+        let e = elaborated(&src);
+        let sk = &e.sketch;
+        let half = sk.params[sk.free_vars["flank.half"] as usize].value;
+        assert!((half - (pressure - tilt)).abs() < 1e-9, "{pressure} {tilt}: {half}");
+        // the contact's place: at the roll the pair is drawn at, where M is on the gear's cone
+        let c = sk.constraints.iter().find(|c| c.kind == CKind::PointOnEnvelope).unwrap();
+        let place = [2, 3, 4].map(|s| sk.params[c.args[s].param() as usize].value);
+        assert!(place[2].abs() < 1e-9, "the roll {}", place[2]);
+        let at = |n: &str| sk.world_point(e.map.ent_named(n).unwrap().i());
+        let (m, apex, centre) = (at("M"), at("apex"), at("C"));
+        let (axis, to) = (sub(centre, apex), sub(m, apex));
+        let seen = dot(axis, to) / (norm(axis) * norm(to));
+        assert!((seen.acos().to_degrees() - half).abs() < 1e-9, "M is on the cone");
+
+        // the profile: three points of the pinion flank's section by `section`
+        let i = envelope(sk, "pinion_flank");
+        let parts = Parts::of(sk, i).unwrap();
+        let (k, values) = (parts.consts(Contact::Point, 0), parts.values(sk));
+        let plane = e.map.ent_named("section").unwrap().i();
+        let basis = sk.basis(plane);
+        let normal = cross(basis.u, basis.v);
+        let unit = |x: [f64; 3]| x.map(|c| c / norm(x));
+        let n0 = held::read(&k, &values, place).unwrap().normal;
+        let along = unit(cross(unit(normal), n0));
+        // where the section passes `s` along the profile's tangent from M
+        let section = |s: f64| -> [f64; 3] {
+            let rows = |x: [f64; 3]| -> [f64; 3] {
+                let r = held::read(&k, &values, x).unwrap();
+                let d = sub(r.position, m);
+                [dot(d, normal), dot(d, along) - s, r.normal_velocity]
+            };
+            let mut x = place;
+            for _ in 0..50 {
+                let r = rows(x);
+                if r.iter().all(|v| v.abs() < 1e-13) {
+                    break;
+                }
+                let mut j = [[0.0; 3]; 3];
+                for q in 0..3 {
+                    let mut y = x;
+                    y[q] += 1e-7;
+                    let ry = rows(y);
+                    for row in 0..3 {
+                        j[row][q] = (ry[row] - r[row]) / 1e-7;
+                    }
+                }
+                // Cramer's rule on the 3 × 3 step
+                let det = |a: [[f64; 3]; 3]| a[0][0] * (a[1][1] * a[2][2] - a[1][2] * a[2][1])
+                    - a[0][1] * (a[1][0] * a[2][2] - a[1][2] * a[2][0])
+                    + a[0][2] * (a[1][0] * a[2][1] - a[1][1] * a[2][0]);
+                let d = det(j);
+                for q in 0..3 {
+                    let mut a = j;
+                    for row in 0..3 {
+                        a[row][q] = r[row];
+                    }
+                    x[q] -= det(a) / d;
+                }
+            }
+            held::read(&k, &values, x).unwrap().position
+        };
+        let h = 1e-3;
+        let (a, b) = (section(-h), section(h));
+        // the circle through a, M and b, in the plane they span
+        let (ab, am) = (sub(b, a), sub(m, a));
+        let w = cross(ab, am);
+        let num = cross(w, ab).map(|x| x * dot(am, am));
+        let num2 = cross(am, w).map(|x| x * dot(ab, ab));
+        let mid = [0, 1, 2].map(|q| a[q] + (num[q] + num2[q]) / (2.0 * dot(w, w)));
+        let fitted = norm(sub(mid, m));
+        let p = e.map.ent_named("profile").unwrap();
+        let (circle_centre, radius) = (sk.world_point(sk.round_center(p)), sk.params[sk.round_radius(p)].value);
+        assert!((radius - fitted).abs() < 1e-4 * fitted, "{pressure} {tilt}: {radius} {fitted}");
+        assert!(norm(sub(circle_centre, mid)) < 1e-4 * fitted, "{pressure} {tilt}");
+    }
+}
+
+/// What touches an envelope may be written first; a relation at a point no contact holds on it is
+/// refused naming the contact it wants; a set the solve cannot read as a cone or a cylinder is
+/// refused where it is applied, and a contact with an envelope whose motion turns about a point of
+/// a view says why it cannot hold to it.
+#[test]
+fn envelope_contacts_read_either_way_round_and_refuse_what_they_cannot_hold() {
+    let src = format!("{ANNULUS}r := point hint((0, 35, 0))\nr coincident flank\nalong tangent(at: r) flank\n\
+        k curvature(at: r) flank\n");
+    let e = elaborated(&src);
+    let kinds: Vec<CKind> = e.sketch.constraints.iter().map(|c| c.kind).collect();
+    assert_eq!(kinds.iter().filter(|&&k| k == CKind::EnvelopeTangentAt).count(), 2);
+    assert_eq!(kinds.iter().filter(|&&k| k == CKind::EnvelopeCurvatureAt).count(), 2);
+    let refused = |src: &str, want: &str| {
+        let (prog, errs) = crate::common::parse(src);
+        assert!(errs.is_empty(), "{errs:?}");
+        let e = gcs_core::program::elaborate(&prog);
+        assert!(e.errors().any(|d| d.message.contains(want)),
+                "{want}: {:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
+    };
+    refused(&ANNULUS.replace("p coincident flank\n", ""), "the curvature at `p` is taken where a contact holds");
+    refused(&ANNULUS.replace("p coincident flank\n", ""), "the normal at `p` is taken where a contact holds");
+    refused(&ANNULUS.replace("cyl := std.Cylinder(cax, r: 5mm)", "cyl := std.Sphere(c1, r: 5mm)"),
+            "the solve reads the envelope of a cone's or a cylinder's surface");
+    let planar = ANNULUS.replace("turn := motion(about: ax)",
+        "in std.top {\n  tc := point hint((0, 0))\n}\nfix((0, 0)) tc\nturn := motion(about: tc)");
+    refused(&planar, "turns about a point of a view");
+}

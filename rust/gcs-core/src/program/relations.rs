@@ -680,12 +680,19 @@ pub(super) fn tangents_at(sk: &Sketch, map: &SourceMap, diags: &mut Vec<Diag>) {
             map.name_of(e).map_or_else(|| e.kind.a(), written)
         };
         let (m, g) = (name(EntRef::point(at)), name(on));
+        // what is taken there: an envelope's normal or its section's curvature, else the tangent
+        let what = match c.kind {
+            CKind::EnvelopeNormalAt => "normal",
+            CKind::EnvelopeCurvatureAt => "curvature",
+            CKind::EnvelopePlaneAt => "tangent plane",
+            _ => "tangent",
+        };
         diags.push(Diag::within(
             Code::E040,
             site.span,
             site.stmt,
             format!(
-                "the tangent at {m} is taken where a contact holds {m} on {g}, and none does: \
+                "the {what} at {m} is taken where a contact holds {m} on {g}, and none does: \
                  state `{} coincident {}`",
                 m.trim_matches('`'),
                 g.trim_matches('`')

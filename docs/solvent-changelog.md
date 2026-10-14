@@ -4,6 +4,23 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.90] An envelope in space is held to by the solve.** `flank := envelope(S, under: m, from:,
+to:)` over a cone or a cylinder set (`std.Cone`, `std.ConeThrough` with its lean stated,
+`std.Cylinder`) — a set is now an envelope's operand, read as what its body states at its point —
+or over a revolution's side turned from a line, an arc or a circle, under a motion of turns about
+lines, screws, slides and `relative_to:`, is no longer only read after the solve: `p coincident
+flank` holds a point to it (owning the place `[u, v, t]`, four rows, net one), and at a point held
+there `flank tangent(at: p) l` (a line or an axis in its tangent plane), `flank perpendicular(at:
+p) l` (along its normal, the common normal of a mesh), `flank tangent(at: p) P` (a plane touching
+it) and `flank curvature(at: p) k` (the osculating circle of its section by `k`'s plane, by
+Meusnier from the shape operator, which the moving source's normal gives with no second solve)
+(§6.15.3). The source's geometry, its number where that is an unknown (`half: hint(20deg)`), and
+the motion's axes are columns, so a cutter's lean solves from a contact stated at the mean point
+(`spiral_bevel/mean_point.sv`, #283). `at:` names a point after `perpendicular` and `curvature` as it
+does after `tangent`. A hint over an unknown a call leaves unbound with a seed reads it at that
+seed, no longer at zero (§6.4): `std.ConeThrough(ax, q, lean: hint(20deg))` places its apex where a
+20° lean puts it.
+
 **[0.89] A plane's normal is a member.** `P.normal` is the axis along `P.u × P.v` through
 `P.origin`, read wherever an axis is: `l parallel P.normal`, `t perpendicular std.front.normal`,
 `Q := plane(u: P.normal, v: P.u)`, `hint(dir: P.normal)` (§6.7). It adds no freedom and is never

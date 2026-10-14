@@ -42,8 +42,12 @@ pub(super) fn held_envelopes(sk: &mut Sketch, res: &mut Resolver, map: &mut Sour
         };
         let motion = operand(1).and_then(|r| res.lookup(r))
             .filter(|e| e.kind == EntKind::Motion && e.i() < sk.motions.len());
-        // a declaration that would not be built after the solve either is left to say so there
-        let (Some(motion),Some(source),Ok(roll)) = (motion,operand(0),roll(sk,d)) else { continue };
+        // a declaration that would not be built after the solve either is left to say so there —
+        // its name, until then, naming nothing a relation could hold to
+        let (Some(motion),Some(source),Ok(roll)) = (motion,operand(0),roll(sk,d)) else {
+            res.of.remove(&d.name.key().text);
+            continue;
+        };
         let held = match res.lookup(source) {
             // a set applied to its hidden point: the point held, as a region's probe is
             Some(p) if p.kind == EntKind::Point && source.root.text.ends_with("#probe") => {
