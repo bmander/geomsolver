@@ -8,7 +8,7 @@ use crate::model::Sketch;
 use crate::newton::{self, Info, Method, TrustRegion};
 use crate::space;
 use crate::sparse::Ata;
-use crate::system::{SolveBlock, Subset, System, DENSE_MAX};
+use crate::system::{SolveBlock, Subset, System, Tearing, DENSE_MAX};
 
 use super::bounds::{across, bound_reading, bound_tol, movable};
 use super::{reads_pose, SolveOpts, SolveResult};
@@ -393,71 +393,133 @@ impl System {
     /// over — one or two statements whose rows number the unknowns, and without which the rest
     /// is square and perfectly matched — and the rest in its own block-triangular order.  Among
     /// the choices, the one whose widest inner block is smallest, the latest statements first
-    /// among equals.  `None` where no such statements are found.
-    fn tearing(&self, b: &SolveBlock, held: &[usize]) -> Option<Tearing> {
+    /// among equals.  `None` where no such statements are found.  A fact about the compile's
+    /// structure, so worked out once a compile (`System::tearings`): a solve steered by a bound
+    /// passes the blocks again.
+    fn tearing(&mut self, b: &SolveBlock, held: &[usize]) -> Option<std::sync::Arc<Tearing>> {
+        let key = (b.cols.clone(), held.to_vec());
+        if let Some(t) = self.tearings.get(&key) {
+            return t.clone();
+        }
+        let t = self.tear(b, held).map(std::sync::Arc::new);
+        self.tearings.insert(key, t.clone());
+        t
+    }
+
+    /// `tearing`, worked out: every choice of statements tried, the latest first.  Each row's
+    /// columns among the rest are read once, a choice that leaves a column no row is refused
+    /// before it is matched, and the rest is matched alone — square, it is well determined
+    /// exactly where the matching is perfect, which is all `graph::blocks` reads of it; the
+    /// choices are compared by their widest part alone (`graph::widest_block`), and only the one
+    /// chosen is put in order.
+    fn tear(&self, b: &SolveBlock, held: &[usize]) -> Option<Tearing> {
         let (adj, _) = self.structure();
         let hard = self.hard_rows();
-        let index: std::collections::BTreeMap<usize, usize> =
-            hard.iter().enumerate().map(|(i, &r)| (r, i)).collect();
+        let mut index = vec![usize::MAX; self.n_res];
+        for (i, &r) in hard.iter().enumerate() {
+            index[r] = i;
+        }
         let rest: Vec<usize> = b.cols.iter().copied().filter(|c| !held.contains(c)).collect();
-        let local: std::collections::BTreeMap<usize, usize> =
-            rest.iter().enumerate().map(|(i, &c)| (c, i)).collect();
-        let rows_of =
-            |inst: &(usize, usize)| -> Vec<usize> { self.rows_of(std::slice::from_ref(inst)) };
-        let id = |inst: &(usize, usize)| self.blocks[inst.0].cids[inst.1];
-        // the candidates, latest statement first
-        let mut by_id: Vec<(usize, usize)> = b.instances.clone();
-        by_id.sort_by_key(|i| std::cmp::Reverse(id(i)));
+        let n = rest.len();
+        let mut local = vec![usize::MAX; self.n_free];
+        for (i, &c) in rest.iter().enumerate() {
+            local[c] = i;
+        }
+        // each instance's rows, and each row's columns among the rest, read once
+        let rows_of: Vec<Vec<usize>> =
+            b.instances.iter().map(|i| self.rows_of(std::slice::from_ref(i))).collect();
+        let mut cols_of = vec![Vec::new(); self.n_res];
+        let mut cover = vec![0_usize; n];
+        for &r in rows_of.iter().flatten() {
+            cols_of[r] = adj[index[r]].iter().map(|&c| local[c]).filter(|&c| c != usize::MAX)
+                .collect::<Vec<usize>>();
+            for &c in &cols_of[r] {
+                cover[c] += 1;
+            }
+        }
+        let id = |k: usize| self.blocks[b.instances[k].0].cids[b.instances[k].1];
+        // the candidates, latest statement first, by their place in `b.instances`
+        let mut by_id: Vec<usize> = (0..b.instances.len()).collect();
+        by_id.sort_by_key(|&k| std::cmp::Reverse(id(k)));
         let need = held.len();
-        let fits = |outer: &[(usize, usize)]| -> Option<Tearing> {
-            if outer.iter().map(|i| rows_of(i).len()).sum::<usize>() != need {
+        let mut uncovered = cover.clone();
+        // the rest without the statements `outer`, matched: its rows, each row's columns among
+        // the rest, and the matching; `None` where it is not square and perfectly matched
+        let mut matched = |outer: &[usize]| -> Option<(Vec<usize>, Vec<Vec<usize>>, crate::graph::Dm)> {
+            if outer.iter().map(|&k| rows_of[k].len()).sum::<usize>() != need {
                 return None;
             }
-            let inner: Vec<(usize, usize)> =
-                b.instances.iter().copied().filter(|i| !outer.contains(i)).collect();
-            let rows: Vec<usize> = inner.iter().flat_map(rows_of).collect();
-            let sub: Vec<Vec<usize>> = rows.iter().map(|r| {
-                adj[index[r]].iter().filter_map(|c| local.get(c).copied()).collect()
-            }).collect();
-            let dm = crate::graph::dulmage_mendelsohn(&sub, rest.len());
-            if dm.rank != rest.len() || rows.len() != rest.len() {
+            // a column only the rows left over read leaves the rest short of a row for it
+            uncovered.copy_from_slice(&cover);
+            for &r in outer.iter().flat_map(|&k| &rows_of[k]) {
+                for &c in &cols_of[r] {
+                    uncovered[c] -= 1;
+                }
+            }
+            if uncovered.contains(&0) {
                 return None;
             }
-            let blt = crate::graph::blocks(&sub, &dm);
-            let parts = blt.rows.iter().map(|part| {
-                let mut cols: Vec<usize> =
-                    part.iter().map(|&r| rest[dm.mate_row[r] as usize]).collect();
-                cols.sort_unstable();
-                let mut instances: Vec<(usize, usize)> =
-                    part.iter().map(|&r| self.instance_of(rows[r])).collect();
-                instances.sort_unstable();
-                instances.dedup();
-                let full: Vec<usize> = instances.iter().flat_map(rows_of).collect();
-                SolveBlock { rows: full, cols, instances }
-            }).collect();
-            Some(Tearing { outer: outer.to_vec(), inner: parts })
+            let rows: Vec<usize> = (0..b.instances.len()).filter(|k| !outer.contains(k))
+                .flat_map(|k| rows_of[k].iter().copied()).collect();
+            if rows.len() != n {
+                return None;
+            }
+            let sub: Vec<Vec<usize>> = rows.iter().map(|&r| cols_of[r].clone()).collect();
+            let (mate_row, mate_col) = crate::graph::hopcroft_karp(&sub, n);
+            if mate_row.contains(&-1) {
+                return None;
+            }
+            // square and perfectly matched: well determined throughout
+            let dm = crate::graph::Dm {
+                mate_row,
+                mate_col,
+                over_rows: Vec::new(),
+                over_cols: Vec::new(),
+                under_rows: Vec::new(),
+                under_cols: Vec::new(),
+                well_rows: (0..n).collect(),
+                well_cols: (0..n).collect(),
+                rank: n,
+                n_redundant: 0,
+                n_free: 0,
+            };
+            Some((rows, sub, dm))
         };
         // of every tearing that leaves the rest square, the one whose largest part is smallest,
         // the later statements first among equals: the rows left over are those the rest of the
         // block does not need to come apart
-        let widest = |t: &Tearing| t.inner.iter().map(|b| b.cols.len()).max().unwrap_or(0);
-        let mut best: Option<Tearing> = None;
-        let mut consider = |t: Option<Tearing>| {
-            if let Some(t) = t {
-                if best.as_ref().is_none_or(|b| widest(&t) < widest(b)) {
-                    best = Some(t);
+        let mut best: Option<(Vec<usize>, usize)> = None;
+        let mut consider = |outer: Vec<usize>| {
+            if let Some((_, sub, dm)) = matched(&outer) {
+                let widest = crate::graph::widest_block(&sub, &dm.mate_col);
+                if best.as_ref().is_none_or(|b| widest < b.1) {
+                    best = Some((outer, widest));
                 }
             }
         };
-        for (n, a) in by_id.iter().enumerate() {
-            consider(fits(&[*a]));
+        for (j, &a) in by_id.iter().enumerate() {
+            consider(vec![a]);
             if need >= 2 {
-                for c in &by_id[n + 1..] {
-                    consider(fits(&[*a, *c]));
+                for &c in &by_id[j + 1..] {
+                    consider(vec![a, c]);
                 }
             }
         }
-        best
+        // the one chosen, in its own block-triangular order
+        let (outer, _) = best?;
+        let (rows, sub, dm) = matched(&outer)?;
+        let blt = crate::graph::blocks(&sub, &dm);
+        let inner = blt.rows.iter().map(|part| {
+            let mut cols: Vec<usize> = part.iter().map(|&r| rest[dm.mate_row[r] as usize]).collect();
+            cols.sort_unstable();
+            let mut instances: Vec<(usize, usize)> =
+                part.iter().map(|&r| self.instance_of(rows[r])).collect();
+            instances.sort_unstable();
+            instances.dedup();
+            let full = self.rows_of(&instances);
+            SolveBlock { rows: full, cols, instances }
+        }).collect();
+        Some(Tearing { outer: outer.iter().map(|&k| b.instances[k]).collect(), inner })
     }
 
     /// **A contact starts where its block comes up** (#304): a point on an envelope in space or
@@ -645,13 +707,6 @@ struct Pass {
     solved: std::collections::BTreeSet<usize>,
     nfev: i32,
     njev: i32,
-}
-
-/// A block torn at its unknowns (`System::tearing`): the statements whose rows are left over,
-/// and the rest in its own block-triangular order.
-struct Tearing {
-    outer: Vec<(usize, usize)>,
-    inner: Vec<SolveBlock>,
 }
 
 /// How many unknowns a block is torn at, at most (`System::torn`).

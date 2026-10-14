@@ -18,9 +18,6 @@ pub struct FacePoly {
     /// The drawn edges, in traversal order, by the name the document calls them.
     pub names: Vec<String>,
     pub basis: Basis,
-    /// Per edge in `names`, a spline's or a curve's own parameter where the walk enters and
-    /// leaves it — what a loft pairs such an edge by (`loft::pair`); `None` for the rest.
-    pub curved: Vec<Option<(EntRef, [f64; 2])>>,
 }
 
 impl FacePoly {
@@ -75,8 +72,7 @@ impl FacePoly {
         for i in 0..n {
             of.push(self.of[(n - 1 - i + n - 1) % n]);
         }
-        let curved = self.curved.iter().map(|c| c.map(|(e, [a, b])| (e, [b, a]))).collect();
-        FacePoly { pts, of, names: self.names.clone(), basis: self.basis, curved }
+        FacePoly { pts, of, names: self.names.clone(), basis: self.basis }
     }
 
     pub fn lift(&self, i: usize) -> [f64; 3] {
@@ -121,8 +117,7 @@ pub(super) fn loop_poly(sk: &Sketch, edges: &[EntRef], edge_names: &[String], pl
             pts.push(*p);
             of.push((0, true));
         }
-        let curved = vec![None; names.len()];
-        let poly = tidy_poly(FacePoly { pts, of, names, basis, curved });
+        let poly = tidy_poly(FacePoly { pts, of, names, basis });
         return poly.valid().then(|| poly.ccw());
     }
 
@@ -139,22 +134,18 @@ pub(super) fn loop_poly(sk: &Sketch, edges: &[EntRef], edge_names: &[String], pl
             pts.push(p);
             of.push((0, true));
         }
-        let (a, b) = sk.curve_domain(i);
-        let curved = vec![Some((edges[0], [a, b]))];
-        let poly = tidy_poly(FacePoly { pts, of, names, basis, curved });
+        let poly = tidy_poly(FacePoly { pts, of, names, basis });
         return poly.valid().then(|| poly.ccw());
     }
 
     // otherwise: every edge in traversal order, each starting where the last one ended
-    let mut curved = vec![None; names.len()];
     for (i, (e, from, to)) in walk_loop(sk, edges)?.into_iter().enumerate() {
         walk_edge(sk, e, from, to, i, unit, &mut pts, &mut of)?;
-        if let Some(c) = curved.get_mut(i) { *c = curved_span(sk, e, from); }
     }
     if pts.len() < 3 {
         return None;
     }
-    let poly = tidy_poly(FacePoly { pts, of, names, basis, curved });
+    let poly = tidy_poly(FacePoly { pts, of, names, basis });
     poly.valid().then(|| poly.ccw())
 }
 
@@ -363,4 +354,57 @@ pub(crate) fn ring_centroid(pts: &[(f64, f64)]) -> (f64, f64) {
     }
     let k = n as f64;
     (pts.iter().map(|p| p.0).sum::<f64>() / k, pts.iter().map(|p| p.1).sum::<f64>() / k)
+}
+
+/// Cut a planar region into convex strips between vertex ordinates. Within a strip no
+/// boundary vertices or crossings occur, so sorted intersections pair by even/odd fill.
+/// This handles any number of holes without subtracting two nearly coincident swept shells.
+pub(super) fn cap(polys: &[&FacePoly]) -> Vec<Vec<(f64, f64)>> {
+    let mut ys: Vec<f64> = polys
+        .iter()
+        .flat_map(|p| p.pts.iter().map(|p| p.1))
+        .collect();
+    ys.sort_by(f64::total_cmp);
+    let tol = (ys.last().unwrap() - ys[0]).abs() * 1e-12;
+    ys.dedup_by(|a, b| (*a - *b).abs() <= tol);
+    let mut out = Vec::new();
+    for band in ys.windows(2) {
+        let (lo, hi) = (band[0], band[1]);
+        let mid = (lo + hi) * 0.5;
+        let mut hits = Vec::new();
+        for p in polys {
+            for i in 0..p.pts.len() {
+                let (a, b) = (p.pts[i], p.pts[(i + 1) % p.pts.len()]);
+                if (a.1 > mid) == (b.1 > mid) {
+                    continue;
+                }
+                let at = |y: f64| {
+                    if (y - a.1).abs() <= tol {
+                        a
+                    } else if (y - b.1).abs() <= tol {
+                        b
+                    } else {
+                        (a.0 + (y - a.1) * (b.0 - a.0) / (b.1 - a.1), y)
+                    }
+                };
+                hits.push((at(mid).0, at(lo), at(hi)));
+            }
+        }
+        hits.sort_by(|a, b| a.0.total_cmp(&b.0));
+        for interval in hits.chunks_exact(2) {
+            let (l, r) = (interval[0], interval[1]);
+            let mut quad = vec![l.1, r.1, r.2, l.2];
+            quad.dedup_by(|a, b| (a.0 - b.0).dhypot(a.1 - b.1) <= tol);
+            if quad.len() > 2
+                && (quad[0].0 - quad.last().unwrap().0).dhypot(quad[0].1 - quad.last().unwrap().1)
+                    <= tol
+            {
+                quad.pop();
+            }
+            if quad.len() >= 3 {
+                out.push(quad);
+            }
+        }
+    }
+    out
 }

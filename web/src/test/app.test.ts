@@ -909,23 +909,25 @@ test('the camera carries a length whichever way it is measured', () => {
 });
 
 test('picking measures what is drawn, and does it in the core', () => {
+  // off the x axis, which is drawn across the whole workspace and would answer a pick past the
+  // segment's end were the segment on it
   const built = new Sketch();
-  built.line(built.point(0, 0), built.point(10, 0));
+  built.line(built.point(0, 5), built.point(10, 5));
   const view = viewOn(built);
   const b = view.sketch.points[1];
   const line = view.sketch.lines[0];
   const at = (x: number, y: number): [number, number] => view.w2s(x, y);
-  assert.equal(view.pick(...at(5, 0)), line);
-  assert.equal(view.pick(...at(5, 0.2)), line, 'within a few pixels of the segment');
+  assert.equal(view.pick(...at(5, 5)), line);
+  assert.equal(view.pick(...at(5, 5.2)), line, 'within a few pixels of the segment');
   // the infinite line a dimension would measure to reaches out here; what is drawn does not
-  assert.equal(view.pick(...at(30, 0)), null);
+  assert.equal(view.pick(...at(30, 5)), null);
   // a point within reach wins over the edge it is an end of
-  assert.equal(view.pick(...at(9.95, 0)), b);
+  assert.equal(view.pick(...at(9.95, 5)), b);
   // the tolerance is in pixels, so it covers less of the drawing the further in you zoom
   const off = view.world(6);                 // six pixels off the segment
-  assert.equal(view.pick(...at(5, off)), line);
+  assert.equal(view.pick(...at(5, 5 + off)), line);
   view.cam.zoomAt(0, 0, 4);
-  assert.equal(view.pick(...at(5, off)), null, 'zoomed in, the same place is well clear of it');
+  assert.equal(view.pick(...at(5, 5 + off)), null, 'zoomed in, the same place is well clear of it');
 });
 
 /* -- the source is the document -------------------------------------------------------- */

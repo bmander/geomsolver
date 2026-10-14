@@ -122,7 +122,6 @@ fn spatial_faces_reject_wrong_support_identity_open_loops_and_planar_sweep_use()
         "bad := face(left_low,middle_edge,right_low,bottom_edge,on: first_envelope,holes: globe)",
         "bad := solid(lower_face,depth: 1mm)",
         "bad := solid(lower_face,about: ax)",
-        "bad := solid(lower_face,along: ax)",
         "bad := solid(face(left_low,middle_edge,right_low,bottom_edge,on: first_envelope),depth: 1mm)",
     ] {
         let (p,errors) = syntax::parse(&format!("{}{declaration}\n",source()));

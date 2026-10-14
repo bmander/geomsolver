@@ -4,7 +4,6 @@
 // V = 128 · 30 · π/2 = 1920π mm³.
 unit mm
 use std
-use lofts
 bend_radius := 30mm
 bend_angle := 90deg
 
@@ -15,7 +14,7 @@ component Section(c: point, size: Length, wall: Length) {
 }
 
 component Elbow(g: arc, up: axis, size: Length, wall: Length, s: Scalar) {
-  st := lofts.OnArc(g, up: up, s: s)
+  st := std.OnArc(g, up: up, s: s)
   sec := Section(st.n.origin, size: size, wall: wall) in st.n
 }
 

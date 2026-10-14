@@ -628,7 +628,7 @@ impl Family {
             of.pop();
         }
         // what a loop is asked here is its shape, never its edges' names
-        FacePoly { pts, of, names: Vec::new(), basis: st.basis, curved: Vec::new() }
+        FacePoly { pts, of, names: Vec::new(), basis: st.basis }
     }
 
     /// Hold every solved station to the station's topology (see the module), and read which way
@@ -783,7 +783,7 @@ impl Family {
                 continue;
             }
             let rings: Vec<&FacePoly> = polys.iter().filter(|p| p.pts.len() >= 3).collect();
-            for quad in super::loft::cap(&rings) {
+            for quad in super::profile::cap(&rings) {
                 let pts = quad.iter().map(|&(x, y)| st.basis.lift(x, y)).collect();
                 push(pts, face, false, reverse, true);
             }

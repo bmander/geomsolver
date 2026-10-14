@@ -8,10 +8,9 @@
 // neck and back (its last control point solved 464 mm up); at 20 the rail rises the whole way.
 unit mm
 use std (horizontal, vertical)
-use lofts
 
 component Body(g: line, up: axis, front: plane, rail: spline, s: Scalar) {
-  st := lofts.OnLine(g, up: up, s: s)
+  st := std.OnLine(g, up: up, s: s)
   rim := point in st.n, front
   rim coincident rail
   in st.n {

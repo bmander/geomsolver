@@ -37,7 +37,7 @@
  *   solids    U extrude and Q revolve the region under a click; M union, Z cut and Y intersect
  *             take the body to change, then the bodies to change it with — the box shows the
  *             result before it is written — and a click back on the first (or Enter) writes it
- *   menus     File/Edit/Insert/Solution hold everything that is not a tool or a constraint;
+ *   menus     File/Edit/Insert/Solution/Help hold everything that is not a tool or a constraint;
  *             the solver's own switches are behind Solution ▸ Options
  *
  * Everything below is presentation; the solver, diagnosis, decomposition and root selection
@@ -376,6 +376,12 @@ async function traceImage(): Promise<void> {
  *  belongs beside the accelerator, in the one table every key in the app is read off. */
 const fade = (by: number) => () => { if (view.underlay?.picked) view.fadeImage(by); };
 
+const REPO = 'https://github.com/bmander/geomsolver';
+const PRIMER = `${REPO}/blob/main/docs/solvent-primer.md`;
+
+/** Follow an outbound link in its own tab, because following it leaves the sketch behind. */
+const visit = (href: string) => { window.open(href, '_blank', 'noopener'); };
+
 /* Everything that is neither a tool nor a constraint.  Like the constraints bar these are
  * tables rather than calls, so the accelerator printed beside an item is the same string the
  * keyboard handler matches — see ACTION_KEYS. */
@@ -456,11 +462,17 @@ const MENUS: [string, (MenuItem | null)[]][] = [
     null,
     { label: 'Options…', onClick: () => void options() },
   ]],
+  ['Help', [
+    { label: 'Solvent language primer', onClick: () => visit(PRIMER),
+      title: 'The language a drawing is written in, as the implementation accepts it' },
+    { label: 'GitHub project', onClick: () => visit(REPO),
+      title: 'The source, the specification and the issue tracker' },
+  ]],
 ];
 for (const [label, items] of MENUS) {
-  // The file menu works in either view. Geometry commands need a selected model file.
+  // The file menu and Help work in either view. Geometry commands need a selected model file.
   const shared = new Set(['New', 'Open…', 'Open drawing folder…', 'Open examples…',
-    'Save', 'Export SVG', 'Program']);
+    'Save', 'Export SVG', 'Program', 'Solvent language primer', 'GitHub project']);
   for (const item of items) {
     if (!item || shared.has(item.label)) continue;
     const action = item.onClick;

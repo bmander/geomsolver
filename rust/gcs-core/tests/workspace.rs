@@ -301,6 +301,31 @@ fn the_bounds_reach_past_a_turned_section() {
     assert!(x0 <= -31.9 && x1 >= 31.9, "{x0} {x1}");
 }
 
+/// A blank sheet opens on the workspace, about five inches across (`overview::WORKSPACE_MM`), and
+/// not on its origin, a point: from the front the box is the front's pane, 125 mm square about
+/// the origin, in the document's own lengths.  A drawing larger than that frames itself.
+#[test]
+fn a_blank_sheet_is_framed_on_the_workspace() {
+    let bounds = gcs_core::overview::workspace::bounds;
+    for (src, side) in [("use std\n", 125.0), ("unit in\nuse std\n", 125.0 / 25.4)] {
+        let e = build(src);
+        let proj = Projection::new(&e.sketch, -FRAC_PI_2, 0.0);
+        let (x0, y0, x1, y1) = bounds(&e.sketch, &proj, 0.05).unwrap();
+        for (lo, hi) in [(x0, x1), (y0, y1)] {
+            assert!((lo + side / 2.0).abs() < 1e-9 && (hi - side / 2.0).abs() < 1e-9,
+                "{src:?}: {x0} {y0} {x1} {y1}");
+        }
+        // the front's pane is under a press anywhere on it
+        let front = plane(&e, "std.front");
+        assert!(panes_at(&e.sketch, &proj, (0.45 * side, -0.45 * side)).contains(&front));
+    }
+    let e = build("use std\na := point hint((0, 0)) in std.front\nfix((0, 0)) a\n\
+        b := point hint((400, 0)) in std.front\nfix((400, 0)) b\nl := line(a, b)\n");
+    let proj = Projection::new(&e.sketch, -FRAC_PI_2, 0.0);
+    let (x0, _, x1, _) = bounds(&e.sketch, &proj, 0.05).unwrap();
+    assert!(x0.abs() < 1e-9 && (x1 - 400.0).abs() < 1e-9, "{x0} {x1}");
+}
+
 /// A curve owns no point, so the view it is drawn in is what it is written over's: an envelope of
 /// a point drawn in `std.top`, and an envelope of that envelope, stand in `std.top` — drawn flat
 /// in the plane at z = 0 — and not on the page the front stands for (the Wankel's bore and flank).
@@ -410,6 +435,29 @@ fn an_axis_is_picked_where_it_is_drawn_and_the_drawing_outranks_it() {
     // from the front it is seen end on, a dot: not picked
     let front = Projection::new(sk, -FRAC_PI_2, 0.0);
     assert_eq!(pick(sk, &front, seen([10.0, 0.0, 10.0], -FRAC_PI_2, 0.0), 0.5, 0.01), None);
+}
+
+/// A blank sheet's axes are drawn one arrow each: `std.back`, which lies on `std.x` reversed, is
+/// that line drawn once, the first declared's, and not a second head pointing left.  An axis
+/// on a line of its own is drawn, whatever it is parallel to.
+#[test]
+fn an_axis_lying_on_one_already_drawn_is_not_drawn_again() {
+    use gcs_core::overview::{scene3d, Part};
+    let e = build(AXES);
+    let sk = &e.sketch;
+    let named = |n: &str| e.map.ent_named(n).unwrap();
+    let scene = scene3d(sk, 0.0);
+    let strokes = |n: &str| {
+        scene.iter().filter(|it| it.what == Part::Drawn && it.of == Some(named(n))).collect::<Vec<_>>()
+    };
+    assert!(strokes("std.back").is_empty());
+    for n in ["std.x", "std.y", "std.z", "t"] {
+        assert_eq!(strokes(n).len(), 3, "{n}: its line and its head's two barbs");
+    }
+    // the x axis's head is at its +x end: both barbs start there
+    let x = strokes("std.x");
+    let tip = x[0].pts[1];
+    assert!(tip[0] > 0.0 && x[1..].iter().all(|b| b.pts[0] == tip), "{tip:?}");
 }
 
 /// The box asks for the scene in layers: the datums every frame a drag moves them, the objects'

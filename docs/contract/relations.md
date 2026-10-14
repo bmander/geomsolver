@@ -183,7 +183,7 @@ came from.
   name-link boundary is refused until #35.  A statement in a braced body ends at the `}`
   (`end_of_stmt`).  `square.sv`, `ngon.sv` are the cases; `tests/open_joint.rs` is the gate, and
   `tests/chain.rs` holds `rect_fillets`'s chain spelling to the shipped longhand.
-- A **step** (#330, Solvent §6.6 [0.100]) is a prefix word over a line, `step(u: s, dv: b) l`,
+- A **step** (#330, Solvent §6.6 [0.101]) is a prefix word over a line, `step(u: s, dv: b) l`,
   the end's ordinates by label — `du`/`dv` from `l.p1`, `u`/`v` from the frame's origin — and the
   ordinate it does not name kept.  It is **no operator and no `CKind`**: `constraints::step_word`
   admits it as a prefix (`syntax::words::prefix_word`, so a chain's link takes it) and reserves it

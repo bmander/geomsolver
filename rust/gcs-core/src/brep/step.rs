@@ -145,7 +145,6 @@ pub const FIT: f64 = 1e-6;
 pub fn blend_net(b: &super::geom::Blend) -> Result<super::nurbs::Net,String> {
     let (dv,nv) = match b.carry {
         super::geom::Carry::Line {..} => (1,1),
-        super::geom::Carry::Arc {..} => (3,4),
         // a quarter of a turn a span to start with, as a helix wants
         super::geom::Carry::Screw {angle,..} => (3,((angle.abs()/std::f64::consts::FRAC_PI_2).ceil() as usize).max(4)),
     };

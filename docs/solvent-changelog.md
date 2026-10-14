@@ -4,17 +4,31 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
-**[0.100] A step: one number per run.** `step(u: s) (ab := line)` says where a line's end
+**[0.101] A step: one number per run.** `step(u: s) (ab := line)` says where a line's end
 stands, one ordinate at a time — `du`, `dv` from its start, `u`, `v` from the frame's origin — and
 keeps the ordinate it does not name, so a stepped outline is a chain of runs, each a station or a
 radius as the part is dimensioned (§6.6). Absolute and relative are chosen per ordinate, not per
 step: `step(u: s, dv: b)`. The frame is the view the line is drawn in, or `from: P`. A step is the
 ordinates and levels it names, each number a dimension kept where it is written; a literal zero is
 a level. The closing edge takes no step. A corner a step places, with no seed written, starts
-where the walk puts it. Through 0.99 such an outline was a point per corner, each placed by two
+where the walk puts it. Through 0.100 such an outline was a point per corner, each placed by two
 ordinates and seeded by a `hint` that restated them, and then the lines threading them: the hub
 motor's cover was 18 points, 18 lines and about 40 lines of source, now 18 links. `heading(θ)`
 and `rev arc`, planned beside it, are not in this draft. (Issue #330, from #309.)
+
+**[0.100] A loft is library words.** `solid(section, along: guide)` and `solid(start_section,
+end_section, along: guide)` are retired: they no longer parse, and `along:` in a solid's brackets
+says what to write instead (§6.9). A loft or a sweep along a path is a face family (0.97) whose
+station stands on its guide through a word of the standard library: `std.OnLine`, `std.OnArc`,
+`std.OnSpline`, `std.On` (any `path` whose tangent at a point is read in space: a line, a spline,
+a traced curve), `std.Screwed` and `std.OnHelix`, each a plane `n` square to its path at the
+running number, its `v` along `up`. The section is the document's own component drawn in that
+plane, so what through 0.99 was the constructor's pairing rule (edges joined in written order, a
+second section's corners mixed with the first's) is a dimension reading `s`. The reducer, the
+elbow, the narrowing bend and the square-to-diamond duct of the case library say so, at the same
+volumes (`rust/examples/solid_loft.sv`, `solid_elbow.sv`, `solid_bend.sv`, `solid_twist.sv`).
+Pairing two faces drawn apart has no word until the language can walk a face (#243, finding 8).
+(Issue #243, L3.)
 
 **[0.99] An empty body.** `pegs := solid()` is a body with nothing in its brackets: its stock is
 the first solid in `union` with it (§6.9), so a pattern of solids joins every copy alike,

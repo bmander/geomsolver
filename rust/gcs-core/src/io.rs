@@ -1191,12 +1191,6 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
                     EntKind::Axis => axis_map[axis.i()].is_some(),
                     _ => false,
                 },
-                crate::model::SolidDef::Loft { end, guide, .. } =>
-                    end.is_none_or(|f| face_map[f as usize].is_some()) && match guide.kind {
-                        EntKind::Line => line_map[guide.i()].is_some(),
-                        EntKind::Arc => arc_map[guide.i()].is_some(),
-                        _ => false,
-                    },
                 // a family comes with its whole station or not at all
                 crate::model::SolidDef::Family { face, ref station, .. } =>
                     face_map[face as usize].is_some()
@@ -1242,13 +1236,6 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             crate::model::SolidDef::Placed { source, motion, at } => {
                 crate::model::SolidDef::Placed { source:sol(source),
                     motion:motion_map[*motion as usize].unwrap() as u32,at:at.clone() }
-            }
-            crate::model::SolidDef::Loft { face: f, end, guide } => {
-                crate::model::SolidDef::Loft { face: face(*f), end: end.map(face), guide: match guide.kind {
-                    EntKind::Line => EntRef::line(line_map[guide.i()].unwrap()),
-                    EntKind::Arc => EntRef::arc(arc_map[guide.i()].unwrap()),
-                    _ => unreachable!(),
-                }}
             }
             crate::model::SolidDef::Prism { face: f, from, to, draft } => {
                 crate::model::SolidDef::Prism { face: face(*f), from: from.clone(), to: to.clone(), draft: draft.clone() }

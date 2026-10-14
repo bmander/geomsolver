@@ -72,10 +72,10 @@ traced (`sweep::traced` kept to compare). `tests/extruded_envelope.rs`, `rack_cu
 **A ball swept is its tube** (#238, `solid::canal`): a sweep whose tool's recipe is one ball
 (`brep::recipe::ball_of`) under one turn about one axis (`Family::turning`: a rotation, or a screw)
 is the points within the radius of its centre's path — the ball's disc square to the path carried
-along it (a partial `revolve`, a whole torus past a whole turn, or a loft along `Guide::Screw` /
-`Carry::Screw`, a `Blend` carried by a turn and a step) united with the half ball beyond each end
-(`brep::build::canal`): exact, its end poses the construction's own, so no clearance (E1) is asked
-and a sweep may stand alone. Refused (left the field's) where the tube would meet itself: the
+along it (a partial `revolve`, a whole torus past a whole turn, or the disc carried to its
+screwed image by `build::ruled` along `Carry::Screw`, a `Blend` carried by a turn and a step)
+united with the half ball beyond each end (`brep::build::canal`): exact, its end poses the
+construction's own, so no clearance (E1) is asked and a sweep may stand alone. Refused (left the field's) where the tube would meet itself: the
 centre within the radius of the axis, or a helix past a turn climbing no more than the diameter a
 turn. The recipe's `"canal"` node (`centre`, `radius`, axis `origin`/`axis`, `angle`, `advance`,
 the ball's `face` naming every face; native OCCT refuses it by name); gated by agreement with the
@@ -98,7 +98,11 @@ first step the tool is proved clear over (`roll::clear`: the tool's support and 
 by branch and bound, a box dropped where the tool's field encloses it empty or the step's
 `Family::bounds` carry it where the body's field encloses it clear, the step halved where poses
 smear a box past its size; a centre in both at the middle pose ends a step early): conservative,
-a few degrees past first clearance, never short, so E1 holds by construction. Refused naming why
+a few degrees past first clearance, never short, so E1 holds by construction. The boxes are one
+tree whatever order they are walked in, so the answer is the order's to choose freely: each step
+walks first the halves toward where the way's step before ended (`roll::march`), and a step the
+tool has not cleared ends in a few dozen boxes, not hundreds (the same rolls, a fraction of the
+time; a document's workers each find them before their first surface). Refused naming why
 (no meeting at 0, not clear within two turns, a tool with no bounded support). The spiral bevel,
 the rack cuts and the lantern state no roll; the drill's flute and the Wankel's period are design.
 `fixtures::gear::roll` restates one member's roll (negative controls). `tests/roll_through.rs` is

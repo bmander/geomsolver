@@ -32,7 +32,8 @@ rows; no plane–plane angle yet); `fix(origin == (x, y, z)) P`. A plane's child
 `hint(dir: up)` an axis, a line `p1`→`p2` in space, `P.n`; `turn: θ, about: g` turns it
 (`KidSeed::dir`, `syntax::DirRef`; `Deferred::Dir`, `entities::direction_of`, read again after
 `views::place` where it reads what that places, `crosses_views`); never written back. The loft
-station `OnLine` seeds `n` so (`docs/lofts/l0/stations/lofts.sv`); `tests/seeds.rs` is the gate.
+station `std.OnLine` seeds `n` so (drafted in `docs/lofts/l0/stations/lofts.sv`); `tests/seeds.rs`
+is the gate.
 An origin already on one axis is placed in fewer rows than three (`P.origin coincident
 std.front`), or the structural count sees a redundancy. W113 warns of two planes lying on one
 another. `views::place`

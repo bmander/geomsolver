@@ -6,7 +6,8 @@
 //!
 //! Dense path: the complete orthogonal decomposition in `linalg`, which also reports the rank.
 //! Sparse path: the regularized normal equations (JᵀJ + εI) p = −g factored by LDLᵀ, which keeps
-//! rank-deficient systems solvable.
+//! rank-deficient systems solvable; a document's solve refines that step toward the Gauss–Newton
+//! step where ε holds it back (`refine`).
 //!
 //! Reference: Nocedal & Wright ch. 4 & 10; PlaneGCS's DogLeg.
 
@@ -17,6 +18,11 @@ use crate::sparse::Ata;
 use crate::system::{System, DENSE_MAX};
 
 const EPS_REL: f64 = 1e-12;
+/// How far the regularisation may hold a document solve's step back — `ε‖d‖` against `‖g‖`, the
+/// regularised step's error in the normal equations (`refine`) — and how many corrections may
+/// take it there.
+const REFINE_TOL: f64 = 1e-6;
+const REFINE_MAX: usize = 32;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Method {
@@ -67,6 +73,8 @@ pub fn status_message(status: i32) -> &'static str {
 /// The Jacobian, dense or sparse, behind one interface.
 struct JacCtx {
     dense: bool,
+    /// Whether the sparse step is refined (`refine`): a document's solve, not a drag's frame.
+    refine: bool,
     m: usize,
     n: usize,
     j: Mat,
@@ -108,7 +116,10 @@ impl JacCtx {
         }
         let values: Vec<f64> = sys.csr_values().to_vec();
         self.rank = -1;
-        normal_step(sys.ata_mut(), &values, g, p);
+        let eps = normal_step(sys.ata_mut(), &values, g, p);
+        if self.refine {
+            refine(sys.ata_mut(), eps, g, p);
+        }
     }
 }
 
@@ -123,8 +134,9 @@ pub(crate) fn min_norm_step(j: &Mat, r: &[f64], p: &mut [f64]) -> i32 {
 
 /// p <- the step solving the regularized normal equations (JᵀJ + εI) p = −g, J's values over
 /// the structure `ata` was built on — the sparse path's Gauss–Newton step, which keeps a
-/// rank-deficient system solvable.  ε is `EPS_REL` of JᵀJ's largest diagonal entry.
-pub(crate) fn normal_step(ata: &mut Ata, values: &[f64], g: &[f64], p: &mut [f64]) {
+/// rank-deficient system solvable.  ε is `EPS_REL` of JᵀJ's largest diagonal entry, and is
+/// returned; NaN where the factorisation met a zero pivot.
+pub(crate) fn normal_step(ata: &mut Ata, values: &[f64], g: &[f64], p: &mut [f64]) -> f64 {
     let n = p.len();
     let mut work = vec![0.0; n];
     ata.fill(values);
@@ -143,7 +155,37 @@ pub(crate) fn normal_step(ata: &mut Ata, values: &[f64], g: &[f64], p: &mut [f64
         work[i] = eps;
         p[i] = -g[i];
     }
-    ata.solve(&work, p);
+    if ata.solve(&work, p) { eps } else { f64::NAN }
+}
+
+/// **The regularised step, refined toward the Gauss–Newton step** (iterated Tikhonov): `ε` holds
+/// back each direction of JᵀJ by `λ / (λ + ε)`, and one whose `λ` is near `ε` — a near-singular
+/// combination in a drawing whose columns span eight orders (a spiral bevel's cutter lean beside
+/// its lengths) — is taken a seventh of the way, so a DogLeg converging on it creeps the rest
+/// of its iterations.  After `(JᵀJ + εI) p = −g`, the normal equations' error is `ε p`
+/// exactly, and the correction that solves it, `(JᵀJ + εI) d = ε p`, leaves `ε d`: each round
+/// one solve with the factorisation in hand, `p` taking `d`, while `ε‖d‖` is more than
+/// `REFINE_TOL` of `‖g‖`, at most `REFINE_MAX` rounds.  A step `ε` barely holds back is left as
+/// it was, to the bit; and as `g` has nothing along JᵀJ's null space, neither has a correction,
+/// so the step stays the least change that `normal_step` makes it.
+fn refine(ata: &Ata, eps: f64, g: &[f64], p: &mut [f64]) {
+    if !eps.is_finite() {
+        return;
+    }
+    let bar = REFINE_TOL * norm(g);
+    let mut d: Vec<f64> = p.iter().map(|v| eps * v).collect();
+    for _ in 0..REFINE_MAX {
+        if !(norm(&d) > bar) {
+            return;
+        }
+        ata.resolve(&mut d);
+        for (pi, di) in p.iter_mut().zip(&d) {
+            *pi += di;
+        }
+        for di in d.iter_mut() {
+            *di *= eps;
+        }
+    }
 }
 
 /// What DogLeg needs of a system, so the trust-region loop is written once.
@@ -493,7 +535,8 @@ fn lm_core(
     Info { status, nfev, njev, iterations: it, rank: -1 }
 }
 
-/// Minimise ½‖r(z)‖² from `z` (updated in place).  `dense = None` picks by size.
+/// Minimise ½‖r(z)‖² from `z` (updated in place).  `dense = None` picks by size; `refine`, a
+/// document's solve, has the sparse step refined toward the Gauss–Newton step (`refine`).
 pub fn solve_system(
     sys: &mut System,
     method: Method,
@@ -503,6 +546,7 @@ pub fn solve_system(
     max_iter: i32,
     max_nfev: i32,
     dense: Option<bool>,
+    refine: bool,
     z: &mut [f64],
 ) -> Info {
     if sys.n_free == 0 || sys.n_res == 0 {
@@ -511,7 +555,7 @@ pub fn solve_system(
     let dense = dense.unwrap_or(sys.n_free <= DENSE_MAX);
     let max_nfev = if max_nfev <= 0 { 4 * max_iter } else { max_nfev };
     let mut ctx =
-        JacCtx { dense, m: sys.n_res, n: sys.n_free, j: Mat::zeros(0, 0), rank: -1 };
+        JacCtx { dense, refine, m: sys.n_res, n: sys.n_free, j: Mat::zeros(0, 0), rank: -1 };
     let mut r = sys.residuals(z);
     let info = if method == Method::Lm {
         lm_core(sys, &mut ctx, z, &mut r, ftol, xtol, gtol, max_iter, max_nfev)

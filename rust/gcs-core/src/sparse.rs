@@ -269,6 +269,14 @@ impl Ata {
         if !self.numeric(damp) {
             return false;
         }
+        self.resolve(b);
+        true
+    }
+
+    /// Solve again, in place, with the factorisation the last `solve` that succeeded left: the
+    /// same `(A + diag(damp))`, another right-hand side.
+    pub fn resolve(&self, b: &mut [f64]) {
+        let n = self.n;
         let mut x = vec![0.0; n];
         for k in 0..n {
             x[k] = b[self.perm[k] as usize];
@@ -293,6 +301,5 @@ impl Ata {
         for k in 0..n {
             b[self.perm[k] as usize] = x[k];
         }
-        true
     }
 }

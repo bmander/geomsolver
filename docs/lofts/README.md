@@ -11,6 +11,43 @@ Solvent. Rust grows only three kinds of things:
   corner) and build it exactly. They never change what the family says, and the general
   evaluation gates each one.
 
+## L3: today's loft becomes library words (2026-10-14)
+
+**Verdict: `along:` is retired, and every loft of the case library is a running section at the
+volume `solid(a[, b], along: g)` gave it.** What is lost until L8 is pairing two sketches drawn
+apart. The station words are `std`'s (`rust/lib/std.sv`): `OnLine`, `OnArc`, `OnSpline`, `On`,
+`Screwed` and `OnHelix`, moved from `l0/lofts.sv` (removed) and `l0/pending.sv`; the L0 programs
+read them from `std` now. The four lofts, off the B-rep (`rust/gcs-core/tests/loft.rs`):
+
+| example | what runs | closed form (mm³) | walls |
+|---|---|---|---|
+| [`solid_loft.sv`](../../rust/examples/solid_loft.sv) | the hollow square's size, 24 to 12 | 5120 (prismatoid) | planes |
+| [`solid_elbow.sv`](../../rust/examples/solid_elbow.sv) | the station round a quarter of R30 | 1920π (Pappus) | planes and cylinders |
+| [`solid_bend.sv`](../../rust/examples/solid_bend.sv) | both: half size 9 to 6 round the quarter | 1560π (Pappus, differentially) | sheets |
+| [`solid_twist.sv`](../../rust/examples/solid_twist.sv) | each corner, the square's to the diamond's | 40/6 · 1856 (prismatoid) | sheets |
+
+`solid_twist` keeps its solid: a square run to a diamond corner by corner, what the pairing of two
+faces made, now four dimensions reading `s`. A rigid turn of the section — any angle, any law —
+stays `l0/twisted_duct.sv`'s, which L1 and L2 gate.
+
+**Finding 8's decision: retire now.** Pairing two sketches drawn apart has no word until L8, and
+between the two it is not available. Gone with it: `SolidDef::Loft`, `Sweep::Along`,
+`solid/loft.rs`, the recipe's `loft` node, `brep::build::loft` and its `Guide`, and the kernel's
+`Carry::Arc`, which only a two-section loft round an arc made. `brep::build::ruled` stays for what
+joins a section to its own image (a drafted prism's offset, a canal's screwed disc). `along:` in a
+solid's brackets parses to a refusal at the key that says how a loft is written now (spec 0.100).
+
+What L3 found on the way:
+
+- **`std.On` stands on a line, a spline and a traced curve, not yet an arc.** Its
+  `g tangent(at: m) tl` of an arc, `m` in space, is E062: an arc's contact is read in space
+  (`PointAlongArc3`) and its tangency is a planar relation, where a spline's point is drawn in the
+  spline's plane (#249). `std.OnArc` serves; one word over every guide drawn in a plane is L4's
+  first item.
+- **A section's `up` is an argument.** A component is closed over what it is given, so a section
+  component standing a station word passes `std.z` in as an `axis` formal — the L0 programs'
+  spelling, now every example's.
+
 ## L2: exact surfaces (2026-10-14)
 
 **Verdict: every L0 closed form holds to a part in 10⁹ — most to 1e-14.** A face family is now a
@@ -177,10 +214,10 @@ fixtures.
 - **`solid(I(…).f over s in (a, b))`**: the solid swept by face `f` of the instance `I` as its
   numeric formal `s` runs over the interval. It is §6.5's curve (`Involute(…).p over u in (…)`)
   one dimension up. The instance is written in place and never drawn.
-- **A station word** (`lofts.OnLine`, `OnArc`, `OnSpline`, `Screwed`, `OnHelix` in
-  [`l0/lofts.sv`](l0/lofts.sv); `On` over any path in `pending.sv`) is a component holding a plane
-  `n` square to the path where its parameter is `s`, with its `v` along `up`. Along a guide in one
-  plane, that is the rotation-minimising frame. Twist is not the word's: it is a directed angle in
+- **A station word** (`lofts.OnLine`, `OnArc`, `OnSpline`, `Screwed`, `OnHelix` in L0's
+  `l0/lofts.sv`; `On` over any path in `pending.sv`; all six `std`'s since L3) is a component
+  holding a plane `n` square to the path where its parameter is `s`, with its `v` along `up`.
+  Along a guide in one plane, that is the rotation-minimising frame. Twist is not the word's: it is a directed angle in
   the station's own plane (`twisted_duct.sv`, through `std.Turned`), so the angle is in a view and
   any number of turns is one statement.
 - **The section is the writer's component** drawn `in st.n`:

@@ -268,8 +268,8 @@ pub fn bracket() -> Sketch {
 pub const CASES: [(&str, &str, &str); 51] = [
     ("Mounting flange · solids", "solid_flange", "One stepped radial section turned about its axis, then a circular pattern of through holes; editable dimensions and three solid views."),
     ("V-belt pulley · solids", "solid_pulley", "A full revolution of a stepped section, with a revolved V-groove cutter and a shaft bore."),
-    ("Hollow duct elbow · solids", "solid_elbow", "A hollow square section swept along a constrained circular arc; edit the guide angle, bend radius, or wall thickness."),
-    ("Hollow reducer · loft", "solid_loft", "Two hollow square component sections joined along a dimensioned line; change either size, the wall, or the length."),
+    ("Hollow duct elbow · solids", "solid_elbow", "One hollow square section carried round a constrained circular arc; edit the guide angle, bend radius, or wall thickness."),
+    ("Hollow reducer · loft", "solid_loft", "One hollow square section run along a dimensioned line, its size the inlet's mixed with the outlet's; change either size, the wall, or the length."),
     ("Pocketed tray · solids", "solid_tray", "Named profile extrusions and nested Boolean bodies: cut a pocket, then add four annular standoffs while preserving the floor."),
     ("Rectangle with fillets", "rect_fillets", "fully constrained; tangent arcs, equal radii, two dimensions"),
     ("Square, one line round a cycle", "square", "`cycle 4 { (s := line) -> perpendicular equal }` — the body ends mid-joint, so each side welds to the next copy's and the wrap closes the loop (issue #38); 1 DOF: it swings about its grounded corner"),
