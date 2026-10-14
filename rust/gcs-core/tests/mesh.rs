@@ -60,6 +60,13 @@ fn bored() -> (Sketch, usize) {
     (sk, body)
 }
 
+/// The facet term's boundary, read directly: the welding and the fans are its business, and a
+/// solid's evaluation takes the exact B-rep where this kernel builds one.
+fn facets(sk: &Sketch, si: usize, unit: f64) -> Vec<gcs_core::csg::Piece> {
+    let csg = solid::resolve(sk, si, unit);
+    gcs_core::csg::boundary(&csg, csg.epsilon())
+}
+
 /// How many directed edges have no matching reverse — zero for a closed, manifold surface.
 fn unpaired(t: &[f64]) -> usize {
     let key = |p: &[f64]| {
@@ -82,7 +89,7 @@ fn unpaired(t: &[f64]) -> usize {
 #[test]
 fn the_mesh_a_printer_gets_is_closed() {
     let (sk, body) = bored();
-    let pieces = sk.solid_boundary(body, UNIT);
+    let pieces = facets(&sk, body, UNIT);
     // the boundary as it comes: right in every way that matters to a *reading* of it…
     let raw = mesh::triangles(&pieces);
     let vol = mesh::volume(&pieces);
@@ -220,7 +227,7 @@ fn the_cheap_fan_is_only_taken_where_it_is_safe() {
     // stitched has a vertex that is not a corner and takes `n`, because a vertex fan there would
     // drop the sub-edge and re-open the T-junction.  Both are in this solid at once.
     let (sk, body) = bored();
-    let pieces = sk.solid_boundary(body, solid::mesh_unit(&sk, body));
+    let pieces = facets(&sk, body, solid::mesh_unit(&sk, body));
     let welded = mesh::weld(&pieces);
     let sides: usize = welded.iter().map(|p| p.pts.len()).sum();
     let tris = mesh::triangles(&welded).len() / 9;
@@ -268,10 +275,9 @@ fn a_solid_leaves_as_a_glb_a_viewer_can_open() {
     // the buffer the manifest declares is the blob that follows it
     assert!(doc.contains(&format!("\"byteLength\":{bin_len}")) || bin_len % 4 == 0);
 
-    // **metres, because the spec says so.**  This document names no unit, so it is written as it
-    // stands; the one that names millimetres is scaled, and says so in `asset.extras`.
+    // **metres, because the spec says so.**  A document naming no unit is in millimetres: it is
+    // scaled, and says so in `asset.extras`.
     let mut mm = Sketch::new();
-    mm.units = gcs_core::units::Units::with_length("mm").expect("mm is a unit");
     let f = rect_face(&mut mm, 0.0, 0.0, 60.0, 40.0, "sec");
     let b = prism(&mut mm, f, -30.0, 0.0, "block");
     let doc2 = {

@@ -67,7 +67,7 @@ fn read(sk: &Sketch, swept: usize) -> Option<Result<Canal, String>> {
     let SolidDef::Swept { source, motion, .. } = &sk.solids[swept].def else { return None };
     let family = crate::motion::Family::read(sk, *motion as usize).ok()?;
     let turn = family.turning()?;
-    let scale_mm = super::cad::millimetres(sk).ok()?;
+    let scale_mm = super::cad::millimetres(sk);
     // the tool: one node, a ball (millimetres back to the model's units)
     let recipe = crate::brep::recipe::Recipe::read(&super::cad::recipe(sk, *source as usize).ok()?).ok()?;
     let [n] = &recipe.nodes[..] else { return None };

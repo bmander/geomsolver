@@ -1789,13 +1789,13 @@ test('the run and the rise between two points are dimensions of their own', () =
   drawnInFront(sk, a, b);
   a.x.fixed = true;
   a.y.fixed = true;
-  sk.add(new C.Ordinate(a, b, null, 30, 'x'), new C.Ordinate(a, b, null, -5, 'y'));
+  sk.add(new C.Ordinate(a, b, null, 30, 'u'), new C.Ordinate(a, b, null, -5, 'v'));
   assert.ok(solve(sk).success);
   assert.ok(Math.abs(b.x.value - 30) < 1e-9, `x ${b.x.value}`);
   assert.ok(Math.abs(b.y.value + 5) < 1e-9, `y ${b.y.value}`);
   // signed from the first point to the second, so the pair does not commute
-  assert.ok(!C.sameConstraint(new C.Ordinate(a, b, null, 30, 'x'),
-                              new C.Ordinate(b, a, null, 30, 'x')));
+  assert.ok(!C.sameConstraint(new C.Ordinate(a, b, null, 30, 'u'),
+                              new C.Ordinate(b, a, null, 30, 'u')));
   // and which of the three a callout states comes from where it is put
   assert.equal(pairDimension([0, 0], [40, 40], [-10, 50]), 'length');
   assert.equal(pairDimension([0, 0], [40, 40], [20, 60]), 'run');
@@ -1867,7 +1867,7 @@ test('coordinates in a plane cross the ABI and round-trip as ordinary constraint
   const p = sk.point(100, -200);
   p.plane = f;
   // an ordinate from the plane's origin along its own axes: the point's coordinates
-  sk.add(new C.Ordinate(f.origin, p, null, -5, 'x'), new C.Ordinate(f.origin, p, null, 2, 'y'));
+  sk.add(new C.Ordinate(f.origin, p, null, -5, 'u'), new C.Ordinate(f.origin, p, null, 2, 'v'));
   assert.ok(solve(sk).success);
   assert.ok(Math.hypot(p.x.value + 5, p.y.value - 2) < 1e-6, `${p.x.value}, ${p.y.value}`);
   const back = io.loads(io.dumps(sk));

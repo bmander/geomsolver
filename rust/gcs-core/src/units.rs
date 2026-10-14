@@ -5,9 +5,9 @@
 //! to is checked against the slot it is written in (spec §3.3).  It catches
 //! `distance(a, b) == 45deg`, `x := w + phi`, and the involute formula's unstated radians.
 //!
-//! **A bare number is dimensionless, and a *context* may take one.**  That is the whole of what
-//! "a document with no `unit` line is in drawing units" means: `distance(a, b) == 80` is a length
-//! because the slot says so, and `sin(30)` reads 30 as degrees because the function does.  What a
+//! **A bare number is dimensionless, and a *context* may take one.**  `distance(a, b) == 80` is
+//! a length in the document's unit because the slot says so — millimetres where no `unit` line
+//! names another — and `sin(30)` reads 30 as degrees because the function does.  What a
 //! context may **not** do is speak for a second operand — `90 / N + ivp` is a plain number added
 //! to an angle, and the language asks rather than answers (`90deg / N + ivp` is the answer).  See
 //! `Dim::fits` against `Dim::agree`; the asymmetry between them is the design.
@@ -115,10 +115,10 @@ impl Dim {
     pub(crate) fn number_text(self, value: f64, units: Units) -> String {
         let number = crate::syntax::num(value);
         if self.is_scalar() { return number; }
-        if self == Self::LENGTH { return format!("{number}{}", units.name().unwrap_or("")); }
+        if self == Self::LENGTH { return format!("{number}{}", units.name()); }
         if self == Self::ANGLE { return format!("{number}deg"); }
         let mut text = number;
-        for (power, unit) in [(self.len, units.name()), (self.ang, Some("deg"))] {
+        for (power, unit) in [(self.len, Some(units.name())), (self.ang, Some("deg"))] {
             let Some(unit) = unit.filter(|_| !power.is_zero()) else { continue };
             let mut factor = format!("1{unit}");
             // Fractional dimensions arise only through sqrt, so denominators are powers of 2.
@@ -171,8 +171,8 @@ impl Dim {
     /// phi` say the radians it was silently working in — `tan(phi) * 1rad - phi`.
     ///
     /// The asymmetry with `fits` is deliberate and is the whole of the design.  A **context**
-    /// that says what it wants may take a bare number, because a document with no `unit` line is
-    /// in drawing units and `distance(a, b) == 80` is a length by virtue of the slot.  Two
+    /// that says what it wants may take a bare number, because `distance(a, b) == 80` is a
+    /// length in the document's unit by virtue of the slot.  Two
     /// operands are not a context: neither is authoritative, so mixing one that said what it was
     /// with one that did not is a question the language should ask rather than answer.
     pub fn agree(self, o: Dim) -> Option<Dim> {
@@ -180,7 +180,7 @@ impl Dim {
     }
 
     /// Whether a value of this dimension may stand where `want` is expected.  A bare number may
-    /// stand anywhere — that is what "drawing units" means — and anything else must agree.
+    /// stand anywhere — it is in the document's unit — and anything else must agree.
     pub fn fits(self, want: Dim) -> bool {
         self.is_scalar() || self == want
     }
@@ -253,58 +253,59 @@ pub fn unit(name: &str) -> Option<Unit> {
 
 /// What the document's numbers are in.
 ///
-/// `length` is `None` for a document with no `unit` line: it is in **drawing units**, a length
-/// dimension with no name.  Everything still checks — `distance(a, b) == 45deg` is still an
-/// error and `Length + Angle` is still an error — you simply cannot write `mm` or `"`, because
-/// there is nothing to convert to.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+/// **Millimetres unless the document says otherwise** ([0.93]): a document with no `unit` line
+/// is a document in millimetres, so a suffix converts in it as in any other and a length read
+/// off its geometry is a `Length`.  `stated` is whether a `unit` line said so, which is what a
+/// document saves and prints back: reading one and writing it out adds no line it did not have.
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Units {
-    /// Millimetres per drawing unit, and the name it was written under.
-    pub length: Option<(&'static str, f64)>,
+    /// The document's length unit by name, and how many millimetres one is worth.
+    pub length: (&'static str, f64),
+    /// Whether a `unit` line named it.
+    pub stated: bool,
+}
+
+impl Default for Units {
+    fn default() -> Units {
+        Units { length: ("mm", 1.0), stated: false }
+    }
 }
 
 impl Units {
-    /// The document's length unit by name, or `Err` naming what the language knows.
+    /// The document's length unit by name, as a `unit` line states it, or `Err` naming what the
+    /// language knows.
     pub fn with_length(name: &str) -> Result<Units, String> {
         // one lookup, which carries both halves: the `'static` name is the row's own, so the
         // name a document is stored under and the ratio it converts by cannot disagree
         match UNITS.iter().find(|&&(n, _)| n == name) {
-            Some(&(n, u)) if u.dim == Dim::LENGTH => Ok(Units { length: Some((n, u.per)) }),
+            Some(&(n, u)) if u.dim == Dim::LENGTH => Ok(Units { length: (n, u.per), stated: true }),
             Some(_) => Err(format!("`{name}` is an angle, and a document's unit is its length")),
             None => Err(format!("`{name}` is not a unit: {}", length_names())),
         }
     }
 
-    pub fn name(&self) -> Option<&'static str> {
-        self.length.map(|(n, _)| n)
+    /// The length unit the document's numbers are in, stated or not.
+    pub fn name(&self) -> &'static str {
+        self.length.0
     }
 
-    /// What a length read off the geometry is: a `Length` where the document names a unit, and a
-    /// bare number where it does not, since there no literal can be a length.  A seed reading a
-    /// seed and a measurement of the solved drawing both read it so.
-    pub fn read_length(&self) -> Dim {
-        if self.length.is_some() {
-            Dim::LENGTH
-        } else {
-            Dim::SCALAR
-        }
+    /// The unit a `unit` line named, where one did: what is saved and printed back.
+    pub fn stated(&self) -> Option<&'static str> {
+        self.stated.then_some(self.length.0)
     }
 
-    /// How many of the document's own length units a literal in `u` is worth.
-    ///
-    /// `Err` where the document named no unit: a number with a unit on it in a document that has
-    /// none is a number with nothing to convert to, and guessing would be the language deciding
-    /// what a drawing is drawn in.
-    pub fn convert(&self, v: f64, u: Unit) -> Result<f64, String> {
+    /// Millimetres per one of the document's lengths.
+    pub fn mm_per(&self) -> f64 {
+        self.length.1
+    }
+
+    /// How many of the document's own length units a literal in `u` is worth (an angle's, how
+    /// many degrees).
+    pub fn convert(&self, v: f64, u: Unit) -> f64 {
         if u.dim != Dim::LENGTH {
-            return Ok(v * u.per);
+            return v * u.per;
         }
-        match self.length {
-            Some((_, per)) => Ok(v * u.per / per),
-            None => Err("this document names no unit, so a length here is a plain number — \
-                         write `unit mm` (or `in`, `cm`, …) at the top to use one"
-                .to_string()),
-        }
+        v * u.per / self.length.1
     }
 }
 

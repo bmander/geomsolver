@@ -15,7 +15,7 @@ pub struct Millimetres<F> { field: F,scale: f64 }
 
 impl<F> Millimetres<F> {
     fn over(sk: &Sketch,field: F) -> Result<Self,String> {
-        Ok(Millimetres {field,scale:crate::solid::cad::millimetres(sk)?})
+        Ok(Millimetres {field,scale:crate::solid::cad::millimetres(sk)})
     }
     /// Millimetres in a document unit: what the export's motions and placements are read by.
     pub fn scale(&self) -> f64 { self.scale }

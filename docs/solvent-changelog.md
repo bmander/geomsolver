@@ -4,7 +4,7 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
-**[0.93] Two flanks meshing are a locus.** `contact := meshing(pinion_flank, gear_flank, under:
+**[0.94] Two flanks meshing are a locus.** `contact := meshing(pinion_flank, gear_flank, under:
 mesh, from:, to:)` turns the first flank with the pinion — `mesh`'s observer, `mesh :=
 motion(gear_turn, relative_to: pinion_turn)` — and the second with the gear, each an envelope in
 space the solve holds to or a cone, a cylinder or a revolution's side standing still in its member
@@ -15,6 +15,17 @@ flank, so a pin states either — `coincident(t == 0deg, lag == 0.01)` — and a
 flank solves from it. After the solve the contact is traced over the phase, and `solventc` reports
 each meshing's contact, transmission error and path (`spiral_bevel/contact.sv`, #283). `meshing`
 is an element keyword: `generation/spur_mesh.sv`'s motion called it is `mesh`.
+
+**[0.93] A document naming no unit is in millimetres.** Without a `unit` line a document is
+read exactly as under `unit mm` (§3.3.2): a bare number in a `Length` slot is a millimetre, a
+suffixed literal converts to it (`a distance(2in) b` is 50.8), and a geometry read in a seed, an
+integrand or a measurement is a `Length`. Through 0.92 such a document was in unnamed *drawing
+units*: a suffix was **E103** ("this document names no unit") and a geometry read was a bare
+number. So `pin.x - 10` is now refused as under `unit mm`, and `pin.x - 10mm` is the spelling;
+the dimension tables written to be read through a `use` (`hardware`, the engine's and the
+V-twin's) elaborate on their own. The line, where written, is still what a document saves and
+prints back, so one without it gains none; glTF and CAD exports scale such a document as
+millimetres, and a paste converts it as one.
 
 **[0.92] One vocabulary for a view's directions.** A view is a plane (§6.7), so its own
 directions are said as a plane's are: between two points drawn in one view, `along: u` is the

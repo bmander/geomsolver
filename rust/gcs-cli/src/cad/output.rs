@@ -105,7 +105,7 @@ pub fn field_agreement(sk: &gcs_core::model::Sketch,body: usize,stl: &[u8],toler
     use gcs_core::solid::{agreement,cad,contracts,MaterialField};
     let mesh = |message: String| ExportRefusal::at(Stage::Mesh,message);
     let refused = |message: String| ExportRefusal::at(Stage::Agreement,message);
-    let scale = cad::millimetres(sk).map_err(mesh)?;
+    let scale = cad::millimetres(sk);
     let started = std::time::Instant::now();
     let (vertices,triangles) = agreement::stl_triangles(stl,scale).map_err(mesh)?;
     let under = tolerance.map_or(contracts::TINY_AREA,|t| (t.deflection()/10.).powi(2));

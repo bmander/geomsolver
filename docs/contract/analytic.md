@@ -57,7 +57,7 @@ tangent and osculating circle against closed forms and a three-point section fit
 screw mesh, the mean-point lean (`spiral_bevel/mean_point.sv`) — with
 `jacobians::envelope_contacts_agree_with_finite_differences`.
 
-**The meshing of two flanks (#283 step 3, [0.93]):** `contact := meshing(a, b, under: mesh, from:,
+**The meshing of two flanks (#283 step 3, [0.94]):** `contact := meshing(a, b, under: mesh, from:,
 to:)` is `MeshingE` (ABI kind 17): two `Flank`s — `Envelope(i)`, a held envelope, or `Formed(Held)`,
 a source read as an envelope's is (a set applied to its hidden point `{contact}#first#probe` /
 `#second#probe`, `set_shape` through `program::envelopes::Reader`; a revolution's side) — the

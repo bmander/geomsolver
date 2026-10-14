@@ -271,7 +271,7 @@ pub(crate) struct SweptCut {
 impl SweptCut {
     pub(crate) fn read(sk: &Sketch,swept: usize) -> Result<SweptCut,ExportRefusal> {
         let name = sk.solids[swept].name.clone();
-        let scale = cad::millimetres(sk).at(Stage::Clearance)?;
+        let scale = cad::millimetres(sk);
         let SolidDef::Swept {source,motion,..} = &sk.solids[swept].def else {
             return Err(ExportRefusal::at(Stage::Clearance,format!("`{name}` is not a continuous sweep")));
         };

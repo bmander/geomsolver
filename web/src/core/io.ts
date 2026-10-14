@@ -15,7 +15,8 @@ export interface SketchJSON {
   arcs: { center: number; start: number; end: number; r: number; fixed: boolean; class: string[] }[];
   constraints: { type: string; args: unknown[] }[];
   branches: Record<string, number>;
-  /** What the document's numbers are in — `null` for one in drawing units (Solvent §3.3). */
+  /** The unit a `unit` line named — `null` where none did, and the document is in millimetres
+   *  (Solvent §3.3.2). */
   unit: string | null;
 }
 

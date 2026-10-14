@@ -261,7 +261,7 @@ fn an_exported_member_agrees_with_its_field() {
     let shift: Option<f64> = std::env::var("SOLVENT_CLASS_SHIFTS").ok().map(|v| v.parse().unwrap());
     let e = match offset { Some(o) => read(o,shift), None => fixtures::gear::read_as_configured() };
     let body = e.map.ent_named(&format!("pair.{member}.body")).unwrap().i();
-    let scale = e.sketch.units.length.unwrap().1;
+    let scale = e.sketch.units.mm_per();
     let (vertices,triangles) = agreement::stl_triangles(&std::fs::read(&path).unwrap(),scale).unwrap();
     let mut material = MaterialField::read(&e.sketch,body,1e-10).unwrap().evaluator(4096);
     let triangles_probed = std::env::var("SOLVENT_AGREE_TRIANGLES").ok().map_or(1000,|v| v.parse().unwrap());
@@ -331,7 +331,7 @@ fn side_query_cost() {
     let shift: Option<f64> = std::env::var("SOLVENT_CLASS_SHIFTS").ok().map(|v| v.parse().unwrap());
     let e = read(offset,shift);
     let body = e.map.ent_named(&format!("pair.{member}.body")).unwrap().i();
-    let scale = e.sketch.units.length.unwrap().1;
+    let scale = e.sketch.units.mm_per();
     let (vertices,triangles) = agreement::stl_triangles(&std::fs::read(&path).unwrap(),scale).unwrap();
     let field = MaterialField::read(&e.sketch,body,1e-10).unwrap();
     let mut points = Vec::new();

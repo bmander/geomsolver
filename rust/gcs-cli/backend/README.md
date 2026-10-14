@@ -25,8 +25,8 @@ how to enable it when asked for STEP.
 
 Supported operations are extrusion, revolution and Boolean bodies with line/arc/circle
 profiles, holes and through cutters, and bodies with generating-motion sweeps of the admitted
-class (below). Along-guide lofts remain unsupported. Models require explicit units and a successful solve, including
-when `--allow-unsolved` is specified.
+class (below). Along-guide lofts remain unsupported. A model naming no unit is in millimetres.
+Export requires a successful solve, including when `--allow-unsolved` is specified.
 
 The optional independent tests use Python's OCCT bindings only to read resulting STEP
 files and check them against analytic volumes. Install `requirements.txt` in a test

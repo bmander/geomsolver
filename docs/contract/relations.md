@@ -83,7 +83,7 @@ came from.
   `perpendicular` (`EnvelopeNormalAt`), a plane `tangent` (`EnvelopePlaneAt`) and a circle or arc
   `curvature` (`EnvelopeCurvatureAt`): the parser reads `at:` after `perpendicular` and `curvature`
   as a point, as after `tangent` (`op_args`), and `settle` names the envelope first whatever was
-  written first (`curve_last`, the symmetric swap).  **On a meshing** (#283, [0.93]) a point is
+  written first (`curve_last`, the symmetric swap).  **On a meshing** (#283, [0.94]) a point is
   `coincident` (`PointOnMeshing`), its phase and lag slots pinned by `t ==` and `lag ==`.
   **What a word means is the kinds of its operands, and a name does not carry its kind until
   elaboration** — so the parser resolves *nothing*: it produces a `syntax::Written` and
