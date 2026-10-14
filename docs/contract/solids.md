@@ -234,10 +234,14 @@ placement carries inside the blank; CLI test readers zero the offset.
   the B-rep (`props::volume`, `Brep::check`), a slab cut by the twisted duct, STEP read back.
 - **A loft is library words over the family** (§6.9 [0.100], `rust/lib/std.sv`; #243 L3).  The
   station words say only where a station stands: `std.OnLine` (a fraction of a line's run),
-  `std.OnArc` (of an arc's turn), `std.OnSpline` (a spline's parameter), `std.On` (any `path` its
-  tangency at a point of reads in space: a line, a spline, a traced curve; an arc's is E062 until
-  L4), `std.Screwed` and `std.OnHelix` — each a component holding a plane `n` square to its path,
-  its `v` along `up`.  The section is the writer's component drawn `in st.n`, reading `s`; two
+  `std.OnArc` (of an arc's turn), `std.OnSpline` (a spline's parameter), `std.On` (any `path`: a
+  line, an arc, a spline, a traced curve — L4, a line touching a round at a point of it drawn in
+  its plane, `planes::incidences`), `std.Screwed` and `std.OnHelix` — each a component holding a
+  plane `n` square to its path, its `v` along `up`.  `On` and `OnSpline` seed their tangent ahead
+  along the guide (`hint(at: m, along: g)`, `entities::rate_along`) and their plane off it as
+  `OnLine` does, so the drawn station starts on the branch whose `v` is `up`'s and whose normal
+  runs the way the guide does — never the mirror, which a sign-free `parallel` would otherwise
+  leave to wherever the solve started (`tests/paths.rs`, `the_frame_keeps_up_up_on_every_guide`).  The section is the writer's component drawn `in st.n`, reading `s`; two
   sections correspond by being one.  **No Rust reads a word's name**, and there is no loft
   constructor: `SolidDef::Loft`, `Sweep::Along` and `solid/loft.rs` are gone, and `along:` in a
   solid's brackets is refused at the key saying what to write (`parser::declarations::sweep_arg`).
@@ -246,6 +250,29 @@ placement carries inside the blank; CLI test readers zero the offset.
   sketches drawn apart) returns at L8 (finding 8).  `tests/loft.rs` is the gate: `solid_loft`,
   `solid_elbow`, `solid_bend` and `solid_twist` at their closed forms off the B-rep to 1e-9, their
   walls by name and kind, `std.On` agreeing with each kind's word.
+- **A chain is one path** (§6.9 [0.102], #243 L4, finding 6).  A `path` formal of a family's
+  instance given a named open chain (`flatten::chain_argument`, the chain found among the
+  statements walked so far) makes the family **legs**, one per link its interval reaches
+  (`walk_legs`): the instance walked again under `#f12_k` with the formal given link `k`, its own
+  running number held at the middle of its part of the interval, the formal read as `k` past it
+  (`bind`: the free value's constant), so a law reads the chain's `s` everywhere; a contact pinned
+  to `s` on the link itself is pinned to the leg's own number (`settle_relation`'s `leg_named`,
+  the operand matched through the alias table), and one on anything else past the first link is
+  E103.  The running formal must be a `Scalar`, the interval within `(0, n)`, the chain open
+  (E080).  The elaborator gives `SolidDef::Family` its `legs` (`FamilyLeg`: face, running number,
+  link index, and the station's entities in the order of their names under the leg, so legs
+  correspond entry for entry); `face`/`held` are the first leg's and `station` every leg's.
+  `SolidDef::legs` is the one reading: a family over one path is one leg.  `family::march` steps
+  each leg over its own part (`leg_part`) — the first from its drawn station, **each later one
+  from its first station, its part started where the last leg ended** (`carry_over`: points put
+  at the same place in space, planes in the same pose, radii the same), so the drawing's branch
+  on the first link is carried along the chain — settles the samples across every leg, reads
+  only the family's own ends as limits (a joint that will not solve is refused), shifts each
+  leg's stations by its index, judges the whole run and densifies leg by leg; the joint station,
+  solved on both legs, is kept once.  `family::walls` runs each leg's pieces the same way and
+  joins them, so a wall is one sheet, one name, over every link.  `tests/paths.rs` is the gate:
+  `docs/lofts/l0/pipe.sv` (a U of three lines and two quarter turns) at the sum of its pieces'
+  Pappus to 1e-9, a radius law in `s` over the chain, part of a chain, the refusals.
 - **A face closes itself** (§6.8, `program::build_face`; issue #49).  The brackets hold a *walk*,
   and an item may be a **point**, with `-> close` sealing the run back to the first item.  Where
   two neighbours do not meet, `build_face` mints the straight line between them, class

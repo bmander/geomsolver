@@ -1051,10 +1051,10 @@ fn place_of(
     // cutter's axis from a point of the pitch plane)
     let plain = a.turn.is_none() && a.bearing.is_none() && a.x.is_none() && a.y.is_none();
     if e.kind == EntKind::Point && plain {
-        if let Some((from, to)) = step_ends(sk, res, e, a)? {
+        if let Some(step) = step_ends(sk, res, e, a)? {
             let f = step_by(sk, res, &a.by, 1.0, names)?;
-            let (at, from, to) = (sk.world_point(e.i()), sk.world_point(from), sk.world_point(to));
-            return Ok((0..3).map(|k| at[k] + f * (to[k] - from[k])).collect());
+            let (at, d) = (sk.world_point(e.i()), step.world(sk));
+            return Ok((0..3).map(|k| at[k] + f * d[k]).collect());
         }
     }
     let home = match e.kind {
@@ -1122,27 +1122,126 @@ fn direction_of(
     Ok(scale(turned, 1.0 / norm(turned)))
 }
 
-/// The two points a place's step runs between: from `e` toward a point (`toward:`), or a line's
-/// run (`along:`); `None` where it takes no step.
+/// The step a place takes: between two points (toward one, or a line's run), or along a path
+/// as it runs where the place's point meets it, in space.
+enum Step {
+    Between(usize, usize),
+    Along([f64; 3]),
+}
+
+impl Step {
+    /// The step in space.
+    fn world(&self, sk: &Sketch) -> [f64; 3] {
+        match *self {
+            Step::Between(from, to) => crate::space::sub(sk.world_point(to), sk.world_point(from)),
+            Step::Along(d) => d,
+        }
+    }
+
+    /// The step on `view`'s page, taken from the point `at`.
+    fn in_view(&self, sk: &Sketch, at: usize, view: Option<usize>) -> (f64, f64) {
+        match *self {
+            Step::Between(from, to) => {
+                let ((fx, fy), (tx, ty)) = (seed_in(sk, from, view), seed_in(sk, to, view));
+                (tx - fx, ty - fy)
+            }
+            Step::Along(d) => {
+                let w = sk.world_point(at);
+                let a = sk.on_view_sheet(w, view);
+                let b = sk.on_view_sheet(crate::space::add(w, d), view);
+                (b.0 - a.0, b.1 - a.1)
+            }
+        }
+    }
+}
+
+/// The step a place takes from `e`: toward a point (`toward:`), a line's run (`along:` a line),
+/// or along any other path (`along:` an arc, a circle, a spline, a traced curve, #243 L4) — its
+/// rate along its own run where `e` meets it (the foot of `e` on it, within its run), as a
+/// line's run is its rate from `p1` to `p2`: an arc's turned by its sweep and a circle's by a
+/// whole turn, counter-clockwise, a spline's and a curve's by its parameter.  `None` where it
+/// takes no step.
 fn step_ends(sk: &Sketch, res: &Resolver, e: EntRef, a: &AtRef)
-    -> Result<Option<(usize, usize)>, String> {
+    -> Result<Option<Step>, String> {
     Ok(match (&a.toward, &a.along) {
         (Some(t), _) => {
             let b = place(sk, res, t)?;
             if b.kind != EntKind::Point {
                 return Err(format!("a step is taken toward a point, not {}", b.kind.a()));
             }
-            Some((e.i(), b.i()))
+            Some(Step::Between(e.i(), b.i()))
         }
         (None, Some(l)) => {
             let l = place(sk, res, l)?;
-            if l.kind != EntKind::Line {
-                return Err(format!("a step is taken along a line, not {}", l.kind.a()));
+            match l.kind {
+                EntKind::Line => {
+                    Some(Step::Between(sk.lines[l.i()].p1 as usize, sk.lines[l.i()].p2 as usize))
+                }
+                EntKind::Arc | EntKind::Circle | EntKind::Spline | EntKind::Curve => {
+                    if e.kind != EntKind::Point {
+                        return Err("a step along a path is taken from a point".to_string());
+                    }
+                    Some(Step::Along(rate_along(sk, l, sk.world_point(e.i()))?))
+                }
+                k => {
+                    return Err(format!("a step is taken along a line, not {}, or along a path",
+                                       k.a()))
+                }
             }
-            Some((sk.lines[l.i()].p1 as usize, sk.lines[l.i()].p2 as usize))
         }
         (None, None) => None,
     })
+}
+
+/// How path `g` runs where the point `w` (in space) meets it: its rate along its own run at the
+/// foot of `w` on it, in space (see `step_ends`).
+fn rate_along(sk: &Sketch, g: EntRef, w: [f64; 3]) -> Result<[f64; 3], String> {
+    let view = super::planes::drawn_plane(sk, g);
+    let basis = view.map_or(crate::plane::Basis::page(), |p| sk.basis(p));
+    let (x, y) = basis.view_coords(w);
+    let lift = |(dx, dy): (f64, f64)| crate::space::sub(basis.lift(dx, dy), basis.lift(0.0, 0.0));
+    let round = |c: usize, r: f64, (lo, hi): (f64, f64)| {
+        let (cx, cy) = sk.point_xy(c);
+        let th = (y - cy).datan2(x - cx);
+        // the foot within the run: the angle turned into it, then held to its ends
+        let mid = 0.5 * (lo + hi);
+        let th = (th - mid + std::f64::consts::PI).rem_euclid(std::f64::consts::TAU)
+            - std::f64::consts::PI + mid;
+        let th = th.clamp(lo.min(hi), lo.max(hi));
+        let (sn, cs) = th.dsin_cos();
+        lift(((hi - lo) * -r * sn, (hi - lo) * r * cs))
+    };
+    let d = match g.kind {
+        EntKind::Arc => {
+            let arc = &sk.arcs[g.i()];
+            round(arc.center as usize, sk.radius_value(g).abs(), sk.arc_angles(g.i()))
+        }
+        EntKind::Circle => {
+            let c = &sk.circles[g.i()];
+            round(c.center as usize, sk.radius_value(g).abs(), (0.0, std::f64::consts::TAU))
+        }
+        EntKind::Spline => {
+            let t = crate::curve::closest(sk, g.i(), x, y).0;
+            lift(crate::curve::eval(sk, g.i(), t).d1)
+        }
+        _ => {
+            let pts = sk.curve_polyline_within(g.i(), 1e-3);
+            // the nearest of its points, and the chord across its neighbours by parameter
+            let off = |i: usize| { let (_, (px, py)) = pts[i]; (px - x).dhypot(py - y) };
+            let k = (0..pts.len()).min_by(|&i, &j| off(i).total_cmp(&off(j)))
+                .ok_or("the curve has no points yet")?;
+            let (u0, (x0, y0)) = pts[k.saturating_sub(1)];
+            let (u1, (x1, y1)) = pts[(k + 1).min(pts.len() - 1)];
+            if u1 == u0 {
+                return Err("the curve has no run yet".to_string());
+            }
+            lift(((x1 - x0) / (u1 - u0), (y1 - y0) / (u1 - u0)))
+        }
+    };
+    if !d.iter().all(|v| v.is_finite()) || crate::space::norm(d) <= 1e-12 {
+        return Err("the path does not run there yet".to_string());
+    }
+    Ok(d)
 }
 
 /// A place's number: what the text comes to, or what an unwritten key means.
@@ -1180,12 +1279,10 @@ fn place_in(
     }
     match (e.kind, &a.bearing, step) {
         (EntKind::Point, None, None) => Ok(seed_in(sk, e.i(), view)),
-        (EntKind::Point, None, Some((from, to))) => {
+        (EntKind::Point, None, Some(step)) => {
             let (ax, ay) = seed_in(sk, e.i(), view);
-            let (fx, fy) = seed_in(sk, from, view);
-            let (tx, ty) = seed_in(sk, to, view);
             let f = number(&a.by, 1.0)?;
-            let (dx, dy) = (tx - fx, ty - fy);
+            let (dx, dy) = step.in_view(sk, e.i(), view);
             // a turn is an angle, and what it comes to is in degrees, as a bearing's is
             let (dx, dy) = match &a.turn {
                 None => (dx, dy),
@@ -1250,9 +1347,14 @@ pub(super) fn crosses_views(sk: &Sketch, res: &Resolver, deferred: &[Deferred]) 
             EntKind::Circle => Some(sk.circles[e.i()].center as usize),
             _ => None,
         };
+        // a line's ends, and the points any other path a step runs along is drawn through
         let line_ends = |r: &crate::syntax::Ref| match place(sk, res, r) {
             Ok(e) if e.kind == EntKind::Line => {
                 vec![sk.lines[e.i()].p1 as usize, sk.lines[e.i()].p2 as usize]
+            }
+            Ok(e) if matches!(e.kind, EntKind::Arc | EntKind::Circle | EntKind::Spline) => {
+                sk.children(e).into_iter().filter(|k| k.kind == EntKind::Point)
+                    .map(|k| k.i()).collect()
             }
             _ => vec![],
         };

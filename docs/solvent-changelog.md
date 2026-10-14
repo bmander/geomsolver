@@ -4,6 +4,17 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.102] Any path, a chain too.** A face family's `path` formal may be given a named open chain
+of lines and arcs (§6.9): the station runs over it link by link, link `k` while `s` is in `(k, k +
+1)`, a contact pinned to `s` on the chain at the fraction `s − k` of that link's run and every
+other reading of `s` the chain's whole number, so a law runs along the chain. Each link's stations
+start where the last link's ended, and a wall keeps one name across the links. Through 0.101 a
+chain was no value a call could pass. `std.On` stands on an arc too: a line touching an arc or a
+circle at a point of it is drawn in the round's plane (§6.21), where through 0.101 the tangency,
+its point read in space, was E062. A seed's `along:` steps along any path where through 0.101 it
+stepped only along a line, so `std.On` and `std.OnSpline` start their tangent ahead along their
+guide and their plane with its `v` along `up`, never on the mirrored branch. (Issue #243, L4.)
+
 **[0.101] A step: one number per run.** `step(u: s) (ab := line)` says where a line's end
 stands, one ordinate at a time — `du`, `dv` from its start, `u`, `v` from the frame's origin — and
 keeps the ordinate it does not name, so a stepped outline is a chain of runs, each a station or a

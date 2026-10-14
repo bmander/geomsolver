@@ -107,10 +107,15 @@ fn reads_where(sk: &Sketch, si: usize, unit: f64, skip: &dyn Fn(usize) -> bool) 
             // a family reads what its stations are solved over: every parameter of the drawing
             // and every number a constraint states, since a dimension of the station's reads
             // the running number and so stands at none of the values it now holds
-            SolidDef::Family { face, station, held, from, to } => {
-                v.extend([9.0, station.len() as f64, from.value, to.value]);
+            SolidDef::Family { face, station, held, from, to, legs } => {
+                v.extend([9.0, station.len() as f64, from.value, to.value, legs.len() as f64]);
                 name_read(held, &mut v);
                 face_reads(sk, *face, &mut v);
+                for l in legs {
+                    v.extend([l.at, l.ents.len() as f64]);
+                    name_read(&l.held, &mut v);
+                    face_reads(sk, l.face, &mut v);
+                }
                 v.extend(station.iter().flat_map(|e| [e.kind as u32 as f64, e.i() as f64]));
                 v.extend(sk.params.iter().flat_map(|p| [p.value, f64::from(u8::from(p.fixed))]));
                 for c in &sk.constraints {

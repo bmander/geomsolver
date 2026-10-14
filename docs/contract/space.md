@@ -110,6 +110,8 @@ a point with a `Deferred::Height` seed, held by a `fix`, a dual's point (`along.
 ring's, or claimed. **A point on a curve drawn in a plane is in it** (#249): `m coincident g` (pins
 allowed), `g` a spline or a traced curve (`planes::drawn_plane`, not an extrusion) drawn in `P`, draws a
 point in space in `P`, and `g tangent l` (either way round, `at:` too, #251) a line's free ends —
+as does a line touching an arc or a circle at a point of it (`TangentCircleAt`, #243 L4: `std.On`
+over an arc) —
 read off the kind `relations::settle` gives, so a word the operands do not take draws nothing; the
 statement stays the 2D contact. A
 kept point is E062 naming what keeps it (`kept`'s cause), its statement returned apart from the

@@ -11,6 +11,64 @@ Solvent. Rust grows only three kinds of things:
   corner) and build it exactly. They never change what the family says, and the general
   evaluation gates each one.
 
+## L4: paths and frames (2026-10-14)
+
+**Verdict: a station word stands on every guide drawn in a plane, and a chain of lines and arcs
+is one path.** [`l0/pipe.sv`](l0/pipe.sv), the program L0 could not write, is a 4 mm pipe along a
+U of three straights and two quarter turns, one `std.On` over all five links, at the sum of its
+pieces' Pappus to a part in 10⁹ (Solvent 0.102, `rust/gcs-core/tests/paths.rs`):
+
+| solid | what it exercises | closed form (mm³) |
+|---|---|---|
+| `pipe.sv`'s `pipe` | a chain as one path, `s` from 0 to 5 | 16π(60 + 25π) |
+| the same, `radius(r + 0.5mm * s)` | a law in `s` along the chain | Σₖ π Lₖ ∫ₖ^{k+1} r(s)² ds |
+| the same, `over s in (1.5, 3.5)` | part of a chain | 16π(20 + 25π/2) |
+| a tube, `std.On` round an arc | E062 until now | π·3²·30·π/2 |
+| a tube, `std.On` and `std.OnSpline` along a Bézier | A·L | 9π × its length by quadrature |
+
+**A chain is legs.**  A `path` formal given a named open chain draws the station once per link the
+interval reaches, each its own hidden instance (`#f12_k`) with the formal given link `k` and its
+own running number, and the family's formal read `k` past it, so a law in `s` reads the chain's `s`
+on every link while a contact pinned to `s` on the link stands at the fraction `s − k` of its run.
+The family steps the first leg from its drawn station, as before, and **every later leg from its
+first station, its part started where the last leg ended** (`carry_over`, entities paired by
+their names under the leg): the branch the drawing chose on the first link is carried round every
+joint, as one link's stations carry it along that link.  The walls are each one sheet over all
+the links, one name (`pipe.k`).  Nothing reads the chain in Rust beyond this split: the joints are
+tangent because the chain says so, and the station is `std.On`'s.
+
+**The frame is the one written.**  `std.On`'s tangent line and plane were sign-free (`parallel`,
+`perpendicular`): which way the plane faced was wherever the solve started, harmless for the
+round sections L3 swept and a mirror image for any other.  A seed's step now runs along any path
+(`hint(at: m, along: g, by: 0.1)`: the path's rate along its own run where `m` meets it), so `On`
+and `OnSpline` start their tangent ahead along the guide and their plane off it as `OnLine` does:
+a section drawn 5 above the station rides 5 above every guide.
+
+**Orientation.**  Along a guide in one plane with `up` its normal, `std.On`'s frame (`v` held
+along `up`) is the rotation-minimising frame and the fixed binormal both.  Frenet's frame differs
+from it only by a half turn where the guide bends the other way, and has no normal on a straight
+run, so it is no new frame for a planar guide; its own word waits for guides in space (L9), where
+it is one, and for a way to state which side the centre of curvature is on — `parallel` to the
+radius of curvature says the line, not its sense, and a seed cannot read the curvature's sign.
+
+**Laws by parameter and by length.**  A law reads `s`: on a line and an arc `s` is the fraction of
+its length, so a law there is by arc length already, and over a chain each link's part of `s` is
+by its length.  A spline's parameter is not its arc length, and a law by a spline's length needs
+the length to a point of it (a partial `SplineLength`), which no relation states yet.
+
+What L4 found on the way:
+
+- **A chain's arcs turn left.**  An arc runs counter-clockwise from its start, and a chain enters
+  each link by its start, so a chain cannot turn right at an arc.  L0's S-bend was not a chain;
+  `pipe.sv` is now a U.  Its first draft also left out the `tangent` at the joints from an arc to
+  a line, and stood at DOF 2.
+- **The joint is the station on both legs.**  Solved at the end of one leg and the start of the
+  next, the two agree, and the run keeps it once; a section that would vanish there (an end read
+  as a limit) is refused, since only the family's own ends are limits.
+
+Handed on: a spline's partial length (arc-length laws on a spline); chains across planes (a chain
+is written in one plane's block); an arc walked end to start in a chain; Frenet's frame (L9).
+
 ## L3: today's loft becomes library words (2026-10-14)
 
 **Verdict: `along:` is retired, and every loft of the case library is a running section at the

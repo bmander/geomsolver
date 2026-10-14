@@ -654,8 +654,12 @@ impl<'a> Walk<'a> {
                 let bare = text.trim();
                 // `t == s` over an unknown — an input nothing binds, a formal left unbound: the
                 // contact's parameter *is* that unknown, and every contact pinned to it shares it
-                let unknown =
-                    vals.get(bare).filter(|a| a.m == 1.0 && a.c == 0.0).and_then(|a| a.free.clone());
+                // — and over a chain, `s` on the link a leg stands on is that leg's own number,
+                // `k` short of the chain's (#243 L4)
+                let on_leg = |a: &Aff| self.held.on_leg.as_ref()
+                    .is_some_and(|(h, k)| a.free.as_ref() == Some(h) && a.c == *k);
+                let unknown = vals.get(bare).filter(|a| a.m == 1.0 && (a.c == 0.0 || on_leg(a)))
+                    .and_then(|a| a.free.clone());
                 // a face family's running number is no unknown and no place: the contact is
                 // pinned to it, at whatever station the family stands (#243 L1)
                 let held = unknown.as_ref().filter(|n| self.held.names.contains_key(*n)).cloned();
@@ -678,12 +682,20 @@ impl<'a> Walk<'a> {
                             Err((code, e)) => self.err(code, *span, format!("`{text}`: {e}")),
                         }
                     }
-                    (Err(_), _) if self.held_text(text, vals, scope).is_some() => self.err(
-                        Code::E103,
-                        *span,
-                        format!("`{text}`: a contact in a face family is pinned to its running \
-                                 number itself, `t == s`, or to a number"),
-                    ),
+                    (Err(_), _) if self.held_text(text, vals, scope).is_some() => {
+                        // a leg's `s` is the chain's, which only the chain's own link reads as a
+                        // place of its run
+                        let leg = vals.get(bare).and_then(|a| a.free.as_ref())
+                            .and_then(|n| self.held.legs.get(n));
+                        let m = match leg {
+                            Some(&(k, _)) => format!("`{text}`: the family runs over a chain, and \
+                                on its link {k} `s` runs from {k}: a contact pinned to `s` \
+                                stands on the chain"),
+                            None => format!("`{text}`: a contact in a face family is pinned to \
+                                its running number itself, `t == s`, or to a number"),
+                        };
+                        self.err(Code::E103, *span, m)
+                    }
                     (Err(_), _)
                         if out_of_reach(bare, vals, scope).is_none()
                             && self.undeclared(bare, vals, scope) =>

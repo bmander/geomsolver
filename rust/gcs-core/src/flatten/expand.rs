@@ -256,20 +256,31 @@ impl<'a> Walk<'a> {
         if let Some(crate::syntax::Sweep::Family(f)) = d2.sweep.as_mut() {
             let key = format!("{}{}", scope.prefix(), f.instance.name.text);
             let held = format!("{key}.{}", f.swept.text);
+            // over a chain, each leg's running number and the face it sweeps (#243 L4)
+            let legs = self.held.chained.get(&key).cloned().unwrap_or_default();
             // refused where the instance was walked: no solid
-            if !self.held.names.contains_key(&held) {
+            if !self.held.names.contains_key(&held) && legs.is_empty() {
                 return;
             }
             let end = |t: &str| value_of(t, vals, self.units);
             if let (Ok(a), Ok(b)) = (end(&f.domain.0), end(&f.domain.1)) {
                 f.domain = (crate::syntax::num(a), crate::syntax::num(b));
             }
-            f.held = Some(held);
-            let mut face = f.face.clone();
-            face.path.insert(0, crate::syntax::Seg::Field(face.root.clone()));
-            face.root = Name { text: f.instance.name.text.clone(), span: face.span };
+            let instances: Vec<String> = if legs.is_empty() {
+                vec![f.instance.name.text.clone()]
+            } else {
+                legs.iter().map(|(_, k)| format!("{}_{k}", f.instance.name.text)).collect()
+            };
+            f.held = Some(legs.first().map_or(held, |(h, _)| h.clone()));
+            f.legs = legs;
+            let faces = instances.into_iter().map(|text| {
+                let mut face = f.face.clone();
+                face.path.insert(0, crate::syntax::Seg::Field(face.root.clone()));
+                face.root = Name { text, span: face.span };
+                crate::syntax::Kid::Ref(face)
+            }).collect();
             if let Some(slot) = d2.children.first_mut() {
-                *slot = vec![crate::syntax::Kid::Ref(face)];
+                *slot = faces;
             }
         }
         self.settle_seeds(&mut d2, vals, scope, st.span);
@@ -357,9 +368,118 @@ impl<'a> Walk<'a> {
             self.err(Code::E080, st.span, m);
             return ControlFlow::Continue(());
         }
+        // a path given a named chain: one leg per link the interval reaches (#243 L4)
+        if let Some((at, links)) = self.chain_argument(comp, inst, scope) {
+            return self.walk_legs(f, inst, (at, links), (a, b), formal.ty, st, scope, vals, path,
+                                  depth);
+        }
         let held = format!("{}{}.{swept}", scope.prefix(), inst.name.text);
         self.held.names.insert(held, (formal.ty.dim(), 0.5 * (a + b)));
         self.walk_instance(inst, st, scope, vals, path, depth)
+    }
+
+    /// **A face family over a chain** (#243 L4, finding 6): the path formal given a named open
+    /// chain, the station runs over it link by link — link `k` while `s` is in `(k, k + 1)` — as
+    /// one family.  Each link the interval reaches is a **leg**: the instance drawn under its own
+    /// key (`#f12_k`), the formal given that link, its own running number held at the middle of
+    /// its part of the interval, and the family's formal read as `k` past it (`bind`), so a law
+    /// in `s` reads the chain's `s` on every link; a contact pinned to `s` on the link reads the
+    /// leg's own number, the fraction of that link's run (`settle_relation`).
+    #[allow(clippy::too_many_arguments)]
+    fn walk_legs(
+        &mut self,
+        f: &crate::syntax::FamilySpec,
+        inst: &crate::syntax::Instance,
+        (at, links): (usize, Vec<(Ref, String)>),
+        (a, b): (f64, f64),
+        ty: Ty,
+        st: &Stmt,
+        scope: &Scope,
+        vals: &BTreeMap<String, Aff>,
+        path: &[PathStep],
+        depth: usize,
+    ) -> ControlFlow<()> {
+        let swept = &f.swept.text;
+        let n = links.len();
+        if ty != Ty::Scalar {
+            let m = format!("a face family over a chain runs `{swept}` link by link, from 0 to \
+                             the chain's {n}: it is a `Scalar`");
+            self.err(Code::E103, f.swept.span, m);
+            return ControlFlow::Continue(());
+        }
+        if a < 0.0 || b > n as f64 {
+            let m = format!("the chain has {n} link{}, so a family over it runs within (0, {n}): \
+                             link `k` while `{swept}` is in (k, k + 1)",
+                            if n == 1 { "" } else { "s" });
+            self.err(Code::E080, st.span, m);
+            return ControlFlow::Continue(());
+        }
+        let key = format!("{}{}", scope.prefix(), inst.name.text);
+        let mut legs = Vec::new();
+        for (k, (link, abs)) in links.into_iter().enumerate() {
+            let (lo, hi) = (a.max(k as f64), b.min(k as f64 + 1.0));
+            if hi - lo <= 1e-12 * (b - a) {
+                continue;
+            }
+            let mut leg = inst.clone();
+            leg.name.text = format!("{}_{k}", inst.name.text);
+            leg.args[at].value = crate::syntax::InstVal::Ref(link);
+            let held = format!("{}{}.{swept}", scope.prefix(), leg.name.text);
+            self.held.names.insert(held.clone(), (ty.dim(), 0.5 * (lo + hi) - k as f64));
+            self.held.legs.insert(held.clone(), (k as f64, abs));
+            legs.push((held, k as f64));
+            self.walk_instance(&leg, st, scope, vals, path, depth)?;
+        }
+        self.held.chained.insert(key, legs);
+        ControlFlow::Continue(())
+    }
+
+    /// The named chain a call gives one of its `path` formals, where it gives one (#243 L4): the
+    /// argument's index, and each link as a reference the call's scope reads with its absolute
+    /// name.  A closed chain is no path a family can run along, its ends meeting; said here.
+    fn chain_argument(
+        &mut self,
+        comp: &Component,
+        inst: &crate::syntax::Instance,
+        scope: &Scope,
+    ) -> Option<(usize, Vec<(Ref, String)>)> {
+        let alias = self.alias_table();
+        for fo in comp.formals.iter().filter(|fo| fo.ty == Ty::Path) {
+            let Some(at) = super::bindings::arg_index(comp, inst, fo) else { continue };
+            let crate::syntax::InstVal::Ref(r) = &inst.args[at].value else { continue };
+            let Some((abs, rest)) = self.look(&alias).find(r, scope) else { continue };
+            if !rest.is_empty() {
+                continue;
+            }
+            let chain = self.out.iter().find_map(|(st, _, sc)| match &st.kind {
+                StmtKind::Chain(c) if c.name.key().text == abs => Some((c.clone(), sc.clone())),
+                _ => None,
+            });
+            let Some((chain, sc)) = chain else { continue };
+            if chain.closed {
+                let m = format!("`{}` is a closed chain, and a face family along it would meet \
+                                 itself: run it over an open one", ref_text(r));
+                self.err(Code::E080, r.span, m);
+                return None;
+            }
+            let mut links = Vec::new();
+            for l in &chain.links {
+                let full = self.look(&alias).find(l, &sc)
+                    .map(|(t, rest)| std::iter::once(t).chain(rest).collect::<Vec<_>>().join("."));
+                // the link by the name the call's scope reads it by
+                let local = full.as_ref().and_then(|full| scope.prefixes.iter()
+                    .find_map(|p| full.strip_prefix(p.as_str()).filter(|n| !n.is_empty())));
+                let (Some(full), Some(local)) = (full.clone(), local) else {
+                    let m = format!("`{}`'s link `{}` is not one the call can name",
+                                    ref_text(r), ref_text(l));
+                    self.err(Code::E103, r.span, m);
+                    return None;
+                };
+                links.push((Ref::dotted(local, r.span), full));
+            }
+            return Some((at, links));
+        }
+        None
     }
 
     /// An instance: its arguments bound and its component's body walked under its prefix — or
@@ -661,6 +781,7 @@ impl<'a> Walk<'a> {
     pub(super) fn settle_relation(&mut self, rel: &crate::syntax::Relation, vals: &BTreeMap<String, Aff>, scope: &Scope)
         -> Option<crate::syntax::Relation> {
         let mut r2 = rel.clone();
+        self.held.on_leg = self.leg_named(&r2, scope);
         if let Some(w) = r2.form.written_mut() {
             for a in w.args.iter_mut() {
                 match a {
@@ -686,6 +807,7 @@ impl<'a> Walk<'a> {
         for a in r2.form.canonical_args_mut().iter_mut().flatten() {
             self.settle_arg(a, vals, scope);
         }
+        self.held.on_leg = None;
         // the enclosing instances' classes, over the statement's own: a ghosted part's
         // dimensions are the ghost's (`display: geometry`) as its lines are
         for c in &scope.stamps.class.0 {
@@ -694,6 +816,23 @@ impl<'a> Walk<'a> {
             }
         }
         Some(r2)
+    }
+
+    /// The leg of a family over a chain whose link relation `r`, written in a leg's station,
+    /// names among its operands (#243 L4): that leg's running number and the link's index.
+    fn leg_named(&self, r: &crate::syntax::Relation, scope: &Scope) -> Option<(String, f64)> {
+        if self.held.legs.is_empty() {
+            return None;
+        }
+        let w = r.form.written()?;
+        let prefix = scope.prefix();
+        let (held, (k, link)) = self.held.legs.iter().find(|(h, _)| {
+            prefix.starts_with(&crate::model::station_prefix(h))
+        })?;
+        let alias = self.alias_table();
+        w.ops.iter().any(|op| self.look(&alias).find(op, scope).is_some_and(|(t, rest)| {
+            std::iter::once(t).chain(rest).collect::<Vec<_>>().join(".") == *link
+        })).then(|| (held.clone(), *k))
     }
 
     /// A seed written as an expression is worked out here, against the parameters in scope,

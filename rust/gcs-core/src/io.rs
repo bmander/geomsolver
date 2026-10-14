@@ -1192,8 +1192,9 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
                     _ => false,
                 },
                 // a family comes with its whole station or not at all
-                crate::model::SolidDef::Family { face, ref station, .. } =>
+                crate::model::SolidDef::Family { face, ref station, ref legs, .. } =>
                     face_map[face as usize].is_some()
+                        && legs.iter().all(|l| face_map[l.face as usize].is_some())
                         && station.iter().all(|&e| station_ent(e).is_some()),
                 _ => true,
             }
@@ -1240,12 +1241,19 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             crate::model::SolidDef::Prism { face: f, from, to, draft } => {
                 crate::model::SolidDef::Prism { face: face(*f), from: from.clone(), to: to.clone(), draft: draft.clone() }
             }
-            crate::model::SolidDef::Family { face: f, station, held, from, to } => {
+            crate::model::SolidDef::Family { face: f, station, held, from, to, legs } => {
                 let station = station.iter()
                     .map(|&e| station_ent(e).expect("retention kept the whole station"))
                     .collect();
+                let legs = legs.iter().map(|l| crate::model::FamilyLeg {
+                    face: face(l.face),
+                    ents: l.ents.iter()
+                        .map(|&e| station_ent(e).expect("retention kept the whole station"))
+                        .collect(),
+                    ..l.clone()
+                }).collect();
                 crate::model::SolidDef::Family { face: face(*f), station, held: held.clone(),
-                    from: from.clone(), to: to.clone() }
+                    from: from.clone(), to: to.clone(), legs }
             }
             crate::model::SolidDef::Through { face: f, body } => {
                 crate::model::SolidDef::Through { face: face(*f), body: sol(body) }

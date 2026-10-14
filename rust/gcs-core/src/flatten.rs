@@ -284,6 +284,16 @@ struct Held {
     texts: BTreeMap<String, String>,
     /// The numbers of the geometry the stations read — see `Expansion::reads`.
     reads: Vec<(String, String, Vec<String>)>,
+    /// Each face family run over a named chain (#243 L4), by its instance's absolute key: one
+    /// leg per link its interval reaches, each the leg's running number and the link's index.
+    chained: BTreeMap<String, Vec<(String, f64)>>,
+    /// Each leg's running number: the link's index — where the leg's `s` starts, so the
+    /// family's formal reads `k + s` there — and the link's absolute name, on which a contact
+    /// pinned to `s` reads the leg's own number.
+    legs: BTreeMap<String, (f64, String)>,
+    /// The leg whose link the relation being settled names, where it names it: a pin to `s`
+    /// there is the leg's running number (`settle_relation`).
+    on_leg: Option<(String, f64)>,
 }
 
 /// An entity a call gave where a kind (or any `path`) is asked for: the absolute name of what it
