@@ -17,6 +17,11 @@ solids.
 | `motor/cover.sv` | side covers | A356-T6 castings, machined; spoke flange, bearing boss |
 | `motor/parts.sv` | bearings, spacers, locknuts; drawing helpers | 6004-2RS; steel tube; M14 × 1.5 flanged nuts |
 
+Each part file ends with a `preview { … }`: opened on its own, it draws the assembly's frame and
+that part in it (the carrier on its axle, the brake-side cover on the ring's screw circle, and
+the right-hand bearing, spacer and locknut for `motor/parts.sv`). Each solves with no freedom
+left and builds the solid the assembly does; `use` leaves the block out.
+
 ## Rating
 
 | | |
@@ -101,6 +106,7 @@ build/solventc rust/examples/hub_motor/hub_motor.sv              # solve, diagno
 build/solventc rust/examples/hub_motor/hub_motor.sv --where rotor.magnets.volume
 build/solventc rust/examples/hub_motor/hub_motor.sv --stl lamination.stl --solid stator.lamination
 build/solventc rust/examples/hub_motor/hub_motor.svd --sheet arrangement -o arrangement.svg
+build/solventc rust/examples/hub_motor/motor/cover.sv          # one part, from its preview
 ```
 
 The sheets are `arrangement` (end view and half-section), `axle`, `solids` (isometrics of the

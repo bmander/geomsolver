@@ -12,6 +12,8 @@
 // holes on the very centres the rotor ring's tapped holes stand on, which are handed in.  The
 // disc side (`disc: 1`) is also tapped for the brake disc's six M5 bolts.
 
+use std (horizontal)
+use motor.dims
 use motor.parts
 
 component Cover(f: group, dims: group, screws: group, sg: Scalar, boss_to: Length,
@@ -83,4 +85,29 @@ component Cover(f: group, dims: group, screws: group, sg: Scalar, boss_to: Lengt
       tapped cut body
     }
   }
+}
+
+// Open this file to preview the brake-side cover alone.  The ring's tapped holes it is drilled
+// on are drawn as `motor.rotor` draws them, half a pitch off the datum.
+preview {
+  unit mm
+  // the frame, as the assembly draws it: the end view's datum and the axle's centreline
+  in std.front {
+    construction centerline datum := line(std.origin, hint((150, 0)))
+    horizontal datum
+    length(150mm) datum
+  }
+  in std.side {
+    construction centerline ax := line(std.side.origin, hint((100, 0)))
+    horizontal ax
+    length(100mm) ax
+  }
+  frame := {front: std.front, side: std.side, top: std.top, o: std.origin, datum: datum,
+            so: std.side.origin, ax: ax, to: std.top.origin}
+
+  screw := motor.parts.HoleCircle(frame, n: motor.dims.screws, r: motor.dims.screw_r,
+                                  d: motor.dims.tap4, phase: 180deg / motor.dims.screws)
+  left := Cover(frame, dims: motor.dims.motor_dims, screws: screw, sg: -1,
+                boss_to: motor.dims.disc_face, boss_r: motor.dims.disc_r, spoke_phase: 0deg,
+                disc: 1)
 }

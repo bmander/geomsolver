@@ -7,7 +7,8 @@
 // view, along it), and the cable's way out — a bore up the left end that turns out radially
 // beside the carrier's web, a hole drawn in the plan and swept straight up.
 
-use std (below)
+use std (below, horizontal)
+use motor.dims
 use motor.parts
 
 component Axle(f: group, dims: group) {
@@ -83,4 +84,24 @@ component Axle(f: group, dims: group) {
     exit := solid(face(exit_c), from: 0mm, to: dims.hub_r + 1mm)
   }
   exit cut body
+}
+
+// Open this file to preview the axle and its key alone, in the assembly's frame.
+preview {
+  unit mm
+  // the frame, as the assembly draws it: the end view's datum and the axle's centreline
+  in std.front {
+    construction centerline datum := line(std.origin, hint((150, 0)))
+    horizontal datum
+    length(150mm) datum
+  }
+  in std.side {
+    construction centerline ax := line(std.side.origin, hint((100, 0)))
+    horizontal ax
+    length(100mm) ax
+  }
+  frame := {front: std.front, side: std.side, top: std.top, o: std.origin, datum: datum,
+            so: std.side.origin, ax: ax, to: std.top.origin}
+
+  axle := Axle(frame, dims: motor.dims.motor_dims)
 }
