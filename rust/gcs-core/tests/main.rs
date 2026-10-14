@@ -94,6 +94,7 @@ mod generated_envelopes;
 mod generation;
 mod extruded_envelope;
 mod generation_examples;
+mod every_example;
 mod examples_sv;
 mod expr;
 mod frame;
