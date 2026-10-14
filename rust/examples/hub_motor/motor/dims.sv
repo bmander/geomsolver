@@ -14,20 +14,28 @@
 // in the air gap: 27.9 N·m on a 103.1 mm gap radius and a 35 mm stack is 11.9 kPa, inside the
 // 10–20 kPa an air-cooled machine sustains.
 //
-// The language has two dimensions, length and angle, so the electrical figures are plain
-// numbers in SI units, each with its unit in the comment; the lengths and angles carry theirs.
-// A component receives this table as `dims`: `motor_dims` at the bottom is the group of what
-// the parts read.  What only the assembly reads (the bearings' bore, the covers' bosses, the
-// spacers and locknuts) it reads here by name, `motor.dims.old`.
+// **Every figure carries its unit** (spec §3.3, [0.98]): the duty and the electromagnetic sizing
+// are values in watts, volts, amperes, teslas and webers, and the arithmetic between them is
+// checked as a length's is, so `torque := power / omega` is a torque because it comes out one.
+// The magnetic circuit is worked last, from the lengths it is drawn with: change `wt` or `back`
+// and the teeth's or the ring's flux density follows.  No figure reaches a constraint; the
+// comments say what each comes to.
+//
+// A component receives this table as `dims`: `motor_dims` at the bottom is the group of what the
+// parts read.  What only the assembly reads (the bearings' bore, the covers' bosses, the spacers
+// and locknuts) it reads here by name, `motor.dims.old`.
 
 // -- the duty -------------------------------------------------------------------------------
-power := 745.7          // W, shaft output: one mechanical horsepower
-volts := 48             // V, the pack's nominal
-rpm := 255              // rev/min at 32 km/h on a 2.09 m tyre
-omega := rpm * 2 * pi / 60          // rad/s: 26.7
-torque := power / omega             // N·m: 27.9
-efficiency := 0.86      // at the rated point; copper and iron losses ~120 W
-amps := power / (volts * efficiency)  // A from the pack at rated load: 18.1
+power := 745.7W         // shaft output: one mechanical horsepower
+volts := 48V            // the pack's nominal
+cruise := 32km / 3600s  // 32 km/h
+roll_out := 2.09m       // a 26 × 2.1" tyre's rolling circumference
+speed := cruise / roll_out * turn   // 255 rpm
+omega := speed / 1rad               // 26.7 rad/s: over a radian, a speed is a rate
+torque := power / omega             // 27.9 N·m
+efficiency := 0.86      // at the rated point
+loss := power / efficiency - power  // 121 W, copper and iron
+amps := power / (volts * efficiency)  // 18.1 A from the pack at rated load
 // The controller: 48 V, 25 A continuous, 40 A peak, sinusoidal (FOC), three hall sensors.
 
 // -- the electromagnetic sizing --------------------------------------------------------------
@@ -35,18 +43,17 @@ poles := 46             // 23 pole pairs
 slots := 51             // 17 teeth a phase
 pole_pitch := 360deg / poles        // 7.83°
 slot_pitch := 360deg / slots        // 7.06°
-freq := poles / 2 * rpm / 60        // Hz electrical at the rated speed: 97.8
+freq := poles / 2 * speed / turn    // 97.8 Hz electrical at the rated speed
 // The winding: concentrated coils, one per tooth, phases A-a-A … in the 17-coil groups a 51/46
-// star of slots gives; star-connected.  Winding factor 0.94 (pitch 0.988, spread 0.955).
-// Back-EMF at the rated speed is 4.44 · f · N · k_w · Φ = 16.5 V rms a phase (28.5 V rms line,
-// 40.3 V peak) under the pack's 48 V, leaving the controller its headroom; the magnet flux a pole
-// is Φ = B_g · α · τ_p · L = 0.85 T · 0.80 · 14.1 mm · 35 mm = 0.335 mWb.
-turns := 7              // turns a tooth: 119 a phase
-strands := 5            // in hand, of 0.80 mm grade-2 enamelled copper (2.51 mm² a turn)
+// star of slots gives; star-connected.  A coil spans one slot, nine tenths of a pole.
+k_pitch := sin(90deg * slot_pitch / pole_pitch)     // 0.988
+k_spread := 0.955       // the spread of a phase's coils over its belts
+k_w := k_pitch * k_spread           // the winding factor: 0.944
+turns := 7              // turns a tooth
+phase_turns := turns * slots / 3    // 119 a phase
+strands := 5            // in hand, of 0.80 mm grade-2 enamelled copper
 wire_d := 0.80mm
-// 15.1 A rms a phase at rated torque is 6.0 A/mm² in the copper; a coil side is 17.6 mm² of
-// copper in half a slot of 81 mm² (the slot drawn in `motor.stator`), a fill of 0.43 — wound
-// by needle winder over 0.25 mm slot liners.
+// Wound by needle winder over 0.25 mm slot liners.
 
 // -- the gap ----------------------------------------------------------------------------------
 Rs := 102.5mm           // the stator's outside: the teeth's tips
@@ -60,8 +67,8 @@ L := 35mm               // the stack: 100 sheets of 0.35 mm M270-35A, bonded
 
 // -- the stator lamination --------------------------------------------------------------------
 // One slot is drawn: a tooth either side of it, parallel-sided, and shoes closing it to a slot
-// opening `bo` at the tips.  At 0.85 T in the gap the teeth carry 1.6 T; the yoke's 0.6 T is
-// thicker than flux asks, for the press fit on the carrier.
+// opening `bo` at the tips.  The yoke is thicker than flux asks, for the press fit on the
+// carrier (`B_yoke` below).
 wt := 6.6mm             // tooth width
 bo := 2.6mm             // the slot's opening between shoes
 hs := 1.2mm             // the shoe's lip at the tip
@@ -73,7 +80,7 @@ overhang := 6mm         // the end turns, axially, past each face of the stack
 end_turn_in := Ry - 0.5mm       // the end turns' inside, just under the slots' bottom
 
 // -- the rotor ring: the back iron and the hub shell in one ------------------------------------
-// 1018 steel tube, bored for the magnets.  Half a pole's flux at 1.5 T needs 3.2 mm; 6 mm (0.8 T)
+// 1018 steel tube, bored for the magnets.  Flux asks 3.2 mm of it (`back_min` below); 6 mm
 // carries the cover screws' threads and stiffens the shell against the spokes' pull.
 back := 6mm
 Ro := Rr + back         // 112.1
@@ -84,6 +91,29 @@ screws := 12            // M4 a side, 10 deep
 tap4 := 3.3mm           // M4's tap drill
 tap_depth := 10mm
 clear4 := 4.5mm         // and its clearance in the cover
+
+// -- the magnetic circuit, from the lengths above ----------------------------------------------
+// The gap's flux density is an estimate from 3 mm of N42SH over a 0.6 mm gap: confirm it with a
+// 2D FEA before tooling.  Everything after it is arithmetic the units check.
+B_g := 0.85T
+tau_p := Rm * pole_pitch / 1rad     // the pole pitch along the magnets' face: 14.1 mm
+flux := B_g * alpha * tau_p * L     // a pole's: 0.335 mWb
+B_tooth := B_g * (Rs * slot_pitch / 1rad) / wt  // a slot pitch's flux through a tooth: 1.63 T
+B_yoke := flux / 2 / ((Ry - Rb) * L)            // 0.60 T
+B_back := flux / 2 / (back * L)                 // in the rotor ring: 0.80 T
+back_min := flux / 2 / (1.5T * L)               // the ring that would carry it at 1.5 T: 3.2 mm
+// The back-EMF at the rated speed, 4.44 · f · N · k_w · Φ, is under the pack's 48 V at its
+// peak, which leaves the controller its headroom.
+emf := pi * sqrt(2) * freq * phase_turns * k_w * flux   // 16.4 V rms a phase
+emf_line := emf * sqrt(3)                        // 28.3 V rms line to line
+emf_peak := emf_line * sqrt(2)                   // 40.1 V
+phase_amps := power / (3 * emf)     // 15.2 A rms a phase at rated torque
+copper := strands * pi / 4 * wire_d^2           // 2.51 mm² a turn
+density := phase_amps / copper      // 6.0 A/mm² in the copper
+coil_side := turns * copper         // 17.6 mm²
+slot_area := 81mm * 1mm             // the slot drawn in `motor.stator`, within the stack
+fill := 2 * coil_side / slot_area   // 0.43
+shear := torque / (2 * pi * Rm^2 * L)   // the air gap's shear: 11.9 kPa, air-cooled territory
 
 // -- the carrier: the stator's aluminium spider ------------------------------------------------
 // 6061-T6, keyed to the axle, the stack pressed on its rim (H7/s6) and bonded.

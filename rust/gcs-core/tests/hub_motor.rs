@@ -146,3 +146,68 @@ fn the_covers_are_their_turned_profiles_less_their_holes() {
     close(&e,"right.body",turned(&profile(38.+16.,1.375*25.4/2.))-drilled);
     close(&e,"left.body",turned(&profile(67.5-15.1,29.))-drilled-6.*hole(4.2,10.));
 }
+
+/// What a figure of the table comes to over the unit it is read in (`motor.dims.torque / 1Nm`),
+/// read off the length slot a plain number stands in.
+fn figure(read: &str) -> f64 {
+    let source = format!("use std\nuse motor.dims\nin std.front {{\na := point hint((0, 0))\n\
+        b := point hint((60, 0))\n}}\na distance({read}) b\n");
+    let e = fixtures::read_beside(&source,&project(),&mut |_,text| text);
+    assert!(e.ok(),"{read}: {:?}",e.errors().map(|d| d.message.clone()).collect::<Vec<_>>());
+    e.sketch.user_constraints()[0].args[2].num()
+}
+
+/// **The sizing is checked arithmetic** (#311): the duty, the winding and the magnetic circuit
+/// are values carrying their units, and each comes to its closed form, worked here from the
+/// table's stated numbers in SI.  A figure read in the wrong unit is refused.
+#[test]
+fn the_tables_figures_are_their_closed_forms() {
+    let (power,volts,efficiency) = (745.7,48.,0.86);
+    let turning = 32e3/3600./2.09;                       // revolutions a second
+    let omega = turning*2.*PI;
+    let torque = power/omega;
+    let freq = POLES/2.*turning;
+    let k_w = (90f64*POLES/SLOTS).to_radians().sin()*0.955;
+    let flux = 0.85*0.8*(RM*(360./POLES).to_radians())*1e-3*L*1e-3;
+    let emf = PI*2f64.sqrt()*freq*7.*SLOTS/3.*k_w*flux;
+    let copper = 5.*PI/4.*0.8*0.8;                       // mm²
+    for (read,want) in [
+        ("speed / 1rpm",turning*60.),
+        ("omega * 1s",omega),
+        ("torque / 1Nm",torque),
+        ("loss / 1W",power/efficiency-power),
+        ("amps / 1A",power/(volts*efficiency)),
+        ("freq / 1Hz",freq),
+        ("k_w",k_w),
+        ("flux / 1mWb",flux*1e3),
+        ("B_tooth / 1T",0.85*RS*(360./SLOTS).to_radians()/WT),
+        ("B_yoke / 1T",flux/2./((RY-RB)*L*1e-6)),
+        ("B_back / 1T",flux/2./((RO-RR)*L*1e-6)),
+        ("back_min / 1mm",flux/2./(1.5*L*1e-3)*1e3),
+        ("emf / 1V",emf),
+        ("emf_peak / 1V",emf*6f64.sqrt()),
+        ("phase_amps / 1A",power/(3.*emf)),
+        ("density * 1mm * 1mm / 1A",power/(3.*emf)/copper),
+        ("fill",2.*7.*copper/81.),
+        ("shear / 1kPa",torque/(2.*PI*(RM*1e-3).powi(2)*L*1e-3)/1e3),
+    ] {
+        let got = figure(&format!("motor.dims.{read}"));
+        assert!((got-want).abs() < 1e-9*want,"{read}: {got} against {want}");
+    }
+    // and to what the table's comments say, to the last figure each gives
+    for (read,says,digit) in [("torque / 1Nm",27.9,0.1),("emf / 1V",16.4,0.1),
+                              ("phase_amps / 1A",15.2,0.1),("shear / 1kPa",11.9,0.1),
+                              ("fill",0.43,0.01)] {
+        let got = figure(&format!("motor.dims.{read}"));
+        assert!((got-says).abs() <= digit/2.,"{read}: {got}, the table says {says}");
+    }
+    let source = "use std\nuse motor.dims\nin std.front {\na := point hint((0, 0))\n\
+        b := point hint((60, 0))\n}\na distance(motor.dims.torque / 1W) b\n";
+    let (mut p,_) = gcs_core::syntax::parse(source);
+    let base = project();
+    let mut same = |_: &str,text: String| text;
+    assert!(gcs_core::modules::link(&mut p,&mut fixtures::beside(&base,&mut same)).is_empty());
+    let e = gcs_core::program::elaborate(&p);
+    assert!(e.errors().any(|d| d.message.contains("is Length, and this is Time (s)")),
+        "{:?}",e.diags.iter().map(|d| d.message.clone()).collect::<Vec<_>>());
+}
