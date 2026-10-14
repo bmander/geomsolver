@@ -148,52 +148,49 @@ fn body_rule(
 ) {
     // `bore cut cyl`, `boss union cyl`, folded into the body they name.  **Both are sets**, so
     // the order this walk meets them in cannot matter, and a document may write them anywhere.
+    let mut stated = Vec::new();
     for st in body {
         if skip.contains(&st.id) {
             continue;
         }
-        let (word, what, at, into) = match &st.kind {
-            StmtKind::SolidRel(r) => (r.word, &r.what, r.span, &r.body),
-            _ => continue,
-        };
-        let mut say = |span: Span, m: String| {
-            diags.push(Diag::within(Code::E080, span, st.id, m));
-        };
-        let (Some(a), Some(b)) = (res.lookup(what), res.lookup(into)) else {
-            let miss = if res.lookup(what).is_none() { what } else { into };
-            diags.push(Diag::within(
-                Code::E101,
-                miss.span,
-                st.id,
-                format!("no such entity: `{}`", miss.root.text),
-            ));
-            continue;
-        };
-        // `A.body`: the solid a face path is of (#183 F5), `pad.boss.body` is `pad`
-        let follow = |e: EntRef, r: &crate::syntax::Ref| match res.operand(sk, r) {
-            Ok(super::resolve::Operand::Body(solid)) => Ok(solid),
-            _ => super::resolve::follow_building(sk,res,e,r),
-        };
-        let resolved = follow(a,what).and_then(|a| follow(b,into).map(|b| (a,b)));
-        let (a,b) = match resolved {
-            Ok(pair) => pair,
-            Err(message) => { say(at,message); continue; }
-        };
-        if a.kind != EntKind::Solid || b.kind != EntKind::Solid {
-            let bad = if a.kind != EntKind::Solid { (what, a) } else { (into, b) };
-            say(
-                at,
-                format!(
-                    "`{}` relates solids, and `{}` is {}",
-                    word.as_str(),
-                    bad.0.root.text,
-                    bad.1.kind.a()
-                ),
-            );
+        let StmtKind::SolidRel(r) = &st.kind else { continue };
+        match body_operands(sk, res, r) {
+            Ok((a, b)) => stated.push((*st, r.word, r.span, a, b)),
+            Err((code, span, m)) => diags.push(Diag::within(code, span, st.id, m)),
+        }
+    }
+    // **an empty body** (`solid()`, its own stock) is its first `union` and the rest of them, so
+    // a pattern joins every copy alike and none is the stock written apart
+    let (mut taken, mut empty) = (BTreeSet::new(), BTreeSet::new());
+    for i in 0..sk.solids.len() {
+        let SolidDef::Body { stock, on, .. } = &sk.solids[i].def else { continue };
+        if *stock as usize != i || !on.is_empty() {
             continue;
         }
-        if a.idx == b.idx {
-            say(at, format!("`{0} {1} {0}` joins a solid to itself", into.root.text, word.as_str()));
+        let first = stated.iter()
+            .position(|(_, word, _, _, b)| *word == crate::syntax::BodyWord::Union && b.i() == i);
+        match first {
+            Some(k) => {
+                let SolidDef::Body { stock, .. } = &mut sk.solids[i].def else { unreachable!() };
+                *stock = stated[k].3.idx;
+                taken.insert(k);
+            }
+            None => {
+                empty.insert(i);
+                let name = sk.solids[i].name.clone();
+                diags.push(Diag::new(
+                    Code::E080,
+                    declared_at(body, &name),
+                    None,
+                    format!("`{name}` is an empty body, and nothing is in `union` with it: \
+                             write `x union {name}` for its material"),
+                ));
+            }
+        }
+    }
+    for (k, (st, word, at, a, b)) in stated.into_iter().enumerate() {
+        // the stock taken, and a body already refused as empty, join nothing more
+        if taken.contains(&k) || empty.contains(&b.i()) {
             continue;
         }
         // **a swept solid that takes a feature is the body over its own sweep**: the name keeps
@@ -210,6 +207,42 @@ fn body_rule(
             diags.push(Diag::within(Code::E041, at, st.id, why));
         }
     }
+}
+
+/// The two solids a body statement names, `what` and the body it joins — or why it names none.
+fn body_operands(sk: &Sketch, res: &Resolver, r: &crate::syntax::SolidRel)
+    -> Result<(EntRef, EntRef), (Code, Span, String)> {
+    let (what, into, at) = (&r.what, &r.body, r.span);
+    let (Some(a), Some(b)) = (res.lookup(what), res.lookup(into)) else {
+        let miss = if res.lookup(what).is_none() { what } else { into };
+        return Err((Code::E101, miss.span, format!("no such entity: `{}`", miss.root.text)));
+    };
+    // `A.body`: the solid a face path is of (#183 F5), `pad.boss.body` is `pad`
+    let follow = |e: EntRef, r: &crate::syntax::Ref| match res.operand(sk, r) {
+        Ok(super::resolve::Operand::Body(solid)) => Ok(solid),
+        _ => super::resolve::follow_building(sk,res,e,r),
+    };
+    let (a,b) = follow(a,what).and_then(|a| follow(b,into).map(|b| (a,b)))
+        .map_err(|m| (Code::E080, at, m))?;
+    if a.kind != EntKind::Solid || b.kind != EntKind::Solid {
+        let bad = if a.kind != EntKind::Solid { (what, a) } else { (into, b) };
+        return Err((Code::E080, at, format!("`{}` relates solids, and `{}` is {}",
+            r.word.as_str(), bad.0.root.text, bad.1.kind.a())));
+    }
+    if a.idx == b.idx {
+        return Err((Code::E080, at, format!("`{0} {1} {0}` joins a solid to itself", into.root.text,
+                                            r.word.as_str())));
+    }
+    Ok((a, b))
+}
+
+/// Where the declaration of the solid `name` is written, or nowhere.
+fn declared_at(body: &[&Stmt], name: &str) -> Span {
+    body.iter()
+        .find(|st| matches!(&st.kind, StmtKind::Decl(d)
+                            if d.kind == EntKind::Solid && d.name.key().text == name))
+        .map(|st| st.span)
+        .unwrap_or_default()
 }
 
 /// The pictures the document asks for (§6.11): views and sections of a solid in a plane.
@@ -297,16 +330,13 @@ fn derived(
 /// document says something that is not about any object (§6.9).
 fn made_of_itself(sk: &mut Sketch, body: &[&Stmt], diags: &mut Vec<Diag>) {
     for i in 0..sk.solids.len() {
+        // an empty body nothing joined is said where it is written (`body_rule`)
+        if matches!(&sk.solids[i].def, SolidDef::Body { stock, .. } if *stock as usize == i) {
+            continue;
+        }
         if crate::solid::reaches(sk, i as u32, i as u32) {
             let name = sk.solids[i].name.clone();
-            let at = body
-                .iter()
-                .find(|st| {
-                    matches!(&st.kind, StmtKind::Decl(d)
-                                    if d.kind == EntKind::Solid && d.name.key().text == name)
-                })
-                .map(|st| st.span)
-                .unwrap_or_default();
+            let at = declared_at(body, &name);
             diags.push(Diag::new(
                 Code::E041,
                 at,

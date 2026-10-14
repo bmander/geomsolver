@@ -68,6 +68,11 @@ placement carries inside the blank; CLI test readers zero the offset.
   makes it the body over its own sweep (`program/solids.rs`'s body pass) — the name keeps its
   index, and the sweep moves to a stock of the same name (`SourceMap::also_made`), which
   `operand_paths` gives no step, so `plate.near` stays its name.
+  **An empty body** (§6.9 [0.99], #313): `solid()` is built its own stock (`build::body`), and the
+  body pass, having resolved every statement first, gives it the first `union` naming it in that
+  place before any is joined; with none it is E080 at its declaration, and no statement joins it
+  (nor does `made_of_itself` call it E041).  A solid swept in a `ring` is one solid a copy
+  (`peg[3]`), so a pattern is `repeat n as i { peg[i] union pegs }`.  `tests/solid_lang.rs`.
   **Nothing three-dimensional is solved for past the sketch** (axes and planes are, with the
   sketch).  `EntKind::Face` and `EntKind::Solid` own no `Param`, and every extent is an `Extent`:
   the text written and the number the *flattener* settled.  The strata run one way: the sketch
@@ -80,6 +85,15 @@ placement carries inside the blank; CLI test readers zero the offset.
   every extent, and `unit`.  Every memo lives in `Sketch::caches` (`model::Caches`, one
   `clear()`); a clone keeps every entry, sharing the `Rc`/`Arc` results, and then remembers apart
   — what a copy read slightly changed (`preview_body`, a body's stratum) reuses for its operands.
+  **A boolean takes its operands whole and gives back what it did not cut whole** (`csg.rs`,
+  #313).  Each operand's polygons are clipped against the *other's* tree, never handed back as
+  their own tree cut them (a ring's inner wall's planes cross its caps: 3,600 facets came back as
+  140,000 pieces and fed every later boolean); a polygon whose pieces still cover its area is put
+  back whole (`rejoin`); two operands whose boxes lie apart are concatenated.  A run of unions is
+  one n-ary union (`union_all`: the operands lying apart grouped first, then the two smallest), and
+  `s − a − b − …` is `s` less their union, so a pattern on a large solid builds its tree once.
+  `tests/solid.rs`'s `a_pattern_on_two_rings_is_put_together_once` holds the volume to arithmetic
+  and the pieces to fewer than twice the facets.
   **The classifier must read the facets the candidates are cut from** (against the true circle a
   bore's wall vanishes).  **A BSP prunes what a split loop cannot** (`csg.rs`): splitting every
   facet by every plane goes as the square of the facets.  **No coordinate snap grid**; `EPS`, four

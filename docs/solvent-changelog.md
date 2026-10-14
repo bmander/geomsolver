@@ -4,6 +4,13 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.99] An empty body.** `pegs := solid()` is a body with nothing in its brackets: its stock is
+the first solid in `union` with it (§6.9), so a pattern of solids joins every copy alike,
+`repeat 6 as i { peg[i] union pegs }`, where through 0.98 the first copy had to be written apart as
+the stock (`pegs := solid(peg[0])` and a `repeat` over the other five). `solid()` was E080 ("a
+solid is a face swept … or a body over other solids"); an empty body nothing is in `union` with
+still is, at its declaration, naming the statement that would give it material. (Issue #313.)
+
 **[0.98] A design table's figures carry their units.** Three base dimensions join length and angle
 for values: **mass**, **time** and **current** (§3.3), and the units derived from them may suffix
 a literal (§3.3.1): `745.7W`, `48V`, `255rpm`, `0.85T`, `11.9kPa`. `+`, `-` and a comparison

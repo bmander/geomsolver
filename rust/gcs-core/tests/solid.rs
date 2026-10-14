@@ -91,6 +91,60 @@ fn a_bore_takes_exactly_the_polygon_it_is_faceted_into() {
 }
 
 #[test]
+fn a_pattern_on_two_rings_is_put_together_once() {
+    // issue #313: two rings lying apart and a block bridging them in each of 24 places, each
+    // block 0.5 into each ring — a winding's end turns and its coil sides.  Written as a run of
+    // unions, the kernel built the rings' tree once a union and handed them back in the pieces
+    // that tree had cut them into, so each union started from more: 3,616 facets became 280,000
+    // pieces, and fifty-one unions took a minute.
+    let mut sk = Sketch::new();
+    let outer = circle_face(&mut sk, (0.0, 0.0), 60.0, "outer");
+    let inner = circle_face(&mut sk, (0.0, 0.0), 40.0, "inner");
+    let ring = |sk: &mut Sketch, from: f64, to: f64, name: &str| {
+        let o = prism(sk, outer, from, to, &format!("{name}_o"));
+        let i = prism(sk, inner, from - 1.0, to + 1.0, &format!("{name}_i"));
+        sk.solid(SolidDef::Body { stock: o as u32, on: vec![], through: vec![i as u32], bound: vec![] }, name)
+    };
+    let (near, far) = (ring(&mut sk, -16.0, -10.0, "near"), ring(&mut sk, 10.0, 16.0, "far"));
+    let (n, s) = (24, 6.0);
+    let blocks: Vec<u32> = (0..n)
+        .map(|k| {
+            let t = std::f64::consts::TAU * k as f64 / n as f64;
+            let at = |du: f64, dv: f64| {
+                let (u, v) = (50.0 + du, dv);
+                (u * t.cos() - v * t.sin(), u * t.sin() + v * t.cos())
+            };
+            let h = s / 2.0;
+            let f = poly_face(&mut sk, &[at(-h, -h), at(h, -h), at(h, h), at(-h, h)], &format!("b{k}_f"));
+            prism(&mut sk, f, -10.5, 10.5, &format!("b{k}")) as u32
+        })
+        .collect();
+    let ring_v = (facet_area(60.0, UNIT) - facet_area(40.0, UNIT)) * 6.0;
+    let want = 2.0 * ring_v + n as f64 * s * s * (21.0 - 2.0 * 0.5);
+    let pieces = |sk: &Sketch, body: usize| {
+        let csg = solid::resolve(sk, body, UNIT);
+        gcs_core::csg::boundary(&csg, csg.epsilon())
+    };
+    let rings = sk.solid(SolidDef::Body { stock: near as u32, on: vec![far as u32], through: vec![], bound: vec![] }, "r");
+    let rings = pieces(&sk, rings).len();
+    // the rings first and the blocks after, and the blocks first: a union is one set
+    let mut on: Vec<u32> = std::iter::once(far as u32).chain(blocks.iter().copied()).collect();
+    let rings_first = sk.solid(SolidDef::Body { stock: near as u32, on: on.clone(), through: vec![], bound: vec![] }, "w");
+    on.reverse();
+    let blocks_first = sk.solid(SolidDef::Body { stock: near as u32, on, through: vec![], bound: vec![] }, "v");
+    for body in [rings_first, blocks_first] {
+        let got = pieces(&sk, body);
+        let v = mesh::volume(&got);
+        assert!((v - want).abs() < 1e-9 * want, "two rings and the blocks: want {want}, got {v}");
+        // what no block reaches comes through whole: the blocks add pieces in proportion to their
+        // own six faces, and nothing to the rings' (each 66,000 pieces, its caps' fans clipped by
+        // its bore; 192,634 in all before)
+        let added = got.len() - rings;
+        assert!(added < 10 * 6 * n, "{added} pieces more than the rings' {rings}");
+    }
+}
+
+#[test]
 fn a_flush_bore_and_one_drilled_past_are_the_same_solid() {
     // the coplanar case, and the one a tolerant kernel gets wrong: the bore's cap lands exactly
     // on the block's own face, so a sliver either survives as a face or eats one

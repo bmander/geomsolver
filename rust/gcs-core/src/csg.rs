@@ -136,9 +136,8 @@ struct Poly {
     path: String,
     prim: usize,
     smooth: bool,
-    /// Which node of its tree the polygon came from, while `clip_to` clips a tree's polygons
-    /// as one batch; its pieces keep it.
-    tag: u32,
+    /// Which polygon of a boolean's operands this one is a piece of (`rejoin`); its pieces keep it.
+    src: u32,
 }
 
 impl Poly {
@@ -385,48 +384,6 @@ impl Node {
         out
     }
 
-    /// Every polygon of this tree clipped to `other`, as one batch tagged by the node it came
-    /// from in a fixed walk: what `other` keeps of a polygon owes nothing to the rest of its
-    /// batch, and a node's own pieces come out in the order a clip of its polygons alone gives
-    /// them, so one batch down `other`'s chains does the work of a walk per node.
-    fn clip_to(&mut self, other: &Node, tol: f64) {
-        let mut batch = Vec::new();
-        let mut nodes = 0u32;
-        let mut work: Vec<&mut Node> = vec![&mut *self];
-        while let Some(node) = work.pop() {
-            for mut p in std::mem::take(&mut node.polys) {
-                p.tag = nodes;
-                batch.push(p);
-            }
-            nodes += 1;
-            let Node { front, back, .. } = node;
-            if let Some(b) = back.as_deref_mut() {
-                work.push(b);
-            }
-            if let Some(f) = front.as_deref_mut() {
-                work.push(f);
-            }
-        }
-        let mut pieces: Vec<Vec<Poly>> = (0..nodes).map(|_| Vec::new()).collect();
-        for p in other.clip(batch, tol) {
-            let at = p.tag as usize;
-            pieces[at].push(p);
-        }
-        let mut at = 0;
-        let mut work: Vec<&mut Node> = vec![self];
-        while let Some(node) = work.pop() {
-            node.polys = std::mem::take(&mut pieces[at]);
-            at += 1;
-            let Node { front, back, .. } = node;
-            if let Some(b) = back.as_deref_mut() {
-                work.push(b);
-            }
-            if let Some(f) = front.as_deref_mut() {
-                work.push(f);
-            }
-        }
-    }
-
     fn invert(&mut self) {
         let mut work: Vec<&mut Node> = vec![self];
         while let Some(node) = work.pop() {
@@ -445,22 +402,6 @@ impl Node {
                 work.push(f);
             }
         }
-    }
-
-    /// Every polygon in the tree, each node's before its front subtree's before its back's.
-    fn all(&self) -> Vec<Poly> {
-        let mut v = Vec::new();
-        let mut work: Vec<&Node> = vec![self];
-        while let Some(node) = work.pop() {
-            v.extend(node.polys.iter().cloned());
-            if let Some(b) = &node.back {
-                work.push(b);
-            }
-            if let Some(f) = &node.front {
-                work.push(f);
-            }
-        }
-        v
     }
 }
 
@@ -777,55 +718,180 @@ impl Drop for Node {
     }
 }
 
-fn union(a: Vec<Poly>, b: Vec<Poly>, tol: f64) -> Vec<Poly> {
+/// The operands of a run of unions, in order, each something other than a union.
+fn summands<'t>(t: &'t crate::solid::Term, out: &mut Vec<&'t crate::solid::Term>) {
+    use crate::solid::Term;
+    let mut work = vec![t];
+    while let Some(t) = work.pop() {
+        match t {
+            Term::Union(a, b) => work.extend([b.as_ref(), a.as_ref()]),
+            t => out.push(t),
+        }
+    }
+}
+
+/// **The union of many solids.**  A union is associative and commutative, and a tree is built
+/// of each operand it takes, so the order is chosen.  Operands lying apart are joined first, for
+/// nothing (each, smallest first, into the first group it lies apart from); then the groups two
+/// smallest first.  A pattern of fifty small pieces on two large rings builds the rings' tree
+/// once, not fifty times.  Ties go in written order.
+fn union_all(parts: Vec<Vec<Poly>>, tol: f64) -> Vec<Poly> {
+    use std::cmp::Reverse;
+    let mut order: Vec<usize> = (0..parts.len()).collect();
+    order.sort_by_key(|&i| parts[i].len());
+    let mut parts: Vec<Option<Vec<Poly>>> = parts.into_iter().map(Some).collect();
+    let mut groups: Vec<(Vec<Poly>, Box3)> = Vec::new();
+    for i in order {
+        let p = parts[i].take().expect("each operand once");
+        let reach = reach_of(&p, tol);
+        match groups.iter_mut().find(|(_, r)| !r.overlaps(&reach)) {
+            Some((g, r)) => {
+                g.extend(p);
+                r.add(reach.lo);
+                r.add(reach.hi);
+            }
+            None => groups.push((p, reach)),
+        }
+    }
+    let mut slots: Vec<Option<Vec<Poly>>> = groups.into_iter().map(|(g, _)| Some(g)).collect();
+    let mut heap: std::collections::BinaryHeap<Reverse<(usize, usize)>> =
+        slots.iter().enumerate().map(|(i, p)| Reverse((p.as_ref().map_or(0, Vec::len), i))).collect();
+    loop {
+        let Some(Reverse((_, i))) = heap.pop() else { return Vec::new() };
+        let a = slots[i].take().expect("a live operand");
+        let Some(Reverse((_, j))) = heap.pop() else { return a };
+        let b = slots[j].take().expect("a live operand");
+        let (a, b) = if i < j { (a, b) } else { (b, a) };
+        let merged = union(a, b, tol);
+        let at = slots.len();
+        heap.push(Reverse((merged.len(), at)));
+        slots.push(Some(merged));
+    }
+}
+
+/// The box around a batch, grown by the tolerance its planes are judged at.
+fn reach_of(polys: &[Poly], tol: f64) -> Box3 {
+    let mut b = Box3::empty();
+    for p in polys {
+        for &v in &p.pts {
+            b.add(v);
+        }
+    }
+    b.grown(tol)
+}
+
+/// Whether two batches lie apart: no point of one is within the tolerance of the other's box,
+/// so neither can cut, clip or hide any part of the other.
+fn apart(a: &[Poly], b: &[Poly], tol: f64) -> bool {
+    !reach_of(a, tol).overlaps(&reach_of(b, tol))
+}
+
+/// What share of a polygon's area its pieces may miss and it still count as having come through
+/// a boolean whole: rounding over the pieces' sums, far below any sliver the cut would mean.
+const WHOLE: f64 = 1e-9;
+
+/// The operands of a boolean, each polygon marked with its place among them, and a copy of them
+/// to `rejoin` the pieces to.
+fn mark(a: &mut [Poly], b: &mut [Poly]) -> Vec<Poly> {
+    for (i, p) in a.iter_mut().chain(b.iter_mut()).enumerate() {
+        p.src = i as u32;
+    }
+    a.iter().chain(b.iter()).cloned().collect()
+}
+
+/// **A polygon that comes through whole is put back whole.**  A clip splits a polygon by every
+/// plane of the other tree it reaches, and a plane reaches far past the face it was taken from (a
+/// block's side crosses the whole of a ring it stands on), so a boolean hands back pieces where
+/// nothing was taken away, and the next boolean builds its tree over the pieces.  Where a
+/// polygon's pieces still cover all of its area, it is the polygon, facing the way they do, in
+/// the place of the first of them.
+fn rejoin(out: Vec<Poly>, inputs: Vec<Poly>) -> Vec<Poly> {
+    let area = |p: &Poly| plane::norm(crate::solid::area_vector(&p.pts));
+    let mut kept = vec![0.0; inputs.len()];
+    for p in &out {
+        kept[p.src as usize] += area(p);
+    }
+    let whole: Vec<bool> = inputs.iter().zip(&kept).map(|(p, &k)| k >= area(p) * (1.0 - WHOLE)).collect();
+    let mut inputs: Vec<Option<Poly>> = inputs.into_iter().map(Some).collect();
+    let mut res = Vec::with_capacity(out.len());
+    for p in out {
+        let i = p.src as usize;
+        if !whole[i] {
+            res.push(p);
+        } else if let Some(mut q) = inputs[i].take() {
+            if plane::dot(q.n, p.n) < 0.0 {
+                q.flip();
+            }
+            res.push(q);
+        }
+    }
+    res
+}
+
+/// Every polygon of a batch turned to face the other way.
+fn flipped(mut polys: Vec<Poly>) -> Vec<Poly> {
+    for p in polys.iter_mut() {
+        p.flip();
+    }
+    polys
+}
+
+/// The tree of a batch, built over a copy: a tree splits the polygons it holds by its own planes,
+/// so each operand is clipped as it came and its tree only asked.
+fn tree_of(polys: &[Poly], tol: f64) -> Node {
+    Node::new(polys.to_vec(), tol)
+}
+
+// The three booleans are Laidlaw's classification as a BSP answers it (after Evan Wallace's
+// csg.js): each operand's polygons are clipped to what lies outside (or, under the other's
+// inverted tree, inside) the other, and of two coplanar faces one survives.
+
+fn union(mut a: Vec<Poly>, mut b: Vec<Poly>, tol: f64) -> Vec<Poly> {
     if a.is_empty() {
         return b;
     }
     if b.is_empty() {
         return a;
     }
-    let mut na = Node::new(a, tol);
-    let mut nb = Node::new(b, tol);
-    na.clip_to(&nb, tol);
-    nb.clip_to(&na, tol);
-    nb.invert();
-    nb.clip_to(&na, tol);
-    nb.invert();
-    na.build(nb.all(), tol);
-    na.all()
-}
-
-fn difference(a: Vec<Poly>, b: Vec<Poly>, tol: f64) -> Vec<Poly> {
-    if a.is_empty() || b.is_empty() {
+    // two solids apart are their two boundaries, untouched: a tree of either would only
+    // fragment the other by planes that cross no material of its own
+    if apart(&a, &b, tol) {
+        a.extend(b);
         return a;
     }
-    let mut na = Node::new(a, tol);
-    let mut nb = Node::new(b, tol);
-    na.invert();
-    na.clip_to(&nb, tol);
-    nb.clip_to(&na, tol);
-    nb.invert();
-    nb.clip_to(&na, tol);
-    nb.invert();
-    na.build(nb.all(), tol);
-    na.invert();
-    na.all()
+    let inputs = mark(&mut a, &mut b);
+    let (ta, tb) = (tree_of(&a, tol), tree_of(&b, tol));
+    // A outside B, and B outside A less its faces lying on A's facing A's way
+    let mut out = tb.clip(a, tol);
+    out.extend(flipped(ta.clip(flipped(ta.clip(b, tol)), tol)));
+    rejoin(out, inputs)
 }
 
-fn intersection(a: Vec<Poly>, b: Vec<Poly>, tol: f64) -> Vec<Poly> {
-    if a.is_empty() || b.is_empty() {
+fn difference(mut a: Vec<Poly>, mut b: Vec<Poly>, tol: f64) -> Vec<Poly> {
+    if a.is_empty() || b.is_empty() || apart(&a, &b, tol) {
+        return a;
+    }
+    let inputs = mark(&mut a, &mut b);
+    let (mut ta, tb) = (tree_of(&a, tol), tree_of(&b, tol));
+    ta.invert();
+    // A outside B, and B inside A turned to face into it, less its faces lying on A's
+    let mut out = flipped(tb.clip(flipped(a), tol));
+    out.extend(ta.clip(flipped(ta.clip(b, tol)), tol));
+    rejoin(out, inputs)
+}
+
+fn intersection(mut a: Vec<Poly>, mut b: Vec<Poly>, tol: f64) -> Vec<Poly> {
+    if a.is_empty() || b.is_empty() || apart(&a, &b, tol) {
         return Vec::new();
     }
-    let mut na = Node::new(a, tol);
-    let mut nb = Node::new(b, tol);
-    na.invert();
-    nb.clip_to(&na, tol);
-    nb.invert();
-    na.clip_to(&nb, tol);
-    nb.clip_to(&na, tol);
-    na.build(nb.all(), tol);
-    na.invert();
-    na.all()
+    let inputs = mark(&mut a, &mut b);
+    let (mut ta, mut tb) = (tree_of(&a, tol), tree_of(&b, tol));
+    ta.invert();
+    tb.invert();
+    // A inside B, and B inside A less its faces lying on A's facing A's way
+    let mut out = flipped(tb.clip(flipped(a), tol));
+    out.extend(flipped(ta.clip(flipped(ta.clip(b, tol)), tol)));
+    rejoin(out, inputs)
 }
 
 /// Common material, evaluated in one local frame. Boundary sampling cannot find all crossings.
@@ -874,16 +940,29 @@ fn polys_of(csg: &Csg, t: &crate::solid::Term, tol: f64, origin: [f64; 3]) -> Ve
                         path: path_of(prim, f),
                         prim: *i,
                         smooth: f.smooth,
-                        tag: 0,
+                        src: 0,
                     }
                 })
                 .collect()
         }
-        Term::Union(a, b) => {
-            union(polys_of(csg, a, tol, origin), polys_of(csg, b, tol, origin), tol)
+        Term::Union(..) => {
+            let mut parts = Vec::new();
+            summands(t, &mut parts);
+            union_all(parts.into_iter().map(|t| polys_of(csg, t, tol, origin)).collect(), tol)
         }
-        Term::Diff(a, b) => {
-            difference(polys_of(csg, a, tol, origin), polys_of(csg, b, tol, origin), tol)
+        Term::Diff(..) => {
+            // `s − a − b − …` is `s` less everything that cuts it, at once
+            let (mut stock, mut cuts) = (t, Vec::new());
+            while let Term::Diff(a, b) = stock {
+                cuts.push(b.as_ref());
+                stock = a;
+            }
+            let mut tools = Vec::new();
+            for b in cuts.into_iter().rev() {
+                summands(b, &mut tools);
+            }
+            let tools = union_all(tools.into_iter().map(|t| polys_of(csg, t, tol, origin)).collect(), tol);
+            difference(polys_of(csg, stock, tol, origin), tools, tol)
         }
         Term::Inter(a, b) => {
             intersection(polys_of(csg, a, tol, origin), polys_of(csg, b, tol, origin), tol)
@@ -924,7 +1003,7 @@ pub(crate) fn contains_boundary(b: &Csg, a: &[Piece], eps: f64) -> bool {
         let pts: Vec<_> = p.pts.iter().map(|v| {
             [v[0] - origin[0], v[1] - origin[1], v[2] - origin[2]]
         }).collect();
-        Poly { w: plane::dot(p.n, pts[0]), pts, n: p.n, path: p.path.clone(), prim: p.prim, smooth: p.smooth, tag: 0 }
+        Poly { w: plane::dot(p.n, pts[0]), pts, n: p.n, path: p.path.clone(), prim: p.prim, smooth: p.smooth, src: 0 }
     }).collect();
     let tol = eps * 1e-3;
     let remainder = difference(ap, polys_of(b, &b.term, tol, origin), tol);

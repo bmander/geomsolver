@@ -118,6 +118,7 @@ NAME := face(EDGE, ..., holes: LOOP)    a planar region                         
 NAME := solid(FACE, SWEEP...)           a face swept: depth:/from:/to:/through:, about:, along:
 NAME := solid(Comp(ARGS).FACE over F in (E, E))   a face family: the face as the formal F runs
 NAME := solid(SOLID) | solid(SET)       a body over a stock; the points of a region
+NAME := solid()                         an empty body: what is in `union` with it (0.99)
 NAME := solid(SOLID, under: MOTION, at: E | from: E, to: E | through: BODY)   placed by, or swept through, a motion
 REF union REF | REF cut REF | REF common REF  material added to, removed from, shared with a body
 NAME := motion | envelope | meshing | surface | patch | seam | vertex | edge(...)    (1.15)
@@ -1262,6 +1263,23 @@ bore cut body
 - **`tip common body`** keeps only what the body has in common with `tip`. Union comes first;
   `cut` and `common` commute. (Through 0.84 the word was `bound`, now refused: a bound is a
   dimension that chooses a root, §1.11.)
+- **A pattern of solids** (0.99). A solid declared inside a `ring` is one solid a copy, each
+  reached by its index (`peg[3]`), as a point of the ring is. To join every copy alike, start from
+  an empty body — its first `union` is its stock — or cut each from the body:
+
+  ```
+  ring 6 about std.origin {
+    …                                     // c on a circle, hole := circle(center: c) …
+    peg := solid(face(hole), from: 0mm, to: 10mm)
+  }
+  pegs := solid()
+  repeat 6 as i {
+    peg[i] union pegs
+  }
+  ```
+
+  `peg[i] cut plate` in the same `repeat` cuts each from a body instead. `solid()` with nothing in
+  `union` with it is E080. Faces are reached through the copies, `pegs.peg.near`.
 - **Name intermediates the sets cannot express.** A boss standing in a pocket's floor is not
   `pocket cut body` + `boss union body` — that is stock ∪ boss − pocket, and the pocket eats the
   boss. Name the pocketed shell, then add the boss to it:

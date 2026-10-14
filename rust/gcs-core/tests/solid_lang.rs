@@ -282,6 +282,65 @@ fn a_body_keeps_what_it_has_in_common_with_each_solid() {
     refused(&format!("{stock}body := solid(stock)\nbore bound body\n"), Code::E100, "now `common`: write `X common B`");
 }
 
+/// Six pegs round a circle, one solid a copy of a `ring`: `peg[0]` … `peg[5]`.
+const PEGS: &str = "\
+unit mm
+use std
+in std.front {
+construction datum := line(std.origin, hint((50, 0)))
+horizontal datum
+length(50mm) datum
+ring 6 about std.origin {
+c := point hint((30, 0))
+std.origin distance(30mm) c
+hole := circle(center: c) hint(r: 4)
+radius(4mm) hole
+private construction radial := line(std.origin, c)
+peg := solid(face(hole), from: 0mm, to: 10mm)
+}
+radial[0] angle(0deg) datum
+plate := circle(center: std.origin) hint(r: 40)
+radius(40mm) plate
+disc := solid(face(plate), from: 0mm, to: 5mm)
+}
+";
+
+#[test]
+fn an_empty_body_is_what_is_in_union_with_it() {
+    // issue #313: a pattern of solids joined into one body, every copy alike — `solid()` is the
+    // body with nothing in it yet, and its first `union` takes the stock's place
+    let one = volume(&read(&format!("{PEGS}one := solid(peg[0])\n")), "one");
+    // a solid swept in a ring is one solid a copy, each reached by its index
+    assert_volume_near(volume(&read(&format!("{PEGS}three := solid(peg[3])\n")), "three"), one);
+    let empty = format!("{PEGS}pegs := solid()\nrepeat 6 as i {{\npeg[i] union pegs\n}}\n");
+    let e = read(&empty);
+    assert_volume_near(volume(&e, "pegs"), 6.0 * one);
+    // the same body as the first copy written as its stock
+    let first = format!("{PEGS}pegs := solid(peg[0])\nrepeat 5 as i {{\npeg[i + 1] union pegs\n}}\n");
+    assert_volume_near(volume(&read(&first), "pegs"), volume(&e, "pegs"));
+    // the unions are a set: written before the body, they make the same one
+    let before = format!("{PEGS}repeat 6 as i {{\npeg[i] union pegs\n}}\npegs := solid()\n");
+    assert_volume_near(volume(&read(&before), "pegs"), volume(&e, "pegs"));
+    // its faces are reached through the copies, as through any operand
+    let p = gcs_core::report::positions(&e.sketch, &e.map);
+    assert!(p.iter().any(|(k, _)| k == "pegs.peg.near.area"), "{p:?}");
+    // and it is cut as any body is: the disc takes the bottom half of every peg
+    let cut = read(&format!("{empty}disc cut pegs\n"));
+    assert_volume_near(volume(&cut, "pegs"), 3.0 * one);
+    // a body nothing is in `union` with is nothing, said at its declaration, and once
+    refused(&format!("{PEGS}pegs := solid()\n"), Code::E080, "`pegs` is an empty body");
+    refused(&format!("{PEGS}pegs := solid()\ndisc cut pegs\n"), Code::E080, "nothing is in `union` with it");
+    let (prog, _) = parse(&format!("{PEGS}pegs := solid()\ndisc cut pegs\n"));
+    let diags = elaborate(&prog).diags;
+    assert!(!diags.iter().any(|d| d.code == Code::E041), "an empty body is not made of itself: {diags:?}");
+    refused(&format!("{PEGS}a := solid()\nb := solid()\na union b\nb union a\n"), Code::E041, "made of itself");
+    refused(&format!("{PEGS}a := solid()\na union a\n"), Code::E080, "`a union a` joins a solid to itself");
+}
+
+fn assert_volume_near(got: f64, want: f64) {
+    assert!((got - want).abs() <= 1e-9 * want.abs(), "{got} != {want}");
+}
+
 #[test]
 fn a_boss_is_united_with_its_body() {
     // `union` is the body rule's own word (§6.9); `on` is a constraint and relates no solids

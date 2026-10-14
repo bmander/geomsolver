@@ -104,7 +104,7 @@ pub(super) fn build_solid(
             let face = one_face(&ops, st, &mut say)?;
             revolve(sk, res, face, (axis, sweep.as_ref(), *sense), st, &mut say)?
         }
-        Sweep::Body => body(&ops, kids, st, &mut say)?,
+        Sweep::Body => body(&ops, kids, sk.solids.len(), st, &mut say)?,
         Sweep::Family(f) => family(sk, res, f, &ops, st, &mut say)?,
     };
     let i = sk.solid(def, &d.name.key().text);
@@ -397,10 +397,13 @@ fn revolve(
     Some(SolidDef::Revolve { face, axis: ax, sweep: turn, sense })
 }
 
-/// A body over other solids: the first its stock, the rest in `union` with it.
+/// A body over other solids: the first its stock, the rest in `union` with it.  **An empty body**,
+/// `solid()` (§6.9 [0.99]), is made its own stock, which is no solid's: `body_rule` gives it its
+/// first `union` in that solid's place, before any statement is joined.
 fn body(
     ops: &[EntRef],
     kids: &[Kid],
+    own: usize,
     st: &Stmt,
     say: &mut impl FnMut(Code, Span, String),
 ) -> Option<SolidDef> {
@@ -420,15 +423,10 @@ fn body(
         }
         solids.push(e.idx);
     }
+    // `solid()`: nothing in the brackets, so nothing the body is made of yet
     let Some((stock, on)) = solids.split_first() else {
-        say(
-            Code::E080,
-            st.span,
-            "a solid is a face swept (`from:`/`to:`, `depth:`, `about:`) or a body over \
-             other solids"
-                .into(),
-        );
-        return None;
+        let own = own as u32;
+        return Some(SolidDef::Body { stock: own, on: Vec::new(), through: Vec::new(), bound: Vec::new() });
     };
     Some(SolidDef::Body { stock: *stock, on: on.to_vec(), through: Vec::new(), bound: Vec::new() })
 }
