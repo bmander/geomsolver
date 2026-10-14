@@ -20,7 +20,7 @@ pub(crate) use meridian::face_polys;
 /// The meridian of region solid `solid`, from its terms as the drawing stands: refused where its
 /// terms share no axis (a ball off it, a cone about another line, a plane not square to it),
 /// where they leave no material, or where they leave material without end.  Remembered against
-/// what it reads (`Sketch::meridian_cache`).
+/// what it reads (`Caches::meridian`).
 pub fn meridian(sk: &Sketch, solid: usize) -> Result<Rc<Meridian>, String> {
     folded(sk, solid).map_err(|r| r.why)
 }
@@ -36,13 +36,13 @@ fn folded(sk: &Sketch, solid: usize) -> Result<Rc<Meridian>, Refusal> {
     } else {
         super::MemoKey::of(sk, solid)
     };
-    sk.meridian_cache.get_or(solid, key, || meridian::fold(sk, solid).map(Rc::new))
+    sk.caches.meridian.get_or(solid, key, || meridian::fold(sk, solid).map(Rc::new))
 }
 
 /// Region solid `solid` read in general position, where its meridian refused for a reason a
 /// reading point by point answers (its terms share no axis): that reading, or why it is none.
 /// `None` where the meridian reads it or refuses it outright.  Remembered against what it reads
-/// (`Sketch::general_cache`): its own terms and the strata of the bodies whose faces it reads
+/// (`Caches::general`): its own terms and the strata of the bodies whose faces it reads
 /// (`faces::cached`'s), as `lowering::lowered` keys its own — a key over the bodies' every term
 /// walks each other round of them, for each (#197).
 pub(crate) fn in_general_position(sk: &Sketch, solid: usize)
@@ -54,7 +54,7 @@ pub(crate) fn in_general_position(sk: &Sketch, solid: usize)
         Ok(strata) => super::MemoKey::own(sk, solid, strata),
         Err(_) => super::MemoKey::of(sk, solid),
     };
-    sk.general_cache.get_or(solid, key, || match folded(sk, solid) {
+    sk.caches.general.get_or(solid, key, || match folded(sk, solid) {
         Ok(_) => None,
         Err(r) if r.outright => None,
         Err(_) => Some(general(sk, solid)),
@@ -124,8 +124,8 @@ impl Route {
 }
 
 /// Region solid `solid`'s `Route`; refused where it is not read at all (`readable`'s refusal), or
-/// is no region.  Each construction is remembered where it is built (`meridian_cache`,
-/// `general_cache`, `lowering_cache`, `bounded_cache`).
+/// is no region.  Each construction is remembered where it is built (`Caches::meridian`,
+/// `Caches::general`, `Caches::lowering`, `Caches::bounded`).
 pub fn route(sk: &Sketch, solid: usize) -> Result<Route, String> {
     let s = sk.solids.get(solid).ok_or("no such solid")?;
     let SolidDef::Region { terms, .. } = &s.def else {

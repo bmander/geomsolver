@@ -166,7 +166,7 @@ of 0°/180° is E040 by value (`program/relations.rs`). `tests/axis.rs` is the g
   statements; only header and brace are the block's (`Program::in_blocks`, spliced by
   `remove`).  Printers spell no clause a statement did not write; a membership edit on a
   block-stamped declaration is refused with the cause.  Top level only.  **An instance joins a
-  view whole** (`t := Tooth(…) in top`): the flattener stamps it (`Scope::in_plane`,
+  view whole** (`t := Tooth(…) in top`): the flattener stamps it (`Stamps::plane`,
   `stamp_scope_plane`, the ref resolved with the prefixes of the scope it was written in, #45.4),
   skipping datum and curve kinds and refusing a plane given twice.  `add_rectangle` takes the
   plane.  Not commutative (`same_args` swaps only the first two entity slots).  `cgraph` leaves it

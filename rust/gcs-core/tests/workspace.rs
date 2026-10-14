@@ -5,29 +5,12 @@ use gcs_core::model::{EntKind, EntRef, Sketch};
 use gcs_core::overview::workspace::{
     apply, look_at, nearest_point, overlapping, panes_at, pick, space_points, unseen, Projection,
 };
-use gcs_core::{callout, library, program};
+use gcs_core::{callout, program};
 use std::f64::consts::{FRAC_PI_2, PI};
-
-fn build(src: &str) -> program::Elaborated {
-    let (p, errors, linked) = library::parse_linked(src);
-    assert!(errors.is_empty() && linked.is_empty(), "{errors:?} {linked:?}");
-    let mut e = program::elaborate(&p);
-    assert!(e.ok(), "{:?}", e.diags);
-    assert!(gcs_core::solve::solve(&mut e.sketch, Default::default()).success);
-    e
-}
+use crate::common::gestures::{build, seen};
 
 fn close(a: (f64, f64), b: (f64, f64)) {
     assert!((a.0 - b.0).hypot(a.1 - b.1) < 1e-9, "{a:?} != {b:?}");
-}
-
-/// The eye's picture-plane coordinates of a point in space, written out from `overview::eye`'s
-/// convention: the viewer at (cos az cos el, sin az cos el, sin el), looking at the origin.
-fn seen(x: [f64; 3], az: f64, el: f64) -> (f64, f64) {
-    let right = [-az.sin(), az.cos(), 0.0];
-    let up = [-az.cos() * el.sin(), -az.sin() * el.sin(), el.cos()];
-    let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-    (dot(right, x), dot(up, x))
 }
 
 fn plane(e: &program::Elaborated, name: &str) -> usize {

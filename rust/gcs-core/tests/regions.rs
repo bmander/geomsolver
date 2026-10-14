@@ -4,17 +4,10 @@
 
 use gcs_core::edit::{self, SolidSweep};
 use gcs_core::overview::region::{region_at, written};
-use gcs_core::program::{self, Elaborated};
+use gcs_core::program::Elaborated;
 use gcs_core::library;
 use std::collections::BTreeSet;
-
-fn build(src: &str) -> Elaborated {
-    let (p, errors, linked) = library::parse_linked(src);
-    assert!(errors.is_empty() && linked.is_empty(), "{errors:?} {linked:?}\n{src}");
-    let e = program::elaborate(&p);
-    assert!(e.ok(), "{:?}\n{src}", e.errors().map(|d| d.message.clone()).collect::<Vec<_>>());
-    e
-}
+use crate::common::read as build;
 
 /// A square of four named lines on the front, `n` its prefix, from (x, y) with side `s`.
 fn square(n: &str, x: f64, y: f64, s: f64) -> String {

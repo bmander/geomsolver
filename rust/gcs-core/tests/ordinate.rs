@@ -5,25 +5,12 @@
 //! solved, the form each reading takes, the freedoms each removes, the words it is refused in,
 //! and the spelling it is read back with.
 use gcs_core::constraints::{CKind, OrdinateForm};
-use gcs_core::diagnose::{diagnose, DiagnoseOptions};
 use gcs_core::io;
 use gcs_core::model::Sketch;
 use gcs_core::program::Elaborated;
-use gcs_core::solve::{solve, SolveOpts};
 use gcs_core::space::{dot, sub};
 
-use crate::common::{ent, read, refused};
-
-fn solved(e: &Elaborated) -> Sketch {
-    let mut sk = e.sketch.clone();
-    let r = solve(&mut sk, SolveOpts::default());
-    assert!(r.success, "{}", r.message);
-    sk
-}
-
-fn dof(sk: &mut Sketch) -> i64 {
-    diagnose(sk, DiagnoseOptions::default()).dof
-}
+use crate::common::{dof, ent, read, refused, said, solved};
 
 /// Where the point the document calls `n` stands in space, as solved.
 fn at(e: &Elaborated, sk: &Sketch, n: &str) -> [f64; 3] {
@@ -33,15 +20,6 @@ fn at(e: &Elaborated, sk: &Sketch, n: &str) -> [f64; 3] {
 /// The form of every ordinate and level the document states, in statement order.
 fn forms(e: &Elaborated) -> Vec<(CKind, OrdinateForm)> {
     e.sketch.user_constraints().iter().filter_map(|c| Some((c.kind, c.form()?))).collect()
-}
-
-/// Each statement as `describe` reads it back, in the document's own names.
-fn said(e: &Elaborated) -> Vec<String> {
-    e.sketch
-        .user_constraints()
-        .iter()
-        .map(|c| io::describe_with(c, &|r| e.map.name_of(r).cloned()))
-        .collect()
 }
 
 const VIEWS: &str = "\

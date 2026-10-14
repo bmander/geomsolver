@@ -42,8 +42,9 @@ as the entry points. All child modules are private.
 | `src/model.rs` | 2,704 | 230 | Sketch storage, presentation and public re-exports |
 | `src/flatten.rs` | 2,192 | 322 | Expansion state, limits, entry points and diagnostics |
 
-`model/` separates entity metadata (`entities.rs`), spatial records and evaluated-solid
-access (`spatial.rs`), geometry/constraint construction (`construction.rs`), parameter
+`model/` separates entity metadata (`entities.rs`), spatial records (`solids.rs`), region
+terms (`region.rs`) and evaluated-solid access (`solid_eval.rs`; these three were `spatial.rs`
+until it grew past a thousand lines), geometry/constraint construction (`construction.rs`), parameter
 ownership and scaling (`parameters.rs`), topology (`topology.rs`), curve sampling and
 its cache (`curves.rs`), solved geometry and bounds (`geometry.rs`), and measurement
 and picking (`measure.rs`). These modules range from 209 to 453 lines.

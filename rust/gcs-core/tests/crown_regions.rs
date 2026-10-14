@@ -15,18 +15,7 @@ use gcs_core::space::{dot, sub};
 use std::f64::consts::PI;
 use std::sync::Mutex;
 
-use crate::common::{ends, ent, off_line, read, unit};
-
-fn solved(src: &str) -> Elaborated {
-    let mut e = read(src);
-    let r = solve(&mut e.sketch, SolveOpts::default());
-    assert!(r.success, "{}\n{src}", r.message);
-    e
-}
-
-fn at(e: &Elaborated, n: &str) -> [f64; 3] {
-    e.sketch.world_point(ent(e, n).i())
-}
+use crate::common::{at, ends, ent, off_line, read, text::solved, unit};
 
 /// An axis up the front plane's `z` through the origin, and a point 20 from it at height 10.
 const AXIS: &str = "\

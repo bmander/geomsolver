@@ -328,8 +328,8 @@ impl Section {
 
 /// Region solid `solid`'s lowering, its pieces (none where it holds nowhere): `None` where no
 /// entry recognises it (it stays the field's), else what it is built as or why the entry that
-/// recognised it refuses it. Remembered against its own terms (`document::reads_own`) and the
-/// stratum it reads, `faces::cached`'s (`Sketch::lowering_cache`): a body rounded all over has
+/// recognised it refuses it. Remembered against its own terms (`reads::reads_own`) and the
+/// stratum it reads, `faces::cached`'s (`Caches::lowering`): a body rounded all over has
 /// hundreds of regions, each reading one body, and a key over the body's every term would walk
 /// them all for each.
 pub fn lowered(sk: &Sketch, solid: usize) -> Option<Result<Rc<Vec<Piece>>, String>> {
@@ -340,7 +340,7 @@ pub fn lowered(sk: &Sketch, solid: usize) -> Option<Result<Rc<Vec<Piece>>, Strin
         Err(e) => return Some(Err(e)),
     };
     let key = super::MemoKey::own(sk, solid, vec![body.clone()]);
-    Some(sk.lowering_cache.get_or(solid, key, || piece::build(&body, &faces, section).and_then(|pieces| {
+    Some(sk.caches.lowering.get_or(solid, key, || piece::build(&body, &faces, section).and_then(|pieces| {
         gate(sk, solid, &pieces, &body, || beside_edges(&body, &faces, section))?;
         Ok(Rc::new(pieces))
     })))
@@ -391,7 +391,7 @@ fn gate(sk: &Sketch, solid: usize, pieces: &[Piece], body: &super::faces::BodyFa
         // in the stratum's own frame (millimetres about its origin), as the recipe builds it: the
         // lowered node, rolled against the stratum standing in its built set
         let (stratum, mm, origin) = body.brep();
-        let mut node = super::cad::shifted_node(&assemble(pieces).node(mm)?, scale(origin, mm));
+        let mut node = assemble(pieces).node(&crate::brep::recipe::Writer::about(mm, scale(origin, mm)))?;
         node.set("stratum", object([("kind", "body".into()), ("stock", 0.into()), ("on", Json::Arr(vec![])),
             ("cut", Json::Arr(vec![])), ("bound", Json::Arr(vec![]))]));
         let built = std::collections::BTreeMap::from([(0, stratum.clone())]);

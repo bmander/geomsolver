@@ -7,7 +7,7 @@ use crate::fmath::Det;
 use super::geom::{tolerance,BSpline,Blend,Carry,Curve,Frame,Rigid,Surface,Uv,V};
 use std::sync::Arc;
 use super::topo::{reverse_loop,Brep,Coedge,EdgeCurve,Face,Pcurve};
-use super::vec3;
+use super::recipe::Writer;
 use crate::json::Json;
 use crate::space::{add,cross,distance,dot,norm,scale,sub,unit};
 
@@ -44,56 +44,58 @@ impl Profile {
     /// The name of loop `l`'s edge `k`, or nothing.
     pub fn name(&self,l: usize,k: usize) -> String { self.names.get(l).and_then(|n| n.get(k)).cloned().unwrap_or_default() }
     /// From a recipe's `profile` (millimetres).
-    pub fn from_json(j: &Json) -> Result<Profile,String> {
-        fn field<'a>(j: &'a Json,k: &str) -> Result<&'a Json,String> { super::field(j,k,"profile") }
+    pub fn from_json(j: &Json) -> Result<Profile,String> { Profile::of(&super::recipe::Section::read(j)?) }
+    /// A recipe's profile as this kernel reads it (millimetres): each arc's angles as the span it
+    /// turns through counter-clockwise, its normal made unit.
+    pub fn of(s: &super::recipe::Section) -> Result<Profile,String> {
+        use super::recipe::Stroke;
         let mut loops = Vec::new();
         let mut names = Vec::new();
-        for l in field(j,"loops")?.arr() {
+        for l in &s.loops {
             let mut edges = Vec::new();
-            names.push(l.arr().iter().map(|e| e.get("name").map_or(String::new(),|n| n.as_str().to_string())).collect());
-            for e in l.arr() {
-                edges.push(match field(e,"kind")?.as_str() {
-                    "line" => ProfileEdge::Line {a:vec3(field(e,"start")?),b:vec3(field(e,"end")?)},
-                    "circle" => {
-                        let frame = Frame::new(vec3(field(e,"center")?),vec3(field(e,"normal")?),vec3(field(e,"x_dir")?));
-                        let span = e.get("angles").map(|a| {
-                            let (a0,a1) = (a.arr()[0].as_f64(),a.arr()[1].as_f64());
+            names.push(l.iter().map(|e| e.name.clone()).collect());
+            for e in l {
+                edges.push(match &e.shape {
+                    &Stroke::Line {start,end} => ProfileEdge::Line {a:start,b:end},
+                    &Stroke::Circle {center,normal,x_dir,radius,angles} => {
+                        let frame = Frame::new(center,normal,x_dir);
+                        let span = angles.map(|[a0,a1]| {
                             let sweep = (a1-a0).rem_euclid(TAU);
                             [a0,a0+if sweep == 0. { TAU } else { sweep }]
                         });
-                        ProfileEdge::Arc {frame,r:field(e,"radius")?.as_f64(),span}
+                        ProfileEdge::Arc {frame,r:radius,span}
                     }
-                    "bspline" => {
-                        let poles = field(e,"poles")?.arr().iter().map(vec3).collect();
-                        let knots = field(e,"knots")?.arr().iter().map(|k| k.as_f64()).collect();
-                        let degree = field(e,"degree")?.as_f64() as usize;
-                        let b = match e.get("weights") {
-                            Some(w) => BSpline::rational(degree,knots,poles,w.arr().iter().map(|x| x.as_f64()).collect()),
+                    Stroke::BSpline {degree,knots,poles,weights} => {
+                        let (degree,knots,poles) = (*degree,knots.clone(),poles.clone());
+                        let b = match weights {
+                            Some(w) => BSpline::rational(degree,knots,poles,w.clone()),
                             None => BSpline::new(degree,knots,poles),
                         };
                         ProfileEdge::Spline(Arc::new(b.map_err(|m| format!("profile: {m}"))?))
                     }
-                    k => return Err(format!("profile: an edge of kind `{k}`")),
                 });
             }
             loops.push(edges);
         }
-        Ok(Profile {origin:vec3(field(j,"origin")?),normal:unit(vec3(field(j,"normal")?)),loops,names})
+        Ok(Profile {origin:s.origin,normal:unit(s.normal),loops,names})
     }
 
-    /// As a recipe writes it (`from_json`'s inverse), its lengths times `scale`: lines, arcs and
-    /// B-splines (their weights where rational), each named where it is. It never fails.
-    pub fn to_json(&self,scale: f64) -> Result<Json,String> {
+    /// As a recipe writes it (`from_json`'s inverse; its lengths model units, written by `w`):
+    /// lines, arcs and B-splines (their weights where rational), each named where it is. It never
+    /// fails.
+    pub fn to_json(&self,w: &Writer) -> Result<Json,String> {
         use crate::json::object;
+        let scale = w.scale;
         let v = |p: V,s: f64| Json::Arr(p.iter().map(|&x| Json::from(x*s)).collect());
+        let at = |p: V| w.at(p.map(|x| x*scale));
         let mut loops = Vec::new();
         for (l,edges) in self.loops.iter().enumerate() {
             let mut out = Vec::new();
             for (k,e) in edges.iter().enumerate() {
                 let mut j = match *e {
-                    ProfileEdge::Line {a,b} => object([("kind","line".into()),("start",v(a,scale)),("end",v(b,scale))]),
+                    ProfileEdge::Line {a,b} => object([("kind","line".into()),("start",at(a)),("end",at(b))]),
                     ProfileEdge::Arc {frame,r,span} => {
-                        let mut o = object([("kind","circle".into()),("center",v(frame.o,scale)),
+                        let mut o = object([("kind","circle".into()),("center",at(frame.o)),
                             ("normal",v(frame.z,1.)),("x_dir",v(frame.x,1.)),("radius",(r*scale).into())]);
                         if let Some([a0,a1]) = span { o.set("angles",Json::Arr(vec![a0.into(),a1.into()])); }
                         o
@@ -101,8 +103,8 @@ impl Profile {
                     ProfileEdge::Spline(ref b) => {
                         let mut o = object([("kind","bspline".into()),("degree",b.degree.into()),
                             ("knots",Json::Arr(b.knots.iter().map(|&k| k.into()).collect())),
-                            ("poles",Json::Arr(b.poles.iter().map(|&p| v(p,scale)).collect()))]);
-                        if let Some(w) = &b.weights { o.set("weights",Json::Arr(w.iter().map(|&x| x.into()).collect())); }
+                            ("poles",Json::Arr(b.poles.iter().map(|&p| at(p)).collect()))]);
+                        if let Some(weights) = &b.weights { o.set("weights",Json::Arr(weights.iter().map(|&x| x.into()).collect())); }
                         o
                     }
                 };
@@ -112,7 +114,9 @@ impl Profile {
             }
             loops.push(Json::Arr(out));
         }
-        Ok(object([("origin",v(self.origin,scale)),("normal",v(self.normal,1.)),("loops",Json::Arr(loops))]))
+        let normal = self.normal.map(|x| x*1.);
+        Ok(object([("origin",w.plane_origin(self.origin.map(|x| x*scale),normal)),("normal",Writer::triple(normal)),
+            ("loops",Json::Arr(loops))]))
     }
 
     /// A length the profile's tolerances are taken against.
@@ -570,7 +574,7 @@ pub fn canal(c: V,r: f64,origin: V,axis: V,angle: f64,advance: f64,name: &str) -
         else { loft(&disc,None,&Guide::Screw {center:origin,axis:a,angle,advance})? };
     let end = screw(origin,a,angle,advance);
     let union = |s: &Brep,b: Brep| super::boolean::combined(s,&named(b),super::boolean::Op::Union,0.);
-    union(&union(&named(tube),half_ball(c,scale(t,-1.),w,r)?)?,half_ball(c,t,w,r)?.moved(&end))
+    Ok(union(&union(&named(tube),half_ball(c,scale(t,-1.),w,r)?)?,half_ball(c,t,w,r)?.moved(&end))?)
 }
 
 /// How far round from the radial line a ball's tube's seams run (radians): the golden angle's
@@ -902,7 +906,7 @@ pub fn kept(piece: &Brep,o: V,keep: V,floor: f64) -> Result<Brep,String> {
     let foot = sub(middle,scale(keep,dot(sub(middle,o),keep)));
     let size = 2.*distance(lo,hi)+distance(middle,foot);
     let block = prism(&square(foot,keep,size),0.,size)?;
-    super::boolean::combined(piece,&block,super::boolean::Op::Common,floor)
+    Ok(super::boolean::combined(piece,&block,super::boolean::Op::Common,floor)?)
 }
 
 /// `piece` less what lies behind the plane through `o` (against `keep`, a unit normal) within
@@ -911,7 +915,7 @@ pub fn kept(piece: &Brep,o: V,keep: V,floor: f64) -> Result<Brep,String> {
 /// and the vertex, and nothing of the run elsewhere (a rim round a hole comes back past the plane).
 pub fn cut_before(piece: &Brep,o: V,keep: V,reach: f64,floor: f64) -> Result<Brep,String> {
     let block = prism(&square(o,keep,reach),-reach,0.)?;
-    super::boolean::combined(piece,&block,super::boolean::Op::Cut,floor)
+    Ok(super::boolean::combined(piece,&block,super::boolean::Op::Cut,floor)?)
 }
 
 /// `piece` kept within (`inside`) or outside the solid a cylinder, a cone or a sphere bounds: in
@@ -956,5 +960,5 @@ pub fn kept_by_solid(piece: &Brep,surface: &Surface,inside: bool,floor: f64) -> 
         _ => return Err(format!("a piece kept within a {}",surface.kind())),
     };
     let op = if inside { super::boolean::Op::Common } else { super::boolean::Op::Cut };
-    super::boolean::combined(piece,&solid,op,floor)
+    Ok(super::boolean::combined(piece,&solid,op,floor)?)
 }

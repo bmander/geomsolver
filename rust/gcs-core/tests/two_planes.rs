@@ -9,18 +9,11 @@ use gcs_core::edit;
 use gcs_core::program::Elaborated;
 use gcs_core::solve::{solve, SolveOpts};
 
-use crate::common::{ent, read, refused};
+use crate::common::{ent, read, refused, text::solved};
 
 /// The top plane and a plane `G` square to it along the x axis: they meet on that axis.
 const FOLDED: &str =
     "unit mm\nuse std\nG := plane(u: std.x, v: std.z)\nfix(origin == (0, 0, 0)) G\n";
-
-fn solved(src: &str) -> Elaborated {
-    let mut e = read(src);
-    let r = solve(&mut e.sketch, SolveOpts::default());
-    assert!(r.success, "{}", r.message);
-    e
-}
 
 fn kinds(e: &Elaborated) -> Vec<CKind> {
     e.sketch.user_constraints().iter().map(|c| c.kind).collect()

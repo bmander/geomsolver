@@ -2,17 +2,17 @@
 //! `gauges`, and region terms built in `regions`.
 
 use super::resolve::{follow, Operand, Resolver};
-use super::gauges::{apply_gauge, fix_spelling, Gauges};
+use super::gauges::{apply_gauge, fix_spelling};
 use super::regions::{
     ends_term, face_term, probe_of, region_term, settled_number, term_name, term_number,
-    written_number, Probes,
+    written_number,
 };
-use super::{Code, Diag, SourceMap};
+use super::{Code, Diag, Elab, SourceMap};
 use crate::constraints::{Arg as CArg, CKind, Constraint, SpecKind};
 use crate::ir::{PathStep, Relation, ResolvedRelation, Statement as Stmt};
 use crate::model::{EntKind, EntRef, Sketch, Toward};
 use crate::syntax::{Arg, Ref, RelationForm, Span, StmtId};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use crate::fmath::Det;
 use crate::{expr, io};
 
@@ -132,61 +132,28 @@ fn say_once(diags: &mut Vec<Diag>, span: Span, stmt: StmtId, message: String) {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-pub(super) fn constrain(
-    sk: &mut Sketch,
-    res: &Resolver,
-    r: &Relation,
-    st: &Stmt,
-    doc: &crate::syntax::Program,
-    map: &SourceMap,
-    duals: &mut BTreeMap<String, usize>,
-    gauges: &mut Gauges,
-    probes: &mut Probes,
-    diags: &mut Vec<Diag>,
-) -> Option<u32> {
+/// A relation stated: settled into a constraint and added to the sketch, its id returned — or
+/// applied as a gauge, taken as a region's term, or refused, and no id. The steps below, in the
+/// order each may end it.
+pub(super) fn constrain(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) -> Option<u32> {
     // what the relation is, by what its operands resolve to (`shape`)
-    let shape = r.form.written().map_or(Shape::Other, |w| shape(sk, res, w));
-    // **a region's point against a face** (#183 F1), or where an edge ends (F7): a term of the
-    // region, read off the body
-    let term = match (&shape, r.form.written()) {
-        (Shape::Face { point, face }, Some(w)) => Some(face_term(sk, res, w, *point, face, probes)),
-        (Shape::Ends { point, edge }, Some(w)) => Some(ends_term(w, *point, *edge, probes)),
-        _ => None,
-    };
-    if let Some(made) = term {
-        match made {
-            Ok((probe, t)) => probes.terms.get_mut(&probe).expect("a probe's terms").push(t),
-            Err(message) => {
-                diags.push(Diag::on(Code::E040, st, message))
-            }
-        }
+    let shape = r.form.written().map_or(Shape::Other, |w| shape(&cx.sk, &cx.res, w));
+    if face_or_ends(cx, r, st, &shape) {
         return None;
     }
     // **a point inside or outside a plane is a bound** (§9.6): the point's ordinate along the
     // plane's normal from its origin, at most or at least zero
     if let (Shape::PlaneSide, Some(w)) = (&shape, r.form.written()) {
         let lowered = side_of_plane(r, w);
-        return constrain(sk, res, &lowered, st, doc, map, duals, gauges, probes, diags);
+        return constrain(cx, &lowered, st);
     }
-    // **a word that relates two solids is a claim, judged and never solved** (§9.8).  Picked up
-    // by the solids phase: nothing here has a kernel, and saying so twice would report one
-    // statement twice.
-    if let Some(w) = r.form.written() {
-        if w.word.text == "outside" {
-            let m = "`outside` says which side of a plane a point is on: `p outside P`";
-            let message = m.to_string();
-            diags.push(Diag::on(Code::E040, st, message));
-            return None;
-        }
-        if crate::constraints::solid_word(&w.word.text).is_some() {
-            return None;
-        }
+    if solid_word(cx, r, st) {
+        return None;
     }
     // the defined word it was written with, its operands the entities they name (§9.9)
     // — but for a set (§6.21), which is no entity and is named as written
     let word = r.word.as_ref().and_then(|w| {
-        let ops = w.ops.iter().map(|o| res.entity(sk, o));
+        let ops = w.ops.iter().map(|o| cx.res.entity(&cx.sk, o));
         Some(crate::constraints::WordUse {
             word: w.word.clone(),
             ops: ops.collect::<Option<Vec<EntRef>>>()?,
@@ -197,51 +164,13 @@ pub(super) fn constrain(
     // a region's term is named by the set the region's body used, where it used one (#212):
     // `tip` for `p inside tip` in `region`'s body, else the region's own name
     let term_name = r.word.as_ref().map_or_else(String::new, |w| term_name(&w.through));
-    // a set's points are points: `coincident` puts one on it, `inside` and `outside` one in it
-    // or out of it, and nothing else (§6.21) — said at the use, where the statement was written
+    // where a set's use was written, said there
     let used = r.word.as_ref().filter(|w| !w.sets.is_empty()).map(|w| w.span);
-    let point_word = |w: &&crate::syntax::Worded| {
-        matches!(w.word.as_str(), "coincident" | "inside" | "outside")
-    };
-    if let (Some(w), Some(found)) = (r.word.as_ref().filter(point_word), &word) {
-        if let (Some(&op), Some((_, set))) = (found.ops.first(), w.sets.first()) {
-            if op.kind != EntKind::Point {
-                let at = w.span;
-                let m = format!("`{set}` is a set of points, and `{}` puts a point on it, not {}",
-                    w.word, op.kind.a());
-                say_once(diags, at, st.id, m);
-                return None;
-            }
-        }
-    }
-    // **a set touched by a plane names the point it is touched at, and only a plane touches a
-    // set at a point** (#145): said once at the use, in its words, and none of its rows stated.
-    // What a touch states besides the tangency — the apex and the point on the plane — is stated
-    // only where the drawing does not draw them there (below)
-    let touching = r.word.as_ref().filter(|w| w.word == "tangent" && w.sets.len() == 1);
-    if let (Some(w), Some(found)) = (touching, &word) {
-        let set = &w.sets[0].1;
-        let wrong = match (found.ops.first().map(|e| e.kind), w.args.is_empty()) {
-            (Some(EntKind::Plane), true) => Some(format!(
-                "a plane touches a set at a point, which the word names: `P tangent(at: m) {set}`"
-            )),
-            (Some(kind), false) if kind != EntKind::Plane => Some(format!(
-                "a set is touched at a point by a plane, `P tangent({}) {set}`, not by {}",
-                w.args,
-                kind.a()
-            )),
-            _ => None,
-        };
-        if let Some(m) = wrong {
-            say_once(diags, w.span, st.id, m);
-            return None;
-        }
-    }
-    let touch = touching.is_some_and(|w| !w.args.is_empty());
+    let touch = set_words(cx, r, st, &word)?;
     // a set's body row stated as its derivative at a tangency's point (§6.21)
     // — what moves its point, or the kind a line was expected in place of
     let along = r.along.as_ref().map(|a| {
-        let ent = |x: &Ref| res.entity(sk, x);
+        let ent = |x: &Ref| cx.res.entity(&cx.sk, x);
         let toward = match &a.toward {
             crate::syntax::AlongBy::Line(l) => ent(l).map(|l| match l.kind {
                 EntKind::Line => Ok(Toward::Line(l.i())),
@@ -263,11 +192,11 @@ pub(super) fn constrain(
         super::reading::Reader::Drawn
     };
     let r = match r
-        .resolve(&|r| res.entity(sk, r).map(|e| e.kind))
+        .resolve(&|r| cx.res.entity(&cx.sk, r).map(|e| e.kind))
     {
         Ok(r) => r,
         Err((span, message)) => {
-            diags.push(Diag::within(Code::E040, span, st.id, message));
+            cx.diags.push(Diag::within(Code::E040, span, st.id, message));
             return None;
         }
     };
@@ -276,21 +205,165 @@ pub(super) fn constrain(
     // is no constraint for the map to know it by.  A claim on one is refused below the way any
     // unclaimable kind is, so it is checked first.
     if ckind.gauge() {
-        if r.claim {
-            diags.push(Diag::on(
-                Code::E040,
-                st,
-                format!(
-                    "`{}` is judged by nothing a claim can weigh: it holds a number or picks a \
-                     root, and adds no row for the diagnosis to rank",
-                    crate::syntax::snake(ckind.name())
-                ),
-            ));
-            return None;
-        }
-        apply_gauge(sk, res, &r, st, gauges, diags);
+        gauge(cx, &r, st);
         return None;
     }
+    let spec = ckind.spec();
+    let (mut args, mut left_out) = arguments(cx, &r, st)?;
+    // the point a plane touches a set at, drawn on the plane already: no row
+    if touch && along.is_none() && ckind == CKind::PointOnPlane {
+        if let [CArg::Ent(p), CArg::Ent(plane)] = args.as_slice() {
+            if cx.sk.plane_of(p.i()) == Some(plane.i()) {
+                return None;
+            }
+        }
+    }
+    // a curve standing for a surface (a prism's side generating, `CurveE::extrusion`) is met in
+    // space, by the point's place in the curve's view, whatever view the point is drawn in
+    let ckind = match (ckind, args.get(1)) {
+        (CKind::PointOnCurve, Some(CArg::Ent(e))) if cx.sk.curves[e.i()].extrusion => CKind::PointOnExtrusion,
+        _ => ckind,
+    };
+    if ckind.word_slot().is_some() {
+        if let Err((span, message)) =
+            ordinate_operands(&cx.sk, &cx.res, &r, st, cx.doc, &mut args, &mut left_out)
+        {
+            cx.diags.push(Diag::within(Code::E040, span, st.id, message));
+            return None;
+        }
+    }
+    let (ckind, spec, mut args, left_out) =
+        across_views(cx, &r, st, (ckind, spec), args, left_out, reader)?;
+    if refused_value(cx, &r, st, ckind, spec, &args) {
+        return None;
+    }
+    let bound = inferred(cx, &r, st, ckind, &mut args, &left_out)?;
+    let mut c = Constraint::new(ckind, args);
+    c.claim = r.claim;
+    // an interval runs upward from its low end, the number as settled
+    if let (Some((b, at)), Some(i)) = (bound, ckind.dimension_slot()) {
+        if b.hi.is_some_and(|hi| hi < c.args[i].num()) {
+            let message = "an interval runs from its low end to its high end".to_string();
+            let span = at.unwrap_or(st.span);
+            cx.diags.push(Diag::within(Code::E040, span, st.id, message));
+            return None;
+        }
+    }
+    c.bound = bound.map(|(b, _)| b);
+    c.class = r.class.clone();
+    c.written = written(&r.args, r.kind.spec(), st, cx.doc);
+    c.word = word;
+    if let Some(found) = along {
+        // said once at the use, however many of the body's rows find it
+        derivative(cx, st, &mut c, found, used.unwrap_or(st.span))?;
+    }
+    region_or_row(cx, &r, st, c, term_name)
+}
+
+/// **A region's point against a face** (#183 F1), or where an edge ends (F7): a term of the
+/// region, read off the body — whether the relation was one, taken or refused.
+fn face_or_ends(cx: &mut Elab<'_>, r: &Relation, st: &Stmt, shape: &Shape) -> bool {
+    let probes = &mut cx.probes;
+    let term = match (shape, r.form.written()) {
+        (Shape::Face { point, face }, Some(w)) => {
+            Some(face_term(&cx.sk, &cx.res, w, *point, face, probes))
+        }
+        (Shape::Ends { point, edge }, Some(w)) => Some(ends_term(w, *point, *edge, probes)),
+        _ => None,
+    };
+    let Some(made) = term else { return false };
+    match made {
+        Ok((probe, t)) => probes.terms.get_mut(&probe).expect("a probe's terms").push(t),
+        Err(message) => {
+            cx.diags.push(Diag::on(Code::E040, st, message))
+        }
+    }
+    true
+}
+
+/// **A word that relates two solids is a claim, judged and never solved** (§9.8).  Picked up by
+/// the solids phase: nothing here has a kernel, and saying so twice would report one statement
+/// twice.  And `outside` anywhere but a plane's side is refused.  Whether it was either.
+fn solid_word(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) -> bool {
+    let Some(w) = r.form.written() else { return false };
+    if w.word.text == "outside" {
+        let m = "`outside` says which side of a plane a point is on: `p outside P`";
+        let message = m.to_string();
+        cx.diags.push(Diag::on(Code::E040, st, message));
+        return true;
+    }
+    crate::constraints::solid_word(&w.word.text).is_some()
+}
+
+/// What a set's use may be: a set's points are points — `coincident` puts one on it, `inside` and
+/// `outside` one in it or out of it, and nothing else (§6.21) — and only a plane touches a set,
+/// at a point the word names (#145), each said once at the use, in its words, and none of its
+/// rows stated (`None`). Else whether the use is a plane's touch: what it states besides the
+/// tangency — the apex and the point on the plane — is stated only where the drawing does not
+/// draw them there.
+fn set_words(
+    cx: &mut Elab<'_>, r: &Relation, st: &Stmt, word: &Option<crate::constraints::WordUse>,
+) -> Option<bool> {
+    let point_word = |w: &&crate::syntax::Worded| {
+        matches!(w.word.as_str(), "coincident" | "inside" | "outside")
+    };
+    if let (Some(w), Some(found)) = (r.word.as_ref().filter(point_word), word) {
+        if let (Some(&op), Some((_, set))) = (found.ops.first(), w.sets.first()) {
+            if op.kind != EntKind::Point {
+                let at = w.span;
+                let m = format!("`{set}` is a set of points, and `{}` puts a point on it, not {}",
+                    w.word, op.kind.a());
+                say_once(&mut cx.diags, at, st.id, m);
+                return None;
+            }
+        }
+    }
+    let touching = r.word.as_ref().filter(|w| w.word == "tangent" && w.sets.len() == 1);
+    if let (Some(w), Some(found)) = (touching, word) {
+        let set = &w.sets[0].1;
+        let wrong = match (found.ops.first().map(|e| e.kind), w.args.is_empty()) {
+            (Some(EntKind::Plane), true) => Some(format!(
+                "a plane touches a set at a point, which the word names: `P tangent(at: m) {set}`"
+            )),
+            (Some(kind), false) if kind != EntKind::Plane => Some(format!(
+                "a set is touched at a point by a plane, `P tangent({}) {set}`, not by {}",
+                w.args,
+                kind.a()
+            )),
+            _ => None,
+        };
+        if let Some(m) = wrong {
+            say_once(&mut cx.diags, w.span, st.id, m);
+            return None;
+        }
+    }
+    Some(touching.is_some_and(|w| !w.args.is_empty()))
+}
+
+/// A gauge applied (`apply_gauge`) — but a claim on one refused, as any unclaimable kind is.
+fn gauge(cx: &mut Elab<'_>, r: &ResolvedRelation<'_>, st: &Stmt) {
+    if r.claim {
+        cx.diags.push(Diag::on(
+            Code::E040,
+            st,
+            format!(
+                "`{}` is judged by nothing a claim can weigh: it holds a number or picks a \
+                 root, and adds no row for the diagnosis to rank",
+                crate::syntax::snake(r.kind.name())
+            ),
+        ));
+        return;
+    }
+    apply_gauge(cx, r, st);
+}
+
+/// Every slot of the kind's spec converted (`to_arg`), with which the source left out — or the
+/// first refused, said at its argument.
+fn arguments(
+    cx: &mut Elab<'_>, r: &ResolvedRelation<'_>, st: &Stmt,
+) -> Option<(Vec<CArg>, Vec<bool>)> {
+    let (sk, res) = (&cx.sk, &cx.res);
+    let ckind = r.kind;
     let spec = ckind.spec();
     let mut args: Vec<CArg> = Vec::with_capacity(spec.len());
     let mut left_out = vec![false; spec.len()];
@@ -321,7 +394,7 @@ pub(super) fn constrain(
                     // the empty word is the slot's own default and says nothing — a selector
                     // nobody wrote (issue #48, item 4), which the printers leave out again
                     if !w.is_empty() && !words.contains(&w.as_str()) {
-                        diags.push(Diag::within(
+                        cx.diags.push(Diag::within(
                             Code::E040,
                             where_(a),
                             st.id,
@@ -351,7 +424,7 @@ pub(super) fn constrain(
                 };
                 let message =
                     format!("`at` is {ends}a point on what is touched, and `{what}` names nothing");
-                diags.push(Diag::within(Code::E040, where_(a), st.id, message));
+                cx.diags.push(Diag::within(Code::E040, where_(a), st.id, message));
                 return None;
             }
             // a direction that names nothing is a word misspelt, more likely than an entity
@@ -361,11 +434,11 @@ pub(super) fn constrain(
                     other => crate::syntax::sel_text(other),
                 };
                 let message = no_direction(&what);
-                diags.push(Diag::within(Code::E040, where_(a), st.id, message));
+                cx.diags.push(Diag::within(Code::E040, where_(a), st.id, message));
                 return None;
             }
             Err((code, msg)) => {
-                diags.push(Diag::within(
+                cx.diags.push(Diag::within(
                     code,
                     where_(a),
                     st.id,
@@ -375,50 +448,53 @@ pub(super) fn constrain(
             }
         }
     }
-    // the point a plane touches a set at, drawn on the plane already: no row
-    if touch && along.is_none() && ckind == CKind::PointOnPlane {
-        if let [CArg::Ent(p), CArg::Ent(plane)] = args.as_slice() {
-            if sk.plane_of(p.i()) == Some(plane.i()) {
-                return None;
-            }
-        }
-    }
-    // **across views, a word means the relation in space**: the planes its operands' points are
-    // drawn in (`reading`) decide it, and the statement is the kind in space from here on — or
-    // refused, where the word has no meaning there or a selector says nothing there
-    // a curve standing for a surface (a prism's side generating, `CurveE::extrusion`) is met in
-    // space, by the point's place in the curve's view, whatever view the point is drawn in
-    let ckind = match (ckind, args.get(1)) {
-        (CKind::PointOnCurve, Some(CArg::Ent(e))) if sk.curves[e.i()].extrusion => CKind::PointOnExtrusion,
-        _ => ckind,
-    };
-    if ckind.word_slot().is_some() {
-        if let Err((span, message)) =
-            ordinate_operands(sk, res, &r, st, doc, &mut args, &mut left_out)
-        {
-            diags.push(Diag::within(Code::E040, span, st.id, message));
-            return None;
-        }
-    }
-    // a point drawn in several planes is read in the one its reader is drawn in (§6.7) — but a
-    // projection relates two planes by definition, each operand read in its own
+    Some((args, left_out))
+}
+
+/// **Across views, a word means the relation in space**: the planes its operands' points are
+/// drawn in (`reading`) decide it, and the statement is the kind in space from here on — or
+/// refused, where the word has no meaning there or a selector says nothing there. A point drawn
+/// in several planes is read in the one its reader is drawn in first (§6.7) — but a projection
+/// relates two planes by definition, each operand read in its own.
+#[allow(clippy::type_complexity)]
+fn across_views(
+    cx: &mut Elab<'_>,
+    r: &ResolvedRelation<'_>,
+    st: &Stmt,
+    (ckind, spec): (CKind, &'static [(&'static str, SpecKind)]),
+    mut args: Vec<CArg>,
+    left_out: Vec<bool>,
+    reader: super::reading::Reader,
+) -> Option<(CKind, &'static [(&'static str, SpecKind)], Vec<CArg>, Vec<bool>)> {
     if ckind != CKind::Project {
-        super::reading::read_twins(sk, &mut args);
+        super::reading::read_twins(&cx.sk, &mut args);
     }
-    let (ckind, spec, mut args, left_out) = match super::reading::in_space(sk, ckind, &args, reader) {
-        Ok(None) => (ckind, spec, args, left_out),
-        Ok(Some((k, a, l))) => (k, k.spec(), a, l),
+    match super::reading::in_space(&cx.sk, ckind, &args, reader) {
+        Ok(None) => Some((ckind, spec, args, left_out)),
+        Ok(Some((k, a, l))) => Some((k, k.spec(), a, l)),
         Err((selector, message)) => {
             let key = ["side", "sense"].into_iter().find_map(|k| r.written.and_then(|w| w.key_span(k)));
-            diags.push(Diag::within(
+            cx.diags.push(Diag::within(
                 if selector { Code::E040 } else { Code::E062 },
                 if selector { key.unwrap_or(st.span) } else { st.span },
                 st.id,
                 message,
             ));
-            return None;
+            None
         }
-    };
+    }
+}
+
+/// The numbers a kind refuses by value, each said where written: whether one was.
+fn refused_value(
+    cx: &mut Elab<'_>,
+    r: &ResolvedRelation<'_>,
+    st: &Stmt,
+    ckind: CKind,
+    spec: &[(&'static str, SpecKind)],
+    args: &[CArg],
+) -> bool {
+    let sk = &cx.sk;
     // a magnitude stated negative: the kernel would square the sign away and the drawing show
     // the positive, so the document and the drawing would disagree about what the thing is
     // **A number that says which way is a word** (§9.2, issue #48 item 4).  Where the sign was a
@@ -451,7 +527,7 @@ pub(super) fn constrain(
                     ),
                     None => String::new(),
                 };
-                diags.push(Diag::within(
+                cx.diags.push(Diag::within(
                     Code::E040,
                     r
                         .args
@@ -465,7 +541,7 @@ pub(super) fn constrain(
                         crate::model::article(&crate::syntax::snake(ckind.name()))
                     ),
                 ));
-                return None;
+                return true;
             }
         }
     }
@@ -482,7 +558,7 @@ pub(super) fn constrain(
                 a => Some(a.num().dcos()),
             };
             if cos.is_some_and(|c| c.abs() > 1.0 - 1e-12) {
-                diags.push(Diag::within(
+                cx.diags.push(Diag::within(
                     Code::E040,
                     r.args.get(i).and_then(|a| a.as_ref()).and_then(arg_span).unwrap_or(st.span),
                     st.id,
@@ -491,7 +567,7 @@ pub(super) fn constrain(
                      and the seed says which way"
                         .to_string(),
                 ));
-                return None;
+                return true;
             }
         }
     }
@@ -502,7 +578,7 @@ pub(super) fn constrain(
     if ckind == CKind::AnnularDistance {
         let centre = |e: EntRef| sk.children(e).first().copied();
         if centre(args[0].ent()) != centre(args[1].ent()) {
-            diags.push(Diag::on(
+            cx.diags.push(Diag::on(
                 Code::E040,
                 st,
                 "`distance` between two circles is the radial gap between concentric \
@@ -510,13 +586,13 @@ pub(super) fn constrain(
                  centres, or make the circles concentric"
                     .to_string(),
             ));
-            return None;
+            return true;
         }
     }
     // a claim is judged, never solved for, so it may own no unknown — `CKind::claimable` is the
     // rule, shared with the document readers; elaboration's job is only to give it a span
     if r.claim && !ckind.claimable() {
-        diags.push(Diag::on(
+        cx.diags.push(Diag::on(
             Code::E040,
             st,
             format!(
@@ -524,80 +600,96 @@ pub(super) fn constrain(
                 crate::syntax::snake(ckind.name())
             ),
         ));
-        return None;
+        return true;
     }
-    // the inferred slots the source left out — read off the geometry, the one place that rule
-    // lives, shared with the document reader and the bindings' constraint records — and what
-    // the model refuses once they are in, in its own words, given this statement's span
+    false
+}
+
+/// The inferred slots the source left out — read off the geometry, the one place that rule
+/// lives, shared with the document reader and the bindings' constraint records — and what the
+/// model refuses once they are in, in its own words, given this statement's span; then the bound
+/// its number is (`bound_of`).  `None` where refused.
+#[allow(clippy::type_complexity)]
+fn inferred(
+    cx: &mut Elab<'_>,
+    r: &ResolvedRelation<'_>,
+    st: &Stmt,
+    ckind: CKind,
+    args: &mut [CArg],
+    left_out: &[bool],
+) -> Option<Option<(crate::constraints::Bound, Option<Span>)>> {
+    let (sk, map) = (&cx.sk, &cx.map);
     let name = |e: EntRef| map.name_of(e).cloned().unwrap_or_else(|| io::entity_name(e));
-    if let Err(message) = crate::constraints::on_the_arc(ckind, &args, &name) {
-        diags.push(Diag::on(Code::E040, st, message));
+    if let Err(message) = crate::constraints::on_the_arc(ckind, args, &name) {
+        cx.diags.push(Diag::on(Code::E040, st, message));
         return None;
     }
-    if let Err(message) = io::seed_omitted_named(sk, ckind, &mut args, |i| left_out[i], &name) {
-        diags.push(Diag::on(Code::E061, st, message));
+    if let Err(message) = io::seed_omitted_named(sk, ckind, args, |i| left_out[i], &name) {
+        cx.diags.push(Diag::on(Code::E061, st, message));
         return None;
     }
-    let bound = match bound_of(sk, res, &r, ckind) {
-        Ok(b) => b,
+    match bound_of(sk, &cx.res, r, ckind) {
+        Ok(b) => Some(b),
         Err((span, message)) => {
             let span = span.unwrap_or(st.span);
-            diags.push(Diag::within(Code::E040, span, st.id, message));
+            cx.diags.push(Diag::within(Code::E040, span, st.id, message));
+            None
+        }
+    }
+}
+
+/// A set's body row stated as its derivative at a tangency's point (§6.21): one derivative per
+/// use, the geometry the use made, under its prefix, moving with it. `None` where the row is
+/// stated not at all — it reads nothing the use moves, or is refused, said once at `used`.
+fn derivative(
+    cx: &mut Elab<'_>,
+    st: &Stmt,
+    c: &mut Constraint,
+    found: (Option<EntRef>, Option<Result<Toward, EntKind>>, &crate::syntax::Along),
+    used: Span,
+) -> Option<()> {
+    let diags = &mut cx.diags;
+    let mut say = |m: String| say_once(diags, used, st.id, m);
+    let (Some(p), Some(toward), a) = found else { return None };
+    let toward = match toward {
+        Ok(t) => t,
+        Err(kind) => {
+            say(format!("a set is touched by a line, not {}", kind.a()));
             return None;
         }
     };
-    let mut c = Constraint::new(ckind, args);
-    c.claim = r.claim;
-    // an interval runs upward from its low end, the number as settled
-    if let (Some((b, at)), Some(i)) = (bound, ckind.dimension_slot()) {
-        if b.hi.is_some_and(|hi| hi < c.args[i].num()) {
-            let message = "an interval runs from its low end to its high end".to_string();
-            let span = at.unwrap_or(st.span);
-            diags.push(Diag::within(Code::E040, span, st.id, message));
+    let (sk, map) = (&mut cx.sk, &cx.map);
+    let d = *cx.duals.entry(a.key.clone()).or_insert_with(|| {
+        let made = a.made.iter().flat_map(|m| map.ents_under(m));
+        sk.add_dual(p.i(), toward, made.filter(|&e| e != p).collect())
+    });
+    match c.differentiable(sk, d) {
+        Ok(true) => c.along = Some(d),
+        // a row that reads nothing the use moves holds still as it moves: no derivative
+        Ok(false) => return None,
+        Err(m) => {
+            say(m);
             return None;
         }
     }
-    c.bound = bound.map(|(b, _)| b);
-    c.class = r.class.clone();
-    c.written = written(&r.args, r.kind.spec(), st, doc);
-    c.word = word;
-    if let Some(found) = along {
-        // said once at the use, however many of the body's rows find it
-        let mut say = |m: String| say_once(diags, used.unwrap_or(st.span), st.id, m);
-        let (Some(p), Some(toward), a) = found else { return None };
-        let toward = match toward {
-            Ok(t) => t,
-            Err(kind) => {
-                say(format!("a set is touched by a line, not {}", kind.a()));
-                return None;
-            }
-        };
-        // one derivative per use: the geometry the use made, under its prefix, moves with it
-        let d = *duals.entry(a.key.clone()).or_insert_with(|| {
-            let made = a.made.iter().flat_map(|m| map.ents_under(m));
-            sk.add_dual(p.i(), toward, made.filter(|&e| e != p).collect())
-        });
-        match c.differentiable(sk, d) {
-            Ok(true) => c.along = Some(d),
-            // a row that reads nothing the use moves holds still as it moves: no derivative
-            Ok(false) => return None,
-            Err(m) => {
-                say(m);
-                return None;
-            }
-        }
-    }
-    // an offset a set put on its number (§6.21, F4): a region's term, and nothing a row states
+    Some(())
+}
+
+/// The constraint added, its id returned — but a bound a set put on a region solid's probe is a
+/// term of the solid, never a row (§6.21), and an offset a set put on its number (F4) one too.
+fn region_or_row(
+    cx: &mut Elab<'_>, r: &ResolvedRelation<'_>, st: &Stmt, c: Constraint, term_name: String,
+) -> Option<u32> {
     let grow = match r.written.and_then(|w| w.grow()) {
         None => None,
         Some((text, span)) => {
             let arg = crate::syntax::Arg::Dim { text: text.clone(), span: *span };
-            let read = to_arg(sk, res, SpecKind::Length, &arg).ok();
-            match read.as_ref().and_then(|a| term_number(a, sk, SpecKind::Length)) {
+            let read = to_arg(&cx.sk, &cx.res, SpecKind::Length, &arg).ok();
+            match read.as_ref().and_then(|a| term_number(a, &cx.sk, SpecKind::Length)) {
                 Some(g) => Some(g),
                 None => {
                     let message = "an offset is stated or reads one unknown of the drawing";
-                    diags.push(Diag::on(Code::E040, st, message.into()));
+                    cx.diags.push(Diag::on(Code::E040, st, message.into()));
                     return None;
                 }
             }
@@ -605,22 +697,21 @@ pub(super) fn constrain(
     };
     // what a set's body states at its envelope's hidden point is the surface the envelope reads
     // (#283), never a row
-    if let Some(e) = super::envelopes::probe_envelope(sk, &c) {
+    if let Some(e) = super::envelopes::probe_envelope(&cx.sk, &c) {
         let read = match grow {
-            Some(_) => Err("an envelope's set is a surface, not one grown from another".to_string()),
-            None => super::envelopes::set_shape(sk, &c, e),
+            Some(_) => Err("an envelope's set is a surface, not one grown from another".into()),
+            None => super::envelopes::set_shape(&mut cx.sk, &c, e),
         };
         if let Err(message) = read {
-            diags.push(Diag::on(Code::E040, st, message));
+            cx.diags.push(Diag::on(Code::E040, st, message));
         }
         return None;
     }
-    // a bound a set put on a region solid's probe is a term of the solid, never a row (§6.21)
-    if let Some(probe) = probe_of(sk, &c, probes) {
-        match region_term(sk, &c, probe, grow, term_name) {
-            Ok(t) => probes.terms.get_mut(&probe).expect("a probe's terms").push(t),
+    if let Some(probe) = probe_of(&cx.sk, &c, &cx.probes) {
+        match region_term(&cx.sk, &c, probe, grow, term_name) {
+            Ok(t) => cx.probes.terms.get_mut(&probe).expect("a probe's terms").push(t),
             Err(message) => {
-                diags.push(Diag::on(Code::E040, st, message))
+                cx.diags.push(Diag::on(Code::E040, st, message))
             }
         }
         return None;
@@ -629,10 +720,10 @@ pub(super) fn constrain(
         let message = "an offset of a cone is a region solid's: a point is put at a distance from \
                        one by its foot on it"
             .to_string();
-        diags.push(Diag::on(Code::E040, st, message));
+        cx.diags.push(Diag::on(Code::E040, st, message));
         return None;
     }
-    Some(sk.add_quiet(c))
+    Some(cx.sk.add_quiet(c))
 }
 
 /// **An entity given where a kind is asked for is of that kind**, refused at the argument once

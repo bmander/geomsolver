@@ -2,15 +2,7 @@
 use gcs_core::{diagnose, io, library, program, solve, syntax};
 use gcs_core::constraints::CKind;
 use gcs_core::model::Sketch;
-use crate::common::STD_POINTS;
-
-fn build(src: &str) -> program::Elaborated {
-    let (p, errors, linked) = library::parse_linked(src);
-    assert!(errors.is_empty() && linked.is_empty(), "{errors:?} {linked:?}");
-    let e = program::elaborate(&p);
-    assert!(e.ok(), "{:?}", e.diags);
-    e
-}
+use crate::common::{read as build, STD_POINTS};
 
 fn solved(sk: &mut Sketch) {
     let r = solve::solve(sk, Default::default());

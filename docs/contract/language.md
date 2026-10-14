@@ -76,7 +76,7 @@ text).  The lexer reads a brace after `:=` as a group only before `}` or `name:`
 
 **`ring N about C { … }`, solved over one copy (0.47, #96):** copies that are turns of the first
 (the representative) about a point (in its view) or an axis held in its direction (in space).
-The flattener expands it as a `cycle` (`BlockKind::Ring`, `Block::about`, `Scope::ring`) and marks
+The flattener expands it as a `cycle` (`BlockKind::Ring`, `Block::about`, `InBlock::ring`) and marks
 every statement of copy k ≥ 1 `ir::Statement::turned` (`Site::turned`): its declarations are
 built, its relations, holds, claims and branches are not (`program.rs`'s `stating`).
 `program/rings.rs` pairs each turned entity with the representative's by key
@@ -92,7 +92,7 @@ numeric residual, `decompose` writes none, the diagnosis reads a copy as free as
 `Part`/`graft`/JSON (`"turns"`)/`topology_key` carry turns. E015 the index read in the body
 (parser finds the reads, `Block::index_reads`), E021 a reference the turn would move or a copy
 by index (`judge_rings`; an instance's entity argument or a use's operand is judged at the call as
-written, `next.u` a turn, and a body reading the formal is not judged again: `Walk::arguments`,
+written, `next.u` a turn, and a body reading the formal is not judged again: `WordState::arguments`,
 #226), E022 a ring in a ring, E023
 what a ring cannot turn (`rings.rs`). The ring's own turn is gauged outside (`hub horizontal
 tip[0]`). `std.Polygon`, `gear.sv`, `gear_trace.sv`, `ngon.sv` and the Wankel rotor are rings;
@@ -144,7 +144,7 @@ geometry aliases; `dims: group` is a required formal. Groups nest, by name or in
 group registered so `Bar(design.bar)` binds); an instance may pass as a layout group. A **`set`
 formal** (`Ty::Set`, #191) takes a set — named, or a family's instance, which is both a set and an
 instance — and a `group` formal no named set; each refusal is E103 at the argument
-(`Walk::group_bindings`, checked in `resolve` against `sets` / `group_names`). **An
+(`Checks::groups`, checked in `resolve` against `sets` / `group_names`). **An
 instance's numbers are read by its name**: `Walk::instance_numbers` puts every numeric formal
 of every instance a body writes into its `vals` as `inst.formal` (the number bound, else the
 unknown `bind` names), before the statements, so `p distance(ball.r) ball.center` reads it and a
@@ -246,7 +246,7 @@ takes a layout naming the front datum, origin and reference axis.
   `Relation::class` is parsed in both trailing-clause loops (a chain's and a lone relation's, before
   `at`) into `Constraint::class`, through `io::dumps`, `from_json`, `graft` and `write_relation`,
   and **not** in the binding's record.  `callout::style_of` resolves `.dimension` (`.reference` for
-  a claim), and `layout` skips one not `shown()`. `Instance::class` (`Scope::in_class`) is stamped
+  a claim), and `layout` skips one not `shown()`. `Instance::class` (`Stamps::class`) is stamped
   **over** each emitted declaration's and relation's own (`stamp_scope_plane`), the way `in` is.
   `Style::display` is `display: none | inline | geometry` (`style::Display`): `shown()` is what an
   entity asks, `dimensioned()` what `callout::layout` asks; `geometry` is drawn but never
@@ -277,7 +277,7 @@ takes a layout naming the front datum, origin and reference axis.
   and may a statement be **written** with it.  `Decl::name` is a **`DeclName`** fusing the answer:
   `Written(Name)` (`l0`, `s1.p0`), `Copy(Name)` (`#3.0.p`, a block copy) and `Key(Name)` (`#a41`);
   accessors `key()`, `shown()`, `written()`, `span()`.  Stamped by the parser and by **the
-  flattener, which knows whether a prefix is an instance's name or a block's id** (`Scope::copies`,
+  flattener, which knows whether a prefix is an instance's name or a block's id** (`InBlock::copies`,
   `DeclName::prefixed`).  `SourceMap::bind` (vocabulary `DeclName::named`) files each name into
   `by_name` always, `names` when `shown()`, `writable` when `writable()`.  So `map.names` is "what
   the source calls the thing" (`name_of` is `names.first()`); `writable_name` is `edit::reconcile`'s

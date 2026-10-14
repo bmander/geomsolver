@@ -61,7 +61,7 @@ pub unsafe extern "C" fn gcs_sketch_svg(h: *mut Sketch, width_px: f64) -> *mut u
 
 #[no_mangle]
 pub unsafe extern "C" fn gcs_sketch_preview(h: *mut Sketch, plane: i32) {
-    guard((), move || gcs_core::drawing::preview(sk(h), (plane >= 0).then_some(plane as usize)))
+    guard((), move || gcs_core::drawing::preview(sk(h), index(plane)))
 }
 
 /// Render a .svd document from a host-supplied text bundle. JSON input:
@@ -286,11 +286,12 @@ pub unsafe extern "C" fn gcs_point_plane(h: *mut Sketch, idx: i32) -> i32 {
 pub unsafe extern "C" fn gcs_point_set_plane(h: *mut Sketch, idx: i32, plane: i32) -> i32 {
     guard(-1, move || {
         let s = sk(h);
-        if plane >= 0 && plane as usize >= s.planes.len() {
+        let plane = index(plane);
+        if plane.is_some_and(|p| p >= s.planes.len()) {
             set_error("no such plane");
             return -1;
         }
-        s.set_plane(idx as usize, (plane >= 0).then_some(plane as usize));
+        s.set_plane(idx as usize, plane);
         0
     })
 }
@@ -328,7 +329,7 @@ pub unsafe extern "C" fn gcs_sketch_spline_through(
         } else {
             std::slice::from_raw_parts(hold, n)
                 .iter()
-                .map(|&i| if i < 0 { None } else { Some(i as usize) })
+                .map(|&i| index(i))
                 .collect()
         };
         sk(h).spline_through_held(&q, &held).map(|i| i as i32).unwrap_or(-1)

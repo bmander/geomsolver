@@ -7,7 +7,7 @@ use gcs_core::program::Elaborated;
 use gcs_core::solve::{solve, SolveOpts, BOUND_BROKEN};
 use gcs_core::system::System;
 
-use crate::common::{ent, read, refused};
+use crate::common::{ent, read, refused, text::solved};
 
 /// A point on two circles about `a` and `b`, five from each: a root above the line through them
 /// and a root below, seeded below.
@@ -18,13 +18,6 @@ const CROSSING: &str = "unit mm\nuse std\nin std.front {\n  a := point hint((0, 
 /// Where `p` stands in space.
 fn p_at(e: &Elaborated) -> [f64; 3] {
     e.sketch.world_point(ent(e, "p").i())
-}
-
-fn solved(src: &str) -> Elaborated {
-    let mut e = read(src);
-    let r = solve(&mut e.sketch, SolveOpts::default());
-    assert!(r.success, "{}\n{src}", r.message);
-    e
 }
 
 /// Unbounded, the seed picks the root below; bounded above, the solve is steered to the other.

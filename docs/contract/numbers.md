@@ -59,7 +59,7 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   none).  **A name nothing declares is
   E101** — in a dimension (`settle_text`), a pin (`settle_arg`), a dotted read nothing made
   (`resolve`, unless it is an instance's unbound formal) — and the relation is not emitted
-  (`Walk::refused`), so it never reaches the expression graph as an unknown; W111 is gone.  A
+  (`Checks::refused`), so it never reaches the expression graph as an unknown; W111 is gone.  A
   dotted name read in a body is made absolute under `Scope::instance_prefix`.  `t == s` over an
   unknown is `Arg::Tie` seeded by the declaration (a `hint(t:)` beside it is E040 in `assemble`).
   `commit_seeds` writes each declared unknown's solved value into its `hint(…)`

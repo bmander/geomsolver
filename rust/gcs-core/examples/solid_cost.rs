@@ -28,7 +28,7 @@ fn main() {
             let mut warm = Vec::new();
             let mut triangles = 0;
             for _ in 0..5 {
-                e.sketch.solid_cache.borrow_mut().clear();
+                e.sketch.caches.solid.borrow_mut().clear();
                 let start = Instant::now();
                 let _ = e.sketch.solid_boundary(i, unit);
                 let _ = e.sketch.solid_edges(i, unit);

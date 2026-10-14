@@ -7,19 +7,7 @@
 //! never act.**
 
 use gcs_core::program::{elaborate, Code, Elaborated};
-use crate::common::parse;
-
-fn read(src: &str) -> Elaborated {
-    let (prog, errs) = parse(src);
-    assert!(errs.is_empty(), "does not parse: {errs:?}\n{src}");
-    let e = elaborate(&prog);
-    assert!(
-        e.ok(),
-        "does not elaborate: {:?}\n{src}",
-        e.errors().map(|d| d.message.clone()).collect::<Vec<_>>()
-    );
-    e
-}
+use crate::common::{parse, parsed::read};
 
 fn verdicts(e: &Elaborated) -> Vec<gcs_core::diagnose::SolidVerdict> {
     let mut sk = e.sketch.clone();

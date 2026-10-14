@@ -831,7 +831,7 @@ surface, and only a loft's blend is fitted.
   round (`near` is the cap toward the viewer, along the normal), and a straight sweep's caps are
   `start` and `end`. An edge between two faces is named by the face whose facets lead, as in the
   facet term (a prism's and a sweep's caps: `Exact::leading`), so a drawing names its lines alike.
-- **Where and how finely.** The recipe is built about the solid's own origin (`cad::shifted`, a
+- **Where and how finely.** The recipe is built about the solid's own origin (`cad::recipe_about`, a
   profile's or a revolution's datum moved within its plane or along its axis to the point nearest
   it), with a Boolean tolerance no finer than the coordinates' rounding where it was read: a part
   solved at 1e9 mm read 0.025 mm³ light until both. The mesh's sag is the policy's but never over

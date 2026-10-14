@@ -101,18 +101,18 @@ impl Guide {
     }
 }
 
-/// A guide as the CAD recipe carries it (millimetres: positions scaled by `scale`): a line's start
-/// and the step to its end, or an arc's centre, its axis (right-handed about which it turns from
-/// its start), its start and the angle it turns through.
-pub(super) fn guide_json(sk: &Sketch, guide: EntRef, scale: f64) -> Result<crate::json::Json, String> {
+/// A guide as the CAD recipe carries it (written by `w`): a line's start and the step to its end,
+/// or an arc's centre, its axis (right-handed about which it turns from its start), its start and
+/// the angle it turns through.
+pub(super) fn guide_json(sk: &Sketch, guide: EntRef, w: &crate::brep::recipe::Writer) -> Result<crate::json::Json, String> {
     use crate::json::{object, Json};
-    let g = Guide::read(sk, guide)?;
+    let (g, scale) = (Guide::read(sk, guide)?, w.scale);
     let v = |x: V| Json::Arr(x.iter().map(|&c| Json::from(c)).collect());
     Ok(if g.angle == 0.0 {
-        object([("kind", "line".into()), ("start", v(scaled(g.start, scale))), ("delta", v(scaled(g.delta, scale)))])
+        object([("kind", "line".into()), ("start", w.at(scaled(g.start, scale))), ("delta", v(scaled(g.delta, scale)))])
     } else {
-        object([("kind", "arc".into()), ("center", v(scaled(g.center, scale))), ("axis", v(g.axis)),
-            ("start", v(scaled(g.start, scale))), ("angle", g.angle.into())])
+        object([("kind", "arc".into()), ("center", w.at(scaled(g.center, scale))), ("axis", v(g.axis)),
+            ("start", w.at(scaled(g.start, scale))), ("angle", g.angle.into())])
     })
 }
 

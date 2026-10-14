@@ -16,7 +16,9 @@ use std::collections::BTreeMap;
 // Private responsibility modules; existing model paths remain the public API.
 mod entities;
 mod curves;
-mod spatial;
+mod solids;
+mod region;
+mod solid_eval;
 mod construction;
 mod parameters;
 mod geometry;
@@ -25,6 +27,7 @@ mod topology;
 mod attitude;
 mod turns;
 mod duals;
+mod caches;
 
 pub use entities::{
     Param, EntKind, Ends, Run, Field, EntRef, PointE, LineE, CircleE, AxisE, ArcE, SplineE,
@@ -32,15 +35,18 @@ pub use entities::{
     LiftE, article,
 };
 pub use curves::{CURVE_STEPS, CurveDef, CurveBody, CurveE, Extremal, Home, Trim, extremal_def, whole};
-pub use spatial::{
+pub use solids::{
     FaceLoop, FaceSupport, FaceE, Length, SolidRequirement, SolidClaim, SolidBearing, Sweep,
-    DerivedE, Extent, Roll, Sense, SolidDef, SolidE, SeamE, EdgeE, VertexE, PatchE, EnvelopeE, Held, SetKind, SetShape, SurfaceE,
-    RegionShape, RegionTerm, TermNumber, Way, FaceRef, Target, turn_of,
+    DerivedE, Extent, Roll, Sense, SolidDef, SolidE, SeamE, EdgeE, VertexE, PatchE, EnvelopeE,
+    Held, SetKind, SetShape, SurfaceE,
     MotionDef, MotionE,
 };
+pub use region::{RegionShape, RegionTerm, TermNumber, FaceRef, Target};
+pub use solid_eval::{Way, turn_of};
 pub use construction::{ThreePointArc, three_point_arc};
 pub use turns::{Turn, Derivation};
 pub use duals::{Dual, Move, Moves, Toward};
+pub use caches::Caches;
 pub use geometry::{Box2, grow};
 pub use topology::{edge_ends, expand};
 pub(crate) use measure::polyline_distance;
@@ -151,50 +157,9 @@ pub struct Sketch {
     /// `expr::evaluate` when it allocates the unknown (its seed, its dimension).  Set by
     /// elaboration and never written to a document.
     pub declared: BTreeMap<String, Declared>,
-    /// Each curve's polyline, remembered against everything it was computed from
-    /// (`curve_polyline`).  A pick walks every drawn curve on every pointer move, and a traced
-    /// curve's polyline is a march of `CURVE_STEPS` block solves — nine milliseconds a move on
-    /// the gear, for a drawing that had not changed.  Interior, so `&self` readers share it; a
-    /// cache and not state, since a miss recomputes what a hit remembers.
-    pub polyline_cache: std::cell::RefCell<BTreeMap<usize, (Vec<f64>, Vec<(f64, f64)>)>>,
-    /// Each solid's evaluated boundary, remembered against everything it was computed from
-    /// (`solid::reads`).  `polyline_cache`'s bargain, for the same reason: a repaint asks every
-    /// derived view for its edges, and a boundary is a sweep of classifications over a drawing
-    /// that has not changed.
-    pub solid_cache: std::cell::RefCell<BTreeMap<(usize, (u8, u64)), (Vec<f64>, Result<std::rc::Rc<crate::solid::EvaluatedSolid>, String>)>>,
-    /// Each static solid's exact B-rep (`solid::Exact`), remembered against `solid::reads` alone:
-    /// it does not depend on an approximation, so it is built once for a geometry and only meshed
-    /// again for each one the evaluated solids above ask for.
-    pub exact_cache: crate::solid::Memo<Result<std::rc::Rc<crate::solid::Exact>, String>>,
-    /// Each region solid's meridian (`solid::region::meridian`), against `solid::reads`: every
-    /// evaluator, the validation and admission read it, and it is a fold of exact Booleans.
-    pub meridian_cache: crate::solid::Memo<
-        Result<std::rc::Rc<crate::solid::region::Meridian>, crate::solid::region::Refusal>,
-    >,
-    /// Each region solid's reading in general position (`solid::region::in_general_position`),
-    /// against its own terms and the strata it reads: validation, the sweep test and the field
-    /// each ask it.
-    pub(crate) general_cache: crate::solid::Memo<Option<Result<crate::solid::RegionField, String>>>,
-    /// Each region solid's lowering (`solid::lowering::lowered`, #194), against its own terms and
-    /// the stratum it reads: the recipe and the exact boundary each ask it, and its gate reads the
-    /// field.
-    pub(crate) lowering_cache:
-        crate::solid::Memo<Result<std::rc::Rc<Vec<crate::solid::lowering::Piece>>, String>>,
-    /// Each region solid in general position built as the common of its terms
-    /// (`solid::bounded::built`, #238), against `solid::reads`: the sweep test, the recipe and
-    /// the exact boundary each ask it, and its gate reads the field.
-    pub(crate) bounded_cache:
-        crate::solid::Memo<Option<Result<std::rc::Rc<crate::solid::bounded::Bounded>, String>>>,
-    /// Each ball's sweep built as its tube (`solid::canal::built`, #238), against `solid::reads`:
-    /// the sweep test, the recipe and the exact boundary each ask it, and its gate reads the field.
-    pub(crate) canal_cache:
-        crate::solid::Memo<Option<Result<std::rc::Rc<crate::solid::canal::Canal>, String>>>,
-    /// Each sweep's roll through a body (`solid::roll::interval`, #271), against `solid::reads`:
-    /// admission, the field and the exact construction each ask it.
-    pub(crate) roll_cache: crate::solid::Memo<Result<[f64; 2], String>>,
-    /// Each body's faces as regions read them (`solid::faces::BodyFaces`, #183), against
-    /// `solid::reads`: every round over one body reads the same stratum.
-    pub faces_cache: crate::solid::Memo<Result<std::sync::Arc<crate::solid::faces::BodyFaces>, String>>,
+    /// What the sketch remembers and could work out again — polylines, evaluated and exact
+    /// solids, regions' readings, bodies' faces — and what a clone keeps of it (`Caches`).
+    pub caches: Caches,
     /// Swept solids' surfaces a host meshed elsewhere (`supply_field`), each against the
     /// `solid::reads` it was supplied under, so a moved drawing reads none.
     pub field_surfaces: std::cell::RefCell<BTreeMap<usize, (Vec<f64>, std::rc::Rc<crate::solid::FieldSurface>)>>,

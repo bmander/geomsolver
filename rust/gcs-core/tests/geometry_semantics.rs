@@ -1,16 +1,9 @@
 use gcs_core::{
-    drawing, io, library, model::EntRef, program, semantics::GeometryRoles, solve, syntax,
+    drawing, io, model::EntRef, program, semantics::GeometryRoles, solve, syntax,
 };
 use std::collections::BTreeMap;
+use crate::common::linked::build;
 
-fn build(src: &str) -> program::Elaborated {
-    let (p, errors, linked) = library::parse_linked(src);
-    assert!(
-        errors.is_empty() && linked.is_empty(),
-        "{errors:?} {linked:?}"
-    );
-    program::elaborate(&p)
-}
 fn good(src: &str) -> program::Elaborated {
     let e = build(src);
     assert!(e.ok(), "{:?}", e.diags);

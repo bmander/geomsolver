@@ -47,7 +47,7 @@ use values::{free, typed, value_of, substitute, reads_geometry};
 use resolve::Lookup;
 use crate::syntax::ref_text;
 
-/// No set walked as a set for want of an element: `Walk::unlowered` where nothing was.
+/// No set walked as a set for want of an element: `SetState::unlowered` where nothing was.
 static NONE: BTreeSet<String> = BTreeSet::new();
 
 /// How deep components and blocks may nest.  A document is untrusted input and
@@ -92,33 +92,17 @@ struct Scope {
     /// Lexical component, independent of temporary prefixes used for indexed lookup.
     owner: String,
     access: std::rc::Rc<BTreeMap<String, String>>,
-    in_roles: crate::semantics::GeometryRoles,
+    /// The groups an interface types (`Walk::typed`), by absolute key, to the interface's name:
+    /// a field read past one names nothing it declares (`lookup`).  Given with `access`.
+    typed: std::rc::Rc<BTreeMap<String, String>>,
     prefixes: Vec<String>,
     closed: bool,
     forbidden: BTreeSet<String>,
     groups: BTreeSet<String>,
-    cyc: Option<Cyc>,
-    /// The `ring` the statement stands in, through however many instances and blocks.
-    ring: Option<Ring>,
-    /// Whether a `cycle` or a `repeat` stands anywhere above: the prefix in force then carries a
-    /// block's id (`#3.0.`) rather than an instance's name, and a declaration under it is one
-    /// *copy* — shown and selected by, never written into a statement.  This walk is the only
-    /// place that is known (`syntax::Named`, issue #39).
-    copies: bool,
-    /// Members of an unnamed call have internal keys but no path another statement can write.
-    anonymous: bool,
     /// The numbers in force where the statement was written — the enclosing counts, params and
     /// block binders.  An index (`p[i + 1]`) is an expression over exactly these, and references
     /// are resolved in a later pass where the walk's own environment is gone, so it travels here.
     vals: BTreeMap<String, Aff>,
-    /// The view an enclosing instance is drawn `in` (§6.7): every point-bearing declaration
-    /// emitted under it joins the plane.  The ref as *written* at the instance, with the
-    /// prefixes of the scope it was written in — `rewrite` resolves it there and not in the
-    /// component's own chain, where a body declaration called `top` would take it (#45.4).
-    in_plane: Option<InPlane>,
-    /// The classes every enclosing instance was given (`t2 := Throw(…) class phantom`), which
-    /// every declaration emitted under them carries beneath its own (§13.2).
-    in_class: crate::style::Classes,
     /// The **sides** in force: a `Side` formal to the word it was given (`s` → `right`).  A side
     /// is a word and not a number (§9.2), so it travels in a table of its own rather than as a
     /// ±1 in `vals` — which is exactly the idiom issue #48's item 4 takes out of the helpers, and
@@ -127,9 +111,50 @@ struct Scope {
     /// The file the body being walked was written in — the document (`None`) or a module — which
     /// is what a call's component name is resolved from (`Program::resolve_component`).
     module: Option<usize>,
-    /// How a predicate's body is being walked (§6.21): as itself; for what it makes and nothing
-    /// it states (the geometry a tangency at a point reads its derivatives over); or a second
-    /// time for a tangency, each relation emitted as its derivative and nothing made again.
+    /// The blocks the statement stands in — see `InBlock`.
+    block: InBlock,
+    /// What the enclosing instances put on every declaration emitted under them — see `Stamps`.
+    stamps: Stamps,
+    /// How a predicate's body is being walked, where the statement is in one — see `PredWalk`.
+    pred: PredWalk,
+}
+
+/// The blocks a statement stands in (`Scope::block`).
+#[derive(Clone, Default)]
+struct InBlock {
+    cyc: Option<Cyc>,
+    /// The `ring` the statement stands in, through however many instances and blocks.
+    ring: Option<Ring>,
+    /// Whether a `cycle` or a `repeat` stands anywhere above: the prefix in force then carries a
+    /// block's id (`#3.0.`) rather than an instance's name, and a declaration under it is one
+    /// *copy* — shown and selected by, never written into a statement.  This walk is the only
+    /// place that is known (`syntax::Named`, issue #39).
+    copies: bool,
+}
+
+/// What the enclosing instances put on every declaration emitted under them (`Scope::stamps`).
+#[derive(Clone, Default)]
+struct Stamps {
+    roles: crate::semantics::GeometryRoles,
+    /// The view an enclosing instance is drawn `in` (§6.7): every point-bearing declaration
+    /// emitted under it joins the plane.  The ref as *written* at the instance, with the
+    /// prefixes of the scope it was written in — `rewrite` resolves it there and not in the
+    /// component's own chain, where a body declaration called `top` would take it (#45.4).
+    plane: Option<InPlane>,
+    /// The classes every enclosing instance was given (`t2 := Throw(…) class phantom`), which
+    /// every declaration emitted under them carries beneath its own (§13.2).
+    class: crate::style::Classes,
+    /// Members of an unnamed call have internal keys but no path another statement can write.
+    anonymous: bool,
+}
+
+/// How a predicate's body is being walked (§6.21), where a statement stands in one
+/// (`Scope::pred`).
+#[derive(Clone, Default)]
+struct PredWalk {
+    /// As itself; for what it makes and nothing it states (the geometry a tangency at a point
+    /// reads its derivatives over); or a second time for a tangency, each relation emitted as
+    /// its derivative and nothing made again.
     pass: apply::Pass,
     /// The statement a relation made by a predicate's use was written as in the body, kept when
     /// the application stamps the use's own over it (`apply`): what a set used there is applied
@@ -140,15 +165,12 @@ struct Scope {
     /// (`Written::held`, `apply`) — the one rule a region's term is read by (#192).  Carried into
     /// every use applied under it.
     held: bool,
-    /// The groups an interface types (`Walk::typed`), by absolute key, to the interface's name:
-    /// a field read past one names nothing it declares (`lookup`).  Given with `access`.
-    typed: std::rc::Rc<BTreeMap<String, String>>,
 }
 
 impl Scope {
     /// The derivative a body walked for a tangency states its relations as (§6.21).
     fn twin(&self) -> Option<&crate::syntax::Along> {
-        match &self.pass {
+        match &self.pred.pass {
             apply::Pass::Along(a) => Some(a),
             apply::Pass::Itself | apply::Pass::Made => None,
         }
@@ -187,7 +209,7 @@ fn is_copy_prefix(p: &str) -> bool {
         && block[1..].bytes().all(|b| b.is_ascii_digit())
 }
 
-/// An instance's `in PLANE`, and where it was written — see `Scope::in_plane`.
+/// An instance's `in PLANE`, and where it was written — see `Stamps::plane`.
 #[derive(Clone)]
 struct InPlane {
     owner: String,
@@ -326,55 +348,91 @@ struct Walk<'a> {
     /// The document says `use std`, so it has the standard datums (`StandardDatums`).
     standard_datums: bool,
     group_names: BTreeSet<String>,
-    /// A group or set formal's alias key, where it was given, and which of the two it wants:
-    /// checked against what the alias reaches once every name is known (`resolve`).
-    group_bindings: Vec<(String, Span, crate::syntax::Ty)>,
-    /// A `path` formal's alias key, where it was given and the formal's name: resolved with the
-    /// rest (`resolve`) into `Expansion::kinds`.
-    path_bindings: Vec<(String, Span, String)>,
     /// Every interface of the program, resolved once (`interfaces::shapes`).
     shapes: Vec<std::rc::Rc<interfaces::Shape>>,
     /// The groups interfaces type (`Walk::typed`), by absolute key, to the interface's name.
     typed: BTreeMap<String, String>,
+    /// What a binding or a read asks that only every name known can answer — see `Checks`.
+    checks: Checks,
+    /// Blocks set aside until their chain is found — see `Aside`.
+    aside: Aside,
+    /// The unknowns declared so far — see `Expansion::unknowns`.
+    unknowns: BTreeMap<String, crate::model::Declared>,
+    /// The components being expanded, outermost first, each with the numbers it was given: a
+    /// call to one already here is a component instantiating itself, walked like any other call
+    /// (a `when` ends it, §12.9) unless it is given the numbers it was given there, which make
+    /// the same choices again and so never end (E003).
+    instantiating: Vec<(&'a Component, BTreeMap<String, Aff>)>,
+    /// The rings expanded — see `Rings`.
+    rings: Rings,
+    /// The relation words applied and what applications bound — see `WordState`.
+    words: WordState,
+    /// The sets made and how they are drawn — see `SetState`.
+    sets: SetState<'a>,
+    /// Every point drawn in further planes and each of its twins — see `Expansion::twins`.
+    twins: Vec<(String, String)>,
+    /// See `Expansion::normals`.
+    normals: BTreeSet<String>,
+    /// The solids' faces read as sets and blocks over them — see `FaceState`.
+    faces: FaceState,
+}
+
+/// What a binding or a read asks that only every name known can answer (`resolve`), and the
+/// kinds it asked for (`Walk::checks`).
+#[derive(Default)]
+struct Checks {
+    /// A group or set formal's alias key, where it was given, and which of the two it wants:
+    /// checked against what the alias reaches once every name is known (`resolve`).
+    groups: Vec<(String, Span, crate::syntax::Ty)>,
+    /// A `path` formal's alias key, where it was given and the formal's name: resolved with the
+    /// rest (`resolve`) into `Expansion::kinds`.
+    paths: Vec<(String, Span, String)>,
     /// A formal an interface types: the key of the whole argument's alias, where it was given,
     /// the shape, and the argument as written — checked against what the alias reaches
     /// (`resolve`, `conform`).
-    interface_bindings: Vec<(String, Span, std::rc::Rc<interfaces::Shape>, String)>,
+    interfaces: Vec<(String, Span, std::rc::Rc<interfaces::Shape>, String)>,
     /// What path formals and interfaces asked to be an entity of a kind, for `Expansion::kinds`.
     kinds: Vec<KindAsked>,
-
     group_fields: Vec<(String, Span)>,
     /// The dotted names a dimension's text reads that nothing numeric in scope answers to, with
     /// where each was written and the scope to resolve it in: judged once every name is known
     /// (`resolve`), since only then can `k.r` (a circle's radius) be told from `t.w` (a named
     /// dimension of the instance `t`).
     dim_reads: Vec<(String, Span, Scope)>,
-    /// Blocks over a chain's edges, waiting for their chain — see `Pending`.
-    pending: Vec<Pending>,
-    /// Statements held aside in the walk's own output while a deferred block is expanded into a
-    /// vector of its own, so the statement cap counts them.
-    held: usize,
-    /// The unknowns declared so far — see `Expansion::unknowns`.
-    unknowns: BTreeMap<String, crate::model::Declared>,
     /// Where a statement read a name nothing declares (E101): the statement is not emitted, so
     /// the name never reaches the expression graph to become an unknown of its own making.
     refused: Vec<Span>,
-    /// The components being expanded, outermost first, each with the numbers it was given: a
-    /// call to one already here is a component instantiating itself, walked like any other call
-    /// (a `when` ends it, §12.9) unless it is given the numbers it was given there, which make
-    /// the same choices again and so never end (E003).
-    instantiating: Vec<(&'a Component, BTreeMap<String, Aff>)>,
-    /// The rings expanded, waiting for their centres to be resolved with everything else: the
-    /// copies' prefix, the centre as written and the scope it was written in, the count, the
-    /// block.
-    rings: Vec<(String, Ref, Scope, usize, Span)>,
+}
+
+/// Blocks over a chain's edges, set aside until their chain is found (`Walk::aside`).
+#[derive(Default)]
+struct Aside {
+    /// The blocks waiting for their chain — see `Pending`.
+    blocks: Vec<Pending>,
+    /// Statements held aside in the walk's own output while a deferred block is expanded into a
+    /// vector of its own, so the statement cap counts them.
+    held: usize,
+}
+
+/// The rings the walk expanded (`Walk::rings`).
+#[derive(Default)]
+struct Rings {
+    /// Waiting for their centres to be resolved with everything else: the copies' prefix, the
+    /// centre as written and the scope it was written in, the count, the block.
+    written: Vec<(String, Ref, Scope, usize, Span)>,
     /// Those resolved — see `Expansion::rings`.
-    ring_infos: Vec<RingInfo>,
+    infos: Vec<RingInfo>,
+}
+
+/// The relation words applied, and what a call's or a use's application bound
+/// (`Walk::words`).
+#[derive(Default)]
+struct WordState {
     /// Each relation word reached, read once — see `expand_word`.
-    word_kinds: BTreeMap<usize, Option<std::rc::Rc<BTreeMap<String, words::Param>>>>,
+    kinds: BTreeMap<usize, Option<std::rc::Rc<BTreeMap<String, words::Param>>>>,
     /// The relation words being applied, outermost first, each with where its outermost use is
     /// written: one reached again inside its own application is defined in terms of itself.
-    applying_words: Vec<(usize, Span)>,
+    applying: Vec<(usize, Span)>,
     /// The names an application bound to what its use wrote (`apply::bind_to_use`): one that
     /// names nothing is said once, at the operand, and not again inside the body.
     use_aliases: BTreeSet<String>,
@@ -382,27 +440,32 @@ struct Walk<'a> {
     /// application's bound variables.  A ring's representative is judged by the argument as
     /// written (E021), and not again where a body reads the name (#226).
     arguments: BTreeSet<String>,
-    /// Every set the walk made, by absolute name (§6.21) — see `sets::Site`.
-    sets: BTreeMap<String, sets::Site>,
+}
+
+/// The sets the walk made (§6.21) and how each is drawn (`Walk::sets`).
+struct SetState<'a> {
+    /// Every set the walk made, by absolute name — see `sets::Site`.
+    made: BTreeMap<String, sets::Site>,
     /// Those drawn as elements (`lowering`), by the same name, with what each is judged by.
     lowered: BTreeMap<String, crate::lowering::Form>,
     /// The sets the elaborator refused as elements, walked as sets (`expand_with`).
     unlowered: &'a BTreeSet<String>,
     /// Whether the uses of sets are being applied, so a set made now is made inside one.
-    applying_sets: bool,
-    /// Every point drawn in further planes and each of its twins — see `Expansion::twins`.
-    twins: Vec<(String, String)>,
-    /// See `Expansion::normals`.
-    normals: BTreeSet<String>,
+    applying: bool,
     /// Every region solid's probe — see `Expansion::probes`.
     probes: Vec<String>,
+}
+
+/// The solids' faces read as sets, and the blocks over them (`Walk::faces`).
+#[derive(Default)]
+struct FaceState {
     /// Each solid's faces, by the path they are named by from it, where the elaborator has said
     /// (#183 F4) — see `Expansion::face_repeats`.
-    faces: BTreeMap<String, Vec<crate::solid::faces::FacePath>>,
-    face_repeats: BTreeSet<String>,
+    given: BTreeMap<String, Vec<crate::solid::faces::FacePath>>,
+    repeats: BTreeSet<String>,
     /// See `Expansion::face_planes` and `face_axes`.
-    face_planes: Vec<FacePlane>,
-    face_axes: Vec<FaceAxis>,
+    planes: Vec<FacePlane>,
+    axes: Vec<FaceAxis>,
 }
 
 /// Expand a program's root component into a flat list of declarations, constraints, gauges and
@@ -425,8 +488,8 @@ pub fn expand_faces(
     faces: &BTreeMap<String, Vec<crate::solid::faces::FacePath>>,
 ) -> Expansion {
     let mut w = Walk::new(prog, units, None);
-    w.unlowered = unlowered;
-    w.faces = faces.clone();
+    w.sets.unlowered = unlowered;
+    w.faces.given = faces.clone();
     let root = prog.root();
     // A definitions-only file has nothing to expand. In particular, imported parameters must
     // not be evaluated in a unit system that only an eventual instantiating model will supply.
@@ -506,36 +569,24 @@ impl<'a> Walk<'a> {
             called: BTreeSet::new(),
             standard_datums,
             group_names: BTreeSet::new(),
-            group_bindings: Vec::new(),
-            path_bindings: Vec::new(),
             shapes: interfaces::shapes(prog),
             typed: BTreeMap::new(),
-            interface_bindings: Vec::new(),
-            kinds: Vec::new(),
-            group_fields: Vec::new(),
-            dim_reads: Vec::new(),
-            pending: Vec::new(),
-            held: 0,
+            checks: Checks::default(),
+            aside: Aside::default(),
             unknowns: BTreeMap::new(),
-            refused: Vec::new(),
             instantiating: Vec::new(),
-            rings: Vec::new(),
-            ring_infos: Vec::new(),
-            word_kinds: BTreeMap::new(),
-            applying_words: Vec::new(),
-            use_aliases: BTreeSet::new(),
-            arguments: BTreeSet::new(),
-            sets: BTreeMap::new(),
-            lowered: BTreeMap::new(),
-            unlowered: &NONE,
-            applying_sets: false,
+            rings: Rings::default(),
+            words: WordState::default(),
+            sets: SetState {
+                made: BTreeMap::new(),
+                lowered: BTreeMap::new(),
+                unlowered: &NONE,
+                applying: false,
+                probes: Vec::new(),
+            },
             twins: Vec::new(),
             normals: BTreeSet::new(),
-            probes: Vec::new(),
-            faces: BTreeMap::new(),
-            face_repeats: BTreeSet::new(),
-            face_planes: Vec::new(),
-            face_axes: Vec::new(),
+            faces: FaceState::default(),
         }
     }
 
@@ -597,15 +648,15 @@ impl<'a> Walk<'a> {
             instances: self.instances,
             aliases,
             unknowns: self.unknowns,
-            rings: self.ring_infos,
+            rings: self.rings.infos,
             lowered,
             twins: self.twins,
             normals: self.normals,
-            probes: self.probes,
-            face_repeats: self.face_repeats,
-            face_planes: self.face_planes,
-            face_axes: self.face_axes,
-            kinds: self.kinds,
+            probes: self.sets.probes,
+            face_repeats: self.faces.repeats,
+            face_planes: self.faces.planes,
+            face_axes: self.faces.axes,
+            kinds: self.checks.kinds,
         }
     }
 }

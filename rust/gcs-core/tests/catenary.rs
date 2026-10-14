@@ -4,25 +4,9 @@
 //! peg, touched by a line; Dido's arc; and a free length found where the energy is stationary in it.
 
 use gcs_core::model::{EntKind, EntRef, Sketch};
-use gcs_core::program::{elaborate, Elaborated};
+use gcs_core::program::Elaborated;
 use gcs_core::solve::{solve, SolveOpts};
-use crate::common::parse;
-
-pub fn read(src: &str) -> (Elaborated, Vec<String>) {
-    let (prog, errs) = parse(src);
-    let e = elaborate(&prog);
-    let mut all: Vec<String> = errs.iter().map(|x| format!("syntax: {}", x.message)).collect();
-    all.extend(e.diags.iter().map(|d| format!("{}: {}", d.code.as_str(), d.message)));
-    (e, all)
-}
-
-pub fn solved(src: &str) -> Elaborated {
-    let (mut e, d) = read(src);
-    assert!(e.ok(), "{d:?}");
-    let r = solve(&mut e.sketch, SolveOpts::default());
-    assert!(r.success, "{}", r.message);
-    e
-}
+use crate::common::lenient::{read, solved};
 
 pub const ROPE: &str = "\
 use std

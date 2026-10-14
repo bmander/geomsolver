@@ -4,10 +4,9 @@
 
 use gcs_core::edit::{self, Kind, SolidSweep};
 use gcs_core::model::EntRef;
-use gcs_core::program::{elaborate, Elaborated};
-use gcs_core::solid::ApproximationPolicy::Report;
-use gcs_core::syntax::{BodyWord, Program, Sense};
-use crate::common::parse;
+use gcs_core::program::elaborate;
+use gcs_core::syntax::{BodyWord, Sense};
+use crate::common::{gestures::{taken, volume}, parsed::{prog_of, read}};
 
 /// A 60 × 40 rectangle of named lines on the front, a circle of radius 5 at (12, 20) and a loose
 /// 10 × 10 square at (35, 15) inside it.
@@ -35,28 +34,6 @@ rs := line(r, s)
 sp := line(s, p)
 }
 ";
-
-fn prog_of(src: &str) -> Program {
-    let (p, errs) = parse(src);
-    assert!(errs.is_empty(), "{:?}\n{src}", errs.iter().map(|e| &e.message).collect::<Vec<_>>());
-    p
-}
-
-fn read(src: &str) -> Elaborated {
-    let e = elaborate(&prog_of(src));
-    assert!(e.ok(), "{:?}\n{src}", e.errors().map(|d| d.message.clone()).collect::<Vec<_>>());
-    e
-}
-
-fn taken(e: edit::Edit) -> String {
-    assert_eq!(e.refused, None);
-    assert_eq!(e.kind, Kind::Structural);
-    e.text
-}
-
-fn volume(e: &Elaborated, name: &str) -> f64 {
-    e.sketch.evaluated_solid(e.map.ent_named(name).unwrap().i(), Report).unwrap().volume()
-}
 
 fn edges(names: &[&str]) -> Vec<String> {
     names.iter().map(|n| n.to_string()).collect()

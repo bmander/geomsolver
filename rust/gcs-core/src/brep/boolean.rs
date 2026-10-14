@@ -189,14 +189,14 @@ pub fn glued(a: &Brep,b: &Brep,tol: f64) -> Option<Brep> {
 
 /// One step of the body rule: `solid` combined with `operand` by `op`, to a tolerance of the two's
 /// size (never under `floor`, mm), and checked.
-pub fn combined(solid: &Brep,operand: &Brep,op: Op,floor: f64) -> Result<Brep,String> {
+pub fn combined(solid: &Brep,operand: &Brep,op: Op,floor: f64) -> Result<Brep,super::KernelError> {
     let tol = super::geom::tolerance_over(solid.size().max(operand.size()),floor);
     let mut out = boolean(solid,operand,op,tol)?;
     // material touching itself along a line (two rounds of separate statements meeting where the
     // body they each read leaves them so, #218): each such edge held twice, a solid's boundary
     // pinched there
     if let Err(e) = out.check(10.*tol) {
-        if !e.starts_with(super::topo::NOT_MANIFOLD) || !matches!(out.unpinched(),Ok(n) if n > 0) { return Err(e) }
+        if e.kind != super::Kind::NotManifold || !matches!(out.unpinched(),Ok(n) if n > 0) { return Err(e) }
         out.check(10.*tol)?;
     }
     Ok(out)

@@ -6,21 +6,13 @@
 //! out, within the field's bar.
 use gcs_core::program::Elaborated;
 use gcs_core::solid::MaterialField;
-use gcs_core::solve::{solve, SolveOpts};
 
-use crate::common::{ent, read};
-use crate::fillet_definition::{
+use crate::common::{ent, text::solved};
+use crate::common::rounds::{
     beside_cylinder, bore_rim, root_ring, sloped, sloped_root, square_run, tee_crotch, RIM, ROOT,
 };
-use crate::fillet_meridian::knob_neck;
+use crate::common::rounds::meridian::knob_neck;
 use crate::region_general::field_volume;
-
-fn solved(src: &str) -> Elaborated {
-    let mut e = read(src);
-    let r = solve(&mut e.sketch, SolveOpts::default());
-    assert!(r.success, "{}", r.message);
-    e
-}
 
 /// Where solid `name` of `src` has material and where it has none.
 fn holds(src: &str, name: &str, inside: &[[f64; 3]], outside: &[[f64; 3]]) -> Elaborated {

@@ -7,18 +7,10 @@ use gcs_core::model::FaceRef;
 use gcs_core::program::Elaborated;
 use gcs_core::solid::faces::{face_paths, BodyFaces, FacePath};
 use gcs_core::solid::MaterialField;
-use gcs_core::solve::{solve, SolveOpts};
 use std::f64::consts::PI;
 
-use crate::common::{ent, read};
+use crate::common::{ent, text::solved};
 use crate::region_general::field_volume;
-
-fn solved(src: &str) -> Elaborated {
-    let mut e = read(src);
-    let r = solve(&mut e.sketch, SolveOpts::default());
-    assert!(r.success, "{}\n{src}", r.message);
-    e
-}
 
 /// A path names a face by its segments from the first, never by a suffix.
 #[test]

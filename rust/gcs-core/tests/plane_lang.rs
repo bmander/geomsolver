@@ -6,7 +6,7 @@ use gcs_core::model::{EntKind, EntRef};
 use gcs_core::plane::Basis;
 use gcs_core::program::{elaborate, Elaborated};
 use gcs_core::syntax::{highlight, write_stmt_to, Tint};
-use crate::common::parse;
+use crate::common::{gestures::reconciled, parse};
 use gcs_core::io;
 
 use crate::common::read;
@@ -71,13 +71,6 @@ fn misparses(src: &str, needle: &str) {
     let (_, errs) = parse(src);
     let msgs: Vec<String> = errs.into_iter().map(|e| e.message).collect();
     assert!(msgs.iter().any(|m| m.contains(needle)), "expected `{needle}`\n{src}\n{msgs:?}");
-}
-
-fn reconciled(e: &mut Elaborated) -> edit::Edit {
-    let sk = std::mem::take(&mut e.sketch);
-    let out = edit::reconcile(e, &sk);
-    e.sketch = sk;
-    out
 }
 
 /// Three planes of the document's own over the standard axes, held at the origin.
