@@ -107,8 +107,9 @@ this needs (ported from #79–#110): edges along a face cut where they cross its
 (`boolean::crossings_among`), `query::line_cylinder`, `Surface::offset`, a fitted edge read at its
 own `tol`; a plane or a cylinder touching a cylinder along a line is one line, judged by the gap
 (the half chord is its square root, #218), and a vertex an edge lying in a face makes on that
-face's edge is on every face that edge bounds (a meeting of the face beside it may end there). `cad::shifted` (the app's exact solid, built about its own origin) moves a lowered
-node's pieces, corners and balls with the rest (`shifted_node`). Refused by the kernel, by name
+face's edge is on every face that edge bounds (a meeting of the face beside it may end there). `cad::recipe_about` (the app's exact solid, built about its own origin) writes a
+lowered node's pieces, corners and balls about it with the rest: every node writer writes its points
+through one `brep::recipe::Writer`, so no key can be left behind. Refused by the kernel, by name
 (#218): a meeting that branches where two surfaces touch (`roll`), a fitted canal met tangent by
 a cylinder (`runout.sv`'s lug rounded all over: ill-conditioned), and rounds of separate
 statements touching along a line (no manifold file describes it). **The oracle** (#218's 8): `gcs-cli tests/fillet_oracle.rs` (OCCT) builds each rounds

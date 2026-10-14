@@ -14,7 +14,9 @@ use std::collections::BTreeMap;
 type Built = Result<Brep,KernelError>;
 
 mod node;
+mod writer;
 pub use node::{Body,Corner,Edge,Kept,Lowered,Named,Node,Recipe,Rolled,Run,Section,Stroke};
+pub use writer::Writer;
 
 /// Between a face's solid and its own name while a recipe is built (`build`, `meridian`,
 /// `solid::exact`): the solid half keyed as `document::operand_primitives` keys it, the face half

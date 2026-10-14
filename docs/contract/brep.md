@@ -66,7 +66,7 @@ an extrusion's of a curve too); a revolution about the axis is kept by `pattern`
 past `nurbs::BANDED` points solve banded; a gross sheet falls back to chord length.
 **Rung 3 (the app reads the exact solid):** a static solid's `EvaluatedSolid` is the B-rep's
 (`solid::Exact`, `Sketch::exact_solid`, cached against `solid::reads`; `from_brep`), built about its
-own origin (`cad::shifted`), faces named by document path (caps leading as the facet term's, so
+own origin (`cad::recipe_about`, every point written through `recipe::Writer`), faces named by document path (caps leading as the facet term's, so
 edges are named alike), meshed no coarser than `BREP_RELATIVE_SAG` or 64 steps a turn, one
 polyhedral `Prim`. The facet term answers what the exact path refuses (touching tori, empty
 solids); `SOLVENT_SOLIDS=facets` throughout. Silhouettes on curved faces are traced on the surfaces

@@ -391,7 +391,7 @@ fn gate(sk: &Sketch, solid: usize, pieces: &[Piece], body: &super::faces::BodyFa
         // in the stratum's own frame (millimetres about its origin), as the recipe builds it: the
         // lowered node, rolled against the stratum standing in its built set
         let (stratum, mm, origin) = body.brep();
-        let mut node = super::cad::shifted_node(&assemble(pieces).node(mm)?, scale(origin, mm));
+        let mut node = assemble(pieces).node(&crate::brep::recipe::Writer::about(mm, scale(origin, mm)))?;
         node.set("stratum", object([("kind", "body".into()), ("stock", 0.into()), ("on", Json::Arr(vec![])),
             ("cut", Json::Arr(vec![])), ("bound", Json::Arr(vec![]))]));
         let built = std::collections::BTreeMap::from([(0, stratum.clone())]);

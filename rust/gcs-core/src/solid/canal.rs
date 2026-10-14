@@ -6,6 +6,7 @@
 //! spring) is a solid like any other. The recipe's `canal` node, built by this kernel; held to the
 //! sweep's own field before it stands (`gate`), as the lowering table's pieces are. Any other tool
 //! or motion stays the generating class's, or the field's.
+use crate::brep::recipe::Writer;
 use crate::json::{object, Json};
 use crate::model::{Sketch, SolidDef};
 use crate::space::{add, cross, dot, norm, scale, sub};
@@ -29,12 +30,12 @@ pub struct Canal {
 }
 
 impl Canal {
-    /// The recipe's node (lengths times `scale`, to millimetres).
-    pub fn node(&self, scale_by: f64) -> Json {
-        let v = |p: V| Json::Arr(p.iter().map(|&x| Json::from(x * scale_by)).collect());
-        object([("kind", "canal".into()), ("centre", v(self.centre)), ("radius", (self.radius * scale_by).into()),
-            ("origin", v(self.origin)), ("axis", Json::Arr(self.axis.iter().map(|&x| x.into()).collect())),
-            ("angle", self.angle.into()), ("advance", (self.advance * scale_by).into()),
+    /// The recipe's node, written by `w`.
+    pub fn node(&self, w: &Writer) -> Json {
+        let mm = |p: V| p.map(|x| x * w.scale);
+        object([("kind", "canal".into()), ("centre", w.point(self.centre)), ("radius", w.length(self.radius)),
+            ("origin", w.line_origin(mm(self.origin), self.axis)), ("axis", Writer::triple(self.axis)),
+            ("angle", self.angle.into()), ("advance", w.length(self.advance)),
             ("face", self.face.clone().into())])
     }
 }
@@ -107,7 +108,7 @@ fn read(sk: &Sketch, swept: usize) -> Option<Result<Canal, String>> {
 /// own field agrees with it — every probe a little inside its boundary material by the field, every
 /// one a little outside not (`agreement`, sampled by area).
 fn gate(sk: &Sketch, swept: usize, c: &Canal) -> Result<(), String> {
-    let brep = crate::brep::recipe::node(&c.node(1.0), &Default::default())?;
+    let brep = crate::brep::recipe::node(&c.node(&Writer::world(1.0)), &Default::default())?;
     let field = super::MaterialField::read(sk, swept, super::cad::AXIS_TOLERANCE)?;
     let what = format!("`{}`: the ball's tube disagrees with the sweep's field", sk.solids[swept].name);
     super::agreement::gate(&field, &brep, None, &what)

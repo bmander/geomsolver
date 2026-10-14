@@ -199,7 +199,7 @@ fn a_run_cut_off_at_a_slant_by_the_face_it_ends_on() {
     close(props::volume(&b), want);
     // running out flush into the west face, it leaves no sliver of the near face there
     assert_eq!(kinds(&b), [("cylinder", 1), ("plane", 6)].into());
-    // the app builds a solid about its own origin (`cad::shifted`): the planes the run is kept
+    // the app builds a solid about its own origin (`cad::recipe_about`): the planes the run is kept
     // behind move with the rest (a cut's volume cannot tell, its prism past a face cutting air)
     let recipe = gcs_core::solid::cad::recipe(&e.sketch, ent(&e, "block").i()).unwrap();
     let by = [5.0, 7.0, 11.0];
@@ -209,7 +209,8 @@ fn a_run_cut_off_at_a_slant_by_the_face_it_ends_on() {
             .map(|h| { let a = h.get("at").unwrap().arr(); [a[0].as_f64(), a[1].as_f64(), a[2].as_f64()] })
             .collect()
     };
-    let (before, after) = (planes(&recipe), planes(&gcs_core::solid::cad::shifted(&recipe, by)));
+    let about = gcs_core::solid::cad::recipe_about(&e.sketch, ent(&e, "block").i(), by).unwrap();
+    let (before, after) = (planes(&recipe), planes(&about));
     assert_eq!(before.len(), 2);
     assert!(before.iter().zip(&after).all(|(p, q)| (0..3).all(|k| (p[k] - by[k] - q[k]).abs() < 1e-12)));
 }
@@ -463,7 +464,7 @@ fn a_run_cut_off_by_a_post_it_runs_into() {
     let run = over_round(r, |u, h| h * (30.0 - (big * big - u * u).sqrt()));
     let want = 60.0 * 40.0 * 10.0 + PI * big * big * 30.0 - PI * big * big / 2.0 * 10.0 - 2.0 * run;
     close(props::volume(&b), want);
-    // the app builds a solid about its own origin (`cad::shifted`): the post's wall the runs are
+    // the app builds a solid about its own origin (`cad::recipe_about`): the post's wall the runs are
     // cut off by moves with the rest
     let recipe = gcs_core::solid::cad::recipe(&e.sketch, ent(&e, "stand").i()).unwrap();
     let by = [5.0, 7.0, 11.0];
@@ -473,7 +474,8 @@ fn a_run_cut_off_by_a_post_it_runs_into() {
             .map(|h| { let a = h.get("origin").unwrap().arr(); [a[0].as_f64(), a[1].as_f64(), a[2].as_f64()] })
             .collect()
     };
-    let (before, after) = (walls(&recipe), walls(&gcs_core::solid::cad::shifted(&recipe, by)));
+    let about = gcs_core::solid::cad::recipe_about(&e.sketch, ent(&e, "stand").i(), by).unwrap();
+    let (before, after) = (walls(&recipe), walls(&about));
     assert_eq!(before.len(), 2);
     assert!(before.iter().zip(&after).all(|(p, q)| (0..3).all(|k| (p[k] - by[k] - q[k]).abs() < 1e-12)));
 }

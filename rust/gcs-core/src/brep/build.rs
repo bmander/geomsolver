@@ -7,6 +7,7 @@ use crate::fmath::Det;
 use super::geom::{tolerance,BSpline,Blend,Carry,Curve,Frame,Rigid,Surface,Uv,V};
 use std::sync::Arc;
 use super::topo::{reverse_loop,Brep,Coedge,EdgeCurve,Face,Pcurve};
+use super::recipe::Writer;
 use crate::json::Json;
 use crate::space::{add,cross,distance,dot,norm,scale,sub,unit};
 
@@ -79,19 +80,22 @@ impl Profile {
         Ok(Profile {origin:s.origin,normal:unit(s.normal),loops,names})
     }
 
-    /// As a recipe writes it (`from_json`'s inverse), its lengths times `scale`: lines, arcs and
-    /// B-splines (their weights where rational), each named where it is. It never fails.
-    pub fn to_json(&self,scale: f64) -> Result<Json,String> {
+    /// As a recipe writes it (`from_json`'s inverse; its lengths model units, written by `w`):
+    /// lines, arcs and B-splines (their weights where rational), each named where it is. It never
+    /// fails.
+    pub fn to_json(&self,w: &Writer) -> Result<Json,String> {
         use crate::json::object;
+        let scale = w.scale;
         let v = |p: V,s: f64| Json::Arr(p.iter().map(|&x| Json::from(x*s)).collect());
+        let at = |p: V| w.at(p.map(|x| x*scale));
         let mut loops = Vec::new();
         for (l,edges) in self.loops.iter().enumerate() {
             let mut out = Vec::new();
             for (k,e) in edges.iter().enumerate() {
                 let mut j = match *e {
-                    ProfileEdge::Line {a,b} => object([("kind","line".into()),("start",v(a,scale)),("end",v(b,scale))]),
+                    ProfileEdge::Line {a,b} => object([("kind","line".into()),("start",at(a)),("end",at(b))]),
                     ProfileEdge::Arc {frame,r,span} => {
-                        let mut o = object([("kind","circle".into()),("center",v(frame.o,scale)),
+                        let mut o = object([("kind","circle".into()),("center",at(frame.o)),
                             ("normal",v(frame.z,1.)),("x_dir",v(frame.x,1.)),("radius",(r*scale).into())]);
                         if let Some([a0,a1]) = span { o.set("angles",Json::Arr(vec![a0.into(),a1.into()])); }
                         o
@@ -99,8 +103,8 @@ impl Profile {
                     ProfileEdge::Spline(ref b) => {
                         let mut o = object([("kind","bspline".into()),("degree",b.degree.into()),
                             ("knots",Json::Arr(b.knots.iter().map(|&k| k.into()).collect())),
-                            ("poles",Json::Arr(b.poles.iter().map(|&p| v(p,scale)).collect()))]);
-                        if let Some(w) = &b.weights { o.set("weights",Json::Arr(w.iter().map(|&x| x.into()).collect())); }
+                            ("poles",Json::Arr(b.poles.iter().map(|&p| at(p)).collect()))]);
+                        if let Some(weights) = &b.weights { o.set("weights",Json::Arr(weights.iter().map(|&x| x.into()).collect())); }
                         o
                     }
                 };
@@ -110,7 +114,9 @@ impl Profile {
             }
             loops.push(Json::Arr(out));
         }
-        Ok(object([("origin",v(self.origin,scale)),("normal",v(self.normal,1.)),("loops",Json::Arr(loops))]))
+        let normal = self.normal.map(|x| x*1.);
+        Ok(object([("origin",w.plane_origin(self.origin.map(|x| x*scale),normal)),("normal",Writer::triple(normal)),
+            ("loops",Json::Arr(loops))]))
     }
 
     /// A length the profile's tolerances are taken against.

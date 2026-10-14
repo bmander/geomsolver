@@ -8,6 +8,7 @@
 //! Any other term (a sum of measurements, a face's, an offset) leaves the region the field's.
 use crate::brep::build::{ball_section, disc, square, Profile, ProfileEdge};
 use crate::brep::geom::Frame;
+use crate::brep::recipe::Writer;
 use crate::json::{object, Json};
 use crate::model::{RegionShape, Sketch, SolidDef};
 use crate::space::{add, dot, norm, scale, sub};
@@ -51,23 +52,23 @@ enum Shape {
 }
 
 impl Bounded {
-    /// The recipe's node (lengths times `scale`, to millimetres): `region`, its `pieces` each a
-    /// `revolve` or a `prism` with `keep` beside it.
-    pub fn node(&self, scale_by: f64) -> Result<Json, String> {
-        let v = |p: V| Json::Arr(p.iter().map(|&x| Json::from(x * scale_by)).collect());
-        let dir = |p: V| Json::Arr(p.iter().map(|&x| Json::from(x)).collect());
+    /// The recipe's node, written by `w`: `region`, its `pieces` each a `revolve` or a `prism` with
+    /// `keep` beside it.
+    pub fn node(&self, w: &Writer) -> Result<Json, String> {
+        let scale_by = w.scale;
+        let mm = |p: V| p.map(|x| x * scale_by);
         let pieces = self.pieces.iter().map(|piece| {
             // each edge named by the term's set
             let profile = |p: Profile| {
                 let names = vec![vec![piece.name.clone(); p.loops[0].len()]];
-                Profile { names, ..p }.to_json(scale_by)
+                Profile { names, ..p }.to_json(w)
             };
             let mut node = match piece.shape {
                 Shape::Ball { c, r } => {
                     // a half disc turned once about a line through the centre
                     let f = Frame::about(c, [0.0, 0.0, 1.0]);
                     object([("kind", "revolve".into()), ("profile", profile(ball_section(&f, r))?),
-                        ("origin", v(c)), ("axis", dir(f.y)), ("angle", TAU.into())])
+                        ("origin", w.line_origin(mm(c), f.y)), ("axis", Writer::triple(f.y)), ("angle", TAU.into())])
                 }
                 Shape::Cylinder { a, d, r, reach } => {
                     object([("kind", "prism".into()), ("profile", profile(disc(a, d, r))?),
@@ -82,7 +83,7 @@ impl Bounded {
                                      ProfileEdge::Line { a: tip, b: a }];
                     let section = Profile { origin: a, normal: f.y, loops: vec![edges], names: Vec::new() };
                     object([("kind", "revolve".into()), ("profile", profile(section)?),
-                        ("origin", v(a)), ("axis", dir(d)), ("angle", TAU.into())])
+                        ("origin", w.line_origin(mm(a), d)), ("axis", Writer::triple(d)), ("angle", TAU.into())])
                 }
                 Shape::Half { o, n, reach } => {
                     // a square on the plane, swept away from `n` into the half-space
@@ -202,7 +203,7 @@ fn construction(sk: &Sketch, solid: usize) -> Option<Result<Bounded, String>> {
 /// the region's own field agrees with it — every probe a little inside its boundary material by
 /// the field, every one a little outside not (`agreement`, sampled by area).
 fn gate(sk: &Sketch, solid: usize, b: &Bounded) -> Result<(), String> {
-    let brep = crate::brep::recipe::node(&b.node(1.0)?, &Default::default())?;
+    let brep = crate::brep::recipe::node(&b.node(&Writer::world(1.0))?, &Default::default())?;
     let field = super::MaterialField::read(sk, solid, super::cad::AXIS_TOLERANCE)?;
     super::agreement::gate(&field, &brep, None, "its exact construction disagrees with the field")
 }

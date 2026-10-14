@@ -30,7 +30,7 @@ pub struct Exact {
 pub(crate) fn build(sk: &Sketch, si: usize) -> Result<Exact, String> {
     let mm = cad::millimetres(sk)?;
     let origin = frame_origin(sk, si, REPORT_UNIT);
-    let recipe = Recipe::read(&cad::shifted(&cad::recipe(sk, si)?, origin.map(|x| x * mm)))?;
+    let recipe = Recipe::read(&cad::recipe_about(sk, si, origin.map(|x| x * mm))?)?;
     // the rounding of coordinates read where the solid stands, before the shift: a few units in
     // the last place of the largest
     let floor = 16.0 * f64::EPSILON * origin.iter().fold(0.0f64, |m, x| m.max(x.abs())) * mm;
