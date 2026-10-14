@@ -1,7 +1,8 @@
 //! Solved analytic construction data for a native CAD host. No meshed surfaces,
 //! filesystem access or kernel dependency enters the core through this interface.
 use crate::{json::{object,Json},model::{EntKind,EntRef,Sense,Sketch,SolidDef}};
-use std::collections::BTreeSet;
+use crate::brep::recipe::Writer;
+use std::collections::{BTreeMap,BTreeSet};
 
 /// How far from a revolution's axis an endpoint is read as on it, whenever an export reads the
 /// solved model into fields, contacts or its admission (the tolerance a revolved snapshot takes).
@@ -34,7 +35,16 @@ pub fn placement_matrix(pose: crate::envelope::Motion,scale: f64) -> [f64;12] {
 /// geometry. Unsupported operations fail before a host receives a partial recipe.
 /// Native construction must additionally validate its analytic profiles and solids.
 pub fn recipe(sk: &Sketch,root: usize) -> Result<Json,String> {
-    Ok(recipe_with(sk,root,false)?.recipe)
+    Ok(recipe_with(sk,root,false,None)?.recipe)
+}
+
+/// `recipe` written about another origin: every point it carries less `by` (millimetres) — a
+/// profile's edges' ends, centres and poles, a guide's start and centre, a placement's translation
+/// (`t + R by − by`) — and every direction as it was; a point that only places a plane or a line
+/// put where its plane or line comes nearest the new origin (`brep::recipe::Writer`). A kernel
+/// building a solid far from the world's origin builds it about its own instead.
+pub fn recipe_about(sk: &Sketch,root: usize,by: [f64;3]) -> Result<Json,String> {
+    Ok(recipe_with(sk,root,false,Some(by))?.recipe)
 }
 
 /// One continuous sweep a static recipe left out of a body's cuts: the swept
@@ -61,7 +71,7 @@ pub struct StaticRecipe {
 }
 
 pub fn recipe_static(sk: &Sketch,root: usize) -> Result<StaticRecipe,String> {
-    recipe_with(sk,root,true)
+    recipe_with(sk,root,true,None)
 }
 
 /// Whether solid `i` holds a continuous sweep among its operands that only the generating class
@@ -102,68 +112,18 @@ pub(crate) fn swept_cut(sk: &Sketch,i: usize) -> Result<Option<SweptCut>,String>
     }
 }
 
-fn recipe_with(sk: &Sketch,root: usize,static_only: bool) -> Result<StaticRecipe,String> {
+fn recipe_with(sk: &Sketch,root: usize,static_only: bool,about: Option<[f64;3]>) -> Result<StaticRecipe,String> {
     super::validate(sk,root)?;
     let scale = millimetres(sk)?;
+    let w = Writer {scale,about};
+    let mut walk = Walk::new(sk,static_only);
     let mut pending = vec![(root,false)];
     let mut seen = BTreeSet::new();
     let mut nodes = Vec::new();
-    let mut sweeps = Vec::new();
-    // how many solids take each as an operand, and the lowered regions each stands for
-    let mut users: std::collections::BTreeMap<u32,usize> = Default::default();
-    for s in &sk.solids { for o in s.operands() { *users.entry(o).or_default() += 1; } }
-    let mut groups: std::collections::BTreeMap<usize,Vec<u32>> = Default::default();
-    // each region's route (`region::route`, #194), asked once a recipe; none for any other solid
-    let routes = std::cell::RefCell::new(std::collections::BTreeMap::new());
-    let route = |o: usize| routes.borrow_mut().entry(o).or_insert_with(|| super::region::route(sk,o).ok()).clone();
-    let pieces_of = |o: u32| route(o as usize).as_ref().and_then(|r| r.pieces().cloned()).unwrap_or_default();
-    // a region lowered to nothing is a term of no body: a round over faces that never meet
-    let nowhere = |o: &u32| route(*o as usize).as_ref().and_then(|r| r.pieces().map(|p| p.is_empty())).unwrap_or(false);
-    // each body's sets, read on its first visit and written on its second
-    let mut bodies: std::collections::BTreeMap<usize,([Vec<u32>;4],Vec<SweptCut>)> = Default::default();
     while let Some((i,ready)) = pending.pop() {
         if seen.contains(&i) { continue; }
         let dependencies = match &sk.solids[i].def {
-            SolidDef::Body {stock,on,through,bound} if !ready => {
-                if let Some(o) = std::iter::once(stock).chain(bound).find(|&o| nowhere(o)) {
-                    return Err(format!("`{}`: `{}` holds nowhere, so the body has no material",sk.solids[i].name,
-                        sk.solid_name(*o as usize)));
-                }
-                let mut cut: Vec<u32> = through.iter().copied().filter(|o| !nowhere(o)).collect();
-                // The static remainder of a body: its swept cuts are listed, not built.
-                let mut swept = Vec::new();
-                if static_only {
-                    if contains_sweep(sk,*stock as usize) {
-                        return Err(format!("`{}`: a body's stock may not contain a continuous sweep",sk.solids[i].name));
-                    }
-                    if let Some(&o) = on.iter().chain(bound).find(|&&o| contains_sweep(sk,o as usize)) {
-                        return Err(format!("`{}`: only a `cut` may hold swept material for now (`{}`)",
-                            sk.solids[i].name,sk.solids[o as usize].name));
-                    }
-                    let mut kept = Vec::new();
-                    for c in cut {
-                        match swept_cut(sk,c as usize)? { Some(sweep) => swept.push(sweep),None => kept.push(c) }
-                    }
-                    cut = kept;
-                }
-                // **the stratum** (#183 F6): what reads the body's faces acts on the body its other
-                // terms make, after them, fills then cuts, as the field applies them
-                let [on,cut,on_late,cut_late] = super::faces::stratum(sk,i,on.iter().copied().filter(|o| !nowhere(o)),cut);
-                // its lowered regions in each late set built as one (`lowering::assemble`): the first
-                // stands for the rest, which are no operands of their own
-                let mut lump = |v: Vec<u32>| -> Vec<u32> {
-                    let low: BTreeSet<u32> = v.iter().copied()
-                        .filter(|&o| users.get(&o) == Some(&1) && !pieces_of(o).is_empty()).collect();
-                    let Some(&first) = low.first().filter(|_| low.len() > 1) else { return v };
-                    groups.insert(first as usize,low.iter().copied().collect());
-                    v.into_iter().filter(|o| *o == first || !low.contains(o)).collect()
-                };
-                let (on_late,cut_late) = (lump(on_late),lump(cut_late));
-                let dependencies = std::iter::once(*stock).chain(on.iter().copied()).chain(cut.iter().copied())
-                    .chain(bound.iter().copied()).chain(on_late.iter().copied()).chain(cut_late.iter().copied()).collect();
-                bodies.insert(i,([on,cut,on_late,cut_late],swept));
-                dependencies
-            }
+            SolidDef::Body {..} if !ready => walk.sets(i)?,
             SolidDef::Body {..} => Vec::new(),
             _ => super::evaluation_operands(sk,i)?,
         };
@@ -172,22 +132,121 @@ fn recipe_with(sk: &Sketch,root: usize,static_only: bool) -> Result<StaticRecipe
             pending.extend(dependencies.iter().rev().map(|&i| (i as usize,false)));
             continue;
         }
+        let mut node = walk.node(i,&dependencies,&w)?;
+        node.set("id",i.into());
+        node.set("name",sk.solids[i].name.clone().into());
+        nodes.push(node);
+        seen.insert(i);
+    }
+    Ok(StaticRecipe {recipe:object([("schema",1.into()),("units","mm".into()),
+        ("root",root.into()),("nodes",Json::Arr(nodes))]),sweeps:walk.sweeps})
+}
+
+/// A recipe's walk over the solids (`recipe_with`): each body's sets gathered on its first visit
+/// (`sets`), and each solid written as its node on its second (`node`).
+struct Walk<'a> {
+    sk: &'a Sketch,
+    /// Whether the body's swept cuts are listed (`sweeps`) and left out of the recipe.
+    static_only: bool,
+    /// How many solids take each as an operand.
+    users: BTreeMap<u32,usize>,
+    /// The lowered regions the first of each group stands for.
+    groups: BTreeMap<usize,Vec<u32>>,
+    /// Each region's route (`region::route`, #194), asked once a recipe; none for any other solid.
+    routes: std::cell::RefCell<BTreeMap<usize,Option<super::region::Route>>>,
+    /// Each body's sets, read on its first visit and written on its second.
+    bodies: BTreeMap<usize,([Vec<u32>;4],Vec<SweptCut>)>,
+    /// The swept cuts left out, each listed once, on the emitting visit.
+    sweeps: Vec<SweptCut>,
+}
+
+impl<'a> Walk<'a> {
+    fn new(sk: &'a Sketch,static_only: bool) -> Walk<'a> {
+        let mut users: BTreeMap<u32,usize> = Default::default();
+        for s in &sk.solids { for o in s.operands() { *users.entry(o).or_default() += 1; } }
+        Walk {sk,static_only,users,groups:Default::default(),routes:Default::default(),bodies:Default::default(),sweeps:Vec::new()}
+    }
+
+    /// Solid `o`'s route, where it is a region.
+    fn route(&self,o: usize) -> Option<super::region::Route> {
+        self.routes.borrow_mut().entry(o).or_insert_with(|| super::region::route(self.sk,o).ok()).clone()
+    }
+    /// The lowering table's pieces of region `o`; none for any other solid.
+    fn pieces_of(&self,o: u32) -> std::rc::Rc<Vec<super::lowering::Piece>> {
+        self.route(o as usize).as_ref().and_then(|r| r.pieces().cloned()).unwrap_or_default()
+    }
+    /// Whether `o` is a region lowered to nothing, a term of no body: a round over faces that never
+    /// meet.
+    fn nowhere(&self,o: &u32) -> bool {
+        self.route(*o as usize).as_ref().and_then(|r| r.pieces().map(|p| p.is_empty())).unwrap_or(false)
+    }
+
+    /// Body `i`'s sets, read on its first visit: its swept cuts listed apart where only static
+    /// material is asked for, what reads its faces split off to act last (the stratum), its lowered
+    /// regions in each late set lumped as one; and the solids it depends on, in order.
+    fn sets(&mut self,i: usize) -> Result<Vec<u32>,String> {
+        let sk = self.sk;
+        let SolidDef::Body {stock,on,through,bound} = &sk.solids[i].def else { unreachable!("a body's sets") };
+        if let Some(o) = std::iter::once(stock).chain(bound).find(|&o| self.nowhere(o)) {
+            return Err(format!("`{}`: `{}` holds nowhere, so the body has no material",sk.solids[i].name,
+                sk.solid_name(*o as usize)));
+        }
+        let mut cut: Vec<u32> = through.iter().copied().filter(|o| !self.nowhere(o)).collect();
+        // The static remainder of a body: its swept cuts are listed, not built.
+        let mut swept = Vec::new();
+        if self.static_only {
+            if contains_sweep(sk,*stock as usize) {
+                return Err(format!("`{}`: a body's stock may not contain a continuous sweep",sk.solids[i].name));
+            }
+            if let Some(&o) = on.iter().chain(bound).find(|&&o| contains_sweep(sk,o as usize)) {
+                return Err(format!("`{}`: only a `cut` may hold swept material for now (`{}`)",
+                    sk.solids[i].name,sk.solids[o as usize].name));
+            }
+            let mut kept = Vec::new();
+            for c in cut {
+                match swept_cut(sk,c as usize)? { Some(sweep) => swept.push(sweep),None => kept.push(c) }
+            }
+            cut = kept;
+        }
+        // **the stratum** (#183 F6): what reads the body's faces acts on the body its other
+        // terms make, after them, fills then cuts, as the field applies them
+        let [on,cut,on_late,cut_late] = super::faces::stratum(sk,i,on.iter().copied().filter(|o| !self.nowhere(o)),cut);
+        let (on_late,cut_late) = (self.lump(on_late),self.lump(cut_late));
+        let dependencies = std::iter::once(*stock).chain(on.iter().copied()).chain(cut.iter().copied())
+            .chain(bound.iter().copied()).chain(on_late.iter().copied()).chain(cut_late.iter().copied()).collect();
+        self.bodies.insert(i,([on,cut,on_late,cut_late],swept));
+        Ok(dependencies)
+    }
+
+    /// A body's late set with its lowered regions built as one (`lowering::assemble`): the first
+    /// stands for the rest, which are no operands of their own.
+    fn lump(&mut self,v: Vec<u32>) -> Vec<u32> {
+        let low: BTreeSet<u32> = v.iter().copied()
+            .filter(|&o| self.users.get(&o) == Some(&1) && !self.pieces_of(o).is_empty()).collect();
+        let Some(&first) = low.first().filter(|_| low.len() > 1) else { return v };
+        self.groups.insert(first as usize,low.iter().copied().collect());
+        v.into_iter().filter(|o| *o == first || !low.contains(o)).collect()
+    }
+
+    /// Solid `i` written as its recipe node by `w`, every solid it depends on (`dependencies`)
+    /// written before it.
+    fn node(&mut self,i: usize,dependencies: &[u32],w: &Writer) -> Result<Json,String> {
+        let (sk,scale) = (self.sk,w.scale);
         let solid = &sk.solids[i];
-        let mut node = match &solid.def {
+        Ok(match &solid.def {
             // a ball under one turn: the tube about its centre's path (#238)
-            SolidDef::Swept {..} if let Some(c) = super::canal::built(sk,i) => c?.node(scale),
+            SolidDef::Swept {..} if let Some(c) = super::canal::built(sk,i) => c?.node(w),
             SolidDef::Swept {..} => return Err(format!(
                 "`{}`: native CAD boundary construction for continuous motion sweeps is not yet supported",solid.name)),
             SolidDef::Placed { source, motion, at } => {
                 let pose = crate::motion::Family::read(sk,*motion as usize)?.at(at.value)?;
-                let matrix = placement_matrix(pose,scale).into_iter().map(Json::from).collect();
                 object([("kind","placed".into()),("source",(*source).into()),
-                    ("matrix",Json::Arr(matrix))])
+                    ("matrix",w.matrix(placement_matrix(pose,scale)))])
             }
             SolidDef::Body {stock,bound,..} => {
-                let ([on,cut,on_late,cut_late],swept) = bodies.remove(&i).expect("a body's sets, read on its first visit");
+                let ([on,cut,on_late,cut_late],swept) = self.bodies.remove(&i).expect("a body's sets, read on its first visit");
                 // (each sweep listed once, on the emitting visit)
-                sweeps.extend(swept);
+                self.sweeps.extend(swept);
                 let mut node = body_terms(*stock,&on,&cut,bound);
                 node.set("kind","body".into());
                 if !on_late.is_empty() || !cut_late.is_empty() {
@@ -197,22 +256,22 @@ fn recipe_with(sk: &Sketch,root: usize,static_only: bool) -> Result<StaticRecipe
                 node
             }
             // a region: built as its route says (`region::route`)
-            SolidDef::Region {..} => match route(i).map_or_else(|| super::region::route(sk,i),Ok)? {
+            SolidDef::Region {..} => match self.route(i).map_or_else(|| super::region::route(sk,i),Ok)? {
                 // over a body's faces, an entry of the lowering table (#194): its pieces, with those
                 // of the regions it stands for in its body's set
                 super::region::Route::Lowered(l) => {
                     if l.map_err(|e| format!("`{}`: {e}",sk.solid_name(i)))?.is_empty() {
                         return Err(format!("`{}` holds nowhere",sk.solid_name(i)))
                     }
-                    let members = groups.get(&i).cloned().unwrap_or_else(|| vec![i as u32]);
-                    let pieces: Vec<_> = members.into_iter().map(pieces_of).collect();
+                    let members = self.groups.get(&i).cloned().unwrap_or_else(|| vec![i as u32]);
+                    let pieces: Vec<_> = members.into_iter().map(|o| self.pieces_of(o)).collect();
                     let assembly = super::lowering::assemble(pieces.iter().flat_map(|p| p.iter()));
-                    let mut node = assembly.node(scale)?;
+                    let mut node = assembly.node(w)?;
                     // a ball rolled along a traced run is rolled against the body as its terms but the
                     // late ones make it, all built before this (they come first in its dependencies)
                     if !assembly.rolled.is_empty() {
                         let late = |sets: &[Vec<u32>;4]| sets[2..].iter().any(|s| s.contains(&(i as u32)));
-                        let Some((&b,(sets,_))) = bodies.iter().find(|(_,(sets,_))| late(sets)) else {
+                        let Some((&b,(sets,_))) = self.bodies.iter().find(|(_,(sets,_))| late(sets)) else {
                             return Err(format!("`{}`: a rolled round is built against the body it rounds",sk.solid_name(i)));
                         };
                         let SolidDef::Body {stock,bound,..} = &sk.solids[b].def else { unreachable!("a body's sets") };
@@ -222,22 +281,22 @@ fn recipe_with(sk: &Sketch,root: usize,static_only: bool) -> Result<StaticRecipe
                 }
                 // in general position: the common of its terms' primitives, where they are ones that
                 // construction makes (#238)
-                super::region::Route::Bounded(b) => b.map_err(|e| format!("`{}`: {e}",sk.solid_name(i)))?.node(scale)?,
+                super::region::Route::Bounded(b) => b.map_err(|e| format!("`{}`: {e}",sk.solid_name(i)))?.node(w)?,
                 super::region::Route::Field(why) => return Err(format!("`{}`: {why}",sk.solid_name(i))),
                 // on one axis: its meridian turned once about it (§6.21)
                 super::region::Route::Meridian(m) => {
                     let name = |t: u32| m.name(t);
                     let p = crate::brep::recipe::region_profile(&m.region,m.origin,m.seam,m.axis,&name);
                     object([
-                        ("kind","revolve".into()),("profile",p.to_json(scale)?),
-                        ("origin",vector(m.origin.map(|v| v*scale))),("axis",vector(m.axis)),
+                        ("kind","revolve".into()),("profile",p.to_json(w)?),
+                        ("origin",w.line_origin(m.origin.map(|v| v*scale),m.axis)),("axis",vector(m.axis)),
                         ("angle",std::f64::consts::TAU.into()),
                     ])
                 }
             },
             SolidDef::Prism {face,from,to,draft} => {
                 let mut node = object([
-                    ("kind","prism".into()),("profile",profile(sk,*face as usize,scale)?),
+                    ("kind","prism".into()),("profile",profile(sk,*face as usize,w)?),
                     ("from",(from.value*scale).into()),("to",(to.value*scale).into()),
                 ]);
                 // its sides tapered from the profile's plane (#245), an angle in radians
@@ -245,8 +304,8 @@ fn recipe_with(sk: &Sketch,root: usize,static_only: bool) -> Result<StaticRecipe
                 node
             }
             SolidDef::Through {face,..} => object([
-                ("kind","through".into()),("profile",profile(sk,*face as usize,scale)?),
-                ("sources",ids(&dependencies)),
+                ("kind","through".into()),("profile",profile(sk,*face as usize,w)?),
+                ("sources",ids(dependencies)),
             ]),
             SolidDef::Revolve {face,axis,sweep,sense} => {
                 // Use the profile's frame for both axis endpoints, as the solid
@@ -257,10 +316,11 @@ fn recipe_with(sk: &Sketch,root: usize,static_only: bool) -> Result<StaticRecipe
                     .ok_or("the revolution axis does not lie in the profile's plane")?;
                 let a = p.basis.lift(a2.0,a2.1);
                 let b = p.basis.lift(b2.0,b2.1);
+                let along = std::array::from_fn(|k| b[k]-a[k]);
                 object([
-                    ("kind","revolve".into()),("profile",profile(sk,*face as usize,scale)?),
-                    ("origin",vector(a.map(|v| v*scale))),
-                    ("axis",vector(std::array::from_fn(|k| b[k]-a[k]))),
+                    ("kind","revolve".into()),("profile",profile(sk,*face as usize,w)?),
+                    ("origin",w.line_origin(a.map(|v| v*scale),along)),
+                    ("axis",vector(along)),
                     ("angle",(sweep.value.min(std::f64::consts::TAU)
                         * if *sense == Sense::Cw { -1. } else { 1. }).into()),
                 ])
@@ -269,114 +329,19 @@ fn recipe_with(sk: &Sketch,root: usize,static_only: bool) -> Result<StaticRecipe
                 // the start section, the end section (at the guide's end, where there is one) and the
                 // guide; each section's loops in written order, each loop's edges in written order —
                 // the order a loft pairs them in
-                let mut node = object([("kind","loft".into()),("profile",profile(sk,*face as usize,scale)?),
-                    ("guide",super::loft::guide_json(sk,*guide,scale)?)]);
-                if let Some(end) = end { node.set("end",profile(sk,*end as usize,scale)?); }
+                let mut node = object([("kind","loft".into()),("profile",profile(sk,*face as usize,w)?),
+                    ("guide",super::loft::guide_json(sk,*guide,w)?)]);
+                if let Some(end) = end { node.set("end",profile(sk,*end as usize,w)?); }
                 node
             }
-        };
-        node.set("id",i.into());
-        node.set("name",solid.name.clone().into());
-        nodes.push(node);
-        seen.insert(i);
+        })
     }
-    Ok(StaticRecipe {recipe:object([("schema",1.into()),("units","mm".into()),
-        ("root",root.into()),("nodes",Json::Arr(nodes))]),sweeps})
 }
 
 /// A body's terms but the late ones — its stock, what is on it, what cuts it, what bounds it — as
 /// the recipe's `body` reads them: the body node's, and the stratum a rolled round is rolled against.
 fn body_terms(stock: u32,on: &[u32],cut: &[u32],bound: &[u32]) -> Json {
     object([("stock",stock.into()),("on",ids(on)),("cut",ids(cut)),("bound",ids(bound))])
-}
-
-/// A recipe written about another origin: every point it carries less `by` (millimetres) — a
-/// profile's edges' ends, centres and poles, a guide's start and centre, a placement's translation
-/// (`t + R by − by`) — and every direction as it was. A point that only places a plane or a line (a
-/// profile's origin, a revolution's) is put where its plane or line comes nearest the new origin:
-/// moved within it, it says the same, and the frames built about it keep parameters of the solid's
-/// own size. A kernel building a solid far from the world's origin builds it about its own instead,
-/// where a double still carries the solid's sizes (a part at 1e9 mm is good to 1e-7 mm there).
-pub fn shifted(recipe: &Json,by: [f64;3]) -> Json {
-    let mut out = recipe.clone();
-    if let Some(Json::Arr(nodes)) = recipe.get("nodes") {
-        out.set("nodes",Json::Arr(nodes.iter().map(|n| shifted_node(n,by)).collect()));
-    }
-    out
-}
-
-/// One node of a recipe written about another origin (`shifted`), with the nodes it holds: a
-/// lowered region's pieces, its corners' points, where its balls are rolled from and the planes a
-/// run is kept behind.
-pub(crate) fn shifted_node(n: &Json,by: [f64;3]) -> Json {
-    let triple = |j: &Json| -> Option<[f64;3]> { match j { Json::Arr(a) if a.len() == 3 => Some(std::array::from_fn(|k| a[k].as_f64())),_ => None } };
-    let point = |j: &Json| match triple(j) { Some(p) => vector(std::array::from_fn(|k| p[k]-by[k])),None => j.clone() };
-    let points = |j: &Json,keys: &[&str]| {
-        let mut j = j.clone();
-        for &k in keys { if let Some(p) = j.get(k).map(&point) { j.set(k,p); } }
-        if let Some(Json::Arr(poles)) = j.get("poles") { let poles = Json::Arr(poles.iter().map(&point).collect()); j.set("poles",poles); }
-        j
-    };
-    // the point of the plane through `key` square to `along` (or of the line through it along
-    // `along`) nearest the new origin
-    let nearest = |j: &mut Json,key: &str,along: &str,plane: bool| {
-        let (Some(o),Some(d)) = (j.get(key).and_then(triple),j.get(along).and_then(triple)) else { return };
-        let o: [f64;3] = std::array::from_fn(|k| o[k]-by[k]);
-        let dd: f64 = d.iter().map(|x| x*x).sum();
-        if !(dd > 0.) { return }
-        let t = (0..3).map(|k| o[k]*d[k]).sum::<f64>()/dd;
-        j.set(key,vector(std::array::from_fn(|k| if plane { t*d[k] } else { o[k]-t*d[k] })));
-    };
-    let profile = |p: &Json| {
-        let mut p = p.clone();
-        nearest(&mut p,"origin","normal",true);
-        if let Some(Json::Arr(loops)) = p.get("loops") {
-            let loops = Json::Arr(loops.iter().map(|l| match l {
-                Json::Arr(edges) => Json::Arr(edges.iter().map(|e| points(e,&["start","end","center"])).collect()),
-                other => other.clone(),
-            }).collect());
-            p.set("loops",loops);
-        }
-        p
-    };
-    let mut n = n.clone();
-    nearest(&mut n,"origin","axis",false);
-    // a canal's ball centre is a point
-    if let Some(c) = n.get("centre").map(&point) { n.set("centre",c); }
-    for k in ["profile","end"] { if let Some(p) = n.get(k).filter(|p| matches!(p,Json::Obj(_))).map(&profile) { n.set(k,p); } }
-    if let Some(g) = n.get("guide").map(|g| points(g,&["start","center"])) { n.set("guide",g); }
-    if let Some(Json::Arr(m)) = n.get("matrix") {
-        let m: Vec<f64> = m.iter().map(Json::as_f64).collect();
-        if m.len() == 12 {
-            let mut moved = m.clone();
-            for r in 0..3 { moved[4*r+3] = m[4*r+3]+(0..3).map(|c| m[4*r+c]*by[c]).sum::<f64>()-by[r]; }
-            n.set("matrix",Json::Arr(moved.into_iter().map(Json::from).collect()));
-        }
-    }
-    if let Some(Json::Arr(pieces)) = n.get("pieces") {
-        let pieces = Json::Arr(pieces.iter().map(|p| shifted_node(p,by)).collect());
-        n.set("pieces",pieces);
-    }
-    for (key,at) in [("corners",&["vertex","centre"][..]),("rolled",&["at","on"][..]),("within",&["at"][..]),("kept",&["origin"][..])] {
-        if let Some(Json::Arr(list)) = n.get(key) {
-            let list = Json::Arr(list.iter().map(|c| {
-                let mut c = points(c,at);
-                // a corner's faces stand where its points do, and so do the sections a rolled
-                // piece is cut at
-                if key == "corners" {
-                    let faces = Json::Arr(c.get("faces").map_or(&[][..],|f| f.arr()).iter().map(|f| points(f,&["origin"])).collect());
-                    c.set("faces",faces);
-                }
-                if let Some(Json::Arr(cuts)) = c.get("cuts").filter(|_| key == "rolled") {
-                    let cuts = Json::Arr(cuts.iter().map(|f| points(f,&["at"])).collect());
-                    c.set("cuts",cuts);
-                }
-                c
-            }).collect());
-            n.set(key,list);
-        }
-    }
-    n
 }
 
 /// How near its curve a fitted stretch must pass (millimetres).
@@ -449,10 +414,12 @@ pub(crate) fn bspline_edge(poles: &[(f64,f64)],knots: &[f64],fit_mm: f64,lift: &
         ("fit",fit_mm.into())])
 }
 
-fn profile(sk: &Sketch,index: usize,scale: f64) -> Result<Json,String> {
+fn profile(sk: &Sketch,index: usize,w: &Writer) -> Result<Json,String> {
     let face = &sk.faces[index];
     let p = super::face_poly(sk,index,super::REPORT_UNIT).ok_or("invalid CAD profile")?;
-    let lift = |q: (f64,f64)| p.basis.lift(q.0,q.1).map(|v| v*scale);
+    let scale = w.scale;
+    // a point of the profile, in millimetres as written
+    let lift = |q: (f64,f64)| w.moved(p.basis.lift(q.0,q.1).map(|v| v*scale));
     let x_dir = p.basis.u;
     // an edge's pieces in a profile: one, or a closed curve's smooth stretches
     let edge = |e: EntRef| -> Result<Vec<Json>,String> {
@@ -521,6 +488,6 @@ fn profile(sk: &Sketch,index: usize,scale: f64) -> Result<Json,String> {
             j
         }).collect::<Vec<_>>())).collect::<Result<Vec<_>,_>>().map(|l| Json::Arr(l.concat())))
         .collect::<Result<Vec<_>,_>>()?;
-    Ok(object([("loops",Json::Arr(loops)),("origin",vector(p.basis.o.map(|v| v*scale))),
+    Ok(object([("loops",Json::Arr(loops)),("origin",w.plane_origin(p.basis.o.map(|v| v*scale),p.basis.normal())),
         ("normal",vector(p.basis.normal()))]))
 }

@@ -3,15 +3,9 @@
 //! nested instance's own unbound formal is its own, the instance a point belongs to is the one
 //! with the formal, and a computed point stands alone.
 
-use gcs_core::program::{elaborate, Elaborated};
+use gcs_core::program::Elaborated;
 use gcs_core::solve::{solve, SolveOpts};
-use crate::common::parse;
-
-fn build(src: &str) -> Elaborated {
-    let (prog, errs) = parse(src);
-    assert!(errs.is_empty(), "{:?}", errs.iter().map(|e| &e.message).collect::<Vec<_>>());
-    elaborate(&prog)
-}
+use crate::common::parsed::build;
 
 fn messages(e: &Elaborated) -> Vec<String> {
     e.diags.iter().map(|d| format!("{}: {}", d.code.as_str(), d.message)).collect()

@@ -1,17 +1,8 @@
 //! Numbers and statements that used to be accepted and should not have been (issue #43), and
 //! two mistakes that used to be reported four ways.
 
-use gcs_core::program::{elaborate, Elaborated};
 use gcs_core::solve::{solve, SolveOpts};
-use crate::common::parse_legacy as parse;
-
-fn read(src: &str) -> (Elaborated, Vec<String>) {
-    let (prog, errs) = parse(src);
-    let e = elaborate(&prog);
-    let mut all: Vec<String> = errs.iter().map(|x| format!("syntax: {}", x.message)).collect();
-    all.extend(e.diags.iter().map(|d| format!("{}: {}", d.code.as_str(), d.message)));
-    (e, all)
-}
+use crate::common::lenient::read_legacy as read;
 
 /// #43.12 — a point-to-point distance and a radius are magnitudes: their kernels square the
 /// sign away, so a negative literal quietly meant the positive and the drawing showed a circle

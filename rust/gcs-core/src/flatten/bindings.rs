@@ -74,8 +74,8 @@ impl<'a> Walk<'a> {
                 // refs would resolve `next` too — the E020 rule bent for exactly the
                 // statements the weld touches, since resolution has no narrower scope to
                 // give one reference.
-                if sc.cyc.is_none() {
-                    sc.cyc = Some(Cyc { prefix: block_prefix.to_string(), k: copy, n });
+                if sc.block.cyc.is_none() {
+                    sc.block.cyc = Some(Cyc { prefix: block_prefix.to_string(), k: copy, n });
                 }
             }
             return;
@@ -225,14 +225,14 @@ impl<'a> Walk<'a> {
                     if let Some(shape) = self.formal_shape(comp, f) {
                         let given = keys::given(&key);
                         self.aliases.push((given.clone(), r.clone(), scope.clone()));
-                        self.group_bindings.push((given.clone(), a.span, *ty));
+                        self.checks.groups.push((given.clone(), a.span, *ty));
                         self.typed(&shape, &key, r, scope);
                         self.interface_numbers(&shape, &actual, &f.name.text, vals, &mut sub, a.span);
-                        self.interface_bindings.push((given, a.span, shape, actual));
+                        self.checks.interfaces.push((given, a.span, shape, actual));
                         continue;
                     }
                     self.aliases.push((key.clone(), r.clone(), scope.clone()));
-                    self.group_bindings.push((key, a.span, *ty));
+                    self.checks.groups.push((key, a.span, *ty));
                     super::copy_members(vals, &actual, &f.name.text, &mut sub);
                 }
                 (Ty::Group | Ty::Set | Ty::Ent(_) | Ty::Path, InstVal::Hint(..)) => self.err(Code::E103, a.span,
@@ -261,9 +261,9 @@ impl<'a> Walk<'a> {
                     let key = formal_name(&prefix, &inst.name.text, &f.name.text);
                     // and what a path is given is judged once its kind is known (#251)
                     if f.ty == Ty::Path {
-                        self.path_bindings.push((key.clone(), a.span, f.name.text.clone()));
+                        self.checks.paths.push((key.clone(), a.span, f.name.text.clone()));
                     }
-                    self.arguments.insert(key.clone());
+                    self.words.arguments.insert(key.clone());
                     self.aliases.push((key, r.clone(), scope.clone()));
                 }
                 (Ty::Ent(_) | Ty::Path, InstVal::Expr(t)) => self.err(

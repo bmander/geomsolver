@@ -96,23 +96,23 @@ impl<'a> Walk<'a> {
 
     /// `begin`, the `n`th of several applications one use makes (`S1 tangent(at: m) S2`, one per
     /// set), each under a prefix of its own.  The statement is the one the use was written as —
-    /// in a body, its own and not the outer use's it carries (`Scope::written`), so two sets used
+    /// in a body, its own and not the outer use's it carries (`PredWalk::written`), so two sets used
     /// in one body are applied apart.
     pub(super) fn begin_nth(&mut self, u: &Use, closure: &Scope, n: usize) -> Application {
-        let id = u.scope.written.unwrap_or(u.st.id);
+        let id = u.scope.pred.written.unwrap_or(u.st.id);
         let prefix = keys::application(u.scope.prefix(), id.0, n);
         let mut scope = closure.clone();
-        scope.written = None;
+        scope.pred.written = None;
         scope.prefixes.insert(0, prefix.clone());
-        scope.copies = true;
-        scope.anonymous = true;
-        scope.cyc = None;
-        scope.pass = Pass::Itself;
-        scope.held = u.scope.held;
-        scope.ring = u.scope.ring.clone();
-        for c in u.scope.in_class.0.iter().chain(&u.rel.class.0) {
-            if !scope.in_class.has(c) {
-                scope.in_class.0.push(c.clone());
+        scope.block.copies = true;
+        scope.stamps.anonymous = true;
+        scope.block.cyc = None;
+        scope.pred.pass = Pass::Itself;
+        scope.pred.held = u.scope.pred.held;
+        scope.block.ring = u.scope.block.ring.clone();
+        for c in u.scope.stamps.class.0.iter().chain(&u.rel.class.0) {
+            if !scope.stamps.class.has(c) {
+                scope.stamps.class.0.push(c.clone());
             }
         }
         Application { prefix, scope, from: self.out.len(), set: false }
@@ -121,8 +121,8 @@ impl<'a> Walk<'a> {
     /// A name of the body, under the application's prefix, standing for what the use wrote.
     pub(super) fn bind_to_use(&mut self, app: &Application, name: &str, r: Ref, u: &Use) {
         let key = format!("{}{name}", app.prefix);
-        self.use_aliases.insert(key.clone());
-        self.arguments.insert(key.clone());
+        self.words.use_aliases.insert(key.clone());
+        self.words.arguments.insert(key.clone());
         self.aliases.push((key, r, u.scope.clone()));
     }
 
@@ -173,7 +173,7 @@ impl<'a> Walk<'a> {
         let mut path = u.path.to_vec();
         path.push(PathStep::Instance(u.st.id));
         for pass in walks {
-            scope.pass = pass.clone();
+            scope.pred.pass = pass.clone();
             let mut vals = scope.vals.clone();
             self.body(&body, &scope, &mut vals, &path, depth + 1);
         }
@@ -205,7 +205,7 @@ impl<'a> Walk<'a> {
                 _ => false,
             };
             if energy {
-                sc.written.get_or_insert(st.id);
+                sc.pred.written.get_or_insert(st.id);
                 st.id = u.st.id;
                 st.span = u.st.span;
                 *p = u.path.to_vec();
@@ -214,12 +214,12 @@ impl<'a> Walk<'a> {
             let StmtKind::Relation(r) = &mut st.kind else { continue };
             // a set measured from states its point's equalities as bounds at their numbers, but
             // for a use of another set, whose own body is held when it is applied (#192)
-            if sc.held {
+            if sc.pred.held {
                 if let Some(w) = r.form.written_mut().filter(|w| !super::sets::may_use(w)) {
                     w.held();
                 }
             }
-            sc.written.get_or_insert(st.id);
+            sc.pred.written.get_or_insert(st.id);
             st.id = u.st.id;
             st.span = u.st.span;
             st.chained = u.st.chained;

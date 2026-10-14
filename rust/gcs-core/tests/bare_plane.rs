@@ -10,11 +10,7 @@ use gcs_core::solve::{solve, SolveOpts};
 use gcs_core::space::{cross, dot, norm, sub};
 use gcs_core::syntax::write_stmt_to;
 
-use crate::common::{ent, read, refused, unit};
-
-fn dof(sk: &mut Sketch) -> i64 {
-    diagnose(sk, DiagnoseOptions::default()).dof
-}
+use crate::common::{dof, ent, read, refused, unit};
 
 /// Axis `n` where it stands: a point on it and its direction.
 fn line(e: &Elaborated, sk: &Sketch, n: &str) -> ([f64; 3], [f64; 3]) {

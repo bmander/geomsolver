@@ -43,12 +43,23 @@ export function local(v: SketchView, e: MouseEvent): [number, number] {
 export function bindEvents(v: SketchView): void {
   const cv = v.canvas;
   const touch = touchNavigation(v);
-  // One pointer owns the gesture until it lets go.  A second finger starting one on top would
-  // drop the live gesture on the floor: its `end` never runs, so the core's drag handle leaks
-  // and the soft drag target it added stays in the sketch, quietly compromising every later
-  // solve.  And a gesture can end without a `pointerup` — a cancelled touch, or capture lost
-  // to a system gesture — so those have to finish it too.  A finger is `touch`'s: a second one
-  // is a pinch, which it settles the first one's gesture to start.
+  bindPointer(v, touch);
+  cv.addEventListener('dblclick', (e) => onDoubleClick(v, e));
+  cv.addEventListener('contextmenu', (e) => e.preventDefault());
+  cv.addEventListener('wheel', (e) => onWheel(v, e), { passive: false });
+  bindSafariPinch(v, touch);
+}
+
+/** The pointer's own events, a finger's handed to `touch`.
+ *
+ *  One pointer owns the gesture until it lets go.  A second finger starting one on top would
+ *  drop the live gesture on the floor: its `end` never runs, so the core's drag handle leaks
+ *  and the soft drag target it added stays in the sketch, quietly compromising every later
+ *  solve.  And a gesture can end without a `pointerup` — a cancelled touch, or capture lost
+ *  to a system gesture — so those have to finish it too.  A finger is `touch`'s: a second one
+ *  is a pinch, which it settles the first one's gesture to start. */
+function bindPointer(v: SketchView, touch: TouchNavigation): void {
+  const cv = v.canvas;
   cv.addEventListener('pointerdown', (e) => {
     v.finger = e.pointerType === 'touch';
     if (e.pointerType === 'touch') {
@@ -86,63 +97,70 @@ export function bindEvents(v: SketchView): void {
   });
   cv.addEventListener('pointercancel', finish);
   cv.addEventListener('lostpointercapture', finish);
-  cv.addEventListener('dblclick', (e) => {
-    // the same gesture the constraint list uses: double-click a dimension, type a new number
-    const sp = local(v, e);
-    const c = v.pickCallout(...sp);
-    if (c) {
-      v.onEditConstraint(c);
-      return;
-    }
-    // and on a curve it asks for another handle where you clicked: the insertion is
-    // shape-preserving, so nothing moves — the new control point comes out selected, ready
-    // to be dragged, which is the whole reason you asked for it.  Only while selecting: with
-    // a tool down a double-click is two clicks of that tool, and talking over it would put a
-    // knot in whatever curve happened to be under the second one.
-    if (v.tool !== 'select') return;
-    const hit = v.pick(...sp);
-    if (hit instanceof Spline) {
-      insertControl(v, hit, ...v.s2wIn(v.viewOf(hit.ctrl[0]), ...sp));
-      return;
-    }
-    // on a solid's face, the face drawn on (#162 F5): the plane lying there chosen, or written —
-    // a pane's frame lies beneath a solid, as a press finds it
-    const frame = hit instanceof Plane ? hit : null;
-    const face = hit && !frame ? null : v.solidAt(...sp);
-    if (face) {
-      v.sketchOnFace(face);
-      return;
-    }
-    // on a pane's frame, which picks its plane, that plane chosen as a press inside it would be
-    const named = frame ? v.doc.nameOf(frame) : null;
-    if (named && v.planeChoices().includes(named)) {
-      v.choosePlane(named, false);
-      return;
-    }
-    // and on a pane, with nothing drawn under the pointer, it is that plane chosen: the next thing
-    // is drawn there.  The eye stays where it is — the pane was double-clicked where it was seen
-    const pane = hit && !frame ? null : v.paneAt(...sp);
-    if (pane) v.choosePlane(pane, false);
-  });
-  cv.addEventListener('contextmenu', (e) => e.preventDefault());
-  cv.addEventListener('wheel', (e) => {
-    e.preventDefault();
-    const [sx, sy] = local(v, e);
-    // a pinch on a trackpad comes as a wheel with ctrl held, in small steps; two fingers slid
-    // across one, as a scroll, which slides the workspace as a pan does; a wheel's notches zoom.
-    // All about the cursor, so what is under it stays under it
-    if (e.ctrlKey) {
-      const d = Math.max(-PINCH_STEP_MAX, Math.min(PINCH_STEP_MAX, e.deltaY * wheelUnit(e)));
-      v.cam.zoomAt(sx, sy, Math.exp(-d * PINCH_PER_PX));
-    } else if (scrolled(e)) {
-      v.cam.panBy(-e.deltaX, -e.deltaY);
-    } else {
-      v.cam.zoomAt(sx, sy, 1.0015 ** (-e.deltaY * wheelUnit(e)));
-    }
-    v.draw();
-  }, { passive: false });
-  // Safari tells a trackpad's pinch as a gesture with a running scale and no wheel.  On a touch
-  // screen it tells a pinch so too, beside the fingers' own events, which `touch` reads instead
+}
+
+/** A double-click: a dimension's number edited, a handle put on a curve, a face drawn on, or a
+ *  plane chosen. */
+function onDoubleClick(v: SketchView, e: MouseEvent): void {
+  // the same gesture the constraint list uses: double-click a dimension, type a new number
+  const sp = local(v, e);
+  const c = v.pickCallout(...sp);
+  if (c) {
+    v.onEditConstraint(c);
+    return;
+  }
+  // and on a curve it asks for another handle where you clicked: the insertion is
+  // shape-preserving, so nothing moves — the new control point comes out selected, ready
+  // to be dragged, which is the whole reason you asked for it.  Only while selecting: with
+  // a tool down a double-click is two clicks of that tool, and talking over it would put a
+  // knot in whatever curve happened to be under the second one.
+  if (v.tool !== 'select') return;
+  const hit = v.pick(...sp);
+  if (hit instanceof Spline) {
+    insertControl(v, hit, ...v.s2wIn(v.viewOf(hit.ctrl[0]), ...sp));
+    return;
+  }
+  // on a solid's face, the face drawn on (#162 F5): the plane lying there chosen, or written —
+  // a pane's frame lies beneath a solid, as a press finds it
+  const frame = hit instanceof Plane ? hit : null;
+  const face = hit && !frame ? null : v.solidAt(...sp);
+  if (face) {
+    v.sketchOnFace(face);
+    return;
+  }
+  // on a pane's frame, which picks its plane, that plane chosen as a press inside it would be
+  const named = frame ? v.doc.nameOf(frame) : null;
+  if (named && v.planeChoices().includes(named)) {
+    v.choosePlane(named, false);
+    return;
+  }
+  // and on a pane, with nothing drawn under the pointer, it is that plane chosen: the next thing
+  // is drawn there.  The eye stays where it is — the pane was double-clicked where it was seen
+  const pane = hit && !frame ? null : v.paneAt(...sp);
+  if (pane) v.choosePlane(pane, false);
+}
+
+/** The wheel.  A pinch on a trackpad comes as a wheel with ctrl held, in small steps; two
+ *  fingers slid across one, as a scroll, which slides the workspace as a pan does; a wheel's
+ *  notches zoom.  All about the cursor, so what is under it stays under it. */
+function onWheel(v: SketchView, e: WheelEvent): void {
+  e.preventDefault();
+  const [sx, sy] = local(v, e);
+  if (e.ctrlKey) {
+    const d = Math.max(-PINCH_STEP_MAX, Math.min(PINCH_STEP_MAX, e.deltaY * wheelUnit(e)));
+    v.cam.zoomAt(sx, sy, Math.exp(-d * PINCH_PER_PX));
+  } else if (scrolled(e)) {
+    v.cam.panBy(-e.deltaX, -e.deltaY);
+  } else {
+    v.cam.zoomAt(sx, sy, 1.0015 ** (-e.deltaY * wheelUnit(e)));
+  }
+  v.draw();
+}
+
+/** Safari tells a trackpad's pinch as a gesture with a running scale and no wheel.  On a touch
+ *  screen it tells a pinch so too, beside the fingers' own events, which `touch` reads instead. */
+function bindSafariPinch(v: SketchView, touch: TouchNavigation): void {
+  const cv = v.canvas;
   let scale = 1;
   const pinched = (e: Event): SafariGesture | null => {
     e.preventDefault();               // or the page zooms
@@ -160,6 +178,9 @@ export function bindEvents(v: SketchView): void {
   });
   cv.addEventListener('gestureend', pinched);
 }
+
+/** What `touchNavigation` hands the pointer's events to. */
+type TouchNavigation = ReturnType<typeof touchNavigation>;
 
 /** Safari's `GestureEvent`, which no other browser has and so no type library declares. */
 type SafariGesture = MouseEvent & { scale: number };
@@ -285,8 +306,18 @@ export function onPointerDown(v: SketchView, e: PointerEvent): void {
   v.stopAnimation();
   const sp = local(v, e);
   v.cursor = sp;
-  // the camera's buttons, as a CAD tool has them: the right turns the workspace about, the middle
-  // (or the right with shift) slides it; with a tool's points half collected the right backs out
+  if (e.button !== 0) {
+    cameraPress(v, e, sp);
+    return;
+  }
+  if (primaryTaken(v, e, sp)) return;
+  selectPress(v, e, sp);
+}
+
+/** The camera's buttons, as a CAD tool has them: the right turns the workspace about, the middle
+ *  (or the right with shift) slides it; with a tool's points half collected the right backs
+ *  out.  Any other button does nothing. */
+function cameraPress(v: SketchView, e: PointerEvent, sp: [number, number]): void {
   if (e.button === 2 && v.pending.length) {
     cancelTool(v);
     return;
@@ -297,34 +328,42 @@ export function onPointerDown(v: SketchView, e: PointerEvent): void {
   }
   if (e.button === 2) {
     v.gesture = orbitGesture(v, sp);
-    return;
   }
-  if (e.button !== 0) return;
+}
+
+/** A primary press taken before the select tool sees it: a dimension planted, an orbit, an
+ *  extent's handle grabbed, or a tool's click.  Whether it was taken. */
+function primaryTaken(v: SketchView, e: PointerEvent, sp: [number, number]): boolean {
   // a dimension still following the pointer: this click is what plants it.  The default is
   // refused so the focus stays in its editor — the number is still being typed
   if (v.liveDim?.placing) {
     e.preventDefault();
     placeDimension(v);
-    return;
+    return true;
   }
   // in orbit mode the primary button turns the workspace, whatever is under it
   if (v.orbitMode) {
     v.gesture = orbitGesture(v, sp);
-    return;
+    return true;
   }
   // the handle of an extrusion, a revolution or an offset plane being sized: taking hold of it
   // sizes it, and a press anywhere else is done with an offset plane's
   if (onExtentArrow(v, sp)) {
     v.gesture = extentGesture(v);
-    return;
+    return true;
   }
   if (v.liveExtent?.kind === 'offset') v.endExtent();
   if (v.tool !== 'select') {
     // an edge tool's number keeps the keyboard across the clicks that pick more
     if (roundsEdges(v.tool)) e.preventDefault();
     toolClick(v, sp, { alt: e.altKey, shift: e.shiftKey });
-    return;
+    return true;
   }
+  return false;
+}
+
+/** A primary press with the select tool: what is under it picked, and a gesture started on it. */
+function selectPress(v: SketchView, e: PointerEvent, sp: [number, number]): void {
   // a number still being written, on a pair that can be measured three ways: taking hold of
   // it goes on choosing which, exactly as it did before the click that planted it
   const live = v.liveDim;
@@ -339,35 +378,7 @@ export function onPointerDown(v: SketchView, e: PointerEvent): void {
     return;
   }
   const at = whatIsAt(v, sp);
-  // a corner of the traced picture: it sizes and turns the picture about its centre
-  if (at.kind === 'handle') {
-    v.gesture = grabHandle(v, at.corner);
-    return;
-  }
-  // a dimension: the press selects the constraint, and dragging moves the callout rather
-  // than the sketch
-  if (at.kind === 'callout') {
-    v.selected = [];
-    v.onPickConstraint(at.callout);
-    v.gesture = calloutGesture(v, at.callout, sp);
-    v.draw();
-    return;
-  }
-  if (at.kind === 'image') {
-    v.pickImage();
-    v.gesture = grabBody(v, sp);
-    v.onSelect();
-    v.onChanged();          // as every other press does: the window and the readout follow it
-    v.draw();
-    return;
-  }
-  if (at.kind === 'solid') {
-    v.pickSolid(at.pick, e.shiftKey);
-    v.onSelect();
-    v.onChanged();
-    v.draw();
-    return;
-  }
+  if (pressedApart(v, e, sp, at)) return;
   v.dropImage();
   const ent = at.kind === 'entity' ? at.ent : null;
   if (!ent) {
@@ -389,43 +400,83 @@ export function onPointerDown(v: SketchView, e: PointerEvent): void {
       ? v.selected.filter((p) => p !== ent) : [...v.selected, ent];
   } else {
     if (!v.selected.includes(ent)) v.selected = [ent];
-    // a point in space stands in no view, so it is dragged **where the eye sees it**: across the
-    // picture plane, its depth along the line of sight left to what else holds it
-    if (ent instanceof Point && v.inSpace(ent)) {
-      if (canMove(v, ent)) {
-        v.pushUndo();
-        const drag = new PlanDrag(v.sketch, ent, ...v.eye(...sp), null, 0.05, v.plan(), v.orbit);
-        v.gesture = pointGesture(v, drag, (at) => v.eye(...at));
-      }
-    // a drag moves a thing **in its own plane**: the pointer is read off the view it stands in,
-    // so a point on the side plane slides along the side plane however the eye is turned
-    } else if (ent instanceof Point && canMove(v, ent) && readable(v, v.viewOf(ent))) {
-      v.pushUndo();
-      const view = v.viewOf(ent);
-      // on the sketch's own plan, compiled once per topology: the drag starts at once
-      const drag = new PlanDrag(v.sketch, ent, ...v.placeIn(view, ...sp), null, 0.05, v.plan());
-      v.gesture = pointGesture(v, drag, (at) => v.placeIn(view, ...at));
-    // a plane is dragged by its pane as a point in space is, where the eye sees it: the core
-    // takes hold of its origin and moves where the plane stands, carrying it without turning it.
-    // The pane is grabbed where it was pressed, so it follows the pointer from there
-    } else if (ent instanceof Plane && canMove(v, ent)) {
-      v.pushUndo();
-      const [px, py] = v.eye(...sp);
-      const [ox, oy] = v.eye(...v.seen(ent.origin));
-      const drag = new PlanDrag(v.sketch, ent.origin, ox, oy, null, 0.05, v.plan(), v.orbit);
-      v.gesture = pointGesture(v, drag, (at) => {
-        const [x, y] = v.eye(...at);
-        return [x + ox - px, y + oy - py];
-      });
-    } else if (isResizable(v, ent) && readable(v, v.viewOf(ent.center))) {
-      v.pushUndo();
-      v.gesture = radiusGesture(v, new RadiusDrag(v.sketch, ent, Math.abs(scalarOf(ent).value)),
-                                v.viewOf(ent.center));
-    }
+    dragEntity(v, sp, ent);
   }
   v.onSelect();
   v.onChanged();
   v.draw();
+}
+
+/** A press on what is not the drawing's: a corner of the traced picture, a dimension, the
+ *  picture itself or a solid.  Whether it was one. */
+function pressedApart(v: SketchView, e: PointerEvent, sp: [number, number], at: Target): boolean {
+  // a corner of the traced picture: it sizes and turns the picture about its centre
+  if (at.kind === 'handle') {
+    v.gesture = grabHandle(v, at.corner);
+    return true;
+  }
+  // a dimension: the press selects the constraint, and dragging moves the callout rather
+  // than the sketch
+  if (at.kind === 'callout') {
+    v.selected = [];
+    v.onPickConstraint(at.callout);
+    v.gesture = calloutGesture(v, at.callout, sp);
+    v.draw();
+    return true;
+  }
+  if (at.kind === 'image') {
+    v.pickImage();
+    v.gesture = grabBody(v, sp);
+    v.onSelect();
+    v.onChanged();          // as every other press does: the window and the readout follow it
+    v.draw();
+    return true;
+  }
+  if (at.kind === 'solid') {
+    v.pickSolid(at.pick, e.shiftKey);
+    v.onSelect();
+    v.onChanged();
+    v.draw();
+    return true;
+  }
+  return false;
+}
+
+/** The drag a press on an entity starts, where it can move at all. */
+function dragEntity(v: SketchView, sp: [number, number], ent: Primitive): void {
+  // a point in space stands in no view, so it is dragged **where the eye sees it**: across the
+  // picture plane, its depth along the line of sight left to what else holds it
+  if (ent instanceof Point && v.inSpace(ent)) {
+    if (canMove(v, ent)) {
+      v.pushUndo();
+      const drag = new PlanDrag(v.sketch, ent, ...v.eye(...sp), null, 0.05, v.plan(), v.orbit);
+      v.gesture = pointGesture(v, drag, (at) => v.eye(...at));
+    }
+  // a drag moves a thing **in its own plane**: the pointer is read off the view it stands in,
+  // so a point on the side plane slides along the side plane however the eye is turned
+  } else if (ent instanceof Point && canMove(v, ent) && readable(v, v.viewOf(ent))) {
+    v.pushUndo();
+    const view = v.viewOf(ent);
+    // on the sketch's own plan, compiled once per topology: the drag starts at once
+    const drag = new PlanDrag(v.sketch, ent, ...v.placeIn(view, ...sp), null, 0.05, v.plan());
+    v.gesture = pointGesture(v, drag, (at) => v.placeIn(view, ...at));
+  // a plane is dragged by its pane as a point in space is, where the eye sees it: the core
+  // takes hold of its origin and moves where the plane stands, carrying it without turning it.
+  // The pane is grabbed where it was pressed, so it follows the pointer from there
+  } else if (ent instanceof Plane && canMove(v, ent)) {
+    v.pushUndo();
+    const [px, py] = v.eye(...sp);
+    const [ox, oy] = v.eye(...v.seen(ent.origin));
+    const drag = new PlanDrag(v.sketch, ent.origin, ox, oy, null, 0.05, v.plan(), v.orbit);
+    v.gesture = pointGesture(v, drag, (at) => {
+      const [x, y] = v.eye(...at);
+      return [x + ox - px, y + oy - py];
+    });
+  } else if (isResizable(v, ent) && readable(v, v.viewOf(ent.center))) {
+    v.pushUndo();
+    v.gesture = radiusGesture(v, new RadiusDrag(v.sketch, ent, Math.abs(scalarOf(ent).value)),
+                              v.viewOf(ent.center));
+  }
 }
 export function onPointerMove(v: SketchView, e: PointerEvent): void {
   const sp = local(v, e);

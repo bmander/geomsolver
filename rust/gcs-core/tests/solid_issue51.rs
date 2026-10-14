@@ -82,7 +82,7 @@ fn unrelated_points_do_not_change_boolean_boundaries_or_containment() {
     let i = si(&e, "result");
     let before = e.sketch.solid_boundary(i, solid::REPORT_UNIT);
     e.sketch.point(1e12, 1e12, true, "remote");
-    e.sketch.solid_cache.borrow_mut().clear();
+    e.sketch.caches.solid.borrow_mut().clear();
     let after = e.sketch.solid_boundary(i, solid::REPORT_UNIT);
     close(mesh::volume(&before), mesh::volume(&after));
 }

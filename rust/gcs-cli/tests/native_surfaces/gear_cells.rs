@@ -93,7 +93,7 @@ fn generic_sheet_reproduces_the_pinion_tooth_space() { single_space("pinion",120
 /// reporting rather than asserting what it builds and how the field judges
 /// both sides of its sheet. No recorded volume exists for a hypoid.
 #[test]
-#[ignore]
+#[ignore = "a tool: SOLVENT_INSPECT_OFFSET names the design to build one pinion space at"]
 fn the_native_space_at_an_offset_against_its_field() {
     let offset: f64 = std::env::var("SOLVENT_INSPECT_OFFSET").ok().and_then(|v| v.parse().ok()).unwrap_or(15.);
     // `SOLVENT_INSPECT_SHIFT` and `SOLVENT_INSPECT_SPIRAL` (degrees) set the
@@ -273,7 +273,7 @@ fn measure_gear_probe_cost() {
 /// fitted sheet with its column and whether it lies in the blank, and each column's
 /// largest step between consecutive contacts against its median.
 #[test]
-#[ignore]
+#[ignore = "a tool: SOLVENT_INSPECT_OFFSET and its kin name the design whose sheet to inspect"]
 fn where_a_sheet_misses_its_contacts() {
     let offset: f64 = std::env::var("SOLVENT_INSPECT_OFFSET").ok().and_then(|v| v.parse().ok()).unwrap_or(25.);
     let knobs = design_knobs(offset);

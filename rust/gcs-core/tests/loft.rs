@@ -6,14 +6,7 @@ use gcs_core::{
     solid::{ApproximationPolicy::Report, WorldPoint},
     syntax,
 };
-
-fn read(src: &str) -> program::Elaborated {
-    let (p, errors) = crate::common::parse(src);
-    assert!(errors.is_empty(), "{errors:?}");
-    let e = program::elaborate(&p);
-    assert!(e.ok(), "{:?}", e.diags);
-    e
-}
+use crate::common::parsed::read;
 
 const SECTIONS: &str = "unit mm
 use std

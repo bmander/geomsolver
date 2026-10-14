@@ -86,7 +86,7 @@ fn rings() -> gcs_core::json::Json {
 #[test]
 fn a_ring_bounded_by_an_offset_ring_sections_exactly() {
     use gcs_core::brep::section::Sectioned;
-    let s = Sectioned::read(&rings()).unwrap().unwrap();
+    let s = Sectioned::read(&rings()).unwrap();
     // towards the other line's offset: its ring from s = 3 + 8 to 3 + 15, cut by 10–20
     let x = s.section([1.,0.,0.]).unwrap();
     close(x.area(),5.*(18.-11.),1e-9);

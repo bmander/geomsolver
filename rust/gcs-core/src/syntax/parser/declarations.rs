@@ -109,6 +109,67 @@ pub(crate) fn sweep_of(p: SweepParts) -> Result<Sweep, String> {
     }
 }
 
+/// Which child slot of a declaration an item of its bracket list fills: a face's edges, holes
+/// or support; a labelled field's; or the next positional one, a List field taking every
+/// positional argument from where it starts.
+fn kid_slot(kind: EntKind, label: Option<&str>, positional: usize, in_holes: bool, slots: usize)
+    -> usize {
+    let fields = kind.fields();
+    if kind == EntKind::Face {
+        if label == Some("on") { 2 } else { usize::from(in_holes) }
+    } else {
+        match label {
+            Some(l) => fields
+                .iter()
+                .filter(|(_, f)| *f != Field::Scalar)
+                .position(|(n, _)| *n == l)
+                .unwrap_or_else(|| positional.min(slots - 1)),
+            None => {
+                // a List field takes every positional argument from where it starts
+                let n_named = fields.iter().filter(|(_, f)| *f == Field::Child).count();
+                if positional >= n_named && slots > n_named {
+                    n_named
+                } else {
+                    positional.min(slots.saturating_sub(1))
+                }
+            }
+        }
+    }
+}
+
+/// What a declaration's bracket list carried (`P::decl_list`).
+struct DeclList {
+    children: Vec<Vec<Kid>>,
+    swp: SweepParts,
+    surface_from: Option<Arg>,
+    surface_to: Option<Arg>,
+    close: Option<Span>,
+    list_span: Span,
+}
+
+/// A declaration's scalars' seeds, as its `hint(…)` clause writes them (`P::seed_clause`): the
+/// number, the text where it is no number, and where each is written.
+struct Seeds {
+    seed: Vec<f64>,
+    text: Vec<Option<String>>,
+    spans: Vec<Span>,
+}
+
+/// What a declaration's trailing clauses said (`P::decl_trailers`).  Where a clause *would* go if
+/// it is not written is `insert`, the point before any of them: what writeback appends at.  How
+/// an error spells the statement's head is worked out at the failure (`decl_head`), since every
+/// declaration that parses would otherwise allocate a string nothing reads.
+struct Trailers {
+    knots: Option<Vec<f64>>,
+    weights: Option<Vec<Weight>>,
+    class: Classes,
+    class_span: Span,
+    seed_at: Option<AtRef>,
+    membership: Membership,
+    hint_span: Span,
+    insert: usize,
+}
+
 impl<'a> P<'a> {
     /// A declaration, its kind keyword just read: what it is made of and its trailers.  The name
     /// was read before it (`name := line(…)`, `(name := line(…))`), or there is none.
@@ -136,9 +197,6 @@ impl<'a> P<'a> {
                 span: Span::at(kw.lo as usize),
             }),
         };
-        // how an error spells this statement's head — computed at the failure, since every
-        // declaration that parses would otherwise allocate a string nothing reads
-        let head = || decl_head(kind, &name);
         if kind == EntKind::Motion { return self.motion_decl(name); }
         if kind == EntKind::Envelope { return self.envelope_decl(name); }
         // a curve is what `over` makes a definition's value, `k := leg.toe over u in (a, b)` — or,
@@ -157,69 +215,131 @@ impl<'a> P<'a> {
         // trailer, since nothing on the sheet ever holds it and no solve writes it.  A point has
         // no children, so its brackets are free to hold the two coordinates.
         if kind == EntKind::Point && self.peek() == Some(&Tok::P('(')) {
-            if name.written().is_none() {
-                self.fail("a computed point is named: `p := point(x: …, y: …)`");
-                return None;
-            }
-            self.i += 1;
-            let mut xy: [Option<(String, Span)>; 2] = [None, None];
-            while !self.eat_p(')') {
-                let Some(l) = self.slot_label() else {
-                    self.fail("a computed point's brackets are `(x: …, y: …)`");
-                    return None;
-                };
-                let k = match l.as_str() {
-                    "x" => 0,
-                    "y" => 1,
-                    _ => {
-                        self.fail(&format!("a point is computed by `x:` and `y:`, not `{l}:`"));
-                        return None;
-                    }
-                };
-                if xy[k].is_some() {
-                    self.fail(&format!("`{l}` is given twice"));
-                    return None;
-                }
-                xy[k] = Some(self.expr_until(',')?);
-                if !self.eat_p(',') && self.peek() != Some(&Tok::P(')')) {
-                    self.fail("expected `,` or `)`");
+            return self.computed_point(kind, name);
+        }
+        let scalars: Vec<&str> =
+            kind.fields().iter().filter(|(_, f)| *f == Field::Scalar).map(|(n, _)| *n).collect();
+        let DeclList { children, swp, surface_from, surface_to, close, list_span } =
+            self.decl_list(kind, &name, &scalars)?;
+        let angular_span = match (surface_from,surface_to) {
+            (None,None) => None,
+            (Some(from),Some(to)) => Some(crate::syntax::AngularSpan {from,to,side:None}),
+            _ => { self.fail("a surface span needs both `from:` and `to:` angles"); return None; }
+        };
+        let sweep = if kind == EntKind::Solid {
+            match sweep_of(swp) {
+                Ok(sw) => Some(sw),
+                Err(m) => {
+                    let head = decl_head(kind, &name);
+                    self.fail(&format!("`{head}`: {m}"));
                     return None;
                 }
             }
-            let [Some(x), Some(y)] = xy else {
-                self.fail("a computed point gives both `x:` and `y:`");
+        } else {
+            None
+        };
+        let mut seeds = Seeds {
+            seed: vec![0.0; scalars.len()],
+            text: vec![None; scalars.len()],
+            spans: vec![Span::default(); scalars.len()],
+        };
+        let Trailers { knots, weights, class, class_span, seed_at, membership, hint_span, insert } =
+            self.decl_trailers(kind, &name, &mut seeds)?;
+        Some(Decl {
+            annotations: Default::default(),
+            kind,
+            name,
+            children,
+            seed: seeds.seed,
+            seed_text: seeds.text,
+            seed_spans: seeds.spans,
+            hint_span: Some(hint_span),
+            knots,
+            weights,
+            curve: None,
+            computed: None,
+            class,
+            class_span: if class_span.is_empty() { Span::at(insert) } else { class_span },
+            seed_at,
+            seed_names: Vec::new(),
+            sweep,
+            motion: None, angular_span,
+            membership,
+            list_span,
+            close,
+            mint_close: None,
+        })
+    }
+
+    /// A computed point, its keyword just read and its `(` next: `p := point(x: xexpr, y: yexpr)`
+    /// (§6.5).
+    fn computed_point(&mut self, kind: EntKind, name: DeclName) -> Option<Decl> {
+        if name.written().is_none() {
+            self.fail("a computed point is named: `p := point(x: …, y: …)`");
+            return None;
+        }
+        self.i += 1;
+        let mut xy: [Option<(String, Span)>; 2] = [None, None];
+        while !self.eat_p(')') {
+            let Some(l) = self.slot_label() else {
+                self.fail("a computed point's brackets are `(x: …, y: …)`");
                 return None;
             };
-            let computed = Some([x, y]);
-            let end = self.prev_hi();
-            let mut membership = Membership::default();
-            membership.set_span(Span::at(end));
-            return Some(Decl {
-                annotations: Default::default(),
-                kind,
-                name,
-                children: Vec::new(),
-                seed: vec![0.0; 2],
-                seed_text: vec![None; 2],
-                seed_spans: vec![Span::default(); 2],
-                hint_span: None,
-                knots: None,
-                weights: None,
-                curve: None,
-                computed,
-                class: Classes::default(),
-                class_span: Span::at(end),
-                seed_at: None,
-                seed_names: Vec::new(),
-                sweep: None, motion: None, angular_span: None,
-                membership,
-                list_span: Span::at(end),
-                close: None,
-                mint_close: None,
-            });
+            let k = match l.as_str() {
+                "x" => 0,
+                "y" => 1,
+                _ => {
+                    self.fail(&format!("a point is computed by `x:` and `y:`, not `{l}:`"));
+                    return None;
+                }
+            };
+            if xy[k].is_some() {
+                self.fail(&format!("`{l}` is given twice"));
+                return None;
+            }
+            xy[k] = Some(self.expr_until(',')?);
+            if !self.eat_p(',') && self.peek() != Some(&Tok::P(')')) {
+                self.fail("expected `,` or `)`");
+                return None;
+            }
         }
+        let [Some(x), Some(y)] = xy else {
+            self.fail("a computed point gives both `x:` and `y:`");
+            return None;
+        };
+        let computed = Some([x, y]);
+        let end = self.prev_hi();
+        let mut membership = Membership::default();
+        membership.set_span(Span::at(end));
+        return Some(Decl {
+            annotations: Default::default(),
+            kind,
+            name,
+            children: Vec::new(),
+            seed: vec![0.0; 2],
+            seed_text: vec![None; 2],
+            seed_spans: vec![Span::default(); 2],
+            hint_span: None,
+            knots: None,
+            weights: None,
+            curve: None,
+            computed,
+            class: Classes::default(),
+            class_span: Span::at(end),
+            seed_at: None,
+            seed_names: Vec::new(),
+            sweep: None, motion: None, angular_span: None,
+            membership,
+            list_span: Span::at(end),
+            close: None,
+            mint_close: None,
+        });
+    }
+
+    /// A declaration's bracket list, where one is written: what the thing is made of — its
+    /// children, a solid's sweep, a surface's span, a face's `-> close`.
+    fn decl_list(&mut self, kind: EntKind, name: &DeclName, scalars: &[&str]) -> Option<DeclList> {
         let mut children: Vec<Vec<Kid>> = Vec::new();
-        let mut seed: Vec<f64> = Vec::new();
         let fields = kind.fields();
         // one slot per Child/List field, so the printer's shape and the parser's agree
         for (_, f) in fields {
@@ -227,11 +347,6 @@ impl<'a> P<'a> {
                 children.push(Vec::new());
             }
         }
-        let scalars: Vec<&str> =
-            fields.iter().filter(|(_, f)| *f == Field::Scalar).map(|(n, _)| *n).collect();
-        seed.resize(scalars.len(), 0.0);
-        let mut seed_text: Vec<Option<String>> = vec![None; scalars.len()];
-        let mut seed_spans: Vec<Span> = vec![Span::default(); scalars.len()];
         let mut swp = SweepParts::default();
         let mut surface_from = None;
         let mut surface_to = None;
@@ -312,7 +427,7 @@ impl<'a> P<'a> {
                     // the brackets after the name are *what the thing is made of*; where the
                     // solve begins is the `hint(…)` after them (spec §6.4)
                     Some(l) if scalars.contains(&l.as_str()) => {
-                        let head = head();
+                        let head = decl_head(kind, name);
                         self.fail(&format!(
                             "`{l}` is a seed, and a seed goes in a `hint(…)` clause: \
                              `{head}(…) hint({l}: …)`"
@@ -322,66 +437,9 @@ impl<'a> P<'a> {
                     _ => {
                         // A slot names an entity, seeds a point, or holds a solid's inline
                         // section. An entity whose children are all unseeded writes no list.
-                        let kid = match self.eat_hint_clause() {
-                            Some(lo) => {
-                                // a plane's `u:` and `v:` are axes, seeded by their direction
-                                let axis = kind == EntKind::Plane && match &label {
-                                    Some(l) => l == "u" || l == "v",
-                                    None => positional < 2,
-                                };
-                                Kid::Hint(self.kid_seed(lo, axis)?)
-                            }
-                            None if self.peek_word("face")
-                                && self.t.get(self.i + 1).map(|t| &t.0) == Some(&Tok::P('(')) =>
-                            {
-                                if kind != EntKind::Solid {
-                                    self.fail("an inline face is a solid's section: \
-                                               write `name := solid(face(…), …)`");
-                                    return None;
-                                }
-                                self.i += 1;
-                                let decl = self.decl(EntKind::Face, None)?;
-                                Kid::Face { span: decl.list_span, decl: Box::new(decl) }
-                            }
-                            None => {
-                                let r = self.refr()?;
-                                // `flank from p to q`: the stretch of a curve a face runs along
-                                if kind == EntKind::Face && self.peek_word("from") {
-                                    let lo = r.span.lo as usize;
-                                    self.i += 1;
-                                    let from = self.refr()?;
-                                    if !self.eat_word("to") {
-                                        self.fail("a face's curve runs `from` one point `to` another: `flank from p to q`");
-                                        return None;
-                                    }
-                                    let to = self.refr()?;
-                                    Kid::Trim { curve: r, from, to, span: Span::new(lo, self.prev_hi()) }
-                                } else {
-                                    Kid::Ref(r)
-                                }
-                            }
-                        };
-                        let slot = if kind == EntKind::Face {
-                            if label.as_deref() == Some("on") { 2 } else { usize::from(in_holes) }
-                        } else {
-                            match &label {
-                                Some(l) => fields
-                                    .iter()
-                                    .filter(|(_, f)| *f != Field::Scalar)
-                                    .position(|(n, _)| n == l)
-                                    .unwrap_or_else(|| positional.min(children.len() - 1)),
-                                None => {
-                                    // a List field takes every positional argument from where it starts
-                                    let n_named =
-                                        fields.iter().filter(|(_, f)| *f == Field::Child).count();
-                                    if positional >= n_named && children.len() > n_named {
-                                        n_named
-                                    } else {
-                                        positional.min(children.len().saturating_sub(1))
-                                    }
-                                }
-                            }
-                        };
+                        let kid = self.list_kid(kind, label.as_deref(), positional)?;
+                        let slots = children.len();
+                        let slot = kid_slot(kind, label.as_deref(), positional, in_holes, slots);
                         if let Some(g) = children.get_mut(slot) {
                             g.push(kid);
                         }
@@ -395,23 +453,62 @@ impl<'a> P<'a> {
             }
             list_span = Span::new(open, self.prev_hi());
         }
-        let angular_span = match (surface_from,surface_to) {
-            (None,None) => None,
-            (Some(from),Some(to)) => Some(crate::syntax::AngularSpan {from,to,side:None}),
-            _ => { self.fail("a surface span needs both `from:` and `to:` angles"); return None; }
-        };
-        let sweep = if kind == EntKind::Solid {
-            match sweep_of(swp) {
-                Ok(sw) => Some(sw),
-                Err(m) => {
-                    let head = head();
-                    self.fail(&format!("`{head}`: {m}"));
+        Some(DeclList { children, swp, surface_from, surface_to, close, list_span })
+    }
+
+    /// One item of a declaration's bracket list, its label (if any) read: a slot names an
+    /// entity, seeds a point, or holds a solid's inline section — or a face's stretch of a
+    /// curve.
+    fn list_kid(&mut self, kind: EntKind, label: Option<&str>, positional: usize) -> Option<Kid> {
+        Some(match self.eat_hint_clause() {
+            Some(lo) => {
+                // a plane's `u:` and `v:` are axes, seeded by their direction
+                let axis = kind == EntKind::Plane && match label {
+                    Some(l) => l == "u" || l == "v",
+                    None => positional < 2,
+                };
+                Kid::Hint(self.kid_seed(lo, axis)?)
+            }
+            None if self.peek_word("face")
+                && self.t.get(self.i + 1).map(|t| &t.0) == Some(&Tok::P('(')) =>
+            {
+                if kind != EntKind::Solid {
+                    self.fail("an inline face is a solid's section: \
+                               write `name := solid(face(…), …)`");
                     return None;
                 }
+                self.i += 1;
+                let decl = self.decl(EntKind::Face, None)?;
+                Kid::Face { span: decl.list_span, decl: Box::new(decl) }
             }
-        } else {
-            None
-        };
+            None => {
+                let r = self.refr()?;
+                // `flank from p to q`: the stretch of a curve a face runs along
+                if kind == EntKind::Face && self.peek_word("from") {
+                    let lo = r.span.lo as usize;
+                    self.i += 1;
+                    let from = self.refr()?;
+                    if !self.eat_word("to") {
+                        self.fail("a face's curve runs `from` one point `to` another: `flank from p to q`");
+                        return None;
+                    }
+                    let to = self.refr()?;
+                    Kid::Trim { curve: r, from, to, span: Span::new(lo, self.prev_hi()) }
+                } else {
+                    Kid::Ref(r)
+                }
+            }
+        })
+    }
+
+    /// A declaration's trailing clauses, in any order: `hint(…)` (its seeds written into `seeds`),
+    /// `knots [...]`, `weights [...]`, `class …`, `in PLANE`.
+    fn decl_trailers(
+        &mut self,
+        kind: EntKind,
+        name: &DeclName,
+        seeds: &mut Seeds,
+    ) -> Option<Trailers> {
         // trailing clauses, in any order: `hint(…)`, `knots [...]`, `weights [...]`, `class …`,
         // `in PLANE`.
         // Where a clause *would* go if it is not written is the point we are standing on now,
@@ -426,177 +523,12 @@ impl<'a> P<'a> {
         let mut hint_span = Span::at(insert);
         loop {
             if let Some(lo) = self.eat_hint_clause() {
-                // `hint((0, 12))` — keyed, keys in any order, an omitted scalar is 0 — or a
-                // place named geometrically, `hint(at: t)`, `hint(at: c, bearing: u + phase)`,
-                // `hint(at: a, toward: b, by: 0.5, turn: 90deg)`, `hint(at: a, along: l, by: 2)`:
-                // the same clause, since a seed is what is inside one and nothing else is
-                // (§4.3), and a place is a seed given as geometry rather than as numbers.  The
-                // place keys stand beside the scalars; a clause naming a place carries no
-                // coordinate, and every other place key says something about the place `at:`
-                // names, so it needs one.
-                let mut at: Option<Ref> = None;
-                let mut toward: Option<Ref> = None;
-                let mut along: Option<Ref> = None;
-                let mut texts: [Option<(String, Span, Span)>; 3] = [None, None, None];
-                let mut coord: Option<Span> = None;
-                // `x:` and `y:` as written, which beside `at:` a plane are a place in it
-                let mut xy: [Option<(String, Span)>; 2] = [None, None];
-                let mut other_coord: Option<Span> = None;
-                for h in self.hint_body("x: 0, y: 0")? {
-                    if let Some(what) = h.place {
-                        let slot = match h.key.as_str() {
-                            "at" => &mut at,
-                            "toward" => &mut toward,
-                            "along" => &mut along,
-                            _ => {
-                                let m = format!(
-                                    "`{}:` reads a direction off geometry, which seeds a plane's \
-                                     axis: `plane(v: hint(dir: up))`; `{}` seeds its scalars",
-                                    h.key, kind.as_str()
-                                );
-                                self.fail_at(h.at, &m);
-                                continue;
-                            }
-                        };
-                        if slot.is_some() {
-                            self.fail_at(h.at, &format!("`{}:` is written twice", h.key));
-                            continue;
-                        }
-                        *slot = Some(what);
-                        continue;
-                    }
-                    if let Some(k) = ["bearing", "by", "turn"].iter().position(|&w| w == h.key) {
-                        if texts[k].is_some() {
-                            self.fail_at(h.at, &format!("`{}:` is written twice", h.key));
-                            continue;
-                        }
-                        texts[k] = Some((h.text, h.span, h.at));
-                        continue;
-                    }
-                    let Some(i) = kind.members().iter().position(|&s| s == h.key) else {
-                        // the key is the mistake, not the declaration: reported, and the rest
-                        // of the clause read on, so the entity is still declared and no
-                        // statement naming it fails for want of it (#43.19)
-                        let m = format!("`{}` has no scalar `{}` to seed", kind.as_str(), h.key);
-                        self.fail_at(h.at, &m);
-                        continue;
-                    };
-                    coord.get_or_insert(h.at);
-                    match h.key.as_str() {
-                        "x" => xy[0] = Some((h.text.clone(), h.span)),
-                        "y" => xy[1] = Some((h.text.clone(), h.span)),
-                        _ => {
-                            other_coord.get_or_insert(h.at);
-                        }
-                    }
-                    seed[i] = h.value.unwrap_or(0.0);
-                    seed_text[i] = (h.value.is_none()).then_some(h.text);
-                    seed_spans[i] = h.span;
-                }
-                let [bearing, by, turn] = texts;
-                let key_at = |t: &Option<(String, Span, Span)>| t.as_ref().map(|t| t.2);
-                let text = |t: Option<(String, Span, Span)>| t.map(|(text, span, _)| (text, span));
-                match at {
-                    Some(what) => {
-                        // a place in a plane, `hint(at: P, (3, 4))`: the plane's own
-                        // coordinates, read where the point is seen; any other scalar beside a
-                        // place is refused
-                        let in_plane = kind == EntKind::Point && coord.is_some() && other_coord.is_none();
-                        if let (Some(sp), false) = (coord, in_plane) {
-                            let m = "`at:` names the place; a clause with it carries no scalar \
-                                     but a place's `x:` and `y:` in a plane";
-                            self.fail_at(sp, m);
-                        }
-                        let step = toward.as_ref().or(along.as_ref()).map(|r| r.span);
-                        if let (true, Some(sp)) = (in_plane, step.or(key_at(&bearing))) {
-                            let m = "`x:` and `y:` are a place in the plane `at:` names, and a \
-                                     step or a bearing is from a point: one or the other";
-                            self.fail_at(sp, m);
-                        }
-                        if let (Some(_), Some(sp)) = (&toward, along.as_ref().map(|r| r.span)) {
-                            let m = "a step is `toward:` a point or `along:` a line: one or the \
-                                     other";
-                            self.fail_at(sp, m);
-                        }
-                        if let (Some(sp), Some(_)) = (key_at(&bearing), step) {
-                            let m = "`bearing:` is a place on a circle's edge and a step is from \
-                                     a point: one or the other";
-                            self.fail_at(sp, m);
-                        }
-                        if step.is_none() {
-                            if let Some(sp) = key_at(&by).or(key_at(&turn)) {
-                                let m = "`by:` and `turn:` say how far a step goes, and need \
-                                         `toward:` or `along:`";
-                                self.fail_at(sp, m);
-                            }
-                        }
-                        if seed_at.is_some() {
-                            self.fail_at(what.span, "the place is seeded twice");
-                        }
-                        seed_at = Some(AtRef {
-                            what,
-                            bearing: text(bearing),
-                            toward,
-                            along,
-                            by: text(by),
-                            turn: text(turn),
-                            x: if in_plane { xy[0].take() } else { None },
-                            y: if in_plane { xy[1].take() } else { None },
-                        });
-                        if in_plane {
-                            // the place carries the numbers; the scalars stay unseeded
-                            for i in 0..seed.len() {
-                                seed[i] = 0.0;
-                                seed_text[i] = None;
-                            }
-                        }
-                    }
-                    None => {
-                        let lone = [
-                            ("toward", toward.as_ref().map(|r| r.span)),
-                            ("along", along.as_ref().map(|r| r.span)),
-                            ("bearing", key_at(&bearing)),
-                            ("by", key_at(&by)),
-                            ("turn", key_at(&turn)),
-                        ];
-                        let first = lone.into_iter().find(|(_, sp)| sp.is_some());
-                        if let Some((key, Some(sp))) = first {
-                            let m = format!("`{key}:` says where from a place, and needs `at:`");
-                            self.fail_at(sp, &m);
-                        }
-                    }
-                }
+                self.seed_clause(kind, seeds, &mut seed_at)?;
                 hint_span = Span::new(lo, self.prev_hi());
             } else if self.eat_word("knots") {
-                if !self.want_p('[') {
-                    return None;
-                }
-                let mut u = Vec::new();
-                while !self.eat_p(']') {
-                    u.push(self.number()?);
-                    if !self.eat_p(',') && self.peek() != Some(&Tok::P(']')) {
-                        self.fail("expected `,` or `]`");
-                        return None;
-                    }
-                }
-                knots = Some(u);
+                knots = Some(self.knot_list()?);
             } else if self.eat_word("weights") {
-                if !self.want_p('[') {
-                    return None;
-                }
-                let mut w = Vec::new();
-                while !self.eat_p(']') {
-                    let (value, text, span) = self.value_text()?;
-                    w.push(match value {
-                        Some(value) => Weight { value, text: None, span },
-                        None => Weight { value: f64::NAN, text: Some(text), span },
-                    });
-                    if !self.eat_p(',') && self.peek() != Some(&Tok::P(']')) {
-                        self.fail("expected `,` or `]`");
-                        return None;
-                    }
-                }
-                weights = Some(w);
+                weights = Some(self.weight_list()?);
             } else if self.peek_word("class") {
                 let (c, sp) = self.class_clause(insert);
                 if c.is_empty() {
@@ -606,56 +538,9 @@ impl<'a> P<'a> {
                 class = c;
                 class_span = sp;
             } else if self.peek_word("in") {
-                // `in top` — every point this declaration mints or names is an image on that
-                // plane (§6.7).  A datum has no points of its own to put there, and a curve is
-                // its expressions.
-                if !kind.bears_points() {
-                    self.fail(&format!(
-                        "`in` puts points on a plane, and {} has none of its own",
-                        kind.a()
-                    ));
-                    return None;
-                }
-                if membership.plane().is_some() {
-                    let head = head();
-                    self.fail(&format!("`{head}` is {}", membership.cause()));
-                    return None;
-                }
-                let lo = self.here().lo as usize;
-                self.i += 1;
-                let r = self.refr()?;
-                // `in P, G` — on every plane named, so where they meet, and drawn in each (§6.7)
-                let mut also = Vec::new();
-                while self.peek() == Some(&Tok::P(','))
-                    && matches!(self.t.get(self.i + 1).map(|(t, _)| t), Some(Tok::Ident(_)))
-                {
-                    self.i += 1;
-                    also.push(self.refr()?);
-                }
-                if !also.is_empty() && kind != EntKind::Point {
-                    self.fail(&format!(
-                        "a point is drawn in several planes, where they meet; {} is drawn in \
-                         one, and on two its points are",
-                        kind.a()
-                    ));
-                    return None;
-                }
-                membership = Membership::written_on(r, also, Span::new(lo, self.prev_hi()));
+                membership = self.membership_clause(kind, &name, &membership)?;
             } else if self.peek_word("hint") || self.peek_word("at") {
-                // the retired spellings — `hint at (0, 0)` and a bare `at (0, 0)` for a pair of
-                // coordinates, `hint at REF [bearing (…)]` for a place (#47.2) — are what every
-                // document said until the clause took them in, so the reader most likely to meet
-                // an error here is the one holding one of them
-                let head = head();
-                let place = self.peek_word("hint")
-                    && self.word_at(self.i + 1) == Some("at")
-                    && self.t.get(self.i + 2).map(|(t, _)| t) != Some(&Tok::P('('));
-                let m = if place {
-                    format!("a place is keyed now: `{head} hint(at: REF, bearing: …)`")
-                } else {
-                    format!("a coordinate seed is keyed now: `{head} hint((…, …))`")
-                };
-                self.fail(&m);
+                self.retired_seed(kind, &name);
                 return None;
             } else {
                 break;
@@ -667,30 +552,267 @@ impl<'a> P<'a> {
             let end = self.prev_hi();
             membership.set_span(Span::at(end));
         }
-        Some(Decl {
-            annotations: Default::default(),
-            kind,
-            name,
-            children,
-            seed,
-            seed_text,
-            seed_spans,
-            hint_span: Some(hint_span),
+        Some(Trailers {
             knots,
             weights,
-            curve: None,
-            computed: None,
             class,
-            class_span: if class_span.is_empty() { Span::at(insert) } else { class_span },
+            class_span,
             seed_at,
-            seed_names: Vec::new(),
-            sweep,
-            motion: None, angular_span,
             membership,
-            list_span,
-            close,
-            mint_close: None,
+            hint_span,
+            insert,
         })
+    }
+
+    /// A declaration's `hint(…)` clause, its `hint(` just read: its scalars' seeds, or a place
+    /// named geometrically (`seed_at`).
+    fn seed_clause(
+        &mut self,
+        kind: EntKind,
+        seeds: &mut Seeds,
+        seed_at: &mut Option<AtRef>,
+    ) -> Option<()> {
+        // `hint((0, 12))` — keyed, keys in any order, an omitted scalar is 0 — or a
+        // place named geometrically, `hint(at: t)`, `hint(at: c, bearing: u + phase)`,
+        // `hint(at: a, toward: b, by: 0.5, turn: 90deg)`, `hint(at: a, along: l, by: 2)`:
+        // the same clause, since a seed is what is inside one and nothing else is
+        // (§4.3), and a place is a seed given as geometry rather than as numbers.  The
+        // place keys stand beside the scalars; a clause naming a place carries no
+        // coordinate, and every other place key says something about the place `at:`
+        // names, so it needs one.
+        let mut at: Option<Ref> = None;
+        let mut toward: Option<Ref> = None;
+        let mut along: Option<Ref> = None;
+        let mut texts: [Option<(String, Span, Span)>; 3] = [None, None, None];
+        let mut coord: Option<Span> = None;
+        // `x:` and `y:` as written, which beside `at:` a plane are a place in it
+        let mut xy: [Option<(String, Span)>; 2] = [None, None];
+        let mut other_coord: Option<Span> = None;
+        for h in self.hint_body("x: 0, y: 0")? {
+            if let Some(what) = h.place {
+                let slot = match h.key.as_str() {
+                    "at" => &mut at,
+                    "toward" => &mut toward,
+                    "along" => &mut along,
+                    _ => {
+                        let m = format!(
+                            "`{}:` reads a direction off geometry, which seeds a plane's \
+                             axis: `plane(v: hint(dir: up))`; `{}` seeds its scalars",
+                            h.key, kind.as_str()
+                        );
+                        self.fail_at(h.at, &m);
+                        continue;
+                    }
+                };
+                if slot.is_some() {
+                    self.fail_at(h.at, &format!("`{}:` is written twice", h.key));
+                    continue;
+                }
+                *slot = Some(what);
+                continue;
+            }
+            if let Some(k) = ["bearing", "by", "turn"].iter().position(|&w| w == h.key) {
+                if texts[k].is_some() {
+                    self.fail_at(h.at, &format!("`{}:` is written twice", h.key));
+                    continue;
+                }
+                texts[k] = Some((h.text, h.span, h.at));
+                continue;
+            }
+            let Some(i) = kind.members().iter().position(|&s| s == h.key) else {
+                // the key is the mistake, not the declaration: reported, and the rest
+                // of the clause read on, so the entity is still declared and no
+                // statement naming it fails for want of it (#43.19)
+                let m = format!("`{}` has no scalar `{}` to seed", kind.as_str(), h.key);
+                self.fail_at(h.at, &m);
+                continue;
+            };
+            coord.get_or_insert(h.at);
+            match h.key.as_str() {
+                "x" => xy[0] = Some((h.text.clone(), h.span)),
+                "y" => xy[1] = Some((h.text.clone(), h.span)),
+                _ => {
+                    other_coord.get_or_insert(h.at);
+                }
+            }
+            seeds.seed[i] = h.value.unwrap_or(0.0);
+            seeds.text[i] = (h.value.is_none()).then_some(h.text);
+            seeds.spans[i] = h.span;
+        }
+        let [bearing, by, turn] = texts;
+        let key_at = |t: &Option<(String, Span, Span)>| t.as_ref().map(|t| t.2);
+        let text = |t: Option<(String, Span, Span)>| t.map(|(text, span, _)| (text, span));
+        match at {
+            Some(what) => {
+                // a place in a plane, `hint(at: P, (3, 4))`: the plane's own
+                // coordinates, read where the point is seen; any other scalar beside a
+                // place is refused
+                let in_plane = kind == EntKind::Point && coord.is_some() && other_coord.is_none();
+                if let (Some(sp), false) = (coord, in_plane) {
+                    let m = "`at:` names the place; a clause with it carries no scalar \
+                             but a place's `x:` and `y:` in a plane";
+                    self.fail_at(sp, m);
+                }
+                let step = toward.as_ref().or(along.as_ref()).map(|r| r.span);
+                if let (true, Some(sp)) = (in_plane, step.or(key_at(&bearing))) {
+                    let m = "`x:` and `y:` are a place in the plane `at:` names, and a \
+                             step or a bearing is from a point: one or the other";
+                    self.fail_at(sp, m);
+                }
+                if let (Some(_), Some(sp)) = (&toward, along.as_ref().map(|r| r.span)) {
+                    let m = "a step is `toward:` a point or `along:` a line: one or the \
+                             other";
+                    self.fail_at(sp, m);
+                }
+                if let (Some(sp), Some(_)) = (key_at(&bearing), step) {
+                    let m = "`bearing:` is a place on a circle's edge and a step is from \
+                             a point: one or the other";
+                    self.fail_at(sp, m);
+                }
+                if step.is_none() {
+                    if let Some(sp) = key_at(&by).or(key_at(&turn)) {
+                        let m = "`by:` and `turn:` say how far a step goes, and need \
+                                 `toward:` or `along:`";
+                        self.fail_at(sp, m);
+                    }
+                }
+                if seed_at.is_some() {
+                    self.fail_at(what.span, "the place is seeded twice");
+                }
+                *seed_at = Some(AtRef {
+                    what,
+                    bearing: text(bearing),
+                    toward,
+                    along,
+                    by: text(by),
+                    turn: text(turn),
+                    x: if in_plane { xy[0].take() } else { None },
+                    y: if in_plane { xy[1].take() } else { None },
+                });
+                if in_plane {
+                    // the place carries the numbers; the scalars stay unseeded
+                    for i in 0..seeds.seed.len() {
+                        seeds.seed[i] = 0.0;
+                        seeds.text[i] = None;
+                    }
+                }
+            }
+            None => {
+                let lone = [
+                    ("toward", toward.as_ref().map(|r| r.span)),
+                    ("along", along.as_ref().map(|r| r.span)),
+                    ("bearing", key_at(&bearing)),
+                    ("by", key_at(&by)),
+                    ("turn", key_at(&turn)),
+                ];
+                let first = lone.into_iter().find(|(_, sp)| sp.is_some());
+                if let Some((key, Some(sp))) = first {
+                    let m = format!("`{key}:` says where from a place, and needs `at:`");
+                    self.fail_at(sp, &m);
+                }
+            }
+        }
+        Some(())
+    }
+
+    /// A spline's `knots [...]`, the word just read.
+    fn knot_list(&mut self) -> Option<Vec<f64>> {
+        if !self.want_p('[') {
+            return None;
+        }
+        let mut u = Vec::new();
+        while !self.eat_p(']') {
+            u.push(self.number()?);
+            if !self.eat_p(',') && self.peek() != Some(&Tok::P(']')) {
+                self.fail("expected `,` or `]`");
+                return None;
+            }
+        }
+        Some(u)
+    }
+
+    /// A rational spline's `weights [...]`, the word just read.
+    fn weight_list(&mut self) -> Option<Vec<Weight>> {
+        if !self.want_p('[') {
+            return None;
+        }
+        let mut w = Vec::new();
+        while !self.eat_p(']') {
+            let (value, text, span) = self.value_text()?;
+            w.push(match value {
+                Some(value) => Weight { value, text: None, span },
+                None => Weight { value: f64::NAN, text: Some(text), span },
+            });
+            if !self.eat_p(',') && self.peek() != Some(&Tok::P(']')) {
+                self.fail("expected `,` or `]`");
+                return None;
+            }
+        }
+        Some(w)
+    }
+
+    /// A declaration's `in PLANE[, G…]` clause, `in` next: the membership it writes, where the
+    /// declaration has said none yet.
+    fn membership_clause(
+        &mut self,
+        kind: EntKind,
+        name: &DeclName,
+        membership: &Membership,
+    ) -> Option<Membership> {
+        // `in top` — every point this declaration mints or names is an image on that
+        // plane (§6.7).  A datum has no points of its own to put there, and a curve is
+        // its expressions.
+        if !kind.bears_points() {
+            self.fail(&format!(
+                "`in` puts points on a plane, and {} has none of its own",
+                kind.a()
+            ));
+            return None;
+        }
+        if membership.plane().is_some() {
+            let head = decl_head(kind, name);
+            self.fail(&format!("`{head}` is {}", membership.cause()));
+            return None;
+        }
+        let lo = self.here().lo as usize;
+        self.i += 1;
+        let r = self.refr()?;
+        // `in P, G` — on every plane named, so where they meet, and drawn in each (§6.7)
+        let mut also = Vec::new();
+        while self.peek() == Some(&Tok::P(','))
+            && matches!(self.t.get(self.i + 1).map(|(t, _)| t), Some(Tok::Ident(_)))
+        {
+            self.i += 1;
+            also.push(self.refr()?);
+        }
+        if !also.is_empty() && kind != EntKind::Point {
+            self.fail(&format!(
+                "a point is drawn in several planes, where they meet; {} is drawn in \
+                 one, and on two its points are",
+                kind.a()
+            ));
+            return None;
+        }
+        Some(Membership::written_on(r, also, Span::new(lo, self.prev_hi())))
+    }
+
+    /// A retired seed spelling, `hint at …` or `at (…)` after a declaration: refused, saying
+    /// what to write.
+    fn retired_seed(&mut self, kind: EntKind, name: &DeclName) {
+        // the retired spellings — `hint at (0, 0)` and a bare `at (0, 0)` for a pair of
+        // coordinates, `hint at REF [bearing (…)]` for a place (#47.2) — are what every
+        // document said until the clause took them in, so the reader most likely to meet
+        // an error here is the one holding one of them
+        let head = decl_head(kind, name);
+        let place = self.peek_word("hint")
+            && self.word_at(self.i + 1) == Some("at")
+            && self.t.get(self.i + 2).map(|(t, _)| t) != Some(&Tok::P('('));
+        let m = if place {
+            format!("a place is keyed now: `{head} hint(at: REF, bearing: …)`")
+        } else {
+            format!("a coordinate seed is keyed now: `{head} hint((…, …))`")
+        };
+        self.fail(&m);
     }
 
     /// One of a solid's sweep arguments, the label already eaten: `from: EXPR`, `to: EXPR`,

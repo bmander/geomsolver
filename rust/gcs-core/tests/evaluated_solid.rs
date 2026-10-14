@@ -100,7 +100,7 @@ fn policies_coexist_and_geometry_placement_and_provenance_invalidate_cache() {
     assert_eq!(cut.round_features().len(), 1);
     assert_eq!(
         e.sketch
-            .solid_cache
+            .caches.solid
             .borrow()
             .keys()
             .filter(|(s, _)| *s == i)

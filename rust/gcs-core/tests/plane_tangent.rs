@@ -7,10 +7,9 @@ use gcs_core::diagnose::{diagnose, DiagnoseOptions, Diagnosis, State};
 use gcs_core::io;
 use gcs_core::model::Toward;
 use gcs_core::program::Elaborated;
-use gcs_core::solve::{solve, SolveOpts};
 use gcs_core::space::{cross, dot, sub};
 
-use crate::common::{ent, read, refused};
+use crate::common::{ent, refused, text::solved};
 
 const SHIPPED: &str = include_str!("../../examples/hypoid_pitch_cones.sv");
 
@@ -20,13 +19,6 @@ fn edited(edits: &[(&str, &str)]) -> String {
         assert!(s.contains(from), "no `{from}` in the shipped example");
         s.replacen(from, to, 1)
     })
-}
-
-fn solved(src: &str) -> Elaborated {
-    let mut e = read(src);
-    let r = solve(&mut e.sketch, SolveOpts::default());
-    assert!(r.success, "{}", r.message);
-    e
 }
 
 /// The rows a plane's tangency states as derivatives along the plane's axes.

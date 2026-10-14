@@ -10,18 +10,8 @@
 //! space — and 3 off the page along the extrusion.  What it lands on is checked against the
 //! swept solid's material field, not the curve it was solved against.
 
-use crate::common::{ent, fd_jacobian};
-use gcs_core::{library, program};
+use crate::common::{ent, fd_jacobian, read as build};
 use gcs_core::solve::{solve, SolveOpts};
-
-/// `src`, its `use std` linked, elaborated with no error.
-fn build(src: &str) -> program::Elaborated {
-    let (p, errors, linked) = library::parse_linked(src);
-    assert!(errors.is_empty() && linked.is_empty(), "{errors:?} {linked:?}");
-    let e = program::elaborate(&p);
-    assert!(e.ok(), "{:?}", e.errors().map(|d| (d.code.as_str(), &d.message)).collect::<Vec<_>>());
-    e
-}
 
 /// The tooth space's drawing: its blank's rim, the rack's pitch line and tooth, the upper flank
 /// named.

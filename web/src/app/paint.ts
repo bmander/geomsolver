@@ -92,15 +92,41 @@ export function paint(v: SketchView): void {
   paintUnderlay(v);
   ctx.lineCap = 'round';
 
-  const sk = v.sketch;
   const sel = new Set(v.selected);
   const hl = new Set(v.highlight);
+  paintFigures(v, sel, hl);
+  paintSplines(v, sel, hl);
+  // a plane is not stroked here: it is a pane of the workspace, drawn in space below, and the
+  // plane being drawn on is named in the chooser over the viewport
+  ctx.setLineDash([]);
+  // a tool's preview is where its clicks are read (`toolCam`): the eye's own, drawing in space
+  if (v.pending.length || v.pendingFit.length) v.withCam(v.toolCam(), () => paintPreview(v));
+  // the region a click would extrude, washed where it is drawn
+  // (the Revolve tool's, once a click chose it, while the line to turn it about is found)
+  const region = sweepsRegion(v.tool) ? v.pendingRevolve ?? v.hoverRegion : null;
+  if (region && !('refused' in region)) v.inView(v.toolView, () => paintRegion(v, region.rings));
+  if (v.diagnosis?.conflicts?.length) paintConflicts(v);
+
+  paintPoints(v, sel, hl);
+  paintCallouts(v);
+  // the traced picture's frame, over everything: dashed grey while it is scenery, since that
+  // edge is the only part of it a press takes hold of and an affordance you cannot see is one
+  // nobody finds — and the canvas's own selected/hovered colours otherwise
+  paintFrame(v);
+  v.gesture?.paint?.(ctx);
+  paintExtentArrow(v);
+  if (v.tool !== 'select' && !sweepsRegion(v.tool)) paintSnap(v);
+  ctx.restore();
+}
+
+/** The lines, circles, arcs and written curves, each in its own view: a line from where each end
+ *  is seen (a projector between two views runs between them), and anything round, or a curve,
+ *  through the camera of the one view it stands in. */
+function paintFigures(v: SketchView, sel: Set<Primitive>, hl: Set<Primitive>): void {
+  const ctx = v.ctx;
+  const sk = v.sketch;
   const strokeFor = (base: string, ent: Primitive, st?: Style): [string, number] =>
     strokeOf(v, sel, hl, base, ent, st);
-
-  // **every figure in its own view**: a line from where each end is seen (a projector between
-  // two views runs between them), and anything round, or a curve, through the camera of the one
-  // view it stands in
   for (const ln of sk.lines) {
     const st = ln.style;
     if (st.hidden) continue;
@@ -152,10 +178,15 @@ export function paint(v: SketchView): void {
       ctx.setLineDash([]);
     });
   }
-  for (const sp of sk.splines) {
+}
+
+/** The B-splines, and the control polygon of one in play. */
+function paintSplines(v: SketchView, sel: Set<Primitive>, hl: Set<Primitive>): void {
+  const ctx = v.ctx;
+  for (const sp of v.sketch.splines) {
     const st = sp.style;
     if (st.hidden) continue;
-    const [col, lw] = strokeFor(COL.spline, sp, st);
+    const [col, lw] = strokeOf(v, sel, hl, COL.spline, sp, st);
     v.inView(v.viewOfEntity(sp), () => {
       // the curve arrives as a polyline already refined to this zoom: `unit` is the eye length of
       // one screen pixel, the same number the callouts are laid out against, so the front end
@@ -180,18 +211,12 @@ export function paint(v: SketchView): void {
       }
     });
   }
-  // a plane is not stroked here: it is a pane of the workspace, drawn in space below, and the
-  // plane being drawn on is named in the chooser over the viewport
-  ctx.setLineDash([]);
-  // a tool's preview is where its clicks are read (`toolCam`): the eye's own, drawing in space
-  if (v.pending.length || v.pendingFit.length) v.withCam(v.toolCam(), () => paintPreview(v));
-  // the region a click would extrude, washed where it is drawn
-  // (the Revolve tool's, once a click chose it, while the line to turn it about is found)
-  const region = sweepsRegion(v.tool) ? v.pendingRevolve ?? v.hoverRegion : null;
-  if (region && !('refused' in region)) v.inView(v.toolView, () => paintRegion(v, region.rings));
-  if (v.diagnosis?.conflicts?.length) paintConflicts(v);
+}
 
-  // one read for every point: a point's style is the sheet's `.point` rule and nothing else
+/** Every point: one read, since a point's style is the sheet's `.point` rule and nothing else. */
+function paintPoints(v: SketchView, sel: Set<Primitive>, hl: Set<Primitive>): void {
+  const ctx = v.ctx;
+  const sk = v.sketch;
   const hidePoints = sk.styleNamed('point').hidden;
   for (const p of sk.points) {
     if (hidePoints && !sel.has(p) && !hl.has(p)) continue;
@@ -206,25 +231,19 @@ export function paint(v: SketchView): void {
       ctx.fill();
     }
   }
-  paintCallouts(v);
-  // the traced picture's frame, over everything: dashed grey while it is scenery, since that
-  // edge is the only part of it a press takes hold of and an affordance you cannot see is one
-  // nobody finds — and the canvas's own selected/hovered colours otherwise
-  paintFrame(v);
-  v.gesture?.paint?.(ctx);
-  paintExtentArrow(v);
-  if (v.tool !== 'select' && !sweepsRegion(v.tool)) {   // snap indicator
-    const sp = v.pickPoint(...v.cursor);
-    if (sp) {
-      const [sx, sy] = v.seen(sp);
-      ctx.strokeStyle = COL.sel;
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.arc(sx, sy, 7, 0, 2 * Math.PI);
-      ctx.stroke();
-    }
-  }
-  ctx.restore();
+}
+
+/** The snap indicator: a ring round the point a drawing tool's click would land on. */
+function paintSnap(v: SketchView): void {
+  const ctx = v.ctx;
+  const sp = v.pickPoint(...v.cursor);
+  if (!sp) return;
+  const [sx, sy] = v.seen(sp);
+  ctx.strokeStyle = COL.sel;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.arc(sx, sy, 7, 0, 2 * Math.PI);
+  ctx.stroke();
 }
 
 /** The dimensions, as a drawing states them.

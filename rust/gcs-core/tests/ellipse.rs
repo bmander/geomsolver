@@ -9,7 +9,7 @@ use gcs_core::model::{pick, EntKind, EntRef};
 use gcs_core::program::{elaborate, Elaborated};
 use gcs_core::solve::{solve, SolveOpts};
 
-use crate::common::fd_jacobian;
+use crate::common::{fd_jacobian, read as build};
 
 /// An ellipse of semi-axes 8 and 3 about (10, 5), its major axis along the front's x.
 const ELLIPSE: &str = "\
@@ -20,15 +20,6 @@ fix((10, 5)) o
 }
 e := std.Ellipse(o, a: 8, b: 3, tilt: 0deg).p over u in (0, 360)
 ";
-
-fn build(src: &str) -> Elaborated {
-    let (prog, errs, linked) = gcs_core::library::parse_linked(src);
-    assert!(errs.is_empty(), "{:?}", errs.iter().map(|e| &e.message).collect::<Vec<_>>());
-    assert!(linked.is_empty(), "{linked:?}");
-    let e = elaborate(&prog);
-    assert!(e.ok(), "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
-    e
-}
 
 /// The contact's parameter — the one curve contact's.
 fn param_of(e: &Elaborated) -> f64 {

@@ -62,12 +62,9 @@ pub unsafe extern "C" fn gcs_constraints_json(h: *mut Sketch) -> *mut u8 {
 
 #[no_mangle]
 pub unsafe extern "C" fn gcs_constraint_json(h: *mut Sketch, id: i32) -> *mut u8 {
-    guard(std::ptr::null_mut(), move || {
+    json_out(move || {
         let s = sk(h);
-        match s.constraint(id as u32) {
-            Some(c) => out_json(report::constraint_json(s, c)),
-            None => out_json(Json::Null),
-        }
+        s.constraint(id as u32).map_or(Json::Null, |c| report::constraint_json(s, c))
     })
 }
 

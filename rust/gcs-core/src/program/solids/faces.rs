@@ -90,7 +90,46 @@ fn build_loop(
     let mut report = |code: Code, span: Span, m: String| {
         diags.push(Diag::within(code, span, stmt, m));
     };
-    // each item: a reference, or a curve with the two points its stretch runs between
+    let refs = loop_refs(res, kids, span, &mut report)?;
+    let items = loop_items(sk, res, &refs, closed, &mut report)?;
+    // **a circle is a loop by itself, and may not stand in one** — and so is a closed curve
+    let lone_circle = items.len() == 1 && (items[0].entity.kind == EntKind::Circle
+        || (items[0].entity.kind == EntKind::Curve && sk.curves[items[0].entity.i()].trim.is_none()));
+    if !lone_circle && items.iter().any(|i| i.entity.kind == EntKind::Circle) {
+        report(Code::E080, span, "a circle is a whole loop: it stands in a face by itself".into());
+        return None;
+    }
+    let walk = walk_items(sk, &items, closed, lone_circle, span, &mut report)?;
+    let (edges, names) = close_gaps(sk, &items, &walk, closed, lone_circle, span, &mut report)?;
+    // **three corners, or a curve.**  A loop of straight runs between two points is a line
+    // drawn twice, and a face with no area is a solid with no volume — worth saying here,
+    // where there is a span, rather than letting the boundary evaluation quietly find nothing.
+    if !edges.iter().any(|e| matches!(e.kind, EntKind::Arc | EntKind::Circle | EntKind::Spline | EntKind::Curve)) {
+        let mut corners: Vec<u32> = edges
+            .iter()
+            .filter_map(|e| crate::model::edge_ends(sk, *e))
+            .flat_map(|(a, b)| [a, b])
+            .collect();
+        corners.sort_unstable();
+        corners.dedup();
+        if corners.len() < 3 {
+            report(Code::E080, span, "a face is a loop, and a straight one needs three corners".into());
+            return None;
+        }
+    }
+    let plane = one_plane(sk, &edges, &names, span, &mut report)?;
+    Some((crate::model::FaceLoop { edges, edge_names: names }, plane))
+}
+
+/// Each item of a face's walk as written — a reference (a chain's links in its place), or a
+/// curve with the two points its stretch runs between.
+#[allow(clippy::type_complexity)]
+fn loop_refs<'a>(
+    res: &'a Resolver,
+    kids: &'a [Kid],
+    span: Span,
+    report: &mut impl FnMut(Code, Span, String),
+) -> Option<Vec<(&'a crate::syntax::Ref, Option<[&'a crate::syntax::Ref; 2]>)>> {
     let mut refs: Vec<(&crate::syntax::Ref, Option<[&crate::syntax::Ref; 2]>)> = Vec::new();
     for k in kids {
         let r = match k {
@@ -120,11 +159,25 @@ fn build_loop(
         report(Code::E080, span, "a face is a loop of edges: `f := face(ab, bc, cd, da)`".into());
         return None;
     }
-    // what one item of the walk is: an edge, or a corner the loop goes straight to
-    struct Item {
-        entity: EntRef,
-        name: String,
-    }
+    Some(refs)
+}
+
+/// What one item of a face's walk is: an edge, or a corner the loop goes straight to.
+struct Item {
+    entity: EntRef,
+    name: String,
+}
+
+/// Each item of the walk resolved, by the leaf of the name the source wrote — a stretch of a
+/// curve minted as a curve of its own — or `None`, refused.
+#[allow(clippy::type_complexity)]
+fn loop_items(
+    sk: &mut Sketch,
+    res: &Resolver,
+    refs: &[(&crate::syntax::Ref, Option<[&crate::syntax::Ref; 2]>)],
+    closed: bool,
+    report: &mut impl FnMut(Code, Span, String),
+) -> Option<Vec<Item>> {
     let reserved: BTreeSet<&str> = refs.iter().map(|(r, _)| boundary_name(r)).collect();
     let mut anonymous = 0;
     let mut items: Vec<Item> = Vec::with_capacity(refs.len());
@@ -133,7 +186,7 @@ fn build_loop(
         res.entity(sk, r)
             .ok_or_else(|| (r.span, format!("no such entity: `{}`", r.root.text)))
     };
-    for &(r, trim) in &refs {
+    for &(r, trim) in refs {
         let mut e = match entity(sk, r) {
             Ok(e) => e,
             Err((sp, m)) => { report(Code::E101, sp, m); return None }
@@ -216,13 +269,20 @@ fn build_loop(
             }
         }
     }
-    // **a circle is a loop by itself, and may not stand in one** — and so is a closed curve
-    let lone_circle = items.len() == 1 && (items[0].entity.kind == EntKind::Circle
-        || (items[0].entity.kind == EntKind::Curve && sk.curves[items[0].entity.i()].trim.is_none()));
-    if !lone_circle && items.iter().any(|i| i.entity.kind == EntKind::Circle) {
-        report(Code::E080, span, "a circle is a whole loop: it stands in a face by itself".into());
-        return None;
-    }
+    Some(items)
+}
+
+/// Where the walk enters and leaves each item, in order — or `None`, refused: an item that is no
+/// loop by itself, an edge meeting neither neighbour, or neighbours sharing no point along it.
+/// A lone circle is walked by no ends.
+fn walk_items(
+    sk: &Sketch,
+    items: &[Item],
+    closed: bool,
+    lone_circle: bool,
+    span: Span,
+    report: &mut impl FnMut(Code, Span, String),
+) -> Option<Vec<(u32, u32)>> {
     // **the ends of each item**, which is what says whether two neighbours already meet.  A
     // point is both of its own.
     let mut ends = Vec::with_capacity(items.len());
@@ -305,8 +365,8 @@ fn build_loop(
         }
         Ok(walk)
     };
-    let walk = match orient(false).or_else(|_| orient(true)) {
-        Ok(walk) => walk,
+    match orient(false).or_else(|_| orient(true)) {
+        Ok(walk) => Some(walk),
         Err(i) => {
             report(Code::E080,
                 span,
@@ -316,10 +376,25 @@ fn build_loop(
                     items[i].name
                 ),
             );
-            return None;
+            None
         }
-    };
-    // -- the walk, and the straight runs it mints ------------------------------------------
+    }
+}
+
+/// **The walk, and the straight runs it mints**: the loop's edges and their names, a line minted
+/// across each gap — the wrap only where `-> close` says so, and an interior one only where a
+/// *point* is one of its sides.
+#[allow(clippy::too_many_arguments)]
+fn close_gaps(
+    sk: &mut Sketch,
+    items: &[Item],
+    walk: &[(u32, u32)],
+    closed: bool,
+    lone_circle: bool,
+    span: Span,
+    report: &mut impl FnMut(Code, Span, String),
+) -> Option<(Vec<EntRef>, Vec<String>)> {
+    let n = items.len();
     let mut edges: Vec<EntRef> = Vec::with_capacity(n);
     let mut names: Vec<String> = Vec::with_capacity(n);
     let reserved: BTreeSet<&str> =
@@ -368,25 +443,20 @@ fn build_loop(
         // A generated side must not merge with a named side in reports or face selection.
         names.push(fresh_boundary_name("close", &mut minted, &reserved));
     }
-    // **three corners, or a curve.**  A loop of straight runs between two points is a line
-    // drawn twice, and a face with no area is a solid with no volume — worth saying here,
-    // where there is a span, rather than letting the boundary evaluation quietly find nothing.
-    if !edges.iter().any(|e| matches!(e.kind, EntKind::Arc | EntKind::Circle | EntKind::Spline | EntKind::Curve)) {
-        let mut corners: Vec<u32> = edges
-            .iter()
-            .filter_map(|e| crate::model::edge_ends(sk, *e))
-            .flat_map(|(a, b)| [a, b])
-            .collect();
-        corners.sort_unstable();
-        corners.dedup();
-        if corners.len() < 3 {
-            report(Code::E080, span, "a face is a loop, and a straight one needs three corners".into());
-            return None;
-        }
-    }
-    // **one plane**, read off the memberships and never written on the face
+    Some((edges, names))
+}
+
+/// **One plane**, read off the memberships and never written on the face — or `None`, refused: a
+/// point standing in space, or two planes.
+fn one_plane(
+    sk: &Sketch,
+    edges: &[EntRef],
+    names: &[String],
+    span: Span,
+    report: &mut impl FnMut(Code, Span, String),
+) -> Option<Option<u32>> {
     let mut plane: Option<Option<u32>> = None;
-    for (e, n) in edges.iter().zip(&names) {
+    for (e, n) in edges.iter().zip(names) {
         for c in sk.children(*e).into_iter().chain([*e]) {
             if c.kind != EntKind::Point {
                 continue;
@@ -421,7 +491,7 @@ fn build_loop(
             }
         }
     }
-    Some((crate::model::FaceLoop { edges, edge_names: names }, plane.flatten()))
+    Some(plane.flatten())
 }
 
 /// The outer loop of a face named as another face's hole.  One already holed, or spatial, or

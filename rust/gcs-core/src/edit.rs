@@ -28,6 +28,7 @@ mod remove;
 mod dimension;
 mod reconcile;
 mod component;
+mod requests;
 
 pub use seeds::*;
 pub use append::*;
@@ -38,6 +39,7 @@ pub use remove::*;
 pub use dimension::*;
 pub use reconcile::*;
 pub use component::make_component;
+pub use requests::*;
 
 /// What an edit did to the document, and what it costs to take up.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -49,6 +51,17 @@ pub enum Kind {
     Numeric,
     /// Nothing to do, or nothing this edit is able to do.
     None,
+}
+
+impl Kind {
+    /// The kind's name as a binding reads it: `structural`, `numeric` or `none`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Kind::Structural => "structural",
+            Kind::Numeric => "numeric",
+            Kind::None => "none",
+        }
+    }
 }
 
 #[derive(Clone, Debug)]

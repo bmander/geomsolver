@@ -206,7 +206,7 @@ fn measure(e: &program::Elaborated,member: &str) -> Report {
 }
 
 #[test]
-#[ignore]
+#[ignore = "a tool: SOLVENT_CLASS_OFFSETS, _SHIFTS and _MEMBERS name the designs to measure"]
 fn where_the_pair_stands_against_the_generating_class() {
     let offsets: Vec<f64> = std::env::var("SOLVENT_CLASS_OFFSETS").unwrap_or("0,6,15,30,45".into())
         .split(',').map(|s| s.trim().parse().unwrap()).collect();
@@ -252,7 +252,7 @@ fn where_the_pair_stands_against_the_generating_class() {
 /// `<SOLVENT_AGREE_MEMBER>.body` (pinion by default) at the configured design,
 /// or with `SOLVENT_CLASS_OFFSETS` etc. as above, and `SOLVENT_AGREE_TRIANGLES`.
 #[test]
-#[ignore]
+#[ignore = "a tool: SOLVENT_AGREE_STL names the exported mesh to hold to its field"]
 fn an_exported_member_agrees_with_its_field() {
     use gcs_core::solid::{agreement,MaterialField};
     let path = std::env::var("SOLVENT_AGREE_STL").expect("SOLVENT_AGREE_STL");
@@ -279,7 +279,7 @@ fn an_exported_member_agrees_with_its_field() {
 /// direction), ±1 mm in 10 µm steps, for `<SOLVENT_AGREE_MEMBER>.body` at the configured
 /// design. Shows where material begins and ends across a failing probe.
 #[test]
-#[ignore]
+#[ignore = "a tool: SOLVENT_LINE names the line to read the material along"]
 fn the_material_along_a_line() {
     use gcs_core::{interval::{Interval,minimum::{Options,Stop}},solid::MaterialField};
     let v: Vec<f64> = std::env::var("SOLVENT_LINE").expect("SOLVENT_LINE").split(',').map(|s| s.trim().parse().unwrap()).collect();
@@ -303,7 +303,7 @@ fn the_material_along_a_line() {
 /// Every named solid's static field at `SOLVENT_POINT=x,y,z` for the configured design, the
 /// ones within 0.2 of zero first: which boundary surfaces pass near a point.
 #[test]
-#[ignore]
+#[ignore = "a tool: SOLVENT_POINT names the point to read every solid's field at"]
 fn which_boundaries_pass_near_a_point() {
     use gcs_core::solid::SpatialField;
     let p: Vec<f64> = std::env::var("SOLVENT_POINT").expect("SOLVENT_POINT").split(',').map(|s| s.trim().parse().unwrap()).collect();
@@ -321,7 +321,7 @@ fn which_boundaries_pass_near_a_point() {
 /// and the points 1 µm and 0.1 mm either side, the mix a mesher's bisection asks. Reports the time
 /// and sweep evaluations per query. Configure the design as `an_exported_member_agrees_with_its_field`.
 #[test]
-#[ignore]
+#[ignore = "measurement: cost of the side query at points on and off SOLVENT_AGREE_STL"]
 fn side_query_cost() {
     use gcs_core::solid::{agreement,MaterialField,SIDE_EVALUATIONS};
     use std::sync::atomic::Ordering;

@@ -3,6 +3,7 @@
 use super::*;
 use super::apply::Pass;
 use super::sets::Made;
+use std::ops::ControlFlow;
 
 impl<'a> Walk<'a> {
     /// The view an enclosing instance is drawn `in`, put on one declaration its expansion
@@ -10,15 +11,15 @@ impl<'a> Walk<'a> {
     /// there — and a declaration that already says which plane (a clause of its own, on a
     /// plane the component declares) may not be told twice.
     pub(super) fn stamp_scope_plane(&mut self, d: &mut Decl, scope: &Scope) {
-        d.annotations.roles = d.annotations.roles.union(scope.in_roles);
+        d.annotations.roles = d.annotations.roles.union(scope.stamps.roles);
         // the instance's classes, over the declaration's own: what the assembly says of an
         // instance is the later and stronger word, so a phantom's centreline is a phantom's
-        for c in &scope.in_class.0 {
+        for c in &scope.stamps.class.0 {
             if !d.class.has(c) {
                 d.class.0.push(c.clone());
             }
         }
-        let Some(p) = &scope.in_plane else { return };
+        let Some(p) = &scope.stamps.plane else { return };
         if !d.kind.bears_points() {
             return; // a plane's origin is the plane's, and a curve is its expressions
         }
@@ -99,7 +100,7 @@ impl<'a> Walk<'a> {
             // a set's body walked again for a tangency states its relations' derivatives and
             // makes nothing a second time, and one walked for what it makes states nothing (§6.21)
             let relation = matches!(st.kind, StmtKind::Relation(_));
-            match scope.pass {
+            match scope.pred.pass {
                 Pass::Along(_) if !relation => continue,
                 Pass::Made
                     if relation
@@ -118,285 +119,19 @@ impl<'a> Walk<'a> {
                 return;
             }
             match &st.kind {
-                StmtKind::Chain(chain) => {
-                    let mut chain = chain.clone();
-                    let abs = format!("{prefix}{}", chain.name.key().text);
-                    self.names.insert(abs.clone());
-                    if chain.annotations.private { self.private_names.insert(abs.clone(), scope.owner.clone()); }
-                    chain.annotations.roles = chain.annotations.roles.union(scope.in_roles);
-                    chain.name = chain.name.prefixed(abs, scope.copies);
-                    if scope.anonymous {
-                        chain.name = crate::syntax::DeclName::Key(chain.name.key().clone());
-                    }
-                    self.emit(StmtKind::Chain(chain), st, scope, path);
-                }
-                StmtKind::Decl(d) => {
-                    let abs = format!("{prefix}{}", d.name.key().text);
-                    self.names.insert(abs.clone());
-                    if d.annotations.private { self.private_names.insert(abs.clone(), scope.owner.clone()); }
-                    let mut d2 = d.clone();
-                    d2.name = d.name.prefixed(abs, scope.copies);
-                    if scope.anonymous {
-                        d2.name = crate::syntax::DeclName::Key(d2.name.key().clone());
-                    }
-                    // a computed point is made of expressions over the formals, which is a
-                    // thing a curve can be and a drawing cannot: nothing on the sheet holds a
-                    // point to a formula (§6.5)
-                    if let Some([(x, xs), (y, ys)]) = &d.computed {
-                        if self.sym.is_none() {
-                            let n = &d.name.key().text;
-                            self.err(
-                                Code::E103,
-                                d.name.span(),
-                                format!(
-                                    "`{n}` is a computed point, so its component is drawn only \
-                                     as a curve: `e := Component(…).{n} over u in (a, b)`"
-                                ),
-                            );
-                            continue;
-                        }
-                        d2.computed = Some([
-                            (self.subst_sym(x, vals, scope), *xs),
-                            (self.subst_sym(y, vals, scope), *ys),
-                        ]);
-                        self.emit(StmtKind::Decl(d2), st, scope, path);
-                        continue;
-                    }
-                    if let Some(c) = d2.curve.as_mut() {
-                        // the interval is written over the parameters in scope, like a number
-                        for t in [&mut c.domain.0, &mut c.domain.1] {
-                            match value_of(t, vals, self.units) {
-                                Ok(v) => *t = crate::syntax::num(v),
-                                Err(e) => self.err(Code::E103, st.span, format!("`{t}`: {e}")),
-                            }
-                        }
-                        // an instance written in place is bound like any other and never
-                        // drawn: the curve is the only thing made of it (§6.5)
-                        if let CurveTarget::Anon(inst, point) = &c.target {
-                            if let Some((_, _, _, key)) =
-                                self.bind_instance(inst, scope, vals, false)
-                            {
-                                c.of = Some(crate::syntax::CurveOf {
-                                    instance: key,
-                                    point: ref_text(point),
-                                });
-                            }
-                        }
-                    }
-                    self.settle_seeds(&mut d2, vals, scope, st.span);
-                    // and a solid's sweep, which is written in the same little language
-                    if let Some(sw) = d2.sweep.as_mut() {
-                        for a in sw.args_mut() {
-                            self.settle_arg(a, vals, scope);
-                        }
-                    }
-                    if let Some(e) = d2.angular_span.as_mut() {
-                        self.settle_arg(&mut e.from, vals, scope);
-                        self.settle_arg(&mut e.to, vals, scope);
-                    }
-                    if let Some(motion) = d2.motion.as_mut() {
-                        for a in motion.args_mut() { self.settle_arg(a, vals, scope); }
-                    }
-                    self.stamp_scope_plane(&mut d2, scope);
-                    let twins = self.twins_of(&d2, &d.name.key().text);
-                    let region = self.region_of(&mut d2, &d.name.key().text, scope);
-                    self.emit(StmtKind::Decl(d2), st, scope, path);
-                    for twin in twins {
-                        self.emit(StmtKind::Decl(twin), st, scope, path);
-                    }
-                    // a region solid's probe, and its set applied to it
-                    if let Some((probe, inside)) = region {
-                        self.emit(StmtKind::Decl(probe), st, scope, path);
-                        self.emit(StmtKind::Relation(inside), st, scope, path);
-                    }
-                }
+                StmtKind::Chain(chain) => self.walk_chain(chain, st, scope, path, &prefix),
+                StmtKind::Decl(d) => self.walk_decl(d, st, scope, vals, path, &prefix),
                 StmtKind::Param(_) | StmtKind::Group(_) => {} // worked out above, before the walk
                 StmtKind::Instance(inst) => {
-                    // a body of nothing but calls emits no statement, so the statements' cap
-                    // never stops a recursion branching at every level: the instances have one
-                    if self.instances.len() >= MAX_FLAT {
-                        self.once(Code::E103, st.span, format!("more than {MAX_FLAT} instances once expanded"));
+                    if self.walk_instance(inst, st, scope, vals, path, depth).is_break() {
                         return;
                     }
-                    let Some((comp, mut sub_vals, sides, key)) =
-                        self.bind_instance(inst, scope, vals, true)
-                    else {
-                        continue;
-                    };
-                    // the instance's own `in`, or the one already in force around it — both at
-                    // once is a plane given twice, which one statement may not do (§6.7)
-                    let in_plane = match (inst.membership.plane(), &scope.in_plane) {
-                        (Some(p), Some(_)) => {
-                            self.err(Code::E103, p.span, inst.membership.cause().to_string());
-                            scope.in_plane.clone()
-                        }
-                        // written here, in this scope: it resolves against these prefixes
-                        (Some(p), None) => {
-                            Some(InPlane { owner: scope.owner.clone(), plane: p.clone(), prefixes: scope.prefixes.clone(), closed: scope.closed })
-                        }
-                        (None, q) => q.clone(),
-                    };
-                    let forbidden = scope.vals.keys().chain(self.file_vals.keys()).cloned().collect();
-                    let sc = Scope {
-                        owner: key.clone(),
-                        access: scope.access.clone(),
-                        in_roles: scope.in_roles.union(inst.annotations.roles),
-                        prefixes: vec![key],
-                        closed: true,
-                        forbidden,
-                        groups: comp.formals.iter().filter(|f| matches!(f.ty, Ty::Group | Ty::Set)).map(|f| f.name.text.clone()).collect(),
-                        typed: scope.typed.clone(),
-                        cyc: None,
-                        // a ring's copy reaches into the instances written in it
-                        ring: scope.ring.clone(),
-                        copies: scope.copies,
-                        anonymous: scope.anonymous || inst.name.text.starts_with('#'),
-                        vals: sub_vals.clone(),
-                        in_plane,
-                        in_class: {
-                            let mut c = scope.in_class.clone();
-                            c.0.extend(inst.class.0.iter().cloned());
-                            c
-                        },
-                        // the sides this instance was given, and no others: a component reads a
-                        // side by the name of its own formal, as it reads every other argument
-                        sides,
-                        // and its body's calls name components from the file it was written in
-                        module: comp.module,
-                        pass: Pass::Itself,
-                        written: None,
-                        held: false,
-                    };
-                    // a component reached again while it is still being expanded recurses
-                    // (§8), ended by a `when` over its numbers: given the numbers it was given
-                    // there, every choice comes out the same and nothing ends it, so that, and
-                    // nesting past the cap, is E003, said once at the call closing the cycle
-                    let same = self.instantiating.iter()
-                        .rposition(|(c, given)| std::ptr::eq(*c, comp) && *given == sub_vals);
-                    let deep = depth + 1 >= MAX_DEPTH
-                        && self.instantiating.iter().any(|(c, _)| std::ptr::eq(*c, comp));
-                    if same.is_some() || deep {
-                        let name = |c: &Component| c.name.as_ref().map_or(String::new(), |n| n.text.clone());
-                        let message = match same {
-                            None => format!("`{}` instantiates itself more than {MAX_DEPTH} deep: \
-                                             its `when` does not end it soon enough", name(comp)),
-                            Some(k) => {
-                                let mut through: Vec<String> = Vec::new();
-                                for (c, _) in &self.instantiating[k + 1..] {
-                                    let n = format!("`{}`", name(c));
-                                    if !std::ptr::eq(*c, comp) && !through.contains(&n) {
-                                        through.push(n);
-                                    }
-                                }
-                                let through = match through.is_empty() {
-                                    true => String::new(),
-                                    false => format!(" through {}", through.join(", ")),
-                                };
-                                format!("`{}` instantiates itself{through} with the numbers it was \
-                                         given, so nothing ends it: a `when` over a number each \
-                                         call changes does", name(comp))
-                            }
-                        };
-                        self.once(Code::E003, st.span, message);
-                        continue;
-                    }
-                    let mut instance_path = path.to_vec();
-                    instance_path.push(PathStep::Instance(st.id));
-                    // an instance of a family of sets is the set, its formals bound (§6.21) —
-                    // and what its body makes without reading its point is the instance's,
-                    // made once here (F3)
-                    let own = match &comp.set {
-                        Some(lit) => {
-                            let name = sc.prefix().trim_end_matches('.').to_string();
-                            let (own, lit) = super::sets::instance_part(lit);
-                            let made = Made { st, path, outer: scope };
-                            self.set_made(name, &lit, &sc, depth + 1, made);
-                            own
-                        }
-                        None => Vec::new(),
-                    };
-                    self.instantiating.push((comp, sub_vals.clone()));
-                    self.body(&comp.body, &sc, &mut sub_vals, &instance_path, depth + 1);
-                    if !own.is_empty() {
-                        self.body(&own, &sc, &mut sub_vals, &instance_path, depth + 1);
-                    }
-                    self.instantiating.pop();
                 }
-                StmtKind::Block(b) => {
-                    // made once in this scope, or not at all (#210): no copy, no prefix, so what
-                    // it declares is named as if written beside it, and the numbers it defines
-                    // are its own
-                    if b.kind == BlockKind::When {
-                        match super::values::condition(&b.count, vals, scope, self.units) {
-                            Ok(true) => {
-                                let mut sub = vals.clone();
-                                self.body(&b.body, scope, &mut sub, path, depth + 1);
-                            }
-                            Ok(false) => {}
-                            Err((code, message)) => self.once(code, b.head, message),
-                        }
-                        continue;
-                    }
-                    if b.over.is_some() {
-                        // how many is the chain's, and the chain may be a name no walk has
-                        // reached yet (a forward reference, or one inside an instance written
-                        // further down): expanded once every name is known, where the block
-                        // itself stands in the output until then
-                        self.pending.push(Pending {
-                            st: st.clone(),
-                            scope: scope.clone(),
-                            vals: vals.clone(),
-                            path: path.to_vec(),
-                            depth,
-                        });
-                        self.out.push((st.clone(), path.to_vec(), scope.clone()));
-                        continue;
-                    }
-                    // a count is a whole number: a computed one (`360deg / 15deg`) may carry
-                    // the arithmetic's last bit, but 2.5 is not rounded to anything (#115)
-                    let n = match value_of(&b.count, vals, self.units) {
-                        Ok(v) if v.is_finite() && v >= 0.0
-                            && (v - v.round()).abs() <= 1e-9 * v.max(1.0) => v.round() as usize,
-                        Ok(v) => {
-                            self.err(
-                                Code::E103,
-                                b.span,
-                                format!("`{}` is {v}, which is not a count", b.count),
-                            );
-                            continue;
-                        }
-                        Err(e) => {
-                            self.err(Code::E103, b.span, format!("`{}`: {e}", b.count));
-                            continue;
-                        }
-                    };
-                    self.copies(b, st, scope, vals, path, depth, n, None);
-                }
+                StmtKind::Block(b) => self.walk_block(b, st, scope, vals, path, depth),
                 // a constraint: its dimension is written in the component's own parameters, which
                 // do not exist in the flat document, so they are worked out here
                 // — and one written with a defined word is that word's body (§9.9)
-                StmtKind::Relation(rel) => {
-                    // a word a file defines is its body, applied where the statement stands
-                    if self.apply_word(st, rel, path, scope, depth) {
-                        continue;
-                    }
-                    let Some(mut r2) = self.settle_relation(rel, vals, scope) else { continue };
-                    if let Some(twin) = scope.twin() {
-                        // a claim, a gauge and a bound state no row, so they have no
-                        // derivative
-                        // — `inside` or `outside` a plane among the bounds, lowered later
-                        let (gauge, bound) = match r2.form.written() {
-                            Some(w) => (crate::constraints::gauge_op(&w.word.text).is_some(),
-                                        w.states_bound()),
-                            None => (false, false),
-                        };
-                        if r2.claim || gauge || bound {
-                            continue;
-                        }
-                        r2.along = Some(twin.clone());
-                    }
-                    self.emit(StmtKind::Relation(r2), st, scope, path);
-                }
+                StmtKind::Relation(rel) => self.walk_relation(rel, st, scope, vals, path, depth),
                 // a set written in place: nothing drawn, its uses expanded once every name is
                 // known (§6.21)
                 StmtKind::Set(set) => {
@@ -405,22 +140,7 @@ impl<'a> Walk<'a> {
                     self.set_made(abs, &set.lit, scope, depth, Made { st, path, outer: scope });
                 }
                 // an energy: each integrand with the scope's numbers written in (#121)
-                StmtKind::Minimize(m) => {
-                    let mut m2 = m.clone();
-                    let mut ok = true;
-                    for t in &mut m2.terms {
-                        match super::values::settle_integrand(t, vals, self.units) {
-                            Ok(text) => t.body = text,
-                            Err(e) => {
-                                self.err(Code::E101, t.body_span, e);
-                                ok = false;
-                            }
-                        }
-                    }
-                    if ok {
-                        self.emit(StmtKind::Minimize(m2), st, scope, path);
-                    }
-                }
+                StmtKind::Minimize(m) => self.walk_minimize(m, st, scope, vals, path),
                 // a bound on measurements: the scope's numbers written in, what it measures
                 // resolved with the references (`rewrite`) (#183 F3, #190)
                 StmtKind::Measured(m) => {
@@ -431,37 +151,404 @@ impl<'a> Walk<'a> {
                     self.emit(StmtKind::Measured(m2), st, scope, path);
                 }
                 // a claim over an interval: its numbers and its relations' worked out as above
-                StmtKind::ClaimOver(c) => {
-                    let mut c2 = c.clone();
-                    for a in [&mut c2.from, &mut c2.to] { self.settle_arg(a, vals, scope); }
-                    let mut body = Vec::with_capacity(c.body.len());
-                    for inner in &c.body {
-                        let StmtKind::Relation(rel) = &inner.kind else {
-                            body.push(inner.clone());
-                            continue;
-                        };
-                        // a word's relations are claimed as the statement is
-                        let from = self.out.len();
-                        if self.apply_word(inner, rel, path, scope, depth) {
-                            for (made, _, _) in self.out.drain(from..).collect::<Vec<_>>() {
-                                match made.kind {
-                                    StmtKind::Relation(_) => body.push(made),
-                                    _ => self.once(Code::E103, inner.span, "a word in a swept claim \
-                                        states relations, and declares nothing"),
-                                }
-                            }
-                            continue;
-                        }
-                        let Some(r2) = self.settle_relation(rel, vals, scope) else { continue };
-                        body.push(Stmt { kind: StmtKind::Relation(r2), ..inner.clone() });
-                    }
-                    c2.body = body;
-                    self.emit(StmtKind::ClaimOver(c2), st, scope, path);
-                }
+                StmtKind::ClaimOver(c) => self.walk_claim_over(c, st, scope, vals, path, depth),
                 // a gauge or an orientation: kept as written, resolved later
                 other => self.emit(other.clone(), st, scope, path),
             }
         }
+    }
+
+    /// A named chain: its name made absolute under the scope, and stamped as its instances say.
+    fn walk_chain(
+        &mut self,
+        chain: &crate::syntax::NamedChain,
+        st: &Stmt,
+        scope: &Scope,
+        path: &[PathStep],
+        prefix: &str,
+    ) {
+        let mut chain = chain.clone();
+        let abs = format!("{prefix}{}", chain.name.key().text);
+        self.names.insert(abs.clone());
+        if chain.annotations.private { self.private_names.insert(abs.clone(), scope.owner.clone()); }
+        chain.annotations.roles = chain.annotations.roles.union(scope.stamps.roles);
+        chain.name = chain.name.prefixed(abs, scope.block.copies);
+        if scope.stamps.anonymous {
+            chain.name = crate::syntax::DeclName::Key(chain.name.key().clone());
+        }
+        self.emit(StmtKind::Chain(chain), st, scope, path);
+    }
+
+    /// A declaration: its name made absolute, its numbers worked out in the scope, and the
+    /// twins, the probe and the set its region makes beside it.
+    fn walk_decl(
+        &mut self,
+        d: &Decl,
+        st: &Stmt,
+        scope: &Scope,
+        vals: &BTreeMap<String, Aff>,
+        path: &[PathStep],
+        prefix: &str,
+    ) {
+        let abs = format!("{prefix}{}", d.name.key().text);
+        self.names.insert(abs.clone());
+        if d.annotations.private { self.private_names.insert(abs.clone(), scope.owner.clone()); }
+        let mut d2 = d.clone();
+        d2.name = d.name.prefixed(abs, scope.block.copies);
+        if scope.stamps.anonymous {
+            d2.name = crate::syntax::DeclName::Key(d2.name.key().clone());
+        }
+        // a computed point is made of expressions over the formals, which is a
+        // thing a curve can be and a drawing cannot: nothing on the sheet holds a
+        // point to a formula (§6.5)
+        if let Some([(x, xs), (y, ys)]) = &d.computed {
+            if self.sym.is_none() {
+                let n = &d.name.key().text;
+                self.err(
+                    Code::E103,
+                    d.name.span(),
+                    format!(
+                        "`{n}` is a computed point, so its component is drawn only \
+                         as a curve: `e := Component(…).{n} over u in (a, b)`"
+                    ),
+                );
+                return;
+            }
+            d2.computed = Some([
+                (self.subst_sym(x, vals, scope), *xs),
+                (self.subst_sym(y, vals, scope), *ys),
+            ]);
+            self.emit(StmtKind::Decl(d2), st, scope, path);
+            return;
+        }
+        if let Some(c) = d2.curve.as_mut() {
+            // the interval is written over the parameters in scope, like a number
+            for t in [&mut c.domain.0, &mut c.domain.1] {
+                match value_of(t, vals, self.units) {
+                    Ok(v) => *t = crate::syntax::num(v),
+                    Err(e) => self.err(Code::E103, st.span, format!("`{t}`: {e}")),
+                }
+            }
+            // an instance written in place is bound like any other and never
+            // drawn: the curve is the only thing made of it (§6.5)
+            if let CurveTarget::Anon(inst, point) = &c.target {
+                if let Some((_, _, _, key)) =
+                    self.bind_instance(inst, scope, vals, false)
+                {
+                    c.of = Some(crate::syntax::CurveOf {
+                        instance: key,
+                        point: ref_text(point),
+                    });
+                }
+            }
+        }
+        self.settle_seeds(&mut d2, vals, scope, st.span);
+        // and a solid's sweep, which is written in the same little language
+        if let Some(sw) = d2.sweep.as_mut() {
+            for a in sw.args_mut() {
+                self.settle_arg(a, vals, scope);
+            }
+        }
+        if let Some(e) = d2.angular_span.as_mut() {
+            self.settle_arg(&mut e.from, vals, scope);
+            self.settle_arg(&mut e.to, vals, scope);
+        }
+        if let Some(motion) = d2.motion.as_mut() {
+            for a in motion.args_mut() { self.settle_arg(a, vals, scope); }
+        }
+        self.stamp_scope_plane(&mut d2, scope);
+        let twins = self.twins_of(&d2, &d.name.key().text);
+        let region = self.region_of(&mut d2, &d.name.key().text, scope);
+        self.emit(StmtKind::Decl(d2), st, scope, path);
+        for twin in twins {
+            self.emit(StmtKind::Decl(twin), st, scope, path);
+        }
+        // a region solid's probe, and its set applied to it
+        if let Some((probe, inside)) = region {
+            self.emit(StmtKind::Decl(probe), st, scope, path);
+            self.emit(StmtKind::Relation(inside), st, scope, path);
+        }
+    }
+
+    /// An instance: its arguments bound and its component's body walked under its prefix — or
+    /// the walk stopped, past the instances' cap.
+    fn walk_instance(
+        &mut self,
+        inst: &crate::syntax::Instance,
+        st: &Stmt,
+        scope: &Scope,
+        vals: &BTreeMap<String, Aff>,
+        path: &[PathStep],
+        depth: usize,
+    ) -> ControlFlow<()> {
+        // a body of nothing but calls emits no statement, so the statements' cap
+        // never stops a recursion branching at every level: the instances have one
+        if self.instances.len() >= MAX_FLAT {
+            self.once(Code::E103, st.span, format!("more than {MAX_FLAT} instances once expanded"));
+            return ControlFlow::Break(());
+        }
+        let Some((comp, mut sub_vals, sides, key)) =
+            self.bind_instance(inst, scope, vals, true)
+        else {
+            return ControlFlow::Continue(());
+        };
+        // the instance's own `in`, or the one already in force around it — both at
+        // once is a plane given twice, which one statement may not do (§6.7)
+        let in_plane = match (inst.membership.plane(), &scope.stamps.plane) {
+            (Some(p), Some(_)) => {
+                self.err(Code::E103, p.span, inst.membership.cause().to_string());
+                scope.stamps.plane.clone()
+            }
+            // written here, in this scope: it resolves against these prefixes
+            (Some(p), None) => {
+                Some(InPlane { owner: scope.owner.clone(), plane: p.clone(), prefixes: scope.prefixes.clone(), closed: scope.closed })
+            }
+            (None, q) => q.clone(),
+        };
+        let forbidden = scope.vals.keys().chain(self.file_vals.keys()).cloned().collect();
+        let sc = Scope {
+            owner: key.clone(),
+            access: scope.access.clone(),
+            typed: scope.typed.clone(),
+            prefixes: vec![key],
+            closed: true,
+            forbidden,
+            groups: comp.formals.iter().filter(|f| matches!(f.ty, Ty::Group | Ty::Set)).map(|f| f.name.text.clone()).collect(),
+            vals: sub_vals.clone(),
+            // the sides this instance was given, and no others: a component reads a
+            // side by the name of its own formal, as it reads every other argument
+            sides,
+            // and its body's calls name components from the file it was written in
+            module: comp.module,
+            block: InBlock {
+                cyc: None,
+                // a ring's copy reaches into the instances written in it
+                ring: scope.block.ring.clone(),
+                copies: scope.block.copies,
+            },
+            stamps: Stamps {
+                roles: scope.stamps.roles.union(inst.annotations.roles),
+                plane: in_plane,
+                class: {
+                    let mut c = scope.stamps.class.clone();
+                    c.0.extend(inst.class.0.iter().cloned());
+                    c
+                },
+                anonymous: scope.stamps.anonymous || inst.name.text.starts_with('#'),
+            },
+            pred: PredWalk { pass: Pass::Itself, written: None, held: false },
+        };
+        // a component reached again while it is still being expanded recurses
+        // (§8), ended by a `when` over its numbers: given the numbers it was given
+        // there, every choice comes out the same and nothing ends it, so that, and
+        // nesting past the cap, is E003, said once at the call closing the cycle
+        let same = self.instantiating.iter()
+            .rposition(|(c, given)| std::ptr::eq(*c, comp) && *given == sub_vals);
+        let deep = depth + 1 >= MAX_DEPTH
+            && self.instantiating.iter().any(|(c, _)| std::ptr::eq(*c, comp));
+        if same.is_some() || deep {
+            let name = |c: &Component| c.name.as_ref().map_or(String::new(), |n| n.text.clone());
+            let message = match same {
+                None => format!("`{}` instantiates itself more than {MAX_DEPTH} deep: \
+                                 its `when` does not end it soon enough", name(comp)),
+                Some(k) => {
+                    let mut through: Vec<String> = Vec::new();
+                    for (c, _) in &self.instantiating[k + 1..] {
+                        let n = format!("`{}`", name(c));
+                        if !std::ptr::eq(*c, comp) && !through.contains(&n) {
+                            through.push(n);
+                        }
+                    }
+                    let through = match through.is_empty() {
+                        true => String::new(),
+                        false => format!(" through {}", through.join(", ")),
+                    };
+                    format!("`{}` instantiates itself{through} with the numbers it was \
+                             given, so nothing ends it: a `when` over a number each \
+                             call changes does", name(comp))
+                }
+            };
+            self.once(Code::E003, st.span, message);
+            return ControlFlow::Continue(());
+        }
+        let mut instance_path = path.to_vec();
+        instance_path.push(PathStep::Instance(st.id));
+        // an instance of a family of sets is the set, its formals bound (§6.21) —
+        // and what its body makes without reading its point is the instance's,
+        // made once here (F3)
+        let own = match &comp.set {
+            Some(lit) => {
+                let name = sc.prefix().trim_end_matches('.').to_string();
+                let (own, lit) = super::sets::instance_part(lit);
+                let made = Made { st, path, outer: scope };
+                self.set_made(name, &lit, &sc, depth + 1, made);
+                own
+            }
+            None => Vec::new(),
+        };
+        self.instantiating.push((comp, sub_vals.clone()));
+        self.body(&comp.body, &sc, &mut sub_vals, &instance_path, depth + 1);
+        if !own.is_empty() {
+            self.body(&own, &sc, &mut sub_vals, &instance_path, depth + 1);
+        }
+        self.instantiating.pop();
+        ControlFlow::Continue(())
+    }
+
+    /// A block: a `when` made or not, one over a chain set aside until the chain is found, or
+    /// its copies.
+    fn walk_block(
+        &mut self,
+        b: &Block,
+        st: &Stmt,
+        scope: &Scope,
+        vals: &BTreeMap<String, Aff>,
+        path: &[PathStep],
+        depth: usize,
+    ) {
+        // made once in this scope, or not at all (#210): no copy, no prefix, so what
+        // it declares is named as if written beside it, and the numbers it defines
+        // are its own
+        if b.kind == BlockKind::When {
+            match super::values::condition(&b.count, vals, scope, self.units) {
+                Ok(true) => {
+                    let mut sub = vals.clone();
+                    self.body(&b.body, scope, &mut sub, path, depth + 1);
+                }
+                Ok(false) => {}
+                Err((code, message)) => self.once(code, b.head, message),
+            }
+            return;
+        }
+        if b.over.is_some() {
+            // how many is the chain's, and the chain may be a name no walk has
+            // reached yet (a forward reference, or one inside an instance written
+            // further down): expanded once every name is known, where the block
+            // itself stands in the output until then
+            self.aside.blocks.push(Pending {
+                st: st.clone(),
+                scope: scope.clone(),
+                vals: vals.clone(),
+                path: path.to_vec(),
+                depth,
+            });
+            self.out.push((st.clone(), path.to_vec(), scope.clone()));
+            return;
+        }
+        // a count is a whole number: a computed one (`360deg / 15deg`) may carry
+        // the arithmetic's last bit, but 2.5 is not rounded to anything (#115)
+        let n = match value_of(&b.count, vals, self.units) {
+            Ok(v) if v.is_finite() && v >= 0.0
+                && (v - v.round()).abs() <= 1e-9 * v.max(1.0) => v.round() as usize,
+            Ok(v) => {
+                self.err(
+                    Code::E103,
+                    b.span,
+                    format!("`{}` is {v}, which is not a count", b.count),
+                );
+                return;
+            }
+            Err(e) => {
+                self.err(Code::E103, b.span, format!("`{}`: {e}", b.count));
+                return;
+            }
+        };
+        self.copies(b, st, scope, vals, path, depth, n, None);
+    }
+
+    /// A relation: a defined word's body applied, or its numbers worked out in the scope and
+    /// stated — as its derivative where a tangency walks the body.
+    fn walk_relation(
+        &mut self,
+        rel: &crate::syntax::Relation,
+        st: &Stmt,
+        scope: &Scope,
+        vals: &BTreeMap<String, Aff>,
+        path: &[PathStep],
+        depth: usize,
+    ) {
+        // a word a file defines is its body, applied where the statement stands
+        if self.apply_word(st, rel, path, scope, depth) {
+            return;
+        }
+        let Some(mut r2) = self.settle_relation(rel, vals, scope) else { return };
+        if let Some(twin) = scope.twin() {
+            // a claim, a gauge and a bound state no row, so they have no
+            // derivative
+            // — `inside` or `outside` a plane among the bounds, lowered later
+            let (gauge, bound) = match r2.form.written() {
+                Some(w) => (crate::constraints::gauge_op(&w.word.text).is_some(),
+                            w.states_bound()),
+                None => (false, false),
+            };
+            if r2.claim || gauge || bound {
+                return;
+            }
+            r2.along = Some(twin.clone());
+        }
+        self.emit(StmtKind::Relation(r2), st, scope, path);
+    }
+
+    /// An energy: each integrand with the scope's numbers written in (#121).
+    fn walk_minimize(
+        &mut self,
+        m: &crate::syntax::Minimize,
+        st: &Stmt,
+        scope: &Scope,
+        vals: &BTreeMap<String, Aff>,
+        path: &[PathStep],
+    ) {
+        let mut m2 = m.clone();
+        let mut ok = true;
+        for t in &mut m2.terms {
+            match super::values::settle_integrand(t, vals, self.units) {
+                Ok(text) => t.body = text,
+                Err(e) => {
+                    self.err(Code::E101, t.body_span, e);
+                    ok = false;
+                }
+            }
+        }
+        if ok {
+            self.emit(StmtKind::Minimize(m2), st, scope, path);
+        }
+    }
+
+    /// A claim over an interval: its numbers and its relations' worked out as a lone relation's.
+    fn walk_claim_over(
+        &mut self,
+        c: &crate::syntax::ClaimOver,
+        st: &Stmt,
+        scope: &Scope,
+        vals: &BTreeMap<String, Aff>,
+        path: &[PathStep],
+        depth: usize,
+    ) {
+        let mut c2 = c.clone();
+        for a in [&mut c2.from, &mut c2.to] { self.settle_arg(a, vals, scope); }
+        let mut body = Vec::with_capacity(c.body.len());
+        for inner in &c.body {
+            let StmtKind::Relation(rel) = &inner.kind else {
+                body.push(inner.clone());
+                continue;
+            };
+            // a word's relations are claimed as the statement is
+            let from = self.out.len();
+            if self.apply_word(inner, rel, path, scope, depth) {
+                for (made, _, _) in self.out.drain(from..).collect::<Vec<_>>() {
+                    match made.kind {
+                        StmtKind::Relation(_) => body.push(made),
+                        _ => self.once(Code::E103, inner.span, "a word in a swept claim \
+                            states relations, and declares nothing"),
+                    }
+                }
+                continue;
+            }
+            let Some(r2) = self.settle_relation(rel, vals, scope) else { continue };
+            body.push(Stmt { kind: StmtKind::Relation(r2), ..inner.clone() });
+        }
+        c2.body = body;
+        self.emit(StmtKind::ClaimOver(c2), st, scope, path);
     }
 
     /// A relation's numbers worked out against the parameters in scope, in either of its
@@ -496,7 +583,7 @@ impl<'a> Walk<'a> {
         }
         // the enclosing instances' classes, over the statement's own: a ghosted part's
         // dimensions are the ghost's (`display: geometry`) as its lines are
-        for c in &scope.in_class.0 {
+        for c in &scope.stamps.class.0 {
             if !r2.class.has(c) {
                 r2.class.0.push(c.clone());
             }
@@ -654,7 +741,7 @@ impl<'a> Walk<'a> {
         // expanded as the cycle it is besides, so what it makes is still there to be named; and
         // its index, read anywhere in its body, varies nothing (E015)
         let ring = match (b.kind, &b.about) {
-            (BlockKind::Ring, Some(_)) if scope.ring.is_some() => {
+            (BlockKind::Ring, Some(_)) if scope.block.ring.is_some() => {
                 self.once(Code::E022, st.span, "a `ring` inside a `ring` is not supported: turn the \
                     inner one's copies about a centre the outer ring does not move, outside it");
                 None
@@ -666,7 +753,8 @@ impl<'a> Walk<'a> {
                         first turned, so there is nothing for it to vary — reach a neighbour by \
                         `next` or `prev`"));
                 }
-                self.rings.push((block_prefix.clone(), about.clone(), scope.clone(), n, st.span));
+                let written = (block_prefix.clone(), about.clone(), scope.clone(), n, st.span);
+                self.rings.written.push(written);
                 Some(block_prefix.clone())
             }
             _ => None,
@@ -685,7 +773,7 @@ impl<'a> Walk<'a> {
             let sc = Scope {
                 owner: scope.owner.clone(),
                 access: scope.access.clone(),
-                in_roles: scope.in_roles,
+                typed: scope.typed.clone(),
                 prefixes: std::iter::once(format!("{block_prefix}{k}."))
                     .chain(scope.prefixes.iter().cloned())
                     .collect(),
@@ -693,24 +781,25 @@ impl<'a> Walk<'a> {
                 closed: scope.closed,
                 forbidden: scope.forbidden.clone(),
                 groups: scope.groups.clone(),
-                cyc: b.kind.wraps().then(|| Cyc { prefix: block_prefix.clone(), k, n }),
-                ring: match &ring {
-                    Some(prefix) => Some(super::Ring { prefix: prefix.clone(), turned: k > 0 }),
-                    None => scope.ring.clone(),
-                },
-                // the prefix just built is the block's id, so every declaration
-                // below is a copy, however deep and through however many instances
-                copies: true,
-                anonymous: scope.anonymous,
                 vals: sub.clone(),
-                in_plane: scope.in_plane.clone(),
-                in_class: scope.in_class.clone(),
                 sides: scope.sides.clone(),
                 module: scope.module,
-                pass: scope.pass.clone(),
-                written: None,
-                held: scope.held,
-                typed: scope.typed.clone(),
+                block: InBlock {
+                    cyc: b.kind.wraps().then(|| Cyc { prefix: block_prefix.clone(), k, n }),
+                    ring: match &ring {
+                        Some(prefix) => Some(super::Ring { prefix: prefix.clone(), turned: k > 0 }),
+                        None => scope.block.ring.clone(),
+                    },
+                    // the prefix just built is the block's id, so every declaration
+                    // below is a copy, however deep and through however many instances
+                    copies: true,
+                },
+                stamps: scope.stamps.clone(),
+                pred: PredWalk {
+                    pass: scope.pred.pass.clone(),
+                    written: None,
+                    held: scope.pred.held,
+                },
             };
             let mut p2 = path.to_vec();
             p2.push(PathStep::Copy { block: st.id, index: k as u32 });
@@ -727,7 +816,10 @@ impl<'a> Walk<'a> {
                     self.body(&j.stmts, &sc, &mut sub, &p2, depth + 1);
                 } else if k + 1 < n {
                     let sc2 = Scope {
-                        cyc: Some(Cyc { prefix: block_prefix.clone(), k, n }),
+                        block: InBlock {
+                            cyc: Some(Cyc { prefix: block_prefix.clone(), k, n }),
+                            ..sc.block.clone()
+                        },
                         ..sc.clone()
                     };
                     self.body(&j.stmts, &sc2, &mut sub, &p2, depth + 1);
@@ -743,7 +835,7 @@ impl<'a> Walk<'a> {
     /// How many statements the walk has made, counting those held aside while a deferred block
     /// is expanded into a vector of its own (`expand_pending`).
     pub(super) fn emitted(&self) -> usize {
-        self.out.len() + self.held
+        self.out.len() + self.aside.held
     }
 
     /// An expanded statement keeps the id of the statement it came from.
@@ -844,7 +936,7 @@ impl Walk<'_> {
         for i in 0..self.out.len() {
             let (st, _, sc) = &self.out[i];
             let StmtKind::Relation(r) = &st.kind else { continue };
-            if r.claim || r.along.is_some() || r.space || sc.ring.is_some() {
+            if r.claim || r.along.is_some() || r.space || sc.block.ring.is_some() {
                 continue;
             }
             let Some(w) = r.form.written() else { continue };
@@ -907,14 +999,14 @@ impl Walk<'_> {
             }
         };
         let Some((abs, rest)) = found else { return None };
-        if !rest.is_empty() || !self.sets.contains_key(&abs) {
+        if !rest.is_empty() || !self.sets.made.contains_key(&abs) {
             return None;
         }
         let set = set.clone();
         let at = Span::at(d.name.span().lo as usize);
         let key = keys::probe(&d.name.key().text);
         self.names.insert(key.clone());
-        self.probes.push(key.clone());
+        self.sets.probes.push(key.clone());
         let probe = keys::probe(&local);
         d.children.clear();
         d.sweep = Some(Sweep::Region { probe: Ref::new(&probe) });

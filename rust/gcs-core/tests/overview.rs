@@ -6,9 +6,7 @@ use gcs_core::overview::{corners, drawable, scene, scene3d, Part};
 use gcs_core::plane::Basis;
 use std::f64::consts::FRAC_PI_2;
 
-fn near(a: f64, b: f64) -> bool {
-    (a - b).abs() < 1e-8
-}
+use crate::common::near;
 
 fn top() -> Basis {
     Basis { u: [1.0, 0.0, 0.0], v: [0.0, 1.0, 0.0], o: [0.0; 3] }

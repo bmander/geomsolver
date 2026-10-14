@@ -6,8 +6,8 @@
 use gcs_core::edit::{self, Kind};
 use gcs_core::program::Elaborated;
 use gcs_core::solid::ApproximationPolicy::Report;
-use gcs_core::syntax::{BodyWord, Program};
-use crate::common::{ent, parse, read};
+use gcs_core::syntax::BodyWord;
+use crate::common::{ent, parsed::prog_of, read};
 use std::f64::consts::PI;
 
 /// A 60 × 40 plate 4 deep behind the front, a 10 × 10 boss standing through it from 8 behind to
@@ -55,12 +55,6 @@ const PLATE: f64 = 60.0 * 40.0 * 4.0;
 const BOSS_IN: f64 = 10.0 * 10.0 * 4.0;
 const BOSS: f64 = 10.0 * 10.0 * 12.0;
 const BORE_IN: f64 = 25.0 * PI * 4.0;
-
-fn prog_of(src: &str) -> Program {
-    let (p, errs) = parse(src);
-    assert!(errs.is_empty(), "{:?}\n{src}", errs.iter().map(|e| &e.message).collect::<Vec<_>>());
-    p
-}
 
 fn index(e: &Elaborated, name: &str) -> usize {
     ent(e, name).i()

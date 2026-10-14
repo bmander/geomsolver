@@ -9,17 +9,9 @@
 use gcs_core::constraints::{CKind, Constraint};
 use gcs_core::edit;
 use gcs_core::model::EntRef;
-use gcs_core::program::{elaborate, Elaborated};
+use gcs_core::program::elaborate;
 use gcs_core::syntax::{write_stmt_to, StmtKind};
-use crate::common::parse;
-
-fn read(src: &str) -> Elaborated {
-    let (prog, errs) = parse(src);
-    assert!(errs.is_empty(), "does not parse: {errs:?}\n{src}");
-    let e = elaborate(&prog);
-    assert!(e.ok(), "{:?}\n{src}", e.errors().map(|d| d.message.clone()).collect::<Vec<_>>());
-    e
-}
+use crate::common::{parse, parsed::read};
 
 fn refuses(src: &str, needle: &str) {
     let (_, errs) = parse(src);

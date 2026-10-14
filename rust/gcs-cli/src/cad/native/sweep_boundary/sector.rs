@@ -60,7 +60,7 @@ pub(super) fn construct(session: &Session,sk: &Sketch,body: usize,recipe: &cad::
         cuts.push(sheet.points.iter().chain(&sheet.withheld).map(|&p| mm(poses[k][0],p)).filter(|&p| inside(p)).collect());
     }
     let all: Vec<[f64;3]> = cuts.iter().flatten().copied().collect();
-    let mut candidates: Vec<Slices> = sphere_centres(&recipe.recipe,frame,size).into_iter().map(Slices::Spheres).collect();
+    let mut candidates: Vec<Slices> = sphere_centres(&gcs_core::brep::recipe::Recipe::read(&recipe.recipe)?,frame,size).into_iter().map(Slices::Spheres).collect();
     candidates.push(Slices::Planes);
     if std::env::var_os("SOLVENT_SECTOR_DEBUG").is_some() {
         for &c in &candidates {

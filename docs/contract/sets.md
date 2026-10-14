@@ -77,7 +77,7 @@ read from `taylor::residual`, exact.  The use's own geometry (its `own_params` a
 0, never saved; `retire_tangents` on `remove`); its intrinsic rows (a lift) are stated as
 derivatives too (`twin_intrinsics`, at `add_dual` and at each later intrinsic add) — never the
 point's own.  **`S1 tangent(at: m) S2`** (`expand_pair`): each body applied under
-`begin_nth` (`#{stmt}.{n}.`), walked `Pass::Made` (declarations only; `Scope::pass` is the walk's `Pass`) then
+`begin_nth` (`#{stmt}.{n}.`), walked `Pass::Made` (declarations only; `PredWalk::pass` is the walk's `Pass`) then
 `Pass::Along` along `Chart(0)` and `Chart(1)` (keys `#{stmt}.t{k}.`, shared by both sets); a
 chart's point tangent is `e_a + s·e_c`, two components held (`set_chart`), `c` the world axis
 the rows' gradient at the seed runs most along (`Sketch::choose_charts`, after phase 3 and at
@@ -136,13 +136,13 @@ R`; `constrain` takes every bound landing on a probe as a `RegionTerm` instead o
 as unsigned, a cone's half, is kept within a half turn by `expr::sync_free`), and `build_solid`
 moves them into the solid and holds the probe. `solid::region::meridian` folds the terms' (r, z)
 regions in a box by `brep::planar::boolean` (coaxial, bounded, nonempty, else refused where
-evaluated), memoised against `solid::reads` (`Sketch::meridian_cache`); every evaluator reads it —
+evaluated), memoised against `solid::reads` (`Caches::meridian`); every evaluator reads it —
 the recipe a `revolve`
 (`recipe::region_profile`, `Profile::to_json`), the field `RevolvedRegion::of_meridian` (also
 `read`, so patches trim by it), facets `region::face_polys` turned by `primitive::revolve`,
 admission `Turns::Line`/`Ball` and `tool()` — its loops `Region::outer_first`, a ball's
 `Region::half_disc`. A set used in a predicate's body is applied under the statement it was
-written as there (`Scope::written`, kept when `apply` stamps the use's over it; `begin_nth`), so
+written as there (`PredWalk::written`, kept when `apply` stamps the use's over it; `begin_nth`), so
 two uses in one body stand apart.
 `tests/region_solids.rs` and `tests/region_blank.rs` (the blank as a region against today's, both
 designs, both members) are the gates.
@@ -156,7 +156,7 @@ surface) unless the lowering table builds it ([rounds.md](rounds.md)) or **the c
 `solid::bounded`: every term a ball, a cylinder, a cone narrower than square or a half-space, no
 offset — each a primitive bounded past the support, kept within in common, kept outside taken
 away; the recipe's `"region"` node, `"pieces"` each with `"keep"`; gated by agreement with the
-field, `Sketch::bounded_cache`); else no exact construction (`cad.rs` says so, naming the region).
+field, `Caches::bounded`); else no exact construction (`cad.rs` says so, naming the region).
 
 **A sum of distances the meridian folds** (#238, `region::meridian::foci`): from one point, or two alike in
 weight, on its axis (the line through them chooses it when nothing else does) — a ball, an
@@ -242,7 +242,7 @@ the offset grows it, `reach_of` over `Written::lower_side`'s form; only a `dista
 outside|inside` is a set use, `sets::reaches`), applied by `sets::expand_reach` in three representations: a body whose
 one relation is a `distance` gets its number moved (`(r) + #grow`, the grow settled in the use's
 scope and given to the application, `Application::give`); otherwise, at a region solid's probe
-(`Walk::probes` through the alias table), the bound carries it (`OpArg::Bound::grow`, `Written::grow`,
+(`SetState::probes` through the alias table), the bound carries it (`OpArg::Bound::grow`, `Written::grow`,
 read by `constrain` into `RegionTerm::grow`, a `TermNumber`; a grow off a probe is E040) and
 `solid/region.rs::fold` builds the exact offset (`within(t, v, g)` is `{sd ≤ g}`; `narrow`: a cone
 shrunk is its apex moved `-g / sin`, grown is the shifted generator plus an arc about the apex, one
@@ -252,7 +252,7 @@ the body walked `Itself` then along
 `Chart(0)`/`Chart(1)` (keys `{prefix}t{k}.`), with `p distance(#reach) foot` (its derivative is the
 sphere about `p`'s), `p outside S` (the side) and `foot inside S` (so the seed crossing puts the
 foot across the surface from `p`) appended to the body under synthetic ids (`FOOT_STATEMENTS`
-down, so `Scope::written` keeps their uses apart). `region_body` counts no bounded side of
+down, so `PredWalk::written` keeps their uses apart). `region_body` counts no bounded side of
 another set among a body's numbers (a distance from one is `std.Offset`'s). `tests/offsets.rs` is the gate.
 
 **`P tangent(at: m) S`, a plane tangent to a set (#145, #148, 0.56):** `sets::expand_touch`

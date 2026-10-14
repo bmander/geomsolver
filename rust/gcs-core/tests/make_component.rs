@@ -5,21 +5,8 @@
 
 use gcs_core::edit::{self, Kind};
 use gcs_core::model::EntRef;
-use gcs_core::program::{elaborate, Elaborated};
-use gcs_core::syntax::Program;
-use crate::common::parse;
-
-fn prog_of(src: &str) -> Program {
-    let (p, errs) = parse(src);
-    assert!(errs.is_empty(), "{:?}\n{src}", errs.iter().map(|e| &e.message).collect::<Vec<_>>());
-    p
-}
-
-fn read(src: &str) -> Elaborated {
-    let e = elaborate(&prog_of(src));
-    assert!(e.ok(), "{:?}\n{src}", e.errors().map(|d| d.message.clone()).collect::<Vec<_>>());
-    e
-}
+use gcs_core::program::Elaborated;
+use crate::common::{gestures::taken, parsed::read};
 
 /// `src` elaborated and solved.
 fn solved(src: &str) -> Elaborated {
@@ -45,12 +32,6 @@ fn make_named(src: &str, names: &[&str], name: Option<&str>) -> edit::Edit {
 
 fn make(src: &str, names: &[&str]) -> edit::Edit {
     make_named(src, names, None)
-}
-
-fn taken(e: edit::Edit) -> String {
-    assert_eq!(e.refused, None);
-    assert_eq!(e.kind, Kind::Structural);
-    e.text
 }
 
 const BASE: &str = "\

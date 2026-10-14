@@ -5,16 +5,8 @@
 use gcs_core::edit::{self, EdgeWord};
 use gcs_core::overview::workspace::{pick_edge, solid_edges, Projection};
 use gcs_core::solid::ApproximationPolicy::Report;
-use gcs_core::{library, program};
-
-fn build(src: &str) -> program::Elaborated {
-    let (p, errors, linked) = library::parse_linked(src);
-    assert!(errors.is_empty() && linked.is_empty(), "{errors:?} {linked:?}");
-    let mut e = program::elaborate(&p);
-    assert!(e.ok(), "{:?}", e.diags);
-    assert!(gcs_core::solve::solve(&mut e.sketch, Default::default()).success);
-    e
-}
+use gcs_core::program;
+use crate::common::gestures::{build, seen};
 
 const BLOCK: &str = "\
 unit mm
@@ -42,14 +34,6 @@ fn objects(e: &program::Elaborated, name: &str) -> usize {
 
 fn pair(a: &str, b: &str) -> (String, String) {
     (a.to_string(), b.to_string())
-}
-
-/// The eye's picture-plane coordinates of a point in space (`overview::eye`'s convention).
-fn seen(x: [f64; 3], az: f64, el: f64) -> (f64, f64) {
-    let right = [-az.sin(), az.cos(), 0.0];
-    let up = [-az.cos() * el.sin(), -az.sin() * el.sin(), el.cos()];
-    let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-    (dot(right, x), dot(up, x))
 }
 
 fn volume(e: &program::Elaborated, name: &str) -> f64 {

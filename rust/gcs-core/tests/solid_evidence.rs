@@ -6,16 +6,10 @@ use gcs_core::{
     model::SolidRequirement,
     program, report,
 };
+use crate::common::parsed::read;
 
 fn fixture() -> String {
     include_str!("fixtures/solid_issue51/sweep_possible.sv").into()
-}
-fn read(src: &str) -> program::Elaborated {
-    let (p, errors) = crate::common::parse(src);
-    assert!(errors.is_empty(), "{errors:?}");
-    let e = program::elaborate(&p);
-    assert!(e.ok(), "{:?}", e.diags);
-    e
 }
 fn verdict(src: &str) -> diagnose::SolidVerdict {
     let mut e = read(src);

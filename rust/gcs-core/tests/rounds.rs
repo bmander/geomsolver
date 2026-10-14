@@ -4,19 +4,11 @@
 //! words that make solids — evaluated by the field, and held to X2's closed forms.
 use gcs_core::program::Elaborated;
 use gcs_core::solid::MaterialField;
-use gcs_core::solve::{solve, SolveOpts};
 use std::f64::consts::PI;
 
-use crate::common::{ent, read};
-use crate::fillet_definition::root_ring;
+use crate::common::{ent, text::solved};
+use crate::common::rounds::{mitred, root_ring, rounded_box};
 use crate::region_general::field_volume;
-
-fn solved(src: &str) -> Elaborated {
-    let mut e = read(src);
-    let r = solve(&mut e.sketch, SolveOpts::default());
-    assert!(r.success, "{}\n{src}", r.message);
-    e
-}
 
 /// A block 40 × 24 × 12 drawn on the front plane (x, z), its near face at y = 0, standing 12 deep.
 const BLOCK: &str = "unit mm\nuse std (round, chamfer)\nin std.front {\n\
@@ -38,12 +30,6 @@ fn change(stmt: &str, name: &str, lo: [f64; 3], hi: [f64; 3], h: f64) -> f64 {
     volume(&before) - volume(&after)
 }
 
-/// The stack's mitre: a convex polygon's prism with one cap's rim rounded alone loses `∫δ` along
-/// its perimeter less `∫δ²` at each corner (`cots` the sum of `cot(θ/2)` over its angles).
-fn mitred(perimeter: f64, cots: f64, r: f64) -> f64 {
-    (1.0 - PI / 4.0) * r * r * perimeter - (5.0 / 3.0 - PI / 2.0) * r * r * r * cots
-}
-
 /// X2's lid: the near face's rim rounded alone, the other edges sharp — runs crossing at each
 /// corner in a mitre.
 #[test]
@@ -52,13 +38,6 @@ fn a_rim_rounded_alone_is_mitred() {
     let got = change("block.near round(r: 2mm) block", "block", [-1.0, -3.0, -1.0], [41.0, 3.0, 25.0], r / 32.0);
     let want = mitred(2.0 * (40.0 + 24.0), 4.0, r);
     assert!((got - want).abs() < 2e-3 * want, "{got} against {want}");
-}
-
-/// A box rounded on every edge, its corners spherical (Steiner).
-fn rounded_box([l, w, h]: [f64; 3], r: f64) -> f64 {
-    let (a, b, c) = (l - 2.0 * r, w - 2.0 * r, h - 2.0 * r);
-    a * b * c + 2.0 * r * (a * b + b * c + a * c) + PI * r * r * (a + b + c)
-        + 4.0 * PI * r * r * r / 3.0
 }
 
 /// X2's block rounded all over: twelve runs, and a corner term where three meet.

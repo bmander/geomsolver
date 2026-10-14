@@ -204,40 +204,7 @@ export function seedNamed(v: SketchView, name: string, x: number, y: number): vo
  *  ⌥⇧. */
 export function toolClick(v: SketchView, sp: [number, number],
                           mods: { alt?: boolean; shift?: boolean } = {}): void {
-  // a Boolean picks bodies where the eye sees them, on no plane
-  if (combines(v.tool)) {
-    v.combineAt(sp[0], sp[1]);
-    return;
-  }
-  // and an edge tool its edges and faces
-  if (roundsEdges(v.tool)) {
-    v.roundAt(sp[0], sp[1]);
-    return;
-  }
-  // a standard plane chosen before the document had it is brought in by the first press: the
-  // document gains `use std`, and what the press makes is drawn on the plane it now has
-  if (!v.ensurePlane()) return;
-  // drawing in space, only a point and a line: a circle, an arc and a curve are drawn in a plane
-  // (E060), and a region to sweep is bounded on one
-  if (v.openSpace && !drawsInSpace(v.tool)) {
-    v.onStatus(`the ${v.tool} tool draws on a plane — choose one to sketch on`);
-    return;
-  }
-  // a plane seen edge on has no place on it under the pointer (`toolView` is the one read)
-  if (!v.viewCam().readable()) {
-    v.onStatus(`${v.planeName} is seen edge on — turn the view, or choose the plane again to face it`);
-    return;
-  }
-  // an extrusion writes its statements through `apply`, which takes its own undo step
-  if (v.tool === 'extrude') {
-    v.extrudeAt(sp[0], sp[1], mods.alt, mods.alt && mods.shift);
-    return;
-  }
-  if (v.tool === 'revolve') {
-    v.revolveAt(sp[0], sp[1], mods.alt);
-    return;
-  }
-  const sk = v.sketch;
+  if (takenElsewhere(v, sp, mods)) return;
   // Tools that make geometry as they go take their snapshot on the first click of a run.  The
   // fit tool makes nothing until it finishes and takes its own there, so pushing here would
   // leave an undo entry — and a whole document serialised — per click that changed nothing.
@@ -245,118 +212,204 @@ export function toolClick(v: SketchView, sp: [number, number],
   if (v.tool !== 'splinefit' && v.tool !== 'rect' && !v.pending.length) {
     v.pushUndo();
   }
-  if (v.tool === 'point') {
-    snapOrNew(v, sp);
-  } else if (v.tool === 'line') {
-    const p = snapOrNew(v, sp);
-    if (v.pending.length && p !== v.pending[v.pending.length - 1]) sk.line(v.pending[v.pending.length - 1], p);
-    v.pending = [p];                            // continue the polyline
-  } else if (v.tool === 'rect') {
-    // a rectangle is a *component instance*: the gesture measures width and height, the
-    // document gains `rN := Rectangle(w: …, h: …)` — and the component itself, the first time —
-    // and the instance is then seeded where the gesture drew it.  The first click is a place,
-    // not a point: the statement's only numbers are the two lengths.
-    if (!v.pendingFit.length) {
-      v.pendingFit = [pickPlace(v, sp)];
-    } else {
-      const [x0, y0] = v.pendingFit[0].at;
-      const [x1, y1] = v.place(sp[0], sp[1]);
-      v.pendingFit = [];
-      // the instance joins the current plane whole — `in top` on its one statement —
-      // reaching every point the component makes, which per-point membership cannot
-      const e = v.doc.addRectangle(
-        v.placeLength(Math.abs(x1 - x0)) || 1,
-        v.placeLength(Math.abs(y1 - y0)) || 1,
-        (v.plane && v.doc.nameOf(v.plane)) || '',
-      );
-      if (v.apply(e, `${e.names[0]}: Rectangle`)) {
-        placeRectangle(v, e.names[0], x0, y0, x1, y1);
-      }
-    }
-  } else if (v.tool === 'circle') {
-    if (!v.pending.length) {
-      v.pending = [snapOrNew(v, sp)];
-    } else {
-      const [x, y] = v.s2w(sp[0], sp[1]);
-      const c = v.pending[0];
-      sk.circle(c, v.placeLength(Math.hypot(x - c.x.value, y - c.y.value)) || 1);
-      v.pending = [];
-    }
-  } else if (v.tool === 'arc3') {
-    // two endpoints, then a point the arc must pass through.  That third click is
-    // construction input, not a sketch point — the circumcircle is what it produces.
-    if (v.pending.length < 2) {
-      const p = snapOrNew(v, sp);
-      if (!v.pending.length || p !== v.pending[0]) v.pending.push(p);
-    } else {
-      // the snap indicator is painted for every drawing tool, so honour it here: landing
-      // the third click on a real point means the arc should stay on it, not merely start
-      // out near it
-      const [a, b] = v.pending;
-      const { at, on } = pickPlace(v, sp);
-      // the centre is minted by the *core* — the circumcircle's, not a click's — so the
-      // bracket goes round the construction rather than round a `snapOrNew`: an arc whose
-      // ends were in the view and whose centre was on the page is a straddling statement
-      // no `in` clause can say
-      const n0 = sk.points.length;
-      const arc = sk.arcThrough(a, b, at);
-      joinPlane(v, n0);
-      if (!arc) {
-        v.onStatus('those three points are collinear — pick a point off the chord');
-        return;                                    // keep the two ends, let them try again
-      }
-      if (on) sk.add(new C.PointOnCircle(on, arc));
-      v.pending = [];
-    }
-  } else if (v.tool === 'splinefit') {
-    // places the curve must pass through, not points of the sketch: snapping still works, but
-    // what is recorded is where, so the tool leaves nothing behind if it is abandoned
-    const place = pickPlace(v, sp);
-    const last = v.pendingFit[v.pendingFit.length - 1];
-    const near = last
-      && Math.hypot(place.at[0] - last.at[0], place.at[1] - last.at[1]) < v.world(v.pickPx);
-    if (near) {
-      finishSplineFit(v);
-      return;
-    }
-    v.pendingFit.push(place);
-    const min = C.curveInfo().minCtrl;
-    const held = v.pendingFit.filter((f) => f.on).length;
-    v.onStatus(v.pendingFit.length < min
-      ? `${min - v.pendingFit.length} more point(s) for a curve`
-      : `Enter to finish${held ? `; ${held} held by a point` : ''}`);
-    v.draw();
-    return;
-  } else if (v.tool === 'spline') {
-    // a control polygon is as long as the user wants it, so the tool collects points until
-    // it is finished — Enter, or a click back on the last one
-    const p = snapOrNew(v, sp);
-    if (p === v.pending[v.pending.length - 1]) {
-      finishSpline(v);
-      return;
-    }
-    v.pending.push(p);
-    const min = C.curveInfo().minCtrl;
-    v.onStatus(v.pending.length < min
-      ? `${min - v.pending.length} more control point(s) for a curve`
-      : 'Enter, or click the last point again, to finish the curve');
-    v.draw();
-    return;                                        // still collecting: nothing to solve yet
-  } else if (v.tool === 'arc') {
-    const existing = v.pickPoint(sp[0], sp[1]) !== null;
-    v.pending.push(snapOrNew(v, sp));
-    if (v.pending.length === 3) {
-      const [cpt, s, en] = v.pending;
-      if (new Set([cpt, s, en]).size === 3) {
-        if (!existing) {                           // freshly placed end point: put it on the radius
-          const q = onRadius(...cpt.xy, ...en.xy, distanceBetween(cpt, s));
-          if (q) [en.x.value, en.y.value] = q;
-        }
-        sk.arc(cpt, s, en);
-      }
-      v.pending = [];
-    }
-  }
+  if (!drawClick(v, sp)) return;
   v.releasePlan();
   v.afterEdit();
+}
+
+/** A press the drawing tools never see — a Boolean's, an edge tool's, a sweep's, or one refused
+ *  for want of a plane to draw on.  Whether it was taken. */
+function takenElsewhere(v: SketchView, sp: [number, number],
+                        mods: { alt?: boolean; shift?: boolean }): boolean {
+  // a Boolean picks bodies where the eye sees them, on no plane
+  if (combines(v.tool)) {
+    v.combineAt(sp[0], sp[1]);
+    return true;
+  }
+  // and an edge tool its edges and faces
+  if (roundsEdges(v.tool)) {
+    v.roundAt(sp[0], sp[1]);
+    return true;
+  }
+  // a standard plane chosen before the document had it is brought in by the first press: the
+  // document gains `use std`, and what the press makes is drawn on the plane it now has
+  if (!v.ensurePlane()) return true;
+  // drawing in space, only a point and a line: a circle, an arc and a curve are drawn in a plane
+  // (E060), and a region to sweep is bounded on one
+  if (v.openSpace && !drawsInSpace(v.tool)) {
+    v.onStatus(`the ${v.tool} tool draws on a plane — choose one to sketch on`);
+    return true;
+  }
+  // a plane seen edge on has no place on it under the pointer (`toolView` is the one read)
+  if (!v.viewCam().readable()) {
+    v.onStatus(`${v.planeName} is seen edge on — turn the view, or choose the plane again to face it`);
+    return true;
+  }
+  // an extrusion writes its statements through `apply`, which takes its own undo step
+  if (v.tool === 'extrude') {
+    v.extrudeAt(sp[0], sp[1], mods.alt, mods.alt && mods.shift);
+    return true;
+  }
+  if (v.tool === 'revolve') {
+    v.revolveAt(sp[0], sp[1], mods.alt);
+    return true;
+  }
+  return false;
+}
+
+/** A drawing tool's click.  Whether the drawing changed and is to be solved: a tool still
+ *  collecting clicks, or one that refused the click, says not. */
+function drawClick(v: SketchView, sp: [number, number]): boolean {
+  switch (v.tool) {
+    case 'point':
+      snapOrNew(v, sp);
+      return true;
+    case 'line':
+      lineClick(v, sp);
+      return true;
+    case 'rect':
+      rectClick(v, sp);
+      return true;
+    case 'circle':
+      circleClick(v, sp);
+      return true;
+    case 'arc3':
+      return arc3Click(v, sp);
+    case 'splinefit':
+      splineFitClick(v, sp);
+      return false;
+    case 'spline':
+      splineClick(v, sp);
+      return false;                                // still collecting: nothing to solve yet
+    case 'arc':
+      arcClick(v, sp);
+      return true;
+    default:
+      return true;
+  }
+}
+
+function lineClick(v: SketchView, sp: [number, number]): void {
+  const p = snapOrNew(v, sp);
+  if (v.pending.length && p !== v.pending[v.pending.length - 1]) {
+    v.sketch.line(v.pending[v.pending.length - 1], p);
+  }
+  v.pending = [p];                                 // continue the polyline
+}
+
+/** A rectangle is a *component instance*: the gesture measures width and height, the document
+ *  gains `rN := Rectangle(w: …, h: …)` — and the component itself, the first time — and the
+ *  instance is then seeded where the gesture drew it.  The first click is a place, not a point:
+ *  the statement's only numbers are the two lengths. */
+function rectClick(v: SketchView, sp: [number, number]): void {
+  if (!v.pendingFit.length) {
+    v.pendingFit = [pickPlace(v, sp)];
+    return;
+  }
+  const [x0, y0] = v.pendingFit[0].at;
+  const [x1, y1] = v.place(sp[0], sp[1]);
+  v.pendingFit = [];
+  // the instance joins the current plane whole — `in top` on its one statement —
+  // reaching every point the component makes, which per-point membership cannot
+  const e = v.doc.addRectangle(
+    v.placeLength(Math.abs(x1 - x0)) || 1,
+    v.placeLength(Math.abs(y1 - y0)) || 1,
+    (v.plane && v.doc.nameOf(v.plane)) || '',
+  );
+  if (v.apply(e, `${e.names[0]}: Rectangle`)) {
+    placeRectangle(v, e.names[0], x0, y0, x1, y1);
+  }
+}
+
+function circleClick(v: SketchView, sp: [number, number]): void {
+  if (!v.pending.length) {
+    v.pending = [snapOrNew(v, sp)];
+    return;
+  }
+  const [x, y] = v.s2w(sp[0], sp[1]);
+  const c = v.pending[0];
+  v.sketch.circle(c, v.placeLength(Math.hypot(x - c.x.value, y - c.y.value)) || 1);
+  v.pending = [];
+}
+
+/** Two endpoints, then a point the arc must pass through.  That third click is construction
+ *  input, not a sketch point — the circumcircle is what it produces.  False where the three
+ *  are collinear: the two ends are kept, to try again. */
+function arc3Click(v: SketchView, sp: [number, number]): boolean {
+  const sk = v.sketch;
+  if (v.pending.length < 2) {
+    const p = snapOrNew(v, sp);
+    if (!v.pending.length || p !== v.pending[0]) v.pending.push(p);
+    return true;
+  }
+  // the snap indicator is painted for every drawing tool, so honour it here: landing
+  // the third click on a real point means the arc should stay on it, not merely start
+  // out near it
+  const [a, b] = v.pending;
+  const { at, on } = pickPlace(v, sp);
+  // the centre is minted by the *core* — the circumcircle's, not a click's — so the
+  // bracket goes round the construction rather than round a `snapOrNew`: an arc whose
+  // ends were in the view and whose centre was on the page is a straddling statement
+  // no `in` clause can say
+  const n0 = sk.points.length;
+  const arc = sk.arcThrough(a, b, at);
+  joinPlane(v, n0);
+  if (!arc) {
+    v.onStatus('those three points are collinear — pick a point off the chord');
+    return false;                                  // keep the two ends, let them try again
+  }
+  if (on) sk.add(new C.PointOnCircle(on, arc));
+  v.pending = [];
+  return true;
+}
+
+/** Places the curve must pass through, not points of the sketch: snapping still works, but
+ *  what is recorded is where, so the tool leaves nothing behind if it is abandoned. */
+function splineFitClick(v: SketchView, sp: [number, number]): void {
+  const place = pickPlace(v, sp);
+  const last = v.pendingFit[v.pendingFit.length - 1];
+  const near = last
+    && Math.hypot(place.at[0] - last.at[0], place.at[1] - last.at[1]) < v.world(v.pickPx);
+  if (near) {
+    finishSplineFit(v);
+    return;
+  }
+  v.pendingFit.push(place);
+  const min = C.curveInfo().minCtrl;
+  const held = v.pendingFit.filter((f) => f.on).length;
+  v.onStatus(v.pendingFit.length < min
+    ? `${min - v.pendingFit.length} more point(s) for a curve`
+    : `Enter to finish${held ? `; ${held} held by a point` : ''}`);
+  v.draw();
+}
+
+/** A control polygon is as long as the user wants it, so the tool collects points until it is
+ *  finished — Enter, or a click back on the last one. */
+function splineClick(v: SketchView, sp: [number, number]): void {
+  const p = snapOrNew(v, sp);
+  if (p === v.pending[v.pending.length - 1]) {
+    finishSpline(v);
+    return;
+  }
+  v.pending.push(p);
+  const min = C.curveInfo().minCtrl;
+  v.onStatus(v.pending.length < min
+    ? `${min - v.pending.length} more control point(s) for a curve`
+    : 'Enter, or click the last point again, to finish the curve');
+  v.draw();
+}
+
+function arcClick(v: SketchView, sp: [number, number]): void {
+  const existing = v.pickPoint(sp[0], sp[1]) !== null;
+  v.pending.push(snapOrNew(v, sp));
+  if (v.pending.length !== 3) return;
+  const [cpt, s, en] = v.pending;
+  if (new Set([cpt, s, en]).size === 3) {
+    if (!existing) {                               // freshly placed end point: put it on the radius
+      const q = onRadius(...cpt.xy, ...en.xy, distanceBetween(cpt, s));
+      if (q) [en.x.value, en.y.value] = q;
+    }
+    v.sketch.arc(cpt, s, en);
+  }
+  v.pending = [];
 }

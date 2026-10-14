@@ -7,11 +7,12 @@
 
 use gcs_core::edit::{self, Kind};
 use gcs_core::overview::workspace::{turn_at, turn_handle, Projection};
-use gcs_core::program::{self, Elaborated};
+use gcs_core::program;
 use gcs_core::solid::ApproximationPolicy::Report;
 use gcs_core::syntax::BodyWord;
-use gcs_core::{library, solve};
+use gcs_core::library;
 use std::f64::consts::PI;
+use crate::common::gestures::{build, names, near, seen, volume};
 
 /// On the front (x, z): a 4 × 4 square `ab…da` with corners (10, 2) and (14, 6); a line `ax`
 /// along z at x = 20; and on the top (x, y) a line `ty` — held, every one.
@@ -27,15 +28,6 @@ const DRAWN: &str = "unit mm\nuse std\nin std.front {\n\
 /// The square's area and the distance of its middle from each axis it is turned about here.
 const AREA: f64 = 16.0;
 
-fn build(src: &str) -> Elaborated {
-    let (p, errors, linked) = library::parse_linked(src);
-    assert!(errors.is_empty() && linked.is_empty(), "{errors:?} {linked:?}\n{src}");
-    let mut e = program::elaborate(&p);
-    assert!(e.ok(), "{:?}\n{src}", e.errors().map(|d| d.message.clone()).collect::<Vec<_>>());
-    assert!(solve::solve(&mut e.sketch, Default::default()).success);
-    e
-}
-
 /// What elaborating `src` refuses, by code and message.
 fn refusals(src: &str) -> Vec<(String, String)> {
     let (p, errors, _) = library::parse_linked(src);
@@ -43,20 +35,8 @@ fn refusals(src: &str) -> Vec<(String, String)> {
     program::elaborate(&p).errors().map(|d| (d.code.as_str().to_string(), d.message.clone())).collect()
 }
 
-fn names(n: &[&str]) -> Vec<String> {
-    n.iter().map(|s| s.to_string()).collect()
-}
-
 fn square() -> Vec<String> {
     names(&["ab", "bc", "cd", "da"])
-}
-
-fn volume(e: &Elaborated, name: &str) -> f64 {
-    e.sketch.evaluated_solid(e.map.ent_named(name).unwrap().i(), Report).unwrap().volume()
-}
-
-fn near(a: f64, b: f64, rel: f64) -> bool {
-    (a - b).abs() <= rel * b.abs().max(1.0)
 }
 
 /// Pappus: the square turned `turn` radians about an axis its middle is `r` from.
@@ -204,14 +184,6 @@ fn a_revolution_previews_a_new_turn_before_the_source_says_it() {
     let block = e.map.ent_named("block").unwrap().i();
     assert!(!e.sketch.set_turn(block, 60.0));
     assert!(!e.sketch.set_turn(ring, 0.0));
-}
-
-/// The eye's picture-plane coordinates of a point in space (`overview::eye`'s convention).
-fn seen(x: [f64; 3], az: f64, el: f64) -> (f64, f64) {
-    let right = [-az.sin(), az.cos(), 0.0];
-    let up = [-az.cos() * el.sin(), -az.sin() * el.sin(), el.cos()];
-    let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-    (dot(right, x), dot(up, x))
 }
 
 #[test]

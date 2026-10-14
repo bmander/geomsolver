@@ -13,7 +13,7 @@ use gcs_core::program::Elaborated;
 use gcs_core::solve::{solve, SolveOpts};
 use gcs_core::space::{cross, dot, norm, sub};
 
-use crate::common::{ends, ent, fd_jacobian, off_line, read, refused, unit};
+use crate::common::{ends, ent, fd_jacobian, off_line, read, refused, solved, text::dof, unit};
 
 /// Two planes square to each other: a centre and three axes grounded in the front one — `ax` in
 /// the side plane, `bx` and `cx` square to it, `cx` from 30 before it — and a point and a line in
@@ -52,18 +52,6 @@ fn with(more: &str) -> String {
 
 fn at(sk: &Sketch, e: &Elaborated, n: &str) -> [f64; 3] {
     sk.world_point(ent(e, n).i())
-}
-
-fn solved(e: &Elaborated) -> Sketch {
-    let mut sk = e.sketch.clone();
-    let r = solve(&mut sk, SolveOpts::default());
-    assert!(r.success, "{}", r.message);
-    sk
-}
-
-fn dof(src: &str) -> i64 {
-    let mut sk = solved(&read(src));
-    diagnose(&mut sk, DiagnoseOptions::default()).dof
 }
 
 /// The angle in degrees between two directions.

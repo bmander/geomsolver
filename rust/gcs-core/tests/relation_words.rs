@@ -3,14 +3,13 @@
 //! where it is written and described as written; a `use` reads the names it lists bare.  The
 //! standard library's `horizontal` and `vertical` between points are such words.
 use gcs_core::constraints::CKind;
-use gcs_core::io;
 use gcs_core::modules::link;
 use gcs_core::program::{elaborate, Elaborated};
 use gcs_core::solve::{solve, SolveOpts};
 use gcs_core::syntax::parse;
 use std::collections::BTreeMap;
 
-use crate::common::{ent, read, refused};
+use crate::common::{ent, read, refused, said};
 
 /// Where the point the document calls `n` stands once solved.
 fn solved_at(e: &Elaborated, names: &[&str]) -> Vec<[f64; 3]> {
@@ -18,15 +17,6 @@ fn solved_at(e: &Elaborated, names: &[&str]) -> Vec<[f64; 3]> {
     let r = solve(&mut sk, SolveOpts::default());
     assert!(r.success, "{}", r.message);
     names.iter().map(|n| sk.world_point(ent(e, n).i())).collect()
-}
-
-/// Each statement as `describe` reads it back, in the document's names.
-fn said(e: &Elaborated) -> Vec<String> {
-    e.sketch
-        .user_constraints()
-        .iter()
-        .map(|c| io::describe_with(c, &|r| e.map.name_of(r).cloned()))
-        .collect()
 }
 
 fn near(a: [f64; 3], b: [f64; 3]) -> bool {
