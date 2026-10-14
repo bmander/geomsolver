@@ -595,6 +595,32 @@ impl<'a> Walk<'a> {
         scope: &Scope,
     ) {
         let prefix = scope.prefix().to_string();
+        let (mut pending, references, mut here) = self.definitions(body, vals, scope, &prefix);
+        if !self.nested_members(&mut pending, vals, &mut here) {
+            return;
+        }
+        if !self.work_out(&pending, vals, scope, &prefix) {
+            return;
+        }
+        for (name, reference) in references {
+            if vals.contains_key(&name) { continue; }
+            let abs = format!("{prefix}{name}");
+            self.checks.group_fields.push((abs.clone(), reference.span));
+            self.aliases.push((abs, reference, Scope { vals: vals.clone(), ..scope.clone() }));
+        }
+    }
+
+    /// The definitions of a body to work out: every `param` (an unknown declared as it is met)
+    /// and every group's members, each name once; the members naming geometry, which bind as
+    /// aliases where no number answers; and the names defined here.
+    #[allow(clippy::type_complexity)]
+    fn definitions(
+        &mut self,
+        body: &[Stmt],
+        vals: &mut BTreeMap<String, Aff>,
+        scope: &Scope,
+        prefix: &str,
+    ) -> (Vec<Def>, Vec<(String, Ref)>, BTreeSet<String>) {
         let mut pending: Vec<Def> = Vec::new();
         let mut references = Vec::new();
         let mut here: BTreeSet<String> = BTreeSet::new();
@@ -661,12 +687,24 @@ impl<'a> Walk<'a> {
                 ty,
             });
         }
+        (pending, references, here)
+    }
+
+    /// Each group reference's members, named under the definition referring to it; `false`
+    /// where the nesting is cyclic, too deep or too large, said at the definition.
+    fn nested_members(
+        &mut self,
+        pending: &mut Vec<Def>,
+        vals: &BTreeMap<String, Aff>,
+        here: &mut BTreeSet<String>,
+    ) -> bool {
         // A nested group exposes the selected group's numeric members, including forward
         // references. Keep ordinary dependency ordering for those members too.
         for depth in 0..MAX_DEPTH {
-            let keys: BTreeSet<String> = vals.keys().cloned().chain(pending.iter().map(|d| d.name.clone())).collect();
+            let keys: BTreeSet<String> =
+                vals.keys().cloned().chain(pending.iter().map(|d| d.name.clone())).collect();
             let mut extra = Vec::new();
-            for d in &pending {
+            for d in pending.iter() {
                 if !d.group_ref { continue; }
                 let start = format!("{}.", d.text);
                 for key in &keys {
@@ -675,11 +713,11 @@ impl<'a> Walk<'a> {
                     if here.insert(name.clone()) {
                         if depth + 1 == MAX_DEPTH || name.split('.').count() > MAX_DEPTH {
                             self.err(Code::E041, d.span, "group nesting is cyclic or too deep");
-                            return;
+                            return false;
                         }
                         if pending.len() + extra.len() >= MAX_FLAT {
                             self.err(Code::E103, d.span, "group expansion is too large");
-                            return;
+                            return false;
                         }
                         extra.push(Def { name, text: key.clone(), span: d.span, group_ref: true,
                             ty: None });
@@ -689,6 +727,18 @@ impl<'a> Walk<'a> {
             if extra.is_empty() { break; }
             pending.extend(extra);
         }
+        true
+    }
+
+    /// The definitions worked out into `vals`, earliest first among those whose reads are
+    /// ready; `false` where some are defined in terms of themselves, said at each.
+    fn work_out(
+        &mut self,
+        pending: &[Def],
+        vals: &mut BTreeMap<String, Aff>,
+        scope: &Scope,
+        prefix: &str,
+    ) -> bool {
         // the names each definition reads; a text that does not parse reads nothing, and is
         // worked out at once so the parse error is the one reported
         let reads: Vec<BTreeSet<String>> = pending
@@ -719,7 +769,7 @@ impl<'a> Walk<'a> {
                         format!("`{}` is defined in terms of itself{through}", d.name),
                     );
                 }
-                return;
+                return false;
             }
             for i in ready {
                 let d = &pending[i];
@@ -753,12 +803,7 @@ impl<'a> Walk<'a> {
             }
             waiting = rest;
         }
-        for (name, reference) in references {
-            if vals.contains_key(&name) { continue; }
-            let abs = format!("{prefix}{name}");
-            self.checks.group_fields.push((abs.clone(), reference.span));
-            self.aliases.push((abs, reference, Scope { vals: vals.clone(), ..scope.clone() }));
-        }
+        true
     }
 
     /// `param beta: Angle hint(30deg)` — an input nothing binds: a free value in `vals`, named
