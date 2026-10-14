@@ -39,7 +39,7 @@ in std.top {
   exit := point hint((0mm, 40mm))
   guide := line(entry, exit)
   vertical guide
-  distance(length) guide
+  length(length) guide
 }
 duct := TwistedSquare(guide, std.z, half: 10mm, twist: 90deg, s: 0.5)
 // Three and a half turns: no pairing can say this.

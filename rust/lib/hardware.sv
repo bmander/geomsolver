@@ -122,8 +122,8 @@ component Groove(body: solid, f: plane,
   e1 parallel ax
   e2 perpendicular ax
   e3 parallel ax
-  distance(r - rb) e0
-  distance(w) e1
+  length(r - rb) e0
+  length(w) e1
   g0 distance(rb, side: left) ax
   g0 distance(z, along: u) f
   claim g0 distance(w) g3

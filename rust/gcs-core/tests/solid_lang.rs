@@ -664,7 +664,7 @@ fn named_chains_support_anonymous_links_and_constraint_words() {
     let e = read("\
 use std
 in std.front {
-profile := distance(10) line -> equal line -> equal line -> close
+profile := length(10) line -> equal line -> equal line -> close
 }
 block := solid(profile, depth: 8)
 ");

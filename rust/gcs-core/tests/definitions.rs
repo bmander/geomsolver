@@ -92,7 +92,7 @@ fn a_chain_names_its_traversal_and_a_link_is_named_in_parentheses() {
 fn a_dimension_defines_no_name() {
     let e = read(&format!("{PTS}w := 10\na distance(w) b\nb distance(w) c\n"));
     assert_eq!(e.sketch.user_constraints().len(), 2);
-    let e = read(&format!("{PTS}distance(10) (ab := line(a, b))\n"));
+    let e = read(&format!("{PTS}length(10) (ab := line(a, b))\n"));
     assert!(e.map.ent_named("ab").is_some());
     assert!(e.sketch.user_constraints().iter().any(|c| c.kind == CKind::Distance));
     let (prog, errs) = parse(&format!("{PTS}a distance(w := 10) b\n"));

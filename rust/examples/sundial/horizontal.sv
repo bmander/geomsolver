@@ -48,7 +48,7 @@ in std.side {
   noon := line(O, F)
   upright := line(F, T)
   style := line(O, T)
-  distance(base) noon
+  length(base) noon
   F vertical T
   noon angle(latitude) style
   S := point hint(at: O, toward: F, turn: latitude + 90deg)

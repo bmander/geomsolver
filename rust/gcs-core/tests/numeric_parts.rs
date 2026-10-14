@@ -77,7 +77,7 @@ fn the_v_twin_is_read_past_the_dense_limit() {
 fn cone_and(n: usize) -> String {
     format!(
         "unit mm\nuse std\nO := point in std.top\nfix((0, 0)) O\nM := point in std.top\n\
-         fix((40, 0)) M\nT := point hint((20, 0, -30))\ngax := line(O, T)\ndistance(60) gax\n\
+         fix((40, 0)) M\nT := point hint((20, 0, -30))\ngax := line(O, T)\nlength(60) gax\n\
          gc := std.Cone(gax, half: 30deg)\nM coincident gc\nstd.top tangent(at: M) gc\n\
          repeat {n} {{\n  q := point hint((50, 5)) in std.top\n  \
          M distance(10, along: std.x) q\n  M distance(5, along: std.y) q\n}}\n"

@@ -53,7 +53,7 @@ component On(g: path, view: plane, up: axis) {
     tl := line(m, q)
   }
   g tangent(at: m) tl
-  distance(10mm) tl
+  length(10mm) tl
   n := plane
   n.origin coincident m
   tl perpendicular n.u
@@ -116,7 +116,7 @@ fn the_tangent_at_a_pinned_place_is_regular_where_the_pinned_tangency_is_not() {
     let station = |tangency: &str| {
         format!(
             "{GUIDES}in std.top {{\n  m := point\n  m coincident(t == 0.5) g\n  q := point\n  \
-             tl := line(m, q)\n  {tangency}\n  distance(10mm) tl\n}}\n"
+             tl := line(m, q)\n  {tangency}\n  length(10mm) tl\n}}\n"
         )
     };
     let mut e = read(&station("g tangent(at: m) tl"));
@@ -152,7 +152,7 @@ fn a_tangency_between_a_line_and_a_curve_reads_either_way_round() {
 fn the_tangent_at_a_point_travels_with_its_contact() {
     let src = format!(
         "{GUIDES}in std.top {{\n  m := point hint((12, 22))\n  q := point hint((20, 28))\n  \
-         tl := line(m, q)\n  g tangent(at: m) tl\n  m coincident g\n  distance(10mm) tl\n  \
+         tl := line(m, q)\n  g tangent(at: m) tl\n  m coincident g\n  length(10mm) tl\n  \
          k0 distance(22.5mm, along: up) m\n}}\n"
     );
     let mut e = read(&src);
@@ -198,4 +198,53 @@ fn a_tangent_at_a_point_no_contact_holds_is_refused() {
          g tangent(at: m) tl\n}}\n"
     );
     refused(&src, "E040", "state `m coincident g`", "g tangent(at: m) tl");
+}
+
+/// **`length` measures any path** (#269): a word over `g: path` states `g`'s length whatever it
+/// is given — a line's the distance between its ends, an arc's along itself, a spline's along the
+/// whole of it — where through 0.89 a line's was `distance` and the word could not be written.
+#[test]
+fn length_of_any_path() {
+    const PATHS: &str = "\
+unit mm
+use std
+in std.top {
+  l0 := point
+  fix((0mm, 0mm)) l0
+  l1 := point hint((30, 5))
+  l := line(l0, l1)
+  c := point
+  e := point
+  fix((100mm, 0mm)) c
+  fix((130mm, 0mm)) e
+  a := arc(center: c, start: e) hint(r: 30)
+  k0 := point
+  fix((0mm, 50mm)) k0
+  k1 := point hint((0, 70))
+  k2 := point hint((20, 80))
+  k3 := point hint((40, 80))
+  g := spline(k0, k1, k2, k3)
+}
+";
+    // the component's formal, and a relation word, which settles by what it is given
+    let uses = [
+        "component Span(g: path, d: Length) {\n  length(d) g\n}\n\
+         sl := Span(l, d: 40mm)\nsa := Span(a, d: 40mm)\nsg := Span(g, d: 80mm)\n",
+        "stretch(d) g := length(d) g\nstretch(d: 40mm) l\nstretch(d: 40mm) a\nstretch(d: 80mm) g\n",
+    ];
+    for u in uses {
+        let mut e = read(&format!("{PATHS}{u}"));
+        let kinds: Vec<CKind> = e.sketch.constraints.iter().map(|c| c.kind).collect();
+        for k in [CKind::Distance, CKind::ArcLength, CKind::SplineLength] {
+            assert!(kinds.contains(&k), "{k:?} in {kinds:?}\n{u}");
+        }
+        let r = solve(&mut e.sketch, SolveOpts::default());
+        assert!(r.success, "{}\n{u}", r.message);
+        let (p, q) = (xy(&e, "l0"), xy(&e, "l1"));
+        assert!(((q.0 - p.0).hypot(q.1 - p.1) - 40.0).abs() < 1e-9, "{p:?} {q:?}\n{u}");
+        // the arc's end, 40 along a radius of 30 counter-clockwise from its start at angle 0
+        let (c, m) = (xy(&e, "c"), xy(&e, "a.end"));
+        let turn = (m.1 - c.1).atan2(m.0 - c.0).rem_euclid(std::f64::consts::TAU);
+        assert!((30.0 * turn - 40.0).abs() < 1e-9, "{turn}\n{u}");
+    }
 }

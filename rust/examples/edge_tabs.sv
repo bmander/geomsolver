@@ -17,8 +17,8 @@ in std.front {
   c := point hint((60, 40))
   d := point hint((0, 40))
   fix((0, 0)) a
-  outline := distance(height) vertical (ad := line(a, d)) -> horizontal (dc := line(d, c)) ->
-    vertical (cb := line(c, b)) -> distance(width) horizontal (ba := line(b, a)) -> close
+  outline := length(height) vertical (ad := line(a, d)) -> horizontal (dc := line(d, c)) ->
+    vertical (cb := line(c, b)) -> length(width) horizontal (ba := line(b, a)) -> close
 
   // The outline runs clockwise, so outside is on each edge's left.  The apex stands `rise`
   // off its edge, and the tab's two sides are equal — which puts the apex over the edge's middle.

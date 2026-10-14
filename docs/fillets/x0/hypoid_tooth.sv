@@ -36,6 +36,6 @@ component Tooth(a: group, b: group, lo: group, hi: group, grow: Length, r: Lengt
 //   tooth := solid(Tooth(inner, outer, tooth_base, tooth_tip, grow: backlash / 4,
 //                        r: rounding * mn))
 //
-// The land bound (`distance(>= 0.01 * design.module) tip`) has no place to stand: there is no
+// The land bound (`length(>= 0.01 * design.module) tip`) has no place to stand: there is no
 // drawn tip line. Whether two rounds may meet and consume the tip is the definition's question
 // (finding 9): rounds that meet take the face between them, and the tooth comes to a full round.

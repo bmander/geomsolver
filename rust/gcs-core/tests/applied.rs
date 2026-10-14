@@ -66,7 +66,7 @@ fn a_word_states_several_relations() {
 #[test]
 fn a_word_declares_what_it_needs_once_per_use() {
     let src = format!(
-        "a apart(d) b := {{\n  private ab := line(a, b)\n  distance(d) ab\n}}\n\
+        "a apart(d) b := {{\n  private ab := line(a, b)\n  length(d) ab\n}}\n\
          w := 20\n{LINES}in std.front {{\n  p := point hint((5, 5))\n  q := point hint((9, 9))\n}}\n\
          a.p1 apart(d: w) p\na.p2 apart(d: 7) q\n"
     );

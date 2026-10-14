@@ -67,8 +67,8 @@ horizontal ab
 vertical bc
 horizontal cd
 vertical da
-distance(40) ab
-distance(30) bc
+length(40) ab
+length(30) bc
 }
 ";
 
@@ -171,8 +171,8 @@ component Rect(w: Length, h: Length) {
   vertical right
   horizontal top
   vertical left
-  distance(w) bottom
-  distance(h) right
+  length(w) bottom
+  length(h) right
 }
 in std.front {
 r := Rect(w: 4mm, h: 3mm)

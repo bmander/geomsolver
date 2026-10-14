@@ -141,7 +141,7 @@ fn a_line_joining_two_loops_is_no_face_and_says_so() {
 #[test]
 fn a_rectangle_instance_is_named_through_its_instance() {
     let src = "unit mm\nuse std\ncomponent Rectangle(w: Length, h: Length) {\n  \
-        distance(w) (l1 := line) -> perpendicular distance(h) (l2 := line) -> \
+        length(w) (l1 := line) -> perpendicular length(h) (l2 := line) -> \
         perpendicular (l3 := line) -> perpendicular (l4 := line) -> close\n}\n\
         r0 := Rectangle(w: 30, h: 20) in std.front\n";
     let mut e = build(src);

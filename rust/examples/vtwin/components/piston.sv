@@ -54,14 +54,14 @@ component Piston(f: group, dims: group) {
   // symmetry determines the matching right flank from that one profile.
   f.u.p1 midpoint crownl
   crownl perpendicular rod
-  distance(2 * pw) crownl
+  length(2 * pw) crownl
   pL0 parallel rod
   pL1 perpendicular rod
   pL2 parallel rod
   pL3 perpendicular rod
   pL4 parallel rod
-  distance(dims.groove) pL0
-  distance(groovew) pL2
+  length(dims.groove) pL0
+  length(groovew) pL2
   g1L distance(gb, side: left) rod
   pL1 equal pL3
   cL distance(dims.ph) sL

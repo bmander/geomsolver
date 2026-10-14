@@ -706,7 +706,7 @@ impl<'a> P<'a> {
             return;
         }
         // inside a braced body the closing `}` ends a statement as a line break does — so
-        // `cycle 4 { distance(50) line -> angle(90) }` is writable on the one line it is
+        // `cycle 4 { length(50) line -> angle(90) }` is writable on the one line it is
         // about — and the brace is left standing, being the body's to consume
         if self.in_body > 0 && self.peek() == Some(&Tok::P('}')) {
             return;

@@ -210,7 +210,7 @@ blade := solid(tooth)
 const LAND: &str = "eb distance(>= 0.01mm, along: left) ea\n";
 
 /// **A region's tip land is a bound between the land's ends** (#209; `docs/fillets`, finding 9):
-/// a region draws no tip line for `distance(>= …) tip` to stand on, so its section says the land
+/// a region draws no tip line for `length(>= …) tip` to stand on, so its section says the land
 /// on its two ends, where the flanks meet the tip, and the bound chooses the root as the drawn
 /// section's does (§9.6) — from the rough start, the section without it settles where the
 /// flanks cross above the tip (the tooth's meridian a triangle, no step on the tip), and with

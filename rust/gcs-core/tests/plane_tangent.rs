@@ -101,7 +101,7 @@ fn the_pitch_plane_touches_the_gear_cone_with_no_view() {
 fn over_top(apex: &str) -> String {
     format!(
         "unit mm\nuse std\n{apex}\nM := point in std.top\nfix((40, 0)) M\n\
-         T := point hint((20, 0, -30))\ngax := line(O, T)\ndistance(60) gax\n\
+         T := point hint((20, 0, -30))\ngax := line(O, T)\nlength(60) gax\n\
          gc := std.Cone(gax, half: 30deg)\nM coincident gc\nstd.top tangent(at: M) gc\n"
     )
 }
@@ -145,7 +145,7 @@ fn a_plane_touches_a_cylinder_lying_along_it() {
         fix(dir == (1, 0, 0), origin == (0, 0, 20)) ux\nvy := axis\n\
         fix(dir == (0, 1, 0), origin == (0, 0, 20)) vy\nup := plane(u: ux, v: vy)\n\
         A := point in up\nfix((0, 0)) A\n\
-        B := point hint((50, 10)) in up\nax := line(A, B)\ndistance(60) ax\n\
+        B := point hint((50, 10)) in up\nax := line(A, B)\nlength(60) ax\n\
         M := point in std.top\nfix((40, 0)) M\nshaft := std.Cylinder(ax, r: hint(15))\n\
         M coincident shaft\nstd.top tangent(at: M) shaft\n");
     let b = e.sketch.world_point(ent(&e, "B").i());
