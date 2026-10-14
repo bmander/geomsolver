@@ -275,171 +275,196 @@ fn tint_word(
             (Some(Tint::Class), Next::Class)
         }
         Next::Def => (Some(Tint::Def), Next::Word),
-        Next::Start => {
-            if ["private", "construction", "centerline"].contains(&w) {
-                return (Some(Tint::Word), Next::Start);
-            }
-            // `param bore: Length := 50mm` — the word, then the name it declares
-            if w == "param" {
-                return (Some(Tint::Word), Next::Def);
-            }
-            // `w := 100`, `c := circle(…)` — the name a definition gives its value
-            if next == Some(&Tok::Define) {
-                return (Some(Tint::Def), Next::Word);
-            }
-            // `point hint(…)`, `line(a, b)`
-            if EntKind::parse(w).is_some() {
-                return (Some(Tint::Word), Next::Word);
-            }
-            if w == "component" || w == "interface" {
-                return (Some(Tint::Word), Next::Def);
-            }
-            if w == "use" {
-                return (Some(Tint::Word), Next::Module);
-            }
-            // `style .construction { … }` — the class it names is the thing it declares
-            if w == "style" {
-                return (Some(Tint::Word), Next::Class);
-            }
-            // `unit mm` — the word, and the unit it names (spec §3.3)
-            if w == "unit" {
-                return (Some(Tint::Word), Next::Unit);
-            }
-            // `in top { … }` — the membership block (§6.7): the word, then the plane it names
-            if w == "in" {
-                return (Some(Tint::Word), Next::Word);
-            }
-            if w == "preview" || BLOCKS.contains(&w) {
-                // `repeat e in rack.profile` — the edge is a name the block declares, as the
-                // index after `as` is
-                let over = BLOCKS.contains(&w) && over_chain(toks, i + 1);
-                return (Some(Tint::Word), if over { Next::Def } else { Next::Word });
-            }
-            // a raw branch: a statement the parser knows by name
-            if w == "branch" {
-                return (Some(Tint::Relation), Next::Word);
-            }
-            // `flat l`, `hangs(L) rope` — a word this file defines or imports, standing before
-            // its operand; a component call has no operand after its parentheses
-            if known.contains(w)
-                && word_at(toks, past_args(toks, i)).is_some_and(|o| !MODIFIERS.contains(&o))
-            {
-                return (Some(Tint::Relation), Next::Word);
-            }
-            if builtin(w, prev, next, false) {
-                return (Some(Tint::Builtin), Next::Word);
-            }
-            if next == Some(&Tok::P('(')) && !is_operator(w) {
-                return (Some(Tint::Type), Next::Word);
-            }
-            // `claim vertical(rail)`: the word after it is a statement start again, so the
-            // relation it qualifies is tinted exactly as it would be standing alone
-            if w == "claim" {
-                return (Some(Tint::Word), Next::Start);
-            }
-            // the operator table, not the registry's names: `coincident` and `equal` are constraints
-            // the language writes and are not any `CKind`'s name, and `point_on_circle` is a
-            // name no document writes any more (spec §9.1)
-            (is_operator(w).then_some(Tint::Relation), Next::Word)
-        }
-        Next::Word => {
-            // `c: circle`, `phase: Angle` — the one place a bare word is a type
-            if prev == Some(&Tok::P(':')) && Ty::parse(w).is_some() {
-                return (Some(Tint::Type), Next::Word);
-            }
-            if next == Some(&Tok::P(':')) {
-                return (Some(Tint::Label), Next::Word);
-            }
-            // `(ab := line(a, b))`, `distance(w := 60)` — a name defined where it stands
-            if next == Some(&Tok::Define) {
-                return (Some(Tint::Def), Next::Word);
-            }
-            // `engine.parts.Crank(…)` — a used module's component, named by its full path
-            if prev == Some(&Tok::P('.')) && next == Some(&Tok::P('(')) {
-                return (Some(Tint::Type), Next::Word);
-            }
-            // `integral(p.y over p)` — a term of an energy (§9.10), read by the parser by name
-            if w == "integral" && next == Some(&Tok::P('(')) {
-                return (Some(Tint::Word), Next::Word);
-            }
-            // `ring N about c` — the turn's centre
-            if w == "about" && ring {
-                return (Some(Tint::Word), Next::Word);
-            }
-            // `next.v` — the copy after this one, in a block
-            if matches!(w, "next" | "prev") && next == Some(&Tok::P('.')) {
-                return (Some(Tint::Word), Next::Word);
-            }
-            // `spline(…) weights [1, w, w, 1]`, and its knots — the curve's own data
-            if matches!(w, "knots" | "weights") && next == Some(&Tok::P('[')) {
-                return (Some(Tint::Word), Next::Word);
-            }
-            // `k from p to q` — a stretch of a curve, `to` closing what `from` opened
-            if w == "to" && after_from(toks, i) {
-                return (Some(Tint::Word), Next::Word);
-            }
-            if builtin(w, prev, next, false) {
-                return (Some(Tint::Builtin), Next::Word);
-            }
-            if (w == "cut" || w == "union" || w == "common" || w == "minimizes" || w == "maximizes")
-                && prev != Some(&Tok::P('.'))
-            {
-                return (Some(Tint::Relation), Next::Word);
-            }
-            if MODIFIERS.contains(&w) {
-                // `cycle N as i` — the binder is a name the block declares; `class a b` names
-                // classes until the clause ends
-                return (
-                    Some(Tint::Word),
-                    match w {
-                        "as" => Next::Def,
-                        "class" => Next::Class,
-                        _ => Next::Word,
-                    },
-                );
-            }
-            // a chain (spec §6.6): the element keyword mid-line, the words standing prefix to
-            // it, the joints between links, and `close`.  Each is claimed only in the company a
-            // chain puts it in, so a point *named* `tangent` in an argument list stays plain.
-            // past the operator's own parentheses, which is where its right operand is:
-            // `radius(25) circle base(…)` and `p distance(80) q` are the prefix and the joint
-            // they would be without a number on the word.  The same lookahead `chain_starts`
-            // reads, so a word this colours as a relation is one the parser settles as one —
-            // and computed *here*, in the one arm that reads it, since the loop around this runs
-            // per keystroke and every other arm has already returned.
-            let j = past_args(toks, i);
-            let next_word = link_word(toks, j);
-            // both questions off the one cursor: a line ending in a joint word continues its
-            // chain onto the next, and `p distance(80)` ends a line as surely as `p equal` does.
-            // A body's `}` ends a statement as a line break does (`end_of_stmt`), so a word
-            // standing at one — a one-line body's trailing joint — reads the same way.
-            let at_line_end =
-                matches!(toks.get(j).map(|(t, _)| t), Some(Tok::Nl | Tok::P('}')) | None);
-            if opens_link(w, next_word) {
-                // the element keyword names what the link declares; a prefix states a relation
-                return match EntKind::parse(w) {
-                    Some(_) => (Some(Tint::Word), Next::Word),
-                    None => (Some(Tint::Relation), Next::Word),
-                };
-            }
-            let at_marker = matches!(toks.get(j).map(|(t, _)| t), Some(Tok::Arrow));
-            if (next_word.is_some() || at_line_end || at_marker) && joint_word(w) {
-                // `at_marker` is the far-side marker: `A -> equal -> B`
-                return (Some(Tint::Relation), Next::Word);
-            }
-            // `centre right_of(d: 5) o` — a word this file defines or imports, between operands
-            if (next_word.is_some() || at_line_end) && known.contains(w) {
-                return (Some(Tint::Relation), Next::Word);
-            }
-            // Chains close at a line end; inside a face's list it is the marker, not the
-            // closing bracket, that distinguishes `-> close` from an edge named `close`.
-            if w == "close" && (at_line_end || prev == Some(&Tok::Arrow)) {
-                return (Some(Tint::Word), Next::Word);
-            }
-            // `ratio: length(a) / length(b)` — a measurement, where no relation took the word
-            (builtin(w, prev, next, true).then_some(Tint::Builtin), Next::Word)
-        }
+        Next::Start => tint_start(w, prev, next, toks, i, known),
+        Next::Word => tint_inner(w, prev, next, toks, i, known, ring),
     }
+}
+
+/// What a word is where a statement starts (`tint_word`): a modifier, a definition's name, a
+/// keyword opening a declaration, block or clause, a word the file defines, a call, or an
+/// operator.
+fn tint_start(
+    w: &str,
+    prev: Option<&Tok>,
+    next: Option<&Tok>,
+    toks: &[(Tok, Span)],
+    i: usize,
+    known: &BTreeSet<&str>,
+) -> (Option<Tint>, Next) {
+    if ["private", "construction", "centerline"].contains(&w) {
+        return (Some(Tint::Word), Next::Start);
+    }
+    // `param bore: Length := 50mm` — the word, then the name it declares
+    if w == "param" {
+        return (Some(Tint::Word), Next::Def);
+    }
+    // `w := 100`, `c := circle(…)` — the name a definition gives its value
+    if next == Some(&Tok::Define) {
+        return (Some(Tint::Def), Next::Word);
+    }
+    // `point hint(…)`, `line(a, b)`
+    if EntKind::parse(w).is_some() {
+        return (Some(Tint::Word), Next::Word);
+    }
+    if w == "component" || w == "interface" {
+        return (Some(Tint::Word), Next::Def);
+    }
+    if w == "use" {
+        return (Some(Tint::Word), Next::Module);
+    }
+    // `style .construction { … }` — the class it names is the thing it declares
+    if w == "style" {
+        return (Some(Tint::Word), Next::Class);
+    }
+    // `unit mm` — the word, and the unit it names (spec §3.3)
+    if w == "unit" {
+        return (Some(Tint::Word), Next::Unit);
+    }
+    // `in top { … }` — the membership block (§6.7): the word, then the plane it names
+    if w == "in" {
+        return (Some(Tint::Word), Next::Word);
+    }
+    if w == "preview" || BLOCKS.contains(&w) {
+        // `repeat e in rack.profile` — the edge is a name the block declares, as the
+        // index after `as` is
+        let over = BLOCKS.contains(&w) && over_chain(toks, i + 1);
+        return (Some(Tint::Word), if over { Next::Def } else { Next::Word });
+    }
+    // a raw branch: a statement the parser knows by name
+    if w == "branch" {
+        return (Some(Tint::Relation), Next::Word);
+    }
+    // `flat l`, `hangs(L) rope` — a word this file defines or imports, standing before
+    // its operand; a component call has no operand after its parentheses
+    if known.contains(w)
+        && word_at(toks, past_args(toks, i)).is_some_and(|o| !MODIFIERS.contains(&o))
+    {
+        return (Some(Tint::Relation), Next::Word);
+    }
+    if builtin(w, prev, next, false) {
+        return (Some(Tint::Builtin), Next::Word);
+    }
+    if next == Some(&Tok::P('(')) && !is_operator(w) {
+        return (Some(Tint::Type), Next::Word);
+    }
+    // `claim vertical(rail)`: the word after it is a statement start again, so the
+    // relation it qualifies is tinted exactly as it would be standing alone
+    if w == "claim" {
+        return (Some(Tint::Word), Next::Start);
+    }
+    // the operator table, not the registry's names: `coincident` and `equal` are constraints
+    // the language writes and are not any `CKind`'s name, and `point_on_circle` is a
+    // name no document writes any more (spec §9.1)
+    (is_operator(w).then_some(Tint::Relation), Next::Word)
+}
+
+/// What a word is inside a statement (`tint_word`): a type, a label, a name defined in place,
+/// a word a construct reads by name, a modifier, or — past its operator's own parentheses —
+/// a chain's link keyword, prefix or joint.
+fn tint_inner(
+    w: &str,
+    prev: Option<&Tok>,
+    next: Option<&Tok>,
+    toks: &[(Tok, Span)],
+    i: usize,
+    known: &BTreeSet<&str>,
+    ring: bool,
+) -> (Option<Tint>, Next) {
+    // `c: circle`, `phase: Angle` — the one place a bare word is a type
+    if prev == Some(&Tok::P(':')) && Ty::parse(w).is_some() {
+        return (Some(Tint::Type), Next::Word);
+    }
+    if next == Some(&Tok::P(':')) {
+        return (Some(Tint::Label), Next::Word);
+    }
+    // `(ab := line(a, b))`, `distance(w := 60)` — a name defined where it stands
+    if next == Some(&Tok::Define) {
+        return (Some(Tint::Def), Next::Word);
+    }
+    // `engine.parts.Crank(…)` — a used module's component, named by its full path
+    if prev == Some(&Tok::P('.')) && next == Some(&Tok::P('(')) {
+        return (Some(Tint::Type), Next::Word);
+    }
+    // `integral(p.y over p)` — a term of an energy (§9.10), read by the parser by name
+    if w == "integral" && next == Some(&Tok::P('(')) {
+        return (Some(Tint::Word), Next::Word);
+    }
+    // `ring N about c` — the turn's centre
+    if w == "about" && ring {
+        return (Some(Tint::Word), Next::Word);
+    }
+    // `next.v` — the copy after this one, in a block
+    if matches!(w, "next" | "prev") && next == Some(&Tok::P('.')) {
+        return (Some(Tint::Word), Next::Word);
+    }
+    // `spline(…) weights [1, w, w, 1]`, and its knots — the curve's own data
+    if matches!(w, "knots" | "weights") && next == Some(&Tok::P('[')) {
+        return (Some(Tint::Word), Next::Word);
+    }
+    // `k from p to q` — a stretch of a curve, `to` closing what `from` opened
+    if w == "to" && after_from(toks, i) {
+        return (Some(Tint::Word), Next::Word);
+    }
+    if builtin(w, prev, next, false) {
+        return (Some(Tint::Builtin), Next::Word);
+    }
+    if (w == "cut" || w == "union" || w == "common" || w == "minimizes" || w == "maximizes")
+        && prev != Some(&Tok::P('.'))
+    {
+        return (Some(Tint::Relation), Next::Word);
+    }
+    if MODIFIERS.contains(&w) {
+        // `cycle N as i` — the binder is a name the block declares; `class a b` names
+        // classes until the clause ends
+        return (
+            Some(Tint::Word),
+            match w {
+                "as" => Next::Def,
+                "class" => Next::Class,
+                _ => Next::Word,
+            },
+        );
+    }
+    // a chain (spec §6.6): the element keyword mid-line, the words standing prefix to
+    // it, the joints between links, and `close`.  Each is claimed only in the company a
+    // chain puts it in, so a point *named* `tangent` in an argument list stays plain.
+    // past the operator's own parentheses, which is where its right operand is:
+    // `radius(25) circle base(…)` and `p distance(80) q` are the prefix and the joint
+    // they would be without a number on the word.  The same lookahead `chain_starts`
+    // reads, so a word this colours as a relation is one the parser settles as one —
+    // and computed *here*, in the one arm that reads it, since the loop around this runs
+    // per keystroke and every other arm has already returned.
+    let j = past_args(toks, i);
+    let next_word = link_word(toks, j);
+    // both questions off the one cursor: a line ending in a joint word continues its
+    // chain onto the next, and `p distance(80)` ends a line as surely as `p equal` does.
+    // A body's `}` ends a statement as a line break does (`end_of_stmt`), so a word
+    // standing at one — a one-line body's trailing joint — reads the same way.
+    let at_line_end =
+        matches!(toks.get(j).map(|(t, _)| t), Some(Tok::Nl | Tok::P('}')) | None);
+    if opens_link(w, next_word) {
+        // the element keyword names what the link declares; a prefix states a relation
+        return match EntKind::parse(w) {
+            Some(_) => (Some(Tint::Word), Next::Word),
+            None => (Some(Tint::Relation), Next::Word),
+        };
+    }
+    let at_marker = matches!(toks.get(j).map(|(t, _)| t), Some(Tok::Arrow));
+    if (next_word.is_some() || at_line_end || at_marker) && joint_word(w) {
+        // `at_marker` is the far-side marker: `A -> equal -> B`
+        return (Some(Tint::Relation), Next::Word);
+    }
+    // `centre right_of(d: 5) o` — a word this file defines or imports, between operands
+    if (next_word.is_some() || at_line_end) && known.contains(w) {
+        return (Some(Tint::Relation), Next::Word);
+    }
+    // Chains close at a line end; inside a face's list it is the marker, not the
+    // closing bracket, that distinguishes `-> close` from an edge named `close`.
+    if w == "close" && (at_line_end || prev == Some(&Tok::Arrow)) {
+        return (Some(Tint::Word), Next::Word);
+    }
+    // `ratio: length(a) / length(b)` — a measurement, where no relation took the word
+    (builtin(w, prev, next, true).then_some(Tint::Builtin), Next::Word)
 }
 
 /// What `expr` knows by name: a function or (with `measures`) a measurement called, or a
