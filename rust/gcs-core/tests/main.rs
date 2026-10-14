@@ -92,6 +92,7 @@ mod held_envelopes;
 mod meshing;
 mod highlight;
 mod homotopy;
+mod hub_motor;
 mod hypoid_layout;
 mod interfaces;
 mod interval;

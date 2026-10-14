@@ -1,0 +1,52 @@
+// The hub motor's sheets: the general arrangement, then the parts a shop makes.
+model m from "hub_motor.sv"
+
+sheet arrangement {
+  size (420mm, 297mm)
+  label "1 HP E-BIKE HUB MOTOR — GENERAL ARRANGEMENT" at (14mm, 16mm)
+  label "746 W, 27.9 N·m at 255 rpm, 48 V · outer rotor · 46 poles / 51 slots" at (14mm, 24mm)
+  label "END VIEW (along the axle, from the brake side)" at (20mm, 40mm)
+  label "HALF SECTION ON THE AXLE" at (250mm, 40mm)
+  sketch end_view(m) from m.std.front at (125mm, 160mm) scale 0.8
+  sketch axial_view(m) from m.std.side at (320mm, 190mm) scale 0.9
+  style .construction { display: none }
+  style .centerline { display: inline; color: #9aa4ae; dash: 12 3 2 3; width: 0.75 }
+}
+
+sheet axle {
+  size (420mm, 297mm)
+  label "AXLE — 4140, hardened and ground at the seats; KEY DIN 6885 A 8 × 7 × 32" at (14mm, 16mm)
+  view axle_side(m.axle.body) from right at (210mm, 120mm) scale 1.5
+  view axle_end(m.axle.body) from front at (210mm, 230mm) scale 2
+  view key_end(m.axle.key) from front at (210mm, 230mm) scale 2
+  dimensions in axle_side
+  style .hidden { dash: 4 3; color: #888888 }
+}
+
+sheet solids {
+  size (420mm, 297mm)
+  label "THE PARTS" at (14mm, 16mm)
+  label "stator lamination" at (20mm, 40mm)
+  label "rotor ring" at (160mm, 40mm)
+  label "magnets" at (300mm, 40mm)
+  label "brake-side cover" at (20mm, 170mm)
+  label "carrier" at (160mm, 170mm)
+  label "axle and key" at (300mm, 170mm)
+  view lam_iso(m.stator.lamination) from isometric at (80mm, 105mm) scale 0.45
+  view ring_iso(m.rotor.ring) from isometric at (220mm, 105mm) scale 0.45
+  view mag_iso(m.rotor.magnets) from isometric at (360mm, 105mm) scale 0.45
+  view cover_iso(m.left.body) from isometric at (80mm, 235mm) scale 0.45
+  view carrier_iso(m.carrier.body) from isometric at (220mm, 235mm) scale 0.45
+  view axle_iso(m.axle.body) from isometric at (360mm, 235mm) scale 0.7
+  style .hidden { display: none }
+}
+
+sheet cover {
+  size (420mm, 297mm)
+  label "SIDE COVER, BRAKE SIDE — A356-T6" at (14mm, 16mm)
+  view cover_face(m.left.body) from front at (120mm, 150mm) scale 0.9
+  section cover_cut(m.left.body) from right cut m.std.side at (320mm, 150mm) scale 0.9
+  dimensions in cover_face
+  dimensions in cover_cut
+  style .hidden { dash: 4 3; color: #888888 }
+}
