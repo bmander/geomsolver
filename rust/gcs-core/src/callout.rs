@@ -539,7 +539,7 @@ fn curve_middle(sk: &Sketch, e: EntRef) -> Option<(P, P)> {
     Some((f.p, unit(f.d1)?))
 }
 
-/// The direction an ordinate is drawn along in its points' view: the view's own `x` or `y`, or
+/// The direction an ordinate is drawn along in its points' view: the view's own `u` or `v`, or
 /// the drawn line it is measured along.  `None` for one read in space, which no view draws.
 fn dimension_axis(sk: &Sketch, c: &Constraint) -> Option<P> {
     match c.form()? {
@@ -551,8 +551,8 @@ fn dimension_axis(sk: &Sketch, c: &Constraint) -> Option<P> {
 }
 
 /// The three dimensions a pair of points can state, as `pair_dimension` chooses one: the
-/// length, the run along the view's `x` and the rise along its `y` — the last two an `Ordinate`
-/// with the word (`along: x`, `along: y`) that names the axis.
+/// length, the run along the view's `u` and the rise along its `v` — the last two an `Ordinate`
+/// with the word (`along: u`, `along: v`) that names the axis.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PairDimension {
     Length,
@@ -565,8 +565,8 @@ impl PairDimension {
     pub fn along(self) -> Option<&'static str> {
         match self {
             PairDimension::Length => None,
-            PairDimension::Run => Some("x"),
-            PairDimension::Rise => Some("y"),
+            PairDimension::Run => Some("u"),
+            PairDimension::Rise => Some("v"),
         }
     }
 }
@@ -576,7 +576,7 @@ impl PairDimension {
 /// A dimension line stands off *across* what it measures, so where the number is put is what
 /// says which measurement was meant: the direction from the middle of the pair out to `at`
 /// picks the nearest of the three lines a dimension line could lie along — the pair's own (a
-/// length), the page's x (the run between them) or the page's y (the rise).  Nearest, not a
+/// length), the view's u (the run between them) or its v (the rise).  Nearest, not a
 /// threshold: the borders are the bisectors, so every direction belongs to exactly one region
 /// and the three meet where they should.  A tie goes to the length, which is the dimension the
 /// pair already looked like it wanted.

@@ -879,7 +879,24 @@ fn ordinate_text(kind: CKind, args: &[Option<Arg>]) -> Option<String> {
     let dir = if toward.is_some() { word.clone() } else { ent(2) };
     // a plane's own direction is measured from its origin: the plane is what the origin is of
     let plane = || p.strip_suffix(".origin").unwrap_or(&p).to_string();
-    let of_plane = toward.is_some_and(|t| t.of_plane());
+    // `n` is only ever a plane's; `u` and `v` are where the core read them over the plane's frame
+    // or as a coordinate from its origin, and between two points of a view the view's (#268) —
+    // from a view's own origin the two readings are one ordinate, so either spelling says it.
+    // With no form (a statement nobody has settled yet) the first point being an origin says it
+    let form = kind.form_slot().and_then(get).and_then(|a| match a {
+        Arg::Int(i) => Some(crate::constraints::OrdinateForm::from_int(*i)),
+        _ => None,
+    });
+    let origin = p.ends_with(".origin");
+    let of_plane = match (toward, form) {
+        (Some(Toward::PlaneN), _) => true,
+        (Some(t), Some(f)) if t.of_plane() => {
+            use crate::constraints::OrdinateForm as F;
+            f.of_frame() || (matches!(f, F::CoordU | F::CoordV) && origin)
+        }
+        (Some(t), None) => t.of_plane() && origin,
+        _ => false,
+    };
     Some(match kind {
         CKind::Ordinate => {
             let d = get(3).map(dim_text).unwrap_or_default();

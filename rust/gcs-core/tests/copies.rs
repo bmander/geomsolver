@@ -20,7 +20,7 @@ repeat 3 as i {
 }
 fix((0, 0)) p[0]
 p[1] distance(5) r[2].b
-r[0].b distance(20, along: y) r[1].b
+r[0].b distance(20, along: v) r[1].b
 ";
     let (prog, errs) = parse(&crate::common::front(src));
     assert!(errs.is_empty(), "{errs:?}");

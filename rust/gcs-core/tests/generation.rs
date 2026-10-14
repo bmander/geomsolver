@@ -105,7 +105,7 @@ in std.front {
 k := point hint((25, 5))
 osc := circle(center: k) hint(r: 8)
 flank curvature osc hint(t: 10)
-o distance(26, along: x) k
+o distance(26, along: u) k
 }
 ",
     );
@@ -240,7 +240,7 @@ fn a_circle_osculates_an_envelope() {
     let mut e = build(&format!(
         "{RACK}{RACK_MOTION}cut := envelope(flank, under: rel, from: -25deg, to: 25deg)\n\
          in std.front {{\nk := point hint((25, -5))\nosc := circle(center: k) hint(r: 8)\n}}\n\
-         cut curvature osc hint(t: -10)\no distance(26, along: x) k\n"
+         cut curvature osc hint(t: -10)\no distance(26, along: u) k\n"
     ));
     let r = solve(&mut e.sketch, SolveOpts::default());
     assert!(r.success, "{}", r.message);

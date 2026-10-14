@@ -49,14 +49,14 @@ in std.front {
   t1 := point hint((18, 0.84))
   t2 := point hint((24, 3.03))
   t3 := point hint((24, -3.03))
-  o distance(rp - m, along: x) t0
-  o distance(rp - m, along: x) t1
-  o distance(rp + 2 * m, along: x) t2
-  o distance(rp + 2 * m, along: x) t3
-  o distance(-(hw - m * tan(alpha)), along: y) t0
-  o distance(hw - m * tan(alpha), along: y) t1
-  o distance(hw + 2 * m * tan(alpha), along: y) t2
-  o distance(-(hw + 2 * m * tan(alpha)), along: y) t3
+  o distance(rp - m, along: u) t0
+  o distance(rp - m, along: u) t1
+  o distance(rp + 2 * m, along: u) t2
+  o distance(rp + 2 * m, along: u) t3
+  o distance(-(hw - m * tan(alpha)), along: v) t0
+  o distance(hw - m * tan(alpha), along: v) t1
+  o distance(hw + 2 * m * tan(alpha), along: v) t2
+  o distance(-(hw + 2 * m * tan(alpha)), along: v) t3
 }
 tooth := face(t0, t1, t2, t3, -> close)
 construction rack_tooth := solid(tooth, from: -width - 2mm, to: 2mm)

@@ -9,7 +9,7 @@ use crate::constraints::{CKind, Fixity};
 /// One written operator argument: a selector, entity, owned slot, or dimension.
 #[derive(Clone, Debug)]
 pub enum OpArg {
-    /// `side: -1`, `at: start`, `along: x`, `external: true`
+    /// `side: -1`, `at: start`, `along: u`, `external: true`
     Named(Name, Arg),
     /// the third entity, unlabelled: `a symmetry(l) b` — or every operand of a call, `ccw(a, b, c)`
     Ent(Ref),
@@ -200,7 +200,7 @@ impl Written {
         self.bound().is_some() || crate::constraints::plane_side_word(&self.word.text).is_some()
     }
 
-    /// One selector by name — what `constraints::infix_op` reads to tell `distance … along: x`
+    /// One selector by name — what `constraints::infix_op` reads to tell `distance … along: u`
     /// from a plain one, and a tangency at a named end from the bare pair.
     pub fn sel(&self, name: &str) -> Option<String> {
         self.args.iter().find_map(|a| match a {

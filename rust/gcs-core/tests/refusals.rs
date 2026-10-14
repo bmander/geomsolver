@@ -14,7 +14,7 @@ fn a_negative_magnitude_is_refused_and_a_signed_dimension_is_not() {
     let (_, d) = read("use std\nin std.front {\na := point hint((0, 0))\nb := point hint((40, 0))\na distance(-40) b\n}\n");
     assert!(d.iter().any(|m| m.starts_with("E040") && m.contains("distance is a magnitude")), "{d:?}");
     // the run is signed from the first point to the second, and −40 is a statement
-    let (e, d) = read("use std\nin std.front {\na := point\nb := point hint((-40, 0))\na distance(-40, along: x) b\nfix((0, 0)) a\n}\n");
+    let (e, d) = read("use std\nin std.front {\na := point\nb := point hint((-40, 0))\na distance(-40, along: u) b\nfix((0, 0)) a\n}\n");
     assert!(d.is_empty(), "{d:?}");
     let mut sk = e.sketch;
     assert!(solve(&mut sk, SolveOpts::default()).success);
@@ -270,7 +270,7 @@ component quarter(c: circle, u: Angle) {
          fix(r == 20) c
          p := point hint((0, -20))
          p coincident f
-         p distance(20, along: y) o
+         p distance(20, along: v) o
          }
 ",
     );
@@ -328,10 +328,15 @@ fix((0, 0)) a
     // `along` takes a direction word or a reference, so a name that is neither is the word
     // misspelt: said once, with the words
     let (_, d) = read(&format!("{PAIR}a distance(40, along: z) b\n"));
-    let want = "E040: `along` is a direction — `x`, `y`, `u`, `v`, `n`, `right`, `left`, `up` or \
-                `down`, an axis or a line — not `z`";
+    let want = "E040: `along` is a direction — `u`, `v`, `n`, `right`, `left`, `up` or `down`, an \
+                axis or a line — not `z`";
     assert_eq!(d, vec![want.to_string()]);
-    assert!(read(&format!("{PAIR}a distance(40, along: x) b\n")).1.is_empty());
+    assert!(read(&format!("{PAIR}a distance(40, along: u) b\n")).1.is_empty());
+    // and `x`, a word no longer (#268), is said as what it became: the view's `u`
+    let (_, d) = read(&format!("{PAIR}a distance(40, along: x) b\n"));
+    let want = "E040: `x` is no longer a direction word: a view's own directions are `u` and `v`, \
+                as a plane's are, and `right`, `left`, `up` and `down` say the sign — write `u`";
+    assert_eq!(d, vec![want.to_string()]);
 
     // a word outside the slot's own set: `banana` used to mean `end`, because nothing checked
     const ARC: &str = "\
@@ -477,8 +482,8 @@ fix((0, 0)) a
     assert!((at(&format!("{PAIR}a distance(60, along: left) b\n")).0 + 60.0).abs() < 1e-6);
     assert!((at(&format!("{PAIR}a distance(60, along: right) b\n")).0 - 60.0).abs() < 1e-6);
     assert!((at(&format!("{PAIR}a distance(60, along: down) b\n")).1 + 60.0).abs() < 1e-6);
-    // `along: x` still means what it always meant, so an old document is untouched
-    assert!((at(&format!("{PAIR}a distance(-60, along: x) b\n")).0 + 60.0).abs() < 1e-6);
+    // `along: u`, the view's own axis with no sense said, is signed from the first point
+    assert!((at(&format!("{PAIR}a distance(-60, along: u) b\n")).0 + 60.0).abs() < 1e-6);
 
     // and an angle: `sense: cw` is the minus, and the drawing shows what the statement makes
     let lines = "\
@@ -597,7 +602,7 @@ fn a_word_across_views_with_no_meaning_in_space_is_refused() {
     for (stmt, code, needle) in [
         ("a horizontal b", "E062", "no meaning in space"),
         ("a vertical b", "E062", "no meaning in space"),
-        ("a distance(4, along: y) b", "E062", "no meaning in space"),
+        ("a distance(4, along: v) b", "E062", "no meaning in space"),
         ("la angle(30, sense: cw) lb", "E040", "unsigned"),
         ("la distance(3, side: right) lb", "E040", "no sides"),
     ] {
@@ -606,7 +611,7 @@ fn a_word_across_views_with_no_meaning_in_space_is_refused() {
     }
     // within one view the page's words stand, and across views the ones space has are accepted,
     // the midpoint and the mirror in a line among them
-    for stmt in ["a horizontal la.p1", "a distance(4, along: y) la.p1", "a distance(8) b", "la angle(40) lb",
+    for stmt in ["a horizontal la.p1", "a distance(4, along: v) la.p1", "a distance(8) b", "la angle(40) lb",
                  "a symmetry(lb) la.p1", "a midpoint lb"] {
         let (_, d) = read(&format!("{views}{stmt}\n"));
         assert!(d.is_empty(), "{stmt}: {d:?}");

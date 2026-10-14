@@ -129,8 +129,8 @@ in std.front {
 
 #[test]
 fn a_claim_keeps_its_word() {
-    let e = read(&format!("use std (horizontal)\n{POINTS}  p distance(0, along: y) q\n}}\n")
-        .replace("p distance(0, along: y) q", "p level(up) q\n  claim p horizontal q"));
+    let e = read(&format!("use std (horizontal)\n{POINTS}  p distance(0, along: v) q\n}}\n")
+        .replace("p distance(0, along: v) q", "p level(up) q\n  claim p horizontal q"));
     assert!(said(&e).contains(&"claim p horizontal q".to_string()), "{:?}", said(&e));
 }
 
@@ -430,7 +430,7 @@ use std
 use lib.words (above, Rung, gap, dims)
 w := gap + dims.w + lib.words.dims.h
 {BODY}  q above(d: lib.words.gap) p
-  q distance(w, along: x) p
+  q distance(w, along: u) p
 }}
 "));
     let at = solved_at(&e, &["q"]);

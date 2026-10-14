@@ -8,7 +8,7 @@ in std.front {
   radius(1mm) c
   p := point hint((0.5, 0.8660254037844386))
   p coincident c
-  o distance(reach,along:x) p
+  o distance(reach,along:u) p
   resultfp0 := point
   fix((0, 0)) resultfp0
   resultfp1 := point

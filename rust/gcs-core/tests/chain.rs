@@ -1270,7 +1270,7 @@ p1 distance(80) p2
 horizontal l
 l perpendicular m
 p1 symmetry(m) p3
-p1 distance(20, along: y) p3
+p1 distance(20, along: v) p3
 }
 ",
     );

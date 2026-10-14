@@ -40,12 +40,12 @@ component Peg(f: plane, r: plane, cf: point, cr: point, draw_r: Int) {
   in f {
     a := point hint((cf.x, cf.y + 10))
     cf vertical a
-    cf distance(10, along: y) a
+    cf distance(10, along: v) a
   }
   repeat draw_r {
     in r {
       b := point hint((cr.x + 5, cr.y + 10))
-      cr distance(5, along: x) b
+      cr distance(5, along: u) b
     }
     a project b[0]
   }

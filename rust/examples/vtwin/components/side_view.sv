@@ -61,25 +61,25 @@ component SideView(o: point, dims: group) {
   cyB_bot := point hint((o.x - tcylB / 2, o.y + 5mm))
   cyA_top := point hint((o.x - tcylA / 2, o.y + 60mm))
   cyA_bot := point hint((o.x - tcylA / 2, o.y + 5mm))
-  o distance(-tcylB / 2, along: x) cyB_top
-  o distance(-tcylB / 2, along: x) cyB_bot
-  o distance(-tcylA / 2, along: x) cyA_top
-  o distance(-tcylA / 2, along: x) cyA_bot
+  o distance(-tcylB / 2, along: u) cyB_top
+  o distance(-tcylB / 2, along: u) cyB_bot
+  o distance(-tcylA / 2, along: u) cyA_top
+  o distance(-tcylA / 2, along: u) cyA_bot
   cylB := components.parts.Slab(o, x0: -tcylB, x1: 0mm, top: cyB_top, bottom: cyB_bot)
   cylA := components.parts.Slab(o, x0: -tcylA, x1: 0mm, top: cyA_top, bottom: cyA_bot)
   boB_top := point hint((o.x - dims.zB, o.y + 55mm))
   boB_bot := point hint((o.x - dims.zB, o.y + 8mm))
   boA_top := point hint((o.x - dims.zA, o.y + 55mm))
   boA_bot := point hint((o.x - dims.zA, o.y + 8mm))
-  o distance(-dims.zB, along: x) boB_top
-  o distance(-dims.zB, along: x) boB_bot
-  o distance(-dims.zA, along: x) boA_top
-  o distance(-dims.zA, along: x) boA_bot
+  o distance(-dims.zB, along: u) boB_top
+  o distance(-dims.zB, along: u) boB_bot
+  o distance(-dims.zA, along: u) boA_top
+  o distance(-dims.zA, along: u) boA_bot
   boreB := components.parts.Slab(o, x0: -(dims.fwB + dims.D), x1: -dims.fwB, top: boB_top, bottom: boB_bot)
   boreA := components.parts.Slab(o, x0: -(dims.fwA + dims.D), x1: -dims.fwA, top: boA_top, bottom: boA_bot)
   claim cylB.a distance(tcylB) cylB.b
-  claim boreA.b distance(dims.fwA, along: x) cylA.b
-  claim boreB.b distance(dims.fwB, along: x) cylB.b
+  claim boreA.b distance(dims.fwA, along: u) cylA.b
+  claim boreB.b distance(dims.fwB, along: u) cylB.b
 }
 
 // Open this file to preview the hardware stack. Heights supplied by the assembly's

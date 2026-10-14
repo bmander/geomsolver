@@ -92,7 +92,7 @@ in std.front {
   g0 := point hint(y: -92)
   g1 := point hint((0, -92))
   ground := horizontal line(g0, g1)
-  g0 distance(60, along: x) g1
+  g0 distance(60, along: u) g1
   fix(x == -60) g0
   path tangent ground hint(t: 25)
   path tangent ground hint(t: 315)

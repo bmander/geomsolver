@@ -62,7 +62,7 @@ construction bore := solid(face(bore_c), from: -width - 2mm, to: 2mm)
 // the tip held at the working depth, a pressure angle of 20 degrees's thickness; the root corner
 // free along its line, the other flank its mirror
 t1 offset(dx: rp - m, dy: 0.842856) o
-o distance(rp + 2 * m, along: x) t2
+o distance(rp + 2 * m, along: u) t2
 t1 symmetry(centre_line) t0
 t2 symmetry(centre_line) t3
 tooth := face(t0, t1, rack_flank, t3, -> close)

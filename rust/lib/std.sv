@@ -14,8 +14,8 @@ a vertical b := a level(right) b
 // steps along one of the view's axes, `b right_of(d: 30) a` — `b` 30 to the right of `a`, level
 // with it — `left_of`, `above` and `below`.
 b offset(dx, dy) a := {
-  a distance(dx, along: x) b
-  a distance(dy, along: y) b
+  a distance(dx, along: u) b
+  a distance(dy, along: v) b
 }
 b right_of(d) a := {
   a distance(d, along: right) b

@@ -221,7 +221,7 @@ fn depth_is_a_positive_magnitude_even_when_it_is_an_expression() {
 #[test]
 fn geometry_validation_uses_the_solved_shape_instead_of_its_hint() {
     // p2 starts at p1. Its dimensions move it to the fourth corner before validation runs.
-    let e = read("unit mm\nuse std\nin std.front {\np0 := point\nfix((0, 0)) p0\np1 := point\nfix((10, 0)) p1\np2 := point hint((10, 0))\np3 := point\nfix((0, 10)) p3\np0 distance(10mm, along: x) p2\np0 distance(10mm, along: y) p2\n}\nf := face(p0,p1,p2,p3, -> close)\nresult := solid(f, depth: 5mm)\n");
+    let e = read("unit mm\nuse std\nin std.front {\np0 := point\nfix((0, 0)) p0\np1 := point\nfix((10, 0)) p1\np2 := point hint((10, 0))\np3 := point\nfix((0, 10)) p3\np0 distance(10mm, along: u) p2\np0 distance(10mm, along: v) p2\n}\nf := face(p0,p1,p2,p3, -> close)\nresult := solid(f, depth: 5mm)\n");
     assert!(program::solid_diagnostics(&e.sketch, &e.map).is_empty());
     near(
         report::positions(&e.sketch, &e.map)

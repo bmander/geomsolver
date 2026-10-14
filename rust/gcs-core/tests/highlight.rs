@@ -191,7 +191,7 @@ p := point hint((0, 0))
 q := point hint((60, 0))
 r := point hint((60, 40))
 p distance(80) q
-p distance(20, along: y) r
+p distance(20, along: v) r
 q equal r
 horizontal p
 }

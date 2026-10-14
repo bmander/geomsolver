@@ -31,7 +31,13 @@ came from.
   Str, form: Int)`: `t` an axis, a line, or a plane standing for its normal (only via the word
   `n`); the word (`constraints::ALONG`, `Toward`) keeps the spelling and the sign
   (`right`/`left`/`up`/`down`), and `infer_entity` reads a page word's axis off the view both points
-  are drawn in (none in a planeless sketch: refused).  `form` (`OrdinateForm`: `PageU`, `PageV`,
+  are drawn in (none in a planeless sketch: refused).  **One vocabulary for a view's directions**
+  (#268, Solvent [0.92]): a view is a plane, so `u` and `v` are the plane at hand's — the plane
+  operand's against one, else the shared view's (`Toward::in_view`; `against_plane` tells the two
+  apart once rewritten, and from a view's own origin they are one ordinate) — and `right`/`up`
+  are the same two with the sign said.  `x` and `y` are retired (`constraints::RETIRED`): no longer
+  words, so a scope's `x` is a reference, and one naming nothing is E040 at the key saying what it
+  became (`no_direction`).  `form` (`OrdinateForm`: `PageU`, `PageV`,
   `InView`, `Space`, `CoordU`/`CoordV` — from a view's own origin, the point's one coordinate, the
   radius kernel's one column — and `FrameU`/`FrameV`/`FrameN` — a plane's own word from its origin
   for a point drawn elsewhere, over the plane's columns, so `v` is its frame's `v̂`, square to `u`,
@@ -39,8 +45,8 @@ came from.
   kernel (`Constraint::kernel`; the run and the rise keep their constant-Jacobian kernels,
   `K::OrdinateU`/`V`); `Constraint::reads_space` asks it where `CKind::spatial` would.
   The plane forms (`q distance(d, along: u) P`) are rewritten from `P.origin` along `P.u` in
-  `program::relations::ordinate_operands`, which also refuses a plane as a direction, a word that
-  also names a direction in scope, and a literal zero (E040, naming the level); `a horizontal b`
+  `program::relations::ordinate_operands`, which also refuses a plane as a direction, `n` with no
+  plane operand, a word that also names a direction in scope, and a literal zero (E040, naming the level); `a horizontal b`
   is `std`'s word for `level(up)` (`use std (horizontal)`, §9.9), and the printer
   (`print::ordinate_text`) spells each case back.  `tests/ordinate.rs` is the gate.
 
@@ -58,7 +64,7 @@ came from.
 - **Every constraint is written as a prefix or an infix operator** (Solvent §9.2); `name(args…)`
   is retired.  `radius(25) c`, `p1 distance(80) p2`, `horizontal l`, `fix((0, 0)) p`,
   `a symmetry(l) b` — the word, its one or two operands, and everything else in the parentheses on the word: the
-  number, a selector (`side: -1`, `at: start`, `along: x`), a third entity, a pin (`t == 0.4`).
+  number, a selector (`side: -1`, `at: start`, `along: u`), a third entity, a pin (`t == 0.4`).
   A *seed* for an owned slot stays the trailing `hint(t: 0.4)`, where every seed is.
   **A pin and a seed are one `OpArg::Slot { key: Name, arg: Arg }`** — the word is the only
   difference (as separate variants a pin lost its expression, a key naming no slot filled any

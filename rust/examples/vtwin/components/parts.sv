@@ -30,13 +30,13 @@ component Slab(o: point, x0: Length, x1: Length, top: point, bottom: point) {
   c := point hint((o.x + x1, top.y))
   d := point hint((o.x + x0, top.y))
   (ab := line(a, b)) -> (bc := line(b, c)) -> (cd := line(c, d)) -> (da := line(d, a)) -> close
-  o distance(x0, along: x) a
+  o distance(x0, along: u) a
   bottom horizontal a
-  o distance(x1, along: x) b
+  o distance(x1, along: u) b
   bottom horizontal b
-  o distance(x1, along: x) c
+  o distance(x1, along: u) c
   top horizontal c
-  o distance(x0, along: x) d
+  o distance(x0, along: u) d
   top horizontal d
 }
 
@@ -49,13 +49,13 @@ component Wide(o: point, y0: Length, y1: Length, left: point, right: point) {
   d := point hint((left.x, o.y + y1))
   (ab := line(a, b)) -> (bc := line(b, c)) -> (cd := line(c, d)) -> (da := line(d, a)) -> close
   left vertical a
-  o distance(y0, along: y) a
+  o distance(y0, along: v) a
   right vertical b
-  o distance(y0, along: y) b
+  o distance(y0, along: v) b
   right vertical c
-  o distance(y1, along: y) c
+  o distance(y1, along: v) c
   left vertical d
-  o distance(y1, along: y) d
+  o distance(y1, along: v) d
 }
 
 // A part sheet's datum: the part's axis up the page through `o`.

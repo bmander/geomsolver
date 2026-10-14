@@ -421,7 +421,7 @@ pub unsafe extern "C" fn gcs_callout_drag(h: *mut Sketch, id: i32, x: f64, y: f6
 
 /// Which of the three dimensions between two points a callout dropped at (px, py) states: 0 the
 /// length (`Distance`), 1 the run between them and 2 the rise — an `Ordinate` along the view's
-/// `x` or `y` (`callout::PairDimension`).
+/// `u` or `v` (`callout::PairDimension`).
 #[no_mangle]
 pub unsafe extern "C" fn gcs_dimension_pair_kind(
     ax: f64,

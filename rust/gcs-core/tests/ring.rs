@@ -81,7 +81,7 @@ fn a_ring_states_no_closing_turn() {
 
 #[test]
 fn a_row_on_a_copy_moves_the_representative() {
-    let src = RING.replace("  hub horizontal tip[0]\n", "  tip[1] distance(4, along: x) hub\n");
+    let src = RING.replace("  hub horizontal tip[0]\n", "  tip[1] distance(4, along: u) hub\n");
     let (e, sk) = solved(&src);
     let (h, t1) = (xy(&sk, ent(&e, "hub")), xy(&sk, ent(&e, "tip[1]")));
     assert!((h.0 - t1.0 - 4.0).abs() < 1e-9);

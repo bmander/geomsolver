@@ -719,12 +719,12 @@ function pairToDimension(): { view: SketchView; sk: Sketch; alt: DimAlt } {
 }
 
 /** The three dimensions of a pair, as `commands::pairDim` states them: the length, and the run
- *  and the rise — an ordinate along the view's `x` and `y`. */
+ *  and the rise — an ordinate along the view's `u` and `v`. */
 function pairMaker(a: Point, b: Point): (kind: PairDimension) => Constraint {
   return (kind) => kind === 'length'
     ? C.build('Distance', [a, b, Math.hypot(b.x.value - a.x.value, b.y.value - a.y.value)])
     : C.build('Ordinate', [a, b, null, kind === 'run' ? b.x.value - a.x.value
-      : b.y.value - a.y.value, kind === 'run' ? 'x' : 'y']);
+      : b.y.value - a.y.value, kind === 'run' ? 'u' : 'v']);
 }
 
 test('where the number is put is which dimension it is', () => {

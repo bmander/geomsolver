@@ -189,8 +189,8 @@ unit mm
 use std
 in std.front {{
   m := point hint((12, 3))
-  std.origin distance(12, along: x) m
-  std.origin distance({h}, along: y) m
+  std.origin distance(12, along: u) m
+  std.origin distance({h}, along: v) m
 }}
 top := plane hint(origin: (0, 0, 30))
 fix(dir == (1, 0, 0)) top.u
@@ -537,7 +537,7 @@ fn a_planes_origin_is_drawn_in_it() {
     assert_eq!(settles("std.side.origin distance(15) b"), CKind::Distance);
     assert_eq!(settles("std.front.origin distance(15) b"), CKind::Distance3);
     assert_eq!(
-        settles_as("std.origin distance(10, along: x) a"),
+        settles_as("std.origin distance(10, along: u) a"),
         (CKind::Ordinate, Some(OrdinateForm::PageU))
     );
 }
@@ -551,8 +551,8 @@ fn refused_as(stmt: &str, code: &str, needle: &str, at: &str) {
 #[test]
 fn a_word_with_no_meaning_in_space_is_refused_across_planes() {
     refused_as("a horizontal b", "E062", "no meaning in space", "a horizontal b");
-    refused_as("a distance(5, along: x) b", "E062", "no meaning in space", "a distance(5, along: x) b");
-    refused_as("a distance(5, along: x) s", "E062", "no meaning in space", "a distance(5, along: x) s");
+    refused_as("a distance(5, along: u) b", "E062", "no meaning in space", "a distance(5, along: u) b");
+    refused_as("a distance(5, along: u) s", "E062", "no meaning in space", "a distance(5, along: u) s");
     refused_as("la tangent cb", "E062", "no meaning in space", "la tangent cb");
     // an angle stated as another is a relation of the plane's turns, and has none in space
     refused_as("la angle(la, lb) lb", "E062", "no meaning in space", "la angle(la, lb) lb");
