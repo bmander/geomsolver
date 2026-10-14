@@ -247,7 +247,11 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   when nothing else is made of it (`overview::objects`).  `box3d.ts` draws what `scene3d` says
   stands in space — panes, axes, the object's creases (a `smooth` seam dropped: shading draws the
   round) and the axes — and every object's mesh
-  (`mesh::grouped`), computing no coordinate; sketches on planes are the 2D canvas's, stroked over
+  (`mesh::grouped`), computing no coordinate; an object that does not evaluate is left out, its
+  `mesh()` throwing the core's reason rather than stopping every paint, and **the banner says
+  which and why** in the core's words (`overview::unbuilt`, after a conflict or an over-block;
+  a swept object still being meshed is not one —
+  `an_object_that_does_not_evaluate_is_reported_with_its_reason`); sketches on planes are the 2D canvas's, stroked over
   it.  Its camera is set from `v.orbit` and the eye's camera; the current plane's pane is bold, a
   material write per frame.  **`⇧⌘B` toggles the solid's surfaces** (on by default; off is a
   wireframe).  The flat shaded path (`Part::Shell`, `overview::shell`, `Item.shade`) is what

@@ -286,7 +286,14 @@ export class Box3D {
       // a sagitta a fixed fraction of the solid's own diagonal.  Handed `v.unit` this re-cut the
       // whole boundary on every wheel tick, and finer without bound as you zoomed in: one tick
       // on the V-twin cylinder locked the tab for the better part of a minute
-      const m = mesh(v.sketch, o.index, 0);
+      // an object that does not evaluate (a revolution whose axis crosses its profile) is left
+      // out: thrown here, it stopped every paint before the drawing, and the page with it
+      let m: Mesh;
+      try {
+        m = mesh(v.sketch, o.index, 0);
+      } catch {
+        continue;
+      }
       for (const f of m.faces) {
         const face = faceMesh(m, f);
         this.objects.add(face);

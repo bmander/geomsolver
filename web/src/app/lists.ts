@@ -13,6 +13,7 @@ import {
   expand,
 } from '../core/model.js';
 import { expressions } from '../core/expr.js';
+import { unbuilt } from '../core/mesh.js';
 import {
   banner, bannerSelect, bannerText, clearFocus, clist, componentEl, cpanel, cpanelTitle,
   currentConstraint, focusConstraint, footerEl, measureEl, view,
@@ -283,7 +284,16 @@ export function refresh(): void {
 function refreshBanner(): void {
   const d = view.diagnosis;
   banner.className = '';
-  if (!d || (d.status !== 'conflict' && d.status !== 'over')) return;
+  if (!d || (d.status !== 'conflict' && d.status !== 'over')) {
+    // an object that does not evaluate is left out of the box, and this is where the page says
+    // why, in the core's words — after the constraints, which may be what put it there
+    const gone = unbuilt(view.sketch);
+    if (!gone.length) return;
+    bannerText.textContent = `⚠ Not drawn — ${gone.map((u) => u.reason).join('; ')}`;
+    banner.className = 'unbuilt';
+    bannerSelect.hidden = true;
+    return;
+  }
   const ix = new io.Index(view.sketch);
   if (d.status === 'conflict') {
     bannerText.textContent = d.conflicts?.length

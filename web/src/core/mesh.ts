@@ -34,9 +34,11 @@ export interface Mesh {
 }
 
 /** The mesh of solid `idx`, refined to `unit` — the world length of one screen pixel, or
- *  `REPORT_UNIT` for a file that should not depend on the zoom. */
+ *  `REPORT_UNIT` for a file that should not depend on the zoom.  Throws with the core's reason
+ *  where the solid does not evaluate (a revolution whose axis crosses its profile). */
 export function mesh(sk: Sketch, idx: number, unit: number): Mesh {
-  const faces = takeJson<Face[]>(core().gcs_solid_faces_json(sk.handle, idx, unit));
+  const faces = takeJson<Face[] | null>(core().gcs_solid_faces_json(sk.handle, idx, unit));
+  if (!faces) throw new Error(lastError());
   const n = faces.reduce((a, f) => a + f.count, 0) * 9;
   const positions = readInto(n, (p, cap) => core().gcs_solid_mesh(sk.handle, idx, unit, p, cap));
   const normals = readInto(n, (p, cap) => core().gcs_solid_normals(sk.handle, idx, unit, p, cap));
@@ -72,6 +74,14 @@ function readInto(n: number, fill: (ptr: number, cap: number) => number): Float6
  *  not a part beside it, and this is the rule that says so — the same one the glass box shows. */
 export function objects(sk: Sketch): { name: string; index: number }[] {
   return takeJson<{ name: string; index: number }[]>(core().gcs_solid_objects_json(sk.handle));
+}
+
+/** The objects that are not drawn, and why: each one that does not evaluate, with the core's
+ *  reason (`` `b1`: the revolution axis crosses the profile ``).  A swept object still being
+ *  meshed in a worker is not one. */
+export function unbuilt(sk: Sketch): { solid: number; name: string; reason: string }[] {
+  return takeJson<{ solid: number; name: string; reason: string }[]>(
+    core().gcs_solid_unbuilt_json(sk.handle));
 }
 
 /** **The objects as a binary glTF.**  Every face of every object is a named node, so a viewer's

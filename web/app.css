@@ -138,7 +138,7 @@ label.check { display: inline-flex; align-items: center; gap: 4px; cursor: point
 
 #banner { display: none; align-items: center; gap: 10px; padding: 7px 12px; font-weight: 600; flex: none; }
 #banner.conflict { display: flex; background: var(--danger-bg); color: #8a0000; border-bottom: 1px solid #d62728; }
-#banner.over { display: flex; background: var(--warn-bg); color: var(--warn); border-bottom: 1px solid #e69500; }
+#banner.over, #banner.unbuilt { display: flex; background: var(--warn-bg); color: var(--warn); border-bottom: 1px solid #e69500; }
 #banner-text { flex: 1; min-width: 0; }
 
 #clist li.claim-proved      { color: var(--ok); }
