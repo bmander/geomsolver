@@ -4,6 +4,16 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.98] A design table's figures carry their units.** Three base dimensions join length and angle
+for values: **mass**, **time** and **current** (§3.3), and the units derived from them may suffix
+a literal (§3.3.1): `745.7W`, `48V`, `255rpm`, `0.85T`, `11.9kPa`. `+`, `-` and a comparison
+demand agreement and `*` and `/` derive, as for lengths, so `torque := power / (omega / 1rad)` is
+a torque and `torque + power` is an error. No slot takes them: a figure reaches a constraint only
+divided by its unit (`torque / 1Nm`). Their numbers are SI with lengths in the document's unit,
+so a figure read back over its unit is the same in every document. Through 0.97 a design table's
+electrical and mechanical figures were plain numbers with their units in comments, and nothing
+checked them. (Issue #311.)
+
 **[0.97] A face that runs: the face family.** `duct := solid(Station(guide, …).f over s in (a,
 b))` is the solid a face of an instance sweeps as one of the instance's numbers runs — §6.5's
 curve (`Involute(…).p over u in (…)`) one dimension up (§6.9). The instance is written in place
