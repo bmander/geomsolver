@@ -481,85 +481,7 @@ fn rewrite(
                 fix(r, bad);
             }
         }
-        StmtKind::Decl(d) => {
-            for g in &mut d.children {
-                for kid in g.iter_mut() {
-                    // a seeded slot names nothing, so there is nothing in it to rescope
-                    match kid {
-                        crate::syntax::Kid::Ref(_) | crate::syntax::Kid::Trim { .. } => {
-                            for r in kid.refs_mut() { fix(r, bad); }
-                        }
-                        crate::syntax::Kid::Face { decl: face, .. } => {
-                            // An inline section reads the same scope as its solid. Its loop
-                            // contains references, trims or seeds, never another section.
-                            for k in face.children.iter_mut().flatten() {
-                                for r in k.refs_mut() { fix(r, bad); }
-                            }
-                        }
-                        crate::syntax::Kid::Hint(_) => {}
-                    }
-                }
-            }
-            // a plane an instance gave the statement was written at the instance, in the
-            // caller's scope, and is resolved there — the component's own names are not in
-            // the caller's sight, so they may not take it (#45.4)
-            let from_instance = d.membership.source() == crate::syntax::Source::Instance;
-            if let Some(r) = d.membership.plane_mut() {
-                match (&sc.stamps.plane, from_instance) {
-                    (Some(ip), true) => {
-                        let outer = Scope { owner: ip.owner.clone(), prefixes: ip.prefixes.clone(), closed: ip.closed, ..sc.clone() };
-                        match look.find(r, &outer) {
-                            Some((abs, rest)) => {
-                                r.root = Name { text: abs, span: r.root.span };
-                                r.path =
-                                    rest.into_iter().map(|f| Seg::Field(Name::new(f))).collect();
-                            }
-                            None => {
-                                let (code, why) = look.missing(r, &outer);
-                                bad.push((code, r.span, why))
-                            }
-                        }
-                    }
-                    _ => fix(r, bad),
-                }
-            }
-            for r in d.membership.also_mut() {
-                fix(r, bad);
-            }
-            // a revolution's axis is a line of the body like any other name it writes
-            for r in d.sweep.as_mut().map(|s| s.references_mut()).unwrap_or_default() {
-                fix(r, bad);
-            }
-            if let Some(motion) = d.motion.as_mut() {
-                for r in motion.refs_mut() { fix(r, bad); }
-                // a number that measures the drawing names geometry as a reference does, in
-                // the scope it was written in; the sheet reads it by absolute name
-                for a in motion.args_mut() {
-                    if let crate::syntax::Arg::Dim { text, span } = a {
-                        rescope_measures(text, *span, sc, look, solids, bad);
-                    }
-                }
-            }
-            if let Some(crate::syntax::CurveSpec { target: CurveTarget::Drawn(r), .. }) =
-                d.curve.as_mut()
-            {
-                fix(r, bad);
-            }
-            if let Some(at) = d.seed_at.as_mut() {
-                fix(&mut at.what, bad);
-                for r in at.toward.iter_mut().chain(at.along.iter_mut()) {
-                    fix(r, bad);
-                }
-            }
-            // a direction a plane's axis is seeded along, read off geometry like a place
-            for kid in d.children.iter_mut().flatten() {
-                if let crate::syntax::Kid::Hint(crate::syntax::KidSeed { dir: Some(dir), .. }) = kid {
-                    for r in dir.refs_mut() {
-                        fix(r, bad);
-                    }
-                }
-            }
-        }
+        StmtKind::Decl(d) => rewrite_decl(d, sc, look, solids, bad, &fix),
         // an energy names the curve it is over (#121)
         StmtKind::Minimize(m) => fix(&mut m.curve, bad),
         // a bound on measurements names what it measures, as a motion's numbers do (#183 F3)
@@ -581,56 +503,156 @@ fn rewrite(
                 fix(at, bad);
             }
         }
-        StmtKind::Relation(rel) => {
-            // the operands a defined word was written with, read where it was written (§9.9);
-            // the body holds the same references, so one that names nothing is said there
-            if let Some(w) = rel.word.as_mut() {
-                for r in w.ops.iter_mut() {
-                    if let Some((abs, rest)) = look.find(r, sc) {
-                        r.root = Name { text: abs, span: r.root.span };
-                        r.path = rest.into_iter().map(|f| Seg::Field(Name::new(f))).collect();
-                    }
-                }
-            }
-            // a set's derivative row: its point and the line it is taken along (§6.21)
-            if let Some(a) = rel.along.as_mut() {
-                fix(&mut a.point, bad);
-                if let crate::syntax::AlongBy::Line(l) = &mut a.toward {
-                    fix(l, bad);
-                }
-            }
-            for a in rel.form.canonical_args_mut().iter_mut().flatten() {
-                if let crate::syntax::Arg::Ref(r) = a {
-                    fix(r, bad);
-                }
-            }
-            // Written operators keep their operands outside the registry argument slots.
-            if let Some(w) = rel.form.written_mut() {
-                for r in w.ops.iter_mut() {
-                    fix(r, bad);
-                }
-                // `level(up)`: a direction word in level's parentheses names nothing to rescope
-                let level = w.word.text == "level";
-                for a in w.args.iter_mut() {
-                    match a {
-                        crate::syntax::OpArg::Ent(r) if level && r.direction_word().is_some() => {}
-                        crate::syntax::OpArg::Ent(r) => fix(r, bad),
-                        // a direction an ordinate is measured along, `along: f.axis`; a name that
-                        // is nothing is a direction word misspelt, which the elaborator says
-                        // what `along:` takes about
-                        crate::syntax::OpArg::Named(_, crate::syntax::Arg::Ref(r)) => {
-                            if look.find(r, sc).is_some() {
-                                fix(r, bad)
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-            }
-        }
+        StmtKind::Relation(rel) => rewrite_relation(rel, sc, look, bad, &fix),
         _ => {}
     }
 }
+/// A declaration's references rewritten (`rewrite`): its children, the plane it is drawn in —
+/// one an instance gave it resolved in the caller's scope — its sweep, motion, curve, place and
+/// a seeded axis's direction.
+fn rewrite_decl(
+    d: &mut Decl,
+    sc: &Scope,
+    look: Lookup,
+    solids: &BTreeSet<String>,
+    bad: &mut Vec<(Code, Span, String)>,
+    fix: &impl Fn(&mut Ref, &mut Vec<(Code, Span, String)>),
+) {
+    for g in &mut d.children {
+        for kid in g.iter_mut() {
+            // a seeded slot names nothing, so there is nothing in it to rescope
+            match kid {
+                crate::syntax::Kid::Ref(_) | crate::syntax::Kid::Trim { .. } => {
+                    for r in kid.refs_mut() { fix(r, bad); }
+                }
+                crate::syntax::Kid::Face { decl: face, .. } => {
+                    // An inline section reads the same scope as its solid. Its loop
+                    // contains references, trims or seeds, never another section.
+                    for k in face.children.iter_mut().flatten() {
+                        for r in k.refs_mut() { fix(r, bad); }
+                    }
+                }
+                crate::syntax::Kid::Hint(_) => {}
+            }
+        }
+    }
+    // a plane an instance gave the statement was written at the instance, in the
+    // caller's scope, and is resolved there — the component's own names are not in
+    // the caller's sight, so they may not take it (#45.4)
+    let from_instance = d.membership.source() == crate::syntax::Source::Instance;
+    if let Some(r) = d.membership.plane_mut() {
+        match (&sc.stamps.plane, from_instance) {
+            (Some(ip), true) => {
+                let outer = Scope { owner: ip.owner.clone(), prefixes: ip.prefixes.clone(), closed: ip.closed, ..sc.clone() };
+                match look.find(r, &outer) {
+                    Some((abs, rest)) => {
+                        r.root = Name { text: abs, span: r.root.span };
+                        r.path =
+                            rest.into_iter().map(|f| Seg::Field(Name::new(f))).collect();
+                    }
+                    None => {
+                        let (code, why) = look.missing(r, &outer);
+                        bad.push((code, r.span, why))
+                    }
+                }
+            }
+            _ => fix(r, bad),
+        }
+    }
+    for r in d.membership.also_mut() {
+        fix(r, bad);
+    }
+    // a revolution's axis is a line of the body like any other name it writes
+    for r in d.sweep.as_mut().map(|s| s.references_mut()).unwrap_or_default() {
+        fix(r, bad);
+    }
+    if let Some(motion) = d.motion.as_mut() {
+        for r in motion.refs_mut() { fix(r, bad); }
+        // a number that measures the drawing names geometry as a reference does, in
+        // the scope it was written in; the sheet reads it by absolute name
+        for a in motion.args_mut() {
+            if let crate::syntax::Arg::Dim { text, span } = a {
+                rescope_measures(text, *span, sc, look, solids, bad);
+            }
+        }
+    }
+    if let Some(crate::syntax::CurveSpec { target: CurveTarget::Drawn(r), .. }) =
+        d.curve.as_mut()
+    {
+        fix(r, bad);
+    }
+    if let Some(at) = d.seed_at.as_mut() {
+        fix(&mut at.what, bad);
+        for r in at.toward.iter_mut().chain(at.along.iter_mut()) {
+            fix(r, bad);
+        }
+    }
+    // a direction a plane's axis is seeded along, read off geometry like a place
+    for kid in d.children.iter_mut().flatten() {
+        if let crate::syntax::Kid::Hint(crate::syntax::KidSeed { dir: Some(dir), .. }) = kid {
+            for r in dir.refs_mut() {
+                fix(r, bad);
+            }
+        }
+    }
+}
+
+/// A relation's references rewritten (`rewrite`): a defined word's operands as written, a
+/// derivative row's point and line, and its operands and arguments.
+fn rewrite_relation(
+    rel: &mut crate::syntax::Relation,
+    sc: &Scope,
+    look: Lookup,
+    bad: &mut Vec<(Code, Span, String)>,
+    fix: &impl Fn(&mut Ref, &mut Vec<(Code, Span, String)>),
+) {
+    // the operands a defined word was written with, read where it was written (§9.9);
+    // the body holds the same references, so one that names nothing is said there
+    if let Some(w) = rel.word.as_mut() {
+        for r in w.ops.iter_mut() {
+            if let Some((abs, rest)) = look.find(r, sc) {
+                r.root = Name { text: abs, span: r.root.span };
+                r.path = rest.into_iter().map(|f| Seg::Field(Name::new(f))).collect();
+            }
+        }
+    }
+    // a set's derivative row: its point and the line it is taken along (§6.21)
+    if let Some(a) = rel.along.as_mut() {
+        fix(&mut a.point, bad);
+        if let crate::syntax::AlongBy::Line(l) = &mut a.toward {
+            fix(l, bad);
+        }
+    }
+    for a in rel.form.canonical_args_mut().iter_mut().flatten() {
+        if let crate::syntax::Arg::Ref(r) = a {
+            fix(r, bad);
+        }
+    }
+    // Written operators keep their operands outside the registry argument slots.
+    if let Some(w) = rel.form.written_mut() {
+        for r in w.ops.iter_mut() {
+            fix(r, bad);
+        }
+        // `level(up)`: a direction word in level's parentheses names nothing to rescope
+        let level = w.word.text == "level";
+        for a in w.args.iter_mut() {
+            match a {
+                crate::syntax::OpArg::Ent(r) if level && r.direction_word().is_some() => {}
+                crate::syntax::OpArg::Ent(r) => fix(r, bad),
+                // a direction an ordinate is measured along, `along: f.axis`; a name that
+                // is nothing is a direction word misspelt, which the elaborator says
+                // what `along:` takes about
+                crate::syntax::OpArg::Named(_, crate::syntax::Arg::Ref(r)) => {
+                    if look.find(r, sc).is_some() {
+                        fix(r, bad)
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
 impl<'a> Walk<'a> {
     /// A reference resolved against the names declared so far and `alias`, the walk's aliases
     /// as `alias_table` resolved them.
@@ -864,131 +886,16 @@ impl<'a> Walk<'a> {
         }
         let alias = self.alias_table();
         self.drawn_incidences(&alias);
-        // an operand a use wrote that names nothing is said there, once, and not again at every
-        // place in the body that reads it (#103)
-        let mut failed: BTreeSet<String> = BTreeSet::new();
-        for (key, r, sc) in self.aliases.clone() {
-            let raw = self.look(&alias).raw(&r, &sc);
-            // read past what an interface declares (§8.1 [0.84]), as the argument is written
-            let past = raw.as_ref().is_some_and(|(t, rest)| !rest.is_empty() && self.typed.contains_key(t));
-            match self.found(raw) {
-                Some((target, _)) => {
-                    if let Some(member) = self.look(&alias).private(&r, &sc, &target) {
-                        self.once(Code::E101, r.span, format!("`{}` names private member `{member}`", ref_text(&r)));
-                    }
-                }
-                // a member an interface asks for that its call did not give: said at the call
-                // (`conform`), and not again where the body reads it
-                None if key.rsplit_once('.').is_some_and(|(group, _)| self.typed.contains_key(group)) => {
-                    failed.insert(key);
-                }
-                None if past || self.words.use_aliases.contains(&key) => {
-                    let (code, why) = self.look(&alias).missing(&r, &sc);
-                    self.once(code, r.span, why);
-                    failed.insert(key);
-                }
-                None => {}
-            }
-        }
-        for (key, span) in self.checks.group_fields.clone() {
-            if !alias.contains_key(&key) {
-                self.err(Code::E103, span, format!("group member `{key}` names no value or geometry"));
-            }
-        }
-        // a group formal takes a group or an instance, a set formal a set — a named one or a set
-        // family's instance, which is both (`s.r` of a sphere) — so a set handed where members
-        // are read is said at the call, not as a missing member far from it (#191)
-        for (key, span, ty) in self.checks.groups.clone() {
-            let target = alias.get(&key);
-            if ty == crate::syntax::Ty::Set {
-                if !target.is_some_and(|t| self.sets.made.contains_key(t)) {
-                    self.err(Code::E103, span, format!("`{key}` wants a set"));
-                }
-            } else if !target.is_some_and(|t| self.group_names.contains(t)) {
-                let key = key.trim_end_matches(keys::GIVEN);
-                self.err(Code::E103, span, format!("`{key}` wants a group or layout instance"));
-            }
-        }
-        // what each interface asks of the group or instance its formal was given (§8.1 [0.84]),
-        // where it is one: whatever it is not was said just above
-        for (key, span, shape, actual) in std::mem::take(&mut self.checks.interfaces) {
-            let Some(target) = alias.get(&key).filter(|t| self.group_names.contains(*t)) else {
-                continue;
-            };
-            self.conform(&shape, &target.clone(), &actual, &alias, span);
-        }
-        // what each path formal was given, for the elaborator to judge by its kind (#251)
-        for (key, span, formal) in std::mem::take(&mut self.checks.paths) {
-            if let Some(target) = alias.get(&key) {
-                self.checks.kinds.push(super::KindAsked {
-                    target: target.clone(),
-                    span,
-                    ty: crate::syntax::Ty::Path,
-                    what: formal,
-                    interface: None,
-                });
-            }
-        }
+        let failed = self.check_aliases(&alias);
+        self.check_bindings(&alias);
         // what each instance was given, now that the aliases its arguments made are absolute
         for info in self.instances.iter_mut() {
             for (formal, actual) in info.ents.iter_mut() {
                 *actual = alias.get(&format!("{}{formal}", info.prefix)).cloned();
             }
         }
-        // a dimension reading a number of the geometry (`k.r`, `k.center.x`): the longest name
-        // its path resolves to is a declaration, not an instance, with a field left over.  A
-        // traced body reads one as a column of its curve (§6.5); here the expression graph would
-        // mint it a free variable of its own, and a drawn instance and its own trace would
-        // disagree about what the component says.  Refused, the statement is not emitted
-        let mut refused: Vec<Span> = std::mem::take(&mut self.checks.refused);
-        for (name, span, sc) in std::mem::take(&mut self.checks.dim_reads) {
-            let segs: Vec<&str> = name.split('.').collect();
-            let r = Ref {
-                root: Name { text: segs[0].to_string(), span },
-                path: segs[1..].iter().map(|f| Seg::Field(Name::new(*f))).collect(),
-                span,
-            };
-            // an unknown an instance left — a formal its call did not bind, `u.t.w` — is the one
-            // dotted name a dimension may read that is no declaration's
-            let known =
-                || sc.prefixes.iter().any(|p| self.unknowns.contains_key(&format!("{p}{name}")));
-            match self.look(&alias).raw(&r, &sc) {
-                Some((abs, rest)) if !rest.is_empty() && !self.group_names.contains(&abs) => {
-                    refused.push(span);
-                    self.err(
-                        Code::E103,
-                        span,
-                        format!(
-                            "`{name}` is a number of the geometry, which only a traced body's \
-                             dimension reads (§6.5); here state the relation (`equal`, `radius`) \
-                             or pass a number"
-                        ),
-                    );
-                }
-                // a dotted name nothing declares is a misspelling, as a bare one is: never an
-                // unknown of its own making
-                found if found.as_ref().is_none_or(|(_, rest)| !rest.is_empty()) && !known() => {
-                    refused.push(span);
-                    self.err(Code::E101, span, super::values::undefined(&name));
-                }
-                _ => {}
-            }
-        }
-        // each ring's centre, resolved where the block stands — outside every copy — and the
-        // block, by the prefix its copies' names start with
-        let mut about: BTreeMap<String, String> = BTreeMap::new();
-        for (prefix, r, sc, n, span) in std::mem::take(&mut self.rings.written) {
-            let Some((abs, rest)) = self.look(&alias).find(&r, &sc) else {
-                let (code, why) = self.look(&alias).missing(&r, &sc);
-                self.err(code, r.span, why);
-                continue;
-            };
-            let mut resolved = r.clone();
-            resolved.root = Name { text: abs, span: r.root.span };
-            resolved.path = rest.into_iter().map(|f| Seg::Field(Name::new(f))).collect();
-            about.insert(prefix.clone(), ref_text(&resolved));
-            self.rings.infos.push(RingInfo { prefix, about: resolved, n: n as u32, span });
-        }
+        let refused = self.refuse_dim_reads(&alias);
+        let about = self.resolve_rings(&alias);
         // what a ring's representative reads, judged once every declaration is resolved (E021),
         // and every circle's centre, which a circle about a ring's is judged by
         let mut judged: Vec<(String, Vec<Seen>)> = Vec::new();
@@ -1094,6 +1001,164 @@ impl<'a> Walk<'a> {
                 Err(d) => self.diagnostic(d),
             }
         }
+        self.judge_arguments(&alias, &mut judged);
+        self.normals = normals.into_inner();
+        self.judge_rings(&about, judged, &centres);
+        (flat, alias)
+    }
+
+    /// Every alias a call or a use made, checked once every name is known: one naming a private
+    /// member is E101; one naming nothing is said at the operand — the names said so (or left
+    /// to `conform`) are the ones returned, not said again where a body reads them.
+    fn check_aliases(&mut self, alias: &BTreeMap<String, String>) -> BTreeSet<String> {
+        // an operand a use wrote that names nothing is said there, once, and not again at every
+        // place in the body that reads it (#103)
+        let mut failed: BTreeSet<String> = BTreeSet::new();
+        for (key, r, sc) in self.aliases.clone() {
+            let raw = self.look(alias).raw(&r, &sc);
+            // read past what an interface declares (§8.1 [0.84]), as the argument is written
+            let past = raw.as_ref().is_some_and(|(t, rest)| !rest.is_empty() && self.typed.contains_key(t));
+            match self.found(raw) {
+                Some((target, _)) => {
+                    if let Some(member) = self.look(alias).private(&r, &sc, &target) {
+                        self.once(Code::E101, r.span, format!("`{}` names private member `{member}`", ref_text(&r)));
+                    }
+                }
+                // a member an interface asks for that its call did not give: said at the call
+                // (`conform`), and not again where the body reads it
+                None if key.rsplit_once('.').is_some_and(|(group, _)| self.typed.contains_key(group)) => {
+                    failed.insert(key);
+                }
+                None if past || self.words.use_aliases.contains(&key) => {
+                    let (code, why) = self.look(alias).missing(&r, &sc);
+                    self.once(code, r.span, why);
+                    failed.insert(key);
+                }
+                None => {}
+            }
+        }
+        failed
+    }
+
+    /// What each binding asked of what its alias reaches (`Checks`): a group member naming
+    /// something, a group or a set formal given one, an interface's members, and a path
+    /// formal's kind left for the elaborator (#251).
+    fn check_bindings(&mut self, alias: &BTreeMap<String, String>) {
+        for (key, span) in self.checks.group_fields.clone() {
+            if !alias.contains_key(&key) {
+                self.err(Code::E103, span, format!("group member `{key}` names no value or geometry"));
+            }
+        }
+        // a group formal takes a group or an instance, a set formal a set — a named one or a set
+        // family's instance, which is both (`s.r` of a sphere) — so a set handed where members
+        // are read is said at the call, not as a missing member far from it (#191)
+        for (key, span, ty) in self.checks.groups.clone() {
+            let target = alias.get(&key);
+            if ty == crate::syntax::Ty::Set {
+                if !target.is_some_and(|t| self.sets.made.contains_key(t)) {
+                    self.err(Code::E103, span, format!("`{key}` wants a set"));
+                }
+            } else if !target.is_some_and(|t| self.group_names.contains(t)) {
+                let key = key.trim_end_matches(keys::GIVEN);
+                self.err(Code::E103, span, format!("`{key}` wants a group or layout instance"));
+            }
+        }
+        // what each interface asks of the group or instance its formal was given (§8.1 [0.84]),
+        // where it is one: whatever it is not was said just above
+        for (key, span, shape, actual) in std::mem::take(&mut self.checks.interfaces) {
+            let Some(target) = alias.get(&key).filter(|t| self.group_names.contains(*t)) else {
+                continue;
+            };
+            self.conform(&shape, &target.clone(), &actual, alias, span);
+        }
+        // what each path formal was given, for the elaborator to judge by its kind (#251)
+        for (key, span, formal) in std::mem::take(&mut self.checks.paths) {
+            if let Some(target) = alias.get(&key) {
+                self.checks.kinds.push(super::KindAsked {
+                    target: target.clone(),
+                    span,
+                    ty: crate::syntax::Ty::Path,
+                    what: formal,
+                    interface: None,
+                });
+            }
+        }
+    }
+
+    /// The statements refused (by where each read a name): those a name nothing declares
+    /// refused as their numbers were settled, and those a dimension reading a number of the
+    /// geometry, or a dotted name nothing declares, refuses here.
+    fn refuse_dim_reads(&mut self, alias: &BTreeMap<String, String>) -> Vec<Span> {
+        // a dimension reading a number of the geometry (`k.r`, `k.center.x`): the longest name
+        // its path resolves to is a declaration, not an instance, with a field left over.  A
+        // traced body reads one as a column of its curve (§6.5); here the expression graph would
+        // mint it a free variable of its own, and a drawn instance and its own trace would
+        // disagree about what the component says.  Refused, the statement is not emitted
+        let mut refused: Vec<Span> = std::mem::take(&mut self.checks.refused);
+        for (name, span, sc) in std::mem::take(&mut self.checks.dim_reads) {
+            let segs: Vec<&str> = name.split('.').collect();
+            let r = Ref {
+                root: Name { text: segs[0].to_string(), span },
+                path: segs[1..].iter().map(|f| Seg::Field(Name::new(*f))).collect(),
+                span,
+            };
+            // an unknown an instance left — a formal its call did not bind, `u.t.w` — is the one
+            // dotted name a dimension may read that is no declaration's
+            let known =
+                || sc.prefixes.iter().any(|p| self.unknowns.contains_key(&format!("{p}{name}")));
+            match self.look(alias).raw(&r, &sc) {
+                Some((abs, rest)) if !rest.is_empty() && !self.group_names.contains(&abs) => {
+                    refused.push(span);
+                    self.err(
+                        Code::E103,
+                        span,
+                        format!(
+                            "`{name}` is a number of the geometry, which only a traced body's \
+                             dimension reads (§6.5); here state the relation (`equal`, `radius`) \
+                             or pass a number"
+                        ),
+                    );
+                }
+                // a dotted name nothing declares is a misspelling, as a bare one is: never an
+                // unknown of its own making
+                found if found.as_ref().is_none_or(|(_, rest)| !rest.is_empty()) && !known() => {
+                    refused.push(span);
+                    self.err(Code::E101, span, super::values::undefined(&name));
+                }
+                _ => {}
+            }
+        }
+        refused
+    }
+
+    /// Each ring's centre, resolved (`Rings::infos`), by the prefix its copies' names start
+    /// with.
+    fn resolve_rings(&mut self, alias: &BTreeMap<String, String>) -> BTreeMap<String, String> {
+        // each ring's centre, resolved where the block stands — outside every copy — and the
+        // block, by the prefix its copies' names start with
+        let mut about: BTreeMap<String, String> = BTreeMap::new();
+        for (prefix, r, sc, n, span) in std::mem::take(&mut self.rings.written) {
+            let Some((abs, rest)) = self.look(alias).find(&r, &sc) else {
+                let (code, why) = self.look(alias).missing(&r, &sc);
+                self.err(code, r.span, why);
+                continue;
+            };
+            let mut resolved = r.clone();
+            resolved.root = Name { text: abs, span: r.root.span };
+            resolved.path = rest.into_iter().map(|f| Seg::Field(Name::new(f))).collect();
+            about.insert(prefix.clone(), ref_text(&resolved));
+            self.rings.infos.push(RingInfo { prefix, about: resolved, n: n as u32, span });
+        }
+        about
+    }
+
+    /// What a ring's representative reads through an argument, as written where the call
+    /// stands, added to `judged`.
+    fn judge_arguments(
+        &self,
+        alias: &BTreeMap<String, String>,
+        judged: &mut Vec<(String, Vec<Seen>)>,
+    ) {
         // an instance's entity argument and a use's operand, as written where the call stands:
         // the body reading it reads the name it is bound to, and is not judged again (#226)
         for (key, r, sc) in &self.aliases {
@@ -1102,15 +1167,12 @@ impl<'a> Walk<'a> {
             if !arguments.contains(key) || through_argument(r, sc, arguments) {
                 continue;
             }
-            if let Some((abs, rest)) = self.look(&alias).find(r, sc) {
+            if let Some((abs, rest)) = self.look(alias).find(r, sc) {
                 let abs = std::iter::once(abs).chain(rest).collect::<Vec<_>>().join(".");
                 let seen = Seen { written: ref_text(r), span: r.span, abs };
                 judged.push((ring.prefix.clone(), vec![seen]));
             }
         }
-        self.normals = normals.into_inner();
-        self.judge_rings(&about, judged, &centres);
-        (flat, alias)
     }
 
     /// E021: what a ring's representative reads must be what every turn of it would read alike —
