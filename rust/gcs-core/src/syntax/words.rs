@@ -73,10 +73,11 @@ pub fn equal_kind(left: EntKind, right: EntKind) -> Option<CKind> {
 /// prefix reading later joins the grammar with nothing here to edit; a retired prefix spelling
 /// (`distance` on a line) is still read, to be refused with the word it became.
 pub(super) fn prefix_word(w: &str) -> bool {
-    use crate::constraints::{prefix_op, retired_prefix};
-    [EntKind::Line, EntKind::Circle, EntKind::Arc]
-        .iter()
-        .any(|&k| prefix_op(w, k).is_some() || retired_prefix(w, k).is_some())
+    use crate::constraints::{prefix_op, retired_prefix, step_word};
+    step_word(w)
+        || [EntKind::Line, EntKind::Circle, EntKind::Arc]
+            .iter()
+            .any(|&k| prefix_op(w, k).is_some() || retired_prefix(w, k).is_some())
 }
 
 /// The identifier at a token position, shared by parsing and highlighting.

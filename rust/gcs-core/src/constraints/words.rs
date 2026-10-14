@@ -522,7 +522,16 @@ pub fn builtin_word(word: &str, fixity: Fixity) -> bool {
         }
         out
     });
-    table.contains(&(word, fixity))
+    table.contains(&(word, fixity)) || (fixity == Fixity::Prefix && step_word(word))
+}
+
+/// **A word the flattener expands where it stands** (`flatten::steps`, #330), rather than one a
+/// `CKind` or a file's definition settles: `step`, which says where a line's end stands — from
+/// its start (`du`, `dv`) or from a frame's origin (`u`, `v`) — and keeps the ordinate it does
+/// not name.  It stands before a line and takes its parameters by label, as a defined word does,
+/// and it is no operator: a formal may still be called `step`.
+pub fn step_word(w: &str) -> bool {
+    w == "step"
 }
 
 /// The same for a word standing *before* its one operand.  **`length` measures one thing**, of
