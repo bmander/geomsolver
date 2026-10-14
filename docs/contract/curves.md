@@ -254,3 +254,10 @@ empty) and its face is refused, never walked
   ordinates and by a screw, a point and a tangent held to it; a torus's point, normal and the
   meridian's osculating circle against closed forms; every contact against finite differences;
   a fold reported.
+  **Two design constraints it is built to** (#326): a traced surface is held to and read, not a
+  face of a solid — exporting one is making it a wall of #243 L2's `Surface::Family` (whose
+  `d1`/`newton` it would answer through `traced::read` and `traced::nearest`), not a second
+  surface type; and the variable table puts the running formals first and reads the body along
+  any direction of them, so a body that reads a rate along one (#339 D2, D4: the drawn instance an
+  initial value, the march by the method of lines over the other) is one more column of the same
+  table and one more order of the same series.
