@@ -5,7 +5,8 @@
 //! the line pushes square to itself, so the rope leaves the line at the angle it met it (the law
 //! of reflection) and, against a level line, its two arcs are catenaries of one directrix.
 
-use crate::catenary::{bisect, read, samples, solved, ROPE};
+use crate::catenary::{bisect, samples, ROPE};
+use crate::common::lenient::{read, solved};
 use gcs_core::constraints::CKind;
 use gcs_core::extremal::{self, shoot, Ends, Lagrangian, Stop};
 use gcs_core::model::{EntKind, EntRef};

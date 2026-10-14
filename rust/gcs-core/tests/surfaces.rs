@@ -1,4 +1,5 @@
-use gcs_core::{diagnose,io,model::{EntKind,EntRef},program,solid::RevolvedSurface,solve,syntax};
+use gcs_core::{io,model::{EntKind,EntRef},solid::RevolvedSurface,syntax};
+use crate::common::parsed::{build, determined as solved};
 
 const MODEL: &str = "\
 unit mm
@@ -17,20 +18,6 @@ radius(1mm) meridian
 ring := solid(face(meridian), about: ax)
 wall := surface(ring, meridian)
 ";
-
-fn build(src: &str) -> program::Elaborated {
-    let (p,errors) = crate::common::parse(src);
-    assert!(errors.is_empty(),"{errors:?}");
-    program::elaborate(&p)
-}
-
-fn solved(src: &str) -> program::Elaborated {
-    let mut e = build(src);
-    assert!(e.ok(),"{:?}",e.diags);
-    assert!(solve::solve(&mut e.sketch,Default::default()).success);
-    assert_eq!(diagnose::diagnose(&mut e.sketch,Default::default()).dof,0);
-    e
-}
 
 #[test]
 fn generating_profile_bounds_enclose_entire_circular_intervals_and_snapshot_derivatives() {

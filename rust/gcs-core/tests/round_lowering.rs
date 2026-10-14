@@ -9,19 +9,11 @@ use gcs_core::brep::topo::Brep;
 use gcs_core::program::Elaborated;
 use gcs_core::solid::lowering::{self, Piece};
 use gcs_core::solid::MaterialField;
-use gcs_core::solve::{solve, SolveOpts};
 use std::f64::consts::PI;
 
-use crate::common::{ent, read};
+use crate::common::{close, ent, text::solved};
 use crate::common::rounds::{beside_cylinder, root_ring, square_run};
 use crate::common::rounds::meridian::{knob_neck, knob_rounded};
-
-fn solved(src: &str) -> Elaborated {
-    let mut e = read(src);
-    let r = solve(&mut e.sketch, SolveOpts::default());
-    assert!(r.success, "{}\n{src}", r.message);
-    e
-}
 
 /// A block 40 × 24 × 12 drawn on the front plane (x, z), its near face at y = 0, standing 12 deep.
 const BLOCK: &str = "unit mm\nuse std (round, chamfer)\nin std.front {\n\
@@ -51,10 +43,6 @@ fn kinds(b: &Brep) -> std::collections::BTreeMap<&'static str, usize> {
         *out.entry(f.surface.kind()).or_default() += 1;
     }
     out
-}
-
-fn close(got: f64, want: f64) {
-    assert!((got - want).abs() <= 1e-9 * want, "{got} against {want}");
 }
 
 /// The regions of a drawing an entry lowers, and those it lowers to nothing.

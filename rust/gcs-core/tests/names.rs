@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 use gcs_core::modules::link;
 use gcs_core::program::{elaborate, Elaborated};
 use gcs_core::solve::{solve, SolveOpts};
-use crate::common::parse;
+use crate::common::{lenient::read, parse};
 
 const BASE: &str = "\
 use std (horizontal, vertical)
@@ -24,14 +24,6 @@ a horizontal b
 b vertical c
 }
 ";
-
-fn read(src: &str) -> (Elaborated, Vec<String>) {
-    let (prog, errs) = parse(src);
-    let e = elaborate(&prog);
-    let mut all: Vec<String> = errs.iter().map(|x| format!("syntax: {}", x.message)).collect();
-    all.extend(e.diags.iter().map(|d| format!("{}: {}", d.code.as_str(), d.message)));
-    (e, all)
-}
 
 fn solved(e: Elaborated) -> gcs_core::model::Sketch {
     let mut sk = e.sketch;

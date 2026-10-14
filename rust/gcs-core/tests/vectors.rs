@@ -4,8 +4,7 @@
 //! held whole is as long as the vector it holds, so `(0, 0)` cannot leave a point in space's
 //! height free unsaid.  A named vector (`o := (10mm, 20mm)`) is a group of its components.
 
-use crate::common::{ent, read, refused};
-use gcs_core::edit;
+use crate::common::{ent, gestures::reconciled, read, refused};
 use gcs_core::model::EntRef;
 use gcs_core::program::Elaborated;
 use gcs_core::syntax::{highlight, Tint};
@@ -14,13 +13,6 @@ use gcs_core::syntax::{highlight, Tint};
 fn own(e: &Elaborated, r: EntRef) -> Vec<(f64, bool)> {
     let sk = &e.sketch;
     sk.own_params(r).iter().map(|&p| (sk.params[p as usize].value, sk.params[p as usize].fixed)).collect()
-}
-
-fn reconciled(e: &mut Elaborated) -> edit::Edit {
-    let sk = std::mem::take(&mut e.sketch);
-    let out = edit::reconcile(e, &sk);
-    e.sketch = sk;
-    out
 }
 
 #[test]

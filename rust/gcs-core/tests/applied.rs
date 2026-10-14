@@ -3,32 +3,14 @@
 //! by one routine (`flatten::apply`).  So a word's body may hold several statements and the
 //! declarations they need, a set may be written where it is used, a word reads inside a set and a
 //! set inside a word, and a tangency to a set linearises through the words its body writes.
-use gcs_core::io;
 use gcs_core::model::Sketch;
 use gcs_core::program::Elaborated;
-use gcs_core::solve::{solve, SolveOpts};
 use gcs_core::space::{cross, dot, norm, sub};
 
-use crate::common::{ends, ent, off_line, read, refused, unit};
-
-fn solved(e: &Elaborated) -> Sketch {
-    let mut sk = e.sketch.clone();
-    let r = solve(&mut sk, SolveOpts::default());
-    assert!(r.success, "{}", r.message);
-    sk
-}
+use crate::common::{ends, ent, off_line, read, refused, said, solved, unit};
 
 fn at(sk: &Sketch, e: &Elaborated, n: &str) -> [f64; 3] {
     sk.world_point(ent(e, n).i())
-}
-
-/// Each statement as `describe` reads it back, in the document's names.
-fn said(e: &Elaborated) -> Vec<String> {
-    e.sketch
-        .user_constraints()
-        .iter()
-        .map(|c| io::describe_with(c, &|r| e.map.name_of(r).cloned()))
-        .collect()
 }
 
 /// Two lines in the front view, one held.

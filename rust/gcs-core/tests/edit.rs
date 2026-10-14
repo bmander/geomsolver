@@ -12,7 +12,7 @@ use gcs_core::style::Classes;
 use gcs_core::model::{EntKind, EntRef};
 use gcs_core::program::elaborate;
 use gcs_core::solve::{solve, SolveOpts};
-use crate::common::{parse, STD_POINTS};
+use crate::common::{gestures::reconciled, parse, parsed::prog_of, STD_POINTS};
 
 /// A little document with everything an edit could wreck: a comment at the top, a comment inside,
 /// blank lines, alignment, and a trailing note after the last statement.
@@ -38,21 +38,6 @@ fix((0, 0)) a
 
 // and this trailing note, too
 ";
-
-/// `reconcile` applies itself to the elaboration, which is the point of it — so a test that wants
-/// both the text and the elaboration afterwards has to hand it the whole thing.
-fn reconciled(e: &mut gcs_core::program::Elaborated) -> edit::Edit {
-    let sk = std::mem::take(&mut e.sketch);
-    let out = edit::reconcile(e, &sk);
-    e.sketch = sk;
-    out
-}
-
-fn prog_of(src: &str) -> gcs_core::syntax::Program {
-    let (p, errs) = parse(src);
-    assert!(errs.is_empty(), "{:?}", errs.iter().map(|e| &e.message).collect::<Vec<_>>());
-    p
-}
 
 /// **The whole point.**  Solve, write the coordinates back, and the only characters that changed
 /// are the numbers inside `at (…)`.

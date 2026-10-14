@@ -1,4 +1,5 @@
 use gcs_core::{io,model::{EntKind,MotionDef},motion,program,solve,syntax};
+use crate::common::parsed::{build, solved};
 
 mod bounds;
 mod contact;
@@ -20,17 +21,6 @@ other := line(o,x)
 }
 ";
 
-fn build(src: &str) -> program::Elaborated {
-    let (p,errors) = crate::common::parse(src);
-    assert!(errors.is_empty(),"{errors:?}");
-    program::elaborate(&p)
-}
-fn solved(src: &str) -> program::Elaborated {
-    let mut e = build(src);
-    assert!(e.ok(),"{:?}",e.diags);
-    assert!(solve::solve(&mut e.sketch,Default::default()).success);
-    e
-}
 fn near(a: [f64;3], b: [f64;3], tol: f64) {
     for i in 0..3 { assert!((a[i]-b[i]).abs() < tol,"{a:?} != {b:?}"); }
 }

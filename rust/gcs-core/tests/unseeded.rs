@@ -8,21 +8,8 @@
 //! declaring form of a port takes the clause every other declaration takes.
 
 use gcs_core::edit;
-use gcs_core::program::{elaborate, Elaborated};
 use gcs_core::solve::{solve, SolveOpts};
-use crate::common::parse;
-
-fn read(src: &str) -> Elaborated {
-    let (prog, errs) = parse(src);
-    assert!(errs.is_empty(), "does not parse: {errs:?}");
-    let e = elaborate(&prog);
-    assert!(
-        e.ok(),
-        "does not elaborate: {:?}",
-        e.errors().map(|d| (d.code.as_str(), d.message.clone())).collect::<Vec<_>>()
-    );
-    e
-}
+use crate::common::{parse, parsed::read};
 
 fn dist(a: (f64, f64), b: (f64, f64)) -> f64 {
     (a.0 - b.0).hypot(a.1 - b.1)

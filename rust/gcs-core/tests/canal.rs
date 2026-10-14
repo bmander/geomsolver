@@ -7,17 +7,9 @@
 use gcs_core::brep::{export, props, sweep::Say};
 use gcs_core::brep::topo::Brep;
 use gcs_core::program::Elaborated;
-use gcs_core::solve::{solve, SolveOpts};
 use std::f64::consts::{PI, TAU};
 
-use crate::common::{ent, read};
-
-fn solved(src: &str) -> Elaborated {
-    let mut e = read(src);
-    let r = solve(&mut e.sketch, SolveOpts::default());
-    assert!(r.success, "{}\n{src}", r.message);
-    e
-}
+use crate::common::{close, ent, text::solved};
 
 /// Solid `name` of `e` built exactly, written as STEP and as STL by this kernel (each read back and
 /// checked as `solventc` checks it), and its B-rep — a static solid's, no sweep's field.
@@ -31,10 +23,6 @@ fn exported(e: &Elaborated, name: &str) -> Brep {
     gcs_core::mesh::stl_shells(&stl).unwrap();
     assert!(e.sketch.exact_solid(s).is_ok(), "{name}: the app's exact solid");
     exact.solid
-}
-
-fn close(got: f64, want: f64) {
-    assert!((got - want).abs() <= 1e-9 * want, "{got} against {want}");
 }
 
 /// The tube about an arc or a helix of `length`, of radius `r`, with the ball at each end: the disc

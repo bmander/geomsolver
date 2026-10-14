@@ -4,17 +4,9 @@
 use gcs_core::mesh;
 use gcs_core::program::Elaborated;
 use gcs_core::solid::MaterialField;
-use gcs_core::solve::{solve, SolveOpts};
 use std::f64::consts::PI;
 
-use crate::common::{ent, read, refused};
-
-fn solved(src: &str) -> Elaborated {
-    let mut e = read(src);
-    let r = solve(&mut e.sketch, SolveOpts::default());
-    assert!(r.success, "{}\n{src}", r.message);
-    e
-}
+use crate::common::{ent, refused, text::solved};
 
 /// The three readings of the solid the document calls `name`: its exact volume, its faceted
 /// volume, and its field's sign at each of `points` (negative inside).

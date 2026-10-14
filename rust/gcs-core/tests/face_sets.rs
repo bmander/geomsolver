@@ -8,7 +8,7 @@ use gcs_core::program::Elaborated;
 use gcs_core::solve::{solve, SolveOpts};
 use gcs_core::space::{cross, dot};
 
-use crate::common::{ent, read, refused};
+use crate::common::{at, ent, read, refused};
 
 /// A 40 × 30 rectangle on the front plane (normal −y), a corner held at the origin.
 const PROFILE: &str = "use std\n\
@@ -23,10 +23,6 @@ fn solved(src: &str) -> Elaborated {
     let r = solve(&mut e.sketch, SolveOpts::default());
     assert!(r.success, "{}", r.message);
     e
-}
-
-fn at(e: &Elaborated, n: &str) -> [f64; 3] {
-    e.sketch.world_point(ent(e, n).i())
 }
 
 /// A point put on a cap stands at the cap's ordinate along the profile's normal (−y here):

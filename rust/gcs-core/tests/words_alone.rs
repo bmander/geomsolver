@@ -10,11 +10,7 @@
 use gcs_core::program::Elaborated;
 use gcs_core::solve::solve;
 
-use crate::common::{ent, read};
-
-fn at(e: &Elaborated, name: &str) -> [f64; 3] {
-    e.sketch.world_point(ent(e, name).i())
-}
+use crate::common::{at, read};
 
 /// Solved to the accuracy the recorded numbers are taken at.
 fn solved(src: &str) -> Elaborated {

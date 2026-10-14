@@ -6,17 +6,9 @@
 //! where it grows — and a drawn point stands at its foot on the set.  Held to closed forms.
 use gcs_core::program::Elaborated;
 use gcs_core::solid::MaterialField;
-use gcs_core::solve::{solve, SolveOpts};
 use std::f64::consts::PI;
 
-use crate::common::{ent, read, refused};
-
-fn solved(src: &str) -> Elaborated {
-    let mut e = read(src);
-    let r = solve(&mut e.sketch, SolveOpts::default());
-    assert!(r.success, "{}\n{src}", r.message);
-    e
-}
+use crate::common::{ent, refused, text::solved};
 
 /// A point held at the origin, the axis up from it, a plane at height 10 square to it, a cone
 /// of half 30° opening up from the origin and a cylinder of radius 6 about the axis.

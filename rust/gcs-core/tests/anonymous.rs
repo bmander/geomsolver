@@ -13,39 +13,18 @@
 use gcs_core::constraints::{CKind, Constraint};
 use gcs_core::edit::{self, Kind};
 use gcs_core::model::EntRef;
-use gcs_core::program::{elaborate, Elaborated};
-use crate::common::{parse, STD_POINTS};
+use gcs_core::program::elaborate;
+use crate::common::{gestures::reconciled, parse, parsed::read, STD_POINTS};
 
 /// `src` drawn in the front plane.
 fn front(src: &str) -> String {
     format!("use std\nin std.front {{\n{src}}}\n")
 }
 
-fn read(src: &str) -> Elaborated {
-    let (prog, errs) = parse(src);
-    assert!(errs.is_empty(), "does not parse: {errs:?}");
-    let e = elaborate(&prog);
-    assert!(
-        e.ok(),
-        "does not elaborate: {:?}",
-        e.errors().map(|d| d.message.clone()).collect::<Vec<_>>()
-    );
-    e
-}
-
 fn refuses(src: &str, needle: &str) {
     let (_, errs) = parse(src);
     let msgs: Vec<String> = errs.into_iter().map(|e| e.message).collect();
     assert!(msgs.iter().any(|m| m.contains(needle)), "expected `{needle}`\n{src}\n{msgs:?}");
-}
-
-/// `reconcile` applies itself to the elaboration, so a test that wants both the text and the
-/// elaboration afterwards hands it the whole thing — `tests/edit.rs`'s device.
-fn reconciled(e: &mut Elaborated) -> edit::Edit {
-    let sk = std::mem::take(&mut e.sketch);
-    let out = edit::reconcile(e, &sk);
-    e.sketch = sk;
-    out
 }
 
 /// The name is optional independently of the children, the clauses and the class — each written

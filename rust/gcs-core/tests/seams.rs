@@ -1,5 +1,6 @@
-use gcs_core::{diagnose,envelope::Error,io,model::EntKind,program,
-    seam::{EnvelopeSeam,SeamIntersectionOptions,SeamTolerance},solve,syntax};
+use gcs_core::{envelope::Error,io,model::EntKind,program,
+    seam::{EnvelopeSeam,SeamIntersectionOptions,SeamTolerance},syntax};
+use crate::common::parsed::{build, determined as solved};
 
 mod boundary;
 mod surfaces;
@@ -44,18 +45,6 @@ shared := seam(first_envelope,second_envelope)
 ";
 
 fn tolerance() -> SeamTolerance { SeamTolerance {position:1e-9,normal:1e-9,axis:1e-10} }
-fn build(src: &str) -> program::Elaborated {
-    let (p,errors) = crate::common::parse(src);
-    assert!(errors.is_empty(),"{errors:?}");
-    program::elaborate(&p)
-}
-fn solved(src: &str) -> program::Elaborated {
-    let mut e = build(src);
-    assert!(e.ok(),"{:?}",e.diags);
-    assert!(solve::solve(&mut e.sketch,Default::default()).success);
-    assert_eq!(diagnose::diagnose(&mut e.sketch,Default::default()).dof,0);
-    e
-}
 fn options(seam: &EnvelopeSeam) -> SeamIntersectionOptions {
     let [_,v,roll] = seam.domain();
     SeamIntersectionOptions {bounds:[v,roll],parameter_scale:[1.;2],

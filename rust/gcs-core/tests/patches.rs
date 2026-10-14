@@ -1,5 +1,6 @@
-use gcs_core::{diagnose,envelope::{Error,IntersectionOptions},io,model::{EntKind,EntRef},
-    patch::TrimmedPatch,program,solve,syntax};
+use gcs_core::{envelope::{Error,IntersectionOptions},io,model::{EntKind,EntRef},
+    patch::TrimmedPatch,syntax};
+use crate::common::parsed::{build, determined as solved};
 
 const SOURCE: &str = "\
 unit mm
@@ -39,20 +40,6 @@ outer := Sphere(o, size: 3.5mm)
 bounded := patch(wall,inside: outer.body,outside: inner.body)
 tooth := patch(generated,inside: outer.body,outside: inner.body)
 ";
-
-fn build(src: &str) -> program::Elaborated {
-    let (p,errors) = crate::common::parse(src);
-    assert!(errors.is_empty(),"{errors:?}");
-    program::elaborate(&p)
-}
-
-fn solved(src: &str) -> program::Elaborated {
-    let mut e = build(src);
-    assert!(e.ok(),"{:?}",e.diags);
-    assert!(solve::solve(&mut e.sketch,Default::default()).success);
-    assert_eq!(diagnose::diagnose(&mut e.sketch,Default::default()).dof,0);
-    e
-}
 
 #[test]
 fn patches_select_material_sides_and_enforce_the_source_locus() {

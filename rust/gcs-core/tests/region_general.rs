@@ -1,18 +1,9 @@
 //! **A region in general position** (§6.21, #183): a region solid whose terms share no axis is read
 //! point by point by the field (`solid::field::RegionField`), its boundary the field's surface,
 //! where one whose terms share an axis is still its meridian turned.  Held to a closed form.
-use gcs_core::program::Elaborated;
 use gcs_core::solid::MaterialField;
-use gcs_core::solve::{solve, SolveOpts};
 
-use crate::common::{ent, read};
-
-fn solved(src: &str) -> Elaborated {
-    let mut e = read(src);
-    let r = solve(&mut e.sketch, SolveOpts::default());
-    assert!(r.success, "{}\n{src}", r.message);
-    e
-}
+use crate::common::{ent, text::solved};
 
 /// The origin, and lines from it along x and z.
 const AXES: &str = "unit mm\nuse std\nc := point hint((0, 0, 0))\nfix((0, 0, 0)) c\n\

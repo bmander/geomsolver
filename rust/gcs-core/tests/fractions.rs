@@ -11,7 +11,7 @@ use gcs_core::diagnose::{diagnose, DiagnoseOptions};
 use gcs_core::program::{elaborate, Elaborated};
 use gcs_core::solve::{solve, SolveOpts};
 
-use crate::common::{build, ent, parse};
+use crate::common::{at, build, parse};
 
 /// `src` elaborated and solved, or the test fails saying why.
 fn solved(src: &str) -> Elaborated {
@@ -19,11 +19,6 @@ fn solved(src: &str) -> Elaborated {
     let r = solve(&mut e.sketch, SolveOpts::default());
     assert!(r.success, "{}\n{src}", r.message);
     e
-}
-
-/// Where the point the document calls `n` stands in space.
-fn at(e: &Elaborated, n: &str) -> [f64; 3] {
-    e.sketch.world_point(ent(e, n).i())
 }
 
 fn near(got: [f64; 3], want: [f64; 3], what: &str) {

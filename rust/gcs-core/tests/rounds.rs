@@ -4,19 +4,11 @@
 //! words that make solids — evaluated by the field, and held to X2's closed forms.
 use gcs_core::program::Elaborated;
 use gcs_core::solid::MaterialField;
-use gcs_core::solve::{solve, SolveOpts};
 use std::f64::consts::PI;
 
-use crate::common::{ent, read};
+use crate::common::{ent, text::solved};
 use crate::common::rounds::{mitred, root_ring, rounded_box};
 use crate::region_general::field_volume;
-
-fn solved(src: &str) -> Elaborated {
-    let mut e = read(src);
-    let r = solve(&mut e.sketch, SolveOpts::default());
-    assert!(r.success, "{}\n{src}", r.message);
-    e
-}
 
 /// A block 40 × 24 × 12 drawn on the front plane (x, z), its near face at y = 0, standing 12 deep.
 const BLOCK: &str = "unit mm\nuse std (round, chamfer)\nin std.front {\n\

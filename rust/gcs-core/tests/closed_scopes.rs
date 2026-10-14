@@ -1,16 +1,6 @@
 //! Components are closed over their arguments; groups bundle numbers and geometry aliases.
 use gcs_core::{library, program, solve, syntax, diagnose};
-fn build(src: &str) -> program::Elaborated {
-    let (p, errors, linked) = library::parse_linked(src);
-    assert!(errors.is_empty() && linked.is_empty(), "{errors:?} {linked:?}");
-    program::elaborate(&p)
-}
-fn solved(src: &str) -> program::Elaborated {
-    let mut e = build(src);
-    assert!(e.ok(), "{:?}", e.diags);
-    assert!(solve::solve(&mut e.sketch, Default::default()).success);
-    e
-}
+use crate::common::linked::{build, solved};
 #[test]
 fn groups_pass_units_and_geometry_without_copying_it() {
     let mut e = solved("\
