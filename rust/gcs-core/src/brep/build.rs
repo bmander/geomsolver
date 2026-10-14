@@ -7,7 +7,6 @@ use crate::fmath::Det;
 use super::geom::{tolerance,BSpline,Blend,Carry,Curve,Frame,Rigid,Surface,Uv,V};
 use std::sync::Arc;
 use super::topo::{reverse_loop,Brep,Coedge,EdgeCurve,Face,Pcurve};
-use super::vec3;
 use crate::json::Json;
 use crate::space::{add,cross,distance,dot,norm,scale,sub,unit};
 
@@ -44,41 +43,40 @@ impl Profile {
     /// The name of loop `l`'s edge `k`, or nothing.
     pub fn name(&self,l: usize,k: usize) -> String { self.names.get(l).and_then(|n| n.get(k)).cloned().unwrap_or_default() }
     /// From a recipe's `profile` (millimetres).
-    pub fn from_json(j: &Json) -> Result<Profile,String> {
-        fn field<'a>(j: &'a Json,k: &str) -> Result<&'a Json,String> { super::field(j,k,"profile") }
+    pub fn from_json(j: &Json) -> Result<Profile,String> { Profile::of(&super::recipe::Section::read(j)?) }
+    /// A recipe's profile as this kernel reads it (millimetres): each arc's angles as the span it
+    /// turns through counter-clockwise, its normal made unit.
+    pub fn of(s: &super::recipe::Section) -> Result<Profile,String> {
+        use super::recipe::Stroke;
         let mut loops = Vec::new();
         let mut names = Vec::new();
-        for l in field(j,"loops")?.arr() {
+        for l in &s.loops {
             let mut edges = Vec::new();
-            names.push(l.arr().iter().map(|e| e.get("name").map_or(String::new(),|n| n.as_str().to_string())).collect());
-            for e in l.arr() {
-                edges.push(match field(e,"kind")?.as_str() {
-                    "line" => ProfileEdge::Line {a:vec3(field(e,"start")?),b:vec3(field(e,"end")?)},
-                    "circle" => {
-                        let frame = Frame::new(vec3(field(e,"center")?),vec3(field(e,"normal")?),vec3(field(e,"x_dir")?));
-                        let span = e.get("angles").map(|a| {
-                            let (a0,a1) = (a.arr()[0].as_f64(),a.arr()[1].as_f64());
+            names.push(l.iter().map(|e| e.name.clone()).collect());
+            for e in l {
+                edges.push(match &e.shape {
+                    &Stroke::Line {start,end} => ProfileEdge::Line {a:start,b:end},
+                    &Stroke::Circle {center,normal,x_dir,radius,angles} => {
+                        let frame = Frame::new(center,normal,x_dir);
+                        let span = angles.map(|[a0,a1]| {
                             let sweep = (a1-a0).rem_euclid(TAU);
                             [a0,a0+if sweep == 0. { TAU } else { sweep }]
                         });
-                        ProfileEdge::Arc {frame,r:field(e,"radius")?.as_f64(),span}
+                        ProfileEdge::Arc {frame,r:radius,span}
                     }
-                    "bspline" => {
-                        let poles = field(e,"poles")?.arr().iter().map(vec3).collect();
-                        let knots = field(e,"knots")?.arr().iter().map(|k| k.as_f64()).collect();
-                        let degree = field(e,"degree")?.as_f64() as usize;
-                        let b = match e.get("weights") {
-                            Some(w) => BSpline::rational(degree,knots,poles,w.arr().iter().map(|x| x.as_f64()).collect()),
+                    Stroke::BSpline {degree,knots,poles,weights} => {
+                        let (degree,knots,poles) = (*degree,knots.clone(),poles.clone());
+                        let b = match weights {
+                            Some(w) => BSpline::rational(degree,knots,poles,w.clone()),
                             None => BSpline::new(degree,knots,poles),
                         };
                         ProfileEdge::Spline(Arc::new(b.map_err(|m| format!("profile: {m}"))?))
                     }
-                    k => return Err(format!("profile: an edge of kind `{k}`")),
                 });
             }
             loops.push(edges);
         }
-        Ok(Profile {origin:vec3(field(j,"origin")?),normal:unit(vec3(field(j,"normal")?)),loops,names})
+        Ok(Profile {origin:s.origin,normal:unit(s.normal),loops,names})
     }
 
     /// As a recipe writes it (`from_json`'s inverse), its lengths times `scale`: lines, arcs and

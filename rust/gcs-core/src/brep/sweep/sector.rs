@@ -13,7 +13,7 @@ use crate::brep::props::volume;
 use crate::brep::query::interior;
 use crate::brep::topo::Brep;
 use crate::envelope::Motion;
-use crate::json::Json;
+use crate::brep::recipe::{Node,Recipe,Stroke};
 use crate::model::Sketch;
 use crate::solid::cad::{self,StaticRecipe};
 use crate::solid::contracts;
@@ -40,22 +40,17 @@ pub struct Sector { pub piece: Brep,pub origin: V,pub axis: V,pub count: usize,p
 
 /// The centres of the spheres the recipe's revolutions make where they are on the axis: the
 /// slicings a bevel gear's end spheres suggest (mm).
-pub fn sphere_centres(recipe: &Json,frame: Frame,size: f64) -> Vec<V> {
+pub fn sphere_centres(recipe: &Recipe,frame: Frame,size: f64) -> Vec<V> {
     let on_axis = |p: V| { let d = sub(p,frame.origin); norm(sub(d,scale(frame.axis,dot(d,frame.axis)))) <= 1e-6*size };
     let mut centres: Vec<V> = Vec::new();
-    for node in recipe.get("nodes").map(Json::arr).unwrap_or_default() {
-        if node.get("kind").map(Json::as_str) != Some("revolve") { continue }
-        let (Some(o),Some(a)) = (node.get("origin"),node.get("axis")) else { continue };
-        let [o,a]: [V;2] = [o,a].map(|j| std::array::from_fn(|i| j.arr()[i].as_f64()));
+    for named in &recipe.nodes {
+        let &Node::Revolve {ref profile,origin: o,axis: a,..} = &named.node else { continue };
         // a circle about a point of the revolution's own axis turns into a sphere about it
         let on_revolution = |p: V| norm(cross(sub(p,o),a)) <= 1e-6*size*norm(a);
-        let Some(profile) = node.get("profile") else { continue };
-        for edges in profile.get("loops").map(Json::arr).unwrap_or_default() { for edge in edges.arr() {
-            if edge.get("kind").map(Json::as_str) != Some("circle") { continue }
-            let Some(c) = edge.get("center") else { continue };
-            let c: V = std::array::from_fn(|i| c.arr()[i].as_f64());
+        for edge in profile.loops.iter().flatten() {
+            let Stroke::Circle {center: c,..} = edge.shape else { continue };
             if on_revolution(c) && on_axis(c) && !centres.iter().any(|&k| distance(k,c) <= 1e-6*size) { centres.push(c); }
-        } }
+        }
     }
     centres
 }
@@ -73,15 +68,15 @@ fn keyed(mut sheet: Brep,key: &str) -> Brep {
 
 /// The blank of `recipe` as its meridian region turned once from the half-plane along `seam`, or
 /// by its Booleans turned about the axis till its seams lie there.
-fn blank_from(recipe: &Json,origin: V,axis: V,seam: V) -> Result<Brep,String> {
-    match crate::brep::recipe::meridian(recipe,seam)? {
+fn blank_from(recipe: &Recipe,origin: V,axis: V,seam: V) -> Result<Brep,String> {
+    match recipe.meridian(seam)? {
         Ok((b,o,a)) => {
             if norm(cross(a,axis)) > 1e-9 || norm(cross(sub(o,origin),axis)) > 1e-6 {
                 return Err("the blank's meridian is about another line than the indexing's".into())
             }
             Ok(b)
         }
-        Err(_) => turned_to(&crate::brep::recipe::build(recipe)?,origin,axis,seam),
+        Err(_) => turned_to(&recipe.build()?,origin,axis,seam),
     }
 }
 
@@ -190,7 +185,7 @@ pub fn premises(sk: &Sketch,body: usize,recipe: &StaticRecipe,blank: &Brep,field
     let cuts: Vec<Vec<V>> = sheets.iter().enumerate()
         .map(|(k,s)| s.sheet.points.iter().chain(&s.sheet.withheld).map(|&p| mm(poses[k][0],p)).filter(|&p| inside(p)).collect()).collect();
     let all: Vec<V> = cuts.iter().flatten().copied().collect();
-    let mut candidates: Vec<Slices> = sphere_centres(&recipe.recipe,frame,size).into_iter().map(Slices::Spheres).collect();
+    let mut candidates: Vec<Slices> = sphere_centres(&Recipe::read(&recipe.recipe)?,frame,size).into_iter().map(Slices::Spheres).collect();
     candidates.push(Slices::Planes);
     let chosen = Boundary::choose(&indexing,&all,&candidates)?;
     let fit = sheets.iter().map(|s| s.error).fold(0.,f64::max);
@@ -246,7 +241,7 @@ pub fn premises(sk: &Sketch,body: usize,recipe: &StaticRecipe,blank: &Brep,field
 pub fn construct(recipe: &StaticRecipe,distinct: &[usize],premises: Premises,say: &Say) -> Result<Sector,String> {
     let Premises {frame,n,pitch,across,side,other,tools,body_field} = premises;
     let clock = crate::clock::Instant::now();
-    let turned = blank_from(&recipe.recipe,frame.origin,frame.axis,frame.radial(across))?;
+    let turned = blank_from(&Recipe::read(&recipe.recipe)?,frame.origin,frame.axis,frame.radial(across))?;
     let whole = volume(&turned);
     let halves = split(&turned,&side.joined(&other),SPLIT_TOL)?;
     let volumes: Vec<f64> = halves.iter().map(volume).collect();
@@ -298,13 +293,14 @@ pub fn whole(sk: &Sketch,body: usize,recipe: &StaticRecipe,blank: &Brep,distinct
     }
     // a solid of revolution made again with its seams opposite the cuts, as a sector's blank is: a
     // sheet across a face's seam is a split this kernel does not finish
-    let blank = match crate::brep::recipe::meridian(&recipe.recipe,[1.,0.,0.])? {
+    let read = Recipe::read(&recipe.recipe)?;
+    let blank = match read.meridian([1.,0.,0.])? {
         Ok((_,origin,axis)) => {
             let centres: Vec<V> = tools.iter().map(|t| { let (a,b) = t.bounds(); std::array::from_fn(|k| (a[k]+b[k])/2.) }).collect();
             let c: V = std::array::from_fn(|k| centres.iter().map(|p| p[k]).sum::<f64>()/centres.len().max(1) as f64);
             let a = scale(axis,1./norm(axis));
             let r = sub(sub(c,origin),scale(a,dot(sub(c,origin),a)));
-            if norm(r) > 1e-9*blank.size() { blank_from(&recipe.recipe,origin,a,scale(r,-1./norm(r)))? } else { blank.clone() }
+            if norm(r) > 1e-9*blank.size() { blank_from(&read,origin,a,scale(r,-1./norm(r)))? } else { blank.clone() }
         }
         Err(_) => blank.clone(),
     };

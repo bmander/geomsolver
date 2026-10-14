@@ -68,11 +68,12 @@ fn read(sk: &Sketch, swept: usize) -> Option<Result<Canal, String>> {
     let turn = family.turning()?;
     let scale_mm = super::cad::millimetres(sk).ok()?;
     // the tool: one node, a ball (millimetres back to the model's units)
-    let recipe = super::cad::recipe(sk, *source as usize).ok()?;
-    let [n] = recipe.get("nodes")?.arr() else { return None };
-    let (c, r) = crate::brep::recipe::ball_of(n, 1e-9 * scale_mm.max(1.0)).ok()??;
+    let recipe = crate::brep::recipe::Recipe::read(&super::cad::recipe(sk, *source as usize).ok()?).ok()?;
+    let [n] = &recipe.nodes[..] else { return None };
+    let (c, r) = n.node.ball(1e-9 * scale_mm.max(1.0)).ok()??;
     let (c, r) = (c.map(|x| x / scale_mm), r / scale_mm);
-    let profile = crate::brep::build::Profile::from_json(n.get("profile")?).ok()?;
+    let crate::brep::recipe::Node::Revolve { profile, .. } = &n.node else { return None };
+    let profile = crate::brep::build::Profile::of(profile).ok()?;
     let face = (0..profile.loops.len()).flat_map(|l| (0..profile.loops[l].len()).map(move |k| (l, k)))
         .find(|&(l, k)| matches!(profile.loops[l][k], crate::brep::build::ProfileEdge::Arc { .. }))
         .map_or(String::new(), |(l, k)| profile.name(l, k));

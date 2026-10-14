@@ -3,12 +3,14 @@
 #[allow(unused_imports)]
 use crate::fmath::Det;
 use super::boolean::{combined,Op};
-use super::build::{cut_before,drafted,kept,kept_by_solid,loft,prism,revolve,Guide,Profile};
+use super::build::{cut_before,drafted,kept,kept_by_solid,loft,prism,revolve,Profile};
 use super::geom::{tolerance,tolerance_over,widen,Rigid,V,EMPTY};
 use super::topo::Brep;
 use crate::json::Json;
-use super::vec3;
 use std::collections::BTreeMap;
+
+mod node;
+pub use node::{Body,Corner,Edge,Kept,Lowered,Named,Node,Recipe,Rolled,Run,Section,Stroke};
 
 /// Between a face's solid and its own name while a recipe is built (`build`, `meridian`,
 /// `solid::exact`): the solid half keyed as `document::operand_primitives` keys it, the face half
@@ -23,9 +25,6 @@ pub fn named_parts(name: &str) -> (&str,&str) { name.split_once(NAMED).unwrap_or
 /// A face's name under its solid's key (`NAMED`), the inverse of `named_parts`.
 pub fn name_under(key: &str,face: &str) -> String { format!("{key}{NAMED}{face}") }
 
-/// A recipe's field `k`, or an error naming it.
-pub(super) fn field<'a>(j: &'a Json,k: &str) -> Result<&'a Json,String> { super::field(j,k,"recipe") }
-
 /// One node of a recipe built from the nodes before it; `Err` names what this kernel does not
 /// build yet.
 pub fn node(n: &Json,built: &BTreeMap<i64,Brep>) -> Result<Brep,String> { node_named(n,built,&BTreeMap::new(),0.) }
@@ -34,50 +33,44 @@ pub fn node(n: &Json,built: &BTreeMap<i64,Brep>) -> Result<Brep,String> { node_n
 /// the rounding a recipe read off coordinates far from its origin carries (a part solved at 1e9 mm
 /// is placed to 1e-7 mm, wherever it is built about).
 pub fn node_named(n: &Json,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64,String>,floor: f64) -> Result<Brep,String> {
-    match field(n,"kind")?.as_str() {
-        "prism" => drafted(&Profile::from_json(field(n,"profile")?)?,field(n,"from")?.as_f64(),field(n,"to")?.as_f64(),
-            n.get("draft").map_or(0.,Json::as_f64)),
-        "revolve" => revolve(&Profile::from_json(field(n,"profile")?)?,vec3(field(n,"origin")?),
-            vec3(field(n,"axis")?),field(n,"angle")?.as_f64()),
-        "loft" => loft_node(n),
-        "placed" => {
-            let m: Vec<f64> = field(n,"matrix")?.arr().iter().map(Json::as_f64).collect();
-            let source = built.get(&field(n,"source")?.as_i64()).ok_or("recipe: `source` not built before its user")?;
-            Ok(source.moved(&Rigid::from_rows(&m)))
-        }
-        "through" => through_node(n,built),
-        "body" => body(n,built,built_names,floor),
-        // a ball swept by a turn or a screw (`solid::canal`, #238): the tube about its centre's path
-        "canal" => super::build::canal(vec3(field(n,"centre")?),field(n,"radius")?.as_f64(),vec3(field(n,"origin")?),
-            vec3(field(n,"axis")?),field(n,"angle")?.as_f64(),field(n,"advance")?.as_f64(),field(n,"face")?.as_str()),
-        "region" => region_node(n,built,built_names,floor),
-        "lowered" => lowered_node(n,built,built_names,floor),
-        k => Err(format!("recipe: a node of kind `{k}`")),
-    }
+    Node::read(n)?.built(built,built_names,floor)
 }
 
-/// A `loft` node: its profile carried along its guide (a line or an arc), to its `end` where it
-/// has one.
-fn loft_node(n: &Json) -> Result<Brep,String> {
-    let g = field(n,"guide")?;
-    let guide = match field(g,"kind")?.as_str() {
-        "line" => Guide::Line {delta:vec3(field(g,"delta")?)},
-        "arc" => Guide::Arc {center:vec3(field(g,"center")?),axis:vec3(field(g,"axis")?),angle:field(g,"angle")?.as_f64()},
-        k => return Err(format!("recipe: a guide of kind `{k}`")),
-    };
-    let end = n.get("end").map(Profile::from_json).transpose()?;
-    loft(&Profile::from_json(field(n,"profile")?)?,end.as_ref(),&guide)
+impl Node {
+    /// The node built from the nodes before it (`built`, named by `built_names` in what it says),
+    /// its Booleans' tolerance never under `floor` (mm) (`node_named`).
+    pub fn built(&self,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64,String>,floor: f64) -> Result<Brep,String> {
+        match self {
+            Node::Prism {profile,from,to,draft} => drafted(&Profile::of(profile)?,*from,*to,draft.unwrap_or(0.)),
+            Node::Revolve {profile,origin,axis,angle} => revolve(&Profile::of(profile)?,*origin,*axis,*angle),
+            Node::Loft {profile,end,guide} => {
+                let end = end.as_ref().map(Profile::of).transpose()?;
+                loft(&Profile::of(profile)?,end.as_ref(),guide)
+            }
+            Node::Placed {source,matrix} => {
+                let source = built.get(source).ok_or("recipe: `source` not built before its user")?;
+                Ok(source.moved(&Rigid::from_rows(matrix)))
+            }
+            Node::Through {profile,sources} => through_node(profile,sources,built),
+            Node::Body(b) => body(b,built,built_names,floor),
+            // a ball swept by a turn or a screw (`solid::canal`, #238): the tube about its centre's path
+            Node::Canal {centre,radius,origin,axis,angle,advance,face} =>
+                super::build::canal(*centre,*radius,*origin,*axis,*angle,*advance,face),
+            Node::Region(pieces) => region_node(pieces,built,built_names,floor),
+            Node::Lowered(l) => lowered_node(l,built,built_names,floor),
+        }
+    }
 }
 
 /// A `through` node: a prism spanning its sources' material along the profile's normal (their
 /// `bounds` enclose it, issue #59), padded as the native host pads it.
-fn through_node(n: &Json,built: &BTreeMap<i64,Brep>) -> Result<Brep,String> {
-    let profile = Profile::from_json(field(n,"profile")?)?;
-    let mut sources = EMPTY;
-    for s in field(n,"sources")?.arr() {
-        widen(&mut sources,built.get(&s.as_i64()).ok_or("recipe: a `through` source not built before it")?.bounds());
+fn through_node(profile: &Section,sources: &[i64],built: &BTreeMap<i64,Brep>) -> Result<Brep,String> {
+    let profile = Profile::of(profile)?;
+    let mut bounds = EMPTY;
+    for s in sources {
+        widen(&mut bounds,built.get(s).ok_or("recipe: a `through` source not built before it")?.bounds());
     }
-    let (lo,hi) = sources;
+    let (lo,hi) = bounds;
     let (nrm,o) = (crate::space::scale(profile.normal,1./crate::space::norm(profile.normal)),profile.origin);
     let (mut from,mut to,mut diagonal) = (0.,0.,0.);
     for k in 0..3 {
@@ -91,15 +84,14 @@ fn through_node(n: &Json,built: &BTreeMap<i64,Brep>) -> Result<Brep,String> {
 
 /// A `region` node, a region in general position (`solid::bounded`, #238): the common of the
 /// primitives it keeps within, less those it keeps outside, each bounded past its material.
-fn region_node(n: &Json,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64,String>,floor: f64) -> Result<Brep,String> {
+fn region_node(pieces: &[Kept],built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64,String>,floor: f64) -> Result<Brep,String> {
     let mut solid: Option<Brep> = None;
-    for piece in field(n,"pieces")?.arr() {
-        let b = node_named(piece,built,built_names,floor)?;
-        let keep = matches!(field(piece,"keep")?,Json::Bool(true));
+    for piece in pieces {
+        let b = piece.node.built(built,built_names,floor)?;
         solid = Some(match solid {
-            None if keep => b,
+            None if piece.keep => b,
             None => return Err("recipe: a region's first piece is one it keeps within".into()),
-            Some(s) => combined(&s,&b,if keep { Op::Common } else { Op::Cut },floor)?,
+            Some(s) => combined(&s,&b,if piece.keep { Op::Common } else { Op::Cut },floor)?,
         });
     }
     solid.ok_or_else(|| "recipe: a region of no pieces".to_string())
@@ -109,67 +101,55 @@ fn region_node(n: &Json,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64,St
 /// revolution, each corner the ball's patch built where it stands, each rolled run the ball rolled
 /// along it; those joined (a run ending in the section a corner's cell begins in, meeting nowhere
 /// else) glued there, never intersected; the chains unioned (`chained`).
-fn lowered_node(n: &Json,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64,String>,floor: f64) -> Result<Brep,String> {
-    let mut pieces = field(n,"pieces")?.arr().iter().map(|piece| lowered_run(piece,built,built_names,floor))
-        .collect::<Result<Vec<_>,_>>()?;
-    for c in field(n,"corners")?.arr() {
-        let (vertex,centre,radius) = (vec3(field(c,"vertex")?),vec3(field(c,"centre")?),field(c,"radius")?.as_f64());
-        let surfaces = field(c,"faces")?.arr().iter().map(surface_of).collect::<Result<Vec<_>,_>>()?;
-        let [a,b,s] = &surfaces[..] else { return Err("recipe: a corner stands between three faces".into()) };
+fn lowered_node(n: &Lowered,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64,String>,floor: f64) -> Result<Brep,String> {
+    let mut pieces = n.pieces.iter().map(|piece| lowered_run(piece,built,built_names,floor)).collect::<Result<Vec<_>,_>>()?;
+    for c in &n.corners {
+        let (vertex,centre,radius) = (c.vertex,c.centre,c.radius);
+        let [a,b,s] = &c.faces[..] else { return Err("recipe: a corner stands between three faces".into()) };
         let tol = tolerance_over(1.+radius+crate::space::norm(vertex),floor);
         pieces.push(super::fillet::corner_among(vertex,centre,radius,[a,b,s],tol).map_err(|e| format!("a corner: {e}"))?);
     }
     // a ball rolled along a traced run (#194): against the body the region rounds as its terms
     // but the late ones make it (the stratum), each piece the material it adds or takes
-    let rolled = n.get("rolled").map_or(&[][..],|r| r.arr());
     let first_rolled = pieces.len();
-    if !rolled.is_empty() {
-        let stratum = body(field(n,"stratum")?,built,built_names,floor)?;
+    if !n.rolled.is_empty() {
+        let stratum = body(n.stratum.as_ref().ok_or("recipe: no `stratum`")?,built,built_names,floor)?;
         let tol = tolerance_over(stratum.size(),floor);
-        for k in rolled {
+        for k in &n.rolled {
             pieces.push(rolled_run(k,&stratum,tol,floor)?);
         }
     }
-    let joins: Vec<[usize;2]> = field(n,"joins")?.arr().iter()
-        .map(|j| { let j = j.arr(); [j[0].as_i64() as usize,j[1].as_i64() as usize] }).collect();
-    chained(&pieces,&joins,first_rolled,floor)
+    chained(&pieces,&n.joins,first_rolled,floor)
 }
 
 /// One rolled run of a `lowered` node: the ball rolled along it against the `stratum`, or a
 /// chamfer's flat cut along it instead (#218's 6), cut at the section of each corner standing at
 /// an end of its run, which takes the rest (#218's 7).
-fn rolled_run(k: &Json,stratum: &Brep,tol: f64,floor: f64) -> Result<Brep,String> {
-    let (at,r) = (vec3(field(k,"at")?),field(k,"radius")?.as_f64());
-    let mut piece = match k.get("legs") {
-        Some(legs) => {
-            let legs = legs.arr();
-            let ([la,lb],on) = ([legs[0].as_f64(),legs[1].as_f64()],vec3(field(k,"on")?));
-            super::fillet::flat_along(stratum,at,[la,lb],Some(on),tol).map_err(|e| format!("a flat along a run: {e}"))?
-        }
-        None => super::fillet::roll(stratum,at,r,tol).map_err(|e| format!("a rolled round: {e}"))?.piece,
+fn rolled_run(k: &Rolled,stratum: &Brep,tol: f64,floor: f64) -> Result<Brep,String> {
+    let mut piece = match k.flat {
+        Some((legs,on)) => super::fillet::flat_along(stratum,k.at,legs,Some(on),tol).map_err(|e| format!("a flat along a run: {e}"))?,
+        None => super::fillet::roll(stratum,k.at,k.radius,tol).map_err(|e| format!("a rolled round: {e}"))?.piece,
     };
-    for c in k.get("cuts").map_or(&[][..],|c| c.arr()) {
-        piece = cut_before(&piece,vec3(field(c,"at")?),vec3(field(c,"normal")?),field(c,"reach")?.as_f64(),floor)
-            .map_err(|e| format!("a rolled round cut at a corner: {e}"))?;
+    for &(at,normal,reach) in &k.cuts {
+        piece = cut_before(&piece,at,normal,reach,floor).map_err(|e| format!("a rolled round cut at a corner: {e}"))?;
     }
     Ok(piece)
 }
 
 /// One run of a `lowered` node, a prism or a revolution, cut off where its edge ends: at a slant
 /// (`within`), or carried on into a curved face (`kept`).
-fn lowered_run(piece: &Json,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64,String>,floor: f64) -> Result<Brep,String> {
-    let mut b = node_named(piece,built,built_names,floor)?;
+fn lowered_run(piece: &Run,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64,String>,floor: f64) -> Result<Brep,String> {
+    let mut b = piece.node.built(built,built_names,floor)?;
     // a run cut off at a slant where its edge ends (a run-out): kept behind each face's
     // plane (through `at`, its `normal` away from the run)
-    for h in piece.get("within").map_or(&[][..],|w| w.arr()) {
-        let keep = vec3(field(h,"normal")?).map(|x| -x);
-        b = kept(&b,vec3(field(h,"at")?),keep,floor).map_err(|e| format!("a run cut off at its end: {e}"))?;
+    for &(at,normal) in &piece.within {
+        let keep = normal.map(|x| -x);
+        b = kept(&b,at,keep,floor).map_err(|e| format!("a run cut off at its end: {e}"))?;
     }
     // one carried on into a curved face it ends on (#218): kept within or outside the
     // cylinder or the ball its surface bounds
-    for k in piece.get("kept").map_or(&[][..],|w| w.arr()) {
-        let inside = matches!(field(k,"inside")?,Json::Bool(true));
-        b = kept_by_solid(&b,&surface_of(k)?,inside,floor).map_err(|e| format!("a run cut off at a curved end: {e}"))?;
+    for (surface,inside) in &piece.kept {
+        b = kept_by_solid(&b,surface,*inside,floor).map_err(|e| format!("a run cut off at a curved end: {e}"))?;
     }
     Ok(b)
 }
@@ -226,15 +206,14 @@ fn beside(a: &Brep,b: &Brep,floor: f64) -> Result<Brep,String> {
 /// A body: the stock, plus everything on it, minus everything that cuts it, within everything that
 /// bounds it — in that order, as the native host combines them; then what reads the faces that
 /// makes (a round's fills, then its cuts: the stratum, #183 F6), where `n` lists them.
-fn body(n: &Json,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64,String>,floor: f64) -> Result<Brep,String> {
-    let mut solid = built.get(&field(n,"stock")?.as_i64()).ok_or("recipe: `stock` not built before its user")?.clone();
-    for (key,op,written) in [("on",Op::Union,true),("cut",Op::Cut,true),("bound",Op::Common,true),
-        ("on_late",Op::Union,false),("cut_late",Op::Cut,false)] {
-        // the late sets only where a body has readers of its faces
-        let list = match n.get(key) { Some(l) => l.arr(),None if !written => continue,None => field(n,key)?.arr() };
+fn body(n: &Body,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64,String>,floor: f64) -> Result<Brep,String> {
+    let mut solid = built.get(&n.stock).ok_or("recipe: `stock` not built before its user")?.clone();
+    for ((key,list),op) in n.sets().into_iter().zip([Op::Union,Op::Cut,Op::Common,Op::Union,Op::Cut]) {
+        // the late sets (fills, then cuts) are what reads the faces the rest make
+        let written = !key.ends_with("_late");
         for x in list {
-            let operand = built.get(&x.as_i64()).ok_or(format!("recipe: an operand not built before its body"))?;
-            let name = built_names.get(&x.as_i64()).cloned().unwrap_or_default();
+            let operand = built.get(x).ok_or(format!("recipe: an operand not built before its body"))?;
+            let name = built_names.get(x).cloned().unwrap_or_default();
             solid = combined(&solid,operand,op,floor).map_err(|e| {
                 // **what the stratum leaves**: each round or chamfer is read off the body as the
                 // terms before them leave it, never off another, so two of separate statements
@@ -251,70 +230,53 @@ fn body(n: &Json,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64,String>,f
     Ok(solid)
 }
 
-/// A lowered piece's end face or a corner's face, as `solid::lowering` writes it (millimetres): a
-/// plane through `origin` square to `normal`, a cylinder of `radius` about the line through `origin`
-/// along `axis`, a sphere of `radius` about `origin`, or a cone about the line through `origin`
-/// along `axis` of `radius` there, its `half` angle (radians).
-fn surface_of(j: &Json) -> Result<super::geom::Surface,String> {
-    use super::geom::{Frame,Surface};
-    let radius = || field(j,"radius").map(Json::as_f64);
-    Ok(match field(j,"kind")?.as_str() {
-        "plane" => Surface::Plane(Frame::about(vec3(field(j,"origin")?),vec3(field(j,"normal")?))),
-        "cylinder" => Surface::Cylinder(Frame::about(vec3(field(j,"origin")?),vec3(field(j,"axis")?)),radius()?),
-        "cone" => Surface::Cone(Frame::about(vec3(field(j,"origin")?),vec3(field(j,"axis")?)),radius()?,field(j,"half")?.as_f64()),
-        "sphere" => Surface::Sphere(Frame::about(vec3(field(j,"origin")?),[0.,0.,1.]),radius()?),
-        k => return Err(format!("recipe: a face on a surface of kind `{k}`")),
-    })
-}
-
 /// The recipe's root, built, each face named by its node (`NAMED`): a primitive's by the node's
 /// name, a placement's copies by the placement and the route to the primitive in its source —
 /// the walk `solid::document::operand_primitives` makes over the solids, made over the nodes, so
 /// the names are `solid::exact`'s.
-pub fn build(recipe: &Json) -> Result<Brep,String> {
-    let mut built = BTreeMap::new();
-    // each node's primitives, keyed as its faces are named, and their routes from it
-    let mut routes: BTreeMap<i64,(String,BTreeMap<String,String>)> = BTreeMap::new();
-    for n in field(recipe,"nodes")?.arr() {
-        let name = n.get("name").map_or("",|j| j.as_str());
-        let mut b = node(n,&built).map_err(|e| format!("`{name}`: {e}"))?;
-        let mut own = BTreeMap::new();
-        match field(n,"kind")?.as_str() {
-            "lowered" => {}
-            "body" => for key in ["stock","on","cut","bound","on_late","cut_late"] {
-                let ids = match n.get(key) { Some(Json::Arr(l)) => l.iter().map(Json::as_i64).collect(),
-                    Some(x) => vec![x.as_i64()], None => vec![] };
-                for id in ids {
-                    let Some((operand,paths)) = routes.get(&id) else { continue };
+pub fn build(recipe: &Json) -> Result<Brep,String> { Recipe::read(recipe)?.build() }
+
+impl Recipe {
+    /// The root, built (`build`).
+    pub fn build(&self) -> Result<Brep,String> {
+        let mut built = BTreeMap::new();
+        // each node's primitives, keyed as its faces are named, and their routes from it
+        let mut routes: BTreeMap<i64,(String,BTreeMap<String,String>)> = BTreeMap::new();
+        for Named {id,name,node} in &self.nodes {
+            let mut b = node.built(&built,&BTreeMap::new(),0.).map_err(|e| format!("`{name}`: {e}"))?;
+            let mut own = BTreeMap::new();
+            match node {
+                Node::Lowered(_) => {}
+                Node::Body(body) => for id in std::iter::once(&body.stock).chain(body.sets().into_iter().flat_map(|(_,l)| l)) {
+                    let Some((operand,paths)) = routes.get(id) else { continue };
                     let short = operand.rsplit('.').next().unwrap_or(operand);
                     for (primitive,path) in paths {
                         // a swept solid's own sweep, split off as its stock, adds no step
                         let route = if operand == name { path.clone() } else { placed_name(short,path) };
                         own.entry(primitive.clone()).or_insert(route);
                     }
+                },
+                Node::Placed {source,..} => {
+                    let source = routes.get(source).map(|(_,p)| p);
+                    for f in &mut b.faces {
+                        let (of,face) = named_parts(&f.name);
+                        let path = source.and_then(|p| p.get(of)).map_or(of,String::as_str);
+                        f.name = name_under(&placed_name(name,path),face);
+                    }
+                    for path in source.into_iter().flat_map(|p| p.values()) {
+                        own.insert(placed_name(name,path),path.clone());
+                    }
                 }
-            },
-            "placed" => {
-                let source = routes.get(&field(n,"source")?.as_i64()).map(|(_,p)| p);
-                for f in &mut b.faces {
-                    let (of,face) = named_parts(&f.name);
-                    let path = source.and_then(|p| p.get(of)).map_or(of,String::as_str);
-                    f.name = name_under(&placed_name(name,path),face);
-                }
-                for path in source.into_iter().flat_map(|p| p.values()) {
-                    own.insert(placed_name(name,path),path.clone());
+                _ => {
+                    for f in &mut b.faces { f.name = name_under(name,&f.name); }
+                    own.insert(name.to_string(),String::new());
                 }
             }
-            _ => {
-                for f in &mut b.faces { f.name = name_under(name,&f.name); }
-                own.insert(name.to_string(),String::new());
-            }
+            routes.insert(*id,(name.to_string(),own));
+            built.insert(*id,b);
         }
-        let id = field(n,"id")?.as_i64();
-        routes.insert(id,(name.to_string(),own));
-        built.insert(id,b);
+        built.remove(&self.root).ok_or("recipe: no root".into())
     }
-    built.remove(&field(recipe,"root")?.as_i64()).ok_or("recipe: no root".into())
 }
 
 /// A route one step further on (`solid::document::placed_name`).
@@ -329,57 +291,63 @@ fn placed_name(name: &str,path: &str) -> String {
 /// combine them by this kernel's Booleans (lines and arcs swept: planes and cylinders, exact), and
 /// the root's cap is the region. `Ok(Err)` names why a recipe is not such a solid, so a caller
 /// builds it by its Booleans instead.
-pub fn meridian(recipe: &Json,seam: V) -> Result<Result<(Brep,V,V),String>,String> {
-    Ok(match meridian_region(recipe,seam)? {
-        Ok((profile,origin,axis)) => Ok((revolve(&profile,origin,axis,std::f64::consts::TAU)?,origin,axis)),
-        Err(e) => Err(e),
-    })
+pub fn meridian(recipe: &Json,seam: V) -> Result<Result<(Brep,V,V),String>,String> { Recipe::read(recipe)?.meridian(seam) }
+
+impl Recipe {
+    /// The recipe built as its meridian region turned once (`meridian`).
+    pub fn meridian(&self,seam: V) -> Result<Result<(Brep,V,V),String>,String> {
+        Ok(match meridian_region(self,seam)? {
+            Ok((profile,origin,axis)) => Ok((revolve(&profile,origin,axis,std::f64::consts::TAU)?,origin,axis)),
+            Err(e) => Err(e),
+        })
+    }
 }
 
 /// A ball, where recipe node `n` is one: a whole revolution of a profile of lines on its axis and
 /// arcs of one circle centred on it (`tol` mm) — its centre and its radius.
-pub fn ball_of(n: &Json,tol: f64) -> Result<Option<(V,f64)>,String> {
-    use crate::space::{cross,norm,scale,sub};
-    use super::build::ProfileEdge;
-    if field(n,"kind")?.as_str() != "revolve" || (field(n,"angle")?.as_f64().abs()-std::f64::consts::TAU).abs() > 1e-9 {
-        return Ok(None)
-    }
-    let a = vec3(field(n,"axis")?);
-    let (o,a) = (vec3(field(n,"origin")?),scale(a,1./norm(a)));
-    let on = |p: V| norm(cross(sub(p,o),a)) <= tol;
-    let mut found: Option<(V,f64)> = None;
-    for e in Profile::from_json(field(n,"profile")?)?.loops.iter().flatten() {
-        match *e {
-            ProfileEdge::Line {a: p,b: q} => if !on(p) || !on(q) { return Ok(None) },
-            ProfileEdge::Arc {frame,r,..} => {
-                if !on(frame.o) { return Ok(None) }
-                match found {
-                    None => found = Some((frame.o,r)),
-                    Some((c,q)) => if norm(sub(c,frame.o)) > tol || (q-r).abs() > tol { return Ok(None) },
+pub fn ball_of(n: &Json,tol: f64) -> Result<Option<(V,f64)>,String> { Node::read(n)?.ball(tol) }
+
+impl Node {
+    /// The ball this node is, where it is one (`ball_of`).
+    pub fn ball(&self,tol: f64) -> Result<Option<(V,f64)>,String> {
+        use crate::space::{cross,norm,scale,sub};
+        use super::build::ProfileEdge;
+        let &Node::Revolve {ref profile,origin,axis,angle} = self else { return Ok(None) };
+        if (angle.abs()-std::f64::consts::TAU).abs() > 1e-9 { return Ok(None) }
+        let (o,a) = (origin,scale(axis,1./norm(axis)));
+        let on = |p: V| norm(cross(sub(p,o),a)) <= tol;
+        let mut found: Option<(V,f64)> = None;
+        for e in Profile::of(profile)?.loops.iter().flatten() {
+            match *e {
+                ProfileEdge::Line {a: p,b: q} => if !on(p) || !on(q) { return Ok(None) },
+                ProfileEdge::Arc {frame,r,..} => {
+                    if !on(frame.o) { return Ok(None) }
+                    match found {
+                        None => found = Some((frame.o,r)),
+                        Some((c,q)) => if norm(sub(c,frame.o)) > tol || (q-r).abs() > tol { return Ok(None) },
+                    }
                 }
+                ProfileEdge::Spline(_) => return Ok(None),
             }
-            ProfileEdge::Spline(_) => return Ok(None),
         }
+        Ok(found)
     }
-    Ok(found)
 }
 
 /// The tolerance a recipe of revolutions is read to: of the reach of its revolutions' lines.
-pub(super) fn revolutions_tolerance(nodes: &[Json]) -> Result<f64,String> {
+pub(super) fn revolutions_tolerance(nodes: &[Named]) -> f64 {
     let mut size: f64 = 1.;
-    for n in nodes.iter().filter(|n| n.get("kind").is_some_and(|k| k.as_str() == "revolve")) {
-        size = size.max(crate::space::norm(vec3(field(n,"origin")?))+crate::space::norm(vec3(field(n,"axis")?)));
+    for n in nodes {
+        if let Node::Revolve {origin,axis,..} = &n.node { size = size.max(crate::space::norm(*origin)+crate::space::norm(*axis)); }
     }
-    Ok(tolerance(size))
+    tolerance(size)
 }
 
-/// Whether `revolve` node `n` (called `name`) is a whole turn: `Ok(Err)` refuses it, by name.
-pub(super) fn whole_turn(n: &Json,name: &str) -> Result<Result<(),String>,String> {
-    Ok(if (field(n,"angle")?.as_f64().abs()-std::f64::consts::TAU).abs() > 1e-9 {
-        Err(format!("`{name}` is a partial revolution"))
-    } else { Ok(()) })
+/// Whether a revolution turning by `angle` (called `name`) is a whole turn: `Err` refuses it, by
+/// name.
+pub(super) fn whole_turn(angle: f64,name: &str) -> Result<(),String> {
+    if (angle.abs()-std::f64::consts::TAU).abs() > 1e-9 { Err(format!("`{name}` is a partial revolution")) } else { Ok(()) }
 }
-
 /// Why a revolution's profile is no meridian (`meridian_of`).
 pub(super) enum Unread {
     /// A spline (one not a conic's arc, where conics are read).
@@ -449,17 +417,17 @@ pub(super) fn meridian_of(profile: &Profile,o: V,a: V,tol: f64,conics: bool) -> 
 
 /// `meridian`'s region: a profile in the half-plane of its line towards `seam` (its outer loop
 /// first), with the line's point and direction.
-fn meridian_region(recipe: &Json,seam: V) -> Result<Result<(Profile,V,V),String>,String> {
+fn meridian_region(recipe: &Recipe,seam: V) -> Result<Result<(Profile,V,V),String>,String> {
     use crate::space::{cross,dot,norm,scale,sub};
     use super::build::ProfileEdge;
     use super::planar::Region;
-    let nodes = field(recipe,"nodes")?.arr();
+    let nodes = &recipe.nodes;
     let unit = |a: V| scale(a,1./norm(a));
-    let tol = revolutions_tolerance(nodes)?;
-    let ball = |n: &Json| ball_of(n,tol);
+    let tol = revolutions_tolerance(nodes);
+    let ball = |n: &Node| n.ball(tol);
     let mut line = None;
-    for n in nodes {
-        if field(n,"kind")?.as_str() == "revolve" && ball(n)?.is_none() { line = Some((vec3(field(n,"origin")?),unit(vec3(field(n,"axis")?)))); break }
+    for Named {node,..} in nodes {
+        if let Node::Revolve {origin,axis,..} = node { if ball(node)?.is_none() { line = Some((*origin,unit(*axis))); break } }
     }
     let Some((origin,axis)) = line else { return Ok(Err("no revolution of it is about a line of its own".into())) };
     let on_line = |p: V| norm(cross(sub(p,origin),axis)) <= tol;
@@ -469,25 +437,23 @@ fn meridian_region(recipe: &Json,seam: V) -> Result<Result<(Profile,V,V),String>
     // each step tagged by its face's name (`NAMED`), one past its place here: the Booleans keep a
     // step's tag
     let mut names: Vec<String> = Vec::new();
-    for n in nodes {
-        let name = n.get("name").map_or("",|j| j.as_str());
-        let region = match field(n,"kind")?.as_str() {
-            "revolve" => {
-                if let Err(e) = whole_turn(n,name)? { return Ok(Err(e)) }
-                if let Some((c,r)) = ball(n)? {
+    for Named {id,name,node} in nodes {
+        let region = match node {
+            Node::Revolve {profile,origin: o,axis: a,angle} => {
+                if let Err(e) = whole_turn(*angle,name) { return Ok(Err(e)) }
+                let profile = Profile::of(profile)?;
+                if let Some((c,r)) = ball(node)? {
                     if !on_line(c) { return Ok(Err(format!("`{name}` is a ball off the line"))) }
                     // its half-disc: from the axis round through the half-plane and back along it
                     let z = dot(sub(c,origin),axis);
-                    let profile = Profile::from_json(field(n,"profile")?)?;
                     let arc = (0..profile.loops.len()).flat_map(|l| (0..profile.loops[l].len()).map(move |k| (l,k)))
                         .find(|&(l,k)| matches!(profile.loops[l][k],ProfileEdge::Arc {..})).map_or(String::new(),|(l,k)| profile.name(l,k));
                     names.push(name_under(name,&arc));
                     let tag = names.len() as u32;
                     Region::half_disc(z,r).tagged(&|_,_| tag)
                 } else {
-                    let (o,a) = (vec3(field(n,"origin")?),unit(vec3(field(n,"axis")?)));
-                    if norm(cross(a,axis)) > 1e-12 || !on_line(o) { return Ok(Err(format!("`{name}` is a revolution about another line"))) }
-                    let profile = Profile::from_json(field(n,"profile")?)?;
+                    let a = unit(*a);
+                    if norm(cross(a,axis)) > 1e-12 || !on_line(*o) { return Ok(Err(format!("`{name}` is a revolution about another line"))) }
                     let loops = match meridian_of(&profile,origin,axis,tol,true) {
                         Ok(loops) => loops,
                         Err(Unread::Spline) => return Ok(Err(format!("`{name}`'s profile has a spline"))),
@@ -503,21 +469,22 @@ fn meridian_region(recipe: &Json,seam: V) -> Result<Result<(Profile,V,V),String>
                         .map(|seg| { let step = super::planar::Step {seg,chart:None,tag}; tag += 1; step }).collect()).collect())
                 }
             }
-            "body" => {
-                let mut region = regions.get(&field(n,"stock")?.as_i64()).ok_or("recipe: a stock not built before its body")?.clone();
-                for (key,op) in [("on",super::planar::Op::Union),("cut",super::planar::Op::Cut),("bound",super::planar::Op::Common)] {
-                    for x in field(n,key)?.arr() {
-                        let operand = regions.get(&x.as_i64()).ok_or("recipe: an operand not built before its body")?;
+            Node::Body(b) => {
+                let mut region = regions.get(&b.stock).ok_or("recipe: a stock not built before its body")?.clone();
+                // (no late set: a body of revolutions has no readers of its faces)
+                for ((key,list),op) in b.sets().into_iter().zip([super::planar::Op::Union,super::planar::Op::Cut,super::planar::Op::Common]) {
+                    for x in list {
+                        let operand = regions.get(x).ok_or("recipe: an operand not built before its body")?;
                         region = super::planar::boolean(&region,operand,op,tol).map_err(|e| format!("`{name}`'s meridian, {key}: {e}"))?;
                     }
                 }
                 region
             }
-            kind => return Ok(Err(format!("`{name}` is a {kind}, not a revolution"))),
+            node => return Ok(Err(format!("`{name}` is a {}, not a revolution",node.kind()))),
         };
-        regions.insert(field(n,"id")?.as_i64(),region);
+        regions.insert(*id,region);
     }
-    let root = regions.remove(&field(recipe,"root")?.as_i64()).ok_or("recipe: no root")?;
+    let root = regions.remove(&recipe.root).ok_or("recipe: no root")?;
     if root.loops.is_empty() { return Ok(Err("the meridian region is empty".into())) }
     let name = |t: u32| if t == 0 { String::new() } else { names.get(t as usize-1).cloned().unwrap_or_default() };
     Ok(Ok((region_profile(&root,origin,seam,axis,&name),origin,axis)))
