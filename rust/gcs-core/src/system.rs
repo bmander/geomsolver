@@ -180,6 +180,22 @@ pub struct System {
     /// The block-triangular order of the hard rows, worked out the first time it is asked for
     /// (`block_order`) and kept for the life of the compile, whose topology it is a fact about.
     order: Option<Arc<BlockOrder>>,
+    /// Each block's tearing at its unknowns, by the block's columns and the unknowns
+    /// (`System::tearing`): a fact about the compile's topology, worked out once.
+    pub(crate) tearings: BTreeMap<(Vec<usize>, Vec<usize>), Option<Arc<Tearing>>>,
+    /// The slots whose constants `refresh_consts` reads, found against the sketch it was last
+    /// given, where that held every one.
+    const_slots: Option<Vec<ConstSlot>>,
+}
+
+/// A slot whose constants are read off the pose (`System::refresh_consts`): an instance of a
+/// kernel block, and the constraint it reads them off — its place in the sketch and its id.
+#[derive(Clone, Copy, Debug)]
+struct ConstSlot {
+    block: usize,
+    instance: usize,
+    index: usize,
+    cid: u32,
 }
 
 /// One strongly connected block of a system's equations: rows that read one another round a
@@ -193,6 +209,14 @@ pub struct SolveBlock {
     pub cols: Vec<usize>,
     /// The constraint instances producing the rows: (kernel block, instance in it), ascending.
     pub instances: Vec<(usize, usize)>,
+}
+
+/// A block torn at its unknowns (`System::tearing`): the statements whose rows are left over,
+/// and the rest in its own block-triangular order.
+#[derive(Debug)]
+pub(crate) struct Tearing {
+    pub outer: Vec<(usize, usize)>,
+    pub inner: Vec<SolveBlock>,
 }
 
 /// The block-triangular order of a system's hard rows (`System::block_order`): the matched
@@ -702,6 +726,8 @@ impl System {
             ata: None,
             kernels: table,
             order: None,
+            tearings: BTreeMap::new(),
+            const_slots: None,
         }
     }
 
@@ -741,27 +767,55 @@ impl System {
     /// One pass over the sketch's constraints, not a `Sketch::constraint` lookup per slot: that
     /// is a linear scan, so looking each one up would make refreshing quadratic in the
     /// constraint count — and this runs on every plan solve and at every drag start.
+    ///
+    /// Which constraint of `sk` each slot reads is found once and kept (`const_slots`), each
+    /// checked by its id before it is read and all found again where one has moved: a block pass
+    /// reads the constants again at every block, thousands of times a solve.
     pub fn refresh_consts(&mut self, sk: &Sketch) {
-        let by_id: BTreeMap<u32, &Constraint> = sk.constraints.iter().map(|c| (c.id, c)).collect();
-        let spans = &self.spans;
-        for b in self.blocks.iter_mut() {
-            let kn = self.kernels[b.kid];
-            if kn.n_const == 0 {
+        let fits = |slots: &[ConstSlot]| {
+            slots.iter().all(|s| sk.constraints.get(s.index).is_some_and(|c| c.id == s.cid))
+        };
+        let kept = self.const_slots.take().filter(|slots| fits(slots));
+        let (slots, whole) = match kept {
+            Some(slots) => (slots, true),
+            None => self.const_slots_of(sk),
+        };
+        for s in &slots {
+            let b = &mut self.blocks[s.block];
+            let n = self.kernels[b.kid].n_const;
+            let v = sk.constraints[s.index].consts_on(sk, None);
+            b.consts[s.instance * n..(s.instance + 1) * n].copy_from_slice(&v);
+        }
+        // kept only where the sketch holds every slot's constraint: one it lacks is read again
+        // the moment it has it
+        self.const_slots = whole.then_some(slots);
+    }
+
+    /// Every slot whose constants `refresh_consts` reads, in its order, with the constraint of
+    /// `sk` it reads them off; and whether `sk` holds the constraint of every slot.
+    fn const_slots_of(&self, sk: &Sketch) -> (Vec<ConstSlot>, bool) {
+        let by_id: BTreeMap<u32, usize> =
+            sk.constraints.iter().enumerate().map(|(k, c)| (c.id, k)).collect();
+        let mut slots = Vec::new();
+        let mut whole = true;
+        for (block, b) in self.blocks.iter().enumerate() {
+            if self.kernels[b.kid].n_const == 0 {
                 continue;
             }
-            for (i, &cid) in b.cids.iter().enumerate() {
-                if let Some(c) = by_id.get(&cid) {
-                    // a curve contact's constants are its compiled span's knots — document data
-                    // no solve moves, and the span is pinned for this system's life, so there is
-                    // nothing here that could have changed
-                    if spans.contains_key(&cid) {
-                        continue;
-                    }
-                    let v = c.consts_on(sk, None);
-                    b.consts[i * kn.n_const..(i + 1) * kn.n_const].copy_from_slice(&v);
+            for (instance, &cid) in b.cids.iter().enumerate() {
+                // a curve contact's constants are its compiled span's knots — document data no
+                // solve moves, and the span is pinned for this system's life, so there is nothing
+                // here that could have changed
+                if self.spans.contains_key(&cid) {
+                    continue;
+                }
+                match by_id.get(&cid) {
+                    Some(&index) => slots.push(ConstSlot { block, instance, index, cid }),
+                    None => whole = false,
                 }
             }
         }
+        (slots, whole)
     }
 
     /// First residual row of a constraint — `None` for one this plan was not compiled from.

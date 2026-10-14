@@ -353,6 +353,16 @@ pub fn blocks(adj: &[Vec<usize>], dm: &Dm) -> Blt {
     out
 }
 
+/// How many rows the largest block `blocks` would make holds, for a square `adj` perfectly
+/// matched by `mate_col`: the strongly connected components alone, not their order — what a
+/// choice among many matchings compares (`System::tearing`).
+pub fn widest_block(adj: &[Vec<usize>], mate_col: &[i32]) -> usize {
+    let succ: Vec<Vec<usize>> = adj.iter().enumerate()
+        .map(|(v, cols)| cols.iter().map(|&c| mate_col[c] as usize).filter(|&w| w != v).collect())
+        .collect();
+    tarjan(&succ).iter().map(Vec::len).max().unwrap_or(0)
+}
+
 /// Strongly connected components of `succ` (Tarjan), iteratively, since a layout's chains are
 /// long enough to matter to a recursive walk's stack.
 fn tarjan(succ: &[Vec<usize>]) -> Vec<Vec<usize>> {
