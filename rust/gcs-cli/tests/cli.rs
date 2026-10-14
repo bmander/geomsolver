@@ -610,3 +610,43 @@ bore cut body
     assert!(std::fs::read_to_string(&step).unwrap().starts_with("ISO-10303-21;"));
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// Two blocks three apart and a claim about their clearance, written to a file of its own.
+fn clearance_document(tag: &str) -> (PathBuf,String) {
+    let dir = std::env::temp_dir().join(format!("solventc-progress-{tag}-{}",std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let block = |t: &str,x: f64| format!(
+        "in std.front {{\na{t} := point\nb{t} := point hint(({}, 0))\nc{t} := point hint(({}, 10))\n\
+         d{t} := point hint(({x}, 10))\n(p{t} := line(a{t}, b{t})) -> (q{t} := line(b{t}, c{t})) -> \
+         (r{t} := line(c{t}, d{t})) -> (s{t} := line(d{t}, a{t})) -> close\nhorizontal p{t}\nvertical q{t}\n\
+         horizontal r{t}\nvertical s{t}\na{t} distance(10) b{t}\na{t} distance(10) d{t}\nfix(({x}, 0)) a{t}\n}}\n\
+         f{t} := face(p{t}, q{t}, r{t}, s{t})\ns{t}_ := solid(f{t}, from: -5mm, to: 0mm)\n",x+10.,x+10.);
+    let text = format!("unit mm\nuse std\n{}{}claim sA_ clear(2mm) sB_\n",block("A",0.),block("B",13.));
+    let path = dir.join("blocks.sv");
+    std::fs::write(&path,&text).unwrap();
+    (path,text)
+}
+
+/// `--progress` says each stage on stderr as it is done, and `--timings` lists the solids and
+/// claims after the report, each with the statement it came from (#320); unasked, a run whose
+/// stderr is no terminal says nothing of the kind.
+#[test]
+fn a_run_says_its_stages_and_their_times() {
+    let (path,text) = clearance_document("said");
+    let file = path.to_str().unwrap();
+    let result = run(&[file,"--progress","--timings"]);
+    let (stdout,stderr) = (String::from_utf8_lossy(&result.stdout),String::from_utf8_lossy(&result.stderr));
+    assert_eq!(result.status.code(),Some(0),"{stderr}");
+    for stage in [format!("elaborated {file} in"),"solved for".into(),"built sA_ in".into(),
+                  "judged claim sA_ clear(2mm) sB_ in".into(),format!("diagnosed {file} in")] {
+        assert!(stderr.lines().any(|l| l.starts_with("solventc: [") && l.contains(&stage)),
+            "`{stage}` said:\n{stderr}");
+    }
+    assert!(stdout.contains(&format!("{file}: solids and claims, slowest first")),"{stdout}");
+    let claim = text.lines().position(|l| l.starts_with("claim")).unwrap()+1;
+    assert!(stdout.lines().any(|l| l.contains("judged claim sA_ clear(2mm) sB_") && l.ends_with(&format!("{file}:{claim}:1"))),
+        "the claim's line points at its statement:\n{stdout}");
+    let quiet = run(&[file]);
+    assert!(!String::from_utf8_lossy(&quiet.stderr).contains("solventc: ["),"unasked, a pipe hears nothing");
+    std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+}

@@ -133,6 +133,7 @@ mod plane_tangent;
 mod points_in_space;
 mod predicates;
 mod program;
+mod progress;
 mod rack_cut;
 mod rational;
 mod recursion;
