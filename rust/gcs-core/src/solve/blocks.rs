@@ -103,7 +103,7 @@ impl System {
             let mut pass = Pass {
                 framed,
                 bounded: sk.constraints.iter().any(|c| c.bound.is_some()),
-                held: holds_contacts(sk),
+                contacts: holds_contacts(sk),
                 search: None,
                 solved: std::collections::BTreeSet::new(),
                 nfev: 0,
@@ -114,7 +114,7 @@ impl System {
                 // a block finding an unknown number from a contact on an envelope or a meshing is
                 // torn at it first: whole, it can come to a root on another sheet of the envelope
                 // that every word it states allows
-                let ok = if pass.held && self.finds_numbers(sk, b) {
+                let ok = if pass.contacts && self.finds_numbers(sk, b) {
                     self.torn(sk, &mut pass, z, b, opts)
                         || self.pass_block(sk, &mut pass, z, b, opts)
                 } else {
@@ -162,22 +162,22 @@ impl System {
         b: &SolveBlock,
         opts: &SolveOpts,
     ) -> bool {
-        if p.framed {
+        if p.framed || p.contacts {
             let s = p.search.get_or_insert_with(|| Search::new(self, sk));
             s.sk.set_x(&self.full_x(z));
-            self.refresh_consts(&s.sk);
-        }
-        // a contact on an envelope or a meshing starts where its sources now stand, its point
-        // within the bounds the block decides
-        if p.held {
-            let s = p.search.get_or_insert_with(|| Search::new(self, sk));
-            s.sk.set_x(&self.full_x(z));
-            if p.bounded {
-                s.start_within(self, z, b, &p.solved);
+            if p.framed {
+                self.refresh_consts(&s.sk);
             }
-            self.seed_contacts(&mut s.sk, z, &b.cols);
+            // a contact on an envelope or a meshing starts where its sources now stand, its point
+            // within the bounds the block decides
+            if p.contacts {
+                if p.bounded {
+                    s.start_within(self, z, b, &p.solved);
+                }
+                self.seed_contacts(&mut s.sk, z, &b.cols);
+            }
         }
-        let sub = self.subset(&b.instances, &b.cols);
+        let mut sub = self.subset(&b.instances, &b.cols);
         let start: Vec<f64> = b.cols.iter().map(|&c| z[c]).collect();
         let (mut ok, info) = self.solve_block(&sub, z, &start, opts);
         (p.nfev, p.njev) = (p.nfev + info.nfev, p.njev + info.njev);
@@ -185,7 +185,6 @@ impl System {
         // on where its rows no longer hold there: a frame read at a start far from the drawing
         // admits a root of the frame's and none of the drawing's (`solve::REFRAMES`)
         if p.framed && ok {
-            let mut sub = sub.clone();
             for _ in 0..super::REFRAMES {
                 let s = p.search.get_or_insert_with(|| Search::new(self, sk));
                 s.sk.set_x(&self.full_x(z));
@@ -217,7 +216,7 @@ impl System {
         let first: Vec<f64> = b.cols.iter().map(|&c| z[c]).collect();
         let mut attempts = s.attempts(self, z, b, &start, &decided);
         while let Some(mut attempt) = attempts.next(s, self, &p.solved) {
-            if p.held {
+            if p.contacts {
                 self.seed_attempt(s, z, &b.cols, &mut attempt);
             }
             let (mut fine, mut info) = self.solve_block(&sub, z, &attempt, opts);
@@ -365,8 +364,7 @@ impl System {
     /// the designer says where the search for one starts — or, where the block holds none, every
     /// unknown number it holds.
     fn seeded_numbers(&self, sk: &Sketch, b: &SolveBlock) -> Vec<usize> {
-        let col = |q: u32| usize::try_from(self.col_of[q as usize]).ok()
-            .filter(|c| b.cols.binary_search(c).is_ok());
+        let col = |q: u32| col_among(&self.col_of, &b.cols, q);
         let numbers: Vec<(usize, bool)> = sk.free_vars.iter()
             .filter_map(|(name, &q)| {
                 let seeded = sk.declared.get(name).is_some_and(|d| d.seed.is_some());
@@ -383,13 +381,11 @@ impl System {
     /// Whether block `b` holds both an unknown number the drawing declares and the place of a
     /// contact on an envelope or a meshing.
     fn finds_numbers(&self, sk: &Sketch, b: &SolveBlock) -> bool {
-        use crate::constraints::{Arg, CKind};
-        let col = |q: u32| usize::try_from(self.col_of[q as usize]).ok()
-            .is_some_and(|c| b.cols.binary_search(&c).is_ok());
+        use crate::constraints::Arg;
+        let col = |q: u32| col_among(&self.col_of, &b.cols, q).is_some();
         sk.free_vars.values().any(|&q| col(q))
             && sk.constraints.iter().any(|c| {
-                matches!(c.kind, CKind::PointOnEnvelope | CKind::PointOnMeshing)
-                    && c.args.iter().any(|a| matches!(a, Arg::Param(q) if col(*q)))
+                is_contact(c.kind) && c.args.iter().any(|a| matches!(a, Arg::Param(q) if col(*q)))
             })
     }
 
@@ -474,10 +470,9 @@ impl System {
     /// `System::remeshed` keeps one.  Nothing is done for a block with no such contact.
     fn seed_contacts(&mut self, sk: &mut Sketch, z: &mut [f64], cols: &[usize]) {
         use crate::constraints::{Arg, CKind, SpecKind};
+        // (its own copy: the closure outlives the residuals read below, which borrow `self`)
         let col_of = self.col_of.clone();
-        let col = |q: u32| {
-            usize::try_from(col_of[q as usize]).ok().filter(|c| cols.binary_search(c).is_ok())
-        };
+        let col = |q: u32| col_among(&col_of, cols, q);
         let place = |c: &crate::constraints::Constraint| -> Vec<(usize, u32)> {
             let first = match c.kind {
                 CKind::PointOnEnvelope => c.kind.contact_on(SpecKind::Envelope).map(|(_, t)| t),
@@ -645,7 +640,7 @@ impl System {
 struct Pass {
     framed: bool,
     bounded: bool,
-    held: bool,
+    contacts: bool,
     search: Option<Search>,
     solved: std::collections::BTreeSet<usize>,
     nfev: i32,
@@ -665,20 +660,30 @@ const TEAR_MAX: usize = 2;
 const TEAR_STEPS: usize = 40;
 /// How many times a torn block's step is halved before it is given up.
 const TEAR_HALVINGS: usize = 12;
-/// How far off a contact may hold, its rows over their own units, and keep its place when
-/// its block comes up (`System::seed_contacts`).
-const SEEDED_OFF: f64 = 1e-2;
 /// How many times a torn block's rest is swept, at most, for one value of its unknowns.
 const TEAR_SWEEPS: usize = 4;
 /// The step a torn block's derivative is taken over, relative to the unknown's size.
 const TEAR_DIFF: f64 = 1e-6;
+/// How far off a contact may hold, its rows over their own units, and keep its place when
+/// its block comes up (`System::seed_contacts`).
+const SEEDED_OFF: f64 = 1e-2;
 
 /// Whether a drawing holds a point to an envelope in space or to a meshing (#283): a contact
 /// whose place is seeded again as its block comes up (`System::seed_contacts`), so its document
 /// solve takes the block pass first (`System::solve_compiled`).
 pub(super) fn holds_contacts(sk: &Sketch) -> bool {
+    sk.constraints.iter().any(|c| is_contact(c.kind))
+}
+
+/// Whether a constraint of kind `kind` holds a point to an envelope in space or to a meshing.
+fn is_contact(kind: crate::constraints::CKind) -> bool {
     use crate::constraints::CKind;
-    sk.constraints.iter().any(|c| matches!(c.kind, CKind::PointOnEnvelope | CKind::PointOnMeshing))
+    matches!(kind, CKind::PointOnEnvelope | CKind::PointOnMeshing)
+}
+
+/// The column parameter `q` is solved in, where that is one of `cols` (sorted).
+fn col_among(col_of: &[i32], cols: &[usize], q: u32) -> Option<usize> {
+    usize::try_from(col_of[q as usize]).ok().filter(|c| cols.binary_search(c).is_ok())
 }
 
 /// How many steps a block followed along its Newton homotopy takes (`System::follow_block`).

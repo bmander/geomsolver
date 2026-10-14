@@ -400,9 +400,9 @@ component Blade(about: line, q: point, half: Angle, opening: Angle) := { p |
 // smaller than the cone distance R, where both members stand farther from undercut along the
 // whole face, and the seeds say which. The solve tears the two numbers out of the block that
 // holds them, solving the rest for each try (solver.md).
-component Balanced(P: plane, gear: Gear, trace: Trace, ax: line, inner: set,
-    outer: set, pinion_generation: motion, gear_generation: motion, R: Length, face: Length,
-    depth: Length, cutter_radius: Length) {
+component Balanced(P: plane, gear: Gear, trace: Trace, ax: line, inner: set, outer: set,
+    pinion_generation: motion, gear_generation: motion, R: Length, face: Length, depth: Length,
+    cutter_radius: Length) {
   gear.M distance(>= R) trace.C
   pinion_flank := envelope(inner, under: pinion_generation, from: -30deg, to: 30deg)
   gear_flank := envelope(outer, under: gear_generation, from: -30deg, to: 30deg)

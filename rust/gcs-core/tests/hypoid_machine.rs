@@ -50,7 +50,7 @@ fn the_face_mill_is_found_by_balancing_the_undercut_margins() {
     }
     let margin = |station: &str| radius(&e,&format!("pair.balance.{station}.pinion_profile"));
     assert!(margin("mean") > margin("at_toe"),"the margin shrinks toward the toe");
-    // the trace is the cutter's circle, through M and the toe, the larger of its two roots
+    // the trace is the cutter's circle, through M and the toe, no smaller than the cone distance
     let (o,m) = (point(&e,"pair.gear_cone.O"),point(&e,"pair.gear_cone.M"));
     let (c,toe) = (point(&e,"pair.trace.C"),point(&e,"pair.balance.toe"));
     assert!((dist(c,m)-cutter).abs() < 1e-9*cutter && (dist(c,toe)-cutter).abs() < 1e-9*cutter);
