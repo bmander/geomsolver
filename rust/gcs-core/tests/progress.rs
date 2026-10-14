@@ -83,27 +83,20 @@ fn a_judgement_is_said_with_the_solids_it_built_inside_it() {
     let verdicts = progress::listen(heard.clone(), || gcs_core::diagnose::judge_solids(&sk));
     assert!(!progress::listening(), "the listener goes when its work does");
     let said = heard.said.borrow();
-    // every begin is ended, innermost first, and nothing is ended that was not begun
-    let mut open = Vec::new();
-    for s in said.iter() {
-        match s {
-            Some(w) => open.push(w.clone()),
-            None => { open.pop().expect("an end closes a begin"); }
-        }
-    }
-    assert!(open.is_empty(), "every begin is ended");
-    // the claims are the outermost work, in the order written, worded as the report words them
-    let mut depth = 0;
-    let mut claims = Vec::new();
+    // every begin is ended, innermost first, and nothing is ended that was not begun; the claims
+    // are the outermost work
+    let (mut depth, mut claims) = (0usize, Vec::new());
     for s in said.iter() {
         match s {
             Some(w) => {
                 if depth == 0 { claims.push(w.clone()); }
                 depth += 1;
             }
-            None => depth -= 1,
+            None => depth = depth.checked_sub(1).expect("an end closes a begin"),
         }
     }
+    assert_eq!(depth, 0, "every begin is ended");
+    // in the order written, worded as the report words them
     assert_eq!(claims.len(), 2, "{claims:?}");
     for (w, v) in claims.iter().zip(&verdicts) {
         assert_eq!(w.kind, Kind::Claim);

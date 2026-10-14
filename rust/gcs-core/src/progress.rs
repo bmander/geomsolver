@@ -140,7 +140,8 @@ thread_local! {
     static OPEN: RefCell<Vec<f64>> = const { RefCell::new(Vec::new()) };
 }
 
-/// Puts back what was listening before, however the work it was around ended.
+/// Puts back what was listening before, and closes what was left open, however the work it was
+/// around ended.
 struct Restore(Option<Rc<dyn Listener>>, usize);
 
 impl Drop for Restore {
@@ -167,18 +168,13 @@ pub fn during<T>(what: impl FnOnce() -> Work, work: impl FnOnce() -> T) -> T {
     let Some(listener) = LISTENER.with(|l| l.borrow().clone()) else { return work() };
     let what = what();
     listener.begin(&what);
-    let depth = OPEN.with(|o| {
-        let mut o = o.borrow_mut();
-        o.push(0.);
-        o.len()
-    });
+    OPEN.with(|o| o.borrow_mut().push(0.));
     let clock = Instant::now();
     let result = work();
     let total = clock.elapsed().as_secs_f64();
     let nested = OPEN.with(|o| {
         let mut o = o.borrow_mut();
-        // a listener swapped in below truncates to its own depth when it goes, never past this
-        let nested = if o.len() == depth { o.pop().unwrap_or(0.) } else { 0. };
+        let nested = o.pop().unwrap_or(0.);
         if let Some(parent) = o.last_mut() { *parent += total; }
         nested
     });

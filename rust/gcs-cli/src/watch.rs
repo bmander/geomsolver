@@ -32,6 +32,8 @@ pub enum Say {
 /// A piece of work open: since when, when next to say it is still going, whether that was said.
 struct Open { work: Work,since: Instant,next: f64,said: bool }
 
+/// The listener: what is open, shared with the thread that says what is still going, and what
+/// was done, for `--timings`.
 pub struct Watch {
     say: Say,
     open: Arc<Mutex<Vec<Open>>>,

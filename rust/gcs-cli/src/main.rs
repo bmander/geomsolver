@@ -26,8 +26,8 @@ use gcs_core::json::Json;
 use gcs_core::model::Sketch;
 use gcs_core::program::{elaborate, Elaborated, Severity};
 use gcs_core::solve::{solve, SolveOpts};
-use gcs_core::syntax::{line_col, parse};
-use gcs_core::{io, json, report};
+use gcs_core::syntax::{line_col, parse, Program, SynErr};
+use gcs_core::{io, json, progress, report};
 
 const USAGE: &str = "\
 solventc — check a Solvent document
@@ -308,22 +308,10 @@ fn check(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
         return check_model(s, opts, &mut Default::default());
     }
     let watch = watch::Watch::new(opts.say);
-    let mut places = Default::default();
-    let out = gcs_core::progress::listen(watch.clone(), || check_model(s, opts, &mut places));
+    let mut places = Places::new();
+    let out = progress::listen(watch.clone(), || check_model(s, opts, &mut places));
     if opts.timings {
-        // beside the JSON report rather than in it, as `--measure`'s lines are
-        let line = |l: String| if opts.json { eprintln!("{l}") } else { println!("{l}") };
-        let timings = watch.timings.borrow();
-        line(format!("{}: {}", s.name, timings.heading()));
-        for (text, work) in timings.lines(TIMINGS) {
-            match work.at.and_then(|a| places.get(&a)) {
-                Some(&lo) => {
-                    let (l, c) = line_col(&s.text, lo);
-                    line(format!("  {text}  {}:{l}:{c}", s.name));
-                }
-                None => line(format!("  {text}")),
-            }
-        }
+        timings(s, opts, &watch.timings.borrow(), &places);
     }
     out
 }
@@ -333,47 +321,72 @@ const TIMINGS: usize = 12;
 
 /// Where each solid and each claim about solids was written, by `progress::At`: the offset of its
 /// statement in the document, for those the document itself wrote.
-type Places = std::collections::BTreeMap<gcs_core::progress::At, u32>;
+type Places = std::collections::BTreeMap<progress::At, u32>;
+
+/// `--timings`: the core's lines, each at its statement.  Beside the JSON report rather than in
+/// it, as `--measure`'s lines are.
+fn timings(s: &Source, opts: &Opts, timings: &progress::Timings, places: &Places) {
+    let line = |l: String| if opts.json { eprintln!("{l}") } else { println!("{l}") };
+    line(format!("{}: {}", s.name, timings.heading()));
+    for (text, work) in timings.lines(TIMINGS) {
+        match work.at.and_then(|a| places.get(&a)) {
+            Some(&lo) => {
+                let (l, c) = line_col(&s.text, lo);
+                line(format!("  {text}  {}:{l}:{c}", s.name));
+            }
+            None => line(format!("  {text}")),
+        }
+    }
+}
+
+/// The `Places` of a document: a solid a module's component made is where the document made that
+/// instance of it.
+fn where_written(prog: &Program, e: &Elaborated) -> Places {
+    use gcs_core::ir::PathStep;
+    use gcs_core::progress::At;
+    let mut places = Places::new();
+    for i in 0..e.sketch.solids.len() {
+        let Some(site) = e.map.site_of(gcs_core::model::EntRef::solid(i)) else { continue };
+        let lo = if prog.document_stmt(site.stmt).is_some() { Some(site.span.lo) } else {
+            site.path.0.iter().rev().find_map(|step| match step {
+                PathStep::Instance(id) | PathStep::Copy { block: id, .. } =>
+                    prog.document_stmt(*id).map(|st| st.span.lo),
+            })
+        };
+        if let Some(lo) = lo { places.insert(At::Solid(i), lo); }
+    }
+    for c in &e.sketch.solid_claims {
+        if let Some(st) = prog.document_stmt(gcs_core::syntax::StmtId(c.stmt())) {
+            places.insert(At::Stmt(c.stmt()), st.span.lo);
+        }
+    }
+    places
+}
+
+/// Parse, link and elaborate: the program, its syntax errors, and what it elaborated to.
+fn read_model(s: &Source) -> (Program, Vec<SynErr>, Elaborated) {
+    let (mut prog, errs) = parse(&s.text);
+    // Resolve beside the model, then its ancestors, then the compiled module library.
+    let dir = std::path::Path::new(&s.name).parent().map(|d| d.to_path_buf()).unwrap_or_default();
+    let mut resolve = |name: &str| -> Option<String> {
+        gcs_core::modules::search_paths(name, &s.name).iter()
+            .find_map(|rel| std::fs::read_to_string(dir.join(rel)).ok())
+            .or_else(|| gcs_core::library::resolve(name))
+    };
+    let linked = gcs_core::modules::link(&mut prog, &mut resolve);
+    let mut e = elaborate(&prog);
+    // a module's diagnostics are the document's to hear, before the elaboration's
+    let mut diags = linked;
+    diags.append(&mut e.diags);
+    e.diags = diags;
+    (prog, errs, e)
+}
 
 fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json>) {
-    let elaborating = gcs_core::progress::Work::elaborate(&s.name);
-    let (prog, errs, mut e) = gcs_core::progress::during(|| elaborating, || {
-        let (mut prog, errs) = parse(&s.text);
-        // Resolve beside the model, then its ancestors, then the compiled module library.
-        let dir = std::path::Path::new(&s.name).parent().map(|d| d.to_path_buf()).unwrap_or_default();
-        let mut resolve = |name: &str| -> Option<String> {
-            gcs_core::modules::search_paths(name, &s.name).iter()
-                .find_map(|rel| std::fs::read_to_string(dir.join(rel)).ok())
-                .or_else(|| gcs_core::library::resolve(name))
-        };
-        let linked = gcs_core::modules::link(&mut prog, &mut resolve);
-        let mut e = elaborate(&prog);
-        // a module's diagnostics are the document's to hear, before the elaboration's
-        let mut diags = linked;
-        diags.append(&mut e.diags);
-        e.diags = diags;
-        (prog, errs, e)
-    });
+    let elaborating = || progress::Work::elaborate(&s.name);
+    let (prog, errs, mut e) = progress::during(elaborating, || read_model(s));
     if opts.timings {
-        use gcs_core::progress::At;
-        use gcs_core::syntax::StmtId;
-        for i in 0..e.sketch.solids.len() {
-            let Some(site) = e.map.site_of(gcs_core::model::EntRef::solid(i)) else { continue };
-            // a solid a module's component made is where the document made that instance of it
-            use gcs_core::ir::PathStep;
-            let lo = if prog.document_stmt(site.stmt).is_some() { Some(site.span.lo) } else {
-                site.path.0.iter().rev().find_map(|step| match step {
-                    PathStep::Instance(id) | PathStep::Copy { block: id, .. } =>
-                        prog.document_stmt(*id).map(|st| st.span.lo),
-                })
-            };
-            if let Some(lo) = lo { places.insert(At::Solid(i), lo); }
-        }
-        for c in &e.sketch.solid_claims {
-            if let Some(st) = prog.document_stmt(StmtId(c.stmt())) {
-                places.insert(At::Stmt(c.stmt()), st.span.lo);
-            }
-        }
+        *places = where_written(&prog, &e);
     }
     // Nothing is said in `--json` mode, so nothing is worked out either: the collapse below is
     // part of deciding what to print, and running it to feed a function that discards every line
@@ -402,8 +415,9 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
     }
 
     let mut sk = e.sketch.clone();
-    let solving = gcs_core::progress::Work::solve(&sk);
-    let r = gcs_core::progress::during(|| solving, || solve(&mut sk, SolveOpts::default()));
+    // named from the elaborated sketch, which `sk` is a copy of, so only when somebody listens
+    let solving = || progress::Work::solve(&e.sketch);
+    let r = progress::during(solving, || solve(&mut sk, SolveOpts::default()));
     let invalid = gcs_core::program::solid_diagnostics(&sk, &e.map);
     if !opts.json {
         for d in &invalid { say(s, d.span.lo, severity(d.severity()), d.code.as_str(), &d.message); }
@@ -413,9 +427,9 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
     if failed {
         return (1, opts.json.then(|| doc_json(s, &[], Some(&r), None, &e, Json::Null)));
     }
-    let diagnosing = || gcs_core::progress::Work::diagnose(&s.name);
+    let diagnosing = || progress::Work::diagnose(&s.name);
     let d = (!opts.no_diagnose)
-        .then(|| gcs_core::progress::during(diagnosing, || diagnose(&mut sk, DiagnoseOptions::default())));
+        .then(|| progress::during(diagnosing, || diagnose(&mut sk, DiagnoseOptions::default())));
 
     if !opts.json {
         println!("{}: {}", s.name, if r.success { "solved" } else { "did not solve" });
@@ -771,7 +785,7 @@ fn pick_solid(sk: &gcs_core::model::Sketch, name: Option<&str>) -> Result<usize,
 /// and is `Null` for a document that never got as far as a drawing.
 fn doc_json(
     s: &Source,
-    syntax: &[gcs_core::syntax::SynErr],
+    syntax: &[SynErr],
     r: Option<&gcs_core::solve::SolveResult>,
     d: Option<(&Sketch, &gcs_core::diagnose::Diagnosis)>,
     e: &Elaborated,
