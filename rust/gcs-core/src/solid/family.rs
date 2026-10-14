@@ -29,6 +29,7 @@
 use crate::fmath::Det;
 use super::*;
 use crate::io::Part;
+use crate::model::Leg;
 use crate::space::sub;
 use crate::syntax::num;
 use plane::{cross, dot, norm};
@@ -536,69 +537,257 @@ fn densify(solved: Vec<Station>, tol: f64, samples: usize) -> Result<Vec<Station
     Ok(out)
 }
 
-/// **The family stepped** (see the module): the part, the drawn station, the runs up to the end and
-/// down to the start, the samples settled, and each station judged.
+/// One leg's station read off its part (#243 L4: a family over a chain is one leg a link; over
+/// one path, the one): the part, what is read of it, and the walls' names.
+struct LegPart {
+    part: Part,
+    rd: Reading,
+    names: Vec<String>,
+}
+
+/// The part leg `leg` of family `si` is solved over, and what the family reads of it, stepped at
+/// the flatness `tol`.
+fn leg_part(sk: &Sketch, station: &[EntRef], leg: &Leg, tol: f64) -> Result<LegPart, String> {
+    let prefix = crate::model::station_prefix(leg.held);
+    let (part, outer) = part_of(sk, leg.face, station, &prefix);
+    let pf = part.entity_in(EntRef::face(leg.face as usize))
+        .ok_or("the station's face is not in its part")?.i();
+    let held = part.sketch.held.get(leg.held).ok_or("its running number is not held")?.param;
+    let (loops, names) = walk_face(&part.sketch, pf, &prefix)?;
+    let rd = Reading { face: pf, held, loops, outer, tol, span: leg.to - leg.from };
+    Ok(LegPart { part, rd, names })
+}
+
+/// **Where one link meets the next** (#243 L4): leg `to`'s part started where leg `from`'s
+/// stands, each entity of its station (`FamilyLeg::ents`, paired by name) put where its twin in
+/// the other is — a point at the same place in space, a plane in the same pose, a radius the
+/// same — so the next link's first station is solved from the last one's, and the branch the
+/// drawing chose on the first link is the one carried along the chain.  Fixed parameters are
+/// left as they stand: what the part holds is the drawing's.
+fn carry_over(from: &LegPart, to: &mut LegPart, pairs: &[(EntRef, EntRef)]) {
+    // each pair as the parts have it, read before either is written
+    let pairs: Vec<(EntRef, EntRef)> = pairs.iter()
+        .filter_map(|&(ea, eb)| Some((from.part.entity_in(ea)?, to.part.entity_in(eb)?)))
+        .collect();
+    let (a, b) = (&from.part.sketch, &mut to.part.sketch);
+    let set = |b: &mut Sketch, p: u32, v: f64| {
+        let q = &mut b.params[p as usize];
+        if !q.fixed && v.is_finite() {
+            q.value = v;
+        }
+    };
+    for (pa, pb) in pairs {
+        if pa.kind != pb.kind {
+            continue;
+        }
+        match pa.kind {
+            EntKind::Point => {
+                let w = a.world_point(pa.i());
+                let q = b.points[pb.i()].clone();
+                match (q.z, q.plane) {
+                    (Some(z), _) => {
+                        for (p, v) in [q.x, q.y, z].into_iter().zip(w) {
+                            set(b, p, v);
+                        }
+                    }
+                    (None, Some(pl)) => {
+                        let (x, y) = b.basis(pl as usize).view_coords(w);
+                        set(b, q.x, x);
+                        set(b, q.y, y);
+                    }
+                    (None, None) => {}
+                }
+            }
+            EntKind::Plane => {
+                let (pl, ql) = (a.planes[pa.i()].clone(), b.planes[pb.i()].clone());
+                let copy = |b: &mut Sketch, xs: [u32; 3], ys: [u32; 3]| {
+                    for (x, y) in xs.into_iter().zip(ys) {
+                        set(b, y, a.params[x as usize].value);
+                    }
+                };
+                copy(b, pl.o, ql.o);
+                for (u, v) in [(pl.u, ql.u), (pl.v, ql.v)] {
+                    let (au, bv) = (a.axes[u as usize].clone(), b.axes[v as usize].clone());
+                    copy(b, au.a, bv.a);
+                    copy(b, au.d, bv.d);
+                }
+            }
+            // a line is its ends, which are points of the station themselves
+            EntKind::Line => {}
+            _ => {
+                let (xs, ys) = (a.entity_params(pa), b.entity_params(pb));
+                if xs.len() == ys.len() {
+                    for (x, y) in xs.into_iter().zip(ys) {
+                        set(b, y, a.params[x as usize].value);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// A leg stepped: its solved stations in order of its own running number, the drawn one's
+/// index, whether either end would not solve (to be read as its limit), and the samples its
+/// edges need.
+struct Stepped {
+    stations: Vec<Station>,
+    drawn: usize,
+    limits: [bool; 2],
+    /// The samples the stations were read at, and what their edges came to need.
+    counts: Vec<Vec<usize>>,
+    need: Vec<Vec<usize>>,
+}
+
+/// One leg stepped (see the module): the drawn station, the runs up to its end and down to its
+/// start, each edge's samples raised to what every station asks of it.  A leg after the first
+/// of a chain (`carried`, its part started where the leg before ended: `carry_over`) is run from
+/// its start instead, the station there solved first.
+fn step(lp: &mut LegPart, leg: &Leg, carried: bool) -> Result<Stepped, String> {
+    let rd = &lp.rd;
+    let ps = &mut lp.part.sketch;
+    // the drawn station, or the first of a leg carried on from the last, held to the rule every
+    // other is
+    let first = if carried { leg.from } else { ps.params[rd.held as usize].value };
+    rd.settle(ps, first)
+        .and_then(|mut sys| Reading::regular(&mut sys, ps))
+        .map_err(|why| format!("the station at {} {why}", num(first + leg.at)))?;
+    let counts: Vec<Vec<usize>> = rd.loops.iter().map(|l| vec![0; l.len()]).collect();
+    let mut need = counts.clone();
+    rd.need(ps, &mut need);
+    let counts = need.clone();
+    let centre = rd.station(ps, first, &counts)?;
+    let (up, up_limit) = run(ps, rd, &centre, None, leg.to, &counts, &mut need)?;
+    if carried {
+        let stations = std::iter::once(centre).chain(up).collect();
+        return Ok(Stepped { stations, drawn: 0, limits: [false, up_limit], counts, need });
+    }
+    restore(ps, &centre);
+    let (down, down_limit) = run(ps, rd, &centre, up.first(), leg.from, &counts, &mut need)?;
+    let drawn = down.len();
+    let stations = down.into_iter().rev().chain(std::iter::once(centre)).chain(up).collect();
+    Ok(Stepped { stations, drawn, limits: [down_limit, up_limit], counts, need })
+}
+
+/// Each pair of entities two neighbouring legs' stations correspond by (`FamilyLeg::ents`).
+fn twins(def: &SolidDef) -> Vec<Vec<(EntRef, EntRef)>> {
+    let SolidDef::Family { legs, .. } = def else { return Vec::new() };
+    legs.windows(2).map(|w| w[0].ents.iter().copied().zip(w[1].ents.iter().copied()).collect())
+        .collect()
+}
+
+/// **The family stepped** (see the module): each leg's part, its drawn station and the runs to
+/// its ends, the samples settled across every leg, each end that would not solve read as its
+/// limit, and the stations judged — over a chain, the legs joined where one link meets the next,
+/// the station there solved on both and kept once.
 fn march(sk: &Sketch, si: usize, unit: f64) -> Result<Family, String> {
-    let SolidDef::Family { face, station, held, from, to } = &sk.solids[si].def else {
+    let def = &sk.solids[si].def;
+    let SolidDef::Family { station, from, to, .. } = def else {
         return Err("not a face family".into());
     };
     let (a, b) = (from.value, to.value);
     if !(a.is_finite() && b.is_finite() && a < b) {
         return Err("a face family needs a finite interval running forward".into());
     }
-    let prefix = crate::model::station_prefix(held);
-    let (mut part, outer) = part_of(sk, *face, station, &prefix);
-    let pf = part.entity_in(EntRef::face(*face as usize))
-        .ok_or("the station's face is not in its part")?.i();
-    let held_param = part.sketch.held.get(held).ok_or("its running number is not held")?.param;
-    let (loops, names) = walk_face(&part.sketch, pf, &prefix)?;
+    let legs = def.legs();
     let tol = crate::curve::flatness(unit);
-    let rd = Reading { face: pf, held: held_param, loops, outer, tol, span: b - a };
-    // the drawn station, held to the rule every other is
-    let ps = &mut part.sketch;
-    let mid = ps.params[held_param as usize].value;
-    rd.settle(ps, mid)
-        .and_then(|mut sys| Reading::regular(&mut sys, ps))
-        .map_err(|why| format!("the station at {} {why}", num(mid)))?;
-    let counts: Vec<Vec<usize>> = rd.loops.iter().map(|l| vec![0; l.len()]).collect();
-    let mut need = counts.clone();
-    rd.need(ps, &mut need);
-    let counts = need.clone();
-    let centre = rd.station(ps, mid, &counts)?;
-    let (up, up_limit) = run(ps, &rd, &centre, None, b, &counts, &mut need)?;
-    restore(ps, &centre);
-    let (down, down_limit) = run(ps, &rd, &centre, up.first(), a, &counts, &mut need)?;
-    let drawn = down.len();
-    let mut stations: Vec<Station> =
-        down.into_iter().rev().chain(std::iter::once(centre)).chain(up).collect();
-    // every edge sampled as finely as its finest station needs, and each station read there again
-    if need != counts {
-        for st in &mut stations {
-            restore(ps, st);
-            *st = rd.station(ps, st.s, &need)?;
+    let mut parts: Vec<LegPart> =
+        legs.iter().map(|l| leg_part(sk, station, l, tol)).collect::<Result<_, _>>()?;
+    let names = parts[0].names.clone();
+    if parts.iter().any(|p| p.names != names) {
+        return Err("the stations on the chain's links are not one section: their edges differ"
+            .into());
+    }
+    // each leg after the first started where the one before it ends
+    let pairs = twins(def);
+    let mut stepped: Vec<Stepped> = Vec::with_capacity(legs.len());
+    for k in 0..legs.len() {
+        if k > 0 {
+            let end = stepped[k - 1].stations.last().ok_or("a leg has no stations")?;
+            if end.x.is_empty() {
+                return Err(format!("the station at {}, where one link of its chain meets the \
+                                    next, does not solve", num(legs[k].at + legs[k].from)));
+            }
+            let (before, after) = parts.split_at_mut(k);
+            put(&mut before[k - 1].part.sketch, &end.x);
+            carry_over(&before[k - 1], &mut after[0], &pairs[k - 1]);
+        }
+        stepped.push(step(&mut parts[k], &legs[k], k > 0)?);
+    }
+    // every edge sampled as finely as its finest station on any leg needs, and each station
+    // read there again
+    let mut need = stepped[0].need.clone();
+    for st in &stepped[1..] {
+        if st.need.len() != need.len()
+            || st.need.iter().zip(&need).any(|(x, y)| x.len() != y.len()) {
+            return Err("the stations on the chain's links are not one section".into());
+        }
+        for (n, m) in need.iter_mut().zip(&st.need) {
+            for (x, &y) in n.iter_mut().zip(m) {
+                *x = (*x).max(y);
+            }
         }
     }
-    // and an end that would not solve read as the limit of the stations closing in on it
-    if down_limit {
-        let near: Vec<Station> = stations[..3].iter().rev().cloned().collect();
-        stations.insert(0, limit(&near, a)?);
+    let last = legs.len() - 1;
+    let mut solved: Vec<Vec<Station>> = Vec::with_capacity(legs.len());
+    let mut drawn = 0;
+    for (k, ((lp, st), leg)) in parts.iter_mut().zip(&mut stepped).zip(&legs).enumerate() {
+        let (rd, ps) = (&lp.rd, &mut lp.part.sketch);
+        if st.counts != need {
+            for station in &mut st.stations {
+                restore(ps, station);
+                *station = rd.station(ps, station.s, &need)?;
+            }
+        }
+        let mut stations = std::mem::take(&mut st.stations);
+        // an end that would not solve read as the limit of the stations closing in on it: only
+        // the family's own ends, never where one link meets the next
+        let [down, up] = st.limits;
+        if (down && k > 0) || (up && k < last) {
+            let at = num(if down && k > 0 { leg.at + leg.from } else { leg.at + leg.to });
+            return Err(format!("the station at {at}, where one link of its chain meets the next, \
+                                does not solve"));
+        }
+        if down {
+            let near: Vec<Station> = stations[..3].iter().rev().cloned().collect();
+            stations.insert(0, limit(&near, leg.from)?);
+        }
+        if up {
+            stations.push(limit(&stations, leg.to)?);
+        }
+        if k == 0 {
+            drawn = st.drawn + usize::from(down);
+        }
+        for station in &mut stations {
+            station.s += leg.at;
+        }
+        solved.push(stations);
     }
-    if up_limit {
-        stations.push(limit(&stations, b)?);
-    }
-    let drawn = drawn + usize::from(down_limit);
-    let steps = rd.loops.iter().zip(&need).map(|(walked, n)| {
+    let steps = parts[0].rd.loops.iter().zip(&need).map(|(walked, n)| {
         walked.iter().zip(n).flat_map(|(w, &k)| {
             let curved = !matches!(w.edge.kind, EntKind::Line);
             std::iter::repeat_n((w.wall, curved), k)
         }).collect()
     }).collect();
-    let mut fam = Family { stations, steps, names, cw: Vec::new(), forward: true, tol };
+    let mut fam = Family { stations: joined(solved.clone()), steps, names, cw: Vec::new(),
+                           forward: true, tol };
     fam.judge(drawn)?;
     let samples = fam.steps.iter().map(Vec::len).sum();
-    fam.stations = densify(std::mem::take(&mut fam.stations), tol, samples)?;
+    let filled = solved.into_iter().map(|leg| densify(leg, tol, samples))
+        .collect::<Result<Vec<_>, _>>()?;
+    fam.stations = joined(filled);
     fam.ahead()?;
     Ok(fam)
+}
+
+/// The legs' stations as one run: where one leg ends the next begins, at the station both
+/// solved, kept once.
+fn joined(legs: Vec<Vec<Station>>) -> Vec<Station> {
+    let mut out: Vec<Station> = Vec::new();
+    for leg in legs {
+        let skip = usize::from(out.last().zip(leg.first()).is_some_and(|(a, b)| a.s == b.s));
+        out.extend(leg.into_iter().skip(skip));
+    }
+    out
 }
 
 impl Family {
@@ -1064,31 +1253,63 @@ fn pieces(sk: &mut Sketch, rd: &Reading, runs: &Runs, start: Node, to: f64, tol:
 /// solved between their nodes within `EXACT` of the section's size.
 pub(crate) fn walls(sk: &Sketch, si: usize) -> Result<Walls, String> {
     let fam = built(sk, si, REPORT_UNIT)?;
-    let SolidDef::Family { face, station, held, from, to } = &sk.solids[si].def else {
+    let def = &sk.solids[si].def;
+    let SolidDef::Family { station, .. } = def else {
         return Err("not a face family".into());
     };
-    let (a, b) = (from.value, to.value);
-    let prefix = crate::model::station_prefix(held);
-    let (mut part, outer) = part_of(sk, *face, station, &prefix);
-    let pf = part.entity_in(EntRef::face(*face as usize))
-        .ok_or("the station's face is not in its part")?.i();
-    let held_param = part.sketch.held.get(held).ok_or("its running number is not held")?.param;
-    let (loops, names) = walk_face(&part.sketch, pf, &prefix)?;
-    let rd = Reading { face: pf, held: held_param, loops, outer, tol: fam.tol, span: b - a };
-    let ps = &mut part.sketch;
-    let runs = runs(ps, &rd)?;
-    let mid = ps.params[held_param as usize].value;
-    rd.settle(ps, mid).map_err(|why| format!("the station at {} {why}", num(mid)))?;
-    let centre = Node { s: mid, x: ps.get_x(), numbers: numbers(ps, &rd)? };
-    let tol = EXACT * spread(&runs, &centre.numbers).max(f64::MIN_POSITIVE);
-    let up = pieces(ps, &rd, &runs, centre.clone(), b, tol)?;
-    let down = pieces(ps, &rd, &runs, centre, a, tol)?;
-    // the pieces in order of the running number, each run down turned round
-    let ordered = down.into_iter().rev().map(|mut p| {
-        p.span.reverse();
-        p.nodes.reverse();
-        p
-    }).chain(up).collect::<Vec<_>>();
+    // each leg run in pieces, the legs one after the next in the family's running number
+    let mut ordered: Vec<Piece> = Vec::new();
+    let mut walls: Option<(Runs, Vec<String>)> = None;
+    let pairs = twins(def);
+    // the leg before, standing where it ends: where the next starts (`carry_over`)
+    let mut before: Option<LegPart> = None;
+    for (k, leg) in def.legs().into_iter().enumerate() {
+        let mut lp = leg_part(sk, station, &leg, fam.tol)?;
+        if let Some(b) = &before {
+            carry_over(b, &mut lp, &pairs[k - 1]);
+        }
+        let carried = before.is_some();
+        let ps = &mut lp.part.sketch;
+        let rd = &lp.rd;
+        let runs = runs(ps, rd)?;
+        let first = if carried { leg.from } else { ps.params[rd.held as usize].value };
+        rd.settle(ps, first)
+            .map_err(|why| format!("the station at {} {why}", num(first + leg.at)))?;
+        let centre = Node { s: first, x: ps.get_x(), numbers: numbers(ps, rd)? };
+        let tol = EXACT * spread(&runs, &centre.numbers).max(f64::MIN_POSITIVE);
+        let up = pieces(ps, rd, &runs, centre.clone(), leg.to, tol)?;
+        let down = if carried { Vec::new() } else { pieces(ps, rd, &runs, centre, leg.from, tol)? };
+        // the part left where the leg ends, for the next to start from
+        if let Some(end) = up.last().and_then(|p| p.nodes.last()) {
+            put(ps, &end.x);
+        }
+        // the pieces in order of the running number, each run down turned round
+        ordered.extend(down.into_iter().rev().map(|mut p| {
+            p.span.reverse();
+            p.nodes.reverse();
+            p
+        }).chain(up).map(|mut p| {
+            p.span = p.span.map(|s| s + leg.at);
+            for n in &mut p.nodes {
+                n.s += leg.at;
+            }
+            p
+        }));
+        match &walls {
+            None => walls = Some((runs, lp.names.clone())),
+            Some((r, n)) if *n == lp.names && r.len() == runs.len()
+                && r.iter().zip(&runs).all(|(x, y)| x.len() == y.len()) => {}
+            Some(_) => return Err("the stations on the chain's links are not one section".into()),
+        }
+        before = Some(lp);
+    }
+    let (runs, names) = walls.ok_or("a face family has no legs")?;
+    // one leg's last span ends where the next one's starts
+    for w in ordered.windows(2) {
+        if w[0].span[1] != w[1].span[0] {
+            return Err("a face family's legs do not meet".into());
+        }
+    }
     let spans = ordered.iter().map(|p| p.span).collect();
     let at = ordered.iter().map(|p| std::array::from_fn(|i| p.nodes[i].s)).collect();
     let mut names = names.into_iter();

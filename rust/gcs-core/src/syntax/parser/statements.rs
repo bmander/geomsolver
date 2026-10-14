@@ -965,7 +965,8 @@ impl<'a> P<'a> {
         membership.set_span(Span::at(end));
         let slots = EntKind::Solid.fields().iter()
             .filter(|(_, f)| *f != crate::model::Field::Scalar).count();
-        let spec = crate::syntax::FamilySpec { instance, face, swept, domain: (a, b), held: None };
+        let spec = crate::syntax::FamilySpec { instance, face, swept, domain: (a, b), held: None,
+            legs: Vec::new() };
         Some(crate::syntax::Decl {
             annotations: Default::default(),
             kind: EntKind::Solid,

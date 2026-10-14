@@ -107,20 +107,32 @@ fn family(
     st: &Stmt,
     say: &mut impl FnMut(Code, Span, String),
 ) -> Option<SolidDef> {
-    let face = one_face(ops, st, say)?;
-    let held = f.held.clone()?;
+    // over a chain, one face a leg (#243 L4)
+    let faces: Vec<u32> = if f.legs.is_empty() {
+        vec![one_face(ops, st, say)?]
+    } else {
+        if ops.len() != f.legs.len() || ops.iter().any(|e| e.kind != EntKind::Face) {
+            say(Code::E080, st.span, "a face family over a chain sweeps one face a link".into());
+            return None;
+        }
+        ops.iter().map(|e| e.idx).collect()
+    };
+    let (face, held) = (faces[0], f.held.clone()?);
     let ends = [&f.domain.0, &f.domain.1].map(|t| crate::expr::literal(t));
     let [Some(a), Some(b)] = ends else {
         say(Code::E103, st.span, "a face family's interval is two numbers".into());
         return None;
     };
-    // the station: every entity its instance made, the face's edges (a closing edge the face
-    // made itself among them), and what each is made of
-    let prefix = crate::model::station_prefix(&held);
+    // the station: every entity its instance made — every leg's — the face's edges (a closing
+    // edge the face made itself among them), and what each is made of
+    let helds: Vec<&String> =
+        if f.legs.is_empty() { vec![&held] } else { f.legs.iter().map(|(h, _)| h).collect() };
+    let prefixes: Vec<String> = helds.iter().map(|h| crate::model::station_prefix(h)).collect();
     let mut station: BTreeSet<EntRef> = res.of.iter()
-        .filter(|(k, _)| k.starts_with(&prefix))
+        .filter(|(k, _)| prefixes.iter().any(|p| k.starts_with(p)))
         .map(|(_, &e)| e)
-        .chain(sk.faces[face as usize].boundaries().flat_map(|(edges, _)| edges.iter().copied()))
+        .chain(faces.iter().flat_map(|&fc| sk.faces[fc as usize].boundaries()
+            .flat_map(|(edges, _)| edges.iter().copied())))
         .filter(|e| !matches!(e.kind, EntKind::Face | EntKind::Solid))
         .collect();
     let mut stack: Vec<EntRef> = station.iter().copied().collect();
@@ -138,7 +150,36 @@ fn family(
         held,
         from: extent(a, &f.domain.0),
         to: extent(b, &f.domain.1),
+        legs: legs(sk, res, &f.legs, &faces),
     })
+}
+
+/// A family's legs over a chain (#243 L4), each its station's entities in the order of their
+/// names under it: a name every leg's station has, then each entity's children in their order,
+/// so the legs' lists correspond entry for entry.
+fn legs(sk: &Sketch, res: &Resolver, legs: &[(String, f64)], faces: &[u32])
+    -> Vec<crate::model::FamilyLeg> {
+    let prefixes: Vec<String> = legs.iter().map(|(h, _)| crate::model::station_prefix(h)).collect();
+    let under = |p: &str| -> BTreeMap<&str, EntRef> {
+        res.of.iter().filter_map(|(k, &e)| k.strip_prefix(p).map(|n| (n, e))).collect()
+    };
+    let named: Vec<BTreeMap<&str, EntRef>> = prefixes.iter().map(|p| under(p)).collect();
+    let mut out = Vec::new();
+    for (((held, at), &face), mine) in legs.iter().zip(faces).zip(&named) {
+        let mut ents: Vec<EntRef> = Vec::new();
+        for (name, &e) in mine {
+            if !named.iter().all(|m| m.get(name).is_some_and(|o| o.kind == e.kind)) {
+                continue;
+            }
+            for x in std::iter::once(e).chain(sk.children(e)) {
+                if !matches!(x.kind, EntKind::Face | EntKind::Solid) {
+                    ents.push(x);
+                }
+            }
+        }
+        out.push(crate::model::FamilyLeg { face, held: held.clone(), at: *at, ents });
+    }
+    out
 }
 
 /// What a solid is written over, resolved: faces (one written in place built here) or solids —

@@ -524,30 +524,34 @@ component OnArc(g: arc, up: axis, s: Scalar) {
 // The plane square to the spline `g` where its parameter is `s`: the tangent there drawn as a line
 // from `m`, the plane square to it, its `v` along `up` (the normal of the plane `g` is drawn in,
 // so again rotation-minimising for a guide in one plane).  The tangent is drawn 10 mm long, or its
-// far end would slide along it.
+// far end would slide along it, and starts ahead along `g`, so the plane starts facing the way
+// the guide runs, `v` along `up` and not the mirror of it.
 component OnSpline(g: spline, up: axis, s: Scalar) {
   m := point
   m coincident(t == s) g
-  q := point
+  q := point hint(at: m, along: g, by: 0.1)
   tl := line(m, q)
   g tangent(at: m) tl
   length(10mm) tl
-  n := plane
+  n := plane(u: hint(dir: up, turn: -90deg, about: tl), v: hint(dir: up))
   n.origin coincident m
   n square(up: up) tl
 }
 
 // The plane square to any path `g` — a line, an arc, a spline or a traced curve — where its
 // parameter is `s`, its `v` along `up`: `OnSpline`'s statements over a `path`.  A line's and an
-// arc's `s` is the fraction of its run (an arc's by angle), a spline's its own parameter.
+// arc's `s` is the fraction of its run (an arc's by angle), a spline's its own parameter.  Given a
+// named open chain of lines and arcs, a family runs it link by link, `s` from 0 to the count of
+// its links (#243 L4).  With `up` the normal of the plane `g` is drawn in, the frame turns only as
+// the guide does — the rotation-minimising frame, its binormal held.
 component On(g: path, up: axis, s: Scalar) {
   m := point
   m coincident(t == s) g
-  q := point
+  q := point hint(at: m, along: g, by: 0.1)
   tl := line(m, q)
   g tangent(at: m) tl
   length(10mm) tl
-  n := plane
+  n := plane(u: hint(dir: up, turn: -90deg, about: tl), v: hint(dir: up))
   n.origin coincident m
   n square(up: up) tl
 }

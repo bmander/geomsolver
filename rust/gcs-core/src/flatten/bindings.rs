@@ -346,7 +346,12 @@ impl<'a> Walk<'a> {
             // one table of every unknown, seeded by the call's `hint(…)` where it wrote one
             let unknown = crate::model::Declared { dim: f.ty.dim(), seed: None };
             self.unknowns.entry(name.clone()).or_insert(unknown);
-            sub.insert(f.name.text.clone(), free(name, f.ty));
+            // a leg of a family over a chain reads its formal `k` past its own number (#243 L4)
+            let mut value = free(name.clone(), f.ty);
+            if let Some(&(k, _)) = self.held.legs.get(&name) {
+                value.c = k;
+            }
+            sub.insert(f.name.text.clone(), value);
         }
         (sub, sides)
     }
@@ -508,9 +513,15 @@ impl<'a> Walk<'a> {
 /// The argument a call gives formal `f`: by its label, or by its place before every label.
 fn arg_of<'i>(comp: &Component, inst: &'i crate::syntax::Instance, f: &crate::syntax::Formal)
     -> Option<&'i crate::syntax::InstArg> {
-    inst.args.iter().enumerate().find(|(i, a)| a.label.as_ref().map_or_else(
-        || comp.formals.get(*i).is_some_and(|p| p.name.text == f.name.text),
-        |l| l.text == f.name.text)).map(|(_, a)| a)
+    arg_index(comp, inst, f).map(|i| &inst.args[i])
+}
+
+/// Where in the call `arg_of`'s argument is written.
+pub(super) fn arg_index(comp: &Component, inst: &crate::syntax::Instance, f: &crate::syntax::Formal)
+    -> Option<usize> {
+    inst.args.iter().enumerate().position(|(i, a)| a.label.as_ref().map_or_else(
+        || comp.formals.get(i).is_some_and(|p| p.name.text == f.name.text),
+        |l| l.text == f.name.text))
 }
 
 impl Walk<'_> {

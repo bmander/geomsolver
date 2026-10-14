@@ -123,6 +123,7 @@ mod ordinate;
 mod overview;
 mod par;
 mod patches;
+mod paths;
 mod pick;
 mod planar;
 mod planar_envelope;

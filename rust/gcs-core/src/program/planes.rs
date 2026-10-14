@@ -218,6 +218,9 @@ pub(super) fn incidences(
             CKind::PointOnPlane | CKind::LineOnPlane if w.args.is_empty() => false,
             CKind::PointOnSpline | CKind::PointOnCurve | CKind::SplineTangentLine
             | CKind::CurveTangentLine | CKind::SplineTangentAt | CKind::CurveTangentAt => true,
+            // a line touching an arc or a circle at a point of it lies in the round's plane
+            // (#243 L4): the tangency is the plane's, its contact read in space or drawn there
+            CKind::TangentCircleAt => true,
             _ => continue,
         };
         // the operand drawn in a plane (the plane itself, a spline, a curve) and the point or
@@ -248,7 +251,12 @@ pub(super) fn incidences(
             // on a curve, which has no contact in space, it is refused here, said once
             Some((&p, why)) => {
                 let name = |e: EntRef| map.name_of(e).cloned().unwrap_or_else(|| io::entity_name(e));
-                let kind = if on.kind == EntKind::Spline { "spline" } else { "curve" };
+                let kind = match on.kind {
+                    EntKind::Spline => "spline",
+                    EntKind::Arc => "arc",
+                    EntKind::Circle => "circle",
+                    _ => "curve",
+                };
                 diags.push(Diag::on(
                     Code::E062,
                     st,

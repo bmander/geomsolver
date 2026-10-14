@@ -82,7 +82,8 @@ place needs no arithmetic:
 - `hint(at: pin)` starts where `pin` starts; `hint(at: k, bearing: 90deg)` on circle `k`'s rim;
 - `hint(at: a, toward: b, by: 0.5, turn: 90deg)` steps from `a` the fraction `by` (1 if unsaid) of
   the way to `b`, turned `turn` about `a` (`by: -1` is a reflection); `along: l` in place of
-  `toward:` steps by `by` times line `l`'s run;
+  `toward:` steps by `by` times line `l`'s run, and along an arc, a spline or a traced curve by
+  `by` times its rate along its own run where `a` meets it — ahead along it;
 - `hint(at: P, (3, 4))`, `P` a plane, is in `P`'s own coordinates (1.12).
 
 A place drawn in another view is read in space and projected into the seeded point's view. A point
@@ -529,7 +530,9 @@ t0 := Rung(l0, r0, len: 50)
   (`Length`, `Angle`, `Int`, `Scalar`, `Side`), a `group` or an interface (below), a `set`
   (1.13), or a `path`: a line,
   an arc, a circle, a spline or a curve, whose words are settled by what the call gives it
-  (`m coincident g`, `g tangent(at: m) l`); given anything else, E103 at the argument.
+  (`m coincident g`, `g tangent(at: m) l`); given anything else, E103 at the argument.  A face
+  family's station may also be given a named open chain for a `path`, which it runs over link by
+  link (the face family, below).
 - **Passing an entity is aliasing**: formal and actual are one entity, so a boundary costs nothing.
 - **Entities by position, numbers by label**: `Rung(l0, r0, len: 50)`, never `Rung(l0, r0, 50)`,
   and nothing positional after a label. Either mistake is **E004** at the argument.
@@ -1183,9 +1186,13 @@ k := Par(o).p over u in (-2mm, 2mm)
   use any expression in `s` and read a number of the geometry it was given (`rim.r`). Write *where
   the section stands* and *what it is* as constraints in the component: a station word of `std` for
   the plane square to the guide at `s` — `std.OnLine(g, up: up, s: s)` on a line, `std.OnArc` an
-  arc, `std.OnSpline` a spline, `std.On` any of a line, a spline or a traced curve, `std.Screwed`
-  and `std.OnHelix` along a screw — then the section drawn `in st.n`, its sizes and turns reading
-  `s`. A component is closed over its arguments, so the station's `up` (`std.z`) is passed in as an
+  arc, `std.OnSpline` a spline, `std.On` any of a line, an arc, a spline or a traced curve,
+  `std.Screwed` and `std.OnHelix` along a screw — then the section drawn `in st.n`, its sizes and
+  turns reading `s`. Its `v` stays along `up`; with `up` the normal of the guide's plane, the frame
+  turns no more than the guide does. **A named open chain of lines and arcs is one path**:
+  `solid(Tube(route, std.z, r: 4mm).f over s in (0, 5))` runs the station over `route`'s
+  five links one after the next, link `k` while `s` is in `(k, k + 1)`; a law in `s` reads the
+  chain's whole `s`, and the walls keep their names across the links (`docs/lofts/l0/pipe.sv`). A component is closed over its arguments, so the station's `up` (`std.z`) is passed in as an
   `axis` formal. Every station inside the interval must solve to DOF 0 with the section's shape
   intact; an end may shrink to a point (a pyramid's apex). Caps `start` and `end`, walls named by
   the section's edges (`body.sec.ab`). Seed the section where it belongs at the middle of the
