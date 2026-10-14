@@ -1247,7 +1247,9 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
                     .collect();
                 let legs = legs.iter().map(|l| crate::model::FamilyLeg {
                     face: face(l.face),
-                    ents: l.ents.iter().filter_map(|&e| station_ent(e)).collect(),
+                    ents: l.ents.iter()
+                        .map(|&e| station_ent(e).expect("retention kept the whole station"))
+                        .collect(),
                     ..l.clone()
                 }).collect();
                 crate::model::SolidDef::Family { face: face(*f), station, held: held.clone(),

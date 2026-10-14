@@ -668,6 +668,11 @@ fn step(lp: &mut LegPart, leg: &Leg, carried: bool) -> Result<Stepped, String> {
     Ok(Stepped { stations, drawn, limits: [down_limit, up_limit], counts, need })
 }
 
+/// Whether two legs' stations are one section: the same walls, loop by loop.
+fn one_section(a: &LegPart, b: &LegPart) -> bool {
+    a.names == b.names && a.rd.loops.iter().map(Vec::len).eq(b.rd.loops.iter().map(Vec::len))
+}
+
 /// Each pair of entities two neighbouring legs' stations correspond by (`FamilyLeg::ents`).
 fn twins(def: &SolidDef) -> Vec<Vec<(EntRef, EntRef)>> {
     let SolidDef::Family { legs, .. } = def else { return Vec::new() };
@@ -692,8 +697,7 @@ fn march(sk: &Sketch, si: usize, unit: f64) -> Result<Family, String> {
     let tol = crate::curve::flatness(unit);
     let mut parts: Vec<LegPart> =
         legs.iter().map(|l| leg_part(sk, station, l, tol)).collect::<Result<_, _>>()?;
-    let names = parts[0].names.clone();
-    if parts.iter().any(|p| p.names != names) {
+    if parts.iter().any(|p| !one_section(&parts[0], p)) {
         return Err("the stations on the chain's links are not one section: their edges differ"
             .into());
     }
@@ -702,11 +706,12 @@ fn march(sk: &Sketch, si: usize, unit: f64) -> Result<Family, String> {
     let mut stepped: Vec<Stepped> = Vec::with_capacity(legs.len());
     for k in 0..legs.len() {
         if k > 0 {
-            let end = stepped[k - 1].stations.last().ok_or("a leg has no stations")?;
-            if end.x.is_empty() {
+            // only the family's own ends are limits, never where one link meets the next
+            if stepped[k - 1].limits[1] {
                 return Err(format!("the station at {}, where one link of its chain meets the \
                                     next, does not solve", num(legs[k].at + legs[k].from)));
             }
+            let end = stepped[k - 1].stations.last().ok_or("a leg has no stations")?;
             let (before, after) = parts.split_at_mut(k);
             put(&mut before[k - 1].part.sketch, &end.x);
             carry_over(&before[k - 1], &mut after[0], &pairs[k - 1]);
@@ -717,17 +722,12 @@ fn march(sk: &Sketch, si: usize, unit: f64) -> Result<Family, String> {
     // read there again
     let mut need = stepped[0].need.clone();
     for st in &stepped[1..] {
-        if st.need.len() != need.len()
-            || st.need.iter().zip(&need).any(|(x, y)| x.len() != y.len()) {
-            return Err("the stations on the chain's links are not one section".into());
-        }
         for (n, m) in need.iter_mut().zip(&st.need) {
             for (x, &y) in n.iter_mut().zip(m) {
                 *x = (*x).max(y);
             }
         }
     }
-    let last = legs.len() - 1;
     let mut solved: Vec<Vec<Station>> = Vec::with_capacity(legs.len());
     let mut drawn = 0;
     for (k, ((lp, st), leg)) in parts.iter_mut().zip(&mut stepped).zip(&legs).enumerate() {
@@ -739,14 +739,9 @@ fn march(sk: &Sketch, si: usize, unit: f64) -> Result<Family, String> {
             }
         }
         let mut stations = std::mem::take(&mut st.stations);
-        // an end that would not solve read as the limit of the stations closing in on it: only
-        // the family's own ends, never where one link meets the next
+        // an end that would not solve read as the limit of the stations closing in on it (a
+        // carried leg has no `down`, and only the last an `up`: refused above)
         let [down, up] = st.limits;
-        if (down && k > 0) || (up && k < last) {
-            let at = num(if down && k > 0 { leg.at + leg.from } else { leg.at + leg.to });
-            return Err(format!("the station at {at}, where one link of its chain meets the next, \
-                                does not solve"));
-        }
         if down {
             let near: Vec<Station> = stations[..3].iter().rev().cloned().collect();
             stations.insert(0, limit(&near, leg.from)?);
@@ -768,6 +763,7 @@ fn march(sk: &Sketch, si: usize, unit: f64) -> Result<Family, String> {
             std::iter::repeat_n((w.wall, curved), k)
         }).collect()
     }).collect();
+    let names = parts[0].names.clone();
     let mut fam = Family { stations: joined(solved.clone()), steps, names, cw: Vec::new(),
                            forward: true, tol };
     fam.judge(drawn)?;
@@ -1257,7 +1253,8 @@ pub(crate) fn walls(sk: &Sketch, si: usize) -> Result<Walls, String> {
     let SolidDef::Family { station, .. } = def else {
         return Err("not a face family".into());
     };
-    // each leg run in pieces, the legs one after the next in the family's running number
+    // each leg run in pieces, the legs one after the next in the family's running number — one
+    // section on every leg, as the stepping has judged (`march`), so the first's walls
     let mut ordered: Vec<Piece> = Vec::new();
     let mut walls: Option<(Runs, Vec<String>)> = None;
     let pairs = twins(def);
@@ -1265,10 +1262,10 @@ pub(crate) fn walls(sk: &Sketch, si: usize) -> Result<Walls, String> {
     let mut before: Option<LegPart> = None;
     for (k, leg) in def.legs().into_iter().enumerate() {
         let mut lp = leg_part(sk, station, &leg, fam.tol)?;
+        let carried = before.is_some();
         if let Some(b) = &before {
             carry_over(b, &mut lp, &pairs[k - 1]);
         }
-        let carried = before.is_some();
         let ps = &mut lp.part.sketch;
         let rd = &lp.rd;
         let runs = runs(ps, rd)?;
@@ -1295,21 +1292,12 @@ pub(crate) fn walls(sk: &Sketch, si: usize) -> Result<Walls, String> {
             }
             p
         }));
-        match &walls {
-            None => walls = Some((runs, lp.names.clone())),
-            Some((r, n)) if *n == lp.names && r.len() == runs.len()
-                && r.iter().zip(&runs).all(|(x, y)| x.len() == y.len()) => {}
-            Some(_) => return Err("the stations on the chain's links are not one section".into()),
+        if walls.is_none() {
+            walls = Some((runs, lp.names.clone()));
         }
         before = Some(lp);
     }
     let (runs, names) = walls.ok_or("a face family has no legs")?;
-    // one leg's last span ends where the next one's starts
-    for w in ordered.windows(2) {
-        if w[0].span[1] != w[1].span[0] {
-            return Err("a face family's legs do not meet".into());
-        }
-    }
     let spans = ordered.iter().map(|p| p.span).collect();
     let at = ordered.iter().map(|p| std::array::from_fn(|i| p.nodes[i].s)).collect();
     let mut names = names.into_iter();

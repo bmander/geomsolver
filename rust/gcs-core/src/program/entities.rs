@@ -1146,16 +1146,16 @@ fn rate_along(sk: &Sketch, g: EntRef, w: [f64; 3]) -> Result<[f64; 3], String> {
         }
         _ => {
             let pts = sk.curve_polyline_within(g.i(), 1e-3);
-            let k = (0..pts.len()).min_by(|&i, &j| {
-                let d = |i: usize| (pts[i].1 .0 - x).dhypot(pts[i].1 .1 - y);
-                d(i).total_cmp(&d(j))
-            }).ok_or("the curve has no points yet")?;
-            let (i, j) = (k.saturating_sub(1), (k + 1).min(pts.len() - 1));
-            let du = pts[j].0 - pts[i].0;
-            if du == 0.0 {
+            // the nearest of its points, and the chord across its neighbours by parameter
+            let off = |i: usize| { let (_, (px, py)) = pts[i]; (px - x).dhypot(py - y) };
+            let k = (0..pts.len()).min_by(|&i, &j| off(i).total_cmp(&off(j)))
+                .ok_or("the curve has no points yet")?;
+            let (u0, (x0, y0)) = pts[k.saturating_sub(1)];
+            let (u1, (x1, y1)) = pts[(k + 1).min(pts.len() - 1)];
+            if u1 == u0 {
                 return Err("the curve has no run yet".to_string());
             }
-            lift(((pts[j].1 .0 - pts[i].1 .0) / du, (pts[j].1 .1 - pts[i].1 .1) / du))
+            lift(((x1 - x0) / (u1 - u0), (y1 - y0) / (u1 - u0)))
         }
     };
     if !d.iter().all(|v| v.is_finite()) || crate::space::norm(d) <= 1e-12 {

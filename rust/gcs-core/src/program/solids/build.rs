@@ -125,9 +125,10 @@ fn family(
     };
     // the station: every entity its instance made — every leg's — the face's edges (a closing
     // edge the face made itself among them), and what each is made of
-    let helds: Vec<&String> =
-        if f.legs.is_empty() { vec![&held] } else { f.legs.iter().map(|(h, _)| h).collect() };
-    let prefixes: Vec<String> = helds.iter().map(|h| crate::model::station_prefix(h)).collect();
+    let prefixes: Vec<String> = match f.legs.is_empty() {
+        true => vec![crate::model::station_prefix(&held)],
+        false => f.legs.iter().map(|(h, _)| crate::model::station_prefix(h)).collect(),
+    };
     let mut station: BTreeSet<EntRef> = res.of.iter()
         .filter(|(k, _)| prefixes.iter().any(|p| k.starts_with(p)))
         .map(|(_, &e)| e)
@@ -156,7 +157,7 @@ fn family(
 
 /// A family's legs over a chain (#243 L4), each its station's entities in the order of their
 /// names under it: a name every leg's station has, then each entity's children in their order,
-/// so the legs' lists correspond entry for entry.
+/// each entity once, so the legs' lists correspond entry for entry.
 fn legs(sk: &Sketch, res: &Resolver, legs: &[(String, f64)], faces: &[u32])
     -> Vec<crate::model::FamilyLeg> {
     let prefixes: Vec<String> = legs.iter().map(|(h, _)| crate::model::station_prefix(h)).collect();
@@ -166,13 +167,13 @@ fn legs(sk: &Sketch, res: &Resolver, legs: &[(String, f64)], faces: &[u32])
     let named: Vec<BTreeMap<&str, EntRef>> = prefixes.iter().map(|p| under(p)).collect();
     let mut out = Vec::new();
     for (((held, at), &face), mine) in legs.iter().zip(faces).zip(&named) {
-        let mut ents: Vec<EntRef> = Vec::new();
+        let (mut ents, mut seen) = (Vec::new(), BTreeSet::new());
         for (name, &e) in mine {
             if !named.iter().all(|m| m.get(name).is_some_and(|o| o.kind == e.kind)) {
                 continue;
             }
             for x in std::iter::once(e).chain(sk.children(e)) {
-                if !matches!(x.kind, EntKind::Face | EntKind::Solid) {
+                if !matches!(x.kind, EntKind::Face | EntKind::Solid) && seen.insert(x) {
                     ents.push(x);
                 }
             }
