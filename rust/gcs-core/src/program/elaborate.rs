@@ -79,6 +79,7 @@ pub(super) fn elaborate_in(
     let skip = names(&mut cx, &body);
     let flat = Flat { expansion: &expansion, body, stating, skip };
     let deferred = geometry(&mut cx, &flat);
+    station_reads(&mut cx, &flat);
     let (drawn, kept_off) = memberships(&mut cx, &flat, &deferred)?;
     let held = holds(&mut cx, &flat, &deferred, crossed);
     let planar = motions(&mut cx, &flat);
@@ -91,6 +92,41 @@ pub(super) fn elaborate_in(
     solids_and_surfaces(&mut cx, &flat, faces, &generated, &held_in_space)?;
     expressions(&mut cx, &flat);
     Ok(finish(cx, &flat))
+}
+
+/// **The numbers of the geometry a face family's stations read** (#243 L1), once the geometry is
+/// built and before any expression is worked out: each held as its scalar stands, so it is no
+/// unknown of the drawing and every station reads it where the drawing put it.
+fn station_reads(cx: &mut Elab<'_>, flat: &Flat<'_>) {
+    use crate::model::{HELD_R, HELD_X, HELD_Y, HELD_Z};
+    for (read, abs, rest) in &flat.expansion.reads {
+        let found = cx.res.of.get(abs).copied().and_then(|e| {
+            let (last, path) = rest.split_last()?;
+            let path: Vec<crate::syntax::Seg> = path.iter()
+                .map(|f| crate::syntax::Seg::Field(crate::syntax::Name::new(f.as_str())))
+                .collect();
+            let e = resolve::follow(&cx.sk, e, &path).ok()?;
+            let field = match (e.kind, last.as_str()) {
+                (EntKind::Point, "x") => HELD_X,
+                (EntKind::Point, "y") => HELD_Y,
+                (EntKind::Point, "z") => HELD_Z,
+                (EntKind::Circle | EntKind::Arc, "r") => HELD_R,
+                _ => return None,
+            };
+            Some((e, field, cx.sk.held_read(e, field)?))
+        });
+        let Some((e, field, value)) = found else {
+            let at = cx.res.declared_at.get(abs).copied().unwrap_or_default();
+            cx.diags.push(Diag { code: Code::E103, span: at, stmt: None, message: format!(
+                "`{read}` is no number of the geometry a station can read: a point's `x`, `y` or \
+                 `z`, or a circle's or an arc's `r`") });
+            continue;
+        };
+        cx.sk.hold(read, value, crate::units::Dim::LENGTH);
+        if let Some(h) = cx.sk.held.get_mut(read) {
+            h.reads = Some((e, field));
+        }
+    }
 }
 
 /// **Phase 0: the document's unit**, before *anything* reads a number.
@@ -146,6 +182,10 @@ fn expand(
     let mut expansion = crate::flatten::expand_faces(cx.doc, cx.sk.units, refused, faces);
     cx.map.private_names = expansion.private_names.clone();
     cx.sk.declared = std::mem::take(&mut expansion.unknowns);
+    // each face family's running number, held where its drawn station stands (#243 L1)
+    for (name, &(dim, at)) in &expansion.held {
+        cx.sk.hold(name, at, dim);
+    }
     cx.diags.extend(expansion.diagnostics.iter().cloned());
     cx.res.normals = expansion.normals.clone();
     expansion

@@ -310,7 +310,12 @@ pub fn layout_selected(sk: &Sketch, unit: f64, ids: Option<&[u32]>) -> Vec<Callo
         spins: BTreeMap::new(),
     };
     let mut out = Vec::with_capacity(sk.constraints.len());
+    // a face family's station is never drawn, nor its dimensions (#243 L1)
+    let stations = sk.stations();
     for c in &sk.constraints {
+        if !stations.is_empty() && c.entities().iter().any(|e| stations.contains(e)) {
+            continue;
+        }
         // a drag target is a number, not a dimension, and an arc's own definition is not
         // something the drawing states twice — nor is a block's dimension, once per copy,
         // unless that copy is the one asked for, nor a set's row stated as its derivative

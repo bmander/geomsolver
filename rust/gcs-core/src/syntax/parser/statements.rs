@@ -467,6 +467,27 @@ impl<'a> P<'a> {
         false
     }
 
+    /// Whether the brackets of the `solid(` at the cursor hold an `over` of their own: a face
+    /// family (#243 L1), `solid(Station(g).f over s in (0, 1))`.
+    fn family_ahead(&self) -> bool {
+        let mut depth = 0i32;
+        for (t, _) in self.t.iter().skip(self.i + 1) {
+            match t {
+                Tok::Nl if depth == 0 => return false,
+                Tok::P('(') | Tok::P('[') | Tok::P('{') => depth += 1,
+                Tok::P(')') | Tok::P(']') | Tok::P('}') => {
+                    depth -= 1;
+                    if depth <= 0 {
+                        return false;
+                    }
+                }
+                Tok::Ident(w) if depth == 1 && w == "over" => return true,
+                _ => {}
+            }
+        }
+        false
+    }
+
     /// `w := m * N / 2` — the number after `:=`, through the line's end.
     fn param(&mut self, name: Name) -> Option<StmtKind> {
         let (text, span) = self.value_after_define()?;
@@ -666,6 +687,11 @@ impl<'a> P<'a> {
             }
             Some("view" | "section" | "dimensions") if call => {
                 self.derived(DeclName::Written(name))?
+            }
+            // `duct := solid(Station(g).f over s in (0, 1))` — a face of a component as one of
+            // its formals runs, one dimension up from a curve (#243 L1)
+            Some("solid") if call && self.family_ahead() => {
+                StmtKind::Decl(self.family(DeclName::Written(name))?)
             }
             // `k := leg.toe over theta in (0, 360)` — a point of a component as one of its
             // formals runs (§6.5); `over` is what says the value is a curve
@@ -878,6 +904,93 @@ impl<'a> P<'a> {
         }
         let [(a, _), (b, _)] = self.pair()?;
         Some(CurveSpec { target, swept, domain: (a, b), of: None })
+    }
+
+    /// What follows a face family's `solid`: `(Component(args).face over IDENT in (a, b))`, the
+    /// instance written in place (#243 L1, finding 11).  The instance's key is one the source
+    /// cannot write, as a curve's is; the face is read under it once the flattener has bound it.
+    pub(super) fn family(&mut self, name: DeclName) -> Option<crate::syntax::Decl> {
+        self.i += 1; // `solid`
+        let open = self.here().lo as usize;
+        if !self.want_p('(') {
+            return None;
+        }
+        if self.call_at(self.i).is_none() {
+            self.fail(
+                "a face family is the face of an instance written in place: \
+                 `solid(Component(…).face over s in (a, b))`",
+            );
+            return None;
+        }
+        let component = self.component_name()?;
+        let lo = component.span.lo as usize;
+        let args = self.inst_args()?;
+        if !self.eat_p('.') {
+            self.fail("the face a family sweeps follows the instance: `Component(…).face`");
+            return None;
+        }
+        let face = self.refr()?;
+        if !self.eat_word("over") {
+            self.fail("a face family says which formal runs: `over s in (a, b)`");
+            return None;
+        }
+        let swept = self.ident()?;
+        if !self.eat_word("in") {
+            self.fail("a face family says the interval its formal runs over: `in (a, b)`");
+            return None;
+        }
+        let [(a, _), (b, _)] = self.pair()?;
+        if !self.want_p(')') {
+            return None;
+        }
+        let list_span = Span::new(open, self.prev_hi());
+        let instance = Instance {
+            annotations: Default::default(),
+            name: Name { text: format!("#f{lo}"), span: Span::at(lo) },
+            component,
+            args,
+            span: Span::new(lo, list_span.hi as usize - 1),
+            membership: Membership::default(),
+            class: Classes::default(),
+        };
+        let at = self.prev_hi();
+        let (class, class_span) = self.class_clause(at);
+        if self.peek_word("in") || self.peek_word("hint") {
+            self.fail("a face family stands where its stations put it: it takes no `in` or `hint`");
+            return None;
+        }
+        self.end_of_stmt();
+        let end = self.prev_hi();
+        let mut membership = Membership::default();
+        membership.set_span(Span::at(end));
+        let slots = EntKind::Solid.fields().iter()
+            .filter(|(_, f)| *f != crate::model::Field::Scalar).count();
+        let spec = crate::syntax::FamilySpec { instance, face, swept, domain: (a, b), held: None };
+        Some(crate::syntax::Decl {
+            annotations: Default::default(),
+            kind: EntKind::Solid,
+            name,
+            children: vec![Vec::new(); slots],
+            seed: Vec::new(),
+            seed_text: Vec::new(),
+            seed_spans: Vec::new(),
+            hint_span: None,
+            knots: None,
+            weights: None,
+            curve: None,
+            computed: None,
+            class,
+            class_span: if class_span.is_empty() { Span::at(end) } else { class_span },
+            seed_at: None,
+            seed_names: Vec::new(),
+            sweep: Some(crate::syntax::Sweep::Family(Box::new(spec))),
+            motion: None,
+            angular_span: None,
+            membership,
+            list_span,
+            close: None,
+            mint_close: None,
+        })
     }
 
     /// `( expr, expr )` — an interval, a computed point's coordinates.

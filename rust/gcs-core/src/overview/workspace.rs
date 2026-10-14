@@ -371,7 +371,7 @@ fn nearest_pane(sk: &Sketch, proj: &Projection, at: (f64, f64), tol: f64) -> Opt
     let places = super::places(sk);
     let least = sk.extent() * super::LEAST_SIDE;
     let mut best: Option<(f64, usize)> = None;
-    for i in (0..sk.planes.len()).filter(|&i| places[i] == i && pane_readable(proj, i)) {
+    for i in (0..sk.planes.len()).filter(|&i| places[i] == Some(i) && pane_readable(proj, i)) {
         let basis = sk.basis(i);
         let (x0, y0, x1, y1) = super::pane(sk, i, &views, &places, least);
         let c = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)].map(|(x, y)| proj.seen(basis.lift(x, y)));
@@ -394,7 +394,8 @@ pub fn panes_at(sk: &Sketch, proj: &Projection, at: (f64, f64)) -> Vec<usize> {
     let toward = proj.toward();
     let mut hits: Vec<(f64, usize)> = Vec::new();
     for i in 0..sk.planes.len() {
-        if !pane_readable(proj, i) {
+        // a face family's station plane has no pane (#243 L1)
+        if !pane_readable(proj, i) || places[i].is_none() {
             continue;
         }
         let m = proj.map(Some(i));

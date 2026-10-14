@@ -5,6 +5,41 @@ use crate::constraints::Arg;
 use crate::rng::Rng;
 
 impl Sketch {
+    /// Hold a face family's running number at `value` (#243 L1, `Sketch::held`), its fixed
+    /// parameter made the first time: the parameter.
+    pub fn hold(&mut self, name: &str, value: f64, dim: crate::units::Dim) -> u32 {
+        if let Some(h) = self.held.get(name) {
+            self.params[h.param as usize].value = value;
+            return h.param;
+        }
+        let p = self.param(value, true, &format!("~{name}")) as u32;
+        self.held.insert(name.to_string(), crate::model::HeldNumber { param: p, dim, reads: None });
+        p
+    }
+
+    /// The scalar of the geometry a held number reads (`HeldNumber::reads`), as it stands.
+    pub fn held_read(&self, e: EntRef, field: u8) -> Option<f64> {
+        use crate::model::{HELD_R, HELD_X, HELD_Y, HELD_Z};
+        let value = |p: u32| self.params.get(p as usize).map(|q| q.value);
+        match (e.kind, field) {
+            (EntKind::Point, HELD_X) => value(self.points.get(e.i())?.x),
+            (EntKind::Point, HELD_Y) => value(self.points.get(e.i())?.y),
+            (EntKind::Point, HELD_Z) => value(self.points.get(e.i())?.z?),
+            (EntKind::Circle | EntKind::Arc, HELD_R) => Some(self.radius_value(e).abs()),
+            _ => None,
+        }
+    }
+
+    /// Every held number that reads the geometry brought up to where that geometry stands.
+    pub fn refresh_held(&mut self) {
+        let reads: Vec<(u32, f64)> = self.held.values()
+            .filter_map(|h| h.reads.and_then(|(e, f)| Some((h.param, self.held_read(e, f)?))))
+            .collect();
+        for (p, v) in reads {
+            self.params[p as usize].value = v;
+        }
+    }
+
     /// The name a shared contact parameter is pinned to (`t == s`), where `p` is one.
     pub fn shared_name(&self, p: u32) -> Option<&str> {
         self.shared.iter().find(|(_, s)| s.param == p).map(|(n, _)| n.as_str())
@@ -15,6 +50,10 @@ impl Sketch {
     /// printer's `lift` both read, so a copy and a printed statement own what the original did.
     pub fn owned_arg(&self, p: u32) -> Arg {
         let q = &self.params[p as usize];
+        // a contact pinned to a face family's running number travels pinned to it by name
+        if let Some((name, _)) = self.held.iter().find(|(_, h)| h.param == p) {
+            return Arg::Shared { name: name.clone(), seed: Some(q.value) };
+        }
         match self.shared_name(p) {
             Some(name) => Arg::Shared { name: name.to_string(), seed: Some(q.value) },
             None => Arg::Seed { value: q.value, pinned: q.fixed },

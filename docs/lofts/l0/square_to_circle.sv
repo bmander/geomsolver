@@ -11,19 +11,32 @@ use lofts
 component Transition(g: line, up: axis, half: Length, s: Scalar) {
   st := lofts.OnLine(g, up: up, s: s)
   in st.n {
+    h := half * (1 - s)
+    r := half * s
     c0 := point
     c1 := point
     c2 := point
     c3 := point
-    h := half * (1 - s)
     c0 coords(du: h, dv: h) st.n
     c1 coords(du: -h, dv: h) st.n
     c2 coords(du: -h, dv: -h) st.n
     c3 coords(du: h, dv: -h) st.n
-    outline := (k0 := arc(center: c0)) -> tangent line -> tangent (k1 := arc(center: c1)) ->
-      tangent line -> tangent (k2 := arc(center: c2)) -> tangent line ->
-      tangent (k3 := arc(center: c3)) -> tangent line -> tangent close
-    radius(half * s) k0
+    // the flats' ends, seeded where the rounded square has them (L1): unseeded, the drawn
+    // station came out with every flat a point and each corner arc the long way round
+    t1 := point hint((h, h + r))
+    t2 := point hint((-h, h + r))
+    l1 := point hint((-h - r, h))
+    l2 := point hint((-h - r, -h))
+    b1 := point hint((-h, -h - r))
+    b2 := point hint((h, -h - r))
+    r1 := point hint((h + r, -h))
+    r2 := point hint((h + r, h))
+    outline := (k0 := arc(center: c0) hint(r: r)) -> tangent (top := line(t1, t2)) ->
+      tangent (k1 := arc(center: c1) hint(r: r)) -> tangent (left := line(l1, l2)) ->
+      tangent (k2 := arc(center: c2) hint(r: r)) -> tangent (bottom := line(b1, b2)) ->
+      tangent (k3 := arc(center: c3) hint(r: r)) -> tangent (right := line(r1, r2)) ->
+      tangent close
+    radius(r) k0
     k0 equal k1
     k1 equal k2
     k2 equal k3

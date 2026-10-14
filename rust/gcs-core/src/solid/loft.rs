@@ -455,7 +455,7 @@ pub(super) fn prepare(
 /// Cut a planar region into convex strips between vertex ordinates. Within a strip no
 /// boundary vertices or crossings occur, so sorted intersections pair by even/odd fill.
 /// This handles any number of holes without subtracting two nearly coincident swept shells.
-fn cap(polys: &[&FacePoly]) -> Vec<Vec<(f64, f64)>> {
+pub(super) fn cap(polys: &[&FacePoly]) -> Vec<Vec<(f64, f64)>> {
     let mut ys: Vec<f64> = polys
         .iter()
         .flat_map(|p| p.pts.iter().map(|p| p.1))

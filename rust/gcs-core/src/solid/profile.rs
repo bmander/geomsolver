@@ -146,28 +146,10 @@ pub(super) fn loop_poly(sk: &Sketch, edges: &[EntRef], edge_names: &[String], pl
     }
 
     // otherwise: every edge in traversal order, each starting where the last one ended
-    let mut at: Option<u32> = None;
     let mut curved = vec![None; names.len()];
-    for (i, e) in edges.iter().enumerate() {
-        let (a, b) = crate::model::edge_ends(sk, *e)?;
-        // which end this edge is entered by: the one the walk is standing on
-        let (from, to) = match at {
-            None => {
-                // the first edge is entered by whichever end the *last* edge shares
-                let (la, lb) = crate::model::edge_ends(sk, *edges.last()?)?;
-                if a == la || a == lb {
-                    (a, b)
-                } else {
-                    (b, a)
-                }
-            }
-            Some(p) if p == a => (a, b),
-            Some(p) if p == b => (b, a),
-            Some(_) => return None,
-        };
-        walk_edge(sk, *e, from, to, i, unit, &mut pts, &mut of)?;
-        if let Some(c) = curved.get_mut(i) { *c = curved_span(sk, *e, from); }
-        at = Some(to);
+    for (i, (e, from, to)) in walk_loop(sk, edges)?.into_iter().enumerate() {
+        walk_edge(sk, e, from, to, i, unit, &mut pts, &mut of)?;
+        if let Some(c) = curved.get_mut(i) { *c = curved_span(sk, e, from); }
     }
     if pts.len() < 3 {
         return None;
@@ -176,8 +158,32 @@ pub(super) fn loop_poly(sk: &Sketch, edges: &[EntRef], edge_names: &[String], pl
     poly.valid().then(|| poly.ccw())
 }
 
+/// A loop's edges in traversal order, each with the end it is entered by and the end it leaves
+/// by, each starting where the last one ended — the first entered by whichever end the *last*
+/// edge shares.  `None` where the edges do not run end to end.
+pub(super) fn walk_loop(sk: &Sketch, edges: &[EntRef]) -> Option<Vec<(EntRef, u32, u32)>> {
+    let mut at: Option<u32> = None;
+    let mut out = Vec::with_capacity(edges.len());
+    for &e in edges {
+        let (a, b) = crate::model::edge_ends(sk, e)?;
+        // which end this edge is entered by: the one the walk is standing on
+        let (from, to) = match at {
+            None => {
+                let (la, lb) = crate::model::edge_ends(sk, *edges.last()?)?;
+                if a == la || a == lb { (a, b) } else { (b, a) }
+            }
+            Some(p) if p == a => (a, b),
+            Some(p) if p == b => (b, a),
+            Some(_) => return None,
+        };
+        out.push((e, from, to));
+        at = Some(to);
+    }
+    Some(out)
+}
+
 /// A spline's or a curve's parameter where a walk entering it at `from` enters and leaves it.
-fn curved_span(sk: &Sketch, e: EntRef, from: u32) -> Option<(EntRef, [f64; 2])> {
+pub(super) fn curved_span(sk: &Sketch, e: EntRef, from: u32) -> Option<(EntRef, [f64; 2])> {
     let (a, b) = match e.kind {
         EntKind::Spline => (crate::curve::domain(sk, e.i()), sk.splines[e.i()].ctrl[0] == from),
         EntKind::Curve => (sk.curve_domain(e.i()), sk.curve_ends(e.i())?.0 == from),
@@ -305,18 +311,23 @@ fn walk_edge(
 /// A circle or arc as chords no further from it than the sheet's own flatness — `overview::round`'s
 /// rule, said here in page coordinates so the solid and the drawing round a corner alike.
 pub(super) fn tessellate_arc(c: (f64, f64), r: f64, from: f64, sweep: f64, unit: f64) -> Vec<(f64, f64)> {
-    let tol = crate::curve::flatness(unit);
-    // Bound angular error too: below the absolute flatness a circle still needs a region,
-    // with the same relative area accuracy as a larger circular profile.
-    let step = (if r > tol { 2.0 * (1.0 - tol / r).dacos() } else { std::f64::consts::TAU })
-        .min(std::f64::consts::TAU / 64.0);
-    let n = ((sweep.abs() / step).ceil() as usize).clamp(2, 4096);
+    let n = arc_steps(r, sweep, crate::curve::flatness(unit));
     (0..=n)
         .map(|k| {
             let a = from + sweep * k as f64 / n as f64;
             (c.0 + r * a.dcos(), c.1 + r * a.dsin())
         })
         .collect()
+}
+
+/// How many chords a circular sweep of `sweep` on radius `r` is cut into so none strays more than
+/// `tol` from it (`tessellate_arc`'s rule, and a face family's samples of an arc).  Bound angular
+/// error too: below the absolute flatness a circle still needs a region, with the same relative
+/// area accuracy as a larger circular profile.
+pub(super) fn arc_steps(r: f64, sweep: f64, tol: f64) -> usize {
+    let step = (if r > tol { 2.0 * (1.0 - tol / r).dacos() } else { std::f64::consts::TAU })
+        .min(std::f64::consts::TAU / 64.0);
+    ((sweep.abs() / step).ceil() as usize).clamp(2, 4096)
 }
 
 /// A closed ring's signed area, positive counter-clockwise: the shoelace about its first point,

@@ -1172,6 +1172,28 @@ pub enum Sweep {
     /// set, and made this by the flattener, which applies the set to the hidden `probe` point
     /// (`probe inside R`) and whose bounds the elaborator reads as the solid's terms.
     Region { probe: Ref },
+    /// `duct := solid(Station(guide).f over s in (0, 1))` — **a face family** (#243 L1): the
+    /// solid a face of an instance sweeps as one of its numeric formals runs.  The instance is
+    /// written in place and drawn once, hidden, at the middle of the interval; the family solves
+    /// it again at every station (`solid::family`).
+    Family(Box<FamilySpec>),
+}
+
+/// A face of an instance written in place, as one of the instance's numbers runs — what a face
+/// family is a family of (#243 L1, §6.5 one dimension up).
+#[derive(Clone, Debug)]
+pub struct FamilySpec {
+    /// The instance, its name a key the source cannot write (`#f12`): the station.
+    pub instance: Instance,
+    /// The face's path inside it (`sec.profile`).
+    pub face: Ref,
+    /// The numeric formal that runs — `s`.
+    pub swept: Name,
+    /// `in (a, b)`, as written; numbers once the flattener has settled them.
+    pub domain: (String, String),
+    /// The running number's absolute name once the flattener has bound it (`#f12.s`) — `None`
+    /// until then, or where it could not.
+    pub held: Option<String>,
 }
 
 impl Sweep {
@@ -1186,7 +1208,7 @@ impl Sweep {
             Sweep::Depth { depth, draft } => std::iter::once(depth).chain(draft).collect(),
             Sweep::Revolve { sweep, .. } => sweep.iter_mut().collect(),
             Sweep::Body | Sweep::Through { .. } | Sweep::Along { .. } | Sweep::Region { .. }
-                | Sweep::Rolled { .. } => Vec::new(),
+                | Sweep::Rolled { .. } | Sweep::Family(_) => Vec::new(),
         }
     }
 
@@ -1216,7 +1238,8 @@ impl Sweep {
             Sweep::Through { body } => vec![body],
             Sweep::Along { guide } => vec![guide],
             Sweep::Region { probe } => vec![probe],
-            Sweep::Prism { .. } | Sweep::Depth { .. } | Sweep::Body => Vec::new(),
+            Sweep::Prism { .. } | Sweep::Depth { .. } | Sweep::Body
+                | Sweep::Family(_) => Vec::new(),
         }
     }
 
@@ -1228,7 +1251,8 @@ impl Sweep {
             Sweep::Through { body } => vec![body],
             Sweep::Along { guide } => vec![guide],
             Sweep::Region { probe } => vec![probe],
-            Sweep::Prism { .. } | Sweep::Depth { .. } | Sweep::Body => Vec::new(),
+            Sweep::Prism { .. } | Sweep::Depth { .. } | Sweep::Body
+                | Sweep::Family(_) => Vec::new(),
         }
     }
 }

@@ -144,6 +144,54 @@ placement carries inside the blank; CLI test readers zero the offset.
   E080 a face that is not a loop on one plane, E081 a revolution's axis, E082 a face a body no
   longer has, E084 a section cut across its own view.
 
+- **A face family is a face that runs** (§6.9 [0.97], `solid/family.rs`; #243 L1).
+  `solid(I(…).f over s in (a, b))` parses to `Sweep::Family(FamilySpec)` (`parser::family`, by
+  an `over` inside `solid(`'s own brackets, `family_ahead`); the flattener walks the instance
+  **drawn**, under a key the source cannot write (`#f<offset>.`, so its declarations are
+  anonymous), the running formal left unbound so `bind` makes it the free value `#f12.s` — and
+  **held** (`flatten::Held`): a text affine in it carries it as any unknown's, its coefficient
+  written with the dimension the two differ by (`of_vals_in`: `(-12mm * #f12.s + 24mm)`), a text
+  that is not is kept and written in where it is read, as a trace keeps one; a pin `t == s` ties
+  to it, a seed reads it at the middle.  The elaborator holds each (`Sketch::hold`): a **fixed**
+  parameter, which `expr::evaluate` reads as a number (no free variable, any arithmetic), which a
+  contact pinned to it owns (`Sketch::add`), and which `owned_arg`/`graft` carry by name.
+  `SolidDef::Family { face, station, held, from, to }`: `station` is every entity the instance
+  made (by key prefix, the face's edges and their children) — `Sketch::stations`, which
+  `drawn()`, the panes, the pane picks and `callout::layout` leave out.  **The drawn station is
+  solved with the drawing at the middle**, so the document's DOF and diagnosis are its too.
+  **Evaluation re-solves it** (`family::built`, memoised in `Caches::family` against
+  `MemoKey::at`, which reads every parameter and every constraint's number): the station's part
+  (`io::Part::around_all` from the face, every primitive, plane pose, lift and outer free
+  variable not the station's held fixed — a plane's origin is no wall while its plane moves, and
+  a plane held along drawn lines keeps its intrinsic rows across `graft`), then a run from the
+  middle to each end: the running number moved, `expr::evaluate`, a solve started where the
+  last two stations carry it, and **a station must be regular** (`System::rank` = `n_free`).
+  Steps are as long as a cubic through four solved stations stays within the sheet's flatness
+  (the extrapolation's miss × 9/384); the facets between are filled in by that cubic
+  (`densify`): as the chord rule asks of every sample's run (owed, to `MAX_STATIONS`), and as a
+  wall's twist asks of its quads within `FACETED` samples × stations.  **An end that will not
+  solve is read as its limit**: the stations close in to `LIMIT_GAP` of it and the samples are
+  carried there quadratically (`limit: true`, never solved); an interior station that will not
+  solve is halved to `FINEST` and refused there.  Each loop is walked once (`walk_face`, the
+  loop's rule), each edge sampled at fixed fractions of its own run at every station (a line its
+  start, an arc by angle, a circle from its plane's `u`, a spline by parameter), the counts the
+  finest station's.  **Judged** at every solved station: each loop valid on its plane and wound
+  as at the middle, holes inside and apart, no edge lost (its run under the flatness) or turned
+  over between stations; an end may lose an edge or the whole section (its samples run together
+  within the flatness).  **And ahead**: every sample of each station on the far side of the one
+  before's plane, the way the family moves, else the swept volume crosses itself.  Faceted
+  (`Family::primitive`): caps by `loft::cap`'s strips, none at a vanished end; walls the quads
+  between stations, flat as one facet, gently bent as two, twisted past the flatness **fanned
+  from the middle** (four triangles, which hold a ruled patch's volume where a diagonal errs to
+  one side); a wall is `smooth` where its facets do not lie in one plane; the caps' strips welded
+  into the end rows only.  Walls are the face's edge names under the path of the face's scope in
+  the instance (`body.sec.ab`, `body.sec.inner.loop.ab`), the caps `start` and `end`.  A station's
+  dimension may read a number of the geometry it was given (`rim.r`, `a.x`): the flattener
+  records it (`Expansion::reads`) where it would refuse one outside a trace, the elaborator holds
+  it reading that scalar (`HeldNumber::reads`, refreshed by `expr::evaluate`), and the part
+  brings the read geometry along; one of the station's own is E103.  No exact construction, no
+  material field and no OCCT recipe yet (each refuses naming the family).  `tests/face_family.rs`
+  is the gate: the L0 programs (`docs/lofts/l0/`) against their closed forms.
 - **A face closes itself** (§6.8, `program::build_face`; issue #49).  The brackets hold a *walk*,
   and an item may be a **point**, with `-> close` sealing the run back to the first item.  Where
   two neighbours do not meet, `build_face` mints the straight line between them, class

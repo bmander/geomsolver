@@ -795,6 +795,12 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         dst.sheet = src.sheet.clone();
     }
     let mut made = Vec::new();
+    // a face family's running numbers, before any contact pinned to one is added (#243 L1)
+    for (name, h) in &src.held {
+        if !dst.held.contains_key(name) {
+            dst.hold(name, src.params[h.param as usize].value, h.dim);
+        }
+    }
     // a paste onto a plane the document already has: one held where the clipboard's is held and
     // facing the same way *is* that plane, so what was drawn in it is drawn in it again and no
     // second plane stands on the first; its axes and its origin are the document's
@@ -1157,6 +1163,22 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         dst.motions.push(crate::model::MotionE {def,name:m.name.clone(),class:m.class.clone(),measured});
         made.push(EntRef::new(EntKind::Motion,next));
     }
+    // a face family's station as copied: its drawn geometry, `None` where some was left behind
+    let station_ent = |e: EntRef| -> Option<EntRef> {
+        let i = match e.kind {
+            EntKind::Point => pt_map[e.i()],
+            EntKind::Line => line_map[e.i()],
+            EntKind::Circle => circle_map[e.i()],
+            EntKind::Arc => arc_map[e.i()],
+            EntKind::Spline => spline_map[e.i()],
+            EntKind::Axis => axis_map[e.i()],
+            EntKind::Plane => plane_map[e.i()],
+            EntKind::Curve => curve_map[e.i()],
+            EntKind::Face => face_map[e.i()],
+            _ => None,
+        };
+        i.map(|i| EntRef::new(e.kind, i))
+    };
     // Allocate the retained graph before remapping it: extent targets and Boolean operands
     // may be forward references, including a cutter referring to the body that subtracts it.
     let mut retained: Vec<bool> = src.solids.iter().enumerate().map(|(i, s)| {
@@ -1175,6 +1197,10 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
                         EntKind::Arc => arc_map[guide.i()].is_some(),
                         _ => false,
                     },
+                // a family comes with its whole station or not at all
+                crate::model::SolidDef::Family { face, ref station, .. } =>
+                    face_map[face as usize].is_some()
+                        && station.iter().all(|&e| station_ent(e).is_some()),
                 _ => true,
             }
     }).collect();
@@ -1226,6 +1252,13 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             }
             crate::model::SolidDef::Prism { face: f, from, to, draft } => {
                 crate::model::SolidDef::Prism { face: face(*f), from: from.clone(), to: to.clone(), draft: draft.clone() }
+            }
+            crate::model::SolidDef::Family { face: f, station, held, from, to } => {
+                let station = station.iter()
+                    .map(|&e| station_ent(e).expect("retention kept the whole station"))
+                    .collect();
+                crate::model::SolidDef::Family { face: face(*f), station, held: held.clone(),
+                    from: from.clone(), to: to.clone() }
             }
             crate::model::SolidDef::Through { face: f, body } => {
                 crate::model::SolidDef::Through { face: face(*f), body: sol(body) }
@@ -1528,6 +1561,61 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             }
         }
     }
+    // a plane held along drawn lines (`program::entities::axes_along`) came over as a plane of its
+    // own: its axes' rows to the lines, and the point its origin stands at in place of its own
+    // `PlaneAxis` rows, are the elaborator's and not a plane's build, so they are carried across
+    // as they stand, or the copy would turn free of the lines it was drawn along
+    {
+        use crate::constraints::CKind;
+        let along: BTreeSet<usize> = src.constraints.iter()
+            .filter(|c| c.intrinsic && c.kind == CKind::Parallel3)
+            .filter(|c| c.args[0].ent().kind == EntKind::Axis)
+            .filter(|c| c.args[1].ent().kind == EntKind::Line)
+            .map(|c| c.args[0].ent().i())
+            .collect();
+        let carried = |c: &&Constraint| match c.kind {
+            CKind::Parallel3 | CKind::PointOnAxis => c.entities().iter()
+                .any(|e| e.kind == EntKind::Axis && along.contains(&e.i())),
+            CKind::Coincident3 => src.plane_of_origin(c.args[0].ent().i()).is_some_and(|p| {
+                let pl = &src.planes[p];
+                along.contains(&(pl.u as usize)) && along.contains(&(pl.v as usize))
+            }),
+            _ => false,
+        };
+        let rows: Vec<&Constraint> =
+            src.constraints.iter().filter(|c| c.intrinsic).filter(carried).collect();
+        for c in rows {
+            let Some(ents) = c.entities().into_iter().map(remap).collect::<Option<Vec<_>>>() else {
+                continue;
+            };
+            // a plane standing at a point has no `PlaneAxis` rows of its own for its in-plane
+            // axes: they go, as `axes_along` takes them (its normal's stays)
+            if c.kind == CKind::Coincident3 {
+                if let Some(p) = dst.plane_of_origin(ents[0].i()) {
+                    let (u, v) = (dst.planes[p].u as usize, dst.planes[p].v as usize);
+                    let gone: Vec<u32> = dst.constraints.iter()
+                        .filter(|d| d.intrinsic && d.kind == CKind::PlaneAxis)
+                        .filter(|d| d.args[0].ent() == EntRef::plane(p))
+                        .filter(|d| [u, v].contains(&d.args[1].ent().i()))
+                        .map(|d| d.id)
+                        .collect();
+                    for id in gone {
+                        dst.remove(id);
+                    }
+                }
+            }
+            let mut nc = Constraint::new(c.kind, ents.into_iter().map(Arg::Ent).collect());
+            nc.intrinsic = true;
+            dst.add_quiet(nc);
+        }
+    }
+    // a held number that reads the geometry reads the copy of it, where that came along
+    for (name, h) in &src.held {
+        let reads = h.reads.and_then(|(e, f)| Some((remap(e)?, f)));
+        if let Some(d) = dst.held.get_mut(name) {
+            d.reads = reads;
+        }
+    }
     // each twin that came along with its point, tied again after the relations (§6.7)
     for (&p, ts) in &src.twins {
         let Some(p) = remap(EntRef::point(p)) else { continue };
@@ -1666,12 +1754,20 @@ pub struct Part {
     to_part: Vec<Option<usize>>,
     /// (part param, document param) for every parameter of the part
     params: Vec<(usize, usize)>,
+    /// document entity → part entity, for every primitive, curve and face that came along
+    ents: BTreeMap<EntRef, EntRef>,
 }
 
 impl Part {
     /// The part around `seed`.  A fixed entity is a wall: it comes along (a constraint naming
     /// it must keep all of its entities) but nothing is reached through it.
     pub fn around(sk: &Sketch, seed: EntRef) -> Part {
+        Part::around_all(sk, &[seed])
+    }
+
+    /// The part around every one of `seeds` — a face family's station, from its face's edges
+    /// (`solid::family`); a face among them comes along when its edges do.
+    pub fn around_all(sk: &Sketch, seeds: &[EntRef]) -> Part {
         let prims = sk.primitives();
         // who contains a point, and which constraints name an entity
         let mut parents: Vec<Vec<EntRef>> = vec![Vec::new(); sk.points.len()];
@@ -1723,12 +1819,15 @@ impl Part {
         // a plane is a wall when it cannot move: its axes held as well as where it stands
         let wall = |e: EntRef| match e.kind {
             EntKind::Plane => sk.plane_fixed(e.i()),
+            // a plane's origin is held at its own (0, 0) and stands wherever the plane does: what
+            // is tied to it moves with a plane that moves
+            EntKind::Point if let Some(pl) = sk.plane_of_origin(e.i()) => sk.plane_fixed(pl),
             _ => sk.entity_params(e).iter().all(|&p| sk.params[p as usize].fixed),
         };
         let mut keep: BTreeSet<EntRef> = BTreeSet::new();
         let mut followed: BTreeSet<u32> = BTreeSet::new();
-        let mut queue = vec![seed];
-        keep.insert(seed);
+        let mut queue = seeds.to_vec();
+        keep.extend(seeds.iter().copied());
         // a tied group — the dimensions and curves reading one free variable — only has to be
         // opened once, however many of its members the walk arrives at
         let mut open = |f: u32, next: &mut Vec<EntRef>| {
@@ -1852,7 +1951,17 @@ impl Part {
                 params.push((mine as usize, doc as usize));
             }
         }
-        Part { sketch, to_doc, to_part, params }
+        // and the faces among the seeds, which come after the curves, in document order
+        let faces = (0..sk.faces.len()).filter(|&i| keep.contains(&EntRef::face(i)));
+        for (doc, part) in faces.zip(0..sketch.faces.len()) {
+            ent.insert(EntRef::face(doc), EntRef::face(part));
+        }
+        Part { sketch, to_doc, to_part, params, ents: ent }
+    }
+
+    /// A document entity as the part's, if it came along.
+    pub fn entity_in(&self, doc: EntRef) -> Option<EntRef> {
+        self.ents.get(&doc).copied()
     }
 
     /// A document point's index in the part, if it came along.

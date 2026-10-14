@@ -644,6 +644,15 @@ impl Sketch {
             if matches!(c.args[i], Arg::Param(_)) {
                 continue;   // already allocated (a constraint moved between sketches)
             }
+            // a contact pinned to a face family's running number owns its parameter, held
+            let held = match &c.args[i] {
+                Arg::Shared { name, .. } => self.held.get(name).copied(),
+                _ => None,
+            };
+            if let Some(h) = held {
+                c.args[i] = Arg::Param(h.param);
+                continue;
+            }
             if let Arg::Shared { name, seed } = &c.args[i] {
                 // a shared unknown is allocated once, by the first contact naming it; a later one
                 // owns the same index, and one added after the last owner was removed revives it

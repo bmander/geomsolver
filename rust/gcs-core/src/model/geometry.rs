@@ -340,8 +340,21 @@ impl Sketch {
         let mut v = self.primitives();
         let normals: Vec<u32> = self.planes.iter().filter_map(|p| p.normal).collect();
         v.retain(|e| e.kind != EntKind::Axis || !normals.contains(&(e.i() as u32)));
+        // a face family's station is written in place and never drawn (#243 L1)
+        let stations = self.stations();
+        v.retain(|e| !stations.contains(e));
         v.extend((0..self.curves.len()).map(|i| EntRef::new(EntKind::Curve, i)));
         v
+    }
+
+    /// Every entity a face family's station is made of (#243 L1): written in place, solved with
+    /// the drawing at the middle of its interval and never drawn — no stroke, no pane and no
+    /// callout.
+    pub fn stations(&self) -> std::collections::BTreeSet<EntRef> {
+        self.solids.iter().flat_map(|s| match &s.def {
+            crate::model::SolidDef::Family { station, .. } => station.as_slice(),
+            _ => &[],
+        }).copied().collect()
     }
 
     /// Bounds of the drawn primitives — what a "fit the view" wants.
@@ -352,9 +365,13 @@ impl Sketch {
     /// curves) that is 11 ms a call against 1 µs — four orders of magnitude, per frame, to
     /// square up a box.  A caller that needs the curves in its box and is already sweeping them
     /// (the SVG export sizes a page from the polylines it is about to draw) grows this by what
-    /// it swept; one that is not should not start.
+    /// it swept; one that is not should not start.  A face family's station is not drawn, so it
+    /// is not in it either (#243 L1).
     pub fn drawn_bounds(&self) -> Box2 {
-        self.bounds_of(&self.primitives()).unwrap_or_else(|| self.bbox())
+        let stations = self.stations();
+        let mut v = self.primitives();
+        v.retain(|e| !stations.contains(e));
+        self.bounds_of(&v).unwrap_or_else(|| self.bbox())
     }
 
     /// The box round a given set of entities, or `None` when the set draws nothing.  The fold

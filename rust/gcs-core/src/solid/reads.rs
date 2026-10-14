@@ -104,6 +104,26 @@ fn reads_where(sk: &Sketch, si: usize, unit: f64, skip: &dyn Fn(usize) -> bool) 
                     }
                 }
             }
+            // a family reads what its stations are solved over: every parameter of the drawing
+            // and every number a constraint states, since a dimension of the station's reads
+            // the running number and so stands at none of the values it now holds
+            SolidDef::Family { face, station, held, from, to } => {
+                v.extend([9.0, station.len() as f64, from.value, to.value]);
+                name_read(held, &mut v);
+                face_reads(sk, *face, &mut v);
+                v.extend(station.iter().flat_map(|e| [e.kind as u32 as f64, e.i() as f64]));
+                v.extend(sk.params.iter().flat_map(|p| [p.value, f64::from(u8::from(p.fixed))]));
+                for c in &sk.constraints {
+                    v.push(c.kind as u32 as f64);
+                    v.extend(c.args.iter().map(|a| match a {
+                        crate::constraints::Arg::Num(x) => *x,
+                        crate::constraints::Arg::Expr(e) => e.value,
+                        crate::constraints::Arg::Param(p) => -1.0 - f64::from(*p),
+                        crate::constraints::Arg::Int(k) => *k as f64,
+                        _ => 0.0,
+                    }));
+                }
+            }
             SolidDef::Loft { face, end, guide } => {
                 v.extend([4.0, end.map_or(-1.0, |f| f as f64)]);
                 face_reads(sk, *face, &mut v);
@@ -166,6 +186,11 @@ impl MemoKey {
     /// Everything solid `si` reads (`reads`).
     pub fn of(sk: &Sketch, si: usize) -> MemoKey {
         MemoKey { reads: reads(sk, si, 0.0), strata: Vec::new() }
+    }
+
+    /// What solid `si` reads, at the unit it is faceted at (`reads`).
+    pub fn at(sk: &Sketch, si: usize, unit: f64) -> MemoKey {
+        MemoKey { reads: reads(sk, si, unit), strata: Vec::new() }
     }
 
     /// What solid `si` reads of its own (`reads_own`), and the strata it reads.
