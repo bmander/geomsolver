@@ -4,6 +4,18 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.101] A step: one number per run.** `step(u: s) (ab := line)` says where a line's end
+stands, one ordinate at a time — `du`, `dv` from its start, `u`, `v` from the frame's origin — and
+keeps the ordinate it does not name, so a stepped outline is a chain of runs, each a station or a
+radius as the part is dimensioned (§6.6). Absolute and relative are chosen per ordinate, not per
+step: `step(u: s, dv: b)`. The frame is the view the line is drawn in, or `from: P`. A step is the
+ordinates and levels it names, each number a dimension kept where it is written; a literal zero is
+a level. The closing edge takes no step. A corner a step places, with no seed written, starts
+where the walk puts it. Through 0.100 such an outline was a point per corner, each placed by two
+ordinates and seeded by a `hint` that restated them, and then the lines threading them: the hub
+motor's cover was 18 points, 18 lines and about 40 lines of source, now 18 links. `heading(θ)`
+and `rev arc`, planned beside it, are not in this draft. (Issue #330, from #309.)
+
 **[0.100] A loft is library words.** `solid(section, along: guide)` and `solid(start_section,
 end_section, along: guide)` are retired: they no longer parse, and `along:` in a solid's brackets
 says what to write instead (§6.9). A loft or a sweep along a path is a face family (0.97) whose

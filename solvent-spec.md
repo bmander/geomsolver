@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.100 — October 2026**
+**Specification, Draft 0.101 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -484,6 +484,8 @@ vertical (right := line(r1, r2)) -> tangent close
 CHAIN  ::= [NAME ":="] LINK (JOINT LINK)* ["->" INFIX* "close"]
 LINK   ::= PREFIX* (DECL | "(" NAME ":=" DECL ")") | REF
 PREFIX ::= a constraint name whose spec is one entity slot     // horizontal, vertical
+         | "step" "(" STEPARG ("," STEPARG)* ")"                // [0.101] step(u: s, dv: b)
+STEPARG ::= ("u" | "v" | "du" | "dv") ":" EXPR | "from" ":" REF
 JOINT  ::= "->" INFIX* ["->"] | INFIX+ ["->"]                  // at least one marker or word
 INFIX  ::= "tangent" | "equal" | a constraint name whose spec is two entity slots
 ```
@@ -535,6 +537,20 @@ Naming a chain never closes an endpoint gap by itself.
 **[0.8] A block body may end mid-joint.** Inside a `repeat`, `cycle` or `ring` body (§12), the body's final chain may end in a *threaded* joint — the marker, or the marker with words — standing at the body's `}`: the trailing joint threads the chain onto the **next copy's** first link, and is stated between copy i's last link and copy i+1's first exactly as an in-chain joint would be — the weld a shared point, every worded tangency the regular at-form. Which pairs are stated is the block's kind: `cycle` and `ring` wrap, so every copy states it and the trailing joint is the loop's closure — `cycle N { length(d) line -> angle(a) }` is the dimensioned N-gon, with no `close`, no names and no written points — while `repeat` does not wrap, so the *last* copy's trailing joint is simply not stated and `repeat N { line -> angle(a) }` is an open polyline of N sides and N−1 corners, the natural reading rather than an error. Both boundary links MUST be declarations of kinds with ends (a name-link's boundary is §6.6's ordinary rule: the point must be named where it stands), and at most one of the two boundary slots may name its point — both named are two *different* points across the copy seam, and that coincidence is stated longhand. Where the construct can mean nothing — a `component` body, a trace block, the top level — it is an error, and an unthreaded trailing word still wants its right operand. The joint is one written joint however many copies state it: each stated copy keeps the one statement identity, told apart by the instance path (§12.7). A statement inside a braced body also ends at the body's `}` as at a line break, so the whole of a block may sit on one line.
 
 Each desugared statement keeps an identity of its own and a span into the chain's text, so a caret, a diagnosis culprit and a splice land on the word that stated the thing. (§12.7 is many instances from one statement; a chain is several statements from one *line*, each still its own.) Deleting a chain-borne constraint is therefore a splice — a threaded joint steps down to the bare corner `->`, a prefix word goes where it stands, and **[0.8]** an unthreaded joint becomes a statement break, its span grown over a terminal name-link that a break would leave dangling (inside a chain that closes there is no safe break, and the deletion is refused). Deleting a link is refused: no splice takes one link out and leaves a chain behind, so that edit belongs to the source.
+
+**[0.101] A step says where a line's end stands, one number per run.** `step(…)` is a prefix word over a line — in a chain, before its link — whose parameters, by label, are the ordinates of the line's end `p2`: `du` and `dv` from its start `p1`, along the frame's `u` and `v`; `u` and `v` from the frame's origin. Each ordinate is one or the other, never both (`u` and `du` together is **E040**), so one step may put its end at an absolute station and a relative rise, `step(u: s, dv: b)`. **The ordinate a step does not name is kept** — its end level with its start along that axis — so `step(u: s)` is a run along `u` to the station `s`, and `step(dv: h)` a rise of `h`. A step that names neither is **E040**, an unlabelled number **E004**.
+
+```solvent
+in std.front {
+  profile := step(u: outer_radius) (ab := line) -> step(v: plate_depth) (bc := line) ->
+             step(u: hub_radius) (cd := line) -> step(dv: hub_height) (de := line) ->
+             step(u: bore_radius) (ef := line) -> step(v: 0mm) (fa := line) -> close
+}
+```
+
+The **frame** is `from: P`, a plane — its origin and its axes, `P.u` and `P.v` — or, where no `from:` is written, the view the line is drawn in, which an `in` block gives; a step with neither is **E040**. A step is sugar for the relations it names, each its own row: an ordinate per ordinate named, `p1 distance(d, along: u) p2` from the start and `P.origin distance(s, along: u) p2` from the frame's origin, and a level per ordinate kept, `p1 level(v) p2`. An ordinate written as a literal zero is that level, a relation which states no number, as a zero `distance(…, along:)` would be (§9.2). Every number is a dimension of the statement: the step keeps one statement identity, is described as written (`step(u: 32mm) ab`), and each number keeps the place it is written at, where its callout reads it and an edit rewrites it. A number may read an unknown.
+
+A closed walk of steps leaves its last edge to close it, as SVG's `z` does: a link with no step, whatever the others leave. Stating every relative step round a loop states the closure twice — two rows of no rank, which the diagnosis names. **The corners start where the walk puts them**: a corner a step places, and the source wrote no seed for, is seeded from its line's start, or from the frame's origin, by the step's numbers, in statement order and twice round, so a closed walk whose first corner its last step places starts there. Nothing is restated in a `hint`, and the seeds follow the numbers. A step measured in a frame other than its line's view, or over an unknown, leaves its corner where it was minted.
 
 *Non-normative:* chains and paths (§10) answer different questions. A path is a traversal of geometry that already exists — vertices, the circles its arc segments lie on, orientation and branch rules, for boundary composition and export. A chain *declares* the geometry: it is how a contour's elements, their meetings and the levels on its straight runs are written down in the first place. The case library's fillet rectangle is the canonical chain; its longhand form states the same sketch in thirty statements.
 

@@ -24,6 +24,7 @@ pub fn set_dimension(e: &Elaborated, prog: &Program, cid: u32, attr: &str, text:
     // family's instance, the number its call gives the formal the body reads
     let dim = match &st.kind {
         StmtKind::Relation(rel) => match &rel.form {
+            syntax::RelationForm::Written(w) if w.is_step() => step_dimension(e, site.stmt, cid, w),
             syntax::RelationForm::Written(w) => w.args.iter().find_map(|a| match a {
                 syntax::OpArg::Dim(text, span) => Some((*span, text.clone())),
                 _ => None,
@@ -66,6 +67,26 @@ pub fn set_dimension(e: &Elaborated, prog: &Program, cid: u32, attr: &str, text:
     let plain = crate::expr::literal(text).is_some() && crate::expr::literal(was).is_some();
     let number = Splice { at: span, with: text.trim().to_string() };
     Edit::spliced(prog, vec![number], if plain { Kind::Numeric } else { Kind::Structural })
+}
+
+/// **A step's number, where the statement wrote it** (#330): a step states one relation along
+/// each axis of its frame, `u` then `v` (`flatten::steps`), so the constraint's place among the
+/// statement's says whose argument it is — `u` or `du`, `v` or `dv`.  An ordinate a step keeps,
+/// or one it puts back on the frame's axis, is a level and has no number to edit.
+fn step_dimension(e: &Elaborated, stmt: syntax::StmtId, cid: u32, w: &syntax::Written)
+    -> Option<(Span, String)> {
+    let k = e.map.made_by(stmt).iter()
+        .filter_map(|m| match m {
+            crate::program::Made::Con(id) => Some(*id),
+            _ => None,
+        })
+        .position(|id| id == cid)?;
+    let (abs, rel) = crate::constraints::STEP_AXES.get(k).copied()?;
+    w.args.iter().find_map(|a| match a {
+        syntax::OpArg::Named(n, syntax::Arg::Dim { text, span })
+            if n.text == abs || n.text == rel => Some((*span, text.clone())),
+        _ => None,
+    })
 }
 
 /// **A defined word's number, where the statement wrote it** (§9.9): where the word's body

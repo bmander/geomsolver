@@ -386,6 +386,7 @@ A chain writes a run of elements and the relations between them on one line.
 CHAIN  ::= LINK (JOINT LINK)* ['->' INFIX* 'close']
 LINK   ::= PREFIX* DECL | REF
 PREFIX ::= a one-operand constraint word         horizontal, vertical, radius(..)
+         | step(u: E, dv: E, from: P)            where a line's end stands (below)
 JOINT  ::= '->' INFIX* ['->']  |  INFIX+ ['->']  at least one marker or word
 INFIX  ::= tangent | equal | any two-operand constraint word
 ```
@@ -406,6 +407,33 @@ right (`p1 -> p2` on a line, `start -> end` counter-clockwise on an arc).
 - `equal` is polymorphic (length or radius); `a equal b equal c` is two statements.
 - `profile := … -> close` names the traversal, which a solid can sweep (1.14); its edges keep
   their own names. Every joint in a named chain carries `->`.
+
+**A step says where a line's end stands, one number per run.** `step(…)` before a line, or before
+a chain's link, gives the end's ordinates by label: `du`, `dv` from the line's start, `u`, `v` from
+the frame's origin. **What it does not name is kept**, so `step(u: s)` is a run along `u` to the
+station `s`, level with where it began, and `step(dv: h)` a rise of `h`. One step may mix them,
+`step(u: s, dv: b)`. The frame is the view the line is drawn in (its `in` block), or `from: P`, a
+plane. Each number is a dimension, drawn and edited where it is written; a literal zero (`v: 0mm`,
+back onto the axis) is a level and states no number. The edge that closes a loop takes no step:
+it is whatever the others leave. A turned part's section, every number a radius from the axis or
+a height from the base:
+
+```
+unit mm
+use std
+in std.front {
+  profile := step(u: 32mm) (ab := line) -> step(v: 6mm) (bc := line) ->
+             step(u: 15mm) (cd := line) -> step(dv: 10mm) (de := line) ->
+             step(u: 8mm) (ef := line) -> step(v: 0mm) (fa := line) -> close
+}
+```
+
+That is twelve rows for six corners, DOF 0, with no point declared and no `hint` written: **a
+corner a step places starts where the walk puts it**, so its seed follows its numbers. A step
+`from:` another frame, or over an unknown, leaves its corner where it was minted. A prefix word
+goes outside a named link, `step(u: s) (ab := line)`. Refused: no ordinate (E040), `u` with `du`
+(E040), an unlabelled number (E004), no frame (E040). `rust/examples/solid_flange.sv` and the hub
+motor's cover are written so.
 
 **Repetition.** `repeat N { … }` makes N unrelated copies; `cycle N { … }` makes N copies that
 close, with `next` and `prev` in scope. `as i` binds the index; copies are reached as `p[0]`.
@@ -980,7 +1008,8 @@ in std.front {
 `p` is still drawn in `std.front`; only the measurement is against the turned axes. No component
 has an implicit frame. **Model relationships, not coordinate tables**: a rectangle is perpendicular
 sides, a width, a height and a position against a datum, not an ordinate for every corner; the
-library deliberately has no coordinate-placement helper.
+library deliberately has no coordinate-placement helper. A stepped outline is a chain of runs
+(1.7), one number each, and not a table of corners.
 
 ### 1.13 Sets and regions
 

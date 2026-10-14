@@ -344,6 +344,10 @@ fn tint_start(
     if builtin(w, prev, next, false) {
         return (Some(Tint::Builtin), Next::Word);
     }
+    // `step(u: s) (ab := line)`: the core's word before a line (#330), not a component's call
+    if next == Some(&Tok::P('(')) && crate::constraints::step_word(w) {
+        return (Some(Tint::Relation), Next::Word);
+    }
     if next == Some(&Tok::P('(')) && !is_operator(w) {
         return (Some(Tint::Type), Next::Word);
     }

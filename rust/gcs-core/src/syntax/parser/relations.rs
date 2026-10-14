@@ -143,7 +143,7 @@ impl<'a> P<'a> {
         }
         // a defined word's parameters, by label, each kept as written (§9.9) — a word the
         // language has in the other fixity included, as the expansion reads it
-        if !builtin_word(word, fixity) {
+        if !builtin_word(word, fixity) || crate::constraints::step_word(word) {
             return self.word_args();
         }
         // `symmetry`'s line, `tangent`'s contact point (two cones touching at M) and `level`'s

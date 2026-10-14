@@ -1053,7 +1053,7 @@ fn level_spelling(w: Option<&crate::syntax::Written>, word: &str) -> String {
 
 /// Whether a dimension's text is a zero written as one: `0`, `0mm`, `-0.0` — not a name or an
 /// expression that comes to it.
-fn written_zero(text: &str, units: crate::units::Units) -> bool {
+pub(crate) fn written_zero(text: &str, units: crate::units::Units) -> bool {
     let text = text.trim();
     expr::is_literal(text)
         && expr::parse_in(text, units).ok()

@@ -84,6 +84,7 @@ pub(crate) use entities::child_names;
 use entities::Deferred;
 pub(crate) use lift::{holds, lift_decl, lift_gauge, lift_relation, point_len};
 pub(crate) use planes::{drawn_plane, plane_of_entity, plane_of_entity_by};
+pub(crate) use relations::written_zero;
 pub(crate) use resolve::NORMAL;
 use std::collections::{BTreeMap, BTreeSet};
 

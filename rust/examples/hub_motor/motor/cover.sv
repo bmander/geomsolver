@@ -21,34 +21,24 @@ component Cover(f: group, dims: group, screws: group, sg: Scalar, boss_to: Lengt
   lip_in := dims.brg_in + dims.brg_w
   lip_out := lip_in + dims.lip
   outer := dims.half + dims.web
+  // each run one number: a station from the mid-plane or a radius from the axle, measured in
+  // the end view from its origin, the other ordinate kept where the run began
   in f.side {
-    p1 := motor.parts.At(f.so, dx: sg * lip_in, dy: dims.lip_r)
-    p2 := motor.parts.At(f.so, dx: sg * boss_to, dy: dims.lip_r)
-    p3 := motor.parts.At(f.so, dx: sg * boss_to, dy: boss_r)
-    p4 := motor.parts.At(f.so, dx: sg * lip_out, dy: boss_r)
-    p5 := motor.parts.At(f.so, dx: sg * lip_out, dy: dims.boss_r)
-    p6 := motor.parts.At(f.so, dx: sg * outer, dy: dims.boss_r)
-    p7 := motor.parts.At(f.so, dx: sg * outer, dy: dims.Ro)
-    p8 := motor.parts.At(f.so, dx: sg * (dims.half + dims.flange_t), dy: dims.Ro)
-    p9 := motor.parts.At(f.so, dx: sg * (dims.half + dims.flange_t), dy: dims.flange_r)
-    p10 := motor.parts.At(f.so, dx: sg * dims.half, dy: dims.flange_r)
-    p11 := motor.parts.At(f.so, dx: sg * dims.half, dy: dims.Rr)
-    p12 := motor.parts.At(f.so, dx: sg * (dims.half - dims.spigot), dy: dims.Rr)
-    p13 := motor.parts.At(f.so, dx: sg * (dims.half - dims.spigot), dy: dims.spigot_r)
-    p14 := motor.parts.At(f.so, dx: sg * dims.half, dy: dims.spigot_r)
-    p15 := motor.parts.At(f.so, dx: sg * dims.half, dy: dims.boss_r)
-    p16 := motor.parts.At(f.so, dx: sg * dims.pocket_in, dy: dims.boss_r)
-    p17 := motor.parts.At(f.so, dx: sg * dims.pocket_in, dy: dims.brg_od / 2)
-    p18 := motor.parts.At(f.so, dx: sg * lip_in, dy: dims.brg_od / 2)
-    profile := (lip_bore := line(p1.p, p2.p)) -> (boss_end := line(p2.p, p3.p)) ->
-               (boss := line(p3.p, p4.p)) -> (boss_step := line(p4.p, p5.p)) ->
-               (housing := line(p5.p, p6.p)) -> (face_o := line(p6.p, p7.p)) ->
-               (flange_step := line(p7.p, p8.p)) -> (flange_o := line(p8.p, p9.p)) ->
-               (flange_rim := line(p9.p, p10.p)) -> (flange_i := line(p10.p, p11.p)) ->
-               (spigot_o := line(p11.p, p12.p)) -> (spigot_end := line(p12.p, p13.p)) ->
-               (spigot_i := line(p13.p, p14.p)) -> (face_i := line(p14.p, p15.p)) ->
-               (housing_i := line(p15.p, p16.p)) -> (pocket_end := line(p16.p, p17.p)) ->
-               (pocket := line(p17.p, p18.p)) -> (lip_face := line(p18.p, p1.p)) -> close
+    profile := step(u: sg * boss_to) (lip_bore := line) -> step(v: boss_r) (boss_end := line) ->
+               step(u: sg * lip_out) (boss := line) -> step(v: dims.boss_r) (boss_step := line) ->
+               step(u: sg * outer) (housing := line) -> step(v: dims.Ro) (face_o := line) ->
+               step(u: sg * (dims.half + dims.flange_t)) (flange_step := line) ->
+               step(v: dims.flange_r) (flange_o := line) ->
+               step(u: sg * dims.half) (flange_rim := line) ->
+               step(v: dims.Rr) (flange_i := line) ->
+               step(u: sg * (dims.half - dims.spigot)) (spigot_o := line) ->
+               step(v: dims.spigot_r) (spigot_end := line) ->
+               step(u: sg * dims.half) (spigot_i := line) ->
+               step(v: dims.boss_r) (face_i := line) ->
+               step(u: sg * dims.pocket_in) (housing_i := line) ->
+               step(v: dims.brg_od / 2) (pocket_end := line) ->
+               step(u: sg * lip_in) (pocket := line) ->
+               step(v: dims.lip_r) (lip_face := line) -> close
   }
   body := solid(profile, about: f.ax)
 

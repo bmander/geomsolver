@@ -81,6 +81,12 @@ pub struct Written {
 }
 
 impl Written {
+    /// Whether it is a step, `step(u: s) l` (#330): the core's prefix word the flattener expands
+    /// where it stands (`flatten::steps`).
+    pub fn is_step(&self) -> bool {
+        self.fixity == Fixity::Prefix && crate::constraints::step_word(&self.word.text)
+    }
+
     /// The bound the number is, where it is one (§9.6): its direction and an interval's high
     /// end.
     pub fn bound(&self) -> Option<(Cmp, Option<&(String, Span)>)> {

@@ -1829,7 +1829,7 @@ test('a fit frames everything the workspace shows, solids included', () => {
   view.fit();
   // the section draws only the half right of the axis; the turned part reaches as far left
   const axis = view.seen(pointNamed(view, 'std.origin'));
-  const rim = view.seen(pointNamed(view, 'b'));
+  const rim = view.seen(pointNamed(view, 'ab.p2'));
   const reach = rim[0] - axis[0];
   assert.ok(reach > 0);
   assert.ok(axis[0] - reach >= 0, `the far side of the turned part is on screen: ${axis[0] - reach}`);
