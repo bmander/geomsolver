@@ -517,7 +517,8 @@ impl<'a> Walk<'a> {
 
     /// A text with the scope's numbers written in, where it then reads a face family's running
     /// number (`Held`).
-    fn held_text(&self, text: &str, vals: &BTreeMap<String, Aff>, scope: &Scope) -> Option<String> {
+    pub(super) fn held_text(&self, text: &str, vals: &BTreeMap<String, Aff>, scope: &Scope)
+        -> Option<String> {
         if self.held.names.is_empty() {
             return None;
         }
@@ -547,7 +548,10 @@ impl<'a> Walk<'a> {
     ) -> Result<String, (Code, String)> {
         let reads: BTreeSet<String> =
             expr::parse_in(text, self.units).map(|p| p.body.deps()).unwrap_or_default();
-        if let Some(e) = reads.iter().find_map(|name| out_of_reach(name, vals, scope)) {
+        // a text kept for a name answers for it, though the scope is closed to the name outside
+        let reach = |name: &String| self.kept(name, scope).is_none()
+            .then(|| out_of_reach(name, vals, scope)).flatten();
+        if let Some(e) = reads.iter().find_map(reach) {
             return Err(e);
         }
         if let Some(name) = reads.iter().find(|n| self.undeclared(n, vals, scope)) {
@@ -620,7 +624,10 @@ impl<'a> Walk<'a> {
         }
         let Ok(p) = expr::parse_in(text, self.units) else { return };
         for name in p.body.deps() {
-            if name.contains('.') && !vals.contains_key(&name) {
+            // a face family's running number, written in as a station's text (#243 L5), is no
+            // geometry's
+            let held = self.held.names.contains_key(&name);
+            if name.contains('.') && !vals.contains_key(&name) && !held {
                 self.checks.dim_reads.push((name, span, scope.clone()));
             }
         }

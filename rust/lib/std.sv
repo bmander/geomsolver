@@ -485,7 +485,7 @@ component Chamfered(a: set, b: set, la: Length, lb: Length) := { p |
 // `solid(I(…).f over s in (0, 1))`.  These words only say where a station stands on its path: a
 // plane `n` square to the path where its parameter is `s`, its `v` along `up`.  What the section
 // is at that station — its shape, its twist, its scale, the rails it follows — is the writer's
-// component, drawn `in st.n` and reading `s`:
+// component, drawn `in st.n` and reading `s` (the laws below run a twist or a scale):
 //
 //   component Reducer(g: line, inlet: Length, outlet: Length, s: Scalar) {
 //     st := std.OnLine(g, up: std.z, s: s)
@@ -599,13 +599,13 @@ component OnHelix(ax: axis, base: plane, r: Length, pitch: Length, turns: Scalar
 // A twist or a scale is a dimension of the section reading `s`, and any expression in it is a
 // law: `twist * (3 * s^2 - 2 * s^3)`, `r * (1 + 0.2 * sin(180 * s))`.  A word takes numbers, not
 // laws (Solvent has no function values), so these take a total — the turn or the scale at
-// `s = 1` — and run it linearly from nothing at `s = 0`; any other law is the same word given
-// another fraction, `s: 3 * s^2 - 2 * s^3`.  A `when` cannot say a law: it is made once, for the
-// whole run, and the station is one shape all along it; `min`, `max` and `abs` say a law in
-// pieces.
+// `s = 1` — and run it linearly from the section as drawn at `s = 0`; any other law is the same
+// word given another fraction, `s: 3 * s^2 - 2 * s^3`.  A `when` cannot say a law: it is made
+// once, for the whole run, and the station is one shape all along it; `min`, `max` and `abs` say
+// a law in pieces.
 //
-//   component Duct(g: path, half: Length, s: Scalar) {
-//     st := std.On(g, up: std.z, s: s)
+//   component Duct(g: path, up: axis, half: Length, s: Scalar) {
+//     st := std.On(g, up: up, s: s)
 //     tw := std.Twisted(st.n, twist: 90deg, s: s)
 //     in st.n {
 //       a := point
@@ -621,8 +621,7 @@ component OnHelix(ax: axis, base: plane, r: Length, pitch: Length, turns: Scalar
 component Twisted(n: plane, twist: Angle, s: Scalar) {
   in n {
     private zero := point
-    zero distance(10mm, along: u) n
-    zero level(v) n
+    zero on_u(d: 10mm) n
     private construction ref := line(n.origin, zero)
     private t := point
     construction u := line(n.origin, t)

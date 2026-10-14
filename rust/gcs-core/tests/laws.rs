@@ -74,9 +74,20 @@ fn near(got: f64, want: f64, rel: f64, what: &str) {
     assert!((got - want).abs() <= rel * want.abs(), "{what}: {got} against {want} (±{rel})");
 }
 
-/// `LAWS` with the solids `families` (`name := solid(…)` lines) written below it, determined.
-fn with(families: &str) -> Elaborated {
-    determined(&format!("{LAWS}{families}\n"))
+/// `LAWS` with `edits` made (each must find its text) and the solids `families` written below
+/// it, determined.
+fn with(families: &str, edits: &[(&str, &str)]) -> Elaborated {
+    determined(&edited(families, edits))
+}
+
+/// `LAWS` with `edits` made and `families` written below it.
+fn edited(families: &str, edits: &[(&str, &str)]) -> String {
+    let mut src = format!("{LAWS}{families}\n");
+    for (from, to) in edits {
+        assert!(src.contains(from), "no `{from}` to edit");
+        src = src.replace(from, to);
+    }
+    src
 }
 
 /// The words the program is refused with.
@@ -105,16 +116,15 @@ fn a_twisted_extrusion_is_al_at_any_twist() {
     let e = with("
 none := solid(Square(straight, std.z, half: 10mm, twist: 0deg, scale: 1).f over s in (0, 1))
 quarter := solid(Square(straight, std.z, half: 10mm, twist: 90deg, scale: 1).f over s in (0, 1))
-back := solid(Square(straight, std.z, half: 10mm, twist: -450deg, scale: 1).f over s in (0, 1))");
+back := solid(Square(straight, std.z, half: 10mm, twist: -450deg, scale: 1).f over s in (0, 1))",
+        &[]);
     for name in ["none", "quarter", "back"] {
         near(exact(&e, name), 16000.0, 1e-9, name);
     }
-    let src = format!("{LAWS}
-eased := solid(Square(straight, std.z, half: 10mm, twist: 90deg, scale: 1).f over s in (0, 1))
-")
-    .replace("std.Twisted(st.n, twist: twist, s: s)",
-             "std.Twisted(st.n, twist: twist, s: 3 * s^2 - 2 * s^3)");
-    near(exact(&determined(&src), "eased"), 16000.0, 1e-9, "an eased quarter turn");
+    let e = with("
+eased := solid(Square(straight, std.z, half: 10mm, twist: 90deg, scale: 1).f over s in (0, 1))",
+        &[("twist: twist, s: s)", "twist: twist, s: 3 * s^2 - 2 * s^3)")]);
+    near(exact(&e, "eased"), 16000.0, 1e-9, "an eased quarter turn");
 }
 
 /// **And round a bend**: a 10 mm square turned about its centre, which stays on a quarter arc of
@@ -124,20 +134,22 @@ eased := solid(Square(straight, std.z, half: 10mm, twist: 90deg, scale: 1).f ove
 fn a_twisted_bend_is_pappus() {
     let e = with("
 bent := solid(Square(bend, std.z, half: 5mm, twist: 0deg, scale: 1).f over s in (0, 1))
-turned := solid(Square(bend, std.z, half: 5mm, twist: 180deg, scale: 1).f over s in (0, 1))");
+turned := solid(Square(bend, std.z, half: 5mm, twist: 180deg, scale: 1).f over s in (0, 1))",
+        &[]);
     near(exact(&e, "bent"), 1500.0 * PI, 1e-9, "untwisted round the bend");
     near(exact(&e, "turned"), 1500.0 * PI, 1e-9, "a half turn round the bend");
 }
 
 /// **A linear scale is a frustum**: the square 20 to 10 over 40 is 40/3 · (400 + 100 + 200)
 /// mm³, at any twist as well (Cavalieri again: each section is the untwisted one turned), and the
-/// disc of radius 10 to 5 is π · 40/3 · (100 + 50 + 25) — a cone.
+/// disc of radius 10 to 5 is π · 40/3 · (100 + 50 + 25), its wall a cone.
 #[test]
 fn a_linear_scale_is_a_frustum() {
     let e = with("
 frustum := solid(Square(straight, std.z, half: 10mm, twist: 0deg, scale: 0.5).f over s in (0, 1))
 twisted := solid(Square(straight, std.z, half: 10mm, twist: -270deg, scale: 0.5).f over s in (0, 1))
-cone := solid(Disc(straight, std.z, r: 10mm, scale: 0.5).f over s in (0, 1))");
+cone := solid(Disc(straight, std.z, r: 10mm, scale: 0.5).f over s in (0, 1))",
+        &[]);
     let square = 40.0 / 3.0 * (400.0 + 100.0 + 200.0);
     near(exact(&e, "frustum"), square, 1e-9, "a square frustum");
     near(exact(&e, "twisted"), square, 1e-9, "a twisted square frustum");
@@ -146,76 +158,82 @@ cone := solid(Disc(straight, std.z, r: 10mm, scale: 0.5).f over s in (0, 1))");
     assert!(x.brep.faces.iter().any(|f| f.surface.kind() == "cone"), "the disc sweeps a cone");
 }
 
-/// **A nonlinear scale is L·∫A(s) ds**: the disc swelling as `1 + 0.3·sin(180°·s)` — the word
-/// given the fraction `sin(180 * s)` — is 40π · 100 · ∫(1 + 0.3 sin πs)² ds = 4000π(1 + 0.6/π·2
-/// + 0.045); the square shrinking by the eased law `1 − 0.5(3s² − 2s³)` — the writer's own
-/// expression — is 40 · 400 · ∫k(s)² ds, by a quadrature exact for its degree (six).
+/// **A nonlinear scale is L·∫A(s) ds**.  The disc swelling as `1 + 0.3 sin(180°·s)` — the word
+/// given the fraction `sin(180 * s)`, a number no affine form holds — is
+/// 40 · 100π · ∫(1 + 0.3 sin πs)² ds = 4000π(1 + 1.2/π + 0.045).  The square shrinking to half
+/// eased in and out, `scaled` given `3s² − 2s³`, is 40 · 400 · ∫k² ds with k = 1 − 0.5(3s² −
+/// 2s³), by a quadrature exact for its degree (six).
 #[test]
 fn a_nonlinear_scale_is_its_quadrature() {
-    let src = format!("{LAWS}
-swell := solid(Disc(straight, std.z, r: 10mm, scale: 1.3).f over s in (0, 1))
-")
-    .replace("scaled_radius(r: r, scale: scale, s: s) k", "scaled_radius(r: r, scale: scale, s: sin(180 * s)) k");
-    let e = determined(&src);
+    let e = with("
+swell := solid(Disc(straight, std.z, r: 10mm, scale: 1.3).f over s in (0, 1))",
+        &[("scale: scale, s: s) k", "scale: scale, s: sin(180 * s)) k")]);
     near(exact(&e, "swell"), 4000.0 * PI * (1.0 + 1.2 / PI + 0.045), 1e-9, "a sine swell");
 
-    let law = "(1 - 0.5 * (3 * s^2 - 2 * s^3))";
-    let src = format!("{LAWS}
-eased := solid(Square(straight, std.z, half: 10mm, twist: 0deg, scale: 1).f over s in (0, 1))
-")
-    .replace("du: -half, dv: -half,", &format!("du: -half * {law}, dv: -half * {law},"))
-    .replace("du: half, dv: -half,", &format!("du: half * {law}, dv: -half * {law},"))
-    .replace("du: half, dv: half,", &format!("du: half * {law}, dv: half * {law},"))
-    .replace("du: -half, dv: half,", &format!("du: -half * {law}, dv: half * {law},"));
-    let e = determined(&src);
+    let e = with("
+eased := solid(Square(straight, std.z, half: 10mm, twist: 0deg, scale: 0.5).f over s in (0, 1))",
+        &[("scale: scale, s: s) tw.axes", "scale: scale, s: 3 * s^2 - 2 * s^3) tw.axes")]);
     let k = |s: f64| 1.0 - 0.5 * (3.0 * s * s - 2.0 * s * s * s);
     near(exact(&e, "eased"), 40.0 * 400.0 * gauss5(|s| k(s).powi(2)), 1e-9, "an eased scale");
 }
 
-/// **A law in pieces** is one expression: `max(1 − s, 0.5)` shrinks the disc to half its radius
-/// by the middle and holds it there, a cone's frustum and a cylinder:
-/// 4000π · (∫₀^½ (1 − s)² ds + ½ · ¼) = 4000π · 5/12.
+/// **A law in pieces** is one expression: `max(1 − s, 0.7)` shrinks the disc to 0.7 of its
+/// radius by `s = 0.3` and holds it there, a cone's frustum and a cylinder:
+/// 4000π · (∫₀^0.3 (1 − s)² ds + 0.7 · 0.7²) = 4000π · ((1 − 0.7³)/3 + 0.7³).  The kink is off
+/// the middle station, so inside a piece of the exact walls.
 #[test]
 fn a_law_in_pieces_is_one_expression() {
-    let src = format!("{LAWS}
-piecewise := solid(Disc(straight, std.z, r: 10mm, scale: 1).f over s in (0, 1))
-")
-    .replace("scaled_radius(r: r, scale: scale, s: s) k", "radius(r * max(1 - s, 0.5)) k");
-    let e = determined(&src);
-    near(exact(&e, "piecewise"), 4000.0 * PI * 5.0 / 12.0, 1e-9, "a cone, then a cylinder");
+    let e = with("
+piecewise := solid(Disc(straight, std.z, r: 10mm, scale: 1).f over s in (0, 1))",
+        &[("scaled_radius(r: r, scale: scale, s: s) k", "radius(r * max(1 - s, 0.7)) k")]);
+    let k3 = 0.7f64.powi(3);
+    near(exact(&e, "piecewise"), 4000.0 * PI * ((1.0 - k3) / 3.0 + k3), 1e-9,
+         "a cone, then a cylinder");
 }
 
 /// **A `when` cannot say a law**: it is made once, for the whole run, so one over the running
-/// number is refused saying what to write instead.
+/// number is refused saying what to write instead, in the names the document wrote.
 #[test]
 fn a_when_over_the_running_number_is_refused() {
-    let src = format!("{LAWS}
-w := solid(Disc(straight, std.z, r: 10mm, scale: 1).f over s in (0, 1))
-")
-    .replace("    scaled_radius(r: r, scale: scale, s: s) k\n  }",
-             "  }\n  when s < 0.5 {\n    radius(r) k\n  }\n  when s >= 0.5 {\n    radius(r / 2) k\n  }");
+    let src = edited("
+w := solid(Disc(straight, std.z, r: 10mm, scale: 1).f over s in (0, 1))",
+        &[("    scaled_radius(r: r, scale: scale, s: s) k\n  }",
+           "  }\n  when s < 0.5 {\n    radius(r) k\n  }\n  \
+            when s >= 0.5 {\n    radius(r / 2) k\n  }")]);
     let said = refused(&src);
     assert!(!said.is_empty(), "a `when` over `s` was not refused");
     assert!(said.iter().all(|m| m.contains("`s` is a face family's running number")
         && m.contains("`min`, `max` and `abs`") && !m.contains("#f")), "{said:?}");
 }
 
-/// **A station with two faces sweeps either**: the square's closing edges are the face's own,
-/// named by nothing under the instance, and sweeping the disc beside it must still move the
-/// square's corners as their laws say (they were held where the drawing stood, and no station
-/// past the drawn one solved).
+/// A disc and, beside it, a triangle closed by the face itself: two faces of one station.
+const PAIR: &str = "
+component Pair(g: path, up: axis, scale: Scalar, s: Scalar) {
+  st := std.On(g, up: up, s: s)
+  in st.n {
+    k := circle(center: st.n.origin)
+    scaled_radius(r: 10mm, scale: scale, s: s) k
+    p := point
+    q := point
+    t := point
+    p scaled(du: 12mm, dv: 0mm, scale: scale, s: s) st.n
+    q scaled(du: 14mm, dv: 0mm, scale: scale, s: s) st.n
+    t scaled(du: 13mm, dv: 1mm, scale: scale, s: s) st.n
+  }
+  disc := face(k)
+  tri := face(p, q, t, -> close)
+}
+";
+
+/// **A station with two faces sweeps either**: the triangle's closing edges are the face's own,
+/// named by nothing under the instance, and they once held the corners they join where the
+/// drawing stood while the disc beside them was swept, so no station past the drawn one solved.
+/// The disc is its cone's frustum, and the triangle, of area 1 scaled to half, 40 · ∫(1 − s/2)².
 #[test]
 fn a_station_with_two_faces_sweeps_either() {
-    let src = LAWS.replace("    k := circle(center: st.n.origin)\n",
-                           "    k := circle(center: st.n.origin)\n    p := point\n    q := point\n    \
-                            r0 := point\n    p scaled(du: 12mm, dv: 0mm, scale: scale, s: s) st.n\n    \
-                            q scaled(du: 14mm, dv: 0mm, scale: scale, s: s) st.n\n    \
-                            r0 scaled(du: 13mm, dv: 1mm, scale: scale, s: s) st.n\n")
-        .replace("  f := face(k)\n}", "  f := face(k)\n  tri := face(p, q, r0, -> close)\n}")
-        + "cone := solid(Disc(straight, std.z, r: 10mm, scale: 0.5).f over s in (0, 1))\n\
-           tri := solid(Disc(straight, std.z, r: 10mm, scale: 0.5).tri over s in (0, 1))\n";
-    let e = determined(&src);
+    let e = with(&format!("{PAIR}
+cone := solid(Pair(straight, std.z, scale: 0.5).disc over s in (0, 1))
+prism := solid(Pair(straight, std.z, scale: 0.5).tri over s in (0, 1))"), &[]);
     near(exact(&e, "cone"), PI * 40.0 / 3.0 * 175.0, 1e-9, "the disc beside a triangle");
-    // the triangle, half of 2 × 1 at the start, scaled to half: its area 1 · k², k = 1 − s/2
-    near(exact(&e, "tri"), 40.0 * 1.0 * (1.0 - 0.5 + 0.25 / 3.0), 1e-9, "the triangle");
+    near(exact(&e, "prism"), 40.0 * (1.0 - 0.5 + 1.0 / 12.0), 1e-9, "the triangle");
 }

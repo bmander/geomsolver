@@ -929,13 +929,15 @@ block := solid(face(mouth, side_r, lid, side_l), from: face, to: back)
 - **[0.103] A law is an expression in the running number.** A twist or a scale is a dimension of
   the section reading `s`, and any expression in it is a law (`twist * (3 * s^2 - 2 * s^3)`, `r *
   max(1 - s, 0.5)`). A word of the library takes numbers, not laws, so the standard library's take
-  a total and run it linearly from nothing at `s = 0`: `Twisted(n, twist:, s:)`, axes `axes` in the
-  plane `n` turned `twist · s` about its origin; `p scaled(du:, dv:, scale:, s:) P`, `p` at
-  `(du, dv)` in `P`'s frame scaled `1 + (scale − 1) · s` about its origin; and `scaled_radius(r:,
-  scale:, s:) k`, a round's radius scaled alike. Any other law is the word given another fraction
-  (`s: 3 * s^2 - 2 * s^3`) or the section's own expression. No word takes a `law:`. A `when` is
-  made once, for the whole run (§12.9), so a condition reading the running number is **E040**,
-  saying so; `min`, `max` and `abs` write a law in pieces.
+  a total and run it linearly from the section as drawn at `s = 0`: `Twisted(n, twist:, s:)`, axes
+  `axes` in the plane `n` turned `twist · s` about its origin; `p scaled(du:, dv:, scale:, s:) P`,
+  `p` at `(du, dv)` in `P`'s frame scaled `1 + (scale − 1) · s` about its origin; and
+  `scaled_radius(r:, scale:, s:) k`, a round's radius scaled alike. Any other law is the word given
+  another fraction (`s: 3 * s^2 - 2 * s^3`) or the section's own expression. No word takes a
+  `law:`. A number given a formal — a component's or a relation word's — MAY be any expression in
+  the running number, worked out at each station; it binds the formal, and is no unknown of the
+  drawing. A `when` is made once, for the whole run (§12.9), so a condition reading the running
+  number is **E040**, saying so; `min`, `max` and `abs` write a law in pieces.
 - **A revolution** turns a face about `about:` a line or an axis, which MUST be one of the two (**E081**) and MUST lie in the **face's own plane** (E081) — a line drawn in another view names a direction this face knows nothing about. **[0.67]** A line lies there by membership; an axis where it is one of the plane's own axes (`std.z` on `std.front`), or, held entirely by `fix` (the plane too), where it stands now — else, placed by the solve, where the solid is evaluated, which refuses the solid if it does not. `sweep:` is how far and is a **magnitude**, a full turn where the document writes none; **which way is a word, not a sign** (§9.2, §9.4): `sense: cw | ccw`, right-handed about the line's own `p1 → p2` (an axis's own direction) unless `cw` is written, and a negative `sweep:` is **E040** at the value, in the words of the selector that replaces it.
 - **A body** names its **stock** in the brackets and takes its features from the **[0.32]** `union`, `cut` and **[0.22]** `common` **[0.85]** statements that name it. A solid whose brackets hold solids and no face is a body. **[0.99]** A solid whose brackets hold nothing, `pegs := solid()`, is an **empty body**: its stock is the first solid in `union` with it, so `B(s)` below is read with `S(s)` empty; which is first is no matter, the union being a set. A pattern then joins every copy alike — `repeat n as i { peg[i] union pegs }` — with none written apart as the stock. An empty body nothing is in `union` with is **E080** at its declaration, whatever cuts it. **[0.31]** A swept solid that a `union`, `cut` or `common` statement names is a body too, whose stock is its own sweep: the name means the sweep with its features wherever it is read, the sweep's faces keep their names (`plate.near`, not `plate.plate.near`), and a feature's are reached through it (`plate.hub.near`). A document wanting the bare sweep and the finished part under two names writes `body := solid(plate)` and puts the features on `body`.
 

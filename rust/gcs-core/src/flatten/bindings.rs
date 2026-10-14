@@ -343,6 +343,11 @@ impl<'a> Walk<'a> {
                 continue;
             }
             let name = formal_name(&prefix, &inst.name.text, &f.name.text);
+            // given a text over a face family's running number, kept to be worked out at each
+            // station (`keep_text`): bound, and no unknown
+            if self.held.texts.contains_key(&name) {
+                continue;
+            }
             // one table of every unknown, seeded by the call's `hint(…)` where it wrote one
             let unknown = crate::model::Declared { dim: f.ty.dim(), seed: None };
             self.unknowns.entry(name.clone()).or_insert(unknown);
