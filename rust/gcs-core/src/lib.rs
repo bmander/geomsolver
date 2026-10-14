@@ -56,6 +56,7 @@ pub mod clock;
 pub mod fmath;
 pub mod plane;
 pub mod program;
+pub mod progress;
 pub mod report;
 pub mod renderer;
 pub mod rng;

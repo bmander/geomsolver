@@ -18,6 +18,7 @@
 
 use std::process::ExitCode;
 mod cad;
+mod watch;
 
 use gcs_core::constraints::SpecKind;
 use gcs_core::diagnose::{diagnose, DiagnoseOptions};
@@ -38,6 +39,11 @@ solventc — check a Solvent document
                         (repeatable; the whole table in --json when none is given)
     --no-diagnose       solve only; skip the diagnosis
     --allow-unsolved    a document that does not solve is not a failure
+    --progress          say each stage on stderr as it is done: the solve, each solid built and
+                        each claim judged, with its time; work still going is said again past
+                        5 s.  On a terminal, unasked, the stages of a second or more are said
+    --no-progress       say nothing on stderr as the run goes, even on a terminal
+    --timings           at the end, the slowest solids and claims, each with its statement
     -o, --output PATH   write an SVG (one file, so one document)
     --stl PATH          write a solid as binary STL (one file, so one document)
     --step PATH         write an analytic STEP solid (by the kernel --kernel names)
@@ -106,6 +112,10 @@ struct Opts {
     /// pixel, which every constant size goes through.  A page width fixes it.
     width: f64,
     sheet: Option<String>,
+    /// `--progress`/`--no-progress`, or what a terminal is told unasked.
+    say: watch::Say,
+    /// `--timings`: the slowest solids and claims, said at the end.
+    timings: bool,
 }
 
 impl Default for Opts {
@@ -127,6 +137,8 @@ impl Default for Opts {
             tolerance: None,
             width: 800.0,
             sheet: None,
+            say: watch::Say::Nothing,
+            timings: false,
         }
     }
 }
@@ -134,6 +146,7 @@ impl Default for Opts {
 fn main() -> ExitCode {
     let mut opts = Opts::default();
     let mut paths: Vec<String> = Vec::new();
+    let mut said: Option<watch::Say> = None;
     let mut args = std::env::args().skip(1).peekable();
     while let Some(a) = args.next() {
         match a.as_str() {
@@ -219,6 +232,9 @@ fn main() -> ExitCode {
             },
             "--json" => opts.json = true,
             "--no-diagnose" => opts.no_diagnose = true,
+            "--progress" => said = Some(watch::Say::Everything),
+            "--no-progress" => said = Some(watch::Say::Nothing),
+            "--timings" => opts.timings = true,
             "--allow-unsolved" => opts.allow_unsolved = true,
             "-h" | "--help" => {
                 print!("{USAGE}");
@@ -248,6 +264,10 @@ fn main() -> ExitCode {
         eprintln!("solventc: --output writes one file, so it takes one document");
         return ExitCode::from(2);
     }
+    // a person watching a terminal is told of slow work unasked; a pipe or a file only on asking
+    use std::io::IsTerminal;
+    let terminal = std::io::stderr().is_terminal();
+    opts.say = said.unwrap_or(if terminal { watch::Say::Slow } else { watch::Say::Nothing });
     if paths.is_empty() {
         eprint!("{USAGE}");
         return ExitCode::from(2);
@@ -284,20 +304,77 @@ fn check(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
     if std::path::Path::new(&s.name).extension().is_some_and(|e| e == "svd") {
         return check_drawing(s, opts);
     }
-    let (mut prog, errs) = parse(&s.text);
-    // Resolve beside the model, then its ancestors, then the compiled module library.
-    let dir = std::path::Path::new(&s.name).parent().map(|d| d.to_path_buf()).unwrap_or_default();
-    let mut resolve = |name: &str| -> Option<String> {
-        gcs_core::modules::search_paths(name, &s.name).iter()
-            .find_map(|rel| std::fs::read_to_string(dir.join(rel)).ok())
-            .or_else(|| gcs_core::library::resolve(name))
-    };
-    let linked = gcs_core::modules::link(&mut prog, &mut resolve);
-    let mut e = elaborate(&prog);
-    // a module's diagnostics are the document's to hear, before the elaboration's
-    let mut diags = linked;
-    diags.append(&mut e.diags);
-    e.diags = diags;
+    if opts.say == watch::Say::Nothing && !opts.timings {
+        return check_model(s, opts, &mut Default::default());
+    }
+    let watch = watch::Watch::new(opts.say);
+    let mut places = Default::default();
+    let out = gcs_core::progress::listen(watch.clone(), || check_model(s, opts, &mut places));
+    if opts.timings {
+        // beside the JSON report rather than in it, as `--measure`'s lines are
+        let line = |l: String| if opts.json { eprintln!("{l}") } else { println!("{l}") };
+        let timings = watch.timings.borrow();
+        line(format!("{}: {}", s.name, timings.heading()));
+        for (text, work) in timings.lines(TIMINGS) {
+            match work.at.and_then(|a| places.get(&a)) {
+                Some(&lo) => {
+                    let (l, c) = line_col(&s.text, lo);
+                    line(format!("  {text}  {}:{l}:{c}", s.name));
+                }
+                None => line(format!("  {text}")),
+            }
+        }
+    }
+    out
+}
+
+/// How many of the slowest solids and claims `--timings` lists.
+const TIMINGS: usize = 12;
+
+/// Where each solid and each claim about solids was written, by `progress::At`: the offset of its
+/// statement in the document, for those the document itself wrote.
+type Places = std::collections::BTreeMap<gcs_core::progress::At, u32>;
+
+fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json>) {
+    let elaborating = gcs_core::progress::Work::elaborate(&s.name);
+    let (prog, errs, mut e) = gcs_core::progress::during(|| elaborating, || {
+        let (mut prog, errs) = parse(&s.text);
+        // Resolve beside the model, then its ancestors, then the compiled module library.
+        let dir = std::path::Path::new(&s.name).parent().map(|d| d.to_path_buf()).unwrap_or_default();
+        let mut resolve = |name: &str| -> Option<String> {
+            gcs_core::modules::search_paths(name, &s.name).iter()
+                .find_map(|rel| std::fs::read_to_string(dir.join(rel)).ok())
+                .or_else(|| gcs_core::library::resolve(name))
+        };
+        let linked = gcs_core::modules::link(&mut prog, &mut resolve);
+        let mut e = elaborate(&prog);
+        // a module's diagnostics are the document's to hear, before the elaboration's
+        let mut diags = linked;
+        diags.append(&mut e.diags);
+        e.diags = diags;
+        (prog, errs, e)
+    });
+    if opts.timings {
+        use gcs_core::progress::At;
+        use gcs_core::syntax::StmtId;
+        for i in 0..e.sketch.solids.len() {
+            let Some(site) = e.map.site_of(gcs_core::model::EntRef::solid(i)) else { continue };
+            // a solid a module's component made is where the document made that instance of it
+            use gcs_core::ir::PathStep;
+            let lo = if prog.document_stmt(site.stmt).is_some() { Some(site.span.lo) } else {
+                site.path.0.iter().rev().find_map(|step| match step {
+                    PathStep::Instance(id) | PathStep::Copy { block: id, .. } =>
+                        prog.document_stmt(*id).map(|st| st.span.lo),
+                })
+            };
+            if let Some(lo) = lo { places.insert(At::Solid(i), lo); }
+        }
+        for c in &e.sketch.solid_claims {
+            if let Some(st) = prog.document_stmt(StmtId(c.stmt())) {
+                places.insert(At::Stmt(c.stmt()), st.span.lo);
+            }
+        }
+    }
     // Nothing is said in `--json` mode, so nothing is worked out either: the collapse below is
     // part of deciding what to print, and running it to feed a function that discards every line
     // is work done for no reader.
@@ -325,7 +402,8 @@ fn check(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
     }
 
     let mut sk = e.sketch.clone();
-    let r = solve(&mut sk, SolveOpts::default());
+    let solving = gcs_core::progress::Work::solve(&sk);
+    let r = gcs_core::progress::during(|| solving, || solve(&mut sk, SolveOpts::default()));
     let invalid = gcs_core::program::solid_diagnostics(&sk, &e.map);
     if !opts.json {
         for d in &invalid { say(s, d.span.lo, severity(d.severity()), d.code.as_str(), &d.message); }
@@ -335,7 +413,9 @@ fn check(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
     if failed {
         return (1, opts.json.then(|| doc_json(s, &[], Some(&r), None, &e, Json::Null)));
     }
-    let d = (!opts.no_diagnose).then(|| diagnose(&mut sk, DiagnoseOptions::default()));
+    let diagnosing = || gcs_core::progress::Work::diagnose(&s.name);
+    let d = (!opts.no_diagnose)
+        .then(|| gcs_core::progress::during(diagnosing, || diagnose(&mut sk, DiagnoseOptions::default())));
 
     if !opts.json {
         println!("{}: {}", s.name, if r.success { "solved" } else { "did not solve" });

@@ -121,7 +121,8 @@ impl Sketch {
         if let Some((old, value)) = self.caches.solid.borrow().get(&slot) {
             if *old == key { return value.clone(); }
         }
-        let value = crate::solid::EvaluatedSolid::evaluate(self, i, policy).map(std::rc::Rc::new);
+        let value = crate::progress::during(|| crate::progress::Work::evaluate(self, i),
+            || crate::solid::EvaluatedSolid::evaluate(self, i, policy).map(std::rc::Rc::new));
         let mut cache = self.caches.solid.borrow_mut();
         cache.retain(|(index, _), (old, _)| *index != i || *old == key);
         // Bound zoom-history memory without evicting report and mesh entries.
@@ -136,7 +137,8 @@ impl Sketch {
     /// for the geometry it reads, whatever approximation asks.
     pub fn exact_solid(&self, i: usize) -> Result<std::rc::Rc<crate::solid::Exact>, String> {
         let key = crate::solid::MemoKey::of(self, i);
-        let build = || crate::solid::build_exact(self, i).map(std::rc::Rc::new);
+        let build = || crate::progress::during(|| crate::progress::Work::build(self, i),
+            || crate::solid::build_exact(self, i).map(std::rc::Rc::new));
         self.caches.exact.get_or(i, key, build)
     }
 

@@ -382,6 +382,19 @@ impl Program {
     }
 
     pub fn stmt(&self, id: StmtId) -> Option<&Stmt> {
+        Self::stmt_among(self.components.iter(), id)
+    }
+
+    /// Statement `id` where the document itself wrote it: `None` for a module's, whose span
+    /// indexes that module's text and not the document's.
+    pub fn document_stmt(&self, id: StmtId) -> Option<&Stmt> {
+        Self::stmt_among(self.components.iter().filter(|c| c.module.is_none()), id)
+    }
+
+    fn stmt_among<'a>(
+        mut among: impl Iterator<Item = &'a Component>,
+        id: StmtId,
+    ) -> Option<&'a Stmt> {
         fn find(st: &Stmt, id: StmtId) -> Option<&Stmt> {
             if st.id == id {
                 return Some(st);
@@ -392,7 +405,7 @@ impl Program {
                 _ => None,
             }
         }
-        self.components.iter().find_map(|c| c.body.iter().find_map(|st| find(st, id)))
+        among.find_map(|c| c.body.iter().find_map(|st| find(st, id)))
     }
 
     /// Visit all statements, including nested blocks, in source order.

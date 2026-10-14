@@ -234,7 +234,9 @@ pub fn judge_solids(sk: &Sketch) -> Vec<SolidVerdict> {
     sk.solid_claims
         .iter()
         .map(|c| {
-            let poses = match &c.over {
+            let text = crate::io::describe_solid_claim(sk, c);
+            let judged = || crate::progress::Work::claim(text.clone(), c.stmt);
+            let poses = crate::progress::during(judged, || match &c.over {
                 None => vec![SolidPose {
                     parameter: None,
                     evaluation: current_pose.clone().and_then(|()| geometry(sk, c)),
@@ -249,10 +251,10 @@ pub fn judge_solids(sk: &Sketch) -> Vec<SolidVerdict> {
                         })
                         .collect(),
                 },
-            };
+            });
             SolidVerdict {
                 stmt: c.stmt,
-                text: crate::io::describe_solid_claim(sk, c),
+                text,
                 sweep: c.over.clone(),
                 poses,
             }
