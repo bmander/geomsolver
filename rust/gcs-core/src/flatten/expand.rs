@@ -1320,6 +1320,10 @@ impl super::values::Names for Asked<'_, '_> {
     fn faces(&self, name: &str) -> Option<Vec<String>> {
         self.walk.faces_named(&Ref::dotted(name, Span::default()), self.scope, self.alias())
     }
+
+    fn running(&self, name: &str) -> bool {
+        self.walk.held.names.contains_key(name)
+    }
 }
 
 /// `probe word set`, stated by the walk at `at`: how a probe has its set applied to it.

@@ -49,6 +49,8 @@ fn out_of_reach(name: &str, vals: &BTreeMap<String, Aff>, scope: &Scope) -> Opti
 pub(super) trait Names {
     fn stands(&self, name: &str) -> Option<String>;
     fn faces(&self, name: &str) -> Option<Vec<String>>;
+    /// Whether the unknown `name` is a face family's running number (#243 L5).
+    fn running(&self, name: &str) -> bool;
 }
 
 /// Whether a `when`'s condition holds over the numbers in scope (#210), or the code and the
@@ -134,6 +136,18 @@ fn holds(
                     }
                     None => return Err(nothing(&name)),
                     Some(Some(u)) => {
+                        // a law of the station is an expression in its running number; the
+                        // station itself, what is made of it, is one shape over the whole run
+                        if names.running(u) {
+                            // the formal by its own name, never the station's key for it
+                            let mine = u.rsplit('.').next() == Some(name.as_str());
+                            let what = if mine { "is" } else { "reads" };
+                            return Err((Code::E040, format!(
+                                "`{name}` {what} a face family's running number, and a `when` is \
+                                 made once, for the whole run: a law that changes with it is one \
+                                 expression (`min`, `max` and `abs` say one in pieces)"
+                            )));
+                        }
                         let what = if u == name {
                             format!("`{name}` is")
                         } else {

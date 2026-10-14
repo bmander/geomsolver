@@ -102,6 +102,7 @@ mod jacobians;
 mod jansen;
 mod json_escapes;
 mod language_pipeline;
+mod laws;
 mod limit_measure;
 mod linalg;
 mod loft;

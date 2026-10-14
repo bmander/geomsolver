@@ -273,6 +273,22 @@ placement carries inside the blank; CLI test readers zero the offset.
   joins them, so a wall is one sheet, one name, over every link.  `tests/paths.rs` is the gate:
   `docs/lofts/l0/pipe.sv` (a U of three lines and two quarter turns) at the sum of its pieces'
   Pappus to 1e-9, a radius law in `s` over the chain, part of a chain, the refusals.
+- **A law is an expression in `s`** (§6.9 [0.103], #243 L5, finding 10).  A twist or a scale is
+  a dimension of the section reading the running number; no word takes a `law:` (no function
+  values).  `std.sv`'s `Twisted` (axes in the station's plane turned `twist · s`, `std.Turned`'s
+  construction over a reference at `n.u`), `scaled` (a point at `(du, dv)` scaled `1 + (scale −
+  1) · s` about the plane's origin) and `scaled_radius` take a total and run it linearly; any
+  other law is the word given another fraction (`s: 3 * s^2 - 2 * s^3`) or the writer's own
+  expression.  A `when` reading the running number is E040 in its own words
+  (`values::Names::running`, the walk's `held.names`): a `when` is made once, the station one
+  shape over the run, and `min`/`max`/`abs` write a law in pieces.  **A station's own parameters
+  are never held** (`family::part_of`): a primitive outside the station — a closing edge another
+  face of the instance minted, named by nothing under it — holds only what is not the station's,
+  else sweeping the instance's other face froze its corners where the drawing stood and no
+  station past it solved.  `tests/laws.rs` is the gate: twisted extrusions at A·L (0°, 90°,
+  −450°, eased), a twisted square round a bend at Pappus, square and round frusta (twisted too),
+  a sine swell and an eased scale by a quadrature exact for their degree, a law in pieces
+  (`max`), the `when` refusal and two faces of one station, each off the exact B-rep to 1e-9.
 - **A face closes itself** (§6.8, `program::build_face`; issue #49).  The brackets hold a *walk*,
   and an item may be a **point**, with `-> close` sealing the run back to the first item.  Where
   two neighbours do not meet, `build_face` mints the straight line between them, class

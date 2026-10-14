@@ -4,6 +4,17 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.103] Twist and scale laws.** A twist or a scale of a face family's section is a dimension
+reading the running number, and any expression in it is a law (§6.9). The standard library adds
+words that take a total and run it linearly: `std.Twisted(n, twist:, s:)`, axes in the station's
+plane turned `twist · s` about its origin; `p scaled(du:, dv:, scale:, s:) P`, a point of a
+section scaled about the plane's origin; and `scaled_radius(r:, scale:, s:) k`. Any other law is
+the same word given another fraction (`s: 3 * s^2 - 2 * s^3`). Through 0.102 a turn was the
+section's own construction, a reference line and a turned one (`docs/lofts/l0/twisted_duct.sv`).
+A `when` whose condition reads the running number is E040, as one reading an unknown was; it
+now says the number is the family's, that a `when` is made once for the whole run, and that
+`min`, `max` and `abs` write a law in pieces. (Issue #243, L5.)
+
 **[0.102] Any path, a chain too.** A face family's `path` formal may be given a named open chain
 of lines and arcs (§6.9): the station runs over it link by link, link `k` while `s` is in `(k, k +
 1)`, a contact pinned to `s` on the chain at the fraction `s − k` of that link's run and every

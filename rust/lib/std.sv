@@ -593,3 +593,56 @@ component OnHelix(ax: axis, base: plane, r: Length, pitch: Length, turns: Scalar
   // the helix leans from square to the axis by its lead angle
   n.v angle(atan(pitch / (2 * pi * r))) sc.n.v
 }
+
+// -- laws of a station (#243 L5) ----------------------------------------------------------------
+//
+// A twist or a scale is a dimension of the section reading `s`, and any expression in it is a
+// law: `twist * (3 * s^2 - 2 * s^3)`, `r * (1 + 0.2 * sin(180 * s))`.  A word takes numbers, not
+// laws (Solvent has no function values), so these take a total — the turn or the scale at
+// `s = 1` — and run it linearly from nothing at `s = 0`; any other law is the same word given
+// another fraction, `s: 3 * s^2 - 2 * s^3`.  A `when` cannot say a law: it is made once, for the
+// whole run, and the station is one shape all along it; `min`, `max` and `abs` say a law in
+// pieces.
+//
+//   component Duct(g: path, half: Length, s: Scalar) {
+//     st := std.On(g, up: std.z, s: s)
+//     tw := std.Twisted(st.n, twist: 90deg, s: s)
+//     in st.n {
+//       a := point
+//       a scaled(du: -half, dv: -half, scale: 0.5, s: s) tw.axes
+//       …
+//     }
+//   }
+
+// The plane `n` turned `twist · s` about its origin, within it: axes a section drawn in `n` is
+// measured against (`p coords(du: 5, dv: 0) tw.axes`), so the section turns as it runs.  At
+// `s = 0` they are `n`'s own.  The turn runs on from one station to the next, so a twist past a
+// half turn is no different from a quarter.
+component Twisted(n: plane, twist: Angle, s: Scalar) {
+  in n {
+    private zero := point
+    zero distance(10mm, along: u) n
+    zero level(v) n
+    private construction ref := line(n.origin, zero)
+    private t := point
+    construction u := line(n.origin, t)
+    length(10mm) u
+    ref angle(twist * s, sense: ccw) u
+    private q := point hint(at: n.origin, toward: t, turn: 90deg)
+    private construction v := line(n.origin, q)
+    v perpendicular u
+    v equal u
+  }
+  axes := plane(u: u, v: v)
+}
+
+// Where a point stands in a plane's frame as its section is scaled about the origin: `(du, dv)`
+// at `s = 0`, `scale` times that at `s = 1`, and run linearly between — `p coords` of a section
+// drawn at its start's size.
+p scaled(du, dv, scale, s) P := {
+  p distance(du * (1 + (scale - 1) * s), along: u) P
+  p distance(dv * (1 + (scale - 1) * s), along: v) P
+}
+
+// A round's radius scaled as `scaled` scales a point: `r` at `s = 0`, `scale` times it at `s = 1`.
+scaled_radius(r, scale, s) k := radius(r * (1 + (scale - 1) * s)) k
