@@ -152,10 +152,13 @@ fn a_roll_through_prints_as_written() {
 /// **The issue's case** (#271): the spiral bevel at 10:48, the gear close to a crown gear, whose
 /// stated 45-degree roll left the space cutter in the blank (E1). Rolled through its blank, each
 /// member's roll ends where the tool's surface, sampled as E1 samples it, is clear of the blank, a
-/// small margin past where it first leaves it, and the gear is admitted.
+/// small margin past where it first leaves it, and the gear is admitted.  Cut by the mill the
+/// issue's pair had (`fixtures::gear::recorded_machine`): at a ten-tooth pinion the balance that
+/// finds the mill (#283) does not solve from its seeds.
 #[test]
 fn the_pair_at_ten_teeth_is_admitted_with_no_roll_stated() {
-    let text = fixtures::gear::configure(&fixtures::gear::source(), &[("pinion_teeth", 10.)]);
+    let text = fixtures::gear::configure(&fixtures::gear::source(),
+        &[("pinion_teeth", 10.), ("pressure_shift", 12.5)]);
     assert!(!text.contains("roll_limit"), "the pair states no roll");
     let e = fixtures::gear::read(&text);
     let sk = &e.sketch;

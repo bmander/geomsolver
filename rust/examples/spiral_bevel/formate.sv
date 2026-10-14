@@ -11,9 +11,10 @@ use std
 use hypoid (GearCone, ToothTrace, PinionCone, Blank, FaceMill, Tooth, Topping, Member, Generated)
 
 // -- the pair as a designer states it ----------------------------------------------------------
-// As `hypoid.sv` states it: the tooth counts, the module at M, the shafts, the cutter's pressure
-// shift and spiral, and the allowances, each zero for the conjugate, sharp-edged pair. The shift
-// is still the number tuned for the crown pair; the generated pinion takes it without undercut.
+// As `hypoid.sv` states it: the tooth counts, the module at M, the shafts, the spiral and the
+// allowances, each zero for the conjugate, sharp-edged pair — and, stated here, the face mill's
+// pressure shift and (in `FormatePair`) its radius, 0.8 R: the crown pair's settings as they were
+// tuned before `hypoid.sv` found its own (#283). The generated pinion takes them without undercut.
 param pinion_teeth := 24
 param gear_teeth := 48
 param mean_module := 2mm
@@ -49,7 +50,7 @@ component FormatePair(P: plane, across: axis, up: axis, pinion_teeth: Int, gear_
   gear_cone := GearCone(P, across, pinion_teeth: pinion_teeth, gear_teeth: gear_teeth,
     mean_module: mean_module)
   trace := ToothTrace(P, gear_cone, R: R, spiral_angle: spiral_angle, mean_module: mean_module,
-    mn: mn)
+    mn: mn, cutter_radius: 0.8 * R)
   pinion_cone := PinionCone(P, up, gear_cone, trace, shaft_angle: shaft_angle, offset: offset,
     rp: rp, pa: pa)
 
@@ -60,7 +61,7 @@ component FormatePair(P: plane, across: axis, up: axis, pinion_teeth: Int, gear_
 
   // The face mill: its axis through C and its two flank cones through the pitch points.
   mill := FaceMill(P, gear_cone, trace, R: R, mean_module: mean_module, pressure: pressure,
-    pressure_shift: pressure_shift, dedendum: dedendum, base: base)
+    pressure_shift: pressure_shift, cutter_radius: 0.8 * R, dedendum: dedendum, base: base)
 
   // The motions: each member's turn about its shaft, which also indexes it; the gear's next
   // tooth, a pitch round; and the mesh — the gear turning at the pinion's tooth count over its own
@@ -102,19 +103,19 @@ component FormatePair(P: plane, across: axis, up: axis, pinion_teeth: Int, gear_
   when tip_relief > 0mm {
     N := plane(u: trace.normal, v: mill.ax)
     depth := addendum - tip_relief
-    inner_lean := pressure + pressure_shift + 30deg
-    outer_lean := pressure_shift - pressure - 30deg
+    inner_half := pressure + pressure_shift + 30deg
+    outer_half := pressure - pressure_shift + 30deg
     pinion_inner := Topping(gear_tooth.inner, mill.ax, N, mill.to_inner, height: -depth,
-      lean: inner_lean)
+      half: inner_half, opening: 180deg - inner_half)
     pinion_outer := Topping(gear_tooth.outer, mill.ax, N, mill.to_outer, height: -depth,
-      lean: outer_lean)
+      half: outer_half, opening: outer_half)
     pinion_top := std.HalfSpace(trace.C, mill.ax, d: -addendum / 2)
     construction pinion_topping := Tooth(pinion_inner.cone, pinion_outer.cone,
       mill.tooth_base, pinion_top, grow: 0mm, r: rounding)
     gear_outer := Topping(gear_space.convex, mill.ax, N, mill.to_outer, height: depth,
-      lean: outer_lean)
+      half: outer_half, opening: outer_half)
     gear_inner := Topping(gear_space.concave, mill.ax, N, mill.to_inner, height: depth,
-      lean: inner_lean)
+      half: inner_half, opening: 180deg - inner_half)
     gear_top := std.HalfSpace(trace.C, mill.ax, d: addendum / 2)
     construction gear_topping := Space(gear_outer.cone, gear_inner.cone, gear_top,
       mill.mate_base, clear_below, clear_above, mill.reach, gear_next, grow: 0mm, r: rounding)

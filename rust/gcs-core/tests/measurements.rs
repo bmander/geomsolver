@@ -279,9 +279,9 @@ fn a_measurement_must_come_to_its_slots_dimension_over_geometry_it_can_measure()
 }
 
 #[test]
-fn the_spiral_bevel_rolls_measured_off_the_pitch_geometry_are_its_trig_ratios() {
-    // the bevel pair, whose rolls the layout measures off its pitch triangles (`hypoid.sv`'s
-    // step 5), each written a second time with its ratio in closed form: a pitch cone's
+fn the_spiral_bevel_rolls_by_tooth_count_are_its_trig_ratios() {
+    // the bevel pair, whose rolls are the crown's tooth count over each member's (`hypoid.sv`'s
+    // step 5, #283), each written a second time with its ratio in closed form: a pitch cone's
     // distance over its pitch radius is one over the sine of its pitch angle
     let anchor = "  gear_generation := motion(crown_roll, relative_to: gear_roll)\n";
     let text = fixtures::gear::bevel(&fixtures::gear::source());

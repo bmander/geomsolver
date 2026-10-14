@@ -94,6 +94,7 @@ mod highlight;
 mod homotopy;
 mod hub_motor;
 mod hypoid_layout;
+mod hypoid_machine;
 mod interfaces;
 mod interval;
 mod io;
