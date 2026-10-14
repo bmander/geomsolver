@@ -17,7 +17,7 @@
 import { Constraint } from './constraints.js';
 import { Kind, KINDS, Plane, Primitive, Sketch } from './model.js';
 import type { Way } from './model.js';
-import { core, lastError, takeJson, takeStr, withJson, withStr } from './wasm.js';
+import { core, lastError, takeJson, takeStr, withBuf, withJson, withStr } from './wasm.js';
 
 /** Where a statement sits in the program text, plus the line and column the core worked out, so
  *  nothing here scans the text a second time.
@@ -295,6 +295,17 @@ export class Document {
 
   spanOfConstraint(id: number): SourceSpan | undefined {
     return this.map.constraints.find((c) => c.id === id);
+  }
+
+  /** Where statement `stmt` of this text was written — a claim about solids, which makes no
+   *  constraint to be found by — or nothing where the text has no such statement (one a module
+   *  states).  The core's bytes brought onto the string, as every report's are. */
+  spanOfStatement(stmt: number): SourceSpan | undefined {
+    const span = withBuf(2, 4, (b) =>
+      core().gcs_elab_stmt_span(this.h, stmt, b.ptr) < 0 ? undefined : [b.i32[0], b.i32[1]]);
+    if (!span) return undefined;
+    const at = new Offsets(this.text);
+    return { lo: at.at(span[0]), hi: at.at(span[1]) };
   }
 
   /* -- the edit verbs ------------------------------------------------------------------- */

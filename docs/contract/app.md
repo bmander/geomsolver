@@ -341,6 +341,15 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   comments and all.  A selection crosses a re-elaboration **by name** (`Document.nameOf` /
   `Document.entity`); a proxy dies with its `Sketch`.  `swap` is the one seam that replaces the
   drawing, and disposes the outgoing document.
+  **An opening says which object it is building** (`SketchView.hold`, `buildObjects`): an
+  object is evaluated the first time anything asks — the banner's `unbuilt`, `fit`'s bounds, the
+  box, all at `ApproximationPolicy::Mesh` — and a rounded part is seconds, so a load held paints
+  nothing and tells the shell nothing, then evaluates each object (not a swept one, the worker's)
+  in turn, the loading modal saying `building NAME (k of n)` with its bar, the page painting
+  between, and lets go: the shell told once, the fit it owed taken.  An example and a project's
+  file are opened so (`openExample`, `chooseFile`); `loading.ts` keeps the modal through the
+  building and then waits on the swept surfaces as before.  The app test beside `buildObjects` is
+  the gate.
   The source catches up at exactly two seams and **never per frame**: `syncSeeds` at the end of a
   drag (`gesture::endGesture`, guaranteed numeric) and `syncSource` at the end of `afterEdit`.
   The panel is wired to `onProgram`, never to `onDragFrame`.

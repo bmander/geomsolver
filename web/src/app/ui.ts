@@ -29,6 +29,15 @@ export function refining(msg: string, state: 'going' | 'failed' | 'finished' = '
   refineEl.className = state === 'going' ? '' : state;
 }
 
+const claimsEl = document.getElementById('claims') as HTMLElement;
+
+/** The claims about solids' line in the footer, and how it reads: going, failed (one refuted, or
+ *  the judging failed) or finished. */
+export function judgingLine(msg: string, state: 'going' | 'failed' | 'finished' = 'going'): void {
+  claimsEl.textContent = msg;
+  claimsEl.className = state === 'going' ? '' : state;
+}
+
 function open<T>(title: string, build: (resolve: (v: T) => void) => void): Promise<T> {
   modalTitle.textContent = title;
   modalBody.replaceChildren();

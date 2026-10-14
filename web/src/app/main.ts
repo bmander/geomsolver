@@ -58,7 +58,7 @@ import {
 } from './dialogs.js';
 import { editValue, onDimension, onExtent, onRound } from './dimbox.js';
 import { bindProgramPanel, openDrawing, refreshProgram, resetProgramFiles, saveProjectFile,
-  showStatementFor, toggleProgramPanel } from './program.js';
+  showClaims, showStatementFor, toggleProgramPanel } from './program.js';
 import { closePanel, openPanel, refresh, refreshPanel, refreshStatus } from './lists.js';
 import {
   aboutBadge, barConstraints, barTools, canvas, currentConstraint, focusConstraint, hooks, menubar,
@@ -66,9 +66,10 @@ import {
 } from './shell.js';
 import {
   MenuItem, ToolbarButton, addButton, addMenu, addTopic, askChoice, closeMenus, download, fitBars,
-  openImage, refining, toast,
+  judgingLine, openImage, refining, toast,
 } from './ui.js';
 import { objectName, type Refining } from './field-preview.js';
+import type { Judging } from './claim-judging.js';
 import { Tool } from './view.js';
 import { meshing } from './loading.js';
 
@@ -278,6 +279,52 @@ function exactExport(kind: 'step' | 'stl'): void {
     exporter.postMessage(job);
   }
   toast(`exporting ${objs.length === 1 ? objs[0].name : `${objs.length} objects`} as ${kind.toUpperCase()} — a swept body takes seconds`);
+}
+
+/** **The claims about solids being judged, said in the footer** — the worker's word on where it
+ *  stands, in the core's words (`judging claim a clear(1mm) b (2 of 3), pose 5 of 37`), a bar of
+ *  the whole done, a spinner and a clock the page keeps ticking, since a pose of a rounded part is
+ *  seconds with nothing said.  Judged, the line counts what they came to — for a few seconds when
+ *  every one holds, and to stay when one does not, which the program panel then lists at its
+ *  statement (`showClaims`). */
+let judgingTimer = 0;
+let judgingTick = 0;
+let listedVerdicts: Judging['verdicts'] | null = null;
+function showJudging(j: Judging | null): void {
+  // the panel's list changes when the verdicts do, not at every word of the judging
+  if (j?.verdicts !== listedVerdicts) {
+    listedVerdicts = j?.verdicts;
+    showClaims(j?.verdicts ?? []);
+  }
+  sayJudging(j);
+}
+
+function sayJudging(j: Judging | null): void {
+  clearTimeout(judgingTimer);
+  clearInterval(judgingTick);
+  judgingTick = 0;
+  if (!j) { judgingLine(''); return; }
+  if (j.error) { judgingLine(`claims: not judged — ${j.error}`, 'failed'); return; }
+  if (j.verdicts) {
+    const count = (vs: string[]): number =>
+      j.verdicts!.filter((v) => vs.includes(v.verdict)).length;
+    const held = count(['holds', 'sampled-success']);
+    const [refuted, undecided] = [count(['refuted']), count(['undecided'])];
+    const said = [refuted && `${refuted} refuted`, undecided && `${undecided} undecided`,
+      held && `${held} hold${held === 1 ? 's' : ''}`].filter(Boolean).join(', ');
+    if (refuted || undecided) { judgingLine(`claims: ${said}`, 'failed'); return; }
+    judgingLine(`claims: ${said}`, 'finished');
+    judgingTimer = window.setTimeout(() => judgingLine(''), 5000);
+    return;
+  }
+  const s = Math.floor((performance.now() - j.since) / 1000);
+  const clock = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  const n = Math.round(Math.max(0, Math.min(1, j.progress?.fraction ?? 0)) * 8);
+  const spin = SPIN[Math.floor(performance.now() / 250) % SPIN.length];
+  const doing = j.progress?.doing
+    ?? `reading the drawing to judge ${j.claims.length} claim${j.claims.length === 1 ? '' : 's'}`;
+  judgingLine(`${spin} ${doing} ${'▰'.repeat(n)}${'▱'.repeat(8 - n)} ${clock}`);
+  judgingTick = window.setInterval(() => sayJudging(view.claims.judging), 250);
 }
 
 /** **The background refinement, said in the footer** — one entry an object, while any is going:
@@ -600,6 +647,7 @@ view.onLoad = () => { if (resetProgramFiles()) leaveExample(); };
 view.onDragFrame = refreshStatus;
 view.onStatus = toast;
 view.onRefine = (list) => { showRefining(list); meshing(list); };
+view.onClaims = showJudging;
 hooks.focusChanged = showStatementFor;
 bindProgramPanel();
 new ResizeObserver(() => view.resize()).observe(canvas);

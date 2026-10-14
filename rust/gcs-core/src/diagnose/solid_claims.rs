@@ -143,13 +143,35 @@ fn geometry(sk: &Sketch, c: &SolidClaim) -> Result<clear::GeometricEvidence, Str
         .into_evidence()
 }
 
-/// A claim along motion `m`'s roll, at each sample, every solid placed under the motion at its
-/// `at:` advanced by the roll and nothing solved again. Where one operand is itself such a
-/// placement and nothing else either reads moves, both are evaluated once and the placement moved
-/// rigidly at each roll (`clear::evaluate_moved`); otherwise a copy of the drawing is re-placed per
-/// sample, keeping its evaluated solids against what they read.
-fn rolled_poses(sk: &Sketch, c: &SolidClaim, sw: &Sweep, m: u32) -> Vec<SolidPose> {
+/// How the claim in hand is judged, pose by pose: what it read once, before its first pose.
+enum Poses {
+    /// The drawing's own pose, once — a claim over no sweep.
+    Current,
+    /// Along a motion's roll with one operand the only placement it moves: both operands evaluated
+    /// once and that placement moved rigidly at each roll (`clear::evaluate_moved`).
+    Rigid {
+        family: crate::motion::Family,
+        home: crate::envelope::Motion,
+        at: f64,
+        a_moves: bool,
+        a: std::rc::Rc<crate::solid::EvaluatedSolid>,
+        b: std::rc::Rc<crate::solid::EvaluatedSolid>,
+    },
+    /// Along a motion's roll otherwise: a copy of the drawing re-placed per roll, every solid
+    /// placed under the motion at its `at:` advanced by the roll and nothing solved again, keeping
+    /// its evaluated solids against what they read.
+    Replaced { scratch: Sketch, placed: Vec<(usize, f64)> },
+    /// Over a free parameter: a copy solved again at each sample.
+    Solved,
+    /// Every pose fails, for this reason: what the roll reads could not be read.
+    Failing(String),
+}
+
+/// What the claim in hand reads once, before its first pose.
+fn poses_of(sk: &Sketch, c: &SolidClaim) -> Poses {
     use crate::model::SolidDef;
+    let Some(sw) = &c.over else { return Poses::Current };
+    let Some(m) = sw.motion() else { return Poses::Solved };
     let placed: Vec<(usize, f64)> = sk.solids.iter().enumerate().filter_map(|(i, s)| match &s.def {
         SolidDef::Placed { motion, at, .. } if *motion == m => Some((i, at.value)),
         _ => None,
@@ -164,38 +186,24 @@ fn rolled_poses(sk: &Sketch, c: &SolidClaim, sw: &Sweep, m: u32) -> Vec<SolidPos
         }
         count
     };
-    let samples = (0..=SWEEP_STEPS).map(|k| sw.sample(k, SWEEP_STEPS).expect("inclusive nonzero sweep intervals"));
     let (a, b) = (c.a as usize, c.b as usize);
     let rigid = match (moving(a), moving(b)) {
         (1, 0) => placed.iter().find(|&&(p, _)| p == a).map(|&(_, at)| (true, at)),
         (0, 1) => placed.iter().find(|&&(p, _)| p == b).map(|&(_, at)| (false, at)),
         _ => None,
     };
-    if let Some((a_moves, at)) = rigid {
-        let policy = crate::solid::ApproximationPolicy::from_unit(crate::solid::REPORT_UNIT);
-        let read = || -> Result<_, String> {
-            let family = crate::motion::Family::read(sk, m as usize)?;
-            Ok((family.at(at)?.inverse(), family, sk.evaluated_solid(a, policy)?, sk.evaluated_solid(b, policy)?))
-        };
-        return match read() {
-            Ok((home, family, ea, eb)) => samples.map(|t| {
-                let evaluation = family.at(at + t.to_radians()).map(|now| home.then(now)).and_then(|pose| {
-                    clear::evaluate_moved(&c.requirement, &ea, &eb, if a_moves { pose.inverse() } else { pose })
-                });
-                SolidPose { parameter: Some(t), evaluation }
-            }).collect(),
-            Err(e) => samples.map(|t| SolidPose { parameter: Some(t), evaluation: Err(e.clone()) }).collect(),
-        };
-    }
-    let mut scratch = sk.clone();
-    samples.map(|t| {
-        for &(i, at) in &placed {
-            if let SolidDef::Placed { at: a, .. } = &mut scratch.solids[i].def { a.value = at + t.to_radians(); }
-        }
-        SolidPose { parameter: Some(t), evaluation: geometry(&scratch, c) }
-    }).collect()
+    let Some((a_moves, at)) = rigid else { return Poses::Replaced { scratch: sk.clone(), placed } };
+    let policy = crate::solid::ApproximationPolicy::from_unit(crate::solid::REPORT_UNIT);
+    let read = || -> Result<Poses, String> {
+        let family = crate::motion::Family::read(sk, m as usize)?;
+        let home = family.at(at)?.inverse();
+        let (a, b) = (sk.evaluated_solid(a, policy)?, sk.evaluated_solid(b, policy)?);
+        Ok(Poses::Rigid { family, home, at, a_moves, a, b })
+    };
+    read().unwrap_or_else(Poses::Failing)
 }
 
+/// The pose of claim `c` at sample `t` of its sweep, solved again on a copy of the drawing.
 fn sampled_pose(sk: &Sketch, c: &SolidClaim, sw: &Sweep, t: f64) -> SolidPose {
     let evaluate = || -> Result<clear::GeometricEvidence, String> {
         let mut scratch = sk.clone();
@@ -216,48 +224,184 @@ fn sampled_pose(sk: &Sketch, c: &SolidClaim, sw: &Sweep, t: f64) -> SolidPose {
     SolidPose { parameter: Some(t), evaluation: evaluate() }
 }
 
-pub fn judge_solids(sk: &Sketch) -> Vec<SolidVerdict> {
-    // A single-pose claim must describe the current drawing, not a newly solved copy.
-    // Check once for all such claims; sweeps solve and validate their own attempted poses.
-    let current_pose = if sk.solid_claims.iter().any(|c| c.over.is_none()) {
-        let mut sys = crate::system::System::new(sk);
-        let z = sys.z0(sk);
-        let residual = sys.max_relative_residual(&z);
-        if residual.is_finite() && residual < super::DiagnoseOptions::default().tol {
-            Ok(())
-        } else {
-            Err("current pose does not satisfy the drawing's constraints".to_string())
-        }
-    } else {
-        Ok(())
-    };
-    sk.solid_claims
-        .iter()
-        .map(|c| {
-            let text = crate::io::describe_solid_claim(sk, c);
-            let judged = || crate::progress::Work::claim(text.clone(), c.stmt);
-            let poses = crate::progress::during(judged, || match &c.over {
-                None => vec![SolidPose {
-                    parameter: None,
-                    evaluation: current_pose.clone().and_then(|()| geometry(sk, c)),
-                }],
-                Some(sw) => match sw.motion() {
-                    Some(m) => rolled_poses(sk, c, sw, m),
-                    None => (0..=SWEEP_STEPS)
-                        .map(|k| {
-                            let t =
-                                sw.sample(k, SWEEP_STEPS).expect("inclusive nonzero sweep intervals");
-                            sampled_pose(sk, c, sw, t)
-                        })
-                        .collect(),
-                },
-            });
-            SolidVerdict {
-                stmt: c.stmt,
-                text,
-                sweep: c.over.clone(),
-                poses,
+/// How many poses claim `c` is judged at: the drawing's own, or each sample of its sweep.
+fn pose_count(c: &SolidClaim) -> usize {
+    if c.over.is_some() { SWEEP_STEPS + 1 } else { 1 }
+}
+
+/// **The drawing's claims about solids, judged a pose at a time** (`step`), so a host can say
+/// where the judging stands between poses and drop it for a newer drawing: a claim over a sweep
+/// is 37 poses, each a solid evaluated, and a drawing's claims take seconds.  `judge_solids` is
+/// this run to the end, so a claim is judged one way whoever asks.
+///
+/// The judge holds no drawing: each step is handed the one it was made for.
+pub struct ClaimJudge {
+    /// Whether the drawing's own pose satisfies its constraints — what a claim over no sweep reads.
+    current_pose: Result<(), String>,
+    /// The claim in hand, by its index in `Sketch::solid_claims`.
+    claim: usize,
+    /// What the claim in hand read before its first pose.
+    reading: Option<Poses>,
+    /// Its poses judged so far.
+    poses: Vec<SolidPose>,
+    verdicts: Vec<SolidVerdict>,
+}
+
+impl ClaimJudge {
+    pub fn new(sk: &Sketch) -> ClaimJudge {
+        // A single-pose claim must describe the current drawing, not a newly solved copy.
+        // Check once for all such claims; sweeps solve and validate their own attempted poses.
+        let current_pose = if sk.solid_claims.iter().any(|c| c.over.is_none()) {
+            let mut sys = crate::system::System::new(sk);
+            let z = sys.z0(sk);
+            let residual = sys.max_relative_residual(&z);
+            if residual.is_finite() && residual < super::DiagnoseOptions::default().tol {
+                Ok(())
+            } else {
+                Err("current pose does not satisfy the drawing's constraints".to_string())
             }
-        })
-        .collect()
+        } else {
+            Ok(())
+        };
+        ClaimJudge {
+            current_pose, claim: 0, reading: None, poses: Vec::new(), verdicts: Vec::new(),
+        }
+    }
+
+    /// Whether every claim of `sk` is judged.
+    pub fn done(&self, sk: &Sketch) -> bool {
+        self.claim >= sk.solid_claims.len()
+    }
+
+    /// Judge the next pose of `sk`, the drawing the judge was made for: whether every claim is now
+    /// judged.
+    pub fn step(&mut self, sk: &Sketch) -> bool {
+        let Some(c) = sk.solid_claims.get(self.claim) else { return true };
+        let k = self.poses.len();
+        let reading = self.reading.get_or_insert_with(|| poses_of(sk, c));
+        let sample = |k: usize| c.over.as_ref()
+            .map(|sw| sw.sample(k, SWEEP_STEPS).expect("inclusive nonzero sweep intervals"));
+        let pose = match reading {
+            Poses::Current => SolidPose {
+                parameter: None,
+                evaluation: self.current_pose.clone().and_then(|()| geometry(sk, c)),
+            },
+            Poses::Rigid { family, home, at, a_moves, a, b } => {
+                let t = sample(k).expect("a roll is a sweep");
+                let evaluation = family.at(*at + t.to_radians()).map(|now| home.then(now))
+                    .and_then(|pose| {
+                        let pose = if *a_moves { pose.inverse() } else { pose };
+                        clear::evaluate_moved(&c.requirement, a, b, pose)
+                    });
+                SolidPose { parameter: Some(t), evaluation }
+            }
+            Poses::Replaced { scratch, placed } => {
+                let t = sample(k).expect("a roll is a sweep");
+                for &(i, at) in placed.iter() {
+                    let def = &mut scratch.solids[i].def;
+                    if let crate::model::SolidDef::Placed { at: a, .. } = def {
+                        a.value = at + t.to_radians();
+                    }
+                }
+                SolidPose { parameter: Some(t), evaluation: geometry(scratch, c) }
+            }
+            Poses::Solved => {
+                let t = sample(k).expect("a free parameter's claim is a sweep");
+                sampled_pose(sk, c, c.over.as_ref().expect("a sweep"), t)
+            }
+            Poses::Failing(e) => SolidPose { parameter: sample(k), evaluation: Err(e.clone()) },
+        };
+        self.poses.push(pose);
+        if self.poses.len() >= pose_count(c) {
+            self.verdicts.push(SolidVerdict {
+                stmt: c.stmt,
+                text: crate::io::describe_solid_claim(sk, c),
+                sweep: c.over.clone(),
+                poses: std::mem::take(&mut self.poses),
+            });
+            self.reading = None;
+            self.claim += 1;
+        }
+        self.done(sk)
+    }
+
+    /// Judge the rest of the claim in hand: whether every claim is now judged.
+    fn finish_claim(&mut self, sk: &Sketch) -> bool {
+        let claim = self.claim;
+        while self.claim == claim {
+            if self.step(sk) { return true; }
+        }
+        false
+    }
+
+    /// Where the judging stands: the claim in hand (counted from 0) of how many, and its poses
+    /// judged of how many — `claim` equal to `claims` once every one is.
+    pub fn progress(&self, sk: &Sketch) -> ClaimProgress {
+        let c = sk.solid_claims.get(self.claim);
+        ClaimProgress {
+            claim: self.claim,
+            claims: sk.solid_claims.len(),
+            pose: self.poses.len(),
+            poses: c.map_or(0, pose_count),
+            text: c.map(|c| crate::io::describe_solid_claim(sk, c)),
+            stmt: c.map(|c| c.stmt),
+        }
+    }
+
+    /// The verdicts so far, in the drawing's order.
+    pub fn verdicts(&self) -> &[SolidVerdict] {
+        &self.verdicts
+    }
+
+    pub fn into_verdicts(self) -> Vec<SolidVerdict> {
+        self.verdicts
+    }
+}
+
+/// Where a `ClaimJudge` stands.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ClaimProgress {
+    /// The claim in hand, counted from 0, and how many there are.
+    pub claim: usize,
+    pub claims: usize,
+    /// Its poses judged, and how many it is judged at.
+    pub pose: usize,
+    pub poses: usize,
+    /// The claim in hand as the report words it (`claim a clear(1mm) b`), and its statement.
+    pub text: Option<String>,
+    pub stmt: Option<u32>,
+}
+
+impl ClaimProgress {
+    /// The fraction of the judging done, every claim weighed alike.
+    pub fn fraction(&self) -> f64 {
+        if self.claims == 0 { return 1.0; }
+        let within = if self.poses == 0 { 0.0 } else { self.pose as f64 / self.poses as f64 };
+        ((self.claim as f64 + within) / self.claims as f64).min(1.0)
+    }
+
+    /// What is being done, as a host says it: `judging claim a clear(1mm) b (2 of 3), pose 5 of
+    /// 37`, and `judged 3 claims` once all are.
+    pub fn doing(&self) -> String {
+        let Some(text) = &self.text else {
+            let s = if self.claims == 1 { "" } else { "s" };
+            return format!("judged {} claim{s}", self.claims);
+        };
+        let mut said = format!("judging {text}");
+        if self.claims > 1 { said += &format!(" ({} of {})", self.claim + 1, self.claims); }
+        if self.poses > 1 { said += &format!(", pose {} of {}", self.pose + 1, self.poses); }
+        said
+    }
+}
+
+/// Every claim of the drawing judged, each said to whoever listens (`progress::during`).
+pub fn judge_solids(sk: &Sketch) -> Vec<SolidVerdict> {
+    let mut judge = ClaimJudge::new(sk);
+    while !judge.done(sk) {
+        let c = &sk.solid_claims[judge.claim];
+        let judged =
+            || crate::progress::Work::claim(crate::io::describe_solid_claim(sk, c), c.stmt);
+        crate::progress::during(judged, || judge.finish_claim(sk));
+    }
+    judge.into_verdicts()
 }
