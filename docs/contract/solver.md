@@ -87,7 +87,9 @@ version ([0.n], see the [language changelog](../solvent-changelog.md)) says wher
   `m` on `g` (`Constraint::tangent_at`/`holds_on`, `Sketch::holding`), whichever comes first
   (`share_place` re-points an earlier tangent), whatever it arrived carrying, so a graft, JSON and
   a lifted program (which never writes its `t`) share it again; `remove` keeps a place free while
-  any constraint owns it. None holding it is E040 (`relations::tangents_at`). A line and a spline
+  any constraint owns it. None holding it is E040 (`relations::tangents_at`). A place is a list of
+  unknowns (`tangent_at` returns its slots, `holds_on`/`holding` its Params): one along a curve,
+  three on an envelope in space (`[u, v, t]`, #283, `analytic.md`). A line and a spline
   or curve touch whichever is written first (`settle` puts the curve first). A **`path`** formal
   (`Ty::Path`) is an entity formal judged by kind at elaboration: what the call gave it must be a
   line, arc, circle, spline or curve (`Expansion::paths`, `relations::paths`, E103 at the

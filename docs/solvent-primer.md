@@ -1423,6 +1423,24 @@ under a motion keeping its view, `envelope(side, under: cutting, …)` is the pl
 extruded, and `p coincident flank` from any view is one equation. Draw the prism's face `in` a view
 and name the edge in it.
 
+**An envelope in space is held to by the solve** where its source is a cone or a cylinder set
+(`std.Cone`, `std.ConeThrough` with its lean stated, `std.Cylinder`) or a revolution's side turned
+from a line, an arc or a circle, under turns about lines, screws, slides and `relative_to:`
+(`spiral_bevel/mean_point.sv`):
+
+```
+flank := std.Cone(spine, half: hint(20deg))           // the half an unknown
+pinion_flank := envelope(flank, under: mesh, from: -30deg, to: 30deg)
+M coincident pinion_flank                             // owns the place [u, v, roll]
+pinion_flank perpendicular(at: M) normal              // along its normal at M
+pinion_flank tangent(at: M) along                     // a line (or a plane) touching it there
+pinion_flank curvature(at: M) profile                 // its section by profile's plane
+```
+
+The source's geometry, its number and the motion's axes are columns, so the cone's half solves from
+what is stated at `M`. The `at:` relations read the place of the `coincident` holding `M`, which must
+be stated. A set's envelope is only held to: it has no chart after the solve.
+
 **Spatial geometry read after the solve** adds no unknown and has no 2D glyph; each certifies only
 local evaluations ([analytic face boundaries](analytic-face-boundaries.md); the spiral bevel's
 checks make the same objects of their parts, from the faces its built members leave —

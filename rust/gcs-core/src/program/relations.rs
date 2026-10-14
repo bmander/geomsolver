@@ -96,7 +96,9 @@ pub(crate) fn settle(
                 swapped.ops.swap(0, 1);
                 return settle(&swapped, kind_of);
             }
-            if symmetric && crate::constraints::infix_op(word, a, b, &sel).is_none() {
+            // and an envelope in space is named first by whatever touches it (#283)
+            let either_way = symmetric || b == EntKind::Envelope;
+            if either_way && crate::constraints::infix_op(word, a, b, &sel).is_none() {
                 if let Some(k) = crate::constraints::infix_op(word, b, a, &sel) {
                     let mut swapped = w.clone();
                     swapped.ops.swap(0, 1);
@@ -701,6 +703,18 @@ fn region_or_row(
             }
         }
     };
+    // what a set's body states at its envelope's hidden point is the surface the envelope reads
+    // (#283), never a row
+    if let Some(e) = super::envelopes::probe_envelope(&cx.sk, &c) {
+        let read = match grow {
+            Some(_) => Err("an envelope's set is a surface, not one grown from another".into()),
+            None => super::envelopes::set_shape(&mut cx.sk, &c, e),
+        };
+        if let Err(message) = read {
+            cx.diags.push(Diag::on(Code::E040, st, message));
+        }
+        return None;
+    }
     if let Some(probe) = probe_of(&cx.sk, &c, &cx.probes) {
         match region_term(&cx.sk, &c, probe, grow, term_name) {
             Ok(t) => cx.probes.terms.get_mut(&probe).expect("a probe's terms").push(t),
@@ -753,20 +767,31 @@ pub(super) fn kinds(map: &SourceMap, given: &[crate::flatten::KindAsked], diags:
 /// and that is a contact's to say. One with none is refused, naming the statement it wants.
 pub(super) fn tangents_at(sk: &Sketch, map: &SourceMap, diags: &mut Vec<Diag>) {
     for c in &sk.constraints {
-        let Some((t, at, on)) = c.tangent_at() else { continue };
-        let held = matches!(c.args[t], CArg::Param(p) if sk.holding(at, on) == Some(p));
+        let Some((slots, at, on)) = c.tangent_at() else { continue };
+        let place: Vec<Option<u32>> = slots.iter().map(|&t| match c.args[t] {
+            CArg::Param(p) => Some(p),
+            _ => None,
+        }).collect();
+        let held = sk.holding(at, on).is_some_and(|h| h.into_iter().map(Some).eq(place));
         let Some(site) = map.site_of_constraint(c.id).filter(|_| !held) else { continue };
         let name = |e: EntRef| {
             let written = |n: &String| format!("`{}`", super::source_map::public_path(n));
             map.name_of(e).map_or_else(|| e.kind.a(), written)
         };
         let (m, g) = (name(EntRef::point(at)), name(on));
+        // what is taken there: an envelope's normal or its section's curvature, else the tangent
+        let what = match c.kind {
+            CKind::EnvelopeNormalAt => "normal",
+            CKind::EnvelopeCurvatureAt => "curvature",
+            CKind::EnvelopePlaneAt => "tangent plane",
+            _ => "tangent",
+        };
         diags.push(Diag::within(
             Code::E040,
             site.span,
             site.stmt,
             format!(
-                "the tangent at {m} is taken where a contact holds {m} on {g}, and none does: \
+                "the {what} at {m} is taken where a contact holds {m} on {g}, and none does: \
                  state `{} coincident {}`",
                 m.trim_matches('`'),
                 g.trim_matches('`')

@@ -115,6 +115,32 @@ pub enum CKind {
     /// curve's second and third derivatives, which a formula has and a trace does not: stated
     /// against a traced curve it is refused (`validate`).
     CurveCurvature,
+    /// **A point in space on an envelope** (#283, `envelope::held`): `p coincident flank`, the
+    /// envelope of a surface of revolution under a motion in space.  Four rows — the point where
+    /// the moving source is at its place `[u, v, t]`, and the meshing equation there — against
+    /// three owned unknowns, the net one equation a surface is worth; the source's geometry and
+    /// the motion's axes are columns, so what makes the source solves from where the point is.
+    PointOnEnvelope,
+    /// The tangent plane of an envelope at a point a contact holds on it (#283): `flank
+    /// tangent(at: p) l`, the line (or axis) running in it.  One row, the line's direction square
+    /// to the normal, over **that contact's place** (`Sketch::add`, as `CurveTangentAt` shares a
+    /// curve contact's).
+    EnvelopeTangentAt,
+    /// The normal of an envelope at a point a contact holds on it (#283): `flank perpendicular(at:
+    /// p) l`, the line (or axis) along it — the common normal of a mesh.  Two rows over the
+    /// contact's place: the direction square to two directions of the tangent plane.
+    EnvelopeNormalAt,
+    /// A plane touching an envelope at a point a contact holds on it (#283): `flank tangent(at: p)
+    /// P`, its normal along the envelope's.  `EnvelopeNormalAt`'s two rows over the plane's axes.
+    /// Says nothing of where the plane stands: `p coincident P` does.
+    EnvelopePlaneAt,
+    /// **A circle osculating an envelope** at a point a contact holds on it (#283): `flank
+    /// curvature(at: p) k`, the circle the osculating circle of the envelope's section by its
+    /// plane at `p` — `p` in that plane, drawn there or stated.  `CurveCurvature`'s three rows over
+    /// the contact's place: the centre the section's centre of curvature (two rows, in the plane,
+    /// by Meusnier from the normal curvature, which the envelope's shape operator gives with no
+    /// second solve), and the radius its distance.
+    EnvelopeCurvatureAt,
     /// **The tangent at a point already on a spline** (#251), `g tangent(at: m) l`: the line runs
     /// along `C'(t)`, where `t` is the place of the contact holding `m` on the spline — **that
     /// contact's own unknown**, shared rather than a second one (`Sketch::add`, #70's shared
@@ -283,7 +309,7 @@ impl FamilyKernel {
 }
 
 /// Every concrete constraint type, in the order the registry lists them.
-pub const ALL_KINDS: [CKind; 73] = [
+pub const ALL_KINDS: [CKind; 78] = [
     CKind::Coincident,
     CKind::Distance,
     CKind::Midpoint,
@@ -315,6 +341,11 @@ pub const ALL_KINDS: [CKind; 73] = [
     CKind::PointOnExtrusion,
     CKind::CurveTangentLine,
     CKind::CurveCurvature,
+    CKind::PointOnEnvelope,
+    CKind::EnvelopeTangentAt,
+    CKind::EnvelopeNormalAt,
+    CKind::EnvelopePlaneAt,
+    CKind::EnvelopeCurvatureAt,
     CKind::Project,
     CKind::Lift,
     CKind::Coincident3,
@@ -369,6 +400,8 @@ pub enum SpecKind {
     Spline,
     /// A curve written in the language — see `model::CurveDef`.
     Curve,
+    /// An envelope in space a contact holds to (#283): its source and motion read as columns.
+    Envelope,
     /// A plane: its origin and its two axes, read by the relations in space and by `Project`.
     Plane,
     /// An axis: a directed line in space, in no view.
@@ -417,6 +450,7 @@ impl SpecKind {
             | SpecKind::CircleOrArc
             | SpecKind::Spline
             | SpecKind::Curve
+            | SpecKind::Envelope
             | SpecKind::Plane
             | SpecKind::Axis
             | SpecKind::Direction
@@ -440,6 +474,7 @@ impl SpecKind {
                 | SpecKind::CircleOrArc
                 | SpecKind::Spline
                 | SpecKind::Curve
+                | SpecKind::Envelope
                 | SpecKind::Plane
                 | SpecKind::Axis
                 | SpecKind::Direction
@@ -475,6 +510,7 @@ impl SpecKind {
             SpecKind::CircleOrArc => "circle_or_arc",
             SpecKind::Spline => "spline",
             SpecKind::Curve => "curve",
+            SpecKind::Envelope => "envelope",
             SpecKind::Plane => "plane",
             SpecKind::Axis => "axis",
             SpecKind::Direction => "direction",
@@ -543,6 +579,11 @@ impl CKind {
             CKind::CurveTangentAt => "CurveTangentAt",
             CKind::TangentCircleAt => "TangentCircleAt",
             CKind::CurveCurvature => "CurveCurvature",
+            CKind::PointOnEnvelope => "PointOnEnvelope",
+            CKind::EnvelopeTangentAt => "EnvelopeTangentAt",
+            CKind::EnvelopeNormalAt => "EnvelopeNormalAt",
+            CKind::EnvelopePlaneAt => "EnvelopePlaneAt",
+            CKind::EnvelopeCurvatureAt => "EnvelopeCurvatureAt",
             CKind::Project => "Project",
             CKind::AxisOnPlane => "AxisOnPlane",
             CKind::AxisCoincident => "AxisCoincident",
@@ -729,6 +770,23 @@ impl CKind {
             CKind::CurveCurvature => {
                 &[("curve", S::Curve), ("circle", S::CircleOrArc), ("t", S::Param)]
             }
+            // the place on the envelope: along the source's meridian, round its axis, the roll
+            CKind::PointOnEnvelope => &[
+                ("p", S::Point), ("envelope", S::Envelope), ("u", S::Param), ("v", S::Param), ("t", S::Param),
+            ],
+            // the point named, then the place: the contact's, which `Sketch::add` hands it
+            CKind::EnvelopeTangentAt | CKind::EnvelopeNormalAt => &[
+                ("envelope", S::Envelope), ("line", S::Direction), ("at", S::Point),
+                ("u", S::Param), ("v", S::Param), ("t", S::Param),
+            ],
+            CKind::EnvelopePlaneAt => &[
+                ("envelope", S::Envelope), ("plane", S::Plane), ("at", S::Point),
+                ("u", S::Param), ("v", S::Param), ("t", S::Param),
+            ],
+            CKind::EnvelopeCurvatureAt => &[
+                ("envelope", S::Envelope), ("circle", S::CircleOrArc), ("at", S::Point),
+                ("u", S::Param), ("v", S::Param), ("t", S::Param),
+            ],
             CKind::SplineTangentLine => {
                 &[("spline", S::Spline), ("line", S::Line), ("t", S::Param)]
             }
@@ -823,6 +881,13 @@ impl CKind {
             | CKind::SplineCurvature
             | CKind::SplineTangentAt
             | CKind::CurveTangentAt
+            // a place on an envelope: along a meridian (a fraction of a line, an angle, a length
+            // along a generator), round an axis, and a roll — read as numbers
+            | CKind::PointOnEnvelope
+            | CKind::EnvelopeTangentAt
+            | CKind::EnvelopeNormalAt
+            | CKind::EnvelopePlaneAt
+            | CKind::EnvelopeCurvatureAt
             // a fraction of a run or a turn
             | CKind::PointAlongLine
             | CKind::PointAlongArc
@@ -867,6 +932,12 @@ impl CKind {
             | CKind::PointAlongArc3 => ("coincident", Infix),
             CKind::CurveTangentLine | CKind::CurveTangentAt => ("tangent", Infix),
             CKind::CurveCurvature => ("curvature", Infix),
+            // an envelope in space (#283): a point on it, a line or a plane touching it, a line
+            // along its normal and a circle osculating it, the last four at a point already on it
+            CKind::PointOnEnvelope => ("coincident", Infix),
+            CKind::EnvelopeTangentAt | CKind::EnvelopePlaneAt => ("tangent", Infix),
+            CKind::EnvelopeNormalAt => ("perpendicular", Infix),
+            CKind::EnvelopeCurvatureAt => ("curvature", Infix),
             CKind::CurveTouchesLine => ("touches", Infix),
             // a measured separation: told apart by the pair and by `along:`, which makes it an
             // ordinate
@@ -1180,6 +1251,21 @@ impl CKind {
     /// names it, and nothing may ask `kernel()` for it.
     pub fn built(self) -> bool {
         matches!(self, CKind::SplineLength | CKind::Stationary | CKind::CurveTouchesLine)
+            || self.envelope_contact().is_some()
+    }
+
+    /// The envelope contact this kind states (#283), for the five over an envelope in space: its
+    /// kernel is built at its operands' widths (`envelope::held::kernel`).
+    pub fn envelope_contact(self) -> Option<crate::envelope::held::Contact> {
+        use crate::envelope::held::Contact;
+        Some(match self {
+            CKind::PointOnEnvelope => Contact::Point,
+            CKind::EnvelopeTangentAt => Contact::Tangent,
+            CKind::EnvelopeNormalAt => Contact::Normal,
+            CKind::EnvelopePlaneAt => Contact::Plane,
+            CKind::EnvelopeCurvatureAt => Contact::Curvature,
+            _ => return None,
+        })
     }
 
     /// The per-definition kernel this kind runs through, for the four kinds that have one.
@@ -1220,7 +1306,11 @@ impl CKind {
             | CKind::CurveCurvature
             | CKind::SplineTangentAt
             | CKind::CurveTangentAt
-            | CKind::TangentCircleAt => true,
+            | CKind::TangentCircleAt
+            | CKind::EnvelopeTangentAt
+            | CKind::EnvelopeNormalAt
+            | CKind::EnvelopePlaneAt
+            | CKind::EnvelopeCurvatureAt => true,
             CKind::Coincident
             | CKind::Distance
             | CKind::Midpoint
@@ -1252,6 +1342,8 @@ impl CKind {
             // second-order screen to look for
             | CKind::PointOnCurve
             | CKind::PointOnExtrusion
+            // a point on an envelope is a contact, as one on a curve is
+            | CKind::PointOnEnvelope
             | CKind::PointAlongLine
             | CKind::PointAlongArc
             | CKind::PointAlongLine3
@@ -1337,6 +1429,13 @@ impl CKind {
             | CKind::CurveTangentAt
             | CKind::CurveCurvature => {
                 panic!("a curve contact's kernel belongs to its definition, not its type")
+            }
+            CKind::PointOnEnvelope
+            | CKind::EnvelopeTangentAt
+            | CKind::EnvelopeNormalAt
+            | CKind::EnvelopePlaneAt
+            | CKind::EnvelopeCurvatureAt => {
+                panic!("an envelope contact's kernel is built at its operands' widths")
             }
             CKind::SplineLength => panic!("a spline length's kernel belongs to its spline's count"),
             CKind::Stationary => panic!("an energy's kernel belongs to its curve"),
@@ -1493,6 +1592,11 @@ impl CKind {
             | CKind::SplineTangentAt
             | CKind::CurveTangentAt
             | CKind::TangentCircleAt
+            | CKind::PointOnEnvelope
+            | CKind::EnvelopeTangentAt
+            | CKind::EnvelopeNormalAt
+            | CKind::EnvelopePlaneAt
+            | CKind::EnvelopeCurvatureAt
             | CKind::PointAlongLine
             | CKind::PointAlongArc
             | CKind::PointAlongLine3
@@ -1550,6 +1654,11 @@ impl CKind {
                 | CKind::Midpoint3
                 | CKind::Symmetric3
                 | CKind::PointOnExtrusion
+                | CKind::PointOnEnvelope
+                | CKind::EnvelopeTangentAt
+                | CKind::EnvelopeNormalAt
+                | CKind::EnvelopePlaneAt
+                | CKind::EnvelopeCurvatureAt
                 | CKind::PointOnAxis
                 | CKind::LineOnAxis
                 | CKind::AxisOnPlane

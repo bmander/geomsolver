@@ -447,3 +447,107 @@ fn every_dimension_can_be_written_free() {
         assert_eq!(free.degree, stated.degree, "{k:?}");
     }
 }
+
+/// Every contact with an envelope in space (#283) — a point on it, a line in its tangent plane, a
+/// line and an axis along its normal, a plane touching it, a circle osculating its section — over
+/// each source the solve reads: a cone and a cylinder set, each with its number an unknown, and a
+/// revolution's line and circle turned about a line and about an axis; under a screw mesh of
+/// skew shafts.  Checked at the seeds and at points knocked off them, since the rows are read
+/// wherever a solve passes.
+#[test]
+fn envelope_contacts_agree_with_finite_differences() {
+    const SRC: &str = "\
+unit mm
+use std
+o := point hint((0, 0, 0))
+z := point hint((0, 0, 10))
+fix((0, 0, 0)) o
+fix((0, 0, 10)) z
+ax := line(o, z)
+a := point hint((0, 30, 0))
+b := point hint((10, 30, 2))
+fix((0, 30, 0)) a
+fix((10, 30, 2)) b
+gear_ax := line(a, b)
+cone := std.Cone(ax, half: hint(20deg))
+spin := motion(about: ax)
+gear_turn := motion(about: gear_ax, ratio: -0.5, advance: 2mm)
+mesh := motion(spin, relative_to: gear_turn)
+flank := envelope(cone, under: mesh, from: -30deg, to: 30deg)
+c1 := point hint((30, 0, -5))
+c2 := point hint((31, 1, 5))
+cax := line(c1, c2)
+cyl := std.Cylinder(cax, r: hint(5mm))
+f2 := envelope(cyl, under: mesh, from: -30deg, to: 30deg)
+in std.front {
+  e1 := point hint((6, 2))
+  e2 := point hint((9, 7))
+  e3 := point hint((12, 7))
+  e4 := point hint((12, 2))
+  l1 := line(e1, e2)
+  l2 := line(e2, e3)
+  l3 := line(e3, e4)
+  l4 := line(e4, e1)
+  rc := point hint((20, 4))
+  rim := circle(center: rc) hint(r: 2)
+  ro := point hint((0, 0))
+  rq := point hint((0, 10))
+  rax := line(ro, rq)
+}
+blade := solid(face(l1, l2, l3, l4), about: std.z)
+ring := solid(face(rim), about: rax)
+side := surface(blade, l1)
+round := surface(ring, rim)
+f3 := envelope(side, under: mesh, from: -30deg, to: 30deg)
+f4 := envelope(round, under: mesh, from: -30deg, to: 30deg)
+p := point hint((9, 3, 1))
+p coincident flank
+r := point hint((26, 2, 1))
+r coincident f2
+s := point hint((7, 1, 4))
+s coincident f3
+w := point hint((19, 2, 5))
+w coincident f4
+in std.top {
+  kc := point hint((5, 2))
+  k := circle(center: kc) hint(r: 10)
+}
+m := point hint((15, 5, 4))
+nl := line(p, m)
+t := axis hint(dir: (1, 2, 3))
+flank tangent(at: p) nl
+flank perpendicular(at: p) t
+flank perpendicular(at: p) nl
+flank tangent(at: p) std.front
+flank curvature(at: p) k
+f2 tangent(at: r) t
+f2 curvature(at: r) k
+f3 perpendicular(at: s) t
+f3 curvature(at: s) k
+f4 tangent(at: w) std.top
+f4 curvature(at: w) k
+";
+    let (prog, errs) = crate::common::parse(SRC);
+    assert!(errs.is_empty(), "{errs:?}");
+    let e = gcs_core::program::elaborate(&prog);
+    assert!(e.ok(), "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
+    let mut sk = e.sketch;
+    let kinds = [CKind::PointOnEnvelope, CKind::EnvelopeTangentAt, CKind::EnvelopeNormalAt,
+                 CKind::EnvelopePlaneAt, CKind::EnvelopeCurvatureAt];
+    for k in kinds {
+        assert!(sk.constraints.iter().any(|c| c.kind == k), "{k:?} is checked");
+    }
+    let mut rng = Rng::new(283);
+    for round in 0..4 {
+        if round > 0 {
+            for p in sk.params.iter_mut().filter(|p| !p.fixed) {
+                p.value += rng.uniform(-0.05, 0.05) * (1.0 + p.value.abs().min(10.0));
+            }
+        }
+        for c in sk.constraints.iter().filter(|c| c.kind.envelope_contact().is_some()) {
+            let err = check_constraint(&sk, c, 1e-6, 1e-7)
+                .unwrap_or_else(|e| panic!("round {round}: {e}"));
+            assert!(err.is_finite());
+        }
+    }
+}

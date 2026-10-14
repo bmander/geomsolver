@@ -84,9 +84,16 @@ pub(super) fn surface(set: &str) -> String {
     format!("{set}{}", Member::Surface.key())
 }
 
-/// A region solid's probe: `{solid}#probe`.
+/// A region solid's probe, or a set's envelope's: `{solid}#probe`.
 pub(super) fn probe(solid: &str) -> String {
-    format!("{solid}#probe")
+    format!("{solid}{PROBE}")
+}
+
+const PROBE: &str = "#probe";
+
+/// Whether `key` is a probe's (`probe`).
+pub(crate) fn is_probe(key: &str) -> bool {
+    key.ends_with(PROBE)
 }
 
 /// The plane a face is drawn in: `{face}#plane`.

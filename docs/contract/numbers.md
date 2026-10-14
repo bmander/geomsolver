@@ -54,7 +54,9 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   `param` states its type (`Length`/`Angle`/`Scalar`), takes the one keyless `hint(E)`; a seed on
   a bound one, an `Int` unknown and a module's unbound `param` are E040; `param` is refused by the
   parser inside a component (formals are its inputs) or block.  A call seeds a formal it leaves
-  unbound with `InstVal::Hint` (`Wing(f, beta: hint(15deg))`).  **A name nothing declares is
+  unbound with `InstVal::Hint` (`Wing(f, beta: hint(15deg))`), and a hint written over that
+  unknown reads it at its seed ([0.90], `settle_seeds`'s provisional values; zero where it has
+  none).  **A name nothing declares is
   E101** — in a dimension (`settle_text`), a pin (`settle_arg`), a dotted read nothing made
   (`resolve`, unless it is an instance's unbound formal) — and the relation is not emitted
   (`Checks::refused`), so it never reaches the expression graph as an unknown; W111 is gone.  A

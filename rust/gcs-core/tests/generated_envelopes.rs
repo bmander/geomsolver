@@ -106,7 +106,7 @@ fn envelope_declarations_round_trip_and_follow_dependency_copy_delete() {
     let mut dst = e.sketch.clone();
     io::paste(&mut dst,&clip,0.,0.);
     assert_eq!(dst.envelopes.len(),2);
-    assert_eq!(dst.envelopes[1].surface,1);
+    assert_eq!(dst.envelopes[1].surface,Some(1));
     assert_eq!(dst.envelopes[1].motion,1);
     near(GeneratedEnvelope::named(&dst,1).unwrap().evaluate([0.125,0.,0.1]).unwrap().position,
         GeneratedEnvelope::named(&e.sketch,0).unwrap().evaluate([0.125,0.,0.1]).unwrap().position);
