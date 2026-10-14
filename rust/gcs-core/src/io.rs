@@ -378,8 +378,9 @@ pub fn to_json(sk: &Sketch) -> Json {
         ("planes", Json::Arr(planes)),
         ("constraints", Json::Arr(constraints)),
         ("branches", Json::Obj(branches)),
-        // written only where the document named one: a drawing in drawing units says nothing
-        ("unit", sk.units.name().map(|n| Json::Str(n.to_string())).unwrap_or(Json::Null)),
+        // written only where the document named one: a drawing in millimetres by default says
+        // nothing, so loading and saving it adds no unit it did not have
+        ("unit", sk.units.stated().map(|n| Json::Str(n.to_string())).unwrap_or(Json::Null)),
     ]);
     let roles = sk.roles.iter().filter(|(e, _)| !e.kind.spatial() && e.kind != EntKind::Curve)
         .map(|(&e, roles)| object([
@@ -1610,11 +1611,11 @@ pub fn copy(sk: &Sketch, entities: &[EntRef]) -> Sketch {
 /// A figure copied out of a drawing in inches and pasted into one in millimetres is the same
 /// figure, and 2 inches is 50.8 mm: converting is what keeps it so.  The scaling is on a copy of
 /// the clipboard, so a clipboard may be pasted into any number of documents and is unchanged by
-/// each.  Two documents that say nothing about their units are in the same drawing units and
-/// nothing is scaled.
+/// each.  A document that says nothing about its unit is in millimetres, and is converted as
+/// one; two in the same unit are not scaled.
 pub fn paste(sk: &mut Sketch, clip: &Sketch, dx: f64, dy: f64) -> Vec<EntRef> {
-    match (clip.units.length, sk.units.length) {
-        (Some((_, from)), Some((_, to))) if from != to => {
+    match (clip.units.mm_per(), sk.units.mm_per()) {
+        (from, to) if from != to => {
             let mut scaled = clip.clone();
             scaled.rescale(from / to);
             graft(sk, &scaled, &|_| true, &[], (dx, dy))

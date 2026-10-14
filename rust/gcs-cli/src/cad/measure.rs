@@ -86,7 +86,7 @@ pub fn measure(meter: &Meter,samples: &[Sample]) -> Vec<Measurement> {
 /// and the report's lines; with a `tolerance` (native millimetres), the last says whether every
 /// exact face is within it, and an `Err` carries the report when one is not.
 pub fn report(sk: &Sketch,body: usize,path: &str,most: usize,tolerance: Option<f64>) -> Result<Vec<String>,String> {
-    let millimetres = cad::millimetres(sk)?;
+    let millimetres = cad::millimetres(sk);
     let started = std::time::Instant::now();
     let meter = Meter::read(sk,body,Options::in_units(millimetres))?;
     stage(&format!("read the exact faces of `{}`: {} of them ({:?})",sk.solids[body].name,meter.surfaces().len(),started.elapsed()));

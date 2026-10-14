@@ -369,9 +369,8 @@ pub enum StmtKind {
     /// A derived view or section, expanded from its source body on the target plane.
     Derived(DerivedDecl),
     /// `unit mm` — what the document's numbers are in (spec §3.3).  A bare number in a `Length`
-    /// slot is that unit, so every document keeps working with one added line; a document that
-    /// says nothing is in **drawing units**, and everything still dimension-checks, you simply
-    /// cannot write `mm` because there is nothing to convert to.
+    /// slot is that unit, and a suffixed literal converts to it; a document that says nothing is
+    /// in **millimetres** ([0.93]), exactly as if it said `unit mm`.
     Unit(Name),
     /// `ball := { p | p distance(12mm) c }` — a set (§6.21), see `SetLit`.
     Set(SetDecl),

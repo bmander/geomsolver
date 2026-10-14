@@ -138,7 +138,7 @@ pub fn render(doc: &Document, models: &BTreeMap<String, Model<'_>>, sheet: Optio
             }
         }
         if selected.is_empty() { return Err(error(v.span, format!("no geometry named `{}`", v.target))) }
-        let scale = v.scale.unwrap_or(s.scale) * model.sketch.units.length.map_or(1.0, |u| u.1) * PX_MM;
+        let scale = v.scale.unwrap_or(s.scale) * model.sketch.units.mm_per() * PX_MM;
         if !scale.is_finite() || scale <= 0.0 { return Err(error(v.span, "view scale is out of range")) }
         let unit = 1.0 / scale;
         let at = |p: (f64, f64)| (v.at.0 * PX_MM + p.0 * scale, v.at.1 * PX_MM - p.1 * scale);

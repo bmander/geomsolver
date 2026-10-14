@@ -14,7 +14,7 @@ fn setting(name: &str,default: f64) -> f64 {
 struct Region { field: MaterialField,scale: f64,center: [f64;3],radius: f64,diagonal: f64 }
 
 fn region(sk: &gcs_core::model::Sketch,solid: usize) -> Result<Region,String> {
-    let scale = gcs_core::solid::cad::millimetres(sk)?;
+    let scale = gcs_core::solid::cad::millimetres(sk);
     let field = MaterialField::read(sk,solid,gcs_core::solid::cad::AXIS_TOLERANCE)?;
     let support = field.support_bounds().map_err(|e| format!("{e:?}"))?
         .ok_or("the material has no finite support to mesh in")?;

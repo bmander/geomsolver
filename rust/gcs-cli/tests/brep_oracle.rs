@@ -270,7 +270,7 @@ fn every_node_the_kernel_builds_is_occts() {
                 // the object itself against the core's faceted kernel, cut as it cuts a mesh (its sagitta a
                 // small fraction of the object's diagonal): to its faceting, a part in 200
                 if id == root_id {
-                    let scale = gcs_core::solid::cad::millimetres(&sk).unwrap();
+                    let scale = gcs_core::solid::cad::millimetres(&sk);
                     let facets = sk.evaluated_solid(root,gcs_core::solid::ApproximationPolicy::Mesh).map(|e| e.volume()*scale.powi(3));
                     match facets {
                         Ok(w) if ((v-w)/v).abs() < 5e-3 => {}

@@ -239,7 +239,7 @@ fn a_module_name_is_reached_only_by_its_full_path() {
     assert!(said.iter().any(|m| m.contains("write `use lib.rung`")), "{said:?}");
     // the standard datums too: `hardware` uses `std`, and that is `hardware`'s business
     let (prog, _, linked) = gcs_core::library::parse_linked(
-        "use std\nuse hardware\nin std.front {\na := point\na distance(1, along: u) std.front\n}\n");
+        "use hardware\nin std.front {\na := point\na distance(1, along: u) std.front\n}\n");
     assert!(linked.is_empty(), "{linked:?}");
     assert!(!elaborate(&prog).ok(), "`std.front` without a `use std` of the file's own");
     let (prog, _, _) = gcs_core::library::parse_linked(

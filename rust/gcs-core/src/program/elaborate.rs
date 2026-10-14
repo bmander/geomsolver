@@ -96,7 +96,7 @@ pub(super) fn elaborate_in(
 /// **Phase 0: the document's unit**, before *anything* reads a number.
 ///
 /// A literal with a unit on it converts to this one, and a document that names none is in
-/// drawing units (spec §3.3).  It is read from the **unexpanded root** because a unit is
+/// millimetres (spec §3.3.2, [0.93]).  It is read from the **unexpanded root** because a unit is
 /// document preamble and a component is reusable: a `unit` line anywhere else is refused
 /// (`style_sheet`) rather than quietly doing nothing.  It comes before the curve families,
 /// because a family's body is a number-bearing text like any other.

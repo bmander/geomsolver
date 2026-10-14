@@ -38,13 +38,13 @@ fn a_component_carries_its_views_in_blocks() {
 use std (vertical)
 component Peg(f: plane, r: plane, cf: point, cr: point, draw_r: Int) {
   in f {
-    a := point hint((cf.x, cf.y + 10))
+    a := point hint((cf.x, cf.y + 10mm))
     cf vertical a
     cf distance(10, along: v) a
   }
   repeat draw_r {
     in r {
-      b := point hint((cr.x + 5, cr.y + 10))
+      b := point hint((cr.x + 5mm, cr.y + 10mm))
       cr distance(5, along: u) b
     }
     a project b[0]

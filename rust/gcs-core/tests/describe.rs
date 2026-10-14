@@ -220,7 +220,7 @@ component Bar(a: point, b: point, len: Length) {
          }
 ",
     );
-    assert_eq!(dims(&e.sketch), ["40"]);
+    assert_eq!(dims(&e.sketch), ["40mm"]);
     // a module's body is a text the document is not: its number is drawn.  And a formal named
     // like a used module keeps its name, since a closed body reads no module's number
     let (mut prog, errs) = gcs_core::syntax::parse(
@@ -247,7 +247,7 @@ use parts
     assert!(linked.is_empty(), "{linked:?}");
     let e = gcs_core::program::elaborate(&prog);
     assert!(e.ok(), "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
-    assert_eq!(dims(&e.sketch), ["40", "parts.w / 2"]);
+    assert_eq!(dims(&e.sketch), ["40mm", "parts.w / 2"]);
 }
 
 #[test]

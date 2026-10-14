@@ -14,15 +14,10 @@ use std::path::{Path, PathBuf};
 use gcs_core::{library, modules, par, program, syntax};
 
 /// What does not elaborate today, by path (under `rust/examples/`, or `lib/` for the library),
-/// each with a diagnostic it gives.  All three are dimension tables, modules written to be read
-/// through a `use` from a document naming its `unit`: on their own they name none, so every
-/// `80mm` among them is E103 (and each group member over one names nothing).  They elaborate
-/// where they are used, which this gate checks with the documents using them.
-const KNOWN: &[(&str, &str)] = &[
-    ("engine/dims.sv", "E103: `D`: this document names no unit"),
-    ("vtwin/components/dims.sv", "this document names no unit"),
-    ("lib/hardware.sv", "E103: `hexbolt14_d`: this document names no unit"),
-];
+/// each with a diagnostic it gives.  Empty: the dimension tables read through a `use` (the
+/// engine's, the V-twin's, `hardware`) elaborate on their own too now that a document naming no
+/// unit is in millimetres ([0.93]).
+const KNOWN: &[(&str, &str)] = &[];
 
 /// Every `.sv` under `dir`, in order.
 fn sources(dir: &Path, out: &mut Vec<PathBuf>) {

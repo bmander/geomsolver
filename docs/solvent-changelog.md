@@ -4,6 +4,17 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.93] A document naming no unit is in millimetres.** Without a `unit` line a document is
+read exactly as under `unit mm` (§3.3.2): a bare number in a `Length` slot is a millimetre, a
+suffixed literal converts to it (`a distance(2in) b` is 50.8), and a geometry read in a seed, an
+integrand or a measurement is a `Length`. Through 0.92 such a document was in unnamed *drawing
+units*: a suffix was **E103** ("this document names no unit") and a geometry read was a bare
+number. So `pin.x - 10` is now refused as under `unit mm`, and `pin.x - 10mm` is the spelling;
+the dimension tables written to be read through a `use` (`hardware`, the engine's and the
+V-twin's) elaborate on their own. The line, where written, is still what a document saves and
+prints back, so one without it gains none; glTF and CAD exports scale such a document as
+millimetres, and a paste converts it as one.
+
 **[0.92] One vocabulary for a view's directions.** A view is a plane (§6.7), so its own
 directions are said as a plane's are: between two points drawn in one view, `along: u` is the
 run and `along: v` the rise — the view's `u` and `v` — as against a plane they are that plane's

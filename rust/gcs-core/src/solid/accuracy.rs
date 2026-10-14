@@ -142,7 +142,7 @@ impl Exact {
     fn read(sk: &Sketch,body: usize) -> Result<Self,String> {
         let b = crate::brep::recipe::build(&cad::recipe(sk,body)?)?;
         let tol = 1e-9*b.size().max(1.);
-        Ok(Self {located:crate::brep::query::Located::owned(b,tol),mm:cad::millimetres(sk)?})
+        Ok(Self {located:crate::brep::query::Located::owned(b,tol),mm:cad::millimetres(sk)})
     }
     fn names(&self) -> Vec<Surface> {
         // a face by its own name, the primitive the recipe's build keys it under left out
