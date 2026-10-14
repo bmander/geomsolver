@@ -979,3 +979,63 @@ pub fn place_of(sk: &Sketch, i: usize, p: [f64; 3]) -> Option<[f64; 2]> {
     let t = sk.traced.get(i)?;
     nearest(&consts_of(t), &theta(sk, t), p, t.domain)
 }
+
+/* -- a traced surface as a meshing's flank --------------------------------------------------- */
+
+/// What marks a meshing flank's constants as a traced surface's (`envelope::meshing`): where a
+/// held flank's carry its source's code.
+pub const FLANK: f64 = 100.0;
+
+/// A meshing flank's constants over traced surface `t`: `[0, FLANK, domain×4, consts…]`.
+pub fn flank_consts(t: &TracedE) -> Vec<f64> {
+    let d = t.domain;
+    [vec![0.0, FLANK, d[0][0], d[0][1], d[1][0], d[1][1]], consts_of(t)].concat()
+}
+
+/// A traced flank's constants read back: its domain and a contact's constants.
+pub(crate) fn flank_parts(k: &[f64]) -> Option<([[f64; 2]; 2], &[f64])> {
+    if k.len() < 6 || k[0] != 0.0 || k[1] != FLANK {
+        return None;
+    }
+    let rest = &k[6..];
+    let (_, _, flat) = parts(rest)?;
+    (view(flat)?.nf == 2).then_some(([[k[2], k[3]], [k[4], k[5]]], rest))
+}
+
+/// How many columns a traced flank reads past its place.
+pub(crate) fn flank_width(k: &[f64]) -> usize {
+    flank_parts(k).and_then(|(_, c)| parts(c)).and_then(|(_, _, f)| view(f)).map_or(0, |v| v.n_theta)
+}
+
+/// What a meshing reads of a traced flank over its columns `c` — `[u, s, t, θ…]`, the roll `t`
+/// held at none — as numbers of any kind: its point, its unit normal `C_u × C_s` and `C_u`, each
+/// exact in every column where the numbers carry derivatives (the frame's, linearised: a `Dual`'s
+/// first order is all a meshing's Jacobian reads).  `None` where the body cannot be solved there.
+pub(crate) fn seen<T: Num>(k: &[f64], c: &[T]) -> Option<([T; 3], [T; 3], [T; 3])> {
+    let (values, home, flat) = parts(k)?;
+    let v = view(flat)?;
+    if v.nf != 2 || c.len() != 3 + v.n_theta {
+        return None;
+    }
+    let vals: Vec<f64> = c.iter().map(|x| x.val()).collect();
+    let mut outer = vec![vals[0], vals[1]];
+    outer.extend_from_slice(&vals[3..]);
+    outer.extend_from_slice(values);
+    let r = read(flat, &outer, &home, Need::Tangent, c.iter().any(|x| x.moves()))?;
+    let lin = |val: [f64; 3], slot: usize| -> [T; 3] {
+        std::array::from_fn(|i| {
+            let mut acc = T::cst(val[i]);
+            for (q, g) in r.grad.iter().flatten().enumerate() {
+                // the place's two columns, then the body's, past the held roll
+                let at = if q < PLACE { q } else { q + 1 };
+                let d = g[slot][i];
+                if d != 0.0 {
+                    acc = acc + (c[at] - T::cst(vals[at])) * T::cst(d);
+                }
+            }
+            acc
+        })
+    };
+    let (x, du, dv) = (lin(r.frame.x, 0), lin(r.frame.d[0], 1), lin(r.frame.d[1], 2));
+    Some((x, unit(held::cross(du, dv)), du))
+}

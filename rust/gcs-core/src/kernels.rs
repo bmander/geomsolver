@@ -2828,6 +2828,11 @@ pub(crate) trait Num:
     fn sin_cos(self) -> (Self, Self);
     /// The bearing of `(x, y)`, on (−π, π].
     fn atan2(y: Self, x: Self) -> Self;
+    /// Whether it carries derivatives at all: a plain number does not, so what is read over one
+    /// may skip working them out (a traced flank's frame, #326).
+    fn moves(self) -> bool {
+        true
+    }
 }
 
 impl<const N: usize> Num for Dual<N> {

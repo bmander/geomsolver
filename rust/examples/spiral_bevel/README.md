@@ -289,3 +289,21 @@ members' equal speeds along it. A gear whose rack slides 2 % faster lags by what
 closes the gap between the racks, `(σ/σ' − 1)` times the phase. And Phillips' claim holds: moved
 after its flanks are made — half a millimetre further off, or its shaft turned half a degree — the
 pair runs at a constant lag, so with no transmission error.
+
+**`phillips_pure.sv`** is the same pair with no rack: each flank is stated by the contact alone.
+The contact element is a line of the member's plane of action moving along `L` at the members'
+speed; the member, turned by the phase, sees it carried back (`X coincident(under: turn, t ==
+-phi) x`). Over the phase and a place along the element that is a surface traced in space, and it
+meshes as the rack-cut pair does:
+
+```sh
+build/solventc rust/examples/spiral_bevel/phillips_pure.sv
+#   bearing: point contact; transmission error (the gear's angle) 0° … 3.1e-13° over the phase
+#   -15° … 15°, the path of contact 8.34989 long
+#   pinion_flank: a surface traced in space, regular over its domain
+#   gear_flank: a surface traced in space, regular over its domain
+```
+
+`gcs-core/tests/phillips.rs` holds each traced flank to the rack's envelope it agrees with, to
+1e-9. Line contact on skew axes stated by its contact alone is a first-order PDE, marched from one
+contact line: #339, item D5.

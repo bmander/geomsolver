@@ -442,6 +442,9 @@ impl TracedE {
 pub enum Flank {
     Envelope(u32),
     Formed(Held),
+    /// A surface traced in space, as its member sees it (#326): the flank stated by its contact
+    /// alone.
+    Traced(u32),
 }
 
 /// What the solve reads an envelope's source as (#283): a surface of revolution whose numbers are

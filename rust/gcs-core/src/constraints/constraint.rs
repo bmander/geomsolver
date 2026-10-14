@@ -386,7 +386,7 @@ impl Constraint {
         if self.kind == CKind::PointOnMeshing {
             let lead = crate::envelope::meshing::LEAD;
             let parts = self.meshing_parts(sk);
-            let (n_par, n_const) = parts.map_or((0, 0), |p| (p.width(lead), p.n_const()));
+            let (n_par, n_const) = parts.map_or((0, 0), |p| (p.width(sk, lead), p.n_const(sk)));
             return Key::Meshing { n_par, n_const };
         }
         // a contact with a traced body, at its block's widths (#326)

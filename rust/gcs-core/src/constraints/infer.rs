@@ -632,11 +632,11 @@ fn meshing_place(sk: &Sketch, m: usize, at: [f64; 3], phase: f64) -> Option<[f64
     }
     let parts = Parts::of(sk, m).ok()?;
     let e = &sk.meshings[m];
-    let k = parts.consts(0);
+    let k = parts.consts(sk, 0);
     let values = parts.values(sk);
     let rolls = e.flanks.clone().map(|f| match f {
         Flank::Envelope(v) => sk.envelopes[v as usize].roll,
-        Flank::Formed(_) => [0.0; 2],
+        Flank::Formed(_) | Flank::Traced(_) => [0.0; 2],
     });
     let key: Vec<f64> = k.iter().chain(&values).chain(&at).chain(rolls.iter().flatten())
         .chain(&[phase]).copied().collect();

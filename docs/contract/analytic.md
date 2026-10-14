@@ -75,8 +75,14 @@ to:)` is `MeshingE` (ABI kind 17): two `Flank`s — `Envelope(i)`, a held envelo
 a source read as an envelope's is (a set applied to its hidden point `{contact}#first#probe` /
 `#second#probe`, `set_shape` through `program::envelopes::Reader`; a revolution's side) — the
 motion and the phase, built with the held envelopes (`held_meshings`), refused (E080) where a flank
-or the motion is unreadable or the motion is not relative. `envelope::meshing` is the evaluator:
-the first flank turned with the motion's observer at the phase `φ`, the second with its source at
+or the motion is unreadable or the motion is not relative. A flank may also be `Traced(i)` (#326,
+[0.107]): a surface traced in space, `meshing::Side::Traced` over `traced::flank_consts` (`[0,
+traced::FLANK, domain×4, contact constants…]`), its own columns the body's `θ`
+(`FlankParts::Traced`), its place `[u, s, t]` with `t` held as a formed flank's; `traced::seen`
+reads its point, `C_u` and the unit normal `C_u × C_s` over any `Num` — the frame's exact
+derivatives linearised into the numbers' own (`Num::moves` false for a plain number skips them),
+all a `Dual` pass reads — and `traced::nearest` seeds its place. `envelope::meshing` is the
+evaluator: the first flank turned with the motion's observer at the phase `φ`, the second with its source at
 `φ + δ` (`held::frames` at two rolls), each flank `held::local` over its own constants (a formed one
 `Layout::read_any`, no step, its pose the identity); rows the two points' offset, the pinion's
 normal against two directions square to the gear's (each times the lever, the contact's distance
@@ -100,7 +106,10 @@ gate — a conjugate pair's lag zero and line contact, a pair cut at another rat
 exactly, a larger cutter at a modified roll touching at a point on the common generator, a cutter
 turned about the normal at M lagging by the turn that closes the gap between the members (found
 from the cone's equation and the poses alone), a stated lag solving its phase, `contact.sv` — with
-`jacobians::meshing_contacts_agree_with_finite_differences`.
+`jacobians::meshing_contacts_agree_with_finite_differences`; and `tests/phillips.rs` holds
+`spiral_bevel/phillips_pure.sv`'s traced flanks to the rack's envelopes (each a point of the
+envelope at the element's phase, to 1e-9), to the closed form's point contact along `L` with no
+lag, and their meshing's Jacobian to finite differences.
 
 **A point a motion carries (#326, [0.104]):** `Reading::Carried` is `X − Pose(τ)·x`, the pose
 `held::frames`' last at `τ` degrees — any motion, its twist constant or not (`Reading::twist`

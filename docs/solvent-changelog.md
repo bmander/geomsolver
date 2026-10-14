@@ -4,6 +4,14 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.107] A flank stated by its contact.** A meshing's flank may be a surface traced in space
+(§6.15.4): the contact element as its member sees it, a point of a component as the phase and a
+place along the element run, carried back by the member's turn. Phillips' pair is written so in
+`spiral_bevel/phillips_pure.sv` — each flank a line of its plane of action moving along the line of
+action, seen from its member — with no rack anywhere, and meshes as the rack-cut pair does: a
+point contact along the line of action with no transmission error. Through 0.106 a flank was an
+envelope or a source standing still. (Issue #326, R6.)
+
 **[0.106] A surface over two formals.** `S := C(…).p over (phi in (a, b), s in (c, d))` is a
 point of a component as two of its formals run: a surface traced in space, held to by a point on it
 and, at a point held there, a line in its tangent plane or along its normal, a plane touching it

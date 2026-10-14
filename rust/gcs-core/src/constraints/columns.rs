@@ -58,7 +58,7 @@ impl Constraint {
         // a meshing contact's: both flanks' and the mesh's (#283)
         if self.kind == CKind::PointOnMeshing {
             let lead = crate::envelope::meshing::LEAD;
-            return self.meshing_parts(sk).map(|p| p.consts(lead)).unwrap_or_default();
+            return self.meshing_parts(sk).map(|p| p.consts(sk, lead)).unwrap_or_default();
         }
         // a contact with a traced body: its values, its home and its body (#326)
         if self.kind.traced_contact().is_some() {
@@ -807,7 +807,7 @@ impl Constraint {
                 [lead, parts].concat()
             }
             CKind::PointOnMeshing => {
-                let parts = self.meshing_parts(sk).map(|p| p.lifted()).unwrap_or_default();
+                let parts = self.meshing_parts(sk).map(|p| p.lifted(sk)).unwrap_or_default();
                 [vec![e(0).i()], parts].concat()
             }
             // what it states about, then every point the traced body reads (#326)

@@ -282,6 +282,9 @@ impl Num for f64 {
     fn atan2(y: Self, x: Self) -> Self {
         y.datan2(x)
     }
+    fn moves(self) -> bool {
+        false
+    }
 }
 
 fn zero<T: Num>() -> T {

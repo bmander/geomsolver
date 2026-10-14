@@ -90,9 +90,18 @@ pub(super) fn held_meshings(sk: &mut Sketch, res: &mut Resolver, map: &mut Sourc
                 Some(e) if e.kind == EntKind::Envelope && e.i() < sk.envelopes.len() => {
                     Ok(Flank::Envelope(e.idx))
                 }
+                // a surface traced in space, as its member sees it (#326)
+                Some(e) if e.kind == EntKind::Traced && e.i() < sk.traced.len() => {
+                    match sk.traced[e.i()].formals() {
+                        2 => Ok(Flank::Traced(e.idx)),
+                        _ => Err(format!("`{}` is a curve traced in space, and a flank is a \
+                                          surface: trace it over two formals", r.root.text)),
+                    }
+                }
                 _ => source_held(sk,res,&decls,r).map(Flank::Formed).map_err(|_| format!(
                     "`{}` is no flank the solve reads: a meshing turns an envelope in space, a cone, \
-                     a cylinder or a plane set, or a named side of a revolution (`surface(rev, e)`)",
+                     a cylinder or a plane set, a named side of a revolution (`surface(rev, e)`) \
+                     or a surface traced in space",
                     r.root.text)),
             }
         };
@@ -179,7 +188,7 @@ impl Reader {
             Reader::Envelope(e) => &mut sk.envelopes[e].held,
             Reader::Flank(m,i) => match &mut sk.meshings[m].flanks[i] {
                 Flank::Formed(h) => h,
-                Flank::Envelope(_) => unreachable!("a flank read off a set is formed"),
+                Flank::Envelope(_) | Flank::Traced(_) => unreachable!("a flank read off a set is formed"),
             },
         }
     }

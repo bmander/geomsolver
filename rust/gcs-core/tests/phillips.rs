@@ -516,3 +516,108 @@ isa screw(pitch == -28.8mm) mesh
     assert!(e.errors().any(|d| d.message.contains("whose twist changes as it runs")),
             "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
 }
+
+/* -- the pure form (R6) ---------------------------------------------------------------------------- */
+
+/// `spiral_bevel/phillips_pure.sv`: the same pair with each flank the contact element as its member
+/// sees it, a surface traced in space, and no rack anywhere.
+fn pure() -> &'static str {
+    include_str!("../../examples/spiral_bevel/phillips_pure.sv")
+}
+
+fn traced_index(e: &gcs_core::program::Elaborated, name: &str) -> usize {
+    let r = e.map.ent_named(name).unwrap_or_else(|| panic!("no `{name}`"));
+    assert_eq!(r.kind, gcs_core::model::EntKind::Traced, "`{name}` is traced in space");
+    r.i()
+}
+
+/// **Each pure-form flank is the rack's helicoid.**  Read at places across it, the flank traced
+/// from the contact alone is on the member's involute helicoid by its own equations, and on the
+/// envelope `phillips.sv` sweeps with its rack — at the element's phase, the rack's place through
+/// that point is on the envelope there, to 1e-9 — and its normal, carried by its member to the
+/// place's phase, is `L`'s.
+#[test]
+fn each_pure_form_flank_is_the_racks_envelope() {
+    use gcs_core::traced::{reading, Need};
+    let traced = solved(pure());
+    let racked = solved(document());
+    let mut rng = Rng::new(6);
+    for (name, mem) in [("pinion_flank", PINION), ("gear_flank", GEAR)] {
+        let i = traced_index(&traced, name);
+        let env = envelope(&racked.sketch, name);
+        let parts = Parts::of(&racked.sketch, env).unwrap();
+        let k = parts.consts(Contact::Point);
+        let values = parts.values(&racked.sketch);
+        for _ in 0..12 {
+            let (phi, s) = (rng.uniform(-35.0, 35.0), rng.uniform(-12.0, 12.0));
+            let r = reading(&traced.sketch, i, [phi, s], Need::Tangent).unwrap();
+            let t = phi.to_radians();
+            let (roll, gap) = on_helicoid(&mem, p(), m(), sigma(), r.position, t);
+            assert!((roll - t).abs() < 1e-9 && gap.abs() < 1e-9, "{name} ({phi}, {s}): {roll} {gap}");
+            let n = mem.turn(r.normal.unwrap(), t);
+            assert!((dot(n, m()).abs() - 1.0).abs() < 1e-10, "{name}: {n:?}");
+            // the rack's envelope at the roll the element is at: the rack's place there is
+            // affine in the plane's two lengths, so three readings find it
+            let at = |u: f64, v: f64| held::read(&k, &values, [u, v, t]).unwrap().position;
+            let (a, b, c) = (at(0.0, 0.0), sub(at(1.0, 0.0), at(0.0, 0.0)), sub(at(0.0, 1.0), at(0.0, 0.0)));
+            let w = sub(r.position, a);
+            let (bb, bc, cc, wb, wc) = (dot(b, b), dot(b, c), dot(c, c), dot(w, b), dot(w, c));
+            let det = bb * cc - bc * bc;
+            let place = [(cc * wb - bc * wc) / det, (bb * wc - bc * wb) / det, t];
+            let on = held::read(&k, &values, place).unwrap();
+            assert!(norm(sub(on.position, r.position)) < 1e-9 && on.normal_velocity.abs() < 1e-9,
+                    "{name} ({phi}, {s}): the rack's envelope there is {:?}, the traced flank {:?}",
+                    on.position, r.position);
+        }
+    }
+}
+
+/// **Phillips' pair in the pure form meshes as the rack-cut one does**: a point contact on `L` at
+/// every phase, with no lag, the common normal `L`'s, each flank's point there its member's own
+/// point carried to the phase — the traced flanks read through `meshing` as the envelopes are.
+#[test]
+fn phillips_pair_in_the_pure_form_touches_along_l_with_no_lag() {
+    use gcs_core::traced::{reading, Need};
+    let e = solved(pure());
+    let sk = &e.sketch;
+    let t = traced(sk, "bearing", 24);
+    assert_eq!(t.found().count(), 25);
+    let (pi, gi) = (traced_index(&e, "pinion_flank"), traced_index(&e, "gear_flank"));
+    for s in t.found() {
+        assert!(s.place.lag.abs() < 1e-10, "{s:?}");
+        assert!(!s.line, "{s:?}");
+        let (phase, lag) = (s.place.phase.to_radians(), s.place.lag.to_radians());
+        assert!(norm(sub(PINION.pose(s.on_pinion, phase), s.position)) < 1e-9, "{s:?}");
+        assert!(norm(sub(GEAR.pose(s.on_gear, phase + lag), s.position)) < 1e-9, "{s:?}");
+        let want = add(p(), scale(m(), sigma() * phase));
+        assert!(norm(sub(s.position, want)) < 1e-9, "{s:?} against {want:?}");
+        let n1 = reading(sk, pi, [s.place.pinion[0], s.place.pinion[1]], Need::Tangent).unwrap();
+        let n2 = reading(sk, gi, [s.place.gear[0], s.place.gear[1]], Need::Tangent).unwrap();
+        let (n1, n2) = (PINION.turn(n1.normal.unwrap(), phase), GEAR.turn(n2.normal.unwrap(), phase + lag));
+        assert!((dot(n1, m()).abs() - 1.0).abs() < 1e-10 && (dot(n2, m()).abs() - 1.0).abs() < 1e-10,
+                "{n1:?} {n2:?}");
+    }
+    let text = gcs_core::report::meshing_text(sk, 0);
+    assert!(text.starts_with("bearing: point contact; transmission error"), "{text}");
+}
+
+/// The Jacobian of a point on a meshing of two traced flanks against finite differences: at the
+/// solve and knocked off it, every column — the phase, the lag, both places, the bodies' geometry
+/// and the mesh's axes.
+#[test]
+fn a_meshing_of_traced_flanks_agrees_with_finite_differences() {
+    use gcs_core::constraints::CKind;
+    use gcs_core::fdcheck::check_constraint;
+    let mut sk = solved(pure()).sketch;
+    let mut rng = Rng::new(62);
+    for round in 0..3 {
+        if round > 0 {
+            for p in sk.params.iter_mut().filter(|p| !p.fixed) {
+                p.value += rng.uniform(-0.01, 0.01) * (1.0 + p.value.abs().min(10.0));
+            }
+        }
+        let c = sk.constraints.iter().find(|c| c.kind == CKind::PointOnMeshing).unwrap();
+        let err = check_constraint(&sk, c, 1e-6, 1e-6).unwrap_or_else(|e| panic!("round {round}: {e}"));
+        assert!(err.is_finite());
+    }
+}

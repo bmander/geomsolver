@@ -1364,23 +1364,6 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         envelope_map[i] = Some(next);
         made.push(EntRef::new(EntKind::Envelope,next));
     }
-    // a meshing's flanks, each an envelope copied with it or a source read in the copy's own
-    // geometry (#283)
-    let mut meshing_map = vec![None;src.meshings.len()];
-    for (i,e) in src.meshings.iter().enumerate() {
-        if !keep(EntRef::new(EntKind::Meshing,i)) { continue; }
-        let Some(motion) = motion_map[e.motion as usize] else { continue; };
-        let flank = |f: &crate::model::Flank| match f {
-            crate::model::Flank::Envelope(v) => envelope_map[*v as usize].map(|v| crate::model::Flank::Envelope(v as u32)),
-            crate::model::Flank::Formed(h) => Some(crate::model::Flank::Formed(remap_held(h))),
-        };
-        let (Some(a),Some(b)) = (flank(&e.flanks[0]),flank(&e.flanks[1])) else { continue; };
-        let next = dst.meshings.len();
-        dst.meshings.push(crate::model::MeshingE {flanks:[a,b],motion:motion as u32,roll:e.roll,
-            name:e.name.clone(),class:e.class.clone()});
-        meshing_map[i] = Some(next);
-        made.push(EntRef::new(EntKind::Meshing,next));
-    }
     // a traced body, where everything its component was given came along (#326)
     let mut traced_map = vec![None;src.traced.len()];
     for (i,t) in src.traced.iter().enumerate() {
@@ -1396,6 +1379,24 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         dst.traced.push(crate::model::TracedE {args,..t.clone()});
         traced_map[i] = Some(next);
         made.push(EntRef::new(EntKind::Traced,next));
+    }
+    // a meshing's flanks, each an envelope copied with it or a source read in the copy's own
+    // geometry (#283)
+    let mut meshing_map = vec![None;src.meshings.len()];
+    for (i,e) in src.meshings.iter().enumerate() {
+        if !keep(EntRef::new(EntKind::Meshing,i)) { continue; }
+        let Some(motion) = motion_map[e.motion as usize] else { continue; };
+        let flank = |f: &crate::model::Flank| match f {
+            crate::model::Flank::Envelope(v) => envelope_map[*v as usize].map(|v| crate::model::Flank::Envelope(v as u32)),
+            crate::model::Flank::Formed(h) => Some(crate::model::Flank::Formed(remap_held(h))),
+            crate::model::Flank::Traced(t) => traced_map[*t as usize].map(|t| crate::model::Flank::Traced(t as u32)),
+        };
+        let (Some(a),Some(b)) = (flank(&e.flanks[0]),flank(&e.flanks[1])) else { continue; };
+        let next = dst.meshings.len();
+        dst.meshings.push(crate::model::MeshingE {flanks:[a,b],motion:motion as u32,roll:e.roll,
+            name:e.name.clone(),class:e.class.clone()});
+        meshing_map[i] = Some(next);
+        made.push(EntRef::new(EntKind::Meshing,next));
     }
     let mut patch_map = vec![None;src.patches.len()];
     for (i,p) in src.patches.iter().enumerate() {

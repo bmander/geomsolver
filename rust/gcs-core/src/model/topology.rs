@@ -82,6 +82,7 @@ impl Sketch {
                     }
                     Flank::Formed(Held::Revolution {axis,edge}) => vec![*axis,*edge],
                     Flank::Formed(Held::Not(_)) => Vec::new(),
+                    Flank::Traced(t) => vec![EntRef::new(EntKind::Traced,*t as usize)],
                 });
                 std::iter::once(EntRef::new(EntKind::Motion,m.motion as usize)).chain(flanks).collect()
             }

@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.106 — October 2026**
+**Specification, Draft 0.107 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -1296,7 +1296,9 @@ R coincident(t == 10deg, lag == 0.01) contact
 pinion's turn) and its second with its source (the gear's): the motion the pair runs at, which
 must be a relative one (**E080** otherwise). A flank is an envelope in space the solve holds to
 (§6.15.3) — **generated** — or what such an envelope reads as its source, a cone, a cylinder or
-a plane set or a named side of a revolution, standing still in its member — **formed**; anything
+a plane set or a named side of a revolution, standing still in its member — **formed** — or a
+surface traced in space over two formals (§6.5), the flank as its member sees it — **traced**
+(**[0.107]**), its place `[u, s]` and its roll held at none; anything
 else is
 **E080**. At each **phase** of the pinion, its roll, the contact is where the two flanks share a
 point and a normal with the gear turned to the ratio's roll plus a **lag**: the transmission error

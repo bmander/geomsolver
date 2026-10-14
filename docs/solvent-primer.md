@@ -1570,7 +1570,8 @@ R coincident(lag == 0.07) bearing                     // the phase the gear lags
 ```
 
 A point on it owns the phase `t` and the lag (both in degrees) and a place on each flank; pin
-either. A conjugate pair touches along a line with no lag (the point is then free along it); a
+either. A flank may also be a surface traced in space (1.10) — the contact element as its member
+sees it, `X coincident(under: turn, t == -phi) x` in its body (`spiral_bevel/phillips_pure.sv`). A conjugate pair touches along a line with no lag (the point is then free along it); a
 mismatched one at a point. After the solve the contact is traced over `from:`…`to:` from the first
 point held to it, and `solventc` reports the transmission error and the path of contact.
 
