@@ -9,10 +9,10 @@ use gcs_core::solid::MaterialField;
 use gcs_core::solve::{solve, SolveOpts};
 
 use crate::common::{ent, read};
-use crate::fillet_definition::{
+use crate::common::rounds::{
     beside_cylinder, bore_rim, root_ring, sloped, sloped_root, square_run, tee_crotch, RIM, ROOT,
 };
-use crate::fillet_meridian::knob_neck;
+use crate::common::rounds::meridian::knob_neck;
 use crate::region_general::field_volume;
 
 fn solved(src: &str) -> Elaborated {

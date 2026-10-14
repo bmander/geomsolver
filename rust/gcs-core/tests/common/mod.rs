@@ -4,7 +4,11 @@
 //! what the block-solve tests and their measurements share: a solve under one `BlockMode`, a pose
 //! to the bit, the corpus they are measured over, the rough starts made from a solution, and how
 //! far one pose is from another.
+//!
+//! `rounds` holds the closed forms the rounds tests are held to.
 #![allow(dead_code)]
+
+pub mod rounds;
 
 use gcs_core::model::{EntRef, Sketch};
 use gcs_core::program::{elaborate, Elaborated};

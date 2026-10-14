@@ -1,5 +1,8 @@
-//! **X1 of #183: rounds and chamfers of a coaxial region, exactly in the meridian.**  A prototype,
-//! kept in this file on purpose (the language step that would call it, L5, has not been decided):
+//! **X1 of #183: rounds and chamfers of a coaxial region, exactly in the meridian.**  The
+//! construction began here as a prototype and now lives in the core, `brep::corners` (`round`,
+//! `chamfer`, `Carrier`, `Leg`), by which a region's rounds and chamfers are built in the meridian
+//! (`solid::region::meridian`) and the lowering table's sections too (`solid::lowering`); this file
+//! holds it to the closed forms (`common::rounds`):
 //! a region of lines and arcs — a meridian, as `solid::region::meridian` folds one — rounded or
 //! chamfered where a step of one group of faces meets a step of another, with nothing but the
 //! planar kernel's own steps.  `A round(r) B` is the ball of radius `r` rolled into that corner:
@@ -21,46 +24,12 @@ use gcs_core::space::norm as norm3;
 use gcs_core::syntax::Cmp;
 use std::f64::consts::{PI, TAU};
 
-use crate::fillet_definition::root_ring;
-
-type P = [f64; 2];
-
-fn sub(a: P, b: P) -> P { [a[0] - b[0], a[1] - b[1]] }
-fn add(a: P, b: P) -> P { [a[0] + b[0], a[1] + b[1]] }
-fn scale(a: P, k: f64) -> P { [a[0] * k, a[1] * k] }
-fn dot(a: P, b: P) -> f64 { a[0] * b[0] + a[1] * b[1] }
-#[allow(dead_code)]
-fn cross(a: P, b: P) -> f64 { a[0] * b[1] - a[1] * b[0] }
-fn norm(a: P) -> f64 { a[0].hypot(a[1]) }
-fn dist(a: P, b: P) -> f64 { norm(sub(a, b)) }
-fn unit(a: P) -> P { scale(a, 1.0 / norm(a)) }
-#[allow(dead_code)]
-fn left(a: P) -> P { [-a[1], a[0]] }
+use crate::common::rounds::meridian::{
+    add, cross, dist, dot, flux, knob_neck, knob_rounded, scale, sub, unit, P,
+};
+use crate::common::rounds::root_ring;
 
 // -- exact measures ----------------------------------------------------------------------------
-
-/// `∮ ρ²/2 dz` along a step, `(ρ, z)` its coordinates, in closed form.
-fn flux(s: &Seg) -> f64 {
-    match *s {
-        Seg::Line { a: p, b: q } => {
-            (q[1] - p[1]) / 2.0 * (p[0] * p[0] + p[0] * q[0] + q[0] * q[0]) / 3.0
-        }
-        Seg::Arc { c, r, a0, sweep } => {
-            let prim = |phi: f64| {
-                let (sn, cs) = phi.sin_cos();
-                (c[0] * c[0] * r * sn + c[0] * r * r * (phi + sn * cs)
-                    + r * r * r * (sn - sn.powi(3) / 3.0)) / 2.0
-            };
-            prim(a0 + sweep) - prim(a0)
-        }
-        // a rational quadratic: eight-point Gauss–Legendre over 16 stretches, to roundoff
-        Seg::Conic { .. } => (0..16).map(|k| gcs_core::integral::GAUSS8.iter().map(|&(x, w)| {
-            let t = (k as f64 + 0.5 + 0.5 * x) / 16.0;
-            let (p, d) = (s.point(t), s.tangent(t));
-            w * p[0] * p[0] / 2.0 * d[1]
-        }).sum::<f64>() / 32.0).sum(),
-    }
-}
 
 /// The volume a meridian sweeps turned once about `ρ = 0` (Green's theorem, every step exact).
 fn turned(region: &Region) -> f64 {
@@ -155,21 +124,6 @@ fn a_frustum_root_and_rim_are_tori() {
     close(turned(&other), turned(&rim), "the rounds the other way about");
 }
 
-/// The stack's closed form of #83's knob's neck: a rod of radius `rod` about the axis entering a
-/// ball of radius `big` about `s`, filled to `r`.  Its section is the corner, its foot on the rod,
-/// the arc of the ball rolled, its foot on the ball and the ball's arc back, turned.
-pub(crate) fn knob_neck(s: P, big: f64, rod: f64, r: f64) -> f64 {
-    let corner = [rod, s[1] - (big * big - rod * rod).sqrt()];
-    let centre = [rod + r, s[1] - ((big + r).powi(2) - (rod + r).powi(2)).sqrt()];
-    let (on_rod, on_ball) = ([rod, centre[1]], add(s, scale(unit(sub(centre, s)), big)));
-    let at = |c: P, p: P| (p[1] - c[1]).atan2(p[0] - c[0]);
-    let arc = |c: P, r: f64, from: P, to: P| {
-        Seg::Arc { c, r, a0: at(c, from), sweep: at(c, to) - at(c, from) }
-    };
-    2.0 * PI * (flux(&Seg::Line { a: corner, b: on_rod })
-        + flux(&arc(centre, r, on_rod, on_ball)) + flux(&arc(s, big, on_ball, corner))).abs()
-}
-
 /// #83's knob (`x0/knob.sv`): a rod standing on a disc and entering a ball, its root filled to 2
 /// (plane against cylinder) and its neck to 1.5 (cylinder against sphere, a section with a curved
 /// side).
@@ -189,15 +143,6 @@ fn a_knobs_root_and_neck_turn_their_sections() {
     close(turned(&root) - turned(&knob), root_ring(rod, 2.0), "the root");
     close(turned(&neck) - turned(&root), knob_neck(s, big, rod, r), "the neck");
     close(turned(&neck), knob_rounded(s, big, rod, r), "the knob");
-}
-
-/// #83's knob rounded, whole (`x0/knob.sv`, `rounds/knob.sv`): the disc (30 by 8), the rod up to
-/// the ball, the ball less the cap the rod holds, its root's ring (2) and its neck's (`knob_neck`).
-pub(crate) fn knob_rounded(s: P, big: f64, rod: f64, r: f64) -> f64 {
-    let corner = s[1] - (big * big - rod * rod).sqrt();
-    let cap = { let h = corner - (s[1] - big); PI * h * h * (3.0 * big - h) / 3.0 };
-    PI * 30.0 * 30.0 * 8.0 + PI * rod * rod * (corner - 8.0) + 4.0 / 3.0 * PI * big.powi(3) - cap
-        + root_ring(rod, 2.0) + knob_neck(s, big, rod, r)
 }
 
 /// A chamfer of the frustum's rim is a cone band: the triangle it takes, turned (Pappus).  Both
