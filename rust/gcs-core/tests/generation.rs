@@ -474,7 +474,7 @@ pinion := motion(about: o1, ratio: 1)
 gear := motion(about: o2, ratio: -2 / 3)
 rack := motion(along: pitch_line, advance: 2 * pi * 20)
 cutting := motion(rack, relative_to: pinion)
-meshing := motion(pinion, relative_to: gear)
+mesh := motion(pinion, relative_to: gear)
 in std.front {
 f0 := point hint((20, 2))
 f1 := point hint((29, 5))
@@ -483,7 +483,7 @@ fix((20, 2)) f0
 fix((29.396926207859083, 5.420201433256687)) f1
 }
 tooth := envelope(flank, under: cutting, from: -40deg, to: 40deg)
-mate := envelope(tooth, under: meshing, from: -15deg, to: 15deg)
+mate := envelope(tooth, under: mesh, from: -15deg, to: 15deg)
 ";
 
 /// The radius of curvature of curve `i` at `t`, by differences of its points.

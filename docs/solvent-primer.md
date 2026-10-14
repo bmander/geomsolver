@@ -118,7 +118,7 @@ NAME := solid(FACE, SWEEP...)           a face swept: depth:/from:/to:/through:,
 NAME := solid(SOLID) | solid(SET)       a body over a stock; the points of a region
 NAME := solid(SOLID, under: MOTION, at: E | from: E, to: E | through: BODY)   placed by, or swept through, a motion
 REF union REF | REF cut REF | REF common REF  material added to, removed from, shared with a body
-NAME := motion | envelope | surface | patch | seam | vertex | edge(...)              (1.15)
+NAME := motion | envelope | meshing | surface | patch | seam | vertex | edge(...)    (1.15)
 WORD[(ARGS)] REF | REF WORD[(ARGS)] REF [hint(SLOT: E, ...)]   a constraint          (1.5)
 claim CONSTRAINT                        judged, never solved for                     (1.11)
 fix((E, E[, E])) REF | fix(MEMBER == E, ...) REF   hold an entity's own numbers      (1.4)
@@ -1445,6 +1445,24 @@ pinion_flank curvature(at: M) profile                 // its section by profile'
 The source's geometry, its number and the motion's axes are columns, so the cone's half solves from
 what is stated at `M`. The `at:` relations read the place of the `coincident` holding `M`, which must
 be stated. A set's envelope is only held to: it has no chart after the solve.
+
+**Two flanks meshing are a locus** (`spiral_bevel/contact.sv`): tooth contact analysis. The first
+flank turns with the pinion and the second with the gear — the mesh's observer and source — each an
+envelope in space as above or a cone, a cylinder or a revolution's side standing still (a formed
+gear's). At each phase of the pinion they touch with the gear turned to the ratio plus a **lag**,
+the transmission error:
+
+```
+mesh := motion(gear_turn, relative_to: pinion_turn)
+bearing := meshing(pinion_flank, flank, under: mesh, from: -15deg, to: 15deg)
+Q coincident(t == 0deg) bearing                       // where they touch at phase 0
+R coincident(lag == 0.07) bearing                     // the phase the gear lags 0.07° at
+```
+
+A point on it owns the phase `t` and the lag (both in degrees) and a place on each flank; pin
+either. A conjugate pair touches along a line with no lag (the point is then free along it); a
+mismatched one at a point. After the solve the contact is traced over `from:`…`to:` from the first
+point held to it, and `solventc` reports the transmission error and the path of contact.
 
 **Spatial geometry read after the solve** adds no unknown and has no 2D glyph; each certifies only
 local evaluations ([analytic face boundaries](analytic-face-boundaries.md); the spiral bevel's

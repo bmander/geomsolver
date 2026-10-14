@@ -55,6 +55,11 @@ impl Constraint {
         if let Some(c) = self.kind.envelope_contact() {
             return self.envelope_parts(sk).map(|p| p.consts(c)).unwrap_or_default();
         }
+        // a meshing contact's: both flanks' and the mesh's (#283)
+        if self.kind == CKind::PointOnMeshing {
+            let lead = crate::envelope::meshing::LEAD;
+            return self.meshing_parts(sk).map(|p| p.consts(lead)).unwrap_or_default();
+        }
         if self.kind == CKind::Stationary {
             return crate::variational::pack(sk, self.id);
         }
@@ -592,6 +597,15 @@ impl Constraint {
                 let at: Vec<u32> = (place..place + 3).map(|i| self.args[i].param()).collect();
                 [lead, at, parts].concat()
             }
+            // the point's lift, the phase, the lag and the two places, then both flanks' and the
+            // mesh's columns (#283, `envelope::meshing`)
+            CKind::PointOnMeshing => {
+                let k = sk.lift_of(e(0).i()).expect("a relation in space is lifted at the add");
+                let own: Vec<u32> = (2..2 + crate::envelope::meshing::UNKNOWNS)
+                    .map(|i| self.args[i].param()).collect();
+                let parts = self.meshing_parts(sk).map(|p| p.columns(sk)).unwrap_or_default();
+                [sk.lifts[k].x.to_vec(), own, parts].concat()
+            }
             CKind::SplineTangentLine => {
                 [vec![self.args[2].param()], self.span_params(sk, span), ln(1)].concat()
             }
@@ -734,6 +748,10 @@ impl Constraint {
                 };
                 let parts = self.envelope_parts(sk).map(|p| p.lifted()).unwrap_or_default();
                 [lead, parts].concat()
+            }
+            CKind::PointOnMeshing => {
+                let parts = self.meshing_parts(sk).map(|p| p.lifted()).unwrap_or_default();
+                [vec![e(0).i()], parts].concat()
             }
             CKind::Symmetric3 => [vec![e(0).i(), e(1).i()], ends(2).to_vec()].concat(),
             // a direction's operands: a line's ends are lifted, and an axis is in space already

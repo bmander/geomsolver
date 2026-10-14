@@ -14,13 +14,13 @@ import { core, lastError, onInit, takeJson, takeStr, withBuf, withJson, withStr 
 
 export type SpecKind =
   | 'point' | 'line' | 'circle' | 'arc' | 'circle_or_arc' | 'spline'
-  | 'curve' | 'envelope' | 'plane' | 'axis' | 'direction' | 'along'
+  | 'curve' | 'envelope' | 'meshing' | 'plane' | 'axis' | 'direction' | 'along'
   | 'length' | 'angle' | 'float' | 'int' | 'str' | 'bool'
   | 'param';
 
 export const ENTITY_KINDS: ReadonlySet<string> =
-  new Set(['point', 'line', 'circle', 'arc', 'circle_or_arc', 'spline', 'curve', 'envelope', 'plane',
-           'axis', 'direction', 'along']);
+  new Set(['point', 'line', 'circle', 'arc', 'circle_or_arc', 'spline', 'curve', 'envelope',
+           'meshing', 'plane', 'axis', 'direction', 'along']);
 export const DIMENSION_KINDS: ReadonlySet<string> = new Set(['length', 'angle']);
 /** A hidden unknown the constraint owns — where along a curve a contact sits.  It reads as the
  *  number the solver currently has it at and cannot be written: nobody states a curve

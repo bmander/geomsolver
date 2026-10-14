@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.92 — October 2026**
+**Specification, Draft 0.93 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -52,7 +52,7 @@ MUST, MUST NOT, SHOULD, SHOULD NOT, and MAY are used as in RFC 2119. Text marked
 ## 2. Lexical structure
 
 - **Identifiers:** `[A-Za-z_][A-Za-z0-9_]*`. Component names are conventionally capitalized; this is not enforced.
-- **Keywords:** `component`, `param`, `point`, `circle`, `line`, `frame`, `path`, `repeat`, `cycle`, `ring`, **[0.72]** `when`, `about`, `as`, `next`, `prev`, `hint`, `at`, `fix`, `ccw`, `cw`, `rev`, `true`, `false`, **[0.2]** `curve`, `over`, `spline` (and `ellipse`, until **[0.15]** made the ellipse a library component — `Ellipse` in `std`, a computed point on a datum traced as a curve, whose contacts are the curve's; an implementation keeps the word only to refuse it). **[0.7]** `unit`, `class` and `style` in, `construction` out; every constraint is a prefix or an infix operator (§9.2), so `coincident`, `equal`, `tangent`, `curvature`, `symmetry` and `distance` are the words a statement is written with — it is a class now, and the base sheet is what draws it dashed (§13.2). **[0.4]** In a chain (§6.6) the word `close` is meaningful *contextually*; it is not reserved, and an entity may bear it as a name. **[0.19]** It is read the same way after `->` inside a `face`'s brackets (§6.8), which is the other place the language draws a loop. **[0.8]** `to` is retired: the plain corner is the `->` marker, and threading is stated at the joint rather than inferred from the operands. **[0.5]** A coordinate seed is written `hint at` (§6.4). **[0.7]** Every seed is written in one `hint(…)` clause (§4.3, §6.4); `hint at REF` kept its own form inside a trace block (§6.5.1) until **[0.14]**, when a place became the `at:` and `bearing:` keys of the same clause — `hint(at: REF, bearing: β)` — so `at` after `hint` is refused, and `bearing` is a key and no keyword. **[0.10]** `plane`, `in`, `project` and `fold` in (§6.7); `from` is contextual there as it is in a trace family. **[0.42]** `axis` in; `frame`, `fold`, and `from`, `offset` and `through` as a plane's labels, out — a plane's brackets take `u:` and `v:` and nothing else. **[0.13]** `port` is retired (§7); an implementation keeps the word only to refuse it. **[0.18]** `face` and `solid` are element keywords (§6.8, §6.9) and `view` and `section` open a statement (§6.11); `cut` is the body rule's own word and `on` gains a reading over two solids (§9.2), so both join the operator words a name may not be. **[0.32]** `union` is the body rule's too, and joins them; `on` loses its reading over two solids. **[0.42]** `on` is no constraint word: `coincident` says incidence (§9.2). **[0.20]** `view` and `section` leave model source for the drawing (§6.11). The eight labels a solid's brackets take — `from`, `to`, `depth`, `through`, `along`, `about`, `sweep`, `sense` — are **contextual**: they are read as labels inside the brackets that take them and are reserved nowhere, so a `param` or a point may still bear any of them as a name (`face := -(fw + D / 2)` is idiomatic). A declaration's *name*, however, may not be an element keyword, and three shipped examples renamed a line that had been called `face`.
+- **Keywords:** `component`, `param`, `point`, `circle`, `line`, `frame`, `path`, `repeat`, `cycle`, `ring`, **[0.72]** `when`, `about`, `as`, `next`, `prev`, `hint`, `at`, `fix`, `ccw`, `cw`, `rev`, `true`, `false`, **[0.2]** `curve`, `over`, `spline` (and `ellipse`, until **[0.15]** made the ellipse a library component — `Ellipse` in `std`, a computed point on a datum traced as a curve, whose contacts are the curve's; an implementation keeps the word only to refuse it). **[0.7]** `unit`, `class` and `style` in, `construction` out; every constraint is a prefix or an infix operator (§9.2), so `coincident`, `equal`, `tangent`, `curvature`, `symmetry` and `distance` are the words a statement is written with — it is a class now, and the base sheet is what draws it dashed (§13.2). **[0.4]** In a chain (§6.6) the word `close` is meaningful *contextually*; it is not reserved, and an entity may bear it as a name. **[0.19]** It is read the same way after `->` inside a `face`'s brackets (§6.8), which is the other place the language draws a loop. **[0.8]** `to` is retired: the plain corner is the `->` marker, and threading is stated at the joint rather than inferred from the operands. **[0.5]** A coordinate seed is written `hint at` (§6.4). **[0.7]** Every seed is written in one `hint(…)` clause (§4.3, §6.4); `hint at REF` kept its own form inside a trace block (§6.5.1) until **[0.14]**, when a place became the `at:` and `bearing:` keys of the same clause — `hint(at: REF, bearing: β)` — so `at` after `hint` is refused, and `bearing` is a key and no keyword. **[0.10]** `plane`, `in`, `project` and `fold` in (§6.7); `from` is contextual there as it is in a trace family. **[0.42]** `axis` in; `frame`, `fold`, and `from`, `offset` and `through` as a plane's labels, out — a plane's brackets take `u:` and `v:` and nothing else. **[0.13]** `port` is retired (§7); an implementation keeps the word only to refuse it. **[0.18]** `face` and `solid` are element keywords (§6.8, §6.9) and `view` and `section` open a statement (§6.11); `cut` is the body rule's own word and `on` gains a reading over two solids (§9.2), so both join the operator words a name may not be. **[0.32]** `union` is the body rule's too, and joins them; `on` loses its reading over two solids. **[0.42]** `on` is no constraint word: `coincident` says incidence (§9.2). **[0.20]** `view` and `section` leave model source for the drawing (§6.11). The eight labels a solid's brackets take — `from`, `to`, `depth`, `through`, `along`, `about`, `sweep`, `sense` — are **contextual**: they are read as labels inside the brackets that take them and are reserved nowhere, so a `param` or a point may still bear any of them as a name (`face := -(fw + D / 2)` is idiomatic). A declaration's *name*, however, may not be an element keyword, and three shipped examples renamed a line that had been called `face`. **[0.93]** `meshing` is an element keyword (§6.15.4); one shipped example renamed a motion that had been called it.
 - **Literals:** decimal numbers with optional unit suffix (`10`, `2.5mm`, `30deg`). The constant `tau` (= 2π) and `pi` are predefined.
 - **Comments:** `//` to end of line; `/* ... */` nesting not required.
 - **Operators and punctuation:** `== + - * / ( ) { } [ ] , : . := -> ~ @`
@@ -1195,6 +1195,44 @@ after the solve where it is a revolution's side, and a relation holding somethin
 refused naming why (**E061**); a set the body reads as no cone or cylinder is **E040** where it
 is applied. A set's envelope has no chart after the solve: it is only held to.
 
+#### 6.15.4 The meshing of two flanks **[0.93]**
+
+```
+mesh := motion(gear_turn, relative_to: pinion_turn)
+contact := meshing(pinion_flank, gear_flank, under: mesh, from: -15deg, to: 15deg)
+Q coincident(t == 0deg) contact
+R coincident(t == 10deg, lag == 0.01) contact
+```
+
+`meshing` is tooth contact analysis, a locus. Its first flank turns with `mesh`'s observer (the
+pinion's turn) and its second with its source (the gear's): the motion the pair runs at, which
+must be a relative one (**E080** otherwise). A flank is an envelope in space the solve holds to
+(§6.15.3) — **generated** — or what such an envelope reads as its source, a cone or a cylinder
+set or a named side of a revolution, standing still in its member — **formed**; anything else is
+**E080**. At each **phase** of the pinion, its roll, the contact is where the two flanks share a
+point and a normal with the gear turned to the ratio's roll plus a **lag**: the transmission error
+as a roll of the mesh (the gear's own angle is off by its ratio times it). A conjugate pair touches
+with no lag, along a line; a pair that is not touches at a point, the gear behind or ahead.
+
+`p coincident contact` holds a point to the **path of contact**, in the fixed frame. It owns the
+phase `t` and the lag `lag`, in degrees as a curve's parameter over an angle is (§6.5), and a place
+`[u, v, t]` on each flank as a point on an envelope owns one (a formed flank's roll held at none):
+eight unknowns against ten rows — the point where the pinion's flank is at the phase, the two
+flanks' point and normal shared, and each flank's own row — so the point is on a curve in space.
+Either number may be pinned: `t == 0deg` says at which phase, and `lag == δ` states the
+transmission error there. Both flanks' sources and motions and the mesh's axes are columns, so a
+number that makes a flank, or the phase, solves from what is stated. Where the two touch along a
+line the rows lose a rank and the point is free along it. A root is local: the place starts where
+the flanks pass nearest `p` at its phase, with no lag, and is sought again where a solve that fails
+leaves the flanks; a pair a little off conjugate, which the rows hold weakly along its bearing, is
+found only from near its contact.
+
+After the solve the contact is **traced** over `from:` … `to:`, walked out phase by phase from the
+first point held to it: the lag over the phase is the transmission error, the contact's places the
+**path of contact** and, on each flank in its own member, the **bearing**. `solventc` says of each
+meshing whether it is a point or a line contact, the transmission error's range and how long the
+path of contact is; `--json` gives each phase.
+
 ### 6.16 Trimmed spatial patches
 
 ```
@@ -1824,7 +1862,7 @@ What goes in the parentheses is a short list:
 
 | word | fixity | operands → constraint |
 |---|---|---|
-| `coincident` | infix | **[0.42]** (point, point); (point, line \| circle \| arc \| spline \| curve) — incidence, where 0.41 and before wrote `on`; **[0.24]** (point, plane), (line, plane) in space — **[0.54]** of a point standing in space, its membership of the plane, as `in` (§6.7); **[0.74]** of a point its declaration draws in another plane, `p coincident P` draws it in `P` too and `P coincident p` passes `P` through it (§6.7); **[0.49]** (point, set), the set's body at the point (§6.21); **[0.42]** (point, axis), (axis, plane); **[0.43]** (axis, axis), one line either way round; **[0.44]** (line, axis), both ends on it; **[0.38]** (point, the envelope of a prism's side), from any view (§6.15.2); **[0.90]** (point, an envelope in space), owning its place (§6.15.3). Read either way round: `P coincident p` is `p coincident P`, but for **[0.74]**'s point drawn in another plane. **[0.32]** Not (solid, solid): the body rule's union is `union` (§6.9) |
+| `coincident` | infix | **[0.42]** (point, point); (point, line \| circle \| arc \| spline \| curve) — incidence, where 0.41 and before wrote `on`; **[0.24]** (point, plane), (line, plane) in space — **[0.54]** of a point standing in space, its membership of the plane, as `in` (§6.7); **[0.74]** of a point its declaration draws in another plane, `p coincident P` draws it in `P` too and `P coincident p` passes `P` through it (§6.7); **[0.49]** (point, set), the set's body at the point (§6.21); **[0.42]** (point, axis), (axis, plane); **[0.43]** (axis, axis), one line either way round; **[0.44]** (line, axis), both ends on it; **[0.38]** (point, the envelope of a prism's side), from any view (§6.15.2); **[0.90]** (point, an envelope in space), owning its place (§6.15.3); **[0.93]** (point, a meshing), on its path of contact, owning its phase `t`, its lag `lag` and a place on each flank (§6.15.4). Read either way round: `P coincident p` is `p coincident P`, but for **[0.74]**'s point drawn in another plane. **[0.32]** Not (solid, solid): the body rule's union is `union` (§6.9) |
 | `cut` | infix | **[0.18]** (solid, solid) — the body rule's other half (§6.9), and no constraint at all |
 | `distance` | infix | (p, p); **[0.46]** +`along:` an ordinate — an axis or a line, or **[0.92]** the view's `u`/`v` for the run and the rise (`right`/`left`/`up`/`down` with the sign said); (p, line); (line, line); (circle, circle); (p, plane) with `along: u`/`v` for signed ordinates from the plane's origin, or **[0.24]** `along: n` for the signed distance along the plane's normal, in space; **[0.42]** (plane, plane), the second's origin along the first's normal (§6.10) |
 | `tangent` | infix | (line, circle); +`at:` for a tangency at a named end; (circle, circle); (arc, line); (spline, line); (curve, line), §6.5 — **six**; **[0.79]** (spline, curve, circle, arc or line; line) +`at: m`, a point held on the first: the tangent there, one equation reading the place of `m`'s contact — three more, and `parallel`; a line and a spline or a curve either way round; **[0.49]** (line, set), a contact on the line in the set and the body's derivative along the line; **[0.51]** (set, set) with the point in the parentheses, `k1 tangent(at: M) k2`, one tangent space there (§6.21); **[0.90]** (envelope in space; line, axis or plane) +`at: m`, a line in its tangent plane or a plane touching it at a point held on it (§6.15.3) |

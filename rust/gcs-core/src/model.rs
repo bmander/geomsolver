@@ -38,7 +38,7 @@ pub use curves::{CURVE_STEPS, CurveDef, CurveBody, CurveE, Extremal, Home, Trim,
 pub use solids::{
     FaceLoop, FaceSupport, FaceE, Length, SolidRequirement, SolidClaim, SolidBearing, Sweep,
     DerivedE, Extent, Roll, Sense, SolidDef, SolidE, SeamE, EdgeE, VertexE, PatchE, EnvelopeE,
-    Held, SetKind, SetShape, SurfaceE,
+    Flank, Held, MeshingE, SetKind, SetShape, SurfaceE,
     MotionDef, MotionE,
 };
 pub use region::{RegionShape, RegionTerm, TermNumber, FaceRef, Target};
@@ -110,6 +110,8 @@ pub struct Sketch {
     pub seams: Vec<SeamE>,
     pub vertices: Vec<VertexE>,
     pub edges: Vec<EdgeE>,
+    /// The meshings of pairs of flanks (#283): tooth contact analyses.
+    pub meshings: Vec<MeshingE>,
     /// The pictures the document asks for (§6.11): `view(body) in right`, `section(body, at: mid)
     /// in front`.  Not entities — nothing on the sheet is held to one, and no solve moves one —
     /// but document state like `branches`, saved and grafted with everything else.
@@ -220,6 +222,7 @@ impl Sketch {
             EntKind::Seam => self.seams[e.i()].class.clone(),
             EntKind::Vertex => self.vertices[e.i()].class.clone(),
             EntKind::Edge => self.edges[e.i()].class.clone(),
+            EntKind::Meshing => self.meshings[e.i()].class.clone(),
         };
         Classes(self.roles_of(e).selectors().map(str::to_string).chain(authored.0).collect())
     }
@@ -245,6 +248,7 @@ impl Sketch {
             EntKind::Seam => self.seams.get_mut(e.i()).map(|x| &mut x.class),
             EntKind::Vertex => self.vertices.get_mut(e.i()).map(|x| &mut x.class),
             EntKind::Edge => self.edges.get_mut(e.i()).map(|x| &mut x.class),
+            EntKind::Meshing => self.meshings.get_mut(e.i()).map(|x| &mut x.class),
         };
         if let Some(c) = slot {
             c.set(name, on);

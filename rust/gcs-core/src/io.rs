@@ -232,7 +232,7 @@ fn remap_early(
         EntKind::Plane => plane_map[e.i()].map(EntRef::plane),
         // a curve is never another curve's argument: nothing in the language says so, and a
         // face and a solid are built after every curve, so neither is one either
-        EntKind::Curve | EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge
+        EntKind::Curve | EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge | EntKind::Meshing
         | EntKind::Axis => None,
     }
 }
@@ -1289,19 +1289,12 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         surface_map[i] = Some(next);
         made.push(EntRef::new(EntKind::Surface,next));
     }
-    let mut envelope_map = vec![None;src.envelopes.len()];
-    for (i,e) in src.envelopes.iter().enumerate() {
-        if !keep(EntRef::new(EntKind::Envelope,i)) { continue; }
-        let surface = match e.surface {
-            Some(s) => match surface_map[s as usize] { Some(s) => Some(s as u32), None => continue },
-            None => None,
-        };
-        let Some(motion) = motion_map[e.motion as usize] else { continue; };
-        // what the solve reads of its source, in the copy's own geometry; a part left behind
-        // leaves the copy with nothing it can read, said where a relation names it
+    // what the solve reads of a source, in the copy's own geometry; a part left behind leaves
+    // the copy with nothing it can read, said where a relation names it
+    let remap_held = |h: &crate::model::Held| -> crate::model::Held {
         let line = |l: u32| line_map[l as usize].map(|x| x as u32);
         let gone = || crate::model::Held::Not("its source was left behind when it was copied".into());
-        let held = match &e.held {
+        match h {
             crate::model::Held::Not(why) => crate::model::Held::Not(why.clone()),
             crate::model::Held::Revolution {axis,edge} => {
                 let edge = measured_ent(*edge);
@@ -1325,7 +1318,17 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
                     _ => gone(),
                 }
             }
+        }
+    };
+    let mut envelope_map = vec![None;src.envelopes.len()];
+    for (i,e) in src.envelopes.iter().enumerate() {
+        if !keep(EntRef::new(EntKind::Envelope,i)) { continue; }
+        let surface = match e.surface {
+            Some(s) => match surface_map[s as usize] { Some(s) => Some(s as u32), None => continue },
+            None => None,
         };
+        let Some(motion) = motion_map[e.motion as usize] else { continue; };
+        let held = remap_held(&e.held);
         let next = dst.envelopes.len();
         dst.envelopes.push(crate::model::EnvelopeE {
             surface,motion:motion as u32,roll:e.roll,
@@ -1333,6 +1336,23 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         });
         envelope_map[i] = Some(next);
         made.push(EntRef::new(EntKind::Envelope,next));
+    }
+    // a meshing's flanks, each an envelope copied with it or a source read in the copy's own
+    // geometry (#283)
+    let mut meshing_map = vec![None;src.meshings.len()];
+    for (i,e) in src.meshings.iter().enumerate() {
+        if !keep(EntRef::new(EntKind::Meshing,i)) { continue; }
+        let Some(motion) = motion_map[e.motion as usize] else { continue; };
+        let flank = |f: &crate::model::Flank| match f {
+            crate::model::Flank::Envelope(v) => envelope_map[*v as usize].map(|v| crate::model::Flank::Envelope(v as u32)),
+            crate::model::Flank::Formed(h) => Some(crate::model::Flank::Formed(remap_held(h))),
+        };
+        let (Some(a),Some(b)) = (flank(&e.flanks[0]),flank(&e.flanks[1])) else { continue; };
+        let next = dst.meshings.len();
+        dst.meshings.push(crate::model::MeshingE {flanks:[a,b],motion:motion as u32,roll:e.roll,
+            name:e.name.clone(),class:e.class.clone()});
+        meshing_map[i] = Some(next);
+        made.push(EntRef::new(EntKind::Meshing,next));
     }
     let mut patch_map = vec![None;src.patches.len()];
     for (i,p) in src.patches.iter().enumerate() {
@@ -1434,6 +1454,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             EntKind::Seam => seam_map[e.i()].map(|i| EntRef::new(EntKind::Seam,i)),
             EntKind::Vertex => vertex_map[e.i()].map(|i| EntRef::new(EntKind::Vertex,i)),
             EntKind::Edge => edge_map[e.i()].map(|i| EntRef::new(EntKind::Edge,i)),
+            EntKind::Meshing => meshing_map[e.i()].map(|i| EntRef::new(EntKind::Meshing,i)),
         }
     };
     for (&e, &roles) in &src.roles {
@@ -1595,7 +1616,7 @@ pub fn copy(sk: &Sketch, entities: &[EntRef]) -> Sketch {
         }
     }
     let mut candidates = sk.primitives();
-    for kind in [EntKind::Curve,EntKind::Face,EntKind::Solid,EntKind::Surface,EntKind::Motion,EntKind::Envelope,EntKind::Patch,EntKind::Seam,EntKind::Vertex,EntKind::Edge] {
+    for kind in [EntKind::Curve,EntKind::Face,EntKind::Solid,EntKind::Surface,EntKind::Motion,EntKind::Envelope,EntKind::Patch,EntKind::Seam,EntKind::Vertex,EntKind::Edge,EntKind::Meshing] {
         candidates.extend((0..sk.count(kind)).map(|i| EntRef::new(kind,i)));
     }
     let drop: Vec<EntRef> = candidates.into_iter().filter(|e| !keep.contains(e)).collect();

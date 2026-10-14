@@ -366,6 +366,10 @@ fn check(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
             for v in &d.solid_claims {
                 println!("  {}", gcs_core::report::solid_claim_text(v));
             }
+            // each meshing's contact over its phase, in the core's words (#283)
+            for i in 0..sk.meshings.len() {
+                println!("  {}", gcs_core::report::meshing_text(&sk, i));
+            }
             for w in &d.warnings {
                 println!("  note: {w}");
             }
@@ -715,6 +719,7 @@ fn doc_json(
         ("solve", r.map(report::solve_result_json).unwrap_or(Json::Null)),
         ("diagnosis", d.map(|(sk, d)| report::diagnosis_json(sk, d)).unwrap_or(Json::Null)),
         ("positions", positions),
+        ("meshings", d.map(|(sk, _)| report::meshings_json(sk)).unwrap_or(Json::Null)),
     ])
 }
 

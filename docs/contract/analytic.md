@@ -57,6 +57,33 @@ tangent and osculating circle against closed forms and a three-point section fit
 screw mesh, the mean-point lean (`spiral_bevel/mean_point.sv`) — with
 `jacobians::envelope_contacts_agree_with_finite_differences`.
 
+**The meshing of two flanks (#283 step 3, [0.93]):** `contact := meshing(a, b, under: mesh, from:,
+to:)` is `MeshingE` (ABI kind 17): two `Flank`s — `Envelope(i)`, a held envelope, or `Formed(Held)`,
+a source read as an envelope's is (a set applied to its hidden point `{contact}#first#probe` /
+`#second#probe`, `set_shape` through `program::envelopes::Reader`; a revolution's side) — the
+motion and the phase, built with the held envelopes (`held_meshings`), refused (E080) where a flank
+or the motion is unreadable or the motion is not relative. `envelope::meshing` is the evaluator:
+the first flank turned with the motion's observer at the phase `φ`, the second with its source at
+`φ + δ` (`held::frames` at two rolls), each flank `held::local` over its own constants (a formed one
+`Layout::read_any`, no step, its pose the identity); rows the two points' offset, the pinion's
+normal against two directions square to the gear's (each times the lever, the contact's distance
+from the motion's first axis point, so a length), and each flank's own row — its meshing equation,
+or a formed flank's roll times the lever — seven at a phase, three more for `PointOnMeshing`'s point
+(lead its lift; columns `[lead, φ, δ, place₁, place₂, flank₁, flank₂, motion]`, constants
+`[lead, n₁, n₂, steps, flank₁, flank₂, steps]`; `KernelKey::Meshing`, exact by `Dual`). The phase
+and the lag are degrees, the places as an envelope contact's. `Meshing::at` solves a phase by
+`newton::dogleg` with minimum-norm steps, a rank lost (`Sample::line`) a line contact; `trace`
+walks out from the anchor (the first `PointOnMeshing`'s solved place), predicting by the last two
+and halving a step the solve cannot take (`reach`); `seed` places a point's place (`held::seed` or
+a coarse grid on a formed flank, then the phase solved), remembered by `infer::meshing_place`.
+`report::meshing_text` / `meshings_json` are the CLI's line and `--json`. What it certifies is
+local: no tooth pair, flank side, trimmed face or first touch elsewhere. `tests/meshing.rs` is the
+gate — a conjugate pair's lag zero and line contact, a pair cut at another ratio lagging `(q − 1)φ`
+exactly, a larger cutter at a modified roll touching at a point on the common generator, a cutter
+turned about the normal at M lagging by the turn that closes the gap between the members (found
+from the cone's equation and the poses alone), a stated lag solving its phase, `contact.sv` — with
+`jacobians::meshing_contacts_agree_with_finite_differences`.
+
 **Trimmed spatial patches:** `flank := patch(source, inside: tip, outside: root)`; repeat the label
 per clipping solid. `patch::TrimmedPatch` has explicit axis, trim and residual tolerances; clips
 unmodified full revolutions (line/arc/circle profiles, holes). `solid::RevolvedRegion` is analytic

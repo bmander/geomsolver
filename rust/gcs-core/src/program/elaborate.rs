@@ -456,10 +456,11 @@ fn prism_sides(cx: &mut Elab<'_>, flat: &Flat<'_>) -> BTreeSet<StmtId> {
 fn held_envelopes(
     cx: &mut Elab<'_>, flat: &Flat<'_>, planar: &BTreeSet<StmtId>, extruded: &BTreeSet<StmtId>,
 ) -> (BTreeSet<StmtId>, BTreeSet<StmtId>) {
-    let Elab { sk, res, map, .. } = cx;
+    let Elab { sk, res, map, diags, .. } = cx;
     let generated: BTreeSet<StmtId> =
         flat.skip.iter().chain(planar).chain(extruded).copied().collect();
     let held = envelopes::held_envelopes(sk, res, map, &flat.body, &generated);
+    envelopes::held_meshings(sk, res, map, &flat.body, &flat.skip, diags);
     (generated, held)
 }
 

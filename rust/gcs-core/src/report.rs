@@ -10,7 +10,7 @@
 use crate::fmath::Det;
 use crate::callout::{self, Callout, Seg};
 use crate::cgraph::{ConstraintGraph, El, ElKind};
-use crate::constraints::{tangency_at, Arg, CKind, Constraint, Touch, ALL_KINDS};
+use crate::constraints::{tangency_at, Arg, CKind, Constraint, SpecKind, Touch, ALL_KINDS};
 use crate::decompose::{Plan, PlanResult};
 use crate::diagnose::{summary as diag_summary, Diagnosis};
 use crate::homotopy::Alternative;
@@ -941,6 +941,71 @@ pub fn constraint_from_json(sk: &Sketch, v: &Json) -> Result<Constraint, String>
     c.claim = v.get("claim").map(|x| x.as_bool()).unwrap_or(false) && kind.claimable();
     c.intrinsic = v.get("intrinsic").map(|x| x.as_bool()).unwrap_or(false);
     Ok(c)
+}
+
+/// How many intervals a meshing is traced over for a report (#283).
+pub const MESHING_STEPS: usize = 24;
+
+/// What meshing `i` comes to after the solve (#283), in a line: whether its flanks touch at a
+/// point or along a line, the transmission error's range over its phase, and how long the path of
+/// contact is — or why it could not be traced.
+pub fn meshing_text(sk: &Sketch, i: usize) -> String {
+    let name = &sk.meshings[i].name;
+    use crate::envelope::meshing::Meshing;
+    let trace = Meshing::named(sk, i).and_then(|m| m.traced(MESHING_STEPS));
+    let t = match trace {
+        Ok(t) => t,
+        Err(why) => return format!("{name}: not traced — {why}"),
+    };
+    let Some([lo, hi]) = t.error_range() else {
+        return format!("{name}: not traced — no contact where its point holds it");
+    };
+    let n = t.found().count();
+    let lines = t.found().filter(|s| s.line).count();
+    let contact = match lines {
+        0 => "point contact",
+        l if l == n => "line contact",
+        _ => "point and line contact",
+    };
+    let deg = |v: f64| format!("{}°", crate::io::reading(SpecKind::Scalar, v));
+    let what = if t.ratio.is_some() { "the gear's angle" } else { "the gear's lag" };
+    let (first, last) = (t.phases[0], t.phases[t.phases.len() - 1]);
+    let path = crate::io::reading(SpecKind::Length, t.path_length());
+    let mut text = format!("{name}: {contact}; transmission error ({what}) {} … {} over the phase \
+                            {} … {}, the path of contact {path} long", deg(lo), deg(hi), deg(first),
+                           deg(last));
+    if n < t.phases.len() {
+        text += &format!(" ({} of {} phases found)", n, t.phases.len());
+    }
+    text
+}
+
+/// Every meshing's trace (#283): by name, each phase in degrees with the lag, the gear's angle
+/// error, the contact in the fixed frame, and whether it is a line contact — or why it could not
+/// be traced.
+pub fn meshings_json(sk: &Sketch) -> Json {
+    let one = |i: usize| -> Json {
+        let name = Json::Str(sk.meshings[i].name.clone());
+        use crate::envelope::meshing::Meshing;
+        let trace = Meshing::named(sk, i).and_then(|m| m.traced(MESHING_STEPS));
+        match trace {
+            Err(why) => object([("name", name), ("error", Json::Str(why))]),
+            Ok(t) => {
+                let rows = t.phases.iter().zip(&t.samples).map(|(&phase, s)| match s {
+                    None => object([("phase", Json::Num(phase))]),
+                    Some(s) => object([
+                        ("phase", Json::Num(phase)),
+                        ("lag", Json::Num(s.place.lag)),
+                        ("gear_error", s.gear_error.map_or(Json::Null, Json::Num)),
+                        ("position", Json::Arr(s.position.iter().map(|&x| Json::Num(x)).collect())),
+                        ("line", Json::Bool(s.line)),
+                    ]),
+                }).collect();
+                object([("name", name), ("trace", Json::Arr(rows))])
+            }
+        }
+    };
+    Json::Arr((0..sk.meshings.len()).map(one).collect())
 }
 
 /// The same immutable claim result supplies terminal and JSON reports.
