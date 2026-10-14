@@ -668,6 +668,10 @@ fn finish(mut cx: Elab<'_>, flat: &Flat<'_>) -> Elaborated {
             d.code = Code::E107;
         }
     }
+    // a declaration reading a formal whose argument was said to name nothing is not said again
+    // where the body reads it (#253): the argument is where the fault is
+    let quiet = &flat.expansion.quiet;
+    cx.diags.retain(|d| !(d.code == Code::E101 && d.stmt.is_some() && quiet.contains(&d.span)));
     let p = cx.doc;
     crate::modules::localize(p, &mut cx.diags);
     Elaborated { sketch: cx.sk, map: cx.map, diags: cx.diags, program: p.clone(), taken: false }

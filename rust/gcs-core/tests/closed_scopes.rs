@@ -360,3 +360,48 @@ fn build_or_parse_fails(src: &str) -> bool {
     let (p, errors, linked) = library::parse_linked(src);
     errors.is_empty() && linked.is_empty() && program::elaborate(&p).ok()
 }
+
+/// A closed component passing on a name it cannot see is told so at the argument, which names
+/// the formal it was for — not where the callee reads the formal, where nothing is wrong (#253).
+#[test]
+fn a_name_a_component_cannot_see_is_said_at_the_argument() {
+    let src = "\
+unit mm
+use std
+component Inner(view: plane) {
+  in view {
+    m := point
+  }
+}
+component Outer() {
+  i := Inner(std.top)
+}
+o := Outer()
+";
+    let e = build(src);
+    let at = src.find("std.top").unwrap();
+    assert_eq!(e.diags.len(), 1, "{:?}", e.diags);
+    let d = &e.diags[0];
+    let (lo, hi) = (d.span.lo as usize, d.span.hi as usize);
+    assert_eq!((d.code, lo, hi), (program::Code::E101, at, at + "std.top".len()), "{d:?}");
+    for word in ["`Outer`", "`std.top`", "`Inner`", "`view`", "closed"] {
+        assert!(d.message.contains(word), "{word}: {}", d.message);
+    }
+    // a name that is nowhere is said at the argument too, and a body reading its formal in a
+    // declaration is not told again
+    for (src, arg) in [
+        ("unit mm\nuse std\ncomponent Inner(q: point) {\n  m := point\n  l := line(q, m)\n}\n\
+          component Outer() {\n  i := Inner(std.origin)\n}\nin std.front {\no := Outer()\n}\n",
+         "std.origin"),
+        ("unit mm\nuse std\ncomponent Inner(q: point) {\n  m := point\n  l := line(q, m)\n}\n\
+          in std.front {\no := Inner(zork)\n}\n", "zork"),
+        ("unit mm\nuse std\ncomponent Inner(view: plane) {\n  in view {\n    m := point\n  }\n}\n\
+          o := Inner(zork)\n", "zork"),
+    ] {
+        let e = build(src);
+        let at = src.find(&format!("({arg})")).unwrap() + 1;
+        let spans: Vec<_> =
+            e.diags.iter().map(|d| (d.span.lo as usize, d.span.hi as usize)).collect();
+        assert_eq!(spans, vec![(at, at + arg.len())], "{src}: {:?}", e.diags);
+    }
+}
