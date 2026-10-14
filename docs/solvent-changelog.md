@@ -4,6 +4,18 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.94] Two flanks meshing are a locus.** `contact := meshing(pinion_flank, gear_flank, under:
+mesh, from:, to:)` turns the first flank with the pinion — `mesh`'s observer, `mesh :=
+motion(gear_turn, relative_to: pinion_turn)` — and the second with the gear, each an envelope in
+space the solve holds to or a cone, a cylinder or a revolution's side standing still in its member
+(a formed gear's flank), and is where they touch: at each phase of the pinion, the gear turned to
+the ratio's roll plus a lag, the transmission error (§6.15.4). `p coincident contact` holds a
+point to the path of contact, owning the phase `t`, the lag `lag` (degrees) and a place on each
+flank, so a pin states either — `coincident(t == 0deg, lag == 0.01)` — and a number that makes a
+flank solves from it. After the solve the contact is traced over the phase, and `solventc` reports
+each meshing's contact, transmission error and path (`spiral_bevel/contact.sv`, #283). `meshing`
+is an element keyword: `generation/spur_mesh.sv`'s motion called it is `mesh`.
+
 **[0.93] A document naming no unit is in millimetres.** Without a `unit` line a document is
 read exactly as under `unit mm` (§3.3.2): a bare number in a `Length` slot is a millimetre, a
 suffixed literal converts to it (`a distance(2in) b` is 50.8), and a geometry read in a seed, an

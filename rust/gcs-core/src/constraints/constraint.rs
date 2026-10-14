@@ -379,6 +379,12 @@ impl Constraint {
             let (n_par, n_const) = parts.map_or((0, 0), |p| (p.width(c), p.n_const()));
             return Key::Envelope { fk: c as u8, n_par, n_const };
         }
+        if self.kind == CKind::PointOnMeshing {
+            let lead = crate::envelope::meshing::LEAD;
+            let parts = self.meshing_parts(sk);
+            let (n_par, n_const) = parts.map_or((0, 0), |p| (p.width(lead), p.n_const()));
+            return Key::Meshing { n_par, n_const };
+        }
         match (self.kind.family_kernel(), self.curve_of()) {
             (Some(fk), Some(e)) => Key::Family { def: sk.curves[e.i()].def as usize, fk: fk as u8 },
             _ => Key::Static(self.kernel_id()),
@@ -409,6 +415,21 @@ impl Constraint {
             Arg::Ent(e) if e.kind == EntKind::Envelope => Some(*e),
             _ => None,
         }
+    }
+
+    /// The meshing a point on one is held to (#283) — the spec's `Meshing` slot.
+    pub fn meshing_of(&self) -> Option<EntRef> {
+        let (e, _) = self.kind.contact_on(SpecKind::Meshing)?;
+        match self.args.get(e)? {
+            Arg::Ent(e) if e.kind == EntKind::Meshing => Some(*e),
+            _ => None,
+        }
+    }
+
+    /// What a point on a meshing reads of it (`envelope::meshing::Parts`), where the solve can
+    /// read it.
+    pub fn meshing_parts(&self, sk: &Sketch) -> Option<crate::envelope::meshing::Parts> {
+        crate::envelope::meshing::Parts::of(sk, self.meshing_of()?.i()).ok()
     }
 
     /// What a contact reads of its envelope (`envelope::held::Parts`), where the solve can read it.
@@ -539,6 +560,9 @@ impl Constraint {
             None => match self.kind.envelope_contact() {
                 // an envelope contact's: a fact about the contact it states (#283)
                 Some(c) => c.rows(),
+                None if self.kind == CKind::PointOnMeshing => {
+                    crate::envelope::meshing::LEAD + crate::envelope::meshing::ROWS
+                }
                 None => kernels::kernel(self.kernel()).n_res,
             },
         }

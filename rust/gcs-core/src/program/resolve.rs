@@ -237,6 +237,15 @@ pub(super) fn follow(sk: &Sketch, mut e: EntRef, path: &[Seg]) -> Result<EntRef,
             };
             continue;
         }
+        // a meshing's motion is read by name, and its flanks are what it was written over (#283)
+        if e.kind == EntKind::Meshing && e.i() < sk.meshings.len() {
+            let m = &sk.meshings[e.i()];
+            e = match f.text.as_str() {
+                "motion" => EntRef::new(EntKind::Motion, m.motion as usize),
+                _ => return Err(format!("a meshing has motion, not `{}`", f.text)),
+            };
+            continue;
+        }
         let fields = e.kind.fields();
         let mut at = 0usize;
         let mut found = None;

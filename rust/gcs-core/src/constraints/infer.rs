@@ -14,6 +14,22 @@ pub fn seed_param(sk: &Sketch, kind: CKind, args: &[Arg], i: usize) -> f64 {
         let (Some(Arg::Ent(e)), Some(Arg::Ent(p))) = (args.get(env), args.get(at)) else { return 0.0 };
         return envelope_place(sk, e.i(), p.i()).map_or(0.0, |x| x[i - first]);
     }
+    // a point on a meshing starts at its phase (pinned, seeded, or 0 within the interval), no lag,
+    // and each flank's place nearest the point seen from its member there, the contact solved
+    // from those (#283)
+    if kind == CKind::PointOnMeshing {
+        let (Some(Arg::Ent(p)), Some(Arg::Ent(m))) = (args.first(), args.get(1)) else {
+            return 0.0;
+        };
+        let Some(e) = sk.meshings.get(m.i()) else { return 0.0 };
+        let [a, b] = e.roll;
+        let phase = match args.get(2) {
+            Some(Arg::Seed { value, .. }) => *value,
+            _ if a <= 0.0 && 0.0 <= b => 0.0,
+            _ => ((a + b) / 2.0).to_degrees(),
+        };
+        return meshing_place(sk, m.i(), sk.lifted(p.i()), phase).map_or(0.0, |x| x[i - 2]);
+    }
     match (kind, i) {
         // where the curve already comes nearest the thing it is being tied to: a curve can meet
         // a point or a line in several places, and the nearest is the branch the user drew
@@ -339,6 +355,13 @@ pub fn validate(
                                name(args[1].ent()), name(e)));
         }
     }
+    // a meshing a point is held to is one whose flanks and motion the solve can read (#283)
+    if kind == CKind::PointOnMeshing {
+        let c = Constraint::new(kind, args.to_vec());
+        let m = c.meshing_of().ok_or("a point on a meshing names a meshing")?;
+        crate::envelope::meshing::Parts::of(sk, m.i())
+            .map_err(|why| format!("the solve cannot hold anything to {}: {why}", name(m)))?;
+    }
     match kind {
         // a curvature reads the curve's second derivative, which a trace gives exactly only
         // where every row of its block has a Taylor form (`taylor.rs`): a residual by difference
@@ -522,6 +545,44 @@ fn envelope_place(sk: &Sketch, e: usize, p: usize) -> Option<[f64; 3]> {
         return Some(x);
     }
     let x = seed(&k, &values, at, roll)?;
+    LAST.with(|l| *l.borrow_mut() = Some((key, x)));
+    Some(x)
+}
+
+/// Where a point on a meshing would start were it stated now, the point standing at `at` and its
+/// phase where it stands (#283): what a document solve that fails seeds it again with
+/// (`solve`'s recoveries).
+pub fn meshing_seed(sk: &Sketch, c: &Constraint, at: [f64; 3]) -> Option<[f64; crate::envelope::meshing::UNKNOWNS]> {
+    let m = c.meshing_of()?;
+    meshing_place(sk, m.i(), at, c.args.get(2)?.value(sk))
+}
+
+/// Where on meshing `m` a solve holding a point at `at` to it at `phase` starts (#283):
+/// `envelope::meshing::seed` over its parts as the drawing stands — the phase, the lag and the two
+/// places — remembered for the last question, since a contact's eight unknowns ask it eight times.
+fn meshing_place(sk: &Sketch, m: usize, at: [f64; 3], phase: f64) -> Option<[f64; crate::envelope::meshing::UNKNOWNS]> {
+    use crate::envelope::meshing::{seed, Meshing, Parts};
+    use crate::model::Flank;
+    use std::cell::RefCell;
+    thread_local! {
+        static LAST: RefCell<Option<(Vec<f64>, [f64; crate::envelope::meshing::UNKNOWNS])>> = const { RefCell::new(None) };
+    }
+    let parts = Parts::of(sk, m).ok()?;
+    let e = &sk.meshings[m];
+    let k = parts.consts(0);
+    let values = parts.values(sk);
+    let rolls = e.flanks.clone().map(|f| match f {
+        Flank::Envelope(v) => sk.envelopes[v as usize].roll,
+        Flank::Formed(_) => [0.0; 2],
+    });
+    let key: Vec<f64> = k.iter().chain(&values).chain(&at).chain(rolls.iter().flatten())
+        .chain(&[phase]).copied().collect();
+    let last = LAST.with(|l| l.borrow().as_ref().filter(|(k, _)| *k == key).map(|(_, x)| *x));
+    if let Some(x) = last {
+        return Some(x);
+    }
+    let mesh = Meshing::new(k, values, e.roll)?;
+    let x = seed(&mesh, rolls, at, phase)?.values();
     LAST.with(|l| *l.borrow_mut() = Some((key, x)));
     Some(x)
 }

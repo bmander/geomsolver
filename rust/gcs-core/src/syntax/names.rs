@@ -28,6 +28,7 @@ pub fn kind_initial(k: EntKind) -> char {
         EntKind::Seam => 'j',
         EntKind::Vertex => 'w',
         EntKind::Edge => 'k',
+        EntKind::Meshing => 'g',
         // `a` is the arc's: an aXis
         EntKind::Axis => 'x',
         EntKind::Point | EntKind::Line | EntKind::Circle | EntKind::Arc | EntKind::Spline => {

@@ -551,3 +551,73 @@ f4 curvature(at: w) k
         }
     }
 }
+
+/// A point on the meshing of two flanks (#283, step 3) — a generated flank against a formed one
+/// read off a cone set whose number is an unknown, against a formed revolution's round side, and
+/// two generated flanks (each an envelope under a motion of its own) — under a screw mesh of skew
+/// shafts.  Checked at the seeds and at points knocked off them.
+#[test]
+fn meshing_contacts_agree_with_finite_differences() {
+    const SRC: &str = "\
+unit mm
+use std
+o := point hint((0, 0, 0))
+z := point hint((0, 0, 10))
+fix((0, 0, 0)) o
+fix((0, 0, 10)) z
+ax := line(o, z)
+a := point hint((0, 30, 0))
+b := point hint((10, 30, 2))
+fix((0, 30, 0)) a
+fix((10, 30, 2)) b
+gear_ax := line(a, b)
+cone := std.Cone(ax, half: hint(20deg))
+spin := motion(about: ax)
+gear_turn := motion(about: gear_ax, ratio: -0.5, advance: 2mm)
+mesh := motion(gear_turn, relative_to: spin)
+back := motion(spin, relative_to: gear_turn)
+c1 := point hint((30, 0, -5))
+c2 := point hint((31, 1, 5))
+cax := line(c1, c2)
+cyl := std.Cylinder(cax, r: hint(5mm))
+pinion_flank := envelope(cyl, under: back, from: -30deg, to: 30deg)
+gear_flank := envelope(cone, under: mesh, from: -30deg, to: 30deg)
+in std.front {
+  rc := point hint((20, 4))
+  rim := circle(center: rc) hint(r: 2)
+  ro := point hint((0, 0))
+  rq := point hint((0, 10))
+  rax := line(ro, rq)
+}
+ring := solid(face(rim), about: rax)
+round := surface(ring, rim)
+formed := meshing(pinion_flank, cone, under: mesh, from: -20deg, to: 20deg)
+rounded := meshing(pinion_flank, round, under: mesh, from: -20deg, to: 20deg)
+both := meshing(pinion_flank, gear_flank, under: mesh, from: -20deg, to: 20deg)
+p := point hint((9, 3, 1))
+p coincident(t == 5deg) formed
+r := point hint((20, 3, 4))
+r coincident rounded
+s := point hint((7, 1, 4))
+s coincident(lag == 0.5) both
+";
+    let (prog, errs) = crate::common::parse(SRC);
+    assert!(errs.is_empty(), "{errs:?}");
+    let e = gcs_core::program::elaborate(&prog);
+    assert!(e.ok(), "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
+    let mut sk = e.sketch;
+    assert_eq!(sk.constraints.iter().filter(|c| c.kind == CKind::PointOnMeshing).count(), 3);
+    let mut rng = Rng::new(283);
+    for round in 0..4 {
+        if round > 0 {
+            for p in sk.params.iter_mut().filter(|p| !p.fixed) {
+                p.value += rng.uniform(-0.05, 0.05) * (1.0 + p.value.abs().min(10.0));
+            }
+        }
+        for c in sk.constraints.iter().filter(|c| c.kind == CKind::PointOnMeshing) {
+            let err = check_constraint(&sk, c, 1e-6, 1e-7)
+                .unwrap_or_else(|e| panic!("round {round}: {e}"));
+            assert!(err.is_finite());
+        }
+    }
+}
