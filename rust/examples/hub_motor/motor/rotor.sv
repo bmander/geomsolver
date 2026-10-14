@@ -7,6 +7,8 @@
 // N, S round the ring (the drawing does not know a magnet's polarity: it is marked on the part).
 // The ring's ends are tapped for the covers' screws, twelve a side on its mid-wall circle.
 
+use std (horizontal)
+use motor.dims
 use motor.parts
 
 component Rotor(f: group, dims: group) {
@@ -63,4 +65,24 @@ component Rotor(f: group, dims: group) {
     ring_s := motor.parts.Box(f.so, x0: -dims.half, y0: dims.Rr, x1: dims.half, y1: dims.Ro)
     magnet_s := motor.parts.Box(f.so, x0: -dims.L / 2, y0: dims.Rm, x1: dims.L / 2, y1: dims.Rr)
   }
+}
+
+// Open this file to preview the rotor alone: the ring and its magnets.
+preview {
+  unit mm
+  // the frame, as the assembly draws it: the end view's datum and the axle's centreline
+  in std.front {
+    construction centerline datum := line(std.origin, hint((150, 0)))
+    horizontal datum
+    length(150mm) datum
+  }
+  in std.side {
+    construction centerline ax := line(std.side.origin, hint((100, 0)))
+    horizontal ax
+    length(100mm) ax
+  }
+  frame := {front: std.front, side: std.side, top: std.top, o: std.origin, datum: datum,
+            so: std.side.origin, ax: ax, to: std.top.origin}
+
+  rotor := Rotor(frame, dims: motor.dims.motor_dims)
 }
