@@ -1065,8 +1065,7 @@ impl Curve {
     /// interval (their hull), a blend's rail by its ends where it is carried along a line and by the
     /// ring about the axis it is screwed round otherwise. A traced curve is its points' box grown by
     /// twice the largest sagitta measured at its chords' midpoints: the one bound measured rather
-    /// than proved, since
-    /// what bounds a trace's sag is the spacing it was traced at.
+    /// than proved, since what bounds a trace's sag is the spacing it was traced at.
     pub fn bounds(&self,[t0,t1]: [f64;2]) -> Box3 {
         let (t0,t1) = (t0.min(t1),t0.max(t1));
         let ends = || [self.point(t0),self.point(t1)];

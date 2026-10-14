@@ -25,7 +25,8 @@ pub(crate) struct SweepParts {
     pub(crate) draft: Option<Arg>,
 }
 
-/// The labels a solid's brackets may carry beside the face or the operands.
+/// The labels a solid's brackets may carry beside the face or the operands — and `along`, retired,
+/// read as one so that its refusal is said at the key (`sweep_arg`).
 fn sweep_label(l: &str) -> bool {
     matches!(l, "from" | "to" | "depth" | "about" | "sweep" | "sense" | "through" | "along" | "under" | "at"
         | "draft")

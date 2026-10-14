@@ -7,11 +7,13 @@
 //! a cylinder, a cone or a torus where its numbers say it is one.
 //!
 //! The fixtures are the L0 target programs (`docs/lofts/l0/`), over the station words they were
-//! written with (`std.OnLine` and its kin since L3, drafted in L0's `lofts.sv`), and the gates are their closed forms: a reduced section is
-//! its prismatoid, a twisted prism A·L at any twist and under any law (Cavalieri), a scaled one a
-//! frustum and a pyramid, a bend and a thread Pappus, a wire square to its helix A × the helix's
-//! length, a smooth loft π∫r² by a quadrature exact for its rail's degree — each read off the exact
-//! B-rep (`props::volume`, its boundary checked by `Brep::check`) to a part in 10⁹.
+//! written with (`std.OnLine` and its kin since L3, drafted in L0's `lofts.sv`), and the gates are
+//! their closed forms: a reduced section is its prismatoid, a twisted prism A·L at any twist and
+//! under any law (Cavalieri), a scaled one a frustum and a pyramid, a bend and a thread Pappus, a
+//! wire square to its helix A × the helix's length, a smooth loft π∫r² by a quadrature exact for
+//! its rail's degree — each read off the exact B-rep (`props::volume`, its boundary checked by
+//! `Brep::check`) to a part in 10⁹.
+
 
 use gcs_core::model::{EntKind, SolidDef};
 use gcs_core::program::{elaborate, Elaborated};

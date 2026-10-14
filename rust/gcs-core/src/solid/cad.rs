@@ -37,10 +37,10 @@ pub fn recipe(sk: &Sketch,root: usize) -> Result<Json,String> {
 }
 
 /// `recipe` written about another origin: every point it carries less `by` (millimetres) — a
-/// profile's edges' ends, centres and poles, a guide's start and centre, a placement's translation
-/// (`t + R by − by`) — and every direction as it was; a point that only places a plane or a line
-/// put where its plane or line comes nearest the new origin (`brep::recipe::Writer`). A kernel
-/// building a solid far from the world's origin builds it about its own instead.
+/// profile's edges' ends, centres and poles, a placement's translation (`t + R by − by`) — and
+/// every direction as it was; a point that only places a plane or a line put where its plane or
+/// line comes nearest the new origin (`brep::recipe::Writer`). A kernel building a solid far from
+/// the world's origin builds it about its own instead.
 pub fn recipe_about(sk: &Sketch,root: usize,by: [f64;3]) -> Result<Json,String> {
     Ok(recipe_with(sk,root,false,Some(by))?.recipe)
 }
@@ -341,12 +341,12 @@ fn body_terms(stock: u32,on: &[u32],cut: &[u32],bound: &[u32]) -> Json {
 pub const FIT_MM: f64 = 1e-4;
 
 /// The cubic B-spline through a curve's samples (Piegl and Tiller's global interpolation,
-/// `curve::interpolating_ctrl_at`) in the curve's own coordinates, over its interval from first
-/// end to second, its parameter the fraction of the curve's at every sample (so a loft pairs the
-/// fit where it pairs the curve): the samples doubled until every sample halfway between two it
-/// passes through is within `tol` of it, measured by projecting that sample onto the fit. A
-/// trimmed stretch's or a free curve's first and last poles are its end points themselves, which
-/// its neighbours share. The poles, the knots and the error measured; `None` past 4096 samples.
+/// `curve::interpolating_ctrl_at`) in the curve's own coordinates, over its interval from first end
+/// to second, its parameter the fraction of the curve's at every sample: the samples doubled until
+/// every sample halfway between two it passes through is within `tol` of it, measured by projecting
+/// that sample onto the fit. A trimmed stretch's or a free curve's first and last poles are its end
+/// points themselves, which its neighbours share. The poles, the knots and the error measured;
+/// `None` past 4096 samples.
 pub fn fit_curve(sk: &Sketch,i: usize,tol: f64) -> Option<(Vec<(f64,f64)>,Vec<f64>,f64)> {
     let (a,b) = sk.curve_domain(i);
     let ends = sk.curve_ends(i).map(|(p,q)| (sk.point_xy(p as usize),sk.point_xy(q as usize)));

@@ -71,9 +71,9 @@ fn todays_lofts_are_running_sections_at_their_closed_forms() {
         let s = e.sketch.evaluated_solid(index(&e, "body"), Report).unwrap();
         near(s.volume(), want, 1e-3, what);
         assert_eq!(super::solid::unpaired(s.mesh()), 0, "{what}");
-        let faces: Vec<String> = s.surviving_faces().iter().map(|f| f.to_string()).collect();
-        assert!(faces.iter().any(|f| f == "body.start") && faces.iter().any(|f| f == "body.end"),
-                "{what}: {faces:?}");
+        let faces = s.surviving_faces();
+        let has = |cap: &str| faces.iter().any(|f| f == cap);
+        assert!(has("body.start") && has("body.end"), "{what}: {faces:?}");
     }
 }
 
@@ -81,24 +81,22 @@ fn todays_lofts_are_running_sections_at_their_closed_forms() {
 /// elbow's planes and cylinders, and the bend's and the twisted duct's sheets, one wall each edge.
 #[test]
 fn the_walls_are_named_by_the_section_and_keep_their_kinds() {
-    let e = determined(REDUCER);
-    let k = kinds(&e, "body");
-    for wall in hollow_walls("body") { assert_eq!(k.get(&wall), Some(&vec!["plane"]), "{wall}: {k:?}"); }
-    assert_eq!(k.len(), 10, "{k:?}");
-    let e = determined(ELBOW);
-    let k = kinds(&e, "body");
-    let flat = |w: &str| k[w] == ["plane"];
-    let round = |w: &str| k[w] == ["cylinder"];
-    for wall in hollow_walls("body") { assert!(flat(&wall) || round(&wall), "{wall}: {k:?}"); }
-    assert_eq!(hollow_walls("body").iter().filter(|w| round(w)).count(), 4, "{k:?}");
-    assert_eq!(k.len(), 10, "{k:?}");
-    // narrowing as it turns, no wall stays on one surface: every one a sheet
-    let e = determined(BEND);
-    let k = kinds(&e, "body");
-    for wall in hollow_walls("body") { assert_eq!(k.get(&wall), Some(&vec!["family"]), "{wall}: {k:?}"); }
-    assert_eq!(k.len(), 10, "{k:?}");
-    let e = determined(TWIST);
-    let k = kinds(&e, "body");
+    // narrowing as it turns, none of the bend's walls stays on one surface
+    for (what, src, flat, round, sheets) in
+        [("reducer", REDUCER, 8, 0, 0), ("elbow", ELBOW, 4, 4, 0), ("bend", BEND, 0, 0, 8)] {
+        let k = kinds(&determined(src), "body");
+        let walls: Vec<&'static str> = hollow_walls("body").iter()
+            .map(|w| match k.get(w).map(Vec::as_slice) {
+                Some([kind]) => *kind,
+                other => panic!("{what}: wall `{w}` is {other:?}: {k:?}"),
+            })
+            .collect();
+        let count = |kind: &str| walls.iter().filter(|w| **w == kind).count();
+        let counts = (count("plane"), count("cylinder"), count("family"));
+        assert_eq!(counts, (flat, round, sheets), "{what}: {k:?}");
+        assert_eq!(k.len(), 10, "{what}: the walls and the two caps: {k:?}");
+    }
+    let k = kinds(&determined(TWIST), "body");
     assert_eq!(k.len(), 6, "{k:?}");
     assert_eq!(k.values().filter(|v| **v == ["family"]).count(), 4, "{k:?}");
 }
@@ -198,7 +196,9 @@ tube := solid(Tube({guide}, std.z).f over s in (0, 1))
 /// round a quarter of radius 30 is Pappus, π·3²·30·π/2.
 #[test]
 fn on_stands_where_each_kind_s_word_does() {
-    let vol = |word: &str, kind: &str, guide: &str| exact(&determined(&tube(word, kind, guide)), "tube");
+    let vol = |word: &str, kind: &str, guide: &str| {
+        exact(&determined(&tube(word, kind, guide)), "tube")
+    };
     near(vol("On", "path", "straight"), 9.0 * PI * 40.0, 1e-9, "On along a line");
     near(vol("OnLine", "line", "straight"), 9.0 * PI * 40.0, 1e-9, "OnLine");
     near(vol("OnArc", "arc", "bend"), 9.0 * PI * 30.0 * PI / 2.0, 1e-9, "OnArc");
