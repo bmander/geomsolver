@@ -46,6 +46,7 @@ comment     ::= '//' ... end of line  |  '/*' ... '*/'
 identifier  ::= [A-Za-z_][A-Za-z0-9_]*
 number      ::= decimal, exponent form allowed; `3 1/2` is a mixed fraction;
                 a unit may follow: 80mm  45deg  0.5rad  6"  1' 6 3/16"   (1.6)
+                and for a design table's values: 745.7W  48V  255rpm  0.85T  27.9Nm
 ```
 
 A newline ends a statement except inside brackets, after a trailing chain joint (1.7), and at a
@@ -117,7 +118,7 @@ NAME := face(EDGE, ..., holes: LOOP)    a planar region                         
 NAME := solid(FACE, SWEEP...)           a face swept: depth:/from:/to:/through:, about:, along:
 NAME := solid(Comp(ARGS).FACE over F in (E, E))   a face family: the face as the formal F runs
 NAME := solid(SOLID) | solid(SET)       a body over a stock; the points of a region
-NAME := solid()                         an empty body: what is in `union` with it (0.98)
+NAME := solid()                         an empty body: what is in `union` with it (0.99)
 NAME := solid(SOLID, under: MOTION, at: E | from: E, to: E | through: BODY)   placed by, or swept through, a motion
 REF union REF | REF cut REF | REF common REF  material added to, removed from, shared with a body
 NAME := motion | envelope | meshing | surface | patch | seam | vertex | edge(...)    (1.15)
@@ -356,6 +357,18 @@ c distance(1' 6 3/16") d            // one literal: spaces separate the parts, a
   not make `w` a length; `w := 80mm` does, as does a formal declared `Length`.
 - `3/16"` is a division; a lone fractional inch is `0.1875"` or `0 3/16"`.
 - `pi` is dimensionless; `tau` and `turn` are one full turn; radians are written `* 1rad`.
+- **A design table's figures carry units too**: mass, time and current are bases beside length
+  and angle, and derive the rest — `kg g s ms A mA Hz kHz rpm N kN Nm J W kW V mV kV ohm Pa kPa
+  MPa GPa Wb mWb T mT`. They are for values: no slot takes one, so a figure reaches a constraint
+  divided by its unit (`torque / 1Nm`). There is no `h` or `min`. `rpm` is an angle over a time:
+
+  ```
+  power := 745.7W
+  omega := 255rpm
+  torque := power / (omega / 1rad)    // a torque: torque / 1Nm is 27.9
+  amps := power / (48V * 0.86)        // amps + torque is refused
+  freq := 46 / 2 * omega / turn       // 97.8Hz
+  ```
 - **There is no string literal**: `"` is the inch mark, and a word argument is bare (`at: start`).
 - A value, input, formal or index named after a built-in (`tau`, `pi`, `min`, …) does not shadow
   it and ends up with two values: W112. Rename it.
@@ -1250,7 +1263,7 @@ bore cut body
 - **`tip common body`** keeps only what the body has in common with `tip`. Union comes first;
   `cut` and `common` commute. (Through 0.84 the word was `bound`, now refused: a bound is a
   dimension that chooses a root, §1.11.)
-- **A pattern of solids** (0.98). A solid declared inside a `ring` is one solid a copy, each
+- **A pattern of solids** (0.99). A solid declared inside a `ring` is one solid a copy, each
   reached by its index (`peg[3]`), as a point of the ring is. To join every copy alike, start from
   an empty body — its first `union` is its stock — or cut each from the body:
 

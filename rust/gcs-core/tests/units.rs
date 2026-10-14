@@ -538,3 +538,159 @@ fn a_slot_mismatch_is_an_error_and_a_free_name_is_not() {
     let d = diag(&format!("{two}a distance(w) b\n"));
     assert_eq!(d.iter().map(|x| x.0.as_str()).collect::<Vec<_>>(), ["E101"], "{d:?}");
 }
+
+/* -- a design table's figures (#311) -------------------------------------------------------- */
+
+/// The solved number a document gives a name (`r.q.x`), or `None` where it made nothing there.
+fn position(src: &str, name: &str) -> Option<f64> {
+    let (p, errs) = parse(src);
+    assert!(errs.is_empty(), "{errs:?}");
+    let e = elaborate(&p);
+    assert!(e.ok(), "{:?}", e.errors().map(|d| d.message.clone()).collect::<Vec<_>>());
+    let mut at = gcs_core::report::positions(&e.sketch, &e.map).into_iter();
+    at.find(|(n, _)| n == name).map(|(_, v)| v)
+}
+
+/// What a dimensionless expression comes to, read off the slot it stands in: a plain number in a
+/// `Length` slot is the document's length, so the slot's number is the expression's.
+fn figure(unit: &str, table: &str, expr: &str) -> f64 {
+    let src = format!("{unit}{table}{PAIR}a distance({expr}) b\n");
+    let sk = read(&src).unwrap_or_else(|e| panic!("{expr}: {e:?}"));
+    sk.user_constraints()[0].args[2].num()
+}
+
+/// The hub motor's duty, written as values that carry their units: `torque := power / omega` is
+/// a torque because the arithmetic says so, and dividing by a unit reads a figure back.
+const DUTY: &str = "\
+power := 745.7W
+volts := 48V
+omega := 255rpm
+efficiency := 0.86
+torque := power / (omega / 1rad)
+amps := power / (volts * efficiency)
+freq := 46 / 2 * omega / turn
+shear := torque / (2 * pi * (103.1mm)^2 * 35mm)
+";
+
+/// **Mass, time and current derive the rest**, and a figure comes to the same number in every
+/// document: a watt in a millimetre document is 10⁶ kg·mm²/s³, but a watt divided by a watt is
+/// one whatever the length is in.
+#[test]
+fn a_design_tables_figures_carry_their_units() {
+    let omega = 255.0 * 2.0 * std::f64::consts::PI / 60.0;
+    let torque = 745.7 / omega;
+    let shear = torque / (2.0 * std::f64::consts::PI * 0.1031f64.powi(2) * 0.035);
+    for unit in ["", "unit mm\n", "unit m\n", "unit in\n"] {
+        for (expr, want) in [
+            ("omega / 1rad * 1s", omega),
+            ("torque / 1Nm", torque),
+            ("torque / (1N * 1m)", torque),
+            ("amps / 1A", 745.7 / (48.0 * 0.86)),
+            ("freq / 1Hz", 46.0 / 2.0 * 255.0 / 60.0),
+            ("shear / 1kPa", shear / 1e3),
+        ] {
+            let got = figure(unit, DUTY, expr);
+            assert!((got - want).abs() < 1e-9 * want, "{unit:?} {expr}: {got}, want {want}");
+        }
+    }
+}
+
+/// The units agree with one another as SI says they do, in any document's lengths.
+#[test]
+fn the_units_are_coherent() {
+    for unit in ["", "unit m\n", "unit in\n", "unit thou\n"] {
+        for (expr, want) in [
+            ("1W / (1kg * (1m)^2 / (1s)^3)", 1.0),
+            ("1N / (1kg * 1m / (1s)^2)", 1.0),
+            ("1J / (1N * 1m)", 1.0),
+            ("1Nm / 1J", 1.0),
+            ("1V * 1A / 1W", 1.0),
+            ("1ohm * 1A / 1V", 1.0),
+            ("1Wb / (1V * 1s)", 1.0),
+            ("1T * (1m)^2 / 1Wb", 1.0),
+            ("1MPa / (1N / (1mm)^2)", 1.0),
+            ("1Pa * (1m)^2 / 1N", 1.0),
+            ("1Hz * 1s", 1.0),
+            ("60s * 1rpm / turn", 1.0),
+            ("1kW / 1W", 1e3),
+            ("1kV / 1mV", 1e6),
+            ("1kg / 1g", 1e3),
+            ("1s / 1ms", 1e3),
+            ("1A / 1mA", 1e3),
+            ("1kHz / 1Hz", 1e3),
+            ("1kN / 1N", 1e3),
+            ("1GPa / 1kPa", 1e6),
+            ("1mWb / 1Wb", 1e-3),
+            ("1mT / 1T", 1e-3),
+        ] {
+            let got = figure(unit, "", expr);
+            assert!((got - want).abs() < 1e-12 * want, "{unit:?} {expr}: {got}, want {want}");
+        }
+    }
+}
+
+/// `+` and `-` demand agreement for the new bases as for length and angle, and a diagnostic
+/// names the SI unit a dimension is: `Length^2·Mass·Time^-3` is a watt.
+#[test]
+fn a_figure_that_mixes_is_an_error() {
+    says(&format!("{DUTY}bad := torque + power\n"), "(N·m)` and `Length^2·Mass·Time^-3 (W)");
+    says(&format!("{DUTY}bad := amps - volts\n"), "cannot be added");
+    // the angle stays in an angular speed until a radian takes it out
+    says(&format!("{DUTY}bad := power / omega - torque\n"), "cannot be added");
+    says("bad := 3V + 2\n", "cannot be added");
+    assert_eq!(Dim::MASS.name(), "Mass (kg)");
+    assert_eq!(Dim::TIME.div(Dim::TIME).div(Dim::TIME).name(), "Time^-1 (Hz)");
+    assert_eq!(Dim::LENGTH.mul(Dim::LENGTH).name(), "Length^2", "a length's names are unchanged");
+}
+
+/// **No slot is of the new bases**: a figure is a value, and one that reaches a constraint
+/// unread by a unit is refused there as an angle is in a length slot.
+#[test]
+fn a_figure_reaches_no_constraint() {
+    says(&format!("{DUTY}{PAIR}a distance(power) b\n"), "is Length, and this is Length^2");
+    says(&format!("{DUTY}{PAIR}c := point hint((1, 1))\nm := line(b, c)\nl angle(omega) m\n"),
+        "is Angle, and this is Angle·Time^-1 (deg/s)");
+    says("unit V\nuse std\nin std.front {\na := point\n}\n", "a document's unit is its length");
+}
+
+/// A figure carries its dimension through a substitution: handed to a component in a group, the
+/// number written in for it says what it is, so the component's arithmetic checks as the root's.
+#[test]
+fn a_figure_keeps_its_dimension_in_a_component() {
+    let src = |unit: &str, read: &str| {
+        format!("{unit}use std\n{DUTY}dims := {{ t: torque, k: shear }}
+frame := {{ front: std.front }}
+component Read(f: group, dims: group) {{
+  in f.front {{
+    a := point hint((0, 0))
+    b := point hint((60, 0))
+  }}
+  a distance({read}) b
+}}
+r := Read(frame, dims: dims)
+")
+    };
+    let omega = 255.0 * 2.0 * std::f64::consts::PI / 60.0;
+    for unit in ["", "unit in\n"] {
+        let sk = read(&src(unit, "dims.t / 1Nm")).expect("a torque over a newton-metre");
+        let d = sk.user_constraints()[0].args[2].num();
+        assert!((d - 745.7 / omega).abs() < 1e-9, "{unit:?}: {d}");
+        says(&src(unit, "dims.t / 1W"), "is Length, and this is Time (s)");
+        says(&src(unit, "dims.t + dims.k"), "cannot be added");
+    }
+}
+
+/// A unit is only a suffix: a name spelled like one is still a name, and `when` compares figures
+/// that agree.
+#[test]
+fn a_unit_is_only_a_suffix() {
+    let sk = read(&format!("V := 4\nA := 2V / 1V\n{PAIR}a distance(V * A * 10) b\n"))
+        .expect("`V` and `A` are names");
+    assert!((sk.user_constraints()[0].args[2].num() - 80.0).abs() < 1e-12);
+    let when = |cond: &str| {
+        format!("use std\n{DUTY}when {cond} {{\n  z := point\n  fix((1, 1, 1)) z\n}}\n")
+    };
+    assert!(position(&when("torque > 20Nm"), "z.x").is_some());
+    assert!(position(&when("torque > 30Nm"), "z.x").is_none());
+    says(&when("torque > 20"), "cannot be compared");
+}

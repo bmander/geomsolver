@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.98 — October 2026**
+**Specification, Draft 0.99 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -135,6 +135,8 @@ Implementations **MUST** check dimensions in expressions and constraints, and MU
 
 **Two base dimensions**, because two is what the language has: a **length** and an **angle**. A quantity is a rational power of each — rational, because `sqrt` halves one and `sqrt(area)` is a length.
 
+**[0.98] Three more for values: a mass, a time and a current.** A machine's sizing lives in the same table as its geometry, and its figures check as its lengths do: `torque := power / omega` is a torque because the arithmetic says so, and `torque + power` is an error. The three are enough to derive every unit of §3.3.1. **No slot is of them** — every slot of §9.3 is a length, an angle or a plain number — so a figure carrying one reaches a constraint only divided by its unit (`torque / 1Nm`), as an angle reaches a length slot only through a function of it. A number of mass, time or current is in kilograms, seconds and amperes, and a length in it in the document's unit (§3.3.2): a watt in a millimetre document is 10⁶ kg·mm²/s³, and `1W / (1kg * (1m)^2 / (1s)^3)` is 1 in every document. A diagnostic names a dimension by its bases' powers and, where an SI unit is that dimension, the unit: `Length^2·Mass·Time^-3 (W)`.
+
 - `*` and `/` **derive**: the exponents add and subtract.
 - `+` and `-` **demand agreement**, and so do `min`, `max`, `hypot` and `atan2`'s two arguments.
 - **[0.72]** So do a comparison's two sides — `<`, `<=`, `>`, `>=`, `==`, `!=` — which make no number but a condition, read only by `when` (§12.9): `relief > 0mm`, never `relief > 0`.
@@ -167,6 +169,26 @@ A **name** is worth a number, and where that number is *used* decides what it is
 ```
 
 A number MAY carry a unit. The length units are `mm`, `cm`, `m`, `km`, `in`, `ft`, `thou`; the angle units are `deg`, `rad`, `grad`. `'` and `"` are the foot and inch marks.
+
+**[0.98]** The units of a design table's figures:
+
+| dimension | units |
+|---|---|
+| mass | `kg`, `g` |
+| time | `s`, `ms` |
+| current | `A`, `mA` |
+| frequency (Time⁻¹) | `Hz`, `kHz` |
+| angular speed (Angle·Time⁻¹) | `rpm` |
+| force | `N`, `kN` |
+| torque, energy | `Nm`, `J` |
+| power | `W`, `kW` |
+| voltage | `V`, `mV`, `kV` |
+| resistance | `ohm` |
+| pressure, stress | `Pa`, `kPa`, `MPa`, `GPa` |
+| magnetic flux | `Wb`, `mWb` |
+| flux density | `T`, `mT` |
+
+A unit is a suffix only, so `48V` is a voltage and `V` alone is still a name. There is no `h` and no `min`, which are a height and a function long before they are an hour and a minute. `rpm` is an angle over a time, so `255rpm / 1rad` is the angular speed in rad/s and `255rpm / turn` the revolutions a second, `1Hz` beside it.
 
 **Feet-and-inches is one literal**, and it is a rule the language already had: *a space is what tells the readings apart*, exactly as it does in a mixed fraction, where `3 1/2` is three and a half and `31/2` is a division. So `1' 6"` is one length for the same reason.
 
@@ -858,7 +880,7 @@ block := solid(face(mouth, side_r, lid, side_l), from: face, to: back)
   caps `start` and `end`; an end that vanished has no cap. *Non-normative:* an implementation
   facets what the stations sweep within the sheet's flatness; its exact surfaces are later work.
 - **A revolution** turns a face about `about:` a line or an axis, which MUST be one of the two (**E081**) and MUST lie in the **face's own plane** (E081) — a line drawn in another view names a direction this face knows nothing about. **[0.67]** A line lies there by membership; an axis where it is one of the plane's own axes (`std.z` on `std.front`), or, held entirely by `fix` (the plane too), where it stands now — else, placed by the solve, where the solid is evaluated, which refuses the solid if it does not. `sweep:` is how far and is a **magnitude**, a full turn where the document writes none; **which way is a word, not a sign** (§9.2, §9.4): `sense: cw | ccw`, right-handed about the line's own `p1 → p2` (an axis's own direction) unless `cw` is written, and a negative `sweep:` is **E040** at the value, in the words of the selector that replaces it.
-- **A body** names its **stock** in the brackets and takes its features from the **[0.32]** `union`, `cut` and **[0.22]** `common` **[0.85]** statements that name it. A solid whose brackets hold solids and no face is a body. **[0.98]** A solid whose brackets hold nothing, `pegs := solid()`, is an **empty body**: its stock is the first solid in `union` with it, so `B(s)` below is read with `S(s)` empty; which is first is no matter, the union being a set. A pattern then joins every copy alike — `repeat n as i { peg[i] union pegs }` — with none written apart as the stock. An empty body nothing is in `union` with is **E080** at its declaration, whatever cuts it. **[0.31]** A swept solid that a `union`, `cut` or `common` statement names is a body too, whose stock is its own sweep: the name means the sweep with its features wherever it is read, the sweep's faces keep their names (`plate.near`, not `plate.plate.near`), and a feature's are reached through it (`plate.hub.near`). A document wanting the bare sweep and the finished part under two names writes `body := solid(plate)` and puts the features on `body`.
+- **A body** names its **stock** in the brackets and takes its features from the **[0.32]** `union`, `cut` and **[0.22]** `common` **[0.85]** statements that name it. A solid whose brackets hold solids and no face is a body. **[0.99]** A solid whose brackets hold nothing, `pegs := solid()`, is an **empty body**: its stock is the first solid in `union` with it, so `B(s)` below is read with `S(s)` empty; which is first is no matter, the union being a set. A pattern then joins every copy alike — `repeat n as i { peg[i] union pegs }` — with none written apart as the stock. An empty body nothing is in `union` with is **E080** at its declaration, whatever cuts it. **[0.31]** A swept solid that a `union`, `cut` or `common` statement names is a body too, whose stock is its own sweep: the name means the sweep with its features wherever it is read, the sweep's faces keep their names (`plate.near`, not `plate.plate.near`), and a feature's are reached through it (`plate.hub.near`). A document wanting the bare sweep and the finished part under two names writes `body := solid(plate)` and puts the features on `body`.
 
 **The body rule, and the whole of it.**
 

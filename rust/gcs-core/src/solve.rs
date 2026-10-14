@@ -27,7 +27,7 @@ const RESIZE: f64 = 4.0;
 
 /// How many times a solve that ends on a root of the constants it was compiled with, and no
 /// root of the drawing's, is solved on from there (`System::solve_unsteered`).
-const REFRAMES: usize = 3;
+pub(super) const REFRAMES: usize = 3;
 
 /// Whether a row of the drawing has constants read off the pose (`CKind::reads_pose`): only then
 /// are they read again as a solve goes (`REFRAMES`, the block pass).
@@ -419,6 +419,16 @@ impl System {
     }
 
     fn solve_compiled(&mut self, sk: &mut Sketch, opts: SolveOpts) -> SolveResult {
+        // a document holding a point to an envelope or a meshing is solved a block at a time
+        // first: each contact is seeded where its sources stand once the blocks before it have
+        // placed them (#304), which a whole-system DogLeg from the seeds never sees
+        let first =
+            opts.blocks == BlockMode::Rescue && opts.document() && blocks::holds_contacts(sk);
+        let opts = if first {
+            SolveOpts { blocks: BlockMode::First, ..opts }
+        } else {
+            opts
+        };
         let z0 = self.z0(sk);
         let dogleg = opts.method == Method::DogLeg;
         let mut z = z0.clone();

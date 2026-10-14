@@ -173,7 +173,7 @@ pub struct System {
     ent_slot: Vec<i32>,
     ent_w: Vec<f64>,
     csr_data: Vec<f64>,
-    slot_of: BTreeMap<u32, (usize, usize)>,
+    pub(crate) slot_of: BTreeMap<u32, (usize, usize)>,
     ata: Option<Ata>,
     /// The kernel of each block, by `Block::kid` — see `build_kernel`.
     kernels: Vec<Kernel>,
@@ -1160,7 +1160,7 @@ impl System {
     }
 
     /// Every residual row of the given instances, in order.
-    fn rows_of(&self, instances: &[(usize, usize)]) -> Vec<usize> {
+    pub(crate) fn rows_of(&self, instances: &[(usize, usize)]) -> Vec<usize> {
         let mut rows = Vec::new();
         for &(b, i) in instances {
             let n_res = self.kernels[self.blocks[b].kid].n_res;

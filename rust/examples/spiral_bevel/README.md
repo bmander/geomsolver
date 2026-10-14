@@ -10,12 +10,15 @@ feeds one, computes a point with `sin` and `cos`.
 one call, `pair := HypoidPair(std.top, std.y, std.z, …)`, passing them on by name. The component
 `HypoidPair` reads as the steps a designer takes, each a component of its own below it, so every
 name the pair makes is under `pair` (`pair.pinion.body`, `pair.gear_cone.M`, `pair.mill.ax`).
-**No point is seeded.** Every root the layout could take is chosen by a word — a bound (`foot
+**No point is seeded** but each blade's apex and foot, started on the side its cone opens to as
+`std.ConeThrough`'s are. Every root the layout could take is chosen by a word — a bound (`foot
 inside P` in the gear's cone, `foot outside P` in the pinion's, `A distance(>= 0, along: v) P`),
 a sense (`sense: cw`), an ordinate's sign — and the layout solves from those words alone: the
 block-triangular order constructs it a block at a time, searching each block's roots for the one
-its bounds say (#217). Nothing is `hint`ed at all; three numbers are unknown — `HypoidPair`'s
-formals `mn`, `rp` and `pa`, which the call leaves out — and the solve finds them.
+its bounds say (#217). Five numbers are unknown and the solve finds them: `HypoidPair`'s formals
+`mn`, `rp` and `pa`, which the call leaves out, and the face mill's `pressure_shift` and
+`cutter_radius`, which it leaves to the solve with a seed each (`hint(10deg)`, `hint(80mm)`) — the
+only hints in the file.
 
 The layout stands on the pitch plane P, `std.top`, with the gear apex O at its origin. The gear's
 right triangle O–M–F and the pinion's axes stand in space square to P on their generators; each
@@ -32,19 +35,21 @@ the instance and may read nothing else of it.
 
 | Step | In `hypoid.sv` | Constructs |
 |---|---|---|
-| 1 | the `param`s; `HypoidPair`'s proportions | the stated pair: teeth, module, shafts, shift, spiral, allowances; the cone distance R and the depths in normal modules |
+| 1 | the `param`s; `HypoidPair`'s proportions | the stated pair: teeth, module, shafts, spiral, allowances; the crown's tooth count, the cone distance R and the depths in normal modules |
 | 2 | `GearCone` (`pair.gear_cone`): O, M, `foot` | the gear's pitch cone: the right triangle O–M–F, standing square to P on O → M; the crown's axis up at O |
 | 2 | `ToothTrace` (`pair.trace`): C, H | the tooth trace about the cutter centre C, and the normal module, O's distance from MC over R / m |
 | 2 | `PinionCone` (`pair.pinion_cone`): A, V | the pinion's cone, solved against the gear's by the shafts and the equal normal pitch |
 | 3 | `Blank` (`pair.gear_blank`, `pair.pinion_blank`) | each member's blank, one region: within its pitch cone grown by the addendum (`std.Offset`) and its heel sphere, outside its toe sphere and its pitch cone shrunk by the back depth; the end relief its tip's toe and heel corners chamfered in the same region (`std.Chamfered`); its faces `tip`, `heel`, `toe` and `back` |
-| 4 | `FaceMill` (`pair.mill`) | the crown tooth's pitch points a quarter pitch either side of M; the face mill, its axis `ax` through C, the two flank cones through the pitch points, and the levels the crowns' tips and bases stand at; the space cutter's reach |
+| 4 | `FaceMill` (`pair.mill`) | the crown tooth's pitch points a quarter pitch either side of M; the face mill, its axis `ax` through C, the cutter's radius long, the two blades (`Blade`: each a cone about the axis through a pitch point, its half the pressure angle split by the shift), and the levels the crowns' tips and bases stand at; the space cutter's reach |
 | 4 | `Tooth`, `Space` (`pair.tooth`, `pair.gear_space`) | the pinion's generator, the crown tooth, a region between the flank cones and two levels, its tip's edges rounded (`std.Rounded`), each flank grown a quarter of the backlash; the gear's, its space cutter, the tooth's mate on the same cones |
-| 5 | the motions, `Generated`, `Member` (`pair.pinion`, `pair.gear`) | the rolls and the generating motions; each member its blank less its crown swept through it (`through: body`: the whole roll during which the crown meets the blank, found after the solve, so no roll limit is stated) and indexed at every tooth |
+| 4 | `Balanced`, `Margins` (`pair.balance`) | the face mill's pressure shift and cutter radius, found: the members' undercut margins equal at M and at the toe (below) |
+| 5 | the motions, `Generated`, `Member` (`pair.pinion`, `pair.gear`) | the rolls (each member at the crown's tooth count over its own) and the generating motions; each member its blank less its crown swept through it (`through: body`: the whole roll during which the crown meets the blank, found after the solve, so no roll limit is stated) and indexed at every tooth |
 | — | `Topping`, `when tip_relief > 0mm` | the tip relief: a topping beside each crown flank (a kink on the flank in N, the cone through it turned by the relief angle), cut the same way |
 
 The normal module is stated nowhere: the trace constructs it, and every depth reads it. As
-configured the pair is a hypoid 25 mm off, whose 12.5° pressure shift and 25° spiral design out
-the undercut a symmetric rack develops past about 15 mm of offset; zero offset is a bevel pair with
+configured the pair is a hypoid 25 mm off, whose 25° spiral and pressure shift design out the
+undercut a symmetric rack develops past about 15 mm of offset — the shift and the cutter found
+by balancing it, 11.25° and 75.6 mm; zero offset is a bevel pair with
 a common apex. The allowances — 0.05 mm normal backlash, 0.2 mm tip relief and 0.2 mm end relief
 — are each zero for the conjugate, sharp-edged pair, which is what the test suites record
 (`fixtures::gear` sets the document's own inputs for them).
@@ -92,8 +97,9 @@ and a witness, and nothing is written unless the shell checks pass and the mesh 
 material field. Each member has two sweeps, its crown's and its tip relief's. The exports take
 about 14 and 19 seconds (pinion, gear) on 12 cores (docs/native-speed-plan.md); measuring a file
 takes longer than making it (`--measure-samples` sets how finely). `--stl-backend mesh` meshes a
-member from its material field instead; progress is reported on stderr. As configured
-(docs/native-hypoid-plan.md, phases 5 and 6):
+member from its material field instead; progress is reported on stderr. As configured before
+the face mill was found (a 12.5° shift and a cutter of 0.8 R; docs/native-hypoid-plan.md, phases 5
+and 6):
 
 | | STEP | STL | worst exact face, STEP / STL |
 |---|---|---|---|
@@ -134,7 +140,7 @@ the blanks and the face mill from `hypoid.sv` and cuts the members differently:
 Each pinion flank is the envelope of a gear flank under the motion the pair runs at, so the pair
 is conjugate by construction at any offset. The backlash and tip relief are carried as before:
 the gear's teeth stand a quarter of the backlash inside the ring, and the pinion's cutter is the
-ring grown by the other quarter. The pressure shift is still the crown pair's 12.5°; the
+ring grown by the other quarter. The pressure shift is stated here, 12.5°, the cutter 0.8 R; the
 generated pinion takes it without undercut, admitted with a least area factor of 0.72 for the
 conjugate design.
 
@@ -191,8 +197,32 @@ M with its normal at the pressure angle to the pitch plane; nothing states the l
 mesh (20° less 5° is 15°, at every design `held_envelopes.rs` tries), the contact at the roll the
 pair is drawn at; and the pinion flank's profile circle at M — the osculating circle of its section
 by the normal plane — is the circle through three points of that section a micron apart (21.17 mm
-at the stated design). Restating `hypoid.sv`'s `pressure_shift`, cutter radius and roll ratios as
-unknowns is the issue's next step.
+at the stated design). `hypoid.sv` now finds its own face mill this way (below).
+
+## The face mill found: balancing the undercut
+
+`hypoid.sv` states no machine setting. The rolls are tooth counts: each member turns at the
+crown's tooth count over its own (`crown_teeth / pinion_teeth`, `-crown_teeth / gear_teeth`), the
+crown's being `sqrt(pinion_teeth^2 + gear_teeth^2)`. The pressure shift and the cutter's radius
+are unknowns, found by `Balanced` as a designer finds them: each member's flank nearest undercut —
+the pinion's, generated by the inner blade, and the gear's, by the outer — is an envelope the
+solve sees, and in a section through the cutter's axis (`Margins`) the point where the mate's tip
+reaches it, a module from the pitch plane, has a profile circle (`curvature(at:)`) whose radius is
+how far the profile stands from the cusp undercut would make. The two members' margins are held
+equal at the mean point, which sets the shift, and at the toe of the trace, which sets the
+cutter. Of the cutter's two roots the larger is the one wanted (`gear.M distance(>= R) trace.C`).
+As configured: 11.2527° and 75.6122 mm, the margins 15.68 mm at M and 12.76 mm at the toe. The
+seeds choose among the balance's roots: from 8°–12° and 70–100 mm the solve finds this one; from
+14° and 60 mm another, a 260 mm cutter. Both members export at 10 µm with no disagreement
+against their fields, but at this cutter the pinion's swept cut is fitted as one face, not named
+by the crown's faces.
+
+The solve finds them by tearing (`docs/contract/solver.md`): the two numbers held, the rest of
+their block — the blades, the generated flanks, the probes and their circles — is solved block by
+block, and the two balances are brought to zero by Newton steps over the numbers alone, from their
+seeds. The suites recorded the pair cut by a stated mill, so `fixtures::gear` states one at every
+recorded design (`recorded_machine`: the shift each design names, the cutter 0.8 R) and drops the
+balance; `gcs-core/tests/hypoid_machine.rs` holds the found mill.
 
 ## Contact analysis: the meshing of two flanks
 

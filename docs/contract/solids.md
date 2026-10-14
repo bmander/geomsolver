@@ -35,7 +35,21 @@ their parts where the built member says the faces meet; the gear's inner mate is
 tooth over (its space cutter's `neighbor` is the inner crown a crown pitch round). Its inputs are
 `param`s at its head (`shaft_angle`, `offset`, E = 0 is bevel; `fixtures::gear::configure` sets
 them where the parser says their values stand); the pinion's cone solves against the gear's;
-members roll at `N_c / N` off the gear's triangle, not `1 / sin`. **No axial views** (#215): the
+members roll at `N_c / N`, written as tooth counts (`crown_teeth / pinion_teeth`), not `1 / sin`.
+**The face mill is found, not stated** (#283): `pressure_shift` and `cutter_radius` are formals of
+`HypoidPair` the call leaves to the solve, seeded (`hint(10deg)`, `hint(80mm)`), and `Balanced`
+finds them as a designer would — the generated flanks' undercut margins (each flank's radius of
+curvature in a section square to the trace, a module inside and outside the pitch, `Margins`)
+equal at the mean point, which sets the shift, and at the toe, which sets the cutter; a cutter no
+smaller than R (`gear.M distance(>= R) trace.C`), the root nearest the seeds (11.2527°, 75.6122
+mm; seeds far off reach another, 260 mm from 14°, 60 mm).  Each blade (`Blade`) is
+`std.ConeThrough` with the side its cone opens to said, so its half reads the unknown shift as a
+number times it plus a number.  At the found cutter the pinion's swept cut is built and agrees
+with its field, but its sheet is fitted as one face, not named by the cutter's (a follow-up);
+`brep_export.rs` holds the sectors at the recorded mill.  `fixtures::gear::configure`
+given a `pressure_shift` states it with the recorded cutter, 0.8 R, and drops the balance
+(`recorded_machine`): every recorded number was taken of a pair so cut.
+`tests/hypoid_machine.rs` is the gate. **No axial views** (#215): the
 gear's triangle O–M–F and the pinion's two axes stand in space square to P on their generators
 (`O level(across) foot`; the pinion's axes square to `square`, each running from its apex to the
 foot of M on it, `gear.M level(ax) foot`), each side a bound (`foot inside P`, `foot outside P`
@@ -54,7 +68,7 @@ placement carries inside the blank; CLI test readers zero the offset.
   makes it the body over its own sweep (`program/solids.rs`'s body pass) — the name keeps its
   index, and the sweep moves to a stock of the same name (`SourceMap::also_made`), which
   `operand_paths` gives no step, so `plate.near` stays its name.
-  **An empty body** (§6.9 [0.98], #313): `solid()` is built its own stock (`build::body`), and the
+  **An empty body** (§6.9 [0.99], #313): `solid()` is built its own stock (`build::body`), and the
   body pass, having resolved every statement first, gives it the first `union` naming it in that
   place before any is joined; with none it is E080 at its declaration, and no statement joins it
   (nor does `made_of_itself` call it E041).  A solid swept in a `ring` is one solid a copy

@@ -4,12 +4,22 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
-**[0.98] An empty body.** `pegs := solid()` is a body with nothing in its brackets: its stock is
+**[0.99] An empty body.** `pegs := solid()` is a body with nothing in its brackets: its stock is
 the first solid in `union` with it (§6.9), so a pattern of solids joins every copy alike,
-`repeat 6 as i { peg[i] union pegs }`, where through 0.97 the first copy had to be written apart as
+`repeat 6 as i { peg[i] union pegs }`, where through 0.98 the first copy had to be written apart as
 the stock (`pegs := solid(peg[0])` and a `repeat` over the other five). `solid()` was E080 ("a
 solid is a face swept … or a body over other solids"); an empty body nothing is in `union` with
 still is, at its declaration, naming the statement that would give it material. (Issue #313.)
+
+**[0.98] A design table's figures carry their units.** Three base dimensions join length and angle
+for values: **mass**, **time** and **current** (§3.3), and the units derived from them may suffix
+a literal (§3.3.1): `745.7W`, `48V`, `255rpm`, `0.85T`, `11.9kPa`. `+`, `-` and a comparison
+demand agreement and `*` and `/` derive, as for lengths, so `torque := power / (omega / 1rad)` is
+a torque and `torque + power` is an error. No slot takes them: a figure reaches a constraint only
+divided by its unit (`torque / 1Nm`). Their numbers are SI with lengths in the document's unit,
+so a figure read back over its unit is the same in every document. Through 0.97 a design table's
+electrical and mechanical figures were plain numbers with their units in comments, and nothing
+checked them. (Issue #311.)
 
 **[0.97] A face that runs: the face family.** `duct := solid(Station(guide, …).f over s in (a,
 b))` is the solid a face of an instance sweeps as one of the instance's numbers runs — §6.5's

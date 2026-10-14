@@ -149,7 +149,9 @@ R`; `constrain` takes every bound landing on a probe as a `RegionTerm` instead o
 as unsigned, a cone's half, is kept within a half turn by `expr::sync_free`), and `build_solid`
 moves them into the solid and holds the probe. `solid::region::meridian` folds the terms' (r, z)
 regions in a box by `brep::planar::boolean` (coaxial, bounded, nonempty, else refused where
-evaluated), memoised against `solid::reads` (`Caches::meridian`); every evaluator reads it —
+evaluated; coaxial to the fold's own tolerance, 1e-7 of the region's size, a plane's tilt too —
+two lines a solve holds on one axis hold to its acceptance, not to the bit, #283), memoised
+against `solid::reads` (`Caches::meridian`); every evaluator reads it —
 the recipe a `revolve`
 (`recipe::region_profile`, `Profile::to_json`), the field `RevolvedRegion::of_meridian` (also
 `read`, so patches trim by it), facets `region::face_polys` turned by `primitive::revolve`,

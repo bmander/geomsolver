@@ -366,7 +366,9 @@ impl Fold<'_> {
             }
             RegionShape::Plane { from, sign, .. } => {
                 let n = t.shape.normal(sk).ok_or_else(|| format!("{} has no normal", what(t)))?;
-                if norm(cross(n, self.axis)) > 1e-9 {
+                // square within the fold's tolerance at the region's size, as its points are on
+                // the axis: two lines a solve holds on one axis to its tolerance, not to the bit
+                if norm(cross(n, self.axis)) * reach > 8.0 * tol {
                     return Err(format!("{}'s plane is not square to the region's axis", what(t)));
                 }
                 // the ordinate, `sign · n · (x - from)`, along the axis

@@ -34,6 +34,15 @@ const projects: Example[] = [{
     + 'wankel.svd is the drawing.',
   target: { kind: 'directory', path: 'wankel', entry: 'wankel.sv' },
 }, {
+  label: 'E-bike hub motor, 1 hp · an assembly of parts', key: 'hub_motor',
+  description: 'A direct-drive, outer-rotor motor for a 26" rear wheel: 746 W at 255 rpm from 48 V. '
+    + 'It has 46 magnets over 51 slots, and one slot, one magnet and one hall sensor are drawn and '
+    + 'turned round in rings. The copper is the coils\' band less the lamination. Axle, carrier, '
+    + 'covers and bearings are profiles turned in a half-section, and twelve claims check the fits, '
+    + 'the 0.6 mm air gap among them. The sizing is worked in motor/dims.sv; hub_motor.svd is the '
+    + 'drawing and the README says what each part is.',
+  target: { kind: 'directory', path: 'hub_motor', entry: 'hub_motor.svd' },
+}, {
   label: 'Pin wheel, generated · swept solid', key: 'lantern_generation',
   description: 'A pinion rolls against a wheel blank and its one pin cuts a tooth space. The roll\'s '
     + 'ratio is measured off the drawing after the solve (the wheel\'s pitch radius over the '

@@ -306,6 +306,14 @@ fn material_points(r: f64) -> Vec<V> {
     points
 }
 
+/// The rolls the members' material was recorded at, in degrees (pinion, gear), by design.  Each
+/// is found through its blank (#271), ending at the first step its tool is proved clear over; at
+/// the bevel pinion's upper end the tool grazes the blank within the proof's depth, so a pose a
+/// few bits off ends it a step sooner (#283).  A reading inside the cut is a magnitude as well as
+/// a sign, which the sweep's extent moves, so the members are read rolled as recorded.
+const RECORDED_ROLLS: [(&str,[[f64;2];2]);2] =
+    [("configured",[[-24.,22.],[-35.,44.]]),("bevel",[[-24.,26.],[-36.,46.]])];
+
 /// The material: every solid the pair evaluated — the crowns, the space cutter, the blank
 /// limits, and the members with their swept cuts — read as fields at the recorded points, at
 /// the configured hypoid and the bevel pair.
@@ -320,7 +328,10 @@ fn the_layout_makes_the_pairs_material() {
         recorded.insert(key,fields.map(|v| v.parse::<f64>().unwrap()).collect::<Vec<_>>());
     }
     for (k,design) in designs().into_iter().enumerate().take(2) {
-        let e = design.read();
+        let (label,[pinion,gear]) = RECORDED_ROLLS[k];
+        assert_eq!(label,design.label);
+        let rolled = fixtures::gear::rolled(&design.text,"pinion",pinion);
+        let e = fixtures::gear::read(&fixtures::gear::rolled(&rolled,"gear",gear));
         let r = rows[0].1[k];
         let read = |name: &str| {
             MaterialField::read(&e.sketch,fixtures::solid(&e,&format!("pair.{name}")),1e-10*r)

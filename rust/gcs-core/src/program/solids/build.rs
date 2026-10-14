@@ -398,7 +398,7 @@ fn revolve(
 }
 
 /// A body over other solids: the first its stock, the rest in `union` with it.  **An empty body**,
-/// `solid()` (§6.9 [0.98]), is made its own stock, which is no solid's: `body_rule` gives it its
+/// `solid()` (§6.9 [0.99]), is made its own stock, which is no solid's: `body_rule` gives it its
 /// first `union` in that solid's place, before any statement is joined.
 fn body(
     ops: &[EntRef],
