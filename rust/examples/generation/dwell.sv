@@ -34,11 +34,11 @@ component FourBar(o2: point, o4: point, r2: Length, r3: Length, r4: Length, beta
   coupler := line(A, B)
   rocker := line(o4, B)
   arm := line(A, P)
-  distance(r2) crank
+  length(r2) crank
   base angle(theta) crank
-  distance(r3) coupler
-  distance(r4) rocker
-  distance(ap) arm
+  length(r3) coupler
+  length(r4) rocker
+  length(ap) arm
   coupler angle(beta) arm
   ccw(A, o4, B)               // the rocker's pose: B left of the line from A to its pivot
 }

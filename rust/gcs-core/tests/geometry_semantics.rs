@@ -178,7 +178,7 @@ in std.front {
 private construction centerline ax := line(p2: hint((10, 0)))
 fix((0, 0)) ax.p1
 horizontal ax
-distance(10) ax
+length(10) ax
 }
 ";
     let mut e = good(tagged);

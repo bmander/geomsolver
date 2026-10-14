@@ -17,8 +17,8 @@ component Rectangle(center: point, w: Length, h: Length) {
   d := point hint((center.x - w / 2, center.y + h / 2))
   profile := horizontal (ab := line(a, b)) -> vertical (bc := line(b, c)) ->
             horizontal (cd := line(c, d)) -> vertical (da := line(d, a)) -> close
-  distance(w) ab
-  distance(h) bc
+  length(w) ab
+  length(h) bc
   diagonal := line(a, c)
   center midpoint diagonal
 }

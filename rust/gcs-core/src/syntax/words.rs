@@ -69,12 +69,14 @@ pub fn equal_kind(left: EntKind, right: EntKind) -> Option<CKind> {
 }
 
 /// Whether a word may stand *before* its one operand — `horizontal`, `vertical`, `radius`,
-/// `distance` (spec §9.1).  Derived from the operator table by asking it, so a word given a
-/// prefix reading later joins the grammar with nothing here to edit.
+/// `length` (spec §9.1).  Derived from the operator table by asking it, so a word given a
+/// prefix reading later joins the grammar with nothing here to edit; a retired prefix spelling
+/// (`distance` on a line) is still read, to be refused with the word it became.
 pub(super) fn prefix_word(w: &str) -> bool {
+    use crate::constraints::{prefix_op, retired_prefix};
     [EntKind::Line, EntKind::Circle, EntKind::Arc]
         .iter()
-        .any(|&k| crate::constraints::prefix_op(w, k).is_some())
+        .any(|&k| prefix_op(w, k).is_some() || retired_prefix(w, k).is_some())
 }
 
 /// The identifier at a token position, shared by parsing and highlighting.

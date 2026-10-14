@@ -442,7 +442,9 @@ pub fn builtin_word(word: &str, fixity: Fixity) -> bool {
             Fixity::Call => call_word(w),
             Fixity::Prefix => {
                 matches!(gauge_op(w).map(CKind::operator), Some(Some((_, Fixity::Prefix))))
-                    || EntKind::ALL.iter().any(|&k| prefix_op(w, k).is_some())
+                    || EntKind::ALL
+                        .iter()
+                        .any(|&k| prefix_op(w, k).is_some() || retired_prefix(w, k).is_some())
             }
             Fixity::Infix => {
                 solid_word(w).is_some()
@@ -465,22 +467,36 @@ pub fn builtin_word(word: &str, fixity: Fixity) -> bool {
     table.contains(&(word, fixity))
 }
 
-/// The same for a word standing *before* its one operand.  `distance` on a line is sugar for the
-/// distance between its ends, which is why it is here and not in the table above.
+/// The same for a word standing *before* its one operand.  **`length` measures one thing**, of
+/// every kind of path (#269): a line's is sugar for the distance between its ends, which is why
+/// it is here and not in the table above, and so a word over `g: path` states `length(L) g`
+/// whatever `g` is given.
 pub fn prefix_op(word: &str, on: EntKind) -> Option<CKind> {
     use EntKind::{Arc, Circle, Line, Spline};
     Some(match (word, on) {
         ("horizontal", Line) => CKind::Horizontal,
         ("vertical", Line) => CKind::Vertical,
         ("radius", Circle | Arc) => CKind::Radius,
+        ("length", Line) => CKind::Distance,
         // an arc's length along itself: the other way a round thing is dimensioned
         ("length", Arc) => CKind::ArcLength,
         // and a spline's, along the whole of it, and a free curve's, its own
         ("length", Spline) => CKind::SplineLength,
         ("length", EntKind::Curve) => CKind::CurveLength,
-        ("distance", Line) => CKind::Distance,
         _ => return None,
     })
+}
+
+/// **A prefix spelling the language no longer has**, and the word it became.  `distance relates
+/// two things; `length` measures one` (#269), so `distance(d) l` on a line is `length(d) l`.
+/// Still a prefix word to the grammar, so a statement or a chain link written the old way
+/// parses and is refused where it is settled, naming the new spelling, rather than failing as
+/// something else; and still a builtin word, so no definition takes it.
+pub fn retired_prefix(word: &str, on: EntKind) -> Option<&'static str> {
+    match (word, on) {
+        ("distance", EntKind::Line) => Some("length"),
+        _ => None,
+    }
 }
 
 /// Every word the language writes a **constraint** with (spec §9.1) — the gauges and the

@@ -17,7 +17,7 @@ pub fn add_rectangle(prog: &Program, w: f64, h: f64, plane: Option<&str>) -> Edi
     // the document's own: a module's `Rectangle` is no name a bare call reaches (§14.4)
     if prog.component("Rectangle").is_none() {
         let definition = "component Rectangle(w: Length, h: Length) {\n  \
-             distance(w) (l1 := line) -> perpendicular distance(h) (l2 := line) -> \
+             length(w) (l1 := line) -> perpendicular length(h) (l2 := line) -> \
              perpendicular (l3 := line) -> perpendicular (l4 := line) -> close\n}\n\n";
         if let Some(preview) = prog.preview {
             let start = preview.lo as usize;
