@@ -2,6 +2,12 @@
 
 use super::*;
 
+/// The statements a removal takes, by id.
+type Doomed = std::collections::BTreeSet<crate::syntax::StmtId>;
+
+/// The names of what a removal takes: entities and declarations alike, by their keys.
+type Gone = std::collections::BTreeSet<String>;
+
 /* -- removing ---------------------------------------------------------------------- */
 
 /// Take entities and constraints out of the source.
@@ -28,9 +34,54 @@ pub fn remove(
     ents: &[EntRef],
     cons: &[u32],
 ) -> Edit {
-    let mut doomed: std::collections::BTreeSet<crate::syntax::StmtId> =
-        std::collections::BTreeSet::new();
-    let mut names: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    let (mut doomed, mut names, left) = selected(e, prog, ents, cons);
+    doom_mentioning(prog, &mut doomed, &mut names);
+    doom_inferred(e, prog, sk, &names, &mut doomed);
+    if doomed.is_empty() {
+        let why = (left > 0).then(|| {
+            "that comes from a component, so deleting it would edit the component and everything \
+             else drawn from it"
+                .to_string()
+        });
+        return Edit::none(prog, why);
+    }
+    // a link of a chain has no deletion splice, so the gesture is refused rather than half-done
+    let refuse = || {
+        Edit::none(
+            prog,
+            Some(
+                "that is part of a chain, which deletion cannot unpick; edit the source instead"
+                    .into(),
+            ),
+        )
+    };
+    let mut edits: Vec<Splice> = membership_splices(prog, &doomed, &names);
+    for s in doomed_splices(prog.text(), &prog.root().body, &doomed) {
+        match s {
+            Some(e) => edits.push(e),
+            None => return refuse(),
+        }
+    }
+    // a prefix word stands inside the statement of the declaration it qualifies once a name is
+    // written before both (`l := horizontal line(a, b)`): the declaration's splice takes it
+    let inside = |e: &Splice, f: &Splice| {
+        f.at.lo <= e.at.lo && e.at.hi <= f.at.hi && (f.at.lo, f.at.hi) != (e.at.lo, e.at.hi)
+    };
+    let edits: Vec<Splice> =
+        edits.iter().filter(|e| !edits.iter().any(|f| inside(e, f))).cloned().collect();
+    let text = splice(prog.text(), edits);
+    if unpicked_badly(prog, &doomed, &text) {
+        return refuse();
+    }
+    Edit { text, kind: Kind::Structural, names: Vec::new(), refused: None, kept: left }
+}
+
+/// What the selection itself dooms: each entity's statement and each constraint's, where it is
+/// the root's own — with the names of the entities going, and how many were left standing
+/// because a component or a block made them.
+fn selected(e: &Elaborated, prog: &Program, ents: &[EntRef], cons: &[u32]) -> (Doomed, Gone, usize) {
+    let mut doomed = Doomed::new();
+    let mut names = Gone::new();
     let mut left = 0;
     for r in ents {
         let Some(site) = e.map.of_entity.get(r) else { continue };
@@ -51,12 +102,16 @@ pub fn remove(
             }
         }
     }
-    // and every statement that names one of the gone — to a fixed point, because a line that
-    // named a deleted point is itself deleted, and the constraint on *that* line goes with it
+    (doomed, names, left)
+}
+
+/// And every statement that names one of the gone — to a fixed point, because a line that named
+/// a deleted point is itself deleted, and the constraint on *that* line goes with it.
+fn doom_mentioning(prog: &Program, doomed: &mut Doomed, names: &mut Gone) {
     loop {
         let mut grew = false;
         for st in prog.root().body.iter() {
-            if doomed.contains(&st.id) || mentions(st, &names).is_empty() {
+            if doomed.contains(&st.id) || mentions(st, names).is_empty() {
                 continue;
             }
             doomed.insert(st.id);
@@ -69,9 +124,12 @@ pub fn remove(
             break;
         }
     }
-    // and every statement whose *constraint* names one of the gone without its text doing so:
-    // a projection's planes are its points' memberships, inferred and never spelled, so the
-    // model drops it when a plane goes (`io::without`'s rule) and its statement goes with it
+}
+
+/// And every statement whose *constraint* names one of the gone without its text doing so: a
+/// projection's planes are its points' memberships, inferred and never spelled, so the model
+/// drops it when a plane goes (`io::without`'s rule) and its statement goes with it.
+fn doom_inferred(e: &Elaborated, prog: &Program, sk: &Sketch, names: &Gone, doomed: &mut Doomed) {
     // only a kind with an inferred entity slot can be in that position, so a document with none
     // skips the walk — `user_constraints` and `entities` both allocate
     let gone: std::collections::BTreeSet<EntRef> = sk
@@ -90,16 +148,12 @@ pub fn remove(
             }
         }
     }
-    if doomed.is_empty() {
-        let why = (left > 0).then(|| {
-            "that comes from a component, so deleting it would edit the component and everything \
-             else drawn from it"
-                .to_string()
-        });
-        return Edit::none(prog, why);
-    }
-    // a membership names a plane without depending on it: a point whose plane goes stays,
-    // and only its `in …` clause comes out — with the space that set it off
+}
+
+/// A membership names a plane without depending on it: a point whose plane goes stays, and only
+/// its `in …` clause comes out — with the space that set it off — and an `in PLANE { … }` block
+/// whose plane goes loses its header and brace, its statements staying.
+fn membership_splices(prog: &Program, doomed: &Doomed, names: &Gone) -> Vec<Splice> {
     let mut clauses: Vec<Splice> = Vec::new();
     for st in prog.root().body.iter() {
         if doomed.contains(&st.id) {
@@ -139,48 +193,28 @@ pub fn remove(
             clauses.push(clause_splice(prog.text(), at, None));
         }
     }
-    // a link of a chain has no deletion splice, so the gesture is refused rather than half-done
-    let refuse = || {
-        Edit::none(
-            prog,
-            Some(
-                "that is part of a chain, which deletion cannot unpick; edit the source instead"
-                    .into(),
-            ),
-        )
-    };
-    let mut edits: Vec<Splice> = clauses;
-    for s in doomed_splices(prog.text(), &prog.root().body, &doomed) {
-        match s {
-            Some(e) => edits.push(e),
-            None => return refuse(),
-        }
-    }
-    // a prefix word stands inside the statement of the declaration it qualifies once a name is
-    // written before both (`l := horizontal line(a, b)`): the declaration's splice takes it
-    let inside = |e: &Splice, f: &Splice| {
-        f.at.lo <= e.at.lo && e.at.hi <= f.at.hi && (f.at.lo, f.at.hi) != (e.at.lo, e.at.hi)
-    };
-    let edits: Vec<Splice> =
-        edits.iter().filter(|e| !edits.iter().any(|f| inside(e, f))).cloned().collect();
-    let text = splice(prog.text(), edits);
-    // and where a chain was touched, the result must still parse: a chain can weave what no
-    // set of per-statement splices unpicks — a name link left dangling between two doomed
-    // joints — and a deletion that corrupts the source is worse than one that is refused.
-    // Whole-line deletions cannot introduce an error, so they skip both parses; a clean
-    // result cannot have more errors than the old text, so it skips the baseline one.
+    clauses
+}
+
+/// Whether the text a removal left no longer parses where it did.  Where a chain was touched,
+/// the result must still parse: a chain can weave what no set of per-statement splices unpicks —
+/// a name link left dangling between two doomed joints — and a deletion that corrupts the source
+/// is worse than one that is refused.  Whole-line deletions cannot introduce an error, so they
+/// skip both parses; a clean result cannot have more errors than the old text, so it skips the
+/// baseline one.
+fn unpicked_badly(prog: &Program, doomed: &Doomed, text: &str) -> bool {
     let woven = prog
         .root()
         .body
         .iter()
         .any(|s| doomed.contains(&s.id) && !matches!(s.chained, syntax::Chained::No));
     if woven {
-        let errs = crate::syntax::parse(&text).1.len();
+        let errs = crate::syntax::parse(text).1.len();
         if errs > 0 && errs > crate::syntax::parse(prog.text()).1.len() {
-            return refuse();
+            return true;
         }
     }
-    Edit { text, kind: Kind::Structural, names: Vec::new(), refused: None, kept: left }
+    false
 }
 
 /// The names a statement refers to, of those given.
@@ -207,50 +241,7 @@ pub(super) fn mentions(st: &Stmt, names: &std::collections::BTreeSet<String>) ->
                 look(r);
             }
         }
-        StmtKind::Decl(d) => {
-            for g in &d.children {
-                for r in g.iter().flat_map(|k| k.refs()) {
-                    look(r);
-                }
-            }
-            // a plane's axes are its children, looked at above; a membership (`in …`) is a
-            // label the point survives losing, and is not counted
-            if let Some(motion) = &d.motion {
-                match motion {
-                    syntax::MotionSpec::Rotation {axis,..} | syntax::MotionSpec::Translation {axis,..} => look(axis),
-                    syntax::MotionSpec::Relative {source,observer} => { look(source); look(observer); }
-                }
-                // a number measured off the drawing is defined from what it measures, and a
-                // motion measuring a deleted line goes with it, as a dimension on it would
-                let mut spec = motion.clone();
-                for a in spec.args_mut() {
-                    if let syntax::Arg::Dim {text,..} = a {
-                        for n in crate::expr::measured_names(text) {
-                            let root = n.split('.').next().unwrap_or_default();
-                            look(&syntax::Ref {root:syntax::Name::new(root),path:vec![],span:Default::default()});
-                        }
-                    }
-                }
-            }
-            // a curve is a point of an instance, and goes with what it is written over: the
-            // instance's point, or — written in place — the entities the instance was given
-            if let Some(c) = &d.curve {
-                match &c.target {
-                    syntax::CurveTarget::Drawn(r) => look(r),
-                    syntax::CurveTarget::Anon(inst, _) => {
-                        for a in &inst.args {
-                            if let syntax::InstVal::Ref(r) = &a.value {
-                                look(r);
-                            }
-                        }
-                    }
-                }
-            }
-            // a solid goes with what it is swept about, through, along or under
-            for r in d.sweep.as_ref().map(syntax::Sweep::references).unwrap_or_default() {
-                look(r);
-            }
-        }
+        StmtKind::Decl(d) => decl_refs(d, &mut look),
         // the body rule goes with either solid it names
         StmtKind::SolidRel(rel) => {
             look(&rel.what);
@@ -271,27 +262,7 @@ pub(super) fn mentions(st: &Stmt, names: &std::collections::BTreeSet<String>) ->
                 hit.extend(mentions(inner, names));
             }
         }
-        StmtKind::Relation(rel) => {
-            for a in rel.form.canonical_args().iter().flatten() {
-                if let syntax::Arg::Ref(r) = a {
-                    look(r);
-                }
-            }
-            // Written operators name operands and may name another entity in parentheses.
-            if let Some(w) = rel.form.written() {
-                for r in w.ops.iter() {
-                    look(r);
-                }
-                for a in &w.args {
-                    match a {
-                        syntax::OpArg::Ent(r) | syntax::OpArg::Named(_, syntax::Arg::Ref(r)) => {
-                            look(r)
-                        }
-                        _ => {}
-                    }
-                }
-            }
-        }
+        StmtKind::Relation(rel) => relation_refs(rel, &mut look),
         // a view or a section of a solid goes with it, and with the plane it is drawn in
         StmtKind::Derived(dv) => {
             look(&dv.solid);
@@ -304,6 +275,78 @@ pub(super) fn mentions(st: &Stmt, names: &std::collections::BTreeSet<String>) ->
         | StmtKind::Style(_) | StmtKind::ClaimOver(_) | StmtKind::Unit(_) => {}
     }
     hit
+}
+
+/// Each reference a declaration depends on: its children, what its motion turns about or
+/// measures, what its curve is written over, and what its solid is swept about, through, along
+/// or under.
+fn decl_refs(d: &Decl, look: &mut impl FnMut(&syntax::Ref)) {
+    for g in &d.children {
+        for r in g.iter().flat_map(|k| k.refs()) {
+            look(r);
+        }
+    }
+    // a plane's axes are its children, looked at above; a membership (`in …`) is a
+    // label the point survives losing, and is not counted
+    if let Some(motion) = &d.motion {
+        match motion {
+            syntax::MotionSpec::Rotation {axis,..} | syntax::MotionSpec::Translation {axis,..} => look(axis),
+            syntax::MotionSpec::Relative {source,observer} => { look(source); look(observer); }
+        }
+        // a number measured off the drawing is defined from what it measures, and a
+        // motion measuring a deleted line goes with it, as a dimension on it would
+        let mut spec = motion.clone();
+        for a in spec.args_mut() {
+            if let syntax::Arg::Dim {text,..} = a {
+                for n in crate::expr::measured_names(text) {
+                    let root = n.split('.').next().unwrap_or_default();
+                    look(&syntax::Ref {root:syntax::Name::new(root),path:vec![],span:Default::default()});
+                }
+            }
+        }
+    }
+    // a curve is a point of an instance, and goes with what it is written over: the
+    // instance's point, or — written in place — the entities the instance was given
+    if let Some(c) = &d.curve {
+        match &c.target {
+            syntax::CurveTarget::Drawn(r) => look(r),
+            syntax::CurveTarget::Anon(inst, _) => {
+                for a in &inst.args {
+                    if let syntax::InstVal::Ref(r) = &a.value {
+                        look(r);
+                    }
+                }
+            }
+        }
+    }
+    // a solid goes with what it is swept about, through, along or under
+    for r in d.sweep.as_ref().map(syntax::Sweep::references).unwrap_or_default() {
+        look(r);
+    }
+}
+
+/// Each reference a relation names: its canonical arguments, or the operands a written operator
+/// names and another entity it may name in parentheses.
+fn relation_refs(rel: &syntax::Relation, look: &mut impl FnMut(&syntax::Ref)) {
+    for a in rel.form.canonical_args().iter().flatten() {
+        if let syntax::Arg::Ref(r) = a {
+            look(r);
+        }
+    }
+    // Written operators name operands and may name another entity in parentheses.
+    if let Some(w) = rel.form.written() {
+        for r in w.ops.iter() {
+            look(r);
+        }
+        for a in &w.args {
+            match a {
+                syntax::OpArg::Ent(r) | syntax::OpArg::Named(_, syntax::Arg::Ref(r)) => {
+                    look(r)
+                }
+                _ => {}
+            }
+        }
+    }
 }
 
 /// One trailing clause, written where the parser said it goes or taken out of the line.
