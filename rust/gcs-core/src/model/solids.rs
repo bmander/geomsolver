@@ -262,6 +262,12 @@ pub enum Sense {
     Cw,
 }
 
+/// The scope a face family's station is drawn under — `#f12.` for the running number `#f12.s`
+/// (#243 L1): every name of the station's instance starts with it.
+pub fn station_prefix(held: &str) -> String {
+    format!("{}.", held.rsplit_once('.').map_or("", |(p, _)| p))
+}
+
 /// **What a solid is** (Solvent §6.9).  Three forms and no fourth: a face swept two ways, and a
 /// body over other solids.
 #[derive(Clone, Debug)]

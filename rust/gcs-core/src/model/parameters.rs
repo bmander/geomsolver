@@ -5,7 +5,6 @@ use crate::constraints::Arg;
 use crate::rng::Rng;
 
 impl Sketch {
-    /// The name a shared contact parameter is pinned to (`t == s`), where `p` is one.
     /// Hold a face family's running number at `value` (#243 L1, `Sketch::held`), its fixed
     /// parameter made the first time: the parameter.
     pub fn hold(&mut self, name: &str, value: f64, dim: crate::units::Dim) -> u32 {
@@ -41,11 +40,7 @@ impl Sketch {
         }
     }
 
-    /// Where a running number stands now, if the sketch holds one by that name.
-    pub fn held_value(&self, name: &str) -> Option<f64> {
-        self.held.get(name).map(|h| self.params[h.param as usize].value)
-    }
-
+    /// The name a shared contact parameter is pinned to (`t == s`), where `p` is one.
     pub fn shared_name(&self, p: u32) -> Option<&str> {
         self.shared.iter().find(|(_, s)| s.param == p).map(|(n, _)| n.as_str())
     }

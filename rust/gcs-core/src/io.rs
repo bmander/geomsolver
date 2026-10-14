@@ -1163,6 +1163,22 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         dst.motions.push(crate::model::MotionE {def,name:m.name.clone(),class:m.class.clone(),measured});
         made.push(EntRef::new(EntKind::Motion,next));
     }
+    // a face family's station as copied: its drawn geometry, `None` where some was left behind
+    let station_ent = |e: EntRef| -> Option<EntRef> {
+        let i = match e.kind {
+            EntKind::Point => pt_map[e.i()],
+            EntKind::Line => line_map[e.i()],
+            EntKind::Circle => circle_map[e.i()],
+            EntKind::Arc => arc_map[e.i()],
+            EntKind::Spline => spline_map[e.i()],
+            EntKind::Axis => axis_map[e.i()],
+            EntKind::Plane => plane_map[e.i()],
+            EntKind::Curve => curve_map[e.i()],
+            EntKind::Face => face_map[e.i()],
+            _ => None,
+        };
+        i.map(|i| EntRef::new(e.kind, i))
+    };
     // Allocate the retained graph before remapping it: extent targets and Boolean operands
     // may be forward references, including a cutter referring to the body that subtracts it.
     let mut retained: Vec<bool> = src.solids.iter().enumerate().map(|(i, s)| {
@@ -1183,18 +1199,8 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
                     },
                 // a family comes with its whole station or not at all
                 crate::model::SolidDef::Family { face, ref station, .. } =>
-                    face_map[face as usize].is_some() && station.iter().all(|e| match e.kind {
-                        EntKind::Point => pt_map[e.i()].is_some(),
-                        EntKind::Line => line_map[e.i()].is_some(),
-                        EntKind::Circle => circle_map[e.i()].is_some(),
-                        EntKind::Arc => arc_map[e.i()].is_some(),
-                        EntKind::Spline => spline_map[e.i()].is_some(),
-                        EntKind::Axis => axis_map[e.i()].is_some(),
-                        EntKind::Plane => plane_map[e.i()].is_some(),
-                        EntKind::Curve => curve_map[e.i()].is_some(),
-                        EntKind::Face => face_map[e.i()].is_some(),
-                        _ => false,
-                    }),
+                    face_map[face as usize].is_some()
+                        && station.iter().all(|&e| station_ent(e).is_some()),
                 _ => true,
             }
     }).collect();
@@ -1248,17 +1254,9 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
                 crate::model::SolidDef::Prism { face: face(*f), from: from.clone(), to: to.clone(), draft: draft.clone() }
             }
             crate::model::SolidDef::Family { face: f, station, held, from, to } => {
-                let station = station.iter().map(|e| EntRef::new(e.kind, match e.kind {
-                    EntKind::Point => pt_map[e.i()],
-                    EntKind::Line => line_map[e.i()],
-                    EntKind::Circle => circle_map[e.i()],
-                    EntKind::Arc => arc_map[e.i()],
-                    EntKind::Spline => spline_map[e.i()],
-                    EntKind::Axis => axis_map[e.i()],
-                    EntKind::Plane => plane_map[e.i()],
-                    EntKind::Curve => curve_map[e.i()],
-                    _ => face_map[e.i()],
-                }.expect("retention kept the whole station"))).collect();
+                let station = station.iter()
+                    .map(|&e| station_ent(e).expect("retention kept the whole station"))
+                    .collect();
                 crate::model::SolidDef::Family { face: face(*f), station, held: held.clone(),
                     from: from.clone(), to: to.clone() }
             }
@@ -1584,23 +1582,21 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             }),
             _ => false,
         };
-        let rows: Vec<&Constraint> = src.constraints.iter()
-            .filter(|c| c.intrinsic)
-            .filter(|c| {
-                matches!(c.kind, CKind::Parallel3 | CKind::PointOnAxis | CKind::Coincident3)
-            })
-            .filter(carried)
-            .collect();
+        let rows: Vec<&Constraint> =
+            src.constraints.iter().filter(|c| c.intrinsic).filter(carried).collect();
         for c in rows {
             let Some(ents) = c.entities().into_iter().map(remap).collect::<Option<Vec<_>>>() else {
                 continue;
             };
-            // a plane standing at a point has no `PlaneAxis` rows of its own: they go
+            // a plane standing at a point has no `PlaneAxis` rows of its own for its in-plane
+            // axes: they go, as `axes_along` takes them (its normal's stays)
             if c.kind == CKind::Coincident3 {
                 if let Some(p) = dst.plane_of_origin(ents[0].i()) {
+                    let (u, v) = (dst.planes[p].u as usize, dst.planes[p].v as usize);
                     let gone: Vec<u32> = dst.constraints.iter()
                         .filter(|d| d.intrinsic && d.kind == CKind::PlaneAxis)
                         .filter(|d| d.args[0].ent() == EntRef::plane(p))
+                        .filter(|d| [u, v].contains(&d.args[1].ent().i()))
                         .map(|d| d.id)
                         .collect();
                     for id in gone {
@@ -1966,11 +1962,6 @@ impl Part {
     /// A document entity as the part's, if it came along.
     pub fn entity_in(&self, doc: EntRef) -> Option<EntRef> {
         self.ents.get(&doc).copied()
-    }
-
-    /// A document parameter as the part's, if it came along.
-    pub fn param_in(&self, doc: usize) -> Option<usize> {
-        self.params.iter().find(|&&(_, d)| d == doc).map(|&(p, _)| p)
     }
 
     /// A document point's index in the part, if it came along.

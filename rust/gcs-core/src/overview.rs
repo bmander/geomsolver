@@ -331,9 +331,7 @@ pub fn scene3d_of(sk: &Sketch, unit: f64, layer: Layer) -> Vec<Item3> {
     let places = places(sk);
     let least = sk.extent() * LEAST_SIDE;
     // one pane for each place, its first plane's
-    let stations = sk.stations();
-    let paned = |i: usize| places[i] == i && !stations.contains(&EntRef::plane(i));
-    for i in (0..sk.planes.len()).filter(|&i| datums && paned(i)) {
+    for i in (0..sk.planes.len()).filter(|&i| datums && places[i] == Some(i)) {
         let of = Some(EntRef::plane(i));
         let basis = sk.basis(i);
         let rect = pane(sk, i, &views, &places, least);
@@ -425,9 +423,7 @@ pub fn scene_with(sk: &Sketch, unit: f64, az: f64, el: f64, shaded: bool) -> Sce
     // the panes of the box, under everything — **one per place, drawn in or not** — each with
     // its own axes at its origin
     let places = places(sk);
-    let stations = sk.stations();
-    let paned = |i: usize| places[i] == i && !stations.contains(&EntRef::plane(i));
-    for i in (0..sk.planes.len()).filter(|&i| paned(i)) {
+    for i in (0..sk.planes.len()).filter(|&i| places[i] == Some(i)) {
         let of = Some(EntRef::plane(i));
         let basis = sk.basis(i);
         let rect = pane(sk, i, &views, &places, least);
@@ -612,12 +608,17 @@ fn finish(items: Vec<Item>) -> Scene {
 
 /// **Each plane's place**: the first plane standing on the same plane in space
 /// (`Basis::coplanar`, `workspace::Views`' rule and tolerance, the page left out — it has no
-/// pane).  `std.up` is `std.front` turned a quarter, so its place is the front's.
-fn places(sk: &Sketch) -> Vec<usize> {
+/// pane).  `std.up` is `std.front` turned a quarter, so its place is the front's.  A face
+/// family's station plane has none (#243 L1): no pane, and none taken from a plane it lies on.
+fn places(sk: &Sketch) -> Vec<Option<usize>> {
     let bases: Vec<_> = (0..sk.planes.len()).map(|i| sk.basis(i)).collect();
+    let stations = sk.stations();
+    let placed = |k: usize| !stations.contains(&EntRef::plane(k));
     let tol = 1e-9 * sk.extent();
     (0..bases.len())
-        .map(|k| (0..k).find(|&j| bases[j].coplanar(&bases[k], tol)).unwrap_or(k))
+        .map(|k| placed(k).then(|| {
+            (0..k).find(|&j| placed(j) && bases[j].coplanar(&bases[k], tol)).unwrap_or(k)
+        }))
         .collect()
 }
 
@@ -630,7 +631,8 @@ fn places(sk: &Sketch) -> Vec<usize> {
 /// One rule for the face and its axes both, so the two cannot come to disagree about how far a
 /// view reaches; and one pane for a place, so drawing on `std.front` does not leave `std.up`'s
 /// behind as a second frame round the same plane (the box draws the place's first plane only).
-fn pane(sk: &Sketch, plane: usize, views: &[Option<usize>], places: &[usize], least: f64) -> Box2 {
+fn pane(sk: &Sketch, plane: usize, views: &[Option<usize>], places: &[Option<usize>], least: f64)
+    -> Box2 {
     let basis = sk.basis(plane);
     let mut b = (0.0f64, 0.0f64, 0.0f64, 0.0f64);
     for j in (0..places.len()).filter(|&j| j != plane && places[j] == places[plane]) {

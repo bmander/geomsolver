@@ -256,23 +256,20 @@ impl<'a> Walk<'a> {
         if let Some(crate::syntax::Sweep::Family(f)) = d2.sweep.as_mut() {
             let key = format!("{}{}", scope.prefix(), f.instance.name.text);
             let held = format!("{key}.{}", f.swept.text);
-            match self.held.names.get(&held) {
-                Some(&(_, mid)) => {
-                    let end = |t: &str| value_of(t, vals, self.units);
-                    if let (Ok(a), Ok(b)) = (end(&f.domain.0), end(&f.domain.1)) {
-                        f.domain = (crate::syntax::num(a), crate::syntax::num(b));
-                    }
-                    debug_assert!(mid.is_finite());
-                    f.held = Some(held);
-                    let mut face = f.face.clone();
-                    face.path.insert(0, crate::syntax::Seg::Field(face.root.clone()));
-                    face.root = Name { text: f.instance.name.text.clone(), span: face.span };
-                    if let Some(slot) = d2.children.first_mut() {
-                        *slot = vec![crate::syntax::Kid::Ref(face)];
-                    }
-                }
-                // refused where the instance was walked: no solid
-                None => return,
+            // refused where the instance was walked: no solid
+            if !self.held.names.contains_key(&held) {
+                return;
+            }
+            let end = |t: &str| value_of(t, vals, self.units);
+            if let (Ok(a), Ok(b)) = (end(&f.domain.0), end(&f.domain.1)) {
+                f.domain = (crate::syntax::num(a), crate::syntax::num(b));
+            }
+            f.held = Some(held);
+            let mut face = f.face.clone();
+            face.path.insert(0, crate::syntax::Seg::Field(face.root.clone()));
+            face.root = Name { text: f.instance.name.text.clone(), span: face.span };
+            if let Some(slot) = d2.children.first_mut() {
+                *slot = vec![crate::syntax::Kid::Ref(face)];
             }
         }
         self.settle_seeds(&mut d2, vals, scope, st.span);

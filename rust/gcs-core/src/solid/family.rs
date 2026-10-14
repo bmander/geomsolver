@@ -30,6 +30,7 @@ use crate::fmath::Det;
 use super::*;
 use crate::io::Part;
 use crate::space::sub;
+use crate::syntax::num;
 use plane::{cross, dot, norm};
 use std::collections::BTreeSet;
 use std::rc::Rc;
@@ -65,7 +66,7 @@ struct Walked {
 
 /// One station: where it stands on the interval, the plane its section is drawn in, its loops
 /// sampled — on the plane's page and in space — and the part's parameters there, so it can be
-/// read again.
+/// read again (empty where no solve stood at it: an end read as a limit, a station filled in).
 #[derive(Clone, Debug)]
 struct Station {
     s: f64,
@@ -73,8 +74,6 @@ struct Station {
     page: Vec<Vec<(f64, f64)>>,
     world: Vec<Vec<V>>,
     x: Vec<f64>,
-    /// An end read as the limit of the stations closing in on it, not solved (`extrapolate`).
-    limit: bool,
 }
 
 /// **A face family, stepped**: its stations in order of the running number, each loop's samples
@@ -87,24 +86,31 @@ pub(crate) struct Family {
     steps: Vec<Vec<(usize, bool)>>,
     /// The walls' names, by the paths of the section's edges under its instance.
     names: Vec<String>,
+    /// Per loop, whether it runs clockwise on its plane's page at the drawn station.
+    cw: Vec<bool>,
     /// Whether the section's normal points the way the family runs.
     forward: bool,
-    /// How near two samples are to be one: a station's end of a vanished edge, an apex.
-    near: f64,
+    /// The sheet's flatness the family was stepped at.
+    tol: f64,
 }
 
 /// The family solid `si` stepped at `unit`, remembered against everything it reads
-/// (`Caches::family`).
+/// (`Caches::family`).  Stepped no coarser than a report asks, so validation, a report and a
+/// mesh, each asking at its own unit, share one stepping.
 pub(crate) fn built(sk: &Sketch, si: usize, unit: f64) -> Result<Rc<Family>, String> {
+    let unit = unit.min(REPORT_UNIT);
     sk.caches.family.get_or(si, MemoKey::at(sk, si, unit), || march(sk, si, unit).map(Rc::new))
 }
 
 /// The station's part of the drawing: everything the station is not held where the drawing
 /// stands — the primitives' parameters, the planes' poses, the unknowns of the drawing — so the
-/// part walked from its face (`Part::around_all`) stops at the geometry the station was given.
-fn part_of(sk: &Sketch, face: u32, station: &[EntRef], prefix: &str) -> Part {
+/// part walked from its face (`Part::around_all`) stops at the geometry the station was given;
+/// and the drawing's unknowns it was handed, by name, to hold at every station.
+fn part_of(sk: &Sketch, face: u32, station: &[EntRef], prefix: &str) -> (Part, Vec<String>) {
     let inside: BTreeSet<EntRef> = station.iter().copied().collect();
     let mut held = sk.clone();
+    // a copy made to solve reads none of what the drawing remembers
+    held.caches = Default::default();
     for e in sk.primitives() {
         if inside.contains(&e) {
             continue;
@@ -127,10 +133,10 @@ fn part_of(sk: &Sketch, face: u32, station: &[EntRef], prefix: &str) -> Part {
             held.params[x as usize].fixed = true;
         }
     }
-    for (name, &p) in &sk.free_vars {
-        if !name.starts_with(prefix) {
-            held.params[p as usize].fixed = true;
-        }
+    let mut outer = Vec::new();
+    for (name, &p) in sk.free_vars.iter().filter(|(n, _)| !n.starts_with(prefix)) {
+        held.params[p as usize].fixed = true;
+        outer.push(name.clone());
     }
     // the face and its edges, and the geometry the station's dimensions read (held, so tied to
     // nothing the walk follows)
@@ -140,11 +146,11 @@ fn part_of(sk: &Sketch, face: u32, station: &[EntRef], prefix: &str) -> Part {
         .chain(f.boundaries().flat_map(|(edges, _)| edges.iter().copied()))
         .chain(read.map(|(e, _)| e))
         .collect();
-    Part::around_all(&held, &seeds)
+    (Part::around_all(&held, &seeds), outer)
 }
 
-/// Each loop of face `fi` as walked (`profile::loop_poly`'s rule: each edge entered where the last
-/// one left), each edge's wall, and the walls' names under the instance `prefix`.
+/// Each loop of face `fi` as walked (`profile::walk_loop`), each edge's wall, and the walls' names
+/// under the instance `prefix`.
 fn walk_face(sk: &Sketch, fi: usize, prefix: &str)
     -> Result<(Vec<Vec<Walked>>, Vec<String>), String> {
     let f = &sk.faces[fi];
@@ -154,30 +160,20 @@ fn walk_face(sk: &Sketch, fi: usize, prefix: &str)
     let mut loops = Vec::new();
     let mut names = Vec::new();
     for (edges, edge_names) in f.boundaries() {
+        let lone = edges.len() == 1 && matches!(edges[0].kind, EntKind::Circle | EntKind::Curve);
+        let ends: Vec<(EntRef, u32)> = if lone {
+            vec![(edges[0], u32::MAX)]
+        } else {
+            super::profile::walk_loop(sk, edges)
+                .ok_or("a section's loop is not walked end to end")?
+                .into_iter().map(|(e, from, _)| (e, from)).collect()
+        };
         let mut walked = Vec::new();
-        let mut at: Option<u32> = None;
-        for (i, &e) in edges.iter().enumerate() {
+        for (i, (edge, from)) in ends.into_iter().enumerate() {
             let wall = names.len();
             let name = edge_names.get(i).cloned().unwrap_or_else(|| format!("e{wall}"));
             names.push(crate::program::public_path(&format!("{under}{name}")));
-            let lone = edges.len() == 1 && matches!(e.kind, EntKind::Circle | EntKind::Curve);
-            if lone {
-                walked.push(Walked { edge: e, from: u32::MAX, wall });
-                continue;
-            }
-            let (a, b) = crate::model::edge_ends(sk, e).ok_or("a section's edge has no ends")?;
-            let (from, to) = match at {
-                None => {
-                    let (la, lb) = edges.last().and_then(|&l| crate::model::edge_ends(sk, l))
-                        .ok_or("a section's edge has no ends")?;
-                    if a == la || a == lb { (a, b) } else { (b, a) }
-                }
-                Some(p) if p == a => (a, b),
-                Some(p) if p == b => (b, a),
-                Some(_) => return Err("a section's loop is not walked end to end".into()),
-            };
-            walked.push(Walked { edge: e, from, wall });
-            at = Some(to);
+            walked.push(Walked { edge, from, wall });
         }
         loops.push(walked);
     }
@@ -189,19 +185,15 @@ fn walk_face(sk: &Sketch, fi: usize, prefix: &str)
 }
 
 /// How many samples edge `w` needs to stray less than `tol` from itself: one for a line, a curve
-/// by the sagitta rule the drawing is drawn by (`profile::tessellate_arc`'s).
+/// by the sagitta rule the drawing is drawn by (`profile::arc_steps`).
 fn needed(sk: &Sketch, w: &Walked, tol: f64) -> usize {
-    let arc = |r: f64, sweep: f64| {
-        let step = (if r > tol { 2.0 * (1.0 - tol / r).dacos() } else { std::f64::consts::TAU })
-            .min(std::f64::consts::TAU / 64.0);
-        ((sweep.abs() / step).ceil() as usize).clamp(2, 4096)
-    };
+    let r = || sk.radius_value(w.edge).abs();
     match w.edge.kind {
         EntKind::Line => 1,
-        EntKind::Circle => arc(sk.radius_value(w.edge).abs(), std::f64::consts::TAU),
+        EntKind::Circle => super::profile::arc_steps(r(), std::f64::consts::TAU, tol),
         EntKind::Arc => {
             let (a0, a1) = sk.arc_angles(w.edge.i());
-            arc(sk.radius_value(w.edge).abs(), (a1 - a0).rem_euclid(std::f64::consts::TAU))
+            super::profile::arc_steps(r(), a1 - a0, tol)
         }
         EntKind::Spline => crate::curve::tessellate(sk, w.edge.i(), tol / crate::curve::FLATNESS_PX)
             .len().saturating_sub(1).clamp(4, 4096),
@@ -213,58 +205,49 @@ fn needed(sk: &Sketch, w: &Walked, tol: f64) -> usize {
 /// leaves: on the page of the plane it is drawn in.
 fn sample(sk: &Sketch, w: &Walked, n: usize, out: &mut Vec<(f64, f64)>) {
     let frac = |k: usize| k as f64 / n as f64;
+    let round = |c: (f64, f64), r: f64, start: f64, sweep: f64, out: &mut Vec<(f64, f64)>| {
+        for k in 0..n {
+            let (sn, cs) = (start + sweep * frac(k)).dsin_cos();
+            out.push((c.0 + r * cs, c.1 + r * sn));
+        }
+    };
     match w.edge.kind {
         EntKind::Line => out.push(sk.point_xy(w.from as usize)),
         EntKind::Circle => {
-            let (c, r) = (sk.point_xy(sk.round_center(w.edge)), sk.radius_value(w.edge).abs());
-            for k in 0..n {
-                let (sn, cs) = (std::f64::consts::TAU * frac(k)).dsin_cos();
-                out.push((c.0 + r * cs, c.1 + r * sn));
-            }
+            let c = sk.point_xy(sk.round_center(w.edge));
+            round(c, sk.radius_value(w.edge).abs(), 0.0, std::f64::consts::TAU, out);
         }
         EntKind::Arc => {
             // how far an arc goes is the arc's; which way, the walk's (`profile::walk_edge`)
             let arc = &sk.arcs[w.edge.i()];
-            let (c, r) = (sk.point_xy(arc.center as usize), sk.radius_value(w.edge).abs());
+            let c = sk.point_xy(arc.center as usize);
             let (a0, a1) = sk.arc_angles(w.edge.i());
-            let mut extent = a1 - a0;
-            while extent <= 0.0 {
-                extent += std::f64::consts::TAU;
-            }
-            let ccw = w.from == arc.start;
-            let (start, step) = if ccw { (a0, extent) } else { (a1, -extent) };
-            for k in 0..n {
-                let (sn, cs) = (start + step * frac(k)).dsin_cos();
-                out.push((c.0 + r * cs, c.1 + r * sn));
-            }
+            let (start, sweep) = if w.from == arc.start { (a0, a1 - a0) } else { (a1, a0 - a1) };
+            round(c, sk.radius_value(w.edge).abs(), start, sweep, out);
         }
-        EntKind::Spline => {
-            let (lo, hi) = crate::curve::domain(sk, w.edge.i());
-            let forward = sk.splines[w.edge.i()].ctrl[0] == w.from;
-            for k in 0..n {
-                let t = if forward { lo + (hi - lo) * frac(k) } else { hi - (hi - lo) * frac(k) };
-                out.push(crate::curve::point_at(sk, w.edge.i(), t));
-            }
-        }
+        // a spline or a curve by its own parameter, the way the walk runs it; a closed curve
+        // standing alone over its whole domain
         _ => {
-            let (lo, hi) = sk.curve_domain(w.edge.i());
-            let forward = sk.curves[w.edge.i()].trim.is_none_or(|t| t.from == w.from);
+            let [t0, t1] = super::profile::curved_span(sk, w.edge, w.from)
+                .map_or_else(|| { let (a, b) = sk.curve_domain(w.edge.i()); [a, b] }, |(_, t)| t);
             for k in 0..n {
-                let t = if forward { lo + (hi - lo) * frac(k) } else { hi - (hi - lo) * frac(k) };
-                out.push(sk.curve_point(w.edge.i(), t));
+                out.push(super::profile::curved_point(sk, w.edge, t0 + (t1 - t0) * frac(k)));
             }
         }
     }
 }
 
 /// What the family reads off the part: its face, its running number's parameter, the loops as
-/// walked and the names the walk gives them.
+/// walked, the unknowns of the drawing it holds, and the sheet's flatness and the interval it is
+/// stepped over.
 struct Reading {
     face: usize,
     held: u32,
     loops: Vec<Vec<Walked>>,
     /// The unknowns of the drawing the part was handed, held as they stand at every station.
     outer: Vec<String>,
+    tol: f64,
+    span: f64,
 }
 
 impl Reading {
@@ -283,18 +266,21 @@ impl Reading {
         let world = page.iter()
             .map(|r| r.iter().map(|&(x, y)| basis.lift(x, y)).collect())
             .collect();
-        let x = sk.params.iter().map(|p| p.value).collect();
-        Ok(Station { s, basis, page, world, x, limit: false })
+        Ok(Station { s, basis, page, world, x: sk.get_x() })
     }
 
-    /// The samples each edge needs here.
-    fn counts(&self, sk: &Sketch, tol: f64) -> Vec<Vec<usize>> {
-        self.loops.iter().map(|l| l.iter().map(|w| needed(sk, w, tol)).collect()).collect()
+    /// Each edge's count raised to what the part, where it stands, needs of it.
+    fn need(&self, sk: &Sketch, counts: &mut [Vec<usize>]) {
+        for (n, walked) in counts.iter_mut().zip(&self.loops) {
+            for (k, w) in n.iter_mut().zip(walked) {
+                *k = (*k).max(needed(sk, w, self.tol));
+            }
+        }
     }
 
-    /// Solve the station at `s`, warm from wherever the part stands: `Err` saying why it is not
-    /// regular — it does not solve, or solves with a freedom or an equation lost.
-    fn settle(&self, sk: &mut Sketch, s: f64) -> Result<(), String> {
+    /// Solve the station at `s`, warm from wherever the part stands: the compiled system, or why
+    /// it does not solve.
+    fn settle(&self, sk: &mut Sketch, s: f64) -> Result<crate::system::System, String> {
         sk.params[self.held as usize].value = s;
         for item in crate::expr::evaluate(sk) {
             if let Some(e) = item.error {
@@ -307,10 +293,15 @@ impl Reading {
             }
         }
         let mut sys = crate::system::System::new(sk);
-        let r = sys.solve(sk, crate::solve::SolveOpts::default());
-        if !r.success {
+        if !sys.solve(sk, crate::solve::SolveOpts::default()).success {
             return Err("does not solve".into());
         }
+        Ok(sys)
+    }
+
+    /// Whether the station `sys` solved is regular: of full column rank, no freedom left and no
+    /// equation lost — asked only of a station the step keeps, since the rank is the dear part.
+    fn regular(sys: &mut crate::system::System, sk: &Sketch) -> Result<(), String> {
         let z = sys.z0(sk);
         let rank = sys.rank(&z, crate::system::RANK_TOL, true);
         if rank < sys.n_free {
@@ -336,35 +327,37 @@ fn weights(at: &[f64], s: f64) -> Vec<f64> {
     }).collect()
 }
 
+/// The polynomial through stations `from`, read at `s`, of what `pick` reads of each.
+fn mix(from: &[&Station], w: &[f64], pick: &dyn Fn(&Station) -> V) -> V {
+    std::array::from_fn(|k| from.iter().zip(w).map(|(st, w)| w * pick(st)[k]).sum())
+}
+
+/// Every sample of the polynomial through stations `from`, read at `s`, in space.
+fn world_at(from: &[&Station], w: &[f64]) -> Vec<Vec<V>> {
+    (0..from[0].world.len()).map(|l| {
+        (0..from[0].world[l].len()).map(|i| mix(from, w, &|st| st.world[l][i])).collect()
+    }).collect()
+}
+
 /// The polynomial through stations `from`, read at `s`: every sample and the plane, a station no
-/// solve stood at.  `limit` says it is an end read so (`extrapolate`).
-fn through(from: &[&Station], s: f64, limit: bool) -> Result<Station, String> {
+/// solve stood at — one filled in between, or an end read as the limit of those before it.
+fn through(from: &[&Station], s: f64) -> Result<Station, String> {
     let w = weights(&from.iter().map(|st| st.s).collect::<Vec<_>>(), s);
-    let mix = |pick: &dyn Fn(&Station) -> V| -> V {
-        std::array::from_fn(|k| from.iter().zip(&w).map(|(st, w)| w * pick(st)[k]).sum())
-    };
-    let world: Vec<Vec<V>> = (0..from[0].world.len()).map(|l| {
-        (0..from[0].world[l].len()).map(|i| mix(&|st| st.world[l][i])).collect()
-    }).collect();
-    let o = mix(&|st| st.basis.o);
-    let basis = Basis::explicit(mix(&|st| st.basis.u), mix(&|st| st.basis.v))
+    let world = world_at(from, &w);
+    let o = mix(from, &w, &|st| st.basis.o);
+    let basis = Basis::explicit(mix(from, &w, &|st| st.basis.u), mix(from, &w, &|st| st.basis.v))
         .map(|bs| Basis { o, ..bs })
         .ok_or("its plane comes out of no direction")?;
-    let on_page = |p: V| {
-        let q = sub(p, o);
-        (dot(q, basis.u), dot(q, basis.v))
-    };
-    let page = world.iter().map(|r| r.iter().map(|&p| on_page(p)).collect()).collect();
-    let x = from.last().map_or(Vec::new(), |st| st.x.clone());
-    Ok(Station { s, basis, page, world, x, limit })
+    let page = world.iter().map(|r| r.iter().map(|&p| basis.view_coords(p)).collect()).collect();
+    Ok(Station { s, basis, page, world, x: Vec::new() })
 }
 
 /// How far the samples of `st` stand from where the cubic through the four stations before it
 /// carries them: an estimate, by the ratio of a cubic's extrapolation error to its interpolation
 /// error, of how far a cubic through four such stations strays between them.
 fn cubic_error(before: &[&Station], st: &Station) -> f64 {
-    let Ok(guess) = through(before, st.s, false) else { return f64::INFINITY };
-    let off = guess.world.iter().flatten().zip(st.world.iter().flatten())
+    let w = weights(&before.iter().map(|b| b.s).collect::<Vec<_>>(), st.s);
+    let off = world_at(before, &w).iter().flatten().zip(st.world.iter().flatten())
         .map(|(p, q)| norm(sub(*p, *q))).fold(0.0f64, f64::max);
     // extrapolating a step past four stations a step apart errs by h⁴|P⁗|; interpolating within
     // the middle of them, by 9/384 of that
@@ -373,22 +366,22 @@ fn cubic_error(before: &[&Station], st: &Station) -> f64 {
 
 /// The stations from `start` (solved, the part standing there) on to the end `to`, each warm from
 /// where the stations before it carry it, and as far apart as a cubic through four of them stays
-/// within `tol` between them; `before` the station on the other side of `start`, where there is
-/// one.
-#[allow(clippy::too_many_arguments)]
+/// within the flatness between them; `before` the station on the other side of `start`, where
+/// there is one.  Each kept station raises `need` to what its edges ask (`Reading::need`).
+/// Whether the end would not solve, so the stations closed in on it to be carried there, comes
+/// back beside them (`limit`).
 fn run(
     sk: &mut Sketch,
     rd: &Reading,
     start: &Station,
     before: Option<&Station>,
     to: f64,
-    span: f64,
     counts: &[Vec<usize>],
-    tol: f64,
-) -> Result<Vec<Station>, String> {
+    need: &mut [Vec<usize>],
+) -> Result<(Vec<Station>, bool), String> {
     let dir = (to - start.s).signum();
-    let (coarsest, finest) = (span * COARSEST, span * FINEST);
-    let mut h = span * FIRST_STEP;
+    let (coarsest, finest) = (rd.span * COARSEST, rd.span * FINEST);
+    let mut h = rd.span * FIRST_STEP;
     // the stations so far, `before` and `start` first: a step is judged by the four before it
     let mut trail: Vec<Station> = before.into_iter().cloned().chain([start.clone()]).collect();
     let skip = trail.len();
@@ -400,13 +393,11 @@ fn run(
         if left <= 0.0 || trail.len() - skip >= MAX_STATIONS {
             break;
         }
-        if closing && left <= span * LIMIT_GAP {
-            let n = trail.len();
-            if n < 3 {
+        if closing && left <= rd.span * LIMIT_GAP {
+            if trail.len() < 3 {
                 return Err("its end does not solve, and no station stands near enough to read \
                             it from".into());
             }
-            trail.push(through(&[&trail[n - 3], &trail[n - 2], &trail[n - 1]], to, true)?);
             break;
         }
         let step = if closing { left / 2.0 } else { h.min(left) };
@@ -421,36 +412,50 @@ fn run(
                 }
             }
         }
-        match rd.settle(sk, s) {
-            Ok(()) => {
-                let st = rd.station(sk, s, counts)?;
-                let n = trail.len();
-                if n >= 4 && !closing {
-                    let last: Vec<&Station> = trail[n - 4..].iter().collect();
-                    let e = cubic_error(&last, &st);
-                    if e > tol && step > finest {
-                        h = step / 2.0;
-                        continue;
-                    }
-                    let grow = if e > 0.0 { (tol / e).powf(0.25) * 0.9 } else { 2.0 };
-                    h = (step * grow.clamp(0.5, 2.0)).clamp(finest, coarsest);
-                } else if !closing {
-                    h = (step * 1.5).min(coarsest);
+        let settled = rd.settle(sk, s).and_then(|mut sys| {
+            let st = rd.station(sk, s, counts)?;
+            // a step whose stations stray from the cubic through the four before is halved
+            let n = trail.len();
+            if !closing && n >= 4 {
+                let last: Vec<&Station> = trail[n - 4..].iter().collect();
+                let e = cubic_error(&last, &st);
+                if e > rd.tol && step > finest {
+                    return Ok(None);
                 }
+                let grow = if e > 0.0 { (rd.tol / e).powf(0.25) * 0.9 } else { 2.0 };
+                h = (step * grow.clamp(0.5, 2.0)).clamp(finest, coarsest);
+            } else if !closing {
+                h = (step * 1.5).min(coarsest);
+            }
+            Reading::regular(&mut sys, sk)?;
+            Ok(Some(st))
+        });
+        match settled {
+            Ok(Some(st)) => {
+                rd.need(sk, need);
                 trail.push(st);
             }
-            // only an end may lose rank: it is read as the limit of the stations closing in
-            Err(_) if s == to && !closing => closing = true,
+            Ok(None) => h = step / 2.0,
             Err(why) if closing => {
-                let (to, s) = (crate::syntax::num(to), crate::syntax::num(s));
+                let (to, s) = (num(to), num(s));
                 return Err(format!("the stations closing in on its end at {to} do not solve: the \
                                     station at {s} {why}"))
             }
+            // only an end may lose rank: it is read as the limit of the stations closing in
+            Err(_) if s == to => closing = true,
             Err(_) if step > finest => h = step / 2.0,
-            Err(why) => return Err(format!("the station at {} {why}", crate::syntax::num(s))),
+            Err(why) => return Err(format!("the station at {} {why}", num(s))),
         }
     }
-    Ok(trail.split_off(skip))
+    Ok((trail.split_off(skip), closing))
+}
+
+/// The end `to` read as the limit of the last three of `stations` closing in on it (finding 9):
+/// every sample, and the plane, carried quadratically to the end.  A vanished section comes out
+/// its apex, a vanished edge a point.
+fn limit(stations: &[Station], to: f64) -> Result<Station, String> {
+    let n = stations.len();
+    through(&[&stations[n - 3], &stations[n - 2], &stations[n - 1]], to)
 }
 
 /// The solved stations filled in between (`through`, a cubic over the four nearest) as finely as
@@ -463,61 +468,58 @@ fn densify(solved: Vec<Station>, tol: f64, samples: usize) -> Result<Vec<Station
         return Ok(solved);
     }
     // per interval, how many steps its runs ask for, and its twist
-    let (mut runs, mut twists): (Vec<f64>, Vec<f64>) = (Vec::with_capacity(n - 1), Vec::new());
+    let (mut runs, mut twists) = (Vec::with_capacity(n - 1), Vec::with_capacity(n - 1));
     for k in 0..n - 1 {
         let (a, b) = (&solved[k], &solved[k + 1]);
         let c = if k + 2 < n { &solved[k + 2] } else { &solved[k - 1] };
-        let (h, mut run, mut worst) = (b.s - a.s, 0.0f64, 0.0f64);
+        let (h1, h2) = (b.s - a.s, c.s - b.s);
+        let (mut run, mut worst) = (0.0f64, 0.0f64);
         for l in 0..a.world.len() {
             let m = a.world[l].len();
             for i in 0..m {
-                // the run's second difference, and the quad's twist to the next sample
+                // the run's second difference; its sagitta over a step h1 is |P''| h1² / 8
                 let (pa, pb, pc) = (a.world[l][i], b.world[l][i], c.world[l][i]);
-                let (h1, h2) = (b.s - a.s, c.s - b.s);
                 let d2: V = std::array::from_fn(|q| {
                     2.0 * ((pc[q] - pb[q]) / h2 - (pb[q] - pa[q]) / h1) / (h1 + h2)
                 });
-                run = run.max((norm(d2) * h * h / 8.0 / tol).sqrt());
+                run = run.max((norm(d2) * h1 * h1 / 8.0 / tol).sqrt());
                 // how far the quad's fourth corner stands off the plane of the other three: a
                 // twisted wall, which its fan meets an eighth of that from the ruled patch
                 let j = (i + 1) % m;
-                let (qa, qb, qc, qd) = (a.world[l][i], a.world[l][j], b.world[l][j], b.world[l][i]);
-                let along = cross(sub(qb, qa), sub(qd, qa));
-                let twist = sub(sub(qc, qb), sub(qd, qa));
+                let (qb, qc) = (a.world[l][j], b.world[l][j]);
+                let along = cross(sub(qb, pa), sub(pb, pa));
                 if let Some(n) = plane::unit(along) {
-                    worst = worst.max(dot(twist, n).abs() / (8.0 * tol));
+                    worst = worst.max(dot(sub(sub(qc, qb), sub(pb, pa)), n).abs() / (8.0 * tol));
                 }
             }
         }
         runs.push(run.ceil().max(1.0));
         twists.push(worst.ceil().max(1.0));
     }
-    // the runs' steps are owed, to `MAX_STATIONS`; the twist's are taken within the budget, each
-    // interval's cut in proportion past it
-    let owed: f64 = runs.iter().sum();
+    // the runs' steps are owed, to `MAX_STATIONS`; the twist's are taken within the budget (no
+    // less than what the runs took), each interval's cut in proportion past it
     let fit = |want: &[f64], room: f64| {
         let total: f64 = want.iter().sum();
-        if total > room { room / total } else { 1.0 }
+        (if total > room { room / total } else { 1.0 }, total.min(room))
     };
-    let runs_scale = fit(&runs, MAX_STATIONS as f64);
-    let room = ((FACETED / samples.max(1)) as f64).max(owed.min(MAX_STATIONS as f64));
-    let twist_scale = fit(&twists, room);
-    let mut out = Vec::new();
-    for k in 0..n - 1 {
-        out.push(solved[k].clone());
-        let m = (runs[k] * runs_scale).max(twists[k] * twist_scale).floor().max(1.0) as usize;
-        let near: Vec<&Station> = {
-            let lo = k.saturating_sub(1).min(n - 4);
-            solved[lo..lo + 4].iter().collect()
-        };
-        for j in 1..m {
-            let s = solved[k].s + (solved[k + 1].s - solved[k].s) * j as f64 / m as f64;
-            let mut st = through(&near, s, false)?;
-            st.x.clear();
-            out.push(st);
-        }
+    let (runs_scale, owed) = fit(&runs, MAX_STATIONS as f64);
+    let (twist_scale, _) = fit(&twists, ((FACETED / samples.max(1)) as f64).max(owed));
+    let steps: Vec<usize> = runs.iter().zip(&twists)
+        .map(|(r, t)| (r * runs_scale).max(t * twist_scale).floor().max(1.0) as usize)
+        .collect();
+    let mut filled: Vec<Vec<Station>> = Vec::with_capacity(n - 1);
+    for (k, &m) in steps.iter().enumerate() {
+        let lo = k.saturating_sub(1).min(n - 4);
+        let near: Vec<&Station> = solved[lo..lo + 4].iter().collect();
+        let (a, b) = (solved[k].s, solved[k + 1].s);
+        filled.push((1..m).map(|j| through(&near, a + (b - a) * j as f64 / m as f64))
+            .collect::<Result<_, _>>()?);
     }
-    out.push(solved[n - 1].clone());
+    let mut out = Vec::with_capacity(n + steps.iter().sum::<usize>());
+    for (st, between) in solved.into_iter().zip(filled.into_iter().map(Some).chain([None])) {
+        out.push(st);
+        out.extend(between.into_iter().flatten());
+    }
     Ok(out)
 }
 
@@ -531,166 +533,175 @@ fn march(sk: &Sketch, si: usize, unit: f64) -> Result<Family, String> {
     if !(a.is_finite() && b.is_finite() && a < b) {
         return Err("a face family needs a finite interval running forward".into());
     }
-    let prefix = format!("{}.", held.rsplit_once('.').map_or("", |(p, _)| p));
-    let mut part = part_of(sk, *face, station, &prefix);
+    let prefix = crate::model::station_prefix(held);
+    let (mut part, outer) = part_of(sk, *face, station, &prefix);
     let pf = part.entity_in(EntRef::face(*face as usize))
         .ok_or("the station's face is not in its part")?.i();
     let held_param = part.sketch.held.get(held).ok_or("its running number is not held")?.param;
     let (loops, names) = walk_face(&part.sketch, pf, &prefix)?;
-    let outer = part.sketch.free_vars.keys().filter(|n| !n.starts_with(&prefix)).cloned().collect();
-    let rd = Reading { face: pf, held: held_param, loops, outer };
     let tol = crate::curve::flatness(unit);
-    let span = b - a;
+    let rd = Reading { face: pf, held: held_param, loops, outer, tol, span: b - a };
     // the drawn station, held to the rule every other is
     let ps = &mut part.sketch;
     let mid = ps.params[held_param as usize].value;
-    rd.settle(ps, mid).map_err(|why| format!("the station at {} {why}", crate::syntax::num(mid)))?;
-    let mut counts = rd.counts(ps, tol);
+    rd.settle(ps, mid)
+        .and_then(|mut sys| Reading::regular(&mut sys, ps))
+        .map_err(|why| format!("the station at {} {why}", num(mid)))?;
+    let counts: Vec<Vec<usize>> = rd.loops.iter().map(|l| vec![0; l.len()]).collect();
+    let mut need = counts.clone();
+    rd.need(ps, &mut need);
+    let counts = need.clone();
     let centre = rd.station(ps, mid, &counts)?;
-    let up = run(ps, &rd, &centre, None, b, span, &counts, tol)?;
+    let (up, up_limit) = run(ps, &rd, &centre, None, b, &counts, &mut need)?;
     restore(ps, &centre);
-    let down = run(ps, &rd, &centre, up.first(), a, span, &counts, tol)?;
+    let (down, down_limit) = run(ps, &rd, &centre, up.first(), a, &counts, &mut need)?;
+    let drawn = down.len();
     let mut stations: Vec<Station> =
         down.into_iter().rev().chain(std::iter::once(centre)).chain(up).collect();
     // every edge sampled as finely as its finest station needs, and each station read there again
-    let mut finer = counts.clone();
-    for st in stations.iter().filter(|st| !st.limit) {
-        restore(ps, st);
-        for (f, c) in finer.iter_mut().flatten().zip(rd.counts(ps, tol).into_iter().flatten()) {
-            *f = (*f).max(c);
-        }
-    }
-    if finer != counts {
-        counts = finer;
-        for st in stations.iter_mut().filter(|st| !st.limit) {
+    if need != counts {
+        for st in &mut stations {
             restore(ps, st);
-            *st = rd.station(ps, st.s, &counts)?;
-        }
-        let n = stations.len();
-        if stations[0].limit && n >= 4 {
-            let near = [&stations[3], &stations[2], &stations[1]];
-            stations[0] = through(&near, a, true)?;
-        }
-        if stations[n - 1].limit && n >= 4 {
-            let near = [&stations[n - 4], &stations[n - 3], &stations[n - 2]];
-            stations[n - 1] = through(&near, b, true)?;
+            *st = rd.station(ps, st.s, &need)?;
         }
     }
-    let steps = rd.loops.iter().zip(&counts).map(|(walked, n)| {
+    // and an end that would not solve read as the limit of the stations closing in on it
+    if down_limit {
+        let near: Vec<Station> = stations[..3].iter().rev().cloned().collect();
+        stations.insert(0, limit(&near, a)?);
+    }
+    if up_limit {
+        stations.push(limit(&stations, b)?);
+    }
+    let drawn = drawn + usize::from(down_limit);
+    let steps = rd.loops.iter().zip(&need).map(|(walked, n)| {
         walked.iter().zip(n).flat_map(|(w, &k)| {
             let curved = !matches!(w.edge.kind, EntKind::Line);
             std::iter::repeat_n((w.wall, curved), k)
         }).collect()
     }).collect();
-    let mut fam = Family { stations, steps, names, forward: true, near: tol * 1e-3 };
-    fam.judge(tol)?;
+    let mut fam = Family { stations, steps, names, cw: Vec::new(), forward: true, tol };
+    fam.judge(drawn)?;
     let samples = fam.steps.iter().map(Vec::len).sum();
     fam.stations = densify(std::mem::take(&mut fam.stations), tol, samples)?;
-    fam.ahead(tol)?;
+    fam.ahead()?;
     Ok(fam)
 }
 
 impl Family {
+    /// How near two samples are to be one: a station's end of a vanished edge, an apex.
+    fn near(&self) -> f64 {
+        self.tol * 1e-3
+    }
+
     /// A station's loop as a polygon on its plane's page, coincident samples run together: what
     /// an end whose edge has vanished comes to.  An end's are run together within the sheet's
     /// flatness, where an edge solved to nothing stands as near nothing as the solve leaves it.
     fn poly(&self, k: usize, l: usize) -> FacePoly {
         let st = &self.stations[k];
-        let near = if k == 0 || k + 1 == self.stations.len() { self.near * 1e3 } else { self.near };
+        let near = if k == 0 || k + 1 == self.stations.len() { self.tol } else { self.near() };
+        let apart = |a: (f64, f64), b: (f64, f64)| (a.0 - b.0).dhypot(a.1 - b.1);
         let mut pts: Vec<(f64, f64)> = Vec::new();
         let mut of = Vec::new();
-        let ring = &st.page[l];
-        for (i, &p) in ring.iter().enumerate() {
-            if pts.last().is_some_and(|q: &(f64, f64)| (q.0 - p.0).dhypot(q.1 - p.1) <= near) {
+        for (i, &p) in st.page[l].iter().enumerate() {
+            if pts.last().is_some_and(|&q| apart(q, p) <= near) {
                 continue;
             }
             pts.push(p);
-            of.push((self.steps[l][i].0, self.steps[l][i].1));
+            of.push(self.steps[l][i]);
         }
-        let apart = |a: (f64, f64), b: (f64, f64)| (a.0 - b.0).dhypot(a.1 - b.1);
         while pts.len() > 1 && apart(pts[0], pts[pts.len() - 1]) <= near {
             pts.pop();
             of.pop();
         }
-        FacePoly { pts, of, names: self.names.clone(), basis: st.basis, curved: Vec::new() }
+        // what a loop is asked here is its shape, never its edges' names
+        FacePoly { pts, of, names: Vec::new(), basis: st.basis, curved: Vec::new() }
     }
 
-    /// Hold every solved station to the station's topology (see the module).
-    fn judge(&mut self, tol: f64) -> Result<(), String> {
-        let n = self.stations.len();
+    /// Hold every solved station to the station's topology (see the module), and read which way
+    /// each loop runs at the drawn one, `drawn`.
+    fn judge(&mut self, drawn: usize) -> Result<(), String> {
+        let (n, tol) = (self.stations.len(), self.tol);
         if n < 2 {
             return Err("a face family needs more than one station".into());
         }
-        let at = |s: f64| crate::syntax::num(s);
         let loops = self.steps.len();
-        // which way each loop runs at the drawn station, and which way the family moves there
-        let centre = self.stations.iter().position(|st| !st.limit).unwrap_or(0);
-        let wind: Vec<f64> = (0..loops).map(|l| self.poly(centre, l).area().signum()).collect();
+        self.cw = (0..loops).map(|l| self.poly(drawn, l).area() < 0.0).collect();
         let area_tol = tol * tol;
+        let edges: Vec<Vec<(usize, usize, usize)>> = (0..loops).map(|l| self.edges(l)).collect();
+        // each edge's run at the station before, to tell one turned over
+        let mut was: Vec<Vec<(f64, V)>> = Vec::new();
         for k in 0..n {
             let end = k == 0 || k == n - 1;
-            let s = self.stations[k].s;
+            let s = num(self.stations[k].s);
             let polys: Vec<FacePoly> = (0..loops).map(|l| self.poly(k, l)).collect();
             for (l, p) in polys.iter().enumerate() {
                 let what = if l == 0 { "its section".to_string() } else { format!("its hole {l}") };
                 // an end may lose an edge, or the whole section to its apex; nothing else may
-                if end && (p.pts.len() < 3 || p.area().abs() <= area_tol) {
+                let area = p.area();
+                if end && (p.pts.len() < 3 || area.abs() <= area_tol) {
                     continue;
                 }
                 if !p.valid() {
-                    return Err(format!("{what} crosses itself or collapses at the station at {}",
-                                       at(s)));
+                    return Err(format!("{what} crosses itself or collapses at the station at {s}"));
                 }
-                if p.area().signum() != wind[l] {
-                    return Err(format!("{what} turns over at the station at {}", at(s)));
+                if (area < 0.0) != self.cw[l] {
+                    return Err(format!("{what} turns over at the station at {s}"));
                 }
+                // a hole inside the section, and apart from every hole before it
                 if l > 0 && polys[0].pts.len() >= 3 {
                     let q = &polys[0];
-                    if section::loops_touch(q, p) || !section::inside_loop(q, p.pts[0]) {
-                        return Err(format!("{what} touches or leaves the section at the station \
-                                            at {}", at(s)));
+                    let apart = polys[1..l].iter().filter(|h| h.pts.len() >= 3).all(|h| {
+                        !section::loops_touch(h, p) && !section::inside_loop(h, p.pts[0])
+                            && !section::inside_loop(p, h.pts[0])
+                    });
+                    if section::loops_touch(q, p) || !section::inside_loop(q, p.pts[0]) || !apart {
+                        return Err(format!("{what} touches or leaves the section, or another \
+                                            hole, at the station at {s}"));
                     }
                 }
             }
             // an edge lost inside the interval, or turned over from one station to the next
-            for l in 0..loops {
-                for (wall, from, to) in self.edges(l) {
-                    let chord = |st: &Station| {
-                        sub(st.world[l][to % st.world[l].len()], st.world[l][from])
-                    };
-                    let here = chord(&self.stations[k]);
-                    let length = self.length(k, l, from, to);
+            let mut runs = Vec::with_capacity(loops);
+            for (l, edges) in edges.iter().enumerate() {
+                let ring = &self.stations[k].world[l];
+                let mut here = Vec::with_capacity(edges.len());
+                for (e, &(wall, from, to)) in edges.iter().enumerate() {
+                    let length: f64 =
+                        (from..to).map(|i| norm(sub(ring[(i + 1) % ring.len()], ring[i]))).sum();
+                    let chord = sub(ring[to % ring.len()], ring[from]);
                     let name = &self.names[wall];
                     if !end && length <= tol {
-                        return Err(format!("the edge `{name}` vanishes at the station at {}: only \
-                                            an end may lose an edge", at(s)));
+                        return Err(format!("the edge `{name}` vanishes at the station at {s}: \
+                                            only an end may lose an edge"));
                     }
-                    if k > 0 && length > tol && self.length(k - 1, l, from, to) > tol
-                        && dot(here, chord(&self.stations[k - 1])) < 0.0 && to - from == 1 {
-                        let before = at(self.stations[k - 1].s);
-                        return Err(format!("the edge `{name}` turns over between the stations at \
-                                            {before} and {}", at(s)));
+                    if let Some(&(before, then)) = was.get(l).and_then(|w| w.get(e)) {
+                        let turned = dot(chord, then) < 0.0 && to - from == 1;
+                        if length > tol && before > tol && turned {
+                            let before = num(self.stations[k - 1].s);
+                            return Err(format!("the edge `{name}` turns over between the \
+                                                stations at {before} and {s}"));
+                        }
                     }
+                    here.push((length, chord));
                 }
+                runs.push(here);
             }
+            was = runs;
         }
         Ok(())
     }
 
     /// The swept volume may not cross itself: each station wholly ahead of the one before, on the
-    /// side the family moves to — and which side that is.
-    fn ahead(&mut self, tol: f64) -> Result<(), String> {
+    /// side the family moves to — and which side that is, read at the middle.
+    fn ahead(&mut self) -> Result<(), String> {
         let n = self.stations.len();
-        let at = |s: f64| crate::syntax::num(s);
-        let centre = self.stations.iter().position(|st| !st.limit).unwrap_or(0);
-        let moved = |k: usize| -> f64 {
-            let (b, next) = (&self.stations[k].basis, &self.stations[k + 1]);
-            let pts: Vec<&V> = next.world.iter().flatten().collect();
-            let along: f64 = pts.iter().map(|&&p| dot(b.normal(), sub(p, b.o))).sum();
-            along / pts.len().max(1) as f64
-        };
-        let step = centre.min(n - 2);
-        let ahead = moved(step);
+        let (tol, gap) = (self.tol, self.near());
+        let mid = (n / 2).min(n - 2);
+        let (b, next) = (&self.stations[mid].basis, &self.stations[mid + 1]);
+        let pts: Vec<&V> = next.world.iter().flatten().collect();
+        let ahead = pts.iter().map(|&&p| dot(b.normal(), sub(p, b.o))).sum::<f64>()
+            / pts.len().max(1) as f64;
         if ahead.abs() <= tol {
             return Err("its section does not move off its own plane: a face family sweeps a solid \
                         only where its stations stand one behind the next".into());
@@ -700,13 +711,12 @@ impl Family {
         for k in 0..n - 1 {
             let (here, next) = (&self.stations[k], &self.stations[k + 1]);
             let (nh, nn) = (here.basis.normal(), next.basis.normal());
-            let gap = tol * 1e-3;
             let behind = next.world.iter().flatten()
                 .any(|&p| sign * dot(nh, sub(p, here.basis.o)) <= gap)
                 || here.world.iter().flatten()
                     .any(|&p| sign * dot(nn, sub(p, next.basis.o)) >= -gap);
             if behind {
-                let (a, b) = (at(here.s), at(next.s));
+                let (a, b) = (num(here.s), num(next.s));
                 return Err(format!("the swept volume crosses itself between the stations at {a} \
                                     and {b}: the section reaches past its path's centre of \
                                     curvature, or turns back"));
@@ -717,32 +727,21 @@ impl Family {
 
     /// Each edge of loop `l`: its wall, the sample it starts at and the one past its last.
     fn edges(&self, l: usize) -> Vec<(usize, usize, usize)> {
-        let steps = &self.steps[l];
-        let mut out: Vec<(usize, usize, usize)> = Vec::new();
-        for (i, &(wall, _)) in steps.iter().enumerate() {
-            match out.last_mut() {
-                Some(e) if e.0 == wall && e.2 == i => e.2 = i + 1,
-                _ => out.push((wall, i, i + 1)),
-            }
-        }
-        out
-    }
-
-    /// How long loop `l`'s run from sample `from` to `to` is at station `k`, along its samples.
-    fn length(&self, k: usize, l: usize, from: usize, to: usize) -> f64 {
-        let ring = &self.stations[k].world[l];
-        (from..to).map(|i| norm(sub(ring[(i + 1) % ring.len()], ring[i]))).sum()
+        let mut at = 0;
+        self.steps[l].chunk_by(|a, b| a.0 == b.0).map(|run| {
+            at += run.len();
+            (run[0].0, at - run.len(), at)
+        }).collect()
     }
 
     /// The family faceted, in coordinates about `origin`: the two ends capped (`start`, `end`), a
     /// vanished one left open to its apex, and each wall the quads between neighbouring stations'
     /// samples, split where they do not lie flat.
     pub(crate) fn primitive(&self, origin: V, name: &str) -> Prim {
-        let tol = self.near * 1e3;
+        let (tol, near) = (self.tol, self.near());
         let mut faces: Vec<String> = vec!["start".into(), "end".into()];
         faces.extend(self.names.iter().cloned());
         let mut facets: Vec<Facet> = Vec::new();
-        let near = self.near;
         // which facets meet the caps' strips, whose corners stand on the walls' edges there
         let mut edge_row: Vec<bool> = Vec::new();
         let mut push = |pts: Vec<V>, face: usize, smooth: bool, reverse: bool, row: bool| {
@@ -764,11 +763,10 @@ impl Family {
         };
         let last = self.stations.len() - 1;
         let loops = self.steps.len();
-        let centre = self.stations.iter().position(|st| !st.limit).unwrap_or(0);
         for (k, face, reverse) in [(0, 0, self.forward), (last, 1, !self.forward)] {
             let st = &self.stations[k];
             let polys: Vec<FacePoly> = (0..loops).map(|l| self.poly(k, l)).collect();
-            if polys[0].pts.len() < 3 || polys[0].area().abs() <= 0.0 {
+            if polys[0].pts.len() < 3 || polys[0].area() == 0.0 {
                 continue;
             }
             let rings: Vec<&FacePoly> = polys.iter().filter(|p| p.pts.len() >= 3).collect();
@@ -778,8 +776,7 @@ impl Family {
             }
         }
         for l in 0..loops {
-            let cw = self.poly(centre, l).area() < 0.0;
-            let reverse = ((!self.forward) != (l > 0)) != cw;
+            let reverse = ((!self.forward) != (l > 0)) != self.cw[l];
             let m = self.steps[l].len();
             for k in 0..last {
                 let row = k == 0 || k + 1 == last;

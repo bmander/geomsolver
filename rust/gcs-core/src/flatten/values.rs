@@ -501,16 +501,17 @@ impl<'a> Walk<'a> {
         substitute_with(text, |w| of(w).or_else(|| self.kept(w, scope)))
     }
 
-    /// Whether a text, once the scope's numbers are written in, reads a face family's running
+    /// A text with the scope's numbers written in, where it then reads a face family's running
     /// number (`Held`).
-    fn reads_held(&self, text: &str, vals: &BTreeMap<String, Aff>, scope: &Scope) -> bool {
+    fn held_text(&self, text: &str, vals: &BTreeMap<String, Aff>, scope: &Scope) -> Option<String> {
         if self.held.names.is_empty() {
-            return false;
+            return None;
         }
         let of = of_vals_in(vals, self.units, &self.held.names);
         let sub = substitute_with(text, |w| of(w).or_else(|| self.kept(w, scope)));
         expr::parse_in(&sub, self.units)
             .is_ok_and(|p| p.body.deps().iter().any(|n| self.held.names.contains_key(n)))
+            .then_some(sub)
     }
 
     /// A dimension's text, settled: the component's numbers written in, and the names that came
@@ -541,8 +542,8 @@ impl<'a> Walk<'a> {
         // a dotted name read in a body (`t.w`, a nested instance's unknown) is made absolute
         // under the instance it is read in; `resolve` judges whether it names anything
         let own = scope.instance_prefix();
+        let of = of_vals_in(vals, self.units, &self.held.names);
         let sub = substitute_with(text, |w| {
-            let of = of_vals_in(vals, self.units, &self.held.names);
             of(w).or_else(|| self.kept(w, scope)).or_else(|| {
                 let dotted = !own.is_empty() && w.contains('.') && reads.contains(w);
                 dotted.then(|| format!("{own}{w}"))
@@ -620,25 +621,18 @@ impl<'a> Walk<'a> {
         vals: &BTreeMap<String, Aff>,
         scope: &Scope,
     ) -> bool {
-        let t = format!("({})", self.subst_sym(text, vals, scope).trim());
+        if self.sym.is_some() {
+            let t = format!("({})", self.subst_sym(text, vals, scope).trim());
+            if let Some(sym) = self.sym.as_mut() {
+                sym.texts.insert(abs, t);
+            }
+            return true;
+        }
         // on the sheet, a text over a face family's running number that is not affine in it:
         // worked out at each station, so kept as text (#243 L1)
-        let held = self.sym.is_none() && self.reads_held(text, vals, scope);
-        match self.sym.as_mut() {
-            Some(sym) => {
-                sym.texts.insert(abs, t);
-                true
-            }
-            None if held => {
-                let t = substitute_with(text, |w| {
-                    let of = of_vals_in(vals, self.units, &self.held.names);
-                    of(w).or_else(|| self.kept(w, scope))
-                });
-                self.held.texts.insert(abs, format!("({})", t.trim()));
-                true
-            }
-            None => false,
-        }
+        let Some(t) = self.held_text(text, vals, scope) else { return false };
+        self.held.texts.insert(abs, format!("({})", t.trim()));
+        true
     }
 
     /// One argument, read over the parameters in scope: a dimension's text settled to text, a
@@ -684,7 +678,7 @@ impl<'a> Walk<'a> {
                             Err((code, e)) => self.err(code, *span, format!("`{text}`: {e}")),
                         }
                     }
-                    (Err(_), _) if self.reads_held(text, vals, scope) => self.err(
+                    (Err(_), _) if self.held_text(text, vals, scope).is_some() => self.err(
                         Code::E103,
                         *span,
                         format!("`{text}`: a contact in a face family is pinned to its running \

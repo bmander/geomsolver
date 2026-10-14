@@ -131,7 +131,7 @@ fn family(
     };
     // the station: every entity its instance made, the face's edges (a closing edge the face
     // made itself among them), and what each is made of
-    let prefix = format!("{}.", held.rsplit_once('.').map_or("", |(p, _)| p));
+    let prefix = crate::model::station_prefix(&held);
     let mut station: BTreeSet<EntRef> = res.of.iter()
         .filter(|(k, _)| k.starts_with(&prefix))
         .map(|(_, &e)| e)

@@ -1156,9 +1156,8 @@ impl<'a> Walk<'a> {
             // (#243 L1): held as that geometry stands at each station, never an unknown — but
             // not its own, which its solve moves
             let station = self.held.names.keys()
-                .map(|h| h.rsplit_once('.').map_or("", |(p, _)| p))
-                .find(|p| sc.instance_prefix().starts_with(&format!("{p}.")))
-                .map(|p| format!("{p}."));
+                .map(|h| crate::model::station_prefix(h))
+                .find(|p| sc.instance_prefix().starts_with(p.as_str()));
             match self.look(alias).raw(&r, &sc) {
                 Some((abs, rest)) if !rest.is_empty() && !self.group_names.contains(&abs)
                     && station.is_some() =>
