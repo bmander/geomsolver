@@ -500,6 +500,7 @@ impl System {
             opts.max_iter,
             opts.max_nfev,
             opts.dense,
+            opts.document(),
             z,
         );
         let r = self.residuals(z);

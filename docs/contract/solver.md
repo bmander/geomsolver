@@ -46,6 +46,14 @@ version ([0.n], see the [language changelog](../solvent-changelog.md)) says wher
   radius, the curve's mean speed |C'| for a curve parameter (read by `System::new`).  `System`
   solves in `z = x * col_scale`, so trust region and minimum-norm step measure world units;
   unscaled, tangencies stall as a drawing grows.  All-1 systems take the untouched path.
+  The sparse step is `(JᵀJ + εI) p = −g`, ε of the largest diagonal (`newton::normal_step`), which
+  holds back a direction whose eigenvalue is near ε, so a DogLeg converging on one creeps to its
+  iteration limit (the spiral bevel's polish: a hundred iterations at 0.86 each).  A document's
+  solve refines that step toward the Gauss–Newton step (`newton::refine`, iterated Tikhonov: the
+  error is `ε p`, each correction one solve with the factorisation in hand) while ε holds it back
+  more than `REFINE_TOL` of `‖g‖`; a step ε barely touches is left to the bit, nothing is added
+  along the null space, so the least change stands, and a drag (`SolveOpts::document` false) is
+  never refined.
 - "Solved" is `System::max_relative_residual <= 1e-6`: each row's residual over its own units
   (`extent^degree`).  Never one absolute threshold — kernels are of degree 1 and 2.  **The
   iteration sees the same vector**: `residuals_into` and `compute_csr` divide every row by
@@ -272,7 +280,12 @@ version ([0.n], see the [language changelog](../solvent-changelog.md)) says wher
   swept until still (`TEAR_SWEEPS`), and the rows left over brought to zero by damped Newton
   over the numbers alone, by differences (`TEAR_DIFF`, `TEAR_STEPS`, `TEAR_HALVINGS`).  At most
   `TEAR_MAX` (2) numbers; tried first in such a block, after a failed whole solve elsewhere, and
-  `z` is left as it was where it fails.  The spiral bevel's face mill is the case: its pressure
+  `z` is left as it was where it fails.  The tearing is a fact of the compile's structure, worked
+  out once (`System::tearings`; a steered solve passes the blocks again): each choice is matched
+  alone and compared by its widest part (`graph::widest_block`), only the one chosen ordered.
+  A seed of a place (`seed_param`, `meshing_seed`) is a grid search, and its last `SEEDS_KEPT`
+  answers are remembered against their whole question (`infer::Recent`): the elaborator's passes
+  and a steered solve ask the same ones again.  The spiral bevel's face mill is the case: its pressure
   shift and cutter radius are found by balancing undercut margins (`hypoid_machine.rs`).
 - **A pass through every block is polished in its own frames** (`blocks_then_polish`, #283): the
   constants it read last stand for the whole-system DogLeg that follows, since a point it held on

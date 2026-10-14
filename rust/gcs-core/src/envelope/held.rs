@@ -612,12 +612,18 @@ pub(crate) struct Local<T> {
 /// The local frame at the place in columns `lead..lead + 3`; `dn` and `dg` only where `second`
 /// asks for them (a curvature), else zero.
 pub(crate) fn local<T: Num>(l: &Layout, cols: &[T], second: bool) -> Local<T> {
+    let t = H2::var(cols[l.lead + 2], 2, second);
+    local_at(l, cols, second, &pose(l, &cols[l.lead + 3 + l.source_width()..], t))
+}
+
+/// `local`, the motion's pose at the place's roll given: a seed's grid asks many places at one
+/// roll (`seed`).
+fn local_at<T: Num>(l: &Layout, cols: &[T], second: bool, pose: &Pose<T>) -> Local<T> {
     let at = l.lead;
     let var = |i: usize| H2::var(cols[at + i], i, second);
-    let (u, v, t) = (var(0), var(1), var(2));
+    let (u, v) = (var(0), var(1));
     let s = &cols[at + 3..at + 3 + l.source_width()];
-    let m = &cols[at + 3 + l.source_width()..];
-    let x = pose(l, m, t).apply(surface(l, s, u, v));
+    let x = pose.apply(surface(l, s, u, v));
     let d = |i: usize| -> [H1<T>; 3] { [x[0].d(i), x[1].d(i), x[2].d(i)] };
     let (xu, xv, xt) = (d(0), d(1), d(2));
     let nn = cross(xu, xv);
@@ -678,13 +684,7 @@ pub(crate) fn rows<T: Num>(c: Contact, cols: &[T], k: &[f64], out: &mut [T]) -> 
     }
     let f = local(&l, cols, c == Contact::Curvature);
     match c {
-        Contact::Point => {
-            let p = col3(cols, 0);
-            for i in 0..3 {
-                out[i] = p[i] - f.x[i];
-            }
-            out[3] = f.g;
-        }
+        Contact::Point => point_rows(cols, &f, out),
         Contact::Tangent => {
             let d = unit(vsub(col3(cols, 3), col3(cols, 0)));
             out[0] = dot(d, f.n);
@@ -720,6 +720,15 @@ pub(crate) fn rows<T: Num>(c: Contact, cols: &[T], k: &[f64], out: &mut [T]) -> 
         }
     }
     Some(())
+}
+
+/// A point contact's rows: the point less the moving point, and the meshing equation.
+fn point_rows<T: Num>(cols: &[T], f: &Local<T>, out: &mut [T]) {
+    let p = col3(cols, 0);
+    for i in 0..3 {
+        out[i] = p[i] - f.x[i];
+    }
+    out[3] = f.g;
 }
 
 /* -- the kernels ------------------------------------------------------------------------------ */
@@ -851,10 +860,12 @@ pub fn seed(k: &[f64], parts: &[f64], p: [f64; 3], roll: [f64; 2]) -> Option<[f6
     let n_roll = 25;
     for a in 0..n_roll {
         let t = roll[0] + (roll[1] - roll[0]) * a as f64 / (n_roll - 1) as f64;
+        // the motion's pose at this roll, read once for every place of it
+        let posed = pose(&l, &tr.cols[l.lead + 3 + l.source_width()..], H2::var(t, 2, false));
         for b in 0..24 {
             let v = b as f64 * std::f64::consts::TAU / 24.0;
             for &u in &us {
-                let r = tr.at([u, v, t]);
+                let r = tr.posed(&l, [u, v, t], &posed);
                 if r.iter().all(|x| x.is_finite()) && best.is_none_or(|(_, c)| cost(r) < c) {
                     best = Some(([u, v, t], cost(r)));
                 }
@@ -897,6 +908,15 @@ impl Seeding<'_> {
             Some(()) => out,
             None => [f64::INFINITY; 4],
         }
+    }
+
+    /// `at`, the motion's pose at the place's roll given (`l` read off the seed's own constants,
+    /// which `seed` has checked describe a point contact over these columns).
+    fn posed(&mut self, l: &Layout, place: [f64; 3], pose: &Pose<f64>) -> [f64; 4] {
+        self.cols[3..6].copy_from_slice(&place);
+        let mut out = [0.0; 4];
+        point_rows(&self.cols, &local_at(l, &self.cols, false, pose), &mut out);
+        out
     }
 }
 
