@@ -16,7 +16,9 @@ use std::collections::BTreeMap;
 // Private responsibility modules; existing model paths remain the public API.
 mod entities;
 mod curves;
-mod spatial;
+mod solids;
+mod region;
+mod solid_eval;
 mod construction;
 mod parameters;
 mod geometry;
@@ -32,12 +34,13 @@ pub use entities::{
     LiftE, article,
 };
 pub use curves::{CURVE_STEPS, CurveDef, CurveBody, CurveE, Extremal, Home, Trim, extremal_def, whole};
-pub use spatial::{
+pub use solids::{
     FaceLoop, FaceSupport, FaceE, Length, SolidRequirement, SolidClaim, SolidBearing, Sweep,
     DerivedE, Extent, Roll, Sense, SolidDef, SolidE, SeamE, EdgeE, VertexE, PatchE, EnvelopeE, SurfaceE,
-    RegionShape, RegionTerm, TermNumber, Way, FaceRef, Target, turn_of,
     MotionDef, MotionE,
 };
+pub use region::{RegionShape, RegionTerm, TermNumber, FaceRef, Target};
+pub use solid_eval::{Way, turn_of};
 pub use construction::{ThreePointArc, three_point_arc};
 pub use turns::{Turn, Derivation};
 pub use duals::{Dual, Move, Moves, Toward};
