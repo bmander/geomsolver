@@ -9,11 +9,9 @@
 //! is the interval, so it takes no multiplier; `H` is conserved, and is that multiplier's
 //! negative.
 //!
-//! Integrated by Gragg–Bulirsch–Stoer: the explicit midpoint rule, its error even in the step,
-//! extrapolated to zero step by Aitken–Neville, the step adapted to the tolerance.  A smooth flow
-//! at a tight tolerance is what it is best at, it has no tableau to carry, and every operation is
-//! linear in the substeps' results — so the **variational equations** integrated through the same
-//! substeps are the exact derivative of the step the flow took.
+//! The flow is a `crate::ode::Rate`, its branch the direction, integrated by the core's
+//! Gragg–Bulirsch–Stoer (`ode`, #339 D1) with the variational equations through the same
+//! substeps: the exact derivative of the step the flow took.
 
 #[allow(unused_imports)]
 use crate::fmath::Det;
@@ -203,42 +201,42 @@ impl<'a> Flow<'a> {
         }
         None
     }
+}
 
-    /// `z'` at `z`, and, asked for (`phi` the 4 × m sensitivities beside it), `A·Φ` with `A` the
-    /// flow's Jacobian.  `false` where the direction cannot be had.
-    pub fn rhs(&mut self, y: &[f64], out: &mut [f64], m: usize) -> bool {
-        debug_assert!(m == 0 || m == 4);
-        let Some(p) = self.at(&y[..4], m > 0) else { return false };
-        let f = p.flow();
-        out[..4].copy_from_slice(&f);
-        if m == 0 {
-            return true;
-        }
+/// The flow as a rate in arc length, its branch the direction (`H_θ = 0` solved from where it
+/// last was): `z' = (cos θ, sin θ, −f_x, −f_y)`, and its Jacobian through `dθ/dz`.
+impl crate::ode::Rate for Flow<'_> {
+    type Branch = f64;
+
+    fn width(&self) -> usize {
+        4
+    }
+
+    fn rate(&mut self, _s: f64, z: &[f64], out: &mut [f64], jac: Option<&mut [f64]>) -> bool {
+        let Some(p) = self.at(&z[..4], jac.is_some()) else { return false };
+        out[..4].copy_from_slice(&p.flow());
+        let Some(a) = jac else { return true };
         let (s, c) = p.theta.dsin_cos();
         let tz = p.theta_z();
-        let mut a = [[0.0f64; 4]; 4];
         for j in 0..4 {
-            a[0][j] = -s * tz[j];
-            a[1][j] = c * tz[j];
-            a[2][j] = -p.d.tx * tz[j];
-            a[3][j] = -p.d.ty * tz[j];
+            a[j] = -s * tz[j];
+            a[4 + j] = c * tz[j];
+            a[8 + j] = -p.d.tx * tz[j];
+            a[12 + j] = -p.d.ty * tz[j];
         }
-        a[2][0] -= p.d.xx;
-        a[2][1] -= p.d.xy;
-        a[3][0] -= p.d.xy;
-        a[3][1] -= p.d.yy;
-        let phi = &y[4..4 + 4 * m];
-        let o = &mut out[4..4 + 4 * m];
-        for i in 0..4 {
-            for k in 0..m {
-                let mut v = 0.0;
-                for j in 0..4 {
-                    v += a[i][j] * phi[j * m + k];
-                }
-                o[i * m + k] = v;
-            }
-        }
+        a[8] -= p.d.xx;
+        a[9] -= p.d.xy;
+        a[12] -= p.d.xy;
+        a[13] -= p.d.yy;
         true
+    }
+
+    fn branch(&self) -> f64 {
+        self.theta
+    }
+
+    fn set_branch(&mut self, theta: f64) {
+        self.theta = theta;
     }
 }
 
@@ -260,88 +258,4 @@ impl Point {
         let (s, c) = self.theta.dsin_cos();
         [self.d.x, self.d.y, c, s]
     }
-}
-
-/* -- Gragg–Bulirsch–Stoer ----------------------------------------------------------------- */
-
-/// The substep counts of the extrapolation: seven columns, to order fourteen.
-const STEPS: [usize; 7] = [2, 4, 6, 8, 10, 12, 14];
-
-/// The relative tolerance one step is held to.
-pub const TOL: f64 = 1e-13;
-
-/// The augmented state's width: the state, then its sensitivities to four starting values.
-pub const WIDTH: usize = 20;
-
-/// The explicit midpoint rule over `n` substeps of one step `h` from `y0` (`4 + 4m` wide), the
-/// flow at `y0` given (`f0`, the direction there `theta0`): it is every column's first.
-#[allow(clippy::too_many_arguments)]
-fn midpoint(flow: &mut Flow, theta0: f64, y0: &[f64; WIDTH], f0: &[f64; WIDTH], h: f64, n: usize, m: usize, out: &mut [f64; WIDTH]) -> bool {
-    let len = 4 + 4 * m;
-    let hs = h / n as f64;
-    flow.theta = theta0;
-    let mut f = [0.0; WIDTH];
-    let mut prev = *y0;
-    let mut cur = [0.0; WIDTH];
-    for i in 0..len {
-        cur[i] = prev[i] + hs * f0[i];
-    }
-    for _ in 1..n {
-        if !flow.rhs(&cur, &mut f, m) {
-            return false;
-        }
-        for i in 0..len {
-            let next = prev[i] + 2.0 * hs * f[i];
-            prev[i] = cur[i];
-            cur[i] = next;
-        }
-    }
-    *out = cur;
-    true
-}
-
-/// One extrapolated step of `h` from `y0` (the state, then — `m` 4 — its sensitivities): the
-/// result and its error estimate over the state, as a fraction of `scale`.  Every column of the
-/// table is taken (a fixed order), the last two telling the error.  `None` where the flow could
-/// not be followed.
-pub fn step(flow: &mut Flow, theta0: f64, y0: &[f64; WIDTH], h: f64, m: usize, scale: &[f64; 4]) -> Option<([f64; WIDTH], f64)> {
-    let len = 4 + 4 * m;
-    const K: usize = STEPS.len();
-    flow.theta = theta0;
-    let mut f0 = [0.0; WIDTH];
-    if !flow.rhs(y0, &mut f0, m) {
-        return None;
-    }
-    let theta0 = flow.theta;
-    let mut prev = [[0.0; WIDTH]; K];
-    let mut row = [[0.0; WIDTH]; K];
-    for (j, &n) in STEPS.iter().enumerate() {
-        if !midpoint(flow, theta0, y0, &f0, h, n, m, &mut row[0]) {
-            return None;
-        }
-        for c in 1..=j {
-            let q = n as f64 / STEPS[j - c] as f64;
-            let r = q * q - 1.0;
-            for i in 0..len {
-                row[c][i] = row[c - 1][i] + (row[c - 1][i] - prev[c - 1][i]) / r;
-            }
-        }
-        prev[..=j].copy_from_slice(&row[..=j]);
-    }
-    let err = (0..4).map(|i| (prev[K - 1][i] - prev[K - 2][i]).abs() / scale[i]).fold(0.0, f64::max);
-    let out = prev[K - 1];
-    out[..len].iter().all(|v| v.is_finite()).then_some((out, err))
-}
-
-/// The order the error estimate is of, for the step-size rule.
-const ESTIMATE_ORDER: f64 = (2 * STEPS.len() - 2) as f64;
-
-/// The next step's size after one whose relative error was `err`.
-pub fn next_h(h: f64, err: f64) -> f64 {
-    let f = if err == 0.0 {
-        4.0
-    } else {
-        (0.9 * (TOL / err).dpowf(1.0 / (ESTIMATE_ORDER + 1.0))).clamp(0.2, 4.0)
-    };
-    h * f
 }

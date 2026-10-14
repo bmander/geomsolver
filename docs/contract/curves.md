@@ -1,7 +1,7 @@
 # Curves
 
 Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you touch `curve.rs`,
-`locus.rs`, `tape.rs`, `variational.rs`, `extremal.rs`. An issue number (#n) or a spec version
+`locus.rs`, `tape.rs`, `variational.rs`, `extremal.rs`, `ode.rs`. An issue number (#n) or a spec version
 ([0.n], see the [language changelog](../solvent-changelog.md)) says where a rule came from.
 
 **Variational curves (§9.10, §6.1, 0.53–0.59, #121, #144, #149, `variational.rs`, `extremal.rs`):**
@@ -15,8 +15,9 @@ its one own param, `CurveE::pegs`). **The curve is the solution of its Euler–L
 solved inside it (`extremal.rs`): optimal control in arc length — state `z = (x, y, λx, λy)`, the
 direction algebraic (`H_θ = 0` by Newton, `H_θθ > 0` Pontryagin, so a branch flip is refused, not
 followed), `λ' = −f_p` — from `Lagrangian`'s three tapes over `(θ, x, y)` (`t.x → cos θ`; each
-first in one variable, so second derivatives only). Integrated by Gragg–Bulirsch–Stoer
-(`extremal/flow.rs`, seven columns) with the variational equations through the same substeps; the
+first in one variable, so second derivatives only). `Flow` is an `ode::Rate` (its branch the
+direction), integrated by the core's Gragg–Bulirsch–Stoer (`ode.rs`, below) with the variational
+equations through the same substeps; the
 BVP (`extremal/shoot.rs`) is multiple shooting, four pieces an arc, a **peg** (a held point the
 curve passes: `peg coincident rope`, absorbed — `rows_in` 0, its place held) splitting arcs with
 the costate free to jump and `H` unbroken (a corner); dense Newton, a long curve started as a
@@ -65,6 +66,28 @@ and `settle_variational` settles no stretch as a free curve of its own (one woul
 curve with no energy, so no shape). A curve with no shape sweeps nothing (`curve_polyline_within`
 empty) and its face is refused, never walked
 (`catenary::a_hanging_rope_and_its_chord_are_a_face`).
+
+**The integrator (#339 D1, `ode.rs`):** one Gragg–Bulirsch–Stoer over a state of any width, for
+everything the core integrates along a formal. The caller supplies the rate and its Jacobian
+(`ode::Rate`: `rate(u, y, f, jac)`; nothing is differenced) and, for a rate that solves a condition
+by Newton from where it last was, its **branch** — taken where a step starts, given back before
+each column, kept with each node as the step's last evaluation left it (a start, not the root at
+the node). The explicit midpoint rule over `ode::STEPS` (even) substeps, extrapolated by
+Aitken–Neville, `Settings::columns` (7) columns, order twice that; the error is the last two
+columns' difference over the state, each component a fraction of the caller's `scale`, held to
+`ode::TOL` (1e-13, well below "solved"); the step adapts to it alone, so a march is the same on
+every target. The **variational equations** `Φ' = (∂f/∂y)Φ` ride through the same substeps (`Φ`
+`n × m`, any seed, the identity for the initial value), the exact derivative of the step taken.
+**Dense output** is one more step from the node before (`Path::at`), not an interpolant, so its
+sensitivities are the flow's. A march runs either way along the formal; it is **refused, never
+followed** (`ode::Refusal`): a step whose rate cannot be had is tried shorter to the floor (`1e-12`
+of the span) and the march stops at the last place it reached (`Undefined`), and one past
+`Settings::steps_max` (4000) steps is `Steps` (stiff, or nowhere near its answer). Free curves
+(`extremal/shoot.rs::integrate`, `within`) run on it bit for bit as they ran on their own copy.
+`tests/ode.rs` is the gate: linear flows against `exp(At)` (an independent series) and their `Φ`
+against it, the formal threaded through the substeps, the order `2k + 1` of one step with `k`
+columns measured by halving on an entire flow, `Φ` against differences of one step and of a
+march, a seed of fewer columns, dense output forwards and back, a carried branch, and refusals.
 
 - A parametric curve (`curve.rs`) is *linear in its control points*, `C(t) = Σ Bᵢ(t) Pᵢ` (every
   B-spline).  A contact carries its own curve parameter as a `Param` slot and says

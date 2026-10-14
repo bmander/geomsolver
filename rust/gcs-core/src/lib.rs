@@ -50,6 +50,7 @@ pub mod measure;
 pub mod model;
 pub mod modules;
 pub mod newton;
+pub mod ode;
 pub mod overview;
 pub mod par;
 pub mod clock;
