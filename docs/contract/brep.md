@@ -82,6 +82,25 @@ edges are named alike), meshed no coarser than `BREP_RELATIVE_SAG` or 64 steps a
 polyhedral `Prim`. The facet term answers what the exact path refuses (touching tori, empty
 solids); `SOLVENT_SOLIDS=facets` throughout. Silhouettes on curved faces are traced on the surfaces
 (`EvaluatedSolid::silhouettes`), never the mesh's seams, which zigzag.
+**A face family's walls** (#243 L2, `brep::family`): `Surface::Family` over a `Sheet` — an
+edge's kind (`Run`: line, round, spline), the pieces of the interval with six nodes each
+(`Stations`, the Vandermonde inverses kept), and the edge's numbers at every node — `S(u, s)` the
+edge's own form in `u` (never differenced) of numbers that are, between nodes, the degree-five
+polynomial through them; `S_s` the polynomial's own derivative, a rail's `S_ss` a central
+difference of it (as a loft's rail's).  `u ∈ [0, 1]` (periodic for a lone circle), `s` the running
+number; `breaks` the pieces' joints, so `props` integrates each piece exactly; `bounds` by each
+number's polynomial range (constant term ± the rest), never a sample; `inverse` per piece nearest
+box first, warm from the thread's last foot.  Rails are `Curve::Rail` (the wall at `u = 0`,
+parameter `s`), rims at the ends `Curve::Line`/`Circle` where they are one, else `Curve::Rim`; an
+edge vanished at an end is a degenerate edge, its rails meeting in one vertex, and a section
+vanished whole has no cap.  **The fast path** (`lower`) puts a wall on a plane (a line edge in one
+plane), a cylinder or cone (a line turned about one axis, or coaxial arcs square to their axis,
+radius constant or affine in the height) or a torus (an arc turned about an axis in its plane) —
+read off the numbers, never a word — kept only when the sheet's points at every node lie on it
+and the face's area there (`props::area`) agrees with the sheet's, both within `AGREE` (1e-10).
+STEP writes a sheet as the net fitted within `step::FIT` (`family_net`, cubic along the edge and
+quintic along `s`: a cubic through 512 rows misses a 3½-turn auger by 1e-6), rails and rims as
+cubics within it.
 Rung 2 is done: `Curve::BSpline` (`brep::nurbs`), `Surface::Extrusion`/`Revolution`, a face's
 stretch of a traced or formula curve (`k from p to q`, `CurveE::trim`, `cad::FIT_MM`), lofts
 (`Surface::Blend`, `Curve::Iso` rails, `step::FIT`) paired at equal parameter fractions.

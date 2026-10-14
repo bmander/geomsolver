@@ -107,6 +107,8 @@ impl Session {
                 the core's kernel builds it (`--kernel rust`), held to the sweep's field".into()),
             Node::Lowered(_) => return Err("native CAD export does not build a lowered round or chamfer; the core's kernel builds \
                 them (`--kernel rust`), and `tests/fillet_oracle.rs` holds them to OCCT's own fillet".into()),
+            Node::Family(_) => return Err("native CAD export does not build a face family; the core's kernel builds its \
+                walls exactly (`--kernel rust`), and OCCT's lofts are its oracle only later (#243 L10)".into()),
             Node::Prism {draft:Some(_),..} => return Err("native CAD export does not build a drafted prism; the core's kernel \
                 builds it (`--kernel rust`)".into()),
             Node::Prism {profile,from,to,..} => (profile,*from,*to),

@@ -15,7 +15,7 @@ type Built = Result<Brep,KernelError>;
 
 mod node;
 mod writer;
-pub use node::{Body,Corner,Edge,Kept,Lowered,Named,Node,Recipe,Rolled,Run,Section,Stroke};
+pub use node::{Body,Corner,Edge,Family,FamilyWall,Kept,Lowered,Named,Node,Recipe,Rolled,Run,Section,Stroke};
 pub use writer::Writer;
 
 /// Between a face's solid and its own name while a recipe is built (`build`, `meridian`,
@@ -64,8 +64,19 @@ impl Node {
                 Ok(super::build::canal(*centre,*radius,*origin,*axis,*angle,*advance,face)?),
             Node::Region(pieces) => region_node(pieces,built,built_names,floor),
             Node::Lowered(l) => lowered_node(l,built,built_names,floor),
+            Node::Family(f) => family_node(f),
         }
     }
+}
+
+/// A `family` node: each wall's sheet over the pieces of its interval, the solid they bound.
+fn family_node(f: &Family) -> Built {
+    use super::family::{Sheet,Stations,Wall};
+    let stations = std::sync::Arc::new(Stations::new(f.spans.clone(),f.at.clone())?);
+    let loops = f.loops.iter().map(|l| l.iter().map(|w| Ok(Wall {
+        sheet:std::sync::Arc::new(Sheet::new(w.run.clone(),stations.clone(),w.nodes.clone(),w.closed)?),name:w.name.clone()}))
+        .collect::<Result<Vec<_>,String>>()).collect::<Result<Vec<_>,String>>()?;
+    Ok(super::family::family(&loops,f.vanish)?)
 }
 
 /// A `through` node: a prism spanning its sources' material along the profile's normal (their

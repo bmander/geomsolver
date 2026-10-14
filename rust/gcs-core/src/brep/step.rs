@@ -45,8 +45,9 @@ impl Out {
                 let v = self.add(format!("VECTOR('',#{d},1.)"));
                 return Ok(self.add(format!("SURFACE_OF_LINEAR_EXTRUSION('',#{c},#{v})")))
             }
-            Surface::Blend(..) | Surface::BSpline(..) => {
-                let net = match s { Surface::Blend(_,b) => blend_net(b)?,Surface::BSpline(_,n) => (**n).clone(),_ => unreachable!() };
+            Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..) => {
+                let net = match s { Surface::Blend(_,b) => blend_net(b)?,Surface::BSpline(_,n) => (**n).clone(),
+                    Surface::Family(_,w) => family_net(w)?,_ => unreachable!() };
                 let rows: Vec<String> = net.poles.iter().map(|col| {
                     let ids: Vec<String> = col.iter().map(|&p| format!("#{}",self.point(p))).collect();
                     format!("({})",ids.join(","))
@@ -88,7 +89,7 @@ impl Out {
                 let a = self.placement(&f);
                 self.add(format!("TOROIDAL_SURFACE('',#{a},{},{})",real(big),real(r)))
             }
-            Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..) | Surface::BSpline(..) => unreachable!("written above"),
+            Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..) => unreachable!("written above"),
         })
     }
     /// The curve a swept surface sweeps (a B-spline, as a profile gives one).
@@ -155,6 +156,23 @@ pub fn blend_net(b: &super::geom::Blend) -> Result<super::nurbs::Net,String> {
     }
 }
 
+/// A face family's wall as the file writes it (#243 L2): the net through it fitted within `FIT` as
+/// a loft face is — cubic along its edge, quintic along the family, whose rails may wind many
+/// times (a cubic through a twisted wall's 512 rows of a three-and-a-half-turn auger misses by
+/// 1e-6) — its `v` the family's running number over its interval.
+pub fn family_net(w: &super::family::Sheet) -> Result<super::nurbs::Net,String> {
+    let [a,b] = w.span();
+    let pieces = w.stations.spans.len().clamp(4,64);
+    match super::nurbs::fit_net(&|u,v| w.d1([u,a+(b-a)*v]).0,3,5,8,pieces,FIT) {
+        Some((mut net,err)) if err <= FIT => {
+            for k in &mut net.vknots { *k = a+(b-a)**k; }
+            Ok(net)
+        }
+        Some((_,err)) => Err(format!("a face family's wall is fitted no nearer than {err:.3e} mm to its surface, past the file's {FIT:e}")),
+        None => Err("a face family's wall could not be fitted (its surface is degenerate)".into()),
+    }
+}
+
 /// A B-spline surface's numbers as a reader of the file compares them: its degrees, the size of
 /// its net, its distinct knots' counts, whether rational, the knots and their multiplicities along
 /// `u` then `v`, then its poles by `u` then `v`, and a rational one's weights in the same order.
@@ -187,7 +205,7 @@ pub fn written(s: &Surface) -> (Frame,Vec<f64>) {
         Surface::Cone(f,r,a) => (if a < 0. { Frame {o:f.o,x:f.x,y:scale(f.y,-1.),z:scale(f.z,-1.)} } else { f },vec![r,a.abs()]),
         Surface::Sphere(f,r) => (f,vec![r]),
         Surface::Torus(f,big,r) => (f,vec![big,r]),
-        Surface::Extrusion(f,_) | Surface::Revolution(f,_) | Surface::Blend(f,_) | Surface::BSpline(f,_) => (f,vec![]),
+        Surface::Extrusion(f,_) | Surface::Revolution(f,_) | Surface::Blend(f,_) | Surface::BSpline(f,_) | Surface::Family(f,_) => (f,vec![]),
     }
 }
 
@@ -378,6 +396,19 @@ pub fn write(b: &Brep,name: &str,tol: f64) -> Result<String,String> {
                 };
                 let ids: Vec<String> = fit.poles.iter().map(|&p| format!("#{}",o.point(p))).collect();
                 spline(&mut o,fit.degree,&ids,&fit.knots,None)
+            }
+            // a family's rail or rim likewise, its parameter the rail's or the rim's
+            Curve::Rail(..) | Curve::Rim(..) => {
+                let [t0,t1] = e.t;
+                let fit = match super::nurbs::fit_curve(&|f| c.point(t0+(t1-t0)*f),3,8,FIT) {
+                    Some((fit,err)) if err <= FIT => fit,
+                    Some((_,err)) => return Err(format!("a face family's {} is fitted no nearer than {err:.3e} mm, past the file's {FIT:e}",c.kind())),
+                    None => return Err(format!("a face family's {} could not be fitted (it is degenerate)",c.kind())),
+                };
+                // its knots the edge's own parameters
+                let knots: Vec<f64> = fit.knots.iter().map(|k| t0+(t1-t0)*k).collect();
+                let ids: Vec<String> = fit.poles.iter().map(|&p| format!("#{}",o.point(p))).collect();
+                spline(&mut o,fit.degree,&ids,&knots,None)
             }
             Curve::Traced(_) => {
                 let ts = samples(c,e.t,tol,&|a,z| distance(c.point((a+z)/2.),crate::space::lerp(c.point(a),c.point(z),0.5)));

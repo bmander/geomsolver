@@ -97,7 +97,7 @@ fn meridian(s: &Surface,o: V,z: V,tol: f64) -> Option<Meridian> {
         }
         Surface::Torus(_,big,r) => Some(Meridian::Circle {c:[big,height(f.o)],r}),
         Surface::Revolution(_,ref c) => match &**c { Curve::BSpline(b) => Some(Meridian::Spline(b.clone(),o,z)),_ => None },
-        Surface::Extrusion(..) | Surface::Blend(..) | Surface::BSpline(..) => None,
+        Surface::Extrusion(..) | Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..) => None,
     }
 }
 
@@ -619,7 +619,7 @@ fn derivative_bounds(s: &Surface,[v0,v1]: [f64;2]) -> Option<[f64;5]> {
         }
         Surface::Sphere(_,r) => Some([r;5]),
         Surface::Torus(_,big,r) => Some([big.abs()+r,r,big.abs()+r,r,r]),
-        Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..) | Surface::BSpline(..) => None,
+        Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..) => None,
     }
 }
 
@@ -637,7 +637,7 @@ fn curvature_bound(s: &Surface,p: V,r: f64) -> Option<f64> {
         Surface::Cylinder(..) | Surface::Cone(..) => over(rho-r),
         // the distance to the core circle in the meridian half-plane, which turns with ρ
         Surface::Torus(_,big,_) => Some(over((rho-big).dhypot(z)-r)?+over(rho-r)?),
-        Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..) | Surface::BSpline(..) => None,
+        Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..) => None,
     }
 }
 

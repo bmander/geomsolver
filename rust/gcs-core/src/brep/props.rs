@@ -14,7 +14,7 @@
 use crate::fmath::Det;
 use super::geom::{Curve,Surface,Uv};
 use super::nurbs::Net;
-use super::topo::{Brep,EdgeCurve,Pcurve};
+use super::topo::{Brep,EdgeCurve,Face,Pcurve};
 use crate::space::{cross,dot};
 
 /// Ten-point Gauss–Legendre nodes and weights on [−1, 1].
@@ -132,16 +132,25 @@ pub fn fluxes(b: &Brep) -> Vec<f64> {
 
 /// A face's flux term by term: for each use of each loop, its line integral and the closing
 /// segment from its end to the next use's start (what a reading of the face can be compared by).
-pub fn terms(b: &Brep,fi: usize) -> Vec<Vec<(f64,f64)>> {
+pub fn terms(b: &Brep,fi: usize) -> Vec<Vec<(f64,f64)>> { integrated(b,&b.faces[fi],false) }
+
+/// A face's area, `∬ |S_u × S_v| du dv` over its domain, read off its loops as its flux is — so a
+/// face on another surface over the same boundary can be held to it (`family::lower`). The face
+/// need not be one of `b`'s, only its edges.
+pub fn area(b: &Brep,f: &Face) -> f64 {
+    integrated(b,f,true).iter().flatten().map(|t| t.0+t.1).sum::<f64>().abs()
+}
+
+/// `terms`, of the flux or (`area`) of the area.
+fn integrated(b: &Brep,f: &Face,area: bool) -> Vec<Vec<(f64,f64)>> {
     {
-        let f = &b.faces[fi];
         let mut out: Vec<Vec<(f64,f64)>> = Vec::new();
         let s = &f.surface;
         let [pu,pv] = s.periods();
-        let g = |u: f64,v: f64| { let (x,su,sv) = s.d1([u,v]); dot(x,cross(su,sv)) };
+        let g = |u: f64,v: f64| { let (x,su,sv) = s.d1([u,v]); if area { crate::space::norm(cross(su,sv)) } else { dot(x,cross(su,sv)) } };
         // a rational net's `g` is a quotient, which no Gauss rule integrates exactly: it takes the
         // stretch-by-stretch rule a swept face does
-        let mut prefix = match s { Surface::BSpline(_,n) if !n.is_rational() => Some(Prefix::new(n)),_ => None };
+        let mut prefix = match s { Surface::BSpline(_,n) if !n.is_rational() && !area => Some(Prefix::new(n)),_ => None };
         // The face's box in its parameters. Away from a spline's table, `g` is integrated from the
         // middle of the face's range and across the parameter it spans less: `G` is then as small
         // as the face allows, and an error δ in a use's parameters moves the flux by `G δ` — from 0
