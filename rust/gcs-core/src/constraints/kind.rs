@@ -164,6 +164,12 @@ pub enum CKind {
     /// direction's two and the place's, then the pitch) over the axis, its pitch and the motion's
     /// axes.
     ScrewAxis,
+    /// **A point as a moving frame sees it** (#326, R4, `envelope::screw`): `X coincident(under:
+    /// m, t == τ) x`, `X` the point `x` carried by the motion's pose at the roll `τ` — `X =
+    /// Pose(τ)·x`, three rows over both points' lifts, the roll (the relation's own unknown, in
+    /// degrees, pinned or solved) and the motion's axes.  In a traced body, `τ` an expression in
+    /// the running formal: a contact seen from a turning member.
+    CarriedPoint,
     /// **The tangent at a point already on a spline** (#251), `g tangent(at: m) l`: the line runs
     /// along `C'(t)`, where `t` is the place of the contact holding `m` on the spline — **that
     /// contact's own unknown**, shared rather than a second one (`Sketch::add`, #70's shared
@@ -332,7 +338,7 @@ impl FamilyKernel {
 }
 
 /// Every concrete constraint type, in the order the registry lists them.
-pub const ALL_KINDS: [CKind; 81] = [
+pub const ALL_KINDS: [CKind; 82] = [
     CKind::Coincident,
     CKind::Distance,
     CKind::Midpoint,
@@ -372,6 +378,7 @@ pub const ALL_KINDS: [CKind; 81] = [
     CKind::PointOnMeshing,
     CKind::Reciprocal,
     CKind::ScrewAxis,
+    CKind::CarriedPoint,
     CKind::Project,
     CKind::Lift,
     CKind::Coincident3,
@@ -624,6 +631,7 @@ impl CKind {
             CKind::PointOnMeshing => "PointOnMeshing",
             CKind::Reciprocal => "Reciprocal",
             CKind::ScrewAxis => "ScrewAxis",
+            CKind::CarriedPoint => "CarriedPoint",
             CKind::Project => "Project",
             CKind::AxisOnPlane => "AxisOnPlane",
             CKind::AxisCoincident => "AxisCoincident",
@@ -837,6 +845,8 @@ impl CKind {
             CKind::Reciprocal => &[("line", S::Line), ("motion", S::Motion)],
             // the axis, the motion, and the pitch: the relation's own unknown
             CKind::ScrewAxis => &[("axis", S::Axis), ("motion", S::Motion), ("pitch", S::Param)],
+            // the point carried, the point it is carried from, the motion and the roll
+            CKind::CarriedPoint => &[("p", S::Point), ("q", S::Point), ("under", S::Motion), ("t", S::Param)],
             CKind::SplineTangentLine => {
                 &[("spline", S::Spline), ("line", S::Line), ("t", S::Param)]
             }
@@ -948,6 +958,8 @@ impl CKind {
             => Some(Dim::SCALAR),
             // a screw's pitch: how far it slides a radian it turns (#326)
             CKind::ScrewAxis => Some(Dim::LENGTH),
+            // a roll in degrees, as a meshing's phase is
+            CKind::CarriedPoint => Some(Dim::SCALAR),
             _ => None,
         }
     }
@@ -995,6 +1007,8 @@ impl CKind {
             // axis it screws about
             CKind::Reciprocal => ("reciprocal", Infix),
             CKind::ScrewAxis => ("screw", Infix),
+            // a point as the moving frame sees it (#326)
+            CKind::CarriedPoint => ("coincident", Infix),
             CKind::EnvelopeTangentAt | CKind::EnvelopePlaneAt => ("tangent", Infix),
             CKind::EnvelopeNormalAt => ("perpendicular", Infix),
             CKind::EnvelopeCurvatureAt => ("curvature", Infix),
@@ -1312,17 +1326,19 @@ impl CKind {
     /// names it, and nothing may ask `kernel()` for it.
     pub fn built(self) -> bool {
         matches!(self, CKind::SplineLength | CKind::Stationary | CKind::CurveTouchesLine
-                       | CKind::PointOnMeshing | CKind::Reciprocal | CKind::ScrewAxis)
+                       | CKind::PointOnMeshing | CKind::Reciprocal | CKind::ScrewAxis
+                       | CKind::CarriedPoint)
             || self.envelope_contact().is_some()
     }
 
     /// What a relation reading a motion's twist states (#326): its kernel is built at its
     /// operands' widths (`envelope::screw::kernel`).
-    pub fn twist_reading(self) -> Option<crate::envelope::screw::Reading> {
+    pub fn motion_reading(self) -> Option<crate::envelope::screw::Reading> {
         use crate::envelope::screw::Reading;
         Some(match self {
             CKind::Reciprocal => Reading::Reciprocal,
             CKind::ScrewAxis => Reading::Axis,
+            CKind::CarriedPoint => Reading::Carried,
             _ => return None,
         })
     }
@@ -1421,6 +1437,7 @@ impl CKind {
             // a motion's twist read (#326): no contact
             | CKind::Reciprocal
             | CKind::ScrewAxis
+            | CKind::CarriedPoint
             | CKind::PointAlongLine
             | CKind::PointAlongArc
             | CKind::PointAlongLine3
@@ -1517,7 +1534,7 @@ impl CKind {
             CKind::PointOnMeshing => {
                 panic!("a meshing contact's kernel is built at its operands' widths")
             }
-            CKind::Reciprocal | CKind::ScrewAxis => {
+            CKind::Reciprocal | CKind::ScrewAxis | CKind::CarriedPoint => {
                 panic!("a motion's twist is read by a kernel built at its operands' widths")
             }
             CKind::SplineLength => panic!("a spline length's kernel belongs to its spline's count"),
@@ -1684,6 +1701,7 @@ impl CKind {
             // nor a motion's twist read (#326)
             | CKind::Reciprocal
             | CKind::ScrewAxis
+            | CKind::CarriedPoint
             | CKind::PointAlongLine
             | CKind::PointAlongArc
             | CKind::PointAlongLine3
@@ -1749,6 +1767,7 @@ impl CKind {
                 | CKind::PointOnMeshing
                 | CKind::Reciprocal
                 | CKind::ScrewAxis
+                | CKind::CarriedPoint
                 | CKind::PointOnAxis
                 | CKind::LineOnAxis
                 | CKind::AxisOnPlane

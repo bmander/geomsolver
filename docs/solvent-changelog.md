@@ -4,6 +4,15 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.104] A point as a moving frame sees it.** `X coincident(under: m, t == τ) x` holds `X` where
+the motion `m` carries `x` at the roll `τ` (§9.3): three rows, the roll in degrees and the
+relation's own unknown, pinned or left to the solve. Under a motion seen from a turn, at the
+negated phase, it is a point of the fixed frame as the turning member sees it — a rolling circle's
+point seen by the fixed one is the epicycloid, a follower's contact seen by its cam the cam's
+profile. A turn about a point of a view reads as the turn about the line through it square to the
+view. Through 0.103 a point was carried by a motion only as an envelope's tool, after the solve or
+in one plane. (Issue #326, R4.)
+
 **[0.103] A motion's twist: `reciprocal` and `screw`.** Two relation words read a motion as
 the velocity field it is (§9.3). `L reciprocal mesh` says a force along the line `L` does no work
 on the motion — its direction square to the velocity of its points — which for the mesh of two

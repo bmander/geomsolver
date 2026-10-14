@@ -138,6 +138,8 @@ macro_rules! undrawn {
             // screw, whose pitch is the relation's own unknown
             | CKind::Reciprocal
             | CKind::ScrewAxis
+            // nor a point carried by a motion
+            | CKind::CarriedPoint
             // a projection in space draws what `project` draws: nothing
             | CKind::ProjectSolved
             | CKind::Fix

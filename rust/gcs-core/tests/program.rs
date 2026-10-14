@@ -110,7 +110,7 @@ fn every_constraint_type_is_printable() {
             // `tests/catenary.rs`, and its touch, `tests/slide.rs`)
             continue;
         }
-        if kind.twist_reading().is_some() {
+        if kind.motion_reading().is_some() {
             // a motion's twist is read off a motion, declared in a document; `tests/phillips.rs`
             // prints them from one
             continue;

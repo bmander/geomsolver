@@ -17,10 +17,20 @@
 //!   length (the direction's times the lever, the first axis the motion reads, as long as it is
 //!   drawn), and the pitch.
 //!
-//! **Layout.** Columns `[lead…, motion…]`: the line's two lifted ends (six), or the axis's
-//! direction, its place and the pitch (seven), then two lifted ends per axis the motion turns about
-//! or slides along (`held::Moving`).  Constants: the motion's steps (`held::encode_steps`).  Every
-//! row is written once over `kernels::Num`, so the Jacobian is exact by forward differentiation.
+//!
+//! And one relation reads the motion's pose rather than its twist:
+//!
+//! - `X coincident(under: m, t == τ) x`: `X` is `x` **as the moving frame sees it**, carried by the
+//!   motion's pose at the roll `τ` (in degrees, as a meshing's phase is) — `X = Pose(τ)·x`, three
+//!   rows (R4).  Under `motion(turn, …)` at `τ = −φ` it is a point of the fixed frame seen from a
+//!   member turned `φ`: a follower's contact seen by its cam, a rolling circle's point seen by the
+//!   fixed one.  Any motion the solve reads, its twist constant or not.
+//!
+//! **Layout.** Columns `[lead…, motion…]`: the line's two lifted ends (six), the axis's direction,
+//! its place and the pitch (seven), or the two points' lifts and the roll (seven), then two lifted
+//! ends per axis the motion turns about or slides along (`held::Moving`).  Constants: the motion's
+//! steps (`held::encode_steps`).  Every row is written once over `kernels::Num`, so the Jacobian
+//! is exact by forward differentiation.
 use super::held::{self, cross, dot, vadd, vsub, Step, STEP};
 use crate::kernels::{Kernel, Num};
 
@@ -31,15 +41,18 @@ pub enum Reading {
     Reciprocal = 0,
     /// `isa screw mesh`: five rows.
     Axis = 1,
+    /// `X coincident(under: m, t == τ) x`: three rows.
+    Carried = 2,
 }
 
 impl Reading {
-    pub const ALL: [Reading; 2] = [Reading::Reciprocal, Reading::Axis];
+    pub const ALL: [Reading; 3] = [Reading::Reciprocal, Reading::Axis, Reading::Carried];
 
     pub fn rows(self) -> usize {
         match self {
             Reading::Reciprocal => 1,
             Reading::Axis => 5,
+            Reading::Carried => 3,
         }
     }
 
@@ -47,22 +60,29 @@ impl Reading {
     pub fn lead(self) -> usize {
         match self {
             Reading::Reciprocal => 6,
-            Reading::Axis => 7,
+            Reading::Axis | Reading::Carried => 7,
         }
+    }
+
+    /// Whether it reads the motion's twist, which must be constant (`constant`).
+    pub fn twist(self) -> bool {
+        self != Reading::Carried
     }
 
     fn name(self) -> &'static str {
         match self {
             Reading::Reciprocal => "reciprocal",
             Reading::Axis => "screw_axis",
+            Reading::Carried => "carried",
         }
     }
 
-    /// A force's work is a length times a velocity; an axis's place and its pitch are lengths.
+    /// A force's work is a length times a velocity; an axis's place, its pitch and a point's
+    /// offset are lengths.
     fn degree(self) -> u32 {
         match self {
             Reading::Reciprocal => 2,
-            Reading::Axis => 1,
+            Reading::Axis | Reading::Carried => 1,
         }
     }
 }
@@ -87,6 +107,12 @@ fn own<T: Num>(s: &Step, m: &[T]) -> Option<([T; 3], [T; 3])> {
         Step::Translation { at, advance } => {
             let (_, d) = axis(at);
             Some(([T::cst(0.0); 3], scale(d, T::cst(advance / tau))))
+        }
+        Step::Turn { at, ratio, .. } => {
+            let a = held::col3(m, at);
+            let d = held::unit(cross(held::col3(m, at + 3), held::col3(m, at + 6)));
+            let w = scale(d, T::cst(ratio));
+            Some((w, cross(a, w)))
         }
         Step::Relative { .. } => None,
     }
@@ -127,6 +153,32 @@ pub(crate) fn axis_of<T: Num>(w: [T; 3], v0: [T; 3]) -> Option<([T; 3], [T; 3], 
     Some((scale(cross(w, v0), inv), held::unit(w), dot(w, v0) * inv))
 }
 
+/// A length the direction's rows are read over, so they are lengths as the place's are: the
+/// longest line the motion turns about or slides along, as drawn, or how far apart the centres
+/// of its turns about points stand; one where it has neither.
+fn lever<T: Num>(steps: &[Step], m: &[T]) -> T {
+    let mut best = T::cst(0.0);
+    let mut first: Option<[T; 3]> = None;
+    for s in steps {
+        let l = match *s {
+            Step::Rotation { at, .. } | Step::Translation { at, .. } => {
+                let d = vsub(held::col3(m, at + 3), held::col3(m, at));
+                dot(d, d).sqrt()
+            }
+            Step::Turn { at, .. } => {
+                let c = held::col3(m, at);
+                let d = vsub(c, *first.get_or_insert(c));
+                dot(d, d).sqrt()
+            }
+            Step::Relative { .. } => continue,
+        };
+        if l.val() > best.val() {
+            best = l;
+        }
+    }
+    if best.val() > 1e-9 { best } else { T::cst(1.0) }
+}
+
 /// Two unit directions square to the unit `d` and to one another: the first the world axis `d`
 /// leans least toward, `d`'s part taken off.
 fn square_to<T: Num>(d: [T; 3]) -> ([T; 3], [T; 3]) {
@@ -141,10 +193,24 @@ fn square_to<T: Num>(d: [T; 3]) -> ([T; 3], [T; 3]) {
 /// nothing and has no axis.
 pub(crate) fn rows<T: Num>(r: Reading, cols: &[T], k: &[f64], out: &mut [T]) -> Option<()> {
     let steps = held::read_steps(k)?;
-    if !constant(&steps) || cols.len() != r.lead() + held::steps_width(&steps) || out.len() != r.rows() {
+    if (r.twist() && !constant(&steps)) || cols.len() != r.lead() + held::steps_width(&steps)
+        || out.len() != r.rows() {
         return None;
     }
     let m = &cols[r.lead()..];
+    if r == Reading::Carried {
+        // `X − Pose(τ)·x`, the roll in degrees
+        let (x, at, t) = (held::col3(cols, 0), held::col3(cols, 3), cols[6]);
+        let deg = T::cst(std::f64::consts::PI / 180.0);
+        let (rot, p) = *held::frames(&steps, m, t * deg).last()?;
+        let moved: [T; 3] = std::array::from_fn(|i| {
+            rot[i][0] * at[0] + rot[i][1] * at[1] + rot[i][2] * at[2] + p[i]
+        });
+        for i in 0..3 {
+            out[i] = x[i] - moved[i];
+        }
+        return Some(());
+    }
     let (w, v0) = twist(&steps, m)?;
     match r {
         Reading::Reciprocal => {
@@ -155,8 +221,7 @@ pub(crate) fn rows<T: Num>(r: Reading, cols: &[T], k: &[f64], out: &mut [T]) -> 
             let (d, a, pitch) = (held::col3(cols, 0), held::col3(cols, 3), cols[6]);
             let (c, along, h) = axis_of(w, v0)?;
             let (t1, t2) = square_to(along);
-            // the lever: the first axis the motion reads, as long as it is drawn
-            let lever = dot(vsub(held::col3(m, 3), held::col3(m, 0)), vsub(held::col3(m, 3), held::col3(m, 0))).sqrt();
+            let lever = lever(&steps, m);
             let off = vsub(a, c);
             out[0] = dot(d, t1) * lever;
             out[1] = dot(d, t2) * lever;
@@ -164,6 +229,7 @@ pub(crate) fn rows<T: Num>(r: Reading, cols: &[T], k: &[f64], out: &mut [T]) -> 
             out[3] = dot(off, t2);
             out[4] = pitch - h;
         }
+        Reading::Carried => unreachable!("read above"),
     }
     Some(())
 }
@@ -183,6 +249,7 @@ pub fn kernel(r: Reading, n_par: usize, n_const: usize) -> Kernel {
     let (res, jac): (fn(usize, &[f64], &[f64], &mut [f64]), fn(usize, &[f64], &[f64], &mut [f64])) = match r {
         Reading::Reciprocal => (res::<0>, jac::<0>),
         Reading::Axis => (res::<1>, jac::<1>),
+        Reading::Carried => (res::<2>, jac::<2>),
     };
     Kernel { name: r.name(), n_res: r.rows(), n_par, n_const, degree: r.degree(), res, jac, const_jac: None, form: None }
 }

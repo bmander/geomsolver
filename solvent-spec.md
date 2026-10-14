@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.103 — October 2026**
+**Specification, Draft 0.104 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -2023,6 +2023,7 @@ Residual conventions: points are ℝ²; `×` is the scalar 2D cross product; `�
 | *across views* **[0.24]** | the relation over the lifts X, Y of its points: X − Y (3); ‖X − Y‖² − e² (1); the point–line magnitude (1); the signed common perpendicular (1); two components of (X − A) × (B − A) across the line (2, `coincident` a line); â·b̂ − cos e (1); â·b̂ (1); (â × b̂) across â (2, `parallel`); ‖B − A‖² − ‖D − C‖² (1, `equal`); ‖X − C‖ − r and n·(X − C) (2, `coincident` a circle); **[0.25]** X − (A + B)/2 (3, `midpoint`); Q + P − 2F, F the foot of P on the line (3, `symmetry`) | as listed | §9.2 |
 | `reciprocal(L: Line, m: Motion)` **[0.103]** | (B − A)·v(A), v(x) = v₀ + ω × x the twist of `m` a radian | 1 | a force along `L` does no work on `m` (Ball); `m` a turn, a screw or a slide about a fixed line, or one relative to another, whose twist is the source's less the observer's; for a mesh the meshing law of a line of action; written `L reciprocal mesh` |
 | `screw(t: Axis, m: Motion)` **[0.103]** | two components of d̂ across ω̂, scaled by L; two of A − c across ω̂; h − ω·v₀/‖ω‖² | 5 | `t` on `m`'s instantaneous screw axis, through c = ω × v₀/‖ω‖² along ω; h, the pitch, the relation's own unknown, a length a radian, pinned as `pitch == h`; L the motion's first axis as drawn; written `isa screw mesh`; a twist turning nothing has no axis |
+| `coincident(X, x, under: m, t)` **[0.104]** | X − Pose_m(t)·x | 3 | `X` is `x` as the moving frame sees it: carried by `m`'s pose at the roll `t`, in degrees, the relation's own unknown (pinned `t == τ`, or solved); X and x lifted; `m` any motion the solve reads, a turn about a point of a view read as the turn about the line through it square to the view; written `X coincident(under: m, t == τ) x` |
 | `project(p, q)` **[0.10]** **[0.42]** | d_A·p − d_B·q + d·(o_A − o_B); over a plane solved for, (n̂_A × n̂_B)·(X_A − X_B) | 1 | the planes A, B inferred from `p`, `q`'s memberships; d the fold line they share, §6.7 |
 
 Implementations MAY extend this library. Extensions MUST document residuals and equation counts, and MUST classify each decoration as hint or constraint per P3.

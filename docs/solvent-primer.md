@@ -1536,7 +1536,9 @@ mesh` (a force along the line `L` does no work on it: for a mesh, the members mo
 `L`, the meshing law of a line of action) and `isa screw mesh` (the axis `isa` is the motion's
 instantaneous screw axis; its pitch is the relation's own unknown, `isa screw(pitch == 0) mesh`
 pins it, and `solventc` reports it). Either reads turns, screws and slides about fixed lines, and
-one relative to another (`spiral_bevel/phillips.sv`).
+one relative to another (`spiral_bevel/phillips.sv`). And `X coincident(under: m, t == τ) x` is `x`
+as the moving frame sees it: carried by `m`'s pose at the roll `τ` (degrees; leave it unpinned and
+the solve finds it) — a rolling circle's point seen by the fixed one is an epicycloid.
 
 **Two flanks meshing are a locus** (`spiral_bevel/contact.sv`): tooth contact analysis. The first
 flank turns with the pinion and the second with the gear — the mesh's observer and source — each an

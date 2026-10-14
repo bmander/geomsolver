@@ -30,6 +30,7 @@ mod brep_census;
 mod brep_export;
 mod callout;
 mod canal;
+mod carried;
 mod catenary;
 mod chain;
 mod chain_edges;

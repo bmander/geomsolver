@@ -622,9 +622,10 @@ s coincident(lag == 0.5) both
     }
 }
 
-/// A motion's twist read (#326, `envelope::screw`): a line reciprocal to it and an axis on its
-/// screw — under the mesh of two turns about skew shafts (the gear's a screw), a slide seen from a
-/// turn, and a turn alone — every axis free, so the motion's columns are differentiated too.
+/// A motion read (#326, `envelope::screw`): a line reciprocal to its twist, an axis on its screw
+/// and a point it carries — under the mesh of two turns about skew shafts (the gear's a screw), a
+/// slide seen from a turn, a turn alone, and a turn about a point of a view seen from a turn about
+/// a line — every axis free, so the motion's columns are differentiated too.
 /// Checked at the seeds and at points knocked off them.
 #[test]
 fn twist_relations_agree_with_finite_differences() {
@@ -660,14 +661,27 @@ jsa := axis hint(dir: (0.1, 0.9, 0.2))
 jsa screw rack
 ksa := axis hint(dir: (0.8, 0.1, -0.5))
 ksa screw gear_turn
+x := point hint((3, -2, 5))
+X := point hint((1, 1, 1))
+X coincident(under: mesh, t == 20) x
+Y := point hint((2, 1, 0))
+Y coincident(under: rack) x
+in std.top {
+  o2 := point hint((1, 2))
+  q2 := point hint((7, 3))
+}
+twirl := motion(about: o2, ratio: 0.7)
+roll := motion(twirl, relative_to: spin)
+Z := point hint((0, 4, 1))
+Z coincident(under: roll, t == -35) q2
 ";
     let (prog, errs) = crate::common::parse(SRC);
     assert!(errs.is_empty(), "{errs:?}");
     let e = gcs_core::program::elaborate(&prog);
     assert!(e.ok(), "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
     let mut sk = e.sketch;
-    let read = |c: &&Constraint| matches!(c.kind, CKind::Reciprocal | CKind::ScrewAxis);
-    assert_eq!(sk.constraints.iter().filter(read).count(), 6);
+    let read = |c: &&Constraint| c.kind.motion_reading().is_some();
+    assert_eq!(sk.constraints.iter().filter(read).count(), 9);
     let mut rng = Rng::new(326);
     for round in 0..4 {
         if round > 0 {

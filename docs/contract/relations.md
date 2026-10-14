@@ -94,6 +94,14 @@ came from.
   its steps; `Constraint::motion_parts` refuses a twist that is not constant (a relative of a
   relative) and the kernel's rows then read NaN.  Neither is a dimension (`undrawn!`).
   `jacobians::twist_relations_agree_with_finite_differences` and `tests/phillips.rs` are the gate.
+  **A point as a moving frame sees it** ([0.104]) is `coincident` between two points with a motion
+  `under:` (`CKind::CarriedPoint`, `(Point, Point)` with the selector: the parser reads `under:` as
+  a reference, `op_args`), slots `(p, q, under: Motion, t: Param)`, `t` in degrees; `Reading::
+  Carried`, three rows `X − Pose(t)·x` over both lifts, the roll and the motion's axes, reading
+  any motion `held::Moving::of_any` reads — a turn about a point of a view too (`Step::Turn`: the
+  centre's lift and the view's two axes, the axis their cross), which an envelope in space still
+  refuses (`Moving::of`).  `tests/carried.rs` is the gate (the epicycloid against its closed form
+  and the planar envelope, a screw's helix in space).
   **What a word means is the kinds of its operands, and a name does not carry its kind until
   elaboration** — so the parser resolves *nothing*: it produces a `syntax::Written` and
   `program::settle` turns it into a `CKind` plus arguments in spec order, through

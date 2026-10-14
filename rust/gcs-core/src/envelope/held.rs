@@ -150,6 +150,10 @@ pub enum Step {
     Rotation { at: usize, ratio: f64, phase: f64, advance: f64 },
     /// Along the line whose lifted ends are motion columns `at..at + 6`.
     Translation { at: usize, advance: f64 },
+    /// About the line through the lifted centre at motion columns `at..at + 3`, square to the
+    /// view whose two axes' directions are columns `at + 3..at + 9`: a turn about a point of a
+    /// view, as it reads in space (#326, read by `Moving::of_any` alone).
+    Turn { at: usize, ratio: f64, phase: f64 },
     /// `observer⁻¹ ∘ source`, by step index.
     Relative { source: usize, observer: usize },
 }
@@ -170,6 +174,7 @@ pub fn encode_steps(steps: &[Step]) -> Vec<f64> {
     steps.iter().flat_map(|s| match *s {
         Step::Rotation { at, ratio, phase, advance } => [1.0, at as f64, 0.0, 0.0, ratio, phase, advance],
         Step::Translation { at, advance } => [2.0, at as f64, 0.0, 0.0, 0.0, 0.0, advance],
+        Step::Turn { at, ratio, phase } => [4.0, at as f64, 0.0, 0.0, ratio, phase, 0.0],
         Step::Relative { source, observer } => [3.0, 0.0, source as f64, observer as f64, 0.0, 0.0, 0.0],
     }).collect()
 }
@@ -186,6 +191,7 @@ pub fn read_steps(k: &[f64]) -> Option<Vec<Step>> {
         steps.push(match s[0] as i64 {
             1 => Step::Rotation { at: s[1] as usize, ratio: s[4], phase: s[5], advance: s[6] },
             2 => Step::Translation { at: s[1] as usize, advance: s[6] },
+            4 => Step::Turn { at: s[1] as usize, ratio: s[4], phase: s[5] },
             3 => Step::Relative { source: idx(s[2])?, observer: idx(s[3])? },
             _ => return None,
         });
@@ -197,6 +203,7 @@ pub fn read_steps(k: &[f64]) -> Option<Vec<Step>> {
 pub fn steps_width(steps: &[Step]) -> usize {
     steps.iter().filter_map(|s| match *s {
         Step::Rotation { at, .. } | Step::Translation { at, .. } => Some(at + 6),
+        Step::Turn { at, .. } => Some(at + 9),
         Step::Relative { .. } => None,
     }).max().unwrap_or(0)
 }
@@ -575,9 +582,17 @@ fn poses<T: Num>(steps: &[Step], m: &[T], t: H2<T>) -> Vec<Pose<T>> {
     let mut poses: Vec<Pose<T>> = Vec::with_capacity(steps.len());
     for s in steps {
         let next = match *s {
-            Step::Rotation { at, ratio, phase, advance } => {
-                let a = col3(m, at);
-                let d = unit(vsub(col3(m, at + 3), a));
+            Step::Rotation { .. } | Step::Turn { .. } => {
+                let (a, d, ratio, phase, advance) = match *s {
+                    Step::Rotation { at, ratio, phase, advance } => {
+                        let a = col3(m, at);
+                        (a, unit(vsub(col3(m, at + 3), a)), ratio, phase, advance)
+                    }
+                    Step::Turn { at, ratio, phase } => {
+                        (col3(m, at), unit(cross(col3(m, at + 3), col3(m, at + 6))), ratio, phase, 0.0)
+                    }
+                    _ => unreachable!(),
+                };
                 let theta = H2::cst(T::cst(phase)) + t.scale(T::cst(ratio));
                 let (st, ct) = theta.sin_cos();
                 let one_c = H2::cst(T::cst(1.0)) - ct;
@@ -1022,7 +1037,7 @@ impl Parts {
         let e = sk.envelopes.get(index).ok_or("no such envelope")?;
         let mut parts = Parts::still(sk, &e.held, &e.name)?;
         let mut done = std::collections::BTreeMap::new();
-        motion(sk, e.motion as usize, &mut parts.steps, &mut parts.cols, &mut done, 0)?;
+        motion(sk, e.motion as usize, &mut parts.steps, &mut parts.cols, &mut done, 0, false)?;
         Ok(parts)
     }
 
@@ -1154,8 +1169,19 @@ pub struct Moving {
 impl Moving {
     /// Motion `m`'s steps and columns, or why the solve cannot read it.
     pub fn of(sk: &Sketch, m: usize) -> Result<Moving, String> {
+        Self::read(sk, m, false)
+    }
+
+    /// The same, a turn about a point of a view read as the turn about the line through it square
+    /// to the view (`Step::Turn`): what a relation reading the motion itself takes (#326), where
+    /// an envelope in space is still generated under turns about lines.
+    pub fn of_any(sk: &Sketch, m: usize) -> Result<Moving, String> {
+        Self::read(sk, m, true)
+    }
+
+    fn read(sk: &Sketch, m: usize, turns: bool) -> Result<Moving, String> {
         let (mut steps, mut cols) = (Vec::new(), Vec::new());
-        motion(sk, m, &mut steps, &mut cols, &mut std::collections::BTreeMap::new(), 0)?;
+        motion(sk, m, &mut steps, &mut cols, &mut std::collections::BTreeMap::new(), 0, turns)?;
         Ok(Moving { steps, cols })
     }
 
@@ -1217,7 +1243,8 @@ fn width(cols: &[Col]) -> usize {
 /// and observer before a relative — each axis's ends appended to `cols`, six motion columns past
 /// the last; returns its step.
 fn motion(sk: &Sketch, m: usize, steps: &mut Vec<Step>, cols: &mut Vec<Col>,
-          done: &mut std::collections::BTreeMap<usize, usize>, depth: usize) -> Result<usize, String> {
+          done: &mut std::collections::BTreeMap<usize, usize>, depth: usize, turns: bool)
+          -> Result<usize, String> {
     if let Some(&s) = done.get(&m) {
         return Ok(s);
     }
@@ -1230,7 +1257,7 @@ fn motion(sk: &Sketch, m: usize, steps: &mut Vec<Step>, cols: &mut Vec<Col>,
                             holds is generated within it: state them", me.name));
     }
     // where the next axis's columns start in the motion's block: past every axis already read
-    let at = 6 * steps.iter().filter(|s| !matches!(s, Step::Relative { .. })).count();
+    let at = steps_width(steps);
     let mut axis = |l: u32| -> Result<(), String> {
         let line = sk.lines.get(l as usize).ok_or("no such motion axis")?;
         cols.extend([Col::Lift(line.p1 as usize), Col::Lift(line.p2 as usize)]);
@@ -1247,13 +1274,23 @@ fn motion(sk: &Sketch, m: usize, steps: &mut Vec<Step>, cols: &mut Vec<Col>,
             axis(l)?;
             Step::Translation { at, advance }
         }
+        MotionDef::Turn { centre, .. } if turns => {
+            let (ratio, phase, _) = me.rotation(sk)?;
+            let view = sk.plane_of(centre as usize).ok_or_else(|| {
+                format!("`{}` turns about a point drawn in no view, so about no line in space", me.name)
+            })?;
+            let pl = sk.planes.get(view).ok_or("no such view")?;
+            cols.extend([Col::Lift(centre as usize), Col::Three(sk.axes[pl.u as usize].d),
+                         Col::Three(sk.axes[pl.v as usize].d)]);
+            Step::Turn { at, ratio, phase }
+        }
         MotionDef::Turn { .. } => {
             return Err(format!("`{}` turns about a point of a view: an envelope in space is \
                                 generated under turns about lines", me.name))
         }
         MotionDef::Relative { source, observer } => {
-            let source = motion(sk, source as usize, steps, cols, done, depth + 1)?;
-            let observer = motion(sk, observer as usize, steps, cols, done, depth + 1)?;
+            let source = motion(sk, source as usize, steps, cols, done, depth + 1, turns)?;
+            let observer = motion(sk, observer as usize, steps, cols, done, depth + 1, turns)?;
             Step::Relative { source, observer }
         }
     };

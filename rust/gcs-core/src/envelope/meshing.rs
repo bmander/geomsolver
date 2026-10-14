@@ -498,6 +498,7 @@ impl Meshing {
         }
         let ratio = match m.steps[m.source] {
             Step::Rotation { ratio, advance, .. } if advance == 0.0 => Some(ratio),
+            Step::Turn { ratio, .. } => Some(ratio),
             _ => None,
         };
         let scale = parts.iter().fold(0.0f64, |a, x| a.max(x.abs())).max(1.0);

@@ -370,12 +370,13 @@ pub fn validate(
     }
     // a motion's twist is read where the solve can read the motion and its twist is the same at
     // every time in the fixed frame (#326)
-    if kind.twist_reading().is_some() {
+    if kind.motion_reading().is_some() {
         let c = Constraint::new(kind, args.to_vec());
         let m = c.motion_of().ok_or("a twist is read off a motion")?;
-        let moving = crate::envelope::held::Moving::of(sk, m.i())
+        let moving = crate::envelope::held::Moving::of_any(sk, m.i())
             .map_err(|why| format!("the solve cannot read the twist of {}: {why}", name(m)))?;
-        if !crate::envelope::screw::constant(&moving.steps) {
+        let twist = kind.motion_reading().is_some_and(|r| r.twist());
+        if twist && !crate::envelope::screw::constant(&moving.steps) {
             return Err(format!("{} is a motion relative to a relative one, whose twist changes as it \
                                 runs: a twist is read of turns, screws and slides about fixed lines, \
                                 and of one relative to another", name(m)));

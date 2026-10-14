@@ -61,7 +61,7 @@ impl Constraint {
             return self.meshing_parts(sk).map(|p| p.consts(lead)).unwrap_or_default();
         }
         // a motion's twist read: its steps (#326)
-        if matches!(self.kind, CKind::Reciprocal | CKind::ScrewAxis) {
+        if self.kind.motion_reading().is_some() {
             return self.motion_parts(sk).map(|p| crate::envelope::screw::consts(&p.steps))
                 .unwrap_or_default();
         }
@@ -613,9 +613,16 @@ impl Constraint {
             }
             // a motion's twist read (#326, `envelope::screw`): the line's two lifted ends, or the
             // axis's direction, its place and the pitch, then the motion's axes
-            CKind::Reciprocal | CKind::ScrewAxis => {
+            CKind::Reciprocal | CKind::ScrewAxis | CKind::CarriedPoint => {
+                let lift = |p: usize| {
+                    let k = sk.lift_of(p).expect("a relation in space is lifted at the add");
+                    sk.lifts[k].x.to_vec()
+                };
                 let lead = match self.kind {
                     CKind::Reciprocal => self.direction_columns(sk, 0),
+                    CKind::CarriedPoint => {
+                        [lift(e(0).i()), lift(e(1).i()), vec![self.args[3].param()]].concat()
+                    }
                     _ => {
                         let x = &sk.axes[e(0).i()];
                         [x.d.to_vec(), x.a.to_vec(), vec![self.args[2].param()]].concat()
@@ -772,9 +779,13 @@ impl Constraint {
                 [vec![e(0).i()], parts].concat()
             }
             // the line's ends, then every point the motion's axes read (#326)
-            CKind::Reciprocal | CKind::ScrewAxis => {
+            CKind::Reciprocal | CKind::ScrewAxis | CKind::CarriedPoint => {
                 let parts = self.motion_parts(sk).map(|p| p.lifted()).unwrap_or_default();
-                let lead = if self.kind == CKind::Reciprocal { ends(0).to_vec() } else { Vec::new() };
+                let lead = match self.kind {
+                    CKind::Reciprocal => ends(0).to_vec(),
+                    CKind::CarriedPoint => vec![e(0).i(), e(1).i()],
+                    _ => Vec::new(),
+                };
                 [lead, parts].concat()
             }
             CKind::Symmetric3 => [vec![e(0).i(), e(1).i()], ends(2).to_vec()].concat(),
