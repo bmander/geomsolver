@@ -10,17 +10,9 @@
 use gcs_core::brep::{export, props, sweep::Say};
 use gcs_core::program::Elaborated;
 use gcs_core::solid::{ApproximationPolicy::Report, MaterialField};
-use gcs_core::solve::{solve, SolveOpts};
 use std::f64::consts::PI;
 
-use crate::common::{ent, read};
-
-fn solved(src: &str) -> Elaborated {
-    let mut e = read(src);
-    let r = solve(&mut e.sketch, SolveOpts::default());
-    assert!(r.success, "{}", r.message);
-    e
-}
+use crate::common::{ent, text::solved};
 
 /// A 20 × 30 block in the front plane (x along u, z along v; its normal is −y), swept `sweep`,
 /// with whatever `more` adds.

@@ -4,25 +4,11 @@
 //! an axis counts (a direction alone is two, and a place nothing reads is none), the refusal of an
 //! unsigned angle at 0 or half a turn, and an axis across JSON and a copy.
 use gcs_core::constraints::CKind;
-use gcs_core::diagnose::{diagnose, DiagnoseOptions};
 use gcs_core::io;
 use gcs_core::model::{EntKind, EntRef, Sketch};
-use gcs_core::program::Elaborated;
-use gcs_core::solve::{solve, SolveOpts};
 use gcs_core::space::{cross, dot, norm, sub};
 
-use crate::common::{ent, read, refused, unit};
-
-fn solved(e: &Elaborated) -> Sketch {
-    let mut sk = e.sketch.clone();
-    let r = solve(&mut sk, SolveOpts::default());
-    assert!(r.success, "{}", r.message);
-    sk
-}
-
-fn dof(sk: &mut Sketch) -> i64 {
-    diagnose(sk, DiagnoseOptions::default()).dof
-}
+use crate::common::{dof, ent, read, refused, solved, unit};
 
 /// An axis's direction and the point on it nearest the origin, as solved.
 fn axis(sk: &Sketch, e: EntRef) -> ([f64; 3], [f64; 3]) {

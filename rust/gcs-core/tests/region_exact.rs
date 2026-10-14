@@ -6,17 +6,9 @@
 use gcs_core::brep::{export, props, sweep::Say};
 use gcs_core::brep::topo::Brep;
 use gcs_core::program::Elaborated;
-use gcs_core::solve::{solve, SolveOpts};
 use std::f64::consts::PI;
 
-use crate::common::{ent, read};
-
-fn solved(src: &str) -> Elaborated {
-    let mut e = read(src);
-    let r = solve(&mut e.sketch, SolveOpts::default());
-    assert!(r.success, "{}\n{src}", r.message);
-    e
-}
+use crate::common::{ent, text::solved};
 
 /// The origin, and lines from it along x and z.
 const AXES: &str = "unit mm\nuse std\nc := point hint((0, 0, 0))\nfix((0, 0, 0)) c\n\

@@ -7,17 +7,9 @@
 //! straight flat, the sum of distances a parabola's arc there, and is lowered so (#196).
 use gcs_core::program::Elaborated;
 use gcs_core::solid::MaterialField;
-use gcs_core::solve::{solve, SolveOpts};
 use std::f64::consts::PI;
 
-use crate::common::{ent, read};
-
-fn solved(src: &str) -> Elaborated {
-    let mut e = read(src);
-    let r = solve(&mut e.sketch, SolveOpts::default());
-    assert!(r.success, "{}\n{src}", r.message);
-    e
-}
+use crate::common::{ent, text::solved};
 
 /// A point held at the origin, the axis up from it, a cone of half 30° opening up from the
 /// origin, the cone grown by 1 (`tip`), a sphere of radius 9 about the origin, a cylinder of

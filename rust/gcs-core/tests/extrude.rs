@@ -6,11 +6,10 @@
 use gcs_core::edit::{self, Kind, SolidSweep};
 use gcs_core::model::Way;
 use gcs_core::overview::workspace::{extent_at, extrude_handle, offset_at, offset_handle, Projection};
-use gcs_core::program::{self, Elaborated};
-use gcs_core::solid::ApproximationPolicy::Report;
+use gcs_core::program::Elaborated;
 use gcs_core::syntax::BodyWord;
-use gcs_core::{library, solve};
 use std::f64::consts::PI;
+use crate::common::gestures::{build, names, near, seen, volume};
 
 /// On the front: a 60 × 40 rectangle `ab…da` from the origin, swept 5 behind as `block`; a
 /// circle `hole` of radius 5 inside it at (30, 20); and a 10 × 10 square `pq…sp` at (80, 0),
@@ -26,37 +25,16 @@ const DRAWN: &str = "unit mm\nuse std\nin std.front {\n\
     fix((80, 0)) p\nfix((90, 0)) q\nfix((90, 10)) r\nfix((80, 10)) s\n}\n\
     block := solid(face(ab, bc, cd, da), depth: 5)\n";
 
-fn build(src: &str) -> Elaborated {
-    let (p, errors, linked) = library::parse_linked(src);
-    assert!(errors.is_empty() && linked.is_empty(), "{errors:?} {linked:?}\n{src}");
-    let mut e = program::elaborate(&p);
-    assert!(e.ok(), "{:?}\n{src}", e.errors().map(|d| d.message.clone()).collect::<Vec<_>>());
-    assert!(solve::solve(&mut e.sketch, Default::default()).success);
-    e
-}
-
 /// `edit::extrude` over the document as it stands.
 fn extrude(e: &Elaborated, outer: &[String], holes: &[Vec<String>],
            with: Option<(BodyWord, &str)>, through: bool) -> edit::Edit {
     edit::extrude(&e.program, &e.sketch, outer, holes, with, through)
 }
 
-fn names(n: &[&str]) -> Vec<String> {
-    n.iter().map(|s| s.to_string()).collect()
-}
-
-fn volume(e: &Elaborated, name: &str) -> f64 {
-    e.sketch.evaluated_solid(e.map.ent_named(name).unwrap().i(), Report).unwrap().volume()
-}
-
 /// The depth a fresh extrusion is written at, read back off its statement.
 fn depth_written(text: &str, solid: &str) -> f64 {
     let line = text.lines().find(|l| l.starts_with(&format!("{solid} := solid("))).unwrap();
     line.split("depth: ").nth(1).unwrap().trim_end_matches(')').parse().unwrap()
-}
-
-fn near(a: f64, b: f64, rel: f64) -> bool {
-    (a - b).abs() <= rel * b.abs().max(1.0)
 }
 
 #[test]
@@ -156,14 +134,6 @@ fn a_prism_previews_a_new_extent_before_the_source_says_it() {
     let mut sk = joined.sketch.clone();
     assert!(matches!(sk.solids[body].def, gcs_core::model::SolidDef::Body { .. }));
     assert!(!sk.set_prism(body, Way::Front, 1.0));
-}
-
-/// The eye's picture-plane coordinates of a point in space (`overview::eye`'s convention).
-fn seen(x: [f64; 3], az: f64, el: f64) -> (f64, f64) {
-    let right = [-az.sin(), az.cos(), 0.0];
-    let up = [-az.cos() * el.sin(), -az.sin() * el.sin(), el.cos()];
-    let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-    (dot(right, x), dot(up, x))
 }
 
 #[test]

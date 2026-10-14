@@ -180,7 +180,7 @@ impl<'a> Walk<'a> {
             let here = format!("{written}.{name}");
             let present = self.names.contains(&key)
                 || alias.contains_key(&key)
-                || self.sets.contains_key(&key)
+                || self.sets.made.contains_key(&key)
                 || self.group_names.contains(&key);
             if !present {
                 self.err(Code::E103, span, format!(
@@ -190,7 +190,7 @@ impl<'a> Walk<'a> {
                 continue;
             }
             let to = alias.get(&key).cloned().unwrap_or(key);
-            let set = self.sets.contains_key(&to);
+            let set = self.sets.made.contains_key(&to);
             let group = self.group_names.contains(&to);
             let wrong = match member {
                 Member::Set if !set => format!("`{here}` is not a set, which `{}` asks for", shape.name),
@@ -210,7 +210,7 @@ impl<'a> Walk<'a> {
             }
             match member {
                 Member::Group(Some(inner)) => self.conform(inner, &to, &here, alias, span),
-                Member::Entity(ty) => self.kinds.push(super::KindAsked {
+                Member::Entity(ty) => self.checks.kinds.push(super::KindAsked {
                     target: to,
                     span,
                     ty: *ty,

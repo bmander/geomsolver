@@ -4,19 +4,10 @@
 //! states, with its free twin and its printed spelling; their refusals are in `refusals.rs`.
 
 use gcs_core::constraints::CKind;
-use gcs_core::io;
-use gcs_core::program::{elaborate, to_program, Elaborated};
+use gcs_core::program::{to_program, Elaborated};
 use gcs_core::solve::{solve, SolveOpts};
-use crate::common::parse_legacy as parse;
+use crate::common::{lenient::read_legacy as read, parse_legacy as parse, said};
 use std::f64::consts::PI;
-
-fn read(src: &str) -> (Elaborated, Vec<String>) {
-    let (prog, errs) = parse(src);
-    let e = elaborate(&prog);
-    let mut all: Vec<String> = errs.iter().map(|x| format!("syntax: {}", x.message)).collect();
-    all.extend(e.diags.iter().map(|d| format!("{}: {}", d.code.as_str(), d.message)));
-    (e, all)
-}
 
 /// Elaborated cleanly and solved.
 fn solved(src: &str) -> Elaborated {
@@ -33,12 +24,6 @@ fn at(e: &Elaborated, name: &str) -> (f64, f64) {
 
 fn near(a: (f64, f64), b: (f64, f64)) -> bool {
     (a.0 - b.0).hypot(a.1 - b.1) < 1e-7
-}
-
-/// The statements a sketch holds, in the words a document writes them with.
-fn said(e: &Elaborated) -> Vec<String> {
-    e.sketch.user_constraints().iter().map(|c| io::describe_with(c, &|r| e.map.name_of(r).cloned()))
-        .collect()
 }
 
 /* -- arc length ---------------------------------------------------------------------------- */

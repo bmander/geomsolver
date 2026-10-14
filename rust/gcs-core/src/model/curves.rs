@@ -437,7 +437,7 @@ impl Sketch {
             [x, y]
         }));
         key.extend(self.curve_pose(i).unwrap_or_default());
-        if let Some((k, poly)) = self.polyline_cache.borrow().get(&i) {
+        if let Some((k, poly)) = self.caches.polyline.borrow().get(&i) {
             if *k == key {
                 return poly.clone();
             }
@@ -448,7 +448,7 @@ impl Sketch {
             p.reverse();
             p
         };
-        self.polyline_cache.borrow_mut().insert(i, (key, poly.clone()));
+        self.caches.polyline.borrow_mut().insert(i, (key, poly.clone()));
         poly
     }
 

@@ -3,6 +3,7 @@
 //! a convex corner's fan), and where the cutter's declared-roll contacts enter the blank fixes the
 //! band of stations and the walk the sheet spans.
 use super::*;
+use gcs_core::brep::recipe::{Named,Node,Recipe};
 
 /// `a` over its length, refusing a zero or non-finite one.
 fn unit(a: [f64;3]) -> Result<[f64;3],String> {
@@ -140,18 +141,14 @@ const FIRST_STATION: f64 = TAU*0.5/96.;
 
 impl Session {
     pub(super) fn cutter(&self,recipe: &gcs_core::json::Json) -> Result<Cutter,String> {
-        let recipe = recipe.clone();
-        let solid = self.construct(&recipe)?;
+        let recipe = Recipe::read(recipe)?;
+        let solid = self.built(&recipe)?;
         let mut axes: Vec<([f64;3],[f64;3])> = Vec::new();
-        for node in recipe.get("nodes").unwrap().arr() {
-            let name = node.get("name").unwrap().as_str();
-            match node.get("kind").unwrap().as_str() {
-                "revolve" => {
-                    let read = |key: &str| -> [f64;3] { let a = node.get(key).unwrap().arr(); std::array::from_fn(|i| a[i].as_f64()) };
-                    axes.push((read("origin"),unit(read("axis"))?));
-                }
-                "placed" | "body" => {}
-                kind => return Err(format!("`{name}`: swept cutters are currently built from revolutions, not a {kind}")),
+        for Named {name,node,..} in &recipe.nodes {
+            match node {
+                Node::Revolve {origin,axis,..} => axes.push((*origin,unit(*axis)?)),
+                Node::Placed {..} | Node::Body(_) => {}
+                node => return Err(format!("`{name}`: swept cutters are currently built from revolutions, not a {}",node.kind())),
             }
         }
         // Stations are meridian half-planes of the first revolution's axis. Other
@@ -446,26 +443,17 @@ fn reverse(pieces: &mut Vec<Piece>) {
 /// Whether a cutter's recipe makes a solid of revolution about the line through `origin` along
 /// `axis` (millimetres, unit): every revolution a whole turn about that line, every placement a
 /// rigid motion keeping the line where it is, and nothing else but Booleans of them.
-fn of_revolution(recipe: &gcs_core::json::Json,origin: [f64;3],axis: [f64;3]) -> bool {
-    let read = |node: &gcs_core::json::Json,key: &str| -> Option<Vec<f64>> {
-        Some(node.get(key)?.arr().iter().map(gcs_core::json::Json::as_f64).collect())
-    };
+fn of_revolution(recipe: &Recipe,origin: [f64;3],axis: [f64;3]) -> bool {
     let size = 1.+norm(origin);
     let on_line = |p: [f64;3]| { let r = sub(p,origin); norm(sub(r,scaled(axis,dot(r,axis)))) <= 1e-9*size };
     let along = |d: [f64;3]| norm(cross(d,axis)) <= 1e-12*norm(d) && norm(d) > 0.;
-    let Some(nodes) = recipe.get("nodes") else { return false };
-    nodes.arr().iter().all(|node| match node.get("kind").map(gcs_core::json::Json::as_str) {
-        Some("revolve") => {
-            let (Some(o),Some(a),Some(angle)) = (read(node,"origin"),read(node,"axis"),node.get("angle")) else { return false };
-            (angle.as_f64().abs()-TAU).abs() <= 1e-12 && on_line([o[0],o[1],o[2]]) && along([a[0],a[1],a[2]])
-        }
-        Some("placed") => {
-            let Some(m) = read(node,"matrix") else { return false };
-            if m.len() != 12 { return false }
+    recipe.nodes.iter().all(|n| match &n.node {
+        &Node::Revolve {origin: o,axis: a,angle,..} => (angle.abs()-TAU).abs() <= 1e-12 && on_line(o) && along(a),
+        Node::Placed {matrix: m,..} => {
             let map = |p: [f64;3],w: f64| -> [f64;3] { std::array::from_fn(|r| m[4*r]*p[0]+m[4*r+1]*p[1]+m[4*r+2]*p[2]+m[4*r+3]*w) };
             on_line(map(origin,1.)) && along(map(axis,0.))
         }
-        Some("body") => true,
+        Node::Body(_) => true,
         _ => false,
     })
 }

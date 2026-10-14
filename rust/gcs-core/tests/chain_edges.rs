@@ -11,29 +11,10 @@ use gcs_core::constraints::{Constraint, CKind};
 use gcs_core::diagnose;
 use gcs_core::edit::{self, Kind};
 use gcs_core::model::{EntKind, EntRef};
-use gcs_core::program::{elaborate, Elaborated};
+use gcs_core::program::elaborate;
 use gcs_core::solve::{self, SolveOpts};
 use gcs_core::syntax::{highlight, render_flat, Tint};
-use crate::common::parse;
-
-fn read(src: &str) -> Elaborated {
-    let (prog, errs) = parse(src);
-    assert!(errs.is_empty(), "does not parse: {errs:?}");
-    let e = elaborate(&prog);
-    assert!(
-        e.ok(),
-        "does not elaborate: {:?}",
-        e.errors().map(|d| d.message.clone()).collect::<Vec<_>>()
-    );
-    e
-}
-
-fn reconciled(e: &mut Elaborated) -> edit::Edit {
-    let sk = std::mem::take(&mut e.sketch);
-    let out = edit::reconcile(e, &sk);
-    e.sketch = sk;
-    out
-}
+use crate::common::{gestures::reconciled, parse, parsed::read};
 
 /// Every error an elaboration reports, as `code: message`.
 fn errors(src: &str) -> Vec<String> {

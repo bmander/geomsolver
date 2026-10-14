@@ -3,21 +3,9 @@
 //! every member to, each of its type, through which the body may read only those members.
 use gcs_core::modules::link;
 use gcs_core::program::{elaborate, Code, Diag, Elaborated};
-use gcs_core::{library, solve, syntax};
+use gcs_core::{library, syntax};
 use std::collections::BTreeMap;
-
-fn build(src: &str) -> Elaborated {
-    let (p, errors, linked) = library::parse_linked(src);
-    assert!(errors.is_empty() && linked.is_empty(), "{errors:?} {linked:?}");
-    elaborate(&p)
-}
-
-fn solved(src: &str) -> Elaborated {
-    let mut e = build(src);
-    assert!(e.ok(), "{:?}", e.diags);
-    assert!(solve::solve(&mut e.sketch, Default::default()).success);
-    e
-}
+use crate::common::linked::{build, solved};
 
 /// The errors a document comes to, each its code and message.
 fn errors(src: &str) -> Vec<(Code, String)> {

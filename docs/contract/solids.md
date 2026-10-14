@@ -63,7 +63,9 @@ placement carries inside the blank; CLI test readers zero the offset.
   **The kernel is the term and nothing is built or stored**: a view, section, volume, mesh and
   clearance are questions asked of `Csg` by classification (Requicha & Voelcker), memoised against
   `solid::reads` — every scalar of every edge the term reaches, each plane's pose and basis,
-  every extent, and `unit`.
+  every extent, and `unit`.  Every memo lives in `Sketch::caches` (`model::Caches`, one
+  `clear()`); a clone keeps every entry, sharing the `Rc`/`Arc` results, and then remembers apart
+  — what a copy read slightly changed (`preview_body`, a body's stratum) reuses for its operands.
   **The classifier must read the facets the candidates are cut from** (against the true circle a
   bore's wall vanishes).  **A BSP prunes what a split loop cannot** (`csg.rs`): splitting every
   facet by every plane goes as the square of the facets.  **No coordinate snap grid**; `EPS`, four

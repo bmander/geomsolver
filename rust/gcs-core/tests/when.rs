@@ -10,20 +10,12 @@
 
 use std::collections::BTreeMap;
 
-use crate::common::parse;
+use crate::common::lenient::read;
 use gcs_core::edit::{self, Kind};
 use gcs_core::expr::{self, Aff, Fault};
-use gcs_core::program::{elaborate, Elaborated};
+use gcs_core::program::Elaborated;
 use gcs_core::solve::{solve, SolveOpts};
 use gcs_core::units::{Dim, Units};
-
-fn read(src: &str) -> (Elaborated, Vec<String>) {
-    let (prog, errs) = parse(src);
-    let e = elaborate(&prog);
-    let mut all: Vec<String> = errs.iter().map(|x| format!("syntax: {}", x.message)).collect();
-    all.extend(e.diags.iter().map(|d| format!("{}: {}", d.code.as_str(), d.message)));
-    (e, all)
-}
 
 fn point(e: &Elaborated, name: &str) -> Option<usize> {
     e.map.ent_named(name).map(|r| r.i())

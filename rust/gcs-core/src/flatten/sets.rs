@@ -244,12 +244,12 @@ impl<'a> Walk<'a> {
         depth: usize,
         made: Made,
     ) {
-        self.sets.insert(abs.clone(), Site::new(lit.clone(), scope.clone(), depth));
+        self.sets.made.insert(abs.clone(), Site::new(lit.clone(), scope.clone(), depth));
         // a set made inside a predicate's use is made once per use, and is that use's: no
         // drawing of its own
-        let applied = self.applying_sets || !self.applying_words.is_empty();
-        if self.sym.is_some() || applied || !matches!(scope.pass, Pass::Itself)
-            || self.unlowered.contains(&abs)
+        let applied = self.sets.applying || !self.words.applying.is_empty();
+        if self.sym.is_some() || applied || !matches!(scope.pred.pass, Pass::Itself)
+            || self.sets.unlowered.contains(&abs)
         {
             return;
         }
@@ -261,7 +261,7 @@ impl<'a> Walk<'a> {
             }
         };
         if drawn {
-            self.lowered.insert(abs, form);
+            self.sets.lowered.insert(abs, form);
         }
     }
 
@@ -285,11 +285,11 @@ impl<'a> Walk<'a> {
         let seed = value_aff(radius.text, &sc.vals, self.units).ok().and_then(|a| a.number())
             .filter(|r| r.is_finite() && *r > 0.0);
         // a set written in place, or an unnamed call, is named nothing the source can say
-        let name = if outer.anonymous || written.text.starts_with('#') {
+        let name = if outer.stamps.anonymous || written.text.starts_with('#') {
             let at = written.span.lo as usize;
             DeclName::Key(Name { text: abs.to_string(), span: Span::at(at) })
         } else {
-            DeclName::Written(written.clone()).prefixed(abs.to_string(), outer.copies)
+            DeclName::Written(written.clone()).prefixed(abs.to_string(), outer.block.copies)
         };
         let mut d = Decl::point(name, [0.0; 2], None);
         d.kind = crate::model::EntKind::Circle;
@@ -318,8 +318,8 @@ impl<'a> Walk<'a> {
     /// Every set drawn as an element, what its shape names resolved where its body reads it —
     /// for the elaborator to judge (`lowering::refused`).
     pub(super) fn to_judge(&self, alias: &BTreeMap<String, String>) -> Vec<Lowered> {
-        self.lowered.iter().map(|(key, form)| {
-            let site = &self.sets[key];
+        self.sets.lowered.iter().map(|(key, form)| {
+            let site = &self.sets.made[key];
             let mut form = form.clone();
             for r in form.refs() {
                 *r = r.take().and_then(|r| self.absolute(&r, &site.scope, alias));
@@ -332,7 +332,7 @@ impl<'a> Walk<'a> {
     /// nothing.
     fn absolute(&self, r: &Ref, sc: &Scope, alias: &BTreeMap<String, String>) -> Option<Ref> {
         let (abs, rest) = self.look(alias).find(r, sc)?;
-        if rest.is_empty() && self.sets.contains_key(&abs) {
+        if rest.is_empty() && self.sets.made.contains_key(&abs) {
             return None;
         }
         let path = rest.into_iter().map(|f| Seg::Field(Name::new(f))).collect();
@@ -353,7 +353,7 @@ impl<'a> Walk<'a> {
         let mut found: Vec<(usize, String)> = Vec::new();
         for (i, r) in w.ops.iter().enumerate() {
             let Some((abs, rest)) = self.look(alias).raw(r, sc)
-                .filter(|(abs, _)| self.sets.contains_key(abs)) else { continue };
+                .filter(|(abs, _)| self.sets.made.contains_key(abs)) else { continue };
             if rest.is_empty() {
                 found.push((i, abs));
             } else if names_surface(&rest) {
@@ -366,7 +366,7 @@ impl<'a> Walk<'a> {
         // a set drawn as an element is one, and a point is put on it as on any (#105) — but for
         // a derivative, which reads the body's rows
         let element = matches!(found.as_slice(),
-                [(_, abs)] if self.lowered.get(abs).is_some_and(|f| f.answers(&w.word.text)))
+                [(_, abs)] if self.sets.lowered.get(abs).is_some_and(|f| f.answers(&w.word.text)))
             && w.args.is_empty()
             && rel.along.is_none() && sc.twin().is_none();
         (!found.is_empty() && !element).then_some((rel, found))
@@ -376,12 +376,12 @@ impl<'a> Walk<'a> {
     /// expansion may hold a use of another set (a set defined over one), so this runs in rounds;
     /// one still standing after `MAX_DEPTH` of them is a set defined in terms of itself.
     pub(super) fn expand_sets(&mut self) {
-        if self.sets.is_empty() {
+        if self.sets.made.is_empty() {
             return;
         }
-        self.applying_sets = true;
+        self.sets.applying = true;
         self.expand_set_uses();
-        self.applying_sets = false;
+        self.sets.applying = false;
     }
 
     /// `expand_sets`' rounds, while every set made is made inside a use.
@@ -429,14 +429,14 @@ impl<'a> Walk<'a> {
                 }
                 // a region has no surface to touch (§6.21) — by a line, a plane or a set alike
                 let tangent = rel.form.written().filter(|w| w.word.text == "tangent");
-                let bounded = found.iter().find(|(_, abs)| self.sets[abs].shape.region);
+                let bounded = found.iter().find(|(_, abs)| self.sets.made[abs].shape.region);
                 if let (Some(w), Some((_, abs))) = (tangent, bounded) {
                     let m = format!("`{}` is a region, and has no surface to touch: touch the set \
                                      it is bounded by", public_path(abs));
                     self.once(Code::E040, w.word.span, m);
                     continue;
                 }
-                self.held = next.len() + rest.len();
+                self.aside.held = next.len() + rest.len();
                 let su = self.set_use_of(&st, rel, &path, &sc, found);
                 // one set touched at a point: by a plane, the one thing that can be
                 let touch = !pair && su.w.word.text == "tangent" && !su.w.args.is_empty();
@@ -451,7 +451,7 @@ impl<'a> Walk<'a> {
                     self.expand_use(&su);
                 }
                 next.append(&mut self.out);
-                self.held = 0;
+                self.aside.held = 0;
             }
             self.out = next;
             if !any {
@@ -475,7 +475,7 @@ impl<'a> Walk<'a> {
     ) -> Option<Vec<(Stmt, Vec<PathStep>, Scope)>> {
         let set_of = |me: &Self, r: &Ref| -> Option<(String, Vec<String>)> {
             let (abs, rest) = me.look(alias).raw(r, sc)?;
-            me.sets.contains_key(&abs).then_some((abs, rest))
+            me.sets.made.contains_key(&abs).then_some((abs, rest))
         };
         // the sets the statement reads, by the reference as written: a measurement's argument
         // (a set, or a set's surface, `S.surface`), or the operand `S.ends`
@@ -522,12 +522,12 @@ impl<'a> Walk<'a> {
         let mut named: BTreeMap<String, String> = BTreeMap::new();
         // the statement as written, which an application's stamp does not hide: two statements
         // of one body stamped alike stay apart
-        let id = sc.written.unwrap_or(st.id).0;
+        let id = sc.pred.written.unwrap_or(st.id).0;
         for (k, (name, written)) in sets.iter().enumerate() {
             let local = keys::measured(id, k);
             let key = format!("{}{local}", sc.prefix());
             self.names.insert(key.clone());
-            self.probes.push(key.clone());
+            self.sets.probes.push(key.clone());
             let at = st.span;
             let point = probe(key, Span::at(at.lo as usize));
             out.push((Stmt { kind: StmtKind::Decl(point), ..st.clone() }, path.to_vec(), sc.clone()));
@@ -550,7 +550,7 @@ impl<'a> Walk<'a> {
             // applied under a prefix of its own, so two sets one statement measures from bind
             // their points apart
             let mut usc = sc.clone();
-            usc.held = true;
+            usc.pred.held = true;
             usc.prefixes.insert(0, keys::measured_prefix(sc.prefix(), id, k));
             if !usc.prefixes.iter().any(|p| p.is_empty()) {
                 usc.prefixes.push(String::new());
@@ -591,8 +591,8 @@ impl<'a> Walk<'a> {
     /// (`{abs}#surface`), made once.  An interval's two surfaces are no one surface: kept.
     fn surface_of(&mut self, abs: &str) -> String {
         let key = keys::surface(abs);
-        if !self.sets.contains_key(&key) {
-            let site = &self.sets[abs];
+        if !self.sets.made.contains_key(&key) {
+            let site = &self.sets.made[abs];
             let mut lit = site.lit.clone();
             for st in lit.body.iter_mut() {
                 let StmtKind::Relation(r) = &mut st.kind else { continue };
@@ -601,7 +601,7 @@ impl<'a> Walk<'a> {
                 }
             }
             let made = Site::of(lit, site.scope.clone(), site.depth);
-            self.sets.insert(key.clone(), made);
+            self.sets.made.insert(key.clone(), made);
             self.names.insert(key.clone());
         }
         key
@@ -638,7 +638,7 @@ impl<'a> Walk<'a> {
     fn refused(&mut self, su: &SetUse, placed: Placed) -> bool {
         let m = su.refuse_derivative(&placed).or_else(|| {
             su.found.iter().find_map(|(k, abs)| {
-                let what = self.sets[abs].shape.makes.as_deref()?;
+                let what = self.sets.made[abs].shape.makes.as_deref()?;
                 placed.made(&ref_text(&su.w.ops[*k]), what)
             })
         });
@@ -670,7 +670,7 @@ impl<'a> Walk<'a> {
         if tangent && self.refused(su, Placed::Contact { word, name: &name }) {
             return;
         }
-        let site = self.sets[abs].clone();
+        let site = self.sets.made[abs].clone();
         let mut body = site.lit.body;
         // **inside or outside a set** (§9.6): its body with its one number a bound
         if let Some(side) = side {
@@ -722,11 +722,11 @@ impl<'a> Walk<'a> {
         // one derivative per direction, which both sets' rows share — under the statement as
         // written, so two tangencies of one body take directions apart
         let u = &su.u;
-        let id = u.scope.written.unwrap_or(u.st.id).0;
+        let id = u.scope.pred.written.unwrap_or(u.st.id).0;
         let charts = [0u8, 1].map(|k| keys::chart(u.scope.prefix(), id, k));
         let worded = Worded { args: format!("at: {}", ref_text(&point)), ..su.worded.clone() };
         for (n, (_, abs)) in su.found.iter().enumerate() {
-            let site = self.sets[abs].clone();
+            let site = self.sets.made[abs].clone();
             let app = self.begin_nth(u, &site.scope, n).of_set();
             let bound = site.lit.bound.text;
             self.bind_to_use(&app, &bound, point.clone(), u);
@@ -761,13 +761,13 @@ impl<'a> Walk<'a> {
         let plane = w.ops[1 - k].clone();
         let worded = Worded { args: format!("at: {}", ref_text(&point)), ..su.worded.clone() };
         let u = &su.u;
-        let site = self.sets[abs].clone();
+        let site = self.sets.made[abs].clone();
         let app = self.begin(u, &site.scope).of_set();
         let bound = site.lit.bound.text;
         self.bind_to_use(&app, &bound, point.clone(), u);
         // the plane's own two directions, each a derivative of its own, under the statement as
         // written
-        let id = u.scope.written.unwrap_or(u.st.id).0;
+        let id = u.scope.pred.written.unwrap_or(u.st.id).0;
         let mut walks = vec![Pass::Made];
         for (n, axis) in ["u", "v"].into_iter().enumerate() {
             let mut r = plane.clone();
@@ -793,10 +793,10 @@ impl<'a> Walk<'a> {
     /// The set a set is one side of (`BodyShape::side_of`), by absolute name, and whether it is
     /// the outside — `None` for any other.
     fn side_of_set(&self, abs: &str, alias: &BTreeMap<String, String>) -> Option<(String, bool)> {
-        let site = self.sets.get(abs)?;
+        let site = self.sets.made.get(abs)?;
         let (other, outside) = site.shape.side_of.as_ref()?;
         let (abs, rest) = self.look(alias).raw(other, &site.scope)?;
-        (rest.is_empty() && self.sets.contains_key(&abs)).then_some((abs, *outside))
+        (rest.is_empty() && self.sets.made.contains_key(&abs)).then_some((abs, *outside))
     }
 
     /// **A point's distance from a set, and a side of a set grown** (§6.21, F4): `p distance(d,
@@ -844,7 +844,7 @@ impl<'a> Walk<'a> {
         let mut grows = grows;
         let mut flipped = false;
         let mut surface: Option<SetLit> = None;
-        let site = &self.sets[abs];
+        let site = &self.sets.made[abs];
         if site.shape.region {
             match one_bound(site) {
                 Some((bare, ge)) => {
@@ -902,7 +902,7 @@ impl<'a> Walk<'a> {
         }
         let distance = written_of(&lit.body[i]).is_some_and(|m| m.word.text == "distance");
         let probe = self.look(alias).raw(&w.ops[1 - k], su.u.scope)
-            .is_some_and(|(p, rest)| rest.is_empty() && self.probes.contains(&p));
+            .is_some_and(|(p, rest)| rest.is_empty() && self.sets.probes.contains(&p));
         let reached = Reached {
             lit: lit.clone(),
             i,
@@ -1016,7 +1016,7 @@ impl<'a> Walk<'a> {
         // the point at the distance from it, on the side named — and the foot, which stands on
         // the surface, seeded on its other side, so the two start apart the way they end; each
         // a statement of the body of its own, so the uses among them are applied apart
-        // (`Scope::written`), stamped as the use's once walked
+        // (`PredWalk::written`), stamped as the use's once walked
         let span = u.st.span;
         let dim = OpArg::Dim(keys::REACH.to_string(), at);
         let ops = vec![local(keys::POINT, at), local(&bound, at)];

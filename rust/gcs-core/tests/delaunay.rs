@@ -156,7 +156,7 @@ fn duplicates_and_weights_hide_points() {
 /// Insertion cost, measured: not a gate on time, which varies by machine, and a hundred thousand
 /// insertions the suite need not pay for (`make bench` measures the same).
 #[test]
-#[ignore]
+#[ignore = "measurement: a hundred thousand insertions timed (`make bench` measures the same)"]
 fn insertion_speed_is_measured() {
     let mut rng = Rng::new(21);
     let n = 50_000;

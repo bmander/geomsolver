@@ -140,75 +140,154 @@ fn compile_trace(
     n_values: usize,
     units: crate::units::Units,
 ) -> Result<(crate::locus::Locus, Vec<(String, usize)>), (Span, String)> {
-    use crate::locus::{Locus, Pred, Row};
-    use crate::tape::Tape;
-    let mut sk = Sketch::new();
-    // the scratch sketch the block is lowered through reads numbers, so it is in the document's
-    // units too — `at_seed` asks it what a bearing's literal is written in
-    sk.units = units;
-    let mut scope: BTreeMap<String, EntRef> = BTreeMap::new();
-    // scratch parameter index -> variable-table slot
-    let mut slot: BTreeMap<u32, usize> = BTreeMap::new();
-    let mut next = 1usize; // slot 0 is the parameter
-    for (name, kind) in formals {
-        let e = match kind {
-            EntKind::Point => EntRef::point(sk.point(0.0, 0.0, false, name)),
-            EntKind::Line => {
-                let a = sk.point(0.0, 0.0, false, name);
-                let b = sk.point(1.0, 0.0, false, name);
-                EntRef::line(sk.line(a, b))
-            }
-            EntKind::Circle => {
-                let c = sk.point(0.0, 0.0, false, name);
-                EntRef::circle(sk.circle(c, 1.0, name))
-            }
-            // a plane: its attitude is no column of the curve, so the front plane's will do
-            EntKind::Plane => EntRef::plane(sk.fixed_plane(crate::plane::Basis::page(), name)),
-            other => {
+    let mut low = Lowering::new(span, vars, formals, units)?;
+    // the numeric columns follow the entities' scalars; nothing in the block is built over them,
+    // and they are read only through the tapes of the dimensions that name them
+    let n_theta = low.slot.len() + n_columns;
+    debug_assert_eq!(low.n_outer, 1 + n_theta + n_values, "variable table shape");
+    // -- pass 1: declarations, so a statement may read a point declared after it --------
+    for st in body {
+        let StmtKind::Decl(d) = &st.kind else { continue };
+        low.declare(st, d)?;
+    }
+    // -- pass 2: constraints and orientations, lowered to rows and predicates ----------
+    for st in body {
+        let r = match &st.kind {
+            StmtKind::Decl(_) => continue,
+            StmtKind::Relation(r) => r,
+            _ => {
                 return Err((
-                    span,
-                    format!("a trace cannot yet be written over {}", other.a()),
+                    st.span,
+                    "a traced component holds declarations and constraints only".to_string(),
                 ))
             }
         };
-        for p in sk.entity_params(e) {
-            slot.insert(p, next);
-            next += 1;
-        }
-        scope.insert(name.clone(), e);
+        low.relation(st, r)?;
     }
-    // the numeric columns follow the entities' scalars; nothing in the block is built over them,
-    // and they are read only through the tapes of the dimensions that name them
-    let n_theta = next - 1 + n_columns;
-    let n_outer = vars.len();
-    debug_assert_eq!(n_outer, 1 + n_theta + n_values, "variable table shape");
-    let tape = |text: &str, span: Span| -> Result<Tape, (Span, String)> {
-        let ast = crate::expr::parse_in(text, units).map_err(|e| (span, e))?;
-        Tape::compile(&ast.body, vars).map_err(|e| (span, e))
+    let Lowering { sk, scope, slot, n_outer, n_q, seeds, pose_of, w, rows, preds, .. } = low;
+    let traced = match scope.get(point) {
+        Some(e) if e.kind == EntKind::Point => {
+            let p = sk.point_params(e.i())[0];
+            match slot.get(&p) {
+                Some(&s) if s >= n_outer => s - n_outer,
+                _ => {
+                    return Err((span, format!("`{point}` must be a point the component declares")))
+                }
+            }
+        }
+        _ => return Err((span, format!("`{point}` must be a point the component declares"))),
     };
-    let constant = |v: f64| -> Tape {
-        Tape::compile(&crate::expr::Ast::Num(v, crate::units::Dim::SCALAR), vars)
-            .expect("a number always compiles")
-    };
+    let locus = crate::locus::Locus::new(n_outer, n_theta, n_q, traced, w, seeds, rows, preds)
+        .map_err(|m| (span, m))?;
+    Ok((locus, pose_of))
+}
 
-    // -- pass 1: declarations, so a statement may read a point declared after it --------
-    let mut n_q = 0usize;
-    let mut seeds: Vec<Tape> = Vec::new();
-    // each inner unknown's owner, so a drawn instance's pose can be read off the sheet
-    let mut pose_of: Vec<(String, usize)> = Vec::new();
-    for st in body {
-        let StmtKind::Decl(d) = &st.kind else { continue };
+/// **A trace block being lowered** (`compile_trace`): the scratch sketch it is drawn in, its
+/// names, which variable-table slot each scratch parameter is, and what the block comes to so far
+/// — each inner unknown's seed and owner, the tapes of the numbers read over `u` (`w`), the rows
+/// and the orientations.
+struct Lowering<'v> {
+    sk: Sketch,
+    scope: BTreeMap<String, EntRef>,
+    /// scratch parameter index -> variable-table slot
+    slot: BTreeMap<u32, usize>,
+    vars: &'v [String],
+    units: crate::units::Units,
+    n_outer: usize,
+    n_q: usize,
+    seeds: Vec<crate::tape::Tape>,
+    /// each inner unknown's owner, so a drawn instance's pose can be read off the sheet
+    pose_of: Vec<(String, usize)>,
+    w: Vec<crate::tape::Tape>,
+    rows: Vec<crate::locus::Row>,
+    preds: Vec<crate::locus::Pred>,
+}
+
+impl<'v> Lowering<'v> {
+    /// The scratch sketch with the entity formals drawn in it, each scalar a slot after the
+    /// parameter's (slot 0).
+    fn new(
+        span: Span,
+        vars: &'v [String],
+        formals: &[(String, EntKind)],
+        units: crate::units::Units,
+    ) -> Result<Lowering<'v>, (Span, String)> {
+        let mut sk = Sketch::new();
+        // the scratch sketch the block is lowered through reads numbers, so it is in the
+        // document's units too — `at_seed` asks it what a bearing's literal is written in
+        sk.units = units;
+        let mut scope: BTreeMap<String, EntRef> = BTreeMap::new();
+        let mut slot: BTreeMap<u32, usize> = BTreeMap::new();
+        let mut next = 1usize; // slot 0 is the parameter
+        for (name, kind) in formals {
+            let e = match kind {
+                EntKind::Point => EntRef::point(sk.point(0.0, 0.0, false, name)),
+                EntKind::Line => {
+                    let a = sk.point(0.0, 0.0, false, name);
+                    let b = sk.point(1.0, 0.0, false, name);
+                    EntRef::line(sk.line(a, b))
+                }
+                EntKind::Circle => {
+                    let c = sk.point(0.0, 0.0, false, name);
+                    EntRef::circle(sk.circle(c, 1.0, name))
+                }
+                // a plane: its attitude is no column of the curve, so the front plane's will do
+                EntKind::Plane => EntRef::plane(sk.fixed_plane(crate::plane::Basis::page(), name)),
+                other => {
+                    return Err((
+                        span,
+                        format!("a trace cannot yet be written over {}", other.a()),
+                    ))
+                }
+            };
+            for p in sk.entity_params(e) {
+                slot.insert(p, next);
+                next += 1;
+            }
+            scope.insert(name.clone(), e);
+        }
+        Ok(Lowering {
+            sk,
+            scope,
+            slot,
+            vars,
+            units,
+            n_outer: vars.len(),
+            n_q: 0,
+            seeds: Vec::new(),
+            pose_of: Vec::new(),
+            w: Vec::new(),
+            rows: Vec::new(),
+            preds: Vec::new(),
+        })
+    }
+
+    /// A number's text compiled over the variable table.
+    fn tape(&self, text: &str, span: Span) -> Result<crate::tape::Tape, (Span, String)> {
+        let ast = crate::expr::parse_in(text, self.units).map_err(|e| (span, e))?;
+        crate::tape::Tape::compile(&ast.body, self.vars).map_err(|e| (span, e))
+    }
+
+    /// A number, as a tape.
+    fn constant(&self, v: f64) -> crate::tape::Tape {
+        crate::tape::Tape::compile(&crate::expr::Ast::Num(v, crate::units::Dim::SCALAR), self.vars)
+            .expect("a number always compiles")
+    }
+
+    /// A declaration of the block drawn in the scratch sketch, each scalar of its own an inner
+    /// unknown with its seed's tape.
+    fn declare(&mut self, st: &Stmt, d: &Decl) -> Result<(), (Span, String)> {
         // a computed point that is not the one traced is its formula and has no unknowns here
         if d.computed.is_some() {
-            continue;
+            return Ok(());
         }
         if d.seed_at.is_some() && d.kind != EntKind::Point {
             return Err((st.span, "only a point takes a geometric seed".to_string()));
         }
-        let seed_tape = |i: usize| -> Result<Tape, (Span, String)> {
+        let seed_tape = |low: &Self, i: usize| -> Result<crate::tape::Tape, (Span, String)> {
             match d.seed_text.get(i).and_then(|t| t.as_ref()) {
-                Some(t) => tape(t, *d.seed_spans.get(i).unwrap_or(&st.span)),
-                None => Ok(constant(d.seed.get(i).copied().unwrap_or(0.0))),
+                Some(t) => low.tape(t, *d.seed_spans.get(i).unwrap_or(&st.span)),
+                None => Ok(low.constant(d.seed.get(i).copied().unwrap_or(0.0))),
             }
         };
         let child = |sk: &Sketch,
@@ -236,40 +315,41 @@ fn compile_trace(
         let e = match d.kind {
             EntKind::Point => {
                 let (sx, sy) = match &d.seed_at {
-                    Some(a) => at_seed(&sk, &scope, &slot, vars, &seeds, n_outer, a, st.span)?,
-                    None => (seed_tape(0)?, seed_tape(1)?),
+                    Some(a) => at_seed(&self.sk, &self.scope, &self.slot, self.vars, &self.seeds,
+                                       self.n_outer, a, st.span)?,
+                    None => (seed_tape(self, 0)?, seed_tape(self, 1)?),
                 };
                 // a scratch sketch nobody's DOF dialog reads, so the key is a fine label here
-                let e = EntRef::point(sk.point(0.0, 0.0, false, &d.name.key().text));
-                seeds.push(sx);
-                seeds.push(sy);
-                for (j, p) in sk.own_params(e).into_iter().enumerate() {
-                    slot.insert(p, n_outer + n_q);
-                    pose_of.push((d.name.key().text.clone(), j));
-                    n_q += 1;
+                let e = EntRef::point(self.sk.point(0.0, 0.0, false, &d.name.key().text));
+                self.seeds.push(sx);
+                self.seeds.push(sy);
+                for (j, p) in self.sk.own_params(e).into_iter().enumerate() {
+                    self.slot.insert(p, self.n_outer + self.n_q);
+                    self.pose_of.push((d.name.key().text.clone(), j));
+                    self.n_q += 1;
                 }
                 e
             }
             EntKind::Line => {
-                let a = child(&sk, &scope, 0)?;
-                let b = child(&sk, &scope, 1)?;
+                let a = child(&self.sk, &self.scope, 0)?;
+                let b = child(&self.sk, &self.scope, 1)?;
                 if a.kind != EntKind::Point || b.kind != EntKind::Point {
                     return Err((st.span, "a line runs between points".to_string()));
                 }
-                EntRef::line(sk.line(a.i(), b.i()))
+                EntRef::line(self.sk.line(a.i(), b.i()))
             }
             EntKind::Circle => {
-                let c = child(&sk, &scope, 0)?;
+                let c = child(&self.sk, &self.scope, 0)?;
                 if c.kind != EntKind::Point {
                     return Err((st.span, "a circle's centre is a point".to_string()));
                 }
-                let sr = seed_tape(0)?;
-                let e = EntRef::circle(sk.circle(c.i(), 0.0, &d.name.key().text));
-                seeds.push(sr);
-                let (j, p) = (0usize, sk.own_params(e)[0]);
-                slot.insert(p, n_outer + n_q);
-                pose_of.push((d.name.key().text.clone(), j));
-                n_q += 1;
+                let sr = seed_tape(self, 0)?;
+                let e = EntRef::circle(self.sk.circle(c.i(), 0.0, &d.name.key().text));
+                self.seeds.push(sr);
+                let (j, p) = (0usize, self.sk.own_params(e)[0]);
+                self.slot.insert(p, self.n_outer + self.n_q);
+                self.pose_of.push((d.name.key().text.clone(), j));
+                self.n_q += 1;
                 e
             }
             other => {
@@ -279,7 +359,7 @@ fn compile_trace(
                 ))
             }
         };
-        if scope.insert(d.name.key().text.clone(), e).is_some() {
+        if self.scope.insert(d.name.key().text.clone(), e).is_some() {
             // two anonymous declarations are two offsets, so only a written name can collide —
             // but the message asks `shown` all the same, so a key cannot leak into it
             let who = d
@@ -288,73 +368,30 @@ fn compile_trace(
                 .map_or_else(|| crate::syntax::decl_head(d.kind, &d.name), |n| n.text.clone());
             return Err((st.span, format!("`{who}` is declared twice")));
         }
+        Ok(())
     }
 
-    // -- pass 2: constraints and orientations, lowered to rows and predicates ----------
-    let mut w: Vec<Tape> = Vec::new();
-    let mut rows: Vec<Row> = Vec::new();
-    let mut preds: Vec<Pred> = Vec::new();
-    for st in body {
-        let r = match &st.kind {
-            StmtKind::Decl(_) => continue,
-            StmtKind::Relation(r) => r,
-            _ => {
-                return Err((
-                    st.span,
-                    "a traced component holds declarations and constraints only".to_string(),
-                ))
-            }
-        };
+    /// The variable-table slot of scratch parameter `p`, or the lowering lost it.
+    fn slot_of(&self, p: u32, span: Span) -> Result<usize, (Span, String)> {
+        self.slot.get(&p).copied().ok_or((span, "trace lowering lost a column".to_string()))
+    }
+
+    /// A relation of the block lowered: an orientation to a predicate, an ordinate in the block's
+    /// plane, or a row over the scratch parameters' slots, a number over `u` a tape's column.
+    fn relation(&mut self, st: &Stmt, r: &crate::ir::Relation) -> Result<(), (Span, String)> {
+        let (sk, scope) = (&self.sk, &self.scope);
         let r = r.resolve(&|rf| {
             scope
                 .get(&rf.root.text)
                 .copied()
-                .and_then(|e| follow(&sk, e, &rf.path).ok())
+                .and_then(|e| follow(sk, e, &rf.path).ok())
                 .map(|e| e.kind)
         })?;
         // `ccw(a, b, x)` — no residual: it selects among the discrete solution components,
         // which is what a branch is, and it is how a block says one *as a fact* rather than
         // as a place to start looking
         if matches!(r.kind, CKind::Ccw | CKind::Cw) {
-            let pts: Vec<&Ref> = r
-                .args
-                .iter()
-                .filter_map(|a| match a {
-                    Some(Arg::Ref(rf)) => Some(rf),
-                    _ => None,
-                })
-                .collect();
-            if pts.len() != 3 {
-                return Err((st.span, "an orientation names three points".to_string()));
-            }
-            let mut cols = [0u32; 6];
-            for (k, rf) in pts.iter().enumerate() {
-                let e = scope
-                    .get(&rf.root.text)
-                    .copied()
-                    .ok_or((rf.span, format!("no such entity: `{}`", rf.root.text)))?;
-                let e = follow(&sk, e, &rf.path).map_err(|m| (rf.span, m))?;
-                if e.kind != EntKind::Point {
-                    return Err((rf.span, "an orientation is about points".to_string()));
-                }
-                let ps = sk.point_params(e.i());
-                for (j, &p) in ps.iter().enumerate() {
-                    let Some(&s) = slot.get(&p) else {
-                        return Err((st.span, "trace lowering lost a column".to_string()));
-                    };
-                    cols[2 * k + j] = s as u32;
-                }
-            }
-            // the placed point is the one a violated predicate reflects, so it must be one
-            // the block actually places
-            if (cols[4] as usize) < n_outer {
-                return Err((
-                    pts[2].span,
-                    "the third point must be one the block places".to_string(),
-                ));
-            }
-            preds.push(Pred { ccw: r.kind == CKind::Ccw, cols });
-            continue;
+            return self.orientation(st, &r);
         }
         let spec = r.kind.spec();
         if r.kind.gauge() {
@@ -389,40 +426,14 @@ fn compile_trace(
         // their word, a drawn line of the block by itself, and a plane's own `u`/`v` as the
         // point's own coordinate in it — the point is drawn there, the block having no other
         let ord = match r.kind.word_slot() {
-            Some(_) => match trace_ordinate(&sk, &scope, &r, st.span)? {
-                TraceOrdinate::Coordinate(p, axis) => {
-                    let col = sk.point_params(p)[axis];
-                    let Some(&col) = slot.get(&col) else {
-                        return Err((st.span, "trace lowering lost a column".to_string()));
-                    };
-                    match r.args.get(3).and_then(|a| a.as_ref()) {
-                        // the coordinate's number over the swept formal: `radius`'s free twin
-                        // over the one column, as any dimension's is
-                        Some(Arg::Dim { text, span }) if r.kind == CKind::Ordinate => {
-                            let cols = vec![col as u32, (n_outer + n_q + w.len()) as u32];
-                            w.push(tape(text, *span)?);
-                            let units = crate::expr::to_arg_units(SpecKind::Length, 1.0);
-                            let kid = crate::kernels::K::RadiusFree as usize;
-                            rows.push(Row { kid, cols, consts: vec![units, 0.0] });
-                        }
-                        _ if r.kind == CKind::Level => rows.push(Row {
-                            kid: crate::kernels::K::Radius as usize,
-                            cols: vec![col as u32],
-                            consts: vec![0.0],
-                        }),
-                        _ => {
-                            return Err((st.span, "`d` must be stated: a trace block infers nothing"
-                                .to_string()))
-                        }
-                    }
-                    continue;
-                }
+            Some(_) => match trace_ordinate(&self.sk, &self.scope, &r, st.span)? {
+                TraceOrdinate::Coordinate(p, axis) => return self.coordinate(st, &r, p, axis),
                 TraceOrdinate::Form(f) => Some(f),
             },
             None => None,
         };
         let mut cargs: Vec<CArg> = Vec::with_capacity(spec.len());
-        let mut dim: Option<(SpecKind, Tape)> = None;
+        let mut dim: Option<(SpecKind, crate::tape::Tape)> = None;
         for (i, (name, kind)) in spec.iter().enumerate() {
             let given = r.args.get(i).and_then(|a| a.as_ref());
             // an ordinate's form is the block's reading of it, and a direction a word named is
@@ -439,11 +450,11 @@ fn compile_trace(
             }
             match (kind, given) {
                 (k, Some(Arg::Ref(rf))) if k.is_entity() => {
-                    let found = scope.get(&rf.root.text).copied();
-                    cargs.push(ent_arg(&sk, found, *k, rf).map_err(|(_, m)| (rf.span, m))?);
+                    let found = self.scope.get(&rf.root.text).copied();
+                    cargs.push(ent_arg(&self.sk, found, *k, rf).map_err(|(_, m)| (rf.span, m))?);
                 }
                 (k, Some(Arg::Dim { text, span })) if k.is_dimension() => {
-                    dim = Some((*k, tape(text, *span)?));
+                    dim = Some((*k, self.tape(text, *span)?));
                     cargs.push(CArg::Num(0.0));
                 }
                 // **a place along a run** (#248) is stated as every number in the block is:
@@ -451,19 +462,21 @@ fn compile_trace(
                 // standing in a scratch Param the constraint's columns name
                 (k, given) if k.is_param() => {
                     let place = match given {
-                        Some(Arg::Seed { value, pinned: true }) => constant(*value),
-                        Some(Arg::SeedExpr { text, pinned: true, span }) => tape(text, *span)?,
-                        Some(Arg::Tie { name, span, .. }) if vars.contains(name) => tape(name, *span)?,
+                        Some(Arg::Seed { value, pinned: true }) => self.constant(*value),
+                        Some(Arg::SeedExpr { text, pinned: true, span }) => self.tape(text, *span)?,
+                        Some(Arg::Tie { name, span, .. }) if self.vars.contains(name) => {
+                            self.tape(name, *span)?
+                        }
                         _ => {
                             return Err((st.span, format!("`{name}` must be pinned in a trace \
                                 block, `{name} == u`: a trace block infers nothing, and a point \
                                 anywhere on the run is `coincident` with no `{name}`")))
                         }
                     };
-                    let p = sk.param(0.0, false, name) as u32;
+                    let p = self.sk.param(0.0, false, name) as u32;
                     // every declaration was consumed in pass 1, so `n_q` is final here
-                    slot.insert(p, n_outer + n_q + w.len());
-                    w.push(place);
+                    self.slot.insert(p, self.n_outer + self.n_q + self.w.len());
+                    self.w.push(place);
                     cargs.push(CArg::Param(p));
                 }
                 // a slot the core would read off the geometry (a tangency's side or sense) is
@@ -489,11 +502,8 @@ fn compile_trace(
         }
         let c = Constraint::new(r.kind, cargs);
         let mut cols: Vec<u32> = Vec::new();
-        for p in c.params(&sk) {
-            let Some(&s) = slot.get(&p) else {
-                return Err((st.span, "trace lowering lost a column".to_string()));
-            };
-            cols.push(s as u32);
+        for p in c.params(&self.sk) {
+            cols.push(self.slot_of(p, st.span)? as u32);
         }
         let kid = match dim {
             Some((k, t)) => {
@@ -508,39 +518,101 @@ fn compile_trace(
                     format!("{} cannot be stated over `u` here", crate::model::article(&crate::syntax::snake(r.kind.name()))),
                 ))?;
                 // every declaration was consumed in pass 1, so `n_q` is final here
-                cols.push((n_outer + n_q + w.len()) as u32);
-                w.push(t);
+                cols.push((self.n_outer + self.n_q + self.w.len()) as u32);
+                self.w.push(t);
                 // the tape works in the units a person writes (degrees); (m, c) are the
                 // conversion to what the kernel reads, the same seam `expr::set_dimension` is,
                 // turned by a word that says which way as a stated number is
                 let sign = c.side().unwrap_or(1.0);
-                rows.push(Row {
+                self.rows.push(crate::locus::Row {
                     kid: twin as usize,
                     cols,
                     consts: vec![sign * crate::expr::to_arg_units(k, 1.0), 0.0],
                 });
-                continue;
+                return Ok(());
             }
             None => c.kernel_id(),
         };
-        let consts = c.consts_on(&sk, None);
-        rows.push(Row { kid, cols, consts });
+        let consts = c.consts_on(&self.sk, None);
+        self.rows.push(crate::locus::Row { kid, cols, consts });
+        Ok(())
     }
-    let traced = match scope.get(point) {
-        Some(e) if e.kind == EntKind::Point => {
-            let p = sk.point_params(e.i())[0];
-            match slot.get(&p) {
-                Some(&s) if s >= n_outer => s - n_outer,
-                _ => {
-                    return Err((span, format!("`{point}` must be a point the component declares")))
-                }
+
+    /// `ccw(a, b, x)` lowered to a predicate over the three points' slots, the third one the
+    /// block places: the point a violated predicate reflects.
+    fn orientation(
+        &mut self, st: &Stmt, r: &crate::ir::ResolvedRelation<'_>,
+    ) -> Result<(), (Span, String)> {
+        let pts: Vec<&Ref> = r
+            .args
+            .iter()
+            .filter_map(|a| match a {
+                Some(Arg::Ref(rf)) => Some(rf),
+                _ => None,
+            })
+            .collect();
+        if pts.len() != 3 {
+            return Err((st.span, "an orientation names three points".to_string()));
+        }
+        let mut cols = [0u32; 6];
+        for (k, rf) in pts.iter().enumerate() {
+            let e = self
+                .scope
+                .get(&rf.root.text)
+                .copied()
+                .ok_or((rf.span, format!("no such entity: `{}`", rf.root.text)))?;
+            let e = follow(&self.sk, e, &rf.path).map_err(|m| (rf.span, m))?;
+            if e.kind != EntKind::Point {
+                return Err((rf.span, "an orientation is about points".to_string()));
+            }
+            let ps = self.sk.point_params(e.i());
+            for (j, &p) in ps.iter().enumerate() {
+                cols[2 * k + j] = self.slot_of(p, st.span)? as u32;
             }
         }
-        _ => return Err((span, format!("`{point}` must be a point the component declares"))),
-    };
-    let locus =
-        Locus::new(n_outer, n_theta, n_q, traced, w, seeds, rows, preds).map_err(|m| (span, m))?;
-    Ok((locus, pose_of))
+        // the placed point is the one a violated predicate reflects, so it must be one
+        // the block actually places
+        if (cols[4] as usize) < self.n_outer {
+            return Err((
+                pts[2].span,
+                "the third point must be one the block places".to_string(),
+            ));
+        }
+        self.preds.push(crate::locus::Pred { ccw: r.kind == CKind::Ccw, cols });
+        Ok(())
+    }
+
+    /// An ordinate along a plane's own `u` or `v`: point `p`'s coordinate `axis`, its number over
+    /// the swept formal `radius`'s free twin over the one column, as any dimension's is — a level
+    /// that coordinate at nothing.
+    fn coordinate(
+        &mut self, st: &Stmt, r: &crate::ir::ResolvedRelation<'_>, p: usize, axis: usize,
+    ) -> Result<(), (Span, String)> {
+        let col = self.sk.point_params(p)[axis];
+        let col = self.slot_of(col, st.span)?;
+        match r.args.get(3).and_then(|a| a.as_ref()) {
+            // the coordinate's number over the swept formal: `radius`'s free twin
+            // over the one column, as any dimension's is
+            Some(Arg::Dim { text, span }) if r.kind == CKind::Ordinate => {
+                let cols = vec![col as u32, (self.n_outer + self.n_q + self.w.len()) as u32];
+                let t = self.tape(text, *span)?;
+                self.w.push(t);
+                let units = crate::expr::to_arg_units(SpecKind::Length, 1.0);
+                let kid = crate::kernels::K::RadiusFree as usize;
+                self.rows.push(crate::locus::Row { kid, cols, consts: vec![units, 0.0] });
+            }
+            _ if r.kind == CKind::Level => self.rows.push(crate::locus::Row {
+                kid: crate::kernels::K::Radius as usize,
+                cols: vec![col as u32],
+                consts: vec![0.0],
+            }),
+            _ => {
+                return Err((st.span, "`d` must be stated: a trace block infers nothing"
+                    .to_string()))
+            }
+        }
+        Ok(())
+    }
 }
 
 /// How a trace block reads an ordinate (`compile_trace`).

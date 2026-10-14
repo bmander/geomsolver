@@ -19,6 +19,17 @@ refusing what it cannot resolve: an untraced meeting is never read as none (issu
 lines and conics, the poles reaching a B-spline's range, a trace by its measured sagitta; a face bulges
 past its edges only off a `ruled` surface (`Surface::bounds_over`: meridians at each axis's
 extreme angle). Never a sample grid: extremes between samples were missed.
+**The recipe is read once** (`recipe::Recipe::read`): every reader — this kernel's build and
+meridian, `section`, the swept cutter and sector, `solid::exact`/`canal`, the native host's
+`Session` — matches a typed `recipe::Node`, never the JSON; a profile stays as written
+(`recipe::Section`, the numbers the native host hands on) until `Profile::of` reads it. A new node
+or field is one arm of `Node::read` and of each match. Every writer writes its points through one
+`recipe::Writer` (millimetres, about the world's origin or `cad::recipe_about`'s). **A kernel error
+has a kind** (`brep::KernelError`, `Kind`): `Brep::check`'s edge not used once each way is
+`NotManifold` (what `boolean::combined` and the body's stratum act on), a recipe of another kind
+than a route builds (`Recipe::meridian`, `Sectioned`) is `Refused` (its caller builds it
+another way), an unreadable recipe `Recipe`; its message is all it says, and it becomes a `String`
+where a caller outside `brep` wants one. Never match an error's text.
 **This kernel is every export's default** (phase 5): OCCT answers only `--kernel occt` /
 `--stl-backend occt` / `SOLVENT_KERNEL=occt` (the oracle; refused in a build without OCCT), its
 STEP checked by `step_check` against `Solid::of`. `gcs-cli tests/brep_oracle.rs` builds every
@@ -66,7 +77,7 @@ an extrusion's of a curve too); a revolution about the axis is kept by `pattern`
 past `nurbs::BANDED` points solve banded; a gross sheet falls back to chord length.
 **Rung 3 (the app reads the exact solid):** a static solid's `EvaluatedSolid` is the B-rep's
 (`solid::Exact`, `Sketch::exact_solid`, cached against `solid::reads`; `from_brep`), built about its
-own origin (`cad::shifted`), faces named by document path (caps leading as the facet term's, so
+own origin (`cad::recipe_about`, every point written through `recipe::Writer`), faces named by document path (caps leading as the facet term's, so
 edges are named alike), meshed no coarser than `BREP_RELATIVE_SAG` or 64 steps a turn, one
 polyhedral `Prim`. The facet term answers what the exact path refuses (touching tori, empty
 solids); `SOLVENT_SOLIDS=facets` throughout. Silhouettes on curved faces are traced on the surfaces

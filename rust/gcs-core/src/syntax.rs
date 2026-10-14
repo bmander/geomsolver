@@ -522,7 +522,7 @@ pub struct Instance {
     /// The view the instance is drawn in — `t := Tooth(…) in top` (§6.7): every point-bearing
     /// declaration its expansion makes joins the plane, the block's rule over the statements
     /// one statement stands for.  Carried into the expansion by the flattener
-    /// (`Scope::in_plane`), never resolved here.
+    /// (`Stamps::plane`), never resolved here.
     pub membership: Membership,
     /// `t2 := Throw(…) class phantom` — every declaration the expansion makes carries these
     /// classes under its own (§13.2), the way `in` puts the whole instance in a view.

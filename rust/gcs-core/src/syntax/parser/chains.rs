@@ -44,6 +44,47 @@ struct Joint {
     sound: bool,
 }
 
+/// The trailing clauses a chain's line carried (`P::chain_trailers`): a placement and where it
+/// is written, the seeds, and a class and where it is written.
+struct ChainTrailers {
+    place: Option<(f64, f64)>,
+    place_span: Span,
+    seeds: Vec<OpArg>,
+    class: Classes,
+    class_span: Span,
+}
+
+/// How each worded joint of a chain splices when its statement is doomed (`Chained`): a
+/// threaded one steps down to the bare corner; an unthreaded one becomes a statement break, its
+/// span grown over a terminal name-link that a break would leave dangling; in a chain that
+/// closes (`closed`) no break is safe — it would re-aim the `close` — so the joint is Stuck.
+fn spellings(joints: &[Joint], closed: bool, links: &[Link], whole: Span) -> Vec<(Span, Fall)> {
+    let n = links.len();
+    joints
+        .iter()
+        .enumerate()
+        .map(|(k, j)| {
+            if j.thread {
+                return (j.span, Fall::Joint);
+            }
+            if closed {
+                return (j.span, Fall::Stuck);
+            }
+            let mut sp = j.span;
+            if k == 0 && links[0].kind().is_none() {
+                sp = Span::new(links[0].span.lo as usize, sp.hi as usize);
+            }
+            if k + 1 == n - 1 && links[n - 1].kind().is_none() {
+                // …and through the trailing clauses: a placement or a seed after the
+                // chain qualifies this line's statements, so text a break left standing
+                // behind the taken name-link would dangle
+                sp = Span::new(sp.lo as usize, whole.hi as usize);
+            }
+            (sp, Fall::Infix)
+        })
+        .collect()
+}
+
 /// One link of a chain while it is being read: the unary constraint words standing before it,
 /// what it stands on, and where its text sits.
 struct Link {
@@ -208,6 +249,81 @@ impl<'a> P<'a> {
         };
         let named_link = link_name.is_some();
         let mut links = vec![self.link(link_name)?];
+        let (joints, close, open) = self.joints(&mut links)?;
+        // the trailing clauses a statement may carry — a lone infix operator is a one-joint
+        // chain, so it carries them here as it would anywhere else
+        let tr = self.chain_trailers(!joints.is_empty())?;
+        self.end_of_stmt();
+        let whole = Span::new(lo, self.prev_hi());
+        if named_link && (!joints.is_empty() || close.is_some() || open.is_some()) {
+            let at = joints.first().or(close.as_ref()).or(open.as_ref()).map_or(whole, |j| j.span);
+            self.errs.push(SynErr {
+                span: at,
+                message: "a definition names one declaration, or a chain that joins every pair of \
+                          its links with `->`"
+                    .into(),
+            });
+            return None;
+        }
+        // whether the line's end can take a trailing clause appended later: a chain ending
+        // in a name (or sealed by `close`) can, one ending in a declaration cannot — the
+        // declaration reads a trailing `at` as its own retired seed spelling
+        let open_end =
+            close.is_some() || matches!(links.last().map(|l| &l.body), Some(LinkBody::Ref(_)));
+        // the open joint's boundary links, read while they are in hand — desugar consumes them
+        let ends = match &open {
+            Some(j) => self.open_ends(j.span, &links),
+            None => None,
+        };
+        let first = out.len();
+        let named = name.map(|name| crate::syntax::NamedChain {
+            annotations: Default::default(),
+            name: crate::syntax::DeclName::Written(name),
+            links: links.iter().map(Link::entity).collect(),
+            closed: close.is_some(),
+        });
+        if named.is_some() {
+            self.named_chain_faults(&joints, open.as_ref());
+        }
+        self.desugar(links, joints, close, open.is_some(), whole, next_id, out);
+        // `l := line(a, b)` — the statement's text starts at its name, before the keyword
+        if named_link {
+            let decl = out[first..].iter_mut().find(|s| matches!(s.kind, StmtKind::Decl(_)));
+            if let Some(st) = decl {
+                st.span.lo = lo as u32;
+            }
+        }
+        if let (Some(j), Some((fe, le, named))) = (open, ends) {
+            self.open_finish(j, fe, le, named, &out[first..], next_id);
+        }
+        // a placement qualifies exactly one dimension (§13.1)
+        self.place_on_one(&mut out[first..], &tr, open_end, whole);
+        // a seed qualifies the one statement the line states, which for a lone infix operator
+        // is the statement itself
+        if let Some(StmtKind::Relation(r)) = out.get_mut(first).map(|s| &mut s.kind) {
+            if let Some(w) = r.form.written_mut() {
+                w.args.extend(tr.seeds);
+            }
+        }
+        if let Some(chain) = named {
+            // A whole named expression, including a single anonymous link, cannot be
+            // deleted by taking out just its geometry and leaving `name =` behind.
+            for st in &mut out[first..] {
+                if matches!(st.kind, StmtKind::Decl(_)) && st.chained == Chained::No {
+                    st.chained = Chained::Link;
+                }
+            }
+            let id = self.mint_stmt(next_id, whole)?;
+            out.push(Stmt { id, kind: StmtKind::Chain(chain), span: whole, chained: Chained::Link });
+        }
+        Some(())
+    }
+
+    /// Every joint after the first link, each with the link it leads to (pushed onto `links`):
+    /// the joints between links, the `-> close` sealing a loop, and a threaded joint left open
+    /// at a block body's `}`.
+    #[allow(clippy::type_complexity)]
+    fn joints(&mut self, links: &mut Vec<Link>) -> Option<(Vec<Joint>, Option<Joint>, Option<Joint>)> {
         let mut joints: Vec<Joint> = Vec::new();
         let mut close: Option<Joint> = None;
         let mut open: Option<Joint> = None;
@@ -232,34 +348,7 @@ impl<'a> P<'a> {
             // that opens a link is the next link's own — `-> vertical line right(…)` is a
             // plain corner onto a levelled line, not a `vertical` joint — which is the same
             // order of questions the colouring asks (`tint_word`), so the two cannot disagree
-            let mut words: Vec<(String, Vec<OpArg>, Span)> = Vec::new();
-            loop {
-                let Some(Tok::Ident(w)) = self.peek() else { break };
-                if !joint_word(w) || opens_link(w, link_word(&self.t, past_args(&self.t, self.i))) {
-                    break;
-                }
-                let w = w.clone();
-                let lo = self.here().lo as usize;
-                self.i += 1;
-                // an infix operator carries its own parentheses: `p1 distance(80) p2` is a
-                // chain of one joint, which is the unification that makes a lone statement
-                // and a chain one grammar rather than two
-                let args = self.op_args(&w, Fixity::Infix)?;
-                words.push((w, args, Span::new(lo, self.prev_hi())));
-                hi = self.prev_hi();
-                // the marker may stand on either side of the words, or both — `A -> equal -> B`
-                // is the one joint `A -> equal B` is — and any marker threads.  Read beside its
-                // word, before the line break, so a continuation onto the next line never picks
-                // up a marker that was written to start a statement there
-                if self.peek() == Some(&Tok::Arrow) {
-                    thread = true;
-                    self.i += 1;
-                    hi = self.prev_hi();
-                    break;
-                }
-                // a line ending in a joint word continues its chain onto the next
-                self.skip_ends();
-            }
+            let words = self.joint_words(&mut thread, &mut hi)?;
             // the retired 0.8 list, caught so a document written against it says what to write
             if (thread || !words.is_empty())
                 && self.peek() == Some(&Tok::P('('))
@@ -304,8 +393,69 @@ impl<'a> P<'a> {
             joints.push(Joint { thread, words, span: Span::new(start, hi), sound: true });
             links.push(self.link(None)?);
         }
-        // the trailing clauses a statement may carry — a lone infix operator is a one-joint
-        // chain, so it carries them here as it would anywhere else
+        Some((joints, close, open))
+    }
+
+    /// What a named chain may not be: left open at a block's brace, or joined by anything but
+    /// `->`.
+    fn named_chain_faults(&mut self, joints: &[Joint], open: Option<&Joint>) {
+        if let Some(j) = open {
+            self.errs.push(SynErr {
+                span: j.span,
+                message: "a named chain must finish before the block's closing brace".into(),
+            });
+        }
+        if let Some(j) = joints.iter().find(|j| !j.thread) {
+            self.errs.push(SynErr {
+                span: j.span,
+                message: "a named chain joins every pair of links with `->`".into(),
+            });
+        }
+    }
+
+    /// The run of words at one joint, each stating a relation there, up to a word that opens
+    /// the next link or a far-side marker (which threads the joint, `*thread`); `*hi` follows
+    /// the last marker or word taken.
+    fn joint_words(
+        &mut self,
+        thread: &mut bool,
+        hi: &mut usize,
+    ) -> Option<Vec<(String, Vec<OpArg>, Span)>> {
+        let mut words: Vec<(String, Vec<OpArg>, Span)> = Vec::new();
+        loop {
+            let Some(Tok::Ident(w)) = self.peek() else { break };
+            if !joint_word(w) || opens_link(w, link_word(&self.t, past_args(&self.t, self.i))) {
+                break;
+            }
+            let w = w.clone();
+            let lo = self.here().lo as usize;
+            self.i += 1;
+            // an infix operator carries its own parentheses: `p1 distance(80) p2` is a
+            // chain of one joint, which is the unification that makes a lone statement
+            // and a chain one grammar rather than two
+            let args = self.op_args(&w, Fixity::Infix)?;
+            words.push((w, args, Span::new(lo, self.prev_hi())));
+            *hi = self.prev_hi();
+            // the marker may stand on either side of the words, or both — `A -> equal -> B`
+            // is the one joint `A -> equal B` is — and any marker threads.  Read beside its
+            // word, before the line break, so a continuation onto the next line never picks
+            // up a marker that was written to start a statement there
+            if self.peek() == Some(&Tok::Arrow) {
+                *thread = true;
+                self.i += 1;
+                *hi = self.prev_hi();
+                break;
+            }
+            // a line ending in a joint word continues its chain onto the next
+            self.skip_ends();
+        }
+        Some(words)
+    }
+
+    /// The trailing clauses a chain's line may carry — a lone infix operator is a one-joint
+    /// chain, so it carries them here as it would anywhere else: seeds, and where the line
+    /// states a relation (`worded`) a class and a placement.
+    fn chain_trailers(&mut self, worded: bool) -> Option<ChainTrailers> {
         let mut place = None;
         let mut place_span = Span::default();
         let mut seeds: Vec<OpArg> = Vec::new();
@@ -316,7 +466,7 @@ impl<'a> P<'a> {
                 for h in self.hint_body("t: 0.4")? {
                     seeds.push(h.into());
                 }
-            } else if class.is_empty() && !joints.is_empty() && self.peek_word("class") {
+            } else if class.is_empty() && worded && self.peek_word("class") {
                 // a class qualifies the line's one relation, as a placement does
                 let (c, sp) = self.class_clause(self.here().lo as usize);
                 if c.is_empty() {
@@ -325,7 +475,7 @@ impl<'a> P<'a> {
                 }
                 class = c;
                 class_span = sp;
-            } else if place.is_none() && !joints.is_empty() && self.peek_word("at") {
+            } else if place.is_none() && worded && self.peek_word("at") {
                 // a placement qualifies a *dimension*, so it is read only where the line states
                 // one — after a declaration, `at (…)` is not a clause the language has
                 let at = self.here().lo as usize;
@@ -347,117 +497,47 @@ impl<'a> P<'a> {
                 break;
             }
         }
-        self.end_of_stmt();
-        let whole = Span::new(lo, self.prev_hi());
-        if named_link && (!joints.is_empty() || close.is_some() || open.is_some()) {
-            let at = joints.first().or(close.as_ref()).or(open.as_ref()).map_or(whole, |j| j.span);
-            self.errs.push(SynErr {
-                span: at,
-                message: "a definition names one declaration, or a chain that joins every pair of \
-                          its links with `->`"
-                    .into(),
-            });
-            return None;
-        }
-        // whether the line's end can take a trailing clause appended later: a chain ending
-        // in a name (or sealed by `close`) can, one ending in a declaration cannot — the
-        // declaration reads a trailing `at` as its own retired seed spelling
-        let open_end =
-            close.is_some() || matches!(links.last().map(|l| &l.body), Some(LinkBody::Ref(_)));
-        // the open joint's boundary links, read while they are in hand — desugar consumes them
-        let ends = match &open {
-            Some(j) => self.open_ends(j.span, &links),
-            None => None,
-        };
-        let first = out.len();
-        let named = name.map(|name| crate::syntax::NamedChain {
-            annotations: Default::default(),
-            name: crate::syntax::DeclName::Written(name),
-            links: links.iter().map(Link::entity).collect(),
-            closed: close.is_some(),
-        });
-        if named.is_some() {
-            if let Some(j) = &open {
-                self.errs.push(SynErr {
-                    span: j.span,
-                    message: "a named chain must finish before the block's closing brace".into(),
-                });
-            }
-            if let Some(j) = joints.iter().find(|j| !j.thread) {
-                self.errs.push(SynErr {
-                    span: j.span,
-                    message: "a named chain joins every pair of links with `->`".into(),
-                });
-            }
-        }
-        self.desugar(links, joints, close, open.is_some(), whole, next_id, out);
-        // `l := line(a, b)` — the statement's text starts at its name, before the keyword
-        if named_link {
-            let decl = out[first..].iter_mut().find(|s| matches!(s.kind, StmtKind::Decl(_)));
-            if let Some(st) = decl {
-                st.span.lo = lo as u32;
-            }
-        }
-        if let (Some(j), Some((fe, le, named))) = (open, ends) {
-            self.open_finish(j, fe, le, named, &out[first..], next_id);
-        }
-        // a placement qualifies exactly one dimension (§13.1), so it is attached to the one
-        // relation the line states, wherever that fell among the links.  A line stating
-        // several offers no way to say which — guessing the first put callouts on statements
-        // nobody measured — so both none and several are refused.  Where no placement was
-        // written and the line offers a spot, the spot one *would* take is recorded all the
-        // same — an empty span at the insertion point, `Decl::hint_span`'s device — so
-        // `reconcile` can write a dragged callout down without re-deriving the line.
-        {
-            let mut rels =
-                out[first..].iter_mut().filter(|s| matches!(s.kind, StmtKind::Relation(_)));
-            match (rels.next(), rels.next()) {
-                (Some(one), None) => {
-                    if let StmtKind::Relation(r) = &mut one.kind {
-                        r.place = place;
-                        r.place_span = match (place, open_end) {
-                            (Some(_), _) => place_span,
-                            (None, true) => Span::at(whole.hi as usize),
-                            (None, false) => Span::default(),
-                        };
-                        r.class = class.clone();
-                        r.class_span = class_span;
-                    }
-                }
-                (Some(_), Some(_)) if place.is_some() => self.errs.push(SynErr {
-                    span: place_span,
-                    message: "a placement qualifies one dimension, and this line states \
-                              several relations (§13.1)"
-                        .to_string(),
-                }),
-                (None, _) if place.is_some() => self.errs.push(SynErr {
-                    span: place_span,
-                    message: "a placement qualifies a dimension, and this line states no \
-                              relation (§13.1)"
-                        .to_string(),
-                }),
-                _ => {}
-            }
-        }
-        // a seed qualifies the one statement the line states, which for a lone infix operator
-        // is the statement itself
-        if let Some(StmtKind::Relation(r)) = out.get_mut(first).map(|s| &mut s.kind) {
-            if let Some(w) = r.form.written_mut() {
-                w.args.extend(seeds);
-            }
-        }
-        if let Some(chain) = named {
-            // A whole named expression, including a single anonymous link, cannot be
-            // deleted by taking out just its geometry and leaving `name =` behind.
-            for st in &mut out[first..] {
-                if matches!(st.kind, StmtKind::Decl(_)) && st.chained == Chained::No {
-                    st.chained = Chained::Link;
+        Some(ChainTrailers { place, place_span, seeds, class, class_span })
+    }
+
+    /// A placement and a class qualify exactly one relation (§13.1), so they are attached to the
+    /// one relation the line states (`out`), wherever that fell among the links.  A line
+    /// stating several offers no way to say which — guessing the first put callouts on
+    /// statements nobody measured — so both none and several are refused.  Where no
+    /// placement was written and the line offers a spot (`open_end`), the spot one *would*
+    /// take is recorded all the same — an empty span at the insertion point,
+    /// `Decl::hint_span`'s device — so `reconcile` can write a dragged callout down without
+    /// re-deriving the line.
+    fn place_on_one(&mut self, out: &mut [Stmt], tr: &ChainTrailers, open_end: bool, whole: Span) {
+        let mut rels =
+            out.iter_mut().filter(|s| matches!(s.kind, StmtKind::Relation(_)));
+        match (rels.next(), rels.next()) {
+            (Some(one), None) => {
+                if let StmtKind::Relation(r) = &mut one.kind {
+                    r.place = tr.place;
+                    r.place_span = match (tr.place, open_end) {
+                        (Some(_), _) => tr.place_span,
+                        (None, true) => Span::at(whole.hi as usize),
+                        (None, false) => Span::default(),
+                    };
+                    r.class = tr.class.clone();
+                    r.class_span = tr.class_span;
                 }
             }
-            let id = self.mint_stmt(next_id, whole)?;
-            out.push(Stmt { id, kind: StmtKind::Chain(chain), span: whole, chained: Chained::Link });
+            (Some(_), Some(_)) if tr.place.is_some() => self.errs.push(SynErr {
+                span: tr.place_span,
+                message: "a placement qualifies one dimension, and this line states \
+                          several relations (§13.1)"
+                    .to_string(),
+            }),
+            (None, _) if tr.place.is_some() => self.errs.push(SynErr {
+                span: tr.place_span,
+                message: "a placement qualifies a dimension, and this line states no \
+                          relation (§13.1)"
+                    .to_string(),
+            }),
+            _ => {}
         }
-        Some(())
     }
 
     /// `[prefix…] KIND(…)`, `[prefix…] (name := KIND(…))`, or a bare name — what a link may
@@ -551,12 +631,141 @@ impl<'a> P<'a> {
         // A marker needs an end on each side it can see, which is exactly a line or an arc; a
         // side that only names an element has a kind only elaboration knows, and is trusted to
         // the point the other side names.
+        self.judge_threads(&links, &mut joints, &mut close);
+
+        // threading: at each threaded joint the shared point is named by exactly one side, by
+        // both in agreement, or — between two declarations — by nobody, in which case the chain
+        // mints it (`thread`).  An end no marker reaches is an implicit child like any other
+        // unwritten slot (§6.2): `(l1 := line) -> (l2 := line)` is two lines and three points,
+        // one shared.
+        for k in 0..joints.len() {
+            if joints[k].thread && joints[k].sound {
+                self.thread(&mut links, k, k + 1, joints[k].span);
+            }
+        }
+        if close.as_ref().is_some_and(|c| c.sound) {
+            let sp = close.as_ref().expect("just checked").span;
+            self.thread(&mut links, n - 1, 0, sp);
+        }
+        // the links are consumed below, so what a joint needs of them — the entity and its kind
+        // where that is known — is taken first, and only where there are joints to need it
+        let sig: Vec<(Ref, Option<EntKind>)> = match chained {
+            true => links.iter().map(|l| (l.entity(), l.kind())).collect(),
+            false => Vec::new(),
+        };
+        // how each worded joint splices when its statement is doomed
+        let spell = spellings(&joints, close.is_some(), &links, whole);
+        let at = |i: usize| (&sig[i].0, sig[i].1);
+        for (i, link) in links.into_iter().enumerate() {
+            if i > 0 && joints[i - 1].sound {
+                let j = &joints[i - 1];
+                for k in 0..j.words.len() {
+                    let (w, args, wspan) = &j.words[k];
+                    // a word with siblings spans itself alone — the blanks around it are the
+                    // splice's business, so a comment or a line break between two words is
+                    // never part of either — and carries the joint's one-word doom for when
+                    // the whole joint falls; the joint's only word steps down to the marker
+                    // or to a statement break (`spell`)
+                    let (span, how) = if lone {
+                        (whole, Chained::No)
+                    } else {
+                        let (of, fall) = spell[i - 1];
+                        word_spelling(j.words.len(), *wspan, of, fall)
+                    };
+                    out.extend(self.joint_stmt(
+                        w,
+                        args,
+                        *wspan,
+                        span,
+                        at(i - 1),
+                        at(i),
+                        j.thread,
+                        how,
+                        next_id,
+                    ));
+                }
+            }
+            let ent = link.entity();
+            if self.prefix_stmts(&link, &ent, next_id, out).is_none() {
+                return;
+            }
+            // a link that only *names* an element declares nothing, so it emits no statement of
+            // its own — the whole of what it contributes is being one end of its joints
+            let LinkBody::Decl(decl) = link.body else { continue };
+            let mut decl = *decl;
+            // where a minted name goes: before a lone declaration's whole statement, prefix
+            // words and all (`l := horizontal line(a, b)`), and round a link's declaration in
+            // a chain (`horizontal (l := line(a, b)) -> …`), since `:=` binds looser than `->`
+            if let DeclName::Key(k) = &mut decl.name {
+                if chained {
+                    decl.mint_close = Some(link.span.hi as usize);
+                } else {
+                    k.span = Span::at(whole.lo as usize);
+                }
+            }
+            let Some(id) = self.mint_stmt(next_id, link.span) else { return };
+            out.push(Stmt {
+                id,
+                kind: StmtKind::Decl(decl),
+                span: link.span,
+                chained: if chained { Chained::Link } else { Chained::No },
+            });
+        }
+        if let Some(c) = close {
+            self.seal(c, at(n - 1), at(0), next_id, out);
+        }
+    }
+
+    /// The statements the `-> close` sealing a chain states between its last link and its
+    /// first; where it states none, the last statement's span grows over its words.
+    fn seal(
+        &mut self,
+        c: Joint,
+        last: (&Ref, Option<EntKind>),
+        first: (&Ref, Option<EntKind>),
+        next_id: &mut u32,
+        out: &mut Vec<Stmt>,
+    ) {
+        let mut sealed = Vec::new();
+        if c.sound {
+            for k in 0..c.words.len() {
+                let (w, args, wspan) = &c.words[k];
+                let (span, how) = word_spelling(c.words.len(), *wspan, c.span, Fall::Close);
+                sealed.extend(self.joint_stmt(
+                    w,
+                    args,
+                    *wspan,
+                    span,
+                    last,
+                    first,
+                    true,
+                    how,
+                    next_id,
+                ));
+            }
+        }
+        if sealed.is_empty() {
+            // `-> close` states nothing, so no statement owns its words; the last link's
+            // span grows over them, or an append would land in the middle of the chain
+            if let Some(tail) = out.last_mut() {
+                tail.span = Span::new(tail.span.lo as usize, c.span.hi as usize);
+            }
+        } else {
+            out.extend(sealed);
+        }
+    }
+
+    /// Which joints a marker may thread: a `close` needs two links, and a marker an end on each
+    /// side it can see — a joint that cannot is not sound, its statements skipped, and each
+    /// link without ends said once however many markers reach it.
+    fn judge_threads(&mut self, links: &[Link], joints: &mut [Joint], close: &mut Option<Joint>) {
+        let n = links.len();
         if close.is_some() && n < 2 {
             self.errs.push(SynErr {
                 span: links[0].span_of_name(),
                 message: "a chain closes over at least two elements".to_string(),
             });
-            if let Some(c) = &mut close {
+            if let Some(c) = close {
                 c.sound = false;
             }
         }
@@ -592,163 +801,45 @@ impl<'a> P<'a> {
                 }
             }
         }
+    }
 
-        // threading: at each threaded joint the shared point is named by exactly one side, by
-        // both in agreement, or — between two declarations — by nobody, in which case the chain
-        // mints it (`thread`).  An end no marker reaches is an implicit child like any other
-        // unwritten slot (§6.2): `(l1 := line) -> (l2 := line)` is two lines and three points,
-        // one shared.
-        for k in 0..joints.len() {
-            if joints[k].thread && joints[k].sound {
-                self.thread(&mut links, k, k + 1, joints[k].span);
-            }
-        }
-        if close.as_ref().is_some_and(|c| c.sound) {
-            let sp = close.as_ref().expect("just checked").span;
-            self.thread(&mut links, n - 1, 0, sp);
-        }
-        // the links are consumed below, so what a joint needs of them — the entity and its kind
-        // where that is known — is taken first, and only where there are joints to need it
-        let sig: Vec<(Ref, Option<EntKind>)> = match chained {
-            true => links.iter().map(|l| (l.entity(), l.kind())).collect(),
-            false => Vec::new(),
-        };
-        // how each worded joint splices when its statement is doomed (`Chained`): a threaded
-        // one steps down to the bare corner; an unthreaded one becomes a statement break, its
-        // span grown over a terminal name-link that a break would leave dangling; in a chain
-        // that closes no break is safe — it would re-aim the `close` — so the joint is Stuck
-        let spell: Vec<(Span, Fall)> = joints
-            .iter()
-            .enumerate()
-            .map(|(k, j)| {
-                if j.thread {
-                    return (j.span, Fall::Joint);
-                }
-                if close.is_some() {
-                    return (j.span, Fall::Stuck);
-                }
-                let mut sp = j.span;
-                if k == 0 && links[0].kind().is_none() {
-                    sp = Span::new(links[0].span.lo as usize, sp.hi as usize);
-                }
-                if k + 1 == n - 1 && links[n - 1].kind().is_none() {
-                    // …and through the trailing clauses: a placement or a seed after the
-                    // chain qualifies this line's statements, so text a break left standing
-                    // behind the taken name-link would dangle
-                    sp = Span::new(sp.lo as usize, whole.hi as usize);
-                }
-                (sp, Fall::Infix)
-            })
-            .collect();
-        let at = |i: usize| (&sig[i].0, sig[i].1);
-        for (i, link) in links.into_iter().enumerate() {
-            if i > 0 && joints[i - 1].sound {
-                let j = &joints[i - 1];
-                for k in 0..j.words.len() {
-                    let (w, args, wspan) = &j.words[k];
-                    // a word with siblings spans itself alone — the blanks around it are the
-                    // splice's business, so a comment or a line break between two words is
-                    // never part of either — and carries the joint's one-word doom for when
-                    // the whole joint falls; the joint's only word steps down to the marker
-                    // or to a statement break (`spell`)
-                    let (span, how) = if lone {
-                        (whole, Chained::No)
-                    } else {
-                        let (of, fall) = spell[i - 1];
-                        word_spelling(j.words.len(), *wspan, of, fall)
-                    };
-                    out.extend(self.joint_stmt(
-                        w,
-                        args,
-                        *wspan,
-                        span,
-                        at(i - 1),
-                        at(i),
-                        j.thread,
-                        how,
-                        next_id,
-                    ));
-                }
-            }
-            let ent = link.entity();
-            for (word, args) in &link.prefixes {
-                let sp = word.span;
-                let rel = Relation {
-                    place: None,
-                    place_span: Span::default(),
-                    form: crate::syntax::RelationForm::Written(Written {
-                        word: word.clone(),
-                        fixity: Fixity::Prefix,
-                        ops: vec![ent.clone()],
-                        args: args.clone(),
-                        span: sp,
-                    }),
-                    claim: false,
-                    class: Classes::default(),
-                    class_span: Span::default(),
-                    word: None,
-                    along: None,
-                    space: false,
-                };
-                let Some(id) = self.mint_stmt(next_id, sp) else { return };
-                out.push(Stmt {
-                    id,
-                    kind: StmtKind::Relation(rel),
+    /// The relations a link's prefix words state over it (`horizontal line(…)`), each a
+    /// statement of its own; `None` where a statement could not be numbered.
+    fn prefix_stmts(
+        &mut self,
+        link: &Link,
+        ent: &Ref,
+        next_id: &mut u32,
+        out: &mut Vec<Stmt>,
+    ) -> Option<()> {
+        for (word, args) in &link.prefixes {
+            let sp = word.span;
+            let rel = Relation {
+                place: None,
+                place_span: Span::default(),
+                form: crate::syntax::RelationForm::Written(Written {
+                    word: word.clone(),
+                    fixity: Fixity::Prefix,
+                    ops: vec![ent.clone()],
+                    args: args.clone(),
                     span: sp,
-                    chained: Chained::Prefix,
-                });
-            }
-            // a link that only *names* an element declares nothing, so it emits no statement of
-            // its own — the whole of what it contributes is being one end of its joints
-            let LinkBody::Decl(decl) = link.body else { continue };
-            let mut decl = *decl;
-            // where a minted name goes: before a lone declaration's whole statement, prefix
-            // words and all (`l := horizontal line(a, b)`), and round a link's declaration in
-            // a chain (`horizontal (l := line(a, b)) -> …`), since `:=` binds looser than `->`
-            if let DeclName::Key(k) = &mut decl.name {
-                if chained {
-                    decl.mint_close = Some(link.span.hi as usize);
-                } else {
-                    k.span = Span::at(whole.lo as usize);
-                }
-            }
-            let Some(id) = self.mint_stmt(next_id, link.span) else { return };
+                }),
+                claim: false,
+                class: Classes::default(),
+                class_span: Span::default(),
+                word: None,
+                along: None,
+                space: false,
+            };
+            let id = self.mint_stmt(next_id, sp)?;
             out.push(Stmt {
                 id,
-                kind: StmtKind::Decl(decl),
-                span: link.span,
-                chained: if chained { Chained::Link } else { Chained::No },
+                kind: StmtKind::Relation(rel),
+                span: sp,
+                chained: Chained::Prefix,
             });
         }
-        if let Some(c) = close {
-            let mut sealed = Vec::new();
-            if c.sound {
-                for k in 0..c.words.len() {
-                    let (w, args, wspan) = &c.words[k];
-                    let (span, how) = word_spelling(c.words.len(), *wspan, c.span, Fall::Close);
-                    sealed.extend(self.joint_stmt(
-                        w,
-                        args,
-                        *wspan,
-                        span,
-                        at(n - 1),
-                        at(0),
-                        true,
-                        how,
-                        next_id,
-                    ));
-                }
-            }
-            if sealed.is_empty() {
-                // `-> close` states nothing, so no statement owns its words; the last link's
-                // span grows over them, or an append would land in the middle of the chain
-                if let Some(last) = out.last_mut() {
-                    last.span = Span::new(last.span.lo as usize, c.span.hi as usize);
-                }
-            } else {
-                out.extend(sealed);
-            }
-        }
+        Some(())
     }
 
     /// The statement one joint states, where it states one — a plain corner states nothing.

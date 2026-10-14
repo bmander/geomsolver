@@ -10,7 +10,7 @@
 
 use gcs_core::program::elaborate;
 use gcs_core::solve::{solve, SolveOpts};
-use crate::common::parse;
+use crate::common::{parse, parsed::build};
 use gcs_core::system::System;
 
 /// The taut-string involute, and its closed form beside it, both over one base circle.  The
@@ -50,12 +50,6 @@ fix((0, 0)) o
 fix((1, 0)) ax
 }
 ";
-
-fn build(src: &str) -> gcs_core::program::Elaborated {
-    let (prog, errs) = parse(src);
-    assert!(errs.is_empty(), "{:?}", errs.iter().map(|e| &e.message).collect::<Vec<_>>());
-    elaborate(&prog)
-}
 
 use crate::common::{fd_jacobian, involute_at};
 

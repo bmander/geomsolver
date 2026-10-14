@@ -5,7 +5,7 @@
 //! a face keeps the name of the operand face it is a piece of.
 use super::*;
 use crate::brep::topo::Brep;
-use crate::brep::recipe::{name_under, named_parts};
+use crate::brep::recipe::{name_under, named_parts, Recipe};
 use std::collections::BTreeSet;
 
 /// A static solid's exact B-rep, in millimetres (`mm` of them a model unit, `cad::millimetres`)
@@ -30,18 +30,15 @@ pub struct Exact {
 pub(crate) fn build(sk: &Sketch, si: usize) -> Result<Exact, String> {
     let mm = cad::millimetres(sk)?;
     let origin = frame_origin(sk, si, REPORT_UNIT);
-    let recipe = cad::shifted(&cad::recipe(sk, si)?, origin.map(|x| x * mm));
+    let recipe = Recipe::read(&cad::recipe_about(sk, si, origin.map(|x| x * mm))?)?;
     // the rounding of coordinates read where the solid stands, before the shift: a few units in
     // the last place of the largest
     let floor = 16.0 * f64::EPSILON * origin.iter().fold(0.0f64, |m, x| m.max(x.abs())) * mm;
-    let field = |j: &'_ crate::json::Json, k: &str| -> Result<crate::json::Json, String> {
-        j.get(k).cloned().ok_or(format!("recipe: no `{k}`"))
-    };
     let mut built = BTreeMap::new();
     let mut leading = BTreeSet::new();
-    for n in field(&recipe, "nodes")?.arr() {
-        let id = field(n, "id")?.as_i64();
-        let mut b = crate::brep::recipe::node_named(n, &built, &BTreeMap::new(), floor)?;
+    for n in &recipe.nodes {
+        let id = n.id;
+        let mut b = n.node.built(&built, &BTreeMap::new(), floor)?;
         let sol = &sk.solids[id as usize];
         match &sol.def {
             SolidDef::Placed { source, .. } => {
@@ -71,7 +68,7 @@ pub(crate) fn build(sk: &Sketch, si: usize) -> Result<Exact, String> {
         }
         built.insert(id, b);
     }
-    let brep = built.remove(&field(&recipe, "root")?.as_i64()).ok_or("recipe: no root")?;
+    let brep = built.remove(&recipe.root).ok_or("recipe: no root")?;
     Ok(named(brep, mm, origin, leading))
 }
 

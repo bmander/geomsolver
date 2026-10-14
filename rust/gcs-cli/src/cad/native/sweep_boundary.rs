@@ -358,10 +358,11 @@ impl Awaited {
 /// A static blank built: as its meridian region turned where every operand is a revolution about one
 /// line (`Session::construct_meridian`), by its recipe's Booleans otherwise; and how.
 fn blank_of(session: &Session,recipe: &gcs_core::json::Json) -> Result<(Blank,String),String> {
-    match session.construct_meridian(recipe) {
+    let recipe = gcs_core::brep::recipe::Recipe::read(recipe)?;
+    match session.built_meridian(&recipe) {
         Ok(Ok((solid,meridian))) => Ok((Blank {solid,meridian:Some(meridian)},", its meridian section turned about its axis".into())),
         Ok(Err(why)) | Err(why) => {
-            let solid = session.construct(recipe)?;
+            let solid = session.built(&recipe)?;
             Ok((Blank {solid,meridian:None},format!(", by its Booleans ({why})")))
         }
     }

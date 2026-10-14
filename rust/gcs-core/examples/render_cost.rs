@@ -28,7 +28,7 @@ fn main() {
         let mut strokes = 0;
         let mut stats = renderer::RenderStats::default();
         for _ in 0..3 {
-            sk.solid_cache.borrow_mut().clear();
+            sk.caches.solid.borrow_mut().clear();
             let start = Instant::now();
             let solids: Vec<_> = ids.iter().map(|&i| {
                 sk.evaluated_solid(i, ApproximationPolicy::View { unit }).unwrap()

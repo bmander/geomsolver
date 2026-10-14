@@ -6,15 +6,7 @@
 
 use gcs_core::io;
 use gcs_core::model::Sketch;
-use gcs_core::program::Elaborated;
-
-fn read(src: &str) -> Elaborated {
-    let (prog, errs) = crate::common::parse(src);
-    assert!(errs.is_empty(), "does not parse: {errs:?}");
-    let e = gcs_core::program::elaborate(&prog);
-    assert!(e.ok(), "does not elaborate: {:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
-    e
-}
+use crate::common::parsed::read;
 
 fn dims(sk: &Sketch) -> Vec<String> {
     sk.user_constraints().iter().filter_map(|c| io::dimension_text(c)).collect()

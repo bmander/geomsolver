@@ -3,7 +3,8 @@
 
 use gcs_core::constraints::CKind;
 use gcs_core::model::{EntKind, EntRef};
-use crate::catenary::{read, samples, solved, ROPE};
+use crate::catenary::{samples, ROPE};
+use crate::common::lenient::{read, solved};
 use crate::common::parse;
 
 fn same(a: &[(f64, f64)], b: &[(f64, f64)]) -> f64 {

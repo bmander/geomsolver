@@ -4,18 +4,10 @@
 //! angle the material makes where two faces meet.  Held to closed forms.
 use gcs_core::program::Elaborated;
 use gcs_core::solid::MaterialField;
-use gcs_core::solve::{solve, SolveOpts};
 use std::f64::consts::PI;
 
-use crate::common::{ent, read};
+use crate::common::{ent, read, text::solved};
 use crate::region_general::field_volume;
-
-fn solved(src: &str) -> Elaborated {
-    let mut e = read(src);
-    let r = solve(&mut e.sketch, SolveOpts::default());
-    assert!(r.success, "{}\n{src}", r.message);
-    e
-}
 
 /// A block 40 × 24 × 12 drawn on the front plane (x, z), standing 12 deep along y, and an L of
 /// two such steps whose inner edge is concave.

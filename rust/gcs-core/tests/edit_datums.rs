@@ -5,8 +5,9 @@
 
 use gcs_core::edit::{self, Kind};
 use gcs_core::model::{EntKind, Sketch};
-use gcs_core::program::{self, Elaborated};
-use gcs_core::{library, solve};
+use gcs_core::program::Elaborated;
+use gcs_core::solve;
+use crate::common::read as build;
 
 /// On the front: `a` at the origin, `m` and `b` along x, `c` at (30, 40) — in space (30, 0, 40)
 /// — with `ab` along x and a circle `k`; `s` in space at (10, 20, 30); and an axis `t` along y
@@ -17,14 +18,6 @@ const DRAWN: &str = "unit mm\nuse std\nin std.front {\n\
     fix((0, 0)) a\nfix((15, 0)) m\nfix((30, 0)) b\nfix((30, 40)) c\nfix(r == 5) k\n}\n\
     s := point hint((10, 20, 30))\nfix((10, 20, 30)) s\n\
     t := axis hint(dir: (0, 1, 0))\nfix(dir == (0, 1, 0), origin == (10, 0, 0)) t\n";
-
-fn build(src: &str) -> Elaborated {
-    let (p, errors, linked) = library::parse_linked(src);
-    assert!(errors.is_empty() && linked.is_empty(), "{errors:?} {linked:?}\n{src}");
-    let e = program::elaborate(&p);
-    assert!(e.ok(), "{:?}\n{src}", e.errors().map(|d| d.message.clone()).collect::<Vec<_>>());
-    e
-}
 
 /// Drop a datum over the drawing, and the document it makes, solved.
 fn drop(kind: EntKind, from: &[&str], current: Option<&str>) -> (String, Elaborated) {

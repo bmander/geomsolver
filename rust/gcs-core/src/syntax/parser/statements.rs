@@ -93,61 +93,9 @@ impl<'a> P<'a> {
             // operator, and under that rule these would be `a ccw(c) b` — which reorders three
             // points that are symmetric, since the predicate is about the *triangle* and not
             // about a pair with a decoration.  Spec §9.6 keeps the call for exactly that reason.
-            "branch" => {
-                self.i += 1;
-                if !self.want_p('(') {
-                    return None;
-                }
-                // the key is written **bare** — `branch(ppp:3|4|5, 1)`.  The language has no
-                // string literal (a quote is the inch mark, §3.3), and a branch key is one run
-                // of characters with no comma in it, so it is taken as the source text up to
-                // the comma exactly as a dimension's is taken up to the end of its line.
-                let from = self.here().lo as usize;
-                while !matches!(self.peek(), Some(Tok::P(',')) | Some(Tok::Nl) | None) {
-                    self.i += 1;
-                }
-                let key = self.text_from(from).trim().to_string();
-                if key.is_empty() {
-                    self.fail("a raw branch names the construction it decides");
-                    return None;
-                }
-                if !self.want_p(',') {
-                    return None;
-                }
-                let v = self.number()? as i32;
-                if !self.want_p(')') {
-                    return None;
-                }
-                Some(StmtKind::Branch(Branch { key, value: v }))
-            }
-            "ellipse" => {
-                // a library component now (bmander/geomsolver#47, item 4): a computed point on
-                // a datum, traced as a curve, whose contacts are the curve's
-                self.fail(
-                    "`ellipse` is a library component now: `use std`, then \
-                     `e := Ellipse(c, a: …, b: …, tilt: 0deg).p over u in (0deg, 360deg)` about \
-                     a centre `c` — `p coincident e`, `e tangent l` and `e curvature k` are the \
-                     curve's contacts",
-                );
-                None
-            }
-            "frame" => {
-                // folded into `plane` (bmander/geomsolver#47, item 6; #81)
-                self.fail(
-                    "`frame` is folded into `plane`: write `f := plane(u: r1, v: r2)` over two \
-                     axes or lines, whose origin is `f.origin`, or turn a frame within a plane \
-                     with `std.Turned(o, t)`",
-                );
-                None
-            }
-            "port" => {
-                // retired (bmander/geomsolver#47): everything an instance makes is reached by
-                // its dotted name, so a port was a second name for a thing that had one
-                self.fail(
-                    "`port` is retired: an instance's entities are reached by dotted name \
-                     (`inst.p`), so declare the point (`p := point hint(…)`), compute it \
-                     (`p := point(x: …, y: …)`) or name the aliased entity itself",
-                );
+            "branch" => self.branch(),
+            "ellipse" | "frame" | "port" => {
+                self.retired(&w);
                 None
             }
             b if BLOCKS.contains(&b) => {
@@ -167,33 +115,7 @@ impl<'a> P<'a> {
             // not one of those.
             "claim" if matches!(self.t.get(self.i + 1).map(|(t, _)| t), Some(Tok::Ident(w)) if w == "over") =>
             {
-                let lo = self.here().lo as usize;
-                self.i += 2;
-                let formal = self.refr()?;
-                if !self.peek_word("in") {
-                    self.fail("a swept claim runs `over NAME in (from, to)`");
-                    return None;
-                }
-                self.i += 1;
-                if !self.want_p('(') {
-                    return None;
-                }
-                let (from, fs) = self.expr_until(',')?;
-                if !self.want_p(',') {
-                    return None;
-                }
-                let (to, ts) = self.expr_until(')')?;
-                if !self.want_p(')') {
-                    return None;
-                }
-                let (body, _) = self.braced_body(next_id)?;
-                Some(StmtKind::ClaimOver(ClaimOver {
-                    formal,
-                    from: Arg::Dim { text: from, span: fs },
-                    to: Arg::Dim { text: to, span: ts },
-                    body,
-                    span: Span::new(lo, self.prev_hi()),
-                }))
+                self.claim_over(next_id)
             }
             // `claim vertical(rail)` — a relation stated as expected to add no rank
             "claim" => {
@@ -220,32 +142,7 @@ impl<'a> P<'a> {
                     || w == "through"),
             ) =>
             {
-                let lo = self.here().lo as usize;
-                let what = self.refr()?;
-                let Some(Tok::Ident(w)) = self.peek().cloned() else {
-                    self.fail("a body statement is `X union B`, `X cut B` or `X common B`");
-                    return None;
-                };
-                if w == "through" {
-                    self.fail("Boolean `through` is now `cut`: write `X cut B`; `through:` specifies a cutter's extent");
-                    return None;
-                }
-                // through 0.84 the intersection was `bound`, the word a dimension's bound is (#270)
-                if w == "bound" {
-                    self.fail("the body word `bound` is now `common`: write `X common B`, the body keeping what \
-                               it has in common with `X`");
-                    return None;
-                }
-                let word = BodyWord::parse(&w).unwrap_or(BodyWord::Common);
-                self.i += 1;
-                let body = self.refr()?;
-                self.end_of_stmt();
-                Some(StmtKind::SolidRel(SolidRel {
-                    word,
-                    what,
-                    body,
-                    span: Span::new(lo, self.prev_hi()),
-                }))
+                self.body_word()
             }
             // `rope minimizes integral(p.y over p)` — what a curve is stationary for (#121), read
             // by the word past its curve, as the body words are
@@ -264,6 +161,131 @@ impl<'a> P<'a> {
             }
             _ => self.relation().map(StmtKind::Relation),
         }
+    }
+
+    /// `branch(KEY, ±1)`, the word next: a raw root choice.
+    fn branch(&mut self) -> Option<StmtKind> {
+        self.i += 1;
+        if !self.want_p('(') {
+            return None;
+        }
+        // the key is written **bare** — `branch(ppp:3|4|5, 1)`.  The language has no
+        // string literal (a quote is the inch mark, §3.3), and a branch key is one run
+        // of characters with no comma in it, so it is taken as the source text up to
+        // the comma exactly as a dimension's is taken up to the end of its line.
+        let from = self.here().lo as usize;
+        while !matches!(self.peek(), Some(Tok::P(',')) | Some(Tok::Nl) | None) {
+            self.i += 1;
+        }
+        let key = self.text_from(from).trim().to_string();
+        if key.is_empty() {
+            self.fail("a raw branch names the construction it decides");
+            return None;
+        }
+        if !self.want_p(',') {
+            return None;
+        }
+        let v = self.number()? as i32;
+        if !self.want_p(')') {
+            return None;
+        }
+        Some(StmtKind::Branch(Branch { key, value: v }))
+    }
+
+    /// A statement word the language retired, refused saying what to write now.
+    fn retired(&mut self, w: &str) {
+        match w {
+            "ellipse" => {
+                // a library component now (bmander/geomsolver#47, item 4): a computed point on
+                // a datum, traced as a curve, whose contacts are the curve's
+                self.fail(
+                    "`ellipse` is a library component now: `use std`, then \
+                     `e := Ellipse(c, a: …, b: …, tilt: 0deg).p over u in (0deg, 360deg)` about \
+                     a centre `c` — `p coincident e`, `e tangent l` and `e curvature k` are the \
+                     curve's contacts",
+                );
+            }
+            "frame" => {
+                // folded into `plane` (bmander/geomsolver#47, item 6; #81)
+                self.fail(
+                    "`frame` is folded into `plane`: write `f := plane(u: r1, v: r2)` over two \
+                     axes or lines, whose origin is `f.origin`, or turn a frame within a plane \
+                     with `std.Turned(o, t)`",
+                );
+            }
+            "port" => {
+                // retired (bmander/geomsolver#47): everything an instance makes is reached by
+                // its dotted name, so a port was a second name for a thing that had one
+                self.fail(
+                    "`port` is retired: an instance's entities are reached by dotted name \
+                     (`inst.p`), so declare the point (`p := point hint(…)`), compute it \
+                     (`p := point(x: …, y: …)`) or name the aliased entity itself",
+                );
+            }
+            _ => {}
+        }
+    }
+
+    /// `claim over NAME in (from, to) { … }`, `claim` next: claims judged as the drawing runs
+    /// along one of its free variables (§9.8).
+    fn claim_over(&mut self, next_id: &mut u32) -> Option<StmtKind> {
+        let lo = self.here().lo as usize;
+        self.i += 2;
+        let formal = self.refr()?;
+        if !self.peek_word("in") {
+            self.fail("a swept claim runs `over NAME in (from, to)`");
+            return None;
+        }
+        self.i += 1;
+        if !self.want_p('(') {
+            return None;
+        }
+        let (from, fs) = self.expr_until(',')?;
+        if !self.want_p(',') {
+            return None;
+        }
+        let (to, ts) = self.expr_until(')')?;
+        if !self.want_p(')') {
+            return None;
+        }
+        let (body, _) = self.braced_body(next_id)?;
+        Some(StmtKind::ClaimOver(ClaimOver {
+            formal,
+            from: Arg::Dim { text: from, span: fs },
+            to: Arg::Dim { text: to, span: ts },
+            body,
+            span: Span::new(lo, self.prev_hi()),
+        }))
+    }
+
+    /// `X union B`, `X cut B`, `X common B` — a body statement, its first operand next.
+    fn body_word(&mut self) -> Option<StmtKind> {
+        let lo = self.here().lo as usize;
+        let what = self.refr()?;
+        let Some(Tok::Ident(w)) = self.peek().cloned() else {
+            self.fail("a body statement is `X union B`, `X cut B` or `X common B`");
+            return None;
+        };
+        if w == "through" {
+            self.fail("Boolean `through` is now `cut`: write `X cut B`; `through:` specifies a cutter's extent");
+            return None;
+        }
+        // through 0.84 the intersection was `bound`, the word a dimension's bound is (#270)
+        if w == "bound" {
+            self.fail("the body word `bound` is now `common`: write `X common B`, the body keeping what \
+                       it has in common with `X`");
+            return None;
+        }
+        let word = BodyWord::parse(&w).unwrap_or(BodyWord::Common);
+        self.i += 1;
+        let body = self.refr()?;
+        self.end_of_stmt();
+        Some(StmtKind::SolidRel(SolidRel {
+            word,
+            what,
+            body,
+            span: Span::new(lo, self.prev_hi()),
+        }))
     }
 
     /// Whether the statement from here compares two sides outside every bracket (`<` or `>`).

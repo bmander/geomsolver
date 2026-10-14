@@ -10,10 +10,9 @@ use gcs_core::diagnose::{diagnose, summary, DiagnoseOptions};
 use gcs_core::io;
 use gcs_core::model::Sketch;
 use gcs_core::program::Elaborated;
-use gcs_core::solve::{solve, SolveOpts};
 use gcs_core::space::{cross, dot, norm, sub};
 
-use crate::common::{ends, ent, off_line, read, refused, unit};
+use crate::common::{ends, ent, off_line, read, refused, solved, text::dof, unit};
 
 fn at(sk: &Sketch, e: &Elaborated, n: &str) -> [f64; 3] {
     sk.world_point(ent(e, n).i())
@@ -34,18 +33,6 @@ fn unknown(sk: &Sketch, name: &str) -> f64 {
 /// The angle in degrees between two directions.
 fn angle(a: [f64; 3], b: [f64; 3]) -> f64 {
     dot(unit(a), unit(b)).clamp(-1.0, 1.0).acos().to_degrees()
-}
-
-fn solved(e: &Elaborated) -> Sketch {
-    let mut sk = e.sketch.clone();
-    let r = solve(&mut sk, SolveOpts::default());
-    assert!(r.success, "{}", r.message);
-    sk
-}
-
-fn dof(src: &str) -> i64 {
-    let mut sk = solved(&read(src));
-    diagnose(&mut sk, DiagnoseOptions::default()).dof
 }
 
 /// Two planes square to each other: two axes grounded in the front one, and a point and a line in

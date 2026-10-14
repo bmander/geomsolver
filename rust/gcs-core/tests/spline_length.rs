@@ -7,26 +7,9 @@ use gcs_core::constraints::CKind;
 use gcs_core::curve;
 use gcs_core::diagnose::{diagnose, DiagnoseOptions};
 use gcs_core::io;
-use gcs_core::program::{elaborate, Elaborated};
-use gcs_core::solve::{solve, SolveOpts};
-use crate::common::parse;
+use gcs_core::program::Elaborated;
+use crate::common::lenient::solved;
 use std::f64::consts::PI;
-
-fn read(src: &str) -> (Elaborated, Vec<String>) {
-    let (prog, errs) = parse(src);
-    let e = elaborate(&prog);
-    let mut all: Vec<String> = errs.iter().map(|x| format!("syntax: {}", x.message)).collect();
-    all.extend(e.diags.iter().map(|d| format!("{}: {}", d.code.as_str(), d.message)));
-    (e, all)
-}
-
-fn solved(src: &str) -> Elaborated {
-    let (mut e, d) = read(src);
-    assert!(e.ok(), "{d:?}");
-    let r = solve(&mut e.sketch, SolveOpts::default());
-    assert!(r.success, "{}: {src}", r.message);
-    e
-}
 
 /// The length of spline `i` as a polyline of 20 000 chords — worked out here, not asked of the
 /// core's quadrature.

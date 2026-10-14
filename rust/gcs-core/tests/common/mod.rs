@@ -4,8 +4,22 @@
 //! what the block-solve tests and their measurements share: a solve under one `BlockMode`, a pose
 //! to the bit, the corpus they are measured over, the rough starts made from a solution, and how
 //! far one pose is from another.
+//!
+//! Beside them, by what they read a document as: `text` (`read` and solved), `parsed`
+//! (`common::parse`, a link diagnostic left to the elaboration), `linked` (a host's parse, the
+//! elaboration unchecked), `lenient` (every diagnostic returned rather than asserted) and
+//! `gestures` (the edit tests' harness); and `rounds`, the closed forms rounds are held to.
 #![allow(dead_code)]
 
+pub mod gestures;
+pub mod lenient;
+pub mod linked;
+pub mod parsed;
+pub mod rounds;
+pub mod text;
+
+use gcs_core::diagnose::{diagnose, DiagnoseOptions};
+use gcs_core::io;
 use gcs_core::model::{EntRef, Sketch};
 use gcs_core::program::{elaborate, Elaborated};
 use gcs_core::rng::Rng;
@@ -124,6 +138,35 @@ pub fn solved(e: &Elaborated) -> Sketch {
     let r = gcs_core::solve::solve(&mut sk, SolveOpts::default());
     assert!(r.success, "{}", r.message);
     sk
+}
+
+/// The freedom a sketch has left.
+pub fn dof(sk: &mut Sketch) -> i64 {
+    diagnose(sk, DiagnoseOptions::default()).dof
+}
+
+/// Where the point the document calls `n` stands in space.
+pub fn at(e: &Elaborated, n: &str) -> [f64; 3] {
+    e.sketch.world_point(ent(e, n).i())
+}
+
+/// Each statement as `describe` reads it back, in the document's names.
+pub fn said(e: &Elaborated) -> Vec<String> {
+    e.sketch
+        .user_constraints()
+        .iter()
+        .map(|c| io::describe_with(c, &|r| e.map.name_of(r).cloned()))
+        .collect()
+}
+
+/// `got` within 1e-9 of `want`, relative: a volume against its closed form.
+pub fn close(got: f64, want: f64) {
+    assert!((got - want).abs() <= 1e-9 * want, "{got} against {want}");
+}
+
+/// Two numbers alike to 1e-8.
+pub fn near(a: f64, b: f64) -> bool {
+    (a - b).abs() < 1e-8
 }
 
 /// A line's two ends where they stand in space.

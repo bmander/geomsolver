@@ -34,6 +34,40 @@ pub(crate) fn field<'a>(j: &'a Json,k: &str,what: &str) -> Result<&'a Json,Strin
     j.get(k).ok_or(format!("{what}: no `{k}`"))
 }
 
+/// What a kernel error is, where a caller acts on it rather than only saying it.
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub enum Kind {
+    /// A boundary that is no manifold: an edge not used once along and once against
+    /// (`topo::Brep::check`), as where two pieces of material touch along it.
+    NotManifold,
+    /// A recipe of another kind than a route builds (`recipe::Recipe::meridian`,
+    /// `section::Sectioned`): its caller builds it another way.
+    Refused,
+    /// A recipe this kernel cannot read (`recipe::Recipe::read`).
+    Recipe,
+    /// Anything else this kernel could not do.
+    Failed,
+}
+
+/// An error of this kernel: what kind it is, and what it says. Said, it is its message alone, and
+/// a caller wanting a `String` takes that (`From`).
+#[derive(Clone,Debug,PartialEq)]
+pub struct KernelError { pub kind: Kind,pub msg: String }
+
+impl KernelError {
+    pub fn new(kind: Kind,msg: impl Into<String>) -> KernelError { KernelError {kind,msg:msg.into()} }
+    /// The same error saying `f` of what it said, its kind kept.
+    pub fn saying(self,f: impl FnOnce(&str) -> String) -> KernelError { KernelError {msg:f(&self.msg),..self} }
+}
+
+impl std::fmt::Display for KernelError {
+    fn fmt(&self,f: &mut std::fmt::Formatter) -> std::fmt::Result { f.write_str(&self.msg) }
+}
+
+impl From<String> for KernelError { fn from(msg: String) -> KernelError { KernelError {kind:Kind::Failed,msg} } }
+impl From<&str> for KernelError { fn from(msg: &str) -> KernelError { KernelError {kind:Kind::Failed,msg:msg.into()} } }
+impl From<KernelError> for String { fn from(e: KernelError) -> String { e.msg } }
+
 /// `SOLVENT_BREP_DEBUG` is set: the kernel narrates its Booleans and traces (read once).
 pub(crate) fn debug() -> bool {
     static ON: OnceLock<bool> = OnceLock::new();

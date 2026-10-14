@@ -381,18 +381,17 @@ pub(super) fn reads_geometry(text: &str, units: Units) -> bool {
         .unwrap_or(false)
 }
 
-/// Where a measurement call opens and closes when `word`, ending at `i`, names one: its `(`
-/// after any space, and its `)` (the text's end where it is unclosed).
-fn measure_call(b: &[char], word: &str, i: usize) -> Option<(usize, usize)> {
-    if !expr::MEASURES.iter().any(|m| m.0 == word) {
-        return None;
-    }
-    let j = i + b[i..].iter().take_while(|c| c.is_whitespace()).count();
-    if b.get(j) != Some(&'(') {
-        return None;
-    }
-    Some((j, b[j..].iter().position(|&c| c == ')').map_or(b.len(), |k| j + k)))
-}
+/// How `map_measured` reads names (`expr::name_at`): Unicode letters, as `substitute_with` does;
+/// no copy's key; and only a word standing on its own — never one right after a name character
+/// or a dot (a path's later segment, the letters of `2length`).
+const MEASURED: expr::NameScan =
+    expr::NameScan { unicode: true, keys: false, inner_keys: false, glued: false };
+
+/// How `substitute_with` reads names (`expr::name_at`): the lexer's, but Unicode letters are a
+/// name's, a copy's key is read only at a name's head (`side.#282.0.small` is `side` and the key
+/// `#282.0.small`), and a name may begin straight after a number's digits (`deg` in `30deg`).
+const SUBSTITUTED: expr::NameScan =
+    expr::NameScan { unicode: true, keys: true, inner_keys: false, glued: true };
 
 /// The text with every measurement's argument names replaced by what `of` says (where it says
 /// anything), and nothing else touched: `length(gen_g) / 2` → `length(pair.gen_g) / 2`.
@@ -401,84 +400,60 @@ pub(super) fn map_measured(text: &str, of: impl Fn(&str) -> Option<String>) -> S
     let mut out = String::with_capacity(text.len());
     let mut i = 0usize;
     while i < b.len() {
-        let word_start = b[i].is_alphabetic() || b[i] == '_';
-        let prev_ident = i > 0 && (b[i - 1].is_alphanumeric() || b[i - 1] == '_' || b[i - 1] == '.');
-        if word_start && !prev_ident {
-            let from = i;
-            while i < b.len() && (b[i].is_alphanumeric() || b[i] == '_') {
-                i += 1;
-            }
-            let word: String = b[from..i].iter().collect();
-            out.push_str(&word);
-            if let Some((j, close)) = measure_call(&b, &word, i) {
-                let inner: String = b[j + 1..close].iter().collect();
-                let args: Vec<String> = inner
-                    .split(',')
-                    .map(|a| a.trim())
-                    .map(|a| of(a).unwrap_or_else(|| a.to_string()))
-                    .collect();
-                out.push('(');
-                out.push_str(&args.join(", "));
-                if close < b.len() {
-                    out.push(')');
-                }
-                i = (close + 1).min(b.len());
-            }
-        } else {
+        let Some(end) = expr::name_at(&b, i, MEASURED) else {
             out.push(b[i]);
             i += 1;
+            continue;
+        };
+        let word: String = b[i..end].iter().collect();
+        out.push_str(&word);
+        i = end;
+        if let Some((j, close)) = expr::measure_call(&b, &word, i) {
+            let inner: String = b[j + 1..close].iter().collect();
+            let args: Vec<String> = inner
+                .split(',')
+                .map(|a| a.trim())
+                .map(|a| of(a).unwrap_or_else(|| a.to_string()))
+                .collect();
+            out.push('(');
+            out.push_str(&args.join(", "));
+            if close < b.len() {
+                out.push(')');
+            }
+            i = (close + 1).min(b.len());
         }
     }
     out
 }
 
-/// `text` with every name `of` answers for written as it says — at identifier boundaries, a dotted
-/// path (`pc.half`) or a block copy's key (`#3.0.w`) read as one name, a measurement's arguments
-/// left as written.
+/// `text` with every name `of` answers for written as it says — a name as the expression lexer
+/// reads one (`SUBSTITUTED`): a dotted path (`pc.half`) or a block copy's key (`#3.0.w`) is one
+/// name, never its head alone, which is what let a second pass find a formal's name inside a
+/// name the first had just written — and a measurement's arguments left as written.
 pub(crate) fn substitute_with(text: &str, of: impl Fn(&str) -> Option<String>) -> String {
-    let mut out = String::with_capacity(text.len());
     let b: Vec<char> = text.chars().collect();
+    let mut out = String::with_capacity(text.len());
     let mut i = 0usize;
-    let ident = |c: char| c.is_alphanumeric() || c == '_';
     while i < b.len() {
-        // a word is what the expression lexer reads as one name: a dotted path is one word
-        // (`c.center.x`, `t1.w`), and so is a block copy's key (`#3.0.w`) — never its head
-        // alone, which is what let a second pass find a formal's name inside a name the first
-        // had just written
-        let key = b[i] == '#' && b.get(i + 1).is_some_and(|&c| ident(c));
-        if b[i].is_alphabetic() || b[i] == '_' || key {
-            let from = i;
-            if key {
-                i += 1;
-            }
-            loop {
-                while i < b.len() && ident(b[i]) {
-                    i += 1;
-                }
-                let dotted = i + 1 < b.len() && b[i] == '.' && ident(b[i + 1]);
-                if dotted && (key || !b[i + 1].is_ascii_digit()) {
-                    i += 1;
-                } else {
-                    break;
-                }
-            }
-            let word: String = b[from..i].iter().collect();
-            // a measurement's arguments are names of geometry, resolved as references are
-            // (`rescope_measures`) and never read as numbers: the call is copied as written
-            if let Some((_, close)) = measure_call(&b, &word, i) {
-                let end = (close + 1).min(b.len());
-                out.extend(&b[from..end]);
-                i = end;
-                continue;
-            }
-            match of(&word) {
-                Some(t) => out.push_str(&t),
-                None => out.push_str(&word),
-            }
-        } else {
+        let Some(end) = expr::name_at(&b, i, SUBSTITUTED) else {
             out.push(b[i]);
             i += 1;
+            continue;
+        };
+        let word: String = b[i..end].iter().collect();
+        // a measurement's arguments are names of geometry, resolved as references are
+        // (`rescope_measures`) and never read as numbers: the call is copied as written
+        if let Some((_, close)) = expr::measure_call(&b, &word, end) {
+            let stop = (close + 1).min(b.len());
+            out.extend(&b[i..stop]);
+            i = stop;
+            continue;
         }
+        match of(&word) {
+            Some(t) => out.push_str(&t),
+            None => out.push_str(&word),
+        }
+        i = end;
     }
     out
 }
@@ -551,7 +526,7 @@ impl<'a> Walk<'a> {
     }
 
     /// A dimension's text settled in place, and its failure said where it is written.  A name
-    /// nothing declares refuses the statement (`Walk::refused`), so it never reaches the
+    /// nothing declares refuses the statement (`Checks::refused`), so it never reaches the
     /// expression graph to become an unknown of its own making.
     pub(super) fn settle_dim(
         &mut self,
@@ -569,7 +544,7 @@ impl<'a> Walk<'a> {
             }
             Err((code, e)) => {
                 if code == Code::E101 {
-                    self.refused.push(span);
+                    self.checks.refused.push(span);
                 }
                 self.err(code, span, format!("`{text}`: {e}"))
             }
@@ -577,7 +552,7 @@ impl<'a> Walk<'a> {
     }
 
     /// Set aside each dotted name a dimension's text reads that nothing numeric in scope answers
-    /// to, as written, for `resolve` to judge (`Walk::dim_reads`).  Not in a trace, whose
+    /// to, as written, for `resolve` to judge (`Checks::dim_reads`).  Not in a trace, whose
     /// dimensions read the geometry's numbers as columns of the curve (§6.5).
     pub(super) fn note_dim_reads(&mut self, text: &str, span: Span, vals: &BTreeMap<String, Aff>, scope: &Scope) {
         if self.sym.is_some() {
@@ -586,7 +561,7 @@ impl<'a> Walk<'a> {
         let Ok(p) = expr::parse_in(text, self.units) else { return };
         for name in p.body.deps() {
             if name.contains('.') && !vals.contains_key(&name) {
-                self.dim_reads.push((name, span, scope.clone()));
+                self.checks.dim_reads.push((name, span, scope.clone()));
             }
         }
     }
@@ -650,7 +625,7 @@ impl<'a> Walk<'a> {
                         if out_of_reach(bare, vals, scope).is_none()
                             && self.undeclared(bare, vals, scope) =>
                     {
-                        self.refused.push(*span);
+                        self.checks.refused.push(*span);
                         self.err(Code::E101, *span, undefined(bare))
                     }
                     (Err(e), _) => self.err(Code::E103, *span, format!("`{text}`: {e}")),
@@ -692,6 +667,32 @@ impl<'a> Walk<'a> {
         scope: &Scope,
     ) {
         let prefix = scope.prefix().to_string();
+        let (mut pending, references, mut here) = self.definitions(body, vals, scope, &prefix);
+        if !self.nested_members(&mut pending, vals, &mut here) {
+            return;
+        }
+        if !self.work_out(&pending, vals, scope, &prefix) {
+            return;
+        }
+        for (name, reference) in references {
+            if vals.contains_key(&name) { continue; }
+            let abs = format!("{prefix}{name}");
+            self.checks.group_fields.push((abs.clone(), reference.span));
+            self.aliases.push((abs, reference, Scope { vals: vals.clone(), ..scope.clone() }));
+        }
+    }
+
+    /// The definitions of a body to work out: every `param` (an unknown declared as it is met)
+    /// and every group's members, each name once; the members naming geometry, which bind as
+    /// aliases where no number answers; and the names defined here.
+    #[allow(clippy::type_complexity)]
+    fn definitions(
+        &mut self,
+        body: &[Stmt],
+        vals: &mut BTreeMap<String, Aff>,
+        scope: &Scope,
+        prefix: &str,
+    ) -> (Vec<Def>, Vec<(String, Ref)>, BTreeSet<String>) {
         let mut pending: Vec<Def> = Vec::new();
         let mut references = Vec::new();
         let mut here: BTreeSet<String> = BTreeSet::new();
@@ -758,12 +759,24 @@ impl<'a> Walk<'a> {
                 ty,
             });
         }
+        (pending, references, here)
+    }
+
+    /// Each group reference's members, named under the definition referring to it; `false`
+    /// where the nesting is cyclic, too deep or too large, said at the definition.
+    fn nested_members(
+        &mut self,
+        pending: &mut Vec<Def>,
+        vals: &BTreeMap<String, Aff>,
+        here: &mut BTreeSet<String>,
+    ) -> bool {
         // A nested group exposes the selected group's numeric members, including forward
         // references. Keep ordinary dependency ordering for those members too.
         for depth in 0..MAX_DEPTH {
-            let keys: BTreeSet<String> = vals.keys().cloned().chain(pending.iter().map(|d| d.name.clone())).collect();
+            let keys: BTreeSet<String> =
+                vals.keys().cloned().chain(pending.iter().map(|d| d.name.clone())).collect();
             let mut extra = Vec::new();
-            for d in &pending {
+            for d in pending.iter() {
                 if !d.group_ref { continue; }
                 let start = format!("{}.", d.text);
                 for key in &keys {
@@ -772,11 +785,11 @@ impl<'a> Walk<'a> {
                     if here.insert(name.clone()) {
                         if depth + 1 == MAX_DEPTH || name.split('.').count() > MAX_DEPTH {
                             self.err(Code::E041, d.span, "group nesting is cyclic or too deep");
-                            return;
+                            return false;
                         }
                         if pending.len() + extra.len() >= MAX_FLAT {
                             self.err(Code::E103, d.span, "group expansion is too large");
-                            return;
+                            return false;
                         }
                         extra.push(Def { name, text: key.clone(), span: d.span, group_ref: true,
                             ty: None });
@@ -786,6 +799,18 @@ impl<'a> Walk<'a> {
             if extra.is_empty() { break; }
             pending.extend(extra);
         }
+        true
+    }
+
+    /// The definitions worked out into `vals`, earliest first among those whose reads are
+    /// ready; `false` where some are defined in terms of themselves, said at each.
+    fn work_out(
+        &mut self,
+        pending: &[Def],
+        vals: &mut BTreeMap<String, Aff>,
+        scope: &Scope,
+        prefix: &str,
+    ) -> bool {
         // the names each definition reads; a text that does not parse reads nothing, and is
         // worked out at once so the parse error is the one reported
         let reads: Vec<BTreeSet<String>> = pending
@@ -816,7 +841,7 @@ impl<'a> Walk<'a> {
                         format!("`{}` is defined in terms of itself{through}", d.name),
                     );
                 }
-                return;
+                return false;
             }
             for i in ready {
                 let d = &pending[i];
@@ -850,12 +875,7 @@ impl<'a> Walk<'a> {
             }
             waiting = rest;
         }
-        for (name, reference) in references {
-            if vals.contains_key(&name) { continue; }
-            let abs = format!("{prefix}{name}");
-            self.group_fields.push((abs.clone(), reference.span));
-            self.aliases.push((abs, reference, Scope { vals: vals.clone(), ..scope.clone() }));
-        }
+        true
     }
 
     /// `param beta: Angle hint(30deg)` — an input nothing binds: a free value in `vals`, named

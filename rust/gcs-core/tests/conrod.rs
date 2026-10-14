@@ -12,20 +12,12 @@
 use gcs_core::brep::{export, props, sweep::Say};
 use gcs_core::program::Elaborated;
 use gcs_core::solid::MaterialField;
-use gcs_core::solve::{solve, SolveOpts};
 use std::f64::consts::PI;
 
-use crate::common::{ent, read};
+use crate::common::{ent, text::solved};
 use crate::region_general::field_volume;
 
 const ROD: &str = include_str!("../../examples/conrod/rod.sv");
-
-fn solved(src: &str) -> Elaborated {
-    let mut e = read(src);
-    let r = solve(&mut e.sketch, SolveOpts::default());
-    assert!(r.success, "{}", r.message);
-    e
-}
 
 /// The rod with no round or chamfer, then `more` statements.
 fn sharp(more: &[&str]) -> String {

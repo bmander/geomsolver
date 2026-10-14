@@ -5,10 +5,7 @@ use gcs_core::model::{EntRef, Sketch};
 use gcs_core::plane::{fold_line, Basis};
 use gcs_core::solve::{solve, SolveOpts};
 use gcs_core::{diagnose, io};
-
-fn near(a: f64, b: f64) -> bool {
-    (a - b).abs() < 1e-8
-}
+use crate::common::near;
 
 fn top() -> Basis {
     Basis { u: [1.0, 0.0, 0.0], v: [0.0, 1.0, 0.0], o: [0.0; 3] }

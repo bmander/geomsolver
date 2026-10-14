@@ -12,7 +12,7 @@
 //! where the tool first clears, never short of it.  A box with material of both at its centre at
 //! the step's middle pose ends a step early, as one never proved clear does.  The roll is the
 //! near end of each way's first clear step; read once after the solve and remembered against
-//! `solid::reads` (`Sketch::roll_cache`), so admission, the field, the exact construction and the
+//! `solid::reads` (`Caches::roll`), so admission, the field, the exact construction and the
 //! native path read one interval.  A placed copy (`solid(removal, under: index, at: θ)`) moves
 //! the sweep it was found for.
 use super::SpatialField;
@@ -38,7 +38,7 @@ pub fn interval(sk: &Sketch, swept: usize) -> Result<[f64; 2], String> {
         Roll::Stated { from, to } => return Ok([from.value, to.value]),
         Roll::Through { body } => *body as usize,
     };
-    sk.roll_cache.get_or(swept, super::MemoKey::of(sk, swept), || {
+    sk.caches.roll.get_or(swept, super::MemoKey::of(sk, swept), || {
         through(sk, *source as usize, *motion as usize, body)
             .map_err(|m| format!("`{}` rolls through `{}`: {m}", s.name, sk.solids[body].name))
     })

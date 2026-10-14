@@ -3,10 +3,9 @@
 //! point with its one number read as at most (`inside`) or at least (`outside`) what it says.
 //! A bound on the point, so a choice of root: no row.
 use gcs_core::program::Elaborated;
-use gcs_core::solve::{solve, SolveOpts};
 use gcs_core::system::System;
 
-use crate::common::{ent, read, refused};
+use crate::common::{ent, read, refused, text::solved};
 
 /// A point on two circles about `a` and `b`, five from each — a root at (3, 4) and one at
 /// (3, -4) — seeded below, and `c` held above at (3, 5).
@@ -24,13 +23,6 @@ const SPACE: &str = "unit mm\nuse std\na := point hint((0, 0, 0))\nb := point hi
 
 fn p_at(e: &Elaborated) -> [f64; 3] {
     e.sketch.world_point(ent(e, "p").i())
-}
-
-fn solved(src: &str) -> Elaborated {
-    let mut e = read(src);
-    let r = solve(&mut e.sketch, SolveOpts::default());
-    assert!(r.success, "{}\n{src}", r.message);
-    e
 }
 
 /// Inside a sphere about `c` is the root near it; outside, the other.
