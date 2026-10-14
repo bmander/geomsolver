@@ -412,6 +412,29 @@ fn an_axis_is_picked_where_it_is_drawn_and_the_drawing_outranks_it() {
     assert_eq!(pick(sk, &front, seen([10.0, 0.0, 10.0], -FRAC_PI_2, 0.0), 0.5, 0.01), None);
 }
 
+/// A blank sheet's axes are drawn one arrow each: `std.back`, which lies on `std.x` reversed, is
+/// that line drawn once, the first declared's, and not a second head pointing left.  An axis
+/// on a line of its own is drawn, whatever it is parallel to.
+#[test]
+fn an_axis_lying_on_one_already_drawn_is_not_drawn_again() {
+    use gcs_core::overview::{scene3d, Part};
+    let e = build(AXES);
+    let sk = &e.sketch;
+    let named = |n: &str| e.map.ent_named(n).unwrap();
+    let scene = scene3d(sk, 0.0);
+    let strokes = |n: &str| {
+        scene.iter().filter(|it| it.what == Part::Drawn && it.of == Some(named(n))).collect::<Vec<_>>()
+    };
+    assert!(strokes("std.back").is_empty());
+    for n in ["std.x", "std.y", "std.z", "t"] {
+        assert_eq!(strokes(n).len(), 3, "{n}: its line and its head's two barbs");
+    }
+    // the x axis's head is at its +x end: both barbs start there
+    let x = strokes("std.x");
+    let tip = x[0].pts[1];
+    assert!(tip[0] > 0.0 && x[1..].iter().all(|b| b.pts[0] == tip), "{tip:?}");
+}
+
 /// The box asks for the scene in layers: the datums every frame a drag moves them, the objects'
 /// creases once the pose settles.  Each layer is its part of the whole scene and nothing else.
 #[test]
