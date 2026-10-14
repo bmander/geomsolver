@@ -39,9 +39,14 @@ pub(crate) fn build(sk: &Sketch, si: usize) -> Result<Exact, String> {
     };
     let mut built = BTreeMap::new();
     let mut leading = BTreeSet::new();
+    let by_id = crate::brep::recipe::by_id(&recipe)?;
     for n in field(&recipe, "nodes")?.arr() {
         let id = field(n, "id")?.as_i64();
-        let mut b = crate::brep::recipe::node_named(n, &built, &BTreeMap::new(), floor)?;
+        // a body cut by copies turned about its blank's axis: one sector patterned (`formed`)
+        let mut b = match crate::brep::formed::body(n, &by_id, &built) {
+            Some(b) => b,
+            None => crate::brep::recipe::node_named(n, &built, &BTreeMap::new(), floor)?,
+        };
         let sol = &sk.solids[id as usize];
         match &sol.def {
             SolidDef::Placed { source, .. } => {

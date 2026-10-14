@@ -4,7 +4,7 @@
 //! the ratio of their teeth. No crown enters the pinion: its cutter is the region the gear's teeth
 //! are copies of, and its motion turns about the two shafts and nothing else. Its sweeps are in
 //! the generating class.
-use gcs_core::brep::{export,sweep::Say};
+use gcs_core::brep::recipe;
 use gcs_core::model::{MotionDef,SolidDef};
 use gcs_core::program::Elaborated;
 use gcs_core::solid::admission::{self,Options};
@@ -67,19 +67,25 @@ fn the_configured_pinion_is_admitted() {
 
 /// A kernel reproduction, not a check of the pair: the configured gear with each space bounded by
 /// the tooth ahead's levels and round as well as its flank (`hypoid.sv`'s `Space` turned a gear
-/// pitch) — a second floor 3.35° off the first — fails the kernel's Boolean at one copy of 48
-/// ("not a manifold", edge 723: a cone of an earlier copy meets that floor in a trace no edge
-/// crosses). With no backlash grown into the flanks it builds. `formate.sv`'s `Space` bounds the tooth ahead by its
-/// flank alone because of it; when this builds, the space may take its own floor back.
+/// pitch) — a second floor 3.35° off the first — cut copy by copy into the whole blank fails the
+/// kernel's Boolean at one copy of 48 ("not a manifold", edge 723: a cone of an earlier copy meets
+/// that floor in a trace no edge crosses). With no backlash grown into the flanks it builds, and
+/// built as one sector (`brep::formed`, as both builders now make it) it builds in seconds; so
+/// `formate.sv`'s `Space`, which bounds the tooth ahead by its flank alone because of it, may take
+/// its own floor back.
 #[test]
 #[ignore = "a kernel reproduction, about two minutes: fails today (brep::boolean), see formate.sv's Space"]
-fn a_formed_gear_with_two_floors_a_space_builds() {
+fn a_formed_gear_with_two_floors_a_space_builds_copy_by_copy() {
     let text = fixtures::gear::formate_source();
     let far = "far := { p | p inside concave; p inside cap; p outside below; p inside above }";
     assert!(text.contains(far),"the space bounds the tooth ahead by its flank alone");
     let e = fixtures::gear::read(&text.replace(far,"concave_round := std.Rounded(concave, tip, r: r)\n  \
         far := { p | p inside concave; p inside tip; p inside base; p inside concave_round }"));
-    let say = Say {stage:&|l: &str| eprintln!("{l}"),mark:&|_| {}};
-    let exact = export::exact(&e.sketch,fixtures::solid(&e,"pair.gear.body"),None,None,&say);
-    assert!(exact.is_ok(),"{}",exact.err().unwrap());
+    let recipe = gcs_core::solid::cad::recipe(&e.sketch,fixtures::solid(&e,"pair.gear.body")).unwrap();
+    let mut built = std::collections::BTreeMap::new();
+    for n in recipe.get("nodes").unwrap().arr() {
+        let b = recipe::node(n,&built);
+        assert!(b.is_ok(),"`{}`: {}",n.get("name").map_or("",|j| j.as_str()),b.err().unwrap());
+        built.insert(n.get("id").unwrap().as_i64(),b.unwrap());
+    }
 }

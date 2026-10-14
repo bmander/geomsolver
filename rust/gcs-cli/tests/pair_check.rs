@@ -532,7 +532,11 @@ fn meshes(stem: &str,e: gcs_core::program::Elaborated,conjugate: bool) {
         let read = report(&label,&closed);
         let [(touch,touching),(open,_)] = [read[side],read[1-side]];
         // (the touching side's lever where the turn closed it: a flank pair in touch has none)
-        let backlash = BACKLASH/2.*(1.+(open.lever/closing.lever).abs());
+        let ratio = (open.lever/closing.lever).abs();
+        let backlash = BACKLASH/2.*(1.+ratio);
+        // each flank pair's clearance read from the files to twice their sag, the closing one's
+        // carried to the other side in the ratio of the levers
+        let within = 2.*SAG*(1.+ratio);
         println!("  normal backlash (the other flanks' least clearance with these touching): {:.4} mm, by the levers \
             {backlash:.4} mm; the touching flanks {:.4} mm apart at their nearest",open.d,touch.d);
         let flank = &pair.pinion[side].tris;
@@ -553,8 +557,8 @@ fn meshes(stem: &str,e: gcs_core::program::Elaborated,conjugate: bool) {
             {:.2} to {:.2} mm from the pinion's apex (mean point {:.2}), radius {:.2} to {:.2} mm",
             tris.len(),tris.iter().map(|t| area(*t)).sum::<f64>(),a0,a1,cone(mean),r0,r1);
         eprintln!("({:.1} s)",started.elapsed().as_secs_f64());
-        assert!(touch.d < 0.002 && (open.d-backlash).abs() < 0.01,"flanks {} touching at {}, backlash {} against {backlash}",
-            names[side],touch.d,open.d);
+        assert!(touch.d < 0.002 && (open.d-backlash).abs() < within,"flanks {} touching at {}, backlash {} against {backlash} \
+            within {within}",names[side],touch.d,open.d);
         if !conjugate { continue }
         // Closed, the flanks touch all through the pitch: no transmission error to the files' sag.
         assert!(touching < SAG,"the flanks {} part by {touching} mm over the pitch",names[side]);

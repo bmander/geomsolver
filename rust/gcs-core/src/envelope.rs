@@ -71,6 +71,9 @@ impl Motion {
         Ok(Self { r, dr, ..Self::identity() })
     }
 
+    /// A still pose: the rotation `r` (rows), then the translation `p`.
+    pub fn rigid(r: M3, p: V3) -> Self { Self { r, p, ..Self::identity() } }
+
     pub fn translation(offset: V3, velocity: V3) -> Result<Self, Error> {
         if !offset.iter().chain(&velocity).all(|x| x.is_finite()) {
             return Err(Error::NonFinite);

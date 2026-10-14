@@ -351,9 +351,14 @@ pub fn build(recipe: &Json) -> Result<Brep,String> {
     let mut built = BTreeMap::new();
     // each node's primitives, keyed as its faces are named, and their routes from it
     let mut routes: BTreeMap<i64,(String,BTreeMap<String,String>)> = BTreeMap::new();
+    let by_id = by_id(recipe)?;
     for n in field(recipe,"nodes")?.arr() {
         let name = n.get("name").map_or("",|j| j.as_str());
-        let mut b = node(n,&built).map_err(|e| format!("`{name}`: {e}"))?;
+        // a body cut by copies turned about its blank's axis: one sector patterned (`formed`)
+        let mut b = match super::formed::body(n,&by_id,&built) {
+            Some(b) => b,
+            None => node(n,&built).map_err(|e| format!("`{name}`: {e}"))?,
+        };
         let mut own = BTreeMap::new();
         match field(n,"kind")?.as_str() {
             "lowered" => {}
@@ -391,6 +396,11 @@ pub fn build(recipe: &Json) -> Result<Brep,String> {
         built.insert(id,b);
     }
     built.remove(&field(recipe,"root")?.as_i64()).ok_or("recipe: no root".into())
+}
+
+/// A recipe's nodes by their ids.
+pub fn by_id(recipe: &Json) -> Result<BTreeMap<i64,&Json>,String> {
+    field(recipe,"nodes")?.arr().iter().map(|n| Ok((field(n,"id")?.as_i64(),n))).collect()
 }
 
 /// A route one step further on (`solid::document::placed_name`).

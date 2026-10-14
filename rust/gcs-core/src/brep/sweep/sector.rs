@@ -39,7 +39,7 @@ pub struct Sector { pub piece: Brep,pub origin: V,pub axis: V,pub count: usize,p
 
 /// The centres of the spheres the recipe's revolutions make where they are on the axis: the
 /// slicings a bevel gear's end spheres suggest (mm).
-fn sphere_centres(recipe: &Json,frame: Frame,size: f64) -> Vec<V> {
+pub(crate) fn sphere_centres(recipe: &Json,frame: Frame,size: f64) -> Vec<V> {
     let on_axis = |p: V| { let d = sub(p,frame.origin); norm(sub(d,scale(frame.axis,dot(d,frame.axis)))) <= 1e-6*size };
     let mut centres: Vec<V> = Vec::new();
     for node in recipe.get("nodes").map(Json::arr).unwrap_or_default() {
@@ -87,7 +87,7 @@ fn blank_from(recipe: &Json,origin: V,axis: V,seam: V) -> Result<Brep,String> {
 
 /// A solid of revolution about the line through `origin` along `axis` turned about it until its
 /// faces' seams lie in the half-plane along `seam`; refused where its seams are not in one.
-fn turned_to(b: &Brep,origin: V,axis: V,seam: V) -> Result<Brep,String> {
+pub(crate) fn turned_to(b: &Brep,origin: V,axis: V,seam: V) -> Result<Brep,String> {
     let mut found: Option<V> = None;
     for f in &b.faces {
         let uses: Vec<u32> = f.loops.iter().flatten().map(|c| c.edge).collect();

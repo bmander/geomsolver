@@ -64,6 +64,16 @@ patterned. `brep::export::{exact,step,stl}` is shared by `solventc` and `app/exp
 by `cutter::OCCURRENCE`; a trace ends off a sheet's patch (`Surface::off_patch`, a revolution's or
 an extrusion's of a curve too); a revolution about the axis is kept by `pattern`'s turns; interpolations
 past `nurbs::BANDED` points solve banded; a gross sheet falls back to chord length.
+**A static body cut by turned copies is one sector too** (`brep::formed`, #283): a body node whose
+cuts are placements of cutters at turns of one placement about its blank's axis (three or more,
+`solid::sector::indexing`), its stock a revolution about that axis, is built as the blank between a
+side through the copies' gaps (`Boundary::choose`, each copy's material filled across every slice:
+a cut's boundary in the blank leaves its middle empty) and that side turned a pitch, less the
+copies in it, patterned — never copy by copy into the whole, whose cost grows with the square of
+the copies (a formed gear's 96 cuts, 95 s, froze the page). Both builders take it
+(`recipe::build`, `solid::exact::build`); where a premise fails the body is cut copy by copy
+(`SOLVENT_SECTOR_DEBUG` says why). Points are classed by the blank's meridian, not its B-rep.
+`tests/formed_sector.rs` (sector against copy by copy) is the gate.
 **Rung 3 (the app reads the exact solid):** a static solid's `EvaluatedSolid` is the B-rep's
 (`solid::Exact`, `Sketch::exact_solid`, cached against `solid::reads`; `from_brep`), built about its
 own origin (`cad::shifted`), faces named by document path (caps leading as the facet term's, so

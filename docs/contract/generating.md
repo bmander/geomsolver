@@ -145,16 +145,16 @@ the pair from the STLs.
 
 **The Formate pair (#283, step 1):** `spiral_bevel/formate.sv` imports `hypoid.sv`'s layout,
 blanks and face mill and drops the crown from the pinion. The gear is formed: its blank less a
-space copied at every tooth with no roll (`Copied`, static placements, no sweep), every space
-flank one of the mill's cones. The pinion is its blank less the gear's tooth (`gear_tooth`,
+space copied at every tooth with no roll (`Copied`, static placements, no sweep, built as one
+sector by `brep::formed`), every space flank one of the mill's cones. The pinion is its blank less the gear's tooth (`gear_tooth`,
 `hypoid.sv`'s `Tooth` region, the ring between those cones) swept under `motion(gear_turn, relative_to: pinion_turn)`, the ratio
 the teeth — exactly conjugate at any offset, and in the generating class as the crown's sweep
 is. Two limits shaped it: the core sections a cutter only of revolutions about parallel lines
 (`brep::section`), so the pinion's cutter is one ring about one axis and the space, not the
 tooth, takes its two flanks from two cutter placements; and a space bounds the tooth ahead by
 its flank alone, since a second floor a gear pitch round (3.35° off the first) broke the
-kernel's Boolean at one copy of 48 (`a_formed_gear_with_two_floors_a_space_builds`, an ignored
-reproduction). `tests/formate.rs` (the cutter and motion, admission);
+kernel's Boolean cut copy by copy at one copy of 48 (`a_formed_gear_with_two_floors_a_space_builds_copy_by_copy`,
+an ignored reproduction; built as one sector, `brep::formed`, it builds). `tests/formate.rs` (the cutter and motion, admission);
 `pair_check`'s `the_exported_formate_pair_is_conjugate` (ignored) reads
 `build/exports/formate-{pinion,gear}.stl` and holds the pair to an unvarying clearance and to
 line contact through the mean section.

@@ -15,6 +15,7 @@ pub mod ssi;
 pub mod recipe;
 pub mod json;
 pub mod pattern;
+pub mod formed;
 pub mod planar;
 pub mod corners;
 pub mod section;

@@ -147,8 +147,10 @@ cargo test --manifest-path rust/Cargo.toml -p gcs-cli --test pair_check formate 
 ```
 
 The pinion's two sweeps, the gear tooth's and its tip relief's, are admitted and built as one
-sector (243 faces, 125,376 triangles, about 14 s on 4 cores). The gear has no sweep: it is its blank less 48 spaces and 48 tip reliefs, each
-Boolean in turn (436 faces, 95,100 triangles, about 95 s on one core). Read from the two STLs:
+sector (243 faces, 125,376 triangles, about 14 s on 4 cores). The gear has no sweep: it is its
+blank less 48 spaces and 48 tip reliefs, copies turned about its axis, so it too is built as one
+sector, cut by the copies that fall in it and patterned (`brep::formed`: 435 faces, about 2 s; cut
+copy by copy into the whole blank it took 95 s, too long for the page). Read from the two STLs:
 
 | | crown pair (`hypoid.sv`) | Formate pair (`formate.sv`) |
 |---|---|---|
