@@ -41,7 +41,10 @@ line, cone, cylinder, round) and the motion the steps `motion::Family` reads (ro
 translations, relatives; a planar turn and a measured number refused), so a residual is exact and
 a Jacobian exact by forward differentiation (`kernels::Dual`, eight columns a pass). `Parts::of`
 reads the columns (lifts, an axis's place and direction, a free number) and constants (`Layout`,
-`HEADER`, `STEP`); a set's turn starts at `SetShape::reference`, read once. The kinds
+`HEADER`, `STEP`); a set's turn starts at `SetShape::reference`, read once — before the solve
+places the axis, so a reference within 30° of the axis as solved gives way to the first world
+axis the axis does not nearly run along (`held::across`, #283), or which way rounding tips it
+moves every place a quarter turn. The kinds
 `PointOnEnvelope` (four rows, three owned), `EnvelopeTangentAt` (one), `EnvelopeNormalAt` and
 `EnvelopePlaneAt` (two, each its own `Contact`) and `EnvelopeCurvatureAt` (three: Meusnier,
 `x + (n − (n·m)m)/κₙ`, `κₙ` from `−dn·dX` along two directions of the place square to `∇g`) are

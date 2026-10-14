@@ -124,14 +124,18 @@ impl Constraint {
             return None;
         }
         let at = self.kind.dimension_slot()?;
-        let v = self.local_values(sk);
+        // a number reading an unknown (`distance(<= 2 * m)`, `m` free) is read at the unknown's
+        // value: the row as a plain one at that number, so stepping the number moves the residual
+        let plain = self.free.is_some().then(|| Constraint { free: None, ..self.clone() });
+        let this = plain.as_ref().unwrap_or(self);
+        let v = this.local_values(sk);
         // the unsigned angle in space is read by its cosine (`cos3 - cos θ`), which is even and
         // periodic in θ: read straight off it, never searched along it
         if self.kind == CKind::Angle3 {
             let d = self.args[at].num();
-            return Some((self.residual(sk, &v)[0] + d.dcos()).clamp(-1.0, 1.0).dacos());
+            return Some((this.residual(sk, &v)[0] + d.dcos()).clamp(-1.0, 1.0).dacos());
         }
-        let mut c = self.clone();
+        let mut c = this.clone();
         let mut residual = |d: f64| {
             c.args[at] = Arg::Num(d);
             c.residual(sk, &v)[0]

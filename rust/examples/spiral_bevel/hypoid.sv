@@ -3,9 +3,13 @@
 // the mean point M on the pitch plane P — then the generating crown as regions about its cutter's
 // axis, and each member its blank less its crown rolled through it at every tooth. Every position
 // follows from lines, angles, incidence and the stated numbers; nothing is computed with `sin` or
-// `cos`. No point is seeded: every root is chosen by a word — a bound (`inside`, `outside`,
+// `cos`. No point is seeded but a blade's apex, started on the side its cone opens to as
+// `std.ConeThrough`'s is: every root is chosen by a word — a bound (`inside`, `outside`,
 // `distance(>= 0, …)`), a sense, an ordinate's sign — and the layout solves from them alone
-// (§9.6, #217). The pair is one component, `HypoidPair`, over the steps below it. See README.md.
+// (§9.6, #217). The face mill's two settings are not stated either: the pressure shift and the
+// cutter's radius are unknowns, found where the pinion and the gear stand equally far from
+// undercut, at M and at the toe (`Balanced`, #283). The pair is one component, `HypoidPair`, over
+// the steps below it. See README.md.
 unit mm
 use std (skew)
 
@@ -17,9 +21,6 @@ param mean_module := 2mm
 // offset is a bevel pair with a common apex; any other, a hypoid.
 param shaft_angle := 90deg
 param offset := 25mm
-// Added to the crown's inner flank pressure angle and taken from its outer's: an offset works a
-// tooth's two sides at different effective pressure angles, and a hypoid balances them.
-param pressure_shift := 12.5deg
 // The crown's spiral angle at M; the pinion's adds the offset angle, which the layout solves for.
 param spiral_angle := 25deg
 // The allowances, each zero for the conjugate, sharp-edged pair: the normal backlash, a quarter
@@ -29,26 +30,31 @@ param backlash := 0.05mm
 param tip_relief := 0.2mm
 param end_relief := 0.2mm
 // The pair on the pitch plane P, `std.top`, with `std.y` (the gear's axis stands square to it)
-// and `std.z`, up from P: `pair.pinion.body` and `pair.gear.body` are the members.
+// and `std.z`, up from P: `pair.pinion.body` and `pair.gear.body` are the members. The face mill's
+// pressure shift and radius are left to the solve, which starts them at the seeds (`hint`) and
+// finds them from the balance; a seed says where the search begins, never where it ends.
 pair := HypoidPair(std.top, std.y, std.z, pinion_teeth: pinion_teeth, gear_teeth: gear_teeth,
   mean_module: mean_module, shaft_angle: shaft_angle, offset: offset,
-  pressure_shift: pressure_shift, spiral_angle: spiral_angle, backlash: backlash,
-  tip_relief: tip_relief, end_relief: end_relief)
+  spiral_angle: spiral_angle, backlash: backlash, tip_relief: tip_relief, end_relief: end_relief,
+  pressure_shift: hint(10deg), cutter_radius: hint(80mm))
 
 // -- the pair ----------------------------------------------------------------------------------
 // The steps a designer takes, each a component below: the pitch cones and the tooth trace through
 // M, the blanks, the generating crown, and the generation. The unknowns no point holds are the
 // formals the call leaves out: the normal module `mn`, the module seen square to the tooth trace,
 // which the trace constructs; the pinion's pitch radius at M, `rp`, which the equal normal pitch
-// sets; and the bevel pinion's pitch angle, `pa`, read off the gear's triangle.
+// sets; the bevel pinion's pitch angle, `pa`, read off the gear's triangle; and the face mill's
+// two settings, `pressure_shift` (added to the crown's inner flank pressure angle and taken from
+// its outer's, so the crown tooth leans) and `cutter_radius`, which the balance below finds.
 component HypoidPair(P: plane, across: axis, up: axis, pinion_teeth: Int, gear_teeth: Int,
-    mean_module: Length, shaft_angle: Angle, offset: Length, pressure_shift: Angle,
-    spiral_angle: Angle, backlash: Length, tip_relief: Length, end_relief: Length, mn: Length,
-    rp: Length, pa: Angle) {
-  // The proportions. The mean cone distance R (the crown's tooth count times half the module)
-  // sizes only the cutter (0.8 R), the face width (0.2 R) and the gear space cutter's reach; the
-  // depths are in normal modules.
-  R := mean_module * sqrt(pinion_teeth^2 + gear_teeth^2) / 2
+    mean_module: Length, shaft_angle: Angle, offset: Length, spiral_angle: Angle,
+    backlash: Length, tip_relief: Length, end_relief: Length, mn: Length, rp: Length, pa: Angle,
+    pressure_shift: Angle, cutter_radius: Length) {
+  // The proportions. The crown's tooth count, the hypotenuse of the gear's triangle in teeth, and
+  // the mean cone distance R, that count times half the module, which sizes the face width
+  // (0.2 R) and the gear space cutter's reach; the depths are in normal modules.
+  crown_teeth := sqrt(pinion_teeth^2 + gear_teeth^2)
+  R := mean_module * crown_teeth / 2
   pressure := 20deg
   addendum := mn
   dedendum := 1.25 * mn
@@ -59,7 +65,7 @@ component HypoidPair(P: plane, across: axis, up: axis, pinion_teeth: Int, gear_t
   gear_cone := GearCone(P, across, pinion_teeth: pinion_teeth, gear_teeth: gear_teeth,
     mean_module: mean_module)
   trace := ToothTrace(P, gear_cone, R: R, spiral_angle: spiral_angle, mean_module: mean_module,
-    mn: mn)
+    mn: mn, cutter_radius: cutter_radius)
   pinion_cone := PinionCone(P, up, gear_cone, trace, shaft_angle: shaft_angle, offset: offset,
     rp: rp, pa: pa)
 
@@ -70,18 +76,18 @@ component HypoidPair(P: plane, across: axis, up: axis, pinion_teeth: Int, gear_t
 
   // The generating crown: the face mill, and the tooth and the gear's space about its axis.
   mill := FaceMill(P, gear_cone, trace, R: R, mean_module: mean_module, pressure: pressure,
-    pressure_shift: pressure_shift, dedendum: dedendum, base: base)
+    pressure_shift: pressure_shift, cutter_radius: cutter_radius, dedendum: dedendum, base: base)
 
-  // Generation. Every roll shares the crown's angle, about its axis square to P at O, and each
-  // member turns at the crown's tooth count over its own, read off the gear's triangle after the
-  // solve: its hypotenuse R over the gear's pitch radius, and over the short leg for the pinion,
-  // whose own cone, solved off the bevel, would roll at another. Indexing turns a member; the
-  // crown's neighbour is one crown pitch round, four quarter pitches of the mean pitch circle.
+  // Generation. Every roll shares the crown's angle, about its axis square to P at O, and the
+  // crown meshes with each member tooth for tooth: each turns at the crown's tooth count over its
+  // own. With the gear the crown rolls on its pitch cone; with the pinion, whose own cone, solved
+  // off the bevel, would roll at another, it keeps the pair's ratio, so pinion and gear generated
+  // by one crown run at their tooth counts. Nothing is read off the solved drawing, so the solve
+  // holds a contact to what either generates (`Balanced`). Indexing turns a member; the crown's
+  // neighbour is one crown pitch round, four quarter pitches of the mean pitch circle.
   crown_roll := motion(about: gear_cone.crown_ax)
-  pinion_roll := motion(about: pinion_cone.ax,
-    ratio: distance(gear_cone.O, gear_cone.M) / distance(gear_cone.O, gear_cone.foot))
-  gear_roll := motion(about: gear_cone.ax,
-    ratio: -distance(gear_cone.O, gear_cone.M) / distance(gear_cone.M, gear_cone.ax))
+  pinion_roll := motion(about: pinion_cone.ax, ratio: crown_teeth / pinion_teeth)
+  gear_roll := motion(about: gear_cone.ax, ratio: -crown_teeth / gear_teeth)
   pinion_generation := motion(crown_roll, relative_to: pinion_roll)
   gear_generation := motion(crown_roll, relative_to: gear_roll)
   pinion_index := motion(about: pinion_cone.ax)
@@ -97,25 +103,31 @@ component HypoidPair(P: plane, across: axis, up: axis, pinion_teeth: Int, gear_t
     n: pinion_teeth)
   gear := Member(gear_blank.material, gear_space.body, gear_generation, gear_index, n: gear_teeth)
 
+  // The face mill's two settings, found: the pinion and the gear equally far from undercut, in the
+  // normal section through M and in the one through the toe of the trace.
+  balance := Balanced(P, gear_cone, trace, mill.ax, mill.inner_flank, mill.outer_flank,
+    pinion_generation, gear_generation, R: R, face: blank_design.width, depth: addendum,
+    cutter_radius: cutter_radius)
+
   // The tip relief: a topping beside each crown flank, the kinks drawn in the normal section N
   // (square to P on the trace normal, through the cutter's axis) a depth `tip_relief` short of
   // the addendum, cut by its own sweep the same way (`Topping`).
   when tip_relief > 0mm {
     N := plane(u: trace.normal, v: mill.ax)
     depth := addendum - tip_relief
-    inner_lean := pressure + pressure_shift + 30deg
-    outer_lean := pressure_shift - pressure - 30deg
+    inner_half := pressure + pressure_shift + 30deg
+    outer_half := pressure - pressure_shift + 30deg
     pinion_inner := Topping(tooth.inner, mill.ax, N, mill.to_inner, height: -depth,
-      lean: inner_lean)
+      half: inner_half, opening: 180deg - inner_half)
     pinion_outer := Topping(tooth.outer, mill.ax, N, mill.to_outer, height: -depth,
-      lean: outer_lean)
+      half: outer_half, opening: outer_half)
     pinion_top := std.HalfSpace(trace.C, mill.ax, d: -addendum / 2)
     construction pinion_topping := Tooth(pinion_inner.cone, pinion_outer.cone, mill.tooth_base,
       pinion_top, grow: 0mm, r: rounding)
     gear_outer := Topping(gear_space.inner, mill.ax, N, mill.to_outer, height: depth,
-      lean: outer_lean)
+      half: outer_half, opening: outer_half)
     gear_inner := Topping(gear_space.outer, mill.ax, N, mill.to_inner, height: depth,
-      lean: inner_lean)
+      half: inner_half, opening: 180deg - inner_half)
     gear_top := std.HalfSpace(trace.C, mill.ax, d: addendum / 2)
     construction gear_topping := Space(gear_outer.cone, gear_inner.cone, gear_top,
       mill.mate_base, mill.reach, crown_neighbor, grow: 0mm, r: rounding)
@@ -162,19 +174,19 @@ component GearCone(P: plane, across: axis, pinion_teeth: Int, gear_teeth: Int,
   fix((0, 0, 1)) crown_ax.p2
 }
 
-// The tooth trace: the circle about the cutter centre C through M, the cutter's radius 0.8 R, MC
-// (`normal`) at 90° less the spiral to MO; its heading at M, square to MC, meets the line from O
-// along MC at H (said as parallel, not as square to the heading, which a heading of no length
+// The tooth trace: the circle about the cutter centre C through M, the cutter's radius from it,
+// MC (`normal`) at 90° less the spiral to MO; its heading at M, square to MC, meets the line from
+// O along MC at H (said as parallel, not as square to the heading, which a heading of no length
 // would be). The normal module `mn` is the module seen square to the trace: how far from MC a
 // point one module from M toward O stands, so O, R / m modules from M, stands R / m times as far.
 component ToothTrace(P: plane, gear: Gear, R: Length, spiral_angle: Angle, mean_module: Length,
-    mn: Length) {
+    mn: Length, cutter_radius: Length) {
   C := point in P
   H := point in P
   normal := line(C, gear.M)
   heading := line(gear.M, H)
   to_heading := line(gear.O, H)
-  gear.M distance(0.8 * R) C
+  gear.M distance(cutter_radius) C
   gear.generator angle(90deg - spiral_angle, sense: cw) normal
   heading perpendicular normal
   to_heading parallel normal
@@ -245,13 +257,15 @@ component Blank(rim: line, ax: line, design: BlankDesign) {
 // The face mill. The crown tooth's thickness: two points of the mean pitch circle a quarter crown
 // pitch either side of M (the arcs `ahead` and `behind` about O); the inner and outer trace
 // circles about C pass through them, and its pitch points are where they cross the trace normal
-// beyond C. The mill's axis `ax` stands up through C, square to P; the flank cones about it pass
-// through the pitch points leaning by the pressure angle split by the shift, and the levels along
+// beyond C. The mill's axis `ax` stands up through C, square to P, as long as the cutter's radius;
+// the flank cones about it pass through the pitch points leaning by the pressure angle split by
+// the shift — the inner opening up the axis, the outer down it (`Blade`) — and the levels along
 // it are where the crowns' tips and bases stand. `reach`, how far the gear's space cutter
 // reaches: the cylinder about the axis through the point a little over the cone distance past O
 // on the line from C through it, clear of every blank point.
 component FaceMill(P: plane, gear: Gear, trace: Trace, R: Length, mean_module: Length,
-    pressure: Angle, pressure_shift: Angle, dedendum: Length, base: Length) {
+    pressure: Angle, pressure_shift: Angle, cutter_radius: Length, dedendum: Length,
+    base: Length) {
   ahead := arc(center: gear.O, start: gear.M) in P
   behind := arc(center: gear.O, end: gear.M) in P
   inner_pitch := point in P
@@ -266,9 +280,11 @@ component FaceMill(P: plane, gear: Gear, trace: Trace, R: Length, mean_module: L
   trace.normal angle(180deg) to_outer
   ax := line(trace.C)
   ax parallel gear.crown_ax
-  trace.C distance(0.8 * R, along: gear.crown_ax) ax.p2
-  inner_flank := std.ConeThrough(ax, inner_pitch, lean: pressure + pressure_shift)
-  outer_flank := std.ConeThrough(ax, outer_pitch, lean: pressure_shift - pressure)
+  trace.C distance(cutter_radius, along: gear.crown_ax) ax.p2
+  inner_flank := Blade(ax, inner_pitch, half: pressure + pressure_shift,
+    opening: 180deg - pressure - pressure_shift)
+  outer_flank := Blade(ax, outer_pitch, half: pressure - pressure_shift,
+    opening: pressure - pressure_shift)
   tooth_tip := std.HalfSpace(trace.C, ax, d: dedendum)
   tooth_base := std.HalfSpace(trace.C, ax, d: -base)
   mate_tip := std.HalfSpace(trace.C, ax, d: -dedendum)
@@ -338,12 +354,98 @@ component Member(blank: solid, tool: solid, under: motion, index: motion, n: Int
 // pitch line; a topping leaves each flank `tip_relief` short of that, at a kink on the flank as
 // grown in the normal section `n`, beyond the axis as its pitch point is (along `toward`, the
 // cutter centre to it), turned the relief angle (30°) so the cut widens toward the base, and
-// rounds into a top inside the crown. Its own sweep, cut the same way: a concave corner inside
-// one sweep would trim two envelopes against each other (generating-sweep row T2).
-component Topping(flank: set, ax: line, n: plane, toward: line, height: Length, lean: Angle) {
+// rounds into a top inside the crown: a blade through the kink (`Blade`, its `half` and
+// `opening` as there). Its own sweep, cut the same way: a concave corner inside one sweep would
+// trim two envelopes against each other (generating-sweep row T2).
+component Topping(flank: set, ax: line, n: plane, toward: line, height: Length, half: Angle,
+    opening: Angle) {
   kink := point in n
   kink coincident flank.surface
   ax.p1 distance(height, along: ax) kink
   ax.p1 distance(>= 0mm, along: toward) kink
-  cone := std.ConeThrough(ax, kink, lean: lean)
+  cone := Blade(ax, kink, half: half, opening: opening)
+}
+
+// A blade's cone about the cutter's axis `about` through `q`: `std.Cone`'s about the line
+// `.spine`, from the apex to `q`'s foot on `about`, `half` the angle between the axis and every
+// generator. The apex is on the axis where the generator from `q` to it makes `opening` with
+// `about` — the supplement of the half where the cone opens along `about`, the half itself where
+// it opens against it — seeded on that side of the axis's start. `std.ConeThrough` with the side
+// the cone opens to said, so a half that reads an unknown (`pressure + pressure_shift`) is a
+// number times it plus a number. A point on it, a line touching it, `inside`, `outside` and an
+// offset read as a cone's.
+component Blade(about: line, q: point, half: Angle, opening: Angle) := { p |
+  apex := point hint(at: about.p1, along: about, by: cos(opening) / abs(cos(opening)))
+  private foot := point hint(at: about.p1)
+  apex coincident about
+  private construction through := line(q, apex)
+  about angle(opening) through
+  foot coincident about
+  private construction across := line(foot, q)
+  across perpendicular about
+  construction spine := line(apex, foot)
+  private construction g := line(apex, p)
+  spine angle(half) g
+}
+
+// -- the face mill's settings, found -------------------------------------------------------------
+// The pressure shift leans the crown tooth: it steepens the flank that generates the pinion's
+// concave side (the inner cone) and flattens the one that generates the gear's (the outer), so
+// it trades the pinion's margin against undercut for the gear's. The cutter's radius sets how
+// those margins run along the face. Neither is stated: each member's flank is the envelope its
+// crown flank generates, held to by the solve (§6.15.3), and the two settings are found where
+// the members stand equally far from undercut — in the normal section N through M, and in the
+// one through the toe of the trace, half the face width short of M, where both run nearest it.
+// Two settings, two balances. The toe's balance holds at more than one radius; the cutter is no
+// smaller than the cone distance R, where both members stand farther from undercut along the
+// whole face, and the seeds say which. The solve tears the two numbers out of the block that
+// holds them, solving the rest for each try (solver.md).
+component Balanced(P: plane, gear: Gear, trace: Trace, ax: line, inner: set,
+    outer: set, pinion_generation: motion, gear_generation: motion, R: Length, face: Length,
+    depth: Length, cutter_radius: Length) {
+  gear.M distance(>= R) trace.C
+  pinion_flank := envelope(inner, under: pinion_generation, from: -30deg, to: 30deg)
+  gear_flank := envelope(outer, under: gear_generation, from: -30deg, to: 30deg)
+  // the normal section through M, square to P on the trace normal, through the cutter's axis
+  N := plane(u: trace.normal, v: ax)
+  mean := Margins(N, gear.M, trace.normal, ax, trace.C, pinion_flank, gear_flank, depth: depth)
+  // the toe of the trace: on the cutter's circle through M, half the face width nearer O, the
+  // root within a face width of M
+  toe := point in P
+  trace.C distance(cutter_radius) toe
+  gear.O distance(R - face / 2) toe
+  gear.M distance(<= face) toe
+  construction to_toe := line(trace.C, toe)
+  T := plane(u: to_toe, v: ax)
+  at_toe := Margins(T, toe, to_toe, ax, trace.C, pinion_flank, gear_flank, depth: depth)
+  mean.pinion_profile equal mean.gear_profile
+  at_toe.pinion_profile equal at_toe.gear_profile
+}
+
+// The members' margins against undercut in the section `s` through the cutter's axis `ax` and
+// the trace's point `at`: on each member's flank nearest undercut — the pinion's generated by the
+// inner cone, the gear's by the outer — the point where its mate's tip reaches, `depth` from P
+// (the start of its active profile), on its side of the trace (`toward`, from the cutter's
+// centre `c` out through `at`) and within two depths of `at`; and the circle osculating the
+// section there, whose radius is how far the profile is from the cusp undercut would make.
+component Margins(s: plane, at: point, toward: line, ax: line, c: point, pinion: envelope,
+    gear: envelope, depth: Length) {
+  pinion_start := point
+  gear_start := point
+  pinion_start coincident s
+  gear_start coincident s
+  pinion_start coincident pinion
+  gear_start coincident gear
+  c distance(depth, along: ax) pinion_start
+  c distance(-depth, along: ax) gear_start
+  at distance(<= 0mm, along: toward) pinion_start
+  at distance(>= 0mm, along: toward) gear_start
+  at distance(<= 2 * depth) pinion_start
+  at distance(<= 2 * depth) gear_start
+  in s {
+    pinion_profile := circle
+    gear_profile := circle
+  }
+  pinion curvature(at: pinion_start) pinion_profile
+  gear curvature(at: gear_start) gear_profile
 }

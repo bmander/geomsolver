@@ -221,10 +221,13 @@ fn a_through_cut_crosses_its_stock_whichever_way_the_stocks_circle_starts() {
 /// turned (#196, `Surface::Revolution` of a rational quadratic B-spline): its sector is split by
 /// the sides and turned into every copy — a traced edge of the band ends where it leaves the
 /// band's patch (`Surface::off_patch`), and the band is kept by the turns about the axis, not
-/// taken for a side (`brep::pattern`).
+/// taken for a side (`brep::pattern`).  Cut by the mill it was recorded at
+/// (`fixtures::gear::recorded_machine`): the mill the pair finds (#283) has a larger cutter, at
+/// which the cut's sheet is fitted as one face, built and agreeing with its field but not named
+/// by the cutter's faces.
 #[test]
 fn the_relieved_pinion_is_built_by_sectors() {
-    let e = fixtures::gear::read_as_configured();
+    let e = fixtures::gear::read(&fixtures::gear::recorded_machine(&fixtures::gear::source(),12.5));
     let body = fixtures::solid(&e,"pair.pinion.body");
     let lines = std::sync::Mutex::new(Vec::new());
     let say = Say {stage:&|l: &str| lines.lock().unwrap().push(l.to_string()),mark:&|_| {}};

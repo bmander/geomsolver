@@ -14,7 +14,45 @@ pub fn source() -> String { std::fs::read_to_string(project().join("hypoid.sv"))
 
 /// `text` with each named input (`param NAME := …` at the top level) given a number, in the
 /// unit its literal is written in there (`2mm`, `25deg`, a count bare). Asserts each is an input.
+/// The face mill's pressure shift, which `hypoid.sv` finds rather than states (#283), is set as
+/// `recorded_machine` sets it, with the cutter the suites recorded: the Formate pair, which still
+/// states it, takes it as an input.
 pub fn configure(text: &str,params: &[(&str,f64)]) -> String {
+    let shift = params.iter().find(|(name,_)| *name == "pressure_shift").map(|&(_,v)| v);
+    let states_shift = text.contains("param pressure_shift :=");
+    let rest: Vec<(&str,f64)> = params.iter().copied()
+        .filter(|(name,_)| states_shift || *name != "pressure_shift").collect();
+    let out = configure_inputs(text,&rest);
+    match shift {
+        Some(v) if !states_shift => recorded_machine(&out,v),
+        _ => out,
+    }
+}
+
+/// `text`, the pair, with the face mill's settings stated as the suites recorded the pair at
+/// before `hypoid.sv` found them (#283): the pressure shift `shift` in degrees and the cutter's
+/// radius 0.8 R, R the mean cone distance — and the balance that finds them dropped. Every
+/// number the suites recorded was taken of a pair so cut.
+pub fn recorded_machine(text: &str,shift: f64) -> String {
+    let seeds = "pressure_shift: hint(10deg), cutter_radius: hint(80mm))";
+    assert!(text.contains(seeds),"the pair leaves its face mill's settings to the solve, seeded");
+    let stated = format!("pressure_shift: {shift}deg, \
+        cutter_radius: 0.8 * mean_module * sqrt(pinion_teeth^2 + gear_teeth^2) / 2)");
+    let mut out = text.replacen(seeds,&stated,1);
+    let call = "  balance := Balanced(";
+    let at = out.find(call).expect("the pair finds its face mill's settings by `Balanced`");
+    let mut depth = 0;
+    let end = at+out[at..].char_indices().find_map(|(k,c)| {
+        match c { '(' => depth += 1, ')' => { depth -= 1; if depth == 0 { return Some(k+1); } } _ => {} }
+        None
+    }).expect("the balance's call closes");
+    let end = end+out[end..].find('\n').map_or(0,|k| k+1);
+    out.replace_range(at..end,"");
+    out
+}
+
+/// `configure` over the document's own inputs alone.
+fn configure_inputs(text: &str,params: &[(&str,f64)]) -> String {
     let (prog,_) = syntax::parse(text);
     let mut values: Vec<(syntax::Span,String)> = params.iter().map(|&(name,v)| {
         let span = prog.root().body.iter().find_map(|st| match &st.kind {
@@ -91,9 +129,13 @@ pub fn axis(member: &str) -> String { format!("pair.{member}_cone.ax") }
 
 /// `text` with a member's cut (`pinion`, `gear`; not its tip relief's) rolled from `-degrees` to
 /// `degrees`, stated, in place of the roll its tool takes through its blank (`through:`, #271):
-/// the negative controls, a roll too short or too long. The member is made by copies of `Member`
-/// and `Generated` as `text` has them, taking the roll.
-pub fn roll(text: &str,member: &str,degrees: f64) -> String {
+/// the negative controls, a roll too short or too long.
+pub fn roll(text: &str,member: &str,degrees: f64) -> String { rolled(text,member,[-degrees,degrees]) }
+
+/// `text` with a member's cut rolled over `degrees`, stated (`roll`): the member is made by copies
+/// of `Member` and `Generated` as `text` has them, taking the roll, made once for every member
+/// so rolled.
+pub fn rolled(text: &str,member: &str,degrees: [f64;2]) -> String {
     let component = |name: &str| -> String {
         let head = format!("\ncomponent {name}(");
         let at = text.find(&head).unwrap_or_else(|| panic!("the pair has a component `{name}`"))+1;
@@ -101,20 +143,24 @@ pub fn roll(text: &str,member: &str,degrees: f64) -> String {
         text[at..end].to_string()
     };
     let formal = "n: Int) {";
-    let member_copy = component("Member").replacen("component Member(","component RolledMember(",1)
-        .replacen(formal,"n: Int, roll: Angle) {",1).replacen("Generated(","RolledGenerated(",1)
-        .replacen("n: n)","n: n, roll: roll)",1);
-    let generated = component("Generated");
-    assert!(generated.contains("through: body)"),"the cut rolls through its body");
-    let generated_copy = generated.replacen("component Generated(","component RolledGenerated(",1)
-        .replacen(formal,"n: Int, roll: Angle) {",1).replacen("through: body)","from: -roll, to: roll)",1);
+    let copies = if text.contains("\ncomponent RolledMember(") { String::new() } else {
+        let member_copy = component("Member").replacen("component Member(","component RolledMember(",1)
+            .replacen(formal,"n: Int, from: Angle, to: Angle) {",1)
+            .replacen("Generated(","RolledGenerated(",1).replacen("n: n)","n: n, from: from, to: to)",1);
+        let generated = component("Generated");
+        assert!(generated.contains("through: body)"),"the cut rolls through its body");
+        let generated_copy = generated.replacen("component Generated(","component RolledGenerated(",1)
+            .replacen(formal,"n: Int, from: Angle, to: Angle) {",1)
+            .replacen("through: body)","from: from, to: to)",1);
+        format!("\n{member_copy}{generated_copy}")
+    };
     let call = format!("{member} := Member(");
     let at = text.find(&call).unwrap_or_else(|| panic!("the pair makes `{member}` by `Member`"));
     let count = format!("n: {member}_teeth)");
     let end = at+text[at..].find(&count).expect("the member's call ends at its tooth count")+count.len();
-    let rolled = text[at..end].replacen("Member(","RolledMember(",1)
-        .replacen(&count,&format!("n: {member}_teeth, roll: {degrees}deg)"),1);
-    format!("{}{rolled}{}\n{member_copy}{generated_copy}",&text[..at],&text[end..])
+    let rolled = text[at..end].replacen("Member(","RolledMember(",1).replacen(&count,
+        &format!("n: {member}_teeth, from: {}deg, to: {}deg)",degrees[0],degrees[1]),1);
+    format!("{}{rolled}{}{copies}",&text[..at],&text[end..])
 }
 
 /// Write the pair into `dir` as `hypoid.sv` at a design (`design`: the offset in millimetres, the

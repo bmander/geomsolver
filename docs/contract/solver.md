@@ -255,6 +255,32 @@ version ([0.n], see the [language changelog](../solvent-changelog.md)) says wher
   distance is a magnitude** (`|s| − d`, `line_line3`, consts `[d, pinned]`): its `sign` slot is no
   longer read off the seed (0, inferred), so both sides are roots and a bound chooses; ±1 pins.
   `tests/words_alone.rs` is the gate (each change's small case), the hypoid its large one.
+- **A drawing holding contacts on envelopes solves block by block** (#283, #304): a document
+  solve whose sketch holds a `PointOnEnvelope` or `PointOnMeshing` (`blocks::holds_contacts`)
+  runs the pass first (`First`, not `Rescue`), since a whole-system minimisation reaches a root
+  on another sheet of an envelope that every word allows.  Each block's contacts are seeded at
+  its start (`seed_contacts`: the place and the lift sought again with the flanks where the
+  blocks before it left them, `seed_param`/`meshing_seed`), but only where the compiled rows are
+  more than `SEEDED_OFF` off, so a converged place keeps its sheet; a bound the start alone
+  breaks is crossed before the block is solved (`Search::start_within`, its own parameters
+  moved), and a solved block whose frame moved is refreshed and solved on (`REFRAMES`).
+- **A block is torn at its declared unknowns** (#283, `blocks::torn`): a block finding a free
+  number with a declared seed (`param w: Length hint(…)`, an unbound formal so seeded) from a
+  contact on an envelope is solved as a designer would: the number held, the rest of the block
+  in its own block-triangular order (`tearing`: one or two statements left over whose rows
+  number the unknowns, the rest square and perfectly matched, the widest inner block smallest),
+  swept until still (`TEAR_SWEEPS`), and the rows left over brought to zero by damped Newton
+  over the numbers alone, by differences (`TEAR_DIFF`, `TEAR_STEPS`, `TEAR_HALVINGS`).  At most
+  `TEAR_MAX` (2) numbers; tried first in such a block, after a failed whole solve elsewhere, and
+  `z` is left as it was where it fails.  The spiral bevel's face mill is the case: its pressure
+  shift and cutter radius are found by balancing undercut margins (`hypoid_machine.rs`).
+- **A pass through every block is polished in its own frames** (`blocks_then_polish`, #283): the
+  constants it read last stand for the whole-system DogLeg that follows, since a point it held on
+  a line turned since compiling is off that line by the turn in the compiled ones; they are put
+  back where the pass broke or the polish fails, so a pass not kept leaves the system as it was.
+- **A bound reads its number as solved**: `Constraint::reading` of a constraint whose number is
+  a free variable reads the number where it stands, not the seed, so `distance(>= R)` with `R`
+  found is decided at the found `R`.
 - **Settled** ([docs/iteration-limit-rescue-plan.md](../iteration-limit-rescue-plan.md)):
   `SolveResult::settled` is `success && status != 4`; a DogLeg accepted on its iteration limit
   can be 1e-3 of the extent off. With `retry` and `Rescue`, `System::block_rescue` tries the block

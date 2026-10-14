@@ -449,13 +449,33 @@ fn lift<T: Num>(x: [T; 3]) -> [H2<T>; 3] {
 
 /* -- the source, the motion, the moving point ------------------------------------------------ */
 
+/// How far from the axis, as the sine of the angle between them, a source's reference must stand
+/// to say where its turn starts (`across`).
+const REFERENCE_LEAST: f64 = 0.5;
+
+/// Where a source's turn round its axis `d` starts: its reference (`SetShape::reference`) square
+/// to the axis.  The reference is read once, before the solve has placed the axis, so the solve
+/// can turn the axis onto it (a cutter's spine read off an unseeded pose, then stood up square to
+/// the pitch plane along the very direction it was read as not running along); square to an
+/// axis it nearly runs along, it says nowhere, and which way rounding tips it moves every place
+/// a quarter turn.  So a reference within 30° of the axis gives way to the first of the world's
+/// axes the axis does not nearly run along — the same one wherever the axis stands near there.
+fn across<T: Num>(d: [T; 3], reference: [f64; 3]) -> [T; 3] {
+    let off = |r: [T; 3]| vsub(r, vscale(d, dot(r, d)));
+    let w = off(reference.map(T::cst));
+    if dot(w, w).val() >= REFERENCE_LEAST * REFERENCE_LEAST {
+        return unit(w);
+    }
+    let k = (0..3).find(|&i| d[i].val().abs() < 0.9).unwrap_or(0);
+    unit(off(std::array::from_fn(|i| T::cst(if i == k { 1.0 } else { 0.0 }))))
+}
+
 /// The source's point at place `(u, v)`: its meridian element at `u`, turned `v` about its axis.
 fn surface<T: Num>(l: &Layout, s: &[T], u: H2<T>, v: H2<T>) -> [H2<T>; 3] {
     let a = col3(s, 0);
     let b = if l.axis == 1 { vadd(a, col3(s, 3)) } else { col3(s, 3) };
     let d = unit(vsub(b, a));
-    let r = l.reference.map(T::cst);
-    let e1 = unit(vsub(r, vscale(d, dot(r, d))));
+    let e1 = across(d, l.reference);
     let number = || {
         let (c, m, free) = l.number;
         let x = if free { s[l.source.width()] } else { zero() };

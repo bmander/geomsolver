@@ -84,75 +84,490 @@ impl System {
     ) -> (SolveResult, f64) {
         let order = self.block_order();
         let (mut nfev, mut njev) = (0, 0);
+        // the compiled constants, where the polish runs in the pass's own
+        let mut kept: Vec<Vec<f64>> = Vec::new();
         if order.blocks.len() >= 2 {
             // a constant read off the pose — the directions across a line its rows are taken
             // along — is read where the blocks before put it, not where it was seeded: a line
-            // turned far from its seed admits a root no word says (#217); the compiled ones are
-            // put back for the polish, which starts on the pass's solution, so a pass not kept
-            // leaves the system as it found it
+            // turned far from its seed admits a root no word says (#217).  A pass that comes
+            // through every block is polished in the frames its root was read in (in the
+            // compiled ones a point it holds on a line turned since is off it by the turn); the
+            // compiled ones are put back where it does not, or the polish fails, so a pass not
+            // kept leaves the system as it found it
             let framed = reads_pose(sk);
-            let bounded = sk.constraints.iter().any(|c| c.bound.is_some());
             let compiled: Vec<Vec<f64>> = if framed {
                 self.blocks.iter().map(|b| b.consts.clone()).collect()
             } else {
                 Vec::new()
             };
-            // the scratch sketch the search reads, made the first time a block needs it
-            let mut search: Option<Search> = None;
-            let mut solved = std::collections::BTreeSet::new();
+            let mut pass = Pass {
+                framed,
+                bounded: sk.constraints.iter().any(|c| c.bound.is_some()),
+                held: holds_contacts(sk),
+                search: None,
+                solved: std::collections::BTreeSet::new(),
+                nfev: 0,
+                njev: 0,
+            };
+            let mut whole = true;
             for b in &order.blocks {
-                if framed {
-                    let s = search.get_or_insert_with(|| Search::new(self, sk));
-                    s.sk.set_x(&self.full_x(z));
-                    self.refresh_consts(&s.sk);
-                }
-                let sub = self.subset(&b.instances, &b.cols);
-                let start: Vec<f64> = b.cols.iter().map(|&c| z[c]).collect();
-                let (mut ok, info) = self.solve_block(&sub, z, &start, opts);
-                (nfev, njev) = (nfev + info.nfev, njev + info.njev);
-                // a drawing that says no bound has no root to search for: its block stands
-                if bounded {
-                    let s = search.get_or_insert_with(|| Search::new(self, sk));
-                    let decided = s.deciding(&b.cols, &solved);
-                    if !(ok && s.holds(self, z, &decided)) {
-                        // the root the words say, or else what the block's own start came to
-                        let first: Vec<f64> = b.cols.iter().map(|&c| z[c]).collect();
-                        let mut found = false;
-                        let mut attempts = s.attempts(self, z, b, &start, &decided);
-                        while let Some(attempt) = attempts.next(s, self, &solved) {
-                            let (mut fine, mut info) = self.solve_block(&sub, z, &attempt, opts);
-                            if !fine {
-                                (fine, info) = self.follow_block(&sub, z, &attempt, opts);
-                            }
-                            (nfev, njev) = (nfev + info.nfev, njev + info.njev);
-                            if fine && s.holds(self, z, &decided) {
-                                (ok, found) = (true, true);
-                                break;
-                            }
-                        }
-                        if !found {
-                            for (k, &c) in b.cols.iter().enumerate() {
-                                z[c] = first[k];
-                            }
-                        }
-                    }
-                }
+                // a block finding an unknown number from a contact on an envelope or a meshing is
+                // torn at it first: whole, it can come to a root on another sheet of the envelope
+                // that every word it states allows
+                let ok = if pass.held && self.finds_numbers(sk, b) {
+                    self.torn(sk, &mut pass, z, b, opts)
+                        || self.pass_block(sk, &mut pass, z, b, opts)
+                } else {
+                    self.pass_block(sk, &mut pass, z, b, opts)
+                        || self.torn(sk, &mut pass, z, b, opts)
+                };
                 if !ok {
+                    whole = false;
                     break;
                 }
-                solved.extend(b.cols.iter().copied());
+                pass.solved.extend(b.cols.iter().copied());
             }
-            for (b, consts) in self.blocks.iter_mut().zip(compiled) {
-                b.consts = consts;
+            (nfev, njev) = (pass.nfev, pass.njev);
+            if whole {
+                kept = compiled;
+            } else {
+                for (b, consts) in self.blocks.iter_mut().zip(compiled) {
+                    b.consts = consts;
+                }
             }
         }
         let (mut res, rel) = self.minimise(z, Method::DogLeg, opts);
+        if !res.success {
+            for (b, consts) in self.blocks.iter_mut().zip(kept) {
+                b.consts = consts;
+            }
+        }
         if nfev > 0 {
             res.method = "blocks".into();
             res.nfev += nfev;
             res.njev += njev;
         }
         (res, rel)
+    }
+
+    /// One block of the pass: minimised from where `z` has it, its contacts seeded first where
+    /// the pass holds any, and its root searched for where it comes to none or to one a bound it
+    /// decides refuses (`Search`).  Whether it came out; `z` holds what it came to, or its own
+    /// start's minimisation where no search found better.
+    fn pass_block(
+        &mut self,
+        sk: &Sketch,
+        p: &mut Pass,
+        z: &mut [f64],
+        b: &SolveBlock,
+        opts: &SolveOpts,
+    ) -> bool {
+        if p.framed {
+            let s = p.search.get_or_insert_with(|| Search::new(self, sk));
+            s.sk.set_x(&self.full_x(z));
+            self.refresh_consts(&s.sk);
+        }
+        // a contact on an envelope or a meshing starts where its sources now stand, its point
+        // within the bounds the block decides
+        if p.held {
+            let s = p.search.get_or_insert_with(|| Search::new(self, sk));
+            s.sk.set_x(&self.full_x(z));
+            if p.bounded {
+                s.start_within(self, z, b, &p.solved);
+            }
+            self.seed_contacts(&mut s.sk, z, &b.cols);
+        }
+        let sub = self.subset(&b.instances, &b.cols);
+        let start: Vec<f64> = b.cols.iter().map(|&c| z[c]).collect();
+        let (mut ok, info) = self.solve_block(&sub, z, &start, opts);
+        (p.nfev, p.njev) = (p.nfev + info.nfev, p.njev + info.njev);
+        // constants read off the pose are read again where the block came out, and it is solved
+        // on where its rows no longer hold there: a frame read at a start far from the drawing
+        // admits a root of the frame's and none of the drawing's (`solve::REFRAMES`)
+        if p.framed && ok {
+            let mut sub = sub.clone();
+            for _ in 0..super::REFRAMES {
+                let s = p.search.get_or_insert_with(|| Search::new(self, sk));
+                s.sk.set_x(&self.full_x(z));
+                self.refresh_consts(&s.sk);
+                let mut r = vec![0.0; sub.rows.len()];
+                self.subset_residuals(&mut sub, z, &mut r);
+                if r.iter().all(|v| v.abs() < opts.acceptance_tol) {
+                    break;
+                }
+                let from: Vec<f64> = b.cols.iter().map(|&c| z[c]).collect();
+                let (again, info) = self.solve_block(&sub, z, &from, opts);
+                (p.nfev, p.njev) = (p.nfev + info.nfev, p.njev + info.njev);
+                ok = again;
+                if !ok {
+                    break;
+                }
+            }
+        }
+        // a drawing that says no bound has no root to search for: its block stands
+        if !p.bounded {
+            return ok;
+        }
+        let s = p.search.get_or_insert_with(|| Search::new(self, sk));
+        let decided = s.deciding(&b.cols, &p.solved);
+        if ok && s.holds(self, z, &decided) {
+            return true;
+        }
+        // the root the words say, or else what the block's own start came to
+        let first: Vec<f64> = b.cols.iter().map(|&c| z[c]).collect();
+        let mut attempts = s.attempts(self, z, b, &start, &decided);
+        while let Some(mut attempt) = attempts.next(s, self, &p.solved) {
+            if p.held {
+                self.seed_attempt(s, z, &b.cols, &mut attempt);
+            }
+            let (mut fine, mut info) = self.solve_block(&sub, z, &attempt, opts);
+            if !fine {
+                (fine, info) = self.follow_block(&sub, z, &attempt, opts);
+            }
+            (p.nfev, p.njev) = (p.nfev + info.nfev, p.njev + info.njev);
+            if fine && s.holds(self, z, &decided) {
+                return true;
+            }
+        }
+        for (k, &c) in b.cols.iter().enumerate() {
+            z[c] = first[k];
+        }
+        false
+    }
+
+    /// **A block is torn at its unknowns** (#283): a number the drawing declares unknown
+    /// (`param w: Length`, a formal a call leaves out) that a block cannot settle together with
+    /// the geometry it makes — a cutter's lean found by a balance of curvatures its envelopes
+    /// have — is found as a designer would find it.  Each value it is tried at, the rest of the
+    /// block is solved block by block from where it stood, its contacts seeded and its roots
+    /// searched for as the pass's are (`pass_block`), swept until it is still; the rows left
+    /// over (`tearing`) are brought to zero by damped Newton steps over the unknowns alone,
+    /// their derivatives by differences.  Tried first where the block finds a number from a
+    /// contact on an envelope, and otherwise only where the block comes to no root whole.  At
+    /// most `TEAR_MAX` unknowns; whether it came out, `z` holding what it came to — or as it
+    /// was, where it did not.
+    fn torn(
+        &mut self,
+        sk: &Sketch,
+        p: &mut Pass,
+        z: &mut [f64],
+        b: &SolveBlock,
+        opts: &SolveOpts,
+    ) -> bool {
+        let held = self.seeded_numbers(sk, b);
+        if held.is_empty() || held.len() > TEAR_MAX || held.len() == b.cols.len() {
+            return false;
+        }
+        let Some(tear) = self.tearing(b, &held) else { return false };
+        let before = z.to_vec();
+        let mut solved = p.solved.clone();
+        solved.extend(held.iter().copied());
+        let k = held.len();
+        let mut out = self.subset(&tear.outer, &held);
+        // the rows left over with the unknowns at `x`, the rest solved in order; `None` where a
+        // part comes to no root
+        let mut at = |sys: &mut System, z: &mut [f64], x: &[f64], p: &mut Pass|
+            -> Option<Vec<f64>> {
+            for (&c, &v) in held.iter().zip(x) {
+                z[c] = v;
+            }
+            let outer = std::mem::replace(&mut p.solved, solved.clone());
+            let mut fine = true;
+            // swept until it stands still: a constant read off the pose (a plane's axes, read by
+            // the points drawn in it) is a dependency the structure does not see, so a part can
+            // read one a later part moves
+            for _ in 0..TEAR_SWEEPS {
+                let was: Vec<f64> = z.to_vec();
+                p.solved = solved.clone();
+                for inner in &tear.inner {
+                    if !sys.pass_block(sk, p, z, inner, opts) {
+                        fine = false;
+                        break;
+                    }
+                    p.solved.extend(inner.cols.iter().copied());
+                }
+                let still =
+                    z.iter().zip(&was).all(|(a, b)| (a - b).abs() <= 1e-12 * a.abs().max(1.0));
+                if !fine || still {
+                    break;
+                }
+            }
+            p.solved = outer;
+            if !fine {
+                return None;
+            }
+            let mut r = vec![0.0; out.rows.len()];
+            sys.subset_residuals(&mut out, z, &mut r);
+            r.iter().all(|v| v.is_finite()).then_some(r)
+        };
+        let norm = |r: &[f64]| r.iter().map(|v| v * v).sum::<f64>().sqrt();
+        let mut x: Vec<f64> = held.iter().map(|&c| z[c]).collect();
+        let Some(mut r) = at(self, z, &x, p) else {
+            z.copy_from_slice(&before);
+            return false;
+        };
+        let mut done = r.iter().all(|v| v.abs() < opts.acceptance_tol);
+        for _ in 0..TEAR_STEPS {
+            if done {
+                break;
+            }
+            // the derivative of the rows left over along each unknown, by differences from here
+            let here = z.to_vec();
+            let mut jac = Mat::zeros(r.len(), k);
+            let mut fine = true;
+            for j in 0..k {
+                let h = TEAR_DIFF * x[j].abs().max(1.0);
+                let mut xh = x.clone();
+                xh[j] += h;
+                match at(self, z, &xh, p) {
+                    Some(rh) => {
+                        for i in 0..r.len() {
+                            jac.data[i * k + j] = (rh[i] - r[i]) / h;
+                        }
+                    }
+                    None => fine = false,
+                }
+                z.copy_from_slice(&here);
+            }
+            if !fine {
+                break;
+            }
+            let mut step = vec![0.0; k];
+            crate::newton::min_norm_step(&jac, &r, &mut step);
+            // halved until the rows left over come down, each try from where the last stood
+            let mut taken = false;
+            let mut scale = 1.0;
+            for _ in 0..TEAR_HALVINGS {
+                let xt: Vec<f64> = x.iter().zip(&step).map(|(a, d)| a + scale * d).collect();
+                let got = at(self, z, &xt, p);
+                if let Some(rt) = got {
+                    if norm(&rt) < norm(&r) {
+                        (x, r, taken) = (xt, rt, true);
+                        break;
+                    }
+                }
+                z.copy_from_slice(&here);
+                scale *= 0.5;
+            }
+            if !taken {
+                break;
+            }
+            done = r.iter().all(|v| v.abs() < opts.acceptance_tol);
+        }
+        if !done {
+            z.copy_from_slice(&before);
+        }
+        done
+    }
+
+    /// The unknown numbers block `b` is torn at (`torn`): those the drawing declares with a
+    /// seed — `param w: Length hint(80mm)`, a formal a call leaves out seeded `hint(…)`, where
+    /// the designer says where the search for one starts — or, where the block holds none, every
+    /// unknown number it holds.
+    fn seeded_numbers(&self, sk: &Sketch, b: &SolveBlock) -> Vec<usize> {
+        let col = |q: u32| usize::try_from(self.col_of[q as usize]).ok()
+            .filter(|c| b.cols.binary_search(c).is_ok());
+        let numbers: Vec<(usize, bool)> = sk.free_vars.iter()
+            .filter_map(|(name, &q)| {
+                let seeded = sk.declared.get(name).is_some_and(|d| d.seed.is_some());
+                col(q).map(|c| (c, seeded))
+            })
+            .collect();
+        let seeded: Vec<usize> = numbers.iter().filter(|n| n.1).map(|n| n.0).collect();
+        let mut held =
+            if seeded.is_empty() { numbers.iter().map(|n| n.0).collect() } else { seeded };
+        held.sort_unstable();
+        held
+    }
+
+    /// Whether block `b` holds both an unknown number the drawing declares and the place of a
+    /// contact on an envelope or a meshing.
+    fn finds_numbers(&self, sk: &Sketch, b: &SolveBlock) -> bool {
+        use crate::constraints::{Arg, CKind};
+        let col = |q: u32| usize::try_from(self.col_of[q as usize]).ok()
+            .is_some_and(|c| b.cols.binary_search(&c).is_ok());
+        sk.free_vars.values().any(|&q| col(q))
+            && sk.constraints.iter().any(|c| {
+                matches!(c.kind, CKind::PointOnEnvelope | CKind::PointOnMeshing)
+                    && c.args.iter().any(|a| matches!(a, Arg::Param(q) if col(*q)))
+            })
+    }
+
+    /// Where block `b` is torn at its unknowns `held` (`torn`): the instances whose rows are left
+    /// over — one or two statements whose rows number the unknowns, and without which the rest
+    /// is square and perfectly matched — and the rest in its own block-triangular order.  Among
+    /// the choices, the one whose widest inner block is smallest, the latest statements first
+    /// among equals.  `None` where no such statements are found.
+    fn tearing(&self, b: &SolveBlock, held: &[usize]) -> Option<Tearing> {
+        let (adj, _) = self.structure();
+        let hard = self.hard_rows();
+        let index: std::collections::BTreeMap<usize, usize> =
+            hard.iter().enumerate().map(|(i, &r)| (r, i)).collect();
+        let rest: Vec<usize> = b.cols.iter().copied().filter(|c| !held.contains(c)).collect();
+        let local: std::collections::BTreeMap<usize, usize> =
+            rest.iter().enumerate().map(|(i, &c)| (c, i)).collect();
+        let rows_of =
+            |inst: &(usize, usize)| -> Vec<usize> { self.rows_of(std::slice::from_ref(inst)) };
+        let id = |inst: &(usize, usize)| self.blocks[inst.0].cids[inst.1];
+        // the candidates, latest statement first
+        let mut by_id: Vec<(usize, usize)> = b.instances.clone();
+        by_id.sort_by_key(|i| std::cmp::Reverse(id(i)));
+        let need = held.len();
+        let fits = |outer: &[(usize, usize)]| -> Option<Tearing> {
+            if outer.iter().map(|i| rows_of(i).len()).sum::<usize>() != need {
+                return None;
+            }
+            let inner: Vec<(usize, usize)> =
+                b.instances.iter().copied().filter(|i| !outer.contains(i)).collect();
+            let rows: Vec<usize> = inner.iter().flat_map(rows_of).collect();
+            let sub: Vec<Vec<usize>> = rows.iter().map(|r| {
+                adj[index[r]].iter().filter_map(|c| local.get(c).copied()).collect()
+            }).collect();
+            let dm = crate::graph::dulmage_mendelsohn(&sub, rest.len());
+            if dm.rank != rest.len() || rows.len() != rest.len() {
+                return None;
+            }
+            let blt = crate::graph::blocks(&sub, &dm);
+            let parts = blt.rows.iter().map(|part| {
+                let mut cols: Vec<usize> =
+                    part.iter().map(|&r| rest[dm.mate_row[r] as usize]).collect();
+                cols.sort_unstable();
+                let mut instances: Vec<(usize, usize)> =
+                    part.iter().map(|&r| self.instance_of(rows[r])).collect();
+                instances.sort_unstable();
+                instances.dedup();
+                let full: Vec<usize> = instances.iter().flat_map(rows_of).collect();
+                SolveBlock { rows: full, cols, instances }
+            }).collect();
+            Some(Tearing { outer: outer.to_vec(), inner: parts })
+        };
+        // of every tearing that leaves the rest square, the one whose largest part is smallest,
+        // the later statements first among equals: the rows left over are those the rest of the
+        // block does not need to come apart
+        let widest = |t: &Tearing| t.inner.iter().map(|b| b.cols.len()).max().unwrap_or(0);
+        let mut best: Option<Tearing> = None;
+        let mut consider = |t: Option<Tearing>| {
+            if let Some(t) = t {
+                if best.as_ref().is_none_or(|b| widest(&t) < widest(b)) {
+                    best = Some(t);
+                }
+            }
+        };
+        for (n, a) in by_id.iter().enumerate() {
+            consider(fits(&[*a]));
+            if need >= 2 {
+                for c in &by_id[n + 1..] {
+                    consider(fits(&[*a, *c]));
+                }
+            }
+        }
+        best
+    }
+
+    /// **A contact starts where its block comes up** (#304): a point on an envelope in space or
+    /// on a meshing is seeded as it is stated (`Sketch::add`), where the sources it reads stand
+    /// before any relation has placed them, and a place sought on the wrong flanks leaves Newton
+    /// a root it reaches only from near it.  So each contact whose own unknowns are among the
+    /// block's columns `cols` is seeded again with the pose `sk` the blocks before it left —
+    /// its point where it stands (its hidden point brought to it first, as the block's other
+    /// hidden points are) — and `z` takes the seed.  A pinned phase or lag is kept, as
+    /// `System::remeshed` keeps one.  Nothing is done for a block with no such contact.
+    fn seed_contacts(&mut self, sk: &mut Sketch, z: &mut [f64], cols: &[usize]) {
+        use crate::constraints::{Arg, CKind, SpecKind};
+        let col_of = self.col_of.clone();
+        let col = |q: u32| {
+            usize::try_from(col_of[q as usize]).ok().filter(|c| cols.binary_search(c).is_ok())
+        };
+        let place = |c: &crate::constraints::Constraint| -> Vec<(usize, u32)> {
+            let first = match c.kind {
+                CKind::PointOnEnvelope => c.kind.contact_on(SpecKind::Envelope).map(|(_, t)| t),
+                CKind::PointOnMeshing => Some(3),
+                _ => None,
+            };
+            let Some(first) = first else { return Vec::new() };
+            c.args.iter().enumerate().skip(first).filter_map(|(i, a)| match a {
+                Arg::Param(q) if !sk.params[*q as usize].fixed => col(*q).map(|_| (i, *q)),
+                _ => None,
+            }).collect()
+        };
+        // one near holding where it stands keeps its place, and Newton takes it from there: an
+        // envelope can pass near its point on another sheet, and the place nearest it is as
+        // likely to be that one; a seed taken where the sources stood before any relation placed
+        // them is off by the drawing's size
+        let found: Vec<(usize, Vec<(usize, u32)>)> = sk.constraints.iter().enumerate()
+            .map(|(i, c)| (i, place(c)))
+            .filter(|(_, slots)| !slots.is_empty())
+            .collect();
+        let mut contacts = Vec::new();
+        for (i, slots) in found {
+            // its rows as the system reads them, over their own units
+            let Some(&inst) = self.slot_of.get(&sk.constraints[i].id) else { continue };
+            let mut sub = self.subset(&[inst], cols);
+            let mut r = vec![0.0; sub.rows.len()];
+            self.subset_residuals(&mut sub, z, &mut r);
+            if !r.iter().all(|v| v.abs() <= SEEDED_OFF) {
+                contacts.push((i, slots));
+            }
+        }
+        if contacts.is_empty() {
+            return;
+        }
+        // every hidden point the block moves, where its drawn point stands: a contact reads its
+        // point's, and a circle a contact holds reads its centre's
+        for k in 0..sk.lifts.len() {
+            let l = &sk.lifts[k];
+            if !l.x.iter().any(|&q| col(q).is_some()) {
+                continue;
+            }
+            let (x, w) = (l.x, sk.world_point(l.point as usize));
+            for (q, v) in x.into_iter().zip(w) {
+                if let Some(c) = col(q) {
+                    sk.params[q as usize].value = v;
+                    z[c] = v * self.col_scale[c];
+                }
+            }
+        }
+        for (i, slots) in contacts {
+            let c = &sk.constraints[i];
+            let seeds: Vec<f64> = match c.kind {
+                CKind::PointOnEnvelope => {
+                    slots.iter()
+                        .map(|&(k, _)| crate::constraints::seed_param(sk, c.kind, &c.args, k))
+                        .collect()
+                }
+                _ => {
+                    let Arg::Ent(p) = c.args[0] else { continue };
+                    let lift = sk.lifted(p.i());
+                    let Some(seed) = crate::constraints::meshing_seed(sk, c, lift) else {
+                        continue;
+                    };
+                    slots.iter().map(|&(k, _)| seed[k - 2]).collect()
+                }
+            };
+            for (&(_, q), v) in slots.iter().zip(seeds) {
+                if !v.is_finite() {
+                    continue;
+                }
+                let c = col(q).expect("a slot among the block's columns");
+                sk.params[q as usize].value = v;
+                z[c] = v * self.col_scale[c];
+            }
+        }
+    }
+
+    /// A searched start of a block seeded as its first start is (`seed_contacts`): the
+    /// attempt's columns put where the scratch sketch reads them, the contacts seeded there, and
+    /// `attempt` given back with their seeds.
+    fn seed_attempt(&mut self, s: &mut Search, z: &[f64], cols: &[usize], attempt: &mut [f64]) {
+        let mut at = z.to_vec();
+        for (k, &c) in cols.iter().enumerate() {
+            at[c] = attempt[k];
+        }
+        s.sk.set_x(&self.full_x(&at));
+        self.seed_contacts(&mut s.sk, &mut at, cols);
+        for (k, &c) in cols.iter().enumerate() {
+            attempt[k] = at[c];
+        }
     }
 
     /// One block (`sub`, its rows and columns) minimised from `start` (its own columns), every
@@ -223,6 +638,47 @@ impl System {
         }
         r.iter().all(|v| v.abs() < opts.acceptance_tol)
     }
+}
+
+/// What one block pass carries from block to block (`System::pass_block`): what it asks of the
+/// drawing, the scratch sketch its searches read, the columns placed so far and its count.
+struct Pass {
+    framed: bool,
+    bounded: bool,
+    held: bool,
+    search: Option<Search>,
+    solved: std::collections::BTreeSet<usize>,
+    nfev: i32,
+    njev: i32,
+}
+
+/// A block torn at its unknowns (`System::tearing`): the statements whose rows are left over,
+/// and the rest in its own block-triangular order.
+struct Tearing {
+    outer: Vec<(usize, usize)>,
+    inner: Vec<SolveBlock>,
+}
+
+/// How many unknowns a block is torn at, at most (`System::torn`).
+const TEAR_MAX: usize = 2;
+/// How many Newton steps a torn block's unknowns take, at most.
+const TEAR_STEPS: usize = 40;
+/// How many times a torn block's step is halved before it is given up.
+const TEAR_HALVINGS: usize = 12;
+/// How far off a contact may hold, its rows over their own units, and keep its place when
+/// its block comes up (`System::seed_contacts`).
+const SEEDED_OFF: f64 = 1e-2;
+/// How many times a torn block's rest is swept, at most, for one value of its unknowns.
+const TEAR_SWEEPS: usize = 4;
+/// The step a torn block's derivative is taken over, relative to the unknown's size.
+const TEAR_DIFF: f64 = 1e-6;
+
+/// Whether a drawing holds a point to an envelope in space or to a meshing (#283): a contact
+/// whose place is seeded again as its block comes up (`System::seed_contacts`), so its document
+/// solve takes the block pass first (`System::solve_compiled`).
+pub(super) fn holds_contacts(sk: &Sketch) -> bool {
+    use crate::constraints::CKind;
+    sk.constraints.iter().any(|c| matches!(c.kind, CKind::PointOnEnvelope | CKind::PointOnMeshing))
 }
 
 /// How many steps a block followed along its Newton homotopy takes (`System::follow_block`).
@@ -329,6 +785,38 @@ impl Search {
             .collect()
     }
 
+    /// A block holding a contact started within the bounds it decides (#304): its points carried
+    /// across each one its start breaks, twice round — before its contacts are seeded where
+    /// those points then stand (`System::seed_contacts`).  A point on an envelope that nothing
+    /// seeds stands wherever the drawing scattered it, and the place nearest it is as likely on
+    /// another sheet of the envelope as on the one its bounds say; carried into them first, it
+    /// starts near its root.  `z` and the scratch sketch, at `z`'s pose, take the crossings.
+    fn start_within(&mut self, sys: &System, z: &mut [f64], b: &SolveBlock,
+        solved: &std::collections::BTreeSet<usize>) {
+        let decided = self.deciding(&b.cols, solved);
+        if decided.is_empty() {
+            return;
+        }
+        let tol = bound_tol(&self.sk);
+        // only the block's own points are carried: one the blocks before it placed stands
+        let own: std::collections::BTreeSet<u32> =
+            b.cols.iter().map(|&c| sys.free[c] as u32).filter(|q| self.free.contains(q)).collect();
+        for _ in 0..2 {
+            for &ci in &decided {
+                let Some(r) = bound_reading(&self.sk, &self.sk.constraints[ci], tol) else {
+                    continue;
+                };
+                if !r.holds {
+                    across(&mut self.sk, ci, r.aims[0], &own);
+                }
+            }
+        }
+        let v = self.block_of(sys, b);
+        for (k, &c) in b.cols.iter().enumerate() {
+            z[c] = v[k];
+        }
+    }
+
     /// Whether each of the bounds `decided` holds at the pose `z`.
     fn holds(&mut self, sys: &System, z: &[f64], decided: &[usize]) -> bool {
         if decided.is_empty() {
@@ -388,10 +876,19 @@ impl Search {
         // across each bound the solution breaks
         self.sk.set_x(&x_solved);
         let tol = bound_tol(&self.sk);
-        let broken: Vec<(usize, f64)> = decided.iter().filter_map(|&ci| {
-            let r = bound_reading(&self.sk, &self.sk.constraints[ci], tol)?;
-            (!r.holds).then(|| (ci, r.aims[0]))
-        }).collect();
+        let breaks = |sk: &Sketch| -> Vec<(usize, f64)> {
+            decided.iter().filter_map(|&ci| {
+                let r = bound_reading(sk, &sk.constraints[ci], tol)?;
+                (!r.holds).then(|| (ci, r.aims[0]))
+            }).collect()
+        };
+        let broken = breaks(&self.sk);
+        // and across each the start breaks that the solution does not: a block whose own start
+        // came to no root at all leaves no broken bound at its solution to carry it across
+        self.sk.set_x(&x_start);
+        let started: Vec<(usize, f64)> =
+            breaks(&self.sk).into_iter()
+                .filter(|(ci, _)| !broken.iter().any(|(b, _)| b == ci)).collect();
         let own = |c: &usize| b.cols.binary_search(c).is_ok();
         let moving: Vec<usize> =
             self.points.iter().filter(|(_, c)| c.iter().any(own)).map(|&(p, _)| p).collect();
@@ -402,6 +899,7 @@ impl Search {
             x_start,
             x_solved,
             broken,
+            started,
             moving,
             turning,
             crossing: 0,
@@ -423,10 +921,13 @@ struct Attempts<'b> {
     x_solved: Vec<f64>,
     /// Each bound the block's solution breaks, with where its point aims.
     broken: Vec<(usize, f64)>,
+    /// Each bound the block's start breaks and its solution does not, with where it aims.
+    started: Vec<(usize, f64)>,
     /// The points the block moves and the axes it turns.
     moving: Vec<usize>,
     turning: Vec<[usize; 3]>,
-    /// The next crossing: the solution's for each broken bound, then the start's.
+    /// The next crossing: the solution's for each broken bound, then the start's, then the start's
+    /// for each bound only the start breaks.
     crossing: usize,
     /// The block mirrored, made with the crossing before it and tried after it.
     mirrored: Option<Vec<f64>>,
@@ -451,9 +952,13 @@ impl Attempts<'_> {
             return Some(m);
         }
         let n = self.broken.len();
-        while self.crossing < 2 * n {
+        while self.crossing < 2 * n + self.started.len() {
             let x = if self.crossing < n { &self.x_solved } else { &self.x_start };
-            let (ci, aim) = self.broken[self.crossing % n];
+            let (ci, aim) = if self.crossing < 2 * n {
+                self.broken[self.crossing % n]
+            } else {
+                self.started[self.crossing - 2 * n]
+            };
             self.crossing += 1;
             s.sk.set_x(x);
             let before: Vec<[f64; 3]> =

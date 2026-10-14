@@ -92,6 +92,7 @@ mod meshing;
 mod highlight;
 mod homotopy;
 mod hypoid_layout;
+mod hypoid_machine;
 mod interfaces;
 mod interval;
 mod io;

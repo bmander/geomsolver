@@ -132,7 +132,8 @@ construction needs `admission::Admission` (only `admit_body` makes one). Contrac
 `solid::contracts`; every refusal is one `solid::export::ExportRefusal` (`Stage`,
 `SOLVENT_STAGE_TRACE`), reported at the solid's statement. Refine features:
 `solid::blank_features` (`BlankTopology`). The configured pair is a 25 mm hypoid
-(`pressure_shift`, `spiral_angle`, `admission.rs::the_admission_grid`); recorded tests pin
+(`spiral_angle`, and `pressure_shift` stated through `fixtures::gear::recorded_machine`,
+`admission.rs::the_admission_grid`); recorded tests pin
 `fixtures::gear::bevel` / `hypoid6` (`rust/fixtures`, dev-only);
 `tests/native_surfaces/gear_cells.rs` holds the recorded tooth-space volumes;
 `tests/generating_harness.rs` (ignored) locates refusals by stage.
