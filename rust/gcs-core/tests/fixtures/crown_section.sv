@@ -52,7 +52,7 @@ component RackSection(lp: point, rp: point, design: group, normal_module: Length
   // The tip is a land: the rounds meeting in a point satisfy the section's rows too, and are
   // not the section (§9.6). A hundredth of a module; the narrowest land, the configured
   // hypoid's, is a sixth.
-  distance(>= 0.01 * design.module) tip
+  length(>= 0.01 * design.module) tip
   rounding := TipRounding(pitch, base, tip, outer_round, inner_round, design,
     normal_module: normal_module)
 }

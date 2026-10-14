@@ -44,6 +44,17 @@ came from.
   is `std`'s word for `level(up)` (`use std (horizontal)`, §9.9), and the printer
   (`print::ordinate_text`) spells each case back.  `tests/ordinate.rs` is the gate.
 
+- **`distance` relates two things; `length` measures one** (#269, Solvent 0.90).  A path's
+  length is `length(d) g` for every kind of path: `prefix_op` settles `("length", Line)` to
+  `Distance` between the line's own ends (`Written::assemble` expands the one operand to its
+  `p1`/`p2`), and an arc, a spline and a free curve to `ArcLength`, `SplineLength` and
+  `CurveLength` — so a word over `g: path` states `length(L) g` whatever it is given.  The prefix
+  `distance(d) l` is retired: `constraints::retired_prefix` keeps it a prefix word to the grammar
+  (`prefix_word`, so a statement or a chain link written that way still parses, and
+  `builtin_word`, so no definition takes it) and `program::settle` refuses it (E040) naming
+  `length(…)` and not the operand, which in a block's copy is a minted name.  The infix `a distance(d) b` is unchanged.  `tests/refusals.rs` and
+  `tests/tangent_at.rs` (`length_of_any_path`) are the gate.
+
 - **Every constraint is written as a prefix or an infix operator** (Solvent §9.2); `name(args…)`
   is retired.  `radius(25) c`, `p1 distance(80) p2`, `horizontal l`, `fix((0, 0)) p`,
   `a symmetry(l) b` — the word, its one or two operands, and everything else in the parentheses on the word: the

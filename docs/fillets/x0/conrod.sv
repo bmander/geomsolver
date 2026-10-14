@@ -52,8 +52,8 @@ in std.front {
   sm midpoint head
   foot perpendicular axis
   head perpendicular axis
-  distance(2 * hB) foot
-  distance(2 * hS) head
+  length(2 * hB) foot
+  length(2 * hS) head
 }
 
 big_end := solid(face(big), from: -wB / 2, to: wB / 2)

@@ -23,7 +23,7 @@ component Ngon(n: Int, side: Length) {
     (s := line(p)) ->
   }
   // one side sized, and the radius follows — a dimensioned radius would let the sides collapse
-  distance(side) s[0]
+  length(side) s[0]
 }
 
 // the hub and the sides are reached by their names: `five.c`, `five.s[0]`

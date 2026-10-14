@@ -107,7 +107,7 @@ bore := envelope(apex, under: rotor_turn, from: 0deg, to: 1080deg)
 tilt := motion(about: rightward_line)
 in std.front {
 rightward_line := horizontal line(std.origin, hint((1, 0)))
-distance(1mm) rightward_line
+length(1mm) rightward_line
 }
 "));
     let (bore,tilt) = (el.map.ent_named("bore").unwrap().i(),el.map.ent_named("tilt").unwrap().i());

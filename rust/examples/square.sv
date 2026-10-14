@@ -16,6 +16,6 @@ in std.front {
 
   // the loop states everything but a size and a pose: one dimension scales it, and a grounded
   // corner leaves a single freedom — drag any side and the square swings about that corner
-  distance(50) s[0]
+  length(50) s[0]
   fix((0, 0)) s[0].p1
 }

@@ -89,7 +89,7 @@ fn a_twin_is_called_by_its_points_name() {
     let src = format!(
         "{FOLDED}O := point hint((0, 0)) in std.top, G\nfix(x == 0) O\n\
          F := point hint((20, 0)) in std.top, G\n\
-         in G {{\n  base := line(O, F)\n  distance(20) base\n}}\n"
+         in G {{\n  base := line(O, F)\n  length(20) base\n}}\n"
     );
     let e = solved(&src);
     let c = e.sketch.user_constraints().into_iter().find(|c| c.kind == CKind::Distance).unwrap();

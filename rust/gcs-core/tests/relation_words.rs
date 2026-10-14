@@ -109,7 +109,7 @@ a toward(w) b := a level(w) b
 fn a_prefix_word_and_a_word_in_terms_of_another() {
     let e = read("\
 use std
-long(d) l := distance(d) l
+long(d) l := length(d) l
 a above(d) b := b distance(d, along: up) a
 a twice(d) b := a above(d: d * 2) b
 in std.front {

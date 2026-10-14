@@ -283,8 +283,8 @@ impl Written {
         self.given_once()?;
         let mut out: Vec<Option<Arg>> = vec![None; spec.len()];
         let mut ents: Vec<Ref> = self.ops.clone();
-        // `distance line1` is the distance between the line's own ends — the one prefix word
-        // that is sugar for a statement about something else's parts
+        // `length line1` is the distance between the line's own ends — the one prefix word
+        // that is sugar for a statement about something else's parts (#269)
         if kind == CKind::Distance && self.ops.len() == 1 {
             let r = &self.ops[0];
             ents = ["p1", "p2"]

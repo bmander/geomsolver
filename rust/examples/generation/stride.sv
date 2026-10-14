@@ -48,26 +48,26 @@ component Leg(axle: point, pivot: point, theta: Angle, h: Length) {
   knee := point hint((-27, -46))
   rod_j := line(pin, top)
   rod_k := line(pin, knee)
-  distance(j) rod_j
-  distance(k) rod_k
+  length(j) rod_j
+  length(k) rod_k
 
   back := point hint((-75, 8))
   (ub := line(pivot, top)) -> (ue := line(top, back)) -> (ud := line(back, pivot)) -> close
-  distance(b) ub
-  distance(e) ue
-  distance(d) ud
+  length(b) ub
+  length(e) ue
+  length(d) ud
 
   heel := point hint((-59, -28))
   rod_c := line(pivot, knee)
   rod_f := line(back, heel)
-  distance(c) rod_c
-  distance(f) rod_f
+  length(c) rod_c
+  length(f) rod_f
 
   toe := point hint((-43, -92))
   (lg := line(knee, heel)) -> (lh := line(heel, toe)) -> (li := line(toe, knee)) -> close
-  distance(g) lg
-  distance(h) lh
-  distance(i) li
+  length(g) lg
+  length(h) lh
+  length(i) li
 
   ccw(pivot, pin, top)
   cw(pivot, pin, knee)

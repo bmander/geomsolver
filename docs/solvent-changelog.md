@@ -21,6 +21,12 @@ does after `tangent`. A hint over an unknown a call leaves unbound with a seed r
 seed, no longer at zero (§6.4): `std.ConeThrough(ax, q, lean: hint(20deg))` places its apex where a
 20° lean puts it.
 
+**[0.90] `length` measures one thing; `distance` relates two.** A line's length is `length(d)
+l`, the word an arc's, a spline's and a free curve's already were (§9.1), so a word over `g: path`
+states `length(L) g` whatever kind `g` is given. `distance(d) l` on a line, the spelling through
+0.89, is **E040**, naming `length(d) l`; the infix `a distance(d) b` is unchanged, and so is the
+prefix in a chain: `length(d) (l1 := line) -> …`, `cycle N { length(d) line -> angle(a) }`.
+
 **[0.89] A plane's normal is a member.** `P.normal` is the axis along `P.u × P.v` through
 `P.origin`, read wherever an axis is: `l parallel P.normal`, `t perpendicular std.front.normal`,
 `Q := plane(u: P.normal, v: P.u)`, `hint(dir: P.normal)` (§6.7). It adds no freedom and is never

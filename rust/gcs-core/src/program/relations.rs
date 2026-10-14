@@ -51,7 +51,17 @@ pub(crate) fn settle(
                 return Err((w.word.span, m));
             };
             crate::constraints::prefix_op(word, a).ok_or_else(|| {
-                (w.word.span, format!("`{word}` does not apply to {}", a.a()))
+                let m = match crate::constraints::retired_prefix(word, a) {
+                    // a retired spelling (#269), said with the one it became — without the
+                    // operand, which in a block's copy is a name the source never wrote
+                    Some(now) => format!(
+                        "`{word}` relates two things and `{now}` measures one: the {now} of {} \
+                         is written `{now}(…)` before it",
+                        a.a(),
+                    ),
+                    None => format!("`{word}` does not apply to {}", a.a()),
+                };
+                (w.word.span, m)
             })?
         }
         Fixity::Infix => {

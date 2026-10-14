@@ -150,7 +150,7 @@ private bt := point hint((3.8, 1))
 private bd := line(bb, bt)
 bc midpoint bd
 bd parallel spindle
-distance(2mm) bd
+length(2mm) bd
 private bm := arc(center: bc, start: bb, end: bt)
 radius(1mm) bm
 }

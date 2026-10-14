@@ -71,7 +71,7 @@ component Throttle(front: plane, c: point, ref: line, phi: Angle, dims: group) {
     lever_end perpendicular lever
     lever_start equal lever_end
     lever_start perpendicular lever
-    distance(dims.levw) lever_start
+    length(dims.levw) lever_start
     // the hole: half of its section, on one side of the axis it is turned about
     x0 := point hint(at: hole_axes.axes, (-dims.rbar, 0mm))
     x1 := point hint(at: hole_axes.axes, (-dims.rbar, dhole / 2))
@@ -89,7 +89,7 @@ component Throttle(front: plane, c: point, ref: line, phi: Angle, dims: group) {
     entry perpendicular hax
     wall parallel hax
     exit perpendicular hax
-    distance(dhole / 2) entry
+    length(dhole / 2) entry
   }
   // Both placements put c on the front view's vertical datum. The longitudinal
   // plane contains that datum and the barrel axis; projection carries c's height.

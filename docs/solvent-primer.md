@@ -200,7 +200,7 @@ the word:
 ```
 horizontal line1                    point1 level(up) point2
 radius(25) circle1                  point1 distance(80) point2
-distance(6) line1                   point1 symmetry(line1) point2
+length(6) line1                     point1 symmetry(line1) point2
 fix((0, 0)) p1                      l1 angle(30) l2
 fix(r == 25) c                      line1 tangent(side: left) circle1
 length(40) arc1                     l1 angle(l3, l4) l2
@@ -215,7 +215,6 @@ whichever is written first (`l tangent g` is `g tangent l`).
 |---|---|---|
 | `coincident` | infix | two points; a point to a line, circle, arc, spline or curve; in space, a point, line or axis to a plane, a point or line to an axis, two axes; a point to a set (1.13) |
 | `distance` | infix | two points (length; with `along:`, an **ordinate**: signed from the first to the second along an axis, a line, or a view's word `x`/`y`/`right`/`left`/`up`/`down`); a point and a line, or two lines (a magnitude, `side:` picks the side); two concentric circles or arcs; a point and a plane (`along: u`/`v`/`n`); two planes (along the first's normal) |
-| `distance` | prefix | a line: its length |
 | `tangent` | infix | line–circle/arc (`at: p1`/`p2` for tangency at that end; `side:` the centre's side); circle/arc–circle/arc (`external: true/false`); arc–line (`at: start`/`end`); spline or curve–line; any path–line `at:` a point a relation holds on the path (below); a line or set to a set (1.13) |
 | `equal` | infix | two lines (length) or two circles/arcs (radius) |
 | `curvature` | infix | spline or curve and a circle/arc: the osculating circle there |
@@ -223,7 +222,7 @@ whichever is written first (`l tangent g` is `g tangent l`).
 | `level(dir)` | infix | two points with the same ordinate along `dir` (an axis, a line, or `up`/`right`); a point and a plane with `u`/`v`. Write it rather than `distance(0, along: …)`, which is refused |
 | `angle` | infix | two lines, directed (below); in space, an axis and a line or axis, unsigned. `l1 angle(l3, l4) l2` equates two angles |
 | `radius` | prefix | a circle or arc |
-| `length` | prefix | an arc (radius × counter-clockwise sweep); a spline or free curve (its whole length) |
+| `length` | prefix | any path: a line (the distance between its ends); an arc (radius × counter-clockwise sweep); a spline or free curve (its whole length). `distance` relates two things and `length` measures one, so `distance(d) l` on a line is refused, naming `length(d) l` |
 | `symmetry(line)` | infix | two points |
 | `midpoint` | infix | a point and a line |
 | `parallel`, `perpendicular` | infix | two lines; an axis and a line or axis; an axis and a plane; `parallel` two planes |
@@ -468,8 +467,8 @@ in std.front {
   vertical bc
   horizontal cd
   vertical da
-  distance(60) ab
-  distance(40) bc
+  length(60) ab
+  length(40) bc
 
   repeat e in outline as i {
     m := point
@@ -580,7 +579,7 @@ component Bar(layout: group, dims: group) {
     ax := line(layout.origin, tip)
     horizontal ax
   }
-  distance(dims.length) ax
+  length(dims.length) ax
 }
 bar := Bar(layout, dims: sizes)
 
@@ -656,7 +655,7 @@ l1 flush(d) l2 := {                              // parallel, and d apart
 }
 a apart(d) b := {                                // what the body declares, each use makes anew
   private ab := line(a, b)
-  distance(d) ab
+  length(d) ab
 }
 ```
 
@@ -1042,7 +1041,7 @@ inner }`).
 corners rounded — `tooth := { p | p outside inner; p inside outer; p inside back; p outside tip;
 p inside std.Rounded(beyond, above, r: …); p inside std.Rounded(outer, above, r: …) }` — is a
 revolution, and `solid(tooth)` swept under a generating motion cuts a member exactly. A region
-has no tip line for `distance(>= d) tip`: draw the land's ends on the tip, the flanks through
+has no tip line for `length(>= d) tip`: draw the land's ends on the tip, the flanks through
 them, and bound the land between them (`eb distance(>= 0.01mm, along: left) ea`), which picks the
 root as the drawn section's bound did. Where the flanks go through points the drawing already
 places (the hypoid's pitch points, `spiral_bevel/hypoid.sv`), the land has no root to choose and
@@ -1671,7 +1670,7 @@ in std.front {
   cycle 4 {
     (s := line) -> perpendicular equal
   }
-  distance(50) s[0]
+  length(50) s[0]
   fix((0, 0)) s[0].p1
 }
 ```
