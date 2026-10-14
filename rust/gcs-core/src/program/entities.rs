@@ -156,6 +156,24 @@ pub(super) fn build(
         ));
         return None;
     }
+    let kids = children(sk, res, d, st, diags, anon, deferred)?;
+    let idx = make(sk, d, st, &kids, diags, deferred)?;
+    let e = EntRef::new(d.kind, idx);
+    set_class(sk, e, d.class.clone());
+    defer_seeds(sk, d, st, e, deferred);
+    Some(e)
+}
+
+/// Every child a declaration names or mints, in field order, each a point — or `None`, refused.
+fn children(
+    sk: &mut Sketch,
+    res: &Resolver,
+    d: &Decl,
+    st: &Stmt,
+    diags: &mut Vec<Diag>,
+    anon: &mut Vec<(String, EntRef)>,
+    deferred: &mut Vec<Deferred>,
+) -> Option<Vec<usize>> {
     // every child a declaration names, flattened in field order and checked to be a Point —
     // which every other child of every other kind is, and which is what an alias class must
     // agree about.  A slot may hold a *seed* instead of a name, and a declaration may write no
@@ -305,6 +323,19 @@ pub(super) fn build(
             return None;
         }
     }
+    Some(kids)
+}
+
+/// The entity a declaration of a point-built kind makes over its children, its index in its
+/// kind's list — or `None`: a kind built by a later phase, or refused.
+fn make(
+    sk: &mut Sketch,
+    d: &Decl,
+    st: &Stmt,
+    kids: &[usize],
+    diags: &mut Vec<Diag>,
+    deferred: &mut Vec<Deferred>,
+) -> Option<usize> {
     let seed = |i: usize| d.seed.get(i).copied().unwrap_or(0.0);
     // what a reader is shown: the declaration's own name, or what the drawing calls it where
     // the source named nothing — a scalar carries this into every list of parameters
@@ -379,7 +410,7 @@ pub(super) fn build(
                 ));
                 return None;
             }
-            match sk.spline_weighted(&kids, d.knots.clone(), d.weights.clone()) {
+            match sk.spline_weighted(kids, d.knots.clone(), d.weights.clone()) {
                 Some(si) => si,
                 None => {
                     let message = if d.weights.as_ref().is_some_and(|w| !curve::weights_valid(w, kids.len())) {
@@ -414,10 +445,13 @@ pub(super) fn build(
         EntKind::Curve => unreachable!("a curve is built before this walk"),
         EntKind::Plane => unreachable!("built by `build_plane`"),
     };
-    let e = EntRef::new(d.kind, idx);
-    set_class(sk, e, d.class.clone());
-    // the seeds this declaration wrote over geometry, settled once everything is built: a
-    // point's place, and any scalar's text that read another entity's
+    Some(idx)
+}
+
+/// The seeds a declaration wrote over geometry, settled once everything is built: a point's
+/// place, and any scalar's text that read another entity's.
+fn defer_seeds(sk: &Sketch, d: &Decl, st: &Stmt, e: EntRef, deferred: &mut Vec<Deferred>) {
+    let idx = e.i();
     if let Some(at) = &d.seed_at {
         deferred.push(Deferred::At {
             point: idx,
@@ -442,7 +476,6 @@ pub(super) fn build(
             });
         }
     }
-    Some(e)
 }
 
 /// A plane: two axes — or drawn lines, each given a hidden axis parallel to it — and an origin of
@@ -470,99 +503,7 @@ fn build_plane(
     let mut axes = [0usize; 2];
     let mut minted: Vec<(&str, usize)> = Vec::new();
     for (k, key) in ["u", "v"].iter().enumerate() {
-        let r = match d.children.get(k).map(|g| g.as_slice()) {
-            Some([Kid::Ref(r)]) => r,
-            // a slot left out is an axis of the plane's own, free: `p := plane` is an origin and
-            // two directions, seeded as the front's unless a `hint((, , ))` in the slot says
-            // which way it starts
-            None | Some([]) | Some([Kid::Hint(_)]) => {
-                let seed = match d.children.get(k).and_then(|g| g.first()) {
-                    Some(Kid::Hint(s)) => Some(s),
-                    _ => None,
-                };
-                let dir = match seed {
-                    // a direction read off geometry is read once everything has its seed; until
-                    // then the axis starts as an unseeded one does
-                    Some(s) if s.dir.is_some() => if k == 0 { [1.0, 0.0, 0.0] } else { [0.0, 0.0, 1.0] },
-                    // what an expression comes to is settled later, as a named axis's is
-                    Some(s) if s.v.iter().any(|&x| x != 0.0) || s.text.iter().any(|t| t.is_some()) => s.v,
-                    Some(s) => {
-                        fail(diags, s.span, format!(
-                            "a plane's `{key}` seeds an axis's direction, and one of no length \
-                             points nowhere"
-                        ));
-                        return None;
-                    }
-                    None if k == 0 => [1.0, 0.0, 0.0],
-                    None => [0.0, 0.0, 1.0],
-                };
-                axes[k] = sk.axis(dir, &format!("{show}.{key}"));
-                if let Some(dir) = seed.and_then(|s| s.dir.as_ref()) {
-                    deferred.push(Deferred::Dir {
-                        axis: axes[k],
-                        dir: dir.clone(),
-                        names: d.seed_names.clone(),
-                        span: seed.map_or(st.span, |s| s.span),
-                        stmt: st.id,
-                    });
-                }
-                for (j, t) in seed.iter().flat_map(|s| s.text.iter().enumerate()) {
-                    let (Some(t), Some(s)) = (t, seed) else { continue };
-                    deferred.push(Deferred::Text {
-                        param: sk.axes[axes[k]].d[j],
-                        text: t.clone(),
-                        names: d.seed_names.clone(),
-                        span: s.spans[j],
-                        stmt: st.id,
-                    });
-                }
-                minted.push((key, axes[k]));
-                continue;
-            }
-            Some(_) => {
-                fail(diags, st.span, format!(
-                    "a plane's `{key}` is an axis or a line, named: `plane(u: a1, v: a2)`, or an \
-                     axis of its own, left out or seeded: `plane(u: hint(dir: (0, 1, 0)))`"
-                ));
-                return None;
-            }
-        };
-        let Some(e) = res.lookup(r) else {
-            diags.push(Diag::within(
-                Code::E101,
-                r.span,
-                st.id,
-                format!("no such entity: `{}`", r.root.text),
-            ));
-            return None;
-        };
-        let e = match follow_building(sk, res, e, r) {
-            Ok(e) => e,
-            Err(msg) => {
-                diags.push(Diag::within(Code::E040, r.span, st.id, msg));
-                return None;
-            }
-        };
-        axes[k] = match e.kind {
-            EntKind::Axis => e.i(),
-            // a drawn line is an axis from its start toward its end: a hidden one, held parallel
-            // to it once its points stand somewhere — minted by this statement as a left-out
-            // slot's is, so recorded with it, or `reconcile` reads it as one a gesture drew
-            EntKind::Line => {
-                let axis = sk.axis([1.0, 0.0, 0.0], &format!("{show}.{key}"));
-                deferred.push(Deferred::Along { axis, line: e.i() });
-                minted.push((key, axis));
-                axis
-            }
-            other => {
-                fail(diags, r.span, format!(
-                    "`{}` is {}, and a plane's `{key}` is an axis or a line",
-                    r.root.text,
-                    other.a()
-                ));
-                return None;
-            }
-        };
+        axes[k] = plane_axis(sk, res, d, st, k, key, &show, diags, &mut minted, deferred)?;
     }
     let wrote = |i: usize| d.seed_explicit.get(i).copied().unwrap_or(false);
     let o = [0, 1, 2].map(|i| if wrote(i) { d.seed.get(i).copied().unwrap_or(0.0) } else { 0.0 });
@@ -585,6 +526,120 @@ fn build_plane(
     let e = EntRef::plane(pi);
     set_class(sk, e, d.class.clone());
     Some(e)
+}
+
+/// A plane's slot `k`, `key` (`u`, `v`): the axis it is — named, a hidden one held along a drawn
+/// line, or one of the plane's own, free, seeded where the slot says (`minted` takes each axis the
+/// statement made) — or `None`, refused.
+#[allow(clippy::too_many_arguments)]
+fn plane_axis<'k>(
+    sk: &mut Sketch,
+    res: &Resolver,
+    d: &Decl,
+    st: &Stmt,
+    k: usize,
+    key: &'k str,
+    show: &str,
+    diags: &mut Vec<Diag>,
+    minted: &mut Vec<(&'k str, usize)>,
+    deferred: &mut Vec<Deferred>,
+) -> Option<usize> {
+    let fail = |diags: &mut Vec<Diag>, span: Span, message: String| {
+        diags.push(Diag::within(Code::E103, span, st.id, message));
+    };
+    let r = match d.children.get(k).map(|g| g.as_slice()) {
+        Some([Kid::Ref(r)]) => r,
+        // a slot left out is an axis of the plane's own, free: `p := plane` is an origin and
+        // two directions, seeded as the front's unless a `hint((, , ))` in the slot says
+        // which way it starts
+        None | Some([]) | Some([Kid::Hint(_)]) => {
+            let seed = match d.children.get(k).and_then(|g| g.first()) {
+                Some(Kid::Hint(s)) => Some(s),
+                _ => None,
+            };
+            let dir = match seed {
+                // a direction read off geometry is read once everything has its seed; until
+                // then the axis starts as an unseeded one does
+                Some(s) if s.dir.is_some() => if k == 0 { [1.0, 0.0, 0.0] } else { [0.0, 0.0, 1.0] },
+                // what an expression comes to is settled later, as a named axis's is
+                Some(s) if s.v.iter().any(|&x| x != 0.0) || s.text.iter().any(|t| t.is_some()) => s.v,
+                Some(s) => {
+                    fail(diags, s.span, format!(
+                        "a plane's `{key}` seeds an axis's direction, and one of no length \
+                         points nowhere"
+                    ));
+                    return None;
+                }
+                None if k == 0 => [1.0, 0.0, 0.0],
+                None => [0.0, 0.0, 1.0],
+            };
+            let axis = sk.axis(dir, &format!("{show}.{key}"));
+            if let Some(dir) = seed.and_then(|s| s.dir.as_ref()) {
+                deferred.push(Deferred::Dir {
+                    axis,
+                    dir: dir.clone(),
+                    names: d.seed_names.clone(),
+                    span: seed.map_or(st.span, |s| s.span),
+                    stmt: st.id,
+                });
+            }
+            for (j, t) in seed.iter().flat_map(|s| s.text.iter().enumerate()) {
+                let (Some(t), Some(s)) = (t, seed) else { continue };
+                deferred.push(Deferred::Text {
+                    param: sk.axes[axis].d[j],
+                    text: t.clone(),
+                    names: d.seed_names.clone(),
+                    span: s.spans[j],
+                    stmt: st.id,
+                });
+            }
+            minted.push((key, axis));
+            return Some(axis);
+        }
+        Some(_) => {
+            fail(diags, st.span, format!(
+                "a plane's `{key}` is an axis or a line, named: `plane(u: a1, v: a2)`, or an \
+                 axis of its own, left out or seeded: `plane(u: hint(dir: (0, 1, 0)))`"
+            ));
+            return None;
+        }
+    };
+    let Some(e) = res.lookup(r) else {
+        diags.push(Diag::within(
+            Code::E101,
+            r.span,
+            st.id,
+            format!("no such entity: `{}`", r.root.text),
+        ));
+        return None;
+    };
+    let e = match follow_building(sk, res, e, r) {
+        Ok(e) => e,
+        Err(msg) => {
+            diags.push(Diag::within(Code::E040, r.span, st.id, msg));
+            return None;
+        }
+    };
+    Some(match e.kind {
+        EntKind::Axis => e.i(),
+        // a drawn line is an axis from its start toward its end: a hidden one, held parallel
+        // to it once its points stand somewhere — minted by this statement as a left-out
+        // slot's is, so recorded with it, or `reconcile` reads it as one a gesture drew
+        EntKind::Line => {
+            let axis = sk.axis([1.0, 0.0, 0.0], &format!("{show}.{key}"));
+            deferred.push(Deferred::Along { axis, line: e.i() });
+            minted.push((key, axis));
+            axis
+        }
+        other => {
+            fail(diags, r.span, format!(
+                "`{}` is {}, and a plane's `{key}` is an axis or a line",
+                r.root.text,
+                other.a()
+            ));
+            return None;
+        }
+    })
 }
 
 /// **Points in space** (`docs/planes-plan.md`): every point no `in` reached — no membership once

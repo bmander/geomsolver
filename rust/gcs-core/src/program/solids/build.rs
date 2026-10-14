@@ -1,5 +1,6 @@
 //! Lower a resolved solid declaration into its typed solid definition.
 use super::*;
+use crate::syntax::Sweep;
 
 /// **A solid is a face swept, or a term over other solids** (§6.9).
 pub(super) fn build_solid(
@@ -11,6 +12,115 @@ pub(super) fn build_solid(
     diags: &mut Vec<Diag>,
 ) -> Option<usize> {
     let kids = d.children.first().map(Vec::as_slice).unwrap_or(&[]);
+    let ops = operands(sk, res, d, kids, st, diags)?;
+    let mut say = |code: Code, span: Span, m: String| {
+        diags.push(Diag::within(code, span, st.id, m));
+    };
+    let sweep = d.sweep.as_ref().unwrap_or(&Sweep::Body);
+    // every number a solid carries is settled here and is never an unknown (`Extent`)
+    let units = sk.units;
+    let ext = |a: &crate::syntax::Arg, what: &str, dim: crate::units::Dim| extent(units, a, what, dim);
+    // a prism's draft (#245): an angle, leaning its sides less than square to the face
+    let draft = match sweep.draft().map(|a| ext(a, "draft", crate::units::Dim::ANGLE)) {
+        None => None,
+        Some(Err(m)) => { say(Code::E103, st.span, m); return None; }
+        Some(Ok(e)) if e.value.abs() >= 90.0 => {
+            say(Code::E080, st.span, format!("a draft of `{}` leans a side flat: a draft is less \
+                                              than a right angle", e.text));
+            return None;
+        }
+        Some(Ok(e)) => (e.value != 0.0).then(|| Extent { text: e.text, value: e.value.to_radians() }),
+    };
+    let def = match sweep {
+        // a region: the bounds its set put on the probe, gathered as they were stated (§6.21)
+        Sweep::Region { probe } => region(sk, res, probe, st, probes, &mut say)?,
+        Sweep::Placed { .. } | Sweep::Swept { .. } | Sweep::Rolled { .. } => {
+            under_motion(sk, res, sweep, &ops, st, &mut say)?
+        }
+        Sweep::Along { guide } => {
+            if !(1..=2).contains(&ops.len()) || ops.iter().any(|e| e.kind != EntKind::Face) {
+                say(Code::E080, st.span, "`along:` requires one start face and an optional end face".into());
+                return None;
+            }
+            let Some(g) = res.entity(sk, guide) else {
+                say(Code::E101, guide.span, "no such guide geometry".into());
+                return None;
+            };
+            if !matches!(g.kind, EntKind::Line | EntKind::Arc) {
+                say(Code::E081, guide.span, "`along:` requires a directed line or circular arc".into());
+                return None;
+            }
+            SolidDef::Loft { face: ops[0].idx, end: ops.get(1).map(|e| e.idx), guide: g }
+        }
+        Sweep::Through { body } => {
+            let face = one_face(&ops, st, &mut say)?;
+            let Some(target) = res.lookup(body) else {
+                say(Code::E101, body.span, format!("no such entity: `{}`", body.root.text));
+                return None;
+            };
+            if target.kind != EntKind::Solid {
+                say(Code::E080, body.span, "`through:` requires a solid target".into());
+                return None;
+            }
+            SolidDef::Through { face, body: target.idx }
+        }
+        Sweep::Depth { depth, .. } => {
+            let face = one_face(&ops, st, &mut say)?;
+            let d = match ext(depth, "depth", crate::units::Dim::LENGTH) {
+                Ok(d) => d,
+                Err(m) => { say(Code::E103, st.span, m); return None; }
+            };
+            if d.value <= 0.0 {
+                say(Code::E080, st.span,
+                    "depth is a positive magnitude; use signed `from:` / `to:` ordinates for direction".into());
+                return None;
+            }
+            SolidDef::Prism {
+                face,
+                from: Extent { text: format!("-({})", d.text), value: -d.value },
+                to: Extent::at(0.0),
+                draft,
+            }
+        }
+        Sweep::Prism { from, to, .. } => {
+            let Some(face) = one_face(&ops, st, &mut say) else { return None };
+            let (a, b) = match (
+                ext(from, "from", crate::units::Dim::LENGTH),
+                ext(to, "to", crate::units::Dim::LENGTH),
+            ) {
+                (Ok(a), Ok(b)) => (a, b),
+                (Err(m), _) | (_, Err(m)) => {
+                    say(Code::E103, st.span, m);
+                    return None;
+                }
+            };
+            if (a.value - b.value).abs() <= 0.0 {
+                say(Code::E080, st.span, "a prism swept nowhere is no solid".into());
+                return None;
+            }
+            SolidDef::Prism { face, from: a, to: b, draft }
+        }
+        Sweep::Revolve { axis, sweep, sense } => {
+            let face = one_face(&ops, st, &mut say)?;
+            revolve(sk, res, face, (axis, sweep.as_ref(), *sense), st, &mut say)?
+        }
+        Sweep::Body => body(&ops, kids, st, &mut say)?,
+    };
+    let i = sk.solid(def, &d.name.key().text);
+    sk.solids[i].class = d.class.clone();
+    Some(i)
+}
+
+/// What a solid is written over, resolved: faces (one written in place built here) or solids —
+/// or `None`, refused.
+fn operands(
+    sk: &mut Sketch,
+    res: &Resolver,
+    d: &Decl,
+    kids: &[Kid],
+    st: &Stmt,
+    diags: &mut Vec<Diag>,
+) -> Option<Vec<EntRef>> {
     let mut ops: Vec<EntRef> = Vec::new();
     for k in kids {
         let e = match k {
@@ -64,262 +174,218 @@ pub(super) fn build_solid(
         }
         ops.push(e);
     }
-    let mut say = |code: Code, span: Span, m: String| {
-        diags.push(Diag::within(code, span, st.id, m));
+    Some(ops)
+}
+
+/// A number a solid carries, settled in the document's units and checked to be of `dim`.
+fn extent(
+    units: crate::units::Units, a: &crate::syntax::Arg, what: &str, dim: crate::units::Dim,
+) -> Result<Extent, String> {
+    let crate::syntax::Arg::Dim { text, .. } = a else {
+        return Err(format!("`{what}` is not a number"));
     };
-    let sweep = d.sweep.as_ref().unwrap_or(&crate::syntax::Sweep::Body);
-    // every number a solid carries is settled here and is never an unknown (`Extent`)
-    let ext =
-        |a: &crate::syntax::Arg, what: &str, dim: crate::units::Dim| -> Result<Extent, String> {
-            let crate::syntax::Arg::Dim { text, .. } = a else {
-                return Err(format!("`{what}` is not a number"));
-            };
-            let v = crate::flatten::value_aff(text, &BTreeMap::new(), sk.units)
-                .map_err(|e| format!("`{text}`: {e}"))?;
-            v.dim.require(dim, what)?;
-            if !v.c.is_finite() { return Err(format!("`{what}` must be finite")); }
-            Ok(Extent { text: text.trim().to_string(), value: v.c })
-        };
-    // a prism's draft (#245): an angle, leaning its sides less than square to the face
-    let draft = match sweep.draft().map(|a| ext(a, "draft", crate::units::Dim::ANGLE)) {
-        None => None,
-        Some(Err(m)) => { say(Code::E103, st.span, m); return None; }
-        Some(Ok(e)) if e.value.abs() >= 90.0 => {
-            say(Code::E080, st.span, format!("a draft of `{}` leans a side flat: a draft is less \
-                                              than a right angle", e.text));
-            return None;
-        }
-        Some(Ok(e)) => (e.value != 0.0).then(|| Extent { text: e.text, value: e.value.to_radians() }),
+    let v = crate::flatten::value_aff(text, &BTreeMap::new(), units)
+        .map_err(|e| format!("`{text}`: {e}"))?;
+    v.dim.require(dim, what)?;
+    if !v.c.is_finite() { return Err(format!("`{what}` must be finite")); }
+    Ok(Extent { text: text.trim().to_string(), value: v.c })
+}
+
+/// A region solid: the bounds its set put on the probe, gathered as they were stated (§6.21), and
+/// the probe held.
+fn region(
+    sk: &mut Sketch,
+    res: &Resolver,
+    probe: &crate::syntax::Ref,
+    st: &Stmt,
+    probes: &mut super::super::regions::Probes,
+    say: &mut impl FnMut(Code, Span, String),
+) -> Option<SolidDef> {
+    let Some(p) = res.lookup(probe).filter(|e| e.kind == EntKind::Point) else {
+        let m = "a region solid lost the point its set was applied to";
+        say(Code::E080, st.span, m.into());
+        return None;
     };
-    let def = match sweep {
-        // a region: the bounds its set put on the probe, gathered as they were stated (§6.21)
-        crate::syntax::Sweep::Region { probe } => {
-            let Some(p) = res.lookup(probe).filter(|e| e.kind == EntKind::Point) else {
-                let m = "a region solid lost the point its set was applied to";
-                say(Code::E080, st.span, m.into());
-                return None;
+    let mut terms = probes.terms.remove(&p.i()).unwrap_or_default();
+    if let Err(m) = super::super::regions::fill_sets(sk, &mut terms, probes, p.i(), 0) {
+        say(Code::E040, st.span, m);
+        return None;
+    }
+    if terms.is_empty() {
+        let m = "a solid is a region: a set whose body bounds a number, or a set its \
+                 `inside` reads one of";
+        say(Code::E080, st.span, m.into());
+        return None;
+    }
+    for q in sk.own_params(p) {
+        sk.params[q as usize].fixed = true;
+    }
+    Some(SolidDef::Region { probe: p.idx, terms })
+}
+
+/// A solid under a named motion: placed at one pose (`at:`), swept over an interval, or rolled
+/// through a body's material (#271, found after the solve).
+fn under_motion(
+    sk: &Sketch,
+    res: &Resolver,
+    sweep: &Sweep,
+    ops: &[EntRef],
+    st: &Stmt,
+    say: &mut impl FnMut(Code, Span, String),
+) -> Option<SolidDef> {
+    let (Sweep::Placed { motion, .. } | Sweep::Swept { motion, .. } | Sweep::Rolled { motion, .. }) =
+        sweep else { unreachable!() };
+    if ops.len() != 1 || ops[0].kind != EntKind::Solid {
+        say(Code::E080,st.span,"a named motion needs one source solid".into());
+        return None;
+    }
+    let found = res.lookup(motion).and_then(|e|
+        super::super::resolve::follow_building(sk,res,e,motion).ok());
+    let Some(m) = found.filter(|e| e.kind == EntKind::Motion) else {
+        say(Code::E080,motion.span,"`under:` requires a named motion".into());
+        return None;
+    };
+    let angle = |a,what| extent(sk.units,a,what,crate::units::Dim::ANGLE)
+        .map(|e| Extent {text:e.text,value:e.value.to_radians()});
+    Some(match sweep {
+        Sweep::Placed {at,..} => {
+            let at = match angle(at,"at") {
+                Ok(at) => at,
+                Err(message) => { say(Code::E103,st.span,message); return None; }
             };
-            let mut terms = probes.terms.remove(&p.i()).unwrap_or_default();
-            if let Err(m) = super::super::regions::fill_sets(sk, &mut terms, probes, p.i(), 0) {
-                say(Code::E040, st.span, m);
-                return None;
-            }
-            if terms.is_empty() {
-                let m = "a solid is a region: a set whose body bounds a number, or a set its \
-                         `inside` reads one of";
-                say(Code::E080, st.span, m.into());
-                return None;
-            }
-            for q in sk.own_params(p) {
-                sk.params[q as usize].fixed = true;
-            }
-            SolidDef::Region { probe: p.idx, terms }
+            SolidDef::Placed {source:ops[0].idx,motion:m.idx,at}
         }
-        crate::syntax::Sweep::Placed { motion, .. } | crate::syntax::Sweep::Swept { motion, .. }
-            | crate::syntax::Sweep::Rolled { motion, .. } => {
-            if ops.len() != 1 || ops[0].kind != EntKind::Solid {
-                say(Code::E080,st.span,"a named motion needs one source solid".into());
-                return None;
-            }
-            let found = res.lookup(motion).and_then(|e|
-                super::super::resolve::follow_building(sk,res,e,motion).ok());
-            let Some(m) = found.filter(|e| e.kind == EntKind::Motion) else {
-                say(Code::E080,motion.span,"`under:` requires a named motion".into());
-                return None;
+        Sweep::Swept {from,to,..} => {
+            let (from,to) = match (angle(from,"from"),angle(to,"to")) {
+                (Ok(a),Ok(b)) if a.value < b.value => (a,b),
+                (Ok(_),Ok(_)) => {
+                    say(Code::E080,st.span,"a continuous motion sweep needs increasing angular bounds; use `at:` for one pose".into());
+                    return None;
+                }
+                (Err(message),_) | (_,Err(message)) => { say(Code::E103,st.span,message); return None; }
             };
-            let angle = |a,what| ext(a,what,crate::units::Dim::ANGLE)
-                .map(|e| Extent {text:e.text,value:e.value.to_radians()});
-            match sweep {
-                crate::syntax::Sweep::Placed {at,..} => {
-                    let at = match angle(at,"at") {
-                        Ok(at) => at,
-                        Err(message) => { say(Code::E103,st.span,message); return None; }
-                    };
-                    SolidDef::Placed {source:ops[0].idx,motion:m.idx,at}
-                }
-                crate::syntax::Sweep::Swept {from,to,..} => {
-                    let (from,to) = match (angle(from,"from"),angle(to,"to")) {
-                        (Ok(a),Ok(b)) if a.value < b.value => (a,b),
-                        (Ok(_),Ok(_)) => {
-                            say(Code::E080,st.span,"a continuous motion sweep needs increasing angular bounds; use `at:` for one pose".into());
-                            return None;
-                        }
-                        (Err(message),_) | (_,Err(message)) => { say(Code::E103,st.span,message); return None; }
-                    };
-                    SolidDef::Swept {source:ops[0].idx,motion:m.idx,roll:crate::model::Roll::Stated {from,to}}
-                }
-                // the roll through a body's material (#271): found after the solve
-                crate::syntax::Sweep::Rolled {body,..} => {
-                    let Some(target) = res.lookup(body) else {
-                        say(Code::E101, body.span, format!("no such entity: `{}`", body.root.text));
-                        return None;
-                    };
-                    if target.kind != EntKind::Solid {
-                        say(Code::E080, body.span, "`through:` requires a solid to roll through".into());
-                        return None;
-                    }
-                    SolidDef::Swept {source:ops[0].idx,motion:m.idx,roll:crate::model::Roll::Through {body:target.idx}}
-                }
-                _ => unreachable!(),
-            }
+            SolidDef::Swept {source:ops[0].idx,motion:m.idx,roll:crate::model::Roll::Stated {from,to}}
         }
-        crate::syntax::Sweep::Along { guide } => {
-            if !(1..=2).contains(&ops.len()) || ops.iter().any(|e| e.kind != EntKind::Face) {
-                say(Code::E080, st.span, "`along:` requires one start face and an optional end face".into());
-                return None;
-            }
-            let Some(g) = res.entity(sk, guide) else {
-                say(Code::E101, guide.span, "no such guide geometry".into());
-                return None;
-            };
-            if !matches!(g.kind, EntKind::Line | EntKind::Arc) {
-                say(Code::E081, guide.span, "`along:` requires a directed line or circular arc".into());
-                return None;
-            }
-            SolidDef::Loft { face: ops[0].idx, end: ops.get(1).map(|e| e.idx), guide: g }
-        }
-        crate::syntax::Sweep::Through { body } => {
-            let face = one_face(&ops, st, &mut say)?;
+        // the roll through a body's material (#271): found after the solve
+        Sweep::Rolled {body,..} => {
             let Some(target) = res.lookup(body) else {
                 say(Code::E101, body.span, format!("no such entity: `{}`", body.root.text));
                 return None;
             };
             if target.kind != EntKind::Solid {
-                say(Code::E080, body.span, "`through:` requires a solid target".into());
+                say(Code::E080, body.span, "`through:` requires a solid to roll through".into());
                 return None;
             }
-            SolidDef::Through { face, body: target.idx }
+            SolidDef::Swept {source:ops[0].idx,motion:m.idx,roll:crate::model::Roll::Through {body:target.idx}}
         }
-        crate::syntax::Sweep::Depth { depth, .. } => {
-            let face = one_face(&ops, st, &mut say)?;
-            let d = match ext(depth, "depth", crate::units::Dim::LENGTH) {
-                Ok(d) => d,
-                Err(m) => { say(Code::E103, st.span, m); return None; }
-            };
-            if d.value <= 0.0 {
-                say(Code::E080, st.span,
-                    "depth is a positive magnitude; use signed `from:` / `to:` ordinates for direction".into());
-                return None;
-            }
-            SolidDef::Prism {
-                face,
-                from: Extent { text: format!("-({})", d.text), value: -d.value },
-                to: Extent::at(0.0),
-                draft,
-            }
-        }
-        crate::syntax::Sweep::Prism { from, to, .. } => {
-            let Some(face) = one_face(&ops, st, &mut say) else { return None };
-            let (a, b) = match (
-                ext(from, "from", crate::units::Dim::LENGTH),
-                ext(to, "to", crate::units::Dim::LENGTH),
-            ) {
-                (Ok(a), Ok(b)) => (a, b),
-                (Err(m), _) | (_, Err(m)) => {
-                    say(Code::E103, st.span, m);
-                    return None;
-                }
-            };
-            if (a.value - b.value).abs() <= 0.0 {
-                say(Code::E080, st.span, "a prism swept nowhere is no solid".into());
-                return None;
-            }
-            SolidDef::Prism { face, from: a, to: b, draft }
-        }
-        crate::syntax::Sweep::Revolve { axis, sweep, sense } => {
-            let Some(face) = one_face(&ops, st, &mut say) else { return None };
-            let found = res.entity(sk, axis);
-            let Some(ax) = found else {
-                say(Code::E101, axis.span, format!("no such entity: `{}`", axis.root.text));
-                return None;
-            };
-            let fp = sk.faces[face as usize].plane().ok()?;
-            match ax.kind {
-                // **the line lies in the face's own plane**: a line in another view names a
-                // direction this face knows nothing about
-                EntKind::Line => {
-                    for p in [sk.lines[ax.i()].p1, sk.lines[ax.i()].p2] {
-                        if sk.plane_of(p as usize).map(|x| x as u32) != fp {
-                            say(Code::E081, axis.span,
-                                format!("`{}` is not in the face's own plane", axis.root.text));
-                            return None;
-                        }
-                    }
-                }
-                // an axis in space lies in the plane where the plane's own axes say so, or where
-                // what holds both says so now; one the solve moves is read where it is evaluated
-                EntKind::Axis => {
-                    if !axis_may_lie_in(sk, fp, ax.i()) {
-                        say(Code::E081, axis.span,
-                            format!("`{}` does not lie in the face's own plane", axis.root.text));
-                        return None;
-                    }
-                }
-                _ => {
-                    say(Code::E081, axis.span,
-                        format!("a face turns about a line or an axis, and `{}` is {}",
-                            axis.root.text, ax.kind.a()));
-                    return None;
-                }
-            }
-            let turn = match sweep {
-                None => Extent { text: String::new(), value: std::f64::consts::TAU },
-                Some(a) => match ext(a, "sweep", crate::units::Dim::ANGLE) {
-                    Ok(e) => Extent { text: e.text, value: e.value.to_radians() },
-                    Err(m) => {
-                        say(Code::E103, st.span, m);
-                        return None;
-                    }
-                },
-            };
-            // **a selector is a word, never a sign**: which way it turns is `sense:`
-            if turn.value <= 0.0 {
-                say(
-                    Code::E040,
-                    st.span,
-                    "a sweep is a magnitude: which way it turns is `sense: cw`".into(),
-                );
-                return None;
-            }
-            let sense = match sense {
-                crate::syntax::Sense::Cw => Sense::Cw,
-                crate::syntax::Sense::Ccw => Sense::Ccw,
-            };
-            SolidDef::Revolve { face, axis: ax, sweep: turn, sense }
-        }
-        crate::syntax::Sweep::Body => {
-            let mut solids = Vec::new();
-            for (e, k) in ops.iter().zip(kids) {
-                if e.kind != EntKind::Solid {
-                    let at = match k {
-                        Kid::Ref(r) => r.span,
-                        _ => st.span,
-                    };
-                    say(
-                        Code::E080,
-                        at,
-                        format!("a body is made of solids, and this is {}", e.kind.a()),
-                    );
-                    return None;
-                }
-                solids.push(e.idx);
-            }
-            let Some((stock, on)) = solids.split_first() else {
-                say(
-                    Code::E080,
-                    st.span,
-                    "a solid is a face swept (`from:`/`to:`, `depth:`, `about:`) or a body over \
-                     other solids"
-                        .into(),
-                );
-                return None;
-            };
-            SolidDef::Body { stock: *stock, on: on.to_vec(), through: Vec::new(), bound: Vec::new() }
-        }
+        _ => unreachable!(),
+    })
+}
+
+/// A face turned about a line in its own plane or an axis lying there (§6.9), through a sweep
+/// that is a magnitude, which way a word (`sense:`).
+fn revolve(
+    sk: &Sketch,
+    res: &Resolver,
+    face: u32,
+    (axis, sweep, sense): (&crate::syntax::Ref, Option<&crate::syntax::Arg>, crate::syntax::Sense),
+    st: &Stmt,
+    say: &mut impl FnMut(Code, Span, String),
+) -> Option<SolidDef> {
+    let found = res.entity(sk, axis);
+    let Some(ax) = found else {
+        say(Code::E101, axis.span, format!("no such entity: `{}`", axis.root.text));
+        return None;
     };
-    let i = sk.solid(def, &d.name.key().text);
-    sk.solids[i].class = d.class.clone();
-    Some(i)
+    let fp = sk.faces[face as usize].plane().ok()?;
+    match ax.kind {
+        // **the line lies in the face's own plane**: a line in another view names a
+        // direction this face knows nothing about
+        EntKind::Line => {
+            for p in [sk.lines[ax.i()].p1, sk.lines[ax.i()].p2] {
+                if sk.plane_of(p as usize).map(|x| x as u32) != fp {
+                    say(Code::E081, axis.span,
+                        format!("`{}` is not in the face's own plane", axis.root.text));
+                    return None;
+                }
+            }
+        }
+        // an axis in space lies in the plane where the plane's own axes say so, or where
+        // what holds both says so now; one the solve moves is read where it is evaluated
+        EntKind::Axis => {
+            if !axis_may_lie_in(sk, fp, ax.i()) {
+                say(Code::E081, axis.span,
+                    format!("`{}` does not lie in the face's own plane", axis.root.text));
+                return None;
+            }
+        }
+        _ => {
+            say(Code::E081, axis.span,
+                format!("a face turns about a line or an axis, and `{}` is {}",
+                    axis.root.text, ax.kind.a()));
+            return None;
+        }
+    }
+    let turn = match sweep {
+        None => Extent { text: String::new(), value: std::f64::consts::TAU },
+        Some(a) => match extent(sk.units, a, "sweep", crate::units::Dim::ANGLE) {
+            Ok(e) => Extent { text: e.text, value: e.value.to_radians() },
+            Err(m) => {
+                say(Code::E103, st.span, m);
+                return None;
+            }
+        },
+    };
+    // **a selector is a word, never a sign**: which way it turns is `sense:`
+    if turn.value <= 0.0 {
+        say(
+            Code::E040,
+            st.span,
+            "a sweep is a magnitude: which way it turns is `sense: cw`".into(),
+        );
+        return None;
+    }
+    let sense = match sense {
+        crate::syntax::Sense::Cw => Sense::Cw,
+        crate::syntax::Sense::Ccw => Sense::Ccw,
+    };
+    Some(SolidDef::Revolve { face, axis: ax, sweep: turn, sense })
+}
+
+/// A body over other solids: the first its stock, the rest in `union` with it.
+fn body(
+    ops: &[EntRef],
+    kids: &[Kid],
+    st: &Stmt,
+    say: &mut impl FnMut(Code, Span, String),
+) -> Option<SolidDef> {
+    let mut solids = Vec::new();
+    for (e, k) in ops.iter().zip(kids) {
+        if e.kind != EntKind::Solid {
+            let at = match k {
+                Kid::Ref(r) => r.span,
+                _ => st.span,
+            };
+            say(
+                Code::E080,
+                at,
+                format!("a body is made of solids, and this is {}", e.kind.a()),
+            );
+            return None;
+        }
+        solids.push(e.idx);
+    }
+    let Some((stock, on)) = solids.split_first() else {
+        say(
+            Code::E080,
+            st.span,
+            "a solid is a face swept (`from:`/`to:`, `depth:`, `about:`) or a body over \
+             other solids"
+                .into(),
+        );
+        return None;
+    };
+    Some(SolidDef::Body { stock: *stock, on: on.to_vec(), through: Vec::new(), bound: Vec::new() })
 }
 
 /// The one face a swept solid is written over.

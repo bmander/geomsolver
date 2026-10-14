@@ -32,7 +32,23 @@ pub(super) fn solids(
     if !has {
         return;
     }
-    // -- faces --------------------------------------------------------------
+    faces(sk, res, map, body, skip, diags);
+    build_solids(sk, res, map, body, skip, probes, diags);
+    body_rule(sk, res, map, body, skip, diags);
+    derived(sk, res, map, body, skip, diags);
+    made_of_itself(sk, body, diags);
+}
+
+/// Every face, a chain closed into one included: bound and recorded with the lines it made,
+/// or forgotten with them.
+fn faces(
+    sk: &mut Sketch,
+    res: &mut Resolver,
+    map: &mut SourceMap,
+    body: &[&Stmt],
+    skip: &BTreeSet<StmtId>,
+    diags: &mut Vec<Diag>,
+) {
     for st in body {
         let chain_decl;
         let d = match &st.kind {
@@ -77,7 +93,19 @@ pub(super) fn solids(
             }
         }
     }
-    // -- solids -------------------------------------------------------------
+}
+
+/// Every solid, bound and recorded with the inline section it owns and that section's closing
+/// lines, or forgotten with them.
+fn build_solids(
+    sk: &mut Sketch,
+    res: &mut Resolver,
+    map: &mut SourceMap,
+    body: &[&Stmt],
+    skip: &BTreeSet<StmtId>,
+    probes: &mut super::regions::Probes,
+    diags: &mut Vec<Diag>,
+) {
     for st in body {
         let StmtKind::Decl(d) = &st.kind else { continue };
         if d.kind != EntKind::Solid || skip.contains(&st.id) {
@@ -107,7 +135,17 @@ pub(super) fn solids(
             }
         }
     }
-    // -- the body rule --------------------------------------------------------
+}
+
+/// **The body rule**: `bore cut cyl`, `boss union cyl`, folded into the body they name.
+fn body_rule(
+    sk: &mut Sketch,
+    res: &mut Resolver,
+    map: &mut SourceMap,
+    body: &[&Stmt],
+    skip: &BTreeSet<StmtId>,
+    diags: &mut Vec<Diag>,
+) {
     // `bore cut cyl`, `boss union cyl`, folded into the body they name.  **Both are sets**, so
     // the order this walk meets them in cannot matter, and a document may write them anywhere.
     for st in body {
@@ -172,7 +210,17 @@ pub(super) fn solids(
             diags.push(Diag::within(Code::E041, at, st.id, why));
         }
     }
-    // -- the pictures the document asks for (§6.11) ---------------------------
+}
+
+/// The pictures the document asks for (§6.11): views and sections of a solid in a plane.
+fn derived(
+    sk: &mut Sketch,
+    res: &mut Resolver,
+    map: &mut SourceMap,
+    body: &[&Stmt],
+    skip: &BTreeSet<StmtId>,
+    diags: &mut Vec<Diag>,
+) {
     for st in body {
         let StmtKind::Derived(d) = &st.kind else { continue };
         if skip.contains(&st.id) {
@@ -243,9 +291,11 @@ pub(super) fn solids(
         });
         map.record(st, Made::Gauge);
     }
+}
 
-    // **a body may not be made of itself** — the term walk would not terminate, and the
-    // document says something that is not about any object (§6.9)
+/// **A body may not be made of itself** — the term walk would not terminate, and the
+/// document says something that is not about any object (§6.9).
+fn made_of_itself(sk: &mut Sketch, body: &[&Stmt], diags: &mut Vec<Diag>) {
     for i in 0..sk.solids.len() {
         if crate::solid::reaches(sk, i as u32, i as u32) {
             let name = sk.solids[i].name.clone();
@@ -269,6 +319,7 @@ pub(super) fn solids(
         }
     }
 }
+
 
 /// Unbind a failed declaration and names that resolve to the same entity, so later
 /// references cannot address another entity that inherited its index.
