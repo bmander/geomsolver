@@ -22,7 +22,7 @@ origin; cached in `Caches::faces`); one naming nothing holds nowhere, and a regi
 over two of its own sets (`set` formals, #191; `p inside S(…)` may be written in place).
 A set's `S.surface` is the set with each bound made an equality (`Written::equality`,
 `sets::surface_of`; a grown side's is the offset surface); a distance from a one-bound region's
-surface reads it (`sets::one_bound`); a set measured from is applied under `Scope::held`, so each
+surface reads it (`sets::one_bound`); a set measured from is applied under `PredWalk::held`, so each
 equality its body states is a bound at its number, `in: (d, d)` (`Written::held`, in `apply`),
 and `region_term` reads every probe by one rule. **Lowering** (step 7, `solid::region::meridian::meridian_corner`): a `Rounded`/`Chamfered`
 term whose sets are two of the region's own bounds (same measure, at its level, moved in by the

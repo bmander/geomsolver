@@ -77,7 +77,7 @@ read from `taylor::residual`, exact.  The use's own geometry (its `own_params` a
 0, never saved; `retire_tangents` on `remove`); its intrinsic rows (a lift) are stated as
 derivatives too (`twin_intrinsics`, at `add_dual` and at each later intrinsic add) — never the
 point's own.  **`S1 tangent(at: m) S2`** (`expand_pair`): each body applied under
-`begin_nth` (`#{stmt}.{n}.`), walked `Pass::Made` (declarations only; `Scope::pass` is the walk's `Pass`) then
+`begin_nth` (`#{stmt}.{n}.`), walked `Pass::Made` (declarations only; `PredWalk::pass` is the walk's `Pass`) then
 `Pass::Along` along `Chart(0)` and `Chart(1)` (keys `#{stmt}.t{k}.`, shared by both sets); a
 chart's point tangent is `e_a + s·e_c`, two components held (`set_chart`), `c` the world axis
 the rows' gradient at the seed runs most along (`Sketch::choose_charts`, after phase 3 and at
@@ -142,7 +142,7 @@ the recipe a `revolve`
 `read`, so patches trim by it), facets `region::face_polys` turned by `primitive::revolve`,
 admission `Turns::Line`/`Ball` and `tool()` — its loops `Region::outer_first`, a ball's
 `Region::half_disc`. A set used in a predicate's body is applied under the statement it was
-written as there (`Scope::written`, kept when `apply` stamps the use's over it; `begin_nth`), so
+written as there (`PredWalk::written`, kept when `apply` stamps the use's over it; `begin_nth`), so
 two uses in one body stand apart.
 `tests/region_solids.rs` and `tests/region_blank.rs` (the blank as a region against today's, both
 designs, both members) are the gates.
@@ -242,7 +242,7 @@ the offset grows it, `reach_of` over `Written::lower_side`'s form; only a `dista
 outside|inside` is a set use, `sets::reaches`), applied by `sets::expand_reach` in three representations: a body whose
 one relation is a `distance` gets its number moved (`(r) + #grow`, the grow settled in the use's
 scope and given to the application, `Application::give`); otherwise, at a region solid's probe
-(`Walk::probes` through the alias table), the bound carries it (`OpArg::Bound::grow`, `Written::grow`,
+(`SetState::probes` through the alias table), the bound carries it (`OpArg::Bound::grow`, `Written::grow`,
 read by `constrain` into `RegionTerm::grow`, a `TermNumber`; a grow off a probe is E040) and
 `solid/region.rs::fold` builds the exact offset (`within(t, v, g)` is `{sd ≤ g}`; `narrow`: a cone
 shrunk is its apex moved `-g / sin`, grown is the shifted generator plus an arc about the apex, one
@@ -252,7 +252,7 @@ the body walked `Itself` then along
 `Chart(0)`/`Chart(1)` (keys `{prefix}t{k}.`), with `p distance(#reach) foot` (its derivative is the
 sphere about `p`'s), `p outside S` (the side) and `foot inside S` (so the seed crossing puts the
 foot across the surface from `p`) appended to the body under synthetic ids (`FOOT_STATEMENTS`
-down, so `Scope::written` keeps their uses apart). `region_body` counts no bounded side of
+down, so `PredWalk::written` keeps their uses apart). `region_body` counts no bounded side of
 another set among a body's numbers (a distance from one is `std.Offset`'s). `tests/offsets.rs` is the gate.
 
 **`P tangent(at: m) S`, a plane tangent to a set (#145, #148, 0.56):** `sets::expand_touch`

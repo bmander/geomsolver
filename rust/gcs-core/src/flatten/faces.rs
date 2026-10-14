@@ -96,7 +96,7 @@ impl Walk<'_> {
             let Some(w) = r.form.written().filter(|w| sets::may_use(w)) else { continue };
             for (k, op) in w.ops.iter().enumerate() {
                 if let Some((abs, rest)) = self.look(&alias).raw(op, sc) {
-                    if !rest.is_empty() && !self.sets.contains_key(&abs) {
+                    if !rest.is_empty() && !self.sets.made.contains_key(&abs) {
                         wanted.push((i, k, op.span, abs, rest));
                     }
                 }
@@ -126,22 +126,22 @@ impl Walk<'_> {
                              drawn on the surface it lies on, `{said}.surface`")
                 };
                 self.once(Code::E040, span, m);
-                self.refused.push(span);
+                self.checks.refused.push(span);
                 continue;
             };
             // under a name the source cannot write, so only this statement reads the set: a
             // region's reading of the same face is the face's own (`solid::faces`)
             let key = format!("{abs}.{}{}", face.join("."), Member::Surface.key());
-            if !self.sets.contains_key(&key) {
+            if !self.sets.made.contains_key(&key) {
                 match self.carrier(&table, &alias, &abs, face, span) {
                     Ok(site) => {
                         self.names.insert(key.clone());
-                        self.sets.insert(key, site);
+                        self.sets.made.insert(key, site);
                     }
                     // and a statement over it says nothing more: it was said at the operand
                     Err(m) => {
                         self.once(Code::E040, span, m);
-                        self.refused.push(span);
+                        self.checks.refused.push(span);
                         continue;
                     }
                 }
@@ -277,7 +277,7 @@ impl Walk<'_> {
             });
             let edges = edges.collect();
             let face = public_path(&face_abs);
-            self.face_planes.push(FacePlane { key: plane_key.clone(), edges, span: at, face });
+            self.faces.planes.push(FacePlane { key: plane_key.clone(), edges, span: at, face });
         }
         let p = local("p", at);
         let body = match face.as_str() {
@@ -329,7 +329,7 @@ impl Walk<'_> {
                         let r = relation(word, vec![m.clone(), other], Vec::new(), at);
                         self.out.push((stmt(StmtKind::Relation(r)), path.clone(), scope.clone()));
                     }
-                    self.face_axes.push(FaceAxis {
+                    self.faces.axes.push(FaceAxis {
                         key: m_key.clone(),
                         edge: e_abs.unwrap(),
                         plane: plane_key.clone(),

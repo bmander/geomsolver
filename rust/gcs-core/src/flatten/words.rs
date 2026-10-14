@@ -290,13 +290,14 @@ impl<'a> Walk<'a> {
         };
         // a word reached again inside its own application is defined in terms of itself, said
         // where the outermost use is written
-        let outer = self.applying_words.first().map_or(used.word.span, |(_, s)| *s);
+        let outer = self.words.applying.first().map_or(used.word.span, |(_, s)| *s);
         let Some(k) = self.prog.resolve_word(&used.word.text, used.fixity, scope.module) else {
             let m = self.no_word(used, scope.module);
             self.once(Code::E102, used.word.span, m);
             return true;
         };
-        if self.applying_words.iter().any(|(j, _)| *j == k) || self.applying_words.len() >= MAX_DEPTH {
+        let applying = &self.words.applying;
+        if applying.iter().any(|(j, _)| *j == k) || applying.len() >= MAX_DEPTH {
             let m = format!("`{}` is defined in terms of itself", used.word.text);
             self.once(Code::E003, outer, m);
             return true;
@@ -391,9 +392,9 @@ impl<'a> Walk<'a> {
             through: Vec::new(),
             span: at,
         };
-        self.applying_words.push((k, outer));
+        self.words.applying.push((k, outer));
         self.apply(&u, app, body, &dims, &walks, worded, depth);
-        self.applying_words.pop();
+        self.words.applying.pop();
         true
     }
 
@@ -466,7 +467,7 @@ impl<'a> Walk<'a> {
     /// every statement that writes it.
     fn word_kinds(&mut self, k: usize) -> Option<Rc<BTreeMap<String, Param>>> {
         let def = &self.prog.words[k];
-        self.word_kinds
+        self.words.kinds
             .entry(k)
             .or_insert_with(|| match faults(def).is_empty() {
                 true => param_kinds(def).ok().map(Rc::new),

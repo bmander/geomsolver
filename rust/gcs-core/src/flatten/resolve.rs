@@ -281,7 +281,7 @@ impl Lookup<'_> {
         // `next` and `prev` name the sibling copy, so the rest of the path is read in *its* scope
         let mut prefixes = sc.prefixes.clone();
         if (segs[0] == "next" || segs[0] == "prev") && segs.len() > 1 {
-            let c = sc.cyc.as_ref()?;
+            let c = sc.block.cyc.as_ref()?;
             let k = match segs[0].as_str() {
                 "next" => (c.k + 1) % c.n,
                 _ => (c.k + c.n - 1) % c.n,
@@ -358,7 +358,7 @@ impl Lookup<'_> {
         }
         // `next` and `prev` name a sibling copy, which only a `cycle` has (§12.1)
         let word = r.root.text.as_str();
-        if (word == "next" || word == "prev") && !r.path.is_empty() && sc.cyc.is_none() {
+        if (word == "next" || word == "prev") && !r.path.is_empty() && sc.block.cyc.is_none() {
             return (Code::E020, format!(
                 "`{word}` names the {} copy round a `cycle`, and no `cycle` closes the copies here",
                 if word == "next" { "next" } else { "previous" }
@@ -386,7 +386,7 @@ struct Known<'k> {
     /// Every solid declared, by absolute name: what a member `surface` or `body` is read past.
     solids: &'k BTreeSet<String>,
     failed: &'k BTreeSet<String>,
-    /// The names bound to what a call or a use wrote (`Walk::arguments`).
+    /// The names bound to what a call or a use wrote (`WordState::arguments`).
     arguments: &'k BTreeSet<String>,
     /// Set where a reference names nothing that was said elsewhere, or reads past what an
     /// interface declares: the relation is not stated, so it is not said again.
@@ -423,7 +423,7 @@ fn rewrite(
 ) {
     let Known { look, sets, solids, failed, arguments, unresolved, normals } = known;
     // only a ring's representative is judged by what it reads (E021)
-    let judged = sc.ring.as_ref().is_some_and(|r| !r.turned);
+    let judged = sc.block.ring.as_ref().is_some_and(|r| !r.turned);
     // a member read already (a set's `ends`, `sets::measured_sets`) is kept; `surface` and
     // `body` past a solid are read here, where no name declared under it is written so (#188)
     let member = |r: &Ref, abs: &str, rest: &mut Vec<String>| -> Option<Seg> {
@@ -505,7 +505,7 @@ fn rewrite(
             // the caller's sight, so they may not take it (#45.4)
             let from_instance = d.membership.source() == crate::syntax::Source::Instance;
             if let Some(r) = d.membership.plane_mut() {
-                match (&sc.in_plane, from_instance) {
+                match (&sc.stamps.plane, from_instance) {
                     (Some(ip), true) => {
                         let outer = Scope { owner: ip.owner.clone(), prefixes: ip.prefixes.clone(), closed: ip.closed, ..sc.clone() };
                         match look.find(r, &outer) {
@@ -722,7 +722,7 @@ impl<'a> Walk<'a> {
         // the faces a path names, by the rule a region's reading of them is (`FacePath::matches`)
         let faces_of = |r: &Ref| -> Option<Vec<String>> {
             let (abs, rest) = self.look(alias).find(r, &sc)?;
-            let all = self.faces.get(&abs)?;
+            let all = self.faces.given.get(&abs)?;
             Some(all.iter().filter(|f| f.matches(&rest)).map(|f| format!("{abs}.{}", f.text()))
                 .collect())
         };
@@ -757,24 +757,24 @@ impl<'a> Walk<'a> {
     /// make the instance holding another's chain, so this runs until nothing more resolves; what
     /// is left names no chain, and says so at the reference.
     pub(super) fn expand_pending(&mut self) {
-        if self.pending.is_empty() {
+        if self.aside.blocks.is_empty() {
             return;
         }
-        while !self.pending.is_empty() {
+        while !self.aside.blocks.is_empty() {
             let alias = self.alias_table();
             let found = self
-                .pending
+                .aside.blocks
                 .iter()
                 .enumerate()
                 .find_map(|(i, p)| {
                     self.chain_of(p, &alias).or_else(|| self.face_links(p, &alias)).map(|c| (i, c))
                 });
             let Some((i, (links, closed))) = found else { break };
-            let p = self.pending.remove(i);
+            let p = self.aside.blocks.remove(i);
             self.expand_edges(p, links, closed);
         }
         let alias = self.alias_table();
-        for p in std::mem::take(&mut self.pending) {
+        for p in std::mem::take(&mut self.aside.blocks) {
             self.take_placeholder(&p);
             let StmtKind::Block(b) = &p.st.kind else { continue };
             let Some(over) = &b.over else { continue };
@@ -785,7 +785,7 @@ impl<'a> Walk<'a> {
             if let Some((abs, _)) = self.look(&alias).find(r, &sc)
                 .filter(|(abs, _)| self.solid_named(abs))
             {
-                self.face_repeats.insert(abs);
+                self.faces.repeats.insert(abs);
                 continue;
             }
             match self.look(&alias).find(r, &sc) {
@@ -844,12 +844,12 @@ impl<'a> Walk<'a> {
             return;
         }
         let outer = std::mem::take(&mut self.out);
-        self.held = outer.len();
+        self.aside.held = outer.len();
         let (b, var) = (b.clone(), over.var.clone());
         let edges = Some((&var, links.as_slice()));
         self.copies(&b, &p.st, &p.scope, &p.vals, &p.path, p.depth, links.len(), edges);
         let made = std::mem::replace(&mut self.out, outer);
-        self.held = 0;
+        self.aside.held = 0;
         self.out.splice(at..at, made);
     }
 
@@ -882,7 +882,7 @@ impl<'a> Walk<'a> {
                 None if key.rsplit_once('.').is_some_and(|(group, _)| self.typed.contains_key(group)) => {
                     failed.insert(key);
                 }
-                None if past || self.use_aliases.contains(&key) => {
+                None if past || self.words.use_aliases.contains(&key) => {
                     let (code, why) = self.look(&alias).missing(&r, &sc);
                     self.once(code, r.span, why);
                     failed.insert(key);
@@ -890,7 +890,7 @@ impl<'a> Walk<'a> {
                 None => {}
             }
         }
-        for (key, span) in self.group_fields.clone() {
+        for (key, span) in self.checks.group_fields.clone() {
             if !alias.contains_key(&key) {
                 self.err(Code::E103, span, format!("group member `{key}` names no value or geometry"));
             }
@@ -898,10 +898,10 @@ impl<'a> Walk<'a> {
         // a group formal takes a group or an instance, a set formal a set — a named one or a set
         // family's instance, which is both (`s.r` of a sphere) — so a set handed where members
         // are read is said at the call, not as a missing member far from it (#191)
-        for (key, span, ty) in self.group_bindings.clone() {
+        for (key, span, ty) in self.checks.groups.clone() {
             let target = alias.get(&key);
             if ty == crate::syntax::Ty::Set {
-                if !target.is_some_and(|t| self.sets.contains_key(t)) {
+                if !target.is_some_and(|t| self.sets.made.contains_key(t)) {
                     self.err(Code::E103, span, format!("`{key}` wants a set"));
                 }
             } else if !target.is_some_and(|t| self.group_names.contains(t)) {
@@ -911,16 +911,16 @@ impl<'a> Walk<'a> {
         }
         // what each interface asks of the group or instance its formal was given (§8.1 [0.84]),
         // where it is one: whatever it is not was said just above
-        for (key, span, shape, actual) in std::mem::take(&mut self.interface_bindings) {
+        for (key, span, shape, actual) in std::mem::take(&mut self.checks.interfaces) {
             let Some(target) = alias.get(&key).filter(|t| self.group_names.contains(*t)) else {
                 continue;
             };
             self.conform(&shape, &target.clone(), &actual, &alias, span);
         }
         // what each path formal was given, for the elaborator to judge by its kind (#251)
-        for (key, span, formal) in std::mem::take(&mut self.path_bindings) {
+        for (key, span, formal) in std::mem::take(&mut self.checks.paths) {
             if let Some(target) = alias.get(&key) {
-                self.kinds.push(super::KindAsked {
+                self.checks.kinds.push(super::KindAsked {
                     target: target.clone(),
                     span,
                     ty: crate::syntax::Ty::Path,
@@ -940,8 +940,8 @@ impl<'a> Walk<'a> {
         // traced body reads one as a column of its curve (§6.5); here the expression graph would
         // mint it a free variable of its own, and a drawn instance and its own trace would
         // disagree about what the component says.  Refused, the statement is not emitted
-        let mut refused: Vec<Span> = std::mem::take(&mut self.refused);
-        for (name, span, sc) in std::mem::take(&mut self.dim_reads) {
+        let mut refused: Vec<Span> = std::mem::take(&mut self.checks.refused);
+        for (name, span, sc) in std::mem::take(&mut self.checks.dim_reads) {
             let segs: Vec<&str> = name.split('.').collect();
             let r = Ref {
                 root: Name { text: segs[0].to_string(), span },
@@ -977,7 +977,7 @@ impl<'a> Walk<'a> {
         // each ring's centre, resolved where the block stands — outside every copy — and the
         // block, by the prefix its copies' names start with
         let mut about: BTreeMap<String, String> = BTreeMap::new();
-        for (prefix, r, sc, n, span) in std::mem::take(&mut self.rings) {
+        for (prefix, r, sc, n, span) in std::mem::take(&mut self.rings.written) {
             let Some((abs, rest)) = self.look(&alias).find(&r, &sc) else {
                 let (code, why) = self.look(&alias).missing(&r, &sc);
                 self.err(code, r.span, why);
@@ -987,7 +987,7 @@ impl<'a> Walk<'a> {
             resolved.root = Name { text: abs, span: r.root.span };
             resolved.path = rest.into_iter().map(|f| Seg::Field(Name::new(f))).collect();
             about.insert(prefix.clone(), ref_text(&resolved));
-            self.ring_infos.push(RingInfo { prefix, about: resolved, n: n as u32, span });
+            self.rings.infos.push(RingInfo { prefix, about: resolved, n: n as u32, span });
         }
         // what a ring's representative reads, judged once every declaration is resolved (E021),
         // and every circle's centre, which a circle about a ring's is judged by
@@ -996,7 +996,8 @@ impl<'a> Walk<'a> {
         let out = std::mem::take(&mut self.out);
         // a set drawn as an element is named as the element (#105)
         let sets: BTreeSet<String> =
-            self.sets.keys().filter(|k| !self.lowered.contains_key(*k)).cloned().collect();
+            self.sets.made.keys().filter(|k| !self.sets.lowered.contains_key(*k)).cloned()
+                .collect();
         let solids: BTreeSet<String> = out.iter().filter_map(|(st, ..)| match &st.kind {
             StmtKind::Decl(d) if d.kind == EntKind::Solid => Some(d.name.key().text.clone()),
             _ => None,
@@ -1014,7 +1015,8 @@ impl<'a> Walk<'a> {
             let mut bad: Vec<(Code, Span, String)> = Vec::new();
             let seen = std::cell::RefCell::new(Vec::new());
             let look = self.look(&alias);
-            let (sets, solids, failed, arguments) = (&sets, &solids, &failed, &self.arguments);
+            let arguments = &self.words.arguments;
+            let (sets, solids, failed) = (&sets, &solids, &failed);
             let unresolved = std::cell::Cell::new(false);
             let known = Known { look, sets, solids, failed, arguments, unresolved: &unresolved, normals: &normals };
             rewrite(&mut st.kind, &sc, known, &mut bad, &seen);
@@ -1028,7 +1030,7 @@ impl<'a> Walk<'a> {
                     centres.insert(d.name.key().text.clone(), named);
                 }
             }
-            if let Some(ring) = sc.ring.as_ref().filter(|r| !r.turned) {
+            if let Some(ring) = sc.block.ring.as_ref().filter(|r| !r.turned) {
                 // a seed is no relation: it may start a copy anywhere (Invariant H), and a plane
                 // a point is drawn in is a place, not a position
                 let mut free = Vec::new();
@@ -1083,7 +1085,7 @@ impl<'a> Walk<'a> {
                     }
                 }
             }
-            let turned = sc.ring.as_ref().is_some_and(|r| r.turned);
+            let turned = sc.block.ring.as_ref().is_some_and(|r| r.turned);
             match crate::ir::Statement::lower(st, path) {
                 Ok(mut st) => {
                     st.turned = turned;
@@ -1095,8 +1097,9 @@ impl<'a> Walk<'a> {
         // an instance's entity argument and a use's operand, as written where the call stands:
         // the body reading it reads the name it is bound to, and is not judged again (#226)
         for (key, r, sc) in &self.aliases {
-            let Some(ring) = sc.ring.as_ref().filter(|r| !r.turned) else { continue };
-            if !self.arguments.contains(key) || through_argument(r, sc, &self.arguments) {
+            let Some(ring) = sc.block.ring.as_ref().filter(|r| !r.turned) else { continue };
+            let arguments = &self.words.arguments;
+            if !arguments.contains(key) || through_argument(r, sc, arguments) {
                 continue;
             }
             if let Some((abs, rest)) = self.look(&alias).find(r, sc) {

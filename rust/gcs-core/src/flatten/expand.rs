@@ -10,15 +10,15 @@ impl<'a> Walk<'a> {
     /// there — and a declaration that already says which plane (a clause of its own, on a
     /// plane the component declares) may not be told twice.
     pub(super) fn stamp_scope_plane(&mut self, d: &mut Decl, scope: &Scope) {
-        d.annotations.roles = d.annotations.roles.union(scope.in_roles);
+        d.annotations.roles = d.annotations.roles.union(scope.stamps.roles);
         // the instance's classes, over the declaration's own: what the assembly says of an
         // instance is the later and stronger word, so a phantom's centreline is a phantom's
-        for c in &scope.in_class.0 {
+        for c in &scope.stamps.class.0 {
             if !d.class.has(c) {
                 d.class.0.push(c.clone());
             }
         }
-        let Some(p) = &scope.in_plane else { return };
+        let Some(p) = &scope.stamps.plane else { return };
         if !d.kind.bears_points() {
             return; // a plane's origin is the plane's, and a curve is its expressions
         }
@@ -99,7 +99,7 @@ impl<'a> Walk<'a> {
             // a set's body walked again for a tangency states its relations' derivatives and
             // makes nothing a second time, and one walked for what it makes states nothing (§6.21)
             let relation = matches!(st.kind, StmtKind::Relation(_));
-            match scope.pass {
+            match scope.pred.pass {
                 Pass::Along(_) if !relation => continue,
                 Pass::Made
                     if relation
@@ -123,9 +123,9 @@ impl<'a> Walk<'a> {
                     let abs = format!("{prefix}{}", chain.name.key().text);
                     self.names.insert(abs.clone());
                     if chain.annotations.private { self.private_names.insert(abs.clone(), scope.owner.clone()); }
-                    chain.annotations.roles = chain.annotations.roles.union(scope.in_roles);
-                    chain.name = chain.name.prefixed(abs, scope.copies);
-                    if scope.anonymous {
+                    chain.annotations.roles = chain.annotations.roles.union(scope.stamps.roles);
+                    chain.name = chain.name.prefixed(abs, scope.block.copies);
+                    if scope.stamps.anonymous {
                         chain.name = crate::syntax::DeclName::Key(chain.name.key().clone());
                     }
                     self.emit(StmtKind::Chain(chain), st, scope, path);
@@ -135,8 +135,8 @@ impl<'a> Walk<'a> {
                     self.names.insert(abs.clone());
                     if d.annotations.private { self.private_names.insert(abs.clone(), scope.owner.clone()); }
                     let mut d2 = d.clone();
-                    d2.name = d.name.prefixed(abs, scope.copies);
-                    if scope.anonymous {
+                    d2.name = d.name.prefixed(abs, scope.block.copies);
+                    if scope.stamps.anonymous {
                         d2.name = crate::syntax::DeclName::Key(d2.name.key().clone());
                     }
                     // a computed point is made of expressions over the formals, which is a
@@ -225,10 +225,10 @@ impl<'a> Walk<'a> {
                     };
                     // the instance's own `in`, or the one already in force around it — both at
                     // once is a plane given twice, which one statement may not do (§6.7)
-                    let in_plane = match (inst.membership.plane(), &scope.in_plane) {
+                    let in_plane = match (inst.membership.plane(), &scope.stamps.plane) {
                         (Some(p), Some(_)) => {
                             self.err(Code::E103, p.span, inst.membership.cause().to_string());
-                            scope.in_plane.clone()
+                            scope.stamps.plane.clone()
                         }
                         // written here, in this scope: it resolves against these prefixes
                         (Some(p), None) => {
@@ -240,32 +240,34 @@ impl<'a> Walk<'a> {
                     let sc = Scope {
                         owner: key.clone(),
                         access: scope.access.clone(),
-                        in_roles: scope.in_roles.union(inst.annotations.roles),
+                        typed: scope.typed.clone(),
                         prefixes: vec![key],
                         closed: true,
                         forbidden,
                         groups: comp.formals.iter().filter(|f| matches!(f.ty, Ty::Group | Ty::Set)).map(|f| f.name.text.clone()).collect(),
-                        typed: scope.typed.clone(),
-                        cyc: None,
-                        // a ring's copy reaches into the instances written in it
-                        ring: scope.ring.clone(),
-                        copies: scope.copies,
-                        anonymous: scope.anonymous || inst.name.text.starts_with('#'),
                         vals: sub_vals.clone(),
-                        in_plane,
-                        in_class: {
-                            let mut c = scope.in_class.clone();
-                            c.0.extend(inst.class.0.iter().cloned());
-                            c
-                        },
                         // the sides this instance was given, and no others: a component reads a
                         // side by the name of its own formal, as it reads every other argument
                         sides,
                         // and its body's calls name components from the file it was written in
                         module: comp.module,
-                        pass: Pass::Itself,
-                        written: None,
-                        held: false,
+                        block: InBlock {
+                            cyc: None,
+                            // a ring's copy reaches into the instances written in it
+                            ring: scope.block.ring.clone(),
+                            copies: scope.block.copies,
+                        },
+                        stamps: Stamps {
+                            roles: scope.stamps.roles.union(inst.annotations.roles),
+                            plane: in_plane,
+                            class: {
+                                let mut c = scope.stamps.class.clone();
+                                c.0.extend(inst.class.0.iter().cloned());
+                                c
+                            },
+                            anonymous: scope.stamps.anonymous || inst.name.text.starts_with('#'),
+                        },
+                        pred: PredWalk { pass: Pass::Itself, written: None, held: false },
                     };
                     // a component reached again while it is still being expanded recurses
                     // (§8), ended by a `when` over its numbers: given the numbers it was given
@@ -342,7 +344,7 @@ impl<'a> Walk<'a> {
                         // reached yet (a forward reference, or one inside an instance written
                         // further down): expanded once every name is known, where the block
                         // itself stands in the output until then
-                        self.pending.push(Pending {
+                        self.aside.blocks.push(Pending {
                             st: st.clone(),
                             scope: scope.clone(),
                             vals: vals.clone(),
@@ -496,7 +498,7 @@ impl<'a> Walk<'a> {
         }
         // the enclosing instances' classes, over the statement's own: a ghosted part's
         // dimensions are the ghost's (`display: geometry`) as its lines are
-        for c in &scope.in_class.0 {
+        for c in &scope.stamps.class.0 {
             if !r2.class.has(c) {
                 r2.class.0.push(c.clone());
             }
@@ -654,7 +656,7 @@ impl<'a> Walk<'a> {
         // expanded as the cycle it is besides, so what it makes is still there to be named; and
         // its index, read anywhere in its body, varies nothing (E015)
         let ring = match (b.kind, &b.about) {
-            (BlockKind::Ring, Some(_)) if scope.ring.is_some() => {
+            (BlockKind::Ring, Some(_)) if scope.block.ring.is_some() => {
                 self.once(Code::E022, st.span, "a `ring` inside a `ring` is not supported: turn the \
                     inner one's copies about a centre the outer ring does not move, outside it");
                 None
@@ -666,7 +668,8 @@ impl<'a> Walk<'a> {
                         first turned, so there is nothing for it to vary — reach a neighbour by \
                         `next` or `prev`"));
                 }
-                self.rings.push((block_prefix.clone(), about.clone(), scope.clone(), n, st.span));
+                let written = (block_prefix.clone(), about.clone(), scope.clone(), n, st.span);
+                self.rings.written.push(written);
                 Some(block_prefix.clone())
             }
             _ => None,
@@ -685,7 +688,7 @@ impl<'a> Walk<'a> {
             let sc = Scope {
                 owner: scope.owner.clone(),
                 access: scope.access.clone(),
-                in_roles: scope.in_roles,
+                typed: scope.typed.clone(),
                 prefixes: std::iter::once(format!("{block_prefix}{k}."))
                     .chain(scope.prefixes.iter().cloned())
                     .collect(),
@@ -693,24 +696,25 @@ impl<'a> Walk<'a> {
                 closed: scope.closed,
                 forbidden: scope.forbidden.clone(),
                 groups: scope.groups.clone(),
-                cyc: b.kind.wraps().then(|| Cyc { prefix: block_prefix.clone(), k, n }),
-                ring: match &ring {
-                    Some(prefix) => Some(super::Ring { prefix: prefix.clone(), turned: k > 0 }),
-                    None => scope.ring.clone(),
-                },
-                // the prefix just built is the block's id, so every declaration
-                // below is a copy, however deep and through however many instances
-                copies: true,
-                anonymous: scope.anonymous,
                 vals: sub.clone(),
-                in_plane: scope.in_plane.clone(),
-                in_class: scope.in_class.clone(),
                 sides: scope.sides.clone(),
                 module: scope.module,
-                pass: scope.pass.clone(),
-                written: None,
-                held: scope.held,
-                typed: scope.typed.clone(),
+                block: InBlock {
+                    cyc: b.kind.wraps().then(|| Cyc { prefix: block_prefix.clone(), k, n }),
+                    ring: match &ring {
+                        Some(prefix) => Some(super::Ring { prefix: prefix.clone(), turned: k > 0 }),
+                        None => scope.block.ring.clone(),
+                    },
+                    // the prefix just built is the block's id, so every declaration
+                    // below is a copy, however deep and through however many instances
+                    copies: true,
+                },
+                stamps: scope.stamps.clone(),
+                pred: PredWalk {
+                    pass: scope.pred.pass.clone(),
+                    written: None,
+                    held: scope.pred.held,
+                },
             };
             let mut p2 = path.to_vec();
             p2.push(PathStep::Copy { block: st.id, index: k as u32 });
@@ -727,7 +731,10 @@ impl<'a> Walk<'a> {
                     self.body(&j.stmts, &sc, &mut sub, &p2, depth + 1);
                 } else if k + 1 < n {
                     let sc2 = Scope {
-                        cyc: Some(Cyc { prefix: block_prefix.clone(), k, n }),
+                        block: InBlock {
+                            cyc: Some(Cyc { prefix: block_prefix.clone(), k, n }),
+                            ..sc.block.clone()
+                        },
                         ..sc.clone()
                     };
                     self.body(&j.stmts, &sc2, &mut sub, &p2, depth + 1);
@@ -743,7 +750,7 @@ impl<'a> Walk<'a> {
     /// How many statements the walk has made, counting those held aside while a deferred block
     /// is expanded into a vector of its own (`expand_pending`).
     pub(super) fn emitted(&self) -> usize {
-        self.out.len() + self.held
+        self.out.len() + self.aside.held
     }
 
     /// An expanded statement keeps the id of the statement it came from.
@@ -844,7 +851,7 @@ impl Walk<'_> {
         for i in 0..self.out.len() {
             let (st, _, sc) = &self.out[i];
             let StmtKind::Relation(r) = &st.kind else { continue };
-            if r.claim || r.along.is_some() || r.space || sc.ring.is_some() {
+            if r.claim || r.along.is_some() || r.space || sc.block.ring.is_some() {
                 continue;
             }
             let Some(w) = r.form.written() else { continue };
@@ -907,14 +914,14 @@ impl Walk<'_> {
             }
         };
         let Some((abs, rest)) = found else { return None };
-        if !rest.is_empty() || !self.sets.contains_key(&abs) {
+        if !rest.is_empty() || !self.sets.made.contains_key(&abs) {
             return None;
         }
         let set = set.clone();
         let at = Span::at(d.name.span().lo as usize);
         let key = keys::probe(&d.name.key().text);
         self.names.insert(key.clone());
-        self.probes.push(key.clone());
+        self.sets.probes.push(key.clone());
         let probe = keys::probe(&local);
         d.children.clear();
         d.sweep = Some(Sweep::Region { probe: Ref::new(&probe) });

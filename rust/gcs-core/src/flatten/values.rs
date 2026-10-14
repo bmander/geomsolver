@@ -479,7 +479,7 @@ impl<'a> Walk<'a> {
     }
 
     /// A dimension's text settled in place, and its failure said where it is written.  A name
-    /// nothing declares refuses the statement (`Walk::refused`), so it never reaches the
+    /// nothing declares refuses the statement (`Checks::refused`), so it never reaches the
     /// expression graph to become an unknown of its own making.
     pub(super) fn settle_dim(
         &mut self,
@@ -497,7 +497,7 @@ impl<'a> Walk<'a> {
             }
             Err((code, e)) => {
                 if code == Code::E101 {
-                    self.refused.push(span);
+                    self.checks.refused.push(span);
                 }
                 self.err(code, span, format!("`{text}`: {e}"))
             }
@@ -505,7 +505,7 @@ impl<'a> Walk<'a> {
     }
 
     /// Set aside each dotted name a dimension's text reads that nothing numeric in scope answers
-    /// to, as written, for `resolve` to judge (`Walk::dim_reads`).  Not in a trace, whose
+    /// to, as written, for `resolve` to judge (`Checks::dim_reads`).  Not in a trace, whose
     /// dimensions read the geometry's numbers as columns of the curve (§6.5).
     pub(super) fn note_dim_reads(&mut self, text: &str, span: Span, vals: &BTreeMap<String, Aff>, scope: &Scope) {
         if self.sym.is_some() {
@@ -514,7 +514,7 @@ impl<'a> Walk<'a> {
         let Ok(p) = expr::parse_in(text, self.units) else { return };
         for name in p.body.deps() {
             if name.contains('.') && !vals.contains_key(&name) {
-                self.dim_reads.push((name, span, scope.clone()));
+                self.checks.dim_reads.push((name, span, scope.clone()));
             }
         }
     }
@@ -578,7 +578,7 @@ impl<'a> Walk<'a> {
                         if out_of_reach(bare, vals, scope).is_none()
                             && self.undeclared(bare, vals, scope) =>
                     {
-                        self.refused.push(*span);
+                        self.checks.refused.push(*span);
                         self.err(Code::E101, *span, undefined(bare))
                     }
                     (Err(e), _) => self.err(Code::E103, *span, format!("`{text}`: {e}")),
@@ -781,7 +781,7 @@ impl<'a> Walk<'a> {
         for (name, reference) in references {
             if vals.contains_key(&name) { continue; }
             let abs = format!("{prefix}{name}");
-            self.group_fields.push((abs.clone(), reference.span));
+            self.checks.group_fields.push((abs.clone(), reference.span));
             self.aliases.push((abs, reference, Scope { vals: vals.clone(), ..scope.clone() }));
         }
     }
