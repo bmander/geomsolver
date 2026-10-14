@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.94 — October 2026**
+**Specification, Draft 0.95 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -294,7 +294,7 @@ no one pose to record.
 - Redeclaration of a name within one body is an error (**E001**), whether the two are values, inputs or one of each.
 - Instance members are accessed by dotted paths: `t.lead`, `g.hub.origin` — an unknown an instance left unbound included: `t.w` (**[0.41]** a dotted name nothing made is **E101**, as a bare one is).
 - **Components have closed model scope.** A body reads its formals and its own declarations. It may call visible component definitions and use built-in functions and constants, but cannot capture geometry, parameters or groups from the root, an importing module, or an enclosing component. Pass those dependencies as arguments. This includes `std.front` and the other standard datums.
-- **[0.41]** An undeclared numeric name is **E101**. A component's unknowns are its numeric formals a call leaves unbound, each the instance's own (`t1.w`, `t2.w`); a call may seed one by leaving it unbound with `hint(…)` in its place (`T(a, b, w: hint(60))`). A reference to a known ambient value without an argument is an error, rather than an implicit capture. Inside a repetition, a name declared by the block belongs to each copy; other names resolve in the enclosing component. `next` and `prev` belong to the lexical cycle, and can be passed to a nested component as arguments.
+- **[0.41]** An undeclared numeric name is **E101**. A component's unknowns are its numeric formals a call leaves unbound, each the instance's own (`t1.w`, `t2.w`); a call may seed one by leaving it unbound with `hint(…)` in its place (`T(a, b, w: hint(60))`). **[0.95]** Only a number may be left out: a call that gives no entity, path, group or set for a formal of that type is **E103** at the call, a set family's instance included, which would otherwise say nothing until something was put on it — but for **a point formal drawn in a plane formal**, `center: point in on`, which the instance then owns: a call that leaves it out makes a point of the instance's own, drawn in the plane it gave `on` (whatever plane the instance stands in), named under the instance (`k.center`) and read and held by that name, as if the body began `center := point in on`; `center: hint((x, y))` seeds it at its place in that plane, and a solve writes it back there. Given a point, the formal is that point, as any entity formal is. So `component Circle(on: plane, center: point in on, r: Length) := { p | p coincident on; p distance(r) center }` is called `Circle(std.front, o, r: 25)` or `Circle(std.front, r: 25)`, and both are the circle. `in` names a `plane` formal of the same component (**E103** at the call otherwise) and follows only a `point` formal. A reference to a known ambient value without an argument is an error, rather than an implicit capture. Inside a repetition, a name declared by the block belongs to each copy; other names resolve in the enclosing component. `next` and `prev` belong to the lexical cycle, and can be passed to a nested component as arguments.
 - Inside `repeat`/`cycle`/`ring` blocks, the index binder (`as i`) and the pseudo-instances `next` / `prev` are in scope (§12).
 - There is no shadowing: a block binder that collides with an outer name is an error (**E002**).
 - **[0.17] A name that shadows a built-in is said.** The constants and functions of §3.3 (`pi`, `tau`, `turn`, `sin`, `min`, …) are known to every expression before the document is, so a `param`, a formal or a block binder of one of those names does *not* shadow it: a text carrying the name is substituted and reads the declaration, a number worked out reads the built-in, and the two answers differ silently — `tau := 35deg` passed to a `tau: Angle` formal arrived as a full turn. Each declaration — a value, an input, a formal, a block binder — is a warning at the declaration (**W112**), because the drawing is not wrong, the name is. An implementation MUST say it once per declaration, whether or not the component is ever instantiated.
@@ -558,7 +558,10 @@ descriptive layout draws twice and ties by `project` is one point. **[0.74]** `O
 said of `O` drawn in `P`, is the same statement: `O` drawn in `P` and `G` (above), however many
 components apart the two are written. Said of a plane `O` is already drawn in, it asks nothing
 (**E061**, as before); under a `claim`, in a `ring` (§12.4) and from a set's body (§6.21) it holds
-`O` there by a row, as before. `project` relates two planes by definition, so it reads each
+`O` there by a row, as before. **[0.95]** From a set's body said of a point already drawn in
+the plane (or twinned there), it holds by construction and states nothing: the body is a
+predicate, true of that point, so `m coincident { p | p coincident ball; p coincident
+std.front }` with `m` drawn in the front is `m` on the circle the front cuts from `ball`. `project` relates two planes by definition, so it reads each
 operand in its own plane, never by its twin: `m coincident P` and `O project m`, the layout that
 drew `m` again, say what they said. *Non-normative:* an end a line mints and does not name
 (`l.p1`) is still held on a second plane by a row. A plane named twice is
@@ -2735,7 +2738,7 @@ component      = "component" IDENT "(" [ formals ] ")"
                  ( "{" { statement } "}" | ":=" set_lit ) ;     (* a family of sets, §6.21 [0.49] *)
 set_lit        = "{" IDENT "|" statement { ( ";" | NEWLINE ) statement } "}" ;  (* §6.21 [0.49] *)
 formals        = formal { "," formal } ;
-formal         = IDENT ":" type ;
+formal         = IDENT ":" type [ "in" IDENT ] ; (* [0.95] a point formal's plane *)
 type           = "Int" | "Scalar" | "Length" | "Angle" | "Side"      (* §4.1 [0.17] *)
                | "group"                                             (* §8.1 [0.35] *)
                | "set"                                               (* §4.1, §6.21 [0.71] *)

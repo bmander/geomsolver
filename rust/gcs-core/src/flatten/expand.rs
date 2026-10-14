@@ -390,6 +390,14 @@ impl<'a> Walk<'a> {
             None => Vec::new(),
         };
         self.instantiating.push((comp, sub_vals.clone()));
+        // a point formal drawn in a plane and left out is the instance's own point there, made
+        // by the call (§5 [0.95]) — in its formal's plane, whatever plane the instance is in
+        let owned = self.owned_points(comp, inst, st, vals);
+        if !owned.is_empty() {
+            let mut at_call = sc.clone();
+            at_call.stamps.plane = None;
+            self.body(&owned, &at_call, &mut sub_vals, path, depth + 1);
+        }
         self.body(&comp.body, &sc, &mut sub_vals, &instance_path, depth + 1);
         if !own.is_empty() {
             self.body(&own, &sc, &mut sub_vals, &instance_path, depth + 1);

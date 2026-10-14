@@ -109,6 +109,129 @@ fn a_set_written_in_place_reads_the_names_around_it() {
     assert!((off_line(a, p, sub(q, p)) - 10.0).abs() < 1e-9);
 }
 
+/// A plane met by a body is said of a point drawn in it already: the body is a predicate, true of
+/// that point there, so it states no row — where `m coincident std.front` said directly asks
+/// nothing (E061).  A sphere met with the front plane is the circle the front cuts from it.
+#[test]
+fn a_plane_in_a_body_holds_of_a_point_drawn_in_it() {
+    let m = "m := point hint((10, 35)) in std.front
+";
+    let src = with(&format!("{m}m coincident {{ p | p coincident ball; p coincident std.front }}"));
+    let e = read(&src);
+    let sk = solved(&e);
+    let got = norm(sub(at(&sk, &e, "m"), at(&sk, &e, "c")));
+    assert!((got - 12.0).abs() < 1e-9, "{got}");
+    // one condition, the sphere's: the plane's holds by construction
+    assert_eq!(dof(&with(m)) - dof(&src), 1);
+    // and a family whose body says so, the instance's point drawn in its plane
+    let ring = "component Ring(on: plane, center: point, r: Length) := { p |
+                  p coincident std.Sphere(center, r: r)
+  p coincident on
+}
+";
+    let src = with(&format!("{ring}{m}m coincident Ring(std.front, c, r: 12)"));
+    let e = read(&src);
+    let sk = solved(&e);
+    assert!((norm(sub(at(&sk, &e, "m"), at(&sk, &e, "c"))) - 12.0).abs() < 1e-9);
+    assert_eq!(dof(&with(m)) - dof(&src), 1);
+    // said of the point directly, it is still asked of nothing
+    refused(&with(&format!("{m}m coincident std.front")), "E061", "m is drawn in std.front",
+            "m coincident std.front");
+}
+
+/// A circle as a family whose centre is a point formal drawn in its plane (§5 [0.95]).
+const CIRCLE: &str = "\
+unit mm
+use std
+component Circle(on: plane, center: point in on, r: Length) := { p |
+  p coincident on
+  p distance(r) center
+}
+";
+
+/// A point formal drawn in a plane may be left out of the call: the instance owns a point of its
+/// own there, read and held by its name, and the family is still the circle — given a point, the
+/// formal is that point, as any entity formal is.
+#[test]
+fn a_family_owns_a_point_formal_left_out() {
+    let src = format!("{CIRCLE}side := plane(u: std.z, v: std.y)
+fix(origin == (0, 0, 0)) side
+        k := Circle(std.front, r: 25)
+fix((5, 5)) k.center
+        in std.front {{
+  o := point
+  fix((-30, 0)) o
+}}
+k3 := Circle(std.front, o, r: 8)
+        in side {{
+  k4 := Circle(std.front, r: 4)
+}}
+");
+    let e = read(&src);
+    let sk = solved(&e);
+    let centre = |n: &str| {
+        let k = ent(&e, n);
+        assert_eq!(k.kind, gcs_core::model::EntKind::Circle, "`{n}` is drawn as the circle");
+        sk.circles[k.i()].center as usize
+    };
+    // the instance's own, held by its name and drawn in the plane its formal names
+    assert_eq!(centre("k"), ent(&e, "k.center").i());
+    assert_eq!(sk.point_xy(centre("k")), (5.0, 5.0));
+    // given, the formal is the point given
+    assert_eq!(centre("k3"), ent(&e, "o").i());
+    // in the formal's plane, whatever plane the instance stands in
+    let front = sk.plane_of(ent(&e, "o").i());
+    assert!(front.is_some());
+    assert_eq!(sk.plane_of(centre("k4")), front);
+}
+
+/// A seed the call writes for an owned point, `center: hint((x, y))`, starts it there, and a
+/// solve writes where it went back into that clause, as an unbound number's is.
+#[test]
+fn an_owned_points_seed_is_written_back() {
+    let src = format!("{CIRCLE}in std.front {{
+  q := point
+  fix((40, 10)) q
+  o := point
+          fix((30, 30)) o
+}}
+k := Circle(std.front, center: hint((40, 0)), r: 10)
+        q coincident k
+o distance(20) k.center
+");
+    let e = read(&src);
+    assert_eq!(e.sketch.point_xy(ent(&e, "k.center").i()), (40.0, 0.0));
+    let sk = solved(&e);
+    let (x, y) = sk.point_xy(ent(&e, "k.center").i());
+    let edit = gcs_core::edit::commit_seeds(&e, &sk, &e.program);
+    let written = format!("center: hint(({}, {}))", gcs_core::syntax::num(x),
+                          gcs_core::syntax::num(y));
+    assert!(edit.text.contains(&written), "{}", edit.text);
+    let back = read(&edit.text);
+    let (bx, by) = back.sketch.point_xy(ent(&back, "k.center").i());
+    assert!((bx - x).abs() < 1e-9 && (by - y).abs() < 1e-9);
+}
+
+#[test]
+fn what_an_owned_point_formal_refuses() {
+    refused(&format!("{CIRCLE}k := Circle(std.front, center: hint(5), r: 5)
+"), "E103",
+            "a point's seed is its place in its plane", "center: hint(5)");
+    let on_a_line = "unit mm\nuse std\ncomponent B(on: line, c: point in on) := { p |\n  \
+                     p distance(3) c\n}\nk := B(std.x)\n";
+    refused(on_a_line, "E103", "`c` is drawn in `on`, which is no `plane` formal of `B`",
+            "k := B(std.x)");
+    // only a point is drawn in a plane, and an interface's member is given, never made
+    for (src, said) in [
+        ("component B(on: plane, r: Length in on) := { p | p distance(r) on }\n",
+         "only a `point` formal is drawn `in` a plane"),
+        ("interface I { on: plane, c: point in on }\n", "an interface's member is given"),
+    ] {
+        let (_, errs, _) = gcs_core::library::parse_linked(&format!("unit mm\n{src}"));
+        assert!(errs.iter().any(|e| e.message.contains(said)), "{errs:?}");
+    }
+}
+
 /// A set is found by what its name resolves to, however it is reached: through a group's
 /// member, and with its head written over two lines.
 #[test]
