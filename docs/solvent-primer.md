@@ -1217,7 +1217,12 @@ k := Par(o).p over u in (-2mm, 2mm)
   the plane square to the guide at `s` — `std.OnLine(g, up: up, s: s)` on a line, `std.OnArc` an
   arc, `std.OnSpline` a spline, `std.On` any of a line, an arc, a spline or a traced curve,
   `std.Screwed` and `std.OnHelix` along a screw — then the section drawn `in st.n`, its sizes and
-  turns reading `s`. Its `v` stays along `up`; with `up` the normal of the guide's plane, the frame
+  turns reading `s`. **A law is any expression in `s`** (0.103): `std.Twisted(st.n, twist: 90deg,
+  s: s)` gives axes `tw.axes` turned `twist · s`, `p scaled(du: 10, dv: 5, scale: 0.5, s: s)
+  tw.axes` places a corner shrinking to half, `scaled_radius(r: 8mm, scale: 2, s: s) k` a radius
+  (`use std (scaled, scaled_radius)`); each runs its total linearly, and the word given another
+  fraction runs another law (`s: 3 * s^2 - 2 * s^3` eases it). A `when` cannot read `s` (it is
+  made once); write a law in pieces with `min`, `max` or `abs`. Its `v` stays along `up`; with `up` the normal of the guide's plane, the frame
   turns no more than the guide does. **A named open chain of lines and arcs is one path**:
   `solid(Tube(route, std.z, r: 4mm).f over s in (0, 5))` runs the station over `route`'s
   five links one after the next, link `k` while `s` is in `(k, k + 1)`; a law in `s` reads the

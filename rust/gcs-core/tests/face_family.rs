@@ -117,13 +117,14 @@ fn a_twisted_prism_is_cavalieri_at_any_twist() {
     near(volume(&e, "auger").unwrap(), 16000.0, 1e-9, "three and a half turns");
 }
 
-/// **And under any law**: the turn eased in and out, `twist · (3s² − 2s³)`, is an expression no
-/// unknown of the drawing could be (one free name, affine), and a station holds `s` at a number,
-/// so the law is its body's to say.  The sections are the same squares: 16000 again.
+/// **And under any law**: the turn eased in and out, `twist · (3s² − 2s³)` — `std.Twisted` given
+/// that fraction for `s` — is an expression no unknown of the drawing could be (one free name,
+/// affine), and a station holds `s` at a number, so the law is its body's to say.  The sections
+/// are the same squares: 16000 again.
 #[test]
 fn an_eased_twist_is_cavalieri_too() {
-    let law = "angle(twist * (3 * s^2 - 2 * s^3), sense: ccw)";
-    let eased = TWISTED.replace("angle(twist * s, sense: ccw)", law);
+    let law = "std.Twisted(st.n, twist: twist, s: 3 * s^2 - 2 * s^3)";
+    let eased = TWISTED.replace("std.Twisted(st.n, twist: twist, s: s)", law);
     assert_ne!(eased, TWISTED, "the law is written in");
     let e = family(&eased);
     near(volume(&e, "duct").unwrap(), 16000.0, 1e-9, "an eased quarter turn");

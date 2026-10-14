@@ -11,6 +11,51 @@ Solvent. Rust grows only three kinds of things:
   corner) and build it exactly. They never change what the family says, and the general
   evaluation gates each one.
 
+## L5: twist and scale laws (2026-10-14)
+
+**Verdict: a law is any expression in `s`, and the library's words run a total linearly.**
+`rust/lib/std.sv` gains `std.Twisted(n, twist:, s:)`, axes in the station's plane turned `twist ·
+s`; `p scaled(du:, dv:, scale:, s:) P`, a corner of a section scaled `1 + (scale − 1) · s` about the
+plane's origin; and `scaled_radius(r:, scale:, s:) k`. Any other law is the same word given
+another fraction (`s: 3 * s^2 - 2 * s^3`, `s: sin(180 * s)`), or the section's own dimension. No
+word takes a `law:` (finding 10). `l0/twisted_duct.sv` is written over `std.Twisted` now. Solvent
+0.103; `rust/gcs-core/tests/laws.rs`, off the exact B-rep to 1e-9:
+
+| solid | what runs | closed form (mm³) |
+|---|---|---|
+| a 20 mm square along 40 | `std.Twisted` 0°, 90°, −450°, and 90° eased (`3s² − 2s³`) | 16000 (Cavalieri) |
+| a 10 mm square round a quarter of R30 | untwisted, and a half turn | 1500π (Pappus) |
+| the square scaled to half | untwisted, and −270° | 40/3 · (400 + 100 + 200) |
+| a disc of radius 10 scaled to half | `scaled_radius`, linear | π · 40/3 · 175, a cone |
+| the disc swelling | `scaled_radius` given `sin(180 * s)` | 4000π(1 + 1.2/π + 0.045) |
+| the square scaled to half, eased | `scaled` given `3s² − 2s³` | 16000 · ∫k² ds, Gauss–Legendre |
+| the disc, `radius(r * max(1 - s, 0.7))` | a law in pieces, its kink at `s = 0.3` | 4000π((1 − 0.7³)/3 + 0.7³) |
+
+**A fraction need not be affine.** A number given a formal over `s` was held to an affine form in
+it: given to a component's formal, a nonlinear one was kept as text for its dimensions (L1) but
+also minted the formal as an unknown of the drawing, so the station stood at "not held: 1 degree
+of freedom"; given to a relation word's, it was E103. Both now keep the text and bind the formal
+with it, so `std.Twisted(st.n, twist: 90deg, s: 3 * s^2 - 2 * s^3)` eases the turn.
+
+**A `when` cannot say a law.** It is made once, for the whole run, and the station is one shape
+all along it. A `when` over `s` was already refused, as reading "an unknown of the drawing" by
+its internal name (`#f400.s`); it now says `s` is the family's running number and points at
+`min`, `max` and `abs`, which write a law in pieces.
+
+What L5 found on the way:
+
+- **Two faces of one station.** A face closed by `-> close` mints its own closing edges, named by
+  nothing under the instance, so the station did not count them as its own. Sweeping the
+  instance's *other* face, the family held those edges where the drawing stood, and with them the
+  corners they join; the corners' laws read `s`, so no station past the drawn one solved
+  (`family::part_of` now never holds a parameter of the station's own).
+- **Scale is a word per kind of geometry.** A word cannot hand back a number (a component's body
+  values are not readable through its name), and a station cannot read its own geometry (E103), so
+  no word scales a whole section; `scaled` scales a point and `scaled_radius` a round, each where
+  the section states it.
+
+Handed on: a Frenet word and arc-length laws on a spline stay where L4 left them.
+
 ## L4: paths and frames (2026-10-14)
 
 **Verdict: a station word stands on every guide drawn in a plane, and a chain of lines and arcs

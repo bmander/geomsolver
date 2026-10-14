@@ -111,6 +111,9 @@ pub(crate) fn built(sk: &Sketch, si: usize, unit: f64) -> Result<Rc<Family>, Str
 /// and the drawing's unknowns it was handed, by name, to hold at every station.
 fn part_of(sk: &Sketch, face: u32, station: &[EntRef], prefix: &str) -> (Part, Vec<String>) {
     let inside: BTreeSet<EntRef> = station.iter().copied().collect();
+    // what the station is made of moves with it, though something outside it shares it — a
+    // closing edge another face of the instance made itself, over the station's own corners
+    let own: BTreeSet<u32> = station.iter().flat_map(|&e| sk.entity_params(e)).collect();
     let mut held = sk.clone();
     // a copy made to solve reads none of what the drawing remembers
     held.caches = Default::default();
@@ -119,6 +122,7 @@ fn part_of(sk: &Sketch, face: u32, station: &[EntRef], prefix: &str) -> (Part, V
             continue;
         }
         let mut ps = sk.entity_params(e);
+        ps.retain(|p| !own.contains(p));
         if e.kind == EntKind::Plane {
             let pl = &sk.planes[e.i()];
             ps.extend(pl.o);
