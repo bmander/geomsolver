@@ -302,6 +302,12 @@ pub enum SolidDef {
     /// body applied to a hidden `probe` point, each bound it put there one of `terms`.  Its terms
     /// share one axis, so it is a revolution of one meridian region (`solid::region`).
     Region { probe: u32, terms: Vec<RegionTerm> },
+    /// **A face family** (#243 L1, `solid(I(…).f over s in (a, b))`): the solid the face `face`
+    /// of a station sweeps as the running number `held` (`Sketch::held`) runs from `from` to
+    /// `to`.  The station is drawn once, hidden — `station`, every entity its instance made —
+    /// at the middle of the interval, and `solid::family` solves it again at every other.  Its
+    /// caps are `start` and `end`, its walls the section's edges by their paths in the instance.
+    Family { face: u32, station: Vec<EntRef>, held: String, from: Extent, to: Extent },
 }
 
 impl SolidDef {
@@ -511,7 +517,8 @@ impl SolidE {
         match &self.def {
             SolidDef::Placed { source, .. } | SolidDef::Swept { source, .. } => vec![*source],
             SolidDef::Prism { .. } | SolidDef::Revolve { .. } | SolidDef::Through { .. }
-                | SolidDef::Loft { .. } | SolidDef::Region { .. } => Vec::new(),
+                | SolidDef::Loft { .. } | SolidDef::Region { .. }
+                | SolidDef::Family { .. } => Vec::new(),
             SolidDef::Body { stock, on, through, bound } => {
                 let mut v = vec![*stock];
                 v.extend(on.iter().copied());
@@ -527,7 +534,7 @@ impl SolidE {
     pub fn caps(&self) -> &'static [&'static str] {
         match &self.def {
             SolidDef::Prism { .. } | SolidDef::Through { .. } => &["near", "far"],
-            SolidDef::Loft { .. } => &["start", "end"],
+            SolidDef::Loft { .. } | SolidDef::Family { .. } => &["start", "end"],
             SolidDef::Revolve { sweep, .. } if sweep.value.abs() < std::f64::consts::TAU - 1e-9 => {
                 &["start", "end"]
             }
@@ -539,8 +546,9 @@ impl SolidE {
     pub fn face(&self) -> Option<u32> {
         match &self.def {
             SolidDef::Prism { face, .. } | SolidDef::Revolve { face, .. } | SolidDef::Through { face, .. } | SolidDef::Loft { face, .. } => Some(*face),
+            // a family's face is its station's, at one station of many: no profile to sweep
             SolidDef::Body { .. } | SolidDef::Placed { .. } | SolidDef::Swept { .. }
-                | SolidDef::Region { .. } => None,
+                | SolidDef::Region { .. } | SolidDef::Family { .. } => None,
         }
     }
 }

@@ -70,6 +70,7 @@ mod export_contracts;
 mod expr;
 mod extremal;
 mod extrude;
+mod face_family;
 mod extruded_envelope;
 mod extruded_fields;
 mod face_names;

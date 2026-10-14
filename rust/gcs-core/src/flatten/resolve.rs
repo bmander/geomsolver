@@ -1109,7 +1109,28 @@ impl<'a> Walk<'a> {
             // dotted name a dimension may read that is no declaration's
             let known =
                 || sc.prefixes.iter().any(|p| self.unknowns.contains_key(&format!("{p}{name}")));
+            // a face family's station reads the geometry it was given as a traced body does
+            // (#243 L1): held as that geometry stands at each station, never an unknown — but
+            // not its own, which its solve moves
+            let station = self.held.names.keys()
+                .map(|h| h.rsplit_once('.').map_or("", |(p, _)| p))
+                .find(|p| sc.instance_prefix().starts_with(&format!("{p}.")))
+                .map(|p| format!("{p}."));
             match self.look(alias).raw(&r, &sc) {
+                Some((abs, rest)) if !rest.is_empty() && !self.group_names.contains(&abs)
+                    && station.is_some() =>
+                {
+                    let station = station.unwrap();
+                    if abs.starts_with(&station) {
+                        refused.push(span);
+                        self.err(Code::E103, span, format!(
+                            "`{name}` is a number of the station's own geometry, which its solve \
+                             moves: a station's dimension reads the geometry it was given"));
+                    } else {
+                        let read = format!("{}{name}", sc.instance_prefix());
+                        self.held.reads.push((read, abs, rest));
+                    }
+                }
                 Some((abs, rest)) if !rest.is_empty() && !self.group_names.contains(&abs) => {
                     refused.push(span);
                     self.err(

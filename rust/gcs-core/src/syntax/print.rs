@@ -368,6 +368,15 @@ fn sweep_parts(s: &Sweep) -> Vec<String> {
         }
         // a region's operand is the set the flattener applied to its probe: nothing to print
         Sweep::Body | Sweep::Region { .. } => Vec::new(),
+        // the face family is the whole of the brackets: `Station(g).f over s in (0, 1)`
+        Sweep::Family(f) => {
+            let mut text = String::new();
+            write_instance_call(&mut text, &f.instance);
+            text.push('.');
+            write_ref(&mut text, &f.face);
+            text.push_str(&format!(" over {} in ({}, {})", f.swept.text, f.domain.0, f.domain.1));
+            vec![text]
+        }
         Sweep::Along { guide } => {
             let mut text = String::from("along: ");
             write_ref(&mut text, guide);
@@ -423,7 +432,9 @@ pub(crate) fn decl_args(d: &Decl) -> String {
     let label = labels_children(d.kind) || after_gap;
     let mut parts: Vec<String> = Vec::new();
     let mut child = 0usize;
-    for (name, field) in d.kind.fields() {
+    // a face family's face is the instance's, written in its brackets (`sweep_parts`)
+    let family = matches!(d.sweep, Some(Sweep::Family(_)));
+    for (name, field) in d.kind.fields().iter().filter(|_| !family) {
         match field {
             Field::Child | Field::List => {
                 let kids = d.children.get(child).map(|g| g.as_slice()).unwrap_or_default();

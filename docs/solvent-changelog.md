@@ -4,6 +4,22 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.93] A face that runs: the face family.** `duct := solid(Station(guide, …).f over s in (a,
+b))` is the solid a face of an instance sweeps as one of the instance's numbers runs — §6.5's
+curve (`Involute(…).p over u in (…)`) one dimension up (§6.9). The instance is written in place
+and never drawn; the running formal is left unbound by the call and is **held**, never an
+unknown: the station stands at the middle of the interval, is solved there with the drawing, and
+is solved again at every other station, each warm from its neighbour. Its body reads as a traced
+body's: any expression in `s` (`twist * (3 * s^2 - 2 * s^3)`), and a number of the geometry it
+was given (`rim.r`, `a.x`), never of its own. A station inside the interval must be held — solved,
+no freedom, no equation lost — and keep the station's topology (no loop crossing itself, no edge
+lost or turned over, no hole touching); only an end may lose an edge or the whole section, and is
+read as the limit of the stations closing in (an apex). The swept volume may not cross itself.
+Caps are `start` and `end`; walls are named by the section's edges under the instance
+(`body.sec.ab`). Calling the instance with the running formal bound is **E103**, an interval run
+backwards **E080**, and a drawn station (`solid(st.f over s in …)`) a syntax error until it is
+written (L10). (Issue #243, L1.)
+
 **[0.92] One vocabulary for a view's directions.** A view is a plane (§6.7), so its own
 directions are said as a plane's are: between two points drawn in one view, `along: u` is the
 run and `along: v` the rise — the view's `u` and `v` — as against a plane they are that plane's

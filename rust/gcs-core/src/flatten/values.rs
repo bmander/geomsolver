@@ -286,15 +286,35 @@ fn fold(sub: &str, text: &str, units: Units) -> Result<String, String> {
 ///
 /// At identifier boundaries, so `flank` in `cos(flank)` is replaced and the `flank` inside
 /// `flank_out` is not; and parenthesised, so a negative value does not change what binds to what.
-pub(super) fn substitute(text: &str, vals: &BTreeMap<String, Aff>, units: Units) -> String {
-    substitute_with(text, of_vals(vals, units))
+/// `held` is what each face family's running number is (`Held`, `of_vals_in`).
+pub(super) fn substitute_in(
+    text: &str,
+    vals: &BTreeMap<String, Aff>,
+    units: Units,
+    held: &BTreeMap<String, (crate::units::Dim, f64)>,
+) -> String {
+    substitute_with(text, of_vals_in(vals, units, held))
 }
+
+/// No running number held: what every scope outside a face family's station reads.
+static NO_HELD: BTreeMap<String, (crate::units::Dim, f64)> = BTreeMap::new();
 
 /// What a word stands for in `vals`, as text: a number, parenthesised; a value affine in the
 /// drawing's unknown (a formal left unbound, or a `param` over one) as `(m * name + c)`, or
 /// the bare name when that is all it is.  `tau` and `turn` are `expr::CONSTANTS` now, and an
 /// angle rather than a number that happens to be 360, so they are left for the evaluator.
 fn of_vals(vals: &BTreeMap<String, Aff>, units: Units) -> impl Fn(&str) -> Option<String> + '_ {
+    of_vals_in(vals, units, &NO_HELD)
+}
+
+/// `of_vals`, knowing what each face family's running number is (`Held`): a value affine in one
+/// of another dimension (`24mm − 12mm·s`, `s` a plain number) writes its coefficient with the
+/// dimension the two differ by, since the number reads the name as what it is.
+fn of_vals_in<'a>(
+    vals: &'a BTreeMap<String, Aff>,
+    units: Units,
+    held: &'a BTreeMap<String, (crate::units::Dim, f64)>,
+) -> impl Fn(&str) -> Option<String> + 'a {
     move |w| {
         let a = vals.get(w)?;
         if let Some(v) = a.number() {
@@ -303,6 +323,15 @@ fn of_vals(vals: &BTreeMap<String, Aff>, units: Units) -> impl Fn(&str) -> Optio
             return Some(format!("({})", a.dim.number_text(v, units)));
         }
         let n = a.free.as_ref()?;
+        if let Some(&(dim, _)) = held.get(n) {
+            let k = a.dim.div(dim);
+            let m = if k.is_scalar() { crate::syntax::num(a.m) } else { k.number_text(a.m, units) };
+            return Some(match (a.m == 1.0 && k.is_scalar(), a.c == 0.0) {
+                (true, true) => n.clone(),
+                (_, true) => format!("({m} * {n})"),
+                _ => format!("({m} * {n} + {})", a.dim.number_text(a.c, units)),
+            });
+        }
         // the constant is of the whole's dimension, so it says so as a number does above, or
         // `(-0.25 * m + 0)` adds a plain number to a length once `m: Length` is written in
         Some(if a.m == 1.0 && a.c == 0.0 {
@@ -462,14 +491,26 @@ impl<'a> Walk<'a> {
     /// A text with what `substitute` writes in, and — in the symbolic mode — every name that
     /// came to text (`Sym::texts`, looked up through the scope's prefixes like any other name)
     /// written in as well.  A kept text was itself substituted when it was kept, so one pass
-    /// is the fixed point.  The identity outside the symbolic mode.
+    /// is the fixed point.  The identity outside the symbolic mode, but where a face family's
+    /// station kept texts over its running number (`Held`), which are written in the same way.
     pub(super) fn subst_sym(&self, text: &str, vals: &BTreeMap<String, Aff>, scope: &Scope) -> String {
-        let Some(sym) = &self.sym else { return text.to_string() };
-        substitute_with(text, |w| {
-            of_vals(vals, self.units)(w).or_else(|| {
-                scope.prefixes.iter().find_map(|p| sym.texts.get(&format!("{p}{w}")).cloned())
-            })
-        })
+        if self.sym.is_none() && self.held.texts.is_empty() {
+            return text.to_string();
+        }
+        let of = of_vals_in(vals, self.units, &self.held.names);
+        substitute_with(text, |w| of(w).or_else(|| self.kept(w, scope)))
+    }
+
+    /// Whether a text, once the scope's numbers are written in, reads a face family's running
+    /// number (`Held`).
+    fn reads_held(&self, text: &str, vals: &BTreeMap<String, Aff>, scope: &Scope) -> bool {
+        if self.held.names.is_empty() {
+            return false;
+        }
+        let of = of_vals_in(vals, self.units, &self.held.names);
+        let sub = substitute_with(text, |w| of(w).or_else(|| self.kept(w, scope)));
+        expr::parse_in(&sub, self.units)
+            .is_ok_and(|p| p.body.deps().iter().any(|n| self.held.names.contains_key(n)))
     }
 
     /// A dimension's text, settled: the component's numbers written in, and the names that came
@@ -501,7 +542,8 @@ impl<'a> Walk<'a> {
         // under the instance it is read in; `resolve` judges whether it names anything
         let own = scope.instance_prefix();
         let sub = substitute_with(text, |w| {
-            of_vals(vals, self.units)(w).or_else(|| self.kept(w, scope)).or_else(|| {
+            let of = of_vals_in(vals, self.units, &self.held.names);
+            of(w).or_else(|| self.kept(w, scope)).or_else(|| {
                 let dotted = !own.is_empty() && w.contains('.') && reads.contains(w);
                 dotted.then(|| format!("{own}{w}"))
             })
@@ -511,8 +553,11 @@ impl<'a> Walk<'a> {
 
     /// What a trace kept as text for a name (`Sym::texts`, through the scope's prefixes).
     fn kept(&self, name: &str, scope: &Scope) -> Option<String> {
-        let sym = self.sym.as_ref()?;
-        scope.prefixes.iter().find_map(|p| sym.texts.get(&format!("{p}{name}")).cloned())
+        let texts = match &self.sym {
+            Some(sym) => &sym.texts,
+            None => &self.held.texts,
+        };
+        scope.prefixes.iter().find_map(|p| texts.get(&format!("{p}{name}")).cloned())
     }
 
     /// Whether a bare name is one nothing in scope declares — no number or unknown of the scope,
@@ -576,9 +621,20 @@ impl<'a> Walk<'a> {
         scope: &Scope,
     ) -> bool {
         let t = format!("({})", self.subst_sym(text, vals, scope).trim());
+        // on the sheet, a text over a face family's running number that is not affine in it:
+        // worked out at each station, so kept as text (#243 L1)
+        let held = self.sym.is_none() && self.reads_held(text, vals, scope);
         match self.sym.as_mut() {
             Some(sym) => {
                 sym.texts.insert(abs, t);
+                true
+            }
+            None if held => {
+                let t = substitute_with(text, |w| {
+                    let of = of_vals_in(vals, self.units, &self.held.names);
+                    of(w).or_else(|| self.kept(w, scope))
+                });
+                self.held.texts.insert(abs, format!("({})", t.trim()));
                 true
             }
             None => false,
@@ -606,6 +662,13 @@ impl<'a> Walk<'a> {
                 // contact's parameter *is* that unknown, and every contact pinned to it shares it
                 let unknown =
                     vals.get(bare).filter(|a| a.m == 1.0 && a.c == 0.0).and_then(|a| a.free.clone());
+                // a face family's running number is no unknown and no place: the contact is
+                // pinned to it, at whatever station the family stands (#243 L1)
+                let held = unknown.as_ref().filter(|n| self.held.names.contains_key(*n)).cloned();
+                if let (Some(name), true) = (held, *pinned) {
+                    *a = crate::syntax::Arg::Tie { name, seed: None, span: *span };
+                    return;
+                }
                 match (value_of(text, vals, self.units), unknown) {
                     (Ok(v), _) => *a = crate::syntax::Arg::Seed { value: v, pinned: *pinned },
                     (Err(_), Some(name)) if *pinned => {
@@ -621,6 +684,12 @@ impl<'a> Walk<'a> {
                             Err((code, e)) => self.err(code, *span, format!("`{text}`: {e}")),
                         }
                     }
+                    (Err(_), _) if self.reads_held(text, vals, scope) => self.err(
+                        Code::E103,
+                        *span,
+                        format!("`{text}`: a contact in a face family is pinned to its running \
+                                 number itself, `t == s`, or to a number"),
+                    ),
                     (Err(_), _)
                         if out_of_reach(bare, vals, scope).is_none()
                             && self.undeclared(bare, vals, scope) =>

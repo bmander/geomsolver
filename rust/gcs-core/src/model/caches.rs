@@ -70,6 +70,10 @@ pub struct Caches {
     /// Each body's faces as regions read them (`solid::faces::BodyFaces`, #183), against
     /// `solid::reads`: every round over one body reads the same stratum.
     pub faces: Memo<Result<std::sync::Arc<crate::solid::faces::BodyFaces>, String>>,
+    /// Each face family stepped (`solid::family::built`, #243 L1), against `solid::reads` at the
+    /// unit it was stepped at: validation and the evaluation each ask it, and it is a solve a
+    /// station.
+    pub(crate) family: Memo<Result<Rc<crate::solid::family::Family>, String>>,
 }
 
 impl Caches {
@@ -85,5 +89,6 @@ impl Caches {
         self.canal.clear();
         self.roll.clear();
         self.faces.clear();
+        self.family.clear();
     }
 }

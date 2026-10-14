@@ -287,7 +287,8 @@ fn revolution_turns(sk: &Sketch,id: usize,tolerance: f64) -> Option<Vec<Turns>> 
             for o in sk.solids[id].operands() { turns.extend(revolution_turns(sk,o as usize,tolerance)?); }
             Some(turns)
         }
-        SolidDef::Prism {..} | SolidDef::Through {..} | SolidDef::Loft {..} | SolidDef::Swept {..} => None,
+        SolidDef::Prism {..} | SolidDef::Through {..} | SolidDef::Loft {..} | SolidDef::Swept {..}
+            | SolidDef::Family {..} => None,
     }
 }
 
@@ -353,6 +354,7 @@ fn tool(sk: &Sketch,id: usize) -> Result<(),String> {
         // a prism's sides are extrusions of lines and arcs, its contact set fixed by the motion
         SolidDef::Prism {..} => Ok(()),
         SolidDef::Loft {..} => Err(format!("`{}` is a loft, not a revolution",solid.name)),
+        SolidDef::Family {..} => Err(format!("`{}` is a face family, not a revolution",solid.name)),
         SolidDef::Through {..} => Err(format!("`{}` is a through prism, not a revolution",solid.name)),
         SolidDef::Swept {..} => Err(format!("`{}` is itself a sweep",solid.name)),
     }

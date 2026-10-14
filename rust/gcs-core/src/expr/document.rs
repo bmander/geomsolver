@@ -165,6 +165,13 @@ pub fn evaluate(sk: &mut Sketch) -> Vec<ExprItem> {
     let (rows, rest): (Vec<usize>, Vec<usize>) =
         (0..nodes.len()).partition(|&k| sk.constraints[nodes[k].ci].states_rows());
     let mut items: Vec<Option<ExprItem>> = (0..nodes.len()).map(|_| None).collect();
+    // a face family's running number is a number wherever it is read, at the station the sketch
+    // holds it at (#243 L1): no unknown, and any arithmetic over it is arithmetic — and a number of
+    // the geometry a station reads, read where that geometry stands now
+    sk.refresh_held();
+    let held: BTreeMap<String, Aff> = sk.held.iter()
+        .map(|(n, h)| (n.clone(), Aff::of_dim(sk.params[h.param as usize].value, h.dim)))
+        .collect();
     for k in rows.into_iter().chain(rest) {
         let nd = &nodes[k];
         let mut value = to_user_units(nd.kind, sk.constraints[nd.ci].args[nd.ai].num());
@@ -180,7 +187,7 @@ pub fn evaluate(sk: &mut Sketch) -> Vec<ExprItem> {
                     // steps that fail the same way, so they are one chain and one error arm
                     None => match (|| -> Result<(f64, Aff), ExprError> {
                         // an unknown the source declared is what it was declared
-                        let a = eval_declared(&p.body, &sk.declared)?;
+                        let a = eval(&p.body, &with_declared(&p.body, &held, &sk.declared))?;
                         check_dim(sk, nd, &a, &mut free_dim)?;
                         Ok((write_value(sk, nd, &a, &mut bound)?, a))
                     })() {

@@ -340,8 +340,21 @@ impl Sketch {
         let mut v = self.primitives();
         let normals: Vec<u32> = self.planes.iter().filter_map(|p| p.normal).collect();
         v.retain(|e| e.kind != EntKind::Axis || !normals.contains(&(e.i() as u32)));
+        // a face family's station is written in place and never drawn (#243 L1)
+        let stations = self.stations();
+        v.retain(|e| !stations.contains(e));
         v.extend((0..self.curves.len()).map(|i| EntRef::new(EntKind::Curve, i)));
         v
+    }
+
+    /// Every entity a face family's station is made of (#243 L1): written in place, solved with
+    /// the drawing at the middle of its interval and never drawn — no stroke, no pane and no
+    /// callout.
+    pub fn stations(&self) -> std::collections::BTreeSet<EntRef> {
+        self.solids.iter().flat_map(|s| match &s.def {
+            crate::model::SolidDef::Family { station, .. } => station.as_slice(),
+            _ => &[],
+        }).copied().collect()
     }
 
     /// Bounds of the drawn primitives — what a "fit the view" wants.

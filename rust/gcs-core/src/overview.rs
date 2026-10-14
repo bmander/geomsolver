@@ -331,7 +331,9 @@ pub fn scene3d_of(sk: &Sketch, unit: f64, layer: Layer) -> Vec<Item3> {
     let places = places(sk);
     let least = sk.extent() * LEAST_SIDE;
     // one pane for each place, its first plane's
-    for i in (0..sk.planes.len()).filter(|&i| datums && places[i] == i) {
+    let stations = sk.stations();
+    let paned = |i: usize| places[i] == i && !stations.contains(&EntRef::plane(i));
+    for i in (0..sk.planes.len()).filter(|&i| datums && paned(i)) {
         let of = Some(EntRef::plane(i));
         let basis = sk.basis(i);
         let rect = pane(sk, i, &views, &places, least);
@@ -423,7 +425,9 @@ pub fn scene_with(sk: &Sketch, unit: f64, az: f64, el: f64, shaded: bool) -> Sce
     // the panes of the box, under everything — **one per place, drawn in or not** — each with
     // its own axes at its origin
     let places = places(sk);
-    for i in (0..sk.planes.len()).filter(|&i| places[i] == i) {
+    let stations = sk.stations();
+    let paned = |i: usize| places[i] == i && !stations.contains(&EntRef::plane(i));
+    for i in (0..sk.planes.len()).filter(|&i| paned(i)) {
         let of = Some(EntRef::plane(i));
         let basis = sk.basis(i);
         let rect = pane(sk, i, &views, &places, least);

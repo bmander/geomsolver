@@ -120,7 +120,15 @@ impl<'a> Walk<'a> {
             }
             match &st.kind {
                 StmtKind::Chain(chain) => self.walk_chain(chain, st, scope, path, &prefix),
-                StmtKind::Decl(d) => self.walk_decl(d, st, scope, vals, path, &prefix),
+                StmtKind::Decl(d) => {
+                    // a face family's station is drawn, hidden, before the solid it makes
+                    if let Some(crate::syntax::Sweep::Family(f)) = &d.sweep {
+                        if self.walk_family(f, st, scope, vals, path, depth).is_break() {
+                            return;
+                        }
+                    }
+                    self.walk_decl(d, st, scope, vals, path, &prefix)
+                }
                 StmtKind::Param(_) | StmtKind::Group(_) => {} // worked out above, before the walk
                 StmtKind::Instance(inst) => {
                     if self.walk_instance(inst, st, scope, vals, path, depth).is_break() {
@@ -146,7 +154,8 @@ impl<'a> Walk<'a> {
                 StmtKind::Measured(m) => {
                     let mut m2 = m.clone();
                     for text in m2.lhs.numbers_mut().into_iter().chain(m2.rhs.numbers_mut()) {
-                        *text = super::values::substitute(text, vals, self.units);
+                        let held = &self.held.names;
+                        *text = super::values::substitute_in(text, vals, self.units, held);
                     }
                     self.emit(StmtKind::Measured(m2), st, scope, path);
                 }
@@ -242,6 +251,30 @@ impl<'a> Walk<'a> {
                 }
             }
         }
+        // a face family: its interval worked out, its running number named, and the face it
+        // sweeps read under the instance `walk_family` drew (#243 L1)
+        if let Some(crate::syntax::Sweep::Family(f)) = d2.sweep.as_mut() {
+            let key = format!("{}{}", scope.prefix(), f.instance.name.text);
+            let held = format!("{key}.{}", f.swept.text);
+            match self.held.names.get(&held) {
+                Some(&(_, mid)) => {
+                    let end = |t: &str| value_of(t, vals, self.units);
+                    if let (Ok(a), Ok(b)) = (end(&f.domain.0), end(&f.domain.1)) {
+                        f.domain = (crate::syntax::num(a), crate::syntax::num(b));
+                    }
+                    debug_assert!(mid.is_finite());
+                    f.held = Some(held);
+                    let mut face = f.face.clone();
+                    face.path.insert(0, crate::syntax::Seg::Field(face.root.clone()));
+                    face.root = Name { text: f.instance.name.text.clone(), span: face.span };
+                    if let Some(slot) = d2.children.first_mut() {
+                        *slot = vec![crate::syntax::Kid::Ref(face)];
+                    }
+                }
+                // refused where the instance was walked: no solid
+                None => return,
+            }
+        }
         self.settle_seeds(&mut d2, vals, scope, st.span);
         // and a solid's sweep, which is written in the same little language
         if let Some(sw) = d2.sweep.as_mut() {
@@ -269,6 +302,65 @@ impl<'a> Walk<'a> {
             self.emit(StmtKind::Decl(probe), st, scope, path);
             self.emit(StmtKind::Relation(inside), st, scope, path);
         }
+    }
+
+    /// **A face family's station** (#243 L1): the instance written in place, drawn under a key
+    /// the source cannot write (`#f12.`) with the running formal left unbound, so it is the free
+    /// value `bind` makes of one (`#f12.s`) — and that value *held* (`Held`): the drawn station
+    /// stands at the middle of the interval, the family solves it again at every other.
+    fn walk_family(
+        &mut self,
+        f: &crate::syntax::FamilySpec,
+        st: &Stmt,
+        scope: &Scope,
+        vals: &BTreeMap<String, Aff>,
+        path: &[PathStep],
+        depth: usize,
+    ) -> ControlFlow<()> {
+        let inst = &f.instance;
+        let comp = match self.prog.resolve_component(&inst.component.text, scope.module) {
+            Ok(i) => &self.prog.components[i],
+            Err(m) => {
+                self.err(Code::E103, inst.component.span, m);
+                return ControlFlow::Continue(());
+            }
+        };
+        let (swept, cname) = (&f.swept.text, &inst.component.text);
+        let Some(formal) = comp.formals.iter().find(|fo| fo.name.text == *swept) else {
+            self.err(Code::E103, f.swept.span, format!("`{cname}` has no formal `{swept}` to run"));
+            return ControlFlow::Continue(());
+        };
+        if !matches!(formal.ty, Ty::Scalar | Ty::Length | Ty::Angle) {
+            let m = format!("a face family runs a number, and `{swept}` is not one");
+            self.err(Code::E103, f.swept.span, m);
+            return ControlFlow::Continue(());
+        }
+        if inst.args.iter().any(|a| a.label.as_ref().is_some_and(|l| l.text == *swept)) {
+            let m = format!("`{swept}` runs over the family's interval, so the call leaves it \
+                             unbound");
+            self.err(Code::E103, f.swept.span, m);
+            return ControlFlow::Continue(());
+        }
+        let ends = [&f.domain.0, &f.domain.1].map(|t| {
+            value_of(t, vals, self.units).and_then(|v| v.is_finite().then_some(v)
+                .ok_or_else(|| "is not a finite number".to_string()))
+        });
+        let (a, b) = match ends {
+            [Ok(a), Ok(b)] => (a, b),
+            [Err(e), _] | [_, Err(e)] => {
+                self.err(Code::E103, st.span, format!("the family's interval: {e}"));
+                return ControlFlow::Continue(());
+            }
+        };
+        if a >= b {
+            let m = format!("a face family runs from its interval's start to a later end: `in ({}, \
+                             {})` runs nowhere or backwards", f.domain.0, f.domain.1);
+            self.err(Code::E080, st.span, m);
+            return ControlFlow::Continue(());
+        }
+        let held = format!("{}{}.{swept}", scope.prefix(), inst.name.text);
+        self.held.names.insert(held, (formal.ty.dim(), 0.5 * (a + b)));
+        self.walk_instance(inst, st, scope, vals, path, depth)
     }
 
     /// An instance: its arguments bound and its component's body walked under its prefix — or
@@ -608,10 +700,15 @@ impl<'a> Walk<'a> {
         // components retain their parameterized seeds.
         let provisional;
         let vals = if self.sym.is_none() && vals.values().any(|v| v.free.is_some()) {
+            // a face family's running number starts where its drawn station stands (#243 L1),
+            // and a text kept over it reads it there by its own name
+            let held = |n: &String| self.held.names.get(n).map(|&(_, v)| v);
             provisional = vals.iter().map(|(name, value)| {
-                let seed = value.free.as_ref().and_then(|n| self.unknowns.get(n)).and_then(|d| d.seed);
+                let seed = value.free.as_ref()
+                    .and_then(|n| self.unknowns.get(n).and_then(|d| d.seed).or_else(|| held(n)));
                 (name.clone(), Aff::of_dim(value.c + seed.map_or(0.0, |s| value.m * s), value.dim))
-            }).collect();
+            }).chain(self.held.names.iter().map(|(n, &(dim, v))| (n.clone(), Aff::of_dim(v, dim))))
+                .collect();
             &provisional
         } else {
             vals
@@ -648,7 +745,7 @@ impl<'a> Walk<'a> {
                 *b = if self.sym.is_some() {
                     self.subst_sym(b, vals, scope)
                 } else {
-                    substitute(b, vals, self.units)
+                    super::values::substitute_in(b, vals, self.units, &self.held.names)
                 };
             }
         }
@@ -659,7 +756,7 @@ impl<'a> Walk<'a> {
             *b = if self.sym.is_some() {
                 self.subst_sym(b, vals, scope)
             } else {
-                substitute(b, vals, self.units)
+                super::values::substitute_in(b, vals, self.units, &self.held.names)
             };
         }
     }
@@ -691,7 +788,7 @@ impl<'a> Walk<'a> {
             // the numbers in force written in, so what the build reads is geometry and nothing
             // of this scope's
             Err(_) if reads_geometry(&t, self.units) => {
-                *keep = Some(substitute(&t, vals, self.units));
+                *keep = Some(super::values::substitute_in(&t, vals, self.units, &self.held.names));
                 None
             }
             Err(e) => {

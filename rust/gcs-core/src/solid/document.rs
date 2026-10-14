@@ -252,6 +252,11 @@ fn build(
         prims.push(loft.primitive(origin, &name));
         return Term::Prim(prims.len()-1);
     }
+    if let SolidDef::Family { .. } = sol.def {
+        let Ok(family) = super::family::built(sk, si as usize, unit) else { return Term::Empty };
+        prims.push(family.primitive(origin, &name));
+        return Term::Prim(prims.len()-1);
+    }
     // a region: its meridian's loops turned once about its axis, the holes taken out
     if let SolidDef::Region { .. } = sol.def {
         let Ok(super::region::Form::Meridian(m)) = super::region::form(sk, si as usize) else {
@@ -316,7 +321,8 @@ fn build(
                 revolve(&p, ab, sweep.value, *sense, unit, &name)
             }
             SolidDef::Body { .. } | SolidDef::Loft { .. } | SolidDef::Placed { .. }
-                | SolidDef::Swept { .. } | SolidDef::Region { .. } => unreachable!(),
+                | SolidDef::Swept { .. } | SolidDef::Region { .. }
+                | SolidDef::Family { .. } => unreachable!(),
         };
         let Some(p) = built else { return Term::Empty };
         prims.push(p);

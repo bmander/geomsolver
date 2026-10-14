@@ -1,0 +1,366 @@
+//! **The face family** (#243 L1): `solid(I(…).f over s in (a, b))`, the solid a face of an
+//! instance sweeps as one of its numbers runs.  The station is drawn once, hidden, at the middle
+//! of its interval and solved with the drawing; the family solves it again at every other station,
+//! each warm from its neighbour, and facets what the stations sweep.
+//!
+//! The fixtures are the L0 target programs (`docs/lofts/l0/`), over the library they were written
+//! against (`docs/lofts/l0/lofts.sv`), and the gates are their closed forms: a reduced section is
+//! its prismatoid, a twisted prism A·L at any twist and under any law (Cavalieri), a scaled one a
+//! frustum and a pyramid, a bend and a thread Pappus, a wire square to its helix A × the helix's
+//! length, a smooth loft π∫r² by a quadrature exact for its rail's degree.  A faceted family is
+//! held to the faceting: exact where its walls are flat, within a few parts in ten thousand where
+//! they are curved (each closed form says what its tolerance is for).
+
+use gcs_core::model::{EntKind, SolidDef};
+use gcs_core::program::{elaborate, Elaborated};
+use gcs_core::solid::ApproximationPolicy::Report;
+use gcs_core::solve::{solve, SolveOpts};
+use std::f64::consts::PI;
+
+use crate::common::parse;
+
+const LOFTS: &str = include_str!("../../../docs/lofts/l0/lofts.sv");
+const REDUCER: &str = include_str!("../../../docs/lofts/l0/reducer.sv");
+const ELBOW: &str = include_str!("../../../docs/lofts/l0/elbow.sv");
+const TWISTED: &str = include_str!("../../../docs/lofts/l0/twisted_duct.sv");
+const PYRAMID: &str = include_str!("../../../docs/lofts/l0/pyramid.sv");
+const SQUARE_TO_CIRCLE: &str = include_str!("../../../docs/lofts/l0/square_to_circle.sv");
+const SPRING: &str = include_str!("../../../docs/lofts/l0/spring.sv");
+const BOTTLE: &str = include_str!("../../../docs/lofts/l0/bottle.sv");
+const BLADE: &str = include_str!("../../../docs/lofts/l0/blade.sv");
+
+/// `src` linked as `solventc` links an L0 program (`lofts` beside it, then the library),
+/// elaborated: the diagnostics' words, and what was made.
+fn read(src: &str) -> (Elaborated, Vec<String>) {
+    let (mut prog, errs) = parse(src);
+    assert!(errs.is_empty(), "{errs:?}");
+    let linked = gcs_core::modules::link(&mut prog, &mut |name| match name {
+        "lofts" => Some(LOFTS.to_string()),
+        _ => gcs_core::library::resolve(name),
+    });
+    assert!(linked.is_empty(), "{:?}", linked.iter().map(|d| &d.message).collect::<Vec<_>>());
+    let e = elaborate(&prog);
+    let said = e.errors().map(|d| d.message.clone()).collect();
+    (e, said)
+}
+
+/// `src` elaborated and solved, or the test fails saying why.
+fn family(src: &str) -> Elaborated {
+    let (mut e, said) = read(src);
+    assert!(said.is_empty(), "{said:?}");
+    let r = solve(&mut e.sketch, SolveOpts::default());
+    assert!(r.success, "{}", r.message);
+    e
+}
+
+fn index(e: &Elaborated, name: &str) -> usize {
+    e.map.ent_named(name).unwrap_or_else(|| panic!("no solid `{name}`")).i()
+}
+
+/// The volume of the family `name`, or why it is refused.
+fn volume(e: &Elaborated, name: &str) -> Result<f64, String> {
+    e.sketch.evaluated_solid(index(e, name), Report).map(|s| s.volume())
+}
+
+/// `got` within `rel` of `want`, said with both.
+fn near(got: f64, want: f64, rel: f64, what: &str) {
+    assert!((got - want).abs() <= rel * want.abs(), "{what}: {got} against {want} (±{rel})");
+}
+
+/// The names of the faces of the family `name` that survive.
+fn faces_of(e: &Elaborated, name: &str) -> std::collections::BTreeSet<String> {
+    let s = e.sketch.evaluated_solid(index(e, name), Report).unwrap();
+    s.surviving_faces().iter().map(|f| f.to_string()).collect()
+}
+
+/// Why the family `name` is refused, its words.
+fn refused(e: &Elaborated, name: &str) -> String {
+    match gcs_core::solid::validate(&e.sketch, index(e, name)) {
+        Ok(()) => panic!("`{name}` was not refused"),
+        Err(m) => m,
+    }
+}
+
+/// **A reducer is its prismatoid**: a hollow square whose size runs linearly from 24 to 12 over
+/// 40 mm has an area linear in `s`, so V = 40 · (8 · 18 − 16) = 5120 mm³ — and every wall is flat,
+/// so the faceting holds it exactly.
+#[test]
+fn a_reducer_is_its_prismatoid() {
+    let e = family(REDUCER);
+    near(volume(&e, "body").unwrap(), 5120.0, 1e-9, "reducer");
+}
+
+/// **A bend is Pappus**: an 18 mm hollow square (area 128) carried a quarter turn round a bend of
+/// radius 30, its centroid on the arc: V = 128 · 30 · π/2 = 1920π mm³, within the faceting of a
+/// quarter turn at the report's sagitta.
+#[test]
+fn a_bend_is_pappus() {
+    let e = family(ELBOW);
+    near(volume(&e, "body").unwrap(), 1920.0 * PI, 1e-4, "elbow");
+}
+
+/// **A twisted prism is A·L at any twist** (Cavalieri): every section is the 20 mm square, so the
+/// duct turned a quarter and the auger turned three and a half turns — which no pairing of two
+/// faces can say — are both 20² · 40 = 16000 mm³.  A twisted wall's quads are fanned from their
+/// middles, which holds a ruled patch's volume where a diagonal would err to one side.
+#[test]
+fn a_twisted_prism_is_cavalieri_at_any_twist() {
+    let e = family(TWISTED);
+    near(volume(&e, "duct").unwrap(), 16000.0, 1e-4, "a quarter turn");
+    near(volume(&e, "auger").unwrap(), 16000.0, 5e-4, "three and a half turns");
+}
+
+/// **And under any law**: the turn eased in and out, `twist · (3s² − 2s³)`, is an expression no
+/// unknown of the drawing could be (one free name, affine), and a station holds `s` at a number,
+/// so the law is its body's to say.  The sections are the same squares: 16000 again.
+#[test]
+fn an_eased_twist_is_cavalieri_too() {
+    let law = "angle(twist * (3 * s^2 - 2 * s^3), sense: ccw)";
+    let eased = TWISTED.replace("angle(twist * s, sense: ccw)", law);
+    assert_ne!(eased, TWISTED, "the law is written in");
+    let e = family(&eased);
+    near(volume(&e, "duct").unwrap(), 16000.0, 1e-4, "an eased quarter turn");
+}
+
+/// **A scaled prism is a frustum, and one scaled to nothing a pyramid**: the square shrinking from
+/// 20 to its centre over 30 mm is 20² · 30 / 3 = 4000 mm³; its end is an apex, where the station
+/// loses rank, so it is read as the limit of the stations closing in and never solved (finding
+/// 9), and it has no `end` cap.  Stopped halfway, it is the frustum 15/3 · (400 + 100 + 200).
+#[test]
+fn a_scaled_prism_is_a_frustum_and_a_pyramid_its_limit() {
+    let e = family(PYRAMID);
+    near(volume(&e, "pyramid").unwrap(), 4000.0, 1e-9, "the pyramid");
+    let faces = faces_of(&e, "pyramid");
+    assert!(faces.contains("pyramid.start") && !faces.contains("pyramid.end"), "{faces:?}");
+    let e = family(&PYRAMID.replace("over s in (0, 1)", "over s in (0, 0.5)"));
+    near(volume(&e, "pyramid").unwrap(), 3500.0, 1e-9, "the frustum");
+}
+
+/// **A square lofted to a circle** as one section: a rounded square whose corner radius runs from
+/// 0 to 10 while its flats run from 20 to nothing.  At `s = 0` the corners are arcs of radius 0
+/// and the station solves; at `s = 1` the flats are points.  area(s) = 400(1 − s)² + 800s(1 − s)
+/// + 100πs², so V = 8000 + 1000π mm³, within the faceting of its arcs.
+#[test]
+fn a_square_lofts_to_a_circle() {
+    let e = family(SQUARE_TO_CIRCLE);
+    near(volume(&e, "transition").unwrap(), 8000.0 + 1000.0 * PI, 1e-4, "square to circle");
+}
+
+/// **A spring and a thread**: a wire of radius 1.5 square to a helix of radius 10, pitch 5, four
+/// turns, its centroid on the helix, is A × the helix's length, π · 1.5² · 4√((20π)² + 5²); a 2 mm
+/// axial square under a screw of pitch 4, three turns, is Pappus, 4 · 2π · 10 · 3 = 240π.  The
+/// wire's circle is faceted at the report's sagitta, which takes about five parts in ten thousand
+/// of its area, and the helices' chords about as much again.
+#[test]
+fn a_spring_and_a_thread() {
+    let e = family(SPRING);
+    let helix = 4.0 * ((20.0 * PI).powi(2) + 25.0).sqrt();
+    near(volume(&e, "spring").unwrap(), PI * 1.5 * 1.5 * helix, 1.5e-3, "the spring");
+    near(volume(&e, "thread").unwrap(), 240.0 * PI, 5e-4, "the thread");
+}
+
+/// **Two rails hold the width**: the blade's edges reach rails drawn in plan, so its width runs
+/// linearly from 20 to 8 over 50 mm and V = 3 · 50 · 14 = 2100 mm³, every wall flat.
+#[test]
+fn two_rails_hold_a_blade() {
+    let e = family(BLADE);
+    near(volume(&e, "blade").unwrap(), 2100.0, 1e-9, "the blade");
+}
+
+/// **A smooth loft is its quadrature**: the bottle's circles reach a cubic rail drawn through its
+/// three rims, so V = π∫ x² dy over the rail — a polynomial of degree 8 in the rail's parameter,
+/// which five Gauss–Legendre points integrate exactly.  The rail is a clamped cubic of four
+/// control points, a Bézier, read off the solve.
+#[test]
+fn a_smooth_loft_is_its_quadrature() {
+    let e = family(BOTTLE);
+    let sk = &e.sketch;
+    let rail = e.map.ent_named("rail").unwrap();
+    assert_eq!(rail.kind, EntKind::Spline);
+    let ctrl: Vec<(f64, f64)> =
+        sk.splines[rail.i()].ctrl.iter().map(|&p| sk.point_xy(p as usize)).collect();
+    assert_eq!(ctrl.len(), 4, "a cubic of four control points");
+    let bez = |t: f64| {
+        let u = 1.0 - t;
+        let b = [u.powi(3), 3.0 * t * u * u, 3.0 * t * t * u, t.powi(3)];
+        (0..4).fold((0.0, 0.0), |a, k| (a.0 + b[k] * ctrl[k].0, a.1 + b[k] * ctrl[k].1))
+    };
+    let dy = |t: f64| {
+        let u = 1.0 - t;
+        let d = [-3.0 * u * u, 3.0 * u * (1.0 - 3.0 * t), 3.0 * t * (2.0 - 3.0 * t), 3.0 * t * t];
+        (0..4).map(|k| d[k] * ctrl[k].1).sum::<f64>()
+    };
+    // the rail the family read is the one written out here
+    for t in [0.2, 0.5, 0.8] {
+        let (a, b) = (bez(t), gcs_core::curve::point_at(sk, rail.i(), t));
+        assert!((a.0 - b.0).abs() < 1e-9 && (a.1 - b.1).abs() < 1e-9, "{a:?} against {b:?}");
+    }
+    // five-point Gauss–Legendre on (−1, 1)
+    let (inner, outer) = ((5.0 - 2.0 * (10.0f64 / 7.0).sqrt()).sqrt() / 3.0,
+                          (5.0 + 2.0 * (10.0f64 / 7.0).sqrt()).sqrt() / 3.0);
+    let (w1, w2) = ((322.0 + 13.0 * 70f64.sqrt()) / 900.0, (322.0 - 13.0 * 70f64.sqrt()) / 900.0);
+    let gauss = [(0.0, 128.0 / 225.0), (-inner, w1), (inner, w1), (-outer, w2), (outer, w2)];
+    let want: f64 = gauss.iter().map(|&(x, w)| {
+        let t = 0.5 * (x + 1.0);
+        0.5 * w * PI * bez(t).0.powi(2) * dy(t)
+    }).sum();
+    near(volume(&e, "bottle").unwrap(), want, 1e-4, "the bottle");
+}
+
+/// **Walls are named by the section's edges** under its instance (finding 12): the reducer's
+/// outer loop's sides as the face names them, its hole's by the loop they came from, all under
+/// the section's path `sec`; the caps are `start` and `end`.  A name never depends on position.
+#[test]
+fn walls_are_named_by_the_sections_edges() {
+    let e = family(REDUCER);
+    let faces = faces_of(&e, "body");
+    let want = ["body.start", "body.end", "body.sec.ab", "body.sec.bc", "body.sec.cd",
+                "body.sec.da", "body.sec.inner.loop.ab", "body.sec.inner.loop.bc",
+                "body.sec.inner.loop.cd", "body.sec.inner.loop.da"];
+    assert_eq!(faces.len(), want.len(), "{faces:?}");
+    for w in want {
+        assert!(faces.contains(w), "no `{w}` in {faces:?}");
+    }
+    let e = family(SQUARE_TO_CIRCLE);
+    let faces = faces_of(&e, "transition");
+    for w in ["transition.k0", "transition.top", "transition.right", "transition.end"] {
+        assert!(faces.contains(w), "no `{w}` in {faces:?}");
+    }
+}
+
+/// **The station is written in place and never drawn**: solved with the drawing (the document is
+/// DOF 0 with it), but no stroke, no pane and no callout of it reaches the page.
+#[test]
+fn the_station_is_never_drawn() {
+    let mut e = family(REDUCER);
+    let SolidDef::Family { station, .. } = &e.sketch.solids[index(&e, "body")].def else {
+        panic!("a face family");
+    };
+    let station = station.clone();
+    assert!(station.iter().any(|s| s.kind == EntKind::Plane), "the station's plane is its");
+    let drawn = e.sketch.drawn();
+    assert!(!drawn.iter().any(|d| station.contains(d)), "a station's entity is drawn");
+    assert!(drawn.iter().any(|d| d.kind == EntKind::Line), "the guide is drawn");
+    let dimensioned: Vec<_> = gcs_core::callout::layout(&e.sketch, 1.0).into_iter()
+        .filter_map(|k| e.sketch.constraints.iter().find(|c| c.id == k.id))
+        .filter(|c| c.entities().iter().any(|x| station.contains(x)))
+        .map(|c| c.kind)
+        .collect();
+    assert!(dimensioned.is_empty(), "a station's dimension is drawn: {dimensioned:?}");
+    use gcs_core::diagnose::{diagnose, DiagnoseOptions};
+    let d = diagnose(&mut e.sketch, DiagnoseOptions::default());
+    assert_eq!(d.dof, 0, "the drawn station is held");
+}
+
+/// **Only an end may lose rank**: the pyramid run past its apex, `s` over (0, 1.5), meets the
+/// section shrunk to nothing inside the interval, which is refused where it happens — as the rank
+/// lost there where a station stands at it, or as the section turned over between the stations
+/// either side of it where none does (past its apex the square is drawn inside out).
+#[test]
+fn a_station_that_loses_rank_inside_is_refused_there() {
+    let e = family(&PYRAMID.replace("over s in (0, 1)", "over s in (0, 1.5)"));
+    let m = refused(&e, "pyramid");
+    let number = |t: &str| t.split(|c: char| !(c.is_ascii_digit() || c == '.')).next()
+        .and_then(|n| n.parse::<f64>().ok());
+    let there = |w: &str| m.split(w).nth(1).and_then(number);
+    match (m.contains("not held"), m.contains("turns over")) {
+        (true, _) => {
+            assert!(there("the station at ").is_some_and(|s| (s - 1.0).abs() < 1e-3), "{m}")
+        }
+        (_, true) => {
+            let (a, b) = (there("between the stations at ").unwrap(), there(" and ").unwrap());
+            assert!(a < 1.0 && 1.0 < b && b - a < 0.2, "{m}");
+        }
+        _ => panic!("{m}"),
+    }
+}
+
+/// **The swept volume may not cross itself**: the elbow's 18 mm section bent on a radius of 8
+/// reaches past the bend's axis, which a bend's section may not.
+#[test]
+fn a_section_reaching_past_its_bend_is_refused() {
+    let e = family(&ELBOW.replace("bend_radius := 30mm", "bend_radius := 8mm"));
+    let m = refused(&e, "body");
+    assert!(m.contains("crosses itself"), "{m}");
+}
+
+/// **What a family is written over, refused where it is written**: its formal bound by the call,
+/// a formal the component has not, an interval run backwards, a drawn station (L10's).
+#[test]
+fn a_family_is_written_over_an_instance_in_place() {
+    let bound = REDUCER.replace("wall: 2mm).sec", "wall: 2mm, s: 0.5).sec");
+    let (_, said) = read(&bound);
+    assert!(said.iter().any(|m| m.contains("runs over the family's interval")), "{said:?}");
+    let (_, said) = read(&REDUCER.replace("over s in (0, 1)", "over t in (0, 1)"));
+    assert!(said.iter().any(|m| m.contains("has no formal `t`")), "{said:?}");
+    let (_, said) = read(&REDUCER.replace("over s in (0, 1)", "over s in (1, 0)"));
+    assert!(said.iter().any(|m| m.contains("runs nowhere or backwards")), "{said:?}");
+    let drawn = REDUCER.replace("body := solid(Reducer(", "st := Reducer(")
+        .replace(").sec.profile over s in (0, 1))",
+                 ")\nbody := solid(st.sec.profile over s in (0, 1))");
+    let (_, errs) = parse(&drawn);
+    assert!(errs.iter().any(|e| e.message.contains("written in place")), "{errs:?}");
+}
+
+/// **A family inside a component** is the component's like any other solid: its running number
+/// is named under the instance's prefix, and the reducer drawn as part of a larger part sweeps
+/// the same 5120 mm³.
+#[test]
+fn a_family_inside_a_component() {
+    let written = "body := solid(Reducer(guide, std.z, inlet: 24mm, outlet: 12mm, wall: 2mm)\
+                   .sec.profile over s in (0, 1))";
+    assert!(REDUCER.contains(written));
+    let inside = written.replace("std.z", "up");
+    let wrapped = REDUCER.replace(written, "part := Part(guide, std.z)")
+        .replace("in std.top {", &format!("component Part(guide: line, up: axis) {{\n  \
+                                           {inside}\n}}\nin std.top {{"));
+    let e = family(&wrapped);
+    near(volume(&e, "part.body").unwrap(), 5120.0, 1e-9, "the reducer in a part");
+    assert!(e.sketch.held.keys().all(|n| n.starts_with("part.#f")), "{:?}", e.sketch.held.keys());
+}
+
+/// A disc of the radius of a circle drawn beside the guide, shrinking to half of it as it runs
+/// 30 mm: a station reading the geometry it was given.
+const CONE: &str = "\
+unit mm
+use std
+use lofts
+
+component Disc(g: line, up: axis, rim: circle, s: Scalar) {
+  st := lofts.OnLine(g, up: up, s: s)
+  in st.n {
+    k := circle(center: st.n.origin)
+    radius(rim.r * (1 - s / 2)) k
+  }
+  f := face(k)
+}
+
+in std.top {
+  o := point
+  fix((0mm, 0mm)) o
+  e := point
+  fix((0mm, 30mm)) e
+  guide := line(o, e)
+  c := point
+  fix((50mm, 0mm)) c
+  ring := circle(center: c)
+  radius(10mm) ring
+}
+cone := solid(Disc(guide, std.z, ring).f over s in (0, 1))
+";
+
+/// **A station reads the geometry it was given** as a traced body does (finding 1): the disc's
+/// radius is the ring's, read where the solve put it (the ring's seed is not 10), shrinking to
+/// half — a frustum, π · 30/3 · (10² + 10 · 5 + 5²) = 1750π, within the faceting of its circles.
+/// Moving the ring moves every station; reading the station's own geometry is refused.
+#[test]
+fn a_station_reads_the_geometry_it_was_given() {
+    let e = family(CONE);
+    near(volume(&e, "cone").unwrap(), 1750.0 * PI, 1e-4, "the frustum");
+    let e = family(&CONE.replace("radius(10mm) ring", "radius(8mm) ring"));
+    near(volume(&e, "cone").unwrap(), 1750.0 * PI * 0.64, 1e-4, "the ring made smaller");
+    let own = CONE.replace("radius(rim.r * (1 - s / 2)) k", "radius(rim.r * (1 - s / 2)) k\n    \
+                           q := point\n    q distance(k.r) st.n.origin");
+    let (_, said) = read(&own);
+    assert!(said.iter().any(|m| m.contains("station's own geometry")), "{said:?}");
+}

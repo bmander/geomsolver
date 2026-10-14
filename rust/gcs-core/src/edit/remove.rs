@@ -319,9 +319,17 @@ fn decl_refs(d: &Decl, look: &mut impl FnMut(&syntax::Ref)) {
             }
         }
     }
-    // a solid goes with what it is swept about, through, along or under
+    // a solid goes with what it is swept about, through, along or under — and a face family
+    // with the entities its instance, written in place, was given
     for r in d.sweep.as_ref().map(syntax::Sweep::references).unwrap_or_default() {
         look(r);
+    }
+    if let Some(syntax::Sweep::Family(f)) = &d.sweep {
+        for a in &f.instance.args {
+            if let syntax::InstVal::Ref(r) = &a.value {
+                look(r);
+            }
+        }
     }
 }
 

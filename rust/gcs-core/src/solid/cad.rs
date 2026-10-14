@@ -334,6 +334,10 @@ impl<'a> Walk<'a> {
                 if let Some(end) = end { node.set("end",profile(sk,*end as usize,w)?); }
                 node
             }
+            // its exact surfaces are L2's (#243): faceted until then, and refused here
+            SolidDef::Family {..} => return Err(format!(
+                "`{}`: a face family has no exact construction yet, only its faceted evaluation",
+                solid.name)),
         })
     }
 }

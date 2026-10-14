@@ -101,6 +101,11 @@ impl Sketch {
                         v.extend(end.iter().map(|&f| EntRef::face(f as usize)));
                         v.push(*guide);
                     }
+                    // the station, every entity of it: deleting one takes the family with it
+                    SolidDef::Family { face, station, .. } => {
+                        v.push(EntRef::face(*face as usize));
+                        v.extend(station.iter().copied());
+                    }
                     SolidDef::Through { face, body } => {
                         v.push(EntRef::face(*face as usize));
                         v.push(EntRef::solid(*body as usize));

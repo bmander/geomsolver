@@ -71,6 +71,24 @@ pub struct SharedPlace {
     pub along: EntRef,
 }
 
+/// A face family's running number (`Sketch::held`): its fixed parameter, in the units a person
+/// reads (degrees for an angle), and what it is — or a number of the geometry a station reads
+/// (`reads`, the entity and which of its scalars: `HELD_X`, `HELD_Y`, `HELD_Z`, `HELD_R`), held
+/// at what that geometry stands at whenever the expressions are worked out.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct HeldNumber {
+    pub param: u32,
+    pub dim: crate::units::Dim,
+    pub reads: Option<(EntRef, u8)>,
+}
+
+/// Which scalar of the geometry a held number reads (`HeldNumber::reads`): a point's coordinates
+/// on its page (or in space), a circle's or an arc's radius.
+pub const HELD_X: u8 = 0;
+pub const HELD_Y: u8 = 1;
+pub const HELD_Z: u8 = 2;
+pub const HELD_R: u8 = 3;
+
 #[derive(Default, Clone, Debug)]
 pub struct Sketch {
     pub roles: BTreeMap<EntRef, crate::semantics::GeometryRoles>,
@@ -147,6 +165,12 @@ pub struct Sketch {
     /// it and handed to the rest.  The constraints hold the index (`Arg::Param`), so this table
     /// is what a rebuild (`io::graft`) and the document writer read the name back from.
     pub shared: BTreeMap<String, SharedPlace>,
+    /// **The face families' running numbers** (#243 L1), by name (`#f12.s`): each a *fixed*
+    /// parameter, the station the family's instance is solved at.  `expr::evaluate` reads one
+    /// as a number, whatever the text does with it, so it is no free variable; a contact pinned
+    /// to one (`t == s`) owns its parameter (`Sketch::add`).  The drawn station stands at the
+    /// middle of the interval; `solid::family` moves it.
+    pub held: BTreeMap<String, HeldNumber>,
     /// Each free curve's energy as `settle_variational` last read it: its statements, pegs and
     /// whether its length is free.  Derived state, never saved.
     pub variational: Vec<crate::variational::Energy>,

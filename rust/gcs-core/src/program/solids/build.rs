@@ -105,10 +105,55 @@ pub(super) fn build_solid(
             revolve(sk, res, face, (axis, sweep.as_ref(), *sense), st, &mut say)?
         }
         Sweep::Body => body(&ops, kids, st, &mut say)?,
+        Sweep::Family(f) => family(sk, res, f, &ops, st, &mut say)?,
     };
     let i = sk.solid(def, &d.name.key().text);
     sk.solids[i].class = d.class.clone();
     Some(i)
+}
+
+/// **A face family** (#243 L1): the face of the station the flattener drew, the running number it
+/// held, and every entity the station is made of — what the family solves again at each station.
+fn family(
+    sk: &Sketch,
+    res: &Resolver,
+    f: &crate::syntax::FamilySpec,
+    ops: &[EntRef],
+    st: &Stmt,
+    say: &mut impl FnMut(Code, Span, String),
+) -> Option<SolidDef> {
+    let face = one_face(ops, st, say)?;
+    let held = f.held.clone()?;
+    let ends = [&f.domain.0, &f.domain.1].map(|t| crate::expr::literal(t));
+    let [Some(a), Some(b)] = ends else {
+        say(Code::E103, st.span, "a face family's interval is two numbers".into());
+        return None;
+    };
+    // the station: every entity its instance made, the face's edges (a closing edge the face
+    // made itself among them), and what each is made of
+    let prefix = format!("{}.", held.rsplit_once('.').map_or("", |(p, _)| p));
+    let mut station: BTreeSet<EntRef> = res.of.iter()
+        .filter(|(k, _)| k.starts_with(&prefix))
+        .map(|(_, &e)| e)
+        .chain(sk.faces[face as usize].boundaries().flat_map(|(edges, _)| edges.iter().copied()))
+        .filter(|e| !matches!(e.kind, EntKind::Face | EntKind::Solid))
+        .collect();
+    let mut stack: Vec<EntRef> = station.iter().copied().collect();
+    while let Some(e) = stack.pop() {
+        for c in sk.children(e) {
+            if !matches!(c.kind, EntKind::Face | EntKind::Solid) && station.insert(c) {
+                stack.push(c);
+            }
+        }
+    }
+    let extent = |v: f64, t: &str| Extent { text: t.trim().to_string(), value: v };
+    Some(SolidDef::Family {
+        face,
+        station: station.into_iter().collect(),
+        held,
+        from: extent(a, &f.domain.0),
+        to: extent(b, &f.domain.1),
+    })
 }
 
 /// What a solid is written over, resolved: faces (one written in place built here) or solids —

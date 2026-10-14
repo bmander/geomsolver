@@ -44,7 +44,7 @@ pub(crate) use keys::is_probe;
 use crate::lowering::Lowered;
 
 pub(crate) use values::{substitute_with, value_aff, value_read};
-use values::{free, typed, value_of, substitute, reads_geometry};
+use values::{free, typed, value_of, reads_geometry};
 use resolve::Lookup;
 use crate::syntax::ref_text;
 
@@ -258,6 +258,28 @@ pub struct Expansion {
     /// kind (§8.1 [0.84]), as given: for the elaborator to judge once it knows what each name is
     /// (E103).
     pub(crate) kinds: Vec<KindAsked>,
+    /// Every face family's running number (#243 L1), by absolute name (`#f12.s`): its dimension
+    /// and the number the drawn station stands at, the middle of its interval — see `Held`.
+    pub held: BTreeMap<String, (crate::units::Dim, f64)>,
+    /// Every number of the geometry a face family's station reads in a dimension (#243 L1), as
+    /// its traced body would: the name the text reads it by (`#f12.g.p2.y`), the declaration it
+    /// resolved to and the fields past it — for the elaborator to hold as the geometry stands.
+    pub reads: Vec<(String, String, Vec<String>)>,
+}
+
+/// **A face family's running number** (#243 L1), as the walk carries it: a free value named
+/// after the formal (`#f12.s`, the unbound formal `bind` makes), which a text affine in it
+/// carries as any unknown's, and a text that is not — `twist * (3 * s^2 - 2 * s^3)` — is
+/// **kept** and written in where it is read, as a trace keeps one (`Sym`).  It is no unknown:
+/// the sketch holds it at a number (`Sketch::held`), the station the family solves at.
+#[derive(Default)]
+struct Held {
+    /// Each running number, its dimension and where the drawn station stands.
+    names: BTreeMap<String, (crate::units::Dim, f64)>,
+    /// Params and arguments that came to text over one, by absolute name.
+    texts: BTreeMap<String, String>,
+    /// The numbers of the geometry the stations read — see `Expansion::reads`.
+    reads: Vec<(String, String, Vec<String>)>,
 }
 
 /// An entity a call gave where a kind (or any `path`) is asked for: the absolute name of what it
@@ -376,6 +398,8 @@ struct Walk<'a> {
     normals: BTreeSet<String>,
     /// The solids' faces read as sets and blocks over them — see `FaceState`.
     faces: FaceState,
+    /// The face families' running numbers — see `Held`.
+    held: Held,
 }
 
 /// What a binding or a read asks that only every name known can answer (`resolve`), and the
@@ -588,6 +612,7 @@ impl<'a> Walk<'a> {
             twins: Vec::new(),
             normals: BTreeSet::new(),
             faces: FaceState::default(),
+            held: Held::default(),
         }
     }
 
@@ -658,6 +683,8 @@ impl<'a> Walk<'a> {
             face_planes: self.faces.planes,
             face_axes: self.faces.axes,
             kinds: self.checks.kinds,
+            held: self.held.names,
+            reads: self.held.reads,
         }
     }
 }

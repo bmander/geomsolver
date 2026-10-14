@@ -11,6 +11,72 @@ Solvent. Rust grows only three kinds of things:
   corner) and build it exactly. They never change what the family says, and the general
   evaluation gates each one.
 
+## L1: the face family (2026-10-14)
+
+**Verdict: the primitive stands.** `solid(I(…).f over s in (a, b))` parses, elaborates and
+evaluates (Solvent 0.93, §6.9); every L0 program the language can write today sweeps its closed
+form (`rust/gcs-core/tests/face_family.rs`):
+
+| program | solid | closed form (mm³) | faceted (mm³) |
+|---|---|---|---|
+| `reducer.sv` | `body` | 5120 | 5120.000000 (flat walls: exact) |
+| `elbow.sv` | `body` | 1920π = 6031.858 | 6031.734 |
+| `twisted_duct.sv` | `duct`, 90° | 16000 | 15999.974 |
+| | `auger`, 1260° | 16000 | 15996.32 |
+| | `duct`, eased `twist·(3s² − 2s³)` | 16000 | 15999.97 |
+| `pyramid.sv` | `pyramid`, to its apex | 4000 | 4000.000000 (the apex a limit) |
+| | stopped at `s = ½` | 3500 (frustum) | 3500.000000 |
+| `square_to_circle.sv` | `transition` | 8000 + 1000π = 11141.59 | 11141.34 |
+| `spring.sv` | `spring` | π·1.5²·4√((20π)² + 25) = 1782.18 | 1780.52 (the wire a 111-gon) |
+| | `thread` | 240π = 753.98 | 753.83 |
+| `blade.sv` | `blade` | 2100 | 2100.000000 |
+| `bottle.sv` | `bottle` | π∫x² dy, Gauss–Legendre exact | within 1e-4 |
+
+How it is built (the rules are in [the solids contract](../contract/solids.md)):
+
+- **The station is drawn, hidden, and solved with the drawing** at the middle of the interval:
+  the flattener walks the instance under a key the source cannot write (`#f12.`), the running
+  formal left unbound and **held** — a fixed parameter every expression reads as a number
+  (`Sketch::held`), so a law in `s` is any expression and no unknown is ever minted for `s`.  The
+  document's DOF and diagnosis are the drawn station's too: an under-held section is said where
+  the drawing is.
+- **Each other station is the station's part solved again** (`io::Part`, everything else held
+  where the drawing stands), started where its two neighbours carry it, so the branch the drawing
+  chose is the one carried; a station inside the interval must be regular (full column rank).
+  Steps are as long as a cubic through four solved stations stays within the sheet's flatness,
+  and the facets between are that cubic's: the auger is 117 solves, not 4000.
+- **Ends as limits** (finding 9): an end that loses rank is read as the limit of the stations
+  closing in on it, never solved — the pyramid's apex, the square-to-circle's vanished flats.
+- **Topology is the station's**: a loop crossing itself, an edge lost or turned over, a hole
+  touching the section, and a swept volume crossing itself (a section reaching past its bend's
+  axis) are each refused at the station where they happen.
+- **Names** (finding 12): caps `start` and `end`, walls the face's edge names under the section's
+  path in the instance — `body.sec.ab`, `body.sec.inner.loop.ab`, `transition.k0`.
+- **Reads as a traced body** (finding 1): a station's dimension may read a number of the geometry
+  it was given (`rim.r`, `a.x`), held as that geometry stands at each station; one of its own is
+  refused.
+- **Twisted walls are fanned**: a quad that does not lie flat is four triangles about its middle,
+  which hold a ruled patch's volume where a diagonal errs to one side — what takes the duct from
+  −0.6 % to −1.6e-6.
+
+What L1 found on the way:
+
+- **Two L0 programs solved to the wrong shape and said DOF 0.**  `square_to_circle.sv`'s drawn
+  station took every flat to a point and every corner arc the long way round; it now seeds the
+  flats' ends where the rounded square has them (`rect_fillets.sv`'s way).  `bottle.sv`'s rail
+  could reach a shoulder of radius 28 at 60 only by running past the neck and back (its control
+  point 464 mm up); its shoulder is 20 now.  The family refused the first and integrated the
+  second over the wrong rail — DOF 0 says a drawing is held, not that it is the drawing meant.
+- **`io::Part` had two holes**, both now closed: a plane's origin, held at its own `(0, 0)`, was
+  taken for a wall, so a part reached through a moving plane stopped at it; and `graft` rebuilt a
+  plane held along drawn lines (`std.Turned`'s) as a free plane, its intrinsic rows lost.
+- **Cost**: a station is a solve of its part (about 2 ms for the twisted duct's 77 unknowns), so
+  the stations are as few as a cubic allows and the faceting is interpolated; every L0 family
+  evaluates in under a second.
+
+Handed on: L2's exact surfaces (`Surface::Family`, the analytic fast paths), and the drawn,
+draggable station of finding 11 (L10).
+
 ## L0: the target programs (2026-10-12)
 
 **Verdict: the bet holds.** Ten programs say every option of a CAD loft dialog as ordinary
@@ -26,7 +92,8 @@ solves at **DOF 0**, standing where its closed form says. What is missing is the
 (`solid(… over s in …)`, finding 1) and a short list of general features (findings 2–9).
 
 The programs are in [`l0/`](l0/), outside `rust/examples/` (the only directory the suites sweep),
-so nothing in the repository reads them. Each stops at its first error today:
+so nothing in the repository reads them but L1's gate (`tests/face_family.rs`). At L0 each
+stopped at its first error:
 - eight stop at the family (`expected , or )` at `over`);
 - `pipe.sv` and `two_faces.sv` stop at the words that cannot be written yet
   ([`l0/pending.sv`](l0/pending.sv): `path` is not a type).
@@ -43,7 +110,7 @@ fixtures.
 | [`twisted_duct.sv`](l0/twisted_duct.sv) | `solid_twist.sv` | a twist law; 1260° in one statement | 16000 at any twist (Cavalieri) | DOF 0, corner turned 630° |
 | [`spring.sv`](l0/spring.sv) | — | a wire square to a helix; an axial thread under a screw | 9π·√(400π² + 25); 240π | DOF 0, lead angle, rise 10 |
 | [`pipe.sv`](l0/pipe.sv) | — | a chain of lines and tangent arcs as one path | 16π(60 + 25π) | *pending: `path`* |
-| [`bottle.sv`](l0/bottle.sv) | — | smooth through three sections; end tangents | quadrature | DOF 0, R 28.59 at 45 |
+| [`bottle.sv`](l0/bottle.sv) | — | smooth through three sections; end tangents | quadrature | DOF 0 (shoulder R 20 since L1) |
 | [`blade.sv`](l0/blade.sv) | — | two rails in plan holding the width | 2100 | DOF 0, rails at ±7 |
 | [`square_to_circle.sv`](l0/square_to_circle.sv) | — | a square to a circle, one section | 8000 + 1000π | DOF 0, corners ±5, R5 |
 | [`pyramid.sv`](l0/pyramid.sv) | — | a loft to a point | 4000 | DOF 0, half 5 |

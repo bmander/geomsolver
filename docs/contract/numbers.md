@@ -87,3 +87,11 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   by the witness, part of `topology_key`, and joins `io::Part`'s walk.  `expr::sync_free` updates
   the numbers shown from every seam writing parameters directly — `Sketch::set_x`,
   `io::Part::write_back`, the wave's writes.
+- **A held number is a number** (#243 L1, `Sketch::held`): a face family's running number
+  (`#f12.s`) and each number of the geometry a station reads (`HeldNumber::reads`, refreshed from
+  its scalar first) are fixed parameters `expr::evaluate` reads as numbers of their dimension, so
+  a text over one is worked out whatever it does with it (`s^2`, `sin(s)`) and no free variable is
+  minted for it.  A text affine in one carries its coefficient with the dimension the two differ
+  by (`flatten::values::of_vals_in`), since the number reads the name as what it is.  A contact
+  pinned to one (`t == s`) owns its parameter (`Sketch::add`), which travels by name
+  (`owned_arg`, `io::graft`); moving it moves every station's number at once (`solid::family`).
