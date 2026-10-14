@@ -309,9 +309,18 @@ impl<'a> Walk<'a> {
         // — and inside a traced component the name is no column of the curve, which is how a nested
         // instance's unbound formal is reported rather than captured by an outer one's.
         for f in &comp.formals {
-            if matches!(f.ty, Ty::Group | Ty::Set) && !inst.args.iter().enumerate().any(|(i, a)|
-                a.label.as_ref().map_or_else(|| comp.formals.get(i).is_some_and(|p| p.name.text == f.name.text), |l| l.text == f.name.text)) {
-                let what = if f.ty == Ty::Set { "set" } else { "group" };
+            // only a number may be left out, an unknown of the drawing (below): an entity, a
+            // group or a set left out is said at the call, and not where the body reads it — or
+            // nowhere, for a set family's instance nothing uses (§6.21)
+            let what = match f.ty {
+                Ty::Set => Some("set"),
+                Ty::Group => Some("group"),
+                Ty::Path => Some("path"),
+                Ty::Ent(k) => Some(k.as_str()),
+                _ => None,
+            };
+            if let Some(what) = what.filter(|_| !inst.args.iter().enumerate().any(|(i, a)|
+                a.label.as_ref().map_or_else(|| comp.formals.get(i).is_some_and(|p| p.name.text == f.name.text), |l| l.text == f.name.text))) {
                 self.err(Code::E103, inst.span, format!("missing {what} argument `{}`", f.name.text));
             }
             // a side left unbound is not an unknown of the drawing: the *statement* it reaches

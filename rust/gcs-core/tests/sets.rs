@@ -109,6 +109,36 @@ fn a_set_written_in_place_reads_the_names_around_it() {
     assert!((off_line(a, p, sub(q, p)) - 10.0).abs() < 1e-9);
 }
 
+/// A plane met by a body is said of a point drawn in it already: the body is a predicate, true of
+/// that point there, so it states no row — where `m coincident std.front` said directly asks
+/// nothing (E061).  A sphere met with the front plane is the circle the front cuts from it.
+#[test]
+fn a_plane_in_a_body_holds_of_a_point_drawn_in_it() {
+    let m = "m := point hint((10, 35)) in std.front
+";
+    let src = with(&format!("{m}m coincident {{ p | p coincident ball; p coincident std.front }}"));
+    let e = read(&src);
+    let sk = solved(&e);
+    let got = norm(sub(at(&sk, &e, "m"), at(&sk, &e, "c")));
+    assert!((got - 12.0).abs() < 1e-9, "{got}");
+    // one condition, the sphere's: the plane's holds by construction
+    assert_eq!(dof(&with(m)) - dof(&src), 1);
+    // and a family whose body says so, the instance's point drawn in its plane
+    let ring = "component Ring(on: plane, center: point, r: Length) := { p |
+                  p coincident std.Sphere(center, r: r)
+  p coincident on
+}
+";
+    let src = with(&format!("{ring}{m}m coincident Ring(std.front, c, r: 12)"));
+    let e = read(&src);
+    let sk = solved(&e);
+    assert!((norm(sub(at(&sk, &e, "m"), at(&sk, &e, "c"))) - 12.0).abs() < 1e-9);
+    assert_eq!(dof(&with(m)) - dof(&src), 1);
+    // said of the point directly, it is still asked of nothing
+    refused(&with(&format!("{m}m coincident std.front")), "E061", "m is drawn in std.front",
+            "m coincident std.front");
+}
+
 /// A set is found by what its name resolves to, however it is reached: through a group's
 /// member, and with its head written over two lines.
 #[test]

@@ -4,6 +4,16 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.93] A set's body holds of a point of its plane; a call gives every entity.** A plane's
+membership stated by a set's body (§6.21) of a point drawn in that plane already — or twinned
+there — holds by construction and states no row, so a body meeting a sphere with a plane, `{ p |
+p coincident ball; p coincident std.front }`, takes a point of the front onto the circle the
+front cuts. Through 0.92 the row was refused as asking nothing (**E061**), which the same words
+said of the point directly still are (§6.7). And a call that leaves out an entity formal is
+**E103** at the call (a missing point argument, say), as a set or group formal left out
+already was (§5): before, it was said only where the body read the formal, and nowhere for an
+instance of a set family nothing used, so `std.Sphere(r: 5)` was silently nothing.
+
 **[0.92] One vocabulary for a view's directions.** A view is a plane (§6.7), so its own
 directions are said as a plane's are: between two points drawn in one view, `along: u` is the
 run and `along: v` the rise — the view's `u` and `v` — as against a plane they are that plane's

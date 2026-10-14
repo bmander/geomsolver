@@ -993,8 +993,10 @@ to the drawing; it means what its uses say:
 - A **family** is a component whose body is a set: `component Ball(center: point, r: Length) :=
   { p | p distance(r) center }`; an instance is the set, its formals read by its name. A component
   takes a set as a **`set` formal**, by position.
-- Statements in one body are a conjunction (an intersection). A union is a choice of root, not a
-  body. A culprit reads as the use (`l tangent shaft`), never the body's rows.
+- Statements in one body are a conjunction (an intersection): `{ p | p coincident ball; p
+  coincident std.front }` is the circle the front cuts from `ball`, and a point drawn in the front
+  meets the plane's statement by being there. A union is a choice of root, not a body. A culprit
+  reads as the use (`l tangent shaft`), never the body's rows.
 - A set's body is read in space wherever its point is drawn, so `side:` or `sense:` in one is an
   error.
 - **A set whose body is a circle's is the circle**: `k := { p | p coincident std.front; p

@@ -97,7 +97,12 @@ the basis about `t₀` a cubic in the jet `τ`, over `Σ wB` by the quotient rul
 `kernels::Num` (`Dual<N>` for res/jac, `Jet` for the form, `Kernel::form`, `num_kernel!`), the
 hand-written spatial kernels have generic twins held to them by `tests/taylor.rs`.  Refused: a
 set named as an entity (E040 in `rewrite`), `coincident` between two sets, parentheses, a
-non-point `coincident`, a non-line or claimed `tangent`.  `tests/sets.rs` is the gate.
+non-point `coincident`, a non-line or claimed `tangent`.  **A plane's membership a body states of
+what is drawn in the plane already** (or twinned there) states no row (`relations::drawn_on`,
+beside a plane touch's point, [0.93]): the body is true of that point, where the same words said
+directly are E061.  An instance of a family given no entity for an entity formal is E103 at the
+call (`Walk::bind`, as a set or group formal left out), never silently nothing.  `tests/sets.rs`
+is the gate.
 
 **Regions (§6.21, §9.6, 0.61, #145 F1):** a set whose body bounds a number is a region
 (`sets::BodyShape::region`, over `Written::states_bound`). `q inside S` / `q outside S` are set
