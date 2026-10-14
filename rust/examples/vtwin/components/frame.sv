@@ -33,7 +33,7 @@ component FrameBank(o: point, ref: line, alpha: Angle, dim: Int, dims: group) {
   claim ref angle(alpha, sense: cw) ax
   claim ref angle(alpha - port_bearing, sense: cw) rad_i
   claim ref angle(alpha + port_bearing, sense: cw) rad_e
-  repeat dim {
+  when dim == 1 {
     claim o distance(dims.H) piv
     claim piv distance(dims.a) ip.p
   }

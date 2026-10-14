@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.90 — October 2026**
+**Specification, Draft 0.91 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -2047,10 +2047,12 @@ body's declarations are. That is how the standard library says `round` and `cham
 ```
 A relieved(d) B := {
   repeat a in A {
-    repeat b in B if b != a {
-      groove := { p | p distance(<= d) a; p distance(<= d) b; p inside a; p inside b }
-      relief := solid(groove)
-      relief cut A.body
+    repeat b in B {
+      when b != a {
+        groove := { p | p distance(<= d) a; p distance(<= d) b; p inside a; p inside b }
+        relief := solid(groove)
+        relief cut A.body
+      }
     }
   }
 }
@@ -2216,7 +2218,7 @@ cycle e in CHAIN as i { ... }
 
 One copy per link of a named chain (§6.6), in traversal order, with `e` a reference to that copy's edge — a constraint operand, a field (`e.p1`), an argument — and `as i` optional as before. The count is the chain's, so the chain MAY be declared later in the body (P2) or reached through an instance or a group. The copies are §12.1's (or §12.2's, with `next`/`prev`) in every other respect, and §12.7 holds. `cycle` over an open chain, and iteration over what is not a named chain or a solid, are errors at the reference (**E103**); a body declaration named as the edge is **E001**.
 
-**Over a solid's faces** **[0.69]**: `repeat a in X { … }`, `X` a solid or a face path (§6.9), makes one copy per face `X` names, `a` the face (a face path itself, §6.21): a prism's `near`, `far` and a side per edge of its section, a revolution's wall per edge and, where the turn is partial, `start` and `end`, a body's every operand's faces under the operand's name (`pad.plate.near`). The faces are read off what the solid is made of, so one a Boolean ate is listed still and names nothing (§6.21); they are known once the solids are built, so the block is expanded then. A condition keeps some copies: `repeat b in B if b != a { … }`, `repeat c in A if c in B and c != a { … }` — `f in X`, the face is one `X` names, and `f != g`, it is not that face — each joined by `and`.
+**Over a solid's faces** **[0.69]**: `repeat a in X { … }`, `X` a solid or a face path (§6.9), makes one copy per face `X` names, `a` the face (a face path itself, §6.21): a prism's `near`, `far` and a side per edge of its section, a revolution's wall per edge and, where the turn is partial, `start` and `end`, a body's every operand's faces under the operand's name (`pad.plate.near`). The faces are read off what the solid is made of, so one a Boolean ate is listed still and names nothing (§6.21); they are known once the solids are built, so the block is expanded then. **[0.91]** Which copies make anything is a `when` in the body (§12.9): `repeat b in B { when b != a { … } }`, `repeat c in A { when c in B and c != a { … } }`. A condition written after the face path (`repeat b in B if b != a`) is a syntax error; *0.69 through 0.89 kept copies by one, `f in X` and `f != g` joined by `and`.*
 
 ### 12.9 `when` — a block made or not by a condition **[0.72]**
 
@@ -2227,6 +2229,8 @@ when COND { ... }
 The body is made **once** where `COND` holds and **not at all** where it does not. The condition is decided at elaboration, over the numbers in scope where the block stands — the document's values and inputs with a value, a module's numbers by their paths, a component's formals bound by its call, an enclosing block's index — so it is a choice of what the program *is*, never of where the solve goes. It stands where `repeat` does: at the top level of a document, in a component body, and inside another block.
 
 `COND` is comparisons of two numbers, `<`, `<=`, `>`, `>=`, `==` and `!=`, joined by `and`, `or` and `not` (`or` binds loosest, then `and`, then `not`); a parenthesis holds a number or a condition. A number alone is no condition, and a comparison is no number. Each comparison is between two numbers of one dimension, as `+` is (§3.3): `relief > 0mm`, not `relief > 0`; two dimensions are **E103**. The comparison is exact, with no tolerance, so `<` and `==` are never both true. Every comparison is worked out, so a mistake on a side `and` or `or` could skip is still said.
+
+**[0.91] Identity.** Two names of which one is no number compare by what they stand for: `a == b` holds where both name the same thing — an entity, or a face (§6.21) — reached through every formal and binder (a formal is what its call gave it, a face repeat's binder its face), and `a != b` where they do not. `c in B` holds where what `c` names is one of the faces the face path `B` names (§6.9). These join numbers' comparisons under `and`, `or` and `not` alike, and are decided where the block is elaborated — inside a block over a solid's faces, once the faces are named (§12.8). A number on one side and something drawn on the other is **E103**, as is something drawn under `<`, `<=`, `>` or `>=`, and `in` over what names no faces; a name that stands for nothing is **E101**. `when` is thereby the language's one conditional: a switch is `when flag == 1 { … }`, never a `repeat` over a count of zero or one, which named what it made as copies.
 
 **A `when` repeats nothing, so it has no index and no copy.** What its body declares is named as if written beside the block — `p_in`, and in a component `t.tip` — never with a copy's index, and is reached from outside by that name; where the condition does not hold, nothing of the body is made, and a name only it declares is undefined (**E101**). The numbers a body defines are its own. A statement inside it is one statement as any is (§12.7), reached once or not at all, so a solve writes its seeds back as at the top level (§4.3). An index binder (`as i`) and a body ending mid-joint (§6.6), which threads onto a next copy there is none of, are syntax errors.
 
@@ -2837,18 +2841,18 @@ seg            = "->" | "~" ref [ "rev" ] "~" ;           (* `~` is `hint` since
 
 hint           = "hint" ref hint_clause ;                  (* §11; unimplemented *)
 
-block          = ( "repeat" | "cycle" ) ( expr | IDENT "in" ref [ condition ] ) [ "as" IDENT ]
+block          = ( "repeat" | "cycle" ) ( expr | IDENT "in" ref ) [ "as" IDENT ]
                  "{" { statement } "}"                (* IDENT "in" ref: §12.8 [0.27] *)
                | "ring"   expr "about" ref [ "as" IDENT ] "{" { statement } "}"
                | "when"   truth "{" { statement } "}" ;    (* §12.9 [0.72] *)
 
 truth          = truth "or" conj | conj ;                 (* [0.72] *)
 conj           = conj "and" negation | negation ;
-negation       = "not" negation | expr cmpop expr | "(" truth ")" ;
+negation       = "not" negation | expr cmpop expr | name "in" name | "(" truth ")" ;
+                 (* `name "in" name` and a comparison of two names: identity, [0.91] *)
+name           = IDENT { "." IDENT } ;
 cmpop          = "<" | "<=" | ">" | ">=" | "==" | "!=" ;
 
-condition      = "if" IDENT ( "in" | "!=" ) ref { "and" IDENT ( "in" | "!=" ) ref } ;
-                 (* which faces' copies are kept, §12.8 [0.69] *)
 ref            = ( IDENT | "next" | "prev" ) { "." IDENT | "[" expr "]" } ;
 expr           = expr addop term | term ;
 term           = term mulop factor | factor ;

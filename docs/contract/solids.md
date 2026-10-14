@@ -159,7 +159,7 @@ placement carries inside the blank; CLI test readers zero the offset.
 
 - **A part carries no views; a sheet asks for them** (§6.11, `hidden.rs`).  `view(body) in
   views.right` and `section(body, at: swing) in views.front` are *outputs*: no `Int` draw flag, no
-  `repeat draw_side { … }`, no second copy of the geometry and no `project` to keep in step.
+  `when draw_side == 1 { … }`, no second copy of the geometry and no `project` to keep in step.
   Three draughtsman's rules.  **A corner is drawn and a tessellation seam is not** — a `smooth`
   seam is drawn only where it is a *silhouette*.  **What the material covers is dashed, not
   dropped** — the eye's ray is classified against the term and the piece carries `.hidden`.

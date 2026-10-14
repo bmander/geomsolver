@@ -411,7 +411,8 @@ impl<'a> Walk<'a> {
         // it declares is named as if written beside it, and the numbers it defines
         // are its own
         if b.kind == BlockKind::When {
-            match super::values::condition(&b.count, vals, scope, self.units) {
+            let names = Asked { walk: self, scope, alias: std::cell::OnceCell::new() };
+            match super::values::condition(&b.count, vals, scope, self.units, &names) {
                 Ok(true) => {
                     let mut sub = vals.clone();
                     self.body(&b.body, scope, &mut sub, path, depth + 1);
@@ -1039,6 +1040,31 @@ impl Walk<'_> {
             return None;
         }
         Some(set.clone())
+    }
+}
+
+/// What a `when` asks of names that are not numbers (#267), answered by the walk as it stands
+/// where the block is met: the aliases made so far — a face a copy runs over among them — read
+/// once, and only if a condition asks.
+struct Asked<'w, 'a> {
+    walk: &'w Walk<'a>,
+    scope: &'w Scope,
+    alias: std::cell::OnceCell<BTreeMap<String, String>>,
+}
+
+impl Asked<'_, '_> {
+    fn alias(&self) -> &BTreeMap<String, String> {
+        self.alias.get_or_init(|| self.walk.alias_table())
+    }
+}
+
+impl super::values::Names for Asked<'_, '_> {
+    fn stands(&self, name: &str) -> Option<String> {
+        self.walk.stands_for(&Ref::dotted(name, Span::default()), self.scope, self.alias())
+    }
+
+    fn faces(&self, name: &str) -> Option<Vec<String>> {
+        self.walk.faces_named(&Ref::dotted(name, Span::default()), self.scope, self.alias())
     }
 }
 

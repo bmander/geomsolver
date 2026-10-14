@@ -105,9 +105,22 @@ unknown, E103 two dimensions, E107 a measurement) and walks the body once in the
 with its own copy of `vals` — no `PathStep`, no prefix, so names are the scope's (`q`, `t.tip`).
 `expr::Cond` (`Cmp` `<`…`!=`, `and`/`or`/`not`) is made only by `expr::parse_condition_in` and
 read by `expr::decide`; no `Ast` holds one, and its sides agree as `+`'s (`> 0mm`, never `> 0`).
-The parser refuses `as`, a trailing joint and `when e in X`; the measured-bound sniff skips a
-statement an opener word starts. `commit_seeds` writes into a root `when`'s body. The hypoid's
-tip relief is one (`hypoid.sv`). `tests/when.rs` is the gate.
+The parser refuses `as` and a trailing joint; the measured-bound sniff skips a statement an
+opener word starts. `commit_seeds` writes into a root `when`'s body. The hypoid's tip relief is
+one (`hypoid.sv`). `tests/when.rs` is the gate.
+
+**`when` is the one conditional (0.91, #267).** Two names that are not numbers compare by
+**identity**: `a == b`/`a != b` (`Cond::Cmp` over two `Ast::Var`, a side not in `vals`) holds as
+`Walk::stands_for` resolves them — the absolute name through every alias, so a formal is what
+its call gave and a face repeat's binder its face — and `c in B` (`Cond::In`, made by
+`parse_condition_in` only) as `Walk::faces_named` lists `B`'s faces. The walk answers through
+`values::Names` (`expand::Asked`), building the alias table only if a condition asks. A number
+against something drawn is E103, something drawn compared as a number E103, `in` over what
+names no faces E103, a name standing for nothing E101; `expr::decide` refuses `Cond::In`. So a
+block over faces has no filter of its own: `repeat b in B if …` is a syntax error naming
+`repeat b in B { when b != a { … } }` (`std.sv`'s `round`, `chamfer`), and a switch is `when
+flag == 1`, never `repeat flag` — the count of zero or one named its copies (`sm[0]`), a `when`
+keeps the name (`sm`).
 
 **A component may instantiate itself** (§8, 0.75): a call back into one still being expanded
 is walked like any other (`Walk::instantiating` keeps each with the numbers it was given), each
@@ -205,8 +218,8 @@ takes a layout naming the front datum, origin and reference axis.
   be passed explicitly. `tests/seeds.rs` and `tests/closed_scopes.rs` are the gates.
 - **A part is one component carrying `in view { … }` blocks** (Solvent §6.7, `P::in_comp`): the
   block form is allowed inside a component body (the plane is a formal) and still refused inside a
-  root block.  With `repeat flag { … }` over a 0/1 `Int` formal for the views an instance does not
-  show in, a part's whole design is one module (`engine/block.sv`, `engine/head.sv`,
+  root block.  With `when flag == 1 { … }` over a 0/1 `Int` formal for the views an instance does
+  not show in, a part's whole design is one module (`engine/block.sv`, `engine/head.sv`,
   `engine/crankshaft.sv`, `engine/conrod.sv`); view modules hold only what the assembly adds.
   Instances inside a block copy are indexed like declarations (`cyl[0].small`, `copy_of`).
 

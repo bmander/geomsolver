@@ -34,7 +34,7 @@ component Bank(pin: point, piv: point, fw: Length, dim: Int, dims: group) {
   pis := components.piston.Piston(piston_axes, dims: dims)
 
   // the dimensions, on one bank
-  repeat dim {
+  when dim == 1 {
     claim cyl.b_tl distance(dims.D) cyl.b_tr
     claim pin distance(dims.L) crown
     claim pis.ra distance(dims.rt) pis.rc

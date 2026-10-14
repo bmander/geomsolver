@@ -13,7 +13,8 @@ use crate::syntax::{
 };
 
 /// What a `when` is, said where one is written otherwise (#210).
-const WHEN: &str = "a `when` is decided by comparing numbers: `when d > 0mm { … }`";
+const WHEN: &str = "a `when` is decided by comparing numbers, or names: `when d > 0mm { … }`, \
+                    `when b != a { … }`";
 
 /// Apply block membership recursively. Faces and solids inherit their geometry's plane;
 /// instances carry membership into expansion. Conflicting clauses are diagnosed here.
@@ -1086,38 +1087,22 @@ impl<'a> P<'a> {
         let lo = self.prev_hi();
         // `repeat e in rack.profile` — the block runs over a chain's edges; a ring is counted,
         // since its turn is a fraction of a whole one
-        if matches!(kind, BlockKind::Ring | BlockKind::When) && over_chain(&self.t, self.i) {
-            self.fail(if kind == BlockKind::Ring {
-                "a `ring` is counted and turned about a centre: `ring N about C { … }`"
-            } else {
-                WHEN
-            });
+        if kind == BlockKind::Ring && over_chain(&self.t, self.i) {
+            self.fail("a `ring` is counted and turned about a centre: `ring N about C { … }`");
             self.skip_block();
             return None;
         }
-        if over_chain(&self.t, self.i) {
+        // `when c in B` is a condition, not a chain to run over (#267)
+        if kind != BlockKind::When && over_chain(&self.t, self.i) {
             let var = self.ident()?;
             self.i += 1;
             let chain = self.refr()?;
-            // `if c in B and c != a` (#183 F8)
-            let mut when = Vec::new();
-            if self.eat_word("if") {
-                loop {
-                    let var = self.ident()?;
-                    let within = if self.eat_word("in") {
-                        true
-                    } else if self.eat_p('!') && self.eat_p('=') {
-                        false
-                    } else {
-                        self.fail("a condition on a copy is `f in X` or `f != g`");
-                        return None;
-                    };
-                    let other = self.refr()?;
-                    when.push(crate::syntax::When { var, within, other });
-                    if !self.eat_word("and") {
-                        break;
-                    }
-                }
+            // a filter on the copies is a `when` in the body (#267): `when b != a { … }`
+            if matches!(self.peek(), Some(Tok::Ident(w)) if w == "if") {
+                self.fail("which copies make anything is a `when` in the body: \
+                           `repeat b in B { when b != a { … } }`");
+                self.skip_block();
+                return None;
             }
             let binder = if self.eat_word("as") { Some(self.ident()?) } else { None };
             let (body, joint) = self.braced_body(next_id)?;
@@ -1125,7 +1110,7 @@ impl<'a> P<'a> {
                 kind,
                 count: String::new(),
                 head: Span::at(lo),
-                over: Some(EdgesOf { var, chain, when }),
+                over: Some(EdgesOf { var, chain }),
                 binder,
                 body,
                 joint,

@@ -163,6 +163,11 @@ pub fn decide(c: &Cond, env: &BTreeMap<String, Aff>) -> Result<bool, ExprError> 
             p || q
         }
         Cond::Not(a) => !decide(a, env)?,
+        Cond::In(a, b) => {
+            return Err(ExprError::from(format!(
+                "`{a} in {b}` asks what `{a}` stands for, which is no number"
+            )))
+        }
     })
 }
 
