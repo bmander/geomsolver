@@ -3,13 +3,12 @@
 // A hub keyed to the axle, a web, and a rim the stack's bore is pressed over: one stepped
 // profile turned about the axle.  Six windows through the web lighten it, let air through and
 // give the phase wires their way from the axle's port out to the windings.  The key's slot is
-// cut through the hub's whole length; the axle's cable port is cut through the hub where it
-// passes, so the wires leave the axle into the left-hand bay.
+// cut through the hub's whole length; the axle's cable port, handed in, is cut through the hub
+// where it passes, so the wires leave the axle into the left-hand bay.
 
-use std
 use motor.parts
 
-component Carrier(f: group, dims: group, key: solid, exit: solid) {
+component Carrier(f: group, dims: group, exit: solid) {
   hh := dims.hub_half
   wh := dims.web_half
   rl := dims.L / 2

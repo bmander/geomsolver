@@ -7,7 +7,6 @@
 // N, S round the ring (the drawing does not know a magnet's polarity: it is marked on the part).
 // The ring's ends are tapped for the covers' screws, twelve a side on its mid-wall circle.
 
-use std
 use motor.parts
 
 component Rotor(f: group, dims: group) {

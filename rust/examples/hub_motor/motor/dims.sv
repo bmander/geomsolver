@@ -9,14 +9,16 @@
 // **The machine.**  The magnets turn and the copper stands still: the stator is pressed on the
 // axle, which is clamped in the dropouts, and the magnets are bonded inside a steel ring that is
 // itself the hub shell, so the rotor's own radius is the lever.  46 poles over 51 slots — a
-// fractional-slot concentrated winding, 17 coils a phase wound one to a tooth, gcd(51, 23) = 1 so
-// the cogging is the 2346th harmonic of a turn and nearly nothing.  Torque comes from the shear
+// fractional-slot concentrated winding, 17 coils a phase wound one to a tooth, and the cogging
+// has lcm(51, 46) = 2346 periods a turn, so it is nearly nothing.  Torque comes from the shear
 // in the air gap: 27.9 N·m on a 103.1 mm gap radius and a 35 mm stack is 11.9 kPa, inside the
 // 10–20 kPa an air-cooled machine sustains.
 //
 // The language has two dimensions, length and angle, so the electrical figures are plain
 // numbers in SI units, each with its unit in the comment; the lengths and angles carry theirs.
-// A component receives this table as `dims`; `motor_dims` at the bottom is that group.
+// A component receives this table as `dims`: `motor_dims` at the bottom is the group of what
+// the parts read.  What only the assembly reads (the bearings' bore, the covers' bosses, the
+// spacers and locknuts) it reads here by name, `motor.dims.old`.
 
 // -- the duty -------------------------------------------------------------------------------
 power := 745.7          // W, shaft output: one mechanical horsepower
@@ -68,13 +70,15 @@ Ry := 84.5mm            // the slots' bottom: 18 mm deep
 Rb := 76.5mm            // the stator's bore, on the carrier's rim: an 8 mm yoke
 Rc := Rs - hs - hw      // where the coils stop under the shoes: 99.3
 overhang := 6mm         // the end turns, axially, past each face of the stack
+end_turn_in := Ry - 0.5mm       // the end turns' inside, just under the slots' bottom
 
 // -- the rotor ring: the back iron and the hub shell in one ------------------------------------
 // 1018 steel tube, bored for the magnets.  Half a pole's flux at 1.5 T needs 3.2 mm; 6 mm (0.8 T)
 // carries the cover screws' threads and stiffens the shell against the spokes' pull.
 back := 6mm
 Ro := Rr + back         // 112.1
-half := 26mm            // half the ring's length: the stack, the end turns, 2.5 mm to the covers
+end_clear := 2.5mm      // from the end turns to the covers
+half := L / 2 + overhang + end_clear    // half the ring's length: 26
 screw_r := Rr + back / 2            // the cover screws' circle, mid-wall: 109.1
 screws := 12            // M4 a side, 10 deep
 tap4 := 3.3mm           // M4's tap drill
@@ -149,11 +153,11 @@ disc_depth := 10mm
 // freewheel; the thread is cut, not drawn.
 fw_r := 1.375" / 2
 fw_len := 16mm
+fw_to := brg_in + brg_w + lip + fw_len  // the thread's end from the mid-plane: 54
 
 // -- the axle's spacers and locknuts ----------------------------------------------------------
 spacer_r := 13mm        // a steel tube on the seat, from the bearing's inner race to the step
 nut_r := 14mm           // the flanged locknut, its face at the dropout's
-end_turn_in := Ry - 0.5mm       // the end turns' inside, just under the slots' bottom
 
 // -- the hall sensors: SS41, in the mouths of slots 0, 17 and 34 --------------------------------
 hall_w := 1.5mm         // across the slot
@@ -162,10 +166,9 @@ hall_r1 := Rs - 0.3mm   // and under the tips, 0.9 from the magnets
 hall_l := 4mm           // along the axle, set into the stack's left end
 
 motor_dims := {
-  Rs: Rs, gap: gap, hm: hm, Rm: Rm, Rr: Rr, Ro: Ro, L: L, half: half, theta: 0deg,
-  poles: poles, slots: slots, pole_pitch: pole_pitch, slot_pitch: slot_pitch,
-  magnet_arc: magnet_arc,
-  wt: wt, bo: bo, hs: hs, hw: hw, Ry: Ry, Rb: Rb, Rc: Rc, overhang: overhang,
+  Rs: Rs, Rm: Rm, Rr: Rr, Ro: Ro, L: L, half: half, theta: 0deg,
+  poles: poles, slots: slots, slot_pitch: slot_pitch, magnet_arc: magnet_arc,
+  wt: wt, bo: bo, hs: hs, Ry: Ry, Rb: Rb, Rc: Rc, overhang: overhang,
   end_turn_in: end_turn_in, hall_w: hall_w, hall_r0: hall_r0, hall_r1: hall_r1, hall_l: hall_l,
   screw_r: screw_r, screws: screws, tap4: tap4, tap_depth: tap_depth, clear4: clear4,
   hub_r: hub_r, hub_half: hub_half, web_half: web_half, rim_r: rim_r, windows: windows,
@@ -174,11 +177,9 @@ motor_dims := {
   flats_from: flats_from, step_seat: step_seat, step_end: step_end, cable_d: cable_d,
   cable_to: cable_to, exit_at: exit_at, exit_d: exit_d,
   key_w: key_w, key_h: key_h, key_l: key_l, key_t1: key_t1, key_t2: key_t2,
-  brg_id: brg_id, brg_od: brg_od, brg_w: brg_w, brg_in: brg_in,
+  brg_od: brg_od, brg_w: brg_w, brg_in: brg_in,
   web: web, spigot: spigot, spigot_r: spigot_r, boss_r: boss_r, lip: lip, lip_r: lip_r,
   pocket_in: pocket_in, flange_r: flange_r, flange_t: flange_t, spokes: spokes,
   spoke_r: spoke_r, spoke_d: spoke_d,
-  disc_face: disc_face, disc_r: disc_r, disc_bolts: disc_bolts, disc_bcd: disc_bcd,
-  tap5: tap5, disc_depth: disc_depth, fw_r: fw_r, fw_len: fw_len,
-  old: old, spacer_r: spacer_r, nut_r: nut_r
+  disc_bolts: disc_bolts, disc_bcd: disc_bcd, tap5: tap5, disc_depth: disc_depth
 }

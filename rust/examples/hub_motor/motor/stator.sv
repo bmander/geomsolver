@@ -15,7 +15,6 @@
 // coils), and the end turns either side of the stack, which the covers must clear.  The three
 // hall sensors stand in three slots' mouths.
 
-use std
 use motor.parts
 
 component Stator(f: group, dims: group) {
@@ -62,7 +61,7 @@ component Stator(f: group, dims: group) {
       shoe_l := line(g, h)
       wall_l := line(h, a)
     }
-    // the first slot stands on the datum: phase A's first coil is the tooth just clockwise of it
+    // the first slot stands on the datum
     f.datum angle(0deg) sc[0]
     tips := circle(center: f.o) hint(r: dims.Rs)
     radius(dims.Rs) tips

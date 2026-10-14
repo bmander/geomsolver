@@ -59,8 +59,7 @@ frame := {front: std.front, side: std.side, top: std.top, o: std.origin, datum: 
 
 // -- what stands still: the axle, the carrier keyed to it, the stator pressed on the carrier ---
 axle := motor.axle.Axle(frame, dims: motor.dims.motor_dims)
-carrier := motor.carrier.Carrier(frame, dims: motor.dims.motor_dims, key: axle.key,
-                                 exit: axle.exit)
+carrier := motor.carrier.Carrier(frame, dims: motor.dims.motor_dims, exit: axle.exit)
 stator := motor.stator.Stator(frame, dims: motor.dims.motor_dims)
 
 // -- what turns: the ring and its magnets, and the covers screwed to its ends -------------------
@@ -69,10 +68,8 @@ left := motor.cover.Cover(frame, dims: motor.dims.motor_dims, screws: rotor.scre
                           boss_to: motor.dims.disc_face, boss_r: motor.dims.disc_r,
                           spoke_phase: 0deg, disc: 1)
 right := motor.cover.Cover(frame, dims: motor.dims.motor_dims, screws: rotor.screw, sg: 1,
-                           boss_to: motor.dims.brg_in + motor.dims.brg_w + motor.dims.lip +
-                                    motor.dims.fw_len,
-                           boss_r: motor.dims.fw_r, spoke_phase: 180deg / motor.dims.spokes,
-                           disc: 0)
+                           boss_to: motor.dims.fw_to, boss_r: motor.dims.fw_r,
+                           spoke_phase: 180deg / motor.dims.spokes, disc: 0)
 
 // -- between them: the bearings on the axle's shoulders, and what clamps their inner races -----
 // Each bearing stands on a shoulder of the carrier's seat; a spacer tube runs from its inner

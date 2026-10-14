@@ -9,10 +9,9 @@
 //
 // The holes are drilled along the axle, from the end view: the spoke holes round the flange,
 // staggered half a pitch between the two flanges (`spoke_phase`), and the cap screws' clearance
-// holes on the very centres the rotor's tapped holes stand on, which are handed in.  The disc
-// side (`disc: 1`) is also tapped for the rotor's six M5 bolts.
+// holes on the very centres the rotor ring's tapped holes stand on, which are handed in.  The
+// disc side (`disc: 1`) is also tapped for the brake disc's six M5 bolts.
 
-use std
 use motor.parts
 
 component Cover(f: group, dims: group, screws: group, sg: Scalar, boss_to: Length,
@@ -73,11 +72,12 @@ component Cover(f: group, dims: group, screws: group, sg: Scalar, boss_to: Lengt
 
   // the brake disc's six M5 holes, `disc_depth` into the boss's face
   when disc == 1 {
-    rotor_bolts := motor.parts.HoleCircle(f, n: dims.disc_bolts, r: dims.disc_bcd / 2,
-                                          d: dims.tap5, phase: 0deg)
+    disc_holes := motor.parts.HoleCircle(f, n: dims.disc_bolts, r: dims.disc_bcd / 2,
+                                         d: dims.tap5, phase: 0deg)
+    // the boss's face along the end view's normal (−y), and the holes run inboard from it
     face_h := -sg * boss_to
     repeat dims.disc_bolts as i {
-      private tapped := solid(face(rotor_bolts.hole[i]),
+      private tapped := solid(face(disc_holes.hole[i]),
                               from: min(face_h, face_h + sg * dims.disc_depth),
                               to: max(face_h, face_h + sg * dims.disc_depth))
       tapped cut body

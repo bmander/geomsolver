@@ -38,10 +38,12 @@ fn motor() -> Elaborated {
 
 /// The volume of the named solid of `e`, built exactly.
 fn volume(e: &Elaborated,name: &str) -> f64 {
-    let built = e.sketch.exact_solid(fixtures::solid(e,name)).unwrap_or_else(|why| panic!("{name}: {why}"));
+    let built = e.sketch.exact_solid(fixtures::solid(e,name))
+        .unwrap_or_else(|why| panic!("{name}: {why}"));
     props::volume(&built.brep)
 }
 
+/// The named solid's volume is `want`, to a part in a million.
 fn close(e: &Elaborated,name: &str,want: f64) {
     let got = volume(e,name);
     assert!((got-want).abs() < 1e-6*want,"{name}: {got} against {want}");
@@ -49,7 +51,8 @@ fn close(e: &Elaborated,name: &str,want: f64) {
 
 /// A polygon's area, counter-clockwise positive (the slot walks clockwise).
 fn shoelace(p: &[[f64;2]]) -> f64 {
-    (0..p.len()).map(|i| { let (a,b) = (p[i],p[(i+1)%p.len()]); a[0]*b[1]-b[0]*a[1] }).sum::<f64>()/2.
+    (0..p.len()).map(|i| { let (a,b) = (p[i],p[(i+1)%p.len()]); a[0]*b[1]-b[0]*a[1] })
+        .sum::<f64>()/2.
 }
 
 /// The point at radius `r` lying `off` to the left of the ray from the origin at bearing `phi`
@@ -131,7 +134,7 @@ fn the_covers_are_their_turned_profiles_less_their_holes() {
              [HALF,RM],[HALF,27.],[23.,27.],[23.,21.],[lip_in,21.]]
     };
     let turned = |p: &[[f64;2]]| {
-        // ∫∫ r dA over the profile, by Green: ∮ r²/2 ds… written as the polygon's moment
+        // the profile's first moment about the axle, ∫∫ r dA, summed edge by edge as a polygon's
         let moment: f64 = (0..p.len()).map(|i| {
             let (a,b) = (p[i],p[(i+1)%p.len()]);
             (a[0]*b[1]-b[0]*a[1])*(a[1]+b[1])

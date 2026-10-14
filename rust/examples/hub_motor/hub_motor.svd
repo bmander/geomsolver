@@ -4,7 +4,7 @@ model m from "hub_motor.sv"
 sheet arrangement {
   size (420mm, 297mm)
   label "1 HP E-BIKE HUB MOTOR — GENERAL ARRANGEMENT" at (14mm, 16mm)
-  label "746 W, 27.9 N·m at 255 rpm, 48 V · direct drive, outer rotor · 46 poles / 51 slots" at (14mm, 24mm)
+  label "746 W, 27.9 N·m at 255 rpm, 48 V · outer rotor · 46 poles / 51 slots" at (14mm, 24mm)
   label "END VIEW (along the axle, from the brake side)" at (20mm, 40mm)
   label "HALF SECTION ON THE AXLE" at (250mm, 40mm)
   sketch end_view(m) from m.std.front at (125mm, 160mm) scale 0.8
