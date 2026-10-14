@@ -11,7 +11,8 @@ use crate::fmath::Det;
 use super::build::Profile;
 use super::geom::{Rigid,V};
 use super::planar::{boolean,Chart,Op,Region,Step};
-use super::recipe::{meridian_of,revolutions_tolerance,whole_turn,Named,Node,Recipe,Unread};
+use super::recipe::{meridian_of,refused,revolutions_tolerance,whole_turn,Named,Node,Recipe,Unread};
+use super::KernelError;
 use crate::json::Json;
 use crate::space::{add,cross,dot,norm,scale,sub,unit};
 use std::collections::BTreeMap;
@@ -43,11 +44,11 @@ fn untag(tag: u32) -> (Option<usize>,usize,usize) {
 }
 
 impl Sectioned {
-    /// The recipe's JSON read, or `Ok(Err)` naming why it is not of this kind.
-    pub fn read(recipe: &Json) -> Result<Result<Sectioned,String>,String> { Sectioned::of(&Recipe::read(recipe)?) }
+    /// The recipe's JSON read (`of`).
+    pub fn read(recipe: &Json) -> Result<Sectioned,KernelError> { Sectioned::of(&Recipe::read(recipe)?) }
 
-    /// The recipe read, or `Ok(Err)` naming why it is not of this kind.
-    pub fn of(recipe: &Recipe) -> Result<Result<Sectioned,String>,String> {
+    /// The recipe read, or a `Kind::Refused` error naming why it is not of this kind.
+    pub fn of(recipe: &Recipe) -> Result<Sectioned,KernelError> {
         let tol = revolutions_tolerance(&recipe.nodes);
         // each node's leaf (a revolution, as placed so far)
         // each revolution's line as placed, and the line and profile it was drawn with
@@ -57,14 +58,14 @@ impl Sectioned {
         for Named {id,name,node} in &recipe.nodes {
             match node {
                 Node::Revolve {profile,origin,axis,angle} => {
-                    if let Err(e) = whole_turn(*angle,name) { return Ok(Err(e)) }
+                    whole_turn(*angle,name)?;
                     let (o,a) = (*origin,unit(*axis));
                     profiles.push((o,a,o,a,Profile::of(profile)?,name.to_string()));
                     placed.insert(*id,profiles.len()-1);
                     out.push((*id,Term::Leaf(profiles.len()-1)));
                 }
                 Node::Placed {source,matrix} => {
-                    let Some(&k) = placed.get(source) else { return Ok(Err(format!("`{name}` places something not a revolution"))) };
+                    let Some(&k) = placed.get(source) else { return Err(refused(format!("`{name}` places something not a revolution"))) };
                     let m = Rigid::from_rows(matrix);
                     let (o,a,so,sa,p,_) = profiles[k].clone();
                     profiles.push((m.point(o),m.vector(a),so,sa,p,name.to_string()));
@@ -78,26 +79,26 @@ impl Sectioned {
                     }
                     out.push((*id,Term::Body {stock:b.stock,ops}));
                 }
-                node => return Ok(Err(format!("`{name}` is a {}, not a revolution",node.kind()))),
+                node => return Err(refused(format!("`{name}` is a {}, not a revolution",node.kind()))),
             }
         }
-        let Some(&(origin,axis,..)) = profiles.first() else { return Ok(Err("no revolution".into())) };
+        let Some(&(origin,axis,..)) = profiles.first() else { return Err(refused("no revolution")) };
         let mut leaves = Vec::new();
         for (o,a,so,sa,profile,name) in profiles {
-            if norm(cross(a,axis)) > 1e-12 { return Ok(Err("a revolution about a line not parallel to the first's".into())) }
+            if norm(cross(a,axis)) > 1e-12 { return Err(refused("a revolution about a line not parallel to the first's")) }
             // the meridian in its own (r, z), read where it was drawn: a placement is rigid, and
             // moves only the line
             let loops = match meridian_of(&profile,so,sa,tol,false) {
                 Ok(loops) => loops,
-                Err(Unread::Spline) => return Ok(Err("a profile with a spline".into())),
-                Err(Unread::Crosses) => return Ok(Err("a profile crossing its line".into())),
-                Err(Unread::OnLine) => return Ok(Err("a profile on its line".into())),
+                Err(Unread::Spline) => return Err(refused("a profile with a spline")),
+                Err(Unread::Crosses) => return Err(refused("a profile crossing its line")),
+                Err(Unread::OnLine) => return Err(refused("a profile on its line")),
             };
             let region = Region::new(loops.into_iter().enumerate()
                 .map(|(li,l)| l.into_iter().enumerate().map(|(k,seg)| Step {seg,chart:None,tag:edge_tag(li,k)}).collect()).collect());
             leaves.push(Leaf {o,a,region,name,edges:profile.names.clone()});
         }
-        Ok(Ok(Sectioned {origin,axis,leaves,nodes:out,root:recipe.root,tol}))
+        Ok(Sectioned {origin,axis,leaves,nodes:out,root:recipe.root,tol})
     }
 
     /// The section by the half-plane of the line towards `side` (unit, square to the line), in its

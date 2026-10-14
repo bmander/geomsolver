@@ -6,8 +6,12 @@ use super::boolean::{combined,Op};
 use super::build::{cut_before,drafted,kept,kept_by_solid,loft,prism,revolve,Profile};
 use super::geom::{tolerance,tolerance_over,widen,Rigid,V,EMPTY};
 use super::topo::Brep;
+use super::{KernelError,Kind};
 use crate::json::Json;
 use std::collections::BTreeMap;
+
+/// A node built, or why not.
+type Built = Result<Brep,KernelError>;
 
 mod node;
 pub use node::{Body,Corner,Edge,Kept,Lowered,Named,Node,Recipe,Rolled,Run,Section,Stroke};
@@ -33,19 +37,19 @@ pub fn node(n: &Json,built: &BTreeMap<i64,Brep>) -> Result<Brep,String> { node_n
 /// the rounding a recipe read off coordinates far from its origin carries (a part solved at 1e9 mm
 /// is placed to 1e-7 mm, wherever it is built about).
 pub fn node_named(n: &Json,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64,String>,floor: f64) -> Result<Brep,String> {
-    Node::read(n)?.built(built,built_names,floor)
+    Ok(Node::read(n)?.built(built,built_names,floor)?)
 }
 
 impl Node {
     /// The node built from the nodes before it (`built`, named by `built_names` in what it says),
     /// its Booleans' tolerance never under `floor` (mm) (`node_named`).
-    pub fn built(&self,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64,String>,floor: f64) -> Result<Brep,String> {
+    pub fn built(&self,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64,String>,floor: f64) -> Built {
         match self {
-            Node::Prism {profile,from,to,draft} => drafted(&Profile::of(profile)?,*from,*to,draft.unwrap_or(0.)),
-            Node::Revolve {profile,origin,axis,angle} => revolve(&Profile::of(profile)?,*origin,*axis,*angle),
+            Node::Prism {profile,from,to,draft} => Ok(drafted(&Profile::of(profile)?,*from,*to,draft.unwrap_or(0.))?),
+            Node::Revolve {profile,origin,axis,angle} => Ok(revolve(&Profile::of(profile)?,*origin,*axis,*angle)?),
             Node::Loft {profile,end,guide} => {
                 let end = end.as_ref().map(Profile::of).transpose()?;
-                loft(&Profile::of(profile)?,end.as_ref(),guide)
+                Ok(loft(&Profile::of(profile)?,end.as_ref(),guide)?)
             }
             Node::Placed {source,matrix} => {
                 let source = built.get(source).ok_or("recipe: `source` not built before its user")?;
@@ -55,7 +59,7 @@ impl Node {
             Node::Body(b) => body(b,built,built_names,floor),
             // a ball swept by a turn or a screw (`solid::canal`, #238): the tube about its centre's path
             Node::Canal {centre,radius,origin,axis,angle,advance,face} =>
-                super::build::canal(*centre,*radius,*origin,*axis,*angle,*advance,face),
+                Ok(super::build::canal(*centre,*radius,*origin,*axis,*angle,*advance,face)?),
             Node::Region(pieces) => region_node(pieces,built,built_names,floor),
             Node::Lowered(l) => lowered_node(l,built,built_names,floor),
         }
@@ -64,7 +68,7 @@ impl Node {
 
 /// A `through` node: a prism spanning its sources' material along the profile's normal (their
 /// `bounds` enclose it, issue #59), padded as the native host pads it.
-fn through_node(profile: &Section,sources: &[i64],built: &BTreeMap<i64,Brep>) -> Result<Brep,String> {
+fn through_node(profile: &Section,sources: &[i64],built: &BTreeMap<i64,Brep>) -> Built {
     let profile = Profile::of(profile)?;
     let mut bounds = EMPTY;
     for s in sources {
@@ -79,12 +83,12 @@ fn through_node(profile: &Section,sources: &[i64],built: &BTreeMap<i64,Brep>) ->
         diagonal += (hi[k]-lo[k]).dpowi(2);
     }
     let pad = diagonal.sqrt()*4e-5;
-    prism(&profile,from-pad,to+pad)
+    Ok(prism(&profile,from-pad,to+pad)?)
 }
 
 /// A `region` node, a region in general position (`solid::bounded`, #238): the common of the
 /// primitives it keeps within, less those it keeps outside, each bounded past its material.
-fn region_node(pieces: &[Kept],built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64,String>,floor: f64) -> Result<Brep,String> {
+fn region_node(pieces: &[Kept],built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64,String>,floor: f64) -> Built {
     let mut solid: Option<Brep> = None;
     for piece in pieces {
         let b = piece.node.built(built,built_names,floor)?;
@@ -94,14 +98,14 @@ fn region_node(pieces: &[Kept],built: &BTreeMap<i64,Brep>,built_names: &BTreeMap
             Some(s) => combined(&s,&b,if piece.keep { Op::Common } else { Op::Cut },floor)?,
         });
     }
-    solid.ok_or_else(|| "recipe: a region of no pieces".to_string())
+    solid.ok_or_else(|| "recipe: a region of no pieces".into())
 }
 
 /// A `lowered` node, a region set's pieces (`solid::lowering`, #194): each run a prism or a
 /// revolution, each corner the ball's patch built where it stands, each rolled run the ball rolled
 /// along it; those joined (a run ending in the section a corner's cell begins in, meeting nowhere
 /// else) glued there, never intersected; the chains unioned (`chained`).
-fn lowered_node(n: &Lowered,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64,String>,floor: f64) -> Result<Brep,String> {
+fn lowered_node(n: &Lowered,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64,String>,floor: f64) -> Built {
     let mut pieces = n.pieces.iter().map(|piece| lowered_run(piece,built,built_names,floor)).collect::<Result<Vec<_>,_>>()?;
     for c in &n.corners {
         let (vertex,centre,radius) = (c.vertex,c.centre,c.radius);
@@ -125,7 +129,7 @@ fn lowered_node(n: &Lowered,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i6
 /// One rolled run of a `lowered` node: the ball rolled along it against the `stratum`, or a
 /// chamfer's flat cut along it instead (#218's 6), cut at the section of each corner standing at
 /// an end of its run, which takes the rest (#218's 7).
-fn rolled_run(k: &Rolled,stratum: &Brep,tol: f64,floor: f64) -> Result<Brep,String> {
+fn rolled_run(k: &Rolled,stratum: &Brep,tol: f64,floor: f64) -> Built {
     let mut piece = match k.flat {
         Some((legs,on)) => super::fillet::flat_along(stratum,k.at,legs,Some(on),tol).map_err(|e| format!("a flat along a run: {e}"))?,
         None => super::fillet::roll(stratum,k.at,k.radius,tol).map_err(|e| format!("a rolled round: {e}"))?.piece,
@@ -138,7 +142,7 @@ fn rolled_run(k: &Rolled,stratum: &Brep,tol: f64,floor: f64) -> Result<Brep,Stri
 
 /// One run of a `lowered` node, a prism or a revolution, cut off where its edge ends: at a slant
 /// (`within`), or carried on into a curved face (`kept`).
-fn lowered_run(piece: &Run,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64,String>,floor: f64) -> Result<Brep,String> {
+fn lowered_run(piece: &Run,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64,String>,floor: f64) -> Built {
     let mut b = piece.node.built(built,built_names,floor)?;
     // a run cut off at a slant where its edge ends (a run-out): kept behind each face's
     // plane (through `at`, its `normal` away from the run)
@@ -157,7 +161,7 @@ fn lowered_run(piece: &Run,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64
 /// A lowered region's pieces, those `joins` names glued at their shared sections into chains, each
 /// walked from its first piece breadth first at the tolerance of its pieces (looser at a rolled
 /// piece's, those from `first_rolled` on), and the chains set beside one another (`beside`).
-fn chained(pieces: &[Brep],joins: &[[usize;2]],first_rolled: usize,floor: f64) -> Result<Brep,String> {
+fn chained(pieces: &[Brep],joins: &[[usize;2]],first_rolled: usize,floor: f64) -> Built {
     if joins.iter().flatten().any(|&k| k >= pieces.len()) { return Err("recipe: a join names no piece".into()) }
     let mut next: Vec<Vec<usize>> = vec![Vec::new();pieces.len()];
     for &[i,j] in joins { next[i].push(j); next[j].push(i); }
@@ -188,14 +192,14 @@ fn chained(pieces: &[Brep],joins: &[[usize;2]],first_rolled: usize,floor: f64) -
         if rolled { chain.measure_tolerances(); }
         solid = Some(match solid { None => chain,Some(s) => beside(&s,&chain,floor)? });
     }
-    solid.ok_or_else(|| "recipe: a lowered region of no pieces".to_string())
+    solid.ok_or_else(|| "recipe: a lowered region of no pieces".into())
 }
 
 /// Two chains of a lowered region unioned, or — where they only touch, along a line their ends
 /// share (a rim's run and a ring's stretch each side of a reflex corner, kept off one another by
 /// the walls they end on) — side by side as two shells: their union is no manifold there, but
 /// nothing of either lies in the other, so a body taking each takes both.
-fn beside(a: &Brep,b: &Brep,floor: f64) -> Result<Brep,String> {
+fn beside(a: &Brep,b: &Brep,floor: f64) -> Built {
     let union = match combined(a,b,Op::Union,floor) { Ok(u) => return Ok(u),Err(e) => e };
     let size = a.size().max(b.size());
     let apart = combined(a,b,Op::Common,floor)
@@ -206,7 +210,7 @@ fn beside(a: &Brep,b: &Brep,floor: f64) -> Result<Brep,String> {
 /// A body: the stock, plus everything on it, minus everything that cuts it, within everything that
 /// bounds it — in that order, as the native host combines them; then what reads the faces that
 /// makes (a round's fills, then its cuts: the stratum, #183 F6), where `n` lists them.
-fn body(n: &Body,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64,String>,floor: f64) -> Result<Brep,String> {
+fn body(n: &Body,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64,String>,floor: f64) -> Built {
     let mut solid = built.get(&n.stock).ok_or("recipe: `stock` not built before its user")?.clone();
     for ((key,list),op) in n.sets().into_iter().zip([Op::Union,Op::Cut,Op::Common,Op::Union,Op::Cut]) {
         // the late sets (fills, then cuts) are what reads the faces the rest make
@@ -220,10 +224,10 @@ fn body(n: &Body,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64,String>,f
                 // meeting at a vertex (a fill and a run of other radii) or across a corner a fill
                 // rounds (a rim's run and a ring's stretch) leave material touching itself along a
                 // line, which no manifold boundary holds (#197, #218)
-                if !written && e.starts_with(super::topo::NOT_MANIFOLD) {
-                    format!("{key}: rounds or chamfers of separate statements meet where the body they each read leaves \
-                        them touching along a line, not built yet (#218): {e}")
-                } else { format!("{key} `{name}`: {e}") }
+                if !written && e.kind == Kind::NotManifold {
+                    e.saying(|e| format!("{key}: rounds or chamfers of separate statements meet where the body they each \
+                        read leaves them touching along a line, not built yet (#218): {e}"))
+                } else { e.saying(|e| format!("{key} `{name}`: {e}")) }
             })?;
         }
     }
@@ -234,16 +238,16 @@ fn body(n: &Body,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64,String>,f
 /// name, a placement's copies by the placement and the route to the primitive in its source —
 /// the walk `solid::document::operand_primitives` makes over the solids, made over the nodes, so
 /// the names are `solid::exact`'s.
-pub fn build(recipe: &Json) -> Result<Brep,String> { Recipe::read(recipe)?.build() }
+pub fn build(recipe: &Json) -> Result<Brep,String> { Ok(Recipe::read(recipe)?.build()?) }
 
 impl Recipe {
     /// The root, built (`build`).
-    pub fn build(&self) -> Result<Brep,String> {
+    pub fn build(&self) -> Built {
         let mut built = BTreeMap::new();
         // each node's primitives, keyed as its faces are named, and their routes from it
         let mut routes: BTreeMap<i64,(String,BTreeMap<String,String>)> = BTreeMap::new();
         for Named {id,name,node} in &self.nodes {
-            let mut b = node.built(&built,&BTreeMap::new(),0.).map_err(|e| format!("`{name}`: {e}"))?;
+            let mut b = node.built(&built,&BTreeMap::new(),0.).map_err(|e| e.saying(|e| format!("`{name}`: {e}")))?;
             let mut own = BTreeMap::new();
             match node {
                 Node::Lowered(_) => {}
@@ -284,31 +288,26 @@ fn placed_name(name: &str,path: &str) -> String {
     if path.is_empty() { name.to_string() } else { format!("{name}.{path}") }
 }
 
-/// A recipe whose every operand is a whole revolution about one line, or a ball centred on it,
-/// built as its meridian region turned once about that line: the region in the half-plane of the
-/// line towards `seam`, so every face of revolution starts its parameters there. Each operand's
-/// region is a thin prism of it standing on that half-plane (a ball's, its half-disc), the bodies
-/// combine them by this kernel's Booleans (lines and arcs swept: planes and cylinders, exact), and
-/// the root's cap is the region. `Ok(Err)` names why a recipe is not such a solid, so a caller
-/// builds it by its Booleans instead.
-pub fn meridian(recipe: &Json,seam: V) -> Result<Result<(Brep,V,V),String>,String> { Recipe::read(recipe)?.meridian(seam) }
-
 impl Recipe {
-    /// The recipe built as its meridian region turned once (`meridian`).
-    pub fn meridian(&self,seam: V) -> Result<Result<(Brep,V,V),String>,String> {
-        Ok(match meridian_region(self,seam)? {
-            Ok((profile,origin,axis)) => Ok((revolve(&profile,origin,axis,std::f64::consts::TAU)?,origin,axis)),
-            Err(e) => Err(e),
-        })
+    /// A recipe whose every operand is a whole revolution about one line, or a ball centred on it,
+    /// built as its meridian region turned once about that line: the region in the half-plane of
+    /// the line towards `seam`, so every face of revolution starts its parameters there. Each
+    /// operand's region is a thin prism of it standing on that half-plane (a ball's, its
+    /// half-disc), the bodies combine them by this kernel's Booleans (lines and arcs swept: planes
+    /// and cylinders, exact), and the root's cap is the region. A `Kind::Refused` error says why a
+    /// recipe is not such a solid, so a caller builds it by its Booleans instead.
+    pub fn meridian(&self,seam: V) -> Result<(Brep,V,V),KernelError> {
+        let (profile,origin,axis) = meridian_region(self,seam)?;
+        Ok((revolve(&profile,origin,axis,std::f64::consts::TAU)?,origin,axis))
     }
 }
 
-/// A ball, where recipe node `n` is one: a whole revolution of a profile of lines on its axis and
-/// arcs of one circle centred on it (`tol` mm) — its centre and its radius.
-pub fn ball_of(n: &Json,tol: f64) -> Result<Option<(V,f64)>,String> { Node::read(n)?.ball(tol) }
+/// Not of the kind a route builds, saying why (`Kind::Refused`).
+pub(super) fn refused(why: impl Into<String>) -> KernelError { KernelError::new(Kind::Refused,why) }
 
 impl Node {
-    /// The ball this node is, where it is one (`ball_of`).
+    /// A ball, where the node is one: a whole revolution of a profile of lines on its axis and arcs
+    /// of one circle centred on it (`tol` mm) — its centre and its radius.
     pub fn ball(&self,tol: f64) -> Result<Option<(V,f64)>,String> {
         use crate::space::{cross,norm,scale,sub};
         use super::build::ProfileEdge;
@@ -345,8 +344,8 @@ pub(super) fn revolutions_tolerance(nodes: &[Named]) -> f64 {
 
 /// Whether a revolution turning by `angle` (called `name`) is a whole turn: `Err` refuses it, by
 /// name.
-pub(super) fn whole_turn(angle: f64,name: &str) -> Result<(),String> {
-    if (angle.abs()-std::f64::consts::TAU).abs() > 1e-9 { Err(format!("`{name}` is a partial revolution")) } else { Ok(()) }
+pub(super) fn whole_turn(angle: f64,name: &str) -> Result<(),KernelError> {
+    if (angle.abs()-std::f64::consts::TAU).abs() > 1e-9 { Err(refused(format!("`{name}` is a partial revolution"))) } else { Ok(()) }
 }
 /// Why a revolution's profile is no meridian (`meridian_of`).
 pub(super) enum Unread {
@@ -417,7 +416,7 @@ pub(super) fn meridian_of(profile: &Profile,o: V,a: V,tol: f64,conics: bool) -> 
 
 /// `meridian`'s region: a profile in the half-plane of its line towards `seam` (its outer loop
 /// first), with the line's point and direction.
-fn meridian_region(recipe: &Recipe,seam: V) -> Result<Result<(Profile,V,V),String>,String> {
+fn meridian_region(recipe: &Recipe,seam: V) -> Result<(Profile,V,V),KernelError> {
     use crate::space::{cross,dot,norm,scale,sub};
     use super::build::ProfileEdge;
     use super::planar::Region;
@@ -429,7 +428,7 @@ fn meridian_region(recipe: &Recipe,seam: V) -> Result<Result<(Profile,V,V),Strin
     for Named {node,..} in nodes {
         if let Node::Revolve {origin,axis,..} = node { if ball(node)?.is_none() { line = Some((*origin,unit(*axis))); break } }
     }
-    let Some((origin,axis)) = line else { return Ok(Err("no revolution of it is about a line of its own".into())) };
+    let Some((origin,axis)) = line else { return Err(refused("no revolution of it is about a line of its own")) };
     let on_line = |p: V| norm(cross(sub(p,origin),axis)) <= tol;
     let seam = unit(sub(seam,scale(axis,dot(seam,axis))));
     // the half-plane's coordinates: along `seam` from the line, and along it
@@ -440,10 +439,10 @@ fn meridian_region(recipe: &Recipe,seam: V) -> Result<Result<(Profile,V,V),Strin
     for Named {id,name,node} in nodes {
         let region = match node {
             Node::Revolve {profile,origin: o,axis: a,angle} => {
-                if let Err(e) = whole_turn(*angle,name) { return Ok(Err(e)) }
+                whole_turn(*angle,name)?;
                 let profile = Profile::of(profile)?;
                 if let Some((c,r)) = ball(node)? {
-                    if !on_line(c) { return Ok(Err(format!("`{name}` is a ball off the line"))) }
+                    if !on_line(c) { return Err(refused(format!("`{name}` is a ball off the line"))) }
                     // its half-disc: from the axis round through the half-plane and back along it
                     let z = dot(sub(c,origin),axis);
                     let arc = (0..profile.loops.len()).flat_map(|l| (0..profile.loops[l].len()).map(move |k| (l,k)))
@@ -453,12 +452,14 @@ fn meridian_region(recipe: &Recipe,seam: V) -> Result<Result<(Profile,V,V),Strin
                     Region::half_disc(z,r).tagged(&|_,_| tag)
                 } else {
                     let a = unit(*a);
-                    if norm(cross(a,axis)) > 1e-12 || !on_line(*o) { return Ok(Err(format!("`{name}` is a revolution about another line"))) }
+                    if norm(cross(a,axis)) > 1e-12 || !on_line(*o) {
+                        return Err(refused(format!("`{name}` is a revolution about another line")))
+                    }
                     let loops = match meridian_of(&profile,origin,axis,tol,true) {
                         Ok(loops) => loops,
-                        Err(Unread::Spline) => return Ok(Err(format!("`{name}`'s profile has a spline"))),
-                        Err(Unread::Crosses) => return Ok(Err(format!("`{name}`'s section crosses its axis"))),
-                        Err(Unread::OnLine) => return Ok(Err(format!("`{name}` has no section off its axis"))),
+                        Err(Unread::Spline) => return Err(refused(format!("`{name}`'s profile has a spline"))),
+                        Err(Unread::Crosses) => return Err(refused(format!("`{name}`'s section crosses its axis"))),
+                        Err(Unread::OnLine) => return Err(refused(format!("`{name}` has no section off its axis"))),
                     };
                     let first = names.len() as u32+1;
                     for (l,edges) in profile.loops.iter().enumerate() {
@@ -480,14 +481,14 @@ fn meridian_region(recipe: &Recipe,seam: V) -> Result<Result<(Profile,V,V),Strin
                 }
                 region
             }
-            node => return Ok(Err(format!("`{name}` is a {}, not a revolution",node.kind()))),
+            node => return Err(refused(format!("`{name}` is a {}, not a revolution",node.kind()))),
         };
         regions.insert(*id,region);
     }
     let root = regions.remove(&recipe.root).ok_or("recipe: no root")?;
-    if root.loops.is_empty() { return Ok(Err("the meridian region is empty".into())) }
+    if root.loops.is_empty() { return Err(refused("the meridian region is empty")) }
     let name = |t: u32| if t == 0 { String::new() } else { names.get(t as usize-1).cloned().unwrap_or_default() };
-    Ok(Ok((region_profile(&root,origin,seam,axis,&name),origin,axis)))
+    Ok((region_profile(&root,origin,seam,axis,&name),origin,axis))
 }
 
 /// A meridian region as the profile a revolution turns: back into the half-plane through `origin`

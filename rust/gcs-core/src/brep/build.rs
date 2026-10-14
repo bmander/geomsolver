@@ -568,7 +568,7 @@ pub fn canal(c: V,r: f64,origin: V,axis: V,angle: f64,advance: f64,name: &str) -
         else { loft(&disc,None,&Guide::Screw {center:origin,axis:a,angle,advance})? };
     let end = screw(origin,a,angle,advance);
     let union = |s: &Brep,b: Brep| super::boolean::combined(s,&named(b),super::boolean::Op::Union,0.);
-    union(&union(&named(tube),half_ball(c,scale(t,-1.),w,r)?)?,half_ball(c,t,w,r)?.moved(&end))
+    Ok(union(&union(&named(tube),half_ball(c,scale(t,-1.),w,r)?)?,half_ball(c,t,w,r)?.moved(&end))?)
 }
 
 /// How far round from the radial line a ball's tube's seams run (radians): the golden angle's
@@ -900,7 +900,7 @@ pub fn kept(piece: &Brep,o: V,keep: V,floor: f64) -> Result<Brep,String> {
     let foot = sub(middle,scale(keep,dot(sub(middle,o),keep)));
     let size = 2.*distance(lo,hi)+distance(middle,foot);
     let block = prism(&square(foot,keep,size),0.,size)?;
-    super::boolean::combined(piece,&block,super::boolean::Op::Common,floor)
+    Ok(super::boolean::combined(piece,&block,super::boolean::Op::Common,floor)?)
 }
 
 /// `piece` less what lies behind the plane through `o` (against `keep`, a unit normal) within
@@ -909,7 +909,7 @@ pub fn kept(piece: &Brep,o: V,keep: V,floor: f64) -> Result<Brep,String> {
 /// and the vertex, and nothing of the run elsewhere (a rim round a hole comes back past the plane).
 pub fn cut_before(piece: &Brep,o: V,keep: V,reach: f64,floor: f64) -> Result<Brep,String> {
     let block = prism(&square(o,keep,reach),-reach,0.)?;
-    super::boolean::combined(piece,&block,super::boolean::Op::Cut,floor)
+    Ok(super::boolean::combined(piece,&block,super::boolean::Op::Cut,floor)?)
 }
 
 /// `piece` kept within (`inside`) or outside the solid a cylinder, a cone or a sphere bounds: in
@@ -954,5 +954,5 @@ pub fn kept_by_solid(piece: &Brep,surface: &Surface,inside: bool,floor: f64) -> 
         _ => return Err(format!("a piece kept within a {}",surface.kind())),
     };
     let op = if inside { super::boolean::Op::Common } else { super::boolean::Op::Cut };
-    super::boolean::combined(piece,&solid,op,floor)
+    Ok(super::boolean::combined(piece,&solid,op,floor)?)
 }

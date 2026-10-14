@@ -120,7 +120,7 @@ impl Face {
 
 /// How `Brep::check` opens a refusal of an edge not used once each way: the boundary is no
 /// manifold there (two pieces touching along it, or a face kept twice).
-pub const NOT_MANIFOLD: &str = "not a manifold: ";
+const NOT_MANIFOLD: &str = "not a manifold: ";
 
 /// A solid's boundary: one or more closed shells, its faces in any order.
 #[derive(Clone,Debug,Default)]
@@ -201,26 +201,27 @@ impl Brep {
     /// measured tolerance where that is larger: every loop closed
     /// in space and in its face's parameters; every edge's ends on its curve; every use's pcurve
     /// on its surface along the edge; every face's loops turning the way its sense says; every
-    /// non-degenerate edge used twice, once each way, and every degenerate one once.
-    pub fn check(&self,tol: f64) -> Result<(),String> {
+    /// non-degenerate edge used twice, once each way, and every degenerate one once. An edge used
+    /// otherwise is a `Kind::NotManifold` refusal (`NOT_MANIFOLD` opens what it says).
+    pub fn check(&self,tol: f64) -> Result<(),super::KernelError> {
         let mut uses = vec![(0usize,0usize);self.edges.len()];
         for (i,e) in self.edges.iter().enumerate() {
             if let EdgeCurve::Curve(c) = &e.curve {
                 for k in 0..2 {
                     let d = distance(c.point(e.t[k]),self.vertices[e.v[k] as usize].p);
-                    if d > tol.max(e.tol) { return Err(format!("edge {i}: its {} vertex is {d:e} off its curve",["first","last"][k])) }
+                    if d > tol.max(e.tol) { return Err(format!("edge {i}: its {} vertex is {d:e} off its curve",["first","last"][k]).into()) }
                 }
-                if !(e.t[1] > e.t[0]) { return Err(format!("edge {i}: its parameters do not increase")) }
+                if !(e.t[1] > e.t[0]) { return Err(format!("edge {i}: its parameters do not increase").into()) }
             }
         }
         for (fi,f) in self.faces.iter().enumerate() {
-            if f.loops.is_empty() { return Err(format!("face {fi} ({}) has no loop",f.name)) }
+            if f.loops.is_empty() { return Err(format!("face {fi} ({}) has no loop",f.name).into()) }
             for (li,l) in f.loops.iter().enumerate() {
-                if l.is_empty() { return Err(format!("face {fi} ({}): loop {li} is empty",f.name)) }
+                if l.is_empty() { return Err(format!("face {fi} ({}): loop {li} is empty",f.name).into()) }
                 for (k,c) in l.iter().enumerate() {
                     let next = &l[(k+1)%l.len()];
                     if self.ends(c)[1] != self.ends(next)[0] {
-                        return Err(format!("face {fi} ({}): loop {li} breaks after use {k}",f.name))
+                        return Err(format!("face {fi} ({}): loop {li} breaks after use {k}",f.name).into())
                     }
                     // the same place, reached on the same branch of the surface's periods
                     let (a,b) = (self.uv_ends(f,c)[1],self.uv_ends(f,next)[0]);
@@ -228,13 +229,13 @@ impl Brep {
                     // curve, the curve's end to the vertex), so two ends within twice the sum
                     let corner = tol.max(2.*(self.edges[c.edge as usize].tol+self.edges[next.edge as usize].tol));
                     if distance(f.surface.point(a),f.surface.point(b)) > corner || (a[0]-b[0]).abs().max((a[1]-b[1]).abs()) > 1e-3 {
-                        return Err(format!("face {fi} ({}): loop {li} breaks in parameters after use {k}: {a:?} to {b:?}",f.name))
+                        return Err(format!("face {fi} ({}): loop {li} breaks in parameters after use {k}: {a:?} to {b:?}",f.name).into())
                     }
                     let e = &self.edges[c.edge as usize];
                     for j in 0..=8 {
                         let t = e.t[0]+(e.t[1]-e.t[0])*j as f64/8.;
                         let d = distance(f.surface.point(c.pcurve.at(t,e,&f.surface,&self.vertices)),e.point(t,&self.vertices));
-                        if d > tol.max(e.tol) { return Err(format!("face {fi} ({}): edge {}'s pcurve is {d:e} off it",f.name,c.edge)) }
+                        if d > tol.max(e.tol) { return Err(format!("face {fi} ({}): edge {}'s pcurve is {d:e} off it",f.name,c.edge).into()) }
                     }
                     let u = &mut uses[c.edge as usize];
                     if c.reversed { u.1 += 1 } else { u.0 += 1 }
@@ -242,17 +243,18 @@ impl Brep {
                 let area = self.loop_area(f,l);
                 let ccw = area > 0.;
                 if (li == 0) != (ccw != f.reversed) {
-                    return Err(format!("face {fi} ({}): loop {li} turns the wrong way ({area:e} in its parameters)",f.name))
+                    return Err(format!("face {fi} ({}): loop {li} turns the wrong way ({area:e} in its parameters)",f.name).into())
                 }
             }
         }
         for (i,(e,u)) in self.edges.iter().zip(&uses).enumerate() {
             match e.curve {
-                EdgeCurve::Degenerate => if u.0+u.1 != 1 { return Err(format!("degenerate edge {i} used {} times",u.0+u.1)) },
+                EdgeCurve::Degenerate => if u.0+u.1 != 1 { return Err(format!("degenerate edge {i} used {} times",u.0+u.1).into()) },
                 EdgeCurve::Curve(_) => if *u != (1,1) {
-                    return Err(format!("{NOT_MANIFOLD}edge {i} ({}) near {:?} used {} times along and {} against",
+                    return Err(super::KernelError::new(super::Kind::NotManifold,
+                        format!("{NOT_MANIFOLD}edge {i} ({}) near {:?} used {} times along and {} against",
                         if let EdgeCurve::Curve(c) = &e.curve { c.kind() } else { "" },
-                        e.point(0.5*(e.t[0]+e.t[1]),&self.vertices).map(|x| (x*1e4).round()/1e4),u.0,u.1))
+                        e.point(0.5*(e.t[0]+e.t[1]),&self.vertices).map(|x| (x*1e4).round()/1e4),u.0,u.1)))
                 }
             }
         }

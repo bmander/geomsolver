@@ -14,6 +14,7 @@ use crate::brep::query::interior;
 use crate::brep::topo::Brep;
 use crate::envelope::Motion;
 use crate::brep::recipe::{Node,Recipe,Stroke};
+use crate::brep::Kind;
 use crate::model::Sketch;
 use crate::solid::cad::{self,StaticRecipe};
 use crate::solid::contracts;
@@ -69,14 +70,15 @@ fn keyed(mut sheet: Brep,key: &str) -> Brep {
 /// The blank of `recipe` as its meridian region turned once from the half-plane along `seam`, or
 /// by its Booleans turned about the axis till its seams lie there.
 fn blank_from(recipe: &Recipe,origin: V,axis: V,seam: V) -> Result<Brep,String> {
-    match recipe.meridian(seam)? {
+    match recipe.meridian(seam) {
         Ok((b,o,a)) => {
             if norm(cross(a,axis)) > 1e-9 || norm(cross(sub(o,origin),axis)) > 1e-6 {
                 return Err("the blank's meridian is about another line than the indexing's".into())
             }
             Ok(b)
         }
-        Err(_) => turned_to(&recipe.build()?,origin,axis,seam),
+        Err(e) if e.kind == Kind::Refused => turned_to(&recipe.build()?,origin,axis,seam),
+        Err(e) => Err(e.into()),
     }
 }
 
@@ -294,7 +296,7 @@ pub fn whole(sk: &Sketch,body: usize,recipe: &StaticRecipe,blank: &Brep,distinct
     // a solid of revolution made again with its seams opposite the cuts, as a sector's blank is: a
     // sheet across a face's seam is a split this kernel does not finish
     let read = Recipe::read(&recipe.recipe)?;
-    let blank = match read.meridian([1.,0.,0.])? {
+    let blank = match read.meridian([1.,0.,0.]) {
         Ok((_,origin,axis)) => {
             let centres: Vec<V> = tools.iter().map(|t| { let (a,b) = t.bounds(); std::array::from_fn(|k| (a[k]+b[k])/2.) }).collect();
             let c: V = std::array::from_fn(|k| centres.iter().map(|p| p[k]).sum::<f64>()/centres.len().max(1) as f64);
@@ -302,7 +304,8 @@ pub fn whole(sk: &Sketch,body: usize,recipe: &StaticRecipe,blank: &Brep,distinct
             let r = sub(sub(c,origin),scale(a,dot(sub(c,origin),a)));
             if norm(r) > 1e-9*blank.size() { blank_from(&read,origin,a,scale(r,-1./norm(r)))? } else { blank.clone() }
         }
-        Err(_) => blank.clone(),
+        Err(e) if e.kind == Kind::Refused => blank.clone(),
+        Err(e) => return Err(e.into()),
     };
     let mut cells = vec![blank.clone()];
     for sheet in &tools {

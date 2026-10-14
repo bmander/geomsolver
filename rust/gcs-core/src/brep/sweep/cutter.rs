@@ -157,8 +157,12 @@ impl Cutter {
     pub fn read(recipe: &Json) -> Result<Cutter,String> {
         let recipe = Recipe::read(recipe)?;
         if let Some(cutter) = Cutter::prism(&recipe)? { return Ok(cutter) }
-        let sec = Sectioned::of(&recipe)?.map_err(|e| format!("the core sections a cutter of revolutions about parallel lines, \
-            or a prism, only: {e}"))?;
+        let sec = match Sectioned::of(&recipe) {
+            Ok(sec) => sec,
+            Err(e) if e.kind == crate::brep::Kind::Refused => return Err(format!("the core sections a cutter of revolutions \
+                about parallel lines, or a prism, only: {e}")),
+            Err(e) => return Err(e.into()),
+        };
         let (origin,axis) = (sec.origin,unit(sec.axis)?);
         let seed = if axis[0].abs() < 0.9 { [1.,0.,0.] } else { [0.,1.,0.] };
         let side = unit(cross(cross(axis,seed),axis))?;

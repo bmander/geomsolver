@@ -68,9 +68,10 @@ pub fn prepare(sk: &Sketch,body: usize,recipe: &StaticRecipe,admission: &Admissi
     let bounds = field.in_model_units().support_bounds().ok().flatten().map(|b| (b.map(|x| x.bounds()[0]),b.map(|x| x.bounds()[1])));
     let started = crate::clock::Instant::now();
     let read = crate::brep::recipe::Recipe::read(&recipe.recipe).at(Stage::Blank)?;
-    let blank = match read.meridian([1.,0.,0.]).at(Stage::Blank)? {
+    let blank = match read.meridian([1.,0.,0.]) {
         Ok((b,..)) => b,
-        Err(_) => read.build().at(Stage::Blank)?,
+        Err(e) if e.kind == crate::brep::Kind::Refused => read.build().at(Stage::Blank)?,
+        Err(e) => return Err(e).at(Stage::Blank),
     };
     (say.stage)(&format!("`{name}`: the static blank by this kernel: {:.6} mm³, {} faces ({:?})",crate::brep::props::volume(&blank),
         blank.faces.len(),started.elapsed()));
