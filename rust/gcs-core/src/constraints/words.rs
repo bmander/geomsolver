@@ -237,7 +237,7 @@ pub fn ordinate_word(kind: CKind, args: &[Arg]) -> &str {
 /// cannot be made from the kinds alone.  `None` is "this word does not relate those two", which
 /// the caller reports with the kinds in it.
 pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option<String>) -> Option<CKind> {
-    use EntKind::{Arc, Circle, Curve, Line, Plane, Point, Axis, Spline};
+    use EntKind::{Arc, Circle, Curve, Envelope, Line, Plane, Point, Axis, Spline};
     let round = |k: EntKind| matches!(k, Circle | Arc);
     // an axis is in space, so a direction relation naming one is the relation in space
     let axes = |a: EntKind, b: EntKind| matches!((a, b), (Axis, Axis | Line) | (Line, Axis));
@@ -254,6 +254,8 @@ pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option
             (Point, k) if round(k) => CKind::PointOnCircle,
             (Point, Spline) => CKind::PointOnSpline,
             (Point, Curve) => CKind::PointOnCurve,
+            // an envelope in space, whatever view the point is drawn in (#283)
+            (Point, Envelope) => CKind::PointOnEnvelope,
             // in space whatever view the point is in: a plane is a place, not a picture
             (Point, Plane) => CKind::PointOnPlane,
             (Line, Plane) => CKind::LineOnPlane,
@@ -294,6 +296,10 @@ pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option
             (k, Line) if round(k) && at_point => CKind::TangentCircleAt,
             (Spline, Line) if at_point => CKind::SplineTangentAt,
             (Curve, Line) if at_point => CKind::CurveTangentAt,
+            // an envelope in space at a point a contact holds on it (#283): a line or an axis in
+            // its tangent plane, a plane touching it there
+            (Envelope, Line | Axis) if at_point => CKind::EnvelopeTangentAt,
+            (Envelope, Plane) if at_point => CKind::EnvelopePlaneAt,
             // tangency at a named end of the line is the regular form; the bare pair is
             // rank-deficient at every solution, so `at:` is how a drawing says which
             (Line, k) if round(k) => match sel("at") {
@@ -319,6 +325,8 @@ pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option
         "curvature" => match (a, b) {
             (Spline, k) if round(k) => CKind::SplineCurvature,
             (Curve, k) if round(k) => CKind::CurveCurvature,
+            // a circle osculating an envelope's section by its plane, at a point already on it
+            (Envelope, k) if round(k) && at_point => CKind::EnvelopeCurvatureAt,
             _ => return None,
         },
         // a free curve pressed onto a held line, a corner where it chooses (#149)
@@ -358,6 +366,8 @@ pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option
             (x, y) if axes(x, y) => CKind::Perpendicular3,
             // square to a plane: along its normal
             (Axis, Plane) => CKind::AxisPerpendicularPlane,
+            // along an envelope's normal at a point already on it (#283): the common normal
+            (Envelope, Line | Axis) if at_point => CKind::EnvelopeNormalAt,
             _ => return None,
         },
         "symmetry" => match (a, b) {
@@ -488,7 +498,9 @@ pub fn builtin_word(word: &str, fixity: Fixity) -> bool {
             Fixity::Call => call_word(w),
             Fixity::Prefix => {
                 matches!(gauge_op(w).map(CKind::operator), Some(Some((_, Fixity::Prefix))))
-                    || EntKind::ALL.iter().any(|&k| prefix_op(w, k).is_some())
+                    || EntKind::ALL
+                        .iter()
+                        .any(|&k| prefix_op(w, k).is_some() || retired_prefix(w, k).is_some())
             }
             Fixity::Infix => {
                 solid_word(w).is_some()
@@ -511,22 +523,36 @@ pub fn builtin_word(word: &str, fixity: Fixity) -> bool {
     table.contains(&(word, fixity))
 }
 
-/// The same for a word standing *before* its one operand.  `distance` on a line is sugar for the
-/// distance between its ends, which is why it is here and not in the table above.
+/// The same for a word standing *before* its one operand.  **`length` measures one thing**, of
+/// every kind of path (#269): a line's is sugar for the distance between its ends, which is why
+/// it is here and not in the table above, and so a word over `g: path` states `length(L) g`
+/// whatever `g` is given.
 pub fn prefix_op(word: &str, on: EntKind) -> Option<CKind> {
     use EntKind::{Arc, Circle, Line, Spline};
     Some(match (word, on) {
         ("horizontal", Line) => CKind::Horizontal,
         ("vertical", Line) => CKind::Vertical,
         ("radius", Circle | Arc) => CKind::Radius,
+        ("length", Line) => CKind::Distance,
         // an arc's length along itself: the other way a round thing is dimensioned
         ("length", Arc) => CKind::ArcLength,
         // and a spline's, along the whole of it, and a free curve's, its own
         ("length", Spline) => CKind::SplineLength,
         ("length", EntKind::Curve) => CKind::CurveLength,
-        ("distance", Line) => CKind::Distance,
         _ => return None,
     })
+}
+
+/// **A prefix spelling the language no longer has**, and the word it became.  `distance relates
+/// two things; `length` measures one` (#269), so `distance(d) l` on a line is `length(d) l`.
+/// Still a prefix word to the grammar, so a statement or a chain link written the old way
+/// parses and is refused where it is settled, naming the new spelling, rather than failing as
+/// something else; and still a builtin word, so no definition takes it.
+pub fn retired_prefix(word: &str, on: EntKind) -> Option<&'static str> {
+    match (word, on) {
+        ("distance", EntKind::Line) => Some("length"),
+        _ => None,
+    }
 }
 
 /// Every word the language writes a **constraint** with (spec §9.1) — the gauges and the

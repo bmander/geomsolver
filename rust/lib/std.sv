@@ -131,8 +131,8 @@ component CenteredRectangle(center: point, w: Length, h: Length) {
   d := point hint((center.x - w / 2, center.y + h / 2))
   loop := horizontal (ab := line(a, b)) -> vertical (bc := line(b, c)) ->
          horizontal (cd := line(c, d)) -> vertical (da := line(d, a)) -> close
-  distance(w) ab
-  distance(h) bc
+  length(w) ab
+  length(h) bc
   private construction diagonal := line(a, c)
   center midpoint diagonal
 }
@@ -410,20 +410,24 @@ component FlatFill(a: face, b: face, la: Length, lb: Length) := { p |
 // read it.  `round(r) X` is every edge among `X`'s faces.
 A round(r) B := {
   repeat a in A {
-    repeat b in B if b != a {
-      run := Run(a, b, r: r)
-      taken := solid(run)
-      taken cut A.body
-      fill := Fill(a, b, r: r)
-      filled := solid(fill)
-      filled union A.body
-      repeat c in A if c in B and c != a and c != b {
-        corner := Corner(a, b, c, r: r)
-        cornered := solid(corner)
-        cornered cut A.body
-        corner_fill := CornerFill(a, b, c, r: r)
-        corner_filled := solid(corner_fill)
-        corner_filled union A.body
+    repeat b in B {
+      when b != a {
+        run := Run(a, b, r: r)
+        taken := solid(run)
+        taken cut A.body
+        fill := Fill(a, b, r: r)
+        filled := solid(fill)
+        filled union A.body
+        repeat c in A {
+          when c in B and c != a and c != b {
+            corner := Corner(a, b, c, r: r)
+            cornered := solid(corner)
+            cornered cut A.body
+            corner_fill := CornerFill(a, b, c, r: r)
+            corner_filled := solid(corner_fill)
+            corner_filled union A.body
+          }
+        }
       }
     }
   }
@@ -434,13 +438,15 @@ round(r) X := X round(r: r) X
 // face, measured from the other; where three meet, their flats meet in a point.
 A chamfer(d) B := {
   repeat a in A {
-    repeat b in B if b != a {
-      flat := Flat(a, b, la: d, lb: d)
-      taken := solid(flat)
-      taken cut A.body
-      flat_fill := FlatFill(a, b, la: d, lb: d)
-      filled := solid(flat_fill)
-      filled union A.body
+    repeat b in B {
+      when b != a {
+        flat := Flat(a, b, la: d, lb: d)
+        taken := solid(flat)
+        taken cut A.body
+        flat_fill := FlatFill(a, b, la: d, lb: d)
+        filled := solid(flat_fill)
+        filled union A.body
+      }
     }
   }
 }

@@ -208,6 +208,19 @@ pub fn evaluate(sk: &mut Sketch) -> Vec<ExprItem> {
             error,
         });
     }
+    // a set's number an envelope's contacts read as a column (#283) is bound whether or not a row
+    // of the drawing reads it, starting where the set's text stood
+    let held: Vec<(String, f64)> = sk.envelopes.iter().enumerate().filter_map(|(i, e)| {
+        let crate::model::Held::Set { shape: Some(s), .. } = &e.held else { return None };
+        let read = sk.constraints.iter().any(|c| c.envelope_of().is_some_and(|x| x.i() == i));
+        s.unknown(&sk.declared).filter(|_| read)
+    }).collect();
+    for (name, seed) in held {
+        if !bound.contains_key(&name) {
+            free_param(sk, &name, seed);
+            bound.insert(name, 1.0);
+        }
+    }
     retire_free(sk, &bound);
     sk.free_dimensions = free_dim
         .into_iter()
@@ -387,6 +400,13 @@ fn settle(sk: &mut Sketch, c: &Constraint, param: u32, reach: f64) {
     if !(err(sk).0.abs() < start_err) {
         sk.params[param as usize].value = start;
     }
+}
+
+/// The unknown `name`, bound now — made at `seed` if it is new or was retired — where a reader
+/// that is no expression of a row needs its column before `evaluate` runs: a set's number an
+/// envelope's contacts read (#283).
+pub(crate) fn bind_free(sk: &mut Sketch, name: &str, seed: f64) -> u32 {
+    free_param(sk, name, seed).0
 }
 
 /// Return a free parameter and whether it needs seeding (new or retired).

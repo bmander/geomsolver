@@ -100,7 +100,7 @@ component Crankshaft(end: plane, side: plane, o: point, ax: line, o_s: point,
   throw_dims := {eye: eP, rim: rcw, half_width: hcw, oil_radius: oilr}
 
   // -- along the axis: the section through cylinder 1 -------------------------------------
-  repeat draw_end {
+  when draw_end == 1 {
     in end {
       main := circle(center: o) hint(r: dims.rj)
       radius(dims.rj) main
@@ -112,31 +112,31 @@ component Crankshaft(end: plane, side: plane, o: point, ax: line, o_s: point,
   }
 
   // -- across the axis: the whole shaft edge on ------------------------------------------
-  repeat 5 * draw_side as j {
-    in side {
-      jc := engine.parts.At(o_s, dx: dims.front + 25mm + j * dims.P, dy: 0mm)
-      journal := engine.parts.Box(jc.p, x0: -wj / 2, y0: -dims.rj, x1: wj / 2, y1: dims.rj)
+  when draw_side == 1 {
+    repeat 5 as j {
+      in side {
+        jc := engine.parts.At(o_s, dx: dims.front + 25mm + j * dims.P, dy: 0mm)
+        journal := engine.parts.Box(jc.p, x0: -wj / 2, y0: -dims.rj, x1: wj / 2, y1: dims.rj)
+      }
     }
-  }
-  repeat 4 * draw_side as i {
-    in side {
-      xc := dims.front + 25mm + dims.P / 2 + i * dims.P
-      // cylinders 1 and 4 are up together, 2 and 3 a half turn on
-      k := i * (3 - i) / 2
-      ph := dims.theta + 180deg * k
-      pin_s := point hint((o_s.x + xc, o_s.y + dims.R * cos(ph)))
-      o_s distance(xc, along: u) pin_s
-      pin := engine.parts.Box(pin_s, x0: -wpin / 2, y0: -dims.rp, x1: wpin / 2, y1: dims.rp)
-      // the throw's crown and heel at this cylinder, their heights the end view's
-      ct := point hint((o_s.x + xc, o_s.y + (dims.R + eP) * cos(ph)))
-      hb := point hint((o_s.x + xc, o_s.y - rcw * cos(ph)))
-      o_s distance(xc, along: u) ct
-      o_s distance(xc, along: u) hb
-      wl := WebSide(o_s, x0: xc - dims.P / 2 + wj / 2, x1: xc - wpin / 2, top: ct, bottom: hb)
-      wr := WebSide(o_s, x0: xc + wpin / 2, x1: xc + dims.P / 2 - wj / 2, top: ct, bottom: hb)
+    repeat 4 as i {
+      in side {
+        xc := dims.front + 25mm + dims.P / 2 + i * dims.P
+        // cylinders 1 and 4 are up together, 2 and 3 a half turn on
+        k := i * (3 - i) / 2
+        ph := dims.theta + 180deg * k
+        pin_s := point hint((o_s.x + xc, o_s.y + dims.R * cos(ph)))
+        o_s distance(xc, along: u) pin_s
+        pin := engine.parts.Box(pin_s, x0: -wpin / 2, y0: -dims.rp, x1: wpin / 2, y1: dims.rp)
+        // the throw's crown and heel at this cylinder, their heights the end view's
+        ct := point hint((o_s.x + xc, o_s.y + (dims.R + eP) * cos(ph)))
+        hb := point hint((o_s.x + xc, o_s.y - rcw * cos(ph)))
+        o_s distance(xc, along: u) ct
+        o_s distance(xc, along: u) hb
+        wl := WebSide(o_s, x0: xc - dims.P / 2 + wj / 2, x1: xc - wpin / 2, top: ct, bottom: hb)
+        wr := WebSide(o_s, x0: xc + wpin / 2, x1: xc + dims.P / 2 - wj / 2, top: ct, bottom: hb)
+      }
     }
-  }
-  repeat draw_side {
     in side {
       // the nose the pulley sits on, forward of the first journal; behind the last, the seal
       // journal through the block's rear wall, then the flange and the flywheel on it
@@ -150,18 +150,18 @@ component Crankshaft(end: plane, side: plane, o: point, ax: line, o_s: point,
   }
 
   // -- the two views agree: each pin, crown and heel is where the section puts it --------
-  repeat draw_end * draw_side {
-    t1[0].pin project pin_s[0]
-    t2[0].pin project pin_s[1]
-    t2[0].pin project pin_s[2]
-    t1[0].pin project pin_s[3]
-    t1[0].crown project ct[0]
-    t2[0].crown project ct[1]
-    t2[0].crown project ct[2]
-    t1[0].crown project ct[3]
-    t1[0].heel project hb[0]
-    t2[0].heel project hb[1]
-    t2[0].heel project hb[2]
-    t1[0].heel project hb[3]
+  when draw_end == 1 and draw_side == 1 {
+    t1.pin project pin_s[0]
+    t2.pin project pin_s[1]
+    t2.pin project pin_s[2]
+    t1.pin project pin_s[3]
+    t1.crown project ct[0]
+    t2.crown project ct[1]
+    t2.crown project ct[2]
+    t1.crown project ct[3]
+    t1.heel project hb[0]
+    t2.heel project hb[1]
+    t2.heel project hb[2]
+    t1.heel project hb[3]
   }
 }

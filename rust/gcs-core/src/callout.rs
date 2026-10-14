@@ -125,6 +125,12 @@ macro_rules! undrawn {
             | CKind::AxisPerpendicularPlane
             | CKind::PlaneParallel
             | CKind::PlaneDistance
+            // a contact with an envelope in space states no number (#283)
+            | CKind::PointOnEnvelope
+            | CKind::EnvelopeTangentAt
+            | CKind::EnvelopeNormalAt
+            | CKind::EnvelopePlaneAt
+            | CKind::EnvelopeCurvatureAt
             // a projection in space draws what `project` draws: nothing
             | CKind::ProjectSolved
             | CKind::Fix

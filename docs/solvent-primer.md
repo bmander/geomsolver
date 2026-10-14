@@ -131,7 +131,7 @@ repeat N [as i] { ... }                 N unrelated copies                      
 cycle N [as i] { ... }                  N copies that close; `next`, `prev` in scope
 ring N about C { ... }                  N copies, each the first turned about C
 repeat e in CHAIN [as i] { ... }        a copy per link of a named chain (`cycle e in` closes)
-repeat a in SOLID [if ...] { ... }      a copy per face of a solid                   (1.14)
+repeat a in SOLID { ... }               a copy per face of a solid                   (1.14)
 when COND { ... }                       made once where COND holds, else not at all  (1.7)
 LHS <= RHS | LHS >= RHS                 in a set's body: a bound on measurements     (1.14)
 NAME := INSTANCE.POINT over FORMAL in (A, B)   a curve                               (1.10)
@@ -200,7 +200,7 @@ the word:
 ```
 horizontal line1                    point1 level(up) point2
 radius(25) circle1                  point1 distance(80) point2
-distance(6) line1                   point1 symmetry(line1) point2
+length(6) line1                     point1 symmetry(line1) point2
 fix((0, 0)) p1                      l1 angle(30) l2
 fix(r == 25) c                      line1 tangent(side: left) circle1
 length(40) arc1                     l1 angle(l3, l4) l2
@@ -215,7 +215,6 @@ whichever is written first (`l tangent g` is `g tangent l`).
 |---|---|---|
 | `coincident` | infix | two points; a point to a line, circle, arc, spline or curve; in space, a point, line or axis to a plane, a point or line to an axis, two axes; a point to a set (1.13) |
 | `distance` | infix | two points (length; with `along:`, an **ordinate**: signed from the first to the second along an axis, a line, or the view's own `u`/`v`, `right`/`left`/`up`/`down` with the sign said); a point and a line, or two lines (a magnitude, `side:` picks the side); two concentric circles or arcs; a point and a plane (`along: u`/`v`/`n`); two planes (along the first's normal) |
-| `distance` | prefix | a line: its length |
 | `tangent` | infix | line–circle/arc (`at: p1`/`p2` for tangency at that end; `side:` the centre's side); circle/arc–circle/arc (`external: true/false`); arc–line (`at: start`/`end`); spline or curve–line; any path–line `at:` a point a relation holds on the path (below); a line or set to a set (1.13) |
 | `equal` | infix | two lines (length) or two circles/arcs (radius) |
 | `curvature` | infix | spline or curve and a circle/arc: the osculating circle there |
@@ -223,7 +222,7 @@ whichever is written first (`l tangent g` is `g tangent l`).
 | `level(dir)` | infix | two points with the same ordinate along `dir` (an axis, a line, or `up`/`right`); a point and a plane with `u`/`v`. Write it rather than `distance(0, along: …)`, which is refused |
 | `angle` | infix | two lines, directed (below); in space, an axis and a line or axis, unsigned. `l1 angle(l3, l4) l2` equates two angles |
 | `radius` | prefix | a circle or arc |
-| `length` | prefix | an arc (radius × counter-clockwise sweep); a spline or free curve (its whole length) |
+| `length` | prefix | any path: a line (the distance between its ends); an arc (radius × counter-clockwise sweep); a spline or free curve (its whole length). `distance` relates two things and `length` measures one, so `distance(d) l` on a line is refused, naming `length(d) l` |
 | `symmetry(line)` | infix | two points |
 | `midpoint` | infix | a point and a line |
 | `parallel`, `perpendicular` | infix | two lines; an axis and a line or axis; an axis and a plane; `parallel` two planes |
@@ -402,9 +401,13 @@ a `cycle` wraps, closing the loop with no `close`; a `repeat` leaves its last jo
 **A block made or not.** `when COND { … }` makes its body once where the condition holds and not
 at all where it does not, decided over the numbers in scope before the solve: comparisons (`<`,
 `<=`, `>`, `>=`, `==`, `!=`) of two numbers of one dimension — `relief > 0mm`, never `relief > 0`
-(E103) — joined by `and`, `or` and `not`. There is no copy: what the body declares keeps its own
-name (`q`, `t.tip`, never `q[0]`), and is undefined where the block is not made. Refused: an
-unknown of the drawing in the condition (E040), an index, a trailing joint.
+(E103) — joined by `and`, `or` and `not`. Two drawn things compare by **identity**: `a != b`
+holds where the names stand for different things (a formal is what its call gave), and `c in B`
+where `c` is one of the faces `B` names (1.14). There is no copy: what the body declares keeps
+its own name (`q`, `t.tip`, never `q[0]`), and is undefined where the block is not made. Refused:
+an unknown of the drawing in the condition (E040), a number against something drawn (E103), an
+index, a trailing joint. `when` is the one conditional: write a switch as `when flag == 1 { … }`,
+never `repeat flag { … }`, and two as `when a == 1 and b == 1`.
 
 ```
 unit mm
@@ -468,8 +471,8 @@ in std.front {
   vertical bc
   horizontal cd
   vertical da
-  distance(60) ab
-  distance(40) bc
+  length(60) ab
+  length(40) bc
 
   repeat e in outline as i {
     m := point
@@ -580,7 +583,7 @@ component Bar(layout: group, dims: group) {
     ax := line(layout.origin, tip)
     horizontal ax
   }
-  distance(dims.length) ax
+  length(dims.length) ax
 }
 bar := Bar(layout, dims: sizes)
 
@@ -656,7 +659,7 @@ l1 flush(d) l2 := {                              // parallel, and d apart
 }
 a apart(d) b := {                                // what the body declares, each use makes anew
   private ab := line(a, b)
-  distance(d) ab
+  length(d) ab
 }
 ```
 
@@ -935,8 +938,8 @@ Views carry no place on paper: the `.svd` places each.
 
 - **`in top { … }`** writes membership once for every declaration inside. An instance joins a view
   whole: `t := Tooth(…) in top`. Inside a component, `in view { … }` over plane formals lets a part
-  carry its own views (`engine/conrod.sv`), and `repeat flag { … }` over a 0/1 `Int` formal omits a
-  view an instance does not show in.
+  carry its own views (`engine/conrod.sv`), and `when flag == 1 { … }` over a 0/1 `Int` formal
+  omits a view an instance does not show in.
 - A view's attitude may be an unknown: build it on axes the solve turns (2.13, 2.14). Planes and
   axes are settled before the main solve and still move with it.
 
@@ -1042,7 +1045,7 @@ inner }`).
 corners rounded — `tooth := { p | p outside inner; p inside outer; p inside back; p outside tip;
 p inside std.Rounded(beyond, above, r: …); p inside std.Rounded(outer, above, r: …) }` — is a
 revolution, and `solid(tooth)` swept under a generating motion cuts a member exactly. A region
-has no tip line for `distance(>= d) tip`: draw the land's ends on the tip, the flanks through
+has no tip line for `length(>= d) tip`: draw the land's ends on the tip, the flanks through
 them, and bound the land between them (`eb distance(>= 0.01mm, along: left) ea`), which picks the
 root as the drawn section's bound did. Where the flanks go through points the drawing already
 places (the hypoid's pitch points, `spiral_bevel/hypoid.sv`), the land has no root to choose and
@@ -1322,7 +1325,8 @@ They are written in Solvent (`rust/lib/std.sv`), from region bodies you can writ
 | `angle(a, b, at: p) <= 180deg` | at a convex edge (the material's angle there) |
 | `p inside crease.ends` | stopped by the faces the edge ends on (none at a tangent seam) |
 | `meeting := { q \| q coincident a.surface; q coincident b.surface; q inside crease.ends }` | where the surfaces meet, short of where the edge ends |
-| `repeat a in A { repeat b in B if b != a { … } }` | a copy per pair of faces |
+| `repeat a in A { repeat b in B { when b != a { … } } }` | a copy per pair of faces, each made where the two differ |
+| `when c in B and c != a { … }` | made where `c` is one of `B`'s faces and not `a` |
 | `taken := solid(run)`, `taken cut A.body` | a solid of a set, cut from the body `A`'s faces are of |
 
 `.ends`, `.surface` and `.body` are members only past a set or a solid where nothing declared
@@ -1423,6 +1427,24 @@ housing's wall sweeps through — `swept := solid(housing, under: housing_turn, 
 under a motion keeping its view, `envelope(side, under: cutting, …)` is the planar envelope
 extruded, and `p coincident flank` from any view is one equation. Draw the prism's face `in` a view
 and name the edge in it.
+
+**An envelope in space is held to by the solve** where its source is a cone or a cylinder set
+(`std.Cone`, `std.ConeThrough` with its lean stated, `std.Cylinder`) or a revolution's side turned
+from a line, an arc or a circle, under turns about lines, screws, slides and `relative_to:`
+(`spiral_bevel/mean_point.sv`):
+
+```
+flank := std.Cone(spine, half: hint(20deg))           // the half an unknown
+pinion_flank := envelope(flank, under: mesh, from: -30deg, to: 30deg)
+M coincident pinion_flank                             // owns the place [u, v, roll]
+pinion_flank perpendicular(at: M) normal              // along its normal at M
+pinion_flank tangent(at: M) along                     // a line (or a plane) touching it there
+pinion_flank curvature(at: M) profile                 // its section by profile's plane
+```
+
+The source's geometry, its number and the motion's axes are columns, so the cone's half solves from
+what is stated at `M`. The `at:` relations read the place of the `coincident` holding `M`, which must
+be stated. A set's envelope is only held to: it has no chart after the solve.
 
 **Spatial geometry read after the solve** adds no unknown and has no 2D glyph; each certifies only
 local evaluations ([analytic face boundaries](analytic-face-boundaries.md); the spiral bevel's
@@ -1653,7 +1675,7 @@ in std.front {
   cycle 4 {
     (s := line) -> perpendicular equal
   }
-  distance(50) s[0]
+  length(50) s[0]
   fix((0, 0)) s[0].p1
 }
 ```

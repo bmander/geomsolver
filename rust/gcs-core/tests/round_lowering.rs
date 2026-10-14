@@ -394,9 +394,9 @@ fn a_torus_on_a_slab_is_filled_by_rings() {
 fn a_flat_no_rational_curve_holds_is_refused_by_name() {
     let src = include_str!("../../examples/rounds/twin.sv").replace("use std (round)", "use std")
         .replace("bar.right.small round(r: r) bar.left.big", "A bevel(la, lb) B := {\n\
-            \x20 repeat a in A {\n    repeat b in B if b != a {\n\
-            \x20     fill := std.FlatFill(a, b, la: la, lb: lb)\n      filled := solid(fill)\n      filled union A.body\n\
-            \x20   }\n  }\n}\nbar.right.small bevel(la: 1mm, lb: 2mm) bar.left.big");
+            \x20 repeat a in A {\n    repeat b in B {\n      when b != a {\n\
+            \x20       fill := std.FlatFill(a, b, la: la, lb: lb)\n        filled := solid(fill)\n        filled union A.body\n\
+            \x20     }\n    }\n  }\n}\nbar.right.small bevel(la: 1mm, lb: 2mm) bar.left.big");
     let e = solved(&src);
     let body = ent(&e, "bar").i();
     let refusal = refused(&e, "bar");

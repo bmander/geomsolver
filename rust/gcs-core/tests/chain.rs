@@ -406,7 +406,7 @@ fn a_prefix_stands_alone() {
 /// — never a `distance` joint between the links.
 #[test]
 fn a_parenthesized_prefix_opens_a_link() {
-    let e = read("l1 := distance(1) line\n");
+    let e = read("l1 := length(1) line\n");
     let c = e
         .sketch
         .user_constraints()
@@ -416,7 +416,7 @@ fn a_parenthesized_prefix_opens_a_link() {
     assert_eq!(e.sketch.points.len(), 2 + STD_POINTS, "both ends minted");
     assert_eq!(gcs_core::io::describe(c), format!("P{} distance(1) P{}", STD_POINTS, STD_POINTS + 1));
 
-    let e = read("use std\nin std.front {\ndistance(1) (l1 := line) -> distance(2) (l2 := line)\n}\n");
+    let e = read("use std\nin std.front {\nlength(1) (l1 := line) -> length(2) (l2 := line)\n}\n");
     assert_eq!(
         e.sketch.user_constraints().iter().filter(|c| c.kind == CKind::Distance).count(),
         2,
@@ -424,13 +424,13 @@ fn a_parenthesized_prefix_opens_a_link() {
     );
     assert_eq!(e.sketch.points.len(), 3 + STD_POINTS, "and the corner is still shared");
 
-    // the colouring takes the same step: `distance` before an element is the link's prefix,
+    // the colouring takes the same step: `length` before an element is the link's prefix,
     // tinted as the relation it states
-    let src = "use std\nin std.front {\ndistance(1) (l1 := line) -> distance(2) (l2 := line)\n}\n";
+    let src = "use std\nin std.front {\nlength(1) (l1 := line) -> length(2) (l2 := line)\n}\n";
     let runs = highlight(src);
     let tints: Vec<Tint> = runs
         .iter()
-        .filter(|(_, s)| src[s.lo as usize..].starts_with("distance"))
+        .filter(|(_, s)| src[s.lo as usize..].starts_with("length"))
         .map(|(t, _)| *t)
         .collect();
     assert_eq!(tints, vec![Tint::Relation, Tint::Relation]);
@@ -1225,7 +1225,7 @@ fn an_implicit_rectangle_does_not_collapse() {
         "\
 use std
 in std.front {
-distance(1) (l1 := line) -> perpendicular distance(2) (l2 := line) -> perpendicular (l3 := line) -> perpendicular (l4 := line) -> close
+length(1) (l1 := line) -> perpendicular length(2) (l2 := line) -> perpendicular (l3 := line) -> perpendicular (l4 := line) -> close
 }
 ",
     );
@@ -1314,7 +1314,7 @@ p1 horizontal p2
 /// what naming them would.
 #[test]
 fn a_prefix_distance_is_the_distance_between_the_ends() {
-    let a = read("use std\nin std.front {\np1 := point hint((0, 0))\np2 := point hint((6, 0))\nl := line(p1, p2)\ndistance(6) l\n}\n");
+    let a = read("use std\nin std.front {\np1 := point hint((0, 0))\np2 := point hint((6, 0))\nl := line(p1, p2)\nlength(6) l\n}\n");
     let b = read(
         "\
 use std

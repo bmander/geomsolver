@@ -637,21 +637,9 @@ pub struct Block {
 pub struct EdgesOf {
     pub var: Name,
     pub chain: Ref,
-    /// `repeat c in A if c in B and c != a` (#183 F8): what each copy keeps to, by the faces its
-    /// names stand for; empty for a chain's.
-    pub when: Vec<When>,
 }
 
-/// One condition a block over faces keeps a copy by (#183 F8): `f != g`, two names standing for
-/// different faces, or `f in X`, a face among `X`'s.
-#[derive(Clone, Debug)]
-pub struct When {
-    pub var: Name,
-    pub within: bool,
-    pub other: Ref,
-}
-
-/// A block body that ends mid-joint — `cycle N { distance(d) line -> angle(a) }` — threads its
+/// A block body that ends mid-joint — `cycle N { length(d) line -> angle(a) }` — threads its
 /// chain onto the **next copy's** first link: every copy states the joint in a `cycle` or a
 /// (the wrap seals the loop), and all but the last do in a `repeat`, whose final corner
 /// is simply not stated.  Everything here is computed at parse time, where both links are

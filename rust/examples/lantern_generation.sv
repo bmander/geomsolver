@@ -46,7 +46,7 @@ in std.front {
   b0 coincident spindle
   std.origin midpoint ba
   b1 distance(wheel_pitch + addendum, side: right) spindle
-  distance(thickness) bo
+  length(thickness) bo
   construction blank := solid(blank_section, about: spindle)
 
   // The pin: a short cylinder on the pinion's radius, taller than the blank is thick.
@@ -60,8 +60,8 @@ in std.front {
   pin_section := horizontal (qb := line(q0, q1)) -> vertical (qo := line(q1, q2)) ->
                 horizontal (qt := line(q2, q3)) -> vertical (qa := line(q3, q0)) -> close
   pin_at midpoint qa
-  distance(pin_radius) qb
-  distance(thickness + 2mm) qo
+  length(pin_radius) qb
+  length(thickness + 2mm) qo
 }
 construction pin := solid(pin_section, about: qa)
 

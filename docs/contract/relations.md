@@ -32,7 +32,7 @@ came from.
   `n`); the word (`constraints::ALONG`, `Toward`) keeps the spelling and the sign
   (`right`/`left`/`up`/`down`), and `infer_entity` reads a page word's axis off the view both points
   are drawn in (none in a planeless sketch: refused).  **One vocabulary for a view's directions**
-  (#268, Solvent [0.90]): a view is a plane, so `u` and `v` are the plane at hand's — the plane
+  (#268, Solvent [0.92]): a view is a plane, so `u` and `v` are the plane at hand's — the plane
   operand's against one, else the shared view's (`Toward::in_view`; `against_plane` tells the two
   apart once rewritten, and from a view's own origin they are one ordinate) — and `right`/`up`
   are the same two with the sign said.  `x` and `y` are retired (`constraints::RETIRED`): no longer
@@ -49,6 +49,17 @@ came from.
   plane operand, a word that also names a direction in scope, and a literal zero (E040, naming the level); `a horizontal b`
   is `std`'s word for `level(up)` (`use std (horizontal)`, §9.9), and the printer
   (`print::ordinate_text`) spells each case back.  `tests/ordinate.rs` is the gate.
+
+- **`distance` relates two things; `length` measures one** (#269, Solvent 0.90).  A path's
+  length is `length(d) g` for every kind of path: `prefix_op` settles `("length", Line)` to
+  `Distance` between the line's own ends (`Written::assemble` expands the one operand to its
+  `p1`/`p2`), and an arc, a spline and a free curve to `ArcLength`, `SplineLength` and
+  `CurveLength` — so a word over `g: path` states `length(L) g` whatever it is given.  The prefix
+  `distance(d) l` is retired: `constraints::retired_prefix` keeps it a prefix word to the grammar
+  (`prefix_word`, so a statement or a chain link written that way still parses, and
+  `builtin_word`, so no definition takes it) and `program::settle` refuses it (E040) naming
+  `length(…)` and not the operand, which in a block's copy is a minted name.  The infix `a distance(d) b` is unchanged.  `tests/refusals.rs` and
+  `tests/tangent_at.rs` (`length_of_any_path`) are the gate.
 
 - **Every constraint is written as a prefix or an infix operator** (Solvent §9.2); `name(args…)`
   is retired.  `radius(25) c`, `p1 distance(80) p2`, `horizontal l`, `fix((0, 0)) p`,
@@ -67,7 +78,12 @@ came from.
   **The shape is the library's**: every user-facing kind has one or two entity slots, always first
   in spec order, with `Symmetric` the single three-slot exception.  Several kinds share a word —
   **`coincident` is fifteen kinds, `distance` nine, `tangent` nine** (twins in space included; a set's uses besides) — and `horizontal`/`vertical` are
-  two each with the *fixity* doing the work.
+  two each with the *fixity* doing the work.  **Over an envelope in space** (#283, [0.90]) a point
+  is `coincident`, and at a point held there a line or an axis `tangent` (`EnvelopeTangentAt`) or
+  `perpendicular` (`EnvelopeNormalAt`), a plane `tangent` (`EnvelopePlaneAt`) and a circle or arc
+  `curvature` (`EnvelopeCurvatureAt`): the parser reads `at:` after `perpendicular` and `curvature`
+  as a point, as after `tangent` (`op_args`), and `settle` names the envelope first whatever was
+  written first (`curve_last`, the symmetric swap).
   **What a word means is the kinds of its operands, and a name does not carry its kind until
   elaboration** — so the parser resolves *nothing*: it produces a `syntax::Written` and
   `program::settle` turns it into a `CKind` plus arguments in spec order, through

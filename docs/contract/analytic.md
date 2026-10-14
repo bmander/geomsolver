@@ -25,6 +25,38 @@ trial residual is off the envelope; a local root certifies no global regularity 
 still checked. Browser `core/envelope.ts` (10 doubles). `intersect_boundaries` checks two
 patches' finite incidence and refuses roots on undeclared continuations.
 
+**Envelopes the solve sees (#283):** every envelope in space is built with the drawing — after the
+motions, before any relation (`program::envelopes::held_envelopes`) — carrying what the solve reads
+of its source (`model::Held`): a revolution's side read off the declarations (`Held::Revolution`,
+its `about:` line or axis and its line, arc or circle edge; the side itself bound after the solids
+into `EnvelopeE::surface`), or a set's (`Held::Set`: the hidden point `{envelope}#probe` the
+flattener applied it to, held; its `SetShape` read off the one relation the body states there by
+`set_shape` — `Angle3` seen from a line's start a cone, `PointLine3` a cylinder — never a row; an
+unknown its number reads is bound for the contacts, `expr::bind_free` and `evaluate`). One whose
+motion or roll is unreadable is left to the late pass, its name dropped so no relation holds to a
+wrong index; one whose source is unreadable is `Held::Not(why)`, evaluated after the solve as before.
+`envelope::held` is the evaluator: the moving point at a place `[u, v, t]` over `kernels::Num` in
+second-order Taylor arithmetic (`H2`), the source a revolution of a meridian element (`Source`:
+line, cone, cylinder, round) and the motion the steps `motion::Family` reads (rotations, screws,
+translations, relatives; a planar turn and a measured number refused), so a residual is exact and
+a Jacobian exact by forward differentiation (`kernels::Dual`, eight columns a pass). `Parts::of`
+reads the columns (lifts, an axis's place and direction, a free number) and constants (`Layout`,
+`HEADER`, `STEP`); a set's turn starts at `SetShape::reference`, read once. The kinds
+`PointOnEnvelope` (four rows, three owned), `EnvelopeTangentAt` (one), `EnvelopeNormalAt` and
+`EnvelopePlaneAt` (two, each its own `Contact`) and `EnvelopeCurvatureAt` (three: Meusnier,
+`x + (n − (n·m)m)/κₙ`, `κₙ` from `−dn·dX` along two directions of the place square to `∇g`) are
+built at their widths (`KernelKey::Envelope`); the four with `at:` share the contact's place
+(`solver.md`, #251). Seeds: `held::seed`, a coarse search
+over the roll interval then `newton::dogleg` on the four rows (`Seeding`), remembered across a
+contact's three slots. A set's
+envelope has no chart after the solve (`GeneratedEnvelope::named` refuses it; `program::solid_diagnostics`
+skips it); an envelope's `surface` and `motion` are read by name (`resolve::follow`), the surface
+off the declaration until bound. `tests/held_envelopes.rs` is the gate — the frame against
+`GeneratedEnvelope` to 1e-12, held points against the snapshot and `motion::Family`, the normal,
+tangent and osculating circle against closed forms and a three-point section fit under a skew
+screw mesh, the mean-point lean (`spiral_bevel/mean_point.sv`) — with
+`jacobians::envelope_contacts_agree_with_finite_differences`.
+
 **Trimmed spatial patches:** `flank := patch(source, inside: tip, outside: root)`; repeat the label
 per clipping solid. `patch::TrimmedPatch` has explicit axis, trim and residual tolerances; clips
 unmodified full revolutions (line/arc/circle profiles, holes). `solid::RevolvedRegion` is analytic

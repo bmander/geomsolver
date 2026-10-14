@@ -633,9 +633,11 @@ impl Sketch {
         // **the tangent at a point reads the place of the contact holding that point** (#251): one
         // unknown, the contact's, whatever this statement arrived carrying — a seed, a pin, a
         // name — so a copy or a document read back shares it again
-        if let Some((t, at, on)) = c.tangent_at() {
-            if let Some(p) = self.holding(at, on) {
-                c.args[t] = Arg::Param(p);
+        if let Some((slots, at, on)) = c.tangent_at() {
+            if let Some(place) = self.holding(at, on) {
+                for (&t, p) in slots.iter().zip(place) {
+                    c.args[t] = Arg::Param(p);
+                }
             }
         }
         for (i, name) in c.kind.param_slots() {
@@ -683,42 +685,45 @@ impl Sketch {
         // and a contact arriving after a tangent at its point gives that tangent its place
         let holds = c.holds_on();
         self.constraints.push(c);
-        if let Some((at, on, p)) = holds {
-            self.share_place(at, on, p);
+        if let Some((at, on, place)) = holds {
+            self.share_place(at, on, place);
         }
         // the private geometry's own row, moving as the use does
         self.twin_new_intrinsic(self.constraints.len() - 1);
         id
     }
 
-    /// The place the contact holding point `at` on curve `on` owns: the first such contact's
-    /// unknown, where one is in the sketch.
-    pub fn holding(&self, at: usize, on: EntRef) -> Option<u32> {
+    /// The place the contact holding point `at` on curve (or envelope) `on` owns: the first such
+    /// contact's unknowns, where one is in the sketch.
+    pub fn holding(&self, at: usize, on: EntRef) -> Option<Vec<u32>> {
         self.constraints.iter().find_map(|c| match c.holds_on() {
             Some((a, e, p)) if a == at && e == on => Some(p),
             _ => None,
         })
     }
 
-    /// Every tangent at point `at` of curve `on` reads place `p` (#251): one stated before the
-    /// contact holding its point took an unknown of its own, retired here once nothing owns it.
-    fn share_place(&mut self, at: usize, on: EntRef, p: u32) {
+    /// Every tangent at point `at` of curve `on` reads place `place` (#251): one stated before
+    /// the contact holding its point took unknowns of its own, retired here once nothing owns
+    /// them.
+    fn share_place(&mut self, at: usize, on: EntRef, place: Vec<u32>) {
         // a second contact holding the point there leaves the tangent with the first's
-        if self.holding(at, on) != Some(p) {
+        if self.holding(at, on).as_ref() != Some(&place) {
             return;
         }
         let mut retired = Vec::new();
         for c in self.constraints.iter_mut() {
-            let Some((t, a, e)) = c.tangent_at() else { continue };
+            let Some((slots, a, e)) = c.tangent_at() else { continue };
             if a != at || e != on {
                 continue;
             }
-            if let Arg::Param(q) = c.args[t] {
-                if q != p {
-                    retired.push(q);
+            for (&t, &p) in slots.iter().zip(&place) {
+                if let Arg::Param(q) = c.args[t] {
+                    if q != p {
+                        retired.push(q);
+                    }
                 }
+                c.args[t] = Arg::Param(p);
             }
-            c.args[t] = Arg::Param(p);
         }
         for q in retired {
             if !self.constraints.iter().any(|c| c.owns(q)) {

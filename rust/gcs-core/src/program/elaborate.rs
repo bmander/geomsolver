@@ -84,10 +84,11 @@ pub(super) fn elaborate_in(
     let planar = motions(&mut cx, &flat);
     let settled = seeds(&mut cx, &deferred, &held);
     let extruded = prism_sides(&mut cx, &flat);
+    let (generated, held_in_space) = held_envelopes(&mut cx, &flat, &planar, &extruded);
     constraints(&mut cx, &flat, &drawn, &kept_off);
     twins(&mut cx, &flat);
     place_planes(&mut cx, &deferred, &held, settled);
-    solids_and_surfaces(&mut cx, &flat, faces, &planar, &extruded)?;
+    solids_and_surfaces(&mut cx, &flat, faces, &generated, &held_in_space)?;
     expressions(&mut cx, &flat);
     Ok(finish(cx, &flat))
 }
@@ -449,6 +450,19 @@ fn prism_sides(cx: &mut Elab<'_>, flat: &Flat<'_>) -> BTreeSet<StmtId> {
     generated::extruded_envelopes(sk, res, map, &flat.body, &flat.skip, diags)
 }
 
+/// Every other envelope — in space — with what the solve reads of its source, so a contact may
+/// name it (#283). The statements of the envelopes generated in the drawing (and those skipped),
+/// and of those held in space, returned.
+fn held_envelopes(
+    cx: &mut Elab<'_>, flat: &Flat<'_>, planar: &BTreeSet<StmtId>, extruded: &BTreeSet<StmtId>,
+) -> (BTreeSet<StmtId>, BTreeSet<StmtId>) {
+    let Elab { sk, res, map, .. } = cx;
+    let generated: BTreeSet<StmtId> =
+        flat.skip.iter().chain(planar).chain(extruded).copied().collect();
+    let held = envelopes::held_envelopes(sk, res, map, &flat.body, &generated);
+    (generated, held)
+}
+
 /// **Phase 3: constraints, in statement order** — but the holds, stated already (`holds`), and
 /// the incidences drawn as memberships or kept in space (`memberships`).
 fn constraints(
@@ -542,8 +556,8 @@ fn solids_and_surfaces(
     cx: &mut Elab<'_>,
     flat: &Flat<'_>,
     faces: &BTreeMap<String, Vec<FacePath>>,
-    planar: &BTreeSet<StmtId>,
-    extruded: &BTreeSet<StmtId>,
+    generated: &BTreeSet<StmtId>,
+    held: &BTreeSet<StmtId>,
 ) -> Result<(), Again> {
     let Elab { sk, res, map, diags, probes, .. } = cx;
     let (body, skip) = (&flat.body, &flat.skip);
@@ -560,8 +574,7 @@ fn solids_and_surfaces(
         return Err(Again::Faces(unnamed));
     }
     surfaces::surfaces(sk, res, map, body, skip, diags);
-    let spatial: BTreeSet<StmtId> = skip.iter().chain(planar).chain(extruded).copied().collect();
-    envelopes::envelopes(sk, res, map, body, &spatial, diags);
+    envelopes::envelopes(sk, res, map, body, generated, held, diags);
     patches::patches(sk, res, map, body, skip, diags);
     seams::seams(sk, res, map, body, skip, diags);
     vertices::vertices(sk, res, map, body, skip, diags);

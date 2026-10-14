@@ -80,7 +80,7 @@ repeat configuration.flutes as i {
 // point's length below that, where the flutes' leading edges reach them
 corner := configuration.fluted_length - configuration.point_length - 0.5mm
 lip_at_corner := configuration.lip + 360deg * corner / configuration.lead
-repeat configuration.point {
+when configuration.point == 1 {
   flank := point.PointCone(side, top: corner, cone: configuration.cone,
     tilt: configuration.tilt, height: configuration.apex_height, offset: configuration.apex_offset,
     reach: configuration.fluted_length + configuration.diameter)

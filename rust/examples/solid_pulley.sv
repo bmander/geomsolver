@@ -30,8 +30,8 @@ in std.front {
   a distance(bore_radius, side: right) spindle
   b distance(hub_radius, side: right) spindle
   d distance(rim_radius, side: right) spindle
-  distance(hub_extension) bc
-  distance(2 * half_width) de
+  length(hub_extension) bc
+  length(2 * half_width) de
   bc equal fg
   b vertical g
   std.origin distance(half_width, side: left) cd

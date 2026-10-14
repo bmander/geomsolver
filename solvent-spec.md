@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.90 — October 2026**
+**Specification, Draft 0.92 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -510,7 +510,7 @@ Naming a chain never closes an endpoint gap by itself.
 
 **Every threaded joint is the regular form.** A threaded joint knows the shared point, so `-> tangent` between a line and an arc is `tangent_arc_line(arc, line, at: start|end)` — tangent *at* the point just threaded — and never the bare tangency over a coincidence, whose Jacobian is rank-deficient at every solution; `-> tangent` between two lines is collinearity (`parallel` over the shared point), and a pair the vocabulary has no regular at-form for (two arcs meeting at a corner) is an error, never a silently degenerate statement. An **unthreaded** `tangent` is the plain pair (`tangent_line_circle`, `tangent_circle_circle`), which is the correct and well-conditioned statement exactly when the two are separate — the `at:` argument is only ever supplied by a threaded joint. A bare `->` states nothing beyond the corner: the shared point is the whole of it.
 
-**[0.8] A block body may end mid-joint.** Inside a `repeat`, `cycle` or `ring` body (§12), the body's final chain may end in a *threaded* joint — the marker, or the marker with words — standing at the body's `}`: the trailing joint threads the chain onto the **next copy's** first link, and is stated between copy i's last link and copy i+1's first exactly as an in-chain joint would be — the weld a shared point, every worded tangency the regular at-form. Which pairs are stated is the block's kind: `cycle` and `ring` wrap, so every copy states it and the trailing joint is the loop's closure — `cycle N { distance(d) line -> angle(a) }` is the dimensioned N-gon, with no `close`, no names and no written points — while `repeat` does not wrap, so the *last* copy's trailing joint is simply not stated and `repeat N { line -> angle(a) }` is an open polyline of N sides and N−1 corners, the natural reading rather than an error. Both boundary links MUST be declarations of kinds with ends (a name-link's boundary is §6.6's ordinary rule: the point must be named where it stands), and at most one of the two boundary slots may name its point — both named are two *different* points across the copy seam, and that coincidence is stated longhand. Where the construct can mean nothing — a `component` body, a trace block, the top level — it is an error, and an unthreaded trailing word still wants its right operand. The joint is one written joint however many copies state it: each stated copy keeps the one statement identity, told apart by the instance path (§12.7). A statement inside a braced body also ends at the body's `}` as at a line break, so the whole of a block may sit on one line.
+**[0.8] A block body may end mid-joint.** Inside a `repeat`, `cycle` or `ring` body (§12), the body's final chain may end in a *threaded* joint — the marker, or the marker with words — standing at the body's `}`: the trailing joint threads the chain onto the **next copy's** first link, and is stated between copy i's last link and copy i+1's first exactly as an in-chain joint would be — the weld a shared point, every worded tangency the regular at-form. Which pairs are stated is the block's kind: `cycle` and `ring` wrap, so every copy states it and the trailing joint is the loop's closure — `cycle N { length(d) line -> angle(a) }` is the dimensioned N-gon, with no `close`, no names and no written points — while `repeat` does not wrap, so the *last* copy's trailing joint is simply not stated and `repeat N { line -> angle(a) }` is an open polyline of N sides and N−1 corners, the natural reading rather than an error. Both boundary links MUST be declarations of kinds with ends (a name-link's boundary is §6.6's ordinary rule: the point must be named where it stands), and at most one of the two boundary slots may name its point — both named are two *different* points across the copy seam, and that coincidence is stated longhand. Where the construct can mean nothing — a `component` body, a trace block, the top level — it is an error, and an unthreaded trailing word still wants its right operand. The joint is one written joint however many copies state it: each stated copy keeps the one statement identity, told apart by the instance path (§12.7). A statement inside a braced body also ends at the body's `}` as at a line break, so the whole of a block may sit on one line.
 
 Each desugared statement keeps an identity of its own and a span into the chain's text, so a caret, a diagnosis culprit and a splice land on the word that stated the thing. (§12.7 is many instances from one statement; a chain is several statements from one *line*, each still its own.) Deleting a chain-borne constraint is therefore a splice — a threaded joint steps down to the bare corner `->`, a prefix word goes where it stands, and **[0.8]** an unthreaded joint becomes a statement break, its span grown over a terminal name-link that a break would leave dangling (inside a chain that closes there is no safe break, and the deletion is refused). Deleting a link is refused: no splice takes one link out and leaves a chain behind, so that edit belongs to the source.
 
@@ -664,7 +664,7 @@ it is **E061**: every point of a plane is on it). Each contributes one
 length-valued residual, owns no unknown, and accepts a signed length expression, including a free
 dimension. **[0.46]** Zero written as a literal is **E040**: it is `p level(u) f`. Either ordinate may be stated independently; `claim` has its ordinary
 assertion meaning. The operands MUST be a point followed by a plane, and `along: u`, `v` or `n` is
-required for this pair. **[0.90]** Between two points of one view the same `u` and `v` are that
+required for this pair. **[0.92]** Between two points of one view the same `u` and `v` are that
 view's own, the run and the rise (§9.2): one direction, whichever plane is at hand. An ordinate
 read in space is drawn with no callout.
 
@@ -675,8 +675,9 @@ likewise name `f.origin` as a corner.
 
 A seed may read `f.x`, `f.y`, `f.z` and the coordinates of `f.origin`, and place a point in `f`'s
 coordinates with `hint(at: f, (…, …))` (§6.4). These read the starting pose, including
-geometric seeds already settled. A hint over an unbound numeric formal uses zero for that
-unknown's provisional value; an affine expression retains its constant offset. This substitution
+geometric seeds already settled. A hint over an unbound numeric formal uses that unknown's own
+seed for its provisional value (`lean: hint(20deg)` reads 20°, **[0.90]**), and zero where it has
+none; an affine expression retains its constant offset. This substitution
 applies only to hints, never to constraints, and traced components retain parameterized hints.
 Hints still select starting configurations only. Signed ordinates explicitly exclude reflections
 across the axis being measured.
@@ -1138,7 +1139,61 @@ view and put on that view's sheet, lies on the curve at the contact's roll — t
 roll it owns (`hint(t: …)`, degrees), the one equation a point on a surface is worth. The rows are
 the planar contact's, with the point's place for its coordinates, so the tool's and the motion's
 geometry are columns as in §6.15.1. A side under any other motion is the spatial envelope of §6.15,
-read after the solve.
+read after the solve — and held to by it (§6.15.3).
+
+#### 6.15.3 Envelopes in space the solve sees **[0.90]**
+
+```
+flank := std.Cone(spine, half: hint(20deg))
+pinion_flank := envelope(flank, under: mesh, from: -30deg, to: 30deg)
+M coincident pinion_flank
+pinion_flank perpendicular(at: M) normal
+pinion_flank tangent(at: M) along
+pinion_flank tangent(at: M) P
+pinion_flank curvature(at: M) profile
+```
+
+An envelope in space is **held to by the solve** where it knows the source before any relation:
+a **set** — a cone (`std.Cone`, and `std.ConeThrough` with its lean stated) or a cylinder
+(`std.Cylinder`), the operand of `envelope` read as what its body states at its point (§6.21) —
+or a **named side of a revolution** turned from a line, an arc or a circle (`surface(rev, e)`),
+under a motion built of turns about lines, screws, slides along lines and `relative_to:`. Its
+numbers — the source's axis and edge, a cone's half or a cylinder's radius where that is an
+unknown of the drawing (`half: hint(20deg)`), and every axis the motion turns about or slides
+along — are columns of every relation holding something to it, so what makes the source solves
+from what the envelope is held to: a cutter's lean from a contact a designer states.
+
+- `p coincident flank`: a point in space, drawn in any view. The relation owns a **place** `[u,
+  v, t]` — along the source's meridian, round its axis, and the motion's roll — where the moving
+  source is at `p` and `F = 0` (§6.15): four rows against three unknowns, the one equation a point
+  on a surface is worth. It starts where the envelope passes nearest `p`.
+- `flank tangent(at: p) l`, `l` a line or an axis: `l` runs in the envelope's tangent plane at
+  `p`, one row.
+- `flank perpendicular(at: p) l`: `l` runs along its normal at `p`, the common normal of a mesh;
+  two rows.
+- `flank tangent(at: p) P`, `P` a plane: `P`'s normal runs along the envelope's at `p`; two rows.
+  Where `P` stands is `p coincident P`'s to say.
+- `flank curvature(at: p) k`, `k` a circle or an arc drawn in a plane through `p`: `k` is the
+  **osculating circle of the envelope's section by its plane** at `p` — its centre at `x + (n −
+  (n·m)m)/κₙ` (Meusnier), `κₙ` the normal curvature along the section's tangent `m × n` and `m`
+  the plane's normal, and its radius the distance from `p`; three rows. The envelope's normal at
+  a point is the moving source's there, so its shape operator is read off the source and the
+  motion, with no second solve. `p` in `k`'s plane is the drawing's to state.
+
+The four with `at:` read the place of the `coincident` holding `p` on the envelope, as a tangent
+at a point of a curve reads its contact's (§9.2, **[0.79]**); one with none is **E040**, naming
+the statement it wants. `at:` names a point after `perpendicular` and `curvature` as after
+`tangent`. The other operand may be written first: `l tangent(at: p) flank` is the same statement.
+
+A root is local, as a planar contact's is: the place starts where the envelope passes nearest
+the point and follows the solve; the roll is not held within `from:`/`to:`, which bound the
+after-the-solve evaluation; and a place where the source's normal has no direction (a cone's
+apex) is degenerate, as a cone whose spine has no length is. A source the solve cannot read — a
+sphere, a region, an offset, a lean or a radius that is no number times one unknown plus a
+number (`std.ConeThrough`'s `abs(lean)` over an unknown lean) — leaves the envelope evaluated
+after the solve where it is a revolution's side, and a relation holding something to it is
+refused naming why (**E061**); a set the body reads as no cone or cylinder is **E040** where it
+is applied. A set's envelope has no chart after the solve: it is only held to.
 
 ### 6.16 Trimmed spatial patches
 
@@ -1655,7 +1710,7 @@ component Bar(layout: group, dims: group) {
   tip := point hint(at: layout.frame, (dims.length, 0mm))
   ax := line(layout.origin, tip)
   ax parallel layout.ax
-  distance(dims.length) ax
+  length(dims.length) ax
 }
 
 in std.front {
@@ -1752,13 +1807,13 @@ Where a constraint needs more than its two operands — a number, a selector, a 
 ```
 horizontal line1                    point1 horizontal point2
 radius(25) circle1                  point1 distance(1' 3") point2
-distance(6) line1                   point1 symmetry(line1) point2
-distance(w / 2) line1               point1 distance(60, along: u) point2
+length(6) line1                     point1 symmetry(line1) point2
+length(w / 2) line1                 point1 distance(60, along: u) point2
 fix((0, 0)) p1             l1 angle(30) l2
 fix(r == 25) c                      line1 tangent(side: left) circle1
 ```
 
-**The type system already has this shape.** Every constraint a person writes has 1 or 2 entity slots, always first in spec order: 1 for the prefix words (`horizontal`, `vertical`, `radius`, `length`, a cone's `angle`, a line's `distance`, `fix`), 2 for everything else, and 3 for symmetry alone — which the parentheses absorb exactly as proposed. So "two operands, the rest in parentheses" is a *description* of the library rather than a rule imposed on it.
+**The type system already has this shape.** Every constraint a person writes has 1 or 2 entity slots, always first in spec order: 1 for the prefix words (`horizontal`, `vertical`, `radius`, `length`, a cone's `angle`, `fix`), 2 for everything else, and 3 for symmetry alone — which the parentheses absorb exactly as proposed. So "two operands, the rest in parentheses" is a *description* of the library rather than a rule imposed on it.
 
 What goes in the parentheses is a short list:
 
@@ -1769,19 +1824,18 @@ What goes in the parentheses is a short list:
 
 | word | fixity | operands → constraint |
 |---|---|---|
-| `coincident` | infix | **[0.42]** (point, point); (point, line \| circle \| arc \| spline \| curve) — incidence, where 0.41 and before wrote `on`; **[0.24]** (point, plane), (line, plane) in space — **[0.54]** of a point standing in space, its membership of the plane, as `in` (§6.7); **[0.74]** of a point its declaration draws in another plane, `p coincident P` draws it in `P` too and `P coincident p` passes `P` through it (§6.7); **[0.49]** (point, set), the set's body at the point (§6.21); **[0.42]** (point, axis), (axis, plane); **[0.43]** (axis, axis), one line either way round; **[0.44]** (line, axis), both ends on it; **[0.38]** (point, the envelope of a prism's side), from any view (§6.15.2). Read either way round: `P coincident p` is `p coincident P`, but for **[0.74]**'s point drawn in another plane. **[0.32]** Not (solid, solid): the body rule's union is `union` (§6.9) |
+| `coincident` | infix | **[0.42]** (point, point); (point, line \| circle \| arc \| spline \| curve) — incidence, where 0.41 and before wrote `on`; **[0.24]** (point, plane), (line, plane) in space — **[0.54]** of a point standing in space, its membership of the plane, as `in` (§6.7); **[0.74]** of a point its declaration draws in another plane, `p coincident P` draws it in `P` too and `P coincident p` passes `P` through it (§6.7); **[0.49]** (point, set), the set's body at the point (§6.21); **[0.42]** (point, axis), (axis, plane); **[0.43]** (axis, axis), one line either way round; **[0.44]** (line, axis), both ends on it; **[0.38]** (point, the envelope of a prism's side), from any view (§6.15.2); **[0.90]** (point, an envelope in space), owning its place (§6.15.3). Read either way round: `P coincident p` is `p coincident P`, but for **[0.74]**'s point drawn in another plane. **[0.32]** Not (solid, solid): the body rule's union is `union` (§6.9) |
 | `cut` | infix | **[0.18]** (solid, solid) — the body rule's other half (§6.9), and no constraint at all |
-| `distance` | infix | (p, p); **[0.46]** +`along:` an ordinate — an axis or a line, or **[0.90]** the view's `u`/`v` for the run and the rise (`right`/`left`/`up`/`down` with the sign said); (p, line); (line, line); (circle, circle); (p, plane) with `along: u`/`v` for signed ordinates from the plane's origin, or **[0.24]** `along: n` for the signed distance along the plane's normal, in space; **[0.42]** (plane, plane), the second's origin along the first's normal (§6.10) |
-| `distance` | prefix | on a line: the distance between its own ends |
-| `tangent` | infix | (line, circle); +`at:` for a tangency at a named end; (circle, circle); (arc, line); (spline, line); (curve, line), §6.5 — **six**; **[0.79]** (spline, curve, circle, arc or line; line) +`at: m`, a point held on the first: the tangent there, one equation reading the place of `m`'s contact — three more, and `parallel`; a line and a spline or a curve either way round; **[0.49]** (line, set), a contact on the line in the set and the body's derivative along the line; **[0.51]** (set, set) with the point in the parentheses, `k1 tangent(at: M) k2`, one tangent space there (§6.21) |
+| `distance` | infix | (p, p); **[0.46]** +`along:` an ordinate — an axis or a line, or **[0.92]** the view's `u`/`v` for the run and the rise (`right`/`left`/`up`/`down` with the sign said); (p, line); (line, line); (circle, circle); (p, plane) with `along: u`/`v` for signed ordinates from the plane's origin, or **[0.24]** `along: n` for the signed distance along the plane's normal, in space; **[0.42]** (plane, plane), the second's origin along the first's normal (§6.10) |
+| `tangent` | infix | (line, circle); +`at:` for a tangency at a named end; (circle, circle); (arc, line); (spline, line); (curve, line), §6.5 — **six**; **[0.79]** (spline, curve, circle, arc or line; line) +`at: m`, a point held on the first: the tangent there, one equation reading the place of `m`'s contact — three more, and `parallel`; a line and a spline or a curve either way round; **[0.49]** (line, set), a contact on the line in the set and the body's derivative along the line; **[0.51]** (set, set) with the point in the parentheses, `k1 tangent(at: M) k2`, one tangent space there (§6.21); **[0.90]** (envelope in space; line, axis or plane) +`at: m`, a line in its tangent plane or a plane touching it at a point held on it (§6.15.3) |
 | `equal` | infix | (line, line) a length; (circle, circle) a radius |
-| `curvature` | infix | (spline, circle), (curve, circle) |
+| `curvature` | infix | (spline, circle), (curve, circle); **[0.90]** (envelope in space, circle or arc) +`at: m`, the osculating circle of its section by the circle's plane (§6.15.3) |
 | `horizontal`, `vertical` | prefix | a line. **[0.48]** Between a pair of points they are the standard library's relation words (§9.9), `level(up)` and `level(right)`: `use std (horizontal, vertical)` |
 | `level` | infix | **[0.46]** (p, p), the direction in the parentheses — an axis, a line, or the view's word; (p, plane) with `u`/`v`, from the plane's origin |
 | `angle` | infix | (line, line); **[0.27]** (line, line) with a second pair in the parentheses, `l1 angle(l3, l4) l2` (§9.4); **[0.42]** (axis, axis \| line), (line, axis), the unsigned angle in space |
 | `radius` | prefix | a circle or an arc |
-| `length` | prefix | **[0.27]** an arc: its length along itself; **[0.53]** a spline: its whole length |
-| `midpoint`, `parallel`, `perpendicular`, `symmetry` | infix | one each; **[0.42]** `parallel` and `perpendicular` also take an axis beside an axis or a line, in space, and (axis, plane) — along the plane, and square to it — either way round; **[0.43]** `parallel` takes (plane, plane): the two face alike, either way (two rows over their normals; neither's place nor its turn within itself) |
+| `length` | prefix | **[0.90]** a line: the distance between its own ends; **[0.27]** an arc: its length along itself; **[0.53]** a spline: its whole length; a free curve: its own. **[0.90]** `distance` relates two things and `length` measures one: so a word over `g: path` states `g`'s length whatever `g` is given, and `distance(d) l` on a line, the spelling through 0.89, is **E040** naming `length(d) l` |
+| `midpoint`, `parallel`, `perpendicular`, `symmetry` | infix | one each; **[0.42]** `parallel` and `perpendicular` also take an axis beside an axis or a line, in space, and (axis, plane) — along the plane, and square to it — either way round; **[0.43]** `parallel` takes (plane, plane): the two face alike, either way (two rows over their normals; neither's place nor its turn within itself); **[0.90]** `perpendicular` takes (envelope in space, line or axis) +`at: m`, the line along its normal at a point held on it (§6.15.3) |
 | `project` | infix | (point, point), each `in` a plane — the two planes are read off the memberships and never written (§6.7) **[0.10]** |
 | `fix` | prefix | the gauge (§13): an entity, and its own numbers pinned whole or by member — `fix((0, 0)) p`, `fix(x == 0) p`, `fix(r == 25) c`, `fix(dir == (0, 0, 1)) t` **[0.34]** **[0.45]** |
 | `ccw`, `cw` | call | three points, all in the parentheses (§9.6) |
@@ -1798,7 +1852,7 @@ The collapses are where the saving is: **`coincident` is fifteen constraints, `d
 
 **[0.18] The body rule is written in this grammar and is not a constraint.** **[0.32]** `boss union cyl`, `bore cut cyl` and **[0.22]** `tip common cyl` (**[0.85]**; `bound` before) are **Declaration**-class (§4.2): each says what its right operand *is* (§6.9), contributes no residual, and takes no part in a solve, a decomposition or any partition of work. None relates geometry or has a residual to be settled into, so each is read by the word alone. None is in the constraint library of §9.3, and none may be `claim`ed: a claim is judged by rank and these add no row, which is the rule already stated for the gauges. `claim a cut b` and `claim a union b` are refused where they are written, neither being a constraint word. (0.18–0.31 spelled the union `on`, settled by the kinds of its operands; `coincident` between two solids is now refused as any constraint word is over operands it does not relate.)
 
-**[0.24] Across planes, the same word is the relation in space.** A relation's operands are read in the planes their points are drawn in (§6.7). Within one plane it is the 2D relation, and the lift is rigid, so the 2D relation *is* the relation in space. **[0.42]** Where they differ, or where any point stands in space, the word means its relation between the points' lifts: `coincident`, `distance` between two points (the true length), a point and a line (to the infinite line) or two lines (the common perpendicular — a magnitude, **[0.78]** both sides roots, chosen by a bound or the seed), `coincident` a line or a circle, `angle` (unsigned, 0 to 180°), `parallel`, `perpendicular` and `equal` (true lengths), and **[0.25]** `midpoint` (of the line in space) and `symmetry` (the half turn about the line in space, which on the line's own plane is the mirror). No selector says so. `sense:` and `side:` name a turn and a side *in a plane* and are **E040** there; a word that has no meaning in space — `horizontal`, `vertical`, a run or a rise (**[0.46]** a direction named by the view's word, **[0.90]** `u`, `v`, `right`, `up` …: name the axis, `along: std.x`), `tangent` between drawn figures, a curve's contacts — is **E062**. **[0.82]** A point at a fraction of a line or an arc (`coincident(t == …)`) is a place in space too: the fraction of the way between the line's ends' places, or of the arc's turn read in the plane it is drawn in. A radius and a ring's width read only radii, which the lift carries unchanged, so they mean the same in any plane; `along: u`/`v`/`n` are measured from a plane in space wherever the point is (§6.7); and `project` relates two planes by definition. A relation over an axis or a plane is in space whatever plane its points are drawn in.
+**[0.24] Across planes, the same word is the relation in space.** A relation's operands are read in the planes their points are drawn in (§6.7). Within one plane it is the 2D relation, and the lift is rigid, so the 2D relation *is* the relation in space. **[0.42]** Where they differ, or where any point stands in space, the word means its relation between the points' lifts: `coincident`, `distance` between two points (the true length), a point and a line (to the infinite line) or two lines (the common perpendicular — a magnitude, **[0.78]** both sides roots, chosen by a bound or the seed), `coincident` a line or a circle, `angle` (unsigned, 0 to 180°), `parallel`, `perpendicular` and `equal` (true lengths), and **[0.25]** `midpoint` (of the line in space) and `symmetry` (the half turn about the line in space, which on the line's own plane is the mirror). No selector says so. `sense:` and `side:` name a turn and a side *in a plane* and are **E040** there; a word that has no meaning in space — `horizontal`, `vertical`, a run or a rise (**[0.46]** a direction named by the view's word, **[0.92]** `u`, `v`, `right`, `up` …: name the axis, `along: std.x`), `tangent` between drawn figures, a curve's contacts — is **E062**. **[0.82]** A point at a fraction of a line or an arc (`coincident(t == …)`) is a place in space too: the fraction of the way between the line's ends' places, or of the arc's turn read in the plane it is drawn in. A radius and a ring's width read only radii, which the lift carries unchanged, so they mean the same in any plane; `along: u`/`v`/`n` are measured from a plane in space wherever the point is (§6.7); and `project` relates two planes by definition. A relation over an axis or a plane is in space whatever plane its points are drawn in.
 
 **[0.42] The role rule is withdrawn.** 0.24 read a plane's own datum points — its origin and its `toward` — by what they were related to, because they placed the view on the sheet. A plane has no `toward` and no place on the sheet now; its origin is a point drawn in it like any other.
 
@@ -1827,7 +1881,7 @@ Residual conventions: points are ℝ²; `×` is the scalar 2D cross product; `�
 | `ccw(a, b, c)` | (b−a) × (c−a) > 0 | 0 | inequality; selects a connected component |
 | `cw(a, b, c)` | (b−a) × (c−a) < 0 | 0 | |
 | `coincident(p, P: Plane)` **[0.24]** | n̂_P·(X − o_P) | 1 | X the point's lift; in space whatever plane `p` is in; `p` drawn in `P` is E061 |
-| `distance(p, q, along: t) == e` **[0.46]** | (q − p)·t̂ − e; in one view along its own `u` (`v`) q.x − p.x − e (q.y − p.y); across views (Y − X)·t̂ − e | 1 | t̂ the unit direction of axis or line `t`, signed along it; **[0.90]** `u`, `v` name the points' view's axes |
+| `distance(p, q, along: t) == e` **[0.46]** | (q − p)·t̂ − e; in one view along its own `u` (`v`) q.x − p.x − e (q.y − p.y); across views (Y − X)·t̂ − e | 1 | t̂ the unit direction of axis or line `t`, signed along it; **[0.92]** `u`, `v` name the points' view's axes |
 | `distance(p, P, along: n) == e` **[0.24]** | n̂_P·(X − o_P) − e | 1 | the ordinate from `P.origin` along `P`'s normal |
 | `distance(p, P, along: u) == e` **[0.21]** **[0.42]** | p.x − e; across planes (X − o_P)·û_P − e | 1 | the ordinate from `P.origin` along `P.u`; `along: v` likewise; §6.7 |
 | `level(p, q, t)` **[0.46]** | (q − p)·t̂ | 1 | the ordinate's zero, written `p level(t) q`; `p horizontal q` is `p level(up) q` |
@@ -1889,7 +1943,7 @@ p outside P                       // in front of it
 - **Closed:** `>=`, `<=` and `in:` include their edge, where a solution may stand. `>` and `<` are refused.
 - **Its number:** zero may be written, unlike an ordinate's equality, which zero makes a `level` (§9.2). A bound may not be a `claim` (**E040**): a bound chooses which solution is meant, and a claim asks about the one there is. It may read an unknown only where a row of the drawing reads it too (**[0.64]**, a cone's half its side is chosen against), read as it stands: on the seeds its seed, on the solution its solution; one nothing else reads is **E040**, since a bound adds no freedom.
 - **Meaning:** outside a set body, a bound **chooses the root**. It adds no row and no freedom, and is drawn as no callout. It does the work a seed did when the seed only picked a side, so it is read on the seeds first: a point whose seed breaks a bound is carried across its edge, to the mirror of its reading, as if it had been seeded there, and everything seeded from it or placed through it follows. The solver then checks it on the solution. Where it still does not hold, the solver looks for the root where it does, from the seeds and from the solution, and fails the solve where none is found (`a bound does not hold`). **[0.78]** A solver that constructs the drawing a block at a time (§15) holds each block to the bounds it decides — every quantity they read is the block's or placed before it — and looks for a block's root there, so the words choose the roots of a drawing with no seed at all. The diagnosis tells which bounds are violated, and which hold with the solution on their edge (*active*).
-- **A region's land** **[0.76]**. A region draws no tip line for `distance(>= d) tip` to stand on: its rounds and faces are worked out, not solved. A tooth whose flanks are drawn through the ends of its tip — a face mill's blade, given by its point width — says its land on those ends, `eb distance(>= d, along: left) ea` in the tooth's section: on the seeds and on the solution it is the same root choice as the drawn section's, so a start on the root where the flanks cross above the tip (the tooth an edge, its tip no face) is carried to the tooth with its land.
+- **A region's land** **[0.76]**. A region draws no tip line for `length(>= d) tip` to stand on: its rounds and faces are worked out, not solved. A tooth whose flanks are drawn through the ends of its tip — a face mill's blade, given by its point width — says its land on those ends, `eb distance(>= d, along: left) ea` in the tooth's section: on the seeds and on the solution it is the same root choice as the drawn section's, so a start on the root where the flanks cross above the tip (the tooth an edge, its tip no face) is carried to the tooth with its land.
 - **Inside a set body** a bound makes the set a region, and `inside`/`outside` put a point in one (§6.21) **[0.61]**. `solid(R)` is a region's solid (§6.9) **[0.62]**. `distance(<= d, side: outside|inside)` grows a side by `d` (§6.21) **[0.64]**, its one spelling **[0.86]**.
 - `inside` between two solids remains the claim of §9.8; which one a statement is follows from its operands.
 
@@ -1994,10 +2048,12 @@ body's declarations are. That is how the standard library says `round` and `cham
 ```
 A relieved(d) B := {
   repeat a in A {
-    repeat b in B if b != a {
-      groove := { p | p distance(<= d) a; p distance(<= d) b; p inside a; p inside b }
-      relief := solid(groove)
-      relief cut A.body
+    repeat b in B {
+      when b != a {
+        groove := { p | p distance(<= d) a; p distance(<= d) b; p inside a; p inside b }
+        relief := solid(groove)
+        relief cut A.body
+      }
     }
   }
 }
@@ -2163,7 +2219,7 @@ cycle e in CHAIN as i { ... }
 
 One copy per link of a named chain (§6.6), in traversal order, with `e` a reference to that copy's edge — a constraint operand, a field (`e.p1`), an argument — and `as i` optional as before. The count is the chain's, so the chain MAY be declared later in the body (P2) or reached through an instance or a group. The copies are §12.1's (or §12.2's, with `next`/`prev`) in every other respect, and §12.7 holds. `cycle` over an open chain, and iteration over what is not a named chain or a solid, are errors at the reference (**E103**); a body declaration named as the edge is **E001**.
 
-**Over a solid's faces** **[0.69]**: `repeat a in X { … }`, `X` a solid or a face path (§6.9), makes one copy per face `X` names, `a` the face (a face path itself, §6.21): a prism's `near`, `far` and a side per edge of its section, a revolution's wall per edge and, where the turn is partial, `start` and `end`, a body's every operand's faces under the operand's name (`pad.plate.near`). The faces are read off what the solid is made of, so one a Boolean ate is listed still and names nothing (§6.21); they are known once the solids are built, so the block is expanded then. A condition keeps some copies: `repeat b in B if b != a { … }`, `repeat c in A if c in B and c != a { … }` — `f in X`, the face is one `X` names, and `f != g`, it is not that face — each joined by `and`.
+**Over a solid's faces** **[0.69]**: `repeat a in X { … }`, `X` a solid or a face path (§6.9), makes one copy per face `X` names, `a` the face (a face path itself, §6.21): a prism's `near`, `far` and a side per edge of its section, a revolution's wall per edge and, where the turn is partial, `start` and `end`, a body's every operand's faces under the operand's name (`pad.plate.near`). The faces are read off what the solid is made of, so one a Boolean ate is listed still and names nothing (§6.21); they are known once the solids are built, so the block is expanded then. **[0.91]** Which copies make anything is a `when` in the body (§12.9): `repeat b in B { when b != a { … } }`, `repeat c in A { when c in B and c != a { … } }`. A condition written after the face path (`repeat b in B if b != a`) is a syntax error; *0.69 through 0.89 kept copies by one, `f in X` and `f != g` joined by `and`.*
 
 ### 12.9 `when` — a block made or not by a condition **[0.72]**
 
@@ -2174,6 +2230,8 @@ when COND { ... }
 The body is made **once** where `COND` holds and **not at all** where it does not. The condition is decided at elaboration, over the numbers in scope where the block stands — the document's values and inputs with a value, a module's numbers by their paths, a component's formals bound by its call, an enclosing block's index — so it is a choice of what the program *is*, never of where the solve goes. It stands where `repeat` does: at the top level of a document, in a component body, and inside another block.
 
 `COND` is comparisons of two numbers, `<`, `<=`, `>`, `>=`, `==` and `!=`, joined by `and`, `or` and `not` (`or` binds loosest, then `and`, then `not`); a parenthesis holds a number or a condition. A number alone is no condition, and a comparison is no number. Each comparison is between two numbers of one dimension, as `+` is (§3.3): `relief > 0mm`, not `relief > 0`; two dimensions are **E103**. The comparison is exact, with no tolerance, so `<` and `==` are never both true. Every comparison is worked out, so a mistake on a side `and` or `or` could skip is still said.
+
+**[0.91] Identity.** Two names of which one is no number compare by what they stand for: `a == b` holds where both name the same thing — an entity, or a face (§6.21) — reached through every formal and binder (a formal is what its call gave it, a face repeat's binder its face), and `a != b` where they do not. `c in B` holds where what `c` names is one of the faces the face path `B` names (§6.9). These join numbers' comparisons under `and`, `or` and `not` alike, and are decided where the block is elaborated — inside a block over a solid's faces, once the faces are named (§12.8). A number on one side and something drawn on the other is **E103**, as is something drawn under `<`, `<=`, `>` or `>=`, and `in` over what names no faces; a name that stands for nothing is **E101**. `when` is thereby the language's one conditional: a switch is `when flag == 1 { … }`, never a `repeat` over a count of zero or one, which named what it made as copies.
 
 **A `when` repeats nothing, so it has no index and no copy.** What its body declares is named as if written beside the block — `p_in`, and in a component `t.tip` — never with a copy's index, and is reached from outside by that name; where the condition does not hold, nothing of the body is made, and a name only it declares is undefined (**E101**). The numbers a body defines are its own. A statement inside it is one statement as any is (§12.7), reached once or not at all, so a solve writes its seeds back as at the top level (§4.3). An index binder (`as i`) and a body ending mid-joint (§6.6), which threads onto a next copy there is none of, are syntax errors.
 
@@ -2784,18 +2842,18 @@ seg            = "->" | "~" ref [ "rev" ] "~" ;           (* `~` is `hint` since
 
 hint           = "hint" ref hint_clause ;                  (* §11; unimplemented *)
 
-block          = ( "repeat" | "cycle" ) ( expr | IDENT "in" ref [ condition ] ) [ "as" IDENT ]
+block          = ( "repeat" | "cycle" ) ( expr | IDENT "in" ref ) [ "as" IDENT ]
                  "{" { statement } "}"                (* IDENT "in" ref: §12.8 [0.27] *)
                | "ring"   expr "about" ref [ "as" IDENT ] "{" { statement } "}"
                | "when"   truth "{" { statement } "}" ;    (* §12.9 [0.72] *)
 
 truth          = truth "or" conj | conj ;                 (* [0.72] *)
 conj           = conj "and" negation | negation ;
-negation       = "not" negation | expr cmpop expr | "(" truth ")" ;
+negation       = "not" negation | expr cmpop expr | name "in" name | "(" truth ")" ;
+                 (* `name "in" name` and a comparison of two names: identity, [0.91] *)
+name           = IDENT { "." IDENT } ;
 cmpop          = "<" | "<=" | ">" | ">=" | "==" | "!=" ;
 
-condition      = "if" IDENT ( "in" | "!=" ) ref { "and" IDENT ( "in" | "!=" ) ref } ;
-                 (* which faces' copies are kept, §12.8 [0.69] *)
 ref            = ( IDENT | "next" | "prev" ) { "." IDENT | "[" expr "]" } ;
 expr           = expr addop term | term ;
 term           = term mulop factor | factor ;

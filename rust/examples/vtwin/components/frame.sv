@@ -33,7 +33,7 @@ component FrameBank(o: point, ref: line, alpha: Angle, dim: Int, dims: group) {
   claim ref angle(alpha, sense: cw) ax
   claim ref angle(alpha - port_bearing, sense: cw) rad_i
   claim ref angle(alpha + port_bearing, sense: cw) rad_e
-  repeat dim {
+  when dim == 1 {
     claim o distance(dims.H) piv
     claim piv distance(dims.a) ip.p
   }
@@ -97,8 +97,8 @@ component IntakePassage(f: group, dims: group) {
   bc perpendicular ax
   cd parallel ax
   da perpendicular ax
-  distance(dims.rpl - dims.rman) ab
-  distance(dims.wch) bc
+  length(dims.rpl - dims.rman) ab
+  length(dims.wch) bc
   a distance(dims.wch / 2, side: right) ax
   a distance(dims.rman, along: u) f.axes
 }

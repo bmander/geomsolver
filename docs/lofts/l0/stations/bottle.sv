@@ -36,7 +36,7 @@ in std.front {
   rail := spline(r0, k0, k1, r2)
   r1 coincident rail
   vertical (foot := line(r0, k0))
-  distance(30mm) foot
+  length(30mm) foot
   vertical (lip := line(k1, r2))
 }
 bottle := Body(axis_line, std.y, std.front, rail, s: 0.5)

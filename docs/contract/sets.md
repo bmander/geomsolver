@@ -19,6 +19,12 @@ stays a component.  An unbound number is the instance's unknown
 it says so (`flatten::substitute_with`).  `tests/spatial_surfaces.rs` and `tests/spatial_lang.rs` are the
 gates.
 
+**A set is an envelope's operand** (#283, [0.90]): `flank := envelope(S, under: m, …)` over a set
+is applied to a hidden point keyed `{flank}#probe` (`Walk::envelope_of`, beside `region_of`, both
+through `set_operand`), `probe coincident S` stated with it; the planar pass skips it, and
+`program::envelopes` reads what the body states at the probe as the surface (a cone, a cylinder) —
+never a row (`analytic.md`).
+
 **Crown regions (#209, 0.76):** a family's body is split by its point at the instance
 (`flatten::sets::instance_part`, called where `comp.set` makes the set): declarations and written
 relations reading nothing of the bound point, directly or through a declaration that does, are

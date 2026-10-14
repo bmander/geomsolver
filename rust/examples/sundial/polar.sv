@@ -44,7 +44,7 @@ in std.side {
   O vertical A
   N vertical B
   A horizontal B
-  distance(height) south_post
+  length(height) south_post
   S := point hint((0, 50))
   construction noon_sun := line(A, S)
   noon_sun perpendicular style

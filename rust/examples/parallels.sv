@@ -29,8 +29,8 @@ in std.front {
 
   // l3 rises from l2's start, and l4 leaves l3's top square to it
   vertical (l3 := line(a, d)) -> perpendicular (l4 := line(d, hint((30, 30))))
-  distance(20) l3
-  distance(20) l4
+  length(20) l3
+  length(20) l4
 
   fix((0, 0)) o
   fix((40, 0)) e

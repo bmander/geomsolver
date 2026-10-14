@@ -27,8 +27,8 @@ fn a_negative_magnitude_is_refused_and_a_signed_dimension_is_not() {
     assert!(gcs_core::expr::set_dimension(&mut sk, id, "r", "5").is_ok());
 }
 
-/// An arc's length is a magnitude like a radius, refused negative where it is written, and only
-/// an arc has one to state this way; `angle`'s parentheses hold one number or the pair of lines
+/// An arc's length is a magnitude like a radius, refused negative where it is written, and a
+/// circle has none to state this way; `angle`'s parentheses hold one number or the pair of lines
 /// of the angle it equals — two numbers there are a mistake, said at the first rather than the
 /// second being dropped, and a point in the pair is not a line.
 #[test]
@@ -48,8 +48,9 @@ fix((0, 0)) o
     assert!(read(&format!("{ARC}length(5) a\n")).1.is_empty());
     let (_, d) = read("use std\nin std.front {\no := point hint((0, 0))\nc := circle(center: o) hint(r: 5)\nlength(10) c\n}\n");
     assert!(d.iter().any(|m| m.contains("`length` does not apply to a circle")), "{d:?}");
+    // a line has one too since #269: the distance between its ends, which `distance` said
     let (_, d) = read("use std\nin std.front {\na := point hint((0, 0))\nb := point hint((5, 0))\nl := line(a, b)\nlength(10) l\n}\n");
-    assert!(d.iter().any(|m| m.contains("`length` does not apply to a line")), "{d:?}");
+    assert!(d.is_empty(), "{d:?}");
     const PAIR: &str = "\
 use std
 in std.front {
@@ -677,4 +678,26 @@ fn a_fraction_past_an_end_runs_on_a_line_and_is_refused_on_an_arc() {
     refused("use std\nin std.front {\n  c := point\n  r := circle(center: c) hint(r: 5)\n  \
              w := point\n  r coincident(t == 0.5) w\n}\n",
             "E040", "a circle has no start or end, so no fraction of its turn", "t");
+}
+
+/// **`distance` relates two things; `length` measures one** (#269): the prefix `distance` on a
+/// line was its length, and is refused naming the word that is now, as a statement and as a
+/// chain's link; the infix stays.
+#[test]
+fn a_lines_length_is_length_not_distance() {
+    const AB: &str = "use std\nin std.front {\na := point\nb := point hint((40, 0))\nab := line(a, b)\n\
+                      fix((0, 0)) a\n";
+    let needle = "`distance` relates two things and `length` measures one: the length of a line \
+                  is written `length(…)` before it";
+    crate::common::refused(&format!("{AB}distance(40) ab\n}}\n"), "E040", needle, "distance");
+    let (_, d) = read(&format!("{AB}length(40) ab\n}}\n"));
+    assert!(d.is_empty(), "{d:?}");
+    let (_, d) = read(&format!("{AB}a distance(40) b\n}}\n"));
+    assert!(d.is_empty(), "{d:?}");
+    // a chain's link: the word before the line it opens
+    let (_, d) = read("use std\nin std.front {\ndistance(10) (l1 := line) -> length(20) (l2 := line)\n}\n");
+    assert!(d.iter().any(|m| m.starts_with("E040") && m.contains(needle)), "{d:?}");
+    // and no definition takes the retired spelling for itself
+    let (_, d) = read("distance(d) l := length(d) l\n");
+    assert!(d.iter().any(|m| m.starts_with("E071")), "{d:?}");
 }

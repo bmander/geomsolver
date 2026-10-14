@@ -47,7 +47,7 @@ component Piston(small: point, pin: Int, dims: group) {
   cr offset(dx: w / 2, dy: dims.ch) small
   sl offset(dx: -w / 2, dy: dims.ch - dims.ph) small
   sr offset(dx: w / 2, dy: dims.ch - dims.ph) small
-  repeat pin {
+  when pin == 1 {
     k := circle(center: small) hint(r: dims.rpin)
     radius(dims.rpin) k
   }

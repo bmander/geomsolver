@@ -4,15 +4,50 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
-**[0.90] One vocabulary for a view's directions.** A view is a plane (§6.7), so its own
+**[0.92] One vocabulary for a view's directions.** A view is a plane (§6.7), so its own
 directions are said as a plane's are: between two points drawn in one view, `along: u` is the
 run and `along: v` the rise — the view's `u` and `v` — as against a plane they are that plane's
-(§9.2). `right`, `left`, `up` and `down` stay, the same two with the sign said. Through 0.89 the
+(§9.2). `right`, `left`, `up` and `down` stay, the same two with the sign said. Through 0.91 the
 run and the rise were `along: x` and `along: y`, which named the view's `u` and `v` by the world's
 letters and read as the world's where they were not: in `std.front`, `along: y` was world z while
 `along: std.y` was world y. `x` and `y` are no longer direction words: a name in scope by either
 is a reference like any other, and one naming nothing is **E040** at the key, saying what the word
 became. (Issue #268.)
+
+**[0.91] `when` is the one conditional.** A `when`'s condition compares two drawn things by
+**identity** — `a != b`, they stand for different things (an entity or a face, through every
+formal and binder), `a == b`, the same — and `c in B` asks whether `c` is one of the faces `B`
+names, joined with numbers' comparisons by `and`, `or` and `not` (§12.9). So a block over a
+solid's faces keeps the copies it wants by a `when` in its body: `repeat b in B { when b != a
+{ … } }`. The filter after the face path, `repeat b in B if b != a { … }` (0.69), is retired and
+is a syntax error naming the `when`. A number against something drawn is **E103**. A switch is
+written `when flag == 1 { … }`, not `repeat flag { … }` over a count of zero or one, and a
+conjunction `when a == 1 and b == 1`, not `repeat a * b`: what a `when` makes keeps its name
+(`rod1.sm`, `crank.t1.pin`) where the `repeat` named a copy (`rod1.sm[0]`). The engine, the
+V-twin and the twist drill are rewritten so.
+
+**[0.90] An envelope in space is held to by the solve.** `flank := envelope(S, under: m, from:,
+to:)` over a cone or a cylinder set (`std.Cone`, `std.ConeThrough` with its lean stated,
+`std.Cylinder`) — a set is now an envelope's operand, read as what its body states at its point —
+or over a revolution's side turned from a line, an arc or a circle, under a motion of turns about
+lines, screws, slides and `relative_to:`, is no longer only read after the solve: `p coincident
+flank` holds a point to it (owning the place `[u, v, t]`, four rows, net one), and at a point held
+there `flank tangent(at: p) l` (a line or an axis in its tangent plane), `flank perpendicular(at:
+p) l` (along its normal, the common normal of a mesh), `flank tangent(at: p) P` (a plane touching
+it) and `flank curvature(at: p) k` (the osculating circle of its section by `k`'s plane, by
+Meusnier from the shape operator, which the moving source's normal gives with no second solve)
+(§6.15.3). The source's geometry, its number where that is an unknown (`half: hint(20deg)`), and
+the motion's axes are columns, so a cutter's lean solves from a contact stated at the mean point
+(`spiral_bevel/mean_point.sv`, #283). `at:` names a point after `perpendicular` and `curvature` as it
+does after `tangent`. A hint over an unknown a call leaves unbound with a seed reads it at that
+seed, no longer at zero (§6.4): `std.ConeThrough(ax, q, lean: hint(20deg))` places its apex where a
+20° lean puts it.
+
+**[0.90] `length` measures one thing; `distance` relates two.** A line's length is `length(d)
+l`, the word an arc's, a spline's and a free curve's already were (§9.1), so a word over `g: path`
+states `length(L) g` whatever kind `g` is given. `distance(d) l` on a line, the spelling through
+0.89, is **E040**, naming `length(d) l`; the infix `a distance(d) b` is unchanged, and so is the
+prefix in a chain: `length(d) (l1 := line) -> …`, `cycle N { length(d) line -> angle(a) }`.
 
 **[0.89] A plane's normal is a member.** `P.normal` is the axis along `P.u × P.v` through
 `P.origin`, read wherever an axis is: `l parallel P.normal`, `t perpendicular std.front.normal`,

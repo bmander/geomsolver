@@ -178,6 +178,9 @@ pub enum KernelKey {
     /// A free curve's length stationary under its energy (`H = 0`, #144), by the energy's first
     /// statement.
     Stationary(u32),
+    /// A contact with an envelope in space (#283), at its block's widths: `fk` the
+    /// `envelope::held::Contact`.
+    Envelope { fk: u8, n_par: usize, n_const: usize },
 }
 
 pub fn kernel(id: K) -> &'static Kernel {
@@ -2023,7 +2026,7 @@ fn refused_jac(_n: usize, _v: &[f64], _k: &[f64], j: &mut [f64]) {
 /// A kernel `fn` is not told its own `n_par` and `n_const` — every other kernel knows them as
 /// constants of its own type.  A curve kernel's are per *definition*, so they are recovered here
 /// from the lengths the block passed, which are `count * n_par` and `count * n_const` exactly.
-fn curve_widths(n: usize, v: &[f64], k: &[f64]) -> (usize, usize) {
+pub(crate) fn curve_widths(n: usize, v: &[f64], k: &[f64]) -> (usize, usize) {
     if n == 0 {
         return (0, 0);
     }
@@ -2729,13 +2732,13 @@ fn symmetric3_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
 
 /// A number and its gradient in the `N` columns of one block.
 #[derive(Clone, Copy)]
-struct Dual<const N: usize> {
-    v: f64,
-    g: [f64; N],
+pub(crate) struct Dual<const N: usize> {
+    pub(crate) v: f64,
+    pub(crate) g: [f64; N],
 }
 
 impl<const N: usize> Dual<N> {
-    fn var(v: f64, i: usize) -> Self {
+    pub(crate) fn var(v: f64, i: usize) -> Self {
         let mut g = [0.0; N];
         g[i] = 1.0;
         Dual { v, g }

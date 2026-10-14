@@ -97,8 +97,8 @@ component Grub(f: group, rin: Length, rout: Length, dims: group) {
   q1 perpendicular ax
   q2 parallel ax
   q3 perpendicular ax
-  distance(dims.nutT) q0
-  distance(dims.nutaf) q1
+  length(dims.nutT) q0
+  length(dims.nutaf) q1
   n0 distance(dims.nutaf / 2, side: left) ax
   n0 distance(rin + dims.nutin, along: u) f.axes
   // **the screw's hole is a solid; its nut's pocket is not, and that is a limit of the language

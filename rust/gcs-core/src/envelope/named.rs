@@ -22,7 +22,10 @@ impl GeneratedEnvelope {
     }
     pub fn named(sk: &Sketch, index: usize) -> Result<Self,String> {
         let e = sk.envelopes.get(index).ok_or("no such envelope")?;
-        Self::new(e.name.clone(),RevolvedSurface::named(sk,e.surface as usize)?,
+        // a set's envelope has no revolution's side to read: the solve holds points to it (#283)
+        let surface = e.surface.ok_or_else(|| format!("`{}` is the envelope of a set's surface, \
+            which the solve holds points to and nothing reads after it",e.name))?;
+        Self::new(e.name.clone(),RevolvedSurface::named(sk,surface as usize)?,
             Family::read(sk,e.motion as usize)?,e.roll)
     }
 

@@ -26,9 +26,9 @@ in std.top {
   c2 := point
   route := horizontal (l0 := line(a, b)) -> tangent (k1 := arc(center: c1)) ->
     vertical (l2 := line) -> tangent (k3 := arc(center: c2)) -> horizontal (l4 := line)
-  distance(20mm) l0
-  distance(20mm) l2
-  distance(20mm) l4
+  length(20mm) l0
+  length(20mm) l2
+  length(20mm) l4
   radius(25mm) k1
   radius(25mm) k3
 }

@@ -51,6 +51,10 @@ impl Constraint {
     }
 
     fn own_consts_on(&self, sk: &Sketch, span: Option<usize>) -> Vec<f64> {
+        // an envelope contact's: its source and its motion, read off the sketch (#283)
+        if let Some(c) = self.kind.envelope_contact() {
+            return self.envelope_parts(sk).map(|p| p.consts(c)).unwrap_or_default();
+        }
         if self.kind == CKind::Stationary {
             return crate::variational::pack(sk, self.id);
         }
@@ -563,6 +567,31 @@ impl Constraint {
             CKind::CurveCurvature => {
                 [vec![self.args[2].param()], sk.entity_params(e(0)), centre(1), vec![rad(1)]].concat()
             }
+            // an envelope contact's lead — what it states about — then its place, then the
+            // source's and the motion's columns (#283, `envelope::held`)
+            CKind::PointOnEnvelope
+            | CKind::EnvelopeTangentAt
+            | CKind::EnvelopeNormalAt
+            | CKind::EnvelopePlaneAt
+            | CKind::EnvelopeCurvatureAt => {
+                let lift = |p: usize| {
+                    let k = sk.lift_of(p).expect("a relation in space is lifted at the add");
+                    sk.lifts[k].x.to_vec()
+                };
+                let (lead, place) = match self.kind {
+                    CKind::PointOnEnvelope => (lift(e(0).i()), 2),
+                    CKind::EnvelopeTangentAt | CKind::EnvelopeNormalAt => (self.direction_columns(sk, 1), 3),
+                    CKind::EnvelopePlaneAt => (plane_columns(sk, e(1).i())[3..].to_vec(), 3),
+                    _ => {
+                        let c = sk.round_center(e(1));
+                        let v = sk.plane_of(c).expect("a circle in space is drawn in a plane");
+                        ([lift(c), vec![rad(1)], plane_columns(sk, v)[3..].to_vec()].concat(), 3)
+                    }
+                };
+                let parts = self.envelope_parts(sk).map(|p| p.columns(sk)).unwrap_or_default();
+                let at: Vec<u32> = (place..place + 3).map(|i| self.args[i].param()).collect();
+                [lead, at, parts].concat()
+            }
             CKind::SplineTangentLine => {
                 [vec![self.args[2].param()], self.span_params(sk, span), ln(1)].concat()
             }
@@ -691,6 +720,21 @@ impl Constraint {
             CKind::LineOnPlane | CKind::LineOnAxis => ends(0).to_vec(),
             CKind::PointOnCircle3 | CKind::PointAlongArc3 => vec![e(0).i(), sk.round_center(e(1))],
             CKind::PointOnExtrusion | CKind::PointOnAxis => vec![e(0).i()],
+            // what it states about, then every point its envelope's source and motion read (#283)
+            CKind::PointOnEnvelope
+            | CKind::EnvelopeTangentAt
+            | CKind::EnvelopeNormalAt
+            | CKind::EnvelopePlaneAt
+            | CKind::EnvelopeCurvatureAt => {
+                let lead = match self.kind {
+                    CKind::PointOnEnvelope => vec![e(0).i()],
+                    CKind::EnvelopeTangentAt | CKind::EnvelopeNormalAt if e(1).kind == EntKind::Line => ends(1).to_vec(),
+                    CKind::EnvelopeCurvatureAt => vec![sk.round_center(e(1))],
+                    _ => Vec::new(),
+                };
+                let parts = self.envelope_parts(sk).map(|p| p.lifted()).unwrap_or_default();
+                [lead, parts].concat()
+            }
             CKind::Symmetric3 => [vec![e(0).i(), e(1).i()], ends(2).to_vec()].concat(),
             // a direction's operands: a line's ends are lifted, and an axis is in space already
             CKind::Angle3 | CKind::Perpendicular3 | CKind::Parallel3 => (0..2)

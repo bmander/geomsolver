@@ -43,15 +43,15 @@ crank := engine.crankshaft.Crankshaft(std.side, std.front, std.side.origin, end.
 // rod 1's for cylinder 4, and a ghosted rod a half turn on for cylinders 2 and 3
 secA := point in std.top
 secA right_of(d: engine.dims.back + 120mm) std.top.origin
-rod1 := engine.conrod.ConRod(std.side, std.front, std.top, crank.t1[0].pin, end.bore, crank.pin_s[0], side.small[0], secA, draw_end: 1, draw_side: 1, draw_sec: 1, dims: engine.dims.engine_dims)
-rod2 := engine.conrod.ConRod(std.side, std.front, std.top, crank.t2[0].pin, end.bore, crank.pin_s[1], side.small[1], secA, draw_end: 0, draw_side: 1, draw_sec: 0, dims: engine.dims.engine_dims)
-rod3 := engine.conrod.ConRod(std.side, std.front, std.top, crank.t2[0].pin, end.bore, crank.pin_s[2], side.small[2], secA, draw_end: 0, draw_side: 1, draw_sec: 0, dims: engine.dims.engine_dims)
-rod4 := engine.conrod.ConRod(std.side, std.front, std.top, crank.t1[0].pin, end.bore, crank.pin_s[3], side.small[3], secA, draw_end: 0, draw_side: 1, draw_sec: 0, dims: engine.dims.engine_dims)
-ghost := engine.parts.Rod(crank.t2[0].pin, end.bore, dims: engine.dims.engine_dims) in std.side
-piston1 := engine.parts.Piston(rod1.sm[0], pin: 1, dims: engine.dims.engine_dims) in std.side
+rod1 := engine.conrod.ConRod(std.side, std.front, std.top, crank.t1.pin, end.bore, crank.pin_s[0], side.small[0], secA, draw_end: 1, draw_side: 1, draw_sec: 1, dims: engine.dims.engine_dims)
+rod2 := engine.conrod.ConRod(std.side, std.front, std.top, crank.t2.pin, end.bore, crank.pin_s[1], side.small[1], secA, draw_end: 0, draw_side: 1, draw_sec: 0, dims: engine.dims.engine_dims)
+rod3 := engine.conrod.ConRod(std.side, std.front, std.top, crank.t2.pin, end.bore, crank.pin_s[2], side.small[2], secA, draw_end: 0, draw_side: 1, draw_sec: 0, dims: engine.dims.engine_dims)
+rod4 := engine.conrod.ConRod(std.side, std.front, std.top, crank.t1.pin, end.bore, crank.pin_s[3], side.small[3], secA, draw_end: 0, draw_side: 1, draw_sec: 0, dims: engine.dims.engine_dims)
+ghost := engine.parts.Rod(crank.t2.pin, end.bore, dims: engine.dims.engine_dims) in std.side
+piston1 := engine.parts.Piston(rod1.sm, pin: 1, dims: engine.dims.engine_dims) in std.side
 ghost.small project side.small[1]
 ghost.small project side.small[2]
-rod1.sm[0] project side.small[3]
+rod1.sm project side.small[3]
 
 // the timing drive, on the front of the engine in the end section and edge on in the side
 drive := engine.end_view.Drive(std.side.origin, head.cam_i, head.cam_e, dims: engine.dims.engine_dims) in std.side
