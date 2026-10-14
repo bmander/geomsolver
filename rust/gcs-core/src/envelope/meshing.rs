@@ -42,8 +42,9 @@
 //! side, not that the contact is within either flank's trimmed face, and not that no other point
 //! of the two members touches first.
 
-use super::held::{self, col3, cross, dot, frames, local, unit, vadd, vsub, Layout, Step, STEP};
-use crate::kernels::{Dual, Kernel, Num};
+use super::held::{self, col3, cross, dot, frames, local, unit, vadd, vsub, Layout, Step, PASS,
+                   STEP};
+use crate::kernels::{curve_widths, Dual, Kernel, Num};
 use crate::linalg::Mat;
 use std::ops::Range;
 
@@ -105,6 +106,11 @@ impl Mesh {
         self.lead + ROWS
     }
 
+    /// Where the mesh's axes start among the columns.
+    fn motion(&self) -> usize {
+        self.lead + UNKNOWNS + self.flank_width(0) + self.flank_width(1)
+    }
+
     /// The pinion's pose at the phase, and the gear's at the phase and the lag (radians): each
     /// step's turn worked out only as far as the one asked for.
     fn poses<T: Num>(&self, motion: &[T], phase: T, gear: T) -> [held::Frame<T>; 2] {
@@ -126,6 +132,51 @@ fn consts(lead: usize, flanks: [&[f64]; 2], steps: &[Step]) -> Vec<f64> {
 
 /* -- the contact at a phase -------------------------------------------------------------------- */
 
+/// What the rows read of a flank: its point, its normal, `∂X/∂u` and its own row, in its own
+/// member (`held::Local`'s `x`, `n`, `dx[0]` and `g`).
+const FLANK: usize = 10;
+/// What the rows read of the mesh: the pinion's pose at the phase and the gear's at the phase and
+/// the lag, each a rotation (row-major) and a translation.
+const POSES: usize = 24;
+
+impl Mesh {
+    /// The columns block `b` of the rows reads: a flank's place and its own columns (`0`, `1`),
+    /// or the phase, the lag and the mesh's axes (`2`).  No column is in two blocks; the rows
+    /// read some columns besides, directly (`assemble`): the lead, the places' rolls (a formed
+    /// flank's own row) and the mesh's first point (the lever).
+    fn block(&self, b: usize) -> std::iter::Chain<Range<usize>, Range<usize>> {
+        let o = self.lead;
+        match b {
+            0 | 1 => {
+                let from = o + UNKNOWNS + if b == 0 { 0 } else { self.flank_width(0) };
+                (o + 2 + 3 * b..o + 5 + 3 * b).chain(from..from + self.flank_width(b))
+            }
+            _ => (o..o + 2).chain(self.motion()..self.width()),
+        }
+    }
+}
+
+/// Flank `i` over its block's columns (`Mesh::block`).
+fn flank<T: Num>(m: &Mesh, i: usize, c: &[T]) -> [T; FLANK] {
+    let f = local(&m.flanks[i], c, false);
+    let [x, n, d] = [f.x, f.n, f.dx[0]];
+    [x[0], x[1], x[2], n[0], n[1], n[2], d[0], d[1], d[2], f.g]
+}
+
+/// The two poses over the mesh's block of columns (`Mesh::block`): the phase and the lag in
+/// degrees, as a curve's parameter over an angle is.
+fn poses<T: Num>(m: &Mesh, c: &[T]) -> [T; POSES] {
+    let deg = T::cst(std::f64::consts::PI / 180.0);
+    let (phase, lag) = (c[0] * deg, c[1] * deg);
+    let [(r1, p1), (r2, p2)] = m.poses(&c[2..], phase, phase + lag);
+    let pose = |r: [[T; 3]; 3], p: [T; 3]| r.into_iter().flatten().chain(p);
+    let mut out = [T::cst(0.0); POSES];
+    for (o, x) in out.iter_mut().zip(pose(r1, p1).chain(pose(r2, p2))) {
+        *o = x;
+    }
+    out
+}
+
 /// What the rows read at the unknowns: each flank's point and normal in the fixed frame, a
 /// direction along the gear's flank there, each flank's own row, and each flank's point in its
 /// own member.
@@ -146,23 +197,22 @@ fn rotate<T: Num>(r: &[[T; 3]; 3], x: [T; 3]) -> [T; 3] {
 
 /// The contact's frame over its columns, the lead's included (it is skipped).
 fn at<T: Num>(m: &Mesh, cols: &[T]) -> At<T> {
+    let of = |b: usize| -> Vec<T> { m.block(b).map(|q| cols[q]).collect() };
+    let f = [flank(m, 0, &of(0)), flank(m, 1, &of(1))];
+    assemble(m, cols, &f, &poses(m, &of(2)))
+}
+
+/// The contact's frame from its blocks — each flank (`flank`) and the poses (`poses`) — and the
+/// columns the rows read past them.
+fn assemble<T: Num>(m: &Mesh, cols: &[T], f: &[[T; FLANK]; 2], p: &[T; POSES]) -> At<T> {
     let o = m.lead;
-    // the phase and the lag in degrees, as a curve's parameter over an angle is
-    let deg = T::cst(std::f64::consts::PI / 180.0);
-    let (phase, lag) = (cols[o] * deg, cols[o + 1] * deg);
-    let mut from = o + UNKNOWNS;
-    let mut flank = |i: usize| {
-        let w = m.flank_width(i);
-        let place = &cols[o + 2 + 3 * i..o + 5 + 3 * i];
-        let c: Vec<T> = place.iter().chain(&cols[from..from + w]).copied().collect();
-        from += w;
-        local(&m.flanks[i], &c, false)
+    let motion = &cols[m.motion()..];
+    let pose = |a: &[T]| -> ([[T; 3]; 3], [T; 3]) {
+        (std::array::from_fn(|i| std::array::from_fn(|j| a[3 * i + j])), col3(a, 9))
     };
-    let (f1, f2) = (flank(0), flank(1));
-    let motion = &cols[from..];
-    let [(r1, p1), (r2, p2)] = m.poses(motion, phase, phase + lag);
-    let x1 = vadd(rotate(&r1, f1.x), p1);
-    let x2 = vadd(rotate(&r2, f2.x), p2);
+    let [(r1, p1), (r2, p2)] = [pose(&p[..12]), pose(&p[12..])];
+    let x1 = vadd(rotate(&r1, col3(&f[0], 0)), p1);
+    let x2 = vadd(rotate(&r2, col3(&f[1], 0)), p2);
     let lever = dot(vsub(x2, col3(motion, 0)), vsub(x2, col3(motion, 0))).sqrt();
     let lever = if lever.val() > 1e-9 { lever } else { T::cst(1.0) };
     // a formed flank's roll, held at none, over the lever so it is a length as a meshing
@@ -170,10 +220,10 @@ fn at<T: Num>(m: &Mesh, cols: &[T]) -> At<T> {
     let own = |l: &Layout, g: T, t: T| if l.steps.is_empty() { t * lever } else { g };
     At {
         x: [x1, x2],
-        n: [rotate(&r1, f1.n), rotate(&r2, f2.n)],
-        along: unit(rotate(&r2, f2.dx[0])),
-        own: [own(&m.flanks[0], f1.g, cols[o + 4]), own(&m.flanks[1], f2.g, cols[o + 7])],
-        member: [f1.x, f2.x],
+        n: [rotate(&r1, col3(&f[0], 3)), rotate(&r2, col3(&f[1], 3))],
+        along: unit(rotate(&r2, col3(&f[1], 6))),
+        own: [own(&m.flanks[0], f[0][9], cols[o + 4]), own(&m.flanks[1], f[1][9], cols[o + 7])],
+        member: [col3(&f[0], 0), col3(&f[1], 0)],
         lever,
     }
 }
@@ -188,7 +238,12 @@ pub(crate) fn rows<T: Num>(cols: &[T], k: &[f64], out: &mut [T]) -> Option<()> {
     if cols.len() != m.width() || out.len() != m.rows() {
         return None;
     }
-    let f = at(&m, cols);
+    write(&m, cols, &at(&m, cols), out);
+    Some(())
+}
+
+/// The rows from the contact's frame.
+fn write<T: Num>(m: &Mesh, cols: &[T], f: &At<T>, out: &mut [T]) {
     let mut i = 0;
     if m.lead == LEAD {
         let p = col3(cols, 0);
@@ -205,7 +260,6 @@ pub(crate) fn rows<T: Num>(cols: &[T], k: &[f64], out: &mut [T]) -> Option<()> {
     out[i + 4] = dot(f.n[0], across) * f.lever;
     out[i + 5] = f.own[0];
     out[i + 6] = f.own[1];
-    Some(())
 }
 
 /* -- the kernel ------------------------------------------------------------------------------ */
@@ -214,8 +268,98 @@ fn res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
     held::block_res(n, v, k, r, LEAD + ROWS, rows);
 }
 
+/// The Jacobian, exact by forward differentiation, a block at a time (#302): each flank against
+/// its own place and columns and the poses against theirs, `PASS` of a block's columns a pass,
+/// so a flank — the dominant cost — is differentiated in the passes its own columns need and not
+/// in every pass over the contact's; then the rows over the blocks' values and derivatives, by
+/// the chain rule, `PASS` of the contact's columns a pass.
 fn jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
-    held::block_jac(n, v, k, j, LEAD + ROWS, rows);
+    let (n_par, n_const) = curve_widths(n, v, k);
+    let m = LEAD + ROWS;
+    for i in 0..n {
+        let block = &mut j[m * n_par * i..m * n_par * (i + 1)];
+        let x = &v[n_par * i..n_par * (i + 1)];
+        if jac_block(x, &k[n_const * i..n_const * (i + 1)], block).is_none() {
+            block.fill(f64::NAN);
+        }
+    }
+}
+
+fn jac_block(x: &[f64], k: &[f64], j: &mut [f64]) -> Option<()> {
+    let m = Mesh::read(k)?;
+    let w = x.len();
+    if w != m.width() || j.len() != m.rows() * w {
+        return None;
+    }
+    let block = |b: usize| -> Vec<usize> { m.block(b).collect() };
+    let f0 = derive(x, &block(0), |c| flank(&m, 0, c));
+    let f1 = derive(x, &block(1), |c| flank(&m, 1, c));
+    let p = derive(x, &block(2), |c| poses(&m, c));
+    let mut cols = vec![Dual::<PASS>::cst(0.0); w];
+    let mut out = vec![Dual::<PASS>::cst(0.0); m.rows()];
+    for start in (0..w).step_by(PASS) {
+        seeded(&mut cols, x, start);
+        let f = [f0.at(start), f1.at(start)];
+        write(&m, &cols, &assemble(&m, &cols, &f, &p.at(start)), &mut out);
+        for (row, val) in out.iter().enumerate() {
+            for q in start..(start + PASS).min(w) {
+                j[row * w + q] = val.g[q - start];
+            }
+        }
+    }
+    Some(())
+}
+
+/// `x` as numbers carrying their derivatives in columns `start..start + PASS`.
+fn seeded(cols: &mut [Dual<PASS>], x: &[f64], start: usize) {
+    for (q, col) in cols.iter_mut().enumerate() {
+        *col = Dual::cst(x[q]);
+        if (start..start + PASS).contains(&q) {
+            col.g[q - start] = 1.0;
+        }
+    }
+}
+
+/// A block's `K` values and their Jacobian in every column of the contact (zero off the block's),
+/// row-major.
+struct Derived<const K: usize> {
+    v: [f64; K],
+    j: Vec<f64>,
+    w: usize,
+}
+
+impl<const K: usize> Derived<K> {
+    /// The values as numbers carrying their derivatives in the contact's columns
+    /// `start..start + PASS`.
+    fn at(&self, start: usize) -> [Dual<PASS>; K] {
+        std::array::from_fn(|o| {
+            let mut d = Dual::cst(self.v[o]);
+            for q in start..(start + PASS).min(self.w) {
+                d.g[q - start] = self.j[o * self.w + q];
+            }
+            d
+        })
+    }
+}
+
+/// `f` over the columns `idx` of `x`, differentiated in those columns, `PASS` a pass.
+fn derive<const K: usize>(x: &[f64], idx: &[usize],
+                          f: impl Fn(&[Dual<PASS>]) -> [Dual<PASS>; K]) -> Derived<K> {
+    let w = x.len();
+    let mut d = Derived { v: [0.0; K], j: vec![0.0; K * w], w };
+    let xs: Vec<f64> = idx.iter().map(|&q| x[q]).collect();
+    let mut c = vec![Dual::<PASS>::cst(0.0); idx.len()];
+    for start in (0..idx.len()).step_by(PASS) {
+        seeded(&mut c, &xs, start);
+        let y = f(&c);
+        for (o, val) in y.iter().enumerate() {
+            d.v[o] = val.v;
+            for p in start..(start + PASS).min(idx.len()) {
+                d.j[o * w + idx[p]] = val.g[p - start];
+            }
+        }
+    }
+    d
 }
 
 /// The kernel of a point on a meshing at a block's widths (`system::build_kernel`).

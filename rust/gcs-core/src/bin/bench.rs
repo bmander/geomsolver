@@ -182,9 +182,38 @@ fn bench_delaunay(only: Option<&str>) {
     }
 }
 
+/// A point on a meshing (#283, #302): its kernel's residual and Jacobian at `contact.sv`'s
+/// drawing, µs an evaluation — the Jacobian the cost of differentiating both flanks.
+fn bench_meshing() {
+    use gcs_core::constraints::CKind;
+    println!("\n== a point on a meshing (spiral_bevel/contact.sv): µs an evaluation ==");
+    let (prog, errs, _) =
+        gcs_core::library::parse_linked(include_str!("../../../examples/spiral_bevel/contact.sv"));
+    assert!(errs.is_empty(), "{errs:?}");
+    let sk = gcs_core::program::elaborate(&prog).sketch;
+    let c = sk.constraints.iter().find(|c| c.kind == CKind::PointOnMeshing).expect("a contact");
+    let (k, v, kc) = (c.kernel_in(&sk), c.local_values(&sk), c.consts(&sk));
+    let (mut r, mut j) = (vec![0.0; k.n_res], vec![0.0; k.n_res * v.len()]);
+    let time = |f: &mut dyn FnMut()| {
+        let reps = 200;
+        let ts: Vec<f64> = (0..15).map(|_| {
+            let t0 = Instant::now();
+            for _ in 0..reps {
+                f();
+            }
+            ms(t0) * 1e3 / reps as f64
+        }).collect();
+        median(ts)
+    };
+    let tr = time(&mut || (k.res)(1, &v, &kc, &mut r));
+    let tj = time(&mut || (k.jac)(1, &v, &kc, &mut j));
+    println!("{:<16}{:>4} columns | residual {tr:8.2} µs | Jacobian {tj:8.2} µs", "contact", v.len());
+}
+
 fn main() {
     // `bench delaunay [case]`: the triangulation alone, or one of its cases (for timing a single
     // case's CPU from outside, as `/usr/bin/time` does when the machine is busy).
+    if std::env::args().nth(1).as_deref() == Some("meshing") { bench_meshing(); return; }
     if std::env::args().nth(1).as_deref() == Some("delaunay") { bench_delaunay(std::env::args().nth(2).as_deref()); return; }
     let cases = cases();
 
@@ -261,5 +290,6 @@ fn main() {
              frame {frame:6.3} ms | cached plan start {start2:6.2} ms frame {frame2:6.3} ms"
         );
     }
+    bench_meshing();
     bench_delaunay(None);
 }
