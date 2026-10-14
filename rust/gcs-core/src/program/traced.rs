@@ -65,7 +65,9 @@ pub(super) fn traced_bodies(sk: &mut Sketch, res: &Resolver, body: &[&Stmt], pro
         match build_traced(sk, res, d, st, prog, insts) {
             Ok(Some(t)) => sk.traced[e.i()] = t,
             Ok(None) => {}
-            Err((code, span, message)) => diags.push(super::Diag::within(code, span, st.id, message)),
+            Err((code, span, message)) => {
+                diags.push(super::Diag::within(code, span, st.id, message))
+            }
         }
     }
 }
@@ -73,13 +75,15 @@ pub(super) fn traced_bodies(sk: &mut Sketch, res: &Resolver, body: &[&Stmt], pro
 /// The traced body a curve declaration draws in space.  `Ok(None)` where the flattener already
 /// said what is wrong with it.
 pub(super) fn build_traced(sk: &Sketch, res: &Resolver, d: &Decl, st: &Stmt, prog: &Program,
-                           insts: &[crate::flatten::InstanceInfo]) -> Result<Option<TracedE>, Fail> {
+                           insts: &[crate::flatten::InstanceInfo])
+                           -> Result<Option<TracedE>, Fail> {
     let Some(c) = d.curve.as_ref() else { return Ok(None) };
     let Some(of) = &c.of else { return Ok(None) };
     let Some(info) = insts.iter().find(|i| i.prefix == of.instance) else { return Ok(None) };
     if info.drawn {
         return Err((Code::E103, st.span, "a body traced in space is written in place, \
-            `Component(…).point over …`: an instance drawn on the sheet stands in its plane".into()));
+            `Component(…).point over …`: an instance drawn on the sheet stands in its plane"
+            .into()));
     }
     let comp = &prog.components[info.comp];
     let mut running: Vec<(&crate::syntax::Name, &(String, String))> = vec![(&c.swept, &c.domain)];
@@ -87,15 +91,17 @@ pub(super) fn build_traced(sk: &Sketch, res: &Resolver, d: &Decl, st: &Stmt, pro
         running.push((s, dom));
     }
     for (f, _) in &running {
-        let numeric = comp.formals.iter()
-            .any(|x| x.name.text == f.text && !matches!(x.ty, Ty::Ent(_) | Ty::Path | Ty::Group | Ty::Set));
+        let numeric = comp.formals.iter().any(|x| {
+            x.name.text == f.text && !matches!(x.ty, Ty::Ent(_) | Ty::Path | Ty::Group | Ty::Set)
+        });
         if !numeric {
             return Err((Code::E040, f.span, format!("`{}` is not a numeric formal of `{}`",
                 f.text, info.component)));
         }
     }
     if running.len() == 2 && running[0].0.text == running[1].0.text {
-        return Err((Code::E040, running[1].0.span, "a surface runs over two different formals".into()));
+        return Err((Code::E040, running[1].0.span,
+                    "a surface runs over two different formals".into()));
     }
     // the variable table: the formals that run, the geometry's coordinates, then the numbers
     let mut vars: Vec<String> = running.iter().map(|(f, _)| f.text.clone()).collect();
@@ -115,6 +121,7 @@ pub(super) fn build_traced(sk: &Sketch, res: &Resolver, d: &Decl, st: &Stmt, pro
                     return Err((Code::E040, st.span, format!("`{name}` is {}, and {} was given",
                         k.a(), e.kind.a())));
                 }
+                let mut steps = Vec::new();
                 let width = match k {
                     EntKind::Point => {
                         vars.extend(["x", "y", "z"].map(|c| format!("{name}.{c}")));
@@ -131,6 +138,7 @@ pub(super) fn build_traced(sk: &Sketch, res: &Resolver, d: &Decl, st: &Stmt, pro
                             .map_err(|why| (Code::E103, st.span, why))?;
                         let w = m.width();
                         vars.extend((0..w).map(|i| format!("{name}#{i}")));
+                        steps = m.steps;
                         w
                     }
                     other => {
@@ -138,7 +146,8 @@ pub(super) fn build_traced(sk: &Sketch, res: &Resolver, d: &Decl, st: &Stmt, pro
                             written over points, lines and motions, not {}", other.a())));
                     }
                 };
-                formals.push(Formal { name: name.to_string(), kind: k, at: vars.len() - width, ent: e });
+                let at = vars.len() - width;
+                formals.push(Formal { name: name.to_string(), kind: k, at, steps });
                 args.push(e);
             }
             Ty::Path | Ty::Group | Ty::Set => {
@@ -163,7 +172,7 @@ pub(super) fn build_traced(sk: &Sketch, res: &Resolver, d: &Decl, st: &Stmt, pro
     }
     let traced = ex.aliases.get(&of.point).cloned().unwrap_or_else(|| of.point.clone());
     let body: Vec<&Stmt> = ex.flat.iter().collect();
-    let mut low = Lowering::new(sk, &vars, &formals, running.len());
+    let mut low = Lowering::new(sk.units, &vars, formals);
     for st in &body {
         if let StmtKind::Decl(d) = &st.kind {
             low.declare(st, d)?;
@@ -187,18 +196,17 @@ pub(super) fn build_traced(sk: &Sketch, res: &Resolver, d: &Decl, st: &Stmt, pro
         _ => return Err((Code::E103, comp.span, format!("`{}` is geometry the component is \
             written over, and does not move with what runs", of.point))),
     };
-    let n_q = low.n_q;
-    let flat = crate::traced::Body::new(running.len(), vars.len(), n_theta, n_q, t, low.w,
+    let flat = crate::traced::Body::new(running.len(), vars.len(), n_theta, low.n_q, t, low.w,
         low.seeds, low.rows).map_err(|m| (Code::E103, comp.span, m))?;
     let num = |t: &str| crate::expr::literal(t);
     let mut domain = [[0.0, 0.0]; 2];
     for (k, (f, (a, b))) in running.iter().enumerate() {
-        let (lo, hi) = (num(a), num(b));
-        let (Some(lo), Some(hi)) = (lo, hi) else {
+        let (Some(lo), Some(hi)) = (num(a), num(b)) else {
             return Err((Code::E103, f.span, "a traced formal's interval is two numbers".into()));
         };
         if lo >= hi {
-            return Err((Code::E103, f.span, "a traced formal runs over an increasing interval".into()));
+            return Err((Code::E103, f.span,
+                        "a traced formal runs over an increasing interval".into()));
         }
         domain[k] = [lo, hi];
     }
@@ -215,13 +223,13 @@ fn missing(st: &Stmt, comp: &str, what: &str) -> Fail {
     (Code::E101, st.span, format!("`{comp}` was not given `{what}`"))
 }
 
-/// An entity formal: its name, its kind, where its coordinates start in the variable table and
-/// the drawing's entity it stands for.
+/// An entity formal: its name, its kind, where its coordinates start in the variable table and,
+/// a motion, its steps.
 struct Formal {
     name: String,
     kind: EntKind,
     at: usize,
-    ent: EntRef,
+    steps: Vec<crate::envelope::held::Step>,
 }
 
 /// A body being lowered in space.
@@ -242,9 +250,9 @@ struct Lowering<'v> {
 }
 
 impl<'v> Lowering<'v> {
-    fn new(real: &Sketch, vars: &'v [String], formals: &[Formal], _running: usize) -> Lowering<'v> {
+    fn new(units: crate::units::Units, vars: &'v [String], formals: Vec<Formal>) -> Lowering<'v> {
         let mut sk = Sketch::new();
-        sk.units = real.units;
+        sk.units = units;
         let mut scope = BTreeMap::new();
         let mut slot = BTreeMap::new();
         let mut motions = BTreeMap::new();
@@ -268,14 +276,12 @@ impl<'v> Lowering<'v> {
                     scope.insert(f.name.clone(), EntRef::line(sk.line(a, b)));
                 }
                 _ => {
-                    let steps = crate::envelope::held::Moving::of_any(real, f.ent.i())
-                        .map(|m| m.steps).unwrap_or_default();
-                    motions.insert(f.name.clone(), (steps, f.at));
+                    motions.insert(f.name, (f.steps, f.at));
                 }
             }
         }
         Lowering { sk, scope, motions, slot, vars, n_outer: vars.len(), n_q: 0, seeds: Vec::new(),
-                   w: Vec::new(), rows: Vec::new(), units: real.units }
+                   w: Vec::new(), rows: Vec::new(), units }
     }
 
     fn tape(&self, text: &str, span: Span) -> Result<crate::tape::Tape, Fail> {
@@ -284,8 +290,8 @@ impl<'v> Lowering<'v> {
     }
 
     fn constant(&self, v: f64) -> crate::tape::Tape {
-        crate::tape::Tape::compile_wide(&crate::expr::Ast::Num(v, crate::units::Dim::SCALAR), self.vars)
-            .expect("a number always compiles")
+        let ast = crate::expr::Ast::Num(v, crate::units::Dim::SCALAR);
+        crate::tape::Tape::compile_wide(&ast, self.vars).expect("a number always compiles")
     }
 
     /// A declaration drawn in space: a point, its three numbers inner unknowns seeded by its
@@ -313,7 +319,8 @@ impl<'v> Lowering<'v> {
             EntKind::Line => {
                 let end = |i: usize| -> Result<usize, Fail> {
                     let r = d.children.get(i).and_then(|v| v.first()).and_then(|k| k.as_ref())
-                        .ok_or((Code::E103, st.span, "a line traced in space names its ends".into()))?;
+                        .ok_or((Code::E103, st.span,
+                                "a line traced in space names its ends".into()))?;
                     let e = self.scope.get(&r.root.text).copied()
                         .ok_or((Code::E101, r.span, format!("no such entity: `{}`", r.root.text)))?;
                     let e = follow(&self.sk, e, &r.path).map_err(|m| (Code::E040, r.span, m))?;
@@ -339,7 +346,9 @@ impl<'v> Lowering<'v> {
         let place = match given {
             Some(Arg::Seed { value, pinned: true }) => self.constant(*value),
             Some(Arg::SeedExpr { text, pinned: true, span }) => self.tape(text, *span)?,
-            Some(Arg::Tie { name, span, .. }) if self.vars.contains(name) => self.tape(name, *span)?,
+            Some(Arg::Tie { name, span, .. }) if self.vars.contains(name) => {
+                self.tape(name, *span)?
+            }
             _ => return Err((Code::E103, span, format!("`{name}` must be pinned in a traced body, \
                 `{name} == …`: a body infers nothing"))),
         };
@@ -468,7 +477,8 @@ impl<'v> Lowering<'v> {
         };
         let (x, at) = (point(0)?, point(1)?);
         let Some(Arg::Ref(m)) = r.args.get(2).and_then(|a| a.as_ref()) else {
-            return Err((Code::E103, st.span, "a carried point names the motion `under:` it".into()));
+            return Err((Code::E103, st.span,
+                        "a carried point names the motion `under:` it".into()));
         };
         let (steps, from) = self.motions.get(&m.root.text).cloned().ok_or((Code::E103, m.span,
             format!("`{}` is no motion the traced component is written over", m.root.text)))?;

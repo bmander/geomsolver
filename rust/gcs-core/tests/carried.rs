@@ -31,7 +31,8 @@ rolling := motion(rolling_turn, relative_to: fixed_turn)
 path := envelope(x, under: rolling, from: -180deg, to: 180deg)
 ";
 
-/// The epicycloid of a circle of radius `b` rolling round one of radius `a`, at `θ`: the textbook's.
+/// The epicycloid of a circle of radius `b` rolling round one of radius `a`, at `θ`: the
+/// textbook's.
 fn epicycloid(a: f64, b: f64, theta: f64) -> [f64; 2] {
     let k = (a + b) / b;
     [(a + b) * theta.cos() - b * (k * theta).cos(), (a + b) * theta.sin() - b * (k * theta).sin()]
@@ -58,9 +59,11 @@ fn a_rolling_circles_point_seen_by_the_fixed_one_is_on_the_epicycloid() {
     let mut src = ROLLING.to_string();
     let rolls = [-150.0, -60.0, -15.0, 0.0, 30.0, 90.0, 170.0];
     for (k, t) in rolls.iter().enumerate() {
-        src += &format!("in std.top {{\n  X{k} := point hint((50, 0))\n}}\nX{k} coincident(under: rolling, t == {t}) x\n");
+        src += &format!("in std.top {{\n  X{k} := point hint((50, 0))\n}}\n\
+                         X{k} coincident(under: rolling, t == {t}) x\n");
     }
-    src += "in std.top {\n  Y := point hint((49, -7))\n}\nY coincident(under: rolling) x\nY distance(50mm) o\nY coincident path\n";
+    src += "in std.top {\n  Y := point hint((49, -7))\n}\nY coincident(under: rolling) x\n\
+            Y distance(50mm) o\nY coincident path\n";
     let e = solved(&src);
     for (k, t) in rolls.iter().enumerate() {
         let x = at(&e, &format!("X{k}"));
@@ -114,7 +117,9 @@ Q coincident(under: seen, t == -25) x
     let (a0, d) = ([1.0, 2.0, 3.0], unit([3.0, 1.0, 8.0]));
     let (b0, e_) = ([-5.0, 0.0, 2.0], unit([0.0, 9.0, -2.0]));
     let x = [9.0, -4.0, 6.0];
-    let screw = |x: [f64; 3], t: f64| add(turned(x, a0, d, 1.5 * t.to_radians()), scale(d, 7.0 * t / 360.0));
+    let screw = |x: [f64; 3], t: f64| {
+        add(turned(x, a0, d, 1.5 * t.to_radians()), scale(d, 7.0 * t / 360.0))
+    };
     let p = screw(x, 40.0);
     assert!(norm(sub(at(&e, "P"), p)) < 1e-9, "{:?} against {p:?}", at(&e, "P"));
     // on the helix: as far from the axis as `x`, and as far along it as the lead says
@@ -129,7 +134,8 @@ Q coincident(under: seen, t == -25) x
 /// anything else there is refused.
 #[test]
 fn a_carried_point_prints_back_and_names_a_motion() {
-    let src = format!("{ROLLING}in std.top {{\n  X := point hint((50, 0))\n}}\nX coincident(under: rolling, t == 30) x\n")
+    let src = format!("{ROLLING}in std.top {{\n  X := point hint((50, 0))\n}}\n\
+                       X coincident(under: rolling, t == 30) x\n")
         .replace("path := envelope(x, under: rolling, from: -180deg, to: 180deg)\n", "");
     let (mut prog, errs) = crate::common::parse(&src);
     assert!(errs.is_empty(), "{errs:?}");
@@ -138,7 +144,8 @@ fn a_carried_point_prints_back_and_names_a_motion() {
     let printed = gcs_core::syntax::render_flat(&mut prog).unwrap().to_string();
     assert!(printed.contains("X coincident(under: rolling, t == 30) x"), "{printed}");
     let again = solved(&printed);
-    assert_eq!(again.sketch.constraints.iter().filter(|c| c.kind == CKind::CarriedPoint).count(), 1);
+    let carried = again.sketch.constraints.iter().filter(|c| c.kind == CKind::CarriedPoint);
+    assert_eq!(carried.count(), 1);
     let (prog, errs) = crate::common::parse(&src.replace("under: rolling", "under: o"));
     assert!(errs.is_empty(), "{errs:?}");
     let e = gcs_core::program::elaborate(&prog);

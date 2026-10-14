@@ -441,7 +441,7 @@ pub(crate) fn vadd<F: Copy + Add<Output = F>>(a: [F; 3], b: [F; 3]) -> [F; 3] {
 pub(crate) fn vsub<F: Copy + Sub<Output = F>>(a: [F; 3], b: [F; 3]) -> [F; 3] {
     [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
 }
-fn vscale<F: Copy + Mul<Output = F>>(a: [F; 3], k: F) -> [F; 3] {
+pub(crate) fn vscale<F: Copy + Mul<Output = F>>(a: [F; 3], k: F) -> [F; 3] {
     [a[0] * k, a[1] * k, a[2] * k]
 }
 
@@ -829,7 +829,7 @@ pub(crate) fn scatter_pass(out: &[Dual<PASS>], j: &mut [f64], start: usize) {
 /// The kernel of contact `c` at a block's widths: built per width (`system::build_kernel`), as a
 /// curve's are per definition, its widths read back off the slices it is handed.
 pub fn kernel(c: Contact, n_par: usize, n_const: usize) -> Kernel {
-    let (res, jac): (fn(usize, &[f64], &[f64], &mut [f64]), fn(usize, &[f64], &[f64], &mut [f64])) = match c {
+    let (res, jac): (crate::kernels::KernelFn, crate::kernels::KernelFn) = match c {
         Contact::Point => (res::<0>, jac::<0>),
         Contact::Tangent => (res::<1>, jac::<1>),
         Contact::Normal => (res::<2>, jac::<2>),

@@ -109,7 +109,8 @@ o distance(0.75mm, along: zl) w
             let r = traced::reading(sk, i, [u, 0.0], Need::Tangent).unwrap();
             assert!(norm(sub(r.position, helix(u))) < 1e-9, "{name} at {u}: {:?}", r.position);
             // per degree: the closed form's derivative
-            let d = [-5.0 * u.to_radians().sin(), 5.0 * u.to_radians().cos(), 3.0 / (2.0 * std::f64::consts::PI)]
+            let a = u.to_radians();
+            let d = [-5.0 * a.sin(), 5.0 * a.cos(), 3.0 / std::f64::consts::TAU]
                 .map(|x| x * std::f64::consts::PI / 180.0);
             assert!(norm(sub(r.d[0], d)) < 1e-9, "{name} at {u}: {:?} against {d:?}", r.d[0]);
         }
@@ -167,8 +168,9 @@ T curvature(at: p) osc
         assert!(norm(sub(r.position, x)) < 1e-9, "({phi}, {s}): {:?} against {x:?}", r.position);
         let got = r.normal.unwrap();
         assert!((dot(got, n).abs() - 1.0).abs() < 1e-10, "({phi}, {s}): {got:?} against {n:?}");
-        assert!(traced::regularity(&traced::consts_of(&sk.traced[i]), &traced::theta(sk, &sk.traced[i]),
-                                   [phi, s]).unwrap() > 0.5);
+        let t = &sk.traced[i];
+        assert!(traced::regularity(&traced::consts_of(t), &traced::theta(sk, t), [phi, s]).unwrap()
+                > 0.5);
     }
     let (x, n, centre) = torus(20.0, 50.0);
     assert!(norm(sub(at(&e, "p"), x)) < 1e-9, "{:?}", at(&e, "p"));
@@ -217,7 +219,8 @@ T tangent(at: p) meridian
     let el = gcs_core::program::elaborate(&prog);
     assert!(el.ok(), "{:?}", el.errors().map(|d| &d.message).collect::<Vec<_>>());
     let mut sk: Sketch = el.sketch;
-    let kinds: Vec<CKind> = sk.constraints.iter().map(|c| c.kind).filter(|k| k.traced_contact().is_some()).collect();
+    let kinds: Vec<CKind> = sk.constraints.iter().map(|c| c.kind)
+        .filter(|k| k.traced_contact().is_some()).collect();
     for k in [CKind::PointOnTraced, CKind::TracedTangentAt, CKind::TracedSurfaceTangentAt,
               CKind::TracedNormalAt, CKind::TracedPlaneAt, CKind::TracedCurvatureAt] {
         assert!(kinds.contains(&k), "{k:?} in {kinds:?}");
@@ -262,5 +265,6 @@ F := Sheet(o, xl, yl, zl).p over (a in (-6, 6), b in (-6, 6))
     let e = solved(&folded);
     let i = traced_named(&e, "F");
     let said = gcs_core::report::traced_text(&e.sketch, i);
-    assert!(said.starts_with("F: a surface traced in space, folding near (") && said.ends_with(", 0)"), "{said}");
+    assert!(said.starts_with("F: a surface traced in space, folding near (")
+            && said.ends_with(", 0)"), "{said}");
 }

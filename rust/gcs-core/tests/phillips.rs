@@ -72,7 +72,8 @@ impl Member {
     /// The same member moved rigidly: its axis turned `angle` about the line through `o` along
     /// `d`, then shifted by `shift`.
     fn moved(&self, o: [f64; 3], d: [f64; 3], angle: f64, shift: [f64; 3]) -> Member {
-        Member { c: add(turned(self.c, o, d, angle), shift), a: turned(self.a, [0.0; 3], d, angle), w: self.w }
+        Member { c: add(turned(self.c, o, d, angle), shift), a: turned(self.a, [0.0; 3], d, angle),
+                 w: self.w }
     }
 }
 
@@ -81,7 +82,8 @@ impl Member {
 /// roll `t` the member carries `x` onto the rack, `(y − p)·m = σt`, at a place moving along `m`
 /// as fast as the rack does, `m·v(y) = σ`.  Returns that roll and the gap left in the first
 /// equation there (zero on the flank), the roll solved by Newton on the second from `t0`.
-fn on_helicoid(mem: &Member, p: [f64; 3], m: [f64; 3], sigma: f64, x: [f64; 3], t0: f64) -> (f64, f64) {
+fn on_helicoid(mem: &Member, p: [f64; 3], m: [f64; 3], sigma: f64, x: [f64; 3], t0: f64)
+                -> (f64, f64) {
     let speed = |t: f64| mem.speed(mem.pose(x, t), m) - sigma;
     let mut t = t0;
     for _ in 0..60 {
@@ -104,7 +106,8 @@ fn solved(src: &str) -> gcs_core::program::Elaborated {
 }
 
 fn envelope(sk: &Sketch, name: &str) -> usize {
-    sk.envelopes.iter().position(|e| e.name == name).unwrap_or_else(|| panic!("no envelope `{name}`"))
+    sk.envelopes.iter().position(|e| e.name == name)
+        .unwrap_or_else(|| panic!("no envelope `{name}`"))
 }
 
 fn traced(sk: &Sketch, name: &str, n: usize) -> Trace {
@@ -157,7 +160,8 @@ fn the_racks_envelope_is_each_members_involute_helicoid() {
             let r = on_envelope(&k, &values, place, 0);
             assert!(r.normal_velocity.abs() < 1e-10, "{name}: {r:?}");
             let (roll, gap) = on_helicoid(&mem, p(), m(), sigma(), r.position, t);
-            assert!((roll - t).abs() < 1e-9, "{name}: the envelope's roll {t}, the helicoid's {roll}");
+            assert!((roll - t).abs() < 1e-9,
+                    "{name}: the envelope's roll {t}, the helicoid's {roll}");
             assert!(gap.abs() < 1e-9, "{name}: {gap} off the helicoid at {:?}", r.position);
             let n = mem.turn(r.normal, t);
             assert!((dot(n, m()).abs() - 1.0).abs() < 1e-12, "{name}: {n:?}");
@@ -165,28 +169,30 @@ fn the_racks_envelope_is_each_members_involute_helicoid() {
     }
 }
 
-/// Where a sample's flanks touch, read against the helicoids' equations and the poses apart from
-/// the meshing: the pinion's point at the phase and the gear's at the phase and lag are the
-/// contact, each on its own helicoid (`sigma` each), and each flank's normal there, carried by its
-/// member, is `m`.  Returns the contact's normal in the fixed frame.
-fn holds_together(sk: &Sketch, s: &Sample, pinion: &Member, gear: &Member, m: [f64; 3],
-                  sigmas: [f64; 2]) -> [f64; 3] {
+/// Where a sample's flanks touch, read against the poses apart from the meshing: the pinion's
+/// point at the phase and the gear's at the phase and lag are the contact, and each flank's normal
+/// there, carried by its member, is the other's.  With `sigmas`, each point is also on its own
+/// helicoid (a gear as made, its rack sliding at `sigmas[1]`).  Returns the contact's unit normal
+/// in the fixed frame.
+fn holds_together(sk: &Sketch, s: &Sample, gear: &Member, sigmas: Option<[f64; 2]>) -> [f64; 3] {
     let (phase, lag) = (s.place.phase.to_radians(), s.place.lag.to_radians());
-    assert!(norm(sub(pinion.pose(s.on_pinion, phase), s.position)) < 1e-9, "{s:?}");
+    assert!(norm(sub(PINION.pose(s.on_pinion, phase), s.position)) < 1e-9, "{s:?}");
     assert!(norm(sub(gear.pose(s.on_gear, phase + lag), s.position)) < 1e-9, "{s:?}");
     assert!(s.residual < 1e-9, "{s:?}");
-    let (_, gap) = on_helicoid(pinion, p(), m, sigmas[0], s.on_pinion, phase);
-    assert!(gap.abs() < 1e-9, "the pinion's point is {gap} off its helicoid: {s:?}");
-    let (_, gap) = on_helicoid(gear, p(), m, sigmas[1], s.on_gear, phase + lag);
-    assert!(gap.abs() < 1e-9, "the gear's point is {gap} off its helicoid: {s:?}");
+    if let Some(sigmas) = sigmas {
+        let (_, gap) = on_helicoid(&PINION, p(), m(), sigmas[0], s.on_pinion, phase);
+        assert!(gap.abs() < 1e-9, "the pinion's point is {gap} off its helicoid: {s:?}");
+        let (_, gap) = on_helicoid(gear, p(), m(), sigmas[1], s.on_gear, phase + lag);
+        assert!(gap.abs() < 1e-9, "the gear's point is {gap} off its helicoid: {s:?}");
+    }
     let normal = |name: &str, place: [f64; 3]| {
         let parts = Parts::of(sk, envelope(sk, name)).unwrap();
         held::read(&parts.consts(Contact::Point), &parts.values(sk), place).unwrap().normal
     };
-    let n1 = pinion.turn(normal("pinion_flank", s.place.pinion), phase);
+    let n1 = PINION.turn(normal("pinion_flank", s.place.pinion), phase);
     let n2 = gear.turn(normal("gear_flank", s.place.gear), phase + lag);
     assert!((dot(n1, n2).abs() - 1.0).abs() < 1e-10, "{s:?}");
-    n1
+    unit(n1)
 }
 
 /// **Phillips' pair transmits without error, touching at a point of `L`.**  At every phase of the
@@ -201,7 +207,7 @@ fn phillips_pair_touches_at_a_point_running_along_l_with_no_lag() {
     for s in t.found() {
         assert!(s.place.lag.abs() < 1e-10, "{s:?}");
         assert!(!s.line, "Phillips' pair touches at a point: {s:?}");
-        let n = holds_together(&e.sketch, s, &PINION, &GEAR, m(), [sigma(); 2]);
+        let n = holds_together(&e.sketch, s, &GEAR, Some([sigma(); 2]));
         assert!((dot(n, m()).abs() - 1.0).abs() < 1e-12, "the normal is L's: {n:?}");
         let want = add(p(), scale(m(), sigma() * s.place.phase.to_radians()));
         assert!(norm(sub(s.position, want)) < 1e-9, "{s:?} against {want:?}");
@@ -210,7 +216,7 @@ fn phillips_pair_touches_at_a_point_running_along_l_with_no_lag() {
     assert!(text.starts_with("bearing: point contact; transmission error"), "{text}");
 }
 
-/* -- a pair stated by its numbers --------------------------------------------------------------- */
+/* -- a pair stated by its numbers ------------------------------------------------------------ */
 
 /// A pair of the same shape stated point by point: the pinion's rack sliding at `sigmas[0]`, the
 /// gear's at `sigmas[1]`, and the gear — its axis and its rack, so its flank — moved rigidly by
@@ -287,7 +293,7 @@ fn a_pair_whose_speeds_along_l_differ_lags_by_the_racks_gap() {
         if s.place.phase != 0.0 {
             assert!(s.place.lag.abs() > 1e-3, "the lag is no rounding: {s:?}");
         }
-        let n = holds_together(&e.sketch, s, &PINION, &GEAR, m(), sigmas);
+        let n = holds_together(&e.sketch, s, &GEAR, Some(sigmas));
         assert!((dot(n, m()).abs() - 1.0).abs() < 1e-12, "{n:?}");
         // the pinion touches the rack at its place at the phase
         let along = dot(sub(s.position, p()), m());
@@ -331,32 +337,16 @@ fn phillips_pair_keeps_its_ratio_when_the_offset_or_the_shaft_angle_is_moved() {
         let mut normals = Vec::new();
         for s in t.found() {
             assert!(!s.line, "{what}: {s:?}");
-            normals.push(holds_together_moved(&e.sketch, s, &gear));
+            normals.push(holds_together(&e.sketch, s, &gear, None));
         }
         for n in &normals {
-            assert!((dot(*n, normals[0]).abs() - 1.0).abs() < 1e-10, "{what}: the normal turns: {n:?}");
+            assert!((dot(*n, normals[0]).abs() - 1.0).abs() < 1e-10,
+                    "{what}: the normal turns: {n:?}");
         }
     }
 }
 
-/// `holds_together` for a moved gear, whose helicoid's equations are its own as made: the poses
-/// alone, each flank's normal carried by its member, and the two agreeing.
-fn holds_together_moved(sk: &Sketch, s: &Sample, gear: &Member) -> [f64; 3] {
-    let (phase, lag) = (s.place.phase.to_radians(), s.place.lag.to_radians());
-    assert!(norm(sub(PINION.pose(s.on_pinion, phase), s.position)) < 1e-9, "{s:?}");
-    assert!(norm(sub(gear.pose(s.on_gear, phase + lag), s.position)) < 1e-9, "{s:?}");
-    assert!(s.residual < 1e-9, "{s:?}");
-    let normal = |name: &str, place: [f64; 3]| {
-        let parts = Parts::of(sk, envelope(sk, name)).unwrap();
-        held::read(&parts.consts(Contact::Point), &parts.values(sk), place).unwrap().normal
-    };
-    let n1 = PINION.turn(normal("pinion_flank", s.place.pinion), phase);
-    let n2 = gear.turn(normal("gear_flank", s.place.gear), phase + lag);
-    assert!((dot(n1, n2).abs() - 1.0).abs() < 1e-10, "{s:?}");
-    unit(n1)
-}
-
-/* -- the screw and the meshing law (R2) ---------------------------------------------------------- */
+/* -- the screw and the meshing law (R2) ------------------------------------------------------ */
 
 /// The axis `isa screw mesh` solves to and its pitch: the axis's point nearest the origin, its
 /// direction, and the relation's own unknown.
@@ -422,14 +412,16 @@ isa screw mesh
         assert!(dot(dir, e_dir).abs() < 1e-12, "{what}: square to the perpendicular");
         assert!((pitch - want_pitch).abs() < 1e-9, "{what}: pitch {pitch} against {want_pitch}");
         if offset == 0.0 {
-            assert!(norm(point) < 1e-9 && pitch.abs() < 1e-12, "{what}: through the apex, no pitch");
+            assert!(norm(point) < 1e-9 && pitch.abs() < 1e-12,
+                    "{what}: through the apex, no pitch");
         }
         // and the velocity of the point on the axis is along it, by the pitch
         let speed = sub(scale(cross(w2, sub(foot, c2)), 1.0), cross(w1, sub(foot, c1)));
         assert!(norm(sub(speed, scale(omega, pitch))) < 1e-9, "{what}: {speed:?}");
         let mesh = e.sketch.motions.iter().position(|m| m.name == "mesh").unwrap();
         let isa = Family::read(&e.sketch, mesh).unwrap().instantaneous().unwrap();
-        assert!(norm(sub(isa.point, foot)) < 1e-9 && (isa.pitch - want_pitch).abs() < 1e-9, "{what}: {isa:?}");
+        assert!(norm(sub(isa.point, foot)) < 1e-9 && (isa.pitch - want_pitch).abs() < 1e-9,
+                "{what}: {isa:?}");
     }
 }
 
@@ -453,13 +445,15 @@ fn l_reciprocal_to_the_mesh_is_where_the_members_move_as_fast_along_it() {
         assert!((v1 - sigma()).abs() < 1e-9, "{lambda}: {v1} against σ {}", sigma());
     }
     let (point, _, pitch) = screw_of(sk);
-    assert!(norm(sub(point, [0.0, 57.6, 0.0])) < 1e-9 && (pitch + 28.8).abs() < 1e-9, "{point:?} {pitch}");
+    assert!(norm(sub(point, [0.0, 57.6, 0.0])) < 1e-9 && (pitch + 28.8).abs() < 1e-9,
+            "{point:?} {pitch}");
     let mut sk = e.sketch.clone();
     let dg = diagnose(&mut sk, DiagnoseOptions::default());
     assert!(dg.claims_violated.is_empty(), "{:?}", dg.claims_violated);
     let said = gcs_core::report::screws_text(&e.sketch);
     assert_eq!(said.len(), 1);
-    assert!(said[0].starts_with("mesh: screws about the axis through (0, 57.6, 0)") && said[0].ends_with("pitch -28.8 a radian"), "{said:?}");
+    assert!(said[0].starts_with("mesh: screws about the axis through (0, 57.6, 0)")
+            && said[0].ends_with("pitch -28.8 a radian"), "{said:?}");
 }
 
 /// `reciprocal` and `screw` print as they are written and read back the same, a pinned pitch with
@@ -499,7 +493,9 @@ isa screw(pitch == -28.8mm) mesh
     let first = gcs_core::program::elaborate(&prog);
     assert!(first.ok(), "{:?}", first.errors().map(|d| &d.message).collect::<Vec<_>>());
     let printed = gcs_core::syntax::render_flat(&mut prog).unwrap().to_string();
-    for said in ["L reciprocal mesh", "isa screw(pitch == -28.8mm) mesh", "claim L reciprocal gear_turn"] {
+    let stated = ["L reciprocal mesh", "isa screw(pitch == -28.8mm) mesh",
+                  "claim L reciprocal gear_turn"];
+    for said in stated {
         assert!(printed.contains(said), "{said}: {printed}");
     }
     let again = solved(&printed);
@@ -517,7 +513,7 @@ isa screw(pitch == -28.8mm) mesh
             "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
 }
 
-/* -- the pure form (R6) ---------------------------------------------------------------------------- */
+/* -- the pure form (R6) ------------------------------------------------------------------------ */
 
 /// `spiral_bevel/phillips_pure.sv`: the same pair with each flank the contact element as its member
 /// sees it, a surface traced in space, and no rack anywhere.
@@ -553,13 +549,15 @@ fn each_pure_form_flank_is_the_racks_envelope() {
             let r = reading(&traced.sketch, i, [phi, s], Need::Tangent).unwrap();
             let t = phi.to_radians();
             let (roll, gap) = on_helicoid(&mem, p(), m(), sigma(), r.position, t);
-            assert!((roll - t).abs() < 1e-9 && gap.abs() < 1e-9, "{name} ({phi}, {s}): {roll} {gap}");
+            assert!((roll - t).abs() < 1e-9 && gap.abs() < 1e-9,
+                    "{name} ({phi}, {s}): {roll} {gap}");
             let n = mem.turn(r.normal.unwrap(), t);
             assert!((dot(n, m()).abs() - 1.0).abs() < 1e-10, "{name}: {n:?}");
             // the rack's envelope at the roll the element is at: the rack's place there is
             // affine in the plane's two lengths, so three readings find it
             let at = |u: f64, v: f64| held::read(&k, &values, [u, v, t]).unwrap().position;
-            let (a, b, c) = (at(0.0, 0.0), sub(at(1.0, 0.0), at(0.0, 0.0)), sub(at(0.0, 1.0), at(0.0, 0.0)));
+            let o = at(0.0, 0.0);
+            let (a, b, c) = (o, sub(at(1.0, 0.0), o), sub(at(0.0, 1.0), o));
             let w = sub(r.position, a);
             let (bb, bc, cc, wb, wc) = (dot(b, b), dot(b, c), dot(c, c), dot(w, b), dot(w, c));
             let det = bb * cc - bc * bc;
@@ -593,9 +591,11 @@ fn phillips_pair_in_the_pure_form_touches_along_l_with_no_lag() {
         assert!(norm(sub(s.position, want)) < 1e-9, "{s:?} against {want:?}");
         let n1 = reading(sk, pi, [s.place.pinion[0], s.place.pinion[1]], Need::Tangent).unwrap();
         let n2 = reading(sk, gi, [s.place.gear[0], s.place.gear[1]], Need::Tangent).unwrap();
-        let (n1, n2) = (PINION.turn(n1.normal.unwrap(), phase), GEAR.turn(n2.normal.unwrap(), phase + lag));
-        assert!((dot(n1, m()).abs() - 1.0).abs() < 1e-10 && (dot(n2, m()).abs() - 1.0).abs() < 1e-10,
-                "{n1:?} {n2:?}");
+        let n1 = PINION.turn(n1.normal.unwrap(), phase);
+        let n2 = GEAR.turn(n2.normal.unwrap(), phase + lag);
+        for n in [n1, n2] {
+            assert!((dot(n, m()).abs() - 1.0).abs() < 1e-10, "{n1:?} {n2:?}");
+        }
     }
     let text = gcs_core::report::meshing_text(sk, 0);
     assert!(text.starts_with("bearing: point contact; transmission error"), "{text}");
@@ -617,7 +617,8 @@ fn a_meshing_of_traced_flanks_agrees_with_finite_differences() {
             }
         }
         let c = sk.constraints.iter().find(|c| c.kind == CKind::PointOnMeshing).unwrap();
-        let err = check_constraint(&sk, c, 1e-6, 1e-6).unwrap_or_else(|e| panic!("round {round}: {e}"));
+        let err = check_constraint(&sk, c, 1e-6, 1e-6)
+            .unwrap_or_else(|e| panic!("round {round}: {e}"));
         assert!(err.is_finite());
     }
 }

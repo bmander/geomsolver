@@ -7,9 +7,9 @@
 //! **instantaneous screw axis** is the line along `ω` through `ω × v₀ / |ω|²`, where every point
 //! moves along it, by the **pitch** `ω·v₀ / |ω|²` a radian (Ball).  Two relations read it:
 //!
-//! - `l reciprocal mesh`: the line `l` is **reciprocal** to the motion's twist — a force along it does
-//!   no work on the relative motion, `d · v(p) = 0` for its direction `d` and any point `p` of it (the
-//!   same number at every point: `d · (ω × d) = 0`).  One row, of degree 2, the direction left
+//! - `l reciprocal mesh`: the line `l` is **reciprocal** to the motion's twist — a force along it
+//!   does no work on the relative motion, `d · v(p) = 0` for its direction `d` and any point `p` of
+//!   it (the same number at every point: `d · (ω × d) = 0`).  One row, of degree 2, the direction left
 //!   unnormalised.  For a mesh it is the meshing law of a line of action: the members move as
 //!   fast along it (Phillips' spatial involute gearing).
 //! - `isa screw mesh`: the axis `isa` is the motion's instantaneous screw axis and the pitch its
@@ -31,8 +31,8 @@
 //! ends per axis the motion turns about or slides along (`held::Moving`).  Constants: the motion's
 //! steps (`held::encode_steps`).  Every row is written once over `kernels::Num`, so the Jacobian
 //! is exact by forward differentiation.
-use super::held::{self, cross, dot, vadd, vsub, Step, STEP};
-use crate::kernels::{Kernel, Num};
+use super::held::{self, cross, dot, vadd, vscale as scale, vsub, Step, STEP};
+use crate::kernels::{Kernel, KernelFn, Num};
 
 /// Which statement the twist is read for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -85,10 +85,6 @@ impl Reading {
             Reading::Axis | Reading::Carried => 1,
         }
     }
-}
-
-fn scale<T: Num>(a: [T; 3], k: T) -> [T; 3] {
-    [a[0] * k, a[1] * k, a[2] * k]
 }
 
 /// One step's twist `(ω, v₀)`, where it is a turn, a screw or a slide about a fixed line.
@@ -181,7 +177,7 @@ fn lever<T: Num>(steps: &[Step], m: &[T]) -> T {
 
 /// Two unit directions square to the unit `d` and to one another: the first the world axis `d`
 /// leans least toward, `d`'s part taken off.
-fn square_to<T: Num>(d: [T; 3]) -> ([T; 3], [T; 3]) {
+pub(crate) fn square_to<T: Num>(d: [T; 3]) -> ([T; 3], [T; 3]) {
     let k = (0..3).min_by(|&i, &j| d[i].val().abs().total_cmp(&d[j].val().abs())).unwrap_or(0);
     let e: [T; 3] = std::array::from_fn(|i| T::cst(if i == k { 1.0 } else { 0.0 }));
     let t1 = held::unit(vsub(e, scale(d, d[k])));
@@ -246,12 +242,13 @@ fn jac<const R: u8>(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
 
 /// The kernel of a reading at a block's widths (`system::build_kernel`).
 pub fn kernel(r: Reading, n_par: usize, n_const: usize) -> Kernel {
-    let (res, jac): (fn(usize, &[f64], &[f64], &mut [f64]), fn(usize, &[f64], &[f64], &mut [f64])) = match r {
+    let (res, jac): (KernelFn, KernelFn) = match r {
         Reading::Reciprocal => (res::<0>, jac::<0>),
         Reading::Axis => (res::<1>, jac::<1>),
         Reading::Carried => (res::<2>, jac::<2>),
     };
-    Kernel { name: r.name(), n_res: r.rows(), n_par, n_const, degree: r.degree(), res, jac, const_jac: None, form: None }
+    Kernel { name: r.name(), n_res: r.rows(), n_par, n_const, degree: r.degree(), res, jac,
+             const_jac: None, form: None }
 }
 
 /// The constants a reading of a motion with these steps takes.

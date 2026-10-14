@@ -436,7 +436,7 @@ pub fn curve_tangent_at_kernel(n_theta: usize, n_const: usize, body: u8) -> Kern
 }
 
 /// A kernel's residual or Jacobian, as the table holds it.
-type KernelFn = fn(usize, &[f64], &[f64], &mut [f64]);
+pub(crate) type KernelFn = fn(usize, &[f64], &[f64], &mut [f64]);
 
 /// A spline's whole length (`length(L) s`, #121): `(c0x, c0y, …, c(n−1)x, c(n−1)y[, a])` over
 /// the constants `integral::length_consts` — what it states, then the spline's quadrature nodes —

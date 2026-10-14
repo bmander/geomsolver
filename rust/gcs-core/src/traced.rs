@@ -31,10 +31,11 @@
 //! read exact in every column, so a kernel's Jacobian is exact by forward differentiation.
 //!
 //! What this certifies is local: a root near where it was seeded, on the branch the seeds pick;
-//! not that the body is regular over its whole domain (`regular` says where it is not).
+//! not that the body is regular over its whole domain (`regularity` says where it is not).
 
+use crate::envelope::held::{col3, cross, dot, unit, vscale, vsub};
 use crate::envelope::{held, screw};
-use crate::kernels::{Dual, Kernel, Num, KERNELS};
+use crate::kernels::{Dual, Kernel, KernelFn, Num, KERNELS};
 use crate::taylor::{self, Jet};
 
 /// Bounds on what a document may ask for: a document is untrusted input, and the encoding is
@@ -99,16 +100,9 @@ impl Body {
         if seeds.len() != n_q || traced + 3 > n_q {
             return Err("traced body shape mismatch".into());
         }
-        let width = n_outer + n_q + w.len();
         let mut n_res = 0;
         for r in &rows {
             let kn = Row::kernel(r.kid, r.cols.len(), r.consts.len()).ok_or("no such kernel")?;
-            if r.kid.is_some() && (r.cols.len() != kn.n_par || r.consts.len() != kn.n_const) {
-                return Err("traced row shape mismatch".into());
-            }
-            if r.cols.iter().any(|&c| c as usize >= width) {
-                return Err("a traced row names a column the body does not have".into());
-            }
             if let Some(k) = r.kid {
                 if !taylor::has_form(k) {
                     return Err(format!("a body traced in space reads its rows' derivatives \
@@ -138,6 +132,8 @@ impl Body {
             f.push(t.flat.len() as f64);
             f.extend_from_slice(&t.flat);
         }
+        // every row's shape and column is checked once, as any encoding is read
+        view(&f).ok_or("traced body shape mismatch")?;
         Ok(Body { flat: f })
     }
 
@@ -149,11 +145,6 @@ impl Body {
     /// How many coordinates of geometry it is written over (its columns past the place).
     pub fn n_theta(&self) -> usize {
         view(&self.flat).map_or(0, |v| v.n_theta)
-    }
-
-    /// The outer variables' count: the formals, the columns and the constants.
-    pub fn n_outer(&self) -> usize {
-        view(&self.flat).map_or(0, |v| v.n_outer)
     }
 }
 
@@ -170,8 +161,8 @@ struct View<'a> {
 }
 
 fn view(flat: &[f64]) -> Option<View<'_>> {
-    let g = |i: usize| flat.get(i).copied().filter(|v| v.is_finite() && *v >= 0.0 && v.fract() == 0.0)
-        .map(|v| v as usize);
+    let g = |i: usize| flat.get(i).copied()
+        .filter(|v| v.is_finite() && *v >= 0.0 && v.fract() == 0.0).map(|v| v as usize);
     let (nf, n_outer, n_theta, n_q, n_w, n_rows, traced) =
         (g(0)?, g(1)?, g(2)?, g(3)?, g(4)?, g(5)?, g(6)?);
     if !(1..=MAX_FORMALS).contains(&nf) || n_q > MAX_Q || n_w > MAX_W || n_rows > MAX_ROWS
@@ -245,16 +236,16 @@ impl View<'_> {
 
     /// The body's residuals over the whole variable table `z`, into `r`.
     fn residual(&self, z: &[f64], r: &mut Vec<f64>) {
-        r.clear();
+        r.resize(self.n_q, 0.0);
+        let mut at = 0;
         for (kn, _, cols, consts) in &self.rows {
             let x: Vec<f64> = cols.iter().map(|&c| z[c]).collect();
-            let mut out = vec![0.0; kn.n_res];
-            (kn.res)(1, &x, consts, &mut out);
-            r.extend(out);
+            (kn.res)(1, &x, consts, &mut r[at..at + kn.n_res]);
+            at += kn.n_res;
         }
     }
 
-    /// `∂r/∂q`, row-major `n_q × n_q`, and `∂r/∂(outer)` where `outer` asks for it.
+    /// `∂r/∂q`, row-major `n_q × n_q`.
     fn jacobian(&self, z: &[f64]) -> Vec<f64> {
         let n = self.n_q;
         let mut j = vec![0.0; n * n];
@@ -358,6 +349,7 @@ impl View<'_> {
             .collect::<Option<_>>()?;
         let mut q: Vec<Jet> = (0..nq).map(|i| Jet::constant(s.z[no + i])).collect();
         let mut jrow = Vec::new();
+        // the tapes over jets are exact to the third order (`tape::eval_num`)
         for k in 1..=order.min(taylor::ORDER - 2) {
             let z: Vec<Jet> = outer.iter().chain(&q).chain(&w).copied().collect();
             let mut rk = Vec::with_capacity(nq);
@@ -411,9 +403,11 @@ pub enum Need {
 pub struct Read {
     pub frame: Frame<f64>,
     /// `x`, then `d[a]`, then `dd[a][b]` (in the frame's order), each against every column.
-    grad: Option<Vec<[[f64; 3]; 1 + MAX_FORMALS + MAX_FORMALS * MAX_FORMALS]>>,
-    pub nf: usize,
+    grad: Option<Vec<[[f64; 3]; SLOTS]>>,
 }
+
+/// A frame's entries: `x`, `d[a]`, `dd[a][b]`.
+const SLOTS: usize = 1 + MAX_FORMALS + MAX_FORMALS * MAX_FORMALS;
 
 /// One coordinate set's `k`-th derivative from a series: the coefficient times `k!`.
 fn nth(s: &[Jet; 3], k: usize) -> [f64; 3] {
@@ -461,7 +455,8 @@ impl Series<'_, '_> {
         let mut acc = [0.0; 3];
         // Σ over subsets S of (−1)^(k − |S|) D^k X[Σ_S e]^k / k!
         for mask in 1u32..(1 << k) {
-            let sub: Vec<usize> = (0..k).filter(|i| mask & (1 << i) != 0).map(|i| terms[i]).collect();
+            let sub: Vec<usize> =
+                (0..k).filter(|i| mask & (1 << i) != 0).map(|i| terms[i]).collect();
             let sign = if (k - sub.len()) % 2 == 0 { 1.0 } else { -1.0 };
             let p = self.power(&sub, k)?;
             for c in 0..3 {
@@ -511,7 +506,7 @@ pub fn read(flat: &[f64], outer: &[f64], home: &[f64], need: Need, grad: bool) -
         // every column of the place and the geometry: the formals are the first outer
         // variables, θ the next; a curve's second place column moves nothing
         let n_c = PLACE + v.n_theta;
-        let mut g = vec![[zero; 1 + MAX_FORMALS + MAX_FORMALS * MAX_FORMALS]; n_c];
+        let mut g = vec![[zero; SLOTS]; n_c];
         for (c, gc) in g.iter_mut().enumerate() {
             let k = match c {
                 c if c < PLACE && c >= nf => continue,
@@ -536,32 +531,34 @@ pub fn read(flat: &[f64], outer: &[f64], home: &[f64], need: Need, grad: bool) -
     } else {
         None
     };
-    Some(Read { frame, grad, nf })
+    Some(Read { frame, grad })
 }
 
 impl Read {
-    /// The frame over numbers carrying their derivatives in a contact's columns
-    /// `start..start + PASS`, the body's columns (place then `θ`) at `from` among the contact's.
-    fn at<const P: usize>(&self, start: usize, from: usize) -> Frame<Dual<P>> {
-        let g = self.grad.as_ref();
-        let lift = |v: [f64; 3], slot: usize| -> [Dual<P>; 3] {
+    /// The frame over numbers carrying derivatives, linearised: `x + Σ δ_c ∂x/∂c` over the body's
+    /// columns `c` (place then `θ`), `δ_c` the caller's motion of column `c` (`None` where it has
+    /// none) — exact to first order, all a Jacobian reads.
+    fn linear<T: Num>(&self, delta: impl Fn(usize) -> Option<T>) -> Frame<T> {
+        let n = self.grad.as_ref().map_or(0, |g| g.len());
+        let deltas: Vec<Option<T>> = (0..n).map(&delta).collect();
+        let lift = |v: [f64; 3], slot: usize| -> [T; 3] {
             std::array::from_fn(|i| {
-                let mut d = Dual::<P>::cst(v[i]);
-                if let Some(g) = g {
-                    for q in start..start + P {
-                        if q >= from && q - from < g.len() {
-                            d.g[q - start] = g[q - from][slot][i];
-                        }
+                let mut acc = T::cst(v[i]);
+                for (g, d) in self.grad.iter().flatten().zip(&deltas) {
+                    if let (Some(d), true) = (d, g[slot][i] != 0.0) {
+                        acc = acc + *d * T::cst(g[slot][i]);
                     }
                 }
-                d
+                acc
             })
         };
         let f = &self.frame;
         Frame {
             x: lift(f.x, 0),
             d: std::array::from_fn(|a| lift(f.d[a], 1 + a)),
-            dd: std::array::from_fn(|a| std::array::from_fn(|b| lift(f.dd[a][b], 1 + MAX_FORMALS + a * MAX_FORMALS + b))),
+            dd: std::array::from_fn(|a| std::array::from_fn(|b| {
+                lift(f.dd[a][b], 1 + MAX_FORMALS + a * MAX_FORMALS + b)
+            })),
         }
     }
 }
@@ -660,33 +657,13 @@ fn parts(k: &[f64]) -> Option<(&[f64], [f64; 2], &[f64])> {
     Some((values, home, k.get(3 + n..)?))
 }
 
-fn unit<T: Num>(a: [T; 3]) -> [T; 3] {
-    held::unit(a)
-}
-
-fn sub3<T: Num>(a: [T; 3], b: [T; 3]) -> [T; 3] {
-    held::vsub(a, b)
-}
-
-fn scale3<T: Num>(a: [T; 3], k: T) -> [T; 3] {
-    [a[0] * k, a[1] * k, a[2] * k]
-}
-
-/// Two unit directions square to the unit `d` and to one another.
-fn square_to<T: Num>(d: [T; 3]) -> ([T; 3], [T; 3]) {
-    let k = (0..3).min_by(|&i, &j| d[i].val().abs().total_cmp(&d[j].val().abs())).unwrap_or(0);
-    let e: [T; 3] = std::array::from_fn(|i| T::cst(if i == k { 1.0 } else { 0.0 }));
-    let t1 = unit(sub3(e, scale3(d, d[k])));
-    (t1, held::cross(d, t1))
-}
-
 /// The smallest normal curvature a contact divides by.
 const FLAT: f64 = 1e-12;
 
 /// A contact's rows from its lead columns and the frame, into `out`.
 fn rows<T: Num>(c: Contact, lead: &[T], f: &Frame<T>, out: &mut [T]) {
-    let n = || unit(held::cross(f.d[0], f.d[1]));
-    let dir = || unit(sub3(held::col3(lead, 3), held::col3(lead, 0)));
+    let n = || unit(cross(f.d[0], f.d[1]));
+    let dir = || unit(vsub(col3(lead, 3), col3(lead, 0)));
     match c {
         Contact::Point => {
             for i in 0..3 {
@@ -694,35 +671,35 @@ fn rows<T: Num>(c: Contact, lead: &[T], f: &Frame<T>, out: &mut [T]) {
             }
         }
         Contact::Tangent => {
-            let (e1, e2) = square_to(unit(f.d[0]));
+            let (e1, e2) = screw::square_to(unit(f.d[0]));
             let l = dir();
-            out[0] = held::dot(l, e1);
-            out[1] = held::dot(l, e2);
+            out[0] = dot(l, e1);
+            out[1] = dot(l, e2);
         }
-        Contact::InPlane => out[0] = held::dot(dir(), n()),
+        Contact::InPlane => out[0] = dot(dir(), n()),
         Contact::Normal | Contact::Plane => {
             let l = if c == Contact::Plane {
-                unit(held::cross(held::col3(lead, 0), held::col3(lead, 3)))
+                unit(cross(col3(lead, 0), col3(lead, 3)))
             } else {
                 dir()
             };
             let t1 = unit(f.d[0]);
-            let t2 = held::cross(n(), t1);
-            out[0] = held::dot(l, t1);
-            out[1] = held::dot(l, t2);
+            let t2 = cross(n(), t1);
+            out[0] = dot(l, t1);
+            out[1] = dot(l, t2);
         }
         // Meusnier, as an envelope's (`envelope::held`): the section by the plane of normal `m`
         // turns `κₙ / cos θ` toward `n − (n·m)m`, `κₙ` the normal curvature along `m × n`
         Contact::Curvature => {
-            let (centre, r) = (held::col3(lead, 0), lead[3]);
-            let (pu, pv) = (held::col3(lead, 4), held::col3(lead, 7));
-            let m = unit(held::cross(pu, pv));
+            let (centre, r) = (col3(lead, 0), lead[3]);
+            let (pu, pv) = (col3(lead, 4), col3(lead, 7));
+            let m = unit(cross(pu, pv));
             let nn = n();
-            let w = unit(held::cross(m, nn));
+            let w = unit(cross(m, nn));
             let (xu, xv) = (f.d[0], f.d[1]);
-            let (e, ff, g) = (held::dot(xu, xu), held::dot(xu, xv), held::dot(xv, xv));
-            let (l, mm, nn2) = (held::dot(f.dd[0][0], nn), held::dot(f.dd[0][1], nn), held::dot(f.dd[1][1], nn));
-            let (b1, b2) = (held::dot(xu, w), held::dot(xv, w));
+            let (e, ff, g) = (dot(xu, xu), dot(xu, xv), dot(xv, xv));
+            let (l, mm, nn2) = (dot(f.dd[0][0], nn), dot(f.dd[0][1], nn), dot(f.dd[1][1], nn));
+            let (b1, b2) = (dot(xu, w), dot(xv, w));
             let det = e * g - ff * ff;
             let det = if det.val() != 0.0 { det } else { T::cst(1.0) };
             let (a, b) = ((g * b1 - ff * b2) / det, (e * b2 - ff * b1) / det);
@@ -733,14 +710,14 @@ fn rows<T: Num>(c: Contact, lead: &[T], f: &Frame<T>, out: &mut [T]) {
             let kappa = second / first;
             let kappa = if kappa.val().abs() >= FLAT { kappa }
                 else { T::cst(if kappa.val() < 0.0 { -FLAT } else { FLAT }) };
-            let inward = sub3(nn, scale3(m, held::dot(nn, m)));
-            let to = sub3(centre, f.x);
-            let off = sub3(to, scale3(inward, T::cst(1.0) / kappa));
+            let inward = vsub(nn, vscale(m, dot(nn, m)));
+            let to = vsub(centre, f.x);
+            let off = vsub(to, vscale(inward, T::cst(1.0) / kappa));
             let a = unit(pu);
-            let bb = unit(held::cross(m, a));
-            out[0] = held::dot(off, a);
-            out[1] = held::dot(off, bb);
-            out[2] = held::dot(to, to).sqrt() - r;
+            let bb = unit(cross(m, a));
+            out[0] = dot(off, a);
+            out[1] = dot(off, bb);
+            out[2] = dot(to, to).sqrt() - r;
         }
     }
 }
@@ -786,9 +763,15 @@ fn jacobian(c: Contact, cols: &[f64], k: &[f64], j: &mut [f64]) -> Option<()> {
     let mut out = vec![Dual::<P>::cst(0.0); c.rows()];
     for start in (0..w).step_by(P) {
         for (q, x) in lead.iter_mut().enumerate() {
-            *x = if (start..start + P).contains(&q) { Dual::var(cols[q], q - start) } else { Dual::cst(cols[q]) };
+            *x = if (start..start + P).contains(&q) {
+                Dual::var(cols[q], q - start)
+            } else {
+                Dual::cst(cols[q])
+            };
         }
-        let f = r.at::<P>(start, c.lead());
+        let from = c.lead();
+        let f = r.linear(|q| (start..start + P).contains(&(from + q))
+            .then(|| Dual::<P>::var(0.0, from + q - start)));
         rows(c, &lead, &f, &mut out);
         held::scatter_pass(&out, j, start);
     }
@@ -808,7 +791,7 @@ fn jac<const C: u8>(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
 
 /// The kernel of contact `c` at a block's widths (`system::build_kernel`).
 pub fn kernel(c: Contact, n_par: usize, n_const: usize) -> Kernel {
-    let (res, jac): (fn(usize, &[f64], &[f64], &mut [f64]), fn(usize, &[f64], &[f64], &mut [f64])) = match c {
+    let (res, jac): (KernelFn, KernelFn) = match c {
         Contact::Point => (res::<0>, jac::<0>),
         Contact::Tangent => (res::<1>, jac::<1>),
         Contact::InPlane => (res::<2>, jac::<2>),
@@ -945,7 +928,9 @@ pub fn columns(sk: &Sketch, t: &TracedE) -> Vec<u32> {
             let l = &sk.lines[e.i()];
             [lift(l.p1 as usize), lift(l.p2 as usize)].concat()
         }
-        EntKind::Motion => held::Moving::of_any(sk, e.i()).map(|m| m.columns(sk)).unwrap_or_default(),
+        EntKind::Motion => {
+            held::Moving::of_any(sk, e.i()).map(|m| m.columns(sk)).unwrap_or_default()
+        }
         _ => Vec::new(),
     }).collect()
 }
@@ -958,7 +943,9 @@ pub fn theta(sk: &Sketch, t: &TracedE) -> Vec<f64> {
             let l = &sk.lines[e.i()];
             [sk.lifted(l.p1 as usize), sk.lifted(l.p2 as usize)].concat()
         }
-        EntKind::Motion => held::Moving::of_any(sk, e.i()).map(|m| m.values(sk)).unwrap_or_default(),
+        EntKind::Motion => {
+            held::Moving::of_any(sk, e.i()).map(|m| m.values(sk)).unwrap_or_default()
+        }
         _ => Vec::new(),
     }).collect()
 }
@@ -1004,7 +991,8 @@ pub(crate) fn flank_parts(k: &[f64]) -> Option<([[f64; 2]; 2], &[f64])> {
 
 /// How many columns a traced flank reads past its place.
 pub(crate) fn flank_width(k: &[f64]) -> usize {
-    flank_parts(k).and_then(|(_, c)| parts(c)).and_then(|(_, _, f)| view(f)).map_or(0, |v| v.n_theta)
+    flank_parts(k).and_then(|(_, c)| parts(c)).and_then(|(_, _, f)| view(f))
+        .map_or(0, |v| v.n_theta)
 }
 
 /// What a meshing reads of a traced flank over its columns `c` — `[u, s, t, θ…]`, the roll `t`
@@ -1022,20 +1010,10 @@ pub(crate) fn seen<T: Num>(k: &[f64], c: &[T]) -> Option<([T; 3], [T; 3], [T; 3]
     outer.extend_from_slice(&vals[3..]);
     outer.extend_from_slice(values);
     let r = read(flat, &outer, &home, Need::Tangent, c.iter().any(|x| x.moves()))?;
-    let lin = |val: [f64; 3], slot: usize| -> [T; 3] {
-        std::array::from_fn(|i| {
-            let mut acc = T::cst(val[i]);
-            for (q, g) in r.grad.iter().flatten().enumerate() {
-                // the place's two columns, then the body's, past the held roll
-                let at = if q < PLACE { q } else { q + 1 };
-                let d = g[slot][i];
-                if d != 0.0 {
-                    acc = acc + (c[at] - T::cst(vals[at])) * T::cst(d);
-                }
-            }
-            acc
-        })
-    };
-    let (x, du, dv) = (lin(r.frame.x, 0), lin(r.frame.d[0], 1), lin(r.frame.d[1], 2));
-    Some((x, unit(held::cross(du, dv)), du))
+    // the place's two columns, then the body's, past the held roll
+    let f = r.linear(|q| {
+        let at = if q < PLACE { q } else { q + 1 };
+        Some(c[at] - T::cst(vals[at]))
+    });
+    Some((f.x, unit(cross(f.d[0], f.d[1])), f.d[0]))
 }
