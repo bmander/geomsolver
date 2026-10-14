@@ -208,7 +208,13 @@ pub(super) fn planar_envelopes(sk: &mut Sketch, res: &mut Resolver, map: &mut So
             let e = res.lookup(r)?;
             Some(follow_building(sk, res, e, r))
         };
-        // an envelope of a spatial operand is the spatial one, built after the solve
+        // an envelope of a spatial operand is the spatial one, built after the solve — and so is
+        // a set's, its operand the hidden point the set is applied to (#283)
+        let probe = matches!(d.children.first().map(Vec::as_slice),
+                             Some([Kid::Ref(r)]) if r.root.text.ends_with("#probe"));
+        if probe {
+            continue;
+        }
         let tool = match operand(0) {
             Some(Ok(e)) if !e.kind.spatial() => e,
             _ => continue,

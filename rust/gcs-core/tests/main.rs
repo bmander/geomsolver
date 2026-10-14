@@ -92,6 +92,7 @@ mod sector;
 mod motions;
 mod generated_envelopes;
 mod generation;
+mod held_envelopes;
 mod extruded_envelope;
 mod generation_examples;
 mod examples_sv;

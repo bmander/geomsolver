@@ -34,7 +34,7 @@ pub use entities::{
 pub use curves::{CURVE_STEPS, CurveDef, CurveBody, CurveE, Extremal, Home, Trim, extremal_def, whole};
 pub use spatial::{
     FaceLoop, FaceSupport, FaceE, Length, SolidRequirement, SolidClaim, SolidBearing, Sweep,
-    DerivedE, Extent, Roll, Sense, SolidDef, SolidE, SeamE, EdgeE, VertexE, PatchE, EnvelopeE, SurfaceE,
+    DerivedE, Extent, Roll, Sense, SolidDef, SolidE, SeamE, EdgeE, VertexE, PatchE, EnvelopeE, Held, SetKind, SetShape, SurfaceE,
     RegionShape, RegionTerm, TermNumber, Way, FaceRef, Target, turn_of,
     MotionDef, MotionE,
 };

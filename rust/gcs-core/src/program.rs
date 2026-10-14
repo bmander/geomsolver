@@ -62,6 +62,8 @@ pub fn solid_diagnostics(sk: &crate::model::Sketch, map: &SourceMap) -> Vec<Diag
     diags.extend(views::degenerate(sk, map));
     diags.extend(views::coplanar(sk, map));
     for i in 0..sk.envelopes.len() {
+        // a set's envelope has no side to read after the solve: its contacts are its rows (#283)
+        if sk.envelopes[i].surface.is_none() { continue; }
         if let Err(message) = crate::envelope::GeneratedEnvelope::named(sk,i) {
             let site = map.site_of(crate::model::EntRef::new(crate::model::EntKind::Envelope,i));
             diags.push(Diag::new(Code::E080,site.map(|s| s.span).unwrap_or_default(),
@@ -553,6 +555,10 @@ fn elaborate_in(
     // a prism's side generating under a motion that keeps its view stands for a surface the
     // solve can hold a point to: built with the drawing, once the memberships say the view
     let extruded = generated::extruded_envelopes(&mut sk, &mut res, &mut map, &body, &skip, &mut diags);
+    // every other envelope — in space — with what the solve reads of its source, so a contact may
+    // name it (#283)
+    let generated: BTreeSet<StmtId> = skip.iter().chain(&planar).chain(&extruded).copied().collect();
+    let seen = envelopes::held_envelopes(&mut sk, &mut res, &mut map, &body, &generated);
 
     // -- phase 3: constraints, in statement order
     let mut arrays = BTreeSet::new();
@@ -646,8 +652,7 @@ fn elaborate_in(
         return Err(Again::Faces(unnamed));
     }
     surfaces::surfaces(&mut sk, &mut res, &mut map, &body, &skip, &mut diags);
-    let spatial: BTreeSet<StmtId> = skip.iter().chain(&planar).chain(&extruded).copied().collect();
-    envelopes::envelopes(&mut sk, &mut res, &mut map, &body, &spatial, &mut diags);
+    envelopes::envelopes(&mut sk, &mut res, &mut map, &body, &generated, &seen, &mut diags);
     patches::patches(&mut sk, &mut res, &mut map, &body, &skip, &mut diags);
     seams::seams(&mut sk, &mut res, &mut map, &body, &skip, &mut diags);
     vertices::vertices(&mut sk, &mut res, &mut map, &body, &skip, &mut diags);

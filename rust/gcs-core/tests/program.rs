@@ -110,6 +110,11 @@ fn every_constraint_type_is_printable() {
             // `tests/catenary.rs`, and its touch, `tests/slide.rs`)
             continue;
         }
+        if kind.envelope_contact().is_some() {
+            // an envelope in space is declared over a solid's side or a set, which a sketch's
+            // fixture holds no text of; `tests/held_envelopes.rs` prints them from a document
+            continue;
+        }
         let (sk, c) = fixture(kind);
         // a relation holding an axis is settled as the planes are, before the solve
         // (`views::place`), so the axis it names comes back where that put it

@@ -177,8 +177,11 @@ impl<'a> P<'a> {
                     // is a path, so a path is a reference whatever its key (`at: v1.origin`)
                     let along = name.text == "along" && self.reference_ahead();
                     // and `tangent(at: m)` names a point, unless it names an end of the line or
-                    // the arc (`at: p1`, `at: start`): the tangent at a point already on (#251)
-                    let point = word == "tangent" && name.text == "at" && matches!(self.peek(),
+                    // the arc (`at: p1`, `at: start`): the tangent at a point already on (#251) —
+                    // as `perpendicular(at: m)` and `curvature(at: m)` do, at a point already on
+                    // an envelope (#283)
+                    let point = matches!(word, "tangent" | "perpendicular" | "curvature")
+                        && name.text == "at" && matches!(self.peek(),
                         Some(Tok::Ident(w)) if !["start", "end", "p1", "p2"].contains(&w.as_str()));
                     let v = if self.path_ahead() || along || point {
                         Arg::Ref(self.refr()?)

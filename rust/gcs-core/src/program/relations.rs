@@ -78,9 +78,13 @@ pub(crate) fn settle(
             // end, apart from it
             let at_point = w.sel("at").is_some_and(|s| s.is_empty());
             let curved = matches!(b, EntKind::Spline | EntKind::Curve);
-            let curve_last = word == "tangent"
+            // and an envelope in space is named first by whatever touches it (#283)
+            let enveloped = b == EntKind::Envelope && matches!(a, EntKind::Line | EntKind::Axis
+                | EntKind::Plane | EntKind::Circle | EntKind::Arc);
+            let curve_last = (word == "tangent"
                 && a == EntKind::Line
-                && (curved || (at_point && b != EntKind::Line));
+                && (curved || (at_point && b != EntKind::Line)))
+                || (matches!(word, "tangent" | "curvature") && enveloped);
             if curve_last {
                 let mut swapped = w.clone();
                 swapped.ops.swap(0, 1);
@@ -599,6 +603,18 @@ pub(super) fn constrain(
             }
         }
     };
+    // what a set's body states at its envelope's hidden point is the surface the envelope reads
+    // (#283), never a row
+    if let Some(e) = super::envelopes::probe_envelope(sk, &c) {
+        let read = match grow {
+            Some(_) => Err("an envelope's set is a surface, not one grown from another".to_string()),
+            None => super::envelopes::set_shape(sk, &c, e),
+        };
+        if let Err(message) = read {
+            diags.push(Diag::on(Code::E040, st, message));
+        }
+        return None;
+    }
     // a bound a set put on a region solid's probe is a term of the solid, never a row (§6.21)
     if let Some(probe) = probe_of(sk, &c, probes) {
         match region_term(sk, &c, probe, grow, term_name) {
@@ -652,8 +668,12 @@ pub(super) fn kinds(map: &SourceMap, given: &[crate::flatten::KindAsked], diags:
 /// and that is a contact's to say. One with none is refused, naming the statement it wants.
 pub(super) fn tangents_at(sk: &Sketch, map: &SourceMap, diags: &mut Vec<Diag>) {
     for c in &sk.constraints {
-        let Some((t, at, on)) = c.tangent_at() else { continue };
-        let held = matches!(c.args[t], CArg::Param(p) if sk.holding(at, on) == Some(p));
+        let Some((slots, at, on)) = c.tangent_at() else { continue };
+        let place: Vec<Option<u32>> = slots.iter().map(|&t| match c.args[t] {
+            CArg::Param(p) => Some(p),
+            _ => None,
+        }).collect();
+        let held = sk.holding(at, on).is_some_and(|h| h.into_iter().map(Some).eq(place));
         let Some(site) = map.site_of_constraint(c.id).filter(|_| !held) else { continue };
         let name = |e: EntRef| {
             let written = |n: &String| format!("`{}`", super::source_map::public_path(n));

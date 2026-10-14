@@ -1292,12 +1292,48 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
     let mut envelope_map = vec![None;src.envelopes.len()];
     for (i,e) in src.envelopes.iter().enumerate() {
         if !keep(EntRef::new(EntKind::Envelope,i)) { continue; }
-        let (Some(surface),Some(motion)) =
-            (surface_map[e.surface as usize],motion_map[e.motion as usize]) else { continue; };
+        let surface = match e.surface {
+            Some(s) => match surface_map[s as usize] { Some(s) => Some(s as u32), None => continue },
+            None => None,
+        };
+        let Some(motion) = motion_map[e.motion as usize] else { continue; };
+        // what the solve reads of its source, in the copy's own geometry; a part left behind
+        // leaves the copy with nothing it can read, said where a relation names it
+        let line = |l: u32| line_map[l as usize].map(|x| x as u32);
+        let gone = || crate::model::Held::Not("its source was left behind when it was copied".into());
+        let held = match &e.held {
+            crate::model::Held::Not(why) => crate::model::Held::Not(why.clone()),
+            crate::model::Held::Revolution {axis,edge} => {
+                let edge = match edge.kind {
+                    EntKind::Line => line_map[edge.i()].map(EntRef::line),
+                    EntKind::Arc => arc_map[edge.i()].map(EntRef::arc),
+                    EntKind::Circle => circle_map[edge.i()].map(EntRef::circle),
+                    _ => None,
+                };
+                let axis = match axis.kind {
+                    EntKind::Line => line_map[axis.i()].map(EntRef::line),
+                    EntKind::Axis => axis_map[axis.i()].map(EntRef::axis),
+                    _ => None,
+                };
+                match (axis,edge) {
+                    (Some(axis),Some(edge)) => crate::model::Held::Revolution {axis,edge},
+                    _ => gone(),
+                }
+            }
+            crate::model::Held::Set {probe,shape} => {
+                use crate::model::SetShape;
+                let shape = shape.as_ref().map(|s| line(s.axis).map(|axis| SetShape {axis,..s.clone()}));
+                match (pt_map[*probe as usize],shape) {
+                    (Some(probe),None) => crate::model::Held::Set {probe:probe as u32,shape:None},
+                    (Some(probe),Some(Some(shape))) => crate::model::Held::Set {probe:probe as u32,shape:Some(shape)},
+                    _ => gone(),
+                }
+            }
+        };
         let next = dst.envelopes.len();
         dst.envelopes.push(crate::model::EnvelopeE {
-            surface:surface as u32,motion:motion as u32,roll:e.roll,
-            name:e.name.clone(),class:e.class.clone(),
+            surface,motion:motion as u32,roll:e.roll,
+            name:e.name.clone(),class:e.class.clone(),held,
         });
         envelope_map[i] = Some(next);
         made.push(EntRef::new(EntKind::Envelope,next));

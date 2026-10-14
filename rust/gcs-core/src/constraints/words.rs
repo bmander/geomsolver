@@ -191,7 +191,7 @@ pub fn ordinate_word(kind: CKind, args: &[Arg]) -> &str {
 /// cannot be made from the kinds alone.  `None` is "this word does not relate those two", which
 /// the caller reports with the kinds in it.
 pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option<String>) -> Option<CKind> {
-    use EntKind::{Arc, Circle, Curve, Line, Plane, Point, Axis, Spline};
+    use EntKind::{Arc, Circle, Curve, Envelope, Line, Plane, Point, Axis, Spline};
     let round = |k: EntKind| matches!(k, Circle | Arc);
     // an axis is in space, so a direction relation naming one is the relation in space
     let axes = |a: EntKind, b: EntKind| matches!((a, b), (Axis, Axis | Line) | (Line, Axis));
@@ -208,6 +208,8 @@ pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option
             (Point, k) if round(k) => CKind::PointOnCircle,
             (Point, Spline) => CKind::PointOnSpline,
             (Point, Curve) => CKind::PointOnCurve,
+            // an envelope in space, whatever view the point is drawn in (#283)
+            (Point, Envelope) => CKind::PointOnEnvelope,
             // in space whatever view the point is in: a plane is a place, not a picture
             (Point, Plane) => CKind::PointOnPlane,
             (Line, Plane) => CKind::LineOnPlane,
@@ -248,6 +250,10 @@ pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option
             (k, Line) if round(k) && at_point => CKind::TangentCircleAt,
             (Spline, Line) if at_point => CKind::SplineTangentAt,
             (Curve, Line) if at_point => CKind::CurveTangentAt,
+            // an envelope in space at a point a contact holds on it (#283): a line or an axis in
+            // its tangent plane, a plane touching it there
+            (Envelope, Line | Axis) if at_point => CKind::EnvelopeTangentAt,
+            (Envelope, Plane) if at_point => CKind::EnvelopePlaneAt,
             // tangency at a named end of the line is the regular form; the bare pair is
             // rank-deficient at every solution, so `at:` is how a drawing says which
             (Line, k) if round(k) => match sel("at") {
@@ -273,6 +279,8 @@ pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option
         "curvature" => match (a, b) {
             (Spline, k) if round(k) => CKind::SplineCurvature,
             (Curve, k) if round(k) => CKind::CurveCurvature,
+            // a circle osculating an envelope's section by its plane, at a point already on it
+            (Envelope, k) if round(k) && at_point => CKind::EnvelopeCurvatureAt,
             _ => return None,
         },
         // a free curve pressed onto a held line, a corner where it chooses (#149)
@@ -312,6 +320,8 @@ pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option
             (x, y) if axes(x, y) => CKind::Perpendicular3,
             // square to a plane: along its normal
             (Axis, Plane) => CKind::AxisPerpendicularPlane,
+            // along an envelope's normal at a point already on it (#283): the common normal
+            (Envelope, Line | Axis) if at_point => CKind::EnvelopeNormalAt,
             _ => return None,
         },
         "symmetry" => match (a, b) {

@@ -178,6 +178,9 @@ pub enum KernelKey {
     /// A free curve's length stationary under its energy (`H = 0`, #144), by the energy's first
     /// statement.
     Stationary(u32),
+    /// A contact with an envelope in space (#283), at its block's widths: `fk` the
+    /// `envelope::held::Contact`.
+    Envelope { fk: u8, n_par: usize, n_const: usize },
 }
 
 pub fn kernel(id: K) -> &'static Kernel {

@@ -53,7 +53,8 @@ pub fn kind(sk: &Sketch,index: usize) -> Result<SeamKind,String> {
 pub(crate) fn junction(sk: &Sketch,faces: [EntRef;2]) -> Result<[f64;2],String> {
     let indices = [source_envelope(sk,faces[0])?,source_envelope(sk,faces[1])?];
     let envelopes = indices.map(|i| &sk.envelopes[i]);
-    let surfaces = envelopes.map(|e| sk.surfaces.get(e.surface as usize).ok_or("no such source surface"));
+    let surfaces = envelopes.map(|e| e.surface.and_then(|s| sk.surfaces.get(s as usize))
+        .ok_or("a generating seam needs the envelopes of a revolution's sides"));
     let [a,b] = surfaces;
     let [a,b] = [a?,b?];
     if a.solid != b.solid || envelopes[0].motion != envelopes[1].motion {
