@@ -46,7 +46,7 @@ fn under_determined_merges_are_skipped() {
 }
 
 #[test]
-#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 20 s: 256 homotopy paths")]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier: 256 homotopy paths, about 4 s")]
 fn the_k33_core_has_several_real_realizations() {
     let mut sk = examples::k33();
     let mut ps = PlanSolver::new(&sk, true);
