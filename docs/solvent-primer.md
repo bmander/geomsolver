@@ -46,6 +46,7 @@ comment     ::= '//' ... end of line  |  '/*' ... '*/'
 identifier  ::= [A-Za-z_][A-Za-z0-9_]*
 number      ::= decimal, exponent form allowed; `3 1/2` is a mixed fraction;
                 a unit may follow: 80mm  45deg  0.5rad  6"  1' 6 3/16"   (1.6)
+                and for a design table's values: 745.7W  48V  255rpm  0.85T  27.9Nm
 ```
 
 A newline ends a statement except inside brackets, after a trailing chain joint (1.7), and at a
@@ -355,6 +356,18 @@ c distance(1' 6 3/16") d            // one literal: spaces separate the parts, a
   not make `w` a length; `w := 80mm` does, as does a formal declared `Length`.
 - `3/16"` is a division; a lone fractional inch is `0.1875"` or `0 3/16"`.
 - `pi` is dimensionless; `tau` and `turn` are one full turn; radians are written `* 1rad`.
+- **A design table's figures carry units too**: mass, time and current are bases beside length
+  and angle, and derive the rest — `kg g s ms A mA Hz kHz rpm N kN Nm J W kW V mV kV ohm Pa kPa
+  MPa GPa Wb mWb T mT`. They are for values: no slot takes one, so a figure reaches a constraint
+  divided by its unit (`torque / 1Nm`). There is no `h` or `min`. `rpm` is an angle over a time:
+
+  ```
+  power := 745.7W
+  omega := 255rpm
+  torque := power / (omega / 1rad)    // a torque: torque / 1Nm is 27.9
+  amps := power / (48V * 0.86)        // amps + torque is refused
+  freq := 46 / 2 * omega / turn       // 97.8Hz
+  ```
 - **There is no string literal**: `"` is the inch mark, and a word argument is bare (`at: start`).
 - A value, input, formal or index named after a built-in (`tau`, `pi`, `min`, …) does not shadow
   it and ends up with two values: W112. Rename it.

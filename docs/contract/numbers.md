@@ -25,8 +25,16 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   `Sketch::set_constraint_num` writes a number and re-evaluates when it dropped an expression.
   Documents save `{"expr", "value"}` and accept a bare string; binding records keep the number in
   `args`, the text under `exprs`, and proxies `sync()` before handing out a value.
-- **Every number has a dimension, and it is checked** (`units.rs`, Solvent §3.3).  Two bases,
-  **length** and **angle**, with *rational* exponents (`sqrt` halves one).  `*` and `/` derive,
+- **Every number has a dimension, and it is checked** (`units.rs`, Solvent §3.3).  Five bases,
+  **length** and **angle** for a drawing and **mass**, **time** and **current** for a design
+  table's figures (#311, [0.98]), with *rational* exponents (`sqrt` halves one).  No slot
+  (`SpecKind::dim()`) is of the last three, so a figure reaches a constraint only over its unit
+  (`torque / 1Nm`); their numbers are kg, s and A with lengths in the document's unit, so
+  `Units::convert` divides a unit's `per` by the document's length once for each power of length
+  it carries, and a figure over its unit is the same number in every document.  `Dim::name`
+  spells the powers and the SI unit where one is that dimension (`Length^2·Mass·Time^-3 (W)`);
+  `Dim::number_text` writes the bases in `kg`, `s` and `A`.  A unit is a suffix only (`V` is a
+  name), and there is no `h` or `min`.  `tests/units.rs`'s design-table section is the gate.  `*` and `/` derive,
   `+` and `-` demand agreement, `^` takes a whole power on a dimensioned base, and the result is
   checked against its slot (`SpecKind::dim()`).  `Aff` carries the dimension beside the value.
   **The asymmetry between `Dim::fits` and `Dim::agree` is the design.**  A *context* (a slot, a

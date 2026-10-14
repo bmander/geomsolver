@@ -57,6 +57,9 @@ fn degree(body: &Ast) -> Result<u32, String> {
     if !a.dim.ang.is_zero() {
         return Err("an integrand is a length or a power of one, never an angle".into());
     }
+    if !a.dim.is_length_power() {
+        return Err(format!("an integrand is a length or a power of one, never {}", a.dim.name()));
+    }
     Ok(a.dim.len.value().round().max(0.0) as u32)
 }
 

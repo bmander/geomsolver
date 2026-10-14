@@ -33,16 +33,19 @@ left and builds the solid the assembly does; `use` leaves the block out.
 | air-gap shear | 11.9 kPa on a 103.1 mm gap radius and a 35 mm stack: air-cooled territory |
 | cogging | lcm(51, 46) = 2346 cogs a turn: negligible |
 
-The electromagnetic sizing is worked in the comments of `motor/dims.sv`. The flux density in the
-gap is taken as 0.85 T from 3 mm of N42SH over a 0.6 mm gap. That is an estimate: confirm it with
-a 2D FEA before tooling.
+The electromagnetic sizing is worked in `motor/dims.sv` as values that carry their units
+(`745.7W`, `48V`, `0.85T`), so the language checks its arithmetic as it checks the lengths: a
+torque that came out a power would be refused. The magnetic circuit reads the lengths the parts
+are drawn with, and `tests/hub_motor.rs` holds each figure to its closed form. The flux density in
+the gap is taken as 0.85 T from 3 mm of N42SH over a 0.6 mm gap. That is an estimate: confirm it
+with a 2D FEA before tooling.
 
 - Flux per pole: Φ = B_g · α · τ_p · L = 0.85 T · 0.80 · 14.1 mm · 35 mm = 0.335 mWb.
 - Winding: 7 turns a tooth, 17 coils a phase (119 turns), 5 strands of Ø0.80 mm in hand.
   The winding factor is 0.94 (pitch 0.988, spread 0.955).
-- Back-EMF at 255 rpm (97.8 Hz electrical): 16.5 V rms a phase, 28.5 V rms line to line, 40.3 V
+- Back-EMF at 255 rpm (97.8 Hz electrical): 16.4 V rms a phase, 28.3 V rms line to line, 40.1 V
   peak. That is under the pack's 48 V, which leaves the controller headroom.
-- Current: 15.1 A rms a phase at rated torque, 6.0 A/mm² in the copper. The slot fill is 0.43
+- Current: 15.2 A rms a phase at rated torque, 6.0 A/mm² in the copper. The slot fill is 0.43
   (17.6 mm² of copper a coil side, two coil sides in each 81 mm² slot).
 - Iron: the teeth run at 1.6 T, the stator yoke at 0.6 T (it is thicker than flux needs so it
   can take the press fit), and the rotor ring at 0.8 T.

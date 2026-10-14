@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.97 — October 2026**
+**Specification, Draft 0.98 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -135,6 +135,8 @@ Implementations **MUST** check dimensions in expressions and constraints, and MU
 
 **Two base dimensions**, because two is what the language has: a **length** and an **angle**. A quantity is a rational power of each — rational, because `sqrt` halves one and `sqrt(area)` is a length.
 
+**[0.98] Three more for values: a mass, a time and a current.** A machine's sizing lives in the same table as its geometry, and its figures check as its lengths do: `torque := power / omega` is a torque because the arithmetic says so, and `torque + power` is an error. The three are enough to derive every unit of §3.3.1. **No slot is of them** — every slot of §9.3 is a length, an angle or a plain number — so a figure carrying one reaches a constraint only divided by its unit (`torque / 1Nm`), as an angle reaches a length slot only through a function of it. A number of mass, time or current is in kilograms, seconds and amperes, and a length in it in the document's unit (§3.3.2): a watt in a millimetre document is 10⁶ kg·mm²/s³, and `1W / (1kg * (1m)^2 / (1s)^3)` is 1 in every document. A diagnostic names a dimension by its bases' powers and, where an SI unit is that dimension, the unit: `Length^2·Mass·Time^-3 (W)`.
+
 - `*` and `/` **derive**: the exponents add and subtract.
 - `+` and `-` **demand agreement**, and so do `min`, `max`, `hypot` and `atan2`'s two arguments.
 - **[0.72]** So do a comparison's two sides — `<`, `<=`, `>`, `>=`, `==`, `!=` — which make no number but a condition, read only by `when` (§12.9): `relief > 0mm`, never `relief > 0`.
@@ -167,6 +169,26 @@ A **name** is worth a number, and where that number is *used* decides what it is
 ```
 
 A number MAY carry a unit. The length units are `mm`, `cm`, `m`, `km`, `in`, `ft`, `thou`; the angle units are `deg`, `rad`, `grad`. `'` and `"` are the foot and inch marks.
+
+**[0.98]** The units of a design table's figures:
+
+| dimension | units |
+|---|---|
+| mass | `kg`, `g` |
+| time | `s`, `ms` |
+| current | `A`, `mA` |
+| frequency (Time⁻¹) | `Hz`, `kHz` |
+| angular speed (Angle·Time⁻¹) | `rpm` |
+| force | `N`, `kN` |
+| torque, energy | `Nm`, `J` |
+| power | `W`, `kW` |
+| voltage | `V`, `mV`, `kV` |
+| resistance | `ohm` |
+| pressure, stress | `Pa`, `kPa`, `MPa`, `GPa` |
+| magnetic flux | `Wb`, `mWb` |
+| flux density | `T`, `mT` |
+
+A unit is a suffix only, so `48V` is a voltage and `V` alone is still a name. There is no `h` and no `min`, which are a height and a function long before they are an hour and a minute. `rpm` is an angle over a time, so `255rpm / 1rad` is the angular speed in rad/s and `255rpm / turn` the revolutions a second, `1Hz` beside it.
 
 **Feet-and-inches is one literal**, and it is a rule the language already had: *a space is what tells the readings apart*, exactly as it does in a mixed fraction, where `3 1/2` is three and a half and `31/2` is a division. So `1' 6"` is one length for the same reason.
 
