@@ -1,7 +1,6 @@
 //! Gauges and orientation predicates (§9.2, issue #47): `fix` and `ccw`/`cw`, read as relations
 //! are and applied, holding numbers or choosing roots, never constraints the sketch holds.
 
-use super::resolve::Resolver;
 use super::{Code, Diag};
 use crate::constraints::CKind;
 use crate::ir::{Relation, ResolvedRelation, Statement as Stmt};
@@ -65,8 +64,6 @@ pub(super) fn is_fix(r: &Relation) -> bool {
 /// every gauge is in (`Gauges::hold_all`, `choose_all`).
 pub(super) fn apply_gauge(cx: &mut super::Elab<'_>, r: &ResolvedRelation<'_>, st: &Stmt) {
     let super::Elab { sk, res, gauges, diags, .. } = cx;
-    let res: &Resolver = res;
-    let sk: &mut Sketch = sk;
     let refs: Vec<&Ref> = r
         .args
         .iter()
