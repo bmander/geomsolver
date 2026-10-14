@@ -708,9 +708,36 @@ impl<'a> Walk<'a> {
             StmtKind::Decl(d) if d.kind == crate::model::EntKind::Solid && d.name.key().text == abs))
     }
 
+    /// The faces a path names, by the rule a region's reading of them is (`FacePath::matches`):
+    /// each by its absolute name (`pad.boss.near`), where the path is a solid's that the
+    /// elaborator has named faces of.
+    pub(super) fn faces_named(
+        &self,
+        r: &Ref,
+        sc: &Scope,
+        alias: &BTreeMap<String, String>,
+    ) -> Option<Vec<String>> {
+        let (abs, rest) = self.look(alias).find(r, sc)?;
+        let all = self.faces.get(&abs)?;
+        Some(all.iter().filter(|f| f.matches(&rest)).map(|f| format!("{abs}.{}", f.text())).collect())
+    }
+
+    /// What a name stands for, as one absolute name: the entity or face it resolves to,
+    /// through every alias — what two names are compared by when a `when` asks if they are
+    /// the same (#267).
+    pub(super) fn stands_for(
+        &self,
+        r: &Ref,
+        sc: &Scope,
+        alias: &BTreeMap<String, String>,
+    ) -> Option<String> {
+        let (abs, rest) = self.look(alias).find(r, sc)?;
+        Some(std::iter::once(abs).chain(rest).collect::<Vec<_>>().join("."))
+    }
+
     /// The faces a set-aside block runs over (#183 F4), where it runs over a solid's (`repeat a
     /// in pad.boss`) and the elaborator has named that solid's: each a reference to the face
-    /// (`pad.boss.near`), those its conditions keep (F8).
+    /// (`pad.boss.near`).  Which copies make anything is a `when`'s in the body (#267).
     fn face_links(
         &self,
         p: &Pending,
@@ -719,32 +746,8 @@ impl<'a> Walk<'a> {
         let StmtKind::Block(b) = &p.st.kind else { return None };
         let over = b.over.as_ref()?;
         let sc = self.pending_scope(p);
-        // the faces a path names, by the rule a region's reading of them is (`FacePath::matches`)
-        let faces_of = |r: &Ref| -> Option<Vec<String>> {
-            let (abs, rest) = self.look(alias).find(r, &sc)?;
-            let all = self.faces.get(&abs)?;
-            Some(all.iter().filter(|f| f.matches(&rest)).map(|f| format!("{abs}.{}", f.text()))
-                .collect())
-        };
-        let all = faces_of(&over.chain)?;
-        // what a name in a condition stands for: the face itself, or as its reference resolves
-        let stands = |name: &Ref, me: &str| -> Option<String> {
-            if name.path.is_empty() && name.root.text == over.var.text {
-                return Some(me.to_string());
-            }
-            let (abs, rest) = self.look(alias).find(name, &sc)?;
-            Some(std::iter::once(abs).chain(rest).collect::<Vec<_>>().join("."))
-        };
-        let keeps = |face: &str| over.when.iter().all(|w| {
-            let var = Ref { root: w.var.clone(), path: Vec::new(), span: w.var.span };
-            let Some(me) = stands(&var, face) else { return false };
-            if w.within {
-                faces_of(&w.other).is_some_and(|fs| fs.iter().any(|f| *f == me))
-            } else {
-                stands(&w.other, face).is_some_and(|other| other != me)
-            }
-        });
-        let links = all.iter().filter(|f| keeps(f)).map(|f| {
+        let all = self.faces_named(&over.chain, &sc, alias)?;
+        let links = all.iter().map(|f| {
             let r = Ref::dotted(f, over.chain.span);
             // an absolute name, read from the document's root
             (r, Scope { prefixes: vec![String::new()], access: sc.access.clone(), ..Scope::default() })

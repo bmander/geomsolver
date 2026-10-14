@@ -207,15 +207,17 @@ fn a_run_along_one_edge() {
 }
 
 
-/// **A word that makes solids** (#183 F4, F5, F8): `round` over two face groups, a run per pair
+/// **A word that makes solids** (#183 F4, F5, F8; #267): `round` over two face groups, a run per pair
 /// of faces cut from the body the faces are of — here one pair, the block's near and south faces,
 /// so the block loses `r²(1 − π/4)` along its 40.
 const ROUND: &str = "A round(r) B := {\n\
     repeat a in A {\n\
-      repeat b in B if b != a {\n\
-        run := Run(a, b, r: r)\n\
-        taken := solid(run)\n\
-        taken cut A.body\n\
+      repeat b in B {\n\
+        when b != a {\n\
+          run := Run(a, b, r: r)\n\
+          taken := solid(run)\n\
+          taken cut A.body\n\
+        }\n\
       }\n\
     }\n}\n";
 
@@ -239,10 +241,12 @@ fn a_word_rounds_an_edge() {
 fn a_word_makes_a_relief() {
     let word = "A relieved(d) B := {\n\
                   repeat a in A {\n\
-                    repeat b in B if b != a {\n\
-                      groove := { p | p distance(<= d) a; p distance(<= d) b; p inside a; p inside b }\n\
-                      relief := solid(groove)\n\
-                      relief cut A.body\n\
+                    repeat b in B {\n\
+                      when b != a {\n\
+                        groove := { p | p distance(<= d) a; p distance(<= d) b; p inside a; p inside b }\n\
+                        relief := solid(groove)\n\
+                        relief cut A.body\n\
+                      }\n\
                     }\n\
                   }\n\
                 }\n";

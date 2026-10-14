@@ -3,6 +3,10 @@
 //! declares is named as if written beside it (`q`, `t.tip`, never `#7.0.q`).  The condition reads
 //! the numbers in scope, compares only numbers of one dimension (E103), and may not read an
 //! unknown of the drawing (E040), since the block is made or not before there is a solve.
+//!
+//! **Identity** (#267): two names that are not numbers compare by what they stand for (`a != b`),
+//! and `c in B` asks whether `c` is one of the faces `B` names — so `when` is the one conditional,
+//! and a block over a solid's faces keeps the copies it wants by a `when` in its body.
 
 use std::collections::BTreeMap;
 
@@ -166,7 +170,7 @@ fn a_condition_is_decided_before_the_solve_or_refused() {
 }
 
 /// What the header may not say: an index, a joint left open for a next copy there is none of,
-/// nothing at all, or a chain to run over.
+/// or nothing at all.  Nor does a block over faces keep copies by an `if` of its own.
 #[test]
 fn a_when_has_no_index_and_no_next_copy() {
     let syntax = |src: &str, words: &str| {
@@ -179,7 +183,8 @@ fn a_when_has_no_index_and_no_next_copy() {
     let head = "unit mm\nuse std\nw := 2mm\n";
     syntax(&format!("{head}when w > 0mm as i {{\n}}\n"), "no index");
     syntax(&format!("{head}when {{\n}}\n"), "decided by comparing numbers");
-    syntax(&format!("{head}when e in w {{\n}}\n"), "decided by comparing numbers");
+    // a filter on a face repeat is a `when` in its body (#267)
+    syntax(&format!("{head}repeat b in w if b != w {{\n}}\n"), "a `when` in the body");
     syntax(
         &format!("{head}in std.front {{\nwhen w > 0mm {{\n(s := line) -> perpendicular\n}}\n}}\n"),
         "a `when` has none",
@@ -234,4 +239,115 @@ fn conditions_compare_numbers_of_one_dimension() {
     }
     // a comparison is no number: an ordinary expression stops at one
     assert!(expr::parse_in("a < b", mm).is_err());
+}
+
+/// A block 40 × 24 × 12, drawn on the front plane and standing 12 deep: six faces, `near`,
+/// `far` and one per side of the outline.
+const BLOCK: &str = "unit mm\nuse std\nin std.front {\n\
+    b0 := point\nb1 := point\nb2 := point\nb3 := point\n\
+    fix((0, 0)) b0\nfix((40, 0)) b1\nfix((40, 24)) b2\nfix((0, 24)) b3\n\
+    (south := line(b0, b1)) -> (east := line(b1, b2)) -> (north := line(b2, b3)) -> \
+    (west := line(b3, b0)) -> close\n\
+    outline := face(south, east, north, west)\n}\n\
+    block := solid(outline, depth: 12mm)\n";
+
+/// How many points the elaboration named ending `.{last}`.
+fn made(e: &Elaborated, last: &str) -> usize {
+    (0..e.sketch.points.len())
+        .filter_map(|i| e.map.name_of(gcs_core::model::EntRef::point(i)))
+        .filter(|n| n.ends_with(&format!(".{last}")))
+        .count()
+}
+
+/// **Faces by identity** (#267): over a solid's faces, `b != a` keeps every ordered pair of two
+/// faces (6 × 5), `c in X` the faces among `X`'s, and either joins numbers and identities under
+/// `and`, `or` and `not` alike — decided where the copies are made, once the faces are named.
+#[test]
+fn a_when_over_faces_keeps_copies_by_what_they_stand_for() {
+    let count = |body: &str, last: &str| {
+        let (e, d) = read(&format!("{BLOCK}k := 2\n{body}"));
+        assert!(d.is_empty(), "{body}: {d:?}");
+        made(&e, last)
+    };
+    let pairs = "repeat a in block {\nrepeat b in block {\nwhen b != a {\nm := point\n}\n}\n}\n";
+    assert_eq!(count(pairs, "m"), 30);
+    let same = "repeat a in block {\nrepeat b in block {\nwhen b == a {\nm := point\n}\n}\n}\n";
+    assert_eq!(count(same, "m"), 6);
+    let among = "repeat c in block {\nwhen c in block.near or c in block.far {\nn := point\n}\n}\n";
+    assert_eq!(count(among, "n"), 2);
+    let mixed = "repeat c in block {\nwhen not c in block.near and k > 1 {\nn := point\n}\n}\n";
+    assert_eq!(count(mixed, "n"), 5);
+    let off = "repeat c in block {\nwhen c != block.near and k > 2 {\nn := point\n}\n}\n";
+    assert_eq!(count(off, "n"), 0);
+}
+
+/// **Points by identity**: a component's formals stand for what its call gave them, so a `when`
+/// over them asks of the arguments — `Pair(a, b)` draws its link, `Pair(a, a)` does not — and
+/// what it makes keeps the instance's name (`s.link`).
+#[test]
+fn a_when_compares_formals_by_what_they_were_given() {
+    let doc = "unit mm\nuse std\n\
+        component Pair(p: point, q: point) {\n\
+          when p != q {\n\
+            link := line(p, q)\n\
+          }\n\
+          when p == q {\n\
+            lone := point hint((1, 1))\n\
+          }\n\
+        }\n\
+        in std.front {\n\
+          a := point\n\
+          fix((0, 0)) a\n\
+          b := point hint((5, 0))\n\
+          s := Pair(a, b)\n\
+          t := Pair(a, a)\n\
+        }\n";
+    let (e, d) = read(doc);
+    assert!(d.is_empty(), "{d:?}");
+    assert!(e.map.ent_named("s.link").is_some(), "two points, a link between them");
+    assert!(e.map.ent_named("t.link").is_none(), "one point twice: no link");
+    assert!(e.map.ent_named("t.lone").is_some() && e.map.ent_named("s.lone").is_none());
+}
+
+/// **Identity refused**: a number against something drawn (E103), something drawn compared as a
+/// number (E103), `in` over what names no faces (E103), and a name that stands for nothing
+/// (E101).  None makes its block.
+#[test]
+fn an_identity_is_between_two_drawn_things() {
+    let refused = |cond: &str, code: &str, words: &str| {
+        let src = format!("unit mm\nuse std\nw := 2mm\nin std.front {{\n\
+                           a := point\nfix((0, 0)) a\nb := point hint((3, 0))\n\
+                           when {cond} {{\nq := point hint((8, 3))\n}}\n}}\n");
+        let (e, d) = read(&src);
+        assert!(
+            d.iter().any(|m| m.starts_with(code) && m.contains(words)),
+            "{cond}: expected {code} saying {words:?}: {d:?}"
+        );
+        assert!(point(&e, "q").is_none(), "a refused block makes nothing");
+    };
+    refused("w != a", "E103", "`w` is a number and `a` is drawn");
+    refused("a > 0mm", "E103", "`a` is drawn, not a number");
+    refused("a in b", "E103", "`b` names no faces");
+    refused("a != nothing", "E101", "`nothing` is not a number here");
+    refused("a in nothing", "E101", "`nothing` is not a number here");
+    // and the comparison holds as the two stand
+    let (e, d) = read("unit mm\nuse std\nin std.front {\na := point\nfix((0, 0)) a\n\
+                       b := point hint((3, 0))\nwhen a != b {\nq := point hint((8, 3))\n}\n}\n");
+    assert!(d.is_empty(), "{d:?}");
+    assert!(point(&e, "q").is_some());
+}
+
+/// The condition reads `in` as membership, a name on each side.
+#[test]
+fn in_is_a_name_among_another() {
+    let mm = Units::with_length("mm").unwrap();
+    let c = expr::parse_condition_in("c in B and c != a", mm).unwrap();
+    let want = expr::Cond::And(
+        Box::new(expr::Cond::In("c".into(), "B".into())),
+        Box::new(expr::Cond::Cmp(expr::Cmp::Ne, expr::Ast::Var("c".into()), expr::Ast::Var("a".into()))),
+    );
+    assert_eq!(c, want);
+    assert!(expr::parse_condition_in("c in 3", mm).is_err(), "a name, not a number");
+    // and `decide`, which knows only numbers, refuses it
+    assert!(expr::decide(&c, &BTreeMap::new()).is_err());
 }

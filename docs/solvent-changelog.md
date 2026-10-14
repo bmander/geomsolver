@@ -4,6 +4,18 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.90] `when` is the one conditional.** A `when`'s condition compares two drawn things by
+**identity** — `a != b`, they stand for different things (an entity or a face, through every
+formal and binder), `a == b`, the same — and `c in B` asks whether `c` is one of the faces `B`
+names, joined with numbers' comparisons by `and`, `or` and `not` (§12.9). So a block over a
+solid's faces keeps the copies it wants by a `when` in its body: `repeat b in B { when b != a
+{ … } }`. The filter after the face path, `repeat b in B if b != a { … }` (0.69), is retired and
+is a syntax error naming the `when`. A number against something drawn is **E103**. A switch is
+written `when flag == 1 { … }`, not `repeat flag { … }` over a count of zero or one, and a
+conjunction `when a == 1 and b == 1`, not `repeat a * b`: what a `when` makes keeps its name
+(`rod1.sm`, `crank.t1.pin`) where the `repeat` named a copy (`rod1.sm[0]`). The engine, the
+V-twin and the twist drill are rewritten so.
+
 **[0.89] A plane's normal is a member.** `P.normal` is the axis along `P.u × P.v` through
 `P.origin`, read wherever an axis is: `l parallel P.normal`, `t perpendicular std.front.normal`,
 `Q := plane(u: P.normal, v: P.u)`, `hint(dir: P.normal)` (§6.7). It adds no freedom and is never

@@ -131,7 +131,7 @@ repeat N [as i] { ... }                 N unrelated copies                      
 cycle N [as i] { ... }                  N copies that close; `next`, `prev` in scope
 ring N about C { ... }                  N copies, each the first turned about C
 repeat e in CHAIN [as i] { ... }        a copy per link of a named chain (`cycle e in` closes)
-repeat a in SOLID [if ...] { ... }      a copy per face of a solid                   (1.14)
+repeat a in SOLID { ... }               a copy per face of a solid                   (1.14)
 when COND { ... }                       made once where COND holds, else not at all  (1.7)
 LHS <= RHS | LHS >= RHS                 in a set's body: a bound on measurements     (1.14)
 NAME := INSTANCE.POINT over FORMAL in (A, B)   a curve                               (1.10)
@@ -402,9 +402,13 @@ a `cycle` wraps, closing the loop with no `close`; a `repeat` leaves its last jo
 **A block made or not.** `when COND { … }` makes its body once where the condition holds and not
 at all where it does not, decided over the numbers in scope before the solve: comparisons (`<`,
 `<=`, `>`, `>=`, `==`, `!=`) of two numbers of one dimension — `relief > 0mm`, never `relief > 0`
-(E103) — joined by `and`, `or` and `not`. There is no copy: what the body declares keeps its own
-name (`q`, `t.tip`, never `q[0]`), and is undefined where the block is not made. Refused: an
-unknown of the drawing in the condition (E040), an index, a trailing joint.
+(E103) — joined by `and`, `or` and `not`. Two drawn things compare by **identity**: `a != b`
+holds where the names stand for different things (a formal is what its call gave), and `c in B`
+where `c` is one of the faces `B` names (1.14). There is no copy: what the body declares keeps
+its own name (`q`, `t.tip`, never `q[0]`), and is undefined where the block is not made. Refused:
+an unknown of the drawing in the condition (E040), a number against something drawn (E103), an
+index, a trailing joint. `when` is the one conditional: write a switch as `when flag == 1 { … }`,
+never `repeat flag { … }`, and two as `when a == 1 and b == 1`.
 
 ```
 unit mm
@@ -935,8 +939,8 @@ Views carry no place on paper: the `.svd` places each.
 
 - **`in top { … }`** writes membership once for every declaration inside. An instance joins a view
   whole: `t := Tooth(…) in top`. Inside a component, `in view { … }` over plane formals lets a part
-  carry its own views (`engine/conrod.sv`), and `repeat flag { … }` over a 0/1 `Int` formal omits a
-  view an instance does not show in.
+  carry its own views (`engine/conrod.sv`), and `when flag == 1 { … }` over a 0/1 `Int` formal
+  omits a view an instance does not show in.
 - A view's attitude may be an unknown: build it on axes the solve turns (2.13, 2.14). Planes and
   axes are settled before the main solve and still move with it.
 
@@ -1322,7 +1326,8 @@ They are written in Solvent (`rust/lib/std.sv`), from region bodies you can writ
 | `angle(a, b, at: p) <= 180deg` | at a convex edge (the material's angle there) |
 | `p inside crease.ends` | stopped by the faces the edge ends on (none at a tangent seam) |
 | `meeting := { q \| q coincident a.surface; q coincident b.surface; q inside crease.ends }` | where the surfaces meet, short of where the edge ends |
-| `repeat a in A { repeat b in B if b != a { … } }` | a copy per pair of faces |
+| `repeat a in A { repeat b in B { when b != a { … } } }` | a copy per pair of faces, each made where the two differ |
+| `when c in B and c != a { … }` | made where `c` is one of `B`'s faces and not `a` |
 | `taken := solid(run)`, `taken cut A.body` | a solid of a set, cut from the body `A`'s faces are of |
 
 `.ends`, `.surface` and `.body` are members only past a set or a solid where nothing declared

@@ -1,6 +1,7 @@
 //! Scoped scalar definitions, dimensional evaluation and text substitution.
 
 use super::*;
+use crate::expr::{Ast, Cmp, Cond};
 
 /// The drawing's unknown a declared number stands for when nothing binds it — a formal no call
 /// binds, or an input with no value (`param beta: Angle`) — under its declared dimension.
@@ -43,43 +44,114 @@ fn out_of_reach(name: &str, vals: &BTreeMap<String, Aff>, scope: &Scope) -> Opti
     None
 }
 
+/// What a `when` asks the walk about names that are not numbers (#267): what one stands for,
+/// as one absolute name, and the faces one names.
+pub(super) trait Names {
+    fn stands(&self, name: &str) -> Option<String>;
+    fn faces(&self, name: &str) -> Option<Vec<String>>;
+}
+
 /// Whether a `when`'s condition holds over the numbers in scope (#210), or the code and the
 /// words for why it cannot be decided: a name nothing in scope gives a number is E101, one that
 /// is or reads an unknown of the drawing E040 (the block is made or not before there is a solve
-/// to give it a number), two dimensions compared E103, a measurement E107.
+/// to read), two dimensions or a number that is no comparison E103, a measurement E107.
+///
+/// A name that is no number may still be compared for **identity** (#267): `a != b` holds where
+/// the two stand for different things (`Names::stands`), `c in B` where what `c` stands for is
+/// one of the faces `B` names.  A number on one side and geometry on the other is E103.
 pub(super) fn condition(
     text: &str,
     env: &BTreeMap<String, Aff>,
     scope: &Scope,
     units: Units,
+    names: &dyn Names,
 ) -> Result<bool, (Code, String)> {
     let said = |code, e: String| (code, format!("`{text}`: {e}"));
     let c = expr::parse_condition_in(text, units).map_err(|e| said(Code::E103, e))?;
-    for name in c.deps() {
-        match env.get(&name).map(|a| a.free.as_deref()) {
-            None => {
-                let why = out_of_reach(&name, env, scope).map(|(_, why)| why).unwrap_or_else(|| {
-                    format!("`{name}` is not a number here — nothing in scope gives it one")
-                });
-                return Err((Code::E101, why));
-            }
-            Some(Some(u)) => {
-                let what = if u == name {
-                    format!("`{name}` is")
-                } else {
-                    format!("`{name}` reads `{u}`,")
-                };
-                return Err((Code::E040, format!(
-                    "{what} an unknown of the drawing, and a `when` is decided before the solve: \
-                     compare numbers the document states"
+    holds(&c, env, scope, names).map_err(|(code, e)| said(code, e))
+}
+
+/// One condition of a `when`, decided: identities by what names stand for, comparisons of
+/// numbers by `expr::decide`.  Both sides of an `and` or an `or` are worked out, so a mistake a
+/// short circuit would skip is still said.
+fn holds(
+    c: &Cond,
+    env: &BTreeMap<String, Aff>,
+    scope: &Scope,
+    names: &dyn Names,
+) -> Result<bool, (Code, String)> {
+    let nothing = |name: &str| {
+        out_of_reach(name, env, scope).unwrap_or_else(|| (Code::E101, format!(
+            "`{name}` is not a number here, nor anything drawn — nothing in scope gives it one"
+        )))
+    };
+    let stands = |name: &str| names.stands(name).ok_or_else(|| nothing(name));
+    Ok(match c {
+        Cond::And(a, b) => {
+            let (p, q) = (holds(a, env, scope, names), holds(b, env, scope, names));
+            p? && q?
+        }
+        Cond::Or(a, b) => {
+            let (p, q) = (holds(a, env, scope, names), holds(b, env, scope, names));
+            p? || q?
+        }
+        Cond::Not(a) => !holds(a, env, scope, names)?,
+        Cond::In(x, y) => {
+            let me = stands(x)?;
+            let Some(faces) = names.faces(y) else {
+                if names.stands(y).is_none() && !env.contains_key(y.as_str()) {
+                    return Err(nothing(y));
+                }
+                return Err((Code::E103, format!(
+                    "`{y}` names no faces: `{x} in {y}` asks whether `{x}` is one of a solid's \
+                     faces, as `B` is in `A round(r) B`"
+                )));
+            };
+            faces.contains(&me)
+        }
+        Cond::Cmp(op @ (Cmp::Eq | Cmp::Ne), Ast::Var(x), Ast::Var(y))
+            if !env.contains_key(x.as_str()) || !env.contains_key(y.as_str()) =>
+        {
+            if let Some(n) = [x, y].into_iter().find(|n| env.contains_key(n.as_str())) {
+                let other = if n == x { y } else { x };
+                stands(other)?;
+                return Err((Code::E103, format!(
+                    "`{n}` is a number and `{other}` is drawn: `{}` compares two numbers, or two \
+                     names for what they stand for",
+                    op.text()
                 )));
             }
-            Some(None) => {}
+            (stands(x)? == stands(y)?) == (*op == Cmp::Eq)
         }
-    }
-    expr::decide(&c, env).map_err(|e| {
-        let code = if e.fault == expr::Fault::Measure { Code::E107 } else { Code::E103 };
-        said(code, e.message)
+        Cond::Cmp(..) => {
+            for name in c.deps() {
+                match env.get(&name).map(|a| a.free.as_deref()) {
+                    None if names.stands(&name).is_some() => {
+                        return Err((Code::E103, format!(
+                            "`{name}` is drawn, not a number: a drawn thing is compared with \
+                             another by `==` or `!=`, or put among faces by `in`"
+                        )));
+                    }
+                    None => return Err(nothing(&name)),
+                    Some(Some(u)) => {
+                        let what = if u == name {
+                            format!("`{name}` is")
+                        } else {
+                            format!("`{name}` reads `{u}`,")
+                        };
+                        return Err((Code::E040, format!(
+                            "{what} an unknown of the drawing, and a `when` is decided before the \
+                             solve: compare numbers the document states"
+                        )));
+                    }
+                    Some(None) => {}
+                }
+            }
+            expr::decide(c, env).map_err(|e| {
+                let code = if e.fault == expr::Fault::Measure { Code::E107 } else { Code::E103 };
+                (code, e.message)
+            })?
+        }
     })
 }
 

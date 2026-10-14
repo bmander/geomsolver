@@ -4,7 +4,7 @@
 // block per view, over planes the assembly hands it — and the projections that tie those views
 // together, so the whole design of the rod is this file: nothing about it is written in the view
 // modules, which draw only the castings a view is of.  `draw_end`, `draw_side` and `draw_sec` say
-// which of its pictures an instance draws (0 or 1, as `repeat` counts): an inline four's end
+// which of its pictures an instance draws (1 draws it, under a `when`): an inline four's end
 // section shows one rod, its side section four, and only one rod need carry the shank section.
 //
 // Looking along the crankshaft (the end view) the rod is seen in its plane of swing: the big-end
@@ -40,7 +40,7 @@ component ConRod(end: plane, side: plane, secv: plane,
   hM := (hB + hS) / 2    // the shank's half-width at mid-length, where the section is cut
   oil := 1.5mm           // the oil passage, half its bore
 
-  repeat draw_end {
+  when draw_end == 1 {
     in end {
       // the small end rides the bore axis one rod length from the pin
       sm := point hint((pin.x, pin.y + dims.L))
@@ -144,7 +144,7 @@ component ConRod(end: plane, side: plane, secv: plane,
     }
   }
 
-  repeat draw_side {
+  when draw_side == 1 {
     in side {
       // the big end: a block `wB` along the axis, the parting line across it, a bolt down it
       ba := point hint((pin_s.x - wB / 2, pin_s.y - eB))
@@ -186,12 +186,12 @@ component ConRod(end: plane, side: plane, secv: plane,
   }
 
   // the rod's two views agree on where the small end is
-  repeat draw_end * draw_side {
-    sm[0] project sm_s
+  when draw_end == 1 and draw_side == 1 {
+    sm project sm_s
   }
 
   // section A-A: the shank's I-section at mid-length, about `at`
-  repeat draw_sec {
+  when draw_sec == 1 {
     in secv {
       q0 := engine.parts.At(at, dx: -fl / 2, dy: -hM)
       q1 := point hint((at.x + fl / 2, at.y - hM))

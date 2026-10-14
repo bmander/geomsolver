@@ -219,9 +219,16 @@ impl Cmp {
 /// **A condition** (#210): comparisons of numbers joined by `and`, `or` and `not` — what `when
 /// COND { … }` decides a block by.  Not an `Ast`: a truth is no number, so no arithmetic can read
 /// one and no number slot can hold one; only `parse_condition_in` makes one.
+///
+/// Two names may also be compared for **identity** (#267): `a == b` and `a != b` where a side
+/// names geometry rather than a number, and `c in B`, a name among the faces another names.
+/// What a name stands for is the elaborator's to say, so `decide` refuses those, and
+/// `flatten::values::condition` decides them.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Cond {
     Cmp(Cmp, Ast, Ast),
+    /// `c in B`: the name on the left among what the name on the right stands for.
+    In(String, String),
     And(Box<Cond>, Box<Cond>),
     Or(Box<Cond>, Box<Cond>),
     Not(Box<Cond>),
@@ -246,6 +253,10 @@ impl Cond {
                 b.collect_deps(out);
             }
             Cond::Not(a) => a.collect_deps(out),
+            Cond::In(a, b) => {
+                out.insert(a.clone());
+                out.insert(b.clone());
+            }
         }
     }
 }

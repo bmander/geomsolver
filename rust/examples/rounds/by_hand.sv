@@ -35,10 +35,12 @@ component Rolled(a: face, b: face, r: Length) := { p |
 
 A rolled(r) B := {
   repeat a in A {
-    repeat b in B if b != a {
-      run := Rolled(a, b, r: r)
-      taken := solid(run)
-      taken cut A.body
+    repeat b in B {
+      when b != a {
+        run := Rolled(a, b, r: r)
+        taken := solid(run)
+        taken cut A.body
+      }
     }
   }
 }

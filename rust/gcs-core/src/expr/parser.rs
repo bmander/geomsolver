@@ -353,10 +353,25 @@ impl Parser {
     }
 
     fn compared(&mut self) -> Result<Cond, String> {
+        // `c in B` (#267): a name among the things another names, which only the elaborator
+        // can tell — so both sides are names, and neither is arithmetic
+        if let (Tok::Ident(x), Some(Tok::Ident(w))) =
+            (self.peek().clone(), self.toks.get(self.pos + 1).map(|t| &t.0))
+        {
+            if w == "in" {
+                self.next();
+                self.next();
+                let Tok::Ident(y) = self.peek().clone() else {
+                    return Err(format!("expected a name after `{x} in` at {}", self.here()));
+                };
+                self.next();
+                return Ok(Cond::In(x, y));
+            }
+        }
         let lhs = self.expr()?;
         let Tok::Cmp(op) = *self.peek() else {
             return Err(format!(
-                "expected a comparison (`<`, `<=`, `>`, `>=`, `==` or `!=`) at {}",
+                "expected a comparison (`<`, `<=`, `>`, `>=`, `==` or `!=`) or `in` at {}",
                 self.here()
             ));
         };

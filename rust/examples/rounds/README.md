@@ -15,7 +15,7 @@ What the words are built from:
 - **Where an edge ends**: `p inside crease.ends`, so a run along an edge stops at the faces it
   ends on.
 - **The material's angle at an edge**: `angle(a, b, at: p) <= 180deg` holds at a convex edge.
-- **Repetition over a solid's faces**: `repeat a in A { repeat b in B if b != a { … } }`, and a
+- **Repetition over a solid's faces**: `repeat a in A { repeat b in B { when b != a { … } } }`, and a
   relation word whose body makes a solid and cuts it from (or adds it to) the body the faces are
   of.
 
