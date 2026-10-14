@@ -4,7 +4,7 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
-**[0.96] A face that runs: the face family.** `duct := solid(Station(guide, …).f over s in (a,
+**[0.97] A face that runs: the face family.** `duct := solid(Station(guide, …).f over s in (a,
 b))` is the solid a face of an instance sweeps as one of the instance's numbers runs — §6.5's
 curve (`Involute(…).p over u in (…)`) one dimension up (§6.9). The instance is written in place
 and never drawn; the running formal is left unbound by the call and is **held**, never an
@@ -19,6 +19,16 @@ Caps are `start` and `end`; walls are named by the section's edges under the ins
 (`body.sec.ab`). Calling the instance with the running formal bound is **E103**, an interval run
 backwards **E080**, and a drawn station (`solid(st.f over s in …)`) a syntax error until it is
 written (L10). (Issue #243, L1.)
+
+**[0.96] A free curve is an edge of a face.** `rope := curve(a, b)` runs from `a` to `b`, so it
+stands in a face whole, between those two points, as a line or a clamped spline does (§6.8):
+`face(rope, deck)`, `face(rope, -> close)` — a hanging rope and its chord swept into a solid.
+Through 0.95 a free curve was read as every other curve, with no ends of its own, so naming it
+alone was E080 asking for a stretch, and the stretch `rope from a to b`, asking `a` to be held
+on the curve, could only be reached by pegging the rope at its own ends. A stretch from a free
+curve's own end is now E080 naming the whole curve instead, and a stretch between two points
+held on one (`rope from m to n`) is that curve cut, where it had been read as a second free curve
+with no energy and so no shape.
 
 **[0.95] A set's body holds of a point of its plane; a call gives every entity, or owns a
 point.** A plane's membership stated by a set's body (§6.21) of a point drawn in that plane

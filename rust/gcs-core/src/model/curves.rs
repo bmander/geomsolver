@@ -276,10 +276,26 @@ impl Sketch {
     }
 
     /// A free curve's shape where its ends and length are now, through its pegs — the one solve
-    /// its contacts and its drawing share (`extremal::shape_for`) — with its Lagrangian.
+    /// its contacts and its drawing share (`extremal::shape_for`) — with its Lagrangian.  A
+    /// face's stretch of one is the curve it was cut from, so it has that curve's shape.
     pub fn curve_shape(&self, i: usize) -> Option<(crate::extremal::Lagrangian, crate::extremal::Shape)> {
+        if let Some(t) = self.curves[i].trim {
+            return self.curve_shape(t.of as usize);
+        }
         let k = self.extremal_consts(i)?;
         crate::extremal::shape_for(&k, &self.extremal_ends(i))
+    }
+
+    /// The two points a curve runs between, first to second, where it has them: a face's stretch
+    /// runs between the points it was trimmed to, and a free curve (`rope := curve(a, b)`)
+    /// between the two it was declared over.  Every other curve runs on past where any point is.
+    pub fn curve_ends(&self, i: usize) -> Option<(u32, u32)> {
+        let cv = self.curves.get(i)?;
+        match (cv.trim, &cv.args[..]) {
+            (Some(t), _) => Some((t.from, t.to)),
+            (None, [a, b]) if self.curve_extremal(i) => Some((a.idx, b.idx)),
+            _ => None,
+        }
     }
 
     /// The interval a curve is drawn over: the one written, or for a trim the parameters of its
@@ -457,7 +473,8 @@ impl Sketch {
     /// within `tol` of it (a cubic stretch centred on an inflection has its middle on its chord, so
     /// the quarters are asked too). A user-written curve has no basis to refine against, so uniform
     /// is the honest start. At the cap, `1 << 14` chords, the finest sampling is returned as it is.
-    /// Runs from the interval's first end to its second.
+    /// Runs from the interval's first end to its second; empty for a curve with no shape to
+    /// sweep (a free curve whose energy found none).
     pub fn curve_polyline_within(&self, i: usize, tol: f64) -> Vec<(f64, (f64, f64))> {
         let (a, b) = self.curve_domain(i);
         let (lo, hi) = (a.min(b), a.max(b));
@@ -469,6 +486,7 @@ impl Sketch {
         let mut n = CURVE_STEPS;
         let (samples, count) = loop {
             let fine = self.curve_sweep(i, lo, hi, 4 * n);
+            if fine.len() <= 4 * n { return Vec::new() }
             let worst = (0..n).flat_map(|k| (1..4).map(move |j| (k, j)))
                 .map(|(k, j)| off(fine[4 * k], fine[4 * k + 4], fine[4 * k + j]))
                 .fold(0.0, f64::max);

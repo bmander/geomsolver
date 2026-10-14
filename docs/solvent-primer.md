@@ -1120,7 +1120,8 @@ The face and solid added nothing to the rectangle's six unknowns and six equatio
   *edges* is E080 (edges out of order), and so is an edge between two gaps.
 - **A curve stands in a face as a stretch**, `k from a to b`, between two points held on it by
   contacts; one stretch closed by `-> close` is a loop with its chord. A clamped spline ends at its
-  end control points, so it is an ordinary edge.
+  end control points, so it is an ordinary edge, and so is a free curve (`rope := curve(a, b)`) at
+  the two points it is written with: `face(rope, deck)` or `face(rope, -> close)` (1.10).
 
 ```
 unit mm
@@ -1163,7 +1164,7 @@ k := Par(o).p over u in (-2mm, 2mm)
 - **Guided sweep or loft** along a directed line or circular arc: `solid(section, along: guide)`,
   `solid(inlet.profile, outlet.profile, along: guide)`. Sections stand square to the guide's
   tangents; holes pair in written order; caps are `start` and `end` (`solid_elbow`, `solid_loft`).
-- **Face family** (0.96): `body := solid(Reducer(guide, std.z, inlet: 24mm, outlet: 12mm, wall:
+- **Face family** (0.97): `body := solid(Reducer(guide, std.z, inlet: 24mm, outlet: 12mm, wall:
   2mm).sec.profile over s in (0, 1))` is the face `sec.profile` of the instance as its formal `s`
   runs (`docs/lofts/l0/reducer.sv`). The instance is written in place, leaves `s` unbound and is
   never drawn; it is solved at every station, `s` a number there, so its body may use any

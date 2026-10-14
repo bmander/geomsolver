@@ -94,7 +94,8 @@ fn build_loop(
     let items = loop_items(sk, res, &refs, closed, &mut report)?;
     // **a circle is a loop by itself, and may not stand in one** — and so is a closed curve
     let lone_circle = items.len() == 1 && (items[0].entity.kind == EntKind::Circle
-        || (items[0].entity.kind == EntKind::Curve && sk.curves[items[0].entity.i()].trim.is_none()));
+        || (items[0].entity.kind == EntKind::Curve
+            && sk.curve_ends(items[0].entity.i()).is_none()));
     if !lone_circle && items.iter().any(|i| i.entity.kind == EntKind::Circle) {
         report(Code::E080, span, "a circle is a whole loop: it stands in a face by itself".into());
         return None;
@@ -210,6 +211,14 @@ fn loop_items(
                         r.root.text, xr.root.text, x.kind.a()));
                     return None;
                 }
+                // a free curve's own end is no point held on it: the whole curve is the edge
+                if sk.contact_param(x.idx, e.idx).is_none()
+                    && sk.curve_ends(e.i()).is_some_and(|(a, b)| x.idx == a || x.idx == b) {
+                    report(Code::E080, xr.span, format!("`{}` is an end of `{}`: a free curve is an \
+                        edge between its ends, so write `{}` alone",
+                        xr.root.text, r.root.text, r.root.text));
+                    return None;
+                }
                 if sk.contact_param(x.idx, e.idx).is_none() {
                     report(Code::E080, xr.span, format!("`{}` is not held on `{}`: a face runs along a curve \
                         between points on it, so write `{} coincident {}`", xr.root.text, r.root.text,
@@ -246,7 +255,10 @@ fn loop_items(
             EntKind::Line | EntKind::Arc | EntKind::Circle | EntKind::Spline | EntKind::Point => {
                 items.push(Item { entity: e, name });
             }
-            EntKind::Curve if trim.is_some() => items.push(Item { entity: e, name }),
+            // a stretch, or a free curve: an edge between its two ends
+            EntKind::Curve if sk.curve_ends(e.i()).is_some() => {
+                items.push(Item { entity: e, name })
+            }
             // a curve standing alone that comes back to where it started is a whole loop, as a
             // circle is (every reader of the loop asks again of the solved curve)
             EntKind::Curve if refs.len() == 1 && !closed && sk.curve_closed(e.i()) => items.push(Item { entity: e, name }),

@@ -144,7 +144,7 @@ placement carries inside the blank; CLI test readers zero the offset.
   E080 a face that is not a loop on one plane, E081 a revolution's axis, E082 a face a body no
   longer has, E084 a section cut across its own view.
 
-- **A face family is a face that runs** (§6.9 [0.96], `solid/family.rs`; #243 L1).
+- **A face family is a face that runs** (§6.9 [0.97], `solid/family.rs`; #243 L1).
   `solid(I(…).f over s in (a, b))` parses to `Sweep::Family(FamilySpec)` (`parser::family`, by
   an `over` inside `solid(`'s own brackets, `family_ahead`); the flattener walks the instance
   **drawn**, under a key the source cannot write (`#f<offset>.`, so its declarations are

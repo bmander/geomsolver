@@ -127,7 +127,9 @@ pub(super) fn loop_poly(sk: &Sketch, edges: &[EntRef], edge_names: &[String], pl
     }
 
     // a closed curve standing alone is the whole loop, walked within the sheet's sagitta
-    if edges.len() == 1 && edges[0].kind == EntKind::Curve && sk.curves[edges[0].i()].trim.is_none() {
+    if edges.len() == 1 && edges[0].kind == EntKind::Curve
+        && sk.curve_ends(edges[0].i()).is_none()
+    {
         let i = edges[0].i();
         if !sk.curve_closed(i) {
             return None;
@@ -184,7 +186,7 @@ pub(super) fn walk_loop(sk: &Sketch, edges: &[EntRef]) -> Option<Vec<(EntRef, u3
 pub(super) fn curved_span(sk: &Sketch, e: EntRef, from: u32) -> Option<(EntRef, [f64; 2])> {
     let (a, b) = match e.kind {
         EntKind::Spline => (crate::curve::domain(sk, e.i()), sk.splines[e.i()].ctrl[0] == from),
-        EntKind::Curve => (sk.curve_domain(e.i()), sk.curves[e.i()].trim?.from == from),
+        EntKind::Curve => (sk.curve_domain(e.i()), sk.curve_ends(e.i())?.0 == from),
         _ => return None,
     };
     let ((lo, hi), forward) = (a, b);
@@ -273,12 +275,13 @@ fn walk_edge(
             Some(())
         }
         EntKind::Curve => {
-            // a face's stretch of a curve, from `from` to `to` in its own sense, chords within
-            // the sheet's flatness
-            let t = sk.curves[e.i()].trim?;
+            // a face's stretch of a curve, or a free curve, from `from` to `to` in its own sense,
+            // chords within the sheet's flatness (none where it has no shape to walk)
+            let (first, _) = sk.curve_ends(e.i())?;
             let mut ring: Vec<(f64, f64)> = sk.curve_polyline_within(e.i(), crate::curve::flatness(unit))
                 .into_iter().map(|(_, p)| p).collect();
-            if t.from != from { ring.reverse(); }
+            if ring.len() < 2 { return None; }
+            if first != from { ring.reverse(); }
             for p in ring.iter().take(ring.len() - 1) {
                 pts.push(*p);
                 of.push((idx, true));

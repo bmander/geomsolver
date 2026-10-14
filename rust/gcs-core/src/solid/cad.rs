@@ -354,11 +354,11 @@ pub const FIT_MM: f64 = 1e-4;
 /// end to second, its parameter the fraction of the curve's at every sample (so a loft pairs the
 /// fit where it pairs the curve): the samples doubled until every sample halfway between two it
 /// passes through is within `tol` of it, measured by projecting that sample onto the fit. A
-/// trimmed stretch's first and last poles are its end points themselves, which its neighbours
-/// share. The poles, the knots and the error measured; `None` past 4096 samples.
+/// trimmed stretch's or a free curve's first and last poles are its end points themselves, which
+/// its neighbours share. The poles, the knots and the error measured; `None` past 4096 samples.
 pub fn fit_curve(sk: &Sketch,i: usize,tol: f64) -> Option<(Vec<(f64,f64)>,Vec<f64>,f64)> {
     let (a,b) = sk.curve_domain(i);
-    let ends = sk.curves[i].trim.map(|t| (sk.point_xy(t.from as usize),sk.point_xy(t.to as usize)));
+    let ends = sk.curve_ends(i).map(|(p,q)| (sk.point_xy(p as usize),sk.point_xy(q as usize)));
     fit_stretch(sk,i,(a,b),ends,tol)
 }
 
@@ -464,7 +464,7 @@ fn profile(sk: &Sketch,index: usize,w: &Writer) -> Result<Json,String> {
                 // until it is within `FIT_MM` of the curve, and what the fit measured
                 let fitted = |(poles,knots,err): (Vec<(f64,f64)>,Vec<f64>,f64)| bspline_edge(&poles,&knots,err*scale,&lift);
                 let unfitted = || format!("`{}`: a curve in its profile could not be fitted within {FIT_MM} mm",face.name);
-                if sk.curves[e.i()].trim.is_none() {
+                if sk.curve_ends(e.i()).is_none() {
                     // a closed curve standing alone: two halves meeting at two vertices, so no side
                     // of the prism is a closed surface with a seam for a Boolean to arrange
                     if !sk.curve_closed(e.i()) {

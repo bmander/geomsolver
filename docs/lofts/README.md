@@ -14,7 +14,7 @@ Solvent. Rust grows only three kinds of things:
 ## L1: the face family (2026-10-14)
 
 **Verdict: the primitive stands.** `solid(I(…).f over s in (a, b))` parses, elaborates and
-evaluates (Solvent 0.96, §6.9); every L0 program the language can write today sweeps its closed
+evaluates (Solvent 0.97, §6.9); every L0 program the language can write today sweeps its closed
 form (`rust/gcs-core/tests/face_family.rs`):
 
 | program | solid | closed form (mm³) | faceted (mm³) |
