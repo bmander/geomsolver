@@ -46,7 +46,8 @@ columns (lifts, an axis's place and direction, a free number) and constants (`La
 (two) and `EnvelopeCurvatureAt` (three: Meusnier, `x + (n − (n·m)m)/κₙ`, `κₙ` from `−dn·dX` along
 two directions of the place square to `∇g`) are built at their widths (`KernelKey::Envelope`); the
 four with `at:` share the contact's place (`solver.md`, #251). Seeds: `held::seed`, a coarse search
-over the roll interval then a downhill walk, remembered across a contact's three slots. A set's
+over the roll interval then `newton::dogleg` on the four rows (`Seeding`), remembered across a
+contact's three slots. A set's
 envelope has no chart after the solve (`GeneratedEnvelope::named` refuses it; `program::solid_diagnostics`
 skips it); an envelope's `surface` and `motion` are read by name (`resolve::follow`), the surface
 off the declaration until bound. `tests/held_envelopes.rs` is the gate — the frame against

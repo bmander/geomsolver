@@ -800,44 +800,27 @@ pub fn read(k: &[f64], parts: &[f64], place: [f64; 3]) -> Option<Reading> {
     })
 }
 
-/// The normal curvature along `w` at `place` (`curvature`'s, over numbers), with respect to the
-/// reading's normal: the centre of curvature is `position + normal / κ`.
-pub fn normal_curvature(k: &[f64], parts: &[f64], place: [f64; 3], w: [f64; 3]) -> Option<f64> {
-    let l = Layout::read(k)?;
-    let mut cols = vec![0.0; l.lead];
-    cols.extend(place);
-    cols.extend_from_slice(parts);
-    let f = local(&l, &cols);
-    let kappa = curvature(&f, w);
-    kappa.is_finite().then_some(kappa)
-}
-
-/// The place on the envelope nearest `p` that a solve should start from: over the roll interval,
-/// the source's nearest point to `p` carried back by the pose, the roll where `n · ∂X/∂t` comes
-/// nearest zero there, then Gauss–Newton on `p − X` and the meshing equation together.  `None`
-/// where nothing is finite.  A seed, not a projection: no claim it is the nearest root.
+/// Where a solve holding `p` to the envelope starts: the place over a coarse grid — rolls across
+/// the interval, turns round the axis, a few spans of the meridian — whose point and meshing
+/// equation come nearest `p` and zero, then `newton::dogleg` on those four rows together (a
+/// least-squares fit where `p` is off the envelope). `None` where nothing is finite. A seed, not a
+/// projection: no claim it is the nearest root.
 pub fn seed(k: &[f64], parts: &[f64], p: [f64; 3], roll: [f64; 2]) -> Option<[f64; 3]> {
     let l = Layout::read(k)?;
     if l.lead != Contact::Point.lead() || parts.len() != l.source_width() + l.motion_width() {
         return None;
     }
-    let mut pc = vec![0.0; l.lead + 3 + parts.len()];
-    pc[..3].copy_from_slice(&p);
-    pc[l.lead + 3..].copy_from_slice(parts);
-    let residual = |place: [f64; 3], pc: &mut Vec<f64>| -> Option<[f64; 4]> {
-        pc[3..6].copy_from_slice(&place);
-        let mut out = [0.0; 4];
-        rows::<f64>(Contact::Point, pc, k, &mut out)?;
-        out.iter().all(|x| x.is_finite()).then_some(out)
-    };
+    let mut tr = Seeding { k, cols: vec![0.0; l.lead + 3 + parts.len()], j: crate::linalg::Mat::zeros(4, 3) };
+    tr.cols[..3].copy_from_slice(&p);
+    tr.cols[l.lead + 3..].copy_from_slice(parts);
     let cost = |r: [f64; 4]| r.iter().map(|x| x * x).sum::<f64>();
-    // a coarse search over the place: rolls across the interval, turns round the axis, and the
-    // meridian's parameter at a few spans
-    let scale = parts.iter().take(6).map(|x| x.abs()).fold(1.0f64, f64::max);
+    // the meridian's spans: a fraction of a line, a turn round a circle, and along a cone's or a
+    // cylinder's generator as far either way as the point is from the axis's start
+    let reach = norm3(vsub(p, [parts[0], parts[1], parts[2]])).max(1e-3);
     let us: Vec<f64> = match l.source {
         Source::Line => vec![-0.5, 0.0, 0.25, 0.5, 0.75, 1.0, 1.5],
         Source::Round => (0..12).map(|i| i as f64 * std::f64::consts::TAU / 12.0).collect(),
-        Source::Cone | Source::Cylinder => (-6..=6).map(|i| i as f64 * scale / 3.0).collect(),
+        Source::Cone | Source::Cylinder => (-6..=6).map(|i| i as f64 * reach / 3.0).collect(),
     };
     let mut best: Option<([f64; 3], f64)> = None;
     let n_roll = 25;
@@ -846,84 +829,90 @@ pub fn seed(k: &[f64], parts: &[f64], p: [f64; 3], roll: [f64; 2]) -> Option<[f6
         for b in 0..24 {
             let v = b as f64 * std::f64::consts::TAU / 24.0;
             for &u in &us {
-                if let Some(r) = residual([u, v, t], &mut pc) {
-                    let c = cost(r);
-                    if best.is_none_or(|(_, b)| c < b) {
-                        best = Some(([u, v, t], c));
-                    }
+                let r = tr.at([u, v, t]);
+                if r.iter().all(|x| x.is_finite()) && best.is_none_or(|(_, c)| cost(r) < c) {
+                    best = Some(([u, v, t], cost(r)));
                 }
             }
         }
     }
-    let (mut x, mut c) = best?;
-    // Levenberg–Marquardt on the four rows over the three numbers, differenced: a seed needs no
-    // more than a downhill walk
-    let mut lambda = 1e-3;
-    for _ in 0..100 {
-        let r = residual(x, &mut pc)?;
-        let mut jm = [[0.0; 3]; 4];
-        for q in 0..3 {
-            let h = 1e-7 * (1.0 + x[q].abs());
-            let mut y = x;
-            y[q] += h;
-            let ry = residual(y, &mut pc)?;
-            for row in 0..4 {
-                jm[row][q] = (ry[row] - r[row]) / h;
-            }
-        }
-        let mut a = [[0.0; 3]; 3];
-        let mut g = [0.0; 3];
-        for i in 0..3 {
-            for j in 0..3 {
-                a[i][j] = (0..4).map(|row| jm[row][i] * jm[row][j]).sum();
-            }
-            g[i] = (0..4).map(|row| jm[row][i] * r[row]).sum();
-        }
-        let mut stepped = false;
-        for _ in 0..10 {
-            let mut aa = a;
-            for i in 0..3 {
-                aa[i][i] += lambda * (1.0 + a[i][i]);
-            }
-            let Some(d) = solve3(aa, g) else { lambda *= 10.0; continue };
-            let y = [x[0] - d[0], x[1] - d[1], x[2] - d[2]];
-            if let Some(ry) = residual(y, &mut pc) {
-                let cy = cost(ry);
-                if cy < c {
-                    x = y;
-                    c = cy;
-                    lambda = (lambda * 0.3).max(1e-12);
-                    stepped = true;
-                    break;
-                }
-            }
-            lambda *= 10.0;
-        }
-        if !stepped || c < 1e-24 {
-            break;
-        }
-    }
-    Some(x)
+    let (start, _) = best?;
+    let mut z = start.to_vec();
+    let mut r = tr.at(start).to_vec();
+    let tol = crate::newton::Tol { ftol: 1e-12 * (1.0 + reach), xtol: 1e-14, gtol: 1e-14 };
+    crate::newton::dogleg(&mut tr, &mut z, &mut r, tol, 100, 400);
+    let x = [z[0], z[1], z[2]];
+    tr.at(x).iter().all(|v| v.is_finite()).then_some(x)
 }
 
-fn solve3(a: [[f64; 3]; 3], b: [f64; 3]) -> Option<[f64; 3]> {
-    let det = |m: [[f64; 3]; 3]| {
-        m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1]) - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
-            + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0])
-    };
-    let d = det(a);
-    if d == 0.0 || !d.is_finite() {
-        return None;
-    }
-    let mut x = [0.0; 3];
-    for c in 0..3 {
-        let mut m = a;
-        for r in 0..3 {
-            m[r][c] = b[r];
+fn norm3(a: [f64; 3]) -> f64 {
+    dot(a, a).sqrt()
+}
+
+/// A point contact's four rows over its place alone, the rest of its columns held: what `seed`
+/// walks downhill on. Its Jacobian is the kernel's, over three tangents.
+struct Seeding<'a> {
+    k: &'a [f64],
+    cols: Vec<f64>,
+    j: crate::linalg::Mat,
+}
+
+impl Seeding<'_> {
+    fn at(&mut self, place: [f64; 3]) -> [f64; 4] {
+        self.cols[3..6].copy_from_slice(&place);
+        let mut out = [0.0; 4];
+        match rows::<f64>(Contact::Point, &self.cols, self.k, &mut out) {
+            Some(()) => out,
+            None => [f64::INFINITY; 4],
         }
-        x[c] = det(m) / d;
     }
-    Some(x)
+}
+
+impl crate::newton::TrustRegion for Seeding<'_> {
+    fn n(&self) -> usize {
+        3
+    }
+    fn m(&self) -> usize {
+        4
+    }
+    fn residuals_into(&mut self, z: &[f64], out: &mut [f64]) {
+        let r = self.at([z[0], z[1], z[2]]);
+        // a trial off the finite numbers is refused, the region shrunk
+        let finite = r.iter().all(|x| x.is_finite());
+        out.copy_from_slice(&if finite { r } else { [f64::INFINITY; 4] });
+    }
+    fn jacobian_at(&mut self, z: &[f64]) {
+        let cols: Vec<Tan<3>> = self.cols.iter().enumerate().map(|(q, &x)| match q {
+            3..=5 => {
+                let mut t = Tan::cst(z[q - 3]);
+                t.g[q - 3] = 1.0;
+                t
+            }
+            _ => Tan::cst(x),
+        }).collect();
+        let mut out = [Tan::<3>::cst(0.0); 4];
+        let ok = rows(Contact::Point, &cols, self.k, &mut out).is_some();
+        for (row, v) in out.iter().enumerate() {
+            for q in 0..3 {
+                self.j.set(row, q, if ok { v.g[q] } else { f64::NAN });
+            }
+        }
+    }
+    fn jt_mul(&mut self, v: &[f64], out: &mut [f64]) {
+        out.copy_from_slice(&self.j.mul_t_vec(v));
+    }
+    fn j_mul(&mut self, v: &[f64], out: &mut [f64]) {
+        out.copy_from_slice(&self.j.mul_vec(v));
+    }
+    fn gn_step(&mut self, r: &[f64], _g: &[f64], p: &mut [f64]) {
+        if !self.j.data.iter().all(|x| x.is_finite()) {
+            p.fill(0.0);
+            return;
+        }
+        let neg: Vec<f64> = r.iter().map(|v| -v).collect();
+        let (step, _) = crate::linalg::min_norm_solve(&self.j, &neg, 1e-12);
+        p.copy_from_slice(&step);
+    }
 }
 
 /* -- reading the sketch ------------------------------------------------------------------------ */
