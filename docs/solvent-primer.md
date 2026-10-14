@@ -86,8 +86,8 @@ place needs no arithmetic:
 
 A place drawn in another view is read in space and projected into the seeded point's view. A point
 in space is seeded `hint((x, y, z))`. Seeds settle in statement order, so one reading a seed written
-below reads its provisional start. Under a `unit` line a geometry read is a length: write
-`pin.x - 10mm`. A value may **not** read geometry, since a seed must never change what a document
+below reads its provisional start. A geometry read is a length: write `pin.x - 10mm`, not
+`pin.x - 10`. A value may **not** read geometry, since a seed must never change what a document
 says. An unbound numeric formal (1.8) reads as 0 in a hint.
 
 ### 1.3 Statement forms
@@ -347,7 +347,9 @@ a distance(80mm) b
 c distance(1' 6 3/16") d            // one literal: spaces separate the parts, as in 3 1/2
 ```
 
-- **Without a `unit` line** numbers are in unnamed drawing units and a suffix is refused.
+- **Without a `unit` line** the document is in millimetres, exactly as under `unit mm`: a suffix
+  converts (`2in` is 50.8) and a geometry read is a length. The line is only written back where
+  the document had one.
 - A name takes its dimension from its value's unit, not its use: `w := 80` used as a length does
   not make `w` a length; `w := 80mm` does, as does a formal declared `Length`.
 - `3/16"` is a division; a lone fractional inch is `0.1875"` or `0 3/16"`.
@@ -633,7 +635,7 @@ its dependents (the V-twin derives its cylinder, pockets and grooves from bore, 
 use engine.dims          // engine/dims.sv beside the document or an ancestor, else the library
 use std                  // datums (1.12), std.Turned, std.CenteredRectangle, std.Polygon,
                          // std.Hex, std.Ellipse, std.Sphere/Cylinder/Cone, rounds (1.14)
-use hardware             // fasteners and fittings, in mm (needs a `unit` line)
+use hardware             // fasteners and fittings, in mm
 use std (horizontal, vertical)        // and import those two words bare
 ```
 
@@ -751,7 +753,7 @@ rope minimizes integral(p.y over p)   // ...and it hangs: its height along it le
 along `k` by arc length, `p` the point running along it; `over (p, t)` also names the unit tangent
 `t`. `EXPR` reads `p.x`, `p.y`, `t.x`, `t.y` and numbers in scope (E101 otherwise). An energy is a
 sum of such terms times numbers; `maximizes` turns the sign; statements over one curve add up.
-Under a `unit` the integrand is dimension-checked (`p.y + 1mm`, not `p.y + 1`).
+The integrand is dimension-checked (`p.y + 1mm`, not `p.y + 1`).
 
 - **What it is**: the solution of the energy's Euler–Lagrange equation from `a` landing on `b`,
   exact to the integration's accuracy. It adds no unknowns but its length, so its ends keep their

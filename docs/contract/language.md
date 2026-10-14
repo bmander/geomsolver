@@ -214,7 +214,11 @@ takes a layout naming the front datum, origin and reference axis.
   `program::build` settles seeds a second time after `solve_planes` when one crosses
   (`crosses_views`), and only then.  An unwritten arc radius settles with them (`Deferred::Radius`).
   A traced point refuses a step.  Components are closed over their arguments: only their own
-  parameters and formals are available. `module_params` exports values to importing root bodies, to
+  parameters and formals are available.  An entity argument naming nothing is said at the
+  argument (`check_aliases`; `unseen` names the component that cannot see it and the formal it
+  was for, #253), and not where the callee reads the formal: a relation reading it is not
+  stated, and a declaration's reference to it is `Expansion::quiet`, which the elaborator's E101
+  there yields to. `module_params` exports values to importing root bodies, to
   be passed explicitly. `tests/seeds.rs` and `tests/closed_scopes.rs` are the gates.
 - **A part is one component carrying `in view { … }` blocks** (Solvent §6.7, `P::in_comp`): the
   block form is allowed inside a component body (the plane is a formal) and still refused inside a

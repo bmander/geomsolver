@@ -35,7 +35,12 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   does not make `w` a length); a literal's unit and a formal's declared `Ty` *do* travel, so the
   formal catches `x := w + phi` after `flatten::settle` substitutes a parameter away.
   A literal's unit is converted **to the document's own** by the tokenizer (`expr::parse_in`
-  takes `Units`): `unit mm` names it, and without one a suffix is refused.  **Feet-and-inches is
+  takes `Units`): `unit in` names it, and **without one it is millimetres** ([0.93]) — a suffix
+  converts and a geometry read is a `Length`, exactly as under `unit mm`.  `Units::stated` is
+  whether a line said so, and is all that is written back (`io` saves `"unit": null`,
+  `lift::to_program` prints no line), so a document gains no `unit` it did not have; every
+  consumer of the ratio (`cad::millimetres`, glTF, paste) reads `Units::mm_per`, so an unstated
+  document exports, measures and pastes as millimetres.  **Feet-and-inches is
   one literal** — `1' 6 3/16"` — so there is **no string literal** (`"` is the inch mark, a `Str`
   argument and a raw branch key are bare words).  `pi` is dimensionless and `tau`/`turn` a
   **turn**, so `tau == 2 * pi * 1rad`; radians are written `* 1rad`, not `* 180 / pi`.  Storing

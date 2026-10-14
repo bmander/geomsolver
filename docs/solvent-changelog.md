@@ -4,15 +4,26 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
-**[0.93] A set's body holds of a point of its plane; a call gives every entity.** A plane's
+**[0.94] A set's body holds of a point of its plane; a call gives every entity.** A plane's
 membership stated by a set's body (§6.21) of a point drawn in that plane already — or twinned
 there — holds by construction and states no row, so a body meeting a sphere with a plane, `{ p |
 p coincident ball; p coincident std.front }`, takes a point of the front onto the circle the
-front cuts. Through 0.92 the row was refused as asking nothing (**E061**), which the same words
+front cuts. Through 0.93 the row was refused as asking nothing (**E061**), which the same words
 said of the point directly still are (§6.7). And a call that leaves out an entity formal is
 **E103** at the call (a missing point argument, say), as a set or group formal left out
 already was (§5): before, it was said only where the body read the formal, and nowhere for an
 instance of a set family nothing used, so `std.Sphere(r: 5)` was silently nothing.
+
+**[0.93] A document naming no unit is in millimetres.** Without a `unit` line a document is
+read exactly as under `unit mm` (§3.3.2): a bare number in a `Length` slot is a millimetre, a
+suffixed literal converts to it (`a distance(2in) b` is 50.8), and a geometry read in a seed, an
+integrand or a measurement is a `Length`. Through 0.92 such a document was in unnamed *drawing
+units*: a suffix was **E103** ("this document names no unit") and a geometry read was a bare
+number. So `pin.x - 10` is now refused as under `unit mm`, and `pin.x - 10mm` is the spelling;
+the dimension tables written to be read through a `use` (`hardware`, the engine's and the
+V-twin's) elaborate on their own. The line, where written, is still what a document saves and
+prints back, so one without it gains none; glTF and CAD exports scale such a document as
+millimetres, and a paste converts it as one.
 
 **[0.92] One vocabulary for a view's directions.** A view is a plane (§6.7), so its own
 directions are said as a plane's are: between two points drawn in one view, `along: u` is the

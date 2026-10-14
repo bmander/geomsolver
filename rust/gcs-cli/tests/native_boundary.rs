@@ -170,7 +170,7 @@ tool := solid(face(ring),about: ax)
 fn native_cutter_edges_agree_with_the_independent_source_material() {
     let e = fixtures::gear::read(&fixtures::gear::bevel(&fixtures::gear::source()));
     let cad = native::Session::new().unwrap();
-    let scale = e.sketch.units.length.unwrap().1;
+    let scale = e.sketch.units.mm_per();
     for name in ["pair.tooth.crown","pair.gear_space.body"] {
         let id = e.map.ent_named(name).unwrap().i();
         let field = SpatialField::read(&e.sketch,id,1e-10).unwrap();

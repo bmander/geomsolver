@@ -211,7 +211,7 @@ fn a_free_length_is_where_the_energy_is_stationary_in_it() {
     let (a, b) = (on(pa), on(pb));
     let src = format!(
         "use std\nin std.front {{\n  a := point\n  b := point\n  fix(({}, {})) a\n  fix(({}, {})) b\n  k := curve(a, b)\n}}\n\
-         k minimizes integral(2 / (1 + p.x^2 + p.y^2) over p)\n",
+         k minimizes integral(2 / (1mm^2 + p.x^2 + p.y^2) over p)\n",
         a.0, a.1, b.0, b.1
     );
     let mut e = solved(&src);
@@ -464,7 +464,7 @@ fn a_free_point_on_a_free_length_curve_leaves_it_stationary() {
     let (a, b, q) = (on(pa), on(pa + 40f64.to_radians()), on(pa + 15f64.to_radians()));
     let src = format!(
         "use std\nin std.front {{\n  a := point\n  b := point\n  q := point hint(({}, {}))\n  fix(({}, {})) a\n  fix(({}, {})) b\n  \
-         k := curve(a, b)\n  q coincident k\n}}\nk minimizes integral(2 / (1 + p.x^2 + p.y^2) over p)\n",
+         k := curve(a, b)\n  q coincident k\n}}\nk minimizes integral(2 / (1mm^2 + p.x^2 + p.y^2) over p)\n",
         q.0 + 0.01, q.1, a.0, a.1, b.0, b.1
     );
     let mut e = solved(&src);

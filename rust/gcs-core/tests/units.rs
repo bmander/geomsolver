@@ -46,7 +46,7 @@ const PAIR: &str = "use std\nin std.front {\na := point hint((0, 0))\nb := point
 #[test]
 fn a_unit_line_names_what_a_number_is() {
     let sk = read(&format!("unit mm\n{PAIR}a distance(2in) b\n")).expect("elaborates");
-    assert_eq!(sk.units.name(), Some("mm"));
+    assert_eq!(sk.units.stated(), Some("mm"));
     let d = sk.user_constraints()[0].args[2].num();
     assert!((d - 50.8).abs() < 1e-9, "two inches is 50.8 mm, got {d}");
 }
@@ -64,14 +64,31 @@ fn feet_and_inches_is_one_literal() {
     assert!(io::describe(&sk.user_constraints()[0]).contains("1' 6 3/16\""));
 }
 
-/// A document that names no unit is in **drawing units**: everything still checks, and a suffix
-/// is refused rather than guessed at.
+/// **A document that names no unit is in millimetres** ([0.93]): a bare number in a `Length`
+/// slot is a millimetre, a suffix converts to it as under `unit mm`, and everything still checks.
+/// The unit is not *stated*, so nothing writes a `unit` line the document did not have.
 #[test]
-fn drawing_units_still_check_and_refuse_a_suffix() {
-    let sk = read(&format!("{PAIR}a distance(60) b\n")).expect("a bare number is a length");
-    assert_eq!(sk.units.name(), None);
-    says(&format!("{PAIR}a distance(6\") b\n"), "names no unit");
-    says(&format!("{PAIR}a distance(80mm) b\n"), "names no unit");
+fn no_unit_line_is_millimetres() {
+    let sk = read(&format!("{PAIR}a distance(60) b
+")).expect("a bare number is a length");
+    assert_eq!(sk.units.stated(), None);
+    assert_eq!(sk.units.name(), "mm");
+    for (text, want) in [("2in", 50.8), ("80mm", 80.0), ("3cm", 30.0), ("6\"", 152.4)] {
+        let sk = read(&format!("{PAIR}a distance({text}) b\n")).expect("a suffix converts");
+        let d = sk.user_constraints()[0].args[2].num();
+        assert!((d - want).abs() < 1e-9, "{text} is {want} mm, got {d}");
+    }
+    // the same document as under `unit mm`, number for number
+    let said = read(&format!("unit mm\n{PAIR}a distance(1' 6 3/16\") b\n")).expect("elaborates");
+    let unsaid = read(&format!("{PAIR}a distance(1' 6 3/16\") b\n")).expect("elaborates");
+    let d = |sk: &Sketch| sk.user_constraints()[0].args[2].num();
+    assert_eq!(d(&said), d(&unsaid));
+    // and a geometry read is a length, so a bare number beside one is refused as under `unit mm`
+    let seeded = |x: &str| {
+        format!("use std\nin std.front {{\nb := point hint((60, 0))\nc := point hint(({x}, 0))\n}}\n")
+    };
+    says(&seeded("b.x + 10"), "cannot be added");
+    read(&seeded("b.x + 10mm")).expect("a length beside a length");
 }
 
 /* -- what it catches --------------------------------------------------------------------- */
@@ -83,7 +100,7 @@ fn an_angle_in_a_length_slot_is_an_error() {
     // and the other way round
     says(
         &format!("{PAIR}c := point hint((1, 1))\nm := line(b, c)\nl angle(3in) m\n"),
-        "names no unit",
+        "is Angle, and this is Length",
     );
 }
 
@@ -169,7 +186,7 @@ l angle(k) m
 #[test]
 fn the_functions_have_signatures() {
     let with = |body: &str| format!("{PAIR}a distance({body}) b\n");
-    says(&with("sin(3in)"), "names no unit");
+    says(&with("sin(3in)"), "takes an angle");
     read(&with("sin(30) * 60")).expect("a bare number in an angle position is degrees");
     says(&with("floor(45deg)"), "takes a plain number");
     says(&with("ln(45deg)"), "takes a plain number");
@@ -209,11 +226,24 @@ fn the_unit_round_trips() {
     let sk = read(&format!("unit in\n{PAIR}a distance(2) b\n")).expect("elaborates");
     let json = io::dumps(&sk, None);
     assert!(json.contains("\"unit\":\"in\""), "{json}");
-    assert_eq!(io::loads(&json).expect("loads").units.name(), Some("in"));
+    assert_eq!(io::loads(&json).expect("loads").units.stated(), Some("in"));
 
     let plain = read(&format!("{PAIR}a distance(2) b\n")).expect("elaborates");
     assert!(io::dumps(&plain, None).contains("\"unit\":null"));
-    assert_eq!(io::loads(&io::dumps(&plain, None)).expect("loads").units.name(), None);
+    assert_eq!(io::loads(&io::dumps(&plain, None)).expect("loads").units.stated(), None);
+}
+
+/// A document that names no unit is in millimetres, and a paste converts it as one.
+#[test]
+fn a_paste_from_no_unit_converts_as_millimetres() {
+    let plain = read(&format!("{PAIR}a distance(50.8) b\n")).expect("elaborates");
+    let clip = io::copy(&plain, &plain.primitives());
+    let mut inches =
+        read("unit in\nuse std\nin std.front {\nz := point hint((0, 0))\n}\n").expect("elaborates");
+    io::paste(&mut inches, &clip, 0.0, 0.0);
+    let far = inches.points.iter().skip(1).map(|p| inches.params[p.x as usize].value)
+        .fold(0.0, f64::max);
+    assert!((far - 60.0 / 25.4).abs() < 1e-9, "60 mm is 2.362 in, got {far}");
 }
 
 /// **Pasting a figure from a document in inches into one in millimetres converts the numbers.**
@@ -222,7 +252,7 @@ fn the_unit_round_trips() {
 fn a_paste_between_units_converts() {
     let inches = read(&format!("unit in\n{PAIR}a distance(2) b\n")).expect("elaborates");
     let clip = io::copy(&inches, &inches.primitives());
-    assert_eq!(clip.units.name(), Some("in"), "a clipboard says what its numbers are in");
+    assert_eq!(clip.units.stated(), Some("in"), "a clipboard says what its numbers are in");
 
     let mut mm = read("unit mm\nuse std\nin std.front {\nz := point hint((0, 0))\n}\n").expect("elaborates");
     io::paste(&mut mm, &clip, 0.0, 0.0);
@@ -279,7 +309,7 @@ fn a_printed_model_keeps_units_and_omits_the_sheet() {
     assert!(text.contains("unit in"), "{text}");
     assert!(!text.contains("style "), "{text}");
     let back = read(&text).expect("reads back");
-    assert_eq!(back.units.name(), Some("in"));
+    assert_eq!(back.units.stated(), Some("in"));
     assert!(back.sheet.is_empty());
 }
 
@@ -438,7 +468,7 @@ fn a_saved_document_has_its_unit_before_its_expressions() {
     let inches = read(&format!("unit in\n{PAIR}a distance(2) b\n")).expect("elaborates");
     let mut json = io::to_json(&inches);
     let back = io::from_json(&json).expect("loads");
-    assert_eq!(back.units.name(), Some("in"));
+    assert_eq!(back.units.stated(), Some("in"));
     // and the expression path: set one and reload
     let mut sk = back;
     let id = sk.user_constraints()[0].id;

@@ -17,11 +17,10 @@
 //! two chunks: a JSON manifest, which `json.rs` already writes, and one blob of the numbers.
 //! There is no compression to implement and no ZIP, which is what a `.3mf` would have wanted.
 //!
-//! **Units.**  glTF says a unit is a metre, and it says so normatively.  A document that names
-//! its own (`unit mm`) is therefore scaled on the way out, so a forty-millimetre part opens as a
-//! forty-millimetre part and not a forty-metre one; a document that names none is written as it
-//! stands, there being nothing to convert from.  Either way the document's own unit goes in
-//! `asset.extras`, so nothing is lost by the scaling.
+//! **Units.**  glTF says a unit is a metre, and it says so normatively.  A document's lengths
+//! (`unit in`, or millimetres where it names none) are therefore scaled on the way out, so a
+//! forty-millimetre part opens as a forty-millimetre part and not a forty-metre one, and the
+//! document's own unit goes in `asset.extras`, so nothing is lost by the scaling.
 
 use crate::json::Json;
 use crate::mesh::Mesh;
@@ -45,7 +44,7 @@ pub fn checked_glb(sk: &Sketch, solids: &[usize], policy: crate::solid::Approxim
     let values = solids.iter().map(|&i| sk.evaluated_solid(i, policy)).collect::<Result<Vec<_>, _>>()?;
     for s in &values { s.finished()?; }
     let parts: Vec<_> = solids.iter().zip(&values).map(|(&i, s)| (sk.solid_name(i), s.mesh(), s.origin().0)).collect();
-    let scale = sk.units.length.map(|(_, mm_per)| mm_per / 1000.0).unwrap_or(1.0);
+    let scale = sk.units.mm_per() / 1000.0;
     if !scale.is_finite() || scale <= 0.0 || parts.iter().flat_map(|(_, _, origin)| origin).any(|x| !(x * scale).is_finite()) {
         return Err("GLB placement or unit scale is not representable".into());
     }
@@ -57,7 +56,7 @@ pub fn checked_glb(sk: &Sketch, solids: &[usize], policy: crate::solid::Approxim
             }
         }
     }
-    let (json, bin) = build_placed(&parts, scale, sk.units.name());
+    let (json, bin) = build_placed(&parts, scale, Some(sk.units.name()));
     Ok(container(&json.dump(None), &bin))
 }
 

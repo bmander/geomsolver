@@ -43,11 +43,11 @@ use std
 in std.front {
 a := point hint((5, 1))
 k := circle(center: a) hint(r: 4)
-b := point hint((a.x + 10, k.r))
+b := point hint((a.x + 10mm, k.r))
 c := point hint(at: a)
 d := point hint(at: k, bearing: 90deg)
 e := point hint((k.center.x + k.r, 0))
-l := line(hint((a.x, 1)), hint((a.x + 1, 1)))
+l := line(hint((a.x, 1)), hint((a.x + 1mm, 1)))
 }
 ",
     );
@@ -144,7 +144,7 @@ dn := Span(k1, k2, side: -1)
     let e = read(
         "repeat 2 as i {\n\
            p := point hint((i * 10, 0))\n\
-           q := point hint((p.x + 1, p.y))\n\
+           q := point hint((p.x + 1mm, p.y))\n\
          }\n",
     );
     assert_eq!(xy(&e, "q[1]"), (11.0, 0.0));
@@ -152,13 +152,13 @@ dn := Span(k1, k2, side: -1)
 
 #[test]
 fn a_seed_that_reads_geometry_is_never_written_back() {
-    let src = "use std\nin std.front {\na := point hint((5, 1))\nb := point hint((a.x + 10, 2))\nc := point hint(at: a)\na distance(3) b\n}\n";
+    let src = "use std\nin std.front {\na := point hint((5, 1))\nb := point hint((a.x + 10mm, 2))\nc := point hint(at: a)\na distance(3) b\n}\n";
     let e = read(src);
     let mut sk = e.sketch.clone();
     gcs_core::solve::solve(&mut sk, Default::default());
     let out = edit::commit_seeds(&e, &sk, &e.program);
     // `b`'s x is an expression and `c` is a place: neither is spliced; only the moved numbers are
-    assert!(out.text.contains("hint((a.x + 10, "), "{}", out.text);
+    assert!(out.text.contains("hint((a.x + 10mm, "), "{}", out.text);
     assert!(out.text.contains("c := point hint(at: a)"), "{}", out.text);
 }
 
@@ -288,11 +288,12 @@ fn what_a_seed_may_read_is_checked() {
 }
 
 #[test]
-fn a_geometry_read_is_a_length_where_the_document_names_a_unit() {
+fn a_geometry_read_is_a_length() {
     read("unit mm\nuse std\nin std.front {\na := point hint((5, 1))\nb := point hint((a.x + 10mm, 0))\n}\n");
     refused("unit mm\nuse std\nin std.front {\na := point hint((5, 1))\nb := point hint((a.x + 10, 0))\n}\n", "cannot be added");
-    // and a bare number where it does not — there is nothing else a number could be
-    read("use std\nin std.front {\na := point hint((5, 1))\nb := point hint((a.x + 10, 0))\n}\n");
+    // and where the document names no unit too, since it is in millimetres ([0.93])
+    read("use std\nin std.front {\na := point hint((5, 1))\nb := point hint((a.x + 10mm, 0))\n}\n");
+    refused("use std\nin std.front {\na := point hint((5, 1))\nb := point hint((a.x + 10, 0))\n}\n", "cannot be added");
 }
 
 /// **A place is two keys of the one seed clause** (issue #47, item 2): `at:` and `bearing:`

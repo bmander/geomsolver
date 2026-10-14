@@ -83,7 +83,9 @@ fn a_bore_takes_exactly_the_polygon_it_is_faceted_into() {
         "body",
     );
     let want = (60.0 * 40.0 - facet_area(5.0, UNIT)) * 30.0;
-    let got = volume(&sk, body);
+    // the facet term's, which a solid's evaluation takes where the exact B-rep is not built
+    let csg = solid::resolve(&sk, body, UNIT);
+    let got = mesh::volume(&gcs_core::csg::boundary(&csg, csg.epsilon()));
     assert!((got - want).abs() < 1e-6 * want.abs(), "block less a through bore: want {want}, got {got}");
     assert!(facet_area(5.0, UNIT) <= std::f64::consts::PI * 25.0, "a facet is inside the circle");
 }

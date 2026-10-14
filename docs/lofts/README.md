@@ -201,8 +201,8 @@ fixtures.
 13. **Paper cuts** met on the way:
     - formals cannot be called `right`/`left` (direction words, E040) or `turn` (a built-in, W112);
     - a line cannot be called `tangent`;
-    - `std.top` passed down from a component that cannot see it is reported at the callee's
-      `in view` ("no such entity: `view`") rather than at the argument;
+    - ~~`std.top` passed down from a component that cannot see it is reported at the callee's
+      `in view` ("no such entity: `view`") rather than at the argument~~, done in #253;
     - `Screwed` needs a reference line of an arbitrary length (`10mm`) to turn an angle from: a
       direction turned within a plane by a directed angle, with no length, would say it.
 

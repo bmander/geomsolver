@@ -244,6 +244,9 @@ pub struct Expansion {
     /// `P`): the planes among them mint their normal as they are built
     /// (`Sketch::plane_normal`), and the rest are said to have none where they are read.
     pub normals: BTreeSet<String>,
+    /// Where a declaration reads through a name already said to name nothing — a formal its
+    /// call gave nothing that is (#253): the elaborator, finding nothing there, says no more.
+    pub quiet: BTreeSet<Span>,
     /// Every region solid's probe, by absolute key: the point its set is applied to (§6.21).
     pub probes: Vec<String>,
     /// The solids a block runs over the faces of, whose faces were not given (#183 F4): the
@@ -374,6 +377,8 @@ struct Walk<'a> {
     twins: Vec<(String, String)>,
     /// See `Expansion::normals`.
     normals: BTreeSet<String>,
+    /// See `Expansion::quiet`.
+    quiet: BTreeSet<Span>,
     /// The solids' faces read as sets and blocks over them — see `FaceState`.
     faces: FaceState,
 }
@@ -587,6 +592,7 @@ impl<'a> Walk<'a> {
             },
             twins: Vec::new(),
             normals: BTreeSet::new(),
+            quiet: BTreeSet::new(),
             faces: FaceState::default(),
         }
     }
@@ -653,6 +659,7 @@ impl<'a> Walk<'a> {
             lowered,
             twins: self.twins,
             normals: self.normals,
+            quiet: self.quiet,
             probes: self.sets.probes,
             face_repeats: self.faces.repeats,
             face_planes: self.faces.planes,
