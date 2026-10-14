@@ -56,6 +56,18 @@ const FACE_MARGIN: f64 = 0.15;
 /// drawing so it reads as a pane beside the others rather than as nothing at all.
 const LEAST_SIDE: f64 = 0.5;
 
+/// How wide the workspace is at the least, in millimetres: about five inches, the sheet a part is
+/// drawn on at a desk.  A pane is never narrower than this, an axis reaches half of it either side
+/// of its foot, and a drawing with nothing yet drawn opens framed on it (`workspace::bounds`) —
+/// sized off the drawing alone, a blank sheet's `std` was a millimetre across.  A drawing larger
+/// than this sizes its workspace itself.
+const WORKSPACE_MM: f64 = 125.0;
+
+/// `WORKSPACE_MM` in the document's own lengths.
+pub(crate) fn workspace_span(sk: &Sketch) -> f64 {
+    WORKSPACE_MM / sk.units.mm_per()
+}
+
 /// How many of its own widths across the box is refined for, when `scene3d` is asked for the
 /// object's own scale rather than the sheet's zoom.  It is a *drawing* is being cut into
 /// polylines, so the number that matters is how many pixels the box is looked at across, and a
@@ -640,7 +652,8 @@ fn places(sk: &Sketch) -> Vec<Option<usize>> {
 /// in its **place** — on it, or on any plane in the same place in space — *and the origins
 /// there* — where axes cross, so a pane never cuts them off — grown a little, and never thinner
 /// than `least` (`LEAST_SIDE` of the sketch's extent) either way, which is what a view with
-/// nothing in it, or only its origin, or only points along one line, gets.
+/// nothing in it, or only its origin, or only points along one line, gets — nor, margin and all,
+/// than the workspace (`WORKSPACE_MM`).
 ///
 /// One rule for the face and its axes both, so the two cannot come to disagree about how far a
 /// view reaches; and one pane for a place, so drawing on `std.front` does not leave `std.up`'s
@@ -661,13 +674,16 @@ fn pane(sk: &Sketch, plane: usize, views: &[Option<usize>], places: &[Option<usi
             _ => {}
         }
     }
-    let widen = |lo: f64, hi: f64| {
+    let widen = |lo: f64, hi: f64, least: f64| {
         let short = (least - (hi - lo)).max(0.0) / 2.0;
         (lo - short, hi + short)
     };
-    let ((x0, x1), (y0, y1)) = (widen(b.0, b.2), widen(b.1, b.3));
+    let ((x0, x1), (y0, y1)) = (widen(b.0, b.2, least), widen(b.1, b.3, least));
     let m = (x1 - x0).max(y1 - y0) * FACE_MARGIN;
-    (x0 - m, y0 - m, x1 + m, y1 + m)
+    // and never narrower than the workspace, either way
+    let span = workspace_span(sk);
+    let ((x0, x1), (y0, y1)) = (widen(x0 - m, x1 + m, span), widen(y0 - m, y1 + m, span));
+    (x0, y0, x1, y1)
 }
 
 /// The pane as a closed polygon in space.
@@ -835,9 +851,10 @@ fn lambert(n: [f64; 3], eye: &([f64; 3], [f64; 3])) -> f64 {
     crate::plane::dot(n, l).clamp(0.0, 1.0)
 }
 
-/// How far either side of its foot an axis is drawn: the drawing's reach.
+/// How far either side of its foot an axis is drawn: the drawing's reach, and no less than half
+/// the workspace (`WORKSPACE_MM`), so a blank sheet's axes run to its panes' edges.
 pub(crate) fn axis_reach(sk: &Sketch) -> f64 {
-    sk.extent().max(1.0)
+    sk.extent().max(workspace_span(sk) / 2.0)
 }
 
 /// Where axis `i` is drawn: `reach` (`axis_reach`) either side of its foot, tail then tip, and its

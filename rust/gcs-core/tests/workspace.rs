@@ -301,6 +301,31 @@ fn the_bounds_reach_past_a_turned_section() {
     assert!(x0 <= -31.9 && x1 >= 31.9, "{x0} {x1}");
 }
 
+/// A blank sheet opens on the workspace, about five inches across (`overview::WORKSPACE_MM`), and
+/// not on its origin, a point: from the front the box is the front's pane, 125 mm square about
+/// the origin, in the document's own lengths.  A drawing larger than that frames itself.
+#[test]
+fn a_blank_sheet_is_framed_on_the_workspace() {
+    let bounds = gcs_core::overview::workspace::bounds;
+    for (src, side) in [("use std\n", 125.0), ("unit in\nuse std\n", 125.0 / 25.4)] {
+        let e = build(src);
+        let proj = Projection::new(&e.sketch, -FRAC_PI_2, 0.0);
+        let (x0, y0, x1, y1) = bounds(&e.sketch, &proj, 0.05).unwrap();
+        for (lo, hi) in [(x0, x1), (y0, y1)] {
+            assert!((lo + side / 2.0).abs() < 1e-9 && (hi - side / 2.0).abs() < 1e-9,
+                "{src:?}: {x0} {y0} {x1} {y1}");
+        }
+        // the front's pane is under a press anywhere on it
+        let front = plane(&e, "std.front");
+        assert!(panes_at(&e.sketch, &proj, (0.45 * side, -0.45 * side)).contains(&front));
+    }
+    let e = build("use std\na := point hint((0, 0)) in std.front\nfix((0, 0)) a\n\
+        b := point hint((400, 0)) in std.front\nfix((400, 0)) b\nl := line(a, b)\n");
+    let proj = Projection::new(&e.sketch, -FRAC_PI_2, 0.0);
+    let (x0, _, x1, _) = bounds(&e.sketch, &proj, 0.05).unwrap();
+    assert!(x0.abs() < 1e-9 && (x1 - 400.0).abs() < 1e-9, "{x0} {x1}");
+}
+
 /// A curve owns no point, so the view it is drawn in is what it is written over's: an envelope of
 /// a point drawn in `std.top`, and an envelope of that envelope, stand in `std.top` — drawn flat
 /// in the plane at z = 0 — and not on the page the front stands for (the Wankel's bore and flank).
