@@ -232,7 +232,10 @@ impl<'a> Walk<'a> {
         }
         if let Some(c) = d2.curve.as_mut() {
             // the interval is written over the parameters in scope, like a number
-            for t in [&mut c.domain.0, &mut c.domain.1] {
+            let second = c.second.as_mut().map(|(_, d)| d);
+            let ends = [&mut c.domain.0, &mut c.domain.1].into_iter()
+                .chain(second.into_iter().flat_map(|d| [&mut d.0, &mut d.1]));
+            for t in ends {
                 match value_of(t, vals, self.units) {
                     Ok(v) => *t = crate::syntax::num(v),
                     Err(e) => self.err(Code::E103, st.span, format!("`{t}`: {e}")),

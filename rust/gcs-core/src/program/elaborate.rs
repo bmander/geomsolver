@@ -328,6 +328,19 @@ fn geometry(cx: &mut Elab<'_>, flat: &Flat<'_>) -> Vec<Deferred> {
             let mut anon: Vec<(String, EntRef)> = Vec::new();
             let insts = &flat.expansion.instances;
             match build(sk, res, d, st, diags, &mut anon, &mut deferred, p, insts) {
+                // a curve traced in space is built as a traced body (#326): its name takes it,
+                // and every later curve sits one index below where phase 1 put it
+                Some(e) if e.kind != d.kind => {
+                    if let Some(gone) = res.of.insert(d.name.key().text.clone(), e) {
+                        for x in res.of.values_mut() {
+                            if x.kind == gone.kind && x.idx > gone.idx {
+                                x.idx -= 1;
+                            }
+                        }
+                    }
+                    map.bind(&d.name.key().text, e, d.name.named());
+                    map.record(st, Made::Ent(e));
+                }
                 Some(e) => {
                     map.bind(&d.name.key().text, e, d.name.named());
                     map.record(st, Made::Ent(e));
@@ -497,7 +510,9 @@ fn prism_sides(cx: &mut Elab<'_>, flat: &Flat<'_>) -> BTreeSet<StmtId> {
 fn held_envelopes(
     cx: &mut Elab<'_>, flat: &Flat<'_>, planar: &BTreeSet<StmtId>, extruded: &BTreeSet<StmtId>,
 ) -> (BTreeSet<StmtId>, BTreeSet<StmtId>) {
-    let Elab { sk, res, map, diags, .. } = cx;
+    let Elab { doc, sk, res, map, diags, .. } = cx;
+    // the bodies traced in space, which a meshing may turn and a relation may hold to (#326)
+    super::traced::traced_bodies(sk, res, &flat.body, doc, &flat.expansion.instances, diags);
     let generated: BTreeSet<StmtId> =
         flat.skip.iter().chain(planar).chain(extruded).copied().collect();
     let held = envelopes::held_envelopes(sk, res, map, &flat.body, &generated);

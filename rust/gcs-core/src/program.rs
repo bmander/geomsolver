@@ -29,6 +29,7 @@ mod rings;
 mod source_map;
 mod variational;
 mod words;
+mod traced;
 
 pub use diagnostics::{Code, Diag, Severity};
 

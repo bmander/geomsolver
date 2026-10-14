@@ -192,6 +192,7 @@ mod tape;
 mod taylor;
 mod topology;
 mod trace;
+mod traced;
 mod turns;
 mod twist_drill;
 mod two_planes;

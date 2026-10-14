@@ -30,6 +30,13 @@ pub fn seed_param(sk: &Sketch, kind: CKind, args: &[Arg], i: usize) -> f64 {
         };
         return meshing_place(sk, m.i(), sk.lifted(p.i()), phase).map_or(0.0, |x| x[i - 2]);
     }
+    // a place on a traced body starts where the body passes nearest the point (#326): the
+    // contact's, or the point a tangent is at
+    if let Some((tr, first)) = kind.contact_on(SpecKind::Traced) {
+        let at = if kind == CKind::PointOnTraced { 0 } else { 2 };
+        let (Some(Arg::Ent(e)), Some(Arg::Ent(p))) = (args.get(tr), args.get(at)) else { return 0.0 };
+        return crate::traced::place_of(sk, e.i(), sk.lifted(p.i())).map_or(0.0, |x| x[i - first]);
+    }
     // a motion's pitch starts where the motion's axes stand (#326)
     if kind == CKind::ScrewAxis {
         let Some(Arg::Ent(m)) = args.get(1) else { return 0.0 };
@@ -367,6 +374,18 @@ pub fn validate(
         let m = c.meshing_of().ok_or("a point on a meshing names a meshing")?;
         crate::envelope::meshing::Parts::of(sk, m.i())
             .map_err(|why| format!("the solve cannot hold anything to {}: {why}", name(m)))?;
+    }
+    // a body traced in space a contact holds to is one the solve can read (#326)
+    if kind.traced_contact().is_some() {
+        let c = Constraint::new(kind, args.to_vec());
+        let t = c.traced_of().ok_or("a contact with a traced body names one")?;
+        if t.i() >= sk.traced.len() || sk.traced[t.i()].body.n_formals() == 0 {
+            return Err(format!("{} is a traced body the solve cannot read", name(t)));
+        }
+        if kind == CKind::TracedCurvatureAt && sk.plane_of(sk.round_center(args[1].ent())).is_none() {
+            return Err(format!("{} is drawn in no plane, so it has no section of {} to osculate",
+                               name(args[1].ent()), name(t)));
+        }
     }
     // a motion's twist is read where the solve can read the motion and its twist is the same at
     // every time in the fixed frame (#326)

@@ -186,6 +186,9 @@ pub enum KernelKey {
     /// A relation reading a motion's twist (#326), at its block's widths: `reading` the
     /// `envelope::screw::Reading`.
     Motion { reading: u8, n_par: usize, n_const: usize },
+    /// A contact with a body traced in space (#326), at its block's widths: `contact` the
+    /// `traced::Contact`.
+    Traced { contact: u8, n_par: usize, n_const: usize },
 }
 
 pub fn kernel(id: K) -> &'static Kernel {

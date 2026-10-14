@@ -233,7 +233,7 @@ fn remap_early(
         // a curve is never another curve's argument: nothing in the language says so, and a
         // face and a solid are built after every curve, so neither is one either
         EntKind::Curve | EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge | EntKind::Meshing
-        | EntKind::Axis => None,
+        | EntKind::Traced | EntKind::Axis => None,
     }
 }
 
@@ -1381,6 +1381,22 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         meshing_map[i] = Some(next);
         made.push(EntRef::new(EntKind::Meshing,next));
     }
+    // a traced body, where everything its component was given came along (#326)
+    let mut traced_map = vec![None;src.traced.len()];
+    for (i,t) in src.traced.iter().enumerate() {
+        if !keep(EntRef::new(EntKind::Traced,i)) { continue; }
+        let args: Option<Vec<EntRef>> = t.args.iter().map(|&e| match e.kind {
+            EntKind::Point => pt_index(e.i()).map(EntRef::point),
+            EntKind::Line => line_map[e.i()].map(EntRef::line),
+            EntKind::Motion => motion_map[e.i()].map(|m| EntRef::new(EntKind::Motion,m)),
+            _ => None,
+        }).collect();
+        let Some(args) = args else { continue; };
+        let next = dst.traced.len();
+        dst.traced.push(crate::model::TracedE {args,..t.clone()});
+        traced_map[i] = Some(next);
+        made.push(EntRef::new(EntKind::Traced,next));
+    }
     let mut patch_map = vec![None;src.patches.len()];
     for (i,p) in src.patches.iter().enumerate() {
         if !keep(EntRef::new(EntKind::Patch,i)) { continue; }
@@ -1482,6 +1498,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             EntKind::Vertex => vertex_map[e.i()].map(|i| EntRef::new(EntKind::Vertex,i)),
             EntKind::Edge => edge_map[e.i()].map(|i| EntRef::new(EntKind::Edge,i)),
             EntKind::Meshing => meshing_map[e.i()].map(|i| EntRef::new(EntKind::Meshing,i)),
+            EntKind::Traced => traced_map[e.i()].map(|i| EntRef::new(EntKind::Traced,i)),
         }
     };
     for (&e, &roles) in &src.roles {

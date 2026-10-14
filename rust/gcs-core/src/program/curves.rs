@@ -761,16 +761,30 @@ pub(super) fn build_curve(
     prog: &Program,
     insts: &[crate::flatten::InstanceInfo],
 ) -> Option<EntRef> {
+    // a body traced in space is no curve of a plane (#326): built as what it is — over two
+    // formals or a motion, compiled once the motions are built (`traced::traced_bodies`)
+    if super::traced::in_space_traced(res, d, insts) {
+        sk.traced.push(super::traced::placeholder(d));
+        return Some(EntRef::new(EntKind::Traced, sk.traced.len() - 1));
+    }
     match curve_entity(sk, res, d, st, prog, insts) {
         Ok(Some(cv)) => {
             sk.curves.push(cv);
             Some(EntRef::new(EntKind::Curve, sk.curves.len() - 1))
         }
         Ok(None) => None,
-        Err((code, span, message)) => {
-            diags.push(Diag::within(code, span, st.id, message));
-            None
-        }
+        // a body that does not read as a plane's may read as one in space; where neither does,
+        // what the plane's says
+        Err((code, span, message)) => match super::traced::build_traced(sk, res, d, st, prog, insts) {
+            Ok(Some(t)) => {
+                sk.traced.push(t);
+                Some(EntRef::new(EntKind::Traced, sk.traced.len() - 1))
+            }
+            _ => {
+                diags.push(Diag::within(code, span, st.id, message));
+                None
+            }
+        },
     }
 }
 

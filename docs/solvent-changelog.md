@@ -4,6 +4,18 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.106] A surface over two formals.** `S := C(…).p over (phi in (a, b), s in (c, d))` is a
+point of a component as two of its formals run: a surface traced in space, held to by a point on it
+and, at a point held there, a line in its tangent plane or along its normal, a plane touching it
+and a circle osculating its section (§6.5). Its normal and its curvature are exact. `solventc`
+says whether it is regular over its domain or where it folds. (Issue #326, R5.)
+
+**[0.105] A curve traced in space.** A traced component whose relations do not read in one plane,
+or which is given a motion, is solved in space: §6.5's curve, a point and a tangent held to it in
+space. Through 0.104 such a body was refused, a traced component solved in one plane alone
+([0.42]). A component may take a motion as a formal, and its body carry a point by it (§9.3).
+(Issue #326, R3.)
+
 **[0.104] A point as a moving frame sees it.** `X coincident(under: m, t == τ) x` holds `X` where
 the motion `m` carries `x` at the roll `τ` (§9.3): three rows, the roll in degrees and the
 relation's own unknown, pinned or left to the solve. Under a motion seen from a turn, at the

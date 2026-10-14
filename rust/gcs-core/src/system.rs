@@ -543,6 +543,9 @@ pub fn build_kernel(sk: &Sketch, key: KernelKey) -> Kernel {
             crate::envelope::held::kernel(crate::envelope::held::Contact::ALL[fk as usize], n_par, n_const)
         }
         KernelKey::Meshing { n_par, n_const } => crate::envelope::meshing::kernel(n_par, n_const),
+        KernelKey::Traced { contact, n_par, n_const } => {
+            crate::traced::kernel(crate::traced::Contact::ALL[contact as usize], n_par, n_const)
+        }
         KernelKey::Motion { reading, n_par, n_const } => {
             crate::envelope::screw::kernel(crate::envelope::screw::Reading::ALL[reading as usize], n_par, n_const)
         }

@@ -220,3 +220,37 @@ empty) and its face is refused, never walked
   `curve::tessellate` refines to `FLATNESS_PX` through `unit`, and `curve::closest` is the pick
   test and a fresh contact's seed.  No binding evaluates a basis function or writes the degree:
   `report::registry_json` publishes `curve.minCtrl`, matching `Sketch::spline_with`.
+
+- **A body traced in space** (#326, [0.105], [0.106]; `traced.rs`, `program/traced.rs`) is
+  `EntKind::Traced` (`TracedE`: the body, the entities its component was given — points, lines,
+  motions — its constant numbers, the formals' domain and home), built where a curve declaration
+  runs over two formals (`CurveSpec::second`, `over (a in (…), b in (…))`, its ends settled by the
+  flattener as the first's) or is given a motion — a placeholder in the geometry phase, compiled by
+  `traced_bodies` once the motions are, before the envelopes and meshings — or where its planar
+  compile fails and the spatial one does not (`curves::build_curve`; the name's resolver entry
+  moved off the curves, `elaborate::geometry`).  Written in place only; numbers given as numbers.
+  The lowering draws every point in space in a scratch sketch (its own lift), reads a word between
+  them as the relation in space (`reading::in_space`), an ordinate at `OrdinateForm::Space`, a
+  dimension as a `Tape::compile_wide` tape read by the free twin (`K::OrdinateSpaceFree` for an
+  ordinate), a pinned place as a tape, and a carried point as a row of no kernel id
+  (`screw::Reading::Carried`, the motion's steps its constants, its axes `θ` columns).
+  `traced::Body` encodes `[n_formals, n_outer, n_theta, n_q, n_w, n_rows, traced]`, the tapes,
+  the rows, the seeds; every static row must have a Taylor form.  `View::solve` is damped Newton
+  from the seeds, else a march from the home — no pose remembered, a reading a function of its
+  place.  `View::series` is the implicit function's Taylor series along any direction of the outer
+  variables (rows over `Jet`s, `taylor::residual` / `screw::rows`; tapes over them by
+  `tape::eval_num`, a `TapeNum` walker exact to the third order), and `Series::mixed` the
+  symmetric multilinear derivative by polarisation over every subset's series.  `read` gives the
+  `Frame` (point, `d[a]`, `dd[a][b]`) and, for a Jacobian, its derivative in every place and `θ`
+  column — exact.  The contacts (`traced::Contact`: `PointOnTraced`, `TracedTangentAt` of a curve,
+  `TracedSurfaceTangentAt`, `TracedNormalAt`, `TracedPlaneAt`, `TracedCurvatureAt` of a surface;
+  `KernelKey::Traced`) own a place `[u, s]`, a curve's `s` pinned at the add
+  (`relations::traced_contact`, which also reads `tangent` against a surface as its tangent plane
+  and refuses a surface's words of a curve); the four with `at:` share the contact's place
+  (`tangent_at`, `holds_on`).  Columns `[lead…, u, s, θ…]` (`traced::columns`: lifts of points and
+  line ends, then motions' axes); constants `[n_values, values…, home×2, body…]`.  Seeds:
+  `traced::nearest`.  `report::traced_text` says regular or where it folds
+  (`traced::regularity` over a 13×13 grid).  `tests/traced.rs` is the gate: a helix by its
+  ordinates and by a screw, a point and a tangent held to it; a torus's point, normal and the
+  meridian's osculating circle against closed forms; every contact against finite differences;
+  a fold reported.

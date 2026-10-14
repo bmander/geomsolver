@@ -778,6 +778,22 @@ A locus usually has several solutions. The body selects one by, strongest first:
 constraint (a point-to-line distance's sign chooses a winding); an orientation predicate `ccw`/`cw`
 (read at the anchor and carried by continuity); a seed.
 
+**In space.** A body whose relations do not read in one plane — ordinates along lines in space, a
+point a motion carries — is a curve **in space** (`p coincident k`, `k tangent(at: p) l`); over two
+formals, `S := C(…).p over (phi in (a, b), s in (c, d))`, a **surface** (`p coincident S`, and at a
+point held there `tangent`, `perpendicular` for its normal, `curvature`). Write it in place, seed
+its points with numbers over the formals, and give it points, lines, motions and numbers:
+
+```
+component Helix(o: point, x: line, y: line, z: line, r: Length, lead: Length, u: Angle) {
+  p := point hint((r * cos(u), r * sin(u), lead * u / 360deg))
+  o distance(r * cos(u), along: x) p
+  o distance(r * sin(u), along: y) p
+  o distance(lead * u / 360deg, along: z) p
+}
+k := Helix(o, xl, yl, zl, r: 5mm, lead: 3mm).p over u in (0deg, 720deg)
+```
+
 **The ellipse** is `std.Ellipse(c: point, a: Length, b: Length, tilt: Angle, u: Angle)`:
 `e := std.Ellipse(c, a: 40, b: 25, tilt: 0deg).p over u in (0deg, 360deg)` is the rim. There is no
 `ellipse` element.

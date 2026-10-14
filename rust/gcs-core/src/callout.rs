@@ -140,6 +140,13 @@ macro_rules! undrawn {
             | CKind::ScrewAxis
             // nor a point carried by a motion
             | CKind::CarriedPoint
+            // nor a contact with a traced body: its curvature is the circle's own radius
+            | CKind::PointOnTraced
+            | CKind::TracedTangentAt
+            | CKind::TracedSurfaceTangentAt
+            | CKind::TracedNormalAt
+            | CKind::TracedPlaneAt
+            | CKind::TracedCurvatureAt
             // a projection in space draws what `project` draws: nothing
             | CKind::ProjectSolved
             | CKind::Fix

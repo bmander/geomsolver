@@ -182,6 +182,49 @@ fn a_tape_differentiates_itself_to_third_order() {
     }
 }
 
+/// **The generic walker agrees with both** (`tape::eval_num`, #326): along the first variable its
+/// value and three derivatives are `eval_series`', and
+/// along each variable alone its first derivative is `eval_flat`'s gradient — and along a sum of
+/// directions the derivative is the sum, as a linear map's is.  A body traced in space reads its
+/// expressions so, along any direction.
+#[test]
+fn the_generic_walker_reads_a_tape_as_the_other_two_do() {
+    let mut s = Scratch::new();
+    for (src, names) in CASES {
+        let t = tape(src, names);
+        // a power whose exponent moves is the one thing it does not carry
+        if names.is_empty() || *src == "a ^ b" {
+            continue;
+        }
+        for k in 0..5 {
+            let x = sample(names.len(), k);
+            let mut e0 = vec![0.0; names.len()];
+            e0[0] = 1.0;
+            let d = gcs_core::tape::derivatives_along(&t.flat, &x, &e0).unwrap();
+            let ser = t.eval_series(&x, &mut s);
+            for o in 0..4 {
+                let want = ser.c[o];
+                assert!((d[o] - want).abs() <= 1e-8 * want.abs().max(1.0),
+                        "{src} at {x:?}: order {o}, generic {}, series {want}", d[o]);
+            }
+            let (v, g) = at(&t, &x);
+            assert!((d[0] - v).abs() <= 1e-12 * v.abs().max(1.0), "{src}: value");
+            let mut sum = vec![0.0; names.len()];
+            let mut want_sum = 0.0;
+            for j in 0..names.len() {
+                let mut e = vec![0.0; names.len()];
+                e[j] = 1.0;
+                sum[j] = 1.0;
+                want_sum += g[j];
+                let d = gcs_core::tape::derivatives_along(&t.flat, &x, &e).unwrap();
+                assert!((d[1] - g[j]).abs() <= 1e-9 * g[j].abs().max(1.0), "{src}: d/d{}", names[j]);
+            }
+            let d = gcs_core::tape::derivatives_along(&t.flat, &x, &sum).unwrap();
+            assert!((d[1] - want_sum).abs() <= 1e-9 * want_sum.abs().max(1.0), "{src}: along the sum");
+        }
+    }
+}
+
 /// The gradient in a variable the expression does not read is zero, not noise.
 #[test]
 fn an_unread_variable_has_no_gradient() {

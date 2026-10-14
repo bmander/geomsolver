@@ -75,6 +75,7 @@ pub mod system;
 pub mod tape;
 pub mod taylor;
 pub mod topology;
+pub mod traced;
 pub mod vertex;
 pub mod edge;
 pub mod spatial_face;

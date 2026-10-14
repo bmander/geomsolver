@@ -170,6 +170,24 @@ pub enum CKind {
     /// degrees, pinned or solved) and the motion's axes.  In a traced body, `τ` an expression in
     /// the running formal: a contact seen from a turning member.
     CarriedPoint,
+    /// **A point on a body traced in space** (#326, `traced`): `p coincident k`, three rows `p −
+    /// X(u, s)` against the place `[u, s]` it owns (a curve's `s` held at none), so a point on a
+    /// curve in space nets two and one on a surface one.  The body's geometry is columns.
+    PointOnTraced,
+    /// A line along a traced curve's tangent at a point a contact holds on it: `k tangent(at: p)
+    /// l`, two rows over that contact's place.
+    TracedTangentAt,
+    /// A line in a traced surface's tangent plane there: `S tangent(at: p) l`, one row.
+    TracedSurfaceTangentAt,
+    /// A line along a traced surface's normal there: `S perpendicular(at: p) l`, two rows — the
+    /// normal `C_φ × C_s`, exact by the implicit function theorem.
+    TracedNormalAt,
+    /// A plane touching a traced surface there: `S tangent(at: p) P`, two rows.
+    TracedPlaneAt,
+    /// A circle osculating a traced surface's section by the circle's plane there: `S
+    /// curvature(at: p) k`, three rows, Meusnier from the second derivatives — exact, each a
+    /// polarised Taylor series.
+    TracedCurvatureAt,
     /// **The tangent at a point already on a spline** (#251), `g tangent(at: m) l`: the line runs
     /// along `C'(t)`, where `t` is the place of the contact holding `m` on the spline — **that
     /// contact's own unknown**, shared rather than a second one (`Sketch::add`, #70's shared
@@ -338,7 +356,7 @@ impl FamilyKernel {
 }
 
 /// Every concrete constraint type, in the order the registry lists them.
-pub const ALL_KINDS: [CKind; 82] = [
+pub const ALL_KINDS: [CKind; 88] = [
     CKind::Coincident,
     CKind::Distance,
     CKind::Midpoint,
@@ -379,6 +397,12 @@ pub const ALL_KINDS: [CKind; 82] = [
     CKind::Reciprocal,
     CKind::ScrewAxis,
     CKind::CarriedPoint,
+    CKind::PointOnTraced,
+    CKind::TracedTangentAt,
+    CKind::TracedSurfaceTangentAt,
+    CKind::TracedNormalAt,
+    CKind::TracedPlaneAt,
+    CKind::TracedCurvatureAt,
     CKind::Project,
     CKind::Lift,
     CKind::Coincident3,
@@ -465,6 +489,8 @@ pub enum SpecKind {
     Param,
     /// A motion (#326): a relation reading its twist takes its axes as columns.
     Motion,
+    /// A body traced in space (#326).
+    Traced,
 }
 
 impl SpecKind {
@@ -491,6 +517,7 @@ impl SpecKind {
             | SpecKind::Envelope
             | SpecKind::Meshing
             | SpecKind::Motion
+            | SpecKind::Traced
             | SpecKind::Plane
             | SpecKind::Axis
             | SpecKind::Direction
@@ -517,6 +544,7 @@ impl SpecKind {
                 | SpecKind::Envelope
                 | SpecKind::Meshing
                 | SpecKind::Motion
+                | SpecKind::Traced
                 | SpecKind::Plane
                 | SpecKind::Axis
                 | SpecKind::Direction
@@ -555,6 +583,7 @@ impl SpecKind {
             SpecKind::Envelope => "envelope",
             SpecKind::Meshing => "meshing",
             SpecKind::Motion => "motion",
+            SpecKind::Traced => "traced",
             SpecKind::Plane => "plane",
             SpecKind::Axis => "axis",
             SpecKind::Direction => "direction",
@@ -632,6 +661,12 @@ impl CKind {
             CKind::Reciprocal => "Reciprocal",
             CKind::ScrewAxis => "ScrewAxis",
             CKind::CarriedPoint => "CarriedPoint",
+            CKind::PointOnTraced => "PointOnTraced",
+            CKind::TracedTangentAt => "TracedTangentAt",
+            CKind::TracedSurfaceTangentAt => "TracedSurfaceTangentAt",
+            CKind::TracedNormalAt => "TracedNormalAt",
+            CKind::TracedPlaneAt => "TracedPlaneAt",
+            CKind::TracedCurvatureAt => "TracedCurvatureAt",
             CKind::Project => "Project",
             CKind::AxisOnPlane => "AxisOnPlane",
             CKind::AxisCoincident => "AxisCoincident",
@@ -847,6 +882,17 @@ impl CKind {
             CKind::ScrewAxis => &[("axis", S::Axis), ("motion", S::Motion), ("pitch", S::Param)],
             // the point carried, the point it is carried from, the motion and the roll
             CKind::CarriedPoint => &[("p", S::Point), ("q", S::Point), ("under", S::Motion), ("t", S::Param)],
+            // the place on a traced body: its formals', a curve's second held at none (#326)
+            CKind::PointOnTraced => &[("p", S::Point), ("traced", S::Traced), ("u", S::Param), ("s", S::Param)],
+            CKind::TracedTangentAt | CKind::TracedSurfaceTangentAt | CKind::TracedNormalAt => &[
+                ("traced", S::Traced), ("line", S::Direction), ("at", S::Point), ("u", S::Param), ("s", S::Param),
+            ],
+            CKind::TracedPlaneAt => &[
+                ("traced", S::Traced), ("plane", S::Plane), ("at", S::Point), ("u", S::Param), ("s", S::Param),
+            ],
+            CKind::TracedCurvatureAt => &[
+                ("traced", S::Traced), ("circle", S::CircleOrArc), ("at", S::Point), ("u", S::Param), ("s", S::Param),
+            ],
             CKind::SplineTangentLine => {
                 &[("spline", S::Spline), ("line", S::Line), ("t", S::Param)]
             }
@@ -960,6 +1006,13 @@ impl CKind {
             CKind::ScrewAxis => Some(Dim::LENGTH),
             // a roll in degrees, as a meshing's phase is
             CKind::CarriedPoint => Some(Dim::SCALAR),
+            // a place on a traced body: its formals' numbers, as a curve's parameter is
+            CKind::PointOnTraced
+            | CKind::TracedTangentAt
+            | CKind::TracedSurfaceTangentAt
+            | CKind::TracedNormalAt
+            | CKind::TracedPlaneAt
+            | CKind::TracedCurvatureAt => Some(Dim::SCALAR),
             _ => None,
         }
     }
@@ -1009,6 +1062,12 @@ impl CKind {
             CKind::ScrewAxis => ("screw", Infix),
             // a point as the moving frame sees it (#326)
             CKind::CarriedPoint => ("coincident", Infix),
+            // a body traced in space (#326): a point on it, and at a point already on it a line
+            // or a plane touching it, a line along a surface's normal and a circle osculating it
+            CKind::PointOnTraced => ("coincident", Infix),
+            CKind::TracedTangentAt | CKind::TracedSurfaceTangentAt | CKind::TracedPlaneAt => ("tangent", Infix),
+            CKind::TracedNormalAt => ("perpendicular", Infix),
+            CKind::TracedCurvatureAt => ("curvature", Infix),
             CKind::EnvelopeTangentAt | CKind::EnvelopePlaneAt => ("tangent", Infix),
             CKind::EnvelopeNormalAt => ("perpendicular", Infix),
             CKind::EnvelopeCurvatureAt => ("curvature", Infix),
@@ -1329,6 +1388,22 @@ impl CKind {
                        | CKind::PointOnMeshing | CKind::Reciprocal | CKind::ScrewAxis
                        | CKind::CarriedPoint)
             || self.envelope_contact().is_some()
+            || self.traced_contact().is_some()
+    }
+
+    /// The traced-body contact this kind states (#326): its kernel is built at its operands'
+    /// widths (`traced::kernel`).
+    pub fn traced_contact(self) -> Option<crate::traced::Contact> {
+        use crate::traced::Contact;
+        Some(match self {
+            CKind::PointOnTraced => Contact::Point,
+            CKind::TracedTangentAt => Contact::Tangent,
+            CKind::TracedSurfaceTangentAt => Contact::InPlane,
+            CKind::TracedNormalAt => Contact::Normal,
+            CKind::TracedPlaneAt => Contact::Plane,
+            CKind::TracedCurvatureAt => Contact::Curvature,
+            _ => return None,
+        })
     }
 
     /// What a relation reading a motion's twist states (#326): its kernel is built at its
@@ -1399,7 +1474,12 @@ impl CKind {
             | CKind::EnvelopeTangentAt
             | CKind::EnvelopeNormalAt
             | CKind::EnvelopePlaneAt
-            | CKind::EnvelopeCurvatureAt => true,
+            | CKind::EnvelopeCurvatureAt
+            | CKind::TracedTangentAt
+            | CKind::TracedSurfaceTangentAt
+            | CKind::TracedNormalAt
+            | CKind::TracedPlaneAt
+            | CKind::TracedCurvatureAt => true,
             CKind::Coincident
             | CKind::Distance
             | CKind::Midpoint
@@ -1438,6 +1518,8 @@ impl CKind {
             | CKind::Reciprocal
             | CKind::ScrewAxis
             | CKind::CarriedPoint
+            // a point on a traced body is a contact, as one on a curve is
+            | CKind::PointOnTraced
             | CKind::PointAlongLine
             | CKind::PointAlongArc
             | CKind::PointAlongLine3
@@ -1533,6 +1615,14 @@ impl CKind {
             }
             CKind::PointOnMeshing => {
                 panic!("a meshing contact's kernel is built at its operands' widths")
+            }
+            CKind::PointOnTraced
+            | CKind::TracedTangentAt
+            | CKind::TracedSurfaceTangentAt
+            | CKind::TracedNormalAt
+            | CKind::TracedPlaneAt
+            | CKind::TracedCurvatureAt => {
+                panic!("a traced body's contact's kernel is built at its operands' widths")
             }
             CKind::Reciprocal | CKind::ScrewAxis | CKind::CarriedPoint => {
                 panic!("a motion's twist is read by a kernel built at its operands' widths")
@@ -1702,6 +1792,13 @@ impl CKind {
             | CKind::Reciprocal
             | CKind::ScrewAxis
             | CKind::CarriedPoint
+            // nor a contact with a traced body
+            | CKind::PointOnTraced
+            | CKind::TracedTangentAt
+            | CKind::TracedSurfaceTangentAt
+            | CKind::TracedNormalAt
+            | CKind::TracedPlaneAt
+            | CKind::TracedCurvatureAt
             | CKind::PointAlongLine
             | CKind::PointAlongArc
             | CKind::PointAlongLine3
@@ -1768,6 +1865,12 @@ impl CKind {
                 | CKind::Reciprocal
                 | CKind::ScrewAxis
                 | CKind::CarriedPoint
+                | CKind::PointOnTraced
+                | CKind::TracedTangentAt
+                | CKind::TracedSurfaceTangentAt
+                | CKind::TracedNormalAt
+                | CKind::TracedPlaneAt
+                | CKind::TracedCurvatureAt
                 | CKind::PointOnAxis
                 | CKind::LineOnAxis
                 | CKind::AxisOnPlane

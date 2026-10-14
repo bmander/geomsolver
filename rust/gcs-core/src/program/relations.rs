@@ -96,8 +96,9 @@ pub(crate) fn settle(
                 swapped.ops.swap(0, 1);
                 return settle(&swapped, kind_of);
             }
-            // and an envelope in space is named first by whatever touches it (#283)
-            let either_way = symmetric || b == EntKind::Envelope;
+            // and an envelope in space is named first by whatever touches it (#283), as a body
+            // traced in space is (#326)
+            let either_way = symmetric || b == EntKind::Envelope || b == EntKind::Traced;
             if either_way && crate::constraints::infix_op(word, a, b, &sel).is_none() {
                 if let Some(k) = crate::constraints::infix_op(word, b, a, &sel) {
                     let mut swapped = w.clone();
@@ -255,8 +256,17 @@ pub(super) fn constrain(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) -> Option<u3
             return None;
         }
     }
-    let (ckind, spec, mut args, left_out) =
+    let (ckind, spec, mut args, mut left_out) =
         across_views(cx, &r, st, (ckind, spec), args, left_out, reader)?;
+    // a body traced in space (#326): a line touching a surface lies in its tangent plane, and a
+    // curve's second place is held at none — the normal, a plane and a curvature are a surface's
+    let ckind = match traced_contact(cx, ckind, &mut args, &mut left_out) {
+        Ok(k) => k,
+        Err(message) => {
+            cx.diags.push(Diag::on(Code::E040, st, message));
+            return None;
+        }
+    };
     if refused_value(cx, &r, st, ckind, spec, &args) {
         return None;
     }
@@ -281,6 +291,33 @@ pub(super) fn constrain(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) -> Option<u3
         derivative(cx, st, &mut c, found, used.unwrap_or(st.span))?;
     }
     region_or_row(cx, &r, st, c, term_name)
+}
+
+/// A contact with a body traced in space, read as its body runs over one formal or two (#326):
+/// the kind it is, its curve's second place pinned at none.
+fn traced_contact(cx: &Elab<'_>, kind: CKind, args: &mut [CArg], left_out: &mut [bool])
+    -> Result<CKind, String> {
+    if kind.traced_contact().is_none() {
+        return Ok(kind);
+    }
+    let at = if kind == CKind::PointOnTraced { 1 } else { 0 };
+    let Some(CArg::Ent(e)) = args.get(at) else { return Ok(kind) };
+    let Some(t) = cx.sk.traced.get(e.i()) else { return Ok(kind) };
+    let surface = t.formals() == 2;
+    let kind = match kind {
+        CKind::TracedTangentAt if surface => CKind::TracedSurfaceTangentAt,
+        CKind::TracedNormalAt | CKind::TracedPlaneAt | CKind::TracedCurvatureAt if !surface => {
+            return Err(format!("`{}` is a curve in space, which has a tangent at a point and no \
+                normal or curvature this relation reads: a surface has them", t.name));
+        }
+        k => k,
+    };
+    if !surface {
+        let s = kind.spec().iter().rposition(|(_, k)| k.is_param()).expect("a place");
+        args[s] = CArg::Seed { value: 0.0, pinned: true };
+        left_out[s] = false;
+    }
+    Ok(kind)
 }
 
 /// **A region's point against a face** (#183 F1), or where an edge ends (F7): a term of the
@@ -806,6 +843,9 @@ pub(super) fn tangents_at(sk: &Sketch, map: &SourceMap, diags: &mut Vec<Diag>) {
             CKind::EnvelopeNormalAt => "normal",
             CKind::EnvelopeCurvatureAt => "curvature",
             CKind::EnvelopePlaneAt => "tangent plane",
+            CKind::TracedNormalAt => "normal",
+            CKind::TracedCurvatureAt => "curvature",
+            CKind::TracedPlaneAt | CKind::TracedSurfaceTangentAt => "tangent plane",
             _ => "tangent",
         };
         diags.push(Diag::within(

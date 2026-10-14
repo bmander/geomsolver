@@ -110,6 +110,11 @@ fn every_constraint_type_is_printable() {
             // `tests/catenary.rs`, and its touch, `tests/slide.rs`)
             continue;
         }
+        if kind.traced_contact().is_some() {
+            // a body traced in space is an instance of a component the sketch holds no text of;
+            // `tests/traced.rs` prints its contacts from a document
+            continue;
+        }
         if kind.motion_reading().is_some() {
             // a motion's twist is read off a motion, declared in a document; `tests/phillips.rs`
             // prints them from one

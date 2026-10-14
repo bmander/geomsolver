@@ -408,6 +408,33 @@ pub struct MeshingE {
     pub class: Classes,
 }
 
+/// **A traced body in space** (#326): a point of a component as one or two of its numeric
+/// formals run, its body solved in space (`traced::Body`).  Held to by a contact owning a place
+/// on it (`CKind::PointOnTraced` and the four at a point already on it), never drawn.
+#[derive(Clone, Debug)]
+pub struct TracedE {
+    pub body: crate::traced::Body,
+    /// What the component was given, in its formals' order: points (their lifts), lines (their
+    /// ends' lifts) and motions (their axes' ends), the columns of every contact after its place.
+    pub args: Vec<EntRef>,
+    /// The constant numbers it was given, in the body's order.
+    pub values: Vec<f64>,
+    /// The interval each formal runs over, as written (degrees for an angle); a curve's second
+    /// none.
+    pub domain: [[f64; 2]; 2],
+    /// Where a march to a place starts, the formals' anchor.
+    pub home: [f64; 2],
+    pub name: String,
+    pub class: Classes,
+}
+
+impl TracedE {
+    /// How many formals run: one for a curve, two for a surface.
+    pub fn formals(&self) -> usize {
+        self.body.n_formals()
+    }
+}
+
 /// A flank a meshing turns: an envelope in space (generated), or a source surface standing in its
 /// member (formed) — a cone or a cylinder set, or a revolution's named side — read as an
 /// envelope's source is (`Held`).
