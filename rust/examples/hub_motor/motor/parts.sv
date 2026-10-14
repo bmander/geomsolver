@@ -14,7 +14,8 @@
 // viewer, toward −y: a prism `from: h0, to: h1` spans y from −h1 to −h0.  The parts that stand
 // either side of the mid-plane say so where they sweep.
 
-use std (offset)
+use std (offset, horizontal)
+use motor.dims
 
 // A rectangle by its corners' ordinates from `o`, in the view it is drawn in: in the section, a
 // run along the axle (`x0` to `x1`) and a band of radius (`y0` to `y1`) — a turned part's
@@ -61,4 +62,31 @@ component HoleCircle(f: group, n: Int, r: Length, d: Length, phase: Angle) {
     }
   }
   f.datum angle(phase) radial[0]
+}
+
+// Open this file to preview the plain rings on the right of the axle: the bearing on its
+// shoulder, the spacer from its inner race to the step, and the flanged locknut.
+preview {
+  unit mm
+  // the frame, as the assembly draws it: the end view's datum and the axle's centreline
+  in std.front {
+    construction centerline datum := line(std.origin, hint((150, 0)))
+    horizontal datum
+    length(150mm) datum
+  }
+  in std.side {
+    construction centerline ax := line(std.side.origin, hint((100, 0)))
+    horizontal ax
+    length(100mm) ax
+  }
+  frame := {front: std.front, side: std.side, top: std.top, o: std.origin, datum: datum,
+            so: std.side.origin, ax: ax, to: std.top.origin}
+
+  brg_out := motor.dims.brg_in + motor.dims.brg_w
+  bearing := Revolved(frame, s0: motor.dims.brg_in, s1: brg_out, r0: motor.dims.brg_id / 2,
+                      r1: motor.dims.brg_od / 2)
+  spacer := Revolved(frame, s0: brg_out, s1: motor.dims.step_end, r0: motor.dims.d_seat / 2,
+                     r1: motor.dims.spacer_r)
+  nut := Revolved(frame, s0: motor.dims.step_end, s1: motor.dims.old / 2,
+                  r0: motor.dims.d_end / 2, r1: motor.dims.nut_r)
 }

@@ -15,6 +15,8 @@
 // coils), and the end turns either side of the stack, which the covers must clear.  The three
 // hall sensors stand in three slots' mouths.
 
+use std (horizontal)
+use motor.dims
 use motor.parts
 
 component Stator(f: group, dims: group) {
@@ -132,4 +134,25 @@ component Stator(f: group, dims: group) {
     end_r := motor.parts.Box(f.so, x0: dims.L / 2, y0: dims.end_turn_in,
                              x1: dims.L / 2 + dims.overhang, y1: dims.Rc)
   }
+}
+
+// Open this file to preview the stator alone: the lamination, the windings and the hall
+// sensors.
+preview {
+  unit mm
+  // the frame, as the assembly draws it: the end view's datum and the axle's centreline
+  in std.front {
+    construction centerline datum := line(std.origin, hint((150, 0)))
+    horizontal datum
+    length(150mm) datum
+  }
+  in std.side {
+    construction centerline ax := line(std.side.origin, hint((100, 0)))
+    horizontal ax
+    length(100mm) ax
+  }
+  frame := {front: std.front, side: std.side, top: std.top, o: std.origin, datum: datum,
+            so: std.side.origin, ax: ax, to: std.top.origin}
+
+  stator := Stator(frame, dims: motor.dims.motor_dims)
 }

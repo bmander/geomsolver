@@ -146,3 +146,29 @@ fn the_covers_are_their_turned_profiles_less_their_holes() {
     close(&e,"right.body",turned(&profile(38.+16.,1.375*25.4/2.))-drilled);
     close(&e,"left.body",turned(&profile(67.5-15.1,29.))-drilled-6.*hole(4.2,10.));
 }
+
+/// **Each part opens alone** (`preview`): a part's file, opened, draws the assembly's frame and
+/// that part in it, solves with nothing left free, and builds the very solid the assembly does.
+#[test]
+fn each_part_previews_as_the_assembly_builds_it() {
+    let whole = motor();
+    let parts: [(&str,&[(&str,&str)]);6] = [
+        ("axle",&[("axle.body","axle.body"),("axle.key","axle.key")]),
+        ("carrier",&[("carrier.body","carrier.body")]),
+        ("stator",&[("stator.lamination","stator.lamination"),
+                    ("stator.windings","stator.windings")]),
+        ("rotor",&[("rotor.ring","rotor.ring"),("rotor.magnets","rotor.magnets")]),
+        ("cover",&[("left.body","left.body")]),
+        ("parts",&[("bearing.body","bearing_r.body"),("spacer.body","spacer_r.body"),
+                   ("nut.body","nut_r.body")]),
+    ];
+    for (part,solids) in parts {
+        let path = project().join(format!("motor/{part}.sv"));
+        let e = fixtures::read_beside(&std::fs::read_to_string(path).unwrap(),&project(),
+                                      &mut |_,text| text);
+        let mut sk = e.sketch.clone();
+        let d = diagnose::diagnose(&mut sk,Default::default());
+        assert_eq!((d.dof,d.status),(0,State::Well),"{part}");
+        for (mine,theirs) in solids { close(&e,mine,volume(&whole,theirs)); }
+    }
+}

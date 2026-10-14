@@ -6,7 +6,10 @@
 // cut through the hub's whole length; the axle's cable port, handed in, is cut through the hub
 // where it passes, so the wires leave the axle into the left-hand bay.
 
+use std (horizontal)
+use motor.dims
 use motor.parts
+use motor.axle
 
 component Carrier(f: group, dims: group, exit: solid) {
   hh := dims.hub_half
@@ -49,4 +52,25 @@ component Carrier(f: group, dims: group, exit: solid) {
   private keyway := solid(slot.profile, through: body)
   keyway cut body
   exit cut body
+}
+
+// Open this file to preview the carrier on the axle whose cable port it is cut by.
+preview {
+  unit mm
+  // the frame, as the assembly draws it: the end view's datum and the axle's centreline
+  in std.front {
+    construction centerline datum := line(std.origin, hint((150, 0)))
+    horizontal datum
+    length(150mm) datum
+  }
+  in std.side {
+    construction centerline ax := line(std.side.origin, hint((100, 0)))
+    horizontal ax
+    length(100mm) ax
+  }
+  frame := {front: std.front, side: std.side, top: std.top, o: std.origin, datum: datum,
+            so: std.side.origin, ax: ax, to: std.top.origin}
+
+  axle := motor.axle.Axle(frame, dims: motor.dims.motor_dims)
+  carrier := Carrier(frame, dims: motor.dims.motor_dims, exit: axle.exit)
 }
