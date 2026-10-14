@@ -56,7 +56,7 @@ conjugate points as sign changes of `det ∂p/∂λ₀`, the Hessian in pegs' pl
 is `Diagnosis::extrema` (`unsolved` where no shape is found), reported by the CLI, the JSON
 (`[id, verdict, asked]`) and the app's marks. `length(L) s` on a spline stays `SplineLength`
 (`integral.rs`). `std.hangs(L) k` is a word. `tests/{extremal,catenary,slide,minimize,spline_length}.rs`
-are the gates. **A free curve is an edge** [0.95]: it runs between the two points it is written
+are the gates. **A free curve is an edge** [0.96]: it runs between the two points it is written
 with, so `Sketch::curve_ends` (a stretch's trim, else a free curve's `args`) is its ends for
 `edge_ends`, the face walk, the profile, material fields and the CAD fit, and it stands in a face
 whole (`face(rope, deck)`); a stretch of it from its own end is E080 naming that form. **A

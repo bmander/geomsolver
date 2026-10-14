@@ -553,7 +553,7 @@ fn the_library_hyperbolic_path_is_a_semicircle_arc() {
     assert!(o < 1e-9, "off the arc by {o}");
 }
 
-/// [0.95] **A free curve is an edge**: it runs between the two points it is written with, so it
+/// [0.96] **A free curve is an edge**: it runs between the two points it is written with, so it
 /// stands in a face whole.  The hanging rope and its chord swept 10 deep are the catenary's area
 /// below the chord, ten times, whichever way the loop is written, in the mesh and the exact
 /// kernel alike.  A stretch of it between two points held on it is the same curve, cut (once

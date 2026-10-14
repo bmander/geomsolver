@@ -47,7 +47,7 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
         let Some(parent) = e.map.ents_made_by(st.id).next() else { continue };
         edits.extend(DeclPose::new(sk, prog, st, d, parent, &radii).splices(nested));
     }
-    edits.extend(unknown_seeds(sk, prog));
+    edits.extend(unknown_seeds(sk, prog, &e.map));
     if edits.is_empty() {
         return Edit::none(prog, None);
     }
@@ -459,7 +459,7 @@ fn free_clause(kind: EntKind, d: &Decl, text: &str, free: impl Iterator<Item = (
 /// written where none was — and only where the solve moved it, so an unread unknown and an
 /// unmoved one change nothing.  A seed written as an expression is the author's arithmetic, and is
 /// left alone.
-fn unknown_seeds(sk: &Sketch, prog: &Program) -> Vec<Splice> {
+fn unknown_seeds(sk: &Sketch, prog: &Program, map: &crate::program::SourceMap) -> Vec<Splice> {
     let solved = |name: &str| {
         let p = sk.free_vars.get(name).copied().or(sk.shared.get(name).map(|s| s.param))?;
         Some(sk.params[p as usize].value)
@@ -490,6 +490,12 @@ fn unknown_seeds(sk: &Sketch, prog: &Program) -> Vec<Splice> {
                     else {
                         continue;
                     };
+                    // a point the instance owns, seeded where the call wrote its place (§5 [0.95])
+                    if f.within.is_some() {
+                        let named = map.ent_named(&format!("{}.{}", inst.name.text, l.text));
+                        out.extend(named.and_then(|e| owned_splice(sk, prog, text, *span, e)));
+                        continue;
+                    }
                     let Some(v) = solved(&format!("{}.{}", inst.name.text, l.text)) else { continue };
                     out.extend(seed_splice(prog, text, *span, v, f.ty == syntax::Ty::Angle));
                 }
@@ -498,6 +504,26 @@ fn unknown_seeds(sk: &Sketch, prog: &Program) -> Vec<Splice> {
         }
     }
     out
+}
+
+/// A point an instance owns, its seed `(x, y)` at `span` rewritten to where the solve left it in
+/// its plane — `None` where it reads the same, a `fix` holds it, or a coordinate is no literal
+/// this can write, as `seed_splice` says of a number.
+fn owned_splice(sk: &Sketch, prog: &Program, text: &str, span: Span, e: EntRef)
+    -> Option<Splice> {
+    let inner = text.trim().strip_prefix('(')?.strip_suffix(')')?;
+    let parts: Vec<&str> = inner.split(',').map(str::trim).collect();
+    let params = sk.point_params(e.i());
+    let plain = |t: &&str| writable_seed(t) && !crate::expr::names_unit(t);
+    let held = params.iter().any(|&p| sk.params[p as usize].fixed);
+    if e.kind != EntKind::Point || parts.len() != 2 || params.len() != 2
+        || !parts.iter().all(plain) || held || span.is_empty()
+    {
+        return None;
+    }
+    let [x, y] = [0, 1].map(|k| sk.params[params[k] as usize].value);
+    let with = format!("({}, {})", num(x), num(y));
+    (span.slice(prog.text()) != with).then_some(Splice { at: span, with })
 }
 
 /// A literal seed, `text` at `span`, rewritten to the value `v` a solve left its unknown at —

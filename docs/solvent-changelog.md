@@ -4,15 +4,30 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
-**[0.95] A free curve is an edge of a face.** `rope := curve(a, b)` runs from `a` to `b`, so it
+**[0.96] A free curve is an edge of a face.** `rope := curve(a, b)` runs from `a` to `b`, so it
 stands in a face whole, between those two points, as a line or a clamped spline does (§6.8):
 `face(rope, deck)`, `face(rope, -> close)` — a hanging rope and its chord swept into a solid.
-Through 0.94 a free curve was read as every other curve, with no ends of its own, so naming it
+Through 0.95 a free curve was read as every other curve, with no ends of its own, so naming it
 alone was E080 asking for a stretch, and the stretch `rope from a to b`, asking `a` to be held
 on the curve, could only be reached by pegging the rope at its own ends. A stretch from a free
 curve's own end is now E080 naming the whole curve instead, and a stretch between two points
 held on one (`rope from m to n`) is that curve cut, where it had been read as a second free curve
 with no energy and so no shape.
+
+**[0.95] A set's body holds of a point of its plane; a call gives every entity, or owns a
+point.** A plane's membership stated by a set's body (§6.21) of a point drawn in that plane
+already — or twinned there — holds by construction and states no row, so a body meeting a
+sphere with a plane, `{ p | p coincident ball; p coincident std.front }`, takes a point of the
+front onto the circle the front cuts. Through 0.94 the row was refused as asking nothing
+(**E061**), which the same words said of the point directly still are (§6.7). And a call that
+leaves out an entity formal is **E103** at the call (a missing point argument, say), as a set or
+group formal left out already was (§5): before, it was said only where the body read the formal,
+and nowhere for an instance of a set family nothing used, so `std.Sphere(r: 5)` was silently
+nothing. The one exception is new: **a point formal drawn in a plane formal**,
+`center: point in on`, may be left out, and the instance then owns a point of its own drawn
+there (`k.center`), seeded by `center: hint((x, y))` and written back there by a solve — so a set
+family's parameters are its formals whether the call gives them or not, and
+`Circle(std.front, r: 25)` is a circle with a centre of its own.
 
 **[0.94] Two flanks meshing are a locus.** `contact := meshing(pinion_flank, gear_flank, under:
 mesh, from:, to:)` turns the first flank with the pinion — `mesh`'s observer, `mesh :=

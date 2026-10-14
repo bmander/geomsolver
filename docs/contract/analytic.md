@@ -70,8 +70,13 @@ normal against two directions square to the gear's (each times the lever, the co
 from the motion's first axis point, so a length), and each flank's own row — its meshing equation,
 or a formed flank's roll times the lever — seven at a phase, three more for `PointOnMeshing`'s point
 (lead its lift; columns `[lead, φ, δ, place₁, place₂, flank₁, flank₂, motion]`, constants
-`[lead, n₁, n₂, steps, flank₁, flank₂, steps]`; `KernelKey::Meshing`, exact by `Dual`). The phase
-and the lag are degrees, the places as an envelope contact's. `Meshing::at` solves a phase by
+`[lead, n₁, n₂, steps, flank₁, flank₂, steps]`; `KernelKey::Meshing`, exact by `Dual`). Its
+Jacobian is taken **a block at a time** (#302): each flank's `local` against its own place and
+columns, the two poses against the phase, the lag and the mesh's axes (`Mesh::flank_cols`,
+`pose_cols`, no column in two), each differentiated over its own columns only, then the rows over
+the blocks' values and derivatives by the chain rule (`assemble`, `write`) — so a flank is
+differentiated in the passes its own columns need, not in every pass over the contact's (`bench
+meshing`); the residual reads the same `assemble`, nothing packed. The phase and the lag are degrees, the places as an envelope contact's. `Meshing::at` solves a phase by
 `newton::dogleg` with minimum-norm steps, a rank lost (`Sample::line`) a line contact; `trace`
 walks out from the anchor (the first `PointOnMeshing`'s solved place), predicting by the last two
 and halving a step the solve cannot take (`reach`); `seed` places a point's place (`held::seed` or
