@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.97 — October 2026**
+**Specification, Draft 0.98 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -858,7 +858,7 @@ block := solid(face(mouth, side_r, lid, side_l), from: face, to: back)
   caps `start` and `end`; an end that vanished has no cap. *Non-normative:* an implementation
   facets what the stations sweep within the sheet's flatness; its exact surfaces are later work.
 - **A revolution** turns a face about `about:` a line or an axis, which MUST be one of the two (**E081**) and MUST lie in the **face's own plane** (E081) — a line drawn in another view names a direction this face knows nothing about. **[0.67]** A line lies there by membership; an axis where it is one of the plane's own axes (`std.z` on `std.front`), or, held entirely by `fix` (the plane too), where it stands now — else, placed by the solve, where the solid is evaluated, which refuses the solid if it does not. `sweep:` is how far and is a **magnitude**, a full turn where the document writes none; **which way is a word, not a sign** (§9.2, §9.4): `sense: cw | ccw`, right-handed about the line's own `p1 → p2` (an axis's own direction) unless `cw` is written, and a negative `sweep:` is **E040** at the value, in the words of the selector that replaces it.
-- **A body** names its **stock** in the brackets and takes its features from the **[0.32]** `union`, `cut` and **[0.22]** `common` **[0.85]** statements that name it. A solid whose brackets hold solids and no face is a body. **[0.31]** A swept solid that a `union`, `cut` or `common` statement names is a body too, whose stock is its own sweep: the name means the sweep with its features wherever it is read, the sweep's faces keep their names (`plate.near`, not `plate.plate.near`), and a feature's are reached through it (`plate.hub.near`). A document wanting the bare sweep and the finished part under two names writes `body := solid(plate)` and puts the features on `body`.
+- **A body** names its **stock** in the brackets and takes its features from the **[0.32]** `union`, `cut` and **[0.22]** `common` **[0.85]** statements that name it. A solid whose brackets hold solids and no face is a body. **[0.98]** A solid whose brackets hold nothing, `pegs := solid()`, is an **empty body**: its stock is the first solid in `union` with it, so `B(s)` below is read with `S(s)` empty; which is first is no matter, the union being a set. A pattern then joins every copy alike — `repeat n as i { peg[i] union pegs }` — with none written apart as the stock. An empty body nothing is in `union` with is **E080** at its declaration, whatever cuts it. **[0.31]** A swept solid that a `union`, `cut` or `common` statement names is a body too, whose stock is its own sweep: the name means the sweep with its features wherever it is read, the sweep's faces keep their names (`plate.near`, not `plate.plate.near`), and a feature's are reached through it (`plate.hub.near`). A document wanting the bare sweep and the finished part under two names writes `body := solid(plate)` and puts the features on `body`.
 
 **The body rule, and the whole of it.**
 
