@@ -237,7 +237,7 @@ pub fn ordinate_word(kind: CKind, args: &[Arg]) -> &str {
 /// cannot be made from the kinds alone.  `None` is "this word does not relate those two", which
 /// the caller reports with the kinds in it.
 pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option<String>) -> Option<CKind> {
-    use EntKind::{Arc, Circle, Curve, Envelope, Line, Meshing, Plane, Point, Axis, Spline};
+    use EntKind::{Arc, Circle, Curve, Envelope, Line, Meshing, Motion, Plane, Point, Axis, Spline};
     let round = |k: EntKind| matches!(k, Circle | Arc);
     // an axis is in space, so a direction relation naming one is the relation in space
     let axes = |a: EntKind, b: EntKind| matches!((a, b), (Axis, Axis | Line) | (Line, Axis));
@@ -374,6 +374,16 @@ pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option
         },
         "symmetry" => match (a, b) {
             (Point, Point) => CKind::Symmetric,
+            _ => return None,
+        },
+        // a motion's twist (#326): a line a force along which does no work on it, and the axis it
+        // screws about
+        "reciprocal" => match (a, b) {
+            (Line, Motion) => CKind::Reciprocal,
+            _ => return None,
+        },
+        "screw" => match (a, b) {
+            (Axis, Motion) => CKind::ScrewAxis,
             _ => return None,
         },
         _ => return None,
@@ -575,10 +585,12 @@ pub fn retired_prefix(word: &str, on: EntKind) -> Option<&'static str> {
 /// table (`gauge_op`), so a class, a placement and the chain's lookahead treat them as any
 /// other word.  None of the three is a prefix word a chain can open a link with: `prefix_op`
 /// declines them, so `fix(x == 0) point p -> …` is no chain.
-pub const OPERATORS: [&str; 24] = [
+pub const OPERATORS: [&str; 26] = [
     "distance", "tangent", "equal", "curvature", "horizontal", "vertical", "level", "angle",
     "radius", "length", "coincident", "midpoint", "parallel", "perpendicular", "symmetry", "project",
     "touches", "fix", "ccw", "cw",
+    // a motion's twist read (#326)
+    "reciprocal", "screw",
     // **the words that relate two solids** (§9.8).  They are operators so that a statement
     // reads the way every other statement does; they settle to no `CKind` and compile no row,
     // because a solid is evaluated after the drawing is solved and a claim about one is judged

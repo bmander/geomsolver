@@ -152,6 +152,18 @@ pub enum CKind {
     /// flanks' sources and motions and the mesh's axes are columns, so what makes a flank solves
     /// from where the contact is and how late the gear is there.
     PointOnMeshing,
+    /// **A line reciprocal to a motion's twist** (#326, `envelope::screw`): `l reciprocal mesh`, a
+    /// force along `l` doing no work on the motion — `d · v(p) = 0`, `d` the line's direction and
+    /// `v` the twist's velocity at a point of it, the same at every point.  One row; the line's
+    /// ends and the motion's axes are columns.  For the mesh of two members it is the meshing law
+    /// of a line of action, the members moving as fast along it.
+    Reciprocal,
+    /// **An axis on a motion's instantaneous screw axis** (#326, `envelope::screw`): `isa screw
+    /// mesh`, the axis along the twist's `ω` through the point every other moves past along it,
+    /// and its own unknown `pitch` that motion's pitch, a length a radian.  Five rows (the
+    /// direction's two and the place's, then the pitch) over the axis, its pitch and the motion's
+    /// axes.
+    ScrewAxis,
     /// **The tangent at a point already on a spline** (#251), `g tangent(at: m) l`: the line runs
     /// along `C'(t)`, where `t` is the place of the contact holding `m` on the spline — **that
     /// contact's own unknown**, shared rather than a second one (`Sketch::add`, #70's shared
@@ -320,7 +332,7 @@ impl FamilyKernel {
 }
 
 /// Every concrete constraint type, in the order the registry lists them.
-pub const ALL_KINDS: [CKind; 79] = [
+pub const ALL_KINDS: [CKind; 81] = [
     CKind::Coincident,
     CKind::Distance,
     CKind::Midpoint,
@@ -358,6 +370,8 @@ pub const ALL_KINDS: [CKind; 79] = [
     CKind::EnvelopePlaneAt,
     CKind::EnvelopeCurvatureAt,
     CKind::PointOnMeshing,
+    CKind::Reciprocal,
+    CKind::ScrewAxis,
     CKind::Project,
     CKind::Lift,
     CKind::Coincident3,
@@ -442,6 +456,8 @@ pub enum SpecKind {
     /// a value a person writes: the slot holds a seed number until `Sketch::add` allocates the
     /// Param and rewrites it to `Arg::Param`, after which the solver moves it like any other.
     Param,
+    /// A motion (#326): a relation reading its twist takes its axes as columns.
+    Motion,
 }
 
 impl SpecKind {
@@ -467,6 +483,7 @@ impl SpecKind {
             | SpecKind::Curve
             | SpecKind::Envelope
             | SpecKind::Meshing
+            | SpecKind::Motion
             | SpecKind::Plane
             | SpecKind::Axis
             | SpecKind::Direction
@@ -492,6 +509,7 @@ impl SpecKind {
                 | SpecKind::Curve
                 | SpecKind::Envelope
                 | SpecKind::Meshing
+                | SpecKind::Motion
                 | SpecKind::Plane
                 | SpecKind::Axis
                 | SpecKind::Direction
@@ -529,6 +547,7 @@ impl SpecKind {
             SpecKind::Curve => "curve",
             SpecKind::Envelope => "envelope",
             SpecKind::Meshing => "meshing",
+            SpecKind::Motion => "motion",
             SpecKind::Plane => "plane",
             SpecKind::Axis => "axis",
             SpecKind::Direction => "direction",
@@ -603,6 +622,8 @@ impl CKind {
             CKind::EnvelopePlaneAt => "EnvelopePlaneAt",
             CKind::EnvelopeCurvatureAt => "EnvelopeCurvatureAt",
             CKind::PointOnMeshing => "PointOnMeshing",
+            CKind::Reciprocal => "Reciprocal",
+            CKind::ScrewAxis => "ScrewAxis",
             CKind::Project => "Project",
             CKind::AxisOnPlane => "AxisOnPlane",
             CKind::AxisCoincident => "AxisCoincident",
@@ -812,6 +833,10 @@ impl CKind {
                 ("u1", S::Param), ("v1", S::Param), ("t1", S::Param),
                 ("u2", S::Param), ("v2", S::Param), ("t2", S::Param),
             ],
+            // a line and the motion whose twist it is reciprocal to (#326)
+            CKind::Reciprocal => &[("line", S::Line), ("motion", S::Motion)],
+            // the axis, the motion, and the pitch: the relation's own unknown
+            CKind::ScrewAxis => &[("axis", S::Axis), ("motion", S::Motion), ("pitch", S::Param)],
             CKind::SplineTangentLine => {
                 &[("spline", S::Spline), ("line", S::Line), ("t", S::Param)]
             }
@@ -921,6 +946,8 @@ impl CKind {
             | CKind::PointAlongLine3
             | CKind::PointAlongArc3
             => Some(Dim::SCALAR),
+            // a screw's pitch: how far it slides a radian it turns (#326)
+            CKind::ScrewAxis => Some(Dim::LENGTH),
             _ => None,
         }
     }
@@ -964,6 +991,10 @@ impl CKind {
             CKind::PointOnEnvelope => ("coincident", Infix),
             // the path of contact of two flanks (#283)
             CKind::PointOnMeshing => ("coincident", Infix),
+            // a motion's twist (#326): a line a force along which does no work on it, and the
+            // axis it screws about
+            CKind::Reciprocal => ("reciprocal", Infix),
+            CKind::ScrewAxis => ("screw", Infix),
             CKind::EnvelopeTangentAt | CKind::EnvelopePlaneAt => ("tangent", Infix),
             CKind::EnvelopeNormalAt => ("perpendicular", Infix),
             CKind::EnvelopeCurvatureAt => ("curvature", Infix),
@@ -1096,6 +1127,7 @@ impl CKind {
             CKind::PointOnAxis | CKind::LineOnAxis | CKind::PlaneAxis => &[1],
             CKind::AxisOnPlane => &[0],
             CKind::AxisCoincident => &[0, 1],
+            CKind::ScrewAxis => &[0],
             _ => &[],
         }
     }
@@ -1280,8 +1312,19 @@ impl CKind {
     /// names it, and nothing may ask `kernel()` for it.
     pub fn built(self) -> bool {
         matches!(self, CKind::SplineLength | CKind::Stationary | CKind::CurveTouchesLine
-                       | CKind::PointOnMeshing)
+                       | CKind::PointOnMeshing | CKind::Reciprocal | CKind::ScrewAxis)
             || self.envelope_contact().is_some()
+    }
+
+    /// What a relation reading a motion's twist states (#326): its kernel is built at its
+    /// operands' widths (`envelope::screw::kernel`).
+    pub fn twist_reading(self) -> Option<crate::envelope::screw::Reading> {
+        use crate::envelope::screw::Reading;
+        Some(match self {
+            CKind::Reciprocal => Reading::Reciprocal,
+            CKind::ScrewAxis => Reading::Axis,
+            _ => return None,
+        })
     }
 
     /// The envelope contact this kind states (#283), for the five over an envelope in space: its
@@ -1375,6 +1418,9 @@ impl CKind {
             // a point on an envelope is a contact, as one on a curve is
             | CKind::PointOnEnvelope
             | CKind::PointOnMeshing
+            // a motion's twist read (#326): no contact
+            | CKind::Reciprocal
+            | CKind::ScrewAxis
             | CKind::PointAlongLine
             | CKind::PointAlongArc
             | CKind::PointAlongLine3
@@ -1470,6 +1516,9 @@ impl CKind {
             }
             CKind::PointOnMeshing => {
                 panic!("a meshing contact's kernel is built at its operands' widths")
+            }
+            CKind::Reciprocal | CKind::ScrewAxis => {
+                panic!("a motion's twist is read by a kernel built at its operands' widths")
             }
             CKind::SplineLength => panic!("a spline length's kernel belongs to its spline's count"),
             CKind::Stationary => panic!("an energy's kernel belongs to its curve"),
@@ -1632,6 +1681,9 @@ impl CKind {
             | CKind::EnvelopePlaneAt
             | CKind::EnvelopeCurvatureAt
             | CKind::PointOnMeshing
+            // nor a motion's twist read (#326)
+            | CKind::Reciprocal
+            | CKind::ScrewAxis
             | CKind::PointAlongLine
             | CKind::PointAlongArc
             | CKind::PointAlongLine3
@@ -1695,6 +1747,8 @@ impl CKind {
                 | CKind::EnvelopePlaneAt
                 | CKind::EnvelopeCurvatureAt
                 | CKind::PointOnMeshing
+                | CKind::Reciprocal
+                | CKind::ScrewAxis
                 | CKind::PointOnAxis
                 | CKind::LineOnAxis
                 | CKind::AxisOnPlane

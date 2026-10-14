@@ -30,6 +30,12 @@ pub fn seed_param(sk: &Sketch, kind: CKind, args: &[Arg], i: usize) -> f64 {
         };
         return meshing_place(sk, m.i(), sk.lifted(p.i()), phase).map_or(0.0, |x| x[i - 2]);
     }
+    // a motion's pitch starts where the motion's axes stand (#326)
+    if kind == CKind::ScrewAxis {
+        let Some(Arg::Ent(m)) = args.get(1) else { return 0.0 };
+        return crate::motion::Family::read(sk, m.i()).ok()
+            .and_then(|f| f.instantaneous().ok()).map_or(0.0, |s| s.pitch);
+    }
     match (kind, i) {
         // where the curve already comes nearest the thing it is being tied to: a curve can meet
         // a point or a line in several places, and the nearest is the branch the user drew
@@ -361,6 +367,19 @@ pub fn validate(
         let m = c.meshing_of().ok_or("a point on a meshing names a meshing")?;
         crate::envelope::meshing::Parts::of(sk, m.i())
             .map_err(|why| format!("the solve cannot hold anything to {}: {why}", name(m)))?;
+    }
+    // a motion's twist is read where the solve can read the motion and its twist is the same at
+    // every time in the fixed frame (#326)
+    if kind.twist_reading().is_some() {
+        let c = Constraint::new(kind, args.to_vec());
+        let m = c.motion_of().ok_or("a twist is read off a motion")?;
+        let moving = crate::envelope::held::Moving::of(sk, m.i())
+            .map_err(|why| format!("the solve cannot read the twist of {}: {why}", name(m)))?;
+        if !crate::envelope::screw::constant(&moving.steps) {
+            return Err(format!("{} is a motion relative to a relative one, whose twist changes as it \
+                                runs: a twist is read of turns, screws and slides about fixed lines, \
+                                and of one relative to another", name(m)));
+        }
     }
     match kind {
         // a curvature reads the curve's second derivative, which a trace gives exactly only

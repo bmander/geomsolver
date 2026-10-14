@@ -1410,13 +1410,13 @@ test('the registry the binding generates its classes from matches the kernels', 
     // -1 means the kernel belongs to the curve *definition* rather than to the type: two curve
     // families read different numbers of coordinates, so they cannot share one — and a spline's
     // length is built at its spline's count, an envelope contact at its source's and its motion's,
-    // and a point on a meshing at its flanks' and its motion's (#283).  Every other type names a
-    // static kernel, and must.
+    // a point on a meshing at its flanks' and its motion's (#283), and a motion's twist read at
+    // its motion's (#326).  Every other type names a static kernel, and must.
     if (t.kernel === -1) {
-      // exactly the kinds with a curve, an envelope or a meshing slot, the spline's length and an
-      // energy's stationarity
+      // exactly the kinds with a curve, an envelope, a meshing or a motion slot, the spline's
+      // length and an energy's stationarity
       const built = C.CONSTRAINT_TYPES[t.name].spec
-        .some(([, k]) => k === 'curve' || k === 'envelope' || k === 'meshing');
+        .some(([, k]) => k === 'curve' || k === 'envelope' || k === 'meshing' || k === 'motion');
       assert.ok(built || t.name === 'SplineLength' || t.name === 'Stationary', `${t.name} has no static kernel`);
     } else {
       assert.ok(t.kernel >= 0 && t.kernel < reg.kernels.length, t.name);

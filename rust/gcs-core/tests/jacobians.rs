@@ -621,3 +621,64 @@ s coincident(lag == 0.5) both
         }
     }
 }
+
+/// A motion's twist read (#326, `envelope::screw`): a line reciprocal to it and an axis on its
+/// screw — under the mesh of two turns about skew shafts (the gear's a screw), a slide seen from a
+/// turn, and a turn alone — every axis free, so the motion's columns are differentiated too.
+/// Checked at the seeds and at points knocked off them.
+#[test]
+fn twist_relations_agree_with_finite_differences() {
+    const SRC: &str = "\
+unit mm
+use std
+o := point hint((0, 0, 0))
+z := point hint((1, 0.5, 10))
+ax := line(o, z)
+a := point hint((0, 30, 0))
+b := point hint((10, 30, 2))
+gear_ax := line(a, b)
+s1 := point hint((2, 3, 4))
+s2 := point hint((5, 1, 9))
+rail := line(s1, s2)
+spin := motion(about: ax)
+gear_turn := motion(about: gear_ax, ratio: -0.5, advance: 2mm)
+mesh := motion(gear_turn, relative_to: spin)
+slide := motion(along: rail, advance: 40mm)
+rack := motion(slide, relative_to: spin)
+l1 := point hint((3, 20, 1))
+l2 := point hint((9, 24, -4))
+L := line(l1, l2)
+L reciprocal mesh
+L reciprocal rack
+k1 := point hint((-3, 8, 2))
+k2 := point hint((4, 6, 1))
+K := line(k1, k2)
+K reciprocal gear_turn
+isa := axis hint(dir: (0.3, -0.2, 0.9))
+isa screw mesh
+jsa := axis hint(dir: (0.1, 0.9, 0.2))
+jsa screw rack
+ksa := axis hint(dir: (0.8, 0.1, -0.5))
+ksa screw gear_turn
+";
+    let (prog, errs) = crate::common::parse(SRC);
+    assert!(errs.is_empty(), "{errs:?}");
+    let e = gcs_core::program::elaborate(&prog);
+    assert!(e.ok(), "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
+    let mut sk = e.sketch;
+    let read = |c: &&Constraint| matches!(c.kind, CKind::Reciprocal | CKind::ScrewAxis);
+    assert_eq!(sk.constraints.iter().filter(read).count(), 6);
+    let mut rng = Rng::new(326);
+    for round in 0..4 {
+        if round > 0 {
+            for p in sk.params.iter_mut().filter(|p| !p.fixed) {
+                p.value += rng.uniform(-0.05, 0.05) * (1.0 + p.value.abs().min(10.0));
+            }
+        }
+        for c in sk.constraints.iter().filter(read) {
+            let err = check_constraint(&sk, c, 1e-6, 1e-7)
+                .unwrap_or_else(|e| panic!("round {round}: {e}"));
+            assert!(err.is_finite());
+        }
+    }
+}

@@ -60,6 +60,11 @@ impl Constraint {
             let lead = crate::envelope::meshing::LEAD;
             return self.meshing_parts(sk).map(|p| p.consts(lead)).unwrap_or_default();
         }
+        // a motion's twist read: its steps (#326)
+        if matches!(self.kind, CKind::Reciprocal | CKind::ScrewAxis) {
+            return self.motion_parts(sk).map(|p| crate::envelope::screw::consts(&p.steps))
+                .unwrap_or_default();
+        }
         if self.kind == CKind::Stationary {
             return crate::variational::pack(sk, self.id);
         }
@@ -606,6 +611,19 @@ impl Constraint {
                 let parts = self.meshing_parts(sk).map(|p| p.columns(sk)).unwrap_or_default();
                 [sk.lifts[k].x.to_vec(), own, parts].concat()
             }
+            // a motion's twist read (#326, `envelope::screw`): the line's two lifted ends, or the
+            // axis's direction, its place and the pitch, then the motion's axes
+            CKind::Reciprocal | CKind::ScrewAxis => {
+                let lead = match self.kind {
+                    CKind::Reciprocal => self.direction_columns(sk, 0),
+                    _ => {
+                        let x = &sk.axes[e(0).i()];
+                        [x.d.to_vec(), x.a.to_vec(), vec![self.args[2].param()]].concat()
+                    }
+                };
+                let parts = self.motion_parts(sk).map(|p| p.columns(sk)).unwrap_or_default();
+                [lead, parts].concat()
+            }
             CKind::SplineTangentLine => {
                 [vec![self.args[2].param()], self.span_params(sk, span), ln(1)].concat()
             }
@@ -752,6 +770,12 @@ impl Constraint {
             CKind::PointOnMeshing => {
                 let parts = self.meshing_parts(sk).map(|p| p.lifted()).unwrap_or_default();
                 [vec![e(0).i()], parts].concat()
+            }
+            // the line's ends, then every point the motion's axes read (#326)
+            CKind::Reciprocal | CKind::ScrewAxis => {
+                let parts = self.motion_parts(sk).map(|p| p.lifted()).unwrap_or_default();
+                let lead = if self.kind == CKind::Reciprocal { ends(0).to_vec() } else { Vec::new() };
+                [lead, parts].concat()
             }
             CKind::Symmetric3 => [vec![e(0).i(), e(1).i()], ends(2).to_vec()].concat(),
             // a direction's operands: a line's ends are lifted, and an axis is in space already

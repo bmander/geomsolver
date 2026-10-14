@@ -1531,6 +1531,13 @@ helicoid: `spiral_bevel/phillips.sv`'s rack, `std.HalfSpace(P, L, d: 0mm)` under
 `motion(slide, relative_to: pinion_turn)`. The `at:` relations read the place of the `coincident` holding `M`, which must
 be stated. A set's envelope is only held to: it has no chart after the solve.
 
+**A motion's twist** is read by two relations whose operand is the motion itself: `L reciprocal
+mesh` (a force along the line `L` does no work on it: for a mesh, the members move as fast along
+`L`, the meshing law of a line of action) and `isa screw mesh` (the axis `isa` is the motion's
+instantaneous screw axis; its pitch is the relation's own unknown, `isa screw(pitch == 0) mesh`
+pins it, and `solventc` reports it). Either reads turns, screws and slides about fixed lines, and
+one relative to another (`spiral_bevel/phillips.sv`).
+
 **Two flanks meshing are a locus** (`spiral_bevel/contact.sv`): tooth contact analysis. The first
 flank turns with the pinion and the second with the gear — the mesh's observer and source — each an
 envelope in space as above or a cone, a cylinder or a revolution's side standing still (a formed

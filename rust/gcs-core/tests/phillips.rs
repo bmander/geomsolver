@@ -355,3 +355,164 @@ fn holds_together_moved(sk: &Sketch, s: &Sample, gear: &Member) -> [f64; 3] {
     assert!((dot(n1, n2).abs() - 1.0).abs() < 1e-10, "{s:?}");
     unit(n1)
 }
+
+/* -- the screw and the meshing law (R2) ---------------------------------------------------------- */
+
+/// The axis `isa screw mesh` solves to and its pitch: the axis's point nearest the origin, its
+/// direction, and the relation's own unknown.
+fn screw_of(sk: &Sketch) -> ([f64; 3], [f64; 3], f64) {
+    use gcs_core::constraints::{Arg, CKind};
+    let c = sk.constraints.iter().find(|c| c.kind == CKind::ScrewAxis).expect("a screw");
+    let (Arg::Ent(ax), Arg::Param(h)) = (&c.args[0], &c.args[2]) else { panic!("{c:?}") };
+    let x = &sk.axes[ax.i()];
+    let v = |q: [u32; 3]| q.map(|p| sk.params[p as usize].value);
+    (v(x.a), v(x.d), sk.params[*h as usize].value)
+}
+
+/// **The screw of two turns is Ball's.**  Two members turning about skew shafts at a ratio — the
+/// pinion about `a₁` through `c₁` at 1, the gear about `a₂` through `c₂` at `w` — and the gear seen
+/// from the pinion: the screw `isa screw mesh` solves to crosses the shafts' common perpendicular
+/// square, where a point of the perpendicular `s` from the pinion's shaft moves along `ω = ω₂ − ω₁`
+/// (`s = E ω₂·ω / |ω|²`, `E` the offset), and its pitch is that point's speed along `ω` a radian of
+/// turn about it.  Worked out on the perpendicular itself, apart from `envelope::screw`, and read
+/// both off the drawing and off `motion::Family`.  With no offset the screw passes through the
+/// apex where the shafts meet, and its pitch is zero: bevel gears roll.
+#[test]
+fn the_screw_of_two_turns_is_on_the_common_perpendicular_with_balls_pitch() {
+    use gcs_core::motion::Family;
+    // (shaft angle, offset, the gear's ratio)
+    for (shaft, offset, w) in [(90.0f64, 72.0, -0.5), (60.0, 25.0, -0.4), (110.0, 0.0, -0.75)] {
+        let s = shaft.to_radians();
+        let (a1, c1) = ([1.0, 0.0, 0.0], [0.0, offset, 0.0]);
+        let (a2, c2) = ([s.cos(), 0.0, s.sin()], [0.0; 3]);
+        let v = |x: [f64; 3]| format!("({:.15}mm, {:.15}mm, {:.15}mm)", x[0], x[1], x[2]);
+        let src = format!("\
+unit mm
+use std
+g0 := point hint((0, 0, 0))
+g1 := point hint((0, 0, 10))
+fix({g0}) g0
+fix({g1}) g1
+gear_ax := line(g0, g1)
+p0 := point hint((0, {offset}, 0))
+p1 := point hint((10, {offset}, 0))
+fix({p0}) p0
+fix({p1}) p1
+pinion_ax := line(p0, p1)
+gear_turn := motion(about: gear_ax, ratio: {w})
+pinion_turn := motion(about: pinion_ax)
+mesh := motion(gear_turn, relative_to: pinion_turn)
+isa := axis hint(dir: (-0.9, 0.1, -0.4))
+isa screw mesh
+", g0 = v(c2), g1 = v(add(c2, scale(a2, 10.0))), p0 = v(c1), p1 = v(add(c1, scale(a1, 10.0))));
+        let e = solved(&src);
+        let (point, dir, pitch) = screw_of(&e.sketch);
+        // on the perpendicular, the pinion's foot `c₁`, toward the gear's `c₂`
+        let (w1, w2) = (a1, scale(a2, w));
+        let omega = sub(w2, w1);
+        let ww = dot(omega, omega);
+        let s_at = offset * dot(w2, omega) / ww;
+        let e_dir = if offset > 0.0 { unit(sub(c2, c1)) } else { [0.0, -1.0, 0.0] };
+        let foot = add(c1, scale(e_dir, s_at));
+        let u = sub(scale(w2, s_at - offset), scale(w1, s_at));
+        let want_pitch = dot(cross(u, e_dir), omega) / ww;
+        let what = format!("{shaft}° {offset} {w}");
+        assert!(norm(sub(point, foot)) < 1e-9, "{what}: {point:?} against {foot:?}");
+        assert!((dot(dir, unit(omega)).abs() - 1.0).abs() < 1e-12, "{what}: {dir:?}");
+        assert!(dot(dir, e_dir).abs() < 1e-12, "{what}: square to the perpendicular");
+        assert!((pitch - want_pitch).abs() < 1e-9, "{what}: pitch {pitch} against {want_pitch}");
+        if offset == 0.0 {
+            assert!(norm(point) < 1e-9 && pitch.abs() < 1e-12, "{what}: through the apex, no pitch");
+        }
+        // and the velocity of the point on the axis is along it, by the pitch
+        let speed = sub(scale(cross(w2, sub(foot, c2)), 1.0), cross(w1, sub(foot, c1)));
+        assert!(norm(sub(speed, scale(omega, pitch))) < 1e-9, "{what}: {speed:?}");
+        let mesh = e.sketch.motions.iter().position(|m| m.name == "mesh").unwrap();
+        let isa = Family::read(&e.sketch, mesh).unwrap().instantaneous().unwrap();
+        assert!(norm(sub(isa.point, foot)) < 1e-9 && (isa.pitch - want_pitch).abs() < 1e-9, "{what}: {isa:?}");
+    }
+}
+
+/// **`L reciprocal mesh` is the meshing law.**  `phillips.sv` states `L`'s pressure angle and that
+/// it is reciprocal to the mesh: the helix angle it solves to is the closed form's, and along it
+/// the two members move as fast at every point — checked from the members' turns alone.  The
+/// rack's slide is reciprocal to each member's cutting in turn (the document's claims hold), and
+/// the report says the mesh's screw.
+#[test]
+fn l_reciprocal_to_the_mesh_is_where_the_members_move_as_fast_along_it() {
+    use gcs_core::diagnose::{diagnose, DiagnoseOptions};
+    let e = solved(document());
+    let sk = &e.sketch;
+    let at = |n: &str| sk.world_point(e.map.ent_named(n).unwrap().i());
+    let d = unit(sub(at("ahead"), at("P")));
+    assert!(norm(sub(d, m())) < 1e-10, "{d:?} against {:?}", m());
+    for lambda in [-30.0, 0.0, 12.5, 40.0] {
+        let x = add(p(), scale(d, lambda));
+        let (v1, v2) = (PINION.speed(x, d), GEAR.speed(x, d));
+        assert!((v1 - v2).abs() < 1e-9, "{lambda}: {v1} {v2}");
+        assert!((v1 - sigma()).abs() < 1e-9, "{lambda}: {v1} against σ {}", sigma());
+    }
+    let (point, _, pitch) = screw_of(sk);
+    assert!(norm(sub(point, [0.0, 57.6, 0.0])) < 1e-9 && (pitch + 28.8).abs() < 1e-9, "{point:?} {pitch}");
+    let mut sk = e.sketch.clone();
+    let dg = diagnose(&mut sk, DiagnoseOptions::default());
+    assert!(dg.claims_violated.is_empty(), "{:?}", dg.claims_violated);
+    let said = gcs_core::report::screws_text(&e.sketch);
+    assert_eq!(said.len(), 1);
+    assert!(said[0].starts_with("mesh: screws about the axis through (0, 57.6, 0)") && said[0].ends_with("pitch -28.8 a radian"), "{said:?}");
+}
+
+/// `reciprocal` and `screw` print as they are written and read back the same, a pinned pitch with
+/// them; a twist that is not constant — a motion relative to a relative one — is refused where it
+/// is read.
+#[test]
+fn reciprocal_and_screw_print_back_and_refuse_what_has_no_constant_screw() {
+    use gcs_core::constraints::CKind;
+    let src = "\
+unit mm
+g0 := point hint((0, 0, 0))
+g1 := point hint((0, 0, 10))
+fix((0, 0, 0)) g0
+fix((0mm, 0mm, 10mm)) g1
+gear_ax := line(g0, g1)
+p0 := point hint((0, 72, 0))
+p1 := point hint((10, 72, 0))
+fix((0mm, 72mm, 0mm)) p0
+fix((10mm, 72mm, 0mm)) p1
+pinion_ax := line(p0, p1)
+gear_turn := motion(about: gear_ax, ratio: -0.5)
+pinion_turn := motion(about: pinion_ax)
+mesh := motion(gear_turn, relative_to: pinion_turn)
+P := point hint((0, 48, 0))
+fix((0mm, 48mm, 0mm)) P
+ahead := point hint((7, 51, -7))
+L := line(P, ahead)
+P distance(10mm) ahead
+P distance(3.42mm, along: gear_ax) ahead
+L reciprocal mesh
+claim L reciprocal gear_turn
+isa := axis hint(dir: (-0.9, 0, -0.45))
+isa screw(pitch == -28.8mm) mesh
+";
+    let (mut prog, errs) = crate::common::parse(src);
+    assert!(errs.is_empty(), "{errs:?}");
+    let first = gcs_core::program::elaborate(&prog);
+    assert!(first.ok(), "{:?}", first.errors().map(|d| &d.message).collect::<Vec<_>>());
+    let printed = gcs_core::syntax::render_flat(&mut prog).unwrap().to_string();
+    for said in ["L reciprocal mesh", "isa screw(pitch == -28.8mm) mesh", "claim L reciprocal gear_turn"] {
+        assert!(printed.contains(said), "{said}: {printed}");
+    }
+    let again = solved(&printed);
+    let kinds = |sk: &Sketch| sk.constraints.iter().map(|c| c.kind)
+        .filter(|k| matches!(k, CKind::Reciprocal | CKind::ScrewAxis)).collect::<Vec<_>>();
+    assert_eq!(kinds(&again.sketch), kinds(&first.sketch));
+    assert_eq!(kinds(&again.sketch).len(), 3);
+    // a relative of a relative has no constant twist, and is refused where it is read
+    let nested = src.replace("isa screw(pitch == -28.8mm) mesh",
+        "again := motion(mesh, relative_to: gear_turn)\nisa screw again");
+    let (prog, errs) = crate::common::parse(&nested);
+    assert!(errs.is_empty(), "{errs:?}");
+    let e = gcs_core::program::elaborate(&prog);
+    assert!(e.errors().any(|d| d.message.contains("whose twist changes as it runs")),
+            "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
+}

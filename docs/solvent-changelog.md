@@ -4,6 +4,17 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.103] A motion's twist: `reciprocal` and `screw`.** Two relation words read a motion as
+the velocity field it is (§9.3). `L reciprocal mesh` says a force along the line `L` does no work
+on the motion — its direction square to the velocity of its points — which for the mesh of two
+members is the meshing law of a line of action: they move as fast along it. `isa screw mesh` puts
+the axis `isa` on the motion's instantaneous screw axis, with the pitch the relation's own unknown
+(`pitch == h` pins it, `solventc` reports it). Either reads a turn, a screw or a slide about a fixed
+line, or one seen from another, whose twist is constant in the fixed frame; a relative of a
+relative is refused. They are the first relations whose operand is a motion. Through 0.102 the
+line of action of `spiral_bevel/phillips.sv` was stated point by point, its helix angle worked out
+by hand; now its pressure angle is stated and `L reciprocal mesh` solves the rest. (Issue #326, R2.)
+
 **[0.102] A plane is an envelope's source.** `envelope(std.HalfSpace(o, l, d: x), under: m, …)`
 is held to by the solve (§6.15.3): the plane square to `l` at `x` along it from `o`, its place two
 lengths in it and the roll, its normal `l`'s everywhere. Under a slide along its normal relative

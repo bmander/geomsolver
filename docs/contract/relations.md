@@ -85,6 +85,15 @@ came from.
   as a point, as after `tangent` (`op_args`), and `settle` names the envelope first whatever was
   written first (`curve_last`, the symmetric swap).  **On a meshing** (#283, [0.94]) a point is
   `coincident` (`PointOnMeshing`), its phase and lag slots pinned by `t ==` and `lag ==`.
+  **A motion is an operand** (#326, [0.103]): `SpecKind::Motion`, the first slot a motion fills,
+  read by `L reciprocal mesh` (`CKind::Reciprocal`, `(Line, Motion)`) and `isa screw mesh`
+  (`CKind::ScrewAxis`, `(Axis, Motion)`, its `pitch` a `Param` slot of `Dim::LENGTH`, `pitch ==`
+  pinning it and `seed_param` reading it off `motion::Family::instantaneous`; `place_slots` [0]).
+  Both are built kinds (`KernelKey::Twist`, `envelope::screw::kernel`): columns the line's lifted
+  ends (or the axis's `d`, `a` and the pitch) then the motion's axes' (`held::Moving`), constants
+  its steps; `Constraint::motion_parts` refuses a twist that is not constant (a relative of a
+  relative) and the kernel's rows then read NaN.  Neither is a dimension (`undrawn!`).
+  `jacobians::twist_relations_agree_with_finite_differences` and `tests/phillips.rs` are the gate.
   **What a word means is the kinds of its operands, and a name does not carry its kind until
   elaboration** — so the parser resolves *nothing*: it produces a `syntax::Written` and
   `program::settle` turns it into a `CKind` plus arguments in spec order, through

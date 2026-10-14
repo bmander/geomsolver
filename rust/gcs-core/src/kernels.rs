@@ -183,6 +183,9 @@ pub enum KernelKey {
     Envelope { fk: u8, n_par: usize, n_const: usize },
     /// A point on the meshing of two flanks (#283), at its block's widths.
     Meshing { n_par: usize, n_const: usize },
+    /// A relation reading a motion's twist (#326), at its block's widths: `reading` the
+    /// `envelope::screw::Reading`.
+    Twist { reading: u8, n_par: usize, n_const: usize },
 }
 
 pub fn kernel(id: K) -> &'static Kernel {

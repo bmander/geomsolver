@@ -110,6 +110,11 @@ fn every_constraint_type_is_printable() {
             // `tests/catenary.rs`, and its touch, `tests/slide.rs`)
             continue;
         }
+        if kind.twist_reading().is_some() {
+            // a motion's twist is read off a motion, declared in a document; `tests/phillips.rs`
+            // prints them from one
+            continue;
+        }
         if kind.envelope_contact().is_some() || kind == CKind::PointOnMeshing {
             // an envelope in space is declared over a solid's side or a set, which a sketch's
             // fixture holds no text of; `tests/held_envelopes.rs` prints them from a document,

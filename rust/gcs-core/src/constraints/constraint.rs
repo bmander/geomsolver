@@ -389,6 +389,14 @@ impl Constraint {
             let (n_par, n_const) = parts.map_or((0, 0), |p| (p.width(lead), p.n_const()));
             return Key::Meshing { n_par, n_const };
         }
+        // a motion's twist read, at its block's widths (#326)
+        if let Some(r) = self.kind.twist_reading() {
+            let parts = self.motion_parts(sk);
+            let (n_par, n_const) = parts.map_or((0, 0), |p| {
+                (r.lead() + p.width(), crate::envelope::screw::n_const(&p.steps))
+            });
+            return Key::Twist { reading: r as u8, n_par, n_const };
+        }
         match (self.kind.family_kernel(), self.curve_of()) {
             (Some(fk), Some(e)) => Key::Family { def: sk.curves[e.i()].def as usize, fk: fk as u8 },
             _ => Key::Static(self.kernel_id()),
@@ -434,6 +442,22 @@ impl Constraint {
     /// read it.
     pub fn meshing_parts(&self, sk: &Sketch) -> Option<crate::envelope::meshing::Parts> {
         crate::envelope::meshing::Parts::of(sk, self.meshing_of()?.i()).ok()
+    }
+
+    /// The motion a relation reading its twist names (#326) — the spec's `Motion` slot.
+    pub fn motion_of(&self) -> Option<EntRef> {
+        let i = self.kind.spec().iter().position(|&(_, k)| k == SpecKind::Motion)?;
+        match self.args.get(i)? {
+            Arg::Ent(e) if e.kind == EntKind::Motion => Some(*e),
+            _ => None,
+        }
+    }
+
+    /// What a relation reading a motion's twist reads of it (`envelope::held::Moving`), where the
+    /// solve can read it and the twist is the same at every time (`envelope::screw::constant`).
+    pub fn motion_parts(&self, sk: &Sketch) -> Option<crate::envelope::held::Moving> {
+        crate::envelope::held::Moving::of(sk, self.motion_of()?.i()).ok()
+            .filter(|m| crate::envelope::screw::constant(&m.steps))
     }
 
     /// What a contact reads of its envelope (`envelope::held::Parts`), where the solve can read it.
@@ -566,6 +590,9 @@ impl Constraint {
                 Some(c) => c.rows(),
                 None if self.kind == CKind::PointOnMeshing => {
                     crate::envelope::meshing::LEAD + crate::envelope::meshing::ROWS
+                }
+                None if self.kind.twist_reading().is_some() => {
+                    self.kind.twist_reading().map_or(0, |r| r.rows())
                 }
                 None => kernels::kernel(self.kernel()).n_res,
             },

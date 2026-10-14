@@ -979,6 +979,25 @@ pub fn meshing_text(sk: &Sketch, i: usize) -> String {
     text
 }
 
+/// What the drawing says of each motion it reads the screw of (#326): for every `isa screw mesh`,
+/// the motion's name, its pitch — the relation's own unknown, as solved — and the axis, in the
+/// words the CLI prints.
+pub fn screws_text(sk: &Sketch) -> Vec<String> {
+    use crate::constraints::{Arg, CKind};
+    sk.constraints.iter().filter(|c| c.kind == CKind::ScrewAxis).filter_map(|c| {
+        let (Arg::Ent(ax), Arg::Ent(m), Arg::Param(h)) = (&c.args[0], &c.args[1], &c.args[2]) else {
+            return None;
+        };
+        let name = &sk.motions.get(m.i())?.name;
+        let axis = sk.axes.get(ax.i())?;
+        let v = |q: [u32; 3]| q.map(|p| crate::io::reading(SpecKind::Scalar, sk.params[p as usize].value));
+        let (a, d) = (v(axis.a), v(axis.d));
+        let pitch = crate::io::reading(SpecKind::Length, sk.params[*h as usize].value);
+        Some(format!("{name}: screws about the axis through ({}, {}, {}) along ({}, {}, {}), pitch \
+                      {pitch} a radian", a[0], a[1], a[2], d[0], d[1], d[2]))
+    }).collect()
+}
+
 /// Meshing `i` traced over its phase for a report, from the first point held to it.
 fn meshing_trace(sk: &Sketch, i: usize) -> Result<crate::envelope::meshing::Trace, String> {
     crate::envelope::meshing::Meshing::named(sk, i).and_then(|m| m.traced(MESHING_STEPS))

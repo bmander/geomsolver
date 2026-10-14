@@ -99,6 +99,19 @@ impl Screw {
     }
 }
 
+/// A motion's instantaneous screw axis (`Family::instantaneous`, #326): the line through `point`
+/// (its nearest the origin) along the unit `direction`, along which every point moves by `pitch` a
+/// radian; and the twist it is read from, `v(x) = v0 + omega × x`.
+#[derive(Clone,Copy,Debug,PartialEq)]
+pub struct Isa { pub point: [f64;3], pub direction: [f64;3], pub pitch: f64, pub omega: [f64;3], pub v0: [f64;3] }
+
+impl Isa {
+    /// The velocity per radian of the point at `x`, in the fixed frame.
+    pub fn velocity(&self,x: [f64;3]) -> [f64;3] {
+        crate::space::add(self.v0,crate::space::cross(self.omega,x))
+    }
+}
+
 /// A snapshot of a named rigid-motion graph and its solved world axes. Re-read after
 /// changing the sketch. Sampling a snapshot never reads drawing coordinates or solves it.
 #[derive(Clone,Debug)]
@@ -228,6 +241,45 @@ impl Family {
             [Step::Rotation {origin,axis,ratio,advance,..}] if ratio != 0. => Some(Screw {origin,axis:unit(axis)?,ratio,advance}),
             _ => None,
         }
+    }
+
+    /// The **instantaneous screw** of this motion (#326): the axis every point moves along at the
+    /// drawn pose, read where the twist is the same at every time in the fixed frame — a turn, a
+    /// screw or a slide about a fixed line, or one such seen from another (`relative_to:`), whose
+    /// twist is the source's less the observer's.  A slide alone, or two turns that cancel, turn
+    /// nothing and have none; a relative of a relative is not constant and is refused, saying so.
+    pub fn instantaneous(&self) -> Result<Isa,String> {
+        let one = |s: &Step| -> Result<([f64;3],[f64;3]),String> {
+            let tau = std::f64::consts::TAU;
+            match *s {
+                Step::Rotation {origin,axis,ratio,advance,..} => {
+                    let d = unit(axis).ok_or("a turn's axis has no direction")?;
+                    let w = d.map(|x| x*ratio);
+                    let v = crate::space::cross(origin,w);
+                    Ok((w,std::array::from_fn(|k| v[k]+d[k]*advance/tau)))
+                }
+                Step::Translation {axis,advance} => {
+                    let d = unit(axis).ok_or("a slide's line has no direction")?;
+                    Ok(([0.;3],d.map(|x| x*advance/tau)))
+                }
+                Step::Relative {..} => Err(format!("`{}` is a motion relative to a relative one, whose \
+                    screw moves as it runs: a screw is read of turns, screws and slides about fixed \
+                    lines, and of one relative to another",self.name)),
+            }
+        };
+        let (w,v0) = match self.steps.last().ok_or("a motion with no step")? {
+            Step::Relative {source,observer} => {
+                let (s,o) = (one(&self.steps[*source])?,one(&self.steps[*observer])?);
+                (crate::space::sub(s.0,o.0),crate::space::sub(s.1,o.1))
+            }
+            s => one(s)?,
+        };
+        let ww = crate::space::dot(w,w);
+        if !(ww > 0.) {
+            return Err(format!("`{}` turns nothing, so its screw has no axis",self.name));
+        }
+        let point = crate::space::cross(w,v0).map(|x| x/ww);
+        Ok(Isa {point,direction:unit(w).expect("a turn"),pitch:crate::space::dot(w,v0)/ww,omega:w,v0})
     }
 
     /// How this motion carries the plane through `point` with unit `normal`, when it carries it

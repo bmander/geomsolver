@@ -102,6 +102,21 @@ turned about the normal at M lagging by the turn that closes the gap between the
 from the cone's equation and the poses alone), a stated lag solving its phase, `contact.sv` — with
 `jacobians::meshing_contacts_agree_with_finite_differences`.
 
+**A motion's screw (#326, [0.103]):** `envelope::screw` reads a motion as its twist, `v(x) = v₀ +
+ω × x` a radian, constant in the fixed frame for a turn, a screw or a slide about a fixed line
+(`own`: `ω = ratio·d`, `v₀ = a × ω + d·advance/τ`) and one relative to another (the source's less
+the observer's) — `constant` refuses anything else. `Reading::Reciprocal` is one row of degree 2,
+`(B − A)·v(A)`; `Reading::Axis` five of degree 1: the axis's direction against the two directions
+square to `ω̂` (`square_to`: the world axis `ω̂` leans least toward, its part off) times the lever
+(the motion's first axis as drawn), its place against `ω × v₀/|ω|²` across them, and the pitch
+against `ω·v₀/|ω|²` (`axis_of`; `None`, so NaN rows, where `ω` is zero). Written once over
+`kernels::Num`, the Jacobian by `held::block_jac`. `motion::Family::instantaneous` is the same
+read off a snapshot (`Isa`: point, direction, pitch, twist); `report::screws_text` is the CLI's
+line. `tests/phillips.rs` holds the screw to Ball's closed form on the common perpendicular — the
+foot `E ω₂·ω/|ω|²` from the pinion's shaft, the pitch that point's speed along `ω` — at three shaft
+angles, no offset giving zero pitch through the apex, and `L reciprocal mesh` to the members'
+equal speeds along `L` at every point of it.
+
 **Trimmed spatial patches:** `flank := patch(source, inside: tip, outside: root)`; repeat the label
 per clipping solid. `patch::TrimmedPatch` has explicit axis, trim and residual tolerances; clips
 unmodified full revolutions (line/arc/circle profiles, holes). `solid::RevolvedRegion` is analytic
