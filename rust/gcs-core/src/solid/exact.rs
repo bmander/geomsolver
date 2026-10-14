@@ -28,7 +28,7 @@ pub struct Exact {
 /// Solid `si`'s exact B-rep, or why this kernel does not build it (no length unit, a sweep, a
 /// recipe node it refuses) — a caller then evaluates the facet term instead.
 pub(crate) fn build(sk: &Sketch, si: usize) -> Result<Exact, String> {
-    let mm = cad::millimetres(sk)?;
+    let mm = cad::millimetres(sk);
     let origin = frame_origin(sk, si, REPORT_UNIT);
     let recipe = Recipe::read(&cad::recipe_about(sk, si, origin.map(|x| x * mm))?)?;
     // the rounding of coordinates read where the solid stands, before the shift: a few units in
@@ -88,7 +88,7 @@ pub(crate) fn named(mut brep: Brep, mm: f64, origin: [f64; 3], leading: BTreeSet
 /// bars), about the origin, each face named as `build` names a static solid's (#212): the blank's
 /// by its primitive, a cut's by the placement that cuts it and the cutter's face that made it.
 pub(crate) fn swept(sk: &Sketch, si: usize) -> Result<Exact, String> {
-    let mm = cad::millimetres(sk)?;
+    let mm = cad::millimetres(sk);
     if let Some(x) = sk.supplied_exact_solid(si).filter(|x| !x.named.is_empty()) {
         return Ok((*x).clone());
     }

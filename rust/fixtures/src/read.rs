@@ -38,7 +38,7 @@ fn line_at(source: &str,at: usize) -> &str {
 /// A small fixture against the standard library, which is written in mm at scale 1.
 pub fn read(source: &str) -> program::Elaborated {
     let e = elaborate(source,&mut |name| gcs_core::library::resolve(name));
-    assert_eq!(e.sketch.units.length.map(|u| u.1),Some(1.),"fixtures are written in mm at scale 1");
+    assert_eq!(e.sketch.units.stated(),Some("mm"),"fixtures are written in mm at scale 1");
     e
 }
 

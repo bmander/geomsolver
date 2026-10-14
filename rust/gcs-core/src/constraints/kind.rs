@@ -141,6 +141,17 @@ pub enum CKind {
     /// by Meusnier from the normal curvature, which the envelope's shape operator gives with no
     /// second solve), and the radius its distance.
     EnvelopeCurvatureAt,
+    /// **A point on the path of contact of two flanks** (#283 step 3, `envelope::meshing`): `p
+    /// coincident contact`, `contact := meshing(pinion_flank, gear_flank, under: mesh, …)`.  It
+    /// owns the pinion's phase `t`, the gear's lag `lag` (the transmission error, as a roll of the
+    /// mesh) and a place on each flank `[u, v, t]`, eight unknowns against ten rows — the point
+    /// where the pinion's flank is at its phase, the two flanks sharing that point and their
+    /// normal there, and each flank's own row (a generated flank's meshing equation, a formed
+    /// one's roll held at none) — so the point is on a curve in space, net two.  The phase and
+    /// the lag are what a pin states (`p coincident(t == 0deg, lag == 0deg) contact`); both
+    /// flanks' sources and motions and the mesh's axes are columns, so what makes a flank solves
+    /// from where the contact is and how late the gear is there.
+    PointOnMeshing,
     /// **The tangent at a point already on a spline** (#251), `g tangent(at: m) l`: the line runs
     /// along `C'(t)`, where `t` is the place of the contact holding `m` on the spline — **that
     /// contact's own unknown**, shared rather than a second one (`Sketch::add`, #70's shared
@@ -309,7 +320,7 @@ impl FamilyKernel {
 }
 
 /// Every concrete constraint type, in the order the registry lists them.
-pub const ALL_KINDS: [CKind; 78] = [
+pub const ALL_KINDS: [CKind; 79] = [
     CKind::Coincident,
     CKind::Distance,
     CKind::Midpoint,
@@ -346,6 +357,7 @@ pub const ALL_KINDS: [CKind; 78] = [
     CKind::EnvelopeNormalAt,
     CKind::EnvelopePlaneAt,
     CKind::EnvelopeCurvatureAt,
+    CKind::PointOnMeshing,
     CKind::Project,
     CKind::Lift,
     CKind::Coincident3,
@@ -402,6 +414,9 @@ pub enum SpecKind {
     Curve,
     /// An envelope in space a contact holds to (#283): its source and motion read as columns.
     Envelope,
+    /// The meshing of two flanks a point is held to (#283): both flanks and the mesh read as
+    /// columns.
+    Meshing,
     /// A plane: its origin and its two axes, read by the relations in space and by `Project`.
     Plane,
     /// An axis: a directed line in space, in no view.
@@ -451,6 +466,7 @@ impl SpecKind {
             | SpecKind::Spline
             | SpecKind::Curve
             | SpecKind::Envelope
+            | SpecKind::Meshing
             | SpecKind::Plane
             | SpecKind::Axis
             | SpecKind::Direction
@@ -475,6 +491,7 @@ impl SpecKind {
                 | SpecKind::Spline
                 | SpecKind::Curve
                 | SpecKind::Envelope
+                | SpecKind::Meshing
                 | SpecKind::Plane
                 | SpecKind::Axis
                 | SpecKind::Direction
@@ -511,6 +528,7 @@ impl SpecKind {
             SpecKind::Spline => "spline",
             SpecKind::Curve => "curve",
             SpecKind::Envelope => "envelope",
+            SpecKind::Meshing => "meshing",
             SpecKind::Plane => "plane",
             SpecKind::Axis => "axis",
             SpecKind::Direction => "direction",
@@ -584,6 +602,7 @@ impl CKind {
             CKind::EnvelopeNormalAt => "EnvelopeNormalAt",
             CKind::EnvelopePlaneAt => "EnvelopePlaneAt",
             CKind::EnvelopeCurvatureAt => "EnvelopeCurvatureAt",
+            CKind::PointOnMeshing => "PointOnMeshing",
             CKind::Project => "Project",
             CKind::AxisOnPlane => "AxisOnPlane",
             CKind::AxisCoincident => "AxisCoincident",
@@ -787,6 +806,12 @@ impl CKind {
                 ("envelope", S::Envelope), ("circle", S::CircleOrArc), ("at", S::Point),
                 ("u", S::Param), ("v", S::Param), ("t", S::Param),
             ],
+            // the pinion's phase and the gear's lag, then the place on each flank
+            CKind::PointOnMeshing => &[
+                ("p", S::Point), ("meshing", S::Meshing), ("t", S::Param), ("lag", S::Param),
+                ("u1", S::Param), ("v1", S::Param), ("t1", S::Param),
+                ("u2", S::Param), ("v2", S::Param), ("t2", S::Param),
+            ],
             CKind::SplineTangentLine => {
                 &[("spline", S::Spline), ("line", S::Line), ("t", S::Param)]
             }
@@ -888,6 +913,8 @@ impl CKind {
             | CKind::EnvelopeNormalAt
             | CKind::EnvelopePlaneAt
             | CKind::EnvelopeCurvatureAt
+            // a phase and a lag in radians, and a place on each flank
+            | CKind::PointOnMeshing
             // a fraction of a run or a turn
             | CKind::PointAlongLine
             | CKind::PointAlongArc
@@ -935,6 +962,8 @@ impl CKind {
             // an envelope in space (#283): a point on it, a line or a plane touching it, a line
             // along its normal and a circle osculating it, the last four at a point already on it
             CKind::PointOnEnvelope => ("coincident", Infix),
+            // the path of contact of two flanks (#283)
+            CKind::PointOnMeshing => ("coincident", Infix),
             CKind::EnvelopeTangentAt | CKind::EnvelopePlaneAt => ("tangent", Infix),
             CKind::EnvelopeNormalAt => ("perpendicular", Infix),
             CKind::EnvelopeCurvatureAt => ("curvature", Infix),
@@ -1250,7 +1279,8 @@ impl CKind {
     /// spline length's control-point count) rather than registered: `Constraint::kernel_key`
     /// names it, and nothing may ask `kernel()` for it.
     pub fn built(self) -> bool {
-        matches!(self, CKind::SplineLength | CKind::Stationary | CKind::CurveTouchesLine)
+        matches!(self, CKind::SplineLength | CKind::Stationary | CKind::CurveTouchesLine
+                       | CKind::PointOnMeshing)
             || self.envelope_contact().is_some()
     }
 
@@ -1344,6 +1374,7 @@ impl CKind {
             | CKind::PointOnExtrusion
             // a point on an envelope is a contact, as one on a curve is
             | CKind::PointOnEnvelope
+            | CKind::PointOnMeshing
             | CKind::PointAlongLine
             | CKind::PointAlongArc
             | CKind::PointAlongLine3
@@ -1436,6 +1467,9 @@ impl CKind {
             | CKind::EnvelopePlaneAt
             | CKind::EnvelopeCurvatureAt => {
                 panic!("an envelope contact's kernel is built at its operands' widths")
+            }
+            CKind::PointOnMeshing => {
+                panic!("a meshing contact's kernel is built at its operands' widths")
             }
             CKind::SplineLength => panic!("a spline length's kernel belongs to its spline's count"),
             CKind::Stationary => panic!("an energy's kernel belongs to its curve"),
@@ -1597,6 +1631,7 @@ impl CKind {
             | CKind::EnvelopeNormalAt
             | CKind::EnvelopePlaneAt
             | CKind::EnvelopeCurvatureAt
+            | CKind::PointOnMeshing
             | CKind::PointAlongLine
             | CKind::PointAlongArc
             | CKind::PointAlongLine3
@@ -1659,6 +1694,7 @@ impl CKind {
                 | CKind::EnvelopeNormalAt
                 | CKind::EnvelopePlaneAt
                 | CKind::EnvelopeCurvatureAt
+                | CKind::PointOnMeshing
                 | CKind::PointOnAxis
                 | CKind::LineOnAxis
                 | CKind::AxisOnPlane

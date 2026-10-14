@@ -359,7 +359,7 @@ fn make(
     let idx = match d.kind {
         // built by their own phase, after every other kind: a face is written over edges and a
         // solid over faces and solids, so neither can be minted by the walk that makes points
-        EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge => return None,
+        EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge | EntKind::Meshing => return None,
         EntKind::Point if unseeded => {
             let (x, y) = scatter(sk.points.len());
             sk.point(x, y, false, &show)
@@ -823,7 +823,7 @@ fn seed_read(sk: &Sketch, res: &Resolver, dotted: &str) -> Result<(f64, crate::u
         )
     })?;
     let p = *sk.entity_params(e).get(at).ok_or_else(|| format!("`{dotted}` has no seed yet"))?;
-    Ok((sk.params[p as usize].value, sk.units.read_length()))
+    Ok((sk.params[p as usize].value, crate::units::Dim::LENGTH))
 }
 
 /// An expression over geometry's seeds, come to its number.  `names` is what each dotted name
@@ -1225,5 +1225,6 @@ fn set_class(sk: &mut Sketch, e: EntRef, c: Classes) {
         EntKind::Seam => sk.seams[e.i()].class = c,
         EntKind::Vertex => sk.vertices[e.i()].class = c,
         EntKind::Edge => sk.edges[e.i()].class = c,
+        EntKind::Meshing => sk.meshings[e.i()].class = c,
     }
 }

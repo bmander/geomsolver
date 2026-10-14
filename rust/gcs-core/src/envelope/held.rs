@@ -155,14 +155,44 @@ pub fn consts(lead: usize, source: Source, axis: u8, number: (f64, f64, bool), r
     let mut k = vec![lead as f64, source as i64 as f64, axis as f64,
                      number.0, number.1, if number.2 { 1.0 } else { 0.0 },
                      reference[0], reference[1], reference[2], steps.len() as f64];
-    for s in steps {
-        k.extend(match *s {
-            Step::Rotation { at, ratio, phase, advance } => [1.0, at as f64, 0.0, 0.0, ratio, phase, advance],
-            Step::Translation { at, advance } => [2.0, at as f64, 0.0, 0.0, 0.0, 0.0, advance],
-            Step::Relative { source, observer } => [3.0, 0.0, source as f64, observer as f64, 0.0, 0.0, 0.0],
+    k.extend(encode_steps(steps));
+    k
+}
+
+/// A motion's steps as constants, `STEP` each.
+pub fn encode_steps(steps: &[Step]) -> Vec<f64> {
+    steps.iter().flat_map(|s| match *s {
+        Step::Rotation { at, ratio, phase, advance } => [1.0, at as f64, 0.0, 0.0, ratio, phase, advance],
+        Step::Translation { at, advance } => [2.0, at as f64, 0.0, 0.0, 0.0, 0.0, advance],
+        Step::Relative { source, observer } => [3.0, 0.0, source as f64, observer as f64, 0.0, 0.0, 0.0],
+    }).collect()
+}
+
+/// Steps read back off `encode_steps`' constants: `None` where they are not steps, or a relative
+/// names a step not before it.
+pub fn read_steps(k: &[f64]) -> Option<Vec<Step>> {
+    if k.len() % STEP != 0 {
+        return None;
+    }
+    let mut steps = Vec::with_capacity(k.len() / STEP);
+    for (i, s) in k.chunks(STEP).enumerate() {
+        let idx = |x: f64| (x >= 0.0 && (x as usize) < i).then_some(x as usize);
+        steps.push(match s[0] as i64 {
+            1 => Step::Rotation { at: s[1] as usize, ratio: s[4], phase: s[5], advance: s[6] },
+            2 => Step::Translation { at: s[1] as usize, advance: s[6] },
+            3 => Step::Relative { source: idx(s[2])?, observer: idx(s[3])? },
+            _ => return None,
         });
     }
-    k
+    Some(steps)
+}
+
+/// The columns a motion's steps read: six per axis.
+pub fn steps_width(steps: &[Step]) -> usize {
+    steps.iter().filter_map(|s| match *s {
+        Step::Rotation { at, .. } | Step::Translation { at, .. } => Some(at + 6),
+        Step::Relative { .. } => None,
+    }).max().unwrap_or(0)
 }
 
 /// A contact's constants read back.
@@ -178,25 +208,23 @@ pub struct Layout {
 }
 
 impl Layout {
+    /// A contact's constants read back: an envelope's, so its motion has a step.
     pub fn read(k: &[f64]) -> Option<Layout> {
+        Self::read_any(k).filter(|l| !l.steps.is_empty())
+    }
+
+    /// A flank's constants read back (#283, `envelope::meshing`): an envelope's, or a formed
+    /// flank's — the source itself, standing still, with no step.
+    pub fn read_any(k: &[f64]) -> Option<Layout> {
         if k.len() < HEADER {
             return None;
         }
         let source = Source::of(k[1])?;
         let n = k[9];
-        if !(n >= 1.0 && n <= 64.0) || k.len() != HEADER + STEP * n as usize {
+        if !(n >= 0.0 && n <= 64.0) || k.len() != HEADER + STEP * n as usize {
             return None;
         }
-        let mut steps = Vec::with_capacity(n as usize);
-        for (i, s) in k[HEADER..].chunks(STEP).enumerate() {
-            let idx = |x: f64| (x >= 0.0 && (x as usize) < i).then_some(x as usize);
-            steps.push(match s[0] as i64 {
-                1 => Step::Rotation { at: s[1] as usize, ratio: s[4], phase: s[5], advance: s[6] },
-                2 => Step::Translation { at: s[1] as usize, advance: s[6] },
-                3 => Step::Relative { source: idx(s[2])?, observer: idx(s[3])? },
-                _ => return None,
-            });
-        }
+        let steps = read_steps(&k[HEADER..])?;
         Some(Layout {
             lead: k[0] as usize,
             source,
@@ -214,10 +242,7 @@ impl Layout {
 
     /// The motion's columns: six per axis a step reads.
     pub fn motion_width(&self) -> usize {
-        self.steps.iter().filter_map(|s| match *s {
-            Step::Rotation { at, .. } | Step::Translation { at, .. } => Some(at + 6),
-            Step::Relative { .. } => None,
-        }).max().unwrap_or(0)
+        steps_width(&self.steps)
     }
 
     /// Every column the contact reads.
@@ -388,16 +413,16 @@ impl<T: Num> Mul for H1<T> {
 
 /* -- vectors, over whatever adds and multiplies ------------------------------------------------- */
 
-fn dot<F: Copy + Add<Output = F> + Mul<Output = F>>(a: [F; 3], b: [F; 3]) -> F {
+pub(crate) fn dot<F: Copy + Add<Output = F> + Mul<Output = F>>(a: [F; 3], b: [F; 3]) -> F {
     a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 }
-fn cross<F: Copy + Sub<Output = F> + Mul<Output = F>>(a: [F; 3], b: [F; 3]) -> [F; 3] {
+pub(crate) fn cross<F: Copy + Sub<Output = F> + Mul<Output = F>>(a: [F; 3], b: [F; 3]) -> [F; 3] {
     [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
 }
-fn vadd<F: Copy + Add<Output = F>>(a: [F; 3], b: [F; 3]) -> [F; 3] {
+pub(crate) fn vadd<F: Copy + Add<Output = F>>(a: [F; 3], b: [F; 3]) -> [F; 3] {
     [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
 }
-fn vsub<F: Copy + Sub<Output = F>>(a: [F; 3], b: [F; 3]) -> [F; 3] {
+pub(crate) fn vsub<F: Copy + Sub<Output = F>>(a: [F; 3], b: [F; 3]) -> [F; 3] {
     [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
 }
 fn vscale<F: Copy + Mul<Output = F>>(a: [F; 3], k: F) -> [F; 3] {
@@ -406,7 +431,7 @@ fn vscale<F: Copy + Mul<Output = F>>(a: [F; 3], k: F) -> [F; 3] {
 
 /// A unit vector along `x`; `x` itself where it has no length (a degenerate figure, whose rows
 /// read as whatever it is rather than as NaN).
-fn unit<T: Num>(x: [T; 3]) -> [T; 3] {
+pub(crate) fn unit<T: Num>(x: [T; 3]) -> [T; 3] {
     let n = dot(x, x).sqrt();
     if n.val() > 0.0 {
         vscale(x, T::cst(1.0) / n)
@@ -415,7 +440,7 @@ fn unit<T: Num>(x: [T; 3]) -> [T; 3] {
     }
 }
 
-fn col3<T: Num>(c: &[T], at: usize) -> [T; 3] {
+pub(crate) fn col3<T: Num>(c: &[T], at: usize) -> [T; 3] {
     [c[at], c[at + 1], c[at + 2]]
 }
 fn lift<T: Num>(x: [T; 3]) -> [H2<T>; 3] {
@@ -492,11 +517,30 @@ impl<T: Num> Pose<T> {
     }
 }
 
-/// The motion's pose at roll `t` (the place's third), as `motion::Family::at` reads it.
+/// The motion's pose at roll `t` (the place's third), as `motion::Family::at` reads it; where it
+/// has no step (a formed flank, #283), the source standing still.
 fn pose<T: Num>(l: &Layout, m: &[T], t: H2<T>) -> Pose<T> {
+    poses(&l.steps, m, t).pop().unwrap_or_else(|| {
+        let (one, o) = (H2::cst(T::cst(1.0)), H2::cst(zero()));
+        Pose { r: [[one, o, o], [o, one, o], [o, o, one]], p: [o; 3] }
+    })
+}
+
+/// A rigid pose's rotation and translation, as numbers.
+pub(crate) type Frame<T> = ([[T; 3]; 3], [T; 3]);
+
+/// Every step's pose at roll `t`, as numbers: what a meshing reads of its motion at two rolls
+/// (#283, `envelope::meshing`).
+pub(crate) fn frames<T: Num>(steps: &[Step], m: &[T], t: T) -> Vec<Frame<T>> {
+    poses(steps, m, H2::cst(t)).into_iter()
+        .map(|p| (p.r.map(|r| r.map(|x| x.v)), p.p.map(|x| x.v))).collect()
+}
+
+/// Each step's pose at roll `t`, in order.
+fn poses<T: Num>(steps: &[Step], m: &[T], t: H2<T>) -> Vec<Pose<T>> {
     let tau = std::f64::consts::TAU;
-    let mut poses: Vec<Pose<T>> = Vec::with_capacity(l.steps.len());
-    for s in &l.steps {
+    let mut poses: Vec<Pose<T>> = Vec::with_capacity(steps.len());
+    for s in steps {
         let next = match *s {
             Step::Rotation { at, ratio, phase, advance } => {
                 let a = col3(m, at);
@@ -528,7 +572,7 @@ fn pose<T: Num>(l: &Layout, m: &[T], t: H2<T>) -> Pose<T> {
         };
         poses.push(next);
     }
-    poses.pop().expect("a motion has a step")
+    poses
 }
 
 /// What the rows read at a place: the moving point, its normal and the meshing equation, each
@@ -661,46 +705,63 @@ pub(crate) fn rows<T: Num>(c: Contact, cols: &[T], k: &[f64], out: &mut [T]) -> 
 /* -- the kernels ------------------------------------------------------------------------------ */
 
 /// Columns differentiated per pass.
-const PASS: usize = 8;
+pub(crate) const PASS: usize = 8;
 
 fn res<const C: u8>(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
     let c = Contact::ALL[C as usize];
+    block_res(n, v, k, r, c.rows(), |x, kc, out| rows(c, x, kc, out));
+}
+
+fn jac<const C: u8>(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    let c = Contact::ALL[C as usize];
+    block_jac(n, v, k, j, c.rows(), |x, kc, out| rows(c, x, kc, out));
+}
+
+/// A kernel's `m` outputs a block over `n` blocks, each written by `rows` over its block's columns
+/// and constants — a kernel built at its block's widths (`curve_widths`), NaN where `rows` cannot
+/// read them: the envelope contacts' and a point on a meshing's (#283) residuals, and with `m`
+/// their rows times their columns, their Jacobians (`block_jac`, `meshing::jac`).
+pub(crate) fn block_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64], m: usize,
+                        mut rows: impl FnMut(&[f64], &[f64], &mut [f64]) -> Option<()>) {
     let (n_par, n_const) = curve_widths(n, v, k);
-    let m = c.rows();
     for i in 0..n {
         let out = &mut r[m * i..m * (i + 1)];
-        if rows::<f64>(c, &v[n_par * i..n_par * (i + 1)], &k[n_const * i..n_const * (i + 1)], out).is_none() {
+        if rows(&v[n_par * i..n_par * (i + 1)], &k[n_const * i..n_const * (i + 1)], out).is_none() {
             out.fill(f64::NAN);
         }
     }
 }
 
-fn jac<const C: u8>(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
-    let c = Contact::ALL[C as usize];
-    let (n_par, n_const) = curve_widths(n, v, k);
-    let m = c.rows();
+/// `block_res`'s Jacobian, exact by forward differentiation, `PASS` columns a pass.
+pub(crate) fn block_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64], m: usize,
+                        rows: impl Fn(&[Dual<PASS>], &[f64], &mut [Dual<PASS>]) -> Option<()>) {
+    let (n_par, _) = curve_widths(n, v, k);
     let mut cols = vec![Dual::<PASS>::cst(0.0); n_par];
     let mut out = vec![Dual::<PASS>::cst(0.0); m];
-    for i in 0..n {
-        let x = &v[n_par * i..n_par * (i + 1)];
-        let kc = &k[n_const * i..n_const * (i + 1)];
-        let block = &mut j[m * n_par * i..m * n_par * (i + 1)];
+    block_res(n, v, k, j, m * n_par, |x, kc, block| {
         for start in (0..n_par).step_by(PASS) {
-            for (q, col) in cols.iter_mut().enumerate() {
-                *col = Dual::cst(x[q]);
-                if (start..start + PASS).contains(&q) {
-                    col.g[q - start] = 1.0;
-                }
-            }
-            if rows(c, &cols, kc, &mut out).is_none() {
-                block.fill(f64::NAN);
-                break;
-            }
-            for (row, val) in out.iter().enumerate() {
-                for q in start..(start + PASS).min(n_par) {
-                    block[row * n_par + q] = val.g[q - start];
-                }
-            }
+            seed_pass(&mut cols, x, start);
+            rows(&cols, kc, &mut out)?;
+            scatter_pass(&out, block, start);
+        }
+        Some(())
+    });
+}
+
+/// `x` as numbers carrying their derivatives in columns `start..start + PASS`.
+pub(crate) fn seed_pass(cols: &mut [Dual<PASS>], x: &[f64], start: usize) {
+    for (q, col) in cols.iter_mut().enumerate() {
+        let seeded = (start..start + PASS).contains(&q);
+        *col = if seeded { Dual::var(x[q], q - start) } else { Dual::cst(x[q]) };
+    }
+}
+
+/// A pass's rows `out` into the row-major Jacobian `j`, at columns `start..start + PASS`.
+pub(crate) fn scatter_pass(out: &[Dual<PASS>], j: &mut [f64], start: usize) {
+    let w = j.len() / out.len();
+    for (row, val) in out.iter().enumerate() {
+        for q in start..(start + PASS).min(w) {
+            j[row * w + q] = val.g[q - start];
         }
     }
 }
@@ -764,14 +825,8 @@ pub fn seed(k: &[f64], parts: &[f64], p: [f64; 3], roll: [f64; 2]) -> Option<[f6
     tr.cols[..3].copy_from_slice(&p);
     tr.cols[l.lead + 3..].copy_from_slice(parts);
     let cost = |r: [f64; 4]| r.iter().map(|x| x * x).sum::<f64>();
-    // the meridian's spans: a fraction of a line, a turn round a circle, and along a cone's or a
-    // cylinder's generator as far either way as the point is from the axis's start
     let reach = crate::space::distance(p, [parts[0], parts[1], parts[2]]).max(1e-3);
-    let us: Vec<f64> = match l.source {
-        Source::Line => vec![-0.5, 0.0, 0.25, 0.5, 0.75, 1.0, 1.5],
-        Source::Round => (0..12).map(|i| i as f64 * std::f64::consts::TAU / 12.0).collect(),
-        Source::Cone | Source::Cylinder => (-6..=6).map(|i| i as f64 * reach / 3.0).collect(),
-    };
+    let us = meridian_spans(l.source, reach);
     let mut best: Option<([f64; 3], f64)> = None;
     let n_roll = 25;
     for a in 0..n_roll {
@@ -793,6 +848,17 @@ pub fn seed(k: &[f64], parts: &[f64], p: [f64; 3], roll: [f64; 2]) -> Option<[f6
     crate::newton::dogleg(&mut tr, &mut z, &mut r, tol, 100, 400);
     let x = [z[0], z[1], z[2]];
     tr.at(x).iter().all(|v| v.is_finite()).then_some(x)
+}
+
+/// Where a seed's coarse grid samples a source's meridian: a fraction of a line, a turn round a
+/// circle, and along a cone's or a cylinder's generator as far either way as `reach`, how far the
+/// point sought is from the axis's start.
+pub(crate) fn meridian_spans(source: Source, reach: f64) -> Vec<f64> {
+    match source {
+        Source::Line => vec![-0.5, 0.0, 0.25, 0.5, 0.75, 1.0, 1.5],
+        Source::Round => (0..12).map(|i| i as f64 * std::f64::consts::TAU / 12.0).collect(),
+        Source::Cone | Source::Cylinder => (-6..=6).map(|i| i as f64 * reach / 3.0).collect(),
+    }
 }
 
 /// A point contact's four rows over its place alone, the rest of its columns held: what `seed`
@@ -847,13 +913,7 @@ impl crate::newton::TrustRegion for Seeding<'_> {
         out.copy_from_slice(&self.j.mul_vec(v));
     }
     fn gn_step(&mut self, r: &[f64], _g: &[f64], p: &mut [f64]) {
-        if !self.j.data.iter().all(|x| x.is_finite()) {
-            p.fill(0.0);
-            return;
-        }
-        let neg: Vec<f64> = r.iter().map(|v| -v).collect();
-        let (step, _) = crate::linalg::min_norm_solve(&self.j, &neg, 1e-12);
-        p.copy_from_slice(&step);
+        crate::newton::dense_gn_step(&self.j, r, p, 1e-12);
     }
 }
 
@@ -889,6 +949,16 @@ impl Parts {
     /// Envelope `index`'s parts, or why a contact cannot read it.
     pub fn of(sk: &Sketch, index: usize) -> Result<Parts, String> {
         let e = sk.envelopes.get(index).ok_or("no such envelope")?;
+        let mut parts = Parts::still(sk, &e.held, &e.name)?;
+        let mut done = std::collections::BTreeMap::new();
+        motion(sk, e.motion as usize, &mut parts.steps, &mut parts.cols, &mut done, 0)?;
+        Ok(parts)
+    }
+
+    /// The parts of a source the solve reads standing still — a formed flank (#283,
+    /// `envelope::meshing`): its own columns and no step.  `name` is what a set's refusal says
+    /// stated nothing at its point.
+    pub fn still(sk: &Sketch, held: &Held, name: &str) -> Result<Parts, String> {
         let mut cols = Vec::new();
         let ends = |l: u32| -> Result<[usize; 2], String> {
             let l = sk.lines.get(l as usize).ok_or("no such line")?;
@@ -904,7 +974,7 @@ impl Parts {
                 },
             }
         };
-        let (source, axis, number, reference) = match &e.held {
+        let (source, axis, number, reference) = match held {
             Held::Not(why) => return Err(why.clone()),
             Held::Revolution { axis, edge } => {
                 let form = match axis.kind {
@@ -938,8 +1008,8 @@ impl Parts {
                 (source, form, (0.0, 0.0, false), [0.0; 3])
             }
             Held::Set { shape: None, .. } => {
-                return Err(format!("`{}`'s set states nothing at its point a surface can be read \
-                                    from", e.name))
+                return Err(format!("`{name}`'s set states nothing at its point a surface can be \
+                                    read from"))
             }
             Held::Set { shape: Some(shape), .. } => {
                 let source = match shape.kind {
@@ -952,45 +1022,32 @@ impl Parts {
                 (source, 0, n, shape.reference)
             }
         };
-        let mut steps = Vec::new();
-        let mut done = std::collections::BTreeMap::new();
-        motion(sk, e.motion as usize, &mut steps, &mut cols, &mut done, 0)?;
-        Ok(Parts { source, axis, number, reference, steps, cols })
+        Ok(Parts { source, axis, number, reference, steps: Vec::new(), cols })
     }
 
     /// The points whose lifts the columns read: what `Sketch::add` lifts.
     pub fn lifted(&self) -> Vec<usize> {
-        self.cols.iter().filter_map(|c| match *c {
-            Col::Lift(p) => Some(p),
-            _ => None,
-        }).collect()
+        lifted(&self.cols)
     }
 
     /// The columns, every point's lift minted.
     pub fn columns(&self, sk: &Sketch) -> Vec<u32> {
-        self.cols.iter().flat_map(|c| match *c {
-            Col::Lift(p) => {
-                let k = sk.lift_of(p).expect("an envelope's points are lifted at the add");
-                sk.lifts[k].x.to_vec()
-            }
-            Col::One(p) => vec![p],
-            Col::Three(x) => x.to_vec(),
-        }).collect()
+        columns(sk, &self.cols)
     }
 
     /// The columns' values as the drawing stands, a point not lifted yet read where it is.
     pub fn values(&self, sk: &Sketch) -> Vec<f64> {
-        let v = |p: u32| sk.params[p as usize].value;
-        self.cols.iter().flat_map(|c| match *c {
-            Col::Lift(p) => sk.lifted(p).to_vec(),
-            Col::One(p) => vec![v(p)],
-            Col::Three(x) => x.map(v).to_vec(),
-        }).collect()
+        values(sk, &self.cols)
     }
 
     /// A contact's constants over these parts.
     pub fn consts(&self, c: Contact) -> Vec<f64> {
-        consts(c.lead(), self.source, self.axis, self.number, self.reference, &self.steps)
+        self.consts_at(c.lead())
+    }
+
+    /// The constants over these parts with a lead of `lead` columns: a flank's are `0`.
+    pub fn consts_at(&self, lead: usize) -> Vec<f64> {
+        consts(lead, self.source, self.axis, self.number, self.reference, &self.steps)
     }
 
     /// How many constants a contact reads (`consts`).
@@ -1000,11 +1057,84 @@ impl Parts {
 
     /// How many columns a contact of kind `c` reads.
     pub fn width(&self, c: Contact) -> usize {
-        c.lead() + 3 + self.cols.iter().map(|x| match x {
-            Col::Lift(_) | Col::Three(_) => 3,
-            Col::One(_) => 1,
-        }).sum::<usize>()
+        c.lead() + 3 + self.own_width()
     }
+
+    /// The columns of the source and the motion alone, past the place.
+    pub fn own_width(&self) -> usize {
+        width(&self.cols)
+    }
+
+}
+
+/// A motion the solve reads apart from any source (#283, `envelope::meshing`): its steps and the
+/// columns of the axes they turn about or slide along.
+#[derive(Clone, Debug)]
+pub struct Moving {
+    pub steps: Vec<Step>,
+    cols: Vec<Col>,
+}
+
+impl Moving {
+    /// Motion `m`'s steps and columns, or why the solve cannot read it.
+    pub fn of(sk: &Sketch, m: usize) -> Result<Moving, String> {
+        let (mut steps, mut cols) = (Vec::new(), Vec::new());
+        motion(sk, m, &mut steps, &mut cols, &mut std::collections::BTreeMap::new(), 0)?;
+        Ok(Moving { steps, cols })
+    }
+
+    pub fn lifted(&self) -> Vec<usize> {
+        lifted(&self.cols)
+    }
+
+    pub fn columns(&self, sk: &Sketch) -> Vec<u32> {
+        columns(sk, &self.cols)
+    }
+
+    pub fn values(&self, sk: &Sketch) -> Vec<f64> {
+        values(sk, &self.cols)
+    }
+
+    pub fn width(&self) -> usize {
+        width(&self.cols)
+    }
+}
+
+/// The points whose lifts columns read.
+fn lifted(cols: &[Col]) -> Vec<usize> {
+    cols.iter().filter_map(|c| match *c {
+        Col::Lift(p) => Some(p),
+        _ => None,
+    }).collect()
+}
+
+/// The columns' parameters, every point's lift minted.
+fn columns(sk: &Sketch, cols: &[Col]) -> Vec<u32> {
+    cols.iter().flat_map(|c| match *c {
+        Col::Lift(p) => {
+            let k = sk.lift_of(p).expect("an envelope's points are lifted at the add");
+            sk.lifts[k].x.to_vec()
+        }
+        Col::One(p) => vec![p],
+        Col::Three(x) => x.to_vec(),
+    }).collect()
+}
+
+/// The columns' values as the drawing stands, a point not lifted yet read where it is.
+fn values(sk: &Sketch, cols: &[Col]) -> Vec<f64> {
+    let v = |p: u32| sk.params[p as usize].value;
+    cols.iter().flat_map(|c| match *c {
+        Col::Lift(p) => sk.lifted(p).to_vec(),
+        Col::One(p) => vec![v(p)],
+        Col::Three(x) => x.map(v).to_vec(),
+    }).collect()
+}
+
+fn width(cols: &[Col]) -> usize {
+    cols.iter().map(|x| match x {
+        Col::Lift(_) | Col::Three(_) => 3,
+        Col::One(_) => 1,
+    }).sum()
 }
 
 /// Motion `m` as steps in the order `motion::Family::read` takes them — each once, its source

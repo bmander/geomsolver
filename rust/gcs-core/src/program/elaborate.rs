@@ -132,7 +132,7 @@ fn station_reads(cx: &mut Elab<'_>, flat: &Flat<'_>) {
 /// **Phase 0: the document's unit**, before *anything* reads a number.
 ///
 /// A literal with a unit on it converts to this one, and a document that names none is in
-/// drawing units (spec §3.3).  It is read from the **unexpanded root** because a unit is
+/// millimetres (spec §3.3.2, [0.93]).  It is read from the **unexpanded root** because a unit is
 /// document preamble and a component is reusable: a `unit` line anywhere else is refused
 /// (`style_sheet`) rather than quietly doing nothing.  It comes before the curve families,
 /// because a family's body is a number-bearing text like any other.
@@ -496,10 +496,11 @@ fn prism_sides(cx: &mut Elab<'_>, flat: &Flat<'_>) -> BTreeSet<StmtId> {
 fn held_envelopes(
     cx: &mut Elab<'_>, flat: &Flat<'_>, planar: &BTreeSet<StmtId>, extruded: &BTreeSet<StmtId>,
 ) -> (BTreeSet<StmtId>, BTreeSet<StmtId>) {
-    let Elab { sk, res, map, .. } = cx;
+    let Elab { sk, res, map, diags, .. } = cx;
     let generated: BTreeSet<StmtId> =
         flat.skip.iter().chain(planar).chain(extruded).copied().collect();
     let held = envelopes::held_envelopes(sk, res, map, &flat.body, &generated);
+    envelopes::held_meshings(sk, res, map, &flat.body, &flat.skip, diags);
     (generated, held)
 }
 
@@ -708,6 +709,10 @@ fn finish(mut cx: Elab<'_>, flat: &Flat<'_>) -> Elaborated {
             d.code = Code::E107;
         }
     }
+    // a declaration reading a formal whose argument was said to name nothing is not said again
+    // where the body reads it (#253): the argument is where the fault is
+    let quiet = &flat.expansion.quiet;
+    cx.diags.retain(|d| !(d.code == Code::E101 && d.stmt.is_some() && quiet.contains(&d.span)));
     let p = cx.doc;
     crate::modules::localize(p, &mut cx.diags);
     Elaborated { sketch: cx.sk, map: cx.map, diags: cx.diags, program: p.clone(), taken: false }

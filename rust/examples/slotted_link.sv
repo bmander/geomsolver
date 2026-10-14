@@ -13,9 +13,9 @@
 // One overall length, one end radius shared by both ends, a radius for each hole, one levelled
 // run and one pinned centre — and the shape is completely determined.
 
-// The document's unit.  Without this line the drawing is in *drawing units* — a length with no
-// name — and everything still dimension-checks; what the line buys is the right to write a
-// length in the unit a person has in hand: `c1 distance(3 1/8") c2` is 79.375 here.
+// The document's unit.  Without this line the drawing is in millimetres all the same; what the
+// line buys is saying so, and the right to name another (`unit in`).  A length may be written
+// in the unit a person has in hand either way: `c1 distance(3 1/8") c2` is 79.375 here.
 unit mm
 use std
 

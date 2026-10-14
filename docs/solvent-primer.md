@@ -86,8 +86,8 @@ place needs no arithmetic:
 
 A place drawn in another view is read in space and projected into the seeded point's view. A point
 in space is seeded `hint((x, y, z))`. Seeds settle in statement order, so one reading a seed written
-below reads its provisional start. Under a `unit` line a geometry read is a length: write
-`pin.x - 10mm`. A value may **not** read geometry, since a seed must never change what a document
+below reads its provisional start. A geometry read is a length: write `pin.x - 10mm`, not
+`pin.x - 10`. A value may **not** read geometry, since a seed must never change what a document
 says. An unbound numeric formal (1.8) reads as 0 in a hint.
 
 ### 1.3 Statement forms
@@ -119,7 +119,7 @@ NAME := solid(Comp(ARGS).FACE over F in (E, E))   a face family: the face as the
 NAME := solid(SOLID) | solid(SET)       a body over a stock; the points of a region
 NAME := solid(SOLID, under: MOTION, at: E | from: E, to: E | through: BODY)   placed by, or swept through, a motion
 REF union REF | REF cut REF | REF common REF  material added to, removed from, shared with a body
-NAME := motion | envelope | surface | patch | seam | vertex | edge(...)              (1.15)
+NAME := motion | envelope | meshing | surface | patch | seam | vertex | edge(...)    (1.15)
 WORD[(ARGS)] REF | REF WORD[(ARGS)] REF [hint(SLOT: E, ...)]   a constraint          (1.5)
 claim CONSTRAINT                        judged, never solved for                     (1.11)
 fix((E, E[, E])) REF | fix(MEMBER == E, ...) REF   hold an entity's own numbers      (1.4)
@@ -348,7 +348,9 @@ a distance(80mm) b
 c distance(1' 6 3/16") d            // one literal: spaces separate the parts, as in 3 1/2
 ```
 
-- **Without a `unit` line** numbers are in unnamed drawing units and a suffix is refused.
+- **Without a `unit` line** the document is in millimetres, exactly as under `unit mm`: a suffix
+  converts (`2in` is 50.8) and a geometry read is a length. The line is only written back where
+  the document had one.
 - A name takes its dimension from its value's unit, not its use: `w := 80` used as a length does
   not make `w` a length; `w := 80mm` does, as does a formal declared `Length`.
 - `3/16"` is a division; a lone fractional inch is `0.1875"` or `0 3/16"`.
@@ -634,7 +636,7 @@ its dependents (the V-twin derives its cylinder, pockets and grooves from bore, 
 use engine.dims          // engine/dims.sv beside the document or an ancestor, else the library
 use std                  // datums (1.12), std.Turned, std.CenteredRectangle, std.Polygon,
                          // std.Hex, std.Ellipse, std.Sphere/Cylinder/Cone, rounds (1.14)
-use hardware             // fasteners and fittings, in mm (needs a `unit` line)
+use hardware             // fasteners and fittings, in mm
 use std (horizontal, vertical)        // and import those two words bare
 ```
 
@@ -752,7 +754,7 @@ rope minimizes integral(p.y over p)   // ...and it hangs: its height along it le
 along `k` by arc length, `p` the point running along it; `over (p, t)` also names the unit tangent
 `t`. `EXPR` reads `p.x`, `p.y`, `t.x`, `t.y` and numbers in scope (E101 otherwise). An energy is a
 sum of such terms times numbers; `maximizes` turns the sign; statements over one curve add up.
-Under a `unit` the integrand is dimension-checked (`p.y + 1mm`, not `p.y + 1`).
+The integrand is dimension-checked (`p.y + 1mm`, not `p.y + 1`).
 
 - **What it is**: the solution of the energy's Euler–Lagrange equation from `a` landing on `b`,
   exact to the integration's accuracy. It adds no unknowns but its length, so its ends keep their
@@ -994,8 +996,14 @@ to the drawing; it means what its uses say:
 - A **family** is a component whose body is a set: `component Ball(center: point, r: Length) :=
   { p | p distance(r) center }`; an instance is the set, its formals read by its name. A component
   takes a set as a **`set` formal**, by position.
-- Statements in one body are a conjunction (an intersection). A union is a choice of root, not a
-  body. A culprit reads as the use (`l tangent shaft`), never the body's rows.
+- A point formal may name the plane formal it is drawn in, `center: point in on`, and a call may
+  then leave it out: `k := Circle(std.front, r: 25)` owns its centre, `k.center`, drawn in the
+  front (`fix((5, 5)) k.center`); `center: hint((40, 0))` seeds it. Any other entity left out of
+  a call is E103.
+- Statements in one body are a conjunction (an intersection): `{ p | p coincident ball; p
+  coincident std.front }` is the circle the front cuts from `ball`, and a point drawn in the front
+  meets the plane's statement by being there. A union is a choice of root, not a body. A culprit
+  reads as the use (`l tangent shaft`), never the body's rows.
 - A set's body is read in space wherever its point is drawn, so `side:` or `sense:` in one is an
   error.
 - **A set whose body is a circle's is the circle**: `k := { p | p coincident std.front; p
@@ -1155,7 +1163,7 @@ k := Par(o).p over u in (-2mm, 2mm)
 - **Guided sweep or loft** along a directed line or circular arc: `solid(section, along: guide)`,
   `solid(inlet.profile, outlet.profile, along: guide)`. Sections stand square to the guide's
   tangents; holes pair in written order; caps are `start` and `end` (`solid_elbow`, `solid_loft`).
-- **Face family** (0.93): `body := solid(Reducer(guide, std.z, inlet: 24mm, outlet: 12mm, wall:
+- **Face family** (0.96): `body := solid(Reducer(guide, std.z, inlet: 24mm, outlet: 12mm, wall:
   2mm).sec.profile over s in (0, 1))` is the face `sec.profile` of the instance as its formal `s`
   runs (`docs/lofts/l0/reducer.sv`). The instance is written in place, leaves `s` unbound and is
   never drawn; it is solved at every station, `s` a number there, so its body may use any
@@ -1457,6 +1465,24 @@ pinion_flank curvature(at: M) profile                 // its section by profile'
 The source's geometry, its number and the motion's axes are columns, so the cone's half solves from
 what is stated at `M`. The `at:` relations read the place of the `coincident` holding `M`, which must
 be stated. A set's envelope is only held to: it has no chart after the solve.
+
+**Two flanks meshing are a locus** (`spiral_bevel/contact.sv`): tooth contact analysis. The first
+flank turns with the pinion and the second with the gear — the mesh's observer and source — each an
+envelope in space as above or a cone, a cylinder or a revolution's side standing still (a formed
+gear's). At each phase of the pinion they touch with the gear turned to the ratio plus a **lag**,
+the transmission error:
+
+```
+mesh := motion(gear_turn, relative_to: pinion_turn)
+bearing := meshing(pinion_flank, flank, under: mesh, from: -15deg, to: 15deg)
+Q coincident(t == 0deg) bearing                       // where they touch at phase 0
+R coincident(lag == 0.07) bearing                     // the phase the gear lags 0.07° at
+```
+
+A point on it owns the phase `t` and the lag (both in degrees) and a place on each flank; pin
+either. A conjugate pair touches along a line with no lag (the point is then free along it); a
+mismatched one at a point. After the solve the contact is traced over `from:`…`to:` from the first
+point held to it, and `solventc` reports the transmission error and the path of contact.
 
 **Spatial geometry read after the solve** adds no unknown and has no 2D glyph; each certifies only
 local evaluations ([analytic face boundaries](analytic-face-boundaries.md); the spiral bevel's

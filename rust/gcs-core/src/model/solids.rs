@@ -389,6 +389,30 @@ pub struct EnvelopeE {
     pub held: Held,
 }
 
+/// **The meshing of two flanks** (#283, step 3): `contact := meshing(pinion_flank, gear_flank,
+/// under: mesh, from: a, to: b)` — tooth contact analysis, the first flank turning with `mesh`'s
+/// observer (the pinion's turn), the second with its source (the gear's).  Held to in the solve by
+/// a point on its path of contact (`CKind::PointOnMeshing`), which owns the phase, the lag and a
+/// place on each flank, and traced over the phase after it (`envelope::meshing::Meshing`).  Phase
+/// bounds are radians.
+#[derive(Clone, Debug)]
+pub struct MeshingE {
+    pub flanks: [Flank; 2],
+    pub motion: u32,
+    pub roll: [f64;2],
+    pub name: String,
+    pub class: Classes,
+}
+
+/// A flank a meshing turns: an envelope in space (generated), or a source surface standing in its
+/// member (formed) — a cone or a cylinder set, or a revolution's named side — read as an
+/// envelope's source is (`Held`).
+#[derive(Clone, Debug, PartialEq)]
+pub enum Flank {
+    Envelope(u32),
+    Formed(Held),
+}
+
 /// What the solve reads an envelope's source as (#283): a surface of revolution whose numbers are
 /// the drawing's, read before any relation is stated.
 #[derive(Clone, Debug, PartialEq)]

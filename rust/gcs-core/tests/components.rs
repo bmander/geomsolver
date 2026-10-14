@@ -272,6 +272,12 @@ fn a_set_and_a_group_fill_only_their_own_formals() {
     crate::common::refused(&format!("{base}On(p, ball.surface)\n"), "E103", "wants a set",
                            "ball.surface");
     crate::common::refused(&format!("{base}On(p)\n"), "E103", "missing set argument `s`", "On(p)");
+    // and an entity left out is said at the call too, not where the body reads it — nor nowhere,
+    // as it was for a set family's instance nothing uses: only a number is left an unknown
+    crate::common::refused(&format!("{base}On(s: ball)\n"), "E103", "missing point argument `p`",
+                           "On(s: ball)");
+    crate::common::refused(&format!("{base}lone := std.Sphere(r: 5)\n"), "E103",
+                           "missing point argument `center`", "lone := std.Sphere(r: 5)");
     // each takes its own — the set named, or a family's instance — and an instance of a family
     // a group as well
     for call in ["Reads(p, dims)", "On(p, ball)", "On(p, sphere)"] {

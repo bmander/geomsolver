@@ -11,9 +11,7 @@ pub const AXIS_TOLERANCE: f64 = 1e-10;
 pub const POSE_CACHE: usize = 4096;
 
 /// Model length units to millimetres, which every native export is written in.
-pub fn millimetres(sk: &Sketch) -> Result<f64,String> {
-    Ok(sk.units.length.ok_or("CAD export requires an explicit model length unit")?.1)
-}
+pub fn millimetres(sk: &Sketch) -> f64 { sk.units.mm_per() }
 
 pub(super) fn vector(v: [f64;3]) -> Json { Json::Arr(v.into_iter().map(Json::from).collect()) }
 fn ids(v: &[u32]) -> Json { Json::Arr(v.iter().copied().map(Json::from).collect()) }
@@ -114,7 +112,7 @@ pub(crate) fn swept_cut(sk: &Sketch,i: usize) -> Result<Option<SweptCut>,String>
 
 fn recipe_with(sk: &Sketch,root: usize,static_only: bool,about: Option<[f64;3]>) -> Result<StaticRecipe,String> {
     super::validate(sk,root)?;
-    let scale = millimetres(sk)?;
+    let scale = millimetres(sk);
     let w = Writer {scale,about};
     let mut walk = Walk::new(sk,static_only);
     let mut pending = vec![(root,false)];

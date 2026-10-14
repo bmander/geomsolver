@@ -133,6 +133,20 @@ pub(crate) fn settle(
     Ok((kind, w.assemble(kind)?))
 }
 
+/// Whether a plane's membership (`p coincident P`, `l coincident P`) is of geometry drawn in `P`
+/// already — itself or its twin there (§6.7) — so that the row would be identically zero.
+fn drawn_on(sk: &Sketch, ckind: CKind, args: &[CArg]) -> bool {
+    let on = |p: usize, plane: EntRef| sk.twin_in(p, plane.i()).is_some();
+    match (ckind, args) {
+        (CKind::PointOnPlane, [CArg::Ent(p), CArg::Ent(plane), ..]) => on(p.i(), *plane),
+        (CKind::LineOnPlane, [CArg::Ent(l), CArg::Ent(plane), ..]) => {
+            crate::model::edge_ends(sk, *l)
+                .is_some_and(|(a, b)| on(a as usize, *plane) && on(b as usize, *plane))
+        }
+        _ => false,
+    }
+}
+
 /// An E040 said once at its span, however many of a use's rows find it.
 fn say_once(diags: &mut Vec<Diag>, span: Span, stmt: StmtId, message: String) {
     if !diags.iter().any(|d| d.span == span && d.message == message) {
@@ -192,6 +206,8 @@ pub(super) fn constrain(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) -> Option<u3
     // what reads the operands' planes: a set's body (§6.21), its derivative along a chart moving
     // its point out of any plane (only a set's body is stated as one)
     let chart = r.along.as_ref().is_some_and(|a| matches!(a.toward, crate::syntax::AlongBy::Chart(_)));
+    // made by a set's body (§6.21): read before `r` is resolved into what it states
+    let from_set = r.space;
     let reader = if chart {
         super::reading::Reader::Moved
     } else if r.space {
@@ -218,13 +234,12 @@ pub(super) fn constrain(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) -> Option<u3
     }
     let spec = ckind.spec();
     let (mut args, mut left_out) = arguments(cx, &r, st)?;
-    // the point a plane touches a set at, drawn on the plane already: no row
-    if touch && along.is_none() && ckind == CKind::PointOnPlane {
-        if let [CArg::Ent(p), CArg::Ent(plane)] = args.as_slice() {
-            if cx.sk.plane_of(p.i()) == Some(plane.i()) {
-                return None;
-            }
-        }
+    // a plane's membership of what is drawn on it already holds by construction: no row.  The
+    // point a plane touches a set at, and a set's body met by a point of the plane — the body is
+    // a predicate, true of that point, where the same words said of it directly ask nothing
+    // (E061)
+    if (touch || from_set) && along.is_none() && drawn_on(&cx.sk, ckind, &args) {
+        return None;
     }
     // a curve standing for a surface (a prism's side generating, `CurveE::extrusion`) is met in
     // space, by the point's place in the curve's view, whatever view the point is drawn in
@@ -712,7 +727,7 @@ fn region_or_row(
     };
     // what a set's body states at its envelope's hidden point is the surface the envelope reads
     // (#283), never a row
-    if let Some(e) = super::envelopes::probe_envelope(&cx.sk, &c) {
+    if let Some(e) = super::envelopes::probe_reader(&cx.sk, &c) {
         let read = match grow {
             Some(_) => Err("an envelope's set is a surface, not one grown from another".into()),
             None => super::envelopes::set_shape(&mut cx.sk, &c, e),

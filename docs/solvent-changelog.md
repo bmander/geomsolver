@@ -4,7 +4,7 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
-**[0.93] A face that runs: the face family.** `duct := solid(Station(guide, …).f over s in (a,
+**[0.96] A face that runs: the face family.** `duct := solid(Station(guide, …).f over s in (a,
 b))` is the solid a face of an instance sweeps as one of the instance's numbers runs — §6.5's
 curve (`Involute(…).p over u in (…)`) one dimension up (§6.9). The instance is written in place
 and never drawn; the running formal is left unbound by the call and is **held**, never an
@@ -19,6 +19,44 @@ Caps are `start` and `end`; walls are named by the section's edges under the ins
 (`body.sec.ab`). Calling the instance with the running formal bound is **E103**, an interval run
 backwards **E080**, and a drawn station (`solid(st.f over s in …)`) a syntax error until it is
 written (L10). (Issue #243, L1.)
+
+**[0.95] A set's body holds of a point of its plane; a call gives every entity, or owns a
+point.** A plane's membership stated by a set's body (§6.21) of a point drawn in that plane
+already — or twinned there — holds by construction and states no row, so a body meeting a
+sphere with a plane, `{ p | p coincident ball; p coincident std.front }`, takes a point of the
+front onto the circle the front cuts. Through 0.94 the row was refused as asking nothing
+(**E061**), which the same words said of the point directly still are (§6.7). And a call that
+leaves out an entity formal is **E103** at the call (a missing point argument, say), as a set or
+group formal left out already was (§5): before, it was said only where the body read the formal,
+and nowhere for an instance of a set family nothing used, so `std.Sphere(r: 5)` was silently
+nothing. The one exception is new: **a point formal drawn in a plane formal**,
+`center: point in on`, may be left out, and the instance then owns a point of its own drawn
+there (`k.center`), seeded by `center: hint((x, y))` and written back there by a solve — so a set
+family's parameters are its formals whether the call gives them or not, and
+`Circle(std.front, r: 25)` is a circle with a centre of its own.
+
+**[0.94] Two flanks meshing are a locus.** `contact := meshing(pinion_flank, gear_flank, under:
+mesh, from:, to:)` turns the first flank with the pinion — `mesh`'s observer, `mesh :=
+motion(gear_turn, relative_to: pinion_turn)` — and the second with the gear, each an envelope in
+space the solve holds to or a cone, a cylinder or a revolution's side standing still in its member
+(a formed gear's flank), and is where they touch: at each phase of the pinion, the gear turned to
+the ratio's roll plus a lag, the transmission error (§6.15.4). `p coincident contact` holds a
+point to the path of contact, owning the phase `t`, the lag `lag` (degrees) and a place on each
+flank, so a pin states either — `coincident(t == 0deg, lag == 0.01)` — and a number that makes a
+flank solves from it. After the solve the contact is traced over the phase, and `solventc` reports
+each meshing's contact, transmission error and path (`spiral_bevel/contact.sv`, #283). `meshing`
+is an element keyword: `generation/spur_mesh.sv`'s motion called it is `mesh`.
+
+**[0.93] A document naming no unit is in millimetres.** Without a `unit` line a document is
+read exactly as under `unit mm` (§3.3.2): a bare number in a `Length` slot is a millimetre, a
+suffixed literal converts to it (`a distance(2in) b` is 50.8), and a geometry read in a seed, an
+integrand or a measurement is a `Length`. Through 0.92 such a document was in unnamed *drawing
+units*: a suffix was **E103** ("this document names no unit") and a geometry read was a bare
+number. So `pin.x - 10` is now refused as under `unit mm`, and `pin.x - 10mm` is the spelling;
+the dimension tables written to be read through a `use` (`hardware`, the engine's and the
+V-twin's) elaborate on their own. The line, where written, is still what a document saves and
+prints back, so one without it gains none; glTF and CAD exports scale such a document as
+millimetres, and a paste converts it as one.
 
 **[0.92] One vocabulary for a view's directions.** A view is a plane (§6.7), so its own
 directions are said as a plane's are: between two points drawn in one view, `along: u` is the

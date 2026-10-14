@@ -47,10 +47,10 @@ pinion := motion(about: o1, ratio: 1)
 gear := motion(about: o2, ratio: -r1 / r2)
 rack := motion(along: pitch_line, advance: 2 * pi * r1)
 cutting := motion(rack, relative_to: pinion)
-meshing := motion(pinion, relative_to: gear)
+mesh := motion(pinion, relative_to: gear)
 
 tooth := envelope(flank, under: cutting, from: -40deg, to: 40deg)
-mate := envelope(tooth, under: meshing, from: -15deg, to: 15deg)
+mate := envelope(tooth, under: mesh, from: -15deg, to: 15deg)
 
 // the mate's curvature where the two mesh, and where its centre must lie
 in std.front {

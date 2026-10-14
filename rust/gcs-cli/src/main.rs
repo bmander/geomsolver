@@ -366,6 +366,10 @@ fn check(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
             for v in &d.solid_claims {
                 println!("  {}", gcs_core::report::solid_claim_text(v));
             }
+            // each meshing's contact over its phase, in the core's words (#283)
+            for i in 0..sk.meshings.len() {
+                println!("  {}", gcs_core::report::meshing_text(&sk, i));
+            }
             for w in &d.warnings {
                 println!("  note: {w}");
             }
@@ -660,7 +664,7 @@ fn length(text: &str) -> Option<Result<(f64,Option<f64>),String>> {
 /// document's unit.
 fn tolerance(sk: &Sketch,opts: &Opts) -> Result<Option<gcs_core::solid::export::Tolerance>,String> {
     let Some((value,per)) = opts.tolerance else { return Ok(None) };
-    let per = match per { Some(p) => p, None => gcs_core::solid::cad::millimetres(sk)? };
+    let per = match per { Some(p) => p, None => gcs_core::solid::cad::millimetres(sk) };
     gcs_core::solid::export::Tolerance::new(value*per).map(Some)
 }
 
@@ -715,6 +719,7 @@ fn doc_json(
         ("solve", r.map(report::solve_result_json).unwrap_or(Json::Null)),
         ("diagnosis", d.map(|(sk, d)| report::diagnosis_json(sk, d)).unwrap_or(Json::Null)),
         ("positions", positions),
+        ("meshings", d.map(|(sk, _)| report::meshings_json(sk)).unwrap_or(Json::Null)),
     ])
 }
 

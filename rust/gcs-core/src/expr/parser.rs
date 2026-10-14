@@ -61,7 +61,7 @@ fn suffix(chars: &[char], i: &mut usize, v: f64, units: Units) -> Result<(f64, D
     };
     if let Some(u) = mark(chars.get(*i)) {
         *i += 1;
-        let mut total = units.convert(v, u)?;
+        let mut total = units.convert(v, u);
         // feet *and* inches: the second half across a space, in the smaller unit
         let mut j = *i;
         while chars.get(j).is_some_and(|c| c.is_whitespace()) {
@@ -69,7 +69,7 @@ fn suffix(chars: &[char], i: &mut usize, v: f64, units: Units) -> Result<(f64, D
         }
         if j > *i {
             if let Some((inches, end)) = inch_part(chars, j) {
-                total += units.convert(inches, unit("in").expect("in"))?;
+                total += units.convert(inches, unit("in").expect("in"));
                 *i = end;
             }
         }
@@ -89,7 +89,7 @@ fn suffix(chars: &[char], i: &mut usize, v: f64, units: Units) -> Result<(f64, D
     match unit(&word) {
         Some(u) => {
             *i = j;
-            Ok((units.convert(v, u)?, u.dim))
+            Ok((units.convert(v, u), u.dim))
         }
         // not a unit: it is a name, and `2r` is two times r as it always was
         None => Ok((v, Dim::SCALAR)),
@@ -489,8 +489,8 @@ impl Parser {
 
 /// Parse an expression.  A syntax error, an unknown function or a wrong arity is an `Err`; a
 /// name is not — what it stands for is the document's business, not the text's.
-/// Parse in **drawing units**: a document that names none, where a unit suffix is an error.
-/// Every caller that has a document uses `parse_in`.
+/// Parse in **millimetres**, a document that names no unit.  Every caller that has a document
+/// uses `parse_in`.
 pub fn parse(text: &str) -> Result<Parsed, String> {
     parse_in(text, Units::default())
 }

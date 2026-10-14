@@ -163,7 +163,7 @@ impl Sketch {
     /// documents in different units would leave that number unconverted.
     fn own_length_params(&self, e: EntRef) -> Vec<u32> {
         match e.kind {
-            EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge => Vec::new(),
+            EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge | EntKind::Meshing => Vec::new(),
             EntKind::Point => self.point_all_params(e.i()),
             EntKind::Circle => vec![self.circles[e.i()].radius],
             // the direction is a unit vector and the place a length
@@ -262,7 +262,7 @@ impl Sketch {
         match e.kind {
             // the stratification, as a table entry: a face and a solid own no parameter, so
             // nothing about either is ever a column of the Jacobian
-            EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge => Vec::new(),
+            EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge | EntKind::Meshing => Vec::new(),
             EntKind::Point => self.point_all_params(e.i()),
             EntKind::Line => self.line_params(e.i()).to_vec(),
             EntKind::Circle => {
@@ -345,7 +345,7 @@ impl Sketch {
             | EntKind::Spline
             | EntKind::Curve
             | EntKind::Face
-            | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge => Vec::new(),
+            | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge | EntKind::Meshing => Vec::new(),
         }
     }
 

@@ -89,6 +89,7 @@ mod generation;
 mod generation_examples;
 mod geometry_semantics;
 mod held_envelopes;
+mod meshing;
 mod highlight;
 mod homotopy;
 mod hypoid_layout;

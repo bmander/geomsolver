@@ -167,7 +167,7 @@ pub fn field_agreement(sk: &Sketch,body: usize,stl: &[u8],tolerance: Option<Tole
     -> Result<(),ExportRefusal> {
     let mesh = |message: String| ExportRefusal::at(Stage::Mesh,message);
     let refused = |message: String| ExportRefusal::at(Stage::Agreement,message);
-    let scale = cad::millimetres(sk).map_err(mesh)?;
+    let scale = cad::millimetres(sk);
     let started = crate::clock::Instant::now();
     let (vertices,triangles) = agreement::stl_triangles(stl,scale).map_err(mesh)?;
     let under = tolerance.map_or(contracts::TINY_AREA,|t| (t.deflection()/10.).dpowi(2));
@@ -335,7 +335,7 @@ pub fn supply_exact_where(sk: &Sketch,wanted: &dyn Fn(usize) -> bool) {
     // a sketch that leaves meshing to its host has its surfaces supplied by it
     if sk.field_meshing.get() != crate::solid::FieldMeshing::Now { return }
     let say = Say {stage:&|_: &str| {},mark:&|_| {}};
-    let Ok(mm) = cad::millimetres(sk) else { return };
+    let mm = cad::millimetres(sk);
     for job in sk.field_jobs().into_iter().filter(|j| wanted(j.solid) && sk.supplied_exact_solid(j.solid).is_none()) {
         // admitted as a display is, which is looked at and not made
         let admitted = cad::swept_operands(sk,job.solid).is_empty().then(|| admission::admit_body(sk,job.solid,&DISPLAY_ADMISSION).ok()).flatten();
@@ -361,7 +361,7 @@ const DISPLAY_ANGULAR: f64 = 0.8;
 
 /// A built swept body meshed for display, within `DISPLAY_SAG` of its size.
 fn display(sk: &Sketch,built: &super::sweep::Built) -> Result<Display,ExportRefusal> {
-    let mm = cad::millimetres(sk).at(Stage::Mesh)?;
+    let mm = cad::millimetres(sk);
     let size = match built { super::sweep::Built::Sector {pattern,..} => pattern.solid.size(),super::sweep::Built::Whole(solid) => solid.size() };
     let bar = DISPLAY_SAG*size;
     // (a pattern's volume is its sector's times its copies, which are turns of it: measured whole,

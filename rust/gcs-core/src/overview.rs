@@ -226,7 +226,7 @@ pub fn drawable(sk: &Sketch, e: EntRef, unit: f64) -> Vec<Vec<(f64, f64)>> {
     match e.kind {
         // nothing on the page: a face is the edges the document already drew, and what is drawn
         // of a solid is a derived view, which is its own geometry
-        EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge => Vec::new(),
+        EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge | EntKind::Meshing => Vec::new(),
         // nothing on its view's page either: an axis is in space (`scene3d` draws it there)
         EntKind::Axis => Vec::new(),
         EntKind::Point => vec![vec![sk.point_xy(i)]],

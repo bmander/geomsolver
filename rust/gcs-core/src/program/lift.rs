@@ -61,7 +61,7 @@ pub fn to_program(sk: &Sketch) -> Program {
     };
     let mut p = Program::new();
     // what its numbers are in, first: every number after it is read in them (spec §3.3.2)
-    if let Some(n) = sk.units.name() {
+    if let Some(n) = sk.units.stated() {
         p.push(StmtKind::Unit(Name::new(n)));
     }
     // the unknowns its dimensions and contacts read, declared, each seeded where it stands, under

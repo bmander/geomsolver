@@ -103,8 +103,8 @@ placement carries inside the blank; CLI test readers zero the offset.
   JSON from `json.rs`; no ZIP, no dependency.  STEP is a B-rep, which this kernel is not.
   **Every face of every object is a named node**, the path carried **twice**, as `name` and in
   `extras`, because a loader may sanitise one (three.js strips dots; `extras` becomes `userData`).
-  **Metres, because the spec says so normatively**: a `mm` document is scaled out, its unit in
-  `asset.extras`; one naming no unit is written as it stands.  Exported are the document's
+  **Metres, because the spec says so normatively**: a document's lengths are scaled out, its
+  unit in `asset.extras` — millimetres where it names none.  Exported are the document's
   *objects* (`overview::objects`) — a bore is a hole in a part, not a part — and glTF holds a
   scene, so it need not be told which part of an assembly to be.  `solventc --gltf`,
   `File ▸ Export solid (glTF)` / `(STL)`.
@@ -144,7 +144,7 @@ placement carries inside the blank; CLI test readers zero the offset.
   E080 a face that is not a loop on one plane, E081 a revolution's axis, E082 a face a body no
   longer has, E084 a section cut across its own view.
 
-- **A face family is a face that runs** (§6.9 [0.93], `solid/family.rs`; #243 L1).
+- **A face family is a face that runs** (§6.9 [0.96], `solid/family.rs`; #243 L1).
   `solid(I(…).f over s in (a, b))` parses to `Sweep::Family(FamilySpec)` (`parser::family`, by
   an `over` inside `solid(`'s own brackets, `family_ahead`); the flattener walks the instance
   **drawn**, under a key the source cannot write (`#f<offset>.`, so its declarations are

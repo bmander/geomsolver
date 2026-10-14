@@ -199,6 +199,7 @@ impl<'a> P<'a> {
         };
         if kind == EntKind::Motion { return self.motion_decl(name); }
         if kind == EntKind::Envelope { return self.envelope_decl(name); }
+        if kind == EntKind::Meshing { return self.meshing_decl(name); }
         // a curve is what `over` makes a definition's value, `k := leg.toe over u in (a, b)` — or,
         // with the two points it runs between, a free curve whose shape its energy states
         // (`rope := curve(a, b)`, #144), read as any declaration's brackets are
@@ -919,6 +920,58 @@ impl<'a> P<'a> {
             children:vec![vec![surface],vec![motion]],
             seed:vec![],seed_text:vec![],seed_spans:vec![],hint_span:None,knots:None,weights:None,curve:None,
             computed:None,class,class_span,seed_at:None,seed_names:vec![],sweep:None,motion:None,angular_span:Some(crate::syntax::AngularSpan {from,to,side}),
+            membership:Membership::default(),list_span:Span::new(start.lo as usize,end),close:None,mint_close:None,
+        })
+    }
+
+    /// `contact := meshing(pinion_flank, gear_flank, under: mesh, from: a, to: b)` (#283): two
+    /// flanks, the relative motion they turn under, and the pinion's phase interval.
+    fn meshing_decl(&mut self, name: DeclName) -> Option<Decl> {
+        let start = self.here();
+        if !self.want_p('(') { return None; }
+        let (mut first, mut second, mut motion) = (None, None, None);
+        let mut from = None; let mut to = None;
+        while !self.eat_p(')') {
+            let label = self.slot_label();
+            match label.as_deref() {
+                // the printer labels every operand (`first:`, `second:`, `motion:`)
+                None | Some("first") | Some("second") | Some("under") | Some("motion") => {
+                    let slot = match label.as_deref() {
+                        Some("first") => &mut first,
+                        Some("second") => &mut second,
+                        Some("under") | Some("motion") => &mut motion,
+                        _ if first.is_none() => &mut first,
+                        _ if second.is_none() => &mut second,
+                        _ => &mut motion,
+                    };
+                    if slot.is_some() { self.fail("a meshing argument is given twice"); return None; }
+                    *slot = Some(Kid::Ref(self.refr()?));
+                }
+                Some("from") | Some("to") => {
+                    let slot = if label.as_deref() == Some("from") { &mut from } else { &mut to };
+                    if slot.is_some() { self.fail("a meshing bound is given twice"); return None; }
+                    let (text,span) = self.expr_until(',')?;
+                    *slot = Some(Arg::Dim {text,span});
+                }
+                _ => {
+                    self.fail("a meshing takes two flanks, `under:` the motion of the second relative to \
+                               the first, and `from:` and `to:` angles of the first's phase");
+                    return None;
+                }
+            }
+            if self.peek() != Some(&Tok::P(')')) && !self.want_p(',') { return None; }
+        }
+        let (Some(first),Some(second),Some(motion),Some(from),Some(to)) = (first,second,motion,from,to) else {
+            self.fail("a meshing needs two flanks, a motion and two angular bounds"); return None;
+        };
+        let end = self.prev_hi();
+        let (class,class_span) = self.class_clause(end);
+        Some(Decl {
+            annotations:Default::default(),kind:EntKind::Meshing,name,
+            children:vec![vec![first],vec![second],vec![motion]],
+            seed:vec![],seed_text:vec![],seed_spans:vec![],hint_span:None,knots:None,weights:None,curve:None,
+            computed:None,class,class_span,seed_at:None,seed_names:vec![],sweep:None,motion:None,
+            angular_span:Some(crate::syntax::AngularSpan {from,to,side:None}),
             membership:Membership::default(),list_span:Span::new(start.lo as usize,end),close:None,mint_close:None,
         })
     }

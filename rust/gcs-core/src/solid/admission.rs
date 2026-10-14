@@ -442,7 +442,7 @@ pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission
     // by its own boundary (a field's support is a construction's box, not the material's)
     let mut planar: Vec<SweepEvidence> = Vec::new();
     let planar_box = order.iter().any(|s| asked[s] == Asked::Planar).then(|| -> Option<(V,V)> {
-        let mm = cad::millimetres(sk).ok()?;
+        let mm = cad::millimetres(sk);
         let blank = crate::brep::recipe::build(&cad::recipe_static(sk,root).ok()?.recipe).ok()?;
         let (lo,hi) = blank.bounds();
         Some((lo.map(|x| x/mm),hi.map(|x| x/mm)))

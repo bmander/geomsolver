@@ -14,7 +14,7 @@ Solvent. Rust grows only three kinds of things:
 ## L1: the face family (2026-10-14)
 
 **Verdict: the primitive stands.** `solid(I(…).f over s in (a, b))` parses, elaborates and
-evaluates (Solvent 0.93, §6.9); every L0 program the language can write today sweeps its closed
+evaluates (Solvent 0.96, §6.9); every L0 program the language can write today sweeps its closed
 form (`rust/gcs-core/tests/face_family.rs`):
 
 | program | solid | closed form (mm³) | faceted (mm³) |
@@ -268,8 +268,8 @@ fixtures.
 13. **Paper cuts** met on the way:
     - formals cannot be called `right`/`left` (direction words, E040) or `turn` (a built-in, W112);
     - a line cannot be called `tangent`;
-    - `std.top` passed down from a component that cannot see it is reported at the callee's
-      `in view` ("no such entity: `view`") rather than at the argument;
+    - ~~`std.top` passed down from a component that cannot see it is reported at the callee's
+      `in view` ("no such entity: `view`") rather than at the argument~~, done in #253;
     - `Screwed` needs a reference line of an arbitrary length (`10mm`) to turn an angle from: a
       direction turned within a plane by a directed angle, with no length, would say it.
 

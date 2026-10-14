@@ -85,6 +85,9 @@ pub enum EntKind {
     /// and a place, placed by relations like any other entity and drawn on no sheet.  Its
     /// relations (`parallel`, `perpendicular`, `angle`, `p coincident t`) are in space.
     Axis,
+    /// **The meshing of two flanks** (#283): where they touch as their members turn, over the
+    /// pinion's phase — a path of contact a point is held to, traced after the solve.
+    Meshing,
 }
 
 impl EntKind {
@@ -118,11 +121,12 @@ impl EntKind {
             EntKind::Vertex => "vertex",
             EntKind::Edge => "edge",
             EntKind::Axis => "axis",
+            EntKind::Meshing => "meshing",
         }
     }
 
     /// Every kind, in declaration order — what a question about the whole table walks.
-    pub const ALL: [EntKind; 17] = [
+    pub const ALL: [EntKind; 18] = [
         EntKind::Point,
         EntKind::Line,
         EntKind::Circle,
@@ -140,6 +144,7 @@ impl EntKind {
         EntKind::Vertex,
         EntKind::Edge,
         EntKind::Axis,
+        EntKind::Meshing,
     ];
 
     pub fn parse(s: &str) -> Option<EntKind> {
@@ -161,6 +166,7 @@ impl EntKind {
             "vertex" => EntKind::Vertex,
             "edge" => EntKind::Edge,
             "axis" => EntKind::Axis,
+            "meshing" => EntKind::Meshing,
             _ => return None,
         })
     }
@@ -200,6 +206,7 @@ impl EntKind {
             EntKind::Patch => &[("source", C), ("inside", L), ("outside", L)],
             EntKind::Seam | EntKind::Vertex => &[("first", C), ("second", C)],
             EntKind::Edge => &[("seam", C), ("from", C), ("to", C), ("along", C)],
+            EntKind::Meshing => &[("first", C), ("second", C), ("motion", C)],
         }
     }
 
@@ -228,7 +235,7 @@ impl EntKind {
             | EntKind::Plane
             | EntKind::Curve
             | EntKind::Face
-            | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge => None,
+            | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge | EntKind::Meshing => None,
         }
     }
 
@@ -265,7 +272,7 @@ impl EntKind {
             EntKind::Plane => &["origin.x", "origin.y", "origin.z"],
             EntKind::Line | EntKind::Spline | EntKind::Curve | EntKind::Face | EntKind::Solid
             | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch
-            | EntKind::Seam | EntKind::Vertex | EntKind::Edge => &[],
+            | EntKind::Seam | EntKind::Vertex | EntKind::Edge | EntKind::Meshing => &[],
         }
     }
 
@@ -293,7 +300,7 @@ impl EntKind {
             // where it stands; its attitude is its axes'
             EntKind::Plane => ["x", "y", "z"].iter().map(|f| format!("{n}.{f}")).collect(),
             EntKind::Axis => ["x", "y", "z", "px", "py", "pz"].iter().map(|f| format!("{n}.{f}")).collect(),
-            EntKind::Spline | EntKind::Curve | EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge => return None,
+            EntKind::Spline | EntKind::Curve | EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge | EntKind::Meshing => return None,
         })
     }
 
@@ -310,7 +317,7 @@ impl EntKind {
         match self {
             // a face bears none of its own: its edges carry the memberships, and the face is on
             // the plane they agree about.  A solid is not on a plane at all.
-            EntKind::Plane | EntKind::Curve | EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge => false,
+            EntKind::Plane | EntKind::Curve | EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge | EntKind::Meshing => false,
             EntKind::Point
             | EntKind::Line
             | EntKind::Circle
@@ -338,7 +345,7 @@ impl EntKind {
             | EntKind::Curve
             | EntKind::Face
             | EntKind::Axis
-            | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge => None,
+            | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge | EntKind::Meshing => None,
         }
     }
 
@@ -350,7 +357,7 @@ impl EntKind {
     /// here is picked, dragged or dimensioned on the sheet.
     pub fn spatial(self) -> bool {
         match self {
-            EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge => true,
+            EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge | EntKind::Meshing => true,
             EntKind::Point
             | EntKind::Line
             | EntKind::Circle

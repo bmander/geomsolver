@@ -157,7 +157,16 @@ geometry aliases; `dims: group` is a required formal. Groups nest, by name or in
 group registered so `Bar(design.bar)` binds); an instance may pass as a layout group. A **`set`
 formal** (`Ty::Set`, #191) takes a set — named, or a family's instance, which is both a set and an
 instance — and a `group` formal no named set; each refusal is E103 at the argument
-(`Checks::groups`, checked in `resolve` against `sets` / `group_names`). **An
+(`Checks::groups`, checked in `resolve` against `sets` / `group_names`). Only a number may be
+left out of a call ([0.95]): an entity, path, group or set formal left out is E103 at the call
+(`Walk::bind`) — but for **a point formal drawn in a plane formal**, `center: point in on`
+(`Formal::within`), which the instance then owns: `Walk::owned_points` declares it as its body
+would, `center := point in on`, under the call's own statement (so the call deletes and
+describes it), in the formal's plane whatever plane the instance stands in, seeded by
+`center: hint((x, y))` (`seed_point`), which `edit::commit_seeds` writes back
+(`owned_splice`). A `within` naming no `plane` formal is E103 at the call (`check_call`); `in` on
+another type, or on an interface's member, does not parse. `tests/sets.rs` is the gate
+(`a_family_owns_a_point_formal_left_out`). **An
 instance's numbers are read by its name**: `Walk::instance_numbers` puts every numeric formal
 of every instance a body writes into its `vals` as `inst.formal` (the number bound, else the
 unknown `bind` names), before the statements, so `p distance(ball.r) ball.center` reads it and a
@@ -214,7 +223,11 @@ takes a layout naming the front datum, origin and reference axis.
   `program::build` settles seeds a second time after `solve_planes` when one crosses
   (`crosses_views`), and only then.  An unwritten arc radius settles with them (`Deferred::Radius`).
   A traced point refuses a step.  Components are closed over their arguments: only their own
-  parameters and formals are available. `module_params` exports values to importing root bodies, to
+  parameters and formals are available.  An entity argument naming nothing is said at the
+  argument (`check_aliases`; `unseen` names the component that cannot see it and the formal it
+  was for, #253), and not where the callee reads the formal: a relation reading it is not
+  stated, and a declaration's reference to it is `Expansion::quiet`, which the elaborator's E101
+  there yields to. `module_params` exports values to importing root bodies, to
   be passed explicitly. `tests/seeds.rs` and `tests/closed_scopes.rs` are the gates.
 - **A part is one component carrying `in view { … }` blocks** (Solvent §6.7, `P::in_comp`): the
   block form is allowed inside a component body (the plane is a formal) and still refused inside a

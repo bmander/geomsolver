@@ -131,6 +131,9 @@ macro_rules! undrawn {
             | CKind::EnvelopeNormalAt
             | CKind::EnvelopePlaneAt
             | CKind::EnvelopeCurvatureAt
+            // nor does a point on the path of contact of two flanks: its lag is a slot a pin
+            // states, not a dimension
+            | CKind::PointOnMeshing
             // a projection in space draws what `project` draws: nothing
             | CKind::ProjectSolved
             | CKind::Fix

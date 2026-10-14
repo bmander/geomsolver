@@ -359,7 +359,7 @@ style .dimension { display: none }
 style .shown { display: inline }
 style .phantom { dash: 6 3; display: geometry }
 component Bar(a: point) {
-  b := point hint((a.x + 30, a.y))
+  b := point hint((a.x + 30mm, a.y))
   l := line(a, b)
   a distance(30) b class shown
   horizontal l

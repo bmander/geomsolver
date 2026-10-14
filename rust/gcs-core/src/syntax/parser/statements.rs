@@ -577,8 +577,21 @@ impl<'a> P<'a> {
             return None;
         }
         let (ty, interface) = self.formal_or_interface()?;
+        // a point formal may say the plane it is drawn in, which lets a call leave it out
+        let within = if self.peek_word("in") {
+            let at = self.here();
+            self.i += 1; // `in`
+            if ty != Ty::Ent(EntKind::Point) {
+                let m = "only a `point` formal is drawn `in` a plane: `center: point in on`";
+                self.fail_at(at, m);
+                return None;
+            }
+            Some(self.ident()?)
+        } else {
+            None
+        };
         let span = Span::new(name.span.lo as usize, self.prev_hi());
-        Some(Formal { name, ty, span, interface })
+        Some(Formal { name, ty, span, interface, within })
     }
 
     /// `interface Gear { O: point, M: point, ax: line }` — a group's shape, named (§8.1 [0.84]):
@@ -603,7 +616,13 @@ impl<'a> P<'a> {
             if self.eat_p('}') {
                 break;
             }
-            members.push(self.formal()?);
+            let member = self.formal()?;
+            if let Some(w) = &member.within {
+                self.fail_at(w.span, "an interface's member is given, never made: it is drawn \
+                                      in no plane of its own");
+                return None;
+            }
+            members.push(member);
             if !self.eat_p(',') && !matches!(self.peek(), Some(Tok::Nl) | Some(Tok::P('}'))) {
                 self.fail("expected `,`, a line break or `}` after an interface's member");
                 return None;

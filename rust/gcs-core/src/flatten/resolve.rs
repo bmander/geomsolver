@@ -393,6 +393,8 @@ struct Known<'k> {
     unresolved: &'k std::cell::Cell<bool>,
     /// What each reference reading a member `normal` reads it of — see `Expansion::normals`.
     normals: &'k std::cell::RefCell<BTreeSet<String>>,
+    /// Where a reference read through a name in `failed` — see `Expansion::quiet`.
+    quiet: &'k std::cell::RefCell<BTreeSet<Span>>,
 }
 
 /// Whether `r` reads a name bound to what a call or a use wrote — a formal, a bound variable —
@@ -421,7 +423,7 @@ fn rewrite(
     bad: &mut Vec<(Code, Span, String)>,
     seen: &std::cell::RefCell<Vec<Seen>>,
 ) {
-    let Known { look, sets, solids, failed, arguments, unresolved, normals } = known;
+    let Known { look, sets, solids, failed, arguments, unresolved, normals, quiet } = known;
     // only a ring's representative is judged by what it reads (E021)
     let judged = sc.block.ring.as_ref().is_some_and(|r| !r.turned);
     // a member read already (a set's `ends`, `sets::measured_sets`) is kept; `surface` and
@@ -465,7 +467,10 @@ fn rewrite(
         }
         // named as written, so an index that picked no copy says which one it was
         // read through an operand, or a member of one, already said to name nothing
-        None if read_through(r, sc, failed) => unresolved.set(true),
+        None if read_through(r, sc, failed) => {
+            unresolved.set(true);
+            quiet.borrow_mut().insert(r.span);
+        }
         None => {
             // past what an interface declares (§8.1 [0.84]): said here, and only here
             let past = look.raw(r, sc)
@@ -914,6 +919,7 @@ impl<'a> Walk<'a> {
         }).collect();
         let mut flat = Vec::with_capacity(out.len());
         let normals = std::cell::RefCell::new(std::mem::take(&mut self.normals));
+        let quiet = std::cell::RefCell::new(std::mem::take(&mut self.quiet));
         for (mut st, path, sc) in out {
             // a refused relation is not emitted; a declaration is (a plane whose fold misspells
             // a name), so the error is the one said and not every reference to it after
@@ -928,7 +934,10 @@ impl<'a> Walk<'a> {
             let arguments = &self.words.arguments;
             let (sets, solids, failed) = (&sets, &solids, &failed);
             let unresolved = std::cell::Cell::new(false);
-            let known = Known { look, sets, solids, failed, arguments, unresolved: &unresolved, normals: &normals };
+            let known = Known {
+                look, sets, solids, failed, arguments,
+                unresolved: &unresolved, normals: &normals, quiet: &quiet,
+            };
             rewrite(&mut st.kind, &sc, known, &mut bad, &seen);
             if let StmtKind::Decl(d) = &st.kind {
                 // a centre the circle names, or `None` for one it mints (`c.center`)
@@ -1006,6 +1015,7 @@ impl<'a> Walk<'a> {
         }
         self.judge_arguments(&alias, &mut judged);
         self.normals = normals.into_inner();
+        self.quiet = quiet.into_inner();
         self.judge_rings(&about, judged, &centres);
         (flat, alias)
     }
@@ -1037,10 +1047,43 @@ impl<'a> Walk<'a> {
                     self.once(code, r.span, why);
                     failed.insert(key);
                 }
+                // a call's entity argument naming nothing is said at the argument, where the
+                // fault is, and not at every place in the callee that reads its formal (#253)
+                None if self.words.arguments.contains(&key) => {
+                    let (code, why) = match self.unseen(&key, &r, &sc, alias) {
+                        Some(why) => (Code::E101, why),
+                        None => self.look(alias).missing(&r, &sc),
+                    };
+                    self.once(code, r.span, why);
+                    failed.insert(key);
+                }
                 None => {}
             }
         }
         failed
+    }
+
+    /// Why a call's argument `r`, bound under `key`, names nothing where it is written, when that
+    /// is because the call stands in a component, closed over its arguments, and the name is
+    /// outside it (`std.top`): the component to take it as a formal, and the formal it was for.
+    fn unseen(&self, key: &str, r: &Ref, sc: &Scope, alias: &BTreeMap<String, String>)
+        -> Option<String> {
+        if !sc.closed {
+            return None;
+        }
+        let open = Scope { closed: false, ..sc.clone() };
+        self.found(self.look(alias).raw(r, &open))?;
+        let (callee, formal) = key.rsplit_once('.')?;
+        let named = |prefix: &str| self.instances.iter().find(|i| i.prefix == prefix)
+            .map(|i| format!("`{}`", i.component));
+        let caller = named(&sc.owner).unwrap_or_else(|| "this component".to_string());
+        let callee = named(&format!("{callee}.")).unwrap_or_else(|| "the call".to_string());
+        let what = ref_text(r);
+        Some(format!(
+            "{caller} cannot see `{what}`, given to {callee} for `{formal}`: a component is \
+             closed over its arguments, so {caller} takes it as a formal of its own and passes \
+             that on"
+        ))
     }
 
     /// What each binding asked of what its alias reaches (`Checks`): a group member naming

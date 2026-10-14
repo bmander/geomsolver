@@ -217,11 +217,22 @@ pub fn evaluate(sk: &mut Sketch) -> Vec<ExprItem> {
     }
     // a set's number an envelope's contacts read as a column (#283) is bound whether or not a row
     // of the drawing reads it, starting where the set's text stood
-    let held: Vec<(String, f64)> = sk.envelopes.iter().enumerate().filter_map(|(i, e)| {
-        let crate::model::Held::Set { shape: Some(s), .. } = &e.held else { return None };
-        let read = sk.constraints.iter().any(|c| c.envelope_of().is_some_and(|x| x.i() == i));
+    // — an envelope's contacts, or a meshing's whose flank it is or whose flank the set is
+    use crate::model::{Flank, Held};
+    let meshed = |f: &dyn Fn(&Flank) -> bool| sk.constraints.iter().any(|c| {
+        c.meshing_of().is_some_and(|m| sk.meshings[m.i()].flanks.iter().any(f))
+    });
+    let envelopes = sk.envelopes.iter().enumerate().filter_map(|(i, e)| {
+        let Held::Set { shape: Some(s), .. } = &e.held else { return None };
+        let read = sk.constraints.iter().any(|c| c.envelope_of().is_some_and(|x| x.i() == i))
+            || meshed(&|f| *f == Flank::Envelope(i as u32));
         s.unknown(&sk.declared).filter(|_| read)
-    }).collect();
+    });
+    let flanks = sk.meshings.iter().flat_map(|m| m.flanks.iter()).filter_map(|f| {
+        let Flank::Formed(Held::Set { shape: Some(s), .. }) = f else { return None };
+        s.unknown(&sk.declared).filter(|_| meshed(&|g| g == f))
+    });
+    let held: Vec<(String, f64)> = envelopes.chain(flanks).collect();
     for (name, seed) in held {
         if !bound.contains_key(&name) {
             free_param(sk, &name, seed);
