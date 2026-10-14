@@ -309,18 +309,17 @@ pub(super) fn reads_geometry(text: &str, units: Units) -> bool {
         .unwrap_or(false)
 }
 
-/// Where a measurement call opens and closes when `word`, ending at `i`, names one: its `(`
-/// after any space, and its `)` (the text's end where it is unclosed).
-fn measure_call(b: &[char], word: &str, i: usize) -> Option<(usize, usize)> {
-    if !expr::MEASURES.iter().any(|m| m.0 == word) {
-        return None;
-    }
-    let j = i + b[i..].iter().take_while(|c| c.is_whitespace()).count();
-    if b.get(j) != Some(&'(') {
-        return None;
-    }
-    Some((j, b[j..].iter().position(|&c| c == ')').map_or(b.len(), |k| j + k)))
-}
+/// How `map_measured` reads names (`expr::name_at`): Unicode letters, as `substitute_with` does;
+/// no copy's key; and only a word standing on its own — never one right after a name character
+/// or a dot (a path's later segment, the letters of `2length`).
+const MEASURED: expr::NameScan =
+    expr::NameScan { unicode: true, keys: false, inner_keys: false, glued: false };
+
+/// How `substitute_with` reads names (`expr::name_at`): the lexer's, but Unicode letters are a
+/// name's, a copy's key is read only at a name's head (`side.#282.0.small` is `side` and the key
+/// `#282.0.small`), and a name may begin straight after a number's digits (`deg` in `30deg`).
+const SUBSTITUTED: expr::NameScan =
+    expr::NameScan { unicode: true, keys: true, inner_keys: false, glued: true };
 
 /// The text with every measurement's argument names replaced by what `of` says (where it says
 /// anything), and nothing else touched: `length(gen_g) / 2` → `length(pair.gen_g) / 2`.
@@ -329,84 +328,60 @@ pub(super) fn map_measured(text: &str, of: impl Fn(&str) -> Option<String>) -> S
     let mut out = String::with_capacity(text.len());
     let mut i = 0usize;
     while i < b.len() {
-        let word_start = b[i].is_alphabetic() || b[i] == '_';
-        let prev_ident = i > 0 && (b[i - 1].is_alphanumeric() || b[i - 1] == '_' || b[i - 1] == '.');
-        if word_start && !prev_ident {
-            let from = i;
-            while i < b.len() && (b[i].is_alphanumeric() || b[i] == '_') {
-                i += 1;
-            }
-            let word: String = b[from..i].iter().collect();
-            out.push_str(&word);
-            if let Some((j, close)) = measure_call(&b, &word, i) {
-                let inner: String = b[j + 1..close].iter().collect();
-                let args: Vec<String> = inner
-                    .split(',')
-                    .map(|a| a.trim())
-                    .map(|a| of(a).unwrap_or_else(|| a.to_string()))
-                    .collect();
-                out.push('(');
-                out.push_str(&args.join(", "));
-                if close < b.len() {
-                    out.push(')');
-                }
-                i = (close + 1).min(b.len());
-            }
-        } else {
+        let Some(end) = expr::name_at(&b, i, MEASURED) else {
             out.push(b[i]);
             i += 1;
+            continue;
+        };
+        let word: String = b[i..end].iter().collect();
+        out.push_str(&word);
+        i = end;
+        if let Some((j, close)) = expr::measure_call(&b, &word, i) {
+            let inner: String = b[j + 1..close].iter().collect();
+            let args: Vec<String> = inner
+                .split(',')
+                .map(|a| a.trim())
+                .map(|a| of(a).unwrap_or_else(|| a.to_string()))
+                .collect();
+            out.push('(');
+            out.push_str(&args.join(", "));
+            if close < b.len() {
+                out.push(')');
+            }
+            i = (close + 1).min(b.len());
         }
     }
     out
 }
 
-/// `text` with every name `of` answers for written as it says — at identifier boundaries, a dotted
-/// path (`pc.half`) or a block copy's key (`#3.0.w`) read as one name, a measurement's arguments
-/// left as written.
+/// `text` with every name `of` answers for written as it says — a name as the expression lexer
+/// reads one (`SUBSTITUTED`): a dotted path (`pc.half`) or a block copy's key (`#3.0.w`) is one
+/// name, never its head alone, which is what let a second pass find a formal's name inside a
+/// name the first had just written — and a measurement's arguments left as written.
 pub(crate) fn substitute_with(text: &str, of: impl Fn(&str) -> Option<String>) -> String {
-    let mut out = String::with_capacity(text.len());
     let b: Vec<char> = text.chars().collect();
+    let mut out = String::with_capacity(text.len());
     let mut i = 0usize;
-    let ident = |c: char| c.is_alphanumeric() || c == '_';
     while i < b.len() {
-        // a word is what the expression lexer reads as one name: a dotted path is one word
-        // (`c.center.x`, `t1.w`), and so is a block copy's key (`#3.0.w`) — never its head
-        // alone, which is what let a second pass find a formal's name inside a name the first
-        // had just written
-        let key = b[i] == '#' && b.get(i + 1).is_some_and(|&c| ident(c));
-        if b[i].is_alphabetic() || b[i] == '_' || key {
-            let from = i;
-            if key {
-                i += 1;
-            }
-            loop {
-                while i < b.len() && ident(b[i]) {
-                    i += 1;
-                }
-                let dotted = i + 1 < b.len() && b[i] == '.' && ident(b[i + 1]);
-                if dotted && (key || !b[i + 1].is_ascii_digit()) {
-                    i += 1;
-                } else {
-                    break;
-                }
-            }
-            let word: String = b[from..i].iter().collect();
-            // a measurement's arguments are names of geometry, resolved as references are
-            // (`rescope_measures`) and never read as numbers: the call is copied as written
-            if let Some((_, close)) = measure_call(&b, &word, i) {
-                let end = (close + 1).min(b.len());
-                out.extend(&b[from..end]);
-                i = end;
-                continue;
-            }
-            match of(&word) {
-                Some(t) => out.push_str(&t),
-                None => out.push_str(&word),
-            }
-        } else {
+        let Some(end) = expr::name_at(&b, i, SUBSTITUTED) else {
             out.push(b[i]);
             i += 1;
+            continue;
+        };
+        let word: String = b[i..end].iter().collect();
+        // a measurement's arguments are names of geometry, resolved as references are
+        // (`rescope_measures`) and never read as numbers: the call is copied as written
+        if let Some((_, close)) = expr::measure_call(&b, &word, end) {
+            let stop = (close + 1).min(b.len());
+            out.extend(&b[i..stop]);
+            i = stop;
+            continue;
         }
+        match of(&word) {
+            Some(t) => out.push_str(&t),
+            None => out.push_str(&word),
+        }
+        i = end;
     }
     out
 }

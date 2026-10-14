@@ -172,44 +172,14 @@ fn tokenize(text: &str, units: Units) -> Result<Vec<(Tok, usize)>, String> {
         // in front of a name declared inside a `cycle` or a `repeat`, so a dimension named in
         // one — or an unbound formal of an instance in one — is `#3.0.w`, and the graph has to
         // read it.  The digits and dots after the `#` are the copy's, so they are part of the
-        // name here where `3.0` alone would be a number.
-        let mut key =
-            c == '#' && chars.get(i + 1).is_some_and(|d| d.is_ascii_alphanumeric() || *d == '_');
-        if c.is_ascii_alphabetic() || c == '_' || key {
-            let start = i;
-            if key {
-                i += 1;
-            }
-            while i < chars.len() && (chars[i].is_ascii_alphanumeric() || chars[i] == '_') {
-                i += 1;
-            }
-            // A dot *between* identifier characters is part of the name: `c.center.x` is one
-            // coordinate a curve is written over, not a name and a decimal point.  Only there —
-            // `a.5` and a trailing `a.` are left alone, so `.5` is still the number it always was
-            // and nothing that used to parse now parses differently.
-            // A copy's key may also stand *inside* a path (`side.#282.0.small`, the absolute
-            // name a measurement's argument resolves to), which no text wrote before.
-            let copy = |j: usize| {
-                chars.get(j) == Some(&'#')
-                    && chars.get(j + 1).is_some_and(|d| d.is_ascii_alphanumeric() || *d == '_')
-            };
-            while i + 1 < chars.len()
-                && chars[i] == '.'
-                && (chars[i + 1].is_ascii_alphabetic()
-                    || chars[i + 1] == '_'
-                    || (key && chars[i + 1].is_ascii_digit())
-                    || copy(i + 1))
-            {
-                i += 1;
-                if chars[i] == '#' {
-                    key = true;
-                    i += 1;
-                }
-                while i < chars.len() && (chars[i].is_ascii_alphanumeric() || chars[i] == '_') {
-                    i += 1;
-                }
-            }
-            out.push((Tok::Ident(chars[start..i].iter().collect()), at));
+        // name here where `3.0` alone would be a number.  A dot *between* identifier characters
+        // is part of the name: `c.center.x` is one coordinate a curve is written over, not a
+        // name and a decimal point.  Only there — `a.5` and a trailing `a.` are left alone, so
+        // `.5` is still the number it always was.  A copy's key may also stand *inside* a path
+        // (`side.#282.0.small`, the absolute name a measurement's argument resolves to).
+        if let Some(end) = super::names::name_at(&chars, i, super::names::LEXER) {
+            out.push((Tok::Ident(chars[i..end].iter().collect()), at));
+            i = end;
             continue;
         }
         i += 1;
