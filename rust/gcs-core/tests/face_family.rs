@@ -1,15 +1,17 @@
 //! **The face family** (#243 L1): `solid(I(…).f over s in (a, b))`, the solid a face of an
 //! instance sweeps as one of its numbers runs.  The station is drawn once, hidden, at the middle
 //! of its interval and solved with the drawing; the family solves it again at every other station,
-//! each warm from its neighbour, and facets what the stations sweep.
+//! each warm from its neighbour, and facets what the stations sweep.  Its walls are exact (L2):
+//! each the surface its edge sweeps as the station is solved at the nodes of each piece of the
+//! interval, a polynomial in the running number between them (`brep::family`), lowered to a plane,
+//! a cylinder, a cone or a torus where its numbers say it is one.
 //!
 //! The fixtures are the L0 target programs (`docs/lofts/l0/`), over the library they were written
 //! against (`docs/lofts/l0/lofts.sv`), and the gates are their closed forms: a reduced section is
 //! its prismatoid, a twisted prism A·L at any twist and under any law (Cavalieri), a scaled one a
 //! frustum and a pyramid, a bend and a thread Pappus, a wire square to its helix A × the helix's
-//! length, a smooth loft π∫r² by a quadrature exact for its rail's degree.  A faceted family is
-//! held to the faceting: exact where its walls are flat, within a few parts in ten thousand where
-//! they are curved (each closed form says what its tolerance is for).
+//! length, a smooth loft π∫r² by a quadrature exact for its rail's degree — each read off the exact
+//! B-rep (`props::volume`, its boundary checked by `Brep::check`) to a part in 10⁹.
 
 use gcs_core::model::{EntKind, SolidDef};
 use gcs_core::program::{elaborate, Elaborated};
@@ -57,9 +59,18 @@ fn index(e: &Elaborated, name: &str) -> usize {
     e.map.ent_named(name).unwrap_or_else(|| panic!("no solid `{name}`")).i()
 }
 
-/// The volume of the family `name`, or why it is refused.
+/// The volume of the solid `name` read off its exact B-rep (`props::volume`, in model units), its
+/// boundary checked first (`Brep::check`) — or why it is refused.
 fn volume(e: &Elaborated, name: &str) -> Result<f64, String> {
-    e.sketch.evaluated_solid(index(e, name), Report).map(|s| s.volume())
+    let x = e.sketch.exact_solid(index(e, name))?;
+    x.brep.check(1e-9 * x.brep.size()).map_err(|k| k.msg)?;
+    Ok(gcs_core::brep::props::volume(&x.brep) / x.mm.powi(3))
+}
+
+/// The kinds of the surfaces of the exact solid `name`'s faces, by face.
+fn kinds(e: &Elaborated, name: &str) -> std::collections::BTreeMap<String, &'static str> {
+    let x = e.sketch.exact_solid(index(e, name)).unwrap();
+    x.brep.faces.iter().map(|f| (f.name.clone(), f.surface.kind())).collect()
 }
 
 /// `got` within `rel` of `want`, said with both.
@@ -91,23 +102,21 @@ fn a_reducer_is_its_prismatoid() {
 }
 
 /// **A bend is Pappus**: an 18 mm hollow square (area 128) carried a quarter turn round a bend of
-/// radius 30, its centroid on the arc: V = 128 · 30 · π/2 = 1920π mm³, within the faceting of a
-/// quarter turn at the report's sagitta.
+/// radius 30, its centroid on the arc: V = 128 · 30 · π/2 = 1920π mm³.
 #[test]
 fn a_bend_is_pappus() {
     let e = family(ELBOW);
-    near(volume(&e, "body").unwrap(), 1920.0 * PI, 1e-4, "elbow");
+    near(volume(&e, "body").unwrap(), 1920.0 * PI, 1e-9, "elbow");
 }
 
 /// **A twisted prism is A·L at any twist** (Cavalieri): every section is the 20 mm square, so the
 /// duct turned a quarter and the auger turned three and a half turns — which no pairing of two
-/// faces can say — are both 20² · 40 = 16000 mm³.  A twisted wall's quads are fanned from their
-/// middles, which holds a ruled patch's volume where a diagonal would err to one side.
+/// faces can say — are both 20² · 40 = 16000 mm³, their walls twisted sheets (`Surface::Family`).
 #[test]
 fn a_twisted_prism_is_cavalieri_at_any_twist() {
     let e = family(TWISTED);
-    near(volume(&e, "duct").unwrap(), 16000.0, 1e-4, "a quarter turn");
-    near(volume(&e, "auger").unwrap(), 16000.0, 5e-4, "three and a half turns");
+    near(volume(&e, "duct").unwrap(), 16000.0, 1e-9, "a quarter turn");
+    near(volume(&e, "auger").unwrap(), 16000.0, 1e-9, "three and a half turns");
 }
 
 /// **And under any law**: the turn eased in and out, `twist · (3s² − 2s³)`, is an expression no
@@ -119,7 +128,7 @@ fn an_eased_twist_is_cavalieri_too() {
     let eased = TWISTED.replace("angle(twist * s, sense: ccw)", law);
     assert_ne!(eased, TWISTED, "the law is written in");
     let e = family(&eased);
-    near(volume(&e, "duct").unwrap(), 16000.0, 1e-4, "an eased quarter turn");
+    near(volume(&e, "duct").unwrap(), 16000.0, 1e-9, "an eased quarter turn");
 }
 
 /// **A scaled prism is a frustum, and one scaled to nothing a pyramid**: the square shrinking from
@@ -139,24 +148,22 @@ fn a_scaled_prism_is_a_frustum_and_a_pyramid_its_limit() {
 /// **A square lofted to a circle** as one section: a rounded square whose corner radius runs from
 /// 0 to 10 while its flats run from 20 to nothing.  At `s = 0` the corners are arcs of radius 0
 /// and the station solves; at `s = 1` the flats are points.  area(s) = 400(1 − s)² + 800s(1 − s)
-/// + 100πs², so V = 8000 + 1000π mm³, within the faceting of its arcs.
+/// + 100πs², so V = 8000 + 1000π mm³.  Its corners' walls start from an edge of no length.
 #[test]
 fn a_square_lofts_to_a_circle() {
     let e = family(SQUARE_TO_CIRCLE);
-    near(volume(&e, "transition").unwrap(), 8000.0 + 1000.0 * PI, 1e-4, "square to circle");
+    near(volume(&e, "transition").unwrap(), 8000.0 + 1000.0 * PI, 1e-9, "square to circle");
 }
 
 /// **A spring and a thread**: a wire of radius 1.5 square to a helix of radius 10, pitch 5, four
 /// turns, its centroid on the helix, is A × the helix's length, π · 1.5² · 4√((20π)² + 5²); a 2 mm
-/// axial square under a screw of pitch 4, three turns, is Pappus, 4 · 2π · 10 · 3 = 240π.  The
-/// wire's circle is faceted at the report's sagitta, which takes about five parts in ten thousand
-/// of its area, and the helices' chords about as much again.
+/// axial square under a screw of pitch 4, three turns, is Pappus, 4 · 2π · 10 · 3 = 240π.
 #[test]
 fn a_spring_and_a_thread() {
     let e = family(SPRING);
     let helix = 4.0 * ((20.0 * PI).powi(2) + 25.0).sqrt();
-    near(volume(&e, "spring").unwrap(), PI * 1.5 * 1.5 * helix, 1.5e-3, "the spring");
-    near(volume(&e, "thread").unwrap(), 240.0 * PI, 5e-4, "the thread");
+    near(volume(&e, "spring").unwrap(), PI * 1.5 * 1.5 * helix, 1e-9, "the spring");
+    near(volume(&e, "thread").unwrap(), 240.0 * PI, 1e-9, "the thread");
 }
 
 /// **Two rails hold the width**: the blade's edges reach rails drawn in plan, so its width runs
@@ -204,7 +211,7 @@ fn a_smooth_loft_is_its_quadrature() {
         let t = 0.5 * (x + 1.0);
         0.5 * w * PI * bez(t).0.powi(2) * dy(t)
     }).sum();
-    near(volume(&e, "bottle").unwrap(), want, 1e-4, "the bottle");
+    near(volume(&e, "bottle").unwrap(), want, 1e-9, "the bottle");
 }
 
 /// **Walls are named by the section's edges** under its instance (finding 12): the reducer's
@@ -351,16 +358,83 @@ cone := solid(Disc(guide, std.z, ring).f over s in (0, 1))
 
 /// **A station reads the geometry it was given** as a traced body does (finding 1): the disc's
 /// radius is the ring's, read where the solve put it (the ring's seed is not 10), shrinking to
-/// half — a frustum, π · 30/3 · (10² + 10 · 5 + 5²) = 1750π, within the faceting of its circles.
+/// half — a frustum, π · 30/3 · (10² + 10 · 5 + 5²) = 1750π, its wall a cone.
 /// Moving the ring moves every station; reading the station's own geometry is refused.
 #[test]
 fn a_station_reads_the_geometry_it_was_given() {
     let e = family(CONE);
-    near(volume(&e, "cone").unwrap(), 1750.0 * PI, 1e-4, "the frustum");
+    near(volume(&e, "cone").unwrap(), 1750.0 * PI, 1e-9, "the frustum");
     let e = family(&CONE.replace("radius(10mm) ring", "radius(8mm) ring"));
-    near(volume(&e, "cone").unwrap(), 1750.0 * PI * 0.64, 1e-4, "the ring made smaller");
+    near(volume(&e, "cone").unwrap(), 1750.0 * PI * 0.64, 1e-9, "the ring made smaller");
     let own = CONE.replace("radius(rim.r * (1 - s / 2)) k", "radius(rim.r * (1 - s / 2)) k\n    \
                            q := point\n    q distance(k.r) st.n.origin");
     let (_, said) = read(&own);
     assert!(said.iter().any(|m| m.contains("station's own geometry")), "{said:?}");
+}
+
+
+/// **The fast path is what the numbers say** (#243 L2): a wall lies on a plane, a cylinder, a cone
+/// or a torus where its edge's numbers keep to one — never by what wrote them — and on the sheet
+/// the station sweeps (`Surface::Family`) everywhere else.  The reducer and the pyramid are all
+/// planes; the elbow's flat walls are planes and its curved ones cylinders about the bend; the
+/// disc shrinking is a cone; the twisted duct's walls are sheets.  Each lowered wall was held to
+/// its sheet (its points, and its area) before it was kept.
+#[test]
+fn walls_lie_on_the_surfaces_their_numbers_say() {
+    let all = |e: &Elaborated, name: &str, want: &[&str]| {
+        let k = kinds(e, name);
+        let walls: Vec<&str> = k.iter().filter(|(n, _)| !n.ends_with(".start") && !n.ends_with(".end"))
+            .map(|(_, &kind)| kind).collect();
+        assert!(!walls.is_empty() && walls.iter().all(|k| want.contains(k)), "{name}: {k:?}");
+        k
+    };
+    all(&family(REDUCER), "body", &["plane"]);
+    all(&family(PYRAMID), "pyramid", &["plane"]);
+    let k = all(&family(ELBOW), "body", &["plane", "cylinder"]);
+    assert_eq!(k.values().filter(|&&v| v == "cylinder").count(), 4, "{k:?}");
+    all(&family(CONE), "cone", &["cone"]);
+    all(&family(TWISTED), "duct", &["family"]);
+    let k = kinds(&family(SQUARE_TO_CIRCLE), "transition");
+    assert!(k.values().any(|&v| v == "family") && k.values().any(|&v| v == "plane"), "{k:?}");
+}
+
+/// **A family is a solid like any other** (#243 L2): the 60 × 20 × 60 slab cut by the twisted
+/// duct running through it loses the duct's 20² · 20 there — 72000 − 8000 = 64000 mm³ — the
+/// slab's faces cut along curves traced where they meet the duct's twisted walls.
+#[test]
+fn a_family_cuts_like_any_solid() {
+    let auger = "// Three and a half turns: no pairing can say this.\n\
+                 auger := solid(TwistedSquare(guide, std.z, half: 10mm, twist: 1260deg).f over s in (0, 1))\n";
+    assert!(TWISTED.contains(auger));
+    let src = TWISTED.replace(auger, "") + "in std.top {\n  m := point\n  fix((0mm, 20mm)) m\n}\n\
+        r := std.CenteredRectangle(m, w: 60mm, h: 20mm) in std.top\nslab := face(r.loop)\n\
+        block := solid(slab, from: -30mm, to: 30mm)\nduct cut block\n";
+    let e = family(&src);
+    near(volume(&e, "block").unwrap(), 64000.0, 1e-9, "the slab less the duct");
+    let k = kinds(&e, "block");
+    assert!(k.iter().any(|(n, &v)| n.starts_with("duct.") && v == "family"), "{k:?}");
+    assert!(!k.contains_key("duct.start") && !k.contains_key("duct.end"), "{k:?}");
+}
+
+/// **And it is written as STEP**: each sheet as the net fitted within the file's tolerance, its
+/// rails and rims likewise, and the file read back describes the solid (`step_check::verify`).
+#[test]
+fn a_family_is_written_as_step() {
+    for (src, name) in [(TWISTED, "duct"), (ELBOW, "body"), (SPRING, "spring")] {
+        let e = family(src);
+        let x = e.sketch.exact_solid(index(&e, name)).unwrap();
+        let text = gcs_core::brep::step::write(&x.brep, name, 1e-3).unwrap();
+        let solid = gcs_core::brep::step_check::Solid::of(&x.brep);
+        gcs_core::brep::step_check::verify(&text, &solid).unwrap_or_else(|m| panic!("{name}: {m}"));
+    }
+}
+
+/// **The solid the page shows is the exact one**: the evaluated elbow is its B-rep meshed, its
+/// volume the B-rep's own, and its walls named by the section's edges.
+#[test]
+fn the_evaluated_family_is_its_exact_brep() {
+    let e = family(ELBOW);
+    let s = e.sketch.evaluated_solid(index(&e, "body"), Report).unwrap();
+    assert_eq!(s.volume(), volume(&e, "body").unwrap());
+    assert!(s.surviving_faces().iter().any(|f| f.starts_with("body.") && !f.ends_with("start")));
 }

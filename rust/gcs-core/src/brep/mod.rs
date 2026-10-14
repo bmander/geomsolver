@@ -22,6 +22,7 @@ pub mod section;
 pub mod sweep;
 pub mod export;
 pub mod fillet;
+pub mod family;
 
 use crate::json::Json;
 use std::sync::OnceLock;

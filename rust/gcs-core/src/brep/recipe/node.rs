@@ -65,7 +65,20 @@ pub enum Node {
     Region(Vec<Kept>),
     /// A region set's pieces (`solid::lowering`, #194).
     Lowered(Lowered),
+    /// A face family's walls (`solid::family`, #243 L2).
+    Family(Family),
 }
+
+/// A face family as its walls (`brep::family`): the pieces of its interval, the six stations of
+/// each, how short an edge's run at an end is to have vanished there (mm), and per loop of its
+/// section, per edge in walk order, its wall.
+#[derive(Clone,Debug)]
+pub struct Family { pub spans: Vec<[f64;2]>,pub at: Vec<[f64;6]>,pub vanish: f64,pub loops: Vec<Vec<FamilyWall>> }
+
+/// A wall of a `Family`: its name, its edge's kind, whether that edge runs round alone, and its
+/// numbers at every station, piece by piece (`brep::family::Run`).
+#[derive(Clone,Debug)]
+pub struct FamilyWall { pub name: String,pub run: crate::brep::family::Run,pub closed: bool,pub nodes: Vec<Vec<f64>> }
 
 /// A body: the stock, plus what is `on` it, less what `cut`s it, within what `bound`s it; then what
 /// reads the faces that makes, fills (`on_late`) then cuts (`cut_late`) — empty where it has none.
@@ -158,6 +171,7 @@ impl Node {
             "region" => Node::Region(each(field(n,"pieces")?.arr(),|p| Ok(Kept {node:Node::read(p)?,
                 keep:matches!(field(p,"keep")?,Json::Bool(true))}))?),
             "lowered" => Node::Lowered(Lowered::read(n)?),
+            "family" => Node::Family(Family::read(n)?),
             k => return Err(unread(format!("recipe: a node of kind `{k}`"))),
         })
     }
@@ -168,6 +182,7 @@ impl Node {
             Node::Prism {..} => "prism",Node::Revolve {..} => "revolve",Node::Loft {..} => "loft",
             Node::Placed {..} => "placed",Node::Through {..} => "through",Node::Body(_) => "body",
             Node::Canal {..} => "canal",Node::Region(_) => "region",Node::Lowered(_) => "lowered",
+            Node::Family(_) => "family",
         }
     }
 }
@@ -183,6 +198,31 @@ impl Body {
     /// Each set after the stock, in the order the body applies them, by its key.
     pub fn sets(&self) -> [(&'static str,&[i64]);5] {
         [("on",&self.on),("cut",&self.cut),("bound",&self.bound),("on_late",&self.on_late),("cut_late",&self.cut_late)]
+    }
+}
+
+impl Family {
+    fn read(n: &Json) -> Read<Family> {
+        use crate::brep::family::Run;
+        let numbers = |j: &Json| -> Vec<f64> { j.arr().iter().map(Json::as_f64).collect() };
+        let at = each(field(n,"at")?.arr(),|a| {
+            let a = numbers(a);
+            if a.len() != 6 { return Err(unread("recipe: a family's piece has not six stations".into())) }
+            Ok(std::array::from_fn(|k| a[k]))
+        })?;
+        let wall = |w: &Json| -> Read<FamilyWall> {
+            let run = match field(w,"run")?.as_str() {
+                "line" => Run::Line,
+                "round" => Run::Round,
+                "spline" => Run::Spline {degree:number(w,"degree")? as usize,knots:numbers(field(w,"knots")?),
+                    weights:w.get("weights").map(numbers)},
+                k => return Err(unread(format!("recipe: a family's wall of kind `{k}`"))),
+            };
+            Ok(FamilyWall {name:w.get("name").map_or("",Json::as_str).to_string(),run,
+                closed:matches!(field(w,"closed")?,Json::Bool(true)),nodes:field(w,"nodes")?.arr().iter().map(numbers).collect()})
+        };
+        Ok(Family {spans:field(n,"spans")?.arr().iter().map(pair).collect(),at,vanish:number(n,"vanish")?,
+            loops:each(field(n,"loops")?.arr(),|l| each(l.arr(),wall))?})
     }
 }
 

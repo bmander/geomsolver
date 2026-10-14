@@ -11,6 +11,62 @@ Solvent. Rust grows only three kinds of things:
   corner) and build it exactly. They never change what the family says, and the general
   evaluation gates each one.
 
+## L2: exact surfaces (2026-10-14)
+
+**Verdict: every L0 closed form holds to a part in 10⁹ — most to 1e-14.** A face family is now a
+recipe node (`family`), built by the core's kernel into a checked B-rep (`brep::family`), so the
+evaluated solid, Booleans, meshing and STEP read it like any other solid
+(`rust/gcs-core/tests/face_family.rs`, volumes off the B-rep by `props::volume`):
+
+| program | solid | closed form (mm³) | relative error | walls |
+|---|---|---|---|---|
+| `reducer.sv` | `body` | 5120 | 8e-14 | planes |
+| `elbow.sv` | `body` | 1920π | 6e-15 | planes and cylinders |
+| `twisted_duct.sv` | `duct` (90°) | 16000 | 2e-15 | sheets |
+| `twisted_duct.sv` | `auger` (1260°) | 16000 | 6e-16 | sheets |
+| `pyramid.sv` | `pyramid` (to 1) | 4000 | 3e-14 | planes, an apex |
+| `pyramid.sv` | `pyramid` (to ½) | 3500 | 1e-15 | planes |
+| `square_to_circle.sv` | `transition` | 8000 + 1000π | 2e-14 | sheets and planes |
+| `spring.sv` | `spring` | π·1.5²·helix | 2e-15 | a sheet |
+| `spring.sv` | `thread` | 240π | 9e-16 | sheets |
+| `blade.sv` | `blade` | 2100 | 8e-14 | planes |
+| a disc reading a ring | `cone` | 1750π | 1e-14 | a cone |
+
+**How a wall is exact.**  `S(u, s)` is the station's edge read at the fraction `u` of its run, in
+its own form (a line, an arc by angle, a spline by parameter), of **numbers** that run with `s`: a
+line's ends; an arc's centre, its radius vectors to its start and a quarter turn on, and its sweep
+(continuous where an angle would wrap); a spline's poles and span.  The station is solved at the
+six Gauss–Lobatto points of each piece of the interval, and between them each number is the
+quintic through those six — so `S` is a polynomial in `s` whose derivatives are its own, and
+`props` integrates each piece exactly.  **Each piece is checked against the solve**: a station is
+solved again between its last two nodes and every edge of the polynomials' must pass within 1e-10
+of the section's size, else the piece is cut.  The auger takes 94 pieces; a straight family a handful.
+
+**The fast path reads numbers, never words.**  A line edge that stays in one plane is a plane; one
+turned about an axis a cylinder or a cone; coaxial arcs square to their axis a cylinder or a cone;
+an arc turned about an axis in its plane a torus.  Each lowered wall must hold every node's points
+within 1e-10 of the wall's size and agree with the sheet's area (`props::area`) as closely.
+
+What L2 found on the way:
+
+- **A cap's outward side is read where the cap is.**  The thread turns three times, so its end
+  section faces against the middle one's; reading the caps' side off the middle turned them
+  inside out (`Brep::check`: an edge used twice the same way).  It is the stations' own rate at
+  that end now.
+- **A cubic net cannot write the auger within STEP's 1e-6 mm in 512 rows**: a wall is fitted
+  quintic along `s`.
+- **Meshing at the report's sagitta is the exact path's cost, not the wall's**: the spring meshes
+  to 800k triangles (10 s) as a torus of its proportions would; `S` costs 0.3 µs.  The gates read
+  volumes off the B-rep; one test holds the meshed solid to it.
+- **No memo by `s` was needed**: a station is never solved where the surface is read, only at its
+  nodes, and reading a number between them is six products.  The IFT's Taylor orders were not
+  needed either: `s` enters a station through `expr::evaluate`'s numbers as well as through a
+  pinned contact, so a tangent by the IFT would difference the residuals along `s` anyway; the
+  polynomial through solved stations, held to a solve between them, is exact by measurement.
+
+Handed on: the native OCCT host refuses a family (its `ThruSections`/`MakePipeShell` oracle is
+L10); a section holding a traced curve has no exact wall yet (its facets answer).
+
 ## L1: the face family (2026-10-14)
 
 **Verdict: the primitive stands.** `solid(I(…).f over s in (a, b))` parses, elaborates and

@@ -189,9 +189,21 @@ placement carries inside the blank; CLI test readers zero the offset.
   dimension may read a number of the geometry it was given (`rim.r`, `a.x`): the flattener
   records it (`Expansion::reads`) where it would refuse one outside a trace, the elaborator holds
   it reading that scalar (`HeldNumber::reads`, refreshed by `expr::evaluate`), and the part
-  brings the read geometry along; one of the station's own is E103.  No exact construction, no
-  material field and no OCCT recipe yet (each refuses naming the family).  `tests/face_family.rs`
-  is the gate: the L0 programs (`docs/lofts/l0/`) against their closed forms.
+  brings the read geometry along; one of the station's own is E103.  **Its walls are exact** (#243
+  L2, `family::walls`, `brep::family`): once the faceted family is judged, the station is run from
+  the middle to each end in **pieces**, each solved at its six Gauss–Lobatto points (warm from the
+  last two) and **checked against a station solved between its last two** — the polynomials
+  through the six must pass every edge of it within `EXACT` (1e-10) of the section's size, else
+  the piece is cut (as the miss's sixth root says) — an end that will not solve read as its
+  limit, the last piece's nodes stopping `LIMIT_GAP` short.  Each edge is **numbers** (a line its
+  ends; an arc its centre, its radius vectors to its start and a quarter turn on, and its signed
+  sweep; a spline its poles and parameter span), and the recipe's `family` node carries them at
+  every node (points about `Writer`'s origin, directions scaled), so the solid is a recipe node
+  like any other: Booleans, meshing, STEP and the evaluated solid read it (`exact_solid`, rung 3).
+  A traced curve in the section has no exact wall yet (refused there; the facets answer).  The
+  native OCCT host refuses the node (its lofts are the oracle at L10).  `tests/face_family.rs` is
+  the gate: the L0 programs (`docs/lofts/l0/`) against their closed forms, every one to 1e-9 off
+  the B-rep (`props::volume`, `Brep::check`), a slab cut by the twisted duct, STEP read back.
 - **A face closes itself** (§6.8, `program::build_face`; issue #49).  The brackets hold a *walk*,
   and an item may be a **point**, with `-> close` sealing the run back to the first item.  Where
   two neighbours do not meet, `build_face` mints the straight line between them, class

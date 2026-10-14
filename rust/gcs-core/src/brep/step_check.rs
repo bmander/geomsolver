@@ -254,6 +254,11 @@ impl Solid {
                 let numbers = crate::brep::step::blend_net(bl).map(|n| crate::brep::step::net_numbers(&n)).unwrap_or_default();
                 return Face {kind:BSPLINE,reversed:f.reversed,indirect:false,numbers}
             }
+            // a face family's wall likewise
+            if let Surface::Family(_,w) = &f.surface {
+                let numbers = crate::brep::step::family_net(w).map(|n| crate::brep::step::net_numbers(&n)).unwrap_or_default();
+                return Face {kind:BSPLINE,reversed:f.reversed,indirect:false,numbers}
+            }
             // a sheet is written as its own net
             if let Surface::BSpline(_,net) = &f.surface {
                 return Face {kind:BSPLINE,reversed:f.reversed,indirect:false,numbers:crate::brep::step::net_numbers(net)}
@@ -262,7 +267,7 @@ impl Solid {
             let kind = match f.surface { Surface::Plane(_) => PLANE,Surface::Cylinder(..) => CYLINDER,
                 Surface::Cone(..) => CONE,Surface::Sphere(..) => SPHERE,Surface::Torus(..) => TORUS,
                 Surface::Revolution(..) => REVOLUTION,Surface::Extrusion(..) => EXTRUSION,
-                Surface::Blend(..) | Surface::BSpline(..) => BSPLINE };
+                Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..) => BSPLINE };
             let mut numbers: Vec<f64> = frame.o.iter().chain(&frame.z).chain(&frame.x).copied().collect();
             numbers.extend(scalars);
             Face {kind,reversed:f.reversed,indirect:false,numbers}
