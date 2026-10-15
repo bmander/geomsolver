@@ -57,8 +57,8 @@
 //! side, not that the contact is within either flank's trimmed face, and not that no other point
 //! of the two members touches first.
 
-use super::held::{self, col3, cross, dot, frames, local, unit, vadd, vsub, Layout, Step, PASS,
-                   STEP};
+use super::held::{self, col3, cross, dot, frames, local, unit, vadd, vscale, vsub, Layout, Step,
+                   PASS, STEP};
 use crate::kernels::{curve_widths, Dual, Kernel, Num};
 use crate::linalg::Mat;
 use std::iter::Chain;
@@ -266,26 +266,25 @@ const EASE: usize = 6;
 /// `M` the point it is eased about and `a` the unit direction of a line, as drawn: a parabola of
 /// curvature `κₗ` lengthwise (along `a`) and `κₚ` across it — on the flank near `M`, its profile.
 /// The eased flank is `X + d·n`, and its normal the normal of that surface: across two directions
-/// along the flank at the place (`directions`), each `dX + (∇d·dX) n + d·dn`, so it reads the
+/// along the flank at the place, each `dX + (∇d·dX) n + d·dn`, so it reads the
 /// flank to second order (`held::local`'s `dn`).  Its columns are `M`'s lift, the line's two
 /// ends' and each curvature's unknown where it reads one; its constants `EASE`.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Ease {
+struct Ease {
     /// `κₚ` and `κₗ` as `c + m·x`, `x` a column where the flag says so.
-    pub numbers: [(f64, f64, bool); 2],
+    numbers: [(f64, f64, bool); 2],
 }
 
 impl Ease {
+    /// Its `EASE` constants read back.
     fn read(k: &[f64]) -> Option<Ease> {
         let flag = |x: f64| (x == 0.0 || x == 1.0).then_some(x == 1.0);
         let number = |i: usize| Some((k[3 * i], k[3 * i + 1], flag(k[3 * i + 2])?));
-        (k.len() == EASE).then_some(())?;
         Some(Ease { numbers: [number(0)?, number(1)?] })
     }
 
-    fn consts(&self) -> [f64; EASE] {
-        let [(a, b, x), (c, d, y)] = self.numbers;
-        [a, b, x as u8 as f64, c, d, y as u8 as f64]
+    fn consts(&self) -> impl Iterator<Item = f64> {
+        self.numbers.into_iter().flat_map(|(c, m, free)| [c, m, if free { 1.0 } else { 0.0 }])
     }
 
     /// Its columns: `M`, the line's two ends, and the unknowns.
@@ -308,27 +307,9 @@ impl Ease {
         let a = unit(vsub(col3(c, 6), col3(c, 3)));
         let w = vsub(x, col3(c, 0));
         let along = dot(w, a);
-        let across = vsub(w, held::vscale(a, along));
+        let across = vsub(w, vscale(a, along));
         let d = T::cst(0.5) * (kl * along * along + kp * dot(across, across));
-        (d, vadd(held::vscale(a, kl * along), held::vscale(across, kp)))
-    }
-}
-
-/// Two directions of a flank's place along it: `u` and `v` for a formed flank, whose roll is
-/// held; square to its meshing equation's gradient for a generated one, chosen by that
-/// gradient's largest component as `held::curvature` chooses.
-fn directions<T: Num>(f: &held::Local<T>, generated: bool) -> [[T; 3]; 2] {
-    let (z, one) = (T::cst(0.0), T::cst(1.0));
-    if !generated {
-        return [[one, z, z], [z, one, z]];
-    }
-    let g = f.dg;
-    let big = (0..3).max_by(|&i, &j| g[i].val().abs().total_cmp(&g[j].val().abs())).unwrap_or(2);
-    let neg = |x: T| z - x;
-    match big {
-        0 => [[neg(g[1]), g[0], z], [neg(g[2]), z, g[0]]],
-        1 => [[g[1], neg(g[0]), z], [z, neg(g[2]), g[1]]],
-        _ => [[g[2], z, neg(g[0])], [z, g[2], neg(g[1])]],
+        (d, vadd(vscale(a, kl * along), vscale(across, kp)))
     }
 }
 
@@ -339,17 +320,18 @@ fn eased<T: Num>(l: &Layout, e: &Ease, c: &[T], ease: &[T]) -> Seen<T> {
     let f = local(l, c, true);
     let (d, grad) = e.relief(ease, f.x);
     let tangent = |k: [T; 3]| {
-        let along = |m: &[[T; 3]; 3]| {
-            vadd(vadd(held::vscale(m[0], k[0]), held::vscale(m[1], k[1])), held::vscale(m[2], k[2]))
-        };
-        let t = along(&f.dx);
-        vadd(vadd(t, held::vscale(f.n, dot(grad, t))), held::vscale(along(&f.dn), d))
+        let t = held::along(&f.dx, k);
+        vadd(vadd(t, vscale(f.n, dot(grad, t))), vscale(held::along(&f.dn, k), d))
     };
-    let [w1, w2] = directions(&f, !l.steps.is_empty());
+    // two directions of the place along the flank: `u` and `v` where its roll is held (a formed
+    // flank's), else square to its meshing equation's gradient
+    let (z, one) = (T::cst(0.0), T::cst(1.0));
+    let [w1, w2] = if l.steps.is_empty() { [[one, z, z], [z, one, z]] }
+        else { held::along_envelope(f.dg) };
     let (t1, t2) = (tangent(w1), tangent(w2));
     let n = cross(t1, t2);
-    let n = if dot(n, f.n).val() < 0.0 { held::vscale(n, T::cst(-1.0)) } else { n };
-    Seen { x: vadd(f.x, held::vscale(f.n, d)), n: unit(n), du: t1, g: f.g }
+    let n = if dot(n, f.n).val() < 0.0 { vscale(n, T::cst(-1.0)) } else { n };
+    Seen { x: vadd(f.x, vscale(f.n, d)), n: unit(n), du: t1, g: f.g }
 }
 
 /* -- the contact at a phase -------------------------------------------------------------------- */
@@ -895,47 +877,25 @@ pub struct Parts {
     pub ease: Option<EaseParts>,
 }
 
-/// What a contact reads of an ease, off the sketch: the point it is about, the line's ends, and
-/// each curvature as constants and the unknown it reads, where it reads one.
+/// What a contact reads of an ease, off the sketch: its constants, and its columns — the point
+/// it is about, the line's ends and each curvature's unknown, where it reads one.
 #[derive(Clone, Debug)]
 pub struct EaseParts {
-    points: [usize; 3],
-    numbers: [(f64, f64, Option<u32>); 2],
+    ease: Ease,
+    cols: Vec<held::Col>,
 }
 
 impl EaseParts {
     fn of(sk: &Sketch, e: &crate::model::Ease) -> Result<EaseParts, String> {
-        let about = e.about as usize;
         let line = sk.lines.get(e.along as usize).ok_or("no such line")?;
-        let number = |t: &crate::model::TermNumber| match &t.free {
-            Some((name, m)) if *m != 0.0 => match sk.free_vars.get(name) {
-                Some(&p) => Ok((t.c, *m, Some(p))),
-                None => Err(format!("`{name}` is an unknown nothing on the drawing reads: state \
-                                     it, or a relation that holds it")),
-            },
-            _ => Ok((t.c, 0.0, None)),
+        let mut cols = [e.about, line.p1, line.p2].map(|p| held::Col::Lift(p as usize)).to_vec();
+        let mut number = |t| -> Result<(f64, f64, bool), String> {
+            let (n, free) = held::number(sk, t)?;
+            cols.extend(free.map(held::Col::One));
+            Ok(n)
         };
-        Ok(EaseParts { points: [about, line.p1 as usize, line.p2 as usize],
-                       numbers: [number(&e.numbers[0])?, number(&e.numbers[1])?] })
-    }
-
-    fn ease(&self) -> Ease {
-        Ease { numbers: self.numbers.map(|(c, m, x)| (c, m, x.is_some())) }
-    }
-
-    fn columns(&self, sk: &Sketch) -> Vec<u32> {
-        let lift = |p: usize| {
-            let k = sk.lift_of(p).expect("an ease's points are lifted at the add");
-            sk.lifts[k].x
-        };
-        self.points.iter().flat_map(|&p| lift(p)).chain(self.numbers.iter().filter_map(|n| n.2))
-            .collect()
-    }
-
-    fn values(&self, sk: &Sketch) -> Vec<f64> {
-        self.points.iter().flat_map(|&p| sk.lifted(p))
-            .chain(self.numbers.iter().filter_map(|n| n.2.map(|q| sk.params[q as usize].value)))
-            .collect()
+        let numbers = [number(&e.numbers[0])?, number(&e.numbers[1])?];
+        Ok(EaseParts { ease: Ease { numbers }, cols })
     }
 }
 
@@ -967,39 +927,37 @@ impl Parts {
                                 the pinion and the second with the gear"));
         }
         let ease = e.ease.as_ref().map(|x| EaseParts::of(sk, x)).transpose()?;
-        if ease.is_some() && matches!(flanks[0], FlankParts::Traced(_)) {
-            return Err("its first flank is a surface traced in space, which is not eased: ease an \
-                        envelope, or a source standing in its member".into());
-        }
         Ok(Parts { flanks, moving, ease })
+    }
+
+    /// An ease's columns, or none.
+    fn eased(&self) -> &[held::Col] {
+        self.ease.as_ref().map_or(&[], |e| &e.cols)
     }
 
     /// The points whose lifts the columns read.
     pub fn lifted(&self, sk: &Sketch) -> Vec<usize> {
-        let ease = self.ease.iter().flat_map(|e| e.points);
-        [self.flanks[0].lifted(sk), self.flanks[1].lifted(sk), self.moving.lifted()].concat()
-            .into_iter().chain(ease).collect()
+        [self.flanks[0].lifted(sk), self.flanks[1].lifted(sk), self.moving.lifted(),
+         held::lifted(self.eased())].concat()
     }
 
     /// The columns past the unknowns, every point's lift minted.
     pub fn columns(&self, sk: &Sketch) -> Vec<u32> {
-        let ease = self.ease.iter().flat_map(|e| e.columns(sk));
-        [self.flanks[0].columns(sk), self.flanks[1].columns(sk), self.moving.columns(sk)].concat()
-            .into_iter().chain(ease).collect()
+        [self.flanks[0].columns(sk), self.flanks[1].columns(sk), self.moving.columns(sk),
+         held::columns(sk, self.eased())].concat()
     }
 
     /// Their values as the drawing stands.
     pub fn values(&self, sk: &Sketch) -> Vec<f64> {
-        let ease = self.ease.iter().flat_map(|e| e.values(sk));
-        [self.flanks[0].values(sk), self.flanks[1].values(sk), self.moving.values(sk)].concat()
-            .into_iter().chain(ease).collect()
+        [self.flanks[0].values(sk), self.flanks[1].values(sk), self.moving.values(sk),
+         held::values(sk, self.eased())].concat()
     }
 
     /// The constants of a contact with a lead of `lead` columns.
     pub fn consts(&self, sk: &Sketch, lead: usize) -> Vec<f64> {
         let flanks = [self.flanks[0].consts(sk), self.flanks[1].consts(sk)];
-        let ease = self.ease.as_ref().map(EaseParts::ease);
-        consts(lead, [&flanks[0], &flanks[1]], &self.moving.steps, ease.as_ref())
+        let ease = self.ease.as_ref().map(|e| &e.ease);
+        consts(lead, [&flanks[0], &flanks[1]], &self.moving.steps, ease)
     }
 
     pub fn n_const(&self, sk: &Sketch) -> usize {
@@ -1009,8 +967,7 @@ impl Parts {
     /// How many columns a contact with a lead of `lead` reads.
     pub fn width(&self, sk: &Sketch, lead: usize) -> usize {
         let flanks = self.flanks[0].own_width(sk) + self.flanks[1].own_width(sk);
-        let ease = self.ease.as_ref().map_or(0, |e| e.ease().width());
-        lead + UNKNOWNS + flanks + self.moving.width() + ease
+        lead + UNKNOWNS + flanks + self.moving.width() + held::width(self.eased())
     }
 }
 

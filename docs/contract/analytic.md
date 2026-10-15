@@ -139,31 +139,31 @@ angle there; printing, sharing the place either way round and refusing an unheld
 `jacobians::meshing_contacts_agree_with_finite_differences` holding both kinds over a formed, a
 round and two generated flanks.
 
-**Ease-off (#345 S2, [0.113]):** `meshing(…, ease: M, along: l, profile: κₚ, lengthwise: κₗ)`
-is `MeshingE::ease` (`model::Ease`: the point, the line, each curvature a `TermNumber` read off the
+**Ease-off (#345 S2, [0.113]):** `meshing(…, ease: M, along: l, profile: κₚ, lengthwise: κₗ)` is
+`MeshingE::ease` (`model::Ease`: the point, the line, each curvature a `TermNumber` read off the
 declaration's text by `program::envelopes::ease`, an unknown it reads bound there —
 `expr::bind_free`, and kept bound by `expr::evaluate` while a contact holds to the meshing). The
 syntax is `AngularSpan::ease` (`EaseSpec`), parsed with the meshing, printed as written, its two
 names rescoped as a declaration's references are and counted by `edit::remove`. In the solve it is
 `envelope::meshing::Ease`: `EASE` constants after the mesh's steps (each curvature's `c`, `m` and
 whether `x` is a column) and columns after the mesh's axes (`M`'s lift, the line's ends', the
-unknowns), read with the first flank (`Mesh::flank_cols`), so a flank's block carries them and the
-poses' do not. `eased` reads the flank at second order (`held::local`'s `dn`) and returns its point
-moved `d` along the normal, `d(X) = ½ κₗ ((X − M)·a)² + ½ κₚ |(X − M) − ((X − M)·a)a|²` in the
-flank's member as drawn; the normal of the moved surface across two directions of the place along
-the flank (`directions`: `u` and `v` for a formed flank, square to `∇g` for a generated one), each
-`dX + (∇d·dX) n + d·dn`, turned to the flank's side; and the first of those for `∂X/∂u`. Its own
-row is the flank's: an eased envelope is the envelope's point moved, at the envelope's place. The
-relief runs along `∂u × ∂v` of the source as `held` reads it. A traced flank is refused (`Mesh::read`
-and `Parts::of`, E080 where the meshing is built). `tests/ease.rs` is the gate — the conjugate pair
-of `tests/meshing.rs` eased about M touches there with no lag where it is drawn and at a point at
-every phase, and its lag is the turn of the gear that closes the gap between the gear's cone and
-the eased flank worked out apart from the meshing (the envelope's point by its own meshing equation,
-moved along the cone's carried normal by the parabola), the contact and the bearing where they
-close; the lags at −15° and 15°, stated of two points with both curvatures unknown, solve both back;
-printing and refusals — with `jacobians::meshing_contacts_agree_with_finite_differences` holding
-the point, the normal and the path over an eased generated and an eased formed flank, a curvature
-an unknown in each.
+unknowns, `EaseParts` over `held`'s columns and `held::number`), read with the first flank
+(`Mesh::flank_cols`), so a flank's block carries them and the poses' do not. `eased` reads the flank
+at second order (`held::local`'s `dn`) and returns its point moved `d` along the normal, `d(X) = ½
+κₗ ((X − M)·a)² + ½ κₚ |(X − M) − ((X − M)·a)a|²` in the flank's member as drawn; the normal of the
+moved surface across two directions of the place along the flank (`u` and `v` for a formed flank,
+`held::along_envelope` for a generated one), each `dX + (∇d·dX) n + d·dn`, turned to the flank's
+side; and the first of those for `∂X/∂u`. Its own row is the flank's: an eased envelope is the
+envelope's point moved, at the envelope's place. The relief runs along `∂u × ∂v` of the source as
+`held` reads it. A traced flank is refused (E080 where the meshing is built, and `Mesh::read`).
+`tests/ease.rs` is the gate — the conjugate pair of `tests/meshing.rs` eased about M touches there
+with no lag where it is drawn and at a point at every phase, and its lag is the turn of the gear
+that closes the gap between the gear's cone and the eased flank worked out apart from the meshing
+(`tests/meshing.rs`'s envelope point, moved along its normal by the parabola, and its `closing`),
+the contact where they close; the lags at −15° and 15°, stated of two points with both curvatures
+unknown, solve both back; printing and refusals — with
+`jacobians::meshing_contacts_agree_with_finite_differences` holding the point, the normal and the
+path over an eased generated and an eased formed flank, a curvature an unknown in each.
 
 **A point a motion carries (#326, [0.106]):** `Reading::Carried` is `X − Pose(τ)·x`, the pose
 `held::frames`' last at `τ` degrees — any motion, its twist constant or not (`Reading::twist`
