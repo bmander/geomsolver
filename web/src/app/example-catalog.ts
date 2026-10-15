@@ -102,6 +102,15 @@ const projects: Example[] = [{
     + 'README says what each shows; the solids refine in the background as you watch.',
   target: { kind: 'directory', path: 'lofts', entry: 'pipe.sv' },
 }, {
+  label: 'Rates · curves integrated in Solvent', key: 'rates',
+  description: 'Five curves stated by how their points move rather than where they are: a point '
+    + 'dragged by a string (the tractrix), a railway transition whose curvature grows with its '
+    + 'length (the clothoid) eased into its bend, a hanging chain shot to its far end beside the '
+    + 'free curve that hangs the same, a dog chasing a hare until it catches it, and a filament '
+    + 'wound on a cone. Each body states a rate, `rate(p over s)`, and is integrated from where it '
+    + 'is drawn; each curve is a closed form its file gives. The README says what each shows.',
+  target: { kind: 'directory', path: 'rates', entry: 'tractrix.sv' },
+}, {
   label: 'Connecting rod, forged · rounded in Solvent', key: 'conrod',
   description: 'Two eyes joined by a tapering I-section shank: the shank filled into both eyes, a '
     + 'pocket each side of the web rounded inside, the bores chamfered and the outside\'s edges '

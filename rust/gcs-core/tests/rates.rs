@@ -44,7 +44,7 @@ written := Dragged(o, a: 30mm, u: 0).d.p over u in (-3, 3)
 ";
 
 /// The tractrix's closed form, the string's end at `(a u, 0)`: `x = a(u − tanh u)`, `y = a sech u`.
-fn tractrix(a: f64, u: f64) -> (f64, f64) {
+pub(crate) fn tractrix(a: f64, u: f64) -> (f64, f64) {
     (a * (u - u.tanh()), a / u.cosh())
 }
 
@@ -108,7 +108,7 @@ spiral := cl.p over s in (-100mm, 100mm)
 ";
 
 /// The Fresnel integrals `∫₀ˢ (cos, sin)(σ²/2A²) dσ`, by their series — worked out here.
-fn fresnel(a: f64, s: f64) -> (f64, f64) {
+pub(crate) fn fresnel(a: f64, s: f64) -> (f64, f64) {
     let w = s * s / (2.0 * a * a);
     let (mut x, mut y) = (0.0, 0.0);
     // the term w^k / k!, its sign and its integral's factor
@@ -285,7 +285,7 @@ path := Started(o, top, ya, half: 30deg, r0: 40mm, s: 0mm).g.p over s in (-60mm,
 /// A geodesic of the cone of half angle 30° from 40 along its generator, setting off square to
 /// it: unrolled, the straight line `ρ cos ψ = 40` — `ρ = √(40² + s²)`, turned `atan(s/40)/sin α`
 /// round the axis.
-fn geodesic(s: f64) -> [f64; 3] {
+pub(crate) fn geodesic(s: f64) -> [f64; 3] {
     let alpha = 30f64.to_radians();
     let rho = (40.0f64 * 40.0 + s * s).sqrt();
     let phi = (s / 40.0).atan() / alpha.sin();

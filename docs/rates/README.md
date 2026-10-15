@@ -343,6 +343,13 @@ The rule is `docs/contract/curves.md` ("Rates along a running formal") and
 | a rate as a place, a magnitude, along another formal or an angle, of a point that does not move, two in one row, in `initially`, outside a component | each E103, saying why |
 | rank lost on a circle | refused at ±30, to within one substep past it (30.0016); the curve short of it the circle |
 
+**The series.** [`rust/examples/rates/`](../../rust/examples/rates/) holds one document per idiom
+— the tractrix drawn and written in place, a clothoid transition eased into its bend, the hanging
+chain shot to its far end beside the free curve, a pursuit refused at its capture, a geodesic on a
+cone — each with its closed form, and the app's examples list it as one project (*Rates*).
+`rust/gcs-core/tests/rate_examples.rs` holds each to it. The D0 programs stay above as the record
+of how each was first written.
+
 ### Findings, for D3–D5
 
 1. **A drawn home must be on the body's rows, or the solve crawls.** Its pose is the initial value

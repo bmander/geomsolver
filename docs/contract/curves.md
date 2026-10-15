@@ -143,7 +143,12 @@ refused.  `tests/rates.rs` is the gate: the tractrix (drawn, and written in plac
 and the assembled Jacobian against differences before the solve, the hanging chain shot to its
 far end (`c sinh(50/c) = 75`), the geodesic on a cone in space (rows past the count) with its
 contacts' Jacobians, a body one rate row short naming its freedom, the refusals, a march refused
-where its rates lose rank, and the spelling printed back.
+where its rates lose rank, and the spelling printed back.  **The rates series**
+(`rust/examples/rates/`, its README the reading order): one document per idiom — a tractrix drawn
+and written in place, a clothoid transition into its osculating bend, a chain shot to its far end
+beside the free curve, a pursuit refused at its capture, a geodesic on a cone in space — each curve
+at the closed form its comments give and each claim a theorem, held by `tests/rate_examples.rs`;
+the app lists the folder as one project (`example-catalog.ts`, *Rates*).
 
 - A parametric curve (`curve.rs`) is *linear in its control points*, `C(t) = Σ Bᵢ(t) Pᵢ` (every
   B-spline).  A contact carries its own curve parameter as a `Param` slot and says
