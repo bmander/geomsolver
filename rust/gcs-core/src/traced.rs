@@ -239,7 +239,6 @@ impl<'a> View<'a> {
 
     /// The body as the integrator reads it (`rates.rs`): over one formal, in space.
     fn rate_body(&self) -> crate::rates::Body<'a> {
-        let rows = rate_rows;
         crate::rates::Body {
             n_outer: self.n_outer,
             n_theta: self.n_theta,
@@ -249,9 +248,9 @@ impl<'a> View<'a> {
             dim: 3,
             w: self.w.clone(),
             seeds: self.seeds.clone(),
-            alg: rows(&self.rows),
-            rate: rows(&self.rates),
-            init: rows(&self.init),
+            alg: rate_rows(&self.rows),
+            rate: rate_rows(&self.rates),
+            init: rate_rows(&self.init),
         }
     }
 }
@@ -707,16 +706,8 @@ fn lines_read(flat: &[f64], v: &View, outer: &[f64], home: f64, need: Need, grad
     let u = outer[0];
     let to = crate::rates::reach(home, u, Some((v.domain[0], v.domain[1])));
     let m = crate::lines::remembered(&body, flat, outer, home, to, body.pieces, grad).ok()?;
-    let order = match need {
-        Need::Point => 0,
-        Need::Tangent => 1,
-        Need::Curvature => 2,
-    };
-    let r = body.read(&plan, &m, u, outer[1], order, grad)?;
-    let mut frame = Frame { x: r.x, d: r.d, dd: r.dd };
-    if need < Need::Curvature {
-        frame.dd = [[[0.0; 3]; MAX_FORMALS]; MAX_FORMALS];
-    }
+    let r = body.read(&plan, &m, u, outer[1], need as u8, grad)?;
+    let frame = Frame { x: r.x, d: r.d, dd: r.dd };
     let grad = r.grad.map(|g| g.into_iter().map(|[x, d0, d1]| {
         let mut slot = [[0.0; 3]; SLOTS];
         slot[0] = x;

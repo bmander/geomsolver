@@ -293,17 +293,19 @@ pub(super) fn rate_operand(
 
 /// A relation that reads a rate, rewritten over the scratch line `line` from an origin to the
 /// rate (`{line}.o`, `{line}.t`): the line where a direction is read, its two points where the
-/// rate stands alone before `distance(k, along: l)`.
+/// rate stands alone before `distance(k, along: l)`.  Each of `lines` is the operand a rate is
+/// of, its scratch line and its span (over two formals a relation may read two, #339 D4).
 pub(super) fn rate_rewritten(
-    mut r: crate::ir::Relation, line: &str, span: Span, unary: bool,
+    mut r: crate::ir::Relation, lines: &[(usize, String, Span)], unary: bool,
 ) -> crate::ir::Relation {
-    let at = |n: String| crate::syntax::Ref { span, ..crate::syntax::Ref::new(n) };
+    let at = |n: String, span: Span| crate::syntax::Ref { span, ..crate::syntax::Ref::new(n) };
     if let Some(w) = r.form.written_mut() {
-        let k = w.rates[0].op;
-        if unary {
-            w.ops = vec![at(format!("{line}.o")), at(format!("{line}.t"))];
-        } else {
-            w.ops[k] = at(line.to_string());
+        for (k, line, span) in lines {
+            if unary {
+                w.ops = vec![at(format!("{line}.o"), *span), at(format!("{line}.t"), *span)];
+            } else {
+                w.ops[*k] = at(line.clone(), *span);
+            }
         }
         w.rates.clear();
     }
@@ -533,7 +535,8 @@ impl<'v> Lowering<'v> {
                 body integrates", self.swept, e.kind.a())));
         }
         let line = self.rate_line(e.i(), rf.span)?;
-        Ok(rate_rewritten(r, &line, rf.span, unary))
+        let k = r.form.written().map_or(0, |w| w.rates[0].op);
+        Ok(rate_rewritten(r, &[(k, line, rf.span)], unary))
     }
 
     /// The scratch line from the origin to point `p`'s rate, made once a point, by name.

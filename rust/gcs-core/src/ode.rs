@@ -270,45 +270,23 @@ pub fn step<R: Rate>(
     scale: &[f64],
     out: &mut [f64],
 ) -> Option<f64> {
-    let (n, m, len, k) = (w.n, w.m, w.len(), w.columns);
-    if !augmented(rate, n, m, &mut w.jac, u0, y0, &mut w.f0) {
-        return None;
-    }
-    let b0 = rate.branch();
-    for (j, &substeps) in STEPS[..k].iter().enumerate() {
-        if !midpoint(rate, w, &b0, u0, y0, h, substeps) {
-            return None;
-        }
-        w.row[..len].copy_from_slice(&w.cur[..len]);
-        for c in 1..=j {
-            let q = substeps as f64 / STEPS[j - c] as f64;
-            let r = q * q - 1.0;
-            let (done, row) = w.row.split_at_mut(c * len);
-            let (a, b) = (&done[(c - 1) * len..], &w.last[(c - 1) * len..c * len]);
-            for ((o, &a), &b) in row[..len].iter_mut().zip(a).zip(b) {
-                *o = a + (a - b) / r;
-            }
-        }
-        w.last[..(j + 1) * len].copy_from_slice(&w.row[..(j + 1) * len]);
-    }
-    let (best, next) = (&w.last[(k - 1) * len..k * len], &w.last[(k - 2) * len..(k - 1) * len]);
-    let err = (0..n).map(|i| (best[i] - next[i]).abs() / scale[i]).fold(0.0, f64::max);
-    out[..len].copy_from_slice(best);
-    out[..len].iter().all(|v| v.is_finite()).then_some(err)
+    extrapolated(rate, w, u0, y0, h, scale, None, out)
 }
 
-/// `step`, stopping at the first column past the second whose difference from the one before is
-/// within `tol` of `scale` (#339 D4): a step shorter than the march's — a dense output's — meets
-/// its tolerance in fewer columns, and a wide state pays for every one.  Its error estimate is
-/// that difference; the result the exact derivative of the step taken, as `step`'s is.
-pub fn step_within<R: Rate>(
+/// One extrapolated step (`step`), every column taken, or — with `stop` — up to the first column
+/// past the second whose difference from the one before is within it (#339 D4): a step shorter
+/// than the march's, a dense output's, meets its tolerance in fewer columns, and a wide state
+/// pays for every one.  The error is the last two columns' difference, the result the exact
+/// derivative of the step taken either way.
+#[allow(clippy::too_many_arguments)]
+fn extrapolated<R: Rate>(
     rate: &mut R,
     w: &mut Work,
     u0: f64,
     y0: &[f64],
     h: f64,
     scale: &[f64],
-    tol: f64,
+    stop: Option<f64>,
     out: &mut [f64],
 ) -> Option<f64> {
     let (n, m, len, k) = (w.n, w.m, w.len(), w.columns);
@@ -316,8 +294,11 @@ pub fn step_within<R: Rate>(
         return None;
     }
     let b0 = rate.branch();
-    let mut err = f64::INFINITY;
-    let mut taken = 0;
+    let error = |w: &Work, j: usize| {
+        let (best, next) = (&w.last[j * len..(j + 1) * len], &w.last[(j - 1) * len..j * len]);
+        (0..n).map(|i| (best[i] - next[i]).abs() / scale[i]).fold(0.0, f64::max)
+    };
+    let mut taken = k;
     for (j, &substeps) in STEPS[..k].iter().enumerate() {
         if !midpoint(rate, w, &b0, u0, y0, h, substeps) {
             return None;
@@ -333,15 +314,12 @@ pub fn step_within<R: Rate>(
             }
         }
         w.last[..(j + 1) * len].copy_from_slice(&w.row[..(j + 1) * len]);
-        taken = j + 1;
-        if j >= 2 {
-            let (best, next) = (&w.last[j * len..(j + 1) * len], &w.last[(j - 1) * len..j * len]);
-            err = (0..n).map(|i| (best[i] - next[i]).abs() / scale[i]).fold(0.0, f64::max);
-            if err <= tol {
-                break;
-            }
+        if stop.is_some_and(|tol| j >= 2 && error(w, j) <= tol) {
+            taken = j + 1;
+            break;
         }
     }
+    let err = error(w, taken - 1);
     out[..len].copy_from_slice(&w.last[(taken - 1) * len..taken * len]);
     out[..len].iter().all(|v| v.is_finite()).then_some(err)
 }
@@ -452,32 +430,6 @@ pub fn march_until<R: Rate>(
 }
 
 impl<B: Clone> Path<B> {
-    /// `at`, its one step order-adaptive (`step_within`): within the march's tolerance in as few
-    /// columns as reach it (#339 D4).
-    pub fn at_within<R: Rate<Branch = B>>(
-        &self,
-        rate: &mut R,
-        u: f64,
-        sens: bool,
-    ) -> Result<Node<B>, Refusal> {
-        let dir = self.dir();
-        let i = self.nodes.partition_point(|nd| dir * (nd.u - u) <= 0.0).saturating_sub(1);
-        let nd = &self.nodes[i];
-        let m = if sens { self.m } else { 0 };
-        let len = self.n * (1 + m);
-        let h = u - nd.u;
-        if dir * h <= 0.0 {
-            return Ok(Node { u: nd.u, y: nd.y[..len].to_vec(), branch: nd.branch.clone() });
-        }
-        let mut w = Work::new(self.n, m, &self.settings);
-        let mut out = vec![0.0; len];
-        rate.set_branch(nd.branch.clone());
-        step_within(rate, &mut w, nd.u, &nd.y[..len], h, &self.scale, self.settings.tol, &mut out)
-            .filter(|&e| e <= self.settings.tol)
-            .ok_or(Refusal::Undefined { at: nd.u })?;
-        Ok(Node { u, y: out, branch: rate.branch() })
-    }
-
     /// Which way the march ran: `1` forwards, `-1` backwards (`1` for a march of no span).
     fn dir(&self) -> f64 {
         match self.nodes.last() {
@@ -495,6 +447,22 @@ impl<B: Clone> Path<B> {
         u: f64,
         sens: bool,
     ) -> Result<Node<B>, Refusal> {
+        self.dense(rate, u, sens, false)
+    }
+
+    /// `at`, its one step order-adaptive: within the march's tolerance in as few columns as reach
+    /// it (#339 D4), and refused where all of them do not.
+    pub fn at_within<R: Rate<Branch = B>>(
+        &self,
+        rate: &mut R,
+        u: f64,
+        sens: bool,
+    ) -> Result<Node<B>, Refusal> {
+        self.dense(rate, u, sens, true)
+    }
+
+    fn dense<R: Rate<Branch = B>>(&self, rate: &mut R, u: f64, sens: bool, within: bool)
+        -> Result<Node<B>, Refusal> {
         let dir = self.dir();
         let i = self.nodes.partition_point(|nd| dir * (nd.u - u) <= 0.0).saturating_sub(1);
         let nd = &self.nodes[i];
@@ -507,7 +475,10 @@ impl<B: Clone> Path<B> {
         let mut w = Work::new(self.n, m, &self.settings);
         let mut out = vec![0.0; len];
         rate.set_branch(nd.branch.clone());
-        step(rate, &mut w, nd.u, &nd.y[..len], h, &self.scale, &mut out)
+        let tol = self.settings.tol;
+        let stop = within.then_some(tol);
+        extrapolated(rate, &mut w, nd.u, &nd.y[..len], h, &self.scale, stop, &mut out)
+            .filter(|&e| !within || e <= tol)
             .ok_or(Refusal::Undefined { at: nd.u })?;
         Ok(Node { u, y: out, branch: rate.branch() })
     }

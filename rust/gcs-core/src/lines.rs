@@ -41,7 +41,8 @@
 use crate::fmath::Det;
 use crate::kernels::KERNELS;
 use crate::ode;
-use crate::rates::{factor, n_res, Factored, Row};
+use crate::linalg::absmax;
+use crate::rates::{factor, jets, n_res, residual, Factored, Row};
 use crate::taylor::{self, Jet};
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -51,7 +52,7 @@ pub const PIECES: usize = 32;
 /// Below this part of a node's area `|x_d × x_u|` at the home, the surface is folding there.
 pub const FOLD: f64 = 1e-2;
 /// The most nodes a march carries.
-pub const MAX_NODES: usize = 2048;
+const MAX_NODES: usize = 2048;
 /// The most columns one row reads.
 const COLS: usize = 32;
 const A_NEWTON: usize = 24;
@@ -133,8 +134,7 @@ impl<'a> Body<'a> {
         if n == 0 || n > crate::rates::MAX_Q || self.traced + 3 > n
             || self.n_theta + 2 > self.n_outer || self.pieces == 0
             || self.pieces * 5 + 1 > MAX_NODES || self.seeds.len() != n {
-            return Err("a body marched by the method of lines places between 1 and 48 numbers \
-                        over a body of its shape".into());
+            return Err("marched body shape mismatch".into());
         }
         if !self.domain.iter().flatten().all(|v| v.is_finite())
             || self.domain[1][0] >= self.domain[1][1]
@@ -236,24 +236,10 @@ impl<'a> Body<'a> {
     }
 }
 
-/// Rows over plain numbers, into `out`.
-fn residual(rows: &[Row], z: &[f64], out: &mut Vec<f64>) {
-    out.clear();
-    let mut x = [0.0f64; COLS];
-    for r in rows {
-        let kn = &KERNELS[r.kid];
-        for (x, &c) in x.iter_mut().zip(&r.cols) {
-            *x = z[c];
-        }
-        let at = out.len();
-        out.resize(at + kn.n_res, 0.0);
-        (kn.res)(1, &x[..r.cols.len()], r.consts, &mut out[at..]);
-    }
-}
-
-/// Rows' Jacobian in the slots `slots` (any order), row-major into `out` (`n_res(rows) × n`).
-fn jacobian(rows: &[Row], z: &[f64], slots: &[usize], out: &mut Vec<f64>) {
-    let n = slots.len();
+/// Rows' Jacobian into `out` (`n_res(rows) × n`, row-major), each column of a row landing where
+/// `at` puts its variable-table slot, if anywhere.
+fn jacobian_by(rows: &[Row], z: &[f64], n: usize, at: impl Fn(usize) -> Option<usize>,
+               out: &mut Vec<f64>) {
     out.clear();
     out.resize(n_res(rows) * n, 0.0);
     let mut row = 0;
@@ -268,7 +254,7 @@ fn jacobian(rows: &[Row], z: &[f64], slots: &[usize], out: &mut Vec<f64>) {
         jr.iter_mut().for_each(|v| *v = 0.0);
         kn.jac_into(&x[..kn.n_par], r.consts, jr);
         for (c, &col) in r.cols.iter().enumerate() {
-            if let Some(k) = slots.iter().position(|&s| s == col) {
+            if let Some(k) = at(col) {
                 for t in 0..kn.n_res {
                     out[(row + t) * n + k] += jr[t * kn.n_par + c];
                 }
@@ -278,27 +264,9 @@ fn jacobian(rows: &[Row], z: &[f64], slots: &[usize], out: &mut Vec<f64>) {
     }
 }
 
-/// Rows over jets, into `out`; `false` where a row has no form.
-fn jets(rows: &[Row], z: &[Jet], out: &mut Vec<Jet>) -> bool {
-    out.clear();
-    let mut jrow = Vec::new();
-    let mut v = [Jet::default(); COLS];
-    for r in rows {
-        let kn = &KERNELS[r.kid];
-        for (v, &c) in v.iter_mut().zip(&r.cols) {
-            *v = z[c];
-        }
-        let at = out.len();
-        out.resize(at + kn.n_res, Jet::default());
-        if !taylor::residual(r.kid, &v[..r.cols.len()], r.consts, &mut out[at..], &mut jrow) {
-            return false;
-        }
-    }
-    true
-}
-
-fn absmax(v: &[f64]) -> f64 {
-    v.iter().fold(0.0f64, |a, x| a.max(x.abs()))
+/// Rows' Jacobian in the slots `slots` (any order), row-major into `out` (`n_res(rows) × n`).
+fn jacobian(rows: &[Row], z: &[f64], slots: &[usize], out: &mut Vec<f64>) {
+    jacobian_by(rows, z, slots.len(), |col| slots.iter().position(|&s| s == col), out);
 }
 
 /* -- the sampled formal ------------------------------------------------------------------- */
@@ -343,11 +311,11 @@ fn basis(t: f64) -> [[f64; 6]; 3] {
 /// an angle whose ends meet — closed, its last node its first.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Grid {
-    pub pieces: usize,
-    pub closed: bool,
-    pub span: [f64; 2],
+    pieces: usize,
+    closed: bool,
+    span: [f64; 2],
     /// Each node's place along the formal.
-    pub nodes: Vec<f64>,
+    nodes: Vec<f64>,
     d6: [[f64; 6]; 6],
 }
 
@@ -436,8 +404,8 @@ impl Grid {
 
 /* -- one node --------------------------------------------------------------------------------- */
 
-/// The body solved at one node: its variable table, the rates of `I` (per the formal's unit) and
-/// the factorisations a directional derivative reuses.
+/// The body solved at one node: its variable table (the placed coordinates and the rates in it),
+/// the rates of `I` (per the formal's unit) and its rate rows' constants.
 struct At {
     z: Vec<f64>,
     v: Vec<f64>,
@@ -618,25 +586,8 @@ impl<'a> Body<'a> {
     fn lin(&self, plan: &Plan<'a>, at: &At) -> Option<Lin> {
         let w = self.width();
         let full = |rows: &[Row]| -> Vec<f64> {
-            let mut out = vec![0.0; n_res(rows) * w];
-            let mut row = 0;
-            let mut x = [0.0f64; COLS];
-            let mut jr = [0.0f64; COLS * 8];
-            for r in rows {
-                let kn = &KERNELS[r.kid];
-                for (x, &c) in x.iter_mut().zip(&r.cols) {
-                    *x = at.z[c];
-                }
-                let jr = &mut jr[..kn.n_res * kn.n_par];
-                jr.iter_mut().for_each(|v| *v = 0.0);
-                kn.jac_into(&x[..kn.n_par], r.consts, jr);
-                for (c, &col) in r.cols.iter().enumerate() {
-                    for t in 0..kn.n_res {
-                        out[(row + t) * w + col] += jr[t * kn.n_par + c];
-                    }
-                }
-                row += kn.n_res;
-            }
+            let mut out = Vec::new();
+            jacobian_by(rows, &at.z, w, Some, &mut out);
             out
         };
         let no = self.n_outer;
@@ -652,18 +603,19 @@ impl<'a> Body<'a> {
         }
         let (ja, jr) = (full(&plan.alg_a), full(&Self::rate_rows(&self.rate, &at.consts)));
         // `∂r/∂A` of the placed rows, and the rate system `M`, at the root
-        let (na, ni) = (plan.a.len(), plan.i.len());
+        let na = plan.a.len();
         let mut lu_a: Vec<f64> = (0..na * na)
             .map(|k| ja[(k / na) * w + self.n_outer + plan.a[k % na]]).collect();
         let mut piv_a = Vec::new();
-        let placed = na == 0 || crate::linalg::lu_factor(na, &mut lu_a, &mut piv_a);
-        let qu: Vec<f64> = at.z[self.r_u()..self.r_u() + self.n_q].to_vec();
-        let (_, mut mat) = self.over_moved(plan, &at.z, &qu)?;
-        let rows = mat.len() / ni.max(1) + jr.len() / w;
-        mat.extend((0..jr.len() / w).flat_map(|r| {
-            plan.i.iter().map(move |&k| (r, k))
-        }).map(|(r, k)| jr[r * w + self.r_d() + k]));
-        let m = factor(rows, ni, mat).filter(|_| placed)?;
+        if na > 0 && !crate::linalg::lu_factor(na, &mut lu_a, &mut piv_a) {
+            return None;
+        }
+        let qu = &at.z[self.r_u()..self.r_u() + self.n_q];
+        let (_, mut mat) = self.over_moved(plan, &at.z, qu)?;
+        for r in jr.chunks_exact(w) {
+            mat.extend(plan.i.iter().map(|&k| r[self.r_d() + k]));
+        }
+        let m = factor(n_res(&plan.alg_i) + n_res(&self.rate), plan.i.len(), mat)?;
         Some(Lin { ja, jr, dw, lu_a, piv_a, m })
     }
 
@@ -732,8 +684,8 @@ impl<'a> Body<'a> {
 }
 
 /// A node's first-order picture (`Body::lin`): the placed rows' and the rate rows' Jacobians over
-/// the whole variable table (row-major), and the tapes' derivatives in the outer variables
-/// (`n_w × n_outer`).
+/// the whole variable table (row-major), the tapes' derivatives in the outer variables (`n_w ×
+/// n_outer`), and `∂r/∂A` (LU) and the rate system `M` factorised at the root.
 struct Lin {
     ja: Vec<f64>,
     jr: Vec<f64>,
@@ -1048,19 +1000,18 @@ impl ode::Rate for Flow<'_, '_> {
     }
 }
 
-
 /* -- marches ---------------------------------------------------------------------------------- */
 
 /// One march of the body from its home on a grid: the columns it was made at, the path, each
 /// node's area at the home, and — where it was refused short of where it was asked to run — the
 /// refusal and why, the path then reaching the place it was refused at.
 pub struct March {
-    pub outer: Vec<f64>,
-    pub home: f64,
-    pub grid: Grid,
-    pub sens: bool,
-    pub path: ode::Path<Vec<f64>>,
-    pub area: Vec<f64>,
+    outer: Vec<f64>,
+    home: f64,
+    grid: Grid,
+    sens: bool,
+    path: ode::Path<Vec<f64>>,
+    area: Vec<f64>,
     pub refused: Option<(ode::Refusal, Why)>,
     /// The state at places read, so every place along the sampled formal at one place along the
     /// marched one is read off one step.
@@ -1074,11 +1025,6 @@ impl March {
         let (to, reached) = (u - self.home, last - self.home);
         to * reached >= 0.0 && to.abs() <= reached.abs()
     }
-
-    /// The last place the march reached.
-    pub fn last(&self) -> f64 {
-        self.path.nodes.last().map_or(self.home, |n| n.u)
-    }
 }
 
 /// A march as remembered: made, or refused (`None` where it could not start).
@@ -1091,6 +1037,9 @@ impl<'a> Body<'a> {
     /// could not start.
     pub fn march(&self, plan: &Plan<'a>, outer: &[f64], span: f64, pieces: usize, sens: bool)
         -> Option<March> {
+        if pieces == 0 || 5 * pieces + 1 > MAX_NODES {
+            return None;
+        }
         let st = self.start(plan, outer, pieces, sens)?;
         let mut flow = Flow { body: self, plan, grid: &st.grid,
                               outer: outer[..self.n_outer].to_vec(), branch: st.branch.clone(),
@@ -1178,11 +1127,8 @@ impl<'a> Body<'a> {
             return Some(r);
         }
         // along the march itself: the rate's derivative along the flow
-        let near: Vec<usize> = {
-            let mut v: Vec<usize> = idx.to_vec();
-            v.dedup();
-            v
-        };
+        let mut near = idx.to_vec();
+        near.dedup();
         let picked = |moved: Vec<(usize, Vec<f64>)>| -> Vec<f64> {
             let mut out = vec![0.0; nn * ni];
             for (j, dv) in moved {

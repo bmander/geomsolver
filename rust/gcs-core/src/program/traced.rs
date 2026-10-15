@@ -386,7 +386,8 @@ impl<'v> Lowering<'v> {
                 .map_err(|(s, m)| (Code::E103, s, m))?;
             let p = self.rated_point(&rf)?;
             let line = self.rate_line(p, rf.span, false)?;
-            return Ok((super::curves::rate_rewritten(r, &line, rf.span, unary), true));
+            let k = r.form.written().map_or(0, |w| w.rates[0].op);
+            return Ok((super::curves::rate_rewritten(r, &[(k, line, rf.span)], unary), true));
         };
         let w = r.form.written()
             .ok_or((Code::E103, st.span, "a rate is written in a relation".to_string()))?;
@@ -412,7 +413,6 @@ impl<'v> Lowering<'v> {
                 a root to choose at every step", self.swept)));
         }
         let unary = w.fixity == crate::constraints::Fixity::Infix && w.ops.len() == 1;
-        let mut out = r.clone();
         let mut lines = Vec::new();
         for rate in &w.rates {
             let rf = &w.ops[rate.op];
@@ -420,18 +420,7 @@ impl<'v> Lowering<'v> {
             lines.push((rate.op, self.rate_line(p, rf.span, rate.over.text != self.swept)?,
                         rf.span));
         }
-        if let Some(w) = out.form.written_mut() {
-            let at =
-                |n: String, span: Span| crate::syntax::Ref { span, ..crate::syntax::Ref::new(n) };
-            for (op, line, span) in lines {
-                if unary {
-                    w.ops = vec![at(format!("{line}.o"), span), at(format!("{line}.t"), span)];
-                } else {
-                    w.ops[op] = at(line, span);
-                }
-            }
-            w.rates.clear();
-        }
+        let out = super::curves::rate_rewritten(r.clone(), &lines, unary);
         Ok((out, marched == 1))
     }
 

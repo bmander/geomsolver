@@ -182,7 +182,7 @@ front perpendicular(at: h) nl
         let got = c.jacobian(&sk, &v);
         // the lead, the place, and two columns that move the ellipse — its centre, and the axis
         // its plane is square to — each a march of its own
-        let lead = c.local_values(&sk).len() - 2 - 12;
+        let lead = v.len() - 2 - 12;
         let cols: Vec<usize> = (0..lead + 2).chain([lead + 2, lead + 11]).collect();
         for k in cols {
             let h = 1e-4 * v[k].abs().max(1.0);

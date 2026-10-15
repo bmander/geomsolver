@@ -96,6 +96,40 @@ pub fn n_res(rows: &[Row]) -> usize {
     rows.iter().map(|r| KERNELS[r.kid].n_res).sum()
 }
 
+/// Rows over plain numbers, into `out`.
+pub(crate) fn residual(rows: &[Row], z: &[f64], out: &mut Vec<f64>) {
+    out.clear();
+    let mut x = [0.0f64; COLS];
+    for r in rows {
+        let kn = &KERNELS[r.kid];
+        for (x, &c) in x.iter_mut().zip(&r.cols) {
+            *x = z[c];
+        }
+        let at = out.len();
+        out.resize(at + kn.n_res, 0.0);
+        (kn.res)(1, &x[..r.cols.len()], r.consts, &mut out[at..]);
+    }
+}
+
+/// Rows over jets, into `out`; `false` where a row has no form.
+pub(crate) fn jets(rows: &[Row], z: &[Jet], out: &mut Vec<Jet>) -> bool {
+    out.clear();
+    let mut jrow = Vec::new();
+    let mut v = [Jet::default(); COLS];
+    for r in rows {
+        let kn = &KERNELS[r.kid];
+        for (v, &c) in v.iter_mut().zip(&r.cols) {
+            *v = z[c];
+        }
+        let at = out.len();
+        out.resize(at + kn.n_res, Jet::default());
+        if !taylor::residual(r.kid, &v[..r.cols.len()], r.consts, &mut out[at..], &mut jrow) {
+            return false;
+        }
+    }
+    true
+}
+
 /// A matrix factorised with its rows scaled to unit length — by LU where it is square, by
 /// Householder QR where it has more rows than unknowns, its rank the index check either way
 /// (`factor`).
@@ -226,21 +260,6 @@ impl<'a> Body<'a> {
         Some(z)
     }
 
-    /// Rows over plain numbers, into `out`.
-    fn residual(rows: &[Row], z: &[f64], out: &mut Vec<f64>) {
-        out.clear();
-        let mut x = [0.0f64; COLS];
-        for r in rows {
-            let kn = &KERNELS[r.kid];
-            for (x, &c) in x.iter_mut().zip(&r.cols) {
-                *x = z[c];
-            }
-            let at = out.len();
-            out.resize(at + kn.n_res, 0.0);
-            (kn.res)(1, &x[..r.cols.len()], r.consts, &mut out[at..]);
-        }
-    }
-
     /// Rows' Jacobian in the `n` slots from `from`, row-major into `out` (`n_res(rows) × n`).
     fn jacobian(rows: &[Row], z: &[f64], from: usize, n: usize, out: &mut Vec<f64>) {
         out.clear();
@@ -267,25 +286,6 @@ impl<'a> Body<'a> {
         }
     }
 
-    /// Rows over jets, into `out`; `false` where a row has no form.
-    fn jets(rows: &[Row], z: &[Jet], out: &mut Vec<Jet>) -> bool {
-        out.clear();
-        let mut jrow = Vec::new();
-        let mut v = [Jet::default(); COLS];
-        for r in rows {
-            let kn = &KERNELS[r.kid];
-            for (v, &c) in v.iter_mut().zip(&r.cols) {
-                *v = z[c];
-            }
-            let at = out.len();
-            out.resize(at + kn.n_res, Jet::default());
-            if !taylor::residual(r.kid, &v[..r.cols.len()], r.consts, &mut out[at..], &mut jrow) {
-                return false;
-            }
-        }
-        true
-    }
-
     /// The outer variables as jets moving along `dir` (one entry an outer variable).
     fn outer_along(&self, outer: &[f64], dir: impl Fn(usize) -> f64) -> Vec<Jet> {
         (0..self.n_outer).map(|i| Jet::from(&[outer[i], dir(i)])).collect()
@@ -308,7 +308,7 @@ impl<'a> Body<'a> {
         let qj: Vec<Jet> = q.iter().map(|&x| Jet::constant(x)).collect();
         let z = self.jet_table(&oj, &qj, &vec![Jet::constant(0.0); self.n_q])?;
         let mut r = Vec::new();
-        Self::jets(rows, &z, &mut r).then(|| r.iter().map(|j| j.0[1]).collect())
+        jets(rows, &z, &mut r).then(|| r.iter().map(|j| j.0[1]).collect())
     }
 
     /// The rates at `(outer, q)`, by Newton on the rate rows from `start` — `None` where the
@@ -327,7 +327,7 @@ impl<'a> Body<'a> {
         let zero = vec![Jet::constant(0.0); n];
         let z = self.jet_table(&oj, &qj, &zero)?;
         let mut rj = Vec::new();
-        if !Self::jets(&self.alg, &z, &mut rj) {
+        if !jets(&self.alg, &z, &mut rj) {
             return None;
         }
         let b: Vec<f64> = rj.iter().map(|j| j.0[1]).collect();
@@ -340,7 +340,7 @@ impl<'a> Body<'a> {
         let mut solved = None;
         for _ in 0..RATE_NEWTON {
             z0[self.r0()..].copy_from_slice(&q1);
-            Self::residual(&self.rate, &z0, &mut rr);
+            residual(&self.rate, &z0, &mut rr);
             Self::jacobian(&self.rate, &z0, self.r0(), n, &mut jr);
             let mut g = Vec::with_capacity(n);
             for i in 0..n_alg {
@@ -405,7 +405,7 @@ impl<'a> Body<'a> {
                     let Some(t) = self.jet_table(&oj, &qj, &q1j) else { return false };
                     z = t;
                 }
-                if !Self::jets(&self.alg, &z, &mut alg) || !Self::jets(&self.rate, &z, &mut rate) {
+                if !jets(&self.alg, &z, &mut alg) || !jets(&self.rate, &z, &mut rate) {
                     return false;
                 }
                 pair[side].clear();
@@ -449,7 +449,7 @@ impl<'a> Body<'a> {
                 Jet::from(&c)
             }).collect();
             let z = self.jet_table(&oj, &qj, &q1j)?;
-            if !Self::jets(&self.alg, &z, &mut alg) || !Self::jets(&self.rate, &z, &mut rate) {
+            if !jets(&self.alg, &z, &mut alg) || !jets(&self.rate, &z, &mut rate) {
                 return None;
             }
             let mut rhs: Vec<f64> = alg.iter().map(|j| -j.0[k])
@@ -512,7 +512,7 @@ impl<'a> Body<'a> {
         let tol = 1e-13 * size;
         let (mut r, mut j) = (Vec::new(), Vec::new());
         let norm = |r: &[f64]| r.iter().fold(0.0f64, |a, x| a.max(x.abs()));
-        Self::residual(rows, &z, &mut r);
+        residual(rows, &z, &mut r);
         let mut now = norm(&r);
         for _ in 0..HOME_NEWTON {
             if !now.is_finite() {
@@ -532,7 +532,7 @@ impl<'a> Body<'a> {
                 for (k, d) in step.iter().enumerate() {
                     trial[self.n_outer + k] += lambda * d;
                 }
-                Self::residual(rows, &trial, &mut r);
+                residual(rows, &trial, &mut r);
                 let next = norm(&r);
                 if next.is_finite() && (next < now || lambda < 1e-4) {
                     z = trial;
@@ -564,7 +564,7 @@ impl<'a> Body<'a> {
         let mut kkt = None;
         for it in 0..PROJECT_NEWTON {
             let z = self.table(outer, &q, &zero)?;
-            Self::residual(&self.alg, &z, &mut r);
+            residual(&self.alg, &z, &mut r);
             Self::jacobian(&self.alg, &z, self.n_outer, n, &mut j);
             // F = [q − pose − Jᵀλ; r]
             let mut f = vec![0.0; k];
@@ -639,7 +639,7 @@ impl<'a> Body<'a> {
         let zj = vec![Jet::constant(0.0); n];
         let z = self.jet_table(&oj, &qj, &zj)?;
         let mut r = Vec::new();
-        if !Self::jets(&self.alg, &z, &mut r) {
+        if !jets(&self.alg, &z, &mut r) {
             return None;
         }
         Some(r.iter().zip(lam).map(|(j, l)| j.0[2] * l).sum())

@@ -91,9 +91,8 @@ march, a seed of fewer columns, dense output forwards and back, a carried branch
 For a wide state (#339 D4): the branch is any `Clone` value (a method of lines' is one per node);
 `Rate::along` gives `f` and `(∂f/∂y) Φ` read along `Φ`'s columns, never forming `∂f/∂y` (`None`,
 the default, forms it, and only then is `Work::jac` sized); `march_until` keeps the road a refused
-march took (`march` is it, refusing); `step_within` / `Path::at_within` is a dense output's step
-stopping at the first column past the second within the tolerance — the march's own steps keep
-every column.
+march took (`march` is it, refusing); `Path::at_within` is a dense output's step stopping at the
+first column past the second within the tolerance — the march's own steps keep every column.
 
 **Rates along a running formal (#339 D2, [0.119], `rates.rs`):** a traced body may state
 relations that read a rate (`rate(p over s)`, `syntax::RateOf` on a `Written`; language.md says
