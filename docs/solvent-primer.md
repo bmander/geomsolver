@@ -239,7 +239,7 @@ whichever is written first (`l tangent g` is `g tangent l`).
 | `midpoint` | infix | a point and a line |
 | `parallel`, `perpendicular` | infix | two lines; an axis and a line or axis; an axis and a plane; `parallel` two planes |
 | `project` | infix | two points in two planes: two images of one point in space (1.12) |
-| `mapped(from -> a, …)` | infix | `q mapped(from -> a, to -> b, third -> c) p`: `q` where the affine map taking the three sources to the three targets carries `p`; two pairs the similarity, `mirror: true` reversing its turn. Sources in one plane, `q` and targets in one (may differ) |
+| `mapped(from -> a, …)` | infix | `q mapped(from -> a, to -> b, third -> c) p`: `q` where the affine map taking the three sources to the three targets carries `p`; two pairs the similarity, `mirror: true` reversing its turn. Sources in one plane, `q` and targets in one (may differ). Two circles under two pairs: centre carried, radius scaled |
 | `fix` | prefix | an entity's own numbers, whole or by member (1.4) |
 | `ccw(a, b, c)`, `cw(a, b, c)` | call | `c` left (right) of ray `a → b`: a root choice, no equation |
 
@@ -1296,7 +1296,11 @@ k := Par(o).p over u in (-2mm, 2mm)
   by `sec := std.Similar(prof, from, to, st.n, l, r)` — `from` and `to` carried to the station's
   points `l` and `r` where two rails cross it, the profile turned and scaled with them — or by
   `std.Affine(prof, from, to, third, st.n, a, b, c)` on three (`docs/lofts/l0/two_faces.sv`,
-  `rust/gcs-core/tests/correspondence.rs`). A component is closed over its arguments, so the station's `up` (`std.z`) is passed in as an
+  `rust/gcs-core/tests/correspondence.rs`). Or say the map itself: **a face carried whole** is
+  `sec := prof mapped(o -> st.n.origin, x -> t) in st.n` — every corner and edge of `prof` carried
+  into `st.n` by the similarity taking `o` and `x` to the origin and `t`, the edges keeping their
+  names (`sec.ab`), an arc or a circle its radius scaled (two pairs only); `mirror: true` gives a
+  handed pair's other hand, wound as its source (`lofts/tapered.sv`, `hub_motor/motor/cover.sv`). A component is closed over its arguments, so the station's `up` (`std.z`) is passed in as an
   `axis` formal. Every station inside the interval must solve to DOF 0 with the section's shape
   intact; an end may shrink to a point (a pyramid's apex). Caps `start` and `end`, walls named by
   the section's edges (`body.sec.ab`). Seed the section where it belongs at the middle of the

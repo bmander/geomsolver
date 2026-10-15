@@ -113,6 +113,11 @@ pub(crate) fn settle(
                     return Ok((k, swapped.assemble(k)?));
                 }
             }
+            // a circle under an affine map is an ellipse (#357): carried by two pairs only
+            if word == "mapped" && pairs == 3 && a == EntKind::Circle && b == EntKind::Circle {
+                return Err((w.word.span, "under a map of three pairs a circle is an ellipse, \
+                    which a circle cannot be: carry it by two pairs, the similarity".to_string()));
+            }
             crate::constraints::infix_op(word, a, b, &sel).ok_or_else(|| {
                 (w.word.span, format!("`{word}` does not relate {} to {}", a.a(), b.a()))
             })?

@@ -129,7 +129,11 @@ came from.
   in a line, or two of its points one, is E061 naming them (`constraints::validate`); one the
   solve moves reads NaN there.  No number, so `undrawn!`.  `tests/mapped.rs` is the gate (a
   triangle's centroid to the image's, the similarity and the mirror against closed forms, the
-  printer, the refusals), with `jacobians.rs`'s three rows.
+  printer, the refusals), with `jacobians.rs`'s three rows.  **A circle carried by a
+  similarity** ([0.116]) is `k mapped(from -> a, to -> b) disc` over two circles:
+  `CKind::MappedCircle`, `(k, from_k, from, a, to, b, mirror)`, kernel `mapped_circle` — the
+  centre's two rows and `r₂ − r·|b − a| / |to − from|`; three pairs are E040 at the word (an
+  ellipse, `settle`).  What a face carried whole makes of its circles (`solids.md`).
   **What a word means is the kinds of its operands, and a name does not carry its kind until
   elaboration** — so the parser resolves *nothing*: it produces a `syntax::Written` and
   `program::settle` turns it into a `CKind` plus arguments in spec order, through

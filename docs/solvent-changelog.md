@@ -4,6 +4,18 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.116] A face carried whole, and a mirror.** `sec := prof mapped(from -> a, to -> b) in n`
+(§6.8) is the face `prof` carried into the plane `n` by a map: each corner carried as a point is,
+each edge rebuilt between the images, the source's corner and edge names kept under the image's,
+so its walls are named as the source's are. A line is carried to a line; under the similarity of
+two pairs an arc to an arc and a circle to a circle, its radius scaled — and `k mapped(o -> a, x ->
+b) disc` says the same of one circle — while under three pairs either is refused, naming it.
+`mirror: true` reverses the turn, so the image is walked the other way round and winds as its
+source does: a handed pair is one profile and its image. Through 0.115 a section was drawn again
+in each station's turned or scaled axes (`std.Twisted`, `scaled`, `scaled_radius`), and a handed
+pair was drawn twice or signed by a number threaded through every station (`hub_motor`'s
+`sg`). (Issue #357, M2 and M3.)
+
 **[0.115] A point carried by a map.** `q mapped(from -> a, to -> b, third -> c) p` (§9.2) holds
 `q` where the affine map taking the three source points to the three targets carries `p`: each
 pair a point of the source, `->`, and where it goes, in the parentheses. Two pairs are the

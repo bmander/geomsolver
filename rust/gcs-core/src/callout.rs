@@ -155,6 +155,7 @@ macro_rules! undrawn {
             // nor does a point carried by a map (#357): its pairs are points, not numbers
             | CKind::Mapped
             | CKind::MappedSimilar
+            | CKind::MappedCircle
             | CKind::Fix
             | CKind::Ccw
             | CKind::Cw

@@ -449,7 +449,7 @@ pub fn validate(
         // (#357): three points standing in a line, or two that are one, have none, and its rows
         // would divide by zero.  Asked of a frame held where it stands; one the solve moves is
         // the solve's
-        CKind::Mapped | CKind::MappedSimilar => {
+        CKind::Mapped | CKind::MappedSimilar | CKind::MappedCircle => {
             let src: Vec<usize> = [2, 4, 6].into_iter()
                 .filter(|&i| i < if kind == CKind::Mapped { 8 } else { 6 })
                 .map(|i| args[i].ent().i())

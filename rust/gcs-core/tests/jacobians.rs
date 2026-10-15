@@ -219,6 +219,13 @@ fn all_constraints(seed: u32) -> Sketch {
             args.push(Arg::Bool(true));
             Constraint::new(CKind::MappedSimilar, args)
         },
+        // and a circle carried by one, its centre and its radius
+        {
+            let mut args = vec![e(ce1), e(ce2)];
+            args.extend([a1, b1, a2, b2].map(|x| e(EntRef::point(x))));
+            args.push(Arg::Bool(true));
+            Constraint::new(CKind::MappedCircle, args)
+        },
         // a distance from a line, both ways it can be written: naming no side, which is the
         // magnitude form (issue #48, item 4), and naming one, which is the signed form
         Constraint::new(CKind::ParallelDistance, vec![e(le1), e(le2), Arg::Num(4.0)]),

@@ -1,11 +1,12 @@
 // A side cover: the hub's end wall, its bearing housing and its spoke flange in one casting.
 //
-// One profile turned about the axle, written for the right-hand cover and mirrored by `sg` (+1
-// right, −1 left): a spigot entering the rotor ring's bore, which centres it; the web that
-// closes the end, its outer face's rim thinned to the spoke flange; the bearing boss, its pocket
-// open inboard and the lip outboard that the bearing's outer race stands against; and a boss
-// beyond the lip `boss_to` from the mid-plane and `boss_r` in radius — the brake disc's mount
-// on the left, the freewheel's thread on the right.
+// One profile turned about the axle, drawn once as the right-hand cover's and carried onto the
+// left (`sg`: +1 right, −1 left) as its mirror image in the mid-plane (#357): a spigot entering
+// the rotor ring's bore, which centres it; the web that closes the end, its outer face's rim
+// thinned to the spoke flange; the bearing boss, its pocket open inboard and the lip outboard
+// that the bearing's outer race stands against; and a boss beyond the lip `boss_to` from the
+// mid-plane and `boss_r` in radius — the brake disc's mount on the left, the freewheel's thread
+// on the right.
 //
 // The holes are drilled along the axle, from the end view: the spoke holes round the flange,
 // staggered half a pitch between the two flanges (`spoke_phase`), and the cap screws' clearance
@@ -24,23 +25,36 @@ component Cover(f: group, dims: group, screws: group, sg: Scalar, boss_to: Lengt
   // each run one number: a station from the mid-plane or a radius from the axle, measured in
   // the end view from its origin, the other ordinate kept where the run began
   in f.side {
-    profile := step(u: sg * boss_to) (lip_bore := line) -> step(v: boss_r) (boss_end := line) ->
-               step(u: sg * lip_out) (boss := line) -> step(v: dims.boss_r) (boss_step := line) ->
-               step(u: sg * outer) (housing := line) -> step(v: dims.Ro) (face_o := line) ->
-               step(u: sg * (dims.half + dims.flange_t)) (flange_step := line) ->
+    profile := step(u: boss_to) (lip_bore := line) -> step(v: boss_r) (boss_end := line) ->
+               step(u: lip_out) (boss := line) -> step(v: dims.boss_r) (boss_step := line) ->
+               step(u: outer) (housing := line) -> step(v: dims.Ro) (face_o := line) ->
+               step(u: dims.half + dims.flange_t) (flange_step := line) ->
                step(v: dims.flange_r) (flange_o := line) ->
-               step(u: sg * dims.half) (flange_rim := line) ->
+               step(u: dims.half) (flange_rim := line) ->
                step(v: dims.Rr) (flange_i := line) ->
-               step(u: sg * (dims.half - dims.spigot)) (spigot_o := line) ->
+               step(u: dims.half - dims.spigot) (spigot_o := line) ->
                step(v: dims.spigot_r) (spigot_end := line) ->
-               step(u: sg * dims.half) (spigot_i := line) ->
+               step(u: dims.half) (spigot_i := line) ->
                step(v: dims.boss_r) (face_i := line) ->
-               step(u: sg * dims.pocket_in) (housing_i := line) ->
+               step(u: dims.pocket_in) (housing_i := line) ->
                step(v: dims.brg_od / 2) (pocket_end := line) ->
-               step(u: sg * lip_in) (pocket := line) ->
+               step(u: lip_in) (pocket := line) ->
                step(v: dims.lip_r) (lip_face := line) -> close
   }
-  body := solid(profile, about: f.ax)
+  // the left cover's profile is the right's mirrored in the mid-plane, the side view's `v` through
+  // its origin: the map taking that line's points to themselves, reversing the turn
+  when sg == 1 {
+    body := solid(profile, about: f.ax)
+  }
+  when sg == -1 {
+    in f.side {
+      private rim := point
+      rim level(u) f.side
+      rim distance(dims.Ro, along: v) f.side
+    }
+    mirrored := profile mapped(f.so -> f.so, rim -> rim, mirror: true) in f.side
+    body := solid(mirrored, about: f.ax)
+  }
 
   // the spoke holes, through the flange
   spokes := motor.parts.HoleCircle(f, n: dims.spokes, r: dims.spoke_r, d: dims.spoke_d,

@@ -109,6 +109,8 @@ pub fn write_stmt_to(out: &mut String, k: &StmtKind) -> Result<(), PrintError> {
 fn printable(k: &StmtKind) -> Result<(), PrintError> {
     match k {
         StmtKind::Chain(_) => Err(PrintError { construct: "named chains" }),
+        // a face carried by a map is a definition, written as one (#357)
+        StmtKind::Block(b) if b.image.is_some() => Ok(()),
         StmtKind::Block(_) => Err(PrintError { construct: "repeat and cycle blocks" }),
         StmtKind::ClaimOver(_) => Err(PrintError { construct: "claim-over bodies" }),
         StmtKind::Set(_) => Err(PrintError { construct: "set literals" }),
@@ -224,6 +226,17 @@ fn write_stmt(out: &mut String, k: &StmtKind) {
                 };
                 out.push_str(&format!("integral({} over {over})", t.body));
             }
+        }
+        // `sec := prof mapped(from -> a, to -> b) in n` (#357)
+        StmtKind::Block(super::Block { image: Some(img), over: Some(over), .. }) => {
+            out.push_str(&img.name.text);
+            out.push_str(" := ");
+            write_ref(out, &over.chain);
+            out.push(' ');
+            out.push_str(&img.word.text);
+            let (parts, _) = written_parts(&img.args, true);
+            out.push_str(&format!("({}) in ", parts.join(", ")));
+            write_ref(out, &img.plane);
         }
         StmtKind::Block(_) | StmtKind::ClaimOver(_) | StmtKind::Chain(_) | StmtKind::Set(_) => {
             unreachable!("validated before printing")
@@ -873,7 +886,7 @@ pub fn operator_text(kind: CKind, args: &[Option<Arg>]) -> String {
     if ents.len() > outside {
         let mut extra: Vec<String> = ents.drain(outside..).collect();
         // a map's pairs, each a point of the source and where it goes (#357)
-        if matches!(kind, CKind::Mapped | CKind::MappedSimilar) {
+        if matches!(kind, CKind::Mapped | CKind::MappedSimilar | CKind::MappedCircle) {
             extra = extra.chunks(2).map(|p| p.join(" -> ")).collect();
         }
         parens.splice(0..0, extra);

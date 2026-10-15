@@ -87,6 +87,7 @@ fn view_points(sk: &Sketch, kind: CKind, args: &[Arg]) -> Option<Vec<usize>> {
                 // a map reads each side in its own plane (`mapped_planes`)
                 | CKind::Mapped
                 | CKind::MappedSimilar
+                | CKind::MappedCircle
         )
     {
         return None;
@@ -108,8 +109,10 @@ fn mapped_planes(sk: &Sketch, kind: CKind, args: &[Arg]) -> Result<(), (bool, St
     // in spec order (q, p, from, a, to, b, third, c): the targets, then the source
     let n = if kind == CKind::Mapped { 8 } else { 6 };
     let side = |of: [usize; 4]| -> Option<usize> {
+        // a point where it is drawn, a circle where its centre is
         let mut planes = of.into_iter().filter(|&i| i < n).map(|i| match &args[i] {
-            Arg::Ent(e) => sk.plane_of(e.i()),
+            Arg::Ent(e) if e.kind == EntKind::Point => sk.plane_of(e.i()),
+            Arg::Ent(e) => sk.plane_of(sk.round_center(*e)),
             _ => None,
         });
         let v = planes.next()??;
@@ -171,7 +174,7 @@ pub(super) fn in_space(
         }
         return Ok(None);
     }
-    if matches!(kind, CKind::Mapped | CKind::MappedSimilar) {
+    if matches!(kind, CKind::Mapped | CKind::MappedSimilar | CKind::MappedCircle) {
         return mapped_planes(sk, kind, args).map(|()| None);
     }
     let Some(pts) = view_points(sk, kind, args) else { return Ok(None) };

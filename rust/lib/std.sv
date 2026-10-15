@@ -716,7 +716,10 @@ component Similar(prof: face, from: point, to: point, n: plane, a: point, b: poi
 // `s = 1` — and run it linearly from the section as drawn at `s = 0`; any other law is the same
 // word given another fraction, `s: 3 * s^2 - 2 * s^3`.  A `when` cannot say a law: it is made
 // once, for the whole run, and the station is one shape all along it; `min`, `max` and `abs` say
-// a law in pieces.
+// a law in pieces.  These are for a section written on the station's own axes; one drawn once is
+// carried whole, turned and scaled by the similarity its frame is mapped by (#357): `sec := prof
+// mapped(o -> st.n.origin, x -> t) in st.n`, the law in where `t` stands
+// (`lofts/tapered.sv`).
 //
 //   component Duct(g: path, up: axis, half: Length, s: Scalar) {
 //     st := std.On(g, up: up, s: s)

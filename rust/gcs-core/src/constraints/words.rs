@@ -406,6 +406,8 @@ pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option
         "mapped" => match (a, b) {
             (Point, Point) if sel("pairs").as_deref() == Some("2") => CKind::MappedSimilar,
             (Point, Point) => CKind::Mapped,
+            // a circle is carried by a similarity only: under three pairs it is an ellipse
+            (Circle, Circle) if sel("pairs").as_deref() != Some("3") => CKind::MappedCircle,
             _ => return None,
         },
         _ => return None,

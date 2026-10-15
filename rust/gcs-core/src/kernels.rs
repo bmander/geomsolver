@@ -131,9 +131,11 @@ pub enum K {
     // a point carried by an affine map, and by a similarity (#357)
     Mapped,
     MappedSimilar,
+    // a circle carried by a similarity: its centre, and its radius scaled (#357)
+    MappedCircle,
 }
 
-pub const N_KERNELS: usize = 91;
+pub const N_KERNELS: usize = 92;
 
 #[derive(Clone, Copy)]
 pub struct Kernel {
@@ -3448,6 +3450,20 @@ fn mapped_similar_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 2] {
     mapped_gap(q, a, e, [T::cst(0.0) - s * e[1], s * e[0]], i, j)
 }
 
+/// Columns of `mapped_circle`: (c₂, r₂, c, r, from, a, to, b), K = (s) — the image circle's
+/// centre and radius, the source's, then the two pairs.  The centre as `mapped_similar` carries a
+/// point, and the radius scaled as the similarity scales every length, `r₂ − r·|b − a| / |to −
+/// from|`.  Under an affine map of three pairs a circle is an ellipse, so there is no such row.
+/// Degree 1.
+fn mapped_circle_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 3] {
+    let centre = [v[0], v[1], v[3], v[4], v[6], v[7], v[8], v[9], v[10], v[11], v[12], v[13]];
+    let [x, y] = mapped_similar_rows(&centre, k);
+    let (f, a, t, b) = (vec2(v, 6), vec2(v, 8), vec2(v, 10), vec2(v, 12));
+    let (e, d) = (sub2(b, a), sub2(t, f));
+    let scale = ((e[0] * e[0] + e[1] * e[1]) / (d[0] * d[0] + d[1] * d[1])).sqrt();
+    [x, y, v[2] - v[5] * scale]
+}
+
 /// The Taylor form of a kernel written once over `Num` (`Kernel::form`): its rows read over
 /// `Jet`s.
 macro_rules! num_form {
@@ -3670,6 +3686,7 @@ pub static KERNELS: [Kernel; N_KERNELS] = [
     num_kernel!("point_along_arc3", point_along_arc3_rows, n_res: 3, n_par: 20, degree: 1, n_const: 0),
     num_kernel!("mapped", mapped_rows, n_res: 2, n_par: 16, degree: 1, n_const: 0),
     num_kernel!("mapped_similar", mapped_similar_rows, n_res: 2, n_par: 12, degree: 1, n_const: 1),
+    num_kernel!("mapped_circle", mapped_circle_rows, n_res: 3, n_par: 14, degree: 1, n_const: 1),
 ];
 
 /// One row of a kernel: residual and Jacobian for a single constraint's local values.  The

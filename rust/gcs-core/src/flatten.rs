@@ -37,6 +37,7 @@ mod interfaces;
 mod keys;
 mod steps;
 mod through;
+mod image;
 
 pub use faces::{FaceAxis, FacePlane};
 

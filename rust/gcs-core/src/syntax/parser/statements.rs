@@ -701,6 +701,10 @@ impl<'a> P<'a> {
             Some("view" | "section" | "dimensions") if call => {
                 self.derived(DeclName::Written(name))?
             }
+            // `sec := prof mapped(from -> a, to -> b) in n` — a face carried whole (#357)
+            Some(_) if self.past_ref(self.i).is_some_and(|j| self.word_at(j) == Some("mapped")) => {
+                StmtKind::Block(self.mapped_face(name)?)
+            }
             // `duct := solid(Station(g).f over s in (0, 1))` — a face of a component as one of
             // its formals runs, one dimension up from a curve (#243 L1)
             Some("solid") if call && self.family_ahead() => {
@@ -739,6 +743,37 @@ impl<'a> P<'a> {
         let id = self.mint_stmt(next_id, span)?;
         out.push(Stmt { id, kind, span, chained: Chained::No });
         Some(())
+    }
+
+    /// `sec := prof mapped(from -> a, to -> b, third -> c) in n` (#357): the face `prof` carried
+    /// whole into the plane `n`, its pairs read as a point's map reads them.  A `cycle` over the
+    /// face's loop that makes no copies (`Block::image`): the flattener builds the image once the
+    /// loop can be walked.
+    fn mapped_face(&mut self, name: Name) -> Option<Block> {
+        let lo = name.span.lo as usize;
+        let prof = self.refr()?;
+        let word = self.ident()?;
+        let args = self.op_args(&word.text, crate::constraints::Fixity::Infix)?;
+        if !self.eat_word("in") {
+            self.fail("a face carried by a map is drawn in a plane: `sec := prof mapped(…) in n`");
+            return None;
+        }
+        let plane = self.refr()?;
+        self.end_of_stmt();
+        let var = Name { text: format!("#map{lo}"), span: Span::at(word.span.lo as usize) };
+        Some(Block {
+            kind: BlockKind::Cycle,
+            count: String::new(),
+            head: word.span,
+            over: Some(EdgesOf { var, chain: prof, zip: Vec::new() }),
+            binder: None,
+            body: Vec::new(),
+            joint: None,
+            about: None,
+            index_reads: Vec::new(),
+            span: Span::new(lo, self.prev_hi()),
+            image: Some(crate::syntax::FaceImage { name, word, args, plane }),
+        })
     }
 
     /// Parse a statement or desugar a chain, recovering at the next terminator on failure.
@@ -1322,6 +1357,7 @@ impl<'a> P<'a> {
                 about: None,
                 index_reads: Vec::new(),
                 span: Span::new(lo, self.prev_hi()),
+                image: None,
             });
         }
         // the count runs to `as` or `{`, and is an expression over what is in scope
@@ -1381,7 +1417,10 @@ impl<'a> P<'a> {
             }
         }
         let span = Span::new(lo, self.prev_hi());
-        Some(Block { kind, count, head, over: None, binder, body, joint, about, index_reads, span })
+        Some(Block {
+            kind, count, head, over: None, binder, body, joint, about, index_reads, span,
+            image: None,
+        })
     }
 
     /// Step over a refused block: the rest of its header line and, where one opens there, the

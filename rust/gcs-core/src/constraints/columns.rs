@@ -194,7 +194,7 @@ impl Constraint {
             // the sign the second pair's angle is read with: `sense: cw` is its mirror image
             CKind::EqualAngle => vec![self.sense()],
             // the turn the similarity keeps, or with `mirror: true` reverses (#357)
-            CKind::MappedSimilar => {
+            CKind::MappedSimilar | CKind::MappedCircle => {
                 vec![if matches!(self.args[6], Arg::Bool(true)) { -1.0 } else { 1.0 }]
             }
             CKind::ArcLength | CKind::CurveLength => vec![self.args[1].num()],
@@ -558,6 +558,11 @@ impl Constraint {
             CKind::Mapped | CKind::MappedSimilar => {
                 let n = if self.kind == CKind::Mapped { 8 } else { 6 };
                 (0..n).flat_map(pt).collect()
+            }
+            // each circle's centre and radius, then the pairs' points
+            CKind::MappedCircle => {
+                [centre(0), vec![rad(0)], centre(1), vec![rad(1)], (2..6).flat_map(pt).collect()]
+                    .concat()
             }
             // the curve columns are one span's control points, which is what keeps the column
             // count fixed however long the spline is

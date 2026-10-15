@@ -13,8 +13,8 @@ Read them in this order:
 | File | What it shows |
 |---|---|
 | `pipe.sv` | **A chain is one path.** A round pipe along a U-bend of lines and tangent arcs, `std.On` standing square to whichever link it is on; the wall keeps one name round the bends. Pappus. |
-| `twisted_duct.sv` | **A twist is a law.** A square duct turned a quarter, three and a half turns (an auger), and a quarter eased in and out, each by `std.Twisted` given another fraction of `s`. Cavalieri. |
-| `tapered.sv` | **A scale is a law too.** A square shrinking to half as it turns (`scaled`), a disc shrinking to a cone (`scaled_radius`), and a disc swelling on a sine. Frusta, and an integral. |
+| `twisted_duct.sv` | **A twist is a law.** A square drawn once and carried whole onto each station (`sec := square mapped(o -> st.n.origin, x -> t) in st.n`), turned a quarter, three and a half turns (an auger), and a quarter eased in and out, its point `t` turned by another fraction of `s`. Cavalieri. |
+| `tapered.sv` | **A scale is a law too.** A square shrinking to half as it turns, a disc shrinking to a cone and a disc swelling on a sine, each drawn once and carried by the similarity that scales it, a round's radius with it. Frusta, and an integral. |
 | `thread.sv` | **A section carried along a screw.** A square thread drawn through the axis and an auger's flight drawn square to it, on `std.Helix`. Pappus and Cavalieri. |
 | `spring.sv` | **A section square to a helix.** A round wire on `std.OnHelix`, leaned back by the lead angle at every station. Area times the helix's length. |
 | `bottle.sv` | **Several sections, on rails.** A bottle's body, shoulder and neck joined ruled (a chain of lines through the rims, an edge at the shoulder) and smooth (the spline through the rims, square to the base and the neck). |
@@ -35,8 +35,11 @@ What the words are (all in `std`):
   `OnLine`, `OnArc`, `OnSpline`, and `On` over any path, a named chain of lines and arcs among
   them; `Helix(base, pitch:, turns:, s:)` (`n` carried by a screw, `axial` through its axis) and
   `OnHelix`; `Across(a, b, c, s:)`, the plane through three rails at `s`.
-- **Laws** — `Twisted(n, twist:, s:)`, `p scaled(du:, dv:, scale:, s:) P`,
-  `scaled_radius(r:, scale:, s:) k`; any other law is the word given another fraction of `s`.
+- **Laws** — a section drawn once is carried whole by the map taking its frame to the
+  station's (`sec := prof mapped(o -> st.n.origin, x -> t) in st.n`, #357), the law in where
+  `t` stands; a section drawn on the station's own axes is turned and scaled by
+  `Twisted(n, twist:, s:)`, `p scaled(du:, dv:, scale:, s:) P` and
+  `scaled_radius(r:, scale:, s:) k`. Any other law is another fraction of `s`.
 - **Sections from faces drawn apart** — `Ruled(a, b, s:)`, `Apex(a, tip, s:)`, and a profile held
   to rails, `Similar(prof, from, to, n, a, b)` and `Affine(prof, from, to, third, n, a, b, c)`.
 - **Rails** — a chain of lines through corresponding corners (ruled), or

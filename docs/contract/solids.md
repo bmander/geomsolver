@@ -366,6 +366,28 @@ placement carries inside the blank; CLI test readers zero the offset.
   prismatoid, a face walked, a face of a cycle's copies, and the refusals.  An arc edge lofted
   with a line edge is not said: it wants a rational edge whose weight reads the arc's sweep and a
   word choosing by an edge's kind.
+- **A face carried whole** (#357, [0.116]): `sec := prof mapped(from -> a, to -> b) in n` parses
+  to a `Block` (`Block::image`, a `FaceImage`) — a `cycle` over `prof`'s loop under a binder no
+  source writes, set aside and resolved as every block over a walk is — which makes no copies:
+  `flatten::image::image_face` builds the statements a person would write, walked in the
+  definition's scope and spliced where it stood.  Each link's source is an alias `sec#src{k}`
+  (the link's own scope, as a copy's `e` is); a corner of a face of corners is `sec.<name> :=
+  point in n` held by `mapped`, and the image `face(sec.k0, …, -> close)`, whose minted runs name
+  the walls `close0`, … as the source's; an edge's start (`p1`, an arc's `start`) is `sec#q{k}`,
+  a line `sec.<name> := line(sec#q{k}, sec#q{k+1})`, an arc about `sec#c{k}` (mapped from its
+  centre) and a lone circle `sec.<name>` held by `CKind::MappedCircle` — each in `n`, each image
+  point seeded `hint(at:)` its source, apart from the others (an arc's image at radius zero has
+  no slope in its radius), and an arc's or a circle's radius left unseeded, read off its points.
+  An arc's image is one row over its unknowns, as an arc held at both ends is.  So the walls
+  keep the source's edge names (`body.ab`, `body.dome`).  `mirror: true` reverses the loop and
+  each arc's ends, so the image winds as the source does; three pairs whose targets turn the
+  other way reflect with the loop as it is, every reader taking a line loop either way.  Under
+  three pairs an arc or a circle is E080 at the word naming it (an ellipse), as is a spline, a
+  curve and a face with holes (`face_walk`).  Printed as written (`print::write_stmt`).
+  `tests/mapped.rs` is the gate (a face of corners and of edges with their wall names, an arc's
+  and a circle's radii, the mirror's winding, the refusals, the printer), with
+  `lofts/tapered.sv` and `lofts/twisted_duct.sv` (each section drawn once, at their closed forms)
+  and `hub_motor`'s left cover, the right's profile mirrored in the mid-plane.
 - **The loft series** (`rust/examples/lofts/`, its README the reading order): one document per
   capability of #243 L1–L8, each solid at the closed form its comments give, held there off the
   exact B-rep to 1e-9 by `tests/loft_examples.rs`; the app lists the folder as one project

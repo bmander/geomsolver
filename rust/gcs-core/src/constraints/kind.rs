@@ -329,6 +329,11 @@ pub enum CKind {
     /// The same with two pairs (`q mapped(from -> a, to -> b) p`): the similarity taking `from`
     /// to `a` and `to` to `b`, keeping the turn — or, `mirror: true`, reversing it.
     MappedSimilar,
+    /// A circle carried by the similarity of two pairs (`k₂ mapped(from -> a, to -> b) k`): its
+    /// centre carried as a point is, and its radius scaled by `|b − a| / |to − from|` — what a
+    /// face carried whole makes of its circles (#357).  Three rows; under three pairs a circle
+    /// is an ellipse, refused where it is written.
+    MappedCircle,
     /// The **gauges** and the **orientation predicates** (spec §9.2, §9.6; issue #47, item 5):
     /// statements written as every other constraint is — an operator, its operands, a class, a
     /// placement — and settled through the same table, but **applied by the elaborator rather
@@ -377,7 +382,7 @@ impl FamilyKernel {
 }
 
 /// Every concrete constraint type, in the order the registry lists them.
-pub const ALL_KINDS: [CKind; 92] = [
+pub const ALL_KINDS: [CKind; 93] = [
     CKind::Coincident,
     CKind::Distance,
     CKind::Midpoint,
@@ -470,6 +475,7 @@ pub const ALL_KINDS: [CKind; 92] = [
     CKind::PointAlongArc3,
     CKind::Mapped,
     CKind::MappedSimilar,
+    CKind::MappedCircle,
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -724,6 +730,7 @@ impl CKind {
             CKind::LineOnAxis => "LineOnAxis",
             CKind::Mapped => "Mapped",
             CKind::MappedSimilar => "MappedSimilar",
+            CKind::MappedCircle => "MappedCircle",
             CKind::Fix => "Fix",
             CKind::Ccw => "Ccw",
             CKind::Cw => "Cw",
@@ -991,6 +998,13 @@ impl CKind {
                 ("to", S::Point), ("b", S::Point),
                 ("mirror", S::Bool),
             ],
+            // a circle and the circle it is carried from, then the two pairs
+            CKind::MappedCircle => &[
+                ("k", S::Circle), ("from_k", S::Circle),
+                ("from", S::Point), ("a", S::Point),
+                ("to", S::Point), ("b", S::Point),
+                ("mirror", S::Bool),
+            ],
             CKind::PlaneParallel => &[("p1", S::Plane), ("p2", S::Plane)],
             CKind::PlaneDistance => &[("p1", S::Plane), ("p2", S::Plane), ("d", S::Length)],
             // the entity, and the numbers it holds, each pinned under the member it is
@@ -1171,7 +1185,7 @@ impl CKind {
             CKind::Project | CKind::ProjectSolved => ("project", Infix),
             // a point carried by a map, its pairs in the parentheses (#357): three an affine map,
             // two a similarity
-            CKind::Mapped | CKind::MappedSimilar => ("mapped", Infix),
+            CKind::Mapped | CKind::MappedSimilar | CKind::MappedCircle => ("mapped", Infix),
             // the gauges are prefix words like `horizontal`; the orientation predicates keep
             // a call, since `a ccw(c) b` would reorder three points that are symmetric
             CKind::Fix => ("fix", Prefix),
@@ -1634,6 +1648,7 @@ impl CKind {
             // an affine combination of points: algebra, no contact
             | CKind::Mapped
             | CKind::MappedSimilar
+            | CKind::MappedCircle
             | CKind::Fix
             | CKind::Ccw
             | CKind::Cw => false,
@@ -1778,6 +1793,7 @@ impl CKind {
             CKind::PlaneDistance => K::PlaneDistance,
             CKind::Mapped => K::Mapped,
             CKind::MappedSimilar => K::MappedSimilar,
+            CKind::MappedCircle => K::MappedCircle,
             CKind::Fix | CKind::Ccw | CKind::Cw => {
                 panic!("{:?} is a gauge: applied by the elaborator, it has no kernel", self)
             }
@@ -1910,6 +1926,7 @@ impl CKind {
             // a map states no number
             | CKind::Mapped
             | CKind::MappedSimilar
+            | CKind::MappedCircle
             | CKind::Fix
             | CKind::Ccw
             | CKind::Cw => return None,
