@@ -303,6 +303,10 @@ impl Sketch {
                 }
                 // the numbers left unknown, once the expression graph has allocated them
                 v.extend(cv.unknowns.iter().filter_map(|n| self.free_vars.get(n).copied()));
+                // a body that states a rate, drawn, runs from its pose (#339 D2)
+                if self.curve_defs[cv.def as usize].home {
+                    v.extend(cv.pose.iter().filter_map(|&(e, j)| self.own_param(e, j)));
+                }
                 // and a free curve's length, its own, then the points of the lines it touches
                 v.extend(cv.length);
                 for &l in &cv.slides {

@@ -11,6 +11,7 @@ impl<'a> P<'a> {
     /// for later kind resolution.
     pub(super) fn relation(&mut self) -> Option<Relation> {
         let lo = self.here().lo as usize;
+        let mut rates = Vec::new();
         let (word, fixity, ops, args) = match self.peek().cloned() {
             // `ccw(a, b, c)`: every operand in the parentheses and none after them
             Some(Tok::Ident(w)) if call_word(&w) => {
@@ -19,15 +20,17 @@ impl<'a> P<'a> {
                 let args = self.op_args(&word.text, Fixity::Call)?;
                 (word, Fixity::Call, Vec::new(), args)
             }
-            Some(Tok::Ident(w)) if is_operator(&w) || self.defined_prefix_ahead() => {
+            Some(Tok::Ident(w)) if (is_operator(&w) || self.defined_prefix_ahead())
+                && !self.rate_ahead() =>
+            {
                 let word = Name { text: w, span: self.here() };
                 self.i += 1;
                 let args = self.op_args(&word.text, Fixity::Prefix)?;
-                let r = self.refr()?;
+                let r = self.operand(0, &mut rates)?;
                 (word, Fixity::Prefix, vec![r], args)
             }
             _ => {
-                let left = self.refr()?;
+                let left = self.operand(0, &mut rates)?;
                 let Some(Tok::Ident(w)) = self.peek().cloned() else {
                     self.fail("a statement relates two things with a word between them");
                     return None;
@@ -41,11 +44,58 @@ impl<'a> P<'a> {
                 let word = Name { text: w, span: self.here() };
                 self.i += 1;
                 let args = self.op_args(&word.text, Fixity::Infix)?;
-                let right = self.refr()?;
-                (word, Fixity::Infix, vec![left, right], args)
+                // **a rate's component along a direction** stands alone (#339 D2):
+                // `rate(p over s) distance(1, along: tl)` — the rate is a displacement, and it
+                // is measured from nothing
+                if !rates.is_empty() && self.statement_ends() {
+                    (word, Fixity::Infix, vec![left], args)
+                } else {
+                    let right = self.operand(1, &mut rates)?;
+                    (word, Fixity::Infix, vec![left, right], args)
+                }
             }
         };
-        self.relation_tail(word, fixity, ops, args, lo)
+        let mut r = self.relation_tail(word, fixity, ops, args, lo)?;
+        if let Some(w) = r.form.written_mut() {
+            w.rates = rates;
+        }
+        Some(r)
+    }
+
+    /// Whether the tokens ahead are `rate(`, an operand read as its rate (#339 D2).
+    pub(super) fn rate_ahead(&self) -> bool {
+        matches!(self.peek(), Some(Tok::Ident(w)) if w == "rate")
+            && matches!(self.t.get(self.i + 1).map(|(t, _)| t), Some(Tok::P('(')))
+    }
+
+    /// Whether the statement ends here: a line break, the end, or a body's closing brace.
+    fn statement_ends(&self) -> bool {
+        self.done()
+            || self.peek() == Some(&Tok::Nl)
+            || (self.in_body > 0 && self.peek() == Some(&Tok::P('}')))
+    }
+
+    /// A relation's operand `k`: a reference, or `rate(x over s)` — `x` read as its rate along
+    /// the formal `s` (#339 D2), recorded in `rates`.
+    fn operand(&mut self, k: usize, rates: &mut Vec<crate::syntax::RateOf>) -> Option<Ref> {
+        if !self.rate_ahead() {
+            return self.refr();
+        }
+        let lo = self.here().lo as usize;
+        self.i += 2;
+        let mut r = self.refr()?;
+        if !self.peek_word("over") {
+            self.fail("a rate names the formal it is along: `rate(p over s)`");
+            return None;
+        }
+        self.i += 1;
+        let over = self.ident()?;
+        if !self.want_p(')') {
+            return None;
+        }
+        r.span = Span::new(lo, self.prev_hi());
+        rates.push(crate::syntax::RateOf { op: k, over });
+        Some(r)
     }
 
     /// Everything a relation statement may carry after its operands.
@@ -113,6 +163,7 @@ impl<'a> P<'a> {
                 ops,
                 args,
                 span: Span::new(lo, self.prev_hi()),
+                rates: Vec::new(),
             }),
             claim: false,
             class,
@@ -120,6 +171,7 @@ impl<'a> P<'a> {
             word: None,
             along: None,
             space: false,
+            initially: false,
         })
     }
 

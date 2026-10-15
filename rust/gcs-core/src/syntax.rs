@@ -22,7 +22,7 @@ pub use print::{bounded, operator_text, render_flat, write_stmt_to, PrintError};
 pub(crate) use print::{sel_text, written_parts};
 pub use source::{line_col, Module, Name, Program, Span, StmtId, SynErr, Use, MAX_STMTS, MAX_TEXT};
 pub use words::{equal_kind, is_name, reserved_word};
-pub use written::{Cmp, OpArg, Written};
+pub use written::{Cmp, OpArg, RateOf, Written};
 
 use crate::constraints::{CKind, Fixity};
 use crate::model::EntKind;
@@ -722,6 +722,11 @@ pub enum BlockKind {
     /// (#210), decided at flattening over the numbers in scope.  No index and no prefix, so what
     /// it declares is named as if written beside it.
     When,
+    /// What holds at a traced body's **home** alone (#339 D2): `initially { … }`, the body's
+    /// initial data where no sheet says it — an instance written in place.  Made once, like a
+    /// `when` that holds; a drawn instance *is* its home, so on the sheet its relations are
+    /// ordinary ones.
+    Initially,
 }
 
 impl BlockKind {
@@ -1498,6 +1503,9 @@ pub struct Relation {
     /// space, so the relation is the one in space wherever its operands are drawn
     /// (`program::reading::in_space`).
     pub space: bool,
+    /// Set by the flattener on a relation written in an `initially { … }` block (#339 D2): it
+    /// holds at a traced body's home alone.
+    pub initially: bool,
 }
 
 impl Relation {
@@ -1514,6 +1522,7 @@ impl Relation {
             word: None,
             along: None,
             space: false,
+            initially: false,
         }
     }
 }

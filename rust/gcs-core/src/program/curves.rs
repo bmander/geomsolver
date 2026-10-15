@@ -5,6 +5,7 @@ use super::resolve::{follow, Resolver};
 use super::{Code, Diag, Severity};
 use crate::constraints::{Arg as CArg, CKind, Constraint, OrdinateForm, SpecKind};
 use crate::ir::{Decl, Operation as StmtKind, Statement as Stmt};
+use crate::kernels::KERNELS;
 use crate::model::{EntKind, EntRef, Sketch};
 use crate::syntax::{Arg, Program, Ref, Span};
 use std::collections::BTreeMap;
@@ -14,6 +15,7 @@ use std::collections::BTreeMap;
 /// it must match kernel Jacobian columns.
 /// `id` is the component's identity across the program (`Program::component_id`), which keys
 /// the definition, and `written` how the call spelled it, which a lifted program writes.
+#[allow(clippy::too_many_arguments)]
 fn compile_curve(
     prog: &Program,
     comp: &crate::syntax::Component,
@@ -22,6 +24,7 @@ fn compile_curve(
     swept: &str,
     point: &str,
     columns: &[String],
+    home: bool,
     units: crate::units::Units,
 ) -> Result<crate::model::CurveDef, (Span, String)> {
     use crate::syntax::Ty;
@@ -105,14 +108,27 @@ fn compile_curve(
             (body, Vec::new())
         }
         None => {
+            // **a drawn instance of a body that states a rate is its home** (#339 D2): its pose
+            // on the sheet is the initial value, so its coordinates are columns of the curve,
+            // after the numbers left unknown and before the constants
+            let rated = home && body.iter().any(|st| states_rate(st));
+            if rated {
+                let n_q = Lowering::count(comp.span, &body, &vars, &formals, units)?;
+                let at = vars.len() - values.len();
+                let names = (0..n_q).map(|k| format!("#home.{k}"));
+                vars.splice(at..at, names);
+            }
+            let trace = Trace { swept, n_columns: columns.len(), n_values: values.len(), pose: rated };
             let (locus, pose_of) =
-                compile_trace(comp.span, &traced, &body, &vars, &formals, columns.len(),
-                              values.len(), units)?;
+                compile_trace(comp.span, &traced, &body, &vars, &formals, &trace, units)?;
             (crate::model::CurveBody::Trace(locus), pose_of)
         }
     };
+    let homed = matches!(&body, crate::model::CurveBody::Trace(l) if home && l.states_rate());
+    let key = crate::model::CurveDef::key(id, point, swept, columns);
     Ok(crate::model::CurveDef {
-        name: crate::model::CurveDef::key(id, point, swept, columns),
+        name: if homed { format!("{key}{}", crate::model::CurveDef::HOME) } else { key },
+        home: homed,
         component: written.to_string(),
         port: point.to_string(),
         formals,
@@ -129,26 +145,45 @@ fn compile_curve(
 /// Lower a trace into scratch geometry and tapes, using `Constraint::params_on`
 /// for kernel columns. Swept dimensions use free-twin kernels whose final column
 /// reads a tape-derived value, including its gradient.
-#[allow(clippy::too_many_arguments)]
+/// What a trace is lowered as, besides its body: the formal it runs over, how many numeric
+/// columns and constants its variable table has, and whether its drawn instance's pose is the
+/// initial value of the rates it states (#339 D2) — the `n_q` columns before the constants.
+struct Trace<'s> {
+    swept: &'s str,
+    n_columns: usize,
+    n_values: usize,
+    pose: bool,
+}
+
+/// Whether a statement of an expanded body reads a rate (#339 D2).
+fn states_rate(st: &Stmt) -> bool {
+    matches!(&st.kind, StmtKind::Relation(r) if r.form.written().is_some_and(|w| w.reads_rate()))
+}
+
 fn compile_trace(
     span: Span,
     point: &str,
     body: &[&Stmt],
     vars: &[String],
     formals: &[(String, EntKind)],
-    n_columns: usize,
-    n_values: usize,
+    trace: &Trace,
     units: crate::units::Units,
 ) -> Result<(crate::locus::Locus, Vec<(String, usize)>), (Span, String)> {
     let mut low = Lowering::new(span, vars, formals, units)?;
+    low.swept = trace.swept.to_string();
     // the numeric columns follow the entities' scalars; nothing in the block is built over them,
-    // and they are read only through the tapes of the dimensions that name them
-    let n_theta = low.slot.len() + n_columns;
-    debug_assert_eq!(low.n_outer, 1 + n_theta + n_values, "variable table shape");
+    // and they are read only through the tapes of the dimensions that name them.  A drawn
+    // instance's pose, where it is the initial value, follows them
+    let n_pose = if trace.pose { vars.len() - 1 - low.slot.len() - trace.n_columns - trace.n_values } else { 0 };
+    let n_theta = low.slot.len() + trace.n_columns + n_pose;
+    debug_assert_eq!(low.n_outer, 1 + n_theta + trace.n_values, "variable table shape");
     // -- pass 1: declarations, so a statement may read a point declared after it --------
     for st in body {
         let StmtKind::Decl(d) = &st.kind else { continue };
         low.declare(st, d)?;
+    }
+    if trace.pose && n_pose != low.n_q {
+        return Err((span, "trace lowering lost its home".to_string()));
     }
     // -- pass 2: constraints and orientations, lowered to rows and predicates ----------
     for st in body {
@@ -162,9 +197,20 @@ fn compile_trace(
                 ))
             }
         };
-        low.relation(st, r)?;
+        if r.form.written().is_some_and(|w| w.reads_rate()) {
+            low.target = Target::Rate;
+            let r = low.rate_relation(st, r)?;
+            low.relation(st, &r)?;
+        } else {
+            low.target = if r.initially { Target::Init } else { Target::Alg };
+            low.relation(st, r)?;
+        }
     }
-    let Lowering { sk, scope, slot, n_outer, n_q, seeds, pose_of, w, rows, preds, .. } = low;
+    low.place_rates();
+    if !low.rates.is_empty() {
+        low.short(span)?;
+    }
+    let Lowering { sk, scope, slot, n_outer, n_q, seeds, pose_of, w, rows, preds, rates, init, .. } = low;
     let traced = match scope.get(point) {
         Some(e) if e.kind == EntKind::Point => {
             let p = sk.point_params(e.i())[0];
@@ -177,10 +223,27 @@ fn compile_trace(
         }
         _ => return Err((span, format!("`{point}` must be a point the component declares"))),
     };
-    let locus = crate::locus::Locus::new(n_outer, n_theta, n_q, traced, w, seeds, rows, preds)
-        .map_err(|m| (span, m))?;
+    let rates = crate::locus::Rates { rows: rates, init, pose: trace.pose };
+    let locus =
+        crate::locus::Locus::with_rates(n_outer, n_theta, n_q, traced, w, seeds, rows, preds, rates)
+            .map_err(|m| (span, m))?;
     Ok((locus, pose_of))
 }
+
+/// Which rows a relation of a trace block is lowered to (#339 D2).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Target {
+    /// It holds at every place.
+    Alg,
+    /// It reads a rate: a row of the rate system.
+    Rate,
+    /// It holds at the home alone (`initially { … }`).
+    Init,
+}
+
+/// Where a rate's slots stand while the block is lowered: past every slot, since the derived
+/// values are not all counted yet (`Lowering::place_rates` puts them past `w`).
+const RATE_BASE: usize = 1 << 20;
 
 /// **A trace block being lowered** (`compile_trace`): the scratch sketch it is drawn in, its
 /// names, which variable-table slot each scratch parameter is, and what the block comes to so far
@@ -201,6 +264,15 @@ struct Lowering<'v> {
     w: Vec<crate::tape::Tape>,
     rows: Vec<crate::locus::Row>,
     preds: Vec<crate::locus::Pred>,
+    /// A body that states a rate (#339 D2): the formal the trace runs over, which rows a
+    /// relation is lowered to, the rate rows and the home's, and for each point whose rate is
+    /// read the scratch line from the origin to its rate (`rated`), the origin's slots a zero.
+    swept: String,
+    target: Target,
+    rates: Vec<crate::locus::Row>,
+    init: Vec<crate::locus::Row>,
+    rated: BTreeMap<usize, String>,
+    origin: Option<usize>,
 }
 
 impl<'v> Lowering<'v> {
@@ -259,7 +331,195 @@ impl<'v> Lowering<'v> {
             w: Vec::new(),
             rows: Vec::new(),
             preds: Vec::new(),
+            swept: String::new(),
+            target: Target::Alg,
+            rates: Vec::new(),
+            init: Vec::new(),
+            rated: BTreeMap::new(),
+            origin: None,
         })
+    }
+
+    /// How many numbers the block places — its declarations' own scalars — read by lowering
+    /// them alone: the width of a drawn instance's pose, before the columns are laid out.
+    fn count(
+        span: Span,
+        body: &[&Stmt],
+        vars: &[String],
+        formals: &[(String, EntKind)],
+        units: crate::units::Units,
+    ) -> Result<usize, (Span, String)> {
+        let mut low = Lowering::new(span, vars, formals, units)?;
+        for st in body {
+            if let StmtKind::Decl(d) = &st.kind {
+                low.declare(st, d)?;
+            }
+        }
+        Ok(low.n_q)
+    }
+
+    /// A row, to the rows its relation is lowered to.
+    fn push(&mut self, row: crate::locus::Row) {
+        match self.target {
+            Target::Alg => self.rows.push(row),
+            Target::Rate => self.rates.push(row),
+            Target::Init => self.init.push(row),
+        }
+    }
+
+    /// **A relation that reads a rate** (#339 D2), rewritten to one over scratch geometry: each
+    /// `rate(p over s)` the line from an origin (its slots a zero) to `p`'s rate (its slots the
+    /// rates of `p`'s coordinates) — a direction, which `parallel`, `perpendicular` and a
+    /// directed `angle` read — and a rate alone before `distance(k, along: l)` the two points,
+    /// so the ordinate is the rate's component along `l`.
+    fn rate_relation(
+        &mut self, st: &Stmt, r: &crate::ir::Relation,
+    ) -> Result<crate::ir::Relation, (Span, String)> {
+        let mut r = r.clone();
+        let Some(w) = r.form.written_mut() else { return Ok(r) };
+        if r.initially {
+            return Err((st.span, "a rate is no row at the home: `initially { … }` says what \
+                holds there of the instance itself".to_string()));
+        }
+        if w.rates.len() > 1 {
+            return Err((st.span, "a relation reads one rate: two along the running formal would \
+                make the rates' system quadratic, leaving a root to choose at every step"
+                .to_string()));
+        }
+        let rate = w.rates[0].clone();
+        if rate.over.text != self.swept {
+            return Err((rate.over.span, format!("`rate(… over {})` is read along `{}`, and the \
+                curve runs over `{}`: a rate is along the formal a trace runs over",
+                rate.over.text, rate.over.text, self.swept)));
+        }
+        let rf = w.ops[rate.op].clone();
+        let e = self
+            .scope
+            .get(&rf.root.text)
+            .copied()
+            .ok_or((rf.span, format!("no such entity: `{}`", rf.root.text)))?;
+        let e = follow(&self.sk, e, &rf.path).map_err(|m| (rf.span, m))?;
+        if e.kind != EntKind::Point {
+            return Err((rf.span, format!("`rate(… over {})` is of a point: {} has no rate the \
+                body integrates", rate.over.text, e.kind.a())));
+        }
+        let line = self.rate_line(e.i(), rf.span)?;
+        let unary = w.fixity == crate::constraints::Fixity::Infix && w.ops.len() == 1;
+        if unary {
+            w.ops = vec![
+                crate::syntax::Ref { span: rf.span, ..crate::syntax::Ref::new(format!("{line}.o")) },
+                crate::syntax::Ref { span: rf.span, ..crate::syntax::Ref::new(format!("{line}.t")) },
+            ];
+        } else {
+            w.ops[rate.op] = crate::syntax::Ref { span: rf.span, ..crate::syntax::Ref::new(line) };
+        }
+        w.rates.clear();
+        Ok(r)
+    }
+
+    /// The scratch line from the origin to point `p`'s rate, made once a point, by name.
+    fn rate_line(&mut self, p: usize, span: Span) -> Result<String, (Span, String)> {
+        if let Some(n) = self.rated.get(&p) {
+            return Ok(n.clone());
+        }
+        let ps = self.sk.point_params(p);
+        let mut tips = Vec::with_capacity(ps.len());
+        for &c in &ps {
+            match self.slot.get(&c) {
+                Some(&s) if (self.n_outer..self.n_outer + self.n_q).contains(&s) => {
+                    tips.push(RATE_BASE + s - self.n_outer)
+                }
+                _ => return Err((span, format!("the point is geometry the component is \
+                    written over, and does not move with `{}`: its rate is no rate of the \
+                    body", self.swept))),
+            }
+        }
+        let zero = match self.origin {
+            Some(z) => z,
+            None => {
+                // every declaration was consumed in pass 1, so `n_q` is final here
+                let z = self.n_outer + self.n_q + self.w.len();
+                let t = self.constant(0.0);
+                self.w.push(t);
+                self.origin = Some(z);
+                z
+            }
+        };
+        let name = format!("#rate{}", self.rated.len());
+        let o = self.sk.point(0.0, 0.0, false, &format!("{name}.o"));
+        let t = self.sk.point(0.0, 0.0, false, &format!("{name}.t"));
+        for c in self.sk.point_params(o) {
+            self.slot.insert(c, zero);
+        }
+        for (c, s) in self.sk.point_params(t).into_iter().zip(tips) {
+            self.slot.insert(c, s);
+        }
+        let l = EntRef::line(self.sk.line(o, t));
+        self.scope.insert(format!("{name}.o"), EntRef::point(o));
+        self.scope.insert(format!("{name}.t"), EntRef::point(t));
+        self.scope.insert(name.clone(), l);
+        self.rated.insert(p, name.clone());
+        Ok(name)
+    }
+
+    /// The rates' slots placed past every derived value, now that those are counted.
+    fn place_rates(&mut self) {
+        let at = self.n_outer + self.n_q + self.w.len();
+        for row in &mut self.rates {
+            for c in &mut row.cols {
+                if *c as usize >= RATE_BASE {
+                    *c = (at + *c as usize - RATE_BASE) as u32;
+                }
+            }
+        }
+    }
+
+    /// A body whose rows and rate rows leave its rates free is refused naming the freedom
+    /// (#339 D0, finding 1): which of its points no row reaches, by a matching of the rate
+    /// system's rows to the rates they read.
+    fn short(&self, span: Span) -> Result<(), (Span, String)> {
+        let (n_q, q0) = (self.n_q, self.n_outer);
+        let at = q0 + n_q + self.w.len();
+        let n_alg: usize = self.rows.iter().map(|r| KERNELS[r.kid].n_res).sum();
+        let n_rate: usize = self.rates.iter().map(|r| KERNELS[r.kid].n_res).sum();
+        // more rows than rates is a rank question, read at every place (#339 D0, finding 1): a
+        // `parallel` in space is two rows, one of them the body's own rows' already
+        if n_alg + n_rate >= n_q {
+            return Ok(());
+        }
+        // each residual row and the rates it reaches: an algebraic row through the coordinates
+        // it reads (its derivative reads their rates), a rate row through the rates
+        let mut reach: Vec<Vec<usize>> = Vec::new();
+        for r in &self.rows {
+            let cols: Vec<usize> = r.cols.iter().map(|&c| c as usize)
+                .filter(|c| (q0..q0 + n_q).contains(c)).map(|c| c - q0).collect();
+            reach.extend(std::iter::repeat(cols).take(KERNELS[r.kid].n_res));
+        }
+        for r in &self.rates {
+            let cols: Vec<usize> = r.cols.iter().map(|&c| c as usize)
+                .filter(|c| (at..at + n_q).contains(c)).map(|c| c - at).collect();
+            reach.extend(std::iter::repeat(cols).take(KERNELS[r.kid].n_res));
+        }
+        // the under-determined block of the rate system's structure, whichever matching: the
+        // rates the missing rows would have to reach
+        let dm = crate::graph::dulmage_mendelsohn(&reach, n_q);
+        let mut names: Vec<String> = Vec::new();
+        for &c in &dm.under_cols {
+            if let Some((n, _)) = self.pose_of.get(c) {
+                if !names.contains(n) {
+                    names.push(n.clone());
+                }
+            }
+        }
+        let rows = |n: usize| if n == 1 { "row" } else { "rows" };
+        let who = names.iter().map(|n| format!("`{n}`")).collect::<Vec<_>>().join(", ");
+        let k = n_q - n_alg - n_rate;
+        let what = format!("its rates leave {k} {} among those of {}: state {k} more rate {} of \
+            how they move", if k == 1 { "freedom" } else { "freedoms" },
+            if who.is_empty() { "its points".to_string() } else { who }, rows(k));
+        Err((span, format!("a body that states a rate must determine its rates along `{}`: \
+            {n_q} unknowns against {n_alg} {} and {n_rate} rate {} — {what}",
+            self.swept, rows(n_alg), rows(n_rate))))
     }
 
     /// A number's text compiled over the variable table.
@@ -393,6 +653,18 @@ impl<'v> Lowering<'v> {
         if matches!(r.kind, CKind::Ccw | CKind::Cw) {
             return self.orientation(st, &r);
         }
+        // **a rate stands where a direction is read** (#339 D0, decision 1): never as a place,
+        // and never as a magnitude, whose row is quadratic in the rate
+        if self.target == Target::Rate
+            && !matches!(r.kind, CKind::Parallel | CKind::Perpendicular | CKind::Angle | CKind::Ordinate)
+        {
+            let word = r.written.map_or_else(|| crate::syntax::snake(r.kind.name()),
+                                             |w| w.word.text.clone());
+            return Err((st.span, format!("a rate stands where a direction is read — `parallel`, \
+                `perpendicular`, a directed `angle`, or its component `distance(k, along: l)` — \
+                and `{word}` reads it otherwise: a rate is never a place, and never a magnitude, \
+                whose row would be quadratic in it")));
+        }
         let spec = r.kind.spec();
         if r.kind.gauge() {
             return Err((
@@ -524,7 +796,7 @@ impl<'v> Lowering<'v> {
                 // conversion to what the kernel reads, the same seam `expr::set_dimension` is,
                 // turned by a word that says which way as a stated number is
                 let sign = c.side().unwrap_or(1.0);
-                self.rows.push(crate::locus::Row {
+                self.push(crate::locus::Row {
                     kid: twin as usize,
                     cols,
                     consts: vec![sign * crate::expr::to_arg_units(k, 1.0), 0.0],
@@ -534,7 +806,7 @@ impl<'v> Lowering<'v> {
             None => c.kernel_id(),
         };
         let consts = c.consts_on(&self.sk, None);
-        self.rows.push(crate::locus::Row { kid, cols, consts });
+        self.push(crate::locus::Row { kid, cols, consts });
         Ok(())
     }
 
@@ -599,9 +871,9 @@ impl<'v> Lowering<'v> {
                 self.w.push(t);
                 let units = crate::expr::to_arg_units(SpecKind::Length, 1.0);
                 let kid = crate::kernels::K::RadiusFree as usize;
-                self.rows.push(crate::locus::Row { kid, cols, consts: vec![units, 0.0] });
+                self.push(crate::locus::Row { kid, cols, consts: vec![units, 0.0] });
             }
-            _ if r.kind == CKind::Level => self.rows.push(crate::locus::Row {
+            _ if r.kind == CKind::Level => self.push(crate::locus::Row {
                 kid: crate::kernels::K::Radius as usize,
                 cols: vec![col as u32],
                 consts: vec![0.0],
@@ -853,13 +1125,20 @@ fn curve_entity(
         columns.push(name.to_string());
         unknowns.push(free.clone());
     }
-    // one definition per (component, point, formal, columns), shared by every instance asked
+    // one definition per (component, point, formal, columns), shared by every instance asked —
+    // and, for a body that states a rate, per whether it is drawn: a drawn one runs from its
+    // pose, whose coordinates are its columns (#339 D2)
     let key = crate::model::CurveDef::key(&id, &of.point, swept, &columns);
-    let di = match sk.curve_defs.iter().position(|x| x.name == key) {
-        Some(i) => i,
-        None => {
+    let homed = format!("{key}{}", crate::model::CurveDef::HOME);
+    let found = |name: &str| sk.curve_defs.iter().position(|x| x.name == name);
+    let rated = |i: usize| matches!(&sk.curve_defs[i].body,
+        crate::model::CurveBody::Trace(l) if l.states_rate());
+    let di = match (found(&homed).filter(|_| info.drawn), found(&key)) {
+        (Some(i), _) => i,
+        (None, Some(i)) if !(info.drawn && rated(i)) => i,
+        _ => {
             let def = compile_curve(prog, comp, &id, &info.component, swept, &of.point, &columns,
-                                    sk.units)
+                                    info.drawn, sk.units)
                 .map_err(|(span, m)| (Code::E103, span, m))?;
             sk.curve_defs.push(def);
             sk.curve_defs.len() - 1
@@ -910,6 +1189,16 @@ fn curve_entity(
         Vec::new()
     };
     let pose = crate::model::whole(pose, def.pose_of.len());
+    if def.home {
+        if pose.is_empty() {
+            return Err((Code::E103, st.span, format!("`{}` runs from its drawn instance, whose \
+                pose is not all on the sheet", info.component)));
+        }
+        if !matches!(home, crate::model::Home::At(_)) {
+            return Err((Code::E103, st.span, format!("a body that states a rate is drawn at its \
+                home, where it starts: give `{swept}` a number")));
+        }
+    }
     Ok(Some(crate::model::CurveE {
         def: di as u32,
         args,

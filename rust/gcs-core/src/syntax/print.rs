@@ -770,23 +770,30 @@ pub fn bounded(
 
 fn write_written(out: &mut String, w: &Written) {
     let (parts, hints) = written_parts(&w.args);
-    let head = |out: &mut String, r: &Ref| {
-        write_ref(out, r);
-        out.push(' ');
-    };
-    if w.fixity == Fixity::Infix {
-        if let Some(l) = w.ops.first() {
-            head(out, l);
+    // an operand written as its rate is printed so (#339 D2)
+    let operand = |out: &mut String, k: usize| {
+        let Some(r) = w.ops.get(k) else { return };
+        match w.rate_of(k) {
+            Some(over) => {
+                out.push_str("rate(");
+                write_ref(out, r);
+                out.push_str(&format!(" over {})", over.text));
+            }
+            None => write_ref(out, r),
         }
+    };
+    if w.fixity == Fixity::Infix && !w.ops.is_empty() {
+        operand(out, 0);
+        out.push(' ');
     }
     out.push_str(&w.word.text);
     if !parts.is_empty() {
         out.push_str(&format!("({})", parts.join(", ")));
     }
-    let last = if w.fixity == Fixity::Infix { w.ops.get(1) } else { w.ops.first() };
-    if let Some(r) = last {
+    let last = if w.fixity == Fixity::Infix { 1 } else { 0 };
+    if last < w.ops.len() {
         out.push(' ');
-        write_ref(out, r);
+        operand(out, last);
     }
     let hint = hint_of(&hints);
     if !hint.is_empty() {

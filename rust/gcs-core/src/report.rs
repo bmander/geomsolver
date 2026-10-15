@@ -1018,6 +1018,40 @@ pub fn traced_text(sk: &Sketch, i: usize) -> String {
     text
 }
 
+/// What the drawing says of a curve whose body states a rate (#339 D2): integrated from its home
+/// across its interval, or refused where its rates lose rank — the place, as a station that
+/// loses rank is said today — or where the march ran past its bound of steps.  `None` for any
+/// other curve.
+pub fn rates_text(sk: &Sketch, i: usize) -> Option<String> {
+    let cv = sk.curves.get(i)?;
+    let crate::model::CurveBody::Trace(l) = &sk.curve_defs[cv.def as usize].body else {
+        return None;
+    };
+    let home = sk.curve_home(i);
+    let reach = crate::locus::rate_reach(&l.flat, &sk.curve_vars(i, home), home, cv.domain)?;
+    let num = |v: f64| crate::io::reading(SpecKind::Scalar, v);
+    let mut out = format!("integrated from its home at {}", num(home));
+    for r in reach {
+        match r {
+            Ok(()) => {}
+            Err(None) => return Some(format!("not integrated: its home at {} is not to be \
+                had", num(home))),
+            Err(Some(crate::ode::Refusal::Undefined { at })) => {
+                out += &format!(", refused at {}: its rates lose rank there", num(at))
+            }
+            Err(Some(crate::ode::Refusal::Steps { at })) => {
+                out += &format!(", refused at {}: the march ran past its bound of steps (stiff, \
+                    or near where its rates lose rank)", num(at))
+            }
+        }
+    }
+    let (a, b) = cv.domain;
+    if !out.contains("refused") {
+        out += &format!(" across ({}, {})", num(a), num(b));
+    }
+    Some(out)
+}
+
 /// What the drawing says of each motion it reads the screw of (#326): for every `isa screw mesh`,
 /// the motion's name, its pitch — the relation's own unknown, as solved — and the axis, in the
 /// words the CLI prints.

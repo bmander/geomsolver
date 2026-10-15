@@ -117,6 +117,7 @@ impl<'a> P<'a> {
                     "repeat" => BlockKind::Repeat,
                     "ring" => BlockKind::Ring,
                     "when" => BlockKind::When,
+                    "initially" => BlockKind::Initially,
                     _ => BlockKind::Cycle,
                 };
                 self.block(kind, next_id).map(StmtKind::Block)
@@ -166,7 +167,7 @@ impl<'a> P<'a> {
             // or a used module's by its full path (`engine.parts.Crank(…)`, §14.4)
             _ if self.call_at(self.i).is_some_and(|dotted| {
                 dotted || !crate::constraints::is_operator(&w)
-            }) && !self.defined_prefix_ahead() =>
+            }) && !self.defined_prefix_ahead() && !self.rate_ahead() =>
             {
                 let lo = self.here().lo as usize;
                 let name = Name { text: format!("#i{lo}"), span: Span::at(lo) };
@@ -1345,6 +1346,12 @@ impl<'a> P<'a> {
             self.skip_block();
             return None;
         }
+        // what holds at a body's home alone (#339 D2) is said, not counted
+        if kind == BlockKind::Initially && !count.is_empty() {
+            self.fail_at(head, "`initially { … }` takes no count: it holds once, at the home");
+            self.skip_block();
+            return None;
+        }
         // a ring names what its copies turn about, and only a ring does
         let about = if self.eat_word("about") {
             let r = self.refr()?;
@@ -1366,6 +1373,9 @@ impl<'a> P<'a> {
         let (body, mut joint) = self.braced_body(next_id)?;
         if kind == BlockKind::When {
             self.no_open_joint(joint.take(), "a `when`");
+        }
+        if kind == BlockKind::Initially {
+            self.no_open_joint(joint.take(), "an `initially`");
         }
         // a ring's index read in its body: a name token spelled as the binder, not a field
         // (`t.k`) nor a key (`k: …`)

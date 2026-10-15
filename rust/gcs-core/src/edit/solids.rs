@@ -419,6 +419,7 @@ fn rounds_edit(
                 syntax::Arg::Dim { text: size.to_string(), span: Span::default() },
             )],
             span: Span::default(),
+            rates: Vec::new(),
         }),
     ));
     let mut stmts: Vec<StmtKind> = Vec::new();

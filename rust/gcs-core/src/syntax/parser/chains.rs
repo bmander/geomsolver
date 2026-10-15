@@ -823,6 +823,7 @@ impl<'a> P<'a> {
                     ops: vec![ent.clone()],
                     args: args.clone(),
                     span: sp,
+                    rates: Vec::new(),
                 }),
                 claim: false,
                 class: Classes::default(),
@@ -830,6 +831,7 @@ impl<'a> P<'a> {
                 word: None,
                 along: None,
                 space: false,
+                initially: false,
             };
             let id = self.mint_stmt(next_id, sp)?;
             out.push(Stmt {
@@ -1093,6 +1095,7 @@ impl<'a> P<'a> {
                     ops,
                     args,
                     span: at,
+                    rates: Vec::new(),
                 }),
                 claim: false,
                 class: Classes::default(),
@@ -1100,6 +1103,7 @@ impl<'a> P<'a> {
                 word: None,
                 along: None,
                 space: false,
+                initially: false,
             })
         };
         let end = |w: &str| {

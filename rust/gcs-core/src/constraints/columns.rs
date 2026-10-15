@@ -135,6 +135,16 @@ impl Constraint {
                     k.push(cv.values.len() as f64);
                     k.extend_from_slice(&cv.values);
                     match sk.curve_pose(ci) {
+                        // a body that states a rate runs from its pose, its columns, and its
+                        // march reaches the ends of its interval (#339 D2): the interval rides
+                        // where a pose would
+                        _ if l.states_rate() => {
+                            k.push(0.0);
+                            k.extend_from_slice(&l.flat);
+                            let mut tail = vec![0.0; n_q];
+                            tail[..2].copy_from_slice(&[cv.domain.0, cv.domain.1]);
+                            k.extend(tail);
+                        }
                         Some(pose) => {
                             k.push(1.0);
                             k.extend_from_slice(&l.flat);

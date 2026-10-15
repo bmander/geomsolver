@@ -29,7 +29,7 @@ pub(super) const OPENERS: [&str; 18] = [
     "dimensions",
 ];
 
-pub(super) const BLOCKS: [&str; 4] = ["repeat", "cycle", "ring", "when"];
+pub(super) const BLOCKS: [&str; 5] = ["repeat", "cycle", "ring", "when", "initially"];
 
 /// `repeat e in rack.profile`: a block runs over a chain's edges when the tokens from `at` (the
 /// one after its word) are a name and `in`, which no count expression can begin with, `in` being
