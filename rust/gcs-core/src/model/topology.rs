@@ -84,7 +84,11 @@ impl Sketch {
                     Flank::Formed(Held::Not(_)) => Vec::new(),
                     Flank::Traced(t) => vec![EntRef::new(EntKind::Traced,*t as usize)],
                 });
-                std::iter::once(EntRef::new(EntKind::Motion,m.motion as usize)).chain(flanks).collect()
+                // and the point and the line its ease reads (#345)
+                let ease = m.ease.iter()
+                    .flat_map(|x| [EntRef::point(x.about as usize),EntRef::line(x.along as usize)]);
+                std::iter::once(EntRef::new(EntKind::Motion,m.motion as usize)).chain(flanks)
+                    .chain(ease).collect()
             }
             // a traced body's: what its component was given
             EntKind::Traced => self.traced[e.i()].args.clone(),

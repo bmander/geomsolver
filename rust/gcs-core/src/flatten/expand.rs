@@ -312,6 +312,9 @@ impl<'a> Walk<'a> {
         if let Some(e) = d2.angular_span.as_mut() {
             self.settle_arg(&mut e.from, vals, scope);
             self.settle_arg(&mut e.to, vals, scope);
+            for a in e.ease.iter_mut().flat_map(|x| x.args_mut()) {
+                self.settle_arg(a, vals, scope);
+            }
         }
         if let Some(motion) = d2.motion.as_mut() {
             for a in motion.args_mut() { self.settle_arg(a, vals, scope); }

@@ -610,16 +610,33 @@ rounded perpendicular(at: r) t
 rounded tangent(at: r) nl
 both perpendicular(at: s) nl
 both tangent(at: s) t
+param kp: Scalar hint(0.02)
+e0 := point hint((8, 2, 2))
+e1 := point hint((9, 3, 5))
+el := line(e0, e1)
+eased := meshing(pinion_flank, cone, under: mesh, from: -20deg, to: 20deg, ease: e0, along: el,
+                 profile: kp / 1mm, lengthwise: -0.01 / 1mm)
+standing := meshing(round, cone, under: mesh, from: -20deg, to: 20deg, ease: e1, along: el,
+                    profile: 0.03 / 1mm, lengthwise: kp / 1mm)
+u := point hint((9, 3, 2))
+u coincident(t == 3deg) eased
+w := point hint((19, 3, 4))
+w coincident standing
+eased perpendicular(at: u) nl
+eased tangent(at: u) t
+standing perpendicular(at: w) t
+standing tangent(at: w) nl
 ";
     let (prog, errs) = crate::common::parse(SRC);
     assert!(errs.is_empty(), "{errs:?}");
     let e = gcs_core::program::elaborate(&prog);
     assert!(e.ok(), "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
     let mut sk = e.sketch;
-    assert_eq!(sk.constraints.iter().filter(|c| c.kind == CKind::PointOnMeshing).count(), 3);
+    assert_eq!(sk.constraints.iter().filter(|c| c.kind == CKind::PointOnMeshing).count(), 5);
     for k in [CKind::MeshingNormalAt, CKind::MeshingTangentAt] {
-        assert_eq!(sk.constraints.iter().filter(|c| c.kind == k).count(), 3, "{k:?} is checked");
+        assert_eq!(sk.constraints.iter().filter(|c| c.kind == k).count(), 5, "{k:?} is checked");
     }
+    assert_eq!(sk.meshings.iter().filter(|m| m.ease.is_some()).count(), 2);
     let mut rng = Rng::new(283);
     for round in 0..4 {
         if round > 0 {

@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.112 — October 2026**
+**Specification, Draft 0.113 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -1401,6 +1401,25 @@ gear's turn carrying it. Where the flanks touch along a line the path has no dir
 along it does not hold. Either is refused at a point no contact holds on the meshing, naming the
 statement it wants (**E040**), and may be written either way round (`along tangent(at: Q)
 contact`).
+
+```
+contact := meshing(pinion_flank, gear_flank, under: mesh, from: -15deg, to: 15deg,
+                   ease: M, along: lengthwise, profile: 0.002 / 1mm, lengthwise: kl / 1mm)
+```
+
+**[0.113]** A meshing's first flank may be **eased**: relieved along its normal by
+`½ κₗ s² + ½ κₚ r²`, where `s` is how far its point stands from the point `ease:` along the line
+`along:` and `r` how far across it, both in the flank's own member as drawn — a parabola about the
+point, its curvature `lengthwise:` along the line and `profile:` across it (on the flank near the
+point, its profile). The relief runs along the flank's normal as the solve reads its source
+(`∂u × ∂v`: for a cone, toward its axis), so a negative curvature relieves the other way. Each
+curvature is a number per length, stated, or a number times one unknown of the drawing and a
+number, which then solves from what is stated of the contact (**E080** otherwise, and where
+`ease:` names no point or `along:` no line). The four are written together or not at all. A
+conjugate pair touches along a line; eased, it touches at the point where the pair is drawn — the
+relief and its slope nothing there — and elsewhere at a point, the gear turned by the lag that
+closes the relief: so the transmission error and the bearing are the designer's, and a lag stated
+of a point held to the contact solves a curvature (lags at two phases, both). A flank traced in space is not eased (**E080**).
 
 After the solve the contact is **traced** over `from:` … `to:`, walked out phase by phase from the
 first point held to it: the lag over the phase is the transmission error, the contact's places the

@@ -4,6 +4,15 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.113] Ease-off.** A meshing's first flank may be eased (§6.15.4): `meshing(…, ease: M,
+along: l, profile: κₚ, lengthwise: κₗ)` relieves it along its normal by the parabola `½ κₗ s² +
+½ κₚ r²` about `M`, `s` along `l` and `r` across it, each curvature a number per length or affine
+in an unknown of the drawing. A conjugate pair so eased touches at a point, the gear lagging by the
+turn that closes the relief, and lags stated of points held to the contact solve the curvatures.
+Through 0.112 a mismatch was written only into how the pair is cut — a cutter grown or turned, a
+modified roll (`spiral_bevel/contact.sv`) — and `std.Offset` moves a set by a constant. (Issue
+#345, S2.)
+
 **[0.112] The common normal and the path of contact at a point.** At a point held to a meshing,
 `contact perpendicular(at: q) l` holds a line or an axis along the two flanks' common normal there,
 and `contact tangent(at: q) l` along the path of contact: the contact point's derivative along the

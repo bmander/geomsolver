@@ -110,7 +110,19 @@ pub(super) fn held_meshings(sk: &mut Sketch, res: &mut Resolver, map: &mut Sourc
             let m = res.lookup(operand(2)?)
                 .filter(|e| e.kind == EntKind::Motion && e.i() < sk.motions.len())
                 .ok_or("a meshing turns its flanks `under:` a motion")?;
-            Ok(MeshingE {flanks,motion:m.idx,roll:roll(sk,d)?,name:name.clone(),class:d.class.clone()})
+            let ease = match d.angular_span.as_ref().and_then(|s| s.ease.as_deref()) {
+                Some(e) => {
+                    if matches!(flanks[0],Flank::Traced(_)) {
+                        return Err("its first flank is a surface traced in space, which is not \
+                                    eased: ease an envelope, or a source standing in its member"
+                            .into());
+                    }
+                    Some(ease(sk,res,e)?)
+                }
+                None => None,
+            };
+            Ok(MeshingE {flanks,motion:m.idx,roll:roll(sk,d)?,name:name.clone(),class:d.class.clone(),
+                ease})
         })();
         match built {
             Ok(m) => {
@@ -126,6 +138,37 @@ pub(super) fn held_meshings(sk: &mut Sketch, res: &mut Resolver, map: &mut Sourc
             }
         }
     }
+}
+
+/// A meshing's ease as its declaration writes it (#345): the point it is about, the line it runs
+/// lengthwise along, and the two curvatures — each stated, or a number times one unknown of the
+/// drawing and a number, an unknown that is bound now, the contacts reading it as a column.
+fn ease(sk: &mut Sketch, res: &Resolver, e: &crate::syntax::EaseSpec)
+    -> Result<crate::model::Ease,String> {
+    let ent = |r: &crate::syntax::Ref, kind: EntKind, what: &str| -> Result<u32,String> {
+        res.lookup(r).filter(|x| x.kind == kind && x.i() < sk.count(kind)).map(|x| x.idx)
+            .ok_or_else(|| format!("a meshing's ease is about a point and along a line, and `{}` \
+                                    is no {what}",r.root.text))
+    };
+    let (about,along) = (ent(&e.about,EntKind::Point,"point")?,ent(&e.along,EntKind::Line,"line")?);
+    let number = |a: &Arg, what: &str| -> Result<crate::model::TermNumber,String> {
+        let Arg::Dim {text,..} = a else {
+            return Err(format!("a meshing's {what} curvature is a number"));
+        };
+        let v = crate::flatten::value_read(text,&BTreeMap::new(),&sk.declared,sk.units)
+            .map_err(|e| format!("a meshing's {what} curvature: {e}"))?;
+        let per_length = crate::units::Dim::SCALAR.div(crate::units::Dim::LENGTH);
+        v.dim.require(per_length,&format!("a meshing's {what} curvature"))?;
+        let free = v.free.clone().filter(|_| v.m != 0.0).map(|n| (n,v.m));
+        Ok(crate::model::TermNumber {c:v.c,free})
+    };
+    let numbers = [number(&e.profile,"profile")?,number(&e.lengthwise,"lengthwise")?];
+    let ease = crate::model::Ease {about,along,numbers};
+    // an unknown a curvature reads is a column of every contact with the meshing, so it is one now
+    for (name,seed) in ease.unknowns(&sk.declared) {
+        crate::expr::bind_free(sk,&name,seed);
+    }
+    Ok(ease)
 }
 
 /// What the solve reads a source operand as, before any relation (#283): a set applied to its

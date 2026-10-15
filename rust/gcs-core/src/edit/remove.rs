@@ -288,6 +288,10 @@ fn decl_refs(d: &Decl, look: &mut impl FnMut(&syntax::Ref)) {
     }
     // a plane's axes are its children, looked at above; a membership (`in …`) is a
     // label the point survives losing, and is not counted
+    if let Some(e) = d.angular_span.as_ref().and_then(|s| s.ease.as_ref()) {
+        look(&e.about);
+        look(&e.along);
+    }
     if let Some(motion) = &d.motion {
         match motion {
             syntax::MotionSpec::Rotation {axis,..} | syntax::MotionSpec::Translation {axis,..} => look(axis),

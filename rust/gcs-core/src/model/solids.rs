@@ -455,6 +455,33 @@ pub struct MeshingE {
     pub roll: [f64;2],
     pub name: String,
     pub class: Classes,
+    /// The first flank's ease-off, where it is eased (#345).
+    pub ease: Option<Ease>,
+}
+
+/// **Ease-off** (#345 S2): `meshing(…, ease: M, along: l, profile: κₚ, lengthwise: κₗ)` relieves
+/// the first flank along its normal by `½ κₗ s² + ½ κₚ r²`, `s` how far its point is from `M`
+/// along `l` and `r` how far across it (`envelope::meshing::Ease`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Ease {
+    /// The point it is eased about.
+    pub about: u32,
+    /// The line whose direction is lengthwise.
+    pub along: u32,
+    /// The curvatures across the line and along it, per length: stated, or affine in an unknown
+    /// of the drawing, which the contacts read as a column.
+    pub numbers: [TermNumber; 2],
+}
+
+impl Ease {
+    /// The unknowns its numbers read, and where each starts: where it was seeded, else zero.
+    pub fn unknowns(&self, declared: &BTreeMap<String, Declared>) -> Vec<(String, f64)> {
+        self.numbers.iter().filter_map(|n| {
+            let (name, _) = n.free.clone().filter(|(_, m)| *m != 0.0)?;
+            let seed = declared.get(&name).and_then(|d| d.seed).unwrap_or(0.0);
+            Some((name, seed))
+        }).collect()
+    }
 }
 
 /// **A traced body in space** (#326): a point of a component as one or two of its numeric

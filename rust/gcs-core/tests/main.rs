@@ -58,6 +58,7 @@ mod diagnose;
 mod draft;
 mod drag;
 mod drawing;
+mod ease;
 mod edit;
 mod edit_datums;
 mod edit_rounds;

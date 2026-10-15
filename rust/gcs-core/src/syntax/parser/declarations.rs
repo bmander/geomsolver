@@ -218,7 +218,7 @@ impl<'a> P<'a> {
             self.decl_list(kind, &name, &scalars)?;
         let angular_span = match (surface_from,surface_to) {
             (None,None) => None,
-            (Some(from),Some(to)) => Some(crate::syntax::AngularSpan {from,to,side:None}),
+            (Some(from),Some(to)) => Some(crate::syntax::AngularSpan {from,to,side:None,ease:None}),
             _ => { self.fail("a surface span needs both `from:` and `to:` angles"); return None; }
         };
         let sweep = if kind == EntKind::Solid {
@@ -947,18 +947,21 @@ impl<'a> P<'a> {
             annotations:Default::default(),kind:EntKind::Envelope,name,
             children:vec![vec![surface],vec![motion]],
             seed:vec![],seed_text:vec![],seed_spans:vec![],hint_span:None,knots:None,weights:None,curve:None,
-            computed:None,class,class_span,seed_at:None,seed_names:vec![],sweep:None,motion:None,angular_span:Some(crate::syntax::AngularSpan {from,to,side}),
+            computed:None,class,class_span,seed_at:None,seed_names:vec![],sweep:None,motion:None,
+            angular_span:Some(crate::syntax::AngularSpan {from,to,side,ease:None}),
             membership:Membership::default(),list_span:Span::new(start.lo as usize,end),close:None,mint_close:None,through:None,
         })
     }
 
     /// `contact := meshing(pinion_flank, gear_flank, under: mesh, from: a, to: b)` (#283): two
-    /// flanks, the relative motion they turn under, and the pinion's phase interval.
+    /// flanks, the relative motion they turn under, and the pinion's phase interval — and the
+    /// first flank's ease, `ease: M, along: l, profile: κₚ, lengthwise: κₗ` (#345).
     fn meshing_decl(&mut self, name: DeclName) -> Option<Decl> {
         let start = self.here();
         if !self.want_p('(') { return None; }
         let (mut first, mut second, mut motion) = (None, None, None);
         let mut from = None; let mut to = None;
+        let (mut about, mut along, mut profile, mut lengthwise) = (None, None, None, None);
         while !self.eat_p(')') {
             let label = self.slot_label();
             match label.as_deref() {
@@ -981,9 +984,24 @@ impl<'a> P<'a> {
                     let (text,span) = self.expr_until(',')?;
                     *slot = Some(Arg::Dim {text,span});
                 }
+                Some("ease") | Some("along") => {
+                    let ease = label.as_deref() == Some("ease");
+                    let slot = if ease { &mut about } else { &mut along };
+                    if slot.is_some() { self.fail("a meshing's ease is given twice"); return None; }
+                    *slot = Some(self.refr()?);
+                }
+                Some("profile") | Some("lengthwise") => {
+                    let across = label.as_deref() == Some("profile");
+                    let slot = if across { &mut profile } else { &mut lengthwise };
+                    if slot.is_some() { self.fail("a meshing's ease is given twice"); return None; }
+                    let (text,span) = self.expr_until(',')?;
+                    *slot = Some(Arg::Dim {text,span});
+                }
                 _ => {
-                    self.fail("a meshing takes two flanks, `under:` the motion of the second relative to \
-                               the first, and `from:` and `to:` angles of the first's phase");
+                    self.fail("a meshing takes two flanks, `under:` the motion of the second \
+                               relative to the first, `from:` and `to:` angles of the first's phase, \
+                               and the first's ease: `ease:` a point, `along:` a line, `profile:` \
+                               and `lengthwise:` curvatures");
                     return None;
                 }
             }
@@ -992,6 +1010,17 @@ impl<'a> P<'a> {
         let (Some(first),Some(second),Some(motion),Some(from),Some(to)) = (first,second,motion,from,to) else {
             self.fail("a meshing needs two flanks, a motion and two angular bounds"); return None;
         };
+        let ease = match (about,along,profile,lengthwise) {
+            (None,None,None,None) => None,
+            (Some(about),Some(along),Some(profile),Some(lengthwise)) => {
+                Some(Box::new(crate::syntax::EaseSpec {about,along,profile,lengthwise}))
+            }
+            _ => {
+                self.fail("a meshing's ease needs `ease:` the point it is about, `along:` the line \
+                           it runs lengthwise along, and `profile:` and `lengthwise:` its curvatures");
+                return None;
+            }
+        };
         let end = self.prev_hi();
         let (class,class_span) = self.class_clause(end);
         Some(Decl {
@@ -999,7 +1028,7 @@ impl<'a> P<'a> {
             children:vec![vec![first],vec![second],vec![motion]],
             seed:vec![],seed_text:vec![],seed_spans:vec![],hint_span:None,knots:None,weights:None,curve:None,
             computed:None,class,class_span,seed_at:None,seed_names:vec![],sweep:None,motion:None,
-            angular_span:Some(crate::syntax::AngularSpan {from,to,side:None}),
+            angular_span:Some(crate::syntax::AngularSpan {from,to,side:None,ease}),
             membership:Membership::default(),list_span:Span::new(start.lo as usize,end),close:None,mint_close:None,through:None,
         })
     }
