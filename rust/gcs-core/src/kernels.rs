@@ -183,6 +183,12 @@ pub enum KernelKey {
     Envelope { fk: u8, n_par: usize, n_const: usize },
     /// A point on the meshing of two flanks (#283), at its block's widths.
     Meshing { n_par: usize, n_const: usize },
+    /// A relation reading a motion's twist (#326), at its block's widths: `reading` the
+    /// `envelope::screw::Reading`.
+    Motion { reading: u8, n_par: usize, n_const: usize },
+    /// A contact with a body traced in space (#326), at its block's widths: `contact` the
+    /// `traced::Contact`.
+    Traced { contact: u8, n_par: usize, n_const: usize },
 }
 
 pub fn kernel(id: K) -> &'static Kernel {
@@ -430,7 +436,7 @@ pub fn curve_tangent_at_kernel(n_theta: usize, n_const: usize, body: u8) -> Kern
 }
 
 /// A kernel's residual or Jacobian, as the table holds it.
-type KernelFn = fn(usize, &[f64], &[f64], &mut [f64]);
+pub(crate) type KernelFn = fn(usize, &[f64], &[f64], &mut [f64]);
 
 /// A spline's whole length (`length(L) s`, #121): `(c0x, c0y, …, c(n−1)x, c(n−1)y[, a])` over
 /// the constants `integral::length_consts` — what it states, then the spline's quadrature nodes —
@@ -2822,6 +2828,11 @@ pub(crate) trait Num:
     fn sin_cos(self) -> (Self, Self);
     /// The bearing of `(x, y)`, on (−π, π].
     fn atan2(y: Self, x: Self) -> Self;
+    /// Whether it carries derivatives at all: a plain number does not, so what is read over one
+    /// may skip working them out (a traced flank's frame, #326).
+    fn moves(self) -> bool {
+        true
+    }
 }
 
 impl<const N: usize> Num for Dual<N> {

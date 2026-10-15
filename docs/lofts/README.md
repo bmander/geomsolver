@@ -20,7 +20,7 @@ base so carried (a section drawn in it sweeps a twisted prism: an auger's flight
 tooth), and `axial`, the plane through the axis, `u` out along `n.u` and `v` up the axis (a
 thread's). `std.OnHelix(base, r:, pitch:, turns:, s:)` is the plane square to the helix of radius
 `r`, its `v` up the axis leaned by the lead angle (a coil's wire). No motion is involved (#64's
-motions stay for swept solids). Solvent 0.104; `rust/gcs-core/tests/helix.rs`, off the exact
+motions stay for swept solids). Solvent 0.110; `rust/gcs-core/tests/helix.rs`, off the exact
 B-rep to 1e-9:
 
 | solid | what it is | closed form (mm³) |

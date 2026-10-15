@@ -311,6 +311,7 @@ pub(crate) fn kind_id(k: EntKind) -> i32 {
         EntKind::Edge => 15,
         EntKind::Axis => 16,
         EntKind::Meshing => 17,
+        EntKind::Traced => 18,
     }
 }
 
@@ -333,6 +334,7 @@ pub(crate) fn ent(kind: i32, idx: i32) -> EntRef {
         15 => EntKind::Edge,
         16 => EntKind::Axis,
         17 => EntKind::Meshing,
+        18 => EntKind::Traced,
         _ => EntKind::Spline,
     };
     EntRef::new(k, idx as usize)

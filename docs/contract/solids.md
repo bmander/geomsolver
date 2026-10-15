@@ -310,7 +310,7 @@ placement carries inside the blank; CLI test readers zero the offset.
   sine swell (closed form) and an eased scale (a quadrature exact for its degree), each given its
   word as a fraction, a law in pieces (`max`), the `when` refusal and two faces of one station, each
   off the exact B-rep to 1e-9.
-- **A screw is constraints** (§6.9 [0.104], #243 L6).  `std.Helix(base, pitch:, turns:, s:)` is
+- **A screw is constraints** (§6.9 [0.110], #243 L6).  `std.Helix(base, pitch:, turns:, s:)` is
   `base`'s frame turned `360deg · turns · s` about `base.normal` and risen `pitch · turns · s` along
   it: `n` the base so carried (a section in it sweeps a twisted prism), `axial` the plane through
   the axis, `u` out along `n.u`, `v` up the axis (a thread's).  `std.OnHelix(base, r:, …)`'s `n`
@@ -319,7 +319,7 @@ placement carries inside the blank; CLI test readers zero the offset.
   base.normal)` for the rise) and planes over the lines between them, so **no direction is held
   by a seed** — a `parallel` would leave its sign to wherever the solve started — and a negative
   pitch winds left-handed, the right-handed solid mirrored in the base plane.  The axis is
-  `base`'s normal through its origin, never an axis given apart (`Screwed`'s, through 0.103,
+  `base`'s normal through its origin, never an axis given apart (`Screwed`'s, through 0.109,
   could disagree with `base`).  No motion is involved (#64's motions stay for swept solids).
   `tests/helix.rs` is the gate: square and V threads at A · 2πr̄ · turns (Pappus, r̄ the
   centroid's), flights square to the axis at A × the rise (Cavalieri), a spring at A × the helix's

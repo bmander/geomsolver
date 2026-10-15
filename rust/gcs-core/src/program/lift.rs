@@ -305,6 +305,7 @@ fn lift_curve(sk: &Sketch, i: usize) -> crate::syntax::CurveSpec {
         ),
         swept: Name::new(def.param.clone()),
         domain: (crate::syntax::num(cv.domain.0), crate::syntax::num(cv.domain.1)),
+        second: None,
         of: None,
     }
 }

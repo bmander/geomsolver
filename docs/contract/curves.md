@@ -1,7 +1,7 @@
 # Curves
 
 Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you touch `curve.rs`,
-`locus.rs`, `tape.rs`, `variational.rs`, `extremal.rs`. An issue number (#n) or a spec version
+`locus.rs`, `tape.rs`, `variational.rs`, `extremal.rs`, `ode.rs`. An issue number (#n) or a spec version
 ([0.n], see the [language changelog](../solvent-changelog.md)) says where a rule came from.
 
 **Variational curves (§9.10, §6.1, 0.53–0.59, #121, #144, #149, `variational.rs`, `extremal.rs`):**
@@ -15,8 +15,9 @@ its one own param, `CurveE::pegs`). **The curve is the solution of its Euler–L
 solved inside it (`extremal.rs`): optimal control in arc length — state `z = (x, y, λx, λy)`, the
 direction algebraic (`H_θ = 0` by Newton, `H_θθ > 0` Pontryagin, so a branch flip is refused, not
 followed), `λ' = −f_p` — from `Lagrangian`'s three tapes over `(θ, x, y)` (`t.x → cos θ`; each
-first in one variable, so second derivatives only). Integrated by Gragg–Bulirsch–Stoer
-(`extremal/flow.rs`, seven columns) with the variational equations through the same substeps; the
+first in one variable, so second derivatives only). `Flow` is an `ode::Rate` (its branch the
+direction), integrated by the core's Gragg–Bulirsch–Stoer (`ode.rs`, below) with the variational
+equations through the same substeps; the
 BVP (`extremal/shoot.rs`) is multiple shooting, four pieces an arc, a **peg** (a held point the
 curve passes: `peg coincident rope`, absorbed — `rows_in` 0, its place held) splitting arcs with
 the costate free to jump and `H` unbroken (a corner); dense Newton, a long curve started as a
@@ -65,6 +66,28 @@ and `settle_variational` settles no stretch as a free curve of its own (one woul
 curve with no energy, so no shape). A curve with no shape sweeps nothing (`curve_polyline_within`
 empty) and its face is refused, never walked
 (`catenary::a_hanging_rope_and_its_chord_are_a_face`).
+
+**The integrator (#339 D1, `ode.rs`):** one Gragg–Bulirsch–Stoer over a state of any width, for
+everything the core integrates along a formal. The caller supplies the rate and its Jacobian
+(`ode::Rate`: `rate(u, y, f, jac)`; nothing is differenced) and, for a rate that solves a condition
+by Newton from where it last was, its **branch** — taken where a step starts, given back before
+each column, kept with each node as the step's last evaluation left it (a start, not the root at
+the node). The explicit midpoint rule over `ode::STEPS` (even) substeps, extrapolated by
+Aitken–Neville, `Settings::columns` (7) columns, order twice that; the error is the last two
+columns' difference over the state, each component a fraction of the caller's `scale`, held to
+`ode::TOL` (1e-13, well below "solved"); the step adapts to it alone, so a march is the same on
+every target. The **variational equations** `Φ' = (∂f/∂y)Φ` ride through the same substeps (`Φ`
+`n × m`, any seed, the identity for the initial value), the exact derivative of the step taken.
+**Dense output** is one more step from the node before (`Path::at`), not an interpolant, so its
+sensitivities are the flow's. A march runs either way along the formal; it is **refused, never
+followed** (`ode::Refusal`): a step whose rate cannot be had is tried shorter to the floor (`1e-12`
+of the span) and the march stops at the last place it reached (`Undefined`), and one past
+`Settings::steps_max` (4000) steps is `Steps` (stiff, or nowhere near its answer). Free curves
+(`extremal/shoot.rs::integrate`, `within`) run on it bit for bit as they ran on their own copy.
+`tests/ode.rs` is the gate: linear flows against `exp(At)` (an independent series) and their `Φ`
+against it, the formal threaded through the substeps, the order `2k + 1` of one step with `k`
+columns measured by halving on an entire flow, `Φ` against differences of one step and of a
+march, a seed of fewer columns, dense output forwards and back, a carried branch, and refusals.
 
 - A parametric curve (`curve.rs`) is *linear in its control points*, `C(t) = Σ Bᵢ(t) Pᵢ` (every
   B-spline).  A contact carries its own curve parameter as a `Param` slot and says
@@ -220,3 +243,44 @@ empty) and its face is refused, never walked
   `curve::tessellate` refines to `FLATNESS_PX` through `unit`, and `curve::closest` is the pick
   test and a fresh contact's seed.  No binding evaluates a basis function or writes the degree:
   `report::registry_json` publishes `curve.minCtrl`, matching `Sketch::spline_with`.
+
+- **A body traced in space** (#326, [0.107], [0.108]; `traced.rs`, `program/traced.rs`) is
+  `EntKind::Traced` (`TracedE`: the body, the entities its component was given — points, lines,
+  motions — its constant numbers, the formals' domain and home), built where a curve declaration
+  runs over two formals (`CurveSpec::second`, `over (a in (…), b in (…))`, its ends settled by the
+  flattener as the first's) or is given a motion — a placeholder in the geometry phase, compiled by
+  `traced_bodies` once the motions are, before the envelopes and meshings — or where its planar
+  compile fails and the spatial one does not (`curves::build_curve`; the name's resolver entry
+  moved off the curves, `elaborate::geometry`).  Written in place only; numbers given as numbers.
+  The lowering draws every point in space in a scratch sketch (its own lift), reads a word between
+  them as the relation in space (`reading::in_space`), an ordinate at `OrdinateForm::Space`, a
+  dimension as a `Tape::compile_wide` tape read by the free twin (`K::OrdinateSpaceFree` for an
+  ordinate), a pinned place as a tape, and a carried point as a row of no kernel id
+  (`screw::Reading::Carried`, the motion's steps its constants, its axes `θ` columns).
+  `traced::Body` encodes `[n_formals, n_outer, n_theta, n_q, n_w, n_rows, traced]`, the tapes,
+  the rows, the seeds; every static row must have a Taylor form.  `View::solve` is damped Newton
+  from the seeds, else a march from the home — no pose remembered, a reading a function of its
+  place.  `View::series` is the implicit function's Taylor series along any direction of the outer
+  variables (rows over `Jet`s, `taylor::residual` / `screw::rows`; tapes over them by
+  `tape::eval_num`, a `TapeNum` walker exact to the third order), and `Series::mixed` the
+  symmetric multilinear derivative by polarisation over every subset's series.  `read` gives the
+  `Frame` (point, `d[a]`, `dd[a][b]`) and, for a Jacobian, its derivative in every place and `θ`
+  column — exact.  The contacts (`traced::Contact`: `PointOnTraced`, `TracedTangentAt` of a curve,
+  `TracedSurfaceTangentAt`, `TracedNormalAt`, `TracedPlaneAt`, `TracedCurvatureAt` of a surface;
+  `KernelKey::Traced`) own a place `[u, s]`, a curve's `s` pinned at the add
+  (`relations::traced_contact`, which also reads `tangent` against a surface as its tangent plane
+  and refuses a surface's words of a curve); the four with `at:` share the contact's place
+  (`tangent_at`, `holds_on`).  Columns `[lead…, u, s, θ…]` (`traced::columns`: lifts of points and
+  line ends, then motions' axes); constants `[n_values, values…, home×2, body…]`.  Seeds:
+  `traced::nearest`.  `report::traced_text` says regular or where it folds
+  (`traced::regularity` over a 13×13 grid).  `tests/traced.rs` is the gate: a helix by its
+  ordinates and by a screw, a point and a tangent held to it; a torus's point, normal and the
+  meridian's osculating circle against closed forms; every contact against finite differences;
+  a fold reported.
+  **Two design constraints it is built to** (#326): a traced surface is held to and read, not a
+  face of a solid — exporting one is making it a wall of #243 L2's `Surface::Family` (whose
+  `d1`/`newton` it would answer through `traced::read` and `traced::nearest`), not a second
+  surface type; and the variable table puts the running formals first and reads the body along
+  any direction of them, so a body that reads a rate along one (#339 D2, D4: the drawn instance an
+  initial value, the march by the method of lines over the other) is one more column of the same
+  table and one more order of the same series.

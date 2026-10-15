@@ -781,6 +781,22 @@ A locus usually has several solutions. The body selects one by, strongest first:
 constraint (a point-to-line distance's sign chooses a winding); an orientation predicate `ccw`/`cw`
 (read at the anchor and carried by continuity); a seed.
 
+**In space.** A body whose relations do not read in one plane — ordinates along lines in space, a
+point a motion carries — is a curve **in space** (`p coincident k`, `k tangent(at: p) l`); over two
+formals, `S := C(…).p over (phi in (a, b), s in (c, d))`, a **surface** (`p coincident S`, and at a
+point held there `tangent`, `perpendicular` for its normal, `curvature`). Write it in place, seed
+its points with numbers over the formals, and give it points, lines, motions and numbers:
+
+```
+component Helix(o: point, x: line, y: line, z: line, r: Length, lead: Length, u: Angle) {
+  p := point hint((r * cos(u), r * sin(u), lead * u / 360deg))
+  o distance(r * cos(u), along: x) p
+  o distance(r * sin(u), along: y) p
+  o distance(lead * u / 360deg, along: z) p
+}
+k := Helix(o, xl, yl, zl, r: 5mm, lead: 3mm).p over u in (0deg, 720deg)
+```
+
 **The ellipse** is `std.Ellipse(c: point, a: Length, b: Length, tilt: Angle, u: Angle)`:
 `e := std.Ellipse(c, a: 40, b: 25, tilt: 0deg).p over u in (0deg, 360deg)` is the rim. There is no
 `ellipse` element.
@@ -1216,7 +1232,7 @@ k := Par(o).p over u in (-2mm, 2mm)
   the section stands* and *what it is* as constraints in the component: a station word of `std` for
   the plane square to the guide at `s` — `std.OnLine(g, up: up, s: s)` on a line, `std.OnArc` an
   arc, `std.OnSpline` a spline, `std.On` any of a line, an arc, a spline or a traced curve —
-  then the section drawn `in st.n`, its sizes and turns reading `s`. **A screw** (0.104):
+  then the section drawn `in st.n`, its sizes and turns reading `s`. **A screw** (0.110):
   `std.Helix(std.top, pitch: 4mm, turns: 3, s: s)` turns `std.top` about its normal and lifts it,
   `360deg · turns · s` and `pitch · turns · s`; draw a thread's section in its `axial` plane
   (through the axis, `u` out from it, `v` up it) and an auger's flight in its `n` (the base
@@ -1527,8 +1543,9 @@ under a motion keeping its view, `envelope(side, under: cutting, …)` is the pl
 extruded, and `p coincident flank` from any view is one equation. Draw the prism's face `in` a view
 and name the edge in it.
 
-**An envelope in space is held to by the solve** where its source is a cone or a cylinder set
-(`std.Cone`, `std.ConeThrough` with its lean stated, `std.Cylinder`) or a revolution's side turned
+**An envelope in space is held to by the solve** where its source is a cone, a cylinder or a
+plane set (`std.Cone`, `std.ConeThrough` with its lean stated, `std.Cylinder`, `std.HalfSpace`) or
+a revolution's side turned
 from a line, an arc or a circle, under turns about lines, screws, slides and `relative_to:`
 (`spiral_bevel/mean_point.sv`):
 
@@ -1542,8 +1559,19 @@ pinion_flank curvature(at: M) profile                 // its section by profile'
 ```
 
 The source's geometry, its number and the motion's axes are columns, so the cone's half solves from
-what is stated at `M`. The `at:` relations read the place of the `coincident` holding `M`, which must
+what is stated at `M`. A plane sliding along its own normal relative to a turn sweeps an involute
+helicoid: `spiral_bevel/phillips.sv`'s rack, `std.HalfSpace(P, L, d: 0mm)` under
+`motion(slide, relative_to: pinion_turn)`. The `at:` relations read the place of the `coincident` holding `M`, which must
 be stated. A set's envelope is only held to: it has no chart after the solve.
+
+**A motion's twist** is read by two relations whose operand is the motion itself: `L reciprocal
+mesh` (a force along the line `L` does no work on it: for a mesh, the members move as fast along
+`L`, the meshing law of a line of action) and `isa screw mesh` (the axis `isa` is the motion's
+instantaneous screw axis; its pitch is the relation's own unknown, `isa screw(pitch == 0) mesh`
+pins it, and `solventc` reports it). Either reads turns, screws and slides about fixed lines, and
+one relative to another (`spiral_bevel/phillips.sv`). And `X coincident(under: m, t == τ) x` is `x`
+as the moving frame sees it: carried by `m`'s pose at the roll `τ` (degrees; leave it unpinned and
+the solve finds it) — a rolling circle's point seen by the fixed one is an epicycloid.
 
 **Two flanks meshing are a locus** (`spiral_bevel/contact.sv`): tooth contact analysis. The first
 flank turns with the pinion and the second with the gear — the mesh's observer and source — each an
@@ -1559,7 +1587,8 @@ R coincident(lag == 0.07) bearing                     // the phase the gear lags
 ```
 
 A point on it owns the phase `t` and the lag (both in degrees) and a place on each flank; pin
-either. A conjugate pair touches along a line with no lag (the point is then free along it); a
+either. A flank may also be a surface traced in space (1.10) — the contact element as its member
+sees it, `X coincident(under: turn, t == -phi) x` in its body (`spiral_bevel/phillips_pure.sv`). A conjugate pair touches along a line with no lag (the point is then free along it); a
 mismatched one at a point. After the solve the contact is traced over `from:`…`to:` from the first
 point held to it, and `solventc` reports the transmission error and the path of contact.
 

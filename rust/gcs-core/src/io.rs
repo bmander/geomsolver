@@ -233,7 +233,7 @@ fn remap_early(
         // a curve is never another curve's argument: nothing in the language says so, and a
         // face and a solid are built after every curve, so neither is one either
         EntKind::Curve | EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge | EntKind::Meshing
-        | EntKind::Axis => None,
+        | EntKind::Traced | EntKind::Axis => None,
     }
 }
 
@@ -1340,7 +1340,13 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             crate::model::Held::Set {probe,shape} => {
                 use crate::model::SetShape;
                 let shape = shape.as_ref()
-                    .map(|s| line(s.axis).map(|axis| SetShape {axis,..s.clone()}).ok_or(()))
+                    .map(|s| {
+                        let origin = match s.origin {
+                            Some(o) => Some(pt_map[o as usize].ok_or(())? as u32),
+                            None => None,
+                        };
+                        line(s.axis).map(|axis| SetShape {axis,origin,..s.clone()}).ok_or(())
+                    })
                     .transpose();
                 match (pt_map[*probe as usize],shape) {
                     (Some(probe),Ok(shape)) => crate::model::Held::Set {probe:probe as u32,shape},
@@ -1366,6 +1372,22 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         envelope_map[i] = Some(next);
         made.push(EntRef::new(EntKind::Envelope,next));
     }
+    // a traced body, where everything its component was given came along (#326)
+    let mut traced_map = vec![None;src.traced.len()];
+    for (i,t) in src.traced.iter().enumerate() {
+        if !keep(EntRef::new(EntKind::Traced,i)) { continue; }
+        let args: Option<Vec<EntRef>> = t.args.iter().map(|&e| match e.kind {
+            EntKind::Point => pt_index(e.i()).map(EntRef::point),
+            EntKind::Line => line_map[e.i()].map(EntRef::line),
+            EntKind::Motion => motion_map[e.i()].map(|m| EntRef::new(EntKind::Motion,m)),
+            _ => None,
+        }).collect();
+        let Some(args) = args else { continue; };
+        let next = dst.traced.len();
+        dst.traced.push(crate::model::TracedE {args,..t.clone()});
+        traced_map[i] = Some(next);
+        made.push(EntRef::new(EntKind::Traced,next));
+    }
     // a meshing's flanks, each an envelope copied with it or a source read in the copy's own
     // geometry (#283)
     let mut meshing_map = vec![None;src.meshings.len()];
@@ -1375,6 +1397,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         let flank = |f: &crate::model::Flank| match f {
             crate::model::Flank::Envelope(v) => envelope_map[*v as usize].map(|v| crate::model::Flank::Envelope(v as u32)),
             crate::model::Flank::Formed(h) => Some(crate::model::Flank::Formed(remap_held(h))),
+            crate::model::Flank::Traced(t) => traced_map[*t as usize].map(|t| crate::model::Flank::Traced(t as u32)),
         };
         let (Some(a),Some(b)) = (flank(&e.flanks[0]),flank(&e.flanks[1])) else { continue; };
         let next = dst.meshings.len();
@@ -1484,6 +1507,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             EntKind::Vertex => vertex_map[e.i()].map(|i| EntRef::new(EntKind::Vertex,i)),
             EntKind::Edge => edge_map[e.i()].map(|i| EntRef::new(EntKind::Edge,i)),
             EntKind::Meshing => meshing_map[e.i()].map(|i| EntRef::new(EntKind::Meshing,i)),
+            EntKind::Traced => traced_map[e.i()].map(|i| EntRef::new(EntKind::Traced,i)),
         }
     };
     for (&e, &roles) in &src.roles {

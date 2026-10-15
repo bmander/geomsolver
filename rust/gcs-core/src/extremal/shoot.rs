@@ -18,6 +18,7 @@
 #[allow(unused_imports)]
 use crate::fmath::Det;
 use super::flow::{self, Flow, Lagrangian};
+use crate::ode;
 
 /// Pieces per arc.
 pub const SEGMENTS: usize = 4;
@@ -127,9 +128,6 @@ pub struct Node {
 
 pub(super) const IDENTITY: [f64; 16] = [1., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1.];
 
-/// The most steps a piece may take — a flow needing more is followed nowhere near its answer.
-const STEPS_MAX: usize = 4000;
-
 /// Integrate one piece of length `len` from `z0`, the direction found from `theta`, with the
 /// sensitivities to the start where `sens` (`None` where the flow cannot be followed).
 pub fn integrate(lag: &Lagrangian, s0: f64, z0: [f64; 4], theta: f64, len: f64, scale_len: f64, sens: bool) -> Option<Piece> {
@@ -137,38 +135,21 @@ pub fn integrate(lag: &Lagrangian, s0: f64, z0: [f64; 4], theta: f64, len: f64, 
     let mut flow = Flow::new(lag, theta);
     let p0 = flow.at(&z0, false)?;
     let lam = z0[2].dhypot(z0[3]).max(p0.h.abs()).max(1e-300);
+    let y = [z0.as_slice(), &IDENTITY].concat();
     let scale = [scale_len, scale_len, lam, lam];
-    let mut nodes = vec![Node { s: s0, z: z0, theta: p0.theta, phi: IDENTITY }];
-    let mut done = 0.0;
-    let mut h = len / 4.0;
-    let mut y = [0.0; flow::WIDTH];
-    y[..4].copy_from_slice(&z0);
-    y[4..].copy_from_slice(&IDENTITY);
-    let mut th = p0.theta;
-    let mut taken = 0;
-    while done < len {
-        if taken >= STEPS_MAX {
-            return None;
-        }
-        let last = len - done <= h * (1.0 + 1e-12);
-        let hh = if last { len - done } else { h };
-        let (y1, err) = flow::step(&mut flow, th, &y, hh, m, &scale)?;
-        taken += 1;
-        if err <= flow::TOL || hh <= len * 1e-12 {
-            done = if last { len } else { done + hh };
-            th = flow.theta;
-            y = y1;
-            let mut phi = IDENTITY;
-            if sens {
-                phi.copy_from_slice(&y[4..20]);
-            }
-            nodes.push(Node { s: s0 + done, z: [y[0], y[1], y[2], y[3]], theta: th, phi });
-            h = flow::next_h(hh, err);
-        } else {
-            h = flow::next_h(hh, err).min(hh * 0.5);
-        }
-    }
+    let path = ode::march(&mut flow, s0, &y[..4 + 4 * m], m, len, &scale, &ode::Settings::default()).ok()?;
+    let nodes = path.nodes.iter().map(|n| node(n.u, &n.y, n.branch, sens)).collect();
     Some(Piece { nodes })
+}
+
+/// A node from the integrator's augmented state, the sensitivities the identity where none were
+/// carried.
+fn node(s: f64, y: &[f64], theta: f64, sens: bool) -> Node {
+    let mut phi = IDENTITY;
+    if sens {
+        phi.copy_from_slice(&y[4..20]);
+    }
+    Node { s, z: [y[0], y[1], y[2], y[3]], theta, phi }
 }
 
 /// The state at `s` within a piece (its start ≤ `s` ≤ its end): one step from the node before
@@ -182,16 +163,13 @@ pub fn within(lag: &Lagrangian, piece: &Piece, s: f64, scale_len: f64, sens: boo
     }
     let mut flow = Flow::new(lag, n.theta);
     let lam = n.z[2].dhypot(n.z[3]).max(1e-300);
-    let mut y = [0.0; flow::WIDTH];
-    y[..4].copy_from_slice(&n.z);
-    y[4..].copy_from_slice(&n.phi);
     let m = if sens { 4 } else { 0 };
-    let (y1, _) = flow::step(&mut flow, n.theta, &y, h, m, &[scale_len, scale_len, lam, lam])?;
-    let mut phi = IDENTITY;
-    if sens {
-        phi.copy_from_slice(&y1[4..20]);
-    }
-    Some(Node { s, z: [y1[0], y1[1], y1[2], y1[3]], theta: flow.theta, phi })
+    let y = [n.z.as_slice(), &n.phi].concat();
+    let mut out = vec![0.0; 4 + 4 * m];
+    let mut w = ode::Work::new(4, m, &ode::Settings::default());
+    let scale = [scale_len, scale_len, lam, lam];
+    ode::step(&mut flow, &mut w, n.s, &y[..4 + 4 * m], h, &scale, &mut out)?;
+    Some(node(s, &out, flow.theta, sens))
 }
 
 /* -- the problem's unknowns --------------------------------------------------------------- */

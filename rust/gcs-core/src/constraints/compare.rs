@@ -64,6 +64,8 @@ pub fn kind_matches(spec: SpecKind, ent: EntKind) -> bool {
         SpecKind::Curve => ent == EntKind::Curve,
         SpecKind::Envelope => ent == EntKind::Envelope,
         SpecKind::Meshing => ent == EntKind::Meshing,
+        SpecKind::Motion => ent == EntKind::Motion,
+        SpecKind::Traced => ent == EntKind::Traced,
         SpecKind::Plane => ent == EntKind::Plane,
         SpecKind::Axis => ent == EntKind::Axis,
         SpecKind::Direction => ent == EntKind::Line || ent == EntKind::Axis,

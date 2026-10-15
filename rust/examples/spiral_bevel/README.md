@@ -263,3 +263,47 @@ closes the gap between the two members: the pinion's flank's nearest approach to
 from the cone's equation and the poses alone. The contact found by Newton is local. A pair a
 little off conjugate holds its contact only weakly along the bearing, so it is found only from
 near it; a failed solve seeds the contact again with the flanks where the solve left them.
+
+## Phillips' spatial involute gearing (#326)
+
+**`phillips.sv`** is a pair on the same skew shafts made from its contact alone: no face mill, no
+crown. The design is one line of action `L` through the pitch point. A force along `L` does no
+work on the members' relative motion when the two move as fast along it: `L reciprocal mesh`,
+which fixes its helix angle once its pressure angle is stated. `isa screw mesh` draws the mesh's
+instantaneous screw axis, on the shafts' common perpendicular, and reports its pitch. Each member's flank is then the involute helicoid a plane
+square to `L` sweeps sliding along it at that speed, seen from the member: its rack,
+`std.HalfSpace(P, L, d: 0mm)` under `motion(slide, relative_to: pinion_turn)`. The two flanks
+touch where the rack meets `L`, with `L` for their normal, at the ratio's roll:
+
+```sh
+build/solventc rust/examples/spiral_bevel/phillips.sv
+#   bearing: point contact; transmission error (the gear's angle) 0° … 8.1e-14° over the phase
+#   -15° … 15°, the path of contact 8.34989 long
+#   mesh: screws about the axis through (0, 57.6, 0) along (-0.894427, 0, -0.447214), pitch
+#   -28.8 a radian
+```
+
+`gcs-core/tests/phillips.rs` holds each flank to the helicoid's own equations and the pair to a
+point contact running along `L` with no lag, the screw to Ball's closed form, and `L` to the
+members' equal speeds along it. A gear whose rack slides 2 % faster lags by what
+closes the gap between the racks, `(σ/σ' − 1)` times the phase. And Phillips' claim holds: moved
+after its flanks are made — half a millimetre further off, or its shaft turned half a degree — the
+pair runs at a constant lag, so with no transmission error.
+
+**`phillips_pure.sv`** is the same pair with no rack: each flank is stated by the contact alone.
+The contact element is a line of the member's plane of action moving along `L` at the members'
+speed; the member, turned by the phase, sees it carried back (`X coincident(under: turn, t ==
+-phi) x`). Over the phase and a place along the element that is a surface traced in space, and it
+meshes as the rack-cut pair does:
+
+```sh
+build/solventc rust/examples/spiral_bevel/phillips_pure.sv
+#   bearing: point contact; transmission error (the gear's angle) 0° … 3.1e-13° over the phase
+#   -15° … 15°, the path of contact 8.34989 long
+#   pinion_flank: a surface traced in space, regular over its domain
+#   gear_flank: a surface traced in space, regular over its domain
+```
+
+`gcs-core/tests/phillips.rs` holds each traced flank to the rack's envelope it agrees with, to
+1e-9. Line contact on skew axes stated by its contact alone is a first-order PDE, marched from one
+contact line: #339, item D5.

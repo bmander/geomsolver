@@ -180,7 +180,10 @@ takes a layout naming the front datum, origin and reference axis.
   [0.29]).  `w := 100` is a value (`StmtKind::Param`), `c := circle(…)` a declaration, `t :=
   Tooth(…)` an instance, `dims := {…}` a group (a brace after `:=` is a list, lexed across lines),
   `profile := (ab := line(a, b)) -> line -> close` a chain whose link is named in place, `k :=
-  leg.toe over u in (a, b)` a curve, `p := point(x: e, y: e)` a computed point.  A dimension's
+  leg.toe over u in (a, b)` a curve (`S := C(…).p over (phi in (a, b), s in (c, d))`, two formals
+  running, a surface traced in space, #326 — `CurveSpec::second`, parsed by `curve_spec` after an
+  `over (`, printed by `write_curve_spec`, its ends settled by the flattener with the first's),
+  `p := point(x: e, y: e)` a computed point.  A dimension's
   number defines no name (named dimensions are gone, [0.41]).  `:=` is `Tok::Define`; a lone `=` is
   no token.  `:=` binds loosest, so a link is named in parentheses; with no `->` in the statement
   the name goes to the one declaration (`l := horizontal line(a, b)`: a prefix word's value is its

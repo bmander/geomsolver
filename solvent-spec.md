@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.104 — October 2026**
+**Specification, Draft 0.110 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -455,6 +455,10 @@ e := Unwind(base, datum, phase: a0).p over u in (u0, u1)
 
 **Over an instance written in place.** `Involute(base, phase: a0).p` binds the arguments as an instance statement would and draws nothing: the curve is the only thing made of it. The anchor is the value it gives the swept formal, or the interval's start when it gives none. **[0.42]** A traced component is solved in one plane, so a relation in space in its body (§9.2) is refused where it is written.
 
+**In space [0.107].** A body whose relations do not read in one plane is solved in space: its points are points in space, its words between them the relations in space (§9.2), and a point a motion carries, `X coincident(under: m, t == −u) x` (§9.3), one of its rows — the motion then given to the component as a formal of its own (`m: motion`). Such a curve is **a curve in space**: written in place, over points, lines, motions and numbers, it declares no curve of a plane but an entity held to in space. `p coincident k` holds a point in space to it (three rows against its place, net two) and `k tangent(at: p) l` a line along its tangent there (two rows). A body given a motion is solved in space whatever its relations; any other is a plane's where it reads as one (the `[0.42]` rule above), and in space only where it does not. Its derivatives are exact — every order the contacts read, along the formal and in every coordinate it is written over, by the Taylor series of the implicit function along any direction and polarisation across directions. Its seeds are numbers over the formals (`hint((r * cos(u), r * sin(u), lead * u / 360deg))`); a geometric seed, an instance drawn on the sheet and an unknown of the drawing given as a number are refused (**E103**): a body traced in space reads the drawing's unknowns through the geometry it is written over.
+
+**Over two formals [0.108].** `S := C(ARGS).p over (phi in (A, B), s in (C, D))` is the same point as two formals run: **a surface** traced in space. `p coincident S` owns a place `[u, s]` (three rows, net one); at a point a contact holds there, `S tangent(at: p) l` puts a line in its tangent plane (one row), `S perpendicular(at: p) l` along its normal `C_φ × C_s` (two), `S tangent(at: p) P` a plane touching it (two), and `S curvature(at: p) k` the circle osculating its section by `k`'s plane (three, Meusnier, as an envelope's, §6.15.3). A place pinned is `p coincident(u == a, s == b) S`. A surface is **regular** where its two derivatives are independent; `solventc` says of each body traced in space whether it is regular over its domain or where it folds — of a flank seen from its member, the undercut. A traced surface is held to and read, not yet a face of a solid.
+
 **Requirements.** An implementation MUST differentiate `C` with respect to the swept formal *and* with respect to every coordinate the component reads. `∂C/∂u` is which way a contact may slide; `∂C/∂θ` is how the curve moves when the geometry it is written over moves, and an implementation that computes only the first will solve a contact once and drop it the moment that geometry is dragged. For a computed point both are mechanical from the expressions; for a locus both come from the implicit function theorem at the body's solution. A name a computed point's expressions cannot reach is an error (**E103**), not a free variable: a curve is written over geometry that exists, and a misspelling there would quietly add a degree of freedom to every point on the curve. A dimension in a traced body MAY read a number of the geometry the component is written over (`c.r`, `k.center.x`): it is a column of the curve, and is differentiated with the rest. **[0.37] Outside a trace a dimension MUST NOT read geometry** (**E103**): the expression graph has no column for it, and minting a free variable named `k.r` would make a drawn instance of a component state something other than its own trace.
 
 **Branches.** A locus generically has several solutions, and a component states its way onto one — three instruments, in order of strength:
@@ -902,7 +906,7 @@ block := solid(face(mouth, side_r, lid, side_l), from: face, to: back)
   `v` along an axis `up`: `OnLine(g, up:, s:)` at the fraction `s` of a line's run, `OnArc` of an
   arc's turn, `OnSpline` at a spline's parameter, `On` over a `path` whose tangent at a point it
   reads in space (a line, a spline, a traced curve), and `Helix` and `OnHelix` along a screw
-  (0.104; through 0.103 `Screwed` and `OnHelix`, each about an axis given apart from its base).
+  (0.110; through 0.109 `Screwed` and `OnHelix`, each about an axis given apart from its base).
   The section is the document's own component drawn `in st.n`, reading `s` where it runs (a size
   `inlet + (outlet - inlet) * s`, a corner's coordinates, a turn): `duct := solid(Reducer(guide,
   std.z, inlet: 24mm, outlet: 12mm).sec.profile over s in (0, 1))`. Two
@@ -939,7 +943,7 @@ block := solid(face(mouth, side_r, lid, side_l), from: face, to: back)
   the running number, worked out at each station; it binds the formal, and is no unknown of the
   drawing. A `when` is made once, for the whole run (§12.9), so a condition reading the running
   number is **E040**, saying so; `min`, `max` and `abs` write a law in pieces.
-- **[0.104] A screw is constraints.** `Helix(base, pitch:, turns:, s:)` is the frame of the plane
+- **[0.110] A screw is constraints.** `Helix(base, pitch:, turns:, s:)` is the frame of the plane
   `base` turned `360deg · turns · s` about `base`'s normal through its origin — the screw's axis —
   from `base.u` toward `base.v`, and risen `pitch · turns · s` along that normal: `n`, the plane
   `base` so carried, and `axial`, the plane through the axis whose `u` runs out along `n.u` and
@@ -948,7 +952,7 @@ block := solid(face(mouth, side_r, lid, side_l), from: face, to: back)
   radius `r` that screw draws, its `u` out from the axis and its `v` up the axis leaned by the
   helix's lead angle, so a section drawn in it sweeps a coil. Every direction of either is an
   ordinate in `base`'s frame: neither is held by a seed, and a negative pitch winds left-handed.
-  `Screwed` (through 0.103 the plane through an axis given apart from `base`) is retired;
+  `Screwed` (through 0.109 the plane through an axis given apart from `base`) is retired;
   `Helix(…).axial` is that plane. *Non-normative:* where the whole section moves rigidly — one
   screw, a turn alone, or a step along one line — an implementation lays each wall on the surface
   its first edge sweeps under that motion and each rail on its corner's path, once they agree with
@@ -1274,8 +1278,9 @@ pinion_flank curvature(at: M) profile
 ```
 
 An envelope in space is **held to by the solve** where it knows the source before any relation:
-a **set** — a cone (`std.Cone`, and `std.ConeThrough` with its lean stated) or a cylinder
-(`std.Cylinder`), the operand of `envelope` read as what its body states at its point (§6.21) —
+a **set** — a cone (`std.Cone`, and `std.ConeThrough` with its lean stated), a cylinder
+(`std.Cylinder`) or a plane (`std.HalfSpace`'s face, a distance along a line from a point,
+**[0.104]**), the operand of `envelope` read as what its body states at its point (§6.21) —
 or a **named side of a revolution** turned from a line, an arc or a circle (`surface(rev, e)`),
 under a motion built of turns about lines, screws, slides along lines and `relative_to:`. Its
 numbers — the source's axis and edge, a cone's half or a cylinder's radius where that is an
@@ -1284,7 +1289,8 @@ along — are columns of every relation holding something to it, so what makes t
 from what the envelope is held to: a cutter's lean from a contact a designer states.
 
 - `p coincident flank`: a point in space, drawn in any view. The relation owns a **place** `[u,
-  v, t]` — along the source's meridian, round its axis, and the motion's roll — where the moving
+  v, t]` — along the source's meridian, round its axis (on a plane, two lengths along two
+  directions in it), and the motion's roll — where the moving
   source is at `p` and `F = 0` (§6.15): four rows against three unknowns, the one equation a point
   on a surface is worth. It starts where the envelope passes nearest `p`.
 - `flank tangent(at: p) l`, `l` a line or an axis: `l` runs in the envelope's tangent plane at
@@ -1312,8 +1318,13 @@ apex) is degenerate, as a cone whose spine has no length is. A source the solve 
 sphere, a region, an offset, a lean or a radius that is no number times one unknown plus a
 number (`std.ConeThrough`'s `abs(lean)` over an unknown lean) — leaves the envelope evaluated
 after the solve where it is a revolution's side, and a relation holding something to it is
-refused naming why (**E061**); a set the body reads as no cone or cylinder is **E040** where it
-is applied. A set's envelope has no chart after the solve: it is only held to.
+refused naming why (**E061**); a set the body reads as no cone, cylinder or plane is **E040**
+where it is applied. A set's envelope has no chart after the solve: it is only held to.
+
+A plane's envelope under a slide along its own normal relative to a turn is an **involute
+helicoid** (**[0.104]**): the rack of Phillips' spatial involute gearing, each member's flank the
+plane square to the line of action sliding along it as fast as the members move along it, seen
+from the member (`spiral_bevel/phillips.sv`).
 
 #### 6.15.4 The meshing of two flanks **[0.94]**
 
@@ -1327,8 +1338,11 @@ R coincident(t == 10deg, lag == 0.01) contact
 `meshing` is tooth contact analysis, a locus. Its first flank turns with `mesh`'s observer (the
 pinion's turn) and its second with its source (the gear's): the motion the pair runs at, which
 must be a relative one (**E080** otherwise). A flank is an envelope in space the solve holds to
-(§6.15.3) — **generated** — or what such an envelope reads as its source, a cone or a cylinder
-set or a named side of a revolution, standing still in its member — **formed**; anything else is
+(§6.15.3) — **generated** — or what such an envelope reads as its source, a cone, a cylinder or
+a plane set or a named side of a revolution, standing still in its member — **formed** — or a
+surface traced in space over two formals (§6.5), the flank as its member sees it — **traced**
+(**[0.109]**), its place `[u, s]` and its roll held at none; anything
+else is
 **E080**. At each **phase** of the pinion, its roll, the contact is where the two flanks share a
 point and a normal with the gear turned to the ratio's roll plus a **lag**: the transmission error
 as a roll of the mesh (the gear's own angle is off by its ratio times it). A conjugate pair touches
@@ -2056,6 +2070,9 @@ Residual conventions: points are ℝ²; `×` is the scalar 2D cross product; `�
 | `tangent(S1, S2, at: m)` **[0.51]** | F₁,ₓ·wₖ and F₂,ₓ·wₖ at m, k = 0, 1, with w₀ = e_a + s₀ e_c and w₁ = e_b + s₁ e_c | 2 for two surfaces (four rows over s₀, s₁) | e_c the world axis the sets' normal at m runs most along, chosen once; `m coincident S1`, `m coincident S2` beside it |
 | `touches(k: free curve, L: Line)` **[0.59]** | inside `k`'s problem (§9.10): its arc ends at o + σ·d̂ on `L`, `H` unbroken there, and (λ⁺ − λ⁻)·d̂ | 0 in the drawing | σ and the place along `k` the problem's own; `L`'s points columns of `k`, as its ends are; written `k touches L` |
 | *across views* **[0.24]** | the relation over the lifts X, Y of its points: X − Y (3); ‖X − Y‖² − e² (1); the point–line magnitude (1); the signed common perpendicular (1); two components of (X − A) × (B − A) across the line (2, `coincident` a line); â·b̂ − cos e (1); â·b̂ (1); (â × b̂) across â (2, `parallel`); ‖B − A‖² − ‖D − C‖² (1, `equal`); ‖X − C‖ − r and n·(X − C) (2, `coincident` a circle); **[0.25]** X − (A + B)/2 (3, `midpoint`); Q + P − 2F, F the foot of P on the line (3, `symmetry`) | as listed | §9.2 |
+| `reciprocal(L: Line, m: Motion)` **[0.105]** | (B − A)·v(A), v(x) = v₀ + ω × x the twist of `m` a radian | 1 | a force along `L` does no work on `m` (Ball); `m` a turn, a screw or a slide about a fixed line, or one relative to another, whose twist is the source's less the observer's; for a mesh the meshing law of a line of action; written `L reciprocal mesh` |
+| `screw(t: Axis, m: Motion)` **[0.105]** | two components of d̂ across ω̂, scaled by L; two of A − c across ω̂; h − ω·v₀/‖ω‖² | 5 | `t` on `m`'s instantaneous screw axis, through c = ω × v₀/‖ω‖² along ω; h, the pitch, the relation's own unknown, a length a radian, pinned as `pitch == h`; L the motion's first axis as drawn; written `isa screw mesh`; a twist turning nothing has no axis |
+| `coincident(X, x, under: m, t)` **[0.106]** | X − Pose_m(t)·x | 3 | `X` is `x` as the moving frame sees it: carried by `m`'s pose at the roll `t`, in degrees, the relation's own unknown (pinned `t == τ`, or solved); X and x lifted; `m` any motion the solve reads, a turn about a point of a view read as the turn about the line through it square to the view; written `X coincident(under: m, t == τ) x` |
 | `project(p, q)` **[0.10]** **[0.42]** | d_A·p − d_B·q + d·(o_A − o_B); over a plane solved for, (n̂_A × n̂_B)·(X_A − X_B) | 1 | the planes A, B inferred from `p`, `q`'s memberships; d the fold line they share, §6.7 |
 
 Implementations MAY extend this library. Extensions MUST document residuals and equation counts, and MUST classify each decoration as hint or constraint per P3.

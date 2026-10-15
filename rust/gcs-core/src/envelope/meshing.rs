@@ -60,13 +60,36 @@ pub const LEAD: usize = 3;
 
 /* -- the layout ------------------------------------------------------------------------------ */
 
+/// A flank as a meshing's constants say it: an envelope or a source standing still (`held`), or
+/// a surface traced in space as its member sees it (#326, `traced`: its domain and constants).
+#[derive(Clone, Debug)]
+enum Side {
+    Held(Layout),
+    Traced { domain: [[f64; 2]; 2], k: Vec<f64>, width: usize },
+}
+
+impl Side {
+    fn read(k: &[f64]) -> Option<Side> {
+        if let Some((domain, c)) = crate::traced::flank_parts(k) {
+            return Some(Side::Traced { domain, k: c.to_vec(), width: crate::traced::flank_width(k) });
+        }
+        Layout::read_any(k).filter(|l| l.lead == 0).map(Side::Held)
+    }
+
+    /// Whether its own row is a meshing equation: a generated flank's, not a formed or a traced
+    /// one's, whose roll is held at none.
+    fn generated(&self) -> bool {
+        matches!(self, Side::Held(l) if !l.steps.is_empty())
+    }
+}
+
 /// A meshing's constants read back.
 #[derive(Clone, Debug)]
 struct Mesh {
     lead: usize,
     /// The pinion's flank (the observer's) and the gear's (the source's), and where each one's
     /// constants are.
-    flanks: [Layout; 2],
+    flanks: [Side; 2],
     consts: [Range<usize>; 2],
     steps: Vec<Step>,
     /// The steps the gear's and the pinion's turns are.
@@ -85,7 +108,7 @@ impl Mesh {
             return None;
         }
         let consts = [HEADER..HEADER + n1, HEADER + n1..HEADER + n1 + n2];
-        let flank = |r: &Range<usize>| Layout::read_any(&k[r.clone()]).filter(|l| l.lead == 0);
+        let flank = |r: &Range<usize>| Side::read(&k[r.clone()]);
         let flanks = [flank(&consts[0])?, flank(&consts[1])?];
         let steps = held::read_steps(&k[HEADER + n1 + n2..])?;
         let Some(&Step::Relative { source, observer }) = steps.last() else { return None };
@@ -94,7 +117,10 @@ impl Mesh {
 
     /// The columns of flank `i`'s source and motion.
     fn flank_width(&self, i: usize) -> usize {
-        self.flanks[i].source_width() + self.flanks[i].motion_width()
+        match &self.flanks[i] {
+            Side::Held(l) => l.source_width() + l.motion_width(),
+            Side::Traced { width, .. } => *width,
+        }
     }
 
     /// Every column a contact reads.
@@ -163,8 +189,20 @@ const POSES: usize = 24;
 impl<T: Num> Seen<T> {
     /// Flank `i` over its columns (`Mesh::flank_cols`).
     fn of(m: &Mesh, i: usize, c: &[T]) -> Self {
-        let f = local(&m.flanks[i], c, false);
-        Seen { x: f.x, n: f.n, du: f.dx[0], g: f.g }
+        match &m.flanks[i] {
+            Side::Held(l) => {
+                let f = local(l, c, false);
+                Seen { x: f.x, n: f.n, du: f.dx[0], g: f.g }
+            }
+            // a traced surface as its member sees it: no meshing equation, its roll held
+            Side::Traced { k, .. } => match crate::traced::seen(k, c) {
+                Some((x, n, du)) => Seen { x, n, du, g: T::cst(0.0) },
+                None => {
+                    let nan = [T::cst(f64::NAN); 3];
+                    Seen { x: nan, n: nan, du: nan, g: T::cst(f64::NAN) }
+                }
+            },
+        }
     }
     fn flat(&self) -> [T; SEEN] {
         let [x, n, d] = [self.x, self.n, self.du];
@@ -235,9 +273,9 @@ fn assemble<T: Num>(m: &Mesh, cols: &[T], f: [Seen<T>; 2], p: [held::Frame<T>; 2
     let x2 = vadd(rotate(&r2, f[1].x), p2);
     let lever = dot(vsub(x2, col3(motion, 0)), vsub(x2, col3(motion, 0))).sqrt();
     let lever = if lever.val() > 1e-9 { lever } else { T::cst(1.0) };
-    // a formed flank's roll, held at none, over the lever so it is a length as a meshing
-    // equation is
-    let own = |l: &Layout, g: T, t: T| if l.steps.is_empty() { t * lever } else { g };
+    // a formed (or traced) flank's roll, held at none, over the lever so it is a length as a
+    // meshing equation is
+    let own = |l: &Side, g: T, t: T| if l.generated() { g } else { t * lever };
     At {
         x: [x1, x2],
         n: [rotate(&r1, f[0].n), rotate(&r2, f[1].n)],
@@ -367,10 +405,51 @@ pub fn kernel(n_par: usize, n_const: usize) -> Kernel {
 
 use crate::model::{Flank, Sketch};
 
+/// What a contact reads of one flank, off the sketch: an envelope's or a source's (`held`), or a
+/// traced surface's (#326), by its index.
+#[derive(Clone, Debug)]
+pub enum FlankParts {
+    Held(held::Parts),
+    Traced(usize),
+}
+
+impl FlankParts {
+    fn lifted(&self, sk: &Sketch) -> Vec<usize> {
+        match self {
+            FlankParts::Held(p) => p.lifted(),
+            FlankParts::Traced(i) => crate::traced::lifted(sk, &sk.traced[*i]),
+        }
+    }
+    fn columns(&self, sk: &Sketch) -> Vec<u32> {
+        match self {
+            FlankParts::Held(p) => p.columns(sk),
+            FlankParts::Traced(i) => crate::traced::columns(sk, &sk.traced[*i]),
+        }
+    }
+    fn values(&self, sk: &Sketch) -> Vec<f64> {
+        match self {
+            FlankParts::Held(p) => p.values(sk),
+            FlankParts::Traced(i) => crate::traced::theta(sk, &sk.traced[*i]),
+        }
+    }
+    fn consts(&self, sk: &Sketch) -> Vec<f64> {
+        match self {
+            FlankParts::Held(p) => p.consts_at(0),
+            FlankParts::Traced(i) => crate::traced::flank_consts(&sk.traced[*i]),
+        }
+    }
+    fn own_width(&self, sk: &Sketch) -> usize {
+        match self {
+            FlankParts::Held(p) => p.own_width(),
+            FlankParts::Traced(i) => sk.traced[*i].body.n_theta(),
+        }
+    }
+}
+
 /// What a contact reads of a meshing, off the sketch: each flank's parts and the mesh's.
 #[derive(Clone, Debug)]
 pub struct Parts {
-    pub flanks: [held::Parts; 2],
+    pub flanks: [FlankParts; 2],
     pub moving: held::Moving,
 }
 
@@ -378,14 +457,19 @@ impl Parts {
     /// Meshing `index`'s parts, or why the solve cannot read it.
     pub fn of(sk: &Sketch, index: usize) -> Result<Parts, String> {
         let e = sk.meshings.get(index).ok_or("no such meshing")?;
-        let flank = |f: &Flank, which: &str| -> Result<held::Parts, String> {
+        let flank = |f: &Flank, which: &str| -> Result<FlankParts, String> {
             match f {
-                Flank::Envelope(i) => held::Parts::of(sk, *i as usize).map_err(|why| {
+                Flank::Envelope(i) => held::Parts::of(sk, *i as usize).map(FlankParts::Held).map_err(|why| {
                     format!("its {which} flank is an envelope the solve cannot read: {why}")
                 }),
-                Flank::Formed(h) => held::Parts::still(sk, h, &e.name).map_err(|why| {
+                Flank::Formed(h) => held::Parts::still(sk, h, &e.name).map(FlankParts::Held).map_err(|why| {
                     format!("its {which} flank is a surface the solve cannot read: {why}")
                 }),
+                Flank::Traced(i) => match sk.traced.get(*i as usize) {
+                    Some(t) if t.formals() == 2 => Ok(FlankParts::Traced(*i as usize)),
+                    _ => Err(format!("its {which} flank is no surface traced in space the solve \
+                                      can read")),
+                },
             }
         };
         let flanks = [flank(&e.flanks[0], "first")?, flank(&e.flanks[1], "second")?];
@@ -400,8 +484,8 @@ impl Parts {
     }
 
     /// The points whose lifts the columns read.
-    pub fn lifted(&self) -> Vec<usize> {
-        [self.flanks[0].lifted(), self.flanks[1].lifted(), self.moving.lifted()].concat()
+    pub fn lifted(&self, sk: &Sketch) -> Vec<usize> {
+        [self.flanks[0].lifted(sk), self.flanks[1].lifted(sk), self.moving.lifted()].concat()
     }
 
     /// The columns past the unknowns, every point's lift minted.
@@ -415,19 +499,18 @@ impl Parts {
     }
 
     /// The constants of a contact with a lead of `lead` columns.
-    pub fn consts(&self, lead: usize) -> Vec<f64> {
-        let flanks = [self.flanks[0].consts_at(0), self.flanks[1].consts_at(0)];
+    pub fn consts(&self, sk: &Sketch, lead: usize) -> Vec<f64> {
+        let flanks = [self.flanks[0].consts(sk), self.flanks[1].consts(sk)];
         consts(lead, [&flanks[0], &flanks[1]], &self.moving.steps)
     }
 
-    pub fn n_const(&self) -> usize {
-        let flanks = self.flanks[0].n_const() + self.flanks[1].n_const();
-        HEADER + flanks + STEP * self.moving.steps.len()
+    pub fn n_const(&self, sk: &Sketch) -> usize {
+        self.consts(sk, 0).len()
     }
 
     /// How many columns a contact with a lead of `lead` reads.
-    pub fn width(&self, lead: usize) -> usize {
-        let flanks = self.flanks[0].own_width() + self.flanks[1].own_width();
+    pub fn width(&self, sk: &Sketch, lead: usize) -> usize {
+        let flanks = self.flanks[0].own_width(sk) + self.flanks[1].own_width(sk);
         lead + UNKNOWNS + flanks + self.moving.width()
     }
 }
@@ -498,6 +581,7 @@ impl Meshing {
         }
         let ratio = match m.steps[m.source] {
             Step::Rotation { ratio, advance, .. } if advance == 0.0 => Some(ratio),
+            Step::Turn { ratio, .. } => Some(ratio),
             _ => None,
         };
         let scale = parts.iter().fold(0.0f64, |a, x| a.max(x.abs())).max(1.0);
@@ -507,7 +591,7 @@ impl Meshing {
     /// Meshing `index` as the drawing stands, anchored where the first point held to it is.
     pub fn named(sk: &Sketch, index: usize) -> Result<Meshing, String> {
         let p = Parts::of(sk, index)?;
-        let mut m = Meshing::new(p.consts(0), p.values(sk), sk.meshings[index].roll)
+        let mut m = Meshing::new(p.consts(sk, 0), p.values(sk), sk.meshings[index].roll)
             .ok_or("the meshing's parts are not a meshing")?;
         m.anchor = sk.constraints.iter().find_map(|c| {
             c.meshing_of().filter(|e| e.i() == index)?;
@@ -744,13 +828,17 @@ pub fn seed(m: &Meshing, rolls: [[f64; 2]; 2], p: [f64; 3], phase: f64) -> Optio
         std::array::from_fn(|c| r[0][c] * d[0] + r[1][c] * d[1] + r[2][c] * d[2])
     };
     let place = |i: usize| -> Option<[f64; 3]> {
-        let (l, parts) = (&mesh.flanks[i], m.flank_parts(&mesh, i));
-        if l.steps.is_empty() {
-            still_seed(l, parts, seen(i))
-        } else {
-            let mut k = m.k[mesh.consts[i].clone()].to_vec();
-            k[0] = LEAD as f64;
-            held::seed(&k, parts, seen(i), rolls[i])
+        let parts = m.flank_parts(&mesh, i);
+        match &mesh.flanks[i] {
+            Side::Traced { domain, k, .. } => {
+                crate::traced::nearest(k, parts, seen(i), *domain).map(|[u, s]| [u, s, 0.0])
+            }
+            Side::Held(l) if l.steps.is_empty() => still_seed(l, parts, seen(i)),
+            Side::Held(_) => {
+                let mut k = m.k[mesh.consts[i].clone()].to_vec();
+                k[0] = LEAD as f64;
+                held::seed(&k, parts, seen(i), rolls[i])
+            }
         }
     };
     let start = Place { phase, lag: 0.0, pinion: place(0)?, gear: place(1)? };
@@ -765,12 +853,12 @@ fn still_seed(l: &Layout, parts: &[f64], q: [f64; 3]) -> Option<[f64; 3]> {
         let f = local(l, &c, false);
         f.x.iter().all(|x| x.is_finite()).then_some(f.x)
     };
-    let reach = crate::space::distance(q, [parts[0], parts[1], parts[2]]).max(1e-3);
+    let reach = held::reach(l.source, parts, q);
     let us = held::meridian_spans(l.source, reach);
+    let vs = held::turn_spans(l.source, reach, 36);
     let mut best: Option<([f64; 2], f64)> = None;
     for &u in &us {
-        for b in 0..36 {
-            let v = b as f64 * std::f64::consts::TAU / 36.0;
+        for &v in &vs {
             if let Some(x) = point(u, v) {
                 let d = crate::space::distance(x, q);
                 if best.is_none_or(|(_, c)| d < c) {
