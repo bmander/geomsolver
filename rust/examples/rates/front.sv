@@ -18,7 +18,13 @@
 // while x_u ≠ 0. At d = b²/a the front folds at the ends of the major axis, where the ellipse is
 // most curved: run `d` past 15mm and the march is refused just short of it, at u = 0, where a
 // node's area |x_d × x_u| falls to a hundredth of what it was — a fold, as an undercut is.
-// `solventc` says how far the front is marched.
+// `folded` is the same front run to 16mm: `solventc` says how far each is marched, and where
+// `folded` is refused.
+//
+// A point is held on the surface where the closed form puts the front: `held`, on the major axis
+// 35 from the centre, 5 inside the ellipse's end. The contact finds its place there, (5, 0°), and
+// the line along the surface's normal at it is claimed along the ellipse's plane's: the front
+// never leaves it.
 //
 // Closed form: x(d, u) = E(u) + d·n(u), n the inward unit normal; the fold at b²/a = 15.625.
 unit mm
@@ -57,3 +63,17 @@ z1 := point hint((0, 0, 10))
 fix((0, 0, 10)) z1
 
 front := Front(c, x1, y1, z1, a: a, b: b).p over (d in (0mm, 15mm), u in (-60deg, 60deg))
+folded := Front(c, x1, y1, z1, a: a, b: b).p over (d in (0mm, 16mm), u in (-60deg, 60deg))
+
+// `held` on the major axis, 35 from the centre: where the front at its end has run a − 35 = 5.
+ya := line(c, y1)
+held := point hint((35, 0, 0))
+held coincident front
+c level(ya) held
+c distance(35mm) held
+above := point hint((35, 0, 10))
+up := line(held, above)
+length(10mm) up
+front perpendicular(at: held) up
+plumb := line(c, z1)
+claim up parallel plumb                      // the swept surface is the ellipse's plane

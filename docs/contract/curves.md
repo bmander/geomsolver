@@ -209,8 +209,18 @@ and at which node.  `tests/lines.rs` is the gate: the offset front of an ellipse
 (`rust/examples/rates/front.sv`) against `E(u) + d·n(u)` and both derivatives at every place read,
 its convergence in the pieces (fifth order) and the check against twice them bounding the error,
 its fold refused short of `b²/a` and nearer it on twice the pieces, a contact's place found and its
-Jacobian (the variational equations) against central differences, a whole turn closed, and every
-refusal of the split.
+Jacobian (the variational equations) against central differences, a whole turn closed, the
+document's own point found at its place with its claim a theorem and `folded` refused where
+`solventc` says, and every refusal of the split.  **The rates series' fronts** (#370,
+`tests/rate_examples.rs`): `geodesic_circles.sv`, a front held to a sphere and to a cone by a row
+over the moved point alone, its normal placed in the tangent plane — the sphere's circles of
+latitude, refused short of the antipode where they focus, the cone's circles about the apex,
+unrolled — and `housing.sv`, a Wankel bore as the epitrochoid's parallel curve at the seal's
+radius, converging in the pieces, and past the waist's radius of curvature refused at the waist on
+the pieces and on twice them.  A fold is refused *early*, by the march's own error, and twice the
+pieces do not always bring it nearer: where a front closes on a point or a concave waist the place
+is not monotone in the pieces (the antipode 78.06 / 78.25 / 78.17 on 16 / 32 / 64, the waist
+14.52 / 13.72 / 13.92), so these gates bound it from below rather than hold it to converge.
 
 - A parametric curve (`curve.rs`) is *linear in its control points*, `C(t) = Σ Bᵢ(t) Pᵢ` (every
   B-spline).  A contact carries its own curve parameter as a `Param` slot and says
