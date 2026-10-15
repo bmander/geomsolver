@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.115 — October 2026**
+**Specification, Draft 0.116 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -997,6 +997,28 @@ block := solid(face(mouth, side_r, lid, side_l), from: face, to: back)
   plane, the section follows its rails: two give a similarity, three an affine map. Through
   0.112 two faces drawn apart had no loft, and a section reached its rails corner by corner.
   Lofting an arc edge with a line edge is not said yet.
+- **[0.116] A station may state a rate.** A relation MAY read the **rate** of an axis's direction
+  or of a point along a formal of the body it is written in, `rate(x over s)`, which always names
+  its formal: `rate(f.u over s) perpendicular f.v`. A rate stands where a direction is read — on
+  the left of `perpendicular` or `parallel`, against an axis, a line or a plane — and never as a
+  place or a magnitude; any other word after it is a syntax error. Every such relation is linear
+  in the rate. In a face family whose running number the formal is given (or a multiple of it), a
+  relation over a rate is no row of the drawing: the drawn station is the family's **home**, its
+  initial value, solved with the drawing, and every other station is the station **integrated**
+  from there along the running number, in both directions — its relations differentiated along
+  `s` and its rate relations together determine how it moves, and that MUST hold at every station
+  (a station whose rates leave it a freedom is refused, saying how many). What holds at the home
+  alone is said in **`initially { … }`**, a block of relations in the station's body that is a row
+  of the home's solve and of no other station's; a station with an `initially` and no rate is
+  refused. A formal given a number is a drawn instance at its home, where no rate is a row. A
+  formal that is an unknown of the drawing is **E040**, and so is a rate of anything but an axis or
+  a point, or one held against anything but a direction or a plane. The standard library's
+  `Minimal(n, up:, s:)` is the rotation-minimising frame of the station `n`: the plane `f` through
+  `n`'s origin square to the path as `n` is, `f.u`'s rate square to `f.v`, and `f.u` square to `up`
+  initially; along a guide in one plane with `up` its normal it is `On`'s frame, and along a
+  twisted path it turns against the path's Frenet frame at the path's torsion. A station that
+  states a rate runs over one path, not yet a chain. *Non-normative:* an implementation integrates
+  the station to well under "solved" and builds its walls through the integrated stations.
 - **A revolution** turns a face about `about:` a line or an axis, which MUST be one of the two (**E081**) and MUST lie in the **face's own plane** (E081) — a line drawn in another view names a direction this face knows nothing about. **[0.67]** A line lies there by membership; an axis where it is one of the plane's own axes (`std.z` on `std.front`), or, held entirely by `fix` (the plane too), where it stands now — else, placed by the solve, where the solid is evaluated, which refuses the solid if it does not. `sweep:` is how far and is a **magnitude**, a full turn where the document writes none; **which way is a word, not a sign** (§9.2, §9.4): `sense: cw | ccw`, right-handed about the line's own `p1 → p2` (an axis's own direction) unless `cw` is written, and a negative `sweep:` is **E040** at the value, in the words of the selector that replaces it.
 - **A body** names its **stock** in the brackets and takes its features from the **[0.32]** `union`, `cut` and **[0.22]** `common` **[0.85]** statements that name it. A solid whose brackets hold solids and no face is a body. **[0.99]** A solid whose brackets hold nothing, `pegs := solid()`, is an **empty body**: its stock is the first solid in `union` with it, so `B(s)` below is read with `S(s)` empty; which is first is no matter, the union being a set. A pattern then joins every copy alike — `repeat n as i { peg[i] union pegs }` — with none written apart as the stock. An empty body nothing is in `union` with is **E080** at its declaration, whatever cuts it. **[0.31]** A swept solid that a `union`, `cut` or `common` statement names is a body too, whose stock is its own sweep: the name means the sweep with its features wherever it is read, the sweep's faces keep their names (`plate.near`, not `plate.plate.near`), and a feature's are reached through it (`plate.hub.near`). A document wanting the bare sweep and the finished part under two names writes `body := solid(plate)` and puts the features on `body`.
 
@@ -3101,8 +3123,10 @@ arg            = [ IDENT ":" ] ( expr | hint_clause ) ; (* `w: hint(60)` leaves 
                                                           and seeds it, §5 [0.41] *)
 
 (* §9.2: every constraint is a prefix or an infix operator; `name(args…)` is retired. *)
-relation       = [ "claim" ] ( prefix_form | infix_form | orientation | solid_claim )
+relation       = [ "claim" ] ( prefix_form | infix_form | orientation | solid_claim | rate_form )
                  [ hint_clause ] ;  (* §4.3; presentation placement belongs to .svd *)
+rate_form      = "rate" "(" ref "over" IDENT ")" ( "perpendicular" | "parallel" ) ref ;
+                                                           (* §6.9 [0.116] *)
 prefix_form    = IDENT [ op_args ] ref ;
 infix_form     = ref ( IDENT | "@" ) [ op_args ] ref ;   (* `@` is `coincident` [0.44] *)
 orientation    = orient "(" ref "," ref "," ref ")" ;      (* §9.2: a call *)
@@ -3135,7 +3159,8 @@ hint           = "hint" ref hint_clause ;                  (* §11; unimplemente
 block          = ( "repeat" | "cycle" ) ( expr | IDENT "in" ref ) [ "as" IDENT ]
                  "{" { statement } "}"                (* IDENT "in" ref: §12.8 [0.27] *)
                | "ring"   expr "about" ref [ "as" IDENT ] "{" { statement } "}"
-               | "when"   truth "{" { statement } "}" ;    (* §12.9 [0.72] *)
+               | "when"   truth "{" { statement } "}"      (* §12.9 [0.72] *)
+               | "initially" "{" { relation } "}" ;      (* §6.9 [0.116] *)
 
 truth          = truth "or" conj | conj ;                 (* [0.72] *)
 conj           = conj "and" negation | negation ;

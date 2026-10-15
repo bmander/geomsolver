@@ -27,6 +27,7 @@ mod topology;
 mod attitude;
 mod turns;
 mod duals;
+mod rates;
 mod caches;
 
 pub use entities::{
@@ -46,6 +47,7 @@ pub use solid_eval::{Way, turn_of};
 pub use construction::{ThreePointArc, three_point_arc};
 pub use turns::{Turn, Derivation};
 pub use duals::{Dual, Move, Moves, Toward};
+pub use rates::{RateRow, RateWord};
 pub use caches::Caches;
 pub use geometry::{Box2, grow};
 pub use topology::{edge_ends, expand};
@@ -175,6 +177,11 @@ pub struct Sketch {
     /// to one (`t == s`) owns its parameter (`Sketch::add`).  The drawn station stands at the
     /// middle of the interval; `solid::family` moves it.
     pub held: BTreeMap<String, HeldNumber>,
+    /// **The rate rows** (#339 D3, `rates.rs`): what a station states of its rates along its
+    /// family's running number.  No row of the drawing — the drawn station is the home, its
+    /// initial value — but what the family integrates the station by (`solid::rated`).  Grafted
+    /// with the entities they name.
+    pub rates: Vec<RateRow>,
     /// Each free curve's energy as `settle_variational` last read it: its statements, pegs and
     /// whether its length is free.  Derived state, never saved.
     pub variational: Vec<crate::variational::Energy>,

@@ -348,6 +348,10 @@ pub fn to_json(sk: &Sketch) -> Json {
             if c.claim {
                 o.set("claim", Json::Bool(true));
             }
+            // a row of the home alone (#339 D3)
+            if c.initially {
+                o.set("initially", Json::Bool(true));
+            }
             // a bound (§9.6): its direction and an interval's high end, in the number's units
             if let Some(b) = c.bound {
                 let mut j = object([("cmp", b.cmp.text().into())]);
@@ -672,6 +676,7 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
         if let Some(a) = c.get("along") {
             nc.along = Some(along_from_json(&sk, &nc, a)?);
         }
+        nc.initially = c.get("initially").is_some_and(|v| v.as_bool());
         if let Some(cls) = c.get("class") {
             nc.class = crate::style::Classes(
                 cls.arr().iter().map(|s| s.as_str().to_string()).filter(|s| !s.is_empty()).collect(),
@@ -1571,6 +1576,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             let mut nc = Constraint::new(c.kind, args);
             nc.claim = c.claim;
             nc.bound = c.bound;
+            nc.initially = c.initially;
             nc.class = c.class.clone();
             nc.written = c.written.clone();
             nc.repeated = c.repeated;
@@ -1636,6 +1642,12 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             let mut nc = Constraint::new(c.kind, ents.into_iter().map(Arg::Ent).collect());
             nc.intrinsic = true;
             dst.add_quiet(nc);
+        }
+    }
+    // a rate row comes along with both the entities it names (#339 D3)
+    for r in &src.rates {
+        if let (Some(of), Some(to)) = (remap(r.of), remap(r.to)) {
+            dst.rates.push(crate::model::RateRow { of, to, ..r.clone() });
         }
     }
     // a held number that reads the geometry reads the copy of it, where that came along

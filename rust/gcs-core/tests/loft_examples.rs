@@ -78,6 +78,16 @@ fn the_spring_is_its_area_times_its_helix() {
     holds(&e, "spring", PI * 1.5 * 1.5 * helix);
 }
 
+/// **`ribbon.sv`** (#339 D3): the flat ribbon in the Frenet frame and in the minimal one, which
+/// twists against it, each its area times the helix's length.
+#[test]
+fn the_ribbon_is_its_area_times_its_helix_in_either_frame() {
+    let e = determined(include_str!("../../examples/lofts/ribbon.sv"));
+    let helix = 3.0 * ((24.0 * PI).powi(2) + 36.0).sqrt();
+    holds(&e, "facing", 2.0 * helix);
+    holds(&e, "twisting", 2.0 * helix);
+}
+
 /// **`bottle.sv`**: ruled, the sum of its two frusta; smooth, π∫x² dy along the drawn rail, x
 /// read from its own axis 80 mm along (`apart`), a quadrature exact on each span (the integrand
 /// x²·y′ of a cubic is of degree eight).

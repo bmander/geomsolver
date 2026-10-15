@@ -16,6 +16,23 @@ use crate::syntax::{
 const WHEN: &str = "a `when` is decided by comparing numbers, or names: `when d > 0mm { … }`, \
                     `when b != a { … }`";
 
+/// Mark every relation of an `initially` body a row of the home alone (#339 D3), through a
+/// `when` in it; anything else in it is refused, since only a relation can hold at one place.
+fn stamp_initially(stmts: &mut [Stmt], errs: &mut Vec<SynErr>) {
+    for st in stmts {
+        match &mut st.kind {
+            StmtKind::Relation(r) => r.initially = true,
+            StmtKind::Block(b) if b.kind == BlockKind::When => stamp_initially(&mut b.body, errs),
+            _ => errs.push(SynErr {
+                span: st.span,
+                message: "`initially` holds relations, which hold at the home alone; what a \
+                          station draws, it draws at every station"
+                    .into(),
+            }),
+        }
+    }
+}
+
 /// Apply block membership recursively. Faces and solids inherit their geometry's plane;
 /// instances carry membership into expansion. Conflicting clauses are diagnosed here.
 fn stamp_plane(stmts: &mut [Stmt], plane: &Ref, errs: &mut Vec<SynErr>) {
@@ -136,6 +153,10 @@ impl<'a> P<'a> {
                 let mut r = self.relation()?;
                 r.claim = true;
                 Some(StmtKind::Relation(r))
+            }
+            // `rate(f.u over s) perpendicular f.v` — a relation reading a rate (#339 D3)
+            "rate" if matches!(self.t.get(self.i + 1).map(|(t, _)| t), Some(Tok::P('('))) => {
+                self.rate_relation().map(StmtKind::Relation)
             }
             // `view(cyl.body) in views.right` — a picture asked of a solid (§6.11).  The
             // brackets are what it is a picture of, `in` is the trailer it already is
@@ -809,6 +830,15 @@ impl<'a> P<'a> {
             }
             return self.in_block(next_id, out);
         }
+        // `initially { … }` (#339 D3): rows of a family's home alone, hoisted as an `in` body is
+        if self.peek_word("initially")
+            && matches!(self.t.get(self.i + 1).map(|(t, _)| t), Some(Tok::P('{')))
+        {
+            if !self.take_statement(self.here()) {
+                return None;
+            }
+            return self.initially(next_id, out);
+        }
         if self.peek_word("param") {
             let lo = self.here().lo as usize;
             let kind = self.input()?;
@@ -864,6 +894,17 @@ impl<'a> P<'a> {
         if !nested {
             self.in_blocks.push(InBlock { plane, header, close });
         }
+        out.extend(body);
+        Some(())
+    }
+
+    /// Hoist an `initially { … }` body (#339 D3), each relation in it marked a row of the home
+    /// alone.  It says only relations: what a station draws, it draws everywhere.
+    fn initially(&mut self, next_id: &mut u32, out: &mut Vec<Stmt>) -> Option<()> {
+        self.i += 1; // `initially`
+        let (mut body, joint) = self.braced_body(next_id)?;
+        self.no_open_joint(joint, "an `initially` block");
+        stamp_initially(&mut body, &mut self.errs);
         out.extend(body);
         Some(())
     }
