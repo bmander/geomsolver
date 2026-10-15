@@ -262,17 +262,27 @@ impl Rated {
         self.keep = None;
     }
 
-    /// The station's rate at `(s, x)`, or why there is none: the stacked rows and their rank.
-    fn rate_at(&mut self, s: f64, x: &[f64], f: &mut [f64]) -> Result<(), String> {
+    /// The station stood at `(s, x)`: its state written, its running number held at `s`, its
+    /// numbers over it worked out there, and the system compiled and its constants read where it
+    /// now stands — `false` where a number does not work out.
+    fn stand(&mut self, s: f64, x: &[f64]) -> bool {
         for (&p, &v) in self.params.iter().zip(x) {
             self.sk.params[p as usize].value = v;
         }
         self.sk.params[self.levers.held as usize].value = s;
         if !self.levers.lean(&mut self.sk, s) {
-            return Err("has a number over its running number that does not work out there".into());
+            return false;
         }
         self.respan();
         self.sys.refresh_consts(&self.sk);
+        true
+    }
+
+    /// The station's rate at `(s, x)`, or why there is none: the stacked rows and their rank.
+    fn rate_at(&mut self, s: f64, x: &[f64], f: &mut [f64]) -> Result<(), String> {
+        if !self.stand(s, x) {
+            return Err("has a number over its running number that does not work out there".into());
+        }
         let z = self.sys.z0(&self.sk);
         let g = self.sys.conditioned(&z);
         let g = g.as_mat();
@@ -323,15 +333,9 @@ impl Rated {
     /// accuracy, whatever the integration made of it across a kink in a law, and only the
     /// freedom the rates hold (a minimum-norm step has no part along it) is the flow's.
     fn meet(&mut self, s: f64, y: &[f64]) {
-        for (&p, &v) in self.params.iter().zip(y) {
-            self.sk.params[p as usize].value = v;
-        }
-        self.sk.params[self.levers.held as usize].value = s;
-        if !self.levers.lean(&mut self.sk, s) {
+        if !self.stand(s, y) {
             return;
         }
-        self.respan();
-        self.sys.refresh_consts(&self.sk);
         let mut z = self.sys.z0(&self.sk);
         let hard = self.sys.hard_rows();
         for _ in 0..MEETS {

@@ -134,7 +134,7 @@ fn kid_slot(kind: EntKind, label: Option<&str>, positional: usize, in_holes: boo
 struct DeclList {
     children: Vec<Vec<Kid>>,
     normal: Option<Ref>,
-    sense: Option<crate::syntax::Sense>,
+    sense: Option<Sense>,
     swp: SweepParts,
     surface_from: Option<Arg>,
     surface_to: Option<Arg>,
@@ -359,7 +359,7 @@ impl<'a> P<'a> {
         // a circle about a point in space, square to an axis (#363 S6)
         let mut normal: Option<Ref> = None;
         // an arc drawn in a plane turning clockwise from its start (#363 S4)
-        let mut sense: Option<crate::syntax::Sense> = None;
+        let mut sense: Option<Sense> = None;
         let name_end = self.prev_hi();
         let open = self.here().lo as usize;
         let mut list_span = Span::at(name_end);
@@ -438,15 +438,7 @@ impl<'a> P<'a> {
                             self.fail("`sense:` is given twice");
                             return None;
                         }
-                        let w = self.ident()?;
-                        sense = Some(match w.text.as_str() {
-                            "ccw" => crate::syntax::Sense::Ccw,
-                            "cw" => crate::syntax::Sense::Cw,
-                            other => {
-                                self.fail(&format!("`sense` is `cw` or `ccw`, not `{other}`"));
-                                return None;
-                            }
-                        });
+                        sense = Some(self.sense_word()?);
                     }
                     Some(l) if kind == EntKind::Circle && l == "normal" => {
                         if normal.is_some() {
@@ -873,6 +865,20 @@ impl<'a> P<'a> {
         self.fail(&m);
     }
 
+    /// Which way, after a `sense:` label: a word, never a sign (§9.2) — a revolution's turn, an
+    /// arc's (#363 S4).
+    fn sense_word(&mut self) -> Option<Sense> {
+        let w = self.ident()?;
+        match w.text.as_str() {
+            "ccw" => Some(Sense::Ccw),
+            "cw" => Some(Sense::Cw),
+            other => {
+                self.fail(&format!("`sense` is `cw` or `ccw`, not `{other}`"));
+                None
+            }
+        }
+    }
+
     /// One of a solid's sweep arguments, the label already eaten: `from: EXPR`, `to: EXPR`,
     /// `depth: EXPR`, `about: REF`, `sweep: EXPR`, `sense: cw|ccw`.
     fn sweep_arg(&mut self, label: &str, parts: &mut SweepParts) -> Option<()> {
@@ -908,15 +914,7 @@ impl<'a> P<'a> {
                 if parts.sense.is_some() {
                     return twice(self);
                 }
-                let w = self.ident()?;
-                parts.sense = Some(match w.text.as_str() {
-                    "ccw" => Sense::Ccw,
-                    "cw" => Sense::Cw,
-                    other => {
-                        self.fail(&format!("`sense` is `cw` or `ccw`, not `{other}`"));
-                        return None;
-                    }
-                });
+                parts.sense = Some(self.sense_word()?);
             }
             _ => {
                 let slot = match label {

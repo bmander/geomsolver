@@ -19,8 +19,8 @@ use crate::common::parsed::{build, determined, read, solved};
 /// Three axes through the origin drawn in space; a helix of radius `r` rising `pitch` a turn over
 /// `turns` of them about `z` from `x`, traced by its point's ordinates as `u` runs over `(0, 1)`;
 /// a station on any path whose plane stands square to it and turns by `std.Minimal`'s rate, a
-/// `w` × `h` rectangle centred in it; and the same rectangle in `std.Minimal`'s plane over
-/// `std.OnHelix`'s station.
+/// `w` × `h` rectangle centred in it; the same rectangle in `std.Minimal`'s plane over
+/// `std.OnHelix`'s station; and a round section of radius `r` in `std.On`'s plane on any path.
 const PATHS: &str = "unit mm
 use std (coords, horizontal, vertical)
 
@@ -89,6 +89,15 @@ component Rider(g: path, up: axis, w: Length, h: Length, s: Scalar) {
   st := std.On(g, up: up, s: s)
   sec := Rect(st.n, w: w, h: h)
   f := face(sec.a, sec.b, sec.c, sec.d, -> close)
+}
+
+component Round(g: path, up: axis, r: Length, s: Scalar) {
+  st := std.On(g, up: up, s: s)
+  in st.n {
+    k := circle(center: st.n.origin)
+    radius(r) k
+  }
+  f := face(k)
 }
 
 component Rect(n: plane, w: Length, h: Length) {
@@ -461,14 +470,6 @@ fn a_spline_in_space_is_drawn_in_the_box() {
 #[test]
 fn a_tube_along_a_spline_in_space_is_its_area_along_its_length() {
     let e = with(&format!("{CUBIC}
-component Round(g: path, up: axis, r: Length, s: Scalar) {{
-  st := std.On(g, up: up, s: s)
-  in st.n {{
-    k := circle(center: st.n.origin)
-    radius(r) k
-  }}
-  f := face(k)
-}}
 tube := solid(Round(cubic, std.z, r: 3mm).f over s in (0, 1))"));
     let length = integral(0.0, 1.0, |t| {
         let d = bezier(&CUBIC_CTRL, t)[1];
@@ -718,14 +719,6 @@ length(20mm) l2
 length(20mm) l4
 radius(20mm) k3
 l4 parallel std.z
-component Pipe(g: path, up: axis, r: Length, s: Scalar) {
-  st := std.On(g, up: up, s: s)
-  in st.n {
-    k := circle(center: st.n.origin)
-    radius(r) k
-  }
-  f := face(k)
-}
 component Bar(g: path, up: axis, lo: Length, hi: Length, s: Scalar) {
   st := std.On(g, up: up, s: s)
   sec := Span(st.n, lo: lo, hi: hi)
@@ -755,7 +748,7 @@ component Span(n: plane, lo: Length, hi: Length) {
 #[test]
 fn a_pipe_bent_in_two_planes_is_one_chain() {
     let e = with(&format!("{PIPE}
-tube := solid(Pipe(route, std.z, r: 4mm).f over s in (0, 5))
+tube := solid(Round(route, std.z, r: 4mm).f over s in (0, 5))
 square := solid(Bar(route, std.z, lo: -1mm, hi: 1mm).f over s in (0, 5))
 bar := solid(Bar(route, std.z, lo: -1mm, hi: 2mm).f over s in (0, 5))"));
     let at = |n: &str| e.sketch.world_point(e.map.ent_named(n).unwrap().i());
@@ -808,14 +801,6 @@ radius(20mm) k3
 l4 parallel std.z
 l2 parallel std.y
 d coincident std.top
-component Round(g: path, up: axis, r: Length, s: Scalar) {
-  st := std.On(g, up: up, s: s)
-  in st.n {
-    k := circle(center: st.n.origin)
-    radius(r) k
-  }
-  f := face(k)
-}
 tube := solid(Round(route, std.z, r: 4mm).f over s in (0, 5))");
     near(exact(&e, "tube"), 16.0 * PI * (60.0 + 20.0 * PI), 1e-9, "the tube");
     let sk = &e.sketch;
@@ -828,14 +813,11 @@ tube := solid(Round(route, std.z, r: 4mm).f over s in (0, 5))");
     }
 }
 
-/// **In space a chain turns either way at an arc** (#363 S4, by S6): L4's rule — an arc runs
-/// counter-clockwise from its start, so a chain drawn in a plane turns left at every one — holds
-/// of an arc drawn in a plane; one over points in space faces its plane as its points do.  So
-/// L0's S-bend, a left turn then a right, is one chain drawn in space: its tube is Pappus's, and
-/// its second bend's plane faces down.
-#[test]
-fn in_space_a_chain_turns_either_way_at_an_arc() {
-    let e = with("
+/// L0's S-bend drawn in space, no plane written: a straight, a left turn, a straight, a right
+/// turn, a straight, each 20 and each bend of radius 20, its third link `k3` as given — and a
+/// round tube along it.
+fn s_bend_in_space(k3: &str) -> String {
+    "
 a := point hint((-20, 0, 0))
 b := point hint((0, 0, 0))
 fix((0mm, 0mm, 0mm)) b
@@ -847,7 +829,7 @@ c2 := point hint((40, 40, 0))
 f := point hint((40, 60, 0))
 g := point hint((60, 60, 0))
 route := (l0 := line(a, b)) -> tangent (k1 := arc(center: c1)) ->
-  tangent (l2 := line(d, e)) -> tangent (k3 := arc(center: c2)) ->
+  tangent (l2 := line(d, e)) -> tangent K3 ->
   tangent (l4 := line(f, g))
 length(20mm) l0
 length(20mm) l2
@@ -856,15 +838,45 @@ radius(20mm) k3
 d coincident std.top
 l2 parallel std.y
 l4 parallel std.x
-component Round(g: path, up: axis, r: Length, s: Scalar) {
-  st := std.On(g, up: up, s: s)
-  in st.n {
-    k := circle(center: st.n.origin)
-    radius(r) k
-  }
-  f := face(k)
+tube := solid(Round(route, std.z, r: 4mm).f over s in (0, 5))"
+        .replace("K3", k3)
 }
-tube := solid(Round(route, std.z, r: 4mm).f over s in (0, 5))");
+
+/// The same S-bend drawn in `std.top`'s block, `before` written in the block ahead of the chain.
+fn s_bend_in_top(before: &str, k3: &str) -> String {
+    "
+in std.top {
+  a := point
+  b := point hint((20, 0))
+  c1 := point hint((20, 20))
+  d := point hint((40, 20))
+  e := point hint((40, 40))
+  c2 := point hint((60, 40))
+  f := point hint((60, 60))
+  g := point hint((80, 60))
+  fix((0mm, 0mm)) a
+  BEFORE
+  route := horizontal (l0 := line(a, b)) -> tangent (k1 := arc(center: c1)) ->
+    tangent vertical (l2 := line(d, e)) -> tangent K3 ->
+    tangent horizontal (l4 := line(f, g))
+  length(20mm) l0
+  length(20mm) l2
+  length(20mm) l4
+  radius(20mm) k1
+  radius(20mm) k3
+}
+tube := solid(Round(route, std.z, r: 4mm).f over s in (0, 5))"
+        .replace("BEFORE", before).replace("K3", k3)
+}
+
+/// **In space a chain turns either way at an arc** (#363 S4, by S6): L4's rule — an arc runs
+/// counter-clockwise from its start, so a chain drawn in a plane turns left at every one — holds
+/// of an arc drawn in a plane; one over points in space faces its plane as its points do.  So
+/// L0's S-bend, a left turn then a right, is one chain drawn in space: its tube is Pappus's, and
+/// its second bend's plane faces down.
+#[test]
+fn in_space_a_chain_turns_either_way_at_an_arc() {
+    let e = with(&s_bend_in_space("(k3 := arc(center: c2))"));
     near(exact(&e, "tube"), 16.0 * PI * (60.0 + 20.0 * PI), 1e-9, "the S-bend");
     let at = |n: &str| e.sketch.world_point(e.map.ent_named(n).unwrap().i());
     assert!(sub(at("g"), [60.0, 60.0, 0.0]).iter().all(|d| d.abs() <= 1e-9), "{:?}", at("g"));
@@ -888,42 +900,12 @@ tube := solid(Round(route, std.z, r: 4mm).f over s in (0, 5))");
 /// is refused: it is drawn one way.
 #[test]
 fn a_chain_walks_an_arc_it_enters_at_its_end_from_there() {
-    let round = "
-component Round(g: path, up: axis, r: Length, s: Scalar) {
-  st := std.On(g, up: up, s: s)
-  in st.n {
-    k := circle(center: st.n.origin)
-    radius(r) k
-  }
-  f := face(k)
-}";
     let length = 60.0 + 20.0 * PI;
     for (before, link) in [("", "(k3 := arc(center: c2, start: f, end: e))"),
                            ("k3 := arc(center: c2, start: f, end: e)", "k3")] {
-        let mut e = with(&format!("{round}
-in std.top {{
-  a := point
-  b := point hint((20, 0))
-  c1 := point hint((20, 20))
-  d := point hint((40, 20))
-  e := point hint((40, 40))
-  c2 := point hint((60, 40))
-  f := point hint((60, 60))
-  g := point hint((80, 60))
-  fix((0mm, 0mm)) a
-  {before}
-  route := horizontal (l0 := line(a, b)) -> tangent (k1 := arc(center: c1)) ->
-    tangent vertical (l2 := line(d, e)) -> tangent {link} ->
-    tangent horizontal (l4 := line(f, g))
-  length(20mm) l0
-  length(20mm) l2
-  length(20mm) l4
-  radius(20mm) k1
-  radius(20mm) k3
-}}
+        let mut e = with(&format!("{}
 claim k3.start coincident f
-claim k3.end coincident e
-tube := solid(Round(route, std.z, r: 4mm).f over s in (0, 5))"));
+claim k3.end coincident e", s_bend_in_top(before, link)));
         near(exact(&e, "tube"), 16.0 * PI * length, 1e-9, "the S-bend in a plane");
         let at = |n: &str| e.sketch.world_point(e.map.ent_named(n).unwrap().i());
         assert!(sub(at("g"), [80.0, 60.0, 0.0]).iter().all(|d| d.abs() <= 1e-9), "{:?}", at("g"));
@@ -935,34 +917,13 @@ tube := solid(Round(route, std.z, r: 4mm).f over s in (0, 5))"));
     let pipe = PIPE.replace("tangent (k3 := arc(center: c2)) ->",
                             "tangent (k3 := arc(center: c2, start: f, end: e, sense: cw)) ->");
     let e = with(&format!("{pipe}
-tube := solid(Pipe(route, std.z, r: 4mm).f over s in (0, 5))
+tube := solid(Round(route, std.z, r: 4mm).f over s in (0, 5))
 square := solid(Bar(route, std.z, lo: -1mm, hi: 1mm).f over s in (0, 5))"));
     near(exact(&e, "tube"), 16.0 * PI * length, 1e-9, "the bent pipe's round tube");
     near(exact(&e, "square"), 4.0 * length, 1e-9, "the bent pipe's square tube");
     let at = |n: &str| e.sketch.world_point(e.map.ent_named(n).unwrap().i());
     assert!(sub(at("g"), [20.0, 60.0, 40.0]).iter().all(|d| d.abs() <= 1e-9), "{:?}", at("g"));
-    let e = with(&format!("{round}
-a := point hint((-20, 0, 0))
-b := point hint((0, 0, 0))
-fix((0mm, 0mm, 0mm)) b
-c1 := point hint((0, 20, 0))
-fix((0mm, 20mm, 0mm)) c1
-d := point hint((20, 20, 0))
-e := point hint((20, 40, 0))
-c2 := point hint((40, 40, 0))
-f := point hint((40, 60, 0))
-g := point hint((60, 60, 0))
-route := (l0 := line(a, b)) -> tangent (k1 := arc(center: c1)) ->
-  tangent (l2 := line(d, e)) -> tangent (k3 := arc(center: c2, start: f, end: e)) ->
-  tangent (l4 := line(f, g))
-length(20mm) l0
-length(20mm) l2
-length(20mm) l4
-radius(20mm) k3
-d coincident std.top
-l2 parallel std.y
-l4 parallel std.x
-tube := solid(Round(route, std.z, r: 4mm).f over s in (0, 5))"));
+    let e = with(&s_bend_in_space("(k3 := arc(center: c2, start: f, end: e))"));
     near(exact(&e, "tube"), 16.0 * PI * length, 1e-9, "the S-bend in space");
     let sk = &e.sketch;
     let k = e.map.ent_named("k3").unwrap();
@@ -991,35 +952,7 @@ in std.top {{
 /// turns as its points stand, is refused, and so is a clockwise half turn.
 #[test]
 fn a_chain_in_a_plane_turns_right_at_an_arc_said_to_turn_clockwise() {
-    let e = with("
-component Round(g: path, up: axis, r: Length, s: Scalar) {
-  st := std.On(g, up: up, s: s)
-  in st.n {
-    k := circle(center: st.n.origin)
-    radius(r) k
-  }
-  f := face(k)
-}
-in std.top {
-  a := point
-  b := point hint((20, 0))
-  c1 := point hint((20, 20))
-  d := point hint((40, 20))
-  e := point hint((40, 40))
-  c2 := point hint((60, 40))
-  f := point hint((60, 60))
-  g := point hint((80, 60))
-  fix((0mm, 0mm)) a
-  route := horizontal (l0 := line(a, b)) -> tangent (k1 := arc(center: c1)) ->
-    tangent vertical (l2 := line(d, e)) -> tangent (k3 := arc(center: c2, sense: cw)) ->
-    tangent horizontal (l4 := line(f, g))
-  length(20mm) l0
-  length(20mm) l2
-  length(20mm) l4
-  radius(20mm) k1
-  radius(20mm) k3
-}
-tube := solid(Round(route, std.z, r: 4mm).f over s in (0, 5))");
+    let e = with(&s_bend_in_top("", "(k3 := arc(center: c2, sense: cw))"));
     near(exact(&e, "tube"), 16.0 * PI * (60.0 + 20.0 * PI), 1e-9, "the S-bend in a plane");
     let at = |n: &str| e.sketch.world_point(e.map.ent_named(n).unwrap().i());
     assert!(sub(at("g"), [80.0, 60.0, 0.0]).iter().all(|d| d.abs() <= 1e-9), "{:?}", at("g"));

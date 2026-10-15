@@ -457,15 +457,17 @@ pub fn scene3d_of(sk: &Sketch, unit: f64, layer: Layer) -> Vec<Item3> {
     }
     // a curve traced in space — a spline over points in space among them (#363) — stands in
     // space and in no view, as an axis does: its polyline refined to the scene's flatness
-    let stations = sk.stations();
-    for i in (0..sk.traced.len()).filter(|_| datums) {
-        let e = EntRef::new(EntKind::Traced, i);
-        if stations.contains(&e) {
-            continue;
-        }
-        let pts = traced_polyline(sk, i, unit);
-        if pts.len() >= 2 {
-            items.push(Item3 { of: Some(e), in_plane: None, what: Part::Drawn, pts });
+    if datums {
+        let stations = sk.stations();
+        for i in 0..sk.traced.len() {
+            let e = EntRef::new(EntKind::Traced, i);
+            if stations.contains(&e) {
+                continue;
+            }
+            let pts = traced_polyline(sk, i, unit);
+            if pts.len() >= 2 {
+                items.push(Item3 { of: Some(e), in_plane: None, what: Part::Drawn, pts });
+            }
         }
     }
     // **the object's creases, and none of its silhouettes.**  A silhouette is a fact about a

@@ -61,8 +61,31 @@ pub enum RowKind {
     /// A point a motion carries (`screw::Reading::Carried`, its constants the motion's steps).
     Carried,
     /// A point on a spline over points in space (#363 S3): `X − Σ Rᵢ(u)·Pᵢ`, its columns
-    /// `[u, P₀ … Pₙ₋₁, X]`, its constants the knot vector and the weights (`spline_row`).
+    /// `[u, P₀ … Pₙ₋₁, X]`, its constants the knot vector and the weights (`spline_res`,
+    /// `spline_jets`).
     Spline,
+}
+
+impl RowKind {
+    /// Its kernel at a row's widths.
+    fn kernel(self, n_par: usize, n_const: usize) -> Option<Kernel> {
+        match self {
+            RowKind::Kernel(k) => KERNELS.get(k).copied(),
+            RowKind::Carried => Some(screw::kernel(screw::Reading::Carried, n_par, n_const)),
+            RowKind::Spline => Some(Kernel { name: "spline_point3", n_res: 3, n_par, n_const,
+                degree: 1, res: spline_res, jac: spline_jac, const_jac: None, form: None }),
+        }
+    }
+
+    /// How it is written in the encoding: a kernel's id, `-1` a carried point, `-2` a point on a
+    /// spline.
+    fn code(self) -> f64 {
+        match self {
+            RowKind::Kernel(k) => k as f64,
+            RowKind::Carried => -1.0,
+            RowKind::Spline => -2.0,
+        }
+    }
 }
 
 /// One row of the body: what it states (`kind`), the variable-table slot each of its columns
@@ -72,27 +95,6 @@ pub struct Row {
     pub kind: RowKind,
     pub cols: Vec<u32>,
     pub consts: Vec<f64>,
-}
-
-impl Row {
-    fn kernel(kind: RowKind, n_par: usize, n_const: usize) -> Option<Kernel> {
-        match kind {
-            RowKind::Kernel(k) => KERNELS.get(k).copied(),
-            RowKind::Carried => Some(screw::kernel(screw::Reading::Carried, n_par, n_const)),
-            RowKind::Spline => Some(Kernel { name: "spline_point3", n_res: 3, n_par, n_const,
-                degree: 1, res: spline_res, jac: spline_jac, const_jac: None, form: None }),
-        }
-    }
-
-    /// How the row is written in the encoding: a kernel's id, `-1` a carried point, `-2` a point
-    /// on a spline.
-    fn code(kind: RowKind) -> f64 {
-        match kind {
-            RowKind::Kernel(k) => k as f64,
-            RowKind::Carried => -1.0,
-            RowKind::Spline => -2.0,
-        }
-    }
 }
 
 /* -- a spline over points in space -------------------------------------------------------- */
@@ -206,7 +208,7 @@ impl Body {
         }
         let mut n_res = 0;
         for r in &rows {
-            let kn = Row::kernel(r.kind, r.cols.len(), r.consts.len()).ok_or("no such kernel")?;
+            let kn = r.kind.kernel(r.cols.len(), r.consts.len()).ok_or("no such kernel")?;
             if let RowKind::Kernel(k) = r.kind {
                 if !taylor::has_form(k) {
                     return Err(format!("a body traced in space reads its rows' derivatives \
@@ -226,7 +228,7 @@ impl Body {
             f.extend_from_slice(&t.flat);
         }
         for r in &rows {
-            f.push(Row::code(r.kind));
+            f.push(r.kind.code());
             f.push(r.cols.len() as f64);
             f.push(r.consts.len() as f64);
             f.extend(r.cols.iter().map(|&c| c as f64));
@@ -288,9 +290,9 @@ fn view(flat: &[f64]) -> Option<View<'_>> {
     }
     let mut rows = Vec::with_capacity(n_rows);
     for _ in 0..n_rows {
-        let kid = match flat.get(at).copied()? {
-            k if k == -1.0 => RowKind::Carried,
-            k if k == -2.0 => RowKind::Spline,
+        let kind = match flat.get(at).copied()? {
+            -1.0 => RowKind::Carried,
+            -2.0 => RowKind::Spline,
             _ => RowKind::Kernel(g(at)?),
         };
         let (n_cols, n_consts) = (g(at + 1)?, g(at + 2)?);
@@ -300,9 +302,13 @@ fn view(flat: &[f64]) -> Option<View<'_>> {
             return None;
         }
         let consts = take(n_consts, &mut at)?;
-        let kn = Row::kernel(kid, n_cols, n_consts)?;
-        match kid {
-            RowKind::Kernel(_) if kn.n_par != n_cols || kn.n_const != n_consts => return None,
+        let kn = kind.kernel(n_cols, n_consts)?;
+        match kind {
+            RowKind::Kernel(_) => {
+                if kn.n_par != n_cols || kn.n_const != n_consts {
+                    return None;
+                }
+            }
             RowKind::Carried => {
                 let steps = held::read_steps(consts)?;
                 if n_cols != 7 + held::steps_width(&steps) {
@@ -312,9 +318,8 @@ fn view(flat: &[f64]) -> Option<View<'_>> {
             RowKind::Spline => {
                 spline_shape(n_cols, n_consts, consts)?;
             }
-            RowKind::Kernel(_) => {}
         }
-        rows.push((kn, kid, cols, consts));
+        rows.push((kn, kind, cols, consts));
     }
     let mut seeds = Vec::with_capacity(n_q);
     for _ in 0..n_q {
@@ -462,10 +467,10 @@ impl View<'_> {
         for k in 1..=order.min(taylor::ORDER - 2) {
             let z: Vec<Jet> = outer.iter().chain(&q).chain(&w).copied().collect();
             let mut rk = Vec::with_capacity(nq);
-            for (kn, kid, cols, consts) in &self.rows {
+            for (kn, kind, cols, consts) in &self.rows {
                 let v: Vec<Jet> = cols.iter().map(|&c| z[c]).collect();
                 let mut r = vec![Jet::default(); kn.n_res];
-                match kid {
+                match kind {
                     RowKind::Kernel(id) => {
                         if !taylor::residual(*id, &v, consts, &mut r, &mut jrow) {
                             return None;

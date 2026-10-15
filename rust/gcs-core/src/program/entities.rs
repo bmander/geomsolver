@@ -799,11 +799,7 @@ pub(super) fn arcs_in_space(sk: &mut Sketch, map: &super::SourceMap, deferred: &
         let u = to_s.map(|x| x / norm(to_s));
         let w = cross(n, to_s);
         let v = w.map(|x| x / norm(w));
-        let ua = sk.axis(u, &format!("{name}#plane.u"));
-        let va = sk.axis(v, &format!("{name}#plane.v"));
-        let pi = sk.plane(ua, va, c, &format!("{name}#plane"));
-        sk.set_plane_origin(pi, c);
-        let origin = sk.planes[pi].origin as usize;
+        let (ua, va, pi, origin) = round_plane(sk, &name, [u, v], c);
         let start = sk.point(norm(to_s), 0.0, false, &format!("{name}#start"));
         sk.params[sk.points[start].y as usize].fixed = true;
         let end = sk.point(dot(to_e, u), dot(to_e, v), false, &format!("{name}#end"));
@@ -830,16 +826,10 @@ pub(super) fn arcs_in_space(sk: &mut Sketch, map: &super::SourceMap, deferred: &
         for &(p, q) in &ties {
             sk.stands_for.insert(p as u32, q as u32);
         }
-        let mut rows: Vec<Constraint> = ties.iter()
-            .map(|&(p, q)| Constraint::coincident(EntRef::point(p), EntRef::point(q)))
-            .map(|mut c| { c.kind = CKind::Coincident3; c })
-            .collect();
+        let mut rows: Vec<Constraint> = ties.iter().map(|&(p, q)| coincident3(p, q)).collect();
         rows.push(Constraint::two_line(CKind::Perpendicular3, EntRef::new(EntKind::Axis, ua),
                                        EntRef::new(EntKind::Axis, va)));
-        for mut c in rows {
-            c.intrinsic = true;
-            sk.add(c);
-        }
+        add_intrinsic(sk, rows);
     }
 }
 
@@ -850,7 +840,7 @@ pub(super) fn arcs_in_space(sk: &mut Sketch, map: &super::SourceMap, deferred: &
 /// it is drawn one way.  A chain whose links do not meet is left to `solids::faces::
 /// validate_chain`, which says so.
 pub(super) fn walked_back(sk: &Sketch, res: &Resolver, diags: &mut Vec<Diag>) -> BTreeSet<usize> {
-    let (mut back, mut forward) = (BTreeMap::new(), BTreeMap::new());
+    let (mut back, mut forward) = (BTreeSet::new(), BTreeSet::new());
     for c in res.chains.values() {
         let links: Option<Vec<(EntRef, [u32; 2])>> = c.links.iter().map(|r| {
             let e = res.entity(sk, r).filter(|e| e.i() < sk.count(e.kind))
@@ -869,17 +859,17 @@ pub(super) fn walked_back(sk: &Sketch, res: &Resolver, diags: &mut Vec<Diag>) ->
             };
             let (mine, other) = if reversed { (&mut back, &forward) } else { (&mut forward, &back) };
             if e.kind == EntKind::Arc {
-                if other.contains_key(&e.i()) {
+                if other.contains(&e.i()) {
                     diags.push(Diag::new(Code::E080, r.span, None, format!("`{}` is walked \
                         from its start in one chain and from its end in another, and an arc is \
                         drawn one way", crate::syntax::ref_text(r))));
                 }
-                mine.insert(e.i(), ());
+                mine.insert(e.i());
             }
             entry = Some(if reversed { s } else { t });
         }
     }
-    back.into_keys().filter(|i| !forward.contains_key(i)).collect()
+    back.difference(&forward).copied().collect()
 }
 
 /// **A circle about a point in space stands square to its `normal:`** (#363 S6): `k := circle(
@@ -932,10 +922,7 @@ pub(super) fn circles_in_space(
         let at = sk.world_point(c);
         let name = map.name_of(EntRef::circle(i)).cloned()
             .unwrap_or_else(|| io::entity_name(EntRef::circle(i)));
-        let ua = sk.axis(u, &format!("{name}#plane.u"));
-        let va = sk.axis(v, &format!("{name}#plane.v"));
-        let pi = sk.plane(ua, va, at, &format!("{name}#plane"));
-        sk.set_plane_origin(pi, at);
+        let (ua, va, _, origin) = round_plane(sk, &name, [u, v], at);
         // the gauge: the world's axis least along the normal, held, and taken again where a
         // solve leaves the normal near it (`Sketch::retake_round_gauges`)
         let gauge = sk.axis(e, &format!("{name}#gauge"));
@@ -943,21 +930,40 @@ pub(super) fn circles_in_space(
             sk.params[p as usize].fixed = true;
         }
         sk.round_gauges.insert(gauge as u32, [ua as u32, va as u32]);
-        let origin = sk.planes[pi].origin as usize;
         sk.circles[i].center = origin as u32;
         sk.stands_for.insert(origin as u32, c as u32);
         let ax = |a: usize| EntRef::new(EntKind::Axis, a);
-        let mut tie = Constraint::coincident(EntRef::point(origin), EntRef::point(c));
-        tie.kind = CKind::Coincident3;
-        let rows = [tie,
+        add_intrinsic(sk, [coincident3(origin, c),
             Constraint::two_line(CKind::Perpendicular3, ax(ua), axis),
             Constraint::two_line(CKind::Perpendicular3, ax(va), axis),
             Constraint::two_line(CKind::Perpendicular3, ax(ua), ax(va)),
-            Constraint::two_line(CKind::Perpendicular3, ax(ua), ax(gauge))];
-        for mut r in rows {
-            r.intrinsic = true;
-            sk.add(r);
-        }
+            Constraint::two_line(CKind::Perpendicular3, ax(ua), ax(gauge))]);
+    }
+}
+
+/// The plane a round over points in space is drawn in (#363 S6): its axes along `u` and `v`,
+/// through `at`, named under the round's `name` — its axes, the plane and its origin.
+fn round_plane(sk: &mut Sketch, name: &str, [u, v]: [[f64; 3]; 2], at: [f64; 3])
+    -> (usize, usize, usize, usize) {
+    let ua = sk.axis(u, &format!("{name}#plane.u"));
+    let va = sk.axis(v, &format!("{name}#plane.v"));
+    let pi = sk.plane(ua, va, at, &format!("{name}#plane"));
+    sk.set_plane_origin(pi, at);
+    (ua, va, pi, sk.planes[pi].origin as usize)
+}
+
+/// Points `p` and `q` one point in space.
+fn coincident3(p: usize, q: usize) -> crate::constraints::Constraint {
+    let mut c = crate::constraints::Constraint::coincident(EntRef::point(p), EntRef::point(q));
+    c.kind = crate::constraints::CKind::Coincident3;
+    c
+}
+
+/// Each of `rows` added as the drawing's own statement, no relation of the document's.
+fn add_intrinsic(sk: &mut Sketch, rows: impl IntoIterator<Item = crate::constraints::Constraint>) {
+    for mut c in rows {
+        c.intrinsic = true;
+        sk.add(c);
     }
 }
 

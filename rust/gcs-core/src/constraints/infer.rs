@@ -305,8 +305,10 @@ fn validate_ordinate(
 /// or a curve traced in space (#363 S1), whichever the contact names — and `None` for a kind
 /// whose own unknown runs along nothing.
 pub(crate) fn contact_carrier(kind: CKind, args: &[Arg]) -> Option<EntRef> {
-    let traced = (kind == CKind::PointOnTraced).then(|| kind.contact_on(SpecKind::Traced));
-    let (e, _) = kind.place_on().or(traced.flatten())?;
+    let (e, _) = match kind {
+        CKind::PointOnTraced => kind.contact_on(SpecKind::Traced)?,
+        _ => kind.place_on()?,
+    };
     Some(args[e].ent())
 }
 
