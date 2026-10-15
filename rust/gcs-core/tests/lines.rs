@@ -5,7 +5,7 @@
 //! its derivatives against `E(u) + d·n(u)`, the march's convergence in its pieces measured and
 //! held to the march on twice the pieces, its fold refused short of `b²/a` where its least radius
 //! of curvature runs out, a contact on the surface solved and its Jacobian held to differences,
-//! and each statement the split refuses.
+//! the document's own point, claim and fold, and each statement the split refuses.
 
 use crate::common::{build, parse, solved};
 use gcs_core::program::elaborate;
@@ -143,12 +143,35 @@ fn the_front_folds_where_its_least_radius_runs_out() {
     assert!(gcs_core::traced::reading(&sk, i, [15.5, 0.0], Need::Point).is_none());
 }
 
+/// **The document holds a point where the closed form is, and says where `folded` is refused.**
+/// `held`, on the ellipse's normal at 50° and 5 inside it, is found on the front at its place
+/// (5, 50°); the line along the surface's normal there is the plane's, the document's one claim a
+/// theorem; and the same front run to 16mm is refused short of its fold, as `solventc` says.
+#[test]
+fn the_document_holds_its_point_and_reports_its_fold() {
+    let mut e = crate::common::parsed::determined(FRONT);
+    let contact = e.sketch.constraints.iter()
+        .find(|c| c.kind == gcs_core::constraints::CKind::PointOnTraced).unwrap().clone();
+    let place: Vec<f64> = contact.local_values(&e.sketch)[3..5].to_vec();
+    assert!((place[0] - 5.0).abs() < 1e-8 && (place[1] - 50.0).abs() < 1e-7, "{place:?}");
+    let held = e.sketch.world_point(e.map.ent_named("held").unwrap().i());
+    assert!(far(held, front(5.0, 50.0)[0]) < 1e-9, "{held:?}");
+    let d = gcs_core::diagnose::diagnose(&mut e.sketch, Default::default());
+    assert!(d.claims_violated.is_empty() && d.claims_consuming.is_empty()
+            && d.claims_theorem.len() == 1, "{d:?}");
+    let folded = e.map.ent_named("folded").unwrap().i();
+    let said = gcs_core::report::traced_text(&e.sketch, folded);
+    assert!(said.starts_with("folded: a surface traced in space, marched from its home at 0, \
+        refused at 15.1") && said.ends_with(": it folds there, near 0 along its second formal"),
+            "{said}");
+}
+
 /// **A contact owns its place on the marched surface.**  A point held where the closed form is at
 /// (9, −25°) is found there; the contact's Jacobian — in the point, the place, and the geometry the
 /// body is written over, the last through the variational equations carried by the march — is its
 /// residual's own, read against central differences with a step a march's tolerance does not
 /// drown.  A line along the surface's normal there is checked alike, reading the derivatives'
-/// sensitivities.
+/// sensitivities, and so are the document's own two.
 #[test]
 fn a_contact_owns_its_place_on_the_marched_surface() {
     let w = front(9.0, -25.0)[0];
@@ -162,7 +185,8 @@ front perpendicular(at: h) nl
 ", w[0] + 0.3, w[1] - 0.2, w[0], w[1], w[2], w[0], w[1]);
     let e = build(&src);
     let mut sk = solved(&e);
-    let contact = sk.constraints.iter()
+    // the last: the document holds a point of its own
+    let contact = sk.constraints.iter().rev()
         .find(|c| c.kind == gcs_core::constraints::CKind::PointOnTraced).unwrap().clone();
     let place: Vec<f64> = contact.local_values(&sk)[3..5].to_vec();
     assert!((place[0] - 9.0).abs() < 1e-7 && (place[1] + 25.0).abs() < 1e-6, "{place:?}");
