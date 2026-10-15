@@ -366,7 +366,7 @@ takes a layout naming the front datum, origin and reference axis.
   **A block walks a face too** (#243 L8, [0.112]): `repeat e in f` over a face by name or a
   `face` formal runs its loop (`flatten::resolve::face_walk`) — a closed chain it is made of or
   the edges it names, each `e` an alias as above, or for a face of corners the straight run from
-  each corner to the next (`Link::Between`), a hidden `.closure` line keyed under the face
+  each corner to the next (`Link::Run`), a hidden `.closure` line keyed under the face
   (`{face}#run{k}`, `keys::run`), drawn once whatever walks it, so its corners read as the face's
   geometry and not a copy's.  Holes, an anonymous corner, a trimmed stretch and corners beside
   edges are E080 at the reference.  **Walks run in step**: `cycle (ea, eb) in (a, b)`

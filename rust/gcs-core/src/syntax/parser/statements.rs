@@ -1292,7 +1292,11 @@ impl<'a> P<'a> {
         // `when c in B` is a condition, not a chain to run over (#267)
         if kind != BlockKind::When && over_chain(&self.t, self.i) {
             let (var, chain, zip) = if over_walks(&self.t, self.i) {
-                self.walks()?
+                let Some(walks) = self.walks() else {
+                    self.skip_block();
+                    return None;
+                };
+                walks
             } else {
                 let var = self.ident()?;
                 self.i += 1;

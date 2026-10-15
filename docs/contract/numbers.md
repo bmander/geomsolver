@@ -109,10 +109,11 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   pinned to one (`t == s`) owns its parameter (`Sketch::add`), which travels by name
   (`owned_arg`, `io::graft`); moving it moves every station's number at once (`solid::family`).
   **A station's number may read its given geometry non-affinely** (#243 L8): a relation word's
-  argument written in a station that reads it (`(e.p1.x - from.x) * … / … * ab.du`) is kept as
-  text (`flatten::values::station_text`) where an affine reading fails, each read made absolute
-  under the *copy's* prefix — the corners of a block's copies stay apart — and set aside there
-  for `refuse_dim_reads` with that key (`Checks::dim_reads`' fourth field), the names it already
-  reads listed in `Checks::settled` so the word's body settles them as they are.  A dimension
+  argument or a component's formal written in a station that reads it (`i: (e.p1.x - from.x) *
+  … / …`) is kept as text (`flatten::values::station_text`, from `words.rs` and `keep_text`)
+  where an affine reading fails, each read made absolute under the *copy's* prefix — the corners
+  of a block's copies stay apart — and set aside there for `refuse_dim_reads` with that key
+  (`Checks::dim_reads`' fourth field), the names it already reads listed in `Checks::settled` so
+  the body it is read in settles them as they are.  A dimension
   over held numbers whose unknown's coefficient comes to 0 at a station (a corner on its frame's
   axis) is that number, binding nothing (`expr::document::evaluate`).

@@ -48,12 +48,13 @@ given rather than the word's formals.
 **A held number is a number, any expression of it.** A station's numbers could read its given
 geometry only affinely (one free name a dimension). `Similar`'s and `Affine`'s corners stand at
 `(i, j)` in a frame, `i` and `j` quotients of the profile's coordinates, so a number a station
-gives a relation word is now kept as text where it reads given geometry (`station_text`), each
-read keyed under the block copy reading it — the corners of a `cycle`'s copies had shared one
-key, `sec.e.p1.x` — and worked out at each station. Each corner is two `offset`s from the rail
-points, affine in hidden unknowns (`Spans(n, a, b).du`, `.dv`: where one rail point stands from
-another in the station's frame) with those quotients as coefficients; a corner on its frame's axis
-gives a coefficient of 0, which is now the number it comes to rather than "does not affect".
+gives a relation word or a component is now kept as text where it reads given geometry
+(`station_text`), each read keyed under the block copy reading it — the corners of a `cycle`'s
+copies had shared one key, `sec.e.p1.x` — and worked out at each station. Each corner is
+`std.Framed(n, a, ab, ac, i:, j:)`: two `offset`s from the rail point `a`, affine in hidden
+unknowns (`Spans(n, a, b).du`, `.dv`: where one rail point stands from another in the station's
+frame) with those quotients as coefficients; a corner on its frame's axis gives a coefficient of
+0, which is now the number it comes to rather than "does not affect".
 
 *Departures from the item:*
 

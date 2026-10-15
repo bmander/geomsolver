@@ -685,6 +685,17 @@ component Spans(n: plane, a: point, b: point, du: Length, dv: Length) {
   }
 }
 
+// The point `q` at `(i, j)` in the frame from `a` along the spans `ab` and `ac` (`Spans`):
+// `a + i·(b − a) + j·(c − a)`, in two steps, each affine in one span's unknowns.
+component Framed(n: plane, a: point, ab: group, ac: group, i: Scalar, j: Scalar) {
+  in n {
+    private r := point
+    q := point
+    r offset(dx: j * ac.du, dy: j * ac.dv) a
+    q offset(dx: i * ab.du, dy: i * ab.dv) r
+  }
+}
+
 // A section held to its rails (#243 L8): the face `prof`, drawn once anywhere, carried into the
 // plane `n` by the map that takes `from` to `a`, `to` to `b` and `third` to `c` — moved, turned,
 // scaled and sheared, so that three rails give an affine map.  Each corner `p` of `prof` keeps
@@ -698,45 +709,36 @@ component Affine(prof: face, from: point, to: point, third: point, n: plane, a: 
   private ab := Spans(n, a, b)
   private ac := Spans(n, a, c)
   cycle e in prof {
+    corner := Framed(n, a, ab, ac,
+      i: ((e.p1.x - from.x) * (third.y - from.y) - (e.p1.y - from.y) * (third.x - from.x))
+         / ((to.x - from.x) * (third.y - from.y) - (to.y - from.y) * (third.x - from.x)),
+      j: ((to.x - from.x) * (e.p1.y - from.y) - (to.y - from.y) * (e.p1.x - from.x))
+         / ((to.x - from.x) * (third.y - from.y) - (to.y - from.y) * (third.x - from.x)))
     in n {
-      private r := point
-      q := point
-      r offset(dx: ((to.x - from.x) * (e.p1.y - from.y) - (to.y - from.y) * (e.p1.x - from.x))
-                   / ((to.x - from.x) * (third.y - from.y) - (to.y - from.y) * (third.x - from.x))
-                   * ac.du,
-               dy: ((to.x - from.x) * (e.p1.y - from.y) - (to.y - from.y) * (e.p1.x - from.x))
-                   / ((to.x - from.x) * (third.y - from.y) - (to.y - from.y) * (third.x - from.x))
-                   * ac.dv) a
-      q offset(dx: ((e.p1.x - from.x) * (third.y - from.y) - (e.p1.y - from.y) * (third.x - from.x))
-                   / ((to.x - from.x) * (third.y - from.y) - (to.y - from.y) * (third.x - from.x))
-                   * ab.du,
-               dy: ((e.p1.x - from.x) * (third.y - from.y) - (e.p1.y - from.y) * (third.x - from.x))
-                   / ((to.x - from.x) * (third.y - from.y) - (to.y - from.y) * (third.x - from.x))
-                   * ab.dv) r
-      side := line(q, next.q)
+      side := line(corner.q, next.corner.q)
     }
   }
   f := face(side)
 }
 
-// A section held to two rails: `Affine` with the third corner of its frame `b` turned a quarter
-// about `a`, counter-clockwise in `n`, as `to` turned so about `from` in `prof`'s plane is — moved,
+// A section held to two rails: `Affine`'s frame with its third corner `b` turned a quarter about
+// `a`, counter-clockwise in `n`, as `to` turned so about `from` is in `prof`'s plane — moved,
 // turned and scaled alike both ways, never stretched: two rails give a similarity.
 component Similar(prof: face, from: point, to: point, n: plane, a: point, b: point) {
   private ab := Spans(n, a, b)
+  in n {
+    private c := point
+    c offset(dx: -ab.dv, dy: ab.du) a
+  }
+  private ac := Spans(n, a, c)
   cycle e in prof {
+    corner := Framed(n, a, ab, ac,
+      i: ((e.p1.x - from.x) * (to.x - from.x) + (e.p1.y - from.y) * (to.y - from.y))
+         / ((to.x - from.x)^2 + (to.y - from.y)^2),
+      j: ((to.x - from.x) * (e.p1.y - from.y) - (to.y - from.y) * (e.p1.x - from.x))
+         / ((to.x - from.x)^2 + (to.y - from.y)^2))
     in n {
-      private r := point
-      q := point
-      r offset(dx: -((to.x - from.x) * (e.p1.y - from.y) - (to.y - from.y) * (e.p1.x - from.x))
-                   / ((to.x - from.x)^2 + (to.y - from.y)^2) * ab.dv,
-               dy: ((to.x - from.x) * (e.p1.y - from.y) - (to.y - from.y) * (e.p1.x - from.x))
-                   / ((to.x - from.x)^2 + (to.y - from.y)^2) * ab.du) a
-      q offset(dx: ((e.p1.x - from.x) * (to.x - from.x) + (e.p1.y - from.y) * (to.y - from.y))
-                   / ((to.x - from.x)^2 + (to.y - from.y)^2) * ab.du,
-               dy: ((e.p1.x - from.x) * (to.x - from.x) + (e.p1.y - from.y) * (to.y - from.y))
-                   / ((to.x - from.x)^2 + (to.y - from.y)^2) * ab.dv) r
-      side := line(q, next.q)
+      side := line(corner.q, next.corner.q)
     }
   }
   f := face(side)

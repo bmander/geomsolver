@@ -357,7 +357,7 @@ placement carries inside the blank; CLI test readers zero the offset.
   faces themselves; `std.Apex(a, tip, s:)` the same to a point (no `end` cap).  Correspondence is
   the written walks: a connector is where a walk starts, unequal counts a point named on an edge;
   the first three corners must not stand in a line (`Across`).  `std.Similar` and `std.Affine`
-  place each corner of a profile drawn once by two `offset`s from the station's rail points,
+  place each corner of a profile drawn once with `std.Framed` — two `offset`s from a rail point,
   over hidden unknowns `Spans(n, a, b).du`/`.dv` (where one rail point stands from another in
   the station's frame), each affine in one with a coefficient read off the profile
   (`numbers.md`'s held numbers).  `tests/correspondence.rs` is the gate: `two_faces.sv` at

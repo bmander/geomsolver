@@ -983,6 +983,19 @@ impl Decl {
         }
     }
 
+    /// A line between two points named elsewhere, built rather than parsed: nothing to seed, no
+    /// clause to write back into.
+    pub fn line(name: DeclName, from: Ref, to: Ref, class: Classes) -> Decl {
+        Decl {
+            kind: EntKind::Line,
+            children: vec![vec![Kid::Ref(from)], vec![Kid::Ref(to)]],
+            seed: Vec::new(),
+            seed_text: Vec::new(),
+            class,
+            ..Decl::point(name, [0.0; 2], None)
+        }
+    }
+
     /// `k := leg.toe over theta in (0, 360)` — the declaration a curve definition makes.
     pub fn curve(name: DeclName, curve: CurveSpec, class: Classes, class_span: Span) -> Decl {
         Decl {

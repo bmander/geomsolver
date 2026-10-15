@@ -892,10 +892,11 @@ block := solid(face(mouth, side_r, lid, side_l), from: face, to: back)
   from its neighbour, so the branch the drawing chose is the one carried. The instance's body
   reads as a traced body's (§6.5): its numbers MAY be any expression in `s`, and its dimensions
   MAY read a number of the geometry it was given (`rim.r`, `a.x`) as that geometry stands, but
-  not its own (**E103**). **[0.112]** A number the station gives a relation word MAY be any
-  expression of such numbers (a product, a quotient), worked out at each station; a dimension
-  whose unknown's coefficient comes to nothing there is the number it comes to. Every station inside the interval MUST be held — solved, with no degree
-  of freedom and no equation lost — and keeps the station's topology: a loop crossing itself, an
+  not its own (**E103**). **[0.112]** A number the station gives a relation word or a component
+  MAY be any expression of such numbers (a product, a quotient), worked out at each station; a
+  dimension whose unknown's coefficient comes to nothing there is the number it comes to. Every
+  station inside the interval MUST be held — solved, with no degree of freedom and no equation
+  lost — and keeps the station's topology: a loop crossing itself, an
   edge lost or turned over and a hole touching its section are refused at the station where they
   happen, as is a swept volume crossing itself (a section reaching past its path's centre of
   curvature). Only an end MAY lose an edge, or the whole section to an apex; an end that loses

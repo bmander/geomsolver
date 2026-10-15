@@ -1100,22 +1100,16 @@ impl<'a> Walk<'a> {
                     // a face of corners: its run from corner `k` to the next, drawn once under the
                     // face whatever walks it — the face's own geometry, read where the face is,
                     // hidden as the face's own closing lines are
-                    Link::Between(a, z, sc, run) => {
+                    Link::Run { from, to, scope: sc, key: run } => {
                         if self.names.insert(run.clone()) {
                             let at = Span::at(var.span.lo as usize);
-                            let key = Name { text: run.clone(), span: at };
-                            let name = crate::syntax::DeclName::Key(key);
-                            let mut line = Decl::point(name, [0.0; 2], None);
-                            line.kind = crate::model::EntKind::Line;
-                            line.seed = Vec::new();
-                            line.seed_text = Vec::new();
-                            line.children =
-                                vec![vec![Kid::Ref(a.clone())], vec![Kid::Ref(z.clone())]];
-                            line.class = crate::style::Classes::one("closure");
+                            let name = Name { text: run.clone(), span: at };
+                            let hidden = crate::style::Classes::one("closure");
+                            let line = Decl::line(crate::syntax::DeclName::Key(name), from.clone(),
+                                                  to.clone(), hidden);
                             self.emit(StmtKind::Decl(line), st, sc, path);
                         }
-                        let root = Scope { prefixes: vec![String::new()], access: sc.access.clone(),
-                                           ..Scope::default() };
+                        let root = Scope::absolute(sc.access.clone());
                         self.aliases.push((key, Ref::dotted(run, var.span), root));
                     }
                 }

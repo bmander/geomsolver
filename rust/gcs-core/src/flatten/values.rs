@@ -551,15 +551,19 @@ impl<'a> Walk<'a> {
             return None;
         }
         let own = scope.prefix();
-        let reads = expr::parse_in(text, self.units).ok()?.body.deps();
         let of = of_vals_in(vals, self.units, &self.held.names);
+        // the dotted names nothing numeric here answers: the geometry read, each keyed under
+        // the copy reading it
+        let geometry: BTreeMap<String, String> = expr::parse_in(text, self.units).ok()?.body
+            .deps().into_iter()
+            .filter(|w| w.contains('.') && of(w).is_none() && self.kept(w, scope).is_none())
+            .map(|w| (w.clone(), format!("{own}{w}")))
+            .collect();
         let sub = substitute_with(text, |w| {
-            of(w).or_else(|| self.kept(w, scope)).or_else(|| {
-                (w.contains('.') && reads.contains(w)).then(|| format!("{own}{w}"))
-            })
+            of(w).or_else(|| self.kept(w, scope)).or_else(|| geometry.get(w).cloned())
         });
-        for w in reads.iter().filter(|w| w.contains('.') && !vals.contains_key(*w)) {
-            self.checks.dim_reads.push((w.clone(), span, scope.clone(), Some(format!("{own}{w}"))));
+        for (w, key) in geometry {
+            self.checks.dim_reads.push((w, span, scope.clone(), Some(key)));
         }
         let names = expr::parse_in(&sub, self.units).ok()?.body.deps();
         self.checks.settled.extend(names.into_iter().filter(|n| n.contains('.')));
@@ -677,6 +681,7 @@ impl<'a> Walk<'a> {
         &mut self,
         abs: String,
         text: &str,
+        span: Span,
         vals: &BTreeMap<String, Aff>,
         scope: &Scope,
     ) -> bool {
@@ -687,9 +692,12 @@ impl<'a> Walk<'a> {
             }
             return true;
         }
-        // on the sheet, a text over a face family's running number that is not affine in it:
-        // worked out at each station, so kept as text (#243 L1)
-        let Some(t) = self.held_text(text, vals, scope) else { return false };
+        // on the sheet, a text over a face family's running number that is not affine in it, or
+        // over the geometry a station was given: worked out at each station, so kept as text
+        // (#243 L1, L8)
+        let kept = self.held_text(text, vals, scope)
+            .or_else(|| self.station_text(text, span, vals, scope));
+        let Some(t) = kept else { return false };
         self.held.texts.insert(abs, format!("({})", t.trim()));
         true
     }
@@ -1000,7 +1008,7 @@ impl<'a> Walk<'a> {
                     Err(e) => {
                         let abs = format!("{prefix}{}", d.name);
                         let (text, name, span) = (d.text.clone(), d.name.clone(), d.span);
-                        if !self.keep_text(abs, &text, vals, scope) {
+                        if !self.keep_text(abs, &text, span, vals, scope) {
                             self.err(Code::E103, span, format!("`{name}`: {e}"));
                             failed.insert(name);
                         }

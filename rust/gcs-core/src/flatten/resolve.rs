@@ -748,7 +748,7 @@ impl<'a> Walk<'a> {
 
     /// **A face's walk** (#243 L8): its edges in order, as a block over it runs them — the links
     /// of a chain it is made of, the edges it names, or, for a face of corners (`face(a, b, c,
-    /// -> close)`), the straight run from each corner to the next (`Link::Between`), a line the
+    /// -> close)`), the straight run from each corner to the next (`Link::Run`), a line the
     /// face owns, drawn once whatever walks it (`keys::run`).  One loop:
     /// a face with holes, an anonymous corner, a trimmed stretch and corners mixed with edges
     /// are refused in words.  `None` while a name it is made of cannot be found yet.
@@ -772,8 +772,11 @@ impl<'a> Walk<'a> {
                     "`{face}` has a corner with no name, and a block's copies read its corners: \
                      name each"
                 ))),
-                Kid::Trim { .. } | Kid::Face { .. } => return Some(Err(format!(
+                Kid::Trim { .. } => return Some(Err(format!(
                     "`{face}` holds a stretch of a curve, which a block does not walk yet"
+                ))),
+                Kid::Face { .. } => return Some(Err(format!(
+                    "`{face}` holds a face written in place, which is no edge of a walk"
                 ))),
             };
             if let Some((c, csc)) = self.chain_named(alias, r, sc) {
@@ -799,9 +802,13 @@ impl<'a> Walk<'a> {
             )));
         }
         let n = corners.len();
-        let between = (0..n).map(|k| Link::Between(corners[k].clone(), corners[(k + 1) % n].clone(),
-                                                   sc.clone(), keys::run(&d.name.key().text, k)));
-        Some(Ok(if n > 0 { between.collect() } else { edges }))
+        let runs = (0..n).map(|k| Link::Run {
+            from: corners[k].clone(),
+            to: corners[(k + 1) % n].clone(),
+            scope: sc.clone(),
+            key: keys::run(&d.name.key().text, k),
+        });
+        Some(Ok(if n > 0 { runs.collect() } else { edges }))
     }
 
     /// Every walk a set-aside block runs over, where every one can be found yet — or the first
@@ -872,8 +879,7 @@ impl<'a> Walk<'a> {
         let links = all.iter().map(|f| {
             let r = Ref::dotted(f, over.chain.span);
             // an absolute name, read from the document's root
-            Link::Edge(r, Scope { prefixes: vec![String::new()], access: sc.access.clone(),
-                                  ..Scope::default() })
+            Link::Edge(r, Scope::absolute(sc.access.clone()))
         }).collect();
         Some(Ok(vec![(links, false)]))
     }

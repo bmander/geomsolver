@@ -343,6 +343,17 @@ fn a_set_written_over_lines_binds_its_point() {
     assert_eq!(tint_of(src, "distance(20)"), Some(Tint::Relation));
 }
 
+/// A block over several walks in step names a link of each (#243 L8): every name in its brackets
+/// is one it declares, as `e` in `repeat e in` is, and the walks it names are not.
+#[test]
+fn walks_in_step_bind_each_name() {
+    let src = "cycle (ea, eb) in (a, b) {\n  q := line(ea.p1, eb.p1)\n}\n";
+    assert!(gcs_core::syntax::parse(src).1.is_empty(), "{:?}", gcs_core::syntax::parse(src).1);
+    assert_eq!(tint_of(src, "ea,"), Some(Tint::Def));
+    assert_eq!(tint_of(src, "eb)"), Some(Tint::Def));
+    assert_ne!(tint_of(src, "a, b)"), Some(Tint::Def));
+}
+
 /// The smaller words a statement is shaped by: a ring's centre, the copy after this one, a
 /// spline's weights and a curve's stretch.
 #[test]

@@ -179,6 +179,11 @@ impl Scope {
         }
     }
 
+    /// A scope that reads absolute names, from the document's root, with `access`'s grants.
+    fn absolute(access: std::rc::Rc<BTreeMap<String, String>>) -> Scope {
+        Scope { prefixes: vec![String::new()], access, ..Scope::default() }
+    }
+
     /// The innermost prefix — what a name declared here is put under.
     fn prefix(&self) -> &str {
         self.prefixes.first().map(String::as_str).unwrap_or("")
@@ -342,14 +347,16 @@ struct Pending {
     depth: usize,
 }
 
-/// One link of a walk a block runs over: an edge written — a chain's link, or an edge a face
-/// names — with the scope it was written in, or the straight run a face of corners makes from
-/// one corner to the next, read in the face's scope and drawn once under the face's key for it
-/// (`keys::run`), a line the source cannot name (#243 L8).
+/// One link of a walk a block runs over (#243 L8).
 #[derive(Clone)]
 enum Link {
+    /// An edge written — a chain's link, or an edge a face names — with the scope it was
+    /// written in.
     Edge(Ref, Scope),
-    Between(Ref, Ref, Scope, String),
+    /// The straight run a face of corners makes from one corner to the next, the corners read
+    /// in the face's scope: a line drawn once under the face's key for it (`keys::run`), which
+    /// the source cannot name.
+    Run { from: Ref, to: Ref, scope: Scope, key: String },
 }
 
 /// The walk's *symbolic* mode: a component expanded over its formals as **variables**, which is
