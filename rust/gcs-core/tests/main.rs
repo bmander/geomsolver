@@ -117,6 +117,7 @@ mod modules;
 mod motions;
 mod names;
 mod numeric_parts;
+mod ode;
 mod offset_corners;
 mod offsets;
 mod open_joint;
