@@ -135,6 +135,8 @@ repeat N [as i] { ... }                 N unrelated copies                      
 cycle N [as i] { ... }                  N copies that close; `next`, `prev` in scope
 ring N about C { ... }                  N copies, each the first turned about C
 repeat e in CHAIN [as i] { ... }        a copy per link of a named chain (`cycle e in` closes)
+repeat e in FACE [as i] { ... }         a copy per edge of a face's walk (0.113)
+cycle (a, b) in (W1, W2) { ... }        walks in step: link k of each in copy k (0.113)
 repeat a in SOLID { ... }               a copy per face of a solid                   (1.14)
 when COND { ... }                       made once where COND holds, else not at all  (1.7)
 LHS <= RHS | LHS >= RHS                 in a set's body: a bound on measurements     (1.14)
@@ -543,6 +545,26 @@ holes.sv: solved
   #22.2.hole.center.x = 30
   #22.2.hole.center.y = 40
   #22.2.hole.r = 4
+```
+
+**A face's walk, and walks in step** (0.113). `repeat e in f` runs over a face's edges in walk
+order — a chain it is made of, the edges it names, or for a face of corners (`face(a, b, c, ->
+close)`) the straight run from each corner to the next, `e.p1` the corner it leaves. `cycle (ea,
+eb) in (a, b)` runs two walks (chains or faces) together, link `k` of each in copy `k`; the walks
+must be as long. And a face may be made of a block's copies, `face(side)` for `side[0]`,
+`side[1]`, …, its count the block's, never written:
+
+```
+unit mm
+use std (coords)
+in std.front {
+  cycle 6 as i {
+    p := point
+    p coords(du: 10mm * cos(60deg * i), dv: 10mm * sin(60deg * i)) std.front
+    side := line(p, next.p)
+  }
+  hex := face(side)
+}
 ```
 
 A block's copies are one statement however many there are, so seeds inside are not written back
@@ -1263,7 +1285,17 @@ k := Par(o).p over u in (-2mm, 2mm)
   each section; `spline(through: rims, start: axis_line, end: axis_line)` is the **smooth** one's
   rail, square to its end sections (or tangent to a neighbouring face's edge). With no guide,
   `std.Across(ra, rb, rc, s: s)` is the plane through three rails at `s`
-  (`docs/lofts/l0/bottle.sv`, `rust/gcs-core/tests/sections.rs`). A component is closed over its arguments, so the station's `up` (`std.z`) is passed in as an
+  (`docs/lofts/l0/bottle.sv`, `rust/gcs-core/tests/sections.rs`). **Two faces drawn apart**
+  (0.113) are lofted by `solid(std.Ruled(inlet, outlet).f over s in (0, 1))`: corner `k` of each
+  walk joined to corner `k` of the other by a straight rail, the ends the faces themselves. The
+  pairing is the written order — start a walk at another corner to connect it differently, and
+  name a point on an edge (`m coincident(t == 0.5) half`, `face(t0, t1, t2, m, -> close)`) to give
+  a triangle a fourth corner for a square; keep the first three corners out of line.
+  `std.Apex(base, tip).f` lofts a face to a point. A profile drawn once is **held to its rails**
+  by `sec := std.Similar(prof, from, to, st.n, l, r)` — `from` and `to` carried to the station's
+  points `l` and `r` where two rails cross it, the profile turned and scaled with them — or by
+  `std.Affine(prof, from, to, third, st.n, a, b, c)` on three (`docs/lofts/l0/two_faces.sv`,
+  `rust/gcs-core/tests/correspondence.rs`). A component is closed over its arguments, so the station's `up` (`std.z`) is passed in as an
   `axis` formal. Every station inside the interval must solve to DOF 0 with the section's shape
   intact; an end may shrink to a point (a pyramid's apex). Caps `start` and `end`, walls named by
   the section's edges (`body.sec.ab`). Seed the section where it belongs at the middle of the

@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 
 use super::lexer::{lex, Tok};
 use super::words::{
-    joint_word, link_word, opens_link, over_chain, past_args, set_at, trails_decl, word_at,
+    joint_word, link_word, opens_link, over_chain, over_walks, past_args, set_at, trails_decl, word_at,
     word_definition_at, BLOCKS, MODIFIERS,
 };
 use super::{Span, Ty, MAX_TEXT};
@@ -110,6 +110,9 @@ pub fn highlight(src: &str) -> Vec<(Tint, Span)> {
     let mut head: Option<(usize, usize)> = None;
     // a `ring` header, the one place `about` is a word rather than a name
     let mut ring = false;
+    // inside a block's bracketed binders, `cycle (ea, eb) in (a, b)`: each name is one the block
+    // declares, as the one in `repeat e in` is
+    let mut walks = false;
     for (i, (t, span)) in toks.iter().enumerate() {
         let prev = i.checked_sub(1).map(|j| &toks[j].0);
         // a unit written against its number is one literal to the parser (`20mm`, `90deg`, `1'
@@ -137,6 +140,12 @@ pub fn highlight(src: &str) -> Vec<(Tint, Span)> {
                 integral = 0;
                 binding = false;
             }
+            _ => {}
+        }
+        match t {
+            Tok::P('(') if matches!(prev, Some(Tok::Ident(w)) if BLOCKS.contains(&w.as_str()))
+                && over_walks(toks, i) => walks = true,
+            Tok::P(')') | Tok::Nl => walks = false,
             _ => {}
         }
         match t {
@@ -173,6 +182,7 @@ pub fn highlight(src: &str) -> Vec<(Tint, Span)> {
                 continue;
             }
             Tok::Ident(w) if binding && w != "over" => Some(Tint::Def),
+            Tok::Ident(_) if walks => Some(Tint::Def),
             Tok::Num(_) if hint > 0 => Some(Tint::Seed),
             Tok::Num(_) => Some(Tint::Num),
             // `w := 100` — a definition, and not a seed: the clause is what says a number is one.

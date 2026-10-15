@@ -5,7 +5,7 @@
 //! holds `m` on it: of a spline or a curve one row reading the place of the contact holding `m`
 //! (#70's shared place, never a second unknown), of a circle or an arc the radius to `m` square
 //! to the line, of a line `parallel`. So one station word stands over any guide (`std.On`,
-//! drafted in `docs/lofts/l0/pending.sv`), each station solved at DOF 0 with every equation
+//! drafted in L0's `pending.sv`, removed at L8), each station solved at DOF 0 with every equation
 //! independent — where the tangency pinned beside the contact restates the point.
 
 use crate::common::{read, refused};

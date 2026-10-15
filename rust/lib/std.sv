@@ -636,6 +636,114 @@ component Across(a: path, b: path, c: path, s: Scalar) {
   n := plane(u: ab, v: ac)
 }
 
+// -- two faces drawn apart (#243 L8) -------------------------------------------------------------
+//
+// CAD's "loft these two sketches": the section at `s` joins corresponding corners of `a` and `b`
+// by straight rails, corner `k` of each walk to corner `k` of the other, and stands where the
+// plane through three of them at `s` cuts every rail (`Across`), so the ends are the faces
+// themselves whatever their planes.  Correspondence is the walks' written order: a connector is
+// where a walk starts (`face(b1, b2, b3, b0, -> close)` pairs `a`'s first corner with `b1`), and
+// two walks of different lengths are made alike by naming a point on an edge in the shorter one.
+// Nothing is inferred.  The first three corners must not stand in a line.
+//
+//   body := solid(std.Ruled(inlet, outlet).f over s in (0, 1))
+component Ruled(a: face, b: face, s: Scalar) {
+  cycle (ea, eb) in (a, b) {
+    private construction rail := line(ea.p1, eb.p1)
+    q := point in st.n
+    q coincident rail
+    in st.n {
+      side := line(q, next.q)
+    }
+  }
+  st := Across(rail[0], rail[1], rail[2], s: s)
+  f := face(side)
+}
+
+// A loft to a point: `a`'s corners joined to `tip` by straight rails, the section at `s` where
+// the plane through three of them at `s` cuts every rail.  At `s = 1` the section is the point:
+// the solid ends in an apex there.
+component Apex(a: face, tip: point, s: Scalar) {
+  cycle e in a {
+    private construction rail := line(e.p1, tip)
+    q := point in st.n
+    q coincident rail
+    in st.n {
+      side := line(q, next.q)
+    }
+  }
+  st := Across(rail[0], rail[1], rail[2], s: s)
+  f := face(side)
+}
+
+// Where `b` stands from `a` in the frame of the plane `n` both are drawn in, `(du, dv)`: unknowns
+// of the drawing where the call leaves them so, which is what `Similar` and `Affine` read a
+// station's rails by.
+component Spans(n: plane, a: point, b: point, du: Length, dv: Length) {
+  in n {
+    b offset(dx: du, dy: dv) a
+  }
+}
+
+// The point `q` at `(i, j)` in the frame from `a` along the spans `ab` and `ac` (`Spans`):
+// `a + i·(b − a) + j·(c − a)`, in two steps, each affine in one span's unknowns.
+component Framed(n: plane, a: point, ab: group, ac: group, i: Scalar, j: Scalar) {
+  in n {
+    private r := point
+    q := point
+    r offset(dx: j * ac.du, dy: j * ac.dv) a
+    q offset(dx: i * ab.du, dy: i * ab.dv) r
+  }
+}
+
+// A section held to its rails (#243 L8): the face `prof`, drawn once anywhere, carried into the
+// plane `n` by the map that takes `from` to `a`, `to` to `b` and `third` to `c` — moved, turned,
+// scaled and sheared, so that three rails give an affine map.  Each corner `p` of `prof` keeps
+// its place `(i, j)` in the frame `from`, `to`, `third` — `p = from + i·(to − from) + j·(third −
+// from)`, read off the drawing, so the word reads geometry as a face family's station may — and
+// stands at `a + i·(b − a) + j·(c − a)`.  In a family whose station holds `a`, `b` and `c` where
+// three rails cross its plane, the section follows the rails.  `from`, `to` and `third` must not
+// stand in a line.
+component Affine(prof: face, from: point, to: point, third: point, n: plane, a: point, b: point,
+                 c: point) {
+  private ab := Spans(n, a, b)
+  private ac := Spans(n, a, c)
+  cycle e in prof {
+    corner := Framed(n, a, ab, ac,
+      i: ((e.p1.x - from.x) * (third.y - from.y) - (e.p1.y - from.y) * (third.x - from.x))
+         / ((to.x - from.x) * (third.y - from.y) - (to.y - from.y) * (third.x - from.x)),
+      j: ((to.x - from.x) * (e.p1.y - from.y) - (to.y - from.y) * (e.p1.x - from.x))
+         / ((to.x - from.x) * (third.y - from.y) - (to.y - from.y) * (third.x - from.x)))
+    in n {
+      side := line(corner.q, next.corner.q)
+    }
+  }
+  f := face(side)
+}
+
+// A section held to two rails: `Affine`'s frame with its third corner `b` turned a quarter about
+// `a`, counter-clockwise in `n`, as `to` turned so about `from` is in `prof`'s plane — moved,
+// turned and scaled alike both ways, never stretched: two rails give a similarity.
+component Similar(prof: face, from: point, to: point, n: plane, a: point, b: point) {
+  private ab := Spans(n, a, b)
+  in n {
+    private c := point
+    c offset(dx: -ab.dv, dy: ab.du) a
+  }
+  private ac := Spans(n, a, c)
+  cycle e in prof {
+    corner := Framed(n, a, ab, ac,
+      i: ((e.p1.x - from.x) * (to.x - from.x) + (e.p1.y - from.y) * (to.y - from.y))
+         / ((to.x - from.x)^2 + (to.y - from.y)^2),
+      j: ((to.x - from.x) * (e.p1.y - from.y) - (to.y - from.y) * (e.p1.x - from.x))
+         / ((to.x - from.x)^2 + (to.y - from.y)^2))
+    in n {
+      side := line(corner.q, next.corner.q)
+    }
+  }
+  f := face(side)
+}
+
 // -- laws of a station (#243 L5) ----------------------------------------------------------------
 //
 // A twist or a scale is a dimension of the section reading `s`, and any expression in it is a

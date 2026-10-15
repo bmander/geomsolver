@@ -750,7 +750,7 @@ impl<'a> Walk<'a> {
                 return;
             }
         };
-        self.copies(b, st, scope, vals, path, depth, n, None);
+        self.copies(b, st, scope, vals, path, depth, n, &[]);
     }
 
     /// A relation: a defined word's body applied, or its numbers worked out in the scope and
@@ -1040,11 +1040,11 @@ impl<'a> Walk<'a> {
         path: &[PathStep],
         depth: usize,
         n: usize,
-        edges: Option<(&Name, &[(Ref, Scope)])>,
+        edges: &[(&Name, &[Link])],
     ) {
         // a block's index and its edge binder are names of each copy, and one over a name the
         // enclosing scope already has would read two ways in one body (E002): said once per block
-        let binders = b.binder.iter().chain(edges.map(|(v, _)| v));
+        let binders = b.binder.iter().chain(edges.iter().map(|(v, _)| *v));
         for name in binders {
             let taken = vals.contains_key(&name.text)
                 || scope.groups.contains(&name.text)
@@ -1093,10 +1093,26 @@ impl<'a> Walk<'a> {
             if let Some(i) = &b.binder {
                 sub.insert(i.text.clone(), Aff::num(k as f64));
             }
-            if let Some((var, links)) = edges {
-                let (r, sc) = &links[k];
+            for (var, links) in edges {
                 let key = format!("{block_prefix}{k}.{}", var.text);
-                self.aliases.push((key, r.clone(), sc.clone()));
+                match &links[k] {
+                    Link::Edge(r, sc) => self.aliases.push((key, r.clone(), sc.clone())),
+                    // a face of corners: its run from corner `k` to the next, drawn once under the
+                    // face whatever walks it — the face's own geometry, read where the face is,
+                    // hidden as the face's own closing lines are
+                    Link::Run { from, to, scope: sc, key: run } => {
+                        if self.names.insert(run.clone()) {
+                            let at = Span::at(var.span.lo as usize);
+                            let name = Name { text: run.clone(), span: at };
+                            let hidden = crate::style::Classes::one("closure");
+                            let line = Decl::line(crate::syntax::DeclName::Key(name), from.clone(),
+                                                  to.clone(), hidden);
+                            self.emit(StmtKind::Decl(line), st, sc, path);
+                        }
+                        let root = Scope::absolute(sc.access.clone());
+                        self.aliases.push((key, Ref::dotted(run, var.span), root));
+                    }
+                }
             }
             let sc = Scope {
                 owner: scope.owner.clone(),

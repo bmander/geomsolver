@@ -42,6 +42,7 @@ mod conrod;
 mod contact_trace;
 mod coordinates;
 mod copies;
+mod correspondence;
 mod crease;
 mod crown_regions;
 mod curve;

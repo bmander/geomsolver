@@ -349,6 +349,23 @@ placement carries inside the blank; CLI test readers zero the offset.
   quadrature on every span, its wall square to the base cap and tangent to a turned neck's cone,
   and the refusals; `face_family`'s bottle is `docs/lofts/l0/bottle.sv` over the spline through
   its rims.
+- **Two faces drawn apart, and a section held to its rails, are library words** (#243 L8,
+  [0.113]): no Rust names them.  `std.Ruled(a, b, s:)` walks the two faces in step (`cycle (ea,
+  eb) in (a, b)`, `language.md`), joins corner `k` of each by a straight rail, stands each
+  corner `point in st.n` on its rail with `st := Across(rail[0], rail[1], rail[2], s:)`, and is
+  `face(side)` of its copies, so its walls are `body.side[k]` from corner `k` and its ends the
+  faces themselves; `std.Apex(a, tip, s:)` the same to a point (no `end` cap).  Correspondence is
+  the written walks: a connector is where a walk starts, unequal counts a point named on an edge;
+  the first three corners must not stand in a line (`Across`).  `std.Similar` and `std.Affine`
+  place each corner of a profile drawn once with `std.Framed` — two `offset`s from a rail point,
+  over hidden unknowns `Spans(n, a, b).du`/`.dv` (where one rail point stands from another in
+  the station's frame), each affine in one with a coefficient read off the profile
+  (`numbers.md`'s held numbers).  `tests/correspondence.rs` is the gate: `two_faces.sv` at
+  40/6 · 1856, a connector and a split triangle at their prismatoids, a pyramid to an oblique tip,
+  a blade on two rails (1560; turning, 1650), a square on three rails at its area ratio's
+  prismatoid, a face walked, a face of a cycle's copies, and the refusals.  An arc edge lofted
+  with a line edge is not said: it wants a rational edge whose weight reads the arc's sweep and a
+  word choosing by an edge's kind.
 - **A face closes itself** (§6.8, `program::build_face`; issue #49).  The brackets hold a *walk*,
   and an item may be a **point**, with `-> close` sealing the run back to the first item.  Where
   two neighbours do not meet, `build_face` mints the straight line between them, class

@@ -179,6 +179,11 @@ impl Scope {
         }
     }
 
+    /// A scope that reads absolute names, from the document's root, with `access`'s grants.
+    fn absolute(access: std::rc::Rc<BTreeMap<String, String>>) -> Scope {
+        Scope { prefixes: vec![String::new()], access, ..Scope::default() }
+    }
+
     /// The innermost prefix — what a name declared here is put under.
     fn prefix(&self) -> &str {
         self.prefixes.first().map(String::as_str).unwrap_or("")
@@ -342,6 +347,18 @@ struct Pending {
     depth: usize,
 }
 
+/// One link of a walk a block runs over (#243 L8).
+#[derive(Clone)]
+enum Link {
+    /// An edge written — a chain's link, or an edge a face names — with the scope it was
+    /// written in.
+    Edge(Ref, Scope),
+    /// The straight run a face of corners makes from one corner to the next, the corners read
+    /// in the face's scope: a line drawn once under the face's key for it (`keys::run`), which
+    /// the source cannot name.
+    Run { from: Ref, to: Ref, scope: Scope, key: String },
+}
+
 /// The walk's *symbolic* mode: a component expanded over its formals as **variables**, which is
 /// what compiling a curve over it needs (§6.5).  The numeric formals are bound as free values
 /// named after themselves, so the ordinary machinery carries them — `substitute` writes a free
@@ -440,7 +457,13 @@ struct Checks {
     /// where each was written and the scope to resolve it in: judged once every name is known
     /// (`resolve`), since only then can `k.r` (a circle's radius) be told from `t.w` (a named
     /// dimension of the instance `t`).
-    dim_reads: Vec<(String, Span, Scope)>,
+    /// A station's text kept whole (`Walk::station_text`) carries the key each read is written
+    /// in as, its copy's own (`#3.0.e.p1.x`), so the corners of a block's copies stay apart.
+    dim_reads: Vec<(String, Span, Scope, Option<String>)>,
+    /// The absolute names a number given in a face family's station already reads (#243 L8,
+    /// `Walk::station_text`): its geometry's, set aside where the number is written, and the
+    /// unknowns it is affine in.  A text they are written into is settled with them as they are.
+    settled: BTreeSet<String>,
     /// Where a statement read a name nothing declares (E101): the statement is not emitted, so
     /// the name never reaches the expression graph to become an unknown of its own making.
     refused: Vec<Span>,

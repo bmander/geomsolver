@@ -3,7 +3,8 @@
 use super::*;
 use crate::model::EntKind;
 use crate::program::NORMAL;
-use crate::syntax::Member;
+use crate::program::public_path;
+use crate::syntax::{Kid, Member};
 
 /// The geometry a kept seed text reads, renamed to the absolute names the sheet resolves — the
 /// same `lookup` every reference goes through, so a formal reads as the actual it aliases and a
@@ -328,7 +329,7 @@ impl Lookup<'_> {
                     .any(|prefix| alias.get(&format!("{prefix}{p}"))
                         .is_some_and(|actual| under_member(actual, member)))
             });
-            if !granted { return Some(crate::program::public_path(member)); }
+            if !granted { return Some(public_path(member)); }
         }
         None
     }
@@ -720,17 +721,114 @@ impl<'a> Walk<'a> {
         Scope { access: std::rc::Rc::new(self.private_names.clone()), ..p.scope.clone() }
     }
 
-    /// The chain a set-aside block runs over, where it can be found yet: each link as the chain
-    /// wrote it, with the scope it was written in, and whether the chain closes.
-    fn chain_of(
+    /// The links of one walk a set-aside block runs over, where it can be found yet: a named
+    /// chain's, each as the chain wrote it with the scope it was written in, and whether it
+    /// closes — or a face's (`face_walk`).  `Err` where the walk is found and cannot be run.
+    fn walk_of(
+        &self,
+        r: &Ref,
+        sc: &Scope,
+        alias: &BTreeMap<String, String>,
+    ) -> Option<Result<(Vec<Link>, bool), String>> {
+        if let Some((c, csc)) = self.chain_named(alias, r, sc) {
+            let links = c.links.iter().map(|l| Link::Edge(l.clone(), csc.clone())).collect();
+            return Some(Ok((links, c.closed)));
+        }
+        let (abs, rest) = self.look(alias).find(r, sc)?;
+        if !rest.is_empty() {
+            return None;
+        }
+        let (d, fsc) = self.out.iter().find_map(|(st, _, fsc)| match &st.kind {
+            StmtKind::Decl(d) if d.kind == crate::model::EntKind::Face
+                && d.name.key().text == abs => Some((d, fsc)),
+            _ => None,
+        })?;
+        self.face_walk(d, fsc, alias).map(|w| w.map(|links| (links, true)))
+    }
+
+    /// **A face's walk** (#243 L8): its edges in order, as a block over it runs them — the links
+    /// of a chain it is made of, the edges it names, or, for a face of corners (`face(a, b, c,
+    /// -> close)`), the straight run from each corner to the next (`Link::Run`), a line the
+    /// face owns, drawn once whatever walks it (`keys::run`).  One loop:
+    /// a face with holes, an anonymous corner, a trimmed stretch and corners mixed with edges
+    /// are refused in words.  `None` while a name it is made of cannot be found yet.
+    fn face_walk(
+        &self,
+        d: &Decl,
+        sc: &Scope,
+        alias: &BTreeMap<String, String>,
+    ) -> Option<Result<Vec<Link>, String>> {
+        let face = public_path(&d.name.key().text);
+        if d.children.get(1).is_some_and(|h| !h.is_empty()) {
+            return Some(Err(format!(
+                "`{face}` has holes, and a block walks one loop: walk a face of its outline"
+            )));
+        }
+        let (mut edges, mut corners) = (Vec::new(), Vec::new());
+        for kid in d.children.first().into_iter().flatten() {
+            let r = match kid {
+                Kid::Ref(r) => r,
+                Kid::Hint(_) => return Some(Err(format!(
+                    "`{face}` has a corner with no name, and a block's copies read its corners: \
+                     name each"
+                ))),
+                Kid::Trim { .. } => return Some(Err(format!(
+                    "`{face}` holds a stretch of a curve, which a block does not walk yet"
+                ))),
+                Kid::Face { .. } => return Some(Err(format!(
+                    "`{face}` holds a face written in place, which is no edge of a walk"
+                ))),
+            };
+            if let Some((c, csc)) = self.chain_named(alias, r, sc) {
+                edges.extend(c.links.iter().map(|l| Link::Edge(l.clone(), csc.clone())));
+                continue;
+            }
+            let (abs, rest) = self.look(alias).find(r, sc)?;
+            let declared = |(st, _, _): &(Stmt, Vec<PathStep>, Scope)| match &st.kind {
+                StmtKind::Decl(x) if x.name.key().text == abs => Some(x.kind),
+                _ => None,
+            };
+            let kind = rest.is_empty().then(|| self.out.iter().find_map(declared)).flatten();
+            match kind {
+                Some(EntKind::Line | EntKind::Arc | EntKind::Spline | EntKind::Curve
+                     | EntKind::Circle) => edges.push(Link::Edge(r.clone(), sc.clone())),
+                _ => corners.push(r.clone()),
+            }
+        }
+        if !edges.is_empty() && !corners.is_empty() {
+            return Some(Err(format!(
+                "`{face}` is written with both corners and edges, and a block walks one or the \
+                 other: write it as its corners or as its edges"
+            )));
+        }
+        let n = corners.len();
+        let runs = (0..n).map(|k| Link::Run {
+            from: corners[k].clone(),
+            to: corners[(k + 1) % n].clone(),
+            scope: sc.clone(),
+            key: keys::run(&d.name.key().text, k),
+        });
+        Some(Ok(if n > 0 { runs.collect() } else { edges }))
+    }
+
+    /// Every walk a set-aside block runs over, where every one can be found yet — or the first
+    /// that cannot be run, said at its name.
+    fn walks_of(
         &self,
         p: &Pending,
         alias: &BTreeMap<String, String>,
-    ) -> Option<(Vec<(Ref, Scope)>, bool)> {
+    ) -> Option<Result<Vec<(Vec<Link>, bool)>, (Span, String)>> {
         let StmtKind::Block(b) = &p.st.kind else { return None };
         let over = b.over.as_ref()?;
-        let (c, sc) = self.chain_named(alias, &over.chain, &self.pending_scope(p))?;
-        Some((c.links.iter().map(|r| (r.clone(), sc.clone())).collect(), c.closed))
+        let sc = self.pending_scope(p);
+        let mut all = Vec::new();
+        for (_, r) in over.walks() {
+            match self.walk_of(r, &sc, alias)? {
+                Ok(w) => all.push(w),
+                Err(m) => return Some(Err((r.span, m))),
+            }
+        }
+        Some(Ok(all))
     }
 
     /// Whether the walk declared a solid by this absolute name.
@@ -773,17 +871,17 @@ impl<'a> Walk<'a> {
         &self,
         p: &Pending,
         alias: &BTreeMap<String, String>,
-    ) -> Option<(Vec<(Ref, Scope)>, bool)> {
+    ) -> Option<Result<Vec<(Vec<Link>, bool)>, (Span, String)>> {
         let StmtKind::Block(b) = &p.st.kind else { return None };
-        let over = b.over.as_ref()?;
+        let over = b.over.as_ref().filter(|o| o.zip.is_empty())?;
         let sc = self.pending_scope(p);
         let all = self.faces_named(&over.chain, &sc, alias)?;
         let links = all.iter().map(|f| {
             let r = Ref::dotted(f, over.chain.span);
             // an absolute name, read from the document's root
-            (r, Scope { prefixes: vec![String::new()], access: sc.access.clone(), ..Scope::default() })
+            Link::Edge(r, Scope::absolute(sc.access.clone()))
         }).collect();
-        Some((links, false))
+        Some(Ok(vec![(links, false)]))
     }
 
     /// Expand every block over a chain's edges (`repeat e in rack.profile { … }`), each where
@@ -801,11 +899,17 @@ impl<'a> Walk<'a> {
                 .iter()
                 .enumerate()
                 .find_map(|(i, p)| {
-                    self.chain_of(p, &alias).or_else(|| self.face_links(p, &alias)).map(|c| (i, c))
+                    self.walks_of(p, &alias).or_else(|| self.face_links(p, &alias)).map(|c| (i, c))
                 });
-            let Some((i, (links, closed))) = found else { break };
+            let Some((i, walks)) = found else { break };
             let p = self.aside.blocks.remove(i);
-            self.expand_edges(p, links, closed);
+            match walks {
+                Ok(walks) => self.expand_edges(p, walks),
+                Err((span, m)) => {
+                    self.take_placeholder(&p);
+                    self.err(Code::E080, span, m);
+                }
+            }
         }
         let alias = self.alias_table();
         for p in std::mem::take(&mut self.aside.blocks) {
@@ -827,8 +931,8 @@ impl<'a> Walk<'a> {
                     Code::E103,
                     r.span,
                     format!(
-                        "`{}` is not a named chain: `{} {} in …` runs over the edges of a \
-                         chain written `name := line -> …`",
+                        "`{}` is not a named chain nor a face: `{} {} in …` runs over the edges \
+                         of a chain written `name := line -> …`, or of a face",
                         ref_text(r),
                         if b.kind.wraps() { "cycle" } else { "repeat" },
                         over.var.text
@@ -852,39 +956,105 @@ impl<'a> Walk<'a> {
         Some(at)
     }
 
-    /// One block over a chain's edges: a copy per link, made into a vector of their own and
-    /// spliced in where the walk met the block, so the statements stand in source order.
-    fn expand_edges(&mut self, p: Pending, links: Vec<(Ref, Scope)>, closed: bool) {
+    /// One block over a chain's edges — or several chains' and faces', in step: a copy per link,
+    /// made into a vector of their own and spliced in where the walk met the block, so the
+    /// statements stand in source order.
+    fn expand_edges(&mut self, p: Pending, walks: Vec<(Vec<Link>, bool)>) {
         let Some(at) = self.take_placeholder(&p) else { return };
         let StmtKind::Block(b) = &p.st.kind else { return };
         let Some(over) = &b.over else { return };
-        if b.kind.wraps() && !closed {
-            self.err(
-                Code::E103,
-                over.chain.span,
-                format!(
-                    "`{}` is an open chain, and a `cycle` closes — its last edge's `next` would \
-                     be its first; write `repeat {} in …`",
-                    ref_text(&over.chain),
-                    over.var.text
-                ),
+        let named: Vec<(&Name, &Ref)> = over.walks().collect();
+        for ((var, chain), (_, closed)) in named.iter().zip(&walks) {
+            if b.kind.wraps() && !closed {
+                self.err(
+                    Code::E103,
+                    chain.span,
+                    format!(
+                        "`{}` is an open chain, and a `cycle` closes — its last edge's `next` \
+                         would be its first; write `repeat {} in …`",
+                        ref_text(chain),
+                        var.text
+                    ),
+                );
+                return;
+            }
+        }
+        // walks run in step have a link of each in every copy, so as many links each — said by
+        // what each walk is, which a word's formal names only as the word's own
+        if let Some(k) = (1..walks.len()).find(|&k| walks[k].0.len() != walks[0].0.len()) {
+            let alias = self.alias_table();
+            let sc = self.pending_scope(&p);
+            let what = |r: &Ref| self.stands_for(r, &sc, &alias)
+                .map_or_else(|| ref_text(r), |a| public_path(&a));
+            let m = format!(
+                "`{}` walks {} links and `{}` {}: walks run in step have as many links each — \
+                 name a point on an edge in the shorter walk to split it",
+                what(named[0].1),
+                walks[0].0.len(),
+                what(named[k].1),
+                walks[k].0.len()
             );
+            self.err(Code::E080, named[k].1.span, m);
             return;
         }
         // a declaration of the body called what each copy calls its edge would hide it
-        let var = &over.var.text;
-        if b.body.iter().any(|st| st.kind.bound_name().is_some_and(|n| &n.text == var)) {
-            self.err(Code::E001, over.var.span, format!("`{var}` is declared twice"));
-            return;
+        for (var, _) in &named {
+            if b.body.iter().any(|st| st.kind.bound_name().is_some_and(|n| n.text == var.text)) {
+                self.err(Code::E001, var.span, format!("`{}` is declared twice", var.text));
+                return;
+            }
         }
         let outer = std::mem::take(&mut self.out);
         self.aside.held = outer.len();
-        let (b, var) = (b.clone(), over.var.clone());
-        let edges = Some((&var, links.as_slice()));
-        self.copies(&b, &p.st, &p.scope, &p.vals, &p.path, p.depth, links.len(), edges);
+        let b = b.clone();
+        let vars: Vec<Name> = named.iter().map(|(v, _)| (*v).clone()).collect();
+        let edges: Vec<(&Name, &[Link])> =
+            vars.iter().zip(&walks).map(|(v, (l, _))| (v, l.as_slice())).collect();
+        let n = walks[0].0.len();
+        self.copies(&b, &p.st, &p.scope, &p.vals, &p.path, p.depth, n, &edges);
         let made = std::mem::replace(&mut self.out, outer);
         self.aside.held = 0;
         self.out.splice(at..at, made);
+    }
+
+    /// **A face of a block's copies** (#243 L8): `face(e)`, `e` declared in a `cycle` or a
+    /// `repeat` beside the face, is the face of `e[0]`, `e[1]`, … in order, as many as the block
+    /// made — the count is the block's, never written, so a face over a walk of any length is one
+    /// statement.  A name the face's scope finds as it stands is itself.
+    fn faces_of_copies(&mut self, alias: &BTreeMap<String, String>) {
+        let look = self.look(alias);
+        let mut made: Vec<(usize, usize, Vec<Kid>)> = Vec::new();
+        for (i, (st, _, sc)) in self.out.iter().enumerate() {
+            let StmtKind::Decl(d) = &st.kind else { continue };
+            if d.kind != EntKind::Face {
+                continue;
+            }
+            for (j, kid) in d.children.first().into_iter().flatten().enumerate() {
+                let Kid::Ref(r) = kid else { continue };
+                if r.path.iter().any(|g| !matches!(g, Seg::Field(_))) || look.raw(r, sc).is_some() {
+                    continue;
+                }
+                let copy = |k: usize| {
+                    let mut c = r.clone();
+                    c.path.push(Seg::Index(k.to_string()));
+                    c
+                };
+                let copies: Vec<Kid> = (0..MAX_FLAT)
+                    .map(copy)
+                    .take_while(|c| look.raw(c, sc).is_some())
+                    .map(Kid::Ref)
+                    .collect();
+                if !copies.is_empty() {
+                    made.push((i, j, copies));
+                }
+            }
+        }
+        // spliced from the last, so an earlier kid's place is not moved by a later one
+        for (i, j, copies) in made.into_iter().rev() {
+            if let StmtKind::Decl(d) = &mut self.out[i].0.kind {
+                d.children[0].splice(j..=j, copies);
+            }
+        }
     }
 
     /// Turn every reference into the absolute name of what it denotes.
@@ -897,6 +1067,7 @@ impl<'a> Walk<'a> {
             sc.typed = typed.clone();
         }
         let alias = self.alias_table();
+        self.faces_of_copies(&alias);
         self.drawn_incidences(&alias);
         let failed = self.check_aliases(&alias);
         self.check_bindings(&alias);
@@ -1145,7 +1316,7 @@ impl<'a> Walk<'a> {
         // mint it a free variable of its own, and a drawn instance and its own trace would
         // disagree about what the component says.  Refused, the statement is not emitted
         let mut refused: Vec<Span> = std::mem::take(&mut self.checks.refused);
-        for (name, span, sc) in std::mem::take(&mut self.checks.dim_reads) {
+        for (name, span, sc, key) in std::mem::take(&mut self.checks.dim_reads) {
             let segs: Vec<&str> = name.split('.').collect();
             let r = Ref {
                 root: Name { text: segs[0].to_string(), span },
@@ -1173,7 +1344,7 @@ impl<'a> Walk<'a> {
                             "`{name}` is a number of the station's own geometry, which its solve \
                              moves: a station's dimension reads the geometry it was given"));
                     } else {
-                        let read = format!("{}{name}", sc.instance_prefix());
+                        let read = key.unwrap_or_else(|| format!("{}{name}", sc.instance_prefix()));
                         self.held.reads.push((read, abs, rest));
                     }
                 }
