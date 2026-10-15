@@ -843,6 +843,8 @@ pub(super) fn tangents_at(sk: &Sketch, map: &SourceMap, diags: &mut Vec<Diag>) {
             CKind::EnvelopeNormalAt => "normal",
             CKind::EnvelopeCurvatureAt => "curvature",
             CKind::EnvelopePlaneAt => "tangent plane",
+            CKind::MeshingNormalAt => "common normal",
+            CKind::MeshingTangentAt => "path of contact",
             CKind::TracedNormalAt => "normal",
             CKind::TracedCurvatureAt => "curvature",
             CKind::TracedPlaneAt | CKind::TracedSurfaceTangentAt => "tangent plane",

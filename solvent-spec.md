@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.111 — October 2026**
+**Specification, Draft 0.112 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -1376,9 +1376,31 @@ Either number may be pinned: `t == 0deg` says at which phase, and `lag == δ` st
 transmission error there. Both flanks' sources and motions and the mesh's axes are columns, so a
 number that makes a flank, or the phase, solves from what is stated. Where the two touch along a
 line the rows lose a rank and the point is free along it. A root is local: the place starts where
-the flanks pass nearest `p` at its phase, with no lag, and is sought again where a solve that fails
-leaves the flanks; a pair a little off conjugate, which the rows hold weakly along its bearing, is
-found only from near its contact.
+the flanks pass nearest `p` at its phase, with no lag, and is sought again when the solve comes to
+it, the flanks where the relations before it have placed them; a pair a little off conjugate,
+which the rows hold weakly along its bearing, is found only from near its contact.
+
+```
+n := point hint((0, 58, 0))
+common := line(Q, n)
+contact perpendicular(at: Q) common
+p := point hint((10, 48, 0))
+along := line(Q, p)
+contact tangent(at: Q) along
+along angle(2deg) std.x
+```
+
+**[0.112]** At a point held to the contact, a line or an axis `perpendicular` to it runs along the
+**common normal** of the two flanks there, and one `tangent` to it along the **path of contact**:
+the contact point's derivative along the phase. Each reads the phase, the lag and the places of the
+contact holding its point — at whatever phase that contact is, not only where the pair is drawn —
+and states two rows, so a number a flank is made from, or the point's phase where nothing pins it,
+solves from an angle stated of either. The path is the motion of the contact in the fixed frame, not
+the bearing: a pair whose contact stands still on the gear's flank has a path all the same, the
+gear's turn carrying it. Where the flanks touch along a line the path has no direction, and a line
+along it does not hold. Either is refused at a point no contact holds on the meshing, naming the
+statement it wants (**E040**), and may be written either way round (`along tangent(at: Q)
+contact`).
 
 After the solve the contact is **traced** over `from:` … `to:`, walked out phase by phase from the
 first point held to it: the lag over the phase is the transmission error, the contact's places the

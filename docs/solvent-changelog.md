@@ -4,6 +4,15 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.112] The common normal and the path of contact at a point.** At a point held to a meshing,
+`contact perpendicular(at: q) l` holds a line or an axis along the two flanks' common normal there,
+and `contact tangent(at: q) l` along the path of contact: the contact point's derivative along the
+phase, in the fixed frame (§6.15.4). Each shares the phase, the lag and the places of the contact
+holding `q`, as an envelope's relations at a point share its place ([0.90]), so either reads at any
+phase, and a number solves from an angle stated of it. Through 0.111 the normal at a contact was
+stated on the generated flank alone, in the pose the pair was drawn at (`pinion_flank
+perpendicular(at: M) l`), and the path not at all. (Issue #345, S1.)
+
 **[0.111] A loft through several sections is drawn on rails.** A spline may be written through
 the corners of a named open chain of lines, `spline(through: rims, start: l, end: m)` (§6.1): the
 cubic through them, a span a link, its ends along the tangents written, or else running straight —

@@ -306,6 +306,8 @@ pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option
             // its tangent plane, a plane touching it there
             (Envelope, Line | Axis) if at_point => CKind::EnvelopeTangentAt,
             (Envelope, Plane) if at_point => CKind::EnvelopePlaneAt,
+            // the path of contact of a meshing at a point a contact holds on it (#345)
+            (Meshing, Line | Axis) if at_point => CKind::MeshingTangentAt,
             // a body traced in space (#326): a curve's tangent, read as a surface's tangent plane
             // where the body is one (`program::relations`)
             (Traced, Line | Axis) if at_point => CKind::TracedTangentAt,
@@ -379,6 +381,8 @@ pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option
             (Axis, Plane) => CKind::AxisPerpendicularPlane,
             // along an envelope's normal at a point already on it (#283): the common normal
             (Envelope, Line | Axis) if at_point => CKind::EnvelopeNormalAt,
+            // and a meshing's, the common normal of its two flanks there (#345)
+            (Meshing, Line | Axis) if at_point => CKind::MeshingNormalAt,
             // and a traced surface's (#326)
             (Traced, Line | Axis) if at_point => CKind::TracedNormalAt,
             _ => return None,

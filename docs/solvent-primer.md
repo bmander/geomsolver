@@ -1608,6 +1608,21 @@ sees it, `X coincident(under: turn, t == -phi) x` in its body (`spiral_bevel/phi
 mismatched one at a point. After the solve the contact is traced over `from:`…`to:` from the first
 point held to it, and `solventc` reports the transmission error and the path of contact.
 
+At a point held to it (0.112), `bearing perpendicular(at: Q) l` holds a line along the two flanks'
+common normal, and `bearing tangent(at: Q) l` one along the path of contact — where the contact
+moves in space as the pinion turns, not the bearing on either flank. Both read Q's phase, lag and
+places, so they hold at any phase Q is at, and an angle stated of either solves a number:
+
+```
+pq := point hint((10, 48, 0))
+path_q := line(Q, pq)
+bearing tangent(at: Q) path_q
+Q distance(10mm) pq
+path_q angle(2deg) std.x                              // R's phase, a cutter's number, …
+```
+
+At a line contact the path has no direction and a line along it does not hold.
+
 **Spatial geometry read after the solve** adds no unknown and has no 2D glyph; each certifies only
 local evaluations ([analytic face boundaries](analytic-face-boundaries.md); the spiral bevel's
 checks make the same objects of their parts, from the faces its built members leave —

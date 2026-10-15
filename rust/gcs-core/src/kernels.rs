@@ -181,8 +181,9 @@ pub enum KernelKey {
     /// A contact with an envelope in space (#283), at its block's widths: `fk` the
     /// `envelope::held::Contact`.
     Envelope { fk: u8, n_par: usize, n_const: usize },
-    /// A point on the meshing of two flanks (#283), at its block's widths.
-    Meshing { n_par: usize, n_const: usize },
+    /// A contact with the meshing of two flanks (#283, #345), at its block's widths: `contact`
+    /// the `envelope::meshing::Contact`.
+    Meshing { contact: u8, n_par: usize, n_const: usize },
     /// A relation reading a motion's twist (#326), at its block's widths: `reading` the
     /// `envelope::screw::Reading`.
     Motion { reading: u8, n_par: usize, n_const: usize },

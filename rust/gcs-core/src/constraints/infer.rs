@@ -16,19 +16,21 @@ pub fn seed_param(sk: &Sketch, kind: CKind, args: &[Arg], i: usize) -> f64 {
     }
     // a point on a meshing starts at its phase (pinned, seeded, or 0 within the interval), no lag,
     // and each flank's place nearest the point seen from its member there, the contact solved
-    // from those (#283)
-    if kind == CKind::PointOnMeshing {
-        let (Some(Arg::Ent(p)), Some(Arg::Ent(m))) = (args.first(), args.get(1)) else {
+    // from those (#283): the contact's point, or the point a line along its normal or its path
+    // is at (#345), until a contact holding that point hands the line its own
+    if let Some((mesh, first)) = kind.contact_on(SpecKind::Meshing) {
+        let at = if kind == CKind::PointOnMeshing { 0 } else { 2 };
+        let (Some(Arg::Ent(p)), Some(Arg::Ent(m))) = (args.get(at), args.get(mesh)) else {
             return 0.0;
         };
         let Some(e) = sk.meshings.get(m.i()) else { return 0.0 };
         let [a, b] = e.roll;
-        let phase = match args.get(2) {
+        let phase = match args.get(first) {
             Some(Arg::Seed { value, .. }) => *value,
             _ if a <= 0.0 && 0.0 <= b => 0.0,
             _ => ((a + b) / 2.0).to_degrees(),
         };
-        return meshing_place(sk, m.i(), sk.lifted(p.i()), phase).map_or(0.0, |x| x[i - 2]);
+        return meshing_place(sk, m.i(), sk.lifted(p.i()), phase).map_or(0.0, |x| x[i - first]);
     }
     // a place on a traced body starts where the body passes nearest the point (#326): the
     // contact's, or the point a tangent is at
@@ -368,10 +370,11 @@ pub fn validate(
                                name(args[1].ent()), name(e)));
         }
     }
-    // a meshing a point is held to is one whose flanks and motion the solve can read (#283)
-    if kind == CKind::PointOnMeshing {
+    // a meshing a point is held to, or a line at a point held there, is one whose flanks and
+    // motion the solve can read (#283, #345)
+    if kind.meshing_contact().is_some() {
         let c = Constraint::new(kind, args.to_vec());
-        let m = c.meshing_of().ok_or("a point on a meshing names a meshing")?;
+        let m = c.meshing_of().ok_or("a contact with a meshing names a meshing")?;
         crate::envelope::meshing::Parts::of(sk, m.i())
             .map_err(|why| format!("the solve cannot hold anything to {}: {why}", name(m)))?;
     }
@@ -612,8 +615,8 @@ fn envelope_place(sk: &Sketch, e: usize, p: usize) -> Option<[f64; 3]> {
 }
 
 /// Where a point on a meshing would start were it stated now, the point standing at `at` and its
-/// phase where it stands (#283): what a document solve that fails seeds it again with
-/// (`solve`'s recoveries).
+/// phase where it stands (#283): what its block seeds it again with when it comes up
+/// (`blocks::seed_contacts`, #304).
 pub fn meshing_seed(sk: &Sketch, c: &Constraint, at: [f64; 3]) -> Option<[f64; crate::envelope::meshing::UNKNOWNS]> {
     let m = c.meshing_of()?;
     meshing_place(sk, m.i(), at, c.args.get(2)?.value(sk))

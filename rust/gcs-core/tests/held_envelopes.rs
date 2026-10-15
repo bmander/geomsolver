@@ -505,3 +505,61 @@ fn envelope_contacts_read_either_way_round_and_refuse_what_they_cannot_hold() {
         "in std.top {\n  tc := point hint((0, 0))\n}\nfix((0, 0)) tc\nturn := motion(about: tc)");
     refused(&planar, "turns about a point of a view");
 }
+
+/// `ANNULUS`'s cylinder with its axis placed by relations alone, each end a point at a stated
+/// place along a rail, and hinted elsewhere (`HINT`, #304).
+const ANNULUS_PLACED: &str = "\
+unit mm
+use std
+o := point hint((0, 0, 0))
+z := point hint((0, 0, 10))
+fix((0, 0, 0)) o
+fix((0, 0, 10)) z
+ax := line(o, z)
+a0 := point hint((0, 0, -5))
+a1 := point hint((60, 0, -5))
+b0 := point hint((0, 0, 5))
+b1 := point hint((60, 0, 5))
+fix((0, 0, -5)) a0
+fix((60, 0, -5)) a1
+fix((0, 0, 5)) b0
+fix((60, 0, 5)) b1
+low := line(a0, a1)
+high := line(b0, b1)
+c1 := point hint((HINT, -5))
+c2 := point hint((HINT, 5))
+c1 coincident(t == 0.5) low
+c2 coincident(t == 0.5) high
+cax := line(c1, c2)
+cyl := std.Cylinder(cax, r: 5mm)
+turn := motion(about: ax)
+flank := envelope(cyl, under: turn, from: -30deg, to: 30deg)
+in std.top {
+  p := point hint((34, 9))
+}
+fix(y == 10) p
+p coincident flank
+";
+
+/// **A contact starts where the solve places its source** (#304): a point held to an envelope is
+/// seeded as it is stated, where the source stands at its hints, and is sought again where its
+/// block comes up, after the blocks that place the cylinder.  Seeded only as stated, it lands on
+/// the far side of the axis, beyond the roll's bounds (the cylinder hinted across the axis), or on
+/// the inner sheet (a quarter turn round); sought again, on the outer sheet where it is drawn, at
+/// a roll within the bounds — as `ANNULUS`'s does, whose cylinder is hinted where it is placed.
+#[test]
+fn an_envelope_contact_starts_where_the_relations_place_its_source() {
+    for hint in ["-60, 0", "0, -60"] {
+        let e = elaborated(&ANNULUS_PLACED.replace("HINT", hint));
+        let sk = &e.sketch;
+        let at = |n: &str| sk.world_point(e.map.ent_named(n).unwrap().i());
+        let c1 = at("c1");
+        assert!(near(c1, [30.0, 0.0, -5.0], 1e-12), "{hint}: {c1:?}");
+        let p = at("p");
+        let want = [(35f64 * 35.0 - 100.0).sqrt(), 10.0, 0.0];
+        assert!(near(p, want, 1e-12), "{hint}: {p:?}");
+        let c = sk.constraints.iter().find(|c| c.kind == CKind::PointOnEnvelope).unwrap();
+        let roll = sk.params[c.args[4].param() as usize].value;
+        assert!(roll.abs() <= 30f64.to_radians(), "{hint}: {roll}");
+    }
+}

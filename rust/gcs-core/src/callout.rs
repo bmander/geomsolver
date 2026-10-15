@@ -134,6 +134,9 @@ macro_rules! undrawn {
             // nor does a point on the path of contact of two flanks: its lag is a slot a pin
             // states, not a dimension
             | CKind::PointOnMeshing
+            // nor a line along its common normal or its path at a point held there (#345)
+            | CKind::MeshingNormalAt
+            | CKind::MeshingTangentAt
             // nor does a motion's twist read (#326): a line reciprocal to it, an axis on its
             // screw, whose pitch is the relation's own unknown
             | CKind::Reciprocal
