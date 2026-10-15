@@ -639,39 +639,54 @@ held := spline(through: pair, start: heads, end: tails)");
 /// **A spline through corners in space solves from its seeds whatever its ends' tangents**: the
 /// foot each tangent end is built over may cross its corner on the way to the answer, which a line
 /// from the corner to it could not follow (#363 S3) — so over three corners in space, each end
-/// given each of a spread of directions, the cubic is the one solved apart, every time.
+/// given each of a spread of directions — over three corners and over four — the cubic is the one
+/// solved apart, every time.
 #[test]
 fn a_spline_through_corners_in_space_solves_for_any_tangents() {
     let dirs: [V; 6] = [[0.0, 6.0, 10.0], [0.0, 6.0, -10.0], [-5.0, -7.0, -4.0], [1.0, 0.0, 0.0],
                         [3.0, -2.0, 7.0], [-4.0, 9.0, 1.0]];
-    let corners = [[0.0, 0.0, 0.0], [20.0, 10.0, 5.0], [40.0, 0.0, 20.0]];
-    for (i, ds) in dirs.iter().enumerate() {
-        for de in &dirs[i..] {
-            let e = with(&format!("
+    let all = [[0.0, 0.0, 0.0], [20.0, 10.0, 5.0], [40.0, 0.0, 20.0], [50.0, -10.0, 40.0]];
+    // over two links and over three, an interior knot or two between the ends
+    for n in [3usize, 4] {
+        let corners = &all[..n];
+        let (last, chain) = if n == 3 {
+            (corners[2], "pair := line(r0, r1) -> line(r1, r2)")
+        } else {
+            (corners[3], "pair := line(r0, r1) -> line(r1, r2) -> line(r2, r3)")
+        };
+        for (i, ds) in dirs.iter().enumerate() {
+            for de in &dirs[i..] {
+                let e = with(&format!("
 r0 := point
 r1 := point
 r2 := point
+r3 := point
 fix((0mm, 0mm, 0mm)) r0
 fix((20mm, 10mm, 5mm)) r1
 fix((40mm, 0mm, 20mm)) r2
+fix((50mm, -10mm, 40mm)) r3
 s1 := point
 fix(({}mm, {}mm, {}mm)) s1
 e1 := point
 fix(({}mm, {}mm, {}mm)) e1
 heads := line(r0, s1)
-tails := line(r2, e1)
-pair := line(r0, r1) -> line(r1, r2)
+tails := line(r{}, e1)
+{chain}
 held := spline(through: pair, start: heads, end: tails)",
-                ds[0], ds[1], ds[2], 40.0 + de[0], de[1], 20.0 + de[2]));
-            let sk = &e.sketch;
-            let k = e.map.ent_named("held").unwrap();
-            let (&sp, _) = sk.spline_traced.iter().find(|(_, &t)| t as usize == k.i()).unwrap();
-            let got: Vec<V> = sk.splines[sp as usize].ctrl.iter()
-                .map(|&p| sk.world_point(p as usize)).collect();
-            let want = through3(&corners, Some(*ds), Some(*de));
-            for (g, w) in got.iter().zip(&want) {
-                assert!(sub(*g, *w).iter().all(|d| d.abs() <= 1e-9),
-                        "start {ds:?}, end {de:?}: {got:?} against {want:?}");
+                    ds[0], ds[1], ds[2], last[0] + de[0], last[1] + de[1], last[2] + de[2],
+                    n - 1));
+                let sk = &e.sketch;
+                let k = e.map.ent_named("held").unwrap();
+                let (&sp, _) = sk.spline_traced.iter().find(|(_, &t)| t as usize == k.i())
+                    .unwrap();
+                let got: Vec<V> = sk.splines[sp as usize].ctrl.iter()
+                    .map(|&p| sk.world_point(p as usize)).collect();
+                let want = through3(corners, Some(*ds), Some(*de));
+                assert_eq!(got.len(), want.len());
+                for (g, w) in got.iter().zip(&want) {
+                    assert!(sub(*g, *w).iter().all(|d| d.abs() <= 1e-9),
+                            "{n} corners, start {ds:?}, end {de:?}: {got:?} against {want:?}");
+                }
             }
         }
     }
