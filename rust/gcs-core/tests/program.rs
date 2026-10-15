@@ -120,10 +120,10 @@ fn every_constraint_type_is_printable() {
             // prints them from one
             continue;
         }
-        if kind.envelope_contact().is_some() || kind == CKind::PointOnMeshing {
+        if kind.envelope_contact().is_some() || kind.meshing_contact().is_some() {
             // an envelope in space is declared over a solid's side or a set, which a sketch's
             // fixture holds no text of; `tests/held_envelopes.rs` prints them from a document,
-            // and `tests/meshing.rs` a point on a meshing of two
+            // and `tests/meshing.rs` a point on a meshing of two and the lines at it
             continue;
         }
         let (sk, c) = fixture(kind);

@@ -552,7 +552,8 @@ f4 curvature(at: w) k
     }
 }
 
-/// A point on the meshing of two flanks (#283, step 3) — a generated flank against a formed one
+/// A point on the meshing of two flanks (#283, step 3), and a line along the common normal and one
+/// along the path of contact at it (#345) — a generated flank against a formed one
 /// read off a cone set whose number is an unknown, against a formed revolution's round side, and
 /// two generated flanks (each an envelope under a motion of its own) — under a screw mesh of skew
 /// shafts.  Checked at the seeds and at points knocked off them.
@@ -600,6 +601,15 @@ r := point hint((20, 3, 4))
 r coincident rounded
 s := point hint((7, 1, 4))
 s coincident(lag == 0.5) both
+m := point hint((15, 5, 4))
+nl := line(p, m)
+t := axis hint(dir: (1, 2, 3))
+formed perpendicular(at: p) nl
+formed tangent(at: p) t
+rounded perpendicular(at: r) t
+rounded tangent(at: r) nl
+both perpendicular(at: s) nl
+both tangent(at: s) t
 ";
     let (prog, errs) = crate::common::parse(SRC);
     assert!(errs.is_empty(), "{errs:?}");
@@ -607,6 +617,9 @@ s coincident(lag == 0.5) both
     assert!(e.ok(), "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
     let mut sk = e.sketch;
     assert_eq!(sk.constraints.iter().filter(|c| c.kind == CKind::PointOnMeshing).count(), 3);
+    for k in [CKind::MeshingNormalAt, CKind::MeshingTangentAt] {
+        assert_eq!(sk.constraints.iter().filter(|c| c.kind == k).count(), 3, "{k:?} is checked");
+    }
     let mut rng = Rng::new(283);
     for round in 0..4 {
         if round > 0 {
@@ -614,7 +627,7 @@ s coincident(lag == 0.5) both
                 p.value += rng.uniform(-0.05, 0.05) * (1.0 + p.value.abs().min(10.0));
             }
         }
-        for c in sk.constraints.iter().filter(|c| c.kind == CKind::PointOnMeshing) {
+        for c in sk.constraints.iter().filter(|c| c.kind.meshing_contact().is_some()) {
             let err = check_constraint(&sk, c, 1e-6, 1e-7)
                 .unwrap_or_else(|e| panic!("round {round}: {e}"));
             assert!(err.is_finite());

@@ -350,7 +350,7 @@ placement carries inside the blank; CLI test readers zero the offset.
   and the refusals; `face_family`'s bottle is `docs/lofts/l0/bottle.sv` over the spline through
   its rims.
 - **Two faces drawn apart, and a section held to its rails, are library words** (#243 L8,
-  [0.112]): no Rust names them.  `std.Ruled(a, b, s:)` walks the two faces in step (`cycle (ea,
+  [0.113]): no Rust names them.  `std.Ruled(a, b, s:)` walks the two faces in step (`cycle (ea,
   eb) in (a, b)`, `language.md`), joins corner `k` of each by a straight rail, stands each
   corner `point in st.n` on its rail with `st := Across(rail[0], rail[1], rail[2], s:)`, and is
   `face(side)` of its copies, so its walls are `body.side[k]` from corner `k` and its ends the

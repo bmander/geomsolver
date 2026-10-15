@@ -77,14 +77,21 @@ came from.
   place a slot is spelled, read by both printers, as `hint_of` is for the clause around it.
   **The shape is the library's**: every user-facing kind has one or two entity slots, always first
   in spec order, with `Symmetric` the single three-slot exception.  Several kinds share a word —
-  **`coincident` is sixteen kinds, `distance` nine, `tangent` nine** (twins in space included; a set's uses besides) — and `horizontal`/`vertical` are
+  **`coincident` is nineteen kinds, `distance` nine, `tangent` fifteen** (twins in space included; a set's uses besides) — and `horizontal`/`vertical` are
   two each with the *fixity* doing the work.  **Over an envelope in space** (#283, [0.90]) a point
   is `coincident`, and at a point held there a line or an axis `tangent` (`EnvelopeTangentAt`) or
   `perpendicular` (`EnvelopeNormalAt`), a plane `tangent` (`EnvelopePlaneAt`) and a circle or arc
   `curvature` (`EnvelopeCurvatureAt`): the parser reads `at:` after `perpendicular` and `curvature`
   as a point, as after `tangent` (`op_args`), and `settle` names the envelope first whatever was
   written first (`curve_last`, the symmetric swap).  **On a meshing** (#283, [0.94]) a point is
-  `coincident` (`PointOnMeshing`), its phase and lag slots pinned by `t ==` and `lag ==`.
+  `coincident` (`PointOnMeshing`), its phase and lag slots pinned by `t ==` and `lag ==`; at a
+  point held there (#345, [0.112]) a line or an axis is `perpendicular` (`MeshingNormalAt`, the
+  common normal) or `tangent` (`MeshingTangentAt`, the path of contact), `(Meshing, Line | Axis)`
+  with `at:` a point, the meshing named first whatever was written first.  Their eight place slots
+  are the holding contact's (`Constraint::tangent_at`, `holds_on`: `PointOnMeshing` hands its
+  phase, lag and places to them as `share_place` does an envelope's), seeded as the contact's are
+  where they come first (`seed_param` over `contact_on(Meshing)`), and one at a point no contact
+  holds is E040 naming the statement (`tangents_at`).
   **A motion is an operand** (#326, [0.105]): `SpecKind::Motion`, the first slot a motion fills,
   read by `L reciprocal mesh` (`CKind::Reciprocal`, `(Line, Motion)`) and `isa screw mesh`
   (`CKind::ScrewAxis`, `(Axis, Motion)`, its `pitch` a `Param` slot of `Dim::LENGTH`, `pitch ==`

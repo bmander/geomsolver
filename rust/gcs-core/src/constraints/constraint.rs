@@ -383,11 +383,10 @@ impl Constraint {
             let (n_par, n_const) = parts.map_or((0, 0), |p| (p.width(c), p.n_const()));
             return Key::Envelope { fk: c as u8, n_par, n_const };
         }
-        if self.kind == CKind::PointOnMeshing {
-            let lead = crate::envelope::meshing::LEAD;
+        if let Some(c) = self.kind.meshing_contact() {
             let parts = self.meshing_parts(sk);
-            let (n_par, n_const) = parts.map_or((0, 0), |p| (p.width(sk, lead), p.n_const(sk)));
-            return Key::Meshing { n_par, n_const };
+            let (n_par, n_const) = parts.map_or((0, 0), |p| (p.width(sk, c.lead()), p.n_const(sk)));
+            return Key::Meshing { contact: c as u8, n_par, n_const };
         }
         // a contact with a traced body, at its block's widths (#326)
         if let Some(c) = self.kind.traced_contact() {
@@ -604,8 +603,8 @@ impl Constraint {
             None => match self.kind.envelope_contact() {
                 // an envelope contact's: a fact about the contact it states (#283)
                 Some(c) => c.rows(),
-                None if self.kind == CKind::PointOnMeshing => {
-                    crate::envelope::meshing::LEAD + crate::envelope::meshing::ROWS
+                None if self.kind.meshing_contact().is_some() => {
+                    self.kind.meshing_contact().map_or(0, |c| c.rows())
                 }
                 None if self.kind.traced_contact().is_some() => {
                     self.kind.traced_contact().map_or(0, |c| c.rows())
@@ -647,6 +646,8 @@ impl Constraint {
             | CKind::EnvelopeNormalAt
             | CKind::EnvelopePlaneAt
             | CKind::EnvelopeCurvatureAt => &[3, 4, 5],
+            // a meshing's is its phase, its lag and a place on each flank (#345)
+            CKind::MeshingNormalAt | CKind::MeshingTangentAt => &[3, 4, 5, 6, 7, 8, 9, 10],
             // a traced body's place is its two formals' (#326)
             CKind::TracedTangentAt
             | CKind::TracedSurfaceTangentAt
@@ -661,8 +662,9 @@ impl Constraint {
         }
     }
 
-    /// A contact holding a point on a spline, a curve or an envelope — the point, what it is on
-    /// and its place, once allocated: what a tangent at that point reads its place from (#251).
+    /// A contact holding a point on a spline, a curve, an envelope or a meshing — the point, what
+    /// it is on and its place, once allocated: what a tangent at that point reads its place from
+    /// (#251).
     pub fn holds_on(&self) -> Option<(usize, EntRef, Vec<u32>)> {
         if !self.states_rows() {
             return None;
@@ -673,6 +675,13 @@ impl Constraint {
             }
             (CKind::PointOnEnvelope, [Arg::Ent(at), Arg::Ent(on), Arg::Param(u), Arg::Param(v), Arg::Param(t)]) => {
                 Some((at.i(), *on, vec![*u, *v, *t]))
+            }
+            (CKind::PointOnMeshing, [Arg::Ent(at), Arg::Ent(on), place @ ..]) => {
+                let place: Option<Vec<u32>> = place.iter().map(|a| match a {
+                    Arg::Param(p) => Some(*p),
+                    _ => None,
+                }).collect();
+                Some((at.i(), *on, place?))
             }
             (CKind::PointOnTraced, [Arg::Ent(at), Arg::Ent(on), Arg::Param(u), Arg::Param(s)]) => {
                 Some((at.i(), *on, vec![*u, *s]))
@@ -789,7 +798,12 @@ impl Constraint {
     }
 
     pub fn residual(&self, sk: &Sketch, v: &[f64]) -> Vec<f64> {
-        self.eval(sk, v).0
+        // the residual alone: a finite difference asks for it once a column, and a Jacobian can
+        // cost many residuals (a path of contact's, #345)
+        let k = self.kernel_in(sk);
+        let mut r = vec![0.0; k.n_res];
+        (k.res)(1, v, &self.consts(sk), &mut r);
+        r
     }
 
     /// n_res x n_par, row-major.

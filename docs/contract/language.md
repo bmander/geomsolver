@@ -363,7 +363,7 @@ takes a layout naming the front datum, origin and reference axis.
   `e` an alias to that link in each copy (`#<id>.<k>.e`); the count is the chain's, so the block
   is set aside where it stands and expanded once the chain resolves (`flatten::expand_pending`),
   through instances and group formals alike. `tests/chain_edges.rs` is the gate.
-  **A block walks a face too** (#243 L8, [0.112]): `repeat e in f` over a face by name or a
+  **A block walks a face too** (#243 L8, [0.113]): `repeat e in f` over a face by name or a
   `face` formal runs its loop (`flatten::resolve::face_walk`) — a closed chain it is made of or
   the edges it names, each `e` an alias as above, or for a face of corners the straight run from
   each corner to the next (`Link::Run`), a hidden `.closure` line keyed under the face

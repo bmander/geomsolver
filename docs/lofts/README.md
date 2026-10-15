@@ -24,7 +24,7 @@ walk joined by a straight rail, the section where the plane through three rails 
 rail (`Across`), so its ends are the faces whatever their planes — and `std.Apex(a, tip, s:)` the
 loft to a point. A section **held to its rails** is `std.Similar` (two rails: moved, turned and
 scaled) or `std.Affine` (three: sheared too), each corner of a profile drawn once at its own place
-in the frame the rail points make, read off the drawing. Solvent 0.112;
+in the frame the rail points make, read off the drawing. Solvent 0.113;
 [`l0/two_faces.sv`](l0/two_faces.sv) is written over `std.Ruled` (and `pending.sv` is gone);
 `rust/gcs-core/tests/correspondence.rs`, off the exact B-rep to 1e-9:
 

@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.112 — October 2026**
+**Specification, Draft 0.113 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -775,7 +775,7 @@ A minted run is an ordinary line of the drawing carrying the class **`.closure`*
 
 Three restrictions keep the shorthand from swallowing a mistake. An interior gap between two **edges** is still E080: a point in a list can mean nothing else, while two edges that do not meet are edges listed out of order. And **an edge MUST meet at least one of its neighbours**, since that is what says which way it is walked — `bad := face(a, bc, d, -> close)` has two readings and states neither, and is E080 naming the edge. A straight loop with fewer than three corners is E080 for the same reason a prism swept nowhere is. A single item is a loop only as a circle, or as an edge with two ends closed by `-> close`, which mints its chord **[0.28]**.
 
-**A face of a block's copies [0.112].** An item of a face's walk that names a declaration of a `repeat` or a `cycle` beside it, read bare (`face(side)`, `side` declared in the block), stands for its copies in order, `side[0]`, `side[1]`, …, as many as the block made: a loop drawn by a block is a face without its count written twice, and a block whose count is a walk's (§12.8) makes a face of that many edges. Each such edge names the face swept from it by its copy, `side[2]`. A name the face's scope finds as it stands is itself.
+**A face of a block's copies [0.113].** An item of a face's walk that names a declaration of a `repeat` or a `cycle` beside it, read bare (`face(side)`, `side` declared in the block), stands for its copies in order, `side[0]`, `side[1]`, …, as many as the block made: a loop drawn by a block is a face without its count written twice, and a block whose count is a walk's (§12.8) makes a face of that many edges. Each such edge names the face swept from it by its copy, `side[2]`. A name the face's scope finds as it stands is itself.
 
 **A face may have holes.** After its outer boundary, `holes:` introduces one or more circles, named closed loops or faces, separated by commas. Each entry is a complete inner boundary; an open chain is refused (E080). A face is a loop, so it is a hole as it stands — its outer loop, which is how a hole of loose edges is written (`h := face(e, f, g, k)`, then `face(a, b, c, d, holes: h)`); a face with holes of its own is refused, and the hole's face is declared before the face it is cut from. All boundaries MUST lie in the same plane. After solving, every hole MUST be simple, nonzero and strictly inside the outer boundary, and holes MUST be mutually disjoint: touching, crossing, overlapping and nested holes are refused. Loop direction does not determine whether it is a hole; `holes:` does. The final `-> close`, when present, closes only the outer boundary.
 
@@ -892,7 +892,7 @@ block := solid(face(mouth, side_r, lid, side_l), from: face, to: back)
   from its neighbour, so the branch the drawing chose is the one carried. The instance's body
   reads as a traced body's (§6.5): its numbers MAY be any expression in `s`, and its dimensions
   MAY read a number of the geometry it was given (`rim.r`, `a.x`) as that geometry stands, but
-  not its own (**E103**). **[0.112]** A number the station gives a relation word or a component
+  not its own (**E103**). **[0.113]** A number the station gives a relation word or a component
   MAY be any expression of such numbers (a product, a quotient), worked out at each station; a
   dimension whose unknown's coefficient comes to nothing there is the number it comes to. Every
   station inside the interval MUST be held — solved, with no degree of freedom and no equation
@@ -921,7 +921,7 @@ block := solid(face(mouth, side_r, lid, side_l), from: face, to: back)
   along: guide)` and `solid(start_section, end_section, along: guide)` — through 0.99 a section
   carried along a line or an arc, or two joined edge to edge in written order — MUST NOT parse;
   an implementation SHOULD say, at `along:`, what the spelling became. Pairing two faces drawn
-  apart has no word yet (0.112: `Ruled`).
+  apart has no word yet (0.113: `Ruled`).
 - **[0.102] A path is any guide drawn in a plane, a chain among them.** `On` stands on an arc as
   on a line, a spline and a traced curve: a line touching an arc or a circle at a point of it is
   drawn in the round's plane, as one touching a spline is (§6.21). Its frame is held to `up`;
@@ -981,7 +981,7 @@ block := solid(face(mouth, side_r, lid, side_l), from: face, to: back)
   toward the third. *Non-normative:* where the walls of a family meet at an angle across its
   interval an implementation builds its solid in bands between those sections, each wall a face a
   band.
-- **[0.112] Two faces drawn apart, and a section held to its rails.** The standard library's
+- **[0.113] Two faces drawn apart, and a section held to its rails.** The standard library's
   `Ruled(a, b, s:)` is CAD's loft of two sketches: walking the faces `a` and `b` in step (§12.8),
   it joins corner `k` of each by a straight rail and stands its section where the plane through
   the first three rails at `s` cuts every rail, so its ends are the faces themselves; `Apex(a,
@@ -995,7 +995,7 @@ block := solid(face(mouth, side_r, lid, side_l), from: face, to: back)
   third point to `c` as well. Each corner keeps its place in the frame those points make, read
   off the drawing, so in a station holding `a`, `b` (and `c`) where two (three) rails cross its
   plane, the section follows its rails: two give a similarity, three an affine map. Through
-  0.111 two faces drawn apart had no loft, and a section reached its rails corner by corner.
+  0.112 two faces drawn apart had no loft, and a section reached its rails corner by corner.
   Lofting an arc edge with a line edge is not said yet.
 - **A revolution** turns a face about `about:` a line or an axis, which MUST be one of the two (**E081**) and MUST lie in the **face's own plane** (E081) — a line drawn in another view names a direction this face knows nothing about. **[0.67]** A line lies there by membership; an axis where it is one of the plane's own axes (`std.z` on `std.front`), or, held entirely by `fix` (the plane too), where it stands now — else, placed by the solve, where the solid is evaluated, which refuses the solid if it does not. `sweep:` is how far and is a **magnitude**, a full turn where the document writes none; **which way is a word, not a sign** (§9.2, §9.4): `sense: cw | ccw`, right-handed about the line's own `p1 → p2` (an axis's own direction) unless `cw` is written, and a negative `sweep:` is **E040** at the value, in the words of the selector that replaces it.
 - **A body** names its **stock** in the brackets and takes its features from the **[0.32]** `union`, `cut` and **[0.22]** `common` **[0.85]** statements that name it. A solid whose brackets hold solids and no face is a body. **[0.99]** A solid whose brackets hold nothing, `pegs := solid()`, is an **empty body**: its stock is the first solid in `union` with it, so `B(s)` below is read with `S(s)` empty; which is first is no matter, the union being a set. A pattern then joins every copy alike — `repeat n as i { peg[i] union pegs }` — with none written apart as the stock. An empty body nothing is in `union` with is **E080** at its declaration, whatever cuts it. **[0.31]** A swept solid that a `union`, `cut` or `common` statement names is a body too, whose stock is its own sweep: the name means the sweep with its features wherever it is read, the sweep's faces keep their names (`plate.near`, not `plate.plate.near`), and a feature's are reached through it (`plate.hub.near`). A document wanting the bare sweep and the finished part under two names writes `body := solid(plate)` and puts the features on `body`.
@@ -1397,9 +1397,31 @@ Either number may be pinned: `t == 0deg` says at which phase, and `lag == δ` st
 transmission error there. Both flanks' sources and motions and the mesh's axes are columns, so a
 number that makes a flank, or the phase, solves from what is stated. Where the two touch along a
 line the rows lose a rank and the point is free along it. A root is local: the place starts where
-the flanks pass nearest `p` at its phase, with no lag, and is sought again where a solve that fails
-leaves the flanks; a pair a little off conjugate, which the rows hold weakly along its bearing, is
-found only from near its contact.
+the flanks pass nearest `p` at its phase, with no lag, and is sought again when the solve comes to
+it, the flanks where the relations before it have placed them; a pair a little off conjugate,
+which the rows hold weakly along its bearing, is found only from near its contact.
+
+```
+n := point hint((0, 58, 0))
+common := line(Q, n)
+contact perpendicular(at: Q) common
+p := point hint((10, 48, 0))
+along := line(Q, p)
+contact tangent(at: Q) along
+along angle(2deg) std.x
+```
+
+**[0.112]** At a point held to the contact, a line or an axis `perpendicular` to it runs along the
+**common normal** of the two flanks there, and one `tangent` to it along the **path of contact**:
+the contact point's derivative along the phase. Each reads the phase, the lag and the places of the
+contact holding its point — at whatever phase that contact is, not only where the pair is drawn —
+and states two rows, so a number a flank is made from, or the point's phase where nothing pins it,
+solves from an angle stated of either. The path is the motion of the contact in the fixed frame, not
+the bearing: a pair whose contact stands still on the gear's flank has a path all the same, the
+gear's turn carrying it. Where the flanks touch along a line the path has no direction, and a line
+along it does not hold. Either is refused at a point no contact holds on the meshing, naming the
+statement it wants (**E040**), and may be written either way round (`along tangent(at: Q)
+contact`).
 
 After the solve the contact is **traced** over `from:` … `to:`, walked out phase by phase from the
 first point held to it: the lag over the phase is the transmission error, the contact's places the
@@ -2434,9 +2456,9 @@ cycle e in CHAIN as i { ... }
 
 One copy per link of a named chain (§6.6), in traversal order, with `e` a reference to that copy's edge — a constraint operand, a field (`e.p1`), an argument — and `as i` optional as before. The count is the chain's, so the chain MAY be declared later in the body (P2) or reached through an instance or a group. The copies are §12.1's (or §12.2's, with `next`/`prev`) in every other respect, and §12.7 holds. `cycle` over an open chain, and iteration over what is not a named chain or a solid, are errors at the reference (**E103**); a body declaration named as the edge is **E001**.
 
-**Over a face's walk** **[0.112]**: `repeat e in F`, `F` a face (by name, or a `face` formal), makes one copy per edge of its loop in walk order: the links of a chain it is made of, the edges it names, or — for a face of corners (`face(a, b, c, -> close)`) — the straight run from each corner to the next, a line the face owns, drawn once and hidden as its closing lines are, whatever walks it. A face is a loop, so `cycle e in F` closes. A face with holes, a corner with no name, a stretch of a curve, and corners written beside edges are **E080** at the reference.
+**Over a face's walk** **[0.113]**: `repeat e in F`, `F` a face (by name, or a `face` formal), makes one copy per edge of its loop in walk order: the links of a chain it is made of, the edges it names, or — for a face of corners (`face(a, b, c, -> close)`) — the straight run from each corner to the next, a line the face owns, drawn once and hidden as its closing lines are, whatever walks it. A face is a loop, so `cycle e in F` closes. A face with holes, a corner with no name, a stretch of a curve, and corners written beside edges are **E080** at the reference.
 
-**Walks in step** **[0.112]**: `cycle (ea, eb) in (a, b) { … }` runs several walks — chains or faces — together, copy `k` naming the link `k` of each, as many names as walks (a syntax error otherwise). The walks MUST have as many links (**E080**, naming what each walk is), and a `cycle` MUST walk only loops. Two faces pair their edges so by their places in the walks: this is the whole of correspondence between sketches drawn apart (§6.9 [0.112]).
+**Walks in step** **[0.113]**: `cycle (ea, eb) in (a, b) { … }` runs several walks — chains or faces — together, copy `k` naming the link `k` of each, as many names as walks (a syntax error otherwise). The walks MUST have as many links (**E080**, naming what each walk is), and a `cycle` MUST walk only loops. Two faces pair their edges so by their places in the walks: this is the whole of correspondence between sketches drawn apart (§6.9 [0.113]).
 
 **Over a solid's faces** **[0.69]**: `repeat a in X { … }`, `X` a solid or a face path (§6.9), makes one copy per face `X` names, `a` the face (a face path itself, §6.21): a prism's `near`, `far` and a side per edge of its section, a revolution's wall per edge and, where the turn is partial, `start` and `end`, a body's every operand's faces under the operand's name (`pad.plate.near`). The faces are read off what the solid is made of, so one a Boolean ate is listed still and names nothing (§6.21); they are known once the solids are built, so the block is expanded then. **[0.91]** Which copies make anything is a `when` in the body (§12.9): `repeat b in B { when b != a { … } }`, `repeat c in A { when c in B and c != a { … } }`. A condition written after the face path (`repeat b in B if b != a`) is a syntax error; *0.69 through 0.89 kept copies by one, `f in X` and `f != g` joined by `and`.*
 

@@ -55,10 +55,9 @@ impl Constraint {
         if let Some(c) = self.kind.envelope_contact() {
             return self.envelope_parts(sk).map(|p| p.consts(c)).unwrap_or_default();
         }
-        // a meshing contact's: both flanks' and the mesh's (#283)
-        if self.kind == CKind::PointOnMeshing {
-            let lead = crate::envelope::meshing::LEAD;
-            return self.meshing_parts(sk).map(|p| p.consts(sk, lead)).unwrap_or_default();
+        // a meshing contact's: both flanks' and the mesh's (#283, #345)
+        if let Some(c) = self.kind.meshing_contact() {
+            return self.meshing_parts(sk).map(|p| p.consts(sk, c.lead())).unwrap_or_default();
         }
         // a contact with a traced body: its values, its home and its body (#326)
         if self.kind.traced_contact().is_some() {
@@ -616,6 +615,14 @@ impl Constraint {
                 let parts = self.meshing_parts(sk).map(|p| p.columns(sk)).unwrap_or_default();
                 [sk.lifts[k].x.to_vec(), own, parts].concat()
             }
+            // a line along the common normal or the path of contact (#345): its direction, then
+            // the contact's unknowns and the meshing's columns as the contact's
+            CKind::MeshingNormalAt | CKind::MeshingTangentAt => {
+                let at: Vec<u32> = (3..3 + crate::envelope::meshing::UNKNOWNS)
+                    .map(|i| self.args[i].param()).collect();
+                let parts = self.meshing_parts(sk).map(|p| p.columns(sk)).unwrap_or_default();
+                [self.direction_columns(sk, 1), at, parts].concat()
+            }
             // a contact with a traced body (#326, `traced`): what it states about, the place, then
             // the body's columns
             CKind::PointOnTraced
@@ -809,6 +816,11 @@ impl Constraint {
             CKind::PointOnMeshing => {
                 let parts = self.meshing_parts(sk).map(|p| p.lifted(sk)).unwrap_or_default();
                 [vec![e(0).i()], parts].concat()
+            }
+            CKind::MeshingNormalAt | CKind::MeshingTangentAt => {
+                let lead = if e(1).kind == EntKind::Line { ends(1).to_vec() } else { Vec::new() };
+                let parts = self.meshing_parts(sk).map(|p| p.lifted(sk)).unwrap_or_default();
+                [lead, parts].concat()
             }
             // what it states about, then every point the traced body reads (#326)
             CKind::PointOnTraced

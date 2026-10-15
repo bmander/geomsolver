@@ -135,8 +135,8 @@ repeat N [as i] { ... }                 N unrelated copies                      
 cycle N [as i] { ... }                  N copies that close; `next`, `prev` in scope
 ring N about C { ... }                  N copies, each the first turned about C
 repeat e in CHAIN [as i] { ... }        a copy per link of a named chain (`cycle e in` closes)
-repeat e in FACE [as i] { ... }         a copy per edge of a face's walk (0.112)
-cycle (a, b) in (W1, W2) { ... }        walks in step: link k of each in copy k (0.112)
+repeat e in FACE [as i] { ... }         a copy per edge of a face's walk (0.113)
+cycle (a, b) in (W1, W2) { ... }        walks in step: link k of each in copy k (0.113)
 repeat a in SOLID { ... }               a copy per face of a solid                   (1.14)
 when COND { ... }                       made once where COND holds, else not at all  (1.7)
 LHS <= RHS | LHS >= RHS                 in a set's body: a bound on measurements     (1.14)
@@ -547,7 +547,7 @@ holes.sv: solved
   #22.2.hole.r = 4
 ```
 
-**A face's walk, and walks in step** (0.112). `repeat e in f` runs over a face's edges in walk
+**A face's walk, and walks in step** (0.113). `repeat e in f` runs over a face's edges in walk
 order — a chain it is made of, the edges it names, or for a face of corners (`face(a, b, c, ->
 close)`) the straight run from each corner to the next, `e.p1` the corner it leaves. `cycle (ea,
 eb) in (a, b)` runs two walks (chains or faces) together, link `k` of each in copy `k`; the walks
@@ -1286,7 +1286,7 @@ k := Par(o).p over u in (-2mm, 2mm)
   rail, square to its end sections (or tangent to a neighbouring face's edge). With no guide,
   `std.Across(ra, rb, rc, s: s)` is the plane through three rails at `s`
   (`docs/lofts/l0/bottle.sv`, `rust/gcs-core/tests/sections.rs`). **Two faces drawn apart**
-  (0.112) are lofted by `solid(std.Ruled(inlet, outlet).f over s in (0, 1))`: corner `k` of each
+  (0.113) are lofted by `solid(std.Ruled(inlet, outlet).f over s in (0, 1))`: corner `k` of each
   walk joined to corner `k` of the other by a straight rail, the ends the faces themselves. The
   pairing is the written order — start a walk at another corner to connect it differently, and
   name a point on an edge (`m coincident(t == 0.5) half`, `face(t0, t1, t2, m, -> close)`) to give
@@ -1639,6 +1639,21 @@ either. A flank may also be a surface traced in space (1.10) — the contact ele
 sees it, `X coincident(under: turn, t == -phi) x` in its body (`spiral_bevel/phillips_pure.sv`). A conjugate pair touches along a line with no lag (the point is then free along it); a
 mismatched one at a point. After the solve the contact is traced over `from:`…`to:` from the first
 point held to it, and `solventc` reports the transmission error and the path of contact.
+
+At a point held to it (0.112), `bearing perpendicular(at: Q) l` holds a line along the two flanks'
+common normal, and `bearing tangent(at: Q) l` one along the path of contact — where the contact
+moves in space as the pinion turns, not the bearing on either flank. Both read Q's phase, lag and
+places, so they hold at any phase Q is at, and an angle stated of either solves a number:
+
+```
+pq := point hint((10, 48, 0))
+path_q := line(Q, pq)
+bearing tangent(at: Q) path_q
+Q distance(10mm) pq
+path_q angle(2deg) std.x                              // R's phase, a cutter's number, …
+```
+
+At a line contact the path has no direction and a line along it does not hold.
 
 **Spatial geometry read after the solve** adds no unknown and has no 2D glyph; each certifies only
 local evaluations ([analytic face boundaries](analytic-face-boundaries.md); the spiral bevel's

@@ -152,6 +152,17 @@ pub enum CKind {
     /// flanks' sources and motions and the mesh's axes are columns, so what makes a flank solves
     /// from where the contact is and how late the gear is there.
     PointOnMeshing,
+    /// **The common normal of two flanks** at a point a contact holds on their meshing (#345):
+    /// `contact perpendicular(at: q) l`, the line (or axis) along it.  `EnvelopeNormalAt`'s two
+    /// rows, over **that contact's** phase, lag and places, so it is read at the contact's phase,
+    /// not only at the drawn pose.
+    MeshingNormalAt,
+    /// **The path of contact** at a point a contact holds on a meshing (#345): `contact
+    /// tangent(at: q) l`, the line (or axis) along the contact point's derivative along the phase
+    /// — by the implicit function theorem, one solve with the meshing rows' Jacobian in the lag
+    /// and the places.  Two rows over that contact's unknowns; at a line contact the path has no
+    /// direction and the rows are not finite.
+    MeshingTangentAt,
     /// **A line reciprocal to a motion's twist** (#326, `envelope::screw`): `l reciprocal mesh`, a
     /// force along `l` doing no work on the motion — `d · v(p) = 0`, `d` the line's direction and
     /// `v` the twist's velocity at a point of it, the same at every point.  One row; the line's
@@ -356,7 +367,7 @@ impl FamilyKernel {
 }
 
 /// Every concrete constraint type, in the order the registry lists them.
-pub const ALL_KINDS: [CKind; 88] = [
+pub const ALL_KINDS: [CKind; 90] = [
     CKind::Coincident,
     CKind::Distance,
     CKind::Midpoint,
@@ -394,6 +405,8 @@ pub const ALL_KINDS: [CKind; 88] = [
     CKind::EnvelopePlaneAt,
     CKind::EnvelopeCurvatureAt,
     CKind::PointOnMeshing,
+    CKind::MeshingNormalAt,
+    CKind::MeshingTangentAt,
     CKind::Reciprocal,
     CKind::ScrewAxis,
     CKind::CarriedPoint,
@@ -658,6 +671,8 @@ impl CKind {
             CKind::EnvelopePlaneAt => "EnvelopePlaneAt",
             CKind::EnvelopeCurvatureAt => "EnvelopeCurvatureAt",
             CKind::PointOnMeshing => "PointOnMeshing",
+            CKind::MeshingNormalAt => "MeshingNormalAt",
+            CKind::MeshingTangentAt => "MeshingTangentAt",
             CKind::Reciprocal => "Reciprocal",
             CKind::ScrewAxis => "ScrewAxis",
             CKind::CarriedPoint => "CarriedPoint",
@@ -876,6 +891,13 @@ impl CKind {
                 ("u1", S::Param), ("v1", S::Param), ("t1", S::Param),
                 ("u2", S::Param), ("v2", S::Param), ("t2", S::Param),
             ],
+            // the point named, then its contact's unknowns, which `Sketch::add` hands it (#345)
+            CKind::MeshingNormalAt | CKind::MeshingTangentAt => &[
+                ("meshing", S::Meshing), ("line", S::Direction), ("at", S::Point),
+                ("t", S::Param), ("lag", S::Param),
+                ("u1", S::Param), ("v1", S::Param), ("t1", S::Param),
+                ("u2", S::Param), ("v2", S::Param), ("t2", S::Param),
+            ],
             // a line and the motion whose twist it is reciprocal to (#326)
             CKind::Reciprocal => &[("line", S::Line), ("motion", S::Motion)],
             // the axis, the motion, and the pitch: the relation's own unknown
@@ -994,8 +1016,10 @@ impl CKind {
             | CKind::EnvelopeNormalAt
             | CKind::EnvelopePlaneAt
             | CKind::EnvelopeCurvatureAt
-            // a phase and a lag in radians, and a place on each flank
+            // a phase and a lag in degrees, and a place on each flank
             | CKind::PointOnMeshing
+            | CKind::MeshingNormalAt
+            | CKind::MeshingTangentAt
             // a fraction of a run or a turn
             | CKind::PointAlongLine
             | CKind::PointAlongArc
@@ -1054,8 +1078,11 @@ impl CKind {
             // an envelope in space (#283): a point on it, a line or a plane touching it, a line
             // along its normal and a circle osculating it, the last four at a point already on it
             CKind::PointOnEnvelope => ("coincident", Infix),
-            // the path of contact of two flanks (#283)
+            // the path of contact of two flanks (#283), and at a point already on it a line along
+            // the common normal or along the path (#345)
             CKind::PointOnMeshing => ("coincident", Infix),
+            CKind::MeshingNormalAt => ("perpendicular", Infix),
+            CKind::MeshingTangentAt => ("tangent", Infix),
             // a motion's twist (#326): a line a force along which does no work on it, and the
             // axis it screws about
             CKind::Reciprocal => ("reciprocal", Infix),
@@ -1385,9 +1412,9 @@ impl CKind {
     /// names it, and nothing may ask `kernel()` for it.
     pub fn built(self) -> bool {
         matches!(self, CKind::SplineLength | CKind::Stationary | CKind::CurveTouchesLine
-                       | CKind::PointOnMeshing | CKind::Reciprocal | CKind::ScrewAxis
-                       | CKind::CarriedPoint)
+                       | CKind::Reciprocal | CKind::ScrewAxis | CKind::CarriedPoint)
             || self.envelope_contact().is_some()
+            || self.meshing_contact().is_some()
             || self.traced_contact().is_some()
     }
 
@@ -1428,6 +1455,18 @@ impl CKind {
             CKind::EnvelopeNormalAt => Contact::Normal,
             CKind::EnvelopePlaneAt => Contact::Plane,
             CKind::EnvelopeCurvatureAt => Contact::Curvature,
+            _ => return None,
+        })
+    }
+
+    /// The meshing contact this kind states (#283, #345), for the three over a meshing: its kernel
+    /// is built at its operands' widths (`envelope::meshing::kernel`).
+    pub fn meshing_contact(self) -> Option<crate::envelope::meshing::Contact> {
+        use crate::envelope::meshing::Contact;
+        Some(match self {
+            CKind::PointOnMeshing => Contact::Point,
+            CKind::MeshingNormalAt => Contact::Normal,
+            CKind::MeshingTangentAt => Contact::Path,
             _ => return None,
         })
     }
@@ -1475,6 +1514,8 @@ impl CKind {
             | CKind::EnvelopeNormalAt
             | CKind::EnvelopePlaneAt
             | CKind::EnvelopeCurvatureAt
+            | CKind::MeshingNormalAt
+            | CKind::MeshingTangentAt
             | CKind::TracedTangentAt
             | CKind::TracedSurfaceTangentAt
             | CKind::TracedNormalAt
@@ -1613,7 +1654,7 @@ impl CKind {
             | CKind::EnvelopeCurvatureAt => {
                 panic!("an envelope contact's kernel is built at its operands' widths")
             }
-            CKind::PointOnMeshing => {
+            CKind::PointOnMeshing | CKind::MeshingNormalAt | CKind::MeshingTangentAt => {
                 panic!("a meshing contact's kernel is built at its operands' widths")
             }
             CKind::PointOnTraced
@@ -1788,6 +1829,8 @@ impl CKind {
             | CKind::EnvelopePlaneAt
             | CKind::EnvelopeCurvatureAt
             | CKind::PointOnMeshing
+            | CKind::MeshingNormalAt
+            | CKind::MeshingTangentAt
             // nor a motion's twist read (#326)
             | CKind::Reciprocal
             | CKind::ScrewAxis
@@ -1862,6 +1905,8 @@ impl CKind {
                 | CKind::EnvelopePlaneAt
                 | CKind::EnvelopeCurvatureAt
                 | CKind::PointOnMeshing
+                | CKind::MeshingNormalAt
+                | CKind::MeshingTangentAt
                 | CKind::Reciprocal
                 | CKind::ScrewAxis
                 | CKind::CarriedPoint

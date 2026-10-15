@@ -528,8 +528,8 @@ impl System {
     /// a root it reaches only from near it.  So each contact whose own unknowns are among the
     /// block's columns `cols` is seeded again with the pose `sk` the blocks before it left —
     /// its point where it stands (its hidden point brought to it first, as the block's other
-    /// hidden points are) — and `z` takes the seed.  A pinned phase or lag is kept, as
-    /// `System::remeshed` keeps one.  Nothing is done for a block with no such contact.
+    /// hidden points are) — and `z` takes the seed.  A pinned phase or lag is kept.  Nothing is
+    /// done for a block with no such contact.
     fn seed_contacts(&mut self, sk: &mut Sketch, z: &mut [f64], cols: &[usize]) {
         use crate::constraints::{Arg, CKind, SpecKind};
         // (its own copy: the closure outlives the residuals read below, which borrow `self`)
