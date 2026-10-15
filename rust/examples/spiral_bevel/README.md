@@ -286,10 +286,10 @@ The designer states:
 The ease's two curvatures are unknown, seeded and found: κₚ = −0.018005 and κₗ = −0.0028544 a
 millimetre (negative: away from the mill's axis, into the gear's tooth). The meshing is read in
 the gear's frame, `drive := motion(pinion_turn, relative_to: gear_turn)`, since the ease relieves
-the first flank, and the phase is the pinion's. The solve tears the block holding the two
-contacts at `κₗ`, the one number whose statement (the path's angle, one row) can be left over:
-`κₚ` is found inside, from the lag's contact (`solve::blocks`, `torn`). It comes to the same
-ease from seeds on either side of it.
+the first flank, and the phase is the pinion's. The block holding the two contacts has no
+tearing at both numbers (the lag's contact is ten rows), so the solve tears it at `κₗ` alone,
+the path's angle left over, and finds `κₚ` inside from the lag's contact (`solve::blocks`,
+`torn`). It comes to the same ease from seeds on either side of it.
 
 The gear is cut to the ease: its concave blade (`EasedBlade`) is an arc in the normal section,
 tangent to the cone's generator at T and bent by the parabola, turned about an axis parallel to

@@ -224,9 +224,10 @@ axis) — a surface of revolution matching the eased cone to second order at T. 
 (κₚ = −0.018005, κₗ = −0.0028544 a millimetre); the contact at phase 0 at T, the cone's normal there
 30° from the plane square to the mill's axis, the path 70° from the heading by differences of the
 traced contact, the lag −0.03° at −7.5°, a point contact over the phase, the least area factor
-(0.486) the sweep's admission's from below; the blade within 0.1 µm of the eased cone (worked out
-from the cone alone) along the traced bearing, 2 µm within 1.25 mm and 4 mm of T, 20 µm at the
-tooth's corners. The tool reading the two exported STLs (`gcs-cli/tests/pair_check.rs`,
+(0.486) the sweep's admission's from below; the blade held within 0.1 µm of the eased cone
+(worked out from the cone alone) along the traced bearing, 2 µm within 1.25 mm and 4 mm of T,
+20 µm at the tooth's corners (it measures 0.02, 1.5 and 13 µm). The tool reading the two
+exported STLs (`gcs-cli/tests/pair_check.rs`,
 `the_exported_meshing_problem_pair_runs_as_its_meshing`, ignored): the convex side's clearance
 gained over the phase is the meshing's lag times the pinion's lever within 1 µm, the members
 nearest within 1 mm of the meshing's contact (the next pair's, a pitch on, at the phase's ends),

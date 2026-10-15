@@ -294,15 +294,17 @@ version ([0.n], see the [language changelog](../solvent-changelog.md)) says wher
   `z` is left as it was where it fails.  The tearing is a fact of the compile's structure, worked
   out once (`System::tearings`; a steered solve passes the blocks again): each choice is matched
   alone and compared by its widest part (`graph::widest_block`), only the one chosen ordered.
-  **Where no statements can be left over for all of them it is torn at fewer** (#345 S4,
-  `torn_at`): every proper subset of the numbers, the larger first and the later columns first,
-  the ones not held found inside with the geometry, until one comes out.  A lag stated of a
-  meshing's contact is ten rows a tearing can leave over only whole, so of two ease curvatures,
-  one read off that lag and one off the angle of the contact's path (one row), only the second
-  can be held: `spiral_bevel/meshing_problem.sv` solves torn at its lengthwise ease, its profile
-  ease found inside from the lag's contact, and from seeds on either side of what it comes to
+  **Where no statements can be left over for all of them, a block finding them from a contact
+  is torn at each one alone** (#345 S4, `torn_at`), the later column first and the other only
+  where it does not come out, the number not held found inside with the geometry.  A lag stated
+  of a meshing's contact is ten rows a tearing can leave over only whole, so two ease
+  curvatures, one read off that lag and one off the angle of the contact's path (one row), have
+  no tearing together; the structure allows holding either, and which comes out is the search's:
+  `spiral_bevel/meshing_problem.sv` comes out torn at its lengthwise ease (the later), its
+  profile ease found inside from the lag's contact, from seeds on either side of what it comes to
   (`meshing_problem::the_pair_solves_to_its_ease_from_its_seeds`); solved whole, that block's
-  Newton wanders off from seeds a few percent from its root.
+  Newton wanders off from seeds a few percent from its root.  A block that fails whole elsewhere
+  is torn only at all its numbers, as before.
   A seed of a place (`seed_param`, `meshing_seed`) is a grid search, and its last `SEEDS_KEPT`
   answers are remembered against their whole question (`infer::Recent`): the elaborator's passes
   and a steered solve ask the same ones again.  The spiral bevel's face mill is the case: its pressure

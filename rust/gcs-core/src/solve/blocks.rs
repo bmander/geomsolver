@@ -115,11 +115,11 @@ impl System {
                 // torn at it first: whole, it can come to a root on another sheet of the envelope
                 // that every word it states allows
                 let ok = if pass.contacts && self.finds_numbers(sk, b) {
-                    self.torn(sk, &mut pass, z, b, opts)
+                    self.torn(sk, &mut pass, z, b, true, opts)
                         || self.pass_block(sk, &mut pass, z, b, opts)
                 } else {
                     self.pass_block(sk, &mut pass, z, b, opts)
-                        || self.torn(sk, &mut pass, z, b, opts)
+                        || self.torn(sk, &mut pass, z, b, false, opts)
                 };
                 if !ok {
                     whole = false;
@@ -246,18 +246,19 @@ impl System {
     /// most `TEAR_MAX` unknowns; whether it came out, `z` holding what it came to — or as it
     /// was, where it did not.
     ///
-    /// Where no statements can be left over for all of them it is torn at fewer (#345): the
-    /// numbers not held are found inside, with the geometry, and the held ones by the rows left
-    /// over — two ease curvatures, one read off a lag stated of a meshing's contact, whose ten
-    /// rows a tearing can leave over only whole, and one off the angle of its path, one row.
-    /// The choices are tried in turn, more held before fewer and later columns first, until one
-    /// comes out.
+    /// Where no statements can be left over for all of them, a block that finds them from a
+    /// contact (`fewer`) is torn at each one alone (#345), the others found inside with the
+    /// geometry — two ease curvatures, one read off a lag stated of a meshing's contact, whose
+    /// ten rows a tearing can leave over only whole, and one off the angle of its path, one row.
+    /// Both may be torn at by the structure; the later column is tried first and the other
+    /// only where it does not come out.
     fn torn(
         &mut self,
         sk: &Sketch,
         p: &mut Pass,
         z: &mut [f64],
         b: &SolveBlock,
+        fewer: bool,
         opts: &SolveOpts,
     ) -> bool {
         let all = self.seeded_numbers(sk, b);
@@ -267,18 +268,14 @@ impl System {
         if let Some(tear) = self.tearing(b, &all) {
             return self.torn_at(sk, p, z, &all, &tear, opts);
         }
-        // fewer: every proper subset, the larger first, those holding later columns first
-        let n = all.len();
-        let mut fewer: Vec<Vec<usize>> = (1..(1_usize << n) - 1)
-            .map(|m| (0..n).filter(|i| m >> i & 1 == 1).map(|i| all[i]).collect())
-            .collect();
-        fewer.sort_by(|a: &Vec<usize>, b| b.len().cmp(&a.len())
-            .then_with(|| b.iter().rev().cmp(a.iter().rev())));
-        for held in fewer {
-            if let Some(tear) = self.tearing(b, &held) {
-                if self.torn_at(sk, p, z, &held, &tear, opts) {
-                    return true;
-                }
+        // fewer: with `TEAR_MAX` two, each number alone, the later column first
+        if !fewer || all.len() < 2 {
+            return false;
+        }
+        for held in all.iter().rev().map(std::slice::from_ref) {
+            let Some(tear) = self.tearing(b, held) else { continue };
+            if self.torn_at(sk, p, z, held, &tear, opts) {
+                return true;
             }
         }
         false

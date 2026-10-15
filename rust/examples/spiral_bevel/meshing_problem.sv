@@ -100,7 +100,7 @@ component MeshingPair(P: plane, across: axis, up: axis, pinion_teeth: Int, gear_
   contact := meshing(mill.inner_flank, pinion_flank, under: drive, from: -7.5deg, to: 7.5deg,
     ease: mean.T, along: trace.heading, profile: profile_ease / 1mm,
     lengthwise: lengthwise_ease / 1mm)
-  Q := point hint((53.2, 1, 0.6))
+  Q := point hint(at: mean.T)
   Q coincident(t == 0deg) contact
   // the path of contact there, at the stated angle to the trace's heading
   ahead := point hint((53.5, -8.6, -2.3))
@@ -110,7 +110,7 @@ component MeshingPair(P: plane, across: axis, up: axis, pinion_teeth: Int, gear_
   Q distance(>= 0mm, along: trace.normal) ahead
   path angle(path_angle) trace.heading
   // the transmission error: the lag at the start of the phase
-  start := point hint((53.1, -1.7, -0.2))
+  start := point hint(at: mean.T)
   start coincident(t == -7.5deg, lag == lag) contact
   // no undercut: the pinion's convex flank does not fold where the gear's tooth cuts it
   pinion_flank regular(by: gear_tooth.crown) within pinion_blank.material
@@ -163,7 +163,8 @@ component MeanContact(gear: Gear, heading: line, ax: line, flank: set, apex: poi
 component EasedBlade(mean: Contact, ax: line, flank: set, heading: line, profile: Scalar,
     lengthwise: Scalar, half: Angle, grow: Length, reach: Length) {
   // N, the normal section: through T and the mill's axis, standing on `radial`, from T to its
-  // foot on the axis, and `upright`, up the axis from there
+  // foot on the axis, and `upright`, up the axis from there — lines seeded here, since a plane
+  // over the mill's axis itself starts its axis where the solve leaves it stale
   foot := point hint((35.5, 38.9, 0.6))
   foot coincident ax
   foot level(ax) mean.T
