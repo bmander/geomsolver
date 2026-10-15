@@ -673,6 +673,7 @@ fn solids_and_surfaces(
     let Elab { sk, res, map, diags, probes, .. } = cx;
     let (body, skip) = (&flat.body, &flat.skip);
     solids(sk, res, map, body, skip, probes, diags);
+    super::solids::carry_legs(sk);
     // the faces of the solids a block runs over, named for the next pass (#183 F4)
     let unnamed: BTreeMap<String, Vec<FacePath>> = flat.expansion.face_repeats.iter()
         .filter(|abs| !faces.contains_key(*abs))

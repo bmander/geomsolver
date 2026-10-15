@@ -4,6 +4,15 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.121] Chains across planes.** A line touching an arc or a circle at a point of it, the line
+not drawn in the round's plane, is the tangency in space: its direction in the round's plane and
+square to the radius there (`TangentCircleAt3`). So a chain's straight between a bend in one plane
+and a bend in another touches both, and a bent pipe — the most common sweep — is one chain a
+family runs, its frame carried across every joint. A station that states a rate, drawn on a link
+past the first, is no longer solved by the drawing, which cannot know the frame carried to it.
+Through 0.120 a chain was one plane's: the tangency at a joint across planes was E062. (Issue
+#363, S4.)
+
 **[0.120] `On` integrates its frame, and a rate runs over a chain.** `std.On(g, up:, s:)` holds
 its plane square to the guide and turns it by `Minimal`'s rate, `up` read at the family's home
 alone: over a guide in one plane with `up` its normal the solid is the one it was, and along a

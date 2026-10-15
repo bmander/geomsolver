@@ -275,6 +275,11 @@ pub enum CKind {
     /// `PointAlongArc` across views: the point's hidden point at the fraction `t` of the arc's
     /// turn, read in the plane the arc is drawn in and stood in space there (#248).
     PointAlongArc3,
+    /// A line touching a circle or an arc at a point of it, the line drawn out of the round's
+    /// plane (#363 S4): its direction square to the radius to `at` and in the round's plane — two
+    /// rows over the hidden points, `TangentCircleAt`'s and a chain joint's (`TangentArcLine`) in
+    /// space.  What makes a straight between bends in two planes one link of a chain.
+    TangentCircleAt3,
     /// `P coincident l`: a line on a plane in space, both its ends.
     LineOnPlane,
     /// A point the midpoint of a line drawn in another view, in space.
@@ -404,7 +409,7 @@ impl FamilyKernel {
 }
 
 /// Every concrete constraint type, in the order the registry lists them.
-pub const ALL_KINDS: [CKind; 94] = [
+pub const ALL_KINDS: [CKind; 95] = [
     CKind::Coincident,
     CKind::Distance,
     CKind::Midpoint,
@@ -499,6 +504,7 @@ pub const ALL_KINDS: [CKind; 94] = [
     CKind::Mapped,
     CKind::MappedSimilar,
     CKind::MappedCircle,
+    CKind::TangentCircleAt3,
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -707,6 +713,7 @@ impl CKind {
             CKind::PointAlongArc => "PointAlongArc",
             CKind::PointAlongLine3 => "PointAlongLine3",
             CKind::PointAlongArc3 => "PointAlongArc3",
+            CKind::TangentCircleAt3 => "TangentCircleAt3",
             CKind::Ordinate => "Ordinate",
             CKind::Level => "Level",
             CKind::PointOnCurve => "PointOnCurve",
@@ -917,7 +924,7 @@ impl CKind {
             CKind::CurveTangentAt => {
                 &[("curve", S::Curve), ("line", S::Line), ("at", S::Point), ("t", S::Param)]
             }
-            CKind::TangentCircleAt => {
+            CKind::TangentCircleAt | CKind::TangentCircleAt3 => {
                 &[("circle", S::CircleOrArc), ("line", S::Line), ("at", S::Point)]
             }
             CKind::CurveCurvature => {
@@ -1243,6 +1250,7 @@ impl CKind {
             CKind::EqualLength3 => ("equal", Infix),
             CKind::PointOnPlane => ("coincident", Infix),
             CKind::PointOnCircle3 => ("coincident", Infix),
+            CKind::TangentCircleAt3 => ("tangent", Infix),
             CKind::PointOnLine3 => ("coincident", Infix),
             CKind::Midpoint3 => ("midpoint", Infix),
             CKind::Symmetric3 => ("symmetry", Infix),
@@ -1695,6 +1703,7 @@ impl CKind {
             | CKind::Parallel3
             | CKind::PointOnPlane
             | CKind::PointOnCircle3
+            | CKind::TangentCircleAt3
             | CKind::PointOnLine3
             | CKind::EqualLength3
             | CKind::LineOnPlane
@@ -1830,6 +1839,7 @@ impl CKind {
             CKind::PointAlongArc => K::PointAlongArc,
             CKind::PointAlongLine3 => K::PointAlongLine3,
             CKind::PointAlongArc3 => K::PointAlongArc3,
+            CKind::TangentCircleAt3 => K::TangentCircleAt3,
             // an ordinate's kernel is its form's (`Constraint::kernel`); the kind's own is the run,
             // and a level's the line kernel that reads a pair of points' heights alike
             CKind::Ordinate => K::OrdinateU,
@@ -1979,6 +1989,7 @@ impl CKind {
             | CKind::Parallel3
             | CKind::PointOnPlane
             | CKind::PointOnCircle3
+            | CKind::TangentCircleAt3
             | CKind::PointOnLine3
             | CKind::EqualLength3
             | CKind::LineOnPlane
@@ -2019,6 +2030,7 @@ impl CKind {
                 | CKind::Parallel3
                 | CKind::PointOnPlane
                 | CKind::PointOnCircle3
+                | CKind::TangentCircleAt3
                 | CKind::ProjectSolved
                 | CKind::PointOnLine3
                 | CKind::PointAlongLine3

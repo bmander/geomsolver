@@ -196,6 +196,19 @@ pub(super) fn in_space(
         return Ok(None);
     }
     let word = kind.operator().map(|(w, _)| w).unwrap_or("this");
+    // a line touching a round at a point of it, the line out of the round's plane (#363 S4): its
+    // direction square to the radius there and in the round's plane — at a chain's joint the
+    // point is the arc's end or the line's, named
+    if matches!(kind, CKind::TangentCircleAt | CKind::TangentArcLine | CKind::TangentLineCircleAt) {
+        let c = crate::constraints::Constraint::new(kind, args.to_vec());
+        let at = c.contact_point(sk).ok_or((false, "a tangency at a point names one".to_string()))?;
+        let (round, line) = match kind {
+            CKind::TangentLineCircleAt => (args[1].clone(), args[0].clone()),
+            _ => (args[0].clone(), args[1].clone()),
+        };
+        let out = vec![round, line, Arg::Ent(EntRef::point(at))];
+        return Ok(Some((CKind::TangentCircleAt3, out, vec![false; 3])));
+    }
     let k3 = match kind {
         CKind::Coincident => CKind::Coincident3,
         CKind::Distance => CKind::Distance3,

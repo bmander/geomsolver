@@ -65,6 +65,10 @@ pub struct Constraint {
     /// other station, which the family integrates from there (`solid::rated`).  The drawing
     /// solves it like any row.  Travels like `claim`.
     pub initially: bool,
+    /// A row of a station a chain's later leg carries (#363 S4, `Sketch::carried`): no row of
+    /// the drawing, whose solve could not hold that station's frame, but one of the leg's part
+    /// once its family frees it.
+    pub carried: bool,
 }
 
 /// A defined relation word as a statement wrote it — see `Constraint::word`.
@@ -101,10 +105,11 @@ impl Constraint {
     }
 
     /// Whether it states rows at all: a claim (§9.7) is judged and a bound (§9.6) read, never
-    /// solved for, so neither compiles one — the question every seam that compiles, counts or
-    /// welds rows asks, where `acts` also leaves out the soft rows a drag does compile.
+    /// solved for, so neither compiles one, nor does a row a chain's later leg carries (#363 S4)
+    /// — the question every seam that compiles, counts or welds rows asks, where `acts` also
+    /// leaves out the soft rows a drag does compile.
     pub fn states_rows(&self) -> bool {
-        !self.claim && self.bound.is_none()
+        !self.claim && self.bound.is_none() && !self.carried
     }
 
     /// What `reading` can come to: a magnitude's at least zero (a distance between points, a
@@ -192,6 +197,7 @@ impl Constraint {
             along: None,
             bound: None,
             initially: false,
+            carried: false,
         }
     }
 

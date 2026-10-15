@@ -183,6 +183,55 @@ fn legs(sk: &Sketch, res: &Resolver, legs: &[(String, f64)], faces: &[u32])
     out
 }
 
+/// **A station a chain's later leg carries** (#363 S4): a family over a chain draws its station
+/// on every link, but one that states a rate has its home on the first alone — on each later link
+/// its frame is the one the last leg's flow carried across the joint, and its rows `initially`
+/// hold nothing there.  So the drawing does not solve those stations: their rows are carried
+/// (`Constraint::carried`, no row of the drawing) and their own parameters — each entity's, its
+/// points' lifts, its planes' normals, its contacts' places — held where they were seeded
+/// (`Sketch::carried`), until the leg's part frees them (`solid::family::part_of`).  Where the
+/// guide ran along `up` there, the drawn station's turn about it was a freedom the drawing could
+/// not hold.
+pub(crate) fn carry_legs(sk: &mut Sketch) {
+    let mut ents: BTreeSet<EntRef> = BTreeSet::new();
+    for s in &sk.solids {
+        let crate::model::SolidDef::Family { legs, .. } = &s.def else { continue };
+        for leg in legs.iter().skip(1).filter(|l| crate::solid::rated::states_rates(sk, &l.held)) {
+            ents.extend(leg.ents.iter().copied());
+        }
+    }
+    if ents.is_empty() {
+        return;
+    }
+    let mut params: BTreeSet<u32> = BTreeSet::new();
+    for &e in &ents {
+        params.extend(sk.entity_params(e));
+        if e.kind == EntKind::Point {
+            if let Some(k) = sk.lift_of(e.i()) {
+                params.extend(sk.lifts[k].x);
+            }
+        }
+        if e.kind == EntKind::Plane {
+            if let Some(n) = sk.planes[e.i()].normal {
+                params.extend(sk.entity_params(EntRef::new(EntKind::Axis, n as usize)));
+            }
+        }
+    }
+    for c in sk.constraints.iter_mut() {
+        if c.states_rows() && c.entities().iter().any(|e| ents.contains(e)) {
+            c.carried = true;
+            params.extend(c.aux_params());
+        }
+    }
+    for p in params {
+        let q = &mut sk.params[p as usize];
+        if !q.fixed {
+            q.fixed = true;
+            sk.carried.insert(p);
+        }
+    }
+}
+
 /// What a solid is written over, resolved: faces (one written in place built here) or solids —
 /// or `None`, refused.
 fn operands(

@@ -109,6 +109,7 @@ macro_rules! undrawn {
             | CKind::Parallel3
             | CKind::PointOnPlane
             | CKind::PointOnCircle3
+            | CKind::TangentCircleAt3
             | CKind::PointOnLine3
             | CKind::EqualLength3
             | CKind::Midpoint3

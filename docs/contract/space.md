@@ -111,7 +111,11 @@ ring's, or claimed. **A point on a curve drawn in a plane is in it** (#249): `m 
 allowed), `g` a spline or a traced curve (`planes::drawn_plane`, not an extrusion) drawn in `P`, draws a
 point in space in `P`, and `g tangent l` (either way round, `at:` too, #251) a line's free ends —
 as does a line touching an arc or a circle at a point of it (`TangentCircleAt`, #243 L4: `std.On`
-over an arc) —
+over an arc) — and where the line's ends are drawn elsewhere already (a chain's straight between
+bends in two planes), the tangency is the one in space, `TangentCircleAt3` (#363 S4, [0.121];
+`reading::in_space`, from `TangentCircleAt`, a joint's `TangentArcLine` or `TangentLineCircleAt`):
+two rows, `r̂·(B − A)` and `n̂·(B − A)`, the line square to the radius at the point and in the
+round's plane —
 read off the kind `relations::settle` gives, so a word the operands do not take draws nothing; the
 statement stays the 2D contact. A
 kept point is E062 naming what keeps it (`kept`'s cause), its statement returned apart from the

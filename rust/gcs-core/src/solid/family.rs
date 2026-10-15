@@ -125,6 +125,14 @@ fn part_of(sk: &Sketch, face: u32, station: &[EntRef], prefix: &str) -> (Part, V
     let mut held = sk.clone();
     // a copy made to solve reads none of what the drawing remembers
     held.caches = Default::default();
+    // a station a chain's later leg carries, which the drawing held where it was seeded, is
+    // solved here (#363 S4): its rows and its freedom given back
+    for &p in &sk.carried {
+        held.params[p as usize].fixed = false;
+    }
+    for c in &mut held.constraints {
+        c.carried = false;
+    }
     for e in sk.primitives() {
         if inside.contains(&e) {
             continue;

@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.120 — October 2026**
+**Specification, Draft 0.121 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -944,7 +944,11 @@ block := solid(face(mouth, side_r, lid, side_l), from: face, to: back)
   open (**E080**: its ends would meet); past the first link, a contact on anything but a chain it
   runs pinned to `s` is **E103**. **[0.111]** Every `path` formal given a named open chain is run
   so, all **in step**: on link `k` each is given its own link `k`, so the chains MUST have as many
-  links (**E080** naming both). A seed's step MAY run along any path, `hint(at: p, along: g, by:
+  links (**E080** naming both). **[0.121]** A chain MAY run across planes: a line touching an arc
+  drawn in another plane, its ends drawn anywhere, is the tangency in space (§9.2), so a bent pipe
+  is one chain. Where the station states a rate (`On` does), a station on a link past the first
+  is the one the link before carried across the joint: the drawing does not solve it, and its
+  `initially` rows hold at the family's home alone. A seed's step MAY run along any path, `hint(at: p, along: g, by:
   f)`: `f` times `g`'s rate along its own run where `p` meets it, as along a line it is `f` times
   its run from `p1` to `p2` (§6.4).
 - **[0.103] A law is an expression in the running number.** A twist or a scale is a dimension of
@@ -2152,7 +2156,7 @@ What goes in the parentheses is a short list:
 | `coincident` | infix | **[0.42]** (point, point); (point, line \| circle \| arc \| spline \| curve) — incidence, where 0.41 and before wrote `on`; **[0.24]** (point, plane), (line, plane) in space — **[0.54]** of a point standing in space, its membership of the plane, as `in` (§6.7); **[0.74]** of a point its declaration draws in another plane, `p coincident P` draws it in `P` too and `P coincident p` passes `P` through it (§6.7); **[0.49]** (point, set), the set's body at the point (§6.21); **[0.42]** (point, axis), (axis, plane); **[0.43]** (axis, axis), one line either way round; **[0.44]** (line, axis), both ends on it; **[0.38]** (point, the envelope of a prism's side), from any view (§6.15.2); **[0.90]** (point, an envelope in space), owning its place (§6.15.3); **[0.94]** (point, a meshing), on its path of contact, owning its phase `t`, its lag `lag` and a place on each flank (§6.15.4). Read either way round: `P coincident p` is `p coincident P`, but for **[0.74]**'s point drawn in another plane. **[0.32]** Not (solid, solid): the body rule's union is `union` (§6.9) |
 | `cut` | infix | **[0.18]** (solid, solid) — the body rule's other half (§6.9), and no constraint at all |
 | `distance` | infix | (p, p); **[0.46]** +`along:` an ordinate — an axis or a line, or **[0.92]** the view's `u`/`v` for the run and the rise (`right`/`left`/`up`/`down` with the sign said); (p, line); (line, line); (circle, circle); (p, plane) with `along: u`/`v` for signed ordinates from the plane's origin, or **[0.24]** `along: n` for the signed distance along the plane's normal, in space; **[0.42]** (plane, plane), the second's origin along the first's normal (§6.10) |
-| `tangent` | infix | (line, circle); +`at:` for a tangency at a named end; (circle, circle); (arc, line); (spline, line); (curve, line), §6.5 — **six**; **[0.79]** (spline, curve, circle, arc or line; line) +`at: m`, a point held on the first: the tangent there, one equation reading the place of `m`'s contact — three more, and `parallel`; a line and a spline or a curve either way round; **[0.49]** (line, set), a contact on the line in the set and the body's derivative along the line; **[0.51]** (set, set) with the point in the parentheses, `k1 tangent(at: M) k2`, one tangent space there (§6.21); **[0.90]** (envelope in space; line, axis or plane) +`at: m`, a line in its tangent plane or a plane touching it at a point held on it (§6.15.3) |
+| `tangent` | infix | (line, circle); +`at:` for a tangency at a named end; (circle, circle); (arc, line); (spline, line); (curve, line), §6.5 — **six**; **[0.79]** (spline, curve, circle, arc or line; line) +`at: m`, a point held on the first: the tangent there, one equation reading the place of `m`'s contact — three more, and `parallel`; a line and a spline or a curve either way round; **[0.49]** (line, set), a contact on the line in the set and the body's derivative along the line; **[0.51]** (set, set) with the point in the parentheses, `k1 tangent(at: M) k2`, one tangent space there (§6.21); **[0.90]** (envelope in space; line, axis or plane) +`at: m`, a line in its tangent plane or a plane touching it at a point held on it (§6.15.3); **[0.121]** (circle or arc; line) at a point of the round — `at: m`, or the arc's end a chain's joint names — where the line is not drawn in the round's plane: the line's direction in the round's plane and square to the radius there, two equations, so a straight between bends in two planes touches each (§6.9) |
 | `equal` | infix | (line, line) a length; (circle, circle) a radius |
 | `curvature` | infix | (spline, circle), (curve, circle); **[0.90]** (envelope in space, circle or arc) +`at: m`, the osculating circle of its section by the circle's plane (§6.15.3) |
 | `horizontal`, `vertical` | prefix | a line. **[0.48]** Between a pair of points they are the standard library's relation words (§9.9), `level(up)` and `level(right)`: `use std (horizontal, vertical)` |

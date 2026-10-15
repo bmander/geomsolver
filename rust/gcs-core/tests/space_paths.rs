@@ -248,6 +248,94 @@ box := solid(Box(route, std.z).f over s in (0, 5))");
     near(exact(&e, "box"), 4.0 * (60.0 + 23.0 * PI), 1e-9, "the box round the U");
 }
 
+/// The 3D pipe of #363 S4: a line 20 long, a quarter bend of R20 in `std.top`, a line 20 long,
+/// a quarter bend of R20 in the plane x = 20, and a line 20 long up `z` — one chain, its
+/// straight between the bends touching each in its own plane — and stations on it.
+const PIPE: &str = "
+P2 := plane
+fix(origin == (20mm, 0mm, 0mm)) P2
+fix(dir == (0, 1, 0)) P2.u
+fix(dir == (0, 0, 1)) P2.v
+a := point hint((-20, 0, 0))
+b := point in std.top hint((0, 0))
+fix((0mm, 0mm)) b
+c1 := point in std.top hint((0, 20))
+fix((0mm, 20mm)) c1
+d := point in std.top hint((20, 20))
+e := point in P2 hint((40, 0))
+c2 := point in P2 hint((40, 20))
+f := point in P2 hint((60, 20))
+g := point hint((20, 60, 40))
+route := (l0 := line(a, b)) -> tangent (k1 := arc(center: c1)) ->
+  tangent (l2 := line(d, e)) -> tangent (k3 := arc(center: c2)) ->
+  tangent (l4 := line(f, g))
+length(20mm) l0
+length(20mm) l2
+length(20mm) l4
+radius(20mm) k3
+l4 parallel std.z
+component Pipe(g: path, up: axis, r: Length, s: Scalar) {
+  st := std.On(g, up: up, s: s)
+  in st.n {
+    k := circle(center: st.n.origin)
+    radius(r) k
+  }
+  f := face(k)
+}
+component Bar(g: path, up: axis, lo: Length, hi: Length, s: Scalar) {
+  st := std.On(g, up: up, s: s)
+  sec := Span(st.n, lo: lo, hi: hi)
+  f := face(sec.a, sec.b, sec.c, sec.d, -> close)
+}
+component Span(n: plane, lo: Length, hi: Length) {
+  in n {
+    a := point
+    b := point
+    c := point
+    d := point
+  }
+  a coords(du: lo, dv: -1mm) n
+  b coords(du: hi, dv: -1mm) n
+  c coords(du: hi, dv: 1mm) n
+  d coords(du: lo, dv: 1mm) n
+}
+";
+
+/// **A pipe bent in two planes** (#363 S4): the straight between the bends touches each in its own
+/// plane (`TangentCircleAt3`), so the five are one chain and a family runs it.  A 4 mm round tube
+/// along it is its area along its length, 16π·(60 + 20π) = 6174.20 mm³; a 2 × 2 square under
+/// `std.On`'s frame is 4·(60 + 20π) = 491.33 mm³.  And the frame has a closed form: it starts
+/// with `u` square to `z` on the first straight (+y, `v` +z), turns a quarter about `z` round the
+/// first bend and a quarter about `x` round the second, and ends with the tangent +z, `u` −x and
+/// `v` −y — read off the end cap of a bar 3 wide along `u` and 2 along `v`.
+#[test]
+fn a_pipe_bent_in_two_planes_is_one_chain() {
+    let e = with(&format!("{PIPE}
+tube := solid(Pipe(route, std.z, r: 4mm).f over s in (0, 5))
+square := solid(Bar(route, std.z, lo: -1mm, hi: 1mm).f over s in (0, 5))
+bar := solid(Bar(route, std.z, lo: -1mm, hi: 2mm).f over s in (0, 5))"));
+    let at = |n: &str| e.sketch.world_point(e.map.ent_named(n).unwrap().i());
+    for (n, want) in [("a", [-20.0, 0.0, 0.0]), ("d", [20.0, 20.0, 0.0]), ("e", [20.0, 40.0, 0.0]),
+                      ("f", [20.0, 60.0, 20.0]), ("g", [20.0, 60.0, 40.0])] {
+        assert!(sub(at(n), want).iter().all(|d| d.abs() <= 1e-9), "{n}: {:?}", at(n));
+    }
+    let length = 60.0 + 20.0 * PI;
+    near(exact(&e, "tube"), 16.0 * PI * length, 1e-9, "the round tube");
+    near(exact(&e, "square"), 4.0 * length, 1e-9, "the square tube");
+    // the bar's end cap: g + du·u + dv·v with u = −x, v = −y
+    let cap: Vec<V> = brep(&e, "bar").vertices.iter().map(|v| v.p)
+        .filter(|p| (p[2] - 40.0).abs() <= 1e-6).collect();
+    assert_eq!(cap.len(), 4, "{cap:?}");
+    for (du, dv) in [(-1.0, -1.0), (2.0, -1.0), (2.0, 1.0), (-1.0, 1.0)] {
+        let want = [20.0 - du, 60.0 - dv, 40.0];
+        let d = cap.iter().map(|p| dot(sub(*p, want), sub(*p, want)).sqrt())
+            .fold(f64::MAX, f64::min);
+        assert!(d <= 1e-9, "the corner at ({du}, {dv}) is {d} from {want:?}: {cap:?}");
+    }
+    // the bar's centroid stands ½ toward the first bend's centre and square to the second's plane
+    near(exact(&e, "bar"), 6.0 * (length - 0.5 * PI / 2.0), 1e-9, "the bar");
+}
+
 /// The four corners of `b` nearest `at`: the corners of its cap there.
 fn cap(b: &gcs_core::brep::topo::Brep, at: V) -> Vec<V> {
     let mut ps: Vec<V> = b.vertices.iter().map(|v| v.p).collect();

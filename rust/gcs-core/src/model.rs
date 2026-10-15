@@ -182,6 +182,13 @@ pub struct Sketch {
     /// initial value — but what the family integrates the station by (`solid::rated`).  Grafted
     /// with the entities they name.
     pub rates: Vec<RateRow>,
+    /// **The parameters a chain's later leg carries** (#363 S4): a station that states a rate,
+    /// drawn on a link of a chain past the first, has no home there — its frame is the one the
+    /// last leg's flow carried across the joint, which nothing in the drawing knows — so its rows
+    /// are `Constraint::carried` and its own parameters held where they were seeded, these, until
+    /// its family's part frees them (`solid::family::part_of`).  Set by the elaborator
+    /// (`program::solids::carry_legs`).
+    pub carried: std::collections::BTreeSet<u32>,
     /// Each free curve's energy as `settle_variational` last read it: its statements, pegs and
     /// whether its length is free.  Derived state, never saved.
     pub variational: Vec<crate::variational::Energy>,
