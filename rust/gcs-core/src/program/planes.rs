@@ -204,7 +204,8 @@ pub(super) fn incidences(
     for (i, st) in stating.iter().enumerate() {
         let StmtKind::Relation(r) = &st.kind else { continue };
         let Some(w) = r.form.written() else { continue };
-        if r.claim || r.along.is_some() || !matches!(w.word.text.as_str(), "coincident" | "tangent")
+        if r.claim || r.initially || r.reads_rate() || r.along.is_some()
+            || !matches!(w.word.text.as_str(), "coincident" | "tangent")
             || w.ops.len() != 2 || w.bound().is_some()
         {
             continue;

@@ -609,6 +609,25 @@ component OnHelix(base: plane, r: Length, pitch: Length, turns: Scalar, s: Scala
   n := plane(u: out, v: lean)
 }
 
+// The rotation-minimising frame of a station (#339 D3, #243 L9): the plane `f` through `n`'s
+// origin, square to the path as `n` is, whose axes turn only as the path makes them — `f.u`'s
+// rate has no part along `f.v` (with both unit and square to the path, U′ ∥ T).  It is integrated
+// along the running number from where its family stands drawn, its home, where `f.u` is square to
+// `up` and `f.v` leans toward it; give it the family's running number as `s`.  Over a guide in
+// one plane, with `up` that plane's normal, it is `On`'s frame; along a twisted path it turns
+// against the path's Frenet frame at the path's torsion, where `OnHelix`'s turns with it.
+component Minimal(n: plane, up: axis, s: Scalar) {
+  f := plane(u: hint(dir: up, turn: -90deg, about: n.normal), v: hint(dir: up))
+  f.origin coincident n.origin
+  f.u perpendicular n.normal
+  f.v perpendicular n.normal
+  f.u perpendicular f.v
+  rate(f.u over s) perpendicular f.v
+  initially {
+    f.u perpendicular up
+  }
+}
+
 // A station with no guide (#243 L7): the plane through the places at `s` on three rails — a loft
 // that joins its sections in space directly.  Each rail runs through one corner of every
 // section: a chain of lines, one a link a pair of neighbouring sections (the ruled loft, a family
@@ -676,72 +695,23 @@ component Apex(a: face, tip: point, s: Scalar) {
   f := face(side)
 }
 
-// Where `b` stands from `a` in the frame of the plane `n` both are drawn in, `(du, dv)`: unknowns
-// of the drawing where the call leaves them so, which is what `Similar` and `Affine` read a
-// station's rails by.
-component Spans(n: plane, a: point, b: point, du: Length, dv: Length) {
-  in n {
-    b offset(dx: du, dy: dv) a
-  }
-}
-
-// The point `q` at `(i, j)` in the frame from `a` along the spans `ab` and `ac` (`Spans`):
-// `a + i·(b − a) + j·(c − a)`, in two steps, each affine in one span's unknowns.
-component Framed(n: plane, a: point, ab: group, ac: group, i: Scalar, j: Scalar) {
-  in n {
-    private r := point
-    q := point
-    r offset(dx: j * ac.du, dy: j * ac.dv) a
-    q offset(dx: i * ab.du, dy: i * ab.dv) r
-  }
-}
-
-// A section held to its rails (#243 L8): the face `prof`, drawn once anywhere, carried into the
-// plane `n` by the map that takes `from` to `a`, `to` to `b` and `third` to `c` — moved, turned,
-// scaled and sheared, so that three rails give an affine map.  Each corner `p` of `prof` keeps
-// its place `(i, j)` in the frame `from`, `to`, `third` — `p = from + i·(to − from) + j·(third −
-// from)`, read off the drawing, so the word reads geometry as a face family's station may — and
-// stands at `a + i·(b − a) + j·(c − a)`.  In a family whose station holds `a`, `b` and `c` where
-// three rails cross its plane, the section follows the rails.  `from`, `to` and `third` must not
-// stand in a line.
+// A section held to its rails (#243 L8): the face `prof`, drawn once anywhere, carried whole into
+// the plane `n` by the map that takes `from` to `a`, `to` to `b` and `third` to `c` — moved,
+// turned, scaled and sheared, so that three rails give an affine map (`mapped`, #357; its edges
+// keep their names under `f`).  In a family whose station holds `a`, `b` and `c` where three
+// rails cross its plane, the section follows the rails.  `from`, `to` and `third` standing in a
+// line is refused where the map is stated.  Written as the word, `f := prof mapped(from -> a,
+// to -> b, third -> c) in n`, this is the same statement.
 component Affine(prof: face, from: point, to: point, third: point, n: plane, a: point, b: point,
                  c: point) {
-  private ab := Spans(n, a, b)
-  private ac := Spans(n, a, c)
-  cycle e in prof {
-    corner := Framed(n, a, ab, ac,
-      i: ((e.p1.x - from.x) * (third.y - from.y) - (e.p1.y - from.y) * (third.x - from.x))
-         / ((to.x - from.x) * (third.y - from.y) - (to.y - from.y) * (third.x - from.x)),
-      j: ((to.x - from.x) * (e.p1.y - from.y) - (to.y - from.y) * (e.p1.x - from.x))
-         / ((to.x - from.x) * (third.y - from.y) - (to.y - from.y) * (third.x - from.x)))
-    in n {
-      side := line(corner.q, next.corner.q)
-    }
-  }
-  f := face(side)
+  f := prof mapped(from -> a, to -> b, third -> c) in n
 }
 
-// A section held to two rails: `Affine`'s frame with its third corner `b` turned a quarter about
-// `a`, counter-clockwise in `n`, as `to` turned so about `from` is in `prof`'s plane — moved,
-// turned and scaled alike both ways, never stretched: two rails give a similarity.
+// A section held to two rails: the similarity taking `from` to `a` and `to` to `b`, keeping the
+// turn — moved, turned and scaled alike both ways, never stretched: two rails give a similarity,
+// and an arc or a circle of `prof` stays one, its radius scaled.
 component Similar(prof: face, from: point, to: point, n: plane, a: point, b: point) {
-  private ab := Spans(n, a, b)
-  in n {
-    private c := point
-    c offset(dx: -ab.dv, dy: ab.du) a
-  }
-  private ac := Spans(n, a, c)
-  cycle e in prof {
-    corner := Framed(n, a, ab, ac,
-      i: ((e.p1.x - from.x) * (to.x - from.x) + (e.p1.y - from.y) * (to.y - from.y))
-         / ((to.x - from.x)^2 + (to.y - from.y)^2),
-      j: ((to.x - from.x) * (e.p1.y - from.y) - (to.y - from.y) * (e.p1.x - from.x))
-         / ((to.x - from.x)^2 + (to.y - from.y)^2))
-    in n {
-      side := line(corner.q, next.corner.q)
-    }
-  }
-  f := face(side)
+  f := prof mapped(from -> a, to -> b) in n
 }
 
 // -- laws of a station (#243 L5) ----------------------------------------------------------------
@@ -752,37 +722,27 @@ component Similar(prof: face, from: point, to: point, n: plane, a: point, b: poi
 // `s = 1` — and run it linearly from the section as drawn at `s = 0`; any other law is the same
 // word given another fraction, `s: 3 * s^2 - 2 * s^3`.  A `when` cannot say a law: it is made
 // once, for the whole run, and the station is one shape all along it; `min`, `max` and `abs` say
-// a law in pieces.
+// a law in pieces.  A section drawn once is carried whole, turned and scaled by the similarity
+// its frame is mapped by (#357), the law in where its frame's second point stands: `Twisted`'s
+// turned point, or any point the station places (`lofts/tapered.sv`).  `scaled` and
+// `scaled_radius` are for a section written as coordinates in the station's own plane.
 //
-//   component Duct(g: path, up: axis, half: Length, s: Scalar) {
+//   component Duct(g: path, up: axis, prof: face, o: point, x: point, s: Scalar) {
 //     st := std.On(g, up: up, s: s)
-//     tw := std.Twisted(st.n, twist: 90deg, s: s)
-//     in st.n {
-//       a := point
-//       a scaled(du: -half, dv: -half, scale: 0.5, s: s) tw.axes
-//       …
-//     }
+//     tw := std.Twisted(st.n, twist: 90deg, reach: 10mm, s: s)
+//     sec := prof mapped(o -> st.n.origin, x -> tw.t) in st.n
 //   }
 
-// The plane `n` turned `twist · s` about its origin, within it: axes a section drawn in `n` is
-// measured against (`p coords(du: 5, dv: 0) tw.axes`), so the section turns as it runs.  At
-// `s = 0` they are `n`'s own.  The turn runs on from one station to the next, so a twist past a
-// half turn is no different from a quarter.
-component Twisted(n: plane, twist: Angle, s: Scalar) {
+// The point `reach` along the plane `n`'s `u` from its origin, turned `twist · s` about the origin
+// within it: where a section drawn once carries the second point of its frame, so the section
+// turns as it runs — `sec := prof mapped(o -> n.origin, x -> tw.t) in n`, `o` and `x` the
+// section's frame `reach` apart (#357).  At `s = 0` it stands on `n`'s own `u`, and the turn is
+// the angle itself, so a twist past a half turn is a twist past a half turn.
+component Twisted(n: plane, twist: Angle, reach: Length, s: Scalar) {
   in n {
-    private zero := point
-    zero on_u(d: 10mm) n
-    private construction ref := line(n.origin, zero)
-    private t := point
-    construction u := line(n.origin, t)
-    length(10mm) u
-    ref angle(twist * s, sense: ccw) u
-    private q := point hint(at: n.origin, toward: t, turn: 90deg)
-    private construction v := line(n.origin, q)
-    v perpendicular u
-    v equal u
+    t := point
+    t coords(du: reach * cos(twist * s), dv: reach * sin(twist * s)) n
   }
-  axes := plane(u: u, v: v)
 }
 
 // Where a point stands in a plane's frame as its section is scaled about the origin: `(du, dv)`

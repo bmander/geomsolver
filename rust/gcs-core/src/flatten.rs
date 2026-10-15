@@ -37,6 +37,7 @@ mod interfaces;
 mod keys;
 mod steps;
 mod through;
+mod image;
 
 pub use faces::{FaceAxis, FacePlane};
 
@@ -133,9 +134,6 @@ struct InBlock {
     /// *copy* — shown and selected by, never written into a statement.  This walk is the only
     /// place that is known (`syntax::Named`, issue #39).
     copies: bool,
-    /// Whether an `initially { … }` stands above (#339 D2): its relations hold at a traced
-    /// body's home alone (`syntax::Relation::initially`).
-    initially: bool,
 }
 
 /// What the enclosing instances put on every declaration emitted under them (`Scope::stamps`).

@@ -185,7 +185,7 @@ pub(super) fn build_traced(sk: &Sketch, res: &Resolver, d: &Decl, st: &Stmt, pro
             StmtKind::Decl(_) => continue,
             // a relation that reads a rate is a row of the rates' system, one written in
             // `initially` a row of the home's (#339 D2)
-            StmtKind::Relation(r) if r.form.written().is_some_and(|w| w.reads_rate()) => {
+            StmtKind::Relation(r) if r.reads_rate() => {
                 low.target = super::curves::Target::Rate;
                 let r = low.rate_relation(st, r)?;
                 low.relation(st, &r)?;

@@ -634,6 +634,22 @@ pub struct Block {
     /// representative turned, so there is nothing an index could vary.
     pub index_reads: Vec<Span>,
     pub span: Span,
+    /// `sec := prof mapped(from -> a, to -> b) in n` (#357): a face carried whole, written as
+    /// the definition it is and walked as a `cycle` over the face's loop (`over`, the copies'
+    /// name one the source cannot write) that makes no copies — the flattener builds the image
+    /// instead (`flatten::image`).  `None` for every block written as one.
+    pub image: Option<FaceImage>,
+}
+
+/// What a face carried by a map is (`Block::image`, #357): the image's name, the word and its
+/// pairs as written (each `from -> a` two unlabelled references, as a point's map reads them),
+/// and the plane the image is drawn in.
+#[derive(Clone, Debug)]
+pub struct FaceImage {
+    pub name: Name,
+    pub word: Name,
+    pub args: Vec<OpArg>,
+    pub plane: Ref,
 }
 
 /// What a block runs over when it runs over a chain: the name each copy calls its edge, and the
@@ -722,11 +738,6 @@ pub enum BlockKind {
     /// (#210), decided at flattening over the numbers in scope.  No index and no prefix, so what
     /// it declares is named as if written beside it.
     When,
-    /// What holds at a traced body's **home** alone (#339 D2): `initially { … }`, the body's
-    /// initial data where no sheet says it — an instance written in place.  Made once, like a
-    /// `when` that holds; a drawn instance *is* its home, so on the sheet its relations are
-    /// ordinary ones.
-    Initially,
 }
 
 impl BlockKind {
@@ -1503,12 +1514,17 @@ pub struct Relation {
     /// space, so the relation is the one in space wherever its operands are drawn
     /// (`program::reading::in_space`).
     pub space: bool,
-    /// Set by the flattener on a relation written in an `initially { … }` block (#339 D2): it
-    /// holds at a traced body's home alone.
+    /// Written inside `initially { … }` (#339 D2, D3): a row of a body's home alone — a traced
+    /// body's or a face family's.  Stamped by the parser, which hoists the block's relations.
     pub initially: bool,
 }
 
 impl Relation {
+    /// Whether any operand is written as a rate (#339 D2): `Written::reads_rate`.
+    pub fn reads_rate(&self) -> bool {
+        self.form.written().is_some_and(|w| w.reads_rate())
+    }
+
     /// A relation built rather than written: its form and nothing else — no placement, class,
     /// claim, word or derivative.
     pub fn of(form: RelationForm) -> Relation {

@@ -87,7 +87,7 @@ test('menu examples open files or directories with one V-twin choice', async (t)
   const lofts = await remote.drawing('lofts');
   assert.equal(lofts.source, 'lofts/pipe.sv');
   for (const name of ['README.md', 'pipe.sv', 'twisted_duct.sv', 'tapered.sv', 'thread.sv',
-    'spring.sv', 'bottle.sv', 'squares.sv', 'two_faces.sv', 'triangle_to_square.sv', 'pyramid.sv',
+    'spring.sv', 'ribbon.sv', 'bottle.sv', 'squares.sv', 'two_faces.sv', 'triangle_to_square.sv', 'pyramid.sv',
     'blade.sv', 'three_rails.sv', 'square_to_circle.sv']) {
     assert.ok(lofts.files[`lofts/${name}`], name);
   }

@@ -76,7 +76,14 @@ pub(crate) fn settle(
             // a selector by name, and a contact's place where it is written, pinned or seeded
             // (`t == 0.25`, `hint(t: 0.3)`): what makes a point on a run a fraction of it (#248)
             let place = w.slots().find(|(k, _)| k.text == "t").map(|(k, _)| k.span);
-            let sel = |n: &str| w.sel(n).or_else(|| (n == "t" && place.is_some()).then(String::new));
+            // and how many pairs a map was written with (#357): three an affine map, two the
+            // similarity
+            let pairs = mapped_pairs(w)?;
+            let sel = |n: &str| {
+                w.sel(n)
+                    .or_else(|| (n == "t" && place.is_some()).then(String::new))
+                    .or_else(|| (n == "pairs").then(|| pairs.to_string()))
+            };
             let circle = matches!((a, b), (EntKind::Point, EntKind::Circle) | (EntKind::Circle, EntKind::Point));
             if let (true, Some(at)) = (word == "coincident" && circle, place) {
                 return Err((at, "a circle has no start or end, so no fraction of its turn: \
@@ -106,6 +113,11 @@ pub(crate) fn settle(
                     return Ok((k, swapped.assemble(k)?));
                 }
             }
+            // a circle under an affine map is an ellipse (#357): carried by two pairs only
+            if word == "mapped" && pairs == 3 && a == EntKind::Circle && b == EntKind::Circle {
+                return Err((w.word.span, "under a map of three pairs a circle is an ellipse, \
+                    which a circle cannot be: carry it by two pairs, the similarity".to_string()));
+            }
             crate::constraints::infix_op(word, a, b, &sel).ok_or_else(|| {
                 (w.word.span, format!("`{word}` does not relate {} to {}", a.a(), b.a()))
             })?
@@ -134,6 +146,28 @@ pub(crate) fn settle(
     Ok((kind, w.assemble(kind)?))
 }
 
+/// How many pairs `mapped`'s parentheses hold (#357), each `source -> target` read as two
+/// unlabelled references (`op_args`): three or two, or refused at the word — and 0 for every
+/// other word.  `mirror:` reverses the turn of the two-pair similarity; three pairs say their
+/// turn by where their targets stand.
+fn mapped_pairs(w: &crate::syntax::Written) -> Result<usize, (Span, String)> {
+    if w.word.text != "mapped" {
+        return Ok(0);
+    }
+    let refs = w.args.iter().filter(|a| matches!(a, crate::syntax::OpArg::Ent(_))).count();
+    let pairs = refs / 2;
+    if refs % 2 != 0 || !(2..=3).contains(&pairs) {
+        return Err((w.word.span, "`mapped` takes two or three pairs, each a point of the source \
+            and where it goes: `q mapped(from -> a, to -> b, third -> c) p`, or two for the \
+            similarity".to_string()));
+    }
+    if let (3, Some(at)) = (pairs, w.key_span("mirror")) {
+        return Err((at, "`mirror:` reverses the similarity two pairs make: three pairs say \
+            their turn by where their targets stand".to_string()));
+    }
+    Ok(pairs)
+}
+
 /// Whether a plane's membership (`p coincident P`, `l coincident P`) is of geometry drawn in `P`
 /// already — itself or its twin there (§6.7) — so that the row would be identically zero.
 fn drawn_on(sk: &Sketch, ckind: CKind, args: &[CArg]) -> bool {
@@ -159,6 +193,12 @@ fn say_once(diags: &mut Vec<Diag>, span: Span, stmt: StmtId, message: String) {
 /// applied as a gauge, taken as a region's term, or refused, and no id. The steps below, in the
 /// order each may end it.
 pub(super) fn constrain(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) -> Option<u32> {
+    // a rate's relation is no row of the drawing, but what its family integrates by (#339 D3)
+    if r.reads_rate() {
+        rate_row(cx, r, st);
+        return None;
+    }
+    let initially = r.initially;
     // what the relation is, by what its operands resolve to (`shape`)
     let shape = r.form.written().map_or(Shape::Other, |w| shape(&cx.sk, &cx.res, w));
     if face_or_ends(cx, r, st, &shape) {
@@ -270,9 +310,17 @@ pub(super) fn constrain(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) -> Option<u3
     if refused_value(cx, &r, st, ckind, spec, &args) {
         return None;
     }
-    let bound = inferred(cx, &r, st, ckind, &mut args, &left_out)?;
+    let mut bound = inferred(cx, &r, st, ckind, &mut args, &left_out)?;
+    // a flank said regular with no number is one with no fold: its least area factor at least
+    // nothing (#345)
+    let margin = ckind.dimension_slot().filter(|&i| ckind == CKind::RegularWithin && left_out[i]);
+    if let (Some(i), None) = (margin, &bound) {
+        args[i] = CArg::Num(0.0);
+        bound = Some((crate::constraints::Bound { cmp: crate::syntax::Cmp::Ge, hi: None }, None));
+    }
     let mut c = Constraint::new(ckind, args);
     c.claim = r.claim;
+    c.initially = initially;
     // an interval runs upward from its low end, the number as settled
     if let (Some((b, at)), Some(i)) = (bound, ckind.dimension_slot()) {
         if b.hi.is_some_and(|hi| hi < c.args[i].num()) {
@@ -291,6 +339,47 @@ pub(super) fn constrain(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) -> Option<u3
         derivative(cx, st, &mut c, found, used.unwrap_or(st.span))?;
     }
     region_or_row(cx, &r, st, c, term_name)
+}
+
+/// `rate(x over s) word y` (#339 D3), kept beside the constraints (`Sketch::rates`): a rate is
+/// of an axis's direction or of a point, and is held against a direction or a plane.
+fn rate_row(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) {
+    let Some(w) = r.form.written() else { return };
+    let said = |r: &Ref| super::source_map::public_path(&crate::syntax::ref_text(r));
+    // a face family's rate is its first operand's, held as a direction against the second
+    let ([x, y], [rate], "parallel" | "perpendicular") = (&w.ops[..], &w.rates[..],
+        w.word.text.as_str()) else {
+        cx.diags.push(Diag::on(Code::E040, st, "a face family holds a rate of its first operand \
+            against a direction: `rate(x over s) parallel y` or `perpendicular y`".into()));
+        return;
+    };
+    if rate.op != 0 || !w.args.is_empty() {
+        cx.diags.push(Diag::on(Code::E040, st, "a face family holds a rate of its first operand \
+            against a direction: `rate(x over s) parallel y` or `perpendicular y`".into()));
+        return;
+    }
+    let over = rate.over.text.as_str();
+    let formal = over.rsplit('.').next().unwrap_or(over);
+    let text = format!("rate({} over {formal}) {} {}", said(x), w.word.text, said(y));
+    let word = match w.word.text.as_str() {
+        "parallel" => crate::model::RateWord::Parallel,
+        _ => crate::model::RateWord::Perpendicular,
+    };
+    let mut refuse = |message: String| cx.diags.push(Diag::on(Code::E040, st, message));
+    match (cx.res.entity(&cx.sk, x), cx.res.entity(&cx.sk, y)) {
+        (Some(of), _) if !matches!(of.kind, EntKind::Axis | EntKind::Point) => refuse(format!(
+            "`{text}`: a rate is of an axis's direction or of a point, and `{}` is {}",
+            said(x), of.kind.a())),
+        (_, Some(to)) if !matches!(to.kind, EntKind::Axis | EntKind::Line | EntKind::Plane) => {
+            refuse(format!("`{text}`: a rate is held against a direction, an axis or a line, or \
+                a plane, and `{}` is {}", said(y), to.kind.a()))
+        }
+        (Some(of), Some(to)) => {
+            cx.sk.rates.push(crate::model::RateRow { of, word, to, over: over.to_string(), text })
+        }
+        _ => refuse(format!("`{text}` relates two things drawn: a rate of an axis or a point, \
+            and a direction or a plane")),
+    }
 }
 
 /// A contact with a body traced in space, read as its body runs over one formal or two (#326):

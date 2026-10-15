@@ -7,7 +7,7 @@ use gcs_core::diagnose::{diagnose, DiagnoseOptions};
 use gcs_core::program::Elaborated;
 
 use crate::common::parsed::determined;
-use crate::rates::{fresnel, geodesic, tractrix};
+use crate::traced_rates::{fresnel, geodesic, tractrix};
 
 fn index(e: &Elaborated, name: &str) -> usize {
     e.map.ent_named(name).unwrap_or_else(|| panic!("no `{name}`")).i()

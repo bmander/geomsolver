@@ -229,6 +229,7 @@ impl<'a> Walk<'a> {
             // in space, a set's body (§6.21), which no later stamp undoes
             r.space |= set;
             r.claim |= u.rel.claim;
+            r.initially |= u.rel.initially;
             if placed == Some(i) {
                 r.place = u.rel.place;
                 r.place_span = u.rel.place_span;

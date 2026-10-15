@@ -1,7 +1,7 @@
-// A section on three rails (#243 L8): `std.Affine(prof, from, to, third, n, a, b, c)` carries
-// the face `prof` into the plane `n` by the affine map taking `from`, `to` and `third` to `a`,
-// `b` and `c` — moved, turned, scaled and sheared — each corner keeping its place in the frame
-// those three make, read off the drawing. With no guide, the station is the plane through the
+// A section on three rails (#243 L8): `sec := prof mapped(from -> pa, to -> pb, third -> pc) in
+// st.n` (#357) carries the face `prof` whole into the station's plane by the affine map taking
+// `from`, `to` and `third` to `pa`, `pb` and `pc` — moved, turned, scaled and sheared — each
+// corner keeping its place in the frame those three make (`std.Affine` says the same). With no guide, the station is the plane through the
 // three rails at `s` (`std.Across`), and `pa`, `pb` and `pc` are where it crosses them.
 // Closed form: an affine map scales every area alike, so the section is the profile's area times
 // the rails' triangle's over the frame's (36/50), quadratic in `s` between level ends:
@@ -19,7 +19,7 @@ component Tri(ra: path, rb: path, rc: path, prof: face, from: point, to: point, 
   pa coincident ra
   pb coincident rb
   pc coincident rc
-  sec := std.Affine(prof, from, to, third, st.n, pa, pb, pc)
+  sec := prof mapped(from -> pa, to -> pb, third -> pc) in st.n
 }
 
 a0 := point
@@ -57,4 +57,4 @@ in std.front {
   sq := line(k0, k1) -> line(k1, k2) -> line(k2, k3) -> line(k3, k0) -> close
 }
 prof := face(sq)
-body := solid(Tri(ra, rb, rc, prof, o, x, y).sec.f over s in (0, 1))
+body := solid(Tri(ra, rb, rc, prof, o, x, y).sec over s in (0, 1))

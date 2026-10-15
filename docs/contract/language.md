@@ -122,20 +122,31 @@ block over faces has no filter of its own: `repeat b in B if …` is a syntax er
 flag == 1`, never `repeat flag` — the count of zero or one named its copies (`sm[0]`), a `when`
 keeps the name (`sm`).
 
-**Rates and `initially` (§6.5, 0.115, #339 D2):** `rate(x over s)` is an operand of a relation
-(`P::operand`, `rate_ahead`), recorded as `syntax::RateOf { op, over }` on the `Written` — the
-reference stays a plain `Ref`, so every rewrite of operands carries it — and printed back as
-written (`write_written`).  A rate alone before an infix word (`rate(p over s) distance(1, along:
-l)`) is a one-operand `Infix`; `rate(` never starts a component call.  The flattener
-(`Walk::rates_over`) reads each rate's formal through the numbers in force: where a component is
-expanded to be traced (`sym`) a formal handed on as itself is renamed the caller's
-(`Drag(…, u: u)`), one given a number or an expression in another is E103; on the sheet the
-relation is not stated — a drawn instance is its own home, where a rate is no row — and a name no
-formal is E103.  `initially { … }` is `BlockKind::Initially` (no count, no trailing joint), walked
-once in the enclosing scope with `InBlock::initially` set, which `walk_relation` copies onto the
-relation (`syntax::Relation::initially`, `ir::Relation::initially`): on the sheet an ordinary
-relation, in a trace the home's alone.  What they mean is curves.md's ("Rates along a running
-formal"); `tests/rates.rs` is the gate.
+**`rate(x over s)` and `initially { … }` (§6.5 [0.119], §6.9 [0.116], #339 D2, D3):** both
+reserved (`syntax::words::OPENERS`).  A rate is an **operand** of a relation (`P::operand`,
+`rate_ahead`), recorded as `syntax::RateOf { op, over }` on the `Written` — the reference stays a
+plain `Ref`, so every rewrite of operands carries it, two rates fit one relation and an option
+fits a rate — and printed back as written (`write_written`); `Relation::reads_rate` (syntax and
+`ir`) asks whether one is.  The formal is always named (a syntax error without `over`), and the
+word must read a direction, `parser::relations::RATE_WORDS` (`parallel`, `perpendicular`,
+`angle`, `distance`): any other is a syntax error.  A rate alone before an infix word
+(`rate(p over s) distance(1, along: l)`) is a one-operand `Infix`; `rate(` never starts a
+component call.  The flattener settles each rate's formal in `settle_relation`
+(`Walk::rate_over`), through the numbers in force: given a number it is a drawn instance at its
+home, where a rate is no row, and the relation is dropped; given a face family's running number,
+or a nonzero multiple of it, it is that held name; where a component is expanded to be traced
+(`sym`) a formal handed on as itself is the caller's (`Drag(…, u: u)`) and one given an
+expression in it E103; anything else, or a name no formal is, E040.  It passes no plane
+membership (`drawn_incidences`, `planes::incidences`).  In a trace the lowering takes it
+(`program::curves`, `program::traced`, curves.md's "Rates along a running formal"); on the sheet
+`program::relations::rate_row` keeps a face family's in `Sketch::rates` (one rate, of the first
+operand, before `parallel` or `perpendicular`, else E040; E040 a rate of anything but an axis or
+a point, or against anything but an axis, a line or a plane) and states no constraint (solids.md).
+`initially { … }` is hoisted as an `in` body is (`parser::statements::initially`), each relation
+in it, through a `when`, marked `Relation::initially` (anything else in it a syntax error); a
+defined word's body takes the flag as it takes `claim`, and it reaches `ir::Relation::initially`
+and `Constraint::initially`: on the sheet a row of the drawn home, in a trace the home's alone.
+`tests/rates.rs` (a face family's) and `tests/traced_rates.rs` (a traced body's) are the gates.
 
 **A component may instantiate itself** (§8, 0.75): a call back into one still being expanded
 is walked like any other (`Walk::instantiating` keeps each with the numbers it was given), each
@@ -391,4 +402,6 @@ takes a layout naming the front datum, origin and reference axis.
   copies**: a face's item naming nothing as it stands, whose copies `e[0]`, `e[1]`, … exist, is
   spliced into them in order (`flatten::resolve::faces_of_copies`, before references resolve),
   and each such edge names its swept face `side[k]` (`program::solids::faces::boundary_name`
-  spells a copy's public path).  `tests/correspondence.rs` is the gate.
+  spells a copy's public path).  `tests/correspondence.rs` is the gate.  **A face carried
+  whole** (`sec := prof mapped(…) in n`, #357) is such a block that makes no copies
+  (`Block::image`): see `solids.md`.

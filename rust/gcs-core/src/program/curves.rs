@@ -158,7 +158,7 @@ struct Trace<'s> {
 
 /// Whether a statement of an expanded body reads a rate (#339 D2).
 fn states_rate(st: &Stmt) -> bool {
-    matches!(&st.kind, StmtKind::Relation(r) if r.form.written().is_some_and(|w| w.reads_rate()))
+    matches!(&st.kind, StmtKind::Relation(r) if r.reads_rate())
 }
 
 /// Lower a trace into scratch geometry and tapes, using `Constraint::params_on`
@@ -206,7 +206,7 @@ fn compile_trace(
                 ))
             }
         };
-        if r.form.written().is_some_and(|w| w.reads_rate()) {
+        if r.reads_rate() {
             low.target = Target::Rate;
             let r = low.rate_relation(st, r)?;
             low.relation(st, &r)?;

@@ -6,6 +6,9 @@ use crate::style::Classes;
 use crate::syntax::lexer::Tok;
 use crate::syntax::{seed_arg, Arg, Cmp, Name, OpArg, Ref, Relation, Span, Written};
 
+/// The words a rate is read by (#339 D2): each reads a direction, which a rate is.
+const RATE_WORDS: [&str; 4] = ["parallel", "perpendicular", "angle", "distance"];
+
 impl<'a> P<'a> {
     /// Parse an operator relation (§9.1), preserving its written operands and arguments
     /// for later kind resolution.
@@ -50,11 +53,19 @@ impl<'a> P<'a> {
                 if !rates.is_empty() && self.statement_ends() {
                     (word, Fixity::Infix, vec![left], args)
                 } else {
+                    self.connective(&word.text)?;
                     let right = self.operand(1, &mut rates)?;
                     (word, Fixity::Infix, vec![left, right], args)
                 }
             }
         };
+        // a rate is a direction (a tangent, scaled): it is read by the words that read one
+        if !rates.is_empty() && !RATE_WORDS.contains(&word.text.as_str()) {
+            self.fail(&format!("a rate stands where a direction is read: `rate(x over s) \
+                perpendicular y`, `parallel y`, `angle(…) y` or `distance(…, along: u)`, not \
+                `{}`", word.text));
+            return None;
+        }
         let mut r = self.relation_tail(word, fixity, ops, args, lo)?;
         if let Some(w) = r.form.written_mut() {
             w.rates = rates;
@@ -84,11 +95,10 @@ impl<'a> P<'a> {
         let lo = self.here().lo as usize;
         self.i += 2;
         let mut r = self.refr()?;
-        if !self.peek_word("over") {
-            self.fail("a rate names the formal it is along: `rate(p over s)`");
+        if !self.eat_word("over") {
+            self.fail("a rate names the formal it runs over: `rate(x over s)`");
             return None;
         }
-        self.i += 1;
         let over = self.ident()?;
         if !self.want_p(')') {
             return None;
@@ -175,6 +185,18 @@ impl<'a> P<'a> {
         })
     }
 
+    /// The word an operator is followed by before its second operand, where it takes one
+    /// (`crate::constraints::connective`): `flank regular(…) within blank`.
+    pub(super) fn connective(&mut self, word: &str) -> Option<()> {
+        let Some(c) = crate::constraints::connective(word) else { return Some(()) };
+        if self.peek_word(c) {
+            self.i += 1;
+            return Some(());
+        }
+        self.fail(&format!("`{word}` reads its second operand after `{c}`: `a {word}(…) {c} b`"));
+        None
+    }
+
     /// Read optional operator arguments. Slot pins stay in parentheses; seeds come
     /// from the separate hint clause.
     pub(super) fn op_args(&mut self, word: &str, fixity: Fixity) -> Option<Vec<OpArg>> {
@@ -203,6 +225,9 @@ impl<'a> P<'a> {
         // is read there
         let takes_entity =
             word == "symmetry" || word == "tangent" || word == "level" || call_word(word);
+        // and `mapped`'s pairs, `from -> a`, each a point of the source and where it goes (#357):
+        // read as two unlabelled references, the source first
+        let pairs = word == "mapped";
         let mut out = Vec::new();
         // where each unlabelled item was read as text: `angle`'s may turn out to be two lines
         let mut texts: Vec<(usize, usize, usize)> = Vec::new();
@@ -245,6 +270,16 @@ impl<'a> P<'a> {
                     out.push(OpArg::Named(name, v));
                 }
                 _ if takes_entity => out.push(OpArg::Ent(self.refr()?)),
+                _ if pairs => {
+                    out.push(OpArg::Ent(self.refr()?));
+                    if self.peek() != Some(&Tok::Arrow) {
+                        self.fail("`mapped` takes pairs, a point of the source and where it goes: \
+                            `from -> a`");
+                        return None;
+                    }
+                    self.i += 1;
+                    out.push(OpArg::Ent(self.refr()?));
+                }
                 // a bound, `>= d` or `<= d` (§9.6)
                 (Some(Tok::P('>' | '<')), _) => {
                     let at = self.here();

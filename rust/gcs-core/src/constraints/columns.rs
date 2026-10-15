@@ -64,6 +64,12 @@ impl Constraint {
             return self.traced_of().and_then(|e| sk.traced.get(e.i()))
                 .map(crate::traced::consts_of).unwrap_or_default();
         }
+        // a flank's regularity within a blank: the envelope's, the roll's, the regions' terms' and
+        // the number (#345)
+        if self.kind == CKind::RegularWithin {
+            let margin = self.kind.dimension_slot().map_or(0.0, |i| self.args[i].num());
+            return self.regular_parts(sk).map(|p| p.consts(margin)).unwrap_or_default();
+        }
         // a motion's twist read: its steps (#326)
         if self.kind.motion_reading().is_some() {
             return self.motion_parts(sk).map(|p| crate::envelope::screw::consts(&p.steps))
@@ -203,6 +209,10 @@ impl Constraint {
             CKind::Angle => vec![self.sense() * self.args[2].num()],
             // the sign the second pair's angle is read with: `sense: cw` is its mirror image
             CKind::EqualAngle => vec![self.sense()],
+            // the turn the similarity keeps, or with `mirror: true` reverses (#357)
+            CKind::MappedSimilar | CKind::MappedCircle => {
+                vec![if matches!(self.args[6], Arg::Bool(true)) { -1.0 } else { 1.0 }]
+            }
             CKind::ArcLength | CKind::CurveLength => vec![self.args[1].num()],
             CKind::AnnularDistance => vec![self.args[2].num()],
             CKind::Radius => vec![self.args[1].num()],
@@ -560,6 +570,16 @@ impl Constraint {
                     .concat()
             }
             CKind::Symmetric => [pt(0), pt(1), ln(2)].concat(),
+            // every point as drawn in its page, in spec order: each side is read in its own (#357)
+            CKind::Mapped | CKind::MappedSimilar => {
+                let n = self.kind.spec().iter().filter(|(_, k)| *k == SpecKind::Point).count();
+                (0..n).flat_map(pt).collect()
+            }
+            // each circle's centre and radius, then the pairs' points
+            CKind::MappedCircle => {
+                [centre(0), vec![rad(0)], centre(1), vec![rad(1)], (2..6).flat_map(pt).collect()]
+                    .concat()
+            }
             // the curve columns are one span's control points, which is what keeps the column
             // count fixed however long the spline is
             CKind::PointOnSpline => {
@@ -659,6 +679,11 @@ impl Constraint {
                 let body = self.traced_of().and_then(|t| sk.traced.get(t.i()))
                     .map(|t| crate::traced::columns(sk, t)).unwrap_or_default();
                 [lead, at, body].concat()
+            }
+            // a flank's regularity (#345): the envelope's columns, then every point, axis and
+            // unknown the tool's and the blank's terms read
+            CKind::RegularWithin => {
+                self.regular_parts(sk).map(|p| p.columns(sk)).unwrap_or_default()
             }
             // a motion's twist read (#326, `envelope::screw`): the line's two lifted ends, or the
             // axis's direction, its place and the pitch, then the motion's axes
@@ -850,6 +875,8 @@ impl Constraint {
                     .map(|t| crate::traced::lifted(sk, t)).unwrap_or_default();
                 [lead, body].concat()
             }
+            // every point the envelope and the regions' terms read (#345)
+            CKind::RegularWithin => self.regular_parts(sk).map(|p| p.lifted()).unwrap_or_default(),
             // the line's ends, then every point the motion's axes read (#326)
             CKind::Reciprocal | CKind::ScrewAxis | CKind::CarriedPoint => {
                 let parts = self.motion_parts(sk).map(|p| p.lifted()).unwrap_or_default();

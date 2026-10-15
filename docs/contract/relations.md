@@ -109,6 +109,48 @@ came from.
   centre's lift and the view's two axes, the axis their cross), which an envelope in space still
   refuses (`Moving::of`).  `tests/carried.rs` is the gate (the epicycloid against its closed form
   and the planar envelope, a screw's helix in space).
+  **A solid is an operand, and a word may take a connective** (#345 S3, [0.115]): `flank
+  regular(>= m, by: tool) within blank` is `CKind::RegularWithin`, `(Envelope, Solid)`, slots
+  `(flank: Envelope, blank: Solid, by: Solid, margin: Ratio)` — `SpecKind::Solid` the first solid
+  slot (`kind_matches`, `is_entity`), `SpecKind::Ratio` the first number with no unit (a
+  dimension, `Dim::SCALAR`, so `assemble` puts the bare number there and `bounded` prints its
+  bound; the bindings' `DIMENSION_KINDS` carry it).  `constraints::connective` says which word is
+  followed by which before its second operand (`regular` by `within`): the parser eats it after
+  the parentheses in a lone statement and in a chain's joint (`P::connective`, refused naming the
+  spelling), and both printers write it back (`write_written`, `operator_text`, which writes the
+  tool `by:` its key as `at:` is).  No number written is the bound `>= 0` (`constrain`).  It reads
+  region solids' terms, which exist once the solids are built and read unknowns bound once the
+  expressions are: `constraints::reads_regions` defers such a statement, and the elaborator states
+  it after `expressions` (`regions_read`), working out its number there (`expr::set_dimension`,
+  its spelling kept) and refusing a number that reads an unknown.  It is a bound that **steers
+  nothing** (`CKind::steers`, solver.md).  Not a dimension drawn (`undrawn!`).  `tests/regular.rs`
+  is the gate.
+  **A point carried by a map** (#357, [0.117]) is `q mapped(from -> a, to -> b, third -> c) p`:
+  `CKind::Mapped`, slots `(q, p, from, a, to, b, third, c)`, and with two pairs
+  `CKind::MappedSimilar`, `(q, p, from, a, to, b, mirror: Bool)`.  The pairs are new syntax for a
+  relation word and **no new `OpArg`**: `op_args` reads each `x -> y` as two unlabelled
+  `OpArg::Ent`, source first, so every walk that rewrites a reference (a component's prefix, a
+  block's copy) carries them unchanged; `program::relations::mapped_pairs` counts them (two or
+  three, `mirror:` only with two, E040 at the word or the key) and hands the count to `infix_op`
+  as the selector `pairs`, which picks the kind.  `written_parts` (`pairs: true` for the word) and
+  `operator_text` join each two back with ` -> `, and leave `mirror: false` unsaid.  Kernels
+  `mapped` (16 columns) and `mapped_similar` (12, its constant the turn's sign) take **the
+  source points as columns**: `(i, j)` is Cramer's rule in the source frame (the similarity's the
+  projection on `to − from` and its quarter turn), so the rows are rational and exact wherever the
+  frame stands, held or solved — a station's held profile drops out of the Jacobian as any held
+  column does, and no held number is read.  **Each side is read in its own plane**
+  (`reading::mapped_planes`, E062 naming the side; `CKind::map_sides` is the one table of which
+  slot is which side, read there and by `validate`): every column is a point's page coordinate, the
+  targets' in theirs and the source's in its, which is how a profile drawn in `std.front` is
+  carried into a station's plane; a map between points in space is not said.  A source frame held
+  in a line, or two of its points one, is E061 naming them (`constraints::validate`); one the
+  solve moves reads NaN there.  No number, so `undrawn!`.  `tests/mapped.rs` is the gate (a
+  triangle's centroid to the image's, the similarity and the mirror against closed forms, the
+  printer, the refusals), with `jacobians.rs`'s three rows.  **A circle carried by a
+  similarity** ([0.118]) is `k mapped(from -> a, to -> b) disc` over two circles:
+  `CKind::MappedCircle`, `(k, from_k, from, a, to, b, mirror)`, kernel `mapped_circle` — the
+  centre's two rows and `r₂ − r·|b − a| / |to − from|`; three pairs are E040 at the word (an
+  ellipse, `settle`).  What a face carried whole makes of its circles (`solids.md`).
   **What a word means is the kinds of its operands, and a name does not carry its kind until
   elaboration** — so the parser resolves *nothing*: it produces a `syntax::Written` and
   `program::settle` turns it into a `CKind` plus arguments in spec order, through

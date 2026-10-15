@@ -155,6 +155,13 @@ version ([0.n], see the [language changelog](../solvent-changelog.md)) says wher
   A free name in one is E040 (`expr::Fault::ClaimFree`) unless a row of the drawing reads it too:
   `expr::evaluate` asks the bounds last, binding `Constraint::free` without minting (0.64). `ccw` on the sheet is still unchecked.
   `tests/bounds.rs` is the gate.
+  **A bound that steers nothing** (#345 S3, [0.115]): `CKind::steers` is `boundable` less
+  `RegularWithin`, a flank's least area factor read at a point a search finds — no point of the
+  drawing to carry across its edge, no root to choose.  `solve::bounds::broken`, so `cross_bounds`
+  and `steer`'s crossings and its block search, and `blocks::Search`'s bounds read only bounds
+  that steer; the verdict reads every bound (`bounds_hold`), so one broken is still `BOUND_BROKEN`.
+  Steering it would restart every block for nothing (a broken regularity cost the Formate pair two
+  minutes a solve).
 - `same_constraint` is "says exactly the same thing"; `same_relation` is the same *without* the
   numbers.  A repeated *relation* is refused by the app (`edit::applyConstraints`): equations
   without rank.  A **dimension is never deduped by the UI**: redundant or contradictory is the

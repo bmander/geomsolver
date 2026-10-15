@@ -89,7 +89,7 @@ against it, the formal threaded through the substeps, the order `2k + 1` of one 
 columns measured by halving on an entire flow, `Φ` against differences of one step and of a
 march, a seed of fewer columns, dense output forwards and back, a carried branch, and refusals.
 
-**Rates along a running formal (#339 D2, [0.115], `rates.rs`):** a traced body may state
+**Rates along a running formal (#339 D2, [0.119], `rates.rs`):** a traced body may state
 relations that read a rate (`rate(p over s)`, `syntax::RateOf` on a `Written`; language.md says
 how it is written and flattened).  Such a body is **integrated from its home**, never solved again
 at a place.  Its rows are three sets over one variable table `[outer] ++ q ++ w ++ q′` — the
@@ -138,7 +138,7 @@ by difference of that local map along `Φ`'s column — no march.  The planar co
 through `locus::kernel_eval_to`/`kernel_frame` (the interval rides where a pose would in the
 constants), the drawing through `eval_flat`/`sweep`, the spatial ones through `traced::read`.
 `report::rates_text` and `traced_text` say how far each such curve is integrated, or where it is
-refused.  `tests/rates.rs` is the gate: the tractrix (drawn, and written in place from
+refused.  `tests/traced_rates.rs` is the gate: the tractrix (drawn, and written in place from
 `initially` both ways), the clothoid against the Fresnel series, contacts against closed forms
 and the assembled Jacobian against differences before the solve, the hanging chain shot to its
 far end (`c sinh(50/c) = 75`), the geodesic on a cone in space (rows past the count) with its

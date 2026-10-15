@@ -92,9 +92,9 @@ const projects: Example[] = [{
   target: { kind: 'directory', path: 'rounds', entry: 'block.sv' },
 }, {
   label: 'Lofts and sweeps · written in Solvent', key: 'lofts',
-  description: 'Thirteen solids swept by a face of a component as one of its numbers runs: a pipe '
+  description: 'Fourteen solids swept by a face of a component as one of its numbers runs: a pipe '
     + 'round a U-bend, a twisted duct and an auger, a taper and a swell, a thread, a flight and a '
-    + 'spring, a bottle through three sections ruled and smooth, squares on rails with no guide, '
+    + 'spring, a ribbon wound in a frame that does not twist, a bottle through three sections ruled and smooth, squares on rails with no guide, '
     + 'two sketches drawn apart lofted corner to corner (and a square to a triangle, and to a '
     + 'point), a blade held to two rails and a profile to three, and a square to a circle. None '
     + 'is a kernel feature: each station is the writer\'s component over the standard library\'s '

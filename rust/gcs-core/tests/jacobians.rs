@@ -200,6 +200,31 @@ fn all_constraints(seed: u32) -> Sketch {
         Constraint::new(CKind::TangentLineCircleAt, vec![e(le1), e(ce1), Arg::Str("p1".into())]),
         Constraint::new(CKind::TangentLineCircleAt, vec![e(le2), e(ce2), Arg::Str("p2".into())]),
         Constraint::new(CKind::Symmetric, vec![e(pe), e(qe), e(le1)]),
+        // a point carried by a map (#357): the affine map over three pairs, the similarity over
+        // two, keeping its turn and mirrored — the source points columns, so rational rows
+        {
+            let pts = [a1, b1, a2, b2, cc1, cc2, ac, as_].map(EntRef::point);
+            Constraint::new(CKind::Mapped, pts.iter().map(|&x| e(x)).collect())
+        },
+        {
+            let pts = [a1, b1, a2, b2, cc1, cc2].map(EntRef::point);
+            let mut args: Vec<Arg> = pts.iter().map(|&x| e(x)).collect();
+            args.push(Arg::Bool(false));
+            Constraint::new(CKind::MappedSimilar, args)
+        },
+        {
+            let pts = [b2, as_, cc2, a1, ac, b1].map(EntRef::point);
+            let mut args: Vec<Arg> = pts.iter().map(|&x| e(x)).collect();
+            args.push(Arg::Bool(true));
+            Constraint::new(CKind::MappedSimilar, args)
+        },
+        // and a circle carried by one, its centre and its radius
+        {
+            let mut args = vec![e(ce1), e(ce2)];
+            args.extend([a1, b1, a2, b2].map(|x| e(EntRef::point(x))));
+            args.push(Arg::Bool(true));
+            Constraint::new(CKind::MappedCircle, args)
+        },
         // a distance from a line, both ways it can be written: naming no side, which is the
         // magnitude form (issue #48, item 4), and naming one, which is the signed form
         Constraint::new(CKind::ParallelDistance, vec![e(le1), e(le2), Arg::Num(4.0)]),
@@ -724,5 +749,29 @@ Z coincident(under: roll, t == -35) q2
                 .unwrap_or_else(|e| panic!("round {round}: {e}"));
             assert!(err.is_finite());
         }
+    }
+}
+
+/// A flank's regularity within its blank (#345 S3, `envelope::regular`): the least area factor of
+/// the Formate pinion's flank where the gear's tooth cuts it in its blank — the inner cone's
+/// envelope, the cone's half an unknown, the worst point on the tool's round — against finite
+/// differences of the search's answer, at the solution and knocked off it.  The worst point
+/// moves with the columns; the Jacobian is the Lagrangian's there, the place standing.
+#[test]
+fn regularity_agrees_with_finite_differences() {
+    let text = crate::regular::pair(12.5, &crate::regular::regular("0.3"), true);
+    let mut sk = fixtures::gear::read(&text).sketch;
+    let mut rng = Rng::new(345);
+    for round in 0..3 {
+        if round > 0 {
+            for p in sk.params.iter_mut().filter(|p| !p.fixed) {
+                p.value += rng.uniform(-1e-4, 1e-4) * (1.0 + p.value.abs().min(10.0));
+            }
+        }
+        let c = sk.constraints.iter().find(|c| c.kind == CKind::RegularWithin).unwrap();
+        assert!(c.local_values(&sk).len() > 40, "the layout's columns are read");
+        let err = check_constraint(&sk, c, 1e-5, 1e-6)
+            .unwrap_or_else(|e| panic!("round {round}: {e}"));
+        assert!(err.is_finite());
     }
 }

@@ -404,7 +404,7 @@ impl<'a> Walk<'a> {
         let worded = Worded {
             word: used.word.text.clone(),
             ops: used.ops.clone(),
-            args: crate::syntax::written_parts(&used.args).0.join(", "),
+            args: crate::syntax::written_parts(&used.args, false).0.join(", "),
             sets: Vec::new(),
             through: Vec::new(),
             span: at,

@@ -126,7 +126,7 @@ impl Walk<'_> {
         let worded = Worded {
             word: w.word.text.clone(),
             ops: w.ops.clone(),
-            args: written_parts(&shown).0.join(", "),
+            args: written_parts(&shown, false).0.join(", "),
             sets: Vec::new(),
             through: Vec::new(),
             span: at,

@@ -390,6 +390,12 @@ pub fn validate(
                                name(args[1].ent()), name(t)));
         }
     }
+    // a flank's regularity is read where the solve can read the envelope, the tool and the blank
+    // (#345)
+    if kind == CKind::RegularWithin {
+        Constraint::new(kind, args.to_vec()).regular_reading(sk)
+            .map_err(|why| format!("the solve cannot read the flank's regularity: {why}"))?;
+    }
     // a motion's twist is read where the solve can read the motion and its twist is the same at
     // every time in the fixed frame (#326)
     if kind.motion_reading().is_some() {
@@ -445,6 +451,41 @@ pub fn validate(
             Ok(())
         }
         CKind::Ordinate | CKind::Level => validate_ordinate(sk, kind, args, name),
+        // a map's source frame has a place for every point of its plane only where it spans it
+        // (#357): three points standing in a line, or two that are one, have none, and its rows
+        // would divide by zero.  Asked of a frame held where it stands; one the solve moves is
+        // the solve's
+        CKind::Mapped | CKind::MappedSimilar | CKind::MappedCircle => {
+            let frame = kind.map_sides().expect("a map has sides").frame();
+            let src: Vec<usize> = frame.iter().map(|&i| args[i].ent().i()).collect();
+            if !src.iter().all(|&p| sk.point_held(p)) {
+                return Ok(());
+            }
+            let (f, t) = (sk.point_xy(src[0]), sk.point_xy(src[1]));
+            let d1 = [t.0 - f.0, t.1 - f.1];
+            let l1 = d1[0].hypot(d1[1]);
+            let pt = |i: usize| name(EntRef::point(src[i]));
+            if l1 <= kernels::MIN_LINE_LEN {
+                return Err(format!(
+                    "{} and {} are one point, so the map has no frame",
+                    pt(0),
+                    pt(1)
+                ));
+            }
+            if let Some(&h) = src.get(2) {
+                let h = sk.point_xy(h);
+                let d2 = [h.0 - f.0, h.1 - f.1];
+                let det = d1[0] * d2[1] - d1[1] * d2[0];
+                if det.abs() <= 1e-9 * l1 * d2[0].hypot(d2[1]).max(l1) {
+                    return Err(format!(
+                        "{}, {} and {} stand in a line, so the map has no place for a point off \
+                         it: the source frame is three points not in a line",
+                        pt(0), pt(1), pt(2)
+                    ));
+                }
+            }
+            Ok(())
+        }
         k if k.spatial() => {
             let c = Constraint::new(kind, args.to_vec());
             for p in c.lifted_points(sk) {

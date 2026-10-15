@@ -84,6 +84,10 @@ fn view_points(sk: &Sketch, kind: CKind, args: &[Arg]) -> Option<Vec<usize>> {
                 | CKind::AxisUnit
                 | CKind::AxisFoot
                 | CKind::PlaneAxis
+                // a map reads each side in its own plane (`mapped_planes`)
+                | CKind::Mapped
+                | CKind::MappedSimilar
+                | CKind::MappedCircle
         )
     {
         return None;
@@ -95,6 +99,35 @@ fn view_points(sk: &Sketch, kind: CKind, args: &[Arg]) -> Option<Vec<usize>> {
         }
     }
     Some(pts)
+}
+
+/// **A map reads each side in its own plane** (#357): the point carried and the targets in one,
+/// the point it is carried from and the source frame in one, which may be another — so a profile
+/// drawn in a view is carried into a station's plane.  Either side not drawn in one plane is
+/// refused, naming the side: a map between points in space is not said yet.
+fn mapped_planes(sk: &Sketch, kind: CKind, args: &[Arg]) -> Result<(), (bool, String)> {
+    let sides = kind.map_sides().expect("a map has sides");
+    let side = |of: &[usize]| -> Option<usize> {
+        // a point where it is drawn, a circle where its centre is
+        let mut planes = of.iter().map(|&i| match &args[i] {
+            Arg::Ent(e) if e.kind == EntKind::Point => sk.plane_of(e.i()),
+            Arg::Ent(e) => sk.plane_of(sk.round_center(*e)),
+            _ => None,
+        });
+        let v = planes.next()??;
+        planes.all(|w| w == Some(v)).then_some(v)
+    };
+    let say = |what: &str| Err((false, format!(
+        "`mapped` reads {what} in one plane, and these are not drawn in one: draw them in one \
+         view (`in P {{ … }}`), as a station's corners are drawn in its plane"
+    )));
+    if side(sides.target).is_none() {
+        return say("the point it places and the targets of its pairs");
+    }
+    if side(sides.source).is_none() {
+        return say("the point it carries and the sources of its pairs");
+    }
+    Ok(())
 }
 
 /// What a relation is read as, written or a set's (§6.21).
@@ -139,6 +172,9 @@ pub(super) fn in_space(
             }
         }
         return Ok(None);
+    }
+    if kind.map_sides().is_some() {
+        return mapped_planes(sk, kind, args).map(|()| None);
     }
     let Some(pts) = view_points(sk, kind, args) else { return Ok(None) };
     // where each point is read: its plane, or `None` for a point in space (a document gives

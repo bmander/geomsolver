@@ -102,7 +102,7 @@ impl System {
             };
             let mut pass = Pass {
                 framed,
-                bounded: sk.constraints.iter().any(|c| c.bound.is_some()),
+                bounded: sk.constraints.iter().any(|c| c.bound.is_some() && c.kind.steers()),
                 contacts: holds_contacts(sk),
                 search: None,
                 solved: std::collections::BTreeSet::new(),
@@ -815,7 +815,7 @@ impl Search {
             c
         };
         let bounds = sk.constraints.iter().enumerate()
-            .filter(|(_, c)| c.bound.is_some())
+            .filter(|(_, c)| c.bound.is_some() && c.kind.steers())
             .map(|(i, c)| (i, cols(c.params(sk))))
             .filter(|(_, c)| !c.is_empty())
             .collect();

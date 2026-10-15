@@ -124,8 +124,8 @@ fn a_twisted_prism_is_cavalieri_at_any_twist() {
 /// are the same squares: 16000 again.
 #[test]
 fn an_eased_twist_is_cavalieri_too() {
-    let law = "std.Twisted(st.n, twist: twist, s: 3 * s^2 - 2 * s^3)";
-    let eased = TWISTED.replace("std.Twisted(st.n, twist: twist, s: s)", law);
+    let law = "std.Twisted(st.n, twist: twist, reach: 10mm, s: 3 * s^2 - 2 * s^3)";
+    let eased = TWISTED.replace("std.Twisted(st.n, twist: twist, reach: 10mm, s: s)", law);
     assert_ne!(eased, TWISTED, "the law is written in");
     let e = family(&eased);
     near(volume(&e, "duct").unwrap(), 16000.0, 1e-9, "an eased quarter turn");

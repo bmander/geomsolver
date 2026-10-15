@@ -141,6 +141,9 @@ macro_rules! undrawn {
             // screw, whose pitch is the relation's own unknown
             | CKind::Reciprocal
             | CKind::ScrewAxis
+            // nor a flank's regularity within a blank (#345): a ratio, read at a point a search
+            // finds
+            | CKind::RegularWithin
             // nor a point carried by a motion
             | CKind::CarriedPoint
             // nor a contact with a traced body: its curvature is the circle's own radius
@@ -152,6 +155,10 @@ macro_rules! undrawn {
             | CKind::TracedCurvatureAt
             // a projection in space draws what `project` draws: nothing
             | CKind::ProjectSolved
+            // nor does a point carried by a map (#357): its pairs are points, not numbers
+            | CKind::Mapped
+            | CKind::MappedSimilar
+            | CKind::MappedCircle
             | CKind::Fix
             | CKind::Ccw
             | CKind::Cw

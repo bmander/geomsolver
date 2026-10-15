@@ -16,6 +16,23 @@ use crate::syntax::{
 const WHEN: &str = "a `when` is decided by comparing numbers, or names: `when d > 0mm { … }`, \
                     `when b != a { … }`";
 
+/// Mark every relation of an `initially` body a row of the home alone (#339 D3), through a
+/// `when` in it; anything else in it is refused, since only a relation can hold at one place.
+fn stamp_initially(stmts: &mut [Stmt], errs: &mut Vec<SynErr>) {
+    for st in stmts {
+        match &mut st.kind {
+            StmtKind::Relation(r) => r.initially = true,
+            StmtKind::Block(b) if b.kind == BlockKind::When => stamp_initially(&mut b.body, errs),
+            _ => errs.push(SynErr {
+                span: st.span,
+                message: "`initially` holds relations, which hold at the home alone; what a \
+                          station draws, it draws at every station"
+                    .into(),
+            }),
+        }
+    }
+}
+
 /// Apply block membership recursively. Faces and solids inherit their geometry's plane;
 /// instances carry membership into expansion. Conflicting clauses are diagnosed here.
 fn stamp_plane(stmts: &mut [Stmt], plane: &Ref, errs: &mut Vec<SynErr>) {
@@ -117,7 +134,6 @@ impl<'a> P<'a> {
                     "repeat" => BlockKind::Repeat,
                     "ring" => BlockKind::Ring,
                     "when" => BlockKind::When,
-                    "initially" => BlockKind::Initially,
                     _ => BlockKind::Cycle,
                 };
                 self.block(kind, next_id).map(StmtKind::Block)
@@ -702,6 +718,10 @@ impl<'a> P<'a> {
             Some("view" | "section" | "dimensions") if call => {
                 self.derived(DeclName::Written(name))?
             }
+            // `sec := prof mapped(from -> a, to -> b) in n` — a face carried whole (#357)
+            Some(_) if self.past_ref(self.i).is_some_and(|j| self.word_at(j) == Some("mapped")) => {
+                StmtKind::Block(self.mapped_face(name)?)
+            }
             // `duct := solid(Station(g).f over s in (0, 1))` — a face of a component as one of
             // its formals runs, one dimension up from a curve (#243 L1)
             Some("solid") if call && self.family_ahead() => {
@@ -740,6 +760,37 @@ impl<'a> P<'a> {
         let id = self.mint_stmt(next_id, span)?;
         out.push(Stmt { id, kind, span, chained: Chained::No });
         Some(())
+    }
+
+    /// `sec := prof mapped(from -> a, to -> b, third -> c) in n` (#357): the face `prof` carried
+    /// whole into the plane `n`, its pairs read as a point's map reads them.  A `cycle` over the
+    /// face's loop that makes no copies (`Block::image`): the flattener builds the image once the
+    /// loop can be walked.
+    fn mapped_face(&mut self, name: Name) -> Option<Block> {
+        let lo = name.span.lo as usize;
+        let prof = self.refr()?;
+        let word = self.ident()?;
+        let args = self.op_args(&word.text, crate::constraints::Fixity::Infix)?;
+        if !self.eat_word("in") {
+            self.fail("a face carried by a map is drawn in a plane: `sec := prof mapped(…) in n`");
+            return None;
+        }
+        let plane = self.refr()?;
+        self.end_of_stmt();
+        let var = Name { text: format!("#map{lo}"), span: Span::at(word.span.lo as usize) };
+        Some(Block {
+            kind: BlockKind::Cycle,
+            count: String::new(),
+            head: word.span,
+            over: Some(EdgesOf { var, chain: prof, zip: Vec::new() }),
+            binder: None,
+            body: Vec::new(),
+            joint: None,
+            about: None,
+            index_reads: Vec::new(),
+            span: Span::new(lo, self.prev_hi()),
+            image: Some(crate::syntax::FaceImage { name, word, args, plane }),
+        })
     }
 
     /// Parse a statement or desugar a chain, recovering at the next terminator on failure.
@@ -810,6 +861,15 @@ impl<'a> P<'a> {
             }
             return self.in_block(next_id, out);
         }
+        // `initially { … }` (#339 D3): rows of a family's home alone, hoisted as an `in` body is
+        if self.peek_word("initially")
+            && matches!(self.t.get(self.i + 1).map(|(t, _)| t), Some(Tok::P('{')))
+        {
+            if !self.take_statement(self.here()) {
+                return None;
+            }
+            return self.initially(next_id, out);
+        }
         if self.peek_word("param") {
             let lo = self.here().lo as usize;
             let kind = self.input()?;
@@ -865,6 +925,17 @@ impl<'a> P<'a> {
         if !nested {
             self.in_blocks.push(InBlock { plane, header, close });
         }
+        out.extend(body);
+        Some(())
+    }
+
+    /// Hoist an `initially { … }` body (#339 D3), each relation in it marked a row of the home
+    /// alone.  It says only relations: what a station draws, it draws everywhere.
+    fn initially(&mut self, next_id: &mut u32, out: &mut Vec<Stmt>) -> Option<()> {
+        self.i += 1; // `initially`
+        let (mut body, joint) = self.braced_body(next_id)?;
+        self.no_open_joint(joint, "an `initially` block");
+        stamp_initially(&mut body, &mut self.errs);
         out.extend(body);
         Some(())
     }
@@ -1323,6 +1394,7 @@ impl<'a> P<'a> {
                 about: None,
                 index_reads: Vec::new(),
                 span: Span::new(lo, self.prev_hi()),
+                image: None,
             });
         }
         // the count runs to `as` or `{`, and is an expression over what is in scope
@@ -1343,12 +1415,6 @@ impl<'a> P<'a> {
         let head = Span::new(from, self.prev_hi().max(from));
         if kind == BlockKind::When && count.is_empty() {
             self.fail(WHEN);
-            self.skip_block();
-            return None;
-        }
-        // what holds at a body's home alone (#339 D2) is said, not counted
-        if kind == BlockKind::Initially && !count.is_empty() {
-            self.fail_at(head, "`initially { … }` takes no count: it holds once, at the home");
             self.skip_block();
             return None;
         }
@@ -1374,9 +1440,6 @@ impl<'a> P<'a> {
         if kind == BlockKind::When {
             self.no_open_joint(joint.take(), "a `when`");
         }
-        if kind == BlockKind::Initially {
-            self.no_open_joint(joint.take(), "an `initially`");
-        }
         // a ring's index read in its body: a name token spelled as the binder, not a field
         // (`t.k`) nor a key (`k: …`)
         let mut index_reads = Vec::new();
@@ -1391,7 +1454,10 @@ impl<'a> P<'a> {
             }
         }
         let span = Span::new(lo, self.prev_hi());
-        Some(Block { kind, count, head, over: None, binder, body, joint, about, index_reads, span })
+        Some(Block {
+            kind, count, head, over: None, binder, body, joint, about, index_reads, span,
+            image: None,
+        })
     }
 
     /// Step over a refused block: the rest of its header line and, where one opens there, the

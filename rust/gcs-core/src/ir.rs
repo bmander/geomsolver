@@ -126,7 +126,7 @@ pub struct Relation {
     pub along: Option<syntax::Along>,
     /// Made by a set's body (§6.21) — see `syntax::Relation::space`.
     pub space: bool,
-    /// Holds at a traced body's home alone (#339 D2) — see `syntax::Relation::initially`.
+    /// Holds at a body's home alone (#339 D2, D3) — see `syntax::Relation::initially`.
     pub initially: bool,
 }
 
@@ -148,6 +148,13 @@ pub struct ClaimOver {
     pub to: Arg,
     pub body: Vec<Statement>,
     pub span: Span,
+}
+
+impl Relation {
+    /// Whether any operand is written as a rate (#339 D2): `Written::reads_rate`.
+    pub fn reads_rate(&self) -> bool {
+        self.form.written().is_some_and(|w| w.reads_rate())
+    }
 }
 
 impl Statement {

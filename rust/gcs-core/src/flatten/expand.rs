@@ -616,8 +616,6 @@ impl<'a> Walk<'a> {
                 // a ring's copy reaches into the instances written in it
                 ring: scope.block.ring.clone(),
                 copies: scope.block.copies,
-                // an instance in an `initially` holds there too
-                initially: scope.block.initially,
             },
             stamps: Stamps {
                 roles: scope.stamps.roles.union(inst.annotations.roles),
@@ -710,15 +708,6 @@ impl<'a> Walk<'a> {
         // made once in this scope, or not at all (#210): no copy, no prefix, so what
         // it declares is named as if written beside it, and the numbers it defines
         // are its own
-        // what holds at a traced body's home alone (#339 D2): made once, each relation marked —
-        // a drawn instance is its home, so on the sheet the marks change nothing
-        if b.kind == BlockKind::Initially {
-            let mut sc = scope.clone();
-            sc.block.initially = true;
-            let mut sub = vals.clone();
-            self.body(&b.body, &sc, &mut sub, path, depth + 1);
-            return;
-        }
         if b.kind == BlockKind::When {
             let names = Asked { walk: self, scope, alias: std::cell::OnceCell::new() };
             match super::values::condition(&b.count, vals, scope, self.units, &names) {
@@ -787,13 +776,6 @@ impl<'a> Walk<'a> {
             return;
         }
         let Some(mut r2) = self.settle_relation(rel, vals, scope) else { return };
-        r2.initially = scope.block.initially;
-        // **a rate is read along a formal its component runs over** (#339 D2): kept, the formal
-        // named as the body traced names it, where a component is expanded to be traced; not a
-        // row at the home, so not stated on the sheet
-        if r2.form.written().is_some_and(|w| w.reads_rate()) && !self.rates_over(&mut r2, vals) {
-            return;
-        }
         if let Some(twin) = scope.twin() {
             // a claim, a gauge and a bound state no row, so they have no
             // derivative
@@ -809,43 +791,6 @@ impl<'a> Walk<'a> {
             r2.along = Some(twin.clone());
         }
         self.emit(StmtKind::Relation(r2), st, scope, path);
-    }
-
-    /// The formals a relation's rates are along (#339 D2), read through the numbers in force:
-    /// `false` where the relation is not stated here.  Where a component is expanded to be
-    /// traced (`sym`) a formal handed on as itself (`Drag(…, u: u)`) is renamed the formal it was
-    /// handed, which the trace runs over; one given a number or an expression in another is no
-    /// formal running, and is refused.  On the sheet the drawn instance is its own home, where
-    /// the rates are no rows, so the relation is not stated — a name no formal is, refused.
-    fn rates_over(&mut self, r: &mut crate::syntax::Relation, vals: &BTreeMap<String, Aff>)
-        -> bool {
-        let sym = self.sym.is_some();
-        let Some(w) = r.form.written_mut() else { return false };
-        let mut stated = true;
-        let mut bad: Vec<(Span, String)> = Vec::new();
-        for rate in w.rates.iter_mut() {
-            let name = rate.over.text.clone();
-            match vals.get(&name) {
-                None => bad.push((rate.over.span, format!(
-                    "`{name}` is no formal here: a rate is read along a formal its component \
-                     runs over, `rate(p over s)` in a component written over `s`"))),
-                Some(_) if !sym => stated = false,
-                Some(Aff { free: Some(f), m, c, .. }) if *m == 1.0 && *c == 0.0 => {
-                    rate.over.text = f.clone();
-                }
-                Some(Aff { free: Some(f), .. }) => bad.push((rate.over.span, format!(
-                    "`{name}` is given an expression in `{f}`, and a rate is read along a \
-                     formal handed on as itself: give the component `{name}: {f}`"))),
-                Some(_) => bad.push((rate.over.span, format!(
-                    "`{name}` is given a number here, so nothing runs along it: a rate is read \
-                     along the formal a trace runs over, handed on as itself (`{name}: {name}`)"))),
-            }
-        }
-        for (span, message) in bad {
-            self.once(Code::E103, span, message);
-            stated = false;
-        }
-        stated
     }
 
     /// An energy: each integrand with the scope's numbers written in (#121).
@@ -942,6 +887,25 @@ impl<'a> Walk<'a> {
             self.settle_arg(a, vals, scope);
         }
         self.held.on_leg = None;
+        // **a rate is read along a formal its body runs over** (#339 D2, D3): kept, the formal
+        // named as the running number it is given; not a row at a drawn instance's home, so not
+        // stated there
+        if let Some(w) = r2.form.written_mut() {
+            let mut stated = true;
+            for rate in w.rates.iter_mut() {
+                match self.rate_over(&rate.over.text, vals) {
+                    Ok(Some(text)) => rate.over.text = text,
+                    Ok(None) => stated = false,
+                    Err((code, m)) => {
+                        self.err(code, rate.over.span, m);
+                        stated = false;
+                    }
+                }
+            }
+            if !stated {
+                return None;
+            }
+        }
         // the enclosing instances' classes, over the statement's own: a ghosted part's
         // dimensions are the ghost's (`display: geometry`) as its lines are
         for c in &scope.stamps.class.0 {
@@ -950,6 +914,30 @@ impl<'a> Walk<'a> {
             }
         }
         Some(r2)
+    }
+
+    /// The running number `rate(x over s)`'s formal `s` is given (#339 D2, D3): `None` where it
+    /// is given a number, the home of a drawn instance.  A face family's running number, or a
+    /// multiple of it, is its own; where a component is expanded to be traced (`sym`) a formal
+    /// handed on as itself (`Drag(…, u: u)`) is the formal it was handed, which the trace runs
+    /// over.  Anything else is no number running, and refused.
+    fn rate_over(&self, s: &str, vals: &BTreeMap<String, Aff>)
+        -> Result<Option<String>, (Code, String)> {
+        let Some(a) = vals.get(s) else {
+            return Err((Code::E040, format!("`{s}` is no formal here: a rate runs over a formal \
+                the body is given its running number in, `rate(x over s)`")));
+        };
+        match &a.free {
+            None => Ok(None),
+            Some(u) if self.held.names.contains_key(u) && a.m != 0.0 => Ok(Some(u.clone())),
+            Some(u) if self.sym.is_some() && a.m == 1.0 && a.c == 0.0 => Ok(Some(u.clone())),
+            Some(u) if self.sym.is_some() => Err((Code::E103, format!("`{s}` is given an \
+                expression in `{u}`, and a rate is read along a formal handed on as itself: give \
+                the component `{s}: {u}`"))),
+            Some(_) => Err((Code::E040, format!("`{s}` is an unknown of the drawing: a rate runs \
+                along a face family's running number, `solid(I(…).f over s in (a, b))`, or a \
+                traced body's formal"))),
+        }
     }
 
     /// The leg of a family over a chain whose link relation `r`, written in a leg's station,
@@ -1195,7 +1183,6 @@ impl<'a> Walk<'a> {
                     // the prefix just built is the block's id, so every declaration
                     // below is a copy, however deep and through however many instances
                     copies: true,
-                    initially: scope.block.initially,
                 },
                 stamps: scope.stamps.clone(),
                 pred: PredWalk {
@@ -1339,7 +1326,8 @@ impl Walk<'_> {
         for i in 0..self.out.len() {
             let (st, _, sc) = &self.out[i];
             let StmtKind::Relation(r) = &st.kind else { continue };
-            if r.claim || r.along.is_some() || r.space || sc.block.ring.is_some() {
+            if r.claim || r.initially || r.reads_rate() || r.along.is_some() || r.space
+                || sc.block.ring.is_some() {
                 continue;
             }
             let Some(w) = r.form.written() else { continue };

@@ -292,10 +292,11 @@ substeps and dense output, is `ode.rs`; the free curves run on it bit for bit. T
 
 ## D2: rates in a traced body (2026-10-15)
 
-**Landed:** `rate(x over s)` and `initially { … }` (0.115, §6.5), a traced body that states a rate
-integrated from its home in the plane and in space (`rates.rs`), and the gate `tests/rates.rs`.
-The rule is `docs/contract/curves.md` ("Rates along a running formal") and
-`docs/contract/language.md` ("Rates and `initially`").
+**Landed:** `rate(x over s)` and `initially { … }` in a traced body (0.119, §6.5; a face
+family's are D3's, 0.116, §6.9), a traced body that states a rate integrated from its home in the
+plane and in space (`rates.rs`), and the gate `tests/traced_rates.rs`.  The rule is
+`docs/contract/curves.md` ("Rates along a running formal") and `docs/contract/language.md`
+("`rate(x over s)` and `initially { … }`").
 
 ### What landed
 
@@ -330,7 +331,7 @@ The rule is `docs/contract/curves.md` ("Rates along a running formal") and
 - **A two-point problem is a drawing** (D0 finding 7): the hanging chain's pulls, unbound formals,
   are solved by its far end landing on `b`, the contact's gradient in them the flow's sensitivity.
 
-### The gate, `tests/rates.rs`
+### The gate, `tests/traced_rates.rs`
 
 | item | result |
 |---|---|
