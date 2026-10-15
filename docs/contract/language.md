@@ -109,22 +109,6 @@ The parser refuses `as` and a trailing joint; the measured-bound sniff skips a s
 opener word starts. `commit_seeds` writes into a root `when`'s body. The hypoid's tip relief is
 one (`hypoid.sv`). `tests/when.rs` is the gate.
 
-**`rate(x over s)` and `initially { … }` (§6.9 [0.116], #339 D3):** both reserved
-(`syntax::words::OPENERS`).  `rate(` opens a relation (`parser::relations::rate_relation`): a
-reference, `over`, the formal's name, then `perpendicular` or `parallel` (any other word a syntax
-error) and the other operand; `syntax::Relation::rate` holds the formal, the rated thing is the
-first operand.  The flattener settles the formal in `settle_relation` (`Walk::rate_over`): given
-a face family's running number, or a nonzero multiple of it, the relation is along that held
-name; given a number it is a drawn instance at its home and the relation is dropped; anything
-else is E040.  It passes no plane membership (`drawn_incidences`, `planes::incidences`) and lowers
-to `ir::Relation::rate`; `program::relations::rate_row` keeps it in `Sketch::rates` (E040 a rate
-of anything but an axis or a point, or against anything but an axis, a line or a plane) and
-states no constraint.  `initially { … }` is hoisted as an `in` body is
-(`parser::statements::initially`), each relation in it, through a `when`, marked
-`Relation::initially` (anything else in it a syntax error); a defined word's body takes the flag
-as it takes `claim`, and it reaches `Constraint::initially`.  What they mean is
-[solids.md](solids.md)'s.  `tests/rates.rs` is the gate.
-
 **`when` is the one conditional (0.91, #267).** Two names that are not numbers compare by
 **identity**: `a == b`/`a != b` (`Cond::Cmp` over two `Ast::Var`, a side not in `vals`) holds as
 `Walk::stands_for` resolves them — the absolute name through every alias, so a formal is what
@@ -137,6 +121,32 @@ block over faces has no filter of its own: `repeat b in B if …` is a syntax er
 `repeat b in B { when b != a { … } }` (`std.sv`'s `round`, `chamfer`), and a switch is `when
 flag == 1`, never `repeat flag` — the count of zero or one named its copies (`sm[0]`), a `when`
 keeps the name (`sm`).
+
+**`rate(x over s)` and `initially { … }` (§6.5 [0.119], §6.9 [0.116], #339 D2, D3):** both
+reserved (`syntax::words::OPENERS`).  A rate is an **operand** of a relation (`P::operand`,
+`rate_ahead`), recorded as `syntax::RateOf { op, over }` on the `Written` — the reference stays a
+plain `Ref`, so every rewrite of operands carries it, two rates fit one relation and an option
+fits a rate — and printed back as written (`write_written`); `Relation::reads_rate` (syntax and
+`ir`) asks whether one is.  The formal is always named (a syntax error without `over`), and the
+word must read a direction, `parser::relations::RATE_WORDS` (`parallel`, `perpendicular`,
+`angle`, `distance`): any other is a syntax error.  A rate alone before an infix word
+(`rate(p over s) distance(1, along: l)`) is a one-operand `Infix`; `rate(` never starts a
+component call.  The flattener settles each rate's formal in `settle_relation`
+(`Walk::rate_over`), through the numbers in force: given a number it is a drawn instance at its
+home, where a rate is no row, and the relation is dropped; given a face family's running number,
+or a nonzero multiple of it, it is that held name; where a component is expanded to be traced
+(`sym`) a formal handed on as itself is the caller's (`Drag(…, u: u)`) and one given an
+expression in it E103; anything else, or a name no formal is, E040.  It passes no plane
+membership (`drawn_incidences`, `planes::incidences`).  In a trace the lowering takes it
+(`program::curves`, `program::traced`, curves.md's "Rates along a running formal"); on the sheet
+`program::relations::rate_row` keeps a face family's in `Sketch::rates` (one rate, of the first
+operand, before `parallel` or `perpendicular`, else E040; E040 a rate of anything but an axis or
+a point, or against anything but an axis, a line or a plane) and states no constraint (solids.md).
+`initially { … }` is hoisted as an `in` body is (`parser::statements::initially`), each relation
+in it, through a `when`, marked `Relation::initially` (anything else in it a syntax error); a
+defined word's body takes the flag as it takes `claim`, and it reaches `ir::Relation::initially`
+and `Constraint::initially`: on the sheet a row of the drawn home, in a trace the home's alone.
+`tests/rates.rs` (a face family's) and `tests/traced_rates.rs` (a traced body's) are the gates.
 
 **A component may instantiate itself** (§8, 0.75): a call back into one still being expanded
 is walked like any other (`Walk::instantiating` keeps each with the numbers it was given), each

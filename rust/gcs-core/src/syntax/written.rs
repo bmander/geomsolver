@@ -78,9 +78,30 @@ pub struct Written {
     pub ops: Vec<Ref>,
     pub args: Vec<OpArg>,
     pub span: Span,
+    /// The operands written as a **rate** (#339 D2): `rate(p over s)` is operand `op` read as
+    /// its rate along the formal `over`, never as itself.  Empty for every other relation.
+    pub rates: Vec<RateOf>,
+}
+
+/// One operand of a relation written as its rate along a formal, `rate(x over s)` (#339 D2):
+/// the operand's index and the formal.  Of a point, its velocity; of a line, its direction's.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RateOf {
+    pub op: usize,
+    pub over: Name,
 }
 
 impl Written {
+    /// The formal operand `k` is a rate along, where it is written as one.
+    pub fn rate_of(&self, k: usize) -> Option<&Name> {
+        self.rates.iter().find(|r| r.op == k).map(|r| &r.over)
+    }
+
+    /// Whether any operand is written as a rate.
+    pub fn reads_rate(&self) -> bool {
+        !self.rates.is_empty()
+    }
+
     /// Whether it is a step, `step(u: s) l` (#330): the core's prefix word the flattener expands
     /// where it stands (`flatten::steps`).
     pub fn is_step(&self) -> bool {

@@ -376,6 +376,7 @@ pub(crate) fn lift_gauge(name: &str, kind: EntKind, point: usize, held: &[(&str,
         ops: vec![Ref::new(name.to_string())],
         args,
         span: Span::default(),
+        rates: Vec::new(),
     }))
 }
 

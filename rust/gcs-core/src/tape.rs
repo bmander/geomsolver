@@ -120,6 +120,11 @@ mod code {
     pub const CALL2: f64 = 9.0;
 }
 
+/// Whether the flat tape reads variable `k` at all.
+pub(crate) fn reads_var(flat: &[f64], k: usize) -> bool {
+    flat.chunks_exact(WORD).any(|w| w[0] == code::VAR && w[1] as usize == k)
+}
+
 /// Scratch a tape runs in: one value and one gradient per slot.  Held by the caller and reused,
 /// because a kernel evaluates the same tape for every constraint in its block and allocating per
 /// evaluation is the one thing the compile-to-plan seam exists to avoid.

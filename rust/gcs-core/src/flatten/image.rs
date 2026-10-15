@@ -148,6 +148,7 @@ impl Walk<'_> {
                 ops: vec![what, of],
                 args: img.args.clone(),
                 span: at,
+                rates: Vec::new(),
             }),
             place: None,
             place_span: Span::default(),
@@ -158,7 +159,6 @@ impl Walk<'_> {
             along: None,
             space: false,
             initially: false,
-            rate: None,
         };
         let local = |text: &str| Ref::dotted(text, at);
         let key = |text: &str| DeclName::Key(Name { text: text.to_string(), span: at });

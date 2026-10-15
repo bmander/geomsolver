@@ -145,6 +145,7 @@ impl Walk<'_> {
                 ops: vec![from, p2.clone()],
                 args,
                 span: w.span,
+                rates: Vec::new(),
             };
             let made = match ord {
                 None => relation("level", p1.clone(), vec![dir]),

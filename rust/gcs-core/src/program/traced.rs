@@ -173,6 +173,8 @@ pub(super) fn build_traced(sk: &Sketch, res: &Resolver, d: &Decl, st: &Stmt, pro
     let traced = ex.aliases.get(&of.point).cloned().unwrap_or_else(|| of.point.clone());
     let body: Vec<&Stmt> = ex.flat.iter().collect();
     let mut low = Lowering::new(sk.units, &vars, formals);
+    low.swept = running[0].0.text.clone();
+    low.angle = comp.formals.iter().any(|f| f.name.text == low.swept && f.ty == Ty::Angle);
     for st in &body {
         if let StmtKind::Decl(d) = &st.kind {
             low.declare(st, d)?;
@@ -181,11 +183,24 @@ pub(super) fn build_traced(sk: &Sketch, res: &Resolver, d: &Decl, st: &Stmt, pro
     for st in &body {
         match &st.kind {
             StmtKind::Decl(_) => continue,
-            StmtKind::Relation(r) => low.relation(st, r)?,
+            // a relation that reads a rate is a row of the rates' system, one written in
+            // `initially` a row of the home's (#339 D2)
+            StmtKind::Relation(r) if r.reads_rate() => {
+                low.target = super::curves::Target::Rate;
+                let r = low.rate_relation(st, r)?;
+                low.relation(st, &r)?;
+            }
+            StmtKind::Relation(r) => {
+                low.target = if r.initially { super::curves::Target::Init }
+                             else { super::curves::Target::Alg };
+                low.relation(st, r)?;
+            }
             _ => return Err((Code::E103, st.span,
                 "a traced component holds declarations and constraints only".into())),
         }
     }
+    let at = vars.len() + low.n_q + low.w.len();
+    super::curves::place_rates(low.rates.iter_mut().map(|r| &mut r.cols), at);
     let Some(&EntRef { kind: EntKind::Point, idx }) = low.scope.get(&traced) else {
         return Err((Code::E103, comp.span, format!("`{}` must be a point the component declares",
             of.point)));
@@ -196,8 +211,6 @@ pub(super) fn build_traced(sk: &Sketch, res: &Resolver, d: &Decl, st: &Stmt, pro
         _ => return Err((Code::E103, comp.span, format!("`{}` is geometry the component is \
             written over, and does not move with what runs", of.point))),
     };
-    let flat = crate::traced::Body::new(running.len(), vars.len(), n_theta, low.n_q, t, low.w,
-        low.seeds, low.rows).map_err(|m| (Code::E103, comp.span, m))?;
     let num = |t: &str| crate::expr::literal(t);
     let mut domain = [[0.0, 0.0]; 2];
     for (k, (f, (a, b))) in running.iter().enumerate() {
@@ -210,6 +223,21 @@ pub(super) fn build_traced(sk: &Sketch, res: &Resolver, d: &Decl, st: &Stmt, pro
         }
         domain[k] = [lo, hi];
     }
+    if !low.rates.is_empty() {
+        let n_res = |r: &crate::traced::Row| r.kid.map_or(0, |k| crate::kernels::KERNELS[k].n_res);
+        let alg = super::curves::reach(low.rows.iter().map(|r| (n_res(r), &r.cols[..])),
+                                       vars.len(), low.n_q);
+        let rates = super::curves::reach(low.rates.iter().map(|r| (n_res(r), &r.cols[..])), at,
+                                         low.n_q);
+        if let Some(m) = super::curves::short(&low.swept, low.n_q, &alg, &rates, &low.owner, false)
+        {
+            return Err((Code::E103, comp.span, m));
+        }
+    }
+    let rates = crate::traced::Rates { rows: std::mem::take(&mut low.rates),
+        init: std::mem::take(&mut low.init), domain: domain[0] };
+    let flat = crate::traced::Body::new(running.len(), vars.len(), n_theta, low.n_q, t,
+        low.w, low.seeds, low.rows, rates).map_err(|m| (Code::E103, comp.span, m))?;
     // where a march starts: what the call gave each formal, else its interval's start
     let home = std::array::from_fn(|k| match running.get(k) {
         Some((f, _)) => info.values.get(&f.text).and_then(|a| a.number()).unwrap_or(domain[k][0]),
@@ -247,6 +275,17 @@ struct Lowering<'v> {
     w: Vec<crate::tape::Tape>,
     rows: Vec<crate::traced::Row>,
     units: crate::units::Units,
+    /// Each number the body places, by the name of the point it is of — what a short body's
+    /// report names.
+    owner: Vec<String>,
+    /// A body that states a rate (#339 D2), as `curves::Lowering` holds one.
+    swept: String,
+    angle: bool,
+    target: super::curves::Target,
+    rates: Vec<crate::traced::Row>,
+    init: Vec<crate::traced::Row>,
+    rated: BTreeMap<usize, String>,
+    origin: Option<usize>,
 }
 
 impl<'v> Lowering<'v> {
@@ -281,8 +320,83 @@ impl<'v> Lowering<'v> {
             }
         }
         Lowering { sk, scope, motions, slot, vars, n_outer: vars.len(), n_q: 0, seeds: Vec::new(),
-                   w: Vec::new(), rows: Vec::new(), units }
+                   w: Vec::new(), rows: Vec::new(), units, owner: Vec::new(),
+                   swept: String::new(), angle: false, target: super::curves::Target::Alg,
+                   rates: Vec::new(), init: Vec::new(), rated: BTreeMap::new(), origin: None }
     }
+
+    /// A row, to the rows its relation is lowered to.
+    fn push(&mut self, row: crate::traced::Row) {
+        match self.target {
+            super::curves::Target::Alg => self.rows.push(row),
+            super::curves::Target::Rate => self.rates.push(row),
+            super::curves::Target::Init => self.init.push(row),
+        }
+    }
+
+    /// A relation that reads a rate, rewritten to one over scratch geometry in space, as
+    /// `curves::Lowering::rate_relation` rewrites one in the plane.
+    fn rate_relation(&mut self, st: &Stmt, r: &crate::ir::Relation)
+        -> Result<crate::ir::Relation, Fail> {
+        let (r, rf, unary) = super::curves::rate_operand(st, r, &self.swept, self.angle)
+            .map_err(|(s, m)| (Code::E103, s, m))?;
+        let e = self.scope.get(&rf.root.text).copied()
+            .ok_or((Code::E101, rf.span, format!("no such entity: `{}`", rf.root.text)))?;
+        let e = follow(&self.sk, e, &rf.path).map_err(|m| (Code::E040, rf.span, m))?;
+        if e.kind != EntKind::Point {
+            return Err((Code::E103, rf.span, format!("`rate(… over {})` is of a point: {} has no \
+                rate the body integrates", self.swept, e.kind.a())));
+        }
+        let line = self.rate_line(e.i(), rf.span)?;
+        Ok(super::curves::rate_rewritten(r, &line, rf.span, unary))
+    }
+
+    /// The scratch line in space from the origin to point `p`'s rate, made once a point.
+    fn rate_line(&mut self, p: usize, span: Span) -> Result<String, Fail> {
+        if let Some(n) = self.rated.get(&p) {
+            return Ok(n.clone());
+        }
+        let mut tips = Vec::new();
+        for c in self.sk.point_all_params(p) {
+            match self.slot.get(&c) {
+                Some(&s) if (self.n_outer..self.n_outer + self.n_q).contains(&s) => {
+                    tips.push(super::curves::RATE_BASE + s - self.n_outer)
+                }
+                _ => return Err((Code::E103, span, format!("the point is geometry the component \
+                    is written over, and does not move with `{}`: its rate is no rate of the body",
+                    self.swept))),
+            }
+        }
+        let zero = match self.origin {
+            Some(z) => z,
+            None => {
+                let z = self.n_outer + self.n_q + self.w.len();
+                let t = self.constant(0.0);
+                self.w.push(t);
+                self.origin = Some(z);
+                z
+            }
+        };
+        let name = format!("#rate{}", self.rated.len());
+        let o = self.sk.point3([0.0; 3], false, &format!("{name}.o"));
+        self.sk.lift_point(o);
+        let t = self.sk.point3([0.0; 3], false, &format!("{name}.t"));
+        self.sk.lift_point(t);
+        for c in self.sk.point_all_params(o) {
+            self.slot.insert(c, zero);
+        }
+        for (c, s) in self.sk.point_all_params(t).into_iter().zip(tips) {
+            self.slot.insert(c, s);
+        }
+        let l = EntRef::line(self.sk.line(o, t));
+        self.scope.insert(format!("{name}.o"), EntRef::point(o));
+        self.scope.insert(format!("{name}.t"), EntRef::point(t));
+        self.scope.insert(name.clone(), l);
+        self.rated.insert(p, name.clone());
+        Ok(name)
+    }
+
+
 
     fn tape(&self, text: &str, span: Span) -> Result<crate::tape::Tape, Fail> {
         let ast = crate::expr::parse_in(text, self.units).map_err(|e| (Code::E103, span, e))?;
@@ -312,6 +426,7 @@ impl<'v> Lowering<'v> {
                     };
                     self.seeds.push(seed);
                     self.slot.insert(q, self.n_outer + self.n_q);
+                    self.owner.push(d.name.key().text.clone());
                     self.n_q += 1;
                 }
                 EntRef::point(p)
@@ -365,6 +480,9 @@ impl<'v> Lowering<'v> {
         }).map_err(|(s, m)| (Code::E040, s, m))?;
         if r.kind == CKind::CarriedPoint {
             return self.carried(st, &r);
+        }
+        if self.target == super::curves::Target::Rate {
+            super::curves::admissible(&r).map_err(|m| (Code::E103, st.span, m))?;
         }
         let spec = r.kind.spec();
         if r.kind.gauge() || r.kind.soft_by_default() || r.kind.built()
@@ -443,7 +561,7 @@ impl<'v> Lowering<'v> {
                 cols.push((self.n_outer + self.n_q + self.w.len()) as u32);
                 self.w.push(t);
                 let sign = c.side().unwrap_or(1.0);
-                self.rows.push(crate::traced::Row {
+                self.push(crate::traced::Row {
                     kid: Some(twin as usize),
                     cols,
                     consts: vec![sign * crate::expr::to_arg_units(k, 1.0), 0.0],
@@ -451,7 +569,7 @@ impl<'v> Lowering<'v> {
             }
             None => {
                 let consts = c.consts_on(&self.sk, None);
-                self.rows.push(crate::traced::Row { kid: Some(c.kernel_id()), cols, consts });
+                self.push(crate::traced::Row { kid: Some(c.kernel_id()), cols, consts });
             }
         }
         Ok(())

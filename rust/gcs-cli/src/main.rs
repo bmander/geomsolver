@@ -468,6 +468,14 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
             for i in 0..sk.traced.len() {
                 println!("  {}", gcs_core::report::traced_text(&sk, i));
             }
+            // each curve whose body states a rate: how far it is integrated (#339 D2)
+            for i in 0..sk.curves.len() {
+                if let Some(text) = gcs_core::report::rates_text(&sk, i) {
+                    let r = gcs_core::model::EntRef::new(gcs_core::model::EntKind::Curve, i);
+                    let name = e.map.name_of(r).cloned().unwrap_or_else(|| format!("curve {i}"));
+                    println!("  {name}: {text}");
+                }
+            }
             // each motion's screw the drawing reads, its pitch (#326)
             for line in gcs_core::report::screws_text(&sk) {
                 println!("  {line}");

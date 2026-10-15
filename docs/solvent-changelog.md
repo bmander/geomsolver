@@ -4,6 +4,19 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.119] Rates along a running formal, in a traced body.** A traced body may state a condition
+on a rate along the formal it runs over (§6.5), as a face family's station may since 0.116 (§6.9):
+`rate(x over s)`, a point's velocity, is an operand, and stands on either side of a word that reads
+a direction — `parallel`, `perpendicular`, a directed `angle`, and alone before `distance(k, along:
+l)`, its component along `l` — never as a place or a magnitude; any other word is a syntax error,
+and two rates in one relation, or `angle` and `distance` in a face family, are refused. Such a body
+is integrated from its home: a drawn instance as it stands on the sheet (its rate rows no rows
+there, its coordinates columns of the curve), or, written in place, where `initially { … }` puts
+it. Its rate rows and its other relations differentiated fix the rates, a rank checked at every
+place reached; a body short of a rate row is refused naming the freedom it leaves, and a march is
+refused where its rates lose rank. Through 0.118 every relation of a traced body held at each
+place by itself, and a body one row short was a curve that did not exist. (Issue #339, D2.)
+
 **[0.118] A face carried whole, and a mirror.** `sec := prof mapped(from -> a, to -> b) in n`
 (§6.8) is the face `prof` carried into the plane `n` by a map: each corner carried as a point is,
 each edge rebuilt between the images, the source's corner and edge names kept under the image's,

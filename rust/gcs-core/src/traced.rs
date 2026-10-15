@@ -79,14 +79,37 @@ pub struct Body {
     pub flat: Vec<f64>,
 }
 
-const HEADER: usize = 7;
+const HEADER: usize = 11;
+
+/// What a body that states a rate adds (#339 D2): the rows that read a rate, those that hold at
+/// its home alone (`initially { … }`), and the interval its curve runs over, which its march
+/// reaches.  Empty for every other body.
+#[derive(Clone, Debug, Default)]
+pub struct Rates {
+    pub rows: Vec<Row>,
+    pub init: Vec<Row>,
+    pub domain: [f64; 2],
+}
 
 impl Body {
-    /// Validate and encode.  An `Err` is a diagnostic for the body, not a panic.
+    /// Validate and encode.  An `Err` is a diagnostic for the body, not a panic.  `rates` is what
+    /// a body that states a rate adds (#339 D2).
     #[allow(clippy::too_many_arguments)]
     pub fn new(n_formals: usize, n_outer: usize, n_theta: usize, n_q: usize, traced: usize,
-               w: Vec<crate::tape::Tape>, seeds: Vec<crate::tape::Tape>, rows: Vec<Row>)
-        -> Result<Body, String> {
+               w: Vec<crate::tape::Tape>, seeds: Vec<crate::tape::Tape>, rows: Vec<Row>,
+               rates: Rates) -> Result<Body, String> {
+        let stated = !rates.rows.is_empty();
+        if stated && n_formals != 1 {
+            return Err("a body that states a rate runs over one formal: one running over two \
+                is marched along the first (#339 D4), which is not yet read".into());
+        }
+        if !stated && !rates.init.is_empty() {
+            return Err("`initially { … }` says what holds at a home, and only a body that \
+                states a rate has one: its rates are integrated from it".into());
+        }
+        if stated && rows.iter().chain(&rates.rows).chain(&rates.init).any(|r| r.kid.is_none()) {
+            return Err("a body that states a rate reads no point a motion carries".into());
+        }
         if !(1..=MAX_FORMALS).contains(&n_formals) || n_formals + n_theta > n_outer {
             return Err("a traced body runs over one formal or two".into());
         }
@@ -111,17 +134,19 @@ impl Body {
             }
             n_res += kn.n_res;
         }
-        if n_res != n_q {
+        if !stated && n_res != n_q {
             return Err(format!("a traced body must determine its points: {n_q} unknowns against \
                                 {n_res} equations"));
         }
         let mut f = vec![n_formals as f64, n_outer as f64, n_theta as f64, n_q as f64,
-                         w.len() as f64, rows.len() as f64, traced as f64];
+                         w.len() as f64, rows.len() as f64, traced as f64,
+                         rates.rows.len() as f64, rates.init.len() as f64,
+                         rates.domain[0], rates.domain[1]];
         for t in &w {
             f.push(t.flat.len() as f64);
             f.extend_from_slice(&t.flat);
         }
-        for r in &rows {
+        for r in rows.iter().chain(&rates.rows).chain(&rates.init) {
             f.push(r.kid.map_or(-1.0, |k| k as f64));
             f.push(r.cols.len() as f64);
             f.push(r.consts.len() as f64);
@@ -133,8 +158,16 @@ impl Body {
             f.extend_from_slice(&t.flat);
         }
         // every row's shape and column is checked once, as any encoding is read
-        view(&f).ok_or("traced body shape mismatch")?;
+        let v = view(&f).ok_or("traced body shape mismatch")?;
+        if stated {
+            v.rate_body().check()?;
+        }
         Ok(Body { flat: f })
+    }
+
+    /// Whether the body states a rate (#339 D2).
+    pub fn states_rate(&self) -> bool {
+        view(&self.flat).is_some_and(|v| !v.rates.is_empty())
     }
 
     /// How many formals it runs over.
@@ -158,6 +191,37 @@ struct View<'a> {
     w: Vec<&'a [f64]>,
     rows: Vec<(Kernel, Option<usize>, Vec<usize>, &'a [f64])>,
     seeds: Vec<&'a [f64]>,
+    /// A body that states a rate (#339 D2): its rate rows, its home's, its interval.
+    rates: Vec<(Kernel, Option<usize>, Vec<usize>, &'a [f64])>,
+    init: Vec<(Kernel, Option<usize>, Vec<usize>, &'a [f64])>,
+    domain: [f64; 2],
+}
+
+impl<'a> View<'a> {
+    /// The body as the integrator reads it (`rates.rs`): over one formal, in space.
+    fn rate_body(&self) -> crate::rates::Body<'a> {
+        type Read<'a> = (Kernel, Option<usize>, Vec<usize>, &'a [f64]);
+        let rows = |rs: &[Read<'a>]| -> Vec<crate::rates::Row<'a>> {
+            rs.iter().map(|(_, kid, cols, consts)| crate::rates::Row {
+                kid: kid.unwrap_or(usize::MAX),
+                cols: cols.clone(),
+                consts,
+            }).collect()
+        };
+        crate::rates::Body {
+            n_outer: self.n_outer,
+            n_theta: self.n_theta,
+            n_q: self.n_q,
+            pose: false,
+            traced: self.traced,
+            dim: 3,
+            w: self.w.clone(),
+            seeds: self.seeds.clone(),
+            alg: rows(&self.rows),
+            rate: rows(&self.rates),
+            init: rows(&self.init),
+        }
+    }
 }
 
 fn view(flat: &[f64]) -> Option<View<'_>> {
@@ -165,11 +229,15 @@ fn view(flat: &[f64]) -> Option<View<'_>> {
         .filter(|v| v.is_finite() && *v >= 0.0 && v.fract() == 0.0).map(|v| v as usize);
     let (nf, n_outer, n_theta, n_q, n_w, n_rows, traced) =
         (g(0)?, g(1)?, g(2)?, g(3)?, g(4)?, g(5)?, g(6)?);
+    let (n_rates, n_init) = (g(7)?, g(8)?);
+    let domain = [*flat.get(9)?, *flat.get(10)?];
     if !(1..=MAX_FORMALS).contains(&nf) || n_q > MAX_Q || n_w > MAX_W || n_rows > MAX_ROWS
+        || n_rates > MAX_ROWS || n_init > MAX_ROWS
         || traced + 3 > n_q || nf + n_theta > n_outer || n_outer > 4096 {
         return None;
     }
-    let width = n_outer + n_q + n_w;
+    // a body that states a rate has its rates as columns past `w` (#339 D2)
+    let width = n_outer + n_q + n_w + if n_rates > 0 { n_q } else { 0 };
     let mut at = HEADER;
     let take = |n: usize, at: &mut usize| -> Option<&[f64]> {
         let s = flat.get(*at..*at + n)?;
@@ -182,8 +250,8 @@ fn view(flat: &[f64]) -> Option<View<'_>> {
         at += 1;
         w.push(take(n, &mut at)?);
     }
-    let mut rows = Vec::with_capacity(n_rows);
-    for _ in 0..n_rows {
+    let mut all = Vec::with_capacity(n_rows + n_rates + n_init);
+    for _ in 0..n_rows + n_rates + n_init {
         let kid = match flat.get(at).copied()? {
             k if k == -1.0 => None,
             _ => Some(g(at)?),
@@ -205,18 +273,21 @@ fn view(flat: &[f64]) -> Option<View<'_>> {
                 return None;
             }
         }
-        rows.push((kn, kid, cols, consts));
+        all.push((kn, kid, cols, consts));
     }
+    let init = all.split_off(n_rows + n_rates);
+    let rates = all.split_off(n_rows);
+    let rows = all;
     let mut seeds = Vec::with_capacity(n_q);
     for _ in 0..n_q {
         let n = g(at)?;
         at += 1;
         seeds.push(take(n, &mut at)?);
     }
-    if rows.iter().map(|r| r.0.n_res).sum::<usize>() != n_q {
+    if rates.is_empty() && rows.iter().map(|r| r.0.n_res).sum::<usize>() != n_q {
         return None;
     }
-    Some(View { nf, n_outer, n_theta, n_q, traced, w, rows, seeds })
+    Some(View { nf, n_outer, n_theta, n_q, traced, w, rows, seeds, rates, init, domain })
 }
 
 /* -- solving the body at a place ---------------------------------------------------------- */
@@ -476,6 +547,9 @@ pub fn read(flat: &[f64], outer: &[f64], home: &[f64], need: Need, grad: bool) -
     if outer.len() != v.n_outer || home.len() < v.nf {
         return None;
     }
+    if !v.rates.is_empty() {
+        return rate_read(flat, &v, outer, home[0], need, grad);
+    }
     let s = v.solve(outer, home)?;
     let order = match need {
         Need::Point => 1,
@@ -531,6 +605,54 @@ pub fn read(flat: &[f64], outer: &[f64], home: &[f64], need: Need, grad: bool) -
     } else {
         None
     };
+    Some(Read { frame, grad })
+}
+
+/// A body that states a rate, read at `outer[0]` (#339 D2): the flow from its home, its frame
+/// and, with `grad`, the frame's derivative in its place and every `θ` column — along the formal
+/// the flow's own higher orders, along a column its sensitivities.
+fn rate_read(flat: &[f64], v: &View, outer: &[f64], home: f64, need: Need, grad: bool)
+    -> Option<Read> {
+    let body = v.rate_body();
+    let u = outer[0];
+    let (lo, hi) = (v.domain[0], v.domain[1]);
+    let m = crate::rates::remembered(&body, flat, outer, home,
+                                     crate::rates::reach(home, u, Some((lo, hi)))).ok()?;
+    // a Jacobian reads one order past the frame
+    let order = match need {
+        Need::Point => 1,
+        Need::Tangent => 2,
+        Need::Curvature => 3,
+    } + u8::from(grad);
+    let r = body.read(&m, u, order.min(3), grad, grad)?;
+    let zero = [0.0; 3];
+    let mut frame =
+        Frame { x: r.d[0], d: [zero; MAX_FORMALS], dd: [[zero; MAX_FORMALS]; MAX_FORMALS] };
+    if need >= Need::Tangent {
+        frame.d[0] = r.d[1];
+    }
+    if need >= Need::Curvature {
+        frame.dd[0][0] = r.d[2];
+    }
+    let grad = grad.then(|| {
+        let mut g = vec![[zero; SLOTS]; PLACE + v.n_theta];
+        g[0][0] = r.d[1];
+        g[0][1] = r.d[2];
+        if r.orders >= 3 {
+            g[0][1 + MAX_FORMALS] = r.d[3];
+        }
+        for (c, gc) in g.iter_mut().enumerate().skip(PLACE) {
+            let j = c - PLACE;
+            gc[0] = r.dc[j];
+            if let Some(d) = r.dd1.get(j) {
+                gc[1] = *d;
+            }
+            if let Some(d) = r.dd2.get(j) {
+                gc[1 + MAX_FORMALS] = *d;
+            }
+        }
+        g
+    });
     Some(Read { frame, grad })
 }
 
@@ -959,6 +1081,19 @@ pub fn consts_of(t: &TracedE) -> Vec<f64> {
 pub fn reading(sk: &Sketch, i: usize, place: [f64; 2], need: Need) -> Option<Reading> {
     let t = sk.traced.get(i)?;
     at(&consts_of(t), &theta(sk, t), place, need)
+}
+
+/// How far traced body `i`, where it states a rate (#339 D2), is integrated across its interval
+/// from its home: `None` for any other body, else each way's refusal (`locus::rate_reach`).
+pub fn rate_reach(sk: &Sketch, i: usize) -> Option<[crate::rates::Reached; 2]> {
+    let t = sk.traced.get(i)?;
+    let v = view(&t.body.flat).filter(|v| !v.rates.is_empty())?;
+    let k = consts_of(t);
+    let (values, home, flat) = parts(&k)?;
+    let mut outer = vec![home[0]];
+    outer.extend(theta(sk, t));
+    outer.extend_from_slice(values);
+    Some(crate::rates::reaches(&v.rate_body(), flat, &outer, home[0], v.domain))
 }
 
 /// Where point `p` (in space) sits nearest on traced body `i`, as the drawing stands.

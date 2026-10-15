@@ -194,8 +194,8 @@ fn say_once(diags: &mut Vec<Diag>, span: Span, stmt: StmtId, message: String) {
 /// order each may end it.
 pub(super) fn constrain(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) -> Option<u32> {
     // a rate's relation is no row of the drawing, but what its family integrates by (#339 D3)
-    if let Some(over) = &r.rate {
-        rate_row(cx, r, st, over);
+    if r.reads_rate() {
+        rate_row(cx, r, st);
         return None;
     }
     let initially = r.initially;
@@ -343,10 +343,22 @@ pub(super) fn constrain(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) -> Option<u3
 
 /// `rate(x over s) word y` (#339 D3), kept beside the constraints (`Sketch::rates`): a rate is
 /// of an axis's direction or of a point, and is held against a direction or a plane.
-fn rate_row(cx: &mut Elab<'_>, r: &Relation, st: &Stmt, over: &str) {
+fn rate_row(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) {
     let Some(w) = r.form.written() else { return };
-    let [x, y] = &w.ops[..] else { return };
     let said = |r: &Ref| super::source_map::public_path(&crate::syntax::ref_text(r));
+    // a face family's rate is its first operand's, held as a direction against the second
+    let ([x, y], [rate], "parallel" | "perpendicular") = (&w.ops[..], &w.rates[..],
+        w.word.text.as_str()) else {
+        cx.diags.push(Diag::on(Code::E040, st, "a face family holds a rate of its first operand \
+            against a direction: `rate(x over s) parallel y` or `perpendicular y`".into()));
+        return;
+    };
+    if rate.op != 0 || !w.args.is_empty() {
+        cx.diags.push(Diag::on(Code::E040, st, "a face family holds a rate of its first operand \
+            against a direction: `rate(x over s) parallel y` or `perpendicular y`".into()));
+        return;
+    }
+    let over = rate.over.text.as_str();
     let formal = over.rsplit('.').next().unwrap_or(over);
     let text = format!("rate({} over {formal}) {} {}", said(x), w.word.text, said(y));
     let word = match w.word.text.as_str() {

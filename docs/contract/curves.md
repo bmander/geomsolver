@@ -1,7 +1,7 @@
 # Curves
 
 Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you touch `curve.rs`,
-`locus.rs`, `tape.rs`, `variational.rs`, `extremal.rs`, `ode.rs`. An issue number (#n) or a spec version
+`locus.rs`, `tape.rs`, `variational.rs`, `extremal.rs`, `ode.rs`, `rates.rs`. An issue number (#n) or a spec version
 ([0.n], see the [language changelog](../solvent-changelog.md)) says where a rule came from.
 
 **Variational curves (§9.10, §6.1, 0.53–0.59, #121, #144, #149, `variational.rs`, `extremal.rs`):**
@@ -88,6 +88,67 @@ of the span) and the march stops at the last place it reached (`Undefined`), and
 against it, the formal threaded through the substeps, the order `2k + 1` of one step with `k`
 columns measured by halving on an entire flow, `Φ` against differences of one step and of a
 march, a seed of fewer columns, dense output forwards and back, a carried branch, and refusals.
+
+**Rates along a running formal (#339 D2, [0.119], `rates.rs`):** a traced body may state
+relations that read a rate (`rate(p over s)`, `syntax::RateOf` on a `Written`; language.md says
+how it is written and flattened).  Such a body is **integrated from its home**, never solved again
+at a place.  Its rows are three sets over one variable table `[outer] ++ q ++ w ++ q′` — the
+algebraic rows, the **rate rows** (each rate lowered as a scratch line from an origin whose slots
+read a zero tape to a tip whose slots are the rates of the point's coordinates, `RATE_BASE` until
+`place_rates` puts them past `w`; the one-operand form `rate(p) distance(k, along: l)` the
+ordinate between the line's two points) and the **initial rows** (`initially`, the home's
+alone) — encoded after the old ones (`locus::Rates`, header ten wide; `traced::Rates`, eleven,
+the interval in it) and read by one integrator, `rates::Body`, in the plane (`dim` 2) and in
+space (3).  `admissible` refuses a rate anywhere but `parallel`, `perpendicular`, `angle` and the
+ordinate; `rate_operand` refuses two rates in a row, a rate in `initially`, one over another
+formal or an `Angle` (degrees: its unit is D3's to settle); a point the body does not move has
+no rate.  **The rates at a place** are the algebraic rows differentiated along the formal (their
+first Taylor order with `q` standing) and the rate rows, solved by Newton from the flow's
+`Branch` (the rates before: one step for the rows admitted, all linear in the rate); `M = [J_q;
+∂R/∂q′]` is factorised with each row scaled to **unit length** (smooth in the state: where rows
+past the count disagree off the body's rows, at a substep, their least squares weighs them by it,
+and a weight with a kink cost the extrapolation its order — a geodesic read 2e-7 between nodes
+with rows scaled by their largest entry), LU where square, Householder QR where it has more rows,
+a pivot under `1e-10` a **rank loss**: the index check, at every evaluation, refused there
+(`ode::Refusal::Undefined`).  In the plane the system must be square by count (`curves::short`);
+in space, where `parallel` is two rows and the body's own rows may imply one, at least square, and
+rows past the count must agree (`strict`) at the home and at a reading, not at a substep.  The
+flow's Jacobian is **exact**: `∂q′/∂z = −M⁻¹ ∂G/∂z`, the algebraic rows' part a mixed second
+derivative by polarisation over `taylor::Jet`s (`r` along `u + t, q + t q′ ± t e_z` differs by
+`2 D²r[ẋ, e_z]` in its second order), the rate rows' part a first; a column no row or tape reads
+is skipped.  The state is `[q, θ free]`, the free columns constant states, `Φ` seeded by the
+home's sensitivity to every `θ` column.  **The home**: a drawn instance's pose is the initial
+value and its coordinates are **columns** of the curve (`CurveDef::home`, keyed `HOME`; `vars`
+gain `#home.k` before the constants; `entity_params` reads `CurveE::pose`), projected onto the
+body's algebraic rows (`rates::Body::project`: `q₀ − pose = Jᵀλ`, `r(q₀) = 0`, Newton on the
+whole condition, `W = Σ λᵢ∇²rᵢ` by polarisation, so its sensitivity is exact off the rows; at a
+solution it is the pose) — without it a solve from a rough start integrated frames the body
+could never be, a clothoid's contacts took 58 s; with it 0.5 s.  Written in place the home is the
+algebraic and initial rows solved from the seeds (restarts as `cold_start`'s), its sensitivity by
+the implicit function theorem.  A drawn home must be a number (`Home::At`).  **The curve**: a
+march from the home to the end of the interval on the place's side (`rates::reach`; past it the
+distance doubled), so every place inside is read off one march, a function of the columns alone;
+marches are remembered by content (`rates::remembered`: encoding, columns, home, reach), a refused
+one kept as far as it reached (`March::refused`, re-marched to the refusal).  A reading is
+`ode::Path::at` (dense output, `Φ` with it): `C` and `∂C/∂θ` from `Φ`, `C′` the rate,
+`∂C′/∂θ = (∂f/∂y)Φ` exact, `C″`, `C‴` the solution's Taylor coefficients (`higher`: along `q(t) =
+Σ q_k t^k` the algebraic rows' `t^k` coefficient is `J_q q_k + R_k`, the rate rows' `t^{k−1}` is
+`k ∂R/∂q′ q_k + S_{k−1}`, one more solve with `M` each), and `∂C″/∂θ` (a curvature's Jacobian)
+by difference of that local map along `Φ`'s column — no march.  The planar contacts read it
+through `locus::kernel_eval_to`/`kernel_frame` (the interval rides where a pose would in the
+constants), the drawing through `eval_flat`/`sweep`, the spatial ones through `traced::read`.
+`report::rates_text` and `traced_text` say how far each such curve is integrated, or where it is
+refused.  `tests/traced_rates.rs` is the gate: the tractrix (drawn, and written in place from
+`initially` both ways), the clothoid against the Fresnel series, contacts against closed forms
+and the assembled Jacobian against differences before the solve, the hanging chain shot to its
+far end (`c sinh(50/c) = 75`), the geodesic on a cone in space (rows past the count) with its
+contacts' Jacobians, a body one rate row short naming its freedom, the refusals, a march refused
+where its rates lose rank, and the spelling printed back.  **The rates series**
+(`rust/examples/rates/`, its README the reading order): one document per idiom — a tractrix drawn
+and written in place, a clothoid transition into its osculating bend, a chain shot to its far end
+beside the free curve, a pursuit refused at its capture, a geodesic on a cone in space — each curve
+at the closed form its comments give and each claim a theorem, held by `tests/rate_examples.rs`;
+the app lists the folder as one project (`example-catalog.ts`, *Rates*).
 
 - A parametric curve (`curve.rs`) is *linear in its control points*, `C(t) = Σ Bᵢ(t) Pᵢ` (every
   B-spline).  A contact carries its own curve parameter as a `Param` slot and says

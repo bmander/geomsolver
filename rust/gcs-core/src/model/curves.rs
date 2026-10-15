@@ -62,9 +62,17 @@ pub struct CurveDef {
     /// the trace's home is the pose on the sheet rather than the component's seeds.  Empty for
     /// a formula.
     pub pose_of: Vec<(String, usize)>,
+    /// Whether the drawn instance's pose is the curve's **initial value** (#339 D2): a body
+    /// that states a rate, drawn, integrated from where it stands on the sheet — so the pose's
+    /// coordinates are columns of the curve, after `columns` (`entity_params`).
+    pub home: bool,
 }
 
 impl CurveDef {
+    /// What a definition drawn at its home is keyed by past its `key` (#339 D2): its variable
+    /// table has the pose's columns, which one written in place has not.
+    pub const HOME: &'static str = "@home";
+
     /// What one definition is keyed by: the component, the point, the swept formal, and the
     /// numeric formals that are columns.
     pub fn key(component: &str, point: &str, swept: &str, columns: &[String]) -> String {
@@ -127,6 +135,7 @@ pub fn extremal_def(name: String, lag: Option<crate::extremal::Lagrangian>, pegs
             .collect(),
         body: CurveBody::Extremal(Extremal { lag, pegs, slides }),
         pose_of: Vec::new(),
+        home: false,
     }
 }
 

@@ -985,6 +985,12 @@ pub fn meshing_text(sk: &Sketch, i: usize) -> String {
 /// flank seen from its member.
 pub fn traced_text(sk: &Sketch, i: usize) -> String {
     let t = &sk.traced[i];
+    // a body that states a rate is integrated from its home, and says how far (#339 D2)
+    if let Some(reach) = crate::traced::rate_reach(sk, i) {
+        let [lo, hi] = t.domain[0];
+        let said = reach_text(reach, t.home[0], (lo, hi));
+        return format!("{}: a curve traced in space, {said}", t.name);
+    }
     let what = if t.formals() == 2 { "a surface" } else { "a curve" };
     let k = crate::traced::consts_of(t);
     let theta = crate::traced::theta(sk, t);
@@ -1016,6 +1022,45 @@ pub fn traced_text(sk: &Sketch, i: usize) -> String {
         text += &format!(" ({missed} places not solved)");
     }
     text
+}
+
+/// What the drawing says of a curve whose body states a rate (#339 D2): integrated from its home
+/// across its interval, or refused where its rates lose rank — the place, as a station that
+/// loses rank is said today — or where the march ran past its bound of steps.  `None` for any
+/// other curve.
+pub fn rates_text(sk: &Sketch, i: usize) -> Option<String> {
+    let cv = sk.curves.get(i)?;
+    let crate::model::CurveBody::Trace(l) = &sk.curve_defs[cv.def as usize].body else {
+        return None;
+    };
+    let home = sk.curve_home(i);
+    let reach = crate::locus::rate_reach(&l.flat, &sk.curve_vars(i, home), home, cv.domain)?;
+    Some(reach_text(reach, home, cv.domain))
+}
+
+/// How far a march reached each way from `home` across `domain`, in the CLI's words.
+fn reach_text(reach: [crate::rates::Reached; 2], home: f64, domain: (f64, f64)) -> String {
+    let num = |v: f64| crate::io::reading(SpecKind::Scalar, v);
+    let mut out = format!("integrated from its home at {}", num(home));
+    for r in reach {
+        match r {
+            Ok(()) => {}
+            Err(None) => return format!("not integrated: its home at {} is not to be had",
+                num(home)),
+            Err(Some(crate::ode::Refusal::Undefined { at })) => {
+                out += &format!(", refused at {}: its rates lose rank there", num(at))
+            }
+            Err(Some(crate::ode::Refusal::Steps { at })) => {
+                out += &format!(", refused at {}: the march ran past its bound of steps (stiff, \
+                    or near where its rates lose rank)", num(at))
+            }
+        }
+    }
+    let (a, b) = domain;
+    if !out.contains("refused") {
+        out += &format!(" across ({}, {})", num(a), num(b));
+    }
+    out
 }
 
 /// What the drawing says of each motion it reads the screw of (#326): for every `isa screw mesh`,

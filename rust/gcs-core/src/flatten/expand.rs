@@ -887,16 +887,23 @@ impl<'a> Walk<'a> {
             self.settle_arg(a, vals, scope);
         }
         self.held.on_leg = None;
-        // a rate is along the running number its formal is given (#339 D3); a formal given a
-        // number is a drawn instance at its home, where no rate is a row
-        if let Some(over) = r2.rate.take() {
-            match self.rate_over(&over.text, vals) {
-                Ok(Some(text)) => r2.rate = Some(crate::syntax::Name { text, span: over.span }),
-                Ok(None) => return None,
-                Err(m) => {
-                    self.err(Code::E040, over.span, m);
-                    return None;
+        // **a rate is read along a formal its body runs over** (#339 D2, D3): kept, the formal
+        // named as the running number it is given; not a row at a drawn instance's home, so not
+        // stated there
+        if let Some(w) = r2.form.written_mut() {
+            let mut stated = true;
+            for rate in w.rates.iter_mut() {
+                match self.rate_over(&rate.over.text, vals) {
+                    Ok(Some(text)) => rate.over.text = text,
+                    Ok(None) => stated = false,
+                    Err((code, m)) => {
+                        self.err(code, rate.over.span, m);
+                        stated = false;
+                    }
                 }
+            }
+            if !stated {
+                return None;
             }
         }
         // the enclosing instances' classes, over the statement's own: a ghosted part's
@@ -909,19 +916,27 @@ impl<'a> Walk<'a> {
         Some(r2)
     }
 
-    /// The running number `rate(x over s)`'s formal `s` is given (#339 D3): `None` where it is
-    /// given a number, the home of a drawn instance; refused where it is anything but a face
-    /// family's running number or a multiple of it.
-    fn rate_over(&self, s: &str, vals: &BTreeMap<String, Aff>) -> Result<Option<String>, String> {
+    /// The running number `rate(x over s)`'s formal `s` is given (#339 D2, D3): `None` where it
+    /// is given a number, the home of a drawn instance.  A face family's running number, or a
+    /// multiple of it, is its own; where a component is expanded to be traced (`sym`) a formal
+    /// handed on as itself (`Drag(…, u: u)`) is the formal it was handed, which the trace runs
+    /// over.  Anything else is no number running, and refused.
+    fn rate_over(&self, s: &str, vals: &BTreeMap<String, Aff>)
+        -> Result<Option<String>, (Code, String)> {
         let Some(a) = vals.get(s) else {
-            return Err(format!("`{s}` is no number of this body: a rate runs over a formal the \
-                body is given its running number in, `rate(x over s)`"));
+            return Err((Code::E040, format!("`{s}` is no formal here: a rate runs over a formal \
+                the body is given its running number in, `rate(x over s)`")));
         };
         match &a.free {
             None => Ok(None),
             Some(u) if self.held.names.contains_key(u) && a.m != 0.0 => Ok(Some(u.clone())),
-            Some(_) => Err(format!("`{s}` is an unknown of the drawing: a rate runs along a face \
-                family's running number, `solid(I(…).f over s in (a, b))`")),
+            Some(u) if self.sym.is_some() && a.m == 1.0 && a.c == 0.0 => Ok(Some(u.clone())),
+            Some(u) if self.sym.is_some() => Err((Code::E103, format!("`{s}` is given an \
+                expression in `{u}`, and a rate is read along a formal handed on as itself: give \
+                the component `{s}: {u}`"))),
+            Some(_) => Err((Code::E040, format!("`{s}` is an unknown of the drawing: a rate runs \
+                along a face family's running number, `solid(I(…).f over s in (a, b))`, or a \
+                traced body's formal"))),
         }
     }
 
@@ -1311,7 +1326,7 @@ impl Walk<'_> {
         for i in 0..self.out.len() {
             let (st, _, sc) = &self.out[i];
             let StmtKind::Relation(r) = &st.kind else { continue };
-            if r.claim || r.initially || r.rate.is_some() || r.along.is_some() || r.space
+            if r.claim || r.initially || r.reads_rate() || r.along.is_some() || r.space
                 || sc.block.ring.is_some() {
                 continue;
             }
@@ -1459,6 +1474,7 @@ fn applied(probe: &str, set: Ref, word: &str, at: Span) -> crate::syntax::Relati
         ops: vec![Ref::new(probe), set],
         args: Vec::new(),
         span: at,
+        rates: Vec::new(),
     };
     crate::syntax::Relation::of(crate::syntax::RelationForm::Written(written))
 }

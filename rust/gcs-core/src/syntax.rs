@@ -22,7 +22,7 @@ pub use print::{bounded, operator_text, render_flat, write_stmt_to, PrintError};
 pub(crate) use print::{sel_text, written_parts};
 pub use source::{line_col, Module, Name, Program, Span, StmtId, SynErr, Use, MAX_STMTS, MAX_TEXT};
 pub use words::{equal_kind, is_name, reserved_word};
-pub use written::{Cmp, OpArg, Written};
+pub use written::{Cmp, OpArg, RateOf, Written};
 
 use crate::constraints::{CKind, Fixity};
 use crate::model::EntKind;
@@ -1514,14 +1514,17 @@ pub struct Relation {
     /// space, so the relation is the one in space wherever its operands are drawn
     /// (`program::reading::in_space`).
     pub space: bool,
-    /// Written inside `initially { … }` (#339 D3): a row of a family's home alone.
+    /// Written inside `initially { … }` (#339 D2, D3): a row of a body's home alone — a traced
+    /// body's or a face family's.  Stamped by the parser, which hoists the block's relations.
     pub initially: bool,
-    /// `rate(x over s) word y` (#339 D3): the formal the rate runs over, its first operand the
-    /// thing whose rate it is.  The flattener writes the running number it names in its place.
-    pub rate: Option<Name>,
 }
 
 impl Relation {
+    /// Whether any operand is written as a rate (#339 D2): `Written::reads_rate`.
+    pub fn reads_rate(&self) -> bool {
+        self.form.written().is_some_and(|w| w.reads_rate())
+    }
+
     /// A relation built rather than written: its form and nothing else — no placement, class,
     /// claim, word or derivative.
     pub fn of(form: RelationForm) -> Relation {
@@ -1536,7 +1539,6 @@ impl Relation {
             along: None,
             space: false,
             initially: false,
-            rate: None,
         }
     }
 }
