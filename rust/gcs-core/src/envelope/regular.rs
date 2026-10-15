@@ -40,8 +40,11 @@
 //! roll₀, roll₁, n, held…, terms, (side, shape, cmp, lo×3, hi, grow×3, a, b, c, sign, 0, 0)…]`
 //! (`HEADER`, `TERM`), a number `c + m·x` with `x` the column `col` (−1 none).
 
-use super::held::{self, dot, unit, vscale, vsub, Layout};
+use super::held::{self, dot, unit, vscale, vsub, Col, Layout};
 use crate::kernels::{Dual, Kernel, Num};
+use crate::model::{EntKind, Held, RegionShape, RegionTerm, SetKind, Sketch, SolidDef, Target,
+                   TermNumber};
+use crate::syntax::Cmp;
 
 /* -- the layout ------------------------------------------------------------------------------ */
 
@@ -86,8 +89,7 @@ pub type Number = (f64, f64, i64);
 pub struct Term {
     pub side: Side,
     pub shape: Shape,
-    /// 0 at most, 1 at least, 2 between `lo` and `hi`.
-    pub cmp: u8,
+    pub cmp: Cmp,
     pub lo: Number,
     pub hi: f64,
     pub grow: Number,
@@ -98,7 +100,12 @@ pub struct Term {
 impl Term {
     fn write(&self, out: &mut Vec<f64>) {
         let n = |x: Number| [x.0, x.1, x.2 as f64];
-        out.extend([self.side as i64 as f64, self.shape as i64 as f64, self.cmp as f64]);
+        let cmp = match self.cmp {
+            Cmp::Le => 0.0,
+            Cmp::Ge => 1.0,
+            Cmp::In => 2.0,
+        };
+        out.extend([self.side as i64 as f64, self.shape as i64 as f64, cmp]);
         out.extend(n(self.lo));
         out.push(self.hi);
         out.extend(n(self.grow));
@@ -121,16 +128,21 @@ impl Term {
             5 => Shape::Round,
             _ => return None,
         };
+        let cmp = match k[2] as i64 {
+            0 => Cmp::Le,
+            1 => Cmp::Ge,
+            2 => Cmp::In,
+            _ => return None,
+        };
         let n = |i: usize| (k[i], k[i + 1], k[i + 2] as i64);
-        Some(Term { side, shape, cmp: k[2] as u8, lo: n(3), hi: k[6], grow: n(7),
+        Some(Term { side, shape, cmp, lo: n(3), hi: k[6], grow: n(7),
                     at: [k[10] as i64, k[11] as i64, k[12] as i64], sign: k[13] })
     }
 }
 
-/// A problem read back off its constants.
+/// A problem read back off its constants (the margin, `k[0]`, is the residual's alone).
 #[derive(Clone, Debug)]
 pub struct Problem {
-    pub margin: f64,
     pub roll: [f64; 2],
     pub layout: Layout,
     pub terms: Vec<Term>,
@@ -150,7 +162,7 @@ impl Problem {
             return None;
         }
         let terms = body.chunks(TERM).map(Term::read).collect::<Option<Vec<_>>>()?;
-        Some(Problem { margin: k[0], roll: [k[1], k[2]], layout, terms })
+        Some(Problem { roll: [k[1], k[2]], layout, terms })
     }
 
     /// What the problem's constants are.
@@ -169,6 +181,18 @@ impl Problem {
     fn conditions(&self) -> usize {
         self.terms.iter().filter(|t| t.side != Side::Part).count() + 2
             + 2 * (self.layout.source == held::Source::Line) as usize
+    }
+
+    /// The conditions on the source's point `s` at `u` along its meridian, into `out`: the tool's
+    /// terms, and a line's ends.
+    fn on_tool<T: Num>(&self, c: &[T], s: [T; 3], u: T, out: &mut Vec<T>) {
+        for t in self.terms.iter().filter(|t| t.side == Side::Source) {
+            out.push(value(&self.terms, t, c, s));
+        }
+        if self.layout.source == held::Source::Line {
+            out.push(u - T::cst(1.0));
+            out.push(T::cst(0.0) - u);
+        }
     }
 }
 
@@ -255,9 +279,9 @@ fn value<T: Num>(terms: &[Term], t: &Term, c: &[T], p: [T; 3]) -> T {
     }
     let grow = number(c, t.grow);
     match t.cmp {
-        0 => from_surface(t, c, p, number(c, t.lo)).0 - grow,
-        1 => grow - from_surface(t, c, p, number(c, t.lo)).0,
-        _ => {
+        Cmp::Le => from_surface(t, c, p, number(c, t.lo)).0 - grow,
+        Cmp::Ge => grow - from_surface(t, c, p, number(c, t.lo)).0,
+        Cmp::In => {
             let hi = from_surface(t, c, p, T::cst(t.hi)).0;
             let lo = T::cst(0.0) - from_surface(t, c, p, number(c, t.lo)).0;
             if hi.val() >= lo.val() { hi } else { lo }
@@ -284,19 +308,13 @@ fn read<T: Num>(p: &Problem, cols: &[T]) -> Read<T> {
     let (alpha, beta) = ((gg * b1 - ff * b2) / det, (e * b2 - ff * b1) / det);
     let area = (f.dg[2] - alpha * f.dg[0] - beta * f.dg[1]) / f.dg[2];
     let c = &cols[3..];
-    let s = held::source_at(l, cols);
     let mut conditions = Vec::with_capacity(p.conditions());
-    for t in p.terms.iter().filter(|t| t.side != Side::Part) {
-        let at = if t.side == Side::Member { f.x } else { s };
-        conditions.push(value(&p.terms, t, c, at));
+    p.on_tool(c, held::source_at(l, cols), cols[0], &mut conditions);
+    for t in p.terms.iter().filter(|t| t.side == Side::Member) {
+        conditions.push(value(&p.terms, t, c, f.x));
     }
-    let roll = cols[2];
-    conditions.push(roll - T::cst(p.roll[1]));
-    conditions.push(T::cst(p.roll[0]) - roll);
-    if l.source == held::Source::Line {
-        conditions.push(cols[0] - T::cst(1.0));
-        conditions.push(T::cst(0.0) - cols[0]);
-    }
+    conditions.push(cols[2] - T::cst(p.roll[1]));
+    conditions.push(T::cst(p.roll[0]) - cols[2]);
     Read { area, g: f.g, conditions }
 }
 
@@ -372,21 +390,14 @@ impl Ask<'_> {
         r.conditions.iter().all(|&c| c <= self.tol()).then_some((r.area, t))
     }
 
-    /// The source's conditions at `(u, v)`: the largest, the tool's own terms alone.
-    fn on_tool(&mut self, u: f64, v: f64) -> Option<f64> {
-        let l = &self.p.layout;
+    /// Whether the source's point at `(u, v)` is on the tool's face.
+    fn on_tool(&mut self, u: f64, v: f64) -> bool {
         self.cols[0] = u;
         self.cols[1] = v;
-        let s = held::source_at(l, &self.cols);
-        let c = &self.cols[3..];
-        let mut worst = f64::NEG_INFINITY;
-        for t in self.p.terms.iter().filter(|t| t.side == Side::Source) {
-            worst = worst.max(value(&self.p.terms, t, c, s));
-        }
-        if l.source == held::Source::Line {
-            worst = worst.max(u - 1.0).max(-u);
-        }
-        worst.is_finite().then_some(worst)
+        let s = held::source_at(&self.p.layout, &self.cols);
+        let mut c = Vec::new();
+        self.p.on_tool(&self.cols[3..], s, u, &mut c);
+        c.iter().all(|&x| x <= 0.0)
     }
 
     /// The stretch of the source's meridian on the tool, from a scan along it.
@@ -405,7 +416,7 @@ impl Ask<'_> {
             let u = a + (b - a) * i as f64 / n as f64;
             let on = (0..4).any(|k| {
                 let v = k as f64 * std::f64::consts::FRAC_PI_2;
-                self.on_tool(u, v).is_some_and(|c| c <= 0.0)
+                self.on_tool(u, v)
             });
             if on {
                 found = Some(found.map_or([u, u], |[lo, hi]| [lo.min(u), hi.max(u)]));
@@ -415,23 +426,18 @@ impl Ask<'_> {
         found.map(|[lo, hi]| [lo - step, hi + step])
     }
 
-    /// How far from the source's axis the tool's terms reach: what its meridian is scanned over.
+    /// Twice as far as the tool's terms' points stand from where the source's axis starts: what
+    /// its meridian is scanned over, either way.
     fn reach(&self) -> f64 {
         let c = &self.cols[3..];
         let apex = [c[0], c[1], c[2]];
-        let mut far: f64 = 1.0;
-        for t in self.p.terms.iter() {
-            for &at in t.at.iter().filter(|&&a| a >= 0) {
-                // a round's are records, and an axis's direction no place
-                let direction = t.shape == Shape::Plane && at == t.at[1] && t.at[2] < 0;
-                if t.shape == Shape::Round || direction {
-                    continue;
-                }
-                let q = col3(c, at);
-                far = far.max(crate::space::distance(q, apex) + number(c, t.lo).abs().min(1e6));
-            }
-        }
-        2.0 * far
+        let tool = |t: &&Term| t.side != Side::Member && t.shape != Shape::Round;
+        let points = self.p.terms.iter().filter(tool).flat_map(|t| {
+            // an axis's direction is no place
+            let places = if t.shape == Shape::Plane && t.at[2] < 0 { 1 } else { 3 };
+            t.at[..places].iter().copied().filter(|&a| a >= 0)
+        });
+        2.0 * points.fold(1.0f64, |far, at| far.max(crate::space::distance(col3(c, at), apex)))
     }
 
     /// Places on the envelope over a grid of the tool's face and the roll, where every condition
@@ -568,9 +574,8 @@ impl Ask<'_> {
                     j.set(i, 4 + k, r.conditions[jj].g[i]);
                 }
             }
-            let mut a = j.data.clone();
             let mut step = f.clone();
-            if !crate::linalg::lu_solve(n, &mut a, &mut step) {
+            if !crate::linalg::lu_solve(n, &mut j.data, &mut step) {
                 return None;
             }
             // halved until the residual falls
@@ -607,12 +612,7 @@ impl Ask<'_> {
     /// The worst point from `z`: held at the conditions nearly met there, polished; a condition
     /// whose multiplier comes out on the wrong side let go.
     fn polish(&mut self, z: [f64; 3], area: f64) -> Option<Worst> {
-        let r = self.at(z)?;
-        let mut near: Vec<(f64, usize)> = r.conditions.iter().enumerate()
-            .filter(|(_, &c)| c > -1e-6 * self.size)
-            .map(|(j, &c)| (c, j)).collect();
-        near.sort_by(|a, b| b.0.total_cmp(&a.0));
-        let near: Vec<usize> = near.into_iter().map(|(_, j)| j).take(2).collect();
+        let near = self.nearly_met(z)?;
         // every subset of the nearly met, the most held first
         let mut tries: Vec<Vec<usize>> = vec![near.clone()];
         if near.len() == 2 {
@@ -683,12 +683,20 @@ impl Ask<'_> {
     /// A worst point the polish could not finish: where the shrinking grid ended, its
     /// multipliers fitted to the conditions nearly met there.
     fn fallback(&mut self, z: [f64; 3]) -> Option<Worst> {
-        let r = self.at(z)?;
-        let active: Vec<usize> = r.conditions.iter().enumerate()
-            .filter(|(_, &c)| c > -1e-7 * self.size).map(|(j, _)| j).take(2).collect();
+        let active = self.nearly_met(z)?;
         let g = self.grad(z)?;
         let fit = multipliers(&g, &active)?;
-        Some(Worst { place: z, area: r.area, active, lambda: fit[0], mu: fit[1..].to_vec() })
+        Some(Worst { place: z, area: g.area.v, active, lambda: fit[0], mu: fit[1..].to_vec() })
+    }
+
+    /// The two conditions nearest being broken at `z`, of those within a millionth of the figure
+    /// of it: where a shrinking grid stops against them.
+    fn nearly_met(&mut self, z: [f64; 3]) -> Option<Vec<usize>> {
+        let r = self.at(z)?;
+        let mut near: Vec<(f64, usize)> = r.conditions.iter().enumerate()
+            .filter(|(_, &c)| c > -1e-6 * self.size).map(|(j, &c)| (c, j)).collect();
+        near.sort_by(|a, b| b.0.total_cmp(&a.0));
+        Some(near.into_iter().map(|(_, j)| j).take(2).collect())
     }
 }
 
@@ -765,16 +773,6 @@ pub fn worst(k: &[f64], cols: &[f64]) -> Option<Worst> {
     found
 }
 
-/// The area factor and the conditions at a place, over a problem's constants and columns: what a
-/// check reads apart from the search.
-pub fn at(k: &[f64], cols: &[f64], place: [f64; 3]) -> Option<(f64, f64, Vec<f64>)> {
-    let p = Problem::read(k)?;
-    let mut c = place.to_vec();
-    c.extend_from_slice(cols);
-    let r = read(&p, &c);
-    Some((r.area, r.g, r.conditions))
-}
-
 /* -- the kernel ------------------------------------------------------------------------------ */
 
 fn res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
@@ -824,14 +822,7 @@ pub fn kernel(n_par: usize, n_const: usize) -> Kernel {
         form: None,
     }
 }
-
-
 /* -- reading the sketch ---------------------------------------------------------------------- */
-
-use crate::model::{EntKind, Held, RegionShape, RegionTerm, SetKind, Sketch, SolidDef, Target,
-                   TermNumber};
-use crate::syntax::Cmp;
-use held::Col;
 
 /// What the kernel reads of an envelope, the tool cutting it and the blank it is cut in, off the
 /// sketch: the envelope's parts, the roll, and the regions' terms over columns of their own.
@@ -884,12 +875,13 @@ impl Parts {
                 face = true;
                 continue;
             }
+            let said = |m: String| format!("`{tool_name}`'s `{}`: {m}", t.name);
             if let RegionShape::Measured { of } = &t.shape {
-                b.round(t, of, &own, &shape.number)
-                    .map_err(|m| format!("`{tool_name}`'s `{}`: {m}", t.name))?;
+                b.round(t, of, &own, &shape.number).map_err(said)?;
                 continue;
             }
-            b.term(t, Side::Source).map_err(|m| format!("`{tool_name}`'s `{}`: {m}", t.name))?;
+            let term = b.read(t, Side::Source).map_err(said)?;
+            b.terms.push(term);
         }
         if !face {
             return Err(format!("`{}`'s source is no face of `{tool_name}`: the tool named is \
@@ -897,7 +889,9 @@ impl Parts {
         }
         let (blank_name, blank_terms) = region(blank)?;
         for t in blank_terms {
-            b.term(t, Side::Member).map_err(|m| format!("`{blank_name}`'s `{}`: {m}", t.name))?;
+            let said = |m: String| format!("`{blank_name}`'s `{}`: {m}", t.name);
+            let term = b.read(t, Side::Member).map_err(said)?;
+            b.terms.push(term);
         }
         Ok(Parts { held, roll: env.roll, terms: b.terms, cols: b.cols })
     }
@@ -989,11 +983,6 @@ impl Builder<'_> {
 
     /// A ball, a cylinder, a cone or a half-space as constants; anything else refused.
     fn read(&mut self, t: &RegionTerm, side: Side) -> Result<Term, String> {
-        let cmp = match t.cmp {
-            Cmp::Le => 0,
-            Cmp::Ge => 1,
-            Cmp::In => 2,
-        };
         let lo = self.number(&t.lo)?;
         let grow = match &t.grow {
             Some(g) => self.number(g)?,
@@ -1028,13 +1017,7 @@ impl Builder<'_> {
             _ => return Err("a region is read here of balls, cylinders, cones, half-spaces and a \
                              tool's rounds".into()),
         };
-        Ok(Term { side, shape, cmp, lo, hi: t.hi.unwrap_or(f64::NAN), grow, at, sign })
-    }
-
-    fn term(&mut self, t: &RegionTerm, side: Side) -> Result<(), String> {
-        let term = self.read(t, side)?;
-        self.terms.push(term);
-        Ok(())
+        Ok(Term { side, shape, cmp: t.cmp, lo, hi: t.hi.unwrap_or(f64::NAN), grow, at, sign })
     }
 
     /// A round of the tool's face: within `r` of a core of two terms, the source running along
@@ -1061,8 +1044,9 @@ impl Builder<'_> {
         self.terms.push(run);
         self.terms.push(bound);
         let lo = self.number(&t.lo)?;
-        self.terms.push(Term { side: Side::Source, shape: Shape::Round, cmp: 0, lo, hi: f64::NAN,
-                               grow: (0.0, 0.0, -1), at: [at, at + 1, other], sign: 1.0 });
+        let none = (0.0, 0.0, -1);
+        self.terms.push(Term { side: Side::Source, shape: Shape::Round, cmp: Cmp::Le, lo,
+                               hi: f64::NAN, grow: none, at: [at, at + 1, other], sign: 1.0 });
         Ok(())
     }
 }

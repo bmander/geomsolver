@@ -273,8 +273,9 @@ pub(super) fn constrain(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) -> Option<u3
     let mut bound = inferred(cx, &r, st, ckind, &mut args, &left_out)?;
     // a flank said regular with no number is one with no fold: its least area factor at least
     // nothing (#345)
-    if ckind == CKind::RegularWithin && left_out[3] && bound.is_none() {
-        args[3] = CArg::Num(0.0);
+    let margin = ckind.dimension_slot().filter(|&i| ckind == CKind::RegularWithin && left_out[i]);
+    if let (Some(i), None) = (margin, &bound) {
+        args[i] = CArg::Num(0.0);
         bound = Some((crate::constraints::Bound { cmp: crate::syntax::Cmp::Ge, hi: None }, None));
     }
     let mut c = Constraint::new(ckind, args);

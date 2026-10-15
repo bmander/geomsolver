@@ -67,7 +67,8 @@ impl Constraint {
         // a flank's regularity within a blank: the envelope's, the roll's, the regions' terms' and
         // the number (#345)
         if self.kind == CKind::RegularWithin {
-            return self.regular_parts(sk).map(|p| p.consts(self.args[3].num())).unwrap_or_default();
+            let margin = self.kind.dimension_slot().map_or(0.0, |i| self.args[i].num());
+            return self.regular_parts(sk).map(|p| p.consts(margin)).unwrap_or_default();
         }
         // a motion's twist read: its steps (#326)
         if self.kind.motion_reading().is_some() {
