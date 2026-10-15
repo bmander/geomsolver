@@ -445,6 +445,47 @@ pub fn validate(
             Ok(())
         }
         CKind::Ordinate | CKind::Level => validate_ordinate(sk, kind, args, name),
+        // a map's source frame has a place for every point of its plane only where it spans it
+        // (#357): three points standing in a line, or two that are one, have none, and its rows
+        // would divide by zero.  Asked of a frame held where it stands; one the solve moves is
+        // the solve's
+        CKind::Mapped | CKind::MappedSimilar => {
+            let src: Vec<usize> = [2, 4, 6].into_iter()
+                .filter(|&i| i < if kind == CKind::Mapped { 8 } else { 6 })
+                .map(|i| args[i].ent().i())
+                .collect();
+            if !src.iter().all(|&p| sk.point_held(p)) {
+                return Ok(());
+            }
+            let at = |p: usize| {
+                let pp = sk.point_params(p);
+                [sk.params[pp[0] as usize].value, sk.params[pp[1] as usize].value]
+            };
+            let (f, t) = (at(src[0]), at(src[1]));
+            let d1 = [t[0] - f[0], t[1] - f[1]];
+            let l1 = d1[0].hypot(d1[1]);
+            let pt = |i: usize| name(EntRef::point(src[i]));
+            if l1 <= kernels::MIN_LINE_LEN {
+                return Err(format!(
+                    "{} and {} are one point, so the map has no frame",
+                    pt(0),
+                    pt(1)
+                ));
+            }
+            if let Some(&h) = src.get(2) {
+                let h = at(h);
+                let d2 = [h[0] - f[0], h[1] - f[1]];
+                let det = d1[0] * d2[1] - d1[1] * d2[0];
+                if det.abs() <= 1e-9 * l1 * d2[0].hypot(d2[1]).max(l1) {
+                    return Err(format!(
+                        "{}, {} and {} stand in a line, so the map has no place for a point off \
+                         it: the source frame is three points not in a line",
+                        pt(0), pt(1), pt(2)
+                    ));
+                }
+            }
+            Ok(())
+        }
         k if k.spatial() => {
             let c = Constraint::new(kind, args.to_vec());
             for p in c.lifted_points(sk) {

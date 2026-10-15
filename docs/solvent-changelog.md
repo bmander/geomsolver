@@ -4,6 +4,18 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.115] A point carried by a map.** `q mapped(from -> a, to -> b, third -> c) p` (§9.2) holds
+`q` where the affine map taking the three source points to the three targets carries `p`: each
+pair a point of the source, `->`, and where it goes, in the parentheses. Two pairs are the
+similarity, keeping the turn or, with `mirror: true`, reversing it. Each side is read in its own
+plane, so a point drawn in one view is carried into another, and the source points are columns of
+the relation, so the map is exact wherever its frame stands. A source frame standing in a line is
+refused where it is stated, naming its points. The standard library's `Affine` and `Similar` are
+one `mapped` per corner. Through 0.114 the map was written out in coordinates — Cramer's rule over
+`x` and `y`, the determinant twice in each quotient — each corner two `offset`s through a hidden
+point over a hidden pair of unknowns per side of the target frame (`std.Framed`, `std.Spans`,
+retired), and a collinear frame divided by zero. (Issue #357, M1.)
+
 **[0.114] Ease-off.** A meshing's first flank may be eased (§6.15.4): `meshing(…, ease: M,
 along: l, profile: κₚ, lengthwise: κₗ)` relieves it along its normal by the parabola `½ κₗ s² +
 ½ κₚ r²` about `M`, `s` along `l` and `r` across it, each curvature a number per length or affine

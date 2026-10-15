@@ -152,6 +152,9 @@ macro_rules! undrawn {
             | CKind::TracedCurvatureAt
             // a projection in space draws what `project` draws: nothing
             | CKind::ProjectSolved
+            // nor does a point carried by a map (#357): its pairs are points, not numbers
+            | CKind::Mapped
+            | CKind::MappedSimilar
             | CKind::Fix
             | CKind::Ccw
             | CKind::Cw

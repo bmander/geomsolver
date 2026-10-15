@@ -705,8 +705,10 @@ fn write_relation(out: &mut String, r: &Relation) {
 }
 
 /// Partition operator arguments between parentheses and the trailing hint clause.
-pub(crate) fn written_parts(args: &[OpArg]) -> (Vec<String>, Vec<String>) {
+pub(crate) fn written_parts(args: &[OpArg], pairs: bool) -> (Vec<String>, Vec<String>) {
     let mut parts: Vec<String> = Vec::new();
+    // `mapped`'s pairs (#357): each source reference and the target after it, `from -> a`
+    let mut source: Option<usize> = None;
     let mut hints: Vec<String> = Vec::new();
     let mut bound = None;
     for a in args {
@@ -716,7 +718,13 @@ pub(crate) fn written_parts(args: &[OpArg]) -> (Vec<String>, Vec<String>) {
             OpArg::Ent(r) => {
                 let mut s = String::new();
                 write_ref(&mut s, r);
-                parts.push(s);
+                match source.take() {
+                    Some(at) if pairs => parts[at] = format!("{} -> {s}", parts[at]),
+                    _ => {
+                        source = pairs.then_some(parts.len());
+                        parts.push(s);
+                    }
+                }
             }
             OpArg::Dim(t, _) => parts.insert(0, t.clone()),
             // the slot's own name, as it was written — never guessed from the kind.  The
@@ -769,7 +777,7 @@ pub fn bounded(
 }
 
 fn write_written(out: &mut String, w: &Written) {
-    let (parts, hints) = written_parts(&w.args);
+    let (parts, hints) = written_parts(&w.args, w.word.text == "mapped");
     let head = |out: &mut String, r: &Ref| {
         write_ref(out, r);
         out.push(' ');
@@ -830,6 +838,10 @@ pub fn operator_text(kind: CKind, args: &[Option<Arg>]) -> String {
         if matches!(a, Arg::Word(w) if w.is_empty()) {
             continue;
         }
+        // a similarity keeping its turn says nothing of it (#357)
+        if *name == "mirror" && matches!(a, Arg::Bool(false)) {
+            continue;
+        }
         // and the place of a tangent at a point is the contact's, written with the contact
         if sk.is_param() && matches!(kind, CKind::SplineTangentAt | CKind::CurveTangentAt) {
             continue;
@@ -859,7 +871,11 @@ pub fn operator_text(kind: CKind, args: &[Option<Arg>]) -> String {
     // reader writes them: `l1 angle(l3, l4, sense: cw) l2`
     let outside = if fixity == Fixity::Call { 0 } else { 2 };
     if ents.len() > outside {
-        let extra: Vec<String> = ents.drain(outside..).collect();
+        let mut extra: Vec<String> = ents.drain(outside..).collect();
+        // a map's pairs, each a point of the source and where it goes (#357)
+        if matches!(kind, CKind::Mapped | CKind::MappedSimilar) {
+            extra = extra.chunks(2).map(|p| p.join(" -> ")).collect();
+        }
         parens.splice(0..0, extra);
     }
     let mut out = String::new();

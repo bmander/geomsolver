@@ -151,6 +151,9 @@ impl<'a> P<'a> {
         // is read there
         let takes_entity =
             word == "symmetry" || word == "tangent" || word == "level" || call_word(word);
+        // and `mapped`'s pairs, `from -> a`, each a point of the source and where it goes (#357):
+        // read as two unlabelled references, the source first
+        let pairs = word == "mapped";
         let mut out = Vec::new();
         // where each unlabelled item was read as text: `angle`'s may turn out to be two lines
         let mut texts: Vec<(usize, usize, usize)> = Vec::new();
@@ -193,6 +196,16 @@ impl<'a> P<'a> {
                     out.push(OpArg::Named(name, v));
                 }
                 _ if takes_entity => out.push(OpArg::Ent(self.refr()?)),
+                _ if pairs => {
+                    out.push(OpArg::Ent(self.refr()?));
+                    if self.peek() != Some(&Tok::Arrow) {
+                        self.fail("`mapped` takes pairs, a point of the source and where it goes: \
+                            `from -> a`");
+                        return None;
+                    }
+                    self.i += 1;
+                    out.push(OpArg::Ent(self.refr()?));
+                }
                 // a bound, `>= d` or `<= d` (§9.6)
                 (Some(Tok::P('>' | '<')), _) => {
                     let at = self.here();

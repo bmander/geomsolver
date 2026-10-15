@@ -128,9 +128,12 @@ pub enum K {
     PointAlongArc,
     PointAlongLine3,
     PointAlongArc3,
+    // a point carried by an affine map, and by a similarity (#357)
+    Mapped,
+    MappedSimilar,
 }
 
-pub const N_KERNELS: usize = 89;
+pub const N_KERNELS: usize = 91;
 
 #[derive(Clone, Copy)]
 pub struct Kernel {
@@ -3381,6 +3384,70 @@ fn symmetric3_rows<T: Num>(v: &[T], _k: &[f64]) -> [T; 3] {
     [0, 1, 2].map(|t| q[t] + p[t] - two * a[t] - two * s * eh[t])
 }
 
+/* -- a point carried by a map (#357) --------------------------------------------------------
+ *
+ * `q mapped(from -> a, to -> b, third -> c) p`: `q = a + i·(b − a) + j·(c − a)`, with `(i, j)`
+ * the place of `p` in the source frame, `p = from + i·(to − from) + j·(third − from)`.  The
+ * source points are columns, so the place is a quotient of them and the rows are rational: exact
+ * derivatives wherever the source frame stands, held or solved.  Each side is read in its own
+ * plane — the targets in theirs, the source in its — so a profile drawn in one view is carried
+ * into another.  Two pairs are the similarity keeping the turn (`mirror: true` reversing it),
+ * whose third pair is the second turned a quarter about the first on each side.
+ */
+
+/// The 2D cross product `a × b`.
+fn cross2<T: Num>(a: [T; 2], b: [T; 2]) -> T {
+    a[0] * b[1] - a[1] * b[0]
+}
+
+/// Columns `at..at + 2` as a point of a page.
+fn vec2<T: Num>(v: &[T], at: usize) -> [T; 2] {
+    [v[at], v[at + 1]]
+}
+
+fn sub2<T: Num>(a: [T; 2], b: [T; 2]) -> [T; 2] {
+    [a[0] - b[0], a[1] - b[1]]
+}
+
+/// `q − (a + i·(b − a) + j·(c − a))`, the two rows a mapped point leaves, `e` and `f` the target
+/// frame's sides.
+fn mapped_gap<T: Num>(q: [T; 2], a: [T; 2], e: [T; 2], f: [T; 2], i: T, j: T) -> [T; 2] {
+    [q[0] - (a[0] + i * e[0] + j * f[0]), q[1] - (a[1] + i * e[1] + j * f[1])]
+}
+
+/// Columns of `mapped`: (q, p, from, a, to, b, third, c), each a point of its page.  `(i, j)` by
+/// Cramer's rule in the source frame, `det = (to − from) × (third − from)`; a frame standing in a
+/// line has none, and its rows read NaN (refused where it is stated, `Constraint::validate`).
+/// Degree 1.
+fn mapped_rows<T: Num>(v: &[T], _k: &[f64]) -> [T; 2] {
+    let (q, p, f) = (vec2(v, 0), vec2(v, 2), vec2(v, 4));
+    let (a, t, b, h, c) = (vec2(v, 6), vec2(v, 8), vec2(v, 10), vec2(v, 12), vec2(v, 14));
+    let (w, d1, d2) = (sub2(p, f), sub2(t, f), sub2(h, f));
+    let det = cross2(d1, d2);
+    if det.val() == 0.0 {
+        return [T::cst(f64::NAN); 2];
+    }
+    let (i, j) = (cross2(w, d2) / det, cross2(d1, w) / det);
+    mapped_gap(q, a, sub2(b, a), sub2(c, a), i, j)
+}
+
+/// Columns of `mapped_similar`: (q, p, from, a, to, b), K = (s).  `(i, j)` the place of `p` along
+/// `to − from` and a quarter turn from it, over `|to − from|²`, and the target frame `b − a` and
+/// it turned a quarter counter-clockwise, `s` times: `s = −1` is the mirror.  Degree 1.
+fn mapped_similar_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 2] {
+    let (q, p, f) = (vec2(v, 0), vec2(v, 2), vec2(v, 4));
+    let (a, t, b) = (vec2(v, 6), vec2(v, 8), vec2(v, 10));
+    let (w, d) = (sub2(p, f), sub2(t, f));
+    let l2 = d[0] * d[0] + d[1] * d[1];
+    if l2.val() == 0.0 {
+        return [T::cst(f64::NAN); 2];
+    }
+    let (i, j) = ((w[0] * d[0] + w[1] * d[1]) / l2, cross2(d, w) / l2);
+    let e = sub2(b, a);
+    let s = T::cst(k[0]);
+    mapped_gap(q, a, e, [T::cst(0.0) - s * e[1], s * e[0]], i, j)
+}
+
 /// The Taylor form of a kernel written once over `Num` (`Kernel::form`): its rows read over
 /// `Jet`s.
 macro_rules! num_form {
@@ -3601,6 +3668,8 @@ pub static KERNELS: [Kernel; N_KERNELS] = [
     num_kernel!("point_along_arc", point_along_arc_rows, n_res: 2, n_par: 10, degree: 1, n_const: 0),
     num_kernel!("point_along_line3", point_along_line_3, n_res: 3, n_par: 10, degree: 1, n_const: 0),
     num_kernel!("point_along_arc3", point_along_arc3_rows, n_res: 3, n_par: 20, degree: 1, n_const: 0),
+    num_kernel!("mapped", mapped_rows, n_res: 2, n_par: 16, degree: 1, n_const: 0),
+    num_kernel!("mapped_similar", mapped_similar_rows, n_res: 2, n_par: 12, degree: 1, n_const: 1),
 ];
 
 /// One row of a kernel: residual and Jacobian for a single constraint's local values.  The

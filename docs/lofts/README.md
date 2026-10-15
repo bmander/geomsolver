@@ -54,7 +54,9 @@ copies had shared one key, `sec.e.p1.x` — and worked out at each station. Each
 `std.Framed(n, a, ab, ac, i:, j:)`: two `offset`s from the rail point `a`, affine in hidden
 unknowns (`Spans(n, a, b).du`, `.dv`: where one rail point stands from another in the station's
 frame) with those quotients as coefficients; a corner on its frame's axis gives a coefficient of
-0, which is now the number it comes to rather than "does not affect".
+0, which is now the number it comes to rather than "does not affect". *Since 0.115 (#357) each corner is
+one `mapped` instead, `q mapped(from -> a, to -> b, third -> c) e.p1`, the profile's corners and
+frame columns of the relation: `Framed` and `Spans` are retired.*
 
 *Departures from the item:*
 

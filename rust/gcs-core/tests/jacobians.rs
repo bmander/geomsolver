@@ -29,6 +29,7 @@ fn all_constraints(seed: u32) -> Sketch {
     let cc2 = pt(&mut sk, &mut rng);
     let c2 = sk.circle(cc2, rng.uniform(1.0, 11.0), "c2");
     let (ac, as_, ae) = (pt(&mut sk, &mut rng), pt(&mut sk, &mut rng), pt(&mut sk, &mut rng));
+    let ae_pt = ae;
     let arc = sk.arc(ac, as_, ae, "a");
     // six control points: three spans, so a contact is checked on an interior span too
     let ctrl: Vec<usize> = (0..6).map(|_| pt(&mut sk, &mut rng)).collect();
@@ -200,6 +201,24 @@ fn all_constraints(seed: u32) -> Sketch {
         Constraint::new(CKind::TangentLineCircleAt, vec![e(le1), e(ce1), Arg::Str("p1".into())]),
         Constraint::new(CKind::TangentLineCircleAt, vec![e(le2), e(ce2), Arg::Str("p2".into())]),
         Constraint::new(CKind::Symmetric, vec![e(pe), e(qe), e(le1)]),
+        // a point carried by a map (#357): the affine map over three pairs, the similarity over
+        // two, keeping its turn and mirrored — the source points columns, so rational rows
+        {
+            let pts = [a1, b1, a2, b2, cc1, cc2, ac, as_].map(EntRef::point);
+            Constraint::new(CKind::Mapped, pts.iter().map(|&x| e(x)).collect())
+        },
+        {
+            let pts = [a1, b1, a2, b2, cc1, cc2].map(EntRef::point);
+            let mut args: Vec<Arg> = pts.iter().map(|&x| e(x)).collect();
+            args.push(Arg::Bool(false));
+            Constraint::new(CKind::MappedSimilar, args)
+        },
+        {
+            let pts = [b2, ae_pt, cc2, a1, ac, b1].map(EntRef::point);
+            let mut args: Vec<Arg> = pts.iter().map(|&x| e(x)).collect();
+            args.push(Arg::Bool(true));
+            Constraint::new(CKind::MappedSimilar, args)
+        },
         // a distance from a line, both ways it can be written: naming no side, which is the
         // magnitude form (issue #48, item 4), and naming one, which is the signed form
         Constraint::new(CKind::ParallelDistance, vec![e(le1), e(le2), Arg::Num(4.0)]),

@@ -109,6 +109,27 @@ came from.
   centre's lift and the view's two axes, the axis their cross), which an envelope in space still
   refuses (`Moving::of`).  `tests/carried.rs` is the gate (the epicycloid against its closed form
   and the planar envelope, a screw's helix in space).
+  **A point carried by a map** (#357, [0.115]) is `q mapped(from -> a, to -> b, third -> c) p`:
+  `CKind::Mapped`, slots `(q, p, from, a, to, b, third, c)`, and with two pairs
+  `CKind::MappedSimilar`, `(q, p, from, a, to, b, mirror: Bool)`.  The pairs are new syntax for a
+  relation word and **no new `OpArg`**: `op_args` reads each `x -> y` as two unlabelled
+  `OpArg::Ent`, source first, so every walk that rewrites a reference (a component's prefix, a
+  block's copy) carries them unchanged; `program::relations::mapped_pairs` counts them (two or
+  three, `mirror:` only with two, E040 at the word or the key) and hands the count to `infix_op`
+  as the selector `pairs`, which picks the kind.  `written_parts` (`pairs: true` for the word) and
+  `operator_text` join each two back with ` -> `, and leave `mirror: false` unsaid.  Kernels
+  `mapped` (16 columns) and `mapped_similar` (12, its constant the turn's sign) take **the
+  source points as columns**: `(i, j)` is Cramer's rule in the source frame (the similarity's the
+  projection on `to − from` and its quarter turn), so the rows are rational and exact wherever the
+  frame stands, held or solved — a station's held profile drops out of the Jacobian as any held
+  column does, and no held number is read.  **Each side is read in its own plane**
+  (`reading::mapped_planes`, E062 naming the side): every column is a point's page coordinate, the
+  targets' in theirs and the source's in its, which is how a profile drawn in `std.front` is
+  carried into a station's plane; a map between points in space is not said.  A source frame held
+  in a line, or two of its points one, is E061 naming them (`constraints::validate`); one the
+  solve moves reads NaN there.  No number, so `undrawn!`.  `tests/mapped.rs` is the gate (a
+  triangle's centroid to the image's, the similarity and the mirror against closed forms, the
+  printer, the refusals), with `jacobians.rs`'s three rows.
   **What a word means is the kinds of its operands, and a name does not carry its kind until
   elaboration** — so the parser resolves *nothing*: it produces a `syntax::Written` and
   `program::settle` turns it into a `CKind` plus arguments in spec order, through
