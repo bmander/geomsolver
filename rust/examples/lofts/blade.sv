@@ -1,11 +1,11 @@
 // A blade on two rails (#243 L8): a profile drawn once, held to two rails at every station.
-// `std.Similar(prof, from, to, n, a, b)` carries the face `prof` into the station's plane `n` by
-// the similarity that takes its point `from` to `a` and `to` to `b` — moved, turned and scaled
-// alike both ways, never stretched — each corner keeping its place in the frame `from`, `to`
-// make, read off the drawing. The station stands square to the spine (`std.OnLine`), and `l` and
-// `r` are where the port and starboard rails cross it, so the profile follows the rails: they
-// close from 20 apart to 8, and the port rail rises 3 as the starboard falls 3, so the section
-// narrows and turns.
+// `sec := prof mapped(from -> l, to -> r) in st.n` (#357) carries the face `prof` whole into the
+// station's plane by the similarity that takes its point `from` to `l` and `to` to `r` — moved,
+// turned and scaled alike both ways, never stretched — each corner keeping its place in the
+// frame `from`, `to` make (`std.Similar` says the same). The station stands square to the spine
+// (`std.OnLine`), and `l` and `r` are where the port and starboard rails cross it, so the
+// profile follows the rails: they close from 20 apart to 8, and the port rail rises 3 as the
+// starboard falls 3, so the section narrows and turns.
 // Closed form: the profile's area times its scale squared, the rails' spread over the profile's,
 // along the spine: 60 · 50 / 20² · ∫((20 − 12s)² + (6s)²) ds = 1650 mm³ as drawn (1560 with the
 // rails level).
@@ -25,7 +25,7 @@ component Blade(g: line, up: axis, port: line, starboard: line, prof: face, from
   r := point in st.n
   l coincident port
   r coincident starboard
-  sec := std.Similar(prof, from, to, st.n, l, r)
+  sec := prof mapped(from -> l, to -> r) in st.n
 }
 
 in std.top {
@@ -63,4 +63,4 @@ in std.front {
   fix((-10mm, 101.5mm)) k3
 }
 profile := face(k0, k1, k2, k3, -> close)
-blade := solid(Blade(spine, std.z, port, starboard, profile, p0, p1).sec.f over s in (0, 1))
+blade := solid(Blade(spine, std.z, port, starboard, profile, p0, p1).sec over s in (0, 1))

@@ -295,8 +295,9 @@ placement carries inside the blank; CLI test readers zero the offset.
   Pappus to 1e-9, a radius law in `s` over the chain, part of a chain, the refusals.
 - **A law is an expression in `s`** (§6.9 [0.103], #243 L5, finding 10).  A twist or a scale is a
   dimension of the section reading the running number; no word takes a `law:` (no function values).
-  `std.sv`'s `Twisted` (axes in the station's plane turned `twist · s`, `std.Turned`'s construction
-  over a reference at `n.u`), `scaled` (a point at `(du, dv)` scaled `1 + (scale − 1) · s` about the
+  `std.sv`'s `Twisted` (the point `reach` along the station's `u` turned `twist · s` — [0.116],
+  the second point a section drawn once is carried to, `f := prof mapped(o -> n.origin, x ->
+  tw.t) in n`; through 0.115 a plane of axes a section was drawn on corner by corner), `scaled` (a point at `(du, dv)` scaled `1 + (scale − 1) · s` about the
   plane's origin) and `scaled_radius` take a total and run it linearly; any other law is the word
   given another fraction (`s: 3 * s^2 - 2 * s^3`) or the writer's own expression.  **A number given
   over `s` that is not affine in it is kept as text** (`Walk::held_text`), whichever formal it is
@@ -357,10 +358,10 @@ placement carries inside the blank; CLI test readers zero the offset.
   faces themselves; `std.Apex(a, tip, s:)` the same to a point (no `end` cap).  Correspondence is
   the written walks: a connector is where a walk starts, unequal counts a point named on an edge;
   the first three corners must not stand in a line (`Across`).  `std.Similar` and `std.Affine`
-  place each corner of a profile drawn once with one `mapped` ([0.115], `relations.md`), `q
-  mapped(from -> a, to -> b, third -> c) e.p1`, `q` a point of the station's plane and the profile's
-  corners and frame columns of the relation, held where the profile is (`Framed` and `Spans`,
-  two `offset`s over hidden spans of the frame, are retired).  `tests/correspondence.rs` is the gate: `two_faces.sv` at
+  are each one statement, the face carried whole ([0.116], below): `f := prof mapped(from -> a,
+  to -> b, third -> c) in n`, the profile's corners and frame columns of each corner's `mapped`,
+  held where the profile is (`Framed` and `Spans`, two `offset`s over hidden spans of the frame,
+  are retired, [0.115]); `lofts/blade.sv` and `three_rails.sv` write the word itself.  `tests/correspondence.rs` is the gate: `two_faces.sv` at
   40/6 · 1856, a connector and a split triangle at their prismatoids, a pyramid to an oblique tip,
   a blade on two rails (1560; turning, 1650), a square on three rails at its area ratio's
   prismatoid, a face walked, a face of a cycle's copies, and the refusals.  An arc edge lofted

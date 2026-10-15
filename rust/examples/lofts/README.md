@@ -13,7 +13,7 @@ Read them in this order:
 | File | What it shows |
 |---|---|
 | `pipe.sv` | **A chain is one path.** A round pipe along a U-bend of lines and tangent arcs, `std.On` standing square to whichever link it is on; the wall keeps one name round the bends. Pappus. |
-| `twisted_duct.sv` | **A twist is a law.** A square drawn once and carried whole onto each station (`sec := square mapped(o -> st.n.origin, x -> t) in st.n`), turned a quarter, three and a half turns (an auger), and a quarter eased in and out, its point `t` turned by another fraction of `s`. Cavalieri. |
+| `twisted_duct.sv` | **A twist is a law.** A square drawn once and carried whole onto each station (`sec := square mapped(o -> st.n.origin, x -> tw.t) in st.n`), turned a quarter, three and a half turns (an auger), and a quarter eased in and out, `std.Twisted`'s point given another fraction of `s`. Cavalieri. |
 | `tapered.sv` | **A scale is a law too.** A square shrinking to half as it turns, a disc shrinking to a cone and a disc swelling on a sine, each drawn once and carried by the similarity that scales it, a round's radius with it. Frusta, and an integral. |
 | `thread.sv` | **A section carried along a screw.** A square thread drawn through the axis and an auger's flight drawn square to it, on `std.Helix`. Pappus and Cavalieri. |
 | `spring.sv` | **A section square to a helix.** A round wire on `std.OnHelix`, leaned back by the lead angle at every station. Area times the helix's length. |
@@ -22,8 +22,8 @@ Read them in this order:
 | `two_faces.sv` | **Two sketches drawn apart.** A square and a diamond in their own planes joined corner to corner by `std.Ruled`, and again with the diamond's walk started at its second corner (a connector). Prismatoids. |
 | `triangle_to_square.sv` | **Faces of different corner counts.** A square lofted to a triangle given a fourth corner by naming a point on one of its edges. |
 | `pyramid.sv` | **A loft to a point.** A square to an off-centre tip by `std.Apex`, ending in an apex. A third of base by height. |
-| `blade.sv` | **A section held to two rails.** A profile drawn once and carried by `std.Similar` onto two rails that close in and turn it. Its area times its scale squared. |
-| `three_rails.sv` | **And to three.** A profile carried by `std.Affine` onto three rails in space, sheared as they lean. Its area times the rails' triangle's ratio. |
+| `blade.sv` | **A section held to two rails.** A profile drawn once and carried whole by the similarity of two pairs (`mapped`, or `std.Similar`) onto two rails that close in and turn it. Its area times its scale squared. |
+| `three_rails.sv` | **And to three.** A profile carried whole by the affine map of three pairs (`mapped`, or `std.Affine`) onto three rails in space, sheared as they lean. Its area times the rails' triangle's ratio. |
 | `square_to_circle.sv` | **One section, one edge vanishing.** A square to a circle drawn as a rounded square whose flats shrink to points: no pairing of lines with an arc. |
 
 The case library has four more: `solid_loft.sv` (a hollow reducer) and `solid_elbow.sv` (a duct
@@ -36,12 +36,14 @@ What the words are (all in `std`):
   them; `Helix(base, pitch:, turns:, s:)` (`n` carried by a screw, `axial` through its axis) and
   `OnHelix`; `Across(a, b, c, s:)`, the plane through three rails at `s`.
 - **Laws** — a section drawn once is carried whole by the map taking its frame to the
-  station's (`sec := prof mapped(o -> st.n.origin, x -> t) in st.n`, #357), the law in where
-  `t` stands; a section drawn on the station's own axes is turned and scaled by
-  `Twisted(n, twist:, s:)`, `p scaled(du:, dv:, scale:, s:) P` and
-  `scaled_radius(r:, scale:, s:) k`. Any other law is another fraction of `s`.
+  station's (`sec := prof mapped(o -> st.n.origin, x -> tw.t) in st.n`, #357), the law in where
+  its second point stands — `Twisted(n, twist:, reach:, s:)`'s point `t`, turned `twist · s` —
+  and a section written as coordinates in the station's plane is scaled by
+  `p scaled(du:, dv:, scale:, s:) P` and `scaled_radius(r:, scale:, s:) k`. Any other law is
+  another fraction of `s`.
 - **Sections from faces drawn apart** — `Ruled(a, b, s:)`, `Apex(a, tip, s:)`, and a profile held
-  to rails, `Similar(prof, from, to, n, a, b)` and `Affine(prof, from, to, third, n, a, b, c)`.
+  to rails, `Similar(prof, from, to, n, a, b)` and `Affine(prof, from, to, third, n, a, b, c)`,
+  each one `prof mapped(…) in n`.
 - **Rails** — a chain of lines through corresponding corners (ruled), or
   `spline(through: chain, start: l, end: m)` (smooth).
 

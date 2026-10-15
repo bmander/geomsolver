@@ -1267,9 +1267,11 @@ k := Par(o).p over u in (-2mm, 2mm)
   (through the axis, `u` out from it, `v` up it) and an auger's flight in its `n` (the base
   carried); `std.OnHelix(std.top, r: 10mm, pitch: 5mm, turns: 4, s: s)`'s `n` stands square to the
   helix of radius `r`, for a coil's wire. A negative pitch winds left-handed
-  (`rust/gcs-core/tests/helix.rs`). **A law is any expression in `s`** (0.103): `std.Twisted(st.n, twist: 90deg,
-  s: s)` gives axes `tw.axes` turned `twist · s`, `p scaled(du: 10, dv: 5, scale: 0.5, s: s)
-  tw.axes` places a corner shrinking to half, `scaled_radius(r: 8mm, scale: 2, s: s) k` a radius
+  (`rust/gcs-core/tests/helix.rs`). **A law is any expression in `s`** (0.103): draw the section once and carry it
+  whole (0.116), `tw := std.Twisted(st.n, twist: 90deg, reach: 10mm, s: s)` the point `tw.t`
+  turned `twist · s`, then `sec := prof mapped(o -> st.n.origin, x -> tw.t) in st.n`, `o` and `x`
+  the section's frame `reach` apart (a `reach` that runs with `s` scales it); for a section written
+  as coordinates, `p scaled(du: 10, dv: 5, scale: 0.5, s: s) st.n` places a corner shrinking to half, `scaled_radius(r: 8mm, scale: 2, s: s) k` a radius
   (`use std (scaled, scaled_radius)`); each runs its total linearly, and the word given another
   fraction runs another law (`s: 3 * s^2 - 2 * s^3` eases it). A `when` cannot read `s` (it is
   made once); write a law in pieces with `min`, `max` or `abs`. Its `v` stays along `up`; with `up` the normal of the guide's plane, the frame

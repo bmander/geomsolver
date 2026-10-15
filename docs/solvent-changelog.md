@@ -11,7 +11,9 @@ so its walls are named as the source's are. A line is carried to a line; under t
 two pairs an arc to an arc and a circle to a circle, its radius scaled — and `k mapped(o -> a, x ->
 b) disc` says the same of one circle — while under three pairs either is refused, naming it.
 `mirror: true` reverses the turn, so the image is walked the other way round and winds as its
-source does: a handed pair is one profile and its image. Through 0.115 a section was drawn again
+source does: a handed pair is one profile and its image. The standard library's `Affine` and
+`Similar` are each that one statement, and `Twisted(n, twist:, reach:, s:)` is the one point a
+section's frame turns to, where it was a plane of axes. Through 0.115 a section was drawn again
 in each station's turned or scaled axes (`std.Twisted`, `scaled`, `scaled_radius`), and a handed
 pair was drawn twice or signed by a number threaded through every station (`hub_motor`'s
 `sg`). (Issue #357, M2 and M3.)

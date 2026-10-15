@@ -56,7 +56,8 @@ unknowns (`Spans(n, a, b).du`, `.dv`: where one rail point stands from another i
 frame) with those quotients as coefficients; a corner on its frame's axis gives a coefficient of
 0, which is now the number it comes to rather than "does not affect". *Since 0.115 (#357) each corner is
 one `mapped` instead, `q mapped(from -> a, to -> b, third -> c) e.p1`, the profile's corners and
-frame columns of the relation: `Framed` and `Spans` are retired.*
+frame columns of the relation: `Framed` and `Spans` are retired; since 0.116 each word is one
+statement, the face carried whole, `f := prof mapped(…) in n`.*
 
 *Departures from the item:*
 
