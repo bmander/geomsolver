@@ -111,6 +111,34 @@ from the cone's equation and the poses alone), a stated lag solving its phase, `
 envelope at the element's phase, to 1e-9), to the closed form's point contact along `L` with no
 lag, and their meshing's Jacobian to finite differences.
 
+**The common normal and the path of contact at a point (#345 S1, [0.111]):** `contact
+perpendicular(at: q) l` is `MeshingNormalAt` and `contact tangent(at: q) l` `MeshingTangentAt`,
+`meshing::Contact::{Normal, Path}` beside `Point` (`CKind::meshing_contact`, `KernelKey::Meshing {
+contact, … }`): lead the line's two lifted ends or an axis's direction (six columns), then the
+point's contact's eight unknowns — shared, `holds_on` handing `PointOnMeshing`'s place to
+`tangent_at`'s slots `[3..11]` — and the meshing's columns as the point's; two rows, degree 0, the
+line's direction square to two directions. The normal's are the gear's tangent plane at the
+contact (`along`, `n₂ × along`), read off `at` as the point's rows are. The path is **the contact
+point's derivative along the phase in the fixed frame**, `∂x/∂φ + ∂x/∂z · dz/dφ` with `J_z dz/dφ =
+−J_φ` over the seven rows' Jacobian in the lag and the places (`meshing::path`, `touching`, the
+elimination `solve`): the implicit function theorem, the rows read once over `Fwd<T, 8>`, a number
+carrying its derivatives in the eight unknowns, each itself a `T`; its two directions are across
+the world axis it runs least along (`square_to`, a tie turning the pair about the path but not the
+plane it spans). Its Jacobian is the rows' second derivatives, exact: `path_jac_block` takes it a
+block at a time as the point's is, each flank's `Seen` over `Fwd<Dual, 3>` in its own place and
+the poses over `Fwd<Dual, 2>` in the phase and the lag, each differentiated over its own columns
+only (`derive`), then `assemble` and `path_of` over `Fwd<Dual, 8>` by the chain rule. It is not the
+bearing: `contact.sv`'s pair and step 3's turned cutter stand still on the gear's flank (the
+bearing a point), and their path is the gear's turn carrying the contact. At a line contact `J_z`
+is singular and the rows are not finite. `tests/meshing.rs` is the gate — on `contact.sv` at 0° and
+10° the point on the turned common generator where the cutting motion's relative velocity is square
+to the cones' normal (`closed_contact`, apart from the meshing), the normal that normal and the path
+that point's derivative over the phase; on the turned cutter the path a central difference of the
+traced positions; a free point's phase solved from a stated path angle and the traced path at that
+angle there; printing, sharing the place either way round and refusing an unheld point — with
+`jacobians::meshing_contacts_agree_with_finite_differences` holding both kinds over a formed, a
+round and two generated flanks.
+
 **A point a motion carries (#326, [0.106]):** `Reading::Carried` is `X − Pose(τ)·x`, the pose
 `held::frames`' last at `τ` degrees — any motion, its twist constant or not (`Reading::twist`
 false). `held::Step::Turn` (code 4, nine columns: a centre's lift, its view's `u` and `v`) is a turn

@@ -30,6 +30,18 @@
 //! phase and the lag are slots a pin states (`P coincident(t == 10deg, lag == 0deg) contact`).
 //! **After the solve** `Meshing` traces it over its phase from where such a point holds it.
 //!
+//! **At a point held there** (#345) two more relations share the point's phase, lag and places,
+//! as an envelope's `at:` contacts share their point's: `contact perpendicular(at: q) l`, the line
+//! along the common normal (`Contact::Normal`), and `contact tangent(at: q) l`, the line along the
+//! path of contact (`Contact::Path`): the contact point's derivative along the phase, read by the
+//! implicit function theorem off the rows' Jacobian in the lag and the places.  (Not the bearing:
+//! a pair whose contact stands still on the gear's flank — `spiral_bevel/contact.sv`'s, step 3's
+//! turned cutter — has a path all the same, the gear's turn carrying the contact.)  Its own
+//! Jacobian is the rows' second derivatives: the rows are read once over a number carrying their
+//! derivatives in the eight unknowns (`Fwd`), each itself a number of the kernel's kind, so a
+//! `Dual` pass differentiates the path exactly.  At a line contact that Jacobian is singular and
+//! the path has no direction: the rows are not finite there.
+//!
 //! **Layout.** A contact's columns are `[lead…, φ, δ, u₁, v₁, t₁, u₂, v₂, t₂, flank₁…, flank₂…,
 //! motion…]`: the point's lift (or nothing), the unknowns, then each flank's source and motion
 //! columns as an envelope contact reads them (`held::Parts`), then the mesh's axes
@@ -59,6 +71,55 @@ pub const ROWS: usize = 7;
 pub const LEAD: usize = 3;
 
 /* -- the layout ------------------------------------------------------------------------------ */
+
+/// Which statement a contact with a meshing makes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Contact {
+    /// `p coincident contact`: the point on the pinion's flank, where the two touch. It owns the
+    /// unknowns. Lead: the point's lift.
+    Point = 0,
+    /// `contact perpendicular(at: q) l`: the line runs along the common normal at `q` (#345).
+    /// Lead: two points along it.
+    Normal = 1,
+    /// `contact tangent(at: q) l`: the line runs along the path of contact at `q` (#345). Lead:
+    /// two points along it.
+    Path = 2,
+}
+
+impl Contact {
+    pub const ALL: [Contact; 3] = [Contact::Point, Contact::Normal, Contact::Path];
+
+    pub fn rows(self) -> usize {
+        match self {
+            Contact::Point => LEAD + ROWS,
+            Contact::Normal | Contact::Path => 2,
+        }
+    }
+
+    /// The lead's width (the columns before the unknowns).
+    pub fn lead(self) -> usize {
+        match self {
+            Contact::Point => LEAD,
+            Contact::Normal | Contact::Path => 6,
+        }
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            Contact::Point => "point_on_meshing",
+            Contact::Normal => "meshing_normal_at",
+            Contact::Path => "meshing_tangent_at",
+        }
+    }
+
+    /// A point's rows are lengths; a direction's are cosines.
+    fn degree(self) -> u32 {
+        match self {
+            Contact::Point => 1,
+            Contact::Normal | Contact::Path => 0,
+        }
+    }
+}
 
 /// A flank as a meshing's constants say it: an envelope or a source standing still (`held`), or
 /// a surface traced in space as its member sees it (#326, `traced`: its domain and constants).
@@ -300,7 +361,7 @@ pub(crate) fn rows<T: Num>(cols: &[T], k: &[f64], out: &mut [T]) -> Option<()> {
     Some(())
 }
 
-/// The rows from the contact's frame.
+/// The rows from the contact's frame: the point's, where there is one, then the contact's.
 fn write<T: Num>(m: &Mesh, cols: &[T], f: &At<T>, out: &mut [T]) {
     let mut i = 0;
     if m.lead == LEAD {
@@ -310,20 +371,266 @@ fn write<T: Num>(m: &Mesh, cols: &[T], f: &At<T>, out: &mut [T]) {
         }
         i = 3;
     }
+    touching(f, &mut out[i..i + ROWS]);
+}
+
+/// The contact's own rows from its frame: the two flanks' offset, the pinion's normal against two
+/// directions square to the gear's (each times the lever), and each flank's own row.
+fn touching<T: Num>(f: &At<T>, out: &mut [T]) {
     for c in 0..3 {
-        out[i + c] = f.x[0][c] - f.x[1][c];
+        out[c] = f.x[0][c] - f.x[1][c];
     }
     let across = cross(f.n[1], f.along);
-    out[i + 3] = dot(f.n[0], f.along) * f.lever;
-    out[i + 4] = dot(f.n[0], across) * f.lever;
-    out[i + 5] = f.own[0];
-    out[i + 6] = f.own[1];
+    out[3] = dot(f.n[0], f.along) * f.lever;
+    out[4] = dot(f.n[0], across) * f.lever;
+    out[5] = f.own[0];
+    out[6] = f.own[1];
+}
+
+/* -- the normal and the path of contact at a point (#345) -------------------------------------- */
+
+/// A line's rows at a point held to the contact, over its columns `cols` and constants `k`, into
+/// `out`: its direction (from its first lifted end to its second, or an axis's) square to two
+/// directions square to the common normal, or to the path of contact.  `None` where the constants
+/// do not describe this contact over this many columns.
+fn line_rows<T: Num>(c: Contact, cols: &[T], k: &[f64], out: &mut [T]) -> Option<()> {
+    let m = Mesh::read(k)?;
+    let fits = m.lead == c.lead() && cols.len() == m.width() && out.len() == c.rows();
+    if c == Contact::Point || !fits {
+        return None;
+    }
+    let d = unit(vsub(col3(cols, 3), col3(cols, 0)));
+    let [a, b] = match c {
+        // the gear's tangent plane, which at a root is the pinion's
+        Contact::Normal => {
+            let f = at(&m, cols);
+            [f.along, cross(f.n[1], f.along)]
+        }
+        _ => square_to(path(&m, cols)),
+    };
+    out[0] = dot(d, a);
+    out[1] = dot(d, b);
+    Some(())
+}
+
+/// The path of contact at the unknowns in `cols`: the contact point's derivative along the phase,
+/// `∂x/∂φ + ∂x/∂z · dz/dφ`, `z` the lag and the places, `dz/dφ` solving `J_z dz/dφ = −J_φ` over
+/// the rows' Jacobian in the unknowns — not finite where `J_z` is singular (a line contact).
+fn path<T: Num>(m: &Mesh, cols: &[T]) -> [T; 3] {
+    path_of(&at(m, &unknowns(m, cols)))
+}
+
+/// `cols` as numbers carrying their derivatives in the contact's unknowns.
+fn unknowns<T: Num>(m: &Mesh, cols: &[T]) -> Vec<Fwd<T, UNKNOWNS>> {
+    let o = m.lead;
+    cols.iter().enumerate().map(|(q, &v)| {
+        if (o..o + UNKNOWNS).contains(&q) { Fwd::var(v, q - o) } else { Fwd::of(v) }
+    }).collect()
+}
+
+/// The path of contact from the contact's frame over numbers carrying their derivatives in the
+/// unknowns (`path`).
+fn path_of<T: Num>(f: &At<Fwd<T, UNKNOWNS>>) -> [T; 3] {
+    let mut r = [Fwd::of(T::cst(0.0)); ROWS];
+    touching(f, &mut r);
+    let zero = T::cst(0.0);
+    let mut a: [[T; ROWS + 1]; ROWS] = std::array::from_fn(|i| std::array::from_fn(|j| {
+        if j < ROWS { r[i].g[j + 1] } else { zero - r[i].g[0] }
+    }));
+    let w = solve(&mut a);
+    std::array::from_fn(|c| {
+        let p = f.x[0][c];
+        (0..ROWS).fold(p.g[0], |s, q| s + p.g[q + 1] * w[q])
+    })
+}
+
+/// Two unit directions square to `t` and to each other: across the world axis `t` runs least
+/// along, so the choice holds still near a point (as `held::curvature` chooses by `∇g`).  Where
+/// two axes tie the pair turns about `t` but spans the same plane, so how far a line is off `t`
+/// does not jump.
+fn square_to<T: Num>(t: [T; 3]) -> [[T; 3]; 2] {
+    let t = unit(t);
+    let least = (0..3).min_by(|&i, &j| t[i].val().abs().total_cmp(&t[j].val().abs())).unwrap_or(0);
+    let mut e = [T::cst(0.0); 3];
+    e[least] = T::cst(1.0);
+    let a = unit(cross(t, e));
+    [a, cross(t, a)]
+}
+
+/// `A w = b`, the augmented `[A | b]` given, by elimination with partial pivoting on the values:
+/// not finite where `A` is singular.
+fn solve<T: Num, const N: usize, const M: usize>(a: &mut [[T; M]; N]) -> [T; N] {
+    for k in 0..N {
+        let p = (k..N).max_by(|&i, &j| a[i][k].val().abs().total_cmp(&a[j][k].val().abs()))
+            .unwrap_or(k);
+        a.swap(k, p);
+        for i in k + 1..N {
+            let f = a[i][k] / a[k][k];
+            for j in k..M {
+                a[i][j] = a[i][j] - f * a[k][j];
+            }
+        }
+    }
+    let mut w = [T::cst(0.0); N];
+    for k in (0..N).rev() {
+        let s = (k + 1..N).fold(a[k][N], |s, j| s - a[k][j] * w[j]);
+        w[k] = s / a[k][k];
+    }
+    w
+}
+
+/// A number and its derivatives in `N` of a contact's unknowns, each itself a `T`: the rows read
+/// over it give their Jacobian in the unknowns as numbers of the kernel's own kind, so what is
+/// read off that Jacobian (`path`) is differentiated exactly where `T` is a `Dual`.
+#[derive(Clone, Copy)]
+struct Fwd<T, const N: usize> {
+    v: T,
+    g: [T; N],
+}
+
+impl<T: Num, const N: usize> Fwd<T, N> {
+    fn of(v: T) -> Self {
+        Fwd { v, g: [T::cst(0.0); N] }
+    }
+    fn var(v: T, i: usize) -> Self {
+        let mut x = Fwd::of(v);
+        x.g[i] = T::cst(1.0);
+        x
+    }
+    /// `v`, its derivatives this one's times `d`.
+    fn chain(self, v: T, d: T) -> Self {
+        Fwd { v, g: self.g.map(|x| x * d) }
+    }
+}
+
+impl<T: Num, const N: usize> std::ops::Add for Fwd<T, N> {
+    type Output = Self;
+    fn add(self, o: Self) -> Self {
+        Fwd { v: self.v + o.v, g: std::array::from_fn(|k| self.g[k] + o.g[k]) }
+    }
+}
+
+impl<T: Num, const N: usize> std::ops::Sub for Fwd<T, N> {
+    type Output = Self;
+    fn sub(self, o: Self) -> Self {
+        Fwd { v: self.v - o.v, g: std::array::from_fn(|k| self.g[k] - o.g[k]) }
+    }
+}
+
+impl<T: Num, const N: usize> std::ops::Mul for Fwd<T, N> {
+    type Output = Self;
+    fn mul(self, o: Self) -> Self {
+        Fwd { v: self.v * o.v, g: std::array::from_fn(|k| self.g[k] * o.v + self.v * o.g[k]) }
+    }
+}
+
+impl<T: Num, const N: usize> std::ops::Div for Fwd<T, N> {
+    type Output = Self;
+    fn div(self, o: Self) -> Self {
+        let q = self.v / o.v;
+        Fwd { v: q, g: std::array::from_fn(|k| (self.g[k] - q * o.g[k]) / o.v) }
+    }
+}
+
+impl<T: Num, const N: usize> Num for Fwd<T, N> {
+    fn cst(v: f64) -> Self {
+        Fwd::of(T::cst(v))
+    }
+    fn val(self) -> f64 {
+        self.v.val()
+    }
+    /// No derivatives where the root is zero, as `Dual`'s.
+    fn sqrt(self) -> Self {
+        let s = self.v.sqrt();
+        let d = if s.val() > 0.0 { T::cst(0.5) / s } else { T::cst(0.0) };
+        self.chain(s, d)
+    }
+    fn sin_cos(self) -> (Self, Self) {
+        let (s, c) = self.v.sin_cos();
+        (self.chain(s, c), self.chain(c, T::cst(0.0) - s))
+    }
+    fn atan2(y: Self, x: Self) -> Self {
+        let q = x.v * x.v + y.v * y.v;
+        let q = if q.val() > 0.0 { q } else { T::cst(1.0) };
+        let g = std::array::from_fn(|k| (x.v * y.g[k] - y.v * x.g[k]) / q);
+        Fwd { v: T::atan2(y.v, x.v), g }
+    }
 }
 
 /* -- the kernel ------------------------------------------------------------------------------ */
 
 fn res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
     held::block_res(n, v, k, r, LEAD + ROWS, rows);
+}
+
+fn line_res<const C: u8>(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    let c = Contact::ALL[C as usize];
+    held::block_res(n, v, k, r, c.rows(), |x, kc, out| line_rows(c, x, kc, out));
+}
+
+/// A line along the common normal's Jacobian, exact by `Dual` over every column at once
+/// (`held::block_jac`).
+fn line_jac<const C: u8>(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    let c = Contact::ALL[C as usize];
+    held::block_jac(n, v, k, j, c.rows(), |x, kc, out| line_rows(c, x, kc, out));
+}
+
+/// A line along the path of contact's Jacobian: its second derivatives, exact by `Dual` over
+/// `Fwd`, a block at a time as the point's are (`jac`).
+fn path_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    let (n_par, _) = curve_widths(n, v, k);
+    held::block_res(n, v, k, j, Contact::Path.rows() * n_par, path_jac_block);
+}
+
+/// One line's: each flank read over its own columns with its derivatives in its own place, and
+/// the poses over theirs with their derivatives in the phase and the lag, each differentiated
+/// in its own columns only; then the contact's frame over every column by the chain rule, and the
+/// path read off it (`path_of`).
+fn path_jac_block(x: &[f64], k: &[f64], j: &mut [f64]) -> Option<()> {
+    let c = Contact::Path;
+    let m = Mesh::read(k)?;
+    let (w, o) = (x.len(), m.lead);
+    if o != c.lead() || w != m.width() || j.len() != c.rows() * w {
+        return None;
+    }
+    type Place = Fwd<Dual<PASS>, 3>;
+    type Phase = Fwd<Dual<PASS>, 2>;
+    let f = [0, 1].map(|i| derive::<{ SEEN * 4 }>(x, m.flank_cols(i), |cols| {
+        let c: Vec<Place> = cols.iter().enumerate()
+            .map(|(q, &v)| if q < 3 { Fwd::var(v, q) } else { Fwd::of(v) }).collect();
+        let s = Seen::of(&m, i, &c).flat();
+        std::array::from_fn(|q| if q % 4 == 0 { s[q / 4].v } else { s[q / 4].g[q % 4 - 1] })
+    }));
+    let p = derive::<{ POSES * 3 }>(x, m.pose_cols(), |cols| {
+        let c: Vec<Phase> = cols.iter().enumerate()
+            .map(|(q, &v)| if q < 2 { Fwd::var(v, q) } else { Fwd::of(v) }).collect();
+        let a = flat_poses(poses(&m, c[0], c[1], &c[2..]));
+        std::array::from_fn(|q| if q % 3 == 0 { a[q / 3].v } else { a[q / 3].g[q % 3 - 1] })
+    });
+    // a value and its derivatives in `slots` of the unknowns, from it and its derivatives in those
+    let spread = |a: &[Dual<PASS>], slots: Range<usize>| {
+        let mut g = [Dual::<PASS>::cst(0.0); UNKNOWNS];
+        for (k, s) in slots.enumerate() {
+            g[s] = a[1 + k];
+        }
+        Fwd { v: a[0], g }
+    };
+    let mut cols = vec![Dual::<PASS>::cst(0.0); w];
+    for start in (0..w).step_by(PASS) {
+        held::seed_pass(&mut cols, x, start);
+        let seen = [0, 1].map(|i| {
+            let a = f[i].at(start);
+            let place = 2 + 3 * i..5 + 3 * i;
+            Seen::read(&std::array::from_fn(|q| spread(&a[4 * q..4 * q + 4], place.clone())))
+        });
+        let a = p.at(start);
+        let poses = read_poses(&std::array::from_fn(|q| spread(&a[3 * q..3 * q + 3], 0..2)));
+        let tau = path_of(&assemble(&m, &unknowns(&m, &cols), seen, poses));
+        let d = unit(vsub(col3(&cols, 3), col3(&cols, 0)));
+        let [a1, b1] = square_to(tau);
+        held::scatter_pass(&[dot(d, a1), dot(d, b1)], j, start);
+    }
+    Some(())
 }
 
 /// The Jacobian, exact by `Dual`, a block at a time (#302): each flank and the poses over their
@@ -395,14 +702,20 @@ fn derive<const K: usize>(x: &[f64], idx: impl Iterator<Item = usize>,
     d
 }
 
-/// The kernel of a point on a meshing at a block's widths (`system::build_kernel`).
-pub fn kernel(n_par: usize, n_const: usize) -> Kernel {
-    Kernel { name: "point_on_meshing", n_res: LEAD + ROWS, n_par, n_const, degree: 1, res, jac,
+/// The kernel of contact `c` with a meshing at a block's widths (`system::build_kernel`).
+pub fn kernel(c: Contact, n_par: usize, n_const: usize) -> Kernel {
+    let (res, jac): (crate::kernels::KernelFn, crate::kernels::KernelFn) = match c {
+        Contact::Point => (res, jac),
+        Contact::Normal => (line_res::<1>, line_jac::<1>),
+        Contact::Path => (line_res::<2>, path_jac),
+    };
+    Kernel { name: c.name(), n_res: c.rows(), n_par, n_const, degree: c.degree(), res, jac,
              const_jac: None, form: None }
 }
 
 /* -- reading the sketch ------------------------------------------------------------------------ */
 
+use crate::constraints::CKind;
 use crate::model::{Flank, Sketch};
 
 /// What a contact reads of one flank, off the sketch: an envelope's or a source's (`held`), or a
@@ -593,7 +906,8 @@ impl Meshing {
         let p = Parts::of(sk, index)?;
         let mut m = Meshing::new(p.consts(sk, 0), p.values(sk), sk.meshings[index].roll)
             .ok_or("the meshing's parts are not a meshing")?;
-        m.anchor = sk.constraints.iter().find_map(|c| {
+        let mut points = sk.constraints.iter().filter(|c| c.kind == CKind::PointOnMeshing);
+        m.anchor = points.find_map(|c| {
             c.meshing_of().filter(|e| e.i() == index)?;
             let x: Vec<f64> = c.args[2..2 + UNKNOWNS].iter().map(|a| a.value(sk)).collect();
             x.iter().all(|v| v.is_finite()).then(|| Place::of(&x))

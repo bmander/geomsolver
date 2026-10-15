@@ -279,14 +279,10 @@ fn gap(g: &Generated, cone: ([f64; 3], [f64; 3]), phase: f64, lag: f64, start: (
     (d, y, (u, t, v))
 }
 
-/// **A mismatched pair, checked against the gap it closes.** The pinion's cutter is the gear's
-/// cone turned 2° about its normal at M: the two touch at M and nowhere else, so the bearing
-/// localises and the gear lags by a little that grows with the phase.  At each phase the lag the
-/// meshing finds is the turn of the gear that closes the gap between the two members — the
-/// pinion's flank's nearest approach to the gear's cone, worked out from the cone's equation and
-/// the motions' poses alone — and the contact is where they close.
-#[test]
-fn a_mismatched_pair_lags_by_the_turn_that_closes_the_gap() {
+/// Step 3's turned cutter: the pinion's cutter the gear's cone turned 2° about its normal at M,
+/// generating under the mesh, and Q held to the meshing where the pair is drawn.  The document, M,
+/// the gear's cone's apex and axis, and the cutter's apex and axis point.
+fn turned_cutter() -> (String, [[f64; 3]; 3], [[f64; 3]; 2]) {
     let base = solved(&format!("{MESH}gear_flank := envelope(flank, under: mesh, from: -40deg, \
                                 to: 40deg)\n"));
     let (m, apex, c) = (at(&base, "M"), at(&base, "apex"), at(&base, "C"));
@@ -308,6 +304,18 @@ contact := meshing(pinion_flank, flank, under: mesh, from: -15deg, to: 15deg)
 Q := point hint((0, 48, 0))
 Q coincident(t == 0deg) contact
 ", a2[0], a2[1], a2[2], pt(a2), c2[0], c2[1], c2[2], pt(c2));
+    (src, [m, apex, axis], [a2, c2])
+}
+
+/// **A mismatched pair, checked against the gap it closes.** The pinion's cutter is the gear's
+/// cone turned 2° about its normal at M: the two touch at M and nowhere else, so the bearing
+/// localises and the gear lags by a little that grows with the phase.  At each phase the lag the
+/// meshing finds is the turn of the gear that closes the gap between the two members — the
+/// pinion's flank's nearest approach to the gear's cone, worked out from the cone's equation and
+/// the motions' poses alone — and the contact is where they close.
+#[test]
+fn a_mismatched_pair_lags_by_the_turn_that_closes_the_gap() {
+    let (src, [m, apex, axis], [a2, c2]) = turned_cutter();
     let e = solved(&src);
     assert!(norm(sub(at(&e, "Q"), m)) < 1e-9, "the contact is at M where the pair is drawn");
     let t = traced(&e.sketch, "contact", 12);
@@ -388,12 +396,9 @@ R coincident(lag == {lag}) contact
     assert!(norm(sub(there.position, r)) < 1e-7, "{:?} {r:?}", there.position);
 }
 
-/// A meshing prints as it is written and reads back the same, a pinned phase and lag with it —
-/// here over a revolution's side, formed, and its envelope under the mesh; one written over a
-/// motion that is not relative, or over a flank the solve cannot read, is refused saying why.
-#[test]
-fn a_meshing_prints_back_and_refuses_what_it_cannot_turn() {
-    let src = "\
+/// A revolution's side meshed with its envelope under the mesh of skew shafts, one a screw, and a
+/// point held to the contact where the pair is drawn.
+const SIDE_MESHING: &str = "\
 unit mm
 use std
 in std.front {
@@ -430,6 +435,13 @@ contact := meshing(f1, side, under: mesh, from: -20deg, to: 20deg)
 p := point hint((3, 1, 8))
 p coincident(t == 0deg, lag == 0) contact
 ";
+
+/// A meshing prints as it is written and reads back the same, a pinned phase and lag with it —
+/// here over a revolution's side, formed, and its envelope under the mesh; one written over a
+/// motion that is not relative, or over a flank the solve cannot read, is refused saying why.
+#[test]
+fn a_meshing_prints_back_and_refuses_what_it_cannot_turn() {
+    let src = SIDE_MESHING;
     let (mut prog, errs) = crate::common::parse(src);
     assert!(errs.is_empty(), "{errs:?}");
     let first = gcs_core::program::elaborate(&prog);
@@ -497,4 +509,226 @@ fn the_mean_points_bearing_runs_along_the_common_generator() {
             assert!(text.contains(&range), "{text}");
         }
     }
+}
+
+/* -- the common normal and the path of contact at a point (#345) ------------------------------- */
+
+/// `contact.sv` with a line along the common normal and one along the path of contact at Q (the
+/// phase the pair is drawn at) and at R (pinned at 10°).
+fn contact_with_lines(text: &str) -> String {
+    format!("{text}
+R := point hint((0, 48, 0))
+R coincident(t == 10deg) bearing
+nq := point hint((0, 58, 0))
+normal_q := line(Q, nq)
+bearing perpendicular(at: Q) normal_q
+Q distance(10mm) nq
+pq := point hint((10, 48, 0))
+path_q := line(Q, pq)
+bearing tangent(at: Q) path_q
+Q distance(10mm) pq
+nr := point hint((0, 58, 0))
+normal_r := line(R, nr)
+bearing perpendicular(at: R) normal_r
+R distance(10mm) nr
+pr := point hint((10, 48, 0))
+path_r := line(R, pr)
+bearing tangent(at: R) path_r
+R distance(10mm) pr
+")
+}
+
+/// How far apart two directions are, either way round: the sine of the angle between them.
+fn skew(a: [f64; 3], b: [f64; 3]) -> f64 {
+    norm(cross(unit(a), unit(b)))
+}
+
+/// `contact.sv`'s pair apart from the meshing: at phase `phase` (degrees) the gear has turned as
+/// the cutting turn has (`−roll/2` the pinion's: the pair lags `(roll − 1)` times the phase), and
+/// the two touch on the generator the gear's cone and the cutter's share through M, turned with
+/// the gear, where the cutting motion's relative velocity is square to the cones' normal — one
+/// normal all along a cone's generator.  The point there, and that normal.
+fn closed_contact(m: [f64; 3], apex: [f64; 3], spine: [f64; 3], roll: f64, phase: f64)
+    -> ([f64; 3], [f64; 3]) {
+    let z = [0.0, 0.0, 1.0];
+    let theta = -0.5 * roll * phase.to_radians();
+    let gear = |x: [f64; 3]| turned(x, [0.0; 3], z, theta);
+    let (m1, along) = (gear(m), unit(sub(gear(m), gear(apex))));
+    let w = sub(m, apex);
+    let n = gear(unit(cross(cross(spine, w), w)));
+    // per radian of the pinion: the gear's turn about z less the pinion's about x through
+    // (0, 72, 0)
+    let v = |x: [f64; 3]| {
+        sub(scale(cross(z, x), -0.5 * roll), cross([1.0, 0.0, 0.0], sub(x, [0.0, 72.0, 0.0])))
+    };
+    let (v0, v1) = (dot(n, v(m1)), dot(n, sub(v(add(m1, along)), v(m1))));
+    (add(m1, scale(along, -v0 / v1)), n)
+}
+
+/// **The common normal and the path of contact are relations on a meshing** (#345 S1): on
+/// `contact.sv`'s pair, at the phase it is drawn at and at 10°, the point held there is on the
+/// generator the two cones share, turned with the gear; a line along the common normal there runs
+/// along the gear's cone's normal, and a line along the path of contact along the derivative of
+/// that point over the phase.  (Not along the generator, the bearing's line: the contact stands
+/// still on the gear's flank, and the gear's turn carries it.)
+#[test]
+fn the_normal_and_the_path_of_contact_at_a_point_are_the_pairs_own() {
+    let text = include_str!("../../examples/spiral_bevel/contact.sv");
+    let roll = 1.005;
+    let e = solved(&contact_with_lines(text));
+    let (m, apex) = (at(&e, "M"), at(&e, "apex"));
+    let spine = unit(sub(at(&e, "C"), apex));
+    for (p, phase, normal, path) in [("Q", 0.0, ("Q", "nq"), ("Q", "pq")),
+                                     ("R", 10.0, ("R", "nr"), ("R", "pr"))] {
+        let (x, n) = closed_contact(m, apex, spine, roll, phase);
+        assert!(norm(sub(at(&e, p), x)) < 1e-8, "{p}: {:?} {x:?}", at(&e, p));
+        let d = sub(at(&e, normal.1), at(&e, normal.0));
+        assert!(skew(d, n) < 1e-12, "{p}: the normal {d:?} against {n:?}");
+        let h = 1e-3;
+        let tangent = sub(closed_contact(m, apex, spine, roll, phase + h).0,
+                          closed_contact(m, apex, spine, roll, phase - h).0);
+        let d = sub(at(&e, path.1), at(&e, path.0));
+        assert!(skew(d, tangent) < 1e-9, "{p}: the path {d:?} against {tangent:?}: {}",
+                skew(d, tangent));
+        assert!(skew(d, sub(m, apex)) > 0.9, "{p}: the path is no bearing");
+    }
+}
+
+/// The direction of the path of contact at phase `phase`: a central difference of the contact
+/// traced from the meshing's anchor either side of it, read with nothing of the path's own rows.
+fn traced_path(sk: &Sketch, phase: f64) -> [f64; 3] {
+    let m = Meshing::named(sk, 0).unwrap();
+    let h = 1e-3;
+    let t = m.trace(&m.anchor.unwrap(), &[phase - h, phase + h]);
+    let (a, b) = (t[0].expect("traced below"), t[1].expect("traced above"));
+    assert!(!a.line && !b.line, "a point contact");
+    sub(b.position, a.position)
+}
+
+/// On step 3's turned cutter the path of contact at Q runs along the path the meshing traces: a
+/// central difference of the contact's positions either side of the phase.
+#[test]
+fn the_path_of_contact_is_the_traced_paths_tangent() {
+    let (src, _, _) = turned_cutter();
+    let e = solved(&format!("{src}\
+pq := point hint((10, 48, 0))
+path_q := line(Q, pq)
+contact tangent(at: Q) path_q
+Q distance(10mm) pq
+"));
+    let d = sub(at(&e, "pq"), at(&e, "Q"));
+    let traced = traced_path(&e.sketch, 0.0);
+    assert!(skew(d, traced) < 1e-7, "{d:?} against {traced:?}: {}", skew(d, traced));
+}
+
+/// A point R held to `contact.sv`'s contact (`PIN` its pin, or none) and a line along the path of
+/// contact there.
+const PATH_AT_R: &str = "\
+R := point hint((0, 48, 0))
+R coincident PIN bearing
+pr := point hint((10, 48, 0))
+path_r := line(R, pr)
+bearing tangent(at: R) path_r
+R distance(10mm) pr
+";
+
+/// How far `d` turns from the x axis, in degrees.
+fn from_x(d: [f64; 3]) -> f64 {
+    dot(unit(d), [1.0, 0.0, 0.0]).acos().to_degrees()
+}
+
+/// **A number solves from a stated path angle** (#345 S1): on `contact.sv`'s pair the contact
+/// stands still on the gear's flank, so the path of contact is the gear's turn carrying it, and
+/// turns with the gear.  A point R held to the contact with no pin is free along the path; stated
+/// the path's angle from the x axis there that the pair has at 10° of the pinion, R's phase,
+/// seeded at 0°, solves to 10° — and the pair traces a path at that angle there.
+#[test]
+fn a_phase_solves_from_the_path_of_contacts_angle() {
+    let text = include_str!("../../examples/spiral_bevel/contact.sv");
+    let at10 = solved(&format!("{text}{}", PATH_AT_R.replace("PIN", "(t == 10deg)")));
+    let stated = from_x(sub(at(&at10, "pr"), at(&at10, "R")));
+    let at0 = from_x(traced_path(&at10.sketch, 0.0));
+    assert!((stated - at0).abs() > 1.0, "the path turns with the gear: {at0} {stated}");
+    let free = PATH_AT_R.replace("PIN ", "");
+    let e = solved(&format!("{text}{free}path_r angle({stated}deg) std.x\n"));
+    let c = e.sketch.constraints.iter().filter(|c| c.kind == CKind::PointOnMeshing).nth(1).unwrap();
+    let phase = c.args[2].value(&e.sketch);
+    assert!((phase - 10.0).abs() < 1e-8, "{phase}");
+    let traced = from_x(traced_path(&e.sketch, phase));
+    assert!((traced - stated).abs() < 1e-5, "{traced} {stated}");
+}
+
+/// The common normal and the path at a point print as they are written and read back the same,
+/// sharing the place of the contact holding the point — written either way round, before the
+/// contact or after it; at a point no contact holds on the meshing they are refused, naming the
+/// statement they want.
+#[test]
+fn lines_at_a_point_on_a_meshing_print_back_and_share_its_place() {
+    let src = format!("{SIDE_MESHING}\
+m := point hint((15, 5, 4))
+nl := line(p, m)
+t := axis hint(dir: (1, 2, 3))
+contact perpendicular(at: p) nl
+contact tangent(at: p) t
+");
+    let (mut prog, errs) = crate::common::parse(&src);
+    assert!(errs.is_empty(), "{errs:?}");
+    let printing = gcs_core::program::elaborate(&prog);
+    assert!(printing.ok(), "{:?}", printing.errors().map(|d| &d.message).collect::<Vec<_>>());
+    let printed = gcs_core::syntax::render_flat(&mut prog).unwrap().to_string();
+    for want in ["contact perpendicular(at: p) nl", "contact tangent(at: p) t"] {
+        assert!(printed.contains(want), "{want}\n{printed}");
+    }
+    let kinds = |e: &gcs_core::program::Elaborated| {
+        let mut k: Vec<CKind> = e.sketch.user_constraints().iter().map(|c| c.kind).collect();
+        k.sort_by_key(|k| k.name());
+        k
+    };
+    let again = build(&printed);
+    assert_eq!(kinds(&again), kinds(&printing));
+    for k in [CKind::MeshingNormalAt, CKind::MeshingTangentAt] {
+        assert!(kinds(&again).contains(&k), "{k:?}");
+    }
+    let text = include_str!("../../examples/spiral_bevel/contact.sv");
+    let src = contact_with_lines(text);
+    let first = solved(&src);
+    // each line reads the place of the contact holding its point, whichever came first
+    let shared = |e: &gcs_core::program::Elaborated| {
+        let sk = &e.sketch;
+        let held = |c: &gcs_core::constraints::Constraint| -> Vec<u32> {
+            c.args[2..10].iter().map(|a| a.param()).collect()
+        };
+        let read = |c: &gcs_core::constraints::Constraint| -> Vec<u32> {
+            c.args[3..11].iter().map(|a| a.param()).collect()
+        };
+        let contacts: Vec<_> =
+            sk.constraints.iter().filter(|c| c.kind == CKind::PointOnMeshing).collect();
+        let lines: Vec<_> = sk.constraints.iter().filter(|c| c.kind.meshing_contact().is_some()
+            && c.kind != CKind::PointOnMeshing).collect();
+        assert_eq!(lines.len(), 4);
+        for l in lines {
+            let at = l.args[2].ent();
+            let holding = contacts.iter().find(|c| c.args[0].ent() == at).unwrap();
+            assert_eq!(read(l), held(holding), "{:?}", l.kind);
+        }
+    };
+    shared(&first);
+    let late = text.replace("Q := point hint((0, 48, 0))\nQ coincident(t == 0deg) bearing\n", "");
+    assert_ne!(late, text);
+    let late = contact_with_lines(&format!("Q := point hint((0, 48, 0))\n{late}"))
+        .replace("Q distance(10mm) pq\n", "Q distance(10mm) pq\nQ coincident(t == 0deg) bearing\n")
+        .replace("bearing tangent(at: Q) path_q", "path_q tangent(at: Q) bearing")
+        .replace("bearing perpendicular(at: Q) normal_q", "normal_q perpendicular(at: Q) bearing");
+    let late = solved(&late);
+    shared(&late);
+    let refused = |src: &str, want: &str| {
+        let (prog, errs) = crate::common::parse(src);
+        assert!(errs.is_empty(), "{errs:?}");
+        let e = gcs_core::program::elaborate(&prog);
+        assert!(e.errors().any(|d| d.message.contains(want)),
+                "{want}: {:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
+    };
+    let unheld = src.replace("R coincident(t == 10deg) bearing\n", "");
+    refused(&unheld, "the common normal at `R` is taken where a contact holds `R` on `bearing`");
+    refused(&unheld, "the path of contact at `R` is taken where a contact holds `R` on `bearing`");
 }

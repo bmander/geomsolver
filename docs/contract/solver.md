@@ -269,7 +269,9 @@ version ([0.n], see the [language changelog](../solvent-changelog.md)) says wher
   more than `SEEDED_OFF` off, so a converged place keeps its sheet; a bound the start alone
   breaks is crossed before the block is solved (`Search::start_within`, its own parameters
   moved), and a solved block whose frame moved is refreshed and solved on (`REFRAMES`).  That
-  is the whole of it: no recovery seeds a contact again after a failed solve.  Gates:
+  is the whole of it: no recovery seeds a contact again after a failed solve.  A line along a
+  meshing's common normal or path at a point (#345) owns nothing and is not seeded: it reads its
+  contact's unknowns as that contact's block leaves them.  Gates:
   `spiral_bevel/contact.sv` solves from its seeds (`meshing::the_mean_points_bearing_…`), and a
   point held to an envelope whose cylinder is placed by relations away from its hints lands where
   it is drawn, at a roll within the bounds, not on the far side or the inner sheet the hinted
