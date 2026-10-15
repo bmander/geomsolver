@@ -109,6 +109,22 @@ came from.
   centre's lift and the view's two axes, the axis their cross), which an envelope in space still
   refuses (`Moving::of`).  `tests/carried.rs` is the gate (the epicycloid against its closed form
   and the planar envelope, a screw's helix in space).
+  **A solid is an operand, and a word may take a connective** (#345 S3, [0.115]): `flank
+  regular(>= m, by: tool) within blank` is `CKind::RegularWithin`, `(Envelope, Solid)`, slots
+  `(flank: Envelope, blank: Solid, by: Solid, margin: Ratio)` — `SpecKind::Solid` the first solid
+  slot (`kind_matches`, `is_entity`), `SpecKind::Ratio` the first number with no unit (a
+  dimension, `Dim::SCALAR`, so `assemble` puts the bare number there and `bounded` prints its
+  bound; the bindings' `DIMENSION_KINDS` carry it).  `constraints::connective` says which word is
+  followed by which before its second operand (`regular` by `within`): the parser eats it after
+  the parentheses in a lone statement and in a chain's joint (`P::connective`, refused naming the
+  spelling), and both printers write it back (`write_written`, `operator_text`, which writes the
+  tool `by:` its key as `at:` is).  No number written is the bound `>= 0` (`constrain`).  It reads
+  region solids' terms, which exist once the solids are built and read unknowns bound once the
+  expressions are: `constraints::reads_regions` defers such a statement, and the elaborator states
+  it after `expressions` (`regions_read`), working out its number there (`expr::set_dimension`,
+  its spelling kept) and refusing a number that reads an unknown.  It is a bound that **steers
+  nothing** (`CKind::steers`, solver.md).  Not a dimension drawn (`undrawn!`).  `tests/regular.rs`
+  is the gate.
   **What a word means is the kinds of its operands, and a name does not carry its kind until
   elaboration** — so the parser resolves *nothing*: it produces a `syntax::Written` and
   `program::settle` turns it into a `CKind` plus arguments in spec order, through

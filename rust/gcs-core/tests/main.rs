@@ -155,6 +155,7 @@ mod region_faces;
 mod region_general;
 mod region_solids;
 mod regions;
+mod regular;
 mod relation_words;
 mod renderer;
 mod revolve;

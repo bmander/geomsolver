@@ -41,6 +41,7 @@ impl<'a> P<'a> {
                 let word = Name { text: w, span: self.here() };
                 self.i += 1;
                 let args = self.op_args(&word.text, Fixity::Infix)?;
+                self.connective(&word.text)?;
                 let right = self.refr()?;
                 (word, Fixity::Infix, vec![left, right], args)
             }
@@ -121,6 +122,18 @@ impl<'a> P<'a> {
             along: None,
             space: false,
         })
+    }
+
+    /// The word an operator is followed by before its second operand, where it takes one
+    /// (`crate::constraints::connective`): `flank regular(…) within blank`.
+    pub(super) fn connective(&mut self, word: &str) -> Option<()> {
+        let Some(c) = crate::constraints::connective(word) else { return Some(()) };
+        if self.peek_word(c) {
+            self.i += 1;
+            return Some(());
+        }
+        self.fail(&format!("`{word}` reads its second operand after `{c}`: `a {word}(…) {c} b`"));
+        None
     }
 
     /// Read optional operator arguments. Slot pins stay in parentheses; seeds come

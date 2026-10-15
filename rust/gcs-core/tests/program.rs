@@ -120,6 +120,11 @@ fn every_constraint_type_is_printable() {
             // prints them from one
             continue;
         }
+        if kind == CKind::RegularWithin {
+            // a flank's regularity reads an envelope and two region solids, declared in a
+            // document; `tests/regular.rs` prints it from the Formate pair
+            continue;
+        }
         if kind.envelope_contact().is_some() || kind.meshing_contact().is_some() {
             // an envelope in space is declared over a solid's side or a set, which a sketch's
             // fixture holds no text of; `tests/held_envelopes.rs` prints them from a document,

@@ -546,6 +546,7 @@ pub fn build_kernel(sk: &Sketch, key: KernelKey) -> Kernel {
             let c = crate::envelope::meshing::Contact::ALL[contact as usize];
             crate::envelope::meshing::kernel(c, n_par, n_const)
         }
+        KernelKey::Regular { n_par, n_const } => crate::envelope::regular::kernel(n_par, n_const),
         KernelKey::Traced { contact, n_par, n_const } => {
             crate::traced::kernel(crate::traced::Contact::ALL[contact as usize], n_par, n_const)
         }

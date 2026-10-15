@@ -86,12 +86,13 @@ pub(super) fn elaborate_in(
     let settled = seeds(&mut cx, &deferred, &held);
     let extruded = prism_sides(&mut cx, &flat);
     let (generated, held_in_space) = held_envelopes(&mut cx, &flat, &planar, &extruded);
-    constraints(&mut cx, &flat, &drawn, &kept_off);
+    let after_solids = constraints(&mut cx, &flat, &drawn, &kept_off);
     walked(&mut cx, &deferred, &held);
     twins(&mut cx, &flat);
     place_planes(&mut cx, &deferred, &held, settled);
     solids_and_surfaces(&mut cx, &flat, faces, &generated, &held_in_space)?;
     expressions(&mut cx, &flat);
+    regions_read(&mut cx, &flat, &after_solids);
     Ok(finish(cx, &flat))
 }
 
@@ -524,8 +525,9 @@ fn held_envelopes(
 /// the incidences drawn as memberships or kept in space (`memberships`).
 fn constraints(
     cx: &mut Elab<'_>, flat: &Flat<'_>, drawn: &BTreeSet<usize>, kept_off: &BTreeSet<usize>,
-) {
+) -> Vec<usize> {
     let mut arrays = BTreeSet::new();
+    let mut later = Vec::new();
     for (i, st) in flat.stating.iter().enumerate() {
         // an energy's terms are constraints of their own, stationary together (#121)
         if let StmtKind::Minimize(m) = &st.kind {
@@ -541,13 +543,58 @@ fn constraints(
         if gauges::is_fix(r) || drawn.contains(&i) || kept_off.contains(&i) {
             continue;
         }
-        let made = constrain(cx, r, st);
-        if let Some(id) = made {
-            cx.map.record(st, Made::Con(id));
-            if let Some(place) = r.place {
-                cx.sk.placements.insert(id, place);
+        // a relation reading a region's terms is stated once the solids hold them (#345)
+        if r.form.written().is_some_and(|w| crate::constraints::reads_regions(&w.word.text)) {
+            later.push(i);
+            continue;
+        }
+        state(cx, r, st, &mut arrays);
+    }
+    later
+}
+
+/// A relation constrained, and what it made recorded against its statement.
+fn state(
+    cx: &mut Elab<'_>, r: &crate::ir::Relation, st: &Statement,
+    arrays: &mut BTreeSet<(crate::syntax::StmtId, Vec<crate::ir::PathStep>, String)>,
+) {
+    if let Some(id) = constrain(cx, r, st) {
+        cx.map.record(st, Made::Con(id));
+        if let Some(place) = r.place {
+            cx.sk.placements.insert(id, place);
+        }
+        repeated(&mut cx.sk, id, st, arrays);
+    }
+}
+
+/// **The relations that read a region's terms** (#345: a flank regular within a blank), stated
+/// once the solids are built and hold them, and the unknowns their numbers read are bound.
+fn regions_read(cx: &mut Elab<'_>, flat: &Flat<'_>, later: &[usize]) {
+    let mut arrays = BTreeSet::new();
+    for &i in later {
+        let st = flat.stating[i];
+        let StmtKind::Relation(r) = &st.kind else { continue };
+        let before = cx.sk.constraints.len();
+        state(cx, r, st, &mut arrays);
+        // its number, written as an expression, is worked out now the drawing's unknowns are
+        // bound — as `expr::evaluate` worked out every number stated before it
+        for ci in before..cx.sk.constraints.len() {
+            let c = &cx.sk.constraints[ci];
+            let Some(at) = c.kind.dimension_slot() else { continue };
+            let crate::constraints::Arg::Expr(e) = &c.args[at] else { continue };
+            let (id, text, written) = (c.id, e.text.clone(), c.written.clone());
+            let name = c.kind.spec()[at].0;
+            let said = expr::set_dimension(&mut cx.sk, id, name, &text);
+            if let Some(c) = cx.sk.constraint_mut(id) {
+                c.written = written;
             }
-            repeated(&mut cx.sk, id, st, &mut arrays);
+            if let Err(m) | Ok(Some(m)) = said {
+                cx.diags.push(Diag::on(Code::E040, st, format!("`{text}`: {m}")));
+            } else if cx.sk.constraint(id).is_some_and(|c| c.free.is_some()) {
+                let m = format!("`{text}` reads an unknown: a flank's least area factor is held \
+                                 to a number, and the unknowns it finds are the drawing's");
+                cx.diags.push(Diag::on(Code::E040, st, m));
+            }
         }
     }
 }
