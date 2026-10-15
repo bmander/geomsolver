@@ -17,6 +17,16 @@ const projects: Example[] = [{
     + 'the spiral angle at its head; the solids refine in the background as you watch.',
   target: { kind: 'directory', path: 'spiral_bevel', entry: 'hypoid.sv' },
 }, {
+  label: 'Hypoid drive · the pair imported, to print', key: 'hypoid_drive',
+  description: 'The hypoid pair above, imported whole (`use spiral_bevel.hypoid`) and restated '
+    + 'nowhere, made a hand-cranked drive to 3D print: a frame inside the pair carrying a plain '
+    + 'sleeve along each shaft, each member a part with a spoked hub seated on its blank\'s back '
+    + 'cone, splined shafts pressed and glued into the hubs and the cranks, and each crank '
+    + 'counterweighted so it spins without wobbling, its handle loose on its pin. Every part '
+    + 'stands on the pair\'s own axes; seventeen claims check the fits and the clearances, the '
+    + 'cranks through a whole turn.',
+  target: { kind: 'directory', path: 'hypoid_drive', entry: 'drive.sv' },
+}, {
   label: 'Twist drill · flutes ground under a screw', key: 'twist_drill',
   description: 'A 10 mm two-flute drill: each flute is what a grinding wheel carried along a screw '
     + 'about the drill sweeps through the stock, so its section is the wheel\'s characteristic '

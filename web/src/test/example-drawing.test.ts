@@ -56,6 +56,12 @@ test('menu examples open files or directories with one V-twin choice', async (t)
   const readme = await remote.drawing('spiral_bevel', 'spiral_bevel/README.md');
   assert.equal(readme.source, 'spiral_bevel/README.md');
   assert.equal(readme.entry, 'spiral_bevel/hypoid.sv');
+  // a project of its own that imports the pair from beside it: the pair's file comes along
+  const drive = await remote.drawing('hypoid_drive');
+  assert.equal(drive.source, 'hypoid_drive/drive.sv');
+  for (const name of ['hypoid_drive/drive.sv', 'hypoid_drive/README.md', 'spiral_bevel/hypoid.sv']) {
+    assert.ok(drive.files[name], name);
+  }
   const vtwin = await remote.drawing('vtwin');
   assert.equal(vtwin.directory, 'vtwin');
   assert.ok(vtwin.files['vtwin/components/frame.sv']);

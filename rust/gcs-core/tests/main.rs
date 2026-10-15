@@ -93,6 +93,7 @@ mod meshing;
 mod highlight;
 mod homotopy;
 mod hub_motor;
+mod hypoid_drive;
 mod hypoid_layout;
 mod hypoid_machine;
 mod interfaces;
