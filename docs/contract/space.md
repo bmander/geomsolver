@@ -40,7 +40,7 @@ another. `views::place`
 settles axes and plane origins before the solve, round by round with seed settlement; they stay
 unknowns. `p distance(d, along: u) P` is an ordinate from `P.origin` along `P.u` (`CKind::Ordinate`,
 in space across planes with no callout); `hint(at: P, (x, y))` seeds in P's coordinates. Circles and
-arcs over a point in space are drawn in a plane they mint (#363 S6, [0.124];
+arcs over a point in space are drawn in a plane they mint (#363 S6, [0.127];
 `entities::arcs_in_space`, `circles_in_space`, in `holds`, before E060 is asked): an arc the plane
 through its centre and ends (axes `u` toward the start and `v` in the plane, its normal
 `(s − c) × (e − c)` — the short way round; collinear, E060), a circle the plane through its centre
@@ -59,7 +59,7 @@ normal is turned onto the plane's `v` as it stands, square to `u`, its row still
 it (`u ⟂ n` says `u ⟂ e`), so a solved circle is never left a freedom it does not have
 (`a_circles_gauge_follows_a_normal_that_swings_onto_it`).  So the round is an arc or a circle in a plane: its
 radius, its contacts, a chain's joints, a face swept from it.  A spline there is a curve traced in
-space ([0.123], `curves.md`); faces E080.  `tests/space_paths.rs`: the bent pipe with no plane
+space ([0.126], `curves.md`); faces E080.  `tests/space_paths.rs`: the bent pipe with no plane
 written, its tube at Pappus to 1e-9 and each bend's plane; a disc swept from a circle square to a
 line at πr²h; the refusals. `use std` gives axes
 `std.x/y/z/back`, planes `std.front` (x, z), `std.top` (x, y), `std.side` (y, z), `std.up` (z,
@@ -133,7 +133,7 @@ allowed), `g` a spline or a traced curve (`planes::drawn_plane`, not an extrusio
 point in space in `P`, and `g tangent l` (either way round, `at:` too, #251) a line's free ends —
 as does a line touching an arc or a circle at a point of it (`TangentCircleAt`, #243 L4: `std.On`
 over an arc) — and where the line's ends are drawn elsewhere already (a chain's straight between
-bends in two planes), the tangency is the one in space, `TangentCircleAt3` (#363 S4, [0.121];
+bends in two planes), the tangency is the one in space, `TangentCircleAt3` (#363 S4, [0.124];
 `reading::in_space`, from `TangentCircleAt`, a joint's `TangentArcLine` or `TangentLineCircleAt`):
 two rows, `r̂·(B − A)` and `n̂·(B − A)`, the line square to the radius at the point and in the
 round's plane —

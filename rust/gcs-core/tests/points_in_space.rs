@@ -34,7 +34,7 @@ fn a_point_in_space_round_trips_through_json() {
 }
 
 /// A circle over a point in space with no `normal:` is refused; an arc over points in space is
-/// drawn in the plane through them (#363 S6, [0.124]) — refused only where three stand in a line,
+/// drawn in the plane through them (#363 S6, [0.127]) — refused only where three stand in a line,
 /// which no one plane is through.
 #[test]
 fn a_curve_over_a_point_in_space_is_refused() {

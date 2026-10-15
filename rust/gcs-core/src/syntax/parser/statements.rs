@@ -154,10 +154,6 @@ impl<'a> P<'a> {
                 r.claim = true;
                 Some(StmtKind::Relation(r))
             }
-            // `rate(f.u over s) perpendicular f.v` — a relation reading a rate (#339 D3)
-            "rate" if matches!(self.t.get(self.i + 1).map(|(t, _)| t), Some(Tok::P('('))) => {
-                self.rate_relation().map(StmtKind::Relation)
-            }
             // `view(cyl.body) in views.right` — a picture asked of a solid (§6.11).  The
             // brackets are what it is a picture of, `in` is the trailer it already is
             "view" | "section" | "dimensions" => {
@@ -187,7 +183,7 @@ impl<'a> P<'a> {
             // or a used module's by its full path (`engine.parts.Crank(…)`, §14.4)
             _ if self.call_at(self.i).is_some_and(|dotted| {
                 dotted || !crate::constraints::is_operator(&w)
-            }) && !self.defined_prefix_ahead() =>
+            }) && !self.defined_prefix_ahead() && !self.rate_ahead() =>
             {
                 let lo = self.here().lo as usize;
                 let name = Name { text: format!("#i{lo}"), span: Span::at(lo) };

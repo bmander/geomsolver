@@ -132,11 +132,8 @@ pub struct Relation {
     pub along: Option<syntax::Along>,
     /// Made by a set's body (§6.21) — see `syntax::Relation::space`.
     pub space: bool,
-    /// A row of a family's home alone (#339 D3) — see `syntax::Relation::initially`.
+    /// Holds at a body's home alone (#339 D2, D3) — see `syntax::Relation::initially`.
     pub initially: bool,
-    /// `rate(x over s)` (#339 D3): the running number the rate is along, its first operand
-    /// the thing whose rate it is — see `syntax::Relation::rate`.
-    pub rate: Option<String>,
 }
 
 /// An operator selected against the declared entity kinds, before argument validation.
@@ -159,6 +156,13 @@ pub struct ClaimOver {
     pub span: Span,
 }
 
+impl Relation {
+    /// Whether any operand is written as a rate (#339 D2): `Written::reads_rate`.
+    pub fn reads_rate(&self) -> bool {
+        self.form.written().is_some_and(|w| w.reads_rate())
+    }
+}
+
 impl Statement {
     pub(crate) fn lower(
         st: syntax::Stmt,
@@ -171,7 +175,6 @@ impl Statement {
             S::Relation(r) => Operation::Relation(Relation {
                 form: r.form, place: r.place, claim: r.claim, class: r.class, word: r.word,
                 along: r.along, space: r.space, initially: r.initially,
-                rate: r.rate.map(|n| n.text),
             }),
             S::Branch(b) => Operation::Branch(b),
             S::Style(s) => Operation::Style(s),

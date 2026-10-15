@@ -1,5 +1,5 @@
-//! Named curves shared by generating faces or analytic surfaces.
-//! A seam is declared once for subsequent oriented uses in face topology.
+//! Curves shared by generating faces or analytic surfaces, made of their parts.  A seam is
+//! built once and its snapshot shared by the oriented uses face topology makes of it.
 #[allow(unused_imports)]
 use crate::fmath::Det;
 mod boundary;
@@ -7,71 +7,10 @@ pub use boundary::{BoundarySeam,BoundarySeamTolerance};
 mod surfaces;
 pub use surfaces::{SurfaceSeam,SurfaceSeamPoint,SurfaceSeamIntersection,SurfaceSeamOptions};
 use crate::{envelope::{self,Contact,Error,Intersection,IntersectionOptions,Motion},
-    model::{edge_ends,EntKind,EntRef,Sketch},patch::EnvelopePatch};
+    patch::EnvelopePatch};
 
 fn distance(a: [f64;3],b: [f64;3]) -> f64 {
     (a[0]-b[0]).dhypot(a[1]-b[1]).dhypot(a[2]-b[2])
-}
-
-fn source_envelope(sk: &Sketch,mut e: EntRef) -> Result<usize,String> {
-    if e.kind == EntKind::Patch {
-        e = sk.patches.get(e.i()).ok_or("no such patch")?.source;
-    }
-    if e.kind != EntKind::Envelope || e.i() >= sk.envelopes.len() {
-        return Err("a seam needs envelopes or patches of envelopes".into());
-    }
-    Ok(e.i())
-}
-
-pub(crate) fn validate(sk: &Sketch,faces: [EntRef;2]) -> Result<(),String> {
-    if faces.iter().all(|f| f.kind == EntKind::Surface) {
-        if faces[0] == faces[1] { return Err("a surface seam needs two distinct named surfaces".into()); }
-        for f in faces { sk.surfaces.get(f.i()).ok_or("no such seam surface")?; }
-        return Ok(());
-    }
-    if faces[1].kind == EntKind::Surface {
-        source_envelope(sk,faces[0])?;
-        sk.surfaces.get(faces[1].i()).ok_or("no such boundary surface")?;
-        Ok(())
-    } else { junction(sk,faces).map(|_| ()) }
-}
-
-#[derive(Clone,Copy,Debug,PartialEq,Eq)]
-pub enum SeamKind { Generating, Boundary, Surfaces }
-
-/// Classify validated operands, so downstream readers cannot conflate a pair of
-/// surfaces with the envelope/boundary case just because operand two is a surface.
-pub fn kind(sk: &Sketch,index: usize) -> Result<SeamKind,String> {
-    let s = sk.seams.get(index).ok_or("no such seam")?;
-    validate(sk,[s.first,s.second])?;
-    Ok(if s.first.kind == EntKind::Surface { SeamKind::Surfaces }
-        else if s.second.kind == EntKind::Surface { SeamKind::Boundary }
-        else { SeamKind::Generating })
-}
-
-/// Structural incidence is a shared source vertex, not a nearest-point weld.
-pub(crate) fn junction(sk: &Sketch,faces: [EntRef;2]) -> Result<[f64;2],String> {
-    let indices = [source_envelope(sk,faces[0])?,source_envelope(sk,faces[1])?];
-    let envelopes = indices.map(|i| &sk.envelopes[i]);
-    let surfaces = envelopes.map(|e| e.surface.and_then(|s| sk.surfaces.get(s as usize))
-        .ok_or("a generating seam needs the envelopes of a revolution's sides"));
-    let [a,b] = surfaces;
-    let [a,b] = [a?,b?];
-    if a.solid != b.solid || envelopes[0].motion != envelopes[1].motion {
-        return Err("a generating seam needs the same source revolution and motion".into());
-    }
-    let ends = [a,b].map(|s| edge_ends(sk,s.edge).ok_or("a generating seam needs source edges with endpoints"));
-    let [a,b] = ends; let [a,b] = [a?,b?];
-    let mut shared = vec![];
-    for (i,p) in [a.0,a.1].into_iter().enumerate() {
-        for (j,q) in [b.0,b.1].into_iter().enumerate() {
-            if p == q { shared.push([i as f64,j as f64]); }
-        }
-    }
-    let [parameters] = shared.as_slice() else {
-        return Err("a generating seam needs exactly one shared source vertex".into());
-    };
-    Ok(*parameters)
 }
 
 /// Explicit geometric tolerances for a solved seam snapshot. `position` and `axis`
@@ -116,15 +55,6 @@ impl SeamTolerance {
 }
 
 impl EnvelopeSeam {
-    pub fn named(sk: &Sketch,index: usize,tolerance: SeamTolerance) -> Result<Self,String> {
-        tolerance.checked()?;
-        let seam = sk.seams.get(index).ok_or("no such seam")?;
-        let faces = [seam.first,seam.second];
-        let ends = junction(sk,faces)?;
-        let [a,b] = faces.map(|e| EnvelopePatch::read(sk,e,tolerance.axis));
-        Self::between(seam.name.clone(),[a?,b?],ends,tolerance)
-    }
-
     /// Two generating faces meeting where their sources do (#212), made of their parts: `ends`
     /// each face's source edge's `u` at the vertex the two share, which the caller knows from the
     /// cutter's profile — checked coincident and tangent there, never found by proximity.

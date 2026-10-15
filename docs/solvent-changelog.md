@@ -4,71 +4,112 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
-**[0.126] An arc walked from its end.** A chain may enter an arc at its end and walk it to its
+**[0.129] An arc walked from its end.** A chain may enter an arc at its end and walk it to its
 start, `-> tangent (k3 := arc(center: c2, start: f, end: e)) ->` entered at `e`, or the arc named
 there: the same arc, drawn from its end and turning the other way, so a family runs it forward and
 L0's S-bend is one chain with its right turn written as a counter-clockwise arc. `k3.start` is
-still `f`. An arc two chains walk opposite ways is E080. Through 0.125 a chain entered every link
+still `f`. An arc two chains walk opposite ways is E080. Through 0.128 a chain entered every link
 at its start, and an arc entered at its end was E080 ("does not share the preceding link's
 endpoint"); an arc in a plane turned right only said `sense: cw`. (Issue #363, S4.)
 
-**[0.125] An arc's sense.** An arc drawn in a plane may turn clockwise from its start, `arc(center:
+**[0.128] An arc's sense.** An arc drawn in a plane may turn clockwise from its start, `arc(center:
 c, sense: cw)`, so a chain in a plane turns right at it — L0's S-bend is one chain in `std.top`.
-Through 0.124 an arc in a plane ran counter-clockwise from its start always, and a chain entering
+Through 0.127 an arc in a plane ran counter-clockwise from its start always, and a chain entering
 each link at its start could only turn left at an arc. (Issue #363, S4.)
 
-**[0.124] Arcs and circles in space.** An arc over a point standing in space is drawn in the plane
+**[0.127] Arcs and circles in space.** An arc over a point standing in space is drawn in the plane
 through its centre and its ends, the short way round; three points in a line are refused. A circle
 over a centre in space takes `normal:`, the axis or line it stands square to, and is drawn in the
 plane through its centre square to it. Each is the arc or circle it is in a plane — its radius,
 its contacts, a chain's joints, a face swept from it — so a bent pipe needs no plane written, and
 a chain drawn in space turns either way at an arc (L0's S-bend is one chain); in a plane's block a
 chain still turns left at every arc.
-Through 0.123 each was E060. (Issue #363, S6.)
+Through 0.126 each was E060. (Issue #363, S6.)
 
-**[0.123] Splines in space.** A spline over a point standing in space is a curve in space:
+**[0.126] Splines in space.** A spline over a point standing in space is a curve in space:
 `Σ Rᵢ(u)·Pᵢ` over its control points where they stand, its parameter over its own domain. Its
 contacts are a curve in space's (a point held at a place, `t == u`; the tangent; the centre of
 curvature), it is a `path` a family runs along, and `spline(through: …)` over corners in space is
 the cubic through them, natural or along the tangents its ends are given — so a loft's smooth rail
-may leave its plane. It bounds no face. Through 0.122 a spline over a point in space was E060.
+may leave its plane. It bounds no face. Through 0.125 a spline over a point in space was E060.
 (Issue #363, S3.)
 
-**[0.122] A curve's centre of curvature, and Frenet's frame.** At a point a contact holds on a
+**[0.125] A curve's centre of curvature, and Frenet's frame.** At a point a contact holds on a
 curve traced in space, `k curvature(at: p) c` puts the point `c` at the centre of its osculating
 circle. The standard library's `Frenet(g, s:)` is the station whose `u` runs toward that centre
-and whose `v` is the binormal, refused where the curve has no curvature. Through 0.121 a curve in
+and whose `v` is the binormal, refused where the curve has no curvature. Through 0.124 a curve in
 space read no curvature (`curvature` was a surface's), and Frenet's frame had no word: the side
 the centre is on could not be said, `parallel` being sign-free. (Issue #363, S5.)
 
-**[0.121] Chains across planes.** A line touching an arc or a circle at a point of it, the line
+**[0.124] Chains across planes.** A line touching an arc or a circle at a point of it, the line
 not drawn in the round's plane, is the tangency in space: its direction in the round's plane and
 square to the radius there (`TangentCircleAt3`). So a chain's straight between a bend in one plane
 and a bend in another touches both, and a bent pipe — the most common sweep — is one chain a
 family runs, its frame carried across every joint. A station that states a rate, drawn on a link
 past the first, is no longer solved by the drawing, which cannot know the frame carried to it.
-Through 0.120 a chain was one plane's: the tangency at a joint across planes was E062. (Issue
+Through 0.123 a chain was one plane's: the tangency at a joint across planes was E062. (Issue
 #363, S4.)
 
-**[0.120] `On` integrates its frame, and a rate runs over a chain.** `std.On(g, up:, s:)` holds
+**[0.123] `On` integrates its frame, and a rate runs over a chain.** `std.On(g, up:, s:)` holds
 its plane square to the guide and turns it by `Minimal`'s rate, `up` read at the family's home
 alone: over a guide in one plane with `up` its normal the solid is the one it was, and along a
 twisted guide (a curve traced in space) the section stays square to it. A station that states a
 rate runs over a named chain, its frame carried across each joint, and a station read off its
-integration meets its relations, so a law in pieces is read as written. Through 0.119 `On` held
+integration meets its relations, so a law in pieces is read as written. Through 0.122 `On` held
 `v` along `up` at every station, which along a twisted guide leaned the section off square to it
 with nothing said, and a rate over a chain was refused. (Issue #363, S2 and S4.)
 
-**[0.119] A curve traced in space is a path.** A curve traced in space (§6.5) is given to a
+**[0.122] A curve traced in space is a path.** A curve traced in space (§6.5) is given to a
 `path` formal: `m coincident(t == s) g` pins its contact's place, the body's own formal, as a
 spline's `t` is pinned — to a face family's running number in a station — and `hint(at: m,
 along: g)` steps along it. So a station stands on a guide drawn in space, its frame stated by a
 rate (`std.Minimal`'s), and a family is swept along it. A surface traced over two formals is no
-path (**E103**). Through 0.118 a station could stand only on a guide in one plane or one written
+path (**E103**). Through 0.121 a station could stand only on a guide in one plane or one written
 into its own body (`std.Helix`, `std.OnHelix`): a traced curve given to a `path` was E103, `t ==`
 on its contact E040, and a step along it E103. `std.On` still held its `v` along `up`, so over
 a twisted guide its plane leaned off square to the tangent: there the plane was held square to
-the tangent and turned by `Minimal`'s rate (0.120 made that `On`). (Issue #363, S1.)
+the tangent and turned by `Minimal`'s rate (0.123 made that `On`). (Issue #363, S1.)
+**[0.121] Two formals marched by the method of lines.** A body traced over two formals may state a
+rate along either (§6.5): the first is marched, the second sampled at the Gauss–Lobatto nodes of
+32 pieces of its interval, a rate along it the derivative of the quintic through a piece's nodes,
+and `initially { … }` the Cauchy data where the first starts, for every value of the second — a
+first-order PDE, an ellipse's offset front (`rates/front.sv`). The body's points whose rate along
+the first formal a rate row reads are integrated; the rest are placed at every node by the
+relations that read them, exactly as many, and only such a relation or a rate row reads a rate
+along the second formal, of an integrated point. A rate along an `Angle` formal over two is per
+radian. The surface's regularity is checked at every node and step, and a fold — characteristics
+crossing, an undercut's kind — is refused where it happens. A contact on the surface reads its
+point, tangent plane and normal; its curvature is not yet read. A rate written to the right of
+its word, `nl perpendicular rate(p over u)`, parses as the grammar has said since 0.119 (it was
+read as a chain's link). Through 0.120 a body over two formals stating a rate was refused.
+(Issue #339, D4.)
+
+**[0.120] The B-rep read after the solve leaves the language.** `patch`, `seam`, `vertex`,
+`edge(…, along:)` and `face(…, on:)` (§6.16–§6.20) are retired: they added no unknown, no solve row
+read them and nothing exported from them, and the one check that needed them, the spiral bevel's,
+already made each of its parts in Rust. They are Rust API now — `TrimmedPatch::of_envelope` and
+`of_surface`, `EnvelopeSeam::new`, `BoundarySeam::new`, `SurfaceSeam::new`, `BoundaryVertex::new`,
+`JunctionVertex::new`, `SpatialEdge::new` and `SpatialFaceBoundary::new` — over the surfaces and
+envelopes a drawing names. `patch`, `seam` and `vertex` are no keywords, `edge` no constructor, and
+a face takes no `on:`: every face is planar. `surface` (§6.13) and the spatial `envelope` stay,
+filed with what the solve holds to, and `surface` says its two meanings, one per kind of solid
+it is read from: a revolution's side, a held spatial envelope's source, and a prism's side, a
+planar envelope's. The section numbers are kept, so §6.21 onward keep theirs. Through 0.119 each
+was declared in the document and read after the solve by a `::named` reader. (Issue #364, settling
+#76 item 6.)
+
+**[0.119] Rates along a running formal, in a traced body.** A traced body may state a condition
+on a rate along the formal it runs over (§6.5), as a face family's station may since 0.116 (§6.9):
+`rate(x over s)`, a point's velocity, is an operand, and stands on either side of a word that reads
+a direction — `parallel`, `perpendicular`, a directed `angle`, and alone before `distance(k, along:
+l)`, its component along `l` — never as a place or a magnitude; any other word is a syntax error,
+and two rates in one relation, or `angle` and `distance` in a face family, are refused. Such a body
+is integrated from its home: a drawn instance as it stands on the sheet (its rate rows no rows
+there, its coordinates columns of the curve), or, written in place, where `initially { … }` puts
+it. Its rate rows and its other relations differentiated fix the rates, a rank checked at every
+place reached; a body short of a rate row is refused naming the freedom it leaves, and a march is
+refused where its rates lose rank. Through 0.118 every relation of a traced body held at each
+place by itself, and a body one row short was a curve that did not exist. (Issue #339, D2.)
 
 **[0.118] A face carried whole, and a mirror.** `sec := prof mapped(from -> a, to -> b) in n`
 (§6.8) is the face `prof` carried into the plane `n` by a map: each corner carried as a point is,

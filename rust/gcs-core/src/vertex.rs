@@ -1,101 +1,9 @@
-//! Spatial corners at intersections of named seams. A declaration establishes
-//! shared identity; coincidence of separately declared vertices does not merge them.
+//! Spatial corners at intersections of seams, made of their parts.  Identity is the caller's:
+//! coincidence of two separately built corners does not merge them.
 use crate::{envelope::{check_tolerance,Error,Intersection,IntersectionOptions},
-    model::{EntKind,EntRef,Sketch},patch::EnvelopePatch,
-    seam::{BoundarySeamTolerance,EnvelopeSeam,SeamIntersectionOptions,SeamTolerance},
+    patch::EnvelopePatch,
+    seam::{BoundarySeamTolerance,EnvelopeSeam,SeamIntersectionOptions},
     solid::SurfaceProjector};
-
-#[derive(Clone,Copy,Debug,PartialEq,Eq)]
-pub enum VertexKind { Boundaries, Junction }
-
-enum Definition {
-    Boundaries {face: EntRef,boundaries: [usize;2]},
-    Junction {seam: usize,boundary: usize,face: usize},
-}
-
-fn definition(sk: &Sketch,ids: [u32;2]) -> Result<Definition,String> {
-    if ids[0] == ids[1] { return Err("a vertex needs two distinct seams".into()); }
-    let read = |i: u32| sk.seams.get(i as usize).ok_or("no such seam");
-    let [a,b] = [read(ids[0])?,read(ids[1])?];
-    use crate::seam::SeamKind::{Boundary,Generating,Surfaces};
-    let kinds = [crate::seam::kind(sk,ids[0] as usize)?,crate::seam::kind(sk,ids[1] as usize)?];
-    match kinds {
-        [Surfaces,_] | [_,Surfaces] =>
-            Err("vertices on surface/surface seams need a surface-chart corner definition".into()),
-        [Boundary,Boundary] => {
-            if a.first != b.first { return Err("boundary seams must share the same named generating face".into()); }
-            if a.second == b.second { return Err("a vertex needs different boundary surfaces".into()); }
-            Ok(Definition::Boundaries {face:a.first,boundaries:[a.second.i(),b.second.i()]})
-        }
-        [Generating,Generating] => Err("a vertex currently needs at least one finite boundary seam".into()),
-        [Boundary,Generating] | [Generating,Boundary] => {
-            let (join,boundary,id) = if kinds[0] == Boundary { (b,a,ids[1]) } else { (a,b,ids[0]) };
-            if boundary.first != join.first && boundary.first != join.second {
-                return Err("the boundary seam must use a face of the generating junction".into());
-            }
-            Ok(Definition::Junction {seam:id as usize,boundary:boundary.second.i(),
-                face:usize::from(boundary.first != join.first)})
-        }
-    }
-}
-
-pub(crate) fn validate(sk: &Sketch,ids: [u32;2]) -> Result<(),String> {
-    definition(sk,ids).map(|_| ())
-}
-
-/// Structural chart correspondence. At a generating junction, a boundary on
-/// either incident face also meets that same boundary on the other face. This
-/// follows exact face and boundary identities, never coordinate proximity.
-pub(crate) fn seam_chart(sk: &Sketch,index: usize,seam: usize) -> Result<Option<f64>,String> {
-    let v = sk.vertices.get(index).ok_or("no such vertex")?;
-    let target = sk.seams.get(seam).ok_or("no such seam")?;
-    crate::seam::validate(sk,[target.first,target.second])?;
-    match definition(sk,[v.first,v.second])? {
-        Definition::Boundaries {..} if [v.first as usize,v.second as usize].contains(&seam) => Ok(None),
-        Definition::Junction {seam:join,boundary,..} => {
-            if seam == join { return Ok(None); }
-            let join = &sk.seams[join];
-            if target.second == EntRef::new(EntKind::Surface,boundary) {
-                if target.first == join.first { return Ok(None); }
-                if target.first == join.second {
-                    return Ok(Some(crate::seam::junction(sk,[join.first,join.second])?[1]));
-                }
-            }
-            Err("the edge endpoint is not incident through its declared faces and boundary".into())
-        }
-        _ => Err("an edge endpoint must explicitly name its seam".into()),
-    }
-}
-
-/// Re-express a checked corner in an incident seam chart. A junction's
-/// second face generally has a different endpoint u; copying all three numbers
-/// would silently address another point on that face.
-pub(crate) fn on_seam(sk: &Sketch,index: usize,seam: usize,p: [f64;3],
-    junction_tolerance: SeamTolerance,point_tolerance: BoundarySeamTolerance)
-    -> Result<([f64;3],[f64;3]),String> {
-    let vertex = sk.vertices.get(index).ok_or("no such vertex")?;
-    let endpoint_u = seam_chart(sk,index,seam)?;
-    let def = definition(sk,[vertex.first,vertex.second])?;
-    let (parameters,position) = match def {
-        Definition::Boundaries {..} => (p,BoundaryVertex::named(sk,index,junction_tolerance.axis)?
-            .position(p,point_tolerance)),
-        Definition::Junction {..} => {
-            let vertex = JunctionVertex::named(sk,index,junction_tolerance)?;
-            let mut parameters = p;
-            if let Some(u) = endpoint_u { parameters[0] = u; }
-            (parameters,vertex.position(p,point_tolerance))
-        }
-    };
-    Ok((parameters,position.map_err(|e| format!("invalid edge endpoint: {e:?}"))?))
-}
-
-pub fn kind(sk: &Sketch,index: usize) -> Result<VertexKind,String> {
-    let v = sk.vertices.get(index).ok_or("no such vertex")?;
-    Ok(match definition(sk,[v.first,v.second])? {
-        Definition::Boundaries {..} => VertexKind::Boundaries,
-        Definition::Junction {..} => VertexKind::Junction,
-    })
-}
 
 /// One checked local root. Parameters remain in the canonical generating chart;
 /// residual meanings follow the selected corner's solve method. A vertex has no
@@ -129,16 +37,6 @@ pub struct BoundaryVertex {
 }
 
 impl BoundaryVertex {
-    pub fn named(sk: &Sketch,index: usize,axis_tolerance: f64) -> Result<Self,String> {
-        check_tolerance(axis_tolerance).map_err(|_| "invalid clipping-axis tolerance")?;
-        let v = sk.vertices.get(index).ok_or("no such vertex")?;
-        let Definition::Boundaries {face,boundaries} = definition(sk,[v.first,v.second])? else {
-            return Err("this vertex uses a generating junction".into());
-        };
-        let [a,b] = boundaries.map(|i| SurfaceProjector::named(sk,i));
-        Ok(Self {name:v.name.clone(),face:EnvelopePatch::read(sk,face,axis_tolerance)?,boundaries:[a?,b?]})
-    }
-
     /// A generating face meeting two finite surfaces, made of its parts (#212).
     pub fn new(name: String,face: &crate::patch::TrimmedPatch,boundaries: [SurfaceProjector;2]) -> Result<Self,String> {
         Ok(Self {name,face:face.envelope_patch()?.clone(),boundaries})
@@ -176,15 +74,6 @@ pub struct JunctionVertex {
 }
 
 impl JunctionVertex {
-    pub fn named(sk: &Sketch,index: usize,tolerance: SeamTolerance) -> Result<Self,String> {
-        let v = sk.vertices.get(index).ok_or("no such vertex")?;
-        let Definition::Junction {seam,boundary,face} = definition(sk,[v.first,v.second])? else {
-            return Err("this vertex uses two boundary seams".into());
-        };
-        Ok(Self {name:v.name.clone(),junction:EnvelopeSeam::named(sk,seam,tolerance)?,
-            boundary:SurfaceProjector::named(sk,boundary)?,boundary_face:face})
-    }
-
     /// A generating junction meeting a finite surface on its face `boundary_face` (0 or 1, in the
     /// junction's operand order), made of its parts (#212).
     pub fn new(name: String,junction: EnvelopeSeam,boundary: SurfaceProjector,boundary_face: usize) -> Result<Self,String> {

@@ -54,6 +54,7 @@ fn infix(word: &str, ops: [Ref; 2], args: Vec<OpArg>, at: Span) -> Relation {
         ops: ops.to_vec(),
         args,
         span: at,
+        rates: Vec::new(),
     }))
 }
 

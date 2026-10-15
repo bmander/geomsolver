@@ -368,7 +368,7 @@ fn make(
     let idx = match d.kind {
         // built by their own phase, after every other kind: a face is written over edges and a
         // solid over faces and solids, so neither can be minted by the walk that makes points
-        EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge | EntKind::Meshing | EntKind::Traced => return None,
+        EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Meshing | EntKind::Traced => return None,
         EntKind::Point if unseeded => {
             let (x, y) = scatter(sk.points.len());
             let p = sk.point(x, y, false, &show);
@@ -704,8 +704,9 @@ pub(super) fn splines_in_space(sk: &mut Sketch, res: &mut Resolver, map: &mut su
             .expect("a number always compiles");
         let row = crate::traced::Row { kind: crate::traced::RowKind::Spline,
             cols: (0..n_outer as u32 + 3).collect(), consts };
-        let Ok(body) = crate::traced::Body::new(1, n_outer, 3 * n, 3, 0, Vec::new(),
-                                                vec![zero.clone(), zero.clone(), zero], vec![row])
+        let seeds = vec![zero.clone(), zero.clone(), zero];
+        let Ok(body) = crate::traced::Body::new(1, n_outer, 3 * n, 3, 0, Vec::new(), seeds,
+                                                vec![row], Default::default())
         else { continue };
         let (lo, hi) = curve::domain(sk, i);
         let e = EntRef::spline(i);
@@ -1720,10 +1721,6 @@ fn set_class(sk: &mut Sketch, e: EntRef, c: Classes) {
         EntKind::Surface => sk.surfaces[e.i()].class = c,
         EntKind::Motion => sk.motions[e.i()].class = c,
         EntKind::Envelope => sk.envelopes[e.i()].class = c,
-        EntKind::Patch => sk.patches[e.i()].class = c,
-        EntKind::Seam => sk.seams[e.i()].class = c,
-        EntKind::Vertex => sk.vertices[e.i()].class = c,
-        EntKind::Edge => sk.edges[e.i()].class = c,
         EntKind::Meshing => sk.meshings[e.i()].class = c,
         EntKind::Traced => sk.traced[e.i()].class = c,
     }

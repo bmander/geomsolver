@@ -122,7 +122,7 @@ NAME := solid(SOLID) | solid(SET)       a body over a stock; the points of a reg
 NAME := solid()                         an empty body: what is in `union` with it (0.99)
 NAME := solid(SOLID, under: MOTION, at: E | from: E, to: E | through: BODY)   placed by, or swept through, a motion
 REF union REF | REF cut REF | REF common REF  material added to, removed from, shared with a body
-NAME := motion | envelope | meshing | surface | patch | seam | vertex | edge(...)    (1.15)
+NAME := motion | envelope | meshing | surface(...)                                  (1.15)
 WORD[(ARGS)] REF | REF WORD[(ARGS)] REF [hint(SLOT: E, ...)]   a constraint          (1.5)
 claim CONSTRAINT                        judged, never solved for                     (1.11)
 fix((E, E[, E])) REF | fix(MEMBER == E, ...) REF   hold an entity's own numbers      (1.4)
@@ -812,7 +812,7 @@ constraint (a point-to-line distance's sign chooses a winding); an orientation p
 
 **In space.** A body whose relations do not read in one plane — ordinates along lines in space, a
 point a motion carries — is a curve **in space** (`p coincident k`, `k tangent(at: p) l`), and a
-`path` (0.119: `p coincident(t == 0.3) k` at its formal, a station's guide); over two
+`path` (0.122: `p coincident(t == 0.3) k` at its formal, a station's guide); over two
 formals, `S := C(…).p over (phi in (a, b), s in (c, d))`, a **surface** (`p coincident S`, and at a
 point held there `tangent`, `perpendicular` for its normal, `curvature`). Write it in place, seed
 its points with numbers over the formals, and give it points, lines, motions and numbers:
@@ -826,6 +826,51 @@ component Helix(o: point, x: line, y: line, z: line, r: Length, lead: Length, u:
 }
 k := Helix(o, xl, yl, zl, r: 5mm, lead: 3mm).p over u in (0deg, 720deg)
 ```
+
+**Rates [0.119].** A body may say how a point *moves* as the formal runs: `rate(p over s)` is
+`p`'s velocity, and it stands where a direction is read — `rate(p over s) parallel tl`,
+`perpendicular`, a directed `angle`, and alone before `distance(k, along: l)` for its component
+along `l` (`rate(p over s) distance(1, along: tl)` is unit speed, so `s` is arc length). Never
+`coincident` and never `length(…) rate(…)`. Such a body is **integrated from its home**: drawn, from
+the instance as it stands on the sheet (its rate rows are no rows there, so the sheet holds what
+they leave free); written in place, from the call's value of the formal (or the interval's start),
+where `initially { … }` in the body says what holds there alone. The relations without a rate plus
+the rate rows must fix every rate — in the plane as many rows as the body places numbers; one short
+is refused naming the points it leaves free. A component handed the running formal as itself
+(`Drag(o, a: a, u: u)`) rates over the caller's; the formal must be a `Scalar` or a `Length`.
+
+```
+component Clothoid(A: Length, s: Length) {
+  p := point
+  q := point
+  k := point
+  tl := line(p, q)
+  nl := line(p, k)
+  length(10mm) tl
+  length(10mm) nl
+  tl angle(90deg) nl
+  rate(p over s) parallel tl
+  rate(p over s) distance(1, along: tl)                 // unit speed: s is arc length
+  rate(q over s) distance(10mm * s / A^2, along: nl)    // the tangent turns at κ = s/A²
+}
+in std.front {
+  o := point
+  x := point
+  fix((0mm, 0mm)) o
+  fix((10mm, 0mm)) x
+  datum := line(o, x)
+  cl := Clothoid(A: 50mm, s: 0mm)
+  cl.p coincident o                                    // the home: where it starts...
+  datum angle(0deg) cl.tl                              // ...and which way
+}
+spiral := cl.p over s in (-100mm, 100mm)
+```
+
+Contacts on such a curve are exact (its tangent is the rate itself), and an unknown of the drawing
+the body reads is solved through the flow: the hanging chain's pulls `c` and `v`, left unbound,
+are found by its far end landing on `b` (`b coincident(t == 150mm) chain`). A march stops where
+its rates cannot be had — `solventc` says how far each curve is integrated, or where it is refused.
+The [rates](../rust/examples/rates/) series shows each idiom in a document of its own.
 
 **The ellipse** is `std.Ellipse(c: point, a: Length, b: Length, tilt: Angle, u: Angle)`:
 `e := std.Ellipse(c, a: 40, b: 25, tilt: 0deg).p over u in (0deg, 360deg)` is the rim. There is no
@@ -926,13 +971,13 @@ plane as an argument does not imply `in`.
 
 **Points in space.** A point no `in` reaches has three coordinates, seeded `hint((x, y, z))` and
 held `fix((x, y, z)) p`; a line between two is a line in space. An arc over points in space is
-drawn in the plane through its centre and its ends, the short way round (0.124), so a chain of
+drawn in the plane through its centre and its ends, the short way round (0.127), so a chain of
 lines and arcs may bend in any plane with none written; a circle about a point in space takes the
 axis it stands square to, `circle(center: o, normal: ax)` (with none it is E060). In a plane an
 arc runs counter-clockwise from its start; `arc(center: c, sense: cw)` runs clockwise, so a chain
-in a plane may turn right at it (0.125). A chain may also enter an arc at its end and walk it to
+in a plane may turn right at it (0.128). A chain may also enter an arc at its end and walk it to
 its start — threaded with both ends written, `-> tangent (k := arc(center: c, start: f, end: e))
-->` entered at `e`, or the arc named there — and `k.start` is still `f` (0.126). A face over a point in space is E080; a spline over points in space is a curve in space (0.123):
+->` entered at `e`, or the arc named there — and `k.start` is still `f` (0.129). A face over a point in space is E080; a spline over points in space is a curve in space (0.126):
 its contacts a traced curve's (`m coincident(t == 0.5) k`, `k tangent(at: m) l`), a `path`, and
 `spline(through: rims)` over corners in space the cubic through them (it bounds no face; the
 workspace draws it in space, as an axis). In the workspace such points are dragged across the
@@ -1286,7 +1331,7 @@ k := Par(o).p over u in (-2mm, 2mm)
   fraction runs another law (`s: 3 * s^2 - 2 * s^3` eases it). A `when` cannot read `s` (it is
   made once); write a law in pieces with `min`, `max` or `abs`. `On`'s `v` leans toward `up` where
   the family is drawn (the middle of its interval) and from there its frame turns only as the
-  guide makes it (0.120): with `up` the normal of the guide's plane its `v` stays along `up`, and
+  guide makes it (0.123): with `up` the normal of the guide's plane its `v` stays along `up`, and
   along a guide in space its plane stays square to the guide. **A named open chain of lines and arcs is one path**:
   `solid(Tube(route, std.z, r: 4mm).f over s in (0, 5))` runs the station over `route`'s
   five links one after the next, link `k` while `s` is in `(k, k + 1)`; a law in `s` reads the
@@ -1319,11 +1364,11 @@ k := Par(o).p over u in (-2mm, 2mm)
   integrates it from there both ways (`rust/gcs-core/tests/rates.rs`). A rate is of an axis or a
   point, against an axis, a line or a plane, by `perpendicular` or `parallel`, and names the
   formal it runs over; give a word that states one the family's running number as that formal.
-  **A guide drawn in space** (0.119) is a curve traced in space handed to a `path` formal: `m
+  **A guide drawn in space** (0.122) is a curve traced in space handed to a `path` formal: `m
   coincident(t == s) g` stands the station at the body's own formal `s` and `hint(at: m, along:
   g)` steps along it; `std.On(g, up: std.z, s: s)` stands on it as on any path, its frame the
   rotation-minimising one (`rust/gcs-core/tests/space_paths.rs`). A surface traced over two
-  formals is no path. **Frenet's frame** (0.122): `std.Frenet(g, s: s)` turns with the curve, `u`
+  formals is no path. **Frenet's frame** (0.125): `std.Frenet(g, s: s)` turns with the curve, `u`
   toward its centre of curvature (`g curvature(at: m) c`, a point) and `v` the binormal; it is
   refused where the curve runs straight.
   A profile drawn once may also be **carried whole** by the map itself,
@@ -1622,6 +1667,12 @@ cam). A point's envelope is its path: `bore := envelope(apex, under: rotor_turn,
 housing's wall sweeps through — `swept := solid(housing, under: housing_turn, from: 0deg, to:
 1080deg)`, `swept cut rotor` (`common` with a sweep keeps the union's inside, a different set).
 
+**A solid's side is a `surface`, and the word has two meanings, one per kind of solid.** Over a
+revolution, `surface(crown, edge: rack.outer[, from: 180deg, to: 360deg])` is the side one profile
+edge sweeps round, `u` along the edge, `v` round (read the domain, never assume [0, 1]): what a
+spatial envelope over it reads as its source, held to by the solve (below). Over a prism drawn in
+a view it is the side its edge extrudes, a planar envelope's source:
+
 **A prism's side** is named as a revolution's is, `side := surface(rack_tooth, edge: rack_flank)`;
 under a motion keeping its view, `envelope(side, under: cutting, …)` is the planar envelope
 extruded, and `p coincident flank` from any view is one equation. Draw the prism's face `in` a view
@@ -1725,22 +1776,13 @@ steer by. A number stated outright is an equation, so a cutter's pressure shift 
 solves to where the margin binds. The source must be the tool's face itself, not grown by a
 backlash, and the blank is read as balls, cylinders, cones and half-spaces.
 
-**Spatial geometry read after the solve** adds no unknown and has no 2D glyph; each certifies only
-local evaluations ([analytic face boundaries](analytic-face-boundaries.md); the spiral bevel's
-checks make the same objects of their parts, from the faces its built members leave —
-`faces::face_source`, #212):
-
-- `surface(crown, edge: rack.outer[, from: 180deg, to: 360deg])` — the surface one profile edge
-  of an unmodified revolution sweeps, `u` along the edge, `v` round; read the domain, never assume
-  [0, 1];
-- `envelope(surface, under: generating, from:, to:)` — its zero-normal-velocity locus over the
-  roll interval; chooses no branch and closes no solid;
-- `patch(flank, inside: tip_body, outside: root_body, …)` — which material keeps it;
-- `seam(a, b)` — two envelopes meeting tangentially at a shared profile vertex, or a generated
-  face meeting a finite boundary surface;
-- `vertex(seam1, seam2)` — where seams meet on one face;
-- `edge(seam, from: v1, to: v2, along: axis)` — a seam's finite extent;
-- `face(e1, e2, …, on: support)` — an ordered loop of such edges on an exact support.
+**The B-rep read after the solve is not Solvent.** Trimmed patches, the seams where faces meet,
+their corners, edges and face boundaries add no unknown, no solve row reads them and nothing
+exports from them, so the language has no word for them: they are Rust API, made of the surfaces
+and envelopes a drawing names (`TrimmedPatch::of_envelope`, `EnvelopeSeam::new`,
+`SpatialFaceBoundary::new`, …), as the spiral bevel's checks make them from the faces its built
+members leave (`faces::face_source`, #212; [analytic face boundaries](analytic-face-boundaries.md)).
+`patch`, `seam` and `vertex` are no keywords, and a face takes no `on:` (spec 0.120, #364).
 
 ### 1.16 Checking your work
 
@@ -2344,6 +2386,7 @@ first; `gear_trace.sv` is the deepest; `engine.sv` and its `engine/` modules are
 | tangent contours | [rounded rectangle](../rust/examples/rect_fillets.sv) |
 | arc-length and equal-angle constraints | [belt wrap](../rust/examples/belt_wrap.sv), [reflection](../rust/examples/reflection.sv) |
 | traced mechanisms and curves | [Jansen](../rust/examples/jansen.sv), [Peaucellier](../rust/examples/peaucellier.sv), [gear trace](../rust/examples/gear_trace.sv) |
+| curves stated by their rates | the [rates](../rust/examples/rates/) series: a tractrix drawn and written in place, a clothoid transition, a chain shot to its far end, a pursuit refused at the capture, a geodesic on a cone |
 | repeated features and components | [flange](../rust/examples/solid_flange.sv) |
 | lofts and sweeps along a path | [elbow](../rust/examples/solid_elbow.sv), [reducer](../rust/examples/solid_loft.sv), [bend](../rust/examples/solid_bend.sv), [square to diamond](../rust/examples/solid_twist.sv), and the [lofts](../rust/examples/lofts/) series: a chain as a path, twist and scale laws, threads and springs, several sections on rails, two faces drawn apart, a section held to its rails |
 | a reusable solid with a preview | [cylinder component](../rust/examples/vtwin/components/cylinder.sv), [its drawing](../rust/examples/vtwin/cylinder.svd) |

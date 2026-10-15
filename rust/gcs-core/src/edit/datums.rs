@@ -11,6 +11,7 @@ fn written(s: Said) -> StmtKind {
         ops: vec![syntax::Ref::new(s.a), syntax::Ref::new(s.b)],
         args: s.args,
         span: Span::default(),
+        rates: Vec::new(),
     };
     StmtKind::Relation(syntax::Relation::of(syntax::RelationForm::Written(form)))
 }

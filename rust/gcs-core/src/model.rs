@@ -37,8 +37,8 @@ pub use entities::{
 };
 pub use curves::{CURVE_STEPS, CurveDef, CurveBody, CurveE, Extremal, Home, Trim, extremal_def, whole};
 pub use solids::{
-    FaceLoop, FaceSupport, FaceE, Length, SolidRequirement, SolidClaim, SolidBearing, Sweep,
-    DerivedE, Extent, Roll, Sense, SolidDef, SolidE, SeamE, EdgeE, VertexE, PatchE, EnvelopeE,
+    FaceLoop, FaceE, Length, SolidRequirement, SolidClaim, SolidBearing, Sweep,
+    DerivedE, Extent, Roll, Sense, SolidDef, SolidE, EnvelopeE,
     Ease, Flank, Held, MeshingE, SetKind, SetShape, SurfaceE, TracedE,
     MotionDef, MotionE, station_prefix, FamilyLeg, Leg,
 };
@@ -126,10 +126,6 @@ pub struct Sketch {
     pub surfaces: Vec<SurfaceE>,
     pub motions: Vec<MotionE>,
     pub envelopes: Vec<EnvelopeE>,
-    pub patches: Vec<PatchE>,
-    pub seams: Vec<SeamE>,
-    pub vertices: Vec<VertexE>,
-    pub edges: Vec<EdgeE>,
     /// The meshings of pairs of flanks (#283): tooth contact analyses.
     pub meshings: Vec<MeshingE>,
     /// The bodies traced in space (#326): curves and surfaces a contact holds to.
@@ -280,10 +276,6 @@ impl Sketch {
             EntKind::Surface => self.surfaces[e.i()].class.clone(),
             EntKind::Motion => self.motions[e.i()].class.clone(),
             EntKind::Envelope => self.envelopes[e.i()].class.clone(),
-            EntKind::Patch => self.patches[e.i()].class.clone(),
-            EntKind::Seam => self.seams[e.i()].class.clone(),
-            EntKind::Vertex => self.vertices[e.i()].class.clone(),
-            EntKind::Edge => self.edges[e.i()].class.clone(),
             EntKind::Meshing => self.meshings[e.i()].class.clone(),
             EntKind::Traced => self.traced[e.i()].class.clone(),
         };
@@ -307,10 +299,6 @@ impl Sketch {
             EntKind::Surface => self.surfaces.get_mut(e.i()).map(|x| &mut x.class),
             EntKind::Motion => self.motions.get_mut(e.i()).map(|x| &mut x.class),
             EntKind::Envelope => self.envelopes.get_mut(e.i()).map(|x| &mut x.class),
-            EntKind::Patch => self.patches.get_mut(e.i()).map(|x| &mut x.class),
-            EntKind::Seam => self.seams.get_mut(e.i()).map(|x| &mut x.class),
-            EntKind::Vertex => self.vertices.get_mut(e.i()).map(|x| &mut x.class),
-            EntKind::Edge => self.edges.get_mut(e.i()).map(|x| &mut x.class),
             EntKind::Meshing => self.meshings.get_mut(e.i()).map(|x| &mut x.class),
             EntKind::Traced => self.traced.get_mut(e.i()).map(|x| &mut x.class),
         };

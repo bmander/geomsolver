@@ -453,7 +453,7 @@ pub(crate) fn decl_args(d: &Decl) -> String {
                 child += 1;
                 for (i, k) in kids.iter().enumerate() {
                     let mut s = String::new();
-                    if (label && *field == Field::Child) || d.kind == EntKind::Patch
+                    if (label && *field == Field::Child)
                         || (d.kind == EntKind::Face && *name == "holes" && i == 0) {
                         s.push_str(name);
                         s.push_str(": ");
@@ -713,16 +713,6 @@ fn write_relation(out: &mut String, r: &Relation) {
         out.push_str("claim ");
     }
     match &r.form {
-        // a rate's operand is written as the rate it is (#339 D3)
-        super::RelationForm::Written(w) if let Some(over) = &r.rate => {
-            out.push_str("rate(");
-            if let Some(x) = w.ops.first() {
-                write_ref(out, x);
-            }
-            out.push_str(&format!(" over {}) ", over.text));
-            let rest = w.ops.get(1..).unwrap_or_default().to_vec();
-            write_written(out, &Written { ops: rest, fixity: Fixity::Prefix, ..w.clone() });
-        }
         super::RelationForm::Written(w) => write_written(out, w),
         super::RelationForm::Canonical { kind, args, bound } => {
             let hi = bound.as_ref().and_then(|(_, hi)| hi.as_ref());
@@ -814,28 +804,35 @@ pub fn bounded(
 
 fn write_written(out: &mut String, w: &Written) {
     let (parts, hints) = written_parts(&w.args, w.word.text == "mapped");
-    let head = |out: &mut String, r: &Ref| {
-        write_ref(out, r);
-        out.push(' ');
-    };
-    if w.fixity == Fixity::Infix {
-        if let Some(l) = w.ops.first() {
-            head(out, l);
+    // an operand written as its rate is printed so (#339 D2)
+    let operand = |out: &mut String, k: usize| {
+        let Some(r) = w.ops.get(k) else { return };
+        match w.rate_of(k) {
+            Some(over) => {
+                out.push_str("rate(");
+                write_ref(out, r);
+                out.push_str(&format!(" over {})", over.text));
+            }
+            None => write_ref(out, r),
         }
+    };
+    let infix = w.fixity == Fixity::Infix;
+    if infix && !w.ops.is_empty() {
+        operand(out, 0);
+        out.push(' ');
     }
     out.push_str(&w.word.text);
     if !parts.is_empty() {
         out.push_str(&format!("({})", parts.join(", ")));
     }
-    let infix = w.fixity == Fixity::Infix;
-    if let Some(c) = crate::constraints::connective(&w.word.text).filter(|_| infix) {
+    let last = if infix { 1 } else { 0 };
+    if last < w.ops.len() {
+        if let Some(c) = crate::constraints::connective(&w.word.text).filter(|_| infix) {
+            out.push(' ');
+            out.push_str(c);
+        }
         out.push(' ');
-        out.push_str(c);
-    }
-    let last = if w.fixity == Fixity::Infix { w.ops.get(1) } else { w.ops.first() };
-    if let Some(r) = last {
-        out.push(' ');
-        write_ref(out, r);
+        operand(out, last);
     }
     let hint = hint_of(&hints);
     if !hint.is_empty() {

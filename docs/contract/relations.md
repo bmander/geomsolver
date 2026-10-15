@@ -215,7 +215,7 @@ came from.
   callout writeback splices where the parser said and re-derives nothing.
   At a threaded joint the shared point is named by exactly one side (or both, in agreement — or
   an arc with both ends written names it as its end, entered there, or as its start, left there:
-  walked end to start, [0.126], `solids.md`), so a threaded `tangent` always desugars to the regular At-form (`TangentArcLine`/
+  walked end to start, [0.129], `solids.md`), so a threaded `tangent` always desugars to the regular At-form (`TangentArcLine`/
   `TangentLineCircleAt`, or `Parallel` between lines) — never the bare pair, rank-deficient at
   every solution; `at:` is only supplied by a threaded joint, and an *unthreaded* `tangent` is the
   plain pair, correct exactly when the two are separate.  At a corner with a name-link the

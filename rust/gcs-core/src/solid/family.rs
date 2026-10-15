@@ -280,7 +280,7 @@ struct Reading {
 impl Reading {
     /// The station the part stands at now, its loops sampled `counts` times an edge.
     fn station(&self, sk: &Sketch, s: f64, counts: &[Vec<usize>]) -> Result<Station, String> {
-        let plane = sk.faces[self.face].plane()?;
+        let plane = sk.faces[self.face].plane;
         let basis = plane.map_or(Basis::page(), |p| sk.basis(p as usize));
         let mut page = Vec::new();
         for (walked, n) in self.loops.iter().zip(counts) {
@@ -1162,7 +1162,7 @@ fn runs(sk: &Sketch, rd: &Reading) -> Result<Runs, String> {
 
 /// Each edge's numbers where the part stands: on its plane's page, lifted.
 fn numbers(sk: &Sketch, rd: &Reading) -> Result<Numbers, String> {
-    let plane = sk.faces[rd.face].plane()?;
+    let plane = sk.faces[rd.face].plane;
     let basis = plane.map_or(Basis::page(), |p| sk.basis(p as usize));
     let point = |q: (f64, f64)| basis.lift(q.0, q.1);
     let vector = |x: f64, y: f64| sub(basis.lift(x, y), basis.lift(0.0, 0.0));

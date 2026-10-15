@@ -257,7 +257,7 @@ placement carries inside the blank; CLI test readers zero the offset.
   `std.OnArc` (of an arc's turn), `std.OnSpline` (a spline's parameter), `std.On` (any `path`: a
   line, an arc, a spline, a traced curve — L4, a line touching a round at a point of it drawn in
   its plane, `planes::incidences`), `std.Helix` and `std.OnHelix` (L6, below) — each a component
-  holding a plane `n` square to its path, its `v` along `up` (`On`'s at its home: [0.120], its
+  holding a plane `n` square to its path, its `v` along `up` (`On`'s at its home: [0.123], its
   frame integrated, below).  `On` and `OnSpline` seed their tangent ahead
   along the guide (`hint(at: m, along: g)`, `entities::rate_along`) and their plane off it as
   `OnLine` does, so the drawn station starts on the branch whose `v` is `up`'s and whose normal
@@ -271,10 +271,10 @@ placement carries inside the blank; CLI test readers zero the offset.
   sketches drawn apart) returns at L8 (finding 8).  `tests/loft.rs` is the gate: `solid_loft`,
   `solid_elbow`, `solid_bend` and `solid_twist` at their closed forms off the B-rep to 1e-9, their
   walls by name and kind, `std.On` agreeing with each kind's word.
-- **A guide in space** (#363 S1, [0.119]): a curve traced in space is a `path`, so a station
+- **A guide in space** (#363 S1, [0.122]): a curve traced in space is a `path`, so a station
   stands on it by `m coincident(t == s) g`, `g tangent(at: m) tl` and a plane square to `tl`
   turned by `Minimal`'s rate from a home square to `up` — the frame integrated, as along
-  `std.OnHelix` — which is `std.On` itself since [0.120] (S2: a frame holding `v` along `up` at
+  `std.OnHelix` — which is `std.On` itself since [0.123] (S2: a frame holding `v` along `up` at
   every station leaned its plane off square to a twisted tangent, silently).  `On` over a planar
   guide is `OnSpline`'s algebraic frame, corner for corner (`tests/rates.rs`).
   `tests/space_paths.rs` is the gate: a 2 × 2 square along two turns of a traced helix (r 10, rise 10) at 4·√((40π)² + 10²)
@@ -282,7 +282,7 @@ placement carries inside the blank; CLI test readers zero the offset.
   turning −28.5576° a turn against Frenet's (r 10, pitch 5), to 1e-9; a traced surface refused;
   `std.On` on the traced helix `OnHelix`'s solid corner for corner; an off-centre square round
   `pipe.sv`'s U at 4·(60 + 23π), its frame carried across the joints.
-- **Frenet's frame** (#363 S5, [0.122]): `std.Frenet(g, s:)` holds its plane square to the
+- **Frenet's frame** (#363 S5, [0.125]): `std.Frenet(g, s:)` holds its plane square to the
   guide, `u` along `line(m, c)` to the centre of curvature (`g curvature(at: m) c`, `curves.md`)
   and `v` the binormal (seeded `tl` turned −90° about it, the one sign a seed picks, and kept by
   warm starts), an algebraic station — no rate.  Where the curve has no curvature the centre's
@@ -313,7 +313,7 @@ placement carries inside the blank; CLI test readers zero the offset.
   joins them, so a wall is one sheet, one name, over every link.  `tests/paths.rs` is the gate:
   `docs/lofts/l0/pipe.sv` (a U of three lines and two quarter turns) at the sum of its pieces'
   Pappus to 1e-9, a radius law in `s` over the chain, part of a chain, the refusals.
-  **A chain across planes** (#363 S4, [0.121]): a straight between bends in two planes touches
+  **A chain across planes** (#363 S4, [0.124]): a straight between bends in two planes touches
   each by `TangentCircleAt3` (`space.md`), so the bent pipe is one chain.  **A station that
   states a rate on a link past the first is carried** (`program::solids::carry_legs`): its rows
   `Constraint::carried` (no row of the drawing: `states_rows`) and its own parameters — entities',
@@ -323,15 +323,15 @@ placement carries inside the blank; CLI test readers zero the offset.
   of #363 (line, R20 in `std.top`, line, R20 in x = 20, line) a 4 mm tube at 16π(60 + 20π), a
   2 × 2 square at 4(60 + 20π), a bar off its centre line at its centroid's path, and the end
   cap's frame (tangent +z, `u` −x, `v` −y) to 1e-9.  **A chain drawn in space turns either way at
-  an arc** ([0.124], S6): an arc over points in space faces its minted plane as its points do, so
+  an arc** ([0.127], S6): an arc over points in space faces its minted plane as its points do, so
   L0's S-bend — a left turn then a right — is one chain (`in_space_a_chain_turns_either_way_at_an_arc`,
-  Pappus, its second bend's plane facing −z).  **In a plane, an arc may turn clockwise** ([0.125],
+  Pappus, its second bend's plane facing −z).  **In a plane, an arc may turn clockwise** ([0.128],
   `Decl::sense`, parsed for an arc as `sense: cw`, read as `Deferred::Clockwise`): drawn by
   `arcs_in_space` in its plane turned over (normal reversed), counter-clockwise there from its
   start, so a chain still enters every link at its start and its legs run forward — no leg is
   walked end to start — and the S-bend in `std.top` is one chain
   (`a_chain_in_a_plane_turns_right_at_an_arc_said_to_turn_clockwise`).  **A chain walks an arc it
-  enters at its end from there** ([0.126]): `program::entities::walked_back` reads each named
+  enters at its end from there** ([0.129]): `program::entities::walked_back` reads each named
   chain before the arcs are drawn — an arc whose end the link before leaves at, or, first, whose
   start the link after enters at — and `arcs_in_space` draws it from its end: start and end
   swapped and its turn reversed (in a plane `sense:` toggled, so it is drawn in its plane turned

@@ -147,7 +147,7 @@ impl RevolvedSurface {
             .chain(face.holes.iter().flat_map(|h| h.edges.iter().zip(&h.edge_names)))
             .find_map(|(e,n)| (*e == edge).then_some(n))
             .ok_or("the requested edge is not a boundary of this revolution's profile")?;
-        let basis = if let Some(p) = face.plane()? {
+        let basis = if let Some(p) = face.plane {
             sk.planes.get(p as usize).ok_or("no profile plane")?;
             sk.basis(p as usize)
         } else { Basis::page() };

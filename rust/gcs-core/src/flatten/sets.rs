@@ -545,6 +545,7 @@ impl<'a> Walk<'a> {
                 ops: vec![Ref::new(&local), set],
                 args: Vec::new(),
                 span: at,
+                rates: Vec::new(),
             };
             let rel = Relation::of(RelationForm::Written(on));
             // applied under a prefix of its own, so two sets one statement measures from bind
@@ -1117,7 +1118,9 @@ pub(super) fn relation(
     span: Span,
 ) -> Relation {
     let word = Name { text: word.to_string(), span: at };
-    Relation::of(RelationForm::Written(crate::syntax::Written { word, fixity, ops, args, span }))
+    Relation::of(RelationForm::Written(crate::syntax::Written {
+        word, fixity, ops, args, span, rates: Vec::new(),
+    }))
 }
 
 /// The point a tangency names, `tangent(at: m)` — `None` where its parentheses hold anything else.

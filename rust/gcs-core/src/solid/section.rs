@@ -12,7 +12,7 @@ pub(super) fn face_polys(sk: &Sketch, fi: usize, unit: f64) -> Result<Vec<FacePo
     let mut polys = vec![outer];
     let face = &sk.faces[fi];
     for (hi, hole) in face.holes.iter().enumerate() {
-        let p = loop_poly(sk, &hole.edges, &hole.edge_names, sk.faces[fi].plane()?, unit)
+        let p = loop_poly(sk, &hole.edges, &hole.edge_names, sk.faces[fi].plane, unit)
             .ok_or("self-intersecting or degenerate hole boundary")?;
         if boundaries_touch(sk, &face.edges, &hole.edges) || loops_touch(&polys[0], &p) || !inside_loop(&polys[0], p.pts[0]) {
             return Err("a hole must lie strictly inside the outer boundary without touching it".into());

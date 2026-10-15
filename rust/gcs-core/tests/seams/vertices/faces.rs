@@ -1,41 +1,110 @@
 use super::*;
-use gcs_core::{edge::EdgeTolerance,model::{EntRef,FaceSupport},spatial_face::SpatialFaceBoundary,
-    topology::Direction};
+use gcs_core::{edge::{EdgePoint,EdgeTolerance,Source,SpatialEdge},seam::BoundarySeam,
+    spatial_face::{SpatialFaceBoundary,Support,Use},topology::Direction};
 
-const SOURCE: &str = include_str!("../../fixtures/spatial_faces.sv");
-const FACES: &str = "
-construction lower_face := face(left_low,middle_edge,right_low,bottom_edge,on: first_envelope)
-upper_face := face(left_high,top_edge,right_high,middle_edge,on: second_envelope)
+/// The spheres the two envelopes' faces are bounded by: below and above the shared
+/// characteristic, and either end of it.
+const BANDS: &str = "
+in std.front {
+  lower := Sphere(o,size: sqrt(9+0.98*0.98)*1mm)
+  upper := Sphere(o,size: sqrt(9+1.02*1.02)*1mm)
+  far_cut := Sphere(shifted,size: sqrt(11-2*cos(0.2rad))*1mm)
+}
 ";
 
-fn source() -> String { SOURCE.to_string() }
-fn without_faces() -> &'static str { SOURCE.split("// Spatial face declarations").next().unwrap() }
+fn source() -> String { format!("{MODEL}{CORNERS}{BANDS}") }
 fn controls() -> EdgeTolerance { EdgeTolerance {junction:tolerance(),point:checked()} }
-fn parameters(sk: &gcs_core::model::Sketch) -> Vec<[f64;3]> {
-    sk.vertices.iter().map(|v| {
-        let (h,t,second): (f64,f64,bool) = match v.name.as_str() {
-            "bl" => (0.98,0.1,false), "br" => (0.98,0.2,false),
-            "ml" => (1.,0.1,false), "mr" => (1.,0.2,false),
-            "tl" => (1.02,0.1,true), "tr" => (1.02,0.2,true),
-            _ => return [f64::NAN;3], // Unused witnesses are deliberately not read.
-        };
-        [if second { h-1. } else { h },0.,((h*h-1.+2.*t.cos())/(2.*h)).acos()]
-    }).collect()
-}
-fn face(e: &program::Elaborated,name: &str) -> SpatialFaceBoundary {
-    SpatialFaceBoundary::named(&e.sketch,e.map.ent_named(name).unwrap().i(),
-        &parameters(&e.sketch),controls()).unwrap()
+
+/// A corner of the faces: where a band sphere meets an end sphere, on the first face (`b`), the
+/// shared characteristic (`m`) or the second face (`t`), at the near (`l`) or far (`r`) end.
+const CORNER_NAMES: [&str;6] = ["bl","br","ml","mr","tl","tr"];
+
+/// A corner's witness in its own chart: the first face's, or the second's for `t`.
+fn witness(name: &str) -> [f64;3] {
+    let h: f64 = match &name[..1] { "b" => 0.98,"m" => 1.,_ => 1.02 };
+    let t: f64 = if name.ends_with('l') { 0.1 } else { 0.2 };
+    [if name.starts_with('t') { h-1. } else { h },0.,((h*h-1.+2.*t.cos())/(2.*h)).acos()]
 }
 
+/// Every part the faces are made of, built off one solved drawing.
+struct Parts<'a> {
+    e: &'a program::Elaborated,
+    faces: [TrimmedPatch;2],
+}
+
+impl Parts<'_> {
+    fn new(e: &program::Elaborated) -> Parts<'_> {
+        Parts {e,faces:[face(e,"first_envelope",&[]),face(e,"second_envelope",&[])]}
+    }
+
+    fn end(name: &str) -> &'static str { if name.ends_with('l') { "join_cut.wall" } else { "far_cut.wall" } }
+
+    /// Where the corner `name` is, at its witness.
+    fn position(&self,name: &str) -> Result<[f64;3],String> {
+        let p = witness(name);
+        let position = match &name[..1] {
+            "m" => JunctionVertex::new(name.into(),shared_with(self.e,tolerance())?,projector(self.e,Self::end(name)),0)?
+                .position(p,checked()),
+            band => {
+                let (face,wall) = if band == "b" { (&self.faces[0],"lower.wall") } else { (&self.faces[1],"upper.wall") };
+                BoundaryVertex::new(name.into(),face,[projector(self.e,wall),projector(self.e,Self::end(name))])?
+                    .position(p,checked())
+            }
+        };
+        position.map_err(|e| format!("invalid corner `{name}`: {e:?}"))
+    }
+
+    /// The corner `name` in the chart of a seam on `face` (0 or 1): a junction corner read on
+    /// the second face takes that face's `u` at the shared vertex, 0.
+    fn point(&self,name: &str,face: usize) -> Result<EdgePoint,String> {
+        let mut parameters = witness(name);
+        if name.starts_with('m') && face == 1 { parameters[0] = 0.; }
+        Ok(EdgePoint {position:self.position(name)?,parameters})
+    }
+
+    /// The edge `name`, its seam and its two corners.
+    fn edge(&self,name: &str) -> Result<SpatialEdge,String> {
+        let (face,wall,ends) = match name {
+            "bottom_edge" | "other_bottom" => (Some(0),"lower.wall",["bl","br"]),
+            "top_edge" => (Some(1),"upper.wall",["tl","tr"]),
+            "left_low" => (Some(0),"join_cut.wall",["bl","ml"]),
+            "right_low" => (Some(0),"far_cut.wall",["br","mr"]),
+            "left_high" => (Some(1),"join_cut.wall",["ml","tl"]),
+            "right_high" => (Some(1),"far_cut.wall",["mr","tr"]),
+            _ => (None,"",["ml","mr"]),
+        };
+        let source = match face {
+            Some(f) => Source::Boundary(BoundarySeam::new(name.into(),&self.faces[f],projector(self.e,wall))?),
+            None => Source::Junction(shared_with(self.e,tolerance())?),
+        };
+        let f = face.unwrap_or(0);
+        let ids = ends.map(|c| CORNER_NAMES.iter().position(|&k| k == c).unwrap());
+        let l = &self.e.sketch.lines[index(self.e,"ax")];
+        let [a,b] = [l.p1,l.p2].map(|p| self.e.sketch.world_point(p as usize));
+        SpatialEdge::new(name.into(),source,ids,[self.point(ends[0],f)?,self.point(ends[1],f)?],
+            std::array::from_fn(|k| b[k]-a[k]),controls())
+    }
+
+    /// The face on `support` bounded by `edges` walked in `directions`: an edge's identity is its
+    /// place in `edges`, and the shared characteristic read on the second face takes its `u`.
+    fn boundary(&self,name: &str,support: usize,edges: &[(&str,Direction)]) -> Result<SpatialFaceBoundary,String> {
+        let uses = edges.iter().enumerate().map(|(id,&(edge,direction))| Ok(Use {edge:self.edge(edge)?,id,direction,
+            endpoint_u:(edge == "middle_edge" && support == 1).then_some(0.)}))
+            .collect::<Result<Vec<_>,String>>()?;
+        SpatialFaceBoundary::new(name.into(),Support::Envelope(self.faces[support].clone()),uses,controls())
+    }
+}
+
+use Direction::{Forward as F,Reverse as R};
+const LOWER: [(&str,Direction);4] = [("left_low",F),("middle_edge",F),("right_low",R),("bottom_edge",R)];
+const UPPER: [(&str,Direction);4] = [("left_high",F),("top_edge",F),("right_high",R),("middle_edge",R)];
+
 #[test]
-fn spatial_faces_reuse_shared_edges_and_convert_their_support_charts() {
+fn spatial_faces_share_an_edge_and_convert_their_support_charts() {
     let e = solved(&source());
-    let lower = face(&e,"lower_face"); let upper = face(&e,"upper_face");
-    let shared = e.map.ent_named("middle_edge").unwrap().i();
-    assert_eq!(lower.edge_uses()[1].edge,shared);
-    assert_eq!(upper.edge_uses()[3].edge,shared);
-    assert_eq!(lower.edge_uses()[1].direction,Direction::Forward);
-    assert_eq!(upper.edge_uses()[3].direction,Direction::Reverse);
+    let parts = Parts::new(&e);
+    let lower = parts.boundary("lower_face",0,&LOWER).unwrap();
+    let upper = parts.boundary("upper_face",1,&UPPER).unwrap();
     for f in [0.,0.25,0.5,0.75,1.] {
         let a = lower.sample_boundary(1,f,100).unwrap();
         let b = upper.sample_boundary(3,1.-f,100).unwrap();
@@ -43,15 +112,14 @@ fn spatial_faces_reuse_shared_edges_and_convert_their_support_charts() {
         assert_eq!(a.parameters[0],1.);
         assert_eq!(b.parameters[0],0.);
     }
-    for face in [&lower,&upper] {
-        for (edge,u) in face.edge_uses().iter().enumerate() {
-            let name = &e.sketch.edges[u.edge].name;
+    for (face,edges) in [(&lower,LOWER),(&upper,UPPER)] {
+        for (edge,&(name,_)) in edges.iter().enumerate() {
             let a = face.sample_boundary(edge,0.,100).unwrap();
             let b = face.sample_boundary(edge,1.,100).unwrap();
             for f in [0.,0.25,0.5,0.75,1.] {
                 let p = face.sample_boundary(edge,f,100).unwrap();
                 let z = (1.-f)*a.position[2]+f*b.position[2];
-                let (radius2,center) = match name.as_str() {
+                let (radius2,center) = match name {
                     "bottom_edge" => (0.98f64.powi(2),0.),
                     "middle_edge" => (1.,0.),
                     "top_edge" => (1.02f64.powi(2),0.),
@@ -64,9 +132,8 @@ fn spatial_faces_reuse_shared_edges_and_convert_their_support_charts() {
             }
         }
     }
-    let reversed = solved(&source().replace("left_low,middle_edge,right_low,bottom_edge",
-        "bottom_edge,right_low,middle_edge,left_low"));
-    let reversed = face(&reversed,"lower_face");
+    let reversed = parts.boundary("lower_face",0,&[("bottom_edge",F),("right_low",F),("middle_edge",R),("left_low",R)])
+        .unwrap();
     for i in 0..4 {
         near(lower.sample_boundary(i,0.25,100).unwrap().position,
             reversed.sample_boundary(3-i,0.75,100).unwrap().position);
@@ -74,74 +141,33 @@ fn spatial_faces_reuse_shared_edges_and_convert_their_support_charts() {
 }
 
 #[test]
-fn spatial_face_dependencies_roundtrip_copy_delete_and_retain_owned_snapshots() {
-    // Forward face declarations must not consume an index in the planar-profile phase.
-    let mut e = solved(&format!("{FACES}{}",without_faces()));
-    let target = e.map.ent_named("upper_face").unwrap();
-    assert_eq!(e.sketch.faces[target.i()].on(),e.map.ent_named("second_envelope"));
-    assert!(e.sketch.faces[target.i()].plane().is_err());
-    assert!(e.sketch.entity_params(target).is_empty());
-    let original = face(&e,"upper_face");
-    let clip = io::copy(&e.sketch,&[target]);
-    let copied = clip.faces.iter().position(|f| f.on().is_some()).unwrap();
-    assert_eq!(clip.edges.len(),4);
-    assert!(SpatialFaceBoundary::named(&clip,copied,&parameters(&clip),controls()).is_ok());
-    let mut pasted = e.sketch.clone();
-    io::paste(&mut pasted,&clip,0.,0.);
-    near(SpatialFaceBoundary::named(&pasted,pasted.faces.len()-1,&parameters(&pasted),controls())
-        .unwrap().sample_boundary(1,0.5,100).unwrap().position,
-        original.sample_boundary(1,0.5,100).unwrap().position);
-    let removed = io::without(&e.sketch,&[e.map.ent_named("top_edge").unwrap()],&[]);
-    assert_eq!(removed.faces.iter().filter(|f| f.on().is_some()).count(),1);
-    let removed = io::without(&e.sketch,&[e.map.ent_named("first_envelope").unwrap()],&[]);
-    assert!(removed.faces.iter().all(|f| f.on().is_none()));
-    let (mut program,errors) = syntax::parse(FACES);
-    assert!(errors.is_empty());
-    let printed = syntax::render_flat(&mut program).unwrap();
-    let again = solved(&format!("{}{printed}",without_faces()));
-    assert_eq!(again.sketch.faces.iter().filter(|f| f.on().is_some()).count(),2);
-    let lower = again.map.ent_named("lower_face").unwrap();
-    assert!(again.sketch.roles_of(lower).construction);
-    // Snapshot domains survive subsequent source changes.
-    let surface = e.map.ent_named("second_surface").unwrap().i();
+fn a_spatial_face_is_a_snapshot_of_its_parts() {
+    let mut e = solved(&source());
+    let original = Parts::new(&e).boundary("upper_face",1,&UPPER).unwrap();
+    let surface = index(&e,"second_surface");
     e.sketch.surfaces[surface].span = Some([0.2,0.4]);
-    assert!(SpatialFaceBoundary::named(&e.sketch,target.i(),&parameters(&e.sketch),controls()).is_err());
+    assert!(Parts::new(&e).boundary("upper_face",1,&UPPER).is_err());
     assert!(original.sample_boundary(1,0.5,100).is_ok());
+    near(original.clone().sample_boundary(1,0.5,100).unwrap().position,
+        original.sample_boundary(1,0.5,100).unwrap().position);
 }
 
 #[test]
-fn spatial_faces_reject_wrong_support_identity_open_loops_and_planar_sweep_use() {
-    for declaration in [
-        "bad := face(left_low,middle_edge,right_low,bottom_edge,on: second_envelope)",
-        "bad := face(left_low,middle_edge,right_high,bottom_edge,on: first_envelope)",
-        "bad := face(left_low,middle_edge,right_low,on: first_envelope)",
-        "bad := face(left_low,middle_edge,right_low,left_low,on: first_envelope)",
-        "bad := face(left_low,middle_edge,right_low,bottom_edge,on: ax)",
-        "bad := face(left_low,middle_edge,right_low,bottom_edge,on: first_envelope,on: first_envelope)",
-        "bad := face(left_low,middle_edge,right_low,bottom_edge,on: first_envelope,-> close)",
-        "bad := face(left_low,middle_edge,right_low,bottom_edge,on: first_envelope,holes: globe)",
-        "bad := solid(lower_face,depth: 1mm)",
-        "bad := solid(lower_face,about: ax)",
-        "bad := solid(face(left_low,middle_edge,right_low,bottom_edge,on: first_envelope),depth: 1mm)",
-    ] {
-        let (p,errors) = syntax::parse(&format!("{}{declaration}\n",source()));
-        assert!(!errors.is_empty() || !program::elaborate(&p).ok(),"accepted {declaration}");
-    }
+fn spatial_faces_reject_the_wrong_support_and_open_loops() {
     let e = solved(&source());
-    let mut sk = e.sketch.clone();
-    let index = e.map.ent_named("lower_face").unwrap().i();
-    let body = e.map.ent_named("body").unwrap().i();
-    if let gcs_core::model::SolidDef::Revolve {face,..} = &mut sk.solids[body].def { *face = index as u32; }
-    assert!(gcs_core::solid::validate(&sk,body).is_err());
-    assert!(gcs_core::solid::face_poly(&sk,index,1.).is_none());
-    // A separately declared coincident support still has different identity.
-    let src = format!("{}\nlookalike := envelope(first_surface,under: roll,from: -20deg,to: 20deg)\n\
-        bad := face(left_low,middle_edge,right_low,bottom_edge,on: lookalike)\n",source());
-    assert!(build(&src).errors().any(|d| d.message.contains("exact named support")));
-    assert!(SpatialFaceBoundary::named(&e.sketch,index,&[],controls()).is_err());
-    let mut invalid = controls(); invalid.point.incidence = f64::NAN;
-    assert!(SpatialFaceBoundary::named(&e.sketch,index,&parameters(&e.sketch),invalid).is_err());
-    let face = face(&e,"lower_face");
+    let parts = Parts::new(&e);
+    // the lower loop does not lie on the second envelope
+    let error = parts.boundary("bad",1,&LOWER).unwrap_err();
+    assert!(error.contains("invalid face boundary endpoint"),"{error}");
+    for loop_ in [
+        &[("left_low",F),("middle_edge",F),("right_high",R),("bottom_edge",R)][..],
+        &[("left_low",F),("middle_edge",F),("right_low",F),("bottom_edge",R)],
+        &[("left_low",F),("middle_edge",F),("right_low",R)],
+        &[("left_low",F)],
+    ] {
+        assert!(parts.boundary("bad",0,loop_).is_err(),"accepted {loop_:?}");
+    }
+    let face = parts.boundary("lower_face",0,&LOWER).unwrap();
     assert_eq!(face.sample_boundary(99,0.5,100).unwrap_err(),Error::InvalidOptions);
     assert_eq!(face.sample_boundary(2,-f64::from_bits(1),100).unwrap_err(),Error::OutsideDomain);
     assert_eq!(face.sample_boundary(2,f64::NAN,100).unwrap_err(),Error::NonFinite);
@@ -149,29 +175,16 @@ fn spatial_faces_reject_wrong_support_identity_open_loops_and_planar_sweep_use()
 }
 
 #[test]
-fn spatial_face_support_paths_formals_and_privacy_use_ordinary_component_rules() {
-    let src = format!("component F(a: edge,b: edge,c: edge,d: edge,s: envelope) {{\n\
-        private hidden := face(a,b,c,d,on: s)\npublic := face(a,b,c,d,on: hidden.on)\n}}\n\
-        instance := F(left_low,middle_edge,right_low,bottom_edge,first_envelope)\n{}",source());
-    let e = solved(&src);
-    let face = e.map.ent_named("instance.public").unwrap();
-    assert_eq!(e.sketch.faces[face.i()].support,FaceSupport::Surface(e.map.ent_named("first_envelope").unwrap()));
-    assert!(e.map.entity_path(&e.sketch,"instance.hidden").is_none());
-    assert!(build(&format!("{src}\nleak := face(left_low,middle_edge,right_low,bottom_edge,on: instance.hidden.on)\n"))
-        .errors().any(|d| d.message.contains("private member")));
-    let clip = io::copy(&e.sketch,&[EntRef::face(face.i())]);
-    assert_eq!(clip.faces.iter().filter(|f| f.on().is_some()).count(),1);
-}
-
-#[test]
 fn surface_supported_boundaries_check_incidence_without_asserting_a_disk_interior() {
     // Two distinct edges trace the same arc in opposite directions. Their loop
-    // has valid declared incidence but no disk interior: this reader must not be
+    // has valid incidence but no disk interior: this reader must not be
     // confused with the still-separate geometric face/solid validity check.
-    let e = solved(&format!("{}\nother_bottom := edge(low_cut,from: bl,to: br,along: ax)\n\
-        loop_only := face(bottom_edge,other_bottom,on: lower.wall)\n",source()));
-    let face = face(&e,"loop_only");
-    let support = gcs_core::solid::RevolvedSurface::named(&e.sketch,face.support().unwrap().i()).unwrap();
+    let e = solved(&source());
+    let parts = Parts::new(&e);
+    let support = surface(&e,"lower.wall");
+    let uses = [("bottom_edge",F),("other_bottom",R)].into_iter().enumerate()
+        .map(|(id,(edge,direction))| Use {edge:parts.edge(edge).unwrap(),id,direction,endpoint_u:None}).collect();
+    let face = SpatialFaceBoundary::new("loop_only".into(),Support::Surface(support.clone()),uses,controls()).unwrap();
     for fraction in [0.,0.25,0.5,0.75,1.] {
         let a = face.sample_boundary(0,fraction,100).unwrap();
         let b = face.sample_boundary(1,1.-fraction,100).unwrap();

@@ -77,6 +77,14 @@ impl RowKind {
         }
     }
 
+    /// Its kernel's id in `KERNELS`, where it is a static kernel's.
+    pub fn id(self) -> Option<usize> {
+        match self {
+            RowKind::Kernel(k) => Some(k),
+            RowKind::Carried | RowKind::Spline => None,
+        }
+    }
+
     /// How it is written in the encoding: a kernel's id, `-1` a carried point, `-2` a point on a
     /// spline.
     fn code(self) -> f64 {
@@ -185,14 +193,37 @@ pub struct Body {
     pub flat: Vec<f64>,
 }
 
-const HEADER: usize = 7;
+const HEADER: usize = 16;
+
+/// What a body that states a rate adds (#339 D2, D4): the rows that read a rate, those that hold
+/// at its home alone (`initially { … }`), the interval its curve runs over, which its march
+/// reaches, and over two formals the sampled formal's interval, what a rate along each is per
+/// (`lines::Body::per`) and the pieces it is sampled on.  Empty for every other body.
+#[derive(Clone, Debug, Default)]
+pub struct Rates {
+    pub rows: Vec<Row>,
+    pub init: Vec<Row>,
+    pub domain: [f64; 2],
+    pub second: [f64; 2],
+    pub per: [f64; 2],
+    pub pieces: usize,
+}
 
 impl Body {
-    /// Validate and encode.  An `Err` is a diagnostic for the body, not a panic.
+    /// Validate and encode.  An `Err` is a diagnostic for the body, not a panic.  `rates` is what
+    /// a body that states a rate adds (#339 D2).
     #[allow(clippy::too_many_arguments)]
     pub fn new(n_formals: usize, n_outer: usize, n_theta: usize, n_q: usize, traced: usize,
-               w: Vec<crate::tape::Tape>, seeds: Vec<crate::tape::Tape>, rows: Vec<Row>)
-        -> Result<Body, String> {
+               w: Vec<crate::tape::Tape>, seeds: Vec<crate::tape::Tape>, rows: Vec<Row>,
+               rates: Rates) -> Result<Body, String> {
+        let stated = !rates.rows.is_empty();
+        if !stated && !rates.init.is_empty() {
+            return Err("`initially { … }` says what holds at a home, and only a body that \
+                states a rate has one: its rates are integrated from it".into());
+        }
+        if stated && rows.iter().chain(&rates.rows).chain(&rates.init).any(|r| r.kind.id().is_none()) {
+            return Err("a body that states a rate reads no point a motion carries".into());
+        }
         if !(1..=MAX_FORMALS).contains(&n_formals) || n_formals + n_theta > n_outer {
             return Err("a traced body runs over one formal or two".into());
         }
@@ -217,17 +248,21 @@ impl Body {
             }
             n_res += kn.n_res;
         }
-        if n_res != n_q {
+        if !stated && n_res != n_q {
             return Err(format!("a traced body must determine its points: {n_q} unknowns against \
                                 {n_res} equations"));
         }
+        let per = if stated { rates.per } else { [1.0; 2] };
         let mut f = vec![n_formals as f64, n_outer as f64, n_theta as f64, n_q as f64,
-                         w.len() as f64, rows.len() as f64, traced as f64];
+                         w.len() as f64, rows.len() as f64, traced as f64,
+                         rates.rows.len() as f64, rates.init.len() as f64,
+                         rates.domain[0], rates.domain[1], rates.second[0], rates.second[1],
+                         per[0], per[1], rates.pieces as f64];
         for t in &w {
             f.push(t.flat.len() as f64);
             f.extend_from_slice(&t.flat);
         }
-        for r in &rows {
+        for r in rows.iter().chain(&rates.rows).chain(&rates.init) {
             f.push(r.kind.code());
             f.push(r.cols.len() as f64);
             f.push(r.consts.len() as f64);
@@ -239,8 +274,20 @@ impl Body {
             f.extend_from_slice(&t.flat);
         }
         // every row's shape and column is checked once, as any encoding is read
-        view(&f).ok_or("traced body shape mismatch")?;
+        let v = view(&f).ok_or("traced body shape mismatch")?;
+        match (stated, n_formals) {
+            (true, 1) => v.rate_body().check()?,
+            (true, _) => {
+                v.lines_body().plan()?;
+            }
+            _ => {}
+        }
         Ok(Body { flat: f })
+    }
+
+    /// Whether the body states a rate (#339 D2).
+    pub fn states_rate(&self) -> bool {
+        view(&self.flat).is_some_and(|v| !v.rates.is_empty())
     }
 
     /// How many formals it runs over.
@@ -254,6 +301,9 @@ impl Body {
     }
 }
 
+/// A row as the encoding is read back: its kernel, what it states, its columns and constants.
+type Decoded<'a> = (Kernel, RowKind, Vec<usize>, &'a [f64]);
+
 /// The encoding, decoded to borrowed slices, every length and column checked on the way in.
 struct View<'a> {
     nf: usize,
@@ -262,8 +312,62 @@ struct View<'a> {
     n_q: usize,
     traced: usize,
     w: Vec<&'a [f64]>,
-    rows: Vec<(Kernel, RowKind, Vec<usize>, &'a [f64])>,
+    rows: Vec<Decoded<'a>>,
     seeds: Vec<&'a [f64]>,
+    /// A body that states a rate (#339 D2, D4): its rate rows, its home's, its intervals, what a
+    /// rate along each formal is per and the pieces the second is sampled on.
+    rates: Vec<Decoded<'a>>,
+    init: Vec<Decoded<'a>>,
+    domain: [f64; 2],
+    second: [f64; 2],
+    per: [f64; 2],
+    pieces: usize,
+}
+
+/// Rows as an integrator reads them: a rate body reads no carried point, so every row a kernel.
+fn rate_rows<'a>(rs: &[Decoded<'a>]) -> Vec<crate::rates::Row<'a>> {
+    rs.iter().map(|(_, kind, cols, consts)| crate::rates::Row {
+        kid: kind.id().unwrap_or(usize::MAX),
+        cols: cols.clone(),
+        consts,
+    }).collect()
+}
+
+impl<'a> View<'a> {
+    /// The body over two formals as the method of lines reads it (`lines.rs`, #339 D4).
+    fn lines_body(&self) -> crate::lines::Body<'a> {
+        crate::lines::Body {
+            n_outer: self.n_outer,
+            n_theta: self.n_theta,
+            n_q: self.n_q,
+            traced: self.traced,
+            w: self.w.clone(),
+            seeds: self.seeds.clone(),
+            alg: rate_rows(&self.rows),
+            rate: rate_rows(&self.rates),
+            init: rate_rows(&self.init),
+            domain: [self.domain, self.second],
+            per: self.per,
+            pieces: self.pieces,
+        }
+    }
+
+    /// The body as the integrator reads it (`rates.rs`): over one formal, in space.
+    fn rate_body(&self) -> crate::rates::Body<'a> {
+        crate::rates::Body {
+            n_outer: self.n_outer,
+            n_theta: self.n_theta,
+            n_q: self.n_q,
+            pose: false,
+            traced: self.traced,
+            dim: 3,
+            w: self.w.clone(),
+            seeds: self.seeds.clone(),
+            alg: rate_rows(&self.rows),
+            rate: rate_rows(&self.rates),
+            init: rate_rows(&self.init),
+        }
+    }
 }
 
 fn view(flat: &[f64]) -> Option<View<'_>> {
@@ -271,11 +375,19 @@ fn view(flat: &[f64]) -> Option<View<'_>> {
         .filter(|v| v.is_finite() && *v >= 0.0 && v.fract() == 0.0).map(|v| v as usize);
     let (nf, n_outer, n_theta, n_q, n_w, n_rows, traced) =
         (g(0)?, g(1)?, g(2)?, g(3)?, g(4)?, g(5)?, g(6)?);
+    let (n_rates, n_init) = (g(7)?, g(8)?);
+    let domain = [*flat.get(9)?, *flat.get(10)?];
+    let second = [*flat.get(11)?, *flat.get(12)?];
+    let per = [*flat.get(13)?, *flat.get(14)?];
+    let pieces = g(15)?;
     if !(1..=MAX_FORMALS).contains(&nf) || n_q > MAX_Q || n_w > MAX_W || n_rows > MAX_ROWS
+        || n_rates > MAX_ROWS || n_init > MAX_ROWS
         || traced + 3 > n_q || nf + n_theta > n_outer || n_outer > 4096 {
         return None;
     }
-    let width = n_outer + n_q + n_w;
+    // a body that states a rate has its rates as columns past `w` (#339 D2), over two formals
+    // the rates along the second past those (D4)
+    let width = n_outer + n_q + n_w + if n_rates > 0 { n_q * nf } else { 0 };
     let mut at = HEADER;
     let take = |n: usize, at: &mut usize| -> Option<&[f64]> {
         let s = flat.get(*at..*at + n)?;
@@ -288,8 +400,8 @@ fn view(flat: &[f64]) -> Option<View<'_>> {
         at += 1;
         w.push(take(n, &mut at)?);
     }
-    let mut rows = Vec::with_capacity(n_rows);
-    for _ in 0..n_rows {
+    let mut all = Vec::with_capacity(n_rows + n_rates + n_init);
+    for _ in 0..n_rows + n_rates + n_init {
         let kind = match flat.get(at).copied()? {
             -1.0 => RowKind::Carried,
             -2.0 => RowKind::Spline,
@@ -319,18 +431,22 @@ fn view(flat: &[f64]) -> Option<View<'_>> {
                 spline_shape(n_cols, n_consts, consts)?;
             }
         }
-        rows.push((kn, kind, cols, consts));
+        all.push((kn, kind, cols, consts));
     }
+    let init = all.split_off(n_rows + n_rates);
+    let rates = all.split_off(n_rows);
+    let rows = all;
     let mut seeds = Vec::with_capacity(n_q);
     for _ in 0..n_q {
         let n = g(at)?;
         at += 1;
         seeds.push(take(n, &mut at)?);
     }
-    if rows.iter().map(|r| r.0.n_res).sum::<usize>() != n_q {
+    if rates.is_empty() && rows.iter().map(|r| r.0.n_res).sum::<usize>() != n_q {
         return None;
     }
-    Some(View { nf, n_outer, n_theta, n_q, traced, w, rows, seeds })
+    Some(View { nf, n_outer, n_theta, n_q, traced, w, rows, seeds, rates, init, domain, second,
+                per, pieces })
 }
 
 /* -- solving the body at a place ---------------------------------------------------------- */
@@ -591,6 +707,12 @@ pub fn read(flat: &[f64], outer: &[f64], home: &[f64], need: Need, grad: bool) -
     if outer.len() != v.n_outer || home.len() < v.nf {
         return None;
     }
+    if !v.rates.is_empty() && v.nf == 2 {
+        return lines_read(flat, &v, outer, home[0], need, grad);
+    }
+    if !v.rates.is_empty() {
+        return rate_read(flat, &v, outer, home[0], need, grad);
+    }
     let s = v.solve(outer, home)?;
     let order = match need {
         Need::Point => 1,
@@ -646,6 +768,77 @@ pub fn read(flat: &[f64], outer: &[f64], home: &[f64], need: Need, grad: bool) -
     } else {
         None
     };
+    Some(Read { frame, grad })
+}
+
+/// A body that states a rate, read at `outer[0]` (#339 D2): the flow from its home, its frame
+/// and, with `grad`, the frame's derivative in its place and every `θ` column — along the formal
+/// the flow's own higher orders, along a column its sensitivities.
+fn rate_read(flat: &[f64], v: &View, outer: &[f64], home: f64, need: Need, grad: bool)
+    -> Option<Read> {
+    let body = v.rate_body();
+    let u = outer[0];
+    let (lo, hi) = (v.domain[0], v.domain[1]);
+    let m = crate::rates::remembered(&body, flat, outer, home,
+                                     crate::rates::reach(home, u, Some((lo, hi)))).ok()?;
+    // a Jacobian reads one order past the frame
+    let order = match need {
+        Need::Point => 1,
+        Need::Tangent => 2,
+        Need::Curvature => 3,
+    } + u8::from(grad);
+    let r = body.read(&m, u, order.min(3), grad, grad)?;
+    let zero = [0.0; 3];
+    let mut frame =
+        Frame { x: r.d[0], d: [zero; MAX_FORMALS], dd: [[zero; MAX_FORMALS]; MAX_FORMALS] };
+    if need >= Need::Tangent {
+        frame.d[0] = r.d[1];
+    }
+    if need >= Need::Curvature {
+        frame.dd[0][0] = r.d[2];
+    }
+    let grad = grad.then(|| {
+        let mut g = vec![[zero; SLOTS]; PLACE + v.n_theta];
+        g[0][0] = r.d[1];
+        g[0][1] = r.d[2];
+        if r.orders >= 3 {
+            g[0][1 + MAX_FORMALS] = r.d[3];
+        }
+        for (c, gc) in g.iter_mut().enumerate().skip(PLACE) {
+            let j = c - PLACE;
+            gc[0] = r.dc[j];
+            if let Some(d) = r.dd1.get(j) {
+                gc[1] = *d;
+            }
+            if let Some(d) = r.dd2.get(j) {
+                gc[1 + MAX_FORMALS] = *d;
+            }
+        }
+        g
+    });
+    Some(Read { frame, grad })
+}
+
+/// A body over two formals that states a rate, read at `outer[..2]` (#339 D4): the march along
+/// the first from its home, the surface the method of lines makes of it there, and with `grad`
+/// the frame's derivative in its place and every `θ` column.  A Jacobian of a curvature (a third
+/// order) is not read.
+fn lines_read(flat: &[f64], v: &View, outer: &[f64], home: f64, need: Need, grad: bool)
+    -> Option<Read> {
+    let body = v.lines_body();
+    let plan = body.plan().ok()?;
+    let u = outer[0];
+    let to = crate::rates::reach(home, u, Some((v.domain[0], v.domain[1])));
+    let m = crate::lines::remembered(&body, flat, outer, home, to, body.pieces, grad).ok()?;
+    let r = body.read(&plan, &m, u, outer[1], need as u8, grad)?;
+    let frame = Frame { x: r.x, d: r.d, dd: r.dd };
+    let grad = r.grad.map(|g| g.into_iter().map(|[x, d0, d1]| {
+        let mut slot = [[0.0; 3]; SLOTS];
+        slot[0] = x;
+        slot[1] = d0;
+        slot[2] = d1;
+        slot
+    }).collect());
     Some(Read { frame, grad })
 }
 
@@ -973,6 +1166,26 @@ pub fn at(k: &[f64], theta: &[f64], place: [f64; 2], need: Need) -> Option<Readi
 /// Where a point `p` sits nearest on the body over a domain: a coarse grid of places, then
 /// Gauss–Newton on `|X − p|²` — a seed, not a projection.  A curve's second place is 0.
 pub fn nearest(k: &[f64], theta: &[f64], p: [f64; 3], domain: [[f64; 2]; 2]) -> Option<[f64; 2]> {
+    // asked again for the same thing — each place slot of a contact seeds itself alike — the
+    // answer is the last one: a body read by a march pays for every place it reads
+    let key: Vec<u64> = k.iter().chain(theta).chain(&p).chain(domain.iter().flatten())
+        .map(|x| x.to_bits()).collect();
+    if let Some(found) = NEAREST.with(|c| c.borrow().as_ref().filter(|(k, _)| *k == key)
+        .map(|(_, f)| *f)) {
+        return found;
+    }
+    let found = nearest_of(k, theta, p, domain);
+    NEAREST.with(|c| *c.borrow_mut() = Some((key, found)));
+    found
+}
+
+thread_local! {
+    /// The last `nearest` asked, and its answer.
+    static NEAREST: std::cell::RefCell<Option<(Vec<u64>, Option<[f64; 2]>)>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+fn nearest_of(k: &[f64], theta: &[f64], p: [f64; 3], domain: [[f64; 2]; 2]) -> Option<[f64; 2]> {
     let (_, _, flat) = parts(k)?;
     let nf = view(flat)?.nf;
     let grid = |i: usize, n: usize| -> Vec<f64> {
@@ -1093,6 +1306,71 @@ pub fn consts_of(t: &TracedE) -> Vec<f64> {
 pub fn reading(sk: &Sketch, i: usize, place: [f64; 2], need: Need) -> Option<Reading> {
     let t = sk.traced.get(i)?;
     at(&consts_of(t), &theta(sk, t), place, need)
+}
+
+/// How far traced body `i`, where it states a rate (#339 D2), is integrated across its interval
+/// from its home: `None` for any other body, else each way's refusal (`locus::rate_reach`).
+pub fn rate_reach(sk: &Sketch, i: usize) -> Option<[crate::rates::Reached; 2]> {
+    let t = sk.traced.get(i)?;
+    let v = view(&t.body.flat).filter(|v| !v.rates.is_empty() && v.nf == 1)?;
+    let k = consts_of(t);
+    let (values, home, flat) = parts(&k)?;
+    let mut outer = vec![home[0]];
+    outer.extend(theta(sk, t));
+    outer.extend_from_slice(values);
+    Some(crate::rates::reaches(&v.rate_body(), flat, &outer, home[0], v.domain))
+}
+
+/// How far traced body `i`, where it runs over two formals and states a rate (#339 D4), is
+/// marched along its first from its home: `None` for any other body, else each way's refusal and
+/// why.
+pub fn lines_reach(sk: &Sketch, i: usize) -> Option<[crate::lines::Reached; 2]> {
+    let (flat, outer, home) = lines_of(sk, i)?;
+    let v = view(&flat)?;
+    Some(crate::lines::reaches(&v.lines_body(), &flat, &outer, home, v.domain))
+}
+
+/// Traced body `i`, where it runs over two formals and states a rate, as the method of lines
+/// reads it (#339 D4): its body and encoding, and the outer variables at its home.
+fn lines_of(sk: &Sketch, i: usize) -> Option<(Vec<f64>, Vec<f64>, f64)> {
+    let t = sk.traced.get(i)?;
+    view(&t.body.flat).filter(|v| !v.rates.is_empty() && v.nf == 2)?;
+    let k = consts_of(t);
+    let (values, home, flat) = parts(&k)?;
+    let mut outer = vec![home[0], home[1]];
+    outer.extend(theta(sk, t));
+    outer.extend_from_slice(values);
+    Some((flat.to_vec(), outer, home[0]))
+}
+
+/// Traced body `i` marched on `pieces` pieces toward `to` along its first formal, read at `place`
+/// to `need` — how the gate measures the method of lines' convergence in its nodes.  `None` for
+/// any other body, or where it is not read there.
+pub fn lines_at(sk: &Sketch, i: usize, pieces: usize, to: f64, place: [f64; 2], need: Need)
+    -> Option<crate::lines::Reading> {
+    let (flat, outer, home) = lines_of(sk, i)?;
+    let body = view(&flat)?.lines_body();
+    let plan = body.plan().ok()?;
+    let m = crate::lines::remembered(&body, &flat, &outer, home, to, pieces, false).ok()?;
+    body.read(&plan, &m, place[0], place[1], need as u8, false)
+}
+
+/// How far traced body `i`, marched on `pieces` pieces toward `to`, is from the same march on
+/// twice the pieces at `places` along its first formal (`lines::check`).
+pub fn lines_check(sk: &Sketch, i: usize, pieces: usize, to: f64, places: &[f64]) -> Option<f64> {
+    let (flat, outer, home) = lines_of(sk, i)?;
+    let body = view(&flat)?.lines_body();
+    crate::lines::check(&body, &flat, &outer, home, to, pieces, places)
+}
+
+/// How far traced body `i`, marched on `pieces` pieces, reaches toward `to`: there, or refused
+/// and why.
+pub fn lines_reached(sk: &Sketch, i: usize, pieces: usize, to: f64)
+    -> Option<crate::lines::Reached> {
+    let (flat, outer, home) = lines_of(sk, i)?;
+    let body = view(&flat)?.lines_body();
+    Some(crate::lines::remembered(&body, &flat, &outer, home, to, pieces, false)
+        .and_then(|m| m.refused.map_or(Ok(()), |r| Err(Some(r)))))
 }
 
 /// Where point `p` (in space) sits nearest on traced body `i`, as the drawing stands.

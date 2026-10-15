@@ -158,7 +158,7 @@ impl Sketch {
     /// documents in different units would leave that number unconverted.
     fn own_length_params(&self, e: EntRef) -> Vec<u32> {
         match e.kind {
-            EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge | EntKind::Meshing | EntKind::Traced => Vec::new(),
+            EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Meshing | EntKind::Traced => Vec::new(),
             EntKind::Point => self.point_all_params(e.i()),
             EntKind::Circle => vec![self.circles[e.i()].radius],
             // the direction is a unit vector and the place a length
@@ -257,7 +257,7 @@ impl Sketch {
         match e.kind {
             // the stratification, as a table entry: a face and a solid own no parameter, so
             // nothing about either is ever a column of the Jacobian
-            EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge | EntKind::Meshing | EntKind::Traced => Vec::new(),
+            EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Meshing | EntKind::Traced => Vec::new(),
             EntKind::Point => self.point_all_params(e.i()),
             EntKind::Line => self.line_params(e.i()).to_vec(),
             EntKind::Circle => {
@@ -303,6 +303,10 @@ impl Sketch {
                 }
                 // the numbers left unknown, once the expression graph has allocated them
                 v.extend(cv.unknowns.iter().filter_map(|n| self.free_vars.get(n).copied()));
+                // a body that states a rate, drawn, runs from its pose (#339 D2)
+                if self.curve_defs[cv.def as usize].home {
+                    v.extend(cv.pose.iter().filter_map(|&(e, j)| self.own_param(e, j)));
+                }
                 // and a free curve's length, its own, then the points of the lines it touches
                 v.extend(cv.length);
                 for &l in &cv.slides {
@@ -340,7 +344,7 @@ impl Sketch {
             | EntKind::Spline
             | EntKind::Curve
             | EntKind::Face
-            | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge | EntKind::Meshing | EntKind::Traced => Vec::new(),
+            | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Meshing | EntKind::Traced => Vec::new(),
         }
     }
 

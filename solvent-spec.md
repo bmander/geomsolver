@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.126 — October 2026**
+**Specification, Draft 0.129 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -79,17 +79,13 @@ MUST, MUST NOT, SHOULD, SHOULD NOT, and MAY are used as in RFC 2119. Text marked
 | `Axis` | a directed line in space with no start, drawn in no view **[0.42]** | 2 (its direction), and 2 more once a relation reads where it is |
 | `Plane` | **[0.42]** a plane in space: its attitude two axes `u`, `v` through its origin **[0.43]**, and where it stands; a **view**, the points drawn in it having its own coordinates (§6.7) | 3 of its own (where it stands), beyond its axes'; a bare `plane` is 7 with the axes it mints **[0.43]** |
 | `Path` | directed piecewise boundary curve | 0 (derived object) |
-| `Face` | a planar profile (§6.8) or an ordered boundary on an explicit spatial support (§6.20) | 0 — it owns no parameter |
+| `Face` | a planar profile (§6.8) | 0 — it owns no parameter |
 | `Solid` | a face swept, or a term over other solids **[0.18]** | 0 — it owns no parameter |
 | `Surface` | an analytic boundary patch read from a solid (§6.13) | 0 — it owns no parameter |
 | `Motion` | a rigid-motion family about solved geometry (§6.14) | 0 — it owns no parameter |
 | `Envelope` | the zero-normal-velocity locus of a moving surface (§6.15) | 0 — it owns no parameter |
-| `Patch` | a spatial region of a surface or envelope, selected by material sides (§6.16) | 0 — it owns no parameter |
-| `Seam` | a shared generating characteristic or envelope/boundary intersection (§6.17) | 0 — it owns no parameter |
-| `Vertex` | a named spatial corner at two seams (§6.18) | 0 — it owns no parameter |
-| `Edge` | a finite seam extent between named spatial vertices (§6.19) | 0 — it owns no parameter |
 
-**`Face`, `Solid`, `Surface`, `Motion`, `Envelope`, `Patch`, `Seam`, `Vertex` and `Edge` are evaluated after the solve.** None owns a coordinate, allocates an unknown, or contributes a planar residual; none may be an argument of a planar constraint of §9.3, be dragged, be dimensioned, or be put on a plane with `in`. What each *is* is settled once the drawing has been solved and every extent worked out (§1.2, §6.9). A kind of this stratum therefore adds nothing to §16.3's ledger.
+**`Face`, `Solid`, `Surface`, `Motion` and `Envelope` are evaluated after the solve.** None owns a coordinate, allocates an unknown, or contributes a planar residual; none may be an argument of a planar constraint of §9.3, be dragged, be dimensioned, or be put on a plane with `in`. What each *is* is settled once the drawing has been solved and every extent worked out (§1.2, §6.9). A kind of this stratum therefore adds nothing to §16.3's ledger.
 
 **[0.2] `Line` was a 2-DOF undirected infinite line with a `.dir` field in 0.1.** It is now a segment between two points, and every constraint that reads a line reads the infinite carrier through those points — which is what `parallel`, `perpendicular`, `coincident` and `angle` mean by a line anyway.
 
@@ -111,7 +107,7 @@ Compound entities expose sub-entities by field access. Sub-entities are ordinary
 | `Plane` | `.origin` | `Point` — drawn in the plane and held at its `(0, 0)` **[0.42]** |
 | `Plane` | `.x`, `.y`, `.z` | `Length` — where it stands in space: read by a seed, seeded by `hint(origin: (…, …, …))` and held by `fix(origin == (…, …, …))` **[0.42]** **[0.45]** |
 | `Line` | `.p1`, `.p2` | `Point` **[0.2]** |
-| `Face` | its edges; `on:` for a spatial support | aliased boundaries; `face.on` reaches a spatial support (§6.20) |
+| `Face` | its edges | aliased boundaries |
 | `Solid` | `.near`, `.far` | a prism's two caps, at the higher and the lower ordinate **[0.18]** |
 | `Solid` | `.<edge>` | the side swept from the edge the source called `<edge>` **[0.18]** |
 | `Solid` | `.start`, `.end` | a partial revolution's two caps **[0.18]** |
@@ -239,7 +235,7 @@ component Name(p1: Type1, p2: Type2, ...) {
 
 ### 4.1 Parameters
 
-Parameters are passed by name or position at instantiation. A parameter of entity type (`Point`, `Circle`, `Line`, `Plane`, **[0.42]** `Axis`) is **bound by aliasing** (P1): the formal name and the actual argument denote the same entity. A parameter of value type (`Int`, `Scalar`, `Length`, `Angle`, **[0.17]** `Side`) is a compile-time or definitional value; it contributes no unknowns. A `group` formal bundles values and geometry references (§8.1); **[0.84]** one typed by an interface (`gear: Gear`) names the members its argument must have and its body may read (§8.1). **[0.79]** A `path` formal takes a line, an arc, a circle, a spline or a curve — **[0.119]** or a curve traced in space (§6.5), never a surface — bound by aliasing as an entity is; the words its body writes of it are settled by the kind of the actual, and an actual that runs along nothing is **E103** at the argument. **[0.71]** A `set` formal takes a set (§6.21): a named one (`S := { p | … }`) or an instance of a set family (`std.Sphere(c, r: 5mm)`), which is the set — written by name, since an argument is a reference, not a call; a set's surface (`S.surface`) is not one yet. It is given by position, as an entity is, and used in the body by its name wherever a set may stand (`p coincident s`, `p inside s`, `distance(p, s)`). A named set given to a `group` formal and a group given to a `set` formal are each **E103** at the argument; a family's instance is both a set and an instance, so it fills either. A `Side` is one of the words `left` and `right` (§9.2) and is not a number: it may be passed on to another instance and written in a selector, and nothing else.
+Parameters are passed by name or position at instantiation. A parameter of entity type (`Point`, `Circle`, `Line`, `Plane`, **[0.42]** `Axis`) is **bound by aliasing** (P1): the formal name and the actual argument denote the same entity. A parameter of value type (`Int`, `Scalar`, `Length`, `Angle`, **[0.17]** `Side`) is a compile-time or definitional value; it contributes no unknowns. A `group` formal bundles values and geometry references (§8.1); **[0.84]** one typed by an interface (`gear: Gear`) names the members its argument must have and its body may read (§8.1). **[0.79]** A `path` formal takes a line, an arc, a circle, a spline or a curve — **[0.122]** or a curve traced in space (§6.5), never a surface — bound by aliasing as an entity is; the words its body writes of it are settled by the kind of the actual, and an actual that runs along nothing is **E103** at the argument. **[0.71]** A `set` formal takes a set (§6.21): a named one (`S := { p | … }`) or an instance of a set family (`std.Sphere(c, r: 5mm)`), which is the set — written by name, since an argument is a reference, not a call; a set's surface (`S.surface`) is not one yet. It is given by position, as an entity is, and used in the body by its name wherever a set may stand (`p coincident s`, `p inside s`, `distance(p, s)`). A named set given to a `group` formal and a group given to a `set` formal are each **E103** at the argument; a family's instance is both a set and an instance, so it fills either. A `Side` is one of the words `left` and `right` (§9.2) and is not a number: it may be passed on to another instance and written in a selector, and nothing else.
 
 **[0.17] Which way is a word, not a sign.** A distance measured **from a line** — a point to a line, a line to a line — is a **magnitude**: its solution set is *both* sides, and which one a solver finds is the seed's business (P3), as it is in every other sketcher. A negative one is an error (**E040**) wherever the number comes from, including a component's argument, since the kernel cannot tell one side from the other and the minus therefore said nothing a drawing could show. A statement that must pin a side writes the word — `p distance(12, side: left) ax`, left being of the line's own `p1 → p2` — and so does a tangency (`side: left | right`, which was `side: -1`). Where a sign is *arithmetic* rather than a convention — the run and the rise, signed from the first point to the second, and the directed angle of §9.4 — it stays a sign, because a component computes it from coordinates it is given; each gains the word that says the same thing in the open (`along: right | left | up | down`, `sense: cw | ccw`), and a document SHOULD prefer it. A component takes a side as a value of the type **`Side`** (`s: Side`, `side: s`), which is a word and not a number: encoded as ±1 it would put the unreadable idiom back one level down, inside every helper.
 
@@ -435,7 +431,7 @@ NAME := Component(ARGS).REF over FORMAL in ( A, B )    an instance written in pl
 
 `REF` names a point the component places — a declaration of its body or a nested instance's; a formal the component is written over does not move with the swept formal and is refused (**E103**). `FORMAL` is a numeric formal of that component, `Angle` or `Length` (**E040** otherwise); the interval's ends are expressions over the parameters in scope. A curve declares an entity and takes contacts like any other curve, each owning the curve's parameter — spelled `t`, as a spline's is, whatever the swept formal is called **[0.15]** (0.2–0.14 spelled it `u`, which an implementation SHOULD name when refusing the old key): `p coincident e hint(t: …)` says `p − C(t) = 0`, two residuals and one new unknown; `e tangent l` holds the line through `C(u)` along `C'(u)`, two residuals against the one unknown; `e curvature k` makes the circle the curve's osculating circle at `u`, three residuals against it. **[0.39]** Each contact owns its own parameter unless it is pinned to a name nothing defines (`e tangent(t == s) l`, `e curvature(t == s) k`, §9.2): then every contact on the curve pinned to that name owns the one unknown, so a line and a circle touching the curve *at the same place* are five residuals against one parameter. Stated instead as two contacts tied through other geometry — the circle tangent to the line — the condition holds to third order in the distance between their two parameters, and the solve is a degenerate root. A tangency needs `C'` and its derivatives in the geometry — second order — and a curvature `C''` and `C'''`: a computed point supplies them exactly from its expressions, and a locus supplies `C'` exactly (the implicit function theorem) and `C''`, `C'''` exactly as the implicit function's Taylor orders — each one more linear solve with the same Jacobian of the body, its rows read in truncated Taylor arithmetic — with their derivatives in the geometry by difference **[0.37]**. A body is read that way only through relations whose kernels an implementation has written in Taylor arithmetic; a curvature stated against a locus with any other relation in its body is an error (**E103**) naming the relation, since a residual by difference would solve to a slightly wrong circle and call it right. There is no separate curve family: 0.2's `curve NAME(FORMALS)(PARAM) = …` and 0.3's `trace POINT where { … }` are retired, and an implementation MUST refuse them with a message naming this form.
 
-**Two ways a component places the point.** A **computed** point, `p := point(x: XEXPR, y: YEXPR)` **[0.13]** (`port p = …` in 0.12), gives the coordinates as expressions over the formals and the params; a component with one is drawn only as a curve, and an instance of it on the sheet is an error (**E103**), since nothing on the sheet holds a point to a formula. Any **other** point is placed by the body's statements — the locus form: `C(u)` is where the constraints put the point, given the formal's value and the geometry the component is written over. Traced, the body MUST determine its own coordinates — as many equations as coordinates of its own — or the curve is an error (**E103**): an under- or over-constrained locus is a curve that does not exist, and it must not elaborate quietly. Drawn, the same component may be closed from outside like any other.
+**Two ways a component places the point.** A **computed** point, `p := point(x: XEXPR, y: YEXPR)` **[0.13]** (`port p = …` in 0.12), gives the coordinates as expressions over the formals and the params; a component with one is drawn only as a curve, and an instance of it on the sheet is an error (**E103**), since nothing on the sheet holds a point to a formula. Any **other** point is placed by the body's statements — the locus form: `C(u)` is where the constraints put the point, given the formal's value and the geometry the component is written over. Traced, the body MUST determine its own coordinates — as many equations as coordinates of its own — or the curve is an error (**E103**): an under- or over-constrained locus is a curve that does not exist, and it must not elaborate quietly. **[0.119]** A body that states a rate (below) counts its rate rows instead. Drawn, the same component may be closed from outside like any other.
 
 ```
 component Unwind(c: circle, datum: line, phase: Angle, u: Angle) {
@@ -457,9 +453,32 @@ e := Unwind(base, datum, phase: a0).p over u in (u0, u1)
 
 **Over an instance written in place.** `Involute(base, phase: a0).p` binds the arguments as an instance statement would and draws nothing: the curve is the only thing made of it. The anchor is the value it gives the swept formal, or the interval's start when it gives none. **[0.42]** A traced component is solved in one plane, so a relation in space in its body (§9.2) is refused where it is written.
 
-**In space [0.107].** A body whose relations do not read in one plane is solved in space: its points are points in space, its words between them the relations in space (§9.2), and a point a motion carries, `X coincident(under: m, t == −u) x` (§9.3), one of its rows — the motion then given to the component as a formal of its own (`m: motion`). Such a curve is **a curve in space**: written in place, over points, lines, motions and numbers, it declares no curve of a plane but an entity held to in space. `p coincident k` holds a point in space to it (three rows against its place, net two) and `k tangent(at: p) l` a line along its tangent there (two rows). A body given a motion is solved in space whatever its relations; any other is a plane's where it reads as one (the `[0.42]` rule above), and in space only where it does not. Its derivatives are exact — every order the contacts read, along the formal and in every coordinate it is written over, by the Taylor series of the implicit function along any direction and polarisation across directions. Its seeds are numbers over the formals (`hint((r * cos(u), r * sin(u), lead * u / 360deg))`); a geometric seed, an instance drawn on the sheet and an unknown of the drawing given as a number are refused (**E103**): a body traced in space reads the drawing's unknowns through the geometry it is written over. **[0.119]** A curve in space is a **path** (§4.1): a `path` formal takes it, `p coincident(t == s) k` pins the contact's place — the body's own formal — to `s` as a spline's `t` is pinned (in a face family, to the running number), and a seed's step runs along it, `hint(at: p, along: k, by: f)` being `f` times `∂C/∂u` at the place nearest `p`. A surface is no path (**E103** at the argument). **[0.122]** At a point a contact holds on it, `k curvature(at: p) c`, `c` a point, puts `c` at the curve's **centre of curvature** there (three equations: `C + |C′|²·((C′ × C″) × C′)/|C′ × C″|²`), where a surface's `curvature` is a circle osculating a section; a curve with no curvature at the place (a straight run, an inflection) has no centre, and the equations lose their rank there. Of a surface it is **E040**: a surface has no one centre at a point.
+**In space [0.107].** A body whose relations do not read in one plane is solved in space: its points are points in space, its words between them the relations in space (§9.2), and a point a motion carries, `X coincident(under: m, t == −u) x` (§9.3), one of its rows — the motion then given to the component as a formal of its own (`m: motion`). Such a curve is **a curve in space**: written in place, over points, lines, motions and numbers, it declares no curve of a plane but an entity held to in space. `p coincident k` holds a point in space to it (three rows against its place, net two) and `k tangent(at: p) l` a line along its tangent there (two rows). A body given a motion is solved in space whatever its relations; any other is a plane's where it reads as one (the `[0.42]` rule above), and in space only where it does not. Its derivatives are exact — every order the contacts read, along the formal and in every coordinate it is written over, by the Taylor series of the implicit function along any direction and polarisation across directions. Its seeds are numbers over the formals (`hint((r * cos(u), r * sin(u), lead * u / 360deg))`); a geometric seed, an instance drawn on the sheet and an unknown of the drawing given as a number are refused (**E103**): a body traced in space reads the drawing's unknowns through the geometry it is written over. **[0.122]** A curve in space is a **path** (§4.1): a `path` formal takes it, `p coincident(t == s) k` pins the contact's place — the body's own formal — to `s` as a spline's `t` is pinned (in a face family, to the running number), and a seed's step runs along it, `hint(at: p, along: k, by: f)` being `f` times `∂C/∂u` at the place nearest `p`. A surface is no path (**E103** at the argument). **[0.125]** At a point a contact holds on it, `k curvature(at: p) c`, `c` a point, puts `c` at the curve's **centre of curvature** there (three equations: `C + |C′|²·((C′ × C″) × C′)/|C′ × C″|²`), where a surface's `curvature` is a circle osculating a section; a curve with no curvature at the place (a straight run, an inflection) has no centre, and the equations lose their rank there. Of a surface it is **E040**: a surface has no one centre at a point.
 
 **Over two formals [0.108].** `S := C(ARGS).p over (phi in (A, B), s in (C, D))` is the same point as two formals run: **a surface** traced in space. `p coincident S` owns a place `[u, s]` (three rows, net one); at a point a contact holds there, `S tangent(at: p) l` puts a line in its tangent plane (one row), `S perpendicular(at: p) l` along its normal `C_φ × C_s` (two), `S tangent(at: p) P` a plane touching it (two), and `S curvature(at: p) k` the circle osculating its section by `k`'s plane (three, Meusnier, as an envelope's, §6.15.3). A place pinned is `p coincident(u == a, s == b) S`. A surface is **regular** where its two derivatives are independent; `solventc` says of each body traced in space whether it is regular over its domain or where it folds — of a flank seen from its member, the undercut. A traced surface is held to and read, not yet a face of a solid.
+
+**Over two formals, marched [0.121].** A body traced over two formals may state a rate along either: `S := Front(c, a: 40mm, b: 25mm).p over (d in (0mm, 15mm), u in (-60deg, 60deg))` is an ellipse's offset front when `Front` says its point moves along its normal at unit speed, square to itself — a first-order PDE. The first formal is **marched**, the second **sampled**, and the surface is the **method of lines**: the second formal's interval is cut into 32 equal pieces of six Gauss–Lobatto nodes each, a joint node shared by the two pieces it ends — a whole turn of an `Angle` formal whose two ends meet is closed — the body's points at the nodes are one state integrated along the first formal from its home, a rate along the second is the derivative of the quintic through a piece's nodes (at a joint, the mean of the two pieces'), and between nodes the surface is that quintic. A rate along an `Angle` formal is per radian. **`initially { … }` is the Cauchy data**: what holds where the first formal starts, for every value of the second. The body's points are split by its rate rows: those whose rate along the first formal a rate row reads are **moved**, integrated; the rest are **placed**, solved at every node and step from where they last stood by the relations that read them, which must be exactly as many as their numbers (the front's normal `nl`, ten long, in its plane and square to `rate(p over u)`). So a rate along the second formal is of a moved point and is read by a rate row or by a relation that places a placed point — one over moved points alone would, differentiated along the first, tie every node of a piece together — a relation reads at most one rate along the first, and `initially` places moved points only: otherwise **E103**, naming the point. Rates that leave a freedom are **E103** naming it, as over one formal: the front's law alone leaves each node free to slide along the front, and the **gauge** that pins it — `rate(p over d) parallel nl`, square to itself — is the author's to state. At every node at every step the rates' rank is checked, and so is the surface's **regularity**, `rank [x_d, x_u] = 2`: where a node's area `|x_d × x_u|` falls below a hundredth of what it was at the home the characteristics are crossing — a **fold**, an undercut's kind — and the march is refused there; `solventc` says how far each such surface is marched, or where it folds and at which node. A march is held to the march on twice the pieces, the discretisation's error being amplified as a front focuses. Contacts own a place on the surface as on any traced one (§6.5 [0.108]); its point, tangent plane and normal are exact in the place and in the geometry (the variational equations), and its curvature is not yet read (**E103**).
+
+**Rates [0.119].** A body may state a condition on a **rate** along the formal it runs over: `rate(x over s)` is point `x`'s velocity as `s` runs — a vector of dimension `[x]/[s]`, so dimensionless along an arc length — and it stands where a direction is read: `parallel`, `perpendicular` or a directed `angle` with a line, and `rate(p over s) distance(k, along: l)`, the rate alone before the word, its component along `l`. A rate is never a place (`coincident`) and never a magnitude (`length(1) rate(p over s)` would be quadratic in the rate, leaving a root to choose at every step): either is **E103**, and so is a relation reading two rates. The formal is always named, since a component does not know which of its formals the call runs; a component handed it as itself (`Drag(o, a: a, u: u)`) reads its own rates over the caller's, and one given a number or an expression in it is **E103**. A body that states a rate is **integrated from its home** rather than solved again at each place: its relations without a rate hold everywhere, its **rate rows** together with them differentiated along the formal fix the rates — one linear system, square by count in a plane and, in space, where a `parallel` is two rows of which the body's own rows may imply one, of full rank — and the curve at `u` is that flow integrated from the home, to a tolerance well below "solved" (`ode.rs`). The system's rank is checked at every place the march reaches: where it is lost the curve is refused there, as is a march that will not meet its tolerance in bounded steps, and `solventc` says how far each such curve is integrated. A body short of rate rows is **E103**, naming the points whose rates the rows leave free. **The home is the initial value.** Over a drawn instance it is the instance as it stands on the sheet: its rate rows are no rows there, so the drawing holds the freedom they leave (`drag.p level(right) o`), and the instance's coordinates are columns of the curve, which moves when it does; while the drawing is not yet solved, the curve is the flow from the nearest point to the instance where its body's relations hold. Written in place, the home is the value the call gives the formal, or the interval's start, and what holds there alone is said in the body, **`initially { … }`**: relations that, with the body's others, place the instance at its home, and nowhere else — the block a face family's station says its home with (§6.9 **[0.116]**), its relations hoisted into the body, each marked; a rate in it is **E103**. On the sheet an `initially` block's relations are ordinary ones, a drawn instance being its own home. A contact owns its place as on any curve, `C′` the rate itself and `C″`, `C‴` the solution's Taylor coefficients, exact, and every derivative in the geometry the flow's sensitivity, carried through the same integration. Over one formal a rate along an `Angle` formal, or of a direction (a line's or an axis's), is not yet read (**E103**); a face family's station reads an axis's (§6.9); over two, below.
+
+```
+component Drag(o: point, a: Length, u: Scalar) {
+  q := point
+  p := point hint((0, 30))
+  q level(up) o
+  o distance(a * u, along: right) q            // the string's end runs along the line
+  string := line(p, q)
+  length(a) string
+  rate(p over u) parallel string               // dragged: p moves only along the string
+}
+in std.front {
+  o := point
+  fix((0mm, 0mm)) o
+  drag := Drag(o, a: 30mm, u: 0)
+  drag.p level(right) o                        // the home: the string square to the line
+}
+tractrix := drag.p over u in (0, 3)
+```
 
 **Requirements.** An implementation MUST differentiate `C` with respect to the swept formal *and* with respect to every coordinate the component reads. `∂C/∂u` is which way a contact may slide; `∂C/∂θ` is how the curve moves when the geometry it is written over moves, and an implementation that computes only the first will solve a contact once and drop it the moment that geometry is dragged. For a computed point both are mechanical from the expressions; for a locus both come from the implicit function theorem at the body's solution. A name a computed point's expressions cannot reach is an error (**E103**), not a free variable: a curve is written over geometry that exists, and a misspelling there would quietly add a degree of freedom to every point on the curve. A dimension in a traced body MAY read a number of the geometry the component is written over (`c.r`, `k.center.x`): it is a column of the curve, and is differentiated with the rest. **[0.37] Outside a trace a dimension MUST NOT read geometry** (**E103**): the expression graph has no column for it, and minting a free variable named `k.r` would make a drawn instance of a component state something other than its own trace.
 
@@ -571,13 +590,13 @@ place to draw and nothing else; where its picture goes on paper is the drawing's
 world's axes, seeded by `hint((…, …, …))` and held by `fix((…, …, …)) p`; a
 `z:` on a point drawn in a plane is **E040** at the key. A line between two points in space is a
 line in space. A circle and an arc are drawn in a plane, and over a point in space each
-is **E060**, naming the point; a face is **E080** (§6.8). **[0.124]** An arc over a point in
+is **E060**, naming the point; a face is **E080** (§6.8). **[0.127]** An arc over a point in
 space is drawn in the plane through its centre and its ends — the short way round, less than a
 half turn — its points those written, so its radius, its contacts and a chain's joints are an
 arc's; three points in a line, which no one plane is through, are **E060**. A circle over a point
 in space is drawn in the plane through its centre square to its **normal**, `circle(center: o,
 normal: ax)`, `ax` an axis or a line; with none it is **E060**, and a `normal:` of a circle drawn
-in a plane is **E040**. **[0.123]** A spline over a point in
+in a plane is **E040**. **[0.126]** A spline over a point in
 space is a **curve in space** (§6.5): the same curve, `Σ Rᵢ(u)·Pᵢ` over its control points where
 they stand and its parameter over its own domain, whose contacts are a curve in space's and which
 is a `path`; `spline(through: …)` over corners in space is the cubic through them. It is drawn in
@@ -755,7 +774,7 @@ across the axis being measured.
 
 ### 6.8 Faces **[0.18]**
 
-A **planar face** is a region of a plane: an outer loop of existing edges and straight runs between named corners, optionally containing holes. An explicit `on:` support instead declares a spatial face boundary (§6.20); the planar rules below do not turn that support into a plane drawn in.
+A **planar face** is a region of a plane: an outer loop of existing edges and straight runs between named corners, optionally containing holes. **[0.120]** A face takes no `on:`: every face is planar.
 
 ```
 sec := face(mouth, side_r, lid, side_l)     // four lines, walked in order
@@ -938,7 +957,7 @@ block := solid(face(mouth, side_r, lid, side_l), from: face, to: back)
   on a line, a spline and a traced curve: a line touching an arc or a circle at a point of it is
   drawn in the round's plane, as one touching a spline is (§6.21). Its frame is held to `up`;
   along a guide in one plane with `up` that plane's normal, that is the rotation-minimising frame.
-  **[0.120]** `On`'s frame is the rotation-minimising one, stated as `Minimal`'s rate and
+  **[0.123]** `On`'s frame is the rotation-minimising one, stated as `Minimal`'s rate and
   integrated from the family's home, where `v` leans toward `up` and `u` is square to it: `up` is
   read at the home alone, so along a guide that leaves its plane (a curve traced in space, §6.5)
   the plane stays square to the guide, where an `up` held at every station would lean it. Along a
@@ -954,17 +973,17 @@ block := solid(face(mouth, side_r, lid, side_l), from: face, to: back)
   open (**E080**: its ends would meet); past the first link, a contact on anything but a chain it
   runs pinned to `s` is **E103**. **[0.111]** Every `path` formal given a named open chain is run
   so, all **in step**: on link `k` each is given its own link `k`, so the chains MUST have as many
-  links (**E080** naming both). **[0.121]** A chain MAY run across planes: a line touching an arc
+  links (**E080** naming both). **[0.124]** A chain MAY run across planes: a line touching an arc
   drawn in another plane, its ends drawn anywhere, is the tangency in space (§9.2), so a bent pipe
   is one chain. Where the station states a rate (`On` does), a station on a link past the first
   is the one the link before carried across the joint: the drawing does not solve it, and its
-  `initially` rows hold at the family's home alone. **[0.124]** An arc over points in space faces
+  `initially` rows hold at the family's home alone. **[0.127]** An arc over points in space faces
   the plane it is drawn in as its points do (§6.4), so a chain drawn in space turns either way at
-  an arc. **[0.125]** In a plane an arc runs counter-clockwise from its start unless it says
+  an arc. **[0.128]** In a plane an arc runs counter-clockwise from its start unless it says
   otherwise, `arc(center: c, sense: cw)`: it then runs clockwise — drawn counter-clockwise in its
   plane turned over — so a chain in a plane turns right at it, entering it at its start as every
   link. Its ends a half turn apart are **E060**; `sense:` of an arc over points in space, which
-  turns as its points stand, is **E040**. **[0.126]** A chain MAY enter an arc at its end — its
+  turns as its points stand, is **E040**. **[0.129]** A chain MAY enter an arc at its end — its
   end the point the link before leaves at, or, first, its start the point the link after enters
   at — and walks it from there to its start: the same arc, drawn from its end and turning the
   other way, so a family runs it forward. Threaded, both of its ends are written (`-> tangent (k
@@ -1042,7 +1061,9 @@ block := solid(face(mouth, side_r, lid, side_l), from: face, to: back)
   or of a point along a formal of the body it is written in, `rate(x over s)`, which always names
   its formal: `rate(f.u over s) perpendicular f.v`. A rate stands where a direction is read — on
   the left of `perpendicular` or `parallel`, against an axis, a line or a plane — and never as a
-  place or a magnitude; any other word after it is a syntax error. Every such relation is linear
+  place or a magnitude; a word that reads no direction is a syntax error. **[0.119]** A rate is an
+  operand, so it may stand on either side, and a directed `angle` and `distance(k, along: l)` read
+  one too, a traced body's alone (§6.5): in a face family either is **E040**. Every such relation is linear
   in the rate. In a face family whose running number the formal is given (or a multiple of it), a
   relation over a rate is no row of the drawing: the drawn station is the family's **home**, its
   initial value, solved with the drawing, and every other station is the station **integrated**
@@ -1057,10 +1078,10 @@ block := solid(face(mouth, side_r, lid, side_l), from: face, to: back)
   `Minimal(n, up:, s:)` is the rotation-minimising frame of the station `n`: the plane `f` through
   `n`'s origin square to the path as `n` is, `f.u`'s rate square to `f.v`, and `f.u` square to `up`
   initially; along a guide in one plane with `up` its normal it is `On`'s frame, and along a
-  twisted path it turns against the path's Frenet frame at the path's torsion. **[0.122]** `Frenet(g, s:)` is **Frenet's frame**
+  twisted path it turns against the path's Frenet frame at the path's torsion. **[0.125]** `Frenet(g, s:)` is **Frenet's frame**
   of a station on a curve traced in space: the plane square to `g` at `s`, `u` toward the centre
   of curvature (its sense the centre's, no seed's) and `v` the binormal; along a helix it is
-  `OnHelix`'s plane. A station where the curve has no curvature is refused there. **[0.120]** A
+  `OnHelix`'s plane. A station where the curve has no curvature is refused there. **[0.123]** A
   station that states a rate MAY run over a chain: on each link after the first its home is where
   the link before ended, the station carried across the joint, its `initially` rows no rows there.
   A station read off its integration meets its relations: only what its rates hold is the
@@ -1157,7 +1178,14 @@ flank := surface(crown, edge: rack.outer)
 root_transition := surface(crown, edge: rack.outer_round)
 ```
 
-A `surface` names an analytic patch of an existing solid. Its arguments are `solid` and
+**[0.120]** A `surface` names a side of an existing solid, and has two meanings, one per kind of
+solid it is read from. Over a **revolution** it is the side one profile edge sweeps round, the
+analytic patch this section specifies, and what a spatial envelope over it reads as its source,
+held to by the solve (§6.15.3). Over a **prism** drawn in a view it is the side its edge extrudes,
+whose envelope under a motion keeping the view is a planar envelope the solve holds to
+(§6.15.2). Neither is a certification object read only after the solve.
+
+Its arguments are `solid` and
 `edge`, in that order; labels may be written as with other constructors. The initial supported
 source is an unmodified revolution, with a line, circular arc or circle on its profile's
 outer or hole boundary. An unrelated edge, a modified body, or an unsupported source MUST
@@ -1206,8 +1234,8 @@ Evaluation also returns a point on the finite patch and the Euclidean error to t
 Only that error, compared with an explicit length tolerance, establishes bounded incidence.
 An axis-crossing meridian or a query with no unique normal is refused by this evaluator.
 
-This declaration provides named generating geometry. Motion families, envelopes and material
-trims are specified below; solids assembled from surface boundaries remain under development.
+This declaration provides named generating geometry. Motion families and envelopes are
+specified below; solids assembled from surface boundaries remain under development.
 
 ### 6.14 Rigid motion families
 
@@ -1297,8 +1325,8 @@ sweep interval MUST NOT be accepted merely because those supporting equations va
 `envelope` component formals, forward dependency paths, privacy, semantic tags, and
 copy/delete dependencies follow ordinary component rules. A solved evaluator is a snapshot
 and must be read again after the source geometry changes. Envelopes are not drawing glyphs
-or completed solids. Declarative trim boundaries and closed solids assembled from bounded
-surfaces remain under development.
+or completed solids. Closed solids assembled from bounded surfaces remain under development; the
+patches, seams, corners, edges and face boundaries that check one are Rust API (§6.16–§6.20).
 
 #### 6.15.1 Envelopes in the plane **[0.37]**
 
@@ -1547,228 +1575,17 @@ first point held to it: the lag over the phase is the transmission error, the co
 meshing whether it is a point or a line contact, the transmission error's range and how long the
 path of contact is; `--json` gives each phase.
 
-### 6.16 Trimmed spatial patches
+### 6.16–6.20 *(retired)* **[0.120]**
 
-```
-flank := patch(generated, inside: tip_body, inside: heel_body,
-            outside: root_body, outside: toe_body)
-```
-
-A `patch` retains points of one named `surface` or `envelope` satisfying every material-side
-condition. Each clipping operand is a **solid**: `inside:` retains its material and boundary;
-`outside:` retains its exterior and boundary. All conditions intersect. The declaration
-requires at least one condition; each operand carries its own `inside:` or `outside:` label.
-The source may be positional or labelled `source:`. `.source` reaches that entity. The
-`inside` and `outside` fields are lists, not singular child paths.
-
-This is spatial geometry evaluated after solving, with no coordinates, hints or planar
-constraint rows. Components, formal aliases, privacy and construction semantics apply.
-Clipping does not replace the source parameter domain or the envelope equation. A patch may
-be disconnected, singular or contain several envelope branches; it does not by itself
-designate a topological disk, an outward normal, or a closed solid.
-
-The current analytic evaluator supports unmodified **full revolutions** with line, arc or
-circle profile boundaries and holes. Partial revolutions, face families, prisms and Boolean bodies
-are refused as clipping operands. Membership uses analytic meridian axis crossings and finite
-curve distances, not the preview facets. Profile topology is checked by the existing solid
-validator, whose topology checks currently use faceted loops. This is not an interval proof
-of arbitrary analytic profile validity. Axis edges that disappear on full revolution are
-not material boundaries: a sphere's diameter is interior.
-
-`TrimmedPatch::named` reads a solved snapshot with an explicit absolute axis tolerance.
-`surface_at` checks a surface point against the trims. `envelope_at` additionally requires
-the normal-velocity equation within its explicit tolerance; arbitrary off-locus trials still
-use `GeneratedEnvelope::evaluate`. Both use an explicit boundary tolerance in model length
-units. `intersect` and `intersect_boundaries` solve on the untrimmed envelope and require the
-final result to pass all trims; an excluded local solution is refused, not silently replaced
-by another branch. Finite-boundary incidence checks remain in force. These floating-point
-checks do not certify a global error bound or closed-solid topology.
-
-### 6.17 Shared spatial seams
-
-```
-flank_join := seam(flank_region, transition_region)
-root_join := seam(transition_region, root_region)
-tip_edge := seam(flank_region, tip.wall)
-```
-
-A `seam` names an implicit curve shared by generating faces, or by a generating face and
-a finite analytic boundary. `first:` and `second:` may label the operands; those fields
-alias the dependencies.
-
-With two generating operands, it names the characteristic shared at a tangent vertex of
-their generating profile. Each operand is an `envelope` or a `patch` whose source is an
-envelope. Both
-envelopes MUST name the same generating motion and source revolution. Their profile edges
-MUST have exactly one shared vertex identity. Coincident but separately named points do
-not establish this relationship, and two copies of the same edge do not define one junction.
-
-After solving, the seam evaluator checks coincident positions and a common tangent plane
-at the source vertex with explicit tolerances. The common revolution and rigid motion
-preserve this relationship over their shared domain. A corner with distinct tangent planes
-is refused. The angular domain is the intersection of both sources' retained spans and
-both envelopes' roll intervals; these intersections must have positive width.
-
-The characteristic is still implicit. Its chart is the first envelope's original `[u,v,roll]`,
-with `u` fixed at the shared vertex. `EnvelopeSeam::intersect` solves both envelope equations
-and one spatial section equation using the existing local solver. `SeamIntersectionOptions`
-and its seed contain only the actual unknowns `[v,roll]`; the shared endpoint cannot be freed
-by a search option. Both face equations use one normal-velocity tolerance, and the section
-has a separate tolerance in its own units. Returned residuals are the first and second
-envelope equations followed by the section equation. The final result must
-satisfy both envelopes and, when present, both patches' material trims. A rank-deficient
-section intersection is refused. Reading a seam does not certify global regularity,
-uniqueness or connectedness of its locus.
-
-`EnvelopeSeam::named` reads a solved snapshot. `SeamTolerance` specifies absolute model-length
-tolerances for the junction position and clipping-axis recognition, plus the difference
-between unit normals for tangent-plane agreement (either orientation is allowed). Point
-evaluation and intersections also take explicit normal-velocity and material-boundary
-tolerances. These are floating-point checks, not a certified world-space export error bound.
-The returned contact normal belongs to the first face, and its velocity is the generating
-motion's velocity, not a derivative along the seam curve.
-
-With an `envelope` (or patch of an envelope) first and a `surface` second, the seam names
-their intersection. The boundary must support the finite analytic incidence evaluator of
-§6.13. It need not share the generating motion, revolution or profile vertex. The operand
-order is significant: the seam retains the envelope's original `[u,v,roll]` chart, and all
-three parameters can vary. Two arbitrary surfaces or two unrelated envelopes are not
-supported by this form.
-
-`BoundarySeam::named` reads one generated-face snapshot with its material conditions and
-one boundary projector, using an explicit clipping-axis tolerance. `evaluate` requires
-the envelope equation, incidence with the finite boundary patch, and all material trims.
-`BoundarySeamTolerance` supplies separate normal-velocity, incidence and trim tolerances.
-`intersect` solves the envelope equation, boundary support equation and one spatial section
-with `IntersectionOptions`; its residuals and tolerances follow that order. It checks finite
-incidence at the retained root, so convergence on an undeclared support continuation is
-refused. Local rank checks reject a nonisolated section. Neither a snapshot nor a local root
-certifies global transversality, branch uniqueness, connectedness or closed-face topology.
-
-Seams own no solver coordinates and have no planar drawing glyph. Component formals, privacy,
-construction semantics, source printing and dependency-aware copy/delete apply. A seam
-provides shared boundary geometry; oriented face loops and checked closed-solid assembly
-remain separate work.
-
-### 6.18 Shared spatial vertices
-
-```sv
-tip_toe := vertex(tip_edge, toe_edge)
-join_toe := vertex(flank_join, toe_edge)
-```
-
-A `vertex` names the intersection of two distinct seams. Optional `first:` and `second:`
-labels name its operands. Two boundary seams must use the exact same named generating
-face and different boundary surfaces. Alternatively, one generating junction may meet
-one boundary seam whose generating face is exactly one of that junction's operands.
-The two seam operands may be reversed. Two generating junctions, unrelated faces and
-duplicate boundary surfaces are refused. Separate declarations retain separate identity,
-even if their evaluated coordinates coincide.
-
-`BoundaryVertex::named` owns one generating-face snapshot with its material conditions
-and two finite boundary evaluators. Its local solve checks the envelope and both boundary
-equations over the original `[u,v,roll]` chart, followed by finite incidence and material
-membership. `IntersectionOptions` residuals and tolerances follow that equation order.
-`JunctionVertex::named` owns one checked generating junction and one boundary evaluator.
-It uses `SeamTolerance` for the junction and `SeamIntersectionOptions` for its two unknowns
-`[v,roll]`; the first face's endpoint `u` is fixed structurally. Its residuals are the two
-envelope equations and boundary equation. Final acceptance checks both material trims and
-finite boundary incidence on the particular face named by the boundary seam. Coincidence
-within the seam tolerance does not transfer a finer incidence tolerance between faces.
-
-Both snapshot types provide `position` with explicit normal-velocity, finite-incidence and
-material-trim tolerances. Results use the canonical generating chart (the junction's first
-face for a junction vertex). A vertex has no unique face normal or generating velocity;
-its position accessor returns only three coordinates. Local solves check rank, but neither
-a declaration nor a local root certifies global uniqueness or regularity. Search bounds
-and seeds must select the intended root when there are multiple intersections.
-
-Vertices are spatial, have no planar solver coordinates or drawing glyph, and cannot be
-grounded as planar points. Component formals, privacy, construction roles, source printing
-and dependency-aware copy/delete follow ordinary entity rules. They establish shared
-corner identity; finite edge branches, oriented face loops and analytic solid assembly
-remain separate work.
-
-### 6.19 Finite spatial edges
-
-```sv
-tip_span := edge(tip_edge, from: tip_toe, to: tip_heel, along: shaft_axis)
-toe_span := edge(toe_edge, from: join_toe, to: tip_toe, along: shaft_axis)
-```
-
-An `edge` names a seam, two distinct spatial vertices, and a line defining its slicing
-direction. Its fields are `seam`, `from`, `to` and `along`, in that positional order.
-The endpoint vertices must be incident through declared identities. For two-boundary
-vertices, the edge's seam is one of the vertex's operands. At a generating junction,
-the same finite boundary also meets the junction's other face: an edge on that face is
-incident when it names that exact face and boundary surface. Coincident lookalikes do
-not establish this relationship.
-
-The `along` line is read in solved world coordinates and must be finite and nondegenerate.
-The endpoints must have distinct projections along it. Edge fraction `s` ranges from zero
-at `from` to one at `to`, and specifies the plane perpendicular to `along` at the linearly
-interpolated endpoint projection. It is not arc length. Reversing the line's direction
-preserves the slices; reversing the endpoint order reverses the fraction.
-
-`edge::SpatialEdge::named` reads an owned snapshot from the declaration, endpoint parameter
-witnesses and explicit `EdgeTolerance`. Witnesses use each vertex's canonical chart and
-are checked against its full defining geometry and material trims. The reader maps them
-into the edge seam's chart by face identity: a generating junction's two endpoint `u`
-coordinates need not agree. The snapshot retains one seam and the shared corner positions.
-`sample` solves the seam's original equations plus the spatial slicing equation through
-the existing intersection solver. It checks local rank, finite incidence and material
-trims in the interior, and preserves the exact stored endpoint positions checked by their
-full vertex definitions. It does not re-solve an endpoint with a potentially tangent
-slicing equation: a regular curve can have zero axial derivative at its endpoint.
-The returned parameters belong to the edge seam; its position has no unique face normal.
-
-This evaluator establishes checked local slices of a finite extent. It does not establish
-that every slice has exactly one root, that separate local solves stay on one connected
-branch, or that all intermediate slices are regular. Endpoint witnesses select local
-roots; they are numerical evaluation inputs, not planar coordinates or model hints.
-A branch with a turning point along the chosen line needs another chart or subdivision;
-rank-deficient requested interior slices are refused. Global branch validation and tolerance-controlled
-curve approximation remain required before these edges can bound a certified analytic solid.
-
-Edges own no solver coordinates and have no planar drawing glyph. Formals, private member
-geometry, construction roles, printing and dependency-aware copy/delete are ordinary entity
-semantics. A spatial edge is distinct from a planar line and cannot be grounded or used as
-a planar constraint operand. Oriented face uses are described in §6.20.
-
-### 6.20 Spatial face boundaries
-
-```sv
-working := face(toe, tip, heel, join, on: flank_region)
-transition := face(round_toe, join, round_heel, root, on: fillet_region)
-```
-
-An `on:` operand gives a face an explicit analytic support: a named surface, envelope
-or material patch. Every loop operand MUST be a distinct named spatial `edge`; its
-seam MUST name that exact support. Coincident but separately declared supports do not
-establish incidence. Consecutive edges MUST meet at the same spatial vertex identity,
-and the last MUST return to the first without revisiting another vertex. The written
-order determines directed edge uses; for a two-edge loop, the first edge's declared
-direction chooses between the two possible traversals. The current implementation
-accepts one loop and refuses holes, repeated edge uses and `-> close` on spatial faces.
-
-`face.on` reaches the support through an ordinary child reference. Faces retain their
-existing entity kind, own no solver coordinates, and follow ordinary component formals,
-privacy, construction roles and dependency-aware copy/delete. Spatial faces build after
-their finite edges. They are not planar sweep profiles: extrusion, revolution and a face family
-MUST refuse them rather than infer a default plane.
-
-`spatial_face::SpatialFaceBoundary` reads an immutable support and finite boundary edges
-from canonical vertex witnesses and explicit `EdgeTolerance`. Sampling follows the
-directed use, retains the edge position and verifies incidence on this particular support.
-A generating junction maps its canonical first-face parameter to the second face when
-needed. The result contains xyz, this support's parameters and the finite incidence error.
-Envelope samples check the envelope equation and material conditions; surface samples
-use the finite projector. A coarse junction tolerance does not replace fine face incidence.
-
-A closed loop with valid support incidence is not yet proof of a disk interior, outward
-orientation, geometric embedding or a valid solid. Those checks remain separate, as do
-global branch selection and tolerance-controlled curve/surface export. In particular,
-two different named edges can retrace the same curve and enclose no area.
+Through 0.119 these sections declared trimmed spatial patches (`patch`), shared spatial seams
+(`seam`), spatial vertices (`vertex`), finite spatial edges (`edge(…, along:)`) and spatial face
+boundaries (`face(…, on:)`). Each was a certification object: it added no unknown, no solve row
+read it, and nothing exported from it. They are no longer words of the language. Each is a Rust
+type made of its parts — `patch::TrimmedPatch`, `seam::{EnvelopeSeam, BoundarySeam,
+SurfaceSeam}`, `vertex::{BoundaryVertex, JunctionVertex}`, `edge::SpatialEdge` and
+`spatial_face::SpatialFaceBoundary` — over the surfaces and envelopes a drawing names (§6.13,
+§6.15), and its tolerance and identity rules are the implementation's contract
+(`docs/contract/analytic.md`). The section numbers are kept so that §6.21 onward keep theirs.
 
 ### 6.21 Sets **[0.49]**
 
@@ -2180,7 +1997,7 @@ What goes in the parentheses is a short list:
 | `coincident` | infix | **[0.42]** (point, point); (point, line \| circle \| arc \| spline \| curve) — incidence, where 0.41 and before wrote `on`; **[0.24]** (point, plane), (line, plane) in space — **[0.54]** of a point standing in space, its membership of the plane, as `in` (§6.7); **[0.74]** of a point its declaration draws in another plane, `p coincident P` draws it in `P` too and `P coincident p` passes `P` through it (§6.7); **[0.49]** (point, set), the set's body at the point (§6.21); **[0.42]** (point, axis), (axis, plane); **[0.43]** (axis, axis), one line either way round; **[0.44]** (line, axis), both ends on it; **[0.38]** (point, the envelope of a prism's side), from any view (§6.15.2); **[0.90]** (point, an envelope in space), owning its place (§6.15.3); **[0.94]** (point, a meshing), on its path of contact, owning its phase `t`, its lag `lag` and a place on each flank (§6.15.4). Read either way round: `P coincident p` is `p coincident P`, but for **[0.74]**'s point drawn in another plane. **[0.32]** Not (solid, solid): the body rule's union is `union` (§6.9) |
 | `cut` | infix | **[0.18]** (solid, solid) — the body rule's other half (§6.9), and no constraint at all |
 | `distance` | infix | (p, p); **[0.46]** +`along:` an ordinate — an axis or a line, or **[0.92]** the view's `u`/`v` for the run and the rise (`right`/`left`/`up`/`down` with the sign said); (p, line); (line, line); (circle, circle); (p, plane) with `along: u`/`v` for signed ordinates from the plane's origin, or **[0.24]** `along: n` for the signed distance along the plane's normal, in space; **[0.42]** (plane, plane), the second's origin along the first's normal (§6.10) |
-| `tangent` | infix | (line, circle); +`at:` for a tangency at a named end; (circle, circle); (arc, line); (spline, line); (curve, line), §6.5 — **six**; **[0.79]** (spline, curve, circle, arc or line; line) +`at: m`, a point held on the first: the tangent there, one equation reading the place of `m`'s contact — three more, and `parallel`; a line and a spline or a curve either way round; **[0.49]** (line, set), a contact on the line in the set and the body's derivative along the line; **[0.51]** (set, set) with the point in the parentheses, `k1 tangent(at: M) k2`, one tangent space there (§6.21); **[0.90]** (envelope in space; line, axis or plane) +`at: m`, a line in its tangent plane or a plane touching it at a point held on it (§6.15.3); **[0.121]** (circle or arc; line) at a point of the round — `at: m`, or the arc's end a chain's joint names — where the line is not drawn in the round's plane: the line's direction in the round's plane and square to the radius there, two equations, so a straight between bends in two planes touches each (§6.9) |
+| `tangent` | infix | (line, circle); +`at:` for a tangency at a named end; (circle, circle); (arc, line); (spline, line); (curve, line), §6.5 — **six**; **[0.79]** (spline, curve, circle, arc or line; line) +`at: m`, a point held on the first: the tangent there, one equation reading the place of `m`'s contact — three more, and `parallel`; a line and a spline or a curve either way round; **[0.49]** (line, set), a contact on the line in the set and the body's derivative along the line; **[0.51]** (set, set) with the point in the parentheses, `k1 tangent(at: M) k2`, one tangent space there (§6.21); **[0.90]** (envelope in space; line, axis or plane) +`at: m`, a line in its tangent plane or a plane touching it at a point held on it (§6.15.3); **[0.124]** (circle or arc; line) at a point of the round — `at: m`, or the arc's end a chain's joint names — where the line is not drawn in the round's plane: the line's direction in the round's plane and square to the radius there, two equations, so a straight between bends in two planes touches each (§6.9) |
 | `equal` | infix | (line, line) a length; (circle, circle) a radius |
 | `curvature` | infix | (spline, circle), (curve, circle); **[0.90]** (envelope in space, circle or arc) +`at: m`, the osculating circle of its section by the circle's plane (§6.15.3) |
 | `horizontal`, `vertical` | prefix | a line. **[0.48]** Between a pair of points they are the standard library's relation words (§9.9), `level(up)` and `level(right)`: `use std (horizontal, vertical)` |
@@ -2875,7 +2692,7 @@ The numerical method is unspecified. Whatever the method, a conforming solver:
 | E040 | type mismatch within an alias class |
 | E041 | cyclic definitional dependency (**[0.18]** a solid made of itself, §6.9; a plane folded from itself until 0.42) |
 | E050 | inconsistent system (no solution); report a minimal infeasible subset when computable |
-| E060 | a point put on two different planes (§6.7) **[0.10]**; **[0.42]** a circle, an arc or a spline over a point standing in space (**[0.123]** a spline there is a curve in space, §6.4; **[0.124]** an arc there is drawn in the plane through its points, a circle in the one square to its `normal:`) |
+| E060 | a point put on two different planes (§6.7) **[0.10]**; **[0.42]** a circle, an arc or a spline over a point standing in space (**[0.126]** a spline there is a curve in space, §6.4; **[0.127]** an arc there is drawn in the plane through its points, a circle in the one square to its `normal:`) |
 | E061 | `project` refused: a point on no plane, both on one plane, or parallel planes (§6.7) **[0.10]**; a point drawn in a plane asked whether it is on it, or how far off it along its normal **[0.24]**; two points of one view, or a point with itself, measured where the row is identically nothing **[0.46]** |
 | E062 | a word across planes, or over a point in space, with no meaning in space (`horizontal`, a run or rise, `tangent` between drawn figures, a curve's contacts) (§9.2) **[0.24]** **[0.42]** |
 | E064 | withdrawn **[0.42]**: was a solved view the model cannot hold (`fold: along`, `through:`) **[0.23]** |
@@ -3111,8 +2928,7 @@ element        = ekw [ "(" ctor_arg { "," ctor_arg } ")" ] { trailer }
                | face_decl | solid_decl ;
 ekw            = "point" | "line" | "circle" | "arc" | "spline" | "plane" | "axis"  (* axis [0.42] *)
                | "face" | "solid"                                            (* §6.8, §6.9 [0.18] *)
-               | "surface" | "motion" | "envelope" | "patch"                (* §6.13–§6.16 *)
-               | "seam" | "vertex" | "edge" ;                               (* §6.17–§6.19 *)
+               | "surface" | "motion" | "envelope" ;                        (* §6.13–§6.15 *)
 (* the trailing clauses are order-free: `hint(…)`, `knots […]`, `in REF`.  A
    place — `hint(at: t)`, `hint(at: c, bearing: …)` — is the same clause with `at:` and
    `bearing:` for keys, §6.4 [0.14] *)
@@ -3145,7 +2961,7 @@ sweep_arg      = ( "from" | "to" | "depth" | "sweep" | "at" ) ":" expr
 (* §6.8, §6.9 [0.18].  Both are ordinary elements — `face` and `solid` are element
    keywords — and are written out here for what their one list slot holds. *)
 face_decl      = "face" "(" face_arg { "," face_arg } [ "," "->" "close" ] ")" ;
-face_arg       = ref | ("edges" | "holes" | "on") ":" ref ;  (* planar/spatial restrictions: §6.8, §6.20 *)
+face_arg       = ref | ("edges" | "holes") ":" ref ;  (* §6.8 *)
 solid_decl     = "solid" "(" solid_term ")" ;
 solid_term     = ref [ "," ref ] { "," sweep_arg }                     (* a face swept *)
                | ref { "," ref } ;                         (* a body: its stock, then solids *)
@@ -3175,8 +2991,16 @@ arg            = [ IDENT ":" ] ( expr | hint_clause ) ; (* `w: hint(60)` leaves 
 (* §9.2: every constraint is a prefix or an infix operator; `name(args…)` is retired. *)
 relation       = [ "claim" ] ( prefix_form | infix_form | orientation | solid_claim | rate_form )
                  [ hint_clause ] ;  (* §4.3; presentation placement belongs to .svd *)
-rate_form      = "rate" "(" ref "over" IDENT ")" ( "perpendicular" | "parallel" ) ref ;
-                                                           (* §6.9 [0.116] *)
+rate_form      = rate rate_word [ op_args ] ( ref | rate ) (* §6.9 [0.116], §6.5 [0.119] *)
+               | ref rate_word [ op_args ] rate            (* §6.5 [0.119]: either side *)
+               | rate "distance" op_args ;                 (* alone, its component along `along:`,
+                                                              §6.5 [0.119] *)
+rate           = "rate" "(" ref "over" IDENT ")" ;
+rate_word      = "perpendicular" | "parallel" | "angle" | "distance" ;
+                                                           (* a word that reads a direction; two
+                                                              rates in one relation are E103, but
+                                                              over two formals one may be along
+                                                              the second, §6.5 [0.121] *)
 prefix_form    = IDENT [ op_args ] ref ;
 infix_form     = ref ( IDENT | "@" ) [ op_args ] ref ;   (* `@` is `coincident` [0.44] *)
 orientation    = orient "(" ref "," ref "," ref ")" ;      (* §9.2: a call *)

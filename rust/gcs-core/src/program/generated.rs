@@ -171,6 +171,7 @@ fn profile(sk: &mut Sketch, d: &Decl, tool: EntRef, motion: usize) -> Result<Cur
                 vars,
                 body: CurveBody::Envelope(generated),
                 pose_of: Vec::new(),
+                home: false,
             });
             sk.curve_defs.len() - 1
         }

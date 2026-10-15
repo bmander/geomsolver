@@ -118,7 +118,16 @@ impl Locus {
         v.rows.iter().find(|r| !taylor::has_form(r.0)).map(|r| KERNELS[r.0].name)
     }
 
-    /// Validate and encode.  An `Err` is a diagnostic for the family, not a panic.
+    /// Whether the block states a rate (#339 D2): its curve is integrated from its home
+    /// (`rates.rs`), not solved again at each place.
+    pub fn states_rate(&self) -> bool {
+        view(&self.flat).is_some_and(|v| !v.rates.is_empty())
+    }
+
+    /// Validate and encode.  An `Err` is a diagnostic for the family, not a panic.  `rates` is
+    /// what a block that states a rate adds (#339 D2): its rate rows, the rows that hold at its
+    /// home alone, and whether its drawn instance's pose is the initial value — the last `n_q`
+    /// of the θ columns.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         n_outer: usize,
@@ -129,6 +138,7 @@ impl Locus {
         seeds: Vec<Tape>,
         rows: Vec<Row>,
         preds: Vec<Pred>,
+        rates: Rates,
     ) -> Result<Locus, String> {
         if n_q == 0 || n_q > MAX_Q {
             return Err(format!("a trace block declares between 1 and {MAX_Q} unknowns"));
@@ -142,13 +152,22 @@ impl Locus {
         if seeds.len() != n_q || traced + 2 > n_q {
             return Err("trace block shape mismatch".to_string());
         }
+        let stated = !rates.rows.is_empty();
+        if !stated && !rates.init.is_empty() {
+            return Err("`initially { … }` says what holds at a home, and only a body that \
+                        states a rate has one: its rates are integrated from it".to_string());
+        }
         let n_res: usize = rows.iter().map(|r| KERNELS[r.kid].n_res).sum();
-        if n_res != n_q {
+        if !stated && n_res != n_q {
             return Err(format!(
                 "a trace block must determine its points: {n_q} unknowns against {n_res} equations"
             ));
         }
-        for r in &rows {
+        if stated && !preds.is_empty() {
+            return Err("a body that states a rate is integrated from its home, so it has no \
+                        branch an orientation could pick".to_string());
+        }
+        for r in rows.iter().chain(&rates.rows).chain(&rates.init) {
             let kn = &KERNELS[r.kid];
             if r.cols.len() != kn.n_par || r.consts.len() != kn.n_const {
                 return Err("trace row shape mismatch".to_string());
@@ -168,12 +187,15 @@ impl Locus {
             rows.len() as f64,
             traced as f64,
             preds.len() as f64,
+            rates.rows.len() as f64,
+            rates.init.len() as f64,
+            if rates.pose { 1.0 } else { 0.0 },
         ];
         for t in &w {
             f.push(t.flat.len() as f64);
             f.extend_from_slice(&t.flat);
         }
-        for r in &rows {
+        for r in rows.iter().chain(&rates.rows).chain(&rates.init) {
             f.push(r.kid as f64);
             f.push(r.cols.len() as f64);
             f.push(r.consts.len() as f64);
@@ -188,8 +210,21 @@ impl Locus {
             f.push(if p.ccw { 1.0 } else { 0.0 });
             f.extend(p.cols.iter().map(|&c| c as f64));
         }
+        let v = view(&f).ok_or("trace block shape mismatch")?;
+        if stated {
+            v.rate_body().check()?;
+        }
         Ok(Locus { flat: f })
     }
+}
+
+/// What a block that states a rate adds to its rows (#339 D2): the rows that read a rate, those
+/// that hold at its home alone, and whether its drawn instance's pose is the initial value.
+#[derive(Clone, Debug, Default)]
+pub struct Rates {
+    pub rows: Vec<Row>,
+    pub init: Vec<Row>,
+    pub pose: bool,
 }
 
 /* -- evaluation --------------------------------------------------------------------- */
@@ -322,6 +357,37 @@ struct View<'a> {
     rows: Vec<(usize, &'a [f64], &'a [f64])>,
     seeds: Vec<&'a [f64]>,
     preds: Vec<(bool, [usize; 6])>,
+    /// A body that states a rate (#339 D2): its rate rows, the rows of its home, and whether its
+    /// pose is columns.  Empty and false for every other block.
+    rates: Vec<(usize, &'a [f64], &'a [f64])>,
+    init: Vec<(usize, &'a [f64], &'a [f64])>,
+    pose: bool,
+}
+
+impl<'a> View<'a> {
+    /// The block as the integrator reads it (`rates.rs`).
+    fn rate_body(&self) -> crate::rates::Body<'a> {
+        let rows = |rs: &[(usize, &'a [f64], &'a [f64])]| -> Vec<crate::rates::Row<'a>> {
+            rs.iter().map(|&(kid, cols, consts)| crate::rates::Row {
+                kid,
+                cols: cols.iter().map(|&c| c as usize).collect(),
+                consts,
+            }).collect()
+        };
+        crate::rates::Body {
+            n_outer: self.n_outer,
+            n_theta: self.n_theta,
+            n_q: self.n_q,
+            pose: self.pose,
+            traced: self.traced,
+            dim: 2,
+            w: self.w.clone(),
+            seeds: self.seeds.clone(),
+            alg: rows(&self.rows),
+            rate: rows(&self.rates),
+            init: rows(&self.init),
+        }
+    }
 }
 
 /// Decode the flat form.  Trailing numbers past the encoding are ignored: a contact's constants
@@ -335,6 +401,12 @@ fn view(flat: &[f64]) -> Option<View<'_>> {
     let n_rows = g(4)? as usize;
     let traced = g(5)? as usize;
     let n_preds = g(6)? as usize;
+    let n_rates = g(7)? as usize;
+    let n_init = g(8)? as usize;
+    let pose = g(9)? == 1.0;
+    if n_rates > MAX_ROWS || n_init > MAX_ROWS {
+        return None;
+    }
     if n_outer == 0
         || n_outer > tape::MAX_VARS
         || 1 + n_theta > n_outer
@@ -347,7 +419,7 @@ fn view(flat: &[f64]) -> Option<View<'_>> {
     {
         return None;
     }
-    let mut at = 7usize;
+    let mut at = 10usize;
     // a length is bounded by the whole encoding before it indexes anything, so a corrupt one
     // is a `None` and never an overflow
     let take = |at: &mut usize, len: usize| -> Option<&[f64]> {
@@ -364,24 +436,31 @@ fn view(flat: &[f64]) -> Option<View<'_>> {
         at += 1;
         w.push(take(&mut at, len)?);
     }
-    let mut rows = Vec::with_capacity(n_rows);
-    let width = n_outer + n_q + n_w;
-    for _ in 0..n_rows {
-        let kid = g(at)? as usize;
-        let n_par = g(at + 1)? as usize;
-        let n_const = g(at + 2)? as usize;
-        at += 3;
-        let kn = KERNELS.get(kid)?;
-        if n_par != kn.n_par || n_const != kn.n_const {
-            return None;
+    // a body that states a rate has its rates as columns past `w` (#339 D2)
+    let width = n_outer + n_q + n_w + if n_rates > 0 { n_q } else { 0 };
+    let row_set = |n: usize, at: &mut usize| -> Option<Vec<(usize, &[f64], &[f64])>> {
+        let mut rows = Vec::with_capacity(n);
+        for _ in 0..n {
+            let kid = g(*at)? as usize;
+            let n_par = g(*at + 1)? as usize;
+            let n_const = g(*at + 2)? as usize;
+            *at += 3;
+            let kn = KERNELS.get(kid)?;
+            if n_par != kn.n_par || n_const != kn.n_const {
+                return None;
+            }
+            let cols = take(at, n_par)?;
+            if cols.iter().any(|&c| !(c >= 0.0 && (c as usize) < width)) {
+                return None;
+            }
+            let consts = take(at, n_const)?;
+            rows.push((kid, cols, consts));
         }
-        let cols = take(&mut at, n_par)?;
-        if cols.iter().any(|&c| !(c >= 0.0 && (c as usize) < width)) {
-            return None;
-        }
-        let consts = take(&mut at, n_const)?;
-        rows.push((kid, cols, consts));
-    }
+        Some(rows)
+    };
+    let rows = row_set(n_rows, &mut at)?;
+    let rates = row_set(n_rates, &mut at)?;
+    let init = row_set(n_init, &mut at)?;
     let mut seeds = Vec::with_capacity(n_q);
     for _ in 0..n_q {
         let len = g(at)? as usize;
@@ -403,7 +482,7 @@ fn view(flat: &[f64]) -> Option<View<'_>> {
         }
         preds.push((ccw, cols));
     }
-    Some(View { n_outer, n_theta, n_q, traced, w, rows, seeds, preds })
+    Some(View { n_outer, n_theta, n_q, traced, w, rows, seeds, preds, rates, init, pose })
 }
 
 /// Where an evaluation is anchored: the parameter value the block's predicates are read at,
@@ -674,6 +753,10 @@ fn eval_at(
     s: &mut Scratch,
 ) -> Val {
     let Some(v) = prepare(flat, outer, s) else { return Val::default() };
+    if !v.rates.is_empty() {
+        // the drawing's question: where, and no gradient
+        return rate_val(flat, &v, outer, anchor.u, None, need, key.is_some(), false).0;
+    }
     let u = outer[0];
     // taken out of the map rather than borrowed from it: the solve below wants the scratch the
     // pose lives in.  It goes back in `keep`, whatever this evaluation makes of it.
@@ -962,6 +1045,9 @@ pub fn sweep(
     if n == 0 {
         return Vec::new();
     }
+    if !v.rates.is_empty() {
+        return rate_sweep(flat, &v, outer, u0, u1, n, anchor.u);
+    }
     let q0 = v.n_outer;
     let at = |k: usize| u0 + (u1 - u0) * k as f64 / n as f64;
     let sample = |s: &mut Scratch, u: f64| {
@@ -1017,6 +1103,9 @@ pub fn kernel_eval_to(consts: &[f64], u: f64, theta_cols: &[f64], need: u8) -> V
     let pose = has_pose.then(|| &flat[flat.len() - n_q..]);
     let mut outer = [0.0f64; tape::MAX_VARS];
     let Some(outer) = outer_of(u, theta_cols, values, &mut outer) else { return Val::default() };
+    if let Some((val, _)) = rate_contact(flat, outer, anchor_u, need, false) {
+        return val;
+    }
     LOCUS_SCRATCH.with(|s| {
         let s = &mut *s.borrow_mut();
         // A compiled block's constants stay where they are put: `refresh_consts` rewrites a
@@ -1104,6 +1193,14 @@ pub struct Frame {
 }
 
 pub fn kernel_frame(consts: &[f64], u: f64, theta_cols: &[f64], need: u8) -> Frame {
+    if let Some((anchor_u, values, _, flat)) = decode(consts) {
+        let mut outer = [0.0f64; tape::MAX_VARS];
+        if let Some(outer) = outer_of(u, theta_cols, values, &mut outer) {
+            if let Some((val, r)) = rate_contact(flat, outer, anchor_u, need, true) {
+                return rate_frame(val, r.as_ref());
+            }
+        }
+    }
     let val = kernel_eval_to(consts, u, theta_cols, need);
     let mut d1 = [[0.0f64; tape::MAX_VARS]; 2];
     let mut d2 = [[f64::NAN; tape::MAX_VARS]; 2];
@@ -1159,6 +1256,101 @@ pub fn kernel_frame(consts: &[f64], u: f64, theta_cols: &[f64], need: u8) -> Fra
         }
     });
     Frame { val, d1, d2 }
+}
+
+/* -- a body that states a rate (#339 D2) ------------------------------------------------------ */
+
+/// A contact on a body that states a rate, read at `outer[0]` with its gradient (and, `frame`,
+/// its derivatives' too) — `None` for any other block.  The contact's constants carry the curve's
+/// interval where a pose would be, so every contact inside it reads one march.
+fn rate_contact(flat: &[f64], outer: &[f64], home: f64, need: u8, frame: bool)
+    -> Option<(Val, Option<crate::rates::Reading>)> {
+    let v = view(flat).filter(|v| !v.rates.is_empty() && flat.len() >= v.n_q)?;
+    let tail = &flat[flat.len() - v.n_q..];
+    Some(rate_val(flat, &v, outer, home, Some((tail[0], tail[1])), need, true, frame))
+}
+
+/// A body that states a rate, read at `outer[0]`: the flow from its home, as a `Val` — and the
+/// reading behind it, the sensitivities of its derivatives too where `frame`.
+fn rate_val(flat: &[f64], v: &View, outer: &[f64], home: f64, domain: Option<(f64, f64)>,
+            need: u8, sens: bool, frame: bool) -> (Val, Option<crate::rates::Reading>) {
+    let (u, body) = (outer[0], v.rate_body());
+    let to = crate::rates::reach(home, u, domain);
+    let Ok(m) = crate::rates::remembered(&body, flat, outer, home, to) else {
+        return (Val::default(), None);
+    };
+    let Some(r) = body.read(&m, u, need.max(1), sens, frame) else {
+        return (Val::default(), None);
+    };
+    let mut val = Val { ok: true, orders: r.orders, ..Val::default() };
+    val.x = r.d[0][0];
+    val.y = r.d[0][1];
+    val.dx[0] = r.d[1][0];
+    val.dy[0] = r.d[1][1];
+    for (j, g) in r.dc.iter().enumerate().take(tape::MAX_VARS - 1) {
+        val.dx[1 + j] = g[0];
+        val.dy[1 + j] = g[1];
+    }
+    if r.orders >= 2 {
+        val.d2 = [r.d[2][0], r.d[2][1]];
+    }
+    if r.orders >= 3 {
+        val.d3 = [r.d[3][0], r.d[3][1]];
+    }
+    (val, Some(r))
+}
+
+/// A `Frame` from a rate body's reading: along `u` its own higher orders, along each column the
+/// sensitivities of its derivatives.
+fn rate_frame(val: Val, r: Option<&crate::rates::Reading>) -> Frame {
+    let mut d1 = [[0.0f64; tape::MAX_VARS]; 2];
+    let mut d2 = [[f64::NAN; tape::MAX_VARS]; 2];
+    let Some(r) = r.filter(|_| val.ok) else { return Frame { val, d1, d2 } };
+    for k in 0..2 {
+        d1[k][0] = r.d[2][k];
+        if r.orders >= 3 {
+            d2[k][0] = r.d[3][k];
+        }
+        for (j, g) in r.dd1.iter().enumerate().take(tape::MAX_VARS - 1) {
+            d1[k][1 + j] = g[k];
+        }
+        for (j, g) in r.dd2.iter().enumerate().take(tape::MAX_VARS - 1) {
+            d2[k][1 + j] = g[k];
+        }
+    }
+    Frame { val, d1, d2 }
+}
+
+/// A rate body's curve over `[u0, u1]` in `n` chords: the march from the home to each end, read
+/// at every sample.  Where a march is refused the samples stop at the last place it reached.
+fn rate_sweep(flat: &[f64], v: &View, outer: &[f64], u0: f64, u1: f64, n: usize, home: f64)
+    -> Vec<(f64, f64)> {
+    let body = v.rate_body();
+    let mut out = Vec::with_capacity(n + 1);
+    let at = |k: usize| u0 + (u1 - u0) * k as f64 / n as f64;
+    let marches: Vec<Option<std::rc::Rc<crate::rates::March>>> = [u0, u1]
+        .iter()
+        .map(|&end| {
+            let to = crate::rates::reach(home, end, Some((u0, u1)));
+            crate::rates::remembered(&body, flat, outer, home, to).ok()
+        })
+        .collect();
+    for k in 0..=n {
+        let u = at(k);
+        let m = if (u - home) * (u0 - home) > 0.0 { &marches[0] } else { &marches[1] };
+        let Some(r) = m.as_ref().and_then(|m| body.read(m, u, 1, false, false)) else { continue };
+        out.push((r.d[0][0], r.d[0][1]));
+    }
+    out
+}
+
+/// How far a body that states a rate is integrated across `domain` from `home` (#339 D2), each
+/// way (`rates::reaches`): `None` for any other block.
+pub fn rate_reach(flat: &[f64], outer: &[f64], home: f64, domain: (f64, f64))
+    -> Option<[crate::rates::Reached; 2]> {
+    let v = view(flat).filter(|v| !v.rates.is_empty())?;
+    let ends = [domain.0.min(domain.1), domain.0.max(domain.1)];
+    Some(crate::rates::reaches(&v.rate_body(), flat, outer, home, ends))
 }
 
 /// Drop every remembered pose.  `System::new` calls it: a contact's constants are addressed by
