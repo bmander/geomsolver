@@ -94,6 +94,7 @@ mod geometry_semantics;
 mod held_envelopes;
 mod helix;
 mod meshing;
+mod meshing_problem;
 mod highlight;
 mod homotopy;
 mod hub_motor;

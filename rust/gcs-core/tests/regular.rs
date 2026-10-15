@@ -52,7 +52,7 @@ fn shift(e: &Elaborated) -> f64 {
 }
 
 /// The sweep's admission of the pinion: its least area factor, or the condition it is refused at.
-fn admitted(e: &Elaborated) -> Result<f64, Condition> {
+pub(crate) fn admitted(e: &Elaborated) -> Result<f64, Condition> {
     let pinion = fixtures::solid(e, "pair.pinion.body");
     match admission::admit_body(&e.sketch, pinion, &Options::default()) {
         Ok(a) => Ok(a.sweeps()[0].least_area_factor),

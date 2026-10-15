@@ -115,11 +115,11 @@ impl System {
                 // torn at it first: whole, it can come to a root on another sheet of the envelope
                 // that every word it states allows
                 let ok = if pass.contacts && self.finds_numbers(sk, b) {
-                    self.torn(sk, &mut pass, z, b, opts)
+                    self.torn(sk, &mut pass, z, b, true, opts)
                         || self.pass_block(sk, &mut pass, z, b, opts)
                 } else {
                     self.pass_block(sk, &mut pass, z, b, opts)
-                        || self.torn(sk, &mut pass, z, b, opts)
+                        || self.torn(sk, &mut pass, z, b, false, opts)
                 };
                 if !ok {
                     whole = false;
@@ -245,24 +245,57 @@ impl System {
     /// contact on an envelope, and otherwise only where the block comes to no root whole.  At
     /// most `TEAR_MAX` unknowns; whether it came out, `z` holding what it came to — or as it
     /// was, where it did not.
+    ///
+    /// Where no statements can be left over for all of them, a block that finds them from a
+    /// contact (`fewer`) is torn at each one alone (#345), the others found inside with the
+    /// geometry — two ease curvatures, one read off a lag stated of a meshing's contact, whose
+    /// ten rows a tearing can leave over only whole, and one off the angle of its path, one row.
+    /// Both may be torn at by the structure; the later column is tried first and the other
+    /// only where it does not come out.
     fn torn(
         &mut self,
         sk: &Sketch,
         p: &mut Pass,
         z: &mut [f64],
         b: &SolveBlock,
+        fewer: bool,
         opts: &SolveOpts,
     ) -> bool {
-        let held = self.seeded_numbers(sk, b);
-        if held.is_empty() || held.len() > TEAR_MAX || held.len() == b.cols.len() {
+        let all = self.seeded_numbers(sk, b);
+        if all.is_empty() || all.len() > TEAR_MAX || all.len() == b.cols.len() {
             return false;
         }
-        let Some(tear) = self.tearing(b, &held) else { return false };
+        if let Some(tear) = self.tearing(b, &all) {
+            return self.torn_at(sk, p, z, &all, &tear, opts);
+        }
+        // fewer: with `TEAR_MAX` two, each number alone, the later column first
+        if !fewer || all.len() < 2 {
+            return false;
+        }
+        for held in all.iter().rev().map(std::slice::from_ref) {
+            let Some(tear) = self.tearing(b, held) else { continue };
+            if self.torn_at(sk, p, z, held, &tear, opts) {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// `torn` at the unknowns `held`, the rows `tear` leaves over.
+    fn torn_at(
+        &mut self,
+        sk: &Sketch,
+        p: &mut Pass,
+        z: &mut [f64],
+        held: &[usize],
+        tear: &Tearing,
+        opts: &SolveOpts,
+    ) -> bool {
         let before = z.to_vec();
         let mut solved = p.solved.clone();
         solved.extend(held.iter().copied());
         let k = held.len();
-        let mut out = self.subset(&tear.outer, &held);
+        let mut out = self.subset(&tear.outer, held);
         // the rows left over with the unknowns at `x`, the rest solved in order; `None` where a
         // part comes to no root
         let mut at = |sys: &mut System, z: &mut [f64], x: &[f64], p: &mut Pass|

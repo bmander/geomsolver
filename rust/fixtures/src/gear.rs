@@ -187,6 +187,13 @@ pub fn read_as_configured() -> program::Elaborated { read(&source()) }
 /// `configure`, `design` and `fabricated` set them, and `read` reads it, `hypoid` beside it.
 pub fn formate_source() -> String { std::fs::read_to_string(project().join("formate.sv")).unwrap() }
 
+/// The pair stated as its meshing problem, `meshing_problem.sv` (#345, S4): `formate.sv`'s pair
+/// with the gear's concave flanks eased off the face mill's cone, the ease found from the contact
+/// the document states. `read` reads it, `hypoid` and `formate` beside it.
+pub fn meshing_problem_source() -> String {
+    std::fs::read_to_string(project().join("meshing_problem.sv")).unwrap()
+}
+
 /// The twelve designs the layout regression records (`tests/hypoid_layout.rs`), each a label and
 /// the document at it: the configured hypoid (with no fabrication allowances, as it was
 /// recorded), the bevel pair, the six-millimetre hypoid, and the bevel pair at three tooth pairs
