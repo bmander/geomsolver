@@ -48,11 +48,16 @@ pub(super) fn validate_chain(
     true
 }
 
-/// Expanded references keep the source's last field as the boundary's public name.
-fn boundary_name(r: &crate::syntax::Ref) -> &str {
+/// Expanded references keep the source's last field as the boundary's public name — a block's
+/// copy spelled as the source would reach it, `side[2]` (#243 L8), so the copies of one edge
+/// stay apart.
+fn boundary_name(r: &crate::syntax::Ref) -> String {
     match r.path.last() {
-        Some(crate::syntax::Seg::Field(n)) => &n.text,
-        _ => r.root.text.rsplit('.').next().unwrap_or(&r.root.text),
+        Some(crate::syntax::Seg::Field(n)) => n.text.clone(),
+        _ => {
+            let public = super::super::public_path(&r.root.text);
+            public.rsplit('.').next().unwrap_or(&public).to_string()
+        }
     }
 }
 
@@ -179,7 +184,8 @@ fn loop_items(
     closed: bool,
     report: &mut impl FnMut(Code, Span, String),
 ) -> Option<Vec<Item>> {
-    let reserved: BTreeSet<&str> = refs.iter().map(|(r, _)| boundary_name(r)).collect();
+    let leaves: Vec<String> = refs.iter().map(|(r, _)| boundary_name(r)).collect();
+    let reserved: BTreeSet<&str> = leaves.iter().map(String::as_str).collect();
     let mut anonymous = 0;
     let mut items: Vec<Item> = Vec::with_capacity(refs.len());
     let mut trimmed: BTreeSet<u32> = BTreeSet::new();
@@ -249,7 +255,7 @@ fn loop_items(
         let name = if leaf.starts_with('#') {
             fresh_boundary_name("edge", &mut anonymous, &reserved)
         } else {
-            leaf.to_string()
+            leaf
         };
         match e.kind {
             EntKind::Line | EntKind::Arc | EntKind::Circle | EntKind::Spline | EntKind::Point => {

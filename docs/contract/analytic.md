@@ -139,7 +139,7 @@ angle there; printing, sharing the place either way round and refusing an unheld
 `jacobians::meshing_contacts_agree_with_finite_differences` holding both kinds over a formed, a
 round and two generated flanks.
 
-**Ease-off (#345 S2, [0.113]):** `meshing(…, ease: M, along: l, profile: κₚ, lengthwise: κₗ)` is
+**Ease-off (#345 S2, [0.114]):** `meshing(…, ease: M, along: l, profile: κₚ, lengthwise: κₗ)` is
 `MeshingE::ease` (`model::Ease`: the point, the line, each curvature a `TermNumber` read off the
 declaration's text by `program::envelopes::ease`, an unknown it reads bound there —
 `expr::bind_free`, and kept bound by `expr::evaluate` while a contact holds to the meshing). The

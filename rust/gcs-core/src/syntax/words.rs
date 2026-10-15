@@ -38,7 +38,27 @@ pub(super) fn over_chain(toks: &[(Tok, Span)], at: usize) -> bool {
     matches!(
         (toks.get(at), toks.get(at + 1)),
         (Some((Tok::Ident(_), _)), Some((Tok::Ident(w), _))) if w == "in"
-    )
+    ) || over_walks(toks, at)
+}
+
+/// Whether a block's header runs over several walks in step: `(ea, eb) in (…)` (#243 L8) — a
+/// bracketed list of names, then `in`.
+pub(super) fn over_walks(toks: &[(Tok, Span)], at: usize) -> bool {
+    if !matches!(toks.get(at), Some((Tok::P('('), _))) {
+        return false;
+    }
+    let mut i = at + 1;
+    loop {
+        if !matches!(toks.get(i), Some((Tok::Ident(_), _))) {
+            return false;
+        }
+        match toks.get(i + 1) {
+            Some((Tok::P(','), _)) => i += 2,
+            Some((Tok::P(')'), _)) => break,
+            _ => return false,
+        }
+    }
+    matches!(toks.get(i + 2), Some((Tok::Ident(w), _)) if w == "in")
 }
 
 /// Whether the operator registry admits this joint word.

@@ -11,6 +11,73 @@ Solvent. Rust grows only three kinds of things:
   corner) and build it exactly. They never change what the family says, and the general
   evaluation gates each one.
 
+## L8: rails and correspondence (2026-10-15)
+
+**Verdict: two faces drawn apart are lofted by a library word, and finding 8 is closed by three
+general features.** **A block walks a face**: `repeat e in f` and `cycle e in f` run over its edges
+in walk order — a chain it is made of, the edges it names, or for a face of corners the straight
+run from each corner to the next, a hidden line the face owns. **Walks run in step**: `cycle (ea,
+eb) in (a, b)` names link `k` of each in copy `k`, and walks of different lengths are refused
+naming both. **A face of a block's copies**: `face(side)` is `side[0]`, `side[1]`, …, the count
+the block's. Over them `std.Ruled(a, b, s:)` is CAD's loft of two sketches — corner `k` of each
+walk joined by a straight rail, the section where the plane through three rails at `s` cuts every
+rail (`Across`), so its ends are the faces whatever their planes — and `std.Apex(a, tip, s:)` the
+loft to a point. A section **held to its rails** is `std.Similar` (two rails: moved, turned and
+scaled) or `std.Affine` (three: sheared too), each corner of a profile drawn once at its own place
+in the frame the rail points make, read off the drawing. Solvent 0.113;
+[`l0/two_faces.sv`](l0/two_faces.sv) is written over `std.Ruled` (and `pending.sv` is gone);
+`rust/gcs-core/tests/correspondence.rs`, off the exact B-rep to 1e-9:
+
+| solid | what it is | closed form (mm³) |
+|---|---|---|
+| `two_faces.sv`: the square to the diamond, corner to corner | ruled, parallel ends 40 apart | 40/6 · 1856 = 12373.33 (relative error 7e-14) |
+| the same with the diamond walked from its second corner | a connector: a quarter turn on | 40/6 · (400 + 4 · 52 + 288) = 5973.33 |
+| the square to a triangle walked with its top edge's middle named | unequal counts made alike by a statement | the prismatoid, 8750 |
+| the square to a tip at (3, 30, 2) (`std.Apex`) | a pyramid leaning off its base | 400 · 30 / 3 = 4000 |
+| a 20 × 3 profile on two rails closing 20 → 8 over 50 (`std.Similar`) | scaled by the rails' spread | ∫60k² · 50 ds = 1560 |
+| the same, one rail rising 3 and the other falling 3 | turned as it narrows | 60 · 50 / 400 · ∫(20 − 12s)² + 36s² ds = 1650 |
+| a 6 mm square on three rails in space (`std.Affine`) | its area 36/50 of the rails' triangle | 40/6 · 0.72 · (200 + 4 · 146.875 + 87.5) = 4200 |
+
+**Correspondence is a statement, never inferred.** The pairing is the walks' written order: a
+**connector** is where a walk starts (`face(b1, b2, b3, b0, -> close)` pairs the inlet's first
+corner with `b1`), and two faces of different corner counts are made alike by **naming a point on
+an edge** of the shorter one (`m coincident(t == 0.5) half`, `face(t0, t1, t2, m, -> close)`).
+Walks of different lengths are E080, `` `inlet` walks 4 links and `tri` 3 ``, naming what was
+given rather than the word's formals.
+
+**A held number is a number, any expression of it.** A station's numbers could read its given
+geometry only affinely (one free name a dimension). `Similar`'s and `Affine`'s corners stand at
+`(i, j)` in a frame, `i` and `j` quotients of the profile's coordinates, so a number a station
+gives a relation word or a component is now kept as text where it reads given geometry
+(`station_text`), each read keyed under the block copy reading it — the corners of a `cycle`'s
+copies had shared one key, `sec.e.p1.x` — and worked out at each station. Each corner is
+`std.Framed(n, a, ab, ac, i:, j:)`: two `offset`s from the rail point `a`, affine in hidden
+unknowns (`Spans(n, a, b).du`, `.dv`: where one rail point stands from another in the station's
+frame) with those quotients as coefficients; a corner on its frame's axis gives a coefficient of
+0, which is now the number it comes to rather than "does not affect".
+
+*Departures from the item:*
+
+- **The two-face word takes no guide.** L0's `pending.Ruled(a, b, guide, up)` stood its station
+  square to a guide, which meets the faces' own planes only when they are square to it at its
+  ends. `Ruled` stands it on its rails (`Across` over the first three), so the ends are the faces
+  whatever their planes, and between parallel ends every station is parallel too. The first three
+  corners of each walk must not stand in a line.
+- **Guide rails are a profile held to rails, not `corner coincident rail`.** The blade already
+  reached its rails corner by corner at L0; what was missing is a section *drawn once* and held to
+  them, which `Similar` and `Affine` say. A station still stands on a guide (`OnLine`) or on its
+  rails (`Across`).
+- **Mixed kinds are not said.** An arc edge lofted with a line edge is exactly a rational
+  quadratic edge (the line read with the arc's weights), its middle control point on a rail from
+  the line's middle to the arc's tangents' corner, its weight `cos(sweep / 2)`. That needs a
+  weight reading the arc's geometry at each station and a word choosing by an edge's kind; a
+  walk's `e.p1` of an arc is not one either (an arc has `start`). So square to circle stays the
+  one running section of L1 (`l0/square_to_circle.sv`, exact since L2), and the pyramid is gated
+  both ways (`l0/pyramid.sv`'s shrinking square, and `Apex`).
+
+Handed on: mixed kinds (a rational edge and kind dispatch); a face with holes walked loop by loop
+(a hollow two-face loft); a `std.Loft` over several faces, which a walk of faces would give.
+
 ## L7: several sections, ruled or smooth (2026-10-15)
 
 **Verdict: a loft through several sections is drawn on rails, and two general features say it.**
@@ -427,7 +494,7 @@ so nothing in the repository reads them but L1's gate (`tests/face_family.rs`). 
 stopped at its first error:
 - eight stop at the family (`expected , or )` at `over`);
 - `pipe.sv` and `two_faces.sv` stop at the words that cannot be written yet
-  ([`l0/pending.sv`](l0/pending.sv): `path` is not a type).
+  (`l0/pending.sv`, removed at L8: `path` is not a type).
 
 The station probes are in [`l0/stations/`](l0/stations/): each program with its family drawn at
 `s: 0.5` in place of its solid, over [`l0/stations/lofts.sv`](l0/stations/lofts.sv), the library in
@@ -445,7 +512,7 @@ fixtures.
 | [`blade.sv`](l0/blade.sv) | — | two rails in plan holding the width | 2100 | DOF 0, rails at ±7 |
 | [`square_to_circle.sv`](l0/square_to_circle.sv) | — | a square to a circle, one section | 8000 + 1000π | DOF 0, corners ±5, R5 |
 | [`pyramid.sv`](l0/pyramid.sv) | — | a loft to a point | 4000 | DOF 0, half 5 |
-| [`two_faces.sv`](l0/two_faces.sv) | `solid_twist.sv` | two faces drawn apart, paired by the word | 40/6 · 1856 (prismatoid; today's `solid_twist` measures it) | *pending: finding 8* |
+| [`two_faces.sv`](l0/two_faces.sv) | `solid_twist.sv` | two faces drawn apart, paired by the word | 40/6 · 1856 (prismatoid; today's `solid_twist` measures it) | *pending: finding 8* (since L8 `std.Ruled`) |
 
 ### The vocabulary the programs assume
 
@@ -552,7 +619,8 @@ fixtures.
      - E061's twin judgement waits for planes the solve places: judged once `views::place` has
        placed them, else where the solve leaves them.
 
-8. **The generic two-face loft is not writable** (`two_faces.sv`, `pending.Ruled`). CAD's
+8. **The generic two-face loft is not writable** (`two_faces.sv`, `pending.Ruled`). *Done at L8
+   (`std.Ruled`, over a face's walk and walks in step).* CAD's
    "loft these two sketches" needs, in a word's body:
    - repeating over a face's walk (`repeat e in a`: "`a` is not a named chain"; a face is no
      chain, and there is no chain formal);

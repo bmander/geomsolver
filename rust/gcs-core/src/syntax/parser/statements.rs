@@ -4,7 +4,7 @@ use super::P;
 use crate::model::EntKind;
 use crate::style::Classes;
 use crate::syntax::lexer::Tok;
-use crate::syntax::words::{self, over_chain, set_at, Brackets, BLOCKS, ENERGY_WORDS};
+use crate::syntax::words::{self, over_chain, over_walks, set_at, Brackets, BLOCKS, ENERGY_WORDS};
 use crate::syntax::{
     Arg, Block, BlockKind, BodyWord, Branch, Chained, ClaimOver, Component, CurveSpec, CurveTarget,
     Decl, DeclName, EdgesOf, DerivedDecl, Formal, InBlock, InstArg, InstVal, Instance, Membership,
@@ -1241,6 +1241,44 @@ impl<'a> P<'a> {
         Some(SetLit { bound, body, span: Span::new(lo, self.prev_hi()) })
     }
 
+    /// `(ea, eb) in (a, b)` — a block's walks run in step (#243 L8): as many names as walks,
+    /// the first of each the block's own walk and the rest its `zip`.
+    fn walks(&mut self) -> Option<(Name, Ref, Vec<(Name, Ref)>)> {
+        self.i += 1;
+        let mut vars = vec![self.ident()?];
+        while self.eat_p(',') {
+            vars.push(self.ident()?);
+        }
+        self.i += 2; // `)` and `in`
+        if !self.eat_p('(') {
+            self.fail("walks run in step are bracketed alike: `(ea, eb) in (a, b)`");
+            return None;
+        }
+        let mut chains = vec![self.refr()?];
+        while self.eat_p(',') {
+            chains.push(self.refr()?);
+        }
+        if !self.eat_p(')') {
+            self.fail("expected `,` or `)`");
+            return None;
+        }
+        if chains.len() != vars.len() {
+            self.fail(&format!(
+                "{} names for {} walks: each walk run in step is named once, in order",
+                vars.len(),
+                chains.len()
+            ));
+            return None;
+        }
+        if vars.len() < 2 {
+            self.fail("one walk is written without brackets: `repeat e in a`");
+            return None;
+        }
+        let mut zip: Vec<(Name, Ref)> = vars.into_iter().zip(chains).collect();
+        let (var, chain) = zip.remove(0);
+        Some((var, chain, zip))
+    }
+
     /// `repeat`, `cycle`, `ring` and `when`: a header, then a braced body.
     fn block(&mut self, kind: BlockKind, next_id: &mut u32) -> Option<Block> {
         let lo = self.prev_hi();
@@ -1253,9 +1291,17 @@ impl<'a> P<'a> {
         }
         // `when c in B` is a condition, not a chain to run over (#267)
         if kind != BlockKind::When && over_chain(&self.t, self.i) {
-            let var = self.ident()?;
-            self.i += 1;
-            let chain = self.refr()?;
+            let (var, chain, zip) = if over_walks(&self.t, self.i) {
+                let Some(walks) = self.walks() else {
+                    self.skip_block();
+                    return None;
+                };
+                walks
+            } else {
+                let var = self.ident()?;
+                self.i += 1;
+                (var, self.refr()?, Vec::new())
+            };
             // a filter on the copies is a `when` in the body (#267): `when b != a { … }`
             if matches!(self.peek(), Some(Tok::Ident(w)) if w == "if") {
                 self.fail("which copies make anything is a `when` in the body: \
@@ -1269,7 +1315,7 @@ impl<'a> P<'a> {
                 kind,
                 count: String::new(),
                 head: Span::at(lo),
-                over: Some(EdgesOf { var, chain }),
+                over: Some(EdgesOf { var, chain, zip }),
                 binder,
                 body,
                 joint,
