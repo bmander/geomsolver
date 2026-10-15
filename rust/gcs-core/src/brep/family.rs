@@ -622,11 +622,14 @@ pub fn family(loops: &[Vec<Wall>],vanish: f64) -> Result<Brep,String> {
             e.curve = EdgeCurve::Curve(Curve::Iso(swept(&sheet,carry),0.));
             e.t = [0.,1.];
         }
-        lower(&mut exact,&out,Some(carry));
-        if exact.faces.iter().all(|f| !matches!(f.surface,Surface::Family(..))) { return Ok(exact) }
+        let walls = exact.faces.iter().filter(|f| matches!(f.surface,Surface::Family(..))).count();
+        let lowered = lower(&exact,&out,Some(carry));
+        if lowered.len() == walls {
+            for (fi,face) in lowered { exact.faces[fi] = face; }
+            return Ok(exact)
+        }
     }
-    let general = out.clone();
-    lower(&mut out,&general,None);
+    for (fi,face) in lower(&out,&out,None) { out.faces[fi] = face; }
     Ok(out)
 }
 
@@ -679,8 +682,8 @@ fn carried(loops: &[Vec<Wall>],tol: f64) -> Option<Carry> {
     let sine = |f: &[V;3]| scale((0..3).fold([0.;3],|acc,i| add(acc,cross(f0[i],f[i]))),0.5);
     let cosine = |f: &[V;3]| ((0..3).map(|i| dot(f0[i],f[i])).sum::<f64>()-1.)/2.;
     let held = |carry: &Carry,v: &[f64]| moves.iter().zip(v).all(|((_,_,p),&v)| p0.iter().zip(p).all(|(&x,&y)| distance(carry.at(x,v),y) <= tol));
-    let widest = moves.iter().map(|m| norm(sine(&m.0))).fold(0.,f64::max);
-    if widest <= 1e-12 {
+    let widest = (0..moves.len()).max_by(|&i,&j| norm(sine(&moves[i].0)).total_cmp(&norm(sine(&moves[j].0))))?;
+    if norm(sine(&moves[widest].0)) <= 1e-12 {
         // no turn: a step along one line
         let delta = moves.last()?.1;
         let len = norm(delta);
@@ -689,8 +692,7 @@ fn carried(loops: &[Vec<Wall>],tol: f64) -> Option<Carry> {
         let carry = Carry::Line {delta};
         return (v.windows(2).all(|w| w[1] >= w[0]) && held(&carry,&v)).then_some(carry)
     }
-    let m = moves.iter().max_by(|x,y| norm(sine(&x.0)).total_cmp(&norm(sine(&y.0))))?;
-    let axis = unit(sine(&m.0));
+    let axis = unit(sine(&moves[widest].0));
     // each station's turn about `axis`, signed, unwound from the last
     let w0 = crate::space::normalised(cross(axis,f0[0])).or_else(|| crate::space::normalised(cross(axis,f0[1])))?;
     let mut theta: Vec<f64> = Vec::with_capacity(moves.len());
@@ -704,10 +706,10 @@ fn carried(loops: &[Vec<Wall>],tol: f64) -> Option<Carry> {
     if !(angle.abs() > 1e-9) { return None }
     // the centre, off the station turned nearest a half turn: (I − R) c = t − (a·t) a in the
     // plane square to the axis, so c = ½ b + ½ cot(θ/2) a × b there
-    let (f,t,_) = moves.iter().max_by(|x,y| (1.-cosine(&x.0)).total_cmp(&(1.-cosine(&y.0))))?;
-    let th = cosine(f).clamp(-1.,1.).dacos()*dot(sine(f),axis).signum();
-    let bv = sub(*t,scale(axis,dot(axis,*t)));
-    let centre = add(scale(bv,0.5),scale(cross(axis,bv),0.5/(th/2.).dtan()));
+    let half = (0..moves.len()).max_by(|&i,&j| cosine(&moves[j].0).total_cmp(&cosine(&moves[i].0)))?;
+    let t = moves[half].1;
+    let bv = sub(t,scale(axis,dot(axis,t)));
+    let centre = add(scale(bv,0.5),scale(cross(axis,bv),0.5/(theta[half]/2.).dtan()));
     let advance = dot(axis,moves.last()?.1);
     let v: Vec<f64> = theta.iter().map(|th| th/angle).collect();
     let carry = Carry::Screw {center:centre,axis,angle,advance};
@@ -722,12 +724,13 @@ const AGREE: f64 = 1e-10;
 /// on that surface — read off what its numbers do, never off what made them: a line edge that
 /// stays in one plane; an arc whose plane stays square to one axis through its centre (a cylinder
 /// where its radius holds, else a cone where the radius runs with the height); an arc whose plane
-/// turns about one axis lying in it (a torus). Failing those, where the section is `carry`'d
-/// rigidly (`carried`), the surface its first rim sweeps (`swept`). Held to the sheet before it is
+/// turns about one axis lying in it (a torus). Failing those, where the section moves rigidly by
+/// `carry` (`carried`), the surface its first rim sweeps (`swept`). Held to the sheet before it is
 /// kept: the sheet's points at every node on the surface within `AGREE` of the wall's size, and
-/// the face's area on it within `AGREE` of the sheet's. A wall with a vanished edge is lowered only
-/// to a plane.
-fn lower(b: &mut Brep,general: &Brep,carry: Option<Carry>) {
+/// the face's area on it within `AGREE` of the sheet's in `general`. A wall with a vanished edge is
+/// lowered only to a plane. The walls of `b` that lower, each as its face on its new surface.
+fn lower(b: &Brep,general: &Brep,carry: Option<Carry>) -> Vec<(usize,Face)> {
+    let mut out = Vec::new();
     for fi in 0..b.faces.len() {
         let Surface::Family(_,sheet) = &b.faces[fi].surface else { continue };
         let sheet = sheet.clone();
@@ -739,9 +742,10 @@ fn lower(b: &mut Brep,general: &Brep,carry: Option<Carry>) {
         let candidates = [analytic(&sheet,tol),carry.map(|c| Surface::Blend(frame,swept(&sheet,c)))];
         for surface in candidates.into_iter().flatten() {
             if degenerate && !matches!(surface,Surface::Plane(_)) { continue }
-            if let Some(face) = lowered(b,general,fi,&sheet,surface,size,tol) { b.faces[fi] = face; break }
+            if let Some(face) = lowered(b,general,fi,&sheet,surface,size,tol) { out.push((fi,face)); break }
         }
     }
+    out
 }
 
 /// The wall `sheet` swept by `carry` from its rim at the family's start: `M(v)·C(u)`, the rim

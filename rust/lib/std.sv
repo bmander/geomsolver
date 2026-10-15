@@ -578,16 +578,17 @@ component Helix(base: plane, pitch: Length, turns: Scalar, s: Scalar) {
   base.origin distance(pitch * turns * s + 10mm, along: base.normal) c
   private construction out := line(o, a)
   private construction across := line(o, b)
-  private construction up := line(o, c)
+  private construction rise := line(o, c)
   n := plane(u: out, v: across)
-  axial := plane(u: out, v: up)
+  axial := plane(u: out, v: rise)
 }
 
 // A helix's normal station: the plane square to the helix of radius `r` about `base`'s normal
 // (`Helix`'s screw), rising `pitch` a turn, at `turns · s` turns from `base.u`.  Its `u` runs out
 // from the axis and its `v` up the axis leaned back by the helix's lead angle, so a section drawn
 // in it (a spring's wire) is carried along the helix, square to it at every station.  Like
-// `Helix`, every direction is an ordinate in `base`'s frame.
+// `Helix`, every direction is an ordinate in the drawn `base`'s frame: against `Helix`'s axial
+// plane, which moves, its `normal` would keep its sense only by continuity.
 component OnHelix(base: plane, r: Length, pitch: Length, turns: Scalar, s: Scalar) {
   // the helix's tangent is (2πr·t̂ + pitch·ẑ) / lead over a turn, t̂ the way the screw turns
   private m := point
@@ -604,8 +605,8 @@ component OnHelix(base: plane, r: Length, pitch: Length, turns: Scalar, s: Scala
   base.origin distance(pitch * turns * s + 10mm * 2 * pi * r / hypot(2 * pi * r, pitch),
                        along: base.normal) b
   private construction out := line(m, a)
-  private construction up := line(m, b)
-  n := plane(u: out, v: up)
+  private construction lean := line(m, b)
+  n := plane(u: out, v: lean)
 }
 
 // -- laws of a station (#243 L5) ----------------------------------------------------------------

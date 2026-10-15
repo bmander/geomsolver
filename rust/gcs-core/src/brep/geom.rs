@@ -286,7 +286,7 @@ impl Blend {
         (-turns..=turns).map(|k| (phi+tau*k as f64)/angle).filter(|v| (0.0..=1.0).contains(v)).collect()
     }
     /// Gauss–Newton for the parameters of the patch's point nearest `p`, from `uv`.
-    pub fn newton(&self,p: V,mut uv: Uv) -> Uv {
+    fn newton(&self,p: V,mut uv: Uv) -> Uv {
         for _ in 0..30 {
             let (x,su,sv) = self.d1(uv);
             let e = sub(x,p);
