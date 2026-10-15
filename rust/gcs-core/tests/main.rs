@@ -134,6 +134,7 @@ mod ordinate;
 mod overview;
 mod par;
 mod patches;
+mod path_examples;
 mod paths;
 mod phillips;
 mod pick;

@@ -347,7 +347,7 @@ fn bezier(ctrl: &[V; 4], t: f64) -> [V; 3] {
 
 /// `∫ f` over `(a, b)` by five-point Gauss–Legendre over 400 panels: to the last digit for a
 /// curve's speed.
-fn integral(a: f64, b: f64, f: impl Fn(f64) -> f64) -> f64 {
+pub fn integral(a: f64, b: f64, f: impl Fn(f64) -> f64) -> f64 {
     let (x, w) = ([-0.906179845938664, -0.538469310105683, 0.0, 0.538469310105683,
                    0.906179845938664],
                   [0.236926885056189, 0.478628670499366, 0.568888888888889, 0.478628670499366,
@@ -514,7 +514,7 @@ fn basis3(m: usize, t: f64, dir: f64) -> [Vec<f64>; 3] {
 /// along `start` and `end` where given — `C′ × T = 0`, `C″ · T = 0` — and else natural, `C″ = 0`:
 /// stated on the curve's own derivatives and solved here, apart from the core's construction (L7's
 /// method, in space).  Its control points.
-fn through3(pts: &[V], start: Option<V>, end: Option<V>) -> Vec<V> {
+pub fn through3(pts: &[V], start: Option<V>, end: Option<V>) -> Vec<V> {
     let n = pts.len();
     let m = n + 2;
     let mut rows: Vec<(Vec<f64>, f64)> = Vec::new();

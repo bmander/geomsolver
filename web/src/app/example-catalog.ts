@@ -114,6 +114,17 @@ const projects: Example[] = [{
     + 'where it is drawn; each is a closed form its file gives. The README says what each shows.',
   target: { kind: 'directory', path: 'rates', entry: 'tractrix.sv' },
 }, {
+  label: 'Paths in space · guides that leave the plane', key: 'paths',
+  description: 'Seven solids swept along guides drawn in space: a square wire wound on a helix '
+    + 'written by its ordinates, a ribbon in Frenet\'s frame facing its helix\'s axis beside one '
+    + 'in the frame that does not twist, a pipe bent in two planes carrying a bar\'s frame to its '
+    + 'end cap, a line routed through space with no plane written, an S-bend whose right turn is an '
+    + 'arc walked from its end, a cable through clip points between two connectors, and a flange '
+    + 'square to a leaning stub. Each guide is a curve of the drawing — a traced curve, a spline '
+    + 'over points in space, a chain of lines and arcs across planes — and each volume is a closed '
+    + 'form its file gives. The README says what each shows.',
+  target: { kind: 'directory', path: 'paths', entry: 'coil.sv' },
+}, {
   label: 'Connecting rod, forged · rounded in Solvent', key: 'conrod',
   description: 'Two eyes joined by a tapering I-section shank: the shank filled into both eyes, a '
     + 'pocket each side of the web rounded inside, the bores chamfered and the outside\'s edges '
