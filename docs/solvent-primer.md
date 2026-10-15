@@ -1655,6 +1655,23 @@ path_q angle(2deg) std.x                              // R's phase, a cutter's n
 
 At a line contact the path has no direction and a line along it does not hold.
 
+A conjugate pair touches along a line; real pairs are mismatched on purpose. **Ease-off** (0.114)
+relieves the first flank along its normal by a parabola about a point — `lengthwise:` its curvature
+along a line, `profile:` across it, each per length — so the pair touches at a point and the gear
+lags by the relief:
+
+```
+lengthwise := line(M, L)                              // the face mill's circle at M
+param kl: Scalar hint(0.001)
+bearing := meshing(pinion_flank, flank, under: mesh, from: -15deg, to: 15deg,
+                   ease: M, along: lengthwise, profile: 0.002 / 1mm, lengthwise: kl / 1mm)
+Q coincident(t == 0deg) bearing                       // at M: no relief there, no lag
+R coincident(t == 15deg, lag == 0.047) bearing        // the transmission error solves kl
+```
+
+The relief runs along the flank's normal as the solve reads its source (for a cone, toward its
+axis); a negative curvature relieves the other way. A traced flank is not eased.
+
 **Spatial geometry read after the solve** adds no unknown and has no 2D glyph; each certifies only
 local evaluations ([analytic face boundaries](analytic-face-boundaries.md); the spiral bevel's
 checks make the same objects of their parts, from the faces its built members leave —

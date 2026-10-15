@@ -11,7 +11,7 @@ use gcs_core::model::Sketch;
 use gcs_core::solve;
 use gcs_core::space::{add, cross, dot, norm, scale, sub, unit};
 
-fn solved(src: &str) -> gcs_core::program::Elaborated {
+pub(super) fn solved(src: &str) -> gcs_core::program::Elaborated {
     let mut e = build(src);
     let r = solve::solve(&mut e.sketch, Default::default());
     assert!(r.success, "{r:?}");
@@ -21,7 +21,7 @@ fn solved(src: &str) -> gcs_core::program::Elaborated {
 /// The mean point's mesh, reduced to its kinematics as `spiral_bevel/mean_point.sv` reduces it —
 /// crossed shafts 72 apart, the gear at half the pinion's speed — and the gear's flank, formed: a
 /// cone about the face mill's axis through M, its blades leaning 15°.
-const MESH: &str = "\
+pub(super) const MESH: &str = "\
 unit mm
 use std
 g0 := point hint((0, 0, 0))
@@ -51,9 +51,9 @@ flank := std.Cone(spine, half: 15deg)
 M coincident flank
 ";
 
-const HALF: f64 = 15.0;
+pub(super) const HALF: f64 = 15.0;
 
-fn at(e: &gcs_core::program::Elaborated, name: &str) -> [f64; 3] {
+pub(super) fn at(e: &gcs_core::program::Elaborated, name: &str) -> [f64; 3] {
     e.sketch.world_point(e.map.ent_named(name).unwrap_or_else(|| panic!("no `{name}`")).i())
 }
 
@@ -64,7 +64,7 @@ fn traced(sk: &Sketch, name: &str, n: usize) -> Trace {
 }
 
 /// `x` turned `angle` about the line through `o` along the unit `d`.
-fn turned(x: [f64; 3], o: [f64; 3], d: [f64; 3], angle: f64) -> [f64; 3] {
+pub(super) fn turned(x: [f64; 3], o: [f64; 3], d: [f64; 3], angle: f64) -> [f64; 3] {
     let w = sub(x, o);
     let (s, c) = angle.sin_cos();
     add(o, add(add(scale(w, c), scale(cross(d, w), s)), scale(d, dot(d, w) * (1.0 - c))))
@@ -72,16 +72,16 @@ fn turned(x: [f64; 3], o: [f64; 3], d: [f64; 3], angle: f64) -> [f64; 3] {
 
 /// The pinion's turn at phase `deg`, and the gear's at roll `deg` of the mesh: about x through
 /// (0, 72, 0), and about z at half the speed the other way.
-fn pinion_pose(x: [f64; 3], deg: f64) -> [f64; 3] {
+pub(super) fn pinion_pose(x: [f64; 3], deg: f64) -> [f64; 3] {
     turned(x, [0.0, 72.0, 0.0], [1.0, 0.0, 0.0], deg.to_radians())
 }
-fn gear_pose(x: [f64; 3], deg: f64) -> [f64; 3] {
+pub(super) fn gear_pose(x: [f64; 3], deg: f64) -> [f64; 3] {
     turned(x, [0.0; 3], [0.0, 0.0, 1.0], -0.5 * deg.to_radians())
 }
 
 /// How far `x` stands outside the cone with apex `a`, unit axis `d` and half angle `half`: its
 /// distance from the generator in its meridian, signed.
-fn off_cone(x: [f64; 3], a: [f64; 3], d: [f64; 3], half: f64) -> f64 {
+pub(super) fn off_cone(x: [f64; 3], a: [f64; 3], d: [f64; 3], half: f64) -> f64 {
     let w = sub(x, a);
     let h = dot(w, d);
     let rho = norm(sub(w, scale(d, h)));
@@ -91,7 +91,7 @@ fn off_cone(x: [f64; 3], a: [f64; 3], d: [f64; 3], half: f64) -> f64 {
 /// Where a sample says the two touch, read against the poses and the gear's cone apart from the
 /// meshing: the pinion's point at the phase and the gear's at the phase and lag are the contact,
 /// the gear's on its cone.
-fn holds_together(s: &Sample, apex: [f64; 3], axis: [f64; 3]) {
+pub(super) fn holds_together(s: &Sample, apex: [f64; 3], axis: [f64; 3]) {
     let (phase, lag) = (s.place.phase, s.place.lag);
     assert!(norm(sub(pinion_pose(s.on_pinion, phase), s.position)) < 1e-9, "{s:?}");
     assert!(norm(sub(gear_pose(s.on_gear, phase + lag), s.position)) < 1e-9, "{s:?}");
@@ -195,7 +195,7 @@ Q coincident(t == 0deg) contact
 /// the mesh, read with nothing of `envelope::held`: the cone's point at `(u, v)`, carried by the
 /// gear's turn and back by the pinion's at roll `t`, its roll `v` the one where the cone's normal
 /// is square to the point's velocity there (both by central differences, the root by secants).
-struct Generated {
+pub(super) struct Generated {
     a: [f64; 3],
     d: [f64; 3],
     e1: [f64; 3],
@@ -203,7 +203,7 @@ struct Generated {
 }
 
 impl Generated {
-    fn new(a: [f64; 3], d: [f64; 3]) -> Generated {
+    pub(super) fn new(a: [f64; 3], d: [f64; 3]) -> Generated {
         let e1 = unit(cross(d, [0.0, 1.0, 0.0]));
         Generated { a, d, e1, e2: cross(d, e1) }
     }
@@ -216,20 +216,25 @@ impl Generated {
 
     /// The source's point at `(u, v)` in the pinion's frame at roll `t` (degrees).
     fn moved(&self, u: f64, v: f64, t: f64) -> [f64; 3] {
-        let back = |x: [f64; 3]| turned(x, [0.0, 72.0, 0.0], [1.0, 0.0, 0.0], -t.to_radians());
-        back(gear_pose(self.cone(u, v), t))
+        pinion_pose(gear_pose(self.cone(u, v), t), -t)
     }
 
-    fn meshing(&self, u: f64, v: f64, t: f64) -> f64 {
+    /// The moved source's unit normal `∂u × ∂v` at `(u, v)` and roll `t`.
+    pub(super) fn normal(&self, u: f64, v: f64, t: f64) -> [f64; 3] {
         let (h, k) = (1e-5, 1e-6);
         let du = scale(sub(self.moved(u + h, v, t), self.moved(u - h, v, t)), 0.5 / h);
         let dv = scale(sub(self.moved(u, v + k, t), self.moved(u, v - k, t)), 0.5 / k);
+        unit(cross(du, dv))
+    }
+
+    fn meshing(&self, u: f64, v: f64, t: f64) -> f64 {
+        let k = 1e-6;
         let dt = scale(sub(self.moved(u, v, t + k), self.moved(u, v, t - k)), 0.5 / k);
-        dot(unit(cross(du, dv)), dt)
+        dot(self.normal(u, v, t), dt)
     }
 
     /// The envelope's point at `(u, t)`, in the pinion's frame, its `v` from `v0`.
-    fn point(&self, u: f64, t: f64, v0: f64) -> ([f64; 3], f64) {
+    pub(super) fn point(&self, u: f64, t: f64, v0: f64) -> ([f64; 3], f64) {
         let (mut a, mut b) = (v0, v0 + 1e-4);
         let (mut fa, mut fb) = (self.meshing(u, a, t), self.meshing(u, b, t));
         for _ in 0..60 {
@@ -245,17 +250,26 @@ impl Generated {
     }
 }
 
-/// How far the pinion's flank stands outside the gear's cone at its nearest, the pinion at `phase`
-/// and the gear at `phase + lag` (degrees): the stationary point of the signed distance over the
-/// flank's `(u, t)`, by Newton on central differences from `(u, t)`.
-fn gap(g: &Generated, cone: ([f64; 3], [f64; 3]), phase: f64, lag: f64, start: (f64, f64, f64))
-    -> (f64, [f64; 3], (f64, f64, f64)) {
+/// Where a sample's point on the pinion's flank starts on `g`'s place `(u, t, v)`: its roll, and
+/// the point carried back by it to the cone.
+pub(super) fn start(g: &Generated, s: &Sample) -> (f64, f64, f64) {
+    let roll = s.place.pinion[2].to_degrees();
+    let w = sub(gear_pose(pinion_pose(s.on_pinion, roll), -roll), g.a);
+    (dot(w, g.d) / HALF.to_radians().cos(), roll, dot(w, g.e2).atan2(dot(w, g.e1)))
+}
+
+/// How far a pinion's flank — `point` its point at `(u, t)` in the pinion's frame, its `v` from
+/// the one given — stands outside the gear's cone at its nearest, the pinion at `phase` and the
+/// gear at `phase + lag` (degrees): the stationary point of the signed distance over the flank's
+/// `(u, t)`, by Newton on central differences from `start`.  The gap and the point in the fixed
+/// frame.
+fn gap(point: &impl Fn(f64, f64, f64) -> ([f64; 3], f64), cone: ([f64; 3], [f64; 3]), phase: f64,
+       lag: f64, start: (f64, f64, f64)) -> (f64, [f64; 3]) {
     let (mut u, mut t, mut v) = start;
     let f = |u: f64, t: f64, v: f64| -> (f64, f64, [f64; 3]) {
-        let (x, v) = g.point(u, t, v);
+        let (x, v) = point(u, t, v);
         let y = pinion_pose(x, phase);
-        let back = turned(y, [0.0; 3], [0.0, 0.0, 1.0], 0.5 * (phase + lag).to_radians());
-        (off_cone(back, cone.0, cone.1, HALF), v, y)
+        (off_cone(gear_pose(y, -(phase + lag)), cone.0, cone.1, HALF), v, y)
     };
     let (hu, ht) = (1e-3, 1e-3);
     for _ in 0..30 {
@@ -275,8 +289,31 @@ fn gap(g: &Generated, cone: ([f64; 3], [f64; 3]), phase: f64, lag: f64, start: (
             break;
         }
     }
-    let (d, v, y) = f(u, t, v);
-    (d, y, (u, t, v))
+    let (d, _, y) = f(u, t, v);
+    (d, y)
+}
+
+/// The lag that closes the gap between a pinion's flank (`point`, as `gap` reads it) and the
+/// gear's cone at a sample's phase — by secants from either side of the sample's, the flank's
+/// point started from where the sample says the pinion's is (`start`) — and where they close, in
+/// the fixed frame.
+pub(super) fn closing(point: &impl Fn(f64, f64, f64) -> ([f64; 3], f64),
+                      cone: ([f64; 3], [f64; 3]), s: &Sample, start: (f64, f64, f64))
+                      -> (f64, [f64; 3]) {
+    let close = |lag: f64| gap(point, cone, s.place.phase, lag, start).0;
+    let (mut a, mut b) = (s.place.lag - 1e-4, s.place.lag + 1e-4);
+    let (mut fa, mut fb) = (close(a), close(b));
+    assert!(fa * fb < 0.0, "the gap closes between: {fa} {fb}");
+    for _ in 0..40 {
+        let c = b - fb * (b - a) / (fb - fa);
+        (a, fa) = (b, fb);
+        b = c;
+        fb = close(b);
+        if fb.abs() < 1e-13 {
+            break;
+        }
+    }
+    (b, gap(point, cone, s.place.phase, b, start).1)
 }
 
 /// Step 3's turned cutter: the pinion's cutter the gear's cone turned 2° about its normal at M,
@@ -330,30 +367,11 @@ fn a_mismatched_pair_lags_by_the_turn_that_closes_the_gap() {
             assert!(s.place.lag.abs() < 1e-12, "{s:?}");
             continue;
         }
-        // the lag that closes the gap, by secants from either side of the meshing's — the flank's
-        // point read from where the sample says the pinion's is, carried back to the cutter
-        let roll = s.place.pinion[2].to_degrees();
-        let unpinioned = turned(s.on_pinion, [0.0, 72.0, 0.0], [1.0, 0.0, 0.0], roll.to_radians());
-        let source = turned(unpinioned, [0.0; 3], [0.0, 0.0, 1.0], 0.5 * roll.to_radians());
-        let w = sub(source, generated.a);
-        let start = (dot(w, generated.d) / HALF.to_radians().cos(), roll,
-                     dot(w, generated.e2).atan2(dot(w, generated.e1)));
-        let close = |lag: f64| gap(&generated, (apex, axis), s.place.phase, lag, start).0;
-        let (mut a, mut b) = (s.place.lag - 1e-4, s.place.lag + 1e-4);
-        let (mut fa, mut fb) = (close(a), close(b));
-        assert!(fa * fb < 0.0, "the gap closes between: {fa} {fb}");
-        for _ in 0..40 {
-            let c = b - fb * (b - a) / (fb - fa);
-            (a, fa) = (b, fb);
-            b = c;
-            fb = close(b);
-            if fb.abs() < 1e-13 {
-                break;
-            }
-        }
-        assert!((b - s.place.lag).abs() < 1e-9, "phase {}: closed at {b}, meshed at {}",
+        // the lag that closes the gap, and where
+        let point = |u, t, v| generated.point(u, t, v);
+        let (lag, y) = closing(&point, (apex, axis), s, start(&generated, s));
+        assert!((lag - s.place.lag).abs() < 1e-9, "phase {}: closed at {lag}, meshed at {}",
                 s.place.phase, s.place.lag);
-        let (_, y, _) = gap(&generated, (apex, axis), s.place.phase, b, start);
         assert!(norm(sub(y, s.position)) < 1e-5, "phase {}: {y:?} {:?}", s.place.phase, s.position);
     }
 }
@@ -398,7 +416,7 @@ R coincident(lag == {lag}) contact
 
 /// A revolution's side meshed with its envelope under the mesh of skew shafts, one a screw, and a
 /// point held to the contact where the pair is drawn.
-const SIDE_MESHING: &str = "\
+pub(super) const SIDE_MESHING: &str = "\
 unit mm
 use std
 in std.front {

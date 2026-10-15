@@ -479,6 +479,12 @@ pub(crate) fn decl_args(d: &Decl) -> String {
     if let Some(e) = &d.angular_span {
         parts.push(format!("from: {}",dim(&e.from)));
         parts.push(format!("to: {}",dim(&e.to)));
+        if let Some(x) = &e.ease {
+            parts.push(format!("ease: {}",super::ref_text(&x.about)));
+            parts.push(format!("along: {}",super::ref_text(&x.along)));
+            parts.push(format!("profile: {}",dim(&x.profile)));
+            parts.push(format!("lengthwise: {}",dim(&x.lengthwise)));
+        }
     }
     if let Some(motion) = &d.motion {
         use super::MotionSpec;

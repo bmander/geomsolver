@@ -920,7 +920,9 @@ pub struct Decl {
     /// in it, or a body over other solids.  `None` for every other kind.
     pub sweep: Option<Sweep>,
     pub motion: Option<MotionSpec>,
-    /// A source surface's angular span or an envelope's roll interval.
+    /// A source surface's angular span, an envelope's roll interval or a meshing's phase
+    /// interval, and what the declaration says besides (a planar envelope's side, a meshing's
+    /// ease).
     pub angular_span: Option<AngularSpan>,
     /// The plane this declaration's points are on — `a := point in top`, and for a line, a circle,
     /// an arc, a spline or an ellipse, every point it mints or names (§6.7).  Its span is at
@@ -1156,6 +1158,29 @@ pub struct AngularSpan {
     /// Which cut a planar envelope takes where its tool cuts twice (`side: near | far` of the
     /// instant centre, §6.15.1); a word, checked where the envelope is built.
     pub side: Option<Name>,
+    /// A meshing's first flank eased (§6.15.4, #345): `ease: M, along: l, profile: κₚ,
+    /// lengthwise: κₗ`.
+    pub ease: Option<Box<EaseSpec>>,
+}
+
+/// **Ease-off** as a meshing's declaration writes it (§6.15.4, #345): the point it is eased
+/// about, the line it runs lengthwise along, and the curvatures across and along it.
+#[derive(Clone, Debug)]
+pub struct EaseSpec {
+    pub about: Ref,
+    pub along: Ref,
+    pub profile: Arg,
+    pub lengthwise: Arg,
+}
+
+impl EaseSpec {
+    pub fn refs_mut(&mut self) -> [&mut Ref; 2] {
+        [&mut self.about, &mut self.along]
+    }
+
+    pub fn args_mut(&mut self) -> [&mut Arg; 2] {
+        [&mut self.profile, &mut self.lengthwise]
+    }
 }
 
 /// A rigid rotation (a screw with `advance:`), a translation, or a relative

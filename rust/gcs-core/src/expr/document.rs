@@ -239,7 +239,11 @@ pub fn evaluate(sk: &mut Sketch) -> Vec<ExprItem> {
         let Flank::Formed(Held::Set { shape: Some(s), .. }) = f else { return None };
         s.unknown(&sk.declared).filter(|_| meshed(&|g| g == f))
     });
-    let held: Vec<(String, f64)> = envelopes.chain(flanks).collect();
+    // and a meshing's ease's curvatures (#345), where a contact holds to it
+    let eased = sk.meshings.iter().enumerate().filter(|(i, _)| {
+        sk.constraints.iter().any(|c| c.meshing_of().is_some_and(|m| m.i() == *i))
+    }).flat_map(|(_, m)| m.ease.iter().flat_map(|e| e.unknowns(&sk.declared)));
+    let held: Vec<(String, f64)> = envelopes.chain(flanks).chain(eased).collect();
     for (name, seed) in held {
         if !bound.contains_key(&name) {
             free_param(sk, &name, seed);

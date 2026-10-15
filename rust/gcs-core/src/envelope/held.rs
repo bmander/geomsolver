@@ -673,20 +673,30 @@ fn local_at<T: Num>(l: &Layout, cols: &[T], second: bool, pose: &Pose<T>) -> Loc
     }
 }
 
-/// The normal curvature of the envelope along `w` (a direction in its tangent plane), with
-/// respect to `f.n`: its centre of curvature is `x + n/κ`.  Read over two directions of the place
-/// square to `∇g` — so along the envelope — chosen by `∇g`'s largest component.
-fn curvature<T: Num>(f: &Local<T>, w: [T; 3]) -> T {
-    let g = f.dg;
+/// Two directions of the place square to `∇g` — so along the envelope — chosen by `∇g`'s largest
+/// component, so the choice holds still near a place.
+pub(crate) fn along_envelope<T: Num>(g: [T; 3]) -> [[T; 3]; 2] {
     let big = (0..3).max_by(|&i, &j| g[i].val().abs().total_cmp(&g[j].val().abs())).unwrap_or(2);
     let z = zero::<T>();
     let neg = |x: T| z - x;
-    let (k1, k2) = match big {
-        0 => ([neg(g[1]), g[0], z], [neg(g[2]), z, g[0]]),
-        1 => ([g[1], neg(g[0]), z], [z, neg(g[2]), g[1]]),
-        _ => ([g[2], z, neg(g[0])], [z, g[2], neg(g[1])]),
-    };
-    let along = |d: &[[T; 3]; 3], k: [T; 3]| vadd(vadd(vscale(d[0], k[0]), vscale(d[1], k[1])), vscale(d[2], k[2]));
+    match big {
+        0 => [[neg(g[1]), g[0], z], [neg(g[2]), z, g[0]]],
+        1 => [[g[1], neg(g[0]), z], [z, neg(g[2]), g[1]]],
+        _ => [[g[2], z, neg(g[0])], [z, g[2], neg(g[1])]],
+    }
+}
+
+/// A derivative along the place's direction `k`: `d` its derivatives along the place's three.
+pub(crate) fn along<T: Num>(d: &[[T; 3]; 3], k: [T; 3]) -> [T; 3] {
+    vadd(vadd(vscale(d[0], k[0]), vscale(d[1], k[1])), vscale(d[2], k[2]))
+}
+
+/// The normal curvature of the envelope along `w` (a direction in its tangent plane), with
+/// respect to `f.n`: its centre of curvature is `x + n/κ`.  Read over two directions of the place
+/// along the envelope (`along_envelope`).
+fn curvature<T: Num>(f: &Local<T>, w: [T; 3]) -> T {
+    let neg = |x: T| zero::<T>() - x;
+    let [k1, k2] = along_envelope(f.dg);
     let (t1, t2) = (along(&f.dx, k1), along(&f.dx, k2));
     let (n1, n2) = (along(&f.dn, k1), along(&f.dn, k2));
     let (e, ff, gg) = (dot(t1, t1), dot(t1, t2), dot(t2, t2));
@@ -1025,7 +1035,7 @@ pub struct Parts {
 
 /// One part of the columns.
 #[derive(Clone, Copy, Debug)]
-enum Col {
+pub(crate) enum Col {
     /// A point's lift: three columns.
     Lift(usize),
     /// One number.
@@ -1052,16 +1062,6 @@ impl Parts {
         let ends = |l: u32| -> Result<[usize; 2], String> {
             let l = sk.lines.get(l as usize).ok_or("no such line")?;
             Ok([l.p1 as usize, l.p2 as usize])
-        };
-        let number = |t: &TermNumber| -> Result<((f64, f64, bool), Option<u32>), String> {
-            match &t.free {
-                None => Ok(((t.c, 0.0, false), None)),
-                Some((name, m)) => match sk.free_vars.get(name) {
-                    Some(&p) => Ok(((t.c, *m, true), Some(p))),
-                    None => Err(format!("`{name}` is an unknown nothing on the drawing reads: state \
-                                         it, or a relation that holds it")),
-                },
-            }
         };
         let (source, axis, number, reference) = match held {
             Held::Not(why) => return Err(why.clone()),
@@ -1111,7 +1111,7 @@ impl Parts {
                     let o = shape.origin.ok_or("a plane's set names the point it is measured from")?;
                     cols.push(Col::Lift(o as usize));
                 }
-                let (n, free) = number(&shape.number)?;
+                let (n, free) = number(sk, &shape.number)?;
                 cols.extend(free.map(Col::One));
                 (source, 0, n, shape.reference)
             }
@@ -1205,8 +1205,21 @@ impl Moving {
     }
 }
 
+/// A number as `c + m·x` and whether `x` is a column — the unknown it reads, where it reads one.
+pub(crate) fn number(sk: &Sketch, t: &TermNumber)
+                     -> Result<((f64, f64, bool), Option<u32>), String> {
+    match &t.free {
+        None => Ok(((t.c, 0.0, false), None)),
+        Some((name, m)) => match sk.free_vars.get(name) {
+            Some(&p) => Ok(((t.c, *m, true), Some(p))),
+            None => Err(format!("`{name}` is an unknown nothing on the drawing reads: state it, or \
+                                 a relation that holds it")),
+        },
+    }
+}
+
 /// The points whose lifts columns read.
-fn lifted(cols: &[Col]) -> Vec<usize> {
+pub(crate) fn lifted(cols: &[Col]) -> Vec<usize> {
     cols.iter().filter_map(|c| match *c {
         Col::Lift(p) => Some(p),
         _ => None,
@@ -1214,7 +1227,7 @@ fn lifted(cols: &[Col]) -> Vec<usize> {
 }
 
 /// The columns' parameters, every point's lift minted.
-fn columns(sk: &Sketch, cols: &[Col]) -> Vec<u32> {
+pub(crate) fn columns(sk: &Sketch, cols: &[Col]) -> Vec<u32> {
     cols.iter().flat_map(|c| match *c {
         Col::Lift(p) => {
             let k = sk.lift_of(p).expect("an envelope's points are lifted at the add");
@@ -1226,7 +1239,7 @@ fn columns(sk: &Sketch, cols: &[Col]) -> Vec<u32> {
 }
 
 /// The columns' values as the drawing stands, a point not lifted yet read where it is.
-fn values(sk: &Sketch, cols: &[Col]) -> Vec<f64> {
+pub(crate) fn values(sk: &Sketch, cols: &[Col]) -> Vec<f64> {
     let v = |p: u32| sk.params[p as usize].value;
     cols.iter().flat_map(|c| match *c {
         Col::Lift(p) => sk.lifted(p).to_vec(),
@@ -1235,7 +1248,7 @@ fn values(sk: &Sketch, cols: &[Col]) -> Vec<f64> {
     }).collect()
 }
 
-fn width(cols: &[Col]) -> usize {
+pub(crate) fn width(cols: &[Col]) -> usize {
     cols.iter().map(|x| match x {
         Col::Lift(_) | Col::Three(_) => 3,
         Col::One(_) => 1,

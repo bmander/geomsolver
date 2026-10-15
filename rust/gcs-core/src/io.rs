@@ -1400,9 +1400,19 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             crate::model::Flank::Traced(t) => traced_map[*t as usize].map(|t| crate::model::Flank::Traced(t as u32)),
         };
         let (Some(a),Some(b)) = (flank(&e.flanks[0]),flank(&e.flanks[1])) else { continue; };
+        // an ease's point and line, copied with it
+        let ease = match &e.ease {
+            Some(x) => match (pt_map[x.about as usize],line_map[x.along as usize]) {
+                (Some(about),Some(along)) => {
+                    Some(crate::model::Ease {about:about as u32,along:along as u32,..x.clone()})
+                }
+                _ => continue,
+            },
+            None => None,
+        };
         let next = dst.meshings.len();
         dst.meshings.push(crate::model::MeshingE {flanks:[a,b],motion:motion as u32,roll:e.roll,
-            name:e.name.clone(),class:e.class.clone()});
+            name:e.name.clone(),class:e.class.clone(),ease});
         meshing_map[i] = Some(next);
         made.push(EntRef::new(EntKind::Meshing,next));
     }

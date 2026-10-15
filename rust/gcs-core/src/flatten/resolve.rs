@@ -585,6 +585,11 @@ fn rewrite_decl(
     for r in d.sweep.as_mut().map(|s| s.references_mut()).unwrap_or_default() {
         fix(r, bad);
     }
+    // a meshing's ease names a point and a line (#345)
+    let ease = d.angular_span.as_mut().and_then(|s| s.ease.as_mut());
+    for r in ease.into_iter().flat_map(|e| e.refs_mut()) {
+        fix(r, bad);
+    }
     if let Some(motion) = d.motion.as_mut() {
         for r in motion.refs_mut() { fix(r, bad); }
         // a number that measures the drawing names geometry as a reference does, in
