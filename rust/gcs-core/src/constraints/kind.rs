@@ -1016,7 +1016,7 @@ impl CKind {
             | CKind::EnvelopeNormalAt
             | CKind::EnvelopePlaneAt
             | CKind::EnvelopeCurvatureAt
-            // a phase and a lag in radians, and a place on each flank
+            // a phase and a lag in degrees, and a place on each flank
             | CKind::PointOnMeshing
             | CKind::MeshingNormalAt
             | CKind::MeshingTangentAt

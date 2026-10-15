@@ -574,20 +574,19 @@ fn closed_contact(m: [f64; 3], apex: [f64; 3], spine: [f64; 3], roll: f64, phase
 #[test]
 fn the_normal_and_the_path_of_contact_at_a_point_are_the_pairs_own() {
     let text = include_str!("../../examples/spiral_bevel/contact.sv");
-    let roll = 1.005;
+    let roll = 1.005; // the document's
     let e = solved(&contact_with_lines(text));
     let (m, apex) = (at(&e, "M"), at(&e, "apex"));
     let spine = unit(sub(at(&e, "C"), apex));
-    for (p, phase, normal, path) in [("Q", 0.0, ("Q", "nq"), ("Q", "pq")),
-                                     ("R", 10.0, ("R", "nr"), ("R", "pr"))] {
+    for (p, phase, normal, path) in [("Q", 0.0, "nq", "pq"), ("R", 10.0, "nr", "pr")] {
         let (x, n) = closed_contact(m, apex, spine, roll, phase);
         assert!(norm(sub(at(&e, p), x)) < 1e-8, "{p}: {:?} {x:?}", at(&e, p));
-        let d = sub(at(&e, normal.1), at(&e, normal.0));
+        let d = sub(at(&e, normal), at(&e, p));
         assert!(skew(d, n) < 1e-12, "{p}: the normal {d:?} against {n:?}");
         let h = 1e-3;
         let tangent = sub(closed_contact(m, apex, spine, roll, phase + h).0,
                           closed_contact(m, apex, spine, roll, phase - h).0);
-        let d = sub(at(&e, path.1), at(&e, path.0));
+        let d = sub(at(&e, path), at(&e, p));
         assert!(skew(d, tangent) < 1e-9, "{p}: the path {d:?} against {tangent:?}: {}",
                 skew(d, tangent));
         assert!(skew(d, sub(m, apex)) > 0.9, "{p}: the path is no bearing");
@@ -713,14 +712,13 @@ contact tangent(at: p) t
         }
     };
     shared(&first);
-    let late = text.replace("Q := point hint((0, 48, 0))\nQ coincident(t == 0deg) bearing\n", "");
-    assert_ne!(late, text);
-    let late = contact_with_lines(&format!("Q := point hint((0, 48, 0))\n{late}"))
-        .replace("Q distance(10mm) pq\n", "Q distance(10mm) pq\nQ coincident(t == 0deg) bearing\n")
+    // Q's contact stated after the lines at Q, which are written the other way round
+    let held = "Q coincident(t == 0deg) bearing\n";
+    let late = contact_with_lines(&text.replace(held, ""))
         .replace("bearing tangent(at: Q) path_q", "path_q tangent(at: Q) bearing")
         .replace("bearing perpendicular(at: Q) normal_q", "normal_q perpendicular(at: Q) bearing");
-    let late = solved(&late);
-    shared(&late);
+    assert!(late.contains("path_q tangent(at: Q) bearing") && !late.contains(held));
+    shared(&solved(&format!("{late}{held}")));
     let refused = |src: &str, want: &str| {
         let (prog, errs) = crate::common::parse(src);
         assert!(errs.is_empty(), "{errs:?}");

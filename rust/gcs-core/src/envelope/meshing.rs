@@ -399,8 +399,7 @@ fn line_rows<T: Num>(c: Contact, cols: &[T], k: &[f64], out: &mut [T]) -> Option
     if c == Contact::Point || !fits {
         return None;
     }
-    let d = unit(vsub(col3(cols, 3), col3(cols, 0)));
-    let [a, b] = match c {
+    let square = match c {
         // the gear's tangent plane, which at a root is the pinion's
         Contact::Normal => {
             let f = at(&m, cols);
@@ -408,9 +407,14 @@ fn line_rows<T: Num>(c: Contact, cols: &[T], k: &[f64], out: &mut [T]) -> Option
         }
         _ => square_to(path(&m, cols)),
     };
-    out[0] = dot(d, a);
-    out[1] = dot(d, b);
+    out.copy_from_slice(&line_against(cols, square));
     Some(())
+}
+
+/// The line's direction in the lead `cols` against two directions `square` to where it runs.
+fn line_against<T: Num>(cols: &[T], [a, b]: [[T; 3]; 2]) -> [T; 2] {
+    let d = unit(vsub(col3(cols, 3), col3(cols, 0)));
+    [dot(d, a), dot(d, b)]
 }
 
 /// The path of contact at the unknowns in `cols`: the contact point's derivative along the phase,
@@ -437,7 +441,7 @@ fn path_of<T: Num>(f: &At<Fwd<T, UNKNOWNS>>) -> [T; 3] {
     let mut a: [[T; ROWS + 1]; ROWS] = std::array::from_fn(|i| std::array::from_fn(|j| {
         if j < ROWS { r[i].g[j + 1] } else { zero - r[i].g[0] }
     }));
-    let w = solve(&mut a);
+    let w = eliminate(&mut a);
     std::array::from_fn(|c| {
         let p = f.x[0][c];
         (0..ROWS).fold(p.g[0], |s, q| s + p.g[q + 1] * w[q])
@@ -459,7 +463,7 @@ fn square_to<T: Num>(t: [T; 3]) -> [[T; 3]; 2] {
 
 /// `A w = b`, the augmented `[A | b]` given, by elimination with partial pivoting on the values:
 /// not finite where `A` is singular.
-fn solve<T: Num, const N: usize, const M: usize>(a: &mut [[T; M]; N]) -> [T; N] {
+fn eliminate<T: Num, const N: usize, const M: usize>(a: &mut [[T; M]; N]) -> [T; N] {
     for k in 0..N {
         let p = (k..N).max_by(|&i, &j| a[i][k].val().abs().total_cmp(&a[j][k].val().abs()))
             .unwrap_or(k);
@@ -570,8 +574,8 @@ fn line_res<const C: u8>(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
 
 /// A line along the common normal's Jacobian, exact by `Dual` over every column at once
 /// (`held::block_jac`).
-fn line_jac<const C: u8>(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
-    let c = Contact::ALL[C as usize];
+fn normal_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    let c = Contact::Normal;
     held::block_jac(n, v, k, j, c.rows(), |x, kc, out| line_rows(c, x, kc, out));
 }
 
@@ -587,23 +591,22 @@ fn path_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
 /// in its own columns only; then the contact's frame over every column by the chain rule, and the
 /// path read off it (`path_of`).
 fn path_jac_block(x: &[f64], k: &[f64], j: &mut [f64]) -> Option<()> {
-    let c = Contact::Path;
     let m = Mesh::read(k)?;
     let (w, o) = (x.len(), m.lead);
-    if o != c.lead() || w != m.width() || j.len() != c.rows() * w {
+    if o != Contact::Path.lead() || w != m.width() || j.len() != Contact::Path.rows() * w {
         return None;
     }
-    type Place = Fwd<Dual<PASS>, 3>;
-    type Phase = Fwd<Dual<PASS>, 2>;
+    // the first `N` of `cols` as variables, the rest as constants
+    fn leading<const N: usize>(cols: &[Dual<PASS>]) -> Vec<Fwd<Dual<PASS>, N>> {
+        cols.iter().enumerate().map(|(q, &v)| if q < N { Fwd::var(v, q) } else { Fwd::of(v) })
+            .collect()
+    }
     let f = [0, 1].map(|i| derive::<{ SEEN * 4 }>(x, m.flank_cols(i), |cols| {
-        let c: Vec<Place> = cols.iter().enumerate()
-            .map(|(q, &v)| if q < 3 { Fwd::var(v, q) } else { Fwd::of(v) }).collect();
-        let s = Seen::of(&m, i, &c).flat();
+        let s = Seen::of(&m, i, &leading::<3>(cols)).flat();
         std::array::from_fn(|q| if q % 4 == 0 { s[q / 4].v } else { s[q / 4].g[q % 4 - 1] })
     }));
     let p = derive::<{ POSES * 3 }>(x, m.pose_cols(), |cols| {
-        let c: Vec<Phase> = cols.iter().enumerate()
-            .map(|(q, &v)| if q < 2 { Fwd::var(v, q) } else { Fwd::of(v) }).collect();
+        let c = leading::<2>(cols);
         let a = flat_poses(poses(&m, c[0], c[1], &c[2..]));
         std::array::from_fn(|q| if q % 3 == 0 { a[q / 3].v } else { a[q / 3].g[q % 3 - 1] })
     });
@@ -626,9 +629,7 @@ fn path_jac_block(x: &[f64], k: &[f64], j: &mut [f64]) -> Option<()> {
         let a = p.at(start);
         let poses = read_poses(&std::array::from_fn(|q| spread(&a[3 * q..3 * q + 3], 0..2)));
         let tau = path_of(&assemble(&m, &unknowns(&m, &cols), seen, poses));
-        let d = unit(vsub(col3(&cols, 3), col3(&cols, 0)));
-        let [a1, b1] = square_to(tau);
-        held::scatter_pass(&[dot(d, a1), dot(d, b1)], j, start);
+        held::scatter_pass(&line_against(&cols, square_to(tau)), j, start);
     }
     Some(())
 }
@@ -706,7 +707,7 @@ fn derive<const K: usize>(x: &[f64], idx: impl Iterator<Item = usize>,
 pub fn kernel(c: Contact, n_par: usize, n_const: usize) -> Kernel {
     let (res, jac): (crate::kernels::KernelFn, crate::kernels::KernelFn) = match c {
         Contact::Point => (res, jac),
-        Contact::Normal => (line_res::<1>, line_jac::<1>),
+        Contact::Normal => (line_res::<1>, normal_jac),
         Contact::Path => (line_res::<2>, path_jac),
     };
     Kernel { name: c.name(), n_res: c.rows(), n_par, n_const, degree: c.degree(), res, jac,

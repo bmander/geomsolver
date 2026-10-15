@@ -16,9 +16,8 @@ pub fn seed_param(sk: &Sketch, kind: CKind, args: &[Arg], i: usize) -> f64 {
     }
     // a point on a meshing starts at its phase (pinned, seeded, or 0 within the interval), no lag,
     // and each flank's place nearest the point seen from its member there, the contact solved
-    // from those (#283)
-    // — or the point a line along its normal or its path is at (#345), which a contact holding it
-    // there hands its own unknowns once stated
+    // from those (#283): the contact's point, or the point a line along its normal or its path
+    // is at (#345), until a contact holding that point hands the line its own
     if let Some((mesh, first)) = kind.contact_on(SpecKind::Meshing) {
         let at = if kind == CKind::PointOnMeshing { 0 } else { 2 };
         let (Some(Arg::Ent(p)), Some(Arg::Ent(m))) = (args.get(at), args.get(mesh)) else {

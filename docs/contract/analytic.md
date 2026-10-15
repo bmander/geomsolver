@@ -121,7 +121,7 @@ line's direction square to two directions. The normal's are the gear's tangent p
 contact (`along`, `n₂ × along`), read off `at` as the point's rows are. The path is **the contact
 point's derivative along the phase in the fixed frame**, `∂x/∂φ + ∂x/∂z · dz/dφ` with `J_z dz/dφ =
 −J_φ` over the seven rows' Jacobian in the lag and the places (`meshing::path`, `touching`, the
-elimination `solve`): the implicit function theorem, the rows read once over `Fwd<T, 8>`, a number
+elimination `eliminate`): the implicit function theorem, the rows read once over `Fwd<T, 8>`, a number
 carrying its derivatives in the eight unknowns, each itself a `T`; its two directions are across
 the world axis it runs least along (`square_to`, a tie turning the pair about the path but not the
 plane it spans). Its Jacobian is the rows' second derivatives, exact: `path_jac_block` takes it a
