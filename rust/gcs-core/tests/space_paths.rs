@@ -426,6 +426,35 @@ length(10mm) tl"));
     }
 }
 
+/// **A spline in space is drawn in the box** (#363 S3): a curve traced in space stands in no view,
+/// so the scene in space carries it as an axis is carried — a polyline from its first control
+/// point to its last, every vertex on Bernstein's curve, no chord straying from it by more than
+/// the flatness it was refined to.
+#[test]
+fn a_spline_in_space_is_drawn_in_the_box() {
+    let e = with(CUBIC);
+    let k = e.map.ent_named("cubic").unwrap();
+    let unit = 0.01;
+    let items = gcs_core::overview::scene3d(&e.sketch, unit);
+    let drawn: Vec<_> = items.iter().filter(|it| it.of == Some(k)).collect();
+    assert_eq!(drawn.len(), 1, "the curve is drawn once");
+    let pts = &drawn[0].pts;
+    assert!(pts.len() > 16, "{}", pts.len());
+    assert!(sub(pts[0], CUBIC_CTRL[0]).iter().all(|d| d.abs() <= 1e-9));
+    assert!(sub(*pts.last().unwrap(), CUBIC_CTRL[3]).iter().all(|d| d.abs() <= 1e-9));
+    // on the curve: each vertex where Bernstein puts the place nearest it
+    let on = |p: V| -> f64 {
+        let t = gcs_core::traced::place_of(&e.sketch, k.i(), p).unwrap()[0];
+        dot(sub(bezier(&CUBIC_CTRL, t)[0], p), sub(bezier(&CUBIC_CTRL, t)[0], p)).sqrt()
+    };
+    let flat = gcs_core::curve::flatness(unit);
+    for w in pts.windows(2) {
+        assert!(on(w[0]) <= 1e-9, "{:?} is off the curve", w[0]);
+        let mid = [0.5 * (w[0][0] + w[1][0]), 0.5 * (w[0][1] + w[1][1]), 0.5 * (w[0][2] + w[1][2])];
+        assert!(on(mid) <= 1.01 * flat, "a chord strays {} past {flat}", on(mid));
+    }
+}
+
 /// **A tube along a spline in space is its area along its length**: a round section of radius
 /// 3 square to the Bézier above, in `std.On`'s frame, sweeps 9π times the curve's length
 /// (Gauss–Legendre on Bernstein's derivative).
@@ -572,7 +601,7 @@ fix((5mm, -3mm, 9mm)) s1
 e0 := point
 e1 := point
 fix((40mm, 0mm, 20mm)) e0
-fix((40mm, 6mm, 10mm)) e1
+fix((40mm, 6mm, 30mm)) e1
 heads := line(s1, s0)
 tails := line(e0, e1)
 pair := line(r0, r1) -> line(r1, r2)
@@ -584,7 +613,7 @@ held := spline(through: pair, start: heads, end: tails)");
         sk.splines[s as usize].ctrl.iter().map(|&p| sk.world_point(p as usize)).collect()
     };
     let corners = [[0.0, 0.0, 0.0], [20.0, 10.0, 5.0], [40.0, 0.0, 20.0], [50.0, -10.0, 40.0]];
-    let (start, end) = (Some([-5.0, -7.0, -4.0]), Some([0.0, 6.0, -10.0]));
+    let (start, end) = (Some([-5.0, -7.0, -4.0]), Some([0.0, 6.0, 10.0]));
     let cases = [("rail", through3(&corners, None, None)),
                  ("held", through3(&corners[..3], start, end))];
     for (name, want) in cases {
@@ -604,6 +633,47 @@ held := spline(through: pair, start: heads, end: tails)");
     for (t, p) in corners.iter().enumerate() {
         let r = reading(sk, k.i(), [t as f64, 0.0], Need::Point).unwrap();
         assert!(sub(r.position, *p).iter().all(|d| d.abs() <= 1e-9), "{t}: {r:?}");
+    }
+}
+
+/// **A spline through corners in space solves from its seeds whatever its ends' tangents**: the
+/// foot each tangent end is built over may cross its corner on the way to the answer, which a line
+/// from the corner to it could not follow (#363 S3) — so over three corners in space, each end
+/// given each of a spread of directions, the cubic is the one solved apart, every time.
+#[test]
+fn a_spline_through_corners_in_space_solves_for_any_tangents() {
+    let dirs: [V; 6] = [[0.0, 6.0, 10.0], [0.0, 6.0, -10.0], [-5.0, -7.0, -4.0], [1.0, 0.0, 0.0],
+                        [3.0, -2.0, 7.0], [-4.0, 9.0, 1.0]];
+    let corners = [[0.0, 0.0, 0.0], [20.0, 10.0, 5.0], [40.0, 0.0, 20.0]];
+    for (i, ds) in dirs.iter().enumerate() {
+        for de in &dirs[i..] {
+            let e = with(&format!("
+r0 := point
+r1 := point
+r2 := point
+fix((0mm, 0mm, 0mm)) r0
+fix((20mm, 10mm, 5mm)) r1
+fix((40mm, 0mm, 20mm)) r2
+s1 := point
+fix(({}mm, {}mm, {}mm)) s1
+e1 := point
+fix(({}mm, {}mm, {}mm)) e1
+heads := line(r0, s1)
+tails := line(r2, e1)
+pair := line(r0, r1) -> line(r1, r2)
+held := spline(through: pair, start: heads, end: tails)",
+                ds[0], ds[1], ds[2], 40.0 + de[0], de[1], 20.0 + de[2]));
+            let sk = &e.sketch;
+            let k = e.map.ent_named("held").unwrap();
+            let (&sp, _) = sk.spline_traced.iter().find(|(_, &t)| t as usize == k.i()).unwrap();
+            let got: Vec<V> = sk.splines[sp as usize].ctrl.iter()
+                .map(|&p| sk.world_point(p as usize)).collect();
+            let want = through3(&corners, Some(*ds), Some(*de));
+            for (g, w) in got.iter().zip(&want) {
+                assert!(sub(*g, *w).iter().all(|d| d.abs() <= 1e-9),
+                        "start {ds:?}, end {de:?}: {got:?} against {want:?}");
+            }
+        }
     }
 }
 

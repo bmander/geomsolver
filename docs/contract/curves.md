@@ -123,11 +123,20 @@ march, a seed of fewer columns, dense output forwards and back, a carried branch
   drawn nor grafted.  So its contacts are a traced curve's (`t == u` pins its place, S1), it is a
   `path`, and `spline(through: …)` over corners in space lowers as it does in a plane, its
   relations the ones in space.  A face over it is E080 ("a curve in space, drawn in no plane").
-  Not drawn yet: a traced curve is no `overview::drawable`.  `tests/space_paths.rs`: a Bézier
+  Drawn as an axis is, in space and in no view: `overview::scene3d_of` carries every curve traced
+  in space in its datums layer as `overview::traced_polyline` — its point read over the domain,
+  sixteen spans each halved (to depth 8) where the curve strays from its chord past
+  `curve::flatness` — and the app strokes it in 3D (`box3d.ts`'s `IN_SPACE`).
+  `a_spline_in_space_is_drawn_in_the_box`.  `tests/space_paths.rs`: a Bézier
   over four points in space — point, `C′`, `C″` and length against Bernstein's to 1e-12, a point
   pinned and a tangent held, every contact against finite differences — a tube along it at 9π ×
   its length to 1e-9, and `spline(through: …)` over corners in space (natural; along lines in
-  space) control point for control point against the cubic solved apart (L7's method).
+  space) control point for control point against the cubic solved apart (L7's method), over a
+  spread of end tangents.  **An end held along a tangent** is built over a line from the corner
+  to a point as far off as the next control point (`#run`, `equal` to `#span`, `parallel` to the
+  tangent), the foot on it and the next control point nothing along it from the foot: a line
+  from the corner to the foot, as through 0.124, lost its direction as the foot crossed the
+  corner and the solve stalled there.
 - **A spline through a chain's corners** (§6.1 [0.111], #243 L7): `spline(through: rims, start:
   l, end: m)` (`Decl::through`, parsed in `decl_list`, printed by `decl_args`) is expanded in
   `flatten::through` once the walk is done (`Aside::fits`, so the chain may be written after it):

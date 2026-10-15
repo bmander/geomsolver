@@ -249,7 +249,8 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   **The box shows the objects, not the features they are made of** — a solid is the object exactly
   when nothing else is made of it (`overview::objects`).  `box3d.ts` draws what `scene3d` says
   stands in space — panes, axes, the object's creases (a `smooth` seam dropped: shading draws the
-  round) and the axes — and every object's mesh
+  round), the axes and the curves traced in space (`IN_SPACE`: `axis`, `traced`; a spline over
+  points in space is one, #363 S3) — and every object's mesh
   (`mesh::grouped`), computing no coordinate; an object that does not evaluate is left out, its
   `mesh()` throwing the core's reason rather than stopping every paint, and **the banner says
   which and why** in the core's words (`overview::unbuilt`, after a conflict or an over-block;
