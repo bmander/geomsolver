@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.119 — October 2026**
+**Specification, Draft 0.120 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -79,17 +79,13 @@ MUST, MUST NOT, SHOULD, SHOULD NOT, and MAY are used as in RFC 2119. Text marked
 | `Axis` | a directed line in space with no start, drawn in no view **[0.42]** | 2 (its direction), and 2 more once a relation reads where it is |
 | `Plane` | **[0.42]** a plane in space: its attitude two axes `u`, `v` through its origin **[0.43]**, and where it stands; a **view**, the points drawn in it having its own coordinates (§6.7) | 3 of its own (where it stands), beyond its axes'; a bare `plane` is 7 with the axes it mints **[0.43]** |
 | `Path` | directed piecewise boundary curve | 0 (derived object) |
-| `Face` | a planar profile (§6.8) or an ordered boundary on an explicit spatial support (§6.20) | 0 — it owns no parameter |
+| `Face` | a planar profile (§6.8) | 0 — it owns no parameter |
 | `Solid` | a face swept, or a term over other solids **[0.18]** | 0 — it owns no parameter |
 | `Surface` | an analytic boundary patch read from a solid (§6.13) | 0 — it owns no parameter |
 | `Motion` | a rigid-motion family about solved geometry (§6.14) | 0 — it owns no parameter |
 | `Envelope` | the zero-normal-velocity locus of a moving surface (§6.15) | 0 — it owns no parameter |
-| `Patch` | a spatial region of a surface or envelope, selected by material sides (§6.16) | 0 — it owns no parameter |
-| `Seam` | a shared generating characteristic or envelope/boundary intersection (§6.17) | 0 — it owns no parameter |
-| `Vertex` | a named spatial corner at two seams (§6.18) | 0 — it owns no parameter |
-| `Edge` | a finite seam extent between named spatial vertices (§6.19) | 0 — it owns no parameter |
 
-**`Face`, `Solid`, `Surface`, `Motion`, `Envelope`, `Patch`, `Seam`, `Vertex` and `Edge` are evaluated after the solve.** None owns a coordinate, allocates an unknown, or contributes a planar residual; none may be an argument of a planar constraint of §9.3, be dragged, be dimensioned, or be put on a plane with `in`. What each *is* is settled once the drawing has been solved and every extent worked out (§1.2, §6.9). A kind of this stratum therefore adds nothing to §16.3's ledger.
+**`Face`, `Solid`, `Surface`, `Motion` and `Envelope` are evaluated after the solve.** None owns a coordinate, allocates an unknown, or contributes a planar residual; none may be an argument of a planar constraint of §9.3, be dragged, be dimensioned, or be put on a plane with `in`. What each *is* is settled once the drawing has been solved and every extent worked out (§1.2, §6.9). A kind of this stratum therefore adds nothing to §16.3's ledger.
 
 **[0.2] `Line` was a 2-DOF undirected infinite line with a `.dir` field in 0.1.** It is now a segment between two points, and every constraint that reads a line reads the infinite carrier through those points — which is what `parallel`, `perpendicular`, `coincident` and `angle` mean by a line anyway.
 
@@ -111,7 +107,7 @@ Compound entities expose sub-entities by field access. Sub-entities are ordinary
 | `Plane` | `.origin` | `Point` — drawn in the plane and held at its `(0, 0)` **[0.42]** |
 | `Plane` | `.x`, `.y`, `.z` | `Length` — where it stands in space: read by a seed, seeded by `hint(origin: (…, …, …))` and held by `fix(origin == (…, …, …))` **[0.42]** **[0.45]** |
 | `Line` | `.p1`, `.p2` | `Point` **[0.2]** |
-| `Face` | its edges; `on:` for a spatial support | aliased boundaries; `face.on` reaches a spatial support (§6.20) |
+| `Face` | its edges | aliased boundaries |
 | `Solid` | `.near`, `.far` | a prism's two caps, at the higher and the lower ordinate **[0.18]** |
 | `Solid` | `.<edge>` | the side swept from the edge the source called `<edge>` **[0.18]** |
 | `Solid` | `.start`, `.end` | a partial revolution's two caps **[0.18]** |
@@ -766,7 +762,7 @@ across the axis being measured.
 
 ### 6.8 Faces **[0.18]**
 
-A **planar face** is a region of a plane: an outer loop of existing edges and straight runs between named corners, optionally containing holes. An explicit `on:` support instead declares a spatial face boundary (§6.20); the planar rules below do not turn that support into a plane drawn in.
+A **planar face** is a region of a plane: an outer loop of existing edges and straight runs between named corners, optionally containing holes. **[0.120]** A face takes no `on:`: every face is planar.
 
 ```
 sec := face(mouth, side_r, lid, side_l)     // four lines, walked in order
@@ -1143,7 +1139,14 @@ flank := surface(crown, edge: rack.outer)
 root_transition := surface(crown, edge: rack.outer_round)
 ```
 
-A `surface` names an analytic patch of an existing solid. Its arguments are `solid` and
+**[0.120]** A `surface` names a side of an existing solid, and has two meanings, one per kind of
+solid it is read from. Over a **revolution** it is the side one profile edge sweeps round, the
+analytic patch this section specifies, and what a spatial envelope over it reads as its source,
+held to by the solve (§6.15.3). Over a **prism** drawn in a view it is the side its edge extrudes,
+whose envelope under a motion keeping the view is a planar envelope the solve holds to
+(§6.15.2). Neither is a certification object read only after the solve.
+
+Its arguments are `solid` and
 `edge`, in that order; labels may be written as with other constructors. The initial supported
 source is an unmodified revolution, with a line, circular arc or circle on its profile's
 outer or hole boundary. An unrelated edge, a modified body, or an unsupported source MUST
@@ -1192,8 +1195,8 @@ Evaluation also returns a point on the finite patch and the Euclidean error to t
 Only that error, compared with an explicit length tolerance, establishes bounded incidence.
 An axis-crossing meridian or a query with no unique normal is refused by this evaluator.
 
-This declaration provides named generating geometry. Motion families, envelopes and material
-trims are specified below; solids assembled from surface boundaries remain under development.
+This declaration provides named generating geometry. Motion families and envelopes are
+specified below; solids assembled from surface boundaries remain under development.
 
 ### 6.14 Rigid motion families
 
@@ -1283,8 +1286,8 @@ sweep interval MUST NOT be accepted merely because those supporting equations va
 `envelope` component formals, forward dependency paths, privacy, semantic tags, and
 copy/delete dependencies follow ordinary component rules. A solved evaluator is a snapshot
 and must be read again after the source geometry changes. Envelopes are not drawing glyphs
-or completed solids. Declarative trim boundaries and closed solids assembled from bounded
-surfaces remain under development.
+or completed solids. Closed solids assembled from bounded surfaces remain under development; the
+patches, seams, corners, edges and face boundaries that check one are Rust API (§6.16–§6.20).
 
 #### 6.15.1 Envelopes in the plane **[0.37]**
 
@@ -1533,228 +1536,17 @@ first point held to it: the lag over the phase is the transmission error, the co
 meshing whether it is a point or a line contact, the transmission error's range and how long the
 path of contact is; `--json` gives each phase.
 
-### 6.16 Trimmed spatial patches
+### 6.16–6.20 *(retired)* **[0.120]**
 
-```
-flank := patch(generated, inside: tip_body, inside: heel_body,
-            outside: root_body, outside: toe_body)
-```
-
-A `patch` retains points of one named `surface` or `envelope` satisfying every material-side
-condition. Each clipping operand is a **solid**: `inside:` retains its material and boundary;
-`outside:` retains its exterior and boundary. All conditions intersect. The declaration
-requires at least one condition; each operand carries its own `inside:` or `outside:` label.
-The source may be positional or labelled `source:`. `.source` reaches that entity. The
-`inside` and `outside` fields are lists, not singular child paths.
-
-This is spatial geometry evaluated after solving, with no coordinates, hints or planar
-constraint rows. Components, formal aliases, privacy and construction semantics apply.
-Clipping does not replace the source parameter domain or the envelope equation. A patch may
-be disconnected, singular or contain several envelope branches; it does not by itself
-designate a topological disk, an outward normal, or a closed solid.
-
-The current analytic evaluator supports unmodified **full revolutions** with line, arc or
-circle profile boundaries and holes. Partial revolutions, face families, prisms and Boolean bodies
-are refused as clipping operands. Membership uses analytic meridian axis crossings and finite
-curve distances, not the preview facets. Profile topology is checked by the existing solid
-validator, whose topology checks currently use faceted loops. This is not an interval proof
-of arbitrary analytic profile validity. Axis edges that disappear on full revolution are
-not material boundaries: a sphere's diameter is interior.
-
-`TrimmedPatch::named` reads a solved snapshot with an explicit absolute axis tolerance.
-`surface_at` checks a surface point against the trims. `envelope_at` additionally requires
-the normal-velocity equation within its explicit tolerance; arbitrary off-locus trials still
-use `GeneratedEnvelope::evaluate`. Both use an explicit boundary tolerance in model length
-units. `intersect` and `intersect_boundaries` solve on the untrimmed envelope and require the
-final result to pass all trims; an excluded local solution is refused, not silently replaced
-by another branch. Finite-boundary incidence checks remain in force. These floating-point
-checks do not certify a global error bound or closed-solid topology.
-
-### 6.17 Shared spatial seams
-
-```
-flank_join := seam(flank_region, transition_region)
-root_join := seam(transition_region, root_region)
-tip_edge := seam(flank_region, tip.wall)
-```
-
-A `seam` names an implicit curve shared by generating faces, or by a generating face and
-a finite analytic boundary. `first:` and `second:` may label the operands; those fields
-alias the dependencies.
-
-With two generating operands, it names the characteristic shared at a tangent vertex of
-their generating profile. Each operand is an `envelope` or a `patch` whose source is an
-envelope. Both
-envelopes MUST name the same generating motion and source revolution. Their profile edges
-MUST have exactly one shared vertex identity. Coincident but separately named points do
-not establish this relationship, and two copies of the same edge do not define one junction.
-
-After solving, the seam evaluator checks coincident positions and a common tangent plane
-at the source vertex with explicit tolerances. The common revolution and rigid motion
-preserve this relationship over their shared domain. A corner with distinct tangent planes
-is refused. The angular domain is the intersection of both sources' retained spans and
-both envelopes' roll intervals; these intersections must have positive width.
-
-The characteristic is still implicit. Its chart is the first envelope's original `[u,v,roll]`,
-with `u` fixed at the shared vertex. `EnvelopeSeam::intersect` solves both envelope equations
-and one spatial section equation using the existing local solver. `SeamIntersectionOptions`
-and its seed contain only the actual unknowns `[v,roll]`; the shared endpoint cannot be freed
-by a search option. Both face equations use one normal-velocity tolerance, and the section
-has a separate tolerance in its own units. Returned residuals are the first and second
-envelope equations followed by the section equation. The final result must
-satisfy both envelopes and, when present, both patches' material trims. A rank-deficient
-section intersection is refused. Reading a seam does not certify global regularity,
-uniqueness or connectedness of its locus.
-
-`EnvelopeSeam::named` reads a solved snapshot. `SeamTolerance` specifies absolute model-length
-tolerances for the junction position and clipping-axis recognition, plus the difference
-between unit normals for tangent-plane agreement (either orientation is allowed). Point
-evaluation and intersections also take explicit normal-velocity and material-boundary
-tolerances. These are floating-point checks, not a certified world-space export error bound.
-The returned contact normal belongs to the first face, and its velocity is the generating
-motion's velocity, not a derivative along the seam curve.
-
-With an `envelope` (or patch of an envelope) first and a `surface` second, the seam names
-their intersection. The boundary must support the finite analytic incidence evaluator of
-§6.13. It need not share the generating motion, revolution or profile vertex. The operand
-order is significant: the seam retains the envelope's original `[u,v,roll]` chart, and all
-three parameters can vary. Two arbitrary surfaces or two unrelated envelopes are not
-supported by this form.
-
-`BoundarySeam::named` reads one generated-face snapshot with its material conditions and
-one boundary projector, using an explicit clipping-axis tolerance. `evaluate` requires
-the envelope equation, incidence with the finite boundary patch, and all material trims.
-`BoundarySeamTolerance` supplies separate normal-velocity, incidence and trim tolerances.
-`intersect` solves the envelope equation, boundary support equation and one spatial section
-with `IntersectionOptions`; its residuals and tolerances follow that order. It checks finite
-incidence at the retained root, so convergence on an undeclared support continuation is
-refused. Local rank checks reject a nonisolated section. Neither a snapshot nor a local root
-certifies global transversality, branch uniqueness, connectedness or closed-face topology.
-
-Seams own no solver coordinates and have no planar drawing glyph. Component formals, privacy,
-construction semantics, source printing and dependency-aware copy/delete apply. A seam
-provides shared boundary geometry; oriented face loops and checked closed-solid assembly
-remain separate work.
-
-### 6.18 Shared spatial vertices
-
-```sv
-tip_toe := vertex(tip_edge, toe_edge)
-join_toe := vertex(flank_join, toe_edge)
-```
-
-A `vertex` names the intersection of two distinct seams. Optional `first:` and `second:`
-labels name its operands. Two boundary seams must use the exact same named generating
-face and different boundary surfaces. Alternatively, one generating junction may meet
-one boundary seam whose generating face is exactly one of that junction's operands.
-The two seam operands may be reversed. Two generating junctions, unrelated faces and
-duplicate boundary surfaces are refused. Separate declarations retain separate identity,
-even if their evaluated coordinates coincide.
-
-`BoundaryVertex::named` owns one generating-face snapshot with its material conditions
-and two finite boundary evaluators. Its local solve checks the envelope and both boundary
-equations over the original `[u,v,roll]` chart, followed by finite incidence and material
-membership. `IntersectionOptions` residuals and tolerances follow that equation order.
-`JunctionVertex::named` owns one checked generating junction and one boundary evaluator.
-It uses `SeamTolerance` for the junction and `SeamIntersectionOptions` for its two unknowns
-`[v,roll]`; the first face's endpoint `u` is fixed structurally. Its residuals are the two
-envelope equations and boundary equation. Final acceptance checks both material trims and
-finite boundary incidence on the particular face named by the boundary seam. Coincidence
-within the seam tolerance does not transfer a finer incidence tolerance between faces.
-
-Both snapshot types provide `position` with explicit normal-velocity, finite-incidence and
-material-trim tolerances. Results use the canonical generating chart (the junction's first
-face for a junction vertex). A vertex has no unique face normal or generating velocity;
-its position accessor returns only three coordinates. Local solves check rank, but neither
-a declaration nor a local root certifies global uniqueness or regularity. Search bounds
-and seeds must select the intended root when there are multiple intersections.
-
-Vertices are spatial, have no planar solver coordinates or drawing glyph, and cannot be
-grounded as planar points. Component formals, privacy, construction roles, source printing
-and dependency-aware copy/delete follow ordinary entity rules. They establish shared
-corner identity; finite edge branches, oriented face loops and analytic solid assembly
-remain separate work.
-
-### 6.19 Finite spatial edges
-
-```sv
-tip_span := edge(tip_edge, from: tip_toe, to: tip_heel, along: shaft_axis)
-toe_span := edge(toe_edge, from: join_toe, to: tip_toe, along: shaft_axis)
-```
-
-An `edge` names a seam, two distinct spatial vertices, and a line defining its slicing
-direction. Its fields are `seam`, `from`, `to` and `along`, in that positional order.
-The endpoint vertices must be incident through declared identities. For two-boundary
-vertices, the edge's seam is one of the vertex's operands. At a generating junction,
-the same finite boundary also meets the junction's other face: an edge on that face is
-incident when it names that exact face and boundary surface. Coincident lookalikes do
-not establish this relationship.
-
-The `along` line is read in solved world coordinates and must be finite and nondegenerate.
-The endpoints must have distinct projections along it. Edge fraction `s` ranges from zero
-at `from` to one at `to`, and specifies the plane perpendicular to `along` at the linearly
-interpolated endpoint projection. It is not arc length. Reversing the line's direction
-preserves the slices; reversing the endpoint order reverses the fraction.
-
-`edge::SpatialEdge::named` reads an owned snapshot from the declaration, endpoint parameter
-witnesses and explicit `EdgeTolerance`. Witnesses use each vertex's canonical chart and
-are checked against its full defining geometry and material trims. The reader maps them
-into the edge seam's chart by face identity: a generating junction's two endpoint `u`
-coordinates need not agree. The snapshot retains one seam and the shared corner positions.
-`sample` solves the seam's original equations plus the spatial slicing equation through
-the existing intersection solver. It checks local rank, finite incidence and material
-trims in the interior, and preserves the exact stored endpoint positions checked by their
-full vertex definitions. It does not re-solve an endpoint with a potentially tangent
-slicing equation: a regular curve can have zero axial derivative at its endpoint.
-The returned parameters belong to the edge seam; its position has no unique face normal.
-
-This evaluator establishes checked local slices of a finite extent. It does not establish
-that every slice has exactly one root, that separate local solves stay on one connected
-branch, or that all intermediate slices are regular. Endpoint witnesses select local
-roots; they are numerical evaluation inputs, not planar coordinates or model hints.
-A branch with a turning point along the chosen line needs another chart or subdivision;
-rank-deficient requested interior slices are refused. Global branch validation and tolerance-controlled
-curve approximation remain required before these edges can bound a certified analytic solid.
-
-Edges own no solver coordinates and have no planar drawing glyph. Formals, private member
-geometry, construction roles, printing and dependency-aware copy/delete are ordinary entity
-semantics. A spatial edge is distinct from a planar line and cannot be grounded or used as
-a planar constraint operand. Oriented face uses are described in §6.20.
-
-### 6.20 Spatial face boundaries
-
-```sv
-working := face(toe, tip, heel, join, on: flank_region)
-transition := face(round_toe, join, round_heel, root, on: fillet_region)
-```
-
-An `on:` operand gives a face an explicit analytic support: a named surface, envelope
-or material patch. Every loop operand MUST be a distinct named spatial `edge`; its
-seam MUST name that exact support. Coincident but separately declared supports do not
-establish incidence. Consecutive edges MUST meet at the same spatial vertex identity,
-and the last MUST return to the first without revisiting another vertex. The written
-order determines directed edge uses; for a two-edge loop, the first edge's declared
-direction chooses between the two possible traversals. The current implementation
-accepts one loop and refuses holes, repeated edge uses and `-> close` on spatial faces.
-
-`face.on` reaches the support through an ordinary child reference. Faces retain their
-existing entity kind, own no solver coordinates, and follow ordinary component formals,
-privacy, construction roles and dependency-aware copy/delete. Spatial faces build after
-their finite edges. They are not planar sweep profiles: extrusion, revolution and a face family
-MUST refuse them rather than infer a default plane.
-
-`spatial_face::SpatialFaceBoundary` reads an immutable support and finite boundary edges
-from canonical vertex witnesses and explicit `EdgeTolerance`. Sampling follows the
-directed use, retains the edge position and verifies incidence on this particular support.
-A generating junction maps its canonical first-face parameter to the second face when
-needed. The result contains xyz, this support's parameters and the finite incidence error.
-Envelope samples check the envelope equation and material conditions; surface samples
-use the finite projector. A coarse junction tolerance does not replace fine face incidence.
-
-A closed loop with valid support incidence is not yet proof of a disk interior, outward
-orientation, geometric embedding or a valid solid. Those checks remain separate, as do
-global branch selection and tolerance-controlled curve/surface export. In particular,
-two different named edges can retrace the same curve and enclose no area.
+Through 0.119 these sections declared trimmed spatial patches (`patch`), shared spatial seams
+(`seam`), spatial vertices (`vertex`), finite spatial edges (`edge(…, along:)`) and spatial face
+boundaries (`face(…, on:)`). Each was a certification object: it added no unknown, no solve row
+read it, and nothing exported from it. They are no longer words of the language. Each is a Rust
+type made of its parts — `patch::TrimmedPatch`, `seam::{EnvelopeSeam, BoundarySeam,
+SurfaceSeam}`, `vertex::{BoundaryVertex, JunctionVertex}`, `edge::SpatialEdge` and
+`spatial_face::SpatialFaceBoundary` — over the surfaces and envelopes a drawing names (§6.13,
+§6.15), and its tolerance and identity rules are the implementation's contract
+(`docs/contract/analytic.md`). The section numbers are kept so that §6.21 onward keep theirs.
 
 ### 6.21 Sets **[0.49]**
 
@@ -3097,8 +2889,7 @@ element        = ekw [ "(" ctor_arg { "," ctor_arg } ")" ] { trailer }
                | face_decl | solid_decl ;
 ekw            = "point" | "line" | "circle" | "arc" | "spline" | "plane" | "axis"  (* axis [0.42] *)
                | "face" | "solid"                                            (* §6.8, §6.9 [0.18] *)
-               | "surface" | "motion" | "envelope" | "patch"                (* §6.13–§6.16 *)
-               | "seam" | "vertex" | "edge" ;                               (* §6.17–§6.19 *)
+               | "surface" | "motion" | "envelope" ;                        (* §6.13–§6.15 *)
 (* the trailing clauses are order-free: `hint(…)`, `knots […]`, `in REF`.  A
    place — `hint(at: t)`, `hint(at: c, bearing: …)` — is the same clause with `at:` and
    `bearing:` for keys, §6.4 [0.14] *)
@@ -3131,7 +2922,7 @@ sweep_arg      = ( "from" | "to" | "depth" | "sweep" | "at" ) ":" expr
 (* §6.8, §6.9 [0.18].  Both are ordinary elements — `face` and `solid` are element
    keywords — and are written out here for what their one list slot holds. *)
 face_decl      = "face" "(" face_arg { "," face_arg } [ "," "->" "close" ] ")" ;
-face_arg       = ref | ("edges" | "holes" | "on") ":" ref ;  (* planar/spatial restrictions: §6.8, §6.20 *)
+face_arg       = ref | ("edges" | "holes") ":" ref ;  (* §6.8 *)
 solid_decl     = "solid" "(" solid_term ")" ;
 solid_term     = ref [ "," ref ] { "," sweep_arg }                     (* a face swept *)
                | ref { "," ref } ;                         (* a body: its stock, then solids *)

@@ -220,31 +220,7 @@ export class Document {
       .map(e => ({ name: e.name!, index: e.index }));
   }
 
-  /** Spatial regions selected by declarative material-side conditions. */
-  patches(): { name: string; index: number }[] {
-    return this.map.entities.filter(e => e.kind === 'patch' && e.name)
-      .map(e => ({ name: e.name!, index: e.index }));
-  }
-
-  /** Shared generating characteristics and envelope/boundary intersections. */
-  seams(): { name: string; index: number }[] {
-    return this.map.entities.filter(e => e.kind === 'seam' && e.name)
-      .map(e => ({ name: e.name!, index: e.index }));
-  }
-
-  /** Named spatial corners; they own no planar solver coordinates. */
-  vertices(): { name: string; index: number }[] {
-    return this.map.entities.filter(e => e.kind === 'vertex' && e.name)
-      .map(e => ({ name: e.name!, index: e.index }));
-  }
-
-  /** Finite seam extents between named spatial vertices. */
-  edges(): { name: string; index: number }[] {
-    return this.map.entities.filter(e => e.kind === 'edge' && e.name)
-      .map(e => ({ name: e.name!, index: e.index }));
-  }
-
-  /** Named faces, including planar profiles and spatial faces with an `on:` support. */
+  /** Named faces: planar profiles. */
   faces(): { name: string; index: number }[] {
     return this.map.entities.filter(e => e.kind === 'face' && e.name)
       .map(e => ({ name: e.name!, index: e.index }));

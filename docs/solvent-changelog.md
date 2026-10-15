@@ -4,6 +4,20 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.120] The B-rep read after the solve leaves the language.** `patch`, `seam`, `vertex`,
+`edge(…, along:)` and `face(…, on:)` (§6.16–§6.20) are retired: they added no unknown, no solve row
+read them and nothing exported from them, and the one check that needed them, the spiral bevel's,
+already made each of its parts in Rust. They are Rust API now — `TrimmedPatch::of_envelope` and
+`of_surface`, `EnvelopeSeam::new`, `BoundarySeam::new`, `SurfaceSeam::new`, `BoundaryVertex::new`,
+`JunctionVertex::new`, `SpatialEdge::new` and `SpatialFaceBoundary::new` — over the surfaces and
+envelopes a drawing names. `patch`, `seam` and `vertex` are no keywords, `edge` no constructor, and
+a face takes no `on:`: every face is planar. `surface` (§6.13) and the spatial `envelope` stay,
+filed with what the solve holds to, and `surface` says its two meanings, one per kind of solid
+it is read from: a revolution's side, a held spatial envelope's source, and a prism's side, a
+planar envelope's. The section numbers are kept, so §6.21 onward keep theirs. Through 0.119 each
+was declared in the document and read after the solve by a `::named` reader. (Issue #364, settling
+#76 item 6.)
+
 **[0.119] Rates along a running formal, in a traced body.** A traced body may state a condition
 on a rate along the formal it runs over (§6.5), as a face family's station may since 0.116 (§6.9):
 `rate(x over s)`, a point's velocity, is an operand, and stands on either side of a word that reads

@@ -122,7 +122,7 @@ NAME := solid(SOLID) | solid(SET)       a body over a stock; the points of a reg
 NAME := solid()                         an empty body: what is in `union` with it (0.99)
 NAME := solid(SOLID, under: MOTION, at: E | from: E, to: E | through: BODY)   placed by, or swept through, a motion
 REF union REF | REF cut REF | REF common REF  material added to, removed from, shared with a body
-NAME := motion | envelope | meshing | surface | patch | seam | vertex | edge(...)    (1.15)
+NAME := motion | envelope | meshing | surface(...)                                  (1.15)
 WORD[(ARGS)] REF | REF WORD[(ARGS)] REF [hint(SLOT: E, ...)]   a constraint          (1.5)
 claim CONSTRAINT                        judged, never solved for                     (1.11)
 fix((E, E[, E])) REF | fix(MEMBER == E, ...) REF   hold an entity's own numbers      (1.4)
@@ -1648,6 +1648,12 @@ cam). A point's envelope is its path: `bore := envelope(apex, under: rotor_turn,
 housing's wall sweeps through — `swept := solid(housing, under: housing_turn, from: 0deg, to:
 1080deg)`, `swept cut rotor` (`common` with a sweep keeps the union's inside, a different set).
 
+**A solid's side is a `surface`, and the word has two meanings, one per kind of solid.** Over a
+revolution, `surface(crown, edge: rack.outer[, from: 180deg, to: 360deg])` is the side one profile
+edge sweeps round, `u` along the edge, `v` round (read the domain, never assume [0, 1]): what a
+spatial envelope over it reads as its source, held to by the solve (below). Over a prism drawn in
+a view it is the side its edge extrudes, a planar envelope's source:
+
 **A prism's side** is named as a revolution's is, `side := surface(rack_tooth, edge: rack_flank)`;
 under a motion keeping its view, `envelope(side, under: cutting, …)` is the planar envelope
 extruded, and `p coincident flank` from any view is one equation. Draw the prism's face `in` a view
@@ -1751,22 +1757,13 @@ steer by. A number stated outright is an equation, so a cutter's pressure shift 
 solves to where the margin binds. The source must be the tool's face itself, not grown by a
 backlash, and the blank is read as balls, cylinders, cones and half-spaces.
 
-**Spatial geometry read after the solve** adds no unknown and has no 2D glyph; each certifies only
-local evaluations ([analytic face boundaries](analytic-face-boundaries.md); the spiral bevel's
-checks make the same objects of their parts, from the faces its built members leave —
-`faces::face_source`, #212):
-
-- `surface(crown, edge: rack.outer[, from: 180deg, to: 360deg])` — the surface one profile edge
-  of an unmodified revolution sweeps, `u` along the edge, `v` round; read the domain, never assume
-  [0, 1];
-- `envelope(surface, under: generating, from:, to:)` — its zero-normal-velocity locus over the
-  roll interval; chooses no branch and closes no solid;
-- `patch(flank, inside: tip_body, outside: root_body, …)` — which material keeps it;
-- `seam(a, b)` — two envelopes meeting tangentially at a shared profile vertex, or a generated
-  face meeting a finite boundary surface;
-- `vertex(seam1, seam2)` — where seams meet on one face;
-- `edge(seam, from: v1, to: v2, along: axis)` — a seam's finite extent;
-- `face(e1, e2, …, on: support)` — an ordered loop of such edges on an exact support.
+**The B-rep read after the solve is not Solvent.** Trimmed patches, the seams where faces meet,
+their corners, edges and face boundaries add no unknown, no solve row reads them and nothing
+exports from them, so the language has no word for them: they are Rust API, made of the surfaces
+and envelopes a drawing names (`TrimmedPatch::of_envelope`, `EnvelopeSeam::new`,
+`SpatialFaceBoundary::new`, …), as the spiral bevel's checks make them from the faces its built
+members leave (`faces::face_source`, #212; [analytic face boundaries](analytic-face-boundaries.md)).
+`patch`, `seam` and `vertex` are no keywords, and a face takes no `on:` (spec 0.120, #364).
 
 ### 1.16 Checking your work
 

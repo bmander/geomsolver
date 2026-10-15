@@ -512,7 +512,7 @@ fn one_plane(
     Some(plane.flatten())
 }
 
-/// The outer loop of a face named as another face's hole.  One already holed, or spatial, or
+/// The outer loop of a face named as another face's hole.  One already holed, or
 /// declared after the face it is cut from, is refused: a hole is one loop on the face's plane.
 fn hole_of_face(
     sk: &Sketch,
@@ -533,11 +533,8 @@ fn hole_of_face(
     if !face.holes.is_empty() {
         return refuse(format!("`{name}` has holes of its own: a hole is one loop"));
     }
-    let crate::model::FaceSupport::Plane(plane) = face.support else {
-        return refuse(format!("`{name}` is a spatial face: a hole lies in its face's plane"));
-    };
     Some((crate::model::FaceLoop { edges: face.edges.clone(), edge_names: face.edge_names.clone() },
-        plane))
+        face.plane))
 }
 
 /// Read each boundary without allocating intermediate faces. `owner` is the containing
@@ -567,11 +564,6 @@ fn build_face_whole(
     span: Span,
     diags: &mut Vec<Diag>,
 ) -> Option<usize> {
-    if d.children.get(2).is_some_and(|g| !g.is_empty()) {
-        diags.push(Diag::within(Code::E080,span,stmt,
-            "a spatial face is not a planar sweep profile".into()));
-        return None;
-    }
     let (outer, plane) = build_loop(sk, res,
         d.children.first().map(Vec::as_slice).unwrap_or_default(), d.closed, stmt, span, diags)?;
     let scope = owner.rsplit_once('.').map(|(p, _)| format!("{p}."));
@@ -629,7 +621,7 @@ fn build_face_whole(
     }
     let i = sk.face(outer.edges, outer.edge_names, &d.name.key().text);
     sk.faces[i].holes = holes;
-    sk.faces[i].support = crate::model::FaceSupport::Plane(plane);
+    sk.faces[i].plane = plane;
     sk.faces[i].class = d.class.clone();
     Some(i)
 }

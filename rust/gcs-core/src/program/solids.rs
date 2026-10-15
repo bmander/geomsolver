@@ -69,8 +69,7 @@ fn faces(
             }
             _ => continue,
         };
-        if d.kind != EntKind::Face || skip.contains(&st.id)
-            || d.children.get(2).is_some_and(|g| !g.is_empty()) {
+        if d.kind != EntKind::Face || skip.contains(&st.id) {
             continue;
         }
         let name = d.name.key().text.clone();

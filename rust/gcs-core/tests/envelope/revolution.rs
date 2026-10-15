@@ -90,7 +90,7 @@ fn exact_revolution_respects_partial_turn_sense_and_its_plane_in_space() {
     };
     sweep.value = std::f64::consts::FRAC_PI_2;
     *sense = Sense::Cw;
-    e.sketch.faces[*face as usize].support = gcs_core::model::FaceSupport::Plane(Some(pi as u32));
+    e.sketch.faces[*face as usize].plane = Some(pi as u32);
     crate::common::set_basis(&mut e.sketch, pi, Basis { u: [0.,0.,1.],v: [1.,0.,0.],o: [10.,20.,30.] });
     let before = patch(&e,"outer_round");
     let a = before.at(0.4,0.).unwrap().position;

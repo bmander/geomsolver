@@ -239,9 +239,8 @@ fn operands(
                 return None;
             }
         };
-        if e.kind == EntKind::Face && sk.faces.get(e.i()).is_none_or(|f| f.plane().is_err()) {
-            diags.push(Diag::on(Code::E080,st,
-                "a sweep needs a built planar profile; a spatial face cannot be swept".into()));
+        if e.kind == EntKind::Face && sk.faces.get(e.i()).is_none() {
+            diags.push(Diag::on(Code::E080,st,"a sweep needs a built planar profile".into()));
             return None;
         }
         ops.push(e);
@@ -369,7 +368,7 @@ fn revolve(
         say(Code::E101, axis.span, format!("no such entity: `{}`", axis.root.text));
         return None;
     };
-    let fp = sk.faces[face as usize].plane().ok()?;
+    let fp = sk.faces[face as usize].plane;
     match ax.kind {
         // **the line lies in the face's own plane**: a line in another view names a
         // direction this face knows nothing about
