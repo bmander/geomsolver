@@ -485,7 +485,7 @@ component Chamfered(a: set, b: set, la: Length, lb: Length) := { p |
 // `solid(I(…).f over s in (0, 1))`.  These words only say where a station stands on its path: a
 // plane `n` square to the path where its parameter is `s`, its `v` along `up`.  What the section
 // is at that station — its shape, its twist, its scale, the rails it follows — is the writer's
-// component, drawn `in st.n` and reading `s`:
+// component, drawn `in st.n` and reading `s` (the laws below run a twist or a scale):
 //
 //   component Reducer(g: line, inlet: Length, outlet: Length, s: Scalar) {
 //     st := std.OnLine(g, up: std.z, s: s)
@@ -524,30 +524,34 @@ component OnArc(g: arc, up: axis, s: Scalar) {
 // The plane square to the spline `g` where its parameter is `s`: the tangent there drawn as a line
 // from `m`, the plane square to it, its `v` along `up` (the normal of the plane `g` is drawn in,
 // so again rotation-minimising for a guide in one plane).  The tangent is drawn 10 mm long, or its
-// far end would slide along it.
+// far end would slide along it, and starts ahead along `g`, so the plane starts facing the way
+// the guide runs, `v` along `up` and not the mirror of it.
 component OnSpline(g: spline, up: axis, s: Scalar) {
   m := point
   m coincident(t == s) g
-  q := point
+  q := point hint(at: m, along: g, by: 0.1)
   tl := line(m, q)
   g tangent(at: m) tl
   length(10mm) tl
-  n := plane
+  n := plane(u: hint(dir: up, turn: -90deg, about: tl), v: hint(dir: up))
   n.origin coincident m
   n square(up: up) tl
 }
 
 // The plane square to any path `g` — a line, an arc, a spline or a traced curve — where its
 // parameter is `s`, its `v` along `up`: `OnSpline`'s statements over a `path`.  A line's and an
-// arc's `s` is the fraction of its run (an arc's by angle), a spline's its own parameter.
+// arc's `s` is the fraction of its run (an arc's by angle), a spline's its own parameter.  Given a
+// named open chain of lines and arcs, a family runs it link by link, `s` from 0 to the count of
+// its links (#243 L4).  With `up` the normal of the plane `g` is drawn in, the frame turns only as
+// the guide does — the rotation-minimising frame, its binormal held.
 component On(g: path, up: axis, s: Scalar) {
   m := point
   m coincident(t == s) g
-  q := point
+  q := point hint(at: m, along: g, by: 0.1)
   tl := line(m, q)
   g tangent(at: m) tl
   length(10mm) tl
-  n := plane
+  n := plane(u: hint(dir: up, turn: -90deg, about: tl), v: hint(dir: up))
   n.origin coincident m
   n square(up: up) tl
 }
@@ -589,3 +593,55 @@ component OnHelix(ax: axis, base: plane, r: Length, pitch: Length, turns: Scalar
   // the helix leans from square to the axis by its lead angle
   n.v angle(atan(pitch / (2 * pi * r))) sc.n.v
 }
+
+// -- laws of a station (#243 L5) ----------------------------------------------------------------
+//
+// A twist or a scale is a dimension of the section reading `s`, and any expression in it is a
+// law: `twist * (3 * s^2 - 2 * s^3)`, `r * (1 + 0.2 * sin(180 * s))`.  A word takes numbers, not
+// laws (Solvent has no function values), so these take a total — the turn or the scale at
+// `s = 1` — and run it linearly from the section as drawn at `s = 0`; any other law is the same
+// word given another fraction, `s: 3 * s^2 - 2 * s^3`.  A `when` cannot say a law: it is made
+// once, for the whole run, and the station is one shape all along it; `min`, `max` and `abs` say
+// a law in pieces.
+//
+//   component Duct(g: path, up: axis, half: Length, s: Scalar) {
+//     st := std.On(g, up: up, s: s)
+//     tw := std.Twisted(st.n, twist: 90deg, s: s)
+//     in st.n {
+//       a := point
+//       a scaled(du: -half, dv: -half, scale: 0.5, s: s) tw.axes
+//       …
+//     }
+//   }
+
+// The plane `n` turned `twist · s` about its origin, within it: axes a section drawn in `n` is
+// measured against (`p coords(du: 5, dv: 0) tw.axes`), so the section turns as it runs.  At
+// `s = 0` they are `n`'s own.  The turn runs on from one station to the next, so a twist past a
+// half turn is no different from a quarter.
+component Twisted(n: plane, twist: Angle, s: Scalar) {
+  in n {
+    private zero := point
+    zero on_u(d: 10mm) n
+    private construction ref := line(n.origin, zero)
+    private t := point
+    construction u := line(n.origin, t)
+    length(10mm) u
+    ref angle(twist * s, sense: ccw) u
+    private q := point hint(at: n.origin, toward: t, turn: 90deg)
+    private construction v := line(n.origin, q)
+    v perpendicular u
+    v equal u
+  }
+  axes := plane(u: u, v: v)
+}
+
+// Where a point stands in a plane's frame as its section is scaled about the origin: `(du, dv)`
+// at `s = 0`, `scale` times that at `s = 1`, and run linearly between — `p coords` of a section
+// drawn at its start's size.
+p scaled(du, dv, scale, s) P := {
+  p distance(du * (1 + (scale - 1) * s), along: u) P
+  p distance(dv * (1 + (scale - 1) * s), along: v) P
+}
+
+// A round's radius scaled as `scaled` scales a point: `r` at `s = 0`, `scale` times it at `s = 1`.
+scaled_radius(r, scale, s) k := radius(r * (1 + (scale - 1) * s)) k

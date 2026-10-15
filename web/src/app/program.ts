@@ -15,12 +15,13 @@
  * every solve would take the line out from under the cursor. */
 import type { Mark } from './editor.js';
 import { highlight, type Diagnostic, type SourceMap, type SourceSpan } from '../core/program.js';
+import type { ClaimVerdict } from '../core/claims.js';
 import * as modules from '../core/modules.js';
 import { highlight as drawingHighlight, type DrawingBundle } from '../core/drawing.js';
 import { drawingActive, pickDrawingFolder, renderDrawing, showDrawing } from './drawing.js';
 import { currentConstraint, pdiags, ped, ppanel, ppanelState, psplit, view } from './shell.js';
 import { download, toast } from './ui.js';
-import { awaitSurfaces, loading, opened, painted } from './loading.js';
+import { awaitSurfaces, buildingObjects, loading, opened, painted } from './loading.js';
 import { ProjectExplorer, projectFile, sourceFile } from './project-explorer.js';
 
 /** The box somebody types in.  `app/editor.ts` owns the two layers and the colouring; this module
@@ -108,11 +109,16 @@ function selectFile(name: string): void {
  *  until the swept objects of the model it shows have a surface. */
 async function chooseFile(name: string): Promise<void> {
   if (name === activeFile || !project || !sourceFile(name)) { selectFile(name); return; }
-  loading(`${name.endsWith('.svd') ? 'rendering' : 'solving'} ${name}…`);
+  loading(`${name.endsWith('.svd') ? 'rendering' : 'reading'} ${name}…`);
   await painted();
   awaitSurfaces();
+  buildingObjects();
+  view.hold();
   try { selectFile(name); }
-  finally { opened(); }
+  finally {
+    await view.buildObjects(loading, painted);
+    opened();
+  }
 }
 
 /** Close whatever project the panel holds, as a new document replaces it; false where a project's
@@ -373,6 +379,17 @@ function map(): SourceMap {
   return view.doc.map;
 }
 
+/** The verdicts on the drawing's claims about solids, once the worker has judged them: none
+ *  while it is judging, so no wash outlives the drawing it was of. */
+let solidVerdicts: ClaimVerdict[] = [];
+
+/** Take the worker's verdicts on the claims about solids, and wash their statements as a claim's
+ *  are (`marks`). */
+export function showClaims(verdicts: ClaimVerdict[]): void {
+  solidVerdicts = verdicts;
+  markStatement();
+}
+
 function showDiags(ds: Diagnostic[]): void {
   pdiags.replaceChildren();
   for (const d of ds) {
@@ -429,6 +446,14 @@ function marks(): Mark[] {
       const at = doc.spanOfConstraint(c.id);
       if (at) out.push({ lo: at.lo, hi: at.hi, cls });
     }
+  }
+  // a claim about solids, as quietly, once the worker has judged it: held (measured, or sampled
+  // over its sweep), refuted, or undecided where the faceting cannot say
+  const solidWash = { 'holds': 'claim-held', 'sampled-success': 'claim-held',
+    'refuted': 'claim-refuted', 'undecided': 'claim-undecided' } as const;
+  for (const v of solidVerdicts) {
+    const at = doc.spanOfStatement(v.stmt);
+    if (at) out.push({ lo: at.lo, hi: at.hi, cls: solidWash[v.verdict] });
   }
   // an energy's verdict (#121), as quietly: the wash of what was asked for, or of what was not
   for (const x of d.extrema) {

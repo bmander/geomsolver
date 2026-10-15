@@ -18,8 +18,10 @@
  * Every mutation funnels through `afterEdit`, which re-solves (when auto-solve is on),
  * re-diagnoses and notifies the shell exactly once. */
 import { Box3D } from './box3d.js';
-import { objects } from '../core/mesh.js';
+import { mesh, objects } from '../core/mesh.js';
+import { fieldJobs } from '../core/field.js';
 import { FieldPreview, type Refining } from './field-preview.js';
+import { ClaimJudging, type Judging } from './claim-judging.js';
 import * as dim from '../core/callout.js';
 import { Constraint } from '../core/constraints.js';
 import { PlanResult, PlanSolver, asSolveResult } from '../core/decompose.js';
@@ -254,6 +256,9 @@ export class SketchView {
   onStatus: (msg: string) => void = () => {};
   /** The swept objects refining in the background, as each frame of their meshing arrives. */
   onRefine: (refining: Refining[]) => void = () => {};
+  /** The claims about solids being judged in the background, as the judging moves; null once the
+   *  drawing has none. */
+  onClaims: (judging: Judging | null) => void = () => {};
   /** A dimension callout was clicked: the shell puts the focus on that constraint. */
   onPickConstraint: (c: Constraint) => void = () => {};
   /** What is held changed, and nothing else did — the line that names it is the whole of the
@@ -345,10 +350,20 @@ export class SketchView {
   /** A gesture moved geometry, so the null space no longer describes the pose on screen. */
   staleDiagnosis = false;
   private frame = 0;
+  /** An opening is building its objects (`hold`, `buildObjects`): nothing is painted or told
+   *  the shell meanwhile, since either would evaluate every object at once, and whether the
+   *  camera owes a fit when it is let go. */
+  private holding = false;
+  private heldFit = false;
+  /** Which hold is the latest: an opening overtaken by another lets go of nothing of the
+   *  other's. */
+  private holdGen = 0;
   /** The eye swinging square on to a plane: its timer, so a second choice replaces the first. */
   private looking = 0;
   /** Swept solids' surfaces, refined in a worker and drawn as they arrive. */
   private readonly fields = new FieldPreview((error) => this.fieldArrived(error), (r) => this.onRefine(r));
+  /** The claims about solids, judged in a worker: the diagnosis here leaves them out. */
+  readonly claims = new ClaimJudging((j) => this.onClaims(j));
   /** A source sync is running: `swap` re-enters `afterEdit`, and the second pass has nothing
    *  left to write.  One flag rather than a subtle argument about termination. */
   private syncing = false;
@@ -761,7 +776,11 @@ export class SketchView {
     this.releasePlan();
     this.afterEdit();
     this.onProgram();
-    if (fit) this.fit();      // after the solve: loading a case can move the geometry a long way
+    // after the solve: loading a case can move the geometry a long way
+    if (fit) {
+      if (this.holding) this.heldFit = true;
+      else this.fit();
+    }
   }
 
   /* -- a selection across a re-elaboration --------------------------------
@@ -954,7 +973,10 @@ export class SketchView {
   }
 
   private rediagnose(system: System | null): void {
-    this.diagnosis = this.sketch.constraints.length ? diagnose(this.sketch, { system }) : null;
+    // the claims about solids are the worker's (`claims`): judged here they held the thread
+    // for seconds an edit, and nothing else the diagnosis says reads them
+    this.diagnosis = this.sketch.constraints.length
+      ? diagnose(this.sketch, { system, solidClaims: false }) : null;
     this.staleDiagnosis = false;
   }
 
@@ -985,9 +1007,53 @@ export class SketchView {
     this.rediagnose(fresh ? this.lastSystem : null);
     this.syncSource();        // the drawing changed, so the document has to say what it now says
     this.fields.start(this.doc);
-    this.onChanged();
+    this.claims.start(this.doc);
+    if (!this.holding) this.onChanged();
     this.draw();
     return this.lastResult;
+  }
+
+  /** **An opening says which object it is building.**  An object is evaluated the first time
+   *  anything asks — the banner's `unbuilt`, the frame `fit` takes, the box — and a rounded part
+   *  takes seconds, so the first paint after an opening would hold the thread for all of them
+   *  at once with nothing said.  Held, a load paints nothing and tells the shell nothing; then
+   *  `buildObjects` evaluates each object in turn (the box's approximation, so every later asker
+   *  finds it built), saying which of how many before each and letting the page paint between,
+   *  and lets go.  A swept object is not one: a worker meshes it, and says so itself. */
+  hold(): void {
+    this.holding = true;
+    this.heldFit = false;
+    this.holdGen += 1;
+  }
+
+  async buildObjects(say: (what: string, fraction: number) => void,
+                     painted: () => Promise<void>): Promise<void> {
+    const gen = this.holdGen;
+    try {
+      const doc = this.doc;
+      const swept = new Set(fieldJobs(this.sketch).map((j) => j.solid));
+      const objs = objects(this.sketch).filter((o) => !swept.has(o.index));
+      for (const [k, o] of objs.entries()) {
+        say(`building ${o.name} (${k + 1} of ${objs.length})`, k / objs.length);
+        await painted();
+        // another document, another opening, or let go
+        if (this.doc !== doc || gen !== this.holdGen || !this.holding) return;
+        try { mesh(this.sketch, o.index, 0); }
+        catch { /* it does not evaluate: the banner says why, once let go */ }
+      }
+    } finally {
+      if (gen === this.holdGen) this.release();
+    }
+  }
+
+  /** Let a held view go: the shell told, and the camera fitted if the load asked for it. */
+  release(): void {
+    if (!this.holding) return;
+    this.holding = false;
+    this.onChanged();
+    if (this.heldFit) this.fit();
+    else this.draw();
+    this.heldFit = false;
   }
 
   /** How much finer than the preview's swept solids are refined (Options ▸ mesh fineness): view
@@ -1123,7 +1189,7 @@ export class SketchView {
 
   draw(): void {
     this.camCache = null;     // a plane's own points may have moved, and its map with them
-    if (this.frame) return;
+    if (this.frame || this.holding) return;
     this.frame = requestAnimationFrame(() => { this.frame = 0; paint(this); });
   }
 

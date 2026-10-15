@@ -311,7 +311,56 @@ pub enum SolidDef {
     /// `to`.  The station is drawn once, hidden — `station`, every entity its instance made —
     /// at the middle of the interval, and `solid::family` solves it again at every other.  Its
     /// caps are `start` and `end`, its walls the section's edges by their paths in the instance.
-    Family { face: u32, station: Vec<EntRef>, held: String, from: Extent, to: Extent },
+    ///
+    /// Over a chain (#243 L4) the station is drawn once per link the interval reaches, each a
+    /// leg (`legs`, in order; `face` and `held` the first's, `station` every leg's entities):
+    /// link `k`'s while the running number is in `(k, k + 1)`, its own running number the place
+    /// on that link's run.  Empty for a family over one path.
+    Family { face: u32, station: Vec<EntRef>, held: String, from: Extent, to: Extent,
+             legs: Vec<FamilyLeg> },
+}
+
+/// One leg of a face family over a chain (#243 L4): the face its station sweeps, its running
+/// number, the index of its link — where the leg's number starts on the family's — and its
+/// station's entities in the order of their names under the leg, so each leg's `i`th is every
+/// other's (the stations are one instance drawn once a link): where one link meets the next,
+/// the next leg's station starts where this one's ends.
+#[derive(Clone, Debug)]
+pub struct FamilyLeg {
+    pub face: u32,
+    pub held: String,
+    pub at: f64,
+    pub ents: Vec<EntRef>,
+}
+
+/// A leg as a family steps it: its face, its running number, where that number starts on the
+/// family's (`at`), and the leg's own interval in it.
+#[derive(Clone, Debug)]
+pub struct Leg<'a> {
+    pub face: u32,
+    pub held: &'a str,
+    pub at: f64,
+    pub from: f64,
+    pub to: f64,
+}
+
+impl SolidDef {
+    /// A face family's legs, in order of its running number: over one path the one leg, its
+    /// interval the family's; over a chain each link's part of it, in the leg's own number.
+    pub fn legs(&self) -> Vec<Leg<'_>> {
+        let SolidDef::Family { face, held, from, to, legs, .. } = self else { return Vec::new() };
+        let (a, b) = (from.value, to.value);
+        if legs.is_empty() {
+            return vec![Leg { face: *face, held, at: 0.0, from: a, to: b }];
+        }
+        legs.iter().map(|l| Leg {
+            face: l.face,
+            held: &l.held,
+            at: l.at,
+            from: a.max(l.at) - l.at,
+            to: b.min(l.at + 1.0) - l.at,
+        }).collect()
+    }
 }
 
 impl SolidDef {

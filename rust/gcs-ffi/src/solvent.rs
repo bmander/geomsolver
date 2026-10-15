@@ -223,3 +223,20 @@ pub unsafe extern "C" fn gcs_elab_report(h: *mut Elaborated) -> *mut u8 {
         ])
     })
 }
+
+/// Where statement `stmt` of the document (not of a module it uses) was written, as byte offsets
+/// `[lo, hi]` into `out`: 0, or −1 where the document has no such statement — a claim a module's
+/// component states, say, which has no place in this text.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_elab_stmt_span(h: *mut Elaborated, stmt: i32, out: *mut i32) -> i32 {
+    guard(-1, move || {
+        let Ok(id) = u32::try_from(stmt) else { return -1 };
+        match (*h).program.document_stmt(gcs_core::syntax::StmtId(id)) {
+            Some(st) => {
+                write(out, &[st.span.lo as i32, st.span.hi as i32]);
+                0
+            }
+            None => -1,
+        }
+    })
+}

@@ -673,6 +673,46 @@ fn a_net_segmented_is_the_same_surface() {
     }
 }
 
+/// A net carried on past its domain (`Net::extended`) is its own polynomials continued: a net cut
+/// short within its end span and carried back out to where it was cut is the uncut net there, at
+/// either end and along either parameter — over the cut's domain the same surface as the cut.
+#[test]
+fn a_net_extended_is_its_own_polynomials_carried_on() {
+    use gcs_core::brep::nurbs::Net;
+    let (uknots,vknots) = (vec![0.,0.,0.,0.,0.3,0.45,1.,1.,1.,1.],vec![-1.,-1.,-1.,0.2,0.5,2.,2.,2.]);
+    let poles: Vec<Vec<V>> = (0..6).map(|i| (0..5).map(|j| {
+        let (x,y) = (i as f64,j as f64);
+        [x+0.3*(x*y).sin(),y-0.2*x*x,0.1*x*y+(x+2.*y).cos()]
+    }).collect()).collect();
+    let net = Net {du:3,dv:2,uknots,vknots,poles,weights:None};
+    let agree = |a: &Net,b: &Net,[u0,u1]: [f64;2],[v0,v1]: [f64;2],what: &str| {
+        for i in 0..=8 { for j in 0..=8 {
+            let (u,v) = (u0+(u1-u0)*i as f64/8.,v0+(v1-v0)*j as f64/8.);
+            let (p,q) = (a.d1(u,v),b.d1(u,v));
+            for (x,y) in [(p.0,q.0),(p.1,q.1),(p.2,q.2)] {
+                assert!((0..3).all(|c| (x[c]-y[c]).abs() <= 1e-9*(1.+x[c].abs())),"{what} at ({u}, {v}): {x:?} against {y:?}");
+            }
+        } }
+    };
+    // (the cut's box, the parameter, the end, how far: the cut ends within the uncut net's end span)
+    for (bu,bv,k,high,by) in [([0.,0.8],[-1.,2.],0,true,0.2),([0.1,1.],[-1.,2.],0,false,0.1),
+        ([0.,1.],[-1.,1.5],1,true,0.5),([0.,1.],[-0.5,2.],1,false,0.5)] {
+        let cut = net.segment(bu,bv);
+        let wider = cut.extended(k,high,by).unwrap();
+        wider.check().unwrap();
+        let what = format!("{bu:?} × {bv:?} carried {by} along {k} past its {}",if high { "end" } else { "start" });
+        let [[w0,w1],[x0,x1]] = wider.domain();
+        let grown = if k == 0 { ([w0,w1],[x0,x1]) == (if high { [bu[0],bu[1]+by] } else { [bu[0]-by,bu[1]] },bv) }
+            else { ([w0,w1],[x0,x1]) == (bu,if high { [bv[0],bv[1]+by] } else { [bv[0]-by,bv[1]] }) };
+        assert!(grown,"{what}: domain {:?}",wider.domain());
+        agree(&cut,&wider,bu,bv,&what);
+        let beyond = match (k,high) { (0,true) => [bu[1],bu[1]+by],(0,false) => [bu[0]-by,bu[0]],(_,true) => [bv[1],bv[1]+by],_ => [bv[0]-by,bv[0]] };
+        if k == 0 { agree(&net,&wider,beyond,bv,&what) } else { agree(&net,&wider,bu,beyond,&what) }
+    }
+    // a rational net is not carried on
+    assert!(Net {weights:Some(vec![vec![1.;5];6]),..net}.extended(0,true,0.1).is_none());
+}
+
 /// A sector turned into its copies by identity (`brep::pattern`, phase 2): a torus and a triangle's
 /// revolution (three cones) revolved through a pitch and patterned are the whole revolutions — one
 /// ring a face of the sector's, each closed on a seam, the volume Pappus's, the mesh made of the

@@ -310,6 +310,9 @@ impl<'a> Walk<'a> {
         let mut vals: BTreeMap<String, Aff> = BTreeMap::new();
         let mut dims: BTreeMap<String, Span> = BTreeMap::new();
         let mut words: BTreeMap<&str, &str> = BTreeMap::new();
+        // a number over a face family's running number that is not affine in it, written into
+        // the body as text: worked out at each station (#243 L5), as a component's is
+        let mut texts: BTreeMap<&str, String> = BTreeMap::new();
         let mut entities: Vec<(&str, Ref)> = Vec::new();
         for (name, (text, span)) in &values {
             let kind = kinds.get(name).copied().unwrap_or(Param::Number);
@@ -323,10 +326,15 @@ impl<'a> Walk<'a> {
                     vals.insert(name.clone(), v);
                     dims.insert(name.clone(), *span);
                 }
-                Some(Err(e)) => {
-                    self.once(Code::E103, *span, format!("`{text}`: {e}"));
-                    return true;
-                }
+                Some(Err(e)) => match self.held_text(text, &scope.vals, scope) {
+                    Some(t) => {
+                        texts.insert(name.as_str(), format!("({})", t.trim()));
+                    }
+                    None => {
+                        self.once(Code::E103, *span, format!("`{text}`: {e}"));
+                        return true;
+                    }
+                },
                 None if kind == Param::Word
                     || (crate::constraints::Toward::of(text).is_some()
                         && !self.names_here(text, scope)) =>
@@ -362,7 +370,14 @@ impl<'a> Walk<'a> {
                     OpArg::Named(_, Arg::Dim { text, .. }) => {
                         if let Some(given) = words.get(text.trim()) {
                             *text = given.to_string();
+                        } else if !texts.is_empty() {
+                            *text = substitute_with(text, |w| texts.get(w).cloned());
                         }
+                    }
+                    OpArg::Dim(text, _) | OpArg::Slot { arg: Arg::Dim { text, .. }, .. }
+                        if !texts.is_empty() =>
+                    {
+                        *text = substitute_with(text, |w| texts.get(w).cloned());
                     }
                     _ => {}
                 }

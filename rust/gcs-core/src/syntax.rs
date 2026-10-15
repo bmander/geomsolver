@@ -1195,6 +1195,10 @@ pub struct FamilySpec {
     /// The running number's absolute name once the flattener has bound it (`#f12.s`) — `None`
     /// until then, or where it could not.
     pub held: Option<String>,
+    /// Over a chain (#243 L4), every leg the flattener drew: its running number and the index of
+    /// its link, where the leg's `s` starts — empty for a family over one path.  `held` is then
+    /// the first leg's.
+    pub legs: Vec<(String, f64)>,
 }
 
 impl Sweep {

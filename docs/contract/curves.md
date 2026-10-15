@@ -221,7 +221,7 @@ empty) and its face is refused, never walked
   test and a fresh contact's seed.  No binding evaluates a basis function or writes the degree:
   `report::registry_json` publishes `curve.minCtrl`, matching `Sketch::spline_with`.
 
-- **A body traced in space** (#326, [0.105], [0.106]; `traced.rs`, `program/traced.rs`) is
+- **A body traced in space** (#326, [0.107], [0.108]; `traced.rs`, `program/traced.rs`) is
   `EntKind::Traced` (`TracedE`: the body, the entities its component was given — points, lines,
   motions — its constant numbers, the formals' domain and home), built where a curve declaration
   runs over two formals (`CurveSpec::second`, `over (a in (…), b in (…))`, its ends settled by the

@@ -7,11 +7,17 @@
  *
  * A second instance builds the exact surfaces (an `exact` job): each swept object's exact B-rep a
  * stage at a time (`ExactBuilder`), saying after each stage what the next does — a stage of a gear
- * takes seconds, and the page shows the work going on — and posting the surface once built. */
+ * takes seconds, and the page shows the work going on — and posting the surface once built.
+ *
+ * A third instance judges the drawing's claims about solids (a `claims` job, `claim-judging.ts`):
+ * a pose at a time (`ClaimJudge`), saying which claim of how many and which pose, and posting the
+ * verdicts once every claim is judged. */
+import { ClaimJudge, solidClaims } from '../core/claims.js';
 import { ExactBuilder, FieldMesher, fieldJobs, unpaired, type MeshProgress } from '../core/field.js';
 import { install } from '../core/modules.js';
 import { Document } from '../core/program.js';
 import { initCore } from '../core/wasm.js';
+import { unpairedClaims, type ClaimFrame, type ClaimJob } from './claim-judging.js';
 import type { ExactJob, Frame, Job, MeshJob } from './field-preview.js';
 
 /** Facets refined between looks at the message queue. */
@@ -20,8 +26,8 @@ const BUDGET = 40;
 const FRAME_MS = 120;
 
 const scope = globalThis as unknown as {
-  onmessage: ((ev: MessageEvent<Job>) => void) | null;
-  postMessage(message: Frame, transfer?: Transferable[]): void;
+  onmessage: ((ev: MessageEvent<Job | ClaimJob>) => void) | null;
+  postMessage(message: Frame | ClaimFrame, transfer?: Transferable[]): void;
 };
 const ready = initCore();
 let latest = 0;
@@ -30,6 +36,10 @@ scope.onmessage = (ev) => {
   const job = ev.data;
   latest = job.id;                    // a cancel is only this: the job in hand ends at its next step
   if (job.kind === 'cancel') return;
+  if (job.kind === 'claims') {
+    ready.then(() => judge(job)).catch((e) => scope.postMessage({ id: job.id, error: String(e) }));
+    return;
+  }
   // a core that will not start, or a job that throws past its own handling, fails every solid
   // of it aloud rather than leaving the page waiting
   const fail = (e: unknown): void => {
@@ -165,6 +175,47 @@ async function run(job: MeshJob): Promise<void> {
     }
   } finally {
     for (const r of running) r.mesher.dispose();
+    doc.dispose();
+  }
+}
+
+/** Judge the drawing's claims about solids a pose at a time, saying where it stands at most every
+ *  `FRAME_MS` and whenever a new claim begins, and posting the verdicts once all are judged. */
+async function judge(job: Extract<ClaimJob, { kind: 'claims' }>): Promise<void> {
+  await pause();                      // a burst of edits: only the last job is started
+  if (job.id !== latest) return;
+  install(job.modules);
+  let doc: Document;
+  try {
+    doc = Document.read(job.text);
+    doc.sketch.setX(job.x);
+    const why = unpairedClaims(job.claims, solidClaims(doc.sketch));
+    if (why) throw new Error(why);
+  } catch (e) {
+    scope.postMessage({ id: job.id, error: String(e) });
+    return;
+  }
+  let judge: ClaimJudge | null = null;
+  try {
+    judge = ClaimJudge.create(doc.sketch);
+    let shown = -Infinity, claim = -1;
+    for (;;) {
+      const progress = judge.progress();
+      const now = performance.now();
+      if (now - shown > FRAME_MS || progress.claim !== claim) {
+        scope.postMessage({ id: job.id, progress });
+        shown = now;
+        claim = progress.claim;
+      }
+      await pause();
+      if (job.id !== latest) return;
+      if (judge.step()) break;
+    }
+    scope.postMessage({ id: job.id, progress: judge.progress(), verdicts: judge.verdicts() });
+  } catch (e) {
+    scope.postMessage({ id: job.id, error: String(e) });
+  } finally {
+    judge?.dispose();
     doc.dispose();
   }
 }

@@ -4,55 +4,80 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
-**[0.107] A flank stated by its contact.** A meshing's flank may be a surface traced in space
+**[0.109] A flank stated by its contact.** A meshing's flank may be a surface traced in space
 (§6.15.4): the contact element as its member sees it, a point of a component as the phase and a
 place along the element run, carried back by the member's turn. Phillips' pair is written so in
 `spiral_bevel/phillips_pure.sv` — each flank a line of its plane of action moving along the line of
 action, seen from its member — with no rack anywhere, and meshes as the rack-cut pair does: a
-point contact along the line of action with no transmission error. Through 0.106 a flank was an
+point contact along the line of action with no transmission error. Through 0.108 a flank was an
 envelope or a source standing still. (Issue #326, R6.)
 
-**[0.106] A surface over two formals.** `S := C(…).p over (phi in (a, b), s in (c, d))` is a
+**[0.108] A surface over two formals.** `S := C(…).p over (phi in (a, b), s in (c, d))` is a
 point of a component as two of its formals run: a surface traced in space, held to by a point on it
 and, at a point held there, a line in its tangent plane or along its normal, a plane touching it
 and a circle osculating its section (§6.5). Its normal and its curvature are exact. `solventc`
 says whether it is regular over its domain or where it folds. (Issue #326, R5.)
 
-**[0.105] A curve traced in space.** A traced component whose relations do not read in one plane,
+**[0.107] A curve traced in space.** A traced component whose relations do not read in one plane,
 or which is given a motion, is solved in space: §6.5's curve, a point and a tangent held to it in
-space. Through 0.104 such a body was refused, a traced component solved in one plane alone
+space. Through 0.106 such a body was refused, a traced component solved in one plane alone
 ([0.42]). A component may take a motion as a formal, and its body carry a point by it (§9.3).
 (Issue #326, R3.)
 
-**[0.104] A point as a moving frame sees it.** `X coincident(under: m, t == τ) x` holds `X` where
+**[0.106] A point as a moving frame sees it.** `X coincident(under: m, t == τ) x` holds `X` where
 the motion `m` carries `x` at the roll `τ` (§9.3): three rows, the roll in degrees and the
 relation's own unknown, pinned or left to the solve. Under a motion seen from a turn, at the
 negated phase, it is a point of the fixed frame as the turning member sees it — a rolling circle's
 point seen by the fixed one is the epicycloid, a follower's contact seen by its cam the cam's
 profile. A turn about a point of a view reads as the turn about the line through it square to the
-view. Through 0.103 a point was carried by a motion only as an envelope's tool, after the solve or
+view. Through 0.105 a point was carried by a motion only as an envelope's tool, after the solve or
 in one plane. (Issue #326, R4.)
 
-**[0.103] A motion's twist: `reciprocal` and `screw`.** Two relation words read a motion as
+**[0.105] A motion's twist: `reciprocal` and `screw`.** Two relation words read a motion as
 the velocity field it is (§9.3). `L reciprocal mesh` says a force along the line `L` does no work
 on the motion — its direction square to the velocity of its points — which for the mesh of two
 members is the meshing law of a line of action: they move as fast along it. `isa screw mesh` puts
 the axis `isa` on the motion's instantaneous screw axis, with the pitch the relation's own unknown
 (`pitch == h` pins it, `solventc` reports it). Either reads a turn, a screw or a slide about a fixed
 line, or one seen from another, whose twist is constant in the fixed frame; a relative of a
-relative is refused. They are the first relations whose operand is a motion. Through 0.102 the
+relative is refused. They are the first relations whose operand is a motion. Through 0.104 the
 line of action of `spiral_bevel/phillips.sv` was stated point by point, its helix angle worked out
 by hand; now its pressure angle is stated and `L reciprocal mesh` solves the rest. (Issue #326, R2.)
 
-**[0.102] A plane is an envelope's source.** `envelope(std.HalfSpace(o, l, d: x), under: m, …)`
+**[0.104] A plane is an envelope's source.** `envelope(std.HalfSpace(o, l, d: x), under: m, …)`
 is held to by the solve (§6.15.3): the plane square to `l` at `x` along it from `o`, its place two
 lengths in it and the roll, its normal `l`'s everywhere. Under a slide along its normal relative
 to a turn its envelope is an involute helicoid, so Phillips' spatial involute gearing is two of
 them — each member's flank the plane square to the line of action sliding along it at the
 members' common speed, seen from the member — meshed point to point along that line with no
 transmission error (`spiral_bevel/phillips.sv`). A plane may stand as a formed flank of a meshing
-too (§6.15.4). Through 0.101 the solve read cones and cylinders only, and a plane's envelope was
+too (§6.15.4). Through 0.103 the solve read cones and cylinders only, and a plane's envelope was
 E040. (Issue #326, R1.)
+
+**[0.103] Twist and scale laws.** A twist or a scale of a face family's section is a dimension
+reading the running number, and any expression in it is a law (§6.9). The standard library adds
+words that take a total and run it linearly: `std.Twisted(n, twist:, s:)`, axes in the station's
+plane turned `twist · s` about its origin; `p scaled(du:, dv:, scale:, s:) P`, a point of a
+section scaled about the plane's origin; and `scaled_radius(r:, scale:, s:) k`. Any other law is
+the same word given another fraction (`s: 3 * s^2 - 2 * s^3`, `s: sin(180 * s)`). Through 0.102
+a turn was the section's own construction, a reference line and a turned one
+(`docs/lofts/l0/twisted_duct.sv`), and a fraction that was not affine in `s` could not be given:
+a component's formal given one became an unknown of the drawing (the station "not held"), and a
+relation word's was E103.
+A `when` whose condition reads the running number is E040, as one reading an unknown was; it
+now says the number is the family's, that a `when` is made once for the whole run, and that
+`min`, `max` and `abs` write a law in pieces. (Issue #243, L5.)
+
+**[0.102] Any path, a chain too.** A face family's `path` formal may be given a named open chain
+of lines and arcs (§6.9): the station runs over it link by link, link `k` while `s` is in `(k, k +
+1)`, a contact pinned to `s` on the chain at the fraction `s − k` of that link's run and every
+other reading of `s` the chain's whole number, so a law runs along the chain. Each link's stations
+start where the last link's ended, and a wall keeps one name across the links. Through 0.101 a
+chain was no value a call could pass. `std.On` stands on an arc too: a line touching an arc or a
+circle at a point of it is drawn in the round's plane (§6.21), where through 0.101 the tangency,
+its point read in space, was E062. A seed's `along:` steps along any path where through 0.101 it
+stepped only along a line, so `std.On` and `std.OnSpline` start their tangent ahead along their
+guide and their plane with its `v` along `up`, never on the mirrored branch. (Issue #243, L4.)
 
 **[0.101] A step: one number per run.** `step(u: s) (ab := line)` says where a line's end
 stands, one ordinate at a time — `du`, `dv` from its start, `u`, `v` from the frame's origin — and

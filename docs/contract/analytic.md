@@ -76,7 +76,7 @@ a source read as an envelope's is (a set applied to its hidden point `{contact}#
 `#second#probe`, `set_shape` through `program::envelopes::Reader`; a revolution's side) — the
 motion and the phase, built with the held envelopes (`held_meshings`), refused (E080) where a flank
 or the motion is unreadable or the motion is not relative. A flank may also be `Traced(i)` (#326,
-[0.107]): a surface traced in space, `meshing::Side::Traced` over `traced::flank_consts` (`[0,
+[0.109]): a surface traced in space, `meshing::Side::Traced` over `traced::flank_consts` (`[0,
 traced::FLANK, domain×4, contact constants…]`), its own columns the body's `θ`
 (`FlankParts::Traced`), its place `[u, s, t]` with `t` held as a formed flank's; `traced::seen`
 reads its point, `C_u` and the unit normal `C_u × C_s` over any `Num` — the frame's exact
@@ -111,12 +111,12 @@ from the cone's equation and the poses alone), a stated lag solving its phase, `
 envelope at the element's phase, to 1e-9), to the closed form's point contact along `L` with no
 lag, and their meshing's Jacobian to finite differences.
 
-**A point a motion carries (#326, [0.104]):** `Reading::Carried` is `X − Pose(τ)·x`, the pose
+**A point a motion carries (#326, [0.106]):** `Reading::Carried` is `X − Pose(τ)·x`, the pose
 `held::frames`' last at `τ` degrees — any motion, its twist constant or not (`Reading::twist`
 false). `held::Step::Turn` (code 4, nine columns: a centre's lift, its view's `u` and `v`) is a turn
 about a point of a view as it reads in space; only `Moving::of_any` reads one.
 
-**A motion's screw (#326, [0.103]):** `envelope::screw` reads a motion as its twist, `v(x) = v₀ +
+**A motion's screw (#326, [0.105]):** `envelope::screw` reads a motion as its twist, `v(x) = v₀ +
 ω × x` a radian, constant in the fixed frame for a turn, a screw or a slide about a fixed line
 (`own`: `ω = ratio·d`, `v₀ = a × ω + d·advance/τ`) and one relative to another (the source's less
 the observer's) — `constant` refuses anything else. `Reading::Reciprocal` is one row of degree 2,

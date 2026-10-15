@@ -71,6 +71,9 @@ export interface DiagnoseOptions {
   witness?: boolean;
   tol?: number;
   numericMax?: number;
+  /** Whether the claims about solids are judged (the default).  A page leaves them to a worker
+   *  (`core/claims.ts`): they enter nothing else the diagnosis says, and take seconds. */
+  solidClaims?: boolean;
 }
 
 interface RawDiagnosis {
@@ -168,6 +171,7 @@ export function diagnose(sketch: Sketch, opts: DiagnoseOptions = {}): Diagnosis 
     witness: opts.witness ?? false,
     tol: opts.tol ?? 1e-6,
     numericMax: opts.numericMax ?? NUMERIC_MAX,
+    solidClaims: opts.solidClaims ?? true,
   };
   const sys = opts.system && opts.system.sketch === sketch ? opts.system : null;
   const raw = withJson(payload, (p, n) => takeJson<RawDiagnosis>(

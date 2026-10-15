@@ -68,16 +68,9 @@ fn containment_is_a_question_about_the_object() {
     assert_eq!(v[3].holds(), Some(false), "but not four");
 }
 
-#[test]
-fn a_swept_claim_finds_the_worst_pose() {
-    // A block that slides along an unknown the solver answers for, and a wall it must clear.
-    // This is the thing every claim in the language could not say: a fact about the whole travel
-    // rather than about the one pose the drawing happens to stand in (issue #48, item 6).
-    //
-    // The gap is `50 - (reach + 4)`, so it is least at the far end of the sweep — and the claim
-    // is written over the travel rather than checked at three angles by hand, which is what the
-    // V-twin's port timing and disc clearance were checked by.
-    let src = "\
+/// A block that slides along `reach`, an unknown the solver answers for, and a wall it must
+/// clear: one claim over the travel and one at the pose.
+const SLIDING: &str = "\
 unit mm
 use std (horizontal, vertical)
 in std.front {
@@ -119,6 +112,17 @@ claim over reach in (10mm, 40mm) { arm clear(1mm) wall }
 claim arm clear(1mm) wall
 }
 ";
+
+#[test]
+fn a_swept_claim_finds_the_worst_pose() {
+    // A block that slides along an unknown the solver answers for, and a wall it must clear.
+    // This is the thing every claim in the language could not say: a fact about the whole travel
+    // rather than about the one pose the drawing happens to stand in (issue #48, item 6).
+    //
+    // The gap is `50 - (reach + 4)`, so it is least at the far end of the sweep — and the claim
+    // is written over the travel rather than checked at three angles by hand, which is what the
+    // V-twin's port timing and disc clearance were checked by.
+    let src = SLIDING;
     let e = read(src);
     let v = verdicts(&e);
     assert_eq!(v.len(), 2, "the swept claim and the one judged at the pose");
@@ -193,4 +197,60 @@ fn what_is_written_wrong_is_refused() {
         Code::E040,
         "not a free variable or a motion of this drawing",
     );
+}
+
+/// **Judged a pose at a time, a claim comes to what it comes to judged at once** — the page's
+/// worker steps a `ClaimJudge` between looks at its messages, and `judge_solids` is the same judge
+/// run to the end, so the two cannot disagree.  Between steps it says which claim of how many and
+/// which pose, in words a page shows as they are.
+#[test]
+fn a_judge_stepped_a_pose_at_a_time_comes_to_the_verdicts() {
+    use gcs_core::diagnose::{ClaimJudge, SWEEP_STEPS};
+    let e = read(SLIDING);
+    let mut sk = e.sketch.clone();
+    let _ = gcs_core::solve::solve(&mut sk, gcs_core::solve::SolveOpts::default());
+    let whole = gcs_core::diagnose::judge_solids(&sk);
+    let mut judge = ClaimJudge::new(&sk);
+    let first = judge.progress(&sk);
+    assert_eq!((first.claim, first.claims, first.pose, first.poses), (0, 2, 0, SWEEP_STEPS + 1));
+    assert_eq!(first.fraction(), 0.0);
+    assert!(first.doing().starts_with("judging claim over reach"), "{}", first.doing());
+    assert!(first.doing().ends_with("(1 of 2), pose 1 of 37"), "{}", first.doing());
+    let (mut steps, mut last) = (0, 0.0);
+    while !judge.step(&sk) {
+        steps += 1;
+        let p = judge.progress(&sk);
+        assert!(p.fraction() > last, "the judging moves on at every step");
+        last = p.fraction();
+    }
+    assert_eq!(steps + 1, SWEEP_STEPS + 2, "a pose a step: the travel's 37 and the pose's one");
+    let done = judge.progress(&sk);
+    assert_eq!((done.fraction(), done.doing().as_str()), (1.0, "judged 2 claims"));
+    let stepped = judge.verdicts();
+    assert_eq!(stepped.len(), whole.len());
+    for (s, w) in stepped.iter().zip(&whole) {
+        assert_eq!(gcs_core::report::solid_claim_text(s), gcs_core::report::solid_claim_text(w));
+        assert_eq!((s.stmt(), s.samples(), s.worst()), (w.stmt(), w.samples(), w.worst()));
+    }
+    // a step past the end is no step
+    assert!(judge.step(&sk));
+    assert_eq!(judge.verdicts().len(), 2);
+}
+
+/// **A page's diagnosis leaves the claims about solids to its worker**: asked not to judge them it
+/// says nothing of them, and everything else it says is what it says judging them — a solid claim
+/// reads the solved pose and enters nothing above it.
+#[test]
+fn a_diagnosis_asked_not_to_judge_solids_says_the_rest_unchanged() {
+    use gcs_core::diagnose::{diagnose, summary, DiagnoseOptions};
+    let e = read(SLIDING);
+    let mut sk = e.sketch.clone();
+    let _ = gcs_core::solve::solve(&mut sk, gcs_core::solve::SolveOpts::default());
+    let judged = diagnose(&mut sk.clone(), DiagnoseOptions::default());
+    let left = diagnose(&mut sk, DiagnoseOptions { solid_claims: false, ..Default::default() });
+    assert_eq!(judged.solid_claims.len(), 2);
+    assert!(left.solid_claims.is_empty());
+    assert_eq!(summary(&left), summary(&judged));
+    assert_eq!(left.status, judged.status);
+    assert_eq!((left.dof, left.n_redundant), (judged.dof, judged.n_redundant));
 }

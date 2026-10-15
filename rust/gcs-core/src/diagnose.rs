@@ -67,7 +67,9 @@ pub struct Component {
 
 mod parts;
 mod solid_claims;
-pub use solid_claims::{judge_solids, SolidOutcome, SolidPose, SolidVerdict, SWEEP_STEPS};
+pub use solid_claims::{
+    judge_solids, ClaimJudge, ClaimProgress, SolidOutcome, SolidPose, SolidVerdict, SWEEP_STEPS,
+};
 
 #[derive(Clone, Debug)]
 pub struct Diagnosis {
@@ -455,6 +457,10 @@ pub struct DiagnoseOptions {
     pub witness: bool,
     pub tol: f64,
     pub numeric_max: usize,
+    /// Whether the claims about solids are judged here.  A page leaves them to a worker
+    /// (`ClaimJudge`): they read the solved pose and enter nothing else the diagnosis says, and
+    /// judging one is seconds of solids evaluated.  Not judged, `solid_claims` is empty.
+    pub solid_claims: bool,
 }
 
 impl Default for DiagnoseOptions {
@@ -465,6 +471,7 @@ impl Default for DiagnoseOptions {
             witness: false,
             tol: 1e-6,
             numeric_max: NUMERIC_MAX,
+            solid_claims: true,
         }
     }
 }
@@ -915,7 +922,7 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
         // **judged, at the very end, and never compiled.**  A solid claim reads the solved pose
         // and the terms over it; it enters no system, so nothing above this line can see it and
         // nothing it says can move a number.
-        solid_claims: judge_solids(sk),
+        solid_claims: if opts.solid_claims { judge_solids(sk) } else { Vec::new() },
         under_params,
         structural_under_params: structural_under,
         components,

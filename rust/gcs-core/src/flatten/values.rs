@@ -49,6 +49,8 @@ fn out_of_reach(name: &str, vals: &BTreeMap<String, Aff>, scope: &Scope) -> Opti
 pub(super) trait Names {
     fn stands(&self, name: &str) -> Option<String>;
     fn faces(&self, name: &str) -> Option<Vec<String>>;
+    /// Whether the unknown `name` is a face family's running number (#243 L5).
+    fn running(&self, name: &str) -> bool;
 }
 
 /// Whether a `when`'s condition holds over the numbers in scope (#210), or the code and the
@@ -134,6 +136,18 @@ fn holds(
                     }
                     None => return Err(nothing(&name)),
                     Some(Some(u)) => {
+                        // a law of the station is an expression in its running number; the
+                        // station itself, what is made of it, is one shape over the whole run
+                        if names.running(u) {
+                            // the formal by its own name, never the station's key for it
+                            let mine = u.rsplit('.').next() == Some(name.as_str());
+                            let what = if mine { "is" } else { "reads" };
+                            return Err((Code::E040, format!(
+                                "`{name}` {what} a face family's running number, and a `when` is \
+                                 made once, for the whole run: a law that changes with it is one \
+                                 expression (`min`, `max` and `abs` say one in pieces)"
+                            )));
+                        }
                         let what = if u == name {
                             format!("`{name}` is")
                         } else {
@@ -503,7 +517,8 @@ impl<'a> Walk<'a> {
 
     /// A text with the scope's numbers written in, where it then reads a face family's running
     /// number (`Held`).
-    fn held_text(&self, text: &str, vals: &BTreeMap<String, Aff>, scope: &Scope) -> Option<String> {
+    pub(super) fn held_text(&self, text: &str, vals: &BTreeMap<String, Aff>, scope: &Scope)
+        -> Option<String> {
         if self.held.names.is_empty() {
             return None;
         }
@@ -533,7 +548,10 @@ impl<'a> Walk<'a> {
     ) -> Result<String, (Code, String)> {
         let reads: BTreeSet<String> =
             expr::parse_in(text, self.units).map(|p| p.body.deps()).unwrap_or_default();
-        if let Some(e) = reads.iter().find_map(|name| out_of_reach(name, vals, scope)) {
+        // a text kept for a name answers for it, though the scope is closed to the name outside
+        let reach = |name: &String| self.kept(name, scope).is_none()
+            .then(|| out_of_reach(name, vals, scope)).flatten();
+        if let Some(e) = reads.iter().find_map(reach) {
             return Err(e);
         }
         if let Some(name) = reads.iter().find(|n| self.undeclared(n, vals, scope)) {
@@ -606,7 +624,10 @@ impl<'a> Walk<'a> {
         }
         let Ok(p) = expr::parse_in(text, self.units) else { return };
         for name in p.body.deps() {
-            if name.contains('.') && !vals.contains_key(&name) {
+            // a face family's running number, written in as a station's text (#243 L5), is no
+            // geometry's
+            let held = self.held.names.contains_key(&name);
+            if name.contains('.') && !vals.contains_key(&name) && !held {
                 self.checks.dim_reads.push((name, span, scope.clone()));
             }
         }
@@ -654,8 +675,12 @@ impl<'a> Walk<'a> {
                 let bare = text.trim();
                 // `t == s` over an unknown — an input nothing binds, a formal left unbound: the
                 // contact's parameter *is* that unknown, and every contact pinned to it shares it
-                let unknown =
-                    vals.get(bare).filter(|a| a.m == 1.0 && a.c == 0.0).and_then(|a| a.free.clone());
+                // — and over a chain, `s` on the link a leg stands on is that leg's own number,
+                // `k` short of the chain's (#243 L4)
+                let on_leg = |a: &Aff| self.held.on_leg.as_ref()
+                    .is_some_and(|(h, k)| a.free.as_ref() == Some(h) && a.c == *k);
+                let unknown = vals.get(bare).filter(|a| a.m == 1.0 && (a.c == 0.0 || on_leg(a)))
+                    .and_then(|a| a.free.clone());
                 // a face family's running number is no unknown and no place: the contact is
                 // pinned to it, at whatever station the family stands (#243 L1)
                 let held = unknown.as_ref().filter(|n| self.held.names.contains_key(*n)).cloned();
@@ -678,12 +703,20 @@ impl<'a> Walk<'a> {
                             Err((code, e)) => self.err(code, *span, format!("`{text}`: {e}")),
                         }
                     }
-                    (Err(_), _) if self.held_text(text, vals, scope).is_some() => self.err(
-                        Code::E103,
-                        *span,
-                        format!("`{text}`: a contact in a face family is pinned to its running \
-                                 number itself, `t == s`, or to a number"),
-                    ),
+                    (Err(_), _) if self.held_text(text, vals, scope).is_some() => {
+                        // a leg's `s` is the chain's, which only the chain's own link reads as a
+                        // place of its run
+                        let leg = vals.get(bare).and_then(|a| a.free.as_ref())
+                            .and_then(|n| self.held.legs.get(n));
+                        let m = match leg {
+                            Some(&(k, _)) => format!("`{text}`: the family runs over a chain, and \
+                                on its link {k} `s` runs from {k}: a contact pinned to `s` \
+                                stands on the chain"),
+                            None => format!("`{text}`: a contact in a face family is pinned to \
+                                its running number itself, `t == s`, or to a number"),
+                        };
+                        self.err(Code::E103, *span, m)
+                    }
                     (Err(_), _)
                         if out_of_reach(bare, vals, scope).is_none()
                             && self.undeclared(bare, vals, scope) =>
