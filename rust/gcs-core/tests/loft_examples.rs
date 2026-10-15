@@ -78,8 +78,9 @@ fn the_spring_is_its_area_times_its_helix() {
     holds(&e, "spring", PI * 1.5 * 1.5 * helix);
 }
 
-/// **`bottle.sv`**: ruled, the sum of its two frusta; smooth, π∫x² dy along the drawn rail, a
-/// quadrature exact on each span (the integrand x²·y′ of a cubic is of degree eight).
+/// **`bottle.sv`**: ruled, the sum of its two frusta; smooth, π∫x² dy along the drawn rail, x
+/// read from its own axis 80 mm along (`apart`), a quadrature exact on each span (the integrand
+/// x²·y′ of a cubic is of degree eight).
 #[test]
 fn the_bottle_is_its_frusta_and_its_rails_integral() {
     let e = determined(include_str!("../../examples/lofts/bottle.sv"));
@@ -88,7 +89,8 @@ fn the_bottle_is_its_frusta_and_its_rails_integral() {
     let rail = index(&e, "rail");
     let smooth: f64 = (0..2).map(|k| gauss5(|u| {
         let f = gcs_core::curve::eval(&e.sketch, rail, k as f64 + u);
-        PI * f.p.0 * f.p.0 * f.d1.1
+        let x = f.p.0 - 80.0;
+        PI * x * x * f.d1.1
     })).sum();
     holds(&e, "smooth", smooth);
 }
