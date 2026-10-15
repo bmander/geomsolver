@@ -121,8 +121,8 @@ march, a seed of fewer columns, dense output forwards and back, a carried branch
   lines `#srun ∥ l`, `#sdrop ⟂ l`): `C'' · T = 0`, the least bending the tangent leaves.  Each
   statement is the declaration's (its id and span), the helpers private construction.  An axis
   given as the tangent of a spline in a plane states one row more than it needs (a line in space
-  parallel to it), consistent and harmless.  `tests/sections.rs` holds the control points to a
-  solve made apart.
+  parallel to it), consistent and harmless.  `tests/sections.rs` holds the control points to those
+  the conditions themselves give (`C'' = 0`; `C' ∥ T`, `C'' · T = 0`), solved apart.
 - A control polygon is edited three ways.  *Inserting* is `curve::insert_control` (Boehm's knot
   insertion: C(t) unchanged, every contact keeps parameter and place; `DEGREE - 1` neighbours
   move, keeping identity).  *Deleting* shortens the curve: `Sketch::min_children` is the general

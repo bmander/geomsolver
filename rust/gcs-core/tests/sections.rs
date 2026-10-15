@@ -12,10 +12,10 @@
 //!
 //! A loft with **no guide** stands its station on its rails, the plane through three of them at
 //! `s` (`std.Across`).  Gated off the exact B-rep to a part in 10⁹: a ruled loft is the sum of its
-//! frusta and prismatoids, a smooth one π∫r² by a quadrature exact for its rail's degree on every
-//! span, and its ends meet the face beside them square (the cap) or tangent (a neck).
+//! frusta and prismatoids, a smooth one its area's integral by a quadrature exact for its rails'
+//! degree on every span, guided or not, and its ends meet the face beside them square (the cap) or
+//! tangent (a neck).
 use gcs_core::brep::geom::Surface;
-use gcs_core::model::EntKind;
 use gcs_core::program::Elaborated;
 use std::f64::consts::PI;
 
@@ -156,57 +156,61 @@ fn prismatoid(h: f64, a: f64, b: f64) -> f64 {
     h / 6.0 * (a * a + (a + b) * (a + b) + b * b)
 }
 
-/// The clamped uniform cubic through `pts`, a span between neighbours, its end tangents along
-/// `start` and `end` where given (the second derivative square to them) and else natural: its
-/// control points, solved here from the conditions themselves, apart from the core.
+/// `∫₀¹ f` by the five-point Gauss–Legendre rule, exact for a polynomial of degree nine.
+fn gauss5(f: impl Fn(f64) -> f64) -> f64 {
+    let (a, b) = (0.538_469_310_105_683_1, 0.906_179_845_938_664);
+    let (wa, wb) = (0.478_628_670_499_366_5, 0.236_926_885_056_189_1);
+    let at = |x: f64| f(0.5 + 0.5 * x);
+    0.5 * (128.0 / 225.0 * at(0.0) + wa * (at(-a) + at(a)) + wb * (at(-b) + at(b)))
+}
+
+/// The clamped uniform cubic through `pts`, a span between neighbours, its ends held as the
+/// conditions say — along `start` and `end` where given, with its second derivative square to
+/// them, and else with none — stated on the curve's own derivatives and solved here, apart from
+/// the core and its construction of them: its control points.
 fn through(pts: &[(f64, f64)], start: Option<(f64, f64)>, end: Option<(f64, f64)>)
     -> Vec<(f64, f64)> {
     let n = pts.len();
     let m = n + 2;
-    // the ends are their control points, and corner `k` the curve where its parameter is `k`;
-    // one row a condition, two unknowns a control point
+    let spans = (n - 1) as f64;
+    // one row a condition over both coordinates' control points, `x` then `y` of each
     let mut rows: Vec<(Vec<f64>, f64)> = Vec::new();
-    let unit = |i: usize, c: usize| { let mut r = vec![0.0; 2 * m]; r[2 * i + c] = 1.0; r };
-    for c in 0..2 {
-        let pick = |p: (f64, f64)| if c == 0 { p.0 } else { p.1 };
-        rows.push((unit(0, c), pick(pts[0])));
-        rows.push((unit(m - 1, c), pick(pts[n - 1])));
-        for (k, &p) in pts.iter().enumerate().take(n - 1).skip(1) {
-            let mut r = vec![0.0; 2 * m];
-            for (i, w) in basis(m, k as f64).into_iter().enumerate() {
-                r[2 * i + c] = w;
-            }
-            rows.push((r, pick(p)));
+    let row = |w: &[f64], c: usize| {
+        let mut r = vec![0.0; 2 * m];
+        for (i, wi) in w.iter().enumerate() {
+            r[2 * i + c] = *wi;
         }
+        r
+    };
+    // the curve through each corner where its parameter is its index
+    for (k, &p) in pts.iter().enumerate() {
+        let w = basis(m, k as f64);
+        rows.push((row(&w, 0), p.0));
+        rows.push((row(&w, 1), p.1));
     }
-    let part = if n >= 3 { 1.0 / 3.0 } else { 0.5 };
-    for (tangent, (corner, beside, next)) in [(start, (0, 1, 2)), (end, (m - 1, m - 2, m - 3))] {
+    // at each end, the weights of the first and second derivatives: the basis is a cubic over
+    // the end span, so four samples a quarter apart give them exactly
+    for (tangent, at, dir) in [(start, 0.0, 1.0), (end, spans, -1.0)] {
+        let h = 0.25;
+        let b: Vec<Vec<f64>> = (0..4).map(|i| basis(m, at + dir * h * i as f64)).collect();
+        let d1: Vec<f64> = (0..m).map(|i| {
+            dir * (-11.0 * b[0][i] + 18.0 * b[1][i] - 9.0 * b[2][i] + 2.0 * b[3][i]) / (6.0 * h)
+        }).collect();
+        let d2: Vec<f64> = (0..m).map(|i| {
+            (2.0 * b[0][i] - 5.0 * b[1][i] + 4.0 * b[2][i] - b[3][i]) / (h * h)
+        }).collect();
         match tangent {
+            // C'' = 0
             None => {
-                for c in 0..2 {
-                    let mut r = unit(beside, c);
-                    r[2 * corner + c] -= 1.0 - part;
-                    r[2 * next + c] -= part;
-                    rows.push((r, 0.0));
-                }
+                rows.push((row(&d2, 0), 0.0));
+                rows.push((row(&d2, 1), 0.0));
             }
+            // C' × T = 0 and C'' · T = 0
             Some((tx, ty)) => {
-                let l = tx.hypot(ty);
-                let (tx, ty) = (tx / l, ty / l);
-                // (P1 − P0) · N = 0 and (P1 − P0) · T = part · (P2 − P0) · T
-                let mut r = vec![0.0; 2 * m];
-                for (c, v) in [(0, -ty), (1, tx)] {
-                    r[2 * beside + c] += v;
-                    r[2 * corner + c] -= v;
-                }
-                rows.push((r, 0.0));
-                let mut r = vec![0.0; 2 * m];
-                for (c, v) in [(0, tx), (1, ty)] {
-                    r[2 * beside + c] += v;
-                    r[2 * corner + c] -= v * (1.0 - part);
-                    r[2 * next + c] -= v * part;
-                }
-                rows.push((r, 0.0));
+                let (a, b) = (row(&d1, 0), row(&d1, 1));
+                rows.push((a.iter().zip(&b).map(|(a, b)| a * ty - b * tx).collect(), 0.0));
+                let (a, b) = (row(&d2, 0), row(&d2, 1));
+                rows.push((a.iter().zip(&b).map(|(a, b)| a * tx + b * ty).collect(), 0.0));
             }
         }
     }
@@ -270,7 +274,8 @@ fn ctrl(e: &Elaborated, spline: &str) -> Vec<(f64, f64)> {
 
 /// **A spline through a chain's corners is the cubic through them**: a span a link, each corner at
 /// its index, its ends along the tangents written — or, where none is, natural — each held to
-/// control points solved apart from the core.  The chain may be written after the spline.
+/// control points solved apart from the core, from those conditions on the curve's derivatives.
+/// The chain may be written after the spline.
 #[test]
 fn a_spline_through_a_chain_is_the_cubic_through_its_corners() {
     let e = with(BOTTLE, "");
@@ -387,14 +392,10 @@ fn a_smooth_loft_meets_the_faces_at_its_ends() {
     let e = with(&neck, "bottle := solid(Ring(whole, std.y, std.front, rail).f over s in (0, 1))");
     // π∫ x² dy over each span of the rail, five Gauss–Legendre points exact for degree 8
     let (sk, i) = (&e.sketch, index(&e, "rail"));
-    let (inner, outer) = ((5.0 - 2.0 * (10.0f64 / 7.0).sqrt()).sqrt() / 3.0,
-                          (5.0 + 2.0 * (10.0f64 / 7.0).sqrt()).sqrt() / 3.0);
-    let (w1, w2) = ((322.0 + 13.0 * 70f64.sqrt()) / 900.0, (322.0 - 13.0 * 70f64.sqrt()) / 900.0);
-    let gauss = [(0.0, 128.0 / 225.0), (-inner, w1), (inner, w1), (-outer, w2), (outer, w2)];
-    let want: f64 = (0..2).map(|span| gauss.iter().map(|&(x, w)| {
-        let f = gcs_core::curve::eval(sk, i, span as f64 + 0.5 * (x + 1.0));
-        0.5 * w * PI * f.p.0.powi(2) * f.d1.1
-    }).sum::<f64>()).sum();
+    let want: f64 = (0..2).map(|span| gauss5(|t| {
+        let f = gcs_core::curve::eval(sk, i, span as f64 + t);
+        PI * f.p.0.powi(2) * f.d1.1
+    })).sum();
     near(volume(&e, "bottle"), want, 1e-9, "the bottle");
     let x = exact(&e, "bottle");
     let face = |name: &str| &x.brep.faces.iter().find(|f| f.name == name)
@@ -417,6 +418,49 @@ fn a_smooth_loft_meets_the_faces_at_its_ends() {
     // its stations, which carries their 1e-10 to a few parts in 10⁹
     assert!(cross.iter().map(|c| c * c).sum::<f64>().sqrt() < 1e-7,
             "the wall at the neck against the cone: {a:?}, {b:?}");
+}
+
+/// **A smooth loft with no guide is its quadrature**: a triangle whose corners ride three splines
+/// through their places at 0, 30 and 60, each in the plane through the axis it stands in, its
+/// stations the planes through the three at `s` (`std.Across`) — level, the three heights alike at
+/// every `t` — and the triangle `r²` wherever the rails stand `r` out, so V = ∫ r² dz over the
+/// rail, five Gauss–Legendre points a span.
+#[test]
+fn a_smooth_loft_with_no_guide_is_its_quadrature() {
+    let rail = |name: &str, plane: &str, x: f64| format!("in std.{plane} {{
+  {name}0 := point
+  {name}1 := point
+  {name}2 := point
+  fix(({}mm, 0mm)) {name}0
+  fix(({}mm, 30mm)) {name}1
+  fix(({}mm, 60mm)) {name}2
+  {name}c := line({name}0, {name}1) -> line({name}1, {name}2)
+  r{name} := spline(through: {name}c)
+}}
+", 10.0 * x, 14.0 * x, 8.0 * x);
+    let src = format!("unit mm
+use std
+
+component Tri(ra: path, rb: path, rc: path, side: plane, front: plane, s: Scalar) {{
+  st := std.Across(ra, rb, rc, s: s)
+  a := point in st.n, side
+  b := point in st.n, front
+  c := point in st.n, front
+  a coincident ra
+  b coincident rb
+  c coincident rc
+  f := face(a, b, c, -> close)
+}}
+{}{}{}
+body := solid(Tri(ra, rb, rc, std.side, std.front).f over s in (0, 2))
+", rail("a", "side", 1.0), rail("b", "front", -1.0), rail("c", "front", 1.0));
+    let e = determined(&src);
+    let (sk, i) = (&e.sketch, index(&e, "ra"));
+    let want: f64 = (0..2).map(|span| gauss5(|t| {
+        let f = gcs_core::curve::eval(sk, i, span as f64 + t);
+        f.p.0.powi(2) * f.d1.1
+    })).sum();
+    near(volume(&e, "body"), want, 1e-9, "the triangle");
 }
 
 /// A point in model units where the exact solid `x` has it.
@@ -470,5 +514,4 @@ fn a_spline_through_a_chain_prints_as_written() {
     let mut text = String::new();
     gcs_core::syntax::write_stmt_to(&mut text, &rail.kind).unwrap();
     assert!(text.contains("rail := spline(through: rims, start: whole, end: whole)"), "{text}");
-    assert_eq!(EntKind::Spline.as_str(), "spline");
 }

@@ -339,8 +339,8 @@ placement carries inside the blank; CLI test readers zero the offset.
   station's plane and that one (`point in st.n, front`): a point another plane already draws is not
   drawn in a spline's plane by its contact (#249's rule is for a point in space).
   `tests/sections.rs` is the gate: the spline through a chain's corners against control points
-  solved apart (tangent ends and natural), a ruled bottle at the sum of its frusta with an edge at
-  the shoulder (two cones, one name), a loft with no guide at its prismatoids, a smooth bottle by
+  solved apart from its end conditions on the curve's derivatives (tangent and natural), a ruled bottle at the sum of its frusta with an edge at
+  the shoulder (two cones, one name), a loft with no guide at its prismatoids and, on three splines, by quadrature, a smooth bottle by
   quadrature on every span, its wall square to the base cap and tangent to a turned neck's cone,
   and the refusals; `face_family`'s bottle is `docs/lofts/l0/bottle.sv` over the spline through
   its rims.

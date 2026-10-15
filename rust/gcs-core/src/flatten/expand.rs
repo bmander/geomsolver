@@ -5,6 +5,10 @@ use super::apply::Pass;
 use super::sets::Made;
 use std::ops::ControlFlow;
 
+/// A chain a call gives one of its `path` formals: the argument's index, the argument as
+/// written, and each link as a reference the call's scope reads, with its absolute name.
+type ChainArgument = (usize, Ref, Vec<(Ref, String)>);
+
 impl<'a> Walk<'a> {
     /// The view an enclosing instance is drawn `in`, put on one declaration its expansion
     /// makes (§6.7).  A datum or a curve is left alone — it has no points of its own to put
@@ -411,7 +415,7 @@ impl<'a> Walk<'a> {
         &mut self,
         f: &crate::syntax::FamilySpec,
         inst: &crate::syntax::Instance,
-        chains: Vec<(usize, Ref, Vec<(Ref, String)>)>,
+        chains: Vec<ChainArgument>,
         (a, b): (f64, f64),
         ty: Ty,
         st: &Stmt,
@@ -477,63 +481,81 @@ impl<'a> Walk<'a> {
         comp: &Component,
         inst: &crate::syntax::Instance,
         scope: &Scope,
-    ) -> Vec<(usize, Ref, Vec<(Ref, String)>)> {
+    ) -> Vec<ChainArgument> {
         let mut out = Vec::new();
         for fo in comp.formals.iter().filter(|fo| fo.ty == Ty::Path) {
             match self.chain_argument(comp, inst, scope, fo) {
-                Some(Some(c)) => out.push(c),
-                Some(None) => return Vec::new(),
-                None => {}
+                Ok(Some(c)) => out.push(c),
+                Ok(None) => {}
+                Err(()) => return Vec::new(),
             }
         }
         out
     }
 
-    /// The named chain a call gives the `path` formal `fo`, where it gives one: `Some(None)`
-    /// where it is refused (said here).
+    /// The named chain a call gives the `path` formal `fo`, where it gives one, or `Err` where it
+    /// is refused (said here).
     fn chain_argument(
         &mut self,
         comp: &Component,
         inst: &crate::syntax::Instance,
         scope: &Scope,
         fo: &crate::syntax::Formal,
-    ) -> Option<Option<(usize, Ref, Vec<(Ref, String)>)>> {
+    ) -> Result<Option<ChainArgument>, ()> {
+        let Some(at) = super::bindings::arg_index(comp, inst, fo) else { return Ok(None) };
+        let crate::syntax::InstVal::Ref(r) = &inst.args[at].value else { return Ok(None) };
         let alias = self.alias_table();
-        {
-            let Some(at) = super::bindings::arg_index(comp, inst, fo) else { return None };
-            let crate::syntax::InstVal::Ref(r) = &inst.args[at].value else { return None };
-            let Some((abs, rest)) = self.look(&alias).find(r, scope) else { return None };
-            if !rest.is_empty() {
-                return None;
-            }
-            let chain = self.out.iter().find_map(|(st, _, sc)| match &st.kind {
-                StmtKind::Chain(c) if c.name.key().text == abs => Some((c.clone(), sc.clone())),
-                _ => None,
-            });
-            let Some((chain, sc)) = chain else { return None };
-            if chain.closed {
-                let m = format!("`{}` is a closed chain, and a face family along it would meet \
-                                 itself: run it over an open one", ref_text(r));
-                self.err(Code::E080, r.span, m);
-                return Some(None);
-            }
-            let mut links = Vec::new();
-            for l in &chain.links {
-                let full = self.look(&alias).find(l, &sc)
-                    .map(|(t, rest)| std::iter::once(t).chain(rest).collect::<Vec<_>>().join("."));
-                // the link by the name the call's scope reads it by
-                let local = full.as_ref().and_then(|full| scope.prefixes.iter()
-                    .find_map(|p| full.strip_prefix(p.as_str()).filter(|n| !n.is_empty())));
-                let (Some(full), Some(local)) = (full.clone(), local) else {
-                    let m = format!("`{}`'s link `{}` is not one the call can name",
-                                    ref_text(r), ref_text(l));
-                    self.err(Code::E103, r.span, m);
-                    return Some(None);
-                };
-                links.push((Ref::dotted(local, r.span), full));
-            }
-            return Some(Some((at, r.clone(), links)));
+        let Some((chain, sc)) = self.chain_named(&alias, r, scope) else { return Ok(None) };
+        if chain.closed {
+            let m = format!("`{}` is a closed chain, and a face family along it would meet \
+                             itself: run it over an open one", ref_text(r));
+            self.err(Code::E080, r.span, m);
+            return Err(());
         }
+        let mut links = Vec::new();
+        for l in &chain.links {
+            let Some((full, local)) = self.link_read(&alias, l, &sc, scope) else {
+                let m = format!("`{}`'s link `{}` is not one the call can name", ref_text(r),
+                                ref_text(l));
+                self.err(Code::E103, r.span, m);
+                return Err(());
+            };
+            links.push((Ref::dotted(&local, r.span), full));
+        }
+        Ok(Some((at, r.clone(), links)))
+    }
+
+    /// The named chain `r` names in `scope`, as the walk has made it so far, and the scope it was
+    /// written in.
+    pub(super) fn chain_named(
+        &self,
+        alias: &BTreeMap<String, String>,
+        r: &Ref,
+        scope: &Scope,
+    ) -> Option<(crate::syntax::NamedChain, Scope)> {
+        let (abs, rest) = self.look(alias).find(r, scope)?;
+        if !rest.is_empty() {
+            return None;
+        }
+        self.out.iter().find_map(|(st, _, sc)| match &st.kind {
+            StmtKind::Chain(c) if c.name.key().text == abs => Some((c.clone(), sc.clone())),
+            _ => None,
+        })
+    }
+
+    /// A chain's link `l`, written in `sc`: its absolute name, and the name `scope` reads it by.
+    pub(super) fn link_read(
+        &self,
+        alias: &BTreeMap<String, String>,
+        l: &Ref,
+        sc: &Scope,
+        scope: &Scope,
+    ) -> Option<(String, String)> {
+        let (t, rest) = self.look(alias).find(l, sc)?;
+        let full = std::iter::once(t).chain(rest).collect::<Vec<_>>().join(".");
+        let local = scope.prefixes.iter()
+            .find_map(|p| full.strip_prefix(p.as_str()).filter(|n| !n.is_empty()))?.to_string();
+        Some((full, local))
     }
 
     /// An instance: its arguments bound and its component's body walked under its prefix — or

@@ -31,6 +31,7 @@ back at L0's 28; `rust/gcs-core/tests/sections.rs`, off the exact B-rep to 1e-9:
 | the bottle's rims, 30 / 28 / 12 at 0 / 60 / 90, ruled | two frusta, an edge at the shoulder | π·60/3·(30² + 30·28 + 28²) + π·30/3·(28² + 28·12 + 12²) ≈ 198297.33 |
 | the same, smooth, over the axis whole and cut at the shoulder | the spline through the rims, square to both ends | π∫x² dy, five Gauss–Legendre points a span |
 | squares 20, 12 (moved off the axis by (10, 5)) and 16 at 0 / 40 / 60, no guide | prismatoids, the stations level | 10453.33 + 3946.67 = 14400 |
+| a triangle whose corners ride three splines through r 10 / 14 / 8 at 0 / 30 / 60, no guide | smooth, its area r² | ∫r² dz, five Gauss–Legendre points a span |
 | the smooth bottle, its end tangent along a turned neck's cone | its wall square to the base cap, tangent to the cone at the neck | normals to 1e-9 and 1e-7 |
 
 **The spline through points is the least bent.** `n` corners make `n + 2` clamped uniform control

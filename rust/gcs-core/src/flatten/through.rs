@@ -72,19 +72,12 @@ impl Walk<'_> {
         }
     }
 
-    /// The chain's corners as the spline's scope reads them, in walk order, or why there are
-    /// none: the chain named, open, of lines, and two corners at least.
+    /// The chain's corners as the spline's scope reads them, in walk order — the first link's
+    /// `p1`, then each link's `p2` — or why there are none: the chain named, open and of lines.
     fn corners(&mut self, t: &Through, scope: &Scope) -> Result<Vec<Ref>, (Code, String)> {
         let alias = self.alias_table();
         let r = &t.chain;
-        let found = self.look(&alias).find(r, scope).filter(|(_, rest)| rest.is_empty());
-        let chain = found.and_then(|(abs, _)| {
-            self.out.iter().find_map(|(st, _, sc)| match &st.kind {
-                StmtKind::Chain(c) if c.name.key().text == abs => Some((c.clone(), sc.clone())),
-                _ => None,
-            })
-        });
-        let Some((chain, sc)) = chain else {
+        let Some((chain, sc)) = self.chain_named(&alias, r, scope) else {
             return Err((Code::E103, format!("a spline runs `through:` the corners of a named \
                 chain, `rims := line(a, b) -> line(b, c)`, and `{}` is not one", ref_text(r))));
         };
@@ -94,21 +87,16 @@ impl Walk<'_> {
         }
         let mut corners = Vec::new();
         for (k, l) in chain.links.iter().enumerate() {
-            let full = self.look(&alias).find(l, &sc)
-                .map(|(t, rest)| std::iter::once(t).chain(rest).collect::<Vec<_>>().join("."));
-            let line = full.as_ref().is_some_and(|full| self.out.iter().any(|(st, _, _)| {
-                matches!(&st.kind, StmtKind::Decl(d)
-                    if d.kind == EntKind::Line && d.name.key().text == *full)
-            }));
-            // the link by the name the spline's scope reads it by
-            let local = full.as_ref().and_then(|full| scope.prefixes.iter()
-                .find_map(|p| full.strip_prefix(p.as_str()).filter(|n| !n.is_empty())));
-            let Some(local) = local.filter(|_| line) else {
+            let read = self.link_read(&alias, l, &sc, scope).filter(|(full, _)| {
+                self.out.iter().any(|(st, _, _)| matches!(&st.kind, StmtKind::Decl(d)
+                    if d.kind == EntKind::Line && d.name.key().text == *full))
+            });
+            let Some((_, local)) = read else {
                 return Err((Code::E080, format!("a spline runs through the corners of a chain of \
                     lines, and `{}`'s link `{}` is not a line the spline can name", ref_text(r),
                     ref_text(l))));
             };
-            let link = Ref::dotted(local, r.span);
+            let link = Ref::dotted(&local, r.span);
             if k == 0 {
                 corners.push(field(&link, "p1", r.span));
             }
@@ -119,8 +107,7 @@ impl Walk<'_> {
 
     /// A point or a line the spline makes, walked as a declaration of its scope: drawn where
     /// the spline is, and private construction where it is no control point.
-    fn made(&mut self, f: &Fit, d: Decl, private: bool) {
-        let mut d = d;
+    fn made(&mut self, f: &Fit, mut d: Decl, private: bool) {
         d.annotations.private = private;
         d.annotations.roles.construction = private;
         d.membership = f.d.membership.clone();

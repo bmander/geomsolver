@@ -574,9 +574,8 @@ pub fn family(loops: &[Vec<Wall>],vanish: f64) -> Result<Brep,String> {
     let [a,b] = first.span();
     if loops.iter().flatten().any(|w| w.sheet.span() != [a,b]) { return Err("a face family's walls run over different intervals".into()) }
     let mid = (a+b)/2.;
-    // which way each loop runs at the middle, and which way the stations move
-    let normals: Vec<V> = loops.iter().map(|l| newell(&loop_points(l,mid))).collect();
-    let section = unit(normals[0]);
+    // the section's normal at the middle, the walls' frames' axis
+    let section = unit(newell(&loop_points(&loops[0],mid)));
     let mut out = Brep::default();
     // the bands between the creases, each wall's sheet over its pieces alone, and where they begin
     // and end
@@ -658,7 +657,7 @@ pub fn family(loops: &[Vec<Wall>],vanish: f64) -> Result<Brep,String> {
             let middle = (lo+hi)/2.;
             // which way the loop runs about its own plane in this band: the section may have
             // turned round since the family's middle (a U)
-            let n_loop = unit(if bands.len() == 1 { normals[li] } else { newell(&loop_points(walls,middle)) });
+            let n_loop = unit(newell(&loop_points(walls,middle)));
             for (k,w) in walls.iter().enumerate() {
                 let sheet = &band.walls[li][k];
                 let line = |p: Uv,q: Uv| Pcurve::Line {a:p,b:q};
@@ -680,8 +679,10 @@ pub fn family(loops: &[Vec<Wall>],vanish: f64) -> Result<Brep,String> {
                 out.faces.push(Face {loops:vec![l],..face});
             }
         }
-        let ends = [ends[0].clone(),ends[cuts.len()-1].clone()];
-        rims.push(ends.map(|e| if e.iter().all(|x| x.1) { Vec::new() } else { e }));
+        // the caps' rims: the first cut's and the last's
+        let last = ends.pop().unwrap_or_default();
+        let first = ends.swap_remove(0);
+        rims.push([first,last].map(|e| if e.iter().all(|x| x.1) { Vec::new() } else { e }));
     }
     // the caps: the start's material toward where the stations go, the end's behind it
     for (e,s,name) in [(0,a,"start"),(1,b,"end")] {

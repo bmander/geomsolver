@@ -716,17 +716,8 @@ impl<'a> Walk<'a> {
     ) -> Option<(Vec<(Ref, Scope)>, bool)> {
         let StmtKind::Block(b) = &p.st.kind else { return None };
         let over = b.over.as_ref()?;
-        let sc = self.pending_scope(p);
-        let (abs, rest) = self.look(alias).find(&over.chain, &sc)?;
-        if !rest.is_empty() {
-            return None;
-        }
-        self.out.iter().find_map(|(st, _, sc)| match &st.kind {
-            StmtKind::Chain(c) if c.name.key().text == abs => {
-                Some((c.links.iter().map(|r| (r.clone(), sc.clone())).collect(), c.closed))
-            }
-            _ => None,
-        })
+        let (c, sc) = self.chain_named(alias, &over.chain, &self.pending_scope(p))?;
+        Some((c.links.iter().map(|r| (r.clone(), sc.clone())).collect(), c.closed))
     }
 
     /// Whether the walk declared a solid by this absolute name.
