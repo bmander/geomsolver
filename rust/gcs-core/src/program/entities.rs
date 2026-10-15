@@ -1156,11 +1156,11 @@ impl Step {
 }
 
 /// The step a place takes from `e`: toward a point (`toward:`), a line's run (`along:` a line),
-/// or along any other path (`along:` an arc, a circle, a spline, a traced curve, #243 L4) — its
-/// rate along its own run where `e` meets it (the foot of `e` on it, within its run), as a
-/// line's run is its rate from `p1` to `p2`: an arc's turned by its sweep and a circle's by a
-/// whole turn, counter-clockwise, a spline's and a curve's by its parameter.  `None` where it
-/// takes no step.
+/// or along any other path (`along:` an arc, a circle, a spline, a curve, #243 L4, or a curve
+/// traced in space, #363 S1) — its rate along its own run where `e` meets it (the foot of `e` on
+/// it, within its run), as a line's run is its rate from `p1` to `p2`: an arc's turned by its
+/// sweep and a circle's by a whole turn, counter-clockwise, a spline's and a curve's by its
+/// parameter, a traced curve's by its formal.  `None` where it takes no step.
 fn step_ends(sk: &Sketch, res: &Resolver, e: EntRef, a: &AtRef)
     -> Result<Option<Step>, String> {
     Ok(match (&a.toward, &a.along) {
@@ -1177,15 +1177,16 @@ fn step_ends(sk: &Sketch, res: &Resolver, e: EntRef, a: &AtRef)
                 EntKind::Line => {
                     Some(Step::Between(sk.lines[l.i()].p1 as usize, sk.lines[l.i()].p2 as usize))
                 }
-                EntKind::Arc | EntKind::Circle | EntKind::Spline | EntKind::Curve => {
+                k if matches!(k, EntKind::Arc | EntKind::Circle | EntKind::Spline | EntKind::Curve)
+                    || super::relations::traced_curve(sk, l) => {
                     if e.kind != EntKind::Point {
                         return Err("a step along a path is taken from a point".to_string());
                     }
                     Some(Step::Along(rate_along(sk, l, sk.world_point(e.i()))?))
                 }
-                k => {
+                _ => {
                     return Err(format!("a step is taken along a line, not {}, or along a path",
-                                       k.a()))
+                                       super::relations::said_kind(l)))
                 }
             }
         }
@@ -1194,8 +1195,17 @@ fn step_ends(sk: &Sketch, res: &Resolver, e: EntRef, a: &AtRef)
 }
 
 /// How path `g` runs where the point `w` (in space) meets it: its rate along its own run at the
-/// foot of `w` on it, in space (see `step_ends`).
+/// foot of `w` on it, in space (see `step_ends`) — a traced curve's `d[0]` at its nearest place.
 fn rate_along(sk: &Sketch, g: EntRef, w: [f64; 3]) -> Result<[f64; 3], String> {
+    if g.kind == EntKind::Traced {
+        use crate::traced::{place_of, reading, Need};
+        let at = place_of(sk, g.i(), w).ok_or("the curve has no points yet")?;
+        let d = reading(sk, g.i(), at, Need::Tangent).ok_or("the curve has no run there")?.d[0];
+        if !d.iter().all(|v| v.is_finite()) || crate::space::norm(d) <= 1e-12 {
+            return Err("the path does not run there yet".to_string());
+        }
+        return Ok(d);
+    }
     let view = super::planes::drawn_plane(sk, g);
     let basis = view.map_or(crate::plane::Basis::page(), |p| sk.basis(p));
     let (x, y) = basis.view_coords(w);

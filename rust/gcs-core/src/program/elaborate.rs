@@ -612,7 +612,7 @@ fn walked(cx: &mut Elab<'_>, deferred: &[Deferred], held: &BTreeSet<u32>) {
 /// else holds it on each (§6.7); the rings' contacts; and each tangency at a point gauging its
 /// directions where the point stands (§6.21).
 fn twins(cx: &mut Elab<'_>, flat: &Flat<'_>) {
-    relations::kinds(&cx.map, &flat.expansion.kinds, &mut cx.diags);
+    relations::kinds(&cx.sk, &cx.map, &flat.expansion.kinds, &mut cx.diags);
     relations::tangents_at(&cx.sk, &cx.map, &mut cx.diags);
     planes::tie_twins(&mut cx.sk, &cx.map, &mut cx.diags);
     cx.sk.hold_twins();

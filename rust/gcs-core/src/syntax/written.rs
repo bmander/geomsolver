@@ -263,7 +263,7 @@ impl Written {
         // number.  Checked before anything is assembled, so the message is about what was
         // written and not about what it came to.
         for (key, _) in self.slots() {
-            if !spec.iter().any(|(n, k)| k.is_param() && *n == key.text) {
+            if !spec.iter().any(|(n, k)| k.is_param() && *n == Self::slot_of(kind, &key.text)) {
                 let word = &self.word.text;
                 let m = format!("`{word}` has no slot `{}` to seed", key.text);
                 return Err((key.span, m));
@@ -286,7 +286,7 @@ impl Written {
                 return Err((key.span, m));
             }
         }
-        self.given_once()?;
+        self.given_once(kind)?;
         let mut out: Vec<Option<Arg>> = vec![None; spec.len()];
         let mut ents: Vec<Ref> = self.ops.clone();
         // `length line1` is the distance between the line's own ends — the one prefix word
@@ -317,7 +317,10 @@ impl Written {
                 });
                 named.or_else(|| next.next().map(Arg::Ref))
             } else if sk.is_param() {
-                let slot = || self.slots().filter(|(key, _)| key.text == *name).map(|(_, arg)| arg);
+                let slot = || {
+                    let named = |key: &Name| Self::slot_of(kind, &key.text) == *name;
+                    self.slots().filter(move |(key, _)| named(key)).map(|(_, arg)| arg)
+                };
                 // a shared parameter is pinned to an unknown and seeded where the unknown is
                 // declared (`param s: Angle hint(330)`): a `hint(t: …)` beside the pin would be a
                 // second seed for one unknown, and the contacts sharing it would disagree
@@ -325,7 +328,7 @@ impl Written {
                 if tie.is_some() {
                     if let Some(key) = self.args.iter().find_map(|a| match a {
                         OpArg::Slot { key, arg: Arg::Seed { pinned: false, .. } }
-                            if key.text == *name => Some(key),
+                            if Self::slot_of(kind, &key.text) == *name => Some(key),
                         _ => None,
                     }) {
                         let m = format!(
@@ -354,11 +357,20 @@ impl Written {
         Ok(out)
     }
 
+    /// The slot a key fills: its own name, but for a point on a curve traced in space, whose
+    /// place `t` is the trace's own formal, `u`, as a spline's and a line's is their `t` (#363 S1).
+    fn slot_of(kind: CKind, key: &str) -> &str {
+        match (kind, key) {
+            (CKind::PointOnTraced, "t") => "u",
+            _ => key,
+        }
+    }
+
     /// **A slot is given once** (issue #112): assembled, a slot takes the first argument naming
     /// it, so a second — `fix((3, 4), (1, 1)) a`, `fix((3, 4), x == 1) a`, two pins of one
     /// contact — went nowhere and said nothing.  Refused at the second, saying which.  A pin to
     /// an unknown beside a seed for it has a message of its own (`assemble`'s tie).
-    fn given_once(&self) -> Result<(), (Span, String)> {
+    fn given_once(&self, kind: CKind) -> Result<(), (Span, String)> {
         let seed = |x: &Arg| {
             matches!(x, Arg::Seed { pinned: false, .. } | Arg::SeedExpr { pinned: false, .. })
         };
@@ -368,8 +380,9 @@ impl Written {
         for a in &self.args {
             let whole = matches!(a, OpArg::Vector { key: None, .. });
             for (key, arg) in Self::fills(a) {
+                let slot = Self::slot_of(kind, &key.text).to_string();
                 let before = said.iter().find(|(n, b, _)| {
-                    *n == key.text && !(tie(arg) && seed(b) || seed(arg) && tie(b))
+                    *n == slot && !(tie(arg) && seed(b) || seed(arg) && tie(b))
                 });
                 if let Some(&(_, _, was_whole)) = before {
                     let word = &self.word.text;
@@ -380,7 +393,7 @@ impl Written {
                     };
                     return Err((key.span, m));
                 }
-                said.push((key.text, arg, whole));
+                said.push((slot, arg, whole));
             }
         }
         Ok(())

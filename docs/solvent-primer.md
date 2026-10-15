@@ -811,7 +811,8 @@ constraint (a point-to-line distance's sign chooses a winding); an orientation p
 (read at the anchor and carried by continuity); a seed.
 
 **In space.** A body whose relations do not read in one plane — ordinates along lines in space, a
-point a motion carries — is a curve **in space** (`p coincident k`, `k tangent(at: p) l`); over two
+point a motion carries — is a curve **in space** (`p coincident k`, `k tangent(at: p) l`), and a
+`path` (0.119: `p coincident(t == 0.3) k` at its formal, a station's guide); over two
 formals, `S := C(…).p over (phi in (a, b), s in (c, d))`, a **surface** (`p coincident S`, and at a
 point held there `tangent`, `perpendicular` for its normal, `curvature`). Write it in place, seed
 its points with numbers over the formals, and give it points, lines, motions and numbers:
@@ -1307,6 +1308,13 @@ k := Par(o).p over u in (-2mm, 2mm)
   integrates it from there both ways (`rust/gcs-core/tests/rates.rs`). A rate is of an axis or a
   point, against an axis, a line or a plane, by `perpendicular` or `parallel`, and names the
   formal it runs over; give a word that states one the family's running number as that formal.
+  **A guide drawn in space** (0.119) is a curve traced in space handed to a `path` formal: `m
+  coincident(t == s) g` stands the station at the body's own formal `s` and `hint(at: m, along:
+  g)` steps along it. `std.On` holds its `v` along `up`, which leans its plane off square to a
+  twisted guide, so hold the plane square to the tangent there (`n.u perpendicular tl`, `n.v
+  perpendicular tl`, `n.u perpendicular n.v`) and turn it by `Minimal`'s rate, `rate(n.u over s)
+  perpendicular n.v` with `initially { n.u perpendicular up }`
+  (`rust/gcs-core/tests/space_paths.rs`). A surface traced over two formals is no path.
   A profile drawn once may also be **carried whole** by the map itself,
   `sec := prof mapped(o -> st.n.origin, x -> t) in st.n` — every corner and edge of `prof` carried
   into `st.n` by the similarity taking `o` and `x` to the origin and `t`, the edges keeping their

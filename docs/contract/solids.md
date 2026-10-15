@@ -270,6 +270,14 @@ placement carries inside the blank; CLI test readers zero the offset.
   sketches drawn apart) returns at L8 (finding 8).  `tests/loft.rs` is the gate: `solid_loft`,
   `solid_elbow`, `solid_bend` and `solid_twist` at their closed forms off the B-rep to 1e-9, their
   walls by name and kind, `std.On` agreeing with each kind's word.
+- **A guide in space** (#363 S1, [0.119]): a curve traced in space is a `path`, so a station
+  stands on it by `m coincident(t == s) g`, `g tangent(at: m) tl` and a plane square to `tl`
+  turned by `Minimal`'s rate from a home square to `up` — the frame integrated, as along
+  `std.OnHelix` (`std.On`'s `square(up:)` leaves its plane leaning off square to a twisted
+  tangent; which word holds a station over any path is S2's).  `tests/space_paths.rs` is the
+  gate: a 2 × 2 square along two turns of a traced helix (r 10, rise 10) at 4·√((40π)² + 10²)
+  off the exact B-rep to 1e-9 and corner for corner `std.OnHelix`'s under `Minimal`; the frame
+  turning −28.5576° a turn against Frenet's (r 10, pitch 5), to 1e-9; a traced surface refused.
 - **A chain is one path** (§6.9 [0.102], #243 L4, finding 6).  A `path` formal of a family's
   instance given a named open chain (`flatten::chain_argument`, the chain found among the
   statements walked so far) makes the family **legs**, one per link its interval reaches

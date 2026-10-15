@@ -215,10 +215,10 @@ pub enum Ty {
     /// or one written in place.  Not a group: a group formal refuses a set and this a group, so a
     /// set handed where members are read is said at the call (#191).
     Set,
-    /// **Any path** (#251): a line, an arc, a circle, a spline or a curve — what a point runs
-    /// along and a tangent is taken at. An entity formal whose words are settled by the kind of
-    /// the actual, as every entity formal's are; refused at the call when the actual runs along
-    /// nothing (E103, `program::paths`).
+    /// **Any path** (#251): a line, an arc, a circle, a spline or a curve, or a curve traced in
+    /// space (#363 S1) — what a point runs along and a tangent is taken at. An entity formal whose
+    /// words are settled by the kind of the actual, as every entity formal's are; refused at the
+    /// call when the actual runs along nothing (E103, `program::paths`).
     Path,
     Ent(EntKind),
 }

@@ -543,7 +543,10 @@ component OnSpline(g: spline, up: axis, s: Scalar) {
 // arc's `s` is the fraction of its run (an arc's by angle), a spline's its own parameter.  Given a
 // named open chain of lines and arcs, a family runs it link by link, `s` from 0 to the count of
 // its links (#243 L4).  With `up` the normal of the plane `g` is drawn in, the frame turns only as
-// the guide does — the rotation-minimising frame, its binormal held.
+// the guide does — the rotation-minimising frame, its binormal held.  A curve traced in space is a
+// path too (#363 S1), but along a twisted one `up` is not square to the tangent and the plane
+// leans (`square`, above): there hold the plane square to the tangent and turn it by `Minimal`'s
+// rate.
 component On(g: path, up: axis, s: Scalar) {
   m := point
   m coincident(t == s) g

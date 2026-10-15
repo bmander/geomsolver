@@ -872,30 +872,50 @@ fn region_or_row(
 
 /// **An entity given where a kind is asked for is of that kind**, refused at the argument once
 /// the elaborator knows what the name it was given is: a `path` formal's (#251), a line, an arc,
-/// a circle, a spline or a curve, what a point runs along; an interface's entity member's
-/// (§8.1 [0.84]), the kind it declares.
-pub(super) fn kinds(map: &SourceMap, given: &[crate::flatten::KindAsked], diags: &mut Vec<Diag>) {
+/// a circle, a spline or a curve, what a point runs along — or a curve traced in space, a body
+/// over one formal (#363 S1), never a surface; an interface's entity member's (§8.1 [0.84]), the
+/// kind it declares.
+pub(super) fn kinds(sk: &Sketch, map: &SourceMap, given: &[crate::flatten::KindAsked],
+                    diags: &mut Vec<Diag>) {
     for k in given {
         let Some(e) = map.ent_named(&k.target) else { continue };
         let fits = match k.ty {
             crate::syntax::Ty::Ent(want) => e.kind == want,
-            _ => e.kind.runs_along(),
+            _ => e.kind.runs_along() || traced_curve(sk, e),
         };
         if fits {
             continue;
         }
         let message = match (&k.interface, k.ty) {
             (None, _) => format!(
-                "`{}` is a path — a line, an arc, a circle, a spline or a curve — not {}",
-                k.what, e.kind.a()
+                "`{}` is a path — a line, an arc, a circle, a spline, a curve or a curve traced \
+                 in space — not {}",
+                k.what, said_kind(e)
             ),
             (Some(i), crate::syntax::Ty::Ent(want)) => {
                 format!("`{}` is {}, where `{i}` asks for {}", k.what, e.kind.a(), want.a())
             }
-            (Some(i), _) => format!("`{}` is {}, where `{i}` asks for a path", k.what, e.kind.a()),
+            (Some(i), _) => {
+                format!("`{}` is {}, where `{i}` asks for a path", k.what, said_kind(e))
+            }
         };
         diags.push(Diag::new(Code::E103, k.span, None, message));
     }
+}
+
+/// What `e` is, with its article, where it was refused as a path: a body traced in space refused
+/// there runs over two formals, a surface.
+pub(super) fn said_kind(e: EntRef) -> String {
+    match e.kind {
+        EntKind::Traced => "a surface traced in space".to_string(),
+        k => k.a(),
+    }
+}
+
+/// Whether `e` is a curve traced in space: a body running over one formal (#326), which a point
+/// runs along as it runs along a spline (#363 S1).
+pub(super) fn traced_curve(sk: &Sketch, e: EntRef) -> bool {
+    e.kind == EntKind::Traced && sk.traced.get(e.i()).is_some_and(|t| t.formals() == 1)
 }
 
 /// **A tangent at a point reads the place of the contact holding the point** (#251): `g

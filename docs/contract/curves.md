@@ -290,6 +290,14 @@ march, a seed of fewer columns, dense output forwards and back, a carried branch
   ordinates and by a screw, a point and a tangent held to it; a torus's point, normal and the
   meridian's osculating circle against closed forms; every contact against finite differences;
   a fold reported.
+  **A curve in space is a path** (#363 S1, [0.119]): a `path` formal takes a body over one
+  formal (`relations::kinds`, `traced_curve`; a surface is E103, "not a surface traced in
+  space"); `p coincident(t == s) k` pins the contact's first place, `t` read as the slot `u`
+  (`Written::slot_of`), to a held running number as a spline's is (`contact_carrier` names the
+  traced curve, so `shared_on_one_curve` and the held place allow it); `hint(at: p, along: k)`
+  steps along `d[0]` at `traced::place_of` (`entities::rate_along`); and a family's part keeps
+  what a traced body was given though the body owns no parameter (`Part::around_all`), else the
+  part dropped its contacts.  `tests/space_paths.rs` is the gate.
   **Two design constraints it is built to** (#326): a traced surface is held to and read, not a
   face of a solid — exporting one is making it a wall of #243 L2's `Surface::Family` (whose
   `d1`/`newton` it would answer through `traced::read` and `traced::nearest`), not a second
