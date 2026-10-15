@@ -348,6 +348,21 @@ pub enum CKind {
     Cw,
 }
 
+/// A map's sides as slots (`CKind::map_sides`): each the thing carried (first) and the frame's
+/// points, in spec order.
+#[derive(Clone, Copy, Debug)]
+pub struct MapSides {
+    pub source: &'static [usize],
+    pub target: &'static [usize],
+}
+
+impl MapSides {
+    /// The source frame's points, without the thing carried from it.
+    pub fn frame(self) -> &'static [usize] {
+        &self.source[1..]
+    }
+}
+
 /// Which of a curve definition's kernels a kind runs through: the table holds these five per
 /// definition, in this order (`System::kernel_table`), and `Constraint::kernel_id_in` counts
 /// them so — the one statement of what "a kind whose kernel is per definition" means.
@@ -1262,6 +1277,20 @@ impl CKind {
             (CKind::Ordinate, 4) | (CKind::Level, 3) => &ALONG_WORDS[..],
             (CKind::Angle, 3) => &["ccw", "cw"][..],
             (CKind::EqualAngle, 4) => &["ccw", "cw"][..],
+            _ => return None,
+        })
+    }
+
+    /// **A map's two sides** (#357), as slots: the source frame's points and the thing carried
+    /// from it, and the targets and the thing carried — each side read in a plane of its own
+    /// (`program::reading`), the source frame what a refusal of a degenerate map asks of
+    /// (`validate`).  `None` for every kind that is no map.
+    pub fn map_sides(self) -> Option<MapSides> {
+        Some(match self {
+            CKind::Mapped => MapSides { source: &[1, 2, 4, 6], target: &[0, 3, 5, 7] },
+            CKind::MappedSimilar | CKind::MappedCircle => {
+                MapSides { source: &[1, 2, 4], target: &[0, 3, 5] }
+            }
             _ => return None,
         })
     }

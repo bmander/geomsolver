@@ -556,7 +556,7 @@ impl Constraint {
             CKind::Symmetric => [pt(0), pt(1), ln(2)].concat(),
             // every point as drawn in its page, in spec order: each side is read in its own (#357)
             CKind::Mapped | CKind::MappedSimilar => {
-                let n = if self.kind == CKind::Mapped { 8 } else { 6 };
+                let n = self.kind.spec().iter().filter(|(_, k)| *k == SpecKind::Point).count();
                 (0..n).flat_map(pt).collect()
             }
             // each circle's centre and radius, then the pairs' points

@@ -123,7 +123,8 @@ came from.
   projection on `to − from` and its quarter turn), so the rows are rational and exact wherever the
   frame stands, held or solved — a station's held profile drops out of the Jacobian as any held
   column does, and no held number is read.  **Each side is read in its own plane**
-  (`reading::mapped_planes`, E062 naming the side): every column is a point's page coordinate, the
+  (`reading::mapped_planes`, E062 naming the side; `CKind::map_sides` is the one table of which
+  slot is which side, read there and by `validate`): every column is a point's page coordinate, the
   targets' in theirs and the source's in its, which is how a profile drawn in `std.front` is
   carried into a station's plane; a map between points in space is not said.  A source frame held
   in a line, or two of its points one, is E061 naming them (`constraints::validate`); one the

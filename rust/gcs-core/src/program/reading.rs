@@ -106,11 +106,10 @@ fn view_points(sk: &Sketch, kind: CKind, args: &[Arg]) -> Option<Vec<usize>> {
 /// drawn in a view is carried into a station's plane.  Either side not drawn in one plane is
 /// refused, naming the side: a map between points in space is not said yet.
 fn mapped_planes(sk: &Sketch, kind: CKind, args: &[Arg]) -> Result<(), (bool, String)> {
-    // in spec order (q, p, from, a, to, b, third, c): the targets, then the source
-    let n = if kind == CKind::Mapped { 8 } else { 6 };
-    let side = |of: [usize; 4]| -> Option<usize> {
+    let sides = kind.map_sides().expect("a map has sides");
+    let side = |of: &[usize]| -> Option<usize> {
         // a point where it is drawn, a circle where its centre is
-        let mut planes = of.into_iter().filter(|&i| i < n).map(|i| match &args[i] {
+        let mut planes = of.iter().map(|&i| match &args[i] {
             Arg::Ent(e) if e.kind == EntKind::Point => sk.plane_of(e.i()),
             Arg::Ent(e) => sk.plane_of(sk.round_center(*e)),
             _ => None,
@@ -122,10 +121,10 @@ fn mapped_planes(sk: &Sketch, kind: CKind, args: &[Arg]) -> Result<(), (bool, St
         "`mapped` reads {what} in one plane, and these are not drawn in one: draw them in one \
          view (`in P {{ … }}`), as a station's corners are drawn in its plane"
     )));
-    if side([0, 3, 5, 7]).is_none() {
+    if side(sides.target).is_none() {
         return say("the point it places and the targets of its pairs");
     }
-    if side([1, 2, 4, 6]).is_none() {
+    if side(sides.source).is_none() {
         return say("the point it carries and the sources of its pairs");
     }
     Ok(())
@@ -174,7 +173,7 @@ pub(super) fn in_space(
         }
         return Ok(None);
     }
-    if matches!(kind, CKind::Mapped | CKind::MappedSimilar | CKind::MappedCircle) {
+    if kind.map_sides().is_some() {
         return mapped_planes(sk, kind, args).map(|()| None);
     }
     let Some(pts) = view_points(sk, kind, args) else { return Ok(None) };

@@ -3411,6 +3411,10 @@ fn sub2<T: Num>(a: [T; 2], b: [T; 2]) -> [T; 2] {
     [a[0] - b[0], a[1] - b[1]]
 }
 
+fn dot2<T: Num>(a: [T; 2], b: [T; 2]) -> T {
+    a[0] * b[0] + a[1] * b[1]
+}
+
 /// `q − (a + i·(b − a) + j·(c − a))`, the two rows a mapped point leaves, `e` and `f` the target
 /// frame's sides.
 fn mapped_gap<T: Num>(q: [T; 2], a: [T; 2], e: [T; 2], f: [T; 2], i: T, j: T) -> [T; 2] {
@@ -3440,11 +3444,11 @@ fn mapped_similar_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 2] {
     let (q, p, f) = (vec2(v, 0), vec2(v, 2), vec2(v, 4));
     let (a, t, b) = (vec2(v, 6), vec2(v, 8), vec2(v, 10));
     let (w, d) = (sub2(p, f), sub2(t, f));
-    let l2 = d[0] * d[0] + d[1] * d[1];
+    let l2 = dot2(d, d);
     if l2.val() == 0.0 {
         return [T::cst(f64::NAN); 2];
     }
-    let (i, j) = ((w[0] * d[0] + w[1] * d[1]) / l2, cross2(d, w) / l2);
+    let (i, j) = (dot2(w, d) / l2, cross2(d, w) / l2);
     let e = sub2(b, a);
     let s = T::cst(k[0]);
     mapped_gap(q, a, e, [T::cst(0.0) - s * e[1], s * e[0]], i, j)
@@ -3460,7 +3464,7 @@ fn mapped_circle_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 3] {
     let [x, y] = mapped_similar_rows(&centre, k);
     let (f, a, t, b) = (vec2(v, 6), vec2(v, 8), vec2(v, 10), vec2(v, 12));
     let (e, d) = (sub2(b, a), sub2(t, f));
-    let scale = ((e[0] * e[0] + e[1] * e[1]) / (d[0] * d[0] + d[1] * d[1])).sqrt();
+    let scale = (dot2(e, e) / dot2(d, d)).sqrt();
     [x, y, v[2] - v[5] * scale]
 }
 

@@ -29,7 +29,6 @@ fn all_constraints(seed: u32) -> Sketch {
     let cc2 = pt(&mut sk, &mut rng);
     let c2 = sk.circle(cc2, rng.uniform(1.0, 11.0), "c2");
     let (ac, as_, ae) = (pt(&mut sk, &mut rng), pt(&mut sk, &mut rng), pt(&mut sk, &mut rng));
-    let ae_pt = ae;
     let arc = sk.arc(ac, as_, ae, "a");
     // six control points: three spans, so a contact is checked on an interior span too
     let ctrl: Vec<usize> = (0..6).map(|_| pt(&mut sk, &mut rng)).collect();
@@ -214,7 +213,7 @@ fn all_constraints(seed: u32) -> Sketch {
             Constraint::new(CKind::MappedSimilar, args)
         },
         {
-            let pts = [b2, ae_pt, cc2, a1, ac, b1].map(EntRef::point);
+            let pts = [b2, as_, cc2, a1, ac, b1].map(EntRef::point);
             let mut args: Vec<Arg> = pts.iter().map(|&x| e(x)).collect();
             args.push(Arg::Bool(true));
             Constraint::new(CKind::MappedSimilar, args)

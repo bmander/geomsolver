@@ -450,19 +450,13 @@ pub fn validate(
         // would divide by zero.  Asked of a frame held where it stands; one the solve moves is
         // the solve's
         CKind::Mapped | CKind::MappedSimilar | CKind::MappedCircle => {
-            let src: Vec<usize> = [2, 4, 6].into_iter()
-                .filter(|&i| i < if kind == CKind::Mapped { 8 } else { 6 })
-                .map(|i| args[i].ent().i())
-                .collect();
+            let frame = kind.map_sides().expect("a map has sides").frame();
+            let src: Vec<usize> = frame.iter().map(|&i| args[i].ent().i()).collect();
             if !src.iter().all(|&p| sk.point_held(p)) {
                 return Ok(());
             }
-            let at = |p: usize| {
-                let pp = sk.point_params(p);
-                [sk.params[pp[0] as usize].value, sk.params[pp[1] as usize].value]
-            };
-            let (f, t) = (at(src[0]), at(src[1]));
-            let d1 = [t[0] - f[0], t[1] - f[1]];
+            let (f, t) = (sk.point_xy(src[0]), sk.point_xy(src[1]));
+            let d1 = [t.0 - f.0, t.1 - f.1];
             let l1 = d1[0].hypot(d1[1]);
             let pt = |i: usize| name(EntRef::point(src[i]));
             if l1 <= kernels::MIN_LINE_LEN {
@@ -473,8 +467,8 @@ pub fn validate(
                 ));
             }
             if let Some(&h) = src.get(2) {
-                let h = at(h);
-                let d2 = [h[0] - f[0], h[1] - f[1]];
+                let h = sk.point_xy(h);
+                let d2 = [h.0 - f.0, h.1 - f.1];
                 let det = d1[0] * d2[1] - d1[1] * d2[0];
                 if det.abs() <= 1e-9 * l1 * d2[0].hypot(d2[1]).max(l1) {
                     return Err(format!(

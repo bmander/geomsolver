@@ -33,7 +33,7 @@ enum Part {
 
 impl Walk<'_> {
     /// The image of `p`'s face over its loop (`links`), in the scope the definition stands in,
-    /// spliced in where the definition stood in the walk's output (`at`).
+    /// spliced in where the definition stood in the walk's output (`at_out`).
     pub(super) fn image_face(
         &mut self,
         p: &Pending,
@@ -124,11 +124,22 @@ impl Walk<'_> {
         let mut body = Vec::new();
         let stmt =
             |kind: StmtKind| Stmt { id: p.st.id, kind, span: p.st.span, chained: Chained::No };
+        let in_n = || Membership::written_at(img.plane.clone(), Span::default());
         // a point of the image, drawn in `n`, seeded where its source is seen there: apart from
         // the others, so an arc's image starts with a radius (at none, its rows have no slope)
         let point = |name: DeclName, of: &Ref| Decl {
-            membership: Membership::written_at(img.plane.clone(), Span::default()),
+            membership: in_n(),
             ..Decl::point(name, [0.0; 2], Some(crate::syntax::AtRef::at(of.clone())))
+        };
+        // a round thing of the image over the points named, its radius unseeded: an arc's is
+        // read off its centre and start once they are placed, a circle's the map's to set
+        let round = |kind: EntKind, name: DeclName, points: &[&str]| Decl {
+            kind,
+            children: points.iter().map(|p| vec![Kid::Ref(Ref::dotted(p, at))]).collect(),
+            seed: Vec::new(),
+            seed_text: Vec::new(),
+            membership: in_n(),
+            ..Decl::point(name, [0.0; 2], None)
         };
         let carried = |what: Ref, of: Ref| Relation {
             form: RelationForm::Written(Written {
@@ -148,78 +159,56 @@ impl Walk<'_> {
             space: false,
         };
         let local = |text: &str| Ref::dotted(text, at);
+        let key = |text: &str| DeclName::Key(Name { text: text.to_string(), span: at });
+        // a point of the image, and the map holding it where `of` goes
+        let held = |body: &mut Vec<Stmt>, name: DeclName, of: Ref| {
+            let q = local(&name.key().text);
+            body.push(stmt(StmtKind::Decl(point(name, &of))));
+            body.push(stmt(StmtKind::Relation(carried(q, of))));
+        };
         let n = parts.len();
         let mut loop_kids: Vec<Kid> = Vec::with_capacity(n);
         let face_of_corners = parts.iter().all(|p| matches!(p, Part::Corner { .. }));
         if face_of_corners {
             for k in 0..n {
                 let name = named(k);
-                let q = name.key().text.clone();
-                let of = local(&src(k));
-                let decl = point(name, &of);
-                body.push(stmt(StmtKind::Decl(decl)));
-                body.push(stmt(StmtKind::Relation(carried(local(&q), of))));
-                loop_kids.push(Kid::Ref(local(&q)));
+                loop_kids.push(Kid::Ref(local(&name.key().text)));
+                held(&mut body, name, local(&src(k)));
             }
         } else if let [Part::Edge { kind: EntKind::Circle, .. }] = parts.as_slice() {
             // a circle about its centre's image, its radius scaled (`CKind::MappedCircle`)
             let name = named(0);
             let k = name.key().text.clone();
             let c = format!("{sec}#c0");
-            let of = local(&format!("{}.center", src(0)));
-            body.push(stmt(StmtKind::Decl(point(DeclName::Key(Name { text: c.clone(), span: at }),
-                                                &of))));
-            let circle = Decl {
-                kind: EntKind::Circle,
-                children: vec![vec![Kid::Ref(local(&c))]],
-                // no seed: the radius is read off the centre and an end once they are placed
-                seed: Vec::new(),
-                seed_text: Vec::new(),
-                membership: Membership::written_at(img.plane.clone(), Span::default()),
-                ..Decl::point(name, [0.0; 2], None)
-            };
-            body.push(stmt(StmtKind::Decl(circle)));
+            held(&mut body, key(&c), local(&format!("{}.center", src(0))));
+            body.push(stmt(StmtKind::Decl(round(EntKind::Circle, name, &[&c]))));
             body.push(stmt(StmtKind::Relation(carried(local(&k), local(&src(0))))));
             loop_kids.push(Kid::Ref(local(&k)));
         } else {
             // the image of each edge's start, the corners the images meet at
             let q = |k: usize| format!("{sec}#q{}", k % n);
-            for (k, part) in parts.iter().enumerate() {
-                let Part::Edge { kind, .. } = part else {
-                    self.err(Code::E080, at, "a face is carried by its corners or by its edges");
-                    return;
-                };
-                let start = if *kind == EntKind::Arc { "start" } else { "p1" };
-                let of = local(&format!("{}.{start}", src(k)));
-                let decl = point(DeclName::Key(Name { text: q(k), span: at }), &of);
-                body.push(stmt(StmtKind::Decl(decl)));
-                body.push(stmt(StmtKind::Relation(carried(local(&q(k)), of))));
+            // a face's walk is its corners or its edges, never both (`resolve::face_walk`)
+            let kind = |k: usize| match &parts[k] {
+                Part::Edge { kind, .. } => *kind,
+                Part::Corner { .. } => unreachable!("a walk of edges"),
+            };
+            for k in 0..n {
+                let start = if kind(k) == EntKind::Arc { "start" } else { "p1" };
+                held(&mut body, key(&q(k)), local(&format!("{}.{start}", src(k))));
             }
-            for (k, part) in parts.iter().enumerate() {
-                let Part::Edge { kind, .. } = part else { unreachable!("edges") };
+            for k in 0..n {
                 let name = named(k);
                 let e = name.key().text.clone();
-                let decl = match kind {
+                let decl = match kind(k) {
                     EntKind::Arc => {
                         let c = format!("{sec}#c{k}");
-                        let of = local(&format!("{}.center", src(k)));
-                        let centre = point(DeclName::Key(Name { text: c.clone(), span: at }), &of);
-                        body.push(stmt(StmtKind::Decl(centre)));
-                        body.push(stmt(StmtKind::Relation(carried(local(&c), of))));
+                        held(&mut body, key(&c), local(&format!("{}.center", src(k))));
                         // the mirror reverses the turn: the arc runs from its end's image
                         let (s, t) = if mirror { (q(k + 1), q(k)) } else { (q(k), q(k + 1)) };
-                        Decl {
-                            kind: EntKind::Arc,
-                            children: vec![vec![Kid::Ref(local(&c))], vec![Kid::Ref(local(&s))],
-                                           vec![Kid::Ref(local(&t))]],
-                            seed: Vec::new(),
-                            seed_text: Vec::new(),
-                            membership: Membership::written_at(img.plane.clone(), Span::default()),
-                            ..Decl::point(name, [0.0; 2], None)
-                        }
+                        round(EntKind::Arc, name, &[&c, &s, &t])
                     }
                     _ => Decl {
-                        membership: Membership::written_at(img.plane.clone(), Span::default()),
+                        membership: in_n(),
                         ..Decl::line(name, local(&q(k)), local(&q(k + 1)), Default::default())
                     },
                 };

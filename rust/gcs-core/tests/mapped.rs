@@ -34,10 +34,17 @@ in std.front {
 }
 ";
 
+/// Where the point the document calls `n` stands on its page.
 fn page(e: &Elaborated, n: &str) -> [f64; 2] {
-    let p = e.map.ent_named(n).unwrap_or_else(|| panic!("no `{n}`")).i();
-    let pp = e.sketch.point_params(p);
-    [e.sketch.params[pp[0] as usize].value, e.sketch.params[pp[1] as usize].value]
+    let (x, y) = e.sketch.point_xy(index(e, n));
+    [x, y]
+}
+
+/// `src` printed as the flat program it is, after checking it parses.
+fn printed(src: &str) -> String {
+    let (mut prog, errs, _) = gcs_core::library::parse_linked(src);
+    assert!(errs.is_empty(), "{errs:?}");
+    gcs_core::syntax::render_flat(&mut prog).unwrap().to_string()
 }
 
 fn near(a: [f64; 2], b: [f64; 2]) -> bool {
@@ -74,21 +81,13 @@ fn two_pairs_turn_and_scale_and_the_mirror_reflects() {
 /// target.
 #[test]
 fn a_map_prints_as_written() {
-    let src = format!("{TRIANGLES}q mapped(s0 -> t0, s1 -> t1, mirror: true) g\n");
-    let (mut prog, errs, _) = gcs_core::library::parse_linked(&src);
-    assert!(errs.is_empty(), "{errs:?}");
-    let text = gcs_core::syntax::render_flat(&mut prog).unwrap().to_string();
+    let text = printed(&format!("{TRIANGLES}q mapped(s0 -> t0, s1 -> t1, mirror: true) g\n"));
     assert!(text.contains("q mapped(s0 -> t0, s1 -> t1, mirror: true) g"), "{text}");
-    // and a face carried whole, as the definition it is
-    let src = format!("{RECT}rev := edged mapped(o -> a, x -> b, mirror: true) in std.top\n");
-    let (mut prog, errs, _) = gcs_core::library::parse_linked(&src);
-    assert!(errs.is_empty(), "{errs:?}");
-    let text = gcs_core::syntax::render_flat(&mut prog).unwrap().to_string();
+    // and a face carried whole, as the definition it is, which reads back as itself
     let said = "rev := edged mapped(o -> a, x -> b, mirror: true) in std.top";
+    let text = printed(&format!("{RECT}{said}\n"));
     assert!(text.contains(said), "{text}");
-    let (mut again, errs, _) = gcs_core::library::parse_linked(&text);
-    assert!(errs.is_empty(), "{errs:?}");
-    assert_eq!(gcs_core::syntax::render_flat(&mut again).unwrap(), text);
+    assert_eq!(printed(&text), text);
 }
 
 /// **A source frame standing in a line is refused where it is stated**, naming its three points:
@@ -101,11 +100,14 @@ fn a_collinear_frame_is_refused() {
     refused(&src, "E061", "s0, s1 and s2 stand in a line", at);
 }
 
-/// And the parentheses hold pairs: a lone reference, a fourth pair, `mirror:` with three.
+/// And the parentheses hold two or three pairs: one or four are refused, and so is `mirror:`
+/// with three, which say their turn by their targets.
 #[test]
 fn a_map_takes_two_or_three_pairs() {
     let three = |tail: &str| format!("{TRIANGLES}q mapped(s0 -> t0, s1 -> t1, s2 -> t2{tail}) g\n");
     refused(&three(", mirror: true"), "E040", "`mirror:` reverses the similarity", "mirror");
+    refused(&three(", g -> q"), "E040", "two or three pairs", "mapped(s0 -> t0, s1 -> t1, \
+        s2 -> t2, g -> q)");
     let one = format!("{TRIANGLES}q mapped(s0 -> t0) g\n");
     refused(&one, "E040", "two or three pairs", "mapped(s0 -> t0)");
 }
@@ -233,8 +235,8 @@ fn corners(e: &Elaborated, face: &str) -> Vec<[f64; 2]> {
     (0..n).map(|k| {
         let (here, next) = (ends(f.edges[k]), ends(f.edges[(k + 1) % n]));
         let p = *here.iter().find(|p| next.contains(p)).expect("an edge meets the next");
-        let pp = e.sketch.point_params(p as usize);
-        [e.sketch.params[pp[0] as usize].value, e.sketch.params[pp[1] as usize].value]
+        let (x, y) = e.sketch.point_xy(p as usize);
+        [x, y]
     }).collect()
 }
 
