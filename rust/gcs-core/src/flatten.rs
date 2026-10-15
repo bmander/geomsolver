@@ -36,6 +36,7 @@ mod faces;
 mod interfaces;
 mod keys;
 mod steps;
+mod through;
 
 pub use faces::{FaceAxis, FacePlane};
 
@@ -288,9 +289,9 @@ struct Held {
     /// leg per link its interval reaches, each the leg's running number and the link's index.
     chained: BTreeMap<String, Vec<(String, f64)>>,
     /// Each leg's running number: the link's index — where the leg's `s` starts, so the
-    /// family's formal reads `k + s` there — and the link's absolute name, on which a contact
-    /// pinned to `s` reads the leg's own number.
-    legs: BTreeMap<String, (f64, String)>,
+    /// family's formal reads `k + s` there — and the absolute names of its links, one per chain
+    /// run in step, on which a contact pinned to `s` reads the leg's own number.
+    legs: BTreeMap<String, (f64, Vec<String>)>,
     /// The leg whose link the relation being settled names, where it names it: a pin to `s`
     /// there is the leg's running number (`settle_relation`).
     on_leg: Option<(String, f64)>,
@@ -450,6 +451,8 @@ struct Checks {
 struct Aside {
     /// The blocks waiting for their chain — see `Pending`.
     blocks: Vec<Pending>,
+    /// The splines through a chain's corners, waiting for every chain — see `through::Fit`.
+    fits: Vec<through::Fit>,
     /// Statements held aside in the walk's own output while a deferred block is expanded into a
     /// vector of its own, so the statement cap counts them.
     held: usize,
@@ -664,11 +667,13 @@ impl<'a> Walk<'a> {
 
     fn finish(mut self) -> Expansion {
         self.expand_pending();
+        self.expand_fits();
         // a set's uses, once every set is known (§6.21) — a solid's faces among them — and a use
         // may hold a block over a chain
         self.face_sets();
         self.expand_sets();
         self.expand_pending();
+        self.expand_fits();
         let (mut flat, mut aliases) = self.resolve();
         let lowered = self.to_judge(&aliases);
         if let Some((comp, scope)) = self.datums() {

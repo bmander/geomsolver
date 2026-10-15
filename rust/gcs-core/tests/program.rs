@@ -387,6 +387,7 @@ fn a_name_declared_twice_is_an_error() {
             list_span: Default::default(),
             close: None,
             mint_close: None,
+            through: None,
         }));
     }
     render_flat(&mut p).unwrap();

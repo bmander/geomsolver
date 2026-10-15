@@ -704,14 +704,14 @@ impl<'a> Walk<'a> {
                         }
                     }
                     (Err(_), _) if self.held_text(text, vals, scope).is_some() => {
-                        // a leg's `s` is the chain's, which only the chain's own link reads as a
-                        // place of its run
+                        // a leg's `s` is the chain's, which only a link of a chain the family
+                        // runs reads as a place of its run
                         let leg = vals.get(bare).and_then(|a| a.free.as_ref())
                             .and_then(|n| self.held.legs.get(n));
                         let m = match leg {
                             Some(&(k, _)) => format!("`{text}`: the family runs over a chain, and \
                                 on its link {k} `s` runs from {k}: a contact pinned to `s` \
-                                stands on the chain"),
+                                stands on a chain it runs"),
                             None => format!("`{text}`: a contact in a face family is pinned to \
                                 its running number itself, `t == s`, or to a number"),
                         };

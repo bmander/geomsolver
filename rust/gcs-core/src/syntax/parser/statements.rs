@@ -1016,6 +1016,7 @@ impl<'a> P<'a> {
             list_span,
             close: None,
             mint_close: None,
+            through: None,
         })
     }
 

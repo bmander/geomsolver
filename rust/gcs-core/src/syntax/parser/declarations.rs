@@ -138,6 +138,7 @@ struct DeclList {
     surface_to: Option<Arg>,
     close: Option<Span>,
     list_span: Span,
+    through: Option<crate::syntax::Through>,
 }
 
 /// A declaration's scalars' seeds, as its `hint(…)` clause writes them (`P::seed_clause`): the
@@ -213,7 +214,7 @@ impl<'a> P<'a> {
         }
         let scalars: Vec<&str> =
             kind.fields().iter().filter(|(_, f)| *f == Field::Scalar).map(|(n, _)| *n).collect();
-        let DeclList { children, swp, surface_from, surface_to, close, list_span } =
+        let DeclList { children, swp, surface_from, surface_to, close, list_span, through } =
             self.decl_list(kind, &name, &scalars)?;
         let angular_span = match (surface_from,surface_to) {
             (None,None) => None,
@@ -262,6 +263,7 @@ impl<'a> P<'a> {
             list_span,
             close,
             mint_close: None,
+            through,
         })
     }
 
@@ -327,6 +329,7 @@ impl<'a> P<'a> {
             list_span: Span::at(end),
             close: None,
             mint_close: None,
+            through: None,
         });
     }
 
@@ -345,6 +348,8 @@ impl<'a> P<'a> {
         let mut surface_from = None;
         let mut surface_to = None;
         let mut close: Option<Span> = None;
+        // a spline through a chain's corners: the chain, and its end tangents (#243 L7)
+        let mut fit: [Option<Ref>; 3] = [None, None, None];
         let name_end = self.prev_hi();
         let open = self.here().lo as usize;
         let mut list_span = Span::at(name_end);
@@ -407,6 +412,17 @@ impl<'a> P<'a> {
                     }
                 }
                 match label {
+                    Some(l) if kind == EntKind::Spline
+                        && matches!(l.as_str(), "through" | "start" | "end") =>
+                    {
+                        let k = ["through", "start", "end"].iter().position(|w| *w == l)
+                            .unwrap_or(0);
+                        if fit[k].is_some() {
+                            self.fail(&format!("`{l}:` is given twice"));
+                            return None;
+                        }
+                        fit[k] = Some(self.refr()?);
+                    }
                     Some(l) if kind == EntKind::Surface && (l == "from" || l == "to") => {
                         let slot = if l == "from" { &mut surface_from } else { &mut surface_to };
                         if slot.is_some() { self.fail("a surface bound is given twice"); return None; }
@@ -447,7 +463,22 @@ impl<'a> P<'a> {
             }
             list_span = Span::new(open, self.prev_hi());
         }
-        Some(DeclList { children, swp, surface_from, surface_to, close, list_span })
+        let [chain, start, end] = fit;
+        let through = match chain {
+            Some(_) if children.iter().any(|g| !g.is_empty()) => {
+                self.fail("a spline through a chain's corners makes its own control points: \
+                           write `spline(through: chain)` or the control points, not both");
+                return None;
+            }
+            Some(chain) => Some(crate::syntax::Through { chain, start, end }),
+            None if start.is_some() || end.is_some() => {
+                self.fail("`start:` and `end:` hold the ends of a spline through a chain's \
+                           corners: `spline(through: chain, start: l)`");
+                return None;
+            }
+            None => None,
+        };
+        Some(DeclList { children, swp, surface_from, surface_to, close, list_span, through })
     }
 
     /// One item of a declaration's bracket list, its label (if any) read: a slot names an
@@ -917,7 +948,7 @@ impl<'a> P<'a> {
             children:vec![vec![surface],vec![motion]],
             seed:vec![],seed_text:vec![],seed_spans:vec![],hint_span:None,knots:None,weights:None,curve:None,
             computed:None,class,class_span,seed_at:None,seed_names:vec![],sweep:None,motion:None,angular_span:Some(crate::syntax::AngularSpan {from,to,side}),
-            membership:Membership::default(),list_span:Span::new(start.lo as usize,end),close:None,mint_close:None,
+            membership:Membership::default(),list_span:Span::new(start.lo as usize,end),close:None,mint_close:None,through:None,
         })
     }
 
@@ -969,7 +1000,7 @@ impl<'a> P<'a> {
             seed:vec![],seed_text:vec![],seed_spans:vec![],hint_span:None,knots:None,weights:None,curve:None,
             computed:None,class,class_span,seed_at:None,seed_names:vec![],sweep:None,motion:None,
             angular_span:Some(crate::syntax::AngularSpan {from,to,side:None}),
-            membership:Membership::default(),list_span:Span::new(start.lo as usize,end),close:None,mint_close:None,
+            membership:Membership::default(),list_span:Span::new(start.lo as usize,end),close:None,mint_close:None,through:None,
         })
     }
 
@@ -1022,7 +1053,7 @@ impl<'a> P<'a> {
             annotations:Default::default(),kind:EntKind::Motion,name,children:vec![vec![]],
             seed:vec![],seed_text:vec![],seed_spans:vec![],hint_span:None,knots:None,weights:None,curve:None,
             computed:None,class,class_span,seed_at:None,seed_names:vec![],sweep:None,motion:Some(spec),angular_span:None,membership:Membership::default(),
-            list_span:Span::new(start.lo as usize,end),close:None,mint_close:None,
+            list_span:Span::new(start.lo as usize,end),close:None,mint_close:None,through:None,
         })
     }
 

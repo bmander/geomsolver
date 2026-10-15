@@ -329,6 +329,26 @@ placement carries inside the blank; CLI test readers zero the offset.
   `tests/helix.rs` is the gate: square and V threads at A · 2πr̄ · turns (Pappus, r̄ the
   centroid's), flights square to the axis at A × the rise (Cavalieri), a spring at A × the helix's
   length, left-handed mirrors, each off the exact B-rep to 1e-9, and the fast path (`brep.md`).
+- **Several sections are drawn on rails** (§6.9 [0.111], #243 L7).  A corner's rail is its
+  places in order, one a section; the station's corner stands where its rail meets the station's
+  plane.  **Chains run in step**: `flatten::chain_arguments` finds every `path` formal given a
+  named open chain, `walk_legs` gives each its own link `k` on leg `k` (refusing chains of unequal
+  counts, E080 naming both), and `Held::legs` keeps every link a leg runs, so a contact pinned to
+  `s` on any of them reads the leg's own number (`leg_named`).  A guide cut at the sections and a
+  chain of lines through each corner is the **ruled** loft, piecewise in `s`; its walls meet at an
+  angle at each section, which the exact build makes an edge (`brep.md`, creases).  The **smooth**
+  loft's rail is `spline(through: …)` (`curves.md`), one span a link, so with the guide cut the
+  same way its sections still stand at `s = k`.  **No guide**: `std.Across(a, b, c, s:)` is the
+  plane over the lines from the place at `s` on rail `a` to those on `b` and `c` (Helix's way, a
+  plane over two lines sharing an end).  A rail drawn in a plane is reached by a corner drawn in the
+  station's plane and that one (`point in st.n, front`): a point another plane already draws is not
+  drawn in a spline's plane by its contact (#249's rule is for a point in space).
+  `tests/sections.rs` is the gate: the spline through a chain's corners against control points
+  solved apart from its end conditions on the curve's derivatives (tangent and natural), a ruled bottle at the sum of its frusta with an edge at
+  the shoulder (two cones, one name), a loft with no guide at its prismatoids and, on three splines, by quadrature, a smooth bottle by
+  quadrature on every span, its wall square to the base cap and tangent to a turned neck's cone,
+  and the refusals; `face_family`'s bottle is `docs/lofts/l0/bottle.sv` over the spline through
+  its rims.
 - **A face closes itself** (§6.8, `program::build_face`; issue #49).  The brackets hold a *walk*,
   and an item may be a **point**, with `-> close` sealing the run back to the first item.  Where
   two neighbours do not meet, `build_face` mints the straight line between them, class
