@@ -247,6 +247,10 @@ fn all_constraints(seed: u32) -> Sketch {
         Constraint::new(CKind::PointAlongLine3, vec![e(s3), e(me2), Arg::Num(-0.2)]),
         Constraint::new(CKind::PointAlongArc3, vec![e(qe), e(ka), Arg::Num(0.7)]),
         Constraint::new(CKind::PointAlongArc3, vec![e(s3), e(ka), Arg::Num(0.2)]),
+        // a line out of a round's plane touching it at a point of it (#363 S4): at an arc's end,
+        // and at a point of a circle drawn in a stated view
+        Constraint::new(CKind::TangentCircleAt3, vec![e(ka), e(me1), e(EntRef::point(kas))]),
+        Constraint::new(CKind::TangentCircleAt3, vec![e(EntRef::circle(kb)), e(me2), e(qe)]),
         Constraint::point_on_spline(&sk, pe, spe),
         Constraint::point_on_spline(&sk, qe, spe),
         Constraint::spline_tangent_line(&sk, spe, le1),

@@ -144,6 +144,45 @@ impl Sketch {
         ri
     }
 
+    /// **A circle's gauge taken again where it stands** (#363 S6): each axis a circle about a
+    /// point in space holds its plane's turn by (`round_gauges`) that has come within 45° of the
+    /// circle's normal is turned onto the plane's `v` as it now stands, made square to its `u` —
+    /// so the row it gauges by still holds, exactly, and the turn is held a quarter turn from
+    /// where the row would lose its rank.  A fixed axis can serve no normal it lies along, and
+    /// none serves every normal (a field of tangents on the sphere vanishes somewhere), so the
+    /// gauge follows the normal instead, taken where each solve ends (`System::solve`); within
+    /// one the rows stay consistent where it is passed — `u ⟂ n` then says `u ⟂ e` — so a solve
+    /// never fails on it.  Whether any was turned.
+    pub fn retake_round_gauges(&mut self) -> bool {
+        use crate::space::{cross, dot, norm, sub};
+        let mut turned = false;
+        for (&g, &[u, v]) in &self.round_gauges.clone() {
+            if g.max(u).max(v) as usize >= self.axes.len() {
+                continue;
+            }
+            let read = |a: u32| self.axes[a as usize].d.map(|p| self.params[p as usize].value);
+            let (du, dv, dg) = (read(u), read(v), read(g));
+            let n = cross(du, dv);
+            let (nn, nu, ng) = (norm(n), norm(du), norm(dg));
+            if nn <= 0.0 || nu <= 0.0 || ng <= 0.0
+                || dot(n, dg).abs() <= std::f64::consts::FRAC_1_SQRT_2 * nn * ng
+            {
+                continue;
+            }
+            let uh = du.map(|x| x / nu);
+            let e = sub(dv, uh.map(|x| x * dot(dv, uh)));
+            let ne = norm(e);
+            if ne <= 0.0 {
+                continue;
+            }
+            for (k, p) in self.axes[g as usize].d.into_iter().enumerate() {
+                self.params[p as usize].value = e[k] / ne;
+            }
+            turned = true;
+        }
+        turned
+    }
+
     /// Free axis `i`'s place and hold it to the foot of the perpendicular from the origin (the
     /// intrinsic `axis_foot` row) — once a relation reads where the axis is, and not before: an axis
     /// read only as a direction has a place no equation mentions, which would be counted as two

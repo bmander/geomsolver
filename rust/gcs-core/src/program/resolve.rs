@@ -246,6 +246,18 @@ pub(super) fn follow(sk: &Sketch, mut e: EntRef, path: &[Seg]) -> Result<EntRef,
             };
             continue;
         }
+        // an arc a chain walks from its end is drawn from there (#363 S4), and its `start` is
+        // still the point written as its start
+        let swapped;
+        let f = match f.text.as_str() {
+            "start" | "end" if e.kind == EntKind::Arc
+                && sk.walked_back.contains(&(e.i() as u32)) =>
+            {
+                swapped = crate::syntax::Name::new(if f.text == "start" { "end" } else { "start" });
+                &swapped
+            }
+            _ => f,
+        };
         let fields = e.kind.fields();
         let mut at = 0usize;
         let mut found = None;

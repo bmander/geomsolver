@@ -554,6 +554,12 @@ impl Constraint {
                     pt_at(a.center), pt_at(a.start), pt_at(a.end), vec![self.args[2].param()]]
                     .concat()
             }
+            // the point of contact, the centre and the line's ends in space, then the round's
+            // plane's axes
+            CKind::TangentCircleAt3 => {
+                let v = self.attitude_read(sk).expect("a circle in space is drawn in a plane");
+                [self.lifted_columns(sk), plane_columns(sk, v)[3..].to_vec()].concat()
+            }
             CKind::Radius => vec![rad(0)],
             CKind::EqualRadius | CKind::AnnularDistance => vec![rad(0), rad(1)],
             CKind::TangentLineCircle => [ln(0), centre(1), vec![rad(1)]].concat(),
@@ -660,13 +666,15 @@ impl Constraint {
             | CKind::TracedSurfaceTangentAt
             | CKind::TracedNormalAt
             | CKind::TracedPlaneAt
-            | CKind::TracedCurvatureAt => {
+            | CKind::TracedCurvatureAt
+            | CKind::TracedCentreAt => {
                 let lift = |p: usize| {
                     let k = sk.lift_of(p).expect("a relation in space is lifted at the add");
                     sk.lifts[k].x.to_vec()
                 };
                 let (lead, place) = match self.kind {
                     CKind::PointOnTraced => (lift(e(0).i()), 2),
+                    CKind::TracedCentreAt => (lift(e(1).i()), 3),
                     CKind::TracedPlaneAt => (plane_columns(sk, e(1).i())[3..].to_vec(), 3),
                     CKind::TracedCurvatureAt => {
                         let c = sk.round_center(e(1));
@@ -832,6 +840,9 @@ impl Constraint {
             | CKind::PlaneDistance => Vec::new(),
             CKind::LineOnPlane | CKind::LineOnAxis => ends(0).to_vec(),
             CKind::PointOnCircle3 | CKind::PointAlongArc3 => vec![e(0).i(), sk.round_center(e(1))],
+            CKind::TangentCircleAt3 => {
+                [vec![e(2).i(), sk.round_center(e(0))], ends(1).to_vec()].concat()
+            }
             CKind::PointOnExtrusion | CKind::PointOnAxis => vec![e(0).i()],
             // what it states about, then every point its envelope's source and motion read (#283)
             CKind::PointOnEnvelope
@@ -863,10 +874,12 @@ impl Constraint {
             | CKind::TracedSurfaceTangentAt
             | CKind::TracedNormalAt
             | CKind::TracedPlaneAt
-            | CKind::TracedCurvatureAt => {
+            | CKind::TracedCurvatureAt
+            | CKind::TracedCentreAt => {
                 let lead = match self.kind {
                     CKind::PointOnTraced => vec![e(0).i()],
                     CKind::TracedCurvatureAt => vec![sk.round_center(e(1))],
+                    CKind::TracedCentreAt => vec![e(1).i()],
                     CKind::TracedPlaneAt => Vec::new(),
                     _ if e(1).kind == EntKind::Line => ends(1).to_vec(),
                     _ => Vec::new(),
@@ -976,6 +989,7 @@ impl Constraint {
             CKind::PointOnCircle3 | CKind::PointAlongArc3 => {
                 sk.plane_of(sk.round_center(self.args[1].ent()))
             }
+            CKind::TangentCircleAt3 => sk.plane_of(sk.round_center(self.args[0].ent())),
             _ => None,
         }
     }

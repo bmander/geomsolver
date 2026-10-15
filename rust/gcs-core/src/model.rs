@@ -178,6 +178,35 @@ pub struct Sketch {
     /// initial value — but what the family integrates the station by (`solid::rated`).  Grafted
     /// with the entities they name.
     pub rates: Vec<RateRow>,
+    /// **The parameters a chain's later leg carries** (#363 S4): a station that states a rate,
+    /// drawn on a link of a chain past the first, has no home there — its frame is the one the
+    /// last leg's flow carried across the joint, which nothing in the drawing knows — so its rows
+    /// are `Constraint::carried` and its own parameters held where they were seeded, these, until
+    /// its family's part frees them (`solid::family::part_of`).  Set by the elaborator
+    /// (`program::solids::carry_legs`).
+    pub carried: std::collections::BTreeSet<u32>,
+    /// **The splines drawn over points in space** (#363 S3), each to the curve traced in space it
+    /// is (`traced::RowKind::Spline`): its name reads the traced curve, and the spline itself,
+    /// kept so no index moves, is no primitive — neither drawn nor grafted.  Set by the
+    /// elaborator (`program::entities::splines_in_space`).
+    pub spline_traced: std::collections::BTreeMap<u32, u32>,
+    /// **The points an arc over points in space is drawn over** (#363 S6), each to the point in
+    /// space it stands for: the arc's own centre, start and end in the plane it minted, tied to
+    /// the points written (`program::entities::arcs_in_space`), so a chain's links still meet
+    /// where they were threaded.
+    pub stands_for: std::collections::BTreeMap<u32, u32>,
+    /// **The axes a circle about a point in space is gauged by** (#363 S6), each to the `u` and
+    /// `v` axes of the plane it minted: the plane's turn about the circle's normal is held square
+    /// to it, and it is taken again where a solve ends (`retake_round_gauges`), so a normal that
+    /// swings onto it never leaves that turn unheld at a solved pose.  Set by the elaborator
+    /// (`program::entities::circles_in_space`).
+    pub round_gauges: std::collections::BTreeMap<u32, [u32; 2]>,
+    /// **The arcs a chain walks from their end** (#363 S4), each drawn from there: its start and
+    /// end swapped and its turn reversed, the same arc, so the chain enters it at its start and a
+    /// family runs it forward.  A name still reads the points as written: `k.start` is the end it
+    /// is drawn to (`program::resolve::follow`).  Set by the elaborator
+    /// (`program::entities::walked_back`, read by `arcs_in_space`).
+    pub walked_back: std::collections::BTreeSet<u32>,
     /// Each free curve's energy as `settle_variational` last read it: its statements, pegs and
     /// whether its length is free.  Derived state, never saved.
     pub variational: Vec<crate::variational::Energy>,

@@ -54,7 +54,7 @@ const FRAME_PX = { plain: 1, current: 2.5 };
 const EDGE_PX = { picked: 3.5, hover: 2.5 };
 
 /** The kinds that stand in space and on no one plane, so are this renderer's to draw. */
-const IN_SPACE = new Set(['axis']);
+const IN_SPACE = new Set(['axis', 'traced']);
 
 /** What the scene was built from, so a repaint that changes nothing rebuilds nothing.  Between
  *  edits mostly the camera moves — and rebuilding a mesh on every pointer move is the one way to

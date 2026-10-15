@@ -538,12 +538,18 @@ component OnSpline(g: spline, up: axis, s: Scalar) {
   n square(up: up) tl
 }
 
-// The plane square to any path `g` — a line, an arc, a spline or a traced curve — where its
-// parameter is `s`, its `v` along `up`: `OnSpline`'s statements over a `path`.  A line's and an
-// arc's `s` is the fraction of its run (an arc's by angle), a spline's its own parameter.  Given a
+// The plane square to any path `g` — a line, an arc, a spline, a curve, or a curve traced in
+// space (#363) — where its parameter is `s`: `OnSpline`'s place and tangent over a `path`, and the
+// rotation-minimising frame along it, `Minimal`'s.  A line's and an arc's `s` is the fraction of
+// its run (an arc's by angle), a spline's its own parameter, a traced curve's its formal.  Given a
 // named open chain of lines and arcs, a family runs it link by link, `s` from 0 to the count of
-// its links (#243 L4).  With `up` the normal of the plane `g` is drawn in, the frame turns only as
-// the guide does — the rotation-minimising frame, its binormal held.
+// its links (#243 L4), the frame carried across each joint.  The frame is integrated along the
+// running number from where its family stands drawn, its home, where `n.v` leans toward `up` and
+// `n.u` is square to it; from there its axes turn only as the guide makes them (`n.u`'s rate has
+// no part along `n.v`).  Over a guide in one plane with `up` its normal that is the frame holding
+// `v` along `up`; along a twisted guide `up` is read at the home alone, so the plane stays square
+// to the guide where an `up` held everywhere would lean it.  Give it the family's running number
+// as `s`.
 component On(g: path, up: axis, s: Scalar) {
   m := point
   m coincident(t == s) g
@@ -553,7 +559,13 @@ component On(g: path, up: axis, s: Scalar) {
   length(10mm) tl
   n := plane(u: hint(dir: up, turn: -90deg, about: tl), v: hint(dir: up))
   n.origin coincident m
-  n square(up: up) tl
+  n.u perpendicular tl
+  n.v perpendicular tl
+  n.u perpendicular n.v
+  rate(n.u over s) perpendicular n.v
+  initially {
+    n.u perpendicular up
+  }
 }
 
 // A screw's station (#243 L6): the frame of `base` turned `360deg · turns · s` about its normal
@@ -626,6 +638,28 @@ component Minimal(n: plane, up: axis, s: Scalar) {
   initially {
     f.u perpendicular up
   }
+}
+
+// Frenet's frame of a station on a curve traced in space (#363 S5): the plane square to `g`
+// where its formal is `s`, `u` toward the centre of curvature there — the principal normal, its
+// sense the centre's, no seed's — and `v` the binormal, so the plane faces the way the curve runs.
+// Along a helix it is `OnHelix`'s plane, `u` the other way; it turns with the curve's torsion,
+// where `Minimal`'s does not.  A curve with no curvature somewhere (a straight run, an
+// inflection) has no centre there, and the station is refused where that happens.
+component Frenet(g: path, s: Scalar) {
+  m := point
+  m coincident(t == s) g
+  q := point hint(at: m, along: g, by: 0.1)
+  tl := line(m, q)
+  g tangent(at: m) tl
+  length(10mm) tl
+  c := point
+  g curvature(at: m) c
+  nl := line(m, c)
+  n := plane(u: nl, v: hint(dir: tl, turn: -90deg, about: nl))
+  n.origin coincident m
+  n.v perpendicular tl
+  n.v perpendicular n.u
 }
 
 // A station with no guide (#243 L7): the plane through the places at `s` on three rails — a loft

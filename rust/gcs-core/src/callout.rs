@@ -109,6 +109,7 @@ macro_rules! undrawn {
             | CKind::Parallel3
             | CKind::PointOnPlane
             | CKind::PointOnCircle3
+            | CKind::TangentCircleAt3
             | CKind::PointOnLine3
             | CKind::EqualLength3
             | CKind::Midpoint3
@@ -153,6 +154,7 @@ macro_rules! undrawn {
             | CKind::TracedNormalAt
             | CKind::TracedPlaneAt
             | CKind::TracedCurvatureAt
+            | CKind::TracedCentreAt
             // a projection in space draws what `project` draws: nothing
             | CKind::ProjectSolved
             // nor does a point carried by a map (#357): its pairs are points, not numbers

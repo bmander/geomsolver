@@ -11,7 +11,8 @@ pub(super) fn chain_face(c: &crate::syntax::NamedChain) -> Decl {
         seed: Vec::new(), seed_text: Vec::new(), seed_spans: Vec::new(),
         unseeded: false, seed_explicit: Vec::new(), closed: false, knots: None, weights: None,
         curve: None, computed: None, class: Classes::default(), seed_at: None,
-        seed_names: Vec::new(), sweep: None, motion: None, angular_span: None, membership: crate::syntax::Membership::default(),
+        seed_names: Vec::new(), sweep: None, motion: None, angular_span: None,
+        membership: crate::syntax::Membership::default(), normal: None, sense: None,
     }
 }
 
@@ -35,7 +36,13 @@ pub(super) fn validate_chain(
             ));
             return false;
         };
-        if previous.is_some_and(|p| p != start) {
+        // an arc over points in space is drawn over points of its own, each standing for the
+        // point it was threaded at (#363 S6)
+        let same = |p: u32, q: u32| {
+            let at = |x: u32| sk.stands_for.get(&x).copied().unwrap_or(x);
+            at(p) == at(q)
+        };
+        if previous.is_some_and(|p| !same(p, start)) {
             diags.push(Diag::within(
                 Code::E080, r.span, st.id,
                 format!("`{}` does not share the preceding link's endpoint in chain `{}`",
@@ -274,13 +281,18 @@ fn loop_items(
                 return None;
             }
             _ => {
+                // a curve traced in space — a spline over points in space among them (#363 S3)
+                // — is drawn in no plane, and a face is
+                let what = match e.kind {
+                    EntKind::Traced => "a curve in space, drawn in no plane".to_string(),
+                    k => k.a(),
+                };
                 report(Code::E080,
                     r.span,
                     format!(
                         "a face is bounded by lines, arcs, circles, splines and stretches of \
-                         curves, and turns at points; `{}` is {}",
+                         curves, and turns at points; `{}` is {what}",
                         r.root.text,
-                        e.kind.a()
                     ),
                 );
                 return None;

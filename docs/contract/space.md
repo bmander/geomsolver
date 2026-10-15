@@ -39,8 +39,29 @@ std.front`), or the structural count sees a redundancy. W113 warns of two planes
 another. `views::place`
 settles axes and plane origins before the solve, round by round with seed settlement; they stay
 unknowns. `p distance(d, along: u) P` is an ordinate from `P.origin` along `P.u` (`CKind::Ordinate`,
-in space across planes with no callout); `hint(at: P, (x, y))` seeds in P's coordinates. Circles, arcs
-and splines over a point in space are E060, faces E080. `use std` gives axes
+in space across planes with no callout); `hint(at: P, (x, y))` seeds in P's coordinates. Circles and
+arcs over a point in space are drawn in a plane they mint (#363 S6, [0.127];
+`entities::arcs_in_space`, `circles_in_space`, in `holds`, before E060 is asked): an arc the plane
+through its centre and ends (axes `u` toward the start and `v` in the plane, its normal
+`(s − c) × (e − c)` — the short way round; collinear, E060), a circle the plane through its centre
+square to its `normal:` (`Decl::normal`, parsed for a circle as a spline's `through:` is, rescoped
+by `rewrite_decl`, read as `Deferred::Normal` once the axes are built; none, E060 saying to give
+one; on a circle drawn in a plane, E040).  The round is drawn over points of its own there — the
+centre the plane's origin, an arc's start on the plane's `u` (a gauge, its `y` held), its end free
+— each tied to the point written by an intrinsic `Coincident3` and recorded in
+`Sketch::stands_for` (so a chain's links still meet: `solids::faces::validate_chain`), the axes
+held square (`Perpendicular3`), and a circle's turn about its normal held square to the world axis
+least along it (a held hidden axis, `Sketch::round_gauges`), a gauge.  No one axis serves every
+normal (a field of tangents on the sphere vanishes somewhere), so the gauge follows the normal:
+where a solve ends (`System::solve`, so drags and the plan solver too), a gauge within 45° of its
+normal is turned onto the plane's `v` as it stands, square to `u`, its row still holding
+(`Sketch::retake_round_gauges`); within a solve the rows stay consistent where the normal passes
+it (`u ⟂ n` says `u ⟂ e`), so a solved circle is never left a freedom it does not have
+(`a_circles_gauge_follows_a_normal_that_swings_onto_it`).  So the round is an arc or a circle in a plane: its
+radius, its contacts, a chain's joints, a face swept from it.  A spline there is a curve traced in
+space ([0.126], `curves.md`); faces E080.  `tests/space_paths.rs`: the bent pipe with no plane
+written, its tube at Pappus to 1e-9 and each bend's plane; a disc swept from a circle square to a
+line at πr²h; the refusals. `use std` gives axes
 `std.x/y/z/back`, planes `std.front` (x, z), `std.top` (x, y), `std.side` (y, z), `std.up` (z,
 back), and `std.origin` (in front, fixed) — flattened after the document, present whenever the
 document says `use std` (the workspace offers them as places to draw). `std.Turned(o, t)` is a
@@ -111,7 +132,11 @@ ring's, or claimed. **A point on a curve drawn in a plane is in it** (#249): `m 
 allowed), `g` a spline or a traced curve (`planes::drawn_plane`, not an extrusion) drawn in `P`, draws a
 point in space in `P`, and `g tangent l` (either way round, `at:` too, #251) a line's free ends —
 as does a line touching an arc or a circle at a point of it (`TangentCircleAt`, #243 L4: `std.On`
-over an arc) —
+over an arc) — and where the line's ends are drawn elsewhere already (a chain's straight between
+bends in two planes), the tangency is the one in space, `TangentCircleAt3` (#363 S4, [0.124];
+`reading::in_space`, from `TangentCircleAt`, a joint's `TangentArcLine` or `TangentLineCircleAt`):
+two rows, `r̂·(B − A)` and `n̂·(B − A)`, the line square to the radius at the point and in the
+round's plane —
 read off the kind `relations::settle` gives, so a word the operands do not take draws nothing; the
 statement stays the 2D contact. A
 kept point is E062 naming what keeps it (`kept`'s cause), its statement returned apart from the

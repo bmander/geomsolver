@@ -1805,8 +1805,11 @@ impl Part {
             if wall(e) {
                 // a held entity is followed no further, but it is rebuilt over what it is made of
                 // — a held spline over its control points (#134) — and those are held with it, so
-                // they stop here in turn, each with its plane.  A plane's own are kept below.
-                if e.kind != EntKind::Plane && !sk.entity_params(e).is_empty() {
+                // they stop here in turn, each with its plane.  A plane's own are kept below.  A
+                // body traced in space owns no parameter and is read over what its component was
+                // given, so a station standing on one keeps that too (#363 S1).
+                let made_of = !sk.entity_params(e).is_empty() || e.kind == EntKind::Traced;
+                if e.kind != EntKind::Plane && made_of {
                     for c in sk.children(e) {
                         if keep.insert(c) {
                             queue.push(c);

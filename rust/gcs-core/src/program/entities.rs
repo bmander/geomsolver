@@ -159,6 +159,13 @@ pub(super) fn build(
     let kids = children(sk, res, d, st, diags, anon, deferred)?;
     let idx = make(sk, d, st, &kids, diags, deferred)?;
     let e = EntRef::new(d.kind, idx);
+    if d.kind == EntKind::Arc && d.sense == Some(crate::syntax::Sense::Cw) {
+        deferred.push(Deferred::Clockwise { arc: idx, span: st.span, stmt: st.id });
+    }
+    if let (EntKind::Circle, Some(n)) = (d.kind, &d.normal) {
+        deferred.push(Deferred::Normal { circle: idx, normal: n.clone(), span: st.span,
+                                         stmt: st.id });
+    }
     set_class(sk, e, d.class.clone());
     defer_seeds(sk, d, st, e, deferred);
     Some(e)
@@ -673,13 +680,302 @@ pub(super) fn places(sk: &mut Sketch, deferred: &[Deferred], diags: &mut Vec<Dia
     }
 }
 
+/// **A spline over points in space is a curve traced in space** (#363 S3): `k := spline(a, b, c,
+/// d)` with a control point no plane reaches is the body `X = Σ Rᵢ(u)·Pᵢ` over the control points'
+/// lifts (`traced::RowKind::Spline`), its formal the spline's parameter over its domain — so its
+/// contacts are a traced curve's, exact, it is a `path`, and `spline(through: …)` over corners in
+/// space is the cubic through them.  A representation, never a meaning: the curve is the spline's
+/// own, its knots and weights.  Its name reads the traced curve, and the spline, kept so no index
+/// moves, is no primitive (`Sketch::spline_traced`).  Asked once every membership is in.
+pub(super) fn splines_in_space(sk: &mut Sketch, res: &mut Resolver, map: &mut super::SourceMap) {
+    for i in 0..sk.splines.len() {
+        let s = &sk.splines[i];
+        if sk.spline_traced.contains_key(&(i as u32))
+            || s.ctrl.iter().all(|&p| sk.plane_of(p as usize).is_some()) {
+            continue;
+        }
+        let n = s.ctrl.len();
+        let consts = [s.knots.clone(), s.weights.clone().unwrap_or_else(|| vec![1.0; n])].concat();
+        // the variable table: the parameter, the control points' lifts, then the point
+        let n_outer = 1 + 3 * n;
+        let vars: Vec<String> = (0..n_outer).map(|k| format!("#v{k}")).collect();
+        let zero = crate::tape::Tape::compile_wide(
+            &crate::expr::Ast::Num(0.0, crate::units::Dim::SCALAR), &vars)
+            .expect("a number always compiles");
+        let row = crate::traced::Row { kind: crate::traced::RowKind::Spline,
+            cols: (0..n_outer as u32 + 3).collect(), consts };
+        let seeds = vec![zero.clone(), zero.clone(), zero];
+        let Ok(body) = crate::traced::Body::new(1, n_outer, 3 * n, 3, 0, Vec::new(), seeds,
+                                                vec![row], Default::default())
+        else { continue };
+        let (lo, hi) = curve::domain(sk, i);
+        let e = EntRef::spline(i);
+        let name = map.name_of(e).cloned().unwrap_or_else(|| io::entity_name(e));
+        let t = crate::model::TracedE {
+            body, args: s.ctrl.iter().map(|&p| EntRef::point(p as usize)).collect(),
+            values: Vec::new(), domain: [[lo, hi], [0.0, 0.0]], home: [0.5 * (lo + hi), 0.0],
+            name, class: s.class.clone(),
+        };
+        let traced = EntRef::new(EntKind::Traced, sk.traced.len());
+        sk.traced.push(t);
+        sk.spline_traced.insert(i as u32, traced.i() as u32);
+        for x in res.of.values_mut().filter(|x| **x == e) {
+            *x = traced;
+        }
+        map.moved(e, traced);
+    }
+}
+
+/// **An arc over points in space is drawn in the plane through them** (#363 S6): `k := arc(center:
+/// c, start: s, end: e)` with a point no plane reaches mints that plane — its origin at `c`, its
+/// `u` toward `s`, its normal `(s − c) × (e − c)`, so the arc is the short way round, less than a
+/// half turn — and draws the arc there over points of its own: its centre the plane's origin, its
+/// start on the plane's `u` (a gauge, the plane's turn in itself), its end free, each tied to the
+/// point in space it is (`Coincident3`, intrinsic), and the plane's axes held square.  The points
+/// written stay where they stand — held in space, or anywhere — and the arc is an arc: its radius,
+/// its contacts, a chain's joints and a family along it are an arc's in a plane.  Three points in
+/// a line take no one plane, and are refused (E060).  Asked with the splines, before E060 is.
+///
+/// **An arc drawn in a plane said to turn clockwise**, `arc(center: c, sense: cw)` (#363 S4), is
+/// drawn the same way in that plane turned over — its normal the plane's reversed — so it runs
+/// counter-clockwise there from its start: a chain in a plane enters every link at its start, and
+/// turns right at such an arc.  Its ends a half turn apart take no one plane either (E060); one
+/// over points in space turns as its points stand, and `sense:` there is refused (E040).
+///
+/// **An arc a chain walks from its end** (`back`, `walked_back`) is drawn from there: its start
+/// and end swapped and its turn reversed — in a plane, counter-clockwise becomes clockwise and
+/// the other way; in space the plane through its points faces the other way — the same arc, so
+/// the chain enters it at its start.
+pub(super) fn arcs_in_space(sk: &mut Sketch, map: &super::SourceMap, deferred: &[Deferred],
+                            back: &BTreeSet<usize>, diags: &mut Vec<Diag>) {
+    use crate::constraints::{CKind, Constraint};
+    use crate::space::{cross, dot, norm, sub};
+    let clockwise: BTreeMap<usize, (Span, StmtId)> = deferred.iter().filter_map(|d| match d {
+        Deferred::Clockwise { arc, span, stmt } => Some((*arc, (*span, *stmt))),
+        _ => None,
+    }).collect();
+    for i in 0..sk.arcs.len() {
+        let walked_back = back.contains(&i);
+        if walked_back {
+            let a = &mut sk.arcs[i];
+            std::mem::swap(&mut a.start, &mut a.end);
+            sk.walked_back.insert(i as u32);
+        }
+        let a = sk.arcs[i].clone();
+        let pts = [a.center, a.start, a.end].map(|p| p as usize);
+        let planar = pts.iter().all(|&p| sk.plane_of(p).is_some());
+        let cw = clockwise.get(&i);
+        if let (false, Some(&(span, stmt))) = (planar, cw) {
+            diags.push(Diag::within(Code::E040, span, stmt, "an arc over points in space turns \
+                the way its points stand, the short way round: `sense:` says which way an arc \
+                drawn in a plane turns".to_string()));
+            continue;
+        }
+        // walked from its end, an arc in a plane turns the other way from there
+        if planar && cw.is_some() == walked_back {
+            continue;
+        }
+        let arc = EntRef::arc(i);
+        let [c, s, e] = pts.map(|p| sk.world_point(p));
+        let (to_s, to_e) = (sub(s, c), sub(e, c));
+        // in space the normal its points make; clockwise in a plane, the plane's reversed
+        let n = match sk.plane_of(pts[0]).filter(|_| planar) {
+            Some(pl) => sk.basis(pl).normal().map(|x| -x),
+            None => cross(to_s, to_e),
+        };
+        if !(norm(cross(to_s, to_e)) > 1e-9 * norm(to_s) * norm(to_e)) {
+            let Some(site) = map.site_of(arc) else { continue };
+            let said = if planar {
+                "an arc turning clockwise — said to, or walked by a chain from its end — is drawn \
+                 in its plane turned over, through its centre and its ends, and these stand in a \
+                 line — a half turn, either way round: draw two arcs"
+            } else {
+                "an arc over points in space is drawn in the plane through its centre and its \
+                 ends, and these stand in a line, which no one plane is through: draw it `in` one"
+            };
+            diags.push(Diag::within(Code::E060, site.span, site.stmt, said.to_string()));
+            continue;
+        }
+        let name = map.name_of(arc).cloned().unwrap_or_else(|| io::entity_name(arc));
+        let u = to_s.map(|x| x / norm(to_s));
+        let w = cross(n, to_s);
+        let v = w.map(|x| x / norm(w));
+        let (ua, va, pi, origin) = round_plane(sk, &name, [u, v], c);
+        let start = sk.point(norm(to_s), 0.0, false, &format!("{name}#start"));
+        sk.params[sk.points[start].y as usize].fixed = true;
+        let end = sk.point(dot(to_e, u), dot(to_e, v), false, &format!("{name}#end"));
+        for p in [start, end] {
+            sk.set_plane(p, Some(pi));
+        }
+        sk.arcs[i].center = origin as u32;
+        sk.arcs[i].start = start as u32;
+        sk.arcs[i].end = end as u32;
+        let r = sk.arcs[i].radius as usize;
+        sk.params[r].value = norm(to_s);
+        // the arc's own rows, its ends on it, over its new ends
+        for c in sk.constraints.iter_mut().filter(|c| c.intrinsic && c.kind == CKind::PointOnCircle
+            && c.args[1].ent() == arc) {
+            let at = c.args[0].ent().i();
+            let to = match at {
+                x if x == a.start as usize => start,
+                x if x == a.end as usize => end,
+                _ => continue,
+            };
+            c.args[0] = crate::constraints::Arg::Ent(EntRef::point(to));
+        }
+        let ties = [(origin, pts[0]), (start, pts[1]), (end, pts[2])];
+        for &(p, q) in &ties {
+            sk.stands_for.insert(p as u32, q as u32);
+        }
+        let mut rows: Vec<Constraint> = ties.iter().map(|&(p, q)| coincident3(p, q)).collect();
+        rows.push(Constraint::two_line(CKind::Perpendicular3, EntRef::new(EntKind::Axis, ua),
+                                       EntRef::new(EntKind::Axis, va)));
+        add_intrinsic(sk, rows);
+    }
+}
+
+/// **The arcs a chain walks from their end** (#363 S4): a chain enters each link where the one
+/// before it leaves, and an arc it enters at its end — its end shared with the link before, or,
+/// first, its start with the link after — it walks from there to its start.  Each such arc, for
+/// `arcs_in_space` to draw from its end.  An arc two chains walk opposite ways is refused (E080):
+/// it is drawn one way.  A chain whose links do not meet is left to `solids::faces::
+/// validate_chain`, which says so.
+pub(super) fn walked_back(sk: &Sketch, res: &Resolver, diags: &mut Vec<Diag>) -> BTreeSet<usize> {
+    let (mut back, mut forward) = (BTreeSet::new(), BTreeSet::new());
+    for c in res.chains.values() {
+        let links: Option<Vec<(EntRef, [u32; 2])>> = c.links.iter().map(|r| {
+            let e = res.entity(sk, r).filter(|e| e.i() < sk.count(e.kind))
+                .filter(|e| matches!(e.kind, EntKind::Line | EntKind::Arc))?;
+            crate::model::edge_ends(sk, e).map(|(s, t)| (e, [s, t]))
+        }).collect();
+        let Some(links) = links else { continue };
+        let meets = |p: u32, k: usize| links.get(k).is_some_and(|(_, ends)| ends.contains(&p));
+        let mut entry = None;
+        for (r, &(e, [s, t])) in c.links.iter().zip(&links) {
+            let reversed = match entry {
+                None => e.kind == EntKind::Arc && meets(s, 1) && !meets(t, 1),
+                Some(p) if p == s => false,
+                Some(p) if p == t && e.kind == EntKind::Arc => true,
+                Some(_) => break,
+            };
+            let (mine, other) = if reversed { (&mut back, &forward) } else { (&mut forward, &back) };
+            if e.kind == EntKind::Arc {
+                if other.contains(&e.i()) {
+                    diags.push(Diag::new(Code::E080, r.span, None, format!("`{}` is walked \
+                        from its start in one chain and from its end in another, and an arc is \
+                        drawn one way", crate::syntax::ref_text(r))));
+                }
+                mine.insert(e.i());
+            }
+            entry = Some(if reversed { s } else { t });
+        }
+    }
+    back.difference(&forward).copied().collect()
+}
+
+/// **A circle about a point in space stands square to its `normal:`** (#363 S6): `k := circle(
+/// center: o, normal: ax)` with `o` standing in space mints the plane through `o` square to `ax`
+/// — an axis, or a line read as one — and draws the circle there about its origin, tied to `o`
+/// (`Coincident3`, intrinsic), its axes square to the normal and to each other.  A circle has no
+/// turn of its own, so the plane's turn about the normal is a gauge, held square to the world's
+/// axis least along the normal where the circle is drawn.  A `normal:` of a circle drawn in a
+/// plane is refused, as one naming no direction is.
+pub(super) fn circles_in_space(
+    sk: &mut Sketch,
+    res: &Resolver,
+    map: &super::SourceMap,
+    deferred: &[Deferred],
+    diags: &mut Vec<Diag>,
+) {
+    use crate::constraints::{CKind, Constraint};
+    use crate::space::{cross, norm, sub};
+    for d in deferred {
+        let Deferred::Normal { circle, normal, span, stmt } = d else { continue };
+        let (i, c) = (*circle, sk.circles[*circle].center as usize);
+        if sk.plane_of(c).is_some() {
+            diags.push(Diag::within(Code::E040, *span, *stmt, "`normal:` stands a circle about a \
+                point in space square to an axis, and this one's centre is drawn in a plane, \
+                which is the plane it is drawn in".to_string()));
+            continue;
+        }
+        let axis = res.entity(sk, normal)
+            .filter(|e| matches!(e.kind, EntKind::Axis | EntKind::Line));
+        let dir = axis.map(|e| match e.kind {
+            EntKind::Axis => sk.axes[e.i()].d.map(|p| sk.params[p as usize].value),
+            _ => {
+                let l = &sk.lines[e.i()];
+                sub(sk.world_point(l.p2 as usize), sk.world_point(l.p1 as usize))
+            }
+        });
+        let (Some(axis), Some(dir)) = (axis, dir.filter(|d| norm(*d) > 0.0)) else {
+            diags.push(Diag::within(Code::E103, normal.span, *stmt, format!("`normal:` names the \
+                axis a circle stands square to, an axis or a line, and `{}` is none",
+                crate::syntax::ref_text(normal))));
+            continue;
+        };
+        let n = dir.map(|x| x / norm(dir));
+        let k = (0..3).min_by(|&a, &b| n[a].abs().total_cmp(&n[b].abs())).unwrap_or(0);
+        let mut e = [0.0; 3];
+        e[k] = 1.0;
+        let w = cross(n, e);
+        let u = w.map(|x| x / norm(w));
+        let v = cross(n, u);
+        let at = sk.world_point(c);
+        let name = map.name_of(EntRef::circle(i)).cloned()
+            .unwrap_or_else(|| io::entity_name(EntRef::circle(i)));
+        let (ua, va, _, origin) = round_plane(sk, &name, [u, v], at);
+        // the gauge: the world's axis least along the normal, held, and taken again where a
+        // solve leaves the normal near it (`Sketch::retake_round_gauges`)
+        let gauge = sk.axis(e, &format!("{name}#gauge"));
+        for &p in &sk.axes[gauge].d.clone() {
+            sk.params[p as usize].fixed = true;
+        }
+        sk.round_gauges.insert(gauge as u32, [ua as u32, va as u32]);
+        sk.circles[i].center = origin as u32;
+        sk.stands_for.insert(origin as u32, c as u32);
+        let ax = |a: usize| EntRef::new(EntKind::Axis, a);
+        add_intrinsic(sk, [coincident3(origin, c),
+            Constraint::two_line(CKind::Perpendicular3, ax(ua), axis),
+            Constraint::two_line(CKind::Perpendicular3, ax(va), axis),
+            Constraint::two_line(CKind::Perpendicular3, ax(ua), ax(va)),
+            Constraint::two_line(CKind::Perpendicular3, ax(ua), ax(gauge))]);
+    }
+}
+
+/// The plane a round over points in space is drawn in (#363 S6): its axes along `u` and `v`,
+/// through `at`, named under the round's `name` — its axes, the plane and its origin.
+fn round_plane(sk: &mut Sketch, name: &str, [u, v]: [[f64; 3]; 2], at: [f64; 3])
+    -> (usize, usize, usize, usize) {
+    let ua = sk.axis(u, &format!("{name}#plane.u"));
+    let va = sk.axis(v, &format!("{name}#plane.v"));
+    let pi = sk.plane(ua, va, at, &format!("{name}#plane"));
+    sk.set_plane_origin(pi, at);
+    (ua, va, pi, sk.planes[pi].origin as usize)
+}
+
+/// Points `p` and `q` one point in space.
+fn coincident3(p: usize, q: usize) -> crate::constraints::Constraint {
+    let mut c = crate::constraints::Constraint::coincident(EntRef::point(p), EntRef::point(q));
+    c.kind = crate::constraints::CKind::Coincident3;
+    c
+}
+
+/// Each of `rows` added as the drawing's own statement, no relation of the document's.
+fn add_intrinsic(sk: &mut Sketch, rows: impl IntoIterator<Item = crate::constraints::Constraint>) {
+    for mut c in rows {
+        c.intrinsic = true;
+        sk.add(c);
+    }
+}
+
 /// A circle, an arc and a spline are drawn in a plane: one over a point standing in space has
 /// none to be drawn in, and is refused at its declaration (E060).  Asked once every membership
 /// is in, so a point an `in` reaches later is in its plane by then.
 pub(super) fn drawn_in_planes(sk: &Sketch, map: &super::SourceMap, diags: &mut Vec<Diag>) {
     let curves = (0..sk.circles.len()).map(EntRef::circle)
         .chain((0..sk.arcs.len()).map(EntRef::arc))
-        .chain((0..sk.splines.len()).map(EntRef::spline))
+        .chain((0..sk.splines.len()).filter(|&i| !sk.spline_traced.contains_key(&(i as u32)))
+            .map(EntRef::spline))
         .chain((0..sk.curves.len()).filter(|&i| sk.curve_extremal(i)).map(|i| EntRef::new(EntKind::Curve, i)));
     for e in curves {
         let Some(&p) = sk.children(e).iter().find(|k| sk.plane_of(k.i()).is_none()) else { continue };
@@ -690,14 +986,19 @@ pub(super) fn drawn_in_planes(sk: &Sketch, map: &super::SourceMap, diags: &mut V
             site.span,
             site.stmt,
             format!(
-                "{} is drawn in a plane, and `{}` stands in space: draw it `in` one",
+                "{} is drawn in a plane, and `{}` stands in space: draw it `in` one{}",
                 match e.kind {
                     EntKind::Arc => "an arc",
                     EntKind::Circle => "a circle",
                     EntKind::Curve => "a free curve",
                     _ => "a spline",
                 },
-                who(p)
+                who(p),
+                if e.kind == EntKind::Circle {
+                    ", or stand it square to an axis, `circle(center: o, normal: ax)`"
+                } else {
+                    ""
+                }
             ),
         ));
     }
@@ -807,6 +1108,12 @@ pub(super) enum Deferred {
     /// A point the source wrote no seed for, started where a minted child is (`scatter`): one a
     /// step may place instead (`walk_seeds`, #330).
     Scattered { point: usize },
+    /// A circle's `normal:` (#363 S6): the axis it stands square to, read where its centre
+    /// stands in space (`circles_in_space`), once every axis is built.
+    Normal { circle: usize, normal: crate::syntax::Ref, span: Span, stmt: StmtId },
+    /// An arc said to turn clockwise from its start, `sense: cw` (#363 S4): drawn in its plane
+    /// turned over (`arcs_in_space`).
+    Clockwise { arc: usize, span: Span, stmt: StmtId },
 }
 
 /// The seed a dotted name reads: `pin.x`, `k.center.y`, `base.r`, `e.b` — `dotted` as the
@@ -1010,7 +1317,8 @@ pub(super) fn settle_deferred(
                 let r = seed_eval(sk, res, text, names).map(|v| seeds.write(sk, param, v));
                 (*span, *stmt, r.map_err(|e| format!("`{text}`: {e}")))
             }
-            Deferred::Along { .. } | Deferred::Height { .. } | Deferred::Scattered { .. } => {
+            Deferred::Along { .. } | Deferred::Height { .. } | Deferred::Scattered { .. }
+            | Deferred::Normal { .. } | Deferred::Clockwise { .. } => {
                 continue
             }
             Deferred::Radius { arc } => {
@@ -1156,11 +1464,11 @@ impl Step {
 }
 
 /// The step a place takes from `e`: toward a point (`toward:`), a line's run (`along:` a line),
-/// or along any other path (`along:` an arc, a circle, a spline, a traced curve, #243 L4) — its
-/// rate along its own run where `e` meets it (the foot of `e` on it, within its run), as a
-/// line's run is its rate from `p1` to `p2`: an arc's turned by its sweep and a circle's by a
-/// whole turn, counter-clockwise, a spline's and a curve's by its parameter.  `None` where it
-/// takes no step.
+/// or along any other path (`along:` an arc, a circle, a spline, a curve, #243 L4, or a curve
+/// traced in space, #363 S1) — its rate along its own run where `e` meets it (the foot of `e` on
+/// it, within its run), as a line's run is its rate from `p1` to `p2`: an arc's turned by its
+/// sweep and a circle's by a whole turn, counter-clockwise, a spline's and a curve's by its
+/// parameter, a traced curve's by its formal.  `None` where it takes no step.
 fn step_ends(sk: &Sketch, res: &Resolver, e: EntRef, a: &AtRef)
     -> Result<Option<Step>, String> {
     Ok(match (&a.toward, &a.along) {
@@ -1177,15 +1485,16 @@ fn step_ends(sk: &Sketch, res: &Resolver, e: EntRef, a: &AtRef)
                 EntKind::Line => {
                     Some(Step::Between(sk.lines[l.i()].p1 as usize, sk.lines[l.i()].p2 as usize))
                 }
-                EntKind::Arc | EntKind::Circle | EntKind::Spline | EntKind::Curve => {
+                k if matches!(k, EntKind::Arc | EntKind::Circle | EntKind::Spline | EntKind::Curve)
+                    || super::relations::traced_curve(sk, l) => {
                     if e.kind != EntKind::Point {
                         return Err("a step along a path is taken from a point".to_string());
                     }
                     Some(Step::Along(rate_along(sk, l, sk.world_point(e.i()))?))
                 }
-                k => {
+                _ => {
                     return Err(format!("a step is taken along a line, not {}, or along a path",
-                                       k.a()))
+                                       super::relations::said_kind(l)))
                 }
             }
         }
@@ -1194,8 +1503,17 @@ fn step_ends(sk: &Sketch, res: &Resolver, e: EntRef, a: &AtRef)
 }
 
 /// How path `g` runs where the point `w` (in space) meets it: its rate along its own run at the
-/// foot of `w` on it, in space (see `step_ends`).
+/// foot of `w` on it, in space (see `step_ends`) — a traced curve's `d[0]` at its nearest place.
 fn rate_along(sk: &Sketch, g: EntRef, w: [f64; 3]) -> Result<[f64; 3], String> {
+    if g.kind == EntKind::Traced {
+        use crate::traced::{place_of, reading, Need};
+        let at = place_of(sk, g.i(), w).ok_or("the curve has no points yet")?;
+        let d = reading(sk, g.i(), at, Need::Tangent).ok_or("the curve has no run there")?.d[0];
+        if !d.iter().all(|v| v.is_finite()) || crate::space::norm(d) <= 1e-12 {
+            return Err("the path does not run there yet".to_string());
+        }
+        return Ok(d);
+    }
     let view = super::planes::drawn_plane(sk, g);
     let basis = view.map_or(crate::plane::Basis::page(), |p| sk.basis(p));
     let (x, y) = basis.view_coords(w);

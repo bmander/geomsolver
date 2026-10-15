@@ -133,9 +133,11 @@ pub enum K {
     MappedSimilar,
     // a circle carried by a similarity: its centre, and its radius scaled (#357)
     MappedCircle,
+    // a line in space touching a round at a point of it (#363 S4)
+    TangentCircleAt3,
 }
 
-pub const N_KERNELS: usize = 92;
+pub const N_KERNELS: usize = 93;
 
 #[derive(Clone, Copy)]
 pub struct Kernel {
@@ -3226,6 +3228,18 @@ fn point_along_arc3_rows<T: Num>(v: &[T], _k: &[f64]) -> [T; 3] {
     [0, 1, 2].map(|t| x[t] - (c3[t] + cs * u[t] + sn * w[t]))
 }
 
+/// Columns of `tangent_circle_at3`: (P, C, A, B, du, dv) — the point of contact's hidden point,
+/// the round's centre's, the line's ends', and the round's plane's axes (#363 S4).  `r̂·(B − A)`
+/// and `n̂·(B − A)`, `r̂` the unit radius to the point and `n̂` the plane's normal: the line runs
+/// square to the radius there and in the round's plane — a line in space touching a circle or an
+/// arc, its ends drawn anywhere.  Degree 1.
+fn tangent_circle_at3_rows<T: Num>(v: &[T], _k: &[f64]) -> [T; 2] {
+    let r = vunit(vsub(vec3(v, 0), vec3(v, 3)));
+    let d = vsub(vec3(v, 9), vec3(v, 6));
+    let (_, _, n) = frame(vec3(v, 12), vec3(v, 15));
+    [vdot(r, d), vdot(n, d)]
+}
+
 /// Columns of `axis_parallel_plane`: (d, du, dv).  `d̂·n̂`: square to the plane's normal.  Degree 0.
 fn axis_parallel_plane_rows<T: Num>(v: &[T], _k: &[f64]) -> [T; 1] {
     let (_, _, n) = frame(vec3(v, 3), vec3(v, 6));
@@ -3693,6 +3707,7 @@ pub static KERNELS: [Kernel; N_KERNELS] = [
     num_kernel!("mapped", mapped_rows, n_res: 2, n_par: 16, degree: 1, n_const: 0),
     num_kernel!("mapped_similar", mapped_similar_rows, n_res: 2, n_par: 12, degree: 1, n_const: 1),
     num_kernel!("mapped_circle", mapped_circle_rows, n_res: 3, n_par: 14, degree: 1, n_const: 1),
+    num_kernel!("tangent_circle_at3", tangent_circle_at3_rows, n_res: 2, n_par: 18, degree: 1, n_const: 0),
 ];
 
 /// One row of a kernel: residual and Jacobian for a single constraint's local values.  The

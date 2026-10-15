@@ -243,6 +243,33 @@ is not monotone in the pieces (the antipode 78.06 / 78.25 / 78.17 on 16 / 32 / 6
   positive plain number). The recipe writes `"weights"`, so the profile is `BSpline::rational` in
   our kernel and in OCCT's (`solvent_cad_bspline` takes a weights pointer). `nurbs.sv`,
   `tests/weighted_spline.rs`.
+- **A spline over points in space is a curve traced in space** (#363 S3, [0.126]): route (b) of
+  the issue, a representation and never a meaning.  `entities::splines_in_space` (in `holds`,
+  once every membership is in, before E060 is asked) makes a spline with a control point no plane
+  reaches a `TracedE` over the control points (`args`), its body one row of
+  `traced::RowKind::Spline` — `X − Σ Rᵢ(u)·Pᵢ`, columns `[u, P₀ … Pₙ₋₁, X]`, constants the knots
+  then the weights (`spline_shape` checks them as any encoding is read), its Newton rows
+  (`spline_res`/`_jac`) and its jets (`spline_jets`: each basis function the cubic of the jet's
+  offset from `curve::basis`'s value and three derivatives, exact to the series' order) — over
+  the spline's domain, home at its middle.  The name moves to it (`res.of`, `SourceMap::moved`)
+  and the spline stays, no index moving, but is no primitive (`Sketch::spline_traced`): neither
+  drawn nor grafted.  So its contacts are a traced curve's (`t == u` pins its place, S1), it is a
+  `path`, and `spline(through: …)` over corners in space lowers as it does in a plane, its
+  relations the ones in space.  A face over it is E080 ("a curve in space, drawn in no plane").
+  Drawn as an axis is, in space and in no view: `overview::scene3d_of` carries every curve traced
+  in space in its datums layer as `overview::traced_polyline` — its point read over the domain,
+  sixteen spans each halved (to depth 8) where the curve strays from its chord past
+  `curve::flatness` — and the app strokes it in 3D (`box3d.ts`'s `IN_SPACE`).
+  `a_spline_in_space_is_drawn_in_the_box`.  `tests/space_paths.rs`: a Bézier
+  over four points in space — point, `C′`, `C″` and length against Bernstein's to 1e-12, a point
+  pinned and a tangent held, every contact against finite differences — a tube along it at 9π ×
+  its length to 1e-9, and `spline(through: …)` over corners in space (natural; along lines in
+  space) control point for control point against the cubic solved apart (L7's method), over a
+  spread of end tangents.  **An end held along a tangent** is built over a line from the corner
+  to a point as far off as the next control point (`#run`, `equal` to `#span`, `parallel` to the
+  tangent), the foot on it and the next control point nothing along it from the foot: a line
+  from the corner to the foot, as through 0.127, lost its direction as the foot crossed the
+  corner and the solve stalled there.
 - **A spline through a chain's corners** (§6.1 [0.111], #243 L7): `spline(through: rims, start:
   l, end: m)` (`Decl::through`, parsed in `decl_list`, printed by `decl_args`) is expanded in
   `flatten::through` once the walk is done (`Aside::fits`, so the chain may be written after it):
@@ -423,6 +450,21 @@ is not monotone in the pieces (the antipode 78.06 / 78.25 / 78.17 on 16 / 32 / 6
   ordinates and by a screw, a point and a tangent held to it; a torus's point, normal and the
   meridian's osculating circle against closed forms; every contact against finite differences;
   a fold reported.
+  **A curve in space is a path** (#363 S1, [0.122]): a `path` formal takes a body over one
+  formal (`relations::kinds`, `traced_curve`; a surface is E103, "not a surface traced in
+  space"); `p coincident(t == s) k` pins the contact's first place, `t` read as the slot `u`
+  (`Written::slot_of`), to a held running number as a spline's is (`contact_carrier` names the
+  traced curve, so `shared_on_one_curve` and the held place allow it); `hint(at: p, along: k)`
+  steps along `d[0]` at `traced::place_of` (`entities::rate_along`); and a family's part keeps
+  what a traced body was given though the body owns no parameter (`Part::around_all`), else the
+  part dropped its contacts.  `tests/space_paths.rs` is the gate.
+  **A curve's centre of curvature** (#363 S5, [0.125]): `k curvature(at: p) c` of a point is
+  `CKind::TracedCentreAt` (`traced::Contact::Centre`, three rows, its lead the point's lift,
+  `Need::Curvature`): `c − (X + |X′|²·(b × X′)/|b|²)`, `b = X′ × X″` floored at `FLAT²`, so where
+  the curve has no curvature the rows stay finite and lose their rank.  Of a surface it is E040
+  (`relations::traced_contact`), as a surface's normal, plane or section of a curve is.
+  `std.Frenet(g, s:)` is the word over it (`solids.md`); `tests/traced.rs` holds the contact to
+  finite differences, `tests/space_paths.rs` to the helix's closed form.
   **Two design constraints it is built to** (#326): a traced surface is held to and read, not a
   face of a solid — exporting one is making it a wall of #243 L2's `Surface::Family` (whose
   `d1`/`newton` it would answer through `traced::read` and `traced::nearest`), not a second
