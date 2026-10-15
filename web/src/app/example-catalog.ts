@@ -91,6 +91,17 @@ const projects: Example[] = [{
     + 'The README says what each shows; the surfaces refine in the background as you watch.',
   target: { kind: 'directory', path: 'rounds', entry: 'block.sv' },
 }, {
+  label: 'Lofts and sweeps · written in Solvent', key: 'lofts',
+  description: 'Thirteen solids swept by a face of a component as one of its numbers runs: a pipe '
+    + 'round a U-bend, a twisted duct and an auger, a taper and a swell, a thread, a flight and a '
+    + 'spring, a bottle through three sections ruled and smooth, squares on rails with no guide, '
+    + 'two sketches drawn apart lofted corner to corner (and a square to a triangle, and to a '
+    + 'point), a blade held to two rails and a profile to three, and a square to a circle. None '
+    + 'is a kernel feature: each station is the writer\'s component over the standard library\'s '
+    + 'words, every wall is built exactly, and every volume is a closed form the file gives. The '
+    + 'README says what each shows; the solids refine in the background as you watch.',
+  target: { kind: 'directory', path: 'lofts', entry: 'pipe.sv' },
+}, {
   label: 'Connecting rod, forged · rounded in Solvent', key: 'conrod',
   description: 'Two eyes joined by a tapering I-section shank: the shank filled into both eyes, a '
     + 'pocket each side of the web rounded inside, the bores chamfered and the outside\'s edges '

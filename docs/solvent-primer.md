@@ -2275,7 +2275,7 @@ first; `gear_trace.sv` is the deepest; `engine.sv` and its `engine/` modules are
 | arc-length and equal-angle constraints | [belt wrap](../rust/examples/belt_wrap.sv), [reflection](../rust/examples/reflection.sv) |
 | traced mechanisms and curves | [Jansen](../rust/examples/jansen.sv), [Peaucellier](../rust/examples/peaucellier.sv), [gear trace](../rust/examples/gear_trace.sv) |
 | repeated features and components | [flange](../rust/examples/solid_flange.sv) |
-| lofts and sweeps along a path | [elbow](../rust/examples/solid_elbow.sv), [reducer](../rust/examples/solid_loft.sv), [bend](../rust/examples/solid_bend.sv), [square to diamond](../rust/examples/solid_twist.sv) |
+| lofts and sweeps along a path | [elbow](../rust/examples/solid_elbow.sv), [reducer](../rust/examples/solid_loft.sv), [bend](../rust/examples/solid_bend.sv), [square to diamond](../rust/examples/solid_twist.sv), and the [lofts](../rust/examples/lofts/) series: a chain as a path, twist and scale laws, threads and springs, several sections on rails, two faces drawn apart, a section held to its rails |
 | a reusable solid with a preview | [cylinder component](../rust/examples/vtwin/components/cylinder.sv), [its drawing](../rust/examples/vtwin/cylinder.svd) |
 | views and projection | [bracket](../rust/examples/bracket.sv) |
 | layouts in space | [skew axes](../rust/examples/skew_axes.sv), [spatial surfaces](../rust/examples/sphere_cone_cylinder.sv), [hypoid pitch cones](../rust/examples/hypoid_pitch_cones.sv), [sundials](../rust/examples/sundial/horizontal.sv) |
