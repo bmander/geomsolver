@@ -509,6 +509,19 @@ fn rewrite(
             }
         }
         StmtKind::Relation(rel) => rewrite_relation(rel, sc, look, bad, &fix),
+        // a claim over a motion names the motion and, in its body, the solids it judges, each
+        // as it would outside the block (`frame.body`); a free variable is no entity, and is
+        // left as written for the claim's reader to find
+        StmtKind::ClaimOver(c) => {
+            if look.find(&c.formal, sc).is_some() {
+                fix(&mut c.formal, bad);
+            }
+            for inner in &mut c.body {
+                if let StmtKind::Relation(rel) = &mut inner.kind {
+                    rewrite_relation(rel, sc, look, bad, &fix);
+                }
+            }
+        }
         _ => {}
     }
 }

@@ -126,6 +126,11 @@ placement carries inside the blank; CLI test readers zero the offset.
   variables** (never a `param`), reporting the *worst* pose; it is **sampling** at `SWEEP_STEPS`
   and says so.  Claims are read **after phase 4** (a free variable is what `expr::evaluate`
   allocates), and the interval **in the unknown's own units**, never converted as an angle.
+  **A swept claim's names resolve as a lone claim's do** (`flatten/resolve.rs`'s `rewrite`): the
+  motion it runs along and the solids its body judges are found through instances
+  (`frame.body`) and, inside a component, under the instance's prefix; a free variable is left as
+  written for `sweep_of_claim` to find.  `tests/solid_claim.rs`'s
+  `a_claim_over_a_motion_reads_the_solids_of_instances`; `hypoid_drive/drive.sv` is the case.
   **Claims are judged a pose at a time, and a page's are judged off its thread**
   (`diagnose::ClaimJudge`): `step` judges the next pose (a claim over a sweep is `SWEEP_STEPS + 1`,
   one at a pose is one) and `progress` says which claim of how many and which pose in the core's
