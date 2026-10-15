@@ -56,9 +56,10 @@ rational one's Gauss stretch by stretch) and **closes every
 loop in the face's parameters** across the kernel's gaps (unclosed, the volume moved with the
 origin). The mesher is a neighbour-array CDT, refined for sag **and** for a facet turning from the
 surface's outward normal (signed); slivers get a point off the longest side; points nearer than
-1e-9 are welded. An edge is sampled from first pieces no midpoint test can be blind to: a B-spline's
-knot spans, a family rail's pieces, a screwed rail a quarter turn at most (`edge_params`; a coil
-of four turns has its ends, middle and quarter points in one line, and was one chord). `Mesh::turned` counts facets facing against their surface (thicker than bar/100);
+1e-9 are welded. An edge is sampled from first pieces no midpoint test can be blind to: a
+B-spline's knot spans, a family rail's pieces, a screwed rail a quarter turn at most
+(`edge_params`; a coil of four turns has its ends, middle and quarter points in one line, and was
+one chord). `Mesh::turned` counts facets facing against their surface (thicker than bar/100);
 the export refuses any.
 **Phase 2 (the pattern ours):** `brep::pattern` turns a one-sector body into the whole (the
 kernel's union is never made): sides matched by a pitch's turn, revolution faces keep the sector's
