@@ -579,6 +579,15 @@ pub(crate) fn frames<T: Num>(steps: &[Step], m: &[T], t: T) -> Vec<Frame<T>> {
         .map(|p| (p.r.map(|r| r.map(|x| x.v)), p.p.map(|x| x.v))).collect()
 }
 
+/// Where the motion's pose at roll `t` (radians) carries `x`, and how fast that point runs a
+/// radian of the roll there (#365): `Pose(t)·x` and `∂(Pose(t)·x)/∂t`.  `None` where the motion
+/// has no step.
+pub(crate) fn carried<T: Num>(steps: &[Step], m: &[T], t: T, x: [T; 3]) -> Option<([T; 3], [T; 3])> {
+    let p = poses(steps, m, H2::var(t, 0, false)).pop()?;
+    let y = p.apply(x.map(H2::cst));
+    Some((y.map(|c| c.v), y.map(|c| c.g[0])))
+}
+
 /// Each step's pose at roll `t`, in order.
 fn poses<T: Num>(steps: &[Step], m: &[T], t: H2<T>) -> Vec<Pose<T>> {
     let tau = std::f64::consts::TAU;

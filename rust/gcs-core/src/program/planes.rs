@@ -218,7 +218,10 @@ pub(super) fn incidences(
         let on_curve = match kind {
             CKind::PointOnPlane | CKind::LineOnPlane if w.args.is_empty() => false,
             CKind::PointOnSpline | CKind::PointOnCurve | CKind::SplineTangentLine
-            | CKind::CurveTangentLine | CKind::SplineTangentAt | CKind::CurveTangentAt => true,
+            | CKind::CurveTangentLine => true,
+            // a rate of a point on a spline or a curve: its line is drawn in the curve's plane
+            // (#365)
+            CKind::Rate if matches!(a.kind, EntKind::Spline | EntKind::Curve) => true,
             // a line touching an arc or a circle at a point of it lies in the round's plane
             // (#243 L4): the tangency is the plane's, its contact read in space or drawn there
             CKind::TangentCircleAt => true,

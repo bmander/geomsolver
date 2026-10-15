@@ -39,11 +39,12 @@ pub fn seed_param(sk: &Sketch, kind: CKind, args: &[Arg], i: usize) -> f64 {
         let (Some(Arg::Ent(e)), Some(Arg::Ent(p))) = (args.get(tr), args.get(at)) else { return 0.0 };
         return crate::traced::place_of(sk, e.i(), sk.lifted(p.i())).map_or(0.0, |x| x[i - first]);
     }
-    // a motion's pitch starts where the motion's axes stand (#326)
-    if kind == CKind::ScrewAxis {
-        let Some(Arg::Ent(m)) = args.get(1) else { return 0.0 };
-        return crate::motion::Family::read(sk, m.i()).ok()
-            .and_then(|f| f.instantaneous().ok()).map_or(0.0, |s| s.pitch);
+    // a rate's slot is the contact's, which hands it its own (`Sketch::add`): until then it
+    // starts where that contact's stands (#365)
+    if matches!(kind, CKind::Rate | CKind::RateDistance) {
+        let (Some(Arg::Ent(on)), Some(Arg::Ent(at))) = (args.first(), args.get(2)) else { return 0.0 };
+        return sk.holding(at.i(), *on).and_then(|p| p.first().copied())
+            .map_or(0.0, |p| sk.params[p as usize].value);
     }
     match (kind, i) {
         // where the curve already comes nearest the thing it is being tied to: a curve can meet
@@ -78,16 +79,6 @@ pub fn seed_param(sk: &Sketch, kind: CKind, args: &[Arg], i: usize) -> f64 {
         (CKind::CurveCurvature, 2) => {
             let (cx, cy) = sk.point_xy(sk.round_center(args[1].ent()));
             sk.curve_nearest_by(args[0].ent().i(), |px, py| (px - cx).dhypot(py - cy))
-        }
-        // the tangent at a point starts where the point is: the contact holding it owns the
-        // place, and a statement without one (`Sketch::add` found none yet) starts beside it
-        (CKind::SplineTangentAt, 3) => {
-            let (x, y) = sk.point_xy(args[2].ent().i());
-            crate::curve::closest(sk, args[0].ent().i(), x, y).0
-        }
-        (CKind::CurveTangentAt, 3) => {
-            let (x, y) = sk.point_xy(args[2].ent().i());
-            sk.curve_nearest_by(args[0].ent().i(), |px, py| (px - x).dhypot(py - y))
         }
         // a point on a curve starts where the curve passes nearest it
         (CKind::PointOnCurve, 2) => {
@@ -173,6 +164,29 @@ pub fn infer_entity(
     name: &dyn Fn(EntRef) -> String,
 ) -> Result<EntRef, String> {
     match (kind, i) {
+        // what the contact holding a rate's point holds it on, whose slot the rate names (#365)
+        (CKind::Rate | CKind::RateDistance, 0) => {
+            let at = args[2].ent();
+            let over = rate_over(kind, args);
+            match rate_carriers(sk, at.i(), over).as_slice() {
+                [one] => Ok(*one),
+                [] => Err(format!(
+                    "`{over}` is no formal here, and no contact holding {} owns a slot `{over}`: a \
+                     rate runs over a formal its body is given its running number in, or over the \
+                     slot of the contact holding its point — `rate(p over t)` of `p coincident(t == \
+                     …) g`, or of `p coincident(under: m, t == …) q`",
+                    name(at)
+                )),
+                many => Err(format!(
+                    "{} is held by {} contacts with a slot `{over}`, on {}: say which with its \
+                     tangent, `g tangent(at: {}) l`",
+                    name(at),
+                    many.len(),
+                    many.iter().map(|&e| name(e)).collect::<Vec<_>>().join(" and "),
+                    name(at)
+                )),
+            }
+        }
         (CKind::Project | CKind::ProjectSolved, 2 | 3) => {
             let p = args[i - 2].ent();
             sk.plane_of(p.i()).map(EntRef::plane).ok_or_else(|| {
@@ -347,6 +361,85 @@ fn shared_on_one_curve(
     }
 }
 
+/// The name a rate's slot is written by (#365): its `over`.
+fn rate_over(kind: CKind, args: &[Arg]) -> &str {
+    let i = if kind == CKind::RateDistance { 5 } else { 4 };
+    match args.get(i) {
+        Some(Arg::Str(s)) => s.as_str(),
+        _ => "",
+    }
+}
+
+/// What the contacts holding point `at` that own a slot named `over` hold it on (#365): a spline's,
+/// a curve's, a meshing's or a carried point's `t`, a traced curve's `u`.  What a rate written
+/// `rate(at over …)` is of, where it is one.
+pub fn rate_carriers(sk: &Sketch, at: usize, over: &str) -> Vec<EntRef> {
+    let mut found: Vec<EntRef> = Vec::new();
+    for c in &sk.constraints {
+        let Some((a, on, _)) = c.holds_on() else { continue };
+        let Some(src) = RateSource::of(on.kind) else { continue };
+        let surface = src == RateSource::Traced && sk.traced.get(on.i()).is_none_or(|t| t.formals() != 1);
+        if a == at && src.slot() == over && !surface && !found.contains(&on) {
+            found.push(on);
+        }
+    }
+    found
+}
+
+/// What a rate of a contact refuses (#365): a slot by another name than its contact's, a surface's two-number place, and what a source's kernel does not read — a
+/// curve's rate in its view square to a line, and a distance along one of anything but a point a
+/// motion carries.
+fn validate_rate(sk: &Sketch, kind: CKind, args: &[Arg], name: &dyn Fn(EntRef) -> String)
+    -> Result<(), String> {
+    let c = Constraint::new(kind, args.to_vec());
+    let Some(src) = c.rate_source() else {
+        return Err("a rate is of a point a contact holds: on a spline, a curve, a curve traced in \
+                    space or a meshing, or carried by a motion".to_string());
+    };
+    let (on, at, to) = (args[0].ent(), args[2].ent(), args[1].ent());
+    let over = rate_over(kind, args);
+    if over != src.slot() {
+        return Err(format!("the contact holding {} on {} runs over `{}`, not `{over}`", name(at),
+                           name(on), src.slot()));
+    }
+    match src {
+        RateSource::Spline | RateSource::Curve => {
+            let drawn_there = to.kind == EntKind::Line && sk.lines.get(to.i())
+                .is_some_and(|l| sk.plane_of(l.p1 as usize) == sk.plane_of(at.i()));
+            if !drawn_there {
+                return Err(format!("{} is drawn in a view, and its rate is held against a line \
+                                    drawn there, not {}", name(on), name(to)));
+            }
+            if kind == CKind::RateDistance || c.rate_square() {
+                return Err(format!("a rate of a point on {} is held along a line, `rate({} over t) \
+                                    parallel l`, written too as its tangent: square to one, or a \
+                                    distance along one, is read of a point in space", name(on),
+                                   name(at)));
+            }
+        }
+        RateSource::Traced => {
+            if sk.traced.get(on.i()).is_none_or(|t| t.formals() != 1) {
+                return Err(format!("{} is a surface, whose place is two numbers, and a rate runs \
+                                    over a curve's one", name(on)));
+            }
+        }
+        RateSource::Meshing => {
+            crate::envelope::meshing::Parts::of(sk, on.i())
+                .map_err(|why| format!("the solve cannot read {}: {why}", name(on)))?;
+        }
+        RateSource::Carried => {
+            crate::envelope::held::Moving::of_any(sk, on.i())
+                .map_err(|why| format!("the solve cannot read {}: {why}", name(on)))?;
+        }
+    }
+    if kind == CKind::RateDistance && src != RateSource::Carried {
+        return Err(format!("a rate's distance along a direction is read of a point a motion \
+                            carries (`X coincident(under: m, t == τ) x`), and {} is held on {}",
+                           name(at), name(on)));
+    }
+    Ok(())
+}
+
 /// What a kind refuses once its arguments are all in — the checks that need the sketch, which
 /// the type check on the spec cannot make.  One rule for the elaborator, the document readers,
 /// the FFI and the Rust constructors alike; `name` is what the caller calls an entity.
@@ -396,19 +489,15 @@ pub fn validate(
         Constraint::new(kind, args.to_vec()).regular_reading(sk)
             .map_err(|why| format!("the solve cannot read the flank's regularity: {why}"))?;
     }
-    // a motion's twist is read where the solve can read the motion and its twist is the same at
-    // every time in the fixed frame (#326)
+    // a point is carried by a motion the solve can read (#326)
     if kind.motion_reading().is_some() {
         let c = Constraint::new(kind, args.to_vec());
-        let m = c.motion_of().ok_or("a twist is read off a motion")?;
-        let moving = crate::envelope::held::Moving::of_any(sk, m.i())
-            .map_err(|why| format!("the solve cannot read the twist of {}: {why}", name(m)))?;
-        let twist = kind.motion_reading().is_some_and(|r| r.twist());
-        if twist && !crate::envelope::screw::constant(&moving.steps) {
-            return Err(format!("{} is a motion relative to a relative one, whose twist changes as it \
-                                runs: a twist is read of turns, screws and slides about fixed lines, \
-                                and of one relative to another", name(m)));
-        }
+        let m = c.motion_of().ok_or("a point is carried by a motion")?;
+        crate::envelope::held::Moving::of_any(sk, m.i())
+            .map_err(|why| format!("the solve cannot read {}: {why}", name(m)))?;
+    }
+    if matches!(kind, CKind::Rate | CKind::RateDistance) {
+        validate_rate(sk, kind, args, name)?;
     }
     match kind {
         // a curvature reads the curve's second derivative, which a trace gives exactly only

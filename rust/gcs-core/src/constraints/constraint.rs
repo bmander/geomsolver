@@ -383,6 +383,10 @@ impl Constraint {
         if matches!(self.kind, CKind::Stationary | CKind::CurveTouchesLine) {
             return Key::Stationary(self.id);
         }
+        // a rate's is its source's (#365)
+        if let Some(src) = self.rate_source() {
+            return self.rate_key(sk, src);
+        }
         // an envelope contact's kernel is its block's widths' (#283)
         if let Some(c) = self.kind.envelope_contact() {
             let parts = self.envelope_parts(sk);
@@ -412,7 +416,7 @@ impl Constraint {
         if let Some(r) = self.kind.motion_reading() {
             let parts = self.motion_parts(sk);
             let (n_par, n_const) = parts.map_or((0, 0), |p| {
-                (r.lead() + p.width(), crate::envelope::screw::n_const(&p.steps))
+                (r.lead() + p.width(), crate::envelope::screw::n_const(r, &p.steps))
             });
             return Key::Motion { reading: r as u8, n_par, n_const };
         }
@@ -420,6 +424,78 @@ impl Constraint {
             (Some(fk), Some(e)) => Key::Family { def: sk.curves[e.i()].def as usize, fk: fk as u8 },
             _ => Key::Static(self.kernel_id()),
         }
+    }
+
+    /// A rate's kernel (#365): the one its source's tangent was read by, held along the line, or
+    /// its twin square to it; a carried point's at its block's widths.
+    fn rate_key(&self, sk: &Sketch, src: RateSource) -> kernels::KernelKey {
+        use kernels::KernelKey as Key;
+        let square = self.rate_square();
+        let on = self.args[0].ent();
+        match src {
+            RateSource::Spline => Key::Static(kernels::K::SplineTangentAt as usize),
+            RateSource::Curve => Key::Family {
+                def: sk.curves.get(on.i()).map_or(0, |c| c.def as usize),
+                fk: FamilyKernel::TangentAt as u8,
+            },
+            RateSource::Traced => {
+                use crate::traced::Contact;
+                let c = if square { Contact::TangentSquare } else { Contact::Tangent };
+                let (n_par, n_const) = sk.traced.get(on.i()).map_or((0, 0), |t| {
+                    (c.lead() + crate::traced::PLACE + t.body.n_theta(),
+                     crate::traced::consts_of(t).len())
+                });
+                Key::Traced { contact: c as u8, n_par, n_const }
+            }
+            RateSource::Meshing => {
+                use crate::envelope::meshing::Contact;
+                let c = if square { Contact::PathSquare } else { Contact::Path };
+                let parts = self.meshing_parts(sk);
+                let (n_par, n_const) = parts.map_or((0, 0), |p| (p.width(sk, c.lead()), p.n_const(sk)));
+                Key::Meshing { contact: c as u8, n_par, n_const }
+            }
+            RateSource::Carried => {
+                let r = self.rate_reading();
+                let parts = self.motion_parts(sk);
+                let free = self.free.is_some() as usize;
+                let (n_par, n_const) = parts.map_or((0, 0), |p| {
+                    (r.lead() + p.width() + free, crate::envelope::screw::n_const(r, &p.steps))
+                });
+                Key::Motion { reading: r as u8, n_par, n_const }
+            }
+        }
+    }
+
+    /// What a rate of a contact reads its rate off (#365): what the contact holding its point is
+    /// on.  `None` for every other kind.
+    pub fn rate_source(&self) -> Option<RateSource> {
+        if !matches!(self.kind, CKind::Rate | CKind::RateDistance) {
+            return None;
+        }
+        let Some(Arg::Ent(on)) = self.args.first() else { return None };
+        RateSource::of(on.kind)
+    }
+
+    /// Whether a rate is held square to its line (`perpendicular`) rather than along it.
+    pub fn rate_square(&self) -> bool {
+        self.kind == CKind::Rate && matches!(self.args.get(5), Some(Arg::Str(w)) if w == "perpendicular")
+    }
+
+    /// How a carried point's rate is read (`envelope::screw::Reading`).
+    pub fn rate_reading(&self) -> crate::envelope::screw::Reading {
+        use crate::envelope::screw::Reading;
+        match (self.kind, self.rate_square()) {
+            (CKind::RateDistance, _) => Reading::RateAlong,
+            (_, true) => Reading::RateSquare,
+            _ => Reading::Rate,
+        }
+    }
+
+    /// The contact holding a rate's point on what the rate names, whose slot it runs over (#365).
+    pub fn rate_contact<'s>(&self, sk: &'s Sketch) -> Option<&'s Constraint> {
+        self.rate_source()?;
+        let (Arg::Ent(on), Arg::Ent(at)) = (&self.args[0], &self.args[2]) else { return None };
+        sk.constraints.iter().find(|c| matches!(c.holds_on(), Some((a, e, _)) if a == at.i() && e == *on))
     }
 
     /// The kernel itself (`kernel_key`, built where it must be).
@@ -448,8 +524,20 @@ impl Constraint {
         }
     }
 
-    /// The meshing a point on one is held to (#283) — the spec's `Meshing` slot.
+    /// What a rate names, where it is of kind `kind` (#365).
+    fn rate_on(&self, kind: EntKind) -> Option<EntRef> {
+        self.rate_source()?;
+        match self.args.first()? {
+            Arg::Ent(e) if e.kind == kind => Some(*e),
+            _ => None,
+        }
+    }
+
+    /// The meshing a point on one is held to (#283) — the spec's `Meshing` slot, or a rate's.
     pub fn meshing_of(&self) -> Option<EntRef> {
+        if let Some(e) = self.rate_on(EntKind::Meshing) {
+            return Some(e);
+        }
         let (e, _) = self.kind.contact_on(SpecKind::Meshing)?;
         match self.args.get(e)? {
             Arg::Ent(e) if e.kind == EntKind::Meshing => Some(*e),
@@ -463,8 +551,11 @@ impl Constraint {
         crate::envelope::meshing::Parts::of(sk, self.meshing_of()?.i()).ok()
     }
 
-    /// The traced body a contact with one is on (#326) — the spec's `Traced` slot.
+    /// The traced body a contact with one is on (#326) — the spec's `Traced` slot, or a rate's.
     pub fn traced_of(&self) -> Option<EntRef> {
+        if let Some(e) = self.rate_on(EntKind::Traced) {
+            return Some(e);
+        }
         let i = self.kind.spec().iter().position(|&(_, k)| k == SpecKind::Traced)?;
         match self.args.get(i)? {
             Arg::Ent(e) if e.kind == EntKind::Traced => Some(*e),
@@ -472,8 +563,11 @@ impl Constraint {
         }
     }
 
-    /// The motion a relation reading its twist names (#326) — the spec's `Motion` slot.
+    /// The motion a point is carried by (#326) — the spec's `Motion` slot, or a rate's.
     pub fn motion_of(&self) -> Option<EntRef> {
+        if let Some(e) = self.rate_on(EntKind::Motion) {
+            return Some(e);
+        }
         let i = self.kind.spec().iter().position(|&(_, k)| k == SpecKind::Motion)?;
         match self.args.get(i)? {
             Arg::Ent(e) if e.kind == EntKind::Motion => Some(*e),
@@ -509,8 +603,12 @@ impl Constraint {
         crate::envelope::held::Parts::of(sk, self.envelope_of()?.i()).ok()
     }
 
-    /// The curve a per-definition kernel is over — the spec's `Curve` slot, wherever it stands.
+    /// The curve a per-definition kernel is over — the spec's `Curve` slot, wherever it stands,
+    /// or a rate's.
     pub fn curve_of(&self) -> Option<EntRef> {
+        if let Some(e) = self.rate_on(EntKind::Curve) {
+            return Some(e);
+        }
         let (e, _) = self.kind.contact_on(SpecKind::Curve)?;
         Some(self.args[e].ent())
     }
@@ -604,6 +702,7 @@ impl Constraint {
     /// or an ordinate whose form is one — so `Sketch::add` mints their lifts.
     pub fn reads_space(&self) -> bool {
         self.kind.spatial() || self.form().is_some_and(|f| f.in_space())
+            || self.rate_source().is_some_and(|s| !s.planar())
     }
 
     /// Which way an angle turns: `sense: cw` is the minus a drawing no longer writes (§9.4), and
@@ -621,6 +720,12 @@ impl Constraint {
     }
 
     pub fn n_residuals(&self) -> usize {
+        // a rate's: one row where it is held square, or of a curve in its view; two along a line
+        // in space (#365)
+        if let Some(src) = self.rate_source() {
+            let planar = matches!(src, RateSource::Spline | RateSource::Curve);
+            return if self.kind == CKind::RateDistance || self.rate_square() || planar { 1 } else { 2 };
+        }
         // a curve's kernel belongs to its definition, so its row count is a fact about the kind
         match self.kind.family_kernel() {
             Some(fk) => fk.n_res(),
@@ -671,17 +776,18 @@ impl Constraint {
     /// and the curve — the contact holding that point there owns the place (`Sketch::add`).
     pub fn tangent_at(&self) -> Option<(&'static [usize], usize, EntRef)> {
         let slots: &'static [usize] = match self.kind {
-            CKind::SplineTangentAt | CKind::CurveTangentAt => &[3],
+            // a rate's slot is the contact's first unknown, the one it runs over (#365)
+            CKind::Rate => &[3],
+            CKind::RateDistance => &[4],
             // an envelope's place is three numbers, all the contact's (#283)
             CKind::EnvelopeTangentAt
             | CKind::EnvelopeNormalAt
             | CKind::EnvelopePlaneAt
             | CKind::EnvelopeCurvatureAt => &[3, 4, 5],
             // a meshing's is its phase, its lag and a place on each flank (#345)
-            CKind::MeshingNormalAt | CKind::MeshingTangentAt => &[3, 4, 5, 6, 7, 8, 9, 10],
+            CKind::MeshingNormalAt => &[3, 4, 5, 6, 7, 8, 9, 10],
             // a traced body's place is its two formals' (#326)
-            CKind::TracedTangentAt
-            | CKind::TracedSurfaceTangentAt
+            CKind::TracedSurfaceTangentAt
             | CKind::TracedNormalAt
             | CKind::TracedPlaneAt
             | CKind::TracedCurvatureAt => &[3, 4],
@@ -716,6 +822,10 @@ impl Constraint {
             }
             (CKind::PointOnTraced, [Arg::Ent(at), Arg::Ent(on), Arg::Param(u), Arg::Param(s)]) => {
                 Some((at.i(), *on, vec![*u, *s]))
+            }
+            // and a point a motion carries, its roll (#365)
+            (CKind::CarriedPoint, [Arg::Ent(at), _, Arg::Ent(on), Arg::Param(t)]) => {
+                Some((at.i(), *on, vec![*t]))
             }
             _ => None,
         }

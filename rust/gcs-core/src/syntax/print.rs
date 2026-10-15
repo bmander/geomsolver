@@ -848,6 +848,9 @@ pub fn operator_text(kind: CKind, args: &[Option<Arg>]) -> String {
     if let Some(text) = ordinate_text(kind, args) {
         return text;
     }
+    if let Some(text) = rate_text(kind, args) {
+        return text;
+    }
     let spec = kind.spec();
     let mut ents: Vec<String> = Vec::new();
     let mut parens: Vec<String> = Vec::new();
@@ -872,10 +875,6 @@ pub fn operator_text(kind: CKind, args: &[Option<Arg>]) -> String {
         }
         // a similarity keeping its turn says nothing of it (#357)
         if *name == "mirror" && matches!(a, Arg::Bool(false)) {
-            continue;
-        }
-        // and the place of a tangent at a point is the contact's, written with the contact
-        if sk.is_param() && matches!(kind, CKind::SplineTangentAt | CKind::CurveTangentAt) {
             continue;
         }
         // the point a tangent is at goes in the parentheses by its name (#251), as written:
@@ -936,6 +935,36 @@ pub fn operator_text(kind: CKind, args: &[Option<Arg>]) -> String {
         out.push_str(&hint);
     }
     out
+}
+
+/// **A rate of a contact, as a document writes it** (#365): `rate(p over t) parallel l`,
+/// `perpendicular l`, `rate(p over t) distance(d, along: l)` — or, written as the tangent it is,
+/// `g tangent(at: p) l`.  What the contact holds the point on is the contact's, and a rate never
+/// names it; its slot is the contact's, written with the contact.  `None` for every other kind.
+fn rate_text(kind: CKind, args: &[Option<Arg>]) -> Option<String> {
+    let get = |i: usize| args.get(i).and_then(|a| a.as_ref());
+    let text = |i: usize| get(i).map_or_else(String::new, |a| write_arg("", SpecKind::Point, a));
+    let word = |i: usize| match get(i) {
+        Some(Arg::Word(w)) if !w.is_empty() => w.clone(),
+        _ => match kind.default_arg(i) {
+            crate::constraints::Arg::Str(w) => w,
+            _ => String::new(),
+        },
+    };
+    match kind {
+        CKind::Rate => {
+            let w = word(5);
+            if w == "tangent" {
+                return Some(format!("{} tangent(at: {}) {}", text(0), text(2), text(1)));
+            }
+            Some(format!("rate({} over {}) {w} {}", text(2), word(4), text(1)))
+        }
+        CKind::RateDistance => {
+            let d = get(3).map_or_else(String::new, dim_text);
+            Some(format!("rate({} over {}) distance({d}, along: {})", text(2), word(5), text(1)))
+        }
+        _ => None,
+    }
 }
 
 /// **An ordinate and its zero, as a document writes them** (`docs/ordinate-plan.md`): the

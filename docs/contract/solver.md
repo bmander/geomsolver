@@ -59,6 +59,14 @@ version ([0.n], see the [language changelog](../solvent-changelog.md)) says wher
   iteration sees the same vector**: `residuals_into` and `compute_csr` divide every row by
   `row_scale`, so the dogleg weighs an `angle` row and a `distance` row alike (issue #43).  A
   test comparing against a kernel multiplies by `row_scale` to get the raw residual.
+  **A rate's rows carry the degree of what they compare** (#365): a line held along the rate of a
+  source that always moves — a meshing's path of contact, a traced curve's tangent — two cosines,
+  degree 0, both directions unit, as its tangent always was; the rate's part across or along a line
+  where the point may stand still — a carried point, which on the axis of a screw of no pitch does —
+  a velocity, degree 1, a length a radian of the slot (an angle's slot per radian, a curve's per its
+  parameter), so the rows stay regular where the rate vanishes; a curve's in its view `(C′ × (B −
+  A))/‖B − A‖`, degree 1; a rate's distance, degree 1.  A rate never owns an unknown: its slot is
+  its contact's, and its other columns are that contact's and its source's.
   `System::stationary` tells apart two non-solutions: at a stationary point the residual is what
   the constraints cannot agree on (a conflict); elsewhere the solver merely stopped, the
   diagnosis solves a scratch copy, and a consistent drawing is `State::Unsolved` — no conflict
@@ -87,9 +95,10 @@ version ([0.n], see the [language changelog](../solvent-changelog.md)) says wher
   account for, at most `SCREEN_MAX`.  A double root's singular value is as small as a real
   freedom's, so a candidate is recognised only by trying it.
   **The tangent at a point of any path** (#251): `g tangent(at: m) l`, the parser reading `at:`
-  as a point unless it is `start`/`end`/`p1`/`p2` — of a spline `SplineTangentAt` (the
-  `spline_tangent_at` kernel, `spline_tangent_line`'s direction row alone), of a curve
-  `CurveTangentAt` (`FamilyKernel::TangentAt`), of a circle or arc `TangentCircleAt` (the
+  as a point unless it is `start`/`end`/`p1`/`p2` — of a spline or a curve the contact's **rate**
+  there held along the line, `CKind::Rate` (#365; the `spline_tangent_at` kernel,
+  `spline_tangent_line`'s direction row alone, or `FamilyKernel::TangentAt`, chosen by
+  `Constraint::rate_key` from the carrier), of a circle or arc `TangentCircleAt` (the
   `tangent_arc_line` kernel over `[at, centre, line]`), of a line `parallel`. The spline's and
   curve's own `t` is **the contact's**: `Sketch::add` hands it the place of the contact holding
   `m` on `g` (`Constraint::tangent_at`/`holds_on`, `Sketch::holding`), whichever comes first

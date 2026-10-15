@@ -136,7 +136,11 @@ component call.  The flattener settles each rate's formal in `settle_relation`
 home, where a rate is no row, and the relation is dropped; given a face family's running number,
 or a nonzero multiple of it, it is that held name; where a component is expanded to be traced
 (`sym`) a formal handed on as itself is the caller's (`Drag(…, u: u)`) and one given an
-expression in it E103; anything else, or a name no formal is, E040.  It passes no plane
+expression in it E103; a name in scope that is no formal, E040.  **A name nothing in scope is**,
+outside a trace and a face family's station, is the slot of the contact holding the rate's point
+(#365, [0.122]): `rate_over` returns the empty name and the rate is marked `RateOf::slot`, kept
+with the name as written, and `constrain` settles it as a row like any other (`settle_rate`,
+relations.md's "The rate of a contact") rather than `rate_row`'s.  It passes no plane
 membership (`drawn_incidences`, `planes::incidences`).  In a trace the lowering takes it
 (`program::curves`, `program::traced`, curves.md's "Rates along a running formal"); on the sheet
 `program::relations::rate_row` keeps a face family's in `Sketch::rates` (one rate, of the first
@@ -144,7 +148,9 @@ operand, before `parallel` or `perpendicular`, else E040; E040 a rate of anythin
 a point, or against anything but an axis, a line or a plane) and states no constraint (solids.md).
 `initially { … }` is hoisted as an `in` body is (`parser::statements::initially`), each relation
 in it, through a `when`, marked `Relation::initially` (anything else in it a syntax error); a
-defined word's body takes the flag as it takes `claim`, and it reaches `ir::Relation::initially`
+defined word's body takes the flag as it takes `claim` — but a claimed word's `coincident`
+placing a point its body declares is stated, never claimed, so a claim judges what it says of
+geometry it still makes (#365, `flatten::apply`) — and it reaches `ir::Relation::initially`
 and `Constraint::initially`: on the sheet a row of the drawn home, in a trace the home's alone.
 `tests/rates.rs` (a face family's) and `tests/traced_rates.rs` (a traced body's) are the gates.
 **Over two formals** (§6.5 [0.121], #339 D4) a rate may be along either, at most one along the

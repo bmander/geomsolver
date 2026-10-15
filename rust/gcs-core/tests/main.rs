@@ -148,6 +148,7 @@ mod predicates;
 mod program;
 mod progress;
 mod rack_cut;
+mod rate_of_contact;
 mod rates;
 mod rate_examples;
 mod rational;

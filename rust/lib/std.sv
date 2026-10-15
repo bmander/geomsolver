@@ -755,3 +755,46 @@ p scaled(du, dv, scale, s) P := {
 
 // A round's radius scaled as `scaled` scales a point: `r` at `s = 0`, `scale` times it at `s = 1`.
 scaled_radius(r, scale, s) k := radius(r * (1 + (scale - 1) * s)) k
+
+// -- a motion's twist, read by rates (#326, #365) -------------------------------------------------
+//
+// A turn about a fixed line, a screw along one or a slide moves every point at a velocity, and so
+// does one seen from another (`motion(gear_turn, relative_to: pinion_turn)`): its **twist**.  It
+// has no words of its own: it is the rate of a point the motion carries.  `X coincident(under: m,
+// t == 0deg) x` is `x` carried by the motion's pose at its roll 0, where a motion with no phase
+// stands as drawn, and `rate(X over t)` is how fast `X` runs there, a length a radian of the roll
+// — the twist at `x`.
+
+// `l reciprocal m`: a force along the line `l` does no work on the motion `m` — its velocity at a
+// point of `l` is square to `l`, the same number at every point of it.  For the mesh of two
+// members it is the meshing law of a line of action: the members move as fast along it
+// (Phillips' spatial involute gearing).  Claimed (`claim l reciprocal m`), the point is carried
+// all the same and only its rate is judged.
+l reciprocal m := {
+  moved := point
+  moved coincident(under: m, t == 0deg) l.p1
+  rate(moved over t) perpendicular l
+}
+
+// The instantaneous screw axis of a motion: `isa`, the axis every point of which `m` moves along
+// it, and `pitch`, how fast — a length a radian of the motion's roll, Ball's pitch times how fast
+// the motion turns about the axis.  `s := std.Screw(isa, mesh)` with no pitch given solves it, and
+// `s.pitch` reads it.  Two points of the axis carried: their rates along it place it, and the
+// first's speed along it is the pitch.  A motion that turns nothing (a slide) has no such axis.
+component Screw(isa: axis, m: motion, pitch: Length) {
+  private origin := point
+  fix((0, 0, 0)) origin
+  private a := point
+  private b := point
+  a coincident isa
+  b coincident isa
+  origin level(isa) a
+  a distance(10mm, along: isa) b
+  private moved_a := point
+  private moved_b := point
+  moved_a coincident(under: m, t == 0deg) a
+  moved_b coincident(under: m, t == 0deg) b
+  rate(moved_a over t) parallel isa
+  rate(moved_b over t) parallel isa
+  rate(moved_a over t) distance(pitch, along: isa)
+}

@@ -102,7 +102,7 @@ fn every_constraint_type_is_printable() {
         if kind.soft_by_default() {
             continue; // soft, and never in a document — `user_constraints` filters it
         }
-        if matches!(kind, CKind::PointOnCurve | CKind::PointOnExtrusion | CKind::CurveTangentLine | CKind::CurveTangentAt | CKind::CurveCurvature | CKind::CurveLength | CKind::Stationary | CKind::CurveTouchesLine) {
+        if matches!(kind, CKind::PointOnCurve | CKind::PointOnExtrusion | CKind::CurveTangentLine | CKind::CurveCurvature | CKind::CurveLength | CKind::Stationary | CKind::CurveTouchesLine) {
             // a curve's contacts print, but the curve they name lifts as an instance of a
             // component the sketch does not hold the text of, so there is nothing for them to
             // round-trip against here; `tests/curve_contact.rs` prints them from a document (and
@@ -115,9 +115,9 @@ fn every_constraint_type_is_printable() {
             // `tests/traced.rs` prints its contacts from a document
             continue;
         }
-        if kind.motion_reading().is_some() {
-            // a motion's twist is read off a motion, declared in a document; `tests/phillips.rs`
-            // prints them from one
+        if kind.motion_reading().is_some() || kind == CKind::RateDistance {
+            // a point a motion carries, and its rate's distance, read off a motion declared in a
+            // document; `tests/carried.rs` and `tests/rate_of_contact.rs` print them from one
             continue;
         }
         if kind == CKind::RegularWithin {
@@ -513,9 +513,12 @@ fn fixture(kind: CKind) -> (Sketch, Constraint) {
     if kind == CKind::Symmetric {
         args[2] = Arg::Ent(EntRef::line(l2));
     }
-    // the tangent at a point of a spline reads the place of the contact holding the point (#251)
-    if kind == CKind::SplineTangentAt {
+    // the tangent at a point of a spline — its rate there — reads the place of the contact
+    // holding the point (#251, #365)
+    if kind == CKind::Rate {
         sk.add(Constraint::point_on_spline(&sk, EntRef::point(p), EntRef::spline(sp)));
+        args = vec![Arg::Ent(EntRef::spline(sp)), Arg::Ent(EntRef::line(l1)), Arg::Ent(EntRef::point(p)),
+                    Arg::Num(0.0), Arg::Str("t".into()), Arg::Str("tangent".into())];
     }
     (sk, Constraint::new(kind, args))
 }

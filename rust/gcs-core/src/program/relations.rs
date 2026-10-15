@@ -23,6 +23,10 @@ pub(crate) fn settle(
 ) -> Result<(CKind, Vec<Option<Arg>>), (Span, String)> {
     use crate::constraints::Fixity;
     let word = w.word.text.as_str();
+    // a rate of a contact is its own kind, whatever word holds it (#365)
+    if w.rates.iter().any(|r| r.slot) {
+        return settle_rate(w, kind_of);
+    }
     // a gauge or an orientation is settled by its word alone: which numbers `fix` may hold is
     // the entity's, and `ccw(a, b, c)` has no operand outside its parentheses; what each operand
     // must be is checked where the statement is applied
@@ -110,6 +114,10 @@ pub(crate) fn settle(
                 if let Some(k) = crate::constraints::infix_op(word, b, a, &sel) {
                     let mut swapped = w.clone();
                     swapped.ops.swap(0, 1);
+                    // a rate's slot is filled below, where it is settled the right way round
+                    if k == CKind::Rate {
+                        return settle(&swapped, kind_of);
+                    }
                     return Ok((k, swapped.assemble(k)?));
                 }
             }
@@ -143,7 +151,65 @@ pub(crate) fn settle(
         along.args.retain(|a| !matches!(a, crate::syntax::OpArg::Named(n, _) if n.text == "at"));
         return Ok((kind, along.assemble(kind)?));
     }
+    // the tangent at a point a contact holds on a curve is that contact's rate there, held along
+    // the line (#365): over the contact's slot, written as the tangent it is
+    if kind == CKind::Rate {
+        let mut args = w.assemble(kind)?;
+        let traced = w.ops.first().and_then(kind_of) == Some(EntKind::Traced);
+        args[4] = Some(Arg::Word(if traced { "u" } else { "t" }.to_string()));
+        args[5] = Some(Arg::Word("tangent".to_string()));
+        return Ok((kind, args));
+    }
     Ok((kind, w.assemble(kind)?))
+}
+
+/// **A rate of a contact** (#365): `rate(p over t) parallel l` and `perpendicular l` a `Rate`,
+/// `rate(p over t) distance(d, along: l)` a `RateDistance` — the point's, over the slot `t` of the
+/// contact holding it, which is what the contact holds it on (`io::seed_omitted` infers it).
+fn settle_rate(
+    w: &crate::syntax::Written,
+    kind_of: &dyn Fn(&Ref) -> Option<EntKind>,
+) -> Result<(CKind, Vec<Option<Arg>>), (Span, String)> {
+    let [rate] = &w.rates[..] else {
+        return Err((w.word.span, "a relation reads one rate".to_string()));
+    };
+    let held = "a rate of a contact is held along a direction or square to one, `rate(p over t) \
+                parallel l` or `perpendicular l`, or measured along one, `rate(p over t) \
+                distance(d, along: l)`";
+    let point = &w.ops[rate.op];
+    if kind_of(point) != Some(EntKind::Point) {
+        return Err((point.span, "a rate of a contact is of the point the contact holds".to_string()));
+    }
+    let direction = |r: &Ref| match kind_of(r) {
+        Some(EntKind::Line | EntKind::Axis) => Ok(Arg::Ref(r.clone())),
+        _ => Err((r.span, format!("{held}: `{}` is no line or axis", crate::syntax::ref_text(r)))),
+    };
+    let over = Some(Arg::Word(rate.over.text.clone()));
+    match (w.word.text.as_str(), w.ops.len()) {
+        (word @ ("parallel" | "perpendicular"), 2) => {
+            if !w.args.is_empty() {
+                return Err((w.word.span, format!("`{word}` of a rate takes nothing in \
+                    parentheses")));
+            }
+            let other = direction(&w.ops[1 - rate.op])?;
+            let word = Some(Arg::Word(word.to_string()));
+            Ok((CKind::Rate, vec![None, Some(other), Some(Arg::Ref(point.clone())), None, over, word]))
+        }
+        ("distance", 1) => {
+            let along = w.args.iter().find_map(|a| match a {
+                crate::syntax::OpArg::Named(n, Arg::Ref(r)) if n.text == "along" => Some(r),
+                _ => None,
+            });
+            let (Some(along), Some((text, span)), 2) = (along, w.dim(), w.args.len()) else {
+                return Err((w.word.span, format!("{held}: `distance(d, along: l)`, `l` a line or \
+                    an axis")));
+            };
+            let d = Some(Arg::Dim { text: text.to_string(), span });
+            Ok((CKind::RateDistance,
+                vec![None, Some(direction(along)?), Some(Arg::Ref(point.clone())), d, None, over]))
+        }
+        _ => Err((w.word.span, format!("{held}, not `{}`", w.word.text))),
+    }
 }
 
 /// How many pairs `mapped`'s parentheses hold (#357), each `source -> target` read as two
@@ -193,8 +259,10 @@ fn say_once(diags: &mut Vec<Diag>, span: Span, stmt: StmtId, message: String) {
 /// applied as a gauge, taken as a region's term, or refused, and no id. The steps below, in the
 /// order each may end it.
 pub(super) fn constrain(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) -> Option<u32> {
-    // a rate's relation is no row of the drawing, but what its family integrates by (#339 D3)
-    if r.reads_rate() {
+    // a rate's relation is no row of the drawing, but what its family integrates by (#339 D3) —
+    // but for a rate of a contact, which is a row like any other (#365)
+    let contact_rate = r.form.written().is_some_and(|w| w.rates.iter().any(|x| x.slot));
+    if r.reads_rate() && !contact_rate {
         rate_row(cx, r, st);
         return None;
     }
@@ -296,7 +364,7 @@ pub(super) fn constrain(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) -> Option<u3
             return None;
         }
     }
-    let (ckind, spec, mut args, mut left_out) =
+    let (ckind, _, mut args, mut left_out) =
         across_views(cx, &r, st, (ckind, spec), args, left_out, reader)?;
     // a body traced in space (#326): a line touching a surface lies in its tangent plane, and a
     // curve's second place is held at none — the normal, a plane and a curvature are a surface's
@@ -307,7 +375,7 @@ pub(super) fn constrain(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) -> Option<u3
             return None;
         }
     };
-    if refused_value(cx, &r, st, ckind, spec, &args) {
+    if refused_value(cx, &r, st, ckind, ckind.spec(), &args) {
         return None;
     }
     let mut bound = inferred(cx, &r, st, ckind, &mut args, &left_out)?;
@@ -384,8 +452,26 @@ fn rate_row(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) {
 
 /// A contact with a body traced in space, read as its body runs over one formal or two (#326):
 /// the kind it is, its curve's second place pinned at none.
-fn traced_contact(cx: &Elab<'_>, kind: CKind, args: &mut [CArg], left_out: &mut [bool])
+fn traced_contact(cx: &Elab<'_>, kind: CKind, args: &mut Vec<CArg>, left_out: &mut Vec<bool>)
     -> Result<CKind, String> {
+    // the tangent at a point of a traced surface is its tangent plane's, over the place's two
+    // numbers: a rate runs over a curve's one (#365)
+    if kind == CKind::Rate {
+        let surface = match args.first() {
+            Some(CArg::Ent(e)) if e.kind == EntKind::Traced => {
+                cx.sk.traced.get(e.i()).is_some_and(|t| t.formals() == 2)
+            }
+            _ => false,
+        };
+        if surface && matches!(args.get(5), Some(CArg::Str(w)) if w == "tangent") {
+            args.truncate(3);
+            args.extend([CArg::Num(0.0), CArg::Num(0.0)]);
+            left_out.truncate(3);
+            left_out.extend([true, true]);
+            return Ok(CKind::TracedSurfaceTangentAt);
+        }
+        return Ok(kind);
+    }
     if kind.traced_contact().is_none() {
         return Ok(kind);
     }
@@ -394,7 +480,6 @@ fn traced_contact(cx: &Elab<'_>, kind: CKind, args: &mut [CArg], left_out: &mut 
     let Some(t) = cx.sk.traced.get(e.i()) else { return Ok(kind) };
     let surface = t.formals() == 2;
     let kind = match kind {
-        CKind::TracedTangentAt if surface => CKind::TracedSurfaceTangentAt,
         CKind::TracedNormalAt | CKind::TracedPlaneAt | CKind::TracedCurvatureAt if !surface => {
             return Err(format!("`{}` is a curve in space, which has a tangent at a point and no \
                 normal or curvature this relation reads: a surface has them", t.name));
@@ -926,7 +1011,10 @@ pub(super) fn tangents_at(sk: &Sketch, map: &SourceMap, diags: &mut Vec<Diag>) {
             CArg::Param(p) => Some(p),
             _ => None,
         }).collect();
-        let held = sk.holding(at, on).is_some_and(|h| h.into_iter().map(Some).eq(place));
+        // a rate shares the first of its contact's unknowns, the slot it runs over (#365)
+        let held = sk.holding(at, on).is_some_and(|h| {
+            h.len() >= place.len() && h.iter().zip(&place).all(|(&a, &b)| Some(a) == b)
+        });
         let Some(site) = map.site_of_constraint(c.id).filter(|_| !held) else { continue };
         let name = |e: EntRef| {
             let written = |n: &String| format!("`{}`", super::source_map::public_path(n));
@@ -939,7 +1027,10 @@ pub(super) fn tangents_at(sk: &Sketch, map: &SourceMap, diags: &mut Vec<Diag>) {
             CKind::EnvelopeCurvatureAt => "curvature",
             CKind::EnvelopePlaneAt => "tangent plane",
             CKind::MeshingNormalAt => "common normal",
-            CKind::MeshingTangentAt => "path of contact",
+            CKind::Rate if c.rate_source() == Some(crate::constraints::RateSource::Meshing)
+                && !c.rate_square() => "path of contact",
+            CKind::Rate if matches!(&c.args[5], CArg::Str(w) if w == "tangent") => "tangent",
+            CKind::Rate | CKind::RateDistance => "rate",
             CKind::TracedNormalAt => "normal",
             CKind::TracedCurvatureAt => "curvature",
             CKind::TracedPlaneAt | CKind::TracedSurfaceTangentAt => "tangent plane",

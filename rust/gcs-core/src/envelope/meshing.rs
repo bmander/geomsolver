@@ -32,9 +32,10 @@
 //!
 //! **At a point held there** (#345) two more relations share the point's phase, lag and places,
 //! as an envelope's `at:` contacts share their point's: `contact perpendicular(at: q) l`, the line
-//! along the common normal (`Contact::Normal`), and `contact tangent(at: q) l`, the line along the
-//! path of contact (`Contact::Path`): the contact point's derivative along the phase, read by the
-//! implicit function theorem off the rows' Jacobian in the lag and the places.  (Not the bearing:
+//! along the common normal (`Contact::Normal`), and the contact point's **rate** along the phase,
+//! `rate(q over t)` (#365), held parallel to a line — the path of contact, `Contact::Path` — or
+//! square to one (`Contact::PathSquare`): read by the implicit function theorem off the rows'
+//! Jacobian in the lag and the places, every other column held.  (Not the bearing:
 //! a pair whose contact stands still on the gear's flank — `spiral_bevel/contact.sv`'s, step 3's
 //! turned cutter — has a path all the same, the gear's turn carrying the contact.)  Its own
 //! Jacobian is the rows' second derivatives: the rows are read once over a number carrying their
@@ -84,18 +85,23 @@ pub enum Contact {
     /// `contact perpendicular(at: q) l`: the line runs along the common normal at `q` (#345).
     /// Lead: two points along it.
     Normal = 1,
-    /// `contact tangent(at: q) l`: the line runs along the path of contact at `q` (#345). Lead:
-    /// two points along it.
+    /// `rate(q over t) parallel l`: the line runs along the path of contact at `q` — the contact
+    /// point's rate along the phase (#345, #365). Lead: two points along it.
     Path = 2,
+    /// `rate(q over t) perpendicular l`: the line runs square to the path of contact at `q`
+    /// (#365): the rate's part along it, a length a radian of the phase. Lead: two points along it.
+    PathSquare = 3,
 }
 
 impl Contact {
-    pub const ALL: [Contact; 3] = [Contact::Point, Contact::Normal, Contact::Path];
+    pub const ALL: [Contact; 4] =
+        [Contact::Point, Contact::Normal, Contact::Path, Contact::PathSquare];
 
     pub fn rows(self) -> usize {
         match self {
             Contact::Point => LEAD + ROWS,
             Contact::Normal | Contact::Path => 2,
+            Contact::PathSquare => 1,
         }
     }
 
@@ -103,7 +109,7 @@ impl Contact {
     pub fn lead(self) -> usize {
         match self {
             Contact::Point => LEAD,
-            Contact::Normal | Contact::Path => 6,
+            Contact::Normal | Contact::Path | Contact::PathSquare => 6,
         }
     }
 
@@ -111,14 +117,16 @@ impl Contact {
         match self {
             Contact::Point => "point_on_meshing",
             Contact::Normal => "meshing_normal_at",
-            Contact::Path => "meshing_tangent_at",
+            Contact::Path => "meshing_rate",
+            Contact::PathSquare => "meshing_rate_square",
         }
     }
 
-    /// A point's rows are lengths; a direction's are cosines.
+    /// A point's rows are lengths, and so is a rate's part along a line; a direction's are
+    /// cosines.
     fn degree(self) -> u32 {
         match self {
-            Contact::Point => 1,
+            Contact::Point | Contact::PathSquare => 1,
             Contact::Normal | Contact::Path => 0,
         }
     }
@@ -513,10 +521,21 @@ fn line_rows<T: Num>(c: Contact, cols: &[T], k: &[f64], out: &mut [T]) -> Option
             let f = at(&m, cols);
             [f.along, cross(f.n[1], f.along)]
         }
+        Contact::PathSquare => {
+            out[0] = along_line(cols, path(&m, cols));
+            return Some(());
+        }
         _ => square_to(path(&m, cols)),
     };
     out.copy_from_slice(&line_against(cols, square));
     Some(())
+}
+
+/// The rate `tau` (a length a degree of the phase) along the line in the lead `cols`, a length a
+/// radian.
+fn along_line<T: Num>(cols: &[T], tau: [T; 3]) -> T {
+    let d = unit(vsub(col3(cols, 3), col3(cols, 0)));
+    dot(d, tau) * T::cst(180.0 / std::f64::consts::PI)
 }
 
 /// The line's direction in the lead `cols` against two directions `square` to where it runs.
@@ -687,21 +706,22 @@ fn normal_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
     held::block_jac(n, v, k, j, c.rows(), |x, kc, out| line_rows(c, x, kc, out));
 }
 
-/// A line along the path of contact's Jacobian: its second derivatives, exact by `Dual` over
-/// `Fwd`, a block at a time as the point's are (`jac`).
-fn path_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+/// A line along the path of contact's Jacobian, or square to it: its second derivatives, exact
+/// by `Dual` over `Fwd`, a block at a time as the point's are (`jac`).
+fn path_jac<const C: u8>(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    let c = Contact::ALL[C as usize];
     let (n_par, _) = curve_widths(n, v, k);
-    held::block_res(n, v, k, j, Contact::Path.rows() * n_par, path_jac_block);
+    held::block_res(n, v, k, j, c.rows() * n_par, |x, kc, out| path_jac_block(c, x, kc, out));
 }
 
 /// One line's: each flank read over its own columns with its derivatives in its own place, and
 /// the poses over theirs with their derivatives in the phase and the lag, each differentiated
 /// in its own columns only; then the contact's frame over every column by the chain rule, and the
 /// path read off it (`path_of`).
-fn path_jac_block(x: &[f64], k: &[f64], j: &mut [f64]) -> Option<()> {
+fn path_jac_block(c: Contact, x: &[f64], k: &[f64], j: &mut [f64]) -> Option<()> {
     let m = Mesh::read(k)?;
     let (w, o) = (x.len(), m.lead);
-    if o != Contact::Path.lead() || w != m.width() || j.len() != Contact::Path.rows() * w {
+    if o != c.lead() || w != m.width() || j.len() != c.rows() * w {
         return None;
     }
     // the first `N` of `cols` as variables, the rest as constants
@@ -737,7 +757,10 @@ fn path_jac_block(x: &[f64], k: &[f64], j: &mut [f64]) -> Option<()> {
         let a = p.at(start);
         let poses = read_poses(&std::array::from_fn(|q| spread(&a[3 * q..3 * q + 3], 0..2)));
         let tau = path_of(&assemble(&m, &unknowns(&m, &cols), seen, poses));
-        held::scatter_pass(&line_against(&cols, square_to(tau)), j, start);
+        match c {
+            Contact::PathSquare => held::scatter_pass(&[along_line(&cols, tau)], j, start),
+            _ => held::scatter_pass(&line_against(&cols, square_to(tau)), j, start),
+        }
     }
     Some(())
 }
@@ -816,7 +839,8 @@ pub fn kernel(c: Contact, n_par: usize, n_const: usize) -> Kernel {
     let (res, jac): (crate::kernels::KernelFn, crate::kernels::KernelFn) = match c {
         Contact::Point => (res, jac),
         Contact::Normal => (line_res::<1>, normal_jac),
-        Contact::Path => (line_res::<2>, path_jac),
+        Contact::Path => (line_res::<2>, path_jac::<2>),
+        Contact::PathSquare => (line_res::<3>, path_jac::<3>),
     };
     Kernel { name: c.name(), n_res: c.rows(), n_par, n_const, degree: c.degree(), res, jac,
              const_jac: None, form: None }

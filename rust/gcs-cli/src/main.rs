@@ -476,10 +476,6 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
                     println!("  {name}: {text}");
                 }
             }
-            // each motion's screw the drawing reads, its pitch (#326)
-            for line in gcs_core::report::screws_text(&sk) {
-                println!("  {line}");
-            }
             for w in &d.warnings {
                 println!("  note: {w}");
             }

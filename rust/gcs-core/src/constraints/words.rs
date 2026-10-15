@@ -237,7 +237,7 @@ pub fn ordinate_word(kind: CKind, args: &[Arg]) -> &str {
 /// cannot be made from the kinds alone.  `None` is "this word does not relate those two", which
 /// the caller reports with the kinds in it.
 pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option<String>) -> Option<CKind> {
-    use EntKind::{Arc, Circle, Curve, Envelope, Line, Meshing, Motion, Plane, Point, Axis, Spline, Traced};
+    use EntKind::{Arc, Circle, Curve, Envelope, Line, Meshing, Plane, Point, Axis, Spline, Traced};
     let round = |k: EntKind| matches!(k, Circle | Arc);
     // an axis is in space, so a direction relation naming one is the relation in space
     let axes = |a: EntKind, b: EntKind| matches!((a, b), (Axis, Axis | Line) | (Line, Axis));
@@ -300,17 +300,18 @@ pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option
             // reads as no word.  Of a line, its own direction
             (Line, Line) if at_point => CKind::Parallel,
             (k, Line) if round(k) && at_point => CKind::TangentCircleAt,
-            (Spline, Line) if at_point => CKind::SplineTangentAt,
-            (Curve, Line) if at_point => CKind::CurveTangentAt,
+            // of a spline, a curve, a meshing and a traced curve, the contact's rate there held
+            // along the line (#365): `rate(m over t) parallel l`, written as the tangent it is
+            (Spline | Curve, Line) if at_point => CKind::Rate,
             // an envelope in space at a point a contact holds on it (#283): a line or an axis in
             // its tangent plane, a plane touching it there
             (Envelope, Line | Axis) if at_point => CKind::EnvelopeTangentAt,
             (Envelope, Plane) if at_point => CKind::EnvelopePlaneAt,
             // the path of contact of a meshing at a point a contact holds on it (#345)
-            (Meshing, Line | Axis) if at_point => CKind::MeshingTangentAt,
+            (Meshing, Line | Axis) if at_point => CKind::Rate,
             // a body traced in space (#326): a curve's tangent, read as a surface's tangent plane
             // where the body is one (`program::relations`)
-            (Traced, Line | Axis) if at_point => CKind::TracedTangentAt,
+            (Traced, Line | Axis) if at_point => CKind::Rate,
             (Traced, Plane) if at_point => CKind::TracedPlaneAt,
             // tangency at a named end of the line is the regular form; the bare pair is
             // rank-deficient at every solution, so `at:` is how a drawing says which
@@ -389,16 +390,6 @@ pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option
         },
         "symmetry" => match (a, b) {
             (Point, Point) => CKind::Symmetric,
-            _ => return None,
-        },
-        // a motion's twist (#326): a line a force along which does no work on it, and the axis it
-        // screws about
-        "reciprocal" => match (a, b) {
-            (Line, Motion) => CKind::Reciprocal,
-            _ => return None,
-        },
-        "screw" => match (a, b) {
-            (Axis, Motion) => CKind::ScrewAxis,
             _ => return None,
         },
         // a point carried by a map (#357): three pairs an affine map, two the similarity — the
@@ -615,12 +606,10 @@ pub fn retired_prefix(word: &str, on: EntKind) -> Option<&'static str> {
 /// table (`gauge_op`), so a class, a placement and the chain's lookahead treat them as any
 /// other word.  None of the three is a prefix word a chain can open a link with: `prefix_op`
 /// declines them, so `fix(x == 0) point p -> …` is no chain.
-pub const OPERATORS: [&str; 28] = [
+pub const OPERATORS: [&str; 26] = [
     "distance", "tangent", "equal", "curvature", "horizontal", "vertical", "level", "angle",
     "radius", "length", "coincident", "midpoint", "parallel", "perpendicular", "symmetry", "project",
     "touches", "fix", "ccw", "cw",
-    // a motion's twist read (#326)
-    "reciprocal", "screw",
     // a point carried by a map (#357)
     "mapped",
     // a flank regular within its blank (#345), written `regular(…) within`

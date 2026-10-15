@@ -295,7 +295,10 @@ at second order").
 on `g`, says `l` runs along `g` there — one equation. Of a spline or a curve it reads the place of
 the contact holding `m` (`m coincident g`, pinned or not; with none it is E040, naming it), so
 `m coincident(t == s) g` beside it determines the line where `g tangent(t == s) l` would restate the
-point; of a circle or an arc the radius to `m` is square to `l`; of a line it is `parallel`.
+point; of a circle or an arc the radius to `m` is square to `l`; of a line it is `parallel`. Of a
+spline or a curve it is the **rate** of that contact along its place, `rate(m over t) parallel l`
+(0.122): `t` names the contact's own slot, and the rate is its derivative there with every other
+unknown held — never along a `param` (an unknown several contacts may read is refused).
 
 #### Across views, a word means space
 
@@ -1680,14 +1683,28 @@ helicoid: `spiral_bevel/phillips.sv`'s rack, `std.HalfSpace(P, L, d: 0mm)` under
 `motion(slide, relative_to: pinion_turn)`. The `at:` relations read the place of the `coincident` holding `M`, which must
 be stated. A set's envelope is only held to: it has no chart after the solve.
 
-**A motion's twist** is read by two relations whose operand is the motion itself: `L reciprocal
-mesh` (a force along the line `L` does no work on it: for a mesh, the members move as fast along
-`L`, the meshing law of a line of action) and `isa screw mesh` (the axis `isa` is the motion's
-instantaneous screw axis; its pitch is the relation's own unknown, `isa screw(pitch == 0) mesh`
-pins it, and `solventc` reports it). Either reads turns, screws and slides about fixed lines, and
-one relative to another (`spiral_bevel/phillips.sv`). And `X coincident(under: m, t == τ) x` is `x`
-as the moving frame sees it: carried by `m`'s pose at the roll `τ` (degrees; leave it unpinned and
-the solve finds it) — a rolling circle's point seen by the fixed one is an epicycloid.
+**A point a motion carries**: `X coincident(under: m, t == τ) x` is `x` as the moving frame sees
+it, carried by `m`'s pose at the roll `τ` (degrees; leave it unpinned and the solve finds it) — a
+rolling circle's point seen by the fixed one is an epicycloid.
+
+**A motion's twist is read by rates** (0.122). The roll `t` is the slot of the `coincident` holding
+`X`, and `rate(X over t)` is how fast `X` runs a radian of it — the twist there. A rate of a contact
+is held along a line or square to one, or measured along one:
+
+```
+X coincident(under: mesh, t == 0deg) x
+rate(X over t) parallel l                             // X moves along l
+rate(X over t) perpendicular l                        // … or square to it
+rate(X over t) distance(v, along: l)                  // its speed along l, a length a radian
+```
+
+The standard library says the two things a gear designer reads of a twist this way (`use std
+(reciprocal)`): `L reciprocal mesh` — a force along `L` does no work on the motion, for a mesh the
+meshing law of a line of action (the members move as fast along `L`) — and `screw :=
+std.Screw(isa, mesh)`, the instantaneous screw axis `isa` and `screw.pitch`, its advance along
+`isa` a radian of the roll (give `pitch:` to pin it). Any motion the solve reads, a relative of a
+relative too (`spiral_bevel/phillips.sv`). A `claim L reciprocal m` carries its point all the same
+and judges the rate.
 
 **Two flanks meshing are a locus** (`spiral_bevel/contact.sv`): tooth contact analysis. The first
 flank turns with the pinion and the second with the gear — the mesh's observer and source — each an
@@ -1709,14 +1726,16 @@ mismatched one at a point. After the solve the contact is traced over `from:`…
 point held to it, and `solventc` reports the transmission error and the path of contact.
 
 At a point held to it (0.112), `bearing perpendicular(at: Q) l` holds a line along the two flanks'
-common normal, and `bearing tangent(at: Q) l` one along the path of contact — where the contact
-moves in space as the pinion turns, not the bearing on either flank. Both read Q's phase, lag and
-places, so they hold at any phase Q is at, and an angle stated of either solves a number:
+common normal. The **path of contact** — where the contact moves in space as the pinion turns, not
+the bearing on either flank — is Q's rate along its phase, its lag and places following (0.122):
+`rate(Q over t) parallel l`, or as the tangent it is, `bearing tangent(at: Q) l`. Both read Q's
+phase, lag and places, so they hold at any phase Q is at, and an angle stated of either solves a
+number:
 
 ```
 pq := point hint((10, 48, 0))
 path_q := line(Q, pq)
-bearing tangent(at: Q) path_q
+rate(Q over t) parallel path_q
 Q distance(10mm) pq
 path_q angle(2deg) std.x                              // R's phase, a cutter's number, …
 ```

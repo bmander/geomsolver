@@ -4,6 +4,24 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.122] The rate of a contact; a motion's twist read by rates.** `rate(p over t)` runs over the
+slot of the contact holding `p` (§6.5) — a curve's `t`, a traced curve's `u`, a meshing's phase,
+the roll of `p coincident(under: m, t == …) q` — where `t` names no formal in scope: the derivative
+of the point the contact holds in that slot, every other unknown of the drawing held (a meshing's
+lag and places following its rows). It is held `parallel` or `perpendicular` to a line or an axis,
+and, of a carried point, measured `distance(d, along: l)` (`d` stated or free); a rate along a
+`param`, a slot no contact holding the point owns, or one owned by two contacts is refused, naming
+it. `g tangent(at: m) l` of a spline, a curve, a traced curve or a meshing is that rate held along
+the line, the same statement: the path of contact is `rate(Q over t) parallel l`. A motion's
+twist has no words of its own: `reciprocal` and `screw` (0.105) leave the core, and the standard
+library says them with rates of carried points — `L reciprocal m` (import it, `use std
+(reciprocal)`) and `std.Screw(isa, m)`, whose `pitch` is the axis's advance a radian of the roll
+(Ball's pitch times how fast the motion turns about it), a component's unknown read as any is. A
+claimed word makes what it declares all the same: the `coincident` placing it is stated, the rest
+judged. `screw(pitch == …)` is `std.Screw(isa, m, pitch: …)`; a twist is read of any motion, a
+relative of a relative too. Through 0.121 the twist was read by two relation words of its own and
+a rate ran only along a running formal. (Issue #365.)
+
 **[0.121] Two formals marched by the method of lines.** A body traced over two formals may state a
 rate along either (§6.5): the first is marched, the second sampled at the Gauss–Lobatto nodes of
 32 pieces of its interval, a rate along it the derivative of the quintic through a piece's nodes,

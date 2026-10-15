@@ -111,9 +111,12 @@ from the cone's equation and the poses alone), a stated lag solving its phase, `
 envelope at the element's phase, to 1e-9), to the closed form's point contact along `L` with no
 lag, and their meshing's Jacobian to finite differences.
 
-**The common normal and the path of contact at a point (#345 S1, [0.112]):** `contact
-perpendicular(at: q) l` is `MeshingNormalAt` and `contact tangent(at: q) l` `MeshingTangentAt`,
-`meshing::Contact::{Normal, Path}` beside `Point` (`CKind::meshing_contact`, `KernelKey::Meshing {
+**The common normal and the path of contact at a point (#345 S1, [0.112], #365):** `contact
+perpendicular(at: q) l` is `MeshingNormalAt`, and the path of contact is the contact point's
+rate along the phase, `rate(q over t) parallel l` — `contact tangent(at: q) l` the same statement —
+a `CKind::Rate` over the meshing, `meshing::Contact::{Normal, Path}` beside `Point` (and
+`PathSquare`, the rate square to a line: its part along it, a length a radian of the phase, degree
+1, through the same `path_jac_block`) (`CKind::meshing_contact`, `KernelKey::Meshing {
 contact, … }`): lead the line's two lifted ends or an axis's direction (six columns), then the
 point's contact's eight unknowns — shared, `holds_on` handing `PointOnMeshing`'s place to
 `tangent_at`'s slots `[3..11]` — and the meshing's columns as the point's; two rows, degree 0, the
@@ -234,24 +237,27 @@ nearest within 1 mm of the meshing's contact (the next pair's, a pitch on, at th
 the concave side constant within the files' sag, no overlap.
 
 **A point a motion carries (#326, [0.106]):** `Reading::Carried` is `X − Pose(τ)·x`, the pose
-`held::frames`' last at `τ` degrees — any motion, its twist constant or not (`Reading::twist`
-false). `held::Step::Turn` (code 4, nine columns: a centre's lift, its view's `u` and `v`) is a turn
+`held::carried` at `τ` degrees — any motion. `held::Step::Turn` (code 4, nine columns: a centre's lift, its view's `u` and `v`) is a turn
 about a point of a view as it reads in space; only `Moving::of_any` reads one.
 
-**A motion's screw (#326, [0.105]):** `envelope::screw` reads a motion as its twist, `v(x) = v₀ +
-ω × x` a radian, constant in the fixed frame for a turn, a screw or a slide about a fixed line
-(`own`: `ω = ratio·d`, `v₀ = a × ω + d·advance/τ`) and one relative to another (the source's less
-the observer's) — `constant` refuses anything else. `Reading::Reciprocal` is one row of degree 2,
-`(B − A)·v(A)`; `Reading::Axis` five of degree 1: the axis's direction against the two directions
-square to `ω̂` (`square_to`: the world axis `ω̂` leans least toward, its part off) times the lever
-(the motion's first axis as drawn), its place against `ω × v₀/|ω|²` across them, and the pitch
-against `ω·v₀/|ω|²` (`axis_of`; `None`, so NaN rows, where `ω` is zero). Written once over
-`kernels::Num`, the Jacobian by `held::block_jac`. `motion::Family::instantaneous` is the same
-read off a snapshot (`Isa`: point, direction, pitch, twist); `report::screws_text` is the CLI's
-line. `tests/phillips.rs` holds the screw to Ball's closed form on the common perpendicular — the
-foot `E ω₂·ω/|ω|²` from the pinion's shaft, the pitch that point's speed along `ω` — at three shaft
-angles, no offset giving zero pitch through the apex, and `L reciprocal mesh` to the members'
-equal speeds along `L` at every point of it.
+**A motion's twist, read by rates (#326, #365, [0.122]):** a carried point's rate,
+`rate(X over t)` of `X coincident(under: m, t == τ) x`, is `∂(Pose(τ)·x)/∂τ` a radian
+(`held::carried`, the pose's derivative in the roll carried by its `H2`), every other column held —
+the twist at `X`, any motion's, its twist constant or not.  `Reading::{Rate, RateSquare,
+RateAlong}`: the rate's two components across the line's direction (`square_to`), its component
+along it, and that less a distance — `(m, c)` in the constants, a free one's unknown the last
+column — each degree 1, a velocity, so a point on the axis of a screw of no pitch, standing still,
+holds them regularly.  Columns the line's lifted ends (or an axis's place and direction), the
+carried point's base point's lift and the roll, then the motion's.  The standard library says the
+twist's two words with them: `l reciprocal m` (a point of `l` carried at roll 0, its rate square to
+`l`: `d · v(p)`, the same at every point of `l`) and `Screw(isa, m, pitch)` (two points of `isa`
+carried, their rates along it, the first's speed along it the pitch — Ball's pitch times `ω` along
+`isa`, the advance a radian of the roll).  `motion::Family::instantaneous` reads Ball's screw off a
+snapshot (`Isa`: point, direction, pitch, twist).  `tests/phillips.rs` holds `std.Screw` to Ball's
+closed form on the common perpendicular — the foot `E ω₂·ω/|ω|²` from the pinion's shaft, the pitch
+that point's speed along the axis — at three shaft angles, no offset giving zero pitch through the
+apex, and `L reciprocal mesh` to the members' equal speeds along `L` at every point of it;
+`tests/rate_of_contact.rs` a rolling circle's carried point's rate to the epicycloid's derivative.
 
 **The post-solve B-rep is Rust API, not Solvent** (#364). Patches, seams, corners, edges and face
 boundaries add no unknown, no solve row reads them and nothing exports from them, so the language

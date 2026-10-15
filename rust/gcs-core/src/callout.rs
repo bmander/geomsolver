@@ -89,9 +89,11 @@ macro_rules! undrawn {
             | CKind::CurveCurvature
             | CKind::SplineTangentLine
             | CKind::SplineCurvature
-            | CKind::SplineTangentAt
-            | CKind::CurveTangentAt
             | CKind::TangentCircleAt
+            // a rate of a contact is a direction, and its distance a velocity, a length a radian
+            // of a slot: no figure on any view (#365)
+            | CKind::Rate
+            | CKind::RateDistance
             // the ordinate's zero states no number
             | CKind::Level
             | CKind::Project
@@ -134,13 +136,8 @@ macro_rules! undrawn {
             // nor does a point on the path of contact of two flanks: its lag is a slot a pin
             // states, not a dimension
             | CKind::PointOnMeshing
-            // nor a line along its common normal or its path at a point held there (#345)
+            // nor a line along its common normal at a point held there (#345)
             | CKind::MeshingNormalAt
-            | CKind::MeshingTangentAt
-            // nor does a motion's twist read (#326): a line reciprocal to it, an axis on its
-            // screw, whose pitch is the relation's own unknown
-            | CKind::Reciprocal
-            | CKind::ScrewAxis
             // nor a flank's regularity within a blank (#345): a ratio, read at a point a search
             // finds
             | CKind::RegularWithin
@@ -148,7 +145,6 @@ macro_rules! undrawn {
             | CKind::CarriedPoint
             // nor a contact with a traced body: its curvature is the circle's own radius
             | CKind::PointOnTraced
-            | CKind::TracedTangentAt
             | CKind::TracedSurfaceTangentAt
             | CKind::TracedNormalAt
             | CKind::TracedPlaneAt

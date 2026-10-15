@@ -51,6 +51,11 @@ impl Constraint {
     }
 
     fn own_consts_on(&self, sk: &Sketch, span: Option<usize>) -> Vec<f64> {
+        // a rate in space reads its source's, as the source's contacts do (#365); in a view, a
+        // spline's knots or a curve's body, read below as its tangent's were
+        if let Some(src) = self.rate_source().filter(|s| !s.planar()) {
+            return self.rate_consts(sk, src);
+        }
         // an envelope contact's: its source and its motion, read off the sketch (#283)
         if let Some(c) = self.kind.envelope_contact() {
             return self.envelope_parts(sk).map(|p| p.consts(c)).unwrap_or_default();
@@ -72,7 +77,9 @@ impl Constraint {
         }
         // a motion's twist read: its steps (#326)
         if self.kind.motion_reading().is_some() {
-            return self.motion_parts(sk).map(|p| crate::envelope::screw::consts(&p.steps))
+            return self.motion_parts(sk)
+                .map(|p| crate::envelope::screw::consts(crate::envelope::screw::Reading::Carried,
+                                                        [0.0; 2], &p.steps))
                 .unwrap_or_default();
         }
         if self.kind == CKind::Stationary {
@@ -276,6 +283,59 @@ impl Constraint {
         }
     }
 
+    /// A rate's constants in space (#365): a traced body's, a meshing's, or a carried point's
+    /// distance and its motion's steps.
+    fn rate_consts(&self, sk: &Sketch, src: RateSource) -> Vec<f64> {
+        match src {
+            RateSource::Traced => self.traced_of().and_then(|e| sk.traced.get(e.i()))
+                .map(crate::traced::consts_of).unwrap_or_default(),
+            RateSource::Meshing => self.meshing_parts(sk).map(|p| p.consts(sk, 6)).unwrap_or_default(),
+            RateSource::Carried => {
+                let stated = match (self.kind, self.free) {
+                    (CKind::RateDistance, Some(f)) => [f.m, f.c],
+                    (CKind::RateDistance, None) => [0.0, self.args[3].num()],
+                    _ => [0.0; 2],
+                };
+                self.motion_parts(sk)
+                    .map(|p| crate::envelope::screw::consts(self.rate_reading(), stated, &p.steps))
+                    .unwrap_or_default()
+            }
+            RateSource::Spline | RateSource::Curve => Vec::new(),
+        }
+    }
+
+    /// A rate's columns (#365): in a view the place, the curve's columns and the line's ends, as
+    /// its tangent's were; in space the line's direction, then the contact's own unknowns — a
+    /// traced curve's place, a meshing's phase, lag and places, a carried point's base point and
+    /// roll — then what the source reads.
+    fn rate_columns(&self, sk: &Sketch, src: RateSource, span: Option<usize>) -> Vec<u32> {
+        let t = self.args[3 + (self.kind == CKind::RateDistance) as usize].param();
+        let ln = || sk.line_params(self.args[1].ent().i()).to_vec();
+        let holder = self.rate_contact(sk);
+        let place = holder.and_then(|c| c.holds_on()).map(|(_, _, p)| p);
+        match src {
+            RateSource::Spline => [vec![t], self.span_params(sk, span), ln()].concat(),
+            RateSource::Curve => [vec![t], sk.entity_params(self.args[0].ent()), ln()].concat(),
+            RateSource::Traced => {
+                let at = place.unwrap_or_else(|| vec![t, t]);
+                let body = self.traced_of().and_then(|e| sk.traced.get(e.i()))
+                    .map(|b| crate::traced::columns(sk, b)).unwrap_or_default();
+                [self.direction_columns(sk, 1), at, body].concat()
+            }
+            RateSource::Meshing => {
+                let at = place.unwrap_or_else(|| vec![t; crate::envelope::meshing::UNKNOWNS]);
+                let parts = self.meshing_parts(sk).map(|p| p.columns(sk)).unwrap_or_default();
+                [self.direction_columns(sk, 1), at, parts].concat()
+            }
+            RateSource::Carried => {
+                let base = holder.map(|c| c.args[1].ent().i())
+                    .and_then(|x| sk.lift_of(x)).map_or_else(Vec::new, |k| sk.lifts[k].x.to_vec());
+                let parts = self.motion_parts(sk).map(|p| p.columns(sk)).unwrap_or_default();
+                [self.direction_columns(sk, 1), base, vec![t], parts].concat()
+            }
+        }
+    }
+
     /// The point a tangency-at-a-contact touches its round entity at: the arc endpoint or the
     /// line endpoint the `at` slot names.  One decode, because `params_on` picks the kernel's
     /// *columns* from it and `cgraph` picks the *cluster element* from it — two readings that
@@ -303,7 +363,7 @@ impl Constraint {
     /// anything that is not a curve contact, and for one that has not been added yet (its
     /// parameter is still the seed number, not a Param).
     pub fn curve_contact(&self) -> Option<(usize, u32)> {
-        let (curve, t) = self.kind.contact_slots()?;
+        let (curve, t) = self.spline_slots()?;
         match self.args[t] {
             Arg::Param(p) => Some((self.args[curve].ent().i(), p)),
             _ => None,
@@ -315,7 +375,14 @@ impl Constraint {
     /// because it gates the span machinery; this is the reading for questions about the
     /// parameter itself — chiefly what one unit of it is worth in world length.
     pub fn parametric_contact(&self) -> Option<(EntRef, u32)> {
-        self.contact_at(self.kind.contact_slots())
+        self.contact_at(self.spline_slots())
+    }
+
+    /// The slots of a contact on a spline: the kind's (`CKind::contact_slots`), or a rate's of a
+    /// point on one (#365), which addresses a span as its tangent did.
+    fn spline_slots(&self) -> Option<(usize, usize)> {
+        self.kind.contact_slots()
+            .or_else(|| (self.rate_source() == Some(RateSource::Spline)).then_some((0, 3)))
     }
 
     /// The entity and the allocated Param at a contact's two slots, once added.
@@ -330,7 +397,8 @@ impl Constraint {
     /// Whatever this constraint's place runs along — a spline, a curve, a line's or an arc's run —
     /// and the Param holding where (`CKind::place_on`).
     pub fn place(&self) -> Option<(EntRef, u32)> {
-        self.contact_at(self.kind.place_on())
+        let rate = self.rate_source().filter(|s| s.planar()).map(|_| (0, 3));
+        self.contact_at(self.kind.place_on().or(rate))
     }
 
     /// A contact on a curve *family* instance (`PointOnCurve`) and the Param holding where
@@ -350,7 +418,7 @@ impl Constraint {
     /// The spline a curve contact touches and the parameter it currently sits at — also before
     /// `Sketch::add`, while the slot still holds the seed number rather than a Param.
     fn spline_contact(&self, sk: &Sketch) -> Option<(usize, f64)> {
-        let (curve, t) = self.kind.contact_slots()?;
+        let (curve, t) = self.spline_slots()?;
         Some((self.args[curve].ent().i(), self.args[t].value(sk)))
     }
 
@@ -600,14 +668,12 @@ impl Constraint {
             CKind::CurveTangentLine => {
                 [vec![self.args[2].param()], sk.entity_params(e(0)), ln(1)].concat()
             }
-            // the place the contact holding the point owns, then the tangency's columns: the
-            // point is the contact's to hold, and no column here
-            CKind::CurveTangentAt => {
-                [vec![self.args[3].param()], sk.entity_params(e(0)), ln(1)].concat()
-            }
-            CKind::SplineTangentAt => {
-                [vec![self.args[3].param()], self.span_params(sk, span), ln(1)].concat()
-            }
+            // the place the contact holding the point owns, then the rate's columns: the point
+            // is the contact's to hold, and no column here (#365)
+            CKind::Rate | CKind::RateDistance => match self.rate_source() {
+                Some(src) => self.rate_columns(sk, src, span),
+                None => Vec::new(),
+            },
             CKind::CurveCurvature => {
                 [vec![self.args[2].param()], sk.entity_params(e(0)), centre(1), vec![rad(1)]].concat()
             }
@@ -647,7 +713,7 @@ impl Constraint {
             }
             // a line along the common normal or the path of contact (#345): its direction, then
             // the contact's unknowns and the meshing's columns as the contact's
-            CKind::MeshingNormalAt | CKind::MeshingTangentAt => {
+            CKind::MeshingNormalAt => {
                 let at: Vec<u32> = (3..3 + crate::envelope::meshing::UNKNOWNS)
                     .map(|i| self.args[i].param()).collect();
                 let parts = self.meshing_parts(sk).map(|p| p.columns(sk)).unwrap_or_default();
@@ -656,7 +722,6 @@ impl Constraint {
             // a contact with a traced body (#326, `traced`): what it states about, the place, then
             // the body's columns
             CKind::PointOnTraced
-            | CKind::TracedTangentAt
             | CKind::TracedSurfaceTangentAt
             | CKind::TracedNormalAt
             | CKind::TracedPlaneAt
@@ -685,23 +750,14 @@ impl Constraint {
             CKind::RegularWithin => {
                 self.regular_parts(sk).map(|p| p.columns(sk)).unwrap_or_default()
             }
-            // a motion's twist read (#326, `envelope::screw`): the line's two lifted ends, or the
-            // axis's direction, its place and the pitch, then the motion's axes
-            CKind::Reciprocal | CKind::ScrewAxis | CKind::CarriedPoint => {
+            // a point a motion carries (#326, `envelope::screw`): both points' lifts and the roll,
+            // then the motion's axes
+            CKind::CarriedPoint => {
                 let lift = |p: usize| {
                     let k = sk.lift_of(p).expect("a relation in space is lifted at the add");
                     sk.lifts[k].x.to_vec()
                 };
-                let lead = match self.kind {
-                    CKind::Reciprocal => self.direction_columns(sk, 0),
-                    CKind::CarriedPoint => {
-                        [lift(e(0).i()), lift(e(1).i()), vec![self.args[3].param()]].concat()
-                    }
-                    _ => {
-                        let x = &sk.axes[e(0).i()];
-                        [x.d.to_vec(), x.a.to_vec(), vec![self.args[2].param()]].concat()
-                    }
-                };
+                let lead = [lift(e(0).i()), lift(e(1).i()), vec![self.args[3].param()]].concat();
                 let parts = self.motion_parts(sk).map(|p| p.columns(sk)).unwrap_or_default();
                 [lead, parts].concat()
             }
@@ -852,14 +908,29 @@ impl Constraint {
                 let parts = self.meshing_parts(sk).map(|p| p.lifted(sk)).unwrap_or_default();
                 [vec![e(0).i()], parts].concat()
             }
-            CKind::MeshingNormalAt | CKind::MeshingTangentAt => {
+            CKind::MeshingNormalAt => {
                 let lead = if e(1).kind == EntKind::Line { ends(1).to_vec() } else { Vec::new() };
                 let parts = self.meshing_parts(sk).map(|p| p.lifted(sk)).unwrap_or_default();
                 [lead, parts].concat()
             }
+            // a rate in space: its line's ends, then every point its source reads (#365)
+            CKind::Rate | CKind::RateDistance => {
+                let lead = if e(1).kind == EntKind::Line { ends(1).to_vec() } else { Vec::new() };
+                let source = match self.rate_source() {
+                    Some(RateSource::Meshing) => {
+                        self.meshing_parts(sk).map(|p| p.lifted(sk)).unwrap_or_default()
+                    }
+                    Some(RateSource::Traced) => self.traced_of().and_then(|t| sk.traced.get(t.i()))
+                        .map(|t| crate::traced::lifted(sk, t)).unwrap_or_default(),
+                    Some(RateSource::Carried) => {
+                        self.motion_parts(sk).map(|p| p.lifted()).unwrap_or_default()
+                    }
+                    _ => Vec::new(),
+                };
+                [lead, source].concat()
+            }
             // what it states about, then every point the traced body reads (#326)
             CKind::PointOnTraced
-            | CKind::TracedTangentAt
             | CKind::TracedSurfaceTangentAt
             | CKind::TracedNormalAt
             | CKind::TracedPlaneAt
@@ -877,15 +948,10 @@ impl Constraint {
             }
             // every point the envelope and the regions' terms read (#345)
             CKind::RegularWithin => self.regular_parts(sk).map(|p| p.lifted()).unwrap_or_default(),
-            // the line's ends, then every point the motion's axes read (#326)
-            CKind::Reciprocal | CKind::ScrewAxis | CKind::CarriedPoint => {
+            // both points, then every point the motion's axes read (#326)
+            CKind::CarriedPoint => {
                 let parts = self.motion_parts(sk).map(|p| p.lifted()).unwrap_or_default();
-                let lead = match self.kind {
-                    CKind::Reciprocal => ends(0).to_vec(),
-                    CKind::CarriedPoint => vec![e(0).i(), e(1).i()],
-                    _ => Vec::new(),
-                };
-                [lead, parts].concat()
+                [vec![e(0).i(), e(1).i()], parts].concat()
             }
             CKind::Symmetric3 => [vec![e(0).i(), e(1).i()], ends(2).to_vec()].concat(),
             // a direction's operands: a line's ends are lifted, and an axis is in space already

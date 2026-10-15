@@ -754,7 +754,8 @@ impl Read {
 pub enum Contact {
     /// `p coincident k`: `p − X`.  Lead: the point's lift.
     Point = 0,
-    /// `l tangent(at: p) k`, `k` a curve: the line along its tangent.  Lead: the line's ends.
+    /// `rate(p over u) parallel l` (#365) — `k tangent(at: p) l` — `k` a curve: the line along its
+    /// tangent.  Lead: the line's ends.
     Tangent = 1,
     /// `l tangent(at: p) S`, `S` a surface: the line in its tangent plane.  Lead: the line's ends.
     InPlane = 2,
@@ -765,24 +766,29 @@ pub enum Contact {
     /// `S curvature(at: p) k`: the circle osculating the surface's section by its plane at `p`.
     /// Lead: the centre's lift, the radius, the plane's two axes.
     Curvature = 5,
+    /// `rate(p over u) perpendicular l`, `k` a curve (#365): the curve's rate along the line, a
+    /// length a unit of `u`.  Lead: the line's ends.
+    TangentSquare = 6,
 }
 
 impl Contact {
-    pub const ALL: [Contact; 6] = [Contact::Point, Contact::Tangent, Contact::InPlane,
-                                   Contact::Normal, Contact::Plane, Contact::Curvature];
+    pub const ALL: [Contact; 7] = [Contact::Point, Contact::Tangent, Contact::InPlane,
+                                   Contact::Normal, Contact::Plane, Contact::Curvature,
+                                   Contact::TangentSquare];
 
     pub fn rows(self) -> usize {
         match self {
             Contact::Point | Contact::Curvature => 3,
             Contact::Tangent | Contact::Normal | Contact::Plane => 2,
-            Contact::InPlane => 1,
+            Contact::InPlane | Contact::TangentSquare => 1,
         }
     }
 
     pub fn lead(self) -> usize {
         match self {
             Contact::Point => 3,
-            Contact::Tangent | Contact::InPlane | Contact::Normal | Contact::Plane => 6,
+            Contact::Tangent | Contact::InPlane | Contact::Normal | Contact::Plane
+            | Contact::TangentSquare => 6,
             Contact::Curvature => 10,
         }
     }
@@ -798,7 +804,8 @@ impl Contact {
     fn name(self) -> &'static str {
         match self {
             Contact::Point => "point_on_traced",
-            Contact::Tangent => "traced_tangent_at",
+            Contact::Tangent => "traced_rate",
+            Contact::TangentSquare => "traced_rate_square",
             Contact::InPlane => "traced_surface_tangent_at",
             Contact::Normal => "traced_normal_at",
             Contact::Plane => "traced_plane_at",
@@ -806,10 +813,11 @@ impl Contact {
         }
     }
 
-    /// A point's and a circle's rows are lengths; a direction's are cosines.
+    /// A point's and a circle's rows are lengths, and so is a rate's part along a line; a
+    /// direction's are cosines.
     fn degree(self) -> u32 {
         match self {
-            Contact::Point | Contact::Curvature => 1,
+            Contact::Point | Contact::Curvature | Contact::TangentSquare => 1,
             _ => 0,
         }
     }
@@ -818,7 +826,7 @@ impl Contact {
     pub fn formals(self) -> Option<usize> {
         match self {
             Contact::Point => None,
-            Contact::Tangent => Some(1),
+            Contact::Tangent | Contact::TangentSquare => Some(1),
             _ => Some(2),
         }
     }
@@ -861,6 +869,7 @@ fn rows<T: Num>(c: Contact, lead: &[T], f: &Frame<T>, out: &mut [T]) {
             out[1] = dot(l, e2);
         }
         Contact::InPlane => out[0] = dot(dir(), n()),
+        Contact::TangentSquare => out[0] = dot(dir(), f.d[0]),
         Contact::Normal | Contact::Plane => {
             let l = if c == Contact::Plane {
                 unit(cross(col3(lead, 0), col3(lead, 3)))
@@ -982,6 +991,7 @@ pub fn kernel(c: Contact, n_par: usize, n_const: usize) -> Kernel {
         Contact::Normal => (res::<3>, jac::<3>),
         Contact::Plane => (res::<4>, jac::<4>),
         Contact::Curvature => (res::<5>, jac::<5>),
+        Contact::TangentSquare => (res::<6>, jac::<6>),
     };
     Kernel { name: c.name(), n_res: c.rows(), n_par, n_const, degree: c.degree(), res, jac,
              const_jac: None, form: None }

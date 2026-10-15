@@ -703,7 +703,7 @@ contact tangent(at: p) t
     };
     let again = build(&printed);
     assert_eq!(kinds(&again), kinds(&printing));
-    for k in [CKind::MeshingNormalAt, CKind::MeshingTangentAt] {
+    for k in [CKind::MeshingNormalAt, CKind::Rate] {
         assert!(kinds(&again).contains(&k), "{k:?}");
     }
     let text = include_str!("../../examples/spiral_bevel/contact.sv");
@@ -720,13 +720,18 @@ contact tangent(at: p) t
         };
         let contacts: Vec<_> =
             sk.constraints.iter().filter(|c| c.kind == CKind::PointOnMeshing).collect();
-        let lines: Vec<_> = sk.constraints.iter().filter(|c| c.kind.meshing_contact().is_some()
-            && c.kind != CKind::PointOnMeshing).collect();
+        let lines: Vec<_> = sk.constraints.iter()
+            .filter(|c| matches!(c.kind, CKind::MeshingNormalAt | CKind::Rate)).collect();
         assert_eq!(lines.len(), 4);
         for l in lines {
             let at = l.args[2].ent();
             let holding = contacts.iter().find(|c| c.args[0].ent() == at).unwrap();
-            assert_eq!(read(l), held(holding), "{:?}", l.kind);
+            // the path of contact is the rate over the contact's phase, its first unknown, the
+            // rest read as columns (#365)
+            match l.kind {
+                CKind::Rate => assert_eq!(l.args[3].param(), held(holding)[0]),
+                _ => assert_eq!(read(l), held(holding), "{:?}", l.kind),
+            }
         }
     };
     shared(&first);

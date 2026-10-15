@@ -256,14 +256,17 @@ fn all_constraints(seed: u32) -> Sketch {
         Constraint::point_on_spline(&sk, qe, spwe),
         Constraint::spline_tangent_line(&sk, spwe, le2),
         Constraint::spline_curvature(&sk, spwe, ce2),
-        // the tangent at a point a contact holds on the curve (#251): its place the contact's
+        // the tangent at a point a contact holds on the curve (#251), its rate there held along
+        // a line (#365): its place the contact's
         Constraint::new(
-            CKind::SplineTangentAt,
-            vec![e(spe), e(le2), e(pe), Arg::Seed { value: 0.5, pinned: false }],
+            CKind::Rate,
+            vec![e(spe), e(le2), e(pe), Arg::Seed { value: 0.5, pinned: false },
+                 Arg::Str("t".into()), Arg::Str("tangent".into())],
         ),
         Constraint::new(
-            CKind::SplineTangentAt,
-            vec![e(spwe), e(le1), e(qe), Arg::Seed { value: 0.5, pinned: false }],
+            CKind::Rate,
+            vec![e(spwe), e(le1), e(qe), Arg::Seed { value: 0.5, pinned: false },
+                 Arg::Str("t".into()), Arg::Str("parallel".into())],
         ),
         Constraint::new(CKind::TangentCircleAt, vec![e(ae), e(le1), e(pe)]),
         Constraint::new(CKind::TangentCircleAt, vec![e(ce1), e(le2), e(qe)]),
@@ -388,9 +391,14 @@ fn every_constraint_jacobian_agrees_with_finite_differences() {
 #[test]
 fn every_constraint_type_has_a_kernel_and_all_are_covered() {
     let sk = all_constraints(0);
-    // a kind whose kernel is built at its operands' width has no static one
-    let used: std::collections::BTreeSet<usize> =
-        sk.constraints.iter().filter(|c| !c.kind.built()).map(|c| c.kernel_id()).collect();
+    // a kind whose kernel is built at its operands' width has no static one — but a rate of a
+    // point on a spline runs the spline's tangent kernel (#365)
+    let used: std::collections::BTreeSet<usize> = sk.constraints.iter()
+        .filter_map(|c| match c.kernel_key(&sk) {
+            gcs_core::kernels::KernelKey::Static(id) => Some(id),
+            _ => None,
+        })
+        .collect();
     assert_eq!(used.len(), gcs_core::kernels::N_KERNELS);
 }
 
@@ -651,6 +659,8 @@ eased perpendicular(at: u) nl
 eased tangent(at: u) t
 standing perpendicular(at: w) t
 standing tangent(at: w) nl
+rate(u over t) parallel nl
+rate(w over t) perpendicular t
 ";
     let (prog, errs) = crate::common::parse(SRC);
     assert!(errs.is_empty(), "{errs:?}");
@@ -658,8 +668,9 @@ standing tangent(at: w) nl
     assert!(e.ok(), "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
     let mut sk = e.sketch;
     assert_eq!(sk.constraints.iter().filter(|c| c.kind == CKind::PointOnMeshing).count(), 5);
-    for k in [CKind::MeshingNormalAt, CKind::MeshingTangentAt] {
-        assert_eq!(sk.constraints.iter().filter(|c| c.kind == k).count(), 5, "{k:?} is checked");
+    for k in [CKind::MeshingNormalAt, CKind::Rate] {
+        let want = if k == CKind::Rate { 7 } else { 5 };
+        assert_eq!(sk.constraints.iter().filter(|c| c.kind == k).count(), want, "{k:?} is checked");
     }
     assert_eq!(sk.meshings.iter().filter(|m| m.ease.is_some()).count(), 2);
     let mut rng = Rng::new(283);
@@ -669,7 +680,8 @@ standing tangent(at: w) nl
                 p.value += rng.uniform(-0.05, 0.05) * (1.0 + p.value.abs().min(10.0));
             }
         }
-        for c in sk.constraints.iter().filter(|c| c.kind.meshing_contact().is_some()) {
+        let read = |c: &&Constraint| c.kind.meshing_contact().is_some() || c.rate_source().is_some();
+        for c in sk.constraints.iter().filter(read) {
             let err = check_constraint(&sk, c, 1e-6, 1e-7)
                 .unwrap_or_else(|e| panic!("round {round}: {e}"));
             assert!(err.is_finite());
@@ -677,8 +689,9 @@ standing tangent(at: w) nl
     }
 }
 
-/// A motion read (#326, `envelope::screw`): a line reciprocal to its twist, an axis on its screw
-/// and a point it carries — under the mesh of two turns about skew shafts (the gear's a screw), a
+/// A motion read (#326, #365, `envelope::screw`): a point it carries, and that point's rate — held
+/// square to a line (`std.sv`'s `reciprocal`), along an axis and measured along it, its distance
+/// free and stated (`std.Screw`) — under the mesh of two turns about skew shafts (the gear's a screw), a
 /// slide seen from a turn, a turn alone, and a turn about a point of a view seen from a turn about
 /// a line — every axis free, so the motion's columns are differentiated too.
 /// Checked at the seeds and at points knocked off them.
@@ -686,7 +699,7 @@ standing tangent(at: w) nl
 fn twist_relations_agree_with_finite_differences() {
     const SRC: &str = "\
 unit mm
-use std
+use std (reciprocal)
 o := point hint((0, 0, 0))
 z := point hint((1, 0.5, 10))
 ax := line(o, z)
@@ -711,11 +724,11 @@ k2 := point hint((4, 6, 1))
 K := line(k1, k2)
 K reciprocal gear_turn
 isa := axis hint(dir: (0.3, -0.2, 0.9))
-isa screw mesh
+sa := std.Screw(isa, mesh)
 jsa := axis hint(dir: (0.1, 0.9, 0.2))
-jsa screw rack
+sb := std.Screw(jsa, rack)
 ksa := axis hint(dir: (0.8, 0.1, -0.5))
-ksa screw gear_turn
+sc := std.Screw(ksa, gear_turn, pitch: 3mm)
 x := point hint((3, -2, 5))
 X := point hint((1, 1, 1))
 X coincident(under: mesh, t == 20) x
@@ -735,8 +748,10 @@ Z coincident(under: roll, t == -35) q2
     let e = gcs_core::program::elaborate(&prog);
     assert!(e.ok(), "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
     let mut sk = e.sketch;
-    let read = |c: &&Constraint| c.kind.motion_reading().is_some();
-    assert_eq!(sk.constraints.iter().filter(read).count(), 9);
+    let read = |c: &&Constraint| c.kind.motion_reading().is_some() || c.rate_source().is_some();
+    assert_eq!(sk.constraints.iter().filter(read).count(), 24);
+    assert!(sk.constraints.iter().any(|c| c.kind == CKind::RateDistance && c.free.is_some()),
+            "a pitch left to the solve is read as a free column");
     let mut rng = Rng::new(326);
     for round in 0..4 {
         if round > 0 {
