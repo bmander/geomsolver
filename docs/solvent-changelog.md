@@ -4,6 +4,15 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.120] `On` integrates its frame, and a rate runs over a chain.** `std.On(g, up:, s:)` holds
+its plane square to the guide and turns it by `Minimal`'s rate, `up` read at the family's home
+alone: over a guide in one plane with `up` its normal the solid is the one it was, and along a
+twisted guide (a curve traced in space) the section stays square to it. A station that states a
+rate runs over a named chain, its frame carried across each joint, and a station read off its
+integration meets its relations, so a law in pieces is read as written. Through 0.119 `On` held
+`v` along `up` at every station, which along a twisted guide leaned the section off square to it
+with nothing said, and a rate over a chain was refused. (Issue #363, S2 and S4.)
+
 **[0.119] A curve traced in space is a path.** A curve traced in space (§6.5) is given to a
 `path` formal: `m coincident(t == s) g` pins its contact's place, the body's own formal, as a
 spline's `t` is pinned — to a face family's running number in a station — and `hint(at: m,
@@ -11,9 +20,9 @@ along: g)` steps along it. So a station stands on a guide drawn in space, its fr
 rate (`std.Minimal`'s), and a family is swept along it. A surface traced over two formals is no
 path (**E103**). Through 0.118 a station could stand only on a guide in one plane or one written
 into its own body (`std.Helix`, `std.OnHelix`): a traced curve given to a `path` was E103, `t ==`
-on its contact E040, and a step along it E103. `std.On` still holds its `v` along `up`, so over
-a twisted guide its plane leans off square to the tangent: there the plane is held square to the
-tangent and turned by `Minimal`'s rate. (Issue #363, S1.)
+on its contact E040, and a step along it E103. `std.On` still held its `v` along `up`, so over
+a twisted guide its plane leaned off square to the tangent: there the plane was held square to
+the tangent and turned by `Minimal`'s rate (0.120 made that `On`). (Issue #363, S1.)
 
 **[0.118] A face carried whole, and a mirror.** `sec := prof mapped(from -> a, to -> b) in n`
 (§6.8) is the face `prof` carried into the plane `n` by a map: each corner carried as a point is,

@@ -538,15 +538,18 @@ component OnSpline(g: spline, up: axis, s: Scalar) {
   n square(up: up) tl
 }
 
-// The plane square to any path `g` — a line, an arc, a spline or a traced curve — where its
-// parameter is `s`, its `v` along `up`: `OnSpline`'s statements over a `path`.  A line's and an
-// arc's `s` is the fraction of its run (an arc's by angle), a spline's its own parameter.  Given a
+// The plane square to any path `g` — a line, an arc, a spline, a curve, or a curve traced in
+// space (#363) — where its parameter is `s`: `OnSpline`'s place and tangent over a `path`, and the
+// rotation-minimising frame along it, `Minimal`'s.  A line's and an arc's `s` is the fraction of
+// its run (an arc's by angle), a spline's its own parameter, a traced curve's its formal.  Given a
 // named open chain of lines and arcs, a family runs it link by link, `s` from 0 to the count of
-// its links (#243 L4).  With `up` the normal of the plane `g` is drawn in, the frame turns only as
-// the guide does — the rotation-minimising frame, its binormal held.  A curve traced in space is a
-// path too (#363 S1), but along a twisted one `up` is not square to the tangent and the plane
-// leans (`square`, above): there hold the plane square to the tangent and turn it by `Minimal`'s
-// rate.
+// its links (#243 L4), the frame carried across each joint.  The frame is integrated along the
+// running number from where its family stands drawn, its home, where `n.v` leans toward `up` and
+// `n.u` is square to it; from there its axes turn only as the guide makes them (`n.u`'s rate has
+// no part along `n.v`).  Over a guide in one plane with `up` its normal that is the frame holding
+// `v` along `up`; along a twisted guide `up` is read at the home alone, so the plane stays square
+// to the guide where an `up` held everywhere would lean it.  Give it the family's running number
+// as `s`.
 component On(g: path, up: axis, s: Scalar) {
   m := point
   m coincident(t == s) g
@@ -556,7 +559,13 @@ component On(g: path, up: axis, s: Scalar) {
   length(10mm) tl
   n := plane(u: hint(dir: up, turn: -90deg, about: tl), v: hint(dir: up))
   n.origin coincident m
-  n square(up: up) tl
+  n.u perpendicular tl
+  n.v perpendicular tl
+  n.u perpendicular n.v
+  rate(n.u over s) perpendicular n.v
+  initially {
+    n.u perpendicular up
+  }
 }
 
 // A screw's station (#243 L6): the frame of `base` turned `360deg · turns · s` about its normal

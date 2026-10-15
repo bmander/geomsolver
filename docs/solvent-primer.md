@@ -1275,8 +1275,10 @@ k := Par(o).p over u in (-2mm, 2mm)
   as coordinates, `p scaled(du: 10, dv: 5, scale: 0.5, s: s) st.n` places a corner shrinking to half, `scaled_radius(r: 8mm, scale: 2, s: s) k` a radius
   (`use std (scaled, scaled_radius)`); each runs its total linearly, and the word given another
   fraction runs another law (`s: 3 * s^2 - 2 * s^3` eases it). A `when` cannot read `s` (it is
-  made once); write a law in pieces with `min`, `max` or `abs`. Its `v` stays along `up`; with `up` the normal of the guide's plane, the frame
-  turns no more than the guide does. **A named open chain of lines and arcs is one path**:
+  made once); write a law in pieces with `min`, `max` or `abs`. `On`'s `v` leans toward `up` where
+  the family is drawn (the middle of its interval) and from there its frame turns only as the
+  guide makes it (0.120): with `up` the normal of the guide's plane its `v` stays along `up`, and
+  along a guide in space its plane stays square to the guide. **A named open chain of lines and arcs is one path**:
   `solid(Tube(route, std.z, r: 4mm).f over s in (0, 5))` runs the station over `route`'s
   five links one after the next, link `k` while `s` is in `(k, k + 1)`; a law in `s` reads the
   chain's whole `s`, and the walls keep their names across the links (`docs/lofts/l0/pipe.sv`).
@@ -1310,11 +1312,9 @@ k := Par(o).p over u in (-2mm, 2mm)
   formal it runs over; give a word that states one the family's running number as that formal.
   **A guide drawn in space** (0.119) is a curve traced in space handed to a `path` formal: `m
   coincident(t == s) g` stands the station at the body's own formal `s` and `hint(at: m, along:
-  g)` steps along it. `std.On` holds its `v` along `up`, which leans its plane off square to a
-  twisted guide, so hold the plane square to the tangent there (`n.u perpendicular tl`, `n.v
-  perpendicular tl`, `n.u perpendicular n.v`) and turn it by `Minimal`'s rate, `rate(n.u over s)
-  perpendicular n.v` with `initially { n.u perpendicular up }`
-  (`rust/gcs-core/tests/space_paths.rs`). A surface traced over two formals is no path.
+  g)` steps along it; `std.On(g, up: std.z, s: s)` stands on it as on any path, its frame the
+  rotation-minimising one (`rust/gcs-core/tests/space_paths.rs`). A surface traced over two
+  formals is no path.
   A profile drawn once may also be **carried whole** by the map itself,
   `sec := prof mapped(o -> st.n.origin, x -> t) in st.n` — every corner and edge of `prof` carried
   into `st.n` by the similarity taking `o` and `x` to the origin and `t`, the edges keeping their

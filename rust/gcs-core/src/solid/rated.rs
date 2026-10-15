@@ -36,6 +36,11 @@ const CONSISTENT: f64 = 1e-8;
 /// The pivot below which the stacked rows (each of unit length) are short of rank.
 const INDEX_TOL: f64 = 1e-9;
 
+/// How far a station read off its flow may leave its rows, each in its own units, before a
+/// Newton step brings it back (`Rated::meet`), and how many steps are taken.
+const MET: f64 = 1e-13;
+const MEETS: usize = 4;
+
 /// How many columns a station's flow is extrapolated over (order twice that): fewer than
 /// `ode::STEPS` offers, so its steps are shorter and a station between two of its nodes — one more
 /// step from the node before (`ode::Path::at`) — costs a third of the evaluations.
@@ -242,6 +247,21 @@ impl Rated {
         Ok(())
     }
 
+    /// The system compiled again where a contact on a spline has run onto another span, whose
+    /// control points its columns name (`curve::contact_spans`), as a solve compiles it again: its
+    /// columns are the same parameters, and the rows found independent are found again.
+    fn respan(&mut self) {
+        if crate::curve::contact_spans(&self.sk) == *self.sys.spans() {
+            return;
+        }
+        self.sys = System::new(&self.sk);
+        let free = &self.sys.free;
+        self.hc = free.iter().position(|&p| p as u32 == self.levers.held).unwrap_or(self.hc);
+        self.cols = (0..self.sys.n_free).filter(|&c| c != self.hc).collect();
+        debug_assert!(self.cols.iter().map(|&c| free[c] as u32).eq(self.params.iter().copied()));
+        self.keep = None;
+    }
+
     /// The station's rate at `(s, x)`, or why there is none: the stacked rows and their rank.
     fn rate_at(&mut self, s: f64, x: &[f64], f: &mut [f64]) -> Result<(), String> {
         for (&p, &v) in self.params.iter().zip(x) {
@@ -251,6 +271,7 @@ impl Rated {
         if !self.levers.lean(&mut self.sk, s) {
             return Err("has a number over its running number that does not work out there".into());
         }
+        self.respan();
         self.sys.refresh_consts(&self.sk);
         let z = self.sys.z0(&self.sk);
         let g = self.sys.conditioned(&z);
@@ -294,6 +315,51 @@ impl Rated {
             f[k] = zp[k] / self.sys.col_scale[c];
         }
         Ok(())
+    }
+
+    /// **The station's rows met where the flow put it** (#363 S2): minimum-norm Newton steps over
+    /// the state, the running number held at `s`, from the state integrated there — so what the
+    /// rows determine (a place on the guide, a radius by its law) is the rows' to the solve's
+    /// accuracy, whatever the integration made of it across a kink in a law, and only the
+    /// freedom the rates hold (a minimum-norm step has no part along it) is the flow's.
+    fn meet(&mut self, s: f64, y: &[f64]) {
+        for (&p, &v) in self.params.iter().zip(y) {
+            self.sk.params[p as usize].value = v;
+        }
+        self.sk.params[self.levers.held as usize].value = s;
+        if !self.levers.lean(&mut self.sk, s) {
+            return;
+        }
+        self.respan();
+        self.sys.refresh_consts(&self.sk);
+        let mut z = self.sys.z0(&self.sk);
+        let hard = self.sys.hard_rows();
+        for _ in 0..MEETS {
+            let r = self.sys.residuals(&z);
+            if hard.iter().all(|&i| r[i].abs() <= MET) {
+                break;
+            }
+            let j = self.sys.jacobian_dense(&z);
+            let mut a = Mat::zeros(hard.len(), self.cols.len());
+            let mut b = Mat::zeros(hard.len(), 1);
+            for (i, &row) in hard.iter().enumerate() {
+                for (k, &c) in self.cols.iter().enumerate() {
+                    a.set(i, k, j.at(row, c));
+                }
+                b.set(i, 0, -r[row]);
+            }
+            let (d, _) = min_norm_lstsq(&a, &b, INDEX_TOL);
+            if !d.data.iter().all(|v| v.is_finite()) {
+                break;
+            }
+            for (k, &c) in self.cols.iter().enumerate() {
+                z[c] += d.data[k];
+            }
+        }
+        let x = self.sys.full_x(&z);
+        for &p in &self.params {
+            self.sk.params[p as usize].value = x[p as usize];
+        }
     }
 
     /// The stacked rows solved square: over the rows found independent where the station first
@@ -432,8 +498,9 @@ impl Flow {
         let rated = &mut self.rated;
         let node = path.at(rated, s, false)
             .map_err(|r| format!("the station at {} {}", num(r.at()), rated.why))?;
-        for (&p, &v) in rated.params.iter().zip(&node.y) {
-            part.params[p as usize].value = v;
+        rated.meet(s, &node.y);
+        for &p in &rated.params {
+            part.params[p as usize].value = rated.sk.params[p as usize].value;
         }
         part.params[rated.levers.held as usize].value = s;
         Ok(())

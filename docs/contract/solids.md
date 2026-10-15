@@ -257,7 +257,8 @@ placement carries inside the blank; CLI test readers zero the offset.
   `std.OnArc` (of an arc's turn), `std.OnSpline` (a spline's parameter), `std.On` (any `path`: a
   line, an arc, a spline, a traced curve — L4, a line touching a round at a point of it drawn in
   its plane, `planes::incidences`), `std.Helix` and `std.OnHelix` (L6, below) — each a component
-  holding a plane `n` square to its path, its `v` along `up`.  `On` and `OnSpline` seed their tangent ahead
+  holding a plane `n` square to its path, its `v` along `up` (`On`'s at its home: [0.120], its
+  frame integrated, below).  `On` and `OnSpline` seed their tangent ahead
   along the guide (`hint(at: m, along: g)`, `entities::rate_along`) and their plane off it as
   `OnLine` does, so the drawn station starts on the branch whose `v` is `up`'s and whose normal
   runs the way the guide does — never the mirror, which a sign-free `parallel` would otherwise
@@ -273,11 +274,14 @@ placement carries inside the blank; CLI test readers zero the offset.
 - **A guide in space** (#363 S1, [0.119]): a curve traced in space is a `path`, so a station
   stands on it by `m coincident(t == s) g`, `g tangent(at: m) tl` and a plane square to `tl`
   turned by `Minimal`'s rate from a home square to `up` — the frame integrated, as along
-  `std.OnHelix` (`std.On`'s `square(up:)` leaves its plane leaning off square to a twisted
-  tangent; which word holds a station over any path is S2's).  `tests/space_paths.rs` is the
-  gate: a 2 × 2 square along two turns of a traced helix (r 10, rise 10) at 4·√((40π)² + 10²)
+  `std.OnHelix` — which is `std.On` itself since [0.120] (S2: a frame holding `v` along `up` at
+  every station leaned its plane off square to a twisted tangent, silently).  `On` over a planar
+  guide is `OnSpline`'s algebraic frame, corner for corner (`tests/rates.rs`).
+  `tests/space_paths.rs` is the gate: a 2 × 2 square along two turns of a traced helix (r 10, rise 10) at 4·√((40π)² + 10²)
   off the exact B-rep to 1e-9 and corner for corner `std.OnHelix`'s under `Minimal`; the frame
-  turning −28.5576° a turn against Frenet's (r 10, pitch 5), to 1e-9; a traced surface refused.
+  turning −28.5576° a turn against Frenet's (r 10, pitch 5), to 1e-9; a traced surface refused;
+  `std.On` on the traced helix `OnHelix`'s solid corner for corner; an off-centre square round
+  `pipe.sv`'s U at 4·(60 + 23π), its frame carried across the joints.
 - **A chain is one path** (§6.9 [0.102], #243 L4, finding 6).  A `path` formal of a family's
   instance given a named open chain (`flatten::chain_argument`, the chain found among the
   statements walked so far) makes the family **legs**, one per link its interval reaches
@@ -400,8 +404,16 @@ placement carries inside the blank; CLI test readers zero the offset.
   (`Flow::put`, `ode::Path::at`: one more step from the node before) where it would solve one, so
   the faceted stepping, its judging and the exact walls (L2's pieces, each checked against one
   more integration between its nodes) are unchanged; the flow is marched once and shared with the
-  walls (`Family::flow`).  No regularity is asked of an integrated station: its rank is the flow's.
-  A station with `initially` rows and no rate is refused, and so is a rate over a chain's legs.  A
+  walls (`Family::flows`, one a leg).  No regularity is asked of an integrated station: its rank is
+  the flow's.  **A station read off its flow meets its rows** (`Rated::meet`, #363 S2):
+  minimum-norm Newton steps from the integrated state, the running number held, to `MET` in each
+  row's units — what the rows determine is theirs, only the freedom the rates hold the flow's, so a
+  law with a kink (`max(1 − s, 0.7)`) is not smeared by the integration across it.  A contact on a
+  spline that runs onto another span compiles the flow's system again (`Rated::respan`, as a solve
+  does).  **A rate over a chain** (#363 S4): each leg its own flow; a leg after the first has its
+  home at its start, the state carried across the joint (`carry_over`), its `initially` rows made
+  claims and its rows met from there with no regularity asked (`Reading::first`), and its walls
+  read off its own flow.  A station with `initially` rows and no rate is refused.  A
   station's part holds **no plane's normal of its own** (`part_of`): a normal is minted where read
   (`Sketch::plane_normal`), under no name of the station's, and moves with its plane.
   `std.Minimal(n, up:, s:)` (#243 L9) is the word.  `tests/rates.rs` is the gate: the minimal
