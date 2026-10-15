@@ -57,13 +57,15 @@ mount := {journal: 5mm, clearance: 0.2mm, play: 0.15mm, root: 4mm, keys: 3, key_
 
 // The pair's size, for the frame's floor: nothing of either member stands farther from the
 // gear's axis than its heel, half the face width (0.1 R) past the mean cone distance R, and a
-// module beyond for the tip. The floor's top is a clearance below that, and runs `side` back
-// from the crossing along each shaft and forward to the foot of M on it, short of the cranks.
-// The cranks' throw is less than the gear's height over the floor's underside, so a crank
-// turns clear of the table the drive stands on.
+// module beyond for the tip. The floor's top is a clearance below that: a round floor `plate`
+// thick and `floor_r` about the post, spoked — a hub `hub_r` about the post's foot, a rim
+// `rim` wide, and `spokes` bars across between them, each two spokes `spoke_w` wide. The cranks'
+// reach is less than the gear's height over the floor, so a crank turns clear of the floor
+// and of the table the drive stands on.
 R := mean_module * sqrt(pinion_teeth^2 + gear_teeth^2) / 2
 reach := 1.1 * R + 2 * mean_module
-sizes := {below: reach + 12mm, plate: 8mm, side: 40mm}
+sizes := {below: reach + 12mm, plate: 8mm, floor_r: 50mm, hub_r: 16mm, rim: 6mm, spokes: 3,
+  spoke_w: 8mm}
 
 cross := Crossing(pair.gear_cone.ax, pair.pinion_cone.ax)
 gear_side := Mount(pair.gear_cone.ax, pair.gear_cone.foot, cross.on_a, pair.gear_blank.back,
@@ -350,23 +352,27 @@ component Crank(ax: line, foot: point, toward: line, across: line, m: group) {
   handle := solid(sleeve)
 }
 
-// The frame, inside the pair: a post where the shafts cross, down to a floor under both, and a
-// sleeve along each shaft from the post into the hollow of its member, bored for the journal.
-// Its three directions are the two axes and their common perpendicular; each piece is the
-// points between levels along them, each level an ordinate from a point the pair places — along
-// a shaft from the foot of M on it or from the crossing, along the perpendicular from either
-// axis.
+// The frame, inside the pair: a post where the shafts cross, down to a round floor under both,
+// spoked about the post's own axis — the shafts' common perpendicular — and a sleeve along each
+// shaft from the post into the hollow of its member, bored for the journal. Its three directions
+// are the two axes and their common perpendicular; each piece is the points between levels
+// along them, or within a radius of one, each level an ordinate from a point the pair places —
+// along a shaft from the foot of M on it or from the crossing, along the perpendicular from
+// either axis.
 component Frame(g: line, gf: point, p: line, pf: point, cross: Perpendicular, m: group,
     f: group) {
   post := { q | cross.on_a distance(in: (-m.post, m.post), along: g) q
                 cross.on_a distance(in: (-m.post, m.post), along: p) q
                 cross.on_a distance(>= -f.below, along: cross.span) q
                 cross.on_b distance(<= 0mm, along: cross.span) q }
-  base := { q | cross.on_a distance(in: (-f.below, f.plate - f.below), along: cross.span) q
-                cross.on_a distance(>= -f.side, along: g) q
-                gf distance(<= 0mm, along: g) q
-                cross.on_a distance(>= -f.side, along: p) q
-                pf distance(<= 0mm, along: p) q }
+  floor_at := f.plate - f.below
+  hub := { q | q inside std.Cylinder(cross.span, r: f.hub_r)
+               cross.on_a distance(in: (-f.below, floor_at), along: cross.span) q }
+  rim := { q | q inside std.Cylinder(cross.span, r: f.floor_r)
+               q outside std.Cylinder(cross.span, r: f.floor_r - f.rim)
+               cross.on_a distance(in: (-f.below, floor_at), along: cross.span) q }
+  private spoked := Spokes(cross.span, cross.on_a, g, lo: -f.below, hi: floor_at,
+    width: f.spoke_w, reach: f.floor_r - 1mm, bars: f.spokes)
   gear_sleeve := { q | q inside std.Cylinder(g, r: m.sleeve_r)
                        cross.on_a distance(>= -m.post, along: g) q
                        gf distance(<= m.front - m.play, along: g) q }
@@ -380,14 +386,17 @@ component Frame(g: line, gf: point, p: line, pf: point, cross: Perpendicular, m:
                        cross.on_b distance(>= -m.post - 1mm, along: p) q
                        pf distance(<= m.front, along: p) q }
   private construction post_solid := solid(post)
-  private construction base_solid := solid(base)
+  private construction hub_solid := solid(hub)
+  private construction rim_solid := solid(rim)
   private construction gear_sleeve_solid := solid(gear_sleeve)
   private construction pinion_sleeve_solid := solid(pinion_sleeve)
   private construction gear_bore_solid := solid(gear_bore)
   private construction pinion_bore_solid := solid(pinion_bore)
   body := solid()
   post_solid union body
-  base_solid union body
+  hub_solid union body
+  rim_solid union body
+  spoked.body union body
   gear_sleeve_solid union body
   pinion_sleeve_solid union body
   gear_bore_solid cut body

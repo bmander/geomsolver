@@ -27,7 +27,7 @@ the solved drawing.
 
 | part | in the document | what it is |
 |---|---|---|
-| frame (1) | `frame.body` | a post where the shafts cross, standing on a floor under both, and a sleeve along each shaft from the post into the hollow of its member |
+| frame (1) | `frame.body` | a post where the shafts cross, standing on a round floor under both, 100 mm across and spoked (a hub, six spokes and a rim), and a sleeve along each shaft from the post into the hollow of its member |
 | shafts (2) | `gear_side.shaft`, `pinion_side.shaft` | a 10 mm journal that runs in its sleeve, a head that stops it at the post, and, from the member's hub out, six splines that pass through the sleeve |
 | gear and pinion (2) | `gear_side.part`, `pinion_side.part` | the imported member and its spoked hub as one part: a rim on the blank's back cone, six spokes and a boss, bored for the spline |
 | cranks (2) | `gear_side.crank.body`, `pinion_side.crank.body` | a 10 mm plate, as a crank is drawn face on: a boss about the shaft bored for the spline, tapering to an eye 34 mm out, and below the shaft a fan, padded on the handle's side, its counterweight |
@@ -37,9 +37,11 @@ the solved drawing.
 Each part is a component used twice, once per member, with one set of numbers (`mount`). Along a
 shaft, every ordinate is measured from the foot of M on it, or from where the other shaft crosses
 it for what stands at the post. So the two drive trains read alike, though one member's blank
-stands 63° to its axis and the other's 24°. Every part but the two members is built as an exact
-B-rep: each plate as the intersection of its half-spaces, everything about one axis as a
-revolution, and the splines and spokes as slabs placed round the axis by a motion. The members
+stands 63° to its axis and the other's 24°. The frame's floor is round and spoked about the
+post's own axis, the shafts' common perpendicular, with the same `Spokes` component the members'
+hubs use. Every part but the two members is built as an exact B-rep: each plate as the
+intersection of its half-spaces, everything about one axis as a revolution, and the splines and
+spokes as slabs placed round the axis by a motion. The members
 are their swept cuts, as in `hypoid.sv`, meshed from their material fields.
 
 ## Assembly
@@ -113,9 +115,9 @@ crank balanced, and, in the slow tier, every claim held with each hub touching i
 The pair's inputs head `drive.sv`, as they head `hypoid.sv`, so the drive can carry a pair of its
 own. The tooth counts, module and spiral may change. The offset may not go to zero: a bevel pair's
 shafts meet, and then there is no common perpendicular for the frame to stand on. The drive's own
-sizes are in `mount` (shaft, sleeve, splines, hub and spokes, crank plate, grip, handle) and `sizes` (the
-frame's floor). The counterweight follows the crank's sizes, and the claims say
-whether a change still fits.
+sizes are in `mount` (shaft, sleeve, splines, hub and spokes, crank plate, grip, handle) and
+`sizes` (the frame's floor: its depth, radius, hub, rim and spokes). The counterweight follows
+the crank's sizes, and the claims say whether a change still fits.
 
 Print files, one STL a part (each member takes about half a minute):
 

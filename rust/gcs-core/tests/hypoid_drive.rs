@@ -121,7 +121,7 @@ fn each_crank_spins_balanced() {
 /// clear of the frame and the other member through a whole turn — and each member's hub lies on
 /// its blank's back face, nowhere apart from it.
 #[test]
-#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 3 min: the drive's claims, two swept")]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 10 min: the drive's claims, four swept")]
 fn every_claim_the_drive_makes_holds() {
     let seated = "\nclaim gear_side.hub clear(1mm) pair.gear_blank.material\n\
                   claim pinion_side.hub clear(1mm) pair.pinion_blank.material\n";
