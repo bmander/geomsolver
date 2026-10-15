@@ -165,6 +165,13 @@ impl Tape {
         if vars.len() > MAX_VARS {
             return Err(format!("a curve may read at most {MAX_VARS} coordinates"));
         }
+        Self::compile_wide(ast, vars)
+    }
+
+    /// `compile` over a table of any width: a tape read only by `eval_num`, whose numbers carry
+    /// their own derivatives, so the `[f64; MAX_VARS]` gradients `eval_flat` builds bound nothing
+    /// (a body traced in space, #326, is written over every coordinate of its points and lines).
+    pub(crate) fn compile_wide(ast: &Ast, vars: &[String]) -> Result<Tape, String> {
         let index: BTreeMap<&str, u32> =
             vars.iter().enumerate().map(|(i, n)| (n.as_str(), i as u32)).collect();
         let mut t = Tape { ops: Vec::new(), flat: Vec::new(), n_vars: vars.len() };
@@ -738,4 +745,103 @@ fn fn2(name: &str) -> Option<Fn2> {
         "hypot" => Fn2::Hypot,
         _ => return None,
     })
+}
+
+/* -- a tape over any number ------------------------------------------------------------------- */
+
+/// A number a tape runs over generically (`eval_num`): one that carries a one-argument function
+/// through its derivatives at the value — a plain number its value, a `Dual` the chain rule, a
+/// Taylor `Jet` Faà di Bruno, so a traced body in space reads its expressions along any
+/// direction of its variables (#326).
+pub(crate) trait TapeNum: crate::kernels::Num {
+    /// `f(self)`, where `d` is `f` and its first three derivatives at `self`'s value.
+    fn apply1(self, d: [f64; 4]) -> Self;
+}
+
+impl TapeNum for f64 {
+    fn apply1(self, d: [f64; 4]) -> f64 {
+        d[0]
+    }
+}
+
+impl<const N: usize> TapeNum for crate::kernels::Dual<N> {
+    fn apply1(self, d: [f64; 4]) -> Self {
+        crate::kernels::Dual { v: d[0], g: self.g.map(|x| d[1] * x) }
+    }
+}
+
+impl TapeNum for crate::taylor::Jet {
+    /// Exact to the third order, the one `call1_series` carries.
+    fn apply1(self, d: [f64; 4]) -> Self {
+        crate::taylor::Jet::from_derivatives(&d).compose(self.shift(-self.0[0]))
+    }
+}
+
+/// `eval_flat`'s value over any `TapeNum` — the third walker over the instructions, and one that
+/// writes no calculus of its own: each op's derivatives are its type's arithmetic, a function's
+/// `call1_series` (`tests/tape.rs` holds it to the other two: the value over `f64`, the gradient
+/// over `Dual`, the series over `Jet`).  `None` for an exponent that varies, whose `exp`/`ln` it
+/// does not carry.
+pub(crate) fn eval_num<T: TapeNum>(flat: &[f64], x: &[T]) -> Option<T> {
+    const K: f64 = std::f64::consts::PI / 180.0;
+    let n_ops = flat.len() / WORD;
+    let mut v: Vec<T> = Vec::with_capacity(n_ops);
+    for i in 0..n_ops {
+        let w = &flat[i * WORD..i * WORD + WORD];
+        let get = |k: f64| v.get((k as usize).min(i.saturating_sub(1))).copied();
+        let out = if w[0] == code::CONST {
+            T::cst(w[1])
+        } else if w[0] == code::VAR {
+            x.get(w[1] as usize).copied().unwrap_or(T::cst(0.0))
+        } else if w[0] == code::NEG {
+            T::cst(0.0) - get(w[1])?
+        } else if w[0] == code::ADD {
+            get(w[1])? + get(w[2])?
+        } else if w[0] == code::SUB {
+            get(w[1])? - get(w[2])?
+        } else if w[0] == code::MUL {
+            get(w[1])? * get(w[2])?
+        } else if w[0] == code::DIV {
+            get(w[1])? / get(w[2])?
+        } else if w[0] == code::POW {
+            let (base, ex) = (get(w[1])?, get(w[2])?);
+            // a fixed power: the falling factorials, as `eval_series_flat` reads one; the
+            // exponent's own derivative is not carried, so one that moves is refused
+            let (a, p) = (base.val(), ex.val());
+            let mut d = [a.dpowf(p); 4];
+            let mut fall = 1.0;
+            for k in 1..4 {
+                fall *= p - (k - 1) as f64;
+                d[k] = if a == 0.0 && p - k as f64 <= 0.0 { 0.0 } else { fall * a.dpowf(p - k as f64) };
+            }
+            let moves = (ex - T::cst(p)).val() != 0.0;
+            if moves {
+                return None;
+            }
+            base.apply1(d)
+        } else if w[0] == code::CALL1 {
+            let a = get(w[1])?;
+            a.apply1(call1_series(fn1_of(w[2]), a.val()))
+        } else {
+            let (a, b) = (get(w[1])?, get(w[2])?);
+            match fn2_of(w[3]) {
+                Fn2::Atan2 => T::atan2(a, b) * T::cst(1.0 / K),
+                Fn2::Min => if a.val() <= b.val() { a } else { b },
+                Fn2::Max => if a.val() >= b.val() { a } else { b },
+                Fn2::Hypot => (a * a + b * b).sqrt(),
+            }
+        };
+        v.push(out);
+    }
+    v.last().copied().or(Some(T::cst(0.0)))
+}
+
+/// A tape's value and its first three derivatives along `dir` at `x`, read by `eval_num` over
+/// Taylor jets: what a body traced in space reads its expressions as (#326), and what
+/// `tests/tape.rs` holds to the other two walkers.
+pub fn derivatives_along(flat: &[f64], x: &[f64], dir: &[f64]) -> Option<[f64; 4]> {
+    use crate::taylor::Jet;
+    let xs: Vec<Jet> = x.iter().zip(dir).map(|(&v, &d)| Jet::from(&[v, d])).collect();
+    let j = eval_num::<Jet>(flat, &xs)?;
+    Some([j.nth(0), j.nth(1), j.nth(2), j.nth(3)])
 }

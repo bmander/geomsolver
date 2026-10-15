@@ -287,7 +287,11 @@ fn write_curve_spec(out: &mut String, c: &CurveSpec) {
             write_ref(out, point);
         }
     }
-    out.push_str(&format!(" over {} in ({}, {})", c.swept.text, c.domain.0, c.domain.1));
+    match &c.second {
+        None => out.push_str(&format!(" over {} in ({}, {})", c.swept.text, c.domain.0, c.domain.1)),
+        Some((s, (a, b))) => out.push_str(&format!(" over ({} in ({}, {}), {} in ({a}, {b}))",
+            c.swept.text, c.domain.0, c.domain.1, s.text)),
+    }
 }
 
 fn write_decl(out: &mut String, d: &Decl) {

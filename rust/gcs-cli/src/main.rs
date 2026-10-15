@@ -464,6 +464,14 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
             for i in 0..sk.meshings.len() {
                 println!("  {}", gcs_core::report::meshing_text(&sk, i));
             }
+            // each body traced in space, and whether it is regular over its domain (#326)
+            for i in 0..sk.traced.len() {
+                println!("  {}", gcs_core::report::traced_text(&sk, i));
+            }
+            // each motion's screw the drawing reads, its pitch (#326)
+            for line in gcs_core::report::screws_text(&sk) {
+                println!("  {line}");
+            }
             for w in &d.warnings {
                 println!("  note: {w}");
             }

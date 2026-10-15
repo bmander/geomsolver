@@ -183,7 +183,9 @@ impl<'a> P<'a> {
                     let point = matches!(word, "tangent" | "perpendicular" | "curvature")
                         && name.text == "at" && matches!(self.peek(),
                         Some(Tok::Ident(w)) if !["start", "end", "p1", "p2"].contains(&w.as_str()));
-                    let v = if self.path_ahead() || along || point {
+                    // and `coincident(under: m)` names the motion carrying the point (#326)
+                    let motion = word == "coincident" && name.text == "under";
+                    let v = if self.path_ahead() || along || point || motion {
                         Arg::Ref(self.refr()?)
                     } else {
                         self.sel_value()?

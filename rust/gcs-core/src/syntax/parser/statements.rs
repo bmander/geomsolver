@@ -897,26 +897,38 @@ impl<'a> P<'a> {
         } else {
             CurveTarget::Drawn(self.refr()?)
         };
-        if self.peek_word("over")
-            && matches!(self.t.get(self.i + 1).map(|(t, _)| t), Some(Tok::P('(')))
-        {
-            self.fail(
-                "`over` names the formal that runs, and `in` the interval: \
-                 `over theta in (0, 360)`",
-            );
-            return None;
-        }
         if !self.eat_word("over") {
             self.fail("a curve says which formal runs: `over theta in (a, b)`");
             return None;
         }
-        let swept = self.ident()?;
-        if !self.eat_word("in") {
-            self.fail("a curve says the interval its formal runs over: `in (a, b)`");
-            return None;
+        // two formals that run, each with its interval: a surface (#326 R5)
+        let two = self.peek() == Some(&Tok::P('('));
+        if two {
+            self.i += 1;
         }
-        let [(a, _), (b, _)] = self.pair()?;
-        Some(CurveSpec { target, swept, domain: (a, b), of: None })
+        let formal = |p: &mut Self| -> Option<(Name, (String, String))> {
+            let swept = p.ident()?;
+            if !p.eat_word("in") {
+                p.fail("a curve says the interval its formal runs over: `in (a, b)`");
+                return None;
+            }
+            let [(a, _), (b, _)] = p.pair()?;
+            Some((swept, (a, b)))
+        };
+        let (swept, domain) = formal(self)?;
+        let second = if two {
+            if !self.want_p(',') {
+                return None;
+            }
+            let s = formal(self)?;
+            if !self.want_p(')') {
+                return None;
+            }
+            Some(s)
+        } else {
+            None
+        };
+        Some(CurveSpec { target, swept, domain, second, of: None })
     }
 
     /// What follows a face family's `solid`: `(Component(args).face over IDENT in (a, b))`, the

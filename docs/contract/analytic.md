@@ -31,13 +31,17 @@ of its source (`model::Held`): a revolution's side read off the declarations (`H
 its `about:` line or axis and its line, arc or circle edge; the side itself bound after the solids
 into `EnvelopeE::surface`), or a set's (`Held::Set`: the hidden point `{envelope}#probe` the
 flattener applied it to, held; its `SetShape` read off the one relation the body states there by
-`set_shape` — `Angle3` seen from a line's start a cone, `PointLine3` a cylinder — never a row; an
+`set_shape` — `Angle3` seen from a line's start a cone, `PointLine3` a cylinder, an `Ordinate`
+along a line from a point a plane (`SetKind::Plane`, `SetShape::origin` that point, the number
+signed toward the probe, #326) — never a row; an
 unknown its number reads is bound for the contacts, `expr::bind_free` and `evaluate`). One whose
 motion or roll is unreadable is left to the late pass, its name dropped so no relation holds to a
 wrong index; one whose source is unreadable is `Held::Not(why)`, evaluated after the solve as before.
 `envelope::held` is the evaluator: the moving point at a place `[u, v, t]` over `kernels::Num` in
 second-order Taylor arithmetic (`H2`), the source a revolution of a meridian element (`Source`:
-line, cone, cylinder, round) and the motion the steps `motion::Family` reads (rotations, screws,
+line, cone, cylinder, round) or a plane (`Source::Plane`, columns `[a, b, o]`: the point `o + x·d`
+moved `u` and `v` along `across(d, ref)` and `d ×` it — no turn, both lengths; the seeds' grid
+samples `v` as `u` there, `held::turn_spans`, and reaches from `o`, `held::reach`) and the motion the steps `motion::Family` reads (rotations, screws,
 translations, relatives; a planar turn and a measured number refused), so a residual is exact and
 a Jacobian exact by forward differentiation (`kernels::Dual`, eight columns a pass). `Parts::of`
 reads the columns (lifts, an axis's place and direction, a free number) and constants (`Layout`,
@@ -54,7 +58,13 @@ over the roll interval then `newton::dogleg` on the four rows (`Seeding`), remem
 contact's three slots. A set's
 envelope has no chart after the solve (`GeneratedEnvelope::named` refuses it; `program::solid_diagnostics`
 skips it); an envelope's `surface` and `motion` are read by name (`resolve::follow`), the surface
-off the declaration until bound. `tests/held_envelopes.rs` is the gate — the frame against
+off the declaration until bound. A plane's envelope under a slide along its normal relative to a turn is the member's involute
+helicoid: `tests/phillips.rs` holds it to the helicoid's own equations, and Phillips' pair
+(`spiral_bevel/phillips.sv`) to a point contact on the line of action with no lag, a pair whose
+racks slide at different speeds to the lag that closes their gap (`δ = (σ/σ' − 1)φ`), and the pair
+misaligned after its flanks are made — the gear half a millimetre further off, or its shaft
+turned half a degree — to a constant lag (−0.307° and 0.0066° of the gear: Phillips' claim, which
+holds). `tests/held_envelopes.rs` is the gate — the frame against
 `GeneratedEnvelope` to 1e-12, held points against the snapshot and `motion::Family`, the normal,
 tangent and osculating circle against closed forms and a three-point section fit under a skew
 screw mesh, the mean-point lean (`spiral_bevel/mean_point.sv`) — with
@@ -65,8 +75,14 @@ to:)` is `MeshingE` (ABI kind 17): two `Flank`s — `Envelope(i)`, a held envelo
 a source read as an envelope's is (a set applied to its hidden point `{contact}#first#probe` /
 `#second#probe`, `set_shape` through `program::envelopes::Reader`; a revolution's side) — the
 motion and the phase, built with the held envelopes (`held_meshings`), refused (E080) where a flank
-or the motion is unreadable or the motion is not relative. `envelope::meshing` is the evaluator:
-the first flank turned with the motion's observer at the phase `φ`, the second with its source at
+or the motion is unreadable or the motion is not relative. A flank may also be `Traced(i)` (#326,
+[0.109]): a surface traced in space, `meshing::Side::Traced` over `traced::flank_consts` (`[0,
+traced::FLANK, domain×4, contact constants…]`), its own columns the body's `θ`
+(`FlankParts::Traced`), its place `[u, s, t]` with `t` held as a formed flank's; `traced::seen`
+reads its point, `C_u` and the unit normal `C_u × C_s` over any `Num` — the frame's exact
+derivatives linearised into the numbers' own (`Num::moves` false for a plain number skips them),
+all a `Dual` pass reads — and `traced::nearest` seeds its place. `envelope::meshing` is the
+evaluator: the first flank turned with the motion's observer at the phase `φ`, the second with its source at
 `φ + δ` (`held::frames` at two rolls), each flank `held::local` over its own constants (a formed one
 `Layout::read_any`, no step, its pose the identity); rows the two points' offset, the pinion's
 normal against two directions square to the gear's (each times the lever, the contact's distance
@@ -90,7 +106,30 @@ gate — a conjugate pair's lag zero and line contact, a pair cut at another rat
 exactly, a larger cutter at a modified roll touching at a point on the common generator, a cutter
 turned about the normal at M lagging by the turn that closes the gap between the members (found
 from the cone's equation and the poses alone), a stated lag solving its phase, `contact.sv` — with
-`jacobians::meshing_contacts_agree_with_finite_differences`.
+`jacobians::meshing_contacts_agree_with_finite_differences`; and `tests/phillips.rs` holds
+`spiral_bevel/phillips_pure.sv`'s traced flanks to the rack's envelopes (each a point of the
+envelope at the element's phase, to 1e-9), to the closed form's point contact along `L` with no
+lag, and their meshing's Jacobian to finite differences.
+
+**A point a motion carries (#326, [0.106]):** `Reading::Carried` is `X − Pose(τ)·x`, the pose
+`held::frames`' last at `τ` degrees — any motion, its twist constant or not (`Reading::twist`
+false). `held::Step::Turn` (code 4, nine columns: a centre's lift, its view's `u` and `v`) is a turn
+about a point of a view as it reads in space; only `Moving::of_any` reads one.
+
+**A motion's screw (#326, [0.105]):** `envelope::screw` reads a motion as its twist, `v(x) = v₀ +
+ω × x` a radian, constant in the fixed frame for a turn, a screw or a slide about a fixed line
+(`own`: `ω = ratio·d`, `v₀ = a × ω + d·advance/τ`) and one relative to another (the source's less
+the observer's) — `constant` refuses anything else. `Reading::Reciprocal` is one row of degree 2,
+`(B − A)·v(A)`; `Reading::Axis` five of degree 1: the axis's direction against the two directions
+square to `ω̂` (`square_to`: the world axis `ω̂` leans least toward, its part off) times the lever
+(the motion's first axis as drawn), its place against `ω × v₀/|ω|²` across them, and the pitch
+against `ω·v₀/|ω|²` (`axis_of`; `None`, so NaN rows, where `ω` is zero). Written once over
+`kernels::Num`, the Jacobian by `held::block_jac`. `motion::Family::instantaneous` is the same
+read off a snapshot (`Isa`: point, direction, pitch, twist); `report::screws_text` is the CLI's
+line. `tests/phillips.rs` holds the screw to Ball's closed form on the common perpendicular — the
+foot `E ω₂·ω/|ω|²` from the pinion's shaft, the pitch that point's speed along `ω` — at three shaft
+angles, no offset giving zero pitch through the apex, and `L reciprocal mesh` to the members'
+equal speeds along `L` at every point of it.
 
 **Trimmed spatial patches:** `flank := patch(source, inside: tip, outside: root)`; repeat the label
 per clipping solid. `patch::TrimmedPatch` has explicit axis, trim and residual tolerances; clips

@@ -38,6 +38,9 @@ pub struct CurveSpec {
     pub swept: Name,
     /// `in (a, b)`, as written.
     pub domain: (String, String),
+    /// A second formal that runs, and its interval: `over (phi in (a, b), s in (c, d))` — a
+    /// surface traced in space (#326 R5).  `None` for a curve.
+    pub second: Option<(Name, (String, String))>,
     /// What the flattener resolved the target to — `None` until it has, or when it could not.
     pub of: Option<CurveOf>,
 }

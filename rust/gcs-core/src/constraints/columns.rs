@@ -58,7 +58,17 @@ impl Constraint {
         // a meshing contact's: both flanks' and the mesh's (#283)
         if self.kind == CKind::PointOnMeshing {
             let lead = crate::envelope::meshing::LEAD;
-            return self.meshing_parts(sk).map(|p| p.consts(lead)).unwrap_or_default();
+            return self.meshing_parts(sk).map(|p| p.consts(sk, lead)).unwrap_or_default();
+        }
+        // a contact with a traced body: its values, its home and its body (#326)
+        if self.kind.traced_contact().is_some() {
+            return self.traced_of().and_then(|e| sk.traced.get(e.i()))
+                .map(crate::traced::consts_of).unwrap_or_default();
+        }
+        // a motion's twist read: its steps (#326)
+        if self.kind.motion_reading().is_some() {
+            return self.motion_parts(sk).map(|p| crate::envelope::screw::consts(&p.steps))
+                .unwrap_or_default();
         }
         if self.kind == CKind::Stationary {
             return crate::variational::pack(sk, self.id);
@@ -606,6 +616,53 @@ impl Constraint {
                 let parts = self.meshing_parts(sk).map(|p| p.columns(sk)).unwrap_or_default();
                 [sk.lifts[k].x.to_vec(), own, parts].concat()
             }
+            // a contact with a traced body (#326, `traced`): what it states about, the place, then
+            // the body's columns
+            CKind::PointOnTraced
+            | CKind::TracedTangentAt
+            | CKind::TracedSurfaceTangentAt
+            | CKind::TracedNormalAt
+            | CKind::TracedPlaneAt
+            | CKind::TracedCurvatureAt => {
+                let lift = |p: usize| {
+                    let k = sk.lift_of(p).expect("a relation in space is lifted at the add");
+                    sk.lifts[k].x.to_vec()
+                };
+                let (lead, place) = match self.kind {
+                    CKind::PointOnTraced => (lift(e(0).i()), 2),
+                    CKind::TracedPlaneAt => (plane_columns(sk, e(1).i())[3..].to_vec(), 3),
+                    CKind::TracedCurvatureAt => {
+                        let c = sk.round_center(e(1));
+                        let v = sk.plane_of(c).expect("a circle in space is drawn in a plane");
+                        ([lift(c), vec![rad(1)], plane_columns(sk, v)[3..].to_vec()].concat(), 3)
+                    }
+                    _ => (self.direction_columns(sk, 1), 3),
+                };
+                let at: Vec<u32> = (place..place + 2).map(|i| self.args[i].param()).collect();
+                let body = self.traced_of().and_then(|t| sk.traced.get(t.i()))
+                    .map(|t| crate::traced::columns(sk, t)).unwrap_or_default();
+                [lead, at, body].concat()
+            }
+            // a motion's twist read (#326, `envelope::screw`): the line's two lifted ends, or the
+            // axis's direction, its place and the pitch, then the motion's axes
+            CKind::Reciprocal | CKind::ScrewAxis | CKind::CarriedPoint => {
+                let lift = |p: usize| {
+                    let k = sk.lift_of(p).expect("a relation in space is lifted at the add");
+                    sk.lifts[k].x.to_vec()
+                };
+                let lead = match self.kind {
+                    CKind::Reciprocal => self.direction_columns(sk, 0),
+                    CKind::CarriedPoint => {
+                        [lift(e(0).i()), lift(e(1).i()), vec![self.args[3].param()]].concat()
+                    }
+                    _ => {
+                        let x = &sk.axes[e(0).i()];
+                        [x.d.to_vec(), x.a.to_vec(), vec![self.args[2].param()]].concat()
+                    }
+                };
+                let parts = self.motion_parts(sk).map(|p| p.columns(sk)).unwrap_or_default();
+                [lead, parts].concat()
+            }
             CKind::SplineTangentLine => {
                 [vec![self.args[2].param()], self.span_params(sk, span), ln(1)].concat()
             }
@@ -750,8 +807,36 @@ impl Constraint {
                 [lead, parts].concat()
             }
             CKind::PointOnMeshing => {
-                let parts = self.meshing_parts(sk).map(|p| p.lifted()).unwrap_or_default();
+                let parts = self.meshing_parts(sk).map(|p| p.lifted(sk)).unwrap_or_default();
                 [vec![e(0).i()], parts].concat()
+            }
+            // what it states about, then every point the traced body reads (#326)
+            CKind::PointOnTraced
+            | CKind::TracedTangentAt
+            | CKind::TracedSurfaceTangentAt
+            | CKind::TracedNormalAt
+            | CKind::TracedPlaneAt
+            | CKind::TracedCurvatureAt => {
+                let lead = match self.kind {
+                    CKind::PointOnTraced => vec![e(0).i()],
+                    CKind::TracedCurvatureAt => vec![sk.round_center(e(1))],
+                    CKind::TracedPlaneAt => Vec::new(),
+                    _ if e(1).kind == EntKind::Line => ends(1).to_vec(),
+                    _ => Vec::new(),
+                };
+                let body = self.traced_of().and_then(|t| sk.traced.get(t.i()))
+                    .map(|t| crate::traced::lifted(sk, t)).unwrap_or_default();
+                [lead, body].concat()
+            }
+            // the line's ends, then every point the motion's axes read (#326)
+            CKind::Reciprocal | CKind::ScrewAxis | CKind::CarriedPoint => {
+                let parts = self.motion_parts(sk).map(|p| p.lifted()).unwrap_or_default();
+                let lead = match self.kind {
+                    CKind::Reciprocal => ends(0).to_vec(),
+                    CKind::CarriedPoint => vec![e(0).i(), e(1).i()],
+                    _ => Vec::new(),
+                };
+                [lead, parts].concat()
             }
             CKind::Symmetric3 => [vec![e(0).i(), e(1).i()], ends(2).to_vec()].concat(),
             // a direction's operands: a line's ends are lifted, and an axis is in space already

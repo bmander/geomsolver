@@ -30,6 +30,19 @@ pub fn seed_param(sk: &Sketch, kind: CKind, args: &[Arg], i: usize) -> f64 {
         };
         return meshing_place(sk, m.i(), sk.lifted(p.i()), phase).map_or(0.0, |x| x[i - 2]);
     }
+    // a place on a traced body starts where the body passes nearest the point (#326): the
+    // contact's, or the point a tangent is at
+    if let Some((tr, first)) = kind.contact_on(SpecKind::Traced) {
+        let at = if kind == CKind::PointOnTraced { 0 } else { 2 };
+        let (Some(Arg::Ent(e)), Some(Arg::Ent(p))) = (args.get(tr), args.get(at)) else { return 0.0 };
+        return crate::traced::place_of(sk, e.i(), sk.lifted(p.i())).map_or(0.0, |x| x[i - first]);
+    }
+    // a motion's pitch starts where the motion's axes stand (#326)
+    if kind == CKind::ScrewAxis {
+        let Some(Arg::Ent(m)) = args.get(1) else { return 0.0 };
+        return crate::motion::Family::read(sk, m.i()).ok()
+            .and_then(|f| f.instantaneous().ok()).map_or(0.0, |s| s.pitch);
+    }
     match (kind, i) {
         // where the curve already comes nearest the thing it is being tied to: a curve can meet
         // a point or a line in several places, and the nearest is the branch the user drew
@@ -362,6 +375,32 @@ pub fn validate(
         crate::envelope::meshing::Parts::of(sk, m.i())
             .map_err(|why| format!("the solve cannot hold anything to {}: {why}", name(m)))?;
     }
+    // a body traced in space a contact holds to is one the solve can read (#326)
+    if kind.traced_contact().is_some() {
+        let c = Constraint::new(kind, args.to_vec());
+        let t = c.traced_of().ok_or("a contact with a traced body names one")?;
+        if t.i() >= sk.traced.len() || sk.traced[t.i()].body.n_formals() == 0 {
+            return Err(format!("{} is a traced body the solve cannot read", name(t)));
+        }
+        if kind == CKind::TracedCurvatureAt && sk.plane_of(sk.round_center(args[1].ent())).is_none() {
+            return Err(format!("{} is drawn in no plane, so it has no section of {} to osculate",
+                               name(args[1].ent()), name(t)));
+        }
+    }
+    // a motion's twist is read where the solve can read the motion and its twist is the same at
+    // every time in the fixed frame (#326)
+    if kind.motion_reading().is_some() {
+        let c = Constraint::new(kind, args.to_vec());
+        let m = c.motion_of().ok_or("a twist is read off a motion")?;
+        let moving = crate::envelope::held::Moving::of_any(sk, m.i())
+            .map_err(|why| format!("the solve cannot read the twist of {}: {why}", name(m)))?;
+        let twist = kind.motion_reading().is_some_and(|r| r.twist());
+        if twist && !crate::envelope::screw::constant(&moving.steps) {
+            return Err(format!("{} is a motion relative to a relative one, whose twist changes as it \
+                                runs: a twist is read of turns, screws and slides about fixed lines, \
+                                and of one relative to another", name(m)));
+        }
+    }
     match kind {
         // a curvature reads the curve's second derivative, which a trace gives exactly only
         // where every row of its block has a Taylor form (`taylor.rs`): a residual by difference
@@ -593,11 +632,11 @@ fn meshing_place(sk: &Sketch, m: usize, at: [f64; 3], phase: f64) -> Option<[f64
     }
     let parts = Parts::of(sk, m).ok()?;
     let e = &sk.meshings[m];
-    let k = parts.consts(0);
+    let k = parts.consts(sk, 0);
     let values = parts.values(sk);
     let rolls = e.flanks.clone().map(|f| match f {
         Flank::Envelope(v) => sk.envelopes[v as usize].roll,
-        Flank::Formed(_) => [0.0; 2],
+        Flank::Formed(_) | Flank::Traced(_) => [0.0; 2],
     });
     let key: Vec<f64> = k.iter().chain(&values).chain(&at).chain(rolls.iter().flatten())
         .chain(&[phase]).copied().collect();

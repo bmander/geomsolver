@@ -386,8 +386,24 @@ impl Constraint {
         if self.kind == CKind::PointOnMeshing {
             let lead = crate::envelope::meshing::LEAD;
             let parts = self.meshing_parts(sk);
-            let (n_par, n_const) = parts.map_or((0, 0), |p| (p.width(lead), p.n_const()));
+            let (n_par, n_const) = parts.map_or((0, 0), |p| (p.width(sk, lead), p.n_const(sk)));
             return Key::Meshing { n_par, n_const };
+        }
+        // a contact with a traced body, at its block's widths (#326)
+        if let Some(c) = self.kind.traced_contact() {
+            let t = self.traced_of().and_then(|e| sk.traced.get(e.i()));
+            let (n_par, n_const) = t.map_or((0, 0), |t| {
+                (c.lead() + crate::traced::PLACE + t.body.n_theta(), crate::traced::consts_of(t).len())
+            });
+            return Key::Traced { contact: c as u8, n_par, n_const };
+        }
+        // a motion's twist read, at its block's widths (#326)
+        if let Some(r) = self.kind.motion_reading() {
+            let parts = self.motion_parts(sk);
+            let (n_par, n_const) = parts.map_or((0, 0), |p| {
+                (r.lead() + p.width(), crate::envelope::screw::n_const(&p.steps))
+            });
+            return Key::Motion { reading: r as u8, n_par, n_const };
         }
         match (self.kind.family_kernel(), self.curve_of()) {
             (Some(fk), Some(e)) => Key::Family { def: sk.curves[e.i()].def as usize, fk: fk as u8 },
@@ -434,6 +450,30 @@ impl Constraint {
     /// read it.
     pub fn meshing_parts(&self, sk: &Sketch) -> Option<crate::envelope::meshing::Parts> {
         crate::envelope::meshing::Parts::of(sk, self.meshing_of()?.i()).ok()
+    }
+
+    /// The traced body a contact with one is on (#326) — the spec's `Traced` slot.
+    pub fn traced_of(&self) -> Option<EntRef> {
+        let i = self.kind.spec().iter().position(|&(_, k)| k == SpecKind::Traced)?;
+        match self.args.get(i)? {
+            Arg::Ent(e) if e.kind == EntKind::Traced => Some(*e),
+            _ => None,
+        }
+    }
+
+    /// The motion a relation reading its twist names (#326) — the spec's `Motion` slot.
+    pub fn motion_of(&self) -> Option<EntRef> {
+        let i = self.kind.spec().iter().position(|&(_, k)| k == SpecKind::Motion)?;
+        match self.args.get(i)? {
+            Arg::Ent(e) if e.kind == EntKind::Motion => Some(*e),
+            _ => None,
+        }
+    }
+
+    /// What a relation reading a motion reads of it (`envelope::held::Moving`), where the solve can
+    /// read it (#326).
+    pub fn motion_parts(&self, sk: &Sketch) -> Option<crate::envelope::held::Moving> {
+        crate::envelope::held::Moving::of_any(sk, self.motion_of()?.i()).ok()
     }
 
     /// What a contact reads of its envelope (`envelope::held::Parts`), where the solve can read it.
@@ -567,6 +607,12 @@ impl Constraint {
                 None if self.kind == CKind::PointOnMeshing => {
                     crate::envelope::meshing::LEAD + crate::envelope::meshing::ROWS
                 }
+                None if self.kind.traced_contact().is_some() => {
+                    self.kind.traced_contact().map_or(0, |c| c.rows())
+                }
+                None if self.kind.motion_reading().is_some() => {
+                    self.kind.motion_reading().map_or(0, |r| r.rows())
+                }
                 None => kernels::kernel(self.kernel()).n_res,
             },
         }
@@ -601,6 +647,12 @@ impl Constraint {
             | CKind::EnvelopeNormalAt
             | CKind::EnvelopePlaneAt
             | CKind::EnvelopeCurvatureAt => &[3, 4, 5],
+            // a traced body's place is its two formals' (#326)
+            CKind::TracedTangentAt
+            | CKind::TracedSurfaceTangentAt
+            | CKind::TracedNormalAt
+            | CKind::TracedPlaneAt
+            | CKind::TracedCurvatureAt => &[3, 4],
             _ => return None,
         };
         match (&self.args[0], &self.args[2]) {
@@ -621,6 +673,9 @@ impl Constraint {
             }
             (CKind::PointOnEnvelope, [Arg::Ent(at), Arg::Ent(on), Arg::Param(u), Arg::Param(v), Arg::Param(t)]) => {
                 Some((at.i(), *on, vec![*u, *v, *t]))
+            }
+            (CKind::PointOnTraced, [Arg::Ent(at), Arg::Ent(on), Arg::Param(u), Arg::Param(s)]) => {
+                Some((at.i(), *on, vec![*u, *s]))
             }
             _ => None,
         }

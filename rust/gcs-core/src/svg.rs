@@ -205,7 +205,7 @@ pub(crate) fn entity(
     match e.kind {
         // a face and a solid are not strokes on the sheet; a `view` or a `section` of one is,
         // and `derived` lays that out beside the entities
-        EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge | EntKind::Meshing => {}
+        EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge | EntKind::Meshing | EntKind::Traced => {}
         // an axis is in space, on no sheet
         EntKind::Axis => {}
         // a point is a place, not a stroke: a small filled dot, in the ink the sheet has no

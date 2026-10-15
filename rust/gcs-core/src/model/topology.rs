@@ -82,9 +82,12 @@ impl Sketch {
                     }
                     Flank::Formed(Held::Revolution {axis,edge}) => vec![*axis,*edge],
                     Flank::Formed(Held::Not(_)) => Vec::new(),
+                    Flank::Traced(t) => vec![EntRef::new(EntKind::Traced,*t as usize)],
                 });
                 std::iter::once(EntRef::new(EntKind::Motion,m.motion as usize)).chain(flanks).collect()
             }
+            // a traced body's: what its component was given
+            EntKind::Traced => self.traced[e.i()].args.clone(),
             // what a motion measures is what it is written over, as much as its axis is
             EntKind::Motion => { let m = &self.motions[e.i()]; match m.def {
                 MotionDef::Rotation {axis,..} | MotionDef::Translation {axis,..} => std::iter::once(EntRef::line(axis as usize))
@@ -182,7 +185,7 @@ impl Sketch {
             // is its term, and a term missing an operand is not that solid
             EntKind::Point | EntKind::Line | EntKind::Circle | EntKind::Arc
             | EntKind::Axis
-            | EntKind::Plane | EntKind::Curve | EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge | EntKind::Meshing => {
+            | EntKind::Plane | EntKind::Curve | EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge | EntKind::Meshing | EntKind::Traced => {
                 children.len()
             }
         }
@@ -272,6 +275,7 @@ impl Sketch {
             EntKind::Vertex => self.vertices.len(),
             EntKind::Edge => self.edges.len(),
             EntKind::Meshing => self.meshings.len(),
+            EntKind::Traced => self.traced.len(),
             EntKind::Point => self.points.len(),
             EntKind::Line => self.lines.len(),
             EntKind::Circle => self.circles.len(),

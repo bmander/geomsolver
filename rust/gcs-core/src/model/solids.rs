@@ -457,6 +457,33 @@ pub struct MeshingE {
     pub class: Classes,
 }
 
+/// **A traced body in space** (#326): a point of a component as one or two of its numeric
+/// formals run, its body solved in space (`traced::Body`).  Held to by a contact owning a place
+/// on it (`CKind::PointOnTraced` and the four at a point already on it), never drawn.
+#[derive(Clone, Debug)]
+pub struct TracedE {
+    pub body: crate::traced::Body,
+    /// What the component was given, in its formals' order: points (their lifts), lines (their
+    /// ends' lifts) and motions (their axes' ends), the columns of every contact after its place.
+    pub args: Vec<EntRef>,
+    /// The constant numbers it was given, in the body's order.
+    pub values: Vec<f64>,
+    /// The interval each formal runs over, as written (degrees for an angle); a curve's second
+    /// none.
+    pub domain: [[f64; 2]; 2],
+    /// Where a march to a place starts, the formals' anchor.
+    pub home: [f64; 2],
+    pub name: String,
+    pub class: Classes,
+}
+
+impl TracedE {
+    /// How many formals run: one for a curve, two for a surface.
+    pub fn formals(&self) -> usize {
+        self.body.n_formals()
+    }
+}
+
 /// A flank a meshing turns: an envelope in space (generated), or a source surface standing in its
 /// member (formed) — a cone or a cylinder set, or a revolution's named side — read as an
 /// envelope's source is (`Held`).
@@ -464,6 +491,9 @@ pub struct MeshingE {
 pub enum Flank {
     Envelope(u32),
     Formed(Held),
+    /// A surface traced in space, as its member sees it (#326): the flank stated by its contact
+    /// alone.
+    Traced(u32),
 }
 
 /// What the solve reads an envelope's source as (#283): a surface of revolution whose numbers are
@@ -486,7 +516,10 @@ pub struct SetShape {
     pub kind: SetKind,
     /// The line it is about.
     pub axis: u32,
-    /// A cone's half angle or a cylinder's radius, in the kernels' units: stated, or affine in an
+    /// A plane's point, from which its number runs along the axis (#326); `None` for a
+    /// revolution.
+    pub origin: Option<u32>,
+    /// A cone's half angle, a cylinder's radius or a plane's distance along its axis, in the kernels' units: stated, or affine in an
     /// unknown of the drawing — which the envelope's contacts read as a column, so it is bound
     /// even where no other row reads it (`expr::evaluate`).
     pub number: TermNumber,
@@ -516,6 +549,9 @@ pub enum SetKind {
     Cone,
     /// The distance `number` from the line `axis` (`std.Cylinder`).
     Cylinder,
+    /// The distance `number` along the line `axis` from the point `origin` (`std.HalfSpace`'s
+    /// face, #326): a plane square to the line.
+    Plane,
 }
 
 #[derive(Clone, Debug)]

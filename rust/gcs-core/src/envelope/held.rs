@@ -55,6 +55,10 @@ pub enum Source {
     Cylinder = 3,
     /// A circle about a centre in a plane (a revolution's arc or circle): `[a, b, c, r, U, V]`.
     Round = 4,
+    /// A plane square to the axis, its number along the axis from a point `o` (`std.HalfSpace`'s
+    /// face, #326): `[a, b, o]`. Not a revolution: its place is `[u, v]` along two directions
+    /// in it, both lengths, so its normal is the axis's direction everywhere.
+    Plane = 5,
 }
 
 impl Source {
@@ -64,6 +68,7 @@ impl Source {
             2 => Source::Cone,
             3 => Source::Cylinder,
             4 => Source::Round,
+            5 => Source::Plane,
             _ => return None,
         })
     }
@@ -74,6 +79,7 @@ impl Source {
             Source::Line => 12,
             Source::Cone | Source::Cylinder => 6,
             Source::Round => 16,
+            Source::Plane => 9,
         }
     }
 }
@@ -144,6 +150,10 @@ pub enum Step {
     Rotation { at: usize, ratio: f64, phase: f64, advance: f64 },
     /// Along the line whose lifted ends are motion columns `at..at + 6`.
     Translation { at: usize, advance: f64 },
+    /// About the line through the lifted centre at motion columns `at..at + 3`, square to the
+    /// view whose two axes' directions are columns `at + 3..at + 9`: a turn about a point of a
+    /// view, as it reads in space (#326, read by `Moving::of_any` alone).
+    Turn { at: usize, ratio: f64, phase: f64 },
     /// `observer⁻¹ ∘ source`, by step index.
     Relative { source: usize, observer: usize },
 }
@@ -164,6 +174,7 @@ pub fn encode_steps(steps: &[Step]) -> Vec<f64> {
     steps.iter().flat_map(|s| match *s {
         Step::Rotation { at, ratio, phase, advance } => [1.0, at as f64, 0.0, 0.0, ratio, phase, advance],
         Step::Translation { at, advance } => [2.0, at as f64, 0.0, 0.0, 0.0, 0.0, advance],
+        Step::Turn { at, ratio, phase } => [4.0, at as f64, 0.0, 0.0, ratio, phase, 0.0],
         Step::Relative { source, observer } => [3.0, 0.0, source as f64, observer as f64, 0.0, 0.0, 0.0],
     }).collect()
 }
@@ -180,6 +191,7 @@ pub fn read_steps(k: &[f64]) -> Option<Vec<Step>> {
         steps.push(match s[0] as i64 {
             1 => Step::Rotation { at: s[1] as usize, ratio: s[4], phase: s[5], advance: s[6] },
             2 => Step::Translation { at: s[1] as usize, advance: s[6] },
+            4 => Step::Turn { at: s[1] as usize, ratio: s[4], phase: s[5] },
             3 => Step::Relative { source: idx(s[2])?, observer: idx(s[3])? },
             _ => return None,
         });
@@ -191,6 +203,7 @@ pub fn read_steps(k: &[f64]) -> Option<Vec<Step>> {
 pub fn steps_width(steps: &[Step]) -> usize {
     steps.iter().filter_map(|s| match *s {
         Step::Rotation { at, .. } | Step::Translation { at, .. } => Some(at + 6),
+        Step::Turn { at, .. } => Some(at + 9),
         Step::Relative { .. } => None,
     }).max().unwrap_or(0)
 }
@@ -268,6 +281,9 @@ impl Num for f64 {
     }
     fn atan2(y: Self, x: Self) -> Self {
         y.datan2(x)
+    }
+    fn moves(self) -> bool {
+        false
     }
 }
 
@@ -425,7 +441,7 @@ pub(crate) fn vadd<F: Copy + Add<Output = F>>(a: [F; 3], b: [F; 3]) -> [F; 3] {
 pub(crate) fn vsub<F: Copy + Sub<Output = F>>(a: [F; 3], b: [F; 3]) -> [F; 3] {
     [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
 }
-fn vscale<F: Copy + Mul<Output = F>>(a: [F; 3], k: F) -> [F; 3] {
+pub(crate) fn vscale<F: Copy + Mul<Output = F>>(a: [F; 3], k: F) -> [F; 3] {
     [a[0] * k, a[1] * k, a[2] * k]
 }
 
@@ -481,6 +497,12 @@ fn surface<T: Num>(l: &Layout, s: &[T], u: H2<T>, v: H2<T>) -> [H2<T>; 3] {
         let x = if free { s[l.source.width()] } else { zero() };
         T::cst(c) + T::cst(m) * x
     };
+    if l.source == Source::Plane {
+        // the plane through `o` moved its number along the axis, `u` and `v` along it
+        let o = vadd(col3(s, 6), vscale(d, number()));
+        let e2 = cross(d, e1);
+        return vadd(lift(o), vadd(vscale(lift(e1), u), vscale(lift(e2), v)));
+    }
     let meridian: [H2<T>; 3] = match l.source {
         Source::Line => {
             let (p1, p2) = (col3(s, 6), col3(s, 9));
@@ -504,6 +526,7 @@ fn surface<T: Num>(l: &Layout, s: &[T], u: H2<T>, v: H2<T>) -> [H2<T>; 3] {
             let rr = H2::cst(r);
             vadd(lift(c), vadd(vscale(lift(uo), cu * rr), vscale(lift(vo), su * rr)))
         }
+        Source::Plane => unreachable!("a plane is no revolution"),
     };
     // Rodrigues: w cos v + (d × w) sin v + d (d·w)(1 − cos v)
     let w = vsub(meridian, lift(a));
@@ -562,9 +585,17 @@ fn poses<T: Num>(steps: &[Step], m: &[T], t: H2<T>) -> Vec<Pose<T>> {
     let mut poses: Vec<Pose<T>> = Vec::with_capacity(steps.len());
     for s in steps {
         let next = match *s {
-            Step::Rotation { at, ratio, phase, advance } => {
-                let a = col3(m, at);
-                let d = unit(vsub(col3(m, at + 3), a));
+            Step::Rotation { .. } | Step::Turn { .. } => {
+                let (a, d, ratio, phase, advance) = match *s {
+                    Step::Rotation { at, ratio, phase, advance } => {
+                        let a = col3(m, at);
+                        (a, unit(vsub(col3(m, at + 3), a)), ratio, phase, advance)
+                    }
+                    Step::Turn { at, ratio, phase } => {
+                        (col3(m, at), unit(cross(col3(m, at + 3), col3(m, at + 6))), ratio, phase, 0.0)
+                    }
+                    _ => unreachable!(),
+                };
                 let theta = H2::cst(T::cst(phase)) + t.scale(T::cst(ratio));
                 let (st, ct) = theta.sin_cos();
                 let one_c = H2::cst(T::cst(1.0)) - ct;
@@ -798,7 +829,7 @@ pub(crate) fn scatter_pass(out: &[Dual<PASS>], j: &mut [f64], start: usize) {
 /// The kernel of contact `c` at a block's widths: built per width (`system::build_kernel`), as a
 /// curve's are per definition, its widths read back off the slices it is handed.
 pub fn kernel(c: Contact, n_par: usize, n_const: usize) -> Kernel {
-    let (res, jac): (fn(usize, &[f64], &[f64], &mut [f64]), fn(usize, &[f64], &[f64], &mut [f64])) = match c {
+    let (res, jac): (crate::kernels::KernelFn, crate::kernels::KernelFn) = match c {
         Contact::Point => (res::<0>, jac::<0>),
         Contact::Tangent => (res::<1>, jac::<1>),
         Contact::Normal => (res::<2>, jac::<2>),
@@ -854,16 +885,16 @@ pub fn seed(k: &[f64], parts: &[f64], p: [f64; 3], roll: [f64; 2]) -> Option<[f6
     tr.cols[..3].copy_from_slice(&p);
     tr.cols[l.lead + 3..].copy_from_slice(parts);
     let cost = |r: [f64; 4]| r.iter().map(|x| x * x).sum::<f64>();
-    let reach = crate::space::distance(p, [parts[0], parts[1], parts[2]]).max(1e-3);
+    let reach = reach(l.source, parts, p);
     let us = meridian_spans(l.source, reach);
+    let vs = turn_spans(l.source, reach, 24);
     let mut best: Option<([f64; 3], f64)> = None;
     let n_roll = 25;
     for a in 0..n_roll {
         let t = roll[0] + (roll[1] - roll[0]) * a as f64 / (n_roll - 1) as f64;
         // the motion's pose at this roll, read once for every place of it
         let posed = pose(&l, &tr.cols[l.lead + 3 + l.source_width()..], H2::var(t, 2, false));
-        for b in 0..24 {
-            let v = b as f64 * std::f64::consts::TAU / 24.0;
+        for &v in &vs {
             for &u in &us {
                 let r = tr.posed(&l, [u, v, t], &posed);
                 if r.iter().all(|x| x.is_finite()) && best.is_none_or(|(_, c)| cost(r) < c) {
@@ -888,8 +919,26 @@ pub(crate) fn meridian_spans(source: Source, reach: f64) -> Vec<f64> {
     match source {
         Source::Line => vec![-0.5, 0.0, 0.25, 0.5, 0.75, 1.0, 1.5],
         Source::Round => (0..12).map(|i| i as f64 * std::f64::consts::TAU / 12.0).collect(),
-        Source::Cone | Source::Cylinder => (-6..=6).map(|i| i as f64 * reach / 3.0).collect(),
+        Source::Cone | Source::Cylinder | Source::Plane => {
+            (-6..=6).map(|i| i as f64 * reach / 3.0).collect()
+        }
     }
+}
+
+/// Where a seed's coarse grid samples round a source's axis, `n` turns of a revolution — or, on a
+/// plane, its second direction as its first is sampled.
+pub(crate) fn turn_spans(source: Source, reach: f64, n: usize) -> Vec<f64> {
+    match source {
+        Source::Plane => meridian_spans(source, reach),
+        _ => (0..n).map(|b| b as f64 * std::f64::consts::TAU / n as f64).collect(),
+    }
+}
+
+/// How far a point sought, `p`, is from where a source's place starts — its axis's start, or a
+/// plane's point — over the source's columns `parts`: how far a seed's grid reaches.
+pub(crate) fn reach(source: Source, parts: &[f64], p: [f64; 3]) -> f64 {
+    let at = if source == Source::Plane { 6 } else { 0 };
+    crate::space::distance(p, [parts[at], parts[at + 1], parts[at + 2]]).max(1e-3)
 }
 
 /// A point contact's four rows over its place alone, the rest of its columns held: what `seed`
@@ -991,7 +1040,7 @@ impl Parts {
         let e = sk.envelopes.get(index).ok_or("no such envelope")?;
         let mut parts = Parts::still(sk, &e.held, &e.name)?;
         let mut done = std::collections::BTreeMap::new();
-        motion(sk, e.motion as usize, &mut parts.steps, &mut parts.cols, &mut done, 0)?;
+        motion(sk, e.motion as usize, &mut parts.steps, &mut parts.cols, &mut done, 0, false)?;
         Ok(parts)
     }
 
@@ -1055,8 +1104,13 @@ impl Parts {
                 let source = match shape.kind {
                     SetKind::Cone => Source::Cone,
                     SetKind::Cylinder => Source::Cylinder,
+                    SetKind::Plane => Source::Plane,
                 };
                 cols.extend(ends(shape.axis)?.map(Col::Lift));
+                if source == Source::Plane {
+                    let o = shape.origin.ok_or("a plane's set names the point it is measured from")?;
+                    cols.push(Col::Lift(o as usize));
+                }
                 let (n, free) = number(&shape.number)?;
                 cols.extend(free.map(Col::One));
                 (source, 0, n, shape.reference)
@@ -1118,8 +1172,19 @@ pub struct Moving {
 impl Moving {
     /// Motion `m`'s steps and columns, or why the solve cannot read it.
     pub fn of(sk: &Sketch, m: usize) -> Result<Moving, String> {
+        Self::read(sk, m, false)
+    }
+
+    /// The same, a turn about a point of a view read as the turn about the line through it square
+    /// to the view (`Step::Turn`): what a relation reading the motion itself takes (#326), where
+    /// an envelope in space is still generated under turns about lines.
+    pub fn of_any(sk: &Sketch, m: usize) -> Result<Moving, String> {
+        Self::read(sk, m, true)
+    }
+
+    fn read(sk: &Sketch, m: usize, turns: bool) -> Result<Moving, String> {
         let (mut steps, mut cols) = (Vec::new(), Vec::new());
-        motion(sk, m, &mut steps, &mut cols, &mut std::collections::BTreeMap::new(), 0)?;
+        motion(sk, m, &mut steps, &mut cols, &mut std::collections::BTreeMap::new(), 0, turns)?;
         Ok(Moving { steps, cols })
     }
 
@@ -1181,7 +1246,8 @@ fn width(cols: &[Col]) -> usize {
 /// and observer before a relative — each axis's ends appended to `cols`, six motion columns past
 /// the last; returns its step.
 fn motion(sk: &Sketch, m: usize, steps: &mut Vec<Step>, cols: &mut Vec<Col>,
-          done: &mut std::collections::BTreeMap<usize, usize>, depth: usize) -> Result<usize, String> {
+          done: &mut std::collections::BTreeMap<usize, usize>, depth: usize, turns: bool)
+          -> Result<usize, String> {
     if let Some(&s) = done.get(&m) {
         return Ok(s);
     }
@@ -1194,7 +1260,7 @@ fn motion(sk: &Sketch, m: usize, steps: &mut Vec<Step>, cols: &mut Vec<Col>,
                             holds is generated within it: state them", me.name));
     }
     // where the next axis's columns start in the motion's block: past every axis already read
-    let at = 6 * steps.iter().filter(|s| !matches!(s, Step::Relative { .. })).count();
+    let at = steps_width(steps);
     let mut axis = |l: u32| -> Result<(), String> {
         let line = sk.lines.get(l as usize).ok_or("no such motion axis")?;
         cols.extend([Col::Lift(line.p1 as usize), Col::Lift(line.p2 as usize)]);
@@ -1211,13 +1277,23 @@ fn motion(sk: &Sketch, m: usize, steps: &mut Vec<Step>, cols: &mut Vec<Col>,
             axis(l)?;
             Step::Translation { at, advance }
         }
+        MotionDef::Turn { centre, .. } if turns => {
+            let (ratio, phase, _) = me.rotation(sk)?;
+            let view = sk.plane_of(centre as usize).ok_or_else(|| {
+                format!("`{}` turns about a point drawn in no view, so about no line in space", me.name)
+            })?;
+            let pl = sk.planes.get(view).ok_or("no such view")?;
+            cols.extend([Col::Lift(centre as usize), Col::Three(sk.axes[pl.u as usize].d),
+                         Col::Three(sk.axes[pl.v as usize].d)]);
+            Step::Turn { at, ratio, phase }
+        }
         MotionDef::Turn { .. } => {
             return Err(format!("`{}` turns about a point of a view: an envelope in space is \
                                 generated under turns about lines", me.name))
         }
         MotionDef::Relative { source, observer } => {
-            let source = motion(sk, source as usize, steps, cols, done, depth + 1)?;
-            let observer = motion(sk, observer as usize, steps, cols, done, depth + 1)?;
+            let source = motion(sk, source as usize, steps, cols, done, depth + 1, turns)?;
+            let observer = motion(sk, observer as usize, steps, cols, done, depth + 1, turns)?;
             Step::Relative { source, observer }
         }
     };

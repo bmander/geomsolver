@@ -29,6 +29,8 @@ pub fn kind_initial(k: EntKind) -> char {
         EntKind::Vertex => 'w',
         EntKind::Edge => 'k',
         EntKind::Meshing => 'g',
+        // a body traced in space: `t` and `l` are taken, so its `r`
+        EntKind::Traced => 'r',
         // `a` is the arc's: an aXis
         EntKind::Axis => 'x',
         EntKind::Point | EntKind::Line | EntKind::Circle | EntKind::Arc | EntKind::Spline => {

@@ -14,6 +14,7 @@ mod named;
 pub mod held;
 pub mod meshing;
 pub mod planar;
+pub mod screw;
 pub use named::GeneratedEnvelope;
 
 use crate::plane::{cross, dot, scaled};

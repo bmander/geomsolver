@@ -979,6 +979,64 @@ pub fn meshing_text(sk: &Sketch, i: usize) -> String {
     text
 }
 
+/// What the drawing says of each body traced in space (#326): a curve or a surface, and whether
+/// it is **regular** over its domain — its derivatives in its formals independent at every place
+/// of a grid across it (`traced::regularity`), else where it is least so: the undercut check of a
+/// flank seen from its member.
+pub fn traced_text(sk: &Sketch, i: usize) -> String {
+    let t = &sk.traced[i];
+    let what = if t.formals() == 2 { "a surface" } else { "a curve" };
+    let k = crate::traced::consts_of(t);
+    let theta = crate::traced::theta(sk, t);
+    let n = 12;
+    let grid = |d: [f64; 2], j: usize, n: usize| d[0] + (d[1] - d[0]) * j as f64 / n as f64;
+    let mut least: Option<(f64, [f64; 2])> = None;
+    let mut missed = 0;
+    for a in 0..=n {
+        for b in 0..=if t.formals() == 2 { n } else { 0 } {
+            let place = [grid(t.domain[0], a, n), grid(t.domain[1], b, n)];
+            match crate::traced::regularity(&k, &theta, place) {
+                Some(r) if least.is_none_or(|(l, _)| r < l) => least = Some((r, place)),
+                Some(_) => {}
+                None => missed += 1,
+            }
+        }
+    }
+    let name = &t.name;
+    let deg = |v: f64| crate::io::reading(SpecKind::Scalar, v);
+    let mut text = match least {
+        None => format!("{name}: {what} traced in space, not read anywhere over its domain"),
+        Some((r, _)) if r > 1e-6 => format!("{name}: {what} traced in space, regular over its domain"),
+        Some((_, [u, s])) if t.formals() == 2 => {
+            format!("{name}: {what} traced in space, folding near ({}, {})", deg(u), deg(s))
+        }
+        Some((_, [u, _])) => format!("{name}: {what} traced in space, stopping near {}", deg(u)),
+    };
+    if missed > 0 && least.is_some() {
+        text += &format!(" ({missed} places not solved)");
+    }
+    text
+}
+
+/// What the drawing says of each motion it reads the screw of (#326): for every `isa screw mesh`,
+/// the motion's name, its pitch — the relation's own unknown, as solved — and the axis, in the
+/// words the CLI prints.
+pub fn screws_text(sk: &Sketch) -> Vec<String> {
+    use crate::constraints::{Arg, CKind};
+    sk.constraints.iter().filter(|c| c.kind == CKind::ScrewAxis).filter_map(|c| {
+        let (Arg::Ent(ax), Arg::Ent(m), Arg::Param(h)) = (&c.args[0], &c.args[1], &c.args[2]) else {
+            return None;
+        };
+        let name = &sk.motions.get(m.i())?.name;
+        let axis = sk.axes.get(ax.i())?;
+        let v = |q: [u32; 3]| q.map(|p| crate::io::reading(SpecKind::Scalar, sk.params[p as usize].value));
+        let (a, d) = (v(axis.a), v(axis.d));
+        let pitch = crate::io::reading(SpecKind::Length, sk.params[*h as usize].value);
+        Some(format!("{name}: screws about the axis through ({}, {}, {}) along ({}, {}, {}), pitch \
+                      {pitch} a radian", a[0], a[1], a[2], d[0], d[1], d[2]))
+    }).collect()
+}
+
 /// Meshing `i` traced over its phase for a report, from the first point held to it.
 fn meshing_trace(sk: &Sketch, i: usize) -> Result<crate::envelope::meshing::Trace, String> {
     crate::envelope::meshing::Meshing::named(sk, i).and_then(|m| m.traced(MESHING_STEPS))

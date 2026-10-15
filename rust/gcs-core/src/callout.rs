@@ -134,6 +134,19 @@ macro_rules! undrawn {
             // nor does a point on the path of contact of two flanks: its lag is a slot a pin
             // states, not a dimension
             | CKind::PointOnMeshing
+            // nor does a motion's twist read (#326): a line reciprocal to it, an axis on its
+            // screw, whose pitch is the relation's own unknown
+            | CKind::Reciprocal
+            | CKind::ScrewAxis
+            // nor a point carried by a motion
+            | CKind::CarriedPoint
+            // nor a contact with a traced body: its curvature is the circle's own radius
+            | CKind::PointOnTraced
+            | CKind::TracedTangentAt
+            | CKind::TracedSurfaceTangentAt
+            | CKind::TracedNormalAt
+            | CKind::TracedPlaneAt
+            | CKind::TracedCurvatureAt
             // a projection in space draws what `project` draws: nothing
             | CKind::ProjectSolved
             | CKind::Fix
