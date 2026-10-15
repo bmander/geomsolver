@@ -7,13 +7,14 @@
 //     the untwisted one turned): a frustum, 40/3 · (400 + 100 + 200) mm³;
 //   cone: the disc of radius 10 shrinking to 5: π · 40/3 · (100 + 50 + 25) mm³, its wall a cone;
 //   swell: the disc swelling as 1 + 0.3·sin(180°·s): 4000π · (1 + 1.2/π + 0.045) mm³.
-// Edit `length`, `half`, `r`, a scale or a twist.
+// Edit `length`, `half`, `r`, `apart`, a scale or a twist.
 unit mm
 use std (scaled, scaled_radius, vertical)
 
 length := 40mm
 half := 10mm
 r := 10mm
+apart := 40mm
 
 component Taper(g: line, up: axis, half: Length, twist: Angle, scale: Scalar, s: Scalar) {
   st := std.OnLine(g, up: up, s: s)
@@ -50,6 +51,7 @@ component Swell(g: line, up: axis, r: Length, scale: Scalar, s: Scalar) {
   f := face(k)
 }
 
+// Each solid on a guide of its own, `apart` from the last, so the three are seen side by side.
 in std.top {
   entry := point
   fix((0mm, 0mm)) entry
@@ -57,7 +59,19 @@ in std.top {
   guide := line(entry, exit)
   vertical guide
   length(length) guide
+  entry2 := point
+  fix((apart, 0mm)) entry2
+  exit2 := point hint((apart, length))
+  guide2 := line(entry2, exit2)
+  vertical guide2
+  length(length) guide2
+  entry3 := point
+  fix((2 * apart, 0mm)) entry3
+  exit3 := point hint((2 * apart, length))
+  guide3 := line(entry3, exit3)
+  vertical guide3
+  length(length) guide3
 }
 taper := solid(Taper(guide, std.z, half: half, twist: 90deg, scale: 0.5).f over s in (0, 1))
-cone := solid(Cone(guide, std.z, r: r, scale: 0.5).f over s in (0, 1))
-swell := solid(Swell(guide, std.z, r: r, scale: 1.3).f over s in (0, 1))
+cone := solid(Cone(guide2, std.z, r: r, scale: 0.5).f over s in (0, 1))
+swell := solid(Swell(guide3, std.z, r: r, scale: 1.3).f over s in (0, 1))

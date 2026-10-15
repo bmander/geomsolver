@@ -9,13 +9,15 @@
 // Closed forms: the corners run linearly between parallel ends, so the section's area is
 // quadratic in `s` and the prismatoid is exact — body 40/6 · (400 + 4·464 + 288) = 40/6 · 1856,
 // turned 40/6 · (400 + 4·52 + 288) mm³.
-// Edit `length`, `side` or `reach`, or start a walk at another corner.
+// `turned` is drawn a second time, `apart` along x, so the two are seen side by side.
+// Edit `length`, `side`, `reach` or `apart`, or start a walk at another corner.
 unit mm
 use std
 
 length := 40mm
 side := 20mm
 reach := 12mm
+apart := 40mm
 
 end_plane := plane
 fix(origin == (0mm, length, 0mm)) end_plane
@@ -41,9 +43,35 @@ in end_plane {
   fix((0mm, reach)) b2
   fix((-reach, 0mm)) b3
 }
+// the same two faces again, `apart` along x, for `turned`
+end_plane2 := plane
+fix(origin == (apart, length, 0mm)) end_plane2
+fix(dir == (1, 0, 0)) end_plane2.u
+fix(dir == (0, 0, 1)) end_plane2.v
+in std.front {
+  c0 := point
+  c1 := point
+  c2 := point
+  c3 := point
+  fix((apart - side / 2, -side / 2)) c0
+  fix((apart + side / 2, -side / 2)) c1
+  fix((apart + side / 2, side / 2)) c2
+  fix((apart - side / 2, side / 2)) c3
+}
+in end_plane2 {
+  d0 := point
+  d1 := point
+  d2 := point
+  d3 := point
+  fix((0mm, -reach)) d0
+  fix((reach, 0mm)) d1
+  fix((0mm, reach)) d2
+  fix((-reach, 0mm)) d3
+}
 inlet := face(a0, a1, a2, a3, -> close)
 outlet := face(b0, b1, b2, b3, -> close)
+inlet2 := face(c0, c1, c2, c3, -> close)
 // the same diamond walked from its second corner: a connector
-outlet_turned := face(b1, b2, b3, b0, -> close)
+outlet_turned := face(d1, d2, d3, d0, -> close)
 body := solid(std.Ruled(inlet, outlet).f over s in (0, 1))
-turned := solid(std.Ruled(inlet, outlet_turned).f over s in (0, 1))
+turned := solid(std.Ruled(inlet2, outlet_turned).f over s in (0, 1))
