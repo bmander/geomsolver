@@ -330,7 +330,19 @@ placement carries inside the blank; CLI test readers zero the offset.
   `arcs_in_space` in its plane turned over (normal reversed), counter-clockwise there from its
   start, so a chain still enters every link at its start and its legs run forward — no leg is
   walked end to start — and the S-bend in `std.top` is one chain
-  (`a_chain_in_a_plane_turns_right_at_an_arc_said_to_turn_clockwise`).
+  (`a_chain_in_a_plane_turns_right_at_an_arc_said_to_turn_clockwise`).  **A chain walks an arc it
+  enters at its end from there** ([0.126]): `program::entities::walked_back` reads each named
+  chain before the arcs are drawn — an arc whose end the link before leaves at, or, first, whose
+  start the link after enters at — and `arcs_in_space` draws it from its end: start and end
+  swapped and its turn reversed (in a plane `sense:` toggled, so it is drawn in its plane turned
+  over or not; in space the plane through its points faces the other way), the same arc, so
+  `validate_chain`, the joints' `at: start|end` and a family running it forward read it entered
+  at its start.  `Sketch::walked_back` keeps the names: `resolve::follow` reads `start`/`end` of
+  such an arc swapped, so `k.start` is the point written.  The parser threads a joint whose point
+  is an arc's written end (`thread`, both ends written); an arc two chains walk opposite ways is
+  E080.  `a_chain_walks_an_arc_it_enters_at_its_end_from_there`: the S-bend in `std.top` with its
+  right turn written from `f` to `e` (declared in the chain, or named), Pappus, the names claimed;
+  the bent pipe's second bend written clockwise from `f`, both tubes; the S-bend in space.
 - **A law is an expression in `s`** (§6.9 [0.103], #243 L5, finding 10).  A twist or a scale is a
   dimension of the section reading the running number; no word takes a `law:` (no function values).
   `std.sv`'s `Twisted` (the point `reach` along the station's `u` turned `twist · s` — [0.118],

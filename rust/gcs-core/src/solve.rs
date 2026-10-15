@@ -217,6 +217,16 @@ impl System {
     /// This is the one place the rule lives, so every caller gets it — the one-shot `solve`, the
     /// plan solver's fallback and a front end that compiled a system for itself alike.
     pub fn solve(&mut self, sk: &mut Sketch, opts: SolveOpts) -> SolveResult {
+        let res = self.solve_steered(sk, opts);
+        // a circle's gauge taken again where the normal now stands: it moves nothing a row
+        // reads but the gauge's own, which still holds (`Sketch::retake_round_gauges`)
+        if sk.retake_round_gauges() {
+            self.resync(sk);
+        }
+        res
+    }
+
+    fn solve_steered(&mut self, sk: &mut Sketch, opts: SolveOpts) -> SolveResult {
         // a document solve over bounds starts where it may be steered back to (§9.6), and one
         // that fails is tried again from there (`RECOVERIES`)
         let steers = opts.document() && sk.constraints.iter().any(|c| c.bound.is_some());

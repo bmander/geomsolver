@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.125 — October 2026**
+**Specification, Draft 0.126 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -964,7 +964,12 @@ block := solid(face(mouth, side_r, lid, side_l), from: face, to: back)
   otherwise, `arc(center: c, sense: cw)`: it then runs clockwise — drawn counter-clockwise in its
   plane turned over — so a chain in a plane turns right at it, entering it at its start as every
   link. Its ends a half turn apart are **E060**; `sense:` of an arc over points in space, which
-  turns as its points stand, is **E040**. A seed's step MAY run along any path, `hint(at: p, along: g, by:
+  turns as its points stand, is **E040**. **[0.126]** A chain MAY enter an arc at its end — its
+  end the point the link before leaves at, or, first, its start the point the link after enters
+  at — and walks it from there to its start: the same arc, drawn from its end and turning the
+  other way, so a family runs it forward. Threaded, both of its ends are written (`-> tangent (k
+  := arc(center: c, start: f, end: e)) ->`, entered at `e`); a name still reads the points as
+  written (`k.start` is `f`). An arc two chains walk opposite ways is **E080**. A seed's step MAY run along any path, `hint(at: p, along: g, by:
   f)`: `f` times `g`'s rate along its own run where `p` meets it, as along a line it is `f` times
   its run from `p1` to `p2` (§6.4).
 - **[0.103] A law is an expression in the running number.** A twist or a scale is a dimension of

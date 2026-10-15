@@ -876,6 +876,114 @@ tube := solid(Round(route, std.z, r: 4mm).f over s in (0, 5))");
     }
 }
 
+/// **A chain walks an arc it enters at its end from there** (#363 S4): L4's rule — a chain enters
+/// each link at its start — read an arc entered at its end as no link at all; walked end to start
+/// it is drawn from there, its turn reversed, the same arc.  So the S-bend in `std.top` is one
+/// chain with its right turn written as the arc from `f` to `e`, counter-clockwise — declared in
+/// the chain, or named there — its tube Pappus's, and a name still reads the points as written
+/// (`claim k3.start coincident f`).  The bent pipe's second bend written from `f`, clockwise, is
+/// the quarter it was: walked back it turns counter-clockwise from `e`, and the square tube and
+/// the round one are the pipe's.  In space the arc from `f` to `e` faces its plane the other way
+/// once walked, so L0's S-bend there is the one before.  And an arc two chains walk opposite ways
+/// is refused: it is drawn one way.
+#[test]
+fn a_chain_walks_an_arc_it_enters_at_its_end_from_there() {
+    let round = "
+component Round(g: path, up: axis, r: Length, s: Scalar) {
+  st := std.On(g, up: up, s: s)
+  in st.n {
+    k := circle(center: st.n.origin)
+    radius(r) k
+  }
+  f := face(k)
+}";
+    let length = 60.0 + 20.0 * PI;
+    for (before, link) in [("", "(k3 := arc(center: c2, start: f, end: e))"),
+                           ("k3 := arc(center: c2, start: f, end: e)", "k3")] {
+        let mut e = with(&format!("{round}
+in std.top {{
+  a := point
+  b := point hint((20, 0))
+  c1 := point hint((20, 20))
+  d := point hint((40, 20))
+  e := point hint((40, 40))
+  c2 := point hint((60, 40))
+  f := point hint((60, 60))
+  g := point hint((80, 60))
+  fix((0mm, 0mm)) a
+  {before}
+  route := horizontal (l0 := line(a, b)) -> tangent (k1 := arc(center: c1)) ->
+    tangent vertical (l2 := line(d, e)) -> tangent {link} ->
+    tangent horizontal (l4 := line(f, g))
+  length(20mm) l0
+  length(20mm) l2
+  length(20mm) l4
+  radius(20mm) k1
+  radius(20mm) k3
+}}
+claim k3.start coincident f
+claim k3.end coincident e
+tube := solid(Round(route, std.z, r: 4mm).f over s in (0, 5))"));
+        near(exact(&e, "tube"), 16.0 * PI * length, 1e-9, "the S-bend in a plane");
+        let at = |n: &str| e.sketch.world_point(e.map.ent_named(n).unwrap().i());
+        assert!(sub(at("g"), [80.0, 60.0, 0.0]).iter().all(|d| d.abs() <= 1e-9), "{:?}", at("g"));
+        assert_eq!(e.sketch.walked_back.len(), 1);
+        let opts = gcs_core::diagnose::DiagnoseOptions::default();
+        let d = gcs_core::diagnose::diagnose(&mut e.sketch, opts);
+        assert!(d.claims_violated.is_empty() && d.claims_theorem.len() == 2, "{d:?}");
+    }
+    let pipe = PIPE.replace("tangent (k3 := arc(center: c2)) ->",
+                            "tangent (k3 := arc(center: c2, start: f, end: e, sense: cw)) ->");
+    let e = with(&format!("{pipe}
+tube := solid(Pipe(route, std.z, r: 4mm).f over s in (0, 5))
+square := solid(Bar(route, std.z, lo: -1mm, hi: 1mm).f over s in (0, 5))"));
+    near(exact(&e, "tube"), 16.0 * PI * length, 1e-9, "the bent pipe's round tube");
+    near(exact(&e, "square"), 4.0 * length, 1e-9, "the bent pipe's square tube");
+    let at = |n: &str| e.sketch.world_point(e.map.ent_named(n).unwrap().i());
+    assert!(sub(at("g"), [20.0, 60.0, 40.0]).iter().all(|d| d.abs() <= 1e-9), "{:?}", at("g"));
+    let e = with(&format!("{round}
+a := point hint((-20, 0, 0))
+b := point hint((0, 0, 0))
+fix((0mm, 0mm, 0mm)) b
+c1 := point hint((0, 20, 0))
+fix((0mm, 20mm, 0mm)) c1
+d := point hint((20, 20, 0))
+e := point hint((20, 40, 0))
+c2 := point hint((40, 40, 0))
+f := point hint((40, 60, 0))
+g := point hint((60, 60, 0))
+route := (l0 := line(a, b)) -> tangent (k1 := arc(center: c1)) ->
+  tangent (l2 := line(d, e)) -> tangent (k3 := arc(center: c2, start: f, end: e)) ->
+  tangent (l4 := line(f, g))
+length(20mm) l0
+length(20mm) l2
+length(20mm) l4
+radius(20mm) k3
+d coincident std.top
+l2 parallel std.y
+l4 parallel std.x
+tube := solid(Round(route, std.z, r: 4mm).f over s in (0, 5))"));
+    near(exact(&e, "tube"), 16.0 * PI * length, 1e-9, "the S-bend in space");
+    let sk = &e.sketch;
+    let k = e.map.ent_named("k3").unwrap();
+    let n = sk.basis(sk.plane_of(sk.round_center(k)).unwrap()).normal();
+    assert!((unit(n)[2] + 1.0).abs() <= 1e-9, "`k3`'s plane faces {n:?}");
+    let said = refusals(&format!("{PATHS}
+in std.top {{
+  p0 := point hint((0, 0))
+  p1 := point hint((10, 0))
+  p2 := point hint((20, 10))
+  p3 := point hint((20, 20))
+  p4 := point hint((10, 30))
+  q := point hint((10, 10))
+  k := arc(center: q, start: p1, end: p2)
+  one := (m0 := line(p0, p1)) -> k -> (m1 := line(p2, p3))
+  two := (m2 := line(p3, p2)) -> k -> (m3 := line(p1, p4))
+}}
+"));
+    assert!(said.iter().any(|m| m.starts_with("E080") && m.contains("drawn one way")), "{said:?}");
+}
+
 /// **A chain in a plane turns right at an arc said to turn clockwise** (#363 S4): `arc(center: c,
 /// sense: cw)` drawn in `std.top` runs clockwise from its start — drawn counter-clockwise in the
 /// plane turned over — so the S-bend drawn in the plane's block is one chain too, a family entering
@@ -998,6 +1106,42 @@ k := arc(center: p1, start: p0, end: p2)
 "));
     assert!(said.iter().any(|m| m.starts_with("E060") && m.contains("stand in a line")),
             "{said:?}");
+}
+
+/// **A circle's gauge is taken again where a solve ends** (#363 S6): its turn about its normal
+/// is held square to an axis chosen off the normal as the circle was drawn, and a normal that
+/// swings onto that axis in the solve — seeded along `z`, so held square to `x`, and solved along
+/// `x`; seeded along `x` and solved along `y` — would leave the turn unheld there, a freedom the drawing does not have.  So the solved
+/// circle is still determined, its gauge square to its normal, and a second solve from there
+/// keeps it.
+#[test]
+fn a_circles_gauge_follows_a_normal_that_swings_onto_it() {
+    for (seed, [dx, dy, dz]) in [("(5, 5, 15)", [10, 0, 0]), ("(15, 5, 5)", [0, 10, 0]),
+                                 ("(5, 5, 15)", [0, 10, 0])] {
+        let place = [(dx, "x"), (dy, "y"), (dz, "z")].map(|(d, a)| match d {
+            0 => format!("oc level(std.{a}) tc"),
+            _ => format!("oc distance({d}mm, along: std.{a}) tc"),
+        }).join("\n");
+        let mut e = with(&format!("
+oc := point hint((5, 5, 5))
+fix((5mm, 5mm, 5mm)) oc
+tc := point hint({seed})
+{}
+ax := line(oc, tc)
+k := circle(center: oc, normal: ax)
+radius(4mm) k
+disc := solid(face(k), depth: 10mm)", place));
+        near(exact(&e, "disc"), PI * 16.0 * 10.0, 1e-9, "the disc");
+        let n = unit(sub(e.sketch.world_point(index(&e, "tc")),
+                         e.sketch.world_point(index(&e, "oc"))));
+        let (&g, _) = e.sketch.round_gauges.iter().next().expect("a gauge");
+        let d = e.sketch.axes[g as usize].d.map(|p| e.sketch.params[p as usize].value);
+        assert!(dot(unit(d), n).abs() <= 1e-9, "the gauge {d:?} against the normal {n:?}");
+        let again = gcs_core::solve::solve(&mut e.sketch, Default::default());
+        assert!(again.success);
+        let opts = gcs_core::diagnose::DiagnoseOptions::default();
+        assert_eq!(gcs_core::diagnose::diagnose(&mut e.sketch, opts).dof, 0);
+    }
 }
 
 /// The four corners of `b` nearest `at`: the corners of its cap there.

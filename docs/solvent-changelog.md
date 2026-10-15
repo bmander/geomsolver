@@ -4,6 +4,14 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.126] An arc walked from its end.** A chain may enter an arc at its end and walk it to its
+start, `-> tangent (k3 := arc(center: c2, start: f, end: e)) ->` entered at `e`, or the arc named
+there: the same arc, drawn from its end and turning the other way, so a family runs it forward and
+L0's S-bend is one chain with its right turn written as a counter-clockwise arc. `k3.start` is
+still `f`. An arc two chains walk opposite ways is E080. Through 0.125 a chain entered every link
+at its start, and an arc entered at its end was E080 ("does not share the preceding link's
+endpoint"); an arc in a plane turned right only said `sense: cw`. (Issue #363, S4.)
+
 **[0.125] An arc's sense.** An arc drawn in a plane may turn clockwise from its start, `arc(center:
 c, sense: cw)`, so a chain in a plane turns right at it — L0's S-bend is one chain in `std.top`.
 Through 0.124 an arc in a plane ran counter-clockwise from its start always, and a chain entering

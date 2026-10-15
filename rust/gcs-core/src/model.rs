@@ -199,6 +199,18 @@ pub struct Sketch {
     /// the points written (`program::entities::arcs_in_space`), so a chain's links still meet
     /// where they were threaded.
     pub stands_for: std::collections::BTreeMap<u32, u32>,
+    /// **The axes a circle about a point in space is gauged by** (#363 S6), each to the `u` and
+    /// `v` axes of the plane it minted: the plane's turn about the circle's normal is held square
+    /// to it, and it is taken again where a solve ends (`retake_round_gauges`), so a normal that
+    /// swings onto it never leaves that turn unheld at a solved pose.  Set by the elaborator
+    /// (`program::entities::circles_in_space`).
+    pub round_gauges: std::collections::BTreeMap<u32, [u32; 2]>,
+    /// **The arcs a chain walks from their end** (#363 S4), each drawn from there: its start and
+    /// end swapped and its turn reversed, the same arc, so the chain enters it at its start and a
+    /// family runs it forward.  A name still reads the points as written: `k.start` is the end it
+    /// is drawn to (`program::resolve::follow`).  Set by the elaborator
+    /// (`program::entities::walked_back`, read by `arcs_in_space`).
+    pub walked_back: std::collections::BTreeSet<u32>,
     /// Each free curve's energy as `settle_variational` last read it: its statements, pegs and
     /// whether its length is free.  Derived state, never saved.
     pub variational: Vec<crate::variational::Energy>,

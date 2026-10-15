@@ -930,7 +930,9 @@ drawn in the plane through its centre and its ends, the short way round (0.124),
 lines and arcs may bend in any plane with none written; a circle about a point in space takes the
 axis it stands square to, `circle(center: o, normal: ax)` (with none it is E060). In a plane an
 arc runs counter-clockwise from its start; `arc(center: c, sense: cw)` runs clockwise, so a chain
-in a plane may turn right at it (0.125). A face over a point in space is E080; a spline over points in space is a curve in space (0.123):
+in a plane may turn right at it (0.125). A chain may also enter an arc at its end and walk it to
+its start — threaded with both ends written, `-> tangent (k := arc(center: c, start: f, end: e))
+->` entered at `e`, or the arc named there — and `k.start` is still `f` (0.126). A face over a point in space is E080; a spline over points in space is a curve in space (0.123):
 its contacts a traced curve's (`m coincident(t == 0.5) k`, `k tangent(at: m) l`), a `path`, and
 `spline(through: rims)` over corners in space the cubic through them (it bounds no face; the
 workspace draws it in space, as an axis). In the workspace such points are dragged across the

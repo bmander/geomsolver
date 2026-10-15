@@ -1015,7 +1015,16 @@ impl<'a> P<'a> {
             let ord = |l: &Link| l.kind().map(build_rank).unwrap_or(usize::MAX);
             (ord(a), ia) < (ord(b), ib)
         }
+        // an arc both of whose ends are written may be entered at its end and left at its start
+        // (#363 S4): walked end to start, which elaboration draws (`entities::walked_back`)
+        let back = |i: usize, k: Option<usize>, p: &Ref| {
+            links[i].kind() == Some(EntKind::Arc) && slot(i, k).is_some_and(|q| refs_eq(&q, p))
+        };
+        let other = |i: usize| links[i].kind().and_then(|k| k.ends());
         match (left, right) {
+            (Some(l), Some(r))
+                if back(ri, other(ri).map(|e| e.exit), &l)
+                    || back(li, other(li).map(|e| e.entry), &r) => {}
             (Some(l), Some(r)) => {
                 if !refs_eq(&l, &r) {
                     self.errs.push(SynErr {

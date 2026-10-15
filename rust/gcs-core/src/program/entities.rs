@@ -740,8 +740,13 @@ pub(super) fn splines_in_space(sk: &mut Sketch, res: &mut Resolver, map: &mut su
 /// counter-clockwise there from its start: a chain in a plane enters every link at its start, and
 /// turns right at such an arc.  Its ends a half turn apart take no one plane either (E060); one
 /// over points in space turns as its points stand, and `sense:` there is refused (E040).
+///
+/// **An arc a chain walks from its end** (`back`, `walked_back`) is drawn from there: its start
+/// and end swapped and its turn reversed — in a plane, counter-clockwise becomes clockwise and
+/// the other way; in space the plane through its points faces the other way — the same arc, so
+/// the chain enters it at its start.
 pub(super) fn arcs_in_space(sk: &mut Sketch, map: &super::SourceMap, deferred: &[Deferred],
-                            diags: &mut Vec<Diag>) {
+                            back: &BTreeSet<usize>, diags: &mut Vec<Diag>) {
     use crate::constraints::{CKind, Constraint};
     use crate::space::{cross, dot, norm, sub};
     let clockwise: BTreeMap<usize, (Span, StmtId)> = deferred.iter().filter_map(|d| match d {
@@ -749,6 +754,12 @@ pub(super) fn arcs_in_space(sk: &mut Sketch, map: &super::SourceMap, deferred: &
         _ => None,
     }).collect();
     for i in 0..sk.arcs.len() {
+        let walked_back = back.contains(&i);
+        if walked_back {
+            let a = &mut sk.arcs[i];
+            std::mem::swap(&mut a.start, &mut a.end);
+            sk.walked_back.insert(i as u32);
+        }
         let a = sk.arcs[i].clone();
         let pts = [a.center, a.start, a.end].map(|p| p as usize);
         let planar = pts.iter().all(|&p| sk.plane_of(p).is_some());
@@ -759,7 +770,8 @@ pub(super) fn arcs_in_space(sk: &mut Sketch, map: &super::SourceMap, deferred: &
                 drawn in a plane turns".to_string()));
             continue;
         }
-        if planar && cw.is_none() {
+        // walked from its end, an arc in a plane turns the other way from there
+        if planar && cw.is_some() == walked_back {
             continue;
         }
         let arc = EntRef::arc(i);
@@ -773,9 +785,9 @@ pub(super) fn arcs_in_space(sk: &mut Sketch, map: &super::SourceMap, deferred: &
         if !(norm(cross(to_s, to_e)) > 1e-9 * norm(to_s) * norm(to_e)) {
             let Some(site) = map.site_of(arc) else { continue };
             let said = if planar {
-                "an arc turning clockwise is drawn in its plane turned over, through its centre \
-                 and its ends, and these stand in a line — a half turn, either way round: draw \
-                 two arcs"
+                "an arc turning clockwise — said to, or walked by a chain from its end — is drawn \
+                 in its plane turned over, through its centre and its ends, and these stand in a \
+                 line — a half turn, either way round: draw two arcs"
             } else {
                 "an arc over points in space is drawn in the plane through its centre and its \
                  ends, and these stand in a line, which no one plane is through: draw it `in` one"
@@ -829,6 +841,45 @@ pub(super) fn arcs_in_space(sk: &mut Sketch, map: &super::SourceMap, deferred: &
             sk.add(c);
         }
     }
+}
+
+/// **The arcs a chain walks from their end** (#363 S4): a chain enters each link where the one
+/// before it leaves, and an arc it enters at its end — its end shared with the link before, or,
+/// first, its start with the link after — it walks from there to its start.  Each such arc, for
+/// `arcs_in_space` to draw from its end.  An arc two chains walk opposite ways is refused (E080):
+/// it is drawn one way.  A chain whose links do not meet is left to `solids::faces::
+/// validate_chain`, which says so.
+pub(super) fn walked_back(sk: &Sketch, res: &Resolver, diags: &mut Vec<Diag>) -> BTreeSet<usize> {
+    let (mut back, mut forward) = (BTreeMap::new(), BTreeMap::new());
+    for c in res.chains.values() {
+        let links: Option<Vec<(EntRef, [u32; 2])>> = c.links.iter().map(|r| {
+            let e = res.entity(sk, r).filter(|e| e.i() < sk.count(e.kind))
+                .filter(|e| matches!(e.kind, EntKind::Line | EntKind::Arc))?;
+            crate::model::edge_ends(sk, e).map(|(s, t)| (e, [s, t]))
+        }).collect();
+        let Some(links) = links else { continue };
+        let meets = |p: u32, k: usize| links.get(k).is_some_and(|(_, ends)| ends.contains(&p));
+        let mut entry = None;
+        for (r, &(e, [s, t])) in c.links.iter().zip(&links) {
+            let reversed = match entry {
+                None => e.kind == EntKind::Arc && meets(s, 1) && !meets(t, 1),
+                Some(p) if p == s => false,
+                Some(p) if p == t && e.kind == EntKind::Arc => true,
+                Some(_) => break,
+            };
+            let (mine, other) = if reversed { (&mut back, &forward) } else { (&mut forward, &back) };
+            if e.kind == EntKind::Arc {
+                if other.contains_key(&e.i()) {
+                    diags.push(Diag::new(Code::E080, r.span, None, format!("`{}` is walked \
+                        from its start in one chain and from its end in another, and an arc is \
+                        drawn one way", crate::syntax::ref_text(r))));
+                }
+                mine.insert(e.i(), ());
+            }
+            entry = Some(if reversed { s } else { t });
+        }
+    }
+    back.into_keys().filter(|i| !forward.contains_key(i)).collect()
 }
 
 /// **A circle about a point in space stands square to its `normal:`** (#363 S6): `k := circle(
@@ -885,11 +936,13 @@ pub(super) fn circles_in_space(
         let va = sk.axis(v, &format!("{name}#plane.v"));
         let pi = sk.plane(ua, va, at, &format!("{name}#plane"));
         sk.set_plane_origin(pi, at);
-        // the gauge: the world's axis least along the normal, held
+        // the gauge: the world's axis least along the normal, held, and taken again where a
+        // solve leaves the normal near it (`Sketch::retake_round_gauges`)
         let gauge = sk.axis(e, &format!("{name}#gauge"));
         for &p in &sk.axes[gauge].d.clone() {
             sk.params[p as usize].fixed = true;
         }
+        sk.round_gauges.insert(gauge as u32, [ua as u32, va as u32]);
         let origin = sk.planes[pi].origin as usize;
         sk.circles[i].center = origin as u32;
         sk.stands_for.insert(origin as u32, c as u32);
