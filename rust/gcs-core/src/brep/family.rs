@@ -19,7 +19,10 @@
 //! (a whole circle's periodic in `u`); its rims the section's edges at the ends, the rails between
 //! walls the sheets' `u = 0` lines; the caps `start` and `end` planes through the end sections.
 //! An edge whose run has vanished at an end is a degenerate edge there (its rails meet in one
-//! vertex), and a section vanished whole is an apex with no cap. A wall whose sheet is a plane, a
+//! vertex), and a section vanished whole is an apex with no cap. Where the walls meet at an angle
+//! across the interval (`creases`, #243 L7: a ruled loft's sections) the solid is cut there into
+//! bands, each wall a face a band, one name over all, and each band's rims an edge of it. A wall
+//! whose sheet is a plane, a
 //! cylinder, a cone or a torus (`analytic`) lies on that surface instead — never by its word, by
 //! what its numbers do — once its points lie on it and its area agrees with the sheet's; and where
 //! the whole section moves rigidly, by one screw or one straight step (`carried`, #243 L6), every
@@ -129,6 +132,11 @@ impl Stations {
         }
         std::array::from_fn(|d| std::array::from_fn(|i| (0..6).map(|k| mono[d][k]*self.inv[j][k][i]).sum()))
     }
+    /// The stations of the pieces `js` alone: a band of the interval (`family`'s, at a crease).
+    fn band(&self,js: std::ops::Range<usize>) -> Stations {
+        let (spans,at) = (self.spans[js.clone()].to_vec(),self.at[js.clone()].to_vec());
+        Stations {spans,at,inv:self.inv[js].to_vec()}
+    }
     /// Where the surface stops being a polynomial in `s`, strictly inside `[a, b]`: the pieces' joints.
     pub fn breaks(&self,[a,b]: [f64;2]) -> Vec<f64> {
         let (a,b) = (a.min(b),a.max(b));
@@ -229,6 +237,20 @@ impl Sheet {
                 add(self.run.spline(dn).point(t),scale(self.run.spline(n).d2(t).1,dt))
             }
         }
+    }
+    /// The wall over the pieces `js` alone, read over `stations` (`Stations::band`'s of them).
+    fn band(&self,stations: Arc<Stations>,js: std::ops::Range<usize>) -> Sheet {
+        let nodes = self.nodes[6*js.start..6*js.end].to_vec();
+        Sheet {run:self.run.clone(),stations,nodes,closed:self.closed,boxes:Vec::new()}.boxed()
+    }
+    /// `∂S/∂s` at `(u, s)` as piece `j` reads it: at a joint, from either side of it.
+    fn rate_in(&self,j: usize,[u,s]: Uv) -> V {
+        let w = self.stations.weights(j,s);
+        let nodes = &self.nodes[6*j..6*j+6];
+        let [n,dn]: [Vec<f64>;2] = std::array::from_fn(|d| {
+            (0..nodes[0].len()).map(|q| (0..6).map(|i| w[d][i]*nodes[i][q]).sum()).collect()
+        });
+        self.rate(&n,&dn,u)
     }
     /// `S`, `S_u`, `S_s`.
     pub fn d1(&self,[u,s]: Uv) -> (V,V,V) {
@@ -502,6 +524,48 @@ fn loop_points(walls: &[Wall],s: f64) -> Vec<V> {
         .collect()
 }
 
+/// A band of a family between its creases: its interval, and each loop's walls' sheets over it.
+struct Band {
+    span: [f64;2],
+    walls: Vec<Vec<Arc<Sheet>>>,
+}
+
+/// How far apart the two sides of a joint may turn a wall's run along `s`, as `1 − cos`, before
+/// the joint is a crease (about a twentieth of a degree): well above what the pieces' polynomials
+/// miss a smooth run by, far below a section a ruled loft meets at an angle.
+const CREASE: f64 = 1e-6;
+
+/// How near another crease or an end a crease may stand, as a part of the interval, and still be
+/// one: a kink a law in pieces puts inside a piece is closed in on by pieces a millionth of the
+/// interval long, whose joints either side of it are no sections.
+const CREASE_GAP: f64 = 1e-3;
+
+/// **Where the walls meet at an angle across the interval** (#243 L7): the joints of the pieces
+/// at which some wall's run along `s` turns — a ruled loft's sections, each a link of a chain the
+/// family runs in step — as indices of the piece each begins.  A joint the walls run on through,
+/// tangent, is none (a pipe's, from a straight to a bend).
+fn creases(loops: &[Vec<Wall>]) -> Vec<usize> {
+    let Some(first) = loops.first().and_then(|l| l.first()) else { return Vec::new() };
+    let st = &first.sheet.stations;
+    let [a,b] = st.span();
+    let gap = CREASE_GAP*(b-a);
+    let turned = |j: usize| {
+        let s = st.spans[j][0];
+        loops.iter().flatten().any(|w| (0..=4).any(|i| {
+            let uv = [i as f64/4.,s];
+            let (l,r) = (w.sheet.rate_in(j-1,uv),w.sheet.rate_in(j,uv));
+            let (nl,nr) = (norm(l),norm(r));
+            nl > 0. && nr > 0. && 1.-dot(l,r)/(nl*nr) > CREASE
+        }))
+    };
+    let all: Vec<usize> = (1..st.spans.len()).filter(|&j| turned(j)).collect();
+    let at = |j: usize| st.spans[j][0];
+    all.iter().copied().filter(|&j| {
+        let s = at(j);
+        s-a > gap && b-s > gap && all.iter().all(|&k| k == j || (at(k)-s).abs() > gap)
+    }).collect()
+}
+
 /// **The solid a face family's walls bound** (see the module): `loops` the section's loops, the
 /// outer first, each the walls of its edges in walk order; an edge's run at an end no longer than
 /// `vanish` (mm) is vanished there.
@@ -510,10 +574,26 @@ pub fn family(loops: &[Vec<Wall>],vanish: f64) -> Result<Brep,String> {
     let [a,b] = first.span();
     if loops.iter().flatten().any(|w| w.sheet.span() != [a,b]) { return Err("a face family's walls run over different intervals".into()) }
     let mid = (a+b)/2.;
-    // which way each loop runs at the middle, and which way the stations move
-    let normals: Vec<V> = loops.iter().map(|l| newell(&loop_points(l,mid))).collect();
-    let section = unit(normals[0]);
+    // the section's normal at the middle, the walls' frames' axis
+    let section = unit(newell(&loop_points(&loops[0],mid)));
     let mut out = Brep::default();
+    // the bands between the creases, each wall's sheet over its pieces alone, and where they begin
+    // and end
+    let pieces = first.stations.spans.len();
+    let starts: Vec<usize> = std::iter::once(0).chain(creases(loops)).collect();
+    let bands: Vec<Band> = starts.iter().enumerate().map(|(i,&j0)| {
+        let j1 = starts.get(i+1).copied().unwrap_or(pieces);
+        if starts.len() == 1 {
+            let walls = loops.iter().map(|l| l.iter().map(|w| w.sheet.clone()).collect()).collect();
+            return Band {span:[a,b],walls}
+        }
+        let stations = Arc::new(first.stations.band(j0..j1));
+        let walls = loops.iter()
+            .map(|l| l.iter().map(|w| Arc::new(w.sheet.band(stations.clone(),j0..j1))).collect())
+            .collect();
+        Band {span:stations.span(),walls}
+    }).collect();
+    let cuts: Vec<f64> = bands.iter().map(|b| b.span[0]).chain([b]).collect();
     // per loop, per end, the rims' edges (none where the loop vanished whole)
     let mut rims: Vec<[Vec<(u32,bool)>;2]> = Vec::new();
     // each rail's edge, and the wall it is the start of
@@ -522,11 +602,13 @@ pub fn family(loops: &[Vec<Wall>],vanish: f64) -> Result<Brep,String> {
         let m = walls.len();
         let closed = m == 1 && walls[0].sheet.closed;
         if (m == 1) != closed { return Err("a face family's loop of one edge must run round".into()) }
-        // each end's corners, those an edge vanished between joined in one vertex
-        let mut corner_ids: [Vec<u32>;2] = [vec![],vec![]];
-        let mut vanished: [Vec<bool>;2] = [vec![],vec![]];
-        for (e,s) in [a,b].into_iter().enumerate() {
-            vanished[e] = walls.iter().map(|w| rim_length(&w.sheet,s) <= vanish).collect();
+        // each cut's corners — the ends' and each crease's — those an edge vanished between at an
+        // end joined in one vertex
+        let mut corner_ids: Vec<Vec<u32>> = Vec::with_capacity(cuts.len());
+        let mut vanished: Vec<Vec<bool>> = Vec::with_capacity(cuts.len());
+        for (e,&s) in cuts.iter().enumerate() {
+            let end = e == 0 || e+1 == cuts.len();
+            vanished.push(walls.iter().map(|w| end && rim_length(&w.sheet,s) <= vanish).collect());
             let mut root: Vec<usize> = (0..m).collect();
             for k in 0..m {
                 if vanished[e][k] && !closed {
@@ -543,47 +625,64 @@ pub fn family(loops: &[Vec<Wall>],vanish: f64) -> Result<Brep,String> {
                 }
                 ids[k] = ids[root[k]];
             }
-            corner_ids[e] = ids;
+            corner_ids.push(ids);
         }
-        let rails: Vec<u32> = (0..m).map(|k| {
-            let v = [corner_ids[0][k],corner_ids[1][k]];
-            out.edge(EdgeCurve::Curve(Curve::Rail(walls[k].sheet.clone(),0.)),[a,b],v)
-        }).collect();
-        all_rails.extend(rails.iter().zip(walls).map(|(&e,w)| (e,w.sheet.clone())));
-        let mut ends: [Vec<(u32,bool)>;2] = [vec![],vec![]];
-        for (e,s) in [a,b].into_iter().enumerate() {
+        // each corner's rail, a band at a time
+        let rails: Vec<Vec<u32>> = bands.iter().enumerate().map(|(bi,band)| (0..m).map(|k| {
+            let v = [corner_ids[bi][k],corner_ids[bi+1][k]];
+            out.edge(EdgeCurve::Curve(Curve::Rail(band.walls[li][k].clone(),0.)),band.span,v)
+        }).collect()).collect();
+        if bands.len() == 1 {
+            all_rails.extend(rails[0].iter().zip(walls).map(|(&e,w)| (e,w.sheet.clone())));
+        }
+        // each edge's rim where a band begins and where the last ends, vanished only at the ends
+        let mut ends: Vec<Vec<(u32,bool)>> = Vec::with_capacity(cuts.len());
+        for (e,&s) in cuts.iter().enumerate() {
+            let band = &bands[e.min(bands.len()-1)];
+            let mut rim = Vec::with_capacity(m);
             for k in 0..m {
                 let v = [corner_ids[e][k],corner_ids[e][(k+1)%m]];
                 let id = if vanished[e][k] {
                     out.edge(EdgeCurve::Degenerate,[0.,1.],[v[0],v[0]])
                 } else {
-                    let (curve,t) = rim_curve(&walls[k].sheet,s);
+                    let (curve,t) = rim_curve(&band.walls[li][k],s);
                     out.edge(EdgeCurve::Curve(curve),t,v)
                 };
-                ends[e].push((id,vanished[e][k]));
+                rim.push((id,vanished[e][k]));
+            }
+            ends.push(rim);
+        }
+        for (bi,band) in bands.iter().enumerate() {
+            let [lo,hi] = band.span;
+            let middle = (lo+hi)/2.;
+            // which way the loop runs about its own plane in this band: the section may have
+            // turned round since the family's middle (a U)
+            let n_loop = unit(newell(&loop_points(walls,middle)));
+            for (k,w) in walls.iter().enumerate() {
+                let sheet = &band.walls[li][k];
+                let line = |p: Uv,q: Uv| Pcurve::Line {a:p,b:q};
+                let mut l = vec![
+                    Coedge {edge:ends[bi][k].0,reversed:false,pcurve:line([0.,lo],[1.,lo])},
+                    Coedge {edge:rails[bi][(k+1)%m],reversed:false,pcurve:line([1.,lo],[1.,hi])},
+                    Coedge {edge:ends[bi+1][k].0,reversed:true,pcurve:line([0.,hi],[1.,hi])},
+                    Coedge {edge:rails[bi][k],reversed:true,pcurve:line([0.,lo],[0.,hi])},
+                ];
+                // outward, in the section's plane: right of the walk about its own loop's normal
+                // for the outer loop, left of it for a hole
+                let (_,tangent,_) = sheet.d1([0.5,middle]);
+                let outward = if li == 0 { cross(tangent,n_loop) } else { cross(n_loop,tangent) };
+                let surface = Surface::Family(Frame::about(w.sheet.rim(0.,a).0,section),sheet.clone());
+                let reversed = dot(surface.normal_raw([0.5,middle]),outward) < 0.;
+                let face = Face {surface,reversed,loops:vec![],name:w.name.clone()};
+                let ccw = out.loop_area(&face,&l) > 0.;
+                if ccw == reversed { l = reverse_loop(l); }
+                out.faces.push(Face {loops:vec![l],..face});
             }
         }
-        let n_loop = unit(normals[li]);
-        for (k,w) in walls.iter().enumerate() {
-            let line = |p: Uv,q: Uv| Pcurve::Line {a:p,b:q};
-            let mut l = vec![
-                Coedge {edge:ends[0][k].0,reversed:false,pcurve:line([0.,a],[1.,a])},
-                Coedge {edge:rails[(k+1)%m],reversed:false,pcurve:line([1.,a],[1.,b])},
-                Coedge {edge:ends[1][k].0,reversed:true,pcurve:line([0.,b],[1.,b])},
-                Coedge {edge:rails[k],reversed:true,pcurve:line([0.,a],[0.,b])},
-            ];
-            // outward, in the section's plane: right of the walk about its own loop's normal for
-            // the outer loop, left of it for a hole
-            let (_,tangent,_) = w.sheet.d1([0.5,mid]);
-            let outward = if li == 0 { cross(tangent,n_loop) } else { cross(n_loop,tangent) };
-            let surface = Surface::Family(Frame::about(w.sheet.rim(0.,a).0,section),w.sheet.clone());
-            let reversed = dot(surface.normal_raw([0.5,mid]),outward) < 0.;
-            let face = Face {surface,reversed,loops:vec![],name:w.name.clone()};
-            let ccw = out.loop_area(&face,&l) > 0.;
-            if ccw == reversed { l = reverse_loop(l); }
-            out.faces.push(Face {loops:vec![l],..face});
-        }
-        rims.push(ends.map(|e| if e.iter().all(|x| x.1) { Vec::new() } else { e }));
+        // the caps' rims: the first cut's and the last's
+        let last = ends.pop().unwrap_or_default();
+        let first = ends.swap_remove(0);
+        rims.push([first,last].map(|e| if e.iter().all(|x| x.1) { Vec::new() } else { e }));
     }
     // the caps: the start's material toward where the stations go, the end's behind it
     for (e,s,name) in [(0,a,"start"),(1,b,"end")] {
@@ -615,7 +714,9 @@ pub fn family(loops: &[Vec<Wall>],vanish: f64) -> Result<Brep,String> {
     // carried rigidly, the walls on what the first rim sweeps and the rails on what each corner
     // does — the whole solid exact, its every wall held to the general one — else wall by wall
     let size = loops.iter().flatten().map(|w| distance(w.sheet.d1([0.,a]).0,w.sheet.d1([1.,b]).0)).fold(0.,f64::max);
-    if let Some(carry) = carried(loops,AGREE*size.max(f64::MIN_POSITIVE)) {
+    let tol = AGREE*size.max(f64::MIN_POSITIVE);
+    let rigid = if bands.len() == 1 { carried(loops,tol) } else { None };
+    if let Some(carry) = rigid {
         let mut exact = out.clone();
         for (k,sheet) in all_rails {
             let e = &mut exact.edges[k as usize];

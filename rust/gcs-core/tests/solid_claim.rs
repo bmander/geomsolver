@@ -199,6 +199,59 @@ fn what_is_written_wrong_is_refused() {
     );
 }
 
+/// A ball swung about the z axis past a post: 10 out on a 2 mm ball, the post 15.5 out on the
+/// other side on a 3 mm one, so at rest they stand 13.4 apart and three quarters of a turn round
+/// half a millimetre, within the millimetre the claim asks for from 260° to 280°.
+/// Each is an instance's solid, `swing.arm.body` and `swing.post.body`, and the claim is written
+/// once at the top and once inside the component that makes them.
+const SWUNG: &str = "\
+unit mm
+use std
+component Ball(c: point, r: Length) {
+  ball := { p | p distance(<= r) c }
+  body := solid(ball)
+}
+component Swing(ax: line, a: point, b: point) {
+  spin := motion(about: ax)
+  arm := Ball(a, r: 2mm)
+  post := Ball(b, r: 3mm)
+  swung := solid(arm.body, under: spin, at: 0deg)
+  claim over spin in (0deg, 360deg) { swung clear(1mm) post.body }
+}
+o := point
+fix((0, 0, 0)) o
+t := point
+fix((0, 0, 1)) t
+a := point
+fix((10, 0, 0)) a
+b := point
+fix((0, -15.5, 0)) b
+spindle := line(o, t)
+swing := Swing(spindle, a, b)
+claim over swing.spin in (0deg, 360deg) { swing.swung clear(1mm) swing.post.body }
+claim swing.arm.body clear(1mm) swing.post.body
+";
+
+#[test]
+fn a_claim_over_a_motion_reads_the_solids_of_instances() {
+    // The body of a swept claim names its solids as any claim does: through an instance, and
+    // from inside a component under the instance's prefix.  Each sweep finds the poses at which
+    // the ball passes too near the post; at rest the same two stand well apart.
+    let e = read(SWUNG);
+    assert!(e.diags.is_empty(), "{:#?}", e.diags);
+    let v = verdicts(&e);
+    assert_eq!(v.len(), 3, "the claim in the component, the one beside it and the one at rest");
+    for swept in &v[..2] {
+        assert_eq!(swept.holds(), Some(false), "the ball passes too near the post");
+        assert_eq!(swept.valid_samples().count(), 37, "every pose of the turn judged");
+        let refuted: Vec<f64> = swept.poses().iter().filter(|p| p.holds() == Some(false))
+            .map(|p| p.parameter().unwrap()).collect();
+        assert_eq!(refuted.len(), 3, "{refuted:?}");
+        assert!(refuted.iter().all(|t| (t - 270.0).abs() <= 10.0 + 1e-9), "{refuted:?}");
+    }
+    assert_eq!(v[2].holds(), Some(true), "at rest they are well apart");
+}
+
 /// **Judged a pose at a time, a claim comes to what it comes to judged at once** — the page's
 /// worker steps a `ClaimJudge` between looks at its messages, and `judge_solids` is the same judge
 /// run to the end, so the two cannot disagree.  Between steps it says which claim of how many and

@@ -85,7 +85,7 @@ came from.
   as a point, as after `tangent` (`op_args`), and `settle` names the envelope first whatever was
   written first (`curve_last`, the symmetric swap).  **On a meshing** (#283, [0.94]) a point is
   `coincident` (`PointOnMeshing`), its phase and lag slots pinned by `t ==` and `lag ==`; at a
-  point held there (#345, [0.111]) a line or an axis is `perpendicular` (`MeshingNormalAt`, the
+  point held there (#345, [0.112]) a line or an axis is `perpendicular` (`MeshingNormalAt`, the
   common normal) or `tangent` (`MeshingTangentAt`, the path of contact), `(Meshing, Line | Axis)`
   with `at:` a point, the meshing named first whatever was written first.  Their eight place slots
   are the holding contact's (`Constraint::tangent_at`, `holds_on`: `PointOnMeshing` hands its

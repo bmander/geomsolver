@@ -174,43 +174,27 @@ fn two_rails_hold_a_blade() {
     near(volume(&e, "blade").unwrap(), 2100.0, 1e-9, "the blade");
 }
 
-/// **A smooth loft is its quadrature**: the bottle's circles reach a cubic rail drawn through its
-/// three rims, so V = π∫ x² dy over the rail — a polynomial of degree 8 in the rail's parameter,
-/// which five Gauss–Legendre points integrate exactly.  The rail is a clamped cubic of four
-/// control points, a Bézier, read off the solve.
+/// **A smooth loft is its quadrature**: the bottle's circles reach the spline through its three
+/// rims (L7), so V = π∫ x² dy over the rail — on each of its two spans a polynomial of degree 8 in
+/// the rail's parameter, which five Gauss–Legendre points integrate exactly.  The rail is a
+/// clamped cubic of five control points, read off the solve.
 #[test]
 fn a_smooth_loft_is_its_quadrature() {
     let e = family(BOTTLE);
     let sk = &e.sketch;
     let rail = e.map.ent_named("rail").unwrap();
     assert_eq!(rail.kind, EntKind::Spline);
-    let ctrl: Vec<(f64, f64)> =
-        sk.splines[rail.i()].ctrl.iter().map(|&p| sk.point_xy(p as usize)).collect();
-    assert_eq!(ctrl.len(), 4, "a cubic of four control points");
-    let bez = |t: f64| {
-        let u = 1.0 - t;
-        let b = [u.powi(3), 3.0 * t * u * u, 3.0 * t * t * u, t.powi(3)];
-        (0..4).fold((0.0, 0.0), |a, k| (a.0 + b[k] * ctrl[k].0, a.1 + b[k] * ctrl[k].1))
-    };
-    let dy = |t: f64| {
-        let u = 1.0 - t;
-        let d = [-3.0 * u * u, 3.0 * u * (1.0 - 3.0 * t), 3.0 * t * (2.0 - 3.0 * t), 3.0 * t * t];
-        (0..4).map(|k| d[k] * ctrl[k].1).sum::<f64>()
-    };
-    // the rail the family read is the one written out here
-    for t in [0.2, 0.5, 0.8] {
-        let (a, b) = (bez(t), gcs_core::curve::point_at(sk, rail.i(), t));
-        assert!((a.0 - b.0).abs() < 1e-9 && (a.1 - b.1).abs() < 1e-9, "{a:?} against {b:?}");
-    }
+    assert_eq!(sk.splines[rail.i()].ctrl.len(), 5, "a cubic of five control points");
+    assert_eq!(gcs_core::curve::domain(sk, rail.i()), (0.0, 2.0), "a span a pair of sections");
     // five-point Gauss–Legendre on (−1, 1)
     let (inner, outer) = ((5.0 - 2.0 * (10.0f64 / 7.0).sqrt()).sqrt() / 3.0,
                           (5.0 + 2.0 * (10.0f64 / 7.0).sqrt()).sqrt() / 3.0);
     let (w1, w2) = ((322.0 + 13.0 * 70f64.sqrt()) / 900.0, (322.0 - 13.0 * 70f64.sqrt()) / 900.0);
     let gauss = [(0.0, 128.0 / 225.0), (-inner, w1), (inner, w1), (-outer, w2), (outer, w2)];
-    let want: f64 = gauss.iter().map(|&(x, w)| {
-        let t = 0.5 * (x + 1.0);
-        0.5 * w * PI * bez(t).0.powi(2) * dy(t)
-    }).sum();
+    let want: f64 = (0..2).map(|span| gauss.iter().map(|&(x, w)| {
+        let f = gcs_core::curve::eval(sk, rail.i(), span as f64 + 0.5 * (x + 1.0));
+        0.5 * w * PI * f.p.0.powi(2) * f.d1.1
+    }).sum::<f64>()).sum();
     near(volume(&e, "bottle").unwrap(), want, 1e-9, "the bottle");
 }
 

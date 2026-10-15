@@ -111,7 +111,7 @@ from the cone's equation and the poses alone), a stated lag solving its phase, `
 envelope at the element's phase, to 1e-9), to the closed form's point contact along `L` with no
 lag, and their meshing's Jacobian to finite differences.
 
-**The common normal and the path of contact at a point (#345 S1, [0.111]):** `contact
+**The common normal and the path of contact at a point (#345 S1, [0.112]):** `contact
 perpendicular(at: q) l` is `MeshingNormalAt` and `contact tangent(at: q) l` `MeshingTangentAt`,
 `meshing::Contact::{Normal, Path}` beside `Point` (`CKind::meshing_contact`, `KernelKey::Meshing {
 contact, … }`): lead the line's two lifted ends or an axis's direction (six columns), then the

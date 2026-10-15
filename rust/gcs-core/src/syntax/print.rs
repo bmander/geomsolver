@@ -468,6 +468,14 @@ pub(crate) fn decl_args(d: &Decl) -> String {
     if let Some(sweep) = &d.sweep {
         parts.extend(sweep_parts(sweep));
     }
+    if let Some(t) = &d.through {
+        parts.push(format!("through: {}", super::ref_text(&t.chain)));
+        for (label, r) in [("start", &t.start), ("end", &t.end)] {
+            if let Some(r) = r {
+                parts.push(format!("{label}: {}", super::ref_text(r)));
+            }
+        }
+    }
     if let Some(e) = &d.angular_span {
         parts.push(format!("from: {}",dim(&e.from)));
         parts.push(format!("to: {}",dim(&e.to)));

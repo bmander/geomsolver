@@ -609,6 +609,33 @@ component OnHelix(base: plane, r: Length, pitch: Length, turns: Scalar, s: Scala
   n := plane(u: out, v: lean)
 }
 
+// A station with no guide (#243 L7): the plane through the places at `s` on three rails — a loft
+// that joins its sections in space directly.  Each rail runs through one corner of every
+// section: a chain of lines, one a link a pair of neighbouring sections (the ruled loft, a family
+// running the chains in step), or a spline through them (`spline(through: …)`, the smooth one).
+// The section's corners stand where their rails meet the plane, each `point in st.n` and
+// `coincident` its rail.  `u` runs from the first rail's place toward the second's and `v`
+// toward the third's, so the plane faces the way its rails are handed in.
+//
+//   component Quad(ra: path, rb: path, rc: path, rd: path, s: Scalar) {
+//     st := std.Across(ra, rb, rc, s: s)
+//     a := point in st.n
+//     a coincident ra
+//     …
+//     f := face(a, b, c, d, -> close)
+//   }
+component Across(a: path, b: path, c: path, s: Scalar) {
+  private pa := point
+  private pb := point
+  private pc := point
+  pa coincident(t == s) a
+  pb coincident(t == s) b
+  pc coincident(t == s) c
+  private construction ab := line(pa, pb)
+  private construction ac := line(pa, pc)
+  n := plane(u: ab, v: ac)
+}
+
 // -- laws of a station (#243 L5) ----------------------------------------------------------------
 //
 // A twist or a scale is a dimension of the section reading `s`, and any expression in it is a

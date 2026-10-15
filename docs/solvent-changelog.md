@@ -4,14 +4,25 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
-**[0.111] The common normal and the path of contact at a point.** At a point held to a meshing,
+**[0.112] The common normal and the path of contact at a point.** At a point held to a meshing,
 `contact perpendicular(at: q) l` holds a line or an axis along the two flanks' common normal there,
 and `contact tangent(at: q) l` along the path of contact: the contact point's derivative along the
 phase, in the fixed frame (§6.15.4). Each shares the phase, the lag and the places of the contact
 holding `q`, as an envelope's relations at a point share its place ([0.90]), so either reads at any
-phase, and a number solves from an angle stated of it. Through 0.110 the normal at a contact was
+phase, and a number solves from an angle stated of it. Through 0.111 the normal at a contact was
 stated on the generated flank alone, in the pose the pair was drawn at (`pinion_flank
 perpendicular(at: M) l`), and the path not at all. (Issue #345, S1.)
+
+**[0.111] A loft through several sections is drawn on rails.** A spline may be written through
+the corners of a named open chain of lines, `spline(through: rims, start: l, end: m)` (§6.1): the
+cubic through them, a span a link, its ends along the tangents written, or else running straight —
+short for its minted control points and ordinary contacts. A face family given several named open
+chains runs them in step, link by link (§6.9), so a guide cut at each section and a chain of lines
+through each corresponding corner is a ruled loft through several sections, piecewise in the running
+number with an edge at each section; the spline through the same corners is the smooth one's rail,
+its ends' tangents the loft's end conditions. The standard library's `Across(a, b, c, s:)` is a
+station with no guide, the plane through three rails at `s`. Through 0.110 a family ran one chain,
+and a smooth rail was drawn by hand, its control points and a corner on it. (Issue #243, L7.)
 
 **[0.110] A screw is constraints.** The standard library's `Helix(base, pitch:, turns:, s:)` is
 the frame of the plane `base` turned `360deg · turns · s` about its normal and risen `pitch ·
