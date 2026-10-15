@@ -141,6 +141,9 @@ macro_rules! undrawn {
             // screw, whose pitch is the relation's own unknown
             | CKind::Reciprocal
             | CKind::ScrewAxis
+            // nor a flank's regularity within a blank (#345): a ratio, read at a point a search
+            // finds
+            | CKind::RegularWithin
             // nor a point carried by a motion
             | CKind::CarriedPoint
             // nor a contact with a traced body: its curvature is the circle's own radius

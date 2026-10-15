@@ -109,7 +109,7 @@ The parser refuses `as` and a trailing joint; the measured-bound sniff skips a s
 opener word starts. `commit_seeds` writes into a root `when`'s body. The hypoid's tip relief is
 one (`hypoid.sv`). `tests/when.rs` is the gate.
 
-**`rate(x over s)` and `initially { … }` (§6.9 [0.115], #339 D3):** both reserved
+**`rate(x over s)` and `initially { … }` (§6.9 [0.116], #339 D3):** both reserved
 (`syntax::words::OPENERS`).  `rate(` opens a relation (`parser::relations::rate_relation`): a
 reference, `over`, the formal's name, then `perpendicular` or `parallel` (any other word a syntax
 error) and the other operand; `syntax::Relation::rate` holds the formal, the rated thing is the

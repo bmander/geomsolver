@@ -209,12 +209,26 @@ swelling := solid(Swelling(std.top, r: 10mm, size: 2mm, pitch: 4mm, turns: 3).f 
 
 /// **And a screwed wall is written as STEP**: the net through it fitted within the file's
 /// tolerance, quintic along a screw of many turns, and the file read back describes the solid.
-/// The evaluated solid is the B-rep meshed, at its volume.
+/// The evaluated solid is the B-rep meshed, at its volume.  **And its mesh follows the screw**:
+/// within the bar, no facet turned against its surface, its volume the solid's within what
+/// chords inscribed in the wire lose.  A rail of a whole number of turns — the spring's four, the
+/// swelling coil's — has its ends, middle and quarter points in one line along the axis, their
+/// tangents alike, and was sampled as one chord: the wall's mesh fanned across the coil from a
+/// seam of two points, 800 000 triangles off it by 17 mm.
 #[test]
 fn a_screwed_wall_is_written_and_meshed() {
     let e = with("
 thread := solid(Thread(std.top, r: 10mm, size: 2mm, pitch: 4mm, turns: 3).f over s in (0, 1))
-spring := solid(Coil(std.top, r: 10mm, wire: 1.5mm, pitch: 5mm, turns: 4).f over s in (0, 1))");
+spring := solid(Coil(std.top, r: 10mm, wire: 1.5mm, pitch: 5mm, turns: 4).f over s in (0, 1))
+component Swelling(base: plane, r: Length, wire: Length, pitch: Length, turns: Scalar, s: Scalar) {
+  st := std.OnHelix(base, r: r, pitch: pitch, turns: turns, s: s)
+  in st.n {
+    w := circle(center: st.n.origin)
+    radius(wire * (1 + 0.5 * s)) w
+  }
+  f := face(w)
+}
+swelling := solid(Swelling(std.top, r: 10mm, wire: 1mm, pitch: 5mm, turns: 4).f over s in (0, 1))");
     for name in ["thread", "spring"] {
         let b = brep(&e, name);
         let text = gcs_core::brep::step::write(&b, name, 1e-3).unwrap();
@@ -223,4 +237,19 @@ spring := solid(Coil(std.top, r: 10mm, wire: 1.5mm, pitch: 5mm, turns: 4).f over
     }
     let s = e.sketch.evaluated_solid(index(&e, "thread"), Report).unwrap();
     assert_eq!(s.volume(), exact(&e, "thread"));
+    let k = walls(&e, "swelling");
+    assert!(!k.is_empty() && k.values().all(|&v| v == "family"), "{k:?}");
+    let bar = 0.01;
+    for name in ["thread", "spring", "swelling"] {
+        let b = brep(&e, name);
+        let m = gcs_core::brep::mesh::mesh(&b, bar, 0.2).unwrap();
+        assert_eq!(m.turned, 0, "{name}: triangles facing against their surfaces");
+        assert!(m.sag <= bar, "{name}: the mesh sags {} against {bar}", m.sag);
+        let volume: f64 = m.tris.iter().map(|t| {
+            let [a, b, c] = t.map(|i| m.pts[i as usize]);
+            (a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0])
+                + a[2] * (b[0] * c[1] - b[1] * c[0])) / 6.0
+        }).sum();
+        near(volume, gcs_core::brep::props::volume(&b), 1e-2, name);
+    }
 }

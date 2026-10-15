@@ -726,3 +726,27 @@ Z coincident(under: roll, t == -35) q2
         }
     }
 }
+
+/// A flank's regularity within its blank (#345 S3, `envelope::regular`): the least area factor of
+/// the Formate pinion's flank where the gear's tooth cuts it in its blank — the inner cone's
+/// envelope, the cone's half an unknown, the worst point on the tool's round — against finite
+/// differences of the search's answer, at the solution and knocked off it.  The worst point
+/// moves with the columns; the Jacobian is the Lagrangian's there, the place standing.
+#[test]
+fn regularity_agrees_with_finite_differences() {
+    let text = crate::regular::pair(12.5, &crate::regular::regular("0.3"), true);
+    let mut sk = fixtures::gear::read(&text).sketch;
+    let mut rng = Rng::new(345);
+    for round in 0..3 {
+        if round > 0 {
+            for p in sk.params.iter_mut().filter(|p| !p.fixed) {
+                p.value += rng.uniform(-1e-4, 1e-4) * (1.0 + p.value.abs().min(10.0));
+            }
+        }
+        let c = sk.constraints.iter().find(|c| c.kind == CKind::RegularWithin).unwrap();
+        assert!(c.local_values(&sk).len() > 40, "the layout's columns are read");
+        let err = check_constraint(&sk, c, 1e-5, 1e-6)
+            .unwrap_or_else(|e| panic!("round {round}: {e}"));
+        assert!(err.is_finite());
+    }
+}

@@ -4,14 +4,25 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
-**[0.115] A station may state a rate.** A relation may read the rate of an axis's direction or of a
+**[0.116] A station may state a rate.** A relation may read the rate of an axis's direction or of a
 point along a formal of its body, `rate(x over s) perpendicular y` (or `parallel`), the formal
 always named; `initially { … }` says what holds at the drawn station alone (§6.9). A face family
 whose station states one integrates it from the drawn station, its home, along the running number,
 instead of solving it again at each station. The standard library's `Minimal(n, up:, s:)` is the
-rotation-minimising frame of a station. Through 0.114 a station was algebraic at every place:
+rotation-minimising frame of a station. Through 0.115 a station was algebraic at every place:
 nothing could be said of how it moves, only where it stands. `rate` and `initially` are reserved.
 (Issue #339, D3.)
+
+**[0.115] A flank regular within its blank.** `flank regular(by: tool) within blank` reads the
+least **area factor** of a generated flank (§6.15.3) — how much the map from a tool point to the
+point it generates scales the tool's area, nothing at a fold — over the part of the flank the tool
+cuts in the blank, found by search: a bound (`>= 0` with no number, no undercut; `>= m` a margin),
+a verdict that steers nothing, or an equation that solves the setting at which a stated margin
+binds. Tool and blank are region solids read by their terms; the flank's source is a face of the
+tool, its round ending the face. `SpecKind::Solid` and `SpecKind::Ratio` are the first solid
+operand and the first number with no unit. Through 0.114 undercut was read only after the solve:
+the sweep's admission refusing a fold (E3), a traced surface's regularity report, and
+`hypoid.sv`'s `Balanced`, which balances two osculating radii and bounds nothing. (Issue #345, S3.)
 
 **[0.114] Ease-off.** A meshing's first flank may be eased (§6.15.4): `meshing(…, ease: M,
 along: l, profile: κₚ, lengthwise: κₗ)` relieves it along its normal by the parabola `½ κₗ s² +

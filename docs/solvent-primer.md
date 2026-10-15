@@ -1295,7 +1295,7 @@ k := Par(o).p over u in (-2mm, 2mm)
   by `sec := std.Similar(prof, from, to, st.n, l, r)` — `from` and `to` carried to the station's
   points `l` and `r` where two rails cross it, the profile turned and scaled with them — or by
   `std.Affine(prof, from, to, third, st.n, a, b, c)` on three (`docs/lofts/l0/two_faces.sv`,
-  `rust/gcs-core/tests/correspondence.rs`). **A frame that does not twist** (0.115): along a
+  `rust/gcs-core/tests/correspondence.rs`). **A frame that does not twist** (0.116): along a
   path that leaves its plane (a helix), `st := std.OnHelix(…)` turns with the path's Frenet frame;
   `rm := std.Minimal(st.n, up: base.normal, s: s)` is the plane through the same place square to
   the path whose axes turn only as the path makes them, so draw the section `in rm.f`. It states
@@ -1680,6 +1680,23 @@ R coincident(t == 15deg, lag == 0.047) bearing        // the transmission error 
 
 The relief runs along the flank's normal as the solve reads its source (for a cone, toward its
 axis); a negative curvature relieves the other way. A traced flank is not eased.
+
+**No undercut** (0.115). A generated flank folds where the tool's contact runs back on itself.
+`regular` reads the flank's least **area factor**, how much it scales the tool's area: 1 rolling
+without sliding, 0 at a fold. It is read over the part the tool cuts within the blank. Name the tool
+whose face the source is (`by:`), then the blank after `within`. Both are region solids:
+
+```
+pinion_flank := envelope(mill.inner_flank, under: mesh, from: -60deg, to: 60deg)
+pinion_flank regular(by: gear_tooth.crown) within pinion_blank.material   // no fold: >= 0
+pinion_flank regular(>= 0.3, by: gear_tooth.crown) within pinion_blank.material
+pinion_flank regular(0.3, by: gear_tooth.crown) within pinion_blank.material  // solves a setting
+```
+
+With no number, or a `>=`, it is a check the solve reports broken (`bound broken`) and does not
+steer by. A number stated outright is an equation, so a cutter's pressure shift left unknown
+solves to where the margin binds. The source must be the tool's face itself, not grown by a
+backlash, and the blank is read as balls, cylinders, cones and half-spaces.
 
 **Spatial geometry read after the solve** adds no unknown and has no 2D glyph; each certifies only
 local evaluations ([analytic face boundaries](analytic-face-boundaries.md); the spiral bevel's

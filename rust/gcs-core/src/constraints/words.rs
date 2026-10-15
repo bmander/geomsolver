@@ -401,6 +401,11 @@ pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option
             (Axis, Motion) => CKind::ScrewAxis,
             _ => return None,
         },
+        // a generated flank regular within its blank, cut by a tool (#345)
+        "regular" => match (a, b) {
+            (Envelope, EntKind::Solid) => CKind::RegularWithin,
+            _ => return None,
+        },
         _ => return None,
     })
 }
@@ -600,12 +605,14 @@ pub fn retired_prefix(word: &str, on: EntKind) -> Option<&'static str> {
 /// table (`gauge_op`), so a class, a placement and the chain's lookahead treat them as any
 /// other word.  None of the three is a prefix word a chain can open a link with: `prefix_op`
 /// declines them, so `fix(x == 0) point p -> …` is no chain.
-pub const OPERATORS: [&str; 26] = [
+pub const OPERATORS: [&str; 27] = [
     "distance", "tangent", "equal", "curvature", "horizontal", "vertical", "level", "angle",
     "radius", "length", "coincident", "midpoint", "parallel", "perpendicular", "symmetry", "project",
     "touches", "fix", "ccw", "cw",
     // a motion's twist read (#326)
     "reciprocal", "screw",
+    // a flank regular within its blank (#345), written `regular(…) within`
+    "regular",
     // **the words that relate two solids** (§9.8).  They are operators so that a statement
     // reads the way every other statement does; they settle to no `CKind` and compile no row,
     // because a solid is evaluated after the drawing is solved and a claim about one is judged
@@ -615,6 +622,19 @@ pub const OPERATORS: [&str; 26] = [
     // (§9.6), lowered to the ordinate along the plane's normal (`program::relations`)
     "outside",
 ];
+
+/// The word an operator is followed by before its second operand, where it takes one: `flank
+/// regular(…) within blank` (#345).  Read by the parser after the operator's parentheses, and
+/// written back by the printers.
+pub fn connective(word: &str) -> Option<&'static str> {
+    (word == "regular").then_some("within")
+}
+
+/// Whether a relation written with `word` reads a region solid's terms, so is stated once the
+/// solids are built (#345).
+pub fn reads_regions(word: &str) -> bool {
+    word == "regular"
+}
 
 /// The words that relate two **solids**, and what each asks (§9.8).  A statement in one of them
 /// is a *claim*: judged at the pose, never solved for, and it can no more move geometry than a

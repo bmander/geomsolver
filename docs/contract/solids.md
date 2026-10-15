@@ -366,7 +366,7 @@ placement carries inside the blank; CLI test readers zero the offset.
   prismatoid, a face walked, a face of a cycle's copies, and the refusals.  An arc edge lofted
   with a line edge is not said: it wants a rational edge whose weight reads the arc's sweep and a
   word choosing by an edge's kind.
-- **A station that states a rate is integrated from its home** (§6.9 [0.115], #339 D3,
+- **A station that states a rate is integrated from its home** (§6.9 [0.116], #339 D3,
   `solid/rated.rs`).  `rate(x over s) perpendicular y` (or `parallel`) is no constraint: the
   elaborator keeps it in `Sketch::rates` (`model::RateRow`: whose rate — an axis's direction or a
   point in space — the word, what it is held against — an axis, a line or a plane — and the held
