@@ -366,6 +366,10 @@ placement carries inside the blank; CLI test readers zero the offset.
   prismatoid, a face walked, a face of a cycle's copies, and the refusals.  An arc edge lofted
   with a line edge is not said: it wants a rational edge whose weight reads the arc's sweep and a
   word choosing by an edge's kind.
+- **The loft series** (`rust/examples/lofts/`, its README the reading order): one document per
+  capability of #243 L1–L8, each solid at the closed form its comments give, held there off the
+  exact B-rep to 1e-9 by `tests/loft_examples.rs`; the app lists the folder as one project
+  (`example-catalog.ts`, *Lofts and sweeps*).
 - **A face closes itself** (§6.8, `program::build_face`; issue #49).  The brackets hold a *walk*,
   and an item may be a **point**, with `-> close` sealing the run back to the first item.  Where
   two neighbours do not meet, `build_face` mints the straight line between them, class

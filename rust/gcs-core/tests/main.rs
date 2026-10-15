@@ -110,6 +110,7 @@ mod laws;
 mod limit_measure;
 mod linalg;
 mod loft;
+mod loft_examples;
 mod make_component;
 mod measurements;
 mod membership;

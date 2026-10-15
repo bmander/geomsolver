@@ -75,6 +75,14 @@ frame) with those quotients as coefficients; a corner on its frame's axis gives 
   one running section of L1 (`l0/square_to_circle.sv`, exact since L2), and the pyramid is gated
   both ways (`l0/pyramid.sv`'s shrinking square, and `Apex`).
 
+**The series.** [`rust/examples/lofts/`](../../rust/examples/lofts/) holds one document per
+capability of L1–L8 — a pipe round a chain, twist and scale laws, a thread, a flight and a spring,
+the bottle ruled and smooth, squares with no guide, two faces drawn apart (with a connector), a
+square to a triangle and to a point, a blade on two rails, a profile on three, square to circle —
+each with its named numbers and its closed form, and the app's examples list it as one project
+(*Lofts and sweeps*). `rust/gcs-core/tests/loft_examples.rs` holds each to its closed form off the
+exact B-rep to 1e-9. The L0 programs stay here as the record of how each was first written.
+
 Handed on: mixed kinds (a rational edge and kind dispatch); a face with holes walked loop by loop
 (a hollow two-face loft); a `std.Loft` over several faces, which a walk of faces would give.
 
