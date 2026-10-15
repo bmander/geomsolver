@@ -252,11 +252,8 @@ version ([0.n], see the [language changelog](../solvent-changelog.md)) says wher
   solves on.
   **A chart is gauged where a failed solve ends** (`System::recharted`, `Sketch::charts_moved`):
   one chosen where an unseeded point started can lie in the tangent plane the solve ends at;
-  changed, the system is compiled again and solved on, kept only where it succeeds. **A point on
-  a meshing is seeded again where a failed solve ends** (`System::remeshed`, #283): seeded at
-  `Sketch::add`, where the flanks' sources stood before any relation placed them, its lag and
-  places are sought again with the flanks where the solve left them and the point where it began
-  (`constraints::meshing_seed`; a pin kept), and solved on, kept only where that succeeds. An angle's
+  changed, the system is compiled again and solved on, kept only where it succeeds. (A point on
+  a meshing needs no recovery of its own: it is seeded where its block comes up, below.) An angle's
   bound is held to the relative tolerance itself, not the length one read as radians
   (`bound_reading`): an offset's side about a far apex is a turn of 1e-4.
   `Parallel3` frames across its second operand where that is held and the first not. **A skew
@@ -271,7 +268,12 @@ version ([0.n], see the [language changelog](../solvent-changelog.md)) says wher
   blocks before it left them, `seed_param`/`meshing_seed`), but only where the compiled rows are
   more than `SEEDED_OFF` off, so a converged place keeps its sheet; a bound the start alone
   breaks is crossed before the block is solved (`Search::start_within`, its own parameters
-  moved), and a solved block whose frame moved is refreshed and solved on (`REFRAMES`).
+  moved), and a solved block whose frame moved is refreshed and solved on (`REFRAMES`).  That
+  is the whole of it: no recovery seeds a contact again after a failed solve.  Gates:
+  `spiral_bevel/contact.sv` solves from its seeds (`meshing::the_mean_points_bearing_…`), and a
+  point held to an envelope whose cylinder is placed by relations away from its hints lands where
+  it is drawn, at a roll within the bounds, not on the far side or the inner sheet the hinted
+  cylinder's seed leads to (`held_envelopes::an_envelope_contact_starts_where_…`).
 - **A block is torn at its declared unknowns** (#283, `blocks::torn`): a block finding a free
   number with a declared seed (`param w: Length hint(…)`, an unbound formal so seeded) from a
   contact on an envelope is solved as a designer would: the number held, the rest of the block

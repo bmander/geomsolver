@@ -141,11 +141,12 @@ impl SolveOpts {
 
 /// What a failed document solve is tried again under, in order, each only while the solve has
 /// not succeeded (`System::solve`): at the drawing's own size, then with its charts gauged where
-/// it ended, then with its points on meshings seeded again there.  Each says whether it applies,
-/// setting up the sketch the system is compiled from again, and where that solve starts and what
-/// is put back where it fails (`Recovery`).
-const RECOVERIES: [fn(&System, &mut Sketch, &[f64]) -> Option<Recovery>; 3] =
-    [System::resized, System::recharted, System::remeshed];
+/// it ended.  Each says whether it applies, setting up the sketch the system is compiled from
+/// again, and where that solve starts and what is put back where it fails (`Recovery`).  (A
+/// contact on an envelope or a meshing needs none: it is seeded where its block comes up,
+/// `blocks::seed_contacts`.)
+const RECOVERIES: [fn(&System, &mut Sketch, &[f64]) -> Option<Recovery>; 2] =
+    [System::resized, System::recharted];
 
 /// One recovery of a failed document solve (`RECOVERIES`): the system compiled again where the
 /// sketch stands, solved on from `from` (where it stands, when `None`), and kept only where that
@@ -272,42 +273,6 @@ impl System {
             sk.set_chart(d, c); // which tangents are free: compiled with them
         }
         Some(Recovery { from: None, back: Back::Sketch(Box::new(before)) })
-    }
-
-    /// **A point on a meshing is seeded again where the solve ends** (#283): its lag and its
-    /// places on the two flanks are seeded as it is stated (`Sketch::add`), where the flanks'
-    /// sources stand then — at their seeds, before any relation places them — and a contact of
-    /// two flanks a little off conjugate is found by Newton only from near it.  A document solve
-    /// that fails seeds each again, the flanks where the solve left them and the point where it
-    /// began (a pinned phase or lag kept), and solves on from there.
-    fn remeshed(&self, sk: &mut Sketch, start: &[f64]) -> Option<Recovery> {
-        use crate::constraints::{Arg, CKind};
-        let back = sk.get_x();
-        let mut moved = false;
-        for i in 0..sk.constraints.len() {
-            let c = &sk.constraints[i];
-            let Arg::Ent(p) = c.args[0] else { continue };
-            if c.kind != CKind::PointOnMeshing {
-                continue;
-            }
-            let began = |q: u32| start.get(q as usize).copied().unwrap_or(f64::NAN);
-            let at = match sk.lift_of(p.i()) {
-                Some(k) => sk.lifts[k].x.map(began),
-                None => sk.lifted(p.i()),
-            };
-            let Some(seed) = crate::constraints::meshing_seed(sk, c, at) else { continue };
-            let slots: Vec<u32> = c.args[3..].iter().filter_map(|a| match a {
-                Arg::Param(q) => Some(*q),
-                _ => None,
-            }).collect();
-            for (&q, &v) in slots.iter().zip(&seed[1..]) {
-                if !sk.params[q as usize].fixed {
-                    sk.params[q as usize].value = v;
-                    moved = true;
-                }
-            }
-        }
-        moved.then_some(Recovery { from: None, back: Back::Pose(back) })
     }
 
     /// A system compiled where `sk` stands — as the recovery left it — then solved on from the
