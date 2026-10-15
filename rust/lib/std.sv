@@ -556,42 +556,57 @@ component On(g: path, up: axis, s: Scalar) {
   n square(up: up) tl
 }
 
-// A screw's station: the plane through the axis `ax` turned `360deg · turns · s` from `base.u`
-// and risen `pitch · turns · s` along it.  Its `u` runs out from the axis, its `v` along it.  A
-// section drawn in it is an axial section (a thread's): carried by the screw, it sweeps the
-// thread.  `base` is the plane square to the axis at the screw's start, its origin on the axis.
-component Screwed(ax: axis, base: plane, pitch: Length, turns: Scalar, s: Scalar) {
-  in base {
-    k := point
-    out := line(base.origin, k)
-    length(10mm) out
-    zero := point
-    zero on_u(d: 10mm) base
-    ref := line(base.origin, zero)
-    ref angle(360deg * turns * s, sense: ccw) out
-  }
-  n := plane
-  n.u parallel out
-  n.v parallel ax
-  base.origin distance(pitch * turns * s, along: ax) n.origin
-  n.origin coincident ax
+// A screw's station (#243 L6): the frame of `base` turned `360deg · turns · s` about its normal
+// through its origin — the screw's axis — and risen `pitch · turns · s` along it.  `n` is `base`
+// so carried, square to the axis: a section drawn in it (an auger's flight, a helical gear's
+// tooth) sweeps a twisted prism.  `axial` is the plane through the axis, its `u` running out along
+// `n.u` and its `v` up the axis: a section drawn in it (a thread's) sweeps a thread.  Every
+// direction is an ordinate in `base`'s frame, so nothing is held by a seed: the screw turns from
+// `base.u` toward `base.v` as it rises, right-handed for a positive pitch, left for a negative.
+component Helix(base: plane, pitch: Length, turns: Scalar, s: Scalar) {
+  private o := point
+  o coincident base.normal
+  base.origin distance(pitch * turns * s, along: base.normal) o
+  private a := point
+  a coords(du: 10mm * cos(360deg * turns * s), dv: 10mm * sin(360deg * turns * s)) base
+  base.origin distance(pitch * turns * s, along: base.normal) a
+  private b := point
+  b coords(du: -10mm * sin(360deg * turns * s), dv: 10mm * cos(360deg * turns * s)) base
+  base.origin distance(pitch * turns * s, along: base.normal) b
+  private c := point
+  c coincident base.normal
+  base.origin distance(pitch * turns * s + 10mm, along: base.normal) c
+  private construction out := line(o, a)
+  private construction across := line(o, b)
+  private construction rise := line(o, c)
+  n := plane(u: out, v: across)
+  axial := plane(u: out, v: rise)
 }
 
-// A helix's normal station: the plane square to the helix of radius `r` about `ax`, rising `pitch`
-// a turn, at `turns · s` turns from `base.u`.  A section drawn in it (a spring's wire) is carried
-// along the helix, square to it at every station.
-component OnHelix(ax: axis, base: plane, r: Length, pitch: Length, turns: Scalar, s: Scalar) {
-  sc := Screwed(ax, base, pitch: pitch, turns: turns, s: s)
-  in sc.n {
-    m := point
-    m on_u(d: r) sc.n
-  }
-  n := plane
-  n.origin coincident m
-  n.u parallel sc.n.u
-  n.v perpendicular n.u
-  // the helix leans from square to the axis by its lead angle
-  n.v angle(atan(pitch / (2 * pi * r))) sc.n.v
+// A helix's normal station: the plane square to the helix of radius `r` about `base`'s normal
+// (`Helix`'s screw), rising `pitch` a turn, at `turns · s` turns from `base.u`.  Its `u` runs out
+// from the axis and its `v` up the axis leaned back by the helix's lead angle, so a section drawn
+// in it (a spring's wire) is carried along the helix, square to it at every station.  Like
+// `Helix`, every direction is an ordinate in the drawn `base`'s frame: against `Helix`'s axial
+// plane, which moves, its `normal` would keep its sense only by continuity.
+component OnHelix(base: plane, r: Length, pitch: Length, turns: Scalar, s: Scalar) {
+  // the helix's tangent is (2πr·t̂ + pitch·ẑ) / lead over a turn, t̂ the way the screw turns
+  private m := point
+  m coords(du: r * cos(360deg * turns * s), dv: r * sin(360deg * turns * s)) base
+  base.origin distance(pitch * turns * s, along: base.normal) m
+  private a := point
+  a coords(du: (r + 10mm) * cos(360deg * turns * s), dv: (r + 10mm) * sin(360deg * turns * s)) base
+  base.origin distance(pitch * turns * s, along: base.normal) a
+  private b := point
+  b coords(du: r * cos(360deg * turns * s)
+               + 10mm * pitch / hypot(2 * pi * r, pitch) * sin(360deg * turns * s),
+           dv: r * sin(360deg * turns * s)
+               - 10mm * pitch / hypot(2 * pi * r, pitch) * cos(360deg * turns * s)) base
+  base.origin distance(pitch * turns * s + 10mm * 2 * pi * r / hypot(2 * pi * r, pitch),
+                       along: base.normal) b
+  private construction out := line(m, a)
+  private construction lean := line(m, b)
+  n := plane(u: out, v: lean)
 }
 
 // -- laws of a station (#243 L5) ----------------------------------------------------------------

@@ -209,6 +209,12 @@ impl Carry {
     }
 }
 
+thread_local! {
+    /// The last foot each thread found on each of the last few blends (by their addresses), as a
+    /// face family's wall keeps its own: only ever a start, held to settling near the point.
+    static LAST_BLEND_FOOT: std::cell::Cell<[(usize,Uv);4]> = const { std::cell::Cell::new([(0,[0.;2]);4]) };
+}
+
 /// A swept section's face between one of its edges and that edge's image in the section it is
 /// carried to (`build::ruled`): `S(u, v) = carry_v((1 − v) A(a₀ + u Δa) + v B(b₀ + u Δb))`, each
 /// edge at the same fraction `u` of its own parameter, `B` the image carried back to the start. A
@@ -228,17 +234,59 @@ impl Blend {
         let q = self.carry.at(p,v);
         (q,self.carry.dir(pu,v),add(self.carry.dir(sub(b,a),v),self.carry.rate(q)))
     }
-    /// The parameters of the point of the patch nearest `p`: the nearest of a grid, then
-    /// Gauss–Newton, `v` held to `[0, 1]` and `u` too unless the patch runs round.
+    /// The parameters of the point of the patch nearest `p`: Gauss–Newton from the last foot this
+    /// thread found on it where that settles near `p` (a mesh asks of one corner after the next, as
+    /// of a face family's wall); else from the nearest of a grid, `v` held to `[0, 1]` and `u` too
+    /// unless the patch runs round.  A section screwed through more than a turn has a sheet for
+    /// each turn, so beside the grid each `u`'s point is tried where the screw turns it to face `p`
+    /// (`turned_to`): a grid spaced along `v` alone would start on the next turn of a coil as
+    /// readily as on its own.
     pub fn inverse(&self,p: V) -> Uv {
+        let key = self as *const Blend as usize;
+        let near = 1e-3*(1.+dot(p,p).sqrt());
+        let last = LAST_BLEND_FOOT.with(|c| c.get());
+        let warm = last.iter().find(|f| f.0 == key).map(|f| self.newton(p,f.1))
+            .filter(|&uv| crate::space::distance(self.d1(uv).0,p) <= near);
+        let uv = warm.unwrap_or_else(|| self.searched(p));
+        let mut next = [(key,uv);4];
+        let mut k = 1;
+        for f in last { if f.0 != key && k < 4 { next[k] = f; k += 1; } }
+        LAST_BLEND_FOOT.with(|c| c.set(next));
+        uv
+    }
+    /// `inverse` from the nearest of the grid and the turned points.
+    fn searched(&self,p: V) -> Uv {
         const N: usize = 16;
         let mut best = (f64::INFINITY,[0.;2]);
-        for i in 0..=N { for j in 0..=N {
-            let uv = [i as f64/N as f64,j as f64/N as f64];
+        let mut try_at = |uv: Uv| {
             let d = crate::space::distance(self.d1(uv).0,p);
             if d < best.0 { best = (d,uv); }
-        } }
-        let mut uv = best.1;
+        };
+        for i in 0..=N { for j in 0..=N { try_at([i as f64/N as f64,j as f64/N as f64]); } }
+        for i in 0..=N {
+            let u = i as f64/N as f64;
+            for v in self.turned_to(u,p) { try_at([u,v]); }
+        }
+        self.newton(p,best.1)
+    }
+    /// Where along `v` a screw turns the section's point at `u` to face `p` about its axis: every
+    /// such `v` in `[0, 1]` (one a turn), none for a step along a line or a point on the axis.
+    fn turned_to(&self,u: f64,p: V) -> Vec<f64> {
+        let Carry::Screw {center,axis,angle,..} = self.carry else { return Vec::new() };
+        if !(angle.abs() > 0.) { return Vec::new() }
+        // the angle about the axis read off the start's point (a seed only: where the section's
+        // image differs from it, the turn of the point between them is near the screw's)
+        let x = self.d1([u,0.]).0;
+        let radial = |q: V| { let d = sub(q,center); sub(d,scale(axis,dot(d,axis))) };
+        let (rx,rp) = (radial(x),radial(p));
+        if !(norm(rx) > 0. && norm(rp) > 0.) { return Vec::new() }
+        let phi = dot(axis,cross(rx,rp)).datan2(dot(rx,rp));
+        let tau = std::f64::consts::TAU;
+        let turns = (angle.abs()/tau).ceil() as i64+1;
+        (-turns..=turns).map(|k| (phi+tau*k as f64)/angle).filter(|v| (0.0..=1.0).contains(v)).collect()
+    }
+    /// Gauss–Newton for the parameters of the patch's point nearest `p`, from `uv`.
+    fn newton(&self,p: V,mut uv: Uv) -> Uv {
         for _ in 0..30 {
             let (x,su,sv) = self.d1(uv);
             let e = sub(x,p);
@@ -606,6 +654,11 @@ impl Surface {
             Surface::Family(_,w) => {
                 let uv = w.newton(p,hint);
                 if crate::space::distance(w.d1(uv).0,p) <= 1e-6*(1.+dot(p,p).sqrt()) { uv } else { w.inverse(p) }
+            }
+            // a swept section's patch likewise
+            Surface::Blend(_,b) => {
+                let uv = b.newton(p,hint);
+                if crate::space::distance(b.d1(uv).0,p) <= 1e-6*(1.+dot(p,p).sqrt()) { uv } else { b.inverse(p) }
             }
             _ => self.inverse(p),
         }

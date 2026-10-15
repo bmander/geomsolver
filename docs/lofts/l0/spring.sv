@@ -9,9 +9,8 @@
 unit mm
 use std (on_u)
 
-component Coil(ax: axis, base: plane, r: Length, wire: Length, pitch: Length, turns: Scalar,
-               s: Scalar) {
-  st := std.OnHelix(ax, base, r: r, pitch: pitch, turns: turns, s: s)
+component Coil(base: plane, r: Length, wire: Length, pitch: Length, turns: Scalar, s: Scalar) {
+  st := std.OnHelix(base, r: r, pitch: pitch, turns: turns, s: s)
   in st.n {
     w := circle(center: st.n.origin)
     radius(wire) w
@@ -19,16 +18,15 @@ component Coil(ax: axis, base: plane, r: Length, wire: Length, pitch: Length, tu
   f := face(w)
 }
 
-component Thread(ax: axis, base: plane, r: Length, size: Length, pitch: Length, turns: Scalar,
-                 s: Scalar) {
-  st := std.Screwed(ax, base, pitch: pitch, turns: turns, s: s)
-  in st.n {
+component Thread(base: plane, r: Length, size: Length, pitch: Length, turns: Scalar, s: Scalar) {
+  st := std.Helix(base, pitch: pitch, turns: turns, s: s)
+  in st.axial {
     c := point
-    c on_u(d: r) st.n
+    c on_u(d: r) st.axial
   }
-  sq := std.CenteredRectangle(c, w: size, h: size) in st.n
+  sq := std.CenteredRectangle(c, w: size, h: size) in st.axial
   f := face(sq.loop)
 }
 
-spring := solid(Coil(std.z, std.top, r: 10mm, wire: 1.5mm, pitch: 5mm, turns: 4).f over s in (0, 1))
-thread := solid(Thread(std.z, std.top, r: 10mm, size: 2mm, pitch: 4mm, turns: 3).f over s in (0, 1))
+spring := solid(Coil(std.top, r: 10mm, wire: 1.5mm, pitch: 5mm, turns: 4).f over s in (0, 1))
+thread := solid(Thread(std.top, r: 10mm, size: 2mm, pitch: 4mm, turns: 3).f over s in (0, 1))

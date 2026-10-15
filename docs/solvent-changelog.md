@@ -4,6 +4,17 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.110] A screw is constraints.** The standard library's `Helix(base, pitch:, turns:, s:)` is
+the frame of the plane `base` turned `360deg · turns · s` about its normal and risen `pitch ·
+turns · s` along it (§6.9): `n` is `base` so carried, and a section drawn in it sweeps a twisted
+prism; `axial` is the plane through the axis, and a section drawn in it sweeps a thread.
+`OnHelix(base, r:, pitch:, turns:, s:)` is the plane square to the helix of radius `r`, for a
+coil's wire. Each direction is an ordinate in `base`'s frame, so neither word is held by a seed,
+and a negative pitch winds left-handed. Through 0.109 the screw was `Screwed(ax, base, …)`, a
+plane through an axis given apart from `base`, turned by a reference line and its `u` and `v`
+held by `parallel`, which a seed decided the sign of; `OnHelix` took the same axis. `Screwed` is
+retired: `Helix(…).axial` is its plane. (Issue #243, L6.)
+
 **[0.109] A flank stated by its contact.** A meshing's flank may be a surface traced in space
 (§6.15.4): the contact element as its member sees it, a point of a component as the phase and a
 place along the element run, carried back by the member's turn. Phillips' pair is written so in

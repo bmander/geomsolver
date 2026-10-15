@@ -141,14 +141,21 @@ pub const FIT: f64 = 1e-6;
 
 /// A loft face's B-spline, fitted within `FIT`: cubic across the section, and cubic along the guide
 /// where it turns or linear where it runs straight (a blend carried along a line is linear in `v`).
-/// Refused where no net the fit may grow to comes within `FIT`, rather than written further off.
+/// A screw a cubic net cannot follow within `FIT` at the fit's cap (a section carried round many
+/// turns, #243 L6) is fitted quintic along it, as a face family's wall is. Refused where no net
+/// the fit may grow to comes within `FIT`, rather than written further off.
 pub fn blend_net(b: &super::geom::Blend) -> Result<super::nurbs::Net,String> {
     let (dv,nv) = match b.carry {
         super::geom::Carry::Line {..} => (1,1),
         // a quarter of a turn a span to start with, as a helix wants
         super::geom::Carry::Screw {angle,..} => (3,((angle.abs()/std::f64::consts::FRAC_PI_2).ceil() as usize).max(4)),
     };
-    match super::nurbs::fit_net(&|u,v| b.d1([u,v]).0,3,dv,8,nv,FIT) {
+    let f = |u,v| b.d1([u,v]).0;
+    let fitted = match super::nurbs::fit_net(&f,3,dv,8,nv,FIT) {
+        Some((_,err)) if err > FIT && dv == 3 => super::nurbs::fit_net(&f,3,5,8,nv,FIT),
+        other => other,
+    };
+    match fitted {
         Some((net,err)) if err <= FIT => Ok(net),
         Some((_,err)) => Err(format!("a loft face is fitted no nearer than {err:.3e} mm to its surface, past the file's {FIT:e}")),
         None => Err("a loft face could not be fitted (its surface is degenerate)".into()),

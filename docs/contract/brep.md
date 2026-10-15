@@ -102,6 +102,25 @@ plane), a cylinder or cone (a line turned about one axis, or coaxial arcs square
 radius constant or affine in the height) or a torus (an arc turned about an axis in its plane) —
 read off the numbers, never a word — kept only when the sheet's points at every node lie on it
 and the face's area there (`props::area`) agrees with the sheet's, both within `AGREE` (1e-10).
+**A section carried rigidly** (`carried`, #243 L6): where every station is the first one moved
+by one screw (a turn about one axis and a step along it in proportion, a turn alone included) or
+by one step along a line — read off the section's points at every node and both ends, the turn's
+axis off the station turned farthest, its centre off the one nearest a half turn, each turn
+unwound from the last, every point then held to the motion within `AGREE` of the size and the turn
+running one way — the solid is built **exact throughout**: each rail the corner's path
+(`Curve::Iso` of the swept wall, parameter `[0, 1]`), each wall the analytic surface where it is
+one, else the surface its first rim sweeps (`swept`: `Surface::Blend` of the rim with itself under
+the `Carry`), each held as above against the solid on its sheets (`general`, edge for edge);
+where any wall will not lower, the general solid is kept, lowered wall by wall.  The sheet is
+exact only at its nodes (between them within its piece check), so the rails must be the motion's
+too: on the sheet's rails a lowered face's area missed by 2e-10.  `Blend::inverse` starts warm
+from the thread's last foot on it where that settles near the point (as a family's wall does: the
+evaluated solid asks at every triangle's corners, and searched afresh the spring meshed 6× slower),
+else seeds each `u` where the screw turns it to face the point (`turned_to`; a grid along `v` alone
+starts on a coil's next turn); `inverse_near` runs Newton from its hint first; `step::blend_net`
+fits quintic along a screw a cubic cannot follow at the fit's cap.  A twisted duct, a thread, an auger's
+flight and a coil lie on blends; a section that changes as it runs stays on its sheets
+(`tests/helix.rs`, `a_rigid_screw_lies_on_its_swept_rim`).
 STEP writes a sheet as the net fitted within `step::FIT` (`family_net`, cubic along the edge and
 quintic along `s`: a cubic through 512 rows misses a 3½-turn auger by 1e-6), rails and rims as
 cubics within it.

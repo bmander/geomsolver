@@ -21,10 +21,13 @@
 //! An edge whose run has vanished at an end is a degenerate edge there (its rails meet in one
 //! vertex), and a section vanished whole is an apex with no cap. A wall whose sheet is a plane, a
 //! cylinder, a cone or a torus (`analytic`) lies on that surface instead — never by its word, by
-//! what its numbers do — once its points lie on it and its area agrees with the sheet's.
+//! what its numbers do — once its points lie on it and its area agrees with the sheet's; and where
+//! the whole section moves rigidly, by one screw or one straight step (`carried`, #243 L6), every
+//! other wall lies on the surface its first rim sweeps under that motion (`M(s)·C(u)`, a `Blend`
+//! of the rim with itself), held alike.
 #[allow(unused_imports)]
 use crate::fmath::Det;
-use super::geom::{hull,include,BSpline,Box3,Curve,Frame,Rigid,Surface,Uv,V,EMPTY};
+use super::geom::{hull,include,BSpline,Blend,Box3,Carry,Curve,Frame,Rigid,Surface,Uv,V,EMPTY};
 use super::topo::{reverse_loop,Brep,Coedge,EdgeCurve,Face,Pcurve};
 use crate::space::{add,cross,distance,dot,norm,scale,sub,unit};
 use std::sync::Arc;
@@ -513,6 +516,8 @@ pub fn family(loops: &[Vec<Wall>],vanish: f64) -> Result<Brep,String> {
     let mut out = Brep::default();
     // per loop, per end, the rims' edges (none where the loop vanished whole)
     let mut rims: Vec<[Vec<(u32,bool)>;2]> = Vec::new();
+    // each rail's edge, and the wall it is the start of
+    let mut all_rails: Vec<(u32,Arc<Sheet>)> = Vec::new();
     for (li,walls) in loops.iter().enumerate() {
         let m = walls.len();
         let closed = m == 1 && walls[0].sheet.closed;
@@ -544,6 +549,7 @@ pub fn family(loops: &[Vec<Wall>],vanish: f64) -> Result<Brep,String> {
             let v = [corner_ids[0][k],corner_ids[1][k]];
             out.edge(EdgeCurve::Curve(Curve::Rail(walls[k].sheet.clone(),0.)),[a,b],v)
         }).collect();
+        all_rails.extend(rails.iter().zip(walls).map(|(&e,w)| (e,w.sheet.clone())));
         let mut ends: [Vec<(u32,bool)>;2] = [vec![],vec![]];
         for (e,s) in [a,b].into_iter().enumerate() {
             for k in 0..m {
@@ -606,8 +612,108 @@ pub fn family(loops: &[Vec<Wall>],vanish: f64) -> Result<Brep,String> {
         }
         out.faces.push(Face {loops:cap_loops,..face});
     }
-    lower(&mut out);
+    // carried rigidly, the walls on what the first rim sweeps and the rails on what each corner
+    // does — the whole solid exact, its every wall held to the general one — else wall by wall
+    let size = loops.iter().flatten().map(|w| distance(w.sheet.d1([0.,a]).0,w.sheet.d1([1.,b]).0)).fold(0.,f64::max);
+    if let Some(carry) = carried(loops,AGREE*size.max(f64::MIN_POSITIVE)) {
+        let mut exact = out.clone();
+        for (k,sheet) in all_rails {
+            let e = &mut exact.edges[k as usize];
+            e.curve = EdgeCurve::Curve(Curve::Iso(swept(&sheet,carry),0.));
+            e.t = [0.,1.];
+        }
+        let walls = exact.faces.iter().filter(|f| matches!(f.surface,Surface::Family(..))).count();
+        let lowered = lower(&exact,&out,Some(carry));
+        if lowered.len() == walls {
+            for (fi,face) in lowered { exact.faces[fi] = face; }
+            return Ok(exact)
+        }
+    }
+    for (fi,face) in lower(&out,&out,None) { out.faces[fi] = face; }
     Ok(out)
+}
+
+/// **A section carried rigidly** (#243 L6): the motion every station is the first one moved by,
+/// where there is one — a screw (a turn about one axis and a step along it in proportion to the
+/// turn, a turn alone included) or a step along one line. Read off the section's points at every
+/// node and the ends (four an edge): each station's place against the first by three of them,
+/// the turn's axis off the station turned farthest from square, its centre off the one turned
+/// nearest a half turn, each station's turn unwound from the last one's; then every point of every
+/// station held to the motion within `tol`, the turn and the step running one way together. Never
+/// read off what wrote the section: a helix's word, a twisted duct and a coil all say it alike.
+fn carried(loops: &[Vec<Wall>],tol: f64) -> Option<Carry> {
+    let first = &loops.first()?.first()?.sheet;
+    let [a,b] = first.span();
+    let st = &first.stations;
+    let mut at: Vec<f64> = st.at.iter().zip(&st.spans).flat_map(|(nodes,sp)| nodes.map(|s| s.clamp(sp[0],sp[1]))).collect();
+    at.push(a);
+    at.push(b);
+    at.sort_by(f64::total_cmp);
+    at.dedup();
+    let points = |s: f64| -> Vec<V> {
+        loops.iter().flatten().flat_map(|w| { let n = w.sheet.numbers(s); (0..4).map(move |j| w.sheet.at(&n,j as f64/4.).0) }).collect()
+    };
+    let p0 = points(a);
+    // three points of the first station well apart: its first, the farthest from it, and the
+    // farthest from the line through those two
+    let i1 = (0..p0.len()).max_by(|&i,&j| distance(p0[i],p0[0]).total_cmp(&distance(p0[j],p0[0])))?;
+    let d1 = crate::space::normalised(sub(p0[i1],p0[0]))?;
+    let off = |p: V| norm(cross(d1,sub(p,p0[0])));
+    let i2 = (0..p0.len()).max_by(|&i,&j| off(p0[i]).total_cmp(&off(p0[j])))?;
+    if !(off(p0[i2]) > 1e3*tol) { return None }
+    let frame = |p: &[V]| -> [V;3] {
+        let e1 = unit(sub(p[i1],p[0]));
+        let w = sub(p[i2],p[0]);
+        let e2 = unit(sub(w,scale(e1,dot(w,e1))));
+        [e1,e2,cross(e1,e2)]
+    };
+    let f0 = frame(&p0);
+    // each station's turn `R` (taking the first station's frame to its own) and step `t`:
+    // x ↦ R x + t
+    let turn = |f: &[V;3],x: V| -> V { add(add(scale(f[0],dot(x,f0[0])),scale(f[1],dot(x,f0[1]))),scale(f[2],dot(x,f0[2]))) };
+    let mut moves: Vec<([V;3],V,Vec<V>)> = Vec::with_capacity(at.len());
+    for &s in &at {
+        let p = points(s);
+        let f = frame(&p);
+        let t = sub(p[0],turn(&f,p0[0]));
+        moves.push((f,t,p));
+    }
+    // sin θ times the axis, and cos θ, of a turn: Σ f0ᵢ × R f0ᵢ = 2 sin θ a, Σ f0ᵢ · R f0ᵢ = 1 + 2 cos θ
+    let sine = |f: &[V;3]| scale((0..3).fold([0.;3],|acc,i| add(acc,cross(f0[i],f[i]))),0.5);
+    let cosine = |f: &[V;3]| ((0..3).map(|i| dot(f0[i],f[i])).sum::<f64>()-1.)/2.;
+    let held = |carry: &Carry,v: &[f64]| moves.iter().zip(v).all(|((_,_,p),&v)| p0.iter().zip(p).all(|(&x,&y)| distance(carry.at(x,v),y) <= tol));
+    let widest = (0..moves.len()).max_by(|&i,&j| norm(sine(&moves[i].0)).total_cmp(&norm(sine(&moves[j].0))))?;
+    if norm(sine(&moves[widest].0)) <= 1e-12 {
+        // no turn: a step along one line
+        let delta = moves.last()?.1;
+        let len = norm(delta);
+        if !(len > 1e3*tol) { return None }
+        let v: Vec<f64> = moves.iter().map(|m| dot(m.1,delta)/(len*len)).collect();
+        let carry = Carry::Line {delta};
+        return (v.windows(2).all(|w| w[1] >= w[0]) && held(&carry,&v)).then_some(carry)
+    }
+    let axis = unit(sine(&moves[widest].0));
+    // each station's turn about `axis`, signed, unwound from the last
+    let w0 = crate::space::normalised(cross(axis,f0[0])).or_else(|| crate::space::normalised(cross(axis,f0[1])))?;
+    let mut theta: Vec<f64> = Vec::with_capacity(moves.len());
+    for (f,_,_) in &moves {
+        let w = turn(f,w0);
+        let raw = dot(axis,cross(w0,w)).datan2(dot(w0,w));
+        let last = theta.last().copied().unwrap_or(0.);
+        theta.push(raw+std::f64::consts::TAU*((last-raw)/std::f64::consts::TAU).round());
+    }
+    let angle = *theta.last()?;
+    if !(angle.abs() > 1e-9) { return None }
+    // the centre, off the station turned nearest a half turn: (I − R) c = t − (a·t) a in the
+    // plane square to the axis, so c = ½ b + ½ cot(θ/2) a × b there
+    let half = (0..moves.len()).max_by(|&i,&j| cosine(&moves[j].0).total_cmp(&cosine(&moves[i].0)))?;
+    let t = moves[half].1;
+    let bv = sub(t,scale(axis,dot(axis,t)));
+    let centre = add(scale(bv,0.5),scale(cross(axis,bv),0.5/(theta[half]/2.).dtan()));
+    let advance = dot(axis,moves.last()?.1);
+    let v: Vec<f64> = theta.iter().map(|th| th/angle).collect();
+    let carry = Carry::Screw {center:centre,axis,angle,advance};
+    (v.windows(2).all(|w| w[1] >= w[0]) && held(&carry,&v)).then_some(carry)
 }
 
 /// How near a lowered surface must pass every point of the sheet it stands for, as a part of the
@@ -618,10 +724,13 @@ const AGREE: f64 = 1e-10;
 /// on that surface — read off what its numbers do, never off what made them: a line edge that
 /// stays in one plane; an arc whose plane stays square to one axis through its centre (a cylinder
 /// where its radius holds, else a cone where the radius runs with the height); an arc whose plane
-/// turns about one axis lying in it (a torus). Held to the sheet before it is kept: the sheet's
-/// points at every node on the surface within `AGREE` of the wall's size, and the face's area on
-/// it within `AGREE` of the sheet's. A wall with a vanished edge is lowered only to a plane.
-fn lower(b: &mut Brep) {
+/// turns about one axis lying in it (a torus). Failing those, where the section moves rigidly by
+/// `carry` (`carried`), the surface its first rim sweeps (`swept`). Held to the sheet before it is
+/// kept: the sheet's points at every node on the surface within `AGREE` of the wall's size, and
+/// the face's area on it within `AGREE` of the sheet's in `general`. A wall with a vanished edge is
+/// lowered only to a plane. The walls of `b` that lower, each as its face on its new surface.
+fn lower(b: &Brep,general: &Brep,carry: Option<Carry>) -> Vec<(usize,Face)> {
+    let mut out = Vec::new();
     for fi in 0..b.faces.len() {
         let Surface::Family(_,sheet) = &b.faces[fi].surface else { continue };
         let sheet = sheet.clone();
@@ -629,50 +738,69 @@ fn lower(b: &mut Brep) {
         let size = distance(sheet.d1([0.,s0]).0,sheet.d1([1.,s1]).0).max(distance(sheet.d1([1.,s0]).0,sheet.d1([0.,s1]).0));
         let tol = AGREE*size.max(f64::MIN_POSITIVE);
         let degenerate = b.faces[fi].loops[0].iter().any(|c| matches!(b.edges[c.edge as usize].curve,EdgeCurve::Degenerate));
-        let Some(surface) = analytic(&sheet,tol) else { continue };
-        if degenerate && !matches!(surface,Surface::Plane(_)) { continue }
-        // every node's points on it
-        let on = sheet.stations.at.iter().zip(&sheet.stations.spans).all(|(at,sp)| at.iter().all(|&s| {
-            let s = s.clamp(sp[0],sp[1]);
-            (0..=8).all(|i| { let p = sheet.d1([i as f64/8.,s]).0; distance(surface.point(surface.inverse(p)),p) <= tol })
-        }));
-        if !on { continue }
-        // the corners' parameters on it, each walked to from the last so a periodic one unwraps
-        let chart = |uv: Uv,from: Option<(Uv,Uv)>| -> Uv {
-            let Some((from_fs,from_uv)) = from else { return surface.inverse(sheet.d1(uv).0) };
-            let mut at = from_uv;
-            for j in 1..=32 {
-                let f = j as f64/32.;
-                let q = [from_fs[0]+(uv[0]-from_fs[0])*f,from_fs[1]+(uv[1]-from_fs[1])*f];
-                at = super::topo::unwrap(surface.inverse(sheet.d1(q).0),at,surface.periods());
-            }
-            at
-        };
-        let c00 = chart([0.,s0],None);
-        let c10 = chart([1.,s0],Some(([0.,s0],c00)));
-        let c01 = chart([0.,s1],Some(([0.,s0],c00)));
-        let c11 = chart([1.,s1],Some(([0.,s1],c01)));
-        let corner = |uv: Uv| -> Uv {
-            match (uv[0] > 0.5,uv[1] > (s0+s1)/2.) { (false,false) => c00,(true,false) => c10,(false,true) => c01,(true,true) => c11 }
-        };
-        let mut face = b.faces[fi].clone();
-        for c in face.loops.iter_mut().flatten() {
-            let Pcurve::Line {a,b: z} = c.pcurve else { continue };
-            let (p,q) = (corner(a),corner(z));
-            c.pcurve = if matches!(b.edges[c.edge as usize].curve,EdgeCurve::Degenerate) { Pcurve::Line {a:p,b:q} } else { Pcurve::Inverse {a:p,b:q} };
+        let frame = *b.faces[fi].surface.frame();
+        let candidates = [analytic(&sheet,tol),carry.map(|c| Surface::Blend(frame,swept(&sheet,c)))];
+        for surface in candidates.into_iter().flatten() {
+            if degenerate && !matches!(surface,Surface::Plane(_)) { continue }
+            if let Some(face) = lowered(b,general,fi,&sheet,surface,size,tol) { out.push((fi,face)); break }
         }
-        face.surface = surface;
-        // the face's sense: its outward normal as the sheet's
-        let sheet_face = &b.faces[fi];
-        let mid = [0.5,(s0+s1)/2.];
-        let (x,_,_) = sheet.d1(mid);
-        let out = scale(sheet_face.surface.normal_raw(mid),if sheet_face.reversed { -1. } else { 1. });
-        face.reversed = dot(face.surface.normal_raw(face.surface.inverse(x)),out) < 0.;
-        let ccw = b.loop_area(&face,&face.loops[0]) > 0.;
-        if ccw == face.reversed { face.loops[0] = reverse_loop(face.loops[0].clone()); }
-        let (want,got) = (super::props::area(b,sheet_face),super::props::area(b,&face));
-        if (want-got).abs() <= AGREE*want.abs().max(size*size*AGREE) { b.faces[fi] = face; }
     }
+    out
+}
+
+/// The wall `sheet` swept by `carry` from its rim at the family's start: `M(v)·C(u)`, the rim
+/// blended with itself (`geom::Blend`); at `u = 0`, its rail.
+fn swept(sheet: &Arc<Sheet>,carry: Carry) -> Arc<Blend> {
+    let (curve,t) = rim_curve(sheet,sheet.span()[0]);
+    Arc::new(Blend {a:curve.clone(),ta:t,b:curve,tb:t,carry,closed:sheet.closed})
+}
+
+/// Face `fi` of `b`, whose surface is `sheet`, put on `surface` — or none where the sheet's points
+/// at a node stray from it by more than `tol`, or the face's area on it is not the sheet's in
+/// `general` (the solid on its sheets, edge for edge) to `AGREE` (`size` the wall's).
+fn lowered(b: &Brep,general: &Brep,fi: usize,sheet: &Arc<Sheet>,surface: Surface,size: f64,tol: f64) -> Option<Face> {
+    let [s0,s1] = sheet.span();
+    // every node's points on it
+    let on = sheet.stations.at.iter().zip(&sheet.stations.spans).all(|(at,sp)| at.iter().all(|&s| {
+        let s = s.clamp(sp[0],sp[1]);
+        (0..=8).all(|i| { let p = sheet.d1([i as f64/8.,s]).0; distance(surface.point(surface.inverse(p)),p) <= tol })
+    }));
+    if !on { return None }
+    // the corners' parameters on it, each walked to from the last so a periodic one unwraps
+    let chart = |uv: Uv,from: Option<(Uv,Uv)>| -> Uv {
+        let Some((from_fs,from_uv)) = from else { return surface.inverse(sheet.d1(uv).0) };
+        let mut at = from_uv;
+        for j in 1..=32 {
+            let f = j as f64/32.;
+            let q = [from_fs[0]+(uv[0]-from_fs[0])*f,from_fs[1]+(uv[1]-from_fs[1])*f];
+            at = super::topo::unwrap(surface.inverse(sheet.d1(q).0),at,surface.periods());
+        }
+        at
+    };
+    let c00 = chart([0.,s0],None);
+    let c10 = chart([1.,s0],Some(([0.,s0],c00)));
+    let c01 = chart([0.,s1],Some(([0.,s0],c00)));
+    let c11 = chart([1.,s1],Some(([0.,s1],c01)));
+    let corner = |uv: Uv| -> Uv {
+        match (uv[0] > 0.5,uv[1] > (s0+s1)/2.) { (false,false) => c00,(true,false) => c10,(false,true) => c01,(true,true) => c11 }
+    };
+    let mut face = b.faces[fi].clone();
+    for c in face.loops.iter_mut().flatten() {
+        let Pcurve::Line {a,b: z} = c.pcurve else { continue };
+        let (p,q) = (corner(a),corner(z));
+        c.pcurve = if matches!(b.edges[c.edge as usize].curve,EdgeCurve::Degenerate) { Pcurve::Line {a:p,b:q} } else { Pcurve::Inverse {a:p,b:q} };
+    }
+    face.surface = surface;
+    // the face's sense: its outward normal as the sheet's
+    let sheet_face = &general.faces[fi];
+    let mid = [0.5,(s0+s1)/2.];
+    let (x,_,_) = sheet.d1(mid);
+    let out = scale(sheet_face.surface.normal_raw(mid),if sheet_face.reversed { -1. } else { 1. });
+    face.reversed = dot(face.surface.normal_raw(face.surface.inverse(x)),out) < 0.;
+    let ccw = b.loop_area(&face,&face.loops[0]) > 0.;
+    if ccw == face.reversed { face.loops[0] = reverse_loop(face.loops[0].clone()); }
+    let (want,got) = (super::props::area(general,sheet_face),super::props::area(b,&face));
+    ((want-got).abs() <= AGREE*want.abs().max(size*size*AGREE)).then_some(face)
 }
 
 /// The analytic surface a wall's sheet is, where its numbers say it is one (see `lower`): read off
