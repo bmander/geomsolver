@@ -51,7 +51,10 @@ centre the plane's origin, an arc's start on the plane's `u` (a gauge, its `y` h
 — each tied to the point written by an intrinsic `Coincident3` and recorded in
 `Sketch::stands_for` (so a chain's links still meet: `solids::faces::validate_chain`), the axes
 held square (`Perpendicular3`), and a circle's turn about its normal held square to the world axis
-least along it (a fixed hidden axis), a gauge.  So the round is an arc or a circle in a plane: its
+least along it (a fixed hidden axis), a gauge: chosen as the normal stands at elaboration,
+so at least arccos(1/√3) ≈ 54.7° off it; a normal free to swing onto that axis within one solve
+loses the gauge's rank there, and no one fixed axis serves every normal (a tangent field on the
+sphere vanishes somewhere).  So the round is an arc or a circle in a plane: its
 radius, its contacts, a chain's joints, a face swept from it.  A spline there is a curve traced in
 space ([0.123], `curves.md`); faces E080.  `tests/space_paths.rs`: the bent pipe with no plane
 written, its tube at Pappus to 1e-9 and each bend's plane; a disc swept from a circle square to a
