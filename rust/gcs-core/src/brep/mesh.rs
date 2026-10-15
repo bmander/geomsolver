@@ -69,21 +69,31 @@ fn edge_params(b: &Brep,e: usize,bar: f64,angular: f64) -> Vec<f64> {
     let EdgeCurve::Curve(c) = &edge.curve else { return vec![edge.t[0],edge.t[1]] };
     let mut out = vec![edge.t[0]];
     // the first pieces: a closed edge in three; a B-spline's every knot span (one inflection at most
-    // in a cubic's, which the quarter points below see though a midpoint test is blind to it)
+    // in a cubic's, which the quarter points below see though a midpoint test is blind to it), a
+    // family's rail at its pieces' joints likewise; a rail screwed about an axis a quarter turn at
+    // most a piece: a whole number of turns puts its ends, middle and quarter points in one line
+    // along the axis, their tangents alike, and a coil's rail read so was one chord (#243 L6)
     let mut cuts = vec![edge.t[0]];
     let near = 1e-6*(edge.t[1]-edge.t[0]);
-    if let super::geom::Curve::BSpline(s) = c {
+    if let super::geom::Curve::BSpline(_) | super::geom::Curve::Rail(..) = c {
         // (a knot is a cut only a bar or more along from the last one and from the end: a fit's
         // knots crowd where it bends, and a cut at each fans slivers there)
         let end = c.point(edge.t[1]);
-        for k in s.breaks(edge.t).into_iter().filter(|&k| k-edge.t[0] > near && edge.t[1]-k > near) {
+        for k in c.breaks(edge.t).into_iter().filter(|&k| k-edge.t[0] > near && edge.t[1]-k > near) {
             let p = c.point(k);
             if distance(p,c.point(*cuts.last().unwrap())) >= bar && distance(p,end) >= bar { cuts.push(k); }
         }
     }
     cuts.push(edge.t[1]);
     // (cut in several pieces regardless, a short span fans slivers from the face's nearest point)
-    let each = |_: f64,_: f64| if !matches!(c,super::geom::Curve::BSpline(_)) && edge.closed() { 3 } else { 1 };
+    let each = |a: f64,z: f64| match c {
+        super::geom::Curve::Iso(b,_) => match b.carry {
+            super::geom::Carry::Screw {angle,..} => ((angle*(z-a)).abs()/std::f64::consts::FRAC_PI_2).ceil().min(1e4).max(1.) as usize,
+            super::geom::Carry::Line {..} => 1,
+        },
+        super::geom::Curve::BSpline(_) => 1,
+        _ => if edge.closed() { 3 } else { 1 },
+    };
     let mut stack: Vec<(f64,f64,u32)> = cuts.windows(2).flat_map(|w| { let n = each(w[0],w[1]); (0..n).map(move |k| {
         let h = (w[1]-w[0])/n as f64;
         (w[0]+h*k as f64,w[0]+h*(k+1) as f64,0)
