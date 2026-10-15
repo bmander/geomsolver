@@ -322,7 +322,12 @@ placement carries inside the blank; CLI test readers zero the offset.
   turn a freedom); `part_of` gives both back to the leg's part.  `tests/space_paths.rs`: the pipe
   of #363 (line, R20 in `std.top`, line, R20 in x = 20, line) a 4 mm tube at 16π(60 + 20π), a
   2 × 2 square at 4(60 + 20π), a bar off its centre line at its centroid's path, and the end
-  cap's frame (tangent +z, `u` −x, `v` −y) to 1e-9.
+  cap's frame (tangent +z, `u` −x, `v` −y) to 1e-9.  **A chain drawn in space turns either way at
+  an arc** ([0.124], S6): an arc over points in space faces its minted plane as its points do, so
+  L0's S-bend — a left turn then a right — is one chain (`in_space_a_chain_turns_either_way_at_an_arc`,
+  Pappus, its second bend's plane facing −z); drawn in a plane's block a chain still turns left at
+  every arc (L4: an arc there runs counter-clockwise from its start, and reading one walked end to
+  start would need a leg's place pinned to `1 − s`, which no pin says yet).
 - **A law is an expression in `s`** (§6.9 [0.103], #243 L5, finding 10).  A twist or a scale is a
   dimension of the section reading the running number; no word takes a `law:` (no function values).
   `std.sv`'s `Twisted` (the point `reach` along the station's `u` turned `twist · s` — [0.118],

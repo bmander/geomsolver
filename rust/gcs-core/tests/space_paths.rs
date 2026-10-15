@@ -743,6 +743,54 @@ tube := solid(Round(route, std.z, r: 4mm).f over s in (0, 5))");
     }
 }
 
+/// **In space a chain turns either way at an arc** (#363 S4, by S6): L4's rule — an arc runs
+/// counter-clockwise from its start, so a chain drawn in a plane turns left at every one — holds
+/// of an arc drawn in a plane; one over points in space faces its plane as its points do.  So
+/// L0's S-bend, a left turn then a right, is one chain drawn in space: its tube is Pappus's, and
+/// its second bend's plane faces down.
+#[test]
+fn in_space_a_chain_turns_either_way_at_an_arc() {
+    let e = with("
+a := point hint((-20, 0, 0))
+b := point hint((0, 0, 0))
+fix((0mm, 0mm, 0mm)) b
+c1 := point hint((0, 20, 0))
+fix((0mm, 20mm, 0mm)) c1
+d := point hint((20, 20, 0))
+e := point hint((20, 40, 0))
+c2 := point hint((40, 40, 0))
+f := point hint((40, 60, 0))
+g := point hint((60, 60, 0))
+route := (l0 := line(a, b)) -> tangent (k1 := arc(center: c1)) ->
+  tangent (l2 := line(d, e)) -> tangent (k3 := arc(center: c2)) ->
+  tangent (l4 := line(f, g))
+length(20mm) l0
+length(20mm) l2
+length(20mm) l4
+radius(20mm) k3
+d coincident std.top
+l2 parallel std.y
+l4 parallel std.x
+component Round(g: path, up: axis, r: Length, s: Scalar) {
+  st := std.On(g, up: up, s: s)
+  in st.n {
+    k := circle(center: st.n.origin)
+    radius(r) k
+  }
+  f := face(k)
+}
+tube := solid(Round(route, std.z, r: 4mm).f over s in (0, 5))");
+    near(exact(&e, "tube"), 16.0 * PI * (60.0 + 20.0 * PI), 1e-9, "the S-bend");
+    let at = |n: &str| e.sketch.world_point(e.map.ent_named(n).unwrap().i());
+    assert!(sub(at("g"), [60.0, 60.0, 0.0]).iter().all(|d| d.abs() <= 1e-9), "{:?}", at("g"));
+    let sk = &e.sketch;
+    for (name, up) in [("k1", 1.0), ("k3", -1.0)] {
+        let k = e.map.ent_named(name).unwrap();
+        let n = sk.basis(sk.plane_of(sk.round_center(k)).unwrap()).normal();
+        assert!((unit(n)[2] - up).abs() <= 1e-9, "`{name}`'s plane faces {n:?}");
+    }
+}
+
 /// **A circle about a point in space stands square to its normal** (#363 S6): `circle(center: o,
 /// normal: ax)` is drawn in the plane through `o` square to `ax`, so a disc swept from it is
 /// π·r²·h, and a point held on it stands `r` from `o`, square to `ax`.  And what is refused: a

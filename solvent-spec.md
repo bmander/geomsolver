@@ -958,7 +958,10 @@ block := solid(face(mouth, side_r, lid, side_l), from: face, to: back)
   drawn in another plane, its ends drawn anywhere, is the tangency in space (§9.2), so a bent pipe
   is one chain. Where the station states a rate (`On` does), a station on a link past the first
   is the one the link before carried across the joint: the drawing does not solve it, and its
-  `initially` rows hold at the family's home alone. A seed's step MAY run along any path, `hint(at: p, along: g, by:
+  `initially` rows hold at the family's home alone. **[0.124]** An arc over points in space faces
+  the plane it is drawn in as its points do (§6.4), so a chain drawn in space turns either way at
+  an arc; one drawn in a plane's block still turns left at every arc, as an arc there runs
+  counter-clockwise from its start. A seed's step MAY run along any path, `hint(at: p, along: g, by:
   f)`: `f` times `g`'s rate along its own run where `p` meets it, as along a line it is `f` times
   its run from `p1` to `p2` (§6.4).
 - **[0.103] A law is an expression in the running number.** A twist or a scale is a dimension of

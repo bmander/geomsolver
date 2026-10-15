@@ -8,7 +8,9 @@ keep the spellings of their day.
 through its centre and its ends, the short way round; three points in a line are refused. A circle
 over a centre in space takes `normal:`, the axis or line it stands square to, and is drawn in the
 plane through its centre square to it. Each is the arc or circle it is in a plane — its radius,
-its contacts, a chain's joints, a face swept from it — so a bent pipe needs no plane written.
+its contacts, a chain's joints, a face swept from it — so a bent pipe needs no plane written, and
+a chain drawn in space turns either way at an arc (L0's S-bend is one chain); in a plane's block a
+chain still turns left at every arc.
 Through 0.123 each was E060. (Issue #363, S6.)
 
 **[0.123] Splines in space.** A spline over a point standing in space is a curve in space:
