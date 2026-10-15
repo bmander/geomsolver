@@ -305,40 +305,28 @@ pub(super) fn constrain(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) -> Option<u3
 fn rate_row(cx: &mut Elab<'_>, r: &Relation, st: &Stmt, over: &str) {
     let Some(w) = r.form.written() else { return };
     let [x, y] = &w.ops[..] else { return };
-    let said = |r: &Ref| {
-        let fields = r.path.iter().filter_map(|s| match s {
-            crate::syntax::Seg::Field(n) => Some(n.text.as_str()),
-            _ => None,
-        });
-        crate::program::public_path(&std::iter::once(r.root.text.as_str()).chain(fields)
-            .collect::<Vec<_>>().join("."))
-    };
+    let said = |r: &Ref| super::source_map::public_path(&crate::syntax::ref_text(r));
     let formal = over.rsplit('.').next().unwrap_or(over);
     let text = format!("rate({} over {formal}) {} {}", said(x), w.word.text, said(y));
-    let (Some(of), Some(to)) = (cx.res.entity(&cx.sk, x), cx.res.entity(&cx.sk, y)) else {
-        let message = format!("`{text}` relates two things drawn: a rate of an axis or a point, \
-            and a direction or a plane");
-        cx.diags.push(Diag::on(Code::E040, st, message));
-        return;
+    let word = match w.word.text.as_str() {
+        "parallel" => crate::model::RateWord::Parallel,
+        _ => crate::model::RateWord::Perpendicular,
     };
-    if !matches!(of.kind, EntKind::Axis | EntKind::Point) {
-        let message = format!("`{text}`: a rate is of an axis's direction or of a point, and \
-            `{}` is {}", said(x), of.kind.a());
-        cx.diags.push(Diag::on(Code::E040, st, message));
-        return;
+    let mut refuse = |message: String| cx.diags.push(Diag::on(Code::E040, st, message));
+    match (cx.res.entity(&cx.sk, x), cx.res.entity(&cx.sk, y)) {
+        (Some(of), _) if !matches!(of.kind, EntKind::Axis | EntKind::Point) => refuse(format!(
+            "`{text}`: a rate is of an axis's direction or of a point, and `{}` is {}",
+            said(x), of.kind.a())),
+        (_, Some(to)) if !matches!(to.kind, EntKind::Axis | EntKind::Line | EntKind::Plane) => {
+            refuse(format!("`{text}`: a rate is held against a direction, an axis or a line, or \
+                a plane, and `{}` is {}", said(y), to.kind.a()))
+        }
+        (Some(of), Some(to)) => {
+            cx.sk.rates.push(crate::model::RateRow { of, word, to, over: over.to_string(), text })
+        }
+        _ => refuse(format!("`{text}` relates two things drawn: a rate of an axis or a point, \
+            and a direction or a plane")),
     }
-    if !matches!(to.kind, EntKind::Axis | EntKind::Line | EntKind::Plane) {
-        let message = format!("`{text}`: a rate is held against a direction, an axis or a line, \
-            or a plane, and `{}` is {}", said(y), to.kind.a());
-        cx.diags.push(Diag::on(Code::E040, st, message));
-        return;
-    }
-    let word = if w.word.text == "parallel" {
-        crate::model::RateWord::Parallel
-    } else {
-        crate::model::RateWord::Perpendicular
-    };
-    cx.sk.rates.push(crate::model::RateRow { of, word, to, over: over.to_string(), text });
 }
 
 /// A contact with a body traced in space, read as its body runs over one formal or two (#326):

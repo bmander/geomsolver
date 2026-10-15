@@ -21,15 +21,6 @@ pub enum RateWord {
     Parallel,
 }
 
-impl RateWord {
-    pub fn text(self) -> &'static str {
-        match self {
-            RateWord::Perpendicular => "perpendicular",
-            RateWord::Parallel => "parallel",
-        }
-    }
-}
-
 /// `rate(of over s) word to`, `s` a face family's running number (`over`, its held name).
 #[derive(Clone, Debug, PartialEq)]
 pub struct RateRow {

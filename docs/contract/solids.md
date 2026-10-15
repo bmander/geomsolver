@@ -378,7 +378,7 @@ placement carries inside the blank; CLI test readers zero the offset.
   cloned, its `initially` rows made claims, its running number unfixed and made the column every
   number written over it leans on — each such dimension's text a tape over the held numbers
   (`tape::derivatives_along`, exact), its constraint made its free twin at `m·s + c` with `m` the
-  derivative (`Rated::lean`), so the running number's column of the conditioned Jacobian is `g_s`;
+  derivative (`Levers::lean`), so the running number's column of the conditioned Jacobian is `g_s`;
   a number over it that is no dimension, or a second on one statement, is refused.  The rate rows
   are linear rows over the state (`Rated::rate_rows`: an axis's rate is its unit direction's,
   `(I − d̂d̂ᵀ)d′/|d|`; square to a direction one row, along it two, a plane the other way round).

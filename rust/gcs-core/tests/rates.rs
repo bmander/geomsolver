@@ -116,7 +116,7 @@ fn unit(a: V) -> V {
     [a[0] / n, a[1] / n, a[2] / n]
 }
 
-/// The corners of the solid `name`'s cap nearest `at`.
+/// The four corners of `b` nearest `at`: the corners of its cap there.
 fn cap(b: &gcs_core::brep::topo::Brep, at: V) -> Vec<V> {
     let mut ps: Vec<V> = b.vertices.iter().map(|v| v.p).collect();
     ps.sort_by(|p, q| dot(sub(*p, at), sub(*p, at)).total_cmp(&dot(sub(*q, at), sub(*q, at))));
@@ -157,7 +157,7 @@ fn a_minimal_frame_turns_against_frenet_at_the_torsion() {
     let e = with("
 minimal := solid(Coil(std.top, r: 10mm, pitch: 5mm, turns: 1).f over s in (0, 1))
 frenet := solid(Frenet(std.top, r: 10mm, pitch: 5mm, turns: 1).f over s in (0, 1))
-twice := solid(Coil(std.top, r: 10mm, pitch: 5mm, turns: 0.75).f over s in (0, 1))");
+three_quarters := solid(Coil(std.top, r: 10mm, pitch: 5mm, turns: 0.75).f over s in (0, 1))");
     let b = 5.0 / (2.0 * PI);
     let per_turn = -2.0 * PI * b / (100.0 + b * b).sqrt();
     assert!((per_turn.to_degrees() + 28.558).abs() < 1e-3, "{}", per_turn.to_degrees());
@@ -167,7 +167,7 @@ twice := solid(Coil(std.top, r: 10mm, pitch: 5mm, turns: 0.75).f over s in (0, 1
     };
     let got = swept("minimal", 1.0);
     assert!((got - per_turn).abs() <= 1e-9, "a turn: {got} against {per_turn}");
-    let got = swept("twice", 0.75);
+    let got = swept("three_quarters", 0.75);
     let want = 0.75 * per_turn;
     assert!((got - want).abs() <= 1e-9, "three quarters: {got} against {want}");
     let got = swept("frenet", 1.0);
