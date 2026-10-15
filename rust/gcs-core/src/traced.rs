@@ -581,15 +581,19 @@ pub enum Contact {
     /// `S curvature(at: p) k`: the circle osculating the surface's section by its plane at `p`.
     /// Lead: the centre's lift, the radius, the plane's two axes.
     Curvature = 5,
+    /// `k curvature(at: p) c`, `k` a curve, `c` a point: the centre of its osculating circle
+    /// (#363 S5).  Lead: the point's lift.
+    Centre = 6,
 }
 
 impl Contact {
-    pub const ALL: [Contact; 6] = [Contact::Point, Contact::Tangent, Contact::InPlane,
-                                   Contact::Normal, Contact::Plane, Contact::Curvature];
+    pub const ALL: [Contact; 7] = [Contact::Point, Contact::Tangent, Contact::InPlane,
+                                   Contact::Normal, Contact::Plane, Contact::Curvature,
+                                   Contact::Centre];
 
     pub fn rows(self) -> usize {
         match self {
-            Contact::Point | Contact::Curvature => 3,
+            Contact::Point | Contact::Curvature | Contact::Centre => 3,
             Contact::Tangent | Contact::Normal | Contact::Plane => 2,
             Contact::InPlane => 1,
         }
@@ -597,7 +601,7 @@ impl Contact {
 
     pub fn lead(self) -> usize {
         match self {
-            Contact::Point => 3,
+            Contact::Point | Contact::Centre => 3,
             Contact::Tangent | Contact::InPlane | Contact::Normal | Contact::Plane => 6,
             Contact::Curvature => 10,
         }
@@ -606,7 +610,7 @@ impl Contact {
     fn need(self) -> Need {
         match self {
             Contact::Point => Need::Point,
-            Contact::Curvature => Need::Curvature,
+            Contact::Curvature | Contact::Centre => Need::Curvature,
             _ => Need::Tangent,
         }
     }
@@ -619,13 +623,14 @@ impl Contact {
             Contact::Normal => "traced_normal_at",
             Contact::Plane => "traced_plane_at",
             Contact::Curvature => "traced_curvature_at",
+            Contact::Centre => "traced_centre_at",
         }
     }
 
     /// A point's and a circle's rows are lengths; a direction's are cosines.
     fn degree(self) -> u32 {
         match self {
-            Contact::Point | Contact::Curvature => 1,
+            Contact::Point | Contact::Curvature | Contact::Centre => 1,
             _ => 0,
         }
     }
@@ -634,7 +639,7 @@ impl Contact {
     pub fn formals(self) -> Option<usize> {
         match self {
             Contact::Point => None,
-            Contact::Tangent => Some(1),
+            Contact::Tangent | Contact::Centre => Some(1),
             _ => Some(2),
         }
     }
@@ -719,6 +724,19 @@ fn rows<T: Num>(c: Contact, lead: &[T], f: &Frame<T>, out: &mut [T]) {
             out[1] = dot(off, bb);
             out[2] = dot(to, to).sqrt() - r;
         }
+        // the osculating circle's centre: `X + |X′|²·(b × X′)/|b|²`, `b = X′ × X″` the binormal
+        // times `|X′|³κ` — no centre where it vanishes, its square floored so the rows stay
+        // finite and the rank says so
+        Contact::Centre => {
+            let (d1, d2) = (f.d[0], f.dd[0][0]);
+            let b = cross(d1, d2);
+            let bb = dot(b, b);
+            let bb = if bb.val() > FLAT * FLAT { bb } else { T::cst(FLAT * FLAT) };
+            let off = vscale(cross(b, d1), dot(d1, d1) / bb);
+            for i in 0..3 {
+                out[i] = lead[i] - (f.x[i] + off[i]);
+            }
+        }
     }
 }
 
@@ -798,6 +816,7 @@ pub fn kernel(c: Contact, n_par: usize, n_const: usize) -> Kernel {
         Contact::Normal => (res::<3>, jac::<3>),
         Contact::Plane => (res::<4>, jac::<4>),
         Contact::Curvature => (res::<5>, jac::<5>),
+        Contact::Centre => (res::<6>, jac::<6>),
     };
     Kernel { name: c.name(), n_res: c.rows(), n_par, n_const, degree: c.degree(), res, jac,
              const_jac: None, form: None }

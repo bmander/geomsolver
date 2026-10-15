@@ -298,6 +298,13 @@ march, a seed of fewer columns, dense output forwards and back, a carried branch
   steps along `d[0]` at `traced::place_of` (`entities::rate_along`); and a family's part keeps
   what a traced body was given though the body owns no parameter (`Part::around_all`), else the
   part dropped its contacts.  `tests/space_paths.rs` is the gate.
+  **A curve's centre of curvature** (#363 S5, [0.122]): `k curvature(at: p) c` of a point is
+  `CKind::TracedCentreAt` (`traced::Contact::Centre`, three rows, its lead the point's lift,
+  `Need::Curvature`): `c − (X + |X′|²·(b × X′)/|b|²)`, `b = X′ × X″` floored at `FLAT²`, so where
+  the curve has no curvature the rows stay finite and lose their rank.  Of a surface it is E040
+  (`relations::traced_contact`), as a surface's normal, plane or section of a curve is.
+  `std.Frenet(g, s:)` is the word over it (`solids.md`); `tests/traced.rs` holds the contact to
+  finite differences, `tests/space_paths.rs` to the helix's closed form.
   **Two design constraints it is built to** (#326): a traced surface is held to and read, not a
   face of a solid — exporting one is making it a wall of #243 L2's `Surface::Family` (whose
   `d1`/`newton` it would answer through `traced::read` and `traced::nearest`), not a second

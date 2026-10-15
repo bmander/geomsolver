@@ -656,13 +656,15 @@ impl Constraint {
             | CKind::TracedSurfaceTangentAt
             | CKind::TracedNormalAt
             | CKind::TracedPlaneAt
-            | CKind::TracedCurvatureAt => {
+            | CKind::TracedCurvatureAt
+            | CKind::TracedCentreAt => {
                 let lift = |p: usize| {
                     let k = sk.lift_of(p).expect("a relation in space is lifted at the add");
                     sk.lifts[k].x.to_vec()
                 };
                 let (lead, place) = match self.kind {
                     CKind::PointOnTraced => (lift(e(0).i()), 2),
+                    CKind::TracedCentreAt => (lift(e(1).i()), 3),
                     CKind::TracedPlaneAt => (plane_columns(sk, e(1).i())[3..].to_vec(), 3),
                     CKind::TracedCurvatureAt => {
                         let c = sk.round_center(e(1));
@@ -862,10 +864,12 @@ impl Constraint {
             | CKind::TracedSurfaceTangentAt
             | CKind::TracedNormalAt
             | CKind::TracedPlaneAt
-            | CKind::TracedCurvatureAt => {
+            | CKind::TracedCurvatureAt
+            | CKind::TracedCentreAt => {
                 let lead = match self.kind {
                     CKind::PointOnTraced => vec![e(0).i()],
                     CKind::TracedCurvatureAt => vec![sk.round_center(e(1))],
+                    CKind::TracedCentreAt => vec![e(1).i()],
                     CKind::TracedPlaneAt => Vec::new(),
                     _ if e(1).kind == EntKind::Line => ends(1).to_vec(),
                     _ => Vec::new(),

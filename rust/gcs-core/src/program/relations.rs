@@ -385,7 +385,13 @@ fn traced_contact(cx: &Elab<'_>, kind: CKind, args: &mut [CArg], left_out: &mut 
         CKind::TracedTangentAt if surface => CKind::TracedSurfaceTangentAt,
         CKind::TracedNormalAt | CKind::TracedPlaneAt | CKind::TracedCurvatureAt if !surface => {
             return Err(format!("`{}` is a curve in space, which has a tangent at a point and no \
-                normal or curvature this relation reads: a surface has them", t.name));
+                normal or section this relation reads: a surface has them; its curvature is a \
+                centre, `{} curvature(at: m) c` of a point `c`", t.name, t.name));
+        }
+        CKind::TracedCentreAt if surface => {
+            return Err(format!("`{}` is a surface, which has no one centre of curvature at a \
+                point: the circle osculating its section by a plane is `curvature` of a circle",
+                t.name));
         }
         k => k,
     };
@@ -943,7 +949,7 @@ pub(super) fn tangents_at(sk: &Sketch, map: &SourceMap, diags: &mut Vec<Diag>) {
             CKind::MeshingNormalAt => "common normal",
             CKind::MeshingTangentAt => "path of contact",
             CKind::TracedNormalAt => "normal",
-            CKind::TracedCurvatureAt => "curvature",
+            CKind::TracedCurvatureAt | CKind::TracedCentreAt => "curvature",
             CKind::TracedPlaneAt | CKind::TracedSurfaceTangentAt => "tangent plane",
             _ => "tangent",
         };

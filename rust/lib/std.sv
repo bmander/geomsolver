@@ -640,6 +640,28 @@ component Minimal(n: plane, up: axis, s: Scalar) {
   }
 }
 
+// Frenet's frame of a station on a curve traced in space (#363 S5): the plane square to `g`
+// where its formal is `s`, `u` toward the centre of curvature there — the principal normal, its
+// sense the centre's, no seed's — and `v` the binormal, so the plane faces the way the curve runs.
+// Along a helix it is `OnHelix`'s plane, `u` the other way; it turns with the curve's torsion,
+// where `Minimal`'s does not.  A curve with no curvature somewhere (a straight run, an
+// inflection) has no centre there, and the station is refused where that happens.
+component Frenet(g: path, s: Scalar) {
+  m := point
+  m coincident(t == s) g
+  q := point hint(at: m, along: g, by: 0.1)
+  tl := line(m, q)
+  g tangent(at: m) tl
+  length(10mm) tl
+  c := point
+  g curvature(at: m) c
+  nl := line(m, c)
+  n := plane(u: nl, v: hint(dir: tl, turn: -90deg, about: nl))
+  n.origin coincident m
+  n.v perpendicular tl
+  n.v perpendicular n.u
+}
+
 // A station with no guide (#243 L7): the plane through the places at `s` on three rails — a loft
 // that joins its sections in space directly.  Each rail runs through one corner of every
 // section: a chain of lines, one a link a pair of neighbouring sections (the ruled loft, a family

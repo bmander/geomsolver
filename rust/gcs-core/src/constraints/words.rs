@@ -340,6 +340,8 @@ pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option
             // a circle osculating an envelope's section by its plane, at a point already on it
             (Envelope, k) if round(k) && at_point => CKind::EnvelopeCurvatureAt,
             (Traced, k) if round(k) && at_point => CKind::TracedCurvatureAt,
+            // a curve's centre of curvature there, a point (#363 S5)
+            (Traced, Point) if at_point => CKind::TracedCentreAt,
             _ => return None,
         },
         // a free curve pressed onto a held line, a corner where it chooses (#149)

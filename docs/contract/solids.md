@@ -282,6 +282,14 @@ placement carries inside the blank; CLI test readers zero the offset.
   turning −28.5576° a turn against Frenet's (r 10, pitch 5), to 1e-9; a traced surface refused;
   `std.On` on the traced helix `OnHelix`'s solid corner for corner; an off-centre square round
   `pipe.sv`'s U at 4·(60 + 23π), its frame carried across the joints.
+- **Frenet's frame** (#363 S5, [0.122]): `std.Frenet(g, s:)` holds its plane square to the
+  guide, `u` along `line(m, c)` to the centre of curvature (`g curvature(at: m) c`, `curves.md`)
+  and `v` the binormal (seeded `tl` turned −90° about it, the one sign a seed picks, and kept by
+  warm starts), an algebraic station — no rate.  Where the curve has no curvature the centre's
+  rows lose their rank and the station is refused there ("not held"), never followed.
+  `tests/space_paths.rs`: along `ribbon.sv`'s helix as a traced curve it is `std.OnHelix`'s
+  `facing` solid corner for corner; a curve straight for a third of its run is refused at a
+  station; a surface's centre is E040.
 - **A chain is one path** (§6.9 [0.102], #243 L4, finding 6).  A `path` formal of a family's
   instance given a named open chain (`flatten::chain_argument`, the chain found among the
   statements walked so far) makes the family **legs**, one per link its interval reaches

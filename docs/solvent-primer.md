@@ -1314,7 +1314,9 @@ k := Par(o).p over u in (-2mm, 2mm)
   coincident(t == s) g` stands the station at the body's own formal `s` and `hint(at: m, along:
   g)` steps along it; `std.On(g, up: std.z, s: s)` stands on it as on any path, its frame the
   rotation-minimising one (`rust/gcs-core/tests/space_paths.rs`). A surface traced over two
-  formals is no path.
+  formals is no path. **Frenet's frame** (0.122): `std.Frenet(g, s: s)` turns with the curve, `u`
+  toward its centre of curvature (`g curvature(at: m) c`, a point) and `v` the binormal; it is
+  refused where the curve runs straight.
   A profile drawn once may also be **carried whole** by the map itself,
   `sec := prof mapped(o -> st.n.origin, x -> t) in st.n` — every corner and edge of `prof` carried
   into `st.n` by the similarity taking `o` and `x` to the origin and `t`, the edges keeping their

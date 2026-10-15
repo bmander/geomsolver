@@ -690,7 +690,8 @@ impl Constraint {
             | CKind::TracedSurfaceTangentAt
             | CKind::TracedNormalAt
             | CKind::TracedPlaneAt
-            | CKind::TracedCurvatureAt => &[3, 4],
+            | CKind::TracedCurvatureAt
+            | CKind::TracedCentreAt => &[3, 4],
             _ => return None,
         };
         match (&self.args[0], &self.args[2]) {

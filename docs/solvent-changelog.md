@@ -4,6 +4,13 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.122] A curve's centre of curvature, and Frenet's frame.** At a point a contact holds on a
+curve traced in space, `k curvature(at: p) c` puts the point `c` at the centre of its osculating
+circle. The standard library's `Frenet(g, s:)` is the station whose `u` runs toward that centre
+and whose `v` is the binormal, refused where the curve has no curvature. Through 0.121 a curve in
+space read no curvature (`curvature` was a surface's), and Frenet's frame had no word: the side
+the centre is on could not be said, `parallel` being sign-free. (Issue #363, S5.)
+
 **[0.121] Chains across planes.** A line touching an arc or a circle at a point of it, the line
 not drawn in the round's plane, is the tangency in space: its direction in the round's plane and
 square to the radius there (`TangentCircleAt3`). So a chain's straight between a bend in one plane

@@ -194,6 +194,8 @@ q coincident k
 q2 := point hint((-5, -5, 2))
 tl := line(q, q2)
 k tangent(at: q) tl
+cc := point hint((0, 0, 1))
+k curvature(at: q) cc
 w := point hint((0, 5, 0.7))
 w coincident h
 p := point hint((30, 9, 3))
@@ -222,7 +224,8 @@ T tangent(at: p) meridian
     let kinds: Vec<CKind> = sk.constraints.iter().map(|c| c.kind)
         .filter(|k| k.traced_contact().is_some()).collect();
     for k in [CKind::PointOnTraced, CKind::TracedTangentAt, CKind::TracedSurfaceTangentAt,
-              CKind::TracedNormalAt, CKind::TracedPlaneAt, CKind::TracedCurvatureAt] {
+              CKind::TracedNormalAt, CKind::TracedPlaneAt, CKind::TracedCurvatureAt,
+              CKind::TracedCentreAt] {
         assert!(kinds.contains(&k), "{k:?} in {kinds:?}");
     }
     // the fixed axes' points are free here, so the body's geometry is differentiated too

@@ -72,6 +72,19 @@ component Coil(base: plane, r: Length, pitch: Length, turns: Scalar, w: Length, 
   f := face(sec.a, sec.b, sec.c, sec.d, -> close)
 }
 
+component Facing(base: plane, r: Length, pitch: Length, turns: Scalar, w: Length, h: Length,
+                 s: Scalar) {
+  st := std.OnHelix(base, r: r, pitch: pitch, turns: turns, s: s)
+  sec := Rect(st.n, w: w, h: h)
+  f := face(sec.a, sec.b, sec.c, sec.d, -> close)
+}
+
+component Frenet(g: path, w: Length, h: Length, s: Scalar) {
+  st := std.Frenet(g, s: s)
+  sec := Rect(st.n, w: w, h: h)
+  f := face(sec.a, sec.b, sec.c, sec.d, -> close)
+}
+
 component Rider(g: path, up: axis, w: Length, h: Length, s: Scalar) {
   st := std.On(g, up: up, s: s)
   sec := Rect(st.n, w: w, h: h)
@@ -246,6 +259,68 @@ in std.top {
 }
 box := solid(Box(route, std.z).f over s in (0, 5))");
     near(exact(&e, "box"), 4.0 * (60.0 + 23.0 * PI), 1e-9, "the box round the U");
+}
+
+/// **Frenet's frame along a traced helix is `std.OnHelix`'s** (#363 S5): `std.Frenet` stands its
+/// plane square to the curve with `u` toward the centre of curvature (`g curvature(at: m) c`, no
+/// seed saying which way) and `v` the binormal, so along the helix of `lofts/ribbon.sv` — radius
+/// 12, pitch 6, three turns — a 4 × 0.5 ribbon in it is that example's `facing` solid, corner for
+/// corner (`OnHelix`'s `u` runs out from the axis, the ribbon centred on it either way), at its
+/// area along the helix's length.  And the centre where it stands is the closed form's, the
+/// radius of curvature (r² + b²)/r in from the curve toward the axis.
+#[test]
+fn frenets_frame_along_a_traced_helix_is_on_helixs() {
+    let e = with("
+guide := Helix(o, xl, yl, zl, r: 12mm, pitch: 6mm, turns: 3).p over u in (0, 1)
+frenet := solid(Frenet(guide, w: 4mm, h: 0.5mm).f over s in (0, 1))
+facing := solid(Facing(std.top, r: 12mm, pitch: 6mm, turns: 3, w: 4mm, h: 0.5mm).f
+                over s in (0, 1))
+st := std.Frenet(guide, s: 0.3)");
+    near(exact(&e, "frenet"), 2.0 * 3.0 * (24.0 * PI).hypot(6.0), 1e-9, "the ribbon");
+    same_corners(&e, "frenet", "facing");
+    let at = |n: &str| e.sketch.world_point(e.map.ent_named(n).unwrap().i());
+    let (m, c) = (at("st.m"), at("st.c"));
+    let b = 6.0 / (2.0 * PI);
+    let rho = (144.0 + b * b) / 12.0;
+    let th = 2.0 * PI * 3.0 * 0.3;
+    let want = [12.0 * th.cos() - rho * th.cos(), 12.0 * th.sin() - rho * th.sin(), 5.4];
+    assert!(sub(m, [12.0 * th.cos(), 12.0 * th.sin(), 5.4]).iter().all(|d| d.abs() <= 1e-9));
+    assert!(sub(c, want).iter().all(|d| d.abs() <= 1e-9), "{c:?} against {want:?}");
+}
+
+/// **Frenet's frame is refused where the curve has no curvature**: a traced curve straight up to
+/// a third of its run and bending after it has no centre of curvature there, so the station run
+/// down from the middle loses its rank where the bend ends and is refused at that station, never
+/// followed past it.  And a surface has no one centre at a point.
+#[test]
+fn frenets_frame_is_refused_on_a_straight_run() {
+    let e = build(&format!("{PATHS}
+component Bent(o: point, x: line, y: line, z: line, u: Scalar) {{
+  p := point hint((20 * u, 10 * max(u - 0.3, 0)^3, 0))
+  o distance(20mm * u, along: x) p
+  o distance(10mm * max(u - 0.3, 0)^3, along: y) p
+  o distance(0mm, along: z) p
+}}
+bent := Bent(o, xl, yl, zl).p over u in (0, 1)
+ribbon := solid(Frenet(bent, w: 2mm, h: 0.5mm).f over s in (0, 1))
+"));
+    assert!(e.ok(), "{:?}", e.errors().map(|d| d.message.clone()).collect::<Vec<_>>());
+    let why = e.sketch.exact_solid(index(&e, "ribbon")).err().expect("the ribbon was built");
+    assert!(why.contains("the station at"), "{why}");
+    let said = refusals(&format!("{PATHS}
+component Sheet(o: point, x: line, y: line, z: line, a: Scalar, b: Scalar) {{
+  p := point hint((a, b, 0))
+  o distance(a * 1mm, along: x) p
+  o distance(b * 1mm, along: y) p
+  o distance(0mm, along: z) p
+}}
+F := Sheet(o, xl, yl, zl).p over (a in (-6, 6), b in (-6, 6))
+m := point hint((1, 1, 0))
+m coincident F
+c := point
+F curvature(at: m) c
+"));
+    assert!(said.iter().any(|m| m.contains("no one centre of curvature")), "{said:?}");
 }
 
 /// The 3D pipe of #363 S4: a line 20 long, a quarter bend of R20 in `std.top`, a line 20 long,

@@ -206,6 +206,12 @@ pub enum CKind {
     /// curvature(at: p) k`, three rows, Meusnier from the second derivatives — exact, each a
     /// polarised Taylor series.
     TracedCurvatureAt,
+    /// The centre of curvature of a curve traced in space there (#363 S5): `g curvature(at: m)
+    /// c`, `c` a point — three rows, `c = X + |X′|²·((X′ × X″) × X′)/|X′ × X″|²`, the osculating
+    /// circle's centre, exact as the rest.  Where the curve has no curvature (a straight run, an
+    /// inflection) it has no centre, and the rows lose their rank: Frenet's frame is refused
+    /// there, never followed.
+    TracedCentreAt,
     /// **The tangent at a point already on a spline** (#251), `g tangent(at: m) l`: the line runs
     /// along `C'(t)`, where `t` is the place of the contact holding `m` on the spline — **that
     /// contact's own unknown**, shared rather than a second one (`Sketch::add`, #70's shared
@@ -409,7 +415,7 @@ impl FamilyKernel {
 }
 
 /// Every concrete constraint type, in the order the registry lists them.
-pub const ALL_KINDS: [CKind; 95] = [
+pub const ALL_KINDS: [CKind; 96] = [
     CKind::Coincident,
     CKind::Distance,
     CKind::Midpoint,
@@ -459,6 +465,7 @@ pub const ALL_KINDS: [CKind; 95] = [
     CKind::TracedNormalAt,
     CKind::TracedPlaneAt,
     CKind::TracedCurvatureAt,
+    CKind::TracedCentreAt,
     CKind::Project,
     CKind::Lift,
     CKind::Coincident3,
@@ -741,6 +748,7 @@ impl CKind {
             CKind::TracedNormalAt => "TracedNormalAt",
             CKind::TracedPlaneAt => "TracedPlaneAt",
             CKind::TracedCurvatureAt => "TracedCurvatureAt",
+            CKind::TracedCentreAt => "TracedCentreAt",
             CKind::Project => "Project",
             CKind::AxisOnPlane => "AxisOnPlane",
             CKind::AxisCoincident => "AxisCoincident",
@@ -982,6 +990,9 @@ impl CKind {
             CKind::TracedCurvatureAt => &[
                 ("traced", S::Traced), ("circle", S::CircleOrArc), ("at", S::Point), ("u", S::Param), ("s", S::Param),
             ],
+            CKind::TracedCentreAt => &[
+                ("traced", S::Traced), ("centre", S::Point), ("at", S::Point), ("u", S::Param), ("s", S::Param),
+            ],
             CKind::SplineTangentLine => {
                 &[("spline", S::Spline), ("line", S::Line), ("t", S::Param)]
             }
@@ -1125,7 +1136,8 @@ impl CKind {
             | CKind::TracedSurfaceTangentAt
             | CKind::TracedNormalAt
             | CKind::TracedPlaneAt
-            | CKind::TracedCurvatureAt => Some(Dim::SCALAR),
+            | CKind::TracedCurvatureAt
+            | CKind::TracedCentreAt => Some(Dim::SCALAR),
             _ => None,
         }
     }
@@ -1185,7 +1197,7 @@ impl CKind {
             CKind::PointOnTraced => ("coincident", Infix),
             CKind::TracedTangentAt | CKind::TracedSurfaceTangentAt | CKind::TracedPlaneAt => ("tangent", Infix),
             CKind::TracedNormalAt => ("perpendicular", Infix),
-            CKind::TracedCurvatureAt => ("curvature", Infix),
+            CKind::TracedCurvatureAt | CKind::TracedCentreAt => ("curvature", Infix),
             CKind::EnvelopeTangentAt | CKind::EnvelopePlaneAt => ("tangent", Infix),
             CKind::EnvelopeNormalAt => ("perpendicular", Infix),
             CKind::EnvelopeCurvatureAt => ("curvature", Infix),
@@ -1549,6 +1561,7 @@ impl CKind {
             CKind::TracedNormalAt => Contact::Normal,
             CKind::TracedPlaneAt => Contact::Plane,
             CKind::TracedCurvatureAt => Contact::Curvature,
+            CKind::TracedCentreAt => Contact::Centre,
             _ => return None,
         })
     }
@@ -1640,7 +1653,8 @@ impl CKind {
             | CKind::TracedSurfaceTangentAt
             | CKind::TracedNormalAt
             | CKind::TracedPlaneAt
-            | CKind::TracedCurvatureAt => true,
+            | CKind::TracedCurvatureAt
+            | CKind::TracedCentreAt => true,
             CKind::Coincident
             | CKind::Distance
             | CKind::Midpoint
@@ -1789,7 +1803,8 @@ impl CKind {
             | CKind::TracedSurfaceTangentAt
             | CKind::TracedNormalAt
             | CKind::TracedPlaneAt
-            | CKind::TracedCurvatureAt => {
+            | CKind::TracedCurvatureAt
+            | CKind::TracedCentreAt => {
                 panic!("a traced body's contact's kernel is built at its operands' widths")
             }
             CKind::RegularWithin => {
@@ -1977,6 +1992,7 @@ impl CKind {
             | CKind::TracedNormalAt
             | CKind::TracedPlaneAt
             | CKind::TracedCurvatureAt
+            | CKind::TracedCentreAt
             | CKind::PointAlongLine
             | CKind::PointAlongArc
             | CKind::PointAlongLine3
@@ -2058,6 +2074,7 @@ impl CKind {
                 | CKind::TracedNormalAt
                 | CKind::TracedPlaneAt
                 | CKind::TracedCurvatureAt
+                | CKind::TracedCentreAt
                 | CKind::PointOnAxis
                 | CKind::LineOnAxis
                 | CKind::AxisOnPlane
