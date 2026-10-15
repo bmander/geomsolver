@@ -201,6 +201,14 @@ impl<'a> P<'a> {
             // retired `to` is still recognised here, so `a to k` reaches the chain loop and its
             // migration message rather than a generic refusal.
             if let Some(j) = self.past_ref(self.i) {
+                // `nl perpendicular rate(p over u)`: a rate on the right is read by a relation,
+                // never a link (#339 D2)
+                let k = past_args(&self.t, j);
+                if self.word_at(k) == Some("rate")
+                    && matches!(self.t.get(k + 1).map(|(t, _)| t), Some(Tok::P('(')))
+                {
+                    return false;
+                }
                 if matches!(self.t.get(j).map(|(t, _)| t), Some(Tok::Arrow))
                     || self.word_at(j).is_some_and(|w| joint_word(w) || w == "to")
                 {

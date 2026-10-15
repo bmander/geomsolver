@@ -4,6 +4,21 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.120] Two formals marched by the method of lines.** A body traced over two formals may state a
+rate along either (§6.5): the first is marched, the second sampled at the Gauss–Lobatto nodes of
+32 pieces of its interval, a rate along it the derivative of the quintic through a piece's nodes,
+and `initially { … }` the Cauchy data where the first starts, for every value of the second — a
+first-order PDE, an ellipse's offset front (`rates/front.sv`). The body's points whose rate along
+the first formal a rate row reads are integrated; the rest are placed at every node by the
+relations that read them, exactly as many, and only such a relation or a rate row reads a rate
+along the second formal, of an integrated point. A rate along an `Angle` formal over two is per
+radian. The surface's regularity is checked at every node and step, and a fold — characteristics
+crossing, an undercut's kind — is refused where it happens. A contact on the surface reads its
+point, tangent plane and normal; its curvature is not yet read. A rate written to the right of
+its word, `nl perpendicular rate(p over u)`, parses as the grammar has said since 0.119 (it was
+read as a chain's link). Through 0.119 a body over two formals stating a rate was refused.
+(Issue #339, D4.)
+
 **[0.119] Rates along a running formal, in a traced body.** A traced body may state a condition
 on a rate along the formal it runs over (§6.5), as a face family's station may since 0.116 (§6.9):
 `rate(x over s)`, a point's velocity, is an operand, and stands on either side of a word that reads

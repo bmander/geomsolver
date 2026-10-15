@@ -111,6 +111,7 @@ mod language_pipeline;
 mod laws;
 mod limit_measure;
 mod linalg;
+mod lines;
 mod loft;
 mod loft_examples;
 mod make_component;

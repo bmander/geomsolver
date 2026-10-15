@@ -216,7 +216,7 @@ fn compile_trace(
         }
     }
     let at = low.n_outer + low.n_q + low.w.len();
-    place_rates(low.rates.iter_mut().map(|r| &mut r.cols), at);
+    place_rates(low.rates.iter_mut().map(|r| &mut r.cols), at, low.n_q);
     if !low.rates.is_empty() {
         low.short(span)?;
     }
@@ -256,6 +256,9 @@ pub(super) enum Target {
 /// Where a rate's slots stand while the block is lowered: past every slot, since the derived
 /// values are not all counted yet (`Lowering::place_rates` puts them past `w`).
 pub(super) const RATE_BASE: usize = 1 << 20;
+/// Where a rate along a second, sampled formal stands while a body is lowered (#339 D4): past
+/// every rate along the first.
+pub(super) const SAMPLED_BASE: usize = 1 << 21;
 
 /// A relation that reads a rate, checked (#339 D2): one rate, along the formal the trace runs
 /// over, and not in `initially`.  The relation, the rated operand and whether the rate stands
@@ -335,10 +338,13 @@ pub(super) fn reach<'r>(rows: impl Iterator<Item = (usize, &'r [u32])>, from: us
 }
 
 /// The rates' slots placed at `at`, past every derived value, now that those are counted: each
-/// column at `RATE_BASE` or past it is a rate's.
-pub(super) fn place_rates<'r>(cols: impl Iterator<Item = &'r mut Vec<u32>>, at: usize) {
+/// column at `RATE_BASE` or past it is a rate's, and at `SAMPLED_BASE` or past it a rate along
+/// a second formal's, past the `n_q` along the first (#339 D4).
+pub(super) fn place_rates<'r>(cols: impl Iterator<Item = &'r mut Vec<u32>>, at: usize, n_q: usize) {
     for c in cols.flatten() {
-        if *c as usize >= RATE_BASE {
+        if *c as usize >= SAMPLED_BASE {
+            *c = (at + n_q + *c as usize - SAMPLED_BASE) as u32;
+        } else if *c as usize >= RATE_BASE {
             *c = (at + *c as usize - RATE_BASE) as u32;
         }
     }

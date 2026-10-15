@@ -17,6 +17,7 @@ Read them in this order:
 | `chain.sv` | **A two-point problem is a drawing.** A hanging chain's pulls left as unknowns, shot to its far end through the flow's sensitivities — beside the free curve of the same length, which hangs the same. The catenary. |
 | `pursuit.sv` | **Rates between moving points, and where they stop.** A dog runs at a hare twice as fast; the line between them is the direction, and where it vanishes the curve is refused: the capture. |
 | `geodesic.sv` | **In space, a rank and not a count.** A filament wound on a cone bends only toward the surface's normal; a `parallel` in space is two rows and the cone already implies one. Written in place, set off by `initially`. A straight line unrolled. |
+| `front.sv` | **Two formals: a first-order PDE.** An ellipse's points move inward at unit speed, square to the front — a law and a gauge — marched along how far it has moved, sampled along the ellipse by the method of lines; `initially` is the Cauchy data. The front is the ellipse offset, and where its least radius of curvature runs out it folds and is refused. Issue #339, item D4. |
 
 What the words are:
 
@@ -30,7 +31,11 @@ What the words are:
   sheet a drawn instance is its own home, and the block's relations are ordinary ones.
 - **Enough rows** — the body's other rows and its rate rows must fix every rate: in the plane as
   many rows as it places numbers. One short is refused naming the points it leaves free.
+- **Over two formals** — `over (d in (…), u in (…))`, the first marched and the second sampled at
+  nodes, a rate along either. A rate along the second is read off the nodes, of a point the rates
+  move, in a relation that places a point they do not (the front's normal) or a rate row. Along an
+  angle a rate is per radian.
 
 `solventc` says of each such curve how far it is integrated, or where it is refused. Each file's
 test is in `rust/gcs-core/tests/rate_examples.rs`, its curves against the closed forms in its
-comments.
+comments; `front.sv`'s is `rust/gcs-core/tests/lines.rs`, the method of lines' gate.

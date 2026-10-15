@@ -99,7 +99,7 @@ pub fn n_res(rows: &[Row]) -> usize {
 /// A matrix factorised with its rows scaled to unit length — by LU where it is square, by
 /// Householder QR where it has more rows than unknowns, its rank the index check either way
 /// (`factor`).
-struct Factored {
+pub(crate) struct Factored {
     rows: usize,
     n: usize,
     /// LU (`piv` its swaps), or QR: `R` above the diagonal, the reflectors on and below it, `R`'s
@@ -120,7 +120,7 @@ struct Solved {
 impl Factored {
     /// `M x = b` (`b` as long as `M` has rows), `x` into `b[..n]`: for more rows, the least
     /// squares solution, which is the solution of a system that holds.
-    fn solve(&self, b: &mut [f64]) {
+    pub(crate) fn solve(&self, b: &mut [f64]) {
         let (r, n) = (self.rows, self.n);
         for (x, s) in b.iter_mut().zip(&self.scale) {
             *x *= s;
@@ -719,7 +719,7 @@ impl<'a> Body<'a> {
 
 /// `M` (`rows × n`, `rows ≥ n`) factorised with each row scaled to unit length — `None`
 /// where it has lost rank: the index check.  A row that is all zero says nothing, and is left so.
-fn factor(rows: usize, n: usize, mut m: Vec<f64>) -> Option<Factored> {
+pub(crate) fn factor(rows: usize, n: usize, mut m: Vec<f64>) -> Option<Factored> {
     if rows < n {
         return None;
     }

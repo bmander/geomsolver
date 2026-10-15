@@ -399,6 +399,12 @@ fn traced_contact(cx: &Elab<'_>, kind: CKind, args: &mut [CArg], left_out: &mut 
             return Err(format!("`{}` is a curve in space, which has a tangent at a point and no \
                 normal or curvature this relation reads: a surface has them", t.name));
         }
+        // a marched surface's curvature reads its second derivatives, whose Jacobian is a third
+        // order the march does not carry (#339 D4)
+        CKind::TracedCurvatureAt if t.body.states_rate() => {
+            return Err(format!("`{}` is marched by the method of lines, and its curvature is not \
+                yet read: its point, its tangent plane and its normal are", t.name));
+        }
         k => k,
     };
     if !surface {

@@ -991,6 +991,12 @@ pub fn traced_text(sk: &Sketch, i: usize) -> String {
         let said = reach_text(reach, t.home[0], (lo, hi));
         return format!("{}: a curve traced in space, {said}", t.name);
     }
+    // over two formals, marched along the first by the method of lines (#339 D4)
+    if let Some(reach) = crate::traced::lines_reach(sk, i) {
+        let [lo, hi] = t.domain[0];
+        return format!("{}: a surface traced in space, {}", t.name,
+                       lines_text(reach, t.home[0], (lo, hi)));
+    }
     let what = if t.formals() == 2 { "a surface" } else { "a curve" };
     let k = crate::traced::consts_of(t);
     let theta = crate::traced::theta(sk, t);
@@ -1036,6 +1042,39 @@ pub fn rates_text(sk: &Sketch, i: usize) -> Option<String> {
     let home = sk.curve_home(i);
     let reach = crate::locus::rate_reach(&l.flat, &sk.curve_vars(i, home), home, cv.domain)?;
     Some(reach_text(reach, home, cv.domain))
+}
+
+/// How far a surface's march reached each way from `home` across `domain` (#339 D4), in the
+/// CLI's words: where it is refused, why — its rates lost rank at a node, or the surface folds
+/// there — and at which node along the sampled formal.
+fn lines_text(reach: [crate::lines::Reached; 2], home: f64, domain: (f64, f64)) -> String {
+    use crate::lines::Why;
+    let num = |v: f64| crate::io::reading(SpecKind::Scalar, v);
+    let mut out = format!("marched from its home at {}", num(home));
+    for r in reach {
+        match r {
+            Ok(()) => {}
+            Err(None) => return format!("not marched: its home at {} is not to be had, or is \
+                not regular", num(home)),
+            Err(Some((refusal, why))) => {
+                let at = num(refusal.at());
+                out += &match why {
+                    Why::Fold { sigma } => format!(", refused at {at}: it folds there, near {} \
+                        along its second formal", num(sigma)),
+                    Why::Rank { sigma } if sigma.is_finite() => format!(", refused at {at}: its \
+                        rates lose rank there, near {} along its second formal", num(sigma)),
+                    Why::Rank { .. } => format!(", refused at {at}: its rates lose rank there"),
+                    Why::Steps => format!(", refused at {at}: the march ran past its bound of \
+                        steps (stiff, or near where it folds)"),
+                };
+            }
+        }
+    }
+    let (a, b) = domain;
+    if !out.contains("refused") {
+        out += &format!(" across ({}, {})", num(a), num(b));
+    }
+    out
 }
 
 /// How far a march reached each way from `home` across `domain`, in the CLI's words.

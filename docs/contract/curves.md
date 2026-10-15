@@ -1,7 +1,7 @@
 # Curves
 
 Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you touch `curve.rs`,
-`locus.rs`, `tape.rs`, `variational.rs`, `extremal.rs`, `ode.rs`, `rates.rs`. An issue number (#n) or a spec version
+`locus.rs`, `tape.rs`, `variational.rs`, `extremal.rs`, `ode.rs`, `rates.rs`, `lines.rs`. An issue number (#n) or a spec version
 ([0.n], see the [language changelog](../solvent-changelog.md)) says where a rule came from.
 
 **Variational curves (§9.10, §6.1, 0.53–0.59, #121, #144, #149, `variational.rs`, `extremal.rs`):**
@@ -88,6 +88,12 @@ of the span) and the march stops at the last place it reached (`Undefined`), and
 against it, the formal threaded through the substeps, the order `2k + 1` of one step with `k`
 columns measured by halving on an entire flow, `Φ` against differences of one step and of a
 march, a seed of fewer columns, dense output forwards and back, a carried branch, and refusals.
+For a wide state (#339 D4): the branch is any `Clone` value (a method of lines' is one per node);
+`Rate::along` gives `f` and `(∂f/∂y) Φ` read along `Φ`'s columns, never forming `∂f/∂y` (`None`,
+the default, forms it, and only then is `Work::jac` sized); `march_until` keeps the road a refused
+march took (`march` is it, refusing); `step_within` / `Path::at_within` is a dense output's step
+stopping at the first column past the second within the tolerance — the march's own steps keep
+every column.
 
 **Rates along a running formal (#339 D2, [0.119], `rates.rs`):** a traced body may state
 relations that read a rate (`rate(p over s)`, `syntax::RateOf` on a `Written`; language.md says
@@ -149,6 +155,63 @@ and written in place, a clothoid transition into its osculating bend, a chain sh
 beside the free curve, a pursuit refused at its capture, a geodesic on a cone in space — each curve
 at the closed form its comments give and each claim a theorem, held by `tests/rate_examples.rs`;
 the app lists the folder as one project (`example-catalog.ts`, *Rates*).
+
+**The method of lines (#339 D4, [0.120], `lines.rs`):** a body traced over two formals (§6.5's
+surface, `traced.rs`) may state a rate along either.  The first is **marched**, the second
+**sampled**: its interval cut into `Body::pieces` equal pieces (`lines::PIECES`, 32, encoded in
+the body's header) of the six Gauss–Lobatto nodes of #243 L2's walls (`brep::family::NODES`), a
+joint node shared by the two pieces it ends, a whole turn of an `Angle` whose two ends' Cauchy
+data meet **closed** (`Grid`, its last node its first); a rate along it is the derivative of the
+quintic through a piece's nodes, at a joint the mean of the two pieces' (`Grid::derive`), and
+between nodes the surface is that quintic (`Grid::at`: a place past an open end reads the end
+piece's, a closed one wraps).  A rate along an `Angle` is per radian (`Body::per`, `180/π` on the
+formal's degrees; over one formal still refused).  The variable table at a node is `[d, u, θ,
+values] ++ q ++ w ++ q_d ++ q_u` (`traced.rs`'s header sixteen wide: the second interval, the
+two `per`s, the pieces; the `q_u` slots lowered at `curves::SAMPLED_BASE`, placed past `q_d` by
+`place_rates`).  **The split** (`Body::plan`, D0's finding 3): the coordinates whose rate along
+the marched formal a rate row reads are **moved** (`I`), the state, integrated; the rest are
+**placed** (`A`), solved at each node at each evaluation by Newton from the branch (the rows that
+read an `A` coordinate, square in `A`, judged by their residual), given `I` and its rates along
+the sampled formal — so a row reading `q_u` must read an `A` coordinate or be a rate row (one
+over `I` alone, differentiated along the marched formal, would tie a piece's nodes), a `q_u` is of
+a moved point, `initially` reads `I` alone, and the traced point is moved; `program::traced`'s
+`Lowering::marched` refuses each naming the point, and `curves::short` over `I` names a missing
+gauge's freedom.  **The rates at a node** are `rates.rs`'s system over `I` — the rows over `I`
+differentiated (`per·∂r/∂d`) and the rate rows, by Newton from the branch, stopping where a step
+is within `1e-8` of the rates (quadratic: the next is at rounding), `factor`'s unit rows and rank
+— and a rate row's space `parallel` reads its two directions **across the line it holds the rate
+to, as it stands at that node** (`Body::across`; stated once across a line of no length in the
+scratch sketch they lose rank wherever the line turns square to them, and at a solution the
+frame's own derivative multiplies a cross product that vanishes).  **The home** is
+`initially` and the rows over `I`, Gauss–Newton at each node (least squares where they are more),
+their sensitivity by the implicit function theorem; then `A` from its seeds.  The state is `[Q_I
+node-major, θ]`; the flow (`ode::Rate`, branch every node's `A` and rates) is read **along `Φ`**
+(`Rate::along`): each column a directional derivative at every node over the node's first-order
+picture (`Lin`, made once a node where a derivative is asked: the placed rows' and the rate rows'
+Jacobians over the whole table, the tapes' derivatives, `∂r/∂A` and `M` factorised at the root),
+`δA` by the implicit function theorem, the rows over `I` by polarisation over jets — exact, and
+banded by piece without a matrix formed.  **Regularity** at every node at every evaluation:
+where `|x_d × x_u|` of the traced point falls below `FOLD` (1e-2) of the node's at the home the
+march is refused there (`Why::Fold`, the node's place; `Why::Rank` where a node's rows will not
+hold or its rates lose rank).  A march (`Body::march`, `ode::march_until`) keeps its road when
+refused; marches are remembered by content (`lines::remembered`, sensitivities or not), the state
+at each place read memoised in the march (`March::states`, `Path::at_within`), so every place
+along the sampled formal at one marched place is one step.  **A reading** (`Body::read`, through
+`traced::read` → `lines_read`) is the frame — `x`, `x_d`, `x_u` and, for a curvature, `x_dd` (the
+rate's derivative along the flow), `x_du`, `x_uu` — and its derivatives in the place and every
+`θ` column (`x_θ` from `Φ`, `x_dθ` the variational rate, `x_uθ` the quintic's of `Φ`); a
+curvature's Jacobian (a third order) is not read, so `relations::traced_contact` refuses a
+curvature contact on a marched surface.  `traced::nearest` remembers its last answer (each place
+slot of a contact seeds alike).  **A march is held to the march on twice the pieces**
+(`lines::check`, `traced::lines_check`: D0's decision 4 — the discretisation's spurious modes
+grow faster than the surface, and there is no solve between nodes to check against).
+`report::traced_text` says how far a marched surface is integrated, or where it is refused, why
+and at which node.  `tests/lines.rs` is the gate: the offset front of an ellipse
+(`rust/examples/rates/front.sv`) against `E(u) + d·n(u)` and both derivatives at every place read,
+its convergence in the pieces (fifth order) and the check against twice them bounding the error,
+its fold refused short of `b²/a` and nearer it on twice the pieces, a contact's place found and its
+Jacobian (the variational equations) against central differences, a whole turn closed, and every
+refusal of the split.
 
 - A parametric curve (`curve.rs`) is *linear in its control points*, `C(t) = Σ Bᵢ(t) Pᵢ` (every
   B-spline).  A contact carries its own curve parameter as a `Param` slot and says
@@ -357,4 +420,5 @@ the app lists the folder as one project (`example-catalog.ts`, *Rates*).
   surface type; and the variable table puts the running formals first and reads the body along
   any direction of them, so a body that reads a rate along one (#339 D2, D4: the drawn instance an
   initial value, the march by the method of lines over the other) is one more column of the same
-  table and one more order of the same series.
+  table and one more order of the same series.  Over two formals such a body is `lines.rs`'s
+  (above), read through the same `traced::read`, its contacts the same kernels.

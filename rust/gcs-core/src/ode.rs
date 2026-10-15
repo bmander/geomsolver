@@ -27,8 +27,9 @@ use crate::fmath::Det;
 /// A flow `y' = f(u, y)`, and what it carries from one evaluation to the next.
 pub trait Rate {
     /// The branch the rate follows (`()` for one that follows none): where it last found the
-    /// root of a condition it solves, which the next evaluation starts from.
-    type Branch: Copy;
+    /// root of a condition it solves, which the next evaluation starts from.  A value, cloned
+    /// where a step starts and kept with each node: a method of lines' is one per node (#339 D4).
+    type Branch: Clone;
 
     /// The state's width.
     fn width(&self) -> usize;
@@ -37,6 +38,16 @@ pub trait Rate {
     /// (`width × width`, row-major) — from the branch as it stands, which it moves to where
     /// this evaluation found it.  `false` where the rate cannot be had.
     fn rate(&mut self, u: f64, y: &[f64], f: &mut [f64], jac: Option<&mut [f64]>) -> bool;
+
+    /// `f(u, y)` into `f` and the variational equations' rate `(∂f/∂y) Φ` into `dphi` (`width ×
+    /// m`, row-major, as `phi`), read along `Φ`'s columns without forming `∂f/∂y` — for a state
+    /// whose Jacobian is wide and sparse (#339 D4: a method of lines' couples only a piece's
+    /// nodes).  `None` where the rate forms its Jacobian instead (`rate`'s `jac`), the default;
+    /// `Some(false)` where the rate cannot be had.
+    fn along(&mut self, _u: f64, _y: &[f64], _phi: &[f64], _m: usize, _f: &mut [f64],
+             _dphi: &mut [f64]) -> Option<bool> {
+        None
+    }
 
     fn branch(&self) -> Self::Branch;
 
@@ -133,7 +144,8 @@ impl Work {
             n,
             m,
             columns,
-            jac: vec![0.0; if m > 0 { n * n } else { 0 }],
+            // formed where the rate asks for it (`augmented`): a rate read along `Φ` never does
+            jac: Vec::new(),
             f0: vec![0.0; len],
             f: vec![0.0; len],
             prev: vec![0.0; len],
@@ -154,7 +166,7 @@ fn augmented<R: Rate>(
     rate: &mut R,
     n: usize,
     m: usize,
-    jac: &mut [f64],
+    jac: &mut Vec<f64>,
     u: f64,
     y: &[f64],
     out: &mut [f64],
@@ -162,7 +174,16 @@ fn augmented<R: Rate>(
     if m == 0 {
         return rate.rate(u, &y[..n], &mut out[..n], None);
     }
-    if !rate.rate(u, &y[..n], &mut out[..n], Some(jac)) {
+    {
+        let (f, dphi) = out[..n + n * m].split_at_mut(n);
+        if let Some(ok) = rate.along(u, &y[..n], &y[n..n + n * m], m, f, dphi) {
+            return ok;
+        }
+    }
+    if jac.len() != n * n {
+        jac.resize(n * n, 0.0);
+    }
+    if !rate.rate(u, &y[..n], &mut out[..n], Some(&mut jac[..])) {
         return false;
     }
     let (phi, out) = (&y[n..n + n * m], &mut out[n..n + n * m]);
@@ -209,7 +230,7 @@ fn rows(n: usize, m: usize, jac: &[f64], phi: &[f64], out: &mut [f64]) {
 fn midpoint<R: Rate>(
     rate: &mut R,
     w: &mut Work,
-    b0: R::Branch,
+    b0: &R::Branch,
     u0: f64,
     y0: &[f64],
     h: f64,
@@ -217,7 +238,7 @@ fn midpoint<R: Rate>(
 ) -> bool {
     let (n, m, len) = (w.n, w.m, w.len());
     let hs = h / substeps as f64;
-    rate.set_branch(b0);
+    rate.set_branch(b0.clone());
     w.prev[..len].copy_from_slice(&y0[..len]);
     for ((c, &y), &f) in w.cur[..len].iter_mut().zip(&y0[..len]).zip(&w.f0[..len]) {
         *c = y + hs * f;
@@ -255,7 +276,7 @@ pub fn step<R: Rate>(
     }
     let b0 = rate.branch();
     for (j, &substeps) in STEPS[..k].iter().enumerate() {
-        if !midpoint(rate, w, b0, u0, y0, h, substeps) {
+        if !midpoint(rate, w, &b0, u0, y0, h, substeps) {
             return None;
         }
         w.row[..len].copy_from_slice(&w.cur[..len]);
@@ -273,6 +294,55 @@ pub fn step<R: Rate>(
     let (best, next) = (&w.last[(k - 1) * len..k * len], &w.last[(k - 2) * len..(k - 1) * len]);
     let err = (0..n).map(|i| (best[i] - next[i]).abs() / scale[i]).fold(0.0, f64::max);
     out[..len].copy_from_slice(best);
+    out[..len].iter().all(|v| v.is_finite()).then_some(err)
+}
+
+/// `step`, stopping at the first column past the second whose difference from the one before is
+/// within `tol` of `scale` (#339 D4): a step shorter than the march's — a dense output's — meets
+/// its tolerance in fewer columns, and a wide state pays for every one.  Its error estimate is
+/// that difference; the result the exact derivative of the step taken, as `step`'s is.
+pub fn step_within<R: Rate>(
+    rate: &mut R,
+    w: &mut Work,
+    u0: f64,
+    y0: &[f64],
+    h: f64,
+    scale: &[f64],
+    tol: f64,
+    out: &mut [f64],
+) -> Option<f64> {
+    let (n, m, len, k) = (w.n, w.m, w.len(), w.columns);
+    if !augmented(rate, n, m, &mut w.jac, u0, y0, &mut w.f0) {
+        return None;
+    }
+    let b0 = rate.branch();
+    let mut err = f64::INFINITY;
+    let mut taken = 0;
+    for (j, &substeps) in STEPS[..k].iter().enumerate() {
+        if !midpoint(rate, w, &b0, u0, y0, h, substeps) {
+            return None;
+        }
+        w.row[..len].copy_from_slice(&w.cur[..len]);
+        for c in 1..=j {
+            let q = substeps as f64 / STEPS[j - c] as f64;
+            let r = q * q - 1.0;
+            let (done, row) = w.row.split_at_mut(c * len);
+            let (a, b) = (&done[(c - 1) * len..], &w.last[(c - 1) * len..c * len]);
+            for ((o, &a), &b) in row[..len].iter_mut().zip(a).zip(b) {
+                *o = a + (a - b) / r;
+            }
+        }
+        w.last[..(j + 1) * len].copy_from_slice(&w.row[..(j + 1) * len]);
+        taken = j + 1;
+        if j >= 2 {
+            let (best, next) = (&w.last[j * len..(j + 1) * len], &w.last[(j - 1) * len..j * len]);
+            err = (0..n).map(|i| (best[i] - next[i]).abs() / scale[i]).fold(0.0, f64::max);
+            if err <= tol {
+                break;
+            }
+        }
+    }
+    out[..len].copy_from_slice(&w.last[(taken - 1) * len..taken * len]);
     out[..len].iter().all(|v| v.is_finite()).then_some(err)
 }
 
@@ -316,11 +386,29 @@ pub fn march<R: Rate>(
     scale: &[f64],
     settings: &Settings,
 ) -> Result<Path<R::Branch>, Refusal> {
+    match march_until(rate, u0, y0, m, span, scale, settings) {
+        (path, None) => Ok(path),
+        (_, Some(refusal)) => Err(refusal),
+    }
+}
+
+/// `march`, keeping the road a refused march took (#339 D4): the path as far as it reached, and
+/// the refusal — the last node is where it stopped — so a march refused part way need not be
+/// made again to be read up to there.
+pub fn march_until<R: Rate>(
+    rate: &mut R,
+    u0: f64,
+    y0: &[f64],
+    m: usize,
+    span: f64,
+    scale: &[f64],
+    settings: &Settings,
+) -> (Path<R::Branch>, Option<Refusal>) {
     let n = rate.width();
     let mut w = Work::new(n, m, settings);
     let len = w.len();
     let mut branch = rate.branch();
-    let mut nodes = vec![Node { u: u0, y: y0[..len].to_vec(), branch }];
+    let mut nodes = vec![Node { u: u0, y: y0[..len].to_vec(), branch: branch.clone() }];
     let (total, dir) = (span.abs(), if span < 0.0 { -1.0 } else { 1.0 });
     let mut y = y0[..len].to_vec();
     let mut out = vec![0.0; len];
@@ -330,11 +418,12 @@ pub fn march<R: Rate>(
     while done < total {
         let here = u0 + dir * done;
         if taken >= settings.steps_max {
-            return Err(Refusal::Steps { at: here });
+            return (Path { n, m, scale: scale.to_vec(), settings: *settings, nodes },
+                    Some(Refusal::Steps { at: here }));
         }
         let last = total - done <= h * (1.0 + 1e-12);
         let hh = if last { total - done } else { h };
-        rate.set_branch(branch);
+        rate.set_branch(branch.clone());
         let err = step(rate, &mut w, here, &y, dir * hh, scale, &mut out);
         taken += 1;
         let floor = hh <= total * 1e-12;
@@ -342,7 +431,8 @@ pub fn march<R: Rate>(
             // the rate is not to be had somewhere in the step: closer, until the step is at the
             // floor and the place is found
             if floor {
-                return Err(Refusal::Undefined { at: here });
+                return (Path { n, m, scale: scale.to_vec(), settings: *settings, nodes },
+                        Some(Refusal::Undefined { at: here }));
             }
             h = hh * 0.25;
             continue;
@@ -352,16 +442,42 @@ pub fn march<R: Rate>(
             branch = rate.branch();
             std::mem::swap(&mut y, &mut out);
             let u = if last { u0 + span } else { u0 + dir * done };
-            nodes.push(Node { u, y: y.clone(), branch });
+            nodes.push(Node { u, y: y.clone(), branch: branch.clone() });
             h = settings.next_h(hh, err);
         } else {
             h = settings.next_h(hh, err).min(hh * 0.5);
         }
     }
-    Ok(Path { n, m, scale: scale.to_vec(), settings: *settings, nodes })
+    (Path { n, m, scale: scale.to_vec(), settings: *settings, nodes }, None)
 }
 
-impl<B: Copy> Path<B> {
+impl<B: Clone> Path<B> {
+    /// `at`, its one step order-adaptive (`step_within`): within the march's tolerance in as few
+    /// columns as reach it (#339 D4).
+    pub fn at_within<R: Rate<Branch = B>>(
+        &self,
+        rate: &mut R,
+        u: f64,
+        sens: bool,
+    ) -> Result<Node<B>, Refusal> {
+        let dir = self.dir();
+        let i = self.nodes.partition_point(|nd| dir * (nd.u - u) <= 0.0).saturating_sub(1);
+        let nd = &self.nodes[i];
+        let m = if sens { self.m } else { 0 };
+        let len = self.n * (1 + m);
+        let h = u - nd.u;
+        if dir * h <= 0.0 {
+            return Ok(Node { u: nd.u, y: nd.y[..len].to_vec(), branch: nd.branch.clone() });
+        }
+        let mut w = Work::new(self.n, m, &self.settings);
+        let mut out = vec![0.0; len];
+        rate.set_branch(nd.branch.clone());
+        step_within(rate, &mut w, nd.u, &nd.y[..len], h, &self.scale, self.settings.tol, &mut out)
+            .filter(|&e| e <= self.settings.tol)
+            .ok_or(Refusal::Undefined { at: nd.u })?;
+        Ok(Node { u, y: out, branch: rate.branch() })
+    }
+
     /// Which way the march ran: `1` forwards, `-1` backwards (`1` for a march of no span).
     fn dir(&self) -> f64 {
         match self.nodes.last() {
@@ -386,11 +502,11 @@ impl<B: Copy> Path<B> {
         let len = self.n * (1 + m);
         let h = u - nd.u;
         if dir * h <= 0.0 {
-            return Ok(Node { u: nd.u, y: nd.y[..len].to_vec(), branch: nd.branch });
+            return Ok(Node { u: nd.u, y: nd.y[..len].to_vec(), branch: nd.branch.clone() });
         }
         let mut w = Work::new(self.n, m, &self.settings);
         let mut out = vec![0.0; len];
-        rate.set_branch(nd.branch);
+        rate.set_branch(nd.branch.clone());
         step(rate, &mut w, nd.u, &nd.y[..len], h, &self.scale, &mut out)
             .ok_or(Refusal::Undefined { at: nd.u })?;
         Ok(Node { u, y: out, branch: rate.branch() })

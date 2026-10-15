@@ -377,3 +377,70 @@ of how each was first written.
 6. **Not yet read:** a rate along an `Angle` formal (the formal's number is degrees; D3 decides the
    unit), along a second formal (D4), of a direction (D3's `rate(f.u over s)`), and `relative_to:`
    (D5).
+
+## D4: two formals and the method of lines (2026-10-15)
+
+**Landed:** a body traced over two formals that states a rate along either, marched along the
+first by the method of lines (0.120, §6.5; `lines.rs`), and the gate `tests/lines.rs` on an
+ellipse's offset front, [`rust/examples/rates/front.sv`](../../rust/examples/rates/front.sv).
+The rule is `docs/contract/curves.md` ("The method of lines").
+
+### What landed
+
+- **The spelling is D0's**, in today's spatial body: `rate(p over d)` and `rate(p over u)` in
+  one body, `initially { … }` as the Cauchy data, `over (d in (…), u in (…))`, the first marched.
+  D0's `offset_front.sv` itself does not run: it reads `right` and `up` and a directed `angle` as a
+  plane does, and a body over two formals is traced in space, so `front.sv` gives the ellipse its
+  axes as lines and draws the normal in its plane and square to `rate(p over u)`.
+- **The representation is decision 4's**: 32 pieces of six Gauss–Lobatto nodes, joints by the
+  mean, a whole turn whose ends meet closed. A rate along an `Angle` formal is per radian.
+- **Solve what the rows place; integrate what the rates move** — D0's finding 3, which D2 set
+  aside for one formal. Over two it is structural: a row reading a rate along the sampled formal,
+  differentiated along the marched one, ties every node of a piece, so such a row must place a
+  point the rates do not move (the normal's end `k`), solved at each node from where it was. The
+  state is the moved points alone, and nothing couples two nodes but the derivative along `u`:
+  the flow's Jacobian is banded by piece and never formed (`ode::Rate::along`).
+- **Exact derivatives.** Each column of the variational equations is a directional derivative at
+  every node over the node's first-order picture: `δA` by the implicit function theorem, the rows
+  over the moved points by polarisation, the rate rows' first order. A contact's point, tangent
+  plane and normal are exact in the place and the geometry; its curvature (a third order) is
+  refused.
+- **The fold is refused where it happens**: a node's area `|x_d × x_u|` under a hundredth of its
+  home's.
+
+### The gate, `tests/lines.rs`
+
+| item | result |
+|---|---|
+| the front against `E(u) + d·n(u)`, 32 pieces, 241 places at each d | point 3e-12 / 7.7e-9 / 5.1e-8 / 2.6e-7 / 2.0e-6 at d = 0 / 3 / 6 / 9 / 12; `x_d` 1.3e-10 … 1.7e-6; `x_u` 2.8e-11 … 1.8e-5 a degree |
+| convergence in the pieces, the worst of 121 places | 8 / 16 / 32 / 64 pieces: 5.1e-5 / 1.3e-6 / 4.4e-8 / 1.7e-9 at d = 6, 1.6e-3 / 6.2e-5 / 1.6e-6 / 6.1e-8 at d = 12: fifth order, as D0's (the gate holds 8 to 32) |
+| held to twice the pieces (`lines::check`) | 16 against 32: 8.8e-5, its error 6.2e-5; 32 against 64: 2.0e-6, its error 1.6e-6 |
+| the fold (b²/a = 15.625; a hundredth of the area at 15.47) | refused at u = 0 at 14.66 / 15.11 / 15.35 on 16 / 32 / 64 pieces; read at 15, not at 15.5 |
+| a point held at the closed form's (9, −25°) | its place found to 1e-7; the contact's and a normal's Jacobians, through the variational equations, against central differences |
+| the whole ellipse, u in (0°, 360°) | closed; the same a turn on, to rounding; 1.5e-5 at d = 6 on its 32 pieces, three times the arc's length |
+| refusals | a front without its gauge names `p`'s freedom; a rate along `u` of a placed point; one read by a row over moved points alone; `initially` placing `k`; two rates along `d`; a rate along a third formal; one along `u` with none along `d`; a curvature contact |
+
+### Findings, for D5
+
+1. **A space `parallel` in a rate row is read across its line at every node.** Its two rows carry
+   directions across one line, stated where the relation is — in a traced body's scratch sketch,
+   across a line of no length — and they lose rank wherever the line turns square to them: the
+   front's normal does, in its plane. Read across the held line as it stands at each node they
+   vanish exactly where the cross product does, so their own derivative, which multiplies it, is
+   nothing at a solution. D2's one-formal integrator still states them once; its geodesic is
+   generic enough not to care, and a body whose held line turns through the frame would.
+2. **Cost.** A march of the front to 15 on 32 pieces (161 nodes, 483 states) is 11 steps and
+   about 800 evaluations, 0.75 s; with its sensitivities to 12 columns 2.5 s.
+   A node evaluation is about 6 µs, half of it the placed points' Newton (about three iterations:
+   a substep starts them 0.1–0.7 mm off). A dense output is order-adaptive (`Path::at_within`),
+   and each marched place read is one step, memoised in the march: seeding two contacts by their
+   nearest place took 10 s before both, 1.3 s after.
+3. **Resolution is per length, not per count.** 32 pieces over the whole ellipse are three times
+   as long as over the arc, and the error at d = 6 is 1.5e-5 against 4.4e-8. D5's contact lines are
+   short and regular (no fold within the blank), but a count chosen by the interval's features,
+   or doubled until the check holds, may be worth its cost there.
+4. **The traced point must be moved.** D5's pinion flank is `X`, carried by the pinion's turn from
+   the contact `x` — a placed point. Reading a placed point's derivatives along the march (its rate
+   by the implicit function theorem along the flow, its sensitivities the same) is D5's to add.
+5. **Not yet read:** `relative_to:` on a rate (D5), and a curvature contact on a marched surface.
+
