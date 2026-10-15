@@ -609,6 +609,25 @@ component OnHelix(base: plane, r: Length, pitch: Length, turns: Scalar, s: Scala
   n := plane(u: out, v: lean)
 }
 
+// The rotation-minimising frame of a station (#339 D3, #243 L9): the plane `f` through `n`'s
+// origin, square to the path as `n` is, whose axes turn only as the path makes them — `f.u`'s
+// rate has no part along `f.v` (with both unit and square to the path, U′ ∥ T).  It is integrated
+// along the running number from where its family stands drawn, its home, where `f.u` is square to
+// `up` and `f.v` leans toward it; give it the family's running number as `s`.  Over a guide in
+// one plane, with `up` that plane's normal, it is `On`'s frame; along a twisted path it turns
+// against the path's Frenet frame at the path's torsion, where `OnHelix`'s turns with it.
+component Minimal(n: plane, up: axis, s: Scalar) {
+  f := plane(u: hint(dir: up, turn: -90deg, about: n.normal), v: hint(dir: up))
+  f.origin coincident n.origin
+  f.u perpendicular n.normal
+  f.v perpendicular n.normal
+  f.u perpendicular f.v
+  rate(f.u over s) perpendicular f.v
+  initially {
+    f.u perpendicular up
+  }
+}
+
 // A station with no guide (#243 L7): the plane through the places at `s` on three rails — a loft
 // that joins its sections in space directly.  Each rail runs through one corner of every
 // section: a chain of lines, one a link a pair of neighbouring sections (the ruled loft, a family

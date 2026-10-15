@@ -109,6 +109,22 @@ The parser refuses `as` and a trailing joint; the measured-bound sniff skips a s
 opener word starts. `commit_seeds` writes into a root `when`'s body. The hypoid's tip relief is
 one (`hypoid.sv`). `tests/when.rs` is the gate.
 
+**`rate(x over s)` and `initially { … }` (§6.9 [0.115], #339 D3):** both reserved
+(`syntax::words::OPENERS`).  `rate(` opens a relation (`parser::relations::rate_relation`): a
+reference, `over`, the formal's name, then `perpendicular` or `parallel` (any other word a syntax
+error) and the other operand; `syntax::Relation::rate` holds the formal, the rated thing is the
+first operand.  The flattener settles the formal in `settle_relation` (`Walk::rate_over`): given
+a face family's running number, or a nonzero multiple of it, the relation is along that held
+name; given a number it is a drawn instance at its home and the relation is dropped; anything
+else is E040.  It passes no plane membership (`drawn_incidences`, `planes::incidences`) and lowers
+to `ir::Relation::rate`; `program::relations::rate_row` keeps it in `Sketch::rates` (E040 a rate
+of anything but an axis or a point, or against anything but an axis, a line or a plane) and
+states no constraint.  `initially { … }` is hoisted as an `in` body is
+(`parser::statements::initially`), each relation in it, through a `when`, marked
+`Relation::initially` (anything else in it a syntax error); a defined word's body takes the flag
+as it takes `claim`, and it reaches `Constraint::initially`.  What they mean is
+[solids.md](solids.md)'s.  `tests/rates.rs` is the gate.
+
 **`when` is the one conditional (0.91, #267).** Two names that are not numbers compare by
 **identity**: `a == b`/`a != b` (`Cond::Cmp` over two `Ast::Var`, a side not in `vals`) holds as
 `Walk::stands_for` resolves them — the absolute name through every alias, so a formal is what

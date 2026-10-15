@@ -1498,6 +1498,11 @@ pub struct Relation {
     /// space, so the relation is the one in space wherever its operands are drawn
     /// (`program::reading::in_space`).
     pub space: bool,
+    /// Written inside `initially { … }` (#339 D3): a row of a family's home alone.
+    pub initially: bool,
+    /// `rate(x over s) word y` (#339 D3): the formal the rate runs over, its first operand the
+    /// thing whose rate it is.  The flattener writes the running number it names in its place.
+    pub rate: Option<Name>,
 }
 
 impl Relation {
@@ -1514,6 +1519,8 @@ impl Relation {
             word: None,
             along: None,
             space: false,
+            initially: false,
+            rate: None,
         }
     }
 }

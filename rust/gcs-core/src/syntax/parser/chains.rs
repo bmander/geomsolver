@@ -830,6 +830,8 @@ impl<'a> P<'a> {
                 word: None,
                 along: None,
                 space: false,
+                initially: false,
+                rate: None,
             };
             let id = self.mint_stmt(next_id, sp)?;
             out.push(Stmt {
@@ -1100,6 +1102,8 @@ impl<'a> P<'a> {
                 word: None,
                 along: None,
                 space: false,
+                initially: false,
+                rate: None,
             })
         };
         let end = |w: &str| {

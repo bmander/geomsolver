@@ -1295,7 +1295,16 @@ k := Par(o).p over u in (-2mm, 2mm)
   by `sec := std.Similar(prof, from, to, st.n, l, r)` — `from` and `to` carried to the station's
   points `l` and `r` where two rails cross it, the profile turned and scaled with them — or by
   `std.Affine(prof, from, to, third, st.n, a, b, c)` on three (`docs/lofts/l0/two_faces.sv`,
-  `rust/gcs-core/tests/correspondence.rs`). A component is closed over its arguments, so the station's `up` (`std.z`) is passed in as an
+  `rust/gcs-core/tests/correspondence.rs`). **A frame that does not twist** (0.115): along a
+  path that leaves its plane (a helix), `st := std.OnHelix(…)` turns with the path's Frenet frame;
+  `rm := std.Minimal(st.n, up: base.normal, s: s)` is the plane through the same place square to
+  the path whose axes turn only as the path makes them, so draw the section `in rm.f`. It states
+  its turn as a **rate**, `rate(f.u over s) perpendicular f.v`, and what holds where the family is
+  drawn (the middle of the interval) in `initially { f.u perpendicular up }`; the family
+  integrates it from there both ways (`rust/gcs-core/tests/rates.rs`). A rate is of an axis or a
+  point, against an axis, a line or a plane, by `perpendicular` or `parallel`, and names the
+  formal it runs over; give a word that states one the family's running number as that formal.
+  A component is closed over its arguments, so the station's `up` (`std.z`) is passed in as an
   `axis` formal. Every station inside the interval must solve to DOF 0 with the section's shape
   intact; an end may shrink to a point (a pyramid's apex). Caps `start` and `end`, walls named by
   the section's edges (`body.sec.ab`). Seed the section where it belongs at the middle of the

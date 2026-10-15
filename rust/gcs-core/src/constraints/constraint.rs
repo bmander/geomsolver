@@ -60,6 +60,11 @@ pub struct Constraint {
     /// out — and outside a set body it chooses a branch: read on the solution (`reading`), and
     /// the solve steered to the root where it holds (`solve::steer`).  Travels like `claim`.
     pub bound: Option<Bound>,
+    /// Stated **initially** (#339 D3): `initially { … }` in a station that states a rate holds
+    /// at the family's home alone — the drawn station, its initial value — and is no row of any
+    /// other station, which the family integrates from there (`solid::rated`).  The drawing
+    /// solves it like any row.  Travels like `claim`.
+    pub initially: bool,
 }
 
 /// A defined relation word as a statement wrote it — see `Constraint::word`.
@@ -186,6 +191,7 @@ impl Constraint {
             word: None,
             along: None,
             bound: None,
+            initially: false,
         }
     }
 

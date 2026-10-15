@@ -366,6 +366,40 @@ placement carries inside the blank; CLI test readers zero the offset.
   prismatoid, a face walked, a face of a cycle's copies, and the refusals.  An arc edge lofted
   with a line edge is not said: it wants a rational edge whose weight reads the arc's sweep and a
   word choosing by an edge's kind.
+- **A station that states a rate is integrated from its home** (§6.9 [0.115], #339 D3,
+  `solid/rated.rs`).  `rate(x over s) perpendicular y` (or `parallel`) is no constraint: the
+  elaborator keeps it in `Sketch::rates` (`model::RateRow`: whose rate — an axis's direction or a
+  point in space — the word, what it is held against — an axis, a line or a plane — and the held
+  running number its formal is given), grafted with the entities it names, so a station's part
+  carries it.  `initially { … }` rows are ordinary constraints flagged `Constraint::initially`
+  (graft and JSON carry it): the drawing solves them with the drawn station, the **home**.  A leg
+  whose part states a rate over its running number (`rated::states_rates`) is solved at the home as
+  any (regular there, with its `initially` rows), then **marched** (`rated::Flow::march`): the part
+  cloned, its `initially` rows made claims, its running number unfixed and made the column every
+  number written over it leans on — each such dimension's text a tape over the held numbers
+  (`tape::derivatives_along`, exact), its constraint made its free twin at `m·s + c` with `m` the
+  derivative (`Rated::lean`), so the running number's column of the conditioned Jacobian is `g_s`;
+  a number over it that is no dimension, or a second on one statement, is refused.  The rate rows
+  are linear rows over the state (`Rated::rate_rows`: an axis's rate is its unit direction's,
+  `(I − d̂d̂ᵀ)d′/|d|`; square to a direction one row, along it two, a plane the other way round).
+  `[G; R]·z′ = [−g_s; 0]`, rows of unit length: solved square over the rows found independent at
+  the first evaluation (LU), and where that fails by the minimum-norm least squares, whose rank
+  short of the state's width is the **index check** — refused there, "is short of rates: k
+  degrees of freedom along its running number" (at the home, before any march), and a stack that
+  is inconsistent is refused too.  `ode::march` integrates from the home to each end at
+  `ode::TOL`, `rated::COLUMNS` (4) columns; `Reading::settle` reads a station off the flow
+  (`Flow::put`, `ode::Path::at`: one more step from the node before) where it would solve one, so
+  the faceted stepping, its judging and the exact walls (L2's pieces, each checked against one
+  more integration between its nodes) are unchanged; the flow is marched once and shared with the
+  walls (`Family::flow`).  No regularity is asked of an integrated station: its rank is the flow's.
+  A station with `initially` rows and no rate is refused, and so is a rate over a chain's legs.  A
+  station's part holds **no plane's normal of its own** (`part_of`): a normal is minted where read
+  (`Sketch::plane_normal`), under no name of the station's, and moves with its plane.
+  `std.Minimal(n, up:, s:)` (#243 L9) is the word.  `tests/rates.rs` is the gate: the minimal
+  frame along a helix of radius 10 and pitch 5 turning −28.558° a turn against `std.OnHelix`'s
+  (Frenet's) to 1e-9, read off the caps (and three quarters of a turn, and the home square to the
+  axis); a tube on four turns at A·L to 1e-9 in either frame; along a planar spline the word and
+  `std.On` the same solid, corner for corner; the refusals.
 - **The loft series** (`rust/examples/lofts/`, its README the reading order): one document per
   capability of #243 L1–L8, each solid at the closed form its comments give, held there off the
   exact B-rep to 1e-9 by `tests/loft_examples.rs`; the app lists the folder as one project

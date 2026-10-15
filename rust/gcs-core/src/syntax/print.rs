@@ -683,10 +683,27 @@ pub(crate) fn hint_clause(d: &Decl, seed: &[f64]) -> String {
 }
 
 fn write_relation(out: &mut String, r: &Relation) {
+    // a row of the home alone is written in a block of its own (#339 D3)
+    if r.initially {
+        out.push_str("initially { ");
+        write_relation(out, &Relation { initially: false, ..r.clone() });
+        out.push_str(" }");
+        return;
+    }
     if r.claim {
         out.push_str("claim ");
     }
     match &r.form {
+        // a rate's operand is written as the rate it is (#339 D3)
+        super::RelationForm::Written(w) if let Some(over) = &r.rate => {
+            out.push_str("rate(");
+            if let Some(x) = w.ops.first() {
+                write_ref(out, x);
+            }
+            out.push_str(&format!(" over {}) ", over.text));
+            let rest = w.ops.get(1..).unwrap_or_default().to_vec();
+            write_written(out, &Written { ops: rest, fixity: Fixity::Prefix, ..w.clone() });
+        }
         super::RelationForm::Written(w) => write_written(out, w),
         super::RelationForm::Canonical { kind, args, bound } => {
             let hi = bound.as_ref().and_then(|(_, hi)| hi.as_ref());

@@ -146,6 +146,7 @@ mod program;
 mod progress;
 mod rack_cut;
 mod rational;
+mod rates;
 mod recursion;
 mod refine;
 mod refusals;

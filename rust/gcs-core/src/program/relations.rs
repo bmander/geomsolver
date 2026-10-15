@@ -159,6 +159,12 @@ fn say_once(diags: &mut Vec<Diag>, span: Span, stmt: StmtId, message: String) {
 /// applied as a gauge, taken as a region's term, or refused, and no id. The steps below, in the
 /// order each may end it.
 pub(super) fn constrain(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) -> Option<u32> {
+    // a rate's relation is no row of the drawing, but what its family integrates by (#339 D3)
+    if let Some(over) = &r.rate {
+        rate_row(cx, r, st, over);
+        return None;
+    }
+    let initially = r.initially;
     // what the relation is, by what its operands resolve to (`shape`)
     let shape = r.form.written().map_or(Shape::Other, |w| shape(&cx.sk, &cx.res, w));
     if face_or_ends(cx, r, st, &shape) {
@@ -273,6 +279,7 @@ pub(super) fn constrain(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) -> Option<u3
     let bound = inferred(cx, &r, st, ckind, &mut args, &left_out)?;
     let mut c = Constraint::new(ckind, args);
     c.claim = r.claim;
+    c.initially = initially;
     // an interval runs upward from its low end, the number as settled
     if let (Some((b, at)), Some(i)) = (bound, ckind.dimension_slot()) {
         if b.hi.is_some_and(|hi| hi < c.args[i].num()) {
@@ -291,6 +298,47 @@ pub(super) fn constrain(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) -> Option<u3
         derivative(cx, st, &mut c, found, used.unwrap_or(st.span))?;
     }
     region_or_row(cx, &r, st, c, term_name)
+}
+
+/// `rate(x over s) word y` (#339 D3), kept beside the constraints (`Sketch::rates`): a rate is
+/// of an axis's direction or of a point, and is held against a direction or a plane.
+fn rate_row(cx: &mut Elab<'_>, r: &Relation, st: &Stmt, over: &str) {
+    let Some(w) = r.form.written() else { return };
+    let [x, y] = &w.ops[..] else { return };
+    let said = |r: &Ref| {
+        let fields = r.path.iter().filter_map(|s| match s {
+            crate::syntax::Seg::Field(n) => Some(n.text.as_str()),
+            _ => None,
+        });
+        crate::program::public_path(&std::iter::once(r.root.text.as_str()).chain(fields)
+            .collect::<Vec<_>>().join("."))
+    };
+    let formal = over.rsplit('.').next().unwrap_or(over);
+    let text = format!("rate({} over {formal}) {} {}", said(x), w.word.text, said(y));
+    let (Some(of), Some(to)) = (cx.res.entity(&cx.sk, x), cx.res.entity(&cx.sk, y)) else {
+        let message = format!("`{text}` relates two things drawn: a rate of an axis or a point, \
+            and a direction or a plane");
+        cx.diags.push(Diag::on(Code::E040, st, message));
+        return;
+    };
+    if !matches!(of.kind, EntKind::Axis | EntKind::Point) {
+        let message = format!("`{text}`: a rate is of an axis's direction or of a point, and \
+            `{}` is {}", said(x), of.kind.a());
+        cx.diags.push(Diag::on(Code::E040, st, message));
+        return;
+    }
+    if !matches!(to.kind, EntKind::Axis | EntKind::Line | EntKind::Plane) {
+        let message = format!("`{text}`: a rate is held against a direction, an axis or a line, \
+            or a plane, and `{}` is {}", said(y), to.kind.a());
+        cx.diags.push(Diag::on(Code::E040, st, message));
+        return;
+    }
+    let word = if w.word.text == "parallel" {
+        crate::model::RateWord::Parallel
+    } else {
+        crate::model::RateWord::Perpendicular
+    };
+    cx.sk.rates.push(crate::model::RateRow { of, word, to, over: over.to_string(), text });
 }
 
 /// A contact with a body traced in space, read as its body runs over one formal or two (#326):
