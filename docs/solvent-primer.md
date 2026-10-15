@@ -925,8 +925,11 @@ x, v along z: where a 2D drawing goes), `std.top` (x, y), `std.side` (y, z, seen
 plane as an argument does not imply `in`.
 
 **Points in space.** A point no `in` reaches has three coordinates, seeded `hint((x, y, z))` and
-held `fix((x, y, z)) p`; a line between two is a line in space. A circle, arc or spline over a
-point in space is E060, a face over one E080. In the workspace such points are dragged across the
+held `fix((x, y, z)) p`; a line between two is a line in space. A circle or arc over a point in
+space is E060, a face over one E080; a spline over points in space is a curve in space (0.123):
+its contacts a traced curve's (`m coincident(t == 0.5) k`, `k tangent(at: m) l`), a `path`, and
+`spline(through: rims)` over corners in space the cubic through them (it bounds no face, and the
+workspace does not draw it yet). In the workspace such points are dragged across the
 eye's picture plane; depth stays the constraints'.
 
 - **`p coincident P` is `in P` said as a relation**: the point is drawn in `P`, and relations over

@@ -39,8 +39,9 @@ std.front`), or the structural count sees a redundancy. W113 warns of two planes
 another. `views::place`
 settles axes and plane origins before the solve, round by round with seed settlement; they stay
 unknowns. `p distance(d, along: u) P` is an ordinate from `P.origin` along `P.u` (`CKind::Ordinate`,
-in space across planes with no callout); `hint(at: P, (x, y))` seeds in P's coordinates. Circles, arcs
-and splines over a point in space are E060, faces E080. `use std` gives axes
+in space across planes with no callout); `hint(at: P, (x, y))` seeds in P's coordinates. Circles and
+arcs over a point in space are E060 (a spline there is a curve traced in space, [0.123],
+`curves.md`), faces E080. `use std` gives axes
 `std.x/y/z/back`, planes `std.front` (x, z), `std.top` (x, y), `std.side` (y, z), `std.up` (z,
 back), and `std.origin` (in front, fixed) — flattened after the document, present whenever the
 document says `use std` (the workspace offers them as places to draw). `std.Turned(o, t)` is a

@@ -110,6 +110,24 @@ march, a seed of fewer columns, dense output forwards and back, a carried branch
   positive plain number). The recipe writes `"weights"`, so the profile is `BSpline::rational` in
   our kernel and in OCCT's (`solvent_cad_bspline` takes a weights pointer). `nurbs.sv`,
   `tests/weighted_spline.rs`.
+- **A spline over points in space is a curve traced in space** (#363 S3, [0.123]): route (b) of
+  the issue, a representation and never a meaning.  `entities::splines_in_space` (in `holds`,
+  once every membership is in, before E060 is asked) makes a spline with a control point no plane
+  reaches a `TracedE` over the control points (`args`), its body one row of
+  `traced::RowKind::Spline` — `X − Σ Rᵢ(u)·Pᵢ`, columns `[u, P₀ … Pₙ₋₁, X]`, constants the knots
+  then the weights (`spline_shape` checks them as any encoding is read), its Newton rows
+  (`spline_res`/`_jac`) and its jets (`spline_jets`: each basis function the cubic of the jet's
+  offset from `curve::basis`'s value and three derivatives, exact to the series' order) — over
+  the spline's domain, home at its middle.  The name moves to it (`res.of`, `SourceMap::moved`)
+  and the spline stays, no index moving, but is no primitive (`Sketch::spline_traced`): neither
+  drawn nor grafted.  So its contacts are a traced curve's (`t == u` pins its place, S1), it is a
+  `path`, and `spline(through: …)` over corners in space lowers as it does in a plane, its
+  relations the ones in space.  A face over it is E080 ("a curve in space, drawn in no plane").
+  Not drawn yet: a traced curve is no `overview::drawable`.  `tests/space_paths.rs`: a Bézier
+  over four points in space — point, `C′`, `C″` and length against Bernstein's to 1e-12, a point
+  pinned and a tangent held, every contact against finite differences — a tube along it at 9π ×
+  its length to 1e-9, and `spline(through: …)` over corners in space (natural; along lines in
+  space) control point for control point against the cubic solved apart (L7's method).
 - **A spline through a chain's corners** (§6.1 [0.111], #243 L7): `spline(through: rims, start:
   l, end: m)` (`Decl::through`, parsed in `decl_list`, printed by `decl_args`) is expanded in
   `flatten::through` once the walk is done (`Aside::fits`, so the chain may be written after it):
