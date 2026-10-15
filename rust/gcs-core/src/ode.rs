@@ -71,10 +71,16 @@ impl Default for Settings {
 }
 
 impl Settings {
+    /// The columns taken: `columns`, within 2 (one to extrapolate, one to tell the error) and
+    /// `STEPS`.
+    fn columns(&self) -> usize {
+        self.columns.clamp(2, STEPS.len())
+    }
+
     /// The next step's size after one whose relative error was `err`: the estimate, the last
     /// two columns' difference, is of order `2·columns − 2`.
     pub fn next_h(&self, h: f64, err: f64) -> f64 {
-        let order = (2 * self.columns - 2) as f64;
+        let order = (2 * self.columns() - 2) as f64;
         let f = if err == 0.0 {
             4.0
         } else {
@@ -122,7 +128,7 @@ pub struct Work {
 impl Work {
     pub fn new(n: usize, m: usize, settings: &Settings) -> Work {
         let len = n * (1 + m);
-        let columns = settings.columns.clamp(2, STEPS.len());
+        let columns = settings.columns();
         Work {
             n,
             m,
@@ -138,17 +144,21 @@ impl Work {
     }
 
     /// The augmented state's length.
-    pub fn len(&self) -> usize {
+    fn len(&self) -> usize {
         self.n * (1 + self.m)
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.n == 0
     }
 }
 
 /// The augmented rate at `(u, y)`: `f`, then `(∂f/∂y) Φ` where sensitivities are carried.
-fn augmented<R: Rate>(rate: &mut R, n: usize, m: usize, jac: &mut [f64], u: f64, y: &[f64], out: &mut [f64]) -> bool {
+fn augmented<R: Rate>(
+    rate: &mut R,
+    n: usize,
+    m: usize,
+    jac: &mut [f64],
+    u: f64,
+    y: &[f64],
+    out: &mut [f64],
+) -> bool {
     if m == 0 {
         return rate.rate(u, &y[..n], &mut out[..n], None);
     }
@@ -156,51 +166,39 @@ fn augmented<R: Rate>(rate: &mut R, n: usize, m: usize, jac: &mut [f64], u: f64,
         return false;
     }
     let (phi, out) = (&y[n..n + n * m], &mut out[n..n + n * m]);
+    // a small state's sum at a length known in advance (a free curve's is 4)
     match n {
-        1 => product::<1>(m, jac, phi, out),
-        2 => product::<2>(m, jac, phi, out),
-        3 => product::<3>(m, jac, phi, out),
-        4 => product::<4>(m, jac, phi, out),
-        6 => product::<6>(m, jac, phi, out),
-        _ => {
-            for (o, a) in out.chunks_exact_mut(m).zip(jac.chunks_exact(n)) {
-                for (k, o) in o.iter_mut().enumerate() {
-                    let mut v = 0.0;
-                    for (j, &a) in a.iter().enumerate() {
-                        v += a * phi[j * m + k];
-                    }
-                    *o = v;
-                }
-            }
-        }
+        1 => product::<1>(n, m, jac, phi, out),
+        2 => product::<2>(n, m, jac, phi, out),
+        3 => product::<3>(n, m, jac, phi, out),
+        4 => product::<4>(n, m, jac, phi, out),
+        _ => product::<0>(n, m, jac, phi, out),
     }
     true
 }
 
-/// `A Φ` for a state `N` wide, each entry the general arm's sum in the general arm's order: a
-/// fast path, its inner sum's length known — and every length, where `Φ` is square (the
-/// sensitivities to the initial value).
-fn product<const N: usize>(m: usize, jac: &[f64], phi: &[f64], out: &mut [f64]) {
-    if m == N {
-        let (jac, phi, out) = (&jac[..N * N], &phi[..N * N], &mut out[..N * N]);
-        for i in 0..N {
-            for k in 0..N {
-                let mut v = 0.0;
-                for j in 0..N {
-                    v += jac[i * N + j] * phi[j * N + k];
-                }
-                out[i * N + k] = v;
-            }
-        }
-        return;
+/// `A Φ` into `out`, `A` `n × n` and `Φ` `n × m`.  `N` is `n` where it is known in advance (0
+/// where it is not), and a square `Φ` (the sensitivities to the initial value) is `N × N`: the
+/// sums' lengths constant, so they unroll.
+fn product<const N: usize>(n: usize, m: usize, jac: &[f64], phi: &[f64], out: &mut [f64]) {
+    if N > 0 && m == N {
+        rows(N, N, jac, phi, out)
+    } else {
+        rows(if N > 0 { N } else { n }, m, jac, phi, out)
     }
-    for (o, a) in out.chunks_exact_mut(m).zip(jac.chunks_exact(N)) {
-        for (k, o) in o.iter_mut().enumerate() {
+}
+
+/// `A Φ` row by row, each entry summed over `A`'s row in order.
+#[inline(always)]
+fn rows(n: usize, m: usize, jac: &[f64], phi: &[f64], out: &mut [f64]) {
+    let (jac, phi, out) = (&jac[..n * n], &phi[..n * m], &mut out[..n * m]);
+    for i in 0..n {
+        for k in 0..m {
             let mut v = 0.0;
-            for j in 0..N {
-                v += a[j] * phi[j * m + k];
+            for j in 0..n {
+                v += jac[i * n + j] * phi[j * m + k];
             }
-            *o = v;
+            out[i * m + k] = v;
         }
     }
 }
@@ -208,7 +206,15 @@ fn product<const N: usize>(m: usize, jac: &[f64], phi: &[f64], out: &mut [f64]) 
 /// The explicit midpoint rule over `substeps` of one step `h` from `(u0, y0)`, the rate at
 /// `y0` given (`w.f0`, every column's first) and the branch it was found on (`b0`), into
 /// `w.cur`.
-fn midpoint<R: Rate>(rate: &mut R, w: &mut Work, b0: R::Branch, u0: f64, y0: &[f64], h: f64, substeps: usize) -> bool {
+fn midpoint<R: Rate>(
+    rate: &mut R,
+    w: &mut Work,
+    b0: R::Branch,
+    u0: f64,
+    y0: &[f64],
+    h: f64,
+    substeps: usize,
+) -> bool {
     let (n, m, len) = (w.n, w.m, w.len());
     let hs = h / substeps as f64;
     rate.set_branch(b0);
@@ -276,16 +282,10 @@ pub fn step<R: Rate>(
 #[derive(Clone, Debug, PartialEq)]
 pub struct Node<B> {
     pub u: f64,
-    /// The state, then — where the march carried them — its sensitivities `Φ` (`n × m`).
+    /// The state, then — where the march carried them — its sensitivities `Φ` (`n × m`,
+    /// row-major).
     pub y: Vec<f64>,
     pub branch: B,
-}
-
-impl<B> Node<B> {
-    /// The sensitivity of state `i` to the march's seed `k`.
-    pub fn phi(&self, n: usize, m: usize, i: usize, k: usize) -> f64 {
-        self.y[n + i * m + k]
-    }
 }
 
 /// A march: its nodes in the order taken (`u` decreasing for a march backwards), and what it
@@ -351,7 +351,8 @@ pub fn march<R: Rate>(
             done = if last { total } else { done + hh };
             branch = rate.branch();
             std::mem::swap(&mut y, &mut out);
-            nodes.push(Node { u: if last { u0 + span } else { u0 + dir * done }, y: y.clone(), branch });
+            let u = if last { u0 + span } else { u0 + dir * done };
+            nodes.push(Node { u, y: y.clone(), branch });
             h = settings.next_h(hh, err);
         } else {
             h = settings.next_h(hh, err).min(hh * 0.5);
@@ -372,7 +373,12 @@ impl<B: Copy> Path<B> {
     /// The state at `u` (within the march's span), one step from the node before it in the
     /// march's direction, with the sensitivities where `sens` (else the state alone).  At a
     /// node, the node.
-    pub fn at<R: Rate<Branch = B>>(&self, rate: &mut R, u: f64, sens: bool) -> Result<Node<B>, Refusal> {
+    pub fn at<R: Rate<Branch = B>>(
+        &self,
+        rate: &mut R,
+        u: f64,
+        sens: bool,
+    ) -> Result<Node<B>, Refusal> {
         let dir = self.dir();
         let i = self.nodes.partition_point(|nd| dir * (nd.u - u) <= 0.0).saturating_sub(1);
         let nd = &self.nodes[i];
@@ -385,7 +391,8 @@ impl<B: Copy> Path<B> {
         let mut w = Work::new(self.n, m, &self.settings);
         let mut out = vec![0.0; len];
         rate.set_branch(nd.branch);
-        step(rate, &mut w, nd.u, &nd.y[..len], h, &self.scale, &mut out).ok_or(Refusal::Undefined { at: nd.u })?;
+        step(rate, &mut w, nd.u, &nd.y[..len], h, &self.scale, &mut out)
+            .ok_or(Refusal::Undefined { at: nd.u })?;
         Ok(Node { u, y: out, branch: rate.branch() })
     }
 }

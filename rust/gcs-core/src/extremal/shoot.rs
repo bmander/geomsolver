@@ -135,9 +135,7 @@ pub fn integrate(lag: &Lagrangian, s0: f64, z0: [f64; 4], theta: f64, len: f64, 
     let mut flow = Flow::new(lag, theta);
     let p0 = flow.at(&z0, false)?;
     let lam = z0[2].dhypot(z0[3]).max(p0.h.abs()).max(1e-300);
-    let mut y = [0.0; 20];
-    y[..4].copy_from_slice(&z0);
-    y[4..].copy_from_slice(&IDENTITY);
+    let y = [z0.as_slice(), &IDENTITY].concat();
     let scale = [scale_len, scale_len, lam, lam];
     let path = ode::march(&mut flow, s0, &y[..4 + 4 * m], m, len, &scale, &ode::Settings::default()).ok()?;
     let nodes = path.nodes.iter().map(|n| node(n.u, &n.y, n.branch, sens)).collect();
@@ -165,14 +163,12 @@ pub fn within(lag: &Lagrangian, piece: &Piece, s: f64, scale_len: f64, sens: boo
     }
     let mut flow = Flow::new(lag, n.theta);
     let lam = n.z[2].dhypot(n.z[3]).max(1e-300);
-    let mut y = [0.0; 20];
-    y[..4].copy_from_slice(&n.z);
-    y[4..].copy_from_slice(&n.phi);
     let m = if sens { 4 } else { 0 };
+    let y = [n.z.as_slice(), &n.phi].concat();
+    let mut out = vec![0.0; 4 + 4 * m];
     let mut w = ode::Work::new(4, m, &ode::Settings::default());
-    let mut out = [0.0; 20];
     let scale = [scale_len, scale_len, lam, lam];
-    ode::step(&mut flow, &mut w, n.s, &y[..4 + 4 * m], h, &scale, &mut out[..4 + 4 * m])?;
+    ode::step(&mut flow, &mut w, n.s, &y[..4 + 4 * m], h, &scale, &mut out)?;
     Some(node(s, &out, flow.theta, sens))
 }
 

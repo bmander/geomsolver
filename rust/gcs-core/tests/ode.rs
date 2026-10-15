@@ -72,12 +72,24 @@ fn lorenz() -> By<impl FnMut(f64, &[f64], &mut [f64], Option<&mut [f64]>) -> boo
     })
 }
 
+/// `got` within `tol` of `want`, relative where `want` is large.
+fn close(got: f64, want: f64, tol: f64, what: &str) {
+    assert!((got - want).abs() <= tol * (1.0 + want.abs()), "{what}: {got} against {want}");
+}
+
+/// The `n × n` identity, row-major.
+fn identity(n: usize) -> Vec<f64> {
+    (0..n * n).map(|k| if k / n == k % n { 1.0 } else { 0.0 }).collect()
+}
+
+/// `A v`, `A` row-major and as many columns as `v` has entries.
+fn mat_vec(a: &[f64], v: &[f64]) -> Vec<f64> {
+    a.chunks_exact(v.len()).map(|r| r.iter().zip(v).map(|(a, v)| a * v).sum()).collect()
+}
+
 /// The augmented start: `y0`, then the identity (sensitivities to the initial value).
 fn seeded(y0: &[f64]) -> Vec<f64> {
-    let n = y0.len();
-    let mut y = y0.to_vec();
-    y.extend((0..n * n).map(|k| if k / n == k % n { 1.0 } else { 0.0 }));
-    y
+    [y0, &identity(y0.len())].concat()
 }
 
 /// `exp(A t)` by its Taylor series, scaled and squared — an independent construction.
@@ -88,7 +100,7 @@ fn expm(a: &[f64], n: usize, t: f64) -> Vec<f64> {
     let norm = a.iter().map(|v| v.abs()).sum::<f64>() * t.abs();
     let sq = (norm.max(1.0).log2().ceil() as i32 + 4).max(0);
     let at: Vec<f64> = a.iter().map(|v| v * t / 2f64.powi(sq)).collect();
-    let mut e: Vec<f64> = (0..n * n).map(|k| if k / n == k % n { 1.0 } else { 0.0 }).collect();
+    let mut e = identity(n);
     let mut term = e.clone();
     for k in 1..30 {
         term = mul(&term, &at).iter().map(|v| v / k as f64).collect();
@@ -120,18 +132,16 @@ fn a_linear_flow_is_its_exponential() {
         let n = lin.n;
         let y0: Vec<f64> = (0..n).map(|i| 1.0 - 0.3 * i as f64).collect();
         for span in [5.0, -3.0] {
-            let path = ode::march(&mut lin, 0.5, &seeded(&y0), n, span, &vec![1.0; n], &Settings::default()).unwrap();
+            let settings = Settings::default();
+            let path = ode::march(&mut lin, 0.5, &seeded(&y0), n, span, &vec![1.0; n], &settings).unwrap();
             let end = path.nodes.last().unwrap();
             assert_eq!(end.u, 0.5 + span);
             let e = expm(&lin.a, n, span);
-            for i in 0..n {
-                let want: f64 = (0..n).map(|j| e[i * n + j] * y0[j]).sum();
-                let scale = 1.0 + want.abs();
-                assert!((end.y[i] - want).abs() <= 1e-11 * scale, "n {n} span {span} y{i}: {} against {want}", end.y[i]);
-                for k in 0..n {
-                    let (got, want) = (end.phi(n, n, i, k), e[i * n + k]);
-                    assert!((got - want).abs() <= 1e-11 * (1.0 + want.abs()), "n {n} span {span} Φ{i}{k}: {got} against {want}");
-                }
+            for (i, want) in mat_vec(&e, &y0).into_iter().enumerate() {
+                close(end.y[i], want, 1e-11, &format!("n {n} span {span} y{i}"));
+            }
+            for (ik, &want) in e.iter().enumerate() {
+                close(end.y[n + ik], want, 1e-11, &format!("n {n} span {span} Φ{ik}"));
             }
         }
     }
@@ -153,8 +163,8 @@ fn the_formal_is_threaded_through_the_substeps() {
         let u1: f64 = u0 + span;
         let g = ((u1 * u1 - u0 * u0) / 2.0).exp();
         let end = path.nodes.last().unwrap();
-        assert!((end.y[0] - 0.7 * g).abs() <= 1e-12 * g, "from {u0} over {span}: {} against {}", end.y[0], 0.7 * g);
-        assert!((end.y[1] - g).abs() <= 1e-12 * g);
+        close(end.y[0], 0.7 * g, 1e-12, &format!("from {u0} over {span}"));
+        close(end.y[1], g, 1e-12, &format!("from {u0} over {span}, Φ"));
     }
 }
 
@@ -178,7 +188,8 @@ fn the_extrapolations_order_is_measured() {
         let (e1, e2) = (one_step_error(k, 2.0), one_step_error(k, 1.0));
         assert!(e2 > 1e-13, "{k} columns: the error {e2} is rounding's");
         let order = (e1 / e2).log2();
-        assert!((order - (2 * k + 1) as f64).abs() < 0.15, "{k} columns: order {order}, not {}", 2 * k + 1);
+        let want = (2 * k + 1) as f64;
+        assert!((order - want).abs() < 0.15, "{k} columns: order {order}, not {want}");
     }
 }
 
@@ -200,7 +211,14 @@ fn stepped<R: Rate<Branch = ()>>(r: &mut R, y0: &[f64], h: f64) -> (Vec<f64>, Ve
 }
 
 /// `Φ` against central differences of what carried it, each start moved by `e`.
-fn against_differences(phi: &[f64], y0: &[f64], e: f64, tol: f64, end: impl Fn(&[f64]) -> Vec<f64>, what: &str) {
+fn against_differences(
+    phi: &[f64],
+    y0: &[f64],
+    e: f64,
+    tol: f64,
+    end: impl Fn(&[f64]) -> Vec<f64>,
+    what: &str,
+) {
     let n = y0.len();
     for k in 0..n {
         let moved = |sign: f64| {
@@ -210,9 +228,7 @@ fn against_differences(phi: &[f64], y0: &[f64], e: f64, tol: f64, end: impl Fn(&
         };
         let (p, m) = (moved(1.0), moved(-1.0));
         for i in 0..n {
-            let fd = (p[i] - m[i]) / (2.0 * e);
-            let got = phi[i * n + k];
-            assert!((got - fd).abs() <= tol * (1.0 + fd.abs()), "{what} Φ{i}{k}: {got} against {fd}");
+            close(phi[i * n + k], (p[i] - m[i]) / (2.0 * e), tol, &format!("{what} Φ{i}{k}"));
         }
     }
 }
@@ -224,14 +240,14 @@ fn against_differences(phi: &[f64], y0: &[f64], e: f64, tol: f64, end: impl Fn(&
 fn the_sensitivities_are_the_differences() {
     let pend = [2.0, 0.3];
     let lor = [1.0, 2.0, 20.0];
-    let (_, phi) = stepped(&mut pendulum(), &pend, 1.5);
-    against_differences(&phi, &pend, 1e-5, 1e-9, |y| stepped(&mut pendulum(), y, 1.5).0, "pendulum, a step");
-    let (_, phi) = stepped(&mut lorenz(), &lor, 0.05);
-    against_differences(&phi, &lor, 1e-3, 1e-9, |y| stepped(&mut lorenz(), y, 0.05).0, "Lorenz, a step");
-    let (_, phi) = marched(&mut pendulum(), &pend, 12.0);
-    against_differences(&phi, &pend, 1e-4, 1e-6, |y| marched(&mut pendulum(), y, 12.0).0, "pendulum, a march");
-    let (_, phi) = marched(&mut lorenz(), &lor, 1.0);
-    against_differences(&phi, &lor, 1e-4, 1e-6, |y| marched(&mut lorenz(), y, 1.0).0, "Lorenz, a march");
+    let step_p = |y: &[f64]| stepped(&mut pendulum(), y, 1.5);
+    let step_l = |y: &[f64]| stepped(&mut lorenz(), y, 0.05);
+    let march_p = |y: &[f64]| marched(&mut pendulum(), y, 12.0);
+    let march_l = |y: &[f64]| marched(&mut lorenz(), y, 1.0);
+    against_differences(&step_p(&pend).1, &pend, 1e-5, 1e-9, |y| step_p(y).0, "pendulum, a step");
+    against_differences(&step_l(&lor).1, &lor, 1e-3, 1e-9, |y| step_l(y).0, "Lorenz, a step");
+    against_differences(&march_p(&pend).1, &pend, 1e-4, 1e-6, |y| march_p(y).0, "pendulum, a march");
+    against_differences(&march_l(&lor).1, &lor, 1e-4, 1e-6, |y| march_l(y).0, "Lorenz, a march");
 }
 
 /// A seed of fewer columns than the state carries `Φ(u) Φ(u0)`: the sensitivity to a direction
@@ -241,13 +257,11 @@ fn a_seed_may_be_any_columns() {
     let y0 = [1.0, 2.0, 20.0];
     let v = [0.6, -0.8, 0.0];
     let (_, phi) = marched(&mut lorenz(), &y0, 0.8);
-    let mut seed = y0.to_vec();
-    seed.extend(v);
+    let seed = [y0, v].concat();
     let path = ode::march(&mut lorenz(), 0.0, &seed, 1, 0.8, &[1.0; 3], &Settings::default()).unwrap();
     let end = path.nodes.last().unwrap();
-    for i in 0..3 {
-        let want: f64 = (0..3).map(|j| phi[i * 3 + j] * v[j]).sum();
-        assert!((end.phi(3, 1, i, 0) - want).abs() <= 1e-9 * (1.0 + want.abs()), "{i}: {} against {want}", end.phi(3, 1, i, 0));
+    for (i, want) in mat_vec(&phi, &v).into_iter().enumerate() {
+        close(end.y[3 + i], want, 1e-9, &format!("Φv{i}"));
     }
 }
 
@@ -259,7 +273,8 @@ fn dense_output_is_the_flow_between_steps() {
     let n = lin.n;
     let y0 = [1.0, -0.5, 0.25, 2.0];
     for span in [6.0, -4.0] {
-        let path = ode::march(&mut lin, 1.0, &seeded(&y0), n, span, &[1.0; 4], &Settings::default()).unwrap();
+        let settings = Settings::default();
+        let path = ode::march(&mut lin, 1.0, &seeded(&y0), n, span, &[1.0; 4], &settings).unwrap();
         assert!(path.nodes.len() > 3, "a march of several steps");
         for q in 0..=40 {
             let u = 1.0 + span * q as f64 / 40.0;
@@ -267,14 +282,12 @@ fn dense_output_is_the_flow_between_steps() {
             let state = path.at(&mut lin, u, false).unwrap();
             assert_eq!(state.y.len(), n);
             let e = expm(&lin.a, n, u - 1.0);
-            for i in 0..n {
-                let want: f64 = (0..n).map(|j| e[i * n + j] * y0[j]).sum();
-                assert!((at.y[i] - want).abs() <= 1e-11 * (1.0 + want.abs()), "at {u}: y{i} {} against {want}", at.y[i]);
-                assert!((state.y[i] - at.y[i]).abs() <= 1e-13 * (1.0 + want.abs()));
-                for k in 0..n {
-                    let want = e[i * n + k];
-                    assert!((at.phi(n, n, i, k) - want).abs() <= 1e-11 * (1.0 + want.abs()), "at {u}: Φ{i}{k}");
-                }
+            for (i, want) in mat_vec(&e, &y0).into_iter().enumerate() {
+                close(at.y[i], want, 1e-11, &format!("at {u}: y{i}"));
+                close(state.y[i], at.y[i], 1e-13, &format!("at {u}: y{i} without Φ"));
+            }
+            for (ik, &want) in e.iter().enumerate() {
+                close(at.y[n + ik], want, 1e-11, &format!("at {u}: Φ{ik}"));
             }
         }
         for nd in &path.nodes {
@@ -299,10 +312,10 @@ impl Rate for Root {
         let mut r = self.r;
         for _ in 0..60 {
             let d = (r * r - y[0]) / (2.0 * r);
-            r -= d;
             if !d.is_finite() {
                 return false;
             }
+            r -= d;
             if d.abs() <= 1e-15 * r.abs() {
                 if r * self.r <= 0.0 {
                     return false; // the root crossed to the other branch
@@ -330,12 +343,12 @@ fn a_branch_is_carried_and_its_end_refused() {
     let mut root = Root { r: -1.0 };
     let path = ode::march(&mut root, 0.0, &[1.0, 1.0], 1, 1.6, &[1.0], &Settings::default()).unwrap();
     for nd in &path.nodes {
-        let want = (1.0 - nd.u / 2.0).powi(2);
-        assert!((nd.y[0] - want).abs() <= 1e-12, "at {}: {} against {want}", nd.u, nd.y[0]);
+        close(nd.y[0], (1.0 - nd.u / 2.0).powi(2), 1e-12, &format!("at {}", nd.u));
         // where the step's last evaluation left it: a start for the next, on the same side
-        assert!(nd.branch < 0.0 && (nd.branch + (1.0 - nd.u / 2.0)).abs() <= 0.1, "the branch at {}: {}", nd.u, nd.branch);
+        let off = nd.branch + (1.0 - nd.u / 2.0);
+        assert!(nd.branch < 0.0 && off.abs() <= 0.1, "the branch at {}: {}", nd.u, nd.branch);
         // `∂y/∂y0` with `y = (√y0 − u/2)²`
-        assert!((nd.y[1] - (1.0 - nd.u / 2.0)).abs() <= 1e-10);
+        close(nd.y[1], 1.0 - nd.u / 2.0, 1e-10, &format!("∂y/∂y0 at {}", nd.u));
     }
     let mut root = Root { r: -1.0 };
     let refused = ode::march(&mut root, 0.0, &[1.0], 0, 3.0, &[1.0], &Settings::default()).unwrap_err();
