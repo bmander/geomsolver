@@ -11,6 +11,80 @@ Solvent. Rust grows only three kinds of things:
   corner) and build it exactly. They never change what the family says, and the general
   evaluation gates each one.
 
+## L7: several sections, ruled or smooth (2026-10-15)
+
+**Verdict: a loft through several sections is drawn on rails, and two general features say it.**
+A rail joins one corresponding corner of every section — the corner's places in order, one a
+section — and the station's corner stands where its rail meets the station's plane, as the blade's
+reached its rails at L0. **Chains run in step**: a family given several named open chains runs
+them link by link together, so a guide cut at each section and a chain of lines through each
+corner is the **ruled** loft, piecewise in `s`, section `k` at `s = k`. **A spline through a
+chain's corners**, `spline(through: rims, start: l, end: m)`, is the **smooth** loft's rail: the
+cubic through them, a span a link, its ends along the tangents written (normal to an end section,
+or along a neighbouring face's edge) or else running straight. With **no guide**, `std.Across(a,
+b, c, s:)` stands the station on its rails, the plane through three of them at `s`. Solvent
+0.111; [`l0/bottle.sv`](l0/bottle.sv) is written over the spline through its rims, its shoulder
+back at L0's 28; `rust/gcs-core/tests/sections.rs`, off the exact B-rep to 1e-9:
+
+| solid | what it is | closed form (mm³) |
+|---|---|---|
+| the bottle's rims, 30 / 28 / 12 at 0 / 60 / 90, ruled | two frusta, an edge at the shoulder | π·60/3·(30² + 30·28 + 28²) + π·30/3·(28² + 28·12 + 12²) ≈ 198297.33 |
+| the same, smooth, over the axis whole and cut at the shoulder | the spline through the rims, square to both ends | π∫x² dy, five Gauss–Legendre points a span |
+| squares 20, 12 (moved off the axis by (10, 5)) and 16 at 0 / 40 / 60, no guide | prismatoids, the stations level | 10453.33 + 3946.67 = 14400 |
+| the smooth bottle, its end tangent along a turned neck's cone | its wall square to the base cap, tangent to the cone at the neck | normals to 1e-9 and 1e-7 |
+
+**The spline through points is the least bent.** `n` corners make `n + 2` clamped uniform control
+points, the corners at the knots; the four left are the ends', and each end is either natural
+(`C'' = 0`: the control point beside the corner a third of the way toward the next) or held along
+a tangent with the bending it leaves least (`C'' · T = 0`: a third of the way toward that next
+point's foot on the tangent). Both are ordinary relations over minted points, the declaration's
+own statements; nothing about lofts is in it. L0 drew the bottle's rail by hand, a Bézier with the
+shoulder on it somewhere: a cubic square to both ends reached a shoulder of 28 only by running past
+the neck and back, so L1 lowered it to 20. Through the rims, a span a link, it rises the whole way
+at 28.
+
+**A section is an edge** (`brep::family::creases`). Over a chain each wall was one sheet (L4),
+right for a pipe whose links meet tangent, but a ruled loft's walls meet each section at an angle,
+and one face with a kink in it is no edge a mesh, a round or a sketch can find. Where some wall's
+run along `s` turns across a joint of the pieces, the solid is now built in bands, each wall a face
+a band under its one name; each band lowers on its own (the ruled bottle's two cones). A kink a law
+in pieces puts inside a piece (L5's `max`) is closed in on by pieces a millionth long, and joints
+that near one another are no section.
+
+*Departures from the item:*
+
+- **No `std.Loft(s0, s1, …, sn)`.** Solvent has no lists and no function values, so no word takes
+  a number of sections, nor walks a face's corners (that is L8's machinery: repeating over a face's
+  walk and pairing two walks). A chain is the list Solvent has, so a section is a corner's place on
+  its rail, the correspondence the rails, and the station the writer's component, as in L3–L6.
+- **The rail is the language's, not a word's.** A word cannot mint a number of control points
+  either, so the spline through points is a form of the `spline` declaration, a general sketching
+  feature (a CAD sketcher's spline through points), not a loft word.
+- **Placed where its plane meets the guide, or written at `s = k`**: with a single guide the
+  smooth loft's sections stand wherever the station's plane passes each rim; cut at the sections,
+  each stands at `s = k`. A section's place as a fraction of a guide not cut there is not said.
+- **A rail drawn in a plane is reached by a corner drawn in two** (`point in st.n, front`): a point
+  another plane already draws is not drawn in a spline's plane by its contact (#249 draws only a
+  point standing in space there), so the station is handed the rails' plane, as the L0 bottle was.
+
+What L7 found on the way:
+
+- **`repeat e in g` over a chain a component is given already works**, inside any component: L0's
+  finding 8 said it did not. What a word still cannot do with it is name the chain or the curve it
+  builds over the links, or count them.
+- **L4's growing pipe has edges now, and should.** `radius(r + 0.5mm * s)` grows the radius as
+  fast per link, so per millimetre about half as fast round a bend as along a straight: the wall's
+  slope changes at every joint, a crease the bands now make an edge of. Its volume is unchanged.
+  The first band build oriented each band's loop by the section's normal at the family's middle,
+  which a U turns round; each band reads its own.
+- **The CLI's evaluated solid is the slow path**: a family's report volume comes from its meshed
+  evaluated solid, about 9 s for each of the bottles; the exact B-rep the gates read takes
+  milliseconds.
+
+Handed on: L8's two-face word (a section's corners read off a face's walk, which would also give a
+`Loft` word its sections); a smooth rail in space (L9, splines over points in space); a twin for a
+point drawn in another plane on a spline's contact.
+
 ## L6: helical sweeps (2026-10-15)
 
 **Verdict: a screw is a station word of ordinates, and a section the screw carries rigidly is
@@ -366,7 +440,7 @@ fixtures.
 | [`twisted_duct.sv`](l0/twisted_duct.sv) | `solid_twist.sv` | a twist law; 1260° in one statement | 16000 at any twist (Cavalieri) | DOF 0, corner turned 630° |
 | [`spring.sv`](l0/spring.sv) | — | a wire square to a helix; an axial thread under a screw | 9π·√(400π² + 25); 240π | DOF 0, lead angle, rise 10 |
 | [`pipe.sv`](l0/pipe.sv) | — | a chain of lines and tangent arcs as one path | 16π(60 + 25π) | *pending: `path`* |
-| [`bottle.sv`](l0/bottle.sv) | — | smooth through three sections; end tangents | quadrature | DOF 0 (shoulder R 20 since L1) |
+| [`bottle.sv`](l0/bottle.sv) | — | smooth through three sections; end tangents | quadrature | DOF 0 (shoulder R 20 L1–L6, 28 again since L7) |
 | [`blade.sv`](l0/blade.sv) | — | two rails in plan holding the width | 2100 | DOF 0, rails at ±7 |
 | [`square_to_circle.sv`](l0/square_to_circle.sv) | — | a square to a circle, one section | 8000 + 1000π | DOF 0, corners ±5, R5 |
 | [`pyramid.sv`](l0/pyramid.sv) | — | a loft to a point | 4000 | DOF 0, half 5 |

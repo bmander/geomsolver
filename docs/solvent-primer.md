@@ -192,6 +192,12 @@ for, one positive plain number per control point (else E103). With `w = (1 + sqr
 inner points where a quarter circle's end tangents meet the cubic's thirds, the curve *is* that
 quarter circle (`nurbs.sv`); every contact reads it as it is, and a solid swept from it is exact.
 
+**A spline through points** (0.111) names them as a chain: `rail := spline(through: rims, start:
+l, end: m)` is the cubic through the corners of the named open chain of lines `rims`, one span a
+link, so its `t` is `k` at corner `k`; at the first corner it runs along `start:` and at the last
+along `end:` (a line or an axis), and an end given neither runs straight out. Its control points
+are minted (`rail.k1` …); the chain may be written after it.
+
 A **free curve**, `rope := curve(a, b)`, runs from `a` to `b` with a shape its energy settles
 (1.10).
 
@@ -1247,7 +1253,17 @@ k := Par(o).p over u in (-2mm, 2mm)
   turns no more than the guide does. **A named open chain of lines and arcs is one path**:
   `solid(Tube(route, std.z, r: 4mm).f over s in (0, 5))` runs the station over `route`'s
   five links one after the next, link `k` while `s` is in `(k, k + 1)`; a law in `s` reads the
-  chain's whole `s`, and the walls keep their names across the links (`docs/lofts/l0/pipe.sv`). A component is closed over its arguments, so the station's `up` (`std.z`) is passed in as an
+  chain's whole `s`, and the walls keep their names across the links (`docs/lofts/l0/pipe.sv`).
+  **Several sections** (0.111) are joined by **rails**, one a corresponding corner — its places in
+  order, one a section — the station's corner where its rail meets the plane: `rim := point in
+  st.n, front` and `rim coincident rail` (or `point in st.n` for a rail of lines in space). Every
+  chain a station is given runs **in step**, link by link (of as many links), so a guide cut at
+  the sections (`axis := line(base, shoulder) -> line(shoulder, top)`) and a chain of lines
+  through each corner (`rims := line(r0, r1) -> line(r1, r2)`) is a **ruled** loft, an edge at
+  each section; `spline(through: rims, start: axis_line, end: axis_line)` is the **smooth** one's
+  rail, square to its end sections (or tangent to a neighbouring face's edge). With no guide,
+  `std.Across(ra, rb, rc, s: s)` is the plane through three rails at `s`
+  (`docs/lofts/l0/bottle.sv`, `rust/gcs-core/tests/sections.rs`). A component is closed over its arguments, so the station's `up` (`std.z`) is passed in as an
   `axis` formal. Every station inside the interval must solve to DOF 0 with the section's shape
   intact; an end may shrink to a point (a pyramid's apex). Caps `start` and `end`, walls named by
   the section's edges (`body.sec.ab`). Seed the section where it belongs at the middle of the

@@ -110,6 +110,19 @@ march, a seed of fewer columns, dense output forwards and back, a carried branch
   positive plain number). The recipe writes `"weights"`, so the profile is `BSpline::rational` in
   our kernel and in OCCT's (`solvent_cad_bspline` takes a weights pointer). `nurbs.sv`,
   `tests/weighted_spline.rs`.
+- **A spline through a chain's corners** (§6.1 [0.111], #243 L7): `spline(through: rims, start:
+  l, end: m)` (`Decl::through`, parsed in `decl_list`, printed by `decl_args`) is expanded in
+  `flatten::through` once the walk is done (`Aside::fits`, so the chain may be written after it):
+  `n` corners make `n + 2` clamped uniform control points, the corners' own points first and last
+  and `rail.k1` … `rail.kn` minted between (seeded at the corners, the end ones a third of the way
+  on), each inner corner `coincident(t == k)`, and at each end the control point beside the corner
+  at a third (one link: a half) of the line toward the next control point — natural, `C'' = 0` —
+  or, given a tangent, toward that point's foot on the tangent through the corner (`#sfoot`, the
+  lines `#srun ∥ l`, `#sdrop ⟂ l`): `C'' · T = 0`, the least bending the tangent leaves.  Each
+  statement is the declaration's (its id and span), the helpers private construction.  An axis
+  given as the tangent of a spline in a plane states one row more than it needs (a line in space
+  parallel to it), consistent and harmless.  `tests/sections.rs` holds the control points to a
+  solve made apart.
 - A control polygon is edited three ways.  *Inserting* is `curve::insert_control` (Boehm's knot
   insertion: C(t) unchanged, every contact keeps parameter and place; `DEGREE - 1` neighbours
   move, keeping identity).  *Deleting* shortens the curve: `Sketch::min_children` is the general

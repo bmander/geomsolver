@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.110 — October 2026**
+**Specification, Draft 0.111 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -345,6 +345,8 @@ A bare declaration introduces an entity all of whose coordinates are unknowns.
 Where an unnamed and unseeded coordinate *starts* is not the language's business (§15). It is worth saying only that the obvious answer is wrong: two implicit endpoints both at the origin is a zero-length line, with no direction for `horizontal l` to bite on and a singular row for any tangency, so an implementation MUST NOT place them coincidently.
 
 A **list** child slot — a spline's control polygon, a curve's arguments — has no arity to conjure children from, so a bare `s := spline` remains **E103**.
+
+**[0.111] A spline through a chain's corners.** `rail := spline(through: rims, start: l, end: m)` is the cubic through the corners of the named open chain of lines `rims` (§6.6), in walk order — the first link's `p1`, then each link's `p2` — **one span a link**, its knots clamped and uniform, so its parameter `t` is `k` at the chain's corner `k`. Its ends are held by tangents: at the first corner along `start:` and at the last along `end:`, each a line or an axis, the curve bent there no more than the tangent asks (its second derivative square to it); an end with neither runs straight out (its second derivative nothing, the natural end). It is short for an ordinary spline and ordinary statements, all the declaration's: its control points minted under it, `rail.k1` … `rail.kn` between the first corner and the last (`n + 2` for `n` corners, the corners' points its first and last), each corner between the ends `coincident(t == k) rail`, and at each end the control point beside the corner a third of the way (over one link, half) from it toward the next control point, or, given a tangent, toward that point's foot on the line through the corner along the tangent — the foot and the lines to it private construction under the spline. The chain is read wherever it is written (P2). `through:` beside control points, `start:` or `end:` with no `through:`, are refused where written; a closed chain, or anything not a named chain of lines, is **E080**/**E103** at the reference. The spline is drawn in a plane like any (§6.7), so are its chain's corners.
 
 **[0.53] A free curve** **[0.55]** is written with the two points it runs between, `rope := curve(a, b)`: the curve runs from `a` to `b` and its shape is the drawing's to find — what an energy over it (§9.10) settles, the solution of that energy's Euler–Lagrange equation. It has no control points: how the implementation solves the equation is its own business (§15), so long as the answer is the curve the statements describe to the accuracy it reports. It owns one number, its **length**, held by `length(L) rope`, or **[0.57]** solved for where the rest of the drawing determines it, or else where the energy is stationary in it. It is drawn in the plane its ends are in (**E060** for ends in space). A free curve no energy is stated over has no shape (**E040**). **[0.55]** `spline(a, b)` is a spline of two control points, refused as too short.
 
@@ -927,8 +929,10 @@ block := solid(face(mouth, side_r, lid, side_l), from: face, to: back)
   stations on a link start where those of the link before end, so the section is carried across
   each joint, and a wall keeps its one name over every link. The running formal of a family over
   a chain MUST be a `Scalar` (**E103**), its interval within `(0, n)` (**E080**) and the chain
-  open (**E080**: its ends would meet); past the first link, a contact on anything but the chain
-  pinned to `s` is **E103**. A seed's step MAY run along any path, `hint(at: p, along: g, by:
+  open (**E080**: its ends would meet); past the first link, a contact on anything but a chain it
+  runs pinned to `s` is **E103**. **[0.111]** Every `path` formal given a named open chain is run
+  so, all **in step**: on link `k` each is given its own link `k`, so the chains MUST have as many
+  links (**E080** naming both). A seed's step MAY run along any path, `hint(at: p, along: g, by:
   f)`: `f` times `g`'s rate along its own run where `p` meets it, as along a line it is `f` times
   its run from `p1` to `p2` (§6.4).
 - **[0.103] A law is an expression in the running number.** A twist or a scale is a dimension of
@@ -957,6 +961,21 @@ block := solid(face(mouth, side_r, lid, side_l), from: face, to: back)
   screw, a turn alone, or a step along one line — an implementation lays each wall on the surface
   its first edge sweeps under that motion and each rail on its corner's path, once they agree with
   the general walls.
+- **[0.111] A loft through several sections is drawn on rails.** A section's corners correspond
+  by rails, one a corner: its places in order, one a section. The station's corners stand where
+  their rails meet its plane (`p := point in st.n`, `p coincident rail`; a rail drawn in a plane,
+  the corner drawn in both, `point in st.n, front`). A **ruled** loft's rail is a named open chain
+  of lines from section to section, and its guide a chain of as many links, cut at the sections:
+  the family runs them in step (§6.9 [0.102]), so the loft is ruled piecewise in the running
+  number, section `k` at `s = k`, and its walls meet there at an angle — an edge of the solid, the
+  wall one name over its pieces. A **smooth** loft's rail is the spline through the same corners
+  (§6.1 [0.111]), its end conditions the spline's tangents there — along the guide (normal to an
+  end section), or along a neighbouring face's edge (tangent to it). A loft with **no guide**
+  stands its station on its rails: the standard library's `Across(a, b, c, s:)` is the plane
+  through the places at `s` on three rails, its `u` from the first toward the second and its `v`
+  toward the third. *Non-normative:* where the walls of a family meet at an angle across its
+  interval an implementation builds its solid in bands between those sections, each wall a face a
+  band.
 - **A revolution** turns a face about `about:` a line or an axis, which MUST be one of the two (**E081**) and MUST lie in the **face's own plane** (E081) — a line drawn in another view names a direction this face knows nothing about. **[0.67]** A line lies there by membership; an axis where it is one of the plane's own axes (`std.z` on `std.front`), or, held entirely by `fix` (the plane too), where it stands now — else, placed by the solve, where the solid is evaluated, which refuses the solid if it does not. `sweep:` is how far and is a **magnitude**, a full turn where the document writes none; **which way is a word, not a sign** (§9.2, §9.4): `sense: cw | ccw`, right-handed about the line's own `p1 → p2` (an axis's own direction) unless `cw` is written, and a negative `sweep:` is **E040** at the value, in the words of the selector that replaces it.
 - **A body** names its **stock** in the brackets and takes its features from the **[0.32]** `union`, `cut` and **[0.22]** `common` **[0.85]** statements that name it. A solid whose brackets hold solids and no face is a body. **[0.99]** A solid whose brackets hold nothing, `pegs := solid()`, is an **empty body**: its stock is the first solid in `union` with it, so `B(s)` below is read with `S(s)` empty; which is first is no matter, the union being a set. A pattern then joins every copy alike — `repeat n as i { peg[i] union pegs }` — with none written apart as the stock. An empty body nothing is in `union` with is **E080** at its declaration, whatever cuts it. **[0.31]** A swept solid that a `union`, `cut` or `common` statement names is a body too, whose stock is its own sweep: the name means the sweep with its features wherever it is read, the sweep's faces keep their names (`plate.near`, not `plate.plate.near`), and a feature's are reached through it (`plate.hub.near`). A document wanting the bare sweep and the finished part under two names writes `body := solid(plate)` and puts the features on `body`.
 

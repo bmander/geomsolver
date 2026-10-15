@@ -190,7 +190,7 @@ impl<'a> Walk<'a> {
 
     /// A declaration: its name made absolute, its numbers worked out in the scope, and the
     /// twins, the probe and the set its region makes beside it.
-    fn walk_decl(
+    pub(super) fn walk_decl(
         &mut self,
         d: &Decl,
         st: &Stmt,
@@ -202,6 +202,18 @@ impl<'a> Walk<'a> {
         let abs = format!("{prefix}{}", d.name.key().text);
         self.names.insert(abs.clone());
         if d.annotations.private { self.private_names.insert(abs.clone(), scope.owner.clone()); }
+        // a spline through a chain's corners waits for every chain (#243 L7, `through`)
+        if d.through.is_some() {
+            self.aside.fits.push(super::through::Fit {
+                d: d.clone(),
+                st: st.clone(),
+                scope: scope.clone(),
+                vals: vals.clone(),
+                path: path.to_vec(),
+                prefix: prefix.to_string(),
+            });
+            return;
+        }
         let mut d2 = d.clone();
         d2.name = d.name.prefixed(abs, scope.block.copies);
         if scope.stamps.anonymous {
@@ -371,9 +383,11 @@ impl<'a> Walk<'a> {
             self.err(Code::E080, st.span, m);
             return ControlFlow::Continue(());
         }
-        // a path given a named chain: one leg per link the interval reaches (#243 L4)
-        if let Some((at, links)) = self.chain_argument(comp, inst, scope) {
-            return self.walk_legs(f, inst, (at, links), (a, b), formal.ty, st, scope, vals, path,
+        // a path given a named chain: one leg per link the interval reaches (#243 L4), every
+        // chain the call gives run in step (L7)
+        let chains = self.chain_arguments(comp, inst, scope);
+        if !chains.is_empty() {
+            return self.walk_legs(f, inst, chains, (a, b), formal.ty, st, scope, vals, path,
                                   depth);
         }
         let held = format!("{}{}.{swept}", scope.prefix(), inst.name.text);
@@ -388,12 +402,16 @@ impl<'a> Walk<'a> {
     /// its part of the interval, and the family's formal read as `k` past it (`bind`), so a law
     /// in `s` reads the chain's `s` on every link; a contact pinned to `s` on the link reads the
     /// leg's own number, the fraction of that link's run (`settle_relation`).
+    ///
+    /// **Several chains run in step** (#243 L7): every `path` formal given a named open chain is
+    /// given its link `k` on leg `k` — a guide and the rails of a loft through several sections,
+    /// each a link a pair of neighbouring sections — so the chains must have as many links.
     #[allow(clippy::too_many_arguments)]
     fn walk_legs(
         &mut self,
         f: &crate::syntax::FamilySpec,
         inst: &crate::syntax::Instance,
-        (at, links): (usize, Vec<(Ref, String)>),
+        chains: Vec<(usize, Ref, Vec<(Ref, String)>)>,
         (a, b): (f64, f64),
         ty: Ty,
         st: &Stmt,
@@ -403,7 +421,15 @@ impl<'a> Walk<'a> {
         depth: usize,
     ) -> ControlFlow<()> {
         let swept = &f.swept.text;
-        let n = links.len();
+        let n = chains[0].2.len();
+        if let Some((_, r, other)) = chains.iter().find(|(_, _, l)| l.len() != n) {
+            let (first, m) = (ref_text(&chains[0].1), other.len());
+            let m = format!("a face family runs the chains it is given in step, link by link, and \
+                             `{}` has {m} link{} where `{first}` has {n}", ref_text(r),
+                            if m == 1 { "" } else { "s" });
+            self.err(Code::E080, r.span, m);
+            return ControlFlow::Continue(());
+        }
         if ty != Ty::Scalar {
             let m = format!("a face family over a chain runs `{swept}` link by link, from 0 to \
                              the chain's {n}: it is a `Scalar`");
@@ -419,14 +445,19 @@ impl<'a> Walk<'a> {
         }
         let key = format!("{}{}", scope.prefix(), inst.name.text);
         let mut legs = Vec::new();
-        for (k, (link, abs)) in links.into_iter().enumerate() {
+        for k in 0..n {
             let (lo, hi) = (a.max(k as f64), b.min(k as f64 + 1.0));
             if hi - lo <= 1e-12 * (b - a) {
                 continue;
             }
             let mut leg = inst.clone();
             leg.name.text = format!("{}_{k}", inst.name.text);
-            leg.args[at].value = crate::syntax::InstVal::Ref(link);
+            let mut abs = Vec::with_capacity(chains.len());
+            for (at, _, links) in &chains {
+                let (link, full) = links[k].clone();
+                leg.args[*at].value = crate::syntax::InstVal::Ref(link);
+                abs.push(full);
+            }
             let held = format!("{}{}.{swept}", scope.prefix(), leg.name.text);
             self.held.names.insert(held.clone(), (ty.dim(), 0.5 * (lo + hi) - k as f64));
             self.held.legs.insert(held.clone(), (k as f64, abs));
@@ -437,33 +468,54 @@ impl<'a> Walk<'a> {
         ControlFlow::Continue(())
     }
 
-    /// The named chain a call gives one of its `path` formals, where it gives one (#243 L4): the
-    /// argument's index, and each link as a reference the call's scope reads with its absolute
-    /// name.  A closed chain is no path a family can run along, its ends meeting; said here.
+    /// The named chains a call gives its `path` formals (#243 L4, L7): each argument's index, the
+    /// argument as written, and each link as a reference the call's scope reads with its absolute
+    /// name.  A closed chain is no path a family can run along, its ends meeting; said here, and
+    /// then no chain is run.
+    fn chain_arguments(
+        &mut self,
+        comp: &Component,
+        inst: &crate::syntax::Instance,
+        scope: &Scope,
+    ) -> Vec<(usize, Ref, Vec<(Ref, String)>)> {
+        let mut out = Vec::new();
+        for fo in comp.formals.iter().filter(|fo| fo.ty == Ty::Path) {
+            match self.chain_argument(comp, inst, scope, fo) {
+                Some(Some(c)) => out.push(c),
+                Some(None) => return Vec::new(),
+                None => {}
+            }
+        }
+        out
+    }
+
+    /// The named chain a call gives the `path` formal `fo`, where it gives one: `Some(None)`
+    /// where it is refused (said here).
     fn chain_argument(
         &mut self,
         comp: &Component,
         inst: &crate::syntax::Instance,
         scope: &Scope,
-    ) -> Option<(usize, Vec<(Ref, String)>)> {
+        fo: &crate::syntax::Formal,
+    ) -> Option<Option<(usize, Ref, Vec<(Ref, String)>)>> {
         let alias = self.alias_table();
-        for fo in comp.formals.iter().filter(|fo| fo.ty == Ty::Path) {
-            let Some(at) = super::bindings::arg_index(comp, inst, fo) else { continue };
-            let crate::syntax::InstVal::Ref(r) = &inst.args[at].value else { continue };
-            let Some((abs, rest)) = self.look(&alias).find(r, scope) else { continue };
+        {
+            let Some(at) = super::bindings::arg_index(comp, inst, fo) else { return None };
+            let crate::syntax::InstVal::Ref(r) = &inst.args[at].value else { return None };
+            let Some((abs, rest)) = self.look(&alias).find(r, scope) else { return None };
             if !rest.is_empty() {
-                continue;
+                return None;
             }
             let chain = self.out.iter().find_map(|(st, _, sc)| match &st.kind {
                 StmtKind::Chain(c) if c.name.key().text == abs => Some((c.clone(), sc.clone())),
                 _ => None,
             });
-            let Some((chain, sc)) = chain else { continue };
+            let Some((chain, sc)) = chain else { return None };
             if chain.closed {
                 let m = format!("`{}` is a closed chain, and a face family along it would meet \
                                  itself: run it over an open one", ref_text(r));
                 self.err(Code::E080, r.span, m);
-                return None;
+                return Some(None);
             }
             let mut links = Vec::new();
             for l in &chain.links {
@@ -476,13 +528,12 @@ impl<'a> Walk<'a> {
                     let m = format!("`{}`'s link `{}` is not one the call can name",
                                     ref_text(r), ref_text(l));
                     self.err(Code::E103, r.span, m);
-                    return None;
+                    return Some(None);
                 };
                 links.push((Ref::dotted(local, r.span), full));
             }
-            return Some((at, links));
+            return Some(Some((at, r.clone(), links)));
         }
-        None
     }
 
     /// An instance: its arguments bound and its component's body walked under its prefix — or
@@ -822,19 +873,20 @@ impl<'a> Walk<'a> {
     }
 
     /// The leg of a family over a chain whose link relation `r`, written in a leg's station,
-    /// names among its operands (#243 L4): that leg's running number and the link's index.
+    /// names among its operands (#243 L4) — a link of any chain the leg runs (L7): that leg's
+    /// running number and the link's index.
     fn leg_named(&self, r: &crate::syntax::Relation, scope: &Scope) -> Option<(String, f64)> {
         if self.held.legs.is_empty() {
             return None;
         }
         let w = r.form.written()?;
         let prefix = scope.prefix();
-        let (held, (k, link)) = self.held.legs.iter().find(|(h, _)| {
+        let (held, (k, links)) = self.held.legs.iter().find(|(h, _)| {
             prefix.starts_with(&crate::model::station_prefix(h))
         })?;
         let alias = self.alias_table();
         w.ops.iter().any(|op| self.look(&alias).find(op, scope).is_some_and(|(t, rest)| {
-            std::iter::once(t).chain(rest).collect::<Vec<_>>().join(".") == *link
+            links.contains(&std::iter::once(t).chain(rest).collect::<Vec<_>>().join("."))
         })).then(|| (held.clone(), *k))
     }
 

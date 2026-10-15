@@ -4,6 +4,17 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.111] A loft through several sections is drawn on rails.** A spline may be written through
+the corners of a named open chain of lines, `spline(through: rims, start: l, end: m)` (§6.1): the
+cubic through them, a span a link, its ends along the tangents written, or else running straight —
+short for its minted control points and ordinary contacts. A face family given several named open
+chains runs them in step, link by link (§6.9), so a guide cut at each section and a chain of lines
+through each corresponding corner is a ruled loft through several sections, piecewise in the running
+number with an edge at each section; the spline through the same corners is the smooth one's rail,
+its ends' tangents the loft's end conditions. The standard library's `Across(a, b, c, s:)` is a
+station with no guide, the plane through three rails at `s`. Through 0.110 a family ran one chain,
+and a smooth rail was drawn by hand, its control points and a corner on it. (Issue #243, L7.)
+
 **[0.110] A screw is constraints.** The standard library's `Helix(base, pitch:, turns:, s:)` is
 the frame of the plane `base` turned `360deg · turns · s` about its normal and risen `pitch ·
 turns · s` along it (§6.9): `n` is `base` so carried, and a section drawn in it sweeps a twisted

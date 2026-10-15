@@ -163,6 +163,7 @@ mod rounds;
 mod rounds_examples;
 mod row_scale;
 mod seams;
+mod sections;
 mod sector;
 mod seeds;
 mod set_regions;

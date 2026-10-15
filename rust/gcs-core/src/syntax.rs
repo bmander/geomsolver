@@ -924,6 +924,19 @@ pub struct Decl {
     /// is named in parentheses, `(l := line(a, b)) -> …`, since `:=` binds looser than `->`.
     /// `None` where `name := ` alone stands at the name's span — a statement's whole value.
     pub mint_close: Option<usize>,
+    /// A spline **through** the corners of a named open chain (#243 L7), `spline(through: rims,
+    /// start: l, end: m)`: its control points minted, its ends' tangents along `start:` and
+    /// `end:` where they are written (`flatten::through`).  `None` for every other declaration.
+    pub through: Option<Through>,
+}
+
+/// What a spline through a chain's corners names (`Decl::through`): the chain, and the lines (or
+/// axes) its tangents at its first and last corner run along, where they are written.
+#[derive(Clone, Debug)]
+pub struct Through {
+    pub chain: Ref,
+    pub start: Option<Ref>,
+    pub end: Option<Ref>,
 }
 
 impl Decl {
@@ -954,6 +967,7 @@ impl Decl {
             list_span: Span::default(),
             close: None,
             mint_close: None,
+            through: None,
         }
     }
 
@@ -983,6 +997,7 @@ impl Decl {
             list_span: Span::default(),
             close: None,
             mint_close: None,
+            through: None,
         }
     }
 }

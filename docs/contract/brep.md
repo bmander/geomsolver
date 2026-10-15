@@ -121,6 +121,15 @@ starts on a coil's next turn); `inverse_near` runs Newton from its hint first; `
 fits quintic along a screw a cubic cannot follow at the fit's cap.  A twisted duct, a thread, an auger's
 flight and a coil lie on blends; a section that changes as it runs stays on its sheets
 (`tests/helix.rs`, `a_rigid_screw_lies_on_its_swept_rim`).
+**Creases** (#243 L7, `creases`): a joint of the pieces at which some wall's `S_s` turns, read
+from either piece (`Sheet::rate_in`) at five places along it, by more than `CREASE` (`1 − cos`,
+1e-6) is a section the walls meet at an angle — a ruled loft's, where a family runs chains in
+step.  The solid is built in **bands** between them (`Band`, `Stations::band`/`Sheet::band`: each
+wall's pieces of the band alone), each wall a face a band under its one name, each band's rims
+edges shared with the next, rails a band at a time; the caps and the vanished ends as before, and
+each band's walls lowered on their own (a ruled bottle's two cones).  A joint within `CREASE_GAP`
+of another or of an end is none: the pieces closing in on a law's kink (`max`) stay in their face.
+A family in bands is never carried rigidly.
 STEP writes a sheet as the net fitted within `step::FIT` (`family_net`, cubic along the edge and
 quintic along `s`: a cubic through 512 rows misses a 3½-turn auger by 1e-6), rails and rims as
 cubics within it.
