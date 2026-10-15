@@ -84,6 +84,13 @@ test('menu examples open files or directories with one V-twin choice', async (t)
     assert.ok(rod.files[`conrod/${name}`], name);
   }
   assert.ok(drawings.info(rod.files['conrod/rod.svd']).sheets.length);
+  const lofts = await remote.drawing('lofts');
+  assert.equal(lofts.source, 'lofts/pipe.sv');
+  for (const name of ['README.md', 'pipe.sv', 'twisted_duct.sv', 'tapered.sv', 'thread.sv',
+    'spring.sv', 'bottle.sv', 'squares.sv', 'two_faces.sv', 'triangle_to_square.sv', 'pyramid.sv',
+    'blade.sv', 'three_rails.sv', 'square_to_circle.sv']) {
+    assert.ok(lofts.files[`lofts/${name}`], name);
+  }
   const wankel = await remote.drawing('wankel');
   assert.equal(wankel.source, 'wankel/wankel.sv');
   for (const name of ['wankel.sv', 'wankel.svd', 'configuration.sv']) {
