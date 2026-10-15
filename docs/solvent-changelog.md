@@ -9,10 +9,15 @@ slot of the contact holding `p` (§6.5) — a curve's `t`, a traced curve's `u`,
 the roll of `p coincident(under: m, t == …) q` — where `t` names no formal in scope: the derivative
 of the point the contact holds in that slot, every other unknown of the drawing held (a meshing's
 lag and places following its rows). It is held `parallel` or `perpendicular` to a line or an axis,
-and, of a carried point, measured `distance(d, along: l)` (`d` stated or free); a rate along a
+and measured `distance(d, along: l)` (`d` stated or free); a rate along a
 `param`, a slot no contact holding the point owns, or one owned by two contacts is refused, naming
-it. `g tangent(at: m) l` of a spline, a curve, a traced curve or a meshing is that rate held along
-the line, the same statement: the path of contact is `rate(Q over t) parallel l`. A motion's
+it. Every statement at a point a contact holds is the contact's frame there, read by one kernel
+whatever the contact: `g tangent(at: m) l` of a spline, a curve, a traced curve or a meshing is that
+rate held along the line — the path of contact is `rate(Q over t) parallel l` — and a surface's
+normal (`S perpendicular(at: p) l`, a meshing's common normal too), a plane or a line touching it
+(`S tangent(at: p) P`, `S tangent(at: p) l`) and its section's circle (`S curvature(at: p) k`) are
+the same frame's, solving to what they did. A curve's rate in its view may now be held square to
+a line and any contact's measured along one, where its tangent was held only along a line. A motion's
 twist has no words of its own: `reciprocal` and `screw` (0.105) leave the core, and the standard
 library says them with rates of carried points — `L reciprocal m` (import it, `use std
 (reciprocal)`) and `std.Screw(isa, m)`, whose `pitch` is the axis's advance a radian of the roll

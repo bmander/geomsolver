@@ -938,8 +938,9 @@ pub fn operator_text(kind: CKind, args: &[Option<Arg>]) -> String {
 }
 
 /// **A rate of a contact, as a document writes it** (#365): `rate(p over t) parallel l`,
-/// `perpendicular l`, `rate(p over t) distance(d, along: l)` — or, written as the tangent it is,
-/// `g tangent(at: p) l`.  What the contact holds the point on is the contact's, and a rate never
+/// `perpendicular l`, `rate(p over t) distance(d, along: l)` — or, written at the point, a curve's
+/// tangent `g tangent(at: p) l` and a surface's frame, `S perpendicular(at: p) l`, `S tangent(at:
+/// p) P`, `S curvature(at: p) k`.  What the contact holds the point on is the contact's, and a rate never
 /// names it; its slot is the contact's, written with the contact.  `None` for every other kind.
 fn rate_text(kind: CKind, args: &[Option<Arg>]) -> Option<String> {
     let get = |i: usize| args.get(i).and_then(|a| a.as_ref());
@@ -953,11 +954,15 @@ fn rate_text(kind: CKind, args: &[Option<Arg>]) -> Option<String> {
     };
     match kind {
         CKind::Rate => {
-            let w = word(5);
-            if w == "tangent" {
-                return Some(format!("{} tangent(at: {}) {}", text(0), text(2), text(1)));
-            }
-            Some(format!("rate({} over {}) {w} {}", text(2), word(4), text(1)))
+            // a curve's tangent and a surface's frame are written at the point, the contact's
+            // carrier first; a rate in one slot as the rate it is
+            let at = match word(5).as_str() {
+                "tangent" | "plane" | "in_plane" => "tangent",
+                "normal" => "perpendicular",
+                "curvature" => "curvature",
+                w => return Some(format!("rate({} over {}) {w} {}", text(2), word(4), text(1))),
+            };
+            Some(format!("{} {at}(at: {}) {}", text(0), text(2), text(1)))
         }
         CKind::RateDistance => {
             let d = get(3).map_or_else(String::new, dim_text);

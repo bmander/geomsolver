@@ -79,45 +79,49 @@ came from.
   in spec order, with `Symmetric` the single three-slot exception.  Several kinds share a word —
   **`coincident` is nineteen kinds, `distance` nine, `tangent` fifteen** (twins in space included; a set's uses besides) — and `horizontal`/`vertical` are
   two each with the *fixity* doing the work.  **Over an envelope in space** (#283, [0.90]) a point
-  is `coincident`, and at a point held there a line or an axis `tangent` (`EnvelopeTangentAt`) or
-  `perpendicular` (`EnvelopeNormalAt`), a plane `tangent` (`EnvelopePlaneAt`) and a circle or arc
-  `curvature` (`EnvelopeCurvatureAt`): the parser reads `at:` after `perpendicular` and `curvature`
-  as a point, as after `tangent` (`op_args`), and `settle` names the envelope first whatever was
-  written first (`curve_last`, the symmetric swap).  **On a meshing** (#283, [0.94]) a point is
+  is `coincident`, and at a point held there a line or an axis `tangent` or `perpendicular`, a
+  plane `tangent` and a circle or arc `curvature` — each a `Rate` of the contact, its word
+  `in_plane`, `normal`, `plane` or `curvature` (#365; `settle` reads which from the word and the
+  operands): the parser reads `at:` after `perpendicular` and `curvature` as a point, as after
+  `tangent` (`op_args`), and `settle` names the envelope first whatever was written first
+  (`curve_last`, the symmetric swap).  **On a meshing** (#283, [0.94]) a point is
   `coincident` (`PointOnMeshing`), its phase and lag slots pinned by `t ==` and `lag ==`; at a
-  point held there (#345, [0.112]) a line or an axis is `perpendicular` (`MeshingNormalAt`, the
-  common normal) or `tangent` (`Rate`, the path of contact — the point's rate along the phase,
-  #365), `(Meshing, Line | Axis)` with `at:` a point, the meshing named first whatever was written
-  first.  The normal's eight place slots are the holding contact's (`Constraint::tangent_at`,
-  `holds_on`: `PointOnMeshing` hands its phase, lag and places to them as `share_place` does an
-  envelope's), seeded as the contact's are where they come first (`seed_param` over
-  `contact_on(Meshing)`); a rate shares the first, the phase, and reads the rest as columns
-  (`rate_contact`); and one at a point no contact holds is E040 naming the statement
-  (`tangents_at`).
+  point held there (#345, [0.112]) a line or an axis is `perpendicular` (the common normal) or
+  `tangent` (the path of contact, the point's rate along the phase) — a `Rate`, `normal` or
+  `tangent` (#365) — `(Meshing, Line | Axis)` with `at:` a point, the meshing named first whatever
+  was written first.  A rate shares the first of the holding contact's unknowns, the phase
+  (`Constraint::tangent_at`, `holds_on`, `share_place`), and reads the rest as columns
+  (`rate_contact`); one at a point no contact holds is E040 naming the statement (`tangents_at`).
   **A motion is an operand** (#326, [0.105]): `SpecKind::Motion`, the slot a motion fills — of a
   point it carries, below.  Its twist has no words of its own (#365, [0.122]): `reciprocal` and
   `screw` are the standard library's, rates of carried points (`L reciprocal m`, `std.Screw(isa,
   m)`), so neither is an `OPERATORS` word any more, and `std.sv` may define them.
-  **The rate of a contact** (#365, [0.122]): `rate(p over t) parallel l` / `perpendicular l` is
-  `CKind::Rate`, slots `(on: Carrier, line: Direction, at: Point, t: Param, over: Str, word: Str)`,
-  and `rate(X over t) distance(d, along: l)` `CKind::RateDistance` (`on`, `along`, `at`, `d: Length`,
-  `t`, `over`).  `settle` lowers a written relation one of whose rates the flattener marked a slot
-  (`RateOf::slot`) by `settle_rate`, before any word table: one rate, of a point, the other operand
-  a line or an axis; `parallel` and `perpendicular` with two operands, `distance` with one and
+  **The rate of a contact** (#365, [0.122]): `CKind::Rate`, slots `(on: Carrier, to: Against, at:
+  Point, t: Param, over: Str, word: Str)`, and `CKind::RateDistance` (`on`, `along: Direction`,
+  `at`, `d: Length`, `t`, `over`) — every statement at a point a contact holds, its word what of the
+  contact's frame it holds (curves.md's "The rate of a contact"): `rate(p over t) parallel l` /
+  `perpendicular l`, and `rate(X over t) distance(d, along: l)`; `g tangent(at: m) l` of a spline, a
+  curve, a meshing or a traced curve (`tangent`), of a traced surface or an envelope (`in_plane`);
+  `S perpendicular(at: p) l` of a surface or a meshing (`normal`); `S tangent(at: p) P` (`plane`);
+  `S curvature(at: p) k` (`curvature`).  `infix_op` settles every such `at:` word to `Rate` and
+  `settle` fills its word and `over` from the word written and the operands
+  (`relations::traced_contact` turns a traced surface's `tangent` into `in_plane` and refuses a
+  curve's surface words); `settle_rate` lowers a written relation one of whose rates the flattener
+  marked a slot (`RateOf::slot`), before any word table: one rate, of a point, the other operand a
+  line or an axis; `parallel` and `perpendicular` with two operands, `distance` with one and
   `along:`; anything else E040.  `on`, the carrier — a spline, a curve, a traced body, a meshing,
-  or the motion of `X coincident(under: m)` (`SpecKind::Carrier`) — is inferred (`infers_arg`) at
-  `io::seed_omitted` from the contacts holding the point that own a slot by that name
-  (`infer::rate_carriers`): none is E061 ("`s` is no formal here, and no contact holding …"), two
-  E061 naming both.  `g tangent(at: m) l` of a spline, a curve, a meshing or a traced curve is
-  `Rate` too (`infix_op`), `on` the curve written, `word: tangent` and `over` the source's slot
-  (`RateSource::slot`), printed back so; of a traced surface it is still its tangent plane
-  (`relations::traced_contact`).  `t` is the contact's first unknown, shared through
-  `tangent_at`/`share_place` as a tangent's always was ([3] of `Rate`, [4] of `RateDistance`;
-  `holds_on` hands a `CarriedPoint`'s roll too), so a rate is claimable (`CKind::claimable`).
-  `validate` (`infer::validate_rate`) refuses an `over` other than the source's slot, a traced
-  surface, a curve's rate in its view against an axis or held square or measured, and a
-  `RateDistance` of anything but a carried point.  Neither is drawn (`undrawn!`); `program::reading`
-  leaves its operands where they stand.  `tests/rate_of_contact.rs`, `jacobians` and
+  an envelope, or the motion of `X coincident(under: m)` (`SpecKind::Carrier`) — is inferred
+  (`infers_arg`) at `io::seed_omitted` from the contacts holding the point that own a slot by that
+  name (`infer::rate_carriers`): none is E061 ("`s` is no formal here, and no contact holding …"),
+  two E061 naming both.  `t` is the contact's first unknown, shared through
+  `tangent_at`/`share_place` ([3] of `Rate`, [4] of `RateDistance`; `holds_on` hands a
+  `CarriedPoint`'s roll too), so a rate is claimable (`CKind::claimable`).  `validate`
+  (`infer::validate_rate`) refuses a word the source has no frame for (a curve's normal, an
+  envelope's rate), an `over` other than the contact's slot (a traced surface's `u` or `s`), what it
+  is held against of the wrong kind (`SpecKind::Against`: a line or an axis, a plane for `plane`, a
+  circle drawn in a plane for `curvature`), and in a view a line drawn elsewhere.  Neither is drawn
+  (`undrawn!`); `program::reading` leaves its operands where they stand.
+  `tests/rate_of_contact.rs`, `jacobians`, `held_envelopes`, `traced`, `meshing` and
   `tests/phillips.rs` are the gate.
   **A point as a moving frame sees it** ([0.106]) is `coincident` between two points with a motion
   `under:` (`CKind::CarriedPoint`, `(Point, Point)` with the selector: the parser reads `under:` as

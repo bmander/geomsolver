@@ -1681,7 +1681,8 @@ The source's geometry, its number and the motion's axes are columns, so the cone
 what is stated at `M`. A plane sliding along its own normal relative to a turn sweeps an involute
 helicoid: `spiral_bevel/phillips.sv`'s rack, `std.HalfSpace(P, L, d: 0mm)` under
 `motion(slide, relative_to: pinion_turn)`. The `at:` relations read the place of the `coincident` holding `M`, which must
-be stated. A set's envelope is only held to: it has no chart after the solve.
+be stated: each is that contact's frame at `M` — its normal, a plane or a line square to it, a
+section's second order — read by the one kernel a rate of a contact is (0.122). A set's envelope is only held to: it has no chart after the solve.
 
 **A point a motion carries**: `X coincident(under: m, t == τ) x` is `x` as the moving frame sees
 it, carried by `m`'s pose at the roll `τ` (degrees; leave it unpinned and the solve finds it) — a

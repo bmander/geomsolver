@@ -48,12 +48,13 @@ reads the columns (lifts, an axis's place and direction, a free number) and cons
 `HEADER`, `STEP`); a set's turn starts at `SetShape::reference`, read once — before the solve
 places the axis, so a reference within 30° of the axis as solved gives way to the first world
 axis the axis does not nearly run along (`held::across`, #283), or which way rounding tips it
-moves every place a quarter turn. The kinds
-`PointOnEnvelope` (four rows, three owned), `EnvelopeTangentAt` (one), `EnvelopeNormalAt` and
-`EnvelopePlaneAt` (two, each its own `Contact`) and `EnvelopeCurvatureAt` (three: Meusnier,
-`x + (n − (n·m)m)/κₙ`, `κₙ` from `−dn·dX` along two directions of the place square to `∇g`) are
-built at their widths (`KernelKey::Envelope`); the four with `at:` share the contact's place
-(`solver.md`, #251). Seeds: `held::seed`, a coarse search
+moves every place a quarter turn. `PointOnEnvelope` (four rows, three owned) is built at its widths
+(`KernelKey::Envelope`); what is read at a point it holds is the envelope's frame, a `Rate` of the
+contact (#365, `contact_rate`, curves.md's "The rate of a contact"): `held::frame` gives the point,
+`∂X/∂u` to read a normal across, the unit normal, and two directions of the place square to `∇g`
+with `−dn·dX` along them, so a line in its tangent plane (`in_plane`, one row), along its normal
+(`normal`, two), a plane along it (`plane`, two) and a section's circle (`curvature`, three:
+Meusnier, `x + (n − (n·m)m)/κₙ`) share the contact's place (`solver.md`, #251). Seeds: `held::seed`, a coarse search
 over the roll interval then `newton::dogleg` on the four rows (`Seeding`), remembered across a
 contact's three slots. A set's
 envelope has no chart after the solve (`GeneratedEnvelope::named` refuses it; `program::solid_diagnostics`
@@ -111,24 +112,21 @@ from the cone's equation and the poses alone), a stated lag solving its phase, `
 envelope at the element's phase, to 1e-9), to the closed form's point contact along `L` with no
 lag, and their meshing's Jacobian to finite differences.
 
-**The common normal and the path of contact at a point (#345 S1, [0.112], #365):** `contact
-perpendicular(at: q) l` is `MeshingNormalAt`, and the path of contact is the contact point's
-rate along the phase, `rate(q over t) parallel l` — `contact tangent(at: q) l` the same statement —
-a `CKind::Rate` over the meshing, `meshing::Contact::{Normal, Path}` beside `Point` (and
-`PathSquare`, the rate square to a line: its part along it, a length a radian of the phase, degree
-1, through the same `path_jac_block`) (`CKind::meshing_contact`, `KernelKey::Meshing {
-contact, … }`): lead the line's two lifted ends or an axis's direction (six columns), then the
-point's contact's eight unknowns — shared, `holds_on` handing `PointOnMeshing`'s place to
-`tangent_at`'s slots `[3..11]` — and the meshing's columns as the point's; two rows, degree 0, the
-line's direction square to two directions. The normal's are the gear's tangent plane at the
-contact (`along`, `n₂ × along`), read off `at` as the point's rows are. The path is **the contact
+**The common normal and the path of contact at a point (#345 S1, [0.112], #365):** both are the
+meshing contact's frame, read by a `Rate` of it (`contact_rate`, `meshing::frame`): `contact
+perpendicular(at: q) l` its `normal` — the line square to the gear's tangent plane at the contact
+(`along`, `n₂ × along`), two rows, degree 0 — and the path of contact the contact point's rate along
+the phase, `rate(q over t) parallel l` (`contact tangent(at: q) l` the same statement), held
+across a line, along one or measured along one, a length a radian of the phase, degree 1.  Columns
+the lead (a line's two lifted ends or an axis's direction), then the point's contact's eight
+unknowns — the rate sharing the phase, `holds_on` handing the rest as columns — then the meshing's
+columns at no lead (`Parts::consts(sk, 0)`). The path is **the contact
 point's derivative along the phase in the fixed frame**, `∂x/∂φ + ∂x/∂z · dz/dφ` with `J_z dz/dφ =
-−J_φ` over the seven rows' Jacobian in the lag and the places (`meshing::path`, `touching`, the
-elimination `eliminate`): the implicit function theorem, the rows read once over `Fwd<T, 8>`, a number
-carrying its derivatives in the eight unknowns, each itself a `T`; its two directions are across
-the world axis it runs least along (`square_to`, a tie turning the pair about the path but not the
-plane it spans). Its Jacobian is the rows' second derivatives, exact: `path_jac_block` takes it a
-block at a time as the point's is, each flank's `Seen` over `Fwd<Dual, 3>` in its own place and
+−J_φ` over the seven rows' Jacobian in the lag and the places (`meshing::path_of`, `touching`,
+the elimination `eliminate`): the implicit function theorem, the rows read once over `Fwd<T, 8>`, a
+number carrying its derivatives in the eight unknowns, each itself a `T`; a line held along it is
+read against two directions square to the line (`screw::square_to`). Its derivative in every column is the rows' second derivatives, exact:
+`meshing::frame` takes it once a block as the point's Jacobian is, each flank's `Seen` over `Fwd<Dual, 3>` in its own place and
 the poses over `Fwd<Dual, 2>` in the phase and the lag, each differentiated over its own columns
 only (`derive`), then `assemble` and `path_of` over `Fwd<Dual, 8>` by the chain rule. It is not the
 bearing: `contact.sv`'s pair and step 3's turned cutter stand still on the gear's flank (the
@@ -139,8 +137,8 @@ to the cones' normal (`closed_contact`, apart from the meshing), the normal that
 that point's derivative over the phase; on the turned cutter the path a central difference of the
 traced positions; a free point's phase solved from a stated path angle and the traced path at that
 angle there; printing, sharing the place either way round and refusing an unheld point — with
-`jacobians::meshing_contacts_agree_with_finite_differences` holding both kinds over a formed, a
-round and two generated flanks.
+`jacobians::meshing_contacts_agree_with_finite_differences` holding the point and every rate over
+a formed, a round and two generated flanks.
 
 **Ease-off (#345 S2, [0.114]):** `meshing(…, ease: M, along: l, profile: κₚ, lengthwise: κₗ)` is
 `MeshingE::ease` (`model::Ease`: the point, the line, each curvature a `TermNumber` read off the

@@ -1,85 +1,42 @@
-//! **A point a motion carries, and its rate** (#326, #365).
+//! **A point a motion carries** (#326, R4).
 //!
 //! `X coincident(under: m, t == τ) x`: `X` is `x` **as the moving frame sees it**, carried by the
 //! motion's pose at the roll `τ` (in degrees, as a meshing's phase is) — `X = Pose(τ)·x`, three
-//! rows (R4).  Under `motion(turn, …)` at `τ = −φ` it is a point of the fixed frame seen from a
-//! member turned `φ`: a follower's contact seen by its cam, a rolling circle's point seen by the
-//! fixed one.  Any motion the solve reads.
+//! rows.  Under `motion(turn, …)` at `τ = −φ` it is a point of the fixed frame seen from a member
+//! turned `φ`: a follower's contact seen by its cam, a rolling circle's point seen by the fixed
+//! one.  Any motion the solve reads.
 //!
-//! **Its rate** (#365) is `rate(X over t)`, the contact's own slot: `∂(Pose(τ)·x)/∂τ`, a length a
-//! radian of the roll, every other column held — what the motion's **twist** is at `X`.  A
-//! motion's twist has no words of its own: the standard library reads it by rates of carried
-//! points (`std.sv`'s `reciprocal`, a line a force along which does no work on the motion, and
-//! `Screw`, its instantaneous screw axis and its pitch).  Three readings of the rate:
+//! **Its rate** (#365), `rate(X over t)` over the contact's own slot, is `∂(Pose(τ)·x)/∂τ`, a
+//! length a radian of the roll, every other column held — what the motion's **twist** is at `X`,
+//! read by the one kernel every rate of a contact is (`contact_rate`, `held::carried`).  A motion's
+//! twist has no words of its own: the standard library reads it by rates of carried points
+//! (`std.sv`'s `reciprocal`, a line a force along which does no work on the motion, and `Screw`,
+//! its instantaneous screw axis and its pitch).
 //!
-//! - `rate(X over t) parallel l`: the rate's part across the line's direction, two rows over two
-//!   directions square to it — a velocity, so a point that stands still (on the axis of a turn)
-//!   holds it regularly;
-//! - `rate(X over t) perpendicular l`: its part along the line, one row;
-//! - `rate(X over t) distance(d, along: l)`: that part less `d`, one row — `d` stated or free.
-//!
-//! **Layout.** Columns `[lead…, motion…]`: the two points' lifts and the roll (seven), or a rate's
-//! direction (a line's two lifted ends, or an axis's place and direction: six), the carried point's
-//! lift and the roll (ten), then two lifted ends per axis the motion turns about or slides along
-//! (`held::Moving`), then — a rate's distance written free — its unknown.  Constants: a rate's
-//! distance as `(m, c)` (`d = m·free + c`), then the motion's steps (`held::encode_steps`).  Every
-//! row is written once over `kernels::Num`, so the Jacobian is exact by forward differentiation.
-use super::held::{self, cross, dot, vscale as scale, vsub, Step, STEP};
+//! **Layout.** Columns `[X's lift, x's lift, τ, motion…]`, then two lifted ends per axis the motion
+//! turns about or slides along (`held::Moving`).  Constants: the motion's steps
+//! (`held::encode_steps`).  The rows are written once over `kernels::Num`, so the Jacobian is exact
+//! by forward differentiation.
+use super::held::{self, cross, vscale as scale, vsub, Step, STEP};
 use crate::kernels::{Kernel, KernelFn, Num};
 
-/// Which statement a motion is read for.
+/// Which statement a motion is read for: a point it carries.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Reading {
     /// `X coincident(under: m, t == τ) x`: three rows.
     Carried = 0,
-    /// `rate(X over t) parallel l`: two rows.
-    Rate = 1,
-    /// `rate(X over t) perpendicular l`: one row.
-    RateSquare = 2,
-    /// `rate(X over t) distance(d, along: l)`: one row.
-    RateAlong = 3,
 }
 
 impl Reading {
-    pub const ALL: [Reading; 4] =
-        [Reading::Carried, Reading::Rate, Reading::RateSquare, Reading::RateAlong];
+    pub const ALL: [Reading; 1] = [Reading::Carried];
 
     pub fn rows(self) -> usize {
-        match self {
-            Reading::Carried => 3,
-            Reading::Rate => 2,
-            Reading::RateSquare | Reading::RateAlong => 1,
-        }
+        3
     }
 
     /// The columns before the motion's.
     pub fn lead(self) -> usize {
-        match self {
-            Reading::Carried => 7,
-            _ => 10,
-        }
-    }
-
-    /// The constants before the motion's steps: a rate's distance, `(m, c)`.
-    pub fn header(self) -> usize {
-        match self {
-            Reading::RateAlong => 2,
-            _ => 0,
-        }
-    }
-
-    fn name(self) -> &'static str {
-        match self {
-            Reading::Carried => "carried",
-            Reading::Rate => "carried_rate",
-            Reading::RateSquare => "carried_rate_square",
-            Reading::RateAlong => "carried_rate_along",
-        }
-    }
-
-    /// A point's offset and a rate's components are lengths (a length a radian).
-    fn degree(self) -> u32 {
-        1
+        7
     }
 }
 
@@ -92,81 +49,45 @@ pub(crate) fn square_to<T: Num>(d: [T; 3]) -> ([T; 3], [T; 3]) {
     (t1, cross(d, t1))
 }
 
-/// A reading's rows over its columns `cols` and constants `k`, into `out`.  `None` where the
-/// constants are no motion's steps over this many columns.
+/// A reading's rows over its columns `cols` and the motion's steps `k`, into `out`.  `None` where
+/// the constants are no motion's steps over this many columns.
 pub(crate) fn rows<T: Num>(r: Reading, cols: &[T], k: &[f64], out: &mut [T]) -> Option<()> {
-    let (head, k) = (k.get(..r.header())?, k.get(r.header()..)?);
     let steps = held::read_steps(k)?;
-    let width = r.lead() + held::steps_width(&steps);
-    // a rate's distance written free reads its unknown last
-    let free = r == Reading::RateAlong && cols.len() == width + 1;
-    if (cols.len() != width && !free) || out.len() != r.rows() {
+    if cols.len() != r.lead() + held::steps_width(&steps) || out.len() != r.rows() {
         return None;
     }
-    let m = &cols[r.lead()..width];
+    // `X − Pose(τ)·x`, the roll in degrees
+    let (x, at, t) = (held::col3(cols, 0), held::col3(cols, 3), cols[6]);
     let deg = T::cst(std::f64::consts::PI / 180.0);
-    if r == Reading::Carried {
-        // `X − Pose(τ)·x`, the roll in degrees
-        let (x, at, t) = (held::col3(cols, 0), held::col3(cols, 3), cols[6]);
-        let (moved, _) = held::carried(&steps, m, t * deg, at)?;
-        for i in 0..3 {
-            out[i] = x[i] - moved[i];
-        }
-        return Some(());
-    }
-    // the rate a radian of the roll, against the line's direction
-    let d = held::unit(vsub(held::col3(cols, 3), held::col3(cols, 0)));
-    let (at, t) = (held::col3(cols, 6), cols[9]);
-    let (_, rate) = held::carried(&steps, m, t * deg, at)?;
-    match r {
-        Reading::Rate => {
-            let (e1, e2) = square_to(d);
-            out[0] = dot(rate, e1);
-            out[1] = dot(rate, e2);
-        }
-        Reading::RateSquare => out[0] = dot(rate, d),
-        Reading::RateAlong => {
-            let stated = match free {
-                true => T::cst(head[0]) * cols[width] + T::cst(head[1]),
-                false => T::cst(head[1]),
-            };
-            out[0] = dot(rate, d) - stated;
-        }
-        Reading::Carried => unreachable!("read above"),
+    let (moved, _) = held::carried(&steps, &cols[r.lead()..], t * deg, at)?;
+    for i in 0..3 {
+        out[i] = x[i] - moved[i];
     }
     Some(())
 }
 
-fn res<const R: u8>(n: usize, v: &[f64], k: &[f64], out: &mut [f64]) {
-    let r = Reading::ALL[R as usize];
+fn res(n: usize, v: &[f64], k: &[f64], out: &mut [f64]) {
+    let r = Reading::Carried;
     held::block_res(n, v, k, out, r.rows(), |x, kc, o| rows(r, x, kc, o));
 }
 
-fn jac<const R: u8>(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
-    let r = Reading::ALL[R as usize];
+fn jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    let r = Reading::Carried;
     held::block_jac(n, v, k, j, r.rows(), |x, kc, o| rows(r, x, kc, o));
 }
 
 /// The kernel of a reading at a block's widths (`system::build_kernel`).
-pub fn kernel(r: Reading, n_par: usize, n_const: usize) -> Kernel {
-    let (res, jac): (KernelFn, KernelFn) = match r {
-        Reading::Carried => (res::<0>, jac::<0>),
-        Reading::Rate => (res::<1>, jac::<1>),
-        Reading::RateSquare => (res::<2>, jac::<2>),
-        Reading::RateAlong => (res::<3>, jac::<3>),
-    };
-    Kernel { name: r.name(), n_res: r.rows(), n_par, n_const, degree: r.degree(), res, jac,
-             const_jac: None, form: None }
+pub fn kernel(_: Reading, n_par: usize, n_const: usize) -> Kernel {
+    Kernel { name: "carried", n_res: 3, n_par, n_const, degree: 1, res: res as KernelFn,
+             jac: jac as KernelFn, const_jac: None, form: None }
 }
 
-/// The constants a reading of a motion with these steps takes, a rate's distance `(m, c)` first.
-pub fn consts(r: Reading, stated: [f64; 2], steps: &[Step]) -> Vec<f64> {
-    let mut k = stated[..r.header()].to_vec();
-    k.extend(held::encode_steps(steps));
-    k
+/// The constants a reading of a motion with these steps takes.
+pub fn consts(steps: &[Step]) -> Vec<f64> {
+    held::encode_steps(steps)
 }
 
 /// How many constants a reading of `steps` takes.
-pub fn n_const(r: Reading, steps: &[Step]) -> usize {
-    r.header() + STEP * steps.len()
+pub fn n_const(steps: &[Step]) -> usize {
+    STEP * steps.len()
 }

@@ -383,8 +383,12 @@ f1 curvature(at: p) osc
     }
     let again = build(&printed);
     assert_eq!(kinds(&again), kinds(&first));
-    for k in ["PointOnEnvelope", "EnvelopeTangentAt", "EnvelopeNormalAt", "EnvelopePlaneAt", "EnvelopeCurvatureAt"] {
-        assert!(kinds(&first).iter().any(|x| x == k), "{k}");
+    assert!(kinds(&first).iter().any(|x| x == "PointOnEnvelope"));
+    // the frame at the point, each word a rate of the contact (#365)
+    use gcs_core::contact_rate::Word;
+    for w in [Word::InPlane, Word::Normal, Word::Plane, Word::Curvature] {
+        assert!(first.sketch.constraints.iter().any(|c| c.kind == CKind::Rate && c.rate_word() == w),
+                "{w:?}");
     }
 }
 
@@ -487,9 +491,12 @@ fn envelope_contacts_read_either_way_round_and_refuse_what_they_cannot_hold() {
     let src = format!("{ANNULUS}r := point hint((0, 35, 0))\nr coincident flank\nalong tangent(at: r) flank\n\
         k curvature(at: r) flank\n");
     let e = elaborated(&src);
-    let kinds: Vec<CKind> = e.sketch.constraints.iter().map(|c| c.kind).collect();
-    assert_eq!(kinds.iter().filter(|&&k| k == CKind::EnvelopeTangentAt).count(), 2);
-    assert_eq!(kinds.iter().filter(|&&k| k == CKind::EnvelopeCurvatureAt).count(), 2);
+    // each the envelope's frame at the point, read by a rate of its contact (#365)
+    use gcs_core::contact_rate::Word;
+    let words: Vec<Word> = e.sketch.constraints.iter().filter(|c| c.kind == CKind::Rate)
+        .map(|c| c.rate_word()).collect();
+    assert_eq!(words.iter().filter(|&&w| w == Word::InPlane).count(), 2);
+    assert_eq!(words.iter().filter(|&&w| w == Word::Curvature).count(), 2);
     let refused = |src: &str, want: &str| {
         let (prog, errs) = crate::common::parse(src);
         assert!(errs.is_empty(), "{errs:?}");

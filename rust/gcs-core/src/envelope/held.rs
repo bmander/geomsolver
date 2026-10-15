@@ -84,62 +84,34 @@ impl Source {
     }
 }
 
-/// Which statement a contact makes.
+/// Which statement a contact makes: a point on the envelope.  What is read at a point a contact
+/// holds — its normal, a plane or a line touching it there, a section's osculating circle — is the
+/// contact's frame, read by a rate of it (`contact_rate`, #365; `frame` here).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Contact {
     /// `p coincident flank`: `p − X`, and the meshing equation. Lead: the point's lift.
     Point = 0,
-    /// `l tangent(at: p) flank`: the line runs in the tangent plane. Lead: two points along it.
-    Tangent = 1,
-    /// `l perpendicular(at: p) flank`: the line runs along the normal. Lead: two points along it.
-    Normal = 2,
-    /// `flank curvature(at: p) k`: the circle osculates the envelope's section by its plane at
-    /// `p`, which is in that plane (drawn there, or stated).  Lead: the centre's lift, the radius,
-    /// the plane's two axes.
-    Curvature = 3,
-    /// `P tangent(at: p) flank`: the plane's normal runs along the envelope's. Lead: the plane's
-    /// two axes.
-    Plane = 4,
 }
 
 impl Contact {
-    pub const ALL: [Contact; 5] =
-        [Contact::Point, Contact::Tangent, Contact::Normal, Contact::Curvature, Contact::Plane];
+    pub const ALL: [Contact; 1] = [Contact::Point];
 
     pub fn rows(self) -> usize {
-        match self {
-            Contact::Point => 4,
-            Contact::Tangent => 1,
-            Contact::Normal | Contact::Plane => 2,
-            Contact::Curvature => 3,
-        }
+        4
     }
 
     /// The lead's width (the columns before the place).
     pub fn lead(self) -> usize {
-        match self {
-            Contact::Point => 3,
-            Contact::Tangent | Contact::Normal | Contact::Plane => 6,
-            Contact::Curvature => 10,
-        }
+        3
     }
 
     fn name(self) -> &'static str {
-        match self {
-            Contact::Point => "point_on_envelope",
-            Contact::Tangent => "envelope_tangent_at",
-            Contact::Normal => "envelope_normal_at",
-            Contact::Plane => "envelope_plane_at",
-            Contact::Curvature => "envelope_curvature_at",
-        }
+        "point_on_envelope"
     }
 
-    /// A point's and a circle's rows are lengths; a direction's are cosines.
+    /// A point's rows are lengths.
     fn degree(self) -> u32 {
-        match self {
-            Contact::Point | Contact::Curvature => 1,
-            Contact::Tangent | Contact::Normal | Contact::Plane => 0,
-        }
+        1
     }
 }
 
@@ -722,30 +694,27 @@ pub(crate) fn along<T: Num>(d: &[[T; 3]; 3], k: [T; 3]) -> [T; 3] {
     vadd(vadd(vscale(d[0], k[0]), vscale(d[1], k[1])), vscale(d[2], k[2]))
 }
 
-/// The normal curvature of the envelope along `w` (a direction in its tangent plane), with
-/// respect to `f.n`: its centre of curvature is `x + n/κ`.  Read over two directions of the place
-/// along the envelope (`along_envelope`).
-fn curvature<T: Num>(f: &Local<T>, w: [T; 3]) -> T {
-    let neg = |x: T| zero::<T>() - x;
-    let [k1, k2] = along_envelope(f.dg);
-    let (t1, t2) = (along(&f.dx, k1), along(&f.dx, k2));
-    let (n1, n2) = (along(&f.dn, k1), along(&f.dn, k2));
-    let (e, ff, gg) = (dot(t1, t1), dot(t1, t2), dot(t2, t2));
-    let half = T::cst(0.5);
-    let (ll, mm, nn) = (neg(dot(n1, t1)), neg((dot(n1, t2) + dot(n2, t1)) * half), neg(dot(n2, t2)));
-    let (b1, b2) = (dot(t1, w), dot(t2, w));
-    let det = e * gg - ff * ff;
-    let det = if det.val() != 0.0 { det } else { T::cst(1.0) };
-    let (a, b) = ((gg * b1 - ff * b2) / det, (e * b2 - ff * b1) / det);
-    let two = T::cst(2.0);
-    let second = ll * a * a + two * mm * a * b + nn * b * b;
-    let first = e * a * a + two * ff * a * b + gg * b * b;
-    let first = if first.val() != 0.0 { first } else { T::cst(1.0) };
-    second / first
+/// **The envelope's frame** at the place in columns `lead..lead + 3` (#365, `contact_rate`): the
+/// point, `∂X/∂u` to read a normal across, the unit normal, and — where `second` — two directions
+/// along the envelope (`along_envelope`) and its second fundamental form along them, from the
+/// normal's derivatives.
+pub(crate) fn frame<T: Num>(l: &Layout, cols: &[T], second: bool) -> crate::contact_rate::Frame<T> {
+    let f = local(l, cols, second);
+    let mut out = crate::contact_rate::Frame::zero();
+    out.x = f.x;
+    out.across = f.dx[0];
+    out.n = f.n;
+    if second {
+        let neg = |x: T| zero::<T>() - x;
+        let [k1, k2] = along_envelope(f.dg);
+        let (t1, t2) = (along(&f.dx, k1), along(&f.dx, k2));
+        let (n1, n2) = (along(&f.dn, k1), along(&f.dn, k2));
+        let half = T::cst(0.5);
+        out.tan = [t1, t2];
+        out.second = [neg(dot(n1, t1)), neg((dot(n1, t2) + dot(n2, t1)) * half), neg(dot(n2, t2))];
+    }
+    out
 }
-
-/// The smallest curvature a contact divides by: a section flatter than this is read as this.
-const FLAT: f64 = 1e-12;
 
 /// A contact's rows over its columns `cols` and constants `k`, into `out`.  `None` where the
 /// constants do not describe a contact over this many columns.
@@ -754,42 +723,9 @@ pub(crate) fn rows<T: Num>(c: Contact, cols: &[T], k: &[f64], out: &mut [T]) -> 
     if l.lead != c.lead() || cols.len() != l.width() || out.len() != c.rows() {
         return None;
     }
-    let f = local(&l, cols, c == Contact::Curvature);
+    let f = local(&l, cols, false);
     match c {
         Contact::Point => point_rows(cols, &f, out),
-        Contact::Tangent => {
-            let d = unit(vsub(col3(cols, 3), col3(cols, 0)));
-            out[0] = dot(d, f.n);
-        }
-        Contact::Normal | Contact::Plane => {
-            let (a, b) = (col3(cols, 0), col3(cols, 3));
-            let d = unit(if c == Contact::Plane { cross(a, b) } else { vsub(b, a) });
-            let t1 = unit(f.dx[0]);
-            let t2 = cross(f.n, t1);
-            out[0] = dot(d, t1);
-            out[1] = dot(d, t2);
-        }
-        // Meusnier: the section by a plane of normal `m` through the point is a curve turning
-        // `κₙ / cos θ` toward the normal's part in the plane, `n − (n·m)m` (of length `cos θ`),
-        // `κₙ` the normal curvature along the section's tangent `m × n` — so its centre of
-        // curvature is `x + (n − (n·m)m)/κₙ`, and that is the circle's centre, in the plane's two
-        // directions, the radius its distance from the point
-        Contact::Curvature => {
-            let (centre, r) = (col3(cols, 0), cols[3]);
-            let (pu, pv) = (col3(cols, 4), col3(cols, 7));
-            let m = unit(cross(pu, pv));
-            let kappa = curvature(&f, unit(cross(m, f.n)));
-            let kappa = if kappa.val().abs() >= FLAT { kappa }
-                else { T::cst(if kappa.val() < 0.0 { -FLAT } else { FLAT }) };
-            let inward = vsub(f.n, vscale(m, dot(f.n, m)));
-            let to = vsub(centre, f.x);
-            let off = vsub(to, vscale(inward, T::cst(1.0) / kappa));
-            let a = unit(pu);
-            let b = unit(cross(m, a));
-            out[0] = dot(off, a);
-            out[1] = dot(off, b);
-            out[2] = dot(to, to).sqrt() - r;
-        }
     }
     Some(())
 }
@@ -872,10 +808,6 @@ pub(crate) fn scatter_pass(out: &[Dual<PASS>], j: &mut [f64], start: usize) {
 pub fn kernel(c: Contact, n_par: usize, n_const: usize) -> Kernel {
     let (res, jac): (crate::kernels::KernelFn, crate::kernels::KernelFn) = match c {
         Contact::Point => (res::<0>, jac::<0>),
-        Contact::Tangent => (res::<1>, jac::<1>),
-        Contact::Normal => (res::<2>, jac::<2>),
-        Contact::Curvature => (res::<3>, jac::<3>),
-        Contact::Plane => (res::<4>, jac::<4>),
     };
     Kernel { name: c.name(), n_res: c.rows(), n_par, n_const, degree: c.degree(), res, jac, const_jac: None, form: None }
 }

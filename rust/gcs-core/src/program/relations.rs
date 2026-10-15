@@ -151,13 +151,25 @@ pub(crate) fn settle(
         along.args.retain(|a| !matches!(a, crate::syntax::OpArg::Named(n, _) if n.text == "at"));
         return Ok((kind, along.assemble(kind)?));
     }
-    // the tangent at a point a contact holds on a curve is that contact's rate there, held along
-    // the line (#365): over the contact's slot, written as the tangent it is
+    // what a contact holding a point there reads of its place is its frame, a rate of it (#365):
+    // the tangent of a curve its rate along the line, written as the tangent it is; a surface's
+    // normal (`perpendicular`), a plane or a line touching it (`tangent`), its section's circle
+    // (`curvature`) — a traced surface's line touching it is told from a curve's tangent where
+    // the body is known (`traced_contact`)
     if kind == CKind::Rate {
         let mut args = w.assemble(kind)?;
-        let traced = w.ops.first().and_then(kind_of) == Some(EntKind::Traced);
+        let on = w.ops.first().and_then(kind_of);
+        let to = w.ops.get(1).and_then(kind_of);
+        let said = match (word, on, to) {
+            ("tangent", _, Some(EntKind::Plane)) => "plane",
+            ("tangent", Some(EntKind::Envelope), _) => "in_plane",
+            ("tangent", ..) => "tangent",
+            ("perpendicular", ..) => "normal",
+            _ => "curvature",
+        };
+        let traced = on == Some(EntKind::Traced);
         args[4] = Some(Arg::Word(if traced { "u" } else { "t" }.to_string()));
-        args[5] = Some(Arg::Word("tangent".to_string()));
+        args[5] = Some(Arg::Word(said.to_string()));
         return Ok((kind, args));
     }
     Ok((kind, w.assemble(kind)?))
@@ -454,21 +466,30 @@ fn rate_row(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) {
 /// the kind it is, its curve's second place pinned at none.
 fn traced_contact(cx: &Elab<'_>, kind: CKind, args: &mut Vec<CArg>, left_out: &mut Vec<bool>)
     -> Result<CKind, String> {
-    // the tangent at a point of a traced surface is its tangent plane's, over the place's two
-    // numbers: a rate runs over a curve's one (#365)
+    // a rate of a point on a traced body (#365): a surface's tangent at a point is a line in its
+    // tangent plane; a curve has no normal or curvature; a marched surface's curvature reads its
+    // second derivatives, whose Jacobian is a third order the march does not carry (#339 D4)
     if kind == CKind::Rate {
-        let surface = match args.first() {
-            Some(CArg::Ent(e)) if e.kind == EntKind::Traced => {
-                cx.sk.traced.get(e.i()).is_some_and(|t| t.formals() == 2)
-            }
-            _ => false,
+        let Some(CArg::Ent(e)) = args.first() else { return Ok(kind) };
+        let Some(t) = cx.sk.traced.get(e.i()).filter(|_| e.kind == EntKind::Traced) else {
+            return Ok(kind);
         };
-        if surface && matches!(args.get(5), Some(CArg::Str(w)) if w == "tangent") {
-            args.truncate(3);
-            args.extend([CArg::Num(0.0), CArg::Num(0.0)]);
-            left_out.truncate(3);
-            left_out.extend([true, true]);
-            return Ok(CKind::TracedSurfaceTangentAt);
+        let surface = t.formals() == 2;
+        let word = match args.get(5) {
+            Some(CArg::Str(w)) => w.clone(),
+            _ => String::new(),
+        };
+        match word.as_str() {
+            "tangent" if surface => args[5] = CArg::Str("in_plane".to_string()),
+            "normal" | "plane" | "curvature" if !surface => {
+                return Err(format!("`{}` is a curve in space, which has a tangent at a point and \
+                    no normal or curvature this relation reads: a surface has them", t.name));
+            }
+            "curvature" if t.body.states_rate() => {
+                return Err(format!("`{}` is marched by the method of lines, and its curvature is \
+                    not yet read: its point, its tangent plane and its normal are", t.name));
+            }
+            _ => {}
         }
         return Ok(kind);
     }
@@ -479,19 +500,6 @@ fn traced_contact(cx: &Elab<'_>, kind: CKind, args: &mut Vec<CArg>, left_out: &m
     let Some(CArg::Ent(e)) = args.get(at) else { return Ok(kind) };
     let Some(t) = cx.sk.traced.get(e.i()) else { return Ok(kind) };
     let surface = t.formals() == 2;
-    let kind = match kind {
-        CKind::TracedNormalAt | CKind::TracedPlaneAt | CKind::TracedCurvatureAt if !surface => {
-            return Err(format!("`{}` is a curve in space, which has a tangent at a point and no \
-                normal or curvature this relation reads: a surface has them", t.name));
-        }
-        // a marched surface's curvature reads its second derivatives, whose Jacobian is a third
-        // order the march does not carry (#339 D4)
-        CKind::TracedCurvatureAt if t.body.states_rate() => {
-            return Err(format!("`{}` is marched by the method of lines, and its curvature is not \
-                yet read: its point, its tangent plane and its normal are", t.name));
-        }
-        k => k,
-    };
     if !surface {
         let s = kind.spec().iter().rposition(|(_, k)| k.is_param()).expect("a place");
         args[s] = CArg::Seed { value: 0.0, pinned: true };
@@ -1023,17 +1031,19 @@ pub(super) fn tangents_at(sk: &Sketch, map: &SourceMap, diags: &mut Vec<Diag>) {
         let (m, g) = (name(EntRef::point(at)), name(on));
         // what is taken there: an envelope's normal or its section's curvature, else the tangent
         let what = match c.kind {
-            CKind::EnvelopeNormalAt => "normal",
-            CKind::EnvelopeCurvatureAt => "curvature",
-            CKind::EnvelopePlaneAt => "tangent plane",
-            CKind::MeshingNormalAt => "common normal",
-            CKind::Rate if c.rate_source() == Some(crate::constraints::RateSource::Meshing)
-                && !c.rate_square() => "path of contact",
-            CKind::Rate if matches!(&c.args[5], CArg::Str(w) if w == "tangent") => "tangent",
-            CKind::Rate | CKind::RateDistance => "rate",
-            CKind::TracedNormalAt => "normal",
-            CKind::TracedCurvatureAt => "curvature",
-            CKind::TracedPlaneAt | CKind::TracedSurfaceTangentAt => "tangent plane",
+            CKind::Rate | CKind::RateDistance => {
+                use crate::contact_rate::Word;
+                let meshing = c.rate_source() == Some(crate::constraints::RateSource::Meshing);
+                match c.rate_word() {
+                    Word::Normal if meshing => "common normal",
+                    Word::Normal => "normal",
+                    Word::Curvature => "curvature",
+                    Word::Plane | Word::InPlane => "tangent plane",
+                    Word::Parallel if meshing => "path of contact",
+                    _ if matches!(&c.args[5], CArg::Str(w) if w == "tangent") => "tangent",
+                    _ => "rate",
+                }
+            }
             _ => "tangent",
         };
         diags.push(Diag::within(

@@ -121,26 +121,6 @@ pub enum CKind {
     /// three owned unknowns, the net one equation a surface is worth; the source's geometry and
     /// the motion's axes are columns, so what makes the source solves from where the point is.
     PointOnEnvelope,
-    /// The tangent plane of an envelope at a point a contact holds on it (#283): `flank
-    /// tangent(at: p) l`, the line (or axis) running in it.  One row, the line's direction square
-    /// to the normal, over **that contact's place** (`Sketch::add`, as a rate shares a
-    /// curve contact's).
-    EnvelopeTangentAt,
-    /// The normal of an envelope at a point a contact holds on it (#283): `flank perpendicular(at:
-    /// p) l`, the line (or axis) along it — the common normal of a mesh.  Two rows over the
-    /// contact's place: the direction square to two directions of the tangent plane.
-    EnvelopeNormalAt,
-    /// A plane touching an envelope at a point a contact holds on it (#283): `flank tangent(at: p)
-    /// P`, its normal along the envelope's.  `EnvelopeNormalAt`'s two rows over the plane's axes.
-    /// Says nothing of where the plane stands: `p coincident P` does.
-    EnvelopePlaneAt,
-    /// **A circle osculating an envelope** at a point a contact holds on it (#283): `flank
-    /// curvature(at: p) k`, the circle the osculating circle of the envelope's section by its
-    /// plane at `p` — `p` in that plane, drawn there or stated.  `CurveCurvature`'s three rows over
-    /// the contact's place: the centre the section's centre of curvature (two rows, in the plane,
-    /// by Meusnier from the normal curvature, which the envelope's shape operator gives with no
-    /// second solve), and the radius its distance.
-    EnvelopeCurvatureAt,
     /// **A point on the path of contact of two flanks** (#283 step 3, `envelope::meshing`): `p
     /// coincident contact`, `contact := meshing(pinion_flank, gear_flank, under: mesh, …)`.  It
     /// owns the pinion's phase `t`, the gear's lag `lag` (the transmission error, as a roll of the
@@ -152,25 +132,25 @@ pub enum CKind {
     /// flanks' sources and motions and the mesh's axes are columns, so what makes a flank solves
     /// from where the contact is and how late the gear is there.
     PointOnMeshing,
-    /// **The common normal of two flanks** at a point a contact holds on their meshing (#345):
-    /// `contact perpendicular(at: q) l`, the line (or axis) along it.  `EnvelopeNormalAt`'s two
-    /// rows, over **that contact's** phase, lag and places, so it is read at the contact's phase,
-    /// not only at the drawn pose.
-    MeshingNormalAt,
-    /// **The rate of a contact** (#365): `rate(p over t) parallel l`, `rate(p over t)
-    /// perpendicular l` — the derivative of the point a contact holds in **that contact's own
-    /// slot**, every other column held: along a spline's or a curve's parameter its tangent, along
-    /// a traced curve's formal its tangent in space, along a meshing's phase its path of contact
-    /// (the lag and the places following by the implicit function theorem), along a carried
-    /// point's roll the motion's twist there.  `g tangent(at: m) l` is the same statement, written
-    /// as the tangent it is (`word: tangent`).  It shares the place of the contact holding the
-    /// point, as every `at:` contact does (`Sketch::add`), and reads that contact's other
-    /// unknowns as columns.  Its kernel is the source's (`Constraint::rate_source`): the rows each
-    /// source's tangent was read by, parallel; and the rate's part along the line, square.
+    /// **The rate of a contact** (#365): what a contact holding a point there reads of its
+    /// place, the derivative in **that contact's own slots**, every other column held.  Its
+    /// `word` says what of it is held against what: `parallel` (`rate(p over t) parallel l`, and
+    /// `tangent`, `g tangent(at: p) l` of a curve, the same) and `perpendicular` a rate in one
+    /// slot along a line or square to one — a spline's or a curve's tangent, a traced curve's, a
+    /// traced surface's along either formal, a meshing's path of contact (its lag and places
+    /// following by the implicit function theorem), a carried point's velocity, the motion's twist;
+    /// `normal` a line square to every rate of a surface (`S perpendicular(at: p) l`, a traced
+    /// surface's, an envelope's, a meshing's common normal), `plane` a plane along that normal
+    /// (`S tangent(at: p) P`), `in_plane` a line square to it (`S tangent(at: p) l`), and
+    /// `curvature` a circle osculating the section by its plane, the second rates read through
+    /// Meusnier (`S curvature(at: p) k`).  It shares the first unknown of the contact holding the
+    /// point, as every `at:` statement does (`Sketch::add`), reads that contact's others as
+    /// columns, and runs **one kernel**, whatever the source (`contact_rate`).
     Rate,
     /// **A rate's distance along a direction** (#365): `rate(X over t) distance(d, along: l)`, the
-    /// rate's part along `l` less `d` — a length a radian of a carried point's roll, the advance
-    /// of a screw.  One row; `d` stated or free.  Read of a point a motion carries.
+    /// rate's part along `l` less `d` — a length a unit of the slot, a radian of an angle's: a
+    /// carried point's along a screw's axis, its advance.  One row; `d` stated or free; the same
+    /// kernel as `Rate`'s.
     RateDistance,
     /// **A point as a moving frame sees it** (#326, R4, `envelope::screw`): `X coincident(under:
     /// m, t == τ) x`, `X` the point `x` carried by the motion's pose at the roll `τ` — `X =
@@ -189,17 +169,6 @@ pub enum CKind {
     /// X(u, s)` against the place `[u, s]` it owns (a curve's `s` held at none), so a point on a
     /// curve in space nets two and one on a surface one.  The body's geometry is columns.
     PointOnTraced,
-    /// A line in a traced surface's tangent plane there: `S tangent(at: p) l`, one row.
-    TracedSurfaceTangentAt,
-    /// A line along a traced surface's normal there: `S perpendicular(at: p) l`, two rows — the
-    /// normal `C_φ × C_s`, exact by the implicit function theorem.
-    TracedNormalAt,
-    /// A plane touching a traced surface there: `S tangent(at: p) P`, two rows.
-    TracedPlaneAt,
-    /// A circle osculating a traced surface's section by the circle's plane there: `S
-    /// curvature(at: p) k`, three rows, Meusnier from the second derivatives — exact, each a
-    /// polarised Taylor series.
-    TracedCurvatureAt,
     /// And of a circle or an arc, at any point of it a relation holds there (#251): the radius
     /// to `at` square to the line, `TangentArcLine`'s kernel with the point named rather than
     /// chosen by `start`/`end` or `p1`/`p2`. No place to share: the point is on the round already.
@@ -340,8 +309,11 @@ pub enum CKind {
 }
 
 /// The words a rate of a contact is held by (#365): `tangent` is `parallel` written as the
-/// tangent at the point (`g tangent(at: m) l`), and printed back so.
-pub const RATE_WORDS: [&str; 3] = ["tangent", "parallel", "perpendicular"];
+/// tangent at the point (`g tangent(at: m) l`), and printed back so; `normal`, `plane`,
+/// `in_plane` and `curvature` are a surface's, written `perpendicular(at:)`, `tangent(at:)` and
+/// `curvature(at:)`.
+pub const RATE_WORDS: [&str; 7] =
+    ["tangent", "parallel", "perpendicular", "normal", "plane", "in_plane", "curvature"];
 
 /// What a rate of a contact reads its rate off (#365): what the contact holding its point is on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -356,6 +328,8 @@ pub enum RateSource {
     Meshing,
     /// A point a motion carries: its velocity, a radian of the roll.
     Carried,
+    /// A point on an envelope in space: its normal and its second order.
+    Envelope,
 }
 
 impl RateSource {
@@ -366,6 +340,7 @@ impl RateSource {
             EntKind::Traced => RateSource::Traced,
             EntKind::Meshing => RateSource::Meshing,
             EntKind::Motion => RateSource::Carried,
+            EntKind::Envelope => RateSource::Envelope,
             _ => return None,
         })
     }
@@ -411,24 +386,19 @@ pub enum FamilyKernel {
     Curvature,
     /// A point in space on the surface the curve stands for (`CKind::PointOnExtrusion`).
     Extrusion,
-    /// The rate at a point a contact already holds on the curve, held parallel to a line
-    /// (`CKind::Rate`, #365).
-    TangentAt,
 }
 
 impl FamilyKernel {
-    pub const ALL: [FamilyKernel; 5] = [
+    pub const ALL: [FamilyKernel; 4] = [
         FamilyKernel::Contact,
         FamilyKernel::Tangent,
         FamilyKernel::Curvature,
         FamilyKernel::Extrusion,
-        FamilyKernel::TangentAt,
     ];
 
     /// Rows per constraint — a fact about the kind, not asked of a kernel it may not have yet.
     pub fn n_res(self) -> usize {
         match self {
-            FamilyKernel::TangentAt => 1,
             FamilyKernel::Contact | FamilyKernel::Tangent | FamilyKernel::Extrusion => 2,
             FamilyKernel::Curvature => 3,
         }
@@ -436,7 +406,7 @@ impl FamilyKernel {
 }
 
 /// Every concrete constraint type, in the order the registry lists them.
-pub const ALL_KINDS: [CKind; 90] = [
+pub const ALL_KINDS: [CKind; 81] = [
     CKind::Coincident,
     CKind::Distance,
     CKind::Midpoint,
@@ -469,19 +439,10 @@ pub const ALL_KINDS: [CKind; 90] = [
     CKind::CurveTangentLine,
     CKind::CurveCurvature,
     CKind::PointOnEnvelope,
-    CKind::EnvelopeTangentAt,
-    CKind::EnvelopeNormalAt,
-    CKind::EnvelopePlaneAt,
-    CKind::EnvelopeCurvatureAt,
     CKind::PointOnMeshing,
-    CKind::MeshingNormalAt,
     CKind::CarriedPoint,
     CKind::RegularWithin,
     CKind::PointOnTraced,
-    CKind::TracedSurfaceTangentAt,
-    CKind::TracedNormalAt,
-    CKind::TracedPlaneAt,
-    CKind::TracedCurvatureAt,
     CKind::Project,
     CKind::Lift,
     CKind::Coincident3,
@@ -579,6 +540,9 @@ pub enum SpecKind {
     /// traced body, a meshing, or the motion a point is carried by.  Inferred where a rate is
     /// written, from the contact holding its point.
     Carrier,
+    /// What a contact's frame is held against (#365): a line or an axis, a plane, or a circle,
+    /// by the rate's word (`CKind::Rate`).
+    Against,
     /// A number with no unit, a ratio (#345): an area factor.  A dimension, as a length and an
     /// angle are, of no dimension.
     Ratio,
@@ -612,6 +576,7 @@ impl SpecKind {
             | SpecKind::Traced
             | SpecKind::Solid
             | SpecKind::Carrier
+            | SpecKind::Against
             | SpecKind::Plane
             | SpecKind::Axis
             | SpecKind::Direction
@@ -641,6 +606,7 @@ impl SpecKind {
                 | SpecKind::Traced
                 | SpecKind::Solid
                 | SpecKind::Carrier
+            | SpecKind::Against
                 | SpecKind::Plane
                 | SpecKind::Axis
                 | SpecKind::Direction
@@ -682,6 +648,7 @@ impl SpecKind {
             SpecKind::Traced => "traced",
             SpecKind::Solid => "solid",
             SpecKind::Carrier => "carrier",
+            SpecKind::Against => "against",
             SpecKind::Ratio => "ratio",
             SpecKind::Plane => "plane",
             SpecKind::Axis => "axis",
@@ -750,19 +717,10 @@ impl CKind {
             CKind::TangentCircleAt => "TangentCircleAt",
             CKind::CurveCurvature => "CurveCurvature",
             CKind::PointOnEnvelope => "PointOnEnvelope",
-            CKind::EnvelopeTangentAt => "EnvelopeTangentAt",
-            CKind::EnvelopeNormalAt => "EnvelopeNormalAt",
-            CKind::EnvelopePlaneAt => "EnvelopePlaneAt",
-            CKind::EnvelopeCurvatureAt => "EnvelopeCurvatureAt",
             CKind::PointOnMeshing => "PointOnMeshing",
-            CKind::MeshingNormalAt => "MeshingNormalAt",
             CKind::CarriedPoint => "CarriedPoint",
             CKind::RegularWithin => "RegularWithin",
             CKind::PointOnTraced => "PointOnTraced",
-            CKind::TracedSurfaceTangentAt => "TracedSurfaceTangentAt",
-            CKind::TracedNormalAt => "TracedNormalAt",
-            CKind::TracedPlaneAt => "TracedPlaneAt",
-            CKind::TracedCurvatureAt => "TracedCurvatureAt",
             CKind::Project => "Project",
             CKind::AxisOnPlane => "AxisOnPlane",
             CKind::AxisCoincident => "AxisCoincident",
@@ -945,7 +903,7 @@ impl CKind {
             // then the contact's slot — its place, which `Sketch::add` hands it — the slot's
             // name as written, and the word (#365)
             CKind::Rate => &[
-                ("on", S::Carrier), ("line", S::Direction), ("at", S::Point), ("t", S::Param),
+                ("on", S::Carrier), ("to", S::Against), ("at", S::Point), ("t", S::Param),
                 ("over", S::Str), ("word", S::Str),
             ],
             CKind::RateDistance => &[
@@ -962,29 +920,9 @@ impl CKind {
             CKind::PointOnEnvelope => &[
                 ("p", S::Point), ("envelope", S::Envelope), ("u", S::Param), ("v", S::Param), ("t", S::Param),
             ],
-            // the point named, then the place: the contact's, which `Sketch::add` hands it
-            CKind::EnvelopeTangentAt | CKind::EnvelopeNormalAt => &[
-                ("envelope", S::Envelope), ("line", S::Direction), ("at", S::Point),
-                ("u", S::Param), ("v", S::Param), ("t", S::Param),
-            ],
-            CKind::EnvelopePlaneAt => &[
-                ("envelope", S::Envelope), ("plane", S::Plane), ("at", S::Point),
-                ("u", S::Param), ("v", S::Param), ("t", S::Param),
-            ],
-            CKind::EnvelopeCurvatureAt => &[
-                ("envelope", S::Envelope), ("circle", S::CircleOrArc), ("at", S::Point),
-                ("u", S::Param), ("v", S::Param), ("t", S::Param),
-            ],
             // the pinion's phase and the gear's lag, then the place on each flank
             CKind::PointOnMeshing => &[
                 ("p", S::Point), ("meshing", S::Meshing), ("t", S::Param), ("lag", S::Param),
-                ("u1", S::Param), ("v1", S::Param), ("t1", S::Param),
-                ("u2", S::Param), ("v2", S::Param), ("t2", S::Param),
-            ],
-            // the point named, then its contact's unknowns, which `Sketch::add` hands it (#345)
-            CKind::MeshingNormalAt => &[
-                ("meshing", S::Meshing), ("line", S::Direction), ("at", S::Point),
-                ("t", S::Param), ("lag", S::Param),
                 ("u1", S::Param), ("v1", S::Param), ("t1", S::Param),
                 ("u2", S::Param), ("v2", S::Param), ("t2", S::Param),
             ],
@@ -997,15 +935,6 @@ impl CKind {
             ],
             // the place on a traced body: its formals', a curve's second held at none (#326)
             CKind::PointOnTraced => &[("p", S::Point), ("traced", S::Traced), ("u", S::Param), ("s", S::Param)],
-            CKind::TracedSurfaceTangentAt | CKind::TracedNormalAt => &[
-                ("traced", S::Traced), ("line", S::Direction), ("at", S::Point), ("u", S::Param), ("s", S::Param),
-            ],
-            CKind::TracedPlaneAt => &[
-                ("traced", S::Traced), ("plane", S::Plane), ("at", S::Point), ("u", S::Param), ("s", S::Param),
-            ],
-            CKind::TracedCurvatureAt => &[
-                ("traced", S::Traced), ("circle", S::CircleOrArc), ("at", S::Point), ("u", S::Param), ("s", S::Param),
-            ],
             CKind::SplineTangentLine => {
                 &[("spline", S::Spline), ("line", S::Line), ("t", S::Param)]
             }
@@ -1126,13 +1055,8 @@ impl CKind {
             // a place on an envelope: along a meridian (a fraction of a line, an angle, a length
             // along a generator), round an axis, and a roll — read as numbers
             | CKind::PointOnEnvelope
-            | CKind::EnvelopeTangentAt
-            | CKind::EnvelopeNormalAt
-            | CKind::EnvelopePlaneAt
-            | CKind::EnvelopeCurvatureAt
             // a phase and a lag in degrees, and a place on each flank
             | CKind::PointOnMeshing
-            | CKind::MeshingNormalAt
             // a fraction of a run or a turn
             | CKind::PointAlongLine
             | CKind::PointAlongArc
@@ -1142,11 +1066,7 @@ impl CKind {
             // a roll in degrees, as a meshing's phase is
             CKind::CarriedPoint => Some(Dim::SCALAR),
             // a place on a traced body: its formals' numbers, as a curve's parameter is
-            CKind::PointOnTraced
-            | CKind::TracedSurfaceTangentAt
-            | CKind::TracedNormalAt
-            | CKind::TracedPlaneAt
-            | CKind::TracedCurvatureAt => Some(Dim::SCALAR),
+            CKind::PointOnTraced => Some(Dim::SCALAR),
             _ => None,
         }
     }
@@ -1191,7 +1111,6 @@ impl CKind {
             // the path of contact of two flanks (#283), and at a point already on it a line along
             // the common normal or along the path (#345)
             CKind::PointOnMeshing => ("coincident", Infix),
-            CKind::MeshingNormalAt => ("perpendicular", Infix),
             // a rate of a contact (#365): its word, and printed as `rate(p over t)` before it
             // (`syntax::operator_text`), or as the tangent it is
             CKind::Rate => ("parallel", Infix),
@@ -1203,12 +1122,6 @@ impl CKind {
             // a body traced in space (#326): a point on it, and at a point already on it a line
             // or a plane touching it, a line along a surface's normal and a circle osculating it
             CKind::PointOnTraced => ("coincident", Infix),
-            CKind::TracedSurfaceTangentAt | CKind::TracedPlaneAt => ("tangent", Infix),
-            CKind::TracedNormalAt => ("perpendicular", Infix),
-            CKind::TracedCurvatureAt => ("curvature", Infix),
-            CKind::EnvelopeTangentAt | CKind::EnvelopePlaneAt => ("tangent", Infix),
-            CKind::EnvelopeNormalAt => ("perpendicular", Infix),
-            CKind::EnvelopeCurvatureAt => ("curvature", Infix),
             CKind::CurveTouchesLine => ("touches", Infix),
             // a measured separation: told apart by the pair and by `along:`, which makes it an
             // ordinate
@@ -1571,10 +1484,6 @@ impl CKind {
         use crate::traced::Contact;
         Some(match self {
             CKind::PointOnTraced => Contact::Point,
-            CKind::TracedSurfaceTangentAt => Contact::InPlane,
-            CKind::TracedNormalAt => Contact::Normal,
-            CKind::TracedPlaneAt => Contact::Plane,
-            CKind::TracedCurvatureAt => Contact::Curvature,
             _ => return None,
         })
     }
@@ -1595,10 +1504,6 @@ impl CKind {
         use crate::envelope::held::Contact;
         Some(match self {
             CKind::PointOnEnvelope => Contact::Point,
-            CKind::EnvelopeTangentAt => Contact::Tangent,
-            CKind::EnvelopeNormalAt => Contact::Normal,
-            CKind::EnvelopePlaneAt => Contact::Plane,
-            CKind::EnvelopeCurvatureAt => Contact::Curvature,
             _ => return None,
         })
     }
@@ -1609,7 +1514,6 @@ impl CKind {
         use crate::envelope::meshing::Contact;
         Some(match self {
             CKind::PointOnMeshing => Contact::Point,
-            CKind::MeshingNormalAt => Contact::Normal,
             _ => return None,
         })
     }
@@ -1651,16 +1555,7 @@ impl CKind {
             | CKind::CurveCurvature
             // a rate held along a line is a tangency at the contact's point (#365)
             | CKind::Rate
-            | CKind::TangentCircleAt
-            | CKind::EnvelopeTangentAt
-            | CKind::EnvelopeNormalAt
-            | CKind::EnvelopePlaneAt
-            | CKind::EnvelopeCurvatureAt
-            | CKind::MeshingNormalAt
-            | CKind::TracedSurfaceTangentAt
-            | CKind::TracedNormalAt
-            | CKind::TracedPlaneAt
-            | CKind::TracedCurvatureAt => true,
+            | CKind::TangentCircleAt => true,
             CKind::Coincident
             | CKind::Distance
             | CKind::Midpoint
@@ -1791,21 +1686,13 @@ impl CKind {
             | CKind::CurveCurvature => {
                 panic!("a curve contact's kernel belongs to its definition, not its type")
             }
-            CKind::PointOnEnvelope
-            | CKind::EnvelopeTangentAt
-            | CKind::EnvelopeNormalAt
-            | CKind::EnvelopePlaneAt
-            | CKind::EnvelopeCurvatureAt => {
+            CKind::PointOnEnvelope => {
                 panic!("an envelope contact's kernel is built at its operands' widths")
             }
-            CKind::PointOnMeshing | CKind::MeshingNormalAt => {
+            CKind::PointOnMeshing => {
                 panic!("a meshing contact's kernel is built at its operands' widths")
             }
-            CKind::PointOnTraced
-            | CKind::TracedSurfaceTangentAt
-            | CKind::TracedNormalAt
-            | CKind::TracedPlaneAt
-            | CKind::TracedCurvatureAt => {
+            CKind::PointOnTraced => {
                 panic!("a traced body's contact's kernel is built at its operands' widths")
             }
             CKind::RegularWithin => {
@@ -1973,12 +1860,7 @@ impl CKind {
             | CKind::SplineCurvature
             | CKind::TangentCircleAt
             | CKind::PointOnEnvelope
-            | CKind::EnvelopeTangentAt
-            | CKind::EnvelopeNormalAt
-            | CKind::EnvelopePlaneAt
-            | CKind::EnvelopeCurvatureAt
             | CKind::PointOnMeshing
-            | CKind::MeshingNormalAt
             // nor a point a motion carries (#326), nor a rate: its free twin is its source's own
             // (#365)
             | CKind::CarriedPoint
@@ -1987,10 +1869,6 @@ impl CKind {
             | CKind::RegularWithin
             // nor a contact with a traced body
             | CKind::PointOnTraced
-            | CKind::TracedSurfaceTangentAt
-            | CKind::TracedNormalAt
-            | CKind::TracedPlaneAt
-            | CKind::TracedCurvatureAt
             | CKind::PointAlongLine
             | CKind::PointAlongArc
             | CKind::PointAlongLine3
@@ -2053,20 +1931,11 @@ impl CKind {
                 | CKind::Symmetric3
                 | CKind::PointOnExtrusion
                 | CKind::PointOnEnvelope
-                | CKind::EnvelopeTangentAt
-                | CKind::EnvelopeNormalAt
-                | CKind::EnvelopePlaneAt
-                | CKind::EnvelopeCurvatureAt
                 | CKind::PointOnMeshing
-                | CKind::MeshingNormalAt
                 | CKind::CarriedPoint
                 | CKind::RateDistance
                 | CKind::RegularWithin
                 | CKind::PointOnTraced
-                | CKind::TracedSurfaceTangentAt
-                | CKind::TracedNormalAt
-                | CKind::TracedPlaneAt
-                | CKind::TracedCurvatureAt
                 | CKind::PointOnAxis
                 | CKind::LineOnAxis
                 | CKind::AxisOnPlane

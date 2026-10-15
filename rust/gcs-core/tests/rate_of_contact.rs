@@ -159,8 +159,12 @@ fn a_meshings_path_of_contact_is_its_rate_along_the_phase() {
     assert_eq!(a.2, 2);
     assert_eq!(a.3, "bearing tangent(at: Q) path");
     assert_eq!(b.3, "rate(Q over t) parallel path");
-    // and measured along a direction it is not read: a carried point's is
-    refused(&with("rate(Q over t) distance(1mm, along: path)"), "a rate's distance along a direction");
+    // and measured along a line: the path's speed a radian of the phase, read by the same kernel
+    let speed = solved(&format!("{text}ahead := point hint((5, 48, 3))\npath := line(Q, ahead)\n\
+        Q distance(10mm) ahead\nrate(Q over t) parallel path\nparam v: Length hint(1)\n\
+        rate(Q over t) distance(v, along: path)\n"));
+    let v = speed.sketch.params[speed.sketch.free_vars["v"] as usize].value;
+    assert!(v.is_finite() && v.abs() > 1e-3, "{v}");
 }
 
 /// What a rate of a contact refuses: a slot no contact holding the point owns, a point held by two
@@ -173,9 +177,7 @@ fn a_rate_of_a_contact_is_refused_where_its_slot_is_not_one() {
     let with = |line: &str| SPLINE.replace("  length(10mm) tl\n", &format!("  length(10mm) tl\n  {line}\n"));
     refused(&with("rate(m over s) parallel tl"), "`s` is no formal here, and no contact holding");
     refused(&with("rate(q over t) parallel tl"), "no contact holding");
-    refused(&with("rate(m over t) perpendicular tl"),
-            "square to one, or a distance along one, is read of a point in space");
-    refused(&with("rate(m over t) distance(3mm, along: tl)"), "or a distance along one");
+    refused(&with("g perpendicular(at: m) tl"), "`perpendicular` does not relate a spline to a line");
     refused(&with("rate(m over t) angle(30deg) tl"), "not `angle`");
     // two splines through one point
     let two = SPLINE.replace("  m coincident(t == 0.5) g\n", "  m coincident(t == 0.5) g\n  \
@@ -187,4 +189,21 @@ fn a_rate_of_a_contact_is_refused_where_its_slot_is_not_one() {
         .replace("in std.top {\n", "param s: Scalar hint(0.5)\nin std.top {\n");
     refused(&shared.replace("  length(10mm) tl\n", "  length(10mm) tl\n  rate(m over s) parallel tl\n"),
             "`s` is an unknown of the drawing");
+}
+
+/// **One kernel reads every word of every source** (#365): a spline's rate, which its tangent
+/// kernel held only along a line, is held square to one and measured along one by the same rows a
+/// rate in space is — the Bézier's `C′(½) = (45, 30)`, square to `nl` and `|C′|` along `tl`.
+#[test]
+fn a_splines_rate_is_held_square_and_measured_as_any_rate_is() {
+    let src = SPLINE.replace("  length(10mm) tl\n", "  length(10mm) tl\n  g tangent(at: m) tl\n  \
+        r := point hint((10, 30))\n  nl := line(m, r)\n  length(10mm) nl\n  \
+        rate(m over t) perpendicular nl\n}\nparam v: Length hint(50)\nin std.top {\n  \
+        rate(m over t) distance(v, along: tl)\n");
+    let e = solved(&src);
+    let at = |n: &str| e.sketch.world_point(e.map.ent_named(n).unwrap().i());
+    let d = sub(at("r"), at("m"));
+    assert!((d[0] * 45.0 + d[1] * 30.0).abs() < 1e-8, "{d:?}");
+    let v = e.sketch.params[e.sketch.free_vars["v"] as usize].value;
+    assert!((v.abs() - 45f64.hypot(30.0)).abs() < 1e-8, "{v}");
 }

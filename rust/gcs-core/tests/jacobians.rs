@@ -565,10 +565,12 @@ f4 curvature(at: w) k
     let e = gcs_core::program::elaborate(&prog);
     assert!(e.ok(), "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
     let mut sk = e.sketch;
-    let kinds = [CKind::PointOnEnvelope, CKind::EnvelopeTangentAt, CKind::EnvelopeNormalAt,
-                 CKind::EnvelopePlaneAt, CKind::EnvelopeCurvatureAt];
-    for k in kinds {
-        assert!(sk.constraints.iter().any(|c| c.kind == k), "{k:?} is checked");
+    assert!(sk.constraints.iter().any(|c| c.kind == CKind::PointOnEnvelope));
+    // the envelope's frame, read by a rate of its contact (#365): every word a surface's
+    use gcs_core::contact_rate::Word;
+    for w in [Word::InPlane, Word::Normal, Word::Plane, Word::Curvature] {
+        assert!(sk.constraints.iter().any(|c| c.kind == CKind::Rate && c.rate_word() == w),
+                "{w:?} is checked");
     }
     let mut rng = Rng::new(283);
     for round in 0..4 {
@@ -577,7 +579,8 @@ f4 curvature(at: w) k
                 p.value += rng.uniform(-0.05, 0.05) * (1.0 + p.value.abs().min(10.0));
             }
         }
-        for c in sk.constraints.iter().filter(|c| c.kind.envelope_contact().is_some()) {
+        let read = |c: &&Constraint| c.kind.envelope_contact().is_some() || c.rate_source().is_some();
+        for c in sk.constraints.iter().filter(read) {
             let err = check_constraint(&sk, c, 1e-6, 1e-7)
                 .unwrap_or_else(|e| panic!("round {round}: {e}"));
             assert!(err.is_finite());
@@ -668,10 +671,8 @@ rate(w over t) perpendicular t
     assert!(e.ok(), "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
     let mut sk = e.sketch;
     assert_eq!(sk.constraints.iter().filter(|c| c.kind == CKind::PointOnMeshing).count(), 5);
-    for k in [CKind::MeshingNormalAt, CKind::Rate] {
-        let want = if k == CKind::Rate { 7 } else { 5 };
-        assert_eq!(sk.constraints.iter().filter(|c| c.kind == k).count(), want, "{k:?} is checked");
-    }
+    // the common normal and the path, and the rates parallel and square: one kind (#365)
+    assert_eq!(sk.constraints.iter().filter(|c| c.kind == CKind::Rate).count(), 12);
     assert_eq!(sk.meshings.iter().filter(|m| m.ease.is_some()).count(), 2);
     let mut rng = Rng::new(283);
     for round in 0..4 {

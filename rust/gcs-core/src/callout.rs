@@ -129,15 +129,10 @@ macro_rules! undrawn {
             | CKind::PlaneDistance
             // a contact with an envelope in space states no number (#283)
             | CKind::PointOnEnvelope
-            | CKind::EnvelopeTangentAt
-            | CKind::EnvelopeNormalAt
-            | CKind::EnvelopePlaneAt
-            | CKind::EnvelopeCurvatureAt
             // nor does a point on the path of contact of two flanks: its lag is a slot a pin
             // states, not a dimension
             | CKind::PointOnMeshing
             // nor a line along its common normal at a point held there (#345)
-            | CKind::MeshingNormalAt
             // nor a flank's regularity within a blank (#345): a ratio, read at a point a search
             // finds
             | CKind::RegularWithin
@@ -145,10 +140,6 @@ macro_rules! undrawn {
             | CKind::CarriedPoint
             // nor a contact with a traced body: its curvature is the circle's own radius
             | CKind::PointOnTraced
-            | CKind::TracedSurfaceTangentAt
-            | CKind::TracedNormalAt
-            | CKind::TracedPlaneAt
-            | CKind::TracedCurvatureAt
             // a projection in space draws what `project` draws: nothing
             | CKind::ProjectSolved
             // nor does a point carried by a map (#357): its pairs are points, not numbers

@@ -305,14 +305,14 @@ pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option
             (Spline | Curve, Line) if at_point => CKind::Rate,
             // an envelope in space at a point a contact holds on it (#283): a line or an axis in
             // its tangent plane, a plane touching it there
-            (Envelope, Line | Axis) if at_point => CKind::EnvelopeTangentAt,
-            (Envelope, Plane) if at_point => CKind::EnvelopePlaneAt,
+            (Envelope, Line | Axis) if at_point => CKind::Rate,
+            (Envelope, Plane) if at_point => CKind::Rate,
             // the path of contact of a meshing at a point a contact holds on it (#345)
             (Meshing, Line | Axis) if at_point => CKind::Rate,
             // a body traced in space (#326): a curve's tangent, read as a surface's tangent plane
             // where the body is one (`program::relations`)
             (Traced, Line | Axis) if at_point => CKind::Rate,
-            (Traced, Plane) if at_point => CKind::TracedPlaneAt,
+            (Traced, Plane) if at_point => CKind::Rate,
             // tangency at a named end of the line is the regular form; the bare pair is
             // rank-deficient at every solution, so `at:` is how a drawing says which
             (Line, k) if round(k) => match sel("at") {
@@ -339,8 +339,8 @@ pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option
             (Spline, k) if round(k) => CKind::SplineCurvature,
             (Curve, k) if round(k) => CKind::CurveCurvature,
             // a circle osculating an envelope's section by its plane, at a point already on it
-            (Envelope, k) if round(k) && at_point => CKind::EnvelopeCurvatureAt,
-            (Traced, k) if round(k) && at_point => CKind::TracedCurvatureAt,
+            (Envelope, k) if round(k) && at_point => CKind::Rate,
+            (Traced, k) if round(k) && at_point => CKind::Rate,
             _ => return None,
         },
         // a free curve pressed onto a held line, a corner where it chooses (#149)
@@ -381,11 +381,11 @@ pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option
             // square to a plane: along its normal
             (Axis, Plane) => CKind::AxisPerpendicularPlane,
             // along an envelope's normal at a point already on it (#283): the common normal
-            (Envelope, Line | Axis) if at_point => CKind::EnvelopeNormalAt,
+            (Envelope, Line | Axis) if at_point => CKind::Rate,
             // and a meshing's, the common normal of its two flanks there (#345)
-            (Meshing, Line | Axis) if at_point => CKind::MeshingNormalAt,
+            (Meshing, Line | Axis) if at_point => CKind::Rate,
             // and a traced surface's (#326)
-            (Traced, Line | Axis) if at_point => CKind::TracedNormalAt,
+            (Traced, Line | Axis) if at_point => CKind::Rate,
             _ => return None,
         },
         "symmetry" => match (a, b) {

@@ -371,36 +371,86 @@ fn rate_over(kind: CKind, args: &[Arg]) -> &str {
 }
 
 /// What the contacts holding point `at` that own a slot named `over` hold it on (#365): a spline's,
-/// a curve's, a meshing's or a carried point's `t`, a traced curve's `u`.  What a rate written
+/// a curve's, a meshing's or a carried point's `t`, a traced curve's `u`, a traced surface's `u`
+/// or `s`.  What a rate written
 /// `rate(at over …)` is of, where it is one.
 pub fn rate_carriers(sk: &Sketch, at: usize, over: &str) -> Vec<EntRef> {
     let mut found: Vec<EntRef> = Vec::new();
     for c in &sk.constraints {
         let Some((a, on, _)) = c.holds_on() else { continue };
         let Some(src) = RateSource::of(on.kind) else { continue };
-        let surface = src == RateSource::Traced && sk.traced.get(on.i()).is_none_or(|t| t.formals() != 1);
-        if a == at && src.slot() == over && !surface && !found.contains(&on) {
+        let surface = src == RateSource::Traced && sk.traced.get(on.i()).is_some_and(|t| t.formals() == 2);
+        let slot = src.slot() == over || (surface && over == "s");
+        if a == at && slot && src != RateSource::Envelope && !found.contains(&on) {
             found.push(on);
         }
     }
     found
 }
 
-/// What a rate of a contact refuses (#365): a slot by another name than its contact's, a surface's two-number place, and what a source's kernel does not read — a
-/// curve's rate in its view square to a line, and a distance along one of anything but a point a
-/// motion carries.
+/// What a rate of a contact refuses (#365): a word its source has nothing for — a curve's normal,
+/// an envelope's rate — a slot by another name than its contact's, and what it is held against
+/// of the wrong kind: a line or an axis for a rate, a normal or a line touching, a plane for a
+/// plane, a circle drawn in a plane for a curvature, and in a view a line drawn there.
 fn validate_rate(sk: &Sketch, kind: CKind, args: &[Arg], name: &dyn Fn(EntRef) -> String)
     -> Result<(), String> {
+    use crate::contact_rate::Word;
     let c = Constraint::new(kind, args.to_vec());
     let Some(src) = c.rate_source() else {
-        return Err("a rate is of a point a contact holds: on a spline, a curve, a curve traced in \
-                    space or a meshing, or carried by a motion".to_string());
+        return Err("a rate is of a point a contact holds: on a spline, a curve, a body traced in \
+                    space, an envelope or a meshing, or carried by a motion".to_string());
     };
     let (on, at, to) = (args[0].ent(), args[2].ent(), args[1].ent());
-    let over = rate_over(kind, args);
-    if over != src.slot() {
-        return Err(format!("the contact holding {} on {} runs over `{}`, not `{over}`", name(at),
-                           name(on), src.slot()));
+    let word = c.rate_word();
+    let rated = matches!(word, Word::Parallel | Word::Square | Word::Along);
+    let surface = match src {
+        RateSource::Traced => sk.traced.get(on.i()).is_some_and(|t| t.formals() == 2),
+        RateSource::Envelope => true,
+        _ => false,
+    };
+    // what the source has for the word
+    let has = match src {
+        RateSource::Spline | RateSource::Curve | RateSource::Carried => rated,
+        RateSource::Traced => rated || surface,
+        RateSource::Meshing => rated || word == Word::Normal,
+        RateSource::Envelope => !rated,
+    };
+    if !has {
+        return Err(match src {
+            RateSource::Traced => format!("{} is a curve in space, which has a tangent at a point \
+                and no normal or curvature this relation reads: a surface has them", name(on)),
+            RateSource::Envelope => format!("{} is an envelope, whose place no rate runs over: its \
+                normal, a plane or a line touching it, and a section's circle are read there",
+                name(on)),
+            RateSource::Meshing => format!("{} is a meshing: its path of contact and its common \
+                normal are read at a point it holds", name(on)),
+            _ => format!("{} has a rate at a point it holds, and no normal or curvature this \
+                relation reads", name(on)),
+        });
+    }
+    if rated {
+        let over = rate_over(kind, args);
+        let slots: &[&str] = if surface { &["u", "s"] } else { &[src.slot()] };
+        if !slots.contains(&over) {
+            return Err(format!("the contact holding {} on {} runs over {}, not `{over}`",
+                               name(at), name(on), crate::syntax::one_of(slots)));
+        }
+    }
+    let against = match word {
+        Word::Plane => to.kind == EntKind::Plane,
+        Word::Curvature => matches!(to.kind, EntKind::Circle | EntKind::Arc),
+        _ => matches!(to.kind, EntKind::Line | EntKind::Axis),
+    };
+    if !against {
+        return Err(format!("{} is not what this reads at {}: {}", name(to), name(at), match word {
+            Word::Plane => "a plane",
+            Word::Curvature => "a circle",
+            _ => "a line or an axis",
+        }));
+    }
+    if word == Word::Curvature && sk.plane_of(sk.round_center(to)).is_none() {
+        return Err(format!("{} is drawn in no plane, so it has no section of {} to osculate",
+                           name(to), name(on)));
     }
     match src {
         RateSource::Spline | RateSource::Curve => {
@@ -410,17 +460,10 @@ fn validate_rate(sk: &Sketch, kind: CKind, args: &[Arg], name: &dyn Fn(EntRef) -
                 return Err(format!("{} is drawn in a view, and its rate is held against a line \
                                     drawn there, not {}", name(on), name(to)));
             }
-            if kind == CKind::RateDistance || c.rate_square() {
-                return Err(format!("a rate of a point on {} is held along a line, `rate({} over t) \
-                                    parallel l`, written too as its tangent: square to one, or a \
-                                    distance along one, is read of a point in space", name(on),
-                                   name(at)));
-            }
         }
         RateSource::Traced => {
-            if sk.traced.get(on.i()).is_none_or(|t| t.formals() != 1) {
-                return Err(format!("{} is a surface, whose place is two numbers, and a rate runs \
-                                    over a curve's one", name(on)));
+            if sk.traced.get(on.i()).is_none_or(|t| t.body.n_formals() == 0) {
+                return Err(format!("{} is a traced body the solve cannot read", name(on)));
             }
         }
         RateSource::Meshing => {
@@ -431,11 +474,10 @@ fn validate_rate(sk: &Sketch, kind: CKind, args: &[Arg], name: &dyn Fn(EntRef) -
             crate::envelope::held::Moving::of_any(sk, on.i())
                 .map_err(|why| format!("the solve cannot read {}: {why}", name(on)))?;
         }
-    }
-    if kind == CKind::RateDistance && src != RateSource::Carried {
-        return Err(format!("a rate's distance along a direction is read of a point a motion \
-                            carries (`X coincident(under: m, t == τ) x`), and {} is held on {}",
-                           name(at), name(on)));
+        RateSource::Envelope => {
+            crate::envelope::held::Parts::of(sk, on.i())
+                .map_err(|why| format!("the solve cannot read {}: {why}", name(on)))?;
+        }
     }
     Ok(())
 }
@@ -458,10 +500,6 @@ pub fn validate(
         let e = c.envelope_of().ok_or("an envelope contact names an envelope")?;
         crate::envelope::held::Parts::of(sk, e.i())
             .map_err(|why| format!("the solve cannot hold anything to {}: {why}", name(e)))?;
-        if kind == CKind::EnvelopeCurvatureAt && sk.plane_of(sk.round_center(args[1].ent())).is_none() {
-            return Err(format!("{} is drawn in no plane, so it has no section of {} to osculate",
-                               name(args[1].ent()), name(e)));
-        }
     }
     // a meshing a point is held to, or a line at a point held there, is one whose flanks and
     // motion the solve can read (#283, #345)
@@ -477,10 +515,6 @@ pub fn validate(
         let t = c.traced_of().ok_or("a contact with a traced body names one")?;
         if t.i() >= sk.traced.len() || sk.traced[t.i()].body.n_formals() == 0 {
             return Err(format!("{} is a traced body the solve cannot read", name(t)));
-        }
-        if kind == CKind::TracedCurvatureAt && sk.plane_of(sk.round_center(args[1].ent())).is_none() {
-            return Err(format!("{} is drawn in no plane, so it has no section of {} to osculate",
-                               name(args[1].ent()), name(t)));
         }
     }
     // a flank's regularity is read where the solve can read the envelope, the tool and the blank

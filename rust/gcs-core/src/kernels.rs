@@ -121,8 +121,6 @@ pub enum K {
     DragSeen,
     // a line lying on an axis
     LineOnAxis,
-    // a line along a spline's tangent where a contact already holds a point on it (#251)
-    SplineTangentAt,
     // a point at a fraction of a line's run and of an arc's turn, in a view and in space (#248)
     PointAlongLine,
     PointAlongArc,
@@ -135,7 +133,7 @@ pub enum K {
     MappedCircle,
 }
 
-pub const N_KERNELS: usize = 92;
+pub const N_KERNELS: usize = 91;
 
 #[derive(Clone, Copy)]
 pub struct Kernel {
@@ -197,6 +195,9 @@ pub enum KernelKey {
     /// A contact with a body traced in space (#326), at its block's widths: `contact` the
     /// `traced::Contact`.
     Traced { contact: u8, n_par: usize, n_const: usize },
+    /// A rate of a contact (#365), whatever its source: one kernel at its word's rows and its
+    /// block's widths (`contact_rate::kernel`).
+    Rate { word: u8, planar: bool, n_par: usize, n_const: usize },
 }
 
 pub fn kernel(id: K) -> &'static Kernel {
@@ -430,18 +431,6 @@ pub fn curve_tangent_kernel(n_theta: usize, n_const: usize, body: u8) -> Kernel 
     Kernel { name, n_res: 2, n_par: 1 + n_theta + 4, n_const, degree: 1, res, jac, const_jac: None, form: None }
 }
 
-/// The tangent at a point already on a curve written in the language (#251): `(u, θ…, ax, ay,
-/// bx, by)`, `curve_tangent_kernel`'s second row alone — its `u` the place of the contact holding
-/// the point, so one row, as `spline_tangent_at` is a spline's.
-pub fn curve_tangent_at_kernel(n_theta: usize, n_const: usize, body: u8) -> Kernel {
-    let (name, res, jac): (&'static str, KernelFn, KernelFn) = match body {
-        TRACE => ("trace_tangent_at", curve_tangent_at_res::<TRACE>, curve_tangent_at_jac::<TRACE>),
-        ENVELOPE => ("envelope_tangent_at", curve_tangent_at_res::<ENVELOPE>, curve_tangent_at_jac::<ENVELOPE>),
-        EXTREMAL => ("extremal_tangent_at", curve_tangent_at_res::<EXTREMAL>, curve_tangent_at_jac::<EXTREMAL>),
-        _ => ("curve_tangent_at", curve_tangent_at_res::<FORMULA>, curve_tangent_at_jac::<FORMULA>),
-    };
-    Kernel { name, n_res: 1, n_par: 1 + n_theta + 4, n_const, degree: 1, res, jac, const_jac: None, form: None }
-}
 
 /// A kernel's residual or Jacobian, as the table holds it.
 pub(crate) type KernelFn = fn(usize, &[f64], &[f64], &mut [f64]);
@@ -546,7 +535,7 @@ fn lin_jac(n: usize, j: &'static [f64], out: &mut [f64]) {
 /// the whole target) and the Jacobian large, which is what pushes the endpoints back apart.
 pub const MIN_LINE_LEN: f64 = 1e-12;
 
-fn line_len(dx: f64, dy: f64) -> f64 {
+pub(crate) fn line_len(dx: f64, dy: f64) -> f64 {
     dx.dhypot(dy).max(MIN_LINE_LEN)
 }
 
@@ -1444,46 +1433,6 @@ fn spline_tangent_line_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
     }
 }
 
-/// **The tangent at a point already on the curve** (#251): `spline_tangent_line`'s second row
-/// alone, `cross(C'(t), b − a) / |b − a|`, over the same columns.  Its `t` is the place of the
-/// contact holding the point on the spline (`Sketch::add` shares it), so where that contact
-/// already says the curve passes, this says only which way the line runs: one row, regular
-/// wherever `C' ≠ 0`.  The two-row tangency there is a double root — the contact on the line
-/// restates the point — and rank-deficient at every solution.
-fn spline_tangent_at_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
-    for i in 0..n {
-        let o = N_PAR_SPLINE_LINE * i;
-        let l = o + 1 + 2 * SPAN_N;
-        let f = span_frame(&v[o..], 0, 1, span_knots(k, i));
-        let (dx, dy) = (v[l + 2] - v[l], v[l + 3] - v[l + 1]);
-        r[i] = (f.d1.0 * dy - f.d1.1 * dx) / line_len(dx, dy);
-    }
-}
-
-fn spline_tangent_at_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
-    let mut dc = [0.0f64; N_PAR_SPLINE_LINE];
-    let mut dl = [0.0f64; N_PAR_SPLINE_LINE];
-    for i in 0..n {
-        let o = N_PAR_SPLINE_LINE * i;
-        let l = o + 1 + 2 * SPAN_N;
-        let ll = l - o;
-        let jo = N_PAR_SPLINE_LINE * i;
-        let f = span_frame(&v[o..], 0, 1, span_knots(k, i));
-        let (tx, ty) = f.d1;
-        let (dx, dy) = (v[l + 2] - v[l], v[l + 3] - v[l + 1]);
-        let len = line_len(dx, dy);
-        dl.fill(0.0);
-        dl[ll..ll + 4].copy_from_slice(&[-dx / len, -dy / len, dx / len, dy / len]);
-        dc.fill(0.0);
-        dc[0] = f.d2.0 * dy - f.d2.1 * dx;
-        for a in 0..SPAN_N {
-            dc[1 + 2 * a] = f.d[a] * dy;
-            dc[2 + 2 * a] = -f.d[a] * dx;
-        }
-        dc[ll..ll + 4].copy_from_slice(&[ty, -tx, -ty, tx]);
-        ratio_jac(&dc, &dl, len, tx * dy - ty * dx, &mut j[jo..jo + N_PAR_SPLINE_LINE]);
-    }
-}
 
 /// Columns of `spline_curvature`: (t, c0x, c0y ... c3x, c3y, cx, cy, r).
 pub const N_PAR_SPLINE_CURVE: usize = 1 + 2 * SPAN_N + 3;
@@ -1801,6 +1750,55 @@ pub const ENVELOPE: u8 = 2;
 /// A free curve's: its energy's Lagrangian and its pegs, its shape solved (`extremal.rs`).
 pub const EXTREMAL: u8 = 3;
 
+/// **A spline's rate at its parameter** (#365): `C′(t)` over one span's columns `[t, x₀, y₀, …]`,
+/// its knots and weights `k`, and — where `grad` — how it moves with each column: `C″` with `t`,
+/// a control point's basis derivative with its own coordinates.  `None` where the columns or the
+/// constants are not one span's.
+pub(crate) fn spline_rate(cols: &[f64], k: &[f64], grad: bool) -> Option<([f64; 2], Vec<[f64; 2]>)> {
+    let knots: &[f64; SPAN_C] = k.try_into().ok()?;
+    if cols.len() != 1 + 2 * SPAN_N {
+        return None;
+    }
+    let f = span_frame(cols, 0, 1, knots);
+    let mut partial = Vec::new();
+    if grad {
+        partial.push([f.d2.0, f.d2.1]);
+        for a in 0..SPAN_N {
+            partial.push([f.d[a], 0.0]);
+            partial.push([0.0, f.d[a]]);
+        }
+    }
+    Some(([f.d1.0, f.d1.1], partial))
+}
+
+/// **A curve's rate at its parameter** (#365): `C′(u)` of a curve written in the language over
+/// its columns `[u, θ…]`, its body `body` (`FORMULA`, `TRACE`, `ENVELOPE`, `EXTREMAL`) and
+/// constants `k`, and — where `grad` — how it moves with each column, exact.
+pub(crate) fn curve_rate(body: u8, k: &[f64], cols: &[f64], grad: bool)
+    -> Option<([f64; 2], Vec<[f64; 2]>)> {
+    let (&u, theta) = cols.split_first()?;
+    if theta.len() >= crate::tape::MAX_VARS || k.len() < 2 {
+        return None;
+    }
+    if !grad {
+        let c = match body {
+            TRACE => curve_value::<TRACE>(k, u, theta, 1),
+            ENVELOPE => curve_value::<ENVELOPE>(k, u, theta, 1),
+            EXTREMAL => curve_value::<EXTREMAL>(k, u, theta, 1),
+            _ => curve_value::<FORMULA>(k, u, theta, 1),
+        };
+        return Some((c[1], Vec::new()));
+    }
+    let f = match body {
+        TRACE => curve_frame::<TRACE>(k, u, theta, 2),
+        ENVELOPE => curve_frame::<ENVELOPE>(k, u, theta, 2),
+        EXTREMAL => curve_frame::<EXTREMAL>(k, u, theta, 2),
+        _ => curve_frame::<FORMULA>(k, u, theta, 2),
+    };
+    let partial = (0..cols.len()).map(|c| [f.g[1][0][c], f.g[1][1][c]]).collect();
+    Some((f.c[1], partial))
+}
+
 /// `C` and its derivatives in the parameter, for a residual.  `BODY` says which body the
 /// constants hold — a formula's two tapes, a trace's block, a generated profile's tool and
 /// motion; `need` how many orders a trace or a profile is to work out (a formula gives all).
@@ -1916,49 +1914,6 @@ fn curve_tangent_jac<const BODY: u8>(n: usize, v: &[f64], k: &[f64], j: &mut [f6
     }
 }
 
-/// `cross(C', b − a) / |b − a|`: the direction row of `curve_tangent_res`, alone.
-fn curve_tangent_at_res<const BODY: u8>(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
-    let (n_par, n_const) = curve_widths(n, v, k);
-    if n_par < 5 || n_const < 2 {
-        return;
-    }
-    let n_theta = n_par - 5;
-    for i in 0..n {
-        let (o, ko) = (n_par * i, n_const * i);
-        let c = curve_value::<BODY>(&k[ko..ko + n_const], v[o], &v[o + 1..o + 1 + n_theta], 1);
-        let l = o + 1 + n_theta;
-        let (dx, dy) = (v[l + 2] - v[l], v[l + 3] - v[l + 1]);
-        r[i] = (c[1][0] * dy - c[1][1] * dx) / line_len(dx, dy);
-    }
-}
-
-fn curve_tangent_at_jac<const BODY: u8>(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
-    const W: usize = crate::tape::MAX_VARS + 4;
-    let (n_par, n_const) = curve_widths(n, v, k);
-    if n_par < 5 || n_const < 2 || n_par > W {
-        return;
-    }
-    let n_theta = n_par - 5;
-    let (mut dc, mut dl) = ([0.0f64; W], [0.0f64; W]);
-    for i in 0..n {
-        let (o, ko) = (n_par * i, n_const * i);
-        let f = curve_frame::<BODY>(&k[ko..ko + n_const], v[o], &v[o + 1..o + 1 + n_theta], 2);
-        let l = o + 1 + n_theta;
-        let ll = l - o;
-        let jo = n_par * i;
-        let (dx, dy) = (v[l + 2] - v[l], v[l + 3] - v[l + 1]);
-        let (tx, ty) = (f.c[1][0], f.c[1][1]);
-        let len = line_len(dx, dy);
-        dl[..n_par].fill(0.0);
-        dl[ll..ll + 4].copy_from_slice(&[-dx / len, -dy / len, dx / len, dy / len]);
-        dc[..n_par].fill(0.0);
-        for c in 0..1 + n_theta {
-            dc[c] = f.g[1][0][c] * dy - f.g[1][1][c] * dx;
-        }
-        dc[ll..ll + 4].copy_from_slice(&[ty, -tx, -ty, tx]);
-        ratio_jac(&dc[..n_par], &dl[..n_par], len, tx * dy - ty * dx, &mut j[jo..jo + n_par]);
-    }
-}
 
 /* -- a circle osculating a curve: (u, θ…, cx, cy, r) ------------------------------------- */
 
@@ -3685,7 +3640,6 @@ pub static KERNELS: [Kernel; N_KERNELS] = [
     num_kernel!("plane_parallel", plane_parallel_rows, n_res: 2, n_par: 12, degree: 0, n_const: 6),
     Kernel { name: "drag_seen", n_res: 3, n_par: 3, degree: 1, n_const: 13, res: drag_seen_res, jac: drag_seen_jac, const_jac: None, form: None },
     num_kernel!("line_on_axis", line_on_axis_rows, n_res: 4, n_par: 12, degree: 1, n_const: 6),
-    Kernel { name: "spline_tangent_at", n_res: 1, n_par: N_PAR_SPLINE_LINE, degree: 1, n_const: SPAN_C, res: spline_tangent_at_res, jac: spline_tangent_at_jac, const_jac: None, form: Some(Form::Jet(taylor::spline_tangent_at)) },
     num_kernel!("point_along_line", point_along_line_2, n_res: 2, n_par: 7, degree: 1, n_const: 0),
     num_kernel!("point_along_arc", point_along_arc_rows, n_res: 2, n_par: 10, degree: 1, n_const: 0),
     num_kernel!("point_along_line3", point_along_line_3, n_res: 3, n_par: 10, degree: 1, n_const: 0),

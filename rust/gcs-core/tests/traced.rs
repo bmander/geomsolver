@@ -223,10 +223,15 @@ rate(q over u) perpendicular nl
     let traced = |c: &&gcs_core::constraints::Constraint| {
         c.kind.traced_contact().is_some() || c.rate_source().is_some()
     };
-    let kinds: Vec<CKind> = sk.constraints.iter().filter(traced).map(|c| c.kind).collect();
-    for k in [CKind::PointOnTraced, CKind::Rate, CKind::TracedSurfaceTangentAt,
-              CKind::TracedNormalAt, CKind::TracedPlaneAt, CKind::TracedCurvatureAt] {
-        assert!(kinds.contains(&k), "{k:?} in {kinds:?}");
+    assert!(sk.constraints.iter().any(|c| c.kind == CKind::PointOnTraced));
+    // a curve's rate, held along a line and square to one, and a surface's frame, every word of
+    // it: one kind, one kernel (#365)
+    use gcs_core::contact_rate::Word;
+    let words: Vec<Word> = sk.constraints.iter().filter(|c| c.kind == CKind::Rate)
+        .map(|c| c.rate_word()).collect();
+    for w in [Word::Parallel, Word::Square, Word::InPlane, Word::Normal, Word::Plane,
+              Word::Curvature] {
+        assert!(words.contains(&w), "{w:?} in {words:?}");
     }
     // the fixed axes' points are free here, so the body's geometry is differentiated too
     for p in sk.params.iter_mut() {
