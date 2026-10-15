@@ -4,6 +4,32 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.118] A face carried whole, and a mirror.** `sec := prof mapped(from -> a, to -> b) in n`
+(§6.8) is the face `prof` carried into the plane `n` by a map: each corner carried as a point is,
+each edge rebuilt between the images, the source's corner and edge names kept under the image's,
+so its walls are named as the source's are. A line is carried to a line; under the similarity of
+two pairs an arc to an arc and a circle to a circle, its radius scaled — and `k mapped(o -> a, x ->
+b) disc` says the same of one circle — while under three pairs either is refused, naming it.
+`mirror: true` reverses the turn, so the image is walked the other way round and winds as its
+source does: a handed pair is one profile and its image. The standard library's `Affine` and
+`Similar` are each that one statement, and `Twisted(n, twist:, reach:, s:)` is the one point a
+section's frame turns to, where it was a plane of axes. Through 0.117 a section was drawn again
+in each station's turned or scaled axes (`std.Twisted`, `scaled`, `scaled_radius`), and a handed
+pair was drawn twice or signed by a number threaded through every station (`hub_motor`'s
+`sg`). (Issue #357, M2 and M3.)
+
+**[0.117] A point carried by a map.** `q mapped(from -> a, to -> b, third -> c) p` (§9.2) holds
+`q` where the affine map taking the three source points to the three targets carries `p`: each
+pair a point of the source, `->`, and where it goes, in the parentheses. Two pairs are the
+similarity, keeping the turn or, with `mirror: true`, reversing it. Each side is read in its own
+plane, so a point drawn in one view is carried into another, and the source points are columns of
+the relation, so the map is exact wherever its frame stands. A source frame standing in a line is
+refused where it is stated, naming its points. The standard library's `Affine` and `Similar` are
+one `mapped` per corner. Through 0.116 the map was written out in coordinates — Cramer's rule over
+`x` and `y`, the determinant twice in each quotient — each corner two `offset`s through a hidden
+point over a hidden pair of unknowns per side of the target frame (`std.Framed`, `std.Spans`,
+retired), and a collinear frame divided by zero. (Issue #357, M1.)
+
 **[0.116] A station may state a rate.** A relation may read the rate of an axis's direction or of a
 point along a formal of its body, `rate(x over s) perpendicular y` (or `parallel`), the formal
 always named; `initially { … }` says what holds at the drawn station alone (§6.9). A face family

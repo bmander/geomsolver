@@ -295,8 +295,9 @@ placement carries inside the blank; CLI test readers zero the offset.
   Pappus to 1e-9, a radius law in `s` over the chain, part of a chain, the refusals.
 - **A law is an expression in `s`** (§6.9 [0.103], #243 L5, finding 10).  A twist or a scale is a
   dimension of the section reading the running number; no word takes a `law:` (no function values).
-  `std.sv`'s `Twisted` (axes in the station's plane turned `twist · s`, `std.Turned`'s construction
-  over a reference at `n.u`), `scaled` (a point at `(du, dv)` scaled `1 + (scale − 1) · s` about the
+  `std.sv`'s `Twisted` (the point `reach` along the station's `u` turned `twist · s` — [0.118],
+  the second point a section drawn once is carried to, `f := prof mapped(o -> n.origin, x ->
+  tw.t) in n`; through 0.117 a plane of axes a section was drawn on corner by corner), `scaled` (a point at `(du, dv)` scaled `1 + (scale − 1) · s` about the
   plane's origin) and `scaled_radius` take a total and run it linearly; any other law is the word
   given another fraction (`s: 3 * s^2 - 2 * s^3`) or the writer's own expression.  **A number given
   over `s` that is not affine in it is kept as text** (`Walk::held_text`), whichever formal it is
@@ -357,10 +358,10 @@ placement carries inside the blank; CLI test readers zero the offset.
   faces themselves; `std.Apex(a, tip, s:)` the same to a point (no `end` cap).  Correspondence is
   the written walks: a connector is where a walk starts, unequal counts a point named on an edge;
   the first three corners must not stand in a line (`Across`).  `std.Similar` and `std.Affine`
-  place each corner of a profile drawn once with `std.Framed` — two `offset`s from a rail point,
-  over hidden unknowns `Spans(n, a, b).du`/`.dv` (where one rail point stands from another in
-  the station's frame), each affine in one with a coefficient read off the profile
-  (`numbers.md`'s held numbers).  `tests/correspondence.rs` is the gate: `two_faces.sv` at
+  are each one statement, the face carried whole ([0.118], below): `f := prof mapped(from -> a,
+  to -> b, third -> c) in n`, the profile's corners and frame columns of each corner's `mapped`,
+  held where the profile is (`Framed` and `Spans`, two `offset`s over hidden spans of the frame,
+  are retired, [0.117]); `lofts/blade.sv` and `three_rails.sv` write the word itself.  `tests/correspondence.rs` is the gate: `two_faces.sv` at
   40/6 · 1856, a connector and a split triangle at their prismatoids, a pyramid to an oblique tip,
   a blade on two rails (1560; turning, 1650), a square on three rails at its area ratio's
   prismatoid, a face walked, a face of a cycle's copies, and the refusals.  An arc edge lofted
@@ -400,6 +401,28 @@ placement carries inside the blank; CLI test readers zero the offset.
   (Frenet's) to 1e-9, read off the caps (and three quarters of a turn, and the home square to the
   axis); a tube on four turns at A·L to 1e-9 in either frame; along a planar spline the word and
   `std.On` the same solid, corner for corner; the refusals.
+- **A face carried whole** (#357, [0.118]): `sec := prof mapped(from -> a, to -> b) in n` parses
+  to a `Block` (`Block::image`, a `FaceImage`) — a `cycle` over `prof`'s loop under a binder no
+  source writes, set aside and resolved as every block over a walk is — which makes no copies:
+  `flatten::image::image_face` builds the statements a person would write, walked in the
+  definition's scope and spliced where it stood.  Each link's source is an alias `sec#src{k}`
+  (the link's own scope, as a copy's `e` is); a corner of a face of corners is `sec.<name> :=
+  point in n` held by `mapped`, and the image `face(sec.k0, …, -> close)`, whose minted runs name
+  the walls `close0`, … as the source's; an edge's start (`p1`, an arc's `start`) is `sec#q{k}`,
+  a line `sec.<name> := line(sec#q{k}, sec#q{k+1})`, an arc about `sec#c{k}` (mapped from its
+  centre) and a lone circle `sec.<name>` held by `CKind::MappedCircle` — each in `n`, each image
+  point seeded `hint(at:)` its source, apart from the others (an arc's image at radius zero has
+  no slope in its radius), and an arc's or a circle's radius left unseeded, read off its points.
+  An arc's image is one row over its unknowns, as an arc held at both ends is.  So the walls
+  keep the source's edge names (`body.ab`, `body.dome`).  `mirror: true` reverses the loop and
+  each arc's ends, so the image winds as the source does; three pairs whose targets turn the
+  other way reflect with the loop as it is, every reader taking a line loop either way.  Under
+  three pairs an arc or a circle is E080 at the word naming it (an ellipse), as is a spline, a
+  curve and a face with holes (`face_walk`).  Printed as written (`print::write_stmt`).
+  `tests/mapped.rs` is the gate (a face of corners and of edges with their wall names, an arc's
+  and a circle's radii, the mirror's winding, the refusals, the printer), with
+  `lofts/tapered.sv` and `lofts/twisted_duct.sv` (each section drawn once, at their closed forms)
+  and `hub_motor`'s left cover, the right's profile mirrored in the mid-plane.
 - **The loft series** (`rust/examples/lofts/`, its README the reading order): one document per
   capability of #243 L1–L8, each solid at the closed form its comments give, held there off the
   exact B-rep to 1e-9 by `tests/loft_examples.rs`; the app lists the folder as one project

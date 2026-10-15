@@ -5,26 +5,35 @@
 // Closed form (Cavalieri): every section is the 20 mm square, so V = 20² · 40 = 16000 mm³ at any
 // turn and under any law.
 unit mm
-use std (coords)
+use std (vertical)
 length := 40mm
 
-// The square at station `s`, drawn on the station's axes turned `twist · s` (`std.Twisted`, #243
-// L5). An eased turn is the word given another fraction: `s: 3 * s^2 - 2 * s^3`.
-component TwistedSquare(g: line, up: axis, half: Length, twist: Angle, s: Scalar) {
+// The square at station `s`, drawn once below and carried whole onto the station by the
+// similarity taking its centre `o` and `x` to the station's origin and `std.Twisted`'s point,
+// turned `twist · s` (#243 L5, #357). An eased turn is the word given another fraction:
+// `s: 3 * s^2 - 2 * s^3`.
+component TwistedSquare(g: line, up: axis, prof: face, o: point, x: point, twist: Angle,
+                        s: Scalar) {
   st := std.OnLine(g, up: up, s: s)
-  tw := std.Twisted(st.n, twist: twist, s: s)
-  in st.n {
-    a := point
-    b := point
-    c := point
-    d := point
-    a coords(du: -half, dv: -half) tw.axes
-    b coords(du: half, dv: -half) tw.axes
-    c coords(du: half, dv: half) tw.axes
-    d coords(du: -half, dv: half) tw.axes
-  }
-  f := face(a, b, c, d, -> close)
+  tw := std.Twisted(st.n, twist: twist, reach: 10mm, s: s)
+  f := prof mapped(o -> st.n.origin, x -> tw.t) in st.n
 }
+
+in std.front {
+  o := point
+  x := point
+  fix((0mm, -50mm)) o
+  fix((10mm, -50mm)) x
+  a := point
+  b := point
+  c := point
+  d := point
+  fix((-10mm, -60mm)) a
+  fix((10mm, -60mm)) b
+  fix((10mm, -40mm)) c
+  fix((-10mm, -40mm)) d
+}
+square := face(a, b, c, d, -> close)
 
 in std.top {
   entry := point
@@ -34,6 +43,6 @@ in std.top {
   vertical guide
   length(length) guide
 }
-duct := solid(TwistedSquare(guide, std.z, half: 10mm, twist: 90deg).f over s in (0, 1))
+duct := solid(TwistedSquare(guide, std.z, square, o, x, twist: 90deg).f over s in (0, 1))
 // Three and a half turns: no pairing can say this.
-auger := solid(TwistedSquare(guide, std.z, half: 10mm, twist: 1260deg).f over s in (0, 1))
+auger := solid(TwistedSquare(guide, std.z, square, o, x, twist: 1260deg).f over s in (0, 1))

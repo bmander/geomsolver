@@ -634,6 +634,22 @@ pub struct Block {
     /// representative turned, so there is nothing an index could vary.
     pub index_reads: Vec<Span>,
     pub span: Span,
+    /// `sec := prof mapped(from -> a, to -> b) in n` (#357): a face carried whole, written as
+    /// the definition it is and walked as a `cycle` over the face's loop (`over`, the copies'
+    /// name one the source cannot write) that makes no copies — the flattener builds the image
+    /// instead (`flatten::image`).  `None` for every block written as one.
+    pub image: Option<FaceImage>,
+}
+
+/// What a face carried by a map is (`Block::image`, #357): the image's name, the word and its
+/// pairs as written (each `from -> a` two unlabelled references, as a point's map reads them),
+/// and the plane the image is drawn in.
+#[derive(Clone, Debug)]
+pub struct FaceImage {
+    pub name: Name,
+    pub word: Name,
+    pub args: Vec<OpArg>,
+    pub plane: Ref,
 }
 
 /// What a block runs over when it runs over a chain: the name each copy calls its edge, and the

@@ -76,7 +76,14 @@ pub(crate) fn settle(
             // a selector by name, and a contact's place where it is written, pinned or seeded
             // (`t == 0.25`, `hint(t: 0.3)`): what makes a point on a run a fraction of it (#248)
             let place = w.slots().find(|(k, _)| k.text == "t").map(|(k, _)| k.span);
-            let sel = |n: &str| w.sel(n).or_else(|| (n == "t" && place.is_some()).then(String::new));
+            // and how many pairs a map was written with (#357): three an affine map, two the
+            // similarity
+            let pairs = mapped_pairs(w)?;
+            let sel = |n: &str| {
+                w.sel(n)
+                    .or_else(|| (n == "t" && place.is_some()).then(String::new))
+                    .or_else(|| (n == "pairs").then(|| pairs.to_string()))
+            };
             let circle = matches!((a, b), (EntKind::Point, EntKind::Circle) | (EntKind::Circle, EntKind::Point));
             if let (true, Some(at)) = (word == "coincident" && circle, place) {
                 return Err((at, "a circle has no start or end, so no fraction of its turn: \
@@ -106,6 +113,11 @@ pub(crate) fn settle(
                     return Ok((k, swapped.assemble(k)?));
                 }
             }
+            // a circle under an affine map is an ellipse (#357): carried by two pairs only
+            if word == "mapped" && pairs == 3 && a == EntKind::Circle && b == EntKind::Circle {
+                return Err((w.word.span, "under a map of three pairs a circle is an ellipse, \
+                    which a circle cannot be: carry it by two pairs, the similarity".to_string()));
+            }
             crate::constraints::infix_op(word, a, b, &sel).ok_or_else(|| {
                 (w.word.span, format!("`{word}` does not relate {} to {}", a.a(), b.a()))
             })?
@@ -132,6 +144,28 @@ pub(crate) fn settle(
         return Ok((kind, along.assemble(kind)?));
     }
     Ok((kind, w.assemble(kind)?))
+}
+
+/// How many pairs `mapped`'s parentheses hold (#357), each `source -> target` read as two
+/// unlabelled references (`op_args`): three or two, or refused at the word — and 0 for every
+/// other word.  `mirror:` reverses the turn of the two-pair similarity; three pairs say their
+/// turn by where their targets stand.
+fn mapped_pairs(w: &crate::syntax::Written) -> Result<usize, (Span, String)> {
+    if w.word.text != "mapped" {
+        return Ok(0);
+    }
+    let refs = w.args.iter().filter(|a| matches!(a, crate::syntax::OpArg::Ent(_))).count();
+    let pairs = refs / 2;
+    if refs % 2 != 0 || !(2..=3).contains(&pairs) {
+        return Err((w.word.span, "`mapped` takes two or three pairs, each a point of the source \
+            and where it goes: `q mapped(from -> a, to -> b, third -> c) p`, or two for the \
+            similarity".to_string()));
+    }
+    if let (3, Some(at)) = (pairs, w.key_span("mirror")) {
+        return Err((at, "`mirror:` reverses the similarity two pairs make: three pairs say \
+            their turn by where their targets stand".to_string()));
+    }
+    Ok(pairs)
 }
 
 /// Whether a plane's membership (`p coincident P`, `l coincident P`) is of geometry drawn in `P`

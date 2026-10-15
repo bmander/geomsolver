@@ -239,6 +239,7 @@ whichever is written first (`l tangent g` is `g tangent l`).
 | `midpoint` | infix | a point and a line |
 | `parallel`, `perpendicular` | infix | two lines; an axis and a line or axis; an axis and a plane; `parallel` two planes |
 | `project` | infix | two points in two planes: two images of one point in space (1.12) |
+| `mapped(from -> a, …)` | infix | `q mapped(from -> a, to -> b, third -> c) p`: `q` where the affine map taking the three sources to the three targets carries `p`; two pairs the similarity, `mirror: true` reversing its turn. Sources in one plane, `q` and targets in one (may differ). Two circles under two pairs: centre carried, radius scaled |
 | `fix` | prefix | an entity's own numbers, whole or by member (1.4) |
 | `ccw(a, b, c)`, `cw(a, b, c)` | call | `c` left (right) of ray `a → b`: a root choice, no equation |
 
@@ -1266,9 +1267,11 @@ k := Par(o).p over u in (-2mm, 2mm)
   (through the axis, `u` out from it, `v` up it) and an auger's flight in its `n` (the base
   carried); `std.OnHelix(std.top, r: 10mm, pitch: 5mm, turns: 4, s: s)`'s `n` stands square to the
   helix of radius `r`, for a coil's wire. A negative pitch winds left-handed
-  (`rust/gcs-core/tests/helix.rs`). **A law is any expression in `s`** (0.103): `std.Twisted(st.n, twist: 90deg,
-  s: s)` gives axes `tw.axes` turned `twist · s`, `p scaled(du: 10, dv: 5, scale: 0.5, s: s)
-  tw.axes` places a corner shrinking to half, `scaled_radius(r: 8mm, scale: 2, s: s) k` a radius
+  (`rust/gcs-core/tests/helix.rs`). **A law is any expression in `s`** (0.103): draw the section once and carry it
+  whole (0.118), `tw := std.Twisted(st.n, twist: 90deg, reach: 10mm, s: s)` the point `tw.t`
+  turned `twist · s`, then `sec := prof mapped(o -> st.n.origin, x -> tw.t) in st.n`, `o` and `x`
+  the section's frame `reach` apart (a `reach` that runs with `s` scales it); for a section written
+  as coordinates, `p scaled(du: 10, dv: 5, scale: 0.5, s: s) st.n` places a corner shrinking to half, `scaled_radius(r: 8mm, scale: 2, s: s) k` a radius
   (`use std (scaled, scaled_radius)`); each runs its total linearly, and the word given another
   fraction runs another law (`s: 3 * s^2 - 2 * s^3` eases it). A `when` cannot read `s` (it is
   made once); write a law in pieces with `min`, `max` or `abs`. Its `v` stays along `up`; with `up` the normal of the guide's plane, the frame
@@ -1304,6 +1307,11 @@ k := Par(o).p over u in (-2mm, 2mm)
   integrates it from there both ways (`rust/gcs-core/tests/rates.rs`). A rate is of an axis or a
   point, against an axis, a line or a plane, by `perpendicular` or `parallel`, and names the
   formal it runs over; give a word that states one the family's running number as that formal.
+  A profile drawn once may also be **carried whole** by the map itself,
+  `sec := prof mapped(o -> st.n.origin, x -> t) in st.n` — every corner and edge of `prof` carried
+  into `st.n` by the similarity taking `o` and `x` to the origin and `t`, the edges keeping their
+  names (`sec.ab`), an arc or a circle its radius scaled (two pairs only); `mirror: true` gives a
+  handed pair's other hand, wound as its source (`lofts/tapered.sv`, `hub_motor/motor/cover.sv`).
   A component is closed over its arguments, so the station's `up` (`std.z`) is passed in as an
   `axis` formal. Every station inside the interval must solve to DOF 0 with the section's shape
   intact; an end may shrink to a point (a pyramid's apex). Caps `start` and `end`, walls named by

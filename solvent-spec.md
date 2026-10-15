@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.116 — October 2026**
+**Specification, Draft 0.118 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -777,6 +777,8 @@ Three restrictions keep the shorthand from swallowing a mistake. An interior gap
 
 **A face of a block's copies [0.113].** An item of a face's walk that names a declaration of a `repeat` or a `cycle` beside it, read bare (`face(side)`, `side` declared in the block), stands for its copies in order, `side[0]`, `side[1]`, …, as many as the block made: a loop drawn by a block is a face without its count written twice, and a block whose count is a walk's (§12.8) makes a face of that many edges. Each such edge names the face swept from it by its copy, `side[2]`. A name the face's scope finds as it stands is itself.
 
+**A face carried whole [0.118].** `sec := prof mapped(from -> a, to -> b) in n` is the face `prof` carried into the plane `n` by a map, its pairs written as a point's are (§9.2): its loop walked as a block walks it (§12.8), each corner carried as a point is and each edge rebuilt between the images, in `n`. The image keeps the source's names under its own: a face of corners is `face(sec.k0, sec.k1, …, -> close)`, so the faces swept from it are named `close0`, … as the source's are; a face of edges names each image edge as its source (`sec.ab`, swept as `ab`). A line is carried to a line. Under the similarity of two pairs an arc is carried to an arc about its centre's image and a circle to a circle, its radius scaled by `|b − a| / |to − from|`; under the affine map of three pairs a circle would be an ellipse, and an arc or a circle there is **E080** naming it, as is a spline or a curve. An edge's image runs from the image of its start — a line's `p1`, an arc's `start` — the walk's own reading. **The mirror**, `mirror: true`, reverses the turn, so the image is walked the other way round and an arc runs from its end's image: it winds as its source does, and a handed pair is one profile and its image. Three pairs whose targets stand in the opposite turn reflect too, and their image winds as the targets do. A face of holes is not carried yet (**E080**).
+
 **A face may have holes.** After its outer boundary, `holes:` introduces one or more circles, named closed loops or faces, separated by commas. Each entry is a complete inner boundary; an open chain is refused (E080). A face is a loop, so it is a hole as it stands — its outer loop, which is how a hole of loose edges is written (`h := face(e, f, g, k)`, then `face(a, b, c, d, holes: h)`); a face with holes of its own is refused, and the hole's face is declared before the face it is cut from. All boundaries MUST lie in the same plane. After solving, every hole MUST be simple, nonzero and strictly inside the outer boundary, and holes MUST be mutually disjoint: touching, crossing, overlapping and nested holes are refused. Loop direction does not determine whether it is a hole; `holes:` does. The final `-> close`, when present, closes only the outer boundary.
 
 ```solvent
@@ -948,7 +950,11 @@ block := solid(face(mouth, side_r, lid, side_l), from: face, to: back)
   `p` at `(du, dv)` in `P`'s frame scaled `1 + (scale − 1) · s` about its origin; and
   `scaled_radius(r:, scale:, s:) k`, a round's radius scaled alike. Any other law is the word given
   another fraction (`s: 3 * s^2 - 2 * s^3`) or the section's own expression. No word takes a
-  `law:`. A number given a formal — a component's or a relation word's — MAY be any expression in
+  `law:`. **[0.118]** A section is drawn once and carried whole by the map taking its frame to the
+  station's (§6.8): `Twisted(n, twist:, reach:, s:)` is the one point that turn needs, `t`, `reach`
+  along `n`'s `u` from its origin turned `twist · s` (`sec := prof mapped(o -> n.origin, x -> tw.t)
+  in n`); through 0.117 it was a plane of axes `axes`, which a section was drawn on corner by
+  corner. A number given a formal — a component's or a relation word's — MAY be any expression in
   the running number, worked out at each station; it binds the formal, and is no unknown of the
   drawing. A `when` is made once, for the whole run (§12.9), so a condition reading the running
   number is **E040**, saying so; `min`, `max` and `abs` write a law in pieces.
@@ -996,7 +1002,12 @@ block := solid(face(mouth, side_r, lid, side_l), from: face, to: back)
   off the drawing, so in a station holding `a`, `b` (and `c`) where two (three) rails cross its
   plane, the section follows its rails: two give a similarity, three an affine map. Through
   0.112 two faces drawn apart had no loft, and a section reached its rails corner by corner.
-  Lofting an arc edge with a line edge is not said yet.
+  Lofting an arc edge with a line edge is not said yet. **[0.117]** Each corner is one
+  `mapped` (§9.2), `q mapped(from -> a, to -> b, third -> c) e.p1`, and two pairs for `Similar`;
+  through 0.116 the map was written out in coordinates, each corner two `offset`s through a hidden
+  point over hidden spans of the frame (`Framed`, `Spans`, retired). **[0.118]** Each is one
+  statement, the face carried whole (§6.8): `f := prof mapped(from -> a, to -> b, third -> c) in
+  n`, its walls named by `prof`'s edges.
 - **[0.116] A station may state a rate.** A relation MAY read the **rate** of an axis's direction
   or of a point along a formal of the body it is written in, `rate(x over s)`, which always names
   its formal: `rate(f.u over s) perpendicular f.v`. A rate stands where a direction is read — on
@@ -2124,6 +2135,7 @@ What goes in the parentheses is a short list:
 - **the number**, which may be an expression exactly as elsewhere: `distance(80)`, `distance(w / 2)`, `distance(1' 3")` — **[0.41]** it names nothing; a name is `w := 60` (§6.3);
 - **a selector** — `side: left`, `at: start`, `external: true`, `along: u`. **[0.17]** A selector's *key* must be one the word has (a slot of the settled kind), and its *value* must be one of the words that slot takes — **[0.46]** `along:` takes a word or a reference to an axis or a line, a name outside its words being a reference (§9.3) — both **E040**, at the key. Neither was checked through 0.16, and both failures were silent: a mistyped key was dropped and the statement settled without it, and a word outside the set fell through to whichever reading the implementation tested for last, so `at: banana` meant `end`. An implementation MUST publish each slot's vocabulary in its registry, so that a front end offers what the core accepts rather than keeping a second list;
 - **the third entity**, for `symmetry`, and **[0.46]** the direction of `level`, which may be a word of `along:`'s (`level(up)`);
+- **[0.117] pairs**, for `mapped`: `from -> a`, a point of the source and where the map takes it, two or three of them;
 - **a pin**, `t == 0.4`, for a slot the constraint owns. Its *seed* is the trailing `hint(t: 0.4)` where every seed in the language is (§4.3). **[0.39]** A pin to an unknown — `t == s` over `param s: Angle` (§3.3, §6.3) — does not hold the slot at a number: it makes the slot's unknown **that one**, as a dimension reading it is written in it, and every contact pinned to the same unknown owns it. Inside a component the unknown is a formal the call left unbound (`leg.s`). **[0.41]** A pin to a name nothing declares is **E101**. Only a bare name is shared (an expression over one would need an equation the slot does not have), only a curve contact's parameter (`t`) can be, and only by contacts on the **same** curve — two curves have two intervals, seams and speeds — so a contact on another curve pinned to the name is **E040**; **[0.82]** a fraction of a line's run or an arc's turn has one interval on every run, so it is shared by contacts on any lines and arcs, and with no curve's parameter, and so is a `fix` pinned to one, since `fix` holds a number. **[0.41]** The shared unknown is seeded where it is declared; a `hint(t: …)` beside a pin to it is a second seed, **E040**.
 
 | word | fixity | operands → constraint |
@@ -2142,6 +2154,7 @@ What goes in the parentheses is a short list:
 | `midpoint`, `parallel`, `perpendicular`, `symmetry` | infix | one each; **[0.42]** `parallel` and `perpendicular` also take an axis beside an axis or a line, in space, and (axis, plane) — along the plane, and square to it — either way round; **[0.43]** `parallel` takes (plane, plane): the two face alike, either way (two rows over their normals; neither's place nor its turn within itself); **[0.90]** `perpendicular` takes (envelope in space, line or axis) +`at: m`, the line along its normal at a point held on it (§6.15.3) |
 | `regular` | infix | **[0.115]** (envelope in space, solid) +`by:` a solid, written `flank regular(…, by: tool) within blank`: the flank's least area factor where the tool cuts it in the blank, a bound or an equation (§6.15.3) |
 | `project` | infix | (point, point), each `in` a plane — the two planes are read off the memberships and never written (§6.7) **[0.10]** |
+| `mapped` | infix | **[0.117]** (point, point), its **pairs** in the parentheses, each a point of the source, `->`, and where it goes: `q mapped(from -> a, to -> b, third -> c) p` holds `q` where the affine map taking `from`, `to` and `third` to `a`, `b` and `c` carries `p`, `q = a + i·(b − a) + j·(c − a)` with `p = from + i·(to − from) + j·(third − from)`. Two pairs are the similarity keeping the turn (`to` turned a quarter about `from` goes to `b` turned a quarter about `a`), `mirror: true` the one reversing it; three pairs say their turn by where their targets stand. Each side is read in its own plane — `q` and the targets in one, `p` and the sources in one, which may be another (**E062** where either is not) — so a point drawn in one view is carried into another. Three sources standing in a line, or two that are one, are **E061** naming them, where they are held; other than two or three pairs, and `mirror:` with three, are **E040**. **[0.118]** (circle, circle) under two pairs: the circle about the image of the other's centre, its radius scaled by `|b − a| / |to − from|`; under three pairs **E040** (an ellipse). A face carried whole is §6.8. No number: not a dimension |
 | `fix` | prefix | the gauge (§13): an entity, and its own numbers pinned whole or by member — `fix((0, 0)) p`, `fix(x == 0) p`, `fix(r == 25) c`, `fix(dir == (0, 0, 1)) t` **[0.34]** **[0.45]** |
 | `ccw`, `cw` | call | three points, all in the parentheses (§9.6) |
 

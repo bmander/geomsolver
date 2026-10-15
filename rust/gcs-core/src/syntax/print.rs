@@ -109,6 +109,8 @@ pub fn write_stmt_to(out: &mut String, k: &StmtKind) -> Result<(), PrintError> {
 fn printable(k: &StmtKind) -> Result<(), PrintError> {
     match k {
         StmtKind::Chain(_) => Err(PrintError { construct: "named chains" }),
+        // a face carried by a map is a definition, written as one (#357)
+        StmtKind::Block(b) if b.image.is_some() => Ok(()),
         StmtKind::Block(_) => Err(PrintError { construct: "repeat and cycle blocks" }),
         StmtKind::ClaimOver(_) => Err(PrintError { construct: "claim-over bodies" }),
         StmtKind::Set(_) => Err(PrintError { construct: "set literals" }),
@@ -224,6 +226,17 @@ fn write_stmt(out: &mut String, k: &StmtKind) {
                 };
                 out.push_str(&format!("integral({} over {over})", t.body));
             }
+        }
+        // `sec := prof mapped(from -> a, to -> b) in n` (#357)
+        StmtKind::Block(super::Block { image: Some(img), over: Some(over), .. }) => {
+            out.push_str(&img.name.text);
+            out.push_str(" := ");
+            write_ref(out, &over.chain);
+            out.push(' ');
+            out.push_str(&img.word.text);
+            let (parts, _) = written_parts(&img.args, true);
+            out.push_str(&format!("({}) in ", parts.join(", ")));
+            write_ref(out, &img.plane);
         }
         StmtKind::Block(_) | StmtKind::ClaimOver(_) | StmtKind::Chain(_) | StmtKind::Set(_) => {
             unreachable!("validated before printing")
@@ -722,8 +735,10 @@ fn write_relation(out: &mut String, r: &Relation) {
 }
 
 /// Partition operator arguments between parentheses and the trailing hint clause.
-pub(crate) fn written_parts(args: &[OpArg]) -> (Vec<String>, Vec<String>) {
+pub(crate) fn written_parts(args: &[OpArg], pairs: bool) -> (Vec<String>, Vec<String>) {
     let mut parts: Vec<String> = Vec::new();
+    // `mapped`'s pairs (#357): each source reference and the target after it, `from -> a`
+    let mut source: Option<usize> = None;
     let mut hints: Vec<String> = Vec::new();
     let mut bound = None;
     for a in args {
@@ -733,7 +748,13 @@ pub(crate) fn written_parts(args: &[OpArg]) -> (Vec<String>, Vec<String>) {
             OpArg::Ent(r) => {
                 let mut s = String::new();
                 write_ref(&mut s, r);
-                parts.push(s);
+                match source.take() {
+                    Some(at) if pairs => parts[at] = format!("{} -> {s}", parts[at]),
+                    _ => {
+                        source = pairs.then_some(parts.len());
+                        parts.push(s);
+                    }
+                }
             }
             OpArg::Dim(t, _) => parts.insert(0, t.clone()),
             // the slot's own name, as it was written — never guessed from the kind.  The
@@ -786,7 +807,7 @@ pub fn bounded(
 }
 
 fn write_written(out: &mut String, w: &Written) {
-    let (parts, hints) = written_parts(&w.args);
+    let (parts, hints) = written_parts(&w.args, w.word.text == "mapped");
     let head = |out: &mut String, r: &Ref| {
         write_ref(out, r);
         out.push(' ');
@@ -852,6 +873,10 @@ pub fn operator_text(kind: CKind, args: &[Option<Arg>]) -> String {
         if matches!(a, Arg::Word(w) if w.is_empty()) {
             continue;
         }
+        // a similarity keeping its turn says nothing of it (#357)
+        if *name == "mirror" && matches!(a, Arg::Bool(false)) {
+            continue;
+        }
         // and the place of a tangent at a point is the contact's, written with the contact
         if sk.is_param() && matches!(kind, CKind::SplineTangentAt | CKind::CurveTangentAt) {
             continue;
@@ -884,7 +909,11 @@ pub fn operator_text(kind: CKind, args: &[Option<Arg>]) -> String {
     // reader writes them: `l1 angle(l3, l4, sense: cw) l2`
     let outside = if fixity == Fixity::Call { 0 } else { 2 };
     if ents.len() > outside {
-        let extra: Vec<String> = ents.drain(outside..).collect();
+        let mut extra: Vec<String> = ents.drain(outside..).collect();
+        // a map's pairs, each a point of the source and where it goes (#357)
+        if matches!(kind, CKind::Mapped | CKind::MappedSimilar | CKind::MappedCircle) {
+            extra = extra.chunks(2).map(|p| p.join(" -> ")).collect();
+        }
         parens.splice(0..0, extra);
     }
     let mut out = String::new();

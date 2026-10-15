@@ -1,6 +1,7 @@
 //! **Twist and scale laws** (#243 L5): a twist or a scale is a dimension of the section reading
 //! the family's running number `s`, and any expression in it is a law.  The library's words take
-//! a total and run it linearly (`std.Twisted`, `scaled`, `scaled_radius`); any other law is the
+//! a total and run it linearly (`std.Twisted`'s turned point, `scaled`, `scaled_radius`); any
+//! other law is the
 //! same word given another fraction, or the writer's own expression (finding 10: Solvent has no
 //! function values, so no word takes a `law:`).  Gated by closed forms off the exact B-rep: a
 //! twisted extrusion is A·L at any twist (Cavalieri), and a section turned about its centroid on
@@ -12,25 +13,18 @@ use std::f64::consts::PI;
 use crate::common::parsed::determined;
 
 /// A square of half side `half` and a disc of radius `r`, each drawn square to the path `g` at
-/// station `s`; the square turned by `std.Twisted` and its corners scaled by `scaled`, the disc's
-/// radius by `scaled_radius`.  The guides: a line 40 long and a quarter arc of radius 30, in plan.
+/// station `s`: the square `sq` drawn once and carried whole by the similarity taking its centre
+/// `po` and `px`, 10 along, to the station's origin and `std.Twisted`'s point, turned `twist · s`
+/// and `half · (1 + (scale − 1)·s)` out (#357); the disc's radius scaled by `scaled_radius`.  The
+/// guides: a line 40 long and a quarter arc of radius 30, in plan.
 const LAWS: &str = "unit mm
 use std (scaled, scaled_radius)
 
-component Square(g: path, up: axis, half: Length, twist: Angle, scale: Scalar, s: Scalar) {
+component Square(g: path, up: axis, sq: face, po: point, px: point, half: Length, twist: Angle,
+                 scale: Scalar, s: Scalar) {
   st := std.On(g, up: up, s: s)
-  tw := std.Twisted(st.n, twist: twist, s: s)
-  in st.n {
-    a := point
-    b := point
-    c := point
-    d := point
-    a scaled(du: -half, dv: -half, scale: scale, s: s) tw.axes
-    b scaled(du: half, dv: -half, scale: scale, s: s) tw.axes
-    c scaled(du: half, dv: half, scale: scale, s: s) tw.axes
-    d scaled(du: -half, dv: half, scale: scale, s: s) tw.axes
-  }
-  f := face(a, b, c, d, -> close)
+  tw := std.Twisted(st.n, twist: twist, reach: half * (1 + (scale - 1) * s), s: s)
+  f := sq mapped(po -> st.n.origin, px -> tw.t) in st.n
 }
 
 component Disc(g: path, up: axis, r: Length, scale: Scalar, s: Scalar) {
@@ -56,6 +50,21 @@ in std.top {
   bend := arc(center: c, start: e, end: x)
   vertical line(c, x)
 }
+in std.front {
+  po := point
+  px := point
+  fix((0mm, -50mm)) po
+  fix((10mm, -50mm)) px
+  q0 := point
+  q1 := point
+  q2 := point
+  q3 := point
+  fix((-10mm, -60mm)) q0
+  fix((10mm, -60mm)) q1
+  fix((10mm, -40mm)) q2
+  fix((-10mm, -40mm)) q3
+}
+sq := face(q0, q1, q2, q3, -> close)
 ";
 
 fn index(e: &Elaborated, name: &str) -> usize {
@@ -109,21 +118,25 @@ fn gauss5(f: impl Fn(f64) -> f64) -> f64 {
 }
 
 /// **A twisted extrusion is A·L at any twist** (Cavalieri): the 20 mm square turned by
-/// `std.Twisted` as it runs 40 mm is 20² · 40 = 16000 mm³, untwisted, a quarter turn, a turn and
+/// `std.Twisted`'s point as it runs 40 mm is 20² · 40 = 16000 mm³, untwisted, a quarter turn, a turn and
 /// a quarter the other way — and eased in and out, the word given the fraction `3s² − 2s³`.
 #[test]
 fn a_twisted_extrusion_is_al_at_any_twist() {
     let e = with("
-none := solid(Square(straight, std.z, half: 10mm, twist: 0deg, scale: 1).f over s in (0, 1))
-quarter := solid(Square(straight, std.z, half: 10mm, twist: 90deg, scale: 1).f over s in (0, 1))
-back := solid(Square(straight, std.z, half: 10mm, twist: -450deg, scale: 1).f over s in (0, 1))",
+none := solid(Square(straight, std.z, sq, po, px,
+    half: 10mm, twist: 0deg, scale: 1).f over s in (0, 1))
+quarter := solid(Square(straight, std.z, sq, po, px,
+    half: 10mm, twist: 90deg, scale: 1).f over s in (0, 1))
+back := solid(Square(straight, std.z, sq, po, px,
+    half: 10mm, twist: -450deg, scale: 1).f over s in (0, 1))",
         &[]);
     for name in ["none", "quarter", "back"] {
         near(exact(&e, name), 16000.0, 1e-9, name);
     }
     let e = with("
-eased := solid(Square(straight, std.z, half: 10mm, twist: 90deg, scale: 1).f over s in (0, 1))",
-        &[("twist: twist, s: s)", "twist: twist, s: 3 * s^2 - 2 * s^3)")]);
+eased := solid(Square(straight, std.z, sq, po, px,
+    half: 10mm, twist: 90deg, scale: 1).f over s in (0, 1))",
+        &[("* (1 + (scale - 1) * s), s: s)", "* (1 + (scale - 1) * s), s: 3 * s^2 - 2 * s^3)")]);
     near(exact(&e, "eased"), 16000.0, 1e-9, "an eased quarter turn");
 }
 
@@ -133,8 +146,10 @@ eased := solid(Square(straight, std.z, half: 10mm, twist: 90deg, scale: 1).f ove
 #[test]
 fn a_twisted_bend_is_pappus() {
     let e = with("
-bent := solid(Square(bend, std.z, half: 5mm, twist: 0deg, scale: 1).f over s in (0, 1))
-turned := solid(Square(bend, std.z, half: 5mm, twist: 180deg, scale: 1).f over s in (0, 1))",
+bent := solid(Square(bend, std.z, sq, po, px,
+    half: 5mm, twist: 0deg, scale: 1).f over s in (0, 1))
+turned := solid(Square(bend, std.z, sq, po, px,
+    half: 5mm, twist: 180deg, scale: 1).f over s in (0, 1))",
         &[]);
     near(exact(&e, "bent"), 1500.0 * PI, 1e-9, "untwisted round the bend");
     near(exact(&e, "turned"), 1500.0 * PI, 1e-9, "a half turn round the bend");
@@ -146,8 +161,10 @@ turned := solid(Square(bend, std.z, half: 5mm, twist: 180deg, scale: 1).f over s
 #[test]
 fn a_linear_scale_is_a_frustum() {
     let e = with("
-frustum := solid(Square(straight, std.z, half: 10mm, twist: 0deg, scale: 0.5).f over s in (0, 1))
-twisted := solid(Square(straight, std.z, half: 10mm, twist: -270deg, scale: 0.5).f over s in (0, 1))
+frustum := solid(Square(straight, std.z, sq, po, px,
+    half: 10mm, twist: 0deg, scale: 0.5).f over s in (0, 1))
+twisted := solid(Square(straight, std.z, sq, po, px,
+    half: 10mm, twist: -270deg, scale: 0.5).f over s in (0, 1))
 cone := solid(Disc(straight, std.z, r: 10mm, scale: 0.5).f over s in (0, 1))",
         &[]);
     let square = 40.0 / 3.0 * (400.0 + 100.0 + 200.0);
@@ -161,7 +178,7 @@ cone := solid(Disc(straight, std.z, r: 10mm, scale: 0.5).f over s in (0, 1))",
 /// **A nonlinear scale is L·∫A(s) ds**.  The disc swelling as `1 + 0.3 sin(180°·s)` — the word
 /// given the fraction `sin(180 * s)`, a number no affine form holds — is
 /// 40 · 100π · ∫(1 + 0.3 sin πs)² ds = 4000π(1 + 1.2/π + 0.045).  The square shrinking to half
-/// eased in and out, `scaled` given `3s² − 2s³`, is 40 · 400 · ∫k² ds with k = 1 − 0.5(3s² −
+/// eased in and out, its reach given `3s² − 2s³`, is 40 · 400 · ∫k² ds with k = 1 − 0.5(3s² −
 /// 2s³), by a quadrature exact for its degree (six).
 #[test]
 fn a_nonlinear_scale_is_its_quadrature() {
@@ -171,8 +188,10 @@ swell := solid(Disc(straight, std.z, r: 10mm, scale: 1.3).f over s in (0, 1))",
     near(exact(&e, "swell"), 4000.0 * PI * (1.0 + 1.2 / PI + 0.045), 1e-9, "a sine swell");
 
     let e = with("
-eased := solid(Square(straight, std.z, half: 10mm, twist: 0deg, scale: 0.5).f over s in (0, 1))",
-        &[("scale: scale, s: s) tw.axes", "scale: scale, s: 3 * s^2 - 2 * s^3) tw.axes")]);
+eased := solid(Square(straight, std.z, sq, po, px,
+    half: 10mm, twist: 0deg, scale: 0.5).f over s in (0, 1))",
+        &[("reach: half * (1 + (scale - 1) * s)",
+           "reach: half * (1 + (scale - 1) * (3 * s^2 - 2 * s^3))")]);
     let k = |s: f64| 1.0 - 0.5 * (3.0 * s * s - 2.0 * s * s * s);
     near(exact(&e, "eased"), 40.0 * 400.0 * gauss5(|s| k(s).powi(2)), 1e-9, "an eased scale");
 }

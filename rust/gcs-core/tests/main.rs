@@ -113,6 +113,7 @@ mod linalg;
 mod loft;
 mod loft_examples;
 mod make_component;
+mod mapped;
 mod measurements;
 mod membership;
 mod mesh;

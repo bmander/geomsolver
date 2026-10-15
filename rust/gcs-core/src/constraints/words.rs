@@ -401,6 +401,16 @@ pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option
             (Axis, Motion) => CKind::ScrewAxis,
             _ => return None,
         },
+        // a point carried by a map (#357): three pairs an affine map, two the similarity — the
+        // pairs counted where the statement is settled (`pairs`)
+        "mapped" => match (a, b) {
+            (Point, Point) if sel("pairs").as_deref() == Some("2") => CKind::MappedSimilar,
+            (Point, Point) => CKind::Mapped,
+            // a circle is carried by a similarity only: under three pairs it is an ellipse,
+            // refused where the pairs are counted (`program::relations::settle`)
+            (Circle, Circle) => CKind::MappedCircle,
+            _ => return None,
+        },
         // a generated flank regular within its blank, cut by a tool (#345)
         "regular" => match (a, b) {
             (Envelope, EntKind::Solid) => CKind::RegularWithin,
@@ -605,12 +615,14 @@ pub fn retired_prefix(word: &str, on: EntKind) -> Option<&'static str> {
 /// table (`gauge_op`), so a class, a placement and the chain's lookahead treat them as any
 /// other word.  None of the three is a prefix word a chain can open a link with: `prefix_op`
 /// declines them, so `fix(x == 0) point p -> …` is no chain.
-pub const OPERATORS: [&str; 27] = [
+pub const OPERATORS: [&str; 28] = [
     "distance", "tangent", "equal", "curvature", "horizontal", "vertical", "level", "angle",
     "radius", "length", "coincident", "midpoint", "parallel", "perpendicular", "symmetry", "project",
     "touches", "fix", "ccw", "cw",
     // a motion's twist read (#326)
     "reciprocal", "screw",
+    // a point carried by a map (#357)
+    "mapped",
     // a flank regular within its blank (#345), written `regular(…) within`
     "regular",
     // **the words that relate two solids** (§9.8).  They are operators so that a statement

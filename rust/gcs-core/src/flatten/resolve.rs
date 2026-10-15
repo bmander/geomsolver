@@ -984,6 +984,11 @@ impl<'a> Walk<'a> {
                 return;
             }
         }
+        // a face carried whole (#357): its image, built where the block stood, and no copies
+        if let Some(img) = &b.image {
+            self.image_face(&p, img, &walks[0].0, at);
+            return;
+        }
         // walks run in step have a link of each in every copy, so as many links each — said by
         // what each walk is, which a word's formal names only as the word's own
         if let Some(k) = (1..walks.len()).find(|&k| walks[k].0.len() != walks[0].0.len()) {

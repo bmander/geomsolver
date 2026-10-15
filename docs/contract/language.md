@@ -392,4 +392,6 @@ takes a layout naming the front datum, origin and reference axis.
   copies**: a face's item naming nothing as it stands, whose copies `e[0]`, `e[1]`, … exist, is
   spliced into them in order (`flatten::resolve::faces_of_copies`, before references resolve),
   and each such edge names its swept face `side[k]` (`program::solids::faces::boundary_name`
-  spells a copy's public path).  `tests/correspondence.rs` is the gate.
+  spells a copy's public path).  `tests/correspondence.rs` is the gate.  **A face carried
+  whole** (`sec := prof mapped(…) in n`, #357) is such a block that makes no copies
+  (`Block::image`): see `solids.md`.
