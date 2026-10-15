@@ -573,3 +573,140 @@ fn meshes(stem: &str,e: gcs_core::program::Elaborated,conjugate: bool) {
             of {f0} to {f1}",names[side]);
     }
 }
+
+/// The pair stated as its meshing problem (`meshing_problem.sv`, #345 S4): `formate.sv`'s pinion,
+/// conjugate to the face mill's cones, and a gear whose concave flanks are cut eased off the inner
+/// cone. Read from its two files, posed at each phase of the meshing the model traces, and held
+/// to it: on the pinion's convex side the clearance grows from the drawn pose by the gap the
+/// meshing's lag leaves — the pinion's turn by the lag, times how fast that turn closes it — and
+/// the members come nearest where the meshing's contact is on the gear's flank; on its concave
+/// side, conjugate, the clearance is the same at every phase.
+#[test]
+#[ignore = "a tool: export both members (examples/spiral_bevel/README.md, The pair stated as its \
+    meshing problem), then cargo test --manifest-path rust/Cargo.toml -p gcs-cli --test pair_check \
+    meshing_problem -- --ignored --nocapture"]
+fn the_exported_meshing_problem_pair_runs_as_its_meshing() {
+    use gcs_core::envelope::meshing::Meshing;
+    let started = std::time::Instant::now();
+    let dir = exports();
+    let (pinion,gear) = (read_stl(&dir.join("meshing_problem-pinion.stl")),read_stl(&dir.join("meshing_problem-gear.stl")));
+    eprintln!("read {} and {} triangles from {} ({:.1} s)",pinion.len(),gear.len(),dir.display(),started.elapsed().as_secs_f64());
+    let e = fixtures::gear::read(&fixtures::gear::meshing_problem_source());
+    let sk = &e.sketch;
+
+    // The shafts, from the solids, against the model's.
+    let line = |name: &str| {
+        let l = &sk.lines[e.map.ent_named(name).unwrap_or_else(|| panic!("no `{name}`")).i()];
+        (sk.world_point(l.p1 as usize),sk.world_point(l.p2 as usize))
+    };
+    let (op,tp) = line("pair.pinion_cone.ax");
+    let (og,tg) = line("pair.gear_cone.ax");
+    let (ap,ag) = (unit(sub(tp,op)),unit(sub(tg,og)));
+    for (member,tris,o,a) in [("pinion",&pinion,op,ap),("gear",&gear,og,ag)] {
+        let (c,d,_,asym) = axis(tris);
+        println!("{member}'s axis {:.2e}° off the model's, its centroid {:.2e} mm off it, transverse moments \
+            equal within {asym:.1e}",dot(d,a).abs().min(1.).acos().to_degrees(),norm(cross(sub(c,o),a)));
+        assert!(dot(d,a).abs() > 1.-1e-8 && norm(cross(sub(c,o),a)) < 1e-3);
+    }
+
+    // The meshing as the model traces it — the gear's eased flank first, turning with the gear,
+    // the pinion's second, at the phase and the lag — and the turn each member's motion makes at
+    // a phase: the sense of each read off the trace itself, the contact on each flank turned to
+    // where it is in the fixed frame.
+    let m = Meshing::named(sk,0).unwrap();
+    let phases: Vec<f64> = (0..=STEPS).map(|k| -7.5+15.*k as f64/STEPS as f64).collect();
+    let samples: Vec<_> = m.trace(&m.anchor.expect("a point held to the contact"),&phases).into_iter()
+        .map(|s| s.expect("traced at every phase")).collect();
+    let far = samples.iter().max_by(|a,b| a.place.phase.abs().total_cmp(&b.place.phase.abs())).unwrap();
+    let sense = |o: V,a: V,on: V,turn: f64| -> f64 {
+        let miss = |s: f64| norm(sub(Pose::turn(o,a,s*turn.to_radians()).of(on),far.position));
+        if miss(1.) < miss(-1.) { 1. } else { -1. }
+    };
+    let ratio = -(24./48.);
+    // the first flank's place is on the gear, the second's on the pinion
+    let (on_gear,on_pinion) = (|s: &gcs_core::envelope::meshing::Sample| s.on_pinion,
+        |s: &gcs_core::envelope::meshing::Sample| s.on_gear);
+    let sg = sense(og,ag,on_gear(far),ratio*far.place.phase);
+    let sp = sense(op,ap,on_pinion(far),far.place.phase+far.place.lag);
+    for s in &samples {
+        let g = Pose::turn(og,ag,sg*(ratio*s.place.phase).to_radians()).of(on_gear(s));
+        let p = Pose::turn(op,ap,sp*(s.place.phase+s.place.lag).to_radians()).of(on_pinion(s));
+        assert!(norm(sub(p,s.position)) < 1e-9 && norm(sub(g,s.position)) < 1e-9,"the senses: {s:?}");
+    }
+    // The pinion in the gear's frame at a phase, the pinion at the ratio and no lag.
+    let pose = |phase: f64| Pose::turn(op,ap,sp*phase.to_radians()).then(Pose::turn(og,ag,-sg*ratio*phase.to_radians()));
+
+    // The pinion's flanks by which way they face its turn, as `meshes` sorts them; the convex
+    // side is the one nearest the contact at the drawn pose.
+    let mut sides = [Vec::new(),Vec::new()];
+    for &t in &pinion {
+        let c = scale(add(add(t[0],t[1]),t[2]),1./3.);
+        let Some(n) = gcs_core::space::triangle_normal(t[0],t[1],t[2]) else { continue };
+        let facing = dot(n,unit(cross(ap,sub(c,op))));
+        if facing.abs() < FACING { continue; }
+        sides[usize::from(facing < 0.)].push(t);
+    }
+    let [a,b] = sides.map(Bvh::new);
+    let gear = Bvh::new(gear);
+    let drawn = &samples[STEPS/2];
+    assert!(drawn.place.phase.abs() < 1e-9);
+    let nearest = |side: &Bvh| search(side,&gear,&Pose::identity(),None);
+    let (da,pa,_,_) = nearest(&a);
+    let (db,pb,_,_) = nearest(&b);
+    let convex_first = norm(sub(pa,drawn.position)) < norm(sub(pb,drawn.position));
+    let (convex,concave) = if convex_first { (a,b) } else { (b,a) };
+    println!("at the drawn pose: the convex flanks {:.4} mm apart, the concave {:.4} mm (the backlash, half a side: {:.4})",
+        if convex_first { da } else { db },if convex_first { db } else { da },BACKLASH/2.);
+
+    // Each phase: the convex side's clearance, where it is on the gear, and how fast the pinion's
+    // own turn closes it there (mm a radian); the concave side's clearance.
+    let read = each(&phases,|&phase| {
+        let at = pose(phase);
+        let (d,p,q,_) = search(&convex,&gear,&at,None);
+        let (c,axis_now) = (at.of(op),apply(&at.m,ap));
+        let lever = dot(cross(axis_now,sub(p,c)),scale(sub(q,p),1./d)).abs();
+        let (dc,_,_,_) = search(&concave,&gear,&at,None);
+        (d,q,lever,dc)
+    });
+    let d0 = read[STEPS/2].0;
+    // At the ends of the phase the next pair takes over: a pinion pitch on (15°, `STEPS` samples
+    // on), its contact on the gear's flank a gear pitch round. Each phase is read against the pair
+    // nearer to touching, as the files are.
+    let pairs = |k: usize| -> Vec<(f64,V)> {
+        let s = &samples[k];
+        let mut v = vec![(s.place.lag.abs(),on_gear(s))];
+        for (j,turn) in [(k+STEPS,1.),(k.wrapping_sub(STEPS),-1.)] {
+            let Some(o) = samples.get(j) else { continue };
+            for sense in [1.,-1.] {
+                let next = Pose::turn(og,ag,sense*turn*GEAR_PITCH.to_radians()).of(on_gear(o));
+                v.push((o.place.lag.abs(),next));
+            }
+        }
+        v
+    };
+    println!("phase   lag (meshing)   clearance gained: files / meshing    nearest on the gear from the meshing's contact   concave");
+    let (mut worst_gap,mut worst_place,mut concave_spread) = (0f64,0f64,(f64::INFINITY,0f64));
+    for (k,(s,&(d,q,lever,dc))) in samples.iter().zip(&read).enumerate() {
+        let files = d-d0;
+        let near = pairs(k);
+        let lag = near.iter().map(|p| p.0).fold(f64::INFINITY,f64::min);
+        let meshing = lag.to_radians()*lever;
+        let off = near.iter().map(|p| norm(sub(q,p.1))).fold(f64::INFINITY,f64::min);
+        println!("{:6.2}° {:+.5}°       {:.4} / {:.4} mm                  {off:.3} mm                                     {dc:.4} mm",
+            s.place.phase,s.place.lag,files,meshing);
+        worst_gap = worst_gap.max((files-meshing).abs());
+        worst_place = worst_place.max(off);
+        concave_spread = (concave_spread.0.min(dc),concave_spread.1.max(dc));
+    }
+    let sag = 0.0015;
+    println!("worst: the gained clearance {worst_gap:.4} mm off the meshing's, the nearest point {worst_place:.3} mm off its contact; \
+        the concave side {:.4} to {:.4} mm",concave_spread.0,concave_spread.1);
+    // The transmission error the files show is the meshing's within what the two files' sag allows.
+    assert!(worst_gap < 2.*sag,"{worst_gap}");
+    assert!(worst_place < 1.,"{worst_place}");
+    // The concave side, conjugate, keeps its clearance through the phase to the files' sag.
+    assert!(concave_spread.1-concave_spread.0 < 2.*sag,"{concave_spread:?}");
+    // And the members never overlap.
+    assert!(read.iter().all(|r| r.0 > 0. && r.3 > 0.));
+    eprintln!("({:.1} s)",started.elapsed().as_secs_f64());
+}

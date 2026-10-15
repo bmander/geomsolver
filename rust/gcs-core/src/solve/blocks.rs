@@ -245,6 +245,13 @@ impl System {
     /// contact on an envelope, and otherwise only where the block comes to no root whole.  At
     /// most `TEAR_MAX` unknowns; whether it came out, `z` holding what it came to — or as it
     /// was, where it did not.
+    ///
+    /// Where no statements can be left over for all of them it is torn at fewer (#345): the
+    /// numbers not held are found inside, with the geometry, and the held ones by the rows left
+    /// over — two ease curvatures, one read off a lag stated of a meshing's contact, whose ten
+    /// rows a tearing can leave over only whole, and one off the angle of its path, one row.
+    /// The choices are tried in turn, more held before fewer and later columns first, until one
+    /// comes out.
     fn torn(
         &mut self,
         sk: &Sketch,
@@ -253,16 +260,45 @@ impl System {
         b: &SolveBlock,
         opts: &SolveOpts,
     ) -> bool {
-        let held = self.seeded_numbers(sk, b);
-        if held.is_empty() || held.len() > TEAR_MAX || held.len() == b.cols.len() {
+        let all = self.seeded_numbers(sk, b);
+        if all.is_empty() || all.len() > TEAR_MAX || all.len() == b.cols.len() {
             return false;
         }
-        let Some(tear) = self.tearing(b, &held) else { return false };
+        if let Some(tear) = self.tearing(b, &all) {
+            return self.torn_at(sk, p, z, &all, &tear, opts);
+        }
+        // fewer: every proper subset, the larger first, those holding later columns first
+        let n = all.len();
+        let mut fewer: Vec<Vec<usize>> = (1..(1_usize << n) - 1)
+            .map(|m| (0..n).filter(|i| m >> i & 1 == 1).map(|i| all[i]).collect())
+            .collect();
+        fewer.sort_by(|a: &Vec<usize>, b| b.len().cmp(&a.len())
+            .then_with(|| b.iter().rev().cmp(a.iter().rev())));
+        for held in fewer {
+            if let Some(tear) = self.tearing(b, &held) {
+                if self.torn_at(sk, p, z, &held, &tear, opts) {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    /// `torn` at the unknowns `held`, the rows `tear` leaves over.
+    fn torn_at(
+        &mut self,
+        sk: &Sketch,
+        p: &mut Pass,
+        z: &mut [f64],
+        held: &[usize],
+        tear: &Tearing,
+        opts: &SolveOpts,
+    ) -> bool {
         let before = z.to_vec();
         let mut solved = p.solved.clone();
         solved.extend(held.iter().copied());
         let k = held.len();
-        let mut out = self.subset(&tear.outer, &held);
+        let mut out = self.subset(&tear.outer, held);
         // the rows left over with the unknowns at `x`, the rest solved in order; `None` where a
         // part comes to no root
         let mut at = |sys: &mut System, z: &mut [f64], x: &[f64], p: &mut Pass|

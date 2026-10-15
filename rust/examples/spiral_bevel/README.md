@@ -264,6 +264,66 @@ from the cone's equation and the poses alone. The contact found by Newton is loc
 little off conjugate holds its contact only weakly along the bearing, so it is found only from
 near it; a failed solve seeds the contact again with the flanks where the solve left them.
 
+## The pair stated as its meshing problem (#345)
+
+**`meshing_problem.sv`** is `formate.sv`'s pair written as the problem a gear engineer states:
+the shafts and the ratio, the blanks, and the contact. The gear is formed and the pinion is its
+blank less the gear's tooth swept under the mesh, so the pinion is conjugate to the face mill's
+cones, as in `formate.sv`. A conjugate pair touches along a line. Here the gear's concave flank
+is **eased** off the inner cone (#345 S2) — relieved along its normal by `½ κₗ s² + ½ κₚ r²`
+about the mean contact T — so the pair touches at a point and runs with a transmission error.
+The designer states:
+
+- the mean contact: T on the inner cone in the normal section through M, where the cone's
+  normal is a line of action of the mesh (`normal reciprocal mesh`), the contact at phase 0;
+- `pressure`, 30°, the lean of the common normal there (the inner blades' half angle);
+- `path_angle`, 70°, the angle the path of contact makes there with the trace's heading
+  (`contact tangent(at: Q) path`);
+- `lag`, −0.03°, how far the pinion stands behind the ratio at the start of the phase, half a
+  pinion pitch before the pair is drawn;
+- no undercut: `pinion_flank regular(by: gear_tooth.crown) within pinion_blank.material`.
+
+The ease's two curvatures are unknown, seeded and found: κₚ = −0.018005 and κₗ = −0.0028544 a
+millimetre (negative: away from the mill's axis, into the gear's tooth). The meshing is read in
+the gear's frame, `drive := motion(pinion_turn, relative_to: gear_turn)`, since the ease relieves
+the first flank, and the phase is the pinion's. The solve tears the block holding the two
+contacts at `κₗ`, the one number whose statement (the path's angle, one row) can be left over:
+`κₚ` is found inside, from the lag's contact (`solve::blocks`, `torn`). It comes to the same
+ease from seeds on either side of it.
+
+The gear is cut to the ease: its concave blade (`EasedBlade`) is an arc in the normal section,
+tangent to the cone's generator at T and bent by the parabola, turned about an axis parallel to
+the mill's, moved out so its circle through T bends by the parabola along the trace. The profile
+radius comes to 55.56 mm and the blade's cutter radius at T to 48.55 mm (the face mill's: 41.86
+mm). A surface of revolution through T with the cone's normal there, it matches the eased flank
+to second order: within 0.02 µm along the whole bearing, 1.5 µm 1.25 mm up the profile and 4 mm
+along the tooth, 13 µm at the tooth's corners, where the pair never touches. The backlash is all
+the gear's, half of it off each flank.
+
+```sh
+build/solventc rust/examples/spiral_bevel/meshing_problem.sv
+#   pair.contact: point contact; transmission error (the gear's angle) -0.03° … -5.00183e-13°
+#   over the phase -7.5° … 7.5°, the path of contact 5.38159 long
+for m in pinion gear; do
+  build/solventc rust/examples/spiral_bevel/meshing_problem.sv --solid pair.$m.body \
+    --tolerance 0.003mm --stl build/exports/meshing_problem-$m.stl --no-diagnose
+done
+cargo test --manifest-path rust/Cargo.toml -p gcs-cli --test pair_check meshing_problem -- --ignored --nocapture
+```
+
+The pinion is one sweep, admitted with a least area factor of 0.486 (147 faces, about 8 s); the
+gear is its blank less 48 spaces, each a torus and a cone (292 faces, about 30 s). `pair_check`
+reads the two STLs, poses the pinion in the gear's frame at each phase of the meshing the model
+traces and holds them to it. On the pinion's convex side the clearance grows from the drawn
+pose by the gap the meshing's lag leaves, within 1.0 µm of it over the phase, and the members
+come nearest within 0.64 mm of the meshing's contact on the gear's flank (at the phase's ends the
+next pair, a pitch on, is the nearer). On its concave side, conjugate, the clearance stays at
+23.6–24.6 µm, half the backlash. `gcs-core/tests/meshing_problem.rs` records the solved ease and
+reads each stated condition again apart from the relation that states it: the contact at phase 0
+at T, the pressure angle of the cone's normal there, the path's angle by differences of the
+traced contact, the lag at the start of the phase, a point contact throughout, and the least
+area factor against the sweep's admission.
+
 ## Phillips' spatial involute gearing (#326)
 
 **`phillips.sv`** is a pair on the same skew shafts made from its contact alone: no face mill, no

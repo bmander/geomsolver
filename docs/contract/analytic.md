@@ -209,6 +209,29 @@ the Jacobian, the cone's half a column, at the solution and knocked off it. `hyp
 `Balanced` is unchanged: it balances two members' osculating radii at two sections, a choice of
 settings, not a feasibility bound.
 
+**The pair stated as its meshing problem (#345 S4):** `spiral_bevel/meshing_problem.sv` is
+`formate.sv`'s pair with the gear's concave flank eased: the meshing reads the face mill's inner
+cone eased about the mean contact T as the first flank, under `motion(pinion_turn, relative_to:
+gear_turn)`, and the pinion's envelope of the cone as the second. The pressure angle, the path's
+angle at T, the lag at the start of the phase and no undercut are stated; the two curvatures are
+the unknowns (the block torn at fewer, `solver.md`). It adds no word: the gear's eased flank is
+cut by a blade the document draws (`EasedBlade`), an arc in the normal section bent from the
+cone's generator by the parabola at 2 mm and turned about an axis parallel to the mill's through
+the centre of the circle through T and the cone's point 2 mm along the trace moved by the
+parabola (divided by the cosine of the blade's lean, the circle's plane being square to the
+axis) — a surface of revolution matching the eased cone to second order at T. Gates:
+`tests/meshing_problem.rs` — the ease from the document's seeds and from seeds on either side
+(κₚ = −0.018005, κₗ = −0.0028544 a millimetre); the contact at phase 0 at T, the cone's normal there
+30° from the plane square to the mill's axis, the path 70° from the heading by differences of the
+traced contact, the lag −0.03° at −7.5°, a point contact over the phase, the least area factor
+(0.486) the sweep's admission's from below; the blade within 0.1 µm of the eased cone (worked out
+from the cone alone) along the traced bearing, 2 µm within 1.25 mm and 4 mm of T, 20 µm at the
+tooth's corners. The tool reading the two exported STLs (`gcs-cli/tests/pair_check.rs`,
+`the_exported_meshing_problem_pair_runs_as_its_meshing`, ignored): the convex side's clearance
+gained over the phase is the meshing's lag times the pinion's lever within 1 µm, the members
+nearest within 1 mm of the meshing's contact (the next pair's, a pitch on, at the phase's ends),
+the concave side constant within the files' sag, no overlap.
+
 **A point a motion carries (#326, [0.106]):** `Reading::Carried` is `X − Pose(τ)·x`, the pose
 `held::frames`' last at `τ` degrees — any motion, its twist constant or not (`Reading::twist`
 false). `held::Step::Turn` (code 4, nine columns: a centre's lift, its view's `u` and `v`) is a turn

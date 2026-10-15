@@ -47,10 +47,12 @@ test('menu examples open files or directories with one V-twin choice', async (t)
   assert.equal(gears.source, 'spiral_bevel/hypoid.sv');
   for (const name of ['hypoid.sv', 'crown.svd']) assert.ok(gears.files[`spiral_bevel/${name}`], name);
   // the Formate pair beside it, a second document importing the first, the mean point's contact
-  // stated and analysed (#283), and Phillips' pair made from its contact (#326)
+  // stated and analysed (#283), Phillips' pair made from its contact (#326), and the pair stated
+  // as its meshing problem (#345)
   assert.deepEqual(Object.keys(gears.files).filter((f) => f.endsWith('.sv')).sort(),
     ['spiral_bevel/contact.sv', 'spiral_bevel/formate.sv', 'spiral_bevel/hypoid.sv',
-     'spiral_bevel/mean_point.sv', 'spiral_bevel/phillips.sv', 'spiral_bevel/phillips_pure.sv']);
+     'spiral_bevel/mean_point.sv', 'spiral_bevel/meshing_problem.sv', 'spiral_bevel/phillips.sv',
+     'spiral_bevel/phillips_pure.sv']);
   // the text beside the sources is part of the project, shown and never elaborated
   assert.match(gears.files['spiral_bevel/README.md'], /^# /);
   const readme = await remote.drawing('spiral_bevel', 'spiral_bevel/README.md');
