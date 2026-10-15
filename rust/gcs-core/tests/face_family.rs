@@ -4,7 +4,8 @@
 //! each warm from its neighbour, and facets what the stations sweep.  Its walls are exact (L2):
 //! each the surface its edge sweeps as the station is solved at the nodes of each piece of the
 //! interval, a polynomial in the running number between them (`brep::family`), lowered to a plane,
-//! a cylinder, a cone or a torus where its numbers say it is one.
+//! a cylinder, a cone or a torus where its numbers say it is one, and to the surface its first rim
+//! sweeps where the whole section moves rigidly (L6).
 //!
 //! The fixtures are the L0 target programs (`docs/lofts/l0/`), over the station words they were
 //! written with (`std.OnLine` and its kin since L3, drafted in L0's `lofts.sv`), and the gates are
@@ -372,11 +373,13 @@ fn a_station_reads_the_geometry_it_was_given() {
 
 
 /// **The fast path is what the numbers say** (#243 L2): a wall lies on a plane, a cylinder, a cone
-/// or a torus where its edge's numbers keep to one — never by what wrote them — and on the sheet
-/// the station sweeps (`Surface::Family`) everywhere else.  The reducer and the pyramid are all
-/// planes; the elbow's flat walls are planes and its curved ones cylinders about the bend; the
-/// disc shrinking is a cone; the twisted duct's walls are sheets.  Each lowered wall was held to
-/// its sheet (its points, and its area) before it was kept.
+/// or a torus where its edge's numbers keep to one — never by what wrote them — on the surface its
+/// first rim sweeps where the section is carried rigidly (L6), and on the sheet the station sweeps
+/// (`Surface::Family`) everywhere else.  The reducer and the pyramid are all planes; the elbow's
+/// flat walls are planes and its curved ones cylinders about the bend; the disc shrinking is a
+/// cone; the twisted duct, screwed rigidly along its guide, is blends; the square running to a
+/// circle keeps sheets.  Each lowered wall was held to its sheet (its points, and its area) before
+/// it was kept.
 #[test]
 fn walls_lie_on_the_surfaces_their_numbers_say() {
     let all = |e: &Elaborated, name: &str, want: &[&str]| {
@@ -391,14 +394,15 @@ fn walls_lie_on_the_surfaces_their_numbers_say() {
     let k = all(&family(ELBOW), "body", &["plane", "cylinder"]);
     assert_eq!(k.values().filter(|&&v| v == "cylinder").count(), 4, "{k:?}");
     all(&family(CONE), "cone", &["cone"]);
-    all(&family(TWISTED), "duct", &["family"]);
+    all(&family(TWISTED), "duct", &["blend"]);
     let k = kinds(&family(SQUARE_TO_CIRCLE), "transition");
     assert!(k.values().any(|&v| v == "family") && k.values().any(|&v| v == "plane"), "{k:?}");
 }
 
 /// **A family is a solid like any other** (#243 L2): the 60 × 20 × 60 slab cut by the twisted
 /// duct running through it loses the duct's 20² · 20 there — 72000 − 8000 = 64000 mm³ — the
-/// slab's faces cut along curves traced where they meet the duct's twisted walls.
+/// slab's faces cut along curves traced where they meet the duct's twisted walls (blends since
+/// L6: the duct is its section screwed).
 #[test]
 fn a_family_cuts_like_any_solid() {
     // the duct alone: the auger, written last, left off
@@ -409,7 +413,7 @@ fn a_family_cuts_like_any_solid() {
     let e = family(&src);
     near(volume(&e, "block").unwrap(), 64000.0, 1e-9, "the slab less the duct");
     let k = kinds(&e, "block");
-    assert!(k.iter().any(|(n, &v)| n.starts_with("duct.") && v == "family"), "{k:?}");
+    assert!(k.iter().any(|(n, &v)| n.starts_with("duct.") && v == "blend"), "{k:?}");
     assert!(!k.contains_key("duct.start") && !k.contains_key("duct.end"), "{k:?}");
 }
 

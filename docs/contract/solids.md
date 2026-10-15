@@ -251,8 +251,8 @@ placement carries inside the blank; CLI test readers zero the offset.
   station words say only where a station stands: `std.OnLine` (a fraction of a line's run),
   `std.OnArc` (of an arc's turn), `std.OnSpline` (a spline's parameter), `std.On` (any `path`: a
   line, an arc, a spline, a traced curve — L4, a line touching a round at a point of it drawn in
-  its plane, `planes::incidences`), `std.Screwed` and `std.OnHelix` — each a component holding a
-  plane `n` square to its path, its `v` along `up`.  `On` and `OnSpline` seed their tangent ahead
+  its plane, `planes::incidences`), `std.Helix` and `std.OnHelix` (L6, below) — each a component
+  holding a plane `n` square to its path, its `v` along `up`.  `On` and `OnSpline` seed their tangent ahead
   along the guide (`hint(at: m, along: g)`, `entities::rate_along`) and their plane off it as
   `OnLine` does, so the drawn station starts on the branch whose `v` is `up`'s and whose normal
   runs the way the guide does — never the mirror, which a sign-free `parallel` would otherwise
@@ -310,6 +310,20 @@ placement carries inside the blank; CLI test readers zero the offset.
   sine swell (closed form) and an eased scale (a quadrature exact for its degree), each given its
   word as a fraction, a law in pieces (`max`), the `when` refusal and two faces of one station, each
   off the exact B-rep to 1e-9.
+- **A screw is constraints** (§6.9 [0.104], #243 L6).  `std.Helix(base, pitch:, turns:, s:)` is
+  `base`'s frame turned `360deg · turns · s` about `base.normal` and risen `pitch · turns · s` along
+  it: `n` the base so carried (a section in it sweeps a twisted prism), `axial` the plane through
+  the axis, `u` out along `n.u`, `v` up the axis (a thread's).  `std.OnHelix(base, r:, …)`'s `n`
+  stands square to the helix of radius `r`, `v` up the axis leaned by the lead angle (a coil's
+  wire).  Both are points placed by ordinates in `base`'s frame (`coords`, and `distance(…, along:
+  base.normal)` for the rise) and planes over the lines between them, so **no direction is held
+  by a seed** — a `parallel` would leave its sign to wherever the solve started — and a negative
+  pitch winds left-handed, the right-handed solid mirrored in the base plane.  The axis is
+  `base`'s normal through its origin, never an axis given apart (`Screwed`'s, through 0.103,
+  could disagree with `base`).  No motion is involved (#64's motions stay for swept solids).
+  `tests/helix.rs` is the gate: square and V threads at A · 2πr̄ · turns (Pappus, r̄ the
+  centroid's), flights square to the axis at A × the rise (Cavalieri), a spring at A × the helix's
+  length, left-handed mirrors, each off the exact B-rep to 1e-9, and the fast path (`brep.md`).
 - **A face closes itself** (§6.8, `program::build_face`; issue #49).  The brackets hold a *walk*,
   and an item may be a **point**, with `-> close` sealing the run back to the first item.  Where
   two neighbours do not meet, `build_face` mints the straight line between them, class

@@ -11,6 +11,66 @@ Solvent. Rust grows only three kinds of things:
   corner) and build it exactly. They never change what the family says, and the general
   evaluation gates each one.
 
+## L6: helical sweeps (2026-10-15)
+
+**Verdict: a screw is a station word of ordinates, and a section the screw carries rigidly is
+built exact throughout.** `rust/lib/std.sv`'s `std.Helix(base, pitch:, turns:, s:)` is `base`'s
+frame turned `360deg · turns · s` about its normal and risen `pitch · turns · s` along it: `n`, the
+base so carried (a section drawn in it sweeps a twisted prism: an auger's flight, a helical gear's
+tooth), and `axial`, the plane through the axis, `u` out along `n.u` and `v` up the axis (a
+thread's). `std.OnHelix(base, r:, pitch:, turns:, s:)` is the plane square to the helix of radius
+`r`, its `v` up the axis leaned by the lead angle (a coil's wire). No motion is involved (#64's
+motions stay for swept solids). Solvent 0.104; `rust/gcs-core/tests/helix.rs`, off the exact
+B-rep to 1e-9:
+
+| solid | what it is | closed form (mm³) |
+|---|---|---|
+| a 2 mm square at r̄ 10, pitch 4, 3 turns, in `axial` | a square thread | 4 · 2π·10 · 3 = 240π (Pappus) |
+| a triangle, root 8 ± 1, crest 10.5, pitch 3, 2 turns | a V thread, its centroid off its middle | 2.5 · 2π · 26.5/3 · 2 |
+| a 4 × 2 flight 4–8 from the axis, in `n` | half a turn at pitch 30; 2½ turns at pitch 12 | 8 · 15; 8 · 30 (Cavalieri) |
+| a wire of radius 1.5 on `OnHelix`, r 10, pitch 5, 4 turns | a spring | π·1.5² · 4√((20π)² + 5²) |
+| the thread at pitch −4, the spring at pitch −5 | left-handed | as the right hand; the thread's corners its mirror in the base |
+| the thread swelling, `size * (1 + 0.5 * s)` | not rigid: stays on its sheets | 2π·10·3·∫(2 + s)² ds = 380π |
+
+**Every direction is an ordinate.** `Screwed(ax, base, …)` (L3's, from L0) turned a reference line
+by a directed angle and then held its plane's `u` and `v` by `parallel`, sign-free, so which way
+its plane faced was the seed's; and its axis was given apart from `base`, so the two could
+disagree. `Helix` places three points at `base`'s ordinates (`coords`, and `distance(…, along:
+base.normal)` for the rise) — `cos` and `sin` of the turn are only numbers of the station — and
+stands its planes on the lines between them; the axis is `base`'s normal. Nothing is held by a
+seed, and a negative pitch winds left-handed: the right-handed solid mirrored in the base plane.
+`Screwed` is retired (`Helix(…).axial` is its plane); `OnHelix` takes `base` alone.
+
+**The fast path: a section carried rigidly** (`brep::family::carried`). Where every station is
+the first one moved by one screw (a turn alone and a step along a line included), read off the
+section's points at every node — never off the word — the solid is built exact throughout: each
+wall the analytic surface where it is one, else the surface its first rim sweeps (`M(v)·C(u)`, a
+`Blend` of the rim with itself under the `Carry`), each rail its corner's path (`Curve::Iso`),
+each wall held to the general one at every node and by its area to 1e-10. The twisted duct, the
+thread, the flight and the coil lie on blends; the elbow and the reducer as before. This also
+does the rigid part of L2's open fast-path item (extrusion and revolution are a screw's limits);
+an affine station is still open.
+
+What L6 found on the way:
+
+- **The rails must be exact too.** Lowering only the walls, the auger's walls matched their sheets
+  to 1e-13 at every node, yet a wall's area missed by 1.7e-10: the sheet is exact at its nodes
+  and within its piece check between them, so its rails stood 2.5e-10 off the exact wall there.
+  With every rail the corner's screw path, the areas agree to 1e-13.
+- **A blend's inverse wants a warm start.** The evaluated solid asks for the surface's normal at
+  every triangle's corners; a family's wall starts from the thread's last foot (L2), a blend
+  searched a grid each time, and the spring meshed 6× slower than on its sheet. Warm, it meshes
+  in 8.4 s where its sheet took 16.3 s, and the auger in 3.7 s where it took 10.0 s (the test
+  profile); building the exact solid costs 10–40% more, for the agreement checks.
+- **A coil has a sheet for each turn.** A grid along `v` alone starts as readily on the next turn
+  of a coil as on its own, so `Blend::inverse` also tries each `u` where the screw turns it to
+  face the point.
+- **STEP:** a cubic net cannot follow a blend round 3½ turns within `step::FIT` at the fit's cap
+  (1.7e-6); a screwed blend that misses is fitted quintic along it, as a family's wall is.
+
+Handed on: a Frenet word and arc-length laws on a spline stay where L4 left them; an affine
+station's fast path (L2).
+
 ## L5: twist and scale laws (2026-10-14)
 
 **Verdict: a law is any expression in `s`, and the library's words run a total linearly.**

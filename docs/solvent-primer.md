@@ -1215,9 +1215,14 @@ k := Par(o).p over u in (-2mm, 2mm)
   use any expression in `s` and read a number of the geometry it was given (`rim.r`). Write *where
   the section stands* and *what it is* as constraints in the component: a station word of `std` for
   the plane square to the guide at `s` — `std.OnLine(g, up: up, s: s)` on a line, `std.OnArc` an
-  arc, `std.OnSpline` a spline, `std.On` any of a line, an arc, a spline or a traced curve,
-  `std.Screwed` and `std.OnHelix` along a screw — then the section drawn `in st.n`, its sizes and
-  turns reading `s`. **A law is any expression in `s`** (0.103): `std.Twisted(st.n, twist: 90deg,
+  arc, `std.OnSpline` a spline, `std.On` any of a line, an arc, a spline or a traced curve —
+  then the section drawn `in st.n`, its sizes and turns reading `s`. **A screw** (0.104):
+  `std.Helix(std.top, pitch: 4mm, turns: 3, s: s)` turns `std.top` about its normal and lifts it,
+  `360deg · turns · s` and `pitch · turns · s`; draw a thread's section in its `axial` plane
+  (through the axis, `u` out from it, `v` up it) and an auger's flight in its `n` (the base
+  carried); `std.OnHelix(std.top, r: 10mm, pitch: 5mm, turns: 4, s: s)`'s `n` stands square to the
+  helix of radius `r`, for a coil's wire. A negative pitch winds left-handed
+  (`rust/gcs-core/tests/helix.rs`). **A law is any expression in `s`** (0.103): `std.Twisted(st.n, twist: 90deg,
   s: s)` gives axes `tw.axes` turned `twist · s`, `p scaled(du: 10, dv: 5, scale: 0.5, s: s)
   tw.axes` places a corner shrinking to half, `scaled_radius(r: 8mm, scale: 2, s: s) k` a radius
   (`use std (scaled, scaled_radius)`); each runs its total linearly, and the word given another
