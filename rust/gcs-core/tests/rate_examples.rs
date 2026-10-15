@@ -143,18 +143,16 @@ fn the_filament_on_the_cone_unrolls_straight() {
 }
 
 /// A geodesic circle of `geodesic_circles.sv` at `(d, u)` (`u` in degrees): on the sphere of
-/// radius 30 the circle of colatitude `30° + d/R`; on the cone of half angle 30° the circle of
-/// radius `10 + d` about `P`, 50 up a generator, unrolled.
+/// radius 30 the circle of colatitude `30° + d/R`; on the cone of half angle 30° the circle
+/// `30 + d` from the apex.
 fn on_sphere(d: f64, u: f64) -> [f64; 3] {
     let (t, u) = (30f64.to_radians() + d / 30.0, u.to_radians());
     [30.0 * t.sin() * u.cos(), 30.0 * t.sin() * u.sin(), 30.0 * t.cos()]
 }
 
 fn on_cone(d: f64, u: f64) -> [f64; 3] {
-    let (alpha, u) = (30f64.to_radians(), u.to_radians());
-    let (x, y) = (50.0 + (10.0 + d) * u.cos(), (10.0 + d) * u.sin());
-    let (rho, az) = (x.hypot(y), y.atan2(x) / alpha.sin());
-    [rho * alpha.sin() * az.cos(), rho * alpha.sin() * az.sin(), rho * alpha.cos()]
+    let (alpha, u, rho) = (30f64.to_radians(), u.to_radians(), 30.0 + d);
+    [rho * alpha.sin() * u.cos(), rho * alpha.sin() * u.sin(), rho * alpha.cos()]
 }
 
 /// The greatest distance, over a turn of `u` every 5°, between surface `i` at `d` and `want`.
@@ -171,7 +169,7 @@ fn worst(sk: &gcs_core::model::Sketch, i: usize, d: f64, lo: f64, hi: f64,
 
 /// **`geodesic_circles.sv`**: a front on a sphere is the circle of latitude it has run to, and
 /// is refused where it focuses on the antipode, short of where the closed form's area falls to a
-/// hundredth; a front on a cone, unrolled, is a circle about where it set off.  On a whole turn of
+/// hundredth; a front on a cone, unrolled, is a circle about the apex.  On a whole turn of
 /// 32 pieces, the error growing as each front runs.
 #[test]
 fn fronts_on_a_surface_are_geodesic_circles() {
@@ -193,12 +191,12 @@ fn fronts_on_a_surface_are_geodesic_circles() {
     let said = gcs_core::report::traced_text(&e.sketch, sphere);
     assert!(said.starts_with("on_sphere: a surface traced in space, marched from its home at 0, \
         refused at 78.2") && said.contains(": it folds there"), "{said}");
-    for (d, tol) in [(0.0, 2e-8), (5.0, 3e-7), (10.0, 1e-6), (15.0, 5e-6), (20.0, 2e-5)] {
+    for d in [0.0, 10.0, 20.0, 30.0] {
         let far = worst(&e.sketch, cone, d, 0.0, 360.0, on_cone);
-        assert!(far < tol, "on the cone at {d}: {far:.1e}");
+        assert!(far < 1e-7, "on the cone at {d}: {far:.1e}");
     }
     assert_eq!(gcs_core::report::traced_text(&e.sketch, cone),
-               "on_cone: a surface traced in space, marched from its home at 0 across (0, 20)");
+               "on_cone: a surface traced in space, marched from its home at 0 across (0, 30)");
 }
 
 /// The epitrochoid `housing.sv` writes (R 75, e 15) at `u` degrees, moved `d` along its outward

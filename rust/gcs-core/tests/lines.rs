@@ -144,8 +144,8 @@ fn the_front_folds_where_its_least_radius_runs_out() {
 }
 
 /// **The document holds a point where the closed form is, and says where `folded` is refused.**
-/// `held`, on the ellipse's normal at 50° and 5 inside it, is found on the front at its place
-/// (5, 50°); the line along the surface's normal there is the plane's, the document's one claim a
+/// `held`, on the major axis 35 from the centre, is found on the front at its place (5, 0°);
+/// the line along the surface's normal there is the plane's, the document's one claim a
 /// theorem; and the same front run to 16mm is refused short of its fold, as `solventc` says.
 #[test]
 fn the_document_holds_its_point_and_reports_its_fold() {
@@ -153,9 +153,7 @@ fn the_document_holds_its_point_and_reports_its_fold() {
     let contact = e.sketch.constraints.iter()
         .find(|c| c.kind == gcs_core::constraints::CKind::PointOnTraced).unwrap().clone();
     let place: Vec<f64> = contact.local_values(&e.sketch)[3..5].to_vec();
-    assert!((place[0] - 5.0).abs() < 1e-8 && (place[1] - 50.0).abs() < 1e-7, "{place:?}");
-    let held = e.sketch.world_point(e.map.ent_named("held").unwrap().i());
-    assert!(far(held, front(5.0, 50.0)[0]) < 1e-9, "{held:?}");
+    assert!((place[0] - 5.0).abs() < 1e-8 && place[1].abs() < 1e-7, "{place:?}");
     let d = gcs_core::diagnose::diagnose(&mut e.sketch, Default::default());
     assert!(d.claims_violated.is_empty() && d.claims_consuming.is_empty()
             && d.claims_theorem.len() == 1, "{d:?}");

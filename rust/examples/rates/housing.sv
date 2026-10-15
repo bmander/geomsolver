@@ -8,8 +8,11 @@
 // The body runs over `d`, how far the front has moved, marched, and `u`, the eccentric's angle,
 // sampled over half a turn: the bore is symmetric about the line of its lobes, and the other half
 // is this one's mirror. `initially` is the epitrochoid, x = e cos 3u + R cos u,
-// y = e sin 3u + R sin u, in the rotor's plane; `nl`, placed at every node, is its outward normal,
-// square to `rate(p over u)`; the law and the gauge are `front.sv`'s.
+// y = e sin 3u + R sin u, in the rotor's plane — the apex's path, which `wankel.sv` has the motion
+// carry the apex along, written out here: a body that states a rate does not yet read a point a
+// motion carries. `nl`, placed at every node square to `rate(p over u)`, is the curve's normal
+// toward the shaft, which its seed at the centre picks; the gauge is `front.sv`'s, and the law
+// moves the front away from `nl` at unit speed: outward.
 //
 // Outward, a convex arc never folds: its parallel curves only grow. An epitrochoid with R/e
 // between 3 and 9 is not convex: its waist, at u = 90°, curves inward, its radius of curvature
@@ -36,15 +39,14 @@ component Bore(c: point, x1: point, y1: point, z1: point, R: Length, e: Length, 
   xa := line(c, x1)
   ya := line(c, y1)
   za := line(c, z1)
-  p := point hint((e * cos(3 * u) + R * cos(u), e * sin(3 * u) + R * sin(u), 0mm))
-  k := point hint((1.1 * (e * cos(3 * u) + R * cos(u)), 1.1 * (e * sin(3 * u) + R * sin(u)),
-                   0mm))
+  p := point hint((0, 0, 0))
+  k := point hint((0, 0, 0))
   nl := line(p, k)
   length(10mm) nl
   c distance(0mm, along: za) k               // the normal in the rotor's plane...
   nl perpendicular rate(p over u)            // ...square to the front
   rate(p over d) parallel nl                 // the gauge: square to itself
-  rate(p over d) distance(1, along: nl)      // the law: at unit speed
+  rate(p over d) distance(-1, along: nl)     // the law: at unit speed, away from `nl`
   initially {
     c distance(e * cos(3 * u) + R * cos(u), along: xa) p   // the Cauchy data: the epitrochoid
     c distance(e * sin(3 * u) + R * sin(u), along: ya) p

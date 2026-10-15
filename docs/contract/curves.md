@@ -214,8 +214,8 @@ document's own point found at its place with its claim a theorem and `folded` re
 `solventc` says, and every refusal of the split.  **The rates series' fronts** (#370,
 `tests/rate_examples.rs`): `geodesic_circles.sv`, a front held to a sphere and to a cone by a row
 over the moved point alone, its normal placed in the tangent plane — the sphere's circles of
-latitude, refused short of the antipode where they focus, the cone's circles about where they set
-off, unrolled — and `housing.sv`, a Wankel bore as the epitrochoid's parallel curve at the seal's
+latitude, refused short of the antipode where they focus, the cone's circles about the apex,
+unrolled — and `housing.sv`, a Wankel bore as the epitrochoid's parallel curve at the seal's
 radius, converging in the pieces, and past the waist's radius of curvature refused at the waist on
 the pieces and on twice them.  A fold is refused *early*, by the march's own error, and twice the
 pieces do not always bring it nearer: where a front closes on a point or a concave waist the place

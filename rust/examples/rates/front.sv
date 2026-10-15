@@ -21,10 +21,10 @@
 // `folded` is the same front run to 16mm: `solventc` says how far each is marched, and where
 // `folded` is refused.
 //
-// A point is held on the surface where the closed form puts the front: `held`, on the ellipse's
-// normal at its point at 50° and 5 inside it. The contact finds its place there, (5, 50°), and the
-// line along the surface's normal at it is claimed along the ellipse's plane's: the front never
-// leaves it.
+// A point is held on the surface where the closed form puts the front: `held`, on the major axis
+// 35 from the centre, 5 inside the ellipse's end. The contact finds its place there, (5, 0°), and
+// the line along the surface's normal at it is claimed along the ellipse's plane's: the front
+// never leaves it.
 //
 // Closed form: x(d, u) = E(u) + d·n(u), n the inward unit normal; the fold at b²/a = 15.625.
 unit mm
@@ -65,18 +65,13 @@ fix((0, 0, 10)) z1
 front := Front(c, x1, y1, z1, a: a, b: b).p over (d in (0mm, 15mm), u in (-60deg, 60deg))
 folded := Front(c, x1, y1, z1, a: a, b: b).p over (d in (0mm, 16mm), u in (-60deg, 60deg))
 
-// The ellipse's point at 50° and its tangent there; `held` on the normal, 5 inside.
-foot := point hint((25.7, 19.2, 0))
-fix((a * cos(50deg), b * sin(50deg), 0mm)) foot
-fore := point hint((16.9, 23.8, 0))
-fix((a * cos(50deg) - 10mm * a * sin(50deg) / hypot(a * sin(50deg), b * cos(50deg)),
-     b * sin(50deg) + 10mm * b * cos(50deg) / hypot(a * sin(50deg), b * cos(50deg)), 0mm)) fore
-tg := line(foot, fore)
-held := point hint((23.4, 14.7, 0))
+// `held` on the major axis, 35 from the centre: where the front at its end has run a − 35 = 5.
+ya := line(c, y1)
+held := point hint((35, 0, 0))
 held coincident front
-foot level(tg) held
-foot distance(5mm) held
-above := point hint((23.4, 14.7, 10))
+c level(ya) held
+c distance(35mm) held
+above := point hint((35, 0, 10))
 up := line(held, above)
 length(10mm) up
 front perpendicular(at: held) up
