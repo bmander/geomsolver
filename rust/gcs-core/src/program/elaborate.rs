@@ -467,6 +467,8 @@ fn holds(
     cx.diags.extend(views::origins_on_axes(&mut cx.sk, &cx.map));
     views::stand_axes(&mut cx.sk);
     entities::splines_in_space(&mut cx.sk, &mut cx.res, &mut cx.map);
+    entities::arcs_in_space(&mut cx.sk, &cx.map, &mut cx.diags);
+    entities::circles_in_space(&mut cx.sk, &cx.res, &cx.map, deferred, &mut cx.diags);
     entities::drawn_in_planes(&cx.sk, &cx.map, &mut cx.diags);
     entities::axes_along(&mut cx.sk, deferred);
     // each normal read turned along its plane as the holds and the lines have stood it

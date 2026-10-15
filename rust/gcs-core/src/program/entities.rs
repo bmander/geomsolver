@@ -159,6 +159,10 @@ pub(super) fn build(
     let kids = children(sk, res, d, st, diags, anon, deferred)?;
     let idx = make(sk, d, st, &kids, diags, deferred)?;
     let e = EntRef::new(d.kind, idx);
+    if let (EntKind::Circle, Some(n)) = (d.kind, &d.normal) {
+        deferred.push(Deferred::Normal { circle: idx, normal: n.clone(), span: st.span,
+                                         stmt: st.id });
+    }
     set_class(sk, e, d.class.clone());
     defer_seeds(sk, d, st, e, deferred);
     Some(e)
@@ -718,6 +722,160 @@ pub(super) fn splines_in_space(sk: &mut Sketch, res: &mut Resolver, map: &mut su
     }
 }
 
+/// **An arc over points in space is drawn in the plane through them** (#363 S6): `k := arc(center:
+/// c, start: s, end: e)` with a point no plane reaches mints that plane — its origin at `c`, its
+/// `u` toward `s`, its normal `(s − c) × (e − c)`, so the arc is the short way round, less than a
+/// half turn — and draws the arc there over points of its own: its centre the plane's origin, its
+/// start on the plane's `u` (a gauge, the plane's turn in itself), its end free, each tied to the
+/// point in space it is (`Coincident3`, intrinsic), and the plane's axes held square.  The points
+/// written stay where they stand — held in space, or anywhere — and the arc is an arc: its radius,
+/// its contacts, a chain's joints and a family along it are an arc's in a plane.  Three points in
+/// a line take no one plane, and are refused (E060).  Asked with the splines, before E060 is.
+pub(super) fn arcs_in_space(sk: &mut Sketch, map: &super::SourceMap, diags: &mut Vec<Diag>) {
+    use crate::constraints::{CKind, Constraint};
+    use crate::space::{cross, dot, norm, sub};
+    for i in 0..sk.arcs.len() {
+        let a = sk.arcs[i].clone();
+        let pts = [a.center, a.start, a.end].map(|p| p as usize);
+        if pts.iter().all(|&p| sk.plane_of(p).is_some()) {
+            continue;
+        }
+        let arc = EntRef::arc(i);
+        let [c, s, e] = pts.map(|p| sk.world_point(p));
+        let (to_s, to_e) = (sub(s, c), sub(e, c));
+        let n = cross(to_s, to_e);
+        if !(norm(n) > 1e-9 * norm(to_s) * norm(to_e)) {
+            let Some(site) = map.site_of(arc) else { continue };
+            diags.push(Diag::within(Code::E060, site.span, site.stmt, "an arc over points in \
+                space is drawn in the plane through its centre and its ends, and these stand in a \
+                line, which no one plane is through: draw it `in` one".to_string()));
+            continue;
+        }
+        let name = map.name_of(arc).cloned().unwrap_or_else(|| io::entity_name(arc));
+        let u = to_s.map(|x| x / norm(to_s));
+        let w = cross(n, to_s);
+        let v = w.map(|x| x / norm(w));
+        let ua = sk.axis(u, &format!("{name}#plane.u"));
+        let va = sk.axis(v, &format!("{name}#plane.v"));
+        let pi = sk.plane(ua, va, c, &format!("{name}#plane"));
+        sk.set_plane_origin(pi, c);
+        let origin = sk.planes[pi].origin as usize;
+        let start = sk.point(norm(to_s), 0.0, false, &format!("{name}#start"));
+        sk.params[sk.points[start].y as usize].fixed = true;
+        let end = sk.point(dot(to_e, u), dot(to_e, v), false, &format!("{name}#end"));
+        for p in [start, end] {
+            sk.set_plane(p, Some(pi));
+        }
+        sk.arcs[i].center = origin as u32;
+        sk.arcs[i].start = start as u32;
+        sk.arcs[i].end = end as u32;
+        let r = sk.arcs[i].radius as usize;
+        sk.params[r].value = norm(to_s);
+        // the arc's own rows, its ends on it, over its new ends
+        for c in sk.constraints.iter_mut().filter(|c| c.intrinsic && c.kind == CKind::PointOnCircle
+            && c.args[1].ent() == arc) {
+            let at = c.args[0].ent().i();
+            let to = match at {
+                x if x == a.start as usize => start,
+                x if x == a.end as usize => end,
+                _ => continue,
+            };
+            c.args[0] = crate::constraints::Arg::Ent(EntRef::point(to));
+        }
+        let ties = [(origin, pts[0]), (start, pts[1]), (end, pts[2])];
+        for &(p, q) in &ties {
+            sk.stands_for.insert(p as u32, q as u32);
+        }
+        let mut rows: Vec<Constraint> = ties.iter()
+            .map(|&(p, q)| Constraint::coincident(EntRef::point(p), EntRef::point(q)))
+            .map(|mut c| { c.kind = CKind::Coincident3; c })
+            .collect();
+        rows.push(Constraint::two_line(CKind::Perpendicular3, EntRef::new(EntKind::Axis, ua),
+                                       EntRef::new(EntKind::Axis, va)));
+        for mut c in rows {
+            c.intrinsic = true;
+            sk.add(c);
+        }
+    }
+}
+
+/// **A circle about a point in space stands square to its `normal:`** (#363 S6): `k := circle(
+/// center: o, normal: ax)` with `o` standing in space mints the plane through `o` square to `ax`
+/// — an axis, or a line read as one — and draws the circle there about its origin, tied to `o`
+/// (`Coincident3`, intrinsic), its axes square to the normal and to each other.  A circle has no
+/// turn of its own, so the plane's turn about the normal is a gauge, held square to the world's
+/// axis least along the normal where the circle is drawn.  A `normal:` of a circle drawn in a
+/// plane is refused, as one naming no direction is.
+pub(super) fn circles_in_space(
+    sk: &mut Sketch,
+    res: &Resolver,
+    map: &super::SourceMap,
+    deferred: &[Deferred],
+    diags: &mut Vec<Diag>,
+) {
+    use crate::constraints::{CKind, Constraint};
+    use crate::space::{cross, norm, sub};
+    for d in deferred {
+        let Deferred::Normal { circle, normal, span, stmt } = d else { continue };
+        let (i, c) = (*circle, sk.circles[*circle].center as usize);
+        if sk.plane_of(c).is_some() {
+            diags.push(Diag::within(Code::E040, *span, *stmt, "`normal:` stands a circle about a \
+                point in space square to an axis, and this one's centre is drawn in a plane, \
+                which is the plane it is drawn in".to_string()));
+            continue;
+        }
+        let axis = res.entity(sk, normal)
+            .filter(|e| matches!(e.kind, EntKind::Axis | EntKind::Line));
+        let dir = axis.map(|e| match e.kind {
+            EntKind::Axis => sk.axes[e.i()].d.map(|p| sk.params[p as usize].value),
+            _ => {
+                let l = &sk.lines[e.i()];
+                sub(sk.world_point(l.p2 as usize), sk.world_point(l.p1 as usize))
+            }
+        });
+        let (Some(axis), Some(dir)) = (axis, dir.filter(|d| norm(*d) > 0.0)) else {
+            diags.push(Diag::within(Code::E103, normal.span, *stmt, format!("`normal:` names the \
+                axis a circle stands square to, an axis or a line, and `{}` is none",
+                crate::syntax::ref_text(normal))));
+            continue;
+        };
+        let n = dir.map(|x| x / norm(dir));
+        let k = (0..3).min_by(|&a, &b| n[a].abs().total_cmp(&n[b].abs())).unwrap_or(0);
+        let mut e = [0.0; 3];
+        e[k] = 1.0;
+        let w = cross(n, e);
+        let u = w.map(|x| x / norm(w));
+        let v = cross(n, u);
+        let at = sk.world_point(c);
+        let name = map.name_of(EntRef::circle(i)).cloned()
+            .unwrap_or_else(|| io::entity_name(EntRef::circle(i)));
+        let ua = sk.axis(u, &format!("{name}#plane.u"));
+        let va = sk.axis(v, &format!("{name}#plane.v"));
+        let pi = sk.plane(ua, va, at, &format!("{name}#plane"));
+        sk.set_plane_origin(pi, at);
+        // the gauge: the world's axis least along the normal, held
+        let gauge = sk.axis(e, &format!("{name}#gauge"));
+        for &p in &sk.axes[gauge].d.clone() {
+            sk.params[p as usize].fixed = true;
+        }
+        let origin = sk.planes[pi].origin as usize;
+        sk.circles[i].center = origin as u32;
+        sk.stands_for.insert(origin as u32, c as u32);
+        let ax = |a: usize| EntRef::new(EntKind::Axis, a);
+        let mut tie = Constraint::coincident(EntRef::point(origin), EntRef::point(c));
+        tie.kind = CKind::Coincident3;
+        let rows = [tie,
+            Constraint::two_line(CKind::Perpendicular3, ax(ua), axis),
+            Constraint::two_line(CKind::Perpendicular3, ax(va), axis),
+            Constraint::two_line(CKind::Perpendicular3, ax(ua), ax(va)),
+            Constraint::two_line(CKind::Perpendicular3, ax(ua), ax(gauge))];
+        for mut r in rows {
+            r.intrinsic = true;
+            sk.add(r);
+        }
+    }
+}
+
 /// A circle, an arc and a spline are drawn in a plane: one over a point standing in space has
 /// none to be drawn in, and is refused at its declaration (E060).  Asked once every membership
 /// is in, so a point an `in` reaches later is in its plane by then.
@@ -736,14 +894,19 @@ pub(super) fn drawn_in_planes(sk: &Sketch, map: &super::SourceMap, diags: &mut V
             site.span,
             site.stmt,
             format!(
-                "{} is drawn in a plane, and `{}` stands in space: draw it `in` one",
+                "{} is drawn in a plane, and `{}` stands in space: draw it `in` one{}",
                 match e.kind {
                     EntKind::Arc => "an arc",
                     EntKind::Circle => "a circle",
                     EntKind::Curve => "a free curve",
                     _ => "a spline",
                 },
-                who(p)
+                who(p),
+                if e.kind == EntKind::Circle {
+                    ", or stand it square to an axis, `circle(center: o, normal: ax)`"
+                } else {
+                    ""
+                }
             ),
         ));
     }
@@ -853,6 +1016,9 @@ pub(super) enum Deferred {
     /// A point the source wrote no seed for, started where a minted child is (`scatter`): one a
     /// step may place instead (`walk_seeds`, #330).
     Scattered { point: usize },
+    /// A circle's `normal:` (#363 S6): the axis it stands square to, read where its centre
+    /// stands in space (`circles_in_space`), once every axis is built.
+    Normal { circle: usize, normal: crate::syntax::Ref, span: Span, stmt: StmtId },
 }
 
 /// The seed a dotted name reads: `pin.x`, `k.center.y`, `base.r`, `e.b` — `dotted` as the
@@ -1056,7 +1222,8 @@ pub(super) fn settle_deferred(
                 let r = seed_eval(sk, res, text, names).map(|v| seeds.write(sk, param, v));
                 (*span, *stmt, r.map_err(|e| format!("`{text}`: {e}")))
             }
-            Deferred::Along { .. } | Deferred::Height { .. } | Deferred::Scattered { .. } => {
+            Deferred::Along { .. } | Deferred::Height { .. } | Deferred::Scattered { .. }
+            | Deferred::Normal { .. } => {
                 continue
             }
             Deferred::Radius { arc } => {

@@ -194,6 +194,11 @@ pub struct Sketch {
     /// kept so no index moves, is no primitive — neither drawn nor grafted.  Set by the
     /// elaborator (`program::entities::splines_in_space`).
     pub spline_traced: std::collections::BTreeMap<u32, u32>,
+    /// **The points an arc over points in space is drawn over** (#363 S6), each to the point in
+    /// space it stands for: the arc's own centre, start and end in the plane it minted, tied to
+    /// the points written (`program::entities::arcs_in_space`), so a chain's links still meet
+    /// where they were threaded.
+    pub stands_for: std::collections::BTreeMap<u32, u32>,
     /// Each free curve's energy as `settle_variational` last read it: its statements, pegs and
     /// whether its length is free.  Derived state, never saved.
     pub variational: Vec<crate::variational::Energy>,

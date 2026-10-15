@@ -958,6 +958,11 @@ pub struct Decl {
     /// start: l, end: m)`: its control points minted, its ends' tangents along `start:` and
     /// `end:` where they are written (`flatten::through`).  `None` for every other declaration.
     pub through: Option<Through>,
+    /// A circle's **normal** (#363 S6), `circle(center: o, normal: ax)`: an axis or a line the
+    /// circle stands square to, where its centre stands in space — the plane it is drawn in
+    /// minted through the centre (`program::entities::circles_in_space`).  `None` for every
+    /// other declaration, and for a circle drawn `in` a plane.
+    pub normal: Option<Ref>,
 }
 
 /// What a spline through a chain's corners names (`Decl::through`): the chain, and the lines (or
@@ -998,6 +1003,7 @@ impl Decl {
             close: None,
             mint_close: None,
             through: None,
+            normal: None,
         }
     }
 
@@ -1041,6 +1047,7 @@ impl Decl {
             close: None,
             mint_close: None,
             through: None,
+            normal: None,
         }
     }
 }

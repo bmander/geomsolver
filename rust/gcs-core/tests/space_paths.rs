@@ -695,6 +695,102 @@ bar := solid(Bar(route, std.z, lo: -1mm, hi: 2mm).f over s in (0, 5))"));
     near(exact(&e, "bar"), 6.0 * (length - 0.5 * PI / 2.0), 1e-9, "the bar");
 }
 
+/// **An arc over points in space is drawn in the plane through them** (#363 S6): the bent pipe of
+/// S4 written with no plane at all — every point in space, each bend's arc over its centre and
+/// the ends its chain threads — mints each bend's plane through its centre and ends, so the chain
+/// is the one the planes made, and its tube is Pappus's, 16π(60 + 20π).  The arc is an arc there:
+/// its radius 20, its plane square to `z` for the first bend and to `x` for the second.
+#[test]
+fn an_arc_over_points_in_space_is_drawn_in_the_plane_through_them() {
+    let e = with("
+a := point hint((-20, 0, 0))
+b := point hint((0, 0, 0))
+fix((0mm, 0mm, 0mm)) b
+c1 := point hint((0, 20, 0))
+fix((0mm, 20mm, 0mm)) c1
+d := point hint((20, 20, 0))
+e := point hint((20, 40, 0))
+c2 := point hint((20, 40, 20))
+f := point hint((20, 60, 20))
+g := point hint((20, 60, 40))
+route := (l0 := line(a, b)) -> tangent (k1 := arc(center: c1)) ->
+  tangent (l2 := line(d, e)) -> tangent (k3 := arc(center: c2)) ->
+  tangent (l4 := line(f, g))
+length(20mm) l0
+length(20mm) l2
+length(20mm) l4
+radius(20mm) k3
+l4 parallel std.z
+l2 parallel std.y
+d coincident std.top
+component Round(g: path, up: axis, r: Length, s: Scalar) {
+  st := std.On(g, up: up, s: s)
+  in st.n {
+    k := circle(center: st.n.origin)
+    radius(r) k
+  }
+  f := face(k)
+}
+tube := solid(Round(route, std.z, r: 4mm).f over s in (0, 5))");
+    near(exact(&e, "tube"), 16.0 * PI * (60.0 + 20.0 * PI), 1e-9, "the tube");
+    let sk = &e.sketch;
+    for (name, normal) in [("k1", [0.0, 0.0, 1.0]), ("k3", [1.0, 0.0, 0.0])] {
+        let k = e.map.ent_named(name).unwrap();
+        assert!((sk.radius_value(k).abs() - 20.0).abs() <= 1e-9, "`{name}`'s radius");
+        let pl = sk.plane_of(sk.round_center(k)).expect("drawn in a plane");
+        let n = sk.basis(pl).normal();
+        assert!((dot(unit(n), normal).abs() - 1.0).abs() <= 1e-9, "`{name}`'s plane: {n:?}");
+    }
+}
+
+/// **A circle about a point in space stands square to its normal** (#363 S6): `circle(center: o,
+/// normal: ax)` is drawn in the plane through `o` square to `ax`, so a disc swept from it is
+/// π·r²·h, and a point held on it stands `r` from `o`, square to `ax`.  And what is refused: a
+/// `normal:` of a circle drawn in a plane, a circle in space with none (saying to give one), and
+/// an arc over three points in a line.
+#[test]
+fn a_circle_about_a_point_in_space_stands_square_to_its_normal() {
+    let e = with("
+oc := point hint((5, 5, 5))
+fix((5mm, 5mm, 5mm)) oc
+tc := point hint((6, 7, 8))
+fix((6mm, 7mm, 8mm)) tc
+ax := line(oc, tc)
+k := circle(center: oc, normal: ax)
+radius(4mm) k
+q := point hint((9, 5, 5))
+q coincident k
+q distance(3mm, along: std.x) oc
+disc := solid(face(k), depth: 10mm)");
+    near(exact(&e, "disc"), PI * 16.0 * 10.0, 1e-9, "the disc");
+    let at = |n: &str| e.sketch.world_point(e.map.ent_named(n).unwrap().i());
+    let r = sub(at("q"), at("oc"));
+    assert!((dot(r, r).sqrt() - 4.0).abs() <= 1e-9, "{r:?}");
+    assert!(dot(r, [1.0, 2.0, 3.0]).abs() <= 1e-9, "{r:?}");
+    let said = refusals(&format!("{PATHS}
+in std.top {{
+  c := point
+}}
+k := circle(center: c, normal: std.z)
+"));
+    assert!(said.iter().any(|m| m.starts_with("E040") && m.contains("drawn in a plane")),
+            "{said:?}");
+    let said = refusals(&format!("{PATHS}
+c := point hint((1, 2, 3))
+k := circle(center: c)
+"));
+    assert!(said.iter().any(|m| m.starts_with("E060")
+                            && m.contains("`circle(center: o, normal: ax)`")), "{said:?}");
+    let said = refusals(&format!("{PATHS}
+p0 := point hint((0, 0, 0))
+p1 := point hint((5, 5, 5))
+p2 := point hint((10, 10, 10))
+k := arc(center: p1, start: p0, end: p2)
+"));
+    assert!(said.iter().any(|m| m.starts_with("E060") && m.contains("stand in a line")),
+            "{said:?}");
+}
+
 /// The four corners of `b` nearest `at`: the corners of its cap there.
 fn cap(b: &gcs_core::brep::topo::Brep, at: V) -> Vec<V> {
     let mut ps: Vec<V> = b.vertices.iter().map(|v| v.p).collect();

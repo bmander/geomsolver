@@ -69,6 +69,8 @@ pub struct Decl {
     pub motion: Option<syntax::MotionSpec>,
     pub angular_span: Option<syntax::AngularSpan>,
     pub membership: Membership,
+    /// A circle's normal, where its centre stands in space (#363 S6, `syntax::Decl::normal`).
+    pub normal: Option<syntax::Ref>,
 }
 
 /// The same operands as syntax, with inline faces lowered to declarations of this stage.
@@ -110,6 +112,7 @@ impl From<syntax::Decl> for Decl {
             motion: d.motion,
             angular_span: d.angular_span,
             membership: d.membership,
+            normal: d.normal,
         }
     }
 }

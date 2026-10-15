@@ -261,6 +261,7 @@ pub(crate) fn lift_decl(sk: &Sketch, e: EntRef) -> Decl {
         close: None,
         mint_close: None,
         through: None,
+        normal: None,
     }
 }
 

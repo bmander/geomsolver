@@ -581,6 +581,10 @@ fn rewrite_decl(
     for r in d.membership.also_mut() {
         fix(r, bad);
     }
+    // a circle's normal is a name of the scope (#363 S6)
+    if let Some(r) = d.normal.as_mut() {
+        fix(r, bad);
+    }
     // a revolution's axis is a line of the body like any other name it writes
     for r in d.sweep.as_mut().map(|s| s.references_mut()).unwrap_or_default() {
         fix(r, bad);

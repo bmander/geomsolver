@@ -40,8 +40,22 @@ another. `views::place`
 settles axes and plane origins before the solve, round by round with seed settlement; they stay
 unknowns. `p distance(d, along: u) P` is an ordinate from `P.origin` along `P.u` (`CKind::Ordinate`,
 in space across planes with no callout); `hint(at: P, (x, y))` seeds in P's coordinates. Circles and
-arcs over a point in space are E060 (a spline there is a curve traced in space, [0.123],
-`curves.md`), faces E080. `use std` gives axes
+arcs over a point in space are drawn in a plane they mint (#363 S6, [0.124];
+`entities::arcs_in_space`, `circles_in_space`, in `holds`, before E060 is asked): an arc the plane
+through its centre and ends (axes `u` toward the start and `v` in the plane, its normal
+`(s − c) × (e − c)` — the short way round; collinear, E060), a circle the plane through its centre
+square to its `normal:` (`Decl::normal`, parsed for a circle as a spline's `through:` is, rescoped
+by `rewrite_decl`, read as `Deferred::Normal` once the axes are built; none, E060 saying to give
+one; on a circle drawn in a plane, E040).  The round is drawn over points of its own there — the
+centre the plane's origin, an arc's start on the plane's `u` (a gauge, its `y` held), its end free
+— each tied to the point written by an intrinsic `Coincident3` and recorded in
+`Sketch::stands_for` (so a chain's links still meet: `solids::faces::validate_chain`), the axes
+held square (`Perpendicular3`), and a circle's turn about its normal held square to the world axis
+least along it (a fixed hidden axis), a gauge.  So the round is an arc or a circle in a plane: its
+radius, its contacts, a chain's joints, a face swept from it.  A spline there is a curve traced in
+space ([0.123], `curves.md`); faces E080.  `tests/space_paths.rs`: the bent pipe with no plane
+written, its tube at Pappus to 1e-9 and each bend's plane; a disc swept from a circle square to a
+line at πr²h; the refusals. `use std` gives axes
 `std.x/y/z/back`, planes `std.front` (x, z), `std.top` (x, y), `std.side` (y, z), `std.up` (z,
 back), and `std.origin` (in front, fixed) — flattened after the document, present whenever the
 document says `use std` (the workspace offers them as places to draw). `std.Turned(o, t)` is a

@@ -4,6 +4,13 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.124] Arcs and circles in space.** An arc over a point standing in space is drawn in the plane
+through its centre and its ends, the short way round; three points in a line are refused. A circle
+over a centre in space takes `normal:`, the axis or line it stands square to, and is drawn in the
+plane through its centre square to it. Each is the arc or circle it is in a plane — its radius,
+its contacts, a chain's joints, a face swept from it — so a bent pipe needs no plane written.
+Through 0.123 each was E060. (Issue #363, S6.)
+
 **[0.123] Splines in space.** A spline over a point standing in space is a curve in space:
 `Σ Rᵢ(u)·Pᵢ` over its control points where they stand, its parameter over its own domain. Its
 contacts are a curve in space's (a point held at a place, `t == u`; the tangent; the centre of

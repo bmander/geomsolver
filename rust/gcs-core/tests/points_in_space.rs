@@ -33,12 +33,17 @@ fn a_point_in_space_round_trips_through_json() {
     assert_eq!(io::dumps(&back, None), text, "and is written again, byte for byte");
 }
 
+/// A circle over a point in space with no `normal:` is refused; an arc over points in space is
+/// drawn in the plane through them (#363 S6, [0.124]) — refused only where three stand in a line,
+/// which no one plane is through.
 #[test]
 fn a_curve_over_a_point_in_space_is_refused() {
     refused("use std\no := point\nk := circle(center: o) hint(r: 5)\n", "E060",
         "a circle is drawn in a plane, and `o` stands in space", "k := circle(center: o) hint(r: 5)");
-    refused("use std\no := point\na := arc(center: o) hint(r: 5)\n", "E060",
-        "`o` stands in space: draw it `in` one", "a := arc(center: o) hint(r: 5)");
+    refused("use std\np0 := point hint((0, 0, 0))\np1 := point hint((5, 5, 5))\n\
+        p2 := point hint((10, 10, 10))\na := arc(center: p1, start: p0, end: p2)\n", "E060",
+        "these stand in a line",
+        "a := arc(center: p1, start: p0, end: p2)");
 }
 
 #[test]
