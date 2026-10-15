@@ -174,7 +174,7 @@ fn inline_sections_inherit_the_boundary_plane_and_coexist_with_forward_faces() {
         named := solid(sec, from: 0mm, to: 2mm)\nsec := face(a, b, c, d, -> close)\n";
     let e = read(src);
     let back = e.map.ent_named("back").unwrap().i() as u32;
-    assert!(e.sketch.faces.iter().all(|f| f.plane() == Ok(Some(back))));
+    assert!(e.sketch.faces.iter().all(|f| f.plane == Some(back)));
     let p = gcs_core::report::positions(&e.sketch, &e.map);
     assert!(p.iter().any(|(n, v)| n == "slab.bounds.z0" && (*v - 12.0).abs() < 1e-9));
     assert_eq!(volume(&e, "slab"), volume(&e, "named"));
@@ -817,7 +817,7 @@ fn named_chains_inherit_planes_and_revolve_with_arcs() {
           ball := solid(profile, about: ax)\n}\n";
     let e = read(src);
     let back = e.map.ent_named("back").unwrap().i() as u32;
-    assert_eq!(e.sketch.faces[0].plane(), Ok(Some(back)));
+    assert_eq!(e.sketch.faces[0].plane, Some(back));
     // Reports integrate the faceted surface; the analytic sphere is an independent check.
     let want = 4.0 / 3.0 * std::f64::consts::PI * 125.0;
     assert!((volume(&e, "ball") / want - 1.0).abs() < 0.002,

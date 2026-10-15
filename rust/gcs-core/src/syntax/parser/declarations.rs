@@ -102,14 +102,14 @@ pub(crate) fn sweep_of(p: SweepParts) -> Result<Sweep, String> {
     }
 }
 
-/// Which child slot of a declaration an item of its bracket list fills: a face's edges, holes
-/// or support; a labelled field's; or the next positional one, a List field taking every
+/// Which child slot of a declaration an item of its bracket list fills: a face's edges or
+/// holes; a labelled field's; or the next positional one, a List field taking every
 /// positional argument from where it starts.
 fn kid_slot(kind: EntKind, label: Option<&str>, positional: usize, in_holes: bool, slots: usize)
     -> usize {
     let fields = kind.fields();
     if kind == EntKind::Face {
-        if label == Some("on") { 2 } else { usize::from(in_holes) }
+        usize::from(in_holes)
     } else {
         match label {
             Some(l) => fields
@@ -384,28 +384,12 @@ impl<'a> P<'a> {
                 }
                 // `name:` labels a field; anything else is positional
                 let label = self.slot_label();
-                if kind == EntKind::Edge && label.as_deref()
-                    .is_some_and(|s| !matches!(s,"seam" | "from" | "to" | "along")) {
-                    self.fail("an edge names its `seam:`, `from:`, `to:` and `along:` operands");
-                    return None;
-                }
-                if matches!(kind,EntKind::Seam | EntKind::Vertex)
-                    && label.as_deref().is_some_and(|s| s != "first" && s != "second") {
-                    self.fail("a seam or vertex names its `first:` and `second:` operands");
-                    return None;
-                }
-                if kind == EntKind::Patch && !matches!(label.as_deref(),
-                    Some("source" | "inside" | "outside")) && !(label.is_none() && positional == 0) {
-                    self.fail("a patch names its source, then labels each solid `inside:` or `outside:`");
-                    return None;
-                }
                 if kind == EntKind::Face {
                     match label.as_deref() {
                         Some("holes") => in_holes = true,
                         Some("edges") if !in_holes => {},
-                        Some("on") => {},
                         Some(_) => {
-                            self.fail("a face takes its edges, optional `holes:`, and `on:` for a spatial support");
+                            self.fail("a face takes its edges and optional `holes:`");
                             return None;
                         }
                         None => {}

@@ -453,7 +453,7 @@ pub(crate) fn decl_args(d: &Decl) -> String {
                 child += 1;
                 for (i, k) in kids.iter().enumerate() {
                     let mut s = String::new();
-                    if (label && *field == Field::Child) || d.kind == EntKind::Patch
+                    if (label && *field == Field::Child)
                         || (d.kind == EntKind::Face && *name == "holes" && i == 0) {
                         s.push_str(name);
                         s.push_str(": ");

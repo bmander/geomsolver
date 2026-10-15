@@ -251,14 +251,7 @@ fn name_read(name: &str, v: &mut Vec<f64>) {
 fn face_reads(sk: &Sketch, fi: u32, v: &mut Vec<f64>) {
     v.push(fi as f64);
     let Some(f) = sk.faces.get(fi as usize) else { return };
-    let plane = match f.support {
-        crate::model::FaceSupport::Plane(p) => p,
-        crate::model::FaceSupport::Surface(s) => {
-            v.extend([-2.,s.kind as u32 as f64,s.idx as f64]);
-            return;
-        }
-    };
-    v.extend([plane.map_or(-1.0, |p| p as f64), f.holes.len() as f64]);
+    v.extend([f.plane.map_or(-1.0, |p| p as f64), f.holes.len() as f64]);
     for (edges, edge_names) in f.boundaries() {
         v.push(edge_names.len() as f64);
         for name in edge_names { name_read(name, v); }
@@ -285,7 +278,7 @@ fn face_reads(sk: &Sketch, fi: u32, v: &mut Vec<f64>) {
             }
         }
     }
-    if let Some(p) = plane.filter(|&p| (p as usize) < sk.planes.len()) {
+    if let Some(p) = f.plane.filter(|&p| (p as usize) < sk.planes.len()) {
         let basis = sk.basis(p as usize);
         v.extend(basis.u);
         v.extend(basis.v);

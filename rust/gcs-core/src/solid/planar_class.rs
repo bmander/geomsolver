@@ -45,10 +45,9 @@ pub(crate) fn prism(sk: &Sketch,id: usize,n: V) -> Result<[f64;2],Failure> {
     let SolidDef::Prism {face,from,to,draft:None} = &solid.def else {
         return Err((Condition::Prisms,format!("`{}` is no prism with square sides",solid.name),None))
     };
-    let basis = match sk.faces[*face as usize].plane() {
-        Ok(Some(p)) => sk.basis(p as usize),
-        Ok(None) => crate::plane::Basis::page(),
-        Err(e) => return Err((Condition::Prisms,e,None)),
+    let basis = match sk.faces[*face as usize].plane {
+        Some(p) => sk.basis(p as usize),
+        None => crate::plane::Basis::page(),
     };
     let m = basis.normal();
     let m = m.map(|x| x/norm(m));

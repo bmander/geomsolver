@@ -10,8 +10,8 @@ use super::relations::{self, constrain, repeated};
 use super::resolve::{self, Resolver};
 use super::solids::{solid_claims, solids};
 use super::{
-    defined_twice, edges, envelopes, generated, motions, patches, planes, rings, seams,
-    shadowing, spatial_faces, surfaces, variational, vertices, views, words,
+    defined_twice, envelopes, generated, motions, planes, rings, shadowing, surfaces,
+    variational, views, words,
 };
 use super::{Again, Code, Diag, Elaborated, Made, SourceMap};
 use crate::expr;
@@ -267,11 +267,7 @@ fn names(cx: &mut Elab<'_>, body: &[&Statement]) -> BTreeSet<StmtId> {
             }
         }
         let n = count.entry(kind).or_insert(0);
-        // Spatial faces depend on edges of generated surfaces, after all planar
-        // profiles and primitive solids. Their indices are assigned in that phase.
-        let late_face = matches!(&st.kind, StmtKind::Decl(d)
-            if d.kind == EntKind::Face && d.children.get(2).is_some_and(|g| !g.is_empty()));
-        res.of.insert(key.clone(), EntRef::new(kind, if late_face { u32::MAX as usize } else { *n as usize }));
+        res.of.insert(key.clone(), EntRef::new(kind, *n as usize));
         if let StmtKind::Decl(d) = &st.kind {
             res.kids.insert(
                 key.clone(),
@@ -281,7 +277,7 @@ fn names(cx: &mut Elab<'_>, body: &[&Statement]) -> BTreeSet<StmtId> {
                 }).collect(),
             );
         }
-        if !late_face { *n += 1; }
+        *n += 1;
         // a plane's origin is a point minted with the points, in statement order
         if kind == EntKind::Plane {
             let n = count.entry(EntKind::Point).or_insert(0);
@@ -686,11 +682,6 @@ fn solids_and_surfaces(
     }
     surfaces::surfaces(sk, res, map, body, skip, diags);
     envelopes::envelopes(sk, res, map, body, generated, held, diags);
-    patches::patches(sk, res, map, body, skip, diags);
-    seams::seams(sk, res, map, body, skip, diags);
-    vertices::vertices(sk, res, map, body, skip, diags);
-    edges::edges(sk, res, map, body, skip, diags);
-    spatial_faces::faces(sk, res, map, body, skip, diags);
     Ok(())
 }
 

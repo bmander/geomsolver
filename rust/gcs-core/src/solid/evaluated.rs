@@ -736,7 +736,7 @@ fn round_features(
                 continue;
             }
             let circle = &sk.circles[edges[0].i()];
-            let basis = match face.plane()? {
+            let basis = match face.plane {
                 Some(i) => sk.basis(i as usize),
                 None => Basis::page(),
             };

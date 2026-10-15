@@ -45,18 +45,6 @@ impl Sketch {
     pub fn children(&self, e: EntRef) -> Vec<EntRef> {
         match e.kind {
             EntKind::Point => Vec::new(),
-            EntKind::Seam => { let s = &self.seams[e.i()]; vec![s.first,s.second] }
-            EntKind::Edge => { let e = &self.edges[e.i()];
-                vec![EntRef::new(EntKind::Seam,e.seam as usize),
-                    EntRef::new(EntKind::Vertex,e.start as usize),EntRef::new(EntKind::Vertex,e.end as usize),
-                    EntRef::line(e.along as usize)] }
-            EntKind::Vertex => { let v = &self.vertices[e.i()];
-                vec![EntRef::new(EntKind::Seam,v.first as usize),EntRef::new(EntKind::Seam,v.second as usize)] }
-            EntKind::Patch => {
-                let p = &self.patches[e.i()];
-                std::iter::once(p.source).chain(p.inside.iter().chain(&p.outside)
-                    .map(|&i| EntRef::solid(i as usize))).collect()
-            }
             EntKind::Envelope => {
                 let v = &self.envelopes[e.i()];
                 // a revolution's side is what the surface is already written over
@@ -106,8 +94,8 @@ impl Sketch {
             }
             // a face's children are the edges it aliases, so deleting one takes the face with
             // it; a solid's are what its term is written over
-            EntKind::Face => self.faces[e.i()].on().into_iter().chain(self.faces[e.i()]
-                .boundaries().flat_map(|(edges, _)| edges.iter().copied())).collect(),
+            EntKind::Face => self.faces[e.i()].boundaries()
+                .flat_map(|(edges, _)| edges.iter().copied()).collect(),
             EntKind::Solid => {
                 let s = &self.solids[e.i()];
                 let mut v: Vec<EntRef> = Vec::new();
@@ -189,7 +177,7 @@ impl Sketch {
             // is its term, and a term missing an operand is not that solid
             EntKind::Point | EntKind::Line | EntKind::Circle | EntKind::Arc
             | EntKind::Axis
-            | EntKind::Plane | EntKind::Curve | EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge | EntKind::Meshing | EntKind::Traced => {
+            | EntKind::Plane | EntKind::Curve | EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Meshing | EntKind::Traced => {
                 children.len()
             }
         }
@@ -274,10 +262,6 @@ impl Sketch {
             EntKind::Surface => self.surfaces.len(),
             EntKind::Motion => self.motions.len(),
             EntKind::Envelope => self.envelopes.len(),
-            EntKind::Patch => self.patches.len(),
-            EntKind::Seam => self.seams.len(),
-            EntKind::Vertex => self.vertices.len(),
-            EntKind::Edge => self.edges.len(),
             EntKind::Meshing => self.meshings.len(),
             EntKind::Traced => self.traced.len(),
             EntKind::Point => self.points.len(),

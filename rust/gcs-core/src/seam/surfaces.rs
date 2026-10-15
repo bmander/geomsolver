@@ -1,6 +1,6 @@
 //! Local transverse intersections of two finite analytic surface patches.
 use crate::{envelope::{check_tolerance,Error,IntersectionOptions,SurfacePoint},
-    model::Sketch,plane::cross,solid::{RevolvedSurface,SurfaceProjection,SurfaceProjector}};
+    plane::cross,solid::{RevolvedSurface,SurfaceProjection,SurfaceProjector}};
 
 use crate::space::length;
 
@@ -57,15 +57,6 @@ pub struct SurfaceSeam {
 }
 
 impl SurfaceSeam {
-    pub fn named(sk: &Sketch,index: usize) -> Result<Self,String> {
-        if super::kind(sk,index)? != super::SeamKind::Surfaces {
-            return Err("a surface seam needs two analytic surface operands".into());
-        }
-        let s = &sk.seams[index];
-        Ok(Self {name:s.name.clone(),first:RevolvedSurface::named(sk,s.first.i())?,
-            second:SurfaceProjector::named(sk,s.second.i())?})
-    }
-
     /// Two finite analytic surfaces meeting, made of their parts (#212).
     pub fn new(name: String,first: RevolvedSurface,second: SurfaceProjector) -> Self { Self {name,first,second} }
 
