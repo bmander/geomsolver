@@ -295,9 +295,9 @@ placement carries inside the blank; CLI test readers zero the offset.
   Pappus to 1e-9, a radius law in `s` over the chain, part of a chain, the refusals.
 - **A law is an expression in `s`** (§6.9 [0.103], #243 L5, finding 10).  A twist or a scale is a
   dimension of the section reading the running number; no word takes a `law:` (no function values).
-  `std.sv`'s `Twisted` (the point `reach` along the station's `u` turned `twist · s` — [0.116],
+  `std.sv`'s `Twisted` (the point `reach` along the station's `u` turned `twist · s` — [0.118],
   the second point a section drawn once is carried to, `f := prof mapped(o -> n.origin, x ->
-  tw.t) in n`; through 0.115 a plane of axes a section was drawn on corner by corner), `scaled` (a point at `(du, dv)` scaled `1 + (scale − 1) · s` about the
+  tw.t) in n`; through 0.117 a plane of axes a section was drawn on corner by corner), `scaled` (a point at `(du, dv)` scaled `1 + (scale − 1) · s` about the
   plane's origin) and `scaled_radius` take a total and run it linearly; any other law is the word
   given another fraction (`s: 3 * s^2 - 2 * s^3`) or the writer's own expression.  **A number given
   over `s` that is not affine in it is kept as text** (`Walk::held_text`), whichever formal it is
@@ -358,16 +358,50 @@ placement carries inside the blank; CLI test readers zero the offset.
   faces themselves; `std.Apex(a, tip, s:)` the same to a point (no `end` cap).  Correspondence is
   the written walks: a connector is where a walk starts, unequal counts a point named on an edge;
   the first three corners must not stand in a line (`Across`).  `std.Similar` and `std.Affine`
-  are each one statement, the face carried whole ([0.116], below): `f := prof mapped(from -> a,
+  are each one statement, the face carried whole ([0.118], below): `f := prof mapped(from -> a,
   to -> b, third -> c) in n`, the profile's corners and frame columns of each corner's `mapped`,
   held where the profile is (`Framed` and `Spans`, two `offset`s over hidden spans of the frame,
-  are retired, [0.115]); `lofts/blade.sv` and `three_rails.sv` write the word itself.  `tests/correspondence.rs` is the gate: `two_faces.sv` at
+  are retired, [0.117]); `lofts/blade.sv` and `three_rails.sv` write the word itself.  `tests/correspondence.rs` is the gate: `two_faces.sv` at
   40/6 · 1856, a connector and a split triangle at their prismatoids, a pyramid to an oblique tip,
   a blade on two rails (1560; turning, 1650), a square on three rails at its area ratio's
   prismatoid, a face walked, a face of a cycle's copies, and the refusals.  An arc edge lofted
   with a line edge is not said: it wants a rational edge whose weight reads the arc's sweep and a
   word choosing by an edge's kind.
-- **A face carried whole** (#357, [0.116]): `sec := prof mapped(from -> a, to -> b) in n` parses
+- **A station that states a rate is integrated from its home** (§6.9 [0.116], #339 D3,
+  `solid/rated.rs`).  `rate(x over s) perpendicular y` (or `parallel`) is no constraint: the
+  elaborator keeps it in `Sketch::rates` (`model::RateRow`: whose rate — an axis's direction or a
+  point in space — the word, what it is held against — an axis, a line or a plane — and the held
+  running number its formal is given), grafted with the entities it names, so a station's part
+  carries it.  `initially { … }` rows are ordinary constraints flagged `Constraint::initially`
+  (graft and JSON carry it): the drawing solves them with the drawn station, the **home**.  A leg
+  whose part states a rate over its running number (`rated::states_rates`) is solved at the home as
+  any (regular there, with its `initially` rows), then **marched** (`rated::Flow::march`): the part
+  cloned, its `initially` rows made claims, its running number unfixed and made the column every
+  number written over it leans on — each such dimension's text a tape over the held numbers
+  (`tape::derivatives_along`, exact), its constraint made its free twin at `m·s + c` with `m` the
+  derivative (`Levers::lean`), so the running number's column of the conditioned Jacobian is `g_s`;
+  a number over it that is no dimension, or a second on one statement, is refused.  The rate rows
+  are linear rows over the state (`Rated::rate_rows`: an axis's rate is its unit direction's,
+  `(I − d̂d̂ᵀ)d′/|d|`; square to a direction one row, along it two, a plane the other way round).
+  `[G; R]·z′ = [−g_s; 0]`, rows of unit length: solved square over the rows found independent at
+  the first evaluation (LU), and where that fails by the minimum-norm least squares, whose rank
+  short of the state's width is the **index check** — refused there, "is short of rates: k
+  degrees of freedom along its running number" (at the home, before any march), and a stack that
+  is inconsistent is refused too.  `ode::march` integrates from the home to each end at
+  `ode::TOL`, `rated::COLUMNS` (4) columns; `Reading::settle` reads a station off the flow
+  (`Flow::put`, `ode::Path::at`: one more step from the node before) where it would solve one, so
+  the faceted stepping, its judging and the exact walls (L2's pieces, each checked against one
+  more integration between its nodes) are unchanged; the flow is marched once and shared with the
+  walls (`Family::flow`).  No regularity is asked of an integrated station: its rank is the flow's.
+  A station with `initially` rows and no rate is refused, and so is a rate over a chain's legs.  A
+  station's part holds **no plane's normal of its own** (`part_of`): a normal is minted where read
+  (`Sketch::plane_normal`), under no name of the station's, and moves with its plane.
+  `std.Minimal(n, up:, s:)` (#243 L9) is the word.  `tests/rates.rs` is the gate: the minimal
+  frame along a helix of radius 10 and pitch 5 turning −28.558° a turn against `std.OnHelix`'s
+  (Frenet's) to 1e-9, read off the caps (and three quarters of a turn, and the home square to the
+  axis); a tube on four turns at A·L to 1e-9 in either frame; along a planar spline the word and
+  `std.On` the same solid, corner for corner; the refusals.
+- **A face carried whole** (#357, [0.118]): `sec := prof mapped(from -> a, to -> b) in n` parses
   to a `Block` (`Block::image`, a `FaceImage`) — a `cycle` over `prof`'s loop under a binder no
   source writes, set aside and resolved as every block over a walk is — which makes no copies:
   `flatten::image::image_face` builds the statements a person would write, walked in the

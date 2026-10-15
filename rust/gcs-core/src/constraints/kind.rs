@@ -181,6 +181,13 @@ pub enum CKind {
     /// degrees, pinned or solved) and the motion's axes.  In a traced body, `τ` an expression in
     /// the running formal: a contact seen from a turning member.
     CarriedPoint,
+    /// **A generated flank regular within its blank** (#345 S3, `envelope::regular`): `flank
+    /// regular(>= m, by: tool) within blank`, the least area factor the flank — a held envelope,
+    /// its source a face of `tool` — takes over the part of it the tool cuts within `blank`,
+    /// found by search.  One row, the factor less the number (a ratio, nothing at a fold); a bound
+    /// as written, an equation where the number is stated outright.  The envelope's columns and
+    /// every point, axis and unknown of the two regions' terms are columns.
+    RegularWithin,
     /// **A point on a body traced in space** (#326, `traced`): `p coincident k`, three rows `p −
     /// X(u, s)` against the place `[u, s]` it owns (a curve's `s` held at none), so a point on a
     /// curve in space nets two and one on a surface one.  The body's geometry is columns.
@@ -397,7 +404,7 @@ impl FamilyKernel {
 }
 
 /// Every concrete constraint type, in the order the registry lists them.
-pub const ALL_KINDS: [CKind; 93] = [
+pub const ALL_KINDS: [CKind; 94] = [
     CKind::Coincident,
     CKind::Distance,
     CKind::Midpoint,
@@ -440,6 +447,7 @@ pub const ALL_KINDS: [CKind; 93] = [
     CKind::Reciprocal,
     CKind::ScrewAxis,
     CKind::CarriedPoint,
+    CKind::RegularWithin,
     CKind::PointOnTraced,
     CKind::TracedTangentAt,
     CKind::TracedSurfaceTangentAt,
@@ -537,6 +545,11 @@ pub enum SpecKind {
     Motion,
     /// A body traced in space (#326).
     Traced,
+    /// A solid (#345): a region whose terms a relation reads as columns — a tool, a blank.
+    Solid,
+    /// A number with no unit, a ratio (#345): an area factor.  A dimension, as a length and an
+    /// angle are, of no dimension.
+    Ratio,
 }
 
 impl SpecKind {
@@ -553,6 +566,7 @@ impl SpecKind {
         match self {
             SpecKind::Length => Dim::LENGTH,
             SpecKind::Angle => Dim::ANGLE,
+            SpecKind::Ratio => Dim::SCALAR,
             SpecKind::Point
             | SpecKind::Line
             | SpecKind::Circle
@@ -564,6 +578,7 @@ impl SpecKind {
             | SpecKind::Meshing
             | SpecKind::Motion
             | SpecKind::Traced
+            | SpecKind::Solid
             | SpecKind::Plane
             | SpecKind::Axis
             | SpecKind::Direction
@@ -591,6 +606,7 @@ impl SpecKind {
                 | SpecKind::Meshing
                 | SpecKind::Motion
                 | SpecKind::Traced
+                | SpecKind::Solid
                 | SpecKind::Plane
                 | SpecKind::Axis
                 | SpecKind::Direction
@@ -604,7 +620,7 @@ impl SpecKind {
     }
 
     pub fn is_dimension(self) -> bool {
-        matches!(self, SpecKind::Length | SpecKind::Angle)
+        matches!(self, SpecKind::Length | SpecKind::Angle | SpecKind::Ratio)
     }
 
     /// A slot holding an unknown of the constraint's own.
@@ -630,6 +646,8 @@ impl SpecKind {
             SpecKind::Meshing => "meshing",
             SpecKind::Motion => "motion",
             SpecKind::Traced => "traced",
+            SpecKind::Solid => "solid",
+            SpecKind::Ratio => "ratio",
             SpecKind::Plane => "plane",
             SpecKind::Axis => "axis",
             SpecKind::Direction => "direction",
@@ -709,6 +727,7 @@ impl CKind {
             CKind::Reciprocal => "Reciprocal",
             CKind::ScrewAxis => "ScrewAxis",
             CKind::CarriedPoint => "CarriedPoint",
+            CKind::RegularWithin => "RegularWithin",
             CKind::PointOnTraced => "PointOnTraced",
             CKind::TracedTangentAt => "TracedTangentAt",
             CKind::TracedSurfaceTangentAt => "TracedSurfaceTangentAt",
@@ -940,6 +959,11 @@ impl CKind {
             CKind::ScrewAxis => &[("axis", S::Axis), ("motion", S::Motion), ("pitch", S::Param)],
             // the point carried, the point it is carried from, the motion and the roll
             CKind::CarriedPoint => &[("p", S::Point), ("q", S::Point), ("under", S::Motion), ("t", S::Param)],
+            // the flank, the blank it is cut within, the tool whose face its source is, and the
+            // least area factor (#345)
+            CKind::RegularWithin => &[
+                ("flank", S::Envelope), ("blank", S::Solid), ("by", S::Solid), ("margin", S::Ratio),
+            ],
             // the place on a traced body: its formals', a curve's second held at none (#326)
             CKind::PointOnTraced => &[("p", S::Point), ("traced", S::Traced), ("u", S::Param), ("s", S::Param)],
             CKind::TracedTangentAt | CKind::TracedSurfaceTangentAt | CKind::TracedNormalAt => &[
@@ -1147,6 +1171,8 @@ impl CKind {
             CKind::ScrewAxis => ("screw", Infix),
             // a point as the moving frame sees it (#326)
             CKind::CarriedPoint => ("coincident", Infix),
+            // a flank's regularity within a blank (#345): written `regular(…) within`
+            CKind::RegularWithin => ("regular", Infix),
             // a body traced in space (#326): a point on it, and at a point already on it a line
             // or a plane touching it, a line along a surface's normal and a circle osculating it
             CKind::PointOnTraced => ("coincident", Infix),
@@ -1439,7 +1465,17 @@ impl CKind {
                 | CKind::PointLine3
                 | CKind::ParallelDistance
                 | CKind::Angle3
+                // a flank's least area factor (#345): at least a margin, read as found
+                | CKind::RegularWithin
         )
+    }
+
+    /// Whether a bound of this kind chooses a root a solve can be steered to, by carrying a point
+    /// it measures across its edge (§9.6) — every boundable kind but a flank's regularity (#345),
+    /// a margin read at a point a search finds, which there is no root of the drawing to choose
+    /// by: it is a verdict, `BOUND_BROKEN` where it does not hold, and steers nothing.
+    pub fn steers(self) -> bool {
+        self.boundable() && self != CKind::RegularWithin
     }
 
     pub fn claimable(self) -> bool {
@@ -1487,7 +1523,8 @@ impl CKind {
     /// names it, and nothing may ask `kernel()` for it.
     pub fn built(self) -> bool {
         matches!(self, CKind::SplineLength | CKind::Stationary | CKind::CurveTouchesLine
-                       | CKind::Reciprocal | CKind::ScrewAxis | CKind::CarriedPoint)
+                       | CKind::Reciprocal | CKind::ScrewAxis | CKind::CarriedPoint
+                       | CKind::RegularWithin)
             || self.envelope_contact().is_some()
             || self.meshing_contact().is_some()
             || self.traced_contact().is_some()
@@ -1634,6 +1671,8 @@ impl CKind {
             | CKind::Reciprocal
             | CKind::ScrewAxis
             | CKind::CarriedPoint
+            // a flank's regularity (#345): no contact
+            | CKind::RegularWithin
             // a point on a traced body is a contact, as one on a curve is
             | CKind::PointOnTraced
             | CKind::PointAlongLine
@@ -1743,6 +1782,9 @@ impl CKind {
             | CKind::TracedPlaneAt
             | CKind::TracedCurvatureAt => {
                 panic!("a traced body's contact's kernel is built at its operands' widths")
+            }
+            CKind::RegularWithin => {
+                panic!("a flank's regularity is read by a kernel built at its operands' widths")
             }
             CKind::Reciprocal | CKind::ScrewAxis | CKind::CarriedPoint => {
                 panic!("a motion's twist is read by a kernel built at its operands' widths")
@@ -1917,6 +1959,7 @@ impl CKind {
             | CKind::Reciprocal
             | CKind::ScrewAxis
             | CKind::CarriedPoint
+            | CKind::RegularWithin
             // nor a contact with a traced body
             | CKind::PointOnTraced
             | CKind::TracedTangentAt
@@ -1996,6 +2039,7 @@ impl CKind {
                 | CKind::Reciprocal
                 | CKind::ScrewAxis
                 | CKind::CarriedPoint
+                | CKind::RegularWithin
                 | CKind::PointOnTraced
                 | CKind::TracedTangentAt
                 | CKind::TracedSurfaceTangentAt

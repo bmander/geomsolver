@@ -41,11 +41,51 @@ impl<'a> P<'a> {
                 let word = Name { text: w, span: self.here() };
                 self.i += 1;
                 let args = self.op_args(&word.text, Fixity::Infix)?;
+                self.connective(&word.text)?;
                 let right = self.refr()?;
                 (word, Fixity::Infix, vec![left, right], args)
             }
         };
         self.relation_tail(word, fixity, ops, args, lo)
+    }
+
+    /// `rate(x over s) perpendicular y` (#339 D3): a rate is read where a direction is, so the
+    /// words are the two that read one, and the rate always names the formal it runs over.
+    pub(super) fn rate_relation(&mut self) -> Option<Relation> {
+        let lo = self.here().lo as usize;
+        self.i += 1; // `rate`
+        if !self.want_p('(') {
+            return None;
+        }
+        let of = self.refr()?;
+        if !self.eat_word("over") {
+            self.fail("a rate names the formal it runs over: `rate(x over s)`");
+            return None;
+        }
+        let over = self.ident()?;
+        if !self.want_p(')') {
+            return None;
+        }
+        let Some(Tok::Ident(w)) = self.peek().cloned() else {
+            self.fail("a rate is related to something by a word: `rate(x over s) perpendicular y`");
+            return None;
+        };
+        if w != "perpendicular" && w != "parallel" {
+            self.fail(&format!("a rate stands where a direction is read: `rate(x over s) \
+                perpendicular y` or `parallel y`, not `{w}`"));
+            return None;
+        }
+        let word = Name { text: w, span: self.here() };
+        self.i += 1;
+        let args = self.op_args(&word.text, Fixity::Infix)?;
+        if !args.is_empty() {
+            self.fail(&format!("`{}` takes nothing in its parentheses here", word.text));
+            return None;
+        }
+        let right = self.refr()?;
+        let mut r = self.relation_tail(word, Fixity::Infix, vec![of, right], args, lo)?;
+        r.rate = Some(over);
+        Some(r)
     }
 
     /// Everything a relation statement may carry after its operands.
@@ -120,7 +160,21 @@ impl<'a> P<'a> {
             word: None,
             along: None,
             space: false,
+            initially: false,
+            rate: None,
         })
+    }
+
+    /// The word an operator is followed by before its second operand, where it takes one
+    /// (`crate::constraints::connective`): `flank regular(…) within blank`.
+    pub(super) fn connective(&mut self, word: &str) -> Option<()> {
+        let Some(c) = crate::constraints::connective(word) else { return Some(()) };
+        if self.peek_word(c) {
+            self.i += 1;
+            return Some(());
+        }
+        self.fail(&format!("`{word}` reads its second operand after `{c}`: `a {word}(…) {c} b`"));
+        None
     }
 
     /// Read optional operator arguments. Slot pins stay in parentheses; seeds come

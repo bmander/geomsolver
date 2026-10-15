@@ -1268,7 +1268,7 @@ k := Par(o).p over u in (-2mm, 2mm)
   carried); `std.OnHelix(std.top, r: 10mm, pitch: 5mm, turns: 4, s: s)`'s `n` stands square to the
   helix of radius `r`, for a coil's wire. A negative pitch winds left-handed
   (`rust/gcs-core/tests/helix.rs`). **A law is any expression in `s`** (0.103): draw the section once and carry it
-  whole (0.116), `tw := std.Twisted(st.n, twist: 90deg, reach: 10mm, s: s)` the point `tw.t`
+  whole (0.118), `tw := std.Twisted(st.n, twist: 90deg, reach: 10mm, s: s)` the point `tw.t`
   turned `twist · s`, then `sec := prof mapped(o -> st.n.origin, x -> tw.t) in st.n`, `o` and `x`
   the section's frame `reach` apart (a `reach` that runs with `s` scales it); for a section written
   as coordinates, `p scaled(du: 10, dv: 5, scale: 0.5, s: s) st.n` places a corner shrinking to half, `scaled_radius(r: 8mm, scale: 2, s: s) k` a radius
@@ -1298,11 +1298,21 @@ k := Par(o).p over u in (-2mm, 2mm)
   by `sec := std.Similar(prof, from, to, st.n, l, r)` — `from` and `to` carried to the station's
   points `l` and `r` where two rails cross it, the profile turned and scaled with them — or by
   `std.Affine(prof, from, to, third, st.n, a, b, c)` on three (`docs/lofts/l0/two_faces.sv`,
-  `rust/gcs-core/tests/correspondence.rs`). Or say the map itself: **a face carried whole** is
+  `rust/gcs-core/tests/correspondence.rs`). **A frame that does not twist** (0.116): along a
+  path that leaves its plane (a helix), `st := std.OnHelix(…)` turns with the path's Frenet frame;
+  `rm := std.Minimal(st.n, up: base.normal, s: s)` is the plane through the same place square to
+  the path whose axes turn only as the path makes them, so draw the section `in rm.f`. It states
+  its turn as a **rate**, `rate(f.u over s) perpendicular f.v`, and what holds where the family is
+  drawn (the middle of the interval) in `initially { f.u perpendicular up }`; the family
+  integrates it from there both ways (`rust/gcs-core/tests/rates.rs`). A rate is of an axis or a
+  point, against an axis, a line or a plane, by `perpendicular` or `parallel`, and names the
+  formal it runs over; give a word that states one the family's running number as that formal.
+  A profile drawn once may also be **carried whole** by the map itself,
   `sec := prof mapped(o -> st.n.origin, x -> t) in st.n` — every corner and edge of `prof` carried
   into `st.n` by the similarity taking `o` and `x` to the origin and `t`, the edges keeping their
   names (`sec.ab`), an arc or a circle its radius scaled (two pairs only); `mirror: true` gives a
-  handed pair's other hand, wound as its source (`lofts/tapered.sv`, `hub_motor/motor/cover.sv`). A component is closed over its arguments, so the station's `up` (`std.z`) is passed in as an
+  handed pair's other hand, wound as its source (`lofts/tapered.sv`, `hub_motor/motor/cover.sv`).
+  A component is closed over its arguments, so the station's `up` (`std.z`) is passed in as an
   `axis` formal. Every station inside the interval must solve to DOF 0 with the section's shape
   intact; an end may shrink to a point (a pyramid's apex). Caps `start` and `end`, walls named by
   the section's edges (`body.sec.ab`). Seed the section where it belongs at the middle of the
@@ -1678,6 +1688,23 @@ R coincident(t == 15deg, lag == 0.047) bearing        // the transmission error 
 
 The relief runs along the flank's normal as the solve reads its source (for a cone, toward its
 axis); a negative curvature relieves the other way. A traced flank is not eased.
+
+**No undercut** (0.115). A generated flank folds where the tool's contact runs back on itself.
+`regular` reads the flank's least **area factor**, how much it scales the tool's area: 1 rolling
+without sliding, 0 at a fold. It is read over the part the tool cuts within the blank. Name the tool
+whose face the source is (`by:`), then the blank after `within`. Both are region solids:
+
+```
+pinion_flank := envelope(mill.inner_flank, under: mesh, from: -60deg, to: 60deg)
+pinion_flank regular(by: gear_tooth.crown) within pinion_blank.material   // no fold: >= 0
+pinion_flank regular(>= 0.3, by: gear_tooth.crown) within pinion_blank.material
+pinion_flank regular(0.3, by: gear_tooth.crown) within pinion_blank.material  // solves a setting
+```
+
+With no number, or a `>=`, it is a check the solve reports broken (`bound broken`) and does not
+steer by. A number stated outright is an equation, so a cutter's pressure shift left unknown
+solves to where the margin binds. The source must be the tool's face itself, not grown by a
+backlash, and the blank is read as balls, cylinders, cones and half-spaces.
 
 **Spatial geometry read after the solve** adds no unknown and has no 2D glyph; each certifies only
 local evaluations ([analytic face boundaries](analytic-face-boundaries.md); the spiral bevel's

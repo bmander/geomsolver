@@ -72,6 +72,7 @@ pub use field::BoundaryComponent;
 mod raycast;
 mod section;
 pub(crate) mod family;
+pub(crate) mod rated;
 pub(crate) mod surface;
 mod sweep_contacts;
 pub mod admission;

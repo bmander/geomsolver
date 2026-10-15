@@ -434,6 +434,7 @@ impl<'a> P<'a> {
             // chain of one joint, which is the unification that makes a lone statement
             // and a chain one grammar rather than two
             let args = self.op_args(&w, Fixity::Infix)?;
+            self.connective(&w)?;
             words.push((w, args, Span::new(lo, self.prev_hi())));
             *hi = self.prev_hi();
             // the marker may stand on either side of the words, or both — `A -> equal -> B`
@@ -830,6 +831,8 @@ impl<'a> P<'a> {
                 word: None,
                 along: None,
                 space: false,
+                initially: false,
+                rate: None,
             };
             let id = self.mint_stmt(next_id, sp)?;
             out.push(Stmt {
@@ -1100,6 +1103,8 @@ impl<'a> P<'a> {
                 word: None,
                 along: None,
                 space: false,
+                initially: false,
+                rate: None,
             })
         };
         let end = |w: &str| {

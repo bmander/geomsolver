@@ -1,4 +1,4 @@
-//! **A face carried whole** (#357, Solvent §6.8 [0.116]): `sec := prof mapped(from -> a, to ->
+//! **A face carried whole** (#357, Solvent §6.8 [0.118]): `sec := prof mapped(from -> a, to ->
 //! b) in n` is the face `prof`, its loop walked as a block walks it (`resolve::face_walk`), each
 //! corner carried by the map as a point is (`q mapped(…) p`, `CKind::Mapped`) and each edge
 //! rebuilt between the images in the plane `n`.  Built here, where the loop can be walked, as the
@@ -157,6 +157,8 @@ impl Walk<'_> {
             word: None,
             along: None,
             space: false,
+            initially: false,
+            rate: None,
         };
         let local = |text: &str| Ref::dotted(text, at);
         let key = |text: &str| DeclName::Key(Name { text: text.to_string(), span: at });

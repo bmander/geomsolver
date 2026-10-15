@@ -17,6 +17,7 @@ Read them in this order:
 | `tapered.sv` | **A scale is a law too.** A square shrinking to half as it turns, a disc shrinking to a cone and a disc swelling on a sine, each drawn once and carried by the similarity that scales it, a round's radius with it. Frusta, and an integral. |
 | `thread.sv` | **A section carried along a screw.** A square thread drawn through the axis and an auger's flight drawn square to it, on `std.Helix`. Pappus and Cavalieri. |
 | `spring.sv` | **A section square to a helix.** A round wire on `std.OnHelix`, leaned back by the lead angle at every station. Area times the helix's length. |
+| `ribbon.sv` | **A frame that does not twist.** A flat ribbon on a helix in `std.OnHelix`'s plane (Frenet's frame, facing the axis) and in `std.Minimal`'s, the rotation-minimising frame stated as a rate and integrated from where the family is drawn: it falls behind Frenet's by the torsion. Area times the helix's length. |
 | `bottle.sv` | **Several sections, on rails.** A bottle's body, shoulder and neck joined ruled (a chain of lines through the rims, an edge at the shoulder) and smooth (the spline through the rims, square to the base and the neck). |
 | `squares.sv` | **A loft with no guide.** Three squares in space, each corner on a rail of its own, the station the plane through three rails (`std.Across`). Prismatoids. |
 | `two_faces.sv` | **Two sketches drawn apart.** A square and a diamond in their own planes joined corner to corner by `std.Ruled`, and again with the diamond's walk started at its second corner (a connector). Prismatoids. |
@@ -34,7 +35,8 @@ What the words are (all in `std`):
 - **Stations** — a plane `n` square to a path where its parameter is `s`, its `v` along `up`:
   `OnLine`, `OnArc`, `OnSpline`, and `On` over any path, a named chain of lines and arcs among
   them; `Helix(base, pitch:, turns:, s:)` (`n` carried by a screw, `axial` through its axis) and
-  `OnHelix`; `Across(a, b, c, s:)`, the plane through three rails at `s`.
+  `OnHelix`; `Across(a, b, c, s:)`, the plane through three rails at `s`; `Minimal(n, up:, s:)`,
+  the rotation-minimising frame of a station `n`, integrated along the running number.
 - **Laws** — a section drawn once is carried whole by the map taking its frame to the
   station's (`sec := prof mapped(o -> st.n.origin, x -> tw.t) in st.n`, #357), the law in where
   its second point stands — `Twisted(n, twist:, reach:, s:)`'s point `t`, turned `twist · s` —

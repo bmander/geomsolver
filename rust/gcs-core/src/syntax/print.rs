@@ -696,10 +696,27 @@ pub(crate) fn hint_clause(d: &Decl, seed: &[f64]) -> String {
 }
 
 fn write_relation(out: &mut String, r: &Relation) {
+    // a row of the home alone is written in a block of its own (#339 D3)
+    if r.initially {
+        out.push_str("initially { ");
+        write_relation(out, &Relation { initially: false, ..r.clone() });
+        out.push_str(" }");
+        return;
+    }
     if r.claim {
         out.push_str("claim ");
     }
     match &r.form {
+        // a rate's operand is written as the rate it is (#339 D3)
+        super::RelationForm::Written(w) if let Some(over) = &r.rate => {
+            out.push_str("rate(");
+            if let Some(x) = w.ops.first() {
+                write_ref(out, x);
+            }
+            out.push_str(&format!(" over {}) ", over.text));
+            let rest = w.ops.get(1..).unwrap_or_default().to_vec();
+            write_written(out, &Written { ops: rest, fixity: Fixity::Prefix, ..w.clone() });
+        }
         super::RelationForm::Written(w) => write_written(out, w),
         super::RelationForm::Canonical { kind, args, bound } => {
             let hi = bound.as_ref().and_then(|(_, hi)| hi.as_ref());
@@ -804,6 +821,11 @@ fn write_written(out: &mut String, w: &Written) {
     if !parts.is_empty() {
         out.push_str(&format!("({})", parts.join(", ")));
     }
+    let infix = w.fixity == Fixity::Infix;
+    if let Some(c) = crate::constraints::connective(&w.word.text).filter(|_| infix) {
+        out.push(' ');
+        out.push_str(c);
+    }
     let last = if w.fixity == Fixity::Infix { w.ops.get(1) } else { w.ops.first() };
     if let Some(r) = last {
         out.push(' ');
@@ -863,6 +885,9 @@ pub fn operator_text(kind: CKind, args: &[Option<Arg>]) -> String {
         // unlabelled it would read as `symmetry`'s third entity
         if sk.takes_ref() && *name == "at" {
             parens.push(format!("at: {}", write_arg(name, *sk, a)));
+        } else if sk.takes_ref() && *name == "by" {
+            // and the tool a flank is cut by (#345)
+            parens.push(format!("by: {}", write_arg(name, *sk, a)));
         } else if sk.takes_ref() {
             ents.push(write_arg(name, *sk, a));
         } else if sk.is_param() {
@@ -899,6 +924,10 @@ pub fn operator_text(kind: CKind, args: &[Option<Arg>]) -> String {
     out.push_str(word);
     if !parens.is_empty() {
         out.push_str(&format!("({})", parens.join(", ")));
+    }
+    if let Some(c) = crate::constraints::connective(word).filter(|_| fixity == Fixity::Infix) {
+        out.push(' ');
+        out.push_str(c);
     }
     for e in &ents {
         out.push(' ');

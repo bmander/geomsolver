@@ -887,6 +887,18 @@ impl<'a> Walk<'a> {
             self.settle_arg(a, vals, scope);
         }
         self.held.on_leg = None;
+        // a rate is along the running number its formal is given (#339 D3); a formal given a
+        // number is a drawn instance at its home, where no rate is a row
+        if let Some(over) = r2.rate.take() {
+            match self.rate_over(&over.text, vals) {
+                Ok(Some(text)) => r2.rate = Some(crate::syntax::Name { text, span: over.span }),
+                Ok(None) => return None,
+                Err(m) => {
+                    self.err(Code::E040, over.span, m);
+                    return None;
+                }
+            }
+        }
         // the enclosing instances' classes, over the statement's own: a ghosted part's
         // dimensions are the ghost's (`display: geometry`) as its lines are
         for c in &scope.stamps.class.0 {
@@ -895,6 +907,22 @@ impl<'a> Walk<'a> {
             }
         }
         Some(r2)
+    }
+
+    /// The running number `rate(x over s)`'s formal `s` is given (#339 D3): `None` where it is
+    /// given a number, the home of a drawn instance; refused where it is anything but a face
+    /// family's running number or a multiple of it.
+    fn rate_over(&self, s: &str, vals: &BTreeMap<String, Aff>) -> Result<Option<String>, String> {
+        let Some(a) = vals.get(s) else {
+            return Err(format!("`{s}` is no number of this body: a rate runs over a formal the \
+                body is given its running number in, `rate(x over s)`"));
+        };
+        match &a.free {
+            None => Ok(None),
+            Some(u) if self.held.names.contains_key(u) && a.m != 0.0 => Ok(Some(u.clone())),
+            Some(_) => Err(format!("`{s}` is an unknown of the drawing: a rate runs along a face \
+                family's running number, `solid(I(…).f over s in (a, b))`")),
+        }
     }
 
     /// The leg of a family over a chain whose link relation `r`, written in a leg's station,
@@ -1283,7 +1311,8 @@ impl Walk<'_> {
         for i in 0..self.out.len() {
             let (st, _, sc) = &self.out[i];
             let StmtKind::Relation(r) = &st.kind else { continue };
-            if r.claim || r.along.is_some() || r.space || sc.block.ring.is_some() {
+            if r.claim || r.initially || r.rate.is_some() || r.along.is_some() || r.space
+                || sc.block.ring.is_some() {
                 continue;
             }
             let Some(w) = r.form.written() else { continue };
