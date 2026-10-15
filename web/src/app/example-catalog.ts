@@ -107,8 +107,10 @@ const projects: Example[] = [{
     + 'dragged by a string (the tractrix), a railway transition whose curvature grows with its '
     + 'length (the clothoid) eased into its bend, a hanging chain shot to its far end beside the '
     + 'free curve that hangs the same, a dog chasing a hare until it catches it, and a filament '
-    + 'wound on a cone. Each body states a rate, `rate(p over s)`, and is integrated from where it '
-    + 'is drawn; each curve is a closed form its file gives. The README says what each shows.',
+    + 'wound on a cone — and a surface, an ellipse\'s front moving inward square to itself until '
+    + 'it folds, marched by the method of lines. Each body states a rate, `rate(p over s)`, and is '
+    + 'integrated from where it is drawn; each is a closed form its file gives. The README says '
+    + 'what each shows.',
   target: { kind: 'directory', path: 'rates', entry: 'tractrix.sv' },
 }, {
   label: 'Connecting rod, forged · rounded in Solvent', key: 'conrod',

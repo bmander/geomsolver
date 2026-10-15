@@ -44,6 +44,7 @@ pub mod json;
 pub mod kernels;
 pub mod library;
 pub mod linalg;
+pub mod lines;
 pub mod locus;
 pub mod lowering;
 pub mod measure;

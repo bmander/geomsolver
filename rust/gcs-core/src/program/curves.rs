@@ -216,7 +216,7 @@ fn compile_trace(
         }
     }
     let at = low.n_outer + low.n_q + low.w.len();
-    place_rates(low.rates.iter_mut().map(|r| &mut r.cols), at);
+    place_rates(low.rates.iter_mut().map(|r| &mut r.cols), at, low.n_q);
     if !low.rates.is_empty() {
         low.short(span)?;
     }
@@ -256,6 +256,9 @@ pub(super) enum Target {
 /// Where a rate's slots stand while the block is lowered: past every slot, since the derived
 /// values are not all counted yet (`Lowering::place_rates` puts them past `w`).
 pub(super) const RATE_BASE: usize = 1 << 20;
+/// Where a rate along a second, sampled formal stands while a body is lowered (#339 D4): past
+/// every rate along the first.
+pub(super) const SAMPLED_BASE: usize = 1 << 21;
 
 /// A relation that reads a rate, checked (#339 D2): one rate, along the formal the trace runs
 /// over, and not in `initially`.  The relation, the rated operand and whether the rate stands
@@ -290,17 +293,19 @@ pub(super) fn rate_operand(
 
 /// A relation that reads a rate, rewritten over the scratch line `line` from an origin to the
 /// rate (`{line}.o`, `{line}.t`): the line where a direction is read, its two points where the
-/// rate stands alone before `distance(k, along: l)`.
+/// rate stands alone before `distance(k, along: l)`.  Each of `lines` is the operand a rate is
+/// of, its scratch line and its span (over two formals a relation may read two, #339 D4).
 pub(super) fn rate_rewritten(
-    mut r: crate::ir::Relation, line: &str, span: Span, unary: bool,
+    mut r: crate::ir::Relation, lines: &[(usize, String, Span)], unary: bool,
 ) -> crate::ir::Relation {
-    let at = |n: String| crate::syntax::Ref { span, ..crate::syntax::Ref::new(n) };
+    let at = |n: String, span: Span| crate::syntax::Ref { span, ..crate::syntax::Ref::new(n) };
     if let Some(w) = r.form.written_mut() {
-        let k = w.rates[0].op;
-        if unary {
-            w.ops = vec![at(format!("{line}.o")), at(format!("{line}.t"))];
-        } else {
-            w.ops[k] = at(line.to_string());
+        for (k, line, span) in lines {
+            if unary {
+                w.ops = vec![at(format!("{line}.o"), *span), at(format!("{line}.t"), *span)];
+            } else {
+                w.ops[*k] = at(line.clone(), *span);
+            }
         }
         w.rates.clear();
     }
@@ -335,10 +340,13 @@ pub(super) fn reach<'r>(rows: impl Iterator<Item = (usize, &'r [u32])>, from: us
 }
 
 /// The rates' slots placed at `at`, past every derived value, now that those are counted: each
-/// column at `RATE_BASE` or past it is a rate's.
-pub(super) fn place_rates<'r>(cols: impl Iterator<Item = &'r mut Vec<u32>>, at: usize) {
+/// column at `RATE_BASE` or past it is a rate's, and at `SAMPLED_BASE` or past it a rate along
+/// a second formal's, past the `n_q` along the first (#339 D4).
+pub(super) fn place_rates<'r>(cols: impl Iterator<Item = &'r mut Vec<u32>>, at: usize, n_q: usize) {
     for c in cols.flatten() {
-        if *c as usize >= RATE_BASE {
+        if *c as usize >= SAMPLED_BASE {
+            *c = (at + n_q + *c as usize - SAMPLED_BASE) as u32;
+        } else if *c as usize >= RATE_BASE {
             *c = (at + *c as usize - RATE_BASE) as u32;
         }
     }
@@ -527,7 +535,8 @@ impl<'v> Lowering<'v> {
                 body integrates", self.swept, e.kind.a())));
         }
         let line = self.rate_line(e.i(), rf.span)?;
-        Ok(rate_rewritten(r, &line, rf.span, unary))
+        let k = r.form.written().map_or(0, |w| w.rates[0].op);
+        Ok(rate_rewritten(r, &[(k, line, rf.span)], unary))
     }
 
     /// The scratch line from the origin to point `p`'s rate, made once a point, by name.
