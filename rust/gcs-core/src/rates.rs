@@ -15,11 +15,13 @@
 //!   pose on the sheet is the initial value, and its coordinates are columns of the curve.
 //!
 //! **The rates at a place** are one linear system: the algebraic rows differentiated along the
-//! formal, `J_q q′ + ∂r/∂u = 0`, and the rate rows, square together.  Its matrix `M = [J_q;
-//! ∂R/∂q′]` is the index check, a rank question read at every evaluation; a place where it loses
-//! rank is refused there (`ode::Refusal::Undefined`).  A rate row is solved by Newton from the
-//! rate before it (the flow's branch), which takes one step for the rows the language admits —
-//! an incidence or a component along a drawn direction, each linear in the rate.
+//! formal, `J_q q′ + ∂r/∂u = 0`, and the rate rows — square in a plane; in space, where a
+//! `parallel` is two rows and the body's own rows may imply one, at least square and of full
+//! rank, its rows past the count agreeing on the body's rows.  Its matrix `M = [J_q; ∂R/∂q′]` is
+//! the index check, a rank question read at every evaluation; a place where it loses rank is
+//! refused there (`ode::Refusal::Undefined`).  A rate row is solved by Newton from the rate before
+//! it (the flow's branch), which takes one step for the rows the language admits — an incidence
+//! or a component along a drawn direction, each linear in the rate.
 //!
 //! **The instance at `u` is the flow integrated from the home** (`ode::march`), with its
 //! sensitivities to every column through the same substeps (the variational equations).  The
@@ -31,6 +33,10 @@
 //! **The curve's higher orders** are the solution's Taylor coefficients, each one more solve with
 //! `M`: along `q(t) = Σ q_k t^k` the algebraic rows' `t^k` coefficient is `J_q q_k + R_k` and the
 //! rate rows' `t^{k−1}` is `k ∂R/∂q′ q_k + S_{k−1}`, `R_k`, `S_{k−1}` read with `q_k` at zero.
+//!
+//! **The home** is a drawn instance's pose — projected onto the body's algebraic rows, so a solve
+//! from a rough start integrates no frame the body could not be (`Body::project`) — or, written in
+//! place, the algebraic and initial rows solved from the seeds.
 //!
 //! What this certifies is the flow from the home: no branch is chosen anywhere else, so the
 //! march needs no `continues` check.
@@ -46,8 +52,8 @@ pub const MAX_Q: usize = 48;
 /// The most columns one row reads.
 const COLS: usize = 32;
 
-/// Below this pivot, of the rate system with each row scaled to its largest entry, the rates
-/// have lost rank and are refused there.
+/// Below this pivot, of the rate system with each row scaled to unit length, the rates have lost
+/// rank and are refused there.
 const RANK: f64 = 1e-10;
 /// Newton on the rate rows from the rate before: one step for rows linear in the rate.
 const RATE_NEWTON: usize = 8;
@@ -90,8 +96,8 @@ pub fn n_res(rows: &[Row]) -> usize {
     rows.iter().map(|r| KERNELS[r.kid].n_res).sum()
 }
 
-/// The rate system at a place: the rates, and `M` factorised with its rows scaled to their
-/// largest entries — by LU where it is square, by Householder QR where it has more rows than
+/// The rate system at a place: the rates, and `M` factorised with its rows scaled to unit
+/// length — by LU where it is square, by Householder QR where it has more rows than
 /// unknowns, its rank the index check either way.
 struct Solved {
     q1: Vec<f64>,
@@ -150,8 +156,9 @@ impl<'a> Body<'a> {
         self.n_theta - if self.pose { self.n_q } else { 0 }
     }
 
-    /// Whether the rows describe a body: every column in the table, the algebraic and initial
-    /// rows reading no rate, and the counts square.
+    /// Whether the rows describe a body: every column in the table, every row within the widths
+    /// the evaluation's buffers hold, the algebraic and initial rows reading no rate, and the
+    /// rows at least as many as the rates (and, written in place, as the coordinates at home).
     pub fn check(&self) -> Result<(), String> {
         let width = self.r0() + self.n_q;
         let n_q = self.n_q;
@@ -287,7 +294,12 @@ impl<'a> Body<'a> {
 
     /// The rates at `(outer, q)`, by Newton on the rate rows from `start` — `None` where the
     /// system loses rank or the rows will not hold.
-    fn rates(&self, outer: &[f64], q: &[f64], start: &[f64]) -> Option<Solved> {
+    ///
+    /// Rows beyond the rates' count (in space, a `parallel`'s second row, which the body's own
+    /// rows imply) agree where the body's rows hold; `strict` asks that they do, as they must
+    /// at the home and at a reading, and between, where an integrator's substep stands off the
+    /// rows by its own error, the rates are their least squares.
+    fn rates(&self, outer: &[f64], q: &[f64], start: &[f64], strict: bool) -> Option<Solved> {
         let n = self.n_q;
         // the algebraic rows' first order along the formal with `q` standing: `∂r/∂u`, the
         // tapes' own rates in it
@@ -332,7 +344,7 @@ impl<'a> Body<'a> {
                 // more rows than rates: what the least squares leaves over is how far they
                 // disagree, which rows that hold leave at rounding
                 let off = g[n..].iter().fold(0.0f64, |a, x| a.max(x.abs()));
-                if off > 1e-9 * big {
+                if strict && off > 1e-8 * big {
                     return None;
                 }
                 solved = Some(Solved { q1: q1.clone(), ..s });
@@ -359,12 +371,19 @@ impl<'a> Body<'a> {
         };
         let mut z = base.clone();
         for zc in 0..width {
+            // a column nothing the flow reads moves no rate
+            if zc >= n && !self.flow_reads(1 + zc - n) {
+                for i in 0..n {
+                    out[i * width + zc] = 0.0;
+                }
+                continue;
+            }
             for (side, c) in [1.0, -1.0].into_iter().enumerate() {
                 if zc < n {
                     z[self.n_outer + zc] = Jet::from(&[q[zc], s.q1[zc] + c]);
                 } else {
-                    let Some(t) = self.jet_table(&self.outer_jets(outer, Some((1 + zc - n, c))), &qj, &q1j)
-                    else { return false };
+                    let oj = self.outer_jets(outer, Some((1 + zc - n, c)));
+                    let Some(t) = self.jet_table(&oj, &qj, &q1j) else { return false };
                     z = t;
                 }
                 if !Self::jets(&self.alg, &z, &mut alg) || !Self::jets(&self.rate, &z, &mut rate) {
@@ -384,6 +403,13 @@ impl<'a> Body<'a> {
             }
         }
         true
+    }
+
+    /// Whether the flow reads outer variable `c`: an algebraic or a rate row names it, or a
+    /// tape does.
+    fn flow_reads(&self, c: usize) -> bool {
+        self.alg.iter().chain(&self.rate).any(|r| r.cols.contains(&c))
+            || self.w.iter().any(|t| crate::tape::reads_var(t, c))
     }
 
     /// The Taylor coefficients `q_2`, `q_3` of the solution through `q` at `outer`, the rates
@@ -421,8 +447,9 @@ impl<'a> Body<'a> {
     fn home(&self, outer: &[f64]) -> Option<(Vec<f64>, Vec<f64>)> {
         let n = self.n_q;
         let rows: Vec<Row> = self.alg.iter().chain(&self.init).cloned().collect();
+        let at = &outer[..self.n_outer];
         let seed: Option<Vec<f64>> =
-            self.seeds.iter().map(|t| crate::tape::eval_num::<f64>(t, &outer[..self.n_outer])).collect();
+            self.seeds.iter().map(|t| crate::tape::eval_num::<f64>(t, at)).collect();
         let seed = seed?;
         let mut q = self.newton(&rows, outer, &seed);
         if q.is_none() {
@@ -430,7 +457,8 @@ impl<'a> Body<'a> {
                 .fold(1.0f64, |m, &x| m.max(x.abs()));
             let mut rng = crate::rng::Rng::new(0x7a7e);
             for _ in 0..RESTARTS {
-                let start: Vec<f64> = seed.iter().map(|&x| x + rng.uniform(-scale, scale)).collect();
+                let start: Vec<f64> =
+                    seed.iter().map(|&x| x + rng.uniform(-scale, scale)).collect();
                 q = self.newton(&rows, outer, &start);
                 if q.is_some() {
                     break;
@@ -562,7 +590,6 @@ impl<'a> Body<'a> {
                 lam[c] += step[n + c];
             }
             if !step.iter().all(|x| x.is_finite()) || it + 1 == PROJECT_NEWTON {
-                if std::env::var("RATES_DEBUG").is_ok() { eprintln!("project failed: f {:?} q {:?}", f, q); }
                 return None;
             }
         }
@@ -694,7 +721,7 @@ impl<'a> Body<'a> {
     }
 }
 
-/// `M` (`rows × n`, `rows ≥ n`) factorised with each row scaled to its largest entry — `None`
+/// `M` (`rows × n`, `rows ≥ n`) factorised with each row scaled to unit length — `None`
 /// where it has lost rank: the index check.  A row that is all zero says nothing, and is left so.
 fn factor(rows: usize, n: usize, mut m: Vec<f64>, q1: Vec<f64>) -> Option<Solved> {
     if rows < n {
@@ -702,7 +729,10 @@ fn factor(rows: usize, n: usize, mut m: Vec<f64>, q1: Vec<f64>) -> Option<Solved
     }
     let mut scale = vec![0.0; rows];
     for i in 0..rows {
-        let big = m[i * n..(i + 1) * n].iter().fold(0.0f64, |a, x| a.max(x.abs()));
+        // each row's length, which is smooth in the state: where rows beyond the rates' count
+        // disagree (off the body's rows, at a substep) the least squares weighs them by it, and
+        // a weight with a kink would cost the extrapolation its order
+        let big = m[i * n..(i + 1) * n].iter().map(|x| x * x).sum::<f64>().sqrt();
         if !big.is_finite() {
             return None;
         }
@@ -774,7 +804,7 @@ impl ode::Rate for Flow<'_, '_> {
         let (n, nf) = (self.body.n_q, self.body.n_free());
         self.outer[0] = u;
         self.outer[1..1 + nf].copy_from_slice(&y[n..n + nf]);
-        let Some(s) = self.body.rates(&self.outer, &y[..n], &self.branch.0[..n]) else {
+        let Some(s) = self.body.rates(&self.outer, &y[..n], &self.branch.0[..n], false) else {
             return false;
         };
         f[..n].copy_from_slice(&s.q1);
@@ -813,11 +843,99 @@ pub struct Reading {
     pub dd2: Vec<[f64; 3]>,
 }
 
-/// One march of the body from its home: the columns it was made at, and the path.
+/// One march of the body from its home: the columns it was made at, the path, and — where the
+/// march was refused short of where it was asked to run — the refusal, the path then reaching
+/// the place it was refused at.
 pub struct March {
     pub outer: Vec<f64>,
     pub home: f64,
     pub path: ode::Path<Branch>,
+    pub refused: Option<ode::Refusal>,
+}
+
+impl March {
+    /// Whether the march reaches `u`.
+    pub fn reaches(&self, u: f64) -> bool {
+        let last = self.path.nodes.last().map_or(self.home, |n| n.u);
+        let (to, reached) = (u - self.home, last - self.home);
+        to * reached >= 0.0 && to.abs() <= reached.abs()
+    }
+}
+
+/// How many marches are remembered at once: a cache, cleared past its bound.
+const MARCHES_MAX: usize = 32;
+
+thread_local! {
+    /// The marches the kernel and drawing paths read, by what each is a function of: the body's
+    /// encoding, the columns and numbers it was made at, its home and how far it runs — so a
+    /// remembered one is the march made again.  By content, not by where the encoding lives:
+    /// every contact on a curve carries a copy, and they read one march.
+    static MARCHES: std::cell::RefCell<Vec<(Vec<u64>, Marched)>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// A march as remembered: made, or refused (`None` where it could not start).
+type Marched = Result<std::rc::Rc<March>, Option<ode::Refusal>>;
+
+/// Where a march to read `u` at runs to, from `home`: the end of the curve's `domain` on `u`'s
+/// side, so that every place within the domain is read off one march — the march a function of
+/// the columns alone, and a reading a function of its place.  Past the end, the end's distance
+/// doubled until it covers `u`, so a solve's trial places there share a march too.  Without a
+/// domain, `u` itself.
+pub fn reach(home: f64, u: f64, domain: Option<(f64, f64)>) -> f64 {
+    let Some((a, b)) = domain else { return u };
+    let (lo, hi) = (a.min(b), a.max(b));
+    let past = |end: f64| {
+        let mut d = (end - home).abs().max(1e-9 * (1.0 + home.abs()));
+        while d < (u - home).abs() {
+            d *= 2.0;
+        }
+        home + d * (u - home).signum()
+    };
+    if u > home {
+        if u <= hi { hi } else { past(hi) }
+    } else if u < home {
+        if u >= lo { lo } else { past(lo) }
+    } else {
+        home
+    }
+}
+
+/// The march of `body` (encoded as `flat`) from `home` at the columns of `outer` to `to`,
+/// remembered.  One refused keeps the road to where it was refused, read as far as it reaches.
+pub fn remembered(body: &Body, flat: &[f64], outer: &[f64], home: f64, to: f64) -> Marched {
+    let mut key: Vec<u64> = Vec::with_capacity(flat.len() + body.n_outer + 2);
+    key.extend(flat.iter().map(|x| x.to_bits()));
+    key.extend(outer[1..body.n_outer].iter().map(|x| x.to_bits()));
+    key.extend([home.to_bits(), to.to_bits()]);
+    let seen = MARCHES.with(|c| c.borrow().iter().find(|(k, _)| *k == key).map(|e| e.1.clone()));
+    if let Some(m) = seen {
+        return m;
+    }
+    // an encoding is the core's own, but a march is no place to find out it is not
+    if body.check().is_err() || outer.len() < body.n_outer {
+        return Err(None);
+    }
+    let mut at = outer[..body.n_outer].to_vec();
+    at[0] = home;
+    let first = body.march(&at, to - home);
+    let m = match first {
+        Err(Some(refusal)) if refusal.at() != home => body.march(&at, refusal.at() - home)
+            .map(|mut m| {
+                m.refused = Some(refusal);
+                m
+            })
+            .map_err(|_| Some(refusal)),
+        other => other,
+    }.map(std::rc::Rc::new);
+    MARCHES.with(|c| {
+        let mut c = c.borrow_mut();
+        if c.len() >= MARCHES_MAX {
+            c.clear();
+        }
+        c.push((key, m.clone()));
+    });
+    m
 }
 
 impl<'a> Body<'a> {
@@ -826,29 +944,37 @@ impl<'a> Body<'a> {
     pub fn march(&self, outer: &[f64], span: f64) -> Result<March, Option<ode::Refusal>> {
         let y0 = self.start(outer).ok_or(None)?;
         let (n, nf) = (self.n_q, self.n_free());
-        let mut flow = Flow { body: self, outer: outer[..self.n_outer].to_vec(), branch: Branch([0.0; MAX_Q]) };
+        let branch = Branch([0.0; MAX_Q]);
+        let mut flow = Flow { body: self, outer: outer[..self.n_outer].to_vec(), branch };
         // the rates at the home start the branch
-        let s = self.rates(outer, &y0[..n], &[0.0; MAX_Q][..n]).ok_or(Some(ode::Refusal::Undefined { at: outer[0] }))?;
+        let s = self.rates(outer, &y0[..n], &[0.0; MAX_Q][..n], true)
+            .ok_or(Some(ode::Refusal::Undefined { at: outer[0] }))?;
         flow.branch.0[..n].copy_from_slice(&s.q1);
         let size = y0[..n + nf].iter().fold(1.0f64, |a, x| a.max(x.abs()));
         let scale = vec![size; n + nf];
-        let path = ode::march(&mut flow, outer[0], &y0, self.n_theta, span, &scale, &ode::Settings::default())
+        let settings = ode::Settings::default();
+        let path = ode::march(&mut flow, outer[0], &y0, self.n_theta, span, &scale, &settings)
             .map_err(Some)?;
-        Ok(March { outer: outer[..self.n_outer].to_vec(), home: outer[0], path })
+        Ok(March { outer: outer[..self.n_outer].to_vec(), home: outer[0], path, refused: None })
     }
 
-    /// The body at `u` along a march: its reading to `need` orders (1 to 3), with the
-    /// sensitivities of the derivatives along the formal where `frame`.  `None` where it cannot
-    /// be had there.
-    pub fn read(&self, m: &March, u: f64, need: u8, frame: bool) -> Option<Reading> {
+    /// The body at `u` along a march: its reading to `need` orders (1 to 3), with its
+    /// sensitivities to the columns where `sens` (else zero) and those of its derivatives along
+    /// the formal too where `frame`.  `None` where it cannot be had there.
+    pub fn read(&self, m: &March, u: f64, need: u8, sens: bool, frame: bool) -> Option<Reading> {
         let (n, nf, nt) = (self.n_q, self.n_free(), self.n_theta);
+        if !m.reaches(u) {
+            return None;
+        }
+        // the sensitivities ride the step to `u` only where a gradient is asked for
+        let sens = sens || frame;
         let mut flow = Flow { body: self, outer: m.outer.clone(), branch: Branch([0.0; MAX_Q]) };
-        let node = m.path.at(&mut flow, u, true).ok()?;
+        let node = m.path.at(&mut flow, u, sens).ok()?;
         let y = &node.y;
         let mut outer = m.outer.clone();
         outer[0] = u;
         outer[1..1 + nf].copy_from_slice(&y[n..n + nf]);
-        let s = self.rates(&outer, &y[..n], &node.branch.0[..n])?;
+        let s = self.rates(&outer, &y[..n], &node.branch.0[..n], true)?;
         let upto = need.clamp(1, 3) as usize;
         let coef = self.higher(&outer, &y[..n], &s, upto)?;
         let (t, dim) = (self.traced, self.dim);
@@ -859,8 +985,9 @@ impl<'a> Body<'a> {
                 d[k][a] = c[t + a] * fact[k];
             }
         }
-        let phi = &y[n + nf..];
         let w = n + nf;
+        let zero = vec![0.0; w * nt];
+        let phi = if sens { &y[w..] } else { &zero[..] };
         let dc: Vec<[f64; 3]> = (0..nt)
             .map(|j| std::array::from_fn(|a| if a < dim { phi[(t + a) * nt + j] } else { 0.0 }))
             .collect();
@@ -888,7 +1015,7 @@ impl<'a> Body<'a> {
                     let yp: Vec<f64> = (0..w).map(|k| y[k] + h * phi[k * nt + j]).collect();
                     let mut op = outer.clone();
                     op[1..1 + nf].copy_from_slice(&yp[n..n + nf]);
-                    let sp = self.rates(&op, &yp[..n], &s.q1)?;
+                    let sp = self.rates(&op, &yp[..n], &s.q1, false)?;
                     let cp = self.higher(&op, &yp[..n], &sp, 2)?;
                     dd2.push(std::array::from_fn(|a| if a < dim {
                         (cp[2][t + a] - coef[2][t + a]) * 2.0 / h

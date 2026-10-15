@@ -825,6 +825,50 @@ component Helix(o: point, x: line, y: line, z: line, r: Length, lead: Length, u:
 k := Helix(o, xl, yl, zl, r: 5mm, lead: 3mm).p over u in (0deg, 720deg)
 ```
 
+**Rates [0.115].** A body may say how a point *moves* as the formal runs: `rate(p over s)` is
+`p`'s velocity, and it stands where a direction is read — `rate(p over s) parallel tl`,
+`perpendicular`, a directed `angle`, and alone before `distance(k, along: l)` for its component
+along `l` (`rate(p over s) distance(1, along: tl)` is unit speed, so `s` is arc length). Never
+`coincident` and never `length(…) rate(…)`. Such a body is **integrated from its home**: drawn, from
+the instance as it stands on the sheet (its rate rows are no rows there, so the sheet holds what
+they leave free); written in place, from the call's value of the formal (or the interval's start),
+where `initially { … }` in the body says what holds there alone. The relations without a rate plus
+the rate rows must fix every rate — in the plane as many rows as the body places numbers; one short
+is refused naming the points it leaves free. A component handed the running formal as itself
+(`Drag(o, a: a, u: u)`) rates over the caller's; the formal must be a `Scalar` or a `Length`.
+
+```
+component Clothoid(A: Length, s: Length) {
+  p := point
+  q := point
+  k := point
+  tl := line(p, q)
+  nl := line(p, k)
+  length(10mm) tl
+  length(10mm) nl
+  tl angle(90deg) nl
+  rate(p over s) parallel tl
+  rate(p over s) distance(1, along: tl)                 // unit speed: s is arc length
+  rate(q over s) distance(10mm * s / A^2, along: nl)    // the tangent turns at κ = s/A²
+}
+in std.front {
+  o := point
+  x := point
+  fix((0mm, 0mm)) o
+  fix((10mm, 0mm)) x
+  datum := line(o, x)
+  cl := Clothoid(A: 50mm, s: 0mm)
+  cl.p coincident o                                    // the home: where it starts...
+  datum angle(0deg) cl.tl                              // ...and which way
+}
+spiral := cl.p over s in (-100mm, 100mm)
+```
+
+Contacts on such a curve are exact (its tangent is the rate itself), and an unknown of the drawing
+the body reads is solved through the flow: the hanging chain's pulls `c` and `v`, left unbound,
+are found by its far end landing on `b` (`b coincident(t == 150mm) chain`). A march stops where
+its rates cannot be had — `solventc` says how far each curve is integrated, or where it is refused.
+
 **The ellipse** is `std.Ellipse(c: point, a: Length, b: Length, tilt: Angle, u: Angle)`:
 `e := std.Ellipse(c, a: 40, b: 25, tilt: 0deg).p over u in (0deg, 360deg)` is the rim. There is no
 `ellipse` element.

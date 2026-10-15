@@ -1118,7 +1118,9 @@ pub(super) fn relation(
     span: Span,
 ) -> Relation {
     let word = Name { text: word.to_string(), span: at };
-    Relation::of(RelationForm::Written(crate::syntax::Written { word, fixity, ops, args, span, rates: Vec::new() }))
+    Relation::of(RelationForm::Written(crate::syntax::Written {
+        word, fixity, ops, args, span, rates: Vec::new(),
+    }))
 }
 
 /// The point a tangency names, `tangent(at: m)` — `None` where its parentheses hold anything else.

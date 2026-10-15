@@ -985,6 +985,12 @@ pub fn meshing_text(sk: &Sketch, i: usize) -> String {
 /// flank seen from its member.
 pub fn traced_text(sk: &Sketch, i: usize) -> String {
     let t = &sk.traced[i];
+    // a body that states a rate is integrated from its home, and says how far (#339 D2)
+    if let Some(reach) = crate::traced::rate_reach(sk, i) {
+        let [lo, hi] = t.domain[0];
+        let said = reach_text(reach, t.home[0], (lo, hi));
+        return format!("{}: a curve traced in space, {said}", t.name);
+    }
     let what = if t.formals() == 2 { "a surface" } else { "a curve" };
     let k = crate::traced::consts_of(t);
     let theta = crate::traced::theta(sk, t);
@@ -1029,13 +1035,19 @@ pub fn rates_text(sk: &Sketch, i: usize) -> Option<String> {
     };
     let home = sk.curve_home(i);
     let reach = crate::locus::rate_reach(&l.flat, &sk.curve_vars(i, home), home, cv.domain)?;
+    Some(reach_text(reach, home, cv.domain))
+}
+
+/// How far a march reached each way from `home` across `domain`, in the CLI's words.
+fn reach_text(reach: [Result<(), Option<crate::ode::Refusal>>; 2], home: f64, domain: (f64, f64))
+    -> String {
     let num = |v: f64| crate::io::reading(SpecKind::Scalar, v);
     let mut out = format!("integrated from its home at {}", num(home));
     for r in reach {
         match r {
             Ok(()) => {}
-            Err(None) => return Some(format!("not integrated: its home at {} is not to be \
-                had", num(home))),
+            Err(None) => return format!("not integrated: its home at {} is not to be had",
+                num(home)),
             Err(Some(crate::ode::Refusal::Undefined { at })) => {
                 out += &format!(", refused at {}: its rates lose rank there", num(at))
             }
@@ -1045,11 +1057,11 @@ pub fn rates_text(sk: &Sketch, i: usize) -> Option<String> {
             }
         }
     }
-    let (a, b) = cv.domain;
+    let (a, b) = domain;
     if !out.contains("refused") {
         out += &format!(" across ({}, {})", num(a), num(b));
     }
-    Some(out)
+    out
 }
 
 /// What the drawing says of each motion it reads the screw of (#326): for every `isa screw mesh`,

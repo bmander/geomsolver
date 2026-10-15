@@ -118,7 +118,9 @@ fn compile_curve(
                 let names = (0..n_q).map(|k| format!("#home.{k}"));
                 vars.splice(at..at, names);
             }
-            let trace = Trace { swept, n_columns: columns.len(), n_values: values.len(), pose: rated };
+            let angle = comp.formals.iter().any(|f| f.name.text == swept && f.ty == Ty::Angle);
+            let trace = Trace { swept, angle, n_columns: columns.len(), n_values: values.len(),
+                                pose: rated };
             let (locus, pose_of) =
                 compile_trace(comp.span, &traced, &body, &vars, &formals, &trace, units)?;
             (crate::model::CurveBody::Trace(locus), pose_of)
@@ -142,14 +144,13 @@ fn compile_curve(
     })
 }
 
-/// Lower a trace into scratch geometry and tapes, using `Constraint::params_on`
-/// for kernel columns. Swept dimensions use free-twin kernels whose final column
-/// reads a tape-derived value, including its gradient.
 /// What a trace is lowered as, besides its body: the formal it runs over, how many numeric
 /// columns and constants its variable table has, and whether its drawn instance's pose is the
 /// initial value of the rates it states (#339 D2) — the `n_q` columns before the constants.
 struct Trace<'s> {
     swept: &'s str,
+    /// Whether the formal is an `Angle`, along which no rate is read yet.
+    angle: bool,
     n_columns: usize,
     n_values: usize,
     pose: bool,
@@ -160,6 +161,10 @@ fn states_rate(st: &Stmt) -> bool {
     matches!(&st.kind, StmtKind::Relation(r) if r.form.written().is_some_and(|w| w.reads_rate()))
 }
 
+/// Lower a trace into scratch geometry and tapes, using `Constraint::params_on`
+/// for kernel columns. Swept dimensions use free-twin kernels whose final column
+/// reads a tape-derived value, including its gradient.  A relation that reads a rate is a row
+/// of the rates' system, one in `initially` a row of the home's (#339 D2).
 fn compile_trace(
     span: Span,
     point: &str,
@@ -171,10 +176,14 @@ fn compile_trace(
 ) -> Result<(crate::locus::Locus, Vec<(String, usize)>), (Span, String)> {
     let mut low = Lowering::new(span, vars, formals, units)?;
     low.swept = trace.swept.to_string();
+    low.angle = trace.angle;
     // the numeric columns follow the entities' scalars; nothing in the block is built over them,
     // and they are read only through the tapes of the dimensions that name them.  A drawn
     // instance's pose, where it is the initial value, follows them
-    let n_pose = if trace.pose { vars.len() - 1 - low.slot.len() - trace.n_columns - trace.n_values } else { 0 };
+    let n_pose = match trace.pose {
+        true => vars.len() - 1 - low.slot.len() - trace.n_columns - trace.n_values,
+        false => 0,
+    };
     let n_theta = low.slot.len() + trace.n_columns + n_pose;
     debug_assert_eq!(low.n_outer, 1 + n_theta + trace.n_values, "variable table shape");
     // -- pass 1: declarations, so a statement may read a point declared after it --------
@@ -210,7 +219,9 @@ fn compile_trace(
     if !low.rates.is_empty() {
         low.short(span)?;
     }
-    let Lowering { sk, scope, slot, n_outer, n_q, seeds, pose_of, w, rows, preds, rates, init, .. } = low;
+    let Lowering {
+        sk, scope, slot, n_outer, n_q, seeds, pose_of, w, rows, preds, rates, init, ..
+    } = low;
     let traced = match scope.get(point) {
         Some(e) if e.kind == EntKind::Point => {
             let p = sk.point_params(e.i())[0];
@@ -232,7 +243,7 @@ fn compile_trace(
 
 /// Which rows a relation of a trace block is lowered to (#339 D2).
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum Target {
+pub(super) enum Target {
     /// It holds at every place.
     Alg,
     /// It reads a rate: a row of the rate system.
@@ -243,7 +254,111 @@ enum Target {
 
 /// Where a rate's slots stand while the block is lowered: past every slot, since the derived
 /// values are not all counted yet (`Lowering::place_rates` puts them past `w`).
-const RATE_BASE: usize = 1 << 20;
+pub(super) const RATE_BASE: usize = 1 << 20;
+
+/// A relation that reads a rate, checked (#339 D2): one rate, along the formal the trace runs
+/// over, and not in `initially`.  The relation, the rated operand and whether the rate stands
+/// alone before its word (`rate(p over s) distance(1, along: tl)`).
+pub(super) fn rate_operand(
+    st: &Stmt, r: &crate::ir::Relation, swept: &str, angle: bool,
+) -> Result<(crate::ir::Relation, crate::syntax::Ref, bool), (Span, String)> {
+    let w = r.form.written().ok_or((st.span, "a rate is written in a relation".to_string()))?;
+    if r.initially {
+        return Err((st.span, "a rate is no row at the home: `initially { … }` says what holds \
+            there of the instance itself".to_string()));
+    }
+    if w.rates.len() > 1 {
+        return Err((st.span, "a relation reads one rate: two along the running formal would \
+            make the rates' system quadratic, leaving a root to choose at every step".to_string()));
+    }
+    let rate = &w.rates[0];
+    if rate.over.text != swept {
+        return Err((rate.over.span, format!("`rate(… over {})` is read along `{}`, and the curve \
+            runs over `{swept}`: a rate is along the formal a trace runs over", rate.over.text,
+            rate.over.text)));
+    }
+    // the formal's number is degrees, and a rate per degree is no rate a person states: which
+    // unit one along a turn is in is D3's to settle
+    if angle {
+        return Err((rate.over.span, format!("`{swept}` is an angle, and a rate along an angle is \
+            not yet read: run the body over a `Scalar` or a `Length`")));
+    }
+    let unary = w.fixity == crate::constraints::Fixity::Infix && w.ops.len() == 1;
+    Ok((r.clone(), w.ops[rate.op].clone(), unary))
+}
+
+/// A relation that reads a rate, rewritten over the scratch line `line` from an origin to the
+/// rate (`{line}.o`, `{line}.t`): the line where a direction is read, its two points where the
+/// rate stands alone before `distance(k, along: l)`.
+pub(super) fn rate_rewritten(
+    mut r: crate::ir::Relation, line: &str, span: Span, unary: bool,
+) -> crate::ir::Relation {
+    let at = |n: String| crate::syntax::Ref { span, ..crate::syntax::Ref::new(n) };
+    if let Some(w) = r.form.written_mut() {
+        let k = w.rates[0].op;
+        if unary {
+            w.ops = vec![at(format!("{line}.o")), at(format!("{line}.t"))];
+        } else {
+            w.ops[k] = at(line.to_string());
+        }
+        w.rates.clear();
+    }
+    r
+}
+
+/// **A rate stands where a direction is read** (#339 D0, decision 1): `parallel`,
+/// `perpendicular`, a directed `angle`, its component `distance(k, along: l)` — never a place,
+/// and never a magnitude, whose row is quadratic in the rate.
+pub(super) fn admissible(r: &crate::ir::ResolvedRelation<'_>) -> Result<(), String> {
+    if matches!(r.kind, CKind::Parallel | CKind::Perpendicular | CKind::Angle | CKind::Ordinate) {
+        return Ok(());
+    }
+    let word =
+        r.written.map_or_else(|| crate::syntax::snake(r.kind.name()), |w| w.word.text.clone());
+    Err(format!("a rate stands where a direction is read — `parallel`, `perpendicular`, a \
+        directed `angle`, or its component `distance(k, along: l)` — and `{word}` reads it \
+        otherwise: a rate is never a place, and never a magnitude, whose row would be quadratic \
+        in it"))
+}
+
+/// **A body short of rate rows**, reported with the freedom it leaves (#339 D0, finding 1):
+/// `None` where its rows and rate rows are enough — square by count in the plane; in space,
+/// where a `parallel` is two rows one of which the body's own rows imply, at least as many, the
+/// rest a rank read at every place.  `alg` and `rates` are each residual row's reach into the
+/// body's `n_q` numbers (an algebraic row's derivative reads the rates of what it reads), and
+/// `owner` names each number's point: the freedom is the under-determined block of that
+/// structure, whichever matching.
+pub(super) fn short(
+    swept: &str, n_q: usize, alg: &[Vec<usize>], rates: &[Vec<usize>], owner: &[String],
+    plane: bool,
+) -> Option<String> {
+    let (n_alg, n_rate) = (alg.len(), rates.len());
+    if n_alg + n_rate == n_q || (!plane && n_alg + n_rate > n_q) {
+        return None;
+    }
+    let rows = |n: usize| if n == 1 { "row" } else { "rows" };
+    let head = format!("a body that states a rate must determine its rates along `{swept}`: \
+        {n_q} unknowns against {n_alg} {} and {n_rate} rate {}", rows(n_alg), rows(n_rate));
+    if n_alg + n_rate > n_q {
+        return Some(format!("{head} — it states {} more than it places in the plane",
+            n_alg + n_rate - n_q));
+    }
+    let reach: Vec<Vec<usize>> = alg.iter().chain(rates).cloned().collect();
+    let dm = crate::graph::dulmage_mendelsohn(&reach, n_q);
+    let mut names: Vec<&str> = Vec::new();
+    for &c in &dm.under_cols {
+        if let Some(n) = owner.get(c) {
+            if !names.contains(&n.as_str()) {
+                names.push(n);
+            }
+        }
+    }
+    let who = names.iter().map(|n| format!("`{n}`")).collect::<Vec<_>>().join(", ");
+    let k = n_q - n_alg - n_rate;
+    Some(format!("{head} — its rates leave {k} {} among those of {}: state {k} more rate {} of \
+        how they move", if k == 1 { "freedom" } else { "freedoms" },
+        if who.is_empty() { "its points".to_string() } else { who }, rows(k)))
+}
 
 /// **A trace block being lowered** (`compile_trace`): the scratch sketch it is drawn in, its
 /// names, which variable-table slot each scratch parameter is, and what the block comes to so far
@@ -268,6 +383,7 @@ struct Lowering<'v> {
     /// relation is lowered to, the rate rows and the home's, and for each point whose rate is
     /// read the scratch line from the origin to its rate (`rated`), the origin's slots a zero.
     swept: String,
+    angle: bool,
     target: Target,
     rates: Vec<crate::locus::Row>,
     init: Vec<crate::locus::Row>,
@@ -332,6 +448,7 @@ impl<'v> Lowering<'v> {
             rows: Vec::new(),
             preds: Vec::new(),
             swept: String::new(),
+            angle: false,
             target: Target::Alg,
             rates: Vec::new(),
             init: Vec::new(),
@@ -375,24 +492,7 @@ impl<'v> Lowering<'v> {
     fn rate_relation(
         &mut self, st: &Stmt, r: &crate::ir::Relation,
     ) -> Result<crate::ir::Relation, (Span, String)> {
-        let mut r = r.clone();
-        let Some(w) = r.form.written_mut() else { return Ok(r) };
-        if r.initially {
-            return Err((st.span, "a rate is no row at the home: `initially { … }` says what \
-                holds there of the instance itself".to_string()));
-        }
-        if w.rates.len() > 1 {
-            return Err((st.span, "a relation reads one rate: two along the running formal would \
-                make the rates' system quadratic, leaving a root to choose at every step"
-                .to_string()));
-        }
-        let rate = w.rates[0].clone();
-        if rate.over.text != self.swept {
-            return Err((rate.over.span, format!("`rate(… over {})` is read along `{}`, and the \
-                curve runs over `{}`: a rate is along the formal a trace runs over",
-                rate.over.text, rate.over.text, self.swept)));
-        }
-        let rf = w.ops[rate.op].clone();
+        let (r, rf, unary) = rate_operand(st, r, &self.swept, self.angle)?;
         let e = self
             .scope
             .get(&rf.root.text)
@@ -401,20 +501,10 @@ impl<'v> Lowering<'v> {
         let e = follow(&self.sk, e, &rf.path).map_err(|m| (rf.span, m))?;
         if e.kind != EntKind::Point {
             return Err((rf.span, format!("`rate(… over {})` is of a point: {} has no rate the \
-                body integrates", rate.over.text, e.kind.a())));
+                body integrates", self.swept, e.kind.a())));
         }
         let line = self.rate_line(e.i(), rf.span)?;
-        let unary = w.fixity == crate::constraints::Fixity::Infix && w.ops.len() == 1;
-        if unary {
-            w.ops = vec![
-                crate::syntax::Ref { span: rf.span, ..crate::syntax::Ref::new(format!("{line}.o")) },
-                crate::syntax::Ref { span: rf.span, ..crate::syntax::Ref::new(format!("{line}.t")) },
-            ];
-        } else {
-            w.ops[rate.op] = crate::syntax::Ref { span: rf.span, ..crate::syntax::Ref::new(line) };
-        }
-        w.rates.clear();
-        Ok(r)
+        Ok(rate_rewritten(r, &line, rf.span, unary))
     }
 
     /// The scratch line from the origin to point `p`'s rate, made once a point, by name.
@@ -475,51 +565,23 @@ impl<'v> Lowering<'v> {
     }
 
     /// A body whose rows and rate rows leave its rates free is refused naming the freedom
-    /// (#339 D0, finding 1): which of its points no row reaches, by a matching of the rate
-    /// system's rows to the rates they read.
+    /// (`short`).
     fn short(&self, span: Span) -> Result<(), (Span, String)> {
         let (n_q, q0) = (self.n_q, self.n_outer);
         let at = q0 + n_q + self.w.len();
-        let n_alg: usize = self.rows.iter().map(|r| KERNELS[r.kid].n_res).sum();
-        let n_rate: usize = self.rates.iter().map(|r| KERNELS[r.kid].n_res).sum();
-        // more rows than rates is a rank question, read at every place (#339 D0, finding 1): a
-        // `parallel` in space is two rows, one of them the body's own rows' already
-        if n_alg + n_rate >= n_q {
-            return Ok(());
+        let reach = |rows: &[crate::locus::Row], from: usize| -> Vec<Vec<usize>> {
+            rows.iter().flat_map(|r| {
+                let cols: Vec<usize> = r.cols.iter().map(|&c| c as usize)
+                    .filter(|c| (from..from + n_q).contains(c)).map(|c| c - from).collect();
+                std::iter::repeat(cols).take(KERNELS[r.kid].n_res)
+            }).collect()
+        };
+        let owner: Vec<String> = self.pose_of.iter().map(|(n, _)| n.clone()).collect();
+        let (alg, rates) = (reach(&self.rows, q0), reach(&self.rates, at));
+        match short(&self.swept, n_q, &alg, &rates, &owner, true) {
+            Some(m) => Err((span, m)),
+            None => Ok(()),
         }
-        // each residual row and the rates it reaches: an algebraic row through the coordinates
-        // it reads (its derivative reads their rates), a rate row through the rates
-        let mut reach: Vec<Vec<usize>> = Vec::new();
-        for r in &self.rows {
-            let cols: Vec<usize> = r.cols.iter().map(|&c| c as usize)
-                .filter(|c| (q0..q0 + n_q).contains(c)).map(|c| c - q0).collect();
-            reach.extend(std::iter::repeat(cols).take(KERNELS[r.kid].n_res));
-        }
-        for r in &self.rates {
-            let cols: Vec<usize> = r.cols.iter().map(|&c| c as usize)
-                .filter(|c| (at..at + n_q).contains(c)).map(|c| c - at).collect();
-            reach.extend(std::iter::repeat(cols).take(KERNELS[r.kid].n_res));
-        }
-        // the under-determined block of the rate system's structure, whichever matching: the
-        // rates the missing rows would have to reach
-        let dm = crate::graph::dulmage_mendelsohn(&reach, n_q);
-        let mut names: Vec<String> = Vec::new();
-        for &c in &dm.under_cols {
-            if let Some((n, _)) = self.pose_of.get(c) {
-                if !names.contains(n) {
-                    names.push(n.clone());
-                }
-            }
-        }
-        let rows = |n: usize| if n == 1 { "row" } else { "rows" };
-        let who = names.iter().map(|n| format!("`{n}`")).collect::<Vec<_>>().join(", ");
-        let k = n_q - n_alg - n_rate;
-        let what = format!("its rates leave {k} {} among those of {}: state {k} more rate {} of \
-            how they move", if k == 1 { "freedom" } else { "freedoms" },
-            if who.is_empty() { "its points".to_string() } else { who }, rows(k));
-        Err((span, format!("a body that states a rate must determine its rates along `{}`: \
-            {n_q} unknowns against {n_alg} {} and {n_rate} rate {} — {what}",
-            self.swept, rows(n_alg), rows(n_rate))))
     }
 
     /// A number's text compiled over the variable table.
@@ -653,17 +715,8 @@ impl<'v> Lowering<'v> {
         if matches!(r.kind, CKind::Ccw | CKind::Cw) {
             return self.orientation(st, &r);
         }
-        // **a rate stands where a direction is read** (#339 D0, decision 1): never as a place,
-        // and never as a magnitude, whose row is quadratic in the rate
-        if self.target == Target::Rate
-            && !matches!(r.kind, CKind::Parallel | CKind::Perpendicular | CKind::Angle | CKind::Ordinate)
-        {
-            let word = r.written.map_or_else(|| crate::syntax::snake(r.kind.name()),
-                                             |w| w.word.text.clone());
-            return Err((st.span, format!("a rate stands where a direction is read — `parallel`, \
-                `perpendicular`, a directed `angle`, or its component `distance(k, along: l)` — \
-                and `{word}` reads it otherwise: a rate is never a place, and never a magnitude, \
-                whose row would be quadratic in it")));
+        if self.target == Target::Rate {
+            admissible(&r).map_err(|m| (st.span, m))?;
         }
         let spec = r.kind.spec();
         if r.kind.gauge() {

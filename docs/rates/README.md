@@ -283,3 +283,89 @@ Front(c, a: 40mm, b: 25mm).p over (d in (0mm, 15mm), u in (0deg, 360deg))   // t
 - **D5** (line contact on skew axes):
   - findings 5, 6 and 9;
   - `helical_contact`, `spherical_contact` and `formate_contact` as gates.
+
+## D1: the integrator (#346, 2026-10-15)
+
+Gragg–Bulirsch–Stoer over a state of any width, with the variational equations through the same
+substeps and dense output, is `ode.rs`; the free curves run on it bit for bit. The rule is
+`docs/contract/curves.md` ("The integrator"), the report the issue's D1 comment.
+
+## D2: rates in a traced body (2026-10-15)
+
+**Landed:** `rate(x over s)` and `initially { … }` (0.115, §6.5), a traced body that states a rate
+integrated from its home in the plane and in space (`rates.rs`), and the gate `tests/rates.rs`.
+The rule is `docs/contract/curves.md` ("Rates along a running formal") and
+`docs/contract/language.md` ("Rates and `initially`").
+
+### What landed
+
+- **The spelling is D0's.** `rate(p over s)` is an operand (`syntax::RateOf` on the written
+  relation); `rate(p over s) distance(k, along: l)` stands alone before its word; `initially {
+  … }` is a block. A component handed the running formal as itself rates over the caller's. Of
+  D0's programs, `tractrix`, `clothoid` and `catenary_flow` run exactly as written (`solventc
+  docs/rates/d0/clothoid.sv`); `tractrix`'s `written` starts at the interval's start, `-3`, since
+  its call gives `u` nothing. `geodesic_cone` does not: a body traced in space is written in place
+  over points, lines, motions and numbers (#326 R3), so the gate states its axis as a line and its
+  start in `initially`.
+- **One integrator, plane and space.** A body is three sets of rows over one variable table: its
+  algebraic rows, its rate rows (a rate is a scratch line from an origin to the point's rate, so
+  every rate row is an ordinary kernel's row, linear in the rate) and its initial rows. At each
+  place the algebraic rows differentiated (their first Taylor order) and the rate rows are one
+  system in the rates, `M = [J_q; ∂R/∂q′]`; the flow `q′ = f(u, q)` is integrated by `ode::march`,
+  the free columns as constant states, `Φ` seeded with the home's sensitivity to every column.
+- **The index check is a rank, at every evaluation** (D0 finding 1). In the plane the system must
+  be square by count; in space a `parallel` is two rows and the body's own rows may imply one, so
+  more rows than rates is allowed, read by Householder QR, and they must agree at the home and at
+  a reading. A place where `M` loses rank is refused there, and `solventc` says how far each curve
+  is integrated: a point whose speed along `right` is 1 on a circle of 30 is refused at ±30.
+- **A body short of a rate row** (D0 finding 2) is refused naming the freedom: the under-determined
+  block of the rate system's structure, so the clothoid without its curvature row says *"its rates
+  leave 1 freedom among those of `q`, `k`"*.
+- **Exact derivatives, nothing differenced in the flow.** The flow's Jacobian is `−M⁻¹ ∂G/∂z`, the
+  algebraic rows' part a mixed second derivative read by polarisation over Taylor jets. `C′` is the
+  rate, `C″` and `C‴` the solution's Taylor coefficients (each one more solve with `M`), `∂C/∂θ` and
+  `∂C′/∂θ` the flow's sensitivities. Only `∂C″/∂θ`, which a curvature contact's Jacobian alone
+  reads, is a difference — of the local map along `Φ`'s column, no march — as a trace's gradients
+  along θ are today.
+- **A two-point problem is a drawing** (D0 finding 7): the hanging chain's pulls, unbound formals,
+  are solved by its far end landing on `b`, the contact's gradient in them the flow's sensitivity.
+
+### The gate, `tests/rates.rs`
+
+| item | result |
+|---|---|
+| tractrix, drawn (home at the cusp) and written in place from `initially`, both ways | 1.6e-12 / 1.2e-12 over 301 places |
+| clothoid against the Fresnel series, both ways over 200 | 9.5e-12 over 401 places |
+| contacts on the clothoid: a point at 60, a line along the tangent there, the circle osculating at 80 | the point 6e-13, the tangent's turn `s²/2A²`, the radius `A²/s` 1e-12; the assembled Jacobian against differences before the solve |
+| the hanging chain shot to `b` | `c` 30.8236469736 (the root of `c sinh(50/c) = 75`) to 2.4e-13, `v` −75 to 1e-12, the curve 1.4e-11 |
+| geodesic on a cone in space (13 rows for 12 rates, rank 12) | 6.3e-12 over 241 places; a point held at a height and the line along the tangent there are the closed form's; both contacts' Jacobians against differences |
+| a body one rate row short | E103 naming `q`, `k` |
+| a rate as a place, a magnitude, along another formal or an angle, of a point that does not move, two in one row, in `initially`, outside a component | each E103, saying why |
+| rank lost on a circle | refused at ±30, to within one substep past it (30.0016); the curve short of it the circle |
+
+### Findings, for D3–D5
+
+1. **A drawn home must be on the body's rows, or the solve crawls.** Its pose is the initial value
+   and its coordinates columns of the curve, so while the drawing is unsolved the flow ran from a
+   frame the body could never be (a clothoid's tangent 1 long turning ten times as fast): 150–400
+   steps a march, and a solve of three contacts took 58 s. The flow now runs from the pose's
+   nearest point on the body's algebraic rows (`q₀ − pose = Jᵀλ`, `r(q₀) = 0`), its sensitivity
+   exact off the rows too (`W = Σ λᵢ ∇²rᵢ` by polarisation); at a solution it is the pose. Seven
+   steps a march, 0.5 s. D3's station drawn mid-interval will need the same.
+2. **Weights must be smooth where rows past the count disagree.** Off the body's rows, at a
+   substep, a `parallel`'s second row and the cone's own disagree, and their least squares weighs
+   them by the row scaling. Scaled to their largest entry (a kink), the geodesic read 2e-7 between
+   nodes that were right to 1e-11; scaled to unit length, 7e-13 everywhere.
+3. **Integrate every coordinate; D0 finding 3's partition is not structural.** The clothoid's `q`
+   and `k` are fixed by `p` and the turning, which only the rates reach, so no partition of the
+   coordinates into "solved" and "integrated" exists in general. Integrated whole, the algebraic
+   rows drift only by the integrator's error, which the closed forms above bound near 1e-12.
+4. **A refused march keeps its road.** A march to the end of the interval refused part way is made
+   again to where it was refused, so a curve that stops is drawn and read as far as it reaches.
+5. **One march serves a curve.** Contacts read a march to the end of the interval on their side,
+   remembered by content (every contact carries a copy of the encoding), so a residual and its
+   Jacobian, and every contact on one curve, share it; a place past the end doubles the reach, so a
+   solve's trial places share marches too.
+6. **Not yet read:** a rate along an `Angle` formal (the formal's number is degrees; D3 decides the
+   unit), along a second formal (D4), of a direction (D3's `rate(f.u over s)`), and `relative_to:`
+   (D5).

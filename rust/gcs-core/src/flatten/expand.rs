@@ -817,7 +817,8 @@ impl<'a> Walk<'a> {
     /// handed, which the trace runs over; one given a number or an expression in another is no
     /// formal running, and is refused.  On the sheet the drawn instance is its own home, where
     /// the rates are no rows, so the relation is not stated — a name no formal is, refused.
-    fn rates_over(&mut self, r: &mut crate::syntax::Relation, vals: &BTreeMap<String, Aff>) -> bool {
+    fn rates_over(&mut self, r: &mut crate::syntax::Relation, vals: &BTreeMap<String, Aff>)
+        -> bool {
         let sym = self.sym.is_some();
         let Some(w) = r.form.written_mut() else { return false };
         let mut stated = true;

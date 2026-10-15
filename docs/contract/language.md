@@ -122,6 +122,21 @@ block over faces has no filter of its own: `repeat b in B if …` is a syntax er
 flag == 1`, never `repeat flag` — the count of zero or one named its copies (`sm[0]`), a `when`
 keeps the name (`sm`).
 
+**Rates and `initially` (§6.5, 0.115, #339 D2):** `rate(x over s)` is an operand of a relation
+(`P::operand`, `rate_ahead`), recorded as `syntax::RateOf { op, over }` on the `Written` — the
+reference stays a plain `Ref`, so every rewrite of operands carries it — and printed back as
+written (`write_written`).  A rate alone before an infix word (`rate(p over s) distance(1, along:
+l)`) is a one-operand `Infix`; `rate(` never starts a component call.  The flattener
+(`Walk::rates_over`) reads each rate's formal through the numbers in force: where a component is
+expanded to be traced (`sym`) a formal handed on as itself is renamed the caller's
+(`Drag(…, u: u)`), one given a number or an expression in another is E103; on the sheet the
+relation is not stated — a drawn instance is its own home, where a rate is no row — and a name no
+formal is E103.  `initially { … }` is `BlockKind::Initially` (no count, no trailing joint), walked
+once in the enclosing scope with `InBlock::initially` set, which `walk_relation` copies onto the
+relation (`syntax::Relation::initially`, `ir::Relation::initially`): on the sheet an ordinary
+relation, in a trace the home's alone.  What they mean is curves.md's ("Rates along a running
+formal"); `tests/rates.rs` is the gate.
+
 **A component may instantiate itself** (§8, 0.75): a call back into one still being expanded
 is walked like any other (`Walk::instantiating` keeps each with the numbers it was given), each
 level an instance under the last (`d.s.s.m`), ended by a `when` over its numbers. E003 at the

@@ -4,6 +4,17 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.115] Rates along a running formal.** A traced body may state a condition on a rate along
+the formal it runs over (§6.5): `rate(x over s)`, a point's velocity, stands where a direction is
+read — `parallel`, `perpendicular`, a directed `angle`, and alone before `distance(k, along: l)`,
+its component along `l` — and never as a place or a magnitude. Such a body is integrated from its
+home: a drawn instance as it stands on the sheet (its rate rows no rows there, its coordinates
+columns of the curve), or, written in place, where `initially { … }` puts it. Its rate rows and
+its other relations differentiated fix the rates, a rank checked at every place reached; a body
+short of a rate row is refused naming the freedom it leaves, and a march is refused where its
+rates lose rank. Through 0.114 every relation of a traced body held at each place by itself, and
+a body one row short was a curve that did not exist. (Issue #339, D2.)
+
 **[0.114] Ease-off.** A meshing's first flank may be eased (§6.15.4): `meshing(…, ease: M,
 along: l, profile: κₚ, lengthwise: κₗ)` relieves it along its normal by the parabola `½ κₗ s² +
 ½ κₚ r²` about `M`, `s` along `l` and `r` across it, each curvature a number per length or affine

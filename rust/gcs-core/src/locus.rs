@@ -768,7 +768,8 @@ fn eval_at(
 ) -> Val {
     let Some(v) = prepare(flat, outer, s) else { return Val::default() };
     if !v.rates.is_empty() {
-        return rate_val(flat, &v, outer, anchor.u, None, need, false).0;
+        // the drawing's question: where, and no gradient
+        return rate_val(flat, &v, outer, anchor.u, None, need, key.is_some(), false).0;
     }
     let u = outer[0];
     // taken out of the map rather than borrowed from it: the solve below wants the scratch the
@@ -1118,7 +1119,7 @@ pub fn kernel_eval_to(consts: &[f64], u: f64, theta_cols: &[f64], need: u8) -> V
     let Some(outer) = outer_of(u, theta_cols, values, &mut outer) else { return Val::default() };
     if let Some(v) = view(flat).filter(|v| !v.rates.is_empty()) {
         let tail = &flat[flat.len() - n_q..];
-        return rate_val(flat, &v, outer, anchor_u, Some((tail[0], tail[1])), need, false).0;
+        return rate_val(flat, &v, outer, anchor_u, Some((tail[0], tail[1])), need, true, false).0;
     }
     LOCUS_SCRATCH.with(|s| {
         let s = &mut *s.borrow_mut();
@@ -1213,7 +1214,7 @@ pub fn kernel_frame(consts: &[f64], u: f64, theta_cols: &[f64], need: u8) -> Fra
             let tail = &flat[flat.len() - v.n_q..];
             if let Some(outer) = outer_of(u, theta_cols, values, &mut outer) {
                 let (val, r) =
-                    rate_val(flat, &v, outer, anchor_u, Some((tail[0], tail[1])), need, true);
+                    rate_val(flat, &v, outer, anchor_u, Some((tail[0], tail[1])), need, true, true);
                 return rate_frame(val, r.as_ref());
             }
         }
@@ -1277,82 +1278,21 @@ pub fn kernel_frame(consts: &[f64], u: f64, theta_cols: &[f64], need: u8) -> Fra
 
 /* -- a body that states a rate (#339 D2) ------------------------------------------------------ */
 
-/// How many marches are remembered at once: a cache, cleared past its bound.
-const MARCHES_MAX: usize = 32;
-
-/// What a march is keyed by: its body's encoding, the columns and numbers it was made at, its
-/// home and how far it runs — every one a fact the march is a function of, so a remembered one
-/// is the march made again.  By content, not by where the encoding lives: every contact on a
-/// curve carries a copy, and they read one march.
-type MarchKey = Vec<u64>;
-
-thread_local! {
-    /// The marches the kernel and drawing paths read, by `MarchKey`: a contact's residual and
-    /// its Jacobian at the same columns read one march, and so do the contacts on one curve.
-    static MARCHES: std::cell::RefCell<Vec<(MarchKey, std::rc::Rc<crate::rates::March>)>> =
-        const { std::cell::RefCell::new(Vec::new()) };
-}
-
-/// Where a march to read `u` at runs to, from `home`: the end of the curve's `domain` on `u`'s
-/// side (or `u`, past it), so that every place within the domain is read off one march — the
-/// march a function of the columns alone, and a reading a function of its place.  Without a
-/// domain, `u` itself.
-fn reach(home: f64, u: f64, domain: Option<(f64, f64)>) -> f64 {
-    let Some((a, b)) = domain else { return u };
-    let (lo, hi) = (a.min(b), a.max(b));
-    // past the end, the end's distance doubled until it covers `u`: a solve's trial places
-    // there share a march too
-    let past = |end: f64| {
-        let mut d = (end - home).abs().max(1e-9 * (1.0 + home.abs()));
-        while d < (u - home).abs() {
-            d *= 2.0;
-        }
-        home + d * (u - home).signum()
-    };
-    if u > home {
-        if u <= hi { hi } else { past(hi) }
-    } else if u < home {
-        if u >= lo { lo } else { past(lo) }
-    } else {
-        home
-    }
-}
-
 /// The march of a body from `home` at the columns of `outer` to `to`, remembered.
 fn rate_march(flat: &[f64], v: &View, outer: &[f64], home: f64, to: f64)
     -> Result<std::rc::Rc<crate::rates::March>, Option<crate::ode::Refusal>> {
-    let view_len = flat.len();
-    let mut key: Vec<u64> = Vec::with_capacity(view_len + v.n_outer + 2);
-    key.extend(flat.iter().map(|x| x.to_bits()));
-    key.extend(outer[1..v.n_outer].iter().map(|x| x.to_bits()));
-    key.extend([home.to_bits(), to.to_bits()]);
-    if let Some(m) = MARCHES.with(|c| c.borrow().iter().find(|(k, _)| *k == key).map(|e| e.1.clone())) {
-        return Ok(m);
-    }
-    let mut at = outer[..v.n_outer].to_vec();
-    at[0] = home;
-    let t0 = std::time::Instant::now();
-    let m = std::rc::Rc::new(v.rate_body().march(&at, to - home)?);
-    if std::env::var("RATES_DEBUG").is_ok() { eprintln!("march {} -> {} nodes {} in {:?} at {:?}", home, to, m.path.nodes.len(), t0.elapsed(), &outer[1..v.n_outer]); }
-    MARCHES.with(|c| {
-        let mut c = c.borrow_mut();
-        if c.len() >= MARCHES_MAX {
-            c.clear();
-        }
-        c.push((key, m.clone()));
-    });
-    Ok(m)
+    crate::rates::remembered(&v.rate_body(), flat, outer, home, to)
 }
 
 /// A body that states a rate, read at `outer[0]`: the flow from its home, as a `Val` — and the
 /// reading behind it, the sensitivities of its derivatives too where `frame`.
 fn rate_val(flat: &[f64], v: &View, outer: &[f64], home: f64, domain: Option<(f64, f64)>,
-            need: u8, frame: bool) -> (Val, Option<crate::rates::Reading>) {
+            need: u8, sens: bool, frame: bool) -> (Val, Option<crate::rates::Reading>) {
     let u = outer[0];
-    let Ok(m) = rate_march(flat, v, outer, home, reach(home, u, domain)) else {
+    let Ok(m) = rate_march(flat, v, outer, home, crate::rates::reach(home, u, domain)) else {
         return (Val::default(), None);
     };
-    let Some(r) = v.rate_body().read(&m, u, need.max(1), frame) else {
+    let Some(r) = v.rate_body().read(&m, u, need.max(1), sens, frame) else {
         return (Val::default(), None);
     };
     let mut val = Val { ok: true, orders: r.orders, ..Val::default() };
@@ -1403,12 +1343,15 @@ fn rate_sweep(flat: &[f64], v: &View, outer: &[f64], u0: f64, u1: f64, n: usize,
     let at = |k: usize| u0 + (u1 - u0) * k as f64 / n as f64;
     let marches: Vec<Option<std::rc::Rc<crate::rates::March>>> = [u0, u1]
         .iter()
-        .map(|&end| rate_march(flat, v, outer, home, reach(home, end, Some((u0, u1)))).ok())
+        .map(|&end| {
+            let to = crate::rates::reach(home, end, Some((u0, u1)));
+            rate_march(flat, v, outer, home, to).ok()
+        })
         .collect();
     for k in 0..=n {
         let u = at(k);
         let m = if (u - home) * (u0 - home) > 0.0 { &marches[0] } else { &marches[1] };
-        let Some(r) = m.as_ref().and_then(|m| body.read(m, u, 1, false)) else { continue };
+        let Some(r) = m.as_ref().and_then(|m| body.read(m, u, 1, false, false)) else { continue };
         out.push((r.d[0][0], r.d[0][1]));
     }
     out
@@ -1428,7 +1371,8 @@ pub fn rate_reach(flat: &[f64], outer: &[f64], home: f64, domain: (f64, f64))
         if end == home {
             return Ok(());
         }
-        rate_march(flat, &v, outer, home, end).map(|_| ())
+        rate_march(flat, &v, outer, home, end)
+            .and_then(|m| m.refused.map_or(Ok(()), |r| Err(Some(r))))
     }))
 }
 
