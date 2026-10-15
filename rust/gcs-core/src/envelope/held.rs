@@ -647,6 +647,28 @@ pub(crate) fn local<T: Num>(l: &Layout, cols: &[T], second: bool) -> Local<T> {
     local_at(l, cols, second, &pose(l, &cols[l.lead + 3 + l.source_width()..], t))
 }
 
+/// The motion's pose at roll `t`, read once for a grid of places at that roll (#345,
+/// `envelope::regular`'s search): `cols` as `local` reads them, the place's roll aside.
+pub(crate) struct Posed<T>(Pose<T>);
+
+pub(crate) fn posed<T: Num>(l: &Layout, cols: &[T], t: T) -> Posed<T> {
+    Posed(pose(l, &cols[l.lead + 3 + l.source_width()..], H2::var(t, 2, false)))
+}
+
+/// `local` at a place of the roll `posed` was read at, first order: the point, the normal and
+/// the meshing equation's value.
+pub(crate) fn local_posed<T: Num>(l: &Layout, cols: &[T], posed: &Posed<T>) -> Local<T> {
+    local_at(l, cols, false, &posed.0)
+}
+
+/// The source's own point at the place's `(u, v)`, standing as drawn: where a tool's region is
+/// read of it (#345, `envelope::regular`).
+pub(crate) fn source_at<T: Num>(l: &Layout, cols: &[T]) -> [T; 3] {
+    let at = l.lead;
+    let (u, v) = (H2::cst(cols[at]), H2::cst(cols[at + 1]));
+    surface(l, &cols[at + 3..at + 3 + l.source_width()], u, v).map(|c| c.v)
+}
+
 /// `local`, the motion's pose at the place's roll given: a seed's grid asks many places at one
 /// roll (`seed`).
 fn local_at<T: Num>(l: &Layout, cols: &[T], second: bool, pose: &Pose<T>) -> Local<T> {

@@ -390,6 +390,12 @@ pub fn validate(
                                name(args[1].ent()), name(t)));
         }
     }
+    // a flank's regularity is read where the solve can read the envelope, the tool and the blank
+    // (#345)
+    if kind == CKind::RegularWithin {
+        Constraint::new(kind, args.to_vec()).regular_reading(sk)
+            .map_err(|why| format!("the solve cannot read the flank's regularity: {why}"))?;
+    }
     // a motion's twist is read where the solve can read the motion and its twist is the same at
     // every time in the fixed frame (#326)
     if kind.motion_reading().is_some() {

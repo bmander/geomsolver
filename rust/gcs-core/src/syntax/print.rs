@@ -783,6 +783,11 @@ fn write_written(out: &mut String, w: &Written) {
     if !parts.is_empty() {
         out.push_str(&format!("({})", parts.join(", ")));
     }
+    let infix = w.fixity == Fixity::Infix;
+    if let Some(c) = crate::constraints::connective(&w.word.text).filter(|_| infix) {
+        out.push(' ');
+        out.push_str(c);
+    }
     let last = if w.fixity == Fixity::Infix { w.ops.get(1) } else { w.ops.first() };
     if let Some(r) = last {
         out.push(' ');
@@ -838,6 +843,9 @@ pub fn operator_text(kind: CKind, args: &[Option<Arg>]) -> String {
         // unlabelled it would read as `symmetry`'s third entity
         if sk.takes_ref() && *name == "at" {
             parens.push(format!("at: {}", write_arg(name, *sk, a)));
+        } else if sk.takes_ref() && *name == "by" {
+            // and the tool a flank is cut by (#345)
+            parens.push(format!("by: {}", write_arg(name, *sk, a)));
         } else if sk.takes_ref() {
             ents.push(write_arg(name, *sk, a));
         } else if sk.is_param() {
@@ -870,6 +878,10 @@ pub fn operator_text(kind: CKind, args: &[Option<Arg>]) -> String {
     out.push_str(word);
     if !parens.is_empty() {
         out.push_str(&format!("({})", parens.join(", ")));
+    }
+    if let Some(c) = crate::constraints::connective(word).filter(|_| fixity == Fixity::Infix) {
+        out.push(' ');
+        out.push_str(c);
     }
     for e in &ents {
         out.push(' ');

@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.114 — October 2026**
+**Specification, Draft 0.115 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -1366,6 +1366,35 @@ helicoid** (**[0.104]**): the rack of Phillips' spatial involute gearing, each m
 plane square to the line of action sliding along it as fast as the members move along it, seen
 from the member (`spiral_bevel/phillips.sv`).
 
+```
+pinion_flank := envelope(gear_flank, under: mesh, from: -60deg, to: 60deg)
+pinion_flank regular(by: gear_tooth) within pinion_blank          // no undercut
+pinion_flank regular(>= 0.3, by: gear_tooth) within pinion_blank  // and a margin from it
+```
+
+**[0.115]** A generated flank is **regular within its blank**. Where a tool point touches the flank
+at the roll `t` that solves `g = 0`, the map from the tool point to the point it generates scales
+the tool's area by the **area factor** `A = (g_t − α g_u − β g_v) / g_t`, with `∂X/∂t = α ∂X/∂u +
+β ∂X/∂v` on the envelope. `A` is 1 where the two surfaces roll without sliding, nothing where the
+flank folds (undercut, the tool point's contact running back on itself), and below nothing past
+the fold. `flank regular(by: tool) within blank` reads its **least** value over the part of the
+flank the tool cuts in the blank: tool points on `tool`'s face whose contacts in the roll interval
+lie inside `blank`. The flank is a held envelope of a cone or a cylinder set that is a face of
+`tool`. `tool` and `blank` are region solids (`solid(R)`, §6.21), read by their terms as drawn:
+the tool's at the source's own point, the blank's at the point generated. The tool's term the
+source lies on is the face itself, and a round of that face (`std.Rounded`) ends the face at its
+tangent line. The least value is found by search, so it is the least found, not a bound proved.
+With no number the statement is a bound, `>= 0`: no fold. `regular(>= m, …)` is a margin from
+one. Both are verdicts with no root to choose, so a solve breaking one is `BOUND_BROKEN` and
+nothing is steered across it (§9.6). `regular(m, …)`, the number stated outright, is an equation:
+one row that solves a number of the drawing the flank reads (a cutter's pressure angle) at
+which the margin binds. `within` stands between the word and the blank; without it the statement
+does not parse. A flank of no set, a source that is no face of `tool`, a face grown off the
+source, a solid that is no region, or a term the solve cannot read (a blank's measured term) is
+**E061**, naming why.
+The envelope of the whole source is not enough. It runs past the tool's tip and folds there,
+inside the blank, whatever the design, so the tool says where the flank is cut.
+
 #### 6.15.4 The meshing of two flanks **[0.94]**
 
 ```
@@ -2089,6 +2118,7 @@ What goes in the parentheses is a short list:
 | `radius` | prefix | a circle or an arc |
 | `length` | prefix | **[0.90]** a line: the distance between its own ends; **[0.27]** an arc: its length along itself; **[0.53]** a spline: its whole length; a free curve: its own. **[0.90]** `distance` relates two things and `length` measures one: so a word over `g: path` states `g`'s length whatever `g` is given, and `distance(d) l` on a line, the spelling through 0.89, is **E040** naming `length(d) l` |
 | `midpoint`, `parallel`, `perpendicular`, `symmetry` | infix | one each; **[0.42]** `parallel` and `perpendicular` also take an axis beside an axis or a line, in space, and (axis, plane) — along the plane, and square to it — either way round; **[0.43]** `parallel` takes (plane, plane): the two face alike, either way (two rows over their normals; neither's place nor its turn within itself); **[0.90]** `perpendicular` takes (envelope in space, line or axis) +`at: m`, the line along its normal at a point held on it (§6.15.3) |
+| `regular` | infix | **[0.115]** (envelope in space, solid) +`by:` a solid, written `flank regular(…, by: tool) within blank`: the flank's least area factor where the tool cuts it in the blank, a bound or an equation (§6.15.3) |
 | `project` | infix | (point, point), each `in` a plane — the two planes are read off the memberships and never written (§6.7) **[0.10]** |
 | `fix` | prefix | the gauge (§13): an entity, and its own numbers pinned whole or by member — `fix((0, 0)) p`, `fix(x == 0) p`, `fix(r == 25) c`, `fix(dir == (0, 0, 1)) t` **[0.34]** **[0.45]** |
 | `ccw`, `cw` | call | three points, all in the parentheses (§9.6) |

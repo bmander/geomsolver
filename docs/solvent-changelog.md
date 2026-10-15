@@ -4,6 +4,17 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.115] A flank regular within its blank.** `flank regular(by: tool) within blank` reads the
+least **area factor** of a generated flank (§6.15.3) — how much the map from a tool point to the
+point it generates scales the tool's area, nothing at a fold — over the part of the flank the tool
+cuts in the blank, found by search: a bound (`>= 0` with no number, no undercut; `>= m` a margin),
+a verdict that steers nothing, or an equation that solves the setting at which a stated margin
+binds. Tool and blank are region solids read by their terms; the flank's source is a face of the
+tool, its round ending the face. `SpecKind::Solid` and `SpecKind::Ratio` are the first solid
+operand and the first number with no unit. Through 0.114 undercut was read only after the solve:
+the sweep's admission refusing a fold (E3), a traced surface's regularity report, and
+`hypoid.sv`'s `Balanced`, which balances two osculating radii and bounds nothing. (Issue #345, S3.)
+
 **[0.114] Ease-off.** A meshing's first flank may be eased (§6.15.4): `meshing(…, ease: M,
 along: l, profile: κₚ, lengthwise: κₗ)` relieves it along its normal by the parabola `½ κₗ s² +
 ½ κₚ r²` about `M`, `s` along `l` and `r` across it, each curvature a number per length or affine

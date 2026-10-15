@@ -165,6 +165,50 @@ unknown, solve both back; printing and refusals — with
 `jacobians::meshing_contacts_agree_with_finite_differences` holding the point, the normal and the
 path over an eased generated and an eased formed flank, a curvature an unknown in each.
 
+**A flank regular within its blank (#345 S3, [0.115]):** `flank regular(>= m, by: tool) within
+blank` is `CKind::RegularWithin` (`KernelKey::Regular`, one row of degree 0): the least **area
+factor** `A = (g_t − α g_u − β g_v)/g_t` (`∂X/∂t = α ∂X/∂u + β ∂X/∂v`, least squares) of a held
+envelope over the tool points on `tool`'s face whose contact in the roll interval lies in `blank`,
+less `m`. `A` is what `solid::admission`'s E3 samples by central differences (`area_factor`, its
+`least_area_factor`): 1 rolling without sliding, nothing at a fold. `envelope::regular` is the
+evaluator. `Parts::of` reads a `Held::Set` cone or cylinder (others refused). `tool` and `blank`
+are `SolidDef::Region`s whose terms are read as `solid::field::region::Term` reads them, in
+closed form over `kernels::Num`: a ball, a cylinder, a cone (its generator nearest, or the apex
+past a quarter turn), a half-space along a line or an axis, each grown. The tool's are read at the
+source's point as drawn (`held::source_at`) and the blank's at the generated point. The tool's
+term that is the source (same shape, same axis line, same number, `same`) is the face and is no
+condition; one grown off it is refused (the backlash's offset face is not the source's envelope).
+A round of the face (`RegionShape::Measured` over a two-term set, one the source's grown by `r`,
+`Shape::Round`) is the core's other term at the source point's foot on the grown one, which ends
+the face at its tangent line exactly. Another face's round is read as its core's terms less `r`,
+short of the true distance only about that face's own edge. The roll's ends, and a line source's
+`[0, 1]`, are conditions too. Columns are the envelope's (`held::Parts`, lead 0), then each
+point, axis and unknown of the terms once (`Builder::col`; an unknown by `held::number`). The
+constants are `Problem::write`'s. **The worst point is searched for**: the face's stretch of the
+meridian scanned (`face`), a grid of it × turns × rolls (`GRID`, the equation at each roll's pose
+read once, `held::posed`) whose sign changes give contacts, each kept where every condition holds;
+the best four followed by a shrinking 7 × 7 grid in `(u, v)`, the roll on the envelope at each;
+then Newton on the KKT conditions (`kkt`: the Lagrangian's gradient in the place by `Dual<3>`
+over `read`, the envelope's equation and up to two held conditions, the place's Jacobian by
+differences), a multiplier on the wrong side or a free condition broken trying fewer held
+(`polish`). The Jacobian is the Lagrangian's in the columns at the worst point, `∂A + λ ∂g + Σ μ
+∂c`, the place and the multipliers standing (the envelope theorem), exact by `Dual<PASS>` passes.
+`worst` remembers each problem's last answers by its constants. The same columns give the answer
+again, nothing found included (a residual's Jacobian asks where the residual did, and a drawing not
+yet solved has none). Columns within `NEAR` start from the last place and its held conditions
+(`warm`), anything else searches again (`cold`, ~0.1 s). A least found, not a bound proved. A
+fold between grid points the shrink never reaches is missed, as a sampled check misses one.
+`tests/regular.rs` is the gate. On `spiral_bevel/formate.sv`'s conjugate pinion (the inner cone's
+envelope under the mesh, `pair.gear_tooth.crown` within `pair.pinion_blank.material`), the least
+is the admission's from below: 0.722584 against 0.722589 sampled at 12.5°, 0.135043 against
+0.135059 at 8°, each on the inner round's tangent line. Its zero, solved, is 7.497°: a tenth of a
+degree above it the pinion is admitted and the bound holds, a tenth below the admission refuses it
+for a fold and the solve reports the bound broken. A margin of 0.3 solves the pressure shift to
+8.7824°, read back and sampled there. `jacobians::regularity_agrees_with_finite_differences` holds
+the Jacobian, the cone's half a column, at the solution and knocked off it. `hypoid.sv`'s
+`Balanced` is unchanged: it balances two members' osculating radii at two sections, a choice of
+settings, not a feasibility bound.
+
 **A point a motion carries (#326, [0.106]):** `Reading::Carried` is `X − Pose(τ)·x`, the pose
 `held::frames`' last at `τ` degrees — any motion, its twist constant or not (`Reading::twist`
 false). `held::Step::Turn` (code 4, nine columns: a centre's lift, its view's `u` and `v`) is a turn

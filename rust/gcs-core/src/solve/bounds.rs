@@ -67,10 +67,11 @@ pub fn bounds_hold(sk: &Sketch) -> bool {
     sk.constraints.iter().all(|c| bound_reading(sk, c, tol).is_none_or(|r| r.holds))
 }
 
-/// Every bound the drawing breaks, by index, with where its point aims, nearest first.
+/// Every bound the drawing breaks that a solve can be steered across (`CKind::steers`), by
+/// index, with where its point aims, nearest first.
 fn broken(sk: &Sketch) -> Vec<(usize, Vec<f64>)> {
     let tol = bound_tol(sk);
-    sk.constraints.iter().enumerate()
+    sk.constraints.iter().enumerate().filter(|(_, c)| c.kind.steers())
         .filter_map(|(i, c)| bound_reading(sk, c, tol).filter(|r| !r.holds).map(|r| (i, r.aims)))
         .collect()
 }
@@ -258,8 +259,9 @@ impl System {
                 self.resync(sk); // back in step with the pose kept
             }
         }
-        // named where it is reported (`Diagnosis::bounds_violated`), not here
-        if !broken(sk).is_empty() {
+        // named where it is reported (`Diagnosis::bounds_violated`), not here — every bound, one
+        // that steers nothing included
+        if !bounds_hold(sk) {
             res.success = false;
             res.status = BOUND_BROKEN;
             res.message = newton::status_message(BOUND_BROKEN).to_string();

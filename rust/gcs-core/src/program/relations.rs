@@ -270,7 +270,13 @@ pub(super) fn constrain(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) -> Option<u3
     if refused_value(cx, &r, st, ckind, spec, &args) {
         return None;
     }
-    let bound = inferred(cx, &r, st, ckind, &mut args, &left_out)?;
+    let mut bound = inferred(cx, &r, st, ckind, &mut args, &left_out)?;
+    // a flank said regular with no number is one with no fold: its least area factor at least
+    // nothing (#345)
+    if ckind == CKind::RegularWithin && left_out[3] && bound.is_none() {
+        args[3] = CArg::Num(0.0);
+        bound = Some((crate::constraints::Bound { cmp: crate::syntax::Cmp::Ge, hi: None }, None));
+    }
     let mut c = Constraint::new(ckind, args);
     c.claim = r.claim;
     // an interval runs upward from its low end, the number as settled

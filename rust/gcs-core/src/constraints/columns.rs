@@ -64,6 +64,11 @@ impl Constraint {
             return self.traced_of().and_then(|e| sk.traced.get(e.i()))
                 .map(crate::traced::consts_of).unwrap_or_default();
         }
+        // a flank's regularity within a blank: the envelope's, the roll's, the regions' terms' and
+        // the number (#345)
+        if self.kind == CKind::RegularWithin {
+            return self.regular_parts(sk).map(|p| p.consts(self.args[3].num())).unwrap_or_default();
+        }
         // a motion's twist read: its steps (#326)
         if self.kind.motion_reading().is_some() {
             return self.motion_parts(sk).map(|p| crate::envelope::screw::consts(&p.steps))
@@ -650,6 +655,11 @@ impl Constraint {
                     .map(|t| crate::traced::columns(sk, t)).unwrap_or_default();
                 [lead, at, body].concat()
             }
+            // a flank's regularity (#345): the envelope's columns, then every point, axis and
+            // unknown the tool's and the blank's terms read
+            CKind::RegularWithin => {
+                self.regular_parts(sk).map(|p| p.columns(sk)).unwrap_or_default()
+            }
             // a motion's twist read (#326, `envelope::screw`): the line's two lifted ends, or the
             // axis's direction, its place and the pitch, then the motion's axes
             CKind::Reciprocal | CKind::ScrewAxis | CKind::CarriedPoint => {
@@ -840,6 +850,8 @@ impl Constraint {
                     .map(|t| crate::traced::lifted(sk, t)).unwrap_or_default();
                 [lead, body].concat()
             }
+            // every point the envelope and the regions' terms read (#345)
+            CKind::RegularWithin => self.regular_parts(sk).map(|p| p.lifted()).unwrap_or_default(),
             // the line's ends, then every point the motion's axes read (#326)
             CKind::Reciprocal | CKind::ScrewAxis | CKind::CarriedPoint => {
                 let parts = self.motion_parts(sk).map(|p| p.lifted()).unwrap_or_default();
