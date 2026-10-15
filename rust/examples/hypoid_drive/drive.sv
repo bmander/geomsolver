@@ -39,18 +39,21 @@ pair := HypoidPair(std.top, std.y, std.z, pinion_teeth: pinion_teeth, gear_teeth
 // face, `play` clear; the member's hub from `front` to `hub`, filling the blank's core to `web`
 // with a boss, a rim `rim` thick under the blank's back and `spokes` bars across between them,
 // each two spokes `spoke_w` wide (and long enough, `spoke_reach`, to meet any rim); the crank's
-// mid-plane at `crank`, the shaft ending at `end`, flush with the crank's hub. From the hub on,
+// mid-plane at `crank`, the shaft ending at `end`, flush with the crank. From the hub on,
 // the shaft is splined: `keys` bars across it, each two keys `key_w` wide from the `root` to the
 // journal's radius, so the splined length passes through the sleeve; each hub's splined bore is
-// the spline less `press` all round, a press fit to be glued. The crank's grip is a pin `pin_r`
-// about with a handle over it, `loose` all round and at each end, kept on by a cap glued on a
-// spigot at the pin's end; its counterweight is the crank's lower side, sized by `Crank` from
-// these. Printers differ: `press`, `clearance` and `loose` are the numbers to tune.
+// the spline less `press` all round, a press fit to be glued. The crank is a plate `plate`
+// thick: `boss_w` about the shaft, tapering to `eye_r` about the grip `throw` out, and below the
+// shaft a fan `fan` either side of straight down, its reach and its pad sized by `Crank` to
+// balance the rest.
+// The grip is a pin `pin_r` about, pressed and glued into the eye, with a handle over it, `loose`
+// all round and at each end, kept on by the pin's head. Printers differ: `press`, `clearance` and
+// `loose` are the numbers to tune.
 mount := {journal: 5mm, clearance: 0.2mm, play: 0.15mm, root: 4mm, keys: 3, key_w: 2.5mm,
   press: 0.05mm, head_r: 8mm, head_t: 3mm, post: 10mm, sleeve_r: 9mm, front: -3mm, web: 6mm,
-  hub: 12mm, hub_r: 10mm, rim: 2.5mm, spokes: 3, spoke_w: 5mm, spoke_reach: 80mm, crank: 22mm,
-  crank_hub: 12mm, end: 28mm, throw: 34mm, arm_t: 8mm, arm_w: 20mm, grip: 40mm, pin_r: 5mm,
-  handle_r: 8mm, loose: 0.3mm, cap_t: 3mm, spigot_r: 2.5mm}
+  hub: 12mm, hub_r: 10mm, rim: 2.5mm, spokes: 3, spoke_w: 5mm, spoke_reach: 80mm, crank: 23mm,
+  end: 28mm, throw: 34mm, plate: 10mm, boss_w: 12mm, eye_r: 8mm, fan: 65deg, grip: 40mm,
+  pin_r: 4mm, handle_r: 7mm, loose: 0.3mm, head_w: 3mm}
 
 // The pair's size, for the frame's floor: nothing of either member stands farther from the
 // gear's axis than its heel, half the face width (0.1 R) past the mean cone distance R, and a
@@ -74,7 +77,7 @@ frame := Frame(pair.gear_cone.ax, pair.gear_cone.foot, pair.pinion_cone.ax,
 // Each member's blank bounds it (a member is its blank less its cuts), so a part clear of the
 // blank is clear of the member. The frame clears both members, and each shaft and hub runs in
 // it with its clearance and play; each shaft clears the other member and the other shaft; each
-// handle turns loose on its pin, between the crank and the cap. Each
+// handle turns loose on its pin, between the crank and the pin's head. Each
 // crank, turned with its shaft through a whole turn, clears the frame and the other member; the
 // two cranks turn in slabs beyond their members, and the slabs are apart.
 claim frame.body clear(2mm) pair.gear_blank.material
@@ -87,9 +90,9 @@ claim gear_side.shaft clear(1mm) pair.pinion_blank.material
 claim pinion_side.shaft clear(1mm) pair.gear_blank.material
 claim gear_side.shaft clear(1mm) pinion_side.shaft
 claim gear_side.crank.handle clear(0.2mm) gear_side.crank.body
-claim gear_side.crank.handle clear(0.2mm) gear_side.crank.cap
+claim gear_side.crank.handle clear(0.2mm) gear_side.crank.pin
 claim pinion_side.crank.handle clear(0.2mm) pinion_side.crank.body
-claim pinion_side.crank.handle clear(0.2mm) pinion_side.crank.cap
+claim pinion_side.crank.handle clear(0.2mm) pinion_side.crank.pin
 gear_turn := motion(about: pair.gear_cone.ax)
 pinion_turn := motion(about: pair.pinion_cone.ax)
 construction gear_crank_turned := solid(gear_side.crank.body, under: gear_turn, at: 0deg)
@@ -203,92 +206,148 @@ component Spokes(ax: line, o: point, across: line, lo: Length, hi: Length, width
   }
 }
 
-// A crank on the shaft about `ax`: a hub at `crank` from `foot`, bored for the spline; an arm
-// `throw` along `toward` and `arm_w` wide across `across` to the grip's axis, parallel to the
-// shaft, the arm's end rounded about it into an eye; the grip's pin standing out away from the
-// member, with its handle and cap (`handle`, `cap`, parts of their own); and below the hub, the
-// crank's lower side, its counterweight: a half disc about the shaft opposite the arm, from the
-// arm's inboard face out.
+// A crank on the shaft about `ax`, a plate `plate` thick at `crank` from `foot`, as a crank is
+// drawn face on: a boss `boss_w` about the shaft, bored for the spline, tapering on lines
+// tangent to both to an eye `eye_r` about the grip's axis, `throw` along `toward` and parallel
+// to the shaft; and below the shaft, the plate's own lower side fanning out, its counterweight —
+// the sector of a disc about the shaft `fan` either side of straight down, padded on the
+// handle's side. The grip's pin (`pin`, a part of its own) is pressed into the eye from the
+// member's side and stands out away from it, a handle (`handle`) loose on it between the plate
+// and the pin's head.
 //
-// The counterweight balances what turns with the crank — the arm, the eye, the pin, the handle
-// and the cap, which ride round on the pin — so the crank's centre of mass is on the shaft and
-// the shaft is a principal axis of its inertia: it spins without shaking or wobbling. Each is a
-// plain shape at a stated size, so its first moment about the shaft (its volume times its
-// distance off the axis) is a number worked out here, as is where along the shaft that moment
-// stands. The arm between the hub and the eye, both `arm_w` / 2 about, is its box less a half
-// disc at each end; the pin stands out from the eye's face; the cap and its spigot are a disc.
-// The weight must carry their whole first moment (static balance) and stand where it does along
-// the shaft (no couple, so no wobble). Starting at the arm's inboard face, that says how deep it
-// is, twice that station plus the arm's thickness; its first moment, `2/3 (R³ - r³)` a unit
-// deep, then says its radius R. The hub runs out with it, to the weight's outboard face. All of
-// it assumes one density, as one print is.
+// The fan balances what turns with the crank, so its centre of mass is on the shaft and the
+// shaft is a principal axis of its inertia: it spins without shaking or wobbling. Each piece is a
+// plain shape at a stated size, so its first moment about the shaft (its area or volume times
+// its distance off the axis) is a number worked out here, and where along the shaft it stands:
+// the plate above the shaft — the boss, the trapezoid between the tangent points and the eye,
+// less the boss's segment beyond the trapezoid and with the eye's beyond it — in the plate's
+// mid-plane, and the pin, handle and head out at the throw, standing out from it. The fan must
+// carry their whole first moment (static balance) and their moment along the shaft (the couple
+// that would wobble it). The plate's part of the fan stands in its mid-plane, so the couple is
+// the pad's alone: a pad as deep as `pad` on the plate's face, over the fan beyond the boss,
+// stands `(plate + pad) / 2` out, and its share of the fan's first moment is `pad / (plate +
+// pad)`, which says how deep it is; the fan's first moment, `2/3 (R³ - r³) sin(fan)` a unit
+// thick beyond the boss, then says its radius R. All of it assumes one density, as one print
+// is.
 component Crank(ax: line, foot: point, toward: line, across: line, m: group) {
   center := point
   center coincident ax
   foot distance(m.crank, along: ax) center
-  pin := point
-  construction arm := line(center, pin)
+  pin_at := point
+  construction arm := line(center, pin_at)
   arm parallel toward
-  center distance(m.throw, along: toward) pin
+  center distance(m.throw, along: toward) pin_at
   tip := point
-  construction grip_ax := line(pin, tip)
+  construction grip_ax := line(pin_at, tip)
   grip_ax parallel ax
-  pin distance(m.grip, along: ax) tip
+  pin_at distance(m.grip, along: ax) tip
 
-  r := m.arm_w / 2
-  t := m.arm_t
-  turning := (m.arm_w * m.throw^2 / 2 - pi * r^2 * m.throw / 2) * t + pi * r^2 * t * m.throw
-  pinned := pi * m.pin_r^2 * (m.grip - t / 2) * m.throw
+  // the plate's own frame: `arm` up it, `side` across it, the shaft square to both
+  side_end := point
+  construction side := line(center, side_end)
+  side parallel across
+  center distance(1mm, along: across) side_end
+  face_on := plane(u: arm, v: side)
+
+  a := m.eye_r
+  b := m.boss_w
+  t := m.plate
+  L := m.throw
+  // the tangent lines: their normals at `theta` either side of the arm, where the sine of their
+  // lean off it is (b - a) / L; the trapezoid between the tangent points, `u0` to `u1` up the arm
+  s := (b - a) / L
+  c := sqrt(1 - s^2)
+  theta := acos(s)
+  u0 := b * s
+  u1 := L + a * s
+  h0 := b * c
+  h1 := a * c
+  leaned := (u1^3 - u0^3) / 3 - u0 * (u1^2 - u0^2) / 2
+  trapezoid := h0 * (u1^2 - u0^2) + 2 * (h1 - h0) / (u1 - u0) * leaned
+  segments := 2 / 3 * (a^3 - b^3) * c^3 + L * a^2 * (theta / 1rad - c * s)
+  upper := trapezoid + segments
+  pinned := pi * m.pin_r^2 * (m.grip - t / 2)
   bore_r := m.pin_r + m.loose
-  sleeved := pi * (m.handle_r^2 - bore_r^2) * (m.grip - t / 2 - 2 * m.loose) * m.throw
-  standing := pinned + sleeved
-  capping := pi * m.handle_r^2 * m.cap_t * m.throw
-  moment := turning + standing + capping
-  centred := (standing * (t / 2 + m.grip) / 2 + capping * (m.grip + m.cap_t / 2)) / moment
-  deep := 2 * centred + t
-  outer := max(m.crank_hub / 2, deep - t / 2)
-  weight_r := (3 * moment / (2 * deep) / 1mm^3 + (r / 1mm)^3)^(1 / 3) * 1mm
+  sleeved := pi * (m.handle_r^2 - bore_r^2) * (m.grip - t / 2 - 2 * m.loose)
+  headed := pi * m.handle_r^2 * m.head_w
+  standing := (pinned + sleeved + headed) * L
+  couple := (pinned + sleeved) * L * (t / 2 + m.grip) / 2 + headed * L * (m.grip + m.head_w / 2)
+  moment := upper * t + standing
+  pad := 2 * couple / moment
+  fan_moment := moment / (t + pad)
+  reach := ((b^3 + fan_moment / (2 / 3 * sin(m.fan))) / 1mm^3)^(1 / 3) * 1mm
 
-  web := { q | center distance(in: (-t / 2, t / 2), along: ax) q
-               center distance(in: (0mm, m.throw), along: toward) q
-               center distance(in: (-r, r), along: across) q }
-  hub := { q | q inside std.Cylinder(ax, r: r)
-               center distance(in: (-m.crank_hub / 2, outer), along: ax) q }
-  eye := { q | q inside std.Cylinder(grip_ax, r: r)
-               center distance(in: (-t / 2, t / 2), along: ax) q }
-  grip := { q | q inside std.Cylinder(grip_ax, r: m.pin_r)
-                center distance(in: (0mm, m.grip), along: ax) q }
-  spigot := { q | q inside std.Cylinder(grip_ax, r: m.spigot_r)
-                  center distance(in: (m.grip - 1mm, m.grip + m.cap_t), along: ax) q }
-  weight := { q | q inside std.Cylinder(ax, r: weight_r); q outside std.Cylinder(ax, r: r - 1mm)
-                  center distance(<= 0mm, along: toward) q
-                  center distance(in: (-t / 2, deep - t / 2), along: ax) q }
-  private construction web_solid := solid(web)
-  private construction hub_solid := solid(hub)
+  // the directions square to the tangent lines and to the fan's edges, in the plate
+  normal_l := point
+  normal_r := point
+  edge_l := point
+  edge_r := point
+  normal_l coincident face_on
+  normal_r coincident face_on
+  edge_l coincident face_on
+  edge_r coincident face_on
+  center distance(1mm) normal_l
+  center distance(1mm) normal_r
+  center distance(1mm) edge_l
+  center distance(1mm) edge_r
+  construction to_normal_l := line(center, normal_l)
+  construction to_normal_r := line(center, normal_r)
+  construction to_edge_l := line(center, edge_l)
+  construction to_edge_r := line(center, edge_r)
+  arm angle(theta) to_normal_l
+  arm angle(theta) to_normal_r
+  arm angle(90deg - m.fan) to_edge_l
+  arm angle(90deg - m.fan) to_edge_r
+  center distance(>= 0mm, along: side) normal_l
+  center distance(<= 0mm, along: side) normal_r
+  center distance(>= 0mm, along: side) edge_l
+  center distance(<= 0mm, along: side) edge_r
+
+  slab := { q | center distance(in: (-t / 2, t / 2), along: ax) q }
+  boss := { q | q inside slab; q inside std.Cylinder(ax, r: b) }
+  eye := { q | q inside slab; q inside std.Cylinder(grip_ax, r: a) }
+  taper := { q | q inside slab; center distance(in: (u0, u1), along: arm) q
+                 center distance(<= b, along: to_normal_l) q
+                 center distance(<= b, along: to_normal_r) q }
+  weight := { q | q inside slab; q inside std.Cylinder(ax, r: reach)
+                  center distance(<= 0mm, along: to_edge_l) q
+                  center distance(<= 0mm, along: to_edge_r) q }
+  padding := { q | center distance(in: (t / 2 - 1mm, t / 2 + pad), along: ax) q
+                   q inside std.Cylinder(ax, r: reach); q outside std.Cylinder(ax, r: b)
+                   center distance(<= 0mm, along: to_edge_l) q
+                   center distance(<= 0mm, along: to_edge_r) q }
+  hole := { q | q inside std.Cylinder(grip_ax, r: m.pin_r - m.press)
+                center distance(in: (-t, t), along: ax) q }
+  private construction boss_solid := solid(boss)
   private construction eye_solid := solid(eye)
-  private construction grip_solid := solid(grip)
-  private construction spigot_solid := solid(spigot)
+  private construction taper_solid := solid(taper)
   private construction weight_solid := solid(weight)
-  private bore := Splined(ax, foot, toward,
-    lo: m.crank - m.crank_hub / 2 - 1mm, hi: m.crank + m.crank_hub / 2 + 1mm,
+  private construction padding_solid := solid(padding)
+  private construction hole_solid := solid(hole)
+  private bore := Splined(ax, foot, toward, lo: m.crank - t / 2 - 1mm, hi: m.crank + t / 2 + 1mm,
     root: m.root - m.press, tip: m.journal - m.press, width: m.key_w - 2 * m.press, keys: m.keys)
   body := solid()
-  web_solid union body
-  hub_solid union body
+  boss_solid union body
   eye_solid union body
-  grip_solid union body
-  spigot_solid union body
+  taper_solid union body
   weight_solid union body
+  padding_solid union body
+  hole_solid cut body
   bore.body cut body
 
+  shank := { q | q inside std.Cylinder(grip_ax, r: m.pin_r)
+                 center distance(in: (-t / 2, m.grip), along: ax) q }
+  cap := { q | q inside std.Cylinder(grip_ax, r: m.handle_r)
+               center distance(in: (m.grip, m.grip + m.head_w), along: ax) q }
   sleeve := { q | q inside std.Cylinder(grip_ax, r: m.handle_r)
-                  q outside std.Cylinder(grip_ax, r: m.pin_r + m.loose)
+                  q outside std.Cylinder(grip_ax, r: bore_r)
                   center distance(in: (t / 2 + m.loose, m.grip - m.loose), along: ax) q }
-  cover := { q | q inside std.Cylinder(grip_ax, r: m.handle_r)
-                 q outside std.Cylinder(grip_ax, r: m.spigot_r - m.press)
-                 center distance(in: (m.grip, m.grip + m.cap_t), along: ax) q }
+  private construction shank_solid := solid(shank)
+  private construction cap_solid := solid(cap)
+  pin := solid()
+  shank_solid union pin
+  cap_solid union pin
   handle := solid(sleeve)
-  cap := solid(cover)
 }
 
 // The frame, inside the pair: a post where the shafts cross, down to a floor under both, and a

@@ -30,9 +30,9 @@ the solved drawing.
 | frame (1) | `frame.body` | a post where the shafts cross, standing on a floor under both, and a sleeve along each shaft from the post into the hollow of its member |
 | shafts (2) | `gear_side.shaft`, `pinion_side.shaft` | a 10 mm journal that runs in its sleeve, a head that stops it at the post, and, from the member's hub out, six splines that pass through the sleeve |
 | gear and pinion (2) | `gear_side.part`, `pinion_side.part` | the imported member and its spoked hub as one part: a rim on the blank's back cone, six spokes and a boss, bored for the spline |
-| cranks (2) | `gear_side.crank.body`, `pinion_side.crank.body` | a hub bored for the spline, a 34 mm arm with a grip pin, and below the hub the crank's lower side, its counterweight |
+| cranks (2) | `gear_side.crank.body`, `pinion_side.crank.body` | a 10 mm plate, as a crank is drawn face on: a boss about the shaft bored for the spline, tapering to an eye 34 mm out, and below the shaft a fan, padded on the handle's side, its counterweight |
+| grip pins (2) | `….crank.pin` | an 8 mm pin pressed into the eye from behind, its head keeping the handle on |
 | handles (2) | `….crank.handle` | a sleeve that turns loose on the grip pin |
-| caps (2) | `….crank.cap` | a disc glued onto the spigot at the pin's end, which keeps the handle on |
 
 Each part is a component used twice, once per member, with one set of numbers (`mount`). Along a
 shaft, every ordinate is measured from the foot of M on it, or from where the other shaft crosses
@@ -46,8 +46,8 @@ are their swept cuts, as in `hypoid.sv`, meshed from their material fields.
 
 1. Slide each shaft into its sleeve from the post, until its head stops at the post's face.
 2. Press each member onto its shaft's spline, against the sleeve's end, and glue it.
-3. Slip a handle over each crank's grip pin, glue the cap onto the spigot, and press the crank
-   onto the shaft's end, flush, and glue it.
+3. Slip a handle over each grip pin, press the pin into its crank's eye from the side that faces
+   the member, and glue it. Then press the crank onto the shaft's end, flush, and glue it.
 
 The head and the member's hub hold each shaft in its sleeve, with 0.15 mm of play at each end.
 The fits are numbers in `mount`, and printers differ, so tune them there:
@@ -58,31 +58,31 @@ The fits are numbers in `mount`, and printers differ, so tune them there:
 | shaft endwise, at each end of the sleeve | `play` | 0.15 mm |
 | each spline in its hub, a press fit to glue | `press` | the hub's bore 0.05 mm inside the spline all round |
 | handle on its pin, loose, and at each end | `loose` | 0.3 mm |
-| cap on its spigot, a press fit to glue | `press` | 0.05 mm |
+| grip pin in the crank's eye, a press fit to glue | `press` | 0.05 mm |
 
 ## The counterweights
 
 Each crank spins without shaking or wobbling: its centre of mass is on the shaft, and the shaft is
 a principal axis of its inertia. Everything that goes round with it is a plain shape at a stated
-size: the arm, the eye at its end, the grip pin, the handle and the cap. The handle and cap count
-because they ride round on the pin. So `Crank` works out their first moment about the shaft
-(volume times distance off the axis) and where along the shaft it stands, as values from
-`mount`.
+size: the plate above the shaft (the boss, the trapezoid between the tangent lines and the eye),
+the grip pin, and the handle, which rides round on the pin. So `Crank` works out their first
+moment about the shaft (area or volume times distance off the axis) and their moment along the
+shaft, as values from `mount`.
 
-The counterweight is the crank's lower side, a half disc about the shaft opposite the arm, flush
-with the arm's inboard face. It must carry the whole first moment, which is static balance. It
-must also stand where that moment does along the shaft, so that it cancels the couple that would
-tilt the axis of inertia and wobble the crank. The grip, handle and cap stand out from the arm, so
-the moment they and the arm carry together stands 15 mm out from the arm's mid-plane. The weight,
-starting at the arm's face, is as deep as that requires (39 mm).
-Its radius then follows from the first moment (25 mm), and the hub runs out to its outboard face.
-A shorter grip would make it shallower. The arithmetic assumes one density, as a single print
-has.
+The counterweight is the plate's own lower side, a fan of a disc about the shaft 65° either side
+of straight down. A flat plate puts all its mass in one plane, and the pin and handle stand out to
+one side of it. Their couple would tilt the axis of inertia, and no part of the plate's plane can
+cancel it. So the fan, and only the fan, is padded on the handle's side, and the couple is the
+pad's alone. The pad's depth is twice the handle group's couple over the total first moment
+(28 mm). The fan's radius then follows from static balance (25 mm). The arithmetic assumes one
+density, as a single print has.
 
 `gcs-core/tests/hypoid_drive.rs` holds the balance against the built meshes, not the arithmetic.
-With its handle and cap, each crank's centre of mass is 0.002 mm off its shaft. Its product of
-inertia between the shaft and a direction square to it is about 1,400 mm⁵, against 1.6 million
-for the crank alone, so its principal axis lies within 0.01° of the shaft.
+With its pin and handle, each crank's centre of mass is 0.01 mm off its shaft. Most of that is the
+press fit, a ring both meshes count, though a pressed pin holds it once. Its product of inertia
+between the shaft and a direction square to it is about 6,000 mm⁵, against 2.5 million for the
+plate alone. Read off the meshes, the crank's principal axis lies 0.03° off the shaft, and with its
+member and shaft the rotor's 0.008°. As a flat plate with no pad, the rotor's would tilt about 9°.
 
 ## What it claims
 
@@ -93,12 +93,12 @@ judges seventeen claims, about three minutes in all:
 - each shaft and hub runs in the frame with its clearance and play (0.15 mm, the least);
 - each shaft is 1 mm clear of the other member's blank, and the two shafts are 1 mm clear of each
   other;
-- each handle is 0.2 mm clear of its crank and cap (0.3 mm by design);
+- each handle is 0.2 mm clear of its crank and its pin (0.3 mm by design);
 - each crank, turned with its shaft through a whole turn (`claim over gear_turn in (0deg,
   360deg)`), is 2 mm clear of the frame and of the other member.
 
 The cranks turn in slabs beyond their members, and the slabs are apart. Each crank's reach,
-44 mm, is less than its shaft's height over the floor's underside (75 mm for the gear's), so it
+42 mm, is less than its shaft's height over the floor's underside (75 mm for the gear's), so it
 turns clear of the table.
 
 The swept claims read solids of instances, `frame.body` and `pair.pinion_blank.material`, and
@@ -113,7 +113,7 @@ crank balanced, and, in the slow tier, every claim held with each hub touching i
 The pair's inputs head `drive.sv`, as they head `hypoid.sv`, so the drive can carry a pair of its
 own. The tooth counts, module and spiral may change. The offset may not go to zero: a bevel pair's
 shafts meet, and then there is no common perpendicular for the frame to stand on. The drive's own
-sizes are in `mount` (shaft, sleeve, splines, hub and spokes, crank, handle) and `sizes` (the
+sizes are in `mount` (shaft, sleeve, splines, hub and spokes, crank plate, grip, handle) and `sizes` (the
 frame's floor). The counterweight follows the crank's sizes, and the claims say
 whether a change still fits.
 
@@ -123,8 +123,8 @@ Print files, one STL a part (each member takes about half a minute):
 make solventc
 mkdir -p build/exports
 for s in frame.body gear_side.part pinion_side.part gear_side.shaft pinion_side.shaft \
-    gear_side.crank.body pinion_side.crank.body gear_side.crank.handle pinion_side.crank.handle \
-    gear_side.crank.cap pinion_side.crank.cap; do
+    gear_side.crank.body pinion_side.crank.body gear_side.crank.pin pinion_side.crank.pin \
+    gear_side.crank.handle pinion_side.crank.handle; do
   build/solventc rust/examples/hypoid_drive/drive.sv --no-diagnose --solid $s \
     --stl build/exports/drive-$s.stl
 done

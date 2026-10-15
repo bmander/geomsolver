@@ -33,7 +33,7 @@ fn the_drive_solves_on_the_imported_pair() {
     // the parts the drive makes of its own are built exactly: plates of half-spaces, the rest
     // revolutions, the spokes and splines placed copies of slabs
     for side in ["gear_side", "pinion_side"] {
-        for part in ["shaft", "hub", "crank.body", "crank.handle", "crank.cap"] {
+        for part in ["shaft", "hub", "crank.body", "crank.handle", "crank.pin"] {
             let name = format!("{side}.{part}");
             let i = fixtures::solid(&e, &name);
             assert!(e.sketch.exact_solid(i).is_ok(), "{name}: {:?}", e.sketch.exact_solid(i).err());
@@ -66,11 +66,11 @@ fn moments(positions: &[f64], o: [f64; 3]) -> (f64, [f64; 3], [[f64; 3]; 3]) {
 
 fn dot(a: [f64; 3], b: [f64; 3]) -> f64 { a[0] * b[0] + a[1] * b[1] + a[2] * b[2] }
 
-/// **Each crank turns balanced.**  Everything that goes round with a crank — its body, the
-/// handle on its grip and the cap that keeps the handle on — has its centre of mass on the shaft
-/// (no shake) and no product of inertia between the shaft and a direction square to it (no
-/// wobble), read off the built meshes, not off the arithmetic `Crank` sizes its counterweight by.
-/// The body alone, without the handle and cap the weight was sized for, is neither.
+/// **Each crank turns balanced.**  Everything that goes round with a crank — its plate, the pin
+/// pressed into it and the handle on the pin — has its centre of mass on the shaft (no shake) and
+/// no product of inertia between the shaft and a direction square to it (no wobble), read off the
+/// built meshes, not off the arithmetic `Crank` sizes its fan and pad by.  The plate alone,
+/// without the pin and handle the fan was sized for, is neither.
 #[test]
 fn each_crank_spins_balanced() {
     let e = read(&source());
@@ -103,14 +103,16 @@ fn each_crank_spins_balanced() {
             });
             (dot(off, off).sqrt() / v, dot(couple, couple).sqrt())
         };
-        let (shake, wobble) = read(&["body", "handle", "cap"]);
+        let (shake, wobble) = read(&["body", "pin", "handle"]);
         let (bare_shake, bare_wobble) = read(&["body"]);
         eprintln!("{side}: {shake:.4} mm off the axis, couple {wobble:.0} mm⁵; the body alone \
                    {bare_shake:.3} mm, {bare_wobble:.0} mm⁵");
-        assert!(shake < 0.01, "{side}: its centre of mass {shake} mm off the shaft");
+        // the pin's shank and the eye's hole overlap by the press fit, a ring counted in both
+        // meshes once each though a pressed part holds it once: 0.014 mm of this, at the throw
+        assert!(shake < 0.02, "{side}: its centre of mass {shake} mm off the shaft");
         assert!(wobble < 1e-2 * bare_wobble,
                 "{side}: a couple of {wobble} mm⁵ against {bare_wobble}");
-        assert!(bare_shake > 1.0, "{side}: the weight was sized for the handle and cap too");
+        assert!(bare_shake > 1.0, "{side}: the fan was sized for the pin and handle too");
     }
 }
 
