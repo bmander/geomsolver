@@ -4,6 +4,14 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.123] Splines in space.** A spline over a point standing in space is a curve in space:
+`Σ Rᵢ(u)·Pᵢ` over its control points where they stand, its parameter over its own domain. Its
+contacts are a curve in space's (a point held at a place, `t == u`; the tangent; the centre of
+curvature), it is a `path` a family runs along, and `spline(through: …)` over corners in space is
+the cubic through them, natural or along the tangents its ends are given — so a loft's smooth rail
+may leave its plane. It bounds no face. Through 0.122 a spline over a point in space was E060.
+(Issue #363, S3.)
+
 **[0.122] A curve's centre of curvature, and Frenet's frame.** At a point a contact holds on a
 curve traced in space, `k curvature(at: p) c` puts the point `c` at the centre of its osculating
 circle. The standard library's `Frenet(g, s:)` is the station whose `u` runs toward that centre

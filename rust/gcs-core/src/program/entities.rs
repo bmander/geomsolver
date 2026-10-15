@@ -673,13 +673,59 @@ pub(super) fn places(sk: &mut Sketch, deferred: &[Deferred], diags: &mut Vec<Dia
     }
 }
 
+/// **A spline over points in space is a curve traced in space** (#363 S3): `k := spline(a, b, c,
+/// d)` with a control point no plane reaches is the body `X = Σ Rᵢ(u)·Pᵢ` over the control points'
+/// lifts (`traced::RowKind::Spline`), its formal the spline's parameter over its domain — so its
+/// contacts are a traced curve's, exact, it is a `path`, and `spline(through: …)` over corners in
+/// space is the cubic through them.  A representation, never a meaning: the curve is the spline's
+/// own, its knots and weights.  Its name reads the traced curve, and the spline, kept so no index
+/// moves, is no primitive (`Sketch::spline_traced`).  Asked once every membership is in.
+pub(super) fn splines_in_space(sk: &mut Sketch, res: &mut Resolver, map: &mut super::SourceMap) {
+    for i in 0..sk.splines.len() {
+        let s = &sk.splines[i];
+        if sk.spline_traced.contains_key(&(i as u32))
+            || s.ctrl.iter().all(|&p| sk.plane_of(p as usize).is_some()) {
+            continue;
+        }
+        let n = s.ctrl.len();
+        let consts = [s.knots.clone(), s.weights.clone().unwrap_or_else(|| vec![1.0; n])].concat();
+        // the variable table: the parameter, the control points' lifts, then the point
+        let n_outer = 1 + 3 * n;
+        let vars: Vec<String> = (0..n_outer).map(|k| format!("#v{k}")).collect();
+        let zero = crate::tape::Tape::compile_wide(
+            &crate::expr::Ast::Num(0.0, crate::units::Dim::SCALAR), &vars)
+            .expect("a number always compiles");
+        let row = crate::traced::Row { kind: crate::traced::RowKind::Spline,
+            cols: (0..n_outer as u32 + 3).collect(), consts };
+        let Ok(body) = crate::traced::Body::new(1, n_outer, 3 * n, 3, 0, Vec::new(),
+                                                vec![zero.clone(), zero.clone(), zero], vec![row])
+        else { continue };
+        let (lo, hi) = curve::domain(sk, i);
+        let e = EntRef::spline(i);
+        let name = map.name_of(e).cloned().unwrap_or_else(|| io::entity_name(e));
+        let t = crate::model::TracedE {
+            body, args: s.ctrl.iter().map(|&p| EntRef::point(p as usize)).collect(),
+            values: Vec::new(), domain: [[lo, hi], [0.0, 0.0]], home: [0.5 * (lo + hi), 0.0],
+            name, class: s.class.clone(),
+        };
+        let traced = EntRef::new(EntKind::Traced, sk.traced.len());
+        sk.traced.push(t);
+        sk.spline_traced.insert(i as u32, traced.i() as u32);
+        for x in res.of.values_mut().filter(|x| **x == e) {
+            *x = traced;
+        }
+        map.moved(e, traced);
+    }
+}
+
 /// A circle, an arc and a spline are drawn in a plane: one over a point standing in space has
 /// none to be drawn in, and is refused at its declaration (E060).  Asked once every membership
 /// is in, so a point an `in` reaches later is in its plane by then.
 pub(super) fn drawn_in_planes(sk: &Sketch, map: &super::SourceMap, diags: &mut Vec<Diag>) {
     let curves = (0..sk.circles.len()).map(EntRef::circle)
         .chain((0..sk.arcs.len()).map(EntRef::arc))
-        .chain((0..sk.splines.len()).map(EntRef::spline))
+        .chain((0..sk.splines.len()).filter(|&i| !sk.spline_traced.contains_key(&(i as u32)))
+            .map(EntRef::spline))
         .chain((0..sk.curves.len()).filter(|&i| sk.curve_extremal(i)).map(|i| EntRef::new(EntKind::Curve, i)));
     for e in curves {
         let Some(&p) = sk.children(e).iter().find(|k| sk.plane_of(k.i()).is_none()) else { continue };

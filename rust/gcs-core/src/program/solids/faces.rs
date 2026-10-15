@@ -274,13 +274,18 @@ fn loop_items(
                 return None;
             }
             _ => {
+                // a curve traced in space — a spline over points in space among them (#363 S3)
+                // — is drawn in no plane, and a face is
+                let what = match e.kind {
+                    EntKind::Traced => "a curve in space, drawn in no plane".to_string(),
+                    k => k.a(),
+                };
                 report(Code::E080,
                     r.span,
                     format!(
                         "a face is bounded by lines, arcs, circles, splines and stretches of \
-                         curves, and turns at points; `{}` is {}",
+                         curves, and turns at points; `{}` is {what}",
                         r.root.text,
-                        e.kind.a()
                     ),
                 );
                 return None;

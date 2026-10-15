@@ -323,6 +323,290 @@ F curvature(at: m) c
     assert!(said.iter().any(|m| m.contains("no one centre of curvature")), "{said:?}");
 }
 
+/// The cubic Bézier over `ctrl` at `t`: its point and first two derivatives, Bernstein's.
+fn bezier(ctrl: &[V; 4], t: f64) -> [V; 3] {
+    let u = 1.0 - t;
+    let mix = |w: [f64; 4]| -> V {
+        std::array::from_fn(|k| (0..4).map(|i| w[i] * ctrl[i][k]).sum())
+    };
+    [
+        mix([u * u * u, 3.0 * t * u * u, 3.0 * t * t * u, t * t * t]),
+        mix([-3.0 * u * u, 3.0 * u * u - 6.0 * t * u, 6.0 * t * u - 3.0 * t * t, 3.0 * t * t]),
+        mix([6.0 * u, 6.0 * t - 12.0 * u, 6.0 * u - 12.0 * t, 6.0 * t]),
+    ]
+}
+
+/// `∫ f` over `(a, b)` by five-point Gauss–Legendre over 400 panels: to the last digit for a
+/// curve's speed.
+fn integral(a: f64, b: f64, f: impl Fn(f64) -> f64) -> f64 {
+    let (x, w) = ([-0.906179845938664, -0.538469310105683, 0.0, 0.538469310105683,
+                   0.906179845938664],
+                  [0.236926885056189, 0.478628670499366, 0.568888888888889, 0.478628670499366,
+                   0.236926885056189]);
+    let n = 400;
+    (0..n).map(|k| {
+        let (lo, hi) = (a + (b - a) * k as f64 / n as f64, a + (b - a) * (k + 1) as f64 / n as f64);
+        let half = 0.5 * (hi - lo);
+        (0..5).map(|i| w[i] * f(0.5 * (lo + hi) + half * x[i])).sum::<f64>() * half
+    }).sum()
+}
+
+/// Four control points in space, a Bézier over them, and points held on it.
+const CUBIC: &str = "
+ka := point hint((0, 0, 0))
+kb := point hint((10, 20, 5))
+kc := point hint((30, 20, 15))
+kd := point hint((40, 0, 30))
+fix((0mm, 0mm, 0mm)) ka
+fix((10mm, 20mm, 5mm)) kb
+fix((30mm, 20mm, 15mm)) kc
+fix((40mm, 0mm, 30mm)) kd
+cubic := spline(ka, kb, kc, kd)
+";
+
+const CUBIC_CTRL: [V; 4] = [[0.0, 0.0, 0.0], [10.0, 20.0, 5.0], [30.0, 20.0, 15.0],
+                            [40.0, 0.0, 30.0]];
+
+/// **A spline over points in space is a curve traced in space** (#363 S3): `spline(a, b, c, d)`
+/// with its control points standing in space is the body `Σ Bᵢ(u)·Pᵢ` over their lifts, so its
+/// name reads a traced curve (the spline kept, no primitive) whose point, derivatives and length
+/// are Bernstein's — to the last digits — and whose contacts are a traced curve's: a point
+/// pinned at a place of it where Bernstein puts it, a tangent along `C′`, each against finite
+/// differences.
+#[test]
+fn a_spline_over_points_in_space_is_its_bernstein_form() {
+    let e = with(&format!("{CUBIC}
+m1 := point hint((5, 5, 1))
+m1 coincident(t == 0.25) cubic
+m2 := point hint((20, 15, 10))
+m2 coincident(t == 0.6) cubic
+q := point hint((25, 10, 12))
+tl := line(m2, q)
+cubic tangent(at: m2) tl
+length(10mm) tl"));
+    let k = e.map.ent_named("cubic").unwrap();
+    assert_eq!(k.kind, gcs_core::model::EntKind::Traced);
+    assert!(!e.sketch.primitives().iter().any(|p| p.kind == gcs_core::model::EntKind::Spline));
+    let at = |n: &str| e.sketch.world_point(e.map.ent_named(n).unwrap().i());
+    let close = |p: V, q: V, tol: f64| sub(p, q).iter().all(|d| d.abs() <= tol);
+    assert!(close(at("m1"), bezier(&CUBIC_CTRL, 0.25)[0], 1e-9), "{:?}", at("m1"));
+    assert!(close(at("m2"), bezier(&CUBIC_CTRL, 0.6)[0], 1e-9), "{:?}", at("m2"));
+    let along = unit(sub(at("q"), at("m2")));
+    let want = unit(bezier(&CUBIC_CTRL, 0.6)[1]);
+    assert!((dot(along, want).abs() - 1.0).abs() <= 1e-12, "{along:?} against {want:?}");
+    // the reading, every order the contacts read
+    use gcs_core::traced::{reading, Need};
+    for t in [0.0, 0.1, 0.37, 0.5, 0.9, 1.0] {
+        let r = reading(&e.sketch, k.i(), [t, 0.0], Need::Curvature).expect("a reading");
+        let [x, d1, d2] = bezier(&CUBIC_CTRL, t);
+        assert!(close(r.position, x, 1e-12) && close(r.d[0], d1, 1e-11)
+                && close(r.dd[0][0], d2, 1e-10), "at {t}: {r:?}");
+    }
+    let length = integral(0.0, 1.0, |t| {
+        let r = reading(&e.sketch, k.i(), [t, 0.0], Need::Tangent).unwrap();
+        dot(r.d[0], r.d[0]).sqrt()
+    });
+    let want = integral(0.0, 1.0, |t| {
+        let d = bezier(&CUBIC_CTRL, t)[1];
+        dot(d, d).sqrt()
+    });
+    assert!((length - want).abs() <= 1e-12 * want, "{length} against {want}");
+    // its contacts against finite differences, the control points free
+    let mut sk = e.sketch.clone();
+    for p in sk.params.iter_mut() {
+        p.fixed = false;
+    }
+    let traced: Vec<_> = sk.constraints.iter().filter(|c| c.kind.traced_contact().is_some())
+        .cloned().collect();
+    assert_eq!(traced.len(), 3, "{:?}", traced.iter().map(|c| c.kind).collect::<Vec<_>>());
+    for c in &traced {
+        let err = gcs_core::fdcheck::check_constraint(&sk, c, 1e-6, 1e-6)
+            .unwrap_or_else(|m| panic!("{:?}: {m}", c.kind));
+        assert!(err.is_finite());
+    }
+}
+
+/// **A tube along a spline in space is its area along its length**: a round section of radius
+/// 3 square to the Bézier above, in `std.On`'s frame, sweeps 9π times the curve's length
+/// (Gauss–Legendre on Bernstein's derivative).
+#[test]
+fn a_tube_along_a_spline_in_space_is_its_area_along_its_length() {
+    let e = with(&format!("{CUBIC}
+component Round(g: path, up: axis, r: Length, s: Scalar) {{
+  st := std.On(g, up: up, s: s)
+  in st.n {{
+    k := circle(center: st.n.origin)
+    radius(r) k
+  }}
+  f := face(k)
+}}
+tube := solid(Round(cubic, std.z, r: 3mm).f over s in (0, 1))"));
+    let length = integral(0.0, 1.0, |t| {
+        let d = bezier(&CUBIC_CTRL, t)[1];
+        dot(d, d).sqrt()
+    });
+    near(exact(&e, "tube"), 9.0 * PI * length, 1e-9, "the tube");
+}
+
+/// The clamped uniform cubic B-spline basis of `m` control points at `t`, its spans of unit
+/// length, and its first two derivatives — read off four samples a quarter apart in the span at
+/// `t`, toward the inside (`dir`): exact for a cubic.
+fn basis3(m: usize, t: f64, dir: f64) -> [Vec<f64>; 3] {
+    let spans = m - 3;
+    let mut u = vec![0.0; 4];
+    u.extend((1..spans).map(|i| i as f64));
+    u.extend([spans as f64; 4]);
+    fn n(i: usize, p: usize, t: f64, u: &[f64]) -> f64 {
+        if p == 0 {
+            return if u[i] <= t && t < u[i + 1] { 1.0 } else { 0.0 };
+        }
+        let a = if u[i + p] > u[i] { (t - u[i]) / (u[i + p] - u[i]) * n(i, p - 1, t, u) }
+            else { 0.0 };
+        let b = if u[i + p + 1] > u[i + 1] {
+            (u[i + p + 1] - t) / (u[i + p + 1] - u[i + 1]) * n(i + 1, p - 1, t, u)
+        } else { 0.0 };
+        a + b
+    }
+    let at = |t: f64| -> Vec<f64> {
+        let t = t.min(spans as f64 - 1e-12);
+        (0..m).map(|i| n(i, 3, t, &u)).collect()
+    };
+    let h = 0.25;
+    let b: Vec<Vec<f64>> = (0..4).map(|i| at(t + dir * h * i as f64)).collect();
+    let d1 = (0..m).map(|i| dir * (-11.0 * b[0][i] + 18.0 * b[1][i] - 9.0 * b[2][i]
+                                   + 2.0 * b[3][i]) / (6.0 * h)).collect();
+    let d2 = (0..m).map(|i| (2.0 * b[0][i] - 5.0 * b[1][i] + 4.0 * b[2][i] - b[3][i]) / (h * h))
+        .collect();
+    [b[0].clone(), d1, d2]
+}
+
+/// The clamped uniform cubic through the corners `pts` in space, each at its index, its ends
+/// along `start` and `end` where given — `C′ × T = 0`, `C″ · T = 0` — and else natural, `C″ = 0`:
+/// stated on the curve's own derivatives and solved here, apart from the core's construction (L7's
+/// method, in space).  Its control points.
+fn through3(pts: &[V], start: Option<V>, end: Option<V>) -> Vec<V> {
+    let n = pts.len();
+    let m = n + 2;
+    let mut rows: Vec<(Vec<f64>, f64)> = Vec::new();
+    let row = |w: &[f64], d: V| {
+        let mut r = vec![0.0; 3 * m];
+        for (i, wi) in w.iter().enumerate() {
+            for c in 0..3 {
+                r[3 * i + c] = wi * d[c];
+            }
+        }
+        r
+    };
+    let axes = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
+    for (k, p) in pts.iter().enumerate() {
+        let [b, _, _] = basis3(m, k as f64, 1.0);
+        for c in 0..3 {
+            rows.push((row(&b, axes[c]), p[c]));
+        }
+    }
+    for (tangent, at, dir) in [(start, 0.0, 1.0), (end, (n - 1) as f64, -1.0)] {
+        let [_, d1, d2] = basis3(m, at, dir);
+        match tangent {
+            None => {
+                for a in axes {
+                    rows.push((row(&d2, a), 0.0));
+                }
+            }
+            Some(t) => {
+                let t = unit(t);
+                let k = (0..3).min_by(|&a, &b| t[a].abs().total_cmp(&t[b].abs())).unwrap();
+                let e1 = unit(cross(t, axes[k]));
+                let e2 = cross(t, e1);
+                rows.push((row(&d1, e1), 0.0));
+                rows.push((row(&d1, e2), 0.0));
+                rows.push((row(&d2, t), 0.0));
+            }
+        }
+    }
+    let x = gauss_solve(rows);
+    (0..m).map(|i| [x[3 * i], x[3 * i + 1], x[3 * i + 2]]).collect()
+}
+
+/// Gaussian elimination with partial pivoting of a square system.
+fn gauss_solve(rows: Vec<(Vec<f64>, f64)>) -> Vec<f64> {
+    let n = rows.len();
+    let mut a: Vec<Vec<f64>> = rows.iter().map(|(r, b)| { let mut r = r.clone(); r.push(*b); r })
+        .collect();
+    assert_eq!(a[0].len(), n + 1, "a square system");
+    for col in 0..n {
+        let p = (col..n).max_by(|&i, &j| a[i][col].abs().total_cmp(&a[j][col].abs())).unwrap();
+        a.swap(col, p);
+        for i in 0..n {
+            if i != col {
+                let f = a[i][col] / a[col][col];
+                for j in col..=n {
+                    a[i][j] -= f * a[col][j];
+                }
+            }
+        }
+    }
+    (0..n).map(|i| a[i][n] / a[i][i]).collect()
+}
+
+/// **A spline through corners in space** (#363 S3, L7's smooth rail out of its plane): over four
+/// corners standing in space, natural at both ends, and over three, along lines in space at its
+/// ends — each the cubic solved apart from the core, control point for control point, its ends
+/// as the conditions say.
+#[test]
+fn a_spline_through_corners_in_space_is_the_cubic_through_them() {
+    let e = with("
+r0 := point
+r1 := point
+r2 := point
+r3 := point
+fix((0mm, 0mm, 0mm)) r0
+fix((20mm, 10mm, 5mm)) r1
+fix((40mm, 0mm, 20mm)) r2
+fix((50mm, -10mm, 40mm)) r3
+rims := line(r0, r1) -> line(r1, r2) -> line(r2, r3)
+rail := spline(through: rims)
+s0 := point
+s1 := point
+fix((0mm, -10mm, 5mm)) s0
+fix((5mm, -3mm, 9mm)) s1
+e0 := point
+e1 := point
+fix((40mm, 0mm, 20mm)) e0
+fix((40mm, 6mm, 10mm)) e1
+heads := line(s1, s0)
+tails := line(e0, e1)
+pair := line(r0, r1) -> line(r1, r2)
+held := spline(through: pair, start: heads, end: tails)");
+    let sk = &e.sketch;
+    let ctrl = |name: &str| -> Vec<V> {
+        let k = e.map.ent_named(name).unwrap();
+        let (&s, _) = sk.spline_traced.iter().find(|(_, &t)| t as usize == k.i()).unwrap();
+        sk.splines[s as usize].ctrl.iter().map(|&p| sk.world_point(p as usize)).collect()
+    };
+    let corners = [[0.0, 0.0, 0.0], [20.0, 10.0, 5.0], [40.0, 0.0, 20.0], [50.0, -10.0, 40.0]];
+    let (start, end) = (Some([-5.0, -7.0, -4.0]), Some([0.0, 6.0, -10.0]));
+    let cases = [("rail", through3(&corners, None, None)),
+                 ("held", through3(&corners[..3], start, end))];
+    for (name, want) in cases {
+        let got = ctrl(name);
+        assert_eq!(got.len(), want.len(), "`{name}`");
+        for (g, w) in got.iter().zip(&want) {
+            assert!(sub(*g, *w).iter().all(|d| d.abs() <= 1e-9),
+                    "`{name}`: {got:?} against {want:?}");
+        }
+    }
+    use gcs_core::traced::{reading, Need};
+    let k = e.map.ent_named("rail").unwrap();
+    for t in [0.0, 3.0] {
+        let r = reading(sk, k.i(), [t, 0.0], Need::Curvature).unwrap();
+        assert!(dot(r.dd[0][0], r.dd[0][0]).sqrt() <= 1e-9, "`rail` bends at {t}: {r:?}");
+    }
+    for (t, p) in corners.iter().enumerate() {
+        let r = reading(sk, k.i(), [t as f64, 0.0], Need::Point).unwrap();
+        assert!(sub(r.position, *p).iter().all(|d| d.abs() <= 1e-9), "{t}: {r:?}");
+    }
+}
+
 /// The 3D pipe of #363 S4: a line 20 long, a quarter bend of R20 in `std.top`, a line 20 long,
 /// a quarter bend of R20 in the plane x = 20, and a line 20 long up `z` — one chain, its
 /// straight between the bends touching each in its own plane — and stations on it.
@@ -487,4 +771,11 @@ m := point hint((10, 0, 0))
 m coincident(t == 0.25, u == 0.5) guide
 "));
     assert!(said.iter().any(|m| m.contains("`u` is given twice")), "{said:?}");
+    // a spline over points in space is a curve in space, and bounds no face (#363 S3)
+    let said = refusals(&format!("{PATHS}{CUBIC}
+closing := line(kd, ka)
+f := face(cubic, closing)
+"));
+    assert!(said.iter().any(|m| m.starts_with("E080") && m.contains("`cubic` is a curve in space")),
+            "{said:?}");
 }

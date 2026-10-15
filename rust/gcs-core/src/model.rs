@@ -189,6 +189,11 @@ pub struct Sketch {
     /// its family's part frees them (`solid::family::part_of`).  Set by the elaborator
     /// (`program::solids::carry_legs`).
     pub carried: std::collections::BTreeSet<u32>,
+    /// **The splines drawn over points in space** (#363 S3), each to the curve traced in space it
+    /// is (`traced::RowKind::Spline`): its name reads the traced curve, and the spline itself,
+    /// kept so no index moves, is no primitive — neither drawn nor grafted.  Set by the
+    /// elaborator (`program::entities::splines_in_space`).
+    pub spline_traced: std::collections::BTreeMap<u32, u32>,
     /// Each free curve's energy as `settle_variational` last read it: its statements, pegs and
     /// whether its length is free.  Derived state, never saved.
     pub variational: Vec<crate::variational::Energy>,

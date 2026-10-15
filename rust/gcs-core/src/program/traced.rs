@@ -444,14 +444,15 @@ impl<'v> Lowering<'v> {
                 self.w.push(t);
                 let sign = c.side().unwrap_or(1.0);
                 self.rows.push(crate::traced::Row {
-                    kid: Some(twin as usize),
+                    kind: crate::traced::RowKind::Kernel(twin as usize),
                     cols,
                     consts: vec![sign * crate::expr::to_arg_units(k, 1.0), 0.0],
                 });
             }
             None => {
                 let consts = c.consts_on(&self.sk, None);
-                self.rows.push(crate::traced::Row { kid: Some(c.kernel_id()), cols, consts });
+                let kind = crate::traced::RowKind::Kernel(c.kernel_id());
+                self.rows.push(crate::traced::Row { kind, cols, consts });
             }
         }
         Ok(())
@@ -486,7 +487,7 @@ impl<'v> Lowering<'v> {
         let width = crate::envelope::held::steps_width(&steps);
         let cols: Vec<u32> = x.into_iter().chain(at).chain([t as u32])
             .chain((from..from + width).map(|c| c as u32)).collect();
-        self.rows.push(crate::traced::Row { kid: None, cols,
+        self.rows.push(crate::traced::Row { kind: crate::traced::RowKind::Carried, cols,
             consts: crate::envelope::held::encode_steps(&steps) });
         Ok(())
     }

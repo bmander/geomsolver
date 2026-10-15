@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.122 — October 2026**
+**Specification, Draft 0.123 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -570,8 +570,12 @@ place to draw and nothing else; where its picture goes on paper is the drawing's
 **A point in space** **[0.42]** is a point no `in` reaches. It has three coordinates in the
 world's axes, seeded by `hint((…, …, …))` and held by `fix((…, …, …)) p`; a
 `z:` on a point drawn in a plane is **E040** at the key. A line between two points in space is a
-line in space. A circle, an arc and a spline are drawn in a plane, and over a point in space each
-is **E060**, naming the point; a face is **E080** (§6.8). A 2D drawing is drawn in a plane — `use
+line in space. A circle and an arc are drawn in a plane, and over a point in space each
+is **E060**, naming the point; a face is **E080** (§6.8). **[0.123]** A spline over a point in
+space is a **curve in space** (§6.5): the same curve, `Σ Rᵢ(u)·Pᵢ` over its control points where
+they stand and its parameter over its own domain, whose contacts are a curve in space's and which
+is a `path`; `spline(through: …)` over corners in space is the cubic through them. It is drawn in
+no plane, so it bounds no face (**E080**). A 2D drawing is drawn in a plane — `use
 std`, then `in std.front { … }` — and there is no page: `std.front` is a plane like any other,
 the one at the world origin with u = x to the right and v = z up, its viewer at −y.
 
@@ -2854,7 +2858,7 @@ The numerical method is unspecified. Whatever the method, a conforming solver:
 | E040 | type mismatch within an alias class |
 | E041 | cyclic definitional dependency (**[0.18]** a solid made of itself, §6.9; a plane folded from itself until 0.42) |
 | E050 | inconsistent system (no solution); report a minimal infeasible subset when computable |
-| E060 | a point put on two different planes (§6.7) **[0.10]**; **[0.42]** a circle, an arc or a spline over a point standing in space |
+| E060 | a point put on two different planes (§6.7) **[0.10]**; **[0.42]** a circle, an arc or a spline over a point standing in space (**[0.123]** a spline there is a curve in space, §6.4) |
 | E061 | `project` refused: a point on no plane, both on one plane, or parallel planes (§6.7) **[0.10]**; a point drawn in a plane asked whether it is on it, or how far off it along its normal **[0.24]**; two points of one view, or a point with itself, measured where the row is identically nothing **[0.46]** |
 | E062 | a word across planes, or over a point in space, with no meaning in space (`horizontal`, a run or rise, `tangent` between drawn figures, a curve's contacts) (§9.2) **[0.24]** **[0.42]** |
 | E064 | withdrawn **[0.42]**: was a solved view the model cannot hold (`fold: along`, `through:`) **[0.23]** |

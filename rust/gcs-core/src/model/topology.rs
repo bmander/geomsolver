@@ -305,6 +305,10 @@ impl Sketch {
             EntKind::Plane,
         ] {
             for i in 0..self.count(kind) {
+                // a spline over points in space is the curve traced in space it is (#363 S3)
+                if kind == EntKind::Spline && self.spline_traced.contains_key(&(i as u32)) {
+                    continue;
+                }
                 out.push(EntRef::new(kind, i));
             }
         }

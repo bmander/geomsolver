@@ -53,23 +53,127 @@ const MARCH: usize = 32;
 
 /* -- the compiled form -------------------------------------------------------------------- */
 
-/// One row of the body: a static kernel (`kid`) or a point a motion carries (`None`,
-/// `screw::Reading::Carried`, its constants the motion's steps), the variable-table slot each of
-/// its columns reads, and its constants.
+/// What a row of the body states.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RowKind {
+    /// A static kernel of `KERNELS`, by its id.
+    Kernel(usize),
+    /// A point a motion carries (`screw::Reading::Carried`, its constants the motion's steps).
+    Carried,
+    /// A point on a spline over points in space (#363 S3): `X − Σ Rᵢ(u)·Pᵢ`, its columns
+    /// `[u, P₀ … Pₙ₋₁, X]`, its constants the knot vector and the weights (`spline_row`).
+    Spline,
+}
+
+/// One row of the body: what it states (`kind`), the variable-table slot each of its columns
+/// reads, and its constants.
 #[derive(Clone, Debug)]
 pub struct Row {
-    pub kid: Option<usize>,
+    pub kind: RowKind,
     pub cols: Vec<u32>,
     pub consts: Vec<f64>,
 }
 
 impl Row {
-    fn kernel(kid: Option<usize>, n_par: usize, n_const: usize) -> Option<Kernel> {
-        match kid {
-            Some(k) => KERNELS.get(k).copied(),
-            None => Some(screw::kernel(screw::Reading::Carried, n_par, n_const)),
+    fn kernel(kind: RowKind, n_par: usize, n_const: usize) -> Option<Kernel> {
+        match kind {
+            RowKind::Kernel(k) => KERNELS.get(k).copied(),
+            RowKind::Carried => Some(screw::kernel(screw::Reading::Carried, n_par, n_const)),
+            RowKind::Spline => Some(Kernel { name: "spline_point3", n_res: 3, n_par, n_const,
+                degree: 1, res: spline_res, jac: spline_jac, const_jac: None, form: None }),
         }
     }
+
+    /// How the row is written in the encoding: a kernel's id, `-1` a carried point, `-2` a point
+    /// on a spline.
+    fn code(kind: RowKind) -> f64 {
+        match kind {
+            RowKind::Kernel(k) => k as f64,
+            RowKind::Carried => -1.0,
+            RowKind::Spline => -2.0,
+        }
+    }
+}
+
+/* -- a spline over points in space -------------------------------------------------------- */
+
+/// A spline row's widths read back: its control points' count, or `None` where the columns and
+/// constants describe no spline (`[u, P×n, X]` and `knots(n + DEGREE + 1) ++ weights(n)`).
+fn spline_shape(n_par: usize, n_const: usize, k: &[f64]) -> Option<usize> {
+    use crate::curve::{knots_valid, weights_valid, DEGREE};
+    let n = n_par.checked_sub(4)? / 3;
+    if 3 * n + 4 != n_par || n_const != 2 * n + DEGREE + 1 {
+        return None;
+    }
+    let (knots, weights) = k.split_at(n + DEGREE + 1);
+    (knots_valid(knots, n) && weights_valid(weights, n)).then_some(n)
+}
+
+/// The rational basis at `u`, on the span `u` falls in: the first control point it reads and
+/// each one's value and first three derivatives (`curve::basis`, `weigh`).
+fn spline_basis(n: usize, k: &[f64], u: f64) -> (usize, [[f64; 4]; crate::curve::SPAN_N]) {
+    use crate::curve::{basis, local_knots, local_weights, span_index, weigh, DEGREE, SPAN_N};
+    let (knots, weights) = k.split_at(n + DEGREE + 1);
+    let span = span_index(knots, n, u);
+    let lk = local_knots(knots, span);
+    let (mut b, mut d) = ([0.0; SPAN_N], [0.0; SPAN_N]);
+    let (mut dd, mut d3) = ([0.0; SPAN_N], [0.0; SPAN_N]);
+    basis(u, &lk, &mut b, &mut d, &mut dd, &mut d3);
+    weigh(&local_weights(Some(weights), span), &mut b, &mut d, &mut dd, &mut d3);
+    (span - DEGREE, std::array::from_fn(|a| [b[a], d[a], dd[a], d3[a]]))
+}
+
+fn spline_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    let (n_par, n_const) = crate::kernels::curve_widths(n, v, k);
+    for i in 0..n {
+        let (v, k, r) = (&v[i * n_par..(i + 1) * n_par], &k[i * n_const..(i + 1) * n_const],
+                         &mut r[3 * i..3 * i + 3]);
+        let Some(m) = spline_shape(n_par, n_const, k) else { r.fill(f64::NAN); continue };
+        let (first, rb) = spline_basis(m, k, v[0]);
+        for t in 0..3 {
+            let on: f64 = rb.iter().enumerate().map(|(a, w)| w[0] * v[1 + 3 * (first + a) + t]).sum();
+            r[t] = v[1 + 3 * m + t] - on;
+        }
+    }
+}
+
+fn spline_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    let (n_par, n_const) = crate::kernels::curve_widths(n, v, k);
+    for i in 0..n {
+        let (v, k) = (&v[i * n_par..(i + 1) * n_par], &k[i * n_const..(i + 1) * n_const]);
+        let j = &mut j[3 * n_par * i..3 * n_par * (i + 1)];
+        j.fill(0.0);
+        let Some(m) = spline_shape(n_par, n_const, k) else { j.fill(f64::NAN); continue };
+        let (first, rb) = spline_basis(m, k, v[0]);
+        for t in 0..3 {
+            let row = &mut j[t * n_par..(t + 1) * n_par];
+            for (a, w) in rb.iter().enumerate() {
+                row[0] -= w[1] * v[1 + 3 * (first + a) + t];
+                row[1 + 3 * (first + a) + t] = -w[0];
+            }
+            row[1 + 3 * m + t] = 1.0;
+        }
+    }
+}
+
+/// The spline row over jets: each basis function the cubic `Σ R⁽ᵏ⁾(u₀)/k!·(u − u₀)ᵏ` of the
+/// jet's offset — exact to the third order the basis carries, all the orders a polynomial span
+/// has.
+fn spline_jets(v: &[Jet], k: &[f64], r: &mut [Jet]) -> Option<()> {
+    let m = spline_shape(v.len(), k.len(), k)?;
+    let u0 = v[0].0[0];
+    let (first, rb) = spline_basis(m, k, u0);
+    let du = v[0] - Jet::constant(u0);
+    for (t, out) in r.iter_mut().enumerate().take(3) {
+        let mut acc = v[1 + 3 * m + t];
+        for (a, w) in rb.iter().enumerate() {
+            let basis = ((Jet::constant(w[3] / 6.0) * du + Jet::constant(w[2] / 2.0)) * du
+                + Jet::constant(w[1])) * du + Jet::constant(w[0]);
+            acc = acc - basis * v[1 + 3 * (first + a) + t];
+        }
+        *out = acc;
+    }
+    Some(())
 }
 
 /// A compiled body, held only as its encoding — what rides in a contact's constants.  The
@@ -102,8 +206,8 @@ impl Body {
         }
         let mut n_res = 0;
         for r in &rows {
-            let kn = Row::kernel(r.kid, r.cols.len(), r.consts.len()).ok_or("no such kernel")?;
-            if let Some(k) = r.kid {
+            let kn = Row::kernel(r.kind, r.cols.len(), r.consts.len()).ok_or("no such kernel")?;
+            if let RowKind::Kernel(k) = r.kind {
                 if !taylor::has_form(k) {
                     return Err(format!("a body traced in space reads its rows' derivatives \
                                         exactly, and `{}` has no Taylor form", KERNELS[k].name));
@@ -122,7 +226,7 @@ impl Body {
             f.extend_from_slice(&t.flat);
         }
         for r in &rows {
-            f.push(r.kid.map_or(-1.0, |k| k as f64));
+            f.push(Row::code(r.kind));
             f.push(r.cols.len() as f64);
             f.push(r.consts.len() as f64);
             f.extend(r.cols.iter().map(|&c| c as f64));
@@ -156,7 +260,7 @@ struct View<'a> {
     n_q: usize,
     traced: usize,
     w: Vec<&'a [f64]>,
-    rows: Vec<(Kernel, Option<usize>, Vec<usize>, &'a [f64])>,
+    rows: Vec<(Kernel, RowKind, Vec<usize>, &'a [f64])>,
     seeds: Vec<&'a [f64]>,
 }
 
@@ -185,8 +289,9 @@ fn view(flat: &[f64]) -> Option<View<'_>> {
     let mut rows = Vec::with_capacity(n_rows);
     for _ in 0..n_rows {
         let kid = match flat.get(at).copied()? {
-            k if k == -1.0 => None,
-            _ => Some(g(at)?),
+            k if k == -1.0 => RowKind::Carried,
+            k if k == -2.0 => RowKind::Spline,
+            _ => RowKind::Kernel(g(at)?),
         };
         let (n_cols, n_consts) = (g(at + 1)?, g(at + 2)?);
         at += 3;
@@ -196,14 +301,18 @@ fn view(flat: &[f64]) -> Option<View<'_>> {
         }
         let consts = take(n_consts, &mut at)?;
         let kn = Row::kernel(kid, n_cols, n_consts)?;
-        if kid.is_some() && (kn.n_par != n_cols || kn.n_const != n_consts) {
-            return None;
-        }
-        if kid.is_none() {
-            let steps = held::read_steps(consts)?;
-            if n_cols != 7 + held::steps_width(&steps) {
-                return None;
+        match kid {
+            RowKind::Kernel(_) if kn.n_par != n_cols || kn.n_const != n_consts => return None,
+            RowKind::Carried => {
+                let steps = held::read_steps(consts)?;
+                if n_cols != 7 + held::steps_width(&steps) {
+                    return None;
+                }
             }
+            RowKind::Spline => {
+                spline_shape(n_cols, n_consts, consts)?;
+            }
+            RowKind::Kernel(_) => {}
         }
         rows.push((kn, kid, cols, consts));
     }
@@ -357,12 +466,13 @@ impl View<'_> {
                 let v: Vec<Jet> = cols.iter().map(|&c| z[c]).collect();
                 let mut r = vec![Jet::default(); kn.n_res];
                 match kid {
-                    Some(id) => {
+                    RowKind::Kernel(id) => {
                         if !taylor::residual(*id, &v, consts, &mut r, &mut jrow) {
                             return None;
                         }
                     }
-                    None => screw::rows(screw::Reading::Carried, &v, consts, &mut r)?,
+                    RowKind::Carried => screw::rows(screw::Reading::Carried, &v, consts, &mut r)?,
+                    RowKind::Spline => spline_jets(&v, consts, &mut r)?,
                 }
                 rk.extend(r.iter().map(|j| -j.0[k]));
             }
