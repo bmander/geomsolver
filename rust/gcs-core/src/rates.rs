@@ -96,11 +96,10 @@ pub fn n_res(rows: &[Row]) -> usize {
     rows.iter().map(|r| KERNELS[r.kid].n_res).sum()
 }
 
-/// The rate system at a place: the rates, and `M` factorised with its rows scaled to unit
-/// length — by LU where it is square, by Householder QR where it has more rows than
-/// unknowns, its rank the index check either way.
-struct Solved {
-    q1: Vec<f64>,
+/// A matrix factorised with its rows scaled to unit length — by LU where it is square, by
+/// Householder QR where it has more rows than unknowns, its rank the index check either way
+/// (`factor`).
+struct Factored {
     rows: usize,
     n: usize,
     /// LU (`piv` its swaps), or QR: `R` above the diagonal, the reflectors on and below it, `R`'s
@@ -112,7 +111,13 @@ struct Solved {
     scale: Vec<f64>,
 }
 
-impl Solved {
+/// The rate system at a place: the rates, and `M` factorised.
+struct Solved {
+    q1: Vec<f64>,
+    m: Factored,
+}
+
+impl Factored {
     /// `M x = b` (`b` as long as `M` has rows), `x` into `b[..n]`: for more rows, the least
     /// squares solution, which is the solution of a system that holds.
     fn solve(&self, b: &mut [f64]) {
@@ -281,15 +286,29 @@ impl<'a> Body<'a> {
         true
     }
 
+    /// The outer variables as jets moving along `dir` (one entry an outer variable).
+    fn outer_along(&self, outer: &[f64], dir: impl Fn(usize) -> f64) -> Vec<Jet> {
+        (0..self.n_outer).map(|i| Jet::from(&[outer[i], dir(i)])).collect()
+    }
+
     /// The outer variables as jets: `u + t` and, where `along` names one, a column moving with it
     /// at `c`.
     fn outer_jets(&self, outer: &[f64], along: Option<(usize, f64)>) -> Vec<Jet> {
-        (0..self.n_outer)
-            .map(|i| {
-                let d = if i == 0 { 1.0 } else { along.filter(|a| a.0 == i).map_or(0.0, |a| a.1) };
-                Jet::from(&[outer[i], d])
-            })
-            .collect()
+        self.outer_along(outer, |i| match along {
+            _ if i == 0 => 1.0,
+            Some((j, c)) if j == i => c,
+            _ => 0.0,
+        })
+    }
+
+    /// `rows`' derivative along outer variable `i`, `q` standing: their first order, the tapes
+    /// over it with them.
+    fn along_column(&self, rows: &[Row], outer: &[f64], q: &[f64], i: usize) -> Option<Vec<f64>> {
+        let oj = self.outer_along(outer, |k| if k == i { 1.0 } else { 0.0 });
+        let qj: Vec<Jet> = q.iter().map(|&x| Jet::constant(x)).collect();
+        let z = self.jet_table(&oj, &qj, &vec![Jet::constant(0.0); self.n_q])?;
+        let mut r = Vec::new();
+        Self::jets(rows, &z, &mut r).then(|| r.iter().map(|j| j.0[1]).collect())
     }
 
     /// The rates at `(outer, q)`, by Newton on the rate rows from `start` — `None` where the
@@ -330,8 +349,8 @@ impl<'a> Body<'a> {
             g.extend(rr.iter().map(|x| -x));
             let mut m = jq.clone();
             m.extend_from_slice(&jr);
-            let s = factor(n_alg + rr.len(), n, m, q1.clone())?;
-            s.solve(&mut g);
+            let m = factor(n_alg + rr.len(), n, m)?;
+            m.solve(&mut g);
             let big = q1.iter().fold(1.0f64, |a, x| a.max(x.abs()));
             let step = g[..n].iter().fold(0.0f64, |a, x| a.max(x.abs()));
             for (x, d) in q1.iter_mut().zip(&g[..n]) {
@@ -347,7 +366,7 @@ impl<'a> Body<'a> {
                 if strict && off > 1e-8 * big {
                     return None;
                 }
-                solved = Some(Solved { q1: q1.clone(), ..s });
+                solved = Some(Solved { q1: q1.clone(), m });
                 break;
             }
         }
@@ -397,7 +416,7 @@ impl<'a> Body<'a> {
             }
             dg.clear();
             dg.extend(pair[0].iter().zip(&pair[1]).map(|(a, b)| -(a - b) * 0.5));
-            s.solve(&mut dg);
+            s.m.solve(&mut dg);
             for i in 0..n {
                 out[i * width + zc] = dg[i];
             }
@@ -435,7 +454,7 @@ impl<'a> Body<'a> {
             }
             let mut rhs: Vec<f64> = alg.iter().map(|j| -j.0[k])
                 .chain(rate.iter().map(|j| -j.0[k - 1] / k as f64)).collect();
-            s.solve(&mut rhs);
+            s.m.solve(&mut rhs);
             rhs.truncate(n);
             coef.push(rhs);
         }
@@ -471,20 +490,11 @@ impl<'a> Body<'a> {
         let z = self.table(outer, &q, &zero)?;
         let mut j = Vec::new();
         Self::jacobian(&rows, &z, self.n_outer, n, &mut j);
-        let s = factor(n_res(&rows), n, j, zero.clone())?;
+        let s = factor(n_res(&rows), n, j)?;
         let mut sens = vec![0.0; n * self.n_theta];
-        let qj: Vec<Jet> = q.iter().map(|&x| Jet::constant(x)).collect();
-        let zj: Vec<Jet> = zero.iter().map(|&x| Jet::constant(x)).collect();
-        let mut r = Vec::new();
         for c in 0..self.n_theta {
-            let oj: Vec<Jet> = (0..self.n_outer)
-                .map(|i| Jet::from(&[outer[i], if i == 1 + c { 1.0 } else { 0.0 }]))
-                .collect();
-            let z = self.jet_table(&oj, &qj, &zj)?;
-            if !Self::jets(&rows, &z, &mut r) {
-                return None;
-            }
-            let mut d: Vec<f64> = r.iter().map(|j| -j.0[1]).collect();
+            let mut d: Vec<f64> =
+                self.along_column(&rows, outer, &q, 1 + c)?.iter().map(|x| -x).collect();
             s.solve(&mut d);
             for i in 0..n {
                 sens[i * self.n_theta + c] = d[i];
@@ -512,7 +522,7 @@ impl<'a> Body<'a> {
                 return Some(z[self.n_outer..self.n_outer + n].to_vec());
             }
             Self::jacobian(rows, &z, self.n_outer, n, &mut j);
-            let s = factor(r.len(), n, j.clone(), zero.clone())?;
+            let s = factor(r.len(), n, j.clone())?;
             let mut step: Vec<f64> = r.iter().map(|x| -x).collect();
             s.solve(&mut step);
             step.truncate(n);
@@ -576,9 +586,9 @@ impl<'a> Body<'a> {
             // judged at the size of what it reads, the pose's and the point's: at rounding there
             let size = q.iter().fold(size, |a, x| a.max(x.abs()));
             let small = f.iter().fold(0.0f64, |a, x| a.max(x.abs())) <= 1e-13 * size;
-            let s = factor(k, k, mat, Vec::new())?;
+            let s = factor(k, k, mat)?;
             if small {
-                kkt = Some((s, j.clone(), lam.clone()));
+                kkt = Some(s);
                 break;
             }
             let mut step: Vec<f64> = f.iter().map(|x| -x).collect();
@@ -593,7 +603,7 @@ impl<'a> Body<'a> {
                 return None;
             }
         }
-        let (s, _, lam) = kkt?;
+        let s = kkt?;
         // the sensitivities: K [dq; dλ] = [dpose + φ_qθ dθ; −r_θ dθ], a column of θ at a time
         let mut sens = vec![0.0; n * nt];
         let cross = self.cross(outer, &q, &lam)?;
@@ -621,10 +631,10 @@ impl<'a> Body<'a> {
     /// `D²(λ·r)[v, v]`.
     fn second(&self, outer: &[f64], q: &[f64], lam: &[f64], v: &[f64]) -> Option<f64> {
         let (n, nf) = (self.n_q, self.n_free());
-        let oj: Vec<Jet> = (0..self.n_outer).map(|i| {
-            let d = if (1..1 + nf).contains(&i) { v[n + i - 1] } else { 0.0 };
-            Jet::from(&[outer[i], d])
-        }).collect();
+        let oj = self.outer_along(outer, |i| match (1..1 + nf).contains(&i) {
+            true => v[n + i - 1],
+            false => 0.0,
+        });
         let qj: Vec<Jet> = (0..n).map(|i| Jet::from(&[q[i], v[i]])).collect();
         let zj = vec![Jet::constant(0.0); n];
         let z = self.jet_table(&oj, &qj, &zj)?;
@@ -673,19 +683,9 @@ impl<'a> Body<'a> {
         let m = n_res(&self.alg);
         let mut qt = vec![0.0; n * nf];
         let mut rt = vec![0.0; m * nf];
-        let zj = vec![Jet::constant(0.0); n];
-        let qj: Vec<Jet> = q.iter().map(|&x| Jet::constant(x)).collect();
-        let mut r = Vec::new();
         for c in 0..nf {
-            let oj: Vec<Jet> = (0..self.n_outer)
-                .map(|i| Jet::from(&[outer[i], if i == 1 + c { 1.0 } else { 0.0 }]))
-                .collect();
-            let z = self.jet_table(&oj, &qj, &zj)?;
-            if !Self::jets(&self.alg, &z, &mut r) {
-                return None;
-            }
-            for a in 0..m {
-                rt[a * nf + c] = r[a].0[1];
+            for (a, x) in self.along_column(&self.alg, outer, q, 1 + c)?.into_iter().enumerate() {
+                rt[a * nf + c] = x;
             }
             if lam.iter().any(|&l| l != 0.0) {
                 for i in 0..n {
@@ -703,16 +703,12 @@ impl<'a> Body<'a> {
         let width = n + nf;
         let mut y = vec![0.0; width * (1 + nt)];
         let phi = width;
-        if self.pose {
-            let pose = &outer[1 + nf..1 + nf + n];
-            let (q, sens) = self.project(outer, pose)?;
-            y[..n].copy_from_slice(&q);
-            y[phi..phi + n * nt].copy_from_slice(&sens);
-        } else {
-            let (q, sens) = self.home(outer)?;
-            y[..n].copy_from_slice(&q);
-            y[phi..phi + n * nt].copy_from_slice(&sens);
-        }
+        let (q, sens) = match self.pose {
+            true => self.project(outer, &outer[1 + nf..1 + nf + n])?,
+            false => self.home(outer)?,
+        };
+        y[..n].copy_from_slice(&q);
+        y[phi..phi + n * nt].copy_from_slice(&sens);
         for c in 0..nf {
             y[n + c] = outer[1 + c];
             y[phi + (n + c) * nt + c] = 1.0;
@@ -723,7 +719,7 @@ impl<'a> Body<'a> {
 
 /// `M` (`rows × n`, `rows ≥ n`) factorised with each row scaled to unit length — `None`
 /// where it has lost rank: the index check.  A row that is all zero says nothing, and is left so.
-fn factor(rows: usize, n: usize, mut m: Vec<f64>, q1: Vec<f64>) -> Option<Solved> {
+fn factor(rows: usize, n: usize, mut m: Vec<f64>) -> Option<Factored> {
     if rows < n {
         return None;
     }
@@ -776,7 +772,7 @@ fn factor(rows: usize, n: usize, mut m: Vec<f64>, q1: Vec<f64>) -> Option<Solved
             }
         }
     }
-    Some(Solved { q1, rows, n, a: m, piv, diag, beta, scale })
+    Some(Factored { rows, n, a: m, piv, diag, beta, scale })
 }
 
 /* -- the flow ------------------------------------------------------------------------------- */
@@ -904,6 +900,10 @@ pub fn reach(home: f64, u: f64, domain: Option<(f64, f64)>) -> f64 {
 /// The march of `body` (encoded as `flat`) from `home` at the columns of `outer` to `to`,
 /// remembered.  One refused keeps the road to where it was refused, read as far as it reaches.
 pub fn remembered(body: &Body, flat: &[f64], outer: &[f64], home: f64, to: f64) -> Marched {
+    // an encoding is the core's own, but a march is no place to find out it is not
+    if body.check().is_err() || outer.len() < body.n_outer {
+        return Err(None);
+    }
     let mut key: Vec<u64> = Vec::with_capacity(flat.len() + body.n_outer + 2);
     key.extend(flat.iter().map(|x| x.to_bits()));
     key.extend(outer[1..body.n_outer].iter().map(|x| x.to_bits()));
@@ -912,14 +912,9 @@ pub fn remembered(body: &Body, flat: &[f64], outer: &[f64], home: f64, to: f64) 
     if let Some(m) = seen {
         return m;
     }
-    // an encoding is the core's own, but a march is no place to find out it is not
-    if body.check().is_err() || outer.len() < body.n_outer {
-        return Err(None);
-    }
     let mut at = outer[..body.n_outer].to_vec();
     at[0] = home;
-    let first = body.march(&at, to - home);
-    let m = match first {
+    let m = match body.march(&at, to - home) {
         Err(Some(refusal)) if refusal.at() != home => body.march(&at, refusal.at() - home)
             .map(|mut m| {
                 m.refused = Some(refusal);
@@ -936,6 +931,21 @@ pub fn remembered(body: &Body, flat: &[f64], outer: &[f64], home: f64, to: f64) 
         c.push((key, m.clone()));
     });
     m
+}
+
+/// How far a march reached toward an end: there, or refused (`None` where it could not start).
+pub type Reached = Result<(), Option<ode::Refusal>>;
+
+/// How far `body` (encoded as `flat`) is integrated from `home` at the columns of `outer` toward
+/// each of `ends` — the place a march is refused at is where its rates lose rank, or where its
+/// bound of steps ran out.
+pub fn reaches(body: &Body, flat: &[f64], outer: &[f64], home: f64, ends: [f64; 2])
+    -> [Reached; 2] {
+    ends.map(|end| match end == home {
+        true => Ok(()),
+        false => remembered(body, flat, outer, home, end)
+            .and_then(|m| m.refused.map_or(Ok(()), |r| Err(Some(r)))),
+    })
 }
 
 impl<'a> Body<'a> {
@@ -1004,8 +1014,8 @@ impl<'a> Body<'a> {
             if upto >= 3 {
                 // ∂C″/∂θ: the second order a function of the state, differenced along Φ's column
                 // from this place — no march, a local map
+                let size = y[..w].iter().fold(1.0f64, |a, x| a.max(x.abs()));
                 for j in 0..nt {
-                    let size = y[..w].iter().fold(1.0f64, |a, x| a.max(x.abs()));
                     let len = (0..w).map(|k| phi[k * nt + j].abs()).fold(0.0f64, f64::max);
                     let h = if len > 0.0 { 1e-6 * size / len } else { 0.0 };
                     if h == 0.0 {

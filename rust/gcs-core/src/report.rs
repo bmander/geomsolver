@@ -1039,8 +1039,7 @@ pub fn rates_text(sk: &Sketch, i: usize) -> Option<String> {
 }
 
 /// How far a march reached each way from `home` across `domain`, in the CLI's words.
-fn reach_text(reach: [Result<(), Option<crate::ode::Refusal>>; 2], home: f64, domain: (f64, f64))
-    -> String {
+fn reach_text(reach: [crate::rates::Reached; 2], home: f64, domain: (f64, f64)) -> String {
     let num = |v: f64| crate::io::reading(SpecKind::Scalar, v);
     let mut out = format!("integrated from its home at {}", num(home));
     for r in reach {

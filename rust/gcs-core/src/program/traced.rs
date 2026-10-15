@@ -199,7 +199,8 @@ pub(super) fn build_traced(sk: &Sketch, res: &Resolver, d: &Decl, st: &Stmt, pro
                 "a traced component holds declarations and constraints only".into())),
         }
     }
-    low.place_rates();
+    let at = vars.len() + low.n_q + low.w.len();
+    super::curves::place_rates(low.rates.iter_mut().map(|r| &mut r.cols), at);
     let Some(&EntRef { kind: EntKind::Point, idx }) = low.scope.get(&traced) else {
         return Err((Code::E103, comp.span, format!("`{}` must be a point the component declares",
             of.point)));
@@ -223,24 +224,19 @@ pub(super) fn build_traced(sk: &Sketch, res: &Resolver, d: &Decl, st: &Stmt, pro
         domain[k] = [lo, hi];
     }
     if !low.rates.is_empty() {
-        let names: Vec<String> = low.owner.clone();
-        let reach = |rows: &[crate::traced::Row], from: usize| -> Vec<Vec<usize>> {
-            rows.iter().flat_map(|r| {
-                let n_res = r.kid.map_or(0, |k| crate::kernels::KERNELS[k].n_res);
-                let cols: Vec<usize> = r.cols.iter().map(|&c| c as usize)
-                    .filter(|&c| (from..from + low.n_q).contains(&c)).map(|c| c - from).collect();
-                std::iter::repeat(cols).take(n_res)
-            }).collect()
-        };
-        let at = vars.len() + low.n_q + low.w.len();
-        let (alg, rates) = (reach(&low.rows, vars.len()), reach(&low.rates, at));
-        if let Some(m) = super::curves::short(&low.swept, low.n_q, &alg, &rates, &names, false) {
+        let n_res = |r: &crate::traced::Row| r.kid.map_or(0, |k| crate::kernels::KERNELS[k].n_res);
+        let alg = super::curves::reach(low.rows.iter().map(|r| (n_res(r), &r.cols[..])),
+                                       vars.len(), low.n_q);
+        let rates = super::curves::reach(low.rates.iter().map(|r| (n_res(r), &r.cols[..])), at,
+                                         low.n_q);
+        if let Some(m) = super::curves::short(&low.swept, low.n_q, &alg, &rates, &low.owner, false)
+        {
             return Err((Code::E103, comp.span, m));
         }
     }
     let rates = crate::traced::Rates { rows: std::mem::take(&mut low.rates),
         init: std::mem::take(&mut low.init), domain: domain[0] };
-    let flat = crate::traced::Body::with_rates(running.len(), vars.len(), n_theta, low.n_q, t,
+    let flat = crate::traced::Body::new(running.len(), vars.len(), n_theta, low.n_q, t,
         low.w, low.seeds, low.rows, rates).map_err(|m| (Code::E103, comp.span, m))?;
     // where a march starts: what the call gave each formal, else its interval's start
     let home = std::array::from_fn(|k| match running.get(k) {
@@ -400,17 +396,7 @@ impl<'v> Lowering<'v> {
         Ok(name)
     }
 
-    /// The rates' slots placed past every derived value, now that those are counted.
-    fn place_rates(&mut self) {
-        let at = self.n_outer + self.n_q + self.w.len();
-        for row in &mut self.rates {
-            for c in &mut row.cols {
-                if *c as usize >= super::curves::RATE_BASE {
-                    *c = (at + *c as usize - super::curves::RATE_BASE) as u32;
-                }
-            }
-        }
-    }
+
 
     fn tape(&self, text: &str, span: Span) -> Result<crate::tape::Tape, Fail> {
         let ast = crate::expr::parse_in(text, self.units).map_err(|e| (Code::E103, span, e))?;

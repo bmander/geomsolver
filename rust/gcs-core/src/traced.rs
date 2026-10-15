@@ -92,17 +92,10 @@ pub struct Rates {
 }
 
 impl Body {
-    /// Validate and encode.  An `Err` is a diagnostic for the body, not a panic.
+    /// Validate and encode.  An `Err` is a diagnostic for the body, not a panic.  `rates` is what
+    /// a body that states a rate adds (#339 D2).
     #[allow(clippy::too_many_arguments)]
     pub fn new(n_formals: usize, n_outer: usize, n_theta: usize, n_q: usize, traced: usize,
-               w: Vec<crate::tape::Tape>, seeds: Vec<crate::tape::Tape>, rows: Vec<Row>)
-        -> Result<Body, String> {
-        Body::with_rates(n_formals, n_outer, n_theta, n_q, traced, w, seeds, rows, Rates::default())
-    }
-
-    /// `new`, for a body that may state rates (#339 D2).
-    #[allow(clippy::too_many_arguments)]
-    pub fn with_rates(n_formals: usize, n_outer: usize, n_theta: usize, n_q: usize, traced: usize,
                w: Vec<crate::tape::Tape>, seeds: Vec<crate::tape::Tape>, rows: Vec<Row>,
                rates: Rates) -> Result<Body, String> {
         let stated = !rates.rows.is_empty();
@@ -114,8 +107,7 @@ impl Body {
             return Err("`initially { … }` says what holds at a home, and only a body that \
                 states a rate has one: its rates are integrated from it".into());
         }
-        if rows.iter().chain(&rates.rows).chain(&rates.init).any(|r| r.kid.is_none())
-            && stated {
+        if stated && rows.iter().chain(&rates.rows).chain(&rates.init).any(|r| r.kid.is_none()) {
             return Err("a body that states a rate reads no point a motion carries".into());
         }
         if !(1..=MAX_FORMALS).contains(&n_formals) || n_formals + n_theta > n_outer {
@@ -1093,7 +1085,7 @@ pub fn reading(sk: &Sketch, i: usize, place: [f64; 2], need: Need) -> Option<Rea
 
 /// How far traced body `i`, where it states a rate (#339 D2), is integrated across its interval
 /// from its home: `None` for any other body, else each way's refusal (`locus::rate_reach`).
-pub fn rate_reach(sk: &Sketch, i: usize) -> Option<[Result<(), Option<crate::ode::Refusal>>; 2]> {
+pub fn rate_reach(sk: &Sketch, i: usize) -> Option<[crate::rates::Reached; 2]> {
     let t = sk.traced.get(i)?;
     let v = view(&t.body.flat).filter(|v| !v.rates.is_empty())?;
     let k = consts_of(t);
@@ -1101,17 +1093,7 @@ pub fn rate_reach(sk: &Sketch, i: usize) -> Option<[Result<(), Option<crate::ode
     let mut outer = vec![home[0]];
     outer.extend(theta(sk, t));
     outer.extend_from_slice(values);
-    if outer.len() != v.n_outer {
-        return None;
-    }
-    let body = v.rate_body();
-    Some(v.domain.map(|end| {
-        if end == home[0] {
-            return Ok(());
-        }
-        crate::rates::remembered(&body, flat, &outer, home[0], end)
-            .and_then(|m| m.refused.map_or(Ok(()), |r| Err(Some(r))))
-    }))
+    Some(crate::rates::reaches(&v.rate_body(), flat, &outer, home[0], v.domain))
 }
 
 /// Where point `p` (in space) sits nearest on traced body `i`, as the drawing stands.

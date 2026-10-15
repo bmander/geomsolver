@@ -118,32 +118,18 @@ impl Locus {
         v.rows.iter().find(|r| !taylor::has_form(r.0)).map(|r| KERNELS[r.0].name)
     }
 
-    /// Validate and encode.  An `Err` is a diagnostic for the family, not a panic.
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        n_outer: usize,
-        n_theta: usize,
-        n_q: usize,
-        traced: usize,
-        w: Vec<Tape>,
-        seeds: Vec<Tape>,
-        rows: Vec<Row>,
-        preds: Vec<Pred>,
-    ) -> Result<Locus, String> {
-        Locus::with_rates(n_outer, n_theta, n_q, traced, w, seeds, rows, preds, Rates::default())
-    }
-
     /// Whether the block states a rate (#339 D2): its curve is integrated from its home
     /// (`rates.rs`), not solved again at each place.
     pub fn states_rate(&self) -> bool {
         view(&self.flat).is_some_and(|v| !v.rates.is_empty())
     }
 
-    /// `new`, for a block that may state rates (#339 D2): its rate rows, the rows that hold at
-    /// its home alone, and whether its drawn instance's pose is the initial value — the last
-    /// `n_q` of the θ columns.
+    /// Validate and encode.  An `Err` is a diagnostic for the family, not a panic.  `rates` is
+    /// what a block that states a rate adds (#339 D2): its rate rows, the rows that hold at its
+    /// home alone, and whether its drawn instance's pose is the initial value — the last `n_q`
+    /// of the θ columns.
     #[allow(clippy::too_many_arguments)]
-    pub fn with_rates(
+    pub fn new(
         n_outer: usize,
         n_theta: usize,
         n_q: usize,
@@ -1117,9 +1103,8 @@ pub fn kernel_eval_to(consts: &[f64], u: f64, theta_cols: &[f64], need: u8) -> V
     let pose = has_pose.then(|| &flat[flat.len() - n_q..]);
     let mut outer = [0.0f64; tape::MAX_VARS];
     let Some(outer) = outer_of(u, theta_cols, values, &mut outer) else { return Val::default() };
-    if let Some(v) = view(flat).filter(|v| !v.rates.is_empty()) {
-        let tail = &flat[flat.len() - n_q..];
-        return rate_val(flat, &v, outer, anchor_u, Some((tail[0], tail[1])), need, true, false).0;
+    if let Some((val, _)) = rate_contact(flat, outer, anchor_u, need, false) {
+        return val;
     }
     LOCUS_SCRATCH.with(|s| {
         let s = &mut *s.borrow_mut();
@@ -1209,12 +1194,9 @@ pub struct Frame {
 
 pub fn kernel_frame(consts: &[f64], u: f64, theta_cols: &[f64], need: u8) -> Frame {
     if let Some((anchor_u, values, _, flat)) = decode(consts) {
-        if let Some(v) = view(flat).filter(|v| !v.rates.is_empty() && flat.len() >= v.n_q) {
-            let mut outer = [0.0f64; tape::MAX_VARS];
-            let tail = &flat[flat.len() - v.n_q..];
-            if let Some(outer) = outer_of(u, theta_cols, values, &mut outer) {
-                let (val, r) =
-                    rate_val(flat, &v, outer, anchor_u, Some((tail[0], tail[1])), need, true, true);
+        let mut outer = [0.0f64; tape::MAX_VARS];
+        if let Some(outer) = outer_of(u, theta_cols, values, &mut outer) {
+            if let Some((val, r)) = rate_contact(flat, outer, anchor_u, need, true) {
                 return rate_frame(val, r.as_ref());
             }
         }
@@ -1278,21 +1260,26 @@ pub fn kernel_frame(consts: &[f64], u: f64, theta_cols: &[f64], need: u8) -> Fra
 
 /* -- a body that states a rate (#339 D2) ------------------------------------------------------ */
 
-/// The march of a body from `home` at the columns of `outer` to `to`, remembered.
-fn rate_march(flat: &[f64], v: &View, outer: &[f64], home: f64, to: f64)
-    -> Result<std::rc::Rc<crate::rates::March>, Option<crate::ode::Refusal>> {
-    crate::rates::remembered(&v.rate_body(), flat, outer, home, to)
+/// A contact on a body that states a rate, read at `outer[0]` with its gradient (and, `frame`,
+/// its derivatives' too) — `None` for any other block.  The contact's constants carry the curve's
+/// interval where a pose would be, so every contact inside it reads one march.
+fn rate_contact(flat: &[f64], outer: &[f64], home: f64, need: u8, frame: bool)
+    -> Option<(Val, Option<crate::rates::Reading>)> {
+    let v = view(flat).filter(|v| !v.rates.is_empty() && flat.len() >= v.n_q)?;
+    let tail = &flat[flat.len() - v.n_q..];
+    Some(rate_val(flat, &v, outer, home, Some((tail[0], tail[1])), need, true, frame))
 }
 
 /// A body that states a rate, read at `outer[0]`: the flow from its home, as a `Val` — and the
 /// reading behind it, the sensitivities of its derivatives too where `frame`.
 fn rate_val(flat: &[f64], v: &View, outer: &[f64], home: f64, domain: Option<(f64, f64)>,
             need: u8, sens: bool, frame: bool) -> (Val, Option<crate::rates::Reading>) {
-    let u = outer[0];
-    let Ok(m) = rate_march(flat, v, outer, home, crate::rates::reach(home, u, domain)) else {
+    let (u, body) = (outer[0], v.rate_body());
+    let to = crate::rates::reach(home, u, domain);
+    let Ok(m) = crate::rates::remembered(&body, flat, outer, home, to) else {
         return (Val::default(), None);
     };
-    let Some(r) = v.rate_body().read(&m, u, need.max(1), sens, frame) else {
+    let Some(r) = body.read(&m, u, need.max(1), sens, frame) else {
         return (Val::default(), None);
     };
     let mut val = Val { ok: true, orders: r.orders, ..Val::default() };
@@ -1345,7 +1332,7 @@ fn rate_sweep(flat: &[f64], v: &View, outer: &[f64], u0: f64, u1: f64, n: usize,
         .iter()
         .map(|&end| {
             let to = crate::rates::reach(home, end, Some((u0, u1)));
-            rate_march(flat, v, outer, home, to).ok()
+            crate::rates::remembered(&body, flat, outer, home, to).ok()
         })
         .collect();
     for k in 0..=n {
@@ -1357,23 +1344,13 @@ fn rate_sweep(flat: &[f64], v: &View, outer: &[f64], u0: f64, u1: f64, n: usize,
     out
 }
 
-/// How far a body that states a rate is integrated across `domain` from `home` (#339 D2): `None`
-/// for any other block, else each way's refusal, `Ok` where the march reaches the end — the
-/// place a march is refused at is where its rates lose rank, or where the step bound ran out.
+/// How far a body that states a rate is integrated across `domain` from `home` (#339 D2), each
+/// way (`rates::reaches`): `None` for any other block.
 pub fn rate_reach(flat: &[f64], outer: &[f64], home: f64, domain: (f64, f64))
-    -> Option<[Result<(), Option<crate::ode::Refusal>>; 2]> {
+    -> Option<[crate::rates::Reached; 2]> {
     let v = view(flat).filter(|v| !v.rates.is_empty())?;
-    if outer.len() < v.n_outer {
-        return None;
-    }
-    let (lo, hi) = (domain.0.min(domain.1), domain.0.max(domain.1));
-    Some([lo, hi].map(|end| {
-        if end == home {
-            return Ok(());
-        }
-        rate_march(flat, &v, outer, home, end)
-            .and_then(|m| m.refused.map_or(Ok(()), |r| Err(Some(r))))
-    }))
+    let ends = [domain.0.min(domain.1), domain.0.max(domain.1)];
+    Some(crate::rates::reaches(&v.rate_body(), flat, outer, home, ends))
 }
 
 /// Drop every remembered pose.  `System::new` calls it: a contact's constants are addressed by

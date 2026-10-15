@@ -215,7 +215,8 @@ fn compile_trace(
             low.relation(st, r)?;
         }
     }
-    low.place_rates();
+    let at = low.n_outer + low.n_q + low.w.len();
+    place_rates(low.rates.iter_mut().map(|r| &mut r.cols), at);
     if !low.rates.is_empty() {
         low.short(span)?;
     }
@@ -236,7 +237,7 @@ fn compile_trace(
     };
     let rates = crate::locus::Rates { rows: rates, init, pose: trace.pose };
     let locus =
-        crate::locus::Locus::with_rates(n_outer, n_theta, n_q, traced, w, seeds, rows, preds, rates)
+        crate::locus::Locus::new(n_outer, n_theta, n_q, traced, w, seeds, rows, preds, rates)
             .map_err(|m| (span, m))?;
     Ok((locus, pose_of))
 }
@@ -319,6 +320,28 @@ pub(super) fn admissible(r: &crate::ir::ResolvedRelation<'_>) -> Result<(), Stri
         directed `angle`, or its component `distance(k, along: l)` — and `{word}` reads it \
         otherwise: a rate is never a place, and never a magnitude, whose row would be quadratic \
         in it"))
+}
+
+/// Each residual row of `rows` (its count and its columns) and which of the body's `n_q` numbers
+/// it reads, its columns read from slot `from` — what `short` matches: an algebraic row from the
+/// body's numbers (its derivative reads their rates), a rate row from the rates.
+pub(super) fn reach<'r>(rows: impl Iterator<Item = (usize, &'r [u32])>, from: usize, n_q: usize)
+    -> Vec<Vec<usize>> {
+    rows.flat_map(|(n_res, cols)| {
+        let cols: Vec<usize> = cols.iter().map(|&c| c as usize)
+            .filter(|c| (from..from + n_q).contains(c)).map(|c| c - from).collect();
+        std::iter::repeat(cols).take(n_res)
+    }).collect()
+}
+
+/// The rates' slots placed at `at`, past every derived value, now that those are counted: each
+/// column at `RATE_BASE` or past it is a rate's.
+pub(super) fn place_rates<'r>(cols: impl Iterator<Item = &'r mut Vec<u32>>, at: usize) {
+    for c in cols.flatten() {
+        if *c as usize >= RATE_BASE {
+            *c = (at + *c as usize - RATE_BASE) as u32;
+        }
+    }
 }
 
 /// **A body short of rate rows**, reported with the freedom it leaves (#339 D0, finding 1):
@@ -552,32 +575,14 @@ impl<'v> Lowering<'v> {
         Ok(name)
     }
 
-    /// The rates' slots placed past every derived value, now that those are counted.
-    fn place_rates(&mut self) {
-        let at = self.n_outer + self.n_q + self.w.len();
-        for row in &mut self.rates {
-            for c in &mut row.cols {
-                if *c as usize >= RATE_BASE {
-                    *c = (at + *c as usize - RATE_BASE) as u32;
-                }
-            }
-        }
-    }
-
     /// A body whose rows and rate rows leave its rates free is refused naming the freedom
     /// (`short`).
     fn short(&self, span: Span) -> Result<(), (Span, String)> {
         let (n_q, q0) = (self.n_q, self.n_outer);
+        let alg = reach(self.rows.iter().map(|r| (KERNELS[r.kid].n_res, &r.cols[..])), q0, n_q);
         let at = q0 + n_q + self.w.len();
-        let reach = |rows: &[crate::locus::Row], from: usize| -> Vec<Vec<usize>> {
-            rows.iter().flat_map(|r| {
-                let cols: Vec<usize> = r.cols.iter().map(|&c| c as usize)
-                    .filter(|c| (from..from + n_q).contains(c)).map(|c| c - from).collect();
-                std::iter::repeat(cols).take(KERNELS[r.kid].n_res)
-            }).collect()
-        };
+        let rates = reach(self.rates.iter().map(|r| (KERNELS[r.kid].n_res, &r.cols[..])), at, n_q);
         let owner: Vec<String> = self.pose_of.iter().map(|(n, _)| n.clone()).collect();
-        let (alg, rates) = (reach(&self.rows, q0), reach(&self.rates, at));
         match short(&self.swept, n_q, &alg, &rates, &owner, true) {
             Some(m) => Err((span, m)),
             None => Ok(()),
