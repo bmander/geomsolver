@@ -318,8 +318,9 @@ What L4 found on the way:
 
 - **A chain's arcs turn left.**  An arc runs counter-clockwise from its start, and a chain enters
   each link by its start, so a chain cannot turn right at an arc.  L0's S-bend was not a chain;
-  `pipe.sv` is now a U.  (#363 S6: drawn in space, an arc faces its plane as its points do, so the
-  S-bend is one chain there — `rust/gcs-core/tests/space_paths.rs`.)  Its first draft also left out the `tangent` at the joints from an arc to
+  `pipe.sv` is now a U.  (#363: drawn in space, an arc faces its plane as its points do, and in a plane
+  `arc(center: c, sense: cw)` turns clockwise, so the S-bend is one chain either way —
+  `rust/gcs-core/tests/space_paths.rs`.)  Its first draft also left out the `tangent` at the joints from an arc to
   a line, and stood at DOF 2.
 - **The joint is the station on both legs.**  Solved at the end of one leg and the start of the
   next, the two agree, and the run keeps it once; a section that would vanish there (an end read

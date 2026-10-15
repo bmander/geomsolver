@@ -791,6 +791,82 @@ tube := solid(Round(route, std.z, r: 4mm).f over s in (0, 5))");
     }
 }
 
+/// **A chain in a plane turns right at an arc said to turn clockwise** (#363 S4): `arc(center: c,
+/// sense: cw)` drawn in `std.top` runs clockwise from its start — drawn counter-clockwise in the
+/// plane turned over — so the S-bend drawn in the plane's block is one chain too, a family entering
+/// every link at its start: its tube is Pappus's.  `sense:` of an arc over points in space, which
+/// turns as its points stand, is refused, and so is a clockwise half turn.
+#[test]
+fn a_chain_in_a_plane_turns_right_at_an_arc_said_to_turn_clockwise() {
+    let e = with("
+component Round(g: path, up: axis, r: Length, s: Scalar) {
+  st := std.On(g, up: up, s: s)
+  in st.n {
+    k := circle(center: st.n.origin)
+    radius(r) k
+  }
+  f := face(k)
+}
+in std.top {
+  a := point
+  b := point hint((20, 0))
+  c1 := point hint((20, 20))
+  d := point hint((40, 20))
+  e := point hint((40, 40))
+  c2 := point hint((60, 40))
+  f := point hint((60, 60))
+  g := point hint((80, 60))
+  fix((0mm, 0mm)) a
+  route := horizontal (l0 := line(a, b)) -> tangent (k1 := arc(center: c1)) ->
+    tangent vertical (l2 := line(d, e)) -> tangent (k3 := arc(center: c2, sense: cw)) ->
+    tangent horizontal (l4 := line(f, g))
+  length(20mm) l0
+  length(20mm) l2
+  length(20mm) l4
+  radius(20mm) k1
+  radius(20mm) k3
+}
+tube := solid(Round(route, std.z, r: 4mm).f over s in (0, 5))");
+    near(exact(&e, "tube"), 16.0 * PI * (60.0 + 20.0 * PI), 1e-9, "the S-bend in a plane");
+    let at = |n: &str| e.sketch.world_point(e.map.ent_named(n).unwrap().i());
+    assert!(sub(at("g"), [80.0, 60.0, 0.0]).iter().all(|d| d.abs() <= 1e-9), "{:?}", at("g"));
+    let said = refusals(&format!("{PATHS}
+p0 := point hint((0, 0, 0))
+p1 := point hint((5, 0, 0))
+p2 := point hint((5, 5, 3))
+k := arc(center: p1, start: p0, end: p2, sense: cw)
+"));
+    assert!(said.iter().any(|m| m.starts_with("E040") && m.contains("`sense:` says which way")),
+            "{said:?}");
+    let said = refusals(&format!("{PATHS}
+in std.top {{
+  q0 := point hint((0, 0))
+  q1 := point hint((5, 0))
+  q2 := point hint((10, 0))
+  k := arc(center: q1, start: q0, end: q2, sense: cw)
+}}
+"));
+    assert!(said.iter().any(|m| m.starts_with("E060") && m.contains("a half turn")), "{said:?}");
+}
+
+/// **The new words print as they were written**: a circle's `normal:` and an arc's `sense:`.
+#[test]
+fn normal_and_sense_print_as_written() {
+    let (p, errs) = crate::common::parse("unit mm\nk := circle(center: o, normal: ax)\n\
+                                          a := arc(center: c, start: s, end: e, sense: cw)\n");
+    assert!(errs.is_empty(), "{errs:?}");
+    let mut said = Vec::new();
+    for st in &p.root().body {
+        if let gcs_core::syntax::StmtKind::Decl(_) = &st.kind {
+            let mut out = String::new();
+            gcs_core::syntax::write_stmt_to(&mut out, &st.kind).unwrap();
+            said.push(out);
+        }
+    }
+    assert_eq!(said, ["k := circle(center: o, normal: ax)",
+                      "a := arc(center: c, start: s, end: e, sense: cw)"]);
+}
+
 /// **A circle about a point in space stands square to its normal** (#363 S6): `circle(center: o,
 /// normal: ax)` is drawn in the plane through `o` square to `ax`, so a disc swept from it is
 /// π·r²·h, and a point held on it stands `r` from `o`, square to `ax`.  And what is refused: a

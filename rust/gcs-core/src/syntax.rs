@@ -963,6 +963,10 @@ pub struct Decl {
     /// minted through the centre (`program::entities::circles_in_space`).  `None` for every
     /// other declaration, and for a circle drawn `in` a plane.
     pub normal: Option<Ref>,
+    /// Which way an arc drawn in a plane turns from its start (#363 S4), `arc(center: c, sense:
+    /// cw)`: clockwise, so a chain in a plane may turn right at it — drawn counter-clockwise in its
+    /// plane turned over (`program::entities::arcs_in_space`).  `None`, counter-clockwise.
+    pub sense: Option<Sense>,
 }
 
 /// What a spline through a chain's corners names (`Decl::through`): the chain, and the lines (or
@@ -1004,6 +1008,7 @@ impl Decl {
             mint_close: None,
             through: None,
             normal: None,
+            sense: None,
         }
     }
 
@@ -1048,6 +1053,7 @@ impl Decl {
             mint_close: None,
             through: None,
             normal: None,
+            sense: None,
         }
     }
 }

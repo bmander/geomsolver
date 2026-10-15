@@ -183,6 +183,7 @@ pub(super) fn gesture_decl(kind: EntKind, name: &str, children: Vec<Vec<syntax::
         mint_close: None,
         through: None,
         normal: None,
+        sense: None,
     }
 }
 

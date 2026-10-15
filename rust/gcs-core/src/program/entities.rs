@@ -159,6 +159,9 @@ pub(super) fn build(
     let kids = children(sk, res, d, st, diags, anon, deferred)?;
     let idx = make(sk, d, st, &kids, diags, deferred)?;
     let e = EntRef::new(d.kind, idx);
+    if d.kind == EntKind::Arc && d.sense == Some(crate::syntax::Sense::Cw) {
+        deferred.push(Deferred::Clockwise { arc: idx, span: st.span, stmt: st.id });
+    }
     if let (EntKind::Circle, Some(n)) = (d.kind, &d.normal) {
         deferred.push(Deferred::Normal { circle: idx, normal: n.clone(), span: st.span,
                                          stmt: st.id });
@@ -731,24 +734,53 @@ pub(super) fn splines_in_space(sk: &mut Sketch, res: &mut Resolver, map: &mut su
 /// written stay where they stand — held in space, or anywhere — and the arc is an arc: its radius,
 /// its contacts, a chain's joints and a family along it are an arc's in a plane.  Three points in
 /// a line take no one plane, and are refused (E060).  Asked with the splines, before E060 is.
-pub(super) fn arcs_in_space(sk: &mut Sketch, map: &super::SourceMap, diags: &mut Vec<Diag>) {
+///
+/// **An arc drawn in a plane said to turn clockwise**, `arc(center: c, sense: cw)` (#363 S4), is
+/// drawn the same way in that plane turned over — its normal the plane's reversed — so it runs
+/// counter-clockwise there from its start: a chain in a plane enters every link at its start, and
+/// turns right at such an arc.  Its ends a half turn apart take no one plane either (E060); one
+/// over points in space turns as its points stand, and `sense:` there is refused (E040).
+pub(super) fn arcs_in_space(sk: &mut Sketch, map: &super::SourceMap, deferred: &[Deferred],
+                            diags: &mut Vec<Diag>) {
     use crate::constraints::{CKind, Constraint};
     use crate::space::{cross, dot, norm, sub};
+    let clockwise: BTreeMap<usize, (Span, StmtId)> = deferred.iter().filter_map(|d| match d {
+        Deferred::Clockwise { arc, span, stmt } => Some((*arc, (*span, *stmt))),
+        _ => None,
+    }).collect();
     for i in 0..sk.arcs.len() {
         let a = sk.arcs[i].clone();
         let pts = [a.center, a.start, a.end].map(|p| p as usize);
-        if pts.iter().all(|&p| sk.plane_of(p).is_some()) {
+        let planar = pts.iter().all(|&p| sk.plane_of(p).is_some());
+        let cw = clockwise.get(&i);
+        if let (false, Some(&(span, stmt))) = (planar, cw) {
+            diags.push(Diag::within(Code::E040, span, stmt, "an arc over points in space turns \
+                the way its points stand, the short way round: `sense:` says which way an arc \
+                drawn in a plane turns".to_string()));
+            continue;
+        }
+        if planar && cw.is_none() {
             continue;
         }
         let arc = EntRef::arc(i);
         let [c, s, e] = pts.map(|p| sk.world_point(p));
         let (to_s, to_e) = (sub(s, c), sub(e, c));
-        let n = cross(to_s, to_e);
-        if !(norm(n) > 1e-9 * norm(to_s) * norm(to_e)) {
+        // in space the normal its points make; clockwise in a plane, the plane's reversed
+        let n = match sk.plane_of(pts[0]).filter(|_| planar) {
+            Some(pl) => sk.basis(pl).normal().map(|x| -x),
+            None => cross(to_s, to_e),
+        };
+        if !(norm(cross(to_s, to_e)) > 1e-9 * norm(to_s) * norm(to_e)) {
             let Some(site) = map.site_of(arc) else { continue };
-            diags.push(Diag::within(Code::E060, site.span, site.stmt, "an arc over points in \
-                space is drawn in the plane through its centre and its ends, and these stand in a \
-                line, which no one plane is through: draw it `in` one".to_string()));
+            let said = if planar {
+                "an arc turning clockwise is drawn in its plane turned over, through its centre \
+                 and its ends, and these stand in a line — a half turn, either way round: draw \
+                 two arcs"
+            } else {
+                "an arc over points in space is drawn in the plane through its centre and its \
+                 ends, and these stand in a line, which no one plane is through: draw it `in` one"
+            };
+            diags.push(Diag::within(Code::E060, site.span, site.stmt, said.to_string()));
             continue;
         }
         let name = map.name_of(arc).cloned().unwrap_or_else(|| io::entity_name(arc));
@@ -1019,6 +1051,9 @@ pub(super) enum Deferred {
     /// A circle's `normal:` (#363 S6): the axis it stands square to, read where its centre
     /// stands in space (`circles_in_space`), once every axis is built.
     Normal { circle: usize, normal: crate::syntax::Ref, span: Span, stmt: StmtId },
+    /// An arc said to turn clockwise from its start, `sense: cw` (#363 S4): drawn in its plane
+    /// turned over (`arcs_in_space`).
+    Clockwise { arc: usize, span: Span, stmt: StmtId },
 }
 
 /// The seed a dotted name reads: `pin.x`, `k.center.y`, `base.r`, `e.b` — `dotted` as the
@@ -1223,7 +1258,7 @@ pub(super) fn settle_deferred(
                 (*span, *stmt, r.map_err(|e| format!("`{text}`: {e}")))
             }
             Deferred::Along { .. } | Deferred::Height { .. } | Deferred::Scattered { .. }
-            | Deferred::Normal { .. } => {
+            | Deferred::Normal { .. } | Deferred::Clockwise { .. } => {
                 continue
             }
             Deferred::Radius { arc } => {

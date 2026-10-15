@@ -484,6 +484,9 @@ pub(crate) fn decl_args(d: &Decl) -> String {
     if let Some(n) = &d.normal {
         parts.push(format!("normal: {}", super::ref_text(n)));
     }
+    if let Some(s) = d.sense {
+        parts.push(format!("sense: {}", if s == crate::syntax::Sense::Cw { "cw" } else { "ccw" }));
+    }
     if let Some(t) = &d.through {
         parts.push(format!("through: {}", super::ref_text(&t.chain)));
         for (label, r) in [("start", &t.start), ("end", &t.end)] {

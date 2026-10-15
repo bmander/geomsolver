@@ -4,6 +4,11 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.125] An arc's sense.** An arc drawn in a plane may turn clockwise from its start, `arc(center:
+c, sense: cw)`, so a chain in a plane turns right at it — L0's S-bend is one chain in `std.top`.
+Through 0.124 an arc in a plane ran counter-clockwise from its start always, and a chain entering
+each link at its start could only turn left at an arc. (Issue #363, S4.)
+
 **[0.124] Arcs and circles in space.** An arc over a point standing in space is drawn in the plane
 through its centre and its ends, the short way round; three points in a line are refused. A circle
 over a centre in space takes `normal:`, the axis or line it stands square to, and is drawn in the
