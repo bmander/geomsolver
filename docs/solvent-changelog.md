@@ -4,6 +4,21 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.112] A block walks a face, walks run in step, and two faces drawn apart are lofted.**
+`repeat e in f` and `cycle e in f` run over a face's walk (§12.8): its edges in order, a face of
+corners by the straight run from each corner to the next. `cycle (ea, eb) in (a, b)` runs several
+walks in step, a link of each in every copy, walks of different lengths refused naming both. A face
+may be written of a block's copies, `face(side)` for `side[0]`, `side[1]`, … (§6.8), the count the
+block's. A number a face family's station gives a relation word may be any expression of the
+geometry the station was given, worked out at each station (§6.9). Over these the standard library
+says CAD's loft of two sketches, `Ruled(a, b, s:)`, corner to corner by straight rails in written
+order — a connector is where a walk starts, and faces of different corner counts are made alike by
+naming a point on an edge — a loft to a point, `Apex(a, tip, s:)`, and a section held to its
+rails, `Similar(prof, from, to, n, a, b)` (two rails, a similarity) and `Affine(…, third, …, c)`
+(three, an affine map). Through 0.111 a block ran over a named chain or a solid's faces, a face
+named each edge, two faces drawn apart had no loft (since 0.100), and a station's numbers read the
+geometry affinely. (Issue #243, L8.)
+
 **[0.111] A loft through several sections is drawn on rails.** A spline may be written through
 the corners of a named open chain of lines, `spline(through: rims, start: l, end: m)` (§6.1): the
 cubic through them, a span a link, its ends along the tangents written, or else running straight —

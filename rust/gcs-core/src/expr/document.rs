@@ -187,7 +187,14 @@ pub fn evaluate(sk: &mut Sketch) -> Vec<ExprItem> {
                     // steps that fail the same way, so they are one chain and one error arm
                     None => match (|| -> Result<(f64, Aff), ExprError> {
                         // an unknown the source declared is what it was declared
-                        let a = eval(&p.body, &with_declared(&p.body, &held, &sk.declared))?;
+                        let mut a = eval(&p.body, &with_declared(&p.body, &held, &sk.declared))?;
+                        // a coefficient read off a station's held numbers may come to nothing
+                        // there — a corner on its frame's axis (#243 L8): the dimension is the
+                        // number it comes to, and says nothing of the unknown
+                        if a.m == 0.0 && a.free.is_some()
+                            && p.body.deps().iter().any(|d| held.contains_key(d)) {
+                            a.free = None;
+                        }
                         check_dim(sk, nd, &a, &mut free_dim)?;
                         Ok((write_value(sk, nd, &a, &mut bound)?, a))
                     })() {

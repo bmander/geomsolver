@@ -638,11 +638,23 @@ pub struct Block {
 
 /// What a block runs over when it runs over a chain: the name each copy calls its edge, and the
 /// chain as written.  The chain is resolved by the flattener in the scope the block stands in,
-/// so it may be reached through an instance or a formal (`refs.pinion.profile`).
+/// so it may be reached through an instance or a formal (`refs.pinion.profile`).  A face's walk
+/// is one too (`repeat e in f`, #243 L8): its edges in order.
 #[derive(Clone, Debug)]
 pub struct EdgesOf {
     pub var: Name,
     pub chain: Ref,
+    /// Further walks run **in step** with the first, a link of each in every copy: `cycle (ea,
+    /// eb) in (a, b)` pairs two faces' edges link by link (#243 L8).  Empty for one walk.
+    pub zip: Vec<(Name, Ref)>,
+}
+
+impl EdgesOf {
+    /// Every walk the block runs over, the first one's first: each copy's name for its link,
+    /// and the chain or face as written.
+    pub fn walks(&self) -> impl Iterator<Item = (&Name, &Ref)> {
+        std::iter::once((&self.var, &self.chain)).chain(self.zip.iter().map(|(v, c)| (v, c)))
+    }
 }
 
 /// A block body that ends mid-joint — `cycle N { length(d) line -> angle(a) }` — threads its

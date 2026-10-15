@@ -101,6 +101,12 @@ pub(super) fn face_plane(face: &str) -> String {
     format!("{face}{PLANE}")
 }
 
+/// A face of corners' straight run from its corner `k` to the next, as a block walking the face
+/// reads it (#243 L8): `{face}#run{k}`.
+pub(super) fn run(face: &str, k: usize) -> String {
+    format!("{face}#run{k}")
+}
+
 /// A face written in place in a solid's statement, by the solid's name: `{solid}#face`.
 pub(super) fn written_face(solid: &str) -> String {
     format!("{solid}#face")

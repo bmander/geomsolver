@@ -310,8 +310,9 @@ impl<'a> Walk<'a> {
         let mut vals: BTreeMap<String, Aff> = BTreeMap::new();
         let mut dims: BTreeMap<String, Span> = BTreeMap::new();
         let mut words: BTreeMap<&str, &str> = BTreeMap::new();
-        // a number over a face family's running number that is not affine in it, written into
-        // the body as text: worked out at each station (#243 L5), as a component's is
+        // a number over a face family's running number that is not affine in it, or over the
+        // geometry a station was given, written into the body as text: worked out at each
+        // station (#243 L5, L8), as a component's is
         let mut texts: BTreeMap<&str, String> = BTreeMap::new();
         let mut entities: Vec<(&str, Ref)> = Vec::new();
         for (name, (text, span)) in &values {
@@ -326,7 +327,8 @@ impl<'a> Walk<'a> {
                     vals.insert(name.clone(), v);
                     dims.insert(name.clone(), *span);
                 }
-                Some(Err(e)) => match self.held_text(text, &scope.vals, scope) {
+                Some(Err(e)) => match self.held_text(text, &scope.vals, scope)
+                    .or_else(|| self.station_text(text, *span, &scope.vals, scope)) {
                     Some(t) => {
                         texts.insert(name.as_str(), format!("({})", t.trim()));
                     }

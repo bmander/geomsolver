@@ -363,3 +363,17 @@ takes a layout naming the front datum, origin and reference axis.
   `e` an alias to that link in each copy (`#<id>.<k>.e`); the count is the chain's, so the block
   is set aside where it stands and expanded once the chain resolves (`flatten::expand_pending`),
   through instances and group formals alike. `tests/chain_edges.rs` is the gate.
+  **A block walks a face too** (#243 L8, [0.112]): `repeat e in f` over a face by name or a
+  `face` formal runs its loop (`flatten::resolve::face_walk`) — a closed chain it is made of or
+  the edges it names, each `e` an alias as above, or for a face of corners the straight run from
+  each corner to the next (`Link::Between`), a hidden `.closure` line keyed under the face
+  (`{face}#run{k}`, `keys::run`), drawn once whatever walks it, so its corners read as the face's
+  geometry and not a copy's.  Holes, an anonymous corner, a trimmed stretch and corners beside
+  edges are E080 at the reference.  **Walks run in step**: `cycle (ea, eb) in (a, b)`
+  (`EdgesOf::zip`, `words::over_walks`) resolves every walk before it expands, copy `k` aliasing
+  link `k` of each; different lengths are E080 naming what each walk stands for (a word's formal
+  names it only as the word's own), a `cycle` over an open one E103.  **A face of a block's
+  copies**: a face's item naming nothing as it stands, whose copies `e[0]`, `e[1]`, … exist, is
+  spliced into them in order (`flatten::resolve::faces_of_copies`, before references resolve),
+  and each such edge names its swept face `side[k]` (`program::solids::faces::boundary_name`
+  spells a copy's public path).  `tests/correspondence.rs` is the gate.
