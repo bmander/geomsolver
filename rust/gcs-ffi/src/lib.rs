@@ -14,9 +14,6 @@
 
 #![allow(clippy::missing_safety_doc)]
 
-mod vertex;
-mod edge;
-mod spatial_face;
 mod sketch;
 mod entities;
 mod constraints;

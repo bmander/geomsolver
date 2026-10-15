@@ -1,7 +1,7 @@
-//! A declarative spatial surface region selected by closed material-side conditions.
+//! A spatial surface region selected by closed material-side conditions, made of its parts: a
+//! source surface or envelope and the regions it is trimmed to.
 use crate::{envelope::{check_tolerance,Contact,Error,GeneratedEnvelope,Intersection,
         IntersectionOptions,SurfacePoint},
-    model::{EntKind,EntRef,PatchE,Sketch},
     solid::{RegionLocation,RevolvedRegion,RevolvedSurface,SurfaceProjector}};
 
 #[derive(Clone,Debug)]
@@ -19,15 +19,6 @@ struct MaterialTrims {
 }
 
 impl MaterialTrims {
-    fn read(sk: &Sketch,p: &PatchE,axis_tolerance: f64) -> Result<Self,String> {
-        if p.inside.is_empty() && p.outside.is_empty() {
-            return Err("a patch needs at least one material-side condition".into());
-        }
-        let read = |ids: &[u32]| ids.iter().map(|&i| RevolvedRegion::read(sk,i as usize,axis_tolerance))
-            .collect::<Result<Vec<_>,_>>();
-        Ok(Self {inside:read(&p.inside)?,outside:read(&p.outside)?})
-    }
-
     fn check(&self,p: [f64;3],tolerance: f64) -> Result<(),Error> {
         // Even an untrimmed envelope must reject invalid numerical controls.
         check_tolerance(tolerance)?;
@@ -43,7 +34,7 @@ impl MaterialTrims {
     }
 }
 
-/// One source and its material conditions, used for both patches and seam operands.
+/// One envelope and its material conditions, used for both patches and seam operands.
 /// There is no separately stored untrimmed copy that can diverge from this source.
 #[derive(Clone,Debug)]
 pub(crate) struct EnvelopePatch {
@@ -52,21 +43,6 @@ pub(crate) struct EnvelopePatch {
 }
 
 impl EnvelopePatch {
-    pub(crate) fn read(sk: &Sketch,e: EntRef,axis_tolerance: f64) -> Result<Self,String> {
-        match e.kind {
-            EntKind::Envelope => Ok(Self {source:GeneratedEnvelope::named(sk,e.i())?,
-                trims:MaterialTrims::default()}),
-            EntKind::Patch => {
-                let patch = TrimmedPatch::named(sk,e.i(),axis_tolerance)?;
-                match patch.source {
-                    Source::Envelope(e) => Ok(e),
-                    _ => Err("a generating face needs an envelope source".into()),
-                }
-            }
-            _ => Err("a generating face needs an envelope or patch of an envelope".into()),
-        }
-    }
-
     pub(crate) fn envelope(&self) -> &GeneratedEnvelope { &self.source }
 
     pub(crate) fn at(&self,p: [f64;3],normal_tolerance: f64,trim_tolerance: f64)
@@ -95,24 +71,17 @@ pub struct TrimmedPatch {
 }
 
 impl TrimmedPatch {
-    pub fn named(sk: &Sketch,index: usize,axis_tolerance: f64) -> Result<Self,String> {
-        let p = sk.patches.get(index).ok_or("no such patch")?;
-        let trims = MaterialTrims::read(sk,p,axis_tolerance)?;
-        let source = match p.source.kind {
-            EntKind::Surface => Source::Surface {
-                surface:RevolvedSurface::named(sk,p.source.i())?,trims},
-            EntKind::Envelope => Source::Envelope(EnvelopePatch {
-                source:GeneratedEnvelope::named(sk,p.source.i())?,trims}),
-            _ => return Err("a patch source must be a surface or envelope".into()),
-        };
-        Ok(Self {name:p.name.clone(),source})
-    }
-
     /// An envelope's points within every region of `inside` and outside every one of `outside`,
     /// made of its parts rather than read off a declaration (#212): a body's cut face, its trims
     /// the body's own material.
     pub fn of_envelope(name: String,source: GeneratedEnvelope,inside: Vec<RevolvedRegion>,outside: Vec<RevolvedRegion>) -> Self {
         Self {name,source:Source::Envelope(EnvelopePatch {source,trims:MaterialTrims {inside,outside}})}
+    }
+
+    /// A revolved surface's points within every region of `inside` and outside every one of
+    /// `outside`.
+    pub fn of_surface(name: String,surface: RevolvedSurface,inside: Vec<RevolvedRegion>,outside: Vec<RevolvedRegion>) -> Self {
+        Self {name,source:Source::Surface {surface,trims:MaterialTrims {inside,outside}}}
     }
 
     pub(crate) fn envelope_patch(&self) -> Result<&EnvelopePatch,String> {

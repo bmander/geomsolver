@@ -41,80 +41,6 @@ pub unsafe extern "C" fn gcs_param_name(h: *mut Sketch, i: i32) -> *mut u8 {
 
 /* -- entities -------------------------------------------------------------- */
 
-/// An envelope/boundary seam's source domain, six doubles in [u,v,roll] order.
-#[no_mangle]
-pub unsafe extern "C" fn gcs_boundary_seam_domain(h: *mut Sketch,idx: i32,
-    axis_tolerance: f64,out: *mut f64) -> i32 {
-    guard(0,move || match gcs_core::seam::BoundarySeam::named(sk(h),idx as usize,axis_tolerance) {
-        Ok(s) => {
-            for (i,v) in s.domain().into_iter().flatten().enumerate() { out.add(i).write(v); }
-            1
-        }
-        Err(message) => { set_error(message); 0 }
-    })
-}
-
-/// A retained envelope/boundary contact, with the envelope sample's ten-double layout.
-#[no_mangle]
-pub unsafe extern "C" fn gcs_boundary_seam_sample(h: *mut Sketch,idx: i32,
-    u: f64,v: f64,roll: f64,axis_tolerance: f64,normal_velocity_tolerance: f64,
-    incidence_tolerance: f64,trim_tolerance: f64,out: *mut f64) -> i32 {
-    guard(0,move || {
-        let tolerance = gcs_core::seam::BoundarySeamTolerance {
-            normal_velocity:normal_velocity_tolerance,incidence:incidence_tolerance,trim:trim_tolerance};
-        let result = gcs_core::seam::BoundarySeam::named(sk(h),idx as usize,axis_tolerance)
-            .and_then(|s| s.evaluate([u,v,roll],tolerance)
-                .map_err(|e| format!("invalid boundary seam point: {e:?}")));
-        match result {
-            Ok(p) => {
-                for (i,v) in p.position.into_iter().chain(p.normal).chain(p.velocity)
-                    .chain([p.normal_velocity]).enumerate() { out.add(i).write(v); }
-                1
-            }
-            Err(message) => { set_error(message); 0 }
-        }
-    })
-}
-
-/// A shared generating seam's parameter bounds, six doubles in its first source chart.
-#[no_mangle]
-pub unsafe extern "C" fn gcs_seam_domain(h: *mut Sketch,idx: i32,
-    position_tolerance: f64,normal_tolerance: f64,axis_tolerance: f64,out: *mut f64) -> i32 {
-    guard(0,move || {
-        let tolerance = gcs_core::seam::SeamTolerance {
-            position:position_tolerance,normal:normal_tolerance,axis:axis_tolerance};
-        match gcs_core::seam::EnvelopeSeam::named(sk(h),idx as usize,tolerance) {
-            Ok(s) => {
-                for (i,v) in s.domain().into_iter().flatten().enumerate() { out.add(i).write(v); }
-                1
-            }
-            Err(message) => { set_error(message); 0 }
-        }
-    })
-}
-
-/// A retained seam contact, ten doubles with the envelope sample layout.
-#[no_mangle]
-pub unsafe extern "C" fn gcs_seam_sample(h: *mut Sketch,idx: i32,u: f64,v: f64,roll: f64,
-    position_tolerance: f64,normal_tolerance: f64,axis_tolerance: f64,
-    envelope_tolerance: f64,trim_tolerance: f64,out: *mut f64) -> i32 {
-    guard(0,move || {
-        let tolerance = gcs_core::seam::SeamTolerance {
-            position:position_tolerance,normal:normal_tolerance,axis:axis_tolerance};
-        let result = gcs_core::seam::EnvelopeSeam::named(sk(h),idx as usize,tolerance)
-            .and_then(|s| s.evaluate([u,v,roll],envelope_tolerance,trim_tolerance)
-                .map_err(|e| format!("invalid seam point: {e:?}")));
-        match result {
-            Ok(p) => {
-                for (i,v) in p.position.into_iter().chain(p.normal).chain(p.velocity)
-                    .chain([p.normal_velocity]).enumerate() { out.add(i).write(v); }
-                1
-            }
-            Err(message) => { set_error(message); 0 }
-        }
-    })
-}
-
 /// Generating profile bounds before revolution: xyz min/max then du min/max, twelve doubles.
 #[no_mangle]
 pub unsafe extern "C" fn gcs_surface_profile_bounds(h: *mut Sketch,idx: i32,
@@ -221,47 +147,6 @@ pub unsafe extern "C" fn gcs_envelope_sample(h: *mut Sketch, idx: i32,
     })
 }
 
-/// A retained point on a trimmed surface: position and tangents (nine doubles).
-#[no_mangle]
-pub unsafe extern "C" fn gcs_patch_surface_sample(h: *mut Sketch,idx: i32,u: f64,v: f64,
-    axis_tolerance: f64,trim_tolerance: f64,out: *mut f64) -> i32 {
-    guard(0,move || {
-        let result = gcs_core::patch::TrimmedPatch::named(sk(h),idx as usize,axis_tolerance)
-            .and_then(|p| p.surface_at(u,v,trim_tolerance).map_err(|e| format!("invalid patch point: {e:?}")));
-        match result {
-            Ok(p) => {
-                for (i,value) in p.position.into_iter().chain(p.du).chain(p.dv).enumerate() {
-                    out.add(i).write(value);
-                }
-                1
-            }
-            Err(message) => { set_error(message); 0 }
-        }
-    })
-}
-
-/// A retained envelope point (ten doubles, same layout as gcs_envelope_sample).
-/// Both its normal-velocity residual and every material-side condition must pass.
-#[no_mangle]
-pub unsafe extern "C" fn gcs_patch_envelope_sample(h: *mut Sketch,idx: i32,u: f64,v: f64,roll: f64,
-    axis_tolerance: f64,normal_tolerance: f64,trim_tolerance: f64,out: *mut f64) -> i32 {
-    guard(0,move || {
-        let result = gcs_core::patch::TrimmedPatch::named(sk(h),idx as usize,axis_tolerance)
-            .and_then(|p| p.envelope_at([u,v,roll],normal_tolerance,trim_tolerance)
-                .map_err(|e| format!("invalid patch point: {e:?}")));
-        match result {
-            Ok(p) => {
-                for (i,value) in p.position.into_iter().chain(p.normal).chain(p.velocity)
-                    .chain([p.normal_velocity]).enumerate() {
-                    out.add(i).write(value);
-                }
-                1
-            }
-            Err(message) => { set_error(message); 0 }
-        }
-    })
-}
-
 /// Position and velocity of a fixed source point under a named motion. The angle is
 /// radians; velocity is distance per radian of that shared parameter. Six doubles.
 #[no_mangle]
@@ -297,7 +182,8 @@ pub(crate) fn kind_id(k: EntKind) -> i32 {
         // the binding decodes an id through its own table (`model.ts`'s `KIND_ID`), so an id
         // keeps its number for good: the ellipse's (5) and the frame's (7) were taken up when
         // those kinds went (#47), and the sphere's, the cone's and the cylinder's when they
-        // became library components (`std.Sphere`, `std.Cone`, `std.Cylinder`)
+        // became library components (`std.Sphere`, `std.Cone`, `std.Cylinder`), and 12–15 when
+        // the patch, the seam, the vertex and the edge left the language for the Rust API (#364)
         EntKind::Curve => 5,
         EntKind::Plane => 6,
         EntKind::Face => 7,
@@ -305,10 +191,6 @@ pub(crate) fn kind_id(k: EntKind) -> i32 {
         EntKind::Surface => 9,
         EntKind::Motion => 10,
         EntKind::Envelope => 11,
-        EntKind::Patch => 12,
-        EntKind::Seam => 13,
-        EntKind::Vertex => 14,
-        EntKind::Edge => 15,
         EntKind::Axis => 16,
         EntKind::Meshing => 17,
         EntKind::Traced => 18,
@@ -328,10 +210,6 @@ pub(crate) fn ent(kind: i32, idx: i32) -> EntRef {
         9 => EntKind::Surface,
         10 => EntKind::Motion,
         11 => EntKind::Envelope,
-        12 => EntKind::Patch,
-        13 => EntKind::Seam,
-        14 => EntKind::Vertex,
-        15 => EntKind::Edge,
         16 => EntKind::Axis,
         17 => EntKind::Meshing,
         18 => EntKind::Traced,

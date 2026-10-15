@@ -1,6 +1,6 @@
 //! The implicit intersection of a generated face and a finite analytic boundary.
 use crate::{envelope::{check_tolerance,Contact,Error,Intersection,IntersectionOptions},
-    model::{EntKind,Sketch},patch::EnvelopePatch,solid::SurfaceProjector};
+    patch::EnvelopePatch,solid::SurfaceProjector};
 
 /// Explicit checks for a retained boundary-seam point. Normal velocity is per
 /// radian of generating roll; incidence and material trim tolerances are lengths.
@@ -18,7 +18,7 @@ impl BoundarySeamTolerance {
     }
 }
 
-/// One generated face and one finite boundary surface, each read exactly once.
+/// One generated face and one finite boundary surface, each held exactly once.
 /// The seam's chart is the envelope's original [u,v,roll]. Reading a snapshot does
 /// not select a connected branch or certify transversality. Local section solves
 /// check all three equations and rank through the common intersection solver.
@@ -30,17 +30,6 @@ pub struct BoundarySeam {
 }
 
 impl BoundarySeam {
-    pub fn named(sk: &Sketch,index: usize,axis_tolerance: f64) -> Result<Self,String> {
-        check_tolerance(axis_tolerance).map_err(|_| "invalid clipping-axis tolerance")?;
-        let s = sk.seams.get(index).ok_or("no such seam")?;
-        if s.second.kind != EntKind::Surface || s.first.kind == EntKind::Surface {
-            return Err("a boundary seam needs an envelope followed by a boundary surface".into());
-        }
-        super::validate(sk,[s.first,s.second])?;
-        Ok(Self {name:s.name.clone(),face:EnvelopePatch::read(sk,s.first,axis_tolerance)?,
-            boundary:SurfaceProjector::named(sk,s.second.i())?})
-    }
-
     /// A generating face meeting a finite boundary surface, made of its parts (#212).
     pub fn new(name: String,face: &crate::patch::TrimmedPatch,boundary: SurfaceProjector) -> Result<Self,String> {
         Ok(Self {name,face:face.envelope_patch()?.clone(),boundary})

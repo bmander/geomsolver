@@ -4,7 +4,7 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
-**[0.120] Two formals marched by the method of lines.** A body traced over two formals may state a
+**[0.121] Two formals marched by the method of lines.** A body traced over two formals may state a
 rate along either (§6.5): the first is marched, the second sampled at the Gauss–Lobatto nodes of
 32 pieces of its interval, a rate along it the derivative of the quintic through a piece's nodes,
 and `initially { … }` the Cauchy data where the first starts, for every value of the second — a
@@ -16,8 +16,22 @@ radian. The surface's regularity is checked at every node and step, and a fold �
 crossing, an undercut's kind — is refused where it happens. A contact on the surface reads its
 point, tangent plane and normal; its curvature is not yet read. A rate written to the right of
 its word, `nl perpendicular rate(p over u)`, parses as the grammar has said since 0.119 (it was
-read as a chain's link). Through 0.119 a body over two formals stating a rate was refused.
+read as a chain's link). Through 0.120 a body over two formals stating a rate was refused.
 (Issue #339, D4.)
+
+**[0.120] The B-rep read after the solve leaves the language.** `patch`, `seam`, `vertex`,
+`edge(…, along:)` and `face(…, on:)` (§6.16–§6.20) are retired: they added no unknown, no solve row
+read them and nothing exported from them, and the one check that needed them, the spiral bevel's,
+already made each of its parts in Rust. They are Rust API now — `TrimmedPatch::of_envelope` and
+`of_surface`, `EnvelopeSeam::new`, `BoundarySeam::new`, `SurfaceSeam::new`, `BoundaryVertex::new`,
+`JunctionVertex::new`, `SpatialEdge::new` and `SpatialFaceBoundary::new` — over the surfaces and
+envelopes a drawing names. `patch`, `seam` and `vertex` are no keywords, `edge` no constructor, and
+a face takes no `on:`: every face is planar. `surface` (§6.13) and the spatial `envelope` stay,
+filed with what the solve holds to, and `surface` says its two meanings, one per kind of solid
+it is read from: a revolution's side, a held spatial envelope's source, and a prism's side, a
+planar envelope's. The section numbers are kept, so §6.21 onward keep theirs. Through 0.119 each
+was declared in the document and read after the solve by a `::named` reader. (Issue #364, settling
+#76 item 6.)
 
 **[0.119] Rates along a running formal, in a traced body.** A traced body may state a condition
 on a rate along the formal it runs over (§6.5), as a face family's station may since 0.116 (§6.9):

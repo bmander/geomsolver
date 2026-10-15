@@ -1,6 +1,6 @@
 //! The spatial entities a drawing names: faces and their loops, solids and what they are
 //! swept or made of, claims and bearings about them, the pictures asked of them, and the
-//! analytic surfaces, envelopes, patches, seams, vertices, edges and motions over them.
+//! analytic surfaces, envelopes and motions over them.
 
 use super::*;
 
@@ -11,16 +11,10 @@ pub struct FaceLoop {
     pub edge_names: Vec<String>,
 }
 
-/// A face's support is either an inherited profile plane or a named spatial
-/// surface/envelope. Spatial support must never default to the page plane.
-#[derive(Clone,Copy,Debug,PartialEq,Eq)]
-pub enum FaceSupport { Plane(Option<u32>), Surface(EntRef) }
-
-/// A region bounded by existing edges. Planar profiles inherit their plane from
-/// point membership; spatial faces name their analytic support explicitly.
+/// A region bounded by existing edges, on the plane it inherits from its points' membership.
 #[derive(Clone, Debug)]
 pub struct FaceE {
-    /// The loop, in traversal order: planar lines/arcs/circles, or named spatial edges.
+    /// The loop, in traversal order: lines, arcs and circles.
     pub edges: Vec<EntRef>,
     /// What the document calls each edge, in the same order — the name the face swept from it
     /// is reached by (`block.side_l`).  Kept beside the references because a solid's face path
@@ -28,8 +22,8 @@ pub struct FaceE {
     pub edge_names: Vec<String>,
     /// Strictly contained, disjoint inner boundaries.
     pub holes: Vec<FaceLoop>,
-    /// Inherited profile plane (`None` is the page) or exact named spatial support.
-    pub support: FaceSupport,
+    /// The inherited profile plane: `None` is the page.
+    pub plane: Option<u32>,
     /// What the document calls it.  A solid's faces are reached by *path* — `body.bore.wall` —
     /// so unlike every other kind a face and a solid carry their own name: the path is the
     /// naming mechanism, and a report that could not spell one would have nothing to say.
@@ -38,15 +32,6 @@ pub struct FaceE {
 }
 
 impl FaceE {
-    pub fn plane(&self) -> Result<Option<u32>,String> {
-        match self.support {
-            FaceSupport::Plane(p) => Ok(p),
-            FaceSupport::Surface(_) => Err("a spatial face is not a planar sweep profile".into()),
-        }
-    }
-    pub fn on(&self) -> Option<EntRef> {
-        match self.support { FaceSupport::Surface(s) => Some(s), FaceSupport::Plane(_) => None }
-    }
     pub fn boundaries(&self) -> impl Iterator<Item = (&[EntRef], &[String])> {
         std::iter::once((self.edges.as_slice(), self.edge_names.as_slice()))
             .chain(self.holes.iter().map(|h| (h.edges.as_slice(), h.edge_names.as_slice())))
@@ -382,45 +367,6 @@ impl SolidDef {
 pub struct SolidE {
     pub def: SolidDef,
     /// What the document calls it — see `FaceE::name`.
-    pub name: String,
-    pub class: Classes,
-}
-
-/// A generating-profile junction, or an envelope intersected by a boundary surface.
-#[derive(Clone, Debug)]
-pub struct SeamE {
-    pub first: EntRef,
-    pub second: EntRef,
-    pub name: String,
-    pub class: Classes,
-}
-
-/// A seam between two corner identities, sliced along a named spatial line.
-#[derive(Clone, Debug)]
-pub struct EdgeE {
-    pub seam: u32,
-    pub start: u32,
-    pub end: u32,
-    pub along: u32,
-    pub name: String,
-    pub class: Classes,
-}
-
-/// A spatial corner at the intersection of two seam identities.
-#[derive(Clone, Debug)]
-pub struct VertexE {
-    pub first: u32,
-    pub second: u32,
-    pub name: String,
-    pub class: Classes,
-}
-
-/// A source surface or envelope clipped by closed material regions.
-#[derive(Clone, Debug)]
-pub struct PatchE {
-    pub source: EntRef,
-    pub inside: Vec<u32>,
-    pub outside: Vec<u32>,
     pub name: String,
     pub class: Classes,
 }

@@ -155,7 +155,7 @@ beside the free curve, a pursuit refused at its capture, a geodesic on a cone in
 at the closed form its comments give and each claim a theorem, held by `tests/rate_examples.rs`;
 the app lists the folder as one project (`example-catalog.ts`, *Rates*).
 
-**The method of lines (#339 D4, [0.120], `lines.rs`):** a body traced over two formals (§6.5's
+**The method of lines (#339 D4, [0.121], `lines.rs`):** a body traced over two formals (§6.5's
 surface, `traced.rs`) may state a rate along either.  The first is **marched**, the second
 **sampled**: its interval cut into `Body::pieces` equal pieces (`lines::PIECES`, 32, encoded in
 the body's header) of the six Gauss–Lobatto nodes of #243 L2's walls (`brep::family::NODES`), a

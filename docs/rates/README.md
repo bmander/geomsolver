@@ -381,7 +381,7 @@ of how each was first written.
 ## D4: two formals and the method of lines (2026-10-15)
 
 **Landed:** a body traced over two formals that states a rate along either, marched along the
-first by the method of lines (0.120, §6.5; `lines.rs`), and the gate `tests/lines.rs` on an
+first by the method of lines (0.121, §6.5; `lines.rs`), and the gate `tests/lines.rs` on an
 ellipse's offset front, [`rust/examples/rates/front.sv`](../../rust/examples/rates/front.sv).
 The rule is `docs/contract/curves.md` ("The method of lines").
 

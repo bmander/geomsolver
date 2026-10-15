@@ -253,12 +253,26 @@ foot `E ω₂·ω/|ω|²` from the pinion's shaft, the pitch that point's speed 
 angles, no offset giving zero pitch through the apex, and `L reciprocal mesh` to the members'
 equal speeds along `L` at every point of it.
 
-**Trimmed spatial patches:** `flank := patch(source, inside: tip, outside: root)`; repeat the label
-per clipping solid. `patch::TrimmedPatch` has explicit axis, trim and residual tolerances; clips
-unmodified full revolutions (line/arc/circle profiles, holes). `solid::RevolvedRegion` is analytic
-meridian membership apart from the CSG kernel. Mind full-circle seams, arc shared vertices,
-vanishing axis edges; never turn a sphere's construction diameter into a wall. The final root must
-satisfy trim and envelope. `core/patch.ts`; ABI kind 12. No branch, face loop or closed solid yet.
+**The post-solve B-rep is Rust API, not Solvent** (#364). Patches, seams, corners, edges and face
+boundaries add no unknown, no solve row reads them and nothing exports from them, so the language
+has no word for them (`patch`, `seam`, `vertex`, `edge(…, along:)` and `face(…, on:)` were retired
+in spec 0.120) and the ABI and the browser bind none. Each is built of its parts — the surfaces,
+envelopes and solids a drawing names, read with `RevolvedSurface::named`,
+`GeneratedEnvelope::named`, `SurfaceProjector::named` and `RevolvedRegion::read` — through its
+`::new` (or `TrimmedPatch::of_envelope`/`of_surface`), as `tests/envelope/paired.rs` builds the
+spiral bevel's off `faces::face_source`. Identity is the caller's: two corners are one only where
+the caller gives them one identity, never because they coincide. Every type is an immutable
+snapshot: a change to the drawing needs the part made again. `tests/patches.rs` and
+`tests/seams/**` hold the rules below over the constructors.
+
+**Trimmed spatial patches:** `patch::TrimmedPatch::of_envelope(name, envelope, inside, outside)` and
+`of_surface` keep a source's points within every `inside` region and outside every `outside` one,
+each a `solid::RevolvedRegion`, with explicit trim and residual tolerances; regions read unmodified
+full revolutions (line/arc/circle profiles, holes) with an explicit axis tolerance.
+`RevolvedRegion` is analytic meridian membership apart from the CSG kernel. Mind full-circle
+seams, arc shared vertices, vanishing axis edges; never turn a sphere's construction diameter into
+a wall. The final root must satisfy trim and envelope; a trial may cross a trim. No branch, face
+loop or closed solid yet.
 
 **Whole-interval geometry bounds:** `interval::Interval`: private finite endpoints,
 outward-rounded arithmetic; zero-straddling division, overflow and invalid domains fail closed.
@@ -295,42 +309,40 @@ trials; `at` requires the envelope equation. `EnvelopePatch` owns one source wit
 conditions; do not reintroduce parallel untrimmed and trimmed copies of a generating face.
 Snapshot domains are private, returned by value; source edits require new snapshots.
 
-**Shared generating seams:** `join := seam(flank, transition)` takes two envelopes or patches of
-envelopes sharing one actual profile vertex, a source revolution and a named motion.
-`seam::EnvelopeSeam` snapshots them after solving, checks coincidence and tangent-plane agreement
-with explicit `SeamTolerance`, and intersects their angular domains; first-source u is fixed at the
-junction. `SeamIntersectionOptions` exposes only [v,roll]; `intersect` solves both envelope
+**Shared generating seams:** `seam::EnvelopeSeam::new(name, [first, second], ends, tolerance)`
+takes two patches of envelopes and each source edge's `u` at the vertex they share, which the
+caller knows from the profile (`paired.rs` reads it off the cutter's meridian). It checks
+coincidence and tangent-plane agreement there with explicit `SeamTolerance` — ends that are no
+shared vertex are refused, never repaired by proximity — and intersects their angular domains;
+first-source u is fixed at the junction. A patch of a surface is refused. `SeamIntersectionOptions` exposes only [v,roll]; `intersect` solves both envelope
 equations and one section through the DogLeg adapter (one normal-velocity tolerance for both
 faces), and the final root checks both envelopes and material trims. Not a nearest-point weld or
-an arbitrary surface intersection. Local singular intersections are refused. Browser
-`core/seam.ts`; ABI kind 13. Contacts carry the first face's normal and generating velocity, not
-the seam's curve derivative.
+an arbitrary surface intersection. Local singular intersections are refused. Contacts carry the
+first face's normal and generating velocity, not the seam's curve derivative.
 
-**Envelope/boundary seams:** `tip_edge := seam(flank_region, tip.wall)` names an envelope (or its
-patch) cut by a finite analytic surface. `seam::BoundarySeam` reads one `EnvelopePatch` and one
+**Envelope/boundary seams:** `seam::BoundarySeam::new(name, face, boundary)` is a patch of an
+envelope cut by a finite analytic surface. It holds one `EnvelopePatch` and one
 `SurfaceProjector`, keeping the full [u,v,roll] domain; it solves envelope, boundary support and
 section equations in that order, then checks finite incidence and trims. A separate type from
-`EnvelopeSeam`: three unknowns, no junction tangency tolerances. Browser `boundarySeamDomain` /
-`boundarySeamSample` in `core/seam.ts`, kind 13. Reading a seam asserts no regular branch or
-oriented face loop.
+`EnvelopeSeam`: three unknowns, no junction tangency tolerances. Two surfaces meeting are a
+`SurfaceSeam::new(name, first, second)`. A seam asserts no regular branch or oriented face loop.
 
-**Shared spatial vertices:** `corner := vertex(tip_edge,toe_edge)` meets two boundary seams on one
-exact named generating face; a generating junction may also meet a boundary seam on either face.
-Coincident declarations keep distinct identity. `BoundaryVertex` owns one face and two boundaries
-(three unknowns); `JunctionVertex` one junction and one boundary (two), checking finite incidence
-on the face the boundary seam names — a coarser seam tolerance cannot transfer finer boundary
-membership. `position` is xyz only, no artificial corner normal. Local solves check rank, not
-global uniqueness. Ordinary formals/privacy/copy; ABI kind 14, `core/vertex.ts`.
+**Shared spatial vertices:** `vertex::BoundaryVertex::new(name, face, [a, b])` is a generating
+face meeting two finite surfaces (three unknowns), owning one copy of the face;
+`JunctionVertex::new(name, junction, boundary, face)` a generating junction meeting one boundary
+on its face 0 or 1 (two unknowns), checking finite incidence on that face — a coarser seam
+tolerance cannot transfer finer boundary membership. `position` is xyz only, no artificial corner
+normal. Local solves check rank, not global uniqueness.
 
-**Finite spatial edges:** `extent := edge(seam,from: a,to: b,along: axis)` names a finite axial
-slicing interval between spatial vertices. `edge::SpatialEdge::named` rechecks endpoint witnesses
-and maps junction endpoint u into the correct incident-face chart. At a junction a boundary on the
-other incident face shares the corner through boundary identity; never infer this from proximity
-or require duplicate corners. `sample` solves via seam APIs, checks local rank/material/incidence
+**Finite spatial edges:** `edge::SpatialEdge::new(name, source, vertices, endpoints, direction,
+tolerance)` is a finite axial slicing interval of a seam between two corner identities. Each
+endpoint is given in the seam's own chart — a junction corner read on its second face takes that
+face's `u` at the shared vertex, which the caller puts in — and is checked on the seam. At a
+junction a boundary on the other incident face shares the corner through the caller's identity;
+never infer this from proximity or require duplicate corners. `sample` solves via seam APIs, checks local rank/material/incidence
 inside, and reuses stored endpoints checked by their full vertex constraints. Never re-solve a
 known endpoint with a potentially tangent slicing equation. Fraction is linear projection along
-the line, not arc length; local samples are no global branch certificate. No planar coordinates or
-glyph; ABI kind 15, `core/edge.ts`.
+the direction, not arc length; local samples are no global branch certificate.
 
 **Checked shell topology:** `topology::ClosedShell` owns explicit edge endpoint identities and
 ordered directed uses in connected faces with boundary loops; construction checks closure, two
@@ -340,12 +352,11 @@ annular faces supported). Separate from planar `FaceE`; no coordinates or tolera
 (exact equals, signed zero normalized). Neither establishes incidence, non-self-intersection,
 outward orientation or deviation error. See `docs/shell-topology.md` before connecting faces.
 
-**Spatial face boundaries:** `working := face(toe,tip,heel,join,on: region)` binds an ordered
-finite-edge loop to an exact named surface/envelope/patch. `FaceSupport` distinguishes inherited
-planes from spatial supports; `FaceE::plane()` refuses the latter, never treating them as page
-profiles. Spatial faces build/copy after edges, `on:` an ordinary dependency.
-`spatial_face::SpatialFaceBoundary` validates shared vertex identity and maps junction parameters
-to this face's chart; samples keep edge xyz and check this support's incidence. No holes or
-repeated vertices/edges yet; solid assembly still needs an interior/embedding certificate. Browser
-`spatial-face.ts`. See `docs/analytic-face-boundaries.md`; a closed boundary walk is not a valid
-disk.
+**Spatial face boundaries:** `spatial_face::SpatialFaceBoundary::new(name, support, uses,
+tolerance)` binds an ordered loop of edge uses to an analytic support (`Support::Envelope` of a
+patch, or `Support::Surface`). The loop closes on the edges' own corner identities, in order; a
+use whose seam's chart is the other face's of a junction carries this face's `u` there
+(`Use::endpoint_u`), and samples keep edge xyz and check this support's incidence. A `FaceE` is a
+planar profile only, its `plane` the one it inherits. No holes yet; solid assembly still needs an
+interior/embedding certificate. See `docs/analytic-face-boundaries.md`; a closed boundary walk is
+not a valid disk.

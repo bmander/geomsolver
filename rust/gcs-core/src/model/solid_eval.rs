@@ -30,7 +30,7 @@ impl Sketch {
             edges,
             edge_names: names,
             holes: Vec::new(),
-            support: FaceSupport::Plane(plane.map(|p| p as u32)),
+            plane: plane.map(|p| p as u32),
             name: name.to_string(),
             class: Classes::default(),
         });
@@ -350,7 +350,7 @@ impl Sketch {
                 let l = self.lines.get(axis.i())?;
                 Some((self.point_xy(l.p1 as usize), self.point_xy(l.p2 as usize)))
             }
-            EntKind::Axis => self.axis_in(self.faces.get(face as usize)?.plane().ok()?, axis.i()),
+            EntKind::Axis => self.axis_in(self.faces.get(face as usize)?.plane, axis.i()),
             _ => None,
         }
     }

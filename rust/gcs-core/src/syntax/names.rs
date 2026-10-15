@@ -24,10 +24,6 @@ pub fn kind_initial(k: EntKind) -> char {
         EntKind::Surface => 't',
         EntKind::Motion => 'm',
         EntKind::Envelope => 'e',
-        EntKind::Patch => 'h',
-        EntKind::Seam => 'j',
-        EntKind::Vertex => 'w',
-        EntKind::Edge => 'k',
         EntKind::Meshing => 'g',
         // a body traced in space: `t` and `l` are taken, so its `r`
         EntKind::Traced => 'r',

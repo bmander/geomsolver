@@ -88,7 +88,7 @@ impl FacePoly {
 /// refused those (E080), so this is the runtime's own guard rather than a diagnosis.
 pub fn face_poly(sk: &Sketch, fi: usize, unit: f64) -> Option<FacePoly> {
     let f = sk.faces.get(fi)?;
-    loop_poly(sk, &f.edges, &f.edge_names, f.plane().ok()?, unit)
+    loop_poly(sk, &f.edges, &f.edge_names, f.plane, unit)
 }
 
 pub(super) fn loop_poly(sk: &Sketch, edges: &[EntRef], edge_names: &[String], plane: Option<u32>, unit: f64) -> Option<FacePoly> {

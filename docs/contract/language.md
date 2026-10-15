@@ -147,7 +147,7 @@ in it, through a `when`, marked `Relation::initially` (anything else in it a syn
 defined word's body takes the flag as it takes `claim`, and it reaches `ir::Relation::initially`
 and `Constraint::initially`: on the sheet a row of the drawn home, in a trace the home's alone.
 `tests/rates.rs` (a face family's) and `tests/traced_rates.rs` (a traced body's) are the gates.
-**Over two formals** (§6.5 [0.120], #339 D4) a rate may be along either, at most one along the
+**Over two formals** (§6.5 [0.121], #339 D4) a rate may be along either, at most one along the
 first (marched) in a relation — `rate(x over d) perpendicular rate(x over u)` is a rate row — and
 a relation reading only rates along the second is algebraic at each step, lowered with the body's
 other rows (`program::traced::Lowering::rate_relation`, `rated` keyed by point and formal);

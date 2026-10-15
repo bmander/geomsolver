@@ -80,7 +80,7 @@ fn within(at: &dyn Fn(f64) -> (f64,f64),a: f64,b: f64,tol: f64) -> Vec<(f64,f64)
 /// solved curve is not certified, as a solved line's is not).
 fn face_loops(sk: &Sketch,face: usize) -> Result<(Basis,Vec<Vec<Edge>>),String> {
     let f = sk.faces.get(face).ok_or("no such face")?;
-    let basis = match f.plane()? {
+    let basis = match f.plane {
         Some(p) => {
             sk.planes.get(p as usize).ok_or("no such plane")?;
             sk.basis(p as usize)
