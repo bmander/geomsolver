@@ -44,8 +44,8 @@ first_surface := surface(body,low,from: 0deg,to: 90deg)
 second_surface := surface(body,high,from: 0deg,to: 90deg)
 roll := frame
 std.Turn(roll,about: spin_axis,ratio: 1)
-first_envelope := envelope(first_surface,under: roll,from: -20deg,to: 20deg)
-second_envelope := envelope(second_surface,under: roll,from: -20deg,to: 20deg)
+first_envelope := envelope(first_surface over t in (-20deg, 20deg), under: roll)
+second_envelope := envelope(second_surface over t in (-20deg, 20deg), under: roll)
 ";
 
 fn index(e: &program::Elaborated,name: &str) -> usize {

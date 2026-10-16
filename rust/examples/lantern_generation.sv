@@ -70,6 +70,6 @@ in std.front {
 construction pin := solid(pin_section, about: qa)
 
 // Everything the pin passes through while it meets the wheel's blank, found after the solve.
-construction space := solid(pin, under: pinion_turn, seen_from: wheel_turn, through: wheel)
+construction space := sweep(pin, through: wheel, under: pinion_turn, seen_from: wheel_turn)
 wheel := solid(blank)
 space cut wheel

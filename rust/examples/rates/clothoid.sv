@@ -51,4 +51,4 @@ in std.front {
   transition curvature(t == L) bend          // the bend osculates the transition's end
   claim radius(A^2 / L) bend
 }
-transition := cl.p over s in (0mm, L)
+transition := trace(cl.p over s in (0mm, L))

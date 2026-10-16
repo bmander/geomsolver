@@ -178,7 +178,7 @@ fn same_corners(e: &Elaborated, a: &str, b: &str) {
 #[test]
 fn a_place_on_a_traced_curve_is_its_formal() {
     let doc = |m: &str| format!("{PATHS}
-guide := Helix(o, xl, yl, zl, r: 10mm, pitch: 5mm, turns: 1).p over u in (0, 1)
+guide := trace(Helix(o, xl, yl, zl, r: 10mm, pitch: 5mm, turns: 1).p over u in (0, 1))
 m := point hint({m})
 m coincident(t == 0.25) guide
 q := point hint(at: m, along: guide, by: 0.01)
@@ -200,9 +200,9 @@ q := point hint(at: m, along: guide, by: 0.01)
 #[test]
 fn a_tube_along_a_traced_helix_is_its_section_along_its_length() {
     let e = with("
-guide := Helix(o, xl, yl, zl, r: 10mm, pitch: 5mm, turns: 2).p over u in (0, 1)
-traced := solid(Station(guide, std.z, w: 2mm, h: 2mm).f over s in (0, 1))
-written := solid(Coil(std.top, r: 10mm, pitch: 5mm, turns: 2, w: 2mm, h: 2mm).f
+guide := trace(Helix(o, xl, yl, zl, r: 10mm, pitch: 5mm, turns: 2).p over u in (0, 1))
+traced := sweep(Station(guide, std.z, w: 2mm, h: 2mm).f over s in (0, 1))
+written := sweep(Coil(std.top, r: 10mm, pitch: 5mm, turns: 2, w: 2mm, h: 2mm).f
                  over s in (0, 1))");
     let want = 4.0 * (40.0 * PI).hypot(10.0);
     assert!((want - 504.2439).abs() < 1e-4, "{want}");
@@ -218,9 +218,9 @@ written := solid(Coil(std.top, r: 10mm, pitch: 5mm, turns: 2, w: 2mm, h: 2mm).f
 #[test]
 fn on_stands_square_to_a_twisted_guide() {
     let e = with("
-guide := Helix(o, xl, yl, zl, r: 10mm, pitch: 5mm, turns: 2).p over u in (0, 1)
-on := solid(Rider(guide, std.z, w: 2mm, h: 2mm).f over s in (0, 1))
-written := solid(Coil(std.top, r: 10mm, pitch: 5mm, turns: 2, w: 2mm, h: 2mm).f
+guide := trace(Helix(o, xl, yl, zl, r: 10mm, pitch: 5mm, turns: 2).p over u in (0, 1))
+on := sweep(Rider(guide, std.z, w: 2mm, h: 2mm).f over s in (0, 1))
+written := sweep(Coil(std.top, r: 10mm, pitch: 5mm, turns: 2, w: 2mm, h: 2mm).f
                  over s in (0, 1))");
     near(exact(&e, "on"), 4.0 * (40.0 * PI).hypot(10.0), 1e-9, "the tube in `std.On`'s frame");
     same_corners(&e, "on", "written");
@@ -266,7 +266,7 @@ in std.top {
   radius(25mm) k1
   radius(25mm) k3
 }
-box := solid(Box(route, std.z).f over s in (0, 5))");
+box := sweep(Box(route, std.z).f over s in (0, 5))");
     near(exact(&e, "box"), 4.0 * (60.0 + 23.0 * PI), 1e-9, "the box round the U");
 }
 
@@ -280,9 +280,9 @@ box := solid(Box(route, std.z).f over s in (0, 5))");
 #[test]
 fn frenets_frame_along_a_traced_helix_is_on_helixs() {
     let e = with("
-guide := Helix(o, xl, yl, zl, r: 12mm, pitch: 6mm, turns: 3).p over u in (0, 1)
-frenet := solid(Frenet(guide, w: 4mm, h: 0.5mm).f over s in (0, 1))
-facing := solid(Facing(std.top, r: 12mm, pitch: 6mm, turns: 3, w: 4mm, h: 0.5mm).f
+guide := trace(Helix(o, xl, yl, zl, r: 12mm, pitch: 6mm, turns: 3).p over u in (0, 1))
+frenet := sweep(Frenet(guide, w: 4mm, h: 0.5mm).f over s in (0, 1))
+facing := sweep(Facing(std.top, r: 12mm, pitch: 6mm, turns: 3, w: 4mm, h: 0.5mm).f
                 over s in (0, 1))
 st := std.Frenet(guide, s: 0.3)");
     near(exact(&e, "frenet"), 2.0 * 3.0 * (24.0 * PI).hypot(6.0), 1e-9, "the ribbon");
@@ -310,8 +310,8 @@ component Bent(o: point, x: line, y: line, z: line, u: Scalar) {{
   o distance(10mm * max(u - 0.3, 0)^3, along: y) p
   o distance(0mm, along: z) p
 }}
-bent := Bent(o, xl, yl, zl).p over u in (0, 1)
-ribbon := solid(Frenet(bent, w: 2mm, h: 0.5mm).f over s in (0, 1))
+bent := trace(Bent(o, xl, yl, zl).p over u in (0, 1))
+ribbon := sweep(Frenet(bent, w: 2mm, h: 0.5mm).f over s in (0, 1))
 "));
     assert!(e.ok(), "{:?}", e.errors().map(|d| d.message.clone()).collect::<Vec<_>>());
     let why = e.sketch.exact_solid(index(&e, "ribbon")).err().expect("the ribbon was built");
@@ -323,7 +323,7 @@ component Sheet(o: point, x: line, y: line, z: line, a: Scalar, b: Scalar) {{
   o distance(b * 1mm, along: y) p
   o distance(0mm, along: z) p
 }}
-F := Sheet(o, xl, yl, zl).p over (a in (-6, 6), b in (-6, 6))
+F := trace(Sheet(o, xl, yl, zl).p over (a in (-6, 6), b in (-6, 6)))
 m := point hint((1, 1, 0))
 m coincident F
 c := point
@@ -472,7 +472,7 @@ fn a_spline_in_space_is_drawn_in_the_box() {
 #[test]
 fn a_tube_along_a_spline_in_space_is_its_area_along_its_length() {
     let e = with(&format!("{CUBIC}
-tube := solid(Round(cubic, std.z, r: 3mm).f over s in (0, 1))"));
+tube := sweep(Round(cubic, std.z, r: 3mm).f over s in (0, 1))"));
     let length = integral(0.0, 1.0, |t| {
         let d = bezier(&CUBIC_CTRL, t)[1];
         dot(d, d).sqrt()
@@ -750,9 +750,9 @@ component Span(n: plane, lo: Length, hi: Length) {
 #[test]
 fn a_pipe_bent_in_two_planes_is_one_chain() {
     let e = with(&format!("{PIPE}
-tube := solid(Round(route, std.z, r: 4mm).f over s in (0, 5))
-square := solid(Bar(route, std.z, lo: -1mm, hi: 1mm).f over s in (0, 5))
-bar := solid(Bar(route, std.z, lo: -1mm, hi: 2mm).f over s in (0, 5))"));
+tube := sweep(Round(route, std.z, r: 4mm).f over s in (0, 5))
+square := sweep(Bar(route, std.z, lo: -1mm, hi: 1mm).f over s in (0, 5))
+bar := sweep(Bar(route, std.z, lo: -1mm, hi: 2mm).f over s in (0, 5))"));
     let at = |n: &str| e.sketch.world_point(e.map.ent_named(n).unwrap().i());
     for (n, want) in [("a", [-20.0, 0.0, 0.0]), ("d", [20.0, 20.0, 0.0]), ("e", [20.0, 40.0, 0.0]),
                       ("f", [20.0, 60.0, 20.0]), ("g", [20.0, 60.0, 40.0])] {
@@ -803,7 +803,7 @@ radius(20mm) k3
 l4 parallel std.z
 l2 parallel std.y
 d coincident std.top
-tube := solid(Round(route, std.z, r: 4mm).f over s in (0, 5))");
+tube := sweep(Round(route, std.z, r: 4mm).f over s in (0, 5))");
     near(exact(&e, "tube"), 16.0 * PI * (60.0 + 20.0 * PI), 1e-9, "the tube");
     let sk = &e.sketch;
     for (name, normal) in [("k1", [0.0, 0.0, 1.0]), ("k3", [1.0, 0.0, 0.0])] {
@@ -840,7 +840,7 @@ radius(20mm) k3
 d coincident std.top
 l2 parallel std.y
 l4 parallel std.x
-tube := solid(Round(route, std.z, r: 4mm).f over s in (0, 5))"
+tube := sweep(Round(route, std.z, r: 4mm).f over s in (0, 5))"
         .replace("K3", k3)
 }
 
@@ -867,7 +867,7 @@ in std.top {
   radius(20mm) k1
   radius(20mm) k3
 }
-tube := solid(Round(route, std.z, r: 4mm).f over s in (0, 5))"
+tube := sweep(Round(route, std.z, r: 4mm).f over s in (0, 5))"
         .replace("BEFORE", before).replace("K3", k3)
 }
 
@@ -919,8 +919,8 @@ claim k3.end coincident e", s_bend_in_top(before, link)));
     let pipe = PIPE.replace("tangent (k3 := arc(center: c2)) ->",
                             "tangent (k3 := arc(center: c2, start: f, end: e, sense: cw)) ->");
     let e = with(&format!("{pipe}
-tube := solid(Round(route, std.z, r: 4mm).f over s in (0, 5))
-square := solid(Bar(route, std.z, lo: -1mm, hi: 1mm).f over s in (0, 5))"));
+tube := sweep(Round(route, std.z, r: 4mm).f over s in (0, 5))
+square := sweep(Bar(route, std.z, lo: -1mm, hi: 1mm).f over s in (0, 5))"));
     near(exact(&e, "tube"), 16.0 * PI * length, 1e-9, "the bent pipe's round tube");
     near(exact(&e, "square"), 4.0 * length, 1e-9, "the bent pipe's square tube");
     let at = |n: &str| e.sketch.world_point(e.map.ent_named(n).unwrap().i());
@@ -1116,8 +1116,8 @@ fn wrapped(a: f64) -> f64 {
 #[test]
 fn the_frame_along_a_traced_helix_turns_against_frenet_at_the_torsion() {
     let e = with("
-guide := Helix(o, xl, yl, zl, r: 10mm, pitch: 5mm, turns: 1).p over u in (0, 1)
-ribbon := solid(Station(guide, std.z, w: 2mm, h: 1mm).f over s in (0, 1))");
+guide := trace(Helix(o, xl, yl, zl, r: 10mm, pitch: 5mm, turns: 1).p over u in (0, 1))
+ribbon := sweep(Station(guide, std.z, w: 2mm, h: 1mm).f over s in (0, 1))");
     let b = 5.0 / (2.0 * PI);
     let per_turn = -2.0 * PI * b / (100.0 + b * b).sqrt();
     assert!((per_turn.to_degrees() + 28.5576).abs() < 1e-4, "{}", per_turn.to_degrees());
@@ -1144,13 +1144,13 @@ component Sheet(o: point, x: line, y: line, z: line, a: Scalar, b: Scalar) {{
   o distance(b * 1mm, along: y) p
   o distance(0mm, along: z) p
 }}
-F := Sheet(o, xl, yl, zl).p over (a in (-6, 6), b in (-6, 6))
+F := trace(Sheet(o, xl, yl, zl).p over (a in (-6, 6), b in (-6, 6)))
 st := Station(F, std.z, w: 2mm, h: 1mm, s: 0.5)
 "));
     assert!(said.iter().any(|m| m.starts_with("E103") && m.contains("`g` is a path")
                                 && m.contains("not a surface traced in space")), "{said:?}");
     let said = refusals(&format!("{PATHS}
-guide := Helix(o, xl, yl, zl, r: 10mm, pitch: 5mm, turns: 1).p over u in (0, 1)
+guide := trace(Helix(o, xl, yl, zl, r: 10mm, pitch: 5mm, turns: 1).p over u in (0, 1))
 m := point hint((10, 0, 0))
 m coincident(t == 0.25, u == 0.5) guide
 "));

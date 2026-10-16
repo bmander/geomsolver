@@ -149,7 +149,7 @@ component Space(a: set, b: set, lo: set, hi: set, below: set, above: set, cap: s
   far := { p | p inside concave; p inside cap; p outside below; p inside above }
   private construction behind := solid(near)
   private construction flank := solid(far)
-  private construction ahead := solid(flank, under: step, at: pitch)
+  private construction ahead := flank at(under: step) pitch
   body := solid(behind)
   ahead common body
 }
@@ -159,7 +159,7 @@ component Space(a: set, b: set, lo: set, hi: set, below: set, above: set, cap: s
 // member is its blank less its cutter so copied.
 component Copied(body: solid, tool: solid, index: frame, n: Int) {
   repeat n as i {
-    private construction indexed := solid(tool, under: index, at: i * 360deg / n)
+    private construction indexed := tool at(under: index) i * 360deg / n
     indexed cut body
   }
 }

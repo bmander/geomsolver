@@ -86,11 +86,11 @@ fn the_retired_spelling_errors_without_a_name() {
     refuses("point at (0, 0)\n", "a coordinate seed is keyed now: `point hint((…, …))`");
 }
 
-/// A curve is the value of a definition, `k := leg.toe over u in (a, b)`, and the name is what
-/// the contact constraints address: the keyword alone declares nothing.
+/// A curve is the value of a definition, `k := trace(leg.toe over u in (a, b))`, and the name is
+/// what the contact constraints address: the keyword alone declares nothing.
 #[test]
 fn a_curve_still_requires_a_name() {
-    refuses("curve\n", "a curve is `name := instance.point over formal in (a, b)`");
+    refuses("curve\n", "a curve is `name := trace(instance.point over formal in (a, b))`");
 }
 
 /// A solve writes an anonymous element's pose back the way it writes `l := line`'s: the argument
@@ -390,7 +390,7 @@ component fam(c: circle, u: Angle) {
   p := point hint((1, 0))
   line
 }
-w := fam(c).p over u in (0, 1)
+w := trace(fam(c).p over u in (0, 1))
 ";
     let (prog, errs) = parse(src);
     assert!(errs.is_empty(), "{errs:?}");

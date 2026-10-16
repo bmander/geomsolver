@@ -38,7 +38,7 @@ in flat {
 }
 private observer := frame
 std.Turn(observer, about: kaxis, ratio: 1)
-construction removal := solid(tool, under: spin, seen_from: observer, from: -75deg, to: 75deg)
+construction removal := sweep(tool over t in (-75deg, 75deg), under: spin, seen_from: observer)
 in std.front {
   private q0 := point
   private q1 := point

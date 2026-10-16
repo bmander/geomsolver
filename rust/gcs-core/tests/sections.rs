@@ -339,9 +339,9 @@ in std.front {
 #[test]
 fn a_ruled_loft_through_three_sections_is_its_frusta() {
     let e = with(BOTTLE, "
-ruled := solid(Ring(axis, std.y, std.front, rims).f over s in (0, 2))
-smooth := solid(Ring(axis, std.y, std.front, rail).f over s in (0, 2))
-single := solid(Ring(whole, std.y, std.front, rail).f over s in (0, 1))");
+ruled := sweep(Ring(axis, std.y, std.front, rims).f over s in (0, 2))
+smooth := sweep(Ring(axis, std.y, std.front, rail).f over s in (0, 2))
+single := sweep(Ring(whole, std.y, std.front, rail).f over s in (0, 1))");
     near(volume(&e, "ruled"), frustum(60.0, 30.0, 28.0) + frustum(30.0, 28.0, 12.0), 1e-9,
          "the ruled bottle");
     near(volume(&e, "smooth"), volume(&e, "single"), 1e-9, "the smooth bottle, cut or whole");
@@ -363,7 +363,7 @@ single := solid(Ring(whole, std.y, std.front, rail).f over s in (0, 1))");
 /// of them, level wherever the rails are, so each piece is the prismatoid of its two squares.
 #[test]
 fn a_loft_with_no_guide_is_its_prismatoids() {
-    let e = with(SQUARES, "body := solid(Quad(ra, rb, rc, rd).f over s in (0, 2))");
+    let e = with(SQUARES, "body := sweep(Quad(ra, rb, rc, rd).f over s in (0, 2))");
     near(volume(&e, "body"), prismatoid(40.0, 20.0, 12.0) + prismatoid(20.0, 12.0, 16.0), 1e-9,
          "the squares");
     let x = exact(&e, "body");
@@ -389,7 +389,7 @@ fn a_smooth_loft_meets_the_faces_at_its_ends() {
   shaft := line(t3, top)
   seat := line(top, r2)
   neck := solid(face(slope, lid, shaft, seat), about: whole)");
-    let e = with(&neck, "bottle := solid(Ring(whole, std.y, std.front, rail).f over s in (0, 1))");
+    let e = with(&neck, "bottle := sweep(Ring(whole, std.y, std.front, rail).f over s in (0, 1))");
     // π∫ x² dy over each span of the rail, five Gauss–Legendre points exact for degree 8
     let (sk, i) = (&e.sketch, index(&e, "rail"));
     let want: f64 = (0..2).map(|span| gauss5(|t| {
@@ -452,7 +452,7 @@ component Tri(ra: path, rb: path, rc: path, side: plane, front: plane, s: Scalar
   f := face(a, b, c, -> close)
 }}
 {}{}{}
-body := solid(Tri(ra, rb, rc, std.side, std.front).f over s in (0, 2))
+body := sweep(Tri(ra, rb, rc, std.side, std.front).f over s in (0, 2))
 ", rail("a", "side", 1.0), rail("b", "front", -1.0), rail("c", "front", 1.0));
     let e = determined(&src);
     let (sk, i) = (&e.sketch, index(&e, "ra"));
@@ -486,7 +486,7 @@ in std.front {{
   ring := line(r1, r2) -> line(r2, r4) -> line(r4, r1) -> close
 }}
 ");
-    let bad = "bad := solid(Ring(axis, std.y, std.front, long).f over s in (0, 2))";
+    let bad = "bad := sweep(Ring(axis, std.y, std.front, long).f over s in (0, 2))";
     let said = refused(&format!("{src}{bad}"));
     assert!(said.iter().any(|m| m.contains("runs the chains it is given in step")
         && m.contains("`long` has 3 links")), "{said:?}");

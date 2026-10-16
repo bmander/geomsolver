@@ -1,4 +1,4 @@
-//! **How far a sweep rolls** (§6.9, #271): `solid(tool, under: m, through: body)` rolls the tool
+//! **How far a sweep rolls** (§6.9, #271): `sweep(tool, through: body, under: m)` rolls the tool
 //! over the whole roll about 0 during which it meets `body`'s material — its stock and additions,
 //! never its cuts, as a `through:` prism spans them — so a roll is no number a document guesses
 //! at and admission checks afterwards: within the window the class admits, the cut does not
@@ -13,7 +13,7 @@
 //! the step's middle pose ends a step early, as one never proved clear does.  The roll is the
 //! near end of each way's first clear step; read once after the solve and remembered against
 //! `solid::reads` (`Caches::roll`), so admission, the field, the exact construction and the
-//! native path read one interval.  A placed copy (`solid(removal, under: index, at: θ)`) moves
+//! native path read one interval.  A placed copy (`removal at(under: index) θ`) moves
 //! the sweep it was found for.
 use super::SpatialField;
 use crate::interval::Interval as I;

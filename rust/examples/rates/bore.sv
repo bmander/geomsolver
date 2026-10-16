@@ -42,7 +42,7 @@ spin := frame
 std.Spin(spin, about: hub, on: std.top, ratio: -2 / 3)   // the rotor, seen from the housing
 
 // the curve the seal's centre runs on: the apex's path over half a turn of the rotor
-trochoid := envelope(apex, under: spin, seen_from: counter, from: 0deg, to: 540deg)
+trochoid := envelope(apex over t in (0deg, 540deg), under: spin, seen_from: counter)
 
 // -- the bore, marched from it ----------------------------------------------------------------
 component Bore(c: point, z1: point, k: curve, d: Length, u: Angle) {
@@ -65,5 +65,5 @@ fix((0, 0, 0)) c
 z1 := point hint((0, 0, 10))
 fix((0, 0, 10)) z1
 
-bore := Bore(c, z1, trochoid).p over (d in (0mm, s), u in (0deg, 180deg))
-past := Bore(c, z1, trochoid).p over (d in (0mm, 20mm), u in (0deg, 180deg))
+bore := trace(Bore(c, z1, trochoid).p over (d in (0mm, s), u in (0deg, 180deg)))
+past := trace(Bore(c, z1, trochoid).p over (d in (0mm, 20mm), u in (0deg, 180deg)))

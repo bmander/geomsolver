@@ -196,7 +196,7 @@ seed, and a negative pitch winds left-handed: the right-handed solid mirrored in
 
 **Since #366 a screw's station is a motion read at a roll.** `Helix` is `base` carried by a frame's
 screw (`std.Turn` about `base.normal`, `advance: pitch`) to `360deg · turns · s` (`n := base
-carried(under: screw, at: …)`), `axial` that frame turned a quarter about its `u`, and `OnHelix`
+at(under: screw) …`), `axial` that frame turned a quarter about its `u`, and `OnHelix`
 `base` tilted about `base.u` to the helix's start and carried by the same screw: no `cos` or `sin`
 of the turn is written, and no geometry is drawn to hold an axis. The ordinates did not
 ensure what this paragraph said of them: a station's axes could still settle against their lines
@@ -434,7 +434,7 @@ L10); a section holding a traced curve has no exact wall yet (its facets answer)
 
 ## L1: the face family (2026-10-14)
 
-**Verdict: the primitive stands.** `solid(I(…).f over s in (a, b))` parses, elaborates and
+**Verdict: the primitive stands.** `sweep(I(…).f over s in (a, b))` parses, elaborates and
 evaluates (Solvent 0.97, §6.9); every L0 program the language can write today sweeps its closed
 form (`rust/gcs-core/tests/face_family.rs`):
 
@@ -510,7 +510,7 @@ constraints in a section component drawn at a running station:
 **No new relation kind was needed.** The section of each of the eight programs that today's
 language can nearly say was solved at one station (`s: 0.5`) in today's spelling. Every one
 solves at **DOF 0**, standing where its closed form says. What is missing is the primitive itself
-(`solid(… over s in …)`, finding 1) and a short list of general features (findings 2–9).
+(`sweep(… over s in …)`, finding 1) and a short list of general features (findings 2–9).
 
 The programs are in [`l0/`](l0/), outside `rust/examples/` (the only directory the suites sweep),
 so nothing in the repository reads them but L1's gate (`tests/face_family.rs`). At L0 each
@@ -539,7 +539,7 @@ fixtures.
 
 ### The vocabulary the programs assume
 
-- **`solid(I(…).f over s in (a, b))`**: the solid swept by face `f` of the instance `I` as its
+- **`sweep(I(…).f over s in (a, b))`**: the solid swept by face `f` of the instance `I` as its
   numeric formal `s` runs over the interval. It is §6.5's curve (`Involute(…).p over u in (…)`)
   one dimension up. The instance is written in place and never drawn.
 - **A station word** (`lofts.OnLine`, `OnArc`, `OnSpline`, `Screwed`, `OnHelix` in L0's
@@ -676,7 +676,7 @@ fixtures.
 
 11. **The spelling reads well in every program**: the instance written in place, `over s in
     (0, 1)`, as a curve's `over u in (…)`. The open alternative is a drawn station
-    (`st := Reducer(guide, …)`, `solid(st.sec.profile over s in (0, 1))`): the workspace would
+    (`st := Reducer(guide, …)`, `sweep(st.sec.profile over s in (0, 1))`): the workspace would
     show one station to drag along the path (L10). Unbound, though, `s` is a DOF of the drawing.
     **Decision:** in-place for now; the drawn form at L10.
 

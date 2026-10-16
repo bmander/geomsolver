@@ -120,7 +120,7 @@ r0 := point
 r1 := point
 port_rail := line(l0, l1)
 starboard_rail := line(r0, r1)
-blade := solid(Blade(spine, std.z, port_rail, starboard_rail, profile, p0, p1).sec.f
+blade := sweep(Blade(spine, std.z, port_rail, starboard_rail, profile, p0, p1).sec.f
                over s in (0, 1))
 ";
 
@@ -187,7 +187,7 @@ in std.front {
   sq := line(k0, k1) -> line(k1, k2) -> line(k2, k3) -> line(k3, k0) -> close
 }
 prof := face(sq)
-body := solid(Tri(ra, rb, rc, prof, o, x, y).sec.f over s in (0, 1))
+body := sweep(Tri(ra, rb, rc, prof, o, x, y).sec.f over s in (0, 1))
 ";
 
 fn index(e: &Elaborated, name: &str) -> usize {
@@ -251,7 +251,7 @@ fn two_faces_drawn_apart_are_lofted_corner_to_corner() {
 #[test]
 fn a_connector_is_where_a_walk_starts() {
     let src = format!("{FRONT}{OUTLET}outlet := face(b1, b2, b3, b0, -> close)
-body := solid(std.Ruled(inlet, outlet).f over s in (0, 1))
+body := sweep(std.Ruled(inlet, outlet).f over s in (0, 1))
 ");
     let e = determined(&src);
     let turned = [DIAMOND[1], DIAMOND[2], DIAMOND[3], DIAMOND[0]];
@@ -266,13 +266,13 @@ body := solid(std.Ruled(inlet, outlet).f over s in (0, 1))
 #[test]
 fn an_edge_split_in_the_walk_pairs_faces_of_different_counts() {
     let src = format!("{FRONT}{TRIANGLE}tri := face(t0, t1, t2, m, -> close)
-body := solid(std.Ruled(inlet, tri).f over s in (0, 1))
+body := sweep(std.Ruled(inlet, tri).f over s in (0, 1))
 ");
     let e = determined(&src);
     let tri = [(-10.0, -10.0), (10.0, -10.0), (0.0, 10.0), (-5.0, 0.0)];
     near(volume(&e, "body"), prismatoid(40.0, &SQUARE, &tri), 1e-9, "triangle split");
     let src = format!("{FRONT}{TRIANGLE}tri := face(t0, t1, t2, -> close)
-body := solid(std.Ruled(inlet, tri).f over s in (0, 1))
+body := sweep(std.Ruled(inlet, tri).f over s in (0, 1))
 ");
     refused(&src, "E080", "`inlet` walks 4 links and `tri` 3", "use std");
 }
@@ -284,7 +284,7 @@ body := solid(std.Ruled(inlet, tri).f over s in (0, 1))
 fn a_loft_to_a_point_is_a_pyramid() {
     let src = format!("{FRONT}tip := point
 fix((3mm, 30mm, 2mm)) tip
-body := solid(std.Apex(inlet, tip).f over s in (0, 1))
+body := sweep(std.Apex(inlet, tip).f over s in (0, 1))
 ");
     let e = determined(&src);
     near(volume(&e, "body"), 400.0 * 30.0 / 3.0, 1e-9, "pyramid");

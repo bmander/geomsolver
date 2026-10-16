@@ -72,11 +72,11 @@ turn := frame
 std.Spin(turn, about: o, on: std.front, ratio: 1)
 rack := frame
 std.Slide(rack, along: slide, advance: 2 * pi * rp)
-construction space := solid(rack_tooth, under: rack, seen_from: turn, through: gear)
+construction space := sweep(rack_tooth, through: gear, under: rack, seen_from: turn)
 
 // the flank in space: the prism's side, and what it generates
 side := surface(rack_tooth, edge: rack_flank)
-flank := envelope(side, under: rack, seen_from: turn, from: -30deg, to: 30deg)
+flank := envelope(side over t in (-30deg, 30deg), under: rack, seen_from: turn)
 
 // the gauge, in a plane square to the front through the line 1.9 above the centre (its u the
 // front's x, its v the front's normal, into the face)
@@ -91,6 +91,6 @@ gauge coincident flank
 gear := solid(blank)
 bore cut gear
 repeat N as i {
-  construction indexed := solid(space, under: turn, at: i * 360deg / N)
+  construction indexed := space at(under: turn) i * 360deg / N
   indexed cut gear
 }

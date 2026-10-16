@@ -14,7 +14,7 @@ fn roll(sk: &Sketch, d: &Decl) -> Result<Running,String> {
     let what = d.kind.as_str();
     let angle = |a: &Arg| super::bound_angle(sk,a,&format!("{what} bound"));
     let e = d.angular_span.as_ref().ok_or_else(|| format!("{} needs angular bounds",d.kind.a()))?;
-    let roll = Running::roll(angle(&e.from)?,angle(&e.to)?);
+    let roll = Running::new(e.running(),crate::units::Dim::ANGLE,angle(&e.from)?,angle(&e.to)?);
     let [a,b] = roll.radians();
     if a >= b { return Err(format!("{} needs increasing roll bounds",d.kind.a())); }
     Ok(roll)

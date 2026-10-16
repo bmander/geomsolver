@@ -83,7 +83,7 @@ o := point
 base := circle(center: o) hint(r: 7)
 fix((0, 0)) o
 }
-w := Outer(o).i.q over u in (0, 90)
+w := trace(Outer(o).i.q over u in (0, 90))
 ";
     let e = build(src);
     assert!(!e.ok(), "the inner `u` swept with the outer one");
@@ -118,7 +118,7 @@ o := point
 fix((0, 0)) o
 d := Outer(o, u: 30)
 }
-k := d.i.t over u in (0, 90)
+k := trace(d.i.t over u in (0, 90))
 ";
     let e = build(src);
     assert!(e.ok(), "{:?}", messages(&e));
@@ -146,7 +146,7 @@ component Both(o: point, u: Angle) {
 in std.front {
 o := point hint((0, 0))
 }
-w := Both(o).p over u in (0, 90)
+w := trace(Both(o).p over u in (0, 90))
 ";
     let e = build(src);
     assert!(!e.ok());

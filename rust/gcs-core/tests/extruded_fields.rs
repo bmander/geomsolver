@@ -32,7 +32,7 @@ ax := line(o, z)
 }
 turn := frame
 std.Turn(turn, about: ax, ratio: 1)
-moved := solid(block, under: turn, at: 40deg)
+moved := block at(under: turn) 40deg
 ";
 
 const BORE: &str = "\

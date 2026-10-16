@@ -35,6 +35,19 @@ fn sweep_label(l: &str) -> bool {
         | "draft" | "seen_from" | "relative_to")
 }
 
+/// `solid(tool, at: θ)`, retired (#391 S2) for the reading at an instant.
+pub(crate) const AT_RETIRED: &str = "`solid(tool, at: θ)` is retired (#391): a solid is read at \
+    an instant, `s := tool at θ`, its frames on the `at` (`tool at(under: m, seen_from: g) θ`)";
+
+/// `solid(tool, under: m, from: a, to: b)`, retired (#391 S2) for the sweep over an interval.
+pub(crate) const SWEPT_RETIRED: &str = "a solid a motion sweeps is `sweep(tool over t in (a, \
+    b), under: m, seen_from: g)` (#391): `solid(tool, under: m, from: a, to: b)` is retired";
+
+/// `solid(tool, under: m, through: body)`, retired (#391 S2) for the sweep through a body.
+pub(crate) const ROLLED_RETIRED: &str = "a solid a motion rolls through a body is `sweep(tool, \
+    through: body, under: m, seen_from: g)` (#391): `solid(tool, under: m, through: body)` is \
+    retired";
+
 /// What the sweep arguments a bracket list carried come to.  A solid is a prism, a revolution,
 /// or a body over other solids — and a mixture is none of the three.
 pub(crate) fn sweep_of(p: SweepParts) -> Result<Sweep, String> {
@@ -45,24 +58,13 @@ pub(crate) fn sweep_of(p: SweepParts) -> Result<Sweep, String> {
         return Err("`draft:` tapers a prism's sides from its face's plane: say `from:`/`to:` or \
                     `depth:`, and nothing else".into());
     }
-    // a frame's motion, named `under:` or, left out, the one the tool rides on (#383): `at:`
-    // and `seen_from:` say it whatever else is written
-    if p.under.is_some() || p.at.is_some() || p.seen_from.is_some() {
-        if p.depth.is_some() || p.about.is_some() || p.sweep.is_some()
-            || p.sense.is_some() || p.through.is_some() && (p.at.is_some() || p.from.is_some() || p.to.is_some()) {
-            return Err("a named motion uses `at:`, angular `from:`/`to:` or `through:` a body, without other \
-                        sweep labels".into());
-        }
-        // the roll the tool takes through a body's material (#271)
-        if let Some(body) = p.through {
-            return Ok(Sweep::Rolled {motion: p.under,body});
-        }
-        return match (p.under,p.at,p.from,p.to) {
-            (motion,Some(at),None,None) => Ok(Sweep::Placed {motion,at}),
-            (motion,None,Some(from),Some(to)) => Ok(Sweep::Swept {motion,from,to}),
-            _ => Err("a frame's motion moves a solid `at:` one roll, over `from:` and `to:`, or \
-                      `through:` a body".into()),
-        };
+    // a solid a frame's motion moves is read at an instant or over an interval (#391 S2): the
+    // `solid(…)` spellings of the readings are retired, each refused naming its own
+    if p.at.is_some() {
+        return Err(AT_RETIRED.into());
+    }
+    if p.under.is_some() || p.seen_from.is_some() {
+        return Err(if p.through.is_some() { ROLLED_RETIRED } else { SWEPT_RETIRED }.into());
     }
     if let Some(body) = p.through {
         if p.from.is_some() || p.to.is_some() || p.depth.is_some() || p.about.is_some()
@@ -198,14 +200,14 @@ impl<'a> P<'a> {
         };
         if kind == EntKind::Envelope { return self.envelope_decl(name); }
         if kind == EntKind::Meshing { return self.meshing_decl(name); }
-        // a curve is what `over` makes a definition's value, `k := leg.toe over u in (a, b)` — or,
-        // with the two points it runs between, a free curve whose shape its energy states
+        // a curve is what `over` makes a definition's value, `k := trace(leg.toe over u in (a, b))`
+        // — or, with the two points it runs between, a free curve whose shape its energy states
         // (`rope := curve(a, b)`, #144), read as any declaration's brackets are
         if kind == EntKind::Curve && self.peek() != Some(&Tok::P('(')) {
             self.fail(
-                "a curve is `name := instance.point over formal in (a, b)`, \
-                 `name := Component(args).point over formal in (a, b)`, or a free curve between \
-                 two points, `name := curve(a, b)`",
+                "a curve is `name := trace(instance.point over formal in (a, b))`, `name := \
+                 trace(Component(args).point over formal in (a, b))`, or a free curve between two \
+                 points, `name := curve(a, b)`",
             );
             return None;
         }
@@ -222,7 +224,9 @@ impl<'a> P<'a> {
                        through } = self.decl_list(kind, &name, &scalars)?;
         let angular_span = match (surface_from,surface_to) {
             (None,None) => None,
-            (Some(from),Some(to)) => Some(crate::syntax::AngularSpan {from,to,side:None,ease:None}),
+            (Some(from),Some(to)) => {
+                Some(crate::syntax::AngularSpan {from,to,over:None,side:None,ease:None})
+            }
             _ => { self.fail("a surface span needs both `from:` and `to:` angles"); return None; }
         };
         // `seen_from:` reads a motion, under the frame `under:` names or, left out, the one the
@@ -907,7 +911,7 @@ impl<'a> P<'a> {
             // its guide, caught here so a document written against 0.99 says what to write
             "along" => {
                 self.fail("`along:` is retired: a loft is a section drawn at a station of its guide, \
-                           swept as the station runs — `solid(I(g, …).f over s in (0, 1))`, `I` \
+                           swept as the station runs — `sweep(I(g, …).f over s in (0, 1))`, `I` \
                            standing `std.OnLine(g, up: …, s: s)` or `std.OnArc` (spec §6.9)");
                 return None;
             }
@@ -949,11 +953,27 @@ impl<'a> P<'a> {
 
 }
 impl<'a> P<'a> {
+    /// `over t in (a, b)`, or `over t` (#391 S2), `over` next: the parameter a reading over an
+    /// interval names and the ends of that interval — written in place, or a declared
+    /// parameter's, which the flattener writes in (left empty here, at the name).
+    pub(super) fn runs_over(&mut self) -> Option<(crate::syntax::RunsOver, Arg, Arg)> {
+        self.i += 1; // `over`
+        let name = self.ident()?;
+        if !self.eat_word("in") {
+            let end = || Arg::Dim { text: String::new(), span: name.span };
+            let (a, b) = (end(), end());
+            return Some((crate::syntax::RunsOver { name, declared: true }, a, b));
+        }
+        let [(a, a_span), (b, b_span)] = self.pair()?;
+        Some((crate::syntax::RunsOver { name, declared: false },
+              Arg::Dim { text: a, span: a_span }, Arg::Dim { text: b, span: b_span }))
+    }
+
     fn envelope_decl(&mut self, name: DeclName) -> Option<Decl> {
         let start = self.here();
         if !self.want_p('(') { return None; }
         let mut surface = None; let mut motion = None; let mut seen_from = None;
-        let mut from = None; let mut to = None; let mut side = None;
+        let mut from = None; let mut to = None; let mut side = None; let mut over = None;
         while !self.eat_p(')') {
             let label = self.slot_label();
             match label.as_deref() {
@@ -966,12 +986,21 @@ impl<'a> P<'a> {
                     };
                     if slot.is_some() { self.fail("an envelope argument is given twice"); return None; }
                     *slot = Some(Kid::Ref(self.refr()?));
+                    // the tool and the interval of the roll it runs over (#391 S2)
+                    if self.peek_word("over") {
+                        if over.is_some() || motion.is_some() {
+                            self.fail("an envelope runs its tool over the roll: `envelope(tool \
+                                       over t in (a, b), …)`");
+                            return None;
+                        }
+                        let (o, a, b) = self.runs_over()?;
+                        (over, from, to) = (Some(o), Some(a), Some(b));
+                    }
                 }
                 Some("from") | Some("to") => {
-                    let slot = if label.as_deref() == Some("from") { &mut from } else { &mut to };
-                    if slot.is_some() { self.fail("an envelope bound is given twice"); return None; }
-                    let (text,span) = self.expr_until(',')?;
-                    *slot = Some(Arg::Dim {text,span});
+                    self.fail("an envelope's `from:`/`to:` are retired (#391): its tool runs over \
+                               an interval of the roll, `envelope(tool over t in (a, b), …)`");
+                    return None;
                 }
                 Some("side") => {
                     if side.is_some() { self.fail("an envelope's side is given twice"); return None; }
@@ -984,8 +1013,9 @@ impl<'a> P<'a> {
                     seen_from = Some(self.refr()?);
                 }
                 _ => {
-                    self.fail("an envelope takes a surface or tool, `under:` a frame (`seen_from:` \
-                               another), `from:` and `to:` angles, and `side:`");
+                    self.fail("an envelope takes a surface or tool over an interval of the roll \
+                               (`tool over t in (a, b)`), `under:` a frame (`seen_from:` another), \
+                               and `side:`");
                     return None;
                 }
             }
@@ -993,7 +1023,8 @@ impl<'a> P<'a> {
         }
         // a tool that rides leaves `under:` out (#383): the elaborator reads what it rides on
         let (Some(surface),Some(from),Some(to)) = (surface,from,to) else {
-            self.fail("an envelope needs a surface, motion and two angular bounds"); return None;
+            self.fail("an envelope needs a surface or tool and the interval of the roll it runs \
+                       over: `envelope(tool over t in (a, b), …)`"); return None;
         };
         let end = self.prev_hi();
         let (class,class_span) = self.class_clause(end);
@@ -1002,12 +1033,12 @@ impl<'a> P<'a> {
             children:vec![vec![surface],motion.into_iter().collect()],
             seed:vec![],seed_text:vec![],seed_spans:vec![],hint_span:None,knots:None,weights:None,curve:None,
             computed:None,class,class_span,seed_at:None,seed_names:vec![],sweep:None,seen_from,
-            angular_span:Some(crate::syntax::AngularSpan {from,to,side,ease:None}),
+            angular_span:Some(crate::syntax::AngularSpan {from,to,over,side,ease:None}),
             membership:Membership::default(),list_span:Span::new(start.lo as usize,end),close:None,mint_close:None,through:None,normal:None,sense:None,bare:false,carried:None,
         })
     }
 
-    /// `contact := meshing(pinion_flank, gear_flank, under: mesh, from: a, to: b)` (#283): two
+    /// `contact := meshing(pinion_flank, gear_flank over t in (a, b), under: mesh)` (#283): two
     /// flanks, the relative motion they turn under, and the pinion's phase interval — and the
     /// first flank's ease, `ease: M, along: l, profile: κₚ, lengthwise: κₗ` (#345).
     fn meshing_decl(&mut self, name: DeclName) -> Option<Decl> {
@@ -1015,13 +1046,18 @@ impl<'a> P<'a> {
         if !self.want_p('(') { return None; }
         let (mut first, mut second, mut motion) = (None, None, None);
         let mut seen_from = None;
-        let mut from = None; let mut to = None;
+        let mut from = None; let mut to = None; let mut over = None;
         let (mut about, mut along, mut profile, mut lengthwise) = (None, None, None, None);
         while !self.eat_p(')') {
             let label = self.slot_label();
             match label.as_deref() {
                 // the printer labels every operand (`first:`, `second:`, `motion:`)
                 None | Some("first") | Some("second") | Some("under") | Some("motion") => {
+                    let second_flank = match label.as_deref() {
+                        Some("second") => true,
+                        None => first.is_some() && second.is_none(),
+                        _ => false,
+                    };
                     let slot = match label.as_deref() {
                         Some("first") => &mut first,
                         Some("second") => &mut second,
@@ -1032,12 +1068,22 @@ impl<'a> P<'a> {
                     };
                     if slot.is_some() { self.fail("a meshing argument is given twice"); return None; }
                     *slot = Some(Kid::Ref(self.refr()?));
+                    // the second flank and the interval of the roll the first's phase runs over
+                    // (#391 S2)
+                    if self.peek_word("over") {
+                        if !second_flank || over.is_some() {
+                            self.fail("a meshing runs its second flank over the roll: \
+                                       `meshing(f1, f2 over t in (a, b), …)`");
+                            return None;
+                        }
+                        let (o, a, b) = self.runs_over()?;
+                        (over, from, to) = (Some(o), Some(a), Some(b));
+                    }
                 }
                 Some("from") | Some("to") => {
-                    let slot = if label.as_deref() == Some("from") { &mut from } else { &mut to };
-                    if slot.is_some() { self.fail("a meshing bound is given twice"); return None; }
-                    let (text,span) = self.expr_until(',')?;
-                    *slot = Some(Arg::Dim {text,span});
+                    self.fail("a meshing's `from:`/`to:` are retired (#391): its phase runs over \
+                               an interval of the roll, `meshing(f1, f2 over t in (a, b), …)`");
+                    return None;
                 }
                 Some("ease") | Some("along") => {
                     let ease = label.as_deref() == Some("ease");
@@ -1059,10 +1105,11 @@ impl<'a> P<'a> {
                     *slot = Some(Arg::Dim {text,span});
                 }
                 _ => {
-                    self.fail("a meshing takes two flanks, `under:` the second's frame \
-                               `seen_from:` the first's, `from:` and `to:` angles of the first's \
-                               phase, and the first's ease: `ease:` a point, `along:` a line, \
-                               `profile:` and `lengthwise:` curvatures");
+                    self.fail("a meshing takes two flanks, the second over the interval of the \
+                               roll the first's phase runs over (`f2 over t in (a, b)`), `under:` \
+                               the second's frame `seen_from:` the first's, and the first's ease: \
+                               `ease:` a point, `along:` a line, `profile:` and `lengthwise:` \
+                               curvatures");
                     return None;
                 }
             }
@@ -1070,7 +1117,8 @@ impl<'a> P<'a> {
         }
         // flanks that ride leave `under:` out (#383): each is read on its own frames
         let (Some(first),Some(second),Some(from),Some(to)) = (first,second,from,to) else {
-            self.fail("a meshing needs two flanks, a motion and two angular bounds"); return None;
+            self.fail("a meshing needs two flanks and the interval of the roll it runs over: \
+                       `meshing(f1, f2 over t in (a, b), …)`"); return None;
         };
         let ease = match (about,along,profile,lengthwise) {
             (None,None,None,None) => None,
@@ -1090,7 +1138,7 @@ impl<'a> P<'a> {
             children:vec![vec![first],vec![second],motion.into_iter().collect()],
             seed:vec![],seed_text:vec![],seed_spans:vec![],hint_span:None,knots:None,weights:None,curve:None,
             computed:None,class,class_span,seed_at:None,seed_names:vec![],sweep:None,seen_from,
-            angular_span:Some(crate::syntax::AngularSpan {from,to,side:None,ease}),
+            angular_span:Some(crate::syntax::AngularSpan {from,to,over,side:None,ease}),
             membership:Membership::default(),list_span:Span::new(start.lo as usize,end),close:None,mint_close:None,through:None,normal:None,sense:None,bare:false,carried:None,
         })
     }

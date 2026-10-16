@@ -82,5 +82,6 @@ in P {
   vref angle(15deg) home
 }
 
-contact := Contact(P, pinion, gear, home).x over (phi in (-30deg, 30deg), sigma in (0, 1))
-pinion_flank := Contact(P, pinion, gear, home).X over (phi in (-30deg, 30deg), sigma in (0, 1))
+contact := trace(Contact(P, pinion, gear, home).x over (phi in (-30deg, 30deg), sigma in (0, 1)))
+pinion_flank := trace(Contact(P, pinion, gear, home).X
+                        over (phi in (-30deg, 30deg), sigma in (0, 1)))

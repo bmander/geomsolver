@@ -45,7 +45,7 @@ component Flight(base: plane, off: Length, w: Length, h: Length, pitch: Length, 
   f := face(a, b, c, d, -> close)
 }
 
-thread := solid(Thread(std.top, r: r, size: size, pitch: pitch, turns: turns).f
+thread := sweep(Thread(std.top, r: r, size: size, pitch: pitch, turns: turns).f
                 over s in (0, 1))
-flight := solid(Flight(std.top, off: 6mm, w: 4mm, h: 2mm, pitch: 12mm, turns: 2.5).f
+flight := sweep(Flight(std.top, off: 6mm, w: 4mm, h: 2mm, pitch: 12mm, turns: 2.5).f
                 over s in (0, 1))

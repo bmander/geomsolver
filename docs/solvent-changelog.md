@@ -4,6 +4,21 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.140] At an instant and over an interval.** Every reading of a frame's motion is one of two
+operations (§6.14). `x at τ` is `x` where the roll `τ` puts it, one verb whatever `x` is: `n :=
+base at τ` a frame carried (0.138's `n := base carried(at: τ)`), `s := tool at θ` a solid placed
+(`solid(tool, at: θ)`), `X := x at τ` a point held there, new, and `X coincident x at τ` a point
+drawn elsewhere held so (`X coincident(at: τ) x`); the frames stand on the `at`, `x at(under: m,
+seen_from: g) τ`. `over t in (a, b)` after the operand that runs is the interval of the roll a
+reading runs over: `sweep(tool over t in (a, b), under: m)` a solid a motion sweeps (`solid(tool,
+under: m, from: a, to: b)`), `sweep(tool, through: body)` one rolled through a body,
+`envelope(tool over t in (a, b), …)` and `meshing(f1, f2 over t in (a, b), …)` (their `from:` and
+`to:`); `over t` alone reads a declared `param t: Angle over (a, b)`'s interval, the first reading
+of one. A face family is `sweep(Station(g).f over s in (a, b))` (§6.9, `solid(…)` through 0.139)
+and a traced curve `trace(leg.toe over theta in (a, b))` (§6.5, written bare through 0.139). Every
+retired spelling is refused naming its replacement; the corpus is rewritten and no solved value
+moved. (Issue #391, stage 2.)
+
 **[0.139] One parameter axis.** `param t: Angle over (a, b)` declares a number that runs over an
 interval (§6.3): it states its type (`Length`, `Angle` or `Scalar`), has no value and no seed, and
 its ends increase (E103 otherwise). Nothing reads one yet — a dimension reading it is E103. A face

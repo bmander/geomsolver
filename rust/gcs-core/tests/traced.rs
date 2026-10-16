@@ -37,7 +37,7 @@ component Helix(o: point, x: line, y: line, z: line, r: Length, lead: Length, u:
   o distance(r * sin(u), along: y) p
   o distance(lead * u / 360deg, along: z) p
 }
-k := Helix(o, xl, yl, zl, r: 5mm, lead: 3mm).p over u in (0deg, 720deg)
+k := trace(Helix(o, xl, yl, zl, r: 5mm, lead: 3mm).p over u in (0deg, 720deg))
 s0 := point hint((5, 0, 0))
 fix((5, 0, 0)) s0
 screw := frame
@@ -46,7 +46,7 @@ component Screwed(p0: point, m: frame, u: Angle) {
   p := point hint((5, 0, 0))
   p coincident(under: m, t == u) p0
 }
-h := Screwed(s0, screw).p over u in (0deg, 720deg)
+h := trace(Screwed(s0, screw).p over u in (0deg, 720deg))
 ";
 
 /// A torus of major radius 30 and minor 8 about `z`, by its point's three ordinates over two
@@ -58,7 +58,7 @@ component Torus(o: point, x: line, y: line, z: line, phi: Angle, s: Angle) {
   o distance((30mm + 8mm * cos(s)) * sin(phi), along: y) p
   o distance(8mm * sin(s), along: z) p
 }
-T := Torus(o, xl, yl, zl).p over (phi in (-180deg, 180deg), s in (-180deg, 180deg))
+T := trace(Torus(o, xl, yl, zl).p over (phi in (-180deg, 180deg), s in (-180deg, 180deg)))
 ";
 
 fn helix(u: f64) -> [f64; 3] {
@@ -271,7 +271,7 @@ component Sheet(o: point, x: line, y: line, z: line, a: Length, b: Length) {{
   o distance(b * b / 10mm, along: y) p
   o distance(0mm, along: z) p
 }}
-F := Sheet(o, xl, yl, zl).p over (a in (-6, 6), b in (-6, 6))
+F := trace(Sheet(o, xl, yl, zl).p over (a in (-6, 6), b in (-6, 6)))
 ");
     let e = solved(&folded);
     let i = traced_named(&e, "F");

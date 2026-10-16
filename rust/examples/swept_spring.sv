@@ -33,4 +33,4 @@ in std.front {
 
 climb := frame
 std.Turn(climb, about: spindle, ratio: 1, advance: pitch)
-spring := solid(ball.body, under: climb, from: 0deg, to: turns * 360deg)
+spring := sweep(ball.body over t in (0deg, turns * 360deg), under: climb)

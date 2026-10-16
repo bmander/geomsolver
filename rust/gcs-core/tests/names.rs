@@ -260,7 +260,7 @@ fn a_dimension_reading_geometry_is_refused_outside_a_trace() {
     let traced = format!(
         "component L(k: circle, u: Length) {{ p := point hint((1, 1))\n  \
          horizontal line(k.center, p)\n  k.center distance(k.r + u) p }}\n\
-         {BASE}k := circle(center: a) hint(r: 10)\nradius(10) k\ne := L(k).p over u in (0, 5)\n"
+         {BASE}k := circle(center: a) hint(r: 10)\nradius(10) k\ne := trace(L(k).p over u in (0, 5))\n"
     );
     let (_, d) = read(&traced);
     assert!(d.is_empty(), "{d:?}");

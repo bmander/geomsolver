@@ -1,4 +1,4 @@
-//! Planar envelopes: `cut := envelope(tool, under: m, from: a, to: b)` over a tool of the sheet
+//! Planar envelopes: `cut := envelope(tool over t in (a, b), under: m)` over a tool of the sheet
 //! and a planar motion, compiled to a curve of the drawing (`generate.rs`, spec §6.15.1).
 //!
 //! Built once every primitive and motion is, beside the curves and before any constraint, since
@@ -108,7 +108,7 @@ fn program_signed(sk: &Sketch, m: usize, inverse: bool, steps: &mut Vec<Step>, a
 /// envelope's declaration `d` states.
 fn profile(sk: &mut Sketch, d: &Decl, tool: EntRef, motion: usize) -> Result<CurveE, String> {
     let kind = tool_of(sk, tool)?;
-    let span = d.angular_span.as_ref().ok_or("an envelope needs `from:` and `to:` rolls")?;
+    let span = d.angular_span.as_ref().ok_or("an envelope runs over an interval of the roll")?;
     let (from, to) = (super::bound_angle(sk, &span.from, "envelope roll")?,
                       super::bound_angle(sk, &span.to, "envelope roll")?);
     if from >= to {
@@ -202,7 +202,7 @@ fn profile(sk: &mut Sketch, d: &Decl, tool: EntRef, motion: usize) -> Result<Cur
         unknowns: Vec::new(),
         values,
         // the shared roll, over the interval the reading states (degrees)
-        over: crate::model::Running::roll(from, to),
+        over: crate::model::Running::new(span.running(), crate::units::Dim::ANGLE, from, to),
         home: Home::At(from),
         pose: Vec::new(),
         class: d.class.clone(),

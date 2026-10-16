@@ -42,7 +42,7 @@ in std.front {
 }
 swing_about := frame
 std.Turn(swing_about, about: spindle, ratio: 1)
-construction groove := solid(ball.body, under: swing_about, from: -swing / 2, to: swing / 2)
+construction groove := sweep(ball.body over t in (-swing / 2, swing / 2), under: swing_about)
 
 part := solid(block)
 groove cut part

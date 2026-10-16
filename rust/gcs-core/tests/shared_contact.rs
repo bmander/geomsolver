@@ -25,7 +25,7 @@ in std.front {
 o := point
 base := circle(center: o) hint(r: 20)
 }
-inv := Involute(base, phase: 0).p over u in (10, 90)
+inv := trace(Involute(base, phase: 0).p over u in (10, 90))
 in std.front {
 radius(20) base
 fix((0, 0)) o
@@ -114,7 +114,7 @@ fn a_tangency_and_a_curvature_at_one_place() {
 #[test]
 fn a_place_is_shared_along_one_curve_only() {
     let src = format!(
-        "{INVOLUTE}inv2 := Involute(base, phase: 90).p over u in (10, 90)\nparam s: Angle hint(50)\n\
+        "{INVOLUTE}inv2 := trace(Involute(base, phase: 90).p over u in (10, 90))\nparam s: Angle hint(50)\n\
          in std.front {{\np := point hint((20, 20))\nq := point hint((-20, 20))\n\
          p coincident(t == s) inv\nq coincident(t == s) inv2\n}}\n"
     );

@@ -363,7 +363,7 @@ index := frame
 std.Turn(index, about: spindle, ratio: 1)
 in std.front {{
 repeat {count} as i {{
-  indexed := solid(removal, under: index, at: i * 360deg / {count})
+  indexed := removal at(under: index) i * 360deg / {count}
   indexed cut part
 }}
 }}

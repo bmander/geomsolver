@@ -63,4 +63,4 @@ in std.front {
   fix((-10mm, 101.5mm)) k3
 }
 profile := face(k0, k1, k2, k3, -> close)
-blade := solid(Blade(spine, std.z, port, starboard, profile, p0, p1).sec over s in (0, 1))
+blade := sweep(Blade(spine, std.z, port, starboard, profile, p0, p1).sec over s in (0, 1))

@@ -83,9 +83,9 @@ in std.top {
   vertical guide3
   length(length) guide3
 }
-taper := solid(Section(guide, std.z, square, o1, x1, reach: reach, twist: 90deg,
+taper := sweep(Section(guide, std.z, square, o1, x1, reach: reach, twist: 90deg,
                        scale: 0.5).sec over s in (0, 1))
-cone := solid(Section(guide2, std.z, round, o2, x2, reach: reach, twist: 0deg,
+cone := sweep(Section(guide2, std.z, round, o2, x2, reach: reach, twist: 0deg,
                       scale: 0.5).sec over s in (0, 1))
-swell := solid(Swell(guide3, std.z, round, o2, x2, reach: reach, scale: 1.3).sec
+swell := sweep(Swell(guide3, std.z, round, o2, x2, reach: reach, scale: 1.3).sec
                over s in (0, 1))

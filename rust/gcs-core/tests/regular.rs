@@ -12,8 +12,7 @@ use gcs_core::solid::admission::{self, Condition, Error, Options};
 
 /// The pinion's flank a held envelope of the gear tooth's inner cone under the mesh.
 const FLANK: &str =
-    "pinion_flank := envelope(mill.inner_flank, under: gear_turn, seen_from: pinion_turn, \
-     from: -60deg, to: 60deg)";
+    "pinion_flank := envelope(mill.inner_flank over t in (-60deg, 60deg), under: gear_turn, seen_from: pinion_turn)";
 
 /// No fold of the pinion's flank within its blank, where the gear's tooth cuts it.
 pub(crate) const REGULAR: &str =

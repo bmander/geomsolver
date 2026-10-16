@@ -41,8 +41,8 @@ datum := line(o, ax)
 base := circle(center: o) hint(r: 20)
 }
 
-formula := involute(base, phase: 0).p over u in (5, 60)
-string := unwind(base, datum, phase: 0).p over u in (5, 60)
+formula := trace(involute(base, phase: 0).p over u in (5, 60))
+string := trace(unwind(base, datum, phase: 0).p over u in (5, 60))
 
 in std.front {
 radius(20) base
@@ -160,7 +160,7 @@ in std.front {
 o := point hint((0, 0))
 base := circle(center: o) hint(r: 20)
 }
-w := wander(base).p over u in (0, 90)
+w := trace(wander(base).p over u in (0, 90))
 ";
     let (prog, errs) = parse(src);
     assert!(errs.is_empty());
@@ -187,7 +187,7 @@ in std.front {
 o := point hint((0, 0))
 base := circle(center: o) hint(r: 20)
 }
-w := odd(base).p over u in (0, 1)
+w := trace(odd(base).p over u in (0, 1))
 ";
     let (prog, errs) = parse(src);
     assert!(errs.is_empty());
@@ -327,7 +327,7 @@ ax := point
 datum := line(o, ax)
 base := circle(center: o) hint(r: 20)
 }
-w := involute(base, datum, phase: 0).p over u in (5, 60)
+w := trace(involute(base, datum, phase: 0).p over u in (5, 60))
 in std.front {
 radius(20) base
 fix((0, 0)) o
@@ -420,7 +420,7 @@ ax := point hint((1, 0))
 datum := line(o, ax)
 base := circle(center: o) hint(r: 20)
 }
-w := limp(base, datum, phase: 0).p over u in (5, 60)
+w := trace(limp(base, datum, phase: 0).p over u in (5, 60))
 ";
     let e = build(src);
     assert!(
@@ -483,7 +483,7 @@ in std.front {
 o := point hint((3, -2))
 base := circle(center: o) hint(r: 20)
 }
-w := dot(base).p over u in (0, 10)
+w := trace(dot(base).p over u in (0, 10))
 ";
     let e = build(src);
     assert!(
@@ -513,7 +513,7 @@ fn a_blocks_mistakes_are_named() {
     for (point, body, want) in cases {
         let src = format!(
             "use std\ncomponent b(c: circle, u: Angle) {{\n  {body}\n}}\nin std.front {{\n\
-             o := point hint((0, 0))\nbase := circle(center: o) hint(r: 5)\n}}\nw := b(base).{point} over u in (0, 1)\n"
+             o := point hint((0, 0))\nbase := circle(center: o) hint(r: 5)\n}}\nw := trace(b(base).{point} over u in (0, 1))\n"
         );
         let (prog, errs) = parse(&src);
         assert!(errs.is_empty(), "{want}: {errs:?}");
@@ -549,7 +549,7 @@ ax := point hint((3, 1))
 datum := line(o, ax)
 base := circle(center: o) hint(r: 7)
 }
-w := rim(base, datum, u: 90).t over u in (10, 170)
+w := trace(rim(base, datum, u: 90).t over u in (10, 170))
 ";
     let e = build(src);
     assert!(
@@ -586,7 +586,7 @@ fn a_geometric_seeds_mistakes_are_named() {
     for (body, want) in cases {
         let src = format!(
             "use std\ncomponent b(c: circle, u: Angle) {{\n  {body}\n}}\nin std.front {{\n\
-             o := point hint((0, 0))\nbase := circle(center: o) hint(r: 5)\n}}\nw := b(base).p over u in (0, 1)\n"
+             o := point hint((0, 0))\nbase := circle(center: o) hint(r: 5)\n}}\nw := trace(b(base).p over u in (0, 1))\n"
         );
         let (prog, errs) = parse(&src);
         assert!(errs.is_empty(), "{want}: {errs:?}");
@@ -655,7 +655,7 @@ ax := point hint((4, 2))
 datum := line(o, ax)
 base := circle(center: o) hint(r: 7)
 }
-w := rim(base, datum, u: 90).t over u in (10, 170)
+w := trace(rim(base, datum, u: 90).t over u in (10, 170))
 ";
     // `ccw(o, ax, t)` read on the traced point: the datum's direction crossed into o→t.  Taken
     // off the elaborated sketch rather than written out, so that levelling the datum in `doc`
@@ -708,7 +708,7 @@ fn an_orientations_mistakes_are_named() {
     for (body, want) in cases {
         let src = format!(
             "use std\ncomponent b(c: circle, u: Angle) {{\n  {body}\n}}\nin std.front {{\n\
-             o := point hint((0, 0))\nbase := circle(center: o) hint(r: 5)\n}}\nw := b(base).p over u in (0, 1)\n"
+             o := point hint((0, 0))\nbase := circle(center: o) hint(r: 5)\n}}\nw := trace(b(base).p over u in (0, 1))\n"
         );
         let (prog, errs) = parse(&src);
         assert!(errs.is_empty(), "{want}: {errs:?}");
@@ -729,8 +729,8 @@ fn an_orientations_mistakes_are_named() {
 fn a_whole_turn_closes_a_curve_only_when_it_comes_back() {
     let src = DOC.replace("over u in (5, 60)", "over u in (5, 365)")
         + "component rim(c: circle, u: Angle) {\n  p := point(x: c.center.x + c.r * cos(u), \
-           y: c.center.y + c.r * sin(u))\n}\nround := rim(base).p over u in (0, 360)\n\
-           half := rim(base).p over u in (0, 180)\n";
+           y: c.center.y + c.r * sin(u))\n}\nround := trace(rim(base).p over u in (0, 360))\n\
+           half := trace(rim(base).p over u in (0, 180))\n";
     let e = build(&src);
     assert!(e.ok(), "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
     let closed: Vec<bool> = (0..e.sketch.curves.len()).map(|i| e.sketch.curve_closed(i)).collect();

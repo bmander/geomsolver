@@ -28,4 +28,4 @@ in std.top {
   vertical guide
   length(length) guide
 }
-body := solid(Reducer(guide, std.z, inlet: 24mm, outlet: 12mm, wall: 2mm).sec.profile over s in (0, 1))
+body := sweep(Reducer(guide, std.z, inlet: 24mm, outlet: 12mm, wall: 2mm).sec.profile over s in (0, 1))

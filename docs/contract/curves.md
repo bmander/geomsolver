@@ -157,8 +157,8 @@ the app lists the folder as one project (`example-catalog.ts`, *Rates*).
 
 **A frame that moves is a frame read at a roll** (#366, [0.138]; the rule is
 [frames.md](frames.md)'s): a station word's frame (`std.Helix`, `std.OnHelix`, `std.Twisted`) is a
-motion's pose at a roll written over the running number, `X coincident(under: m, at: τ) x` and `n :=
-base carried(under: m, at: τ)` — never `cos`/`sin` ordinates of the running number.  The roll,
+motion's pose at a roll written over the running number, `X coincident x at(under: m) τ` and `n :=
+base at(under: m) τ` — never `cos`/`sin` ordinates of the running number.  The roll,
 stated, is read as a dimension is: a station reads it again at every place (`expr::evaluate` over
 the held number), and one that states a rate leans on it as on any number written over its running
 number (`solid::rated`'s `Levers`: its free twin over the running number's column, the built
@@ -517,8 +517,8 @@ curve has its Jacobian in the profile's columns against central differences; and
 - **The sphere, the cone and the cylinder are library components too** (see "Spheres, cones and cylinders are
   library sets" in [sets.md](sets.md)): FFI kind ids stay contiguous, the axis now 16.
 - **A curve is a point of a component, as one of its numeric formals runs** (Solvent §6.5).
-  No curve family: `path := leg.toe over theta in (0, 360)` asks a *drawn* instance, and
-  `e := Involute(base, phase: a0).p over u in (u0, u1)` one written in place and never drawn.
+  No curve family: `path := trace(leg.toe over theta in (0, 360))` asks a *drawn* instance, and
+  `e := trace(Involute(base, phase: a0).p over u in (u0, u1))` one written in place and never drawn.
   `syntax::CurveSpec` is the statement (`CurveTarget` `Drawn`/`Anon`, swept formal, interval);
   the flattener records every instance it binds (`flatten::InstanceInfo` — prefix, component,
   absolute actuals, numbers) and resolves a drawn target onto the instance owning the longest

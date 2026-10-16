@@ -80,7 +80,7 @@ component Grow(c: point, x1: point, y1: point, z1: point, d1: point, L: Length, 
 d1 := point hint((6, 3, 2))
 fix((6, 3, 2)) d1
 dl := line(c, d1)
-g := Grow(c, x1, y1, z1, d1, L: 20mm).p over s in (0mm, 30mm)
+g := trace(Grow(c, x1, y1, z1, d1, L: 20mm).p over s in (0mm, 30mm))
 h := point hint((26, 13, 9))
 h coincident g
 c distance(30mm, along: dl) h
@@ -126,7 +126,7 @@ component Saddle(c: point, x1: point, y1: point, z1: point, u: Angle) {{
 }}
 
 {AXES}
-w := Saddle(c, x1, y1, z1).p over u in (0deg, 360deg)
+w := trace(Saddle(c, x1, y1, z1).p over u in (0deg, 360deg))
 h := point hint((5, 8, 2))
 h coincident w
 c distance(5mm, along: xa) h

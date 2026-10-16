@@ -50,4 +50,4 @@ in std.front {
   claim length(a) string            // the body's algebraic row holds on the closed form
   claim tl parallel string          // and its rate row: the path runs along the string
 }
-tr := Closed(o, a: a).p over u in (0, 3)
+tr := trace(Closed(o, a: a).p over u in (0, 3))

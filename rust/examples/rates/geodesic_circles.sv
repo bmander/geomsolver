@@ -92,5 +92,5 @@ s := point hint((15, 0, 26))
 fix(x == r1, y == 0mm) s
 c distance(R) s
 
-on_sphere := OnSphere(c, s, spin, R: R).p over (d in (0mm, pi * R), u in (0deg, 360deg))
-on_cone := OnCone(c, top, s, spin, half: half).p over (d in (0mm, 30mm), u in (0deg, 360deg))
+on_sphere := trace(OnSphere(c, s, spin, R: R).p over (d in (0mm, pi * R), u in (0deg, 360deg)))
+on_cone := trace(OnCone(c, top, s, spin, half: half).p over (d in (0mm, 30mm), u in (0deg, 360deg)))

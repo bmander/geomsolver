@@ -23,7 +23,7 @@ ring := solid(face(meridian),about: ax)
 wall := surface(ring,meridian)
 roll := frame
 std.Turn(roll,about: spin_axis,ratio: 1)
-generated := envelope(wall,under: roll,from: -20deg,to: 20deg)
+generated := envelope(wall over t in (-20deg, 20deg), under: roll)
 ";
 fn near(a: [f64;3],b: [f64;3]) {
     for i in 0..3 { assert!((a[i]-b[i]).abs() < 1e-9,"{a:?} != {b:?}"); }
@@ -128,23 +128,23 @@ fn envelope_declarations_round_trip_and_follow_dependency_copy_delete() {
 #[test]
 fn envelope_formals_alias_forward_source_dependencies_and_private_members() {
     let src = format!("component Copy(e: envelope,limit: Angle) {{\n\
-        private out := envelope(e.surface,under: e.motion,from: -limit,to: limit)\n}}\n\
+        private out := envelope(e.surface over t in (-limit, limit), under: e.motion)\n}}\n\
         copy := Copy(generated,limit: 10deg)\n{MODEL}");
     let e = solved(&src);
     assert_eq!(e.sketch.envelopes.len(),2);
     assert!(e.map.entity_path(&e.sketch,"copy.out").is_none());
-    let bad = build(&format!("{src}bad := envelope(copy.out.surface,under: roll,from: -10deg,to: 10deg)\n"));
+    let bad = build(&format!("{src}bad := envelope(copy.out.surface over t in (-10deg, 10deg), under: roll)\n"));
     assert!(bad.errors().any(|d| d.message.contains("private member")),"{:?}",bad.diags);
 }
 
 #[test]
 fn envelopes_reject_invalid_dependencies_and_domains() {
     for (tail,want) in [
-        ("bad := envelope(ax,roll,from: -1deg,to: 1deg)","a turn about a point"),
-        ("bad := envelope(wall,ax,from: -1deg,to: 1deg)","a motion is read off a frame"),
-        ("bad := envelope(wall,roll,from: 1mm,to: 2mm)","envelope bound"),
-        ("bad := envelope(wall,roll,from: 1deg,to: 1deg)","increasing"),
-        ("bad := envelope(wall,roll,from: 1deg,to: -1deg)","increasing"),
+        ("bad := envelope(ax over t in (-1deg, 1deg), roll)","a turn about a point"),
+        ("bad := envelope(wall over t in (-1deg, 1deg), ax)","a motion is read off a frame"),
+        ("bad := envelope(wall over t in (1mm, 2mm), roll)","envelope bound"),
+        ("bad := envelope(wall over t in (1deg, 1deg), roll)","increasing"),
+        ("bad := envelope(wall over t in (1deg, -1deg), roll)","increasing"),
         ("fix((0, 0)) generated","an envelope has no number of its own to fix"),
     ] {
         let e = build(&format!("{MODEL}{tail}\n"));

@@ -47,9 +47,9 @@ turn := frame
 std.Spin(turn, about: o, on: std.front, ratio: 1)
 rack := frame
 std.Slide(rack, along: slide, advance: 2 * pi * 20mm)
-construction space := solid(rack_tooth, under: rack, seen_from: turn, from: -60deg, to: 60deg)
+construction space := sweep(rack_tooth over t in (-60deg, 60deg), under: rack, seen_from: turn)
 side := surface(rack_tooth, edge: rack_flank)
-flank := envelope(side, under: rack, seen_from: turn, from: -30deg, to: 30deg)
+flank := envelope(side over t in (-30deg, 30deg), under: rack, seen_from: turn)
 ";
 
 /// The tooth space drawn in `std.front`.

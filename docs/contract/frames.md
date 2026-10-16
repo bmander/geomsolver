@@ -43,8 +43,9 @@ motion is what its tool rides on, seen from the frame `seen_from:` names (`motio
   on nothing);
 - a meshing: the second flank's carriers seen from the first's (`motions::meshing`), an
   envelope flank riding on its observer;
-- a solid placed `at:`, swept `from:`/`to:` or rolled `through:` a body — over a solid that
-  rides, `from:`/`to:` and `through:` are a motion's words and not a prism's (`build_solid`).
+- a solid read at an instant (`tool at θ`), swept over an interval (`sweep(tool over t in (a,
+  b))`) or rolled through a body (`sweep(tool, through: body)`) — over a solid that rides, a
+  `solid(…)`'s `from:`/`to:` and `through:` are refused naming those (`build_solid`, #391 S2).
 
 `under:` names the frame of an operand that rides on none: naming one for a tool drawn riding is
 refused (`motions::under_riding`, over `Sketch::drawn_carriers`, its points' paths alone) — what a
@@ -76,30 +77,32 @@ the centre distance solved from a stated ratio, a joint nothing holds reported f
 numbers.  A joint stating no number is no longer refused (E080 through 0.136).
 
 **A frame that moves as a number runs is a frame read at a roll** (#366, [0.138]) — one notion,
-wherever a frame moves.  `X coincident(at: τ) x` is `x` carried to the roll `τ` by what it rides on
-(seen from what `X` rides on, or from `seen_from:`), or by the frame `under: m` names where `x`
-rides on none — the same reading as `t == τ`, one kind, `CKind::CarriedPoint`, whose roll slot is
-read two ways (`Constraint::stated_roll`): **owned**, `t == τ`, the relation's own unknown in
-degrees, a column, pinned or solved, which a rate runs over; **stated**, `at: τ`, the text the
-statement wrote, worked out as a dimension is (`Constraint::arg_kind` an angle, `expr::evaluate`),
-no unknown (`Sketch::add` allocates none), so it may be written over a face family's running number
-and is read again at every station, and a free variable it names is its twin's last column
-(`envelope::screw::Reading::At`, constants `[free, m, c, steps…]`, the roll `m·a + c`).  Saying
-both is refused (`Written::assemble`).  At a stated roll a point drawn in a plane is held where
-that plane sees it, two rows along the plane's axes (`CarriedPointIn`, `program::reading`, as a
-relation in space has its kind in a view) — as many rows as it has numbers.  A roll read where
-nothing rides and no frame is named is refused saying so (`relations::riding_point`).
+wherever a frame moves. `X coincident x at τ` ([0.140]; `X coincident(at: τ) x` through 0.139) is
+`x` carried to the roll `τ` by what it rides on (seen from what `X` rides on, or from `seen_from:`),
+or by the frame `under: m` names where `x` rides on none — the same reading as `t == τ`, one kind,
+`CKind::CarriedPoint`, whose roll slot is read two ways (`Constraint::stated_roll`): **owned**, `t
+== τ`, the relation's own unknown in degrees, a column, pinned or solved, which a rate runs over;
+**stated**, `at: τ`, the text the statement wrote, worked out as a dimension is
+(`Constraint::arg_kind` an angle, `expr::evaluate`), no unknown (`Sketch::add` allocates none), so
+it may be written over a face family's running number and is read again at every station, and a free
+variable it names is its twin's last column (`envelope::screw::Reading::At`, constants `[free, m, c,
+steps…]`, the roll `m·a + c`). Saying both is refused (`Written::assemble`). At a stated roll a
+point drawn in a plane is held where that plane sees it, two rows along the plane's axes
+(`CarriedPointIn`, `program::reading`, as a relation in space has its kind in a view) — as many rows
+as it has numbers. A roll read where nothing rides and no frame is named is refused saying so
+(`relations::riding_point`).
 
-**A frame carried** is `n := base carried(at: τ)` (`syntax::Decl::carried`, kind `Frame`;
-`under:` and `seen_from:` as on a point): the flattener writes it out where it walks the body
-(`flatten::carried`) — three points drawn in `base` and held there (its origin and ten along each
-axis), riding as `base` does; each carried to `τ` into a point riding on nothing; the plane over the
-lines from the carried origin — so its carrier is found as a point's is, its `u`, `v` and normal
-are `base`'s carried, and the source prints the one statement.  `under:` on a `base` that rides is
-refused (`motions::under_riding`).  Before the solve each joint held to an axis is seeded on it
-and each point carried to a stated roll where its motion carries it, round by round with the planes
-placed over them (`Sketch::seed_joints`, `Sketch::seed_carried`, `program::place_planes`), so a
-plane drawn over carried points stands along its lines however far round the roll is.
+**A frame carried** is `n := base at τ` ([0.140]; `syntax::Decl::carried`, `at(under: m, seen_from:
+g)` as on a point), the reading at an instant a frame's source makes of it — a solid's is a solid
+placed, a point's a point held ([parameters.md](parameters.md)): the flattener writes it out where
+it walks the body (`flatten::carried`) — three points drawn in `base` and held there (its origin and
+ten along each axis), riding as `base` does; each carried to `τ` into a point riding on nothing; the
+plane over the lines from the carried origin — so its carrier is found as a point's is, its `u`, `v`
+and normal are `base`'s carried, and the source prints the one statement. `under:` on a `base` that
+rides is refused (`motions::under_riding`). Before the solve each joint held to an axis is seeded on
+it and each point carried to a stated roll where its motion carries it, round by round with the
+planes placed over them (`Sketch::seed_joints`, `Sketch::seed_carried`, `program::place_planes`), so
+a plane drawn over carried points stands along its lines however far round the roll is.
 
 **A joint about a frame's own axis** (#366): `std.Turn(f, about: P.normal)`, or `P.u`, holds
 `f.axis` coincident with an axis no drawn line is — `Joint { axis }` — which the held steps read as

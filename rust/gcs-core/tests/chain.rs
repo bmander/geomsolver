@@ -1502,7 +1502,7 @@ in std.front {
 o := point hint((0, 0))
 base := circle(center: o) hint(r: 20)
 }
-flank := Involute(base, phase: 0).p over u in (0, 60)
+flank := trace(Involute(base, phase: 0).p over u in (0, 60))
 in std.front {
 p := point hint((40, 40))
 }

@@ -30,4 +30,4 @@ in std.top {
   guide := arc(center: turn_center, start: entry, end: exit)
   radius(bend_radius) guide
 }
-body := solid(Elbow(guide, std.z, size: 18mm, wall: 2mm).sec.profile over s in (0, 1))
+body := sweep(Elbow(guide, std.z, size: 18mm, wall: 2mm).sec.profile over s in (0, 1))

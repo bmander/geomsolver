@@ -118,8 +118,8 @@ fn near(got: f64, want: f64, rel: f64, what: &str) {
 #[test]
 fn a_thread_is_pappus() {
     let e = with("
-thread := solid(Thread(std.top, r: 10mm, size: 2mm, pitch: 4mm, turns: 3).f over s in (0, 1))
-vee := solid(VThread(std.top, root: 8mm, crest: 10.5mm, half: 1mm, pitch: 3mm, turns: 2).f over s in (0, 1))");
+thread := sweep(Thread(std.top, r: 10mm, size: 2mm, pitch: 4mm, turns: 3).f over s in (0, 1))
+vee := sweep(VThread(std.top, root: 8mm, crest: 10.5mm, half: 1mm, pitch: 3mm, turns: 2).f over s in (0, 1))");
     near(exact(&e, "thread"), 240.0 * PI, 1e-9, "a square thread");
     near(exact(&e, "vee"), 2.5 * 2.0 * PI * 26.5 / 3.0 * 2.0, 1e-9, "a V thread");
 }
@@ -130,8 +130,8 @@ vee := solid(VThread(std.top, root: 8mm, crest: 10.5mm, half: 1mm, pitch: 3mm, t
 #[test]
 fn a_flight_is_cavalieri() {
     let e = with("
-half := solid(Flight(std.top, off: 6mm, w: 4mm, h: 2mm, pitch: 30mm, turns: 0.5).f over s in (0, 1))
-auger := solid(Flight(std.top, off: 6mm, w: 4mm, h: 2mm, pitch: 12mm, turns: 2.5).f over s in (0, 1))");
+half := sweep(Flight(std.top, off: 6mm, w: 4mm, h: 2mm, pitch: 30mm, turns: 0.5).f over s in (0, 1))
+auger := sweep(Flight(std.top, off: 6mm, w: 4mm, h: 2mm, pitch: 12mm, turns: 2.5).f over s in (0, 1))");
     near(exact(&e, "half"), 8.0 * 15.0, 1e-9, "half a turn");
     near(exact(&e, "auger"), 8.0 * 30.0, 1e-9, "two and a half turns");
 }
@@ -142,7 +142,7 @@ auger := solid(Flight(std.top, off: 6mm, w: 4mm, h: 2mm, pitch: 12mm, turns: 2.5
 #[test]
 fn a_spring_is_its_wire_along_the_helix() {
     let e = with("
-spring := solid(Coil(std.top, r: 10mm, wire: 1.5mm, pitch: 5mm, turns: 4).f over s in (0, 1))");
+spring := sweep(Coil(std.top, r: 10mm, wire: 1.5mm, pitch: 5mm, turns: 4).f over s in (0, 1))");
     let helix = 4.0 * (20.0 * PI).hypot(5.0);
     near(exact(&e, "spring"), PI * 1.5 * 1.5 * helix, 1e-9, "the spring");
 }
@@ -154,9 +154,9 @@ spring := solid(Coil(std.top, r: 10mm, wire: 1.5mm, pitch: 5mm, turns: 4).f over
 #[test]
 fn a_negative_pitch_is_the_mirror_image() {
     let e = with("
-right := solid(Thread(std.top, r: 10mm, size: 2mm, pitch: 4mm, turns: 3.25).f over s in (0, 1))
-left := solid(Thread(std.top, r: 10mm, size: 2mm, pitch: -4mm, turns: 3.25).f over s in (0, 1))
-coil := solid(Coil(std.top, r: 10mm, wire: 1.5mm, pitch: -5mm, turns: 4).f over s in (0, 1))");
+right := sweep(Thread(std.top, r: 10mm, size: 2mm, pitch: 4mm, turns: 3.25).f over s in (0, 1))
+left := sweep(Thread(std.top, r: 10mm, size: 2mm, pitch: -4mm, turns: 3.25).f over s in (0, 1))
+coil := sweep(Coil(std.top, r: 10mm, wire: 1.5mm, pitch: -5mm, turns: 4).f over s in (0, 1))");
     near(exact(&e, "left"), exact(&e, "right"), 1e-9, "the mirror thread");
     near(exact(&e, "left"), 4.0 * 20.0 * PI * 3.25, 1e-9, "a left-handed thread");
     let helix = 4.0 * (20.0 * PI).hypot(5.0);
@@ -188,9 +188,9 @@ coil := solid(Coil(std.top, r: 10mm, wire: 1.5mm, pitch: -5mm, turns: 4).f over 
 #[test]
 fn a_rigid_screw_lies_on_its_swept_rim() {
     let e = with("
-thread := solid(Thread(std.top, r: 10mm, size: 2mm, pitch: 4mm, turns: 3).f over s in (0, 1))
-auger := solid(Flight(std.top, off: 6mm, w: 4mm, h: 2mm, pitch: 12mm, turns: 2.5).f over s in (0, 1))
-spring := solid(Coil(std.top, r: 10mm, wire: 1.5mm, pitch: 5mm, turns: 4).f over s in (0, 1))
+thread := sweep(Thread(std.top, r: 10mm, size: 2mm, pitch: 4mm, turns: 3).f over s in (0, 1))
+auger := sweep(Flight(std.top, off: 6mm, w: 4mm, h: 2mm, pitch: 12mm, turns: 2.5).f over s in (0, 1))
+spring := sweep(Coil(std.top, r: 10mm, wire: 1.5mm, pitch: 5mm, turns: 4).f over s in (0, 1))
 component Swelling(base: plane, r: Length, size: Length, pitch: Length, turns: Scalar, s: Scalar) {
   st := std.Helix(base, pitch: pitch, turns: turns, s: s)
   in st.axial {
@@ -200,7 +200,7 @@ component Swelling(base: plane, r: Length, size: Length, pitch: Length, turns: S
   sq := std.CenteredRectangle(c, w: size * (1 + 0.5 * s), h: size * (1 + 0.5 * s)) in st.axial
   f := face(sq.loop)
 }
-swelling := solid(Swelling(std.top, r: 10mm, size: 2mm, pitch: 4mm, turns: 3).f over s in (0, 1))");
+swelling := sweep(Swelling(std.top, r: 10mm, size: 2mm, pitch: 4mm, turns: 3).f over s in (0, 1))");
     for name in ["thread", "auger", "spring"] {
         let k = walls(&e, name);
         assert!(!k.is_empty() && k.values().all(|&v| v == "blend"), "{name}: {k:?}");
@@ -221,8 +221,8 @@ swelling := solid(Swelling(std.top, r: 10mm, size: 2mm, pitch: 4mm, turns: 3).f 
 #[test]
 fn a_screwed_wall_is_written_and_meshed() {
     let e = with("
-thread := solid(Thread(std.top, r: 10mm, size: 2mm, pitch: 4mm, turns: 3).f over s in (0, 1))
-spring := solid(Coil(std.top, r: 10mm, wire: 1.5mm, pitch: 5mm, turns: 4).f over s in (0, 1))
+thread := sweep(Thread(std.top, r: 10mm, size: 2mm, pitch: 4mm, turns: 3).f over s in (0, 1))
+spring := sweep(Coil(std.top, r: 10mm, wire: 1.5mm, pitch: 5mm, turns: 4).f over s in (0, 1))
 component Swelling(base: plane, r: Length, wire: Length, pitch: Length, turns: Scalar, s: Scalar) {
   st := std.OnHelix(base, r: r, pitch: pitch, turns: turns, s: s)
   in st.n {
@@ -231,7 +231,7 @@ component Swelling(base: plane, r: Length, wire: Length, pitch: Length, turns: S
   }
   f := face(w)
 }
-swelling := solid(Swelling(std.top, r: 10mm, wire: 1mm, pitch: 5mm, turns: 4).f over s in (0, 1))");
+swelling := sweep(Swelling(std.top, r: 10mm, wire: 1mm, pitch: 5mm, turns: 4).f over s in (0, 1))");
     for name in ["thread", "spring"] {
         let b = brep(&e, name);
         let text = gcs_core::brep::step::write(&b, name, 1e-3).unwrap();

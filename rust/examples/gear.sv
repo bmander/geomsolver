@@ -34,7 +34,7 @@ component Involute(c: circle, phase: Angle, u: Angle) {
 // solves, from a worse start.
 component Flank(base: circle, root: circle, tip: circle,
                 phase: Angle, u0: Angle, u1: Angle) {
-  e := Involute(base, phase: phase).p over u in (u0, u1)
+  e := trace(Involute(base, phase: phase).p over u in (u0, u1))
   // Seeded at the centre on purpose.  Where along the flank each end sits is the contact's own
   // `hint(t: …)` below; from the centre — where every circle's row is flat — the first step
   // puts the point on the curve at exactly that roll, and the solve is nine iterations.  Left

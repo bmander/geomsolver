@@ -25,7 +25,7 @@ What the words are:
 - A motion is a frame's joint: `m := frame` declares the frame, `std.Spin(m, about: o, on: v,
   ratio: r)` turns it about a point `o` drawn in the view `v`, `std.Turn(m, about: ax, ratio: r)`
   about a line, and `std.Slide(m, along: l, advance: d)` slides it along a line, `d` a turn.
-- `envelope(tool, under: m, from: a, to: b)` is what a point, line, circle, arc, formula curve or
+- `envelope(tool over t in (a, b), under: m)` is what a point, line, circle, arc, formula curve or
   another envelope cuts. `seen_from: n` reads it as `m` seen from the frame `n`
   (`under: rack, seen_from: blank`). `side: near | far` picks a circle's side.
 - `c tangent(t == s) l` pins a contact's place to an unknown, `param s: Angle hint(318)`: every
@@ -35,7 +35,7 @@ What the words are:
 - `envelope(surface(prism, edge: e), under: m, …)` is the surface a prism's side cuts. When `m`
   keeps the prism's view, that surface is `e`'s envelope extruded, and `p on` it holds a point drawn
   in any view.
-- `solid(tool, under: m, from: a, to: b)` is the solid a tool sweeps through, and `cut` takes
+- `sweep(tool over t in (a, b), under: m)` is the solid a tool sweeps through, and `cut` takes
   it out of a body.
 
 Each file's test is in `rust/gcs-core/tests/generation_examples.rs` (with `generation.rs` and

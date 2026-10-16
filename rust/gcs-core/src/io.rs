@@ -583,7 +583,7 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
     if d.get("ellipses").is_some_and(|a| !a.arr().is_empty()) {
         return Err(
             "this document holds an ellipse entity, which is a library component now: write \
-             it as `e := Ellipse(f, a: …, b: …).p over u in (0, 360)` under `use std`"
+             it as `e := trace(Ellipse(f, a: …, b: …).p over u in (0, 360))` under `use std`"
                 .to_string(),
         );
     }

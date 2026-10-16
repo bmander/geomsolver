@@ -65,5 +65,5 @@ in std.front {
   rims2 := line(q0, q1) -> line(q1, q2)
   rail := spline(through: rims2, start: whole, end: whole)
 }
-ruled := solid(Ring(axis, std.y, std.front, rims).f over s in (0, 2))
-smooth := solid(Ring(whole, std.y, std.front, rail).f over s in (0, 1))
+ruled := sweep(Ring(axis, std.y, std.front, rims).f over s in (0, 2))
+smooth := sweep(Ring(whole, std.y, std.front, rail).f over s in (0, 1))

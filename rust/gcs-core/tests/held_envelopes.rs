@@ -54,8 +54,8 @@ spin := frame
 std.Turn(spin, about: ax, ratio: 1)
 gear_turn := frame
 std.Turn(gear_turn, about: gear_ax, ratio: -0.4, advance: 3mm)
-f1 := envelope(side, under: spin, seen_from: gear_turn, from: -60deg, to: 60deg)
-f2 := envelope(round, under: spin, seen_from: gear_turn, from: -60deg, to: 60deg)
+f1 := envelope(side over t in (-60deg, 60deg), under: spin, seen_from: gear_turn)
+f2 := envelope(round over t in (-60deg, 60deg), under: spin, seen_from: gear_turn)
 ";
 
 fn solved(src: &str) -> Sketch {
@@ -228,7 +228,7 @@ spin := frame
 std.Turn(spin, about: ax, ratio: 1)
 gear_turn := frame
 std.Turn(gear_turn, about: gear_ax, ratio: -0.5)
-flank := envelope(cone, under: spin, seen_from: gear_turn, from: -30deg, to: 30deg)
+flank := envelope(cone over t in (-30deg, 30deg), under: spin, seen_from: gear_turn)
 p := point hint((9, 3, 1))
 fix(x == 9, z == 1) p
 p coincident flank
@@ -255,7 +255,7 @@ cax := line(c1, c2)
 cyl := std.Cylinder(cax, r: 5mm)
 turn := frame
 std.Turn(turn, about: ax, ratio: 1)
-flank := envelope(cyl, under: turn, from: -30deg, to: 30deg)
+flank := envelope(cyl over t in (-30deg, 30deg), under: turn)
 in std.top {
   p := point hint((34, 9))
   kc := point hint((4, -3))
@@ -556,7 +556,7 @@ cax := line(c1, c2)
 cyl := std.Cylinder(cax, r: 5mm)
 turn := frame
 std.Turn(turn, about: ax, ratio: 1)
-flank := envelope(cyl, under: turn, from: -30deg, to: 30deg)
+flank := envelope(cyl over t in (-30deg, 30deg), under: turn)
 in std.top {
   p := point hint((34, 9))
 }

@@ -58,4 +58,4 @@ in std.front {
   claim radius(A^2 / s1) osc                      // rate row 3: tl turns at s1/A²...
   claim osc.center coincident place.nl               // ...towards its left normal
 }
-cl := Closed(o, A: A).p over s in (0mm, 100mm)
+cl := trace(Closed(o, A: A).p over s in (0mm, 100mm))

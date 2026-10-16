@@ -41,6 +41,6 @@ in std.front {
   c := point
   fix((0mm, 0mm)) c
 }
-front := Front(c, a: 40mm, b: 25mm).p over (d in (0mm, 15mm), u in (0deg, 360deg))
+front := trace(Front(c, a: 40mm, b: 25mm).p over (d in (0mm, 15mm), u in (0deg, 360deg)))
 // past the fold: refused at d = 15.625, where the front's rank is lost
-folded := Front(c, a: 40mm, b: 25mm).p over (d in (0mm, 16mm), u in (0deg, 360deg))
+folded := trace(Front(c, a: 40mm, b: 25mm).p over (d in (0mm, 16mm), u in (0deg, 360deg)))

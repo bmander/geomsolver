@@ -176,7 +176,7 @@ fn a_joints_ratio_and_advance_are_stated_and_a_measured_one_is_refused() {
 fn a_placed_solid_moves_when_the_number_its_frame_turns_by_does() {
     let src = format!("{DRAWING}turn := frame\n\
         std.Turn(turn, about: ax, ratio: big_len / small_len)\n\
-        moved := solid(stock, under: turn, at: 30deg)\n");
+        moved := stock at(under: turn) 30deg\n");
     let inside = WorldPoint([2.,-1.,1.]);
     let mut seen = Vec::new();
     for small in [10.,15.] {
@@ -199,7 +199,7 @@ fn a_placed_solid_moves_when_the_number_its_frame_turns_by_does() {
 fn a_placed_solids_motion_is_copied_with_it_and_goes_with_its_axis() {
     let e = read(&format!("{DRAWING}turn := frame\n\
         std.Turn(turn, about: ax, ratio: big_len / small_len)\n\
-        moved := solid(stock, under: turn, at: 30deg)\n"));
+        moved := stock at(under: turn) 30deg\n"));
     let copied = io::copy(&e.sketch,&[e.map.ent_named("moved").unwrap()]);
     assert_eq!(copied.motions.len(),1);
     assert_eq!(copied.motions[0].rotation(&copied).unwrap().0,3.);
@@ -287,7 +287,7 @@ fn a_measurement_read_before_the_solve_is_refused_with_the_stratum() {
     refused(&format!("{DRAWING}tall := solid(profile, depth: length(small))\n"),"E107",mark);
     // an attitude and a placement angle are both read before anything measures
     refused(&format!("{DRAWING}turn := frame\nstd.Turn(turn, about: ax, ratio: 1)\n\
-        moved := solid(stock, under: turn, at: angle(big, slope))\n"),"E107",mark);
+        moved := stock at(under: turn) angle(big, slope)\n"),"E107",mark);
     // and a joint's numbers are held by relations, so they are too
     refused(&format!("{DRAWING}turn := frame\nstd.Turn(turn, about: ax, ratio: 1, \
         advance: length(small))\n"),"E107",mark);

@@ -122,6 +122,10 @@ struct Scope {
     stamps: Stamps,
     /// How a predicate's body is being walked, where the statement is in one — see `PredWalk`.
     pred: PredWalk,
+    /// Which reading at an instant the statement is one way of writing out (#391 S2), and which
+    /// way: the index into `Walk::readings` and what its source must be for this to be the one
+    /// kept (`carried`, `Walk::settle_readings`).
+    reading: Option<(usize, carried::Read)>,
 }
 
 /// The blocks a statement stands in (`Scope::block`).
@@ -431,6 +435,9 @@ struct Walk<'a> {
     unknowns: BTreeMap<String, crate::model::Declared>,
     /// The parameter axes declared so far — see `Expansion::parameters`.
     parameters: BTreeMap<String, crate::model::Running>,
+    /// Every reading at an instant walked and not yet settled (#391 S2): what it reads, and the
+    /// scope that names it in — see `carried`.
+    readings: Vec<(Ref, Scope)>,
     /// The components being expanded, outermost first, each with the numbers it was given: a
     /// call to one already here is a component instantiating itself, walked like any other call
     /// (a `when` ends it, §12.9) unless it is given the numbers it was given there, which make
@@ -664,6 +671,7 @@ impl<'a> Walk<'a> {
             aside: Aside::default(),
             unknowns: BTreeMap::new(),
             parameters: BTreeMap::new(),
+            readings: Vec::new(),
             instantiating: Vec::new(),
             rings: Rings::default(),
             words: WordState::default(),
@@ -716,6 +724,9 @@ impl<'a> Walk<'a> {
     fn finish(mut self) -> Expansion {
         self.expand_pending();
         self.expand_fits();
+        // what each reading at an instant reads, once every name is known (#391 S2): a solid's
+        // faces are named of what it is
+        self.settle_readings();
         // a set's uses, once every set is known (§6.21) — a solid's faces among them — and a use
         // may hold a block over a chain
         self.face_sets();

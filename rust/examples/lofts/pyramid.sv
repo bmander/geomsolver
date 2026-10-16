@@ -24,4 +24,4 @@ in std.front {
 tip := point
 fix((lean, height, 2mm)) tip
 base := face(a0, a1, a2, a3, -> close)
-pyramid := solid(std.Apex(base, tip).f over s in (0, 1))
+pyramid := sweep(std.Apex(base, tip).f over s in (0, 1))

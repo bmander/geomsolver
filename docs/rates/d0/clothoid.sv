@@ -41,4 +41,4 @@ in std.front {
   cl.p coincident o
   datum angle(0deg) cl.tl
 }
-spiral := cl.p over s in (-100mm, 100mm)
+spiral := trace(cl.p over s in (-100mm, 100mm))

@@ -103,7 +103,7 @@ test('an edited drawing is a new job, and one with nothing to mesh cancels the j
   const doc = Document.read(TORUS);
   fp.start(doc);
   const first = stub.last as MeshJob;
-  const edited = Document.read(TORUS.replace('to: 75deg', 'to: 70deg'));
+  const edited = Document.read(TORUS.replace('(-75deg, 75deg)', '(-75deg, 70deg)'));
   fp.start(edited);
   const second = stub.last as MeshJob;
   assert.equal(second.kind, 'mesh');

@@ -124,7 +124,7 @@ fn a_computed_point_is_arithmetic() {
 #[test]
 fn a_curve_is_coloured() {
     let src = "component unwind(c: circle, u: Angle) {\n  p := point\n  p coincident c\n}\n\
-               w := unwind(c).p over u in (0, 1)";
+               w := trace(unwind(c).p over u in (0, 1))";
     assert_eq!(tint_of(src, "w :="), Some(Tint::Def));
     assert_eq!(tint_of(src, "over"), Some(Tint::Word));
     assert_eq!(tint_of(src, "in ("), Some(Tint::Word));

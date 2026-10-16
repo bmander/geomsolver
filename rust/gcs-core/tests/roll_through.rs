@@ -27,7 +27,7 @@ fix((0, 0, 1)) top
 spindle := line(o, top)
 turn := frame
 std.Turn(turn, about: spindle, ratio: 1)
-construction removal := solid(tool, {sweep})
+construction removal := sweep(tool, {sweep})
 part := solid(blank)
 removal cut part
 ")
@@ -121,8 +121,8 @@ fn a_roll_with_no_engagement_about_0_is_refused() {
 fn through_is_a_roll_of_its_own() {
     let mixed = balls("(3, 0, 0)", "under: turn, through: part, from: 0deg, to: 10deg");
     let (_, errors) = syntax::parse(&mixed);
-    assert!(errors.iter().any(|d| d.message.contains("`through:` a body, without other sweep labels")),
-        "{errors:?}");
+    assert!(errors.iter().any(|d| d.message.contains("a sweep takes its tool over an interval of \
+        the roll")), "{errors:?}");
     // the roll names a solid
     crate::common::refused(&balls("(3, 0, 0)", "under: turn, through: spindle"), "E080",
         "`through:` requires a solid", "spindle");
@@ -146,7 +146,7 @@ fn a_roll_through_prints_as_written() {
         .find(|st| src[st.span.lo as usize..st.span.hi as usize].starts_with("construction removal")).unwrap();
     let mut printed = String::new();
     syntax::write_stmt_to(&mut printed, &stmt.kind).unwrap();
-    assert!(printed.contains("solid(tool, under: turn, through: part)"), "{printed}");
+    assert!(printed.contains("sweep(tool, through: part, under: turn)"), "{printed}");
     let e = read(&src.replace(&src[stmt.span.lo as usize..stmt.span.hi as usize], &printed));
     let removal = crate::common::ent(&e, "removal").i();
     assert!(matches!(e.sketch.solids[removal].def, SolidDef::Swept { roll: Roll::Through { .. }, .. }));

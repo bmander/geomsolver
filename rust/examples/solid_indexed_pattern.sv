@@ -4,7 +4,7 @@ use std (on_u)
 
 component IndexedCuts(tool: solid, target: solid, indexing: frame, count: Int) {
   repeat count as i {
-    indexed := solid(tool, under: indexing, at: i * 360deg / count)
+    indexed := tool at(under: indexing) i * 360deg / count
     indexed cut target
   }
 }

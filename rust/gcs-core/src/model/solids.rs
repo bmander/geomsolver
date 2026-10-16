@@ -231,10 +231,10 @@ impl Extent {
     }
 }
 
-/// **How far a sweep rolls** (§6.9, #271): an interval of the shared roll stated (`from:` /
-/// `to:`, a `Running::roll`, #391 S1: degrees as written, `radians` what is read), or `through:
-/// body` — the roll about 0 during which the tool meets the body's material, its stock and
-/// additions (never its cuts, so a sweep cutting the body it rolls through is no cycle), found
+/// **How far a sweep rolls** (§6.9, #271): an interval of the shared roll stated (`over t in (a,
+/// b)`, a `Running`, #391 S1, named as written, S2: degrees as written, `radians` what is read),
+/// or `through: body` — the roll about 0 during which the tool meets the body's material, its
+/// stock and additions (never its cuts, so a sweep cutting the body it rolls through is no cycle), found
 /// after the solve (`solid::roll`).  Every reader asks `solid::roll::interval`,
 /// never the extents, so the exact construction, admission and the field read one interval.
 #[derive(Clone, Debug)]
@@ -294,7 +294,7 @@ pub enum SolidDef {
     /// body applied to a hidden `probe` point, each bound it put there one of `terms`.  Its terms
     /// share one axis, so it is a revolution of one meridian region (`solid::region`).
     Region { probe: u32, terms: Vec<RegionTerm> },
-    /// **A face family** (#243 L1, `solid(I(…).f over s in (a, b))`): the solid the face `face`
+    /// **A face family** (#243 L1, `sweep(I(…).f over s in (a, b))`): the solid the face `face`
     /// of a station sweeps as its running number runs over `over` (#391 S1: its name the key in
     /// `Sketch::held`, its dimension the formal's, its ends as written).  The station is drawn
     /// once, hidden — `station`, every entity its instance made — at the middle of the interval,
@@ -393,11 +393,11 @@ pub struct EnvelopeE {
     pub held: Held,
 }
 
-/// **The meshing of two flanks** (#283, step 3): `contact := meshing(pinion_flank, gear_flank,
-/// under: mesh, from: a, to: b)` — tooth contact analysis, the first flank turning with `mesh`'s
-/// observer (the pinion's turn), the second with its source (the gear's).  Held to in the solve by
-/// a point on its path of contact (`CKind::PointOnMeshing`), which owns the phase, the lag and a
-/// place on each flank, and traced over the phase after it (`envelope::meshing::Meshing`).  Its
+/// **The meshing of two flanks** (#283, step 3): `contact := meshing(pinion_flank, gear_flank over
+/// t in (a, b), under: mesh)` — tooth contact analysis, the first flank turning with `mesh`'s
+/// observer (the pinion's turn), the second with its source (the gear's). Held to in the solve by a
+/// point on its path of contact (`CKind::PointOnMeshing`), which owns the phase, the lag and a
+/// place on each flank, and traced over the phase after it (`envelope::meshing::Meshing`). Its
 /// phase runs over an interval of the shared roll (`Running::roll`, #391 S1), in degrees.
 #[derive(Clone, Debug)]
 pub struct MeshingE {

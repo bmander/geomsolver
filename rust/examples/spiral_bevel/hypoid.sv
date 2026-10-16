@@ -334,7 +334,7 @@ component Space(a: set, b: set, lo: set, hi: set, cap: set, step: frame, pitch: 
   far := { p | p inside outer; p inside tip; p inside base; p inside outer_round }
   private construction outer_crown := solid(near)
   private construction inner_crown := solid(far)
-  private construction neighbor := solid(inner_crown, under: step, at: pitch)
+  private construction neighbor := inner_crown at(under: step) pitch
   body := solid(outer_crown)
   neighbor common body
 }
@@ -346,9 +346,9 @@ component Space(a: set, b: set, lo: set, hi: set, cap: set, step: frame, pitch: 
 // each of `n` teeth. A member is its blank less its crown's cut.
 component Generated(body: solid, tool: solid, under: frame, seen_from: frame, index: frame,
     n: Int) {
-  construction removal := solid(tool, under: under, seen_from: seen_from, through: body)
+  construction removal := sweep(tool, through: body, under: under, seen_from: seen_from)
   repeat n as i {
-    private construction indexed := solid(removal, under: index, at: i * 360deg / n)
+    private construction indexed := removal at(under: index) i * 360deg / n
     indexed cut body
   }
 }
@@ -413,9 +413,9 @@ component Balanced(P: plane, gear: Gear, trace: Trace, ax: line, inner: set, out
     crown_roll: frame, pinion_roll: frame, gear_roll: frame, R: Length, face: Length,
     depth: Length, cutter_radius: Length) {
   gear.M distance(>= R) trace.C
-  pinion_flank := envelope(inner, under: crown_roll, seen_from: pinion_roll, from: -30deg,
-    to: 30deg)
-  gear_flank := envelope(outer, under: crown_roll, seen_from: gear_roll, from: -30deg, to: 30deg)
+  pinion_flank := envelope(inner over t in (-30deg, 30deg), under: crown_roll,
+                           seen_from: pinion_roll)
+  gear_flank := envelope(outer over t in (-30deg, 30deg), under: crown_roll, seen_from: gear_roll)
   // the normal section through M, square to P on the trace normal, through the cutter's axis
   N := plane(u: trace.normal, v: ax)
   mean := Margins(N, gear.M, trace.normal, ax, trace.C, pinion_flank, gear_flank, depth: depth)

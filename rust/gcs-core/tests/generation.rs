@@ -65,7 +65,7 @@ fix((1, 0)) x
 ";
 
 fn flank(src_tail: &str) -> Elaborated {
-    build(&format!("{RACK}flank := RackFlank(pitch, datum, alpha: 20, s0: 5).p over u in (-25, 25)\n{src_tail}"))
+    build(&format!("{RACK}flank := trace(RackFlank(pitch, datum, alpha: 20, s0: 5).p over u in (-25, 25))\n{src_tail}"))
 }
 
 /// **A straight rack cuts an involute.**  At every roll the line from the instant centre to the
@@ -164,7 +164,7 @@ component RackTip(pitch: circle, datum: line, st: Length, ht: Length, rf: Length
 #[test]
 fn the_tip_round_cuts_a_fillet_tangent_to_it() {
     let e = build(&format!(
-        "{RACK}{TIP}fillet := RackTip(pitch, datum, st: 9, ht: 7.5, rf: 1.5).p over u in (-30, 30)\n"
+        "{RACK}{TIP}fillet := trace(RackTip(pitch, datum, st: 9, ht: 7.5, rf: 1.5).p over u in (-30, 30))\n"
     ));
     let i = e.sketch.curves.len() - 1;
     for k in 0..=12 {
@@ -218,9 +218,8 @@ fix((39.396926207859084, 8.420201433256687)) f1
 #[test]
 fn an_envelope_of_a_rack_flank_is_the_traced_cut() {
     let src = format!(
-        "{RACK}{RACK_MOTION}cut := envelope(flank, under: rack, seen_from: blank, from: -25deg, \
-         to: 25deg)\n\
-         traced := RackFlank(pitch, datum, alpha: 20, s0: 5).p over u in (-25, 25)\n"
+        "{RACK}{RACK_MOTION}cut := envelope(flank over t in (-25deg, 25deg), under: rack, seen_from: blank)\n\
+         traced := trace(RackFlank(pitch, datum, alpha: 20, s0: 5).p over u in (-25, 25))\n"
     );
     let e = build(&src);
     let cut = e.map.ent_named("cut").unwrap();
@@ -240,8 +239,7 @@ fn an_envelope_of_a_rack_flank_is_the_traced_cut() {
 #[test]
 fn a_circle_osculates_an_envelope() {
     let mut e = build(&format!(
-        "{RACK}{RACK_MOTION}cut := envelope(flank, under: rack, seen_from: blank, from: -25deg, \
-         to: 25deg)\n\
+        "{RACK}{RACK_MOTION}cut := envelope(flank over t in (-25deg, 25deg), under: rack, seen_from: blank)\n\
          in std.front {{\nk := point hint((25, -5))\nosc := circle(center: k) hint(r: 8)\n}}\n\
          cut curvature osc hint(t: -10)\no distance(26, along: u) k\n"
     ));
@@ -270,7 +268,7 @@ fn a_contact_on_the_cut_solves_the_tool() {
     let src = format!("{RACK}{RACK_MOTION}")
         .replace("fix((39.396926207859084, 8.420201433256687)) f1\n", "f0 distance(10) f1\n")
         + "\
-cut := envelope(flank, under: rack, seen_from: blank, from: -25deg, to: 25deg)
+cut := envelope(flank over t in (-25deg, 25deg), under: rack, seen_from: blank)
 in std.front {
 g := point hint((31, -3))
 fix((31.5, -3)) g
@@ -326,8 +324,8 @@ fix((30, 0)) rc
 roller := circle(center: rc) hint(r: 4)
 radius(4) roller
 }
-pitch := envelope(rc, under: follower, seen_from: cam, from: 0deg, to: 270deg)
-profile := envelope(roller, under: follower, seen_from: cam, from: 0deg, to: 270deg, side: near)
+pitch := envelope(rc over t in (0deg, 270deg), under: follower, seen_from: cam)
+profile := envelope(roller over t in (0deg, 270deg), under: follower, seen_from: cam, side: near)
 ";
     let e = build(src);
     let (pitch, profile) = (e.map.ent_named("pitch").unwrap(), e.map.ent_named("profile").unwrap());
@@ -370,12 +368,12 @@ fix((60, 0)) o2
 base1 := circle(center: o1) hint(r: 18.79385241571817)
 radius(18.79385241571817) base1
 }
-flank := Involute(base1, phase: -20).p over u in (0, 60)
+flank := trace(Involute(base1, phase: -20).p over u in (0, 60))
 pinion := frame
 std.Spin(pinion, about: o1, on: std.front, ratio: -2)
 gear := frame
 std.Spin(gear, about: o2, on: std.front, ratio: 1)
-conj := envelope(flank, under: pinion, seen_from: gear, from: -12deg, to: 12deg)
+conj := envelope(flank over t in (-12deg, 12deg), under: pinion, seen_from: gear)
 ";
     let e = build(src);
     let conj = e.map.ent_named("conj").unwrap();
@@ -404,15 +402,15 @@ conj := envelope(flank, under: pinion, seen_from: gear, from: -12deg, to: 12deg)
 fn a_planar_envelope_refuses_what_it_cannot_cut() {
     let base = format!("{RACK}{RACK_MOTION}");
     for (tail, want) in [
-        ("cut := envelope(flank, under: rack, seen_from: blank, from: 0deg, to: 10deg, side: left)",
+        ("cut := envelope(flank over t in (0deg, 10deg), under: rack, seen_from: blank, side: left)",
          "`near` or `far`"),
-        ("st := RackFlank(pitch, datum, alpha: 20, s0: 5).p over u in (-25, 25)\n\
-          cut := envelope(st, under: rack, seen_from: blank, from: 0deg, to: 10deg)",
+        ("st := trace(RackFlank(pitch, datum, alpha: 20, s0: 5).p over u in (-25, 25))\n\
+          cut := envelope(st over t in (0deg, 10deg), under: rack, seen_from: blank)",
          "a traced curve cannot cut yet"),
         ("spin := frame\nstd.Turn(spin, about: slide, ratio: 1)\n\
-          cut := envelope(flank, under: spin, from: 0deg, to: 10deg)",
+          cut := envelope(flank over t in (0deg, 10deg), under: spin)",
          "turns about a line in space"),
-        ("cut := envelope(flank, under: rack, seen_from: blank, from: 10deg, to: 0deg)",
+        ("cut := envelope(flank over t in (10deg, 0deg), under: rack, seen_from: blank)",
          "increasing"),
     ] {
         let (prog, errs) = crate::common::parse(&format!("{base}{tail}\n"));
@@ -430,8 +428,7 @@ fn a_planar_envelope_refuses_what_it_cannot_cut() {
 /// contact must not end there.
 #[test]
 fn a_line_is_tangent_to_an_envelope() {
-    let base = format!("{RACK}{RACK_MOTION}cut := envelope(flank, under: rack, seen_from: blank, \
-                        from: -25deg, to: 25deg)\n");
+    let base = format!("{RACK}{RACK_MOTION}cut := envelope(flank over t in (-25deg, 25deg), under: rack, seen_from: blank)\n");
     let probe = build(&base);
     let ci = probe.map.ent_named("cut").unwrap().i();
     let (p0, h) = (probe.sketch.curve_point(ci, -15.0), 1e-5);
@@ -494,8 +491,8 @@ flank := line(f0, f1)
 fix((20, 2)) f0
 fix((29.396926207859083, 5.420201433256687)) f1
 }
-tooth := envelope(flank, under: rack, seen_from: pinion, from: -40deg, to: 40deg)
-mate := envelope(tooth, under: pinion, seen_from: gear, from: -15deg, to: 15deg)
+tooth := envelope(flank over t in (-40deg, 40deg), under: rack, seen_from: pinion)
+mate := envelope(tooth over t in (-15deg, 15deg), under: pinion, seen_from: gear)
 ";
 
 /// The radius of curvature of curve `i` at `t`, by differences of its points.
@@ -574,12 +571,12 @@ fix((40, 0)) o2
 lc := point hint((3, 0))
 fix((3, 0)) lc
 }
-lobe := Lobe(lc, a: 14, b: 9).p over u in (0, 360)
+lobe := trace(Lobe(lc, a: 14, b: 9).p over u in (0, 360))
 cam_a := frame
 std.Spin(cam_a, about: o1, on: std.front, ratio: 1)
 cam_b := frame
 std.Spin(cam_b, about: o2, on: std.front, ratio: -1)
-conj := envelope(lobe, under: cam_a, seen_from: cam_b, from: 0deg, to: 360deg)
+conj := envelope(lobe over t in (0deg, 360deg), under: cam_a, seen_from: cam_b)
 ";
     let e = build(src);
     let (lobe, conj) = (e.map.ent_named("lobe").unwrap().i(), e.map.ent_named("conj").unwrap().i());
@@ -670,16 +667,14 @@ fn the_generated_spur_example_proves_its_claim() {
 #[test]
 fn the_planar_envelope_is_the_swept_solids_boundary() {
     let src = format!(
-        "{RACK}{RACK_MOTION}cut := envelope(flank, under: rack, seen_from: blank, from: -25deg, \
-         to: 25deg)\n\
+        "{RACK}{RACK_MOTION}cut := envelope(flank over t in (-25deg, 25deg), under: rack, seen_from: blank)\n\
          in std.front {{\nt0 := point hint((26.25, 1.6525))\nt1 := point hint((26.25, 3.6351))\n\
          t2 := point hint((36, 7.1838))\nt3 := point hint((36, -1.8962))\n\
          fix((26.25, 1.6525446)) t0\nfix((26.25, 3.6351146)) t1\n\
          fix((36, 7.1838203)) t2\nfix((36, -1.8962057)) t3\n}}\n\
          tooth := face(t0, t1, t2, t3, -> close)\n\
          construction rack_tooth := solid(tooth, depth: 4)\n\
-         construction removal := solid(rack_tooth, under: rack, seen_from: blank, from: -60deg, \
-         to: 60deg)\n"
+         construction removal := sweep(rack_tooth over t in (-60deg, 60deg), under: rack, seen_from: blank)\n"
     );
     let mut e = build(&src);
     let r = solve(&mut e.sketch, SolveOpts::default());

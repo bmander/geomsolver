@@ -380,9 +380,9 @@ y1 := point hint((0, 10, 0))
 fix((0, 10, 0)) y1
 top := point hint((0, 0, 10))
 fix((0, 0, 10)) top
-on_sphere := OnSphere(c, x1, y1, R: R, r1: r1).p over (d in (0mm, pi * R), u in (0deg, 360deg))
-on_cone := OnCone(c, x1, y1, top, half: half, r1: r1).p over (d in (0mm, 30mm),
-                                                            u in (0deg, 360deg))
+on_sphere := trace(OnSphere(c, x1, y1, R: R, r1: r1).p over (d in (0mm, pi * R), u in (0deg, 360deg)))
+on_cone := trace(OnCone(c, x1, y1, top, half: half, r1: r1).p over (d in (0mm, 30mm),
+                                                            u in (0deg, 360deg)))
 ";
 
 /// `housing.sv` as it was written before: its Cauchy data the epitrochoid's two terms.
@@ -418,7 +418,7 @@ y1 := point hint((0, 10, 0))
 fix((0, 10, 0)) y1
 z1 := point hint((0, 0, 10))
 fix((0, 0, 10)) z1
-bore := Bore(c, x1, y1, z1, R: R, e: e).p over (d in (0mm, s), u in (0deg, 180deg))
+bore := trace(Bore(c, x1, y1, z1, R: R, e: e).p over (d in (0mm, s), u in (0deg, 180deg)))
 ";
 
 /// The greatest distance between two surfaces, `name` in each document, at `d` over `u` every

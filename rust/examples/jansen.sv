@@ -89,4 +89,4 @@ in std.front {
 }
 
 // where the toe goes over a whole turn of the crank
-path := leg.toe over theta in (0, 360)
+path := trace(leg.toe over theta in (0, 360))

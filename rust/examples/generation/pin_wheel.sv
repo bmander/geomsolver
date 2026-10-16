@@ -38,5 +38,5 @@ pinion := frame
 std.Spin(pinion, about: o1, on: std.front, ratio: -r2 / r1)
 wheel := frame
 std.Spin(wheel, about: o2, on: std.front, ratio: 1)
-epicycloid := envelope(pc, under: pinion, seen_from: wheel, from: -20deg, to: 20deg)
-flank := envelope(pin, under: pinion, seen_from: wheel, from: -20deg, to: 20deg, side: far)
+epicycloid := envelope(pc over t in (-20deg, 20deg), under: pinion, seen_from: wheel)
+flank := envelope(pin over t in (-20deg, 20deg), under: pinion, seen_from: wheel, side: far)

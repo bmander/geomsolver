@@ -68,4 +68,4 @@ in std.front {
   claim m coincident low
 }
 rope minimizes integral(p.y over p)
-cf := Closed(a, c: c).p over s in (0mm, 150mm)
+cf := trace(Closed(a, c: c).p over s in (0mm, 150mm))

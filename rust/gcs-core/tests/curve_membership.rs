@@ -43,7 +43,7 @@ in {view} {{
   b := circle(center: o)
   fix(r == 10mm) b
 }}
-e := Inv(b).p over u in (0deg, 90deg)
+e := trace(Inv(b).p over u in (0deg, 90deg))
 "
     )
 }

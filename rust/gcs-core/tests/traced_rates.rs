@@ -39,8 +39,8 @@ in std.front {
   drag := Drag(o, a: 30mm, u: 0)
   drag.p level(right) o
 }
-tractrix := drag.p over u in (0, 3)
-written := Dragged(o, a: 30mm, u: 0).d.p over u in (-3, 3)
+tractrix := trace(drag.p over u in (0, 3))
+written := trace(Dragged(o, a: 30mm, u: 0).d.p over u in (-3, 3))
 ";
 
 /// The tractrix's closed form, the string's end at `(a u, 0)`: `x = a(u − tanh u)`, `y = a sech u`.
@@ -104,7 +104,7 @@ in std.front {
   cl.p coincident o
   datum angle(0deg) cl.tl
 }
-spiral := cl.p over s in (-100mm, 100mm)
+spiral := trace(cl.p over s in (-100mm, 100mm))
 ";
 
 /// The Fresnel integrals `∫₀ˢ (cos, sin)(σ²/2A²) dσ`, by their series — worked out here.
@@ -202,7 +202,7 @@ in std.front {
   hang.p coincident a
   b coincident(t == 150mm) chain
 }
-chain := hang.p over s in (0mm, 150mm)
+chain := trace(hang.p over s in (0mm, 150mm))
 ";
 
 /// **A two-point problem is a drawing.**  The chain's forces — a horizontal pull `c` and a
@@ -279,7 +279,7 @@ y1 := point hint((0, 10, 0))
 fix((0, 10, 0)) y1
 ya := line(o, y1)
 zl := line(o, top)
-path := Started(o, top, ya, half: 30deg, r0: 40mm, s: 0mm).g.p over s in (-60mm, 60mm)
+path := trace(Started(o, top, ya, half: 30deg, r0: 40mm, s: 0mm).g.p over s in (-60mm, 60mm))
 ";
 
 /// A geodesic of the cone of half angle 30° from 40 along its generator, setting off square to
@@ -375,7 +375,7 @@ spin := frame
 std.Turn(spin, about: za, ratio: 1)
 x0 := point hint((20, 0, 0))
 fix((20, 0, 0)) x0
-helix := Wound(x0, za, spin, s: 0mm).X over s in (-60mm, 60mm)
+helix := trace(Wound(x0, za, spin, s: 0mm).X over s in (-60mm, 60mm))
 ";
 
 /// The helix of radius 20 about the axis, a turn each 120 up it, from 30° round at `s = 0`.
@@ -474,7 +474,7 @@ fn a_rate_is_read_only_as_a_direction() {
         p := point hint((10, 0))\n  t := line(o, p)\n  o distance(10mm) p\n  \
         x angle(u) t\n  rate(p over u) perpendicular t\n}\nin std.front {\n  o := point\n  \
         e := point\n  x := line(o, e)\n  fix((0, 0)) o\n  fix((10, 0)) e\n}\n\
-        k := Turn(o, x, u: 0deg).p over u in (0deg, 90deg)\n");
+        k := trace(Turn(o, x, u: 0deg).p over u in (0deg, 90deg))\n");
     assert!(errs.iter().any(|e| e.contains("a rate along an angle is not yet read")), "{errs:?}");
     // outside a component nothing runs
     let errs = errors("unit mm\nuse std\nin std.front {\n  p := point\n  q := point\n  \
@@ -503,7 +503,7 @@ in std.front {
   r := Round(o, u: 0)
   r.p level(right) o
 }
-arc := r.p over u in (-40, 40)
+arc := trace(r.p over u in (-40, 40))
 ";
     let e = build(src);
     let sk = solved(&e);

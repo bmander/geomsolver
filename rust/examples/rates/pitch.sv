@@ -51,14 +51,14 @@ in std.front {
   radius(rr) roller
 }
 
-pitch_rise := envelope(c_rise, under: out, seen_from: cam, from: 0deg, to: 180deg)
-cam_rise := envelope(roller, under: out, seen_from: cam, from: 0deg, to: 180deg, side: near)
+pitch_rise := envelope(c_rise over t in (0deg, 180deg), under: out, seen_from: cam)
+cam_rise := envelope(roller over t in (0deg, 180deg), under: out, seen_from: cam, side: near)
 
 // a profile drawn by its formula, three lobes and three hollows
 component Lobed(c: point, u: Angle) {
   p := point(x: c.x + (30 + 6 * cos(3 * u)) * cos(u), y: c.y + (30 + 6 * cos(3 * u)) * sin(u))
 }
-lobed := Lobed(o).p over u in (0deg, 120deg)
+lobed := trace(Lobed(o).p over u in (0deg, 120deg))
 
 // -- the pitch curves, marched ----------------------------------------------------------------
 component Pitch(c: point, y1: point, k: curve, d: Length, u: Angle) {
@@ -81,6 +81,6 @@ fix((0, 0, 0)) cc
 y1 := point hint((0, 10, 0))
 fix((0, 10, 0)) y1
 
-pitch := Pitch(cc, y1, cam_rise).p over (d in (0, rr), u in (10deg, 170deg))
-follows := Pitch(cc, y1, lobed).p over (d in (0, 15), u in (30deg, 90deg))
-undercut := Pitch(cc, y1, lobed).p over (d in (0, 22), u in (30deg, 90deg))
+pitch := trace(Pitch(cc, y1, cam_rise).p over (d in (0, rr), u in (10deg, 170deg)))
+follows := trace(Pitch(cc, y1, lobed).p over (d in (0, 15), u in (30deg, 90deg)))
+undercut := trace(Pitch(cc, y1, lobed).p over (d in (0, 22), u in (30deg, 90deg)))

@@ -318,13 +318,29 @@ fn write_decl(out: &mut String, d: &Decl) {
         out.push_str(&n.text);
         out.push_str(" := ");
     }
-    // a frame a motion carries is the image as written (#366)
+    // a reading at an instant is its source and the instant, as written (#391 S2)
     if let Some(c) = &d.carried {
         write_ref(out, &c.source);
-        out.push(' ');
-        out.push_str(&c.word.text);
-        let (parts, _) = written_parts(&c.args, false);
-        out.push_str(&format!("({})", parts.join(", ")));
+        out.push_str(&instant_text(&c.args));
+        write_class(out, d);
+        return;
+    }
+    // and so is a solid placed at one (#391 S2): `tool at(under: m) θ`
+    if let Some(Sweep::Placed { motion, at }) = &d.sweep {
+        if let Some(Kid::Ref(tool)) = d.children.first().and_then(|k| k.first()) {
+            write_ref(out, tool);
+            out.push_str(&format!(" at{} {}", frames_text(motion.as_ref(), d.seen_from.as_ref()),
+                                  dim(at)));
+            write_class(out, d);
+            return;
+        }
+    }
+    // a sweep over an interval or through a body, a face family's among them, is `sweep(…)`
+    if let Some(sweep @ (Sweep::Swept { .. } | Sweep::Rolled { .. } | Sweep::Family(_)))
+        = &d.sweep
+    {
+        out.push_str(&sweep_text(d, sweep));
+        write_class(out, d);
         return;
     }
     // a computed point is its formula, and carries no clause a solve could write
@@ -333,7 +349,10 @@ fn write_decl(out: &mut String, d: &Decl) {
         return;
     }
     if let Some(c) = &d.curve {
+        // a point of a component followed as one of its formals runs (#391 S2)
+        out.push_str("trace(");
         write_curve_spec(out, c);
+        out.push(')');
     } else if d.bare {
         // a frame declared bare is its word alone (#383)
         out.push_str("frame");
@@ -371,6 +390,66 @@ fn write_decl(out: &mut String, d: &Decl) {
     }
 }
 
+/// ` class a b` after a declaration that has one.
+fn write_class(out: &mut String, d: &Decl) {
+    if !d.class.is_empty() {
+        out.push_str(" class ");
+        out.push_str(&d.class.0.join(" "));
+    }
+}
+
+/// `(under: m, seen_from: g)` on an instant, or nothing where it names neither (#391 S2).
+fn frames_text(under: Option<&Ref>, seen_from: Option<&Ref>) -> String {
+    let parts: Vec<String> = [("under", under), ("seen_from", seen_from)].into_iter()
+        .filter_map(|(label, r)| r.map(|r| format!("{label}: {}", super::ref_text(r))))
+        .collect();
+    if parts.is_empty() { String::new() } else { format!("({})", parts.join(", ")) }
+}
+
+/// ` at τ`, or ` at(under: m, seen_from: g) τ` — an instant as its arguments hold it (#391 S2):
+/// the frames by their labels, the roll the relation's number.
+pub(crate) fn instant_text(args: &[OpArg]) -> String {
+    let frame = |label: &str| args.iter().find_map(|a| match a {
+        OpArg::Named(n, Arg::Ref(r)) if n.text == label => Some(r),
+        _ => None,
+    });
+    let roll = args.iter().find_map(|a| match a {
+        OpArg::Dim(t, _) => Some(t.as_str()),
+        _ => None,
+    }).unwrap_or_default();
+    format!(" at{} {roll}", frames_text(frame("under"), frame("seen_from")))
+}
+
+/// ` over t in (a, b)`, or ` over t` where it names a declared parameter (#391 S2).
+fn over_text(over: &super::RunsOver, from: &Arg, to: &Arg) -> String {
+    match over.declared {
+        true => format!(" over {}", over.name.text),
+        false => format!(" over {} in ({}, {})", over.name.text, dim(from), dim(to)),
+    }
+}
+
+/// `sweep(…)` (#391 S2): a face family's instance written in place and its formal's interval,
+/// or the tool a motion sweeps over an interval of the roll or through a body, and the frames.
+fn sweep_text(d: &Decl, sweep: &Sweep) -> String {
+    let tool = || match d.children.first().and_then(|k| k.first()) {
+        Some(Kid::Ref(r)) => super::ref_text(r),
+        _ => String::new(),
+    };
+    let mut parts = match sweep {
+        Sweep::Family(_) => sweep_parts(sweep),
+        Sweep::Swept { from, to, over, .. } => {
+            vec![format!("{}{}", tool(), over_text(over, from, to))]
+        }
+        Sweep::Rolled { body, .. } => vec![tool(), format!("through: {}", super::ref_text(body))],
+        _ => Vec::new(),
+    };
+    if let Sweep::Swept { motion, .. } | Sweep::Rolled { motion, .. } = sweep {
+        parts.extend(motion.iter().map(under));
+        parts.extend(d.seen_from.iter().map(|g| format!("seen_from: {}", super::ref_text(g))));
+    }
+    format!("sweep({})", parts.join(", "))
+}
+
 /// A document expression, kept as written rather than converted to a seed.
 fn dim(a: &Arg) -> String {
     match a {
@@ -389,20 +468,9 @@ fn under(m: &Ref) -> String {
 /// Sweep arguments are document expressions, preserved through canonical printing.
 fn sweep_parts(s: &Sweep) -> Vec<String> {
     let mut parts = match s {
-        // the frame it is under, where it is written: left out, the tool's own (#383)
-        Sweep::Swept {motion,from,to} => {
-            let mut out: Vec<String> = motion.iter().map(under).collect();
-            out.extend([format!("from: {}",dim(from)),format!("to: {}",dim(to))]);
-            out
-        }
-        Sweep::Rolled {motion,body} => {
-            let mut through = String::from("through: ");
-            write_ref(&mut through,body);
-            motion.iter().map(under).chain([through]).collect()
-        }
-        Sweep::Placed {motion,at} => {
-            motion.iter().map(under).chain([format!("at: {}",dim(at))]).collect()
-        }
+        // a reading at an instant or over an interval is no `solid(…)`'s (#391 S2): `write_decl`
+        // writes it whole
+        Sweep::Swept { .. } | Sweep::Rolled { .. } | Sweep::Placed { .. } => Vec::new(),
         // a region's operand is the set the flattener applied to its probe: nothing to print
         Sweep::Body | Sweep::Region { .. } => Vec::new(),
         // the face family is the whole of the brackets: `Station(g).f over s in (0, 1)`
@@ -516,8 +584,20 @@ pub(crate) fn decl_args(d: &Decl) -> String {
         }
     }
     if let Some(e) = &d.angular_span {
-        parts.push(format!("from: {}",dim(&e.from)));
-        parts.push(format!("to: {}",dim(&e.to)));
+        match &e.over {
+            // over an interval of the roll, after the operand that runs (#391 S2): an envelope's
+            // tool, a meshing's second flank
+            Some(o) => {
+                let k = usize::from(d.kind == EntKind::Meshing);
+                if let Some(p) = parts.get_mut(k) {
+                    p.push_str(&over_text(o, &e.from, &e.to));
+                }
+            }
+            None => {
+                parts.push(format!("from: {}",dim(&e.from)));
+                parts.push(format!("to: {}",dim(&e.to)));
+            }
+        }
         if let Some(x) = &e.ease {
             parts.push(format!("ease: {}",super::ref_text(&x.about)));
             parts.push(format!("along: {}",super::ref_text(&x.along)));
@@ -742,13 +822,9 @@ pub(crate) fn written_parts(args: &[OpArg], pairs: bool) -> (Vec<String>, Vec<St
     let mut source: Option<usize> = None;
     let mut hints: Vec<String> = Vec::new();
     let mut bound = None;
-    // a carried point's roll, stated, goes after the motion by its label (#366)
-    let under = args.iter().any(|a| matches!(a, OpArg::Named(n, _) if n.text == "under"));
-    let mut roll: Option<String> = None;
     for a in args {
         match a {
             OpArg::Bound { cmp, hi, .. } => bound = Some((*cmp, hi.as_ref().map(|h| &h.0))),
-            OpArg::Dim(t, _) if under => roll = Some(format!("at: {t}")),
             OpArg::Named(n, v) => parts.push(format!("{}: {}", n.text, sel_text(v))),
             OpArg::Ent(r) => {
                 let mut s = String::new();
@@ -779,7 +855,6 @@ pub(crate) fn written_parts(args: &[OpArg], pairs: bool) -> (Vec<String>, Vec<St
             }
         }
     }
-    parts.extend(roll);
     // a bound is said before its number, which leads the parentheses (§9.6)
     if let (Some((cmp, hi)), Some(d)) = (bound, parts.first_mut()) {
         *d = bound_text(cmp, d, hi.map(|h| h.as_str()));
@@ -813,7 +888,13 @@ pub fn bounded(
 }
 
 fn write_written(out: &mut String, w: &Written) {
-    let (parts, hints) = written_parts(&w.args, w.word.text == "mapped");
+    // a point read at an instant (#391 S2): its roll and frames are the instant's, after the
+    // operand it reads
+    let instant = w.word.text == "coincident" && w.args.iter().any(|a| matches!(a, OpArg::Dim(..)));
+    let of_instant = |a: &OpArg| matches!(a, OpArg::Dim(..))
+        || matches!(a, OpArg::Named(n, _) if n.text == "under" || n.text == "seen_from");
+    let args: Vec<OpArg> = w.args.iter().filter(|a| !(instant && of_instant(a))).cloned().collect();
+    let (parts, hints) = written_parts(&args, w.word.text == "mapped");
     // an operand written as its rate is printed so (#339 D2)
     let operand = |out: &mut String, k: usize| {
         let Some(r) = w.ops.get(k) else { return };
@@ -844,6 +925,9 @@ fn write_written(out: &mut String, w: &Written) {
         out.push(' ');
         operand(out, last);
     }
+    if instant {
+        out.push_str(&instant_text(&w.args));
+    }
     let hint = hint_of(&hints);
     if !hint.is_empty() {
         out.push(' ');
@@ -871,6 +955,11 @@ pub fn operator_text(kind: CKind, args: &[Option<Arg>]) -> String {
     let mut ents: Vec<String> = Vec::new();
     let mut parens: Vec<String> = Vec::new();
     let mut hints: Vec<String> = Vec::new();
+    // a point read at an instant (#391 S2): the roll stated, and the frames it is read by
+    let stated = kind.roll_slot().and_then(|k| args.get(k)).and_then(|a| a.as_ref())
+        .is_some_and(|a| matches!(a, Arg::Dim { .. }));
+    let mut instant: Vec<String> = Vec::new();
+    let mut roll = String::new();
     for (i, (name, sk)) in spec.iter().enumerate() {
         let Some(a) = args.get(i).and_then(|a| a.as_ref()) else { continue };
         // an entity slot the core infers — a projection's planes — is never spelled: the
@@ -900,12 +989,15 @@ pub fn operator_text(kind: CKind, args: &[Option<Arg>]) -> String {
         } else if sk.takes_ref() && *name == "by" {
             // and the tool a flank is cut by (#345)
             parens.push(format!("by: {}", write_arg(name, *sk, a)));
+        } else if sk.takes_ref() && *name == "under" && stated {
+            // the motion a point is read by at an instant is the instant's (#391 S2)
+            instant.push(format!("under: {}", write_arg(name, *sk, a)));
         } else if sk.takes_ref() && *name == "under" {
             // and the motion a point is carried by (#326)
             parens.push(format!("under: {}", write_arg(name, *sk, a)));
         } else if kind.roll_slot() == Some(i) && matches!(a, Arg::Dim { .. }) {
-            // and the roll it is carried to, stated after the motion by its label (#366)
-            parens.push(format!("at: {}", dim_text(a)));
+            // and the instant it is read at, after its operand (#391 S2)
+            roll = dim_text(a);
         } else if sk.takes_ref() {
             ents.push(write_arg(name, *sk, a));
         } else if sk.is_param() {
@@ -950,6 +1042,13 @@ pub fn operator_text(kind: CKind, args: &[Option<Arg>]) -> String {
     for e in &ents {
         out.push(' ');
         out.push_str(e);
+    }
+    if stated {
+        let frames = match instant.is_empty() {
+            true => String::new(),
+            false => format!("({})", instant.join(", ")),
+        };
+        out.push_str(&format!(" at{frames} {roll}"));
     }
     let hint = hint_of(&hints);
     if !hint.is_empty() {

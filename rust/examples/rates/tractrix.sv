@@ -49,8 +49,8 @@ in std.front {
   drag := Drag(o, a: a, u: 0)
   drag.p level(right) o                      // the home: the string starts square to the line
 }
-tractrix := drag.p over u in (0, 3)
-both_ways := Dragged(o, a: a, u: 0).d.p over u in (-3, 3)
+tractrix := trace(drag.p over u in (0, 3))
+both_ways := trace(Dragged(o, a: a, u: 0).d.p over u in (-3, 3))
 
 in std.front {
   m := point hint((14, 16))

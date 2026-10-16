@@ -30,7 +30,7 @@ pub fn off_flank(r: f64,e: f64,g: [f64;2]) -> f64 {
 
 fn rotor(r: f64,e: f64) -> Result<(InnerEnvelope,gcs_core::program::Elaborated),gcs_core::envelope::planar::Refusal> {
     let el = solved(&wankel(r,e,
-        "bore := envelope(apex, under: spin, seen_from: counter, from: 0deg, to: 1080deg)"));
+        "bore := envelope(apex over t in (0deg, 1080deg), under: spin, seen_from: counter)"));
     let (bore,turn) = (el.map.ent_named("bore").unwrap().i(),seen(&el,"counter","spin"));
     InnerEnvelope::read(&el.sketch,bore,turn,[0.,3.*std::f64::consts::TAU]).map(|env| (env,el))
 }
@@ -77,7 +77,7 @@ fn below_the_limiting_k_the_envelope_is_refused_and_names_its_row() {
 #[test]
 fn an_envelope_is_read_over_a_whole_period() {
     let el = solved(&wankel(105.,15.,
-        "bore := envelope(apex, under: spin, seen_from: counter, from: 0deg, to: 1080deg)"));
+        "bore := envelope(apex over t in (0deg, 1080deg), under: spin, seen_from: counter)"));
     let (bore,turn) = (el.map.ent_named("bore").unwrap().i(),seen(&el,"counter","spin"));
     let refused = InnerEnvelope::read(&el.sketch,bore,turn,[0.,std::f64::consts::TAU]).unwrap_err();
     assert_eq!(refused.row,Condition::Period,"{refused}");
@@ -105,7 +105,7 @@ pub fn rotor_area(r: f64,e: f64) -> f64 {
 #[test]
 fn a_motion_off_the_plane_gives_no_envelope() {
     let el = solved(&wankel(105.,15.,"\
-bore := envelope(apex, under: spin, seen_from: counter, from: 0deg, to: 1080deg)
+bore := envelope(apex over t in (0deg, 1080deg), under: spin, seen_from: counter)
 tilt := frame
 std.Turn(tilt, about: rightward_line, ratio: 1)
 in std.front {

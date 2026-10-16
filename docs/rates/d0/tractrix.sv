@@ -37,5 +37,5 @@ in std.front {
   drag := Drag(o, a: 30mm, u: 0)
   o distance(30mm, along: up) drag.p
 }
-tractrix := drag.p over u in (0, 3)
-written := Dragged(o, a: 30mm).d.p over u in (-3, 3)     // from the home at the call's 0, both ways
+tractrix := trace(drag.p over u in (0, 3))
+written := trace(Dragged(o, a: 30mm).d.p over u in (-3, 3))     // from the home at the call's 0, both ways

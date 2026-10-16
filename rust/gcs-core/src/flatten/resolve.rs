@@ -1109,6 +1109,7 @@ impl<'a> Walk<'a> {
             sc.access = access.clone();
             sc.typed = typed.clone();
         }
+        self.settle_readings();
         let alias = self.alias_table();
         self.faces_of_copies(&alias);
         self.drawn_incidences(&alias);

@@ -62,8 +62,8 @@ fix((0, 10, 0)) y1
 z1 := point hint((0, 0, 10))
 fix((0, 0, 10)) z1
 
-front := Front(c, x1, y1, z1, a: a, b: b).p over (d in (0mm, 15mm), u in (-60deg, 60deg))
-folded := Front(c, x1, y1, z1, a: a, b: b).p over (d in (0mm, 16mm), u in (-60deg, 60deg))
+front := trace(Front(c, x1, y1, z1, a: a, b: b).p over (d in (0mm, 15mm), u in (-60deg, 60deg)))
+folded := trace(Front(c, x1, y1, z1, a: a, b: b).p over (d in (0mm, 16mm), u in (-60deg, 60deg)))
 
 // `held` on the major axis, 35 from the centre: where the front at its end has run a − 35 = 5.
 ya := line(c, y1)

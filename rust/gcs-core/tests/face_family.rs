@@ -1,4 +1,4 @@
-//! **The face family** (#243 L1): `solid(I(…).f over s in (a, b))`, the solid a face of an
+//! **The face family** (#243 L1): `sweep(I(…).f over s in (a, b))`, the solid a face of an
 //! instance sweeps as one of its numbers runs.  The station is drawn once, hidden, at the middle
 //! of its interval and solved with the drawing; the family solves it again at every other station,
 //! each warm from its neighbour, and facets what the stations sweep.  Its walls are exact (L2):
@@ -286,11 +286,11 @@ fn a_family_is_written_over_an_instance_in_place() {
     assert!(said.iter().any(|m| m.contains("has no formal `t`")), "{said:?}");
     let (_, said) = read(&REDUCER.replace("over s in (0, 1)", "over s in (1, 0)"));
     assert!(said.iter().any(|m| m.contains("runs nowhere or backwards")), "{said:?}");
-    let drawn = REDUCER.replace("body := solid(Reducer(", "st := Reducer(")
+    let drawn = REDUCER.replace("body := sweep(Reducer(", "st := Reducer(")
         .replace(").sec.profile over s in (0, 1))",
-                 ")\nbody := solid(st.sec.profile over s in (0, 1))");
-    let (_, errs) = parse(&drawn);
-    assert!(errs.iter().any(|e| e.message.contains("written in place")), "{errs:?}");
+                 ")\nbody := sweep(st.sec.profile over s in (0, 1))");
+    let (_, said) = read(&drawn);
+    assert!(said.iter().any(|m| m.contains("written in place")), "{said:?}");
 }
 
 /// **A family inside a component** is the component's like any other solid: its running number
@@ -298,7 +298,7 @@ fn a_family_is_written_over_an_instance_in_place() {
 /// the same 5120 mm³.
 #[test]
 fn a_family_inside_a_component() {
-    let written = "body := solid(Reducer(guide, std.z, inlet: 24mm, outlet: 12mm, wall: 2mm)\
+    let written = "body := sweep(Reducer(guide, std.z, inlet: 24mm, outlet: 12mm, wall: 2mm)\
                    .sec.profile over s in (0, 1))";
     assert!(REDUCER.contains(written));
     let inside = written.replace("std.z", "up");
@@ -336,7 +336,7 @@ in std.top {
   ring := circle(center: c)
   radius(10mm) ring
 }
-cone := solid(Disc(guide, std.z, ring).f over s in (0, 1))
+cone := sweep(Disc(guide, std.z, ring).f over s in (0, 1))
 ";
 
 /// **A station reads the geometry it was given** as a traced body does (finding 1): the disc's

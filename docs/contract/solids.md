@@ -193,7 +193,7 @@ placement carries inside the blank; CLI test readers zero the offset.
   longer has, E084 a section cut across its own view.
 
 - **A face family is a face that runs** (§6.9 [0.97], `solid/family.rs`; #243 L1).
-  `solid(I(…).f over s in (a, b))` parses to `Sweep::Family(FamilySpec)` (`parser::family`, by
+  `sweep(I(…).f over s in (a, b))` parses to `Sweep::Family(FamilySpec)` (`parser::family`, by
   an `over` inside `solid(`'s own brackets, `family_ahead`); the flattener walks the instance
   **drawn**, under a key the source cannot write (`#f<offset>.`, so its declarations are
   anonymous), the running formal left unbound so `bind` makes it the free value `#f12.s` — and
@@ -350,8 +350,8 @@ placement carries inside the blank; CLI test readers zero the offset.
   `std.sv`'s `Twisted` (the point `reach` along the station's `u` turned `twist · s` — [0.118],
   the second point a section drawn once is carried to, `f := prof mapped(o -> n.origin, x ->
   tw.t) in n`; through 0.117 a plane of axes a section was drawn on corner by corner; since
-  [0.138] a turn of `n` about its origin read at that roll, `t coincident(under: turn, at: twist
-  * s) x`), `scaled` (a point at `(du, dv)` scaled `1 + (scale − 1) · s` about the
+  [0.138] a turn of `n` about its origin read at that roll, `t coincident x at(under: turn) twist
+  * s`), `scaled` (a point at `(du, dv)` scaled `1 + (scale − 1) · s` about the
   plane's origin) and `scaled_radius` take a total and run it linearly; any other law is the word
   given another fraction (`s: 3 * s^2 - 2 * s^3`) or the writer's own expression.  **A number given
   over `s` that is not affine in it is kept as text** (`Walk::held_text`), whichever formal it is
@@ -378,7 +378,7 @@ placement carries inside the blank; CLI test readers zero the offset.
   the helix of radius `r`, `v` up the axis leaned by the lead angle (a coil's wire): `base` tilted
   about `base.u` by `90deg + atan2(pitch, 2πr)` and slid `r` out (one screw about that axis,
   read at its turn), then carried by the helix's screw.  Every frame is a carried one (`n := base
-  carried(under: m, at: τ)`, [frames.md](frames.md)) about its frames' own axes, so **no direction
+  at(under: m) τ`, [frames.md](frames.md)) about its frames' own axes, so **no direction
   is held by a seed** and no plane stands against its lines — which the ordinates of 0.110–0.137 did
   not ensure: where the solve started decided whether a station's axes ran with their lines, and
   `lofts/spring.sv`'s, `ribbon.sv`'s and `l0/spring.sv`'s thread's drawn stations stood turned (the

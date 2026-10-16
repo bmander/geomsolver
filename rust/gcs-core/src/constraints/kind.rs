@@ -162,7 +162,7 @@ pub enum CKind {
     /// and read again at every station (`at: 360deg * turns * s`), and a free variable it names
     /// is its twin's last column.  In a traced body, `τ` an expression in the running formal: a
     /// contact seen from a turning member.  What a carried frame is made of (`n := base
-    /// carried(at: τ)`).
+    /// at τ`).
     CarriedPoint,
     /// **`CarriedPoint` read in the plane its point is drawn in** (#366): at a stated roll, `X`
     /// drawn in `n` is held where `n` sees the carried point — two rows, `(X − Pose(τ)·x)·n.u` and

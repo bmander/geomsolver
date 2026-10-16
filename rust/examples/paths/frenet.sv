@@ -69,9 +69,9 @@ component Minimal(g: path, up: axis, w: Length, h: Length, s: Scalar) {
   f := face(sec.a, sec.b, sec.c, sec.d, -> close)
 }
 
-helix := Helix(o, xl, yl, zl, r: r, pitch: pitch, turns: turns).p over u in (0, 1)
-facing := solid(Facing(helix, w: w, h: h).f over s in (0, 1))
-minimal := solid(Minimal(helix, std.z, w: w, h: h).f over s in (0, 1))
+helix := trace(Helix(o, xl, yl, zl, r: r, pitch: pitch, turns: turns).p over u in (0, 1))
+facing := sweep(Facing(helix, w: w, h: h).f over s in (0, 1))
+minimal := sweep(Minimal(helix, std.z, w: w, h: h).f over s in (0, 1))
 
 // Frenet's frame where the helix is a third of the way up: its centre of curvature stands
 // (r² + (pitch/2π)²)/r in from the curve, toward the axis

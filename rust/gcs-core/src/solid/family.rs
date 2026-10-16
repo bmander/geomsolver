@@ -1,5 +1,5 @@
 //! **A face family** (#243 L1): the solid a face of a station sweeps as the station's running
-//! number runs, `solid(I(…).f over s in (a, b))` — §6.5's curve one dimension up.
+//! number runs, `sweep(I(…).f over s in (a, b))` — §6.5's curve one dimension up.
 //!
 //! The station is drawn once, hidden, at the middle of the interval (`flatten::Held`), and solved
 //! there with the drawing.  Here it is solved again at every other station: the part of the
@@ -1404,7 +1404,7 @@ pub(crate) fn walls(sk: &Sketch, si: usize) -> Result<Walls, String> {
 /// **A family its statements say a motion carries** (#366 S3): one whose every row reading its
 /// running number is a point carried by one motion (`CKind::CarriedPoint`) to a roll stated
 /// affine in that number, the motion one turn or screw about one axis, or one slide — `std.Helix`'s,
-/// `std.OnHelix`'s and any frame `carried(under: m, at: a·s + b)`.  It is that motion's sweep of
+/// `std.OnHelix`'s and any frame `at(under: m) a·s + b`.  It is that motion's sweep of
 /// its section: the carry over the family's interval, its first rim the start, which
 /// `brep::family` builds the walls on — exact by the statement, the axis, the turn and the rise the motion's own — where
 /// it reads the stations for one otherwise.  Recognised by what is stated, never by a word's

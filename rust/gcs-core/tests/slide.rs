@@ -295,7 +295,7 @@ fn a_touch_is_refused_where_it_cannot_press() {
                component Wheel(c: point, u: Angle) {\n  p := point(x: c.x + 50 * cos(u), y: c.y + 50 * sin(u))\n}\n\
                in std.front {\n  o := point\n  fix((0, 0)) o\n  r0 := point\n  r1 := point\n  \
                fix((0, 10)) r0\n  fix((10, 10)) r1\n  rail := line(r0, r1)\n}\n\
-               k := Wheel(o).p over u in (0, 90)\nin std.front {\n  k touches rail\n}\n";
+               k := trace(Wheel(o).p over u in (0, 90))\nin std.front {\n  k touches rail\n}\n";
     let (_, d) = read(src);
     assert!(d.iter().any(|m| m.starts_with("E040") && m.contains("free curve")), "{d:?}");
     let tangent = touched().replace("rope touches rail", "rope tangent rail");

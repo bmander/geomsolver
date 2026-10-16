@@ -13,7 +13,7 @@
 //! (`std.sv`'s `reciprocal`, a line a force along which does no work on the motion, and `Screw`,
 //! its instantaneous screw axis and its pitch).
 //!
-//! **At a stated roll** (#366), `X coincident(under: m, at: τ) x`: the same rows, `τ` a dimension
+//! **At a stated roll** (#366), `X coincident x at(under: m) τ`: the same rows, `τ` a dimension
 //! the statement states (or a free variable's affine map), so a face family's station may be
 //! carried to a roll written over its running number and read again at every station — the
 //! station words of `std.sv` are motions read so.  Drawn in a plane, `X` is held where the plane
@@ -33,7 +33,7 @@ use crate::kernels::{Kernel, KernelFn, Num};
 pub enum Reading {
     /// `X coincident(under: m, t == τ) x`: three rows.
     Carried = 0,
-    /// `X coincident(under: m, at: τ) x`, `X` in space: three rows.
+    /// `X coincident x at(under: m) τ`, `X` in space: three rows.
     At = 1,
     /// The same, `X` drawn in a plane: two rows, along the plane's axes.
     AtIn = 2,

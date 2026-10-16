@@ -43,4 +43,4 @@ in std.top {
   radius(bend) k1
   radius(bend) k3
 }
-pipe := solid(Tube(route, std.z, r: r).f over s in (0, 5))
+pipe := sweep(Tube(route, std.z, r: r).f over s in (0, 5))

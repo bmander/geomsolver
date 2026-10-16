@@ -1,13 +1,13 @@
 //! **The method of lines** (#339 D4): a body traced over two formals whose relations read a rate
 //! along either — a first-order PDE — marched along the first and sampled along the second.
 //!
-//! `S := Front(c, a: 40mm, b: 25mm).p over (d in (0, 15), u in (-60deg, 60deg))` runs over `d`,
-//! **marched**, and `u`, **sampled**: the interval of `u` is cut into pieces (`Grid`), each with
-//! the six Gauss–Lobatto nodes of #243 L2's walls, a joint node shared by the two pieces it ends.
-//! The body's coordinates at the nodes are one state, integrated in `d` (`ode::march`), and a rate
-//! along `u` is the derivative of the quintic through a piece's nodes — at a joint, the mean of
-//! the two pieces'.  `initially { … }` is the **Cauchy data**: what holds at the home of `d` for
-//! every `u`.  Between nodes the surface is that quintic, so its derivatives in `u` are its own.
+//! `S := trace(Front(c, a: 40mm, b: 25mm).p over (d in (0, 15), u in (-60deg, 60deg)))` runs over
+//! `d`, **marched**, and `u`, **sampled**: the interval of `u` is cut into pieces (`Grid`), each
+//! with the six Gauss–Lobatto nodes of #243 L2's walls, a joint node shared by the two pieces it
+//! ends. The body's coordinates at the nodes are one state, integrated in `d` (`ode::march`), and a
+//! rate along `u` is the derivative of the quintic through a piece's nodes — at a joint, the mean
+//! of the two pieces'. `initially { … }` is the **Cauchy data**: what holds at the home of `d` for
+//! every `u`. Between nodes the surface is that quintic, so its derivatives in `u` are its own.
 //!
 //! **What is integrated and what is solved** (D0's finding 3).  A row that reads a rate along `u`
 //! is algebraic at each step — the rate is the nodes' — but differentiated along `d` it would read

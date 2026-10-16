@@ -73,5 +73,5 @@ outlet := face(b0, b1, b2, b3, -> close)
 inlet2 := face(c0, c1, c2, c3, -> close)
 // the same diamond walked from its second corner: a connector
 outlet_turned := face(d1, d2, d3, d0, -> close)
-body := solid(std.Ruled(inlet, outlet).f over s in (0, 1))
-turned := solid(std.Ruled(inlet2, outlet_turned).f over s in (0, 1))
+body := sweep(std.Ruled(inlet, outlet).f over s in (0, 1))
+turned := sweep(std.Ruled(inlet2, outlet_turned).f over s in (0, 1))

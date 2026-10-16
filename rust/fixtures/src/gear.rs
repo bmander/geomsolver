@@ -148,10 +148,10 @@ pub fn rolled(text: &str,member: &str,degrees: [f64;2]) -> String {
             .replacen(formal,"n: Int, from: Angle, to: Angle) {",1)
             .replacen("Generated(","RolledGenerated(",1).replacen("n: n)","n: n, from: from, to: to)",1);
         let generated = component("Generated");
-        assert!(generated.contains("through: body)"),"the cut rolls through its body");
+        assert!(generated.contains("sweep(tool, through: body,"),"the cut rolls through its body");
         let generated_copy = generated.replacen("component Generated(","component RolledGenerated(",1)
             .replacen(formal,"n: Int, from: Angle, to: Angle) {",1)
-            .replacen("through: body)","from: from, to: to)",1);
+            .replacen("sweep(tool, through: body,","sweep(tool over t in (from, to),",1);
         format!("\n{member_copy}{generated_copy}")
     };
     let call = format!("{member} := Member(");

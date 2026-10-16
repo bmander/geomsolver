@@ -25,7 +25,7 @@ ring := solid(face(meridian),about: ax)
 wall := surface(ring,meridian)
 roll := frame
 std.Turn(roll,about: spin_axis,ratio: 1)
-generated := envelope(wall,under: roll,from: -20deg,to: 20deg)
+generated := envelope(wall over t in (-20deg, 20deg), under: roll)
 component Sphere(o: point, size: Length) {
   private bottom := point
   private top := point
@@ -122,7 +122,7 @@ fn the_post_solve_vocabulary_is_not_solvent() {
     // `patch`, `seam`, `vertex`, `edge(…, along:)` and `face(…, on:)` were certification
     // objects read after the solve: they are Rust API now (#364), and no word of the language.
     let corners = "\
-first := envelope(wall,under: roll,from: -20deg,to: 20deg)
+first := envelope(wall over t in (-20deg, 20deg), under: roll)
 s := seam(generated,first)
 v := vertex(s,s)
 ";

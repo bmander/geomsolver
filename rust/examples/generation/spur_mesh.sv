@@ -51,8 +51,8 @@ rack := frame
 std.Slide(rack, along: pitch_line, advance: 2 * pi * r1)
 
 // the rack seen from the pinion cuts the tooth; the pinion seen from the gear cuts the mate
-tooth := envelope(flank, under: rack, seen_from: pinion, from: -40deg, to: 40deg)
-mate := envelope(tooth, under: pinion, seen_from: gear, from: -15deg, to: 15deg)
+tooth := envelope(flank over t in (-40deg, 40deg), under: rack, seen_from: pinion)
+mate := envelope(tooth over t in (-15deg, 15deg), under: pinion, seen_from: gear)
 
 // the mate's curvature where the two mesh, and where its centre must lie
 in std.front {

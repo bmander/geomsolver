@@ -101,10 +101,11 @@ fn a_continuous_sweep_is_meshed_from_its_field() {
 
 #[test]
 fn sweep_print_copy_paste_and_delete_preserve_transitive_dependencies() {
-    let e = read(&format!("swept := solid(tool,under: generating,from: -60deg,to: 60deg)\n{SOURCE}"));
+    let e = read(&format!("swept := sweep(tool over t in (-60deg, 60deg), under: generating)\n{SOURCE}"));
     let mut p = e.program.clone();
     let printed = syntax::render_flat(&mut p).unwrap();
-    assert!(printed.contains("from: -60deg, to: 60deg"),"{printed}");
+    assert!(printed.contains("swept := sweep(tool over t in (-60deg, 60deg), under: generating)"),
+        "{printed}");
     let restored = read(printed);
     let i = restored.map.ent_named("swept").unwrap().i();
     assert!(material(&restored.sketch,i,[3.,0.,0.])[1] < -0.99);
@@ -127,7 +128,7 @@ fn repeated_component_cuts_index_one_continuous_sweep() {
     let e = read(&format!("{SOURCE}
 component IndexedCuts(tool: solid,target: solid,indexing: frame,count: Int) {{
   repeat count as i {{
-    placed := solid(tool,under: indexing,at: i*360deg/count)
+    placed := tool at(under: indexing) i*360deg/count
     placed cut target
   }}
 }}
@@ -135,7 +136,7 @@ band := circle(center: center)
 radius(2) band
 stock := solid(face(band),about: ax)
 body := solid(stock)
-swept := solid(tool,under: generating,from: -10deg,to: 10deg)
+swept := sweep(tool over t in (-10deg, 10deg), under: generating)
 cuts := IndexedCuts(swept,body,generating,count: 3)
 "));
     let i = e.map.ent_named("body").unwrap().i();
@@ -156,7 +157,7 @@ cuts := IndexedCuts(swept,body,generating,count: 3)
 
 #[test]
 fn sweep_fingerprints_read_the_motion_family_and_source_geometry() {
-    let mut e = read(&format!("{SOURCE}swept := solid(tool,under: generating,from: 0deg,to: 360deg)\n"));
+    let mut e = read(&format!("{SOURCE}swept := sweep(tool over t in (0deg, 360deg), under: generating)\n"));
     let i = e.map.ent_named("swept").unwrap().i();
     let before = solid::reads(&e.sketch,i,solid::REPORT_UNIT);
     let m = joint(&e,"generating");
@@ -171,22 +172,22 @@ fn sweep_fingerprints_read_the_motion_family_and_source_geometry() {
 
 #[test]
 fn invalid_intervals_cycles_and_nested_sweeps_are_explicit() {
-    for bad in ["bad := solid(tool,under: generating,from: 1deg)",
-        "bad := solid(tool,under: generating,to: 1deg)",
-        "bad := solid(tool,under: generating,from: 0deg,to: 0deg)",
-        "bad := solid(tool,under: generating,from: 1deg,to: -1deg)",
-        "bad := solid(tool,under: generating,from: 1mm,to: 2mm)",
+    for bad in ["bad := sweep(tool over t in (1deg), under: generating)",
+        "bad := sweep(tool over t, under: generating)",
+        "bad := sweep(tool over t in (0deg, 0deg), under: generating)",
+        "bad := sweep(tool over t in (1deg, -1deg), under: generating)",
+        "bad := sweep(tool over t in (1mm, 2mm), under: generating)",
         "bad := solid(tool,under: generating,from: 0deg,to: 1deg,at: 0deg)",
         "bad := solid(tool,under: generating,from: 0deg,to: 1deg,depth: 1mm)",
-        "bad := solid(tool,under: ax,from: 0deg,to: 1deg)",
-        "bad := solid(bad,under: generating,from: 0deg,to: 1deg)"] {
+        "bad := sweep(tool over t in (0deg, 1deg), under: ax)",
+        "bad := sweep(bad over t in (0deg, 1deg), under: generating)"] {
         let (p,errors) = crate::common::parse(&format!("{SOURCE}{bad}\n"));
         let e = program::elaborate(&p);
         assert!(!errors.is_empty() || !e.ok() ||
             e.sketch.solids.iter().enumerate().any(|(i,_)| solid::validate(&e.sketch,i).is_err()),"{bad}");
     }
-    let e = read(&format!("{SOURCE}inner_sweep := solid(tool,under: generating,from: -10deg,to: 10deg)\n\
-        outer_sweep := solid(inner_sweep,under: generating,from: -10deg,to: 10deg)\n"));
+    let e = read(&format!("{SOURCE}inner_sweep := sweep(tool over t in (-10deg, 10deg), under: generating)\n\
+        outer_sweep := sweep(inner_sweep over t in (-10deg, 10deg), under: generating)\n"));
     let i = e.map.ent_named("outer_sweep").unwrap().i();
     assert!(MaterialField::read(&e.sketch,i,1e-10).unwrap_err().contains("nested continuous sweeps"));
 }

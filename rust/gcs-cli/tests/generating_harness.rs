@@ -249,8 +249,7 @@ fn run_all(name: &str,cases: Vec<Case>) -> Vec<String> {
 fn fixture(name: &str,tool: String,motion: String,roll_deg: f64,blank: String,expect: Expect,truth: Option<Truth>) -> Case {
     let dir = case_dir(name);
     std::fs::write(dir.join("case.sv"),format!("{tool}{motion}construction removal := \
-        solid(tool, under: spin, seen_from: observer, from: -{roll_deg}deg, \
-        to: {roll_deg}deg)\n{blank}")).unwrap();
+        sweep(tool over t in (-{roll_deg}deg, {roll_deg}deg), under: spin, seen_from: observer)\n{blank}")).unwrap();
     Case {name:name.into(),dir,entry:"case.sv".into(),solid:"part".into(),arguments:vec![],expect,truth,budget:Duration::from_secs(300)}
 }
 

@@ -17,22 +17,21 @@ pub(super) fn build_solid(
         diags.push(Diag::within(code, span, st.id, m));
     };
     let sweep = d.sweep.as_ref().unwrap_or(&Sweep::Body);
-    // a solid that rides, swept `from:`/`to:` or `through:` a body with no `under:`, is swept by
-    // the frames it rides on (#383) — a prism's words over a face, a motion's over a solid
+    // a solid that rides, swept `from:`/`to:` or `through:` a body, is a prism's words over a
+    // solid: what its frames sweep is a reading over an interval (#391 S2), and `solid(…)`'s
+    // spelling of one is retired
     let rides = |sk: &Sketch| ops.len() == 1 && ops[0].kind == EntKind::Solid
         && sk.carriers(ops[0]).is_ok_and(|c| !c.is_empty());
-    let read;
-    let sweep = match sweep {
-        Sweep::Prism { from, to, draft: None } if rides(sk) => {
-            read = Sweep::Swept { motion: None, from: from.clone(), to: to.clone() };
-            &read
+    match sweep {
+        Sweep::Prism { .. } | Sweep::Through { .. } if rides(sk) => {
+            let rolled = matches!(sweep, Sweep::Through { .. });
+            let m = if rolled { crate::syntax::ROLLED_RETIRED }
+                else { crate::syntax::SWEPT_RETIRED };
+            say(Code::E080, st.span, m.into());
+            return None;
         }
-        Sweep::Through { body } if rides(sk) => {
-            read = Sweep::Rolled { motion: None, body: body.clone() };
-            &read
-        }
-        s => s,
-    };
+        _ => {}
+    }
     // every number a solid carries is settled here and is never an unknown (`Extent`)
     let units = sk.units;
     let ext = |a: &crate::syntax::Arg, what: &str, dim: crate::units::Dim| extent(units, a, what, dim);
@@ -379,7 +378,9 @@ fn under_motion(
     let (Sweep::Placed { motion, .. } | Sweep::Swept { motion, .. } | Sweep::Rolled { motion, .. }) =
         sweep else { unreachable!() };
     if ops.len() != 1 || ops[0].kind != EntKind::Solid {
-        say(Code::E080,st.span,"a named motion needs one source solid".into());
+        say(Code::E080,st.span,"a frame's motion moves one solid; a face swept as a formal runs is \
+            a face family, of an instance written in place: `sweep(Component(…).face over s in \
+            (a, b))`".into());
         return None;
     }
     // the frame it is carried by — named, or the one it rides on — seen from the one named,
@@ -402,17 +403,19 @@ fn under_motion(
             };
             SolidDef::Placed {source:ops[0].idx,motion:m.idx,at}
         }
-        Sweep::Swept {from,to,..} => {
-            // an interval of the shared roll (#391 S1), as written; read in radians
+        Sweep::Swept {from,to,over,..} => {
+            // an interval of the shared roll (#391 S1), named as written (S2); read in radians
             let degrees = |a,what| extent(sk.units,a,what,crate::units::Dim::ANGLE)
                 .map(|e| e.value);
             let roll = match (degrees(from,"from"),degrees(to,"to")) {
-                (Ok(a),Ok(b)) => crate::model::Running::roll(a,b),
+                (Ok(a),Ok(b)) => crate::model::Running::new(over.name.text.clone(),
+                                                             crate::units::Dim::ANGLE,a,b),
                 (Err(message),_) | (_,Err(message)) => { say(Code::E103,st.span,message); return None; }
             };
             let [a,b] = roll.radians();
             if a >= b {
-                say(Code::E080,st.span,"a continuous motion sweep needs increasing angular bounds; use `at:` for one pose".into());
+                say(Code::E080,st.span,"a continuous motion sweep needs increasing angular \
+                    bounds; read one pose at an instant, `tool at θ`".into());
                 return None;
             }
             SolidDef::Swept {source:ops[0].idx,motion:m.idx,roll:crate::model::Roll::Stated(roll)}

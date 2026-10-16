@@ -215,7 +215,7 @@ component spiral(o: point, k: Length, u: Angle) {{
 in std.front {{
 o := point
 }}
-f := spiral(o, k: 10).p over u in (0, 720)
+f := trace(spiral(o, k: 10).p over u in (0, 720))
 in std.front {{
 t := point hint((12, 3))
 t coincident f hint(t: {u})
@@ -264,7 +264,7 @@ component quarter(c: circle, u: Angle) {
          o := point
          c := circle(center: o) hint(r: 20)
          }
-         f := quarter(c).p over u in (0, 90)
+         f := trace(quarter(c).p over u in (0, 90))
          in std.front {
          fix((0, 0)) o
          fix(r == 20) c
