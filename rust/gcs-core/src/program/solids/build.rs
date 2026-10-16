@@ -407,15 +407,14 @@ fn under_motion(
             let degrees = |a,what| extent(sk.units,a,what,crate::units::Dim::ANGLE)
                 .map(|e| e.value);
             let roll = match (degrees(from,"from"),degrees(to,"to")) {
-                (Ok(a),Ok(b)) if a.to_radians() < b.to_radians() => {
-                    crate::model::Running::roll(a,b)
-                }
-                (Ok(_),Ok(_)) => {
-                    say(Code::E080,st.span,"a continuous motion sweep needs increasing angular bounds; use `at:` for one pose".into());
-                    return None;
-                }
+                (Ok(a),Ok(b)) => crate::model::Running::roll(a,b),
                 (Err(message),_) | (_,Err(message)) => { say(Code::E103,st.span,message); return None; }
             };
+            let [a,b] = roll.radians();
+            if a >= b {
+                say(Code::E080,st.span,"a continuous motion sweep needs increasing angular bounds; use `at:` for one pose".into());
+                return None;
+            }
             SolidDef::Swept {source:ops[0].idx,motion:m.idx,roll:crate::model::Roll::Stated(roll)}
         }
         // the roll through a body's material (#271): found after the solve

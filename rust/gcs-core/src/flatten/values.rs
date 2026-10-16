@@ -558,7 +558,7 @@ impl<'a> Walk<'a> {
             return Err(e);
         }
         if let Some(name) = reads.iter().find(|n| self.runs(n, vals)) {
-            return Err((Code::E103, runs(name)));
+            return Err((Code::E103, runs_over(name)));
         }
         if let Some(name) = reads.iter().find(|n| self.undeclared(n, vals, scope)) {
             return Err((Code::E101, undefined(name)));
@@ -588,7 +588,7 @@ impl<'a> Walk<'a> {
 
     /// Whether a bare name is a parameter axis the document declares (#391 S1) and nothing in
     /// scope gives a number — read as a number, which it is not.
-    pub(super) fn runs(&self, name: &str, vals: &BTreeMap<String, Aff>) -> bool {
+    fn runs(&self, name: &str, vals: &BTreeMap<String, Aff>) -> bool {
         self.parameters.contains_key(name) && !vals.contains_key(name)
     }
 
@@ -866,11 +866,11 @@ impl<'a> Walk<'a> {
                 self.err(Code::E001, pd.name.span, format!("`{}` is declared twice", pd.name.text));
                 continue;
             }
-            let ty = pd.input.as_ref().and_then(|i| i.ty);
             // a parameter axis is no definition to work out: its interval is read once they are
             if pd.over().is_some() {
                 continue;
             }
+            let ty = pd.input.as_ref().and_then(|i| i.ty);
             if let Some(input) = pd.input.as_ref().filter(|_| !pd.bound()) {
                 self.unknown(pd, input, vals, scope);
                 continue;
@@ -1116,7 +1116,7 @@ impl<'a> Walk<'a> {
 }
 
 /// E103's words for a parameter axis read as a number (#391 S1).
-pub(super) fn runs(name: &str) -> String {
+pub(super) fn runs_over(name: &str) -> String {
     format!("`{name}` runs over an interval (`param {name}: … over (a, b)`), and is no number a \
              dimension can read")
 }

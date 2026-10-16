@@ -578,7 +578,8 @@ impl<'a> P<'a> {
         let seed = self.hint_value()?;
         if let Some(o) = &over {
             let said = if !text.is_empty() {
-                Some(format!("`{}` runs over an interval, so it has no value: `param {}: Angle \
+                let ty = ty.and_then(|t| t.word()).unwrap_or("Angle");
+                Some(format!("`{}` runs over an interval, so it has no value: `param {}: {ty} \
                               over (a, b)` and no `:=`", name.text, name.text))
             } else {
                 seed.as_ref().map(|_| format!("`{}` runs over an interval and the solve never \

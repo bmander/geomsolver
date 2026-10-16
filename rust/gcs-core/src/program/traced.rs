@@ -249,8 +249,7 @@ pub(super) fn build_traced(sk: &Sketch, res: &Resolver, d: &Decl, st: &Stmt, pro
     let num = |t: &str| crate::expr::literal(t);
     // each formal that runs, one parameter axis (#391 S1)
     let mut over: Vec<crate::model::Running> = Vec::with_capacity(running.len());
-    let mut domain = [[0.0, 0.0]; 2];
-    for (k, (f, (a, b))) in running.iter().enumerate() {
+    for (f, (a, b)) in &running {
         let (Some(lo), Some(hi)) = (num(a), num(b)) else {
             return Err((Code::E103, f.span, "a traced formal's interval is two numbers".into()));
         };
@@ -258,7 +257,6 @@ pub(super) fn build_traced(sk: &Sketch, res: &Resolver, d: &Decl, st: &Stmt, pro
             return Err((Code::E103, f.span,
                         "a traced formal runs over an increasing interval".into()));
         }
-        domain[k] = [lo, hi];
         let dim = comp.formals.iter().find(|x| x.name.text == f.text)
             .map_or(crate::units::Dim::SCALAR, |x| x.ty.dim());
         over.push(crate::model::Running::new(f.text.clone(), dim, lo, hi));
@@ -281,14 +279,14 @@ pub(super) fn build_traced(sk: &Sketch, res: &Resolver, d: &Decl, st: &Stmt, pro
     }
     let two = low.second.is_some();
     let rates = crate::traced::Rates { rows: std::mem::take(&mut low.rates),
-        init: std::mem::take(&mut low.init), domain: domain[0],
-        second: if two { domain[1] } else { [0.0; 2] }, per: if two { per } else { [1.0; 2] },
+        init: std::mem::take(&mut low.init), domain: over[0].span(),
+        second: if two { over[1].span() } else { [0.0; 2] }, per: if two { per } else { [1.0; 2] },
         pieces: if two { crate::lines::PIECES } else { 0 } };
     let flat = crate::traced::Body::new(running.len(), vars.len(), n_theta, low.n_q, t,
         low.w, low.seeds, low.rows, rates).map_err(|m| (Code::E103, comp.span, m))?;
     // where a march starts: what the call gave each formal, else its interval's start
     let home = std::array::from_fn(|k| match running.get(k) {
-        Some((f, _)) => info.values.get(&f.text).and_then(|a| a.number()).unwrap_or(domain[k][0]),
+        Some((f, _)) => info.values.get(&f.text).and_then(|a| a.number()).unwrap_or(over[k].from),
         None => 0.0,
     });
     Ok(Some(TracedE { body: flat, args, values: numbers, over, home,
