@@ -229,6 +229,72 @@ fn a_hold_made_in_the_app_is_written_with_its_numbers() {
     assert!(!edit.text.contains(") b"), "the hold let go is gone:\n{}", edit.text);
 }
 
+/// A number a component's `fix` holds is the component's to say, though the root declared what
+/// it is of: `std.Turn` holds the joint of a frame the root declared, and a reconcile after a
+/// solve (what the app does as a document opens) wrote it again at the root, by the members of
+/// a frame with a chart, `fix(origin.x == 1, origin.y == 0) f`, which no frame with only a joint
+/// has (`hypoid_drive`, whose page then meshed neither member).
+#[test]
+fn a_hold_a_component_says_is_not_written_again_at_the_root() {
+    let src = "\
+use std
+component Pin(p: point) {
+  fix((1, 2, 3)) p
+}
+a := point
+b := point hint((0, 0, 10))
+fix((0, 0, 0)) a
+fix((0, 0, 10)) b
+ax := line(a, b)
+f := frame
+std.Turn(f, about: ax, ratio: 1)
+q := point
+Pin(q)
+";
+    let (prog, errs) = parse(src);
+    assert!(errs.is_empty(), "{errs:?}");
+    let mut e = elaborate(&prog);
+    assert!(e.ok(), "{:?}", messages(&e));
+    assert!(gcs_core::solve::solve(&mut e.sketch, Default::default()).success);
+    let sk = std::mem::take(&mut e.sketch);
+    let edit = gcs_core::edit::reconcile(&mut e, &sk);
+    assert!(edit.refused.is_none(), "{:?}", edit.refused);
+    assert_eq!(edit.text.matches("fix(").count(), src.matches("fix(").count(), "{}", edit.text);
+    let again = read(&edit.text);
+    assert!(again.ok(), "{:?}\n{}", messages(&again), edit.text);
+}
+
+/// A frame's holds are named by what it has (`Sketch::frame_members`): one with a joint and no
+/// chart has `ratio` and `advance`, and a hold the app makes of its advance is written so.
+#[test]
+fn a_frame_with_a_joint_alone_is_held_by_its_joint() {
+    let src = "\
+use std
+a := point
+b := point hint((0, 0, 10))
+fix((0, 0, 0)) a
+fix((0, 0, 10)) b
+ax := line(a, b)
+f := frame
+ax coincident f.axis
+fix(ratio == 2) f
+";
+    let (prog, errs) = parse(src);
+    assert!(errs.is_empty(), "{errs:?}");
+    let mut e = elaborate(&prog);
+    assert!(e.ok(), "{:?}", messages(&e));
+    let f = e.map.ent_named("f").unwrap();
+    assert_eq!(e.sketch.frame_members(f.i()), ["ratio", "advance"]);
+    let advance = e.sketch.frame_params(f.i())[1] as usize;
+    e.sketch.params[advance].fixed = true;
+    let sk = std::mem::take(&mut e.sketch);
+    let edit = gcs_core::edit::reconcile(&mut e, &sk);
+    assert!(edit.text.contains("fix(ratio == 2, advance == 0) f"), "{}", edit.text);
+    assert!(!edit.text.contains("origin"), "{}", edit.text);
+    let again = read(&edit.text);
+    assert!(again.ok(), "{:?}\n{}", messages(&again), edit.text);
+}
+
 /// A number is held once in one `fix` (issue #112): assembled, the slot took the first argument
 /// naming it, and a second vector, or a member a vector already gave, went nowhere and said
 /// nothing.  Refused at the second, holding nothing.

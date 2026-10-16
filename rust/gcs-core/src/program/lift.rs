@@ -339,6 +339,13 @@ pub(crate) fn lift_plane(sk: &Sketch, e: EntRef) -> crate::syntax::Membership {
 /// writes them (`Sketch::seed_value`: a cone's half-angle in degrees).  None for a plane's
 /// origin, which the plane holds at its own `(0, 0)` and no `fix` says.
 pub(crate) fn holds(sk: &Sketch, e: EntRef) -> Vec<(&'static str, f64)> {
+    holds_except(sk, e, &Default::default())
+}
+
+/// `holds`, leaving out the numbers in `skip`: those a statement other than the one being
+/// written already holds (`SourceMap::held_within`).
+pub(crate) fn holds_except(sk: &Sketch, e: EntRef, skip: &BTreeSet<u32>)
+    -> Vec<(&'static str, f64)> {
     if e.kind == EntKind::Point && sk.plane_of_origin(e.i()).is_some() {
         return Vec::new();
     }
@@ -346,10 +353,12 @@ pub(crate) fn holds(sk: &Sketch, e: EntRef) -> Vec<(&'static str, f64)> {
     // the document's: a place is stated held only once something reads it
     let own = sk.own_params(e);
     let own = if e.kind == EntKind::Axis && !sk.axes[e.i()].placed { &own[..3] } else { &own[..] };
-    e.kind.members()
+    // a frame's are what it has, a chart's place and a joint's numbers, each where it has one
+    let frame = (e.kind == EntKind::Frame).then(|| sk.frame_members(e.i()));
+    frame.as_deref().unwrap_or(e.kind.members())
         .iter()
         .zip(own.iter().copied())
-        .filter(|&(_, p)| sk.params[p as usize].fixed)
+        .filter(|&(_, p)| sk.params[p as usize].fixed && !skip.contains(&p))
         .map(|(n, p)| (*n, sk.seed_value(e, p)))
         .collect()
 }

@@ -63,7 +63,9 @@ pub(super) fn is_fix(r: &Relation) -> bool {
 /// kinds always made, in their words.  What it holds or chooses goes into `gauges`, applied once
 /// every gauge is in (`Gauges::hold_all`, `choose_all`).
 pub(super) fn apply_gauge(cx: &mut super::Elab<'_>, r: &ResolvedRelation<'_>, st: &Stmt) {
-    let super::Elab { sk, res, gauges, diags, .. } = cx;
+    let super::Elab { doc, sk, res, map, gauges, diags, .. } = cx;
+    // a `fix` of the root's own is the one a reconcile reads back; any other is said where it is
+    let within = !st.path.is_empty() || !doc.root().body.iter().any(|s| s.id == st.id);
     let refs: Vec<&Ref> = r
         .args
         .iter()
@@ -156,6 +158,9 @@ pub(super) fn apply_gauge(cx: &mut super::Elab<'_>, r: &ResolvedRelation<'_>, st
                     sk.place_axis(e.i());
                 }
                 gauges.hold(own[at], v, field, crate::syntax::ref_text(rf), st);
+                if within {
+                    map.held_within.insert(own[at]);
+                }
             }
         }
         CKind::Ccw | CKind::Cw => {
