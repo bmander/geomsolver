@@ -58,9 +58,17 @@ The fits are numbers in `mount`, and printers differ, so tune them there:
 |---|---|---|
 | journal in its sleeve, a running fit | `clearance` | 0.2 mm over the radius |
 | shaft endwise, at each end of the sleeve | `play` | 0.15 mm |
-| each spline in its hub, a press fit to glue | `press` | the hub's bore 0.05 mm inside the spline all round |
+| each spline in its hub or crank, a light press fit to glue | `shrink`, `press` | the shaft's spline 0.1 mm inside nominal all round, each bore 0.05 mm inside it: 0.05 mm clear as drawn |
 | handle on its pin, loose, and at each end | `loose` | 0.3 mm |
 | grip pin in the crank's eye, a press fit to glue | `press` | 0.05 mm |
+
+The splines are drawn clear because the print closes the gap. An FDM printer dilates what it lays
+down: an outer wall prints proud and a hole prints small, by some 0.05 to 0.1 mm each on a Prusa.
+Common guides for Prusa MK4- and MK3-class printers put a press fit at 0 to 0.05 mm of drawn
+clearance, and a snug or locating fit at 0.15 to 0.2 mm. So the splines, drawn 0.05 mm clear,
+print as a light interference. If they go in loose, lower `shrink`; if they will not go in, raise
+it toward 0.15 mm. Better still, print one shaft and one crank first and tune `shrink` to your own
+printer and filament.
 
 ## The counterweights
 

@@ -42,18 +42,21 @@ pair := HypoidPair(std.top, std.y, std.z, pinion_teeth: pinion_teeth, gear_teeth
 // mid-plane at `crank`, the shaft ending at `end`, flush with the crank. From the hub on,
 // the shaft is splined: `keys` bars across it, each two keys `key_w` wide from the `root` to the
 // journal's radius, so the splined length passes through the sleeve; each hub's splined bore is
-// the spline less `press` all round, a press fit to be glued. The crank is a plate `plate`
-// thick: `boss_w` about the shaft, tapering to `eye_r` about the grip `throw` out, and below the
-// shaft a fan `fan` either side of straight down, its reach and its pad sized by `Crank` to
-// balance the rest.
+// that spline less `press` all round. The shaft's own spline is cut `shrink` inside it all round,
+// so as drawn it stands `shrink - press` (0.05 mm) clear of each bore: a printer dilates what it
+// lays down, an outer wall printing proud and a hole closing by some 0.05 to 0.1 mm each on a
+// Prusa, so the printed spline goes into its bore a light press fit, to be glued. The crank is a
+// plate `plate` thick: `boss_w` about the shaft, tapering to `eye_r` about the grip `throw` out,
+// and below the shaft a fan `fan` either side of straight down, its reach and its pad sized by
+// `Crank` to balance the rest.
 // The grip is a pin `pin_r` about, pressed and glued into the eye, with a handle over it, `loose`
-// all round and at each end, kept on by the pin's head. Printers differ: `press`, `clearance` and
-// `loose` are the numbers to tune.
+// all round and at each end, kept on by the pin's head. Printers differ: `shrink`, `press`,
+// `clearance` and `loose` are the numbers to tune.
 mount := {journal: 5mm, clearance: 0.2mm, play: 0.15mm, root: 4mm, keys: 3, key_w: 2.5mm,
-  press: 0.05mm, head_r: 8mm, head_t: 3mm, post: 10mm, sleeve_r: 9mm, front: -3mm, web: 6mm,
-  hub: 12mm, hub_r: 10mm, rim: 2.5mm, spokes: 3, spoke_w: 5mm, spoke_reach: 80mm, crank: 23mm,
-  end: 28mm, throw: 34mm, plate: 10mm, boss_w: 12mm, eye_r: 8mm, fan: 65deg, grip: 40mm,
-  pin_r: 4mm, handle_r: 7mm, loose: 0.3mm, head_w: 3mm}
+  press: 0.05mm, shrink: 0.1mm, head_r: 8mm, head_t: 3mm, post: 10mm, sleeve_r: 9mm,
+  front: -3mm, web: 6mm, hub: 12mm, hub_r: 10mm, rim: 2.5mm, spokes: 3, spoke_w: 5mm,
+  spoke_reach: 80mm, crank: 23mm, end: 28mm, throw: 34mm, plate: 10mm, boss_w: 12mm, eye_r: 8mm,
+  fan: 65deg, grip: 40mm, pin_r: 4mm, handle_r: 7mm, loose: 0.3mm, head_w: 3mm}
 
 // The pair's size, for the frame's floor: nothing of either member stands farther from the
 // gear's axis than its heel, half the face width (0.1 R) past the mean cone distance R, and a
@@ -138,8 +141,8 @@ component Mount(ax: line, foot: point, inner: point, seat: set, member: solid, t
                 inner distance(in: (-m.post - m.play - m.head_t, -m.post - m.play), along: ax) q }
   private construction journal_solid := solid(journal)
   private construction head_solid := solid(head)
-  private splines := Splined(ax, foot, toward, lo: m.front, hi: m.end, root: m.root,
-    tip: m.journal, width: m.key_w, keys: m.keys)
+  private splines := Splined(ax, foot, toward, lo: m.front, hi: m.end, root: m.root - m.shrink,
+    tip: m.journal - m.shrink, width: m.key_w - 2 * m.shrink, keys: m.keys)
   shaft := solid()
   journal_solid union shaft
   head_solid union shaft
