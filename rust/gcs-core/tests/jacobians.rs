@@ -767,11 +767,83 @@ Z coincident(under: twirl, seen_from: spin, t == -35) q2
     let e = gcs_core::program::elaborate(&prog);
     assert!(e.ok(), "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
     let mut sk = e.sketch;
-    let read = |c: &&Constraint| c.kind.motion_reading().is_some() || c.rate_source().is_some();
+    let read = |c: &&Constraint| c.kind.reads_motion() || c.rate_source().is_some();
     assert_eq!(sk.constraints.iter().filter(read).count(), 24);
     assert!(sk.constraints.iter().any(|c| c.kind == CKind::RateDistance && c.free.is_some()),
             "a pitch left to the solve is read as a free column");
     let mut rng = Rng::new(326);
+    for round in 0..4 {
+        if round > 0 {
+            for p in sk.params.iter_mut().filter(|p| !p.fixed) {
+                p.value += rng.uniform(-0.05, 0.05) * (1.0 + p.value.abs().min(10.0));
+            }
+        }
+        for c in sk.constraints.iter().filter(read) {
+            let err = check_constraint(&sk, c, 1e-6, 1e-7)
+                .unwrap_or_else(|e| panic!("round {round}: {e}"));
+            assert!(err.is_finite());
+        }
+    }
+}
+
+/// A point carried to a stated roll (#366, `envelope::screw`'s `At` and `AtIn`): in space under a
+/// screw seen from a turn and under a screw about a line of its own, at a roll stated and at one a
+/// free variable names (the twin's last column); drawn in a view under a turn in it, its two rows
+/// along the view's axes — every axis free, so the motion's columns are differentiated too; and
+/// under a screw about a plane's normal, a joint's own axis its point and direction (#366).
+/// Checked at the seeds and at points knocked off them.
+#[test]
+fn carried_at_rows_agree_with_finite_differences() {
+    const SRC: &str = "\
+unit mm
+use std
+o := point hint((0, 0, 0))
+z := point hint((1, 0.5, 10))
+ax := line(o, z)
+a := point hint((0, 30, 0))
+b := point hint((10, 30, 2))
+gear_ax := line(a, b)
+c := point hint((0.5, -1, 0))
+d := point hint((0, -1.5, 10))
+lift_ax := line(c, d)
+spin := frame
+std.Turn(spin, about: ax, ratio: 1)
+gear_turn := frame
+std.Turn(gear_turn, about: gear_ax, ratio: -0.5, advance: 2mm)
+lift := frame
+std.Turn(lift, about: lift_ax, ratio: 1.3, advance: 5mm)
+param theta: Angle hint(25deg)
+x := point hint((3, -2, 5))
+X := point hint((1, 1, 1))
+X coincident(under: gear_turn, seen_from: spin, at: 35deg) x
+Y := point hint((2, 1, 0))
+Y coincident(under: lift, at: -110deg) x
+W := point hint((0, 2, 1))
+W coincident(under: gear_turn, seen_from: spin, at: theta) x
+in std.top {
+  o2 := point hint((1, 2))
+  q2 := point hint((7, 3))
+  T := point hint((4, 4))
+}
+twirl := frame
+std.Spin(twirl, about: o2, on: std.top, ratio: 0.7)
+T coincident(under: twirl, at: 60deg) q2
+up := frame
+std.Turn(up, about: std.top.normal, ratio: 0.9, advance: 3mm)
+V := point hint((1, 2, 3))
+V coincident(under: up, seen_from: spin, at: 50deg) x
+";
+    let (prog, errs) = crate::common::parse(SRC);
+    assert!(errs.is_empty(), "{errs:?}");
+    let e = gcs_core::program::elaborate(&prog);
+    assert!(e.ok(), "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
+    let mut sk = e.sketch;
+    let read = |c: &&Constraint| c.kind.reads_motion() && c.stated_roll();
+    assert_eq!(sk.constraints.iter().filter(read).count(), 5);
+    assert!(sk.constraints.iter().any(|c| c.kind == CKind::CarriedPointIn));
+    assert!(sk.constraints.iter().any(|c| c.kind == CKind::CarriedPoint && c.free.is_some()),
+            "a roll left to the solve is read as a free column");
+    let mut rng = Rng::new(366);
     for round in 0..4 {
         if round > 0 {
             for p in sk.params.iter_mut().filter(|p| !p.fixed) {

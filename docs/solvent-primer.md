@@ -1377,13 +1377,15 @@ k := Par(o).p over u in (-2mm, 2mm)
   the section stands* and *what it is* as constraints in the component: a station word of `std` for
   the plane square to the guide at `s` — `std.OnLine(g, up: up, s: s)` on a line, `std.OnArc` an
   arc, `std.OnSpline` a spline, `std.On` any of a line, an arc, a spline or a traced curve —
-  then the section drawn `in st.n`, its sizes and turns reading `s`. **A screw** (0.110):
-  `std.Helix(std.top, pitch: 4mm, turns: 3, s: s)` turns `std.top` about its normal and lifts it,
-  `360deg · turns · s` and `pitch · turns · s`; draw a thread's section in its `axial` plane
-  (through the axis, `u` out from it, `v` up it) and an auger's flight in its `n` (the base
-  carried); `std.OnHelix(std.top, r: 10mm, pitch: 5mm, turns: 4, s: s)`'s `n` stands square to the
-  helix of radius `r`, for a coil's wire. A negative pitch winds left-handed
-  (`rust/gcs-core/tests/helix.rs`). **A law is any expression in `s`** (0.103): draw the section once and carry it
+  then the section drawn `in st.n`, its sizes and turns reading `s`. **A screw** (0.110, 0.138):
+  `std.Helix(std.top, pitch: 4mm, turns: 3, s: s)` is `std.top` carried by the screw about its
+  normal to `360deg · turns · s` — turned that much and lifted `pitch · turns · s` (a frame
+  carried, §6.14); draw a thread's section in its `axial` plane (through the axis, `u` out from it,
+  `v` up it) and an auger's flight in its `n` (the base carried); `std.OnHelix(std.top, r: 10mm,
+  pitch: 5mm, turns: 4, s: s)`'s `n` stands square to the helix of radius `r`, for a coil's wire. A
+  negative pitch winds left-handed (`rust/gcs-core/tests/helix.rs`). A family a motion carries its
+  station by this way is exported as that motion's sweep, exactly (`lofts/spring.sv` and
+  `swept_spring.sv` are one tube). **A law is any expression in `s`** (0.103): draw the section once and carry it
   whole (0.118), `tw := std.Twisted(st.n, twist: 90deg, reach: 10mm, s: s)` the point `tw.t`
   turned `twist · s`, then `sec := prof mapped(o -> st.n.origin, x -> tw.t) in st.n`, `o` and `x`
   the section's frame `reach` apart (a `reach` that runs with `s` scales it); for a section written
@@ -1822,9 +1824,18 @@ helicoid: `spiral_bevel/phillips.sv`'s rack, `std.HalfSpace(P, L, d: 0mm)` under
 be stated: each is that contact's frame at `M` — its normal, a plane or a line square to it, a
 section's second order — read by the one kernel a rate of a contact is (0.130). A set's envelope is only held to: it has no chart after the solve.
 
-**A point a frame carries**: `X coincident(under: m, t == τ) x` is `x` as the moving frame sees
-it, carried by `m`'s pose at the roll `τ` (degrees; leave it unpinned and the solve finds it) — a
-rolling circle's point seen by the fixed one is an epicycloid.
+**A point a frame carries**: `X coincident(under: m, t == τ) x` is `x` as the moving frame sees it,
+carried by `m`'s pose at the roll `τ` (degrees; leave it unpinned and the solve finds it) — a
+rolling circle's point seen by the fixed one is an epicycloid. **At a stated roll** (0.138), `X
+coincident(under: m, at: τ) x`, the roll is the relation's number, an angle — the same reading as `t
+== τ`, never both: written over a face family's running number (`at: 360deg * turns * s`) it is read
+again at every station, and over a `param` it is that unknown. Drawn in a plane, `X` is held where
+that plane sees the carried point (two rows). Leave `under:` out where `x` rides on a frame (`in f {
+… }`), as for any reading. **A frame carried** (0.138): `n := base carried(at: τ)` — `under: m`
+where `base` rides on nothing — is the plane `base` there, origin, axes and normal; every frame that
+moves is a frame read at a roll, and the station words `std.Helix`, `std.OnHelix` and `std.Twisted`
+are written so. A frame turns about another's axis as about a line: `std.Turn(screw, about:
+base.normal, ratio: 1, advance: pitch)`.
 
 **A motion's twist is read by rates** (0.130). The roll `t` is the slot of the `coincident` holding
 `X`, and `rate(X over t)` is how fast `X` runs a radian of it — the twist there. A rate of a contact

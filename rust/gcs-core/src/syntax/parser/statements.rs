@@ -796,6 +796,12 @@ impl<'a> P<'a> {
             Some(_) if self.past_ref(self.i).is_some_and(|j| self.word_at(j) == Some("mapped")) => {
                 StmtKind::Block(self.mapped_face(name)?)
             }
+            // `n := base carried(under: m, at: τ)` — a frame a motion carries (#366)
+            Some(_)
+                if self.past_ref(self.i).is_some_and(|j| self.word_at(j) == Some("carried")) =>
+            {
+                StmtKind::Decl(self.carried_frame(name)?)
+            }
             // `duct := solid(Station(g).f over s in (0, 1))` — a face of a component as one of
             // its formals runs, one dimension up from a curve (#243 L1)
             Some("solid") if call && self.family_ahead() => {
@@ -864,6 +870,37 @@ impl<'a> P<'a> {
             index_reads: Vec::new(),
             span: Span::new(lo, self.prev_hi()),
             image: Some(crate::syntax::FaceImage { name, word, args, plane }),
+        })
+    }
+
+    /// `n := base carried(at: τ)` (#366): the plane `base` carried to the roll `τ` by the frames
+    /// it rides on, or by the frame `under: m` names where it rides on none — its arguments read
+    /// as a carried point's are (`under:` and `seen_from:` references, the roll after `at:` the
+    /// relation's number), so its carrier is found as theirs is (`relations::riding_point`).  A
+    /// plane declaration the flattener writes out as the statements it stands for
+    /// (`flatten::carried`).
+    fn carried_frame(&mut self, name: Name) -> Option<Decl> {
+        let source = self.refr()?;
+        let word = self.ident()?;
+        let args = self.op_args("coincident", crate::constraints::Fixity::Infix)?;
+        let under = args.iter().filter(|a| matches!(a, OpArg::Named(n, crate::syntax::Arg::Ref(_))
+            if n.text == "under")).count();
+        let at = args.iter().filter(|a| matches!(a, OpArg::Dim(..))).count();
+        let seen = args.iter().filter(|a| matches!(a, OpArg::Named(n, crate::syntax::Arg::Ref(_))
+            if n.text == "seen_from")).count();
+        if under > 1 || at != 1 || seen > 1 || args.len() != 1 + under + seen {
+            self.fail("a frame is carried to a roll by the frames it rides on: `n := base \
+                       carried(at: τ)`, by a frame it rides on none of `under: m`, seen from \
+                       another `seen_from: g`");
+            return None;
+        }
+        self.end_of_stmt();
+        Some(Decl {
+            kind: EntKind::Frame,
+            seed: vec![0.0; 3],
+            seed_text: vec![None; 3],
+            carried: Some(crate::syntax::CarriedFrame { source, word, args }),
+            ..Decl::point(DeclName::Written(name), [0.0; 2], None)
         })
     }
 
@@ -1204,6 +1241,7 @@ impl<'a> P<'a> {
             normal: None,
             sense: None,
             bare: false,
+            carried: None,
         })
     }
 

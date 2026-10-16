@@ -246,6 +246,13 @@ impl<'a> P<'a> {
                     out.push(OpArg::Bound { cmp: Cmp::In, span, hi: Some(hi), grow: None });
                     out.push(OpArg::Dim(a, a_span));
                 }
+                // `coincident(under: m, at: τ)`: the roll a motion carries the point to, stated —
+                // the relation's number, written after its label (#366)
+                (Some(Tok::Ident(n)), Some(Tok::P(':'))) if word == "coincident" && n == "at" => {
+                    self.i += 2;
+                    let (text, span) = self.raw_number()?;
+                    out.push(OpArg::Dim(text, span));
+                }
                 (Some(Tok::Ident(n)), Some(Tok::P(':'))) => {
                     let name = Name { text: n, span: self.here() };
                     self.i += 2;

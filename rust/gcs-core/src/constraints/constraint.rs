@@ -418,11 +418,13 @@ impl Constraint {
             let (n_par, n_const) = parts.map_or((0, 0), |p| (p.width(), p.n_const()));
             return Key::Regular { n_par, n_const };
         }
-        // a motion's twist read, at its block's widths (#326)
-        if let Some(r) = self.kind.motion_reading() {
+        // a motion's twist read, at its block's widths (#326) — a stated roll's free variable
+        // its last column (#366)
+        if let Some(r) = self.motion_reading() {
             let parts = self.motion_parts(sk);
+            let free = usize::from(self.free.is_some());
             let (n_par, n_const) = parts.map_or((0, 0), |p| {
-                (r.lead() + p.width(), crate::envelope::screw::n_const(&p.steps))
+                (r.lead() + p.width() + free, crate::envelope::screw::n_const(r, &p.steps))
             });
             return Key::Motion { reading: r as u8, n_par, n_const };
         }
@@ -704,6 +706,34 @@ impl Constraint {
         table.iter().find(|(n, _)| n == w).map(|(_, s)| *s)
     }
 
+    /// Whether a carried point's roll is **stated** (#366, `at: τ`): its slot holds the text the
+    /// statement wrote, worked out as a dimension is, not an unknown of the relation's own (`t ==
+    /// τ`, a number there the seed of one).
+    pub fn stated_roll(&self) -> bool {
+        self.kind.roll_slot().is_some_and(|i| matches!(self.args.get(i), Some(Arg::Expr(_))))
+    }
+
+    /// What argument `i` is read as: its slot's kind, but an angle for a carried point's roll
+    /// stated (#366), which stands in the slot of the unknown it is not.
+    pub fn arg_kind(&self, i: usize) -> SpecKind {
+        match self.kind.roll_slot() == Some(i) && self.stated_roll() {
+            true => SpecKind::Angle,
+            false => self.kind.spec()[i].1,
+        }
+    }
+
+    /// What a relation reading a motion's pose reads (#326, #366): a point carried to a roll it
+    /// owns, or to one it states, in space or where the plane its point is drawn in sees it.
+    pub fn motion_reading(&self) -> Option<crate::envelope::screw::Reading> {
+        use crate::envelope::screw::Reading;
+        Some(match self.kind {
+            CKind::CarriedPoint if self.stated_roll() => Reading::At,
+            CKind::CarriedPoint => Reading::Carried,
+            CKind::CarriedPointIn => Reading::AtIn,
+            _ => return None,
+        })
+    }
+
     pub fn n_residuals(&self) -> usize {
         // a rate's: one row where it is held square, or of a curve in its view; two along a line
         // in space (#365)
@@ -727,8 +757,8 @@ impl Constraint {
                 None if self.kind.traced_contact().is_some() => {
                     self.kind.traced_contact().map_or(0, |c| c.rows())
                 }
-                None if self.kind.motion_reading().is_some() => {
-                    self.kind.motion_reading().map_or(0, |r| r.rows())
+                None if self.kind.reads_motion() => {
+                    self.motion_reading().map_or(0, |r| r.rows())
                 }
                 // a flank's least area factor (#345)
                 None if self.kind == CKind::RegularWithin => 1,

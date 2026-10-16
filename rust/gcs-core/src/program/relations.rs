@@ -497,7 +497,9 @@ fn carried_motion(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) -> Option<Option<R
 fn riding_point(cx: &mut Elab<'_>, r: &Relation, w: &crate::syntax::Written, seen: Option<usize>,
                 seen_ref: Option<&Ref>, st: &Stmt) -> Option<Option<Relation>> {
     use crate::syntax::OpArg;
-    let rolls = w.args.iter().any(|a| matches!(a, OpArg::Slot { key, .. } if key.text == "t"));
+    // a roll the relation owns, `t == τ`, or one it states, `at: τ` (#366)
+    let rolls = w.args.iter().any(|a| matches!(a, OpArg::Slot { key, .. } if key.text == "t")
+        || matches!(a, OpArg::Dim(..)));
     if w.word.text != "coincident" || w.ops.len() != 2 || !rolls {
         return None;
     }
@@ -515,6 +517,15 @@ fn riding_point(cx: &mut Elab<'_>, r: &Relation, w: &crate::syntax::Written, see
             return Some(None);
         }
     };
+    // a roll read off nothing that moves: said so, rather than as a slot `coincident` lacks —
+    // a carried frame written without `under:` over a plane riding on nothing among them (#366)
+    if seen_ref.is_none() && source.is_empty() && observer.is_empty() {
+        let name = super::motions::name_of(&cx.res, x);
+        cx.diags.push(Diag::within(Code::E040, w.span, st.id, format!(
+            "a roll is read off a frame's motion, and {name} rides on none: name the frame it is \
+             carried by, `under: f`, or draw it in that frame's block, `in f {{ … }}`")));
+        return Some(None);
+    }
     if seen_ref.is_none() && source == observer {
         return None;
     }
@@ -787,6 +798,8 @@ fn arguments(
             (Some(_), 1, Arg::Ref(r))
                 if res.entity(sk, r)
                     .is_some_and(|e| e.kind == EntKind::Frame) => &SpecKind::Plane,
+            // a carried point's roll, stated, is an angle (#366)
+            (_, _, Arg::Dim { .. }) if ckind.roll_slot() == Some(i) => &SpecKind::Angle,
             _ => kind,
         };
         match to_arg(sk, res, *kind, a) {
@@ -809,6 +822,14 @@ fn arguments(
                         return None;
                     }
                 }
+                // a carried point's roll, stated, keeps its text, a number written too: what
+                // says it is stated and not the seed of an unknown (`Constraint::stated_roll`)
+                let v = match (v, a) {
+                    (CArg::Num(n), Arg::Dim { text, .. }) if ckind.roll_slot() == Some(i) => {
+                        CArg::Expr(expr::Expr::new(text.trim().to_string(), n))
+                    }
+                    (v, _) => v,
+                };
                 args.push(v)
             }
             // a point a tangent is at that names nothing may be an end's word misspelt (#251):

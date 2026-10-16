@@ -34,7 +34,8 @@ the solve `program::motions` reads each joint's kind off its holding statements 
 pushes the `MotionDef` the readers know: a line with a ratio stated 0 `Translation`, a line
 `Rotation`, a
 view's point with the axis square to it `Turn`, anything else `Joint { axis, ratio, advance }`,
-which `Family::read` reads (ratio 0 a translation) and the planar program and held steps refuse.
+which `Family::read` reads (ratio 0 a translation), the held steps read about the joint's own axis
+as the solve places it (#366, [frames.md](frames.md)) and the planar program refuses.
 A joint's number no `fix` states is the solve's (stage 5); a measured one is E107.  The joint's
 `motion` is that node; a frame without a joint is the world.  `motions::reading_of` is every
 reading's one entry (`under:` on a solid, envelopes, meshings, held and planar and extruded
@@ -63,6 +64,20 @@ count the minted nodes (an inverse is as deep as what it undoes). `tests/frames.
 (a planet against `R(τ)·(c + R(−3τ)(x − c))`, three turns against the hand product, a turn on a
 slide against the cycloid, coaxial screws read as one screw, 64 levels), with a `CarriedPoint`
 under a chain FD-checked over both axes in `tests/jacobians.rs`.
+
+**A face family its statements say a frame carries is that motion's sweep** (#366, [0.138];
+what a frame read at a roll is, and the station words written so, are [frames.md](frames.md)'s):
+`solid::family::stated_carry` reads the rows of the station that read its running number, and
+where every one is a `CarriedPoint` at a stated roll under one motion — one turn or screw about one
+axis (`Family::turning`) or one slide (`Family::sliding`) — at a roll affine in it, the recipe's
+`family` node carries that motion over the interval (`carry`, `Carry::Screw`/`Line`, written in
+millimetres) and `brep::family` builds the walls on the first rim so carried, every wall still held
+to the general sheets; read off the stations (`brep::family::carried`) only where no statement
+says.  Recognised by what is stated, never by a word's name.  So `lofts/spring.sv`'s wire and
+`swept_spring.sv`'s ball are one tube on one screw (`Blend`), the canal's half balls the only
+difference, and both export alike.  A part walked for a station follows a motion to what it is
+written over (`io::Part::around_all`: a motion owns no number, so is never a wall).  The gate:
+`tests/carried_family.rs` (the springs, the screw's walls, a station read otherwise).
 
 **A frame's numbers are stated or solved** (#383 stages 3 and 5): a ratio or advance measured
 off the solved drawing (`ratio: -length(a) / length(b)`) is E107, as every measurement in a

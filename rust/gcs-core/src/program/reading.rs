@@ -180,6 +180,14 @@ pub(super) fn in_space(
     if kind.map_sides().is_some() {
         return mapped_planes(sk, kind, args).map(|()| None);
     }
+    // a point carried to a stated roll is read in space, or drawn in a plane where that plane
+    // sees it: as many rows as it has numbers (#366)
+    if kind == CKind::CarriedPoint {
+        let stated = matches!(args.get(3), Some(Arg::Expr(_)));
+        let drawn = matches!(args.first(), Some(Arg::Ent(p)) if sk.plane_of(p.i()).is_some());
+        return Ok((stated && drawn)
+            .then(|| (CKind::CarriedPointIn, args.to_vec(), vec![false; args.len()])));
+    }
     let Some(pts) = view_points(sk, kind, args) else { return Ok(None) };
     // where each point is read: its plane, or `None` for a point in space (a document gives
     // every point one or the other before a relation is read: `entities::places`)

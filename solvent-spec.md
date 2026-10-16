@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.137 — October 2026**
+**Specification, Draft 0.138 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -1023,24 +1023,35 @@ block := solid(face(mouth, side_r, lid, side_l), from: face, to: back)
   station's (§6.8): `Twisted(n, twist:, reach:, s:)` is the one point that turn needs, `t`, `reach`
   along `n`'s `u` from its origin turned `twist · s` (`sec := prof mapped(o -> n.origin, x -> tw.t)
   in n`); through 0.117 it was a plane of axes `axes`, which a section was drawn on corner by
-  corner. A number given a formal — a component's or a relation word's — MAY be any expression in
+  corner; **[0.138]** it is the turn of `n` about its origin read at that roll (§6.14), `t
+  coincident(under: turn, at: twist * s) x`. A number given a formal — a component's or a relation
+  word's — MAY be any expression in
   the running number, worked out at each station; it binds the formal, and is no unknown of the
   drawing. A `when` is made once, for the whole run (§12.9), so a condition reading the running
   number is **E040**, saying so; `min`, `max` and `abs` write a law in pieces.
-- **[0.110] A screw is constraints.** `Helix(base, pitch:, turns:, s:)` is the frame of the plane
-  `base` turned `360deg · turns · s` about `base`'s normal through its origin — the screw's axis —
-  from `base.u` toward `base.v`, and risen `pitch · turns · s` along that normal: `n`, the plane
-  `base` so carried, and `axial`, the plane through the axis whose `u` runs out along `n.u` and
-  whose `v` runs up the axis. A section drawn in `axial` sweeps a thread, one drawn in `n` a
-  twisted prism. `OnHelix(base, r:, pitch:, turns:, s:)` is the plane `n` square to the helix of
+- **[0.110] A screw is a motion read at a roll [0.138].** `Helix(base, pitch:, turns:, s:)` is the
+  frame of the plane `base` turned `360deg · turns · s` about `base`'s normal through its origin —
+  the screw's axis — from `base.u` toward `base.v`, and risen `pitch · turns · s` along that normal:
+  `n`, the plane `base` so carried, and `axial`, the plane through the axis whose `u` runs out along
+  `n.u` and whose `v` runs up the axis. A section drawn in `axial` sweeps a thread, one drawn in `n`
+  a twisted prism. `OnHelix(base, r:, pitch:, turns:, s:)` is the plane `n` square to the helix of
   radius `r` that screw draws, its `u` out from the axis and its `v` up the axis leaned by the
-  helix's lead angle, so a section drawn in it sweeps a coil. Every direction of either is an
-  ordinate in `base`'s frame: neither is held by a seed, and a negative pitch winds left-handed.
-  `Screwed` (through 0.109 the plane through an axis given apart from `base`) is retired;
-  `Helix(…).axial` is that plane. *Non-normative:* where the whole section moves rigidly — one
-  screw, a turn alone, or a step along one line — an implementation lays each wall on the surface
-  its first edge sweeps under that motion and each rail on its corner's path, once they agree with
-  the general walls.
+  helix's lead angle, so a section drawn in it sweeps a coil. Neither is held by a seed, and a
+  negative pitch winds left-handed. **[0.138]** Both are frames read at a roll (§6.14): `n` is
+  `base` carried by a frame's screw (`std.Turn` about `base.normal`, `advance: pitch`) to `360deg
+  · turns · s`, `axial` that frame turned a quarter about its `u`, and `OnHelix`'s `n` the frame
+  square to the helix where it starts — `base` turned about `base.u` and slid out `r` — carried by
+  the same screw; through 0.137 each was points placed by `cos` and `sin` ordinates in
+  `base`'s frame. `Screwed` (through 0.109 the plane through an axis given apart from `base`) is
+  retired; `Helix(…).axial` is that plane. **[0.138] A face family carried by a motion is that
+  motion's sweep**: where every relation of the station that reads its running number is a point the
+  one motion carries (§6.14) to a roll affine in it, and the motion is a turn or a screw about one
+  axis or a slide along one line, the section at the interval's start carried by that motion over it
+  is the solid — so a wire drawn square to a helix and a ball swept along the helix are one tube.
+  The recognition is by what is stated, never by a word's name. *Non-normative:* an implementation
+  lays each wall on the surface its first edge sweeps under that motion and each rail on its
+  corner's path, once they agree with the general walls; where no statement says, it MAY find such a
+  motion from the stations.
 - **[0.111] A loft through several sections is drawn on rails.** A section's corners correspond
   by rails, one a corner: its places in order, one a section. The station's corners stand where
   their rails meet its plane (`p := point in st.n`, `p coincident rail`; a rail drawn in a plane,
@@ -1350,6 +1361,26 @@ observer)`, with `m: motion` formals and its numbers allowed to measure the solv
 **[0.27]**. Each is refused naming what it became: `motion(…)` the frame and `std.Turn`, `std.Spin`
 or `std.Slide`; `relative_to:` the reading's `seen_from:`; `phase:` a roll offset (a turn with
 phase φ and ratio r read at roll τ is the same turn read at τ + φ/r).
+
+**[0.138] A frame that moves is a frame read at a roll.** `X coincident(at: τ) x` is the point
+`x` carried by the pose at the roll `τ` of the frames it rides on (seen from those `X` rides on),
+or of the frame `under: m` names where `x` rides on none — `τ` an Angle the statement states:
+worked out where it is written (over a face family's running number it is read again at every
+station, §6.9), a free name in it an unknown the solve finds, and drawn nowhere. It is the same
+reading as `X coincident(t == τ) x` (§9.3), whose roll is the relation's own unknown, pinned or
+solved, which a rate runs over; stating both is an error. `seen_from: g` reads it as `g` sees it,
+as on any reading. `X` in space is held by three equations; drawn in a plane, at a stated roll, by
+two, where that plane sees the carried point. A roll read where nothing rides and no frame is named
+is an error. A plane is carried whole: `n := base carried(at: τ)` (with `under: m` and `seen_from:
+g` as on a point) is the plane `base` where the pose carries it — its origin, its `u` and `v` and
+its normal the pose's images of `base`'s — and anything drawn in `n` is drawn in the carried frame.
+A frame may turn about another frame's axis, `std.Turn(f, about: P.normal)` or `P.u`, as about a
+line. The standard library's station words are frames read so: `std.Helix` is `base` carried by a
+screw about `base.normal` (`advance: pitch`) to `360deg · turns · s`, `std.OnHelix` the frame
+square to the helix where it starts carried by the same screw, `std.Twisted`'s point turned in its
+plane about its origin (`std.Spin`, §6.9). Every frame that moves as a number runs is said this
+way: no frame of the language is written as `cos` and `sin` ordinates of the number it moves
+by.
 
 ### 6.15 Generated envelopes
 
@@ -2141,6 +2172,7 @@ Residual conventions: points are ℝ²; `×` is the scalar 2D cross product; `�
 | ~~`reciprocal(L: Line, m: Motion)`~~ **[0.105]**, the standard library's word **[0.130]** | (B − A)·v(A), v(x) = v₀ + ω × x the twist of `m` a radian | 1 | a force along `L` does no work on `m` (Ball); `m` a turn, a screw or a slide about a fixed line, or one relative to another, whose twist is the source's less the observer's; for a mesh the meshing law of a line of action; written `L reciprocal(seen_from: pinion) gear` **[0.135]** |
 | ~~`screw(t: Axis, m: Motion)`~~ **[0.105]**, `std.Screw(t, m)` **[0.130]** | two components of d̂ across ω̂, scaled by L; two of A − c across ω̂; h − ω·v₀/‖ω‖² | 5 | `t` on `m`'s instantaneous screw axis, through c = ω × v₀/‖ω‖² along ω; h, the pitch, the relation's own unknown, a length a radian, pinned as `pitch == h`; L the motion's first axis as drawn; written `isa screw mesh`; a twist turning nothing has no axis |
 | `coincident(X, x, under: m, t)` **[0.106]** | X − Pose_m(t)·x | 3 | `X` is `x` as the moving frame sees it: carried by `m`'s pose at the roll `t`, in degrees, the relation's own unknown (pinned `t == τ`, or solved); X and x lifted; `m` any motion the solve reads, a turn about a point of a view read as the turn about the line through it square to the view; written `X coincident(under: m, t == τ) x` |
+| `coincident(X, x, at: τ)` **[0.138]** | X − Pose_m(τ)·x; drawn in a plane, its components along the plane's `u` and `v` | 3; 2 | the same at a roll the statement states, an Angle dimension — read again where a running number is, an unknown where a free name is — owning no unknown; written `X coincident(under: m, at: τ) x` (§6.14) |
 | `parallel(rate(p over t), l)`, `perpendicular(…)` **[0.130]** | r = ∂X/∂t of the contact holding `p`, every other column held: of a curve in its view (r × (B − A))/‖B − A‖ and r·(B − A)/‖B − A‖; in space two components of r across l̂, and r·l̂ | 1 in a view; 2 parallel in space, 1 square | one kernel for every contact (§6.5); the contact's slot shared, its other unknowns columns; `g tangent(at: p) l` the same statement |
 | `distance(rate(p over t), d, along: l)` **[0.130]** | r·l̂ − d | 1 | `d` stated or an unknown |
 | `perpendicular(S, l, at: p)`, `tangent(S, P, at: p)`, `tangent(S, l, at: p)`, `curvature(S, k, at: p)`, `curvature(k, c, at: p)` **[0.130]** | the contact's frame: l̂ against t̂ and n̂ × t̂; P's normal likewise; l̂·n̂; the circle by Meusnier; c − (X + ‖X′‖²·(b × X′)/‖b‖²), b = X′ × X″ | 2, 2, 1, 3, 3 | the same kernel as a rate's; a traced surface's, an envelope's, a meshing's normal; a traced curve's centre |

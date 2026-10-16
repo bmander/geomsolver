@@ -570,7 +570,7 @@ pub fn validate(
             .map_err(|why| format!("the solve cannot read the flank's regularity: {why}"))?;
     }
     // a point is carried by a motion the solve can read (#326)
-    if kind.motion_reading().is_some() {
+    if kind.reads_motion() {
         let c = Constraint::new(kind, args.to_vec());
         let m = c.motion_of().ok_or("a point is carried by a motion")?;
         crate::envelope::held::Moving::of_any(sk, m.i())

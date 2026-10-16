@@ -636,6 +636,18 @@ fn place_planes(
     cx: &mut Elab<'_>, deferred: &[Deferred], held: &BTreeSet<u32>, mut settled: Range<usize>,
 ) {
     let mut placed = views::place(&mut cx.sk);
+    // each point a motion carries to a stated roll where the motion carries it, from the planes
+    // placed, and the planes drawn over such points placed again — a carried frame's over its
+    // carried frame's in turn (#366)
+    for _ in 0..4 {
+        // a joint held to a frame's axis turns about it as that frame now stands
+        cx.sk.seed_joints();
+        if !cx.sk.seed_carried() {
+            break;
+        }
+        views::relift(&mut cx.sk);
+        placed = views::place(&mut cx.sk);
+    }
     if crosses_views(&cx.sk, &cx.res, deferred) {
         for _ in 0..4 {
             let before: Vec<f64> = cx.sk.params.iter().map(|p| p.value).collect();

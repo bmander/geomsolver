@@ -169,8 +169,11 @@ coil := solid(Coil(std.top, r: 10mm, wire: 1.5mm, pitch: -5mm, turns: 4).f over 
     };
     let (right, left) = (corners("right", 1.0), corners("left", -1.0));
     assert_eq!(right.len(), left.len());
-    for (a, b) in right.iter().zip(&left) {
-        assert!((0..3).all(|k| (a[k] - b[k]).abs() <= 1e-9), "{a:?} against {b:?}");
+    // each corner of one is a corner of the other: matched by place, since a coordinate of
+    // nothing rounds either way and would reorder a sorted list
+    for a in &right {
+        let near = |b: &&V| (0..3).all(|k| (a[k] - b[k]).abs() <= 1e-9);
+        assert!(left.iter().any(|b| near(&b)), "{a:?} in {left:?}");
     }
     // the end section a quarter turn on: toward `base.v`, above the base for the right hand
     assert!(right.iter().any(|p| p[1] > 8.0 && p[2] > 12.0), "{right:?}");

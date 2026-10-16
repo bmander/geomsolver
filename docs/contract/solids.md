@@ -347,7 +347,9 @@ placement carries inside the blank; CLI test readers zero the offset.
   dimension of the section reading the running number; no word takes a `law:` (no function values).
   `std.sv`'s `Twisted` (the point `reach` along the station's `u` turned `twist · s` — [0.118],
   the second point a section drawn once is carried to, `f := prof mapped(o -> n.origin, x ->
-  tw.t) in n`; through 0.117 a plane of axes a section was drawn on corner by corner), `scaled` (a point at `(du, dv)` scaled `1 + (scale − 1) · s` about the
+  tw.t) in n`; through 0.117 a plane of axes a section was drawn on corner by corner; since
+  [0.138] a turn of `n` about its origin read at that roll, `t coincident(under: turn, at: twist
+  * s) x`), `scaled` (a point at `(du, dv)` scaled `1 + (scale − 1) · s` about the
   plane's origin) and `scaled_radius` take a total and run it linearly; any other law is the word
   given another fraction (`s: 3 * s^2 - 2 * s^3`) or the writer's own expression.  **A number given
   over `s` that is not affine in it is kept as text** (`Walk::held_text`), whichever formal it is
@@ -366,20 +368,26 @@ placement carries inside the blank; CLI test readers zero the offset.
   sine swell (closed form) and an eased scale (a quadrature exact for its degree), each given its
   word as a fraction, a law in pieces (`max`), the `when` refusal and two faces of one station, each
   off the exact B-rep to 1e-9.
-- **A screw is constraints** (§6.9 [0.110], #243 L6).  `std.Helix(base, pitch:, turns:, s:)` is
-  `base`'s frame turned `360deg · turns · s` about `base.normal` and risen `pitch · turns · s` along
-  it: `n` the base so carried (a section in it sweeps a twisted prism), `axial` the plane through
-  the axis, `u` out along `n.u`, `v` up the axis (a thread's).  `std.OnHelix(base, r:, …)`'s `n`
-  stands square to the helix of radius `r`, `v` up the axis leaned by the lead angle (a coil's
-  wire).  Both are points placed by ordinates in `base`'s frame (`coords`, and `distance(…, along:
-  base.normal)` for the rise) and planes over the lines between them, so **no direction is held
-  by a seed** — a `parallel` would leave its sign to wherever the solve started — and a negative
-  pitch winds left-handed, the right-handed solid mirrored in the base plane.  The axis is
-  `base`'s normal through its origin, never an axis given apart (`Screwed`'s, through 0.109,
-  could disagree with `base`).  No motion is involved (#64's motions stay for swept solids).
-  `tests/helix.rs` is the gate: square and V threads at A · 2πr̄ · turns (Pappus, r̄ the
-  centroid's), flights square to the axis at A × the rise (Cavalieri), a spring at A × the helix's
-  length, left-handed mirrors, each off the exact B-rep to 1e-9, and the fast path (`brep.md`).
+- **A screw is a motion read at a roll** (§6.9 [0.110], [0.138]; #243 L6, #366). `std.Helix(base,
+  pitch:, turns:, s:)` is `base` carried by the screw about its normal through its origin (a frame's
+  `std.Turn` about `base.normal`, `advance: pitch`) to `360deg · turns · s`: `n` the base so
+  carried (a section in it sweeps a twisted prism), `axial` `n` turned a quarter about its `u` — `u`
+  out along `n.u`, `v` up the axis (a thread's).  `std.OnHelix(base, r:, …)`'s `n` stands square to
+  the helix of radius `r`, `v` up the axis leaned by the lead angle (a coil's wire): `base` tilted
+  about `base.u` by `90deg + atan2(pitch, 2πr)` and slid `r` out (one screw about that axis,
+  read at its turn), then carried by the helix's screw.  Every frame is a carried one (`n := base
+  carried(under: m, at: τ)`, [frames.md](frames.md)) about its frames' own axes, so **no direction
+  is held by a seed** and no plane stands against its lines — which the ordinates of 0.110–0.137 did
+  not ensure: where the solve started decided whether a station's axes ran with their lines, and
+  `lofts/spring.sv`'s, `ribbon.sv`'s and `l0/spring.sv`'s thread's drawn stations stood turned (the
+  solids alike to 1e-13, the sections' frames not).  A negative pitch winds left-handed, the
+  right-handed solid mirrored in the base plane.  The axis is `base`'s normal through its origin.  A
+  family such a station sweeps is the screw's sweep (`stated_carry`, `generating.md`): its walls the
+  first rim carried by the motion's own screw. `tests/helix.rs` is the gate: square and V threads at
+  A · 2πr̄ · turns (Pappus, r̄ the centroid's), flights square to the axis at A × the rise
+  (Cavalieri), a spring at A × the helix's length, left-handed mirrors (corner for corner, matched
+  by place), each off the exact B-rep to 1e-9, and the fast path (`brep.md`);
+  `tests/carried_frame.rs` holds each station to its closed form.
 - **Several sections are drawn on rails** (§6.9 [0.111], #243 L7).  A corner's rail is its
   places in order, one a section; the station's corner stands where its rail meets the station's
   plane.  **Chains run in step**: `flatten::chain_arguments` finds every `path` formal given a

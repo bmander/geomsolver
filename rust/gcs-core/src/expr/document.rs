@@ -148,9 +148,9 @@ pub fn evaluate(sk: &mut Sketch) -> Vec<ExprItem> {
     // expression is exactly the one whose binding has to go.
     for (ci, c) in sk.constraints.iter_mut().enumerate() {
         c.free = None;
-        for (ai, (_, kind)) in c.kind.spec().iter().enumerate() {
+        for ai in 0..c.kind.spec().len() {
             if let Arg::Expr(e) = &c.args[ai] {
-                nodes.push(Node { ci, ai, kind: *kind, parsed: parse_in(&e.text, units) });
+                nodes.push(Node { ci, ai, kind: c.arg_kind(ai), parsed: parse_in(&e.text, units) });
             }
         }
     }

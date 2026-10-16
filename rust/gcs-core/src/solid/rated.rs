@@ -79,8 +79,9 @@ impl Levers {
         let vars: Vec<u32> = names.iter().map(|n| sk.held[n].param).collect();
         let mut list: Vec<Lever> = Vec::new();
         for (ci, c) in sk.constraints.iter().enumerate().filter(|(_, c)| c.states_rows()) {
-            for (ai, &(_, kind)) in c.kind.spec().iter().enumerate() {
+            for ai in 0..c.kind.spec().len() {
                 let Arg::Expr(e) = &c.args[ai] else { continue };
+                let kind = c.arg_kind(ai);
                 let parsed = crate::expr::parse_in(&e.text, sk.units)?;
                 if !parsed.body.deps().contains(held) {
                     continue;

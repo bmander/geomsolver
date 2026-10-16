@@ -241,7 +241,11 @@ the solve starts where the motion carries its point nearest the point held (`inf
 sampled over a turn), not at 0: from 0 a rolling circle's point seen 50 out starts halfway between
 the epicycloid's two places there, and a whole-system solve holding it to the path too settles
 between them as readily as on the one drawn (`carried::a_rolling_circles_point_seen_by_…`, the
-hint swept).
+hint swept). At a stated roll (#366, `CarriedPoint` with its roll slot text, `Reading::At`, or
+`CarriedPointIn`, `Reading::AtIn`) the roll is a constant `c`, or `m·a + c` over a free variable
+`a`, the block's last column.  A joint about an axis no drawn line holds (`MotionDef::Joint`) is
+a step about the joint's own axis, its point and its direction (`Step::Rotation { dir: true }`,
+codes 5 and 6; `Translation` alike).
 
 **A motion's twist, read by rates (#326, #365, [0.130]):** a carried point's rate,
 `rate(X over t)` of `X coincident(under: m, t == τ) x`, is `∂(Pose(τ)·x)/∂τ` a radian

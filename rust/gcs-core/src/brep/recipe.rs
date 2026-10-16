@@ -72,7 +72,7 @@ fn family_node(f: &Family) -> Built {
     let loops = f.loops.iter().map(|l| l.iter().map(|w| Ok(Wall {
         sheet:std::sync::Arc::new(Sheet::new(w.run.clone(),stations.clone(),w.nodes.clone(),w.closed)?),name:w.name.clone()}))
         .collect::<Result<Vec<_>,String>>()).collect::<Result<Vec<_>,String>>()?;
-    Ok(super::family::family(&loops,f.vanish)?)
+    Ok(super::family::family(&loops,f.vanish,f.carry)?)
 }
 
 /// A `through` node: a prism spanning its sources' material along the profile's normal (their

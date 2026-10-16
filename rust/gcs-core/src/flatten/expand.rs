@@ -46,6 +46,16 @@ impl<'a> Walk<'a> {
             }
             return;
         }
+        // a frame a motion carries is the statements it stands for (#366)
+        let written;
+        let carried = |st: &Stmt| matches!(&st.kind, StmtKind::Decl(d) if d.carried.is_some());
+        let body = match body.iter().any(carried) {
+            true => {
+                written = super::carried::expand(body);
+                &written[..]
+            }
+            false => body,
+        };
         let prefix = scope.prefix().to_string();
         for st in body {
             let StmtKind::Group(g) = &st.kind else { continue };

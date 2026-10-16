@@ -1859,6 +1859,8 @@ impl Part {
             // a plane's origin is held at its own (0, 0) and stands wherever the plane does: what
             // is tied to it moves with a plane that moves
             EntKind::Point if let Some(pl) = sk.plane_of_origin(e.i()) => sk.plane_fixed(pl),
+            // a motion owns no number, and moves with what it is written over: its axes (#366)
+            EntKind::Motion => false,
             _ => sk.entity_params(e).iter().all(|&p| sk.params[p as usize].fixed),
         };
         let mut keep: BTreeSet<EntRef> = BTreeSet::new();

@@ -569,7 +569,7 @@ fn creases(loops: &[Vec<Wall>]) -> Vec<usize> {
 /// **The solid a face family's walls bound** (see the module): `loops` the section's loops, the
 /// outer first, each the walls of its edges in walk order; an edge's run at an end no longer than
 /// `vanish` (mm) is vanished there.
-pub fn family(loops: &[Vec<Wall>],vanish: f64) -> Result<Brep,String> {
+pub fn family(loops: &[Vec<Wall>],vanish: f64,stated: Option<Carry>) -> Result<Brep,String> {
     let first = &loops.first().and_then(|l| l.first()).ok_or("a face family has no walls")?.sheet;
     let [a,b] = first.span();
     if loops.iter().flatten().any(|w| w.sheet.span() != [a,b]) { return Err("a face family's walls run over different intervals".into()) }
@@ -712,10 +712,12 @@ pub fn family(loops: &[Vec<Wall>],vanish: f64) -> Result<Brep,String> {
         out.faces.push(Face {loops:cap_loops,..face});
     }
     // carried rigidly, the walls on what the first rim sweeps and the rails on what each corner
-    // does — the whole solid exact, its every wall held to the general one — else wall by wall
+    // does — the whole solid exact, its every wall held to the general one — else wall by wall.
+    // The motion the statements carry the station by, where they say one (#366); else read off
+    // the stations
     let size = loops.iter().flatten().map(|w| distance(w.sheet.d1([0.,a]).0,w.sheet.d1([1.,b]).0)).fold(0.,f64::max);
     let tol = AGREE*size.max(f64::MIN_POSITIVE);
-    let rigid = if bands.len() == 1 { carried(loops,tol) } else { None };
+    let rigid = if bands.len() == 1 { stated.or_else(|| carried(loops,tol)) } else { None };
     if let Some(carry) = rigid {
         let mut exact = out.clone();
         for (k,sheet) in all_rails {
