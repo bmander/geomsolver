@@ -3,6 +3,7 @@
 //! envelope under the housing's motion, the rotor its blank less the housing turned about it over a
 //! whole period — admitted to the planar generating class, which reads the bore's inner envelope,
 //! and built exactly — each held to its closed form.
+use crate::bore::seen;
 use crate::planar_envelope::{off_flank,rotor_area};
 use gcs_core::envelope::planar::InnerEnvelope;
 use gcs_core::{brep,solid::admission};
@@ -81,7 +82,8 @@ fn each_planar_row_names_what_it_refuses() {
     let r = refused(&edit("solid(face(rim), from: -1mm,","solid(face(rim), from: 10mm,"),&[]);
     assert_eq!(r.condition,admission::Condition::Prisms,"{r}");
     // P3: two turns of the shaft are no period
-    let r = refused(&edit("under: housing_turn, from: 0deg, to: 1080deg)\nrotor","under: housing_turn, from: 0deg, to: 720deg)\nrotor"),&[]);
+    let r = refused(&edit("under: counter, seen_from: spin, from: 0deg, to: 1080deg)\nrotor",
+                          "under: counter, seen_from: spin, from: 0deg, to: 720deg)\nrotor"),&[]);
     assert_eq!(r.condition,admission::Condition::Period,"{r}");
     // P5: a case too small, its wall reaching the blank as it turns
     let r = refused(&edit("radius(R + 4 * e) rim","radius(R + e) rim"),&[]);
@@ -101,23 +103,23 @@ fn below_the_limiting_k_no_rotor_is_read() {
         other => panic!("{}",other.map(|_| "admitted".to_string()).unwrap_or_else(|e| format!("{e:?}"))),
     }
     assert!(brep::export::exact(&e.sketch,rotor,None,None,&say()).is_err());
-    let (bore,turn) = (e.map.ent_named("bore").unwrap().i(),e.map.ent_named("housing_turn").unwrap().i());
+    let (bore,turn) = (e.map.ent_named("bore").unwrap().i(),seen(&e,"counter","spin"));
     let refused = InnerEnvelope::read(&e.sketch,bore,turn,[0.,3.*std::f64::consts::TAU]).map(|_| ()).unwrap_err();
     assert!(refused.to_string().contains("no simple loop"),"{refused}");
 }
 
 /// The chamber displacement read off the solved parts: chamber 0 at roll θ is bounded by the bore
 /// from apex 0, at the bore's own parameter θ, to apex 1 at θ + 360° (the apex is where the bore
-/// is the path of), and by the flank between those apexes carried by `rotor_turn`. Its area by
-/// the shoelace over both, its largest less its least over the cycle times the width, is
-/// 3√3·e·R·W.
+/// is the path of), and by the flank between those apexes carried by the rotor, `spin` seen from
+/// `counter`. Its area by the shoelace over both, its largest less its least over the cycle times
+/// the width, is 3√3·e·R·W.
 #[test]
 fn the_chamber_displacement_is_three_root_three_e_r_w() {
     let e = standard();
     let sk = &e.sketch;
     let index = |n: &str| e.map.ent_named(n).unwrap().i();
     let bore = index("bore");
-    let family = gcs_core::motion::Family::read(sk,index("rotor_turn")).unwrap();
+    let family = gcs_core::motion::Family::read(sk,seen(&e,"spin","counter")).unwrap();
     let view = sk.curve_view(bore);
     // the bore at a twentieth of a degree of the roll over a period and the turn past it that a
     // chamber reaches, and anywhere between (its parameter is the roll in degrees)
@@ -126,7 +128,8 @@ fn the_chamber_displacement_is_three_root_three_e_r_w() {
     let grid: Vec<[f64;2]> = (0..=28800).map(|k| at(k as f64*step)).collect();
     // the flank from apex 0 (on the line of centres) to apex 1, in the rotor's own frame: a piece
     // of the bore's inner envelope under the housing's motion
-    let env = InnerEnvelope::read(sk,bore,index("housing_turn"),[0.,3.*std::f64::consts::TAU]).unwrap();
+    let env = InnerEnvelope::read(sk,bore,seen(&e,"counter","spin"),[0.,3.*std::f64::consts::TAU])
+        .unwrap();
     let apex0 = [E+R,0.];
     let piece = env.pieces.iter().position(|p| (p[0].at[0]-apex0[0]).hypot(p[0].at[1]-apex0[1]) < 1e-6).unwrap();
     let flank: Vec<[f64;3]> = (0..=4000).map(|k| env.point(piece,k as f64/4000.).unwrap())
@@ -163,8 +166,9 @@ fn the_chamber_displacement_is_three_root_three_e_r_w() {
 }
 
 /// The rotor to make, three arcs a clearance inside the flanks, clears the housing by half the
-/// clearance at every pose of a whole turn: the claim over `rotor_turn` reads the arc rotor placed
-/// under it at each sampled roll, solving nothing again, and reports the worst pose.
+/// clearance at every pose of a whole turn: the claim over the rotor's motion (`over spin
+/// seen_from counter`) reads the arc rotor placed under it at each sampled roll, solving nothing
+/// again, and reports the worst pose.
 #[test]
 fn the_arc_rotor_clears_the_housing_over_a_whole_turn() {
     let e = standard();

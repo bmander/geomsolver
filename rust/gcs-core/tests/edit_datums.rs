@@ -77,7 +77,7 @@ fn on_axis(e: &Elaborated, ax: &str, x: [f64; 3]) -> bool {
 
 #[test]
 fn a_plane_dropped_on_nothing_is_free_and_set_off_the_one_being_drawn_on() {
-    let (text, e) = drop(EntKind::Plane, &[], Some("std.front"));
+    let (text, e) = drop(EntKind::Frame, &[], Some("std.front"));
     assert!(text.contains("v0 := plane(u: hint(dir: (1, 0, 0)), v: hint(dir: (0, 0, 1))) hint(origin: (0, "),
         "{text}");
     let (n, o) = plane(&e, "v0");
@@ -86,26 +86,26 @@ fn a_plane_dropped_on_nothing_is_free_and_set_off_the_one_being_drawn_on() {
 
 #[test]
 fn a_plane_through_a_point_and_square_to_a_ray() {
-    let (text, e) = drop(EntKind::Plane, &["c"], Some("std.top"));
+    let (text, e) = drop(EntKind::Frame, &["c"], Some("std.top"));
     assert!(text.contains("v0 coincident c\n"), "{text}");
     assert!(on_plane(&e, "v0", point(&e, "c")));
     // square to an axis, said outright
-    let (text, e) = drop(EntKind::Plane, &["s", "t"], None);
+    let (text, e) = drop(EntKind::Frame, &["s", "t"], None);
     assert!(text.contains("v0 coincident s\nt perpendicular v0\n"), "{text}");
     assert!(on_plane(&e, "v0", point(&e, "s")) && along(plane(&e, "v0").0, [0.0, 1.0, 0.0]));
     // square to a drawn line, by standing square to both the plane's own axes
-    let (text, e) = drop(EntKind::Plane, &["s", "ab"], None);
+    let (text, e) = drop(EntKind::Frame, &["s", "ab"], None);
     assert!(text.contains("v0 coincident s\nab perpendicular v0.u\nab perpendicular v0.v\n"), "{text}");
     assert!(on_plane(&e, "v0", point(&e, "s")) && along(plane(&e, "v0").0, [1.0, 0.0, 0.0]));
 }
 
 #[test]
 fn a_plane_holds_two_rays_or_three_points() {
-    let (text, e) = drop(EntKind::Plane, &["ab", "t"], None);
+    let (text, e) = drop(EntKind::Frame, &["ab", "t"], None);
     assert!(text.contains("ab coincident v0\nt coincident v0\n"), "{text}");
     assert!(along(plane(&e, "v0").0, [0.0, 0.0, 1.0]));
     assert!(on_plane(&e, "v0", point(&e, "b")));
-    let (text, e) = drop(EntKind::Plane, &["a", "b", "s"], None);
+    let (text, e) = drop(EntKind::Frame, &["a", "b", "s"], None);
     assert!(text.contains("v0 coincident a\nv0 coincident b\nv0 coincident s\n"), "{text}");
     for p in ["a", "b", "s"] {
         assert!(on_plane(&e, "v0", point(&e, p)), "{p}");
@@ -116,7 +116,7 @@ fn a_plane_holds_two_rays_or_three_points() {
 /// there to size.
 #[test]
 fn a_plane_from_a_plane_is_parallel_and_set_off_by_a_stated_distance() {
-    let (text, e) = drop(EntKind::Plane, &["std.top"], None);
+    let (text, e) = drop(EntKind::Frame, &["std.top"], None);
     assert!(text.contains("v0 parallel std.top\n"), "{text}");
     let d: f64 = text.split("std.top distance(").nth(1).and_then(|t| t.split(") v0\n").next())
         .and_then(|t| t.parse().ok()).unwrap_or_else(|| panic!("no distance stated\n{text}"));
@@ -220,11 +220,11 @@ fn an_axis_from_planes_is_a_normal_or_where_two_meet() {
 #[test]
 fn a_selection_no_rule_takes_or_that_says_nothing_is_refused_with_the_cause() {
     assert!(refused(EntKind::Axis, &["a", "a"]).contains("one place"));
-    assert!(refused(EntKind::Plane, &["a", "m", "b"]).contains("on a line"));
+    assert!(refused(EntKind::Frame, &["a", "m", "b"]).contains("on a line"));
     assert!(refused(EntKind::Axis, &["std.front", "std.front"]).contains("parallel"));
-    assert!(refused(EntKind::Plane, &["k"]).contains("does not place"));
+    assert!(refused(EntKind::Frame, &["k"]).contains("does not place"));
     assert!(refused(EntKind::Axis, &["a", "b", "c"]).contains("an axis is dropped"));
-    assert!(refused(EntKind::Plane, &["nothing"]).contains("nothing in this drawing"));
+    assert!(refused(EntKind::Frame, &["nothing"]).contains("nothing in this drawing"));
 }
 
 /// The user's sketch (#170): a plane through a free point, square to the line from the front's

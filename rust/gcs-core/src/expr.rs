@@ -119,9 +119,9 @@ impl Measure {
 /// words (`MEASURE_MARK`) the elaborator gives E107 by, whichever path carried the message.
 pub fn measure_refusal(call: &str) -> String {
     format!(
-        "`{call}` {MEASURE_MARK}, and only a motion's `ratio:`, `phase:` and `advance:` are read \
-         after the solve; a param, a seed, a constraint's number and a solid's extent are \
-         needed before it"
+        "`{call}` {MEASURE_MARK}, and a number is needed before the solve: a param, a seed, a \
+         constraint's number, a solid's extent and a frame's ratio or advance are stated from \
+         the document's own numbers"
     )
 }
 

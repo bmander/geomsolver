@@ -116,7 +116,8 @@ fix((1, 0)) a
 fix((1, 1)) b
 ax := line(a,b)
 }
-turn := motion(about: ax)
+turn := frame
+std.Turn(turn, about: ax, ratio: 1)
 ");
     assert!(errors.is_empty());
     let mut model = program::elaborate(&source); assert!(model.ok());

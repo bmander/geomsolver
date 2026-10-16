@@ -451,7 +451,7 @@ impl<'v> Lowering<'v> {
                     EntRef::circle(sk.circle(c, 1.0, name))
                 }
                 // a plane: its attitude is no column of the curve, so the front plane's will do
-                EntKind::Plane => EntRef::plane(sk.fixed_plane(crate::plane::Basis::page(), name)),
+                EntKind::Frame => EntRef::frame(sk.fixed_plane(crate::plane::Basis::page(), name)),
                 other => {
                     return Err((
                         span,
@@ -986,7 +986,7 @@ fn trace_ordinate(
         (span, format!("`{w}` relates its operands in space, and a traced component places its \
             points in one plane"))
     };
-    let plane = ent(1).filter(|e| e.kind == EntKind::Plane);
+    let plane = ent(1).filter(|e| e.kind == EntKind::Frame);
     Ok(match (plane, word, ent(2)) {
         (Some(_), Some(Toward::PlaneU | Toward::PlaneV), _) => {
             let p = ent(0).filter(|e| e.kind == EntKind::Point).ok_or_else(in_space)?;
@@ -1102,7 +1102,7 @@ pub(super) fn build_curve(
 ) -> Option<EntRef> {
     // a body traced in space is no curve of a plane (#326): built as what it is — over two
     // formals or a motion, compiled once the motions are built (`traced::traced_bodies`)
-    if super::traced::in_space_traced(res, d, insts) {
+    if super::traced::in_space_traced(sk, res, d, insts) {
         sk.traced.push(super::traced::placeholder(d));
         return Some(EntRef::new(EntKind::Traced, sk.traced.len() - 1));
     }

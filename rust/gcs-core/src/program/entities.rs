@@ -142,9 +142,24 @@ pub(super) fn build(
         }
         return build_curve(sk, res, d, st, diags, prog, insts);
     }
-    // and a plane's are two axes, and its origin is its own
-    if d.kind == EntKind::Plane {
-        return build_plane(sk, res, d, st, diags, anon, deferred);
+    // and a plane's are two axes, and its origin is its own; a frame declared bare owns
+    // nothing until its axes are read (#383)
+    if d.kind == EntKind::Frame {
+        let e = if d.bare && !res.charts.contains(&d.name.key().text) {
+            sk.frames.push(crate::model::FrameE::bare());
+            let e = EntRef::frame(sk.frames.len() - 1);
+            set_class(sk, e, d.class.clone());
+            e
+        } else {
+            build_plane(sk, res, d, st, diags, anon, deferred)?
+        };
+        // its joint, where the document reads it (#383): `f.axis`, minted with it
+        if res.joints.contains(&d.name.key().text) {
+            let j = sk.mint_joint(e.i(), &shown(sk, d));
+            anon.push((format!("{}.axis", d.name.key().text),
+                EntRef::new(EntKind::Axis, j.axis as usize)));
+        }
+        return Some(e);
     }
     // a seed named by a place (`hint(at: k, bearing: b)`) is a point's; every other kind has
     // a scalar of its own the clause seeds by name
@@ -454,7 +469,7 @@ fn make(
             ri
         }
         EntKind::Curve => unreachable!("a curve is built before this walk"),
-        EntKind::Plane => unreachable!("built by `build_plane`"),
+        EntKind::Frame => unreachable!("built by `build_plane`"),
     };
     Some(idx)
 }
@@ -521,6 +536,10 @@ fn build_plane(
     // the origin was minted with the points (`Resolver::origins`)
     let Some(&origin) = res.origins.get(&d.name.key().text) else { return None };
     let pi = sk.plane_over(axes[0], axes[1], o, origin, &show);
+    // a frame declared bare whose axes are read: spatial, its origin at (0, 0, 0) along them
+    if d.bare {
+        sk.spatial_chart(pi);
+    }
     if let Some(n) = d.name.shown() {
         sk.plane_names.insert(pi as u32, n.text.clone());
     }
@@ -534,7 +553,7 @@ fn build_plane(
         let n = sk.plane_normal(pi, &format!("{show}.{NORMAL}"));
         anon.push((format!("{}.{NORMAL}", d.name.key().text), EntRef::new(EntKind::Axis, n)));
     }
-    let e = EntRef::plane(pi);
+    let e = EntRef::frame(pi);
     set_class(sk, e, d.class.clone());
     Some(e)
 }
@@ -582,6 +601,8 @@ fn plane_axis<'k>(
                     return None;
                 }
                 None if k == 0 => [1.0, 0.0, 0.0],
+                // a spatial frame starts as the world stands, up along `y` and out along `z`
+                None if d.bare => [0.0, 1.0, 0.0],
                 None => [0.0, 0.0, 1.0],
             };
             let axis = sk.axis(dir, &format!("{show}.{key}"));
@@ -950,7 +971,7 @@ fn round_plane(sk: &mut Sketch, name: &str, [u, v]: [[f64; 3]; 2], at: [f64; 3])
     let va = sk.axis(v, &format!("{name}#plane.v"));
     let pi = sk.plane(ua, va, at, &format!("{name}#plane"));
     sk.set_plane_origin(pi, at);
-    (ua, va, pi, sk.planes[pi].origin as usize)
+    (ua, va, pi, sk.frames[pi].origin as usize)
 }
 
 /// Points `p` and `q` one point in space.
@@ -1020,8 +1041,8 @@ pub(super) fn axes_along(sk: &mut Sketch, deferred: &[Deferred]) {
         return;
     }
     let ends = |sk: &Sketch, l: usize| [sk.lines[l].p1 as usize, sk.lines[l].p2 as usize];
-    for p in 0..sk.planes.len() {
-        let (u, v) = (sk.planes[p].u as usize, sk.planes[p].v as usize);
+    for p in sk.charted() {
+        let (u, v) = (sk.frames[p].u as usize, sk.frames[p].v as usize);
         let (lu, lv) = (along.get(&u).copied(), along.get(&v).copied());
         // the end the two lines share, if they meet at one: each line's own image of it, which
         // for a point drawn in two planes may be its twin (§6.7)
@@ -1052,7 +1073,7 @@ pub(super) fn axes_along(sk: &mut Sketch, deferred: &[Deferred]) {
             sk.add(c);
         }
         // both axes on one point, which is drawn elsewhere: the plane stands at it
-        let origin = sk.planes[p].origin as usize;
+        let origin = sk.frames[p].origin as usize;
         let Some([at, _]) = shared
             .filter(|ends| ends.iter().all(|&x| sk.points[x].plane != Some(p as u32)))
         else {
@@ -1060,7 +1081,7 @@ pub(super) fn axes_along(sk: &mut Sketch, deferred: &[Deferred]) {
         };
         let rows: Vec<u32> = sk.constraints.iter()
             // its normal's stays: it stands through the origin wherever that is
-            .filter(|c| c.intrinsic && c.kind == CKind::PlaneAxis && c.args[0].ent() == EntRef::plane(p)
+            .filter(|c| c.intrinsic && c.kind == CKind::PlaneAxis && c.args[0].ent() == EntRef::frame(p)
                 && [u, v].contains(&c.args[1].ent().i()))
             .map(|c| c.id)
             .collect();
@@ -1069,7 +1090,7 @@ pub(super) fn axes_along(sk: &mut Sketch, deferred: &[Deferred]) {
         }
         let x = sk.world_point(at);
         for k in 0..3 {
-            let q = sk.planes[p].o[k] as usize;
+            let q = sk.frames[p].o[k] as usize;
             sk.params[q].value = x[k];
         }
         let mut c = Constraint::new(
@@ -1351,13 +1372,36 @@ fn place_of(
     if sk.points[point].z.is_none() {
         return place_in(sk, res, sk.plane_of(point), a, names).map(|(x, y)| vec![x, y]);
     }
+    let w = place_in_space(sk, res, a, names)?;
+    // a point drawn in a spatial frame's chart has its numbers along its axes (#383)
+    Ok(match sk.points[point].chart {
+        Some(f) => sk.chart_coords(f as usize, [w[0], w[1], w[2]]).to_vec(),
+        None => w,
+    })
+}
+
+/// Where `hint(at: …)` puts a point in space, in the world's coordinates.
+fn place_in_space(sk: &Sketch, res: &Resolver, a: &AtRef, names: &[(String, String)])
+    -> Result<Vec<f64>, String> {
+    // a place in a spatial frame's coordinates, three of them, read in space (#383)
+    let e = place(sk, res, &a.what)?;
+    if e.kind == EntKind::Frame && !sk.frames[e.i()].planar() {
+        if sk.frames[e.i()].chart.is_none() {
+            return Err("a place in a frame is read along its axes, and this frame has none: \
+                        name `f.u`, `f.v` or `f.origin` where they are placed".to_string());
+        }
+        let number = |t: &Option<(String, Span)>| step_by(sk, res, t, 0.0, names);
+        let p = [number(&a.x)?, number(&a.y)?, number(&a.z)?];
+        return Ok(sk.chart_lift(e.i(), p).to_vec());
+    }
     // a point in space: the place is read in the plane it is drawn in and lifted from there,
     // or, where it stands in space itself, read where it stands
     let e = place(sk, res, &a.what)?;
     // a step from a point, with no turn, is the same step in space wherever its point is drawn:
     // read there, so a step along a line square to that plane goes somewhere (#214: up a
     // cutter's axis from a point of the pitch plane)
-    let plain = a.turn.is_none() && a.bearing.is_none() && a.x.is_none() && a.y.is_none();
+    let plain = a.turn.is_none() && a.bearing.is_none() && a.x.is_none() && a.y.is_none()
+        && a.z.is_none();
     if e.kind == EntKind::Point && plain {
         if let Some(step) = step_ends(sk, res, e, a)? {
             let f = step_by(sk, res, &a.by, 1.0, names)?;
@@ -1366,7 +1410,7 @@ fn place_of(
         }
     }
     let home = match e.kind {
-        EntKind::Plane => Some(e.i()),
+        EntKind::Frame => Some(e.i()),
         EntKind::Circle => sk.plane_of(sk.circles[e.i()].center as usize),
         _ => sk.plane_of(e.i()),
     };
@@ -1402,7 +1446,7 @@ fn direction_of(
             place(sk, res, r)?
         };
         let v = match e.kind {
-            EntKind::Plane if normal => sk.basis(e.i()).normal(),
+            EntKind::Frame if normal => sk.basis(e.i()).normal(),
             EntKind::Axis => sk.axes[e.i()].d.map(|p| sk.params[p as usize].value),
             EntKind::Line => {
                 let l = &sk.lines[e.i()];
@@ -1585,11 +1629,15 @@ fn place_in(
     let step = step_ends(sk, res, e, a)?;
     // a place in a plane's own coordinates, read in space and seen where the point is
     if a.x.is_some() || a.y.is_some() {
-        if e.kind != EntKind::Plane {
+        if e.kind != EntKind::Frame {
             return Err(format!(
                 "`x:` and `y:` are a place in a plane, and `at:` here names {}",
                 e.kind.a()
             ));
+        }
+        if a.z.is_some() || !sk.frames[e.i()].planar() {
+            return Err("a place in a plane is its `x:` and `y:`, and one in a spatial frame \
+                        three numbers, seeding a point in space".to_string());
         }
         let (u, v) = (number(&a.x, 0.0)?, number(&a.y, 0.0)?);
         let at = sk.basis(e.i()).lift(u, v);
@@ -1677,7 +1725,7 @@ pub(super) fn crosses_views(sk: &Sketch, res: &Resolver, deferred: &[Deferred]) 
             _ => vec![],
         };
         // a place in another plane's coordinates is read through that plane's pose
-        let in_plane = matches!(place(sk, res, &at.what), Ok(e) if e.kind == EntKind::Plane
+        let in_plane = matches!(place(sk, res, &at.what), Ok(e) if e.kind == EntKind::Frame
             && Some(e.i()) != view);
         in_plane || std::iter::once(&at.what).chain(at.toward.iter())
             .filter_map(|r| place(sk, res, r).ok().and_then(point_of))
@@ -1696,7 +1744,7 @@ fn reads_unplaced(sk: &Sketch, res: &Resolver, r: &crate::syntax::Ref) -> bool {
     };
     let in_unplaced = |p: u32| sk.plane_of(p as usize).is_some_and(|pl| !sk.plane_fixed(pl));
     match e {
-        Some(e) if e.kind == EntKind::Plane => !sk.plane_fixed(e.i()),
+        Some(e) if e.kind == EntKind::Frame => !sk.plane_fixed(e.i()),
         Some(e) if e.kind == EntKind::Axis => !super::views::held(sk, &sk.axes[e.i()].d),
         Some(e) if e.kind == EntKind::Line => {
             let l = &sk.lines[e.i()];
@@ -1715,7 +1763,7 @@ fn set_class(sk: &mut Sketch, e: EntRef, c: Classes) {
         EntKind::Axis => sk.axes[e.i()].class = c,
         EntKind::Arc => sk.arcs[e.i()].class = c,
         EntKind::Spline => sk.splines[e.i()].class = c,
-        EntKind::Plane => sk.planes[e.i()].class = c,
+        EntKind::Frame => sk.frames[e.i()].class = c,
         EntKind::Face => sk.faces[e.i()].class = c,
         EntKind::Solid => sk.solids[e.i()].class = c,
         EntKind::Surface => sk.surfaces[e.i()].class = c,

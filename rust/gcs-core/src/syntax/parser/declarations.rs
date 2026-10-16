@@ -14,6 +14,9 @@ use crate::syntax::{
 #[derive(Default)]
 pub(crate) struct SweepParts {
     pub(crate) under: Option<Ref>,
+    /// The frame the motion is seen from (#383), read off the solid's declaration as
+    /// `Decl::seen_from`.
+    pub(crate) seen_from: Option<Ref>,
     pub(crate) at: Option<Arg>,
     pub(crate) from: Option<Arg>,
     pub(crate) to: Option<Arg>,
@@ -29,7 +32,7 @@ pub(crate) struct SweepParts {
 /// read as one so that its refusal is said at the key (`sweep_arg`).
 fn sweep_label(l: &str) -> bool {
     matches!(l, "from" | "to" | "depth" | "about" | "sweep" | "sense" | "through" | "along" | "under" | "at"
-        | "draft")
+        | "draft" | "seen_from" | "relative_to")
 }
 
 /// What the sweep arguments a bracket list carried come to.  A solid is a prism, a revolution,
@@ -42,7 +45,9 @@ pub(crate) fn sweep_of(p: SweepParts) -> Result<Sweep, String> {
         return Err("`draft:` tapers a prism's sides from its face's plane: say `from:`/`to:` or \
                     `depth:`, and nothing else".into());
     }
-    if p.under.is_some() || p.at.is_some() {
+    // a frame's motion, named `under:` or, left out, the one the tool rides on (#383): `at:`
+    // and `seen_from:` say it whatever else is written
+    if p.under.is_some() || p.at.is_some() || p.seen_from.is_some() {
         if p.depth.is_some() || p.about.is_some() || p.sweep.is_some()
             || p.sense.is_some() || p.through.is_some() && (p.at.is_some() || p.from.is_some() || p.to.is_some()) {
             return Err("a named motion uses `at:`, angular `from:`/`to:` or `through:` a body, without other \
@@ -50,15 +55,13 @@ pub(crate) fn sweep_of(p: SweepParts) -> Result<Sweep, String> {
         }
         // the roll the tool takes through a body's material (#271)
         if let Some(body) = p.through {
-            return match p.under {
-                Some(motion) => Ok(Sweep::Rolled {motion,body}),
-                None => Err("a named motion needs `under:`".into()),
-            };
+            return Ok(Sweep::Rolled {motion: p.under,body});
         }
         return match (p.under,p.at,p.from,p.to) {
-            (Some(motion),Some(at),None,None) => Ok(Sweep::Placed {motion,at}),
-            (Some(motion),None,Some(from),Some(to)) => Ok(Sweep::Swept {motion,from,to}),
-            _ => Err("a named motion needs `under:` and either `at:`, both `from:` and `to:`, or `through:`".into()),
+            (motion,Some(at),None,None) => Ok(Sweep::Placed {motion,at}),
+            (motion,None,Some(from),Some(to)) => Ok(Sweep::Swept {motion,from,to}),
+            _ => Err("a frame's motion moves a solid `at:` one roll, over `from:` and `to:`, or \
+                      `through:` a body".into()),
         };
     }
     if let Some(body) = p.through {
@@ -193,7 +196,6 @@ impl<'a> P<'a> {
                 span: Span::at(kw.lo as usize),
             }),
         };
-        if kind == EntKind::Motion { return self.motion_decl(name); }
         if kind == EntKind::Envelope { return self.envelope_decl(name); }
         if kind == EntKind::Meshing { return self.meshing_decl(name); }
         // a curve is what `over` makes a definition's value, `k := leg.toe over u in (a, b)` — or,
@@ -223,6 +225,9 @@ impl<'a> P<'a> {
             (Some(from),Some(to)) => Some(crate::syntax::AngularSpan {from,to,side:None,ease:None}),
             _ => { self.fail("a surface span needs both `from:` and `to:` angles"); return None; }
         };
+        // `seen_from:` reads a motion, under the frame `under:` names or, left out, the one the
+        // tool rides on (#383)
+        let seen_from = swp.seen_from.clone();
         let sweep = if kind == EntKind::Solid {
             match sweep_of(swp) {
                 Ok(sw) => Some(sw),
@@ -260,7 +265,7 @@ impl<'a> P<'a> {
             seed_at,
             seed_names: Vec::new(),
             sweep,
-            motion: None, angular_span,
+            seen_from, angular_span,
             membership,
             list_span,
             close,
@@ -268,6 +273,7 @@ impl<'a> P<'a> {
             through,
             normal,
             sense,
+            bare: false,
         })
     }
 
@@ -328,7 +334,7 @@ impl<'a> P<'a> {
             class_span: Span::at(end),
             seed_at: None,
             seed_names: Vec::new(),
-            sweep: None, motion: None, angular_span: None,
+            sweep: None, seen_from: None, angular_span: None,
             membership,
             list_span: Span::at(end),
             close: None,
@@ -336,6 +342,7 @@ impl<'a> P<'a> {
             through: None,
             normal: None,
             sense: None,
+            bare: false,
         });
     }
 
@@ -497,7 +504,7 @@ impl<'a> P<'a> {
         Some(match self.eat_hint_clause() {
             Some(lo) => {
                 // a plane's `u:` and `v:` are axes, seeded by their direction
-                let axis = kind == EntKind::Plane && match label {
+                let axis = kind == EntKind::Frame && match label {
                     Some(l) => l == "u" || l == "v",
                     None => positional < 2,
                 };
@@ -620,7 +627,8 @@ impl<'a> P<'a> {
         let mut texts: [Option<(String, Span, Span)>; 3] = [None, None, None];
         let mut coord: Option<Span> = None;
         // `x:` and `y:` as written, which beside `at:` a plane are a place in it
-        let mut xy: [Option<(String, Span)>; 2] = [None, None];
+        let mut xy: [Option<(String, Span)>; 3] = [None, None, None];
+        let mut z_at: Option<Span> = None;
         let mut other_coord: Option<Span> = None;
         for h in self.hint_body("x: 0, y: 0")? {
             if let Some(what) = h.place {
@@ -665,6 +673,12 @@ impl<'a> P<'a> {
             match h.key.as_str() {
                 "x" => xy[0] = Some((h.text.clone(), h.span)),
                 "y" => xy[1] = Some((h.text.clone(), h.span)),
+                // a place in a spatial frame has a third, out along it (#383) — beside the
+                // other two, never alone
+                "z" => {
+                    xy[2] = Some((h.text.clone(), h.span));
+                    z_at = Some(h.at);
+                }
                 _ => {
                     other_coord.get_or_insert(h.at);
                 }
@@ -672,6 +686,9 @@ impl<'a> P<'a> {
             seeds.seed[i] = h.value.unwrap_or(0.0);
             seeds.text[i] = (h.value.is_none()).then_some(h.text);
             seeds.spans[i] = h.span;
+        }
+        if xy[0].is_none() && xy[1].is_none() {
+            other_coord = other_coord.or(z_at);
         }
         let [bearing, by, turn] = texts;
         let key_at = |t: &Option<(String, Span, Span)>| t.as_ref().map(|t| t.2);
@@ -722,6 +739,7 @@ impl<'a> P<'a> {
                     turn: text(turn),
                     x: if in_plane { xy[0].take() } else { None },
                     y: if in_plane { xy[1].take() } else { None },
+                    z: if in_plane { xy[2].take() } else { None },
                 });
                 if in_plane {
                     // the place carries the numbers; the scalars stay unseeded
@@ -875,6 +893,14 @@ impl<'a> P<'a> {
                 if parts.under.is_some() { return twice(self); }
                 parts.under = Some(self.refr()?);
             }
+            "seen_from" => {
+                if parts.seen_from.is_some() { return twice(self); }
+                parts.seen_from = Some(self.refr()?);
+            }
+            "relative_to" => {
+                self.fail(super::RELATIVE_TO);
+                return None;
+            }
             // retired (#243, L3): a loft is a face family, its section a component standing on
             // its guide, caught here so a document written against 0.99 says what to write
             "along" => {
@@ -924,7 +950,7 @@ impl<'a> P<'a> {
     fn envelope_decl(&mut self, name: DeclName) -> Option<Decl> {
         let start = self.here();
         if !self.want_p('(') { return None; }
-        let mut surface = None; let mut motion = None;
+        let mut surface = None; let mut motion = None; let mut seen_from = None;
         let mut from = None; let mut to = None; let mut side = None;
         while !self.eat_p(')') {
             let label = self.slot_label();
@@ -949,22 +975,33 @@ impl<'a> P<'a> {
                     if side.is_some() { self.fail("an envelope's side is given twice"); return None; }
                     side = Some(self.refr()?.root);
                 }
-                _ => { self.fail("an envelope takes a surface or tool, `under:` a motion, `from:` and `to:` angles, and `side:`"); return None; }
+                Some("seen_from") => {
+                    if seen_from.is_some() {
+                        self.fail("an envelope's observer is given twice"); return None;
+                    }
+                    seen_from = Some(self.refr()?);
+                }
+                _ => {
+                    self.fail("an envelope takes a surface or tool, `under:` a frame (`seen_from:` \
+                               another), `from:` and `to:` angles, and `side:`");
+                    return None;
+                }
             }
             if self.peek() != Some(&Tok::P(')')) && !self.want_p(',') { return None; }
         }
-        let (Some(surface),Some(motion),Some(from),Some(to)) = (surface,motion,from,to) else {
+        // a tool that rides leaves `under:` out (#383): the elaborator reads what it rides on
+        let (Some(surface),Some(from),Some(to)) = (surface,from,to) else {
             self.fail("an envelope needs a surface, motion and two angular bounds"); return None;
         };
         let end = self.prev_hi();
         let (class,class_span) = self.class_clause(end);
         Some(Decl {
             annotations:Default::default(),kind:EntKind::Envelope,name,
-            children:vec![vec![surface],vec![motion]],
+            children:vec![vec![surface],motion.into_iter().collect()],
             seed:vec![],seed_text:vec![],seed_spans:vec![],hint_span:None,knots:None,weights:None,curve:None,
-            computed:None,class,class_span,seed_at:None,seed_names:vec![],sweep:None,motion:None,
+            computed:None,class,class_span,seed_at:None,seed_names:vec![],sweep:None,seen_from,
             angular_span:Some(crate::syntax::AngularSpan {from,to,side,ease:None}),
-            membership:Membership::default(),list_span:Span::new(start.lo as usize,end),close:None,mint_close:None,through:None,normal:None,sense:None,
+            membership:Membership::default(),list_span:Span::new(start.lo as usize,end),close:None,mint_close:None,through:None,normal:None,sense:None,bare:false,
         })
     }
 
@@ -975,6 +1012,7 @@ impl<'a> P<'a> {
         let start = self.here();
         if !self.want_p('(') { return None; }
         let (mut first, mut second, mut motion) = (None, None, None);
+        let mut seen_from = None;
         let mut from = None; let mut to = None;
         let (mut about, mut along, mut profile, mut lengthwise) = (None, None, None, None);
         while !self.eat_p(')') {
@@ -1005,6 +1043,12 @@ impl<'a> P<'a> {
                     if slot.is_some() { self.fail("a meshing's ease is given twice"); return None; }
                     *slot = Some(self.refr()?);
                 }
+                Some("seen_from") => {
+                    if seen_from.is_some() {
+                        self.fail("a meshing's observer is given twice"); return None;
+                    }
+                    seen_from = Some(self.refr()?);
+                }
                 Some("profile") | Some("lengthwise") => {
                     let across = label.as_deref() == Some("profile");
                     let slot = if across { &mut profile } else { &mut lengthwise };
@@ -1013,16 +1057,17 @@ impl<'a> P<'a> {
                     *slot = Some(Arg::Dim {text,span});
                 }
                 _ => {
-                    self.fail("a meshing takes two flanks, `under:` the motion of the second \
-                               relative to the first, `from:` and `to:` angles of the first's phase, \
-                               and the first's ease: `ease:` a point, `along:` a line, `profile:` \
-                               and `lengthwise:` curvatures");
+                    self.fail("a meshing takes two flanks, `under:` the second's frame \
+                               `seen_from:` the first's, `from:` and `to:` angles of the first's \
+                               phase, and the first's ease: `ease:` a point, `along:` a line, \
+                               `profile:` and `lengthwise:` curvatures");
                     return None;
                 }
             }
             if self.peek() != Some(&Tok::P(')')) && !self.want_p(',') { return None; }
         }
-        let (Some(first),Some(second),Some(motion),Some(from),Some(to)) = (first,second,motion,from,to) else {
+        // flanks that ride leave `under:` out (#383): each is read on its own frames
+        let (Some(first),Some(second),Some(from),Some(to)) = (first,second,from,to) else {
             self.fail("a meshing needs two flanks, a motion and two angular bounds"); return None;
         };
         let ease = match (about,along,profile,lengthwise) {
@@ -1040,66 +1085,72 @@ impl<'a> P<'a> {
         let (class,class_span) = self.class_clause(end);
         Some(Decl {
             annotations:Default::default(),kind:EntKind::Meshing,name,
-            children:vec![vec![first],vec![second],vec![motion]],
+            children:vec![vec![first],vec![second],motion.into_iter().collect()],
             seed:vec![],seed_text:vec![],seed_spans:vec![],hint_span:None,knots:None,weights:None,curve:None,
-            computed:None,class,class_span,seed_at:None,seed_names:vec![],sweep:None,motion:None,
+            computed:None,class,class_span,seed_at:None,seed_names:vec![],sweep:None,seen_from,
             angular_span:Some(crate::syntax::AngularSpan {from,to,side:None,ease}),
-            membership:Membership::default(),list_span:Span::new(start.lo as usize,end),close:None,mint_close:None,through:None,normal:None,sense:None,
+            membership:Membership::default(),list_span:Span::new(start.lo as usize,end),close:None,mint_close:None,through:None,normal:None,sense:None,bare:false,
         })
     }
 
-    fn motion_decl(&mut self, name: DeclName) -> Option<Decl> {
-        use crate::syntax::MotionSpec;
-        let start = self.here();
-        if !self.want_p('(') { return None; }
-        let mut axis = None; let mut along = None; let mut source = None; let mut observer = None;
-        let mut ratio = None; let mut phase = None; let mut advance = None;
-        while !self.eat_p(')') {
-            let label = self.slot_label();
-            match label.as_deref() {
-                Some("about") | Some("along") | Some("relative_to") | Some("of") | None => {
-                    let slot = match label.as_deref() {
-                        Some("about") => &mut axis,
-                        Some("along") => &mut along,
-                        Some("relative_to") => &mut observer,
-                        _ => &mut source,
-                    };
-                    if slot.is_some() { self.fail("a motion argument is given twice"); return None; }
-                    *slot = Some(self.refr()?);
-                }
-                Some("ratio") | Some("phase") | Some("advance") => {
-                    let slot = match label.as_deref() {
-                        Some("ratio") => &mut ratio,
-                        Some("phase") => &mut phase,
-                        _ => &mut advance,
-                    };
-                    if slot.is_some() { self.fail("a motion argument is given twice"); return None; }
-                    let (text,span) = self.expr_until(',')?;
-                    *slot = Some(Arg::Dim {text,span});
-                }
-                _ => { self.fail("a motion takes `about`, `ratio`, `phase`, `advance`; `along`, `advance`; or `of`, `relative_to`"); return None; }
-            }
-            if self.peek() != Some(&Tok::P(')')) && !self.want_p(',') { return None; }
+    /// `f := frame` (#383): a spatial frame declared bare.  It is made of nothing, so it has no
+    /// brackets, no seed and no place in a plane: what it is, relations say after the fact —
+    /// its axes `f.u`, `f.v` and its origin `f.origin` are minted where they are named.  A class
+    /// is presentation, and taken.
+    pub(super) fn frame_decl(&mut self, name: DeclName) -> Option<Decl> {
+        if self.peek() == Some(&Tok::P('(')) {
+            self.fail("a frame is declared bare, `f := frame`, and constrained after the fact: \
+                       name its axes `f.u`, `f.v` and its origin `f.origin` in relations (a flat \
+                       frame over two axes is `plane(u: r1, v: r2)`)");
+            return None;
         }
-        let spec = match (axis,along,source,observer,ratio,phase,advance) {
-            (Some(axis),None,None,None,ratio,phase,advance) => MotionSpec::Rotation {axis,ratio,phase,advance},
-            (None,Some(axis),None,None,None,None,Some(advance)) => MotionSpec::Translation {axis,advance},
-            (None,None,Some(source),Some(observer),None,None,None) => MotionSpec::Relative {source,observer},
-            _ => {
-                self.fail("a motion is a rotation `about:` a line (with `advance:` for a screw), a translation \
-                    `along:` a line by `advance:` per turn, or `of:` another motion `relative_to:` an observer");
-                return None;
-            }
+        let kw = self.t.get(self.i.wrapping_sub(1)).map(|(_, s)| *s).unwrap_or_default();
+        let scalars: Vec<&str> = EntKind::Frame.fields().iter()
+            .filter(|(_, f)| *f == Field::Scalar).map(|(n, _)| *n).collect();
+        let mut seeds = Seeds {
+            seed: vec![0.0; scalars.len()],
+            text: vec![None; scalars.len()],
+            spans: vec![Span::default(); scalars.len()],
         };
-        let end = self.prev_hi();
-        let (class,class_span) = self.class_clause(end);
+        let Trailers { class, class_span, seed_at, membership, hint_span, insert, .. } =
+            self.decl_trailers(EntKind::Frame, &name, &mut seeds)?;
+        if !hint_span.is_empty() || seed_at.is_some() {
+            self.fail_at(hint_span, "a frame declared bare has no seed: hint its axes and its \
+                                     origin where they are named");
+            return None;
+        }
+        let fields = EntKind::Frame.fields().iter().filter(|(_, f)| *f != Field::Scalar).count();
         Some(Decl {
-            annotations:Default::default(),kind:EntKind::Motion,name,children:vec![vec![]],
-            seed:vec![],seed_text:vec![],seed_spans:vec![],hint_span:None,knots:None,weights:None,curve:None,
-            computed:None,class,class_span,seed_at:None,seed_names:vec![],sweep:None,motion:Some(spec),angular_span:None,membership:Membership::default(),
-            list_span:Span::new(start.lo as usize,end),close:None,mint_close:None,through:None,normal:None,sense:None,
+            annotations: Default::default(),
+            kind: EntKind::Frame,
+            name,
+            children: vec![Vec::new(); fields],
+            seed: seeds.seed,
+            seed_text: seeds.text,
+            seed_spans: seeds.spans,
+            hint_span: None,
+            knots: None,
+            weights: None,
+            curve: None,
+            computed: None,
+            class,
+            class_span: if class_span.is_empty() { Span::at(insert) } else { class_span },
+            seed_at: None,
+            seed_names: Vec::new(),
+            sweep: None,
+            seen_from: None,
+            angular_span: None,
+            membership,
+            list_span: Span::at(kw.hi as usize),
+            close: None,
+            mint_close: None,
+            through: None,
+            normal: None,
+            sense: None,
+            bare: true,
         })
     }
+
 
     /// A `hint(…)` standing in a child slot, the opening paren already eaten.
     ///

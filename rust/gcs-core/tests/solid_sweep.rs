@@ -23,8 +23,17 @@ diameter := line(a,b)
 ax := line(o,z)
 }
 tool := solid(face(rim,diameter),about: diameter)
-generating := motion(about: ax)
+generating := frame
+ax coincident generating.axis
+fix(ratio == 1,advance == 0mm) generating
 ";
+/// The motion node frame `name`'s joint was lowered to.  `SOURCE` states its turn as the
+/// statements `std.Turn` writes, so that it prints: the canonical printer prints no component
+/// instance.
+fn joint(e: &program::Elaborated,name: &str) -> usize {
+    let f = e.map.ent_named(name).unwrap();
+    e.sketch.frames[f.i()].joint.as_ref().and_then(|j| j.motion).expect("a jointed frame") as usize
+}
 fn read(source: &str) -> program::Elaborated {
     let (mut p,errors) = crate::common::parse(source);
     assert!(errors.is_empty(),"{errors:?}");
@@ -65,8 +74,10 @@ fn continuous_sweep_source_has_the_full_interval_and_endpoint_caps() {
 /// turned about it: a capsule, π + 2π + 4π/3 = 10π/3, which no ball's tube builds (`canal` takes a
 /// turn), so its surface is the field's.
 fn slid() -> String {
-    include_str!("../../examples/solid_generating_sweep.sv")
-        .replace("generating := motion(about: spindle)","generating := motion(along: spindle, advance: 6mm)")
+    let source = include_str!("../../examples/solid_generating_sweep.sv");
+    assert!(source.contains("std.Turn(generating, about: spindle, ratio: 1)"),"the turn moved");
+    source.replace("std.Turn(generating, about: spindle, ratio: 1)",
+                 "std.Slide(generating, along: spindle, advance: 6mm)")
 }
 const CAPSULE: f64 = 10.*std::f64::consts::PI/3.;
 
@@ -114,7 +125,7 @@ fn sweep_print_copy_paste_and_delete_preserve_transitive_dependencies() {
 #[test]
 fn repeated_component_cuts_index_one_continuous_sweep() {
     let e = read(&format!("{SOURCE}
-component IndexedCuts(tool: solid,target: solid,indexing: motion,count: Int) {{
+component IndexedCuts(tool: solid,target: solid,indexing: frame,count: Int) {{
   repeat count as i {{
     placed := solid(tool,under: indexing,at: i*360deg/count)
     placed cut target
@@ -148,7 +159,7 @@ fn sweep_fingerprints_read_the_motion_family_and_source_geometry() {
     let mut e = read(&format!("{SOURCE}swept := solid(tool,under: generating,from: 0deg,to: 360deg)\n"));
     let i = e.map.ent_named("swept").unwrap().i();
     let before = solid::reads(&e.sketch,i,solid::REPORT_UNIT);
-    let m = e.map.ent_named("generating").unwrap().i();
+    let m = joint(&e,"generating");
     let MotionDef::Rotation {ratio,..} = &mut e.sketch.motions[m].def else { panic!() };
     *ratio = 2.; // Endpoint poses coincide; the whole family must still invalidate the cache.
     let changed = solid::reads(&e.sketch,i,solid::REPORT_UNIT);

@@ -191,8 +191,19 @@ impl Pair {
         let rm = module*teeth_f[0].hypot(teeth_f[1])/2.;
         let theta = (35f64-90.).to_radians();
         let offset = [rm-0.8*rm*theta.cos(),-0.8*rm*theta.sin(),0.];
-        let motion_families = ["pair.pinion_generation","pair.gear_generation"].map(|name|
-            gcs_core::motion::Family::read(sk,model.map.ent_named(name).unwrap().i()).unwrap());
+        // each member's generation: the crown's roll seen from the member's, the relative node its
+        // readings (`under: crown_roll, seen_from: pinion_roll`) minted
+        let joint = |name: &str| sk.frames[model.map.ent_named(name).unwrap().i()].joint.as_ref()
+            .and_then(|j| j.motion).unwrap_or_else(|| panic!("`{name}` has no joint"));
+        let crown = joint("pair.crown_roll");
+        let motion_families = ["pair.pinion_roll","pair.gear_roll"].map(|name| {
+            let member = joint(name);
+            let seen = sk.motions.iter().position(|m| matches!(m.def,
+                gcs_core::model::MotionDef::Relative {source,observer}
+                    if source == crown && observer == member))
+                .unwrap_or_else(|| panic!("nothing reads the crown's roll seen from `{name}`"));
+            gcs_core::motion::Family::read(sk,seen).unwrap()
+        });
         let tolerance = SeamTolerance {position:module*1e-8,normal:1e-8,axis:module*1e-10};
         let edge_tolerance = EdgeTolerance {junction:tolerance,point:gcs_core::seam::BoundarySeamTolerance {
             normal_velocity:module*1e-10,incidence:module*1e-10,trim:module*1e-8}};

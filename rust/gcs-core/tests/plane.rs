@@ -31,7 +31,7 @@ fn a_plane_is_its_axes_and_its_place() {
     assert!(sk.axes.iter().all(|r| r.placed));
     let b = sk.basis(p);
     assert!(near(b.u[0], 0.8) && near(b.u[1], 0.6) && b.v == [0.0, 0.0, 1.0]);
-    let o = sk.planes[p].origin as usize;
+    let o = sk.frames[p].origin as usize;
     assert_eq!(sk.plane_of(o), Some(p));
     assert_eq!(sk.point_xy(o), (0.0, 0.0));
     assert!(sk.point_params(o).iter().all(|&k| sk.params[k as usize].fixed));
@@ -188,35 +188,35 @@ fn round_trips_through_json_and_the_graft() {
     let (mut sk, [front, top, right], [pf, pt, pr]) = three_views();
     let c = Constraint::project(&sk, EntRef::point(pf), EntRef::point(pt)).unwrap();
     let id = sk.add(c);
-    sk.set_class(EntRef::plane(top), "section", true);
+    sk.set_class(EntRef::frame(top), "section", true);
     let text = io::dumps(&sk, Some(1));
     assert!(!text.contains("AxisUnit"), "an intrinsic is never stored");
     let back = io::loads(&text).unwrap();
-    assert_eq!(back.planes.len(), 3);
+    assert_eq!(back.frames.len(), 3);
     assert_eq!(back.basis(right), sk.basis(right));
     assert_eq!(back.plane_of(pf), Some(front));
     assert_eq!(back.plane_of(pt), Some(top));
     assert_eq!(back.plane_of(pr), Some(right));
-    assert!(back.class_of(EntRef::plane(top)).0.contains(&"section".to_string()));
+    assert!(back.class_of(EntRef::frame(top)).0.contains(&"section".to_string()));
     assert_eq!(back.user_constraints().len(), 1);
     assert_eq!(back.user_constraints()[0].entities().len(), 4);
     assert_eq!(io::dumps(&back, Some(1)), text);
     // a copy of everything keeps the projection; a copy of one view keeps its memberships
     let all = io::copy(&sk, &sk.primitives());
     assert_eq!(all.user_constraints().len(), 1);
-    let one = io::copy(&sk, &[EntRef::plane(top), EntRef::point(pt)]);
-    assert_eq!(one.planes.len(), 1);
+    let one = io::copy(&sk, &[EntRef::frame(top), EntRef::point(pt)]);
+    assert_eq!(one.frames.len(), 1);
     assert_eq!(one.plane_of(one.points.len() - 1), Some(0));
     assert!(one.user_constraints().is_empty(), "the other plane did not come");
     // deleting a plane drops the projection and clears the memberships that named it
-    let less = io::without(&sk, &[EntRef::plane(top)], &[]);
-    assert_eq!(less.planes.len(), 2);
+    let less = io::without(&sk, &[EntRef::frame(top)], &[]);
+    assert_eq!(less.frames.len(), 2);
     assert!(less.user_constraints().is_empty());
     assert!(less.points.iter().all(|p| p.plane.map_or(true, |q| (q as usize) < 2)));
     assert_eq!(less.points.iter().filter(|p| p.plane.is_none()).count(), 1);
     // deleting a point drops the projection and keeps the planes
     let less = io::without(&sk, &[EntRef::point(pf)], &[]);
-    assert_eq!(less.planes.len(), 3);
+    assert_eq!(less.frames.len(), 3);
     assert!(less.user_constraints().is_empty());
     let _ = id;
 }
@@ -244,7 +244,7 @@ fn the_drag_part_reaches_the_planes() {
     let c = Constraint::project(&sk, EntRef::point(pf), EntRef::point(pt)).unwrap();
     sk.add(c);
     let part = io::Part::around(&sk, EntRef::point(pt));
-    assert_eq!(part.sketch.planes.len(), 2, "both planes come with the projection");
+    assert_eq!(part.sketch.frames.len(), 2, "both planes come with the projection");
     assert_eq!(part.sketch.user_constraints().len(), 1);
     let _ = (front, top);
 }
@@ -274,7 +274,7 @@ fn the_bracket_shows_its_incline_true_size() {
 /// A document is untrusted input, and `wasm32-unknown-unknown` aborts rather than unwinding —
 /// so an entity argument whose *kind* is not the one its slot names must be refused where it is
 /// read.  Every reader past that point indexes the list the spec names (a projection's planes
-/// reach `sk.planes`), which for a line would be an out-of-bounds panic.
+/// reach `sk.frames`), which for a line would be an out-of-bounds panic.
 #[test]
 fn a_projection_pointed_at_the_wrong_kind_is_refused() {
     let doc = |args: &str| {
@@ -308,7 +308,7 @@ fn the_glyph_is_laid_out_once_and_screen_constant() {
     let p = sk.fixed_plane(Basis::page(), "front");
     let unit = 0.5;                                   // half a world unit to the screen pixel
     let [(o, t), (o2, tick)] = gcs_core::plane::glyph(unit);
-    assert_eq!(o, sk.point_xy(sk.planes[p].origin as usize));
+    assert_eq!(o, sk.point_xy(sk.frames[p].origin as usize));
     assert_eq!(o2, o, "the tick comes out of the origin");
     assert!(near(t.0, gcs_core::plane::AXIS_PX * unit) && near(t.1, 0.0));
     assert!(near(tick.0, 0.0) && near(tick.1, gcs_core::plane::TICK_PX * unit));

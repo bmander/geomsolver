@@ -86,7 +86,9 @@ pub(super) fn apply_gauge(cx: &mut super::Elab<'_>, r: &ResolvedRelation<'_>, st
                 return;
             };
             // a plane holds where it stands; an axis its direction and its origin
-            let members = e.kind.members();
+            // a frame's are what it has: its chart's place and its joint's numbers (#383)
+            let frame_members = (e.kind == EntKind::Frame).then(|| sk.frame_members(e.i()));
+            let members = frame_members.as_deref().unwrap_or(e.kind.members());
             let spec = r.kind.spec();
             let own = sk.own_params(e);
             let owned = &members[..own.len().min(members.len())];
@@ -133,7 +135,12 @@ pub(super) fn apply_gauge(cx: &mut super::Elab<'_>, r: &ResolvedRelation<'_>, st
                     );
                     continue;
                 };
-                // a `fix` holds a number, and an unknown is not one
+                // a `fix` holds a number, and an unknown is not one — but a joint's number left
+                // unstated is its frame's to say, once, naming the joint (`program::motions`)
+                let joint = e.kind == EntKind::Frame && matches!(field, "ratio" | "advance");
+                if let (Arg::Tie { .. }, true) = (a, joint) {
+                    continue;
+                }
                 if let Arg::Tie { span, .. } = a {
                     let m = format!("`fix` holds a number, and `{field}` is pinned to an unknown");
                     bad(Code::E040, *span, m);

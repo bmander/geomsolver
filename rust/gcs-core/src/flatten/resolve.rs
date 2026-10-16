@@ -38,46 +38,6 @@ fn rescope_seeds(k: &mut StmtKind, sc: &Scope, look: Lookup, bad: &mut Vec<(Code
     d.seed_names = names.into_iter().collect();
 }
 
-/// A post-solve number's measurements (`length(gen_g)`), each argument resolved to the absolute
-/// name of what it denotes by the same `lookup` every reference goes through, and written back
-/// into the text: a formal reads as its actual and a name inside a block copy as that copy's
-/// (`side.#282.0.small`, which the expression lexer reads as one name for this reason).
-fn rescope_measures(
-    text: &mut String,
-    span: Span,
-    sc: &Scope,
-    look: Lookup,
-    solids: &BTreeSet<String>,
-    bad: &mut Vec<(Code, Span, String)>,
-) {
-    let Ok(p) = expr::parse_in(text, look.units) else { return };
-    let mut to: BTreeMap<String, String> = BTreeMap::new();
-    for (_, args) in p.body.measures() {
-        for a in args {
-            if to.contains_key(&a) {
-                continue;
-            }
-            let segs: Vec<&str> = a.split('.').collect();
-            match resolve_dotted(&segs, span, sc, look) {
-                Ok((abs, mut rest)) => {
-                    // a face's surface, read here: spelled by a segment the source cannot write,
-                    // so the elaborator reads the member and not the word (#188)
-                    if solids.contains(&abs)
-                        && rest.last().is_some_and(|f| Member::of(f) == Some(Member::Surface))
-                    {
-                        *rest.last_mut().expect("a last field") = Member::Surface.key();
-                    }
-                    to.insert(a, std::iter::once(abs).chain(rest).collect::<Vec<_>>().join("."));
-                }
-                Err((code, why)) => bad.push((code, span, why)),
-            }
-        }
-    }
-    if !to.is_empty() {
-        *text = super::values::map_measured(text, |w| to.get(w).cloned());
-    }
-}
-
 /// One kept seed text — see `rescope_seeds`: each dotted name in it, resolved.
 fn rescope_text(
     t: &str,
@@ -394,6 +354,10 @@ struct Known<'k> {
     unresolved: &'k std::cell::Cell<bool>,
     /// What each reference reading a member `normal` reads it of — see `Expansion::normals`.
     normals: &'k std::cell::RefCell<BTreeSet<String>>,
+    /// What each reference reading a frame's member reads it of — see `Expansion::charts`.
+    charts: &'k std::cell::RefCell<BTreeSet<String>>,
+    /// What each reference reading a joint's member reads it of — see `Expansion::joints`.
+    joints: &'k std::cell::RefCell<BTreeSet<String>>,
     /// Where a reference read through a name in `failed` — see `Expansion::quiet`.
     quiet: &'k std::cell::RefCell<BTreeSet<Span>>,
 }
@@ -424,7 +388,8 @@ fn rewrite(
     bad: &mut Vec<(Code, Span, String)>,
     seen: &std::cell::RefCell<Vec<Seen>>,
 ) {
-    let Known { look, sets, solids, failed, arguments, unresolved, normals, quiet } = known;
+    let Known { look, sets, solids, failed, arguments, unresolved, normals, charts, joints,
+        quiet } = known;
     // only a ring's representative is judged by what it reads (E021)
     let judged = sc.block.ring.as_ref().is_some_and(|r| !r.turned);
     // a member read already (a set's `ends`, `sets::measured_sets`) is kept; `surface` and
@@ -457,6 +422,20 @@ fn rewrite(
                 normals.borrow_mut().insert(std::iter::once(&abs).chain(of).cloned()
                     .collect::<Vec<_>>().join("."));
             }
+            // and a frame's axes and origin where they are read (#383)
+            if let Some((_, of)) = rest.split_last()
+                .filter(|(f, _)| ["u", "v", "origin", NORMAL].contains(&f.as_str()))
+            {
+                charts.borrow_mut().insert(std::iter::once(&abs).chain(of).cloned()
+                    .collect::<Vec<_>>().join("."));
+            }
+            // and a frame's joint where one of its members is read
+            if let Some((_, of)) = rest.split_last()
+                .filter(|(f, _)| ["axis", "ratio", "advance"].contains(&f.as_str()))
+            {
+                joints.borrow_mut().insert(std::iter::once(&abs).chain(of).cloned()
+                    .collect::<Vec<_>>().join("."));
+            }
             // a formal reads what its call was given, judged at the argument as written
             let was = (judged && !through_argument(r, sc, arguments)).then(|| ref_text(r));
             let member = member(r, &abs, &mut rest);
@@ -487,7 +466,13 @@ fn rewrite(
                 fix(r, bad);
             }
         }
-        StmtKind::Decl(d) => rewrite_decl(d, sc, look, solids, bad, &fix),
+        StmtKind::Decl(d) => {
+            rewrite_decl(d, sc, look, bad, &fix);
+            // a seed at a place in a frame's coordinates reads its axes (#383)
+            if let Some(a) = d.seed_at.as_ref().filter(|a| a.x.is_some() || a.y.is_some() || a.z.is_some()) {
+                charts.borrow_mut().insert(ref_text(&a.what));
+            }
+        }
         // an energy names the curve it is over (#121)
         StmtKind::Minimize(m) => fix(&mut m.curve, bad),
         // a bound on measurements names what it measures, as a motion's numbers do (#183 F3)
@@ -509,13 +494,35 @@ fn rewrite(
                 fix(at, bad);
             }
         }
-        StmtKind::Relation(rel) => rewrite_relation(rel, sc, look, bad, &fix),
+        StmtKind::Relation(rel) => {
+            rewrite_relation(rel, sc, look, bad, &fix);
+            // an ordinate along a frame's axes reads them (#383), and a `fix` of a ratio or an
+            // advance its joint
+            if let Some(w) = rel.form.written() {
+                let numbers = w.word.text == "fix" && w.args.iter().any(|a| matches!(a,
+                    crate::syntax::OpArg::Slot { key, .. }
+                        if key.text == "ratio" || key.text == "advance"));
+                if numbers {
+                    joints.borrow_mut().extend(w.ops.first().map(ref_text));
+                }
+                let along_chart = w.args.iter().any(|a| matches!(a,
+                    crate::syntax::OpArg::Named(n, crate::syntax::Arg::Ref(r))
+                        if n.text == "along" && r.path.is_empty()
+                            && ["u", "v", "n"].contains(&r.root.text.as_str())));
+                if along_chart {
+                    charts.borrow_mut().extend(w.ops.iter().map(ref_text));
+                }
+            }
+        }
         // a claim over a motion names the motion and, in its body, the solids it judges, each
         // as it would outside the block (`frame.body`); a free variable is no entity, and is
         // left as written for the claim's reader to find
         StmtKind::ClaimOver(c) => {
             if look.find(&c.formal, sc).is_some() {
                 fix(&mut c.formal, bad);
+            }
+            if let Some(g) = c.seen_from.as_mut() {
+                fix(g, bad);
             }
             for inner in &mut c.body {
                 if let StmtKind::Relation(rel) = &mut inner.kind {
@@ -533,7 +540,6 @@ fn rewrite_decl(
     d: &mut Decl,
     sc: &Scope,
     look: Lookup,
-    solids: &BTreeSet<String>,
     bad: &mut Vec<(Code, Span, String)>,
     fix: &impl Fn(&mut Ref, &mut Vec<(Code, Span, String)>),
 ) {
@@ -581,6 +587,35 @@ fn rewrite_decl(
     for r in d.membership.also_mut() {
         fix(r, bad);
     }
+    // the frames it rides on (#383): its blocks', in this scope, and outside them every frame an
+    // instance around it is drawn in or rides on, each where it was written
+    for r in d.membership.rides_mut() {
+        fix(r, bad);
+    }
+    if d.kind.bears_points() || d.kind == crate::model::EntKind::Frame {
+        let own = !from_instance && d.membership.plane().is_some();
+        let around = sc.stamps.rides.iter().chain(sc.stamps.plane.iter().filter(|_| own));
+        let mut outer = Vec::new();
+        for ip in around {
+            let at = Scope { owner: ip.owner.clone(), prefixes: ip.prefixes.clone(),
+                closed: ip.closed, ..sc.clone() };
+            let mut r = ip.plane.clone();
+            match look.find(&r, &at) {
+                Some((abs, rest)) => {
+                    r.root = Name { text: abs, span: r.root.span };
+                    r.path = rest.into_iter().map(|f| Seg::Field(Name::new(f))).collect();
+                    outer.push(r);
+                }
+                None => {
+                    let (code, why) = look.missing(&r, &at);
+                    bad.push((code, r.span, why))
+                }
+            }
+        }
+        for r in outer.iter().rev() {
+            d.membership.ride_in(r);
+        }
+    }
     // a circle's normal is a name of the scope (#363 S6)
     if let Some(r) = d.normal.as_mut() {
         fix(r, bad);
@@ -594,15 +629,9 @@ fn rewrite_decl(
     for r in ease.into_iter().flat_map(|e| e.refs_mut()) {
         fix(r, bad);
     }
-    if let Some(motion) = d.motion.as_mut() {
-        for r in motion.refs_mut() { fix(r, bad); }
-        // a number that measures the drawing names geometry as a reference does, in
-        // the scope it was written in; the sheet reads it by absolute name
-        for a in motion.args_mut() {
-            if let crate::syntax::Arg::Dim { text, span } = a {
-                rescope_measures(text, *span, sc, look, solids, bad);
-            }
-        }
+    // the frame a motion is seen from (#383)
+    if let Some(g) = d.seen_from.as_mut() {
+        fix(g, bad);
     }
     if let Some(crate::syntax::CurveSpec { target: CurveTarget::Drawn(r), .. }) =
         d.curve.as_mut()
@@ -1108,6 +1137,8 @@ impl<'a> Walk<'a> {
         }).collect();
         let mut flat = Vec::with_capacity(out.len());
         let normals = std::cell::RefCell::new(std::mem::take(&mut self.normals));
+        let charts = std::cell::RefCell::new(std::mem::take(&mut self.charts));
+        let joints = std::cell::RefCell::new(std::mem::take(&mut self.joints));
         let quiet = std::cell::RefCell::new(std::mem::take(&mut self.quiet));
         for (mut st, path, sc) in out {
             // a refused relation is not emitted; a declaration is (a plane whose fold misspells
@@ -1125,7 +1156,8 @@ impl<'a> Walk<'a> {
             let unresolved = std::cell::Cell::new(false);
             let known = Known {
                 look, sets, solids, failed, arguments,
-                unresolved: &unresolved, normals: &normals, quiet: &quiet,
+                unresolved: &unresolved, normals: &normals, charts: &charts, joints: &joints,
+                quiet: &quiet,
             };
             rewrite(&mut st.kind, &sc, known, &mut bad, &seen);
             if let StmtKind::Decl(d) = &st.kind {
@@ -1152,6 +1184,8 @@ impl<'a> Walk<'a> {
                         }
                     }
                     free.extend(d.membership.plane().map(|r| r.span));
+                    // and the frames it rides on carry every copy alike (#383)
+                    free.extend(d.membership.rides().iter().map(|r| r.span));
                 }
                 let mut seen = seen.into_inner();
                 seen.retain(|s| !free.contains(&s.span));
@@ -1204,6 +1238,8 @@ impl<'a> Walk<'a> {
         }
         self.judge_arguments(&alias, &mut judged);
         self.normals = normals.into_inner();
+        self.charts = charts.into_inner();
+        self.joints = joints.into_inner();
         self.quiet = quiet.into_inner();
         self.judge_rings(&about, judged, &centres);
         (flat, alias)

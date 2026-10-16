@@ -190,6 +190,8 @@ fn expand(
     }
     cx.diags.extend(expansion.diagnostics.iter().cloned());
     cx.res.normals = expansion.normals.clone();
+    cx.res.charts = expansion.charts.clone();
+    cx.res.joints = expansion.joints.clone();
     expansion
 }
 
@@ -278,8 +280,10 @@ fn names(cx: &mut Elab<'_>, body: &[&Statement]) -> BTreeSet<StmtId> {
             );
         }
         *n += 1;
-        // a plane's origin is a point minted with the points, in statement order
-        if kind == EntKind::Plane {
+        // a plane's origin is a point minted with the points, in statement order — and a
+        // frame's declared bare where its axes are read (#383)
+        let charted = |d: &crate::ir::Decl| !d.bare || res.charts.contains(&d.name.key().text);
+        if kind == EntKind::Frame && matches!(&st.kind, StmtKind::Decl(d) if charted(d)) {
             let n = count.entry(EntKind::Point).or_insert(0);
             res.origins.insert(key.clone(), *n as usize);
             *n += 1;
@@ -305,13 +309,15 @@ fn geometry(cx: &mut Elab<'_>, flat: &Flat<'_>) -> Vec<Deferred> {
         EntKind::Spline,
         // a plane is built over its axes
         EntKind::Axis,
-        EntKind::Plane,
+        EntKind::Frame,
         EntKind::Curve,
     ] {
         for st in &flat.body {
             let StmtKind::Decl(d) = &st.kind else { continue };
             // a plane's origin, minted with the points in statement order (`Resolver::origins`)
-            if kind == EntKind::Point && d.kind == EntKind::Plane && !flat.skip.contains(&st.id) {
+            if kind == EntKind::Point && d.kind == EntKind::Frame && !flat.skip.contains(&st.id)
+                && (!d.bare || res.charts.contains(&d.name.key().text))
+            {
                 let key = &d.name.key().text;
                 let o = sk.point(0.0, 0.0, true, &format!("{key}.origin"));
                 debug_assert_eq!(res.origins.get(key), Some(&o));
@@ -654,6 +660,7 @@ fn place_planes(
     // a ring's copies where their representatives' seeds put them, whatever a seed said of a copy
     cx.sk.settle_turns();
     cx.sk.seed_normals();
+    cx.sk.seed_joints();
 }
 
 /// **Phase 3b: faces, then solids** (§6.8, §6.9).  **After every other kind and after the

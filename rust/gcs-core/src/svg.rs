@@ -254,7 +254,7 @@ pub(crate) fn entity(
         EntKind::Curve => poly(out, &polys[i], at, &ink()),
         // a plane is a place in space, two axes and an origin, with nothing to draw on paper:
         // the workspace shows it as a pane
-        EntKind::Plane => {}
+        EntKind::Frame => {}
     }
 }
 

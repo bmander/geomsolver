@@ -90,8 +90,8 @@ pub enum Code {
     /// not yet: a construct the language has and elaboration does not
     E106,
     /// a measurement of the solved drawing (`length(l)`) read where the number is needed before
-    /// the solve: a `param`, a seed, a constraint's number, a solid's extent or placement angle.
-    /// Only a motion's `ratio:`, `phase:` and `advance:` are read after it (§6.14)
+    /// the solve: a `param`, a seed, a constraint's number, a solid's extent or placement angle,
+    /// a frame's ratio or advance (§6.14 [0.135])
     E107,
     /// an expression that would not compute — the last number stands
     W110,
@@ -103,6 +103,9 @@ pub enum Code {
     /// a free curve whose length nothing holds and no length makes its energy stationary in: it
     /// has no shape to settle on (§9.10)
     W114,
+    /// a declaration in two frames with axes at once, nested `in` blocks (#383): the inner one
+    /// draws it, and the outer is only ridden on
+    W115,
 }
 
 impl Code {
@@ -143,12 +146,13 @@ impl Code {
             Code::W112 => "W112",
             Code::W113 => "W113",
             Code::W114 => "W114",
+            Code::W115 => "W115",
         }
     }
 
     pub fn severity(self) -> Severity {
         match self {
-            Code::W110 | Code::W112 | Code::W113 | Code::W114 => Severity::Warning,
+            Code::W110 | Code::W112 | Code::W113 | Code::W114 | Code::W115 => Severity::Warning,
             _ => Severity::Error,
         }
     }

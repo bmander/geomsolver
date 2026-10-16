@@ -82,7 +82,7 @@ fn face_loops(sk: &Sketch,face: usize) -> Result<(Basis,Vec<Vec<Edge>>),String> 
     let f = sk.faces.get(face).ok_or("no such face")?;
     let basis = match f.plane {
         Some(p) => {
-            sk.planes.get(p as usize).ok_or("no such plane")?;
+            sk.frames.get(p as usize).ok_or("no such plane")?;
             sk.basis(p as usize)
         }
         None => Basis::page(),

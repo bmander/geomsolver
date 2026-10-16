@@ -1,14 +1,14 @@
 // A spur gear cut by a rack, as a gear shaper's rack cutter cuts one: generation by motion in space.
 //
 // Nothing here states an involute.  The rack's tooth is a trapezoid, its flanks `alpha` from the
-// radius, extruded through the blank; `cutting` is the rack sliding along its pitch line while
-// the blank turns, so the line rolls on the pitch circle without slipping.  `space` is everything
-// the tooth sweeps through over the roll, and each `indexed` copy of it, a pitch apart, is cut
-// from the blank.  The flanks it leaves are involutes of the base circle, and the root fillets
-// trochoids of the rack's tip corners.
+// radius, drawn in the rack's frame and extruded through the blank; the rack slides along its
+// pitch line while the blank turns, so the line rolls on the pitch circle without slipping.
+// `space` is everything the tooth sweeps through over the roll, seen from the blank, and each
+// `indexed` copy of it, a pitch apart, is cut from the blank.  The flanks it leaves are involutes
+// of the base circle, and the root fillets trochoids of the rack's tip corners.
 //
 // Beside the solid, the sketch carries the same generation in the plane: `involute` and `fillet`
-// are curves of the drawing, the envelopes of the rack's flank and tip corner under `cutting`.
+// are curves of the drawing, the envelopes of the rack's flank and tip corner seen from the blank.
 //
 // `solventc --step` and `--stl` build this exactly (the generating-sweep class,
 // docs/generating-sweeps.md): one tooth space's boundary traced as a sheet, one sector of the
@@ -43,28 +43,36 @@ in std.front {
   s0 right_of(d: rp) o
   slide := vertical line(s0, s1)
   s0 distance(10) s1
+}
 
-  // the rack's tooth: its tip at the working depth, its back past the blank's rim
-  t0 := point hint((18, -0.84))
-  t1 := point hint((18, 0.84))
-  t2 := point hint((24, 3.03))
-  t3 := point hint((24, -3.03))
-  o distance(rp - m, along: u) t0
-  o distance(rp - m, along: u) t1
-  o distance(rp + 2 * m, along: u) t2
-  o distance(rp + 2 * m, along: u) t3
-  o distance(-(hw - m * tan(alpha)), along: v) t0
-  o distance(hw - m * tan(alpha), along: v) t1
-  o distance(hw + 2 * m * tan(alpha), along: v) t2
-  o distance(-(hw + 2 * m * tan(alpha)), along: v) t3
+// the rack's tooth, drawn in the rack: its tip at the working depth, its back past the blank's
+// rim, where it stands at roll 0
+in (rack := frame) {
+  in std.front {
+    t0 := point hint((18, -0.84))
+    t1 := point hint((18, 0.84))
+    t2 := point hint((24, 3.03))
+    t3 := point hint((24, -3.03))
+    o distance(rp - m, along: u) t0
+    o distance(rp - m, along: u) t1
+    o distance(rp + 2 * m, along: u) t2
+    o distance(rp + 2 * m, along: u) t3
+    o distance(-(hw - m * tan(alpha)), along: v) t0
+    o distance(hw - m * tan(alpha), along: v) t1
+    o distance(hw + 2 * m * tan(alpha), along: v) t2
+    o distance(-(hw + 2 * m * tan(alpha)), along: v) t3
+  }
 }
 tooth := face(t0, t1, t2, t3, -> close)
 construction rack_tooth := solid(tooth, from: -width - 2mm, to: 2mm)
 
-turn := motion(about: o, ratio: 1)
-rack := motion(along: slide, advance: 2 * pi * rp)
-cutting := motion(rack, relative_to: turn)
-construction space := solid(rack_tooth, under: cutting, through: gear)
+// The blank turns in the front view about its centre, and the rack slides along its pitch line
+// a pitch circle's turn a turn: the rack rolls on the pitch circle.  What it cuts is the tooth,
+// riding the rack, seen from the blank.
+turn := frame
+std.Spin(turn, about: o, on: std.front, ratio: 1)
+std.Slide(rack, along: slide, advance: 2 * pi * rp)
+construction space := solid(rack_tooth, seen_from: turn, through: gear)
 
 // The same motion draws on the sketch what it cuts in the solid: the envelope of the rack's flank
 // is the tooth's involute, and the envelope of its tip corner the root fillet, curves of the
@@ -72,8 +80,8 @@ construction space := solid(rack_tooth, under: cutting, through: gear)
 in std.front {
   rack_flank := line(t1, t2)
 }
-involute := envelope(rack_flank, under: cutting, from: -30deg, to: 30deg)
-fillet := envelope(t1, under: cutting, from: -30deg, to: 30deg)
+involute := envelope(rack_flank, seen_from: turn, from: -30deg, to: 30deg)
+fillet := envelope(t1, seen_from: turn, from: -30deg, to: 30deg)
 in std.front {
   base_c := circle(center: o) hint(r: 18.8)
   radius(rp * cos(alpha)) base_c

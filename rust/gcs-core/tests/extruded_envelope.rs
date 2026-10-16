@@ -1,9 +1,10 @@
 //! **A point in space held to a generated surface** (issue #70, part 1).  A prism's side
 //! generating under a motion that keeps the prism's view sweeps the surface its edge's planar
 //! envelope is extruded into, square to the view, so the drawing holds it: `flank :=
-//! envelope(side, under: cutting, …)` over `side := surface(rack_tooth, edge: rack_flank)` is that
-//! envelope, marked an extrusion (`CurveE::extrusion`), and a point drawn in another view is `on`
-//! it by its place in the prism's view (`CKind::PointOnExtrusion`, its kernel the definition's).
+//! envelope(side, under: rack, seen_from: turn, …)` over `side := surface(rack_tooth, edge:
+//! rack_flank)` is that envelope, marked an extrusion (`CurveE::extrusion`), and a point drawn in
+//! another view is `on` it by its place in the prism's view (`CKind::PointOnExtrusion`, its kernel
+//! the definition's).
 //!
 //! The fixture is `rack_cut.rs`'s tooth space drawn in `std.front`; the point stands in a view
 //! parallel to the page's horizontal, 1.9 above the gear's centre — across the flank of the tooth
@@ -42,12 +43,13 @@ fix((24, 3.026666)) t2
 fix((24, -3.026666)) t3
 tooth := face(t0, t1, rack_flank, t3, -> close)
 construction rack_tooth := solid(tooth, from: -8mm, to: 2mm)
-turn := motion(about: o, ratio: 1)
-rack := motion(along: slide, advance: 2 * pi * 20mm)
-cutting := motion(rack, relative_to: turn)
-construction space := solid(rack_tooth, under: cutting, from: -60deg, to: 60deg)
+turn := frame
+std.Spin(turn, about: o, on: std.front, ratio: 1)
+rack := frame
+std.Slide(rack, along: slide, advance: 2 * pi * 20mm)
+construction space := solid(rack_tooth, under: rack, seen_from: turn, from: -60deg, to: 60deg)
 side := surface(rack_tooth, edge: rack_flank)
-flank := envelope(side, under: cutting, from: -30deg, to: 30deg)
+flank := envelope(side, under: rack, seen_from: turn, from: -30deg, to: 30deg)
 ";
 
 /// The tooth space drawn in `std.front`.

@@ -42,8 +42,12 @@ pub(super) fn held_envelopes(sk: &mut Sketch, res: &mut Resolver, map: &mut Sour
                 _ => None,
             }
         };
-        let motion = operand(1).and_then(|r| res.lookup(r))
-            .filter(|e| e.kind == EntKind::Motion && e.i() < sk.motions.len());
+        // the frame it is generated under, seen from the one named — or, `under:` left out,
+        // what its source rides on (#383)
+        let tool = operand(0).and_then(|r| ridden(sk, res, &decls, r));
+        let motion = super::motions::reading_of(sk, res, tool, operand(1), d.seen_from.as_ref())
+            .ok().map(|m| EntRef::new(EntKind::Motion, m));
+        let rides = super::generated::observer_path(sk, res, d);
         // a declaration that would not be built after the solve either is left to say so there —
         // its name, until then, naming nothing a relation could hold to
         let (Some(motion),Some(source),Ok(roll)) = (motion,operand(0),roll(sk,d)) else {
@@ -59,8 +63,24 @@ pub(super) fn held_envelopes(sk: &mut Sketch, res: &mut Resolver, map: &mut Sour
         map.bind(&name,e,d.name.named());
         map.record(st,Made::Ent(e));
         made.insert(st.id);
+        super::generated::ride_on(sk, res, d, rides);
     }
     made
+}
+
+/// What a reading's source rides as (#383): the entity it names, or for a revolution's named side
+/// — whose solid is built after the solve — the edge it is turned from.  `None` for a set applied
+/// to its hidden point, which rides on nothing.
+fn ridden(sk: &Sketch, res: &Resolver, decls: &BTreeMap<&str,&Decl>, r: &crate::syntax::Ref)
+    -> Option<EntRef> {
+    if let Some(sd) = decls.get(r.root.text.as_str()).filter(|sd| sd.kind == EntKind::Surface) {
+        let [Kid::Ref(edge)] = sd.children.get(1)?.as_slice() else { return None };
+        return res.lookup(edge).and_then(|e| follow_building(sk, res, e, edge).ok());
+    }
+    if crate::flatten::is_probe(&r.root.text) {
+        return None;
+    }
+    res.lookup(r).and_then(|e| follow_building(sk, res, e, r).ok())
 }
 
 /// Each meshing of two flanks (#283), built with the drawing — after the envelopes the solve holds,
@@ -107,9 +127,24 @@ pub(super) fn held_meshings(sk: &mut Sketch, res: &mut Resolver, map: &mut Sourc
         };
         let built = (|| -> Result<MeshingE,String> {
             let flanks = [flank(sk,0)?,flank(sk,1)?];
-            let m = res.lookup(operand(2)?)
-                .filter(|e| e.kind == EntKind::Motion && e.i() < sk.motions.len())
-                .ok_or("a meshing turns its flanks `under:` a motion")?;
+            // each flank read on its own frames where `under:` is left out (#383)
+            let m = match operand(2) {
+                Ok(u) => super::motions::reading(sk, res, u, d.seen_from.as_ref()),
+                Err(_) => {
+                    let rode = |sk: &Sketch, i: usize| match &flanks[i] {
+                        Flank::Envelope(k) => Some(EntRef::new(EntKind::Envelope, *k as usize)),
+                        _ => ridden(sk, res, &decls, operand(i).ok()?),
+                    };
+                    match (rode(sk, 0), rode(sk, 1)) {
+                        (Some(a), Some(b)) => super::motions::meshing(sk, res, a, b,
+                                                                       d.seen_from.as_ref()),
+                        _ => Err("a meshing names the frame its flanks turn under, `under:`"
+                            .into()),
+                    }
+                }
+            }.map(|m| EntRef::new(EntKind::Motion, m))
+                .map_err(|why| format!("a meshing turns its flanks `under:` the second's frame \
+                    `seen_from:` the first's: {why}"))?;
             let ease = match d.angular_span.as_ref().and_then(|s| s.ease.as_deref()) {
                 Some(e) => {
                     if matches!(flanks[0],Flank::Traced(_)) {
@@ -331,6 +366,25 @@ pub(super) fn envelopes(sk: &mut Sketch, res: &mut Resolver, map: &mut SourceMap
     for st in body {
         let Operation::Decl(d) = &st.kind else { continue; };
         if d.kind != EntKind::Envelope || skip.contains(&st.id) { continue; }
+        // the frame it is generated under, seen from the one named — or, `under:` left out, what
+        // its surface rides on (#383)
+        let motion = match d.children.get(1).map(Vec::as_slice) {
+            _ if held.contains(&st.id) => Err(String::new()),
+            under => {
+                let under = match under {
+                    Some([Kid::Ref(r)]) => Some(r),
+                    _ => None,
+                };
+                let tool = match d.children.first().map(Vec::as_slice) {
+                    Some([Kid::Ref(r)]) => {
+                        res.lookup(r).and_then(|e| follow_building(sk, res, e, r).ok())
+                    }
+                    _ => None,
+                };
+                super::motions::reading_of(sk, res, tool, under, d.seen_from.as_ref())
+                    .map(|m| m as u32)
+            }
+        };
         let operand = |i: usize, kind: EntKind| -> Result<u32,String> {
             let group = d.children.get(i).ok_or("an envelope needs a surface and motion")?;
             let [Kid::Ref(r)] = group.as_slice() else {
@@ -355,7 +409,7 @@ pub(super) fn envelopes(sk: &mut Sketch, res: &mut Resolver, map: &mut SourceMap
             continue;
         }
         let build = || -> Result<EnvelopeE,String> {
-            Ok(EnvelopeE {surface:Some(operand(0,EntKind::Surface)?),motion:operand(1,EntKind::Motion)?,
+            Ok(EnvelopeE {surface:Some(operand(0,EntKind::Surface)?),motion:motion.clone()?,
                 roll:roll(sk,d)?,name:name.clone(),class:d.class.clone(),
                 held:Held::Not("its source and motion were not read before the relations".into())})
         };
@@ -366,6 +420,8 @@ pub(super) fn envelopes(sk: &mut Sketch, res: &mut Resolver, map: &mut SourceMap
                 map.bind(&value.name,e,d.name.named());
                 map.record(st,Made::Ent(e));
                 sk.envelopes.push(value);
+                let rides = super::generated::observer_path(sk, res, d);
+                super::generated::ride_on(sk, res, d, rides);
             }
             Err(message) => {
                 diags.push(Diag::on(Code::E080, st, message));

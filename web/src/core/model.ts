@@ -14,7 +14,7 @@ import './constraints.js';
 /** (xmin, ymin, xmax, ymax) */
 export type Box = [number, number, number, number];
 
-export type Kind = 'point' | 'line' | 'circle' | 'arc' | 'spline' | 'curve' | 'plane' | 'axis';
+export type Kind = 'point' | 'line' | 'circle' | 'arc' | 'spline' | 'curve' | 'frame' | 'axis';
 /** Which way an extrusion runs from its face: behind it (`depth:`), in front of it (`from: 0,
  *  to:`), or both ways — the core's words, and in this order its numbers. */
 export const WAYS = ['behind', 'front', 'both'] as const;
@@ -23,13 +23,24 @@ export type Way = typeof WAYS[number];
 /** The core's kind ids (`kind_id` in the ABI), one per kind with a proxy here — the one table:
  *  an axis is 16, past kinds that have none. */
 export const KIND_ID: Record<Kind, number> =
-  { point: 0, line: 1, circle: 2, arc: 3, spline: 4, curve: 5, plane: 6, axis: 16 };
+  { point: 0, line: 1, circle: 2, arc: 3, spline: 4, curve: 5, frame: 6, axis: 16 };
 /** Every kind with a proxy here. */
 export const KINDS = Object.keys(KIND_ID) as Kind[];
 
 /** Where each kind's count sits in `gcs_sketch_counts` — appended to, never reordered. */
 const COUNT_SLOT: Record<Kind, number> =
-  { point: 1, line: 2, circle: 3, arc: 4, spline: 6, curve: 8, plane: 10, axis: 11 };
+  { point: 1, line: 2, circle: 3, arc: 4, spline: 6, curve: 8, frame: 10, axis: 11 };
+
+/** A kind as the core's documents and reports spell it: the frame kind is written `plane`, the
+ *  word its flat ones are declared with (#383) — `toWire` and `fromWire` are the one seam. */
+export function toWire(k: Kind): string {
+  return k === 'frame' ? 'plane' : k;
+}
+
+/** The binding's kind for one the core wrote. */
+export function fromWire(k: string): string {
+  return k === 'plane' ? 'frame' : k;
+}
 
 /** The kind a core kind id names, or undefined for one with no proxy — how a pick is decoded. */
 export function kindOf(id: number): Kind | undefined {
@@ -70,8 +81,8 @@ export abstract class Entity {
   }
 
   /** `['point', 3]` — the reference form the document and the ABI use. */
-  get ref(): [Kind, number] {
-    return [this.kind, this.index];
+  get ref(): [string, number] {
+    return [toWire(this.kind), this.index];
   }
 
   /** `P0` / `L3` / `C1` / `A2`. */
@@ -181,12 +192,12 @@ export class Point extends Entity {
   /** The view this point is drawn in, or null for the page.  Membership is what a `project`
    *  reads to know which two views it relates, and what the source writes as `in top`; it is
    *  document state, so the core holds it and a gesture sets it before the source catches up. */
-  get plane(): Plane | null {
+  get plane(): Frame | null {
     const i = core().gcs_point_plane(this.sketch.handle, this.index);
     return i < 0 ? null : this.sketch.planes[i];
   }
 
-  set plane(p: Plane | null) {
+  set plane(p: Frame | null) {
     const ok = core().gcs_point_set_plane(this.sketch.handle, this.index, p ? p.index : -1) === 0;
     if (!ok) throw new Error(lastError() || 'no such plane');
   }
@@ -370,12 +381,25 @@ export class Curve extends Styled {
   }
 }
 
-/** A plane: two axes and a place it stands, its basis read off the axes — `u` along the first,
- *  `v` what is left of the second, the viewer along `u × v` (`docs/planes-plan.md`).  Points
- *  drawn *in* it (`Point.plane`) have its two coordinates, which is what a `project` between two
- *  of them relates.  Its one point is its origin, drawn in it and held at `(0, 0)`. */
-export class Plane extends Styled {
-  readonly kind = 'plane' as const;
+/** A frame (#383, `docs/frames-plan.md`): the core's one datum kind.  A **plane** is a frame
+ *  whose `in` draws flat — two axes and a place it stands, its basis read off the axes, `u`
+ *  along the first, `v` what is left of the second, the viewer along `u × v`
+ *  (`docs/planes-plan.md`); points drawn *in* it (`Point.plane`) have its two coordinates, which
+ *  is what a `project` between two of them relates, and its one point is its origin, drawn in it
+ *  and held at `(0, 0)`.  A frame declared bare (`f := frame`) is spatial: no pane, its points
+ *  in space, and no origin until its axes are named. */
+export class Frame extends Styled {
+  readonly kind = 'frame' as const;
+
+  /** Whether its `in` draws flat: a plane, which the workspace offers as a place to draw. */
+  get planar(): boolean {
+    return core().gcs_frame_planar(this.sketch.handle, this.index) === 1;
+  }
+
+  /** Whether it moves: a joint the document holds, which `frameSample` evaluates. */
+  get moves(): boolean {
+    return core().gcs_frame_moves(this.sketch.handle, this.index) === 1;
+  }
 
   /** The point the plane stands at, held at its `(0, 0)`. */
   get origin(): Point {
@@ -424,11 +448,15 @@ export class Axis extends Styled {
   readonly kind = 'axis' as const;
 }
 
-export type Primitive = Point | Line | Circle | Arc | Spline | Curve | Plane | Axis;
+/** The class every plane is: a frame, of which a plane is the flat kind (`Frame.planar`) —
+ *  what every pane, pick and chooser of the workspace names. */
+export { Frame as Plane };
+
+export type Primitive = Point | Line | Circle | Arc | Spline | Curve | Frame | Axis;
 
 const CLASSES =
   { point: Point, line: Line, circle: Circle, arc: Arc, spline: Spline,
-    curve: Curve, plane: Plane, axis: Axis } as const;
+    curve: Curve, frame: Frame, axis: Axis } as const;
 
 /** The CCW arc through three points: centre, radius, and the sweep that passes through the
  *  third point.  `swapped` is true when that sweep runs from the *second* given point. */
@@ -457,7 +485,7 @@ export class Sketch {
   private params_: Param[] = [];
   private ents: Record<Kind, Entity[]> =
     { point: [], line: [], circle: [], arc: [], spline: [], curve: [],
-      plane: [], axis: [] };
+      frame: [], axis: [] };
   private cons: Constraint[] = [];
   /** Constraint id → its proxy, so identity survives every round trip. */
   readonly byId = new Map<number, Constraint>();
@@ -558,7 +586,7 @@ export class Sketch {
   /** A plane held at the world's origin, looking along `u × v`, over two axes a `fix` would
    *  hold, and its origin.  The core orthonormalises the basis and refuses one that spans no
    *  plane. */
-  plane(u: readonly [number, number, number], v: readonly [number, number, number], name = ''): Plane {
+  plane(u: readonly [number, number, number], v: readonly [number, number, number], name = ''): Frame {
     const i = withStr(name, (p, n) =>
       core().gcs_sketch_plane(this.handle, u[0], u[1], u[2], v[0], v[1], v[2], p, n));
     if (i < 0) throw new Error(lastError() || 'u and v do not span a plane');
@@ -677,8 +705,15 @@ export class Sketch {
     return this.entities('curve') as Curve[];
   }
 
-  get planes(): Plane[] {
-    return this.entities('plane') as Plane[];
+  /** Every frame: the planes and the frames declared bare, by the core's index. */
+  get frames(): Frame[] {
+    return this.entities('frame') as Frame[];
+  }
+
+  /** Every frame by the core's index, as `frames` — so `planes[i]` is what a point's `plane`
+   *  names; a chooser offering places to draw asks each whether it is `planar`. */
+  get planes(): Frame[] {
+    return this.frames;
   }
 
   get axes(): Axis[] {

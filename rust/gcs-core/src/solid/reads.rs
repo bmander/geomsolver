@@ -278,7 +278,7 @@ fn face_reads(sk: &Sketch, fi: u32, v: &mut Vec<f64>) {
             }
         }
     }
-    if let Some(p) = f.plane.filter(|&p| (p as usize) < sk.planes.len()) {
+    if let Some(p) = f.plane.filter(|&p| (p as usize) < sk.frames.len()) {
         let basis = sk.basis(p as usize);
         v.extend(basis.u);
         v.extend(basis.v);
@@ -293,12 +293,12 @@ fn motion_reads(sk: &Sketch,motion: u32,values: &mut Vec<f64>) {
         if !seen.insert(i) { continue; }
         let Some(m) = sk.motions.get(i as usize) else { values.push(UNREAD); continue; };
         values.push(i as f64);
-        // a number written as a measurement is read as it now comes to, so the key moves
-        // exactly when the measured geometry does (`MotionE::rotation`)
+        // a joint's number the solve finds is read as it now stands, so the key moves exactly
+        // when the solve moves it (`MotionE::rotation`)
         match m.def {
             crate::model::MotionDef::Rotation {axis,..} => {
-                let (ratio,phase,advance) = m.rotation(sk).unwrap_or((UNREAD,UNREAD,UNREAD));
-                values.extend([0.,axis as f64,ratio,phase,advance]);
+                let (ratio,advance) = m.rotation(sk).unwrap_or((UNREAD,UNREAD));
+                values.extend([0.,axis as f64,ratio,advance]);
                 if let Some(axis) = sk.lines.get(axis as usize) {
                     for p in [axis.p1,axis.p2] { values.extend(sk.world_point(p as usize)); }
                 } else { values.push(UNREAD); }
@@ -310,8 +310,8 @@ fn motion_reads(sk: &Sketch,motion: u32,values: &mut Vec<f64>) {
                 } else { values.push(UNREAD); }
             }
             crate::model::MotionDef::Turn {centre,..} => {
-                let (ratio,phase,_) = m.rotation(sk).unwrap_or((UNREAD,UNREAD,UNREAD));
-                values.extend([3.,centre as f64,ratio,phase]);
+                let (ratio,_) = m.rotation(sk).unwrap_or((UNREAD,UNREAD));
+                values.extend([3.,centre as f64,ratio]);
                 if (centre as usize) < sk.points.len() {
                     values.extend(sk.world_point(centre as usize));
                     let b = sk.plane_of(centre as usize).map(|i| sk.basis(i));
@@ -321,6 +321,18 @@ fn motion_reads(sk: &Sketch,motion: u32,values: &mut Vec<f64>) {
             crate::model::MotionDef::Relative {source,observer} => {
                 values.extend([1.,source as f64,observer as f64]);
                 pending.extend([observer,source]);
+            }
+            crate::model::MotionDef::Inverse {of} => {
+                values.extend([4.,of as f64]);
+                pending.push(of);
+            }
+            crate::model::MotionDef::Joint {axis,ratio,advance} => {
+                values.extend([5.,axis as f64,ratio,advance]);
+                match sk.axes.get(axis as usize) {
+                    Some(r) => values.extend(r.a.iter().chain(&r.d)
+                        .map(|&q| sk.params[q as usize].value)),
+                    None => values.push(UNREAD),
+                }
             }
         }
     }

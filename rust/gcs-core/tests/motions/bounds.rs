@@ -8,20 +8,22 @@ fn contains(b: [I;3],p: [f64;3]) {
 
 #[test]
 fn interval_rotations_include_axis_normalization_offset_and_both_senses() {
-    let e = solved(&format!("{AXES}\nturn := motion(about: ax,ratio: -2,phase: 30deg)\n"));
-    let family = motion::Family::read(&e.sketch,0).unwrap();
-    let domain = I::new(-0.3,0.4).unwrap();
+    let e = solved(&format!("{AXES}\nturn := frame\nstd.Turn(turn,about: ax,ratio: -2)\n"));
+    let family = motion::Family::read(&e.sketch,joint(&e,"turn")).unwrap();
+    // over a window from 15° before roll 0, where the turn stands 30° on
+    let s = 15f64.to_radians();
+    let domain = I::new(-0.3-s,0.4-s).unwrap();
     let bounds = family.bounds(domain).unwrap();
     let p = [3.,4.,5.];
     for i in 0..=20 {
-        let t = -0.3+0.7*i as f64/20.;
-        let angle = 30f64.to_radians()-2.*t;
+        let t = -0.3-s+0.7*i as f64/20.;
+        let angle = -2.*t;
         let (s,c) = angle.sin_cos();
         // Axis is world z through (2,0,0); independent coordinate formula.
         contains(bounds.point(box_at(p)).unwrap(),[2.+c-4.*s,s+4.*c,5.]);
         contains(bounds.inverse_point(box_at(p)).unwrap(),[2.+c+4.*s,-s+4.*c,5.]);
     }
-    let fixed = family.bounds(I::point(0.).unwrap()).unwrap();
+    let fixed = family.bounds(I::point(-s).unwrap()).unwrap();
     for q in [fixed.point(box_at(p)).unwrap(),fixed.inverse_point(box_at(p)).unwrap()] {
         assert!(q.iter().all(|v| v.bounds()[1]-v.bounds()[0] < 1e-10));
     }
@@ -29,13 +31,16 @@ fn interval_rotations_include_axis_normalization_offset_and_both_senses() {
 
 #[test]
 fn relative_motion_bounds_cover_input_boxes_and_nested_observer_inverses() {
-    let e = solved(&format!("{AXES}\n\
-        turn := motion(about: ax,ratio: 2,phase: 30deg)\n\
-        observer := motion(about: other,ratio: -0.3,phase: 20deg)\n\
-        relative := motion(turn,relative_to: observer)\n\
-        nested := motion(relative,relative_to: turn)\n"));
-    for name in ["relative","nested"] {
-        let family = motion::Family::read(&e.sketch,e.map.ent_named(name).unwrap().i()).unwrap();
+    let mut e = solved(&format!("{AXES}\n\
+        turn := frame\nstd.Turn(turn,about: ax,ratio: 2)\n\
+        observer := frame\nstd.Turn(observer,about: other,ratio: -0.3)\n{}",
+        reading("turn","observer")));
+    // and the relative seen from the turn again, made by hand: a document reads one frame seen
+    // from another
+    let (relative,turn) = (seen(&e,"turn","observer"),joint(&e,"turn"));
+    let nested = push_relative(&mut e.sketch,relative,turn);
+    for node in [relative,nested] {
+        let family = motion::Family::read(&e.sketch,node).unwrap();
         let b = family.bounds(I::new(-0.1,0.2).unwrap()).unwrap();
         let p = [I::new(2.,3.).unwrap(),I::new(-1.,1.).unwrap(),I::new(4.,5.).unwrap()];
         let forward = b.point(p).unwrap(); let inverse = b.inverse_point(p).unwrap();
@@ -51,8 +56,9 @@ fn relative_motion_bounds_cover_input_boxes_and_nested_observer_inverses() {
 
 #[test]
 fn motion_bounds_retain_solved_snapshots_and_enclose_angles_of_any_size() {
-    let mut e = solved(&format!("{AXES}\nturn := motion(about: ax,ratio: 2)\n"));
-    let family = motion::Family::read(&e.sketch,0).unwrap();
+    let mut e = solved(&format!("{AXES}\nturn := frame\nstd.Turn(turn,about: ax,ratio: 2)\n"));
+    let turn = joint(&e,"turn");
+    let family = motion::Family::read(&e.sketch,turn).unwrap();
     // Many turns wide, the bounds hold every pose in them, the identity among them; a single
     // angle past sin_cos's own domain reads the same pose as that angle a turn nearer zero.
     let q = [3.,1.,4.];
@@ -71,6 +77,6 @@ fn motion_bounds_retain_solved_snapshots_and_enclose_angles_of_any_size() {
     let x = e.sketch.points[a].x as usize;
     e.sketch.params[x].value = -2.;
     assert_eq!(family.bounds(I::point(0.3).unwrap()).unwrap().point(p).unwrap(),original);
-    let updated = motion::Family::read(&e.sketch,0).unwrap();
+    let updated = motion::Family::read(&e.sketch,turn).unwrap();
     assert_ne!(updated.bounds(I::point(0.3).unwrap()).unwrap().point(p).unwrap(),original);
 }

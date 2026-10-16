@@ -80,14 +80,21 @@ impl Sketch {
             }
             // a traced body's: what its component was given
             EntKind::Traced => self.traced[e.i()].args.clone(),
-            // what a motion measures is what it is written over, as much as its axis is
-            EntKind::Motion => { let m = &self.motions[e.i()]; match m.def {
-                MotionDef::Rotation {axis,..} | MotionDef::Translation {axis,..} => std::iter::once(EntRef::line(axis as usize))
-                    .chain(m.measured.iter().flat_map(|x| x.value.ents.values().copied())).collect(),
-                MotionDef::Turn {centre,..} => std::iter::once(EntRef::point(centre as usize))
-                    .chain(m.measured.iter().flat_map(|x| x.value.ents.values().copied())).collect(),
+            // what a motion is written over, its axis or its centre — and a joint's node is its
+            // frame's (#383), so deleting the frame takes what reads it
+            EntKind::Motion => { let m = &self.motions[e.i()];
+                let mut kids: Vec<EntRef> = match m.def {
+                MotionDef::Rotation {axis,..} | MotionDef::Translation {axis,..} =>
+                    vec![EntRef::line(axis as usize)],
+                MotionDef::Turn {centre,..} => vec![EntRef::point(centre as usize)],
                 MotionDef::Relative {source,observer} => [source,observer].map(|i| EntRef::new(EntKind::Motion,i as usize)).to_vec(),
-            } },
+                MotionDef::Inverse {of} => vec![EntRef::new(EntKind::Motion,of as usize)],
+                MotionDef::Joint {axis,..} => vec![EntRef::new(EntKind::Axis,axis as usize)],
+            };
+            kids.extend(self.frames.iter().enumerate()
+                .filter(|(_,f)| f.joint.as_ref().and_then(|j| j.motion) == Some(e.i() as u32))
+                .map(|(k,_)| EntRef::frame(k)));
+            kids },
             EntKind::Surface => {
                 let s = &self.surfaces[e.i()];
                 vec![EntRef::solid(s.solid as usize),s.edge]
@@ -149,13 +156,18 @@ impl Sketch {
                 self.splines[e.i()].ctrl.iter().map(|&c| EntRef::point(c as usize)).collect()
             }
             // its two axes and its origin, the order its declaration names them
-            EntKind::Plane => {
-                let p = &self.planes[e.i()];
-                vec![
+            // (a frame declared bare has none until they are named, #383)
+            // its chart's axes and origin, and its joint's axis (#383)
+            EntKind::Frame => {
+                let f = &self.frames[e.i()];
+                let chart = f.chart.as_ref().map(|p| vec![
                     EntRef::new(EntKind::Axis, p.u as usize),
                     EntRef::new(EntKind::Axis, p.v as usize),
                     EntRef::point(p.origin as usize),
-                ]
+                ]).unwrap_or_default();
+                chart.into_iter()
+                    .chain(f.joint.as_ref().map(|j| EntRef::new(EntKind::Axis, j.axis as usize)))
+                    .collect()
             }
             // the one kind whose children need not be points
             EntKind::Curve => self.curves[e.i()].args.clone(),
@@ -177,7 +189,7 @@ impl Sketch {
             // is its term, and a term missing an operand is not that solid
             EntKind::Point | EntKind::Line | EntKind::Circle | EntKind::Arc
             | EntKind::Axis
-            | EntKind::Plane | EntKind::Curve | EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Meshing | EntKind::Traced => {
+            | EntKind::Frame | EntKind::Curve | EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Meshing | EntKind::Traced => {
                 children.len()
             }
         }
@@ -194,7 +206,7 @@ impl Sketch {
             self.lines.len(),
             self.circles.len(),
             self.arcs.len(),
-            self.planes.len()
+            self.frames.len()
         );
         for sp in &self.splines {
             let _ = write!(s, "s{}:", sp.ctrl.len());
@@ -270,7 +282,7 @@ impl Sketch {
             EntKind::Axis => self.axes.len(),
             EntKind::Arc => self.arcs.len(),
             EntKind::Spline => self.splines.len(),
-            EntKind::Plane => self.planes.len(),
+            EntKind::Frame => self.frames.len(),
             EntKind::Curve => self.curves.len(),
         }
     }
@@ -286,7 +298,7 @@ impl Sketch {
             EntKind::Spline,
             // a plane is built over its axes
             EntKind::Axis,
-            EntKind::Plane,
+            EntKind::Frame,
         ] {
             for i in 0..self.count(kind) {
                 // a spline over points in space is the curve traced in space it is (#363 S3)

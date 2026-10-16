@@ -42,7 +42,8 @@ profile := face(bottom,low,high,top,inner)
 body := solid(profile,about: ax)
 first_surface := surface(body,low,from: 0deg,to: 90deg)
 second_surface := surface(body,high,from: 0deg,to: 90deg)
-roll := motion(about: spin_axis)
+roll := frame
+std.Turn(roll,about: spin_axis,ratio: 1)
 first_envelope := envelope(first_surface,under: roll,from: -20deg,to: 20deg)
 second_envelope := envelope(second_surface,under: roll,from: -20deg,to: 20deg)
 ";
@@ -181,8 +182,8 @@ fn an_unresolved_arc_radius_cannot_hide_a_gap_at_a_shared_vertex() {
 
 #[test]
 fn a_stationary_family_does_not_produce_a_falsely_unique_seam_intersection() {
-    let e = solved(&MODEL.replace("roll := motion(about: spin_axis)",
-        "roll := motion(about: spin_axis,ratio: 0)"));
+    let e = solved(&MODEL.replace("std.Turn(roll,about: spin_axis,ratio: 1)",
+        "std.Turn(roll,about: spin_axis,ratio: 0)"));
     let seam = shared(&e);
     let result = seam.intersect(|c| c.position[1]-1.,[0.05,0.],options(&seam),1e-9);
     assert_eq!(result.unwrap_err(),Error::SingularIntersection);

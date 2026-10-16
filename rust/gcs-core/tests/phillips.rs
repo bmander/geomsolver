@@ -241,9 +241,10 @@ p1 := point hint((10, 72, 0))
 fix((0mm, 72mm, 0mm)) p0
 fix((10mm, 72mm, 0mm)) p1
 pinion_ax := line(p0, p1)
-gear_turn := motion(about: gear_ax, ratio: -{Q})
-pinion_turn := motion(about: pinion_ax)
-mesh := motion(gear_turn, relative_to: pinion_turn)
+gear_turn := frame
+std.Turn(gear_turn, about: gear_ax, ratio: -{Q})
+pinion_turn := frame
+std.Turn(pinion_turn, about: pinion_ax, ratio: 1)
 P := point hint({hp})
 fix({p}) P
 ahead := point hint({ha})
@@ -256,13 +257,14 @@ fix({ga}) gahead
 GL := line(GP, gahead)
 rack := std.HalfSpace(P, L, d: 0mm)
 gear_rack := std.HalfSpace(GP, GL, d: 0mm)
-slide := motion(along: L, advance: {s1}mm)
-gear_slide := motion(along: GL, advance: {s2}mm)
-pinion_cutting := motion(slide, relative_to: pinion_turn)
-gear_cutting := motion(gear_slide, relative_to: gear_turn)
-pinion_flank := envelope(rack, under: pinion_cutting, from: -40deg, to: 40deg)
-gear_flank := envelope(gear_rack, under: gear_cutting, from: -40deg, to: 40deg)
-bearing := meshing(pinion_flank, gear_flank, under: mesh, from: -15deg, to: 15deg)
+slide := frame
+std.Slide(slide, along: L, advance: {s1}mm)
+gear_slide := frame
+std.Slide(gear_slide, along: GL, advance: {s2}mm)
+pinion_flank := envelope(rack, under: slide, seen_from: pinion_turn, from: -40deg, to: 40deg)
+gear_flank := envelope(gear_rack, under: gear_slide, seen_from: gear_turn, from: -40deg, to: 40deg)
+bearing := meshing(pinion_flank, gear_flank, under: gear_turn, seen_from: pinion_turn, from: -15deg,
+                   to: 15deg)
 Q := point hint({hp})
 Q coincident(t == 0deg) bearing
 ",
@@ -363,14 +365,14 @@ fn screw_of(e: &gcs_core::program::Elaborated) -> ([f64; 3], [f64; 3], f64) {
 
 /// **The screw of two turns is Ball's.**  Two members turning about skew shafts at a ratio — the
 /// pinion about `a₁` through `c₁` at 1, the gear about `a₂` through `c₂` at `w` — and the gear seen
-/// from the pinion: the screw `std.Screw(isa, mesh)` solves to crosses the shafts' common
-/// perpendicular square, where a point of the perpendicular `s` from the pinion's shaft moves along
-/// `ω = ω₂ − ω₁` (`s = E ω₂·ω / |ω|²`, `E` the offset), and its pitch is that point's speed along
-/// the axis a radian of the mesh's roll — Ball's pitch (its speed a radian of turn about it) times
-/// `ω` along the axis.  Worked out on the perpendicular itself, apart from `envelope::screw`, and
-/// read both off the drawing and off `motion::Family`.  With no offset the screw passes through
-/// the apex where the shafts meet, and its pitch is zero: bevel gears roll — the carried points on
-/// the axis stand still, and their rates' rows stay regular.
+/// from the pinion: the screw `std.Screw(isa, gear_turn, seen_from: pinion_turn)` solves to crosses
+/// the shafts' common perpendicular square, where a point of the perpendicular `s` from the
+/// pinion's shaft moves along `ω = ω₂ − ω₁` (`s = E ω₂·ω / |ω|²`, `E` the offset), and its pitch is
+/// that point's speed along the axis a radian of the mesh's roll — Ball's pitch (its speed a radian
+/// of turn about it) times `ω` along the axis.  Worked out on the perpendicular itself, apart from
+/// `envelope::screw`, and read both off the drawing and off `motion::Family`.  With no offset the
+/// screw passes through the apex where the shafts meet, and its pitch is zero: bevel gears roll —
+/// the carried points on the axis stand still, and their rates' rows stay regular.
 #[test]
 fn the_screw_of_two_turns_is_on_the_common_perpendicular_with_balls_pitch() {
     use gcs_core::motion::Family;
@@ -393,11 +395,12 @@ p1 := point hint((10, {offset}, 0))
 fix({p0}) p0
 fix({p1}) p1
 pinion_ax := line(p0, p1)
-gear_turn := motion(about: gear_ax, ratio: {w})
-pinion_turn := motion(about: pinion_ax)
-mesh := motion(gear_turn, relative_to: pinion_turn)
+gear_turn := frame
+std.Turn(gear_turn, about: gear_ax, ratio: {w})
+pinion_turn := frame
+std.Turn(pinion_turn, about: pinion_ax, ratio: 1)
 isa := axis hint(dir: (-0.9, 0.1, -0.4))
-screw := std.Screw(isa, mesh)
+screw := std.Screw(isa, gear_turn, seen_from: pinion_turn)
 ", g0 = v(c2), g1 = v(add(c2, scale(a2, 10.0))), p0 = v(c1), p1 = v(add(c1, scale(a1, 10.0))));
         let e = solved(&src);
         let (point, dir, pitch) = screw_of(&e);
@@ -424,15 +427,18 @@ screw := std.Screw(isa, mesh)
         // and the velocity of the point on the axis is along it, by Ball's pitch
         let speed = sub(scale(cross(w2, sub(foot, c2)), 1.0), cross(w1, sub(foot, c1)));
         assert!(norm(sub(speed, scale(omega, balls))) < 1e-9, "{what}: {speed:?}");
-        let mesh = e.sketch.motions.iter().position(|m| m.name == "mesh").unwrap();
+        // the mesh: the gear's turn seen from the pinion's, which the screw's readings mint
+        let mesh = e.sketch.motions.iter()
+            .position(|m| m.name == "gear_turn seen from pinion_turn").unwrap();
         let isa = Family::read(&e.sketch, mesh).unwrap().instantaneous().unwrap();
         assert!(norm(sub(isa.point, foot)) < 1e-9 && (isa.pitch - balls).abs() < 1e-9,
                 "{what}: {isa:?}");
     }
 }
 
-/// **`L reciprocal mesh` is the meshing law.**  `phillips.sv` states `L`'s pressure angle and that
-/// it is reciprocal to the mesh — `std.sv`'s word, a point of `L` carried by the mesh whose rate is
+/// **`L reciprocal(seen_from: pinion_turn) gear_turn` is the meshing law.**  `phillips.sv` states
+/// `L`'s pressure angle and that it is reciprocal to the mesh, the gear's turn seen from the
+/// pinion's — `std.sv`'s word, a point of `L` carried by the mesh whose rate is
 /// square to `L` (#365): the helix angle it solves to is the closed form's, and along it the two
 /// members move as fast at every point — checked from the members' turns alone.  The rack's slide
 /// is reciprocal to each member's cutting in turn (the document's claims hold), and the mesh's
@@ -465,8 +471,9 @@ fn l_reciprocal_to_the_mesh_is_where_the_members_move_as_fast_along_it() {
 
 /// `reciprocal` and `screw` are the standard library's (#365): they print as they are written and
 /// read back the same, a pinned pitch with them, and are rates of carried points underneath — no
-/// kind of their own.  A motion relative to a relative one has a screw too: a rate reads any
-/// motion's pose.
+/// kind of their own.  The mesh read the other way, the pinion seen from the gear, has a screw
+/// too: a rate reads any motion's pose.  Each joint is stated as the statements `std.Turn` writes:
+/// the canonical printer prints no component instance.
 #[test]
 fn reciprocal_and_screw_print_back_as_words_of_the_standard_library() {
     use gcs_core::constraints::CKind;
@@ -483,24 +490,29 @@ p1 := point hint((10, 72, 0))
 fix((0mm, 72mm, 0mm)) p0
 fix((10mm, 72mm, 0mm)) p1
 pinion_ax := line(p0, p1)
-gear_turn := motion(about: gear_ax, ratio: -0.5)
-pinion_turn := motion(about: pinion_ax)
-mesh := motion(gear_turn, relative_to: pinion_turn)
+gear_turn := frame
+gear_ax coincident gear_turn.axis
+fix(ratio == -0.5, advance == 0mm) gear_turn
+pinion_turn := frame
+pinion_ax coincident pinion_turn.axis
+fix(ratio == 1, advance == 0mm) pinion_turn
+rest := frame
 P := point hint((0, 48, 0))
 fix((0mm, 48mm, 0mm)) P
 ahead := point hint((7, 51, -7))
 L := line(P, ahead)
 P distance(10mm) ahead
 P distance(3.42mm, along: gear_ax) ahead
-L reciprocal mesh
-claim L reciprocal gear_turn
+L reciprocal(seen_from: pinion_turn) gear_turn
+claim L reciprocal(seen_from: rest) gear_turn
 ";
     let (mut prog, errs) = crate::common::parse(src);
     assert!(errs.is_empty(), "{errs:?}");
     let first = gcs_core::program::elaborate(&prog);
     assert!(first.ok(), "{:?}", first.errors().map(|d| &d.message).collect::<Vec<_>>());
     let printed = gcs_core::syntax::render_flat(&mut prog).unwrap().to_string();
-    let stated = ["L reciprocal mesh", "claim L reciprocal gear_turn"];
+    let stated = ["L reciprocal(seen_from: pinion_turn) gear_turn",
+        "claim L reciprocal(seen_from: rest) gear_turn"];
     for said in stated {
         assert!(printed.contains(said), "{said}: {printed}");
     }
@@ -518,12 +530,12 @@ claim L reciprocal gear_turn
     // a statement the diagnosis names is said as written: the word, not its rows
     let rate = first.sketch.constraints.iter().find(|c| c.kind == CKind::Rate).unwrap();
     assert_eq!(gcs_core::io::describe_with(rate, &|e| first.map.name_of(e).cloned()),
-               "L reciprocal mesh");
+               "L reciprocal(seen_from: pinion_turn) gear_turn");
     // the screw, its pitch stated, two carried points, their rates along the axis and the first's
-    // distance along it; and of a relative of a relative, read as any motion is
-    for (screw, motion) in [("std.Screw(isa, mesh, pitch: -32.199mm)", ""),
-                            ("std.Screw(isa, again)", "again := motion(mesh, relative_to: gear_turn)\n")] {
-        let text = format!("{src}{motion}isa := axis hint(dir: (-0.9, 0, -0.45))\nscrew := {screw}\n");
+    // distance along it; and of the mesh read the other way, read as any motion is
+    for screw in ["std.Screw(isa, gear_turn, seen_from: pinion_turn, pitch: -32.199mm)",
+                  "std.Screw(isa, pinion_turn, seen_from: gear_turn)"] {
+        let text = format!("{src}isa := axis hint(dir: (-0.9, 0, -0.45))\nscrew := {screw}\n");
         let (prog, errs) = crate::common::parse(&text);
         assert!(errs.is_empty(), "{errs:?}");
         let e = gcs_core::program::elaborate(&prog);

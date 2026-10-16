@@ -8,7 +8,8 @@
  * arguments live locally; afterwards every read and write goes through the core.
  */
 import {
-  ConstraintRecord, Entity, KINDS, Kind, Param, Primitive, Sketch, registerConstraintFactory,
+  ConstraintRecord, Entity, KINDS, Kind, Param, Primitive, Sketch, fromWire,
+  registerConstraintFactory,
 } from './model.js';
 import { core, lastError, onInit, takeJson, takeStr, withBuf, withJson, withStr } from './wasm.js';
 
@@ -315,7 +316,8 @@ export abstract class Constraint {
 
 function fromJson(sk: Sketch, v: unknown, kind: SpecKind): unknown {
   if (ENTITY_KINDS.has(kind) && Array.isArray(v)) {
-    const [k, i] = v as [Kind, number];
+    const [w, i] = v as [string, number];
+    const k = fromWire(w) as Kind;
     // a kind with no proxy here: the reference is kept as it came, and handed back the same way
     if (!KINDS.includes(k)) return v;
     return sk.entities(k)[i];

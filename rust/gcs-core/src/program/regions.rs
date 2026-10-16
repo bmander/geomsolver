@@ -91,7 +91,7 @@ pub(super) fn region_term(sk: &Sketch, c: &Constraint, probe: usize, grow: Optio
             // line or an axis from any point (`std.HalfSpace`)
             let along = match c.args[2] {
                 CArg::Ent(t) if matches!(t.kind, EntKind::Line | EntKind::Axis) => Some(t),
-                _ => sk.plane_of_origin(from.i()).filter(|_| normal).map(EntRef::plane),
+                _ => sk.plane_of_origin(from.i()).filter(|_| normal).map(EntRef::frame),
             };
             let Some(along) = along else {
                 return Err("a region's ordinate is along a plane's normal (`inside`/`outside` \
@@ -326,7 +326,7 @@ pub(super) fn measured_term(
             to = Target::Set { probe: q as u32, terms: Vec::new() };
         }
         if let Target::Ent(e) = &to {
-            if !matches!(e.kind, EntKind::Point | EntKind::Line | EntKind::Axis | EntKind::Plane) {
+            if !matches!(e.kind, EntKind::Point | EntKind::Line | EntKind::Axis | EntKind::Frame) {
                 return refuse(format!(
                     "a region's bound measures the distance from a point, a line, an axis, a \
                      plane, a face or a set, not {}",

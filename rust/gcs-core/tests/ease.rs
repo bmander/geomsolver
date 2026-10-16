@@ -16,16 +16,18 @@ const LENGTHWISE: f64 = 0.0005;
 
 /// `tests/meshing.rs`'s mesh — crossed shafts 72 apart, the gear at half the pinion's speed, the
 /// gear's flank formed, a cone about the face mill's axis through M — and the pinion's flank its
-/// envelope under the mesh, a conjugate pair; the pinion's flank eased by `profile` and
-/// `lengthwise` (texts) about M, `lengthwise` running along the face mill's circle there, and Q
-/// held to the contact where the pair is drawn.
+/// envelope under the gear's turn seen from the pinion's, a conjugate pair; the pinion's flank
+/// eased by `profile` and `lengthwise` (texts) about M, `lengthwise` running along the face mill's
+/// circle there, and Q held to the contact where the pair is drawn.
 fn eased(profile: &str, lengthwise: &str) -> String {
     format!("{}\
 L := point hint((10, 48, 10))
 fix((10mm, 48mm, 10mm)) L
 lengthwise := line(M, L)
-pinion_flank := envelope(flank, under: mesh, from: -40deg, to: 40deg)
-contact := meshing(pinion_flank, flank, under: mesh, from: -20deg, to: 20deg, ease: M,
+pinion_flank := envelope(flank, under: gear_turn, seen_from: pinion_turn, from: -40deg,
+                         to: 40deg)
+contact := meshing(pinion_flank, flank, under: gear_turn, seen_from: pinion_turn, from: -20deg,
+                   to: 20deg, ease: M,
                    along: lengthwise, profile: {profile}, lengthwise: {lengthwise})
 Q := point hint((0, 48, 0))
 Q coincident(t == 0deg) contact
@@ -51,10 +53,10 @@ fn relief(y: [f64; 3]) -> f64 {
     0.5 * LENGTHWISE * s * s + 0.5 * PROFILE * dot(r, r)
 }
 
-/// The pinion's flank — the gear's cone's envelope under the mesh — eased, read with nothing of
-/// `envelope::held` or `envelope::meshing`: the envelope's point at `(u, t)` as `tests/meshing.rs`
-/// reads it (`Generated`), moved along the moved cone's normal `∂u × ∂v` there by the relief at
-/// the point.
+/// The pinion's flank — the gear's cone's envelope as the pinion sees it — eased, read with
+/// nothing of `envelope::held` or `envelope::meshing`: the envelope's point at `(u, t)` as
+/// `tests/meshing.rs` reads it (`Generated`), moved along the moved cone's normal `∂u × ∂v` there
+/// by the relief at the point.
 fn eased_point(g: &Generated, u: f64, t: f64, v0: f64) -> ([f64; 3], f64) {
     let (y, v) = g.point(u, t, v0);
     (add(y, scale(g.normal(u, v, t), relief(y))), v)
@@ -153,7 +155,7 @@ fn an_ease_prints_back_and_refuses_what_it_cannot_read() {
     let ease = |e: &gcs_core::program::Elaborated| e.sketch.meshings[0].ease.clone().unwrap();
     let printed = gcs_core::syntax::render_flat(&mut prog).unwrap().to_string();
     let said = "to: 20deg, ease: g1, along: gear_ax, profile: 0.002 / 1mm, \
-                lengthwise: -0.0005 / 1mm)";
+                lengthwise: -0.0005 / 1mm";
     assert!(printed.contains(said), "{printed}");
     let again = build(&printed);
     assert_eq!(ease(&again), ease(&first));
@@ -176,9 +178,10 @@ fn an_ease_prints_back_and_refuses_what_it_cannot_read() {
     refused(&src.replace("ease: M,", "ease: lengthwise,"), "`lengthwise` is no point");
     refused(&src.replace("along: lengthwise,", "along: M,"), "`M` is no line");
     refused(&src.replace("profile: 0.002 / 1mm", "profile: 2mm"), "profile curvature");
+    // the bearing's bounds, the one place the document writes them
     let traced = include_str!("../../examples/spiral_bevel/phillips_pure.sv").replace(
-        "bearing := meshing(pinion_flank, gear_flank, under: mesh, from: -15deg, to: 15deg)",
-        "bearing := meshing(pinion_flank, gear_flank, under: mesh, from: -15deg, to: 15deg, \
-         ease: P, along: L, profile: 0.001 / 1mm, lengthwise: 0.001 / 1mm)");
+        "from: -15deg, to: 15deg)",
+        "from: -15deg, to: 15deg, ease: P, along: L, profile: 0.001 / 1mm, \
+         lengthwise: 0.001 / 1mm)");
     refused(&traced, "a surface traced in space, which is not eased");
 }

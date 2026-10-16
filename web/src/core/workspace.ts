@@ -6,7 +6,7 @@
  * into a place on a plane by inverting a 2×2 — `app/camera.ts`'s whole job.  Every question about
  * what is under the pointer is asked here, of the figures where the eye sees them: views that lie
  * on top of one another on the page are nowhere near one another in space. */
-import { KINDS, Plane, Point, Primitive, Sketch, kindOf } from './model.js';
+import { KINDS, Plane, Point, Primitive, Sketch, fromWire, kindOf } from './model.js';
 import type { Kind, Way } from './model.js';
 import { core, takeJson, withBuf } from './wasm.js';
 
@@ -259,8 +259,10 @@ export function overlappingSeen(sk: Sketch, unit: number, az: number, el: number
   const hits = takeJson<[string, number][]>(
     core().gcs_workspace_overlapping_json(sk.handle, unit, az, el, a[0], a[1], b[0], b[1]));
   return hits
-    .map(([kind, index]) => (KINDS as string[]).includes(kind)
-      ? sk.entities(kind as Kind)[index] : undefined)
+    .map(([wire, index]) => {
+      const kind = fromWire(wire);
+      return (KINDS as string[]).includes(kind) ? sk.entities(kind as Kind)[index] : undefined;
+    })
     .filter((e): e is Primitive => !!e);
 }
 

@@ -34,8 +34,9 @@ in std.front {
   radius(rp) pin
 }
 
-pinion := motion(about: o1, ratio: -r2 / r1)
-wheel := motion(about: o2, ratio: 1)
-seen := motion(pinion, relative_to: wheel)
-epicycloid := envelope(pc, under: seen, from: -20deg, to: 20deg)
-flank := envelope(pin, under: seen, from: -20deg, to: 20deg, side: far)
+pinion := frame
+std.Spin(pinion, about: o1, on: std.front, ratio: -r2 / r1)
+wheel := frame
+std.Spin(wheel, about: o2, on: std.front, ratio: 1)
+epicycloid := envelope(pc, under: pinion, seen_from: wheel, from: -20deg, to: 20deg)
+flank := envelope(pin, under: pinion, seen_from: wheel, from: -20deg, to: 20deg, side: far)

@@ -63,7 +63,7 @@ fn reconciled(e: &mut Elaborated, sk: &Sketch, prog: &Program) -> Result<Edit, S
     // replaced where it stands, written where the parser said one would go, or taken out
     // with the space in front of it
     let flags: Vec<Splice> = memberships.iter().map(|(d, now)| {
-        let with = now.map(|p| format!(" in {}", said.name_of(EntRef::plane(p))));
+        let with = now.map(|p| format!(" in {}", said.name_of(EntRef::frame(p))));
         clause_splice(prog.text(), d.membership.span(), with)
     }).collect();
     gauges(&said, prog, &held, &mut adds, &mut made, &mut doomed);
@@ -151,7 +151,7 @@ fn needed(
     for &r in minted.keys() {
         needed.extend(sk.children(r));
         if let Some(p) = crate::program::plane_of_entity(sk, r) {
-            needed.insert(EntRef::plane(p));
+            needed.insert(EntRef::frame(p));
         }
     }
     // …a gauge names what it holds…
@@ -175,7 +175,7 @@ fn memberships<'p>(
     let mut memberships: Vec<(&Decl, Option<usize>)> = Vec::new();
     // a drawing with no view in it has no membership to write, and the walk below is a scan of
     // the root body per entity — so the question is asked once, of the sketch, first
-    for (r, site) in e.map.of_entity.iter().filter(|_| !sk.planes.is_empty()) {
+    for (r, site) in e.map.of_entity.iter().filter(|_| !sk.frames.is_empty()) {
         if !site.path.0.is_empty() || !in_root(prog, site.stmt) {
             continue;
         }
@@ -194,7 +194,7 @@ fn memberships<'p>(
             .as_ref()
             // the whole path: `in std.front` is `std` and a field, and `std` names no plane
             .and_then(|p| e.map.ent_named(&syntax::ref_text(p)))
-            .filter(|p| p.kind == EntKind::Plane)
+            .filter(|p| p.kind == EntKind::Frame)
             .map(|p| p.i());
         if now == was {
             continue;
@@ -242,7 +242,7 @@ fn memberships<'p>(
             ));
         }
         if let Some(p) = now {
-            needed.insert(EntRef::plane(p));
+            needed.insert(EntRef::frame(p));
         }
         memberships.push((d, now));
     }
@@ -274,7 +274,7 @@ fn name_anonymous(
     let needed: std::collections::BTreeSet<EntRef> = needed
         .into_iter()
         .map(|r| match origin_of(sk, r) {
-            Some(p) if e.map.writable_name(r).is_none() => EntRef::plane(p),
+            Some(p) if e.map.writable_name(r).is_none() => EntRef::frame(p),
             _ => r,
         })
         .collect();
@@ -399,7 +399,7 @@ impl Said<'_> {
     fn name_of(&self, r: EntRef) -> String {
         match origin_of(self.sk, r) {
             Some(p) if self.e.map.name_of(r).is_none() => {
-                format!("{}.origin", self.plain(EntRef::plane(p)))
+                format!("{}.origin", self.plain(EntRef::frame(p)))
             }
             _ => self.plain(r),
         }
@@ -416,7 +416,7 @@ fn declarations(said: &Said, adds: &mut Vec<StmtKind>, made: &mut Vec<Made>, nam
         rename_children(&mut d, sk, r, &|k| said.name_of(k));
         // the plane its points are on, by the name the document calls it
         d.membership = crate::program::plane_of_entity(sk, r)
-            .map(|p| syntax::Membership::lifted(syntax::Ref::new(said.name_of(EntRef::plane(p)))))
+            .map(|p| syntax::Membership::lifted(syntax::Ref::new(said.name_of(EntRef::frame(p)))))
             .unwrap_or_default();
         names.push(name.clone());
         made.push(Made::Ent(r));

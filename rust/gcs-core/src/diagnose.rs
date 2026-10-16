@@ -167,7 +167,7 @@ pub struct Diagnosis {
 pub fn view_freedoms(sk: &Sketch, d: &Diagnosis) -> Vec<String> {
     let under: BTreeSet<u32> = d.under_params.iter().copied().collect();
     let mut out = Vec::new();
-    for (i, p) in sk.planes.iter().enumerate() {
+    for (i, p) in sk.frames.iter().enumerate().filter_map(|(i, f)| Some((i, f.chart.as_ref()?))) {
         let axes = [p.u, p.v].map(|r| sk.axes[r as usize].d);
         if axes.iter().flatten().any(|q| under.contains(q)) {
             out.push(format!("{}.attitude", sk.plane_name(i)));

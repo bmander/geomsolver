@@ -179,6 +179,12 @@ pub struct Formal {
     /// formal may be left out of a call, and the instance then owns a point of its own drawn
     /// there, `k.center`, as if its body began `center := point in on`.
     pub within: Option<Name>,
+    /// A number's default, `advance: Length = 0mm` (#383): what a call that leaves the formal out
+    /// gives it, where an unbound number would otherwise be an unknown of the drawing.
+    pub default: Option<(String, Span)>,
+    /// Written `f: frame` (#383): left out of a call, the instance's own frame declared bare —
+    /// at rest, the world as an observer sees it.  A `plane` formal left out is still refused.
+    pub frame: bool,
 }
 
 /// **A group's shape, named** (§8.1 [0.84]): `interface Gear { O: point, M: point, ax: line,
@@ -242,6 +248,8 @@ impl Ty {
     pub fn parse(s: &str) -> Option<Ty> {
         match TYPE_WORDS.iter().find(|(w, _)| *w == s) {
             Some(&(_, ty)) => Some(ty),
+            // a frame formal takes a plane as well as a frame declared bare: one kind (#383)
+            None if s.eq_ignore_ascii_case("frame") => Some(Ty::Ent(EntKind::Frame)),
             None => Some(Ty::Ent(EntKind::parse(&s.to_lowercase())?)),
         }
     }
@@ -456,6 +464,8 @@ pub struct Integral {
 #[derive(Clone, Debug)]
 pub struct ClaimOver {
     pub formal: Ref,
+    /// The frame the motion is seen from, `claim over m seen_from g in (a, b) { … }` (#383).
+    pub seen_from: Option<Ref>,
     pub from: Arg,
     pub to: Arg,
     pub body: Vec<Stmt>,
@@ -935,7 +945,11 @@ pub struct Decl {
     /// How a solid is swept (§6.9): a prism along the plane's normal, a revolution about a line
     /// in it, or a body over other solids.  `None` for every other kind.
     pub sweep: Option<Sweep>,
-    pub motion: Option<MotionSpec>,
+    /// The frame a reading of a motion is seen from (#383): `envelope(tool, under: f, seen_from:
+    /// g, …)`, a meshing's and a swept or placed solid's — what `motion(f, relative_to: g)` was,
+    /// said where it is read.  `None` for every other declaration, and for a reading from the
+    /// world.
+    pub seen_from: Option<Ref>,
     /// A source surface's angular span, an envelope's roll interval or a meshing's phase
     /// interval, and what the declaration says besides (a planar envelope's side, a meshing's
     /// ease).
@@ -967,6 +981,10 @@ pub struct Decl {
     /// cw)`: clockwise, so a chain in a plane may turn right at it — drawn counter-clockwise in its
     /// plane turned over (`program::entities::arcs_in_space`).  `None`, counter-clockwise.
     pub sense: Option<Sense>,
+    /// Written `frame` (#383): a **spatial frame declared bare**, owning nothing until the
+    /// document names what it has — where `plane(…)`, the same kind, is a flat frame over two
+    /// axes.  False for every other declaration.
+    pub bare: bool,
 }
 
 /// What a spline through a chain's corners names (`Decl::through`): the chain, and the lines (or
@@ -1000,7 +1018,7 @@ impl Decl {
             seed_at,
             seed_names: Vec::new(),
             sweep: None,
-            motion: None,
+            seen_from: None,
             angular_span: None,
             membership: Membership::default(),
             list_span: Span::default(),
@@ -1009,6 +1027,7 @@ impl Decl {
             through: None,
             normal: None,
             sense: None,
+            bare: false,
         }
     }
 
@@ -1045,7 +1064,7 @@ impl Decl {
             seed_at: None,
             seed_names: Vec::new(),
             sweep: None,
-            motion: None,
+            seen_from: None,
             angular_span: None,
             membership: Membership::default(),
             list_span: Span::default(),
@@ -1054,6 +1073,7 @@ impl Decl {
             through: None,
             normal: None,
             sense: None,
+            bare: false,
         }
     }
 }
@@ -1066,6 +1086,10 @@ pub struct Membership {
     /// The further planes a point is drawn in (`point in P, G`, §6.7): it is on each, so where
     /// they meet, and drawn in each by a twin of its own (`Sketch::twins`).
     also: Vec<Ref>,
+    /// The frames of the further `in` blocks around it (#383), outermost first: it **rides**
+    /// on each (its carriers are their joints), and is drawn in the innermost of the path that
+    /// has axes — `plane` last.
+    rides: Vec<Ref>,
     /// Where the clause is, or an empty span where one would go — `class_span`'s idiom.
     span: Span,
     from: Source,
@@ -1086,7 +1110,8 @@ pub enum Source {
 impl Membership {
     /// The statement's own clause, as parsed.
     pub fn written_at(plane: Ref, span: Span) -> Membership {
-        Membership { plane: Some(plane), also: Vec::new(), span, from: Source::Written }
+        Membership { plane: Some(plane), also: Vec::new(), rides: Vec::new(), span,
+                     from: Source::Written }
     }
 
     /// The same, on further planes too (`in P, G`).
@@ -1102,6 +1127,27 @@ impl Membership {
     /// The same, to rescope.
     pub fn also_mut(&mut self) -> &mut [Ref] {
         &mut self.also
+    }
+
+    /// The frames of the blocks around it beyond its own plane (#383), outermost first.
+    pub fn rides(&self) -> &[Ref] {
+        &self.rides
+    }
+
+    /// The same, to rescope.
+    pub fn rides_mut(&mut self) -> &mut Vec<Ref> {
+        &mut self.rides
+    }
+
+    /// Ride on a frame around everything it is in already: an `in` block outside the one, or
+    /// the clause, that gave it its plane (#383).
+    pub fn ride_in(&mut self, frame: &Ref) {
+        self.rides.insert(0, frame.clone());
+    }
+
+    /// Every frame it is in, outermost first: the blocks' and then its plane.
+    pub fn path(&self) -> impl Iterator<Item = &Ref> {
+        self.rides.iter().chain(self.plane.as_ref())
     }
 
     /// A membership a *lift* gives a statement it is about to print — written, so it prints,
@@ -1177,6 +1223,10 @@ pub struct InBlock {
     pub plane: Ref,
     pub header: Span,
     pub close: Span,
+    /// Whether the header declares the frame, `in (f := frame) { … }` (#383): the declaration
+    /// is a statement of its own whose span lies inside the header, so deleting the frame takes
+    /// the header whole and the body's statements stay.
+    pub declares: bool,
 }
 
 /// A declared angular domain; it is data, not a solver unknown or hint.
@@ -1212,44 +1262,18 @@ impl EaseSpec {
     }
 }
 
-/// A rigid rotation (a screw with `advance:`), a translation, or a relative
-/// motion, over one shared angular parameter.
-#[derive(Clone, Debug)]
-pub enum MotionSpec {
-    Rotation { axis: Ref, ratio: Option<Arg>, phase: Option<Arg>, advance: Option<Arg> },
-    Translation { axis: Ref, advance: Arg },
-    Relative { source: Ref, observer: Ref },
-}
-
-impl MotionSpec {
-    pub fn refs_mut(&mut self) -> Vec<&mut Ref> {
-        match self {
-            Self::Rotation {axis,..} | Self::Translation {axis,..} => vec![axis],
-            Self::Relative {source,observer} => vec![source,observer],
-        }
-    }
-
-    pub fn args_mut(&mut self) -> Vec<&mut Arg> {
-        match self {
-            Self::Rotation {ratio,phase,advance,..} =>
-                ratio.iter_mut().chain(phase.iter_mut()).chain(advance.iter_mut()).collect(),
-            Self::Translation {advance,..} => vec![advance],
-            Self::Relative {..} => vec![],
-        }
-    }
-}
 
 /// A prism, revolution, or body operation (§6.9). Numeric arguments remain
 /// expressions until elaboration.
 #[derive(Clone, Debug)]
 pub enum Sweep {
     /// A solid placed at one angle of a named rigid motion.
-    Placed { motion: Ref, at: Arg },
+    Placed { motion: Option<Ref>, at: Arg },
     /// The continuous union of a solid under a finite motion interval.
-    Swept { motion: Ref, from: Arg, to: Arg },
+    Swept { motion: Option<Ref>, from: Arg, to: Arg },
     /// The same over the roll about 0 during which it meets `body`'s material (#271): `under: m,
     /// through: body`, the roll found after the solve as a `through:` prism's extent is.
-    Rolled { motion: Ref, body: Ref },
+    Rolled { motion: Option<Ref>, body: Ref },
     /// `from: a, to: b` — signed ordinates along the plane's normal; `draft: θ` tapers the sides
     /// from the face's own plane, the parting plane (#245).
     Prism { from: Arg, to: Arg, draft: Option<Arg> },
@@ -1331,8 +1355,9 @@ impl Sweep {
     /// that rewrite references.
     pub fn references_mut(&mut self) -> Vec<&mut Ref> {
         match self {
-            Sweep::Placed { motion, .. } | Sweep::Swept { motion, .. } => vec![motion],
-            Sweep::Rolled { motion, body } => vec![motion, body],
+            Sweep::Placed { motion, .. } | Sweep::Swept { motion, .. } =>
+                motion.iter_mut().collect(),
+            Sweep::Rolled { motion, body } => motion.iter_mut().chain([body]).collect(),
             Sweep::Revolve { axis, .. } => vec![axis],
             Sweep::Through { body } => vec![body],
             Sweep::Region { probe } => vec![probe],
@@ -1343,8 +1368,8 @@ impl Sweep {
 
     pub fn references(&self) -> Vec<&Ref> {
         match self {
-            Sweep::Placed { motion, .. } | Sweep::Swept { motion, .. } => vec![motion],
-            Sweep::Rolled { motion, body } => vec![motion, body],
+            Sweep::Placed { motion, .. } | Sweep::Swept { motion, .. } => motion.iter().collect(),
+            Sweep::Rolled { motion, body } => motion.iter().chain([body]).collect(),
             Sweep::Revolve { axis, .. } => vec![axis],
             Sweep::Through { body } => vec![body],
             Sweep::Region { probe } => vec![probe],
@@ -1467,6 +1492,9 @@ pub struct AtRef {
     /// space and seen in the seeded point's plane.
     pub x: Option<(String, Span)>,
     pub y: Option<(String, Span)>,
+    /// `hint(at: f, (3, 4, 5))`: the third of a place in a spatial frame's coordinates, out
+    /// along it (#383).
+    pub z: Option<(String, Span)>,
 }
 
 impl AtRef {
@@ -1481,19 +1509,20 @@ impl AtRef {
             turn: None,
             x: None,
             y: None,
+            z: None,
         }
     }
 
     /// The texts the place reads numbers from — a bearing, a fraction, a turn, a plane's
     /// coordinates — for the walks that resolve and substitute them.
     pub fn texts_mut(&mut self) -> impl Iterator<Item = &mut (String, Span)> {
-        [&mut self.bearing, &mut self.by, &mut self.turn, &mut self.x, &mut self.y]
+        [&mut self.bearing, &mut self.by, &mut self.turn, &mut self.x, &mut self.y, &mut self.z]
             .into_iter()
             .flatten()
     }
 
     pub fn texts(&self) -> impl Iterator<Item = &(String, Span)> {
-        [&self.bearing, &self.by, &self.turn, &self.x, &self.y].into_iter().flatten()
+        [&self.bearing, &self.by, &self.turn, &self.x, &self.y, &self.z].into_iter().flatten()
     }
 }
 

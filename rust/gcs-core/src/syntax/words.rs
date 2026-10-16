@@ -5,10 +5,10 @@ use super::Span;
 use crate::constraints::{is_operator, CKind, Fixity};
 use crate::model::EntKind;
 
-// `port`, `frame` and `ellipse` are retired and `ring` is not yet (bmander/geomsolver#47), and
-// each is kept here only so a document written with it is told what to write instead of reading
-// the word as a name
-pub(super) const OPENERS: [&str; 20] = [
+// `port` and `ellipse` are retired and `ring` is not yet (bmander/geomsolver#47), and each is kept
+// here only so a document written with it is told what to write instead of reading the word as a
+// name; `frame`, retired in 0.42, is an element keyword again (#383)
+pub(super) const OPENERS: [&str; 19] = [
     "preview",
     "claim",
     "initially",
@@ -24,7 +24,6 @@ pub(super) const OPENERS: [&str; 20] = [
     "ring",
     "when",
     "use",
-    "frame",
     "ellipse",
     "view",
     "section",
@@ -236,6 +235,28 @@ pub(super) fn named_link_at(toks: &[(Tok, Span)], j: usize) -> bool {
         (toks.get(j), toks.get(j + 1), toks.get(j + 2), word_at(toks, j + 3)),
         (Some((Tok::P('('), _)), Some((Tok::Ident(_), _)), Some((Tok::Define, _)), Some(w))
             if EntKind::parse(w).is_some()
+    )
+}
+
+/// `frame` at `j` as a whole value (#383): the last word of its statement, or before its class
+/// or the bracket that refuses it.  Read so only there, so `frame` stays a name a document may
+/// give anything else.
+pub(super) fn bare_frame_at(toks: &[(Tok, Span)], j: usize) -> bool {
+    word_at(toks, j) == Some("frame")
+        && match toks.get(j + 1).map(|(t, _)| t) {
+            None | Some(Tok::Nl) | Some(Tok::P('}')) => true,
+            // its trailers, which it refuses but `class`, said where they are
+            Some(Tok::Ident(w)) => ["class", "hint", "in"].contains(&w.as_str()),
+            _ => false,
+        }
+}
+
+/// `(name := frame)` at `j`: an `in` block's header declaring the frame it draws in (#383).
+pub(super) fn named_frame_at(toks: &[(Tok, Span)], j: usize) -> bool {
+    matches!(
+        (toks.get(j), toks.get(j + 1), toks.get(j + 2), word_at(toks, j + 3), toks.get(j + 4)),
+        (Some((Tok::P('('), _)), Some((Tok::Ident(_), _)), Some((Tok::Define, _)), Some("frame"),
+         Some((Tok::P(')'), _)))
     )
 }
 

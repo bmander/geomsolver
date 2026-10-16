@@ -39,9 +39,11 @@ p1 := point hint((10, 72, 0))
 fix((0mm, rg + rp, 0mm)) p0
 fix((10mm, rg + rp, 0mm)) p1
 pinion_ax := line(p0, p1)
-gear_turn := motion(about: gear_ax, ratio: -q)
-pinion_turn := motion(about: pinion_ax)
-mesh := motion(gear_turn, relative_to: pinion_turn)
+gear_turn := frame
+std.Turn(gear_turn, about: gear_ax, ratio: -q)
+pinion_turn := frame
+std.Turn(pinion_turn, about: pinion_ax, ratio: 1)
+// the mesh is the gear's turn seen from the pinion's: `under: gear_turn, seen_from: pinion_turn`
 
 // -- the line of action --------------------------------------------------------------------------
 P := point hint((0, 48, 0))
@@ -50,25 +52,25 @@ ahead := point hint((7, 51, -7))
 L := line(P, ahead)
 P distance(10mm) ahead
 P distance(10mm * sin(pressure), along: std.y) ahead
-L reciprocal mesh
+L reciprocal(seen_from: pinion_turn) gear_turn
 // the mesh's instantaneous screw axis, on the common perpendicular, and its pitch: `screw.pitch`,
 // the advance a radian of the mesh's roll — both read by rates of points the mesh carries (std.sv)
 isa := axis hint(dir: (-0.9, 0, -0.45))
-screw := std.Screw(isa, mesh)
+screw := std.Screw(isa, gear_turn, seen_from: pinion_turn)
 
 // -- the rack and the flanks ---------------------------------------------------------------------
 // The plane square to L through P, sliding along L at the speed both members have along it; each
 // member's flank is what it sweeps, seen from that member.
 rack := std.HalfSpace(P, L, d: 0mm)
-slide := motion(along: L, advance: 2 * pi * sigma)
-pinion_cutting := motion(slide, relative_to: pinion_turn)
-gear_cutting := motion(slide, relative_to: gear_turn)
-pinion_flank := envelope(rack, under: pinion_cutting, from: -40deg, to: 40deg)
-gear_flank := envelope(rack, under: gear_cutting, from: -40deg, to: 40deg)
-claim L reciprocal pinion_cutting
-claim L reciprocal gear_cutting
+slide := frame
+std.Slide(slide, along: L, advance: 2 * pi * sigma)
+pinion_flank := envelope(rack, under: slide, seen_from: pinion_turn, from: -40deg, to: 40deg)
+gear_flank := envelope(rack, under: slide, seen_from: gear_turn, from: -40deg, to: 40deg)
+claim L reciprocal(seen_from: pinion_turn) slide
+claim L reciprocal(seen_from: gear_turn) slide
 
 // -- the contact ---------------------------------------------------------------------------------
-bearing := meshing(pinion_flank, gear_flank, under: mesh, from: -15deg, to: 15deg)
+bearing := meshing(pinion_flank, gear_flank, under: gear_turn, seen_from: pinion_turn, from: -15deg,
+                   to: 15deg)
 Q := point hint((0, 48, 0))
 Q coincident(t == 0deg) bearing

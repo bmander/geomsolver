@@ -165,7 +165,7 @@ impl Sketch {
             EntKind::Axis => self.axes[e.i()].a.to_vec(),
             EntKind::Arc => vec![self.arcs[e.i()].radius],
             // where a plane stands is three lengths; which way it faces is its axes'
-            EntKind::Plane => self.planes[e.i()].o.to_vec(),
+            EntKind::Frame => self.frame_params(e.i()),
             // a line and a spline are their points, and a curve is its expressions: no number
             // of their own to convert — but a free curve's length
             EntKind::Line | EntKind::Spline => Vec::new(),
@@ -235,7 +235,7 @@ impl Sketch {
         match e.kind {
             // a direction's dust below a double's resolution of a unit vector is 0: `z: 6e-17`
             // written into a source file is a number nobody said
-            EntKind::Axis | EntKind::Plane if v.abs() < 1e-12 => 0.0,
+            EntKind::Axis | EntKind::Frame if v.abs() < 1e-12 => 0.0,
             _ => v,
         }
     }
@@ -292,7 +292,7 @@ impl Sketch {
                 v
             }
             // where it stands; its axes and its origin point are children of their own
-            EntKind::Plane => self.planes[e.i()].o.to_vec(),
+            EntKind::Frame => self.frame_params(e.i()),
             // whatever its arguments contribute, in argument order — which is the order its
             // tapes were compiled against and so the order of the Jacobian's columns
             EntKind::Curve => {
@@ -335,7 +335,7 @@ impl Sketch {
                 [r.d, r.a].concat()
             }
             EntKind::Arc => vec![self.arcs[e.i()].radius],
-            EntKind::Plane => self.planes[e.i()].o.to_vec(),
+            EntKind::Frame => self.frame_params(e.i()),
             // a curve holds no number of its own: it is its expressions, and they read
             // the geometry rather than owning any; a face and a solid own none for the same
             // reason, one further out — every number of theirs is an extent, an expression the

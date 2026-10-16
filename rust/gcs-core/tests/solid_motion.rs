@@ -25,8 +25,18 @@ da := line(d,a)
 }
 profile := face(ab,bc,cd,da)
 stock := solid(profile, from: 0mm, to: 2mm)
-turn := motion(about: ax)
+turn := frame
+ax coincident turn.axis
+fix(ratio == 1, advance == 0mm) turn
 ";
+
+/// The motion node frame `name`'s joint was lowered to.  `SOURCE` states its turn as the
+/// statements `std.Turn` writes, so that it prints: the canonical printer prints no component
+/// instance.
+fn joint(e: &program::Elaborated,name: &str) -> usize {
+    let f = e.map.ent_named(name).unwrap();
+    e.sketch.frames[f.i()].joint.as_ref().and_then(|j| j.motion).expect("a jointed frame") as usize
+}
 
 fn read(src: &str) -> program::Elaborated {
     let (mut p,errors) = crate::common::parse(src);
@@ -61,9 +71,10 @@ fn nested_placements_transform_composite_sources_and_invalidate_motion_caches() 
         moved := solid(first, under: turn, at: 45deg)\n"));
     let old = solid(&e,"moved");
     assert!(old.contains_world(WorldPoint([1.,2.,1.])));
-    let m = e.map.ent_named("turn").unwrap().i();
-    let MotionDef::Rotation {phase,..} = &mut e.sketch.motions[m].def else { unreachable!() };
-    *phase = std::f64::consts::FRAC_PI_2;
+    // three times as fast, each placement turns 135°
+    let m = joint(&e,"turn");
+    let MotionDef::Rotation {ratio,..} = &mut e.sketch.motions[m].def else { unreachable!() };
+    *ratio = 3.;
     let changed = solid(&e,"moved");
     assert!(!std::rc::Rc::ptr_eq(&old,&changed));
     assert!(changed.contains_world(WorldPoint([-1.,-2.,1.])));
@@ -129,24 +140,27 @@ fn malformed_placements_and_cycles_are_refused() {
 #[test]
 fn solids_bind_final_motion_indices_after_dependency_ordering() {
     // Declaration order, alphabetical order and dependency order all differ.
-    // Each solid must retain its named motion, including through a formal.
+    // Each solid must retain its named motion, including through a formal: `z_turn` seen from
+    // `turn` turns as fast as `turn`, so a quarter turn at 90°, and `z_turn` itself at 45°.
     let e = read(&format!("{SOURCE}\n\
-        z_turn := motion(about: ax,phase: 90deg)\n\
-        a_relative := motion(z_turn,relative_to: turn)\n\
-        component Copy(stock: solid,movement: motion) {{\n\
-          moved := solid(stock,under: movement,at: 0deg)\n\
-          swept := solid(stock,under: movement,from: -10deg,to: 10deg)\n\
+        z_turn := frame\nax coincident z_turn.axis\nfix(ratio == 2,advance == 0mm) z_turn\n\
+        component Copy(stock: solid,movement: frame,seen_from: frame) {{\n\
+          moved := solid(stock,under: movement,seen_from: seen_from,at: 90deg)\n\
+          swept := solid(stock,under: movement,seen_from: seen_from,from: -10deg,to: 10deg)\n\
         }}\n\
-        copy := Copy(stock,a_relative)\n\
-        direct := solid(stock,under: z_turn,at: 0deg)\n"));
+        copy := Copy(stock,z_turn,turn)\n\
+        direct := solid(stock,under: z_turn,at: 45deg)\n"));
     use gcs_core::model::SolidDef;
-    for (name,expected) in [("copy.moved","a_relative"),("copy.swept","a_relative"),("direct","z_turn")] {
+    let (s,o) = (joint(&e,"z_turn") as u32,joint(&e,"turn") as u32);
+    let relative = e.sketch.motions.iter().position(|m| matches!(m.def,
+        MotionDef::Relative {source,observer} if source == s && observer == o)).unwrap();
+    for (name,expected) in [("copy.moved",relative),("copy.swept",relative),("direct",s as usize)] {
         let s = &e.sketch.solids[e.map.ent_named(name).unwrap().i()];
         let motion = match s.def {
             SolidDef::Placed {motion,..} | SolidDef::Swept {motion,..} => motion,
             _ => panic!("expected a motion operand"),
         };
-        assert_eq!(motion as usize,e.map.ent_named(expected).unwrap().i(),"{name}");
+        assert_eq!(motion as usize,expected,"{name}");
     }
     for name in ["copy.moved","direct"] {
         assert!(solid(&e,name).contains_world(WorldPoint([1.,2.,1.])));
@@ -159,7 +173,7 @@ fn a_placement_whose_motion_refuses_keys_its_solid_alike_each_read() {
     // a key over a number nothing reads must equal itself, or the solid is built at every ask
     let mut e = read(&format!("{SOURCE}moved := solid(stock, under: turn, at: 90deg)\n\
         swept := solid(stock, under: turn, from: -10deg, to: 10deg)\n"));
-    let m = e.map.ent_named("turn").unwrap().i();
+    let m = joint(&e,"turn");
     let MotionDef::Rotation {axis,..} = &mut e.sketch.motions[m].def else { unreachable!() };
     *axis = u32::MAX;
     for name in ["moved","swept"] {

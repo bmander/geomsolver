@@ -312,7 +312,7 @@ pub fn is_determined(sk: &Sketch) -> bool {
 /// Stand plane `pi` where `b` says: its axes turned to `b`'s directions and its place moved —
 /// for a test that holds a sketch and turns a plane by hand, as a solve would.
 pub fn set_basis(sk: &mut Sketch, pi: usize, b: gcs_core::plane::Basis) {
-    let (u, v) = (sk.planes[pi].u as usize, sk.planes[pi].v as usize);
+    let (u, v) = (sk.frames[pi].u as usize, sk.frames[pi].v as usize);
     for (r, d) in [(u, b.u), (v, b.v)] {
         for k in 0..3 {
             let q = sk.axes[r].d[k] as usize;
@@ -337,7 +337,7 @@ pub fn move_space(sk: &mut Sketch, turn: impl Fn([f64; 3]) -> [f64; 3], shift: [
             sk.params[q].value = x;
         }
     }
-    for p in 0..sk.planes.len() {
+    for p in 0..sk.frames.len() {
         let o = sk.basis(p).o;
         sk.set_plane_origin(p, moved(o));
     }
@@ -433,7 +433,7 @@ pub fn draw_in_front(sk: &mut Sketch) -> View {
 
 /// The axes and origin of plane `plane`, as entities.
 pub fn view_of(sk: &Sketch, plane: usize) -> View {
-    let pl = &sk.planes[plane];
+    let pl = &sk.frames[plane];
     let axis = |i: u32| EntRef::new(gcs_core::model::EntKind::Axis, i as usize);
     View { plane, u: axis(pl.u), v: axis(pl.v), origin: EntRef::point(pl.origin as usize) }
 }

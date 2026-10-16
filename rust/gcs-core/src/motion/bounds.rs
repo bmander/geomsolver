@@ -119,7 +119,7 @@ impl MotionBounds {
 
 impl Family {
     /// Bound the mathematical solved motion for every roll value in `angle`.
-    /// Axis normalization, phase/rate arithmetic and trigonometry all use outward
+    /// Axis normalization, rate arithmetic and trigonometry all use outward
     /// intervals. This does not transfer errors from the sketch's nonlinear solve.
     /// Each primitive angle must lie within the interval sine/cosine domain [-8,8];
     /// unsupported argument reduction, overflow and unresolved normalization fail.
@@ -127,8 +127,8 @@ impl Family {
         let mut values = Vec::with_capacity(self.steps.len());
         for step in &self.steps {
             let value = match *step {
-                Step::Rotation {origin,axis,ratio,phase,advance} => MotionBounds::rotation(origin,axis,
-                    I::point(phase)?.add(I::point(ratio)?.mul(angle)?)?)?.advanced(axis,advance,angle)?,
+                Step::Rotation {origin,axis,ratio,advance} => MotionBounds::rotation(origin,axis,
+                    I::point(ratio)?.mul(angle)?)?.advanced(axis,advance,angle)?,
                 Step::Translation {axis,advance} => MotionBounds::identity().advanced(axis,advance,angle)?,
                 Step::Relative {source,observer} => MotionBounds::relative(values[source],values[observer])?,
             };

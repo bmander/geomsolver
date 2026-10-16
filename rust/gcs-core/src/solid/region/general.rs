@@ -216,7 +216,7 @@ fn ent_measure(sk: &Sketch, e: crate::model::EntRef) -> Result<crate::solid::fie
             let d = normalised(read(x.d)).ok_or("a distance from an axis of no direction")?;
             Measure::Line { a: read(x.a), d }
         }
-        EntKind::Plane => {
+        EntKind::Frame => {
             let b = sk.basis(e.i());
             Measure::Ordinate { o: b.o, n: b.normal() }
         }

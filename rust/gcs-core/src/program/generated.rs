@@ -37,7 +37,7 @@ fn tool_of(sk: &Sketch, e: EntRef) -> Result<Tool, String> {
 /// A step of the motion program before its columns are placed: which argument or value each
 /// number is read from.
 enum Step {
-    Turn { centre: usize, ratio: usize, phase: usize },
+    Turn { centre: usize, ratio: usize },
     Slide { line: usize, advance: usize },
     Relative,
 }
@@ -46,33 +46,54 @@ enum Step {
 /// numbers to `values`, and its shape (for the definition's key) to `shape`.
 fn program(sk: &Sketch, m: usize, steps: &mut Vec<Step>, args: &mut Vec<EntRef>,
            values: &mut Vec<f64>, shape: &mut String, depth: usize) -> Result<(), String> {
+    program_signed(sk, m, false, steps, args, values, shape, depth)
+}
+
+/// `program`, or the program of the motion's inverse where `inverse`: a turn and a slide run
+/// back (their numbers negated, so the key's values say it and the shape need not), and a
+/// relative `O⁻¹·S` undone as `S⁻¹·O`, its sides swapped.
+#[allow(clippy::too_many_arguments)]
+fn program_signed(sk: &Sketch, m: usize, inverse: bool, steps: &mut Vec<Step>, args: &mut Vec<EntRef>,
+                  values: &mut Vec<f64>, shape: &mut String, depth: usize) -> Result<(), String> {
+    let sign = if inverse { -1.0 } else { 1.0 };
     if depth > 16 {
         return Err("a planar motion nests too deeply".into());
     }
     let me = sk.motions.get(m).ok_or("no such motion")?;
-    if !me.measured.is_empty() {
-        return Err(format!("`{}`'s numbers are measured after the solve, and a profile in the \
-                            plane is generated within it: state them", me.name));
+    // a profile in the plane is generated over its motion's numbers as constants of its tape
+    if me.numbers.is_some() {
+        return Err(format!("`{}`'s numbers are found by the solve, and a profile in the plane is \
+                            generated over stated ones: state its ratio and advance", me.name));
     }
     match me.def {
-        MotionDef::Turn { centre, ratio, phase } => {
+        MotionDef::Turn { centre, ratio } => {
             args.push(EntRef::point(centre as usize));
-            steps.push(Step::Turn { centre: args.len() - 1, ratio: values.len(), phase: values.len() + 1 });
-            values.extend([ratio, phase]);
+            steps.push(Step::Turn { centre: args.len() - 1, ratio: values.len() });
+            values.push(sign * ratio);
             shape.push('T');
         }
         MotionDef::Translation { axis, advance } => {
             args.push(EntRef::line(axis as usize));
             steps.push(Step::Slide { line: args.len() - 1, advance: values.len() });
-            values.push(advance);
+            values.push(sign * advance);
             shape.push('S');
         }
         MotionDef::Relative { source, observer } => {
+            let (first, second) = if inverse { (observer, source) } else { (source, observer) };
             shape.push('(');
-            program(sk, source as usize, steps, args, values, shape, depth + 1)?;
-            program(sk, observer as usize, steps, args, values, shape, depth + 1)?;
+            program_signed(sk, first as usize, false, steps, args, values, shape, depth + 1)?;
+            program_signed(sk, second as usize, false, steps, args, values, shape, depth + 1)?;
             steps.push(Step::Relative);
             shape.push(')');
+        }
+        MotionDef::Inverse { of } => {
+            program_signed(sk, of as usize, !inverse, steps, args, values, shape, depth + 1)?;
+        }
+        MotionDef::Joint { .. } => {
+            return Err(format!("`{}`'s joint turns about an axis no centre of a view holds: a tool \
+                                of the sheet is carried by a turn in its view, `std.Spin(f, \
+                                about: o, on: P, ratio: r)`, or a slide along a drawn line, \
+                                `std.Slide`", me.name))
         }
         MotionDef::Rotation { .. } => {
             return Err(format!("`{}` turns about a line in space: a tool of the sheet is carried \
@@ -126,8 +147,7 @@ fn profile(sk: &mut Sketch, d: &Decl, tool: EntRef, motion: usize) -> Result<Cur
     }
     let value = |i: usize| 1 + n_theta + i;
     let ops: Vec<Op> = steps.iter().map(|s| match *s {
-        Step::Turn { centre, ratio, phase } =>
-            Op::Turn { centre: at[centre], ratio: value(ratio), phase: value(phase) },
+        Step::Turn { centre, ratio } => Op::Turn { centre: at[centre], ratio: value(ratio) },
         Step::Slide { line, advance } => Op::Slide { line: at[line], advance: value(advance) },
         Step::Relative => Op::Relative,
     }).collect();
@@ -221,14 +241,37 @@ pub(super) fn planar_envelopes(sk: &mut Sketch, res: &mut Resolver, map: &mut So
             _ => continue,
         };
         made.insert(st.id);
-        let motion_ref = operand(1);
-        let built = match motion_ref {
-            Some(Ok(e)) if e.kind == EntKind::Motion && e.i() < sk.motions.len() => profile(sk, d, tool, e.i()),
-            _ => Err("an envelope is generated `under:` a motion".into()),
+        // the frame it is generated under, seen from the one named — or, `under:` left out,
+        // what the tool rides on (#383); the profile rides on its observer
+        let under = match d.children.get(1).map(Vec::as_slice) {
+            Some([Kid::Ref(r)]) => Some(r),
+            _ => None,
         };
+        let built = super::motions::reading_of(sk, res, Some(tool), under, d.seen_from.as_ref())
+            .and_then(|m| profile(sk, d, tool, m));
+        let rides = observer_path(sk, res, d);
         bind(sk, res, map, st, d, built, diags);
+        ride_on(sk, res, d, rides);
     }
     made
+}
+
+/// The frames a reading's observer rides on and is (#383): where what it generates rides.
+pub(super) fn observer_path(sk: &Sketch, res: &Resolver, d: &Decl) -> Option<Vec<u32>> {
+    let g = d.seen_from.as_ref()?;
+    let e = res.lookup(g).and_then(|e| follow_building(sk, res, e, g).ok())?;
+    (e.kind == EntKind::Frame).then(|| {
+        let mut path = sk.frames[e.i()].rides.clone();
+        path.push(e.i() as u32);
+        path
+    })
+}
+
+/// What a reading made rides on its observer (#383), where it was made and has one.
+pub(super) fn ride_on(sk: &mut Sketch, res: &Resolver, d: &Decl, path: Option<Vec<u32>>) {
+    if let (Some(path), Some(&e)) = (path, res.of.get(&d.name.key().text)) {
+        sk.rides.insert(e, path);
+    }
 }
 
 /// An envelope built as a curve, bound to its name; or why not, said at its statement.
@@ -280,16 +323,24 @@ pub(super) fn extruded_envelopes(sk: &mut Sketch, res: &mut Resolver, map: &mut 
             (sd.children.first().map(Vec::as_slice), sd.children.get(1).map(Vec::as_slice)) else { continue };
         let prism = decl(&solid.root.text).is_some_and(|x| x.kind == EntKind::Solid && solid.path.is_empty()
             && matches!(x.sweep, Some(crate::syntax::Sweep::Depth { .. } | crate::syntax::Sweep::Prism { .. })));
-        let motion = match d.children.get(1).map(Vec::as_slice) {
-            Some([Kid::Ref(r)]) => res.lookup(r).filter(|e| e.kind == EntKind::Motion && e.i() < sk.motions.len()),
+        if !prism {
+            continue;
+        }
+        let under = match d.children.get(1).map(Vec::as_slice) {
+            Some([Kid::Ref(r)]) => Some(r),
             _ => None,
         };
-        let (true, Some(motion)) = (prism, motion) else { continue };
+        // the prism the side is of rides as its face's points do (#383)
+        let ridden = res.lookup(edge).and_then(|e| follow_building(sk, res, e, edge).ok());
+        let motion = super::motions::reading_of(sk, res, ridden, under, d.seen_from.as_ref()).ok()
+            .map(|m| EntRef::new(EntKind::Motion, m));
+        let Some(motion) = motion else { continue };
         // a turn about a line in space keeps no view: the spatial envelope's, after the solve
         if program(sk, motion.i(), &mut Vec::new(), &mut Vec::new(), &mut Vec::new(), &mut String::new(), 0).is_err() {
             continue;
         }
         made.insert(st.id);
+        let rides = observer_path(sk, res, d);
         let built = (|| -> Result<CurveE, String> {
             let tool = res.lookup(edge).ok_or_else(|| format!("no such entity: `{}`", edge.root.text))?;
             let tool = follow_building(sk, res, tool, edge)?;
@@ -314,6 +365,7 @@ pub(super) fn extruded_envelopes(sk: &mut Sketch, res: &mut Resolver, map: &mut 
             Ok(cv)
         })();
         bind(sk, res, map, st, d, built, diags);
+        ride_on(sk, res, d, rides);
     }
     made
 }

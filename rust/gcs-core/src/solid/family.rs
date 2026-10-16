@@ -115,8 +115,8 @@ pub(crate) fn built(sk: &Sketch, si: usize, unit: f64) -> Result<Rc<Family>, Str
 fn part_of(sk: &Sketch, face: u32, station: &[EntRef], prefix: &str) -> (Part, Vec<String>) {
     // a plane's normal moves with its plane, though it is minted where something reads it, under
     // no name of the station's (`Sketch::plane_normal`)
-    let normals = station.iter().filter(|e| e.kind == EntKind::Plane)
-        .filter_map(|e| sk.planes[e.i()].normal)
+    let normals = station.iter().filter(|e| e.kind == EntKind::Frame)
+        .filter_map(|e| sk.frames[e.i()].normal)
         .map(|n| EntRef::new(EntKind::Axis, n as usize));
     let inside: BTreeSet<EntRef> = station.iter().copied().chain(normals).collect();
     // what the station is made of moves with it, though something outside it shares it — a
@@ -139,8 +139,8 @@ fn part_of(sk: &Sketch, face: u32, station: &[EntRef], prefix: &str) -> (Part, V
         }
         let mut ps = sk.entity_params(e);
         ps.retain(|p| !own.contains(p));
-        if e.kind == EntKind::Plane {
-            let pl = &sk.planes[e.i()];
+        if e.kind == EntKind::Frame {
+            let pl = &sk.frames[e.i()];
             ps.extend(pl.o);
             for ax in [pl.u, pl.v] {
                 ps.extend(sk.axes[ax as usize].a);
@@ -676,8 +676,8 @@ fn carry_over(from: &LegPart, to: &mut LegPart, pairs: &[(EntRef, EntRef)]) {
                     (None, None) => {}
                 }
             }
-            EntKind::Plane => {
-                let (pl, ql) = (a.planes[pa.i()].clone(), b.planes[pb.i()].clone());
+            EntKind::Frame => {
+                let (pl, ql) = (a.frames[pa.i()].clone(), b.frames[pb.i()].clone());
                 let copy = |b: &mut Sketch, xs: [u32; 3], ys: [u32; 3]| {
                     for (x, y) in xs.into_iter().zip(ys) {
                         set(b, y, a.params[x as usize].value);

@@ -38,9 +38,10 @@ p1 := point hint((10, 72, 0))
 fix((0mm, rg + rp, 0mm)) p0
 fix((10mm, rg + rp, 0mm)) p1
 pinion_ax := line(p0, p1)
-gear_turn := motion(about: gear_ax, ratio: -pinion_teeth / gear_teeth)
-pinion_turn := motion(about: pinion_ax)
-mesh := motion(gear_turn, relative_to: pinion_turn)
+gear_turn := frame
+std.Turn(gear_turn, about: gear_ax, ratio: -pinion_teeth / gear_teeth)
+pinion_turn := frame
+std.Turn(pinion_turn, about: pinion_ax, ratio: 1)
 
 // -- the mean point ------------------------------------------------------------------------------
 // M, where the pitch cylinders touch; the pitch plane is square to the y axis there. The gear's
@@ -76,7 +77,8 @@ flank := std.Cone(spine, half: hint(20deg))
 // -- the contact ---------------------------------------------------------------------------------
 // The pinion's flank: the gear's generated under the mesh. M is on it, and its normal there leans
 // the pressure angle from the pitch plane.
-pinion_flank := envelope(flank, under: mesh, from: -30deg, to: 30deg)
+pinion_flank := envelope(flank, under: gear_turn, seen_from: pinion_turn, from: -30deg,
+                         to: 30deg)
 M coincident pinion_flank
 n := point hint((7, 58, -7))
 contact_normal := line(M, n)

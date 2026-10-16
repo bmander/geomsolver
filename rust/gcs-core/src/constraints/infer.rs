@@ -110,8 +110,44 @@ pub fn seed_param(sk: &Sketch, kind: CKind, args: &[Arg], i: usize) -> f64 {
             let (px, py) = sk.on_view_sheet(sk.world_point(args[0].ent().i()), view);
             arc_fraction((py - cy).datan2(px - cx), a0, a1 - a0)
         }
+        // a point a motion carries starts at the roll that carries its point nearest where it
+        // stands (#365), as a point on a curve starts where the curve passes nearest it: at roll
+        // 0 it starts on the point carried, which can be as far from the roll drawn as from its
+        // mirror — a rolling circle's point seen 50 out starts halfway between the epicycloid's
+        // two places there, and a whole solve holding it to the path too settles between them
+        // as readily as on the one drawn
+        (CKind::CarriedPoint, 3) => carried_roll(sk, args).unwrap_or(0.0),
         _ => 0.0,
     }
+}
+
+/// How many rolls over a whole turn a carried point's seed is sampled at (`carried_roll`).
+const ROLL_SAMPLES: usize = 720;
+
+/// The roll, in degrees within half a turn of 0, at which motion `args[2]` carries point
+/// `args[1]` nearest where `args[0]` stands, sampled `ROLL_SAMPLES` times over the turn — 0
+/// where no roll sampled is nearer.  `None` where the solve reads no such motion.
+fn carried_roll(sk: &Sketch, args: &[Arg]) -> Option<f64> {
+    use crate::envelope::held::{carried, Moving};
+    let (Some(Arg::Ent(p)), Some(Arg::Ent(q)), Some(Arg::Ent(m))) =
+        (args.first(), args.get(1), args.get(2)) else { return None };
+    let moving = Moving::of_any(sk, m.i()).ok()?;
+    let values = moving.values(sk);
+    let (at, x) = (sk.lifted(p.i()), sk.lifted(q.i()));
+    let gap = |deg: f64| {
+        carried(&moving.steps, &values, deg.to_radians(), x)
+            .map_or(f64::INFINITY, |(w, _)| crate::space::norm(crate::space::sub(w, at)))
+    };
+    let step = 360.0 / ROLL_SAMPLES as f64;
+    let (mut best, mut near) = (0.0, gap(0.0));
+    for k in 0..=ROLL_SAMPLES {
+        let t = -180.0 + k as f64 * step;
+        let g = gap(t);
+        if g < near {
+            (best, near) = (t, g);
+        }
+    }
+    near.is_finite().then_some(best)
 }
 
 /// **An arc's fraction is on the arc** (#248): its turn from `start` to `end` is all there is of
@@ -189,7 +225,7 @@ pub fn infer_entity(
         }
         (CKind::Project | CKind::ProjectSolved, 2 | 3) => {
             let p = args[i - 2].ent();
-            sk.plane_of(p.i()).map(EntRef::plane).ok_or_else(|| {
+            sk.plane_of(p.i()).map(EntRef::frame).ok_or_else(|| {
                 format!(
                     "{} is on no plane, so `project` cannot say which view it is in",
                     name(p)
@@ -208,8 +244,8 @@ pub fn infer_entity(
             })?;
             let (p, q) = (args[0].ent(), args[1].ent());
             match (toward.in_view(), shared_view(sk, p.i(), q.i())) {
-                (Some(Toward::PageV), Some(v)) => Ok(EntRef::axis(sk.planes[v].v as usize)),
-                (Some(_), Some(v)) => Ok(EntRef::axis(sk.planes[v].u as usize)),
+                (Some(Toward::PageV), Some(v)) => Ok(EntRef::axis(sk.frames[v].v as usize)),
+                (Some(_), Some(v)) => Ok(EntRef::axis(sk.frames[v].u as usize)),
                 (Some(_), None) => Err(format!(
                     "`{w}` is a direction of the view both points are drawn in, and {} and {} \
                      are not drawn in one: name the axis",
@@ -240,14 +276,14 @@ fn validate_ordinate(
     if let Some(toward) = Toward::of(word).filter(|t| t.of_plane()) {
         let datum = sk.plane_of_origin(p.i());
         let on = datum.is_some_and(|pl| match toward {
-            Toward::PlaneU => t == EntRef::axis(sk.planes[pl].u as usize),
-            Toward::PlaneV => t == EntRef::axis(sk.planes[pl].v as usize),
-            _ => t == EntRef::plane(pl),
+            Toward::PlaneU => t == EntRef::axis(sk.frames[pl].u as usize),
+            Toward::PlaneV => t == EntRef::axis(sk.frames[pl].v as usize),
+            _ => t == EntRef::frame(pl),
         });
         // or, `u` and `v` with no plane operand, the axis of the view both points are drawn in
         let in_view = shared_view(sk, p.i(), q.i()).is_some_and(|v| match toward {
-            Toward::PlaneU => t == EntRef::axis(sk.planes[v].u as usize),
-            Toward::PlaneV => t == EntRef::axis(sk.planes[v].v as usize),
+            Toward::PlaneU => t == EntRef::axis(sk.frames[v].u as usize),
+            Toward::PlaneV => t == EntRef::axis(sk.frames[v].v as usize),
             _ => false,
         });
         if !on && !in_view {
@@ -291,7 +327,7 @@ fn validate_ordinate(
     // cannot see
     if let Some(v) = shared_view(sk, p.i(), q.i()) {
         let square = match t.kind {
-            EntKind::Plane => t.i() == v,
+            EntKind::Frame => t.i() == v,
             EntKind::Axis => {
                 let d = &sk.axes[t.i()].d;
                 let held = d.iter().all(|&k| sk.params[k as usize].fixed) && sk.plane_fixed(v);
@@ -445,7 +481,7 @@ fn validate_rate(sk: &Sketch, kind: CKind, args: &[Arg], name: &dyn Fn(EntRef) -
         }
     }
     let against = match word {
-        Word::Plane => to.kind == EntKind::Plane,
+        Word::Plane => to.kind == EntKind::Frame,
         Word::Curvature => matches!(to.kind, EntKind::Circle | EntKind::Arc),
         Word::Centre => to.kind == EntKind::Point,
         _ => matches!(to.kind, EntKind::Line | EntKind::Axis),

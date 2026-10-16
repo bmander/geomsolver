@@ -15,7 +15,7 @@
  * column.
  */
 import { Constraint } from './constraints.js';
-import { Kind, KINDS, Plane, Primitive, Sketch } from './model.js';
+import { Kind, KINDS, Plane, Primitive, Sketch, fromWire } from './model.js';
 import type { Way } from './model.js';
 import { core, lastError, takeJson, takeStr, withBuf, withJson, withStr } from './wasm.js';
 
@@ -157,7 +157,7 @@ export class Document {
       // selection carried across a re-elaboration — inherits the rule rather than each
       // remembering to test for `''`
       entities: r.entities.map(([kind, index, name, lo, hi]) =>
-        ({ kind, index, name: name || undefined, lo: at.at(lo), hi: at.at(hi) })),
+        ({ kind: fromWire(kind), index, name: name || undefined, lo: at.at(lo), hi: at.at(hi) })),
       constraints: r.constraints.map(([id, lo, hi]) => ({ id, lo: at.at(lo), hi: at.at(hi) })),
     };
     this.byName.clear();
@@ -226,9 +226,10 @@ export class Document {
       .map(e => ({ name: e.name!, index: e.index }));
   }
 
-  /** Named rigid motions, evaluated through motionSample in world coordinates. */
-  motions(): { name: string; index: number }[] {
-    return this.map.entities.filter(e => e.kind === 'motion' && e.name)
+  /** Named frames that move (#383), evaluated through `frameSample` in world coordinates. */
+  movingFrames(): { name: string; index: number }[] {
+    return this.map.entities.filter(e => e.kind === 'frame' && e.name
+      && this.sketch.frames[e.index]?.moves)
       .map(e => ({ name: e.name!, index: e.index }));
   }
 

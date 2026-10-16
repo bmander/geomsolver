@@ -34,14 +34,16 @@ fix((0, 0)) z
 fix((0, 1)) q
 spindle := line(z,q)
 }
-indexing := motion(about: spindle)
+indexing := frame
+std.Turn(indexing, about: spindle, ratio: 1)
 ";
 
 #[test]
 fn source_sphere_sweep_matches_a_torus_and_keeps_snapshot_geometry() {
     let mut e = read(SPHERE);
     let ball = e.map.ent_named("ball").unwrap().i();
-    let motion = e.map.ent_named("indexing").unwrap().i();
+    let indexing = e.map.ent_named("indexing").unwrap().i();
+    let motion = e.sketch.frames[indexing].joint.as_ref().unwrap().motion.unwrap() as usize;
     let sweep = SweptField::read(&e.sketch,ball,motion,I::new(-4.,4.).unwrap(),1e-10).unwrap();
     let mut query = sweep.evaluator(128);
     let options = Options {value_tolerance:1e-4,max_evaluations:50000};

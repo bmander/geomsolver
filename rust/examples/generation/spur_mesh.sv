@@ -43,14 +43,16 @@ in std.front {
 
 // the pinion and the gear turn together at the ratio of their pitch radii; the rack rolls on
 // the pinion's pitch circle
-pinion := motion(about: o1, ratio: 1)
-gear := motion(about: o2, ratio: -r1 / r2)
-rack := motion(along: pitch_line, advance: 2 * pi * r1)
-cutting := motion(rack, relative_to: pinion)
-mesh := motion(pinion, relative_to: gear)
+pinion := frame
+std.Spin(pinion, about: o1, on: std.front, ratio: 1)
+gear := frame
+std.Spin(gear, about: o2, on: std.front, ratio: -r1 / r2)
+rack := frame
+std.Slide(rack, along: pitch_line, advance: 2 * pi * r1)
 
-tooth := envelope(flank, under: cutting, from: -40deg, to: 40deg)
-mate := envelope(tooth, under: mesh, from: -15deg, to: 15deg)
+// the rack seen from the pinion cuts the tooth; the pinion seen from the gear cuts the mate
+tooth := envelope(flank, under: rack, seen_from: pinion, from: -40deg, to: 40deg)
+mate := envelope(tooth, under: pinion, seen_from: gear, from: -15deg, to: 15deg)
 
 // the mate's curvature where the two mesh, and where its centre must lie
 in std.front {

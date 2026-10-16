@@ -48,7 +48,7 @@ impl Selection {
                     let ax = &sk.axes[r.i()];
                     out.rays.push(Ray { name: n.clone(), axis: true, at: ax.a.map(param), dir: ax.d.map(param) });
                 }
-                EntKind::Plane => out.planes.push((n.clone(), sk.basis(r.i()))),
+                EntKind::Frame => out.planes.push((n.clone(), sk.basis(r.i()))),
                 other => return Err(format!("{} does not place a plane or an axis: select points, \
                                              lines, axes or planes", other.a())),
             }
@@ -112,13 +112,13 @@ fn datum_edit(
     let sel = Selection::read(e, sk, from)?;
     let current = match current {
         Some(n) => match e.map.ent_named(n) {
-            Some(r) if r.kind == EntKind::Plane => sk.basis(r.i()),
+            Some(r) if r.kind == EntKind::Frame => sk.basis(r.i()),
             _ => return Err(format!("`{n}` is not a plane in this drawing")),
         },
         None => crate::plane::Basis::page(),
     };
     let name = chosen_name(&mut taken_names(&e.program), name, kind)?;
-    let (decl, said) = if kind == EntKind::Plane {
+    let (decl, said) = if kind == EntKind::Frame {
         plane_datum(sk, &sel, &current, &name)?
     } else {
         axis_datum(sk, &sel, &current, &name)?
@@ -201,7 +201,7 @@ fn plane_datum(sk: &Sketch, sel: &Selection, current: &crate::plane::Basis, name
     all.append(&mut rest);
     let seed = |d: [f64; 3]| vec![syntax::Kid::Hint(syntax::KidSeed { v: seed_round(d), axis: true,
         ..Default::default() })];
-    let decl = gesture_decl(EntKind::Plane, name, vec![seed(frame.u), seed(frame.v), Vec::new()],
+    let decl = gesture_decl(EntKind::Frame, name, vec![seed(frame.u), seed(frame.v), Vec::new()],
         &seed_round(frame.o));
     Ok((decl, all))
 }
@@ -295,10 +295,10 @@ fn on_face_edit(
         let (a, b) = c.basis.view_coords(p);
         c.basis.lift(a, b)
     });
-    let name = chosen_name(&mut taken_names(&e.program), name, EntKind::Plane)?;
+    let name = chosen_name(&mut taken_names(&e.program), name, EntKind::Frame)?;
     let seed = |d: [f64; 3]| vec![syntax::Kid::Hint(syntax::KidSeed { v: seed_round(d), axis: true,
         ..Default::default() })];
-    let decl = gesture_decl(EntKind::Plane, &name, vec![seed(c.basis.u), seed(c.basis.v), Vec::new()],
+    let decl = gesture_decl(EntKind::Frame, &name, vec![seed(c.basis.u), seed(c.basis.v), Vec::new()],
         &seed_round(origin));
     let point = format!("{name}.origin");
     let touch = syntax::OpArg::Named(syntax::Name::new("at"),
@@ -319,8 +319,8 @@ fn on_face_edit(
 pub fn face_plane(e: &Elaborated, sk: &Sketch, solid: usize, face: &str) -> Option<String> {
     let c = crate::solid::carrier::carrier(sk, solid, face).ok()?;
     let tol = 1e-9 * sk.extent().max(1.0);
-    (0..sk.planes.len()).filter(|&i| sk.basis(i).coplanar(&c.basis, tol))
-        .find_map(|i| e.map.name_of(EntRef::new(EntKind::Plane, i)).cloned())
+    sk.planes().into_iter().filter(|&i| sk.basis(i).coplanar(&c.basis, tol))
+        .find_map(|i| e.map.name_of(EntRef::new(EntKind::Frame, i)).cloned())
 }
 
 /// `x` to `digits` significant digits.

@@ -145,6 +145,9 @@ struct Stamps {
     /// prefixes of the scope it was written in — `rewrite` resolves it there and not in the
     /// component's own chain, where a body declaration called `top` would take it (#45.4).
     plane: Option<InPlane>,
+    /// The frames further out that an enclosing instance rides on (#383), outermost first, each
+    /// as written where it was: what its statements ride on beyond `plane`.
+    rides: Vec<InPlane>,
     /// The classes every enclosing instance was given (`t2 := Throw(…) class phantom`), which
     /// every declaration emitted under them carries beneath its own (§13.2).
     class: crate::style::Classes,
@@ -252,6 +255,14 @@ pub struct Expansion {
     /// `P`): the planes among them mint their normal as they are built
     /// (`Sketch::plane_normal`), and the rest are said to have none where they are read.
     pub normals: BTreeSet<String>,
+    /// What every reference reading a member `u`, `v`, `origin` or `normal` reads it of,
+    /// absolute (#383): a frame declared bare among them mints its axes as it is built, and
+    /// one not among them owns nothing.
+    pub charts: BTreeSet<String>,
+    /// What every reference reading a joint's member `axis`, `ratio` or `advance` reads it of, and
+    /// every frame a `fix` holds a ratio or an advance of, absolute (#383): a frame among them
+    /// mints its joint as it is built.
+    pub joints: BTreeSet<String>,
     /// Where a declaration reads through a name already said to name nothing — a formal its
     /// call gave nothing that is (#253): the elaborator, finding nothing there, says no more.
     pub quiet: BTreeSet<Span>,
@@ -429,6 +440,10 @@ struct Walk<'a> {
     twins: Vec<(String, String)>,
     /// See `Expansion::normals`.
     normals: BTreeSet<String>,
+    /// See `Expansion::charts`.
+    charts: BTreeSet<String>,
+    /// See `Expansion::joints`.
+    joints: BTreeSet<String>,
     /// See `Expansion::quiet`.
     quiet: BTreeSet<Span>,
     /// The solids' faces read as sets and blocks over them — see `FaceState`.
@@ -654,6 +669,8 @@ impl<'a> Walk<'a> {
             },
             twins: Vec::new(),
             normals: BTreeSet::new(),
+            charts: BTreeSet::new(),
+            joints: BTreeSet::new(),
             quiet: BTreeSet::new(),
             faces: FaceState::default(),
             held: Held::default(),
@@ -724,6 +741,8 @@ impl<'a> Walk<'a> {
             lowered,
             twins: self.twins,
             normals: self.normals,
+            charts: self.charts,
+            joints: self.joints,
             quiet: self.quiet,
             probes: self.sets.probes,
             face_repeats: self.faces.repeats,

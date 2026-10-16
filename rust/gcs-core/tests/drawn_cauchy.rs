@@ -78,9 +78,13 @@ fn the_bore_read_off_the_apex_path_is_the_carried_apexs() {
     for pieces in [16, 32] {
         let (x, sx) = folded(&sb, past, pieces, 20.0);
         let (y, sy) = folded(&sh, written, pieces, 20.0);
-        // at the waist's node, on 32 pieces the waist itself
-        assert!(sx == sy && (sx - 90.0).abs() < 2.0, "{pieces} pieces: at {sx}, {sy}");
-        assert!((x - y).abs() < 1e-3 && x < 15.0, "{pieces} pieces: {x} against {y}");
+        // at the waist's node, on 32 pieces the waist itself — on 16 the two nodes either side
+        // of it, symmetric about it, so which of them is named is a tie rounding breaks
+        assert!((sx - 90.0).abs() < 2.0 && ((sx - 90.0).abs() - (sy - 90.0).abs()).abs() < 1e-9,
+                "{pieces} pieces: at {sx}, {sy}");
+        // refused at one place, to within the tie: the nodes either side of the waist differ
+        let within = if sx == sy { 1e-3 } else { 5e-3 };
+        assert!((x - y).abs() < within && x < 15.0, "{pieces} pieces: {x} against {y}");
     }
     assert_eq!(gcs_core::report::traced_text(&sb, bore),
                "bore: a surface traced in space, marched from its home at 0 across (0, 3)");

@@ -30,7 +30,8 @@ in std.front {
   hub_up above(d: 5mm) hub
   construction centerline cradle := line(hub, hub_up)
 }
-private spin := motion(about: cradle, ratio: 0.25)
+private spin := frame
+std.Turn(spin, about: cradle, ratio: 0.25)
 private rise := axis hint(dir: (0, 1, 1))
 fix(dir == (0, sqrt(0.5), sqrt(0.5))) rise
 private tilted := plane(u: std.x, v: rise)
@@ -42,6 +43,6 @@ in tilted {
   k1 coords(du: 5mm, dv: 0.7071mm) tilted
   construction centerline kaxis := line(k0, k1)
 }
-private observer := motion(about: kaxis)
-tumble := motion(spin, relative_to: observer)
-tumbled := solid(torus, under: tumble, from: -roll, to: roll)
+private observer := frame
+std.Turn(observer, about: kaxis, ratio: 1)
+tumbled := solid(torus, under: spin, seen_from: observer, from: -roll, to: roll)

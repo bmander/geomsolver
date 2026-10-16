@@ -1,6 +1,7 @@
 //! What is left of the datum a plane once was (issue #47, item 6 folded `frame` into `plane`;
 //! `docs/planes-plan.md` made a plane two axes and a place): a plane is measured where it
-//! stands, at its own origin, and the word `frame` is refused with the spelling it became.
+//! stands, at its own origin, and 0.15's `frame` is refused with the spelling a frame has now
+//! (#383, `tests/frames.rs`).
 use gcs_core::model::{distance_between, EntRef, Sketch};
 use gcs_core::plane::Basis;
 use crate::common::parse;
@@ -16,12 +17,12 @@ fn every_pair_with_a_plane_measures_from_its_origin() {
     let l = sk.line_xy(-50.0, 5.0, 100.0, 5.0, "l");
     let ci = sk.circle(p, 2.0, "ci");
     let f2 = sk.fixed_plane(Basis { o: [0.0, 0.0, 9.0], ..Basis::page() }, "f2");
-    let fr = EntRef::plane(f);
+    let fr = EntRef::frame(f);
     // each is the distance from (0, 0) to the thing, and none of them panics
     assert!((distance_between(&sk, fr, EntRef::point(p)) - 5.0).abs() < 1e-12);
     assert!((distance_between(&sk, fr, EntRef::line(l)) - 5.0).abs() < 1e-12);
     assert!((distance_between(&sk, fr, EntRef::circle(ci)) - 3.0).abs() < 1e-12);
-    assert!(distance_between(&sk, fr, EntRef::plane(f2)).abs() < 1e-12);
+    assert!(distance_between(&sk, fr, EntRef::frame(f2)).abs() < 1e-12);
     // and the pair reads the same measured either way round
     assert_eq!(
         distance_between(&sk, EntRef::line(l), fr),
@@ -29,13 +30,13 @@ fn every_pair_with_a_plane_measures_from_its_origin() {
     );
 }
 
-/// The word itself is gone: a document written with it is told what to write instead, at the
-/// declaration and at a component's formal alike.
+/// The 0.15 spelling is refused with the one a frame has now, `f := frame` declared bare (#383),
+/// and a formal `f: frame` is the one kind a plane is too.
 #[test]
-fn the_word_frame_is_refused_with_the_spelling_it_became() {
+fn the_old_frame_spelling_is_refused_with_the_one_it_became() {
     let (_, errs) = parse("o := point hint((0, 0))\nq := point hint((4, 0))\nframe f(origin: o, toward: q)\n");
     assert_eq!(errs.len(), 1, "{errs:?}");
-    assert!(errs[0].message.contains("folded into `plane`"), "{}", errs[0].message);
+    assert!(errs[0].message.contains("`f := frame`"), "{}", errs[0].message);
     let (_, errs) = parse("component c(f: frame) {\n  p := point\n}\n");
-    assert!(errs.iter().any(|e| e.message.contains("`f: plane`")), "{errs:?}");
+    assert!(errs.is_empty(), "{errs:?}");
 }

@@ -31,5 +31,6 @@ in std.front {
   private ball := Sphere(start, r: wire_r)
 }
 
-climb := motion(about: spindle, advance: pitch)
+climb := frame
+std.Turn(climb, about: spindle, ratio: 1, advance: pitch)
 spring := solid(ball.body, under: climb, from: 0deg, to: turns * 360deg)

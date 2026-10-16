@@ -390,7 +390,7 @@ Q := plane(u: l, v: m)
 
 /// Which way plane `p`'s axis `key` (`u` or `v`) runs, as seeded.
 fn axis_dir(e: &Elaborated, p: &str, key: &str) -> [f64; 3] {
-    let pl = &e.sketch.planes[e.map.ent_named(p).unwrap_or_else(|| panic!("no `{p}`")).i()];
+    let pl = &e.sketch.frames[e.map.ent_named(p).unwrap_or_else(|| panic!("no `{p}`")).i()];
     let a = if key == "u" { pl.u } else { pl.v };
     e.sketch.axes[a as usize].d.map(|q| e.sketch.params[q as usize].value)
 }
@@ -487,7 +487,7 @@ fn every_line_station_solves_over_the_one_library() {
         let d = gcs_core::diagnose::diagnose(&mut e.sketch, Default::default());
         assert_eq!(d.dof, 0, "{name}");
         // the plane square to its guide, its `v` along `up` as the word says, not against it
-        let pl = &e.sketch.planes[e.map.ent_named(&format!("{name}.st.n")).expect("st.n").i()];
+        let pl = &e.sketch.frames[e.map.ent_named(&format!("{name}.st.n")).expect("st.n").i()];
         let v = e.sketch.axes[pl.v as usize].d.map(|q| e.sketch.params[q as usize].value);
         let up = if name == "bottle" { [0.0, 1.0, 0.0] } else { [0.0, 0.0, 1.0] };
         along(v, up, name);

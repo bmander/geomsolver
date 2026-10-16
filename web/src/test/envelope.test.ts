@@ -27,7 +27,8 @@ radius(1mm) meridian
 }
 ring := solid(face(meridian),about: ax)
 wall := surface(ring,meridian)
-roll := motion(about: spin_axis)
+roll := frame
+std.Turn(roll,about: spin_axis,ratio: 1)
 generated := envelope(wall,under: roll,from: -20deg,to: 20deg)
 half := surface(ring,meridian,from: 180deg,to: 360deg)
 limited := envelope(half,under: roll,from: -20deg,to: 20deg)

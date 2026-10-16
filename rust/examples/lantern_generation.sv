@@ -1,8 +1,9 @@
 // A pinion rolled against a wheel blank, carrying one pin just inside its pitch circle: the pin
-// cuts the tooth space it would drive. The roll's ratio is not typed in. It is measured off the
-// drawing after the solve, the wheel's pitch radius over the pinion's, so editing either radius
-// re-times the roll and the cut follows. The part is the blank with everything the pin passes
-// through removed, meshed from its material field (the glass box shows it refining).
+// cuts the tooth space it would drive. The roll's ratio is not stated: the pitch circles roll on
+// one another without slipping at the pitch point, which times it from the two pitch radii, so
+// editing either radius re-times the roll and the cut follows. The part is the blank with
+// everything the pin passes through removed, meshed from its material field (the glass box shows
+// it refining).
 
 unit mm
 use std (coords, on_u)
@@ -29,11 +30,14 @@ in std.front {
   construction pinion_radius := line(hub, pitch)
 }
 
-// The wheel turns once per turn of the shared angle; the pinion turns the other way at the
-// ratio of the radii, read from the two drawn lines whenever the motion is read.
-wheel_turn := motion(about: spindle)
-pinion_turn := motion(about: pinion_axis, ratio: -length(wheel_radius) / length(pinion_radius))
-roll := motion(pinion_turn, relative_to: wheel_turn)
+// The wheel turns once per turn of the shared angle; the pinion turns the other way, as fast as
+// the two pitch circles rolling at the pitch point make it — along the page's normal, where the
+// circles touch, the pinion's point there moves with the wheel's.
+wheel_turn := frame
+std.Turn(wheel_turn, about: spindle, ratio: 1)
+pinion_turn := frame
+std.Turn(pinion_turn, about: pinion_axis)
+std.Rolls(pitch, pinion_turn, wheel_turn, along: std.front.normal)
 
 // The blank: a disc out to the addendum circle, turned about the spindle.
 in std.front {
@@ -66,6 +70,6 @@ in std.front {
 construction pin := solid(pin_section, about: qa)
 
 // Everything the pin passes through while it meets the wheel's blank, found after the solve.
-construction space := solid(pin, under: roll, through: wheel)
+construction space := solid(pin, under: pinion_turn, seen_from: wheel_turn, through: wheel)
 wheel := solid(blank)
 space cut wheel

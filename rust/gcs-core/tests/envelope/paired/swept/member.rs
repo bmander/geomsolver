@@ -114,8 +114,11 @@ impl Member {
         let mut index_definitions = vec![];
         let (origin,axis) = axis(pair,&fixtures::gear::axis(name));
         let indices: Vec<_> = (0..pair.teeth[member] as usize).map(|index| {
-            let gcs_core::model::MotionDef::Rotation {ratio,phase,..} = &mut sk.motions[id].def else { panic!() };
-            *ratio = 0.; *phase = TAU*index as f64/pair.teeth[member];
+            // index `index` is the member's roll turned a tooth pitch that many times: a turn at
+            // that ratio read at roll 1
+            let gcs_core::model::MotionDef::Rotation {ratio,..} = &mut sk.motions[id].def else { panic!() };
+            *ratio = TAU*index as f64/pair.teeth[member];
+            let phase = *ratio;
             index_definitions.push(format!("{{\"origin\":{origin:?},\"axis\":{axis:?},\"ratio\":0,\"phase\":{phase}}}"));
             Family::read(&sk,id).unwrap()
         }).collect();
@@ -128,10 +131,10 @@ impl Member {
         let sweep = MaterialField::from(SweptField::new(generator,pair.motion_families[member].clone(),
             I::new(domain[0],domain[1]).unwrap()));
         let field = indices.iter().fold(MaterialField::from(blank.clone()),|field,index|
-            field.difference(sweep.clone().transformed(index,0.).unwrap()).unwrap()).evaluator(1_000_000);
+            field.difference(sweep.clone().transformed(index,1.).unwrap()).unwrap()).evaluator(1_000_000);
         let section = indices.iter().fold(MaterialField::from(angular),|field,index|
-            field.difference(sweep.clone().transformed(index,0.).unwrap()).unwrap()).evaluator(1_000_000);
-        let indices = indices.iter().map(|index| index.bounds(I::ZERO).unwrap()).collect();
+            field.difference(sweep.clone().transformed(index,1.).unwrap()).unwrap()).evaluator(1_000_000);
+        let indices = indices.iter().map(|index| index.bounds(I::new(1.,1.).unwrap()).unwrap()).collect();
         Self {blank,field,section,radii,indices,definition}
     }
 

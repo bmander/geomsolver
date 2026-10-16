@@ -31,9 +31,11 @@ p1 := point hint((10, 72, 0))
 fix((0mm, rg + rp, 0mm)) p0
 fix((10mm, rg + rp, 0mm)) p1
 pinion_ax := line(p0, p1)
-gear_turn := motion(about: gear_ax, ratio: -q)
-pinion_turn := motion(about: pinion_ax)
-mesh := motion(gear_turn, relative_to: pinion_turn)
+gear_turn := frame
+std.Turn(gear_turn, about: gear_ax, ratio: -q)
+pinion_turn := frame
+std.Turn(pinion_turn, about: pinion_ax, ratio: 1)
+// the mesh is the gear's turn seen from the pinion's: `under: gear_turn, seen_from: pinion_turn`
 
 // -- the line of action, as `phillips.sv` holds it -----------------------------------------------
 P := point hint((0, 48, 0))
@@ -42,7 +44,7 @@ ahead := point hint((7, 51, -7))
 L := line(P, ahead)
 P distance(10mm) ahead
 P distance(10mm * sin(pressure), along: std.y) ahead
-L reciprocal mesh
+L reciprocal(seen_from: pinion_turn) gear_turn
 
 // -- each member's plane of action ---------------------------------------------------------------
 // Through L along the member's shaft: its normal square to both, and a line in it across L.
@@ -70,7 +72,7 @@ P distance(10mm) ga
 // -- the flanks, as their members see the contact -------------------------------------------------
 // The element at phase `phi`, `s` across L in the plane of action, and the member's view of it:
 // carried back by the member's turn.
-component Element(P: point, L: line, across: line, normal: line, m: motion, v: Length,
+component Element(P: point, L: line, across: line, normal: line, m: frame, v: Length,
     phi: Angle, s: Length) {
   x := point hint((0, 48, 0))
   P distance(v * phi / 1rad, along: L) x
@@ -85,6 +87,7 @@ pinion_flank := Element(P, L, pin_across, pin_normal, pinion_turn, v: sigma).X o
 gear_flank := Element(P, L, gear_across, gear_normal, gear_turn, v: sigma).X over (phi in (-run, run), s in (-w, w))
 
 // -- the contact ---------------------------------------------------------------------------------
-bearing := meshing(pinion_flank, gear_flank, under: mesh, from: -15deg, to: 15deg)
+bearing := meshing(pinion_flank, gear_flank, under: gear_turn, seen_from: pinion_turn,
+                   from: -15deg, to: 15deg)
 Q := point hint((0, 48, 0))
 Q coincident(t == 0deg) bearing

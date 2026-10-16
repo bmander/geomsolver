@@ -174,7 +174,7 @@ pub struct DatumRequest {
 impl DatumRequest {
     pub fn from_json(v: &Json) -> Result<DatumRequest, String> {
         let kind = EntKind::parse(text(v, "kind").as_deref().unwrap_or_default())
-            .filter(|k| matches!(k, EntKind::Plane | EntKind::Axis))
+            .filter(|k| matches!(k, EntKind::Frame | EntKind::Axis))
             .ok_or("a datum is a plane or an axis")?;
         Ok(DatumRequest {
             kind,

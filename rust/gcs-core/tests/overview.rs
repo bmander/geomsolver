@@ -240,7 +240,7 @@ fn every_plane_is_a_pane_with_its_own_axes() {
     let s = scene(&sk, unit, -FRAC_PI_2, 0.0);
     assert_eq!(s.items.iter().filter(|i| i.what == Part::Face).count(), 4, "a pane per plane");
     for i in 0..4 {
-        let of = Some(EntRef::plane(i));
+        let of = Some(EntRef::frame(i));
         let arms: Vec<_> =
             s.items.iter().filter(|it| it.what == Part::Axis && it.in_plane == of).collect();
         assert_eq!(arms.len(), 2, "plane {i} has an x and a y");
@@ -258,7 +258,7 @@ fn every_plane_is_a_pane_with_its_own_axes() {
     }
     // the pane contains its own origin, so the two axes cross on it rather than running along
     // an edge: looked at the front view square on, the scene's coordinates are that view's own
-    let front = s.items.iter().find(|it| it.what == Part::Face && it.in_plane == Some(EntRef::plane(0)));
+    let front = s.items.iter().find(|it| it.what == Part::Face && it.in_plane == Some(EntRef::frame(0)));
     let p = &front.expect("the front pane").pts;
     let (lo, hi) = p.iter().fold(((f64::MAX, f64::MAX), (f64::MIN, f64::MIN)), |(l, h), q| {
         ((l.0.min(q.0), l.1.min(q.1)), (h.0.max(q.0), h.1.max(q.1)))

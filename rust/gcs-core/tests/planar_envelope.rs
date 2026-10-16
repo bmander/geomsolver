@@ -1,7 +1,7 @@
 //! The inner envelope of a closed planar curve under a planar motion (`envelope::planar`, what the
 //! planar generating class reads of a pocket): the Wankel rotor's flanks are the inner envelope of
 //! the housing's bore seen from the rotor, against the closed form (Yamamoto).
-use crate::bore::{solved,wankel};
+use crate::bore::{seen,solved,wankel};
 use gcs_core::envelope::planar::{Condition,InnerEnvelope};
 
 /// The rotor's flank in its own frame, about its centre, apex at angle 0: for s ∈ [0, 2π/3],
@@ -29,8 +29,9 @@ pub fn off_flank(r: f64,e: f64,g: [f64;2]) -> f64 {
 }
 
 fn rotor(r: f64,e: f64) -> Result<(InnerEnvelope,gcs_core::program::Elaborated),gcs_core::envelope::planar::Refusal> {
-    let el = solved(&wankel(r,e,"bore := envelope(apex, under: rotor_turn, from: 0deg, to: 1080deg)"));
-    let (bore,turn) = (el.map.ent_named("bore").unwrap().i(),el.map.ent_named("housing_turn").unwrap().i());
+    let el = solved(&wankel(r,e,
+        "bore := envelope(apex, under: spin, seen_from: counter, from: 0deg, to: 1080deg)"));
+    let (bore,turn) = (el.map.ent_named("bore").unwrap().i(),seen(&el,"counter","spin"));
     InnerEnvelope::read(&el.sketch,bore,turn,[0.,3.*std::f64::consts::TAU]).map(|env| (env,el))
 }
 
@@ -75,8 +76,9 @@ fn below_the_limiting_k_the_envelope_is_refused_and_names_its_row() {
 
 #[test]
 fn an_envelope_is_read_over_a_whole_period() {
-    let el = solved(&wankel(105.,15.,"bore := envelope(apex, under: rotor_turn, from: 0deg, to: 1080deg)"));
-    let (bore,turn) = (el.map.ent_named("bore").unwrap().i(),el.map.ent_named("housing_turn").unwrap().i());
+    let el = solved(&wankel(105.,15.,
+        "bore := envelope(apex, under: spin, seen_from: counter, from: 0deg, to: 1080deg)"));
+    let (bore,turn) = (el.map.ent_named("bore").unwrap().i(),seen(&el,"counter","spin"));
     let refused = InnerEnvelope::read(&el.sketch,bore,turn,[0.,std::f64::consts::TAU]).unwrap_err();
     assert_eq!(refused.row,Condition::Period,"{refused}");
 }
@@ -103,14 +105,17 @@ pub fn rotor_area(r: f64,e: f64) -> f64 {
 #[test]
 fn a_motion_off_the_plane_gives_no_envelope() {
     let el = solved(&wankel(105.,15.,"\
-bore := envelope(apex, under: rotor_turn, from: 0deg, to: 1080deg)
-tilt := motion(about: rightward_line)
+bore := envelope(apex, under: spin, seen_from: counter, from: 0deg, to: 1080deg)
+tilt := frame
+std.Turn(tilt, about: rightward_line, ratio: 1)
 in std.front {
 rightward_line := horizontal line(std.origin, hint((1, 0)))
 length(1mm) rightward_line
 }
 "));
-    let (bore,tilt) = (el.map.ent_named("bore").unwrap().i(),el.map.ent_named("tilt").unwrap().i());
+    let tilt = el.map.ent_named("tilt").unwrap();
+    let tilt = el.sketch.frames[tilt.i()].joint.as_ref().and_then(|j| j.motion).unwrap() as usize;
+    let bore = el.map.ent_named("bore").unwrap().i();
     let refused = InnerEnvelope::read(&el.sketch,bore,tilt,[0.,std::f64::consts::TAU]).unwrap_err();
     assert_eq!(refused.row,Condition::Plane,"{refused}");
 }

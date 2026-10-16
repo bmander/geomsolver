@@ -1401,6 +1401,12 @@ pub fn regularity(k: &[f64], theta: &[f64], place: [f64; 2]) -> Option<f64> {
 
 use crate::model::{EntKind, Sketch, TracedE};
 
+/// Frame `f`'s motion, its joint's: `None` at rest, the world, which reads no column (#383).
+fn moving(sk: &Sketch, f: usize) -> Option<held::Moving> {
+    let m = sk.frames.get(f)?.joint.as_ref()?.motion?;
+    held::Moving::of_any(sk, m as usize).ok()
+}
+
 /// The points whose lifts a traced body's columns read: its points, its lines' ends, and every
 /// point its motions' axes read.
 pub fn lifted(sk: &Sketch, t: &TracedE) -> Vec<usize> {
@@ -1410,7 +1416,7 @@ pub fn lifted(sk: &Sketch, t: &TracedE) -> Vec<usize> {
             let l = &sk.lines[e.i()];
             vec![l.p1 as usize, l.p2 as usize]
         }
-        EntKind::Motion => held::Moving::of_any(sk, e.i()).map(|m| m.lifted()).unwrap_or_default(),
+        EntKind::Frame => moving(sk, e.i()).map(|m| m.lifted()).unwrap_or_default(),
         // a spline's control points, and what a curve traced in space reads (#376)
         EntKind::Spline => sk.splines[e.i()].ctrl.iter().map(|&p| p as usize).collect(),
         EntKind::Traced => sk.traced.get(e.i()).map(|t| lifted(sk, t)).unwrap_or_default(),
@@ -1431,9 +1437,7 @@ pub fn columns(sk: &Sketch, t: &TracedE) -> Vec<u32> {
             let l = &sk.lines[e.i()];
             [lift(l.p1 as usize), lift(l.p2 as usize)].concat()
         }
-        EntKind::Motion => {
-            held::Moving::of_any(sk, e.i()).map(|m| m.columns(sk)).unwrap_or_default()
-        }
+        EntKind::Frame => moving(sk, e.i()).map(|m| m.columns(sk)).unwrap_or_default(),
         // a spline's control points' lifts, a drawn curve's own columns, and a curve traced in
         // space's (#376)
         EntKind::Spline => sk.splines[e.i()].ctrl.iter().flat_map(|&p| lift(p as usize)).collect(),
@@ -1451,9 +1455,7 @@ pub fn theta(sk: &Sketch, t: &TracedE) -> Vec<f64> {
             let l = &sk.lines[e.i()];
             [sk.lifted(l.p1 as usize), sk.lifted(l.p2 as usize)].concat()
         }
-        EntKind::Motion => {
-            held::Moving::of_any(sk, e.i()).map(|m| m.values(sk)).unwrap_or_default()
-        }
+        EntKind::Frame => moving(sk, e.i()).map(|m| m.values(sk)).unwrap_or_default(),
         EntKind::Spline => {
             sk.splines[e.i()].ctrl.iter().flat_map(|&p| sk.lifted(p as usize)).collect()
         }

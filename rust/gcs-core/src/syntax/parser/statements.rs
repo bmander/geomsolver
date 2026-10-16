@@ -34,15 +34,18 @@ fn stamp_initially(stmts: &mut [Stmt], errs: &mut Vec<SynErr>) {
 }
 
 /// Apply block membership recursively. Faces and solids inherit their geometry's plane;
-/// instances carry membership into expansion. Conflicting clauses are diagnosed here.
-fn stamp_plane(stmts: &mut [Stmt], plane: &Ref, errs: &mut Vec<SynErr>) {
+/// instances carry membership into expansion.  A statement already in a frame — a block inside
+/// this one, or its own clause — **rides** on this one too (#383): the path is kept, outermost
+/// first, and the elaborator draws it in the innermost frame of it with axes.  A frame declared
+/// here takes the path as where it rides.
+fn stamp_frame(stmts: &mut [Stmt], plane: &Ref, errs: &mut Vec<SynErr>) {
     for st in stmts {
         match &mut st.kind {
             StmtKind::Decl(d) => {
                 // Faces and solids use the planes of their constituent geometry, and a free curve
                 // the view of the points it runs between.
                 if d.kind.spatial() || (d.kind == EntKind::Curve && d.curve.is_none()) {
-                } else if !d.kind.bears_points() {
+                } else if !d.kind.bears_points() && d.kind != EntKind::Frame {
                     errs.push(SynErr {
                         span: st.span,
                         message: format!(
@@ -51,13 +54,10 @@ fn stamp_plane(stmts: &mut [Stmt], plane: &Ref, errs: &mut Vec<SynErr>) {
                         ),
                     });
                 } else if !d.membership.join(plane, Source::Block) {
-                    errs.push(SynErr {
-                        span: d.membership.span(),
-                        message: d.membership.cause().into(),
-                    });
+                    d.membership.ride_in(plane);
                 }
             }
-            StmtKind::Block(b) => stamp_plane(&mut b.body, plane, errs),
+            StmtKind::Block(b) => stamp_frame(&mut b.body, plane, errs),
             // a step measured in no frame of its own is measured in the view its line is drawn
             // in (#330): the block's plane, handed on as a reference — which no source writes,
             // a written `from:` being kept as its text — so the flattener tells the two apart
@@ -74,10 +74,7 @@ fn stamp_plane(stmts: &mut [Stmt], plane: &Ref, errs: &mut Vec<SynErr>) {
             // the instance joins whole: the flattener carries the plane into its expansion
             StmtKind::Instance(inst) => {
                 if !inst.membership.join(plane, Source::Block) {
-                    errs.push(SynErr {
-                        span: inst.membership.span(),
-                        message: inst.membership.cause().into(),
-                    });
+                    inst.membership.ride_in(plane);
                 }
             }
             _ => {}
@@ -124,8 +121,18 @@ impl<'a> P<'a> {
             // points that are symmetric, since the predicate is about the *triangle* and not
             // about a pair with a decoration.  Spec §9.6 keeps the call for exactly that reason.
             "branch" => self.branch(),
-            "ellipse" | "frame" | "port" => {
+            "ellipse" | "port" => {
                 self.retired(&w);
+                None
+            }
+            // 0.15's `frame f(origin: o, toward: q)` (#47 folded it into `plane`); a frame is
+            // declared bare again, by definition (#383)
+            "frame" if matches!(self.t.get(self.i + 1).map(|(t, _)| t), Some(Tok::Ident(_))) => {
+                self.fail(
+                    "a frame is declared bare, `f := frame`, and constrained after the fact: \
+                     its axes `f.u`, `f.v` and its origin `f.origin` take relations, and a flat \
+                     frame over two axes is `f := plane(u: r1, v: r2)`",
+                );
                 None
             }
             b if BLOCKS.contains(&b) => {
@@ -235,14 +242,6 @@ impl<'a> P<'a> {
                      curve's contacts",
                 );
             }
-            "frame" => {
-                // folded into `plane` (bmander/geomsolver#47, item 6; #81)
-                self.fail(
-                    "`frame` is folded into `plane`: write `f := plane(u: r1, v: r2)` over two \
-                     axes or lines, whose origin is `f.origin`, or turn a frame within a plane \
-                     with `std.Turned(o, t)`",
-                );
-            }
             "port" => {
                 // retired (bmander/geomsolver#47): everything an instance makes is reached by
                 // its dotted name, so a port was a second name for a thing that had one
@@ -262,6 +261,8 @@ impl<'a> P<'a> {
         let lo = self.here().lo as usize;
         self.i += 2;
         let formal = self.refr()?;
+        // over a motion seen from another frame (#383): `claim over m seen_from g in (a, b)`
+        let seen_from = if self.eat_word("seen_from") { Some(self.refr()?) } else { None };
         if !self.peek_word("in") {
             self.fail("a swept claim runs `over NAME in (from, to)`");
             return None;
@@ -281,6 +282,7 @@ impl<'a> P<'a> {
         let (body, _) = self.braced_body(next_id)?;
         Some(StmtKind::ClaimOver(ClaimOver {
             formal,
+            seen_from,
             from: Arg::Dim { text: from, span: fs },
             to: Arg::Dim { text: to, span: ts },
             body,
@@ -570,16 +572,61 @@ impl<'a> P<'a> {
         Some(StmtKind::Param(ParamDecl { name, text, span, input: Some(Input { ty, seed }) }))
     }
 
+    /// `motion(…)` (#383), refused saying what each spelling is now — read past its brackets for
+    /// the labels it was written with: one refusal for the declaration, naming the new words.
+    fn retired_motion(&mut self) {
+        let at = self.here();
+        let mut labels: Vec<String> = Vec::new();
+        let mut depth = 0i32;
+        let mut j = self.i + 1;
+        while let Some((t, _)) = self.t.get(j) {
+            match t {
+                Tok::P('(') => depth += 1,
+                Tok::P(')') => {
+                    depth -= 1;
+                    if depth == 0 { break; }
+                }
+                Tok::Ident(w)
+                    if depth == 1 && matches!(self.t.get(j + 1), Some((Tok::P(':'), _))) => {
+                    labels.push(w.clone());
+                }
+                Tok::Nl if depth == 0 => break,
+                _ => {}
+            }
+            j += 1;
+        }
+        let has = |l: &str| labels.iter().any(|x| x == l);
+        let message = if has("relative_to") {
+            "`motion(a, relative_to: b)` is retired (#383): a motion seen from another is said \
+             where it is read, `under: a, seen_from: b` — on a carried point, an envelope, a \
+             meshing and a swept or placed solid"
+        } else if has("phase") {
+            "`phase:` is retired (#383): roll 0 is as drawn, so a motion that stood turned by φ is \
+             read at the roll shifted by φ / ratio (`t == τ + φ`, `from: start + φ`) — or its \
+             member drawn turned"
+        } else if has("along") {
+            "`motion(along: l, advance: a)` is retired (#383): declare a frame and slide it, \
+             `f := frame` then `std.Slide(f, along: l, advance: a)`"
+        } else {
+            "`motion(about: …)` is retired (#383): declare a frame and turn it, `f := frame` then \
+             `std.Turn(f, about: l, ratio: r)` (a screw: `advance: a`), or about a point of a view \
+             `std.Spin(f, about: o, on: P, ratio: r)`"
+        };
+        self.fail_at(at, message);
+        self.i = j.min(self.t.len());
+        if self.t.get(self.i).is_some() { self.i += 1; }
+    }
+
     /// A formal's type after its `:` — the word, read through `Ty::parse`.
     fn formal_type(&mut self) -> Option<Ty> {
         let tname = self.ident()?;
         let Some(ty) = Ty::parse(&tname.text) else {
             self.errs.push(SynErr {
                 span: tname.span,
-                message: if tname.text.eq_ignore_ascii_case("frame") {
-                    "`frame` is folded into `plane`: a formal `f: plane` is the datum, \
-                     and offers `f.angle`"
-                        .to_string()
+                message: if tname.text == "motion" {
+                    "a motion is a frame's now (#383): a formal `m: frame` is read `under: m`, and \
+                     one that was a relative motion takes its observer as a second, `seen_from: \
+                     frame`".to_string()
                 } else {
                     format!("`{}` is not a type", tname.text)
                 },
@@ -594,7 +641,8 @@ impl<'a> P<'a> {
     /// interface.  Whether the name is one is the flattener's to say, once modules are linked.
     fn formal_or_interface(&mut self) -> Option<(Ty, Option<Name>)> {
         let word = self.word_at(self.i).map(str::to_string);
-        if word.as_deref().is_some_and(|w| Ty::parse(w).is_some() || w.eq_ignore_ascii_case("frame")) {
+        // `motion` was a type until 0.135, and is refused as one rather than read as a name
+        if word.as_deref().is_some_and(|w| Ty::parse(w).is_some() || w == "motion") {
             return self.formal_type().map(|ty| (ty, None));
         }
         Some((Ty::Group, Some(self.component_name()?)))
@@ -606,6 +654,7 @@ impl<'a> P<'a> {
         if !self.want_p(':') {
             return None;
         }
+        let frame = self.word_at(self.i) == Some("frame");
         let (ty, interface) = self.formal_or_interface()?;
         // a point formal may say the plane it is drawn in, which lets a call leave it out
         let within = if self.peek_word("in") {
@@ -620,8 +669,20 @@ impl<'a> P<'a> {
         } else {
             None
         };
+        // a number may say what it is where a call leaves it out (#383)
+        let default = if self.peek() == Some(&Tok::P('=')) {
+            let at = self.here();
+            self.i += 1;
+            if !ty.number() {
+                self.fail_at(at, "only a number formal has a default: `advance: Length = 0mm`");
+                return None;
+            }
+            Some(self.expr_until(',')?)
+        } else {
+            None
+        };
         let span = Span::new(name.span.lo as usize, self.prev_hi());
-        Some(Formal { name, ty, span, interface, within })
+        Some(Formal { name, ty, span, interface, within, default, frame })
     }
 
     /// `interface Gear { O: point, M: point, ax: line }` — a group's shape, named (§8.1 [0.84]):
@@ -714,6 +775,19 @@ impl<'a> P<'a> {
                     .collect();
                 self.end_of_stmt();
                 StmtKind::Group(crate::syntax::GroupDecl { name, fields })
+            }
+            // `f := frame` (#383): a frame declared bare — the word read so only as a definition's
+            // whole value, since `frame` is a name a document may give
+            Some("frame") if words::bare_frame_at(&self.t, self.i) || call => {
+                self.i += 1;
+                let d = self.frame_decl(DeclName::Written(name))?;
+                self.end_of_stmt();
+                StmtKind::Decl(d)
+            }
+            // `motion(…)` is retired (#383): what it said is a frame's joint, held by relations
+            Some("motion") if call => {
+                self.retired_motion();
+                return None;
             }
             Some("view" | "section" | "dimensions") if call => {
                 self.derived(DeclName::Written(name))?
@@ -854,7 +928,9 @@ impl<'a> P<'a> {
         // `in top { … }` before anything else: `in` opens no chain and no statement of any
         // other kind, and no name may be called `in`
         if self.peek_word("in")
-            && matches!(self.t.get(self.i + 1).map(|(t, _)| t), Some(Tok::Ident(_)))
+            && (matches!(self.t.get(self.i + 1).map(|(t, _)| t), Some(Tok::Ident(_)))
+                || words::named_link_at(&self.t, self.i + 1)
+                || words::named_frame_at(&self.t, self.i + 1))
         {
             if !self.take_statement(self.here()) {
                 return None;
@@ -899,7 +975,38 @@ impl<'a> P<'a> {
     fn in_block(&mut self, next_id: &mut u32, out: &mut Vec<Stmt>) -> Option<()> {
         let lo = self.here().lo as usize;
         self.i += 1; // `in`
-        let plane = self.refr()?;
+        // `in (g := frame) { … }` (#383): the header declares the frame the block draws in,
+        // `g := frame` then `in g { … }` — its declaration a statement of its own, before the body
+        let declares = words::named_link_at(&self.t, self.i) || words::named_frame_at(&self.t, self.i);
+        let plane = if declares {
+            self.i += 1; // `(`
+            let n = self.ident()?;
+            self.i += 1; // `:=`
+            let bare = self.word_at(self.i) == Some("frame");
+            let kind = if bare { EntKind::Frame } else {
+                EntKind::parse(self.word_at(self.i)?).expect("named_link_at")
+            };
+            if kind != EntKind::Frame {
+                self.fail("an `in` block's header declares the frame it draws in: \
+                           `in (f := frame) { … }`, or a plane, `in (P := plane(u: a, v: b)) { … }`");
+                return None;
+            }
+            self.i += 1;
+            let decl = if bare {
+                self.frame_decl(DeclName::Written(n.clone()))?
+            } else {
+                self.decl(kind, Some(n.clone()))?
+            };
+            let span = Span::new(n.span.lo as usize, self.prev_hi());
+            if !self.want_p(')') {
+                return None;
+            }
+            let id = self.mint_stmt(next_id, span)?;
+            out.push(Stmt { id, kind: StmtKind::Decl(decl), span, chained: Chained::No });
+            Ref { span: n.span, root: n, path: Vec::new() }
+        } else {
+            self.refr()?
+        };
         self.skip_ends();
         if !matches!(self.peek(), Some(Tok::P('{'))) {
             self.fail("an `in` block is `in PLANE { … }`");
@@ -910,20 +1017,25 @@ impl<'a> P<'a> {
         // the plane is a formal, and nothing the document deletes reaches the header; inside a
         // root block a header buried in another statement's span is a splice no deletion
         // could compose, so there the clause is written per declaration
-        let nested = self.in_body > u32::from(self.in_preview);
+        // `in` inside `in` nests (#383): what is drawn there rides on both, so only the
+        // blocks that are no `in` count
+        let nested = self.in_body - self.in_in > u32::from(self.in_preview);
         if nested && !self.in_comp {
             self.fail(
-                "an `in` block stands at the top level or in a component; inside a block here, \
-                 write the clause on each declaration",
+                "an `in` block stands at the top level, in another `in` block or in a component; \
+                 inside a block here, write the clause on each declaration",
             );
         }
-        let (mut body, joint) = self.braced_body(next_id)?;
+        self.in_in += 1;
+        let got = self.braced_body(next_id);
+        self.in_in -= 1;
+        let (mut body, joint) = got?;
         self.no_open_joint(joint, "an `in` block");
         let close = self.t.get(self.i.wrapping_sub(1)).map(|(_, s)| *s).unwrap_or_default();
-        stamp_plane(&mut body, &plane, &mut self.errs);
+        stamp_frame(&mut body, &plane, &mut self.errs);
         // recorded only where a deletion could reach it: a nested block is already an error
         if !nested {
-            self.in_blocks.push(InBlock { plane, header, close });
+            self.in_blocks.push(InBlock { plane, header, close, declares });
         }
         out.extend(body);
         Some(())
@@ -1082,7 +1194,7 @@ impl<'a> P<'a> {
             seed_at: None,
             seed_names: Vec::new(),
             sweep: Some(crate::syntax::Sweep::Family(Box::new(spec))),
-            motion: None,
+            seen_from: None,
             angular_span: None,
             membership,
             list_span,
@@ -1091,6 +1203,7 @@ impl<'a> P<'a> {
             through: None,
             normal: None,
             sense: None,
+            bare: false,
         })
     }
 

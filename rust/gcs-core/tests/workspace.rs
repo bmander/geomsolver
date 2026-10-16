@@ -258,8 +258,8 @@ fn the_report_says_each_view() {
     let e = build(&format!("{VIEWS}l := line(s, t)\n"));
     let sk: &Sketch = &e.sketch;
     let parsed = gcs_core::json::parse(&gcs_core::report::workspace_json(sk).dump(None)).unwrap();
-    assert_eq!(parsed.get("places").unwrap().arr().len(), 1 + sk.planes.len());
-    assert_eq!(parsed.get("looks").unwrap().arr().len(), 1 + sk.planes.len());
+    assert_eq!(parsed.get("places").unwrap().arr().len(), 1 + sk.frames.len());
+    assert_eq!(parsed.get("looks").unwrap().arr().len(), 1 + sk.frames.len());
     let lines = parsed.get("views").unwrap().get("line").unwrap().arr();
     // the projector between the side and the top stands in no one view
     let l = e.map.ent_named("l").unwrap();
@@ -341,12 +341,12 @@ in std.top {
   apex := point
   fix((120, 0)) apex
 }
-counter := motion(about: centre, ratio: -1)
-spin := motion(about: hub, ratio: -2 / 3)
-rotor_turn := motion(spin, relative_to: counter)
-housing_turn := motion(counter, relative_to: spin)
-bore := envelope(apex, under: rotor_turn, from: 0deg, to: 1080deg)
-flank := envelope(bore, under: housing_turn, from: 10deg, to: 170deg)
+counter := frame
+std.Spin(counter, about: centre, on: std.top, ratio: -1)
+spin := frame
+std.Spin(spin, about: hub, on: std.top, ratio: -2 / 3)
+bore := envelope(apex, under: spin, seen_from: counter, from: 0deg, to: 1080deg)
+flank := envelope(bore, under: counter, seen_from: spin, from: 10deg, to: 170deg)
 ");
     let top = plane(&e, "std.top");
     let views = gcs_core::overview::workspace::Views::new(&e.sketch);
@@ -357,7 +357,7 @@ flank := envelope(bore, under: housing_turn, from: 10deg, to: 170deg)
         let drawn: Vec<_> = scene.iter().filter(|it| it.of == Some(c)).collect();
         assert!(!drawn.is_empty(), "{name} is drawn");
         for it in drawn {
-            assert_eq!(it.in_plane, Some(EntRef::plane(top)), "{name}");
+            assert_eq!(it.in_plane, Some(EntRef::frame(top)), "{name}");
             assert!(it.pts.iter().all(|p| p[2].abs() < 1e-9), "{name} lies in the plane z = 0");
             assert!(it.pts.iter().any(|p| p[1].abs() > 1.0), "{name} reaches off the x axis");
         }

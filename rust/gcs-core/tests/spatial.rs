@@ -54,7 +54,7 @@ fn a_plane_stands_on_its_rays() {
     assert_eq!(b.o, [2.0, -1.0, 3.5]);
     // a point drawn at (20, 3) stands at o + 20u + 3v, and its origin at o
     assert!(close3(sk.world_point(a), b.lift(20.0, 3.0), 1e-12));
-    assert!(close3(sk.world_point(sk.planes[pl].origin as usize), b.o, 1e-15));
+    assert!(close3(sk.world_point(sk.frames[pl].origin as usize), b.o, 1e-15));
 }
 
 #[test]
@@ -94,14 +94,14 @@ fn a_lift_follows_its_plane() {
     let flat = sk.point(1.0, 1.0, false, "flat");
     assert_eq!(sk.lift_point(flat), None);
     // turn the first axis by hand, hold everything drawn, and solve: the hidden points follow
-    let u = sk.axes[sk.planes[pl].u as usize].d;
+    let u = sk.axes[sk.frames[pl].u as usize].d;
     let turned = [0.2f64, 0.9, -0.3];
     let n = gcs_core::space::norm(turned);
     for k in 0..3 {
         sk.params[u[k] as usize].value = turned[k] / n;
         sk.params[u[k] as usize].fixed = true;
     }
-    for p in sk.axes[sk.planes[pl].v as usize].d.into_iter().chain(sk.planes[pl].o) {
+    for p in sk.axes[sk.frames[pl].v as usize].d.into_iter().chain(sk.frames[pl].o) {
         sk.params[p as usize].fixed = true;
     }
     sk.fix_point(a, true);
@@ -133,7 +133,7 @@ fn a_plane_round_trips_through_json_and_a_copy() {
     assert_eq!(back.constraints.iter().filter(|c| c.kind == CKind::AxisUnit).count(), 4);
     assert!(back.lifts.is_empty(), "re-minted by whatever reads it, not by the reader");
     // a copy carries the plane, its axes and the hidden point
-    let copy = io::copy(&sk, &[EntRef::plane(pl), EntRef::plane(held), EntRef::point(a)]);
+    let copy = io::copy(&sk, &[EntRef::frame(pl), EntRef::frame(held), EntRef::point(a)]);
     for p in [pl, held] {
         assert_eq!(bits(copy.basis(p)), bits(sk.basis(p)));
     }
@@ -145,15 +145,15 @@ fn a_drag_part_carries_the_plane_and_its_hidden_points() {
     let (mut sk, pl, [a, _]) = turned();
     sk.lift_point(a).unwrap();
     let part = io::Part::around(&sk, EntRef::point(a));
-    assert_eq!(part.sketch.planes.len(), 1, "the plane came");
+    assert_eq!(part.sketch.frames.len(), 1, "the plane came");
     assert_eq!(part.sketch.lifts.len(), 1);
     assert_eq!(bits(part.sketch.basis(0)), bits(sk.basis(pl)));
     // a move in the part reaches the document's axis
     let mut part = part;
-    let u0 = part.sketch.axes[part.sketch.planes[0].u as usize].d[0] as usize;
+    let u0 = part.sketch.axes[part.sketch.frames[0].u as usize].d[0] as usize;
     part.sketch.params[u0].value = 0.25;
     part.write_back(&mut sk);
-    let u = sk.axes[sk.planes[pl].u as usize].d[0] as usize;
+    let u = sk.axes[sk.frames[pl].u as usize].d[0] as usize;
     assert_eq!(sk.params[u].value, 0.25);
 }
 
@@ -393,7 +393,7 @@ fn a_point_on_a_plane_in_space() {
     let p = drawn(&mut sk, page, 3.0, 1.0, "p");
     let px = sk.points[p].x as usize;
     sk.params[px].fixed = true;
-    sk.add(relation(&sk, CKind::PointOnPlane, &[EntRef::point(p), EntRef::plane(top)], None));
+    sk.add(relation(&sk, CKind::PointOnPlane, &[EntRef::point(p), EntRef::frame(top)], None));
     assert_eq!(ledger(&mut sk).dof, 0);
     let r = solve(&mut sk, exact());
     assert!(r.success, "{}", r.message);
@@ -403,9 +403,9 @@ fn a_point_on_a_plane_in_space() {
     sk.fix_point(p, true);
     let py = sk.points[p].y as usize;
     sk.params[py].value = 2.5;
-    let oz = sk.planes[top].o[2] as usize;
+    let oz = sk.frames[top].o[2] as usize;
     sk.params[oz].fixed = false;
-    for r in [sk.planes[top].u, sk.planes[top].v] {
+    for r in [sk.frames[top].u, sk.frames[top].v] {
         let az = sk.axes[r as usize].a[2] as usize;
         sk.params[az].fixed = false;
     }
@@ -428,9 +428,9 @@ fn a_point_on_a_circle_in_space() {
         let top = sk.fixed_plane(top(h), "top");
         if solved {
             // a place the solve may move, held by a statement rather than a `fix`
-            let oz = sk.planes[top].o[2] as usize;
+            let oz = sk.frames[top].o[2] as usize;
             sk.params[oz].fixed = false;
-            let origin = EntRef::point(sk.planes[top].origin as usize);
+            let origin = EntRef::point(sk.frames[top].origin as usize);
             let held = sk.point3([0.0, 0.0, h], true, "held");
             sk.add(relation(&sk, CKind::Coincident3, &[origin, EntRef::point(held)], None));
         }

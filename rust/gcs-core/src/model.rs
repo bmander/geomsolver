@@ -32,7 +32,7 @@ mod caches;
 
 pub use entities::{
     Param, EntKind, Ends, Run, Field, EntRef, PointE, LineE, CircleE, AxisE, ArcE, SplineE,
-    PlaneE,
+    FrameE, Chart, Joint,
     LiftE, article,
 };
 pub use curves::{CURVE_STEPS, CurveDef, CurveBody, CurveE, Extremal, Home, Trim, extremal_def, whole};
@@ -104,7 +104,7 @@ pub struct Sketch {
     pub zero: Option<u32>,
     pub arcs: Vec<ArcE>,
     pub splines: Vec<SplineE>,
-    pub planes: Vec<PlaneE>,
+    pub frames: Vec<FrameE>,
     /// The hidden points in space a spatial relation reads — see `LiftE`.  Derived state,
     /// re-minted rather than saved.
     pub lifts: Vec<LiftE>,
@@ -117,6 +117,11 @@ pub struct Sketch {
     /// `hold_twins`).  A reader drawn in a plane reads the point there by its twin
     /// (`Sketch::twin_in`).
     pub twins: BTreeMap<usize, Vec<usize>>,
+    /// **What rides on frames** (#383): a point drawn in nested `in` blocks, or an envelope or
+    /// a swept solid riding on its observer, to the frames of its path, outermost first — its
+    /// carriers are their joints (`Sketch::carriers`).  At rest it is drawn where it stands: the
+    /// path enters no row but a reading at a roll.
+    pub rides: BTreeMap<EntRef, Vec<u32>>,
     pub curves: Vec<CurveE>,
     /// The faces and solids the document names (§6.8, §6.9).  Built after every other kind,
     /// since a face is written over edges and a solid over faces and solids; evaluated after
@@ -269,7 +274,7 @@ impl Sketch {
             EntKind::Axis => self.axes[e.i()].class.clone(),
             EntKind::Arc => self.arcs[e.i()].class.clone(),
             EntKind::Spline => self.splines[e.i()].class.clone(),
-            EntKind::Plane => self.planes[e.i()].class.clone(),
+            EntKind::Frame => self.frames[e.i()].class.clone(),
             EntKind::Curve => self.curves[e.i()].class.clone(),
             EntKind::Face => self.faces[e.i()].class.clone(),
             EntKind::Solid => self.solids[e.i()].class.clone(),
@@ -292,7 +297,7 @@ impl Sketch {
             EntKind::Axis => self.axes.get_mut(e.i()).map(|x| &mut x.class),
             EntKind::Arc => self.arcs.get_mut(e.i()).map(|x| &mut x.class),
             EntKind::Spline => self.splines.get_mut(e.i()).map(|x| &mut x.class),
-            EntKind::Plane => self.planes.get_mut(e.i()).map(|x| &mut x.class),
+            EntKind::Frame => self.frames.get_mut(e.i()).map(|x| &mut x.class),
             EntKind::Curve => self.curves.get_mut(e.i()).map(|x| &mut x.class),
             EntKind::Face => self.faces.get_mut(e.i()).map(|x| &mut x.class),
             EntKind::Solid => self.solids.get_mut(e.i()).map(|x| &mut x.class),

@@ -17,6 +17,22 @@ pub(super) fn build_solid(
         diags.push(Diag::within(code, span, st.id, m));
     };
     let sweep = d.sweep.as_ref().unwrap_or(&Sweep::Body);
+    // a solid that rides, swept `from:`/`to:` or `through:` a body with no `under:`, is swept by
+    // the frames it rides on (#383) — a prism's words over a face, a motion's over a solid
+    let rides = |sk: &Sketch| ops.len() == 1 && ops[0].kind == EntKind::Solid
+        && sk.carriers(ops[0]).is_ok_and(|c| !c.is_empty());
+    let read;
+    let sweep = match sweep {
+        Sweep::Prism { from, to, draft: None } if rides(sk) => {
+            read = Sweep::Swept { motion: None, from: from.clone(), to: to.clone() };
+            &read
+        }
+        Sweep::Through { body } if rides(sk) => {
+            read = Sweep::Rolled { motion: None, body: body.clone() };
+            &read
+        }
+        s => s,
+    };
     // every number a solid carries is settled here and is never an unknown (`Extent`)
     let units = sk.units;
     let ext = |a: &crate::syntax::Arg, what: &str, dim: crate::units::Dim| extent(units, a, what, dim);
@@ -35,7 +51,7 @@ pub(super) fn build_solid(
         // a region: the bounds its set put on the probe, gathered as they were stated (§6.21)
         Sweep::Region { probe } => region(sk, res, probe, st, probes, &mut say)?,
         Sweep::Placed { .. } | Sweep::Swept { .. } | Sweep::Rolled { .. } => {
-            under_motion(sk, res, sweep, &ops, st, &mut say)?
+            under_motion(sk, res, sweep, d.seen_from.as_ref(), &ops, st, &mut say)?
         }
         Sweep::Through { body } => {
             let face = one_face(&ops, st, &mut say)?;
@@ -94,6 +110,12 @@ pub(super) fn build_solid(
     };
     let i = sk.solid(def, &d.name.key().text);
     sk.solids[i].class = d.class.clone();
+    // a sweep rides on its observer (#383): the material a generating cut leaves is the blank's
+    if matches!(sweep, Sweep::Swept { .. } | Sweep::Rolled { .. }) {
+        if let Some(path) = super::super::generated::observer_path(sk, res, d) {
+            sk.rides.insert(EntRef::solid(i), path);
+        }
+    }
     Some(i)
 }
 
@@ -211,8 +233,8 @@ pub(crate) fn carry_legs(sk: &mut Sketch) {
                 params.extend(sk.lifts[k].x);
             }
         }
-        if e.kind == EntKind::Plane {
-            if let Some(n) = sk.planes[e.i()].normal {
+        if e.kind == EntKind::Frame {
+            if let Some(n) = sk.frames[e.i()].normal {
                 params.extend(sk.entity_params(EntRef::new(EntKind::Axis, n as usize)));
             }
         }
@@ -346,9 +368,10 @@ fn region(
 /// A solid under a named motion: placed at one pose (`at:`), swept over an interval, or rolled
 /// through a body's material (#271, found after the solve).
 fn under_motion(
-    sk: &Sketch,
+    sk: &mut Sketch,
     res: &Resolver,
     sweep: &Sweep,
+    seen_from: Option<&crate::syntax::Ref>,
     ops: &[EntRef],
     st: &Stmt,
     say: &mut impl FnMut(Code, Span, String),
@@ -359,11 +382,15 @@ fn under_motion(
         say(Code::E080,st.span,"a named motion needs one source solid".into());
         return None;
     }
-    let found = res.lookup(motion).and_then(|e|
-        super::super::resolve::follow_building(sk,res,e,motion).ok());
-    let Some(m) = found.filter(|e| e.kind == EntKind::Motion) else {
-        say(Code::E080,motion.span,"`under:` requires a named motion".into());
-        return None;
+    // the frame it is carried by — named, or the one it rides on — seen from the one named,
+    // where one is (#383)
+    let m = match super::super::motions::reading_of(sk, res, Some(ops[0]), motion.as_ref(),
+                                                     seen_from) {
+        Ok(m) => EntRef::new(EntKind::Motion, m),
+        Err(message) => {
+            say(Code::E080, motion.as_ref().map_or(st.span, |m| m.span), message);
+            return None;
+        }
     };
     let angle = |a,what| extent(sk.units,a,what,crate::units::Dim::ANGLE)
         .map(|e| Extent {text:e.text,value:e.value.to_radians()});
@@ -533,7 +560,7 @@ fn one_face(
 /// own axes; or nothing the solve moves places either, and it lies there now; or the solve may
 /// put it there, which the evaluation reads (`Sketch::revolve_axis`).
 fn axis_may_lie_in(sk: &Sketch, plane: Option<u32>, ax: usize) -> bool {
-    let own = plane.map(|p| &sk.planes[p as usize]);
+    let own = plane.map(|p| &sk.frames[p as usize]);
     if own.is_some_and(|pl| [pl.u, pl.v].contains(&(ax as u32))) {
         return true;
     }

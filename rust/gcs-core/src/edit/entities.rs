@@ -86,7 +86,7 @@ pub fn add_entity(prog: &Program, kind: EntKind, args: &[String], seed: &[f64]) 
 /// edit is refused in those words.  The language's own form — a gesture drops one by
 /// `add_datum` instead, constrained to what is selected.
 pub fn add_plane(prog: &Program, args: &[String], name: Option<&str>) -> Edit {
-    Edit::refused_or(prog, entity_decl(prog, EntKind::Plane, args, &[], name)
+    Edit::refused_or(prog, entity_decl(prog, EntKind::Frame, args, &[], name)
         .and_then(|(d, name)| append_checked(prog, &[StmtKind::Decl(d)], vec![name])))
 }
 
@@ -176,7 +176,7 @@ pub(super) fn gesture_decl(kind: EntKind, name: &str, children: Vec<Vec<syntax::
         class_span: Span::default(),
         seed_at: None,
         seed_names: Vec::new(),
-        sweep: None, motion: None, angular_span: None,
+        sweep: None, seen_from: None, angular_span: None,
         membership: Default::default(),
         list_span: Span::default(),
         close: None,
@@ -184,6 +184,7 @@ pub(super) fn gesture_decl(kind: EntKind, name: &str, children: Vec<Vec<syntax::
         through: None,
         normal: None,
         sense: None,
+        bare: false,
     }
 }
 

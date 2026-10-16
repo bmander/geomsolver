@@ -50,7 +50,7 @@ fn render(sk: &Sketch, si: usize, plane_i: Option<usize>, unit: f64, section: Op
 /// The plane a picture is drawn in, read in its own coordinates.  `None` is the front plane,
 /// what a 2D sketch is read on.
 pub(crate) fn view_frame(sk: &Sketch, plane_i: Option<usize>) -> Basis {
-    plane_i.filter(|&i| i < sk.planes.len()).map_or(Basis::page(), |i| sk.basis(i))
+    plane_i.filter(|&i| i < sk.frames.len()).map_or(Basis::page(), |i| sk.basis(i))
 }
 
 /// **Every picture the document asked for, laid out.**  The one entry both front ends read, so

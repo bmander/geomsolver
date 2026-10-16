@@ -15,7 +15,7 @@ use std::collections::{BTreeMap, BTreeSet};
 fn name(sk: &Sketch, e: EntRef) -> String {
     if e.kind == EntKind::Point {
         if let Some(i) = sk.plane_of_origin(e.i()) {
-            return format!("{}.origin", crate::syntax::entity_name(EntRef::plane(i)));
+            return format!("{}.origin", crate::syntax::entity_name(EntRef::frame(i)));
         }
         // a twin is its point, drawn in a further plane: written by the point's name (§6.7)
         if let Some(p) = twin_of(sk, e.i()) {
@@ -25,7 +25,7 @@ fn name(sk: &Sketch, e: EntRef) -> String {
     // a plane's normal is the plane's, minted where it is read: `v0.normal`
     if e.kind == EntKind::Axis {
         if let Some(i) = sk.normal_of(e.i()) {
-            return format!("{}.{}", crate::syntax::entity_name(EntRef::plane(i)), super::NORMAL);
+            return format!("{}.{}", crate::syntax::entity_name(EntRef::frame(i)), super::NORMAL);
         }
     }
     crate::syntax::entity_name(e)
@@ -74,17 +74,21 @@ pub fn to_program(sk: &Sketch) -> Program {
     // the points, in statement order, so the plane is written where its origin stands among them
     for e in sk.primitives() {
         match e.kind {
-            EntKind::Plane => continue,
+            EntKind::Frame => continue,
             // and a normal by a statement reading it, never declared
             EntKind::Axis if sk.normal_of(e.i()).is_some() => continue,
             // a twin is said by its point's `in` (§6.7)
             EntKind::Point if twin_of(sk, e.i()).is_some() => continue,
-            EntKind::Point => match sk.plane_of_origin(e.i()) {
-                Some(pl) => p.push(StmtKind::Decl(lift_decl(sk, EntRef::plane(pl)))),
+            EntKind::Point => match sk.plane_of_origin(e.i()).or_else(|| spatial_origin(sk, e.i())) {
+                Some(pl) => p.push(StmtKind::Decl(lift_decl(sk, EntRef::frame(pl)))),
                 None => p.push(StmtKind::Decl(lift_decl(sk, e))),
             },
             _ => p.push(StmtKind::Decl(lift_decl(sk, e))),
         };
+    }
+    // a frame declared bare owns no origin to be written beside (#383)
+    for f in (0..sk.frames.len()).filter(|&f| sk.frames[f].chart.is_none()) {
+        p.push(StmtKind::Decl(lift_decl(sk, EntRef::frame(f))));
     }
     // and a plane written over a drawn line says so with the axis it gave it: `r parallel l`,
     // and `p coincident r` for the end it stands on (`entities::axes_along`).  Where both of a
@@ -196,7 +200,7 @@ fn renamed(mut rel: Relation, names: &BTreeMap<String, String>) -> Relation {
 pub(crate) fn lift_decl(sk: &Sketch, e: EntRef) -> Decl {
     let mut kids = sk.children(e);
     // a plane's origin is its own, never written: `plane(u: r0, v: r1)`
-    if e.kind == EntKind::Plane {
+    if e.kind == EntKind::Frame {
         kids.truncate(2);
     }
     let mut children: Vec<Vec<Kid>> = Vec::new();
@@ -255,7 +259,7 @@ pub(crate) fn lift_decl(sk: &Sketch, e: EntRef) -> Decl {
         class_span: Span::default(),
         seed_at: None,
         seed_names: Vec::new(),
-        sweep: None, motion: None, angular_span: None,
+        sweep: None, seen_from: None, angular_span: None,
         membership: lift_plane(sk, e),
         list_span: Span::default(),
         close: None,
@@ -263,6 +267,7 @@ pub(crate) fn lift_decl(sk: &Sketch, e: EntRef) -> Decl {
         through: None,
         normal: None,
         sense: None,
+        bare: e.kind == EntKind::Frame && !sk.frames[e.i()].planar(),
     }
 }
 
@@ -317,7 +322,7 @@ fn lift_curve(sk: &Sketch, i: usize) -> crate::syntax::CurveSpec {
 /// statement writes.  A point with none, or a line whose ends are on two planes (which no one
 /// statement can say), lifts without one.
 pub(crate) fn lift_plane(sk: &Sketch, e: EntRef) -> crate::syntax::Membership {
-    let plane = |p: usize| Ref::new(name(sk, EntRef::plane(p)));
+    let plane = |p: usize| Ref::new(name(sk, EntRef::frame(p)));
     match plane_of_entity(sk, e) {
         // and a point drawn in further planes names each, its twins' (§6.7)
         Some(p) if e.kind == EntKind::Point && sk.twins.contains_key(&e.i()) => {
@@ -461,4 +466,10 @@ fn lift_arg(sk: &Sketch, kind: SpecKind, a: &CArg) -> Option<Arg> {
 /// A sketch as a program.  The counterpart of `io::dumps`.
 pub fn dumps(sk: &Sketch) -> String {
     to_program(sk).text().to_string()
+}
+
+/// The spatial frame point `p` is the origin of, where it is one (#383).
+fn spatial_origin(sk: &Sketch, p: usize) -> Option<usize> {
+    let f = sk.points[p].chart? as usize;
+    (sk.frames.get(f)?.chart.as_ref()?.origin as usize == p).then_some(f)
 }

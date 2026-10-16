@@ -363,7 +363,7 @@ impl Sketch {
         let value = |q: [u32; 3]| q.map(|q| self.params[q as usize].value);
         let (d, a) = (value(x.d), value(x.a));
         let basis = match plane {
-            Some(p) => { self.planes.get(p as usize)?; self.basis(p as usize) }
+            Some(p) => { self.frames.get(p as usize)?; self.basis(p as usize) }
             None => crate::plane::Basis::page(),
         };
         let n = basis.normal();

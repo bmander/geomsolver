@@ -41,7 +41,7 @@ R := 30mm
 r1 := 15mm
 half := 30deg
 
-component OnSphere(c: point, s: point, spin: motion, R: Length, d: Length, u: Angle) {
+component OnSphere(c: point, s: point, spin: frame, R: Length, d: Length, u: Angle) {
   p := point hint((0, 0, 30))
   k := point hint((0, 0, -30))
   rad := line(c, p)
@@ -57,7 +57,7 @@ component OnSphere(c: point, s: point, spin: motion, R: Length, d: Length, u: An
   }
 }
 
-component OnCone(o: point, top: point, s: point, spin: motion, half: Angle, d: Length,
+component OnCone(o: point, top: point, s: point, spin: frame, half: Angle, d: Length,
                  u: Angle) {
   ax := line(o, top)
   p := point hint((0, 0, 30))
@@ -84,7 +84,8 @@ fix((0, 0, 0)) c
 top := point hint((0, 0, 10))
 fix((0, 0, 10)) top
 za := line(c, top)
-spin := motion(about: za)                  // a turn about the axis, a degree a degree
+spin := frame
+std.Turn(spin, about: za, ratio: 1)      // a turn about the axis, a degree a degree
 
 // the starting circle's point: r1 from the axis, on the sphere (and so on the cone)
 s := point hint((15, 0, 26))

@@ -1,0 +1,79 @@
+# Frames: joints, riding and readings
+
+The rules for frames that move (#383, [frames plan](../frames-plan.md)): a frame's joint, the
+`in` blocks that make a declaration ride on frames, and how a reading at a roll finds what it
+carries.  A frame as a place to draw — a plane, a spatial chart, `f := frame` — is
+[space.md](space.md)'s; the motion graph the readings lower to, and the generating classes that
+read it, are [generating.md](generating.md)'s.
+
+**A frame rides on the frames of the blocks around its declaration** (stage 4): `in (arm :=
+frame) { in (planet := frame) { … } }` declares `planet` in `arm`'s block, so `FrameE::rides` is
+`[arm]`, outermost first, set by `planes::memberships` from the declaration's membership path.
+`Sketch::carriers_of(path)` is every jointed frame a path carries, each after the frames it rides
+on, each once; `Sketch::carriers(e)` is a point's path's (`Sketch::rides`), a frame's own path
+and itself, and anything drawn (a line, a circle, an arc, a spline, a face, a solid, a surface)
+what its parts ride on, which must agree — `Err` names two parts riding on different paths, and
+`motions::carriers` says it in the document's names.  A motion, an axis, a datum and a curve of
+expressions ride on nothing unless `rides` says so.  `motions::frame_motion` of a frame is the
+chain of its carriers' joints, so `under: planet` is `arm·planet`.  `tests/frames.rs` is the gate
+(`a_planet_drawn_in_its_arm_rides_on_both`).
+
+**`in` nests in `in`** (stage 4): the parser counts the braced bodies that are `in` blocks
+(`P::in_in`), so a block inside another is no nested root block, and records every header in
+`Program::in_blocks` for the editor.  `stamp_frame` stamps the innermost block first: a
+declaration already in a frame — an inner block's or its own clause — rides on the outer one
+(`Membership::ride_in`, `rides`, outermost first), and a frame declared in a block takes the
+block's frame the same way.  An instance's frame reaches its body's declarations through
+`Stamps::{plane, rides}`, each resolved where it was written (`rewrite_decl`).  The elaborator
+draws a point in the **innermost frame of its path with axes** (a plane, or a spatial frame with
+a chart), and the path itself is what it rides on; a frame with axes further out says nothing of
+where, which is W115.  At rest a riding point is drawn where it stands: `Sketch::world_point`
+reads no joint, so no relation naming no roll sees riding at all.  A point already riding keeps
+its path: drawn again on another is E060.
+
+**A reading at a roll infers its carrier** (stage 4): where a reading leaves `under:` out, the
+motion is what its tool rides on, seen from the frame `seen_from:` names (`motions::riding`,
+`reading_of`), and a tool riding on nothing is refused saying so:
+- `X coincident(t == τ) x`, both points: the carried point over `path(X)⁻¹·path(x)` — `x`'s
+  carriers seen from `X`'s, or from `seen_from:` — with `under: #motion{n}` put on the relation
+  (`relations::riding_point`); both riding alike, it is read as written;
+- an envelope in the plane, a prism's side, an envelope in space (its source a drawn tool, a
+  revolution's side read by its edge, `envelopes::ridden`; a set applied to its hidden point rides
+  on nothing);
+- a meshing: the second flank's carriers seen from the first's (`motions::meshing`), an
+  envelope flank riding on its observer;
+- a solid placed `at:`, swept `from:`/`to:` or rolled `through:` a body — over a solid that
+  rides, `from:`/`to:` and `through:` are a motion's words and not a prism's (`build_solid`).
+
+`under:` names the frame of an operand that rides on none: naming one for a tool drawn riding is
+refused (`motions::under_riding`, over `Sketch::drawn_carriers`, its points' paths alone) — what a
+reading made rides on its observer and may still be read under another frame, a generating cut
+indexed `under:` its blank's turn.  **What a reading makes rides on its observer**: a profile
+generated in the plane, an envelope in space and a swept solid get `rides` of the `seen_from:`
+frame's path (`generated::ride_on`) — the profile a rack cuts rides on the blank.  The parser
+takes an envelope's, a meshing's and a solid's `under:` as optional (`Sweep::{Placed, Swept,
+Rolled}::motion` is an `Option`).  `tests/frames.rs` holds the rack and the swept tool against
+the same readings written `under:` (`a_rack_riding_its_frame_cuts_what_the_reading_under_it_cuts`,
+`a_tool_riding_its_frame_is_placed_and_swept_as_under_it`) and the refusals
+(`riding_refuses_what_it_cannot_mean`).
+
+**Joints in the solve** (stage 5): a joint's ratio or advance no `fix` states (`std.Turn` given
+no `ratio:`, `program::motions` reading a `Tie` slot or none) stays a free parameter of the
+frame's, seeded where its unknown is, and the motion node carries both as `MotionE::numbers`.
+The kind is still read off the holding statements: an axis on a line with its ratio unknown is a
+turn.  `envelope::held::motion` puts the two numbers among the motion's columns past its axis's
+(`held::Free`, encoded in a step's constants as where they start, one past, and whether the step
+runs back), and `held::Step::numbers` reads them in place of the constants — so `CarriedPoint`,
+the rates and the rate of a contact, `PointOnEnvelope` and its words, and `PointOnMeshing` hold
+them as columns (`Meshing::new` reads the source's ratio off its parts).  `tests/jacobians.rs`
+FD-checks every such row over the joints' columns
+(`a_joints_free_numbers_agree_with_finite_differences`).  `std.Rolls(at, a, b, along: d)` holds
+the rate of `at` carried by `a` seen from `b`, at roll 0, to nothing along `d` — one row, the
+other parts of the rate zero by construction for parallel or meeting shafts with `at` on the line
+of centres.  `tests/frames.rs` is the gate: a pair's ratio solved from rolling against `−R/r`,
+the centre distance solved from a stated ratio, a joint nothing holds reported free with its six
+numbers.  A joint stating no number is no longer refused (E080 through 0.136).
+
+**Not built in stage 4**: the app offers only planar frames as places to draw (a spatial chart is
+drawn in text), and the printer writes no `in` blocks of its own, so the plan's "jointed frame
+outermost" is the author's order.

@@ -1,4 +1,5 @@
-use gcs_core::{io,model::{EntKind,MotionDef},motion,program,solve,syntax};
+use gcs_core::{io,model::{EntKind,EntRef,MotionDef,MotionE},motion,program,solve,syntax};
+use gcs_core::program::Elaborated;
 use crate::common::parsed::{build, solved};
 
 mod bounds;
@@ -21,19 +22,55 @@ other := line(o,x)
 }
 ";
 
+/// The motion node frame `name`'s joint was lowered to (#383).
+fn joint(e: &Elaborated, name: &str) -> usize {
+    let f = e.map.ent_named(name).unwrap_or_else(|| panic!("no frame `{name}`"));
+    assert_eq!(f.kind,EntKind::Frame);
+    let j = e.sketch.frames[f.i()].joint.as_ref()
+        .unwrap_or_else(|| panic!("`{name}` has no joint"));
+    j.motion.unwrap_or_else(|| panic!("`{name}`'s joint was not lowered")) as usize
+}
+
+/// A reading of frame `under` seen from frame `seen_from` — a point carried by it, `x` as the
+/// relative's pose at roll 0 takes it — which is what mints the relative motion.
+fn reading(under: &str, seen_from: &str) -> String {
+    format!("seen_{under}_{seen_from} := point\n\
+             seen_{under}_{seen_from} coincident(under: {under}, seen_from: {seen_from}, \
+             t == 0deg) x\n")
+}
+
+/// The relative motion node of frame `under` seen from frame `seen_from`, minted by a reading.
+fn seen(e: &Elaborated, under: &str, seen_from: &str) -> usize {
+    let (s,o) = (joint(e,under) as u32,joint(e,seen_from) as u32);
+    e.sketch.motions.iter().position(|m| matches!(m.def,
+        MotionDef::Relative {source,observer} if source == s && observer == o))
+        .unwrap_or_else(|| panic!("no reading of `{under}` seen from `{seen_from}`"))
+}
+
+/// A relative motion node pushed by hand: a document only reads one frame seen from another,
+/// and the reader of nested relatives is held to its limits through these.
+fn push_relative(sk: &mut gcs_core::model::Sketch, source: usize, observer: usize) -> usize {
+    sk.motions.push(MotionE {
+        def: MotionDef::Relative {source: source as u32,observer: observer as u32},
+        name: format!("m{}",sk.motions.len()),class: Default::default(),numbers: None});
+    sk.motions.len()-1
+}
+
 fn near(a: [f64;3], b: [f64;3], tol: f64) {
     for i in 0..3 { assert!((a[i]-b[i]).abs() < tol,"{a:?} != {b:?}"); }
 }
 
 #[test]
 fn inverse_motion_speed_bounds_cover_offset_axes_and_shared_relative_graphs() {
+    // the two relatives share both frames' nodes: each reads the other's observer as its source
     let e = solved(&format!("{AXES}\n\
-        turn := motion(about: ax,ratio: 2,phase: 90deg)\n\
-        observer := motion(about: other,ratio: -3,phase: 20deg)\n\
-        relative := motion(turn,relative_to: observer)\n\
-        nested := motion(relative,relative_to: turn)\n"));
-    for name in ["turn","observer","relative","nested"] {
-        let family = motion::Family::read(&e.sketch,e.map.ent_named(name).unwrap().i()).unwrap();
+        turn := frame\nstd.Turn(turn,about: ax,ratio: 2)\n\
+        observer := frame\nstd.Turn(observer,about: other,ratio: -3)\n{}{}",
+        reading("turn","observer"),reading("observer","turn")));
+    let nodes = [("turn",joint(&e,"turn")),("observer",joint(&e,"observer")),
+        ("relative",seen(&e,"turn","observer")),("reverse",seen(&e,"observer","turn"))];
+    for (name,node) in nodes {
+        let family = motion::Family::read(&e.sketch,node).unwrap();
         for p in [[0.;3],[0.,3.,4.],[3.,1.,4.],[-20.,30.,-5.]] {
             let upper = family.inverse_point_speed_bound(p,gcs_core::interval::Interval::new(-50.,50.).unwrap()).unwrap();
             for t in [-20.,-1.,0.,0.7,50.] {
@@ -51,24 +88,30 @@ fn inverse_motion_speed_bounds_cover_offset_axes_and_shared_relative_graphs() {
 }
 
 #[test]
-fn motions_follow_directed_axes_with_phase_and_exact_relative_velocity() {
-    let e = solved(&format!("{AXES}relative := motion(turn,relative_to: observer)\n\
-        turn := motion(about: ax,ratio: 2,phase: 90deg)\n\
-        observer := motion(about: other,ratio: -0.3,phase: 20deg)\n"));
-    let index = |n| e.map.ent_named(n).unwrap().i();
-    let turn = motion::evaluate(&e.sketch,index("turn"),0.).unwrap();
-    near(turn.point([3.,0.,0.]),[2.,1.,0.],1e-12);
-    near(turn.point([2.,0.,5.]),[2.,0.,5.],1e-12);
+fn motions_follow_directed_axes_and_exact_relative_velocity() {
+    // the reading before the frames it reads
+    let e = solved(&format!("{AXES}{}\
+        turn := frame\nstd.Turn(turn,about: ax,ratio: 2)\n\
+        observer := frame\nstd.Turn(observer,about: other,ratio: -0.3)\n",
+        reading("turn","observer")));
+    let (turn,observer,relative) =
+        (joint(&e,"turn"),joint(&e,"observer"),seen(&e,"turn","observer"));
+    // a quarter turn on, at roll 45°: about the axis's own direction, world z
+    let quarter = motion::evaluate(&e.sketch,turn,std::f64::consts::FRAC_PI_4).unwrap();
+    near(quarter.point([3.,0.,0.]),[2.,1.,0.],1e-12);
+    near(quarter.point([2.,0.,5.]),[2.,0.,5.],1e-12);
+    // roll 0 is as drawn
+    near(motion::evaluate(&e.sketch,turn,0.).unwrap().point([3.,0.,0.]),[3.,0.,0.],1e-12);
     let p = [3.,1.,4.];
     for t in [-1.,0.,0.7] {
-        let relative = motion::evaluate(&e.sketch,index("relative"),t).unwrap();
-        let source = motion::evaluate(&e.sketch,index("turn"),t).unwrap();
-        let observer = motion::evaluate(&e.sketch,index("observer"),t).unwrap();
-        near(observer.point(relative.point(p)),source.point(p),1e-12);
+        let relative_at = motion::evaluate(&e.sketch,relative,t).unwrap();
+        let source = motion::evaluate(&e.sketch,turn,t).unwrap();
+        let observer = motion::evaluate(&e.sketch,observer,t).unwrap();
+        near(observer.point(relative_at.point(p)),source.point(p),1e-12);
         let h = 1e-6;
-        let before = motion::evaluate(&e.sketch,index("relative"),t-h).unwrap().point(p);
-        let after = motion::evaluate(&e.sketch,index("relative"),t+h).unwrap().point(p);
-        near(relative.velocity(p),std::array::from_fn(|k| (after[k]-before[k])/(2.*h)),1e-8);
+        let before = motion::evaluate(&e.sketch,relative,t-h).unwrap().point(p);
+        let after = motion::evaluate(&e.sketch,relative,t+h).unwrap().point(p);
+        near(relative_at.velocity(p),std::array::from_fn(|k| (after[k]-before[k])/(2.*h)),1e-8);
     }
     assert!(motion::evaluate(&e.sketch,999,0.).is_err());
     assert!(motion::evaluate(&e.sketch,0,f64::NAN).is_err());
@@ -76,13 +119,16 @@ fn motions_follow_directed_axes_with_phase_and_exact_relative_velocity() {
 
 #[test]
 fn motions_round_trip_and_remap_transitive_dependencies() {
-    let src = format!("{AXES}a_relative := motion(turn,relative_to: observer)\n\
-        turn := motion(about: ax)\nobserver := motion(about: other,ratio: -2)\n");
+    // each joint stated as the statements `std.Turn` writes: the canonical printer prints no
+    // component instance
+    let src = format!("{AXES}{}turn := frame\nax coincident turn.axis\n\
+        fix(ratio == 1,advance == 0mm) turn\nobserver := frame\nother coincident observer.axis\n\
+        fix(ratio == -2,advance == 0mm) observer\n",reading("turn","observer"));
     let e = solved(&src);
     let mut p = e.program.clone();
     let text = syntax::render_flat(&mut p).unwrap().to_string();
     assert_eq!(solved(&text).sketch.motions.len(),3);
-    let relative = e.map.ent_named("a_relative").unwrap();
+    let relative = EntRef::new(EntKind::Motion,seen(&e,"turn","observer"));
     assert!(e.sketch.entity_params(relative).is_empty());
     let clip = io::copy(&e.sketch,&[relative]);
     assert_eq!(clip.motions.len(),3);
@@ -101,38 +147,59 @@ fn motions_round_trip_and_remap_transitive_dependencies() {
 
 #[test]
 fn motion_component_formals_preserve_private_dependencies() {
-    let src = format!("{AXES}component Rotate(ax: line,rate: Scalar) {{\n\
-        private spin := motion(about: ax,ratio: rate)\n\
-        out := motion(spin,relative_to: spin)\n}}\n\
-        component Observe(m: motion) {{ out := motion(m,relative_to: m) }}\n\
-        copy := Observe(part.out)\npart := Rotate(ax,rate: 2)\n");
+    // a frame seen from itself stands still: the private one inside, the public one outside
+    let src = format!("{AXES}component Rotate(ax: line,x: point,rate: Scalar) {{\n\
+        private spin := frame\nstd.Turn(spin,about: ax,ratio: rate)\n\
+        turn := frame\nstd.Turn(turn,about: ax,ratio: rate)\n\
+        out := point\nout coincident(under: spin,seen_from: spin,t == 40deg) x\n}}\n\
+        component Observe(m: frame,x: point) {{\n\
+        out := point\nout coincident(under: m,seen_from: m,t == 40deg) x\n}}\n\
+        copy := Observe(part.turn,x)\npart := Rotate(ax,x,rate: 2)\n");
     let e = solved(&src);
     assert!(e.map.entity_path(&e.sketch,"part.spin").is_none());
-    let out = e.map.ent_named("copy.out").unwrap();
-    assert_eq!(out.kind,EntKind::Motion);
-    near(motion::evaluate(&e.sketch,out.i(),0.7).unwrap().point([1.,2.,3.]),[1.,2.,3.],1e-12);
-    let bad = build(&format!("{src}bad := motion(part.spin,relative_to: part.out)\n"));
-    assert!(bad.errors().any(|d| d.message.contains("private member")),"{:?}",bad.diags);
+    for out in ["part.out","copy.out"] {
+        near(crate::common::at(&e,out),[1.,0.,0.],1e-9);
+    }
+    let still = seen(&e,"part.turn","part.turn");
+    near(motion::evaluate(&e.sketch,still,0.7).unwrap().point([1.,2.,3.]),[1.,2.,3.],1e-12);
+    let bad = build(&format!("{src}bad := point\nbad coincident(under: part.spin,t == 0deg) x\n"));
+    assert!(bad.errors().any(|d| d.message.contains("private member")
+        || d.message.contains("no such frame: `part.spin`")),"{:?}",bad.diags);
 }
 
+/// A joint is held by relations, and what holds it wrongly — or reads a frame that has none, or
+/// something that is not a frame — is refused saying so; `motion(…)` itself is retired, refused
+/// naming what each of its spellings is now.
 #[test]
-fn motions_reject_wrong_units_missing_references_and_cycles() {
+fn motions_reject_wrong_units_missing_references_and_retired_spellings() {
     for (tail,want) in [
-        ("bad := motion(about: o,advance: 2mm)","no `advance:`"),
-        ("bad := motion(about: missing)","no such motion ax"),
-        ("bad := motion(about: ax,ratio: 2mm)","ratio"),
-        ("bad := motion(about: ax,phase: 2mm)","phase"),
-        ("bad := motion(ax,relative_to: ax)","does not name a motion"),
-        ("ma := motion(mb,relative_to: mb)\nmb := motion(ma,relative_to: ma)","cycle"),
+        ("bad := frame\no coincident bad.axis\nbad.axis parallel std.front.normal\n\
+          fix(ratio == 1,advance == 2mm) bad","has no advance"),
+        ("bad := frame\nstd.Turn(bad,about: missing,ratio: 1)","missing"),
+        ("bad := frame\nstd.Turn(bad,about: ax,ratio: 2mm)","ratio"),
+        // a joint's number no `fix` states is the solve's (stage 5); one measured is no number
+        ("bad := frame\nstd.Turn(bad,about: ax,ratio: length(ax) / 1mm)","measures the solved"),
+        ("bad := point\nbad coincident(under: ax,t == 0deg) x","a motion is read off a frame"),
+        ("still := frame\nbad := point\nbad coincident(under: still,t == 0deg) x","does not move"),
     ] {
         let e = build(&format!("{AXES}{tail}\n"));
-        assert!(!e.ok() && e.errors().any(|d| d.message.contains(want)),"{:?}",e.diags);
+        assert!(!e.ok() && e.errors().any(|d| d.message.contains(want)),"{tail}: {:?}",e.diags);
     }
-    for args in ["", "about: ax,relative_to: a", "about: ax,about: ax",
-        "a,relative_to: a,ratio: 1", "bogus: ax"] {
-        let (_,errors) = crate::common::parse(&format!("bad := motion({args})\n"));
-        assert!(!errors.is_empty(),"accepted {args}");
+    for (args,want) in [
+        ("about: ax,ratio: 2,phase: 30deg","roll 0 is as drawn"),
+        ("turn,relative_to: observer","seen_from: b"),
+        ("along: other,advance: 2mm","std.Slide(f, along: l, advance: a)"),
+        ("about: ax,ratio: 2","std.Turn(f, about: l, ratio: r)"),
+        ("about: o,ratio: 2","std.Spin(f, about: o, on: P, ratio: r)"),
+    ] {
+        let (_,errors) = crate::common::parse(&format!("{AXES}bad := motion({args})\n"));
+        assert!(errors.iter()
+            .any(|d| d.message.contains("is retired (#383)") && d.message.contains(want)),
+            "motion({args}): {:?}",errors.iter().map(|d| &d.message).collect::<Vec<_>>());
     }
+    let (_,errors) = crate::common::parse("component Observe(m: motion) {\n}\n");
+    assert!(errors.iter().any(|d| d.message.contains("`m: frame`")),"{:?}",
+        errors.iter().map(|d| &d.message).collect::<Vec<_>>());
 }
 
 #[test]
@@ -148,12 +215,15 @@ in std.front {
   b distance(1mm,along: v) std.front
   ax := line(a,b)
 }
-turn := motion(about: ax,phase: 90deg)
+turn := frame
+std.Turn(turn,about: ax,ratio: 1)
 ");
-    let snapshot = motion::Family::read(&e.sketch,0).unwrap();
-    let m = motion::evaluate(&e.sketch,0,0.).unwrap();
-    near(m.point([3.,0.,0.]),[2.,1.,0.],1e-10);
-    near(m.point([2.,0.,5.]),[2.,0.,5.],1e-10);
+    // a quarter turn on, at roll 90°
+    let (m,quarter) = (joint(&e,"turn"),std::f64::consts::FRAC_PI_2);
+    let snapshot = motion::Family::read(&e.sketch,m).unwrap();
+    let pose = motion::evaluate(&e.sketch,m,quarter).unwrap();
+    near(pose.point([3.,0.,0.]),[2.,1.,0.],1e-10);
+    near(pose.point([2.,0.,5.]),[2.,0.,5.],1e-10);
     // Editing the solved points changes the next evaluation, without retaining a pose: one
     // along the front's x is one along the world's.
     for name in ["a","b"] {
@@ -161,8 +231,8 @@ turn := motion(about: ax,phase: 90deg)
         let params = e.sketch.point_params(i);
         e.sketch.params[params[0] as usize].value += 1.;
     }
-    near(snapshot.at(0.).unwrap().point([3.,0.,0.]),[2.,1.,0.],1e-10);
-    let after = motion::evaluate(&e.sketch,0,0.).unwrap();
+    near(snapshot.at(quarter).unwrap().point([3.,0.,0.]),[2.,1.,0.],1e-10);
+    let after = motion::evaluate(&e.sketch,m,quarter).unwrap();
     near(after.point([4.,0.,0.]),[3.,1.,0.],1e-10);
     let a = e.map.ent_named("a").unwrap().i();
     let b = e.map.ent_named("b").unwrap().i();
@@ -170,35 +240,44 @@ turn := motion(about: ax,phase: 90deg)
     let bp = e.sketch.point_params(b);
     e.sketch.params[bp[0] as usize].value = xy.0;
     e.sketch.params[bp[1] as usize].value = xy.1;
-    assert!(motion::evaluate(&e.sketch,0,0.).unwrap_err().contains("nondegenerate"));
+    assert!(motion::evaluate(&e.sketch,m,0.).unwrap_err().contains("nondegenerate"));
     assert!(program::solid_diagnostics(&e.sketch,&e.map).iter()
         .any(|d| d.message.contains("nondegenerate")));
 }
 
+/// A document reads one frame seen from another and no deeper, so the reader's limits on nested
+/// relatives — 64 levels, and no cycle — are held over nodes made by hand.
 #[test]
 fn motion_dependency_depth_is_bounded_and_runtime_cycles_are_rejected() {
-    let mut src = format!("{AXES}base := motion(about: ax)\n");
+    let mut e = solved(&format!("{AXES}base := frame\nstd.Turn(base,about: ax,ratio: 1)\n"));
+    let base = joint(&e,"base");
+    // m0 reads m1 reads … m69 reads base, each seen from base: the recursion is 70 deep
+    let first = e.sketch.motions.len();
     for i in 0..70 {
-        let next = if i == 69 { "base".to_string() } else { format!("m{:02}",i+1) };
-        src.push_str(&format!("m{i:02} := motion({next},relative_to: base)\n"));
+        let next = if i == 69 { base } else { first+i+1 };
+        push_relative(&mut e.sketch,next,base);
     }
-    let e = build(&src);
-    assert!(e.errors().any(|d| d.message.contains("64 levels")),"{:?}",e.diags);
-    let mut e = solved(&format!("{AXES}base := motion(about: ax)\n"));
-    e.sketch.motions[0].def = MotionDef::Relative {source:0,observer:0};
-    assert!(motion::evaluate(&e.sketch,0,0.).unwrap_err().contains("cycle"));
+    assert!(motion::evaluate(&e.sketch,first,0.).unwrap_err().contains("64 levels"));
+    assert!(motion::evaluate(&e.sketch,first+70-63,0.).is_ok());
+    e.sketch.motions[base].def = MotionDef::Relative {source:base as u32,observer:base as u32};
+    assert!(motion::evaluate(&e.sketch,base,0.).unwrap_err().contains("cycle"));
 }
 
+/// Read the other way — each node over the one before it, so every step is found already read —
+/// the cache does not hide the depth.
 #[test]
 fn cached_motion_dependencies_do_not_bypass_the_depth_limit() {
-    let mut src = format!("{AXES}base := motion(about: ax)\n");
-    for i in 0..70 {
-        let prev = if i == 0 { "base".to_string() } else { format!("m{:02}",i-1) };
-        src.push_str(&format!("m{i:02} := motion({prev},relative_to: base)\n"));
+    let mut e = solved(&format!("{AXES}base := frame\nstd.Turn(base,about: ax,ratio: 1)\n"));
+    let base = joint(&e,"base");
+    let mut prev = base;
+    for _ in 0..70 {
+        prev = push_relative(&mut e.sketch,prev,base);
     }
-    let e = build(&src);
-    assert!(e.errors().any(|d| d.message.contains("64 levels")),"{:?}",e.diags);
-    assert_eq!(e.sketch.motions.len(),64);
+    let first = prev+1-70;
+    assert!(motion::evaluate(&e.sketch,first+62,0.).is_ok());
+    for i in 63..70 {
+        assert!(motion::evaluate(&e.sketch,first+i,0.).unwrap_err().contains("64 levels"),"{i}");
+    }
 }
 
 /// A screw advances along its axis by `advance` per turn; a translation moves
@@ -208,12 +287,11 @@ fn cached_motion_dependencies_do_not_bypass_the_depth_limit() {
 fn screws_and_translations_follow_their_closed_forms() {
     use gcs_core::interval::Interval as I;
     let e = solved(&format!("{AXES}\n\
-        tap := motion(about: ax,ratio: 2,phase: 30deg,advance: 3mm)\n\
-        feed := motion(along: other,advance: 10mm)\n\
-        relative := motion(tap,relative_to: feed)\n"));
-    let tap = motion::Family::read(&e.sketch,e.map.ent_named("tap").unwrap().i()).unwrap();
-    let feed = motion::Family::read(&e.sketch,e.map.ent_named("feed").unwrap().i()).unwrap();
-    let relative = motion::Family::read(&e.sketch,e.map.ent_named("relative").unwrap().i()).unwrap();
+        tap := frame\nstd.Turn(tap,about: ax,ratio: 2,advance: 3mm)\n\
+        feed := frame\nstd.Slide(feed,along: other,advance: 10mm)\n{}",reading("tap","feed")));
+    let tap = motion::Family::read(&e.sketch,joint(&e,"tap")).unwrap();
+    let feed = motion::Family::read(&e.sketch,joint(&e,"feed")).unwrap();
+    let relative = motion::Family::read(&e.sketch,seen(&e,"tap","feed")).unwrap();
     let (axis_a,axis_b) = ([e.sketch.lines[0].p1,e.sketch.lines[0].p2],[e.sketch.lines[1].p1,e.sketch.lines[1].p2]);
     let direction = |ends: [u32;2]| -> [f64;3] {
         let a = e.sketch.world_point(ends[0] as usize); let b = e.sketch.world_point(ends[1] as usize);
@@ -224,7 +302,7 @@ fn screws_and_translations_follow_their_closed_forms() {
     for t in [-2.,0.,0.4,3.] {
         // The screw: the pure rotation's pose, then a slide of advance*t/tau along the axis.
         let pose = tap.at(t).unwrap();
-        let turn = gcs_core::envelope::Motion::rotation(da,30_f64.to_radians()+2.*t,2.).unwrap();
+        let turn = gcs_core::envelope::Motion::rotation(da,2.*t,2.).unwrap();
         let slide = 3.*t/std::f64::consts::TAU;
         for p in [[0.;3],[1.,2.,3.],[-4.,0.5,2.]] {
             let q = pose.point(p);
@@ -269,16 +347,19 @@ fn screws_and_translations_follow_their_closed_forms() {
 /// offset rotations, screws, translations and relative motions of them.
 #[test]
 fn a_pose_alone_is_the_motion_without_its_derivative() {
-    let e = solved(&format!("{AXES}\n\
-        tap := motion(about: ax,ratio: 2,phase: 30deg,advance: 3mm)\n\
-        feed := motion(along: other,advance: 10mm)\n\
-        turn := motion(about: ax,ratio: 2,phase: 90deg)\n\
-        observer := motion(about: other,ratio: -3,phase: 20deg)\n\
-        relative := motion(tap,relative_to: feed)\n\
-        rolled := motion(turn,relative_to: observer)\n\
-        nested := motion(rolled,relative_to: turn)\n"));
-    for name in ["tap","feed","turn","relative","rolled","nested"] {
-        let family = motion::Family::read(&e.sketch,e.map.ent_named(name).unwrap().i()).unwrap();
+    let mut e = solved(&format!("{AXES}\n\
+        tap := frame\nstd.Turn(tap,about: ax,ratio: 2,advance: 3mm)\n\
+        feed := frame\nstd.Slide(feed,along: other,advance: 10mm)\n\
+        turn := frame\nstd.Turn(turn,about: ax,ratio: 2)\n\
+        observer := frame\nstd.Turn(observer,about: other,ratio: -3)\n{}{}",
+        reading("tap","feed"),reading("turn","observer")));
+    // and a relative of a relative, made by hand: a document reads one frame seen from another
+    let (rolled,turn) = (seen(&e,"turn","observer"),joint(&e,"turn"));
+    let nested = push_relative(&mut e.sketch,rolled,turn);
+    let nodes = [joint(&e,"tap"),joint(&e,"feed"),joint(&e,"turn"),seen(&e,"tap","feed"),
+        rolled,nested];
+    for node in nodes {
+        let family = motion::Family::read(&e.sketch,node).unwrap();
         for k in -8..=8 {
             let angle = 0.37*k as f64;
             let (full,pose) = (family.at(angle).unwrap(),family.pose_at(angle).unwrap());
@@ -292,15 +373,17 @@ fn a_pose_alone_is_the_motion_without_its_derivative() {
 
 /// **A turn about a point is a rotation about the line through it square to its view** — how
 /// a planar motion reads in space, so the generators of the plane (§6.15.1) and of space (§6.14)
-/// are one family.  At roll 0.7 a point one unit along x from the centre has turned 0.7·ratio
-/// about it, in the page, the phase added.
+/// are one family.  At roll 0.7 past 15° a point one unit along x from the centre has turned
+/// ratio times that about it, in the page.
 #[test]
 fn a_turn_about_a_point_is_a_rotation_square_to_its_view() {
-    let e = solved(&format!("{AXES}turn := motion(about: a,ratio: 2,phase: 30deg)\n"));
-    let m = e.map.ent_named("turn").unwrap();
-    // the page stands in space as the front view: its points are lifted through its basis
+    let e = solved(&format!("{AXES}turn := frame\n\
+        std.Spin(turn,about: a,on: std.front,ratio: 2)\n"));
+    // the page stands in space as the front view: its points are lifted through its basis; read
+    // at 0.7 on from 15°, where a turn twice the roll stands 30° on
     let page = gcs_core::plane::Basis::page();
-    let got = motion::evaluate(&e.sketch,m.i(),0.7).unwrap().point(page.lift(3.,0.));
+    let roll = 0.7 + 15f64.to_radians();
+    let got = motion::evaluate(&e.sketch,joint(&e,"turn"),roll).unwrap().point(page.lift(3.,0.));
     let ang = 2.0*0.7 + 30f64.to_radians();
     near(got,page.lift(2.+ang.cos(),ang.sin()),1e-12);
 }
@@ -328,10 +411,14 @@ c1 distance({e}mm, along: u) std.front
 c1 distance(1mm, along: v) std.front
 rotor_axis := line(c0, c1)
 }}
-counter := motion(about: shaft, ratio: -1)
-spin := motion(about: rotor_axis, ratio: -2/3)
-rotor_turn := motion(spin, relative_to: counter)
-housing_turn := motion(counter, relative_to: spin)
+counter := frame
+std.Turn(counter, about: shaft, ratio: -1)
+spin := frame
+std.Turn(spin, about: rotor_axis, ratio: -2/3)
+rotor := point
+rotor coincident(under: spin, seen_from: counter, t == 0deg) c0
+housing := point
+housing coincident(under: counter, seen_from: spin, t == 0deg) c0
 ");
     let (mut p,errors) = crate::common::parse(&src);
     assert!(errors.is_empty(),"{errors:?}");
@@ -339,8 +426,9 @@ housing_turn := motion(counter, relative_to: spin)
     let mut el = program::elaborate(&p);
     assert!(el.ok(),"{:?}",el.diags);
     assert!(solve::solve(&mut el.sketch,Default::default()).success);
-    let family = |n| motion::Family::read(&el.sketch,el.map.ent_named(n).unwrap().i()).unwrap();
-    let (rotor,housing) = (family("rotor_turn"),family("housing_turn"));
+    // the rotor is the spin seen from the housing, and the housing the counter seen from it
+    let family = |m| motion::Family::read(&el.sketch,m).unwrap();
+    let (rotor,housing) = (family(seen(&el,"spin","counter")),family(seen(&el,"counter","spin")));
     let apex = [r+e,0.,0.];
     for k in 0..=36 {
         let theta = (k as f64*30.).to_radians();

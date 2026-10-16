@@ -25,7 +25,8 @@ top := point
 fix((0, 0, 0)) o
 fix((0, 0, 1)) top
 spindle := line(o, top)
-turn := motion(about: spindle)
+turn := frame
+std.Turn(turn, about: spindle, ratio: 1)
 construction removal := solid(tool, {sweep})
 part := solid(blank)
 removal cut part
@@ -64,7 +65,9 @@ fn a_roll_through_a_body_ends_just_past_where_the_tool_clears_it() {
     // the march's own proof over the step past each end
     let tool = solid::SpatialField::read(&e.sketch, crate::common::ent(&e, "tool").i(), 1e-10).unwrap();
     let blank = solid::SpatialField::read(&e.sketch, crate::common::ent(&e, "blank").i(), 1e-10).unwrap();
-    let family = gcs_core::motion::Family::read(&e.sketch, crate::common::ent(&e, "turn").i()).unwrap();
+    let turn = &e.sketch.frames[crate::common::ent(&e, "turn").i()];
+    let turn = turn.joint.as_ref().and_then(|j| j.motion).expect("the turn's motion") as usize;
+    let family = gcs_core::motion::Family::read(&e.sketch, turn).unwrap();
     let support = tool.support_bounds().unwrap().unwrap();
     assert!(solid::roll::clear(&tool, support, &blank, &family, [to, to + solid::roll::STEP]).unwrap());
     assert!(solid::roll::clear(&tool, support, &blank, &family, [from - solid::roll::STEP, from]).unwrap());

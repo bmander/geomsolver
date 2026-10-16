@@ -36,6 +36,11 @@ pub fn remove(
 ) -> Edit {
     let (mut doomed, mut names, left) = selected(e, prog, ents, cons);
     doom_mentioning(prog, &mut doomed, &mut names);
+    // what the model builds over the gone without naming it — a solid placed under a frame
+    // whose joint turned about a deleted line (#383) — goes too, and then what names that
+    while doom_dependent(e, prog, sk, &mut doomed, &mut names) {
+        doom_mentioning(prog, &mut doomed, &mut names);
+    }
     doom_inferred(e, prog, sk, &names, &mut doomed);
     if doomed.is_empty() {
         let why = (left > 0).then(|| {
@@ -56,8 +61,13 @@ pub fn remove(
         )
     };
     let mut edits: Vec<Splice> = membership_splices(prog, &doomed, &names);
+    // a frame declared in a block's header (`in (f := frame) { … }`, #383) goes with the header,
+    // which the membership pass splices whole: its own statement's splice would overlap it
+    let headers: Vec<Span> = prog.in_blocks.iter()
+        .filter(|b| b.declares && names.contains(&b.plane.root.text)).map(|b| b.header).collect();
     for s in doomed_splices(prog.text(), &prog.root().body, &doomed) {
         match s {
+            Some(e) if headers.iter().any(|h| e.at.lo < h.hi && h.lo < e.at.hi) => {}
             Some(e) => edits.push(e),
             None => return refuse(),
         }
@@ -124,6 +134,48 @@ fn doom_mentioning(prog: &Program, doomed: &mut Doomed, names: &mut Gone) {
             break;
         }
     }
+}
+
+/// And every root declaration the model builds over a motion one of the gone takes with it — a
+/// placement under a frame whose joint turned about a deleted line (#383): a motion node has no
+/// statement of its own to go, so what reads it goes in its place.  Whether any was found.
+fn doom_dependent(e: &Elaborated, prog: &Program, sk: &Sketch, doomed: &mut Doomed,
+                  names: &mut Gone) -> bool {
+    let mut dead: std::collections::BTreeSet<EntRef> =
+        names.iter().filter_map(|n| e.map.ent_named(n)).collect();
+    if dead.is_empty() || sk.motions.is_empty() {
+        return false;
+    }
+    let lost = |x: EntRef, dead: &std::collections::BTreeSet<EntRef>| {
+        let kids = sk.children(x);
+        !kids.is_empty()
+            && kids.iter().filter(|c| !dead.contains(c)).count() < sk.min_children(x, &kids)
+    };
+    // the motions that go, a relative or an inverse with what it is over
+    loop {
+        let gone: Vec<EntRef> = (0..sk.motions.len()).map(|i| EntRef::new(EntKind::Motion, i))
+            .filter(|m| !dead.contains(m) && lost(*m, &dead)).collect();
+        if gone.is_empty() {
+            break;
+        }
+        dead.extend(gone);
+    }
+    let mut found = false;
+    let all = EntKind::ALL.iter().filter(|&&k| k != EntKind::Motion)
+        .flat_map(|&k| (0..sk.count(k)).map(move |i| EntRef::new(k, i)));
+    for x in all {
+        let reads_gone = sk.children(x).iter()
+            .any(|c| c.kind == EntKind::Motion && dead.contains(c));
+        let Some(site) = e.map.of_entity.get(&x).filter(|_| reads_gone) else { continue };
+        if !site.path.0.is_empty() || !in_root(prog, site.stmt) || doomed.contains(&site.stmt) {
+            continue;
+        }
+        let Some(d) = decl_of(prog, site) else { continue };
+        doomed.insert(site.stmt);
+        names.insert(d.name.key().text.clone());
+        found = true;
+    }
+    found
 }
 
 /// And every statement whose *constraint* names one of the gone without its text doing so: a
@@ -263,6 +315,18 @@ pub(super) fn mentions(st: &Stmt, names: &std::collections::BTreeSet<String>) ->
             }
         }
         StmtKind::Relation(rel) => relation_refs(rel, &mut look),
+        // a call with no name makes nothing another statement can name, only what it states of
+        // its arguments — `std.Turn(f, about: ax, ratio: 2)` (#383) — so it goes with any of them
+        StmtKind::Instance(i) if i.name.text.starts_with('#') => {
+            let mut args: Vec<&syntax::InstArg> = i.args.iter().collect();
+            while let Some(a) = args.pop() {
+                match &a.value {
+                    syntax::InstVal::Ref(r) => look(r),
+                    syntax::InstVal::Group(inner) => args.extend(inner),
+                    syntax::InstVal::Expr(_) | syntax::InstVal::Hint(..) => {}
+                }
+            }
+        }
         // a view or a section of a solid goes with it, and with the plane it is drawn in
         StmtKind::Derived(dv) => {
             look(&dv.solid);
@@ -292,22 +356,9 @@ fn decl_refs(d: &Decl, look: &mut impl FnMut(&syntax::Ref)) {
         look(&e.about);
         look(&e.along);
     }
-    if let Some(motion) = &d.motion {
-        match motion {
-            syntax::MotionSpec::Rotation {axis,..} | syntax::MotionSpec::Translation {axis,..} => look(axis),
-            syntax::MotionSpec::Relative {source,observer} => { look(source); look(observer); }
-        }
-        // a number measured off the drawing is defined from what it measures, and a
-        // motion measuring a deleted line goes with it, as a dimension on it would
-        let mut spec = motion.clone();
-        for a in spec.args_mut() {
-            if let syntax::Arg::Dim {text,..} = a {
-                for n in crate::expr::measured_names(text) {
-                    let root = n.split('.').next().unwrap_or_default();
-                    look(&syntax::Ref {root:syntax::Name::new(root),path:vec![],span:Default::default()});
-                }
-            }
-        }
+    // the frame a motion is seen from is what the reading is written over (#383)
+    if let Some(g) = &d.seen_from {
+        look(g);
     }
     // a curve is a point of an instance, and goes with what it is written over: the
     // instance's point, or — written in place — the entities the instance was given

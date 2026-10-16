@@ -4,6 +4,52 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.137] Frames: joints in the solve.** A frame's ratio or advance no `fix` states — `std.Turn`
+or `std.Spin` given no `ratio:`, a number pinned to an unknown — is an unknown of the solve, a
+column of every relation reading the motion, and a joint nothing holds is freedom the diagnosis
+reports. `std.Rolls(at, a, b, along: d)` holds two frames rolling on one another at a point
+without slipping along a direction, so a gear pair's ratio follows its pitch radii, or a stated
+ratio places the pitch point; `lantern_generation.sv` times its roll so. A profile generated in
+the plane is generated over stated numbers. Through 0.136 a joint stating no ratio was E080. (Issue
+#383, stage 5.)
+
+**[0.136] Frames: riding.** `in` nests in `in` (§6.14): a declaration in nested blocks rides on
+every frame of its path and is drawn in the innermost with axes (an outer one with axes is W115),
+and a frame declared in a block rides on the block's frame, its motion its joint after theirs. A
+reading at a roll that leaves `under:` out reads what its tool rides on — `X coincident(t == τ)
+x`, `envelope(tool, seen_from: G, …)`, `meshing(f1, f2, …)`, `solid(tool, at: θ)`, and over a
+riding solid `solid(tool, from: a, to: b)` and `through:` — and what it makes rides on its
+observer. `under:` on a tool that rides is refused, as is a tool whose parts ride on different
+frames. Through 0.135 an `in` block inside another was refused, and a plane given twice (a block
+and a clause, or two blocks) was an error, now a nesting. (Issue #383, stage 4.)
+
+**[0.135] Frames: a motion is a frame's joint.** `motion(…)` is retired (§6.14). A frame's joint
+is three members minted where a reference names them — `f.axis`, `f.ratio`, `f.advance` — held
+by relations, and the standard library states them: `std.Turn(f, about: l, ratio: r)` (with
+`advance: a` a screw), `std.Spin(f, about: o, on: P, ratio: r)` (a turn in a view) and
+`std.Slide(f, along: l, advance: a)`. A frame with no joint is the world. A reading names the
+frame it is seen from beside `under:`, `seen_from: g` — on `solid`, `envelope`, `meshing`, a
+carried `coincident`, `claim over m seen_from g in (…)`, `l reciprocal(seen_from: g) m`,
+`std.Screw(isa, m, seen_from: g)` — where 0.134 declared `motion(m, relative_to: g)`. `phase:` is
+gone: roll 0 is as drawn, and a phase φ at ratio r is the roll offset φ/r. A ratio or advance is
+stated from the document's numbers; a measurement there, allowed in a motion's numbers since
+[0.27], is E107. A formal `m: frame` takes a frame, a `frame` formal left out is the instance's
+own frame at rest, and a number formal may state a default, `advance: Length = 0mm`. `motion(…)`,
+`m: motion`, `relative_to:` and `phase:` are refused naming what they became. (Issue #383, stage
+3.)
+
+**[0.134] Frames: the bare frame.** A plane is a frame whose `in` draws flat, and `f := frame`
+declares a spatial one bare (§6.7): it owns nothing until the document names its axes `f.u`,
+`f.v` or its origin `f.origin`, which are then seven numbers placed by relations, as a plane's
+are. A point `in` a frame with axes has three numbers along them (`u`, up, out) — `hint((x, y,
+z))`, `hint(at: f, (x, y, z))`, `fix((x, y, z))` — and one in a frame with none is a point in
+space. `in (f := frame) { … }` declares the frame in the header. A spatial frame is no set:
+`p coincident f`, `f distance(d) g`, `f parallel g` and `p inside f` over one are E040. `frame` is
+a declaration only as a definition's whole value, so documents keep the name (`hub_motor`'s
+`frame := {…}`, `hypoid_drive`'s `frame := Frame(…)`); 0.15's `frame f(origin: o, …)` is refused
+naming `f := frame`, and a formal `f: frame` is the plane's kind. Through 0.133 `frame` was
+refused at a statement's start and as a formal's type. (Issue #383, stage 2.)
+
 **[0.133] Cauchy data on a drawn curve.** A body marched over two formals (§6.5, 0.121) may start
 its moved point on a curve the drawing has: `initially { p coincident(t == u) k }`, `k` a `curve`
 formal given a spline, a curve drawn in a held plane (a formula, a trace, an envelope) or a curve

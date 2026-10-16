@@ -322,6 +322,9 @@ fn write_decl(out: &mut String, d: &Decl) {
     }
     if let Some(c) = &d.curve {
         write_curve_spec(out, c);
+    } else if d.bare {
+        // a frame declared bare is its word alone (#383)
+        out.push_str("frame");
     } else {
         out.push_str(d.kind.as_str());
         // a declaration written with no `hint(…)` prints none: "no clause" is the empty span
@@ -364,24 +367,29 @@ fn dim(a: &Arg) -> String {
     }
 }
 
+/// `under: m`, as a sweep prints it.
+fn under(m: &Ref) -> String {
+    let mut text = String::from("under: ");
+    write_ref(&mut text,m);
+    text
+}
+
 /// Sweep arguments are document expressions, preserved through canonical printing.
 fn sweep_parts(s: &Sweep) -> Vec<String> {
     let mut parts = match s {
+        // the frame it is under, where it is written: left out, the tool's own (#383)
         Sweep::Swept {motion,from,to} => {
-            let mut text = String::from("under: ");
-            write_ref(&mut text,motion);
-            vec![text,format!("from: {}",dim(from)),format!("to: {}",dim(to))]
+            let mut out: Vec<String> = motion.iter().map(under).collect();
+            out.extend([format!("from: {}",dim(from)),format!("to: {}",dim(to))]);
+            out
         }
         Sweep::Rolled {motion,body} => {
-            let (mut under,mut through) = (String::from("under: "),String::from("through: "));
-            write_ref(&mut under,motion);
+            let mut through = String::from("through: ");
             write_ref(&mut through,body);
-            vec![under,through]
+            motion.iter().map(under).chain([through]).collect()
         }
         Sweep::Placed {motion,at} => {
-            let mut text = String::from("under: ");
-            write_ref(&mut text,motion);
-            vec![text,format!("at: {}",dim(at))]
+            motion.iter().map(under).chain([format!("at: {}",dim(at))]).collect()
         }
         // a region's operand is the set the flattener applied to its probe: nothing to print
         Sweep::Body | Sweep::Region { .. } => Vec::new(),
@@ -505,24 +513,9 @@ pub(crate) fn decl_args(d: &Decl) -> String {
             parts.push(format!("lengthwise: {}",dim(&x.lengthwise)));
         }
     }
-    if let Some(motion) = &d.motion {
-        use super::MotionSpec;
-        match motion {
-            MotionSpec::Rotation {axis,ratio,phase,advance} => {
-                parts.push(format!("about: {}",super::ref_text(axis)));
-                if let Some(a) = ratio { parts.push(format!("ratio: {}",dim(a))); }
-                if let Some(a) = phase { parts.push(format!("phase: {}",dim(a))); }
-                if let Some(a) = advance { parts.push(format!("advance: {}",dim(a))); }
-            }
-            MotionSpec::Translation {axis,advance} => {
-                parts.push(format!("along: {}",super::ref_text(axis)));
-                parts.push(format!("advance: {}",dim(advance)));
-            }
-            MotionSpec::Relative {source,observer} => {
-                parts.push(super::ref_text(source));
-                parts.push(format!("relative_to: {}",super::ref_text(observer)));
-            }
-        }
+    // the frame a motion is seen from, beside its `under:` (#383)
+    if let Some(g) = &d.seen_from {
+        parts.push(format!("seen_from: {}", super::ref_text(g)));
     }
     // and a face's loop seals last, where it was written (§6.8)
     if d.close.is_some() {
@@ -682,7 +675,7 @@ pub(crate) fn hint_clause(d: &Decl, seed: &[f64]) -> String {
             || d.seed_spans.get(i).is_some_and(|s| !s.is_empty());
         // a number that is 0 where nobody wrote one says nothing: a point's height, an axis's
         // origin, where a plane stands — each 0 unless said
-        let optional = matches!(d.kind, EntKind::Point | EntKind::Plane) && *member == "z"
+        let optional = matches!(d.kind, EntKind::Point | EntKind::Frame) && *member == "z"
             || member.starts_with("origin.");
         if optional && !said && v == 0.0 {
             continue;
@@ -690,7 +683,7 @@ pub(crate) fn hint_clause(d: &Decl, seed: &[f64]) -> String {
         given.push(i);
     }
     // where a plane stands is said whole, as its origin, where any of it is
-    if d.kind == EntKind::Plane && !given.is_empty() {
+    if d.kind == EntKind::Frame && !given.is_empty() {
         given = vec![0, 1, 2];
     }
     if d.kind == EntKind::Axis && given.iter().any(|&i| i >= 3) {

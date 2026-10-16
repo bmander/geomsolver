@@ -50,11 +50,12 @@ g2 := point hint((9, 41, 13))
 fix((5, 40, 3)) g1
 fix((9, 41, 13)) g2
 gear_ax := line(g1, g2)
-spin := motion(about: ax)
-gear_turn := motion(about: gear_ax, ratio: -0.4, advance: 3mm)
-mesh := motion(spin, relative_to: gear_turn)
-f1 := envelope(side, under: mesh, from: -60deg, to: 60deg)
-f2 := envelope(round, under: mesh, from: -60deg, to: 60deg)
+spin := frame
+std.Turn(spin, about: ax, ratio: 1)
+gear_turn := frame
+std.Turn(gear_turn, about: gear_ax, ratio: -0.4, advance: 3mm)
+f1 := envelope(side, under: spin, seen_from: gear_turn, from: -60deg, to: 60deg)
+f2 := envelope(round, under: spin, seen_from: gear_turn, from: -60deg, to: 60deg)
 ";
 
 fn solved(src: &str) -> Sketch {
@@ -186,7 +187,13 @@ fn a_point_held_to_a_cone_sets_envelope_is_on_it() {
         let along = dot(d, w) * (1.0 - co);
         [0, 1, 2].map(|k| apex[k] + w[k] * co + dw[k] * s + d[k] * along)
     };
-    let mesh = sk.motions.iter().position(|m| m.name == "mesh").unwrap();
+    // the mesh: `spin` seen from `gear_turn`, the relative node the envelope's reading minted
+    let joint = |n: &str| sk.frames[e.map.ent_named(n).unwrap().i()].joint.as_ref().unwrap()
+        .motion.unwrap();
+    let (source, observer) = (joint("spin"), joint("gear_turn"));
+    let mesh = sk.motions.iter().position(|m| matches!(m.def,
+        gcs_core::model::MotionDef::Relative { source: s, observer: o }
+            if s == source && o == observer)).unwrap();
     let pose = gcs_core::motion::Family::read(sk, mesh).unwrap().at(t).unwrap();
     let h = 1e-6;
     let du = sub(at(u + h, v), at(u - h, v));
@@ -217,10 +224,11 @@ fix((0, 30, 0)) a
 fix((10, 30, 0)) b
 gear_ax := line(a, b)
 cone := std.ConeThrough(ax, q, lean: 20deg)
-spin := motion(about: ax)
-gear_turn := motion(about: gear_ax, ratio: -0.5)
-mesh := motion(spin, relative_to: gear_turn)
-flank := envelope(cone, under: mesh, from: -30deg, to: 30deg)
+spin := frame
+std.Turn(spin, about: ax, ratio: 1)
+gear_turn := frame
+std.Turn(gear_turn, about: gear_ax, ratio: -0.5)
+flank := envelope(cone, under: spin, seen_from: gear_turn, from: -30deg, to: 30deg)
 p := point hint((9, 3, 1))
 fix(x == 9, z == 1) p
 p coincident flank
@@ -245,7 +253,8 @@ fix((30, 0, -5)) c1
 fix((30, 0, 5)) c2
 cax := line(c1, c2)
 cyl := std.Cylinder(cax, r: 5mm)
-turn := motion(about: ax)
+turn := frame
+std.Turn(turn, about: ax, ratio: 1)
 flank := envelope(cyl, under: turn, from: -30deg, to: 30deg)
 in std.top {
   p := point hint((34, 9))
@@ -352,7 +361,12 @@ f1 curvature(at: p) osc
 /// elaborates to the same relations.
 #[test]
 fn every_envelope_contact_prints_and_parses() {
-    let src = format!("{SIDES}\
+    // the flat form prints no component instance: the joints written out as `std.Turn` writes them
+    let sides = SIDES.replace("std.Turn(spin, about: ax, ratio: 1)",
+        "ax coincident spin.axis\nfix(ratio == 1, advance == 0mm) spin")
+        .replace("std.Turn(gear_turn, about: gear_ax, ratio: -0.4, advance: 3mm)",
+        "gear_ax coincident gear_turn.axis\nfix(ratio == -0.4, advance == 3mm) gear_turn");
+    let src = format!("{sides}\
 p := point hint((3, 1, 8))
 p coincident f1
 in std.top {{
@@ -508,8 +522,9 @@ fn envelope_contacts_read_either_way_round_and_refuse_what_they_cannot_hold() {
     refused(&ANNULUS.replace("p coincident flank\n", ""), "the normal at `p` is taken where a contact holds");
     refused(&ANNULUS.replace("cyl := std.Cylinder(cax, r: 5mm)", "cyl := std.Sphere(c1, r: 5mm)"),
             "the solve reads the envelope of a cone's or a cylinder's surface");
-    let planar = ANNULUS.replace("turn := motion(about: ax)",
-        "in std.top {\n  tc := point hint((0, 0))\n}\nfix((0, 0)) tc\nturn := motion(about: tc)");
+    let planar = ANNULUS.replace("std.Turn(turn, about: ax, ratio: 1)",
+        "in std.top {\n  tc := point hint((0, 0))\n}\nfix((0, 0)) tc\n\
+         std.Spin(turn, about: tc, on: std.top, ratio: 1)");
     refused(&planar, "turns about a point of a view");
 }
 
@@ -539,7 +554,8 @@ c1 coincident(t == 0.5) low
 c2 coincident(t == 0.5) high
 cax := line(c1, c2)
 cyl := std.Cylinder(cax, r: 5mm)
-turn := motion(about: ax)
+turn := frame
+std.Turn(turn, about: ax, ratio: 1)
 flank := envelope(cyl, under: turn, from: -30deg, to: 30deg)
 in std.top {
   p := point hint((34, 9))

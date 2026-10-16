@@ -34,7 +34,7 @@ export interface Abi {
   gcs_surface_domain(h: number, idx: number, out: number): number;
   gcs_surface_profile_bounds(h: number, idx: number, uMin: number, uMax: number, out: number): number;
   gcs_envelope_domain(h: number, idx: number, out: number): number;
-  gcs_motion_sample(h: number, idx: number, angle: number, x: number, y: number, z: number, out: number): number;
+  gcs_frame_sample(h: number, idx: number, angle: number, x: number, y: number, z: number, out: number): number;
   gcs_surface_project(h: number, idx: number, x: number, y: number, z: number, out: number): number;
   gcs_surface_sample(h: number, idx: number, u: number, v: number, out: number): number;
   gcs_counts_len(): number;
@@ -97,6 +97,8 @@ export interface Abi {
   gcs_sketch_arc_through(h: number, s: number, e: number, tx: number, ty: number, name: number, nameLen: number): number;
   gcs_sketch_plane(h: number, ux: number, uy: number, uz: number, vx: number, vy: number,
                    vz: number, name: number, nameLen: number): number;
+  gcs_frame_planar(h: number, idx: number): number;
+  gcs_frame_moves(h: number, idx: number): number;
   gcs_plane_basis(h: number, idx: number, out: number): number;
   gcs_plane_frame3(h: number, idx: number, out: number): number;
   gcs_plane_glyph(h: number, idx: number, unit: number, out: number): number;

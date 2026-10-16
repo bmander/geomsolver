@@ -262,7 +262,7 @@ pub fn drawable(sk: &Sketch, e: EntRef, unit: f64) -> Vec<Vec<(f64, f64)>> {
         EntKind::Spline => vec![crate::curve::tessellate(sk, i, unit)],
         EntKind::Curve => vec![sk.curve_polyline(i)],
         // a plane's glyph is already two segments, in its own coordinates
-        EntKind::Plane => crate::plane::glyph(unit).iter().map(|(a, b)| vec![*a, *b]).collect(),
+        EntKind::Frame => crate::plane::glyph(unit).iter().map(|(a, b)| vec![*a, *b]).collect(),
     }
 }
 
@@ -383,8 +383,8 @@ pub fn scene3d_of(sk: &Sketch, unit: f64, layer: Layer) -> Vec<Item3> {
     let places = places(sk);
     let least = sk.extent() * LEAST_SIDE;
     // one pane for each place, its first plane's
-    for i in (0..sk.planes.len()).filter(|&i| datums && places[i] == Some(i)) {
-        let of = Some(EntRef::plane(i));
+    for i in (0..sk.frames.len()).filter(|&i| datums && places[i] == Some(i)) {
+        let of = Some(EntRef::frame(i));
         let basis = sk.basis(i);
         let rect = pane(sk, i, &views, &places, least);
         items.push(Item3 { of, in_plane: of, what: Part::Face, pts: face(&basis, rect) });
@@ -395,14 +395,14 @@ pub fn scene3d_of(sk: &Sketch, unit: f64, layer: Layer) -> Vec<Item3> {
     // the axes already drawn, each as its line: a later one lying on one of them is not drawn again
     let mut lines: Vec<([f64; 3], [f64; 3])> = Vec::new();
     for e in sk.drawn().into_iter().filter(|_| datums) {
-        if matches!(e.kind, EntKind::Point | EntKind::Plane) {
+        if matches!(e.kind, EntKind::Point | EntKind::Frame) {
             continue;
         }
         if layer == Layer::Datums && e.kind != EntKind::Axis {
             continue;
         }
         let plane = entity_view(sk, e, &views);
-        let in_plane = plane.map(EntRef::plane);
+        let in_plane = plane.map(EntRef::frame);
         // an axis is in space and in no view: its line across the drawing's reach, and a head at
         // the end it points to.  One lying on an axis already drawn (`std.back` is `std.x`
         // reversed) is that line, drawn once, the first declared's: a second head at the other
@@ -504,8 +504,8 @@ pub fn scene_with(sk: &Sketch, unit: f64, az: f64, el: f64, shaded: bool) -> Sce
     // the panes of the box, under everything — **one per place, drawn in or not** — each with
     // its own axes at its origin
     let places = places(sk);
-    for i in (0..sk.planes.len()).filter(|&i| places[i] == Some(i)) {
-        let of = Some(EntRef::plane(i));
+    for i in (0..sk.frames.len()).filter(|&i| places[i] == Some(i)) {
+        let of = Some(EntRef::frame(i));
         let basis = sk.basis(i);
         let rect = pane(sk, i, &views, &places, least);
         items.push(Item {
@@ -529,7 +529,7 @@ pub fn scene_with(sk: &Sketch, unit: f64, az: f64, el: f64, shaded: bool) -> Sce
     for e in sk.drawn() {
         // a point is a place, and a plane's glyph is the sheet's way of showing a datum — in
         // the box the pane says it
-        if matches!(e.kind, EntKind::Point | EntKind::Plane) {
+        if matches!(e.kind, EntKind::Point | EntKind::Frame) {
             continue;
         }
         let plane = entity_view(sk, e, &views);
@@ -541,7 +541,7 @@ pub fn scene_with(sk: &Sketch, unit: f64, az: f64, el: f64, shaded: bool) -> Sce
             let end = |q: u32| flat(sk.world_point(q as usize));
             items.push(Item {
                 of: Some(e),
-                in_plane: plane.map(EntRef::plane),
+                in_plane: plane.map(EntRef::frame),
                 what: Part::Drawn,
                 pts: vec![end(l.p1), end(l.p2)],
                 shade: None,
@@ -554,7 +554,7 @@ pub fn scene_with(sk: &Sketch, unit: f64, az: f64, el: f64, shaded: bool) -> Sce
             }
             items.push(Item {
                 of: Some(e),
-                in_plane: plane.map(EntRef::plane),
+                in_plane: plane.map(EntRef::frame),
                 what: Part::Drawn,
                 pts: poly.into_iter().map(|p| flat(sk.world_in(plane, p))).collect(),
                 shade: None,
@@ -692,9 +692,10 @@ fn finish(items: Vec<Item>) -> Scene {
 /// pane).  `std.up` is `std.front` turned a quarter, so its place is the front's.  A face
 /// family's station plane has none (#243 L1): no pane, and none taken from a plane it lies on.
 fn places(sk: &Sketch) -> Vec<Option<usize>> {
-    let bases: Vec<_> = (0..sk.planes.len()).map(|i| sk.basis(i)).collect();
+    let bases: Vec<_> = (0..sk.frames.len()).map(|i| sk.basis(i)).collect();
     let stations = sk.stations();
-    let placed = |k: usize| !stations.contains(&EntRef::plane(k));
+    // a spatial frame draws no pane: its points stand in space (#383)
+    let placed = |k: usize| !stations.contains(&EntRef::frame(k)) && sk.frames[k].planar();
     let tol = 1e-9 * sk.extent();
     (0..bases.len())
         .map(|k| placed(k).then(|| {

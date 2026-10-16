@@ -23,7 +23,8 @@ in std.front {
   hub_up coords(du: 2mm, dv: 5mm) std.front
   construction centerline cradle := line(hub, hub_up)
 }
-private spin := motion(about: cradle, ratio: 0.25)
+private spin := frame
+std.Turn(spin, about: cradle, ratio: 0.25)
 private rise := axis hint(dir: (0, 1, 1))
 fix(dir == (0, sqrt(0.5), sqrt(0.5))) rise
 private flat := plane(u: std.x, v: rise)
@@ -35,9 +36,9 @@ in flat {
   k1 coords(du: 5mm, dv: 0.7071mm) flat
   construction centerline kaxis := line(k0, k1)
 }
-private observer := motion(about: kaxis)
-turn := motion(spin, relative_to: observer)
-construction removal := solid(tool, under: turn, from: -75deg, to: 75deg)
+private observer := frame
+std.Turn(observer, about: kaxis, ratio: 1)
+construction removal := solid(tool, under: spin, seen_from: observer, from: -75deg, to: 75deg)
 in std.front {
   private q0 := point
   private q1 := point

@@ -25,6 +25,11 @@ pub(super) struct Resolver {
     /// The planes whose normal the document reads (`Expansion::normals`), by key: each mints
     /// `P.normal` as it is built, so a later declaration may name it.
     pub(super) normals: std::collections::BTreeSet<String>,
+    /// The frames whose axes or origin the document reads (`Expansion::charts`), by key: a frame
+    /// declared bare among them mints its chart as it is built (#383).
+    pub(super) charts: std::collections::BTreeSet<String>,
+    /// The frames whose joint the document reads (`Expansion::joints`), by key (#383).
+    pub(super) joints: std::collections::BTreeSet<String>,
 }
 
 /// A plane's member naming its normal, `P.normal`: `u × v`, an axis (`Sketch::plane_normal`).
@@ -147,15 +152,15 @@ pub(super) fn follow_building(
         let Seg::Field(f) = &path[0] else {
             return Err("an index names a copy, not a part".to_string());
         };
-        if e.kind == EntKind::Plane && f.text == "origin" {
+        if e.kind == EntKind::Frame && f.text == "origin" {
             if let Some(&o) = res.origins.get(&name) {
                 return follow(sk, EntRef::point(o), &path[1..]);
             }
         }
-        if e.kind == EntKind::Plane && f.text == NORMAL {
+        if e.kind == EntKind::Frame && (f.text == NORMAL || f.text == "axis") {
             return Err(format!(
-                "`{name}` is declared after this, and its normal is minted with it: declare \
-                 `{name}` first"
+                "`{name}` is declared after this, and its {} is minted with it: declare \
+                 `{name}` first", if f.text == "axis" { "joint" } else { "normal" }
             ));
         }
         let Some(kid) = res.kid(&name, e.kind, &f.text)? else {
@@ -214,13 +219,23 @@ pub(super) fn follow(sk: &Sketch, mut e: EntRef, path: &[Seg]) -> Result<EntRef,
             Seg::Member(m) => return Err(format!("{} has no `{}`", e.kind.a(), m.word())),
         };
         // a plane's normal is no field of its declaration: an axis minted where it is read
-        if e.kind == EntKind::Plane && f.text == NORMAL {
-            match sk.planes.get(e.i()).and_then(|p| p.normal) {
+        if e.kind == EntKind::Frame && f.text == NORMAL {
+            match sk.frames.get(e.i()).and_then(|p| p.chart.as_ref()?.normal) {
                 Some(n) => {
                     e = EntRef::new(EntKind::Axis, n as usize);
                     continue;
                 }
                 None => return Err("a plane's normal is not built yet".to_string()),
+            }
+        }
+        // and a frame's joint axis, minted where its joint is read (#383)
+        if e.kind == EntKind::Frame && f.text == "axis" {
+            match sk.frames.get(e.i()).and_then(|p| p.joint.as_ref()) {
+                Some(j) => {
+                    e = EntRef::new(EntKind::Axis, j.axis as usize);
+                    continue;
+                }
+                None => return Err("a frame's joint is not built yet".to_string()),
             }
         }
         // an envelope's side is bound after the solids, and a set's has none (#283): its two

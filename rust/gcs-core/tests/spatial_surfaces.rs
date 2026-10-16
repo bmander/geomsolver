@@ -245,7 +245,7 @@ fn a_lifted_plane_keeps_its_origin() {
     let sk = solved(&e);
     let lifted = gcs_core::program::to_program(&sk).text().to_string();
     let again = read(&lifted);
-    for i in 0..sk.planes.len() {
+    for i in 0..sk.frames.len() {
         let (x, y) = (sk.basis(i), again.sketch.basis(i));
         assert!(norm(sub(x.o, y.o)) < 1e-12 && norm(sub(x.u, y.u)) < 1e-12, "v{i}: {x:?} {y:?}");
     }
@@ -265,7 +265,7 @@ fn a_point_on_a_ball_drags_on_its_own_part() {
     let (pb, bc) = (ent(&e, "pb").i(), ent(&e, "bc").i());
     let (x, y) = sk.point_xy(pb);
     let mut d = gcs_core::decompose::PlanDrag::new(&sk, pb, x, y, None, 0.05);
-    assert!(d.part().unwrap().sketch.planes.len() >= 2, "the planes its points are drawn in");
+    assert!(d.part().unwrap().sketch.frames.len() >= 2, "the planes its points are drawn in");
     for k in 1..10 {
         let r = d.move_to(&mut sk, None, x + 0.5 * k as f64, y - k as f64);
         assert!(r.success, "{k}: {r:?}");

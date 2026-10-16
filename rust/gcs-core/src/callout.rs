@@ -98,6 +98,7 @@ macro_rules! undrawn {
             | CKind::Level
             | CKind::Project
             | CKind::Lift
+            | CKind::ChartLift
             // an energy states no number on the figure, nor does a touch
             | CKind::Stationary
             | CKind::CurveTouchesLine

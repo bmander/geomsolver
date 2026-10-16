@@ -49,10 +49,11 @@ in std.top {{
   Q := point hint((55, 5))
   R := point hint((45, 5))
 }}
-fixed_turn := motion(about: o)
-rolling_turn := motion(about: c, ratio: -2)
-rolling := motion(rolling_turn, relative_to: fixed_turn)
-X coincident(under: rolling, t == {tau}) x
+fixed_turn := frame
+std.Spin(fixed_turn, about: o, on: std.top, ratio: 1)
+rolling_turn := frame
+std.Spin(rolling_turn, about: c, on: std.top, ratio: -2)
+X coincident(under: rolling_turn, seen_from: fixed_turn, t == {tau}) x
 param vx: Length hint(1)
 param vy: Length hint(1)
 rate(X over t) distance(vx, along: std.x)

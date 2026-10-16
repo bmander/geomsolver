@@ -113,15 +113,17 @@ fn the_over_and_under_determined_parts_stand_apart() {
 /// (#214) it draws no section: what was 204 rows in 64 blocks, 13 deep (three crown sections of
 /// sixteen), is the cutter's axis and its flank cones' apexes and feet.  In one file (#217), 87
 /// rows in 34 blocks: the crown's axis held, the cutter's parallel to it, the normal module read
-/// off O with no point of its own, the blank's spheres sized from M with no rim points.
+/// off O with no point of its own, the blank's spheres sized from M with no rim points.  Since a
+/// motion is a frame's joint (#383) each of the pair's five turning frames holds its axis on its
+/// shaft, six rows over its six numbers in a block of its own: 117 rows in 39.
 #[test]
-fn the_hypoid_layout_is_34_blocks_9_deep() {
+fn the_hypoid_layout_is_39_blocks_9_deep() {
     let e = fixtures::gear::read(&fixtures::gear::design(&fixtures::gear::source(), 25., 12.5, 25.));
     let mut sys = System::new(&e.sketch);
     let order = sys.block_order();
-    assert_eq!((sys.hard_rows().len(), sys.n_free), (87, 87));
+    assert_eq!((sys.hard_rows().len(), sys.n_free), (117, 117));
     assert!(order.over_rows.is_empty() && order.under_cols.is_empty());
-    assert_eq!(order.blocks.len(), 34);
+    assert_eq!(order.blocks.len(), 39);
     assert_eq!(order.depth(), 9);
     let mut sizes = std::collections::BTreeMap::new();
     for b in &order.blocks {
@@ -129,8 +131,9 @@ fn the_hypoid_layout_is_34_blocks_9_deep() {
         *sizes.entry(b.rows.len()).or_insert(0) += 1;
     }
     // a plane's origin where its two axes meet is a block of three; the gear's triangle is the
-    // block of seven, the pinion's cone against it the block of twenty
-    let want = [(1, 14), (2, 8), (3, 10), (7, 1), (20, 1)];
+    // block of seven, the pinion's cone against it the block of twenty; each joint's axis held on
+    // its shaft a block of six
+    let want = [(1, 14), (2, 8), (3, 10), (6, 5), (7, 1), (20, 1)];
     assert_eq!(sizes.into_iter().collect::<Vec<_>>(), want);
     // every block reads only the blocks before it: a column a block's rows touch that is not its
     // own is an earlier block's

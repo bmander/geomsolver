@@ -128,7 +128,7 @@ pub fn relative_path(path: &str, from: &str) -> String {
 /// state, installed after elaboration, and never serialized as .sv source.
 pub fn preview(sk: &mut crate::model::Sketch, plane: Option<usize>) {
     sk.derived = crate::overview::objects(sk).into_iter().map(|i| crate::model::DerivedE {
-        solid: i as u32, plane: plane.filter(|&p| p < sk.planes.len()).map(|p| p as u32),
+        solid: i as u32, plane: plane.filter(|&p| p < sk.frames.len()).map(|p| p as u32),
         at: None, dims: false, name: sk.solids[i].name.clone(), class: Default::default(),
     }).collect();
 }

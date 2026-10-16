@@ -925,7 +925,9 @@ impl Search {
     /// Point `p` put at `w` in space on the scratch sketch — a point drawn in a plane at its
     /// shadow there — its lift with it; only its free numbers are written.
     fn place(&mut self, p: usize, w: [f64; 3]) {
-        let at = if self.sk.points[p].z.is_some() { w.to_vec() } else {
+        let at = if let Some(f) = self.sk.points[p].chart {
+            self.sk.chart_coords(f as usize, w).to_vec()
+        } else if self.sk.points[p].z.is_some() { w.to_vec() } else {
             let (u, v) = self.sk.on_view_sheet(w, self.sk.plane_of(p));
             vec![u, v]
         };

@@ -60,6 +60,13 @@ fn all_constraints(seed: u32) -> Sketch {
     sk.set_plane(lq, Some(pb));
     sk.lift_point(lc).unwrap();
     sk.lift_point(lq).unwrap();
+    // a point drawn in a spatial frame's three coordinates, the frame free (#383): its lift's
+    // `ChartLift` row
+    let pf = free(&mut sk, &mut rng, "pf");
+    sk.spatial_chart(pf);
+    let cf = sk.point3(r3(&mut rng).map(|x| 5.0 * x), false, "cf");
+    sk.draw_in_chart(cf, pf);
+    sk.lift_point(cf).unwrap();
     // a point in space, its own lift
     let sp3 = sk.point3(r3(&mut rng).map(|x| 10.0 * x), false, "s3");
     // and entities drawn in those views for the relations in space to read: a line across two
@@ -91,7 +98,7 @@ fn all_constraints(seed: u32) -> Sketch {
     let lc2 = pt(&mut sk, &mut rng);
     sk.set_plane(lc2, Some(pc));
     let fold_line = EntRef::line(sk.line(lc, lc2));
-    let (pce, pbe, pae) = (EntRef::plane(pc), EntRef::plane(pb), EntRef::plane(pa));
+    let (pce, pbe, pae) = (EntRef::frame(pc), EntRef::frame(pb), EntRef::frame(pa));
     // and a held plane of its own for a projection to a free one, and one between two held
     let held = gcs_core::plane::Basis {
         u: [0.0, 0.6, 0.8], v: [1.0, 0.0, 0.0], o: r3(&mut rng),
@@ -106,13 +113,13 @@ fn all_constraints(seed: u32) -> Sketch {
     sk.set_plane(ia, Some(pa));
     sk.set_plane(ib, Some(pa));
     let in_pa = EntRef::line(sk.line(ia, ib));
-    let (pa_u, pa_v) = (EntRef::new(gcs_core::model::EntKind::Axis, sk.planes[pa].u as usize),
-        EntRef::new(gcs_core::model::EntKind::Axis, sk.planes[pa].v as usize));
+    let (pa_u, pa_v) = (EntRef::new(gcs_core::model::EntKind::Axis, sk.frames[pa].u as usize),
+        EntRef::new(gcs_core::model::EntKind::Axis, sk.frames[pa].v as usize));
     let cpbe = EntRef::point(cpb);
     // and the free plane's origin and axes, for an ordinate along its frame from its origin
-    let pc_o = EntRef::point(sk.planes[pc].origin as usize);
-    let (pc_u, pc_v) = (EntRef::new(gcs_core::model::EntKind::Axis, sk.planes[pc].u as usize),
-        EntRef::new(gcs_core::model::EntKind::Axis, sk.planes[pc].v as usize));
+    let pc_o = EntRef::point(sk.frames[pc].origin as usize);
+    let (pc_u, pc_v) = (EntRef::new(gcs_core::model::EntKind::Axis, sk.frames[pc].u as usize),
+        EntRef::new(gcs_core::model::EntKind::Axis, sk.frames[pc].v as usize));
     let worded = |mut c: Constraint, w: &str| {
         let i = c.kind.word_slot().expect("an ordinate");
         c.args[i] = Arg::Str(w.to_string());
@@ -277,7 +284,8 @@ fn all_constraints(seed: u32) -> Sketch {
         // a projection between two held planes, and the lift over a free plane and a held one
         Constraint::project(&sk, EntRef::point(dp), pe).expect("two images on two planes that fold"),
         Constraint::new(CKind::Lift, vec![e(EntRef::point(lc)), e(pce)]),
-        Constraint::new(CKind::Lift, vec![e(EntRef::point(dp)), e(EntRef::plane(pd))]),
+        Constraint::new(CKind::Lift, vec![e(EntRef::point(dp)), e(EntRef::frame(pd))]),
+        Constraint::new(CKind::ChartLift, vec![e(EntRef::point(cf)), e(EntRef::frame(pf))]),
         // the relations in space, over the hidden points `Sketch::add` mints for them — the two
         // that read a plane once over the solved view and once over a stated one
         Constraint::new(CKind::Coincident3, vec![e(pe), e(EntRef::point(lq))]),
@@ -329,7 +337,7 @@ fn all_constraints(seed: u32) -> Sketch {
         Constraint::new(CKind::PlaneParallel, vec![e(pae), e(pce)]),
         // a projection over a free plane
         Constraint::project(&sk, pe, qe).expect("two images on two planes that fold"),
-        Constraint::new(CKind::ProjectSolved, vec![e(EntRef::point(dp)), e(EntRef::point(lc)), e(EntRef::plane(pd)), e(pce)]),
+        Constraint::new(CKind::ProjectSolved, vec![e(EntRef::point(dp)), e(EntRef::point(lc)), e(EntRef::frame(pd)), e(pce)]),
         // every dimension again with its number written in terms of a free variable, which is
         // an unknown of the sketch rather than a constant — one more column, and (m, c) where
         // the number was.  A different name each time, so no two of them are tied together, and
@@ -507,15 +515,16 @@ fix((0, 30, 0)) a
 fix((10, 30, 2)) b
 gear_ax := line(a, b)
 cone := std.Cone(ax, half: hint(20deg))
-spin := motion(about: ax)
-gear_turn := motion(about: gear_ax, ratio: -0.5, advance: 2mm)
-mesh := motion(spin, relative_to: gear_turn)
-flank := envelope(cone, under: mesh, from: -30deg, to: 30deg)
+spin := frame
+std.Turn(spin, about: ax, ratio: 1)
+gear_turn := frame
+std.Turn(gear_turn, about: gear_ax, ratio: -0.5, advance: 2mm)
+flank := envelope(cone, under: spin, seen_from: gear_turn, from: -30deg, to: 30deg)
 c1 := point hint((30, 0, -5))
 c2 := point hint((31, 1, 5))
 cax := line(c1, c2)
 cyl := std.Cylinder(cax, r: hint(5mm))
-f2 := envelope(cyl, under: mesh, from: -30deg, to: 30deg)
+f2 := envelope(cyl, under: spin, seen_from: gear_turn, from: -30deg, to: 30deg)
 in std.front {
   e1 := point hint((6, 2))
   e2 := point hint((9, 7))
@@ -535,8 +544,8 @@ blade := solid(face(l1, l2, l3, l4), about: std.z)
 ring := solid(face(rim), about: rax)
 side := surface(blade, l1)
 round := surface(ring, rim)
-f3 := envelope(side, under: mesh, from: -30deg, to: 30deg)
-f4 := envelope(round, under: mesh, from: -30deg, to: 30deg)
+f3 := envelope(side, under: spin, seen_from: gear_turn, from: -30deg, to: 30deg)
+f4 := envelope(round, under: spin, seen_from: gear_turn, from: -30deg, to: 30deg)
 p := point hint((9, 3, 1))
 p coincident flank
 r := point hint((26, 2, 1))
@@ -613,16 +622,16 @@ fix((0, 30, 0)) a
 fix((10, 30, 2)) b
 gear_ax := line(a, b)
 cone := std.Cone(ax, half: hint(20deg))
-spin := motion(about: ax)
-gear_turn := motion(about: gear_ax, ratio: -0.5, advance: 2mm)
-mesh := motion(gear_turn, relative_to: spin)
-back := motion(spin, relative_to: gear_turn)
+spin := frame
+std.Turn(spin, about: ax, ratio: 1)
+gear_turn := frame
+std.Turn(gear_turn, about: gear_ax, ratio: -0.5, advance: 2mm)
 c1 := point hint((30, 0, -5))
 c2 := point hint((31, 1, 5))
 cax := line(c1, c2)
 cyl := std.Cylinder(cax, r: hint(5mm))
-pinion_flank := envelope(cyl, under: back, from: -30deg, to: 30deg)
-gear_flank := envelope(cone, under: mesh, from: -30deg, to: 30deg)
+pinion_flank := envelope(cyl, under: spin, seen_from: gear_turn, from: -30deg, to: 30deg)
+gear_flank := envelope(cone, under: gear_turn, seen_from: spin, from: -30deg, to: 30deg)
 in std.front {
   rc := point hint((20, 4))
   rim := circle(center: rc) hint(r: 2)
@@ -632,9 +641,12 @@ in std.front {
 }
 ring := solid(face(rim), about: rax)
 round := surface(ring, rim)
-formed := meshing(pinion_flank, cone, under: mesh, from: -20deg, to: 20deg)
-rounded := meshing(pinion_flank, round, under: mesh, from: -20deg, to: 20deg)
-both := meshing(pinion_flank, gear_flank, under: mesh, from: -20deg, to: 20deg)
+formed := meshing(pinion_flank, cone, under: gear_turn, seen_from: spin, from: -20deg,
+                  to: 20deg)
+rounded := meshing(pinion_flank, round, under: gear_turn, seen_from: spin, from: -20deg,
+                   to: 20deg)
+both := meshing(pinion_flank, gear_flank, under: gear_turn, seen_from: spin, from: -20deg,
+                to: 20deg)
 p := point hint((9, 3, 1))
 p coincident(t == 5deg) formed
 r := point hint((20, 3, 4))
@@ -654,10 +666,10 @@ param kp: Scalar hint(0.02)
 e0 := point hint((8, 2, 2))
 e1 := point hint((9, 3, 5))
 el := line(e0, e1)
-eased := meshing(pinion_flank, cone, under: mesh, from: -20deg, to: 20deg, ease: e0, along: el,
-                 profile: kp / 1mm, lengthwise: -0.01 / 1mm)
-standing := meshing(round, cone, under: mesh, from: -20deg, to: 20deg, ease: e1, along: el,
-                    profile: 0.03 / 1mm, lengthwise: kp / 1mm)
+eased := meshing(pinion_flank, cone, under: gear_turn, seen_from: spin, from: -20deg, to: 20deg,
+                 ease: e0, along: el, profile: kp / 1mm, lengthwise: -0.01 / 1mm)
+standing := meshing(round, cone, under: gear_turn, seen_from: spin, from: -20deg, to: 20deg,
+                    ease: e1, along: el, profile: 0.03 / 1mm, lengthwise: kp / 1mm)
 u := point hint((9, 3, 2))
 u coincident(t == 3deg) eased
 w := point hint((19, 3, 4))
@@ -714,39 +726,41 @@ gear_ax := line(a, b)
 s1 := point hint((2, 3, 4))
 s2 := point hint((5, 1, 9))
 rail := line(s1, s2)
-spin := motion(about: ax)
-gear_turn := motion(about: gear_ax, ratio: -0.5, advance: 2mm)
-mesh := motion(gear_turn, relative_to: spin)
-slide := motion(along: rail, advance: 40mm)
-rack := motion(slide, relative_to: spin)
+spin := frame
+std.Turn(spin, about: ax, ratio: 1)
+gear_turn := frame
+std.Turn(gear_turn, about: gear_ax, ratio: -0.5, advance: 2mm)
+slide := frame
+std.Slide(slide, along: rail, advance: 40mm)
+rest := frame
 l1 := point hint((3, 20, 1))
 l2 := point hint((9, 24, -4))
 L := line(l1, l2)
-L reciprocal mesh
-L reciprocal rack
+L reciprocal(seen_from: spin) gear_turn
+L reciprocal(seen_from: spin) slide
 k1 := point hint((-3, 8, 2))
 k2 := point hint((4, 6, 1))
 K := line(k1, k2)
-K reciprocal gear_turn
+K reciprocal(seen_from: rest) gear_turn
 isa := axis hint(dir: (0.3, -0.2, 0.9))
-sa := std.Screw(isa, mesh)
+sa := std.Screw(isa, gear_turn, seen_from: spin)
 jsa := axis hint(dir: (0.1, 0.9, 0.2))
-sb := std.Screw(jsa, rack)
+sb := std.Screw(jsa, slide, seen_from: spin)
 ksa := axis hint(dir: (0.8, 0.1, -0.5))
 sc := std.Screw(ksa, gear_turn, pitch: 3mm)
 x := point hint((3, -2, 5))
 X := point hint((1, 1, 1))
-X coincident(under: mesh, t == 20) x
+X coincident(under: gear_turn, seen_from: spin, t == 20) x
 Y := point hint((2, 1, 0))
-Y coincident(under: rack) x
+Y coincident(under: slide, seen_from: spin) x
 in std.top {
   o2 := point hint((1, 2))
   q2 := point hint((7, 3))
 }
-twirl := motion(about: o2, ratio: 0.7)
-roll := motion(twirl, relative_to: spin)
+twirl := frame
+std.Spin(twirl, about: o2, on: std.top, ratio: 0.7)
 Z := point hint((0, 4, 1))
-Z coincident(under: roll, t == -35) q2
+Z coincident(under: twirl, seen_from: spin, t == -35) q2
 ";
     let (prog, errs) = crate::common::parse(SRC);
     assert!(errs.is_empty(), "{errs:?}");
@@ -793,5 +807,132 @@ fn regularity_agrees_with_finite_differences() {
         let err = check_constraint(&sk, c, 1e-5, 1e-6)
             .unwrap_or_else(|e| panic!("round {round}: {e}"));
         assert!(err.is_finite());
+    }
+}
+
+/// **A point carried by a chain** (#383 stage 1, `Sketch::chain`): the planet's turn about a
+/// skew line carried by the arm's screw about another, lowered to the relative over the arm's
+/// minted inverse.  Both axes' ends are free, so the carried point's Jacobian is checked over
+/// both axes' columns, at the start and knocked off it.
+#[test]
+fn a_point_carried_by_a_chain_agrees_with_finite_differences() {
+    const SRC: &str = "\
+unit mm
+use std
+o := point hint((0, 0, 0))
+z := point hint((1, 0.5, 10))
+shaft := line(o, z)
+a := point hint((0, 30, 0))
+b := point hint((10, 30, 2))
+pin := line(a, b)
+arm := frame
+std.Turn(arm, about: shaft, ratio: 0.8, advance: 2mm)
+planet := frame
+std.Turn(planet, about: pin, ratio: -2.5)
+x := point hint((3, -2, 5))
+X := point hint((1, 1, 1))
+";
+    let (prog, errs) = crate::common::parse(SRC);
+    assert!(errs.is_empty(), "{errs:?}");
+    let e = gcs_core::program::elaborate(&prog);
+    assert!(e.ok(), "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
+    let mut sk = e.sketch;
+    let at = |name: &str| sk.motions.iter().position(|m| m.name == name).unwrap();
+    let (arm, planet) = (at("arm"), at("planet"));
+    let chain = sk.chain(arm, planet, "carried").unwrap();
+    let (x, big) = (e.map.ent_named("x").unwrap(), e.map.ent_named("X").unwrap());
+    let motion = gcs_core::model::EntRef::new(gcs_core::model::EntKind::Motion, chain);
+    for (k, t) in [(0, 25.0), (1, -70.0)] {
+        let c = Constraint::new(CKind::CarriedPoint, vec![Arg::Ent(big), Arg::Ent(x), Arg::Ent(motion),
+            Arg::Seed { value: t, pinned: k == 0 }]);
+        sk.add(c);
+    }
+    let mut rng = Rng::new(383);
+    for round in 0..4 {
+        if round > 0 {
+            for p in sk.params.iter_mut().filter(|p| !p.fixed) {
+                p.value += rng.uniform(-0.05, 0.05) * (1.0 + p.value.abs().min(10.0));
+            }
+        }
+        for c in sk.constraints.iter().filter(|c| c.kind == CKind::CarriedPoint) {
+            assert!(c.params(&sk).len() >= 3 + 3 + 1 + 12, "both axes are columns");
+            let err = check_constraint(&sk, c, 1e-6, 1e-7).unwrap_or_else(|e| panic!("round {round}: {e}"));
+            assert!(err.is_finite());
+        }
+    }
+}
+
+/// **A joint's numbers the solve finds are columns** (#383 stage 5): the spin's ratio left to the
+/// solve (`std.Turn` with no `ratio:`) and the gear's advance stated nowhere (its joint held flat),
+/// read by a point on an envelope, a point on a meshing, a carried point and its rate — each
+/// row's Jacobian checked over the joints' columns with the rest, at the seeds and knocked off.
+#[test]
+fn a_joints_free_numbers_agree_with_finite_differences() {
+    const SRC: &str = "\
+unit mm
+use std (reciprocal)
+o := point hint((0, 0, 0))
+z := point hint((1, 0.5, 10))
+ax := line(o, z)
+a := point hint((0, 30, 0))
+b := point hint((10, 30, 2))
+gear_ax := line(a, b)
+cone := std.Cone(ax, half: 20deg)
+spin := frame
+std.Turn(spin, about: ax)
+gear_turn := frame
+gear_ax coincident gear_turn.axis
+fix(ratio == -0.5) gear_turn
+flank := envelope(cone, under: spin, seen_from: gear_turn, from: -30deg, to: 30deg)
+p := point hint((9, 3, 1))
+p coincident flank
+c1 := point hint((30, 0, -5))
+c2 := point hint((31, 1, 5))
+cax := line(c1, c2)
+mated := std.Cone(cax, half: 15deg)
+both := meshing(flank, mated, under: gear_turn, seen_from: spin, from: -20deg, to: 20deg)
+q := point hint((20, 3, 4))
+q coincident both
+x := point hint((3, -2, 5))
+X := point hint((1, 1, 1))
+X coincident(under: gear_turn, seen_from: spin, t == 15deg) x
+m := point hint((15, 5, 4))
+nl := line(X, m)
+rate(X over t) perpendicular nl
+";
+    let (prog, errs) = crate::common::parse(SRC);
+    assert!(errs.is_empty(), "{errs:?}");
+    let e = gcs_core::program::elaborate(&prog);
+    assert!(e.ok(), "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
+    let mut sk = e.sketch;
+    let joint = |name: &str| {
+        let f = e.map.ent_named(name).unwrap();
+        sk.frames[f.i()].joint.clone().unwrap()
+    };
+    let (spin, gear) = (joint("spin"), joint("gear_turn"));
+    assert!(!sk.params[spin.ratio as usize].fixed && sk.params[spin.advance as usize].fixed);
+    assert!(sk.params[gear.ratio as usize].fixed && !sk.params[gear.advance as usize].fixed);
+    let free = [spin.ratio, gear.advance];
+    let read = |c: &&Constraint| c.kind.envelope_contact().is_some()
+        || c.kind.meshing_contact().is_some() || c.kind == CKind::CarriedPoint
+        || c.rate_source().is_some();
+    let rows: Vec<&Constraint> = sk.constraints.iter().filter(read).collect();
+    assert!(rows.len() >= 4);
+    for c in &rows {
+        let ps = c.params(&sk);
+        assert!(free.iter().all(|q| ps.contains(q)), "{:?} reads the joints' numbers", c.kind);
+    }
+    let mut rng = Rng::new(3835);
+    for round in 0..4 {
+        if round > 0 {
+            for p in sk.params.iter_mut().filter(|p| !p.fixed) {
+                p.value += rng.uniform(-0.05, 0.05) * (1.0 + p.value.abs().min(10.0));
+            }
+        }
+        for c in sk.constraints.iter().filter(read) {
+            let err = check_constraint(&sk, c, 1e-6, 1e-7)
+                .unwrap_or_else(|e| panic!("round {round}: {e}"));
+            assert!(err.is_finite());
+        }
     }
 }

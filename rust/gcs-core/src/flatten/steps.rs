@@ -2,7 +2,7 @@
 //! time — `du`, `dv` from the line's start, `u`, `v` from a frame's origin — and keeps the
 //! ordinate it does not name, so `step(u: s)` is a run to station `s` level with where it began.
 //! The frame is `from:`, or the view the line is drawn in, which the parser hands on from the
-//! `in` block it stands in (`stamp_plane`).
+//! `in` block it stands in (`stamp_frame`).
 //!
 //! It is expanded where it stands, in the statement's own scope, into the relations it is short
 //! for: an ordinate per ordinate named (`p distance(d, along: u) q`) and a level per one kept

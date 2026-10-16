@@ -100,7 +100,7 @@ pub unsafe extern "C" fn gcs_elab_add_entity(
             return std::ptr::null_mut();
         };
         // a plane over two axes or lines, `args` their names, and the name asked for
-        if r.kind == EntKind::Plane {
+        if r.kind == EntKind::Frame {
             return out_edit(gcs_core::edit::add_plane(&(*h).program, &r.args, r.name.as_deref()));
         }
         out_edit(gcs_core::edit::add_entity(&(*h).program, r.kind, &r.args, &r.seed))

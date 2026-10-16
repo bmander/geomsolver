@@ -15,7 +15,7 @@ pub fn entity_name(e: EntRef) -> String {
 /// Prefix for generated entity names. Distinguish kinds whose keywords share an initial.
 pub fn kind_initial(k: EntKind) -> char {
     match k {
-        EntKind::Plane => 'v',
+        EntKind::Frame => 'v',
         EntKind::Curve => 'k',
         // `face` and `solid` share an `s` with `spline`: a face's labels run `f0`, and a
         // solid's `b0` — a *body*, since `s` is taken and a solid is what a body is
