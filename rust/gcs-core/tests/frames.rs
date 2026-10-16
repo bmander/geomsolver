@@ -1,0 +1,253 @@
+//! **Frames** (#383, `docs/frames-plan.md`): one declaration for planes and motions.  Stage 1 is
+//! a chain of motions in the core with no syntax: `Sketch::chain(outer, inner)` is the pose
+//! `outer(τ)·inner(τ)`, lowered as it is pushed to the relative of `inner` seen from `outer`'s
+//! minted inverse — or, over one axis, folded to one joint — so every reader of a motion reads a
+//! chain on the first day.  Each is held here to a closed form worked out apart from the core: a
+//! planet's point on its arm, three turns multiplied by hand, a wheel rolling along a slide (the
+//! cycloid), and two screws on one shaft read back as one screw.
+use crate::common::build;
+use gcs_core::constraints::{Arg, CKind, Constraint};
+use gcs_core::model::{EntKind, EntRef, MotionDef, Sketch};
+use gcs_core::motion::Family;
+use gcs_core::solve;
+use gcs_core::space::{norm, sub};
+
+/// An arm turning about `o` a radian a radian, and a planet on it turning about `c` (drawn at
+/// rest at (30, 0)) three times as fast the other way; `x` is a point of the planet.
+const PLANET: &str = "\
+unit mm
+use std
+in std.top {
+  o := point
+  fix((0, 0)) o
+  c := point
+  fix((30, 0)) c
+  x := point
+  fix((40, 0)) x
+  X := point hint((10, 17))
+}
+arm := motion(about: o, ratio: 1)
+planet := motion(about: c, ratio: -3)
+";
+
+fn index(sk: &Sketch, name: &str) -> usize {
+    sk.motions.iter().position(|m| m.name == name).unwrap_or_else(|| panic!("no motion `{name}`"))
+}
+
+/// A turn of the plane by `a` radians about `c`, applied to `p`.
+fn turn(c: [f64; 2], a: f64, p: [f64; 2]) -> [f64; 2] {
+    let (s, k) = a.sin_cos();
+    let d = [p[0] - c[0], p[1] - c[1]];
+    [c[0] + k * d[0] - s * d[1], c[1] + s * d[0] + k * d[1]]
+}
+
+/// The planet's point at the roll `τ`, by hand: `R(τ)·(c + R(−3τ)(x − c))`.
+fn planet_at(tau: f64) -> [f64; 3] {
+    let p = turn([0.0, 0.0], tau, turn([30.0, 0.0], -3.0 * tau, [40.0, 0.0]));
+    [p[0], p[1], 0.0]
+}
+
+/// **A planet's point carried by its chain is the closed form**, read two ways: the chain's pose
+/// sampled after the solve (`Family::at`), and a carried point (`CarriedPoint`, the rows the
+/// solve holds) pinned at a roll — at 60° the plan's (10, 17.3205).
+#[test]
+fn a_planets_point_on_its_arm_is_the_product_of_the_two_turns() {
+    let mut e = build(PLANET);
+    let sk = &mut e.sketch;
+    let (arm, planet) = (index(sk, "arm"), index(sk, "planet"));
+    let chain = sk.chain(arm, planet, "carried").unwrap();
+    assert!(matches!(sk.motions[chain].def, MotionDef::Relative { .. }), "two centres do not fold");
+    let x = e.map.ent_named("x").unwrap().i();
+    let family = Family::read(sk, chain).unwrap();
+    for deg in [-170.0, -60.0, 0.0, 25.0, 60.0, 135.0] {
+        let tau = f64::to_radians(deg);
+        let got = family.at(tau).unwrap().point(sk.world_point(x));
+        assert!(norm(sub(got, planet_at(tau))) < 1e-12, "τ = {deg}: {got:?} against {:?}", planet_at(tau));
+    }
+    let want = planet_at(f64::to_radians(60.0));
+    assert!((want[0] - 10.0).abs() < 1e-9 && (want[1] - 17.320508075688775).abs() < 1e-9, "{want:?}");
+    // held by the solve: X carried from x at 60°
+    let big = e.map.ent_named("X").unwrap();
+    sk.add(Constraint::new(CKind::CarriedPoint, vec![Arg::Ent(big), Arg::Ent(EntRef::point(x)),
+        Arg::Ent(EntRef::new(EntKind::Motion, chain)), Arg::Seed { value: 60.0, pinned: true }]));
+    assert!(solve::solve(sk, Default::default()).success);
+    let got = sk.world_point(big.i());
+    assert!(norm(sub(got, want)) < 1e-9, "{got:?} against {want:?}");
+}
+
+/// **Three chained turns are their product**: `A·(B·C)` and `(A·B)·C` both, against the three
+/// turns multiplied by hand, so a chain of a chain reads through the inverse of a relative.
+#[test]
+fn three_chained_turns_are_the_hand_product() {
+    let src = "\
+unit mm
+use std
+in std.top {
+  a := point
+  fix((0, 0)) a
+  b := point
+  fix((20, 5)) b
+  c := point
+  fix((35, -10)) c
+  x := point
+  fix((42, -3)) x
+}
+first := motion(about: a, ratio: 0.5, phase: 10deg)
+second := motion(about: b, ratio: 2)
+third := motion(about: c, ratio: -1.5)
+";
+    let mut e = build(src);
+    let sk = &mut e.sketch;
+    let (a, b, c) = (index(sk, "first"), index(sk, "second"), index(sk, "third"));
+    let bc = sk.chain(b, c, "bc").unwrap();
+    let right = sk.chain(a, bc, "a(bc)").unwrap();
+    let ab = sk.chain(a, b, "ab").unwrap();
+    let left = sk.chain(ab, c, "(ab)c").unwrap();
+    let x = sk.world_point(e.map.ent_named("x").unwrap().i());
+    let hand = |tau: f64| {
+        let p = turn([35.0, -10.0], -1.5 * tau, [x[0], x[1]]);
+        let p = turn([20.0, 5.0], 2.0 * tau, p);
+        let p = turn([0.0, 0.0], f64::to_radians(10.0) + 0.5 * tau, p);
+        [p[0], p[1], 0.0]
+    };
+    for m in [right, left] {
+        let family = Family::read(sk, m).unwrap();
+        for deg in [-90.0, -20.0, 0.0, 33.0, 180.0] {
+            let tau = f64::to_radians(deg);
+            let moving = family.at(tau).unwrap();
+            let got = moving.point(x);
+            assert!(norm(sub(got, hand(tau))) < 1e-11, "{}: τ = {deg}: {got:?} against {:?}",
+                    sk.motions[m].name, hand(tau));
+            // the pose alone agrees with the pose and its rate
+            let pose = family.pose_at(tau).unwrap().point(x);
+            assert!(norm(sub(pose, got)) < 1e-11);
+            // and the rate is the hand product's, by central differences
+            let h = 1e-6;
+            let fd: [f64; 3] = std::array::from_fn(|k| (hand(tau + h)[k] - hand(tau - h)[k]) / (2.0 * h));
+            let rate = moving.velocity(x);
+            assert!(norm(sub(rate, fd)) < 1e-6, "τ = {deg}: rate {rate:?} against {fd:?}");
+        }
+    }
+}
+
+/// **A wheel turning on a slide traces the cycloid**: a slide along `std.x` by `2πr` a turn
+/// carrying a wheel of radius `r` turning back about its centre, so it rolls without slipping, and
+/// its point at the ground is `(r(τ − sin τ), r(1 − cos τ))`.
+#[test]
+fn a_turn_on_a_slide_is_the_cycloid() {
+    let src = "\
+unit mm
+use std
+in std.top {
+  g0 := point
+  fix((0, 0)) g0
+  g1 := point
+  fix((10, 0)) g1
+  ground := line(g0, g1)
+  hub := point
+  fix((0, 8)) hub
+  rim := point
+  fix((0, 0)) rim
+}
+slide := motion(along: ground, advance: 2 * pi * 8)
+roll := motion(about: hub, ratio: -1)
+";
+    let mut e = build(src);
+    let sk = &mut e.sketch;
+    let (slide, roll) = (index(sk, "slide"), index(sk, "roll"));
+    let chain = sk.chain(slide, roll, "wheel").unwrap();
+    let rim = sk.world_point(e.map.ent_named("rim").unwrap().i());
+    let family = Family::read(sk, chain).unwrap();
+    let r = 8.0;
+    for deg in [-200.0, -45.0, 0.0, 90.0, 180.0, 300.0] {
+        let tau = f64::to_radians(deg);
+        let got = family.at(tau).unwrap().point(rim);
+        let want = [r * (tau - tau.sin()), r * (1.0 - tau.cos()), 0.0];
+        assert!(norm(sub(got, want)) < 1e-11, "τ = {deg}: {got:?} against {want:?}");
+    }
+}
+
+/// **Two joints about one axis fold to one**: a screw chained on a screw about the same line reads
+/// as a single screw (`Family::screw`) whose ratio and advance are the two added — a gear train on
+/// one shaft is the turn the generating classes admit — and two turns about one centre fold too.
+/// A chain over two lines is a relative, and no screw.
+#[test]
+fn coaxial_joints_fold_to_one_screw() {
+    let src = "\
+unit mm
+use std
+o := point hint((1, 2, 3))
+z := point hint((2, 4, 13))
+fix((1, 2, 3)) o
+fix((2, 4, 13)) z
+shaft := line(o, z)
+w := point hint((5, 0, 0))
+fix((5, 0, 0)) w
+other := line(o, w)
+in std.top {
+  c := point
+  fix((3, 4)) c
+}
+lead := motion(about: shaft, ratio: 2, advance: 3mm)
+follow := motion(about: shaft, ratio: -0.5, advance: 1mm)
+skew := motion(about: other, ratio: 1, advance: 1mm)
+t1 := motion(about: c, ratio: 1)
+t2 := motion(about: c, ratio: 2, phase: 5deg)
+";
+    let mut e = build(src);
+    let sk = &mut e.sketch;
+    let (lead, follow, skew) = (index(sk, "lead"), index(sk, "follow"), index(sk, "skew"));
+    let n = sk.motions.len();
+    let folded = sk.chain(lead, follow, "train").unwrap();
+    assert_eq!(sk.motions.len(), n + 1, "a fold mints no inverse");
+    let screw = Family::read(sk, folded).unwrap().screw().expect("one screw");
+    assert!((screw.ratio - 1.5).abs() < 1e-15 && (screw.advance - 4.0).abs() < 1e-15, "{screw:?}");
+    // the fold is the chain it stands for: the same pose as the relative over the inverse
+    let separate = {
+        let inverse = sk.motions.len();
+        sk.motions.push(gcs_core::model::MotionE { def: MotionDef::Inverse { of: lead as u32 },
+            name: "lead⁻".into(), class: Default::default(), measured: Vec::new() });
+        sk.motions.push(gcs_core::model::MotionE {
+            def: MotionDef::Relative { source: follow as u32, observer: inverse as u32 },
+            name: "unfolded".into(), class: Default::default(), measured: Vec::new() });
+        sk.motions.len() - 1
+    };
+    let (a, b) = (Family::read(sk, folded).unwrap(), Family::read(sk, separate).unwrap());
+    assert!(b.screw().is_none(), "a relative is no single screw");
+    let p = [7.0, -3.0, 5.0];
+    for deg in [-120.0, 0.0, 47.0, 400.0] {
+        let tau = f64::to_radians(deg);
+        let (x, y) = (a.at(tau).unwrap().point(p), b.at(tau).unwrap().point(p));
+        assert!(norm(sub(x, y)) < 1e-11, "τ = {deg}: {x:?} against {y:?}");
+    }
+    let crossed = sk.chain(lead, skew, "crossed").unwrap();
+    assert!(Family::read(sk, crossed).unwrap().screw().is_none());
+    let (t1, t2) = (index(sk, "t1"), index(sk, "t2"));
+    let turns = sk.chain(t1, t2, "turns").unwrap();
+    match sk.motions[turns].def {
+        MotionDef::Turn { ratio, phase, .. } => {
+            assert!((ratio - 3.0).abs() < 1e-15 && (phase - f64::to_radians(5.0)).abs() < 1e-15);
+        }
+        ref d => panic!("two turns about one centre fold to a turn: {d:?}"),
+    }
+}
+
+/// **The height check counts the minted nodes**: a chain of a chain … 70 deep is refused by the
+/// reader, naming the limit, while one 30 deep reads.
+#[test]
+fn a_chain_past_sixty_four_levels_is_refused() {
+    let mut e = build(PLANET);
+    let sk = &mut e.sketch;
+    let (arm, planet) = (index(sk, "arm"), index(sk, "planet"));
+    let mut top = planet;
+    let mut at_thirty = None;
+    for k in 0..70 {
+        top = sk.chain(arm, top, &format!("c{k}")).unwrap();
+        if k == 30 {
+            at_thirty = Some(top);
+        }
+    }
+    assert!(Family::read(sk, at_thirty.unwrap()).is_ok());
+    let err = Family::read(sk, top).unwrap_err();
+    assert!(err.contains("64 levels"), "{err}");
+}

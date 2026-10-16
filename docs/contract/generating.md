@@ -29,6 +29,19 @@ The analytic snapshots are made of parts too (`GeneratedEnvelope::new`, `Trimmed
 pose and derivative via `Sketch::world_point`; relative is observer inverse times source. Spatial,
 ABI kind 10. Cycles and depth over 64 refused (checked with cached subgraphs too). Browser
 `core/motion.ts` (six doubles). `motion::Family::read` snapshots; re-read after axis edits.
+**A chain** (#383 stage 1, [frames plan](../frames-plan.md)): `Sketch::chain(outer, inner)` is the
+pose `outer(τ)·inner(τ)`, lowered as it is pushed and never evaluated as a new step: two joints
+over one axis entity (one line, one centre) whose numbers are stated fold to one joint, ratios,
+phases and advances adding (so `Family::screw`/`turning` and the generating classes read a train
+on one shaft as its one turn); any other pair is `Relative { source: inner, observer: inv }` over a
+minted `MotionDef::Inverse { of: outer }` — a joint's inverse runs back (numbers negated), a
+relative's swaps its sides — read so by `Family::read` (`Step::inverse`), the planar program
+(`generated::program_signed`) and the held steps (`envelope::held::motion`, the same axis columns).
+`Family`'s shape queries read the root step, so an inverse's leftover steps hide no joint. Heights
+count the minted nodes (an inverse is as deep as what it undoes). `tests/frames.rs` is the gate
+(a planet against `R(τ)·(c + R(−3τ)(x − c))`, three turns against the hand product, a turn on a
+slide against the cycloid, coaxial screws read as one screw, 64 levels), with a `CarriedPoint`
+under a chain FD-checked over both axes in `tests/jacobians.rs`.
 
 **Measurements read after the solve** (`measure.rs`, `expr::Measure`): `length(l)`, `radius(c)`,
 `distance(a, b)`, `angle(l1, l2)` only in a motion's `ratio:`/`phase:`/`advance:`; resolved by

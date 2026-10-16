@@ -795,3 +795,52 @@ fn regularity_agrees_with_finite_differences() {
         assert!(err.is_finite());
     }
 }
+
+/// **A point carried by a chain** (#383 stage 1, `Sketch::chain`): the planet's turn about a
+/// skew line carried by the arm's screw about another, lowered to the relative over the arm's
+/// minted inverse.  Both axes' ends are free, so the carried point's Jacobian is checked over
+/// both axes' columns, at the start and knocked off it.
+#[test]
+fn a_point_carried_by_a_chain_agrees_with_finite_differences() {
+    const SRC: &str = "\
+unit mm
+o := point hint((0, 0, 0))
+z := point hint((1, 0.5, 10))
+shaft := line(o, z)
+a := point hint((0, 30, 0))
+b := point hint((10, 30, 2))
+pin := line(a, b)
+arm := motion(about: shaft, ratio: 0.8, advance: 2mm)
+planet := motion(about: pin, ratio: -2.5)
+x := point hint((3, -2, 5))
+X := point hint((1, 1, 1))
+";
+    let (prog, errs) = crate::common::parse(SRC);
+    assert!(errs.is_empty(), "{errs:?}");
+    let e = gcs_core::program::elaborate(&prog);
+    assert!(e.ok(), "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
+    let mut sk = e.sketch;
+    let at = |name: &str| sk.motions.iter().position(|m| m.name == name).unwrap();
+    let (arm, planet) = (at("arm"), at("planet"));
+    let chain = sk.chain(arm, planet, "carried").unwrap();
+    let (x, big) = (e.map.ent_named("x").unwrap(), e.map.ent_named("X").unwrap());
+    let motion = gcs_core::model::EntRef::new(gcs_core::model::EntKind::Motion, chain);
+    for (k, t) in [(0, 25.0), (1, -70.0)] {
+        let c = Constraint::new(CKind::CarriedPoint, vec![Arg::Ent(big), Arg::Ent(x), Arg::Ent(motion),
+            Arg::Seed { value: t, pinned: k == 0 }]);
+        sk.add(c);
+    }
+    let mut rng = Rng::new(383);
+    for round in 0..4 {
+        if round > 0 {
+            for p in sk.params.iter_mut().filter(|p| !p.fixed) {
+                p.value += rng.uniform(-0.05, 0.05) * (1.0 + p.value.abs().min(10.0));
+            }
+        }
+        for c in sk.constraints.iter().filter(|c| c.kind == CKind::CarriedPoint) {
+            assert!(c.params(&sk).len() >= 3 + 3 + 1 + 12, "both axes are columns");
+            let err = check_constraint(&sk, c, 1e-6, 1e-7).unwrap_or_else(|e| panic!("round {round}: {e}"));
+            assert!(err.is_finite());
+        }
+    }
+}

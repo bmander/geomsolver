@@ -1272,6 +1272,17 @@ fn motion(sk: &Sketch, m: usize, steps: &mut Vec<Step>, cols: &mut Vec<Col>,
             let observer = motion(sk, observer as usize, steps, cols, done, depth + 1, turns)?;
             Step::Relative { source, observer }
         }
+        // a joint's inverse runs back over the same axis columns, a relative's swaps its sides
+        MotionDef::Inverse { of } => {
+            let k = motion(sk, of as usize, steps, cols, done, depth + 1, turns)?;
+            match steps[k] {
+                Step::Rotation { at, ratio, phase, advance } =>
+                    Step::Rotation { at, ratio: -ratio, phase: -phase, advance: -advance },
+                Step::Translation { at, advance } => Step::Translation { at, advance: -advance },
+                Step::Turn { at, ratio, phase } => Step::Turn { at, ratio: -ratio, phase: -phase },
+                Step::Relative { source, observer } => Step::Relative { source: observer, observer: source },
+            }
+        }
     };
     steps.push(step);
     done.insert(m, steps.len() - 1);

@@ -46,6 +46,16 @@ enum Step {
 /// numbers to `values`, and its shape (for the definition's key) to `shape`.
 fn program(sk: &Sketch, m: usize, steps: &mut Vec<Step>, args: &mut Vec<EntRef>,
            values: &mut Vec<f64>, shape: &mut String, depth: usize) -> Result<(), String> {
+    program_signed(sk, m, false, steps, args, values, shape, depth)
+}
+
+/// `program`, or the program of the motion's inverse where `inverse`: a turn and a slide run
+/// back (their numbers negated, so the key's values say it and the shape need not), and a
+/// relative `O⁻¹·S` undone as `S⁻¹·O`, its sides swapped.
+#[allow(clippy::too_many_arguments)]
+fn program_signed(sk: &Sketch, m: usize, inverse: bool, steps: &mut Vec<Step>, args: &mut Vec<EntRef>,
+                  values: &mut Vec<f64>, shape: &mut String, depth: usize) -> Result<(), String> {
+    let sign = if inverse { -1.0 } else { 1.0 };
     if depth > 16 {
         return Err("a planar motion nests too deeply".into());
     }
@@ -58,21 +68,25 @@ fn program(sk: &Sketch, m: usize, steps: &mut Vec<Step>, args: &mut Vec<EntRef>,
         MotionDef::Turn { centre, ratio, phase } => {
             args.push(EntRef::point(centre as usize));
             steps.push(Step::Turn { centre: args.len() - 1, ratio: values.len(), phase: values.len() + 1 });
-            values.extend([ratio, phase]);
+            values.extend([sign * ratio, sign * phase]);
             shape.push('T');
         }
         MotionDef::Translation { axis, advance } => {
             args.push(EntRef::line(axis as usize));
             steps.push(Step::Slide { line: args.len() - 1, advance: values.len() });
-            values.push(advance);
+            values.push(sign * advance);
             shape.push('S');
         }
         MotionDef::Relative { source, observer } => {
+            let (first, second) = if inverse { (observer, source) } else { (source, observer) };
             shape.push('(');
-            program(sk, source as usize, steps, args, values, shape, depth + 1)?;
-            program(sk, observer as usize, steps, args, values, shape, depth + 1)?;
+            program_signed(sk, first as usize, false, steps, args, values, shape, depth + 1)?;
+            program_signed(sk, second as usize, false, steps, args, values, shape, depth + 1)?;
             steps.push(Step::Relative);
             shape.push(')');
+        }
+        MotionDef::Inverse { of } => {
+            program_signed(sk, of as usize, !inverse, steps, args, values, shape, depth + 1)?;
         }
         MotionDef::Rotation { .. } => {
             return Err(format!("`{}` turns about a line in space: a tool of the sheet is carried \

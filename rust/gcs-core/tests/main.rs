@@ -84,6 +84,7 @@ mod fmath;
 mod formate;
 mod fractions;
 mod frame;
+mod frames;
 mod functional_solids;
 mod gauges;
 mod gear_crowns;

@@ -57,6 +57,8 @@ impl Builder<'_> {
             MotionDef::Rotation {..} | MotionDef::Translation {..} | MotionDef::Turn {..} => 1,
             MotionDef::Relative {source,observer} =>
                 1+self.heights[source as usize].max(self.heights[observer as usize]),
+            // an inverse is as deep as what it undoes
+            MotionDef::Inverse {of} => self.heights[of as usize],
         };
         if height > 64 { return Err("motion dependencies exceed 64 levels".into()); }
         self.heights.push(height);

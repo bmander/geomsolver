@@ -1125,16 +1125,19 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             crate::model::MotionDef::Rotation {axis,..} | crate::model::MotionDef::Translation {axis,..} =>
                 line_map[axis as usize].is_some(),
             crate::model::MotionDef::Turn {centre,..} => pt_index(centre as usize).is_some(),
-            crate::model::MotionDef::Relative {..} => true,
+            crate::model::MotionDef::Relative {..} | crate::model::MotionDef::Inverse {..} => true,
         }
     }).collect();
     loop {
         let mut changed = false;
         for (i,m) in src.motions.iter().enumerate() {
-            if let crate::model::MotionDef::Relative {source,observer} = m.def {
-                if retained[i] && (!retained[source as usize] || !retained[observer as usize]) {
-                    retained[i] = false; changed = true;
-                }
+            let needs: &[u32] = match m.def {
+                crate::model::MotionDef::Relative {ref source,ref observer} => &[*source,*observer],
+                crate::model::MotionDef::Inverse {ref of} => std::slice::from_ref(of),
+                _ => &[],
+            };
+            if retained[i] && needs.iter().any(|&k| !retained[k as usize]) {
+                retained[i] = false; changed = true;
             }
         }
         if !changed { break; }
@@ -1163,6 +1166,8 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
                     source:motion_map[source as usize].unwrap() as u32,
                     observer:motion_map[observer as usize].unwrap() as u32,
                 },
+            crate::model::MotionDef::Inverse {of} =>
+                crate::model::MotionDef::Inverse {of:motion_map[of as usize].unwrap() as u32},
         };
         let measured = measured_of(m).expect("a retained motion keeps what it measures");
         dst.motions.push(crate::model::MotionE {def,name:m.name.clone(),class:m.class.clone(),measured});

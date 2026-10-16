@@ -550,6 +550,10 @@ pub enum MotionDef {
     Turn { centre: u32, ratio: f64, phase: f64 },
     Translation { axis: u32, advance: f64 },
     Relative { source: u32, observer: u32 },
+    /// The inverse of motion `of`, minted where a chain is lowered (`Sketch::chain`): a joint's
+    /// inverse turns and slides back (its ratio, phase and advance negated) and a relative's
+    /// swaps its two sides, so every reader reads it as the steps it already knows.
+    Inverse { of: u32 },
 }
 
 #[derive(Clone, Debug)]
@@ -594,6 +598,48 @@ impl MotionE {
             Some(m) => m.value.value(sk).map_err(|e| format!("`{}`: {e}", self.name)),
             None => Ok(advance),
         }
+    }
+}
+
+impl crate::model::Sketch {
+    /// **A chain** of two motions (`docs/frames-plan.md`, stage 1): `inner` carried by `outer`,
+    /// the pose `outer(τ)·inner(τ)` — a planet's turn on its arm's.  Lowered as it is pushed, so
+    /// no reader learns a new step: two joints about one axis (one line, or one centre) whose
+    /// numbers are stated fold to one joint, their ratios, phases and advances adding — a gear
+    /// train on one shaft reads as the single turn `Family::screw` and the generating classes
+    /// admit — and any other pair is the relative of `inner` seen from `outer`'s minted inverse,
+    /// `inv(outer)⁻¹·inner`.  Returns the chain's index in `motions`.
+    pub fn chain(&mut self, outer: usize, inner: usize, name: &str) -> Result<usize, String> {
+        let n = self.motions.len();
+        if outer >= n || inner >= n {
+            return Err("no such motion".into());
+        }
+        let (a, b) = (&self.motions[outer], &self.motions[inner]);
+        let plain = a.measured.is_empty() && b.measured.is_empty();
+        let folded = match (&a.def, &b.def) {
+            (MotionDef::Rotation { axis: l, ratio: r1, phase: p1, advance: a1 },
+             MotionDef::Rotation { axis: k, ratio: r2, phase: p2, advance: a2 }) if plain && l == k =>
+                Some(MotionDef::Rotation { axis: *l, ratio: r1 + r2, phase: p1 + p2, advance: a1 + a2 }),
+            (MotionDef::Turn { centre: c, ratio: r1, phase: p1 },
+             MotionDef::Turn { centre: d, ratio: r2, phase: p2 }) if plain && c == d =>
+                Some(MotionDef::Turn { centre: *c, ratio: r1 + r2, phase: p1 + p2 }),
+            (MotionDef::Translation { axis: l, advance: a1 },
+             MotionDef::Translation { axis: k, advance: a2 }) if plain && l == k =>
+                Some(MotionDef::Translation { axis: *l, advance: a1 + a2 }),
+            _ => None,
+        };
+        let class = Classes::default();
+        let def = match folded {
+            Some(def) => def,
+            None => {
+                let inverse = self.motions.len();
+                self.motions.push(MotionE { def: MotionDef::Inverse { of: outer as u32 },
+                    name: format!("{name}⁻"), class: class.clone(), measured: Vec::new() });
+                MotionDef::Relative { source: inner as u32, observer: inverse as u32 }
+            }
+        };
+        self.motions.push(MotionE { def, name: name.to_string(), class, measured: Vec::new() });
+        Ok(self.motions.len() - 1)
     }
 }
 

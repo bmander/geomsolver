@@ -87,6 +87,7 @@ impl Sketch {
                 MotionDef::Turn {centre,..} => std::iter::once(EntRef::point(centre as usize))
                     .chain(m.measured.iter().flat_map(|x| x.value.ents.values().copied())).collect(),
                 MotionDef::Relative {source,observer} => [source,observer].map(|i| EntRef::new(EntKind::Motion,i as usize)).to_vec(),
+                MotionDef::Inverse {of} => vec![EntRef::new(EntKind::Motion,of as usize)],
             } },
             EntKind::Surface => {
                 let s = &self.surfaces[e.i()];

@@ -18,6 +18,17 @@ enum Step {
 }
 
 impl Step {
+    /// The step that undoes this one at every time: a turn, screw or slide run backwards, and the
+    /// relative `observer⁻¹·source` undone as `source⁻¹·observer`.
+    fn inverse(&self) -> Step {
+        match *self {
+            Step::Rotation {origin,axis,ratio,phase,advance} =>
+                Step::Rotation {origin,axis,ratio:-ratio,phase:-phase,advance:-advance},
+            Step::Translation {axis,advance} => Step::Translation {axis,advance:-advance},
+            Step::Relative {source,observer} => Step::Relative {source:observer,observer:source},
+        }
+    }
+
     /// Whether this step carries the plane with unit `normal` within itself: a turn about an axis
     /// square to it that does not screw along it, or a slide along it. A relative is its steps'.
     fn keeps(&self,normal: [f64;3]) -> bool {
@@ -121,6 +132,10 @@ pub struct Family {
 }
 
 impl Family {
+    /// The step the motion is: the last, every other one read by it.  A joint at the root is the
+    /// whole motion, whatever steps an inverse left before it.
+    fn root(&self) -> &Step { self.steps.last().expect("a motion family has a root") }
+
     /// Upper bound on the speed of inverse(M(t))*point per radian, for every t in
     /// `domain`. This bounds the mathematical rigid family represented by the
     /// solved axes; it does not bound roundoff in `at` or error in the solved
@@ -226,8 +241,8 @@ impl Family {
     /// twist is constant — which is what `solid::constant_twist` builds a swept boundary from.
     /// A rotation without advance, a translation and a relative motion are none.
     pub fn screw(&self) -> Option<Screw> {
-        match *self.steps.as_slice() {
-            [Step::Rotation {origin,axis,ratio,advance,..}] if advance != 0. && ratio != 0. =>
+        match *self.root() {
+            Step::Rotation {origin,axis,ratio,advance,..} if advance != 0. && ratio != 0. =>
                 Some(Screw {origin,axis:unit(axis)?,ratio,advance}),
             _ => None,
         }
@@ -237,8 +252,8 @@ impl Family {
     /// rotation with no advance (`advance` nothing) — what a ball under it sweeps is the tube about
     /// a helix or an arc of a circle (`solid::canal`, #238).
     pub fn turning(&self) -> Option<Screw> {
-        match *self.steps.as_slice() {
-            [Step::Rotation {origin,axis,ratio,advance,..}] if ratio != 0. => Some(Screw {origin,axis:unit(axis)?,ratio,advance}),
+        match *self.root() {
+            Step::Rotation {origin,axis,ratio,advance,..} if ratio != 0. => Some(Screw {origin,axis:unit(axis)?,ratio,advance}),
             _ => None,
         }
     }
@@ -290,15 +305,15 @@ impl Family {
     pub fn in_plane(&self,normal: [f64;3],point: [f64;3]) -> Option<PlaneRigid> {
         use crate::space::dot;
         let normal = unit(normal)?;
-        match *self.steps.as_slice() {
-            [ref step @ Step::Rotation {origin,axis,ratio,..}] => {
+        match *self.root() {
+            ref step @ Step::Rotation {origin,axis,ratio,..} => {
                 let axis = unit(axis)?;
                 if !step.keeps(normal) || ratio == 0. { return None; }
                 // the plane turns about where its axis meets it
                 let along = dot([point[0]-origin[0],point[1]-origin[1],point[2]-origin[2]],axis);
                 Some(PlaneRigid::Turn {centre:std::array::from_fn(|k| origin[k]+along*axis[k]),axis,rate:ratio})
             }
-            [ref step @ Step::Translation {axis,advance}] => {
+            ref step @ Step::Translation {axis,advance} => {
                 let axis = unit(axis)?;
                 if !step.keeps(normal) || advance == 0. { return None; }
                 let rate = advance/std::f64::consts::TAU;
@@ -395,6 +410,11 @@ impl Family {
                     source:visit(sk,source as usize,done,visiting,steps,depth+1)?,
                     observer:visit(sk,observer as usize,done,visiting,steps,depth+1)?,
                 },
+                // a joint's inverse turns and slides back, and a relative's swaps its sides
+                MotionDef::Inverse {of} => {
+                    let k = visit(sk,of as usize,done,visiting,steps,depth+1)?;
+                    steps[k].inverse()
+                }
             };
             visiting[i] = false;
             let next = steps.len();

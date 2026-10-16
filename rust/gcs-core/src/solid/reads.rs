@@ -322,6 +322,10 @@ fn motion_reads(sk: &Sketch,motion: u32,values: &mut Vec<f64>) {
                 values.extend([1.,source as f64,observer as f64]);
                 pending.extend([observer,source]);
             }
+            crate::model::MotionDef::Inverse {of} => {
+                values.extend([4.,of as f64]);
+                pending.push(of);
+            }
         }
     }
 }
