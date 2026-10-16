@@ -238,7 +238,7 @@ the concave side constant within the files' sag, no overlap.
 `held::carried` at `τ` degrees — any motion. `held::Step::Turn` (code 4, nine columns: a centre's lift, its view's `u` and `v`) is a turn
 about a point of a view as it reads in space; only `Moving::of_any` reads one.
 
-**A motion's twist, read by rates (#326, #365, [0.122]):** a carried point's rate,
+**A motion's twist, read by rates (#326, #365, [0.130]):** a carried point's rate,
 `rate(X over t)` of `X coincident(under: m, t == τ) x`, is `∂(Pose(τ)·x)/∂τ` a radian
 (`held::carried`, the pose's derivative in the roll carried by its `H2`), every other column held —
 the twist at `X`, any motion's, its twist constant or not.  `Reading::{Rate, RateSquare,

@@ -133,6 +133,8 @@ fn kid_slot(kind: EntKind, label: Option<&str>, positional: usize, in_holes: boo
 /// What a declaration's bracket list carried (`P::decl_list`).
 struct DeclList {
     children: Vec<Vec<Kid>>,
+    normal: Option<Ref>,
+    sense: Option<Sense>,
     swp: SweepParts,
     surface_from: Option<Arg>,
     surface_to: Option<Arg>,
@@ -214,8 +216,8 @@ impl<'a> P<'a> {
         }
         let scalars: Vec<&str> =
             kind.fields().iter().filter(|(_, f)| *f == Field::Scalar).map(|(n, _)| *n).collect();
-        let DeclList { children, swp, surface_from, surface_to, close, list_span, through } =
-            self.decl_list(kind, &name, &scalars)?;
+        let DeclList { children, normal, sense, swp, surface_from, surface_to, close, list_span,
+                       through } = self.decl_list(kind, &name, &scalars)?;
         let angular_span = match (surface_from,surface_to) {
             (None,None) => None,
             (Some(from),Some(to)) => Some(crate::syntax::AngularSpan {from,to,side:None,ease:None}),
@@ -264,6 +266,8 @@ impl<'a> P<'a> {
             close,
             mint_close: None,
             through,
+            normal,
+            sense,
         })
     }
 
@@ -330,6 +334,8 @@ impl<'a> P<'a> {
             close: None,
             mint_close: None,
             through: None,
+            normal: None,
+            sense: None,
         });
     }
 
@@ -350,6 +356,10 @@ impl<'a> P<'a> {
         let mut close: Option<Span> = None;
         // a spline through a chain's corners: the chain, and its end tangents (#243 L7)
         let mut fit: [Option<Ref>; 3] = [None, None, None];
+        // a circle about a point in space, square to an axis (#363 S6)
+        let mut normal: Option<Ref> = None;
+        // an arc drawn in a plane turning clockwise from its start (#363 S4)
+        let mut sense: Option<Sense> = None;
         let name_end = self.prev_hi();
         let open = self.here().lo as usize;
         let mut list_span = Span::at(name_end);
@@ -407,6 +417,20 @@ impl<'a> P<'a> {
                         }
                         fit[k] = Some(self.refr()?);
                     }
+                    Some(l) if kind == EntKind::Arc && l == "sense" => {
+                        if sense.is_some() {
+                            self.fail("`sense:` is given twice");
+                            return None;
+                        }
+                        sense = Some(self.sense_word()?);
+                    }
+                    Some(l) if kind == EntKind::Circle && l == "normal" => {
+                        if normal.is_some() {
+                            self.fail("`normal:` is given twice");
+                            return None;
+                        }
+                        normal = Some(self.refr()?);
+                    }
                     Some(l) if kind == EntKind::Surface && (l == "from" || l == "to") => {
                         let slot = if l == "from" { &mut surface_from } else { &mut surface_to };
                         if slot.is_some() { self.fail("a surface bound is given twice"); return None; }
@@ -462,7 +486,8 @@ impl<'a> P<'a> {
             }
             None => None,
         };
-        Some(DeclList { children, swp, surface_from, surface_to, close, list_span, through })
+        Some(DeclList { children, normal, sense, swp, surface_from, surface_to, close, list_span,
+                        through })
     }
 
     /// One item of a declaration's bracket list, its label (if any) read: a slot names an
@@ -824,6 +849,20 @@ impl<'a> P<'a> {
         self.fail(&m);
     }
 
+    /// Which way, after a `sense:` label: a word, never a sign (§9.2) — a revolution's turn, an
+    /// arc's (#363 S4).
+    fn sense_word(&mut self) -> Option<Sense> {
+        let w = self.ident()?;
+        match w.text.as_str() {
+            "ccw" => Some(Sense::Ccw),
+            "cw" => Some(Sense::Cw),
+            other => {
+                self.fail(&format!("`sense` is `cw` or `ccw`, not `{other}`"));
+                None
+            }
+        }
+    }
+
     /// One of a solid's sweep arguments, the label already eaten: `from: EXPR`, `to: EXPR`,
     /// `depth: EXPR`, `about: REF`, `sweep: EXPR`, `sense: cw|ccw`.
     fn sweep_arg(&mut self, label: &str, parts: &mut SweepParts) -> Option<()> {
@@ -859,15 +898,7 @@ impl<'a> P<'a> {
                 if parts.sense.is_some() {
                     return twice(self);
                 }
-                let w = self.ident()?;
-                parts.sense = Some(match w.text.as_str() {
-                    "ccw" => Sense::Ccw,
-                    "cw" => Sense::Cw,
-                    other => {
-                        self.fail(&format!("`sense` is `cw` or `ccw`, not `{other}`"));
-                        return None;
-                    }
-                });
+                parts.sense = Some(self.sense_word()?);
             }
             _ => {
                 let slot = match label {
@@ -933,7 +964,7 @@ impl<'a> P<'a> {
             seed:vec![],seed_text:vec![],seed_spans:vec![],hint_span:None,knots:None,weights:None,curve:None,
             computed:None,class,class_span,seed_at:None,seed_names:vec![],sweep:None,motion:None,
             angular_span:Some(crate::syntax::AngularSpan {from,to,side,ease:None}),
-            membership:Membership::default(),list_span:Span::new(start.lo as usize,end),close:None,mint_close:None,through:None,
+            membership:Membership::default(),list_span:Span::new(start.lo as usize,end),close:None,mint_close:None,through:None,normal:None,sense:None,
         })
     }
 
@@ -1013,7 +1044,7 @@ impl<'a> P<'a> {
             seed:vec![],seed_text:vec![],seed_spans:vec![],hint_span:None,knots:None,weights:None,curve:None,
             computed:None,class,class_span,seed_at:None,seed_names:vec![],sweep:None,motion:None,
             angular_span:Some(crate::syntax::AngularSpan {from,to,side:None,ease}),
-            membership:Membership::default(),list_span:Span::new(start.lo as usize,end),close:None,mint_close:None,through:None,
+            membership:Membership::default(),list_span:Span::new(start.lo as usize,end),close:None,mint_close:None,through:None,normal:None,sense:None,
         })
     }
 
@@ -1066,7 +1097,7 @@ impl<'a> P<'a> {
             annotations:Default::default(),kind:EntKind::Motion,name,children:vec![vec![]],
             seed:vec![],seed_text:vec![],seed_spans:vec![],hint_span:None,knots:None,weights:None,curve:None,
             computed:None,class,class_span,seed_at:None,seed_names:vec![],sweep:None,motion:Some(spec),angular_span:None,membership:Membership::default(),
-            list_span:Span::new(start.lo as usize,end),close:None,mint_close:None,through:None,
+            list_span:Span::new(start.lo as usize,end),close:None,mint_close:None,through:None,normal:None,sense:None,
         })
     }
 

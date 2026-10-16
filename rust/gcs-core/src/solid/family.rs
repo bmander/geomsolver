@@ -95,8 +95,9 @@ pub(crate) struct Family {
     forward: bool,
     /// The sheet's flatness the family was stepped at.
     tol: f64,
-    /// The flow a station that states a rate was integrated by (#339 D3), for its walls.
-    flow: super::rated::Shared,
+    /// The flow each leg's station was integrated by, where it states a rate (#339 D3; one a
+    /// link of a chain, #363 S4), for its walls.
+    flows: Vec<super::rated::Shared>,
 }
 
 /// The family solid `si` stepped at `unit`, remembered against everything it reads
@@ -124,6 +125,14 @@ fn part_of(sk: &Sketch, face: u32, station: &[EntRef], prefix: &str) -> (Part, V
     let mut held = sk.clone();
     // a copy made to solve reads none of what the drawing remembers
     held.caches = Default::default();
+    // a station a chain's later leg carries, which the drawing held where it was seeded, is
+    // solved here (#363 S4): its rows and its freedom given back
+    for &p in &sk.carried {
+        held.params[p as usize].fixed = false;
+    }
+    for c in &mut held.constraints {
+        c.carried = false;
+    }
     for e in sk.primitives() {
         if inside.contains(&e) {
             continue;
@@ -305,6 +314,23 @@ impl Reading {
             return Ok(None);
         }
         self.solve(sk, s).map(Some)
+    }
+
+    /// The station a leg starts from, at `s`: the drawn one, or the first of a leg carried on
+    /// from the last (`carry_over`), solved and held to the rule every other is.  A carried leg
+    /// whose station states a rate (#363 S4) has its home where the last leg's flow ended: its
+    /// rows met from the state carried across the joint, its rows `initially` no rows of it (they
+    /// hold at the drawn station alone), and its rank the flow's, so no regularity is asked.
+    fn first(&self, sk: &mut Sketch, s: f64, carried: bool, regular: bool)
+        -> Result<(), String> {
+        if !(carried && self.rated.is_some()) {
+            let mut sys = self.solve(sk, s)?;
+            return if regular { Self::regular(&mut sys, sk) } else { Ok(()) };
+        }
+        for c in sk.constraints.iter_mut().filter(|c| c.initially) {
+            c.claim = true;
+        }
+        self.solve(sk, s).map(|_| ())
     }
 
     /// The flow of a station that states a rate, marched from its home where the part stands,
@@ -700,8 +726,7 @@ fn step(lp: &mut LegPart, leg: &Leg, carried: bool) -> Result<Stepped, String> {
     // the drawn station, or the first of a leg carried on from the last, held to the rule every
     // other is
     let first = if carried { leg.from } else { ps.params[rd.held as usize].value };
-    rd.solve(ps, first)
-        .and_then(|mut sys| Reading::regular(&mut sys, ps))
+    rd.first(ps, first, carried, true)
         .map_err(|why| format!("the station at {} {why}", num(first + leg.at)))?;
     // a station that states a rate is integrated from here, its home (#339 D3)
     rd.start_flow(ps, leg.from, leg.to, &Default::default())?;
@@ -748,9 +773,6 @@ fn march(sk: &Sketch, si: usize, unit: f64) -> Result<Family, String> {
         return Err("a face family needs a finite interval running forward".into());
     }
     let legs = def.legs();
-    if legs.len() > 1 && legs.iter().any(|l| super::rated::states_rates(sk, l.held)) {
-        return Err("a station that states a rate runs over one path, not yet a chain".into());
-    }
     let tol = crate::curve::flatness(unit);
     let mut parts: Vec<LegPart> =
         legs.iter().map(|l| leg_part(sk, station, l, tol)).collect::<Result<_, _>>()?;
@@ -821,8 +843,9 @@ fn march(sk: &Sketch, si: usize, unit: f64) -> Result<Family, String> {
         }).collect()
     }).collect();
     let names = parts[0].names.clone();
+    let flows = parts.iter().map(|p| p.rd.flow.borrow().clone()).collect();
     let mut fam = Family { stations: joined(solved.clone()), steps, names, cw: Vec::new(),
-                           forward: true, tol, flow: parts[0].rd.flow.borrow().clone() };
+                           forward: true, tol, flows };
     fam.judge(drawn)?;
     let samples = fam.steps.iter().map(Vec::len).sum();
     let filled = solved.into_iter().map(|leg| densify(leg, tol, samples))
@@ -1327,9 +1350,15 @@ pub(crate) fn walls(sk: &Sketch, si: usize) -> Result<Walls, String> {
         let rd = &lp.rd;
         let runs = runs(ps, rd)?;
         let first = if carried { leg.from } else { ps.params[rd.held as usize].value };
-        rd.solve(ps, first)
+        rd.first(ps, first, carried, false)
             .map_err(|why| format!("the station at {} {why}", num(first + leg.at)))?;
-        rd.start_flow(ps, leg.from, leg.to, &fam.flow)?;
+        let flow = fam.flows.get(k).cloned().unwrap_or_default();
+        rd.start_flow(ps, leg.from, leg.to, &flow)?;
+        // an integrated station starts where its flow does, the one the stepping marched
+        if rd.rated.is_some() {
+            rd.settle(ps, first)
+                .map_err(|why| format!("the station at {} {why}", num(first + leg.at)))?;
+        }
         let centre = Node { s: first, x: ps.get_x(), numbers: numbers(ps, rd)? };
         let tol = EXACT * spread(&runs, &centre.numbers).max(f64::MIN_POSITIVE);
         let up = pieces(ps, rd, &runs, centre.clone(), leg.to, tol)?;

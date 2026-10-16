@@ -5,13 +5,14 @@
 //! reads the same thing: the contact's **frame** there, the derivative of its place in its slots.
 //! The rate in one slot, `rate(p over t)`, held along a line or square to one or measured along
 //! one; the normal, square to every rate of a surface; a plane along that normal; a line in the
-//! tangent plane, square to it; and the circle osculating a section, the second rates read through
-//! Meusnier.  So one kernel reads them all (`CKind::Rate`, `CKind::RateDistance`), its rows formed
-//! here over a `Frame`, and each **source** only says what its frame is: a spline's and a curve's
-//! in their view (`kernels::spline_rate`, `curve_rate`), a traced body's (`traced::frame`), a
-//! meshing's (`meshing::frame`, the path of contact by the implicit function theorem, the common
-//! normal the gear's flank's), a carried point's (`held::carried`) and an envelope's
-//! (`held::frame`).
+//! tangent plane, square to it; the circle osculating a section, the second rates read through
+//! Meusnier; and a curve's centre of curvature, from its first rate and its second.  So one
+//! kernel reads them all (`CKind::Rate`, `CKind::RateDistance`), its rows formed here over a
+//! `Frame` in the form the source's own kernel had (`Form`), and each **source** only says what
+//! its frame is: a spline's and a curve's in their view (`kernels::spline_rate`, `curve_rate`), a
+//! traced body's (`traced::frame`), a meshing's (`meshing::frame`, the path of contact by the
+//! implicit function theorem, the common normal the gear's flank's), a carried point's
+//! (`held::carried`) and an envelope's (`held::frame`).
 //!
 //! **Partial, never total**: a source's frame is the derivative in its own slots with every other
 //! column held — a contact's own other unknowns following its rows where the source says so (a
@@ -22,7 +23,8 @@
 //!
 //! **Layout.**  Columns `[lead…, source…, free?]`: what the frame is held against — a line drawn in
 //! the view (four), a line's lifted ends or an axis's place and direction (six), a plane's two axes
-//! (six), a circle's centre's lift, radius and plane's two axes (ten) — then the source's own
+//! (six), a circle's centre's lift, radius and plane's two axes (ten), a point's lift (three) —
+//! then the source's own
 //! columns, then a distance's unknown where it is written free.  Constants `[HEADER…, source…]`:
 //! the source, the word, the slot, whether the distance is free, the distance as `(m, c)`, then
 //! the source's own.
@@ -33,7 +35,7 @@ use crate::kernels::{curve_widths, Dual, Kernel, KernelFn, Num};
 pub const HEADER: usize = 6;
 
 /// The numbers of a frame, flat.
-const FLAT: usize = 21;
+const FLAT: usize = 24;
 
 /// The smallest normal curvature a section's circle divides by.
 const FLATTEST: f64 = 1e-12;
@@ -78,6 +80,42 @@ impl Source {
     pub fn curve(body: u8) -> Source {
         Source::ALL[1 + body.min(3) as usize]
     }
+
+    /// The form its rate is held to a line in.
+    pub fn form(self) -> Form {
+        match self {
+            _ if self.planar() => Form::Planar,
+            Source::Carried => Form::Velocity,
+            Source::Meshing => Form::Path,
+            _ => Form::Direction,
+        }
+    }
+}
+
+/// **How a source's rate is held to a line**: one word, its rows the form the source's own kernel
+/// had (#365's second question, settled in `docs/contract/curves.md`), so folding a kind onto the
+/// rate changed no value it solved to and no path its solve took.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Form {
+    /// A curve in its view: `(C′ × (B − A))/‖B − A‖`, the rate across the line drawn there.
+    Planar = 0,
+    /// A carried point's velocity across or along the line — a length a radian, regular where it
+    /// vanishes (a point on the axis of a screw of no pitch).
+    Velocity = 1,
+    /// A traced curve's tangent: the line's direction against two unit directions square to the
+    /// rate (`screw::square_to`), or along it — cosines.
+    Direction = 2,
+    /// A meshing's path of contact: the same, the two directions square to the path across the
+    /// world axis it runs least along (`across_least`).
+    Path = 3,
+}
+
+impl Form {
+    pub const ALL: [Form; 4] = [Form::Planar, Form::Velocity, Form::Direction, Form::Path];
+
+    pub fn planar(self) -> bool {
+        self == Form::Planar
+    }
 }
 
 /// What a frame is held to: a word of the language, as a rate of a contact states it.
@@ -97,11 +135,14 @@ pub enum Word {
     InPlane = 5,
     /// `S curvature(at: p) k`: the circle osculating the section by its plane at `p`.
     Curvature = 6,
+    /// `k curvature(at: p) c`, `k` a curve in space and `c` a point: the centre of its osculating
+    /// circle (#363 S5).
+    Centre = 7,
 }
 
 impl Word {
-    pub const ALL: [Word; 7] = [Word::Parallel, Word::Square, Word::Along, Word::Normal,
-                                Word::Plane, Word::InPlane, Word::Curvature];
+    pub const ALL: [Word; 8] = [Word::Parallel, Word::Square, Word::Along, Word::Normal,
+                                Word::Plane, Word::InPlane, Word::Curvature, Word::Centre];
 
     /// The word a `Rate` holds in its `word` slot, and a distance's.
     pub fn of(written: &str) -> Option<Word> {
@@ -113,6 +154,7 @@ impl Word {
             "plane" => Word::Plane,
             "in_plane" => Word::InPlane,
             "curvature" => Word::Curvature,
+            "centre" => Word::Centre,
             _ => return None,
         })
     }
@@ -122,7 +164,7 @@ impl Word {
             Word::Parallel if planar => 1,
             Word::Parallel | Word::Normal | Word::Plane => 2,
             Word::Square | Word::Along | Word::InPlane => 1,
-            Word::Curvature => 3,
+            Word::Curvature | Word::Centre => 3,
         }
     }
 
@@ -131,22 +173,24 @@ impl Word {
         match self {
             _ if planar => 4,
             Word::Curvature => 10,
+            Word::Centre => 3,
             _ => 6,
         }
     }
 
     /// A rate's components are lengths a unit of the slot, and a circle's offsets lengths; a
-    /// direction against the normal is cosines.
-    pub fn degree(self) -> u32 {
+    /// direction against the normal or the unit rate is cosines.
+    pub fn degree(self, form: Form) -> u32 {
         match self {
             Word::Normal | Word::Plane | Word::InPlane => 0,
+            Word::Parallel | Word::Square if matches!(form, Form::Direction | Form::Path) => 0,
             _ => 1,
         }
     }
 
     /// Whether the frame's second order is read.
     pub fn second(self) -> bool {
-        self == Word::Curvature
+        matches!(self, Word::Curvature | Word::Centre)
     }
 
     fn name(self) -> &'static str {
@@ -158,14 +202,16 @@ impl Word {
             Word::Plane => "rate_plane",
             Word::InPlane => "rate_in_plane",
             Word::Curvature => "rate_curvature",
+            Word::Centre => "rate_centre",
         }
     }
 }
 
 /// **A contact's frame** at the point it holds: the point, the rate in the slot a statement names,
-/// a direction a normal's rows are read across, the unit normal, and — of a surface, its second
-/// order asked — two directions of its tangent plane and its second fundamental form along them,
-/// `[L, M, N]`.  What a source has not (a curve's normal) is zero.
+/// a direction a normal's rows are read across, the unit normal, and — its second order asked —
+/// the second rate in that slot and, of a surface, two directions of its tangent plane and its
+/// second fundamental form along them, `[L, M, N]`.  What a source has not (a curve's normal) is
+/// zero.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Frame<T> {
     pub x: [T; 3],
@@ -174,17 +220,19 @@ pub(crate) struct Frame<T> {
     pub n: [T; 3],
     pub tan: [[T; 3]; 2],
     pub second: [T; 3],
+    pub accel: [T; 3],
 }
 
 impl<T: Num> Frame<T> {
     pub fn zero() -> Frame<T> {
         let z = [T::cst(0.0); 3];
-        Frame { x: z, rate: z, across: z, n: z, tan: [z; 2], second: z }
+        Frame { x: z, rate: z, across: z, n: z, tan: [z; 2], second: z, accel: z }
     }
 
     fn flat(&self) -> [T; FLAT] {
         let mut a = [T::cst(0.0); FLAT];
-        let parts = [self.x, self.rate, self.across, self.n, self.tan[0], self.tan[1], self.second];
+        let parts = [self.x, self.rate, self.across, self.n, self.tan[0], self.tan[1], self.second,
+                     self.accel];
         for (k, p) in parts.iter().enumerate() {
             a[3 * k..3 * k + 3].copy_from_slice(p);
         }
@@ -193,7 +241,8 @@ impl<T: Num> Frame<T> {
 
     fn read(a: &[T; FLAT]) -> Frame<T> {
         let c = |k: usize| col3(a, 3 * k);
-        Frame { x: c(0), rate: c(1), across: c(2), n: c(3), tan: [c(4), c(5)], second: c(6) }
+        Frame { x: c(0), rate: c(1), across: c(2), n: c(3), tan: [c(4), c(5)], second: c(6),
+                accel: c(7) }
     }
 }
 
@@ -346,9 +395,21 @@ fn normal_curvature<T: Num>(f: &Frame<T>, w: [T; 3]) -> T {
     second / first
 }
 
-/// A word's rows over the lead `lead` and the frame `f`, the distance `stated`, into `out`.
-fn rows<T: Num>(w: Word, planar: bool, lead: &[T], f: &Frame<T>, stated: T, out: &mut [T]) {
-    if planar {
+/// Two unit directions square to `t` and to each other, across the world axis `t` runs least
+/// along — the meshing's path-of-contact basis, kept (`Form::Path`).
+fn across_least<T: Num>(t: [T; 3]) -> [[T; 3]; 2] {
+    let t = unit(t);
+    let least = (0..3).min_by(|&i, &j| t[i].val().abs().total_cmp(&t[j].val().abs())).unwrap_or(0);
+    let mut e = [T::cst(0.0); 3];
+    e[least] = T::cst(1.0);
+    let a = unit(cross(t, e));
+    [a, cross(t, a)]
+}
+
+/// A word's rows over the lead `lead` and the frame `f`, the distance `stated`, into `out`, in the
+/// source's form.
+fn rows<T: Num>(w: Word, form: Form, lead: &[T], f: &Frame<T>, stated: T, out: &mut [T]) {
+    if form.planar() {
         // a line drawn in the view: the rate across it and along it over its length, as a
         // curve's tangency is read
         let (dx, dy) = (lead[2] - lead[0], lead[3] - lead[1]);
@@ -366,11 +427,25 @@ fn rows<T: Num>(w: Word, planar: bool, lead: &[T], f: &Frame<T>, stated: T, out:
     let dir = || unit(vsub(col3(lead, 3), col3(lead, 0)));
     match w {
         Word::Parallel => {
-            let (e1, e2) = crate::envelope::screw::square_to(dir());
-            out[0] = dot(f.rate, e1);
-            out[1] = dot(f.rate, e2);
+            let (a, b, against) = match form {
+                Form::Velocity => {
+                    let (e1, e2) = crate::envelope::screw::square_to(dir());
+                    (e1, e2, f.rate)
+                }
+                Form::Path => {
+                    let [e1, e2] = across_least(f.rate);
+                    (e1, e2, dir())
+                }
+                _ => {
+                    let (e1, e2) = crate::envelope::screw::square_to(unit(f.rate));
+                    (e1, e2, dir())
+                }
+            };
+            out[0] = dot(against, a);
+            out[1] = dot(against, b);
         }
-        Word::Square => out[0] = dot(f.rate, dir()),
+        Word::Square if form == Form::Velocity => out[0] = dot(f.rate, dir()),
+        Word::Square => out[0] = dot(dir(), unit(f.rate)),
         Word::Along => out[0] = dot(f.rate, dir()) - stated,
         Word::InPlane => out[0] = dot(dir(), f.n),
         Word::Normal | Word::Plane => {
@@ -404,6 +479,19 @@ fn rows<T: Num>(w: Word, planar: bool, lead: &[T], f: &Frame<T>, stated: T, out:
             out[1] = dot(off, b);
             out[2] = dot(to, to).sqrt() - r;
         }
+        // the osculating circle's centre: `X + |X′|²·(b × X′)/|b|²`, `b = X′ × X″` the binormal
+        // times `|X′|³κ` — no centre where it vanishes, its square floored so the rows stay
+        // finite and the rank says so
+        Word::Centre => {
+            let b = cross(f.rate, f.accel);
+            let bb = dot(b, b);
+            let floor = FLATTEST * FLATTEST;
+            let bb = if bb.val() > floor { bb } else { T::cst(floor) };
+            let off = vscale(cross(b, f.rate), dot(f.rate, f.rate) / bb);
+            for i in 0..3 {
+                out[i] = lead[i] - (f.x[i] + off[i]);
+            }
+        }
     }
 }
 
@@ -417,14 +505,14 @@ fn widths(h: &Header, n_cols: usize) -> Option<(usize, usize)> {
 /// One block's rows, `out` its residuals.
 fn block_rows(x: &[f64], k: &[f64], out: &mut [f64]) -> Option<()> {
     let h = header(k)?;
-    let planar = h.source.planar();
+    let form = h.source.form();
     let (lead, own) = widths(&h, x.len())?;
-    if out.len() != h.word.rows(planar) {
+    if out.len() != h.word.rows(form.planar()) {
         return None;
     }
     let f = source_frame(&h, &x[lead..lead + own], false)?.frame;
     let stated = if h.free { h.stated[0] * x[lead + own] + h.stated[1] } else { h.stated[1] };
-    rows(h.word, planar, &x[..lead], &f, stated, out);
+    rows(h.word, form, &x[..lead], &f, stated, out);
     out.iter().all(|v| v.is_finite()).then_some(())
 }
 
@@ -432,9 +520,9 @@ fn block_rows(x: &[f64], k: &[f64], out: &mut [f64]) -> Option<()> {
 /// the rows over the frame linearised a pass of columns at a time.
 fn block_jac(x: &[f64], k: &[f64], j: &mut [f64]) -> Option<()> {
     let h = header(k)?;
-    let planar = h.source.planar();
+    let form = h.source.form();
     let (lead, own) = widths(&h, x.len())?;
-    let m = h.word.rows(planar);
+    let m = h.word.rows(form.planar());
     if j.len() != m * x.len() {
         return None;
     }
@@ -448,7 +536,7 @@ fn block_jac(x: &[f64], k: &[f64], j: &mut [f64]) -> Option<()> {
             true => Dual::cst(h.stated[0]) * cols[lead + own] + Dual::cst(h.stated[1]),
             false => Dual::cst(h.stated[1]),
         };
-        rows(h.word, planar, &cols[..lead], &f, stated, &mut out);
+        rows(h.word, form, &cols[..lead], &f, stated, &mut out);
         held::scatter_pass(&out, j, start);
     }
     Some(())
@@ -467,7 +555,8 @@ fn jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
 
 /// **The kernel** of a rate of a contact, at a block's widths: one, whatever the source, its rows
 /// the word's (`system::build_kernel`).
-pub fn kernel(word: Word, planar: bool, n_par: usize, n_const: usize) -> Kernel {
-    Kernel { name: word.name(), n_res: word.rows(planar), n_par, n_const, degree: word.degree(),
+pub fn kernel(word: Word, form: Form, n_par: usize, n_const: usize) -> Kernel {
+    Kernel { name: word.name(), n_res: word.rows(form.planar()), n_par, n_const,
+             degree: word.degree(form),
              res: res as KernelFn, jac: jac as KernelFn, const_jac: None, form: None }
 }

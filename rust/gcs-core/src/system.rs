@@ -547,9 +547,10 @@ pub fn build_kernel(sk: &Sketch, key: KernelKey) -> Kernel {
         KernelKey::Traced { contact, n_par, n_const } => {
             crate::traced::kernel(crate::traced::Contact::ALL[contact as usize], n_par, n_const)
         }
-        KernelKey::Rate { word, planar, n_par, n_const } => {
-            let w = crate::contact_rate::Word::ALL[word as usize];
-            crate::contact_rate::kernel(w, planar, n_par, n_const)
+        KernelKey::Rate { word, form, n_par, n_const } => {
+            use crate::contact_rate::{Form, Word};
+            crate::contact_rate::kernel(Word::ALL[word as usize], Form::ALL[form as usize], n_par,
+                                        n_const)
         }
         KernelKey::Motion { reading, n_par, n_const } => {
             crate::envelope::screw::kernel(crate::envelope::screw::Reading::ALL[reading as usize], n_par, n_const)

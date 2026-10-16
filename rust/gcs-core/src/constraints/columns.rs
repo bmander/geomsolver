@@ -345,6 +345,7 @@ impl Constraint {
                 let v = sk.plane_of(c).map_or_else(Vec::new, |v| plane_columns(sk, v)[3..].to_vec());
                 [lift(c), vec![sk.round_radius(to) as u32], v].concat()
             }
+            (false, crate::contact_rate::Word::Centre) => lift(to.i()),
             (false, _) if to.kind == EntKind::Plane => plane_columns(sk, to.i())[3..].to_vec(),
             (false, _) => self.direction_columns(sk, 1),
         };
@@ -664,6 +665,12 @@ impl Constraint {
                     pt_at(a.center), pt_at(a.start), pt_at(a.end), vec![self.args[2].param()]]
                     .concat()
             }
+            // the point of contact, the centre and the line's ends in space, then the round's
+            // plane's axes
+            CKind::TangentCircleAt3 => {
+                let v = self.attitude_read(sk).expect("a circle in space is drawn in a plane");
+                [self.lifted_columns(sk), plane_columns(sk, v)[3..].to_vec()].concat()
+            }
             CKind::Radius => vec![rad(0)],
             CKind::EqualRadius | CKind::AnnularDistance => vec![rad(0), rad(1)],
             CKind::TangentLineCircle => [ln(0), centre(1), vec![rad(1)]].concat(),
@@ -890,6 +897,9 @@ impl Constraint {
             | CKind::PlaneDistance => Vec::new(),
             CKind::LineOnPlane | CKind::LineOnAxis => ends(0).to_vec(),
             CKind::PointOnCircle3 | CKind::PointAlongArc3 => vec![e(0).i(), sk.round_center(e(1))],
+            CKind::TangentCircleAt3 => {
+                [vec![e(2).i(), sk.round_center(e(0))], ends(1).to_vec()].concat()
+            }
             CKind::PointOnExtrusion | CKind::PointOnAxis => vec![e(0).i()],
             // what it states about, then every point its envelope's source and motion read (#283)
             // the point, then every point its envelope's source and motion read (#283)
@@ -901,12 +911,13 @@ impl Constraint {
                 let parts = self.meshing_parts(sk).map(|p| p.lifted(sk)).unwrap_or_default();
                 [vec![e(0).i()], parts].concat()
             }
-            // a rate in space: its line's ends or its circle's centre, then every point its source
-            // reads (#365)
+            // a rate in space: its line's ends, its circle's centre or the centre of curvature,
+            // then every point its source reads (#365)
             CKind::Rate | CKind::RateDistance => {
                 let lead = match e(1).kind {
                     EntKind::Line => ends(1).to_vec(),
                     EntKind::Circle | EntKind::Arc => vec![sk.round_center(e(1))],
+                    EntKind::Point => vec![e(1).i()],
                     _ => Vec::new(),
                 };
                 let source = match self.rate_source() {
@@ -1027,6 +1038,7 @@ impl Constraint {
             CKind::PointOnCircle3 | CKind::PointAlongArc3 => {
                 sk.plane_of(sk.round_center(self.args[1].ent()))
             }
+            CKind::TangentCircleAt3 => sk.plane_of(sk.round_center(self.args[0].ent())),
             _ => None,
         }
     }

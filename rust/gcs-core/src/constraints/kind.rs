@@ -228,6 +228,11 @@ pub enum CKind {
     /// `PointAlongArc` across views: the point's hidden point at the fraction `t` of the arc's
     /// turn, read in the plane the arc is drawn in and stood in space there (#248).
     PointAlongArc3,
+    /// A line touching a circle or an arc at a point of it, the line drawn out of the round's
+    /// plane (#363 S4): its direction square to the radius to `at` and in the round's plane — two
+    /// rows over the hidden points, `TangentCircleAt`'s and a chain joint's (`TangentArcLine`) in
+    /// space.  What makes a straight between bends in two planes one link of a chain.
+    TangentCircleAt3,
     /// `P coincident l`: a line on a plane in space, both its ends.
     LineOnPlane,
     /// A point the midpoint of a line drawn in another view, in space.
@@ -311,9 +316,9 @@ pub enum CKind {
 /// The words a rate of a contact is held by (#365): `tangent` is `parallel` written as the
 /// tangent at the point (`g tangent(at: m) l`), and printed back so; `normal`, `plane`,
 /// `in_plane` and `curvature` are a surface's, written `perpendicular(at:)`, `tangent(at:)` and
-/// `curvature(at:)`.
-pub const RATE_WORDS: [&str; 7] =
-    ["tangent", "parallel", "perpendicular", "normal", "plane", "in_plane", "curvature"];
+/// `curvature(at:)`; `centre` a curve's centre of curvature, written `curvature(at:)` of a point.
+pub const RATE_WORDS: [&str; 8] =
+    ["tangent", "parallel", "perpendicular", "normal", "plane", "in_plane", "curvature", "centre"];
 
 /// What a rate of a contact reads its rate off (#365): what the contact holding its point is on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -348,6 +353,17 @@ impl RateSource {
     /// Read in a view, as against in space.
     pub fn planar(self) -> bool {
         matches!(self, RateSource::Spline | RateSource::Curve)
+    }
+
+    /// The form its rate is held to a line in (`contact_rate::Form`).
+    pub fn form(self) -> crate::contact_rate::Form {
+        use crate::contact_rate::Form;
+        match self {
+            RateSource::Spline | RateSource::Curve => Form::Planar,
+            RateSource::Carried => Form::Velocity,
+            RateSource::Meshing => Form::Path,
+            RateSource::Traced | RateSource::Envelope => Form::Direction,
+        }
     }
 
     /// The slot a rate of it runs over, as the contact writes it: a traced curve's place is its
@@ -406,7 +422,7 @@ impl FamilyKernel {
 }
 
 /// Every concrete constraint type, in the order the registry lists them.
-pub const ALL_KINDS: [CKind; 81] = [
+pub const ALL_KINDS: [CKind; 82] = [
     CKind::Coincident,
     CKind::Distance,
     CKind::Midpoint,
@@ -488,6 +504,7 @@ pub const ALL_KINDS: [CKind; 81] = [
     CKind::MappedCircle,
     CKind::Rate,
     CKind::RateDistance,
+    CKind::TangentCircleAt3,
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -540,8 +557,8 @@ pub enum SpecKind {
     /// traced body, a meshing, or the motion a point is carried by.  Inferred where a rate is
     /// written, from the contact holding its point.
     Carrier,
-    /// What a contact's frame is held against (#365): a line or an axis, a plane, or a circle,
-    /// by the rate's word (`CKind::Rate`).
+    /// What a contact's frame is held against (#365): a line or an axis, a plane, a circle, or a
+    /// point at a curve's centre of curvature, by the rate's word (`CKind::Rate`).
     Against,
     /// A number with no unit, a ratio (#345): an area factor.  A dimension, as a length and an
     /// angle are, of no dimension.
@@ -709,6 +726,7 @@ impl CKind {
             CKind::PointAlongArc => "PointAlongArc",
             CKind::PointAlongLine3 => "PointAlongLine3",
             CKind::PointAlongArc3 => "PointAlongArc3",
+            CKind::TangentCircleAt3 => "TangentCircleAt3",
             CKind::Ordinate => "Ordinate",
             CKind::Level => "Level",
             CKind::PointOnCurve => "PointOnCurve",
@@ -910,7 +928,7 @@ impl CKind {
                 ("on", S::Carrier), ("along", S::Direction), ("at", S::Point), ("d", S::Length),
                 ("t", S::Param), ("over", S::Str),
             ],
-            CKind::TangentCircleAt => {
+            CKind::TangentCircleAt | CKind::TangentCircleAt3 => {
                 &[("circle", S::CircleOrArc), ("line", S::Line), ("at", S::Point)]
             }
             CKind::CurveCurvature => {
@@ -1182,6 +1200,7 @@ impl CKind {
             CKind::EqualLength3 => ("equal", Infix),
             CKind::PointOnPlane => ("coincident", Infix),
             CKind::PointOnCircle3 => ("coincident", Infix),
+            CKind::TangentCircleAt3 => ("tangent", Infix),
             CKind::PointOnLine3 => ("coincident", Infix),
             CKind::Midpoint3 => ("midpoint", Infix),
             CKind::Symmetric3 => ("symmetry", Infix),
@@ -1617,6 +1636,7 @@ impl CKind {
             | CKind::Parallel3
             | CKind::PointOnPlane
             | CKind::PointOnCircle3
+            | CKind::TangentCircleAt3
             | CKind::PointOnLine3
             | CKind::EqualLength3
             | CKind::LineOnPlane
@@ -1744,6 +1764,7 @@ impl CKind {
             CKind::PointAlongArc => K::PointAlongArc,
             CKind::PointAlongLine3 => K::PointAlongLine3,
             CKind::PointAlongArc3 => K::PointAlongArc3,
+            CKind::TangentCircleAt3 => K::TangentCircleAt3,
             // an ordinate's kernel is its form's (`Constraint::kernel`); the kind's own is the run,
             // and a level's the line kernel that reads a pair of points' heights alike
             CKind::Ordinate => K::OrdinateU,
@@ -1881,6 +1902,7 @@ impl CKind {
             | CKind::Parallel3
             | CKind::PointOnPlane
             | CKind::PointOnCircle3
+            | CKind::TangentCircleAt3
             | CKind::PointOnLine3
             | CKind::EqualLength3
             | CKind::LineOnPlane
@@ -1921,6 +1943,7 @@ impl CKind {
                 | CKind::Parallel3
                 | CKind::PointOnPlane
                 | CKind::PointOnCircle3
+                | CKind::TangentCircleAt3
                 | CKind::ProjectSolved
                 | CKind::PointOnLine3
                 | CKind::PointAlongLine3

@@ -1089,6 +1089,8 @@ impl<'a> P<'a> {
             close: None,
             mint_close: None,
             through: None,
+            normal: None,
+            sense: None,
         })
     }
 

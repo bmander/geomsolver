@@ -138,7 +138,7 @@ or a nonzero multiple of it, it is that held name; where a component is expanded
 (`sym`) a formal handed on as itself is the caller's (`Drag(…, u: u)`) and one given an
 expression in it E103; a name in scope that is no formal, E040.  **A name nothing in scope is**,
 outside a trace and a face family's station, is the slot of the contact holding the rate's point
-(#365, [0.122]): `rate_over` returns the empty name and the rate is marked `RateOf::slot`, kept
+(#365, [0.130]): `rate_over` returns the empty name and the rate is marked `RateOf::slot`, kept
 with the name as written, and `constrain` settles it as a row like any other (`settle_rate`,
 relations.md's "The rate of a contact") rather than `rate_row`'s.  It passes no plane
 membership (`drawn_incidences`, `planes::incidences`).  In a trace the lowering takes it

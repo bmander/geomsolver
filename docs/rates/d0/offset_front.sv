@@ -1,6 +1,12 @@
 // D0 (#339): an ellipse whose points move inward at unit speed square to it, in the proposed
 // spelling. Does not parse: it stops at `initially`. D4's first gate: a first-order PDE.
 //
+// Kept as D0 proposed it. Its runnable form is `rust/examples/rates/front.sv` (D4): a body over
+// two formals is traced in space, so `front.sv` gives the ellipse its axes as lines in place of
+// `right` and `up`, and states the normal in the ellipse's plane and square to `rate(p over u)` in
+// place of the directed `angle(90deg)` a plane would read; `front` and `folded` there are this
+// file's two, over the arc u in (−60°, 60°) rather than the whole turn.
+//
 // A body over two formals: `d`, how far the front has moved, and `u`, the ellipse's eccentric
 // angle. The first formal written in `over (…, …)` is marched; the second is sampled at nodes and
 // its rates are read off them (the method of lines). `initially` is the Cauchy data: at d = 0 the

@@ -462,6 +462,10 @@ fn holds(
     // its free axes with it
     cx.diags.extend(views::origins_on_axes(&mut cx.sk, &cx.map));
     views::stand_axes(&mut cx.sk);
+    entities::splines_in_space(&mut cx.sk, &mut cx.res, &mut cx.map);
+    let back = entities::walked_back(&cx.sk, &cx.res, &mut cx.diags);
+    entities::arcs_in_space(&mut cx.sk, &cx.map, deferred, &back, &mut cx.diags);
+    entities::circles_in_space(&mut cx.sk, &cx.res, &cx.map, deferred, &mut cx.diags);
     entities::drawn_in_planes(&cx.sk, &cx.map, &mut cx.diags);
     entities::axes_along(&mut cx.sk, deferred);
     // each normal read turned along its plane as the holds and the lines have stood it
@@ -608,7 +612,7 @@ fn walked(cx: &mut Elab<'_>, deferred: &[Deferred], held: &BTreeSet<u32>) {
 /// else holds it on each (§6.7); the rings' contacts; and each tangency at a point gauging its
 /// directions where the point stands (§6.21).
 fn twins(cx: &mut Elab<'_>, flat: &Flat<'_>) {
-    relations::kinds(&cx.map, &flat.expansion.kinds, &mut cx.diags);
+    relations::kinds(&cx.sk, &cx.map, &flat.expansion.kinds, &mut cx.diags);
     relations::tangents_at(&cx.sk, &cx.map, &mut cx.diags);
     planes::tie_twins(&mut cx.sk, &cx.map, &mut cx.diags);
     cx.sk.hold_twins();
@@ -669,6 +673,7 @@ fn solids_and_surfaces(
     let Elab { sk, res, map, diags, probes, .. } = cx;
     let (body, skip) = (&flat.body, &flat.skip);
     solids(sk, res, map, body, skip, probes, diags);
+    super::solids::carry_legs(sk);
     // the faces of the solids a block runs over, named for the next pass (#183 F4)
     let unnamed: BTreeMap<String, Vec<FacePath>> = flat.expansion.face_repeats.iter()
         .filter(|abs| !faces.contains_key(*abs))

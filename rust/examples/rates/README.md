@@ -17,7 +17,9 @@ Read them in this order:
 | `chain.sv` | **A two-point problem is a drawing.** A hanging chain's pulls left as unknowns, shot to its far end through the flow's sensitivities — beside the free curve of the same length, which hangs the same. The catenary. |
 | `pursuit.sv` | **Rates between moving points, and where they stop.** A dog runs at a hare twice as fast; the line between them is the direction, and where it vanishes the curve is refused: the capture. |
 | `geodesic.sv` | **In space, a rank and not a count.** A filament wound on a cone bends only toward the surface's normal; a `parallel` in space is two rows and the cone already implies one. Written in place, set off by `initially`. A straight line unrolled. |
-| `front.sv` | **Two formals: a first-order PDE.** An ellipse's points move inward at unit speed, square to the front — a law and a gauge — marched along how far it has moved, sampled along the ellipse by the method of lines; `initially` is the Cauchy data. The front is the ellipse offset, and where its least radius of curvature runs out it folds and is refused. Issue #339, item D4. |
+| `front.sv` | **Two formals: a first-order PDE.** An ellipse's points move inward at unit speed, square to the front — a law and a gauge — marched along how far it has moved, sampled along the ellipse by the method of lines; `initially` is the Cauchy data. The front is the ellipse offset, and where its least radius of curvature runs out it folds and is refused: `folded` runs it there, and `solventc` says where. A point held on the major axis is found on the surface at its place, and a claim says the surface stays in the ellipse's plane. Issue #339, item D4. |
+| `geodesic_circles.sv` | **A front on a surface.** A row over the moved point alone holds it to a sphere or a cone, and the front's normal is placed in the tangent plane. On the sphere the circles of latitude close on the antipode, where the front focuses and is refused; on the cone, unrolled, the fronts are circles about the apex. The starting circles are written by their own ordinates, the seeds are plain numbers that pick each root. Issue #370. |
+| `housing.sv` | **An offset with a design rule.** A Wankel bore is the epitrochoid's parallel curve at the apex seal's radius: the front moves outward from the curve the seal's centre runs on. Outward a front folds only where its curve is concave — at the trochoid's waist — so the seal's radius must stay below the waist's radius of curvature; run past it the march is refused there. Issue #370. |
 
 What the words are:
 
@@ -35,6 +37,12 @@ What the words are:
   nodes, a rate along either. A rate along the second is read off the nodes, of a point the rates
   move, in a relation that places a point they do not (the front's normal) or a rate row. Along an
   angle a rate is per radian.
+
+- **What a front cannot say yet** — its Cauchy data are written in `initially`, by relations and
+  expressions, never read off a curve the drawing has (an envelope, a spline, another traced
+  curve) nor a point a motion carries, so a starting circle is written by its ordinates; its speed reads the formals and the given numbers, never its own point; and a surface is
+  sampled on 32 pieces whatever its length, so a whole turn is resolved three times as coarsely
+  as a third of one (`housing.sv` marches half its bore, the other half its mirror).
 
 `solventc` says of each such curve how far it is integrated, or where it is refused. Each file's
 test is in `rust/gcs-core/tests/rate_examples.rs`, its curves against the closed forms in its

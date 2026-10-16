@@ -48,6 +48,12 @@ component Held(g: path, up: axis, s: Scalar) {
   f := face(sec.a, sec.b, sec.c, sec.d, -> close)
 }
 
+component Algebraic(g: spline, up: axis, s: Scalar) {
+  st := std.OnSpline(g, up: up, s: s)
+  sec := Rect(st.n, off: 2mm, w: 3mm, h: 1mm)
+  f := face(sec.a, sec.b, sec.c, sec.d, -> close)
+}
+
 component Rect(n: plane, off: Length, w: Length, h: Length) {
   in n {
     a := point
@@ -200,17 +206,24 @@ frenet := solid(Frenet(std.top, r: 10mm, pitch: 5mm, turns: 4).f over s in (0, 1
 fn on_a_planar_guide_the_word_is_ons_frame() {
     let e = with("
 minimal := solid(Tube(curvy, std.z).f over s in (0, 1))
-held := solid(Held(curvy, std.z).f over s in (0, 1))");
-    near(exact(&e, "minimal"), exact(&e, "held"), 1e-9, "the volumes");
-    let sorted = |name: &str| {
-        let mut ps: Vec<V> = brep(&e, name).vertices.iter().map(|v| v.p).collect();
-        ps.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        ps
-    };
-    let (a, b) = (sorted("minimal"), sorted("held"));
-    assert_eq!(a.len(), b.len());
-    for (p, q) in a.iter().zip(&b) {
-        assert!((0..3).all(|k| (p[k] - q[k]).abs() <= 1e-9), "{p:?} against {q:?}");
+held := solid(Held(curvy, std.z).f over s in (0, 1))
+algebraic := solid(Algebraic(curvy, std.z).f over s in (0, 1))");
+    let corners = |name: &str| -> Vec<V> { brep(&e, name).vertices.iter().map(|v| v.p).collect() };
+    // `std.On`'s frame is integrated too (#363 S2): over a planar guide it is the frame that
+    // holds `v` along `up` at every station, `OnSpline`'s.  Corners paired by nearness: two may
+    // share a coordinate to the last bits, which an order would not pair
+    let a = corners("minimal");
+    for other in ["held", "algebraic"] {
+        near(exact(&e, "minimal"), exact(&e, other), 1e-9, other);
+        let b = corners(other);
+        assert_eq!(a.len(), b.len());
+        for (from, to) in [(&a, &b), (&b, &a)] {
+            for p in from {
+                let d = to.iter().map(|q| dot(sub(*p, *q), sub(*p, *q)).sqrt())
+                    .fold(f64::MAX, f64::min);
+                assert!(d <= 1e-9, "{other}: {p:?} is {d} from the nearest corner");
+            }
+        }
     }
 }
 
@@ -252,8 +265,8 @@ loose := solid(Loose(curvy, std.z).k over s in (0, 1))
     assert!(said.contains("is short of rates: 2 degrees of freedom along its running number"),
             "{said}");
     let home = format!("{RATES}
-component Homely(g: path, up: axis, s: Scalar) {{
-  st := std.On(g, up: up, s: s)
+component Homely(g: spline, up: axis, s: Scalar) {{
+  st := std.OnSpline(g, up: up, s: s)
   initially {{
     st.n.u perpendicular up
   }}

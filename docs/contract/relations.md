@@ -93,10 +93,10 @@ came from.
   (`Constraint::tangent_at`, `holds_on`, `share_place`), and reads the rest as columns
   (`rate_contact`); one at a point no contact holds is E040 naming the statement (`tangents_at`).
   **A motion is an operand** (#326, [0.105]): `SpecKind::Motion`, the slot a motion fills — of a
-  point it carries, below.  Its twist has no words of its own (#365, [0.122]): `reciprocal` and
+  point it carries, below.  Its twist has no words of its own (#365, [0.130]): `reciprocal` and
   `screw` are the standard library's, rates of carried points (`L reciprocal m`, `std.Screw(isa,
   m)`), so neither is an `OPERATORS` word any more, and `std.sv` may define them.
-  **The rate of a contact** (#365, [0.122]): `CKind::Rate`, slots `(on: Carrier, to: Against, at:
+  **The rate of a contact** (#365, [0.130]): `CKind::Rate`, slots `(on: Carrier, to: Against, at:
   Point, t: Param, over: Str, word: Str)`, and `CKind::RateDistance` (`on`, `along: Direction`,
   `at`, `d: Length`, `t`, `over`) — every statement at a point a contact holds, its word what of the
   contact's frame it holds (curves.md's "The rate of a contact"): `rate(p over t) parallel l` /
@@ -235,8 +235,9 @@ came from.
   A trailing placement attaches to the line's **one** relation and is refused on a line stating
   several; where none is written the parser records the spot (`place_span`, an empty span), so
   callout writeback splices where the parser said and re-derives nothing.
-  At a threaded joint the shared point is named by exactly one side (or both, in agreement), so a
-  threaded `tangent` always desugars to the regular At-form (`TangentArcLine`/
+  At a threaded joint the shared point is named by exactly one side (or both, in agreement — or
+  an arc with both ends written names it as its end, entered there, or as its start, left there:
+  walked end to start, [0.129], `solids.md`), so a threaded `tangent` always desugars to the regular At-form (`TangentArcLine`/
   `TangentLineCircleAt`, or `Parallel` between lines) — never the bare pair, rank-deficient at
   every solution; `at:` is only supplied by a threaded joint, and an *unthreaded* `tangent` is the
   plain pair, correct exactly when the two are separate.  At a corner with a name-link the

@@ -194,6 +194,8 @@ q coincident k
 q2 := point hint((-5, -5, 2))
 tl := line(q, q2)
 k tangent(at: q) tl
+cc := point hint((0, 0, 1))
+k curvature(at: q) cc
 w := point hint((0, 5, 0.7))
 w coincident h
 p := point hint((30, 9, 3))
@@ -230,7 +232,7 @@ rate(q over u) perpendicular nl
     let words: Vec<Word> = sk.constraints.iter().filter(|c| c.kind == CKind::Rate)
         .map(|c| c.rate_word()).collect();
     for w in [Word::Parallel, Word::Square, Word::InPlane, Word::Normal, Word::Plane,
-              Word::Curvature] {
+              Word::Curvature, Word::Centre] {
         assert!(words.contains(&w), "{w:?} in {words:?}");
     }
     // the fixed axes' points are free here, so the body's geometry is differentiated too

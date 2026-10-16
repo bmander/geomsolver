@@ -15,8 +15,10 @@
 //! * at each end, the control point beside the corner a third of the way (a half, over one link)
 //!   from it toward the next control point — the natural end — or, given a tangent, toward that
 //!   point's foot on the line through the corner along it: the least bending the tangent leaves
-//!   (its second derivative square to it).  The foot and the lines to it are the spline's own,
-//!   private construction.
+//!   (its second derivative square to it).  That line is run to a point as far from the corner
+//!   as the next control point, so it always has a direction (#363 S3); the foot is on it, the
+//!   next control point nothing along it from the foot.  The foot, that point and the lines are
+//!   the spline's own, private construction.
 //!
 //! Each relation is the declaration's statement, its span and id, as a step's are (`steps.rs`).
 
@@ -190,19 +192,29 @@ impl Walk<'_> {
                 None => next.clone(),
                 Some(dir) => {
                     // the foot of the next control point on the line through the corner along
-                    // the tangent
+                    // the tangent: that line run to a point as far from the corner as the next
+                    // control point — never no length, so its direction is always read, where a
+                    // line from the corner to the foot had none as the foot crossed the corner
+                    // and the solve stalled there (#363 S3) — the foot on it, and its distance
+                    // from the next control point along it nothing
+                    let seed = || AtRef { toward: Some(next.clone()),
+                                          by: Some(("1 / 2".into(), at)),
+                                          ..AtRef::at(corner.clone()) };
                     let foot = dotted(&format!("#{tag}foot"));
-                    // seeded half way to the next control point, where neither line to it
-                    // starts with no length
-                    let seed = AtRef { toward: Some(next.clone()), by: Some(("1 / 2".into(), at)),
-                                       ..AtRef::at(corner.clone()) };
-                    self.made_point(&f, format!("{own}.#{tag}foot"), seed, true);
-                    self.made_line(&f, format!("{own}.#{tag}run"), corner, &foot);
-                    self.made_line(&f, format!("{own}.#{tag}drop"), &foot, next);
+                    self.made_point(&f, format!("{own}.#{tag}foot"), seed(), true);
+                    self.made_point(&f, format!("{own}.#{tag}reach"), seed(), true);
+                    let reach = dotted(&format!("#{tag}reach"));
+                    self.made_line(&f, format!("{own}.#{tag}run"), corner, &reach);
+                    self.made_line(&f, format!("{own}.#{tag}span"), corner, next);
                     let run = dotted(&format!("#{tag}run"));
-                    let drop = dotted(&format!("#{tag}drop"));
-                    self.stated(&f, infix("parallel", [run, dir.clone()], Vec::new(), at));
-                    self.stated(&f, infix("perpendicular", [drop, dir.clone()], Vec::new(), at));
+                    let span = dotted(&format!("#{tag}span"));
+                    self.stated(&f, infix("parallel", [run.clone(), dir.clone()], Vec::new(), at));
+                    self.stated(&f, infix("equal", [run.clone(), span], Vec::new(), at));
+                    self.stated(&f, infix("coincident", [foot.clone(), run.clone()], Vec::new(), at));
+                    let along = OpArg::Named(Name { text: "along".into(), span: at }, Arg::Ref(run));
+                    let nothing = OpArg::Dim("0".into(), at);
+                    self.stated(&f, infix("distance", [foot.clone(), next.clone()],
+                                          vec![nothing, along], at));
                     foot
                 }
             };

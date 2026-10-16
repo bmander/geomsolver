@@ -165,6 +165,7 @@ pub(crate) fn settle(
             ("tangent", Some(EntKind::Envelope), _) => "in_plane",
             ("tangent", ..) => "tangent",
             ("perpendicular", ..) => "normal",
+            (_, _, Some(EntKind::Point)) => "centre",
             _ => "curvature",
         };
         let traced = on == Some(EntKind::Traced);
@@ -467,7 +468,8 @@ fn rate_row(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) {
 fn traced_contact(cx: &Elab<'_>, kind: CKind, args: &mut Vec<CArg>, left_out: &mut Vec<bool>)
     -> Result<CKind, String> {
     // a rate of a point on a traced body (#365): a surface's tangent at a point is a line in its
-    // tangent plane; a curve has no normal or curvature; a marched surface's curvature reads its
+    // tangent plane; a curve has no normal or section, and its curvature is a centre, which a
+    // surface has not; a marched surface's curvature reads its
     // second derivatives, whose Jacobian is a third order the march does not carry (#339 D4)
     if kind == CKind::Rate {
         let Some(CArg::Ent(e)) = args.first() else { return Ok(kind) };
@@ -483,7 +485,13 @@ fn traced_contact(cx: &Elab<'_>, kind: CKind, args: &mut Vec<CArg>, left_out: &m
             "tangent" if surface => args[5] = CArg::Str("in_plane".to_string()),
             "normal" | "plane" | "curvature" if !surface => {
                 return Err(format!("`{}` is a curve in space, which has a tangent at a point and \
-                    no normal or curvature this relation reads: a surface has them", t.name));
+                    no normal or section this relation reads: a surface has them; its curvature is \
+                    a centre, `{} curvature(at: m) c` of a point `c`", t.name, t.name));
+            }
+            "centre" if surface => {
+                return Err(format!("`{}` is a surface, which has no one centre of curvature at a \
+                    point: the circle osculating its section by a plane is `curvature` of a circle",
+                    t.name));
             }
             "curvature" if t.body.states_rate() => {
                 return Err(format!("`{}` is marched by the method of lines, and its curvature is \
@@ -983,30 +991,50 @@ fn region_or_row(
 
 /// **An entity given where a kind is asked for is of that kind**, refused at the argument once
 /// the elaborator knows what the name it was given is: a `path` formal's (#251), a line, an arc,
-/// a circle, a spline or a curve, what a point runs along; an interface's entity member's
-/// (§8.1 [0.84]), the kind it declares.
-pub(super) fn kinds(map: &SourceMap, given: &[crate::flatten::KindAsked], diags: &mut Vec<Diag>) {
+/// a circle, a spline or a curve, what a point runs along — or a curve traced in space, a body
+/// over one formal (#363 S1), never a surface; an interface's entity member's (§8.1 [0.84]), the
+/// kind it declares.
+pub(super) fn kinds(sk: &Sketch, map: &SourceMap, given: &[crate::flatten::KindAsked],
+                    diags: &mut Vec<Diag>) {
     for k in given {
         let Some(e) = map.ent_named(&k.target) else { continue };
         let fits = match k.ty {
             crate::syntax::Ty::Ent(want) => e.kind == want,
-            _ => e.kind.runs_along(),
+            _ => e.kind.runs_along() || traced_curve(sk, e),
         };
         if fits {
             continue;
         }
         let message = match (&k.interface, k.ty) {
             (None, _) => format!(
-                "`{}` is a path — a line, an arc, a circle, a spline or a curve — not {}",
-                k.what, e.kind.a()
+                "`{}` is a path — a line, an arc, a circle, a spline, a curve or a curve traced \
+                 in space — not {}",
+                k.what, said_kind(e)
             ),
             (Some(i), crate::syntax::Ty::Ent(want)) => {
                 format!("`{}` is {}, where `{i}` asks for {}", k.what, e.kind.a(), want.a())
             }
-            (Some(i), _) => format!("`{}` is {}, where `{i}` asks for a path", k.what, e.kind.a()),
+            (Some(i), _) => {
+                format!("`{}` is {}, where `{i}` asks for a path", k.what, said_kind(e))
+            }
         };
         diags.push(Diag::new(Code::E103, k.span, None, message));
     }
+}
+
+/// What `e` is, with its article, where it was refused as a path: a body traced in space refused
+/// there runs over two formals, a surface.
+pub(super) fn said_kind(e: EntRef) -> String {
+    match e.kind {
+        EntKind::Traced => "a surface traced in space".to_string(),
+        k => k.a(),
+    }
+}
+
+/// Whether `e` is a curve traced in space: a body running over one formal (#326), which a point
+/// runs along as it runs along a spline (#363 S1).
+pub(super) fn traced_curve(sk: &Sketch, e: EntRef) -> bool {
+    e.kind == EntKind::Traced && sk.traced.get(e.i()).is_some_and(|t| t.formals() == 1)
 }
 
 /// **A tangent at a point reads the place of the contact holding the point** (#251): `g
@@ -1037,7 +1065,7 @@ pub(super) fn tangents_at(sk: &Sketch, map: &SourceMap, diags: &mut Vec<Diag>) {
                 match c.rate_word() {
                     Word::Normal if meshing => "common normal",
                     Word::Normal => "normal",
-                    Word::Curvature => "curvature",
+                    Word::Curvature | Word::Centre => "curvature",
                     Word::Plane | Word::InPlane => "tangent plane",
                     Word::Parallel if meshing => "path of contact",
                     _ if matches!(&c.args[5], CArg::Str(w) if w == "tangent") => "tangent",

@@ -481,6 +481,12 @@ pub(crate) fn decl_args(d: &Decl) -> String {
     if let Some(sweep) = &d.sweep {
         parts.extend(sweep_parts(sweep));
     }
+    if let Some(n) = &d.normal {
+        parts.push(format!("normal: {}", super::ref_text(n)));
+    }
+    if let Some(s) = d.sense {
+        parts.push(format!("sense: {}", if s == Sense::Cw { "cw" } else { "ccw" }));
+    }
     if let Some(t) = &d.through {
         parts.push(format!("through: {}", super::ref_text(&t.chain)));
         for (label, r) in [("start", &t.start), ("end", &t.end)] {
@@ -959,7 +965,7 @@ fn rate_text(kind: CKind, args: &[Option<Arg>]) -> Option<String> {
             let at = match word(5).as_str() {
                 "tangent" | "plane" | "in_plane" => "tangent",
                 "normal" => "perpendicular",
-                "curvature" => "curvature",
+                "curvature" | "centre" => "curvature",
                 w => return Some(format!("rate({} over {}) {w} {}", text(2), word(4), text(1))),
             };
             Some(format!("{} {at}(at: {}) {}", text(0), text(2), text(1)))

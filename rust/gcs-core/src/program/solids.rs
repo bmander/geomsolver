@@ -14,6 +14,7 @@ mod build;
 pub(super) use claims::solid_claims;
 use faces::{chain_face,validate_chain,build_face};
 use build::build_solid;
+pub(super) use build::carry_legs;
 
 /// Build faces and solids in dependency order, then fold body operations into stock solids.
 pub(super) fn solids(

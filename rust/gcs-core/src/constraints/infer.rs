@@ -316,9 +316,13 @@ fn validate_ordinate(
 }
 
 /// What a contact's parameter runs along — a spline, a language curve, a line's or an arc's run,
-/// whichever the contact names — and `None` for a kind whose own unknown runs along nothing.
+/// or a curve traced in space (#363 S1), whichever the contact names — and `None` for a kind
+/// whose own unknown runs along nothing.
 pub(crate) fn contact_carrier(kind: CKind, args: &[Arg]) -> Option<EntRef> {
-    let (e, _) = kind.place_on()?;
+    let (e, _) = match kind {
+        CKind::PointOnTraced => kind.contact_on(SpecKind::Traced)?,
+        _ => kind.place_on()?,
+    };
     Some(args[e].ent())
 }
 
@@ -411,14 +415,18 @@ fn validate_rate(sk: &Sketch, kind: CKind, args: &[Arg], name: &dyn Fn(EntRef) -
     // what the source has for the word
     let has = match src {
         RateSource::Spline | RateSource::Curve | RateSource::Carried => rated,
-        RateSource::Traced => rated || surface,
+        RateSource::Traced => rated || (surface != (word == Word::Centre)),
         RateSource::Meshing => rated || word == Word::Normal,
         RateSource::Envelope => !rated,
     };
     if !has {
         return Err(match src {
+            RateSource::Traced if surface => format!("{} is a surface, which has no one centre of \
+                curvature at a point: the circle osculating its section by a plane is `curvature` \
+                of a circle", name(on)),
             RateSource::Traced => format!("{} is a curve in space, which has a tangent at a point \
-                and no normal or curvature this relation reads: a surface has them", name(on)),
+                and no normal or section this relation reads: a surface has them; its curvature is \
+                a centre, `curvature(at:)` of a point", name(on)),
             RateSource::Envelope => format!("{} is an envelope, whose place no rate runs over: its \
                 normal, a plane or a line touching it, and a section's circle are read there",
                 name(on)),
@@ -439,12 +447,14 @@ fn validate_rate(sk: &Sketch, kind: CKind, args: &[Arg], name: &dyn Fn(EntRef) -
     let against = match word {
         Word::Plane => to.kind == EntKind::Plane,
         Word::Curvature => matches!(to.kind, EntKind::Circle | EntKind::Arc),
+        Word::Centre => to.kind == EntKind::Point,
         _ => matches!(to.kind, EntKind::Line | EntKind::Axis),
     };
     if !against {
         return Err(format!("{} is not what this reads at {}: {}", name(to), name(at), match word {
             Word::Plane => "a plane",
             Word::Curvature => "a circle",
+            Word::Centre => "a point",
             _ => "a line or an axis",
         }));
     }

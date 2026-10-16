@@ -164,6 +164,28 @@ impl SourceMap {
         self.of_entity.insert(e, site);
     }
 
+    /// Everything said of `from` said of `to` instead: its names, its site and what its statement
+    /// made — a spline over points in space being the curve traced in space it is (#363 S3).
+    pub(super) fn moved(&mut self, from: EntRef, to: EntRef) {
+        for e in self.by_name.values_mut().filter(|e| **e == from) {
+            *e = to;
+        }
+        if let Some(n) = self.names.remove(&from) {
+            self.names.insert(to, n);
+        }
+        if self.writable.remove(&from) {
+            self.writable.insert(to);
+        }
+        if let Some(site) = self.of_entity.remove(&from) {
+            self.of_entity.insert(to, site);
+        }
+        for m in self.made.values_mut().flatten() {
+            if *m == Made::Ent(from) {
+                *m = Made::Ent(to);
+            }
+        }
+    }
+
     pub(super) fn record(&mut self, st: &crate::ir::Statement, what: Made) {
         let site = Site { stmt: st.id, span: st.span, path: InstPath(st.path.clone()) };
         match what {

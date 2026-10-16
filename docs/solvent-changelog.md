@@ -4,7 +4,7 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
-**[0.122] The rate of a contact; a motion's twist read by rates.** `rate(p over t)` runs over the
+**[0.130] The rate of a contact; a motion's twist read by rates.** `rate(p over t)` runs over the
 slot of the contact holding `p` (§6.5) — a curve's `t`, a traced curve's `u`, a meshing's phase,
 the roll of `p coincident(under: m, t == …) q` — where `t` names no formal in scope: the derivative
 of the point the contact holds in that slot, every other unknown of the drawing held (a meshing's
@@ -15,8 +15,9 @@ it. Every statement at a point a contact holds is the contact's frame there, rea
 whatever the contact: `g tangent(at: m) l` of a spline, a curve, a traced curve or a meshing is that
 rate held along the line — the path of contact is `rate(Q over t) parallel l` — and a surface's
 normal (`S perpendicular(at: p) l`, a meshing's common normal too), a plane or a line touching it
-(`S tangent(at: p) P`, `S tangent(at: p) l`) and its section's circle (`S curvature(at: p) k`) are
-the same frame's, solving to what they did. A curve's rate in its view may now be held square to
+(`S tangent(at: p) P`, `S tangent(at: p) l`), its section's circle (`S curvature(at: p) k`) and a
+curve's centre of curvature (`k curvature(at: p) c`, 0.125) are the same frame's, solving to what
+they did. A curve's rate in its view may now be held square to
 a line and any contact's measured along one, where its tangent was held only along a line. A motion's
 twist has no words of its own: `reciprocal` and `screw` (0.105) leave the core, and the standard
 library says them with rates of carried points — `L reciprocal m` (import it, `use std
@@ -24,9 +25,74 @@ library says them with rates of carried points — `L reciprocal m` (import it, 
 (Ball's pitch times how fast the motion turns about it), a component's unknown read as any is. A
 claimed word makes what it declares all the same: the `coincident` placing it is stated, the rest
 judged. `screw(pitch == …)` is `std.Screw(isa, m, pitch: …)`; a twist is read of any motion, a
-relative of a relative too. Through 0.121 the twist was read by two relation words of its own and
+relative of a relative too. Through 0.129 the twist was read by two relation words of its own and
 a rate ran only along a running formal. (Issue #365.)
 
+**[0.129] An arc walked from its end.** A chain may enter an arc at its end and walk it to its
+start, `-> tangent (k3 := arc(center: c2, start: f, end: e)) ->` entered at `e`, or the arc named
+there: the same arc, drawn from its end and turning the other way, so a family runs it forward and
+L0's S-bend is one chain with its right turn written as a counter-clockwise arc. `k3.start` is
+still `f`. An arc two chains walk opposite ways is E080. Through 0.128 a chain entered every link
+at its start, and an arc entered at its end was E080 ("does not share the preceding link's
+endpoint"); an arc in a plane turned right only said `sense: cw`. (Issue #363, S4.)
+
+**[0.128] An arc's sense.** An arc drawn in a plane may turn clockwise from its start, `arc(center:
+c, sense: cw)`, so a chain in a plane turns right at it — L0's S-bend is one chain in `std.top`.
+Through 0.127 an arc in a plane ran counter-clockwise from its start always, and a chain entering
+each link at its start could only turn left at an arc. (Issue #363, S4.)
+
+**[0.127] Arcs and circles in space.** An arc over a point standing in space is drawn in the plane
+through its centre and its ends, the short way round; three points in a line are refused. A circle
+over a centre in space takes `normal:`, the axis or line it stands square to, and is drawn in the
+plane through its centre square to it. Each is the arc or circle it is in a plane — its radius,
+its contacts, a chain's joints, a face swept from it — so a bent pipe needs no plane written, and
+a chain drawn in space turns either way at an arc (L0's S-bend is one chain); in a plane's block a
+chain still turns left at every arc.
+Through 0.126 each was E060. (Issue #363, S6.)
+
+**[0.126] Splines in space.** A spline over a point standing in space is a curve in space:
+`Σ Rᵢ(u)·Pᵢ` over its control points where they stand, its parameter over its own domain. Its
+contacts are a curve in space's (a point held at a place, `t == u`; the tangent; the centre of
+curvature), it is a `path` a family runs along, and `spline(through: …)` over corners in space is
+the cubic through them, natural or along the tangents its ends are given — so a loft's smooth rail
+may leave its plane. It bounds no face. Through 0.125 a spline over a point in space was E060.
+(Issue #363, S3.)
+
+**[0.125] A curve's centre of curvature, and Frenet's frame.** At a point a contact holds on a
+curve traced in space, `k curvature(at: p) c` puts the point `c` at the centre of its osculating
+circle. The standard library's `Frenet(g, s:)` is the station whose `u` runs toward that centre
+and whose `v` is the binormal, refused where the curve has no curvature. Through 0.124 a curve in
+space read no curvature (`curvature` was a surface's), and Frenet's frame had no word: the side
+the centre is on could not be said, `parallel` being sign-free. (Issue #363, S5.)
+
+**[0.124] Chains across planes.** A line touching an arc or a circle at a point of it, the line
+not drawn in the round's plane, is the tangency in space: its direction in the round's plane and
+square to the radius there (`TangentCircleAt3`). So a chain's straight between a bend in one plane
+and a bend in another touches both, and a bent pipe — the most common sweep — is one chain a
+family runs, its frame carried across every joint. A station that states a rate, drawn on a link
+past the first, is no longer solved by the drawing, which cannot know the frame carried to it.
+Through 0.123 a chain was one plane's: the tangency at a joint across planes was E062. (Issue
+#363, S4.)
+
+**[0.123] `On` integrates its frame, and a rate runs over a chain.** `std.On(g, up:, s:)` holds
+its plane square to the guide and turns it by `Minimal`'s rate, `up` read at the family's home
+alone: over a guide in one plane with `up` its normal the solid is the one it was, and along a
+twisted guide (a curve traced in space) the section stays square to it. A station that states a
+rate runs over a named chain, its frame carried across each joint, and a station read off its
+integration meets its relations, so a law in pieces is read as written. Through 0.122 `On` held
+`v` along `up` at every station, which along a twisted guide leaned the section off square to it
+with nothing said, and a rate over a chain was refused. (Issue #363, S2 and S4.)
+
+**[0.122] A curve traced in space is a path.** A curve traced in space (§6.5) is given to a
+`path` formal: `m coincident(t == s) g` pins its contact's place, the body's own formal, as a
+spline's `t` is pinned — to a face family's running number in a station — and `hint(at: m,
+along: g)` steps along it. So a station stands on a guide drawn in space, its frame stated by a
+rate (`std.Minimal`'s), and a family is swept along it. A surface traced over two formals is no
+path (**E103**). Through 0.121 a station could stand only on a guide in one plane or one written
+into its own body (`std.Helix`, `std.OnHelix`): a traced curve given to a `path` was E103, `t ==`
+on its contact E040, and a step along it E103. `std.On` still held its `v` along `up`, so over
+a twisted guide its plane leaned off square to the tangent: there the plane was held square to
+the tangent and turned by `Minimal`'s rate (0.123 made that `On`). (Issue #363, S1.)
 **[0.121] Two formals marched by the method of lines.** A body traced over two formals may state a
 rate along either (§6.5): the first is marched, the second sampled at the Gauss–Lobatto nodes of
 32 pieces of its interval, a rate along it the derivative of the quintic through a piece's nodes,

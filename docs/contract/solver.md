@@ -59,13 +59,14 @@ version ([0.n], see the [language changelog](../solvent-changelog.md)) says wher
   iteration sees the same vector**: `residuals_into` and `compute_csr` divide every row by
   `row_scale`, so the dogleg weighs an `angle` row and a `distance` row alike (issue #43).  A
   test comparing against a kernel multiplies by `row_scale` to get the raw residual.
-  **A rate's rows carry the degree of what they compare** (#365, `contact_rate::Word::degree`): a
-  rate across or along a line — any source's: a curve's tangent, a meshing's path of contact, a
-  carried point's velocity — a velocity, degree 1, a length a unit of the slot (an angle's per
-  radian), so the rows stay regular where the point stands still (on the axis of a screw of no
-  pitch); a curve's in its view `(C′ × (B − A))/‖B − A‖`, degree 1; a rate's distance, degree 1; a
-  direction against a surface's normal (`normal`, `plane`, `in_plane`) cosines, degree 0; a
-  section's circle, lengths.  A rate never owns an unknown: its slot is its contact's, and its
+  **A rate's rows carry the degree of what they compare** (#365, `contact_rate::Word::degree`, by
+  the source's `Form`): a carried point's rate across or along a line a velocity, degree 1, a
+  length a radian of the roll, so the rows stay regular where the point stands still (on the axis
+  of a screw of no pitch); a traced curve's tangent and a meshing's path of contact the line's
+  direction against the unit rate, cosines, degree 0, as their own kernels were; a curve's in its
+  view `(C′ × (B − A))/‖B − A‖`, degree 1; a rate's distance, degree 1; a direction against a
+  surface's normal (`normal`, `plane`, `in_plane`) cosines, degree 0; a section's circle and a
+  curve's centre of curvature, lengths.  A rate never owns an unknown: its slot is its contact's, and its
   other columns are that contact's and its source's.
   `System::stationary` tells apart two non-solutions: at a stationary point the residual is what
   the constraints cannot agree on (a conflict); elsewhere the solver merely stopped, the

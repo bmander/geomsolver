@@ -155,7 +155,7 @@ beside the free curve, a pursuit refused at its capture, a geodesic on a cone in
 at the closed form its comments give and each claim a theorem, held by `tests/rate_examples.rs`;
 the app lists the folder as one project (`example-catalog.ts`, *Rates*).
 
-**The rate of a contact (#365, [0.122], `contact_rate.rs`, `CKind::Rate`,
+**The rate of a contact (#365, [0.130], `contact_rate.rs`, `CKind::Rate`,
 `CKind::RateDistance`):** a contact holds a point at its place, and every statement at that point
 reads the same thing — the contact's **frame** there, the derivative of its place in its slots —
 so one kind states them and **one kernel** reads them.  `rate(p over t)` runs over **the slot of
@@ -168,12 +168,14 @@ a line, `perpendicular` along it, `RateDistance` along it less a distance, `norm
 to every rate of a surface (`S perpendicular(at: p) l`), `plane` a plane along that normal
 (`S tangent(at: p) P`), `in_plane` a line square to it (`S tangent(at: p) l`), `curvature` the
 circle osculating the section by its plane (`S curvature(at: p) k`).
-**The kernel** (`contact_rate::kernel`, `KernelKey::Rate { word, planar, … }`): columns the lead
+**The kernel** (`contact_rate::kernel`, `KernelKey::Rate { word, form, … }`): columns the lead
 (a line drawn in the view, four; a line's lifted ends or an axis's direction, six; a plane's axes,
-six; a circle's centre, radius and plane, ten), the source's own, a free distance last; constants
+six; a circle's centre, radius and plane, ten; a centre of curvature's lift, three), the source's
+own, a free distance last; constants
 a header (source, word, slot, free, `(m, c)`) and the source's own.  Each **source** says only its
 frame (`contact_rate::Frame`: the point, the rate in the slot named, a direction a normal is read
-across, the unit normal, two tangent directions and the second fundamental form along them) and
+across, the unit normal, two tangent directions and the second fundamental form along them, the
+second rate in the slot) and
 its derivative in each of its own columns, worked out once a block (`Read`): a spline's
 `kernels::spline_rate` (`C′`, `C″` and the basis' derivatives), a curve's `curve_rate` (its
 body's frame), a traced body's `traced::frame` (`read`'s exact gradient, a surface's normal and
@@ -193,25 +195,37 @@ The five questions the issue left open are settled so:
    unknown is E040 ("an unknown of the drawing"); a point no contact holds with that slot, or two
    contacts holding it with one, is E061 at `io::seed_omitted`, which infers the carrier
    (`infer::rate_carriers`) — `g tangent(at: p) l` names the curve where two could.
-2. **Closed forms behind one surface.**  The words' rows are the source kernels' forms, kept: a
-   curve's in its view `(C′ × (B − A))/‖B − A‖`, a normal's and a plane's the direction against two
-   directions square to the normal, a line's in the tangent plane against the normal, a curvature
-   by Meusnier — so folding the kinds changed no solved value (`mean_point.sv`, `contact.sv`,
-   `phillips.sv` and `meshing_problem.sv` solve to the same numbers).  A circle's or an arc's tangent
-   at a point (`TangentCircleAt`, `TangentLineCircleAt`, the radius square to the line, a degree-2
-   polynomial) stays its own kind: a point on a round owns no slot, and the closed form is cheaper
-   and better scaled than a velocity.  What a source has no frame for is refused (`validate_rate`):
+2. **Closed forms behind one surface.**  The words' rows are the source kernels' forms, kept, the
+   source choosing (`contact_rate::Form`): a curve's in its view `(C′ × (B − A))/‖B − A‖`
+   (`Planar`); a traced curve's tangent the line's direction against two unit directions square to
+   `X′` (`Direction`), a meshing's against two square to the path across the world axis it runs
+   least along (`Path`), cosines both; a carried point's the rate itself across the line
+   (`Velocity`, regular where it vanishes, which `reciprocal` and `Screw` need); a normal's and a
+   plane's the direction against two directions square to the normal, a line's in the tangent
+   plane against the normal, a curvature by Meusnier, a curve's centre of curvature from `X′` and
+   `X″`.  The same rows take the same Newton path, which matters where a solve settles something
+   its rows leave free: `paths/frenet.sv`'s plane holds `u` only parallel to the line to the
+   centre, so its sense is the path's.  So folding the kinds changed no solved value: every
+   document of `examples/` solves to the numbers it did on the base, positions to 1e-9 mm — but
+   `meshing_problem.sv`, whose solve stops at its iteration limit (residual 8e-13) on both, its
+   positions to 1e-8 mm and its meshed areas and volumes to 1e-5 relative.  A circle's or an arc's
+   tangent at a point (`TangentCircleAt`, `TangentLineCircleAt`, `TangentCircleAt3` in space, the
+   radius square to the line, a degree-2 polynomial) stays its own kind: a point on a round owns
+   no slot, and the closed form is cheaper and better scaled than a velocity.  What a source has no frame for is refused (`validate_rate`):
    a curve's normal, an envelope's rate.
-3. **Second order is the frame's, not a second rate.**  A section's curvature reads the frame's
-   second fundamental form, which each surface source gives (a traced surface's `dd·n`, an
-   envelope's from `∂n`); `rate(rate(p over t) over t)` is a syntax error (a rate is of a
-   reference, E001), and a second rate as an operand, when one is wanted, will read the same
+3. **Second order is the frame's, not a second rate.**  A curve's centre of curvature reads the
+   frame's second rate in its slot (`Frame::accel`, a traced curve's `X″`); a section's curvature
+   reads the frame's second fundamental form, which each surface source gives (a traced surface's
+   `dd·n`, an envelope's from `∂n`); `rate(rate(p over t) over t)` is a syntax error (a rate is of
+   a reference, E001), and a second rate as an operand, when one is wanted, will read the same
    frame.  A marched surface's curvature is refused (#339 D4).
 4. **Scaling.**  A rate is a length a unit of its slot — a radian of an angle's (`held::carried`
    reads the roll in radians, `meshing::frame` turns a degree's into a radian's) — and its rows
-   carry the degree of what they compare (`solver.md`): a rate across or along a line a velocity
-   (degree 1, so a point that stands still, on the axis of a screw of no pitch, holds them
-   regularly); a direction against the normal cosines (degree 0); a circle's offsets lengths.
+   carry the degree of what they compare (`solver.md`), by the source's form: a carried point's
+   rate across or along a line a velocity (degree 1, so a point that stands still, on the axis of
+   a screw of no pitch, holds them regularly); a traced curve's tangent and a path of contact, and
+   a direction against the normal, cosines (degree 0); a distance along a line, a circle's offsets
+   and a centre lengths (degree 1).
 5. **Diagnosis reads the statement written.**  `syntax::operator_text` prints a `Rate` as
    `rate(p over t) parallel l`, or by its word at the point (`g tangent(at: p) l`, `S
    perpendicular(at: p) l`, `S tangent(at: p) P`, `S curvature(at: p) k`), and a `RateDistance` as
@@ -223,7 +237,8 @@ The retired kinds, fifteen: `SplineTangentAt`, `CurveTangentAt`, `TracedTangentA
 `MeshingTangentAt` (`g tangent(at: m) l`, now `word: tangent`), `TracedSurfaceTangentAt`,
 `EnvelopeTangentAt` (`in_plane`), `TracedNormalAt`, `EnvelopeNormalAt`, `MeshingNormalAt`
 (`normal`), `TracedPlaneAt`, `EnvelopePlaneAt` (`plane`), `TracedCurvatureAt`,
-`EnvelopeCurvatureAt` (`curvature`), and `Reciprocal` and `ScrewAxis` (now `std.sv`'s `reciprocal`
+`EnvelopeCurvatureAt` (`curvature`), with #363's `TracedCentreAt` (`centre`, folded as it
+landed), and `Reciprocal` and `ScrewAxis` (now `std.sv`'s `reciprocal`
 and `Screw`, rates of carried points).  `tests/rate_of_contact.rs` is the gate — a carried point's
 rate against the epicycloid's derivative, a spline's tangent written three ways one kind over the
 contact's place, a spline's rate held square and measured, a meshing's path written two ways one
@@ -284,8 +299,18 @@ and at which node.  `tests/lines.rs` is the gate: the offset front of an ellipse
 (`rust/examples/rates/front.sv`) against `E(u) + d·n(u)` and both derivatives at every place read,
 its convergence in the pieces (fifth order) and the check against twice them bounding the error,
 its fold refused short of `b²/a` and nearer it on twice the pieces, a contact's place found and its
-Jacobian (the variational equations) against central differences, a whole turn closed, and every
-refusal of the split.
+Jacobian (the variational equations) against central differences, a whole turn closed, the
+document's own point found at its place with its claim a theorem and `folded` refused where
+`solventc` says, and every refusal of the split.  **The rates series' fronts** (#370,
+`tests/rate_examples.rs`): `geodesic_circles.sv`, a front held to a sphere and to a cone by a row
+over the moved point alone, its normal placed in the tangent plane — the sphere's circles of
+latitude, refused short of the antipode where they focus, the cone's circles about the apex,
+unrolled — and `housing.sv`, a Wankel bore as the epitrochoid's parallel curve at the seal's
+radius, converging in the pieces, and past the waist's radius of curvature refused at the waist on
+the pieces and on twice them.  A fold is refused *early*, by the march's own error, and twice the
+pieces do not always bring it nearer: where a front closes on a point or a concave waist the place
+is not monotone in the pieces (the antipode 78.06 / 78.25 / 78.17 on 16 / 32 / 64, the waist
+14.52 / 13.72 / 13.92), so these gates bound it from below rather than hold it to converge.
 
 - A parametric curve (`curve.rs`) is *linear in its control points*, `C(t) = Σ Bᵢ(t) Pᵢ` (every
   B-spline).  A contact carries its own curve parameter as a `Param` slot and says
@@ -308,6 +333,33 @@ refusal of the split.
   positive plain number). The recipe writes `"weights"`, so the profile is `BSpline::rational` in
   our kernel and in OCCT's (`solvent_cad_bspline` takes a weights pointer). `nurbs.sv`,
   `tests/weighted_spline.rs`.
+- **A spline over points in space is a curve traced in space** (#363 S3, [0.126]): route (b) of
+  the issue, a representation and never a meaning.  `entities::splines_in_space` (in `holds`,
+  once every membership is in, before E060 is asked) makes a spline with a control point no plane
+  reaches a `TracedE` over the control points (`args`), its body one row of
+  `traced::RowKind::Spline` — `X − Σ Rᵢ(u)·Pᵢ`, columns `[u, P₀ … Pₙ₋₁, X]`, constants the knots
+  then the weights (`spline_shape` checks them as any encoding is read), its Newton rows
+  (`spline_res`/`_jac`) and its jets (`spline_jets`: each basis function the cubic of the jet's
+  offset from `curve::basis`'s value and three derivatives, exact to the series' order) — over
+  the spline's domain, home at its middle.  The name moves to it (`res.of`, `SourceMap::moved`)
+  and the spline stays, no index moving, but is no primitive (`Sketch::spline_traced`): neither
+  drawn nor grafted.  So its contacts are a traced curve's (`t == u` pins its place, S1), it is a
+  `path`, and `spline(through: …)` over corners in space lowers as it does in a plane, its
+  relations the ones in space.  A face over it is E080 ("a curve in space, drawn in no plane").
+  Drawn as an axis is, in space and in no view: `overview::scene3d_of` carries every curve traced
+  in space in its datums layer as `overview::traced_polyline` — its point read over the domain,
+  sixteen spans each halved (to depth 8) where the curve strays from its chord past
+  `curve::flatness` — and the app strokes it in 3D (`box3d.ts`'s `IN_SPACE`).
+  `a_spline_in_space_is_drawn_in_the_box`.  `tests/space_paths.rs`: a Bézier
+  over four points in space — point, `C′`, `C″` and length against Bernstein's to 1e-12, a point
+  pinned and a tangent held, every contact against finite differences — a tube along it at 9π ×
+  its length to 1e-9, and `spline(through: …)` over corners in space (natural; along lines in
+  space) control point for control point against the cubic solved apart (L7's method), over a
+  spread of end tangents.  **An end held along a tangent** is built over a line from the corner
+  to a point as far off as the next control point (`#run`, `equal` to `#span`, `parallel` to the
+  tangent), the foot on it and the next control point nothing along it from the foot: a line
+  from the corner to the foot, as through 0.127, lost its direction as the foot crossed the
+  corner and the solve stalled there.
 - **A spline through a chain's corners** (§6.1 [0.111], #243 L7): `spline(through: rims, start:
   l, end: m)` (`Decl::through`, parsed in `decl_list`, printed by `decl_args`) is expanded in
   `flatten::through` once the walk is done (`Aside::fits`, so the chain may be written after it):
@@ -488,6 +540,23 @@ refusal of the split.
   ordinates and by a screw, a point and a tangent held to it; a torus's point, normal and the
   meridian's osculating circle against closed forms; every contact against finite differences;
   a fold reported.
+  **A curve in space is a path** (#363 S1, [0.122]): a `path` formal takes a body over one
+  formal (`relations::kinds`, `traced_curve`; a surface is E103, "not a surface traced in
+  space"); `p coincident(t == s) k` pins the contact's first place, `t` read as the slot `u`
+  (`Written::slot_of`), to a held running number as a spline's is (`contact_carrier` names the
+  traced curve, so `shared_on_one_curve` and the held place allow it); `hint(at: p, along: k)`
+  steps along `d[0]` at `traced::place_of` (`entities::rate_along`); and a family's part keeps
+  what a traced body was given though the body owns no parameter (`Part::around_all`), else the
+  part dropped its contacts.  `tests/space_paths.rs` is the gate.
+  **A curve's centre of curvature** (#363 S5, [0.125]): `k curvature(at: p) c` of a point is a
+  rate of the contact holding `p` (#365, [0.130]: `CKind::Rate`, word `centre`, three rows, its
+  lead the point's lift; `traced::frame` gives the frame's second rate `X″` under
+  `Need::Curvature`): `c − (X + |X′|²·(b × X′)/|b|²)`, `b = X′ × X″` floored at
+  `contact_rate::FLATTEST²`, so where the curve has no curvature the rows stay finite and lose
+  their rank.  Of a surface it is E040
+  (`relations::traced_contact`), as a surface's normal, plane or section of a curve is.
+  `std.Frenet(g, s:)` is the word over it (`solids.md`); `tests/traced.rs` holds the contact to
+  finite differences, `tests/space_paths.rs` to the helix's closed form.
   **Two design constraints it is built to** (#326): a traced surface is held to and read, not a
   face of a solid — exporting one is making it a wall of #243 L2's `Surface::Family` (whose
   `d1`/`newton` it would answer through `traced::read` and `traced::nearest`), not a second

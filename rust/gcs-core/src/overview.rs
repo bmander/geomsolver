@@ -301,6 +301,46 @@ pub struct Item3 {
     pub pts: Vec<[f64; 3]>,
 }
 
+/// How many spans a curve traced in space is first cut into, and how many times a span is halved
+/// at most where its chord strays further from the curve than the flatness.
+const TRACED_SPANS: usize = 16;
+const TRACED_DEPTH: u32 = 8;
+
+/// **A curve traced in space, as a polyline in space** (#363): its point read at places over its
+/// formal's domain (`traced::reading`), each span halved where the curve at its middle strays
+/// from the chord by more than the sheet's flatness at `unit` (`curve::flatness`).  Empty for a
+/// surface, and where the body cannot be read.
+pub fn traced_polyline(sk: &Sketch, i: usize, unit: f64) -> Vec<[f64; 3]> {
+    use crate::space::{add, distance, scale};
+    let Some(t) = sk.traced.get(i).filter(|t| t.formals() == 1) else { return Vec::new() };
+    let [lo, hi] = t.domain[0];
+    let at = |u: f64| crate::traced::reading(sk, i, [u, 0.0], crate::traced::Need::Point)
+        .map(|r| r.position);
+    let tol = crate::curve::flatness(unit);
+    fn refine(at: &dyn Fn(f64) -> Option<[f64; 3]>, (a, pa): (f64, [f64; 3]),
+              (b, pb): (f64, [f64; 3]), tol: f64, depth: u32, out: &mut Vec<[f64; 3]>) {
+        let m = 0.5 * (a + b);
+        if let Some(pm) = at(m).filter(|_| depth > 0) {
+            if distance(pm, scale(add(pa, pb), 0.5)) > tol {
+                refine(at, (a, pa), (m, pm), tol, depth - 1, out);
+                refine(at, (m, pm), (b, pb), tol, depth - 1, out);
+                return;
+            }
+        }
+        out.push(pb);
+    }
+    let Some(first) = at(lo) else { return Vec::new() };
+    let mut out = vec![first];
+    let mut last = (lo, first);
+    for k in 1..=TRACED_SPANS {
+        let u = lo + (hi - lo) * k as f64 / TRACED_SPANS as f64;
+        let Some(p) = at(u) else { return Vec::new() };
+        refine(&at, last, (u, p), tol, TRACED_DEPTH, &mut out);
+        last = (u, p);
+    }
+    out
+}
+
 /// **The scene as it stands in space**, for a front end that has a camera of its own.
 ///
 /// `scene` flattens because a 2D canvas must be handed something it can stroke; a renderer with a
@@ -413,6 +453,21 @@ pub fn scene3d_of(sk: &Sketch, unit: f64, layer: Layer) -> Vec<Item3> {
                 what: Part::Drawn,
                 pts: poly.into_iter().map(|p| sk.world_in(plane, p)).collect(),
             });
+        }
+    }
+    // a curve traced in space — a spline over points in space among them (#363) — stands in
+    // space and in no view, as an axis does: its polyline refined to the scene's flatness
+    if datums {
+        let stations = sk.stations();
+        for i in 0..sk.traced.len() {
+            let e = EntRef::new(EntKind::Traced, i);
+            if stations.contains(&e) {
+                continue;
+            }
+            let pts = traced_polyline(sk, i, unit);
+            if pts.len() >= 2 {
+                items.push(Item3 { of: Some(e), in_plane: None, what: Part::Drawn, pts });
+            }
         }
     }
     // **the object's creases, and none of its silhouettes.**  A silhouette is a fact about a

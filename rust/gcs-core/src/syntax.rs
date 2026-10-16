@@ -215,10 +215,10 @@ pub enum Ty {
     /// or one written in place.  Not a group: a group formal refuses a set and this a group, so a
     /// set handed where members are read is said at the call (#191).
     Set,
-    /// **Any path** (#251): a line, an arc, a circle, a spline or a curve — what a point runs
-    /// along and a tangent is taken at. An entity formal whose words are settled by the kind of
-    /// the actual, as every entity formal's are; refused at the call when the actual runs along
-    /// nothing (E103, `program::paths`).
+    /// **Any path** (#251): a line, an arc, a circle, a spline or a curve, or a curve traced in
+    /// space (#363 S1) — what a point runs along and a tangent is taken at. An entity formal whose
+    /// words are settled by the kind of the actual, as every entity formal's are; refused at the
+    /// call when the actual runs along nothing (E103, `program::paths`).
     Path,
     Ent(EntKind),
 }
@@ -958,6 +958,15 @@ pub struct Decl {
     /// start: l, end: m)`: its control points minted, its ends' tangents along `start:` and
     /// `end:` where they are written (`flatten::through`).  `None` for every other declaration.
     pub through: Option<Through>,
+    /// A circle's **normal** (#363 S6), `circle(center: o, normal: ax)`: an axis or a line the
+    /// circle stands square to, where its centre stands in space — the plane it is drawn in
+    /// minted through the centre (`program::entities::circles_in_space`).  `None` for every
+    /// other declaration, and for a circle drawn `in` a plane.
+    pub normal: Option<Ref>,
+    /// Which way an arc drawn in a plane turns from its start (#363 S4), `arc(center: c, sense:
+    /// cw)`: clockwise, so a chain in a plane may turn right at it — drawn counter-clockwise in its
+    /// plane turned over (`program::entities::arcs_in_space`).  `None`, counter-clockwise.
+    pub sense: Option<Sense>,
 }
 
 /// What a spline through a chain's corners names (`Decl::through`): the chain, and the lines (or
@@ -998,6 +1007,8 @@ impl Decl {
             close: None,
             mint_close: None,
             through: None,
+            normal: None,
+            sense: None,
         }
     }
 
@@ -1041,6 +1052,8 @@ impl Decl {
             close: None,
             mint_close: None,
             through: None,
+            normal: None,
+            sense: None,
         }
     }
 }

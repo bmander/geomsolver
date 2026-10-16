@@ -343,7 +343,9 @@ h distance(10mm) h2
     for p in sk.params.iter_mut() {
         p.value += rng.uniform(-0.02, 0.02) * (1.0 + p.value.abs().min(10.0));
     }
-    for c in sk.constraints.iter().filter(|c| c.kind.traced_contact().is_some()) {
+    // a rate of the contact too, the normal and the tangent being rates (#365)
+    for c in sk.constraints.iter()
+        .filter(|c| c.kind.traced_contact().is_some() || c.rate_source().is_some()) {
         gcs_core::fdcheck::check_constraint(&sk, c, 1e-6, 1e-6)
             .unwrap_or_else(|why| panic!("{:?}: {why}", c.kind));
     }

@@ -393,6 +393,8 @@ fn a_name_declared_twice_is_an_error() {
             close: None,
             mint_close: None,
             through: None,
+            normal: None,
+            sense: None,
         }));
     }
     render_flat(&mut p).unwrap();

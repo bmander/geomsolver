@@ -96,8 +96,14 @@ test('menu examples open files or directories with one V-twin choice', async (t)
   const rates = await remote.drawing('rates');
   assert.equal(rates.source, 'rates/tractrix.sv');
   for (const name of ['README.md', 'tractrix.sv', 'clothoid.sv', 'chain.sv', 'pursuit.sv',
-    'geodesic.sv', 'front.sv']) {
+    'geodesic.sv', 'front.sv', 'geodesic_circles.sv', 'housing.sv']) {
     assert.ok(rates.files[`rates/${name}`], name);
+  }
+  const paths = await remote.drawing('paths');
+  assert.equal(paths.source, 'paths/coil.sv');
+  for (const name of ['README.md', 'coil.sv', 'frenet.sv', 'bent_pipe.sv', 'routed_line.sv',
+    's_bend.sv', 'cable.sv', 'flange.sv']) {
+    assert.ok(paths.files[`paths/${name}`], name);
   }
   const wankel = await remote.drawing('wankel');
   assert.equal(wankel.source, 'wankel/wankel.sv');
