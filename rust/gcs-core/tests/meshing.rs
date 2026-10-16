@@ -703,9 +703,7 @@ contact tangent(at: p) t
     };
     let again = build(&printed);
     assert_eq!(kinds(&again), kinds(&printing));
-    for k in [CKind::MeshingNormalAt, CKind::MeshingTangentAt] {
-        assert!(kinds(&again).contains(&k), "{k:?}");
-    }
+    assert!(kinds(&again).contains(&CKind::Rate));
     let text = include_str!("../../examples/spiral_bevel/contact.sv");
     let src = contact_with_lines(text);
     let first = solved(&src);
@@ -715,18 +713,18 @@ contact tangent(at: p) t
         let held = |c: &gcs_core::constraints::Constraint| -> Vec<u32> {
             c.args[2..10].iter().map(|a| a.param()).collect()
         };
-        let read = |c: &gcs_core::constraints::Constraint| -> Vec<u32> {
-            c.args[3..11].iter().map(|a| a.param()).collect()
-        };
         let contacts: Vec<_> =
             sk.constraints.iter().filter(|c| c.kind == CKind::PointOnMeshing).collect();
-        let lines: Vec<_> = sk.constraints.iter().filter(|c| c.kind.meshing_contact().is_some()
-            && c.kind != CKind::PointOnMeshing).collect();
+        let lines: Vec<_> = sk.constraints.iter()
+            .filter(|c| c.kind == CKind::Rate).collect();
         assert_eq!(lines.len(), 4);
         for l in lines {
             let at = l.args[2].ent();
             let holding = contacts.iter().find(|c| c.args[0].ent() == at).unwrap();
-            assert_eq!(read(l), held(holding), "{:?}", l.kind);
+            // the common normal and the path of contact are the contact's frame, read by a rate
+            // sharing its phase, its first unknown, the rest read as columns (#365)
+            assert_eq!(l.args[3].param(), held(holding)[0]);
+            assert_eq!(l.params(sk)[6..14], held(holding)[..], "the contact's unknowns read");
         }
     };
     shared(&first);

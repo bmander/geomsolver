@@ -70,6 +70,13 @@ pub fn kind_matches(spec: SpecKind, ent: EntKind) -> bool {
         SpecKind::Plane => ent == EntKind::Plane,
         SpecKind::Axis => ent == EntKind::Axis,
         SpecKind::Direction => ent == EntKind::Line || ent == EntKind::Axis,
+        // what a contact holds a point on, whose slot a rate runs over (#365)
+        SpecKind::Carrier => matches!(ent, EntKind::Spline | EntKind::Curve | EntKind::Traced
+                                           | EntKind::Meshing | EntKind::Motion | EntKind::Envelope),
+        // what a contact's frame is held against: a line, an axis, a plane, a round or a centre
+        // of curvature (#365)
+        SpecKind::Against => matches!(ent, EntKind::Line | EntKind::Axis | EntKind::Plane
+                                           | EntKind::Circle | EntKind::Arc | EntKind::Point),
         SpecKind::Along => matches!(ent, EntKind::Line | EntKind::Axis | EntKind::Plane),
         _ => false,
     }

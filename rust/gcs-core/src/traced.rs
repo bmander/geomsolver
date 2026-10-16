@@ -33,7 +33,7 @@
 //! What this certifies is local: a root near where it was seeded, on the branch the seeds pick;
 //! not that the body is regular over its whole domain (`regularity` says where it is not).
 
-use crate::envelope::held::{col3, cross, dot, unit, vscale, vsub};
+use crate::envelope::held::{cross, dot, unit};
 use crate::envelope::{held, screw};
 use crate::kernels::{Dual, Kernel, KernelFn, Num, KERNELS};
 use crate::taylor::{self, Jet};
@@ -873,83 +873,34 @@ impl Read {
 
 /* -- the contacts ---------------------------------------------------------------------------- */
 
-/// Which statement a contact with a traced body makes.
+/// Which statement a contact with a traced body makes: a point on it.  What is read at a point
+/// a contact holds — a curve's tangent, a surface's normal, a plane or a line touching it, a
+/// section's osculating circle — is the contact's frame, read by a rate of it (`contact_rate`,
+/// #365; `frame` here).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Contact {
     /// `p coincident k`: `p − X`.  Lead: the point's lift.
     Point = 0,
-    /// `l tangent(at: p) k`, `k` a curve: the line along its tangent.  Lead: the line's ends.
-    Tangent = 1,
-    /// `l tangent(at: p) S`, `S` a surface: the line in its tangent plane.  Lead: the line's ends.
-    InPlane = 2,
-    /// `l perpendicular(at: p) S`: the line along its normal.  Lead: the line's ends.
-    Normal = 3,
-    /// `P tangent(at: p) S`: the plane's normal along the surface's.  Lead: the plane's two axes.
-    Plane = 4,
-    /// `S curvature(at: p) k`: the circle osculating the surface's section by its plane at `p`.
-    /// Lead: the centre's lift, the radius, the plane's two axes.
-    Curvature = 5,
-    /// `k curvature(at: p) c`, `k` a curve, `c` a point: the centre of its osculating circle
-    /// (#363 S5).  Lead: the point's lift.
-    Centre = 6,
 }
 
 impl Contact {
-    pub const ALL: [Contact; 7] = [Contact::Point, Contact::Tangent, Contact::InPlane,
-                                   Contact::Normal, Contact::Plane, Contact::Curvature,
-                                   Contact::Centre];
+    pub const ALL: [Contact; 1] = [Contact::Point];
 
     pub fn rows(self) -> usize {
-        match self {
-            Contact::Point | Contact::Curvature | Contact::Centre => 3,
-            Contact::Tangent | Contact::Normal | Contact::Plane => 2,
-            Contact::InPlane => 1,
-        }
+        3
     }
 
     pub fn lead(self) -> usize {
-        match self {
-            Contact::Point | Contact::Centre => 3,
-            Contact::Tangent | Contact::InPlane | Contact::Normal | Contact::Plane => 6,
-            Contact::Curvature => 10,
-        }
-    }
-
-    fn need(self) -> Need {
-        match self {
-            Contact::Point => Need::Point,
-            Contact::Curvature | Contact::Centre => Need::Curvature,
-            _ => Need::Tangent,
-        }
+        3
     }
 
     fn name(self) -> &'static str {
-        match self {
-            Contact::Point => "point_on_traced",
-            Contact::Tangent => "traced_tangent_at",
-            Contact::InPlane => "traced_surface_tangent_at",
-            Contact::Normal => "traced_normal_at",
-            Contact::Plane => "traced_plane_at",
-            Contact::Curvature => "traced_curvature_at",
-            Contact::Centre => "traced_centre_at",
-        }
+        "point_on_traced"
     }
 
-    /// A point's and a circle's rows are lengths; a direction's are cosines.
+    /// A point's rows are lengths.
     fn degree(self) -> u32 {
-        match self {
-            Contact::Point | Contact::Curvature | Contact::Centre => 1,
-            _ => 0,
-        }
-    }
-
-    /// The body's formals the contact is about: a tangent along a curve, the rest of a surface.
-    pub fn formals(self) -> Option<usize> {
-        match self {
-            Contact::Point => None,
-            Contact::Tangent | Contact::Centre => Some(1),
-            _ => Some(2),
-        }
+        1
     }
 }
 
@@ -970,82 +921,65 @@ fn parts(k: &[f64]) -> Option<(&[f64], [f64; 2], &[f64])> {
     Some((values, home, k.get(3 + n..)?))
 }
 
-/// The smallest normal curvature a contact divides by.
-const FLAT: f64 = 1e-12;
-
 /// A contact's rows from its lead columns and the frame, into `out`.
 fn rows<T: Num>(c: Contact, lead: &[T], f: &Frame<T>, out: &mut [T]) {
-    let n = || unit(cross(f.d[0], f.d[1]));
-    let dir = || unit(vsub(col3(lead, 3), col3(lead, 0)));
     match c {
         Contact::Point => {
             for i in 0..3 {
                 out[i] = lead[i] - f.x[i];
             }
         }
-        Contact::Tangent => {
-            let (e1, e2) = screw::square_to(unit(f.d[0]));
-            let l = dir();
-            out[0] = dot(l, e1);
-            out[1] = dot(l, e2);
-        }
-        Contact::InPlane => out[0] = dot(dir(), n()),
-        Contact::Normal | Contact::Plane => {
-            let l = if c == Contact::Plane {
-                unit(cross(col3(lead, 0), col3(lead, 3)))
-            } else {
-                dir()
-            };
-            let t1 = unit(f.d[0]);
-            let t2 = cross(n(), t1);
-            out[0] = dot(l, t1);
-            out[1] = dot(l, t2);
-        }
-        // Meusnier, as an envelope's (`envelope::held`): the section by the plane of normal `m`
-        // turns `κₙ / cos θ` toward `n − (n·m)m`, `κₙ` the normal curvature along `m × n`
-        Contact::Curvature => {
-            let (centre, r) = (col3(lead, 0), lead[3]);
-            let (pu, pv) = (col3(lead, 4), col3(lead, 7));
-            let m = unit(cross(pu, pv));
-            let nn = n();
-            let w = unit(cross(m, nn));
-            let (xu, xv) = (f.d[0], f.d[1]);
-            let (e, ff, g) = (dot(xu, xu), dot(xu, xv), dot(xv, xv));
-            let (l, mm, nn2) = (dot(f.dd[0][0], nn), dot(f.dd[0][1], nn), dot(f.dd[1][1], nn));
-            let (b1, b2) = (dot(xu, w), dot(xv, w));
-            let det = e * g - ff * ff;
-            let det = if det.val() != 0.0 { det } else { T::cst(1.0) };
-            let (a, b) = ((g * b1 - ff * b2) / det, (e * b2 - ff * b1) / det);
-            let two = T::cst(2.0);
-            let second = l * a * a + two * mm * a * b + nn2 * b * b;
-            let first = e * a * a + two * ff * a * b + g * b * b;
-            let first = if first.val() != 0.0 { first } else { T::cst(1.0) };
-            let kappa = second / first;
-            let kappa = if kappa.val().abs() >= FLAT { kappa }
-                else { T::cst(if kappa.val() < 0.0 { -FLAT } else { FLAT }) };
-            let inward = vsub(nn, vscale(m, dot(nn, m)));
-            let to = vsub(centre, f.x);
-            let off = vsub(to, vscale(inward, T::cst(1.0) / kappa));
-            let a = unit(pu);
-            let bb = unit(cross(m, a));
-            out[0] = dot(off, a);
-            out[1] = dot(off, bb);
-            out[2] = dot(to, to).sqrt() - r;
-        }
-        // the osculating circle's centre: `X + |X′|²·(b × X′)/|b|²`, `b = X′ × X″` the binormal
-        // times `|X′|³κ` — no centre where it vanishes, its square floored so the rows stay
-        // finite and the rank says so
-        Contact::Centre => {
-            let (d1, d2) = (f.d[0], f.dd[0][0]);
-            let b = cross(d1, d2);
-            let bb = dot(b, b);
-            let bb = if bb.val() > FLAT * FLAT { bb } else { T::cst(FLAT * FLAT) };
-            let off = vscale(cross(b, d1), dot(d1, d1) / bb);
-            for i in 0..3 {
-                out[i] = lead[i] - (f.x[i] + off[i]);
-            }
+    }
+}
+
+/// **The body's frame at a place** (#365, `contact_rate`), over columns `[u, s, θ…]` and a
+/// contact's constants: the rate along formal `slot`, a direction a normal is read across (the
+/// first formal's), and of a surface its unit normal and — where `second` — its two rates and its
+/// second fundamental form along them; where `grad`, its derivative in each column, exact.
+pub(crate) fn frame(cols: &[f64], k: &[f64], slot: usize, second: bool, grad: bool)
+    -> Option<crate::contact_rate::Read> {
+    use crate::contact_rate::Read as Rated;
+    let (values, home, flat) = parts(k)?;
+    let v = view(flat)?;
+    if cols.len() != PLACE + v.n_theta || slot >= v.nf {
+        return None;
+    }
+    let mut outer = cols[..v.nf].to_vec();
+    outer.extend_from_slice(&cols[PLACE..]);
+    outer.extend_from_slice(values);
+    let need = if second { Need::Curvature } else { Need::Tangent };
+    let r = read(flat, &outer, &home, need, grad)?;
+    let surface = v.nf == 2;
+    let derive = |f: Frame<f64>| derived(&f, slot, surface, second);
+    if !grad {
+        return Some(Rated::value(derive(r.frame)));
+    }
+    Rated::by_passes(cols, |c, _| {
+        let f = r.linear(|q| c.get(q).map(|&x| x - Dual::<{ held::PASS }>::cst(x.val())));
+        Some(derived(&f, slot, surface, second))
+    })
+}
+
+/// The contact frame of a body's frame: its rate along formal `slot`, its second rate there where
+/// `second`, and of a surface its normal and second order.
+fn derived<T: Num>(f: &Frame<T>, slot: usize, surface: bool, second: bool)
+    -> crate::contact_rate::Frame<T> {
+    let mut out = crate::contact_rate::Frame::zero();
+    out.x = f.x;
+    out.rate = f.d[slot];
+    out.across = f.d[0];
+    if second {
+        out.accel = f.dd[slot][slot];
+    }
+    if surface {
+        let n = unit(cross(f.d[0], f.d[1]));
+        out.n = n;
+        if second {
+            out.tan = [f.d[0], f.d[1]];
+            out.second = [dot(f.dd[0][0], n), dot(f.dd[0][1], n), dot(f.dd[1][1], n)];
         }
     }
+    out
 }
 
 /// The body's outer variables at a contact's columns: its place, its `θ` and the values.
@@ -1063,11 +997,11 @@ fn residual(c: Contact, cols: &[f64], k: &[f64], out: &mut [f64]) -> Option<()> 
     let (values, home, flat) = parts(k)?;
     let v = view(flat)?;
     if cols.len() != c.lead() + PLACE + v.n_theta || out.len() != c.rows()
-        || c.formals().is_some_and(|n| n != v.nf) {
+        || c != Contact::Point {
         return None;
     }
     let outer = outer_of(c, cols, values, v.nf);
-    let r = read(flat, &outer, &home, c.need(), false)?;
+    let r = read(flat, &outer, &home, Need::Point, false)?;
     rows(c, &cols[..c.lead()], &r.frame, out);
     out.iter().all(|x| x.is_finite()).then_some(())
 }
@@ -1080,11 +1014,11 @@ fn jacobian(c: Contact, cols: &[f64], k: &[f64], j: &mut [f64]) -> Option<()> {
     let v = view(flat)?;
     let w = cols.len();
     if w != c.lead() + PLACE + v.n_theta || j.len() != c.rows() * w
-        || c.formals().is_some_and(|n| n != v.nf) {
+        || c != Contact::Point {
         return None;
     }
     let outer = outer_of(c, cols, values, v.nf);
-    let r = read(flat, &outer, &home, c.need(), true)?;
+    let r = read(flat, &outer, &home, Need::Point, true)?;
     let mut lead = vec![Dual::<P>::cst(0.0); c.lead()];
     let mut out = vec![Dual::<P>::cst(0.0); c.rows()];
     for start in (0..w).step_by(P) {
@@ -1119,12 +1053,6 @@ fn jac<const C: u8>(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
 pub fn kernel(c: Contact, n_par: usize, n_const: usize) -> Kernel {
     let (res, jac): (KernelFn, KernelFn) = match c {
         Contact::Point => (res::<0>, jac::<0>),
-        Contact::Tangent => (res::<1>, jac::<1>),
-        Contact::InPlane => (res::<2>, jac::<2>),
-        Contact::Normal => (res::<3>, jac::<3>),
-        Contact::Plane => (res::<4>, jac::<4>),
-        Contact::Curvature => (res::<5>, jac::<5>),
-        Contact::Centre => (res::<6>, jac::<6>),
     };
     Kernel { name: c.name(), n_res: c.rows(), n_par, n_const, degree: c.degree(), res, jac,
              const_jac: None, form: None }

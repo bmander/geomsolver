@@ -89,6 +89,10 @@ pub struct Written {
 pub struct RateOf {
     pub op: usize,
     pub over: Name,
+    /// Read along **the slot of the contact holding the point** rather than a formal (#365):
+    /// `rate(Q over t)` of `Q coincident(t == 0deg) contact`.  Set where the flattener finds the
+    /// name no formal in scope (`Walk::rate_over`); written as the parser wrote it either way.
+    pub slot: bool,
 }
 
 impl Written {

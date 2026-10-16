@@ -7,7 +7,7 @@
 // does not fold within its blank — and the ease is found: the profile radius of the gear's
 // concave blade and the radius it is cut at. See README.md.
 unit mm
-use std
+use std (reciprocal)
 use hypoid (GearCone, ToothTrace, PinionCone, Blank, FaceMill, Tooth, Member, Gear)
 use formate (Formed)
 
@@ -102,10 +102,11 @@ component MeshingPair(P: plane, across: axis, up: axis, pinion_teeth: Int, gear_
     lengthwise: lengthwise_ease / 1mm)
   Q := point hint(at: mean.T)
   Q coincident(t == 0deg) contact
-  // the path of contact there, at the stated angle to the trace's heading
+  // the path of contact there — the contact point's rate along the phase — at the stated angle
+  // to the trace's heading
   ahead := point hint((53.5, -8.6, -2.3))
   path := line(Q, ahead)
-  contact tangent(at: Q) path
+  rate(Q over t) parallel path
   Q distance(10mm) ahead
   Q distance(>= 0mm, along: trace.normal) ahead
   path angle(path_angle) trace.heading

@@ -104,7 +104,7 @@ fn one_station_word_stands_over_any_path() {
     // and the line's is the line
     along(&e, "sl.m", "sl.q", (0.0, 1.0));
     let kinds: Vec<CKind> = e.sketch.constraints.iter().map(|c| c.kind).collect();
-    for k in [CKind::SplineTangentAt, CKind::TangentCircleAt, CKind::Parallel] {
+    for k in [CKind::Rate, CKind::TangentCircleAt, CKind::Parallel] {
         assert!(kinds.contains(&k), "{k:?} in {kinds:?}");
     }
 }
@@ -138,7 +138,7 @@ fn a_tangency_between_a_line_and_a_curve_reads_either_way_round() {
         );
         let e = read(&src);
         let at = |k: CKind| e.sketch.constraints.iter().filter(|c| c.kind == k).count();
-        (at(CKind::SplineTangentLine), at(CKind::SplineTangentAt))
+        (at(CKind::SplineTangentLine), at(CKind::Rate))
     };
     assert_eq!(kinds("g tangent tl"), (1, 0));
     assert_eq!(kinds("tl tangent g"), (1, 0));

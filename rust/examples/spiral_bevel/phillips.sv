@@ -14,7 +14,7 @@
 // turn — it moves along L as the member does — which the claims check (`tests/phillips.rs` reads
 // the pair against the closed form).
 unit mm
-use std
+use std (reciprocal)
 
 param pinion_teeth := 24
 param gear_teeth := 48
@@ -51,9 +51,10 @@ L := line(P, ahead)
 P distance(10mm) ahead
 P distance(10mm * sin(pressure), along: std.y) ahead
 L reciprocal mesh
-// the mesh's instantaneous screw axis, on the common perpendicular, and its pitch
+// the mesh's instantaneous screw axis, on the common perpendicular, and its pitch: `screw.pitch`,
+// the advance a radian of the mesh's roll — both read by rates of points the mesh carries (std.sv)
 isa := axis hint(dir: (-0.9, 0, -0.45))
-isa screw mesh
+screw := std.Screw(isa, mesh)
 
 // -- the rack and the flanks ---------------------------------------------------------------------
 // The plane square to L through P, sliding along L at the speed both members have along it; each

@@ -198,7 +198,9 @@ front perpendicular(at: h) nl
     for p in sk.params.iter_mut() {
         p.value += rng.uniform(-0.02, 0.02) * (1.0 + p.value.abs().min(10.0));
     }
-    for c in sk.constraints.iter().filter(|c| c.kind.traced_contact().is_some()) {
+    // a rate of the contact too, the normal and the tangent being rates (#365)
+    for c in sk.constraints.iter()
+        .filter(|c| c.kind.traced_contact().is_some() || c.rate_source().is_some()) {
         let v = c.local_values(&sk);
         let rows = c.n_residuals();
         let got = c.jacobian(&sk, &v);

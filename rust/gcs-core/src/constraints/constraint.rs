@@ -389,6 +389,10 @@ impl Constraint {
         if matches!(self.kind, CKind::Stationary | CKind::CurveTouchesLine) {
             return Key::Stationary(self.id);
         }
+        // a rate's is its source's (#365)
+        if let Some(src) = self.rate_source() {
+            return self.rate_key(sk, src);
+        }
         // an envelope contact's kernel is its block's widths' (#283)
         if let Some(c) = self.kind.envelope_contact() {
             let parts = self.envelope_parts(sk);
@@ -428,6 +432,54 @@ impl Constraint {
         }
     }
 
+    /// A rate's kernel (#365): the one kernel every rate of a contact runs, at its word's rows
+    /// and its block's widths (`contact_rate::kernel`).
+    fn rate_key(&self, sk: &Sketch, src: RateSource) -> kernels::KernelKey {
+        kernels::KernelKey::Rate {
+            word: self.rate_word() as u8,
+            form: src.form() as u8,
+            n_par: self.params(sk).len(),
+            n_const: self.consts(sk).len(),
+        }
+    }
+
+    /// What a rate of a contact holds its frame to (#365): its word, `along` a distance's.
+    pub fn rate_word(&self) -> crate::contact_rate::Word {
+        use crate::contact_rate::Word;
+        match (self.kind, self.args.get(5)) {
+            (CKind::RateDistance, _) => Word::Along,
+            (_, Some(Arg::Str(w))) => Word::of(w).unwrap_or(Word::Parallel),
+            _ => Word::Parallel,
+        }
+    }
+
+    /// Which of the contact's slots a rate runs over: a traced surface's second formal, `s`, is
+    /// its second; every other is its first.
+    pub fn rate_slot(&self) -> usize {
+        let i = if self.kind == CKind::RateDistance { 5 } else { 4 };
+        match self.args.get(i) {
+            Some(Arg::Str(w)) if w == "s" => 1,
+            _ => 0,
+        }
+    }
+
+    /// What a rate of a contact reads its rate off (#365): what the contact holding its point is
+    /// on.  `None` for every other kind.
+    pub fn rate_source(&self) -> Option<RateSource> {
+        if !matches!(self.kind, CKind::Rate | CKind::RateDistance) {
+            return None;
+        }
+        let Some(Arg::Ent(on)) = self.args.first() else { return None };
+        RateSource::of(on.kind)
+    }
+
+    /// The contact holding a rate's point on what the rate names, whose slot it runs over (#365).
+    pub fn rate_contact<'s>(&self, sk: &'s Sketch) -> Option<&'s Constraint> {
+        self.rate_source()?;
+        let (Arg::Ent(on), Arg::Ent(at)) = (&self.args[0], &self.args[2]) else { return None };
+        sk.constraints.iter().find(|c| matches!(c.holds_on(), Some((a, e, _)) if a == at.i() && e == *on))
+    }
+
     /// The kernel itself (`kernel_key`, built where it must be).
     pub fn kernel_in(&self, sk: &Sketch) -> Kernel {
         crate::system::build_kernel(sk, self.kernel_key(sk))
@@ -447,6 +499,9 @@ impl Constraint {
 
     /// The envelope a contact with one is on (#283) — the spec's `Envelope` slot.
     pub fn envelope_of(&self) -> Option<EntRef> {
+        if let Some(e) = self.rate_on(EntKind::Envelope) {
+            return Some(e);
+        }
         let (e, _) = self.kind.contact_on(SpecKind::Envelope)?;
         match self.args.get(e)? {
             Arg::Ent(e) if e.kind == EntKind::Envelope => Some(*e),
@@ -454,8 +509,20 @@ impl Constraint {
         }
     }
 
-    /// The meshing a point on one is held to (#283) — the spec's `Meshing` slot.
+    /// What a rate names, where it is of kind `kind` (#365).
+    fn rate_on(&self, kind: EntKind) -> Option<EntRef> {
+        self.rate_source()?;
+        match self.args.first()? {
+            Arg::Ent(e) if e.kind == kind => Some(*e),
+            _ => None,
+        }
+    }
+
+    /// The meshing a point on one is held to (#283) — the spec's `Meshing` slot, or a rate's.
     pub fn meshing_of(&self) -> Option<EntRef> {
+        if let Some(e) = self.rate_on(EntKind::Meshing) {
+            return Some(e);
+        }
         let (e, _) = self.kind.contact_on(SpecKind::Meshing)?;
         match self.args.get(e)? {
             Arg::Ent(e) if e.kind == EntKind::Meshing => Some(*e),
@@ -469,8 +536,11 @@ impl Constraint {
         crate::envelope::meshing::Parts::of(sk, self.meshing_of()?.i()).ok()
     }
 
-    /// The traced body a contact with one is on (#326) — the spec's `Traced` slot.
+    /// The traced body a contact with one is on (#326) — the spec's `Traced` slot, or a rate's.
     pub fn traced_of(&self) -> Option<EntRef> {
+        if let Some(e) = self.rate_on(EntKind::Traced) {
+            return Some(e);
+        }
         let i = self.kind.spec().iter().position(|&(_, k)| k == SpecKind::Traced)?;
         match self.args.get(i)? {
             Arg::Ent(e) if e.kind == EntKind::Traced => Some(*e),
@@ -478,8 +548,11 @@ impl Constraint {
         }
     }
 
-    /// The motion a relation reading its twist names (#326) — the spec's `Motion` slot.
+    /// The motion a point is carried by (#326) — the spec's `Motion` slot, or a rate's.
     pub fn motion_of(&self) -> Option<EntRef> {
+        if let Some(e) = self.rate_on(EntKind::Motion) {
+            return Some(e);
+        }
         let i = self.kind.spec().iter().position(|&(_, k)| k == SpecKind::Motion)?;
         match self.args.get(i)? {
             Arg::Ent(e) if e.kind == EntKind::Motion => Some(*e),
@@ -515,8 +588,12 @@ impl Constraint {
         crate::envelope::held::Parts::of(sk, self.envelope_of()?.i()).ok()
     }
 
-    /// The curve a per-definition kernel is over — the spec's `Curve` slot, wherever it stands.
+    /// The curve a per-definition kernel is over — the spec's `Curve` slot, wherever it stands,
+    /// or a rate's.
     pub fn curve_of(&self) -> Option<EntRef> {
+        if let Some(e) = self.rate_on(EntKind::Curve) {
+            return Some(e);
+        }
         let (e, _) = self.kind.contact_on(SpecKind::Curve)?;
         Some(self.args[e].ent())
     }
@@ -610,6 +687,7 @@ impl Constraint {
     /// or an ordinate whose form is one — so `Sketch::add` mints their lifts.
     pub fn reads_space(&self) -> bool {
         self.kind.spatial() || self.form().is_some_and(|f| f.in_space())
+            || self.rate_source().is_some_and(|s| !s.planar())
     }
 
     /// Which way an angle turns: `sense: cw` is the minus a drawing no longer writes (§9.4), and
@@ -627,6 +705,11 @@ impl Constraint {
     }
 
     pub fn n_residuals(&self) -> usize {
+        // a rate's: one row where it is held square, or of a curve in its view; two along a line
+        // in space (#365)
+        if let Some(src) = self.rate_source() {
+            return self.rate_word().rows(src.planar());
+        }
         // a curve's kernel belongs to its definition, so its row count is a fact about the kind
         match self.kind.family_kernel() {
             Some(fk) => fk.n_res(),
@@ -673,25 +756,14 @@ impl Constraint {
             .collect()
     }
 
-    /// A tangent at a point already on its curve (#251): the slot holding its place, the point
-    /// and the curve — the contact holding that point there owns the place (`Sketch::add`).
+    /// A rate at a point already on its curve (#251, #365): the slot holding its place, the point
+    /// and what it is on — the contact holding that point there owns the place (`Sketch::add`),
+    /// and the rate shares its first unknown.
     pub fn tangent_at(&self) -> Option<(&'static [usize], usize, EntRef)> {
         let slots: &'static [usize] = match self.kind {
-            CKind::SplineTangentAt | CKind::CurveTangentAt => &[3],
-            // an envelope's place is three numbers, all the contact's (#283)
-            CKind::EnvelopeTangentAt
-            | CKind::EnvelopeNormalAt
-            | CKind::EnvelopePlaneAt
-            | CKind::EnvelopeCurvatureAt => &[3, 4, 5],
-            // a meshing's is its phase, its lag and a place on each flank (#345)
-            CKind::MeshingNormalAt | CKind::MeshingTangentAt => &[3, 4, 5, 6, 7, 8, 9, 10],
-            // a traced body's place is its two formals' (#326)
-            CKind::TracedTangentAt
-            | CKind::TracedSurfaceTangentAt
-            | CKind::TracedNormalAt
-            | CKind::TracedPlaneAt
-            | CKind::TracedCurvatureAt
-            | CKind::TracedCentreAt => &[3, 4],
+            // a rate's slot is the contact's first unknown, the one it runs over (#365)
+            CKind::Rate => &[3],
+            CKind::RateDistance => &[4],
             _ => return None,
         };
         match (&self.args[0], &self.args[2]) {
@@ -723,6 +795,10 @@ impl Constraint {
             }
             (CKind::PointOnTraced, [Arg::Ent(at), Arg::Ent(on), Arg::Param(u), Arg::Param(s)]) => {
                 Some((at.i(), *on, vec![*u, *s]))
+            }
+            // and a point a motion carries, its roll (#365)
+            (CKind::CarriedPoint, [Arg::Ent(at), _, Arg::Ent(on), Arg::Param(t)]) => {
+                Some((at.i(), *on, vec![*t]))
             }
             _ => None,
         }

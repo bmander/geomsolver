@@ -104,7 +104,7 @@ impl<'a> P<'a> {
             return None;
         }
         r.span = Span::new(lo, self.prev_hi());
-        rates.push(crate::syntax::RateOf { op: k, over });
+        rates.push(crate::syntax::RateOf { op: k, over, slot: false });
         Some(r)
     }
 

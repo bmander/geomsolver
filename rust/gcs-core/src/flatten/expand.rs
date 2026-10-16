@@ -894,6 +894,9 @@ impl<'a> Walk<'a> {
             let mut stated = true;
             for rate in w.rates.iter_mut() {
                 match self.rate_over(&rate.over.text, vals) {
+                    // a name no formal is in scope is the slot of the contact holding the point
+                    // (#365), which the elaborator finds
+                    Ok(Some(text)) if text.is_empty() => rate.slot = true,
                     Ok(Some(text)) => rate.over.text = text,
                     Ok(None) => stated = false,
                     Err((code, m)) => {
@@ -920,10 +923,15 @@ impl<'a> Walk<'a> {
     /// is given a number, the home of a drawn instance.  A face family's running number, or a
     /// multiple of it, is its own; where a component is expanded to be traced (`sym`) a formal
     /// handed on as itself (`Drag(…, u: u)`) is the formal it was handed, which the trace runs
-    /// over.  Anything else is no number running, and refused.
+    /// over.  A name nothing in scope is, outside a trace, is the slot of the contact holding the
+    /// rate's point (#365): `Some("")`, found by the elaborator, which refuses it where no contact
+    /// owns one.  Anything else is no number running, and refused.
     fn rate_over(&self, s: &str, vals: &BTreeMap<String, Aff>)
         -> Result<Option<String>, (Code, String)> {
         let Some(a) = vals.get(s) else {
+            if self.sym.is_none() && self.held.names.get(s).is_none() {
+                return Ok(Some(String::new()));
+            }
             return Err((Code::E040, format!("`{s}` is no formal here: a rate runs over a formal \
                 the body is given its running number in, `rate(x over s)`")));
         };

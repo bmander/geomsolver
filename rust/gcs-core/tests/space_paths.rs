@@ -425,7 +425,9 @@ length(10mm) tl"));
     for p in sk.params.iter_mut() {
         p.fixed = false;
     }
-    let traced: Vec<_> = sk.constraints.iter().filter(|c| c.kind.traced_contact().is_some())
+    // the tangent a rate of the contact holding `m2` (#365)
+    let traced: Vec<_> = sk.constraints.iter()
+        .filter(|c| c.kind.traced_contact().is_some() || c.rate_source().is_some())
         .cloned().collect();
     assert_eq!(traced.len(), 3, "{:?}", traced.iter().map(|c| c.kind).collect::<Vec<_>>());
     for c in &traced {

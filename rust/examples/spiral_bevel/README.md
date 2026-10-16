@@ -278,7 +278,7 @@ The designer states:
   normal is a line of action of the mesh (`normal reciprocal mesh`), the contact at phase 0;
 - `pressure`, 30°, the lean of the common normal there (the inner blades' half angle);
 - `path_angle`, 70°, the angle the path of contact makes there with the trace's heading
-  (`contact tangent(at: Q) path`);
+  (`rate(Q over t) parallel path`: Q's rate along the phase);
 - `lag`, −0.03°, how far the pinion stands behind the ratio at the start of the phase, half a
   pinion pitch before the pair is drawn;
 - no undercut: `pinion_flank regular(by: gear_tooth.crown) within pinion_blank.material`.
@@ -329,19 +329,24 @@ area factor against the sweep's admission.
 **`phillips.sv`** is a pair on the same skew shafts made from its contact alone: no face mill, no
 crown. The design is one line of action `L` through the pitch point. A force along `L` does no
 work on the members' relative motion when the two move as fast along it: `L reciprocal mesh`,
-which fixes its helix angle once its pressure angle is stated. `isa screw mesh` draws the mesh's
-instantaneous screw axis, on the shafts' common perpendicular, and reports its pitch. Each member's flank is then the involute helicoid a plane
+which fixes its helix angle once its pressure angle is stated. `screw := std.Screw(isa, mesh)`
+draws the mesh's instantaneous screw axis, on the shafts' common perpendicular, and `screw.pitch`
+is its advance a radian of the mesh's roll. Both are the standard library's, rates of points the
+mesh carries (#365): a motion's twist has no words of its own. Each member's flank is then the involute helicoid a plane
 square to `L` sweeps sliding along it at that speed, seen from the member: its rack,
 `std.HalfSpace(P, L, d: 0mm)` under `motion(slide, relative_to: pinion_turn)`. The two flanks
 touch where the rack meets `L`, with `L` for their normal, at the ratio's roll:
 
 ```sh
-build/solventc rust/examples/spiral_bevel/phillips.sv
+build/solventc rust/examples/spiral_bevel/phillips.sv --where screw.pitch --where isa
 #   bearing: point contact; transmission error (the gear's angle) 0° … 8.1e-14° over the phase
 #   -15° … 15°, the path of contact 8.34989 long
-#   mesh: screws about the axis through (0, 57.6, 0) along (-0.894427, 0, -0.447214), pitch
-#   -28.8 a radian
+#   screw.pitch = -32.1994
+#   isa.px = 0, isa.py = 57.6, isa.pz = 0; isa.x = -0.894427, isa.y = 0, isa.z = -0.447214
 ```
+
+Ball's pitch is −28.8 a radian of turn about the axis; the mesh turns √1.25 about it a radian of
+its roll.
 
 `gcs-core/tests/phillips.rs` holds each flank to the helicoid's own equations and the pair to a
 point contact running along `L` with no lag, the screw to Ball's closed form, and `L` to the

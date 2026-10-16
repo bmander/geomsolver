@@ -192,6 +192,21 @@ impl<'a> Walk<'a> {
             ([one], _) | (_, [one]) => Some(*one),
             _ => None,
         };
+        // what the body declares (by its key under the use's prefix, read by its last name): under
+        // a claim it is made all the same, and the `coincident`
+        // that places it is how it is made — stated, never claimed (#365)
+        let made: std::collections::BTreeSet<String> = self.out[from..].iter()
+            .filter_map(|(st, _, _)| match &st.kind {
+                StmtKind::Decl(d) => Some(d.name.key().text.clone()),
+                _ => None,
+            })
+            .collect();
+        let places = |r: &Relation| r.form.written().is_some_and(|w| {
+            w.word.text == "coincident" && w.rates.is_empty()
+                && w.ops.first().is_some_and(|o| o.path.is_empty() && made.iter().any(|m| {
+                    m.rsplit('.').next() == Some(o.root.text.as_str())
+                }))
+        });
         // the sets a statement came through (#212): the use's, then those an inner use stamped
         let through_all = |inner: Vec<String>| through.iter().cloned().chain(inner).collect();
         for (i, (st, p, sc)) in self.out.iter_mut().enumerate().skip(from) {
@@ -228,7 +243,7 @@ impl<'a> Walk<'a> {
             r.word = Some(Worded { through: through_all(inner), ..stamp.clone() });
             // in space, a set's body (§6.21), which no later stamp undoes
             r.space |= set;
-            r.claim |= u.rel.claim;
+            r.claim |= u.rel.claim && !places(r);
             r.initially |= u.rel.initially;
             if placed == Some(i) {
                 r.place = u.rel.place;

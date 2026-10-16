@@ -4,6 +4,33 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.130] The rate of a contact; a motion's twist read by rates.** `rate(p over t)` runs over the
+slot of the contact holding `p` (§6.5) — a curve's `t`, a traced curve's `u`, a meshing's phase,
+the roll of `p coincident(under: m, t == …) q` — where `t` names no formal in scope: the derivative
+of the point the contact holds in that slot, every other unknown of the drawing held (a meshing's
+lag and places following its rows). It is held `parallel` or `perpendicular` to a line or an axis,
+and measured `distance(d, along: l)` (`d` stated or free); a rate along a
+`param`, a slot no contact holding the point owns, or one owned by two contacts is refused, naming
+it. Every statement at a point a contact holds is the contact's frame there, read by one kernel
+whatever the contact: `g tangent(at: m) l` of a spline, a curve, a traced curve or a meshing is that
+rate held along the line — the path of contact is `rate(Q over t) parallel l` — and a surface's
+normal (`S perpendicular(at: p) l`, a meshing's common normal too), a plane or a line touching it
+(`S tangent(at: p) P`, `S tangent(at: p) l`), its section's circle (`S curvature(at: p) k`) and a
+curve's centre of curvature (`k curvature(at: p) c`, 0.125) are the same frame's, solving to what
+they did. A curve's rate in its view may now be held square to
+a line and any contact's measured along one, where its tangent was held only along a line. A motion's
+twist has no words of its own: `reciprocal` and `screw` (0.105) leave the core, and the standard
+library says them with rates of carried points — `L reciprocal m` (import it, `use std
+(reciprocal)`) and `std.Screw(isa, m)`, whose `pitch` is the axis's advance a radian of the roll
+(Ball's pitch times how fast the motion turns about it), a component's unknown read as any is. A
+claimed word makes what it declares all the same: the `coincident` placing it is stated, the rest
+judged. `screw(pitch == …)` is `std.Screw(isa, m, pitch: …)`; a twist is read of any motion, a
+relative of a relative too. Through 0.129 the twist was read by two relation words of its own and
+a rate ran only along a running formal. Every example solves to the values it did, to
+rounding: bit for bit but `phillips.sv`'s screw axis (its last bit), `meshing_problem.sv`
+(8e-9 mm, a solve that stops at its iteration limit, through `reciprocal`) and zeros at 4e-22.
+(Issue #365.)
+
 **[0.129] An arc walked from its end.** A chain may enter an arc at its end and walk it to its
 start, `-> tangent (k3 := arc(center: c2, start: f, end: e)) ->` entered at `e`, or the arc named
 there: the same arc, drawn from its end and turning the other way, so a family runs it forward and

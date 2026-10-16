@@ -84,6 +84,9 @@ fn view_points(sk: &Sketch, kind: CKind, args: &[Arg]) -> Option<Vec<usize>> {
                 | CKind::AxisUnit
                 | CKind::AxisFoot
                 | CKind::PlaneAxis
+                // a rate reads its point where its contact holds it (#365)
+                | CKind::Rate
+                | CKind::RateDistance
                 // a map reads each side in its own plane (`mapped_planes`)
                 | CKind::Mapped
                 | CKind::MappedSimilar

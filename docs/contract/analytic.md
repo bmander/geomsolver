@@ -48,12 +48,13 @@ reads the columns (lifts, an axis's place and direction, a free number) and cons
 `HEADER`, `STEP`); a set's turn starts at `SetShape::reference`, read once — before the solve
 places the axis, so a reference within 30° of the axis as solved gives way to the first world
 axis the axis does not nearly run along (`held::across`, #283), or which way rounding tips it
-moves every place a quarter turn. The kinds
-`PointOnEnvelope` (four rows, three owned), `EnvelopeTangentAt` (one), `EnvelopeNormalAt` and
-`EnvelopePlaneAt` (two, each its own `Contact`) and `EnvelopeCurvatureAt` (three: Meusnier,
-`x + (n − (n·m)m)/κₙ`, `κₙ` from `−dn·dX` along two directions of the place square to `∇g`) are
-built at their widths (`KernelKey::Envelope`); the four with `at:` share the contact's place
-(`solver.md`, #251). Seeds: `held::seed`, a coarse search
+moves every place a quarter turn. `PointOnEnvelope` (four rows, three owned) is built at its widths
+(`KernelKey::Envelope`); what is read at a point it holds is the envelope's frame, a `Rate` of the
+contact (#365, `contact_rate`, curves.md's "The rate of a contact"): `held::frame` gives the point,
+`∂X/∂u` to read a normal across, the unit normal, and two directions of the place square to `∇g`
+with `−dn·dX` along them, so a line in its tangent plane (`in_plane`, one row), along its normal
+(`normal`, two), a plane along it (`plane`, two) and a section's circle (`curvature`, three:
+Meusnier, `x + (n − (n·m)m)/κₙ`) share the contact's place (`solver.md`, #251). Seeds: `held::seed`, a coarse search
 over the roll interval then `newton::dogleg` on the four rows (`Seeding`), remembered across a
 contact's three slots. A set's
 envelope has no chart after the solve (`GeneratedEnvelope::named` refuses it; `program::solid_diagnostics`
@@ -111,21 +112,21 @@ from the cone's equation and the poses alone), a stated lag solving its phase, `
 envelope at the element's phase, to 1e-9), to the closed form's point contact along `L` with no
 lag, and their meshing's Jacobian to finite differences.
 
-**The common normal and the path of contact at a point (#345 S1, [0.112]):** `contact
-perpendicular(at: q) l` is `MeshingNormalAt` and `contact tangent(at: q) l` `MeshingTangentAt`,
-`meshing::Contact::{Normal, Path}` beside `Point` (`CKind::meshing_contact`, `KernelKey::Meshing {
-contact, … }`): lead the line's two lifted ends or an axis's direction (six columns), then the
-point's contact's eight unknowns — shared, `holds_on` handing `PointOnMeshing`'s place to
-`tangent_at`'s slots `[3..11]` — and the meshing's columns as the point's; two rows, degree 0, the
-line's direction square to two directions. The normal's are the gear's tangent plane at the
-contact (`along`, `n₂ × along`), read off `at` as the point's rows are. The path is **the contact
+**The common normal and the path of contact at a point (#345 S1, [0.112], #365):** both are the
+meshing contact's frame, read by a `Rate` of it (`contact_rate`, `meshing::frame`): `contact
+perpendicular(at: q) l` its `normal` — the line square to the gear's tangent plane at the contact
+(`along`, `n₂ × along`), two rows, degree 0 — and the path of contact the contact point's rate along
+the phase, `rate(q over t) parallel l` (`contact tangent(at: q) l` the same statement), held
+across a line, along one or measured along one, a length a radian of the phase, degree 1.  Columns
+the lead (a line's two lifted ends or an axis's direction), then the point's contact's eight
+unknowns — the rate sharing the phase, `holds_on` handing the rest as columns — then the meshing's
+columns at no lead (`Parts::consts(sk, 0)`). The path is **the contact
 point's derivative along the phase in the fixed frame**, `∂x/∂φ + ∂x/∂z · dz/dφ` with `J_z dz/dφ =
-−J_φ` over the seven rows' Jacobian in the lag and the places (`meshing::path`, `touching`, the
-elimination `eliminate`): the implicit function theorem, the rows read once over `Fwd<T, 8>`, a number
-carrying its derivatives in the eight unknowns, each itself a `T`; its two directions are across
-the world axis it runs least along (`square_to`, a tie turning the pair about the path but not the
-plane it spans). Its Jacobian is the rows' second derivatives, exact: `path_jac_block` takes it a
-block at a time as the point's is, each flank's `Seen` over `Fwd<Dual, 3>` in its own place and
+−J_φ` over the seven rows' Jacobian in the lag and the places (`meshing::path_of`, `touching`,
+the elimination `eliminate`): the implicit function theorem, the rows read once over `Fwd<T, 8>`, a
+number carrying its derivatives in the eight unknowns, each itself a `T`; a line held along it is
+read against two directions square to the line (`screw::square_to`). Its derivative in every column is the rows' second derivatives, exact:
+`meshing::frame` takes it once a block as the point's Jacobian is, each flank's `Seen` over `Fwd<Dual, 3>` in its own place and
 the poses over `Fwd<Dual, 2>` in the phase and the lag, each differentiated over its own columns
 only (`derive`), then `assemble` and `path_of` over `Fwd<Dual, 8>` by the chain rule. It is not the
 bearing: `contact.sv`'s pair and step 3's turned cutter stand still on the gear's flank (the
@@ -136,8 +137,8 @@ to the cones' normal (`closed_contact`, apart from the meshing), the normal that
 that point's derivative over the phase; on the turned cutter the path a central difference of the
 traced positions; a free point's phase solved from a stated path angle and the traced path at that
 angle there; printing, sharing the place either way round and refusing an unheld point — with
-`jacobians::meshing_contacts_agree_with_finite_differences` holding both kinds over a formed, a
-round and two generated flanks.
+`jacobians::meshing_contacts_agree_with_finite_differences` holding the point and every rate over
+a formed, a round and two generated flanks.
 
 **Ease-off (#345 S2, [0.114]):** `meshing(…, ease: M, along: l, profile: κₚ, lengthwise: κₗ)` is
 `MeshingE::ease` (`model::Ease`: the point, the line, each curvature a `TermNumber` read off the
@@ -234,24 +235,27 @@ nearest within 1 mm of the meshing's contact (the next pair's, a pitch on, at th
 the concave side constant within the files' sag, no overlap.
 
 **A point a motion carries (#326, [0.106]):** `Reading::Carried` is `X − Pose(τ)·x`, the pose
-`held::frames`' last at `τ` degrees — any motion, its twist constant or not (`Reading::twist`
-false). `held::Step::Turn` (code 4, nine columns: a centre's lift, its view's `u` and `v`) is a turn
+`held::carried` at `τ` degrees — any motion. `held::Step::Turn` (code 4, nine columns: a centre's lift, its view's `u` and `v`) is a turn
 about a point of a view as it reads in space; only `Moving::of_any` reads one.
 
-**A motion's screw (#326, [0.105]):** `envelope::screw` reads a motion as its twist, `v(x) = v₀ +
-ω × x` a radian, constant in the fixed frame for a turn, a screw or a slide about a fixed line
-(`own`: `ω = ratio·d`, `v₀ = a × ω + d·advance/τ`) and one relative to another (the source's less
-the observer's) — `constant` refuses anything else. `Reading::Reciprocal` is one row of degree 2,
-`(B − A)·v(A)`; `Reading::Axis` five of degree 1: the axis's direction against the two directions
-square to `ω̂` (`square_to`: the world axis `ω̂` leans least toward, its part off) times the lever
-(the motion's first axis as drawn), its place against `ω × v₀/|ω|²` across them, and the pitch
-against `ω·v₀/|ω|²` (`axis_of`; `None`, so NaN rows, where `ω` is zero). Written once over
-`kernels::Num`, the Jacobian by `held::block_jac`. `motion::Family::instantaneous` is the same
-read off a snapshot (`Isa`: point, direction, pitch, twist); `report::screws_text` is the CLI's
-line. `tests/phillips.rs` holds the screw to Ball's closed form on the common perpendicular — the
-foot `E ω₂·ω/|ω|²` from the pinion's shaft, the pitch that point's speed along `ω` — at three shaft
-angles, no offset giving zero pitch through the apex, and `L reciprocal mesh` to the members'
-equal speeds along `L` at every point of it.
+**A motion's twist, read by rates (#326, #365, [0.130]):** a carried point's rate,
+`rate(X over t)` of `X coincident(under: m, t == τ) x`, is `∂(Pose(τ)·x)/∂τ` a radian
+(`held::carried`, the pose's derivative in the roll carried by its `H2`), every other column held —
+the twist at `X`, any motion's, its twist constant or not.  `Reading::{Rate, RateSquare,
+RateAlong}`: the rate's two components across the line's direction (`square_to`), its component
+along it, and that less a distance — `(m, c)` in the constants, a free one's unknown the last
+column — each degree 1, a velocity, so a point on the axis of a screw of no pitch, standing still,
+holds them regularly.  Columns the line's lifted ends (or an axis's place and direction), the
+carried point's base point's lift and the roll, then the motion's.  The standard library says the
+twist's two words with them: `l reciprocal m` (a point of `l` carried at roll 0, its rate square to
+`l`: `d · v(p)`, the same at every point of `l`) and `Screw(isa, m, pitch)` (two points of `isa`
+carried, their rates along it, the first's speed along it the pitch — Ball's pitch times `ω` along
+`isa`, the advance a radian of the roll).  `motion::Family::instantaneous` reads Ball's screw off a
+snapshot (`Isa`: point, direction, pitch, twist).  `tests/phillips.rs` holds `std.Screw` to Ball's
+closed form on the common perpendicular — the foot `E ω₂·ω/|ω|²` from the pinion's shaft, the pitch
+that point's speed along the axis — at three shaft angles, no offset giving zero pitch through the
+apex, and `L reciprocal mesh` to the members' equal speeds along `L` at every point of it;
+`tests/rate_of_contact.rs` a rolling circle's carried point's rate to the epicycloid's derivative.
 
 **The post-solve B-rep is Rust API, not Solvent** (#364). Patches, seams, corners, edges and face
 boundaries add no unknown, no solve row reads them and nothing exports from them, so the language

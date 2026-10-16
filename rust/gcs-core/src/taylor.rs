@@ -522,14 +522,6 @@ pub(crate) fn spline_tangent_line(v: &[Jet], k: &[f64], r: &mut [Jet]) {
     r[1] = (c1[0] * dy - c1[1] * dx) / Jet::line_len(dx, dy);
 }
 
-/// (t, c0x … c3y, ax, ay, bx, by): the curve along the line where a contact holds its point
-/// (#251) — `spline_tangent_line`'s second row.
-pub(crate) fn spline_tangent_at(v: &[Jet], k: &[f64], r: &mut [Jet]) {
-    let [_, c1, _] = span_frame(v[0], &v[1..9], k);
-    let (dx, dy) = (v[11] - v[9], v[12] - v[10]);
-    r[0] = (c1[0] * dy - c1[1] * dx) / Jet::line_len(dx, dy);
-}
-
 /// (t, c0x … c3y, cx, cy, r): the centre is the centre of curvature, and the radius its
 /// distance.
 pub(crate) fn spline_curvature(v: &[Jet], k: &[f64], r: &mut [Jet]) {

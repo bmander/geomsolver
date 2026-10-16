@@ -527,9 +527,6 @@ pub fn build_kernel(sk: &Sketch, key: KernelKey) -> Kernel {
                 (FamilyKernel::Contact, kernels::FORMULA) => kernels::curve_kernel(n_theta, n_const),
                 (FamilyKernel::Contact, _) => kernels::point_on_body_kernel(n_theta, n_const, body),
                 (FamilyKernel::Tangent, _) => kernels::curve_tangent_kernel(n_theta, n_const, body),
-                (FamilyKernel::TangentAt, _) => {
-                    kernels::curve_tangent_at_kernel(n_theta, n_const, body)
-                }
                 (FamilyKernel::Curvature, _) => {
                     kernels::curve_curvature_kernel(n_theta, n_const, body, formed)
                 }
@@ -549,6 +546,11 @@ pub fn build_kernel(sk: &Sketch, key: KernelKey) -> Kernel {
         KernelKey::Regular { n_par, n_const } => crate::envelope::regular::kernel(n_par, n_const),
         KernelKey::Traced { contact, n_par, n_const } => {
             crate::traced::kernel(crate::traced::Contact::ALL[contact as usize], n_par, n_const)
+        }
+        KernelKey::Rate { word, form, n_par, n_const } => {
+            use crate::contact_rate::{Form, Word};
+            crate::contact_rate::kernel(Word::ALL[word as usize], Form::ALL[form as usize], n_par,
+                                        n_const)
         }
         KernelKey::Motion { reading, n_par, n_const } => {
             crate::envelope::screw::kernel(crate::envelope::screw::Reading::ALL[reading as usize], n_par, n_const)

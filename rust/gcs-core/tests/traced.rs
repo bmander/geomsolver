@@ -215,18 +215,25 @@ in meridian {{
 }}
 T curvature(at: p) osc
 T tangent(at: p) meridian
+rate(q over u) perpendicular nl
 ");
     let (prog, errs) = crate::common::parse(&src);
     assert!(errs.is_empty(), "{errs:?}");
     let el = gcs_core::program::elaborate(&prog);
     assert!(el.ok(), "{:?}", el.errors().map(|d| &d.message).collect::<Vec<_>>());
     let mut sk: Sketch = el.sketch;
-    let kinds: Vec<CKind> = sk.constraints.iter().map(|c| c.kind)
-        .filter(|k| k.traced_contact().is_some()).collect();
-    for k in [CKind::PointOnTraced, CKind::TracedTangentAt, CKind::TracedSurfaceTangentAt,
-              CKind::TracedNormalAt, CKind::TracedPlaneAt, CKind::TracedCurvatureAt,
-              CKind::TracedCentreAt] {
-        assert!(kinds.contains(&k), "{k:?} in {kinds:?}");
+    let traced = |c: &&gcs_core::constraints::Constraint| {
+        c.kind.traced_contact().is_some() || c.rate_source().is_some()
+    };
+    assert!(sk.constraints.iter().any(|c| c.kind == CKind::PointOnTraced));
+    // a curve's rate, held along a line and square to one, and a surface's frame, every word of
+    // it: one kind, one kernel (#365)
+    use gcs_core::contact_rate::Word;
+    let words: Vec<Word> = sk.constraints.iter().filter(|c| c.kind == CKind::Rate)
+        .map(|c| c.rate_word()).collect();
+    for w in [Word::Parallel, Word::Square, Word::InPlane, Word::Normal, Word::Plane,
+              Word::Curvature, Word::Centre] {
+        assert!(words.contains(&w), "{w:?} in {words:?}");
     }
     // the fixed axes' points are free here, so the body's geometry is differentiated too
     for p in sk.params.iter_mut() {
@@ -239,7 +246,7 @@ T tangent(at: p) meridian
                 p.value += rng.uniform(-0.02, 0.02) * (1.0 + p.value.abs().min(10.0));
             }
         }
-        for c in sk.constraints.iter().filter(|c| c.kind.traced_contact().is_some()) {
+        for c in sk.constraints.iter().filter(traced) {
             let err = check_constraint(&sk, c, 1e-6, 1e-6)
                 .unwrap_or_else(|e| panic!("round {round}, {:?}: {e}", c.kind));
             assert!(err.is_finite());
