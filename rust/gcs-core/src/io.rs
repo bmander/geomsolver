@@ -1385,6 +1385,10 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             EntKind::Point => pt_index(e.i()).map(EntRef::point),
             EntKind::Line => line_map[e.i()].map(EntRef::line),
             EntKind::Motion => motion_map[e.i()].map(|m| EntRef::new(EntKind::Motion,m)),
+            // the curves a marched body's Cauchy data is read off (#376)
+            EntKind::Spline => spline_map[e.i()].map(EntRef::spline),
+            EntKind::Curve => curve_map[e.i()].map(|c| EntRef::new(EntKind::Curve,c)),
+            EntKind::Traced => traced_map[e.i()].map(|t| EntRef::new(EntKind::Traced,t)),
             _ => None,
         }).collect();
         let Some(args) = args else { continue; };

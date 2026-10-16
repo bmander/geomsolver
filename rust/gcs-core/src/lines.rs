@@ -142,14 +142,24 @@ impl<'a> Body<'a> {
             return Err("a marched body runs over two intervals".into());
         }
         let width = self.width();
-        for rows in [&self.alg, &self.rate, &self.init] {
+        for (rows, cauchy) in [(&self.alg, false), (&self.rate, false), (&self.init, true)] {
             for r in rows.iter() {
-                let kn = KERNELS.get(r.kid).ok_or("no such kernel")?;
-                if kn.n_par != r.cols.len() || kn.n_const != r.consts.len() || kn.n_par > COLS
+                // a point on a curve the drawing has is Cauchy data alone (#376): its home's
+                // implicit-function step reads it to the first order, and nothing reads more
+                if r.drawn.is_some() && !cauchy {
+                    return Err("a point on a curve the drawing has is read in `initially { … }` \
+                                alone".into());
+                }
+                let kn = match r.drawn {
+                    Some(kn) => kn,
+                    None => *KERNELS.get(r.kid).ok_or("no such kernel")?,
+                };
+                if kn.n_par != r.cols.len() || kn.n_const != r.consts.len()
+                    || (kn.n_par > COLS && r.drawn.is_none())
                     || kn.n_res > 8 || r.cols.iter().any(|&c| c >= width) {
                     return Err("rate row shape mismatch".into());
                 }
-                if !taylor::has_form(r.kid) {
+                if r.drawn.is_none() && !taylor::has_form(r.kid) {
                     return Err(format!("a body that states a rate reads its rows' derivatives \
                                         exactly, and `{}` has no Taylor form", kn.name));
                 }
@@ -180,7 +190,7 @@ impl<'a> Body<'a> {
                         rates do not move".into());
         }
         let count =
-            |ks: &[usize]| ks.iter().map(|&k| KERNELS[self.alg[k].kid].n_res).sum::<usize>();
+            |ks: &[usize]| ks.iter().map(|&k| self.alg[k].kn().n_res).sum::<usize>();
         if count(&alg_a) != a.len() {
             return Err(format!("the body's rows must place what its rates do not move: {} \
                 numbers against {} rows", a.len(), count(&alg_a)));
@@ -245,14 +255,25 @@ fn jacobian_by(rows: &[Row], z: &[f64], n: usize, at: impl Fn(usize) -> Option<u
     let mut row = 0;
     let mut x = [0.0f64; COLS];
     let mut jr = [0.0f64; COLS * 8];
+    // a drawn row is as wide as its curve (#376), read at the home alone
+    let (mut wide_x, mut wide_jr) = (Vec::new(), Vec::new());
     for r in rows {
-        let kn = &KERNELS[r.kid];
-        for (x, &c) in x.iter_mut().zip(&r.cols) {
-            *x = z[c];
-        }
-        let jr = &mut jr[..kn.n_res * kn.n_par];
-        jr.iter_mut().for_each(|v| *v = 0.0);
-        kn.jac_into(&x[..kn.n_par], r.consts, jr);
+        let kn = r.kn();
+        let (x, jr) = if r.cols.len() > COLS {
+            wide_x.clear();
+            wide_x.extend(r.cols.iter().map(|&c| z[c]));
+            wide_jr.clear();
+            wide_jr.resize(kn.n_res * kn.n_par, 0.0);
+            (&wide_x[..], &mut wide_jr[..])
+        } else {
+            for (x, &c) in x.iter_mut().zip(&r.cols) {
+                *x = z[c];
+            }
+            let jr = &mut jr[..kn.n_res * kn.n_par];
+            jr.iter_mut().for_each(|v| *v = 0.0);
+            (&x[..kn.n_par], jr)
+        };
+        kn.jac_into(x, r.consts, jr);
         for (c, &col) in r.cols.iter().enumerate() {
             if let Some(k) = at(col) {
                 for t in 0..kn.n_res {
@@ -571,7 +592,8 @@ impl<'a> Body<'a> {
 
     /// The rate rows over constants of a node's.
     fn rate_rows<'c>(rows: &[Row], consts: &'c [Vec<f64>]) -> Vec<Row<'c>> {
-        rows.iter().zip(consts).map(|(r, k)| Row { kid: r.kid, cols: r.cols.clone(), consts: k })
+        rows.iter().zip(consts).map(|(r, k)| Row { kid: r.kid, cols: r.cols.clone(), consts: k,
+                                                drawn: r.drawn })
             .collect()
     }
 

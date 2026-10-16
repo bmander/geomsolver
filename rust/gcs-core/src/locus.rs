@@ -372,6 +372,7 @@ impl<'a> View<'a> {
                 kid,
                 cols: cols.iter().map(|&c| c as usize).collect(),
                 consts,
+                drawn: None,
             }).collect()
         };
         crate::rates::Body {

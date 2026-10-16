@@ -117,11 +117,16 @@ pub(super) fn build_traced(sk: &Sketch, res: &Resolver, d: &Decl, st: &Stmt, pro
                 let abs = actual.as_ref().ok_or_else(|| missing(st, &info.component, name))?;
                 let e = *res.of.get(abs)
                     .ok_or_else(|| (Code::E101, st.span, format!("no such entity: `{abs}`")))?;
-                if e.kind != k {
+                // a `curve` is any curve the drawing has: a spline, or one traced in space (#376)
+                let curve = k == EntKind::Curve
+                    && matches!(e.kind, EntKind::Spline | EntKind::Traced);
+                if e.kind != k && !curve {
                     return Err((Code::E040, st.span, format!("`{name}` is {}, and {} was given",
                         k.a(), e.kind.a())));
                 }
+                let k = e.kind;
                 let mut steps = Vec::new();
+                let mut drawn = None;
                 let width = match k {
                     EntKind::Point => {
                         vars.extend(["x", "y", "z"].map(|c| format!("{name}.{c}")));
@@ -141,13 +146,22 @@ pub(super) fn build_traced(sk: &Sketch, res: &Resolver, d: &Decl, st: &Stmt, pro
                         steps = m.steps;
                         w
                     }
+                    // a curve the drawing has, which a marched body's Cauchy data reads (#376)
+                    EntKind::Spline | EntKind::Curve | EntKind::Traced => {
+                        let d = Drawn::of(sk, e).map_err(|m| (Code::E103, st.span, format!(
+                            "`{name}`: {m}")))?;
+                        let w = d.width;
+                        vars.extend((0..w).map(|i| format!("{name}#{i}")));
+                        drawn = Some(d);
+                        w
+                    }
                     other => {
                         return Err((Code::E103, st.span, format!("a body traced in space is \
-                            written over points, lines and motions, not {}", other.a())));
+                            written over points, lines, motions and curves, not {}", other.a())));
                     }
                 };
                 let at = vars.len() - width;
-                formals.push(Formal { name: name.to_string(), kind: k, at, steps });
+                formals.push(Formal { name: name.to_string(), kind: k, at, steps, drawn });
                 args.push(e);
             }
             Ty::Path | Ty::Group | Ty::Set => {
@@ -238,7 +252,7 @@ pub(super) fn build_traced(sk: &Sketch, res: &Resolver, d: &Decl, st: &Stmt, pro
     if !low.rates.is_empty() && low.second.is_some() {
         low.marched(at, t, comp.span)?;
     } else if !low.rates.is_empty() {
-        let n_res = |r: &crate::traced::Row| r.kind.id().map_or(0, |k| crate::kernels::KERNELS[k].n_res);
+        let n_res = |r: &crate::traced::Row| r.n_res();
         let alg = super::curves::reach(low.rows.iter().map(|r| (n_res(r), &r.cols[..])),
                                        vars.len(), low.n_q);
         let rates = super::curves::reach(low.rates.iter().map(|r| (n_res(r), &r.cols[..])), at,
@@ -273,12 +287,77 @@ fn missing(st: &Stmt, comp: &str, what: &str) -> Fail {
 }
 
 /// An entity formal: its name, its kind, where its coordinates start in the variable table and,
-/// a motion, its steps.
+/// a motion, its steps; a curve, what a point on it reads.
 struct Formal {
     name: String,
     kind: EntKind,
     at: usize,
     steps: Vec<crate::envelope::held::Step>,
+    drawn: Option<Drawn>,
+}
+
+/// **A curve the drawing has, as a traced body reads it** (#376): what a point on it at a number
+/// of the formals is lowered to (`Lowering::on_drawn`) — a spline's row over its control points'
+/// lifts, a curve drawn in a held plane read in space, or a curve traced in space's contact —
+/// how many columns of the variable table it reads, and the row's constants.
+#[derive(Clone, Debug)]
+struct Drawn {
+    row: crate::traced::RowKind,
+    width: usize,
+    consts: Vec<f64>,
+}
+
+impl Drawn {
+    fn of(sk: &Sketch, e: EntRef) -> Result<Drawn, String> {
+        use crate::traced::RowKind;
+        match e.kind {
+            EntKind::Spline => {
+                let s = &sk.splines[e.i()];
+                let n = s.ctrl.len();
+                let mut consts = s.knots.clone();
+                consts.extend(s.weights.clone().unwrap_or_else(|| vec![1.0; n]));
+                Ok(Drawn { row: RowKind::Spline, width: 3 * n, consts })
+            }
+            EntKind::Curve => {
+                let i = e.i();
+                let cv = &sk.curves[i];
+                let d = &sk.curve_defs[cv.def as usize];
+                use crate::model::CurveBody as B;
+                let body = match &d.body {
+                    B::Exprs { .. } => crate::kernels::FORMULA,
+                    B::Trace(_) => crate::kernels::TRACE,
+                    B::Envelope(_) => crate::kernels::ENVELOPE,
+                    B::Extremal(_) => crate::kernels::EXTREMAL,
+                };
+                if cv.extrusion || sk.curve_turn(i).is_some() {
+                    return Err("a curve standing for a surface, or a ring's turned copy, is no \
+                        curve a marched body starts on".into());
+                }
+                if sk.curve_view(i).is_some_and(|v| !sk.plane_fixed(v)) {
+                    return Err("a curve drawn in a plane is read in space through its plane's \
+                        basis, which must be held: `fix` its plane's axes and origin".into());
+                }
+                let width = sk.entity_params(e).len();
+                if width + 1 + d.values.len() != d.vars.len() {
+                    return Err("its columns are not its definition's".into());
+                }
+                let mut consts = vec![body as f64];
+                consts.extend(sk.extrusion_frame(i));
+                consts.extend(crate::constraints::curve_contact_consts(sk, i));
+                Ok(Drawn { row: RowKind::Curve, width, consts })
+            }
+            _ => {
+                let t = sk.traced.get(e.i()).filter(|t| !t.body.flat.is_empty())
+                    .ok_or("a curve traced in space is read once it is drawn: declare it first")?;
+                if t.body.n_formals() != 1 {
+                    return Err("a surface is no curve: a point on a curve is said at one number"
+                        .into());
+                }
+                Ok(Drawn { row: RowKind::Traced, width: t.body.n_theta(),
+                           consts: crate::traced::consts_of(t) })
+            }
+        }
+    }
 }
 
 /// A body being lowered in space.
@@ -287,6 +366,9 @@ struct Lowering<'v> {
     scope: BTreeMap<String, EntRef>,
     /// The motions it is written over, by name: their steps and where their columns start.
     motions: BTreeMap<String, (Vec<crate::envelope::held::Step>, usize)>,
+    /// The curves it is written over (#376), by name: what a point on one reads, where their
+    /// columns start, and their kind.
+    drawn: BTreeMap<String, (Drawn, usize, EntKind)>,
     /// scratch parameter → variable-table slot
     slot: BTreeMap<u32, usize>,
     vars: &'v [String],
@@ -325,6 +407,7 @@ impl<'v> Lowering<'v> {
         let mut scope = BTreeMap::new();
         let mut slot = BTreeMap::new();
         let mut motions = BTreeMap::new();
+        let mut drawn = BTreeMap::new();
         let point = |sk: &mut Sketch, slot: &mut BTreeMap<u32, usize>, at: usize, name: &str| {
             let p = sk.point3([0.0; 3], false, name);
             sk.lift_point(p);
@@ -344,13 +427,18 @@ impl<'v> Lowering<'v> {
                     let b = point(&mut sk, &mut slot, f.at + 3, &f.name);
                     scope.insert(f.name.clone(), EntRef::line(sk.line(a, b)));
                 }
-                _ => {
+                EntKind::Motion => {
                     motions.insert(f.name, (f.steps, f.at));
+                }
+                k => {
+                    if let Some(d) = f.drawn {
+                        drawn.insert(f.name, (d, f.at, k));
+                    }
                 }
             }
         }
-        Lowering { sk, scope, motions, slot, vars, n_outer: vars.len(), n_q: 0, seeds: Vec::new(),
-                   w: Vec::new(), rows: Vec::new(), units, owner: Vec::new(),
+        Lowering { sk, scope, motions, drawn, slot, vars, n_outer: vars.len(), n_q: 0,
+                   seeds: Vec::new(), w: Vec::new(), rows: Vec::new(), units, owner: Vec::new(),
                    swept: String::new(), angle: false, target: super::curves::Target::Alg,
                    rates: Vec::new(), init: Vec::new(), rated: BTreeMap::new(), origin: None,
                    second: None, spans: Vec::new(), rate_spans: Vec::new(),
@@ -462,7 +550,7 @@ impl<'v> Lowering<'v> {
         let mut over_moved = Vec::new();
         let mut places = 0;
         for (r, sp) in self.rows.iter().zip(&self.spans) {
-            let n_res = r.kind.id().map_or(0, |k| crate::kernels::KERNELS[k].n_res);
+            let n_res = r.n_res();
             if any(&r.cols, n0, &placed) {
                 places += n_res;
             } else if any(&r.cols, at + n, &moved) {
@@ -494,7 +582,7 @@ impl<'v> Lowering<'v> {
             rows.iter().flat_map(|r| {
                 let cols: Vec<usize> =
                     r.cols.iter().filter_map(|&c| index(c as usize, from)).collect();
-                let n_res = r.kind.id().map_or(0, |k| crate::kernels::KERNELS[k].n_res);
+                let n_res = r.n_res();
                 std::iter::repeat(cols).take(n_res)
             }).collect()
         };
@@ -505,7 +593,7 @@ impl<'v> Lowering<'v> {
             return Err((Code::E103, span, m));
         }
         let init: usize = self.init.iter().chain(over_moved.iter().copied())
-            .map(|r| r.kind.id().map_or(0, |k| crate::kernels::KERNELS[k].n_res)).sum();
+            .map(|r| r.n_res()).sum();
         if init < moved.len() {
             return Err((Code::E103, span, format!("a marched body starts where `initially {{ … }}` \
                 says, at every `{u}`: {} places {} numbers against {init} rows", names(&moved),
@@ -653,14 +741,24 @@ impl<'v> Lowering<'v> {
     }
 
     fn relation(&mut self, st: &Stmt, r: &crate::ir::Relation) -> Result<(), Fail> {
-        let (sk, scope, motions) = (&self.sk, &self.scope, &self.motions);
-        let r = r.resolve(&|rf| match motions.contains_key(&rf.root.text) && rf.path.is_empty() {
-            true => Some(EntKind::Motion),
-            false => scope.get(&rf.root.text).copied().and_then(|e| follow(sk, e, &rf.path).ok())
+        let (sk, scope, motions, drawn) = (&self.sk, &self.scope, &self.motions, &self.drawn);
+        let r = r.resolve(&|rf| match rf.path.is_empty() {
+            true if motions.contains_key(&rf.root.text) => Some(EntKind::Motion),
+            true if drawn.contains_key(&rf.root.text) => drawn.get(&rf.root.text).map(|d| d.2),
+            _ => scope.get(&rf.root.text).copied().and_then(|e| follow(sk, e, &rf.path).ok())
                 .map(|e| e.kind),
         }).map_err(|(s, m)| (Code::E040, s, m))?;
         if r.kind == CKind::CarriedPoint {
             return self.carried(st, &r);
+        }
+        let on = r.args.iter().flatten().find_map(|a| match a {
+            Arg::Ref(rf) if rf.path.is_empty() && self.drawn.contains_key(&rf.root.text) => {
+                Some(rf.root.text.clone())
+            }
+            _ => None,
+        });
+        if let Some(name) = on {
+            return self.on_drawn(st, &r, &name);
         }
         if self.target == super::curves::Target::Rate {
             super::curves::admissible(&r).map_err(|m| (Code::E103, st.span, m))?;
@@ -754,6 +852,56 @@ impl<'v> Lowering<'v> {
                 self.push(crate::traced::Row { kind, cols, consts }, st.span);
             }
         }
+        Ok(())
+    }
+
+    /// **A point on a curve the drawing has at a number of the formals** (#376): `p
+    /// coincident(t == u) k` in a marched body's `initially`, its Cauchy data read off `k` — a
+    /// spline, a curve drawn in a held plane, or a curve traced in space.  One row of three: the
+    /// point less the curve there, its place pinned over the formals as any place is.
+    fn on_drawn(&mut self, st: &Stmt, r: &crate::ir::ResolvedRelation<'_>, name: &str)
+        -> Result<(), Fail> {
+        use crate::traced::RowKind;
+        let (d, at, _) = self.drawn.get(name).cloned()
+            .ok_or((Code::E103, st.span, "traced lowering lost a curve".to_string()))?;
+        if !matches!(r.kind, CKind::PointOnSpline | CKind::PointOnCurve | CKind::PointOnExtrusion
+            | CKind::PointOnTraced) {
+            return Err((Code::E103, st.span, format!("a marched body reads `{name}` as its Cauchy \
+                data alone: a point on it at a number of the formals, `p coincident(t == u) \
+                {name}`")));
+        }
+        if self.target != super::curves::Target::Init || self.second.is_none() {
+            return Err((Code::E103, st.span, format!("a point on `{name}` is Cauchy data: it is \
+                said in `initially {{ … }}` of a body marched over two formals, where it places \
+                the points the rates move at the home")));
+        }
+        let Some(Arg::Ref(prf)) = r.args.first().and_then(|a| a.as_ref()) else {
+            return Err((Code::E103, st.span, "a point on a curve names the point".into()));
+        };
+        let p = self.scope.get(&prf.root.text).copied()
+            .ok_or((Code::E101, prf.span, format!("no such entity: `{}`", prf.root.text)))?;
+        let p = follow(&self.sk, p, &prf.path).map_err(|m| (Code::E040, prf.span, m))?;
+        if p.kind != EntKind::Point {
+            return Err((Code::E040, prf.span, "a point on a curve names the point".into()));
+        }
+        let x: Vec<u32> = self.sk.point_all_params(p.i()).into_iter()
+            .map(|q| self.slot.get(&q).map(|&s| s as u32)
+                .ok_or((Code::E103, st.span, "traced lowering lost a column".to_string())))
+            .collect::<Result<_, _>>()?;
+        let slot = if r.kind == CKind::PointOnTraced { "u" } else { "t" };
+        let t = self.pinned(r.args.get(2).and_then(|a| a.as_ref()), slot, st.span)? as u32;
+        let theta = (at..at + d.width).map(|c| c as u32);
+        let cols: Vec<u32> = match d.row {
+            RowKind::Traced => {
+                // a curve's second place is held at none
+                let s = (self.n_outer + self.n_q + self.w.len()) as u32;
+                let zero = self.constant(0.0);
+                self.w.push(zero);
+                x.into_iter().chain([t, s]).chain(theta).collect()
+            }
+            _ => [t].into_iter().chain(theta).chain(x).collect(),
+        };
+        self.push(crate::traced::Row { kind: d.row, cols, consts: d.consts }, st.span);
         Ok(())
     }
 

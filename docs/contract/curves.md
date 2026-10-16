@@ -321,6 +321,33 @@ the pieces and on twice them.  A fold is refused *early*, by the march's own err
 pieces do not always bring it nearer: where a front closes on a point or a concave waist the place
 is not monotone in the pieces (the antipode 78.06 / 78.25 / 78.17 on 16 / 32 / 64, the waist
 14.52 / 13.72 / 13.92), so these gates bound it from below rather than hold it to converge.
+**Cauchy data on a drawn curve** (#376, [0.131], `program::traced::Drawn`, `Lowering::on_drawn`):
+a marched body's `initially` may hold a moved point on a curve the drawing has, `p coincident(t
+== u) k`, `k` an entity formal — `curve` takes a spline, a curve of a plane (`EntKind::Curve`: a
+formula, a trace, an envelope, a free curve) or a curve traced in space; `spline` a spline alone
+— and `t` pinned over the formals (`pinned`, a tape in `w`).  It lowers to one row of three
+residuals: a spline's `RowKind::Spline` over its control points' lifts; a curve of a plane's
+`RowKind::Curve` (`point_on_drawn`: the definition's own contact kernel at `[0, 0, t, θ…]` gives
+`−C` and its gradient, lifted through the plane's basis, which the constants carry and so must be
+held — `Sketch::plane_fixed`, E103 otherwise; a curve standing for a surface or a ring's turned
+copy is refused); a curve traced in space's `RowKind::Traced` (the `point_on_traced` contact, its
+second place a zero in `w`, its constants the curve's `consts_of`, read once it is compiled — a
+surface is refused).  The body's `θ` takes the curve's columns (`traced::columns`, `theta`,
+`lifted`: the control points' lifts, `Sketch::entity_params`, the traced curve's own), so a
+contact on the surface moves with the curve's geometry.  **These rows have no Taylor form**: they
+are Cauchy data alone (`RowKind::drawn`; `Body::new` and `lines::Body::plan` refuse one anywhere
+but a two-formal body's `initially`, `rates::Body::check` over one formal), and the home's
+implicit-function step reads them **to the first order** (`rates::Row::drawn`, `jets`' first
+order `J·v`, every higher order NaN so nothing can take one for a number) — all `cauchy` reads.
+A curve's constants (a trace's home and pose, an envelope's roll) are read when the body is
+compiled; its columns are live.  Any other relation reading `k`, or a point on it outside a
+marched body's `initially`, is E103 naming it.  `tests/drawn_cauchy.rs` is the gate: `rates/bore.sv`
+(the apex's envelope) marches to `housing.sv`'s written-out trochoid to 4e-12 and folds at its
+waist at the same place on 16 and 32 pieces; `rates/pitch.sv`'s pitch curve marched from the heart
+cam's profile is the envelope of the roller's centre to 8e-10, and a drawn three-lobed cam's
+roller of 22 is refused at its hollow (u = 60°, radius 19.2) at 17.7 / 18.3 on 16 / 32 pieces;
+a spline's front is its parallel curve, a traced circle's its concentric; a contact on the pitch
+curve has its Jacobian in the profile's columns against central differences; and the refusals.
 
 - A parametric curve (`curve.rs`) is *linear in its control points*, `C(t) = Σ Bᵢ(t) Pᵢ` (every
   B-spline).  A contact carries its own curve parameter as a `Param` slot and says

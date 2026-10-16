@@ -18,6 +18,7 @@ use crate::space::across;
 
 mod arg;
 mod columns;
+pub(crate) use columns::curve_contact_consts;
 mod compare;
 mod constraint;
 mod infer;
