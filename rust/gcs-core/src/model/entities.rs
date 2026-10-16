@@ -40,13 +40,13 @@ pub enum EntKind {
     Arc,
     Spline,
     /// **The one datum kind** (issue #47, item 6: `frame` is folded into it): a plane in space
-    /// over two axes, `plane(u: r1, v: r2)`, standing at a place of its own (`PlaneE`).  Its
+    /// over two axes, `plane(u: r1, v: r2)`, standing at a place of its own (`FrameE`).  Its
     /// attitude is its axes' directions and where it stands three Params — unknowns of the solve
     /// unless a `fix` holds them, when the plane is **fixed** (`Sketch::plane_fixed`).
     /// A point that says it is `in` the plane is drawn in the plane's own 2D coordinates and
     /// stands in space at its lift (`Sketch::world_point`); `Project` between two such points is
     /// the one equation two images of one point share.
-    Plane,
+    Frame,
     /// A curve written in the language: `C(u)` as an expression over the geometry it is drawn
     /// from.  Unlike every other kind it holds no coordinates of its own — it *is* the two
     /// expressions plus whatever it reads — so it moves when its arguments do and never
@@ -105,7 +105,7 @@ impl EntKind {
             EntKind::Circle => "circle",
             EntKind::Arc => "arc",
             EntKind::Spline => "spline",
-            EntKind::Plane => "plane",
+            EntKind::Frame => "plane",
             EntKind::Curve => "curve",
             EntKind::Face => "face",
             EntKind::Solid => "solid",
@@ -125,7 +125,7 @@ impl EntKind {
         EntKind::Circle,
         EntKind::Arc,
         EntKind::Spline,
-        EntKind::Plane,
+        EntKind::Frame,
         EntKind::Curve,
         EntKind::Face,
         EntKind::Solid,
@@ -144,7 +144,9 @@ impl EntKind {
             "circle" => EntKind::Circle,
             "arc" => EntKind::Arc,
             "spline" => EntKind::Spline,
-            "plane" => EntKind::Plane,
+            // a plane is a frame whose `in` draws flat; `name := frame` declares one bare
+            // (#383), a word read so only there, since documents name things `frame`
+            "plane" => EntKind::Frame,
             "curve" => EntKind::Curve,
             "face" => EntKind::Face,
             "solid" => EntKind::Solid,
@@ -177,7 +179,7 @@ impl EntKind {
             EntKind::Arc => &[("center", C), ("start", C), ("end", C), ("r", S)],
             EntKind::Spline => &[("ctrl", L)],
             // two axes for its attitude, its origin a point drawn in it, and where that stands
-            EntKind::Plane => &[("u", C), ("v", C), ("origin", C), ("x", S), ("y", S), ("z", S)],
+            EntKind::Frame => &[("u", C), ("v", C), ("origin", C), ("x", S), ("y", S), ("z", S)],
             // as many arguments as its definition takes, and none of them need be points — the
             // first kind for which that is true
             EntKind::Curve => &[("args", L)],
@@ -217,7 +219,7 @@ impl EntKind {
             | EntKind::Circle
             | EntKind::Axis
             | EntKind::Spline
-            | EntKind::Plane
+            | EntKind::Frame
             | EntKind::Curve
             | EntKind::Face
             | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Meshing | EntKind::Traced => None,
@@ -254,7 +256,7 @@ impl EntKind {
             EntKind::Point => &["x", "y", "z"],
             EntKind::Circle | EntKind::Arc => &["r"],
             EntKind::Axis => &["dir.x", "dir.y", "dir.z", "origin.x", "origin.y", "origin.z"],
-            EntKind::Plane => &["origin.x", "origin.y", "origin.z"],
+            EntKind::Frame => &["origin.x", "origin.y", "origin.z"],
             EntKind::Line | EntKind::Spline | EntKind::Curve | EntKind::Face | EntKind::Solid
             | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Meshing
             | EntKind::Traced => &[],
@@ -268,7 +270,7 @@ impl EntKind {
         match self {
             EntKind::Point => &[("", 0)],
             EntKind::Axis => &[("dir", 0), ("origin", 3)],
-            EntKind::Plane => &[("origin", 0)],
+            EntKind::Frame => &[("origin", 0)],
             _ => &[],
         }
     }
@@ -283,7 +285,7 @@ impl EntKind {
                 [pt("center"), pt("start"), pt("end"), vec![format!("{n}.r")]].concat()
             }
             // where it stands; its attitude is its axes'
-            EntKind::Plane => ["x", "y", "z"].iter().map(|f| format!("{n}.{f}")).collect(),
+            EntKind::Frame => ["x", "y", "z"].iter().map(|f| format!("{n}.{f}")).collect(),
             EntKind::Axis => ["x", "y", "z", "px", "py", "pz"].iter().map(|f| format!("{n}.{f}")).collect(),
             EntKind::Spline | EntKind::Curve | EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Meshing | EntKind::Traced => return None,
         })
@@ -302,7 +304,7 @@ impl EntKind {
         match self {
             // a face bears none of its own: its edges carry the memberships, and the face is on
             // the plane they agree about.  A solid is not on a plane at all.
-            EntKind::Plane | EntKind::Curve | EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Meshing | EntKind::Traced => false,
+            EntKind::Frame | EntKind::Curve | EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Meshing | EntKind::Traced => false,
             EntKind::Point
             | EntKind::Line
             | EntKind::Circle
@@ -319,7 +321,7 @@ impl EntKind {
     /// written to the document: it is a fact about the kind, not about the statement.
     pub fn implicit_class(self) -> Option<&'static str> {
         match self {
-            EntKind::Plane => Some("plane"),
+            EntKind::Frame => Some("plane"),
             // a point carries no class of its own and is drawn as a handle; `.point` is how a
             // document says the handles are not part of the picture (`display: none`)
             EntKind::Point => Some("point"),
@@ -348,7 +350,7 @@ impl EntKind {
             | EntKind::Circle
             | EntKind::Arc
             | EntKind::Spline
-            | EntKind::Plane
+            | EntKind::Frame
             | EntKind::Curve
             // solved, owning its number — a figure of the drawing stratum, not a reading of one
             | EntKind::Axis => false,
@@ -400,8 +402,8 @@ impl EntRef {
     pub fn spline(idx: usize) -> EntRef {
         EntRef::new(EntKind::Spline, idx)
     }
-    pub fn plane(idx: usize) -> EntRef {
-        EntRef::new(EntKind::Plane, idx)
+    pub fn frame(idx: usize) -> EntRef {
+        EntRef::new(EntKind::Frame, idx)
     }
     pub fn axis(idx: usize) -> EntRef {
         EntRef::new(EntKind::Axis, idx)
@@ -430,6 +432,11 @@ pub struct PointE {
     /// program or a JSON document builds with no planes at all — read in space on the front
     /// plane, and never made by a document.
     pub plane: Option<u32>,
+    /// The **spatial frame** whose axes its three numbers are read along (#383): `a := point in
+    /// f` where `f`'s axes are minted — `x` along `f.u`, `y` up, `z` out, standing in space at
+    /// `f`'s lift of them (`Sketch::world_point`, the `ChartLift` row).  `None` for every other
+    /// point; a point drawn in a frame with no axes of its own is a point in space.
+    pub chart: Option<u32>,
 }
 
 #[derive(Clone, Debug)]
@@ -492,13 +499,59 @@ pub struct SplineE {
     pub class: Classes,
 }
 
-/// **A plane in space** (`docs/planes-plan.md`): its attitude is two axes' — right along `u`,
-/// out along `u × v`, up along `out × u` — and where it stands is `o`, three Params of its own.
-/// Its origin is the member point `origin`, drawn in it and held at `(0, 0)`, so it stands at
-/// `o`.  A plane owns no intrinsic row: what it is, is read off its axes and `o` (`Sketch::basis`),
-/// and it is **fixed** — its basis constants every row may read — when all nine are held.
+/// **A frame** (#383, `docs/frames-plan.md`): the one datum kind, a plane and a motion seen as
+/// one thing.  `P := plane(u: r1, v: r2)` is a frame whose `in` draws flat; `f := frame` is a
+/// spatial one, declared bare — it owns nothing until the document names what it has
+/// (`f.u`, `f.v`, `f.origin` mint its `chart`).  Where its axes are minted, a point `in` it is
+/// drawn in their coordinates (two for a plane, three for a spatial frame); where they are not,
+/// in its parent's.  Its chart is read through it (`Deref`): only a frame with one is ever read
+/// as a chart, and a walk over every frame asks `chart` first.
 #[derive(Clone, Debug)]
-pub struct PlaneE {
+pub struct FrameE {
+    /// The frame it was declared in: the innermost of the `in` blocks around its declaration
+    /// (stage 4), `None` in the world's.
+    pub parent: Option<u32>,
+    /// Its axes and place, where it has them: always for a plane.
+    pub chart: Option<Chart>,
+    pub class: Classes,
+}
+
+impl FrameE {
+    /// A plane's frame, or a spatial frame's once its axes are named.
+    pub fn charted(chart: Chart) -> FrameE {
+        FrameE { parent: None, chart: Some(chart), class: Classes::default() }
+    }
+    /// A bare frame: no axes, no place, nothing of its own.
+    pub fn bare() -> FrameE {
+        FrameE { parent: None, chart: None, class: Classes::default() }
+    }
+    /// Whether a point `in` it is drawn flat in its own two coordinates: a plane.
+    pub fn planar(&self) -> bool {
+        self.chart.as_ref().is_some_and(|c| c.planar)
+    }
+}
+
+impl std::ops::Deref for FrameE {
+    type Target = Chart;
+    fn deref(&self) -> &Chart {
+        self.chart.as_ref().expect("a frame read as a chart has axes of its own")
+    }
+}
+
+impl std::ops::DerefMut for FrameE {
+    fn deref_mut(&mut self) -> &mut Chart {
+        self.chart.as_mut().expect("a frame read as a chart has axes of its own")
+    }
+}
+
+/// **A frame's chart** (`docs/planes-plan.md`): its attitude is two axes' — right along `u`,
+/// out along `u × v`, up along `out × u` — and where it stands is `o`, three Params of its own.
+/// Its origin is the member point `origin`, drawn in it and held at `(0, 0)` (`(0, 0, 0)` in a
+/// spatial frame), so it stands at `o`.  It owns no intrinsic row: what it is, is read off its
+/// axes and `o` (`Sketch::basis`), and it is **fixed** — its basis constants every row may read —
+/// when all nine are held.
+#[derive(Clone, Debug)]
+pub struct Chart {
     pub u: u32,
     pub v: u32,
     pub o: [u32; 3],
@@ -506,7 +559,9 @@ pub struct PlaneE {
     /// Its normal `P.normal`, a hidden axis along `u × v` through its origin, where the document
     /// reads one (`Sketch::plane_normal`): no field of the declaration, and drawn nowhere.
     pub normal: Option<u32>,
-    pub class: Classes,
+    /// Whether a point drawn in it has two coordinates (a plane) or three (a spatial frame's,
+    /// along `u`, up and out).
+    pub planar: bool,
 }
 
 /// A **hidden point in space**: the lift of one view point, held to it by an intrinsic `lift`

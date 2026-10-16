@@ -150,8 +150,9 @@ impl Sketch {
                 self.splines[e.i()].ctrl.iter().map(|&c| EntRef::point(c as usize)).collect()
             }
             // its two axes and its origin, the order its declaration names them
-            EntKind::Plane => {
-                let p = &self.planes[e.i()];
+            // (a frame declared bare has none until they are named, #383)
+            EntKind::Frame => {
+                let Some(p) = self.frames[e.i()].chart.as_ref() else { return Vec::new() };
                 vec![
                     EntRef::new(EntKind::Axis, p.u as usize),
                     EntRef::new(EntKind::Axis, p.v as usize),
@@ -178,7 +179,7 @@ impl Sketch {
             // is its term, and a term missing an operand is not that solid
             EntKind::Point | EntKind::Line | EntKind::Circle | EntKind::Arc
             | EntKind::Axis
-            | EntKind::Plane | EntKind::Curve | EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Meshing | EntKind::Traced => {
+            | EntKind::Frame | EntKind::Curve | EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Meshing | EntKind::Traced => {
                 children.len()
             }
         }
@@ -195,7 +196,7 @@ impl Sketch {
             self.lines.len(),
             self.circles.len(),
             self.arcs.len(),
-            self.planes.len()
+            self.frames.len()
         );
         for sp in &self.splines {
             let _ = write!(s, "s{}:", sp.ctrl.len());
@@ -271,7 +272,7 @@ impl Sketch {
             EntKind::Axis => self.axes.len(),
             EntKind::Arc => self.arcs.len(),
             EntKind::Spline => self.splines.len(),
-            EntKind::Plane => self.planes.len(),
+            EntKind::Frame => self.frames.len(),
             EntKind::Curve => self.curves.len(),
         }
     }
@@ -287,7 +288,7 @@ impl Sketch {
             EntKind::Spline,
             // a plane is built over its axes
             EntKind::Axis,
-            EntKind::Plane,
+            EntKind::Frame,
         ] {
             for i in 0..self.count(kind) {
                 // a spline over points in space is the curve traced in space it is (#363 S3)

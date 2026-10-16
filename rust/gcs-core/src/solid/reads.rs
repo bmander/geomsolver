@@ -278,7 +278,7 @@ fn face_reads(sk: &Sketch, fi: u32, v: &mut Vec<f64>) {
             }
         }
     }
-    if let Some(p) = f.plane.filter(|&p| (p as usize) < sk.planes.len()) {
+    if let Some(p) = f.plane.filter(|&p| (p as usize) < sk.frames.len()) {
         let basis = sk.basis(p as usize);
         v.extend(basis.u);
         v.extend(basis.v);

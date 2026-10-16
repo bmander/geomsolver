@@ -251,3 +251,144 @@ fn a_chain_past_sixty_four_levels_is_refused() {
     let err = Family::read(sk, top).unwrap_err();
     assert!(err.contains("64 levels"), "{err}");
 }
+
+// -- stage 2: one kind, and the bare frame --------------------------------------------------------
+
+/// A frame stood off the world by `fix`: `u` along `y`, `v` along `z` — so up is `z` and out is
+/// `x` — at (10, 20, 30).
+const STOOD: &str = "\
+unit mm
+use std
+f := frame
+fix(dir == (0, 1, 0)) f.u
+fix(dir == (0, 0, 1)) f.v
+fix(origin == (10, 20, 30)) f
+";
+
+/// **A point in a spatial frame has three numbers, read along its axes**: `x` along `f.u`, `y`
+/// up and `z` out, standing at `o + x·u + y·up + z·out` — and a relation in space between it and a
+/// point in space reads its lift there.
+#[test]
+fn a_point_in_a_spatial_frame_lifts_through_its_chart() {
+    let src = format!("{STOOD}\
+in f {{
+  p := point
+  fix((1, 2, 3)) p
+}}
+q := point hint((0, 0, 0))
+q coincident p
+in f {{
+  r := point hint(at: f, (4, 5, 6))
+}}
+s := point hint(at: f, (4, 5, 6))
+");
+    let e = crate::common::text::solved(&src);
+    let p = crate::common::at(&e, "p");
+    assert!(norm(sub(p, [13.0, 21.0, 32.0])) < 1e-9, "{p:?}");
+    let q = crate::common::at(&e, "q");
+    assert!(norm(sub(q, p)) < 1e-9, "{q:?}");
+    // its own numbers are the frame's coordinates, three of them
+    let pt = &e.sketch.points[e.map.ent_named("p").unwrap().i()];
+    assert!(pt.chart.is_some() && pt.plane.is_none() && pt.z.is_some());
+    let v = |k: u32| e.sketch.params[k as usize].value;
+    assert_eq!([v(pt.x), v(pt.y), v(pt.z.unwrap())], [1.0, 2.0, 3.0]);
+    // a place in its coordinates seeds a point drawn in it by its own three numbers, and one in
+    // space where the place stands
+    let r = &e.sketch.points[e.map.ent_named("r").unwrap().i()];
+    assert_eq!([v(r.x), v(r.y), v(r.z.unwrap())], [4.0, 5.0, 6.0]);
+    let s = crate::common::at(&e, "s");
+    assert!(norm(sub(s, [16.0, 24.0, 35.0])) < 1e-9, "{s:?}");
+    // and the frame's origin is the point at (0, 0, 0) along them
+    let o = crate::common::at(&e, "f.origin");
+    assert!(norm(sub(o, [10.0, 20.0, 30.0])) < 1e-9, "{o:?}");
+}
+
+/// **A bare frame's axes are placed by relations**: named, `f.u` and `f.v` are axes of its own and
+/// `f.origin` its origin, seven numbers like a plane's, held here by ordinary relations — its `u`
+/// along a drawn line, its `v` along the world's `z`, its origin on a point — and a point drawn in
+/// it stands where the relations put the frame: along `u`, up (`out × u`) and out (`u × v`).
+#[test]
+fn a_bare_frames_axes_are_placed_by_relations() {
+    let src = "\
+unit mm
+use std
+a := point
+fix((5, 0, 0)) a
+b := point
+fix((8, 3, 4)) b
+rail := line(a, b)
+f := frame
+f.origin coincident a
+f.u parallel rail
+f.v parallel std.z
+in f {
+  p := point
+  fix((10, 1, 2)) p
+}
+";
+    let mut e = crate::common::text::solved(src);
+    let unit = |v: [f64; 3]| { let n = norm(v); v.map(|x| x / n) };
+    let cross = gcs_core::space::cross;
+    // the parallels leave each axis its sense: read the one the solve kept
+    let pick = |name: &str, along: [f64; 3]| {
+        let r = &e.sketch.axes[e.map.ent_named(name).unwrap().i()];
+        let d: [f64; 3] = r.d.map(|q| e.sketch.params[q as usize].value);
+        if gcs_core::space::dot(d, along) < 0.0 { along.map(|x| -x) } else { along }
+    };
+    let u = pick("f.u", unit([3.0, 3.0, 4.0]));
+    let v = pick("f.v", [0.0, 0.0, 1.0]);
+    let out = unit(cross(u, v));
+    let up = cross(out, u);
+    let want: [f64; 3] = std::array::from_fn(|k| [5.0, 0.0, 0.0][k] + 10.0 * u[k] + up[k] + 2.0 * out[k]);
+    let p = crate::common::at(&e, "p");
+    assert!(norm(sub(p, want)) < 1e-9, "{p:?} against {want:?}");
+    assert_eq!(crate::common::dof(&mut e.sketch), 0, "the frame's seven numbers are held");
+}
+
+/// **A frame nothing reads owns nothing**: declared bare and never named, it mints no axis, no
+/// place and no origin, so the document's unknowns are what they were without it; a point drawn in
+/// it is a point in space, drawn in its parent's coordinates — the world's.
+#[test]
+fn an_unnamed_frame_owns_no_unknowns() {
+    let with = "\
+unit mm
+f := frame
+in f {
+  p := point hint((1, 2, 3))
+}
+";
+    let without = "\
+unit mm
+p := point hint((1, 2, 3))
+";
+    let (a, b) = (crate::common::text::solved(with), crate::common::text::solved(without));
+    assert_eq!(a.sketch.params.len(), b.sketch.params.len());
+    assert_eq!(a.sketch.axes.len(), b.sketch.axes.len());
+    assert_eq!(a.sketch.constraints.len(), b.sketch.constraints.len());
+    let f = a.map.ent_named("f").expect("the frame is named");
+    assert_eq!(f.kind, EntKind::Frame);
+    assert!(a.sketch.frames[f.i()].chart.is_none());
+    assert_eq!(crate::common::at(&a, "p"), [1.0, 2.0, 3.0]);
+}
+
+/// **The words**: `frame` declares, `in (f := frame) { … }` declares in the header, a frame takes
+/// no brackets and no seed, and a relation over a plane refuses a spatial frame, which is no set.
+#[test]
+fn a_frame_is_declared_bare_and_in_a_header() {
+    let e = crate::common::text::solved("\
+unit mm
+in (g := frame) {
+  p := point hint((1, 2, 3))
+}
+");
+    assert_eq!(e.map.ent_named("g").unwrap().kind, EntKind::Frame);
+    assert_eq!(crate::common::at(&e, "p"), [1.0, 2.0, 3.0]);
+    for (src, says) in [
+        ("f := frame(u: a)\n", "declared bare"),
+        ("f := frame hint((1, 2, 3))\n", "no seed"),
+    ] {
+        let (_, errs) = crate::common::parse(&format!("unit mm\n{src}"));
+        assert!(errs.iter().any(|e| e.message.contains(says)), "{src}: {:?}",
+                errs.iter().map(|e| &e.message).collect::<Vec<_>>());
+    }
+}

@@ -39,7 +39,7 @@ impl RegionShape {
     pub fn normal(&self, sk: &Sketch) -> Option<[f64; 3]> {
         let RegionShape::Plane { along, .. } = *self else { return None };
         match along.kind {
-            EntKind::Plane => Some(sk.basis(along.i()).normal()),
+            EntKind::Frame => Some(sk.basis(along.i()).normal()),
             EntKind::Line => {
                 let l = sk.lines.get(along.i())?;
                 let (a, b) = (sk.world_point(l.p1 as usize), sk.world_point(l.p2 as usize));

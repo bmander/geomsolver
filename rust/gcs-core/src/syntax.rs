@@ -242,6 +242,8 @@ impl Ty {
     pub fn parse(s: &str) -> Option<Ty> {
         match TYPE_WORDS.iter().find(|(w, _)| *w == s) {
             Some(&(_, ty)) => Some(ty),
+            // a frame formal takes a plane as well as a frame declared bare: one kind (#383)
+            None if s.eq_ignore_ascii_case("frame") => Some(Ty::Ent(EntKind::Frame)),
             None => Some(Ty::Ent(EntKind::parse(&s.to_lowercase())?)),
         }
     }
@@ -967,6 +969,10 @@ pub struct Decl {
     /// cw)`: clockwise, so a chain in a plane may turn right at it — drawn counter-clockwise in its
     /// plane turned over (`program::entities::arcs_in_space`).  `None`, counter-clockwise.
     pub sense: Option<Sense>,
+    /// Written `frame` (#383): a **spatial frame declared bare**, owning nothing until the
+    /// document names what it has — where `plane(…)`, the same kind, is a flat frame over two
+    /// axes.  False for every other declaration.
+    pub bare: bool,
 }
 
 /// What a spline through a chain's corners names (`Decl::through`): the chain, and the lines (or
@@ -1009,6 +1015,7 @@ impl Decl {
             through: None,
             normal: None,
             sense: None,
+            bare: false,
         }
     }
 
@@ -1054,6 +1061,7 @@ impl Decl {
             through: None,
             normal: None,
             sense: None,
+            bare: false,
         }
     }
 }
@@ -1177,6 +1185,10 @@ pub struct InBlock {
     pub plane: Ref,
     pub header: Span,
     pub close: Span,
+    /// Whether the header declares the frame, `in (f := frame) { … }` (#383): the declaration
+    /// is a statement of its own whose span lies inside the header, so deleting the frame takes
+    /// the header whole and the body's statements stay.
+    pub declares: bool,
 }
 
 /// A declared angular domain; it is data, not a solver unknown or hint.
@@ -1467,6 +1479,9 @@ pub struct AtRef {
     /// space and seen in the seeded point's plane.
     pub x: Option<(String, Span)>,
     pub y: Option<(String, Span)>,
+    /// `hint(at: f, (3, 4, 5))`: the third of a place in a spatial frame's coordinates, out
+    /// along it (#383).
+    pub z: Option<(String, Span)>,
 }
 
 impl AtRef {
@@ -1481,19 +1496,20 @@ impl AtRef {
             turn: None,
             x: None,
             y: None,
+            z: None,
         }
     }
 
     /// The texts the place reads numbers from — a bearing, a fraction, a turn, a plane's
     /// coordinates — for the walks that resolve and substitute them.
     pub fn texts_mut(&mut self) -> impl Iterator<Item = &mut (String, Span)> {
-        [&mut self.bearing, &mut self.by, &mut self.turn, &mut self.x, &mut self.y]
+        [&mut self.bearing, &mut self.by, &mut self.turn, &mut self.x, &mut self.y, &mut self.z]
             .into_iter()
             .flatten()
     }
 
     pub fn texts(&self) -> impl Iterator<Item = &(String, Span)> {
-        [&self.bearing, &self.by, &self.turn, &self.x, &self.y].into_iter().flatten()
+        [&self.bearing, &self.by, &self.turn, &self.x, &self.y, &self.z].into_iter().flatten()
     }
 }
 

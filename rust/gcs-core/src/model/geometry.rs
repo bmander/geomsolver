@@ -57,7 +57,7 @@ impl Sketch {
         let Some(plane) = self.plane_of(p) else { return };
         let mut on = Constraint::new(
             CKind::PointOnPlane,
-            vec![Arg::Ent(EntRef::point(t)), Arg::Ent(EntRef::plane(plane))],
+            vec![Arg::Ent(EntRef::point(t)), Arg::Ent(EntRef::frame(plane))],
         );
         on.intrinsic = true;
         self.add_quiet(on);
@@ -82,14 +82,14 @@ impl Sketch {
             let point = EntRef::point(p);
             let held = self.constraints.iter().any(|c| {
                 c.kind == CKind::PointOnPlane && c.args[0].ent() == point
-                    && c.args[1].ent() == EntRef::plane(plane)
+                    && c.args[1].ent() == EntRef::frame(plane)
             });
             if held || self.built_through(p, plane) {
                 continue;
             }
             let mut on = Constraint::new(
                 CKind::PointOnPlane,
-                vec![Arg::Ent(point), Arg::Ent(EntRef::plane(plane))],
+                vec![Arg::Ent(point), Arg::Ent(EntRef::frame(plane))],
             );
             on.intrinsic = true;
             self.add_quiet(on);
@@ -99,7 +99,7 @@ impl Sketch {
     /// Whether `plane` is built along a line point `p` is on: an end of it, or stated on it.
     fn built_through(&self, p: usize, plane: usize) -> bool {
         use crate::constraints::CKind;
-        let axes = [self.planes[plane].u as usize, self.planes[plane].v as usize];
+        let axes = [self.frames[plane].u as usize, self.frames[plane].v as usize];
         let on = |l: usize| {
             let line = &self.lines[l];
             line.p1 as usize == p || line.p2 as usize == p
@@ -141,7 +141,7 @@ impl Sketch {
     /// Put a point on a plane, or take it off (`None`).  A membership and not a constraint:
     /// nothing moves, and only `Project` reads it.
     pub fn set_plane(&mut self, point: usize, plane: Option<usize>) {
-        debug_assert!(plane.map_or(true, |p| p < self.planes.len()));
+        debug_assert!(plane.map_or(true, |p| p < self.frames.len()));
         self.points[point].plane = plane.map(|p| p as u32);
     }
 
@@ -182,9 +182,31 @@ impl Sketch {
     pub fn world_point(&self, i: usize) -> [f64;3] {
         if let Some(z) = self.points[i].z {
             let (x, y) = self.point_xy(i);
-            return [x, y, self.params[z as usize].value];
+            let z = self.params[z as usize].value;
+            // drawn in a spatial frame: along its u, up and out (#383)
+            if let Some(f) = self.points[i].chart {
+                return self.chart_lift(f as usize, [x, y, z]);
+            }
+            return [x, y, z];
         }
         self.world_in(self.plane_of(i), self.point_xy(i))
+    }
+
+    /// Where the point at `p` in spatial frame `f`'s three coordinates stands: `o + x·u + y·up +
+    /// z·out`, its basis read as a plane's.
+    pub fn chart_lift(&self, f: usize, p: [f64;3]) -> [f64;3] {
+        let b = self.basis(f);
+        let n = b.normal();
+        let at = b.lift(p[0], p[1]);
+        std::array::from_fn(|k| at[k] + p[2] * n[k])
+    }
+
+    /// The inverse of `chart_lift`: what point `w` in space measures along frame `f`'s u, up and
+    /// out from its origin.
+    pub fn chart_coords(&self, f: usize, w: [f64;3]) -> [f64;3] {
+        let b = self.basis(f);
+        let (x, y) = b.view_coords(w);
+        [x, y, crate::space::dot(crate::space::sub(w, b.o), b.normal())]
     }
 
     /// Where a point of plane `view`'s coordinates stands in space — `None` a 2D sketch's,
@@ -292,7 +314,7 @@ impl Sketch {
                 (cx - r, cy - r, cx + r, cy + r)
             }
             // a plane is drawn in its own coordinates, at its origin
-            EntKind::Plane => (0.0, 0.0, 0.0, 0.0),
+            EntKind::Frame => (0.0, 0.0, 0.0, 0.0),
             EntKind::Arc | EntKind::Spline => {
                 let pts = if e.kind == EntKind::Arc {
                     self.arc_extremes(e.i())
@@ -338,7 +360,7 @@ impl Sketch {
     /// a name the document reads, with nothing of its own to show.
     pub fn drawn(&self) -> Vec<EntRef> {
         let mut v = self.primitives();
-        let normals: Vec<u32> = self.planes.iter().filter_map(|p| p.normal).collect();
+        let normals: Vec<u32> = self.frames.iter().filter_map(|p| p.chart.as_ref()?.normal).collect();
         v.retain(|e| e.kind != EntKind::Axis || !normals.contains(&(e.i() as u32)));
         // a face family's station is written in place and never drawn (#243 L1)
         let stations = self.stations();

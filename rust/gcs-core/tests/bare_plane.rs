@@ -46,7 +46,7 @@ fn a_bare_plane_is_seven_freedoms() {
 #[test]
 fn a_plane_mints_only_the_axis_it_is_not_given() {
     let e = read("use std\np := plane(u: std.x)\n");
-    assert_eq!(e.sketch.planes[ent(&e, "p").i()].u as usize, ent(&e, "std.x").i());
+    assert_eq!(e.sketch.frames[ent(&e, "p").i()].u as usize, ent(&e, "std.x").i());
     assert_eq!(ent(&e, "p.v").kind, EntKind::Axis);
     let mut sk = e.sketch.clone();
     // the origin slides along std.x, and v turns about it

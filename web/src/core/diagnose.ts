@@ -4,7 +4,7 @@
  * point-distance subgraph, minimal conflict sets, and the structural-vs-numeric rank cross-check.
  * All of it runs in the core; this module presents the report. */
 import { Constraint } from './constraints.js';
-import { Param, Point, Primitive, Sketch } from './model.js';
+import { Param, Point, Primitive, Sketch, fromWire } from './model.js';
 import { System } from './system.js';
 import { WitnessReport, reportFrom } from './witness.js';
 import { core, takeJson, withJson } from './wasm.js';
@@ -142,7 +142,7 @@ function fromRaw(sk: Sketch, d: RawDiagnosis): Diagnosis {
       structuralRank: c.structuralRank,
       dof: c.dof,
     })),
-    entityState: new Map(d.entityState.map(([k, i, s]) => [ents.get(`${k}:${i}`)!, s])),
+    entityState: new Map(d.entityState.map(([k, i, s]) => [ents.get(`${fromWire(k)}:${i}`)!, s])),
     rigidClusters: d.rigidClusters.map((c) => c.map((i) => sk.points[i])),
     redundantDistances: cons(d.redundantDistances),
     violated: cons(d.violated),

@@ -218,7 +218,7 @@ fn the_document_uses_the_field_names() {
         ("lines", EntKind::Line),
         ("circles", EntKind::Circle),
         ("arcs", EntKind::Arc),
-        ("planes", EntKind::Plane),
+        ("planes", EntKind::Frame),
     ] {
         let Some(first) = doc.get(plural).and_then(|a| a.arr().first()) else { continue };
         for (name, _) in kind.fields() {
@@ -395,6 +395,7 @@ fn a_name_declared_twice_is_an_error() {
             through: None,
             normal: None,
             sense: None,
+            bare: false,
         }));
     }
     render_flat(&mut p).unwrap();
@@ -460,8 +461,8 @@ fn fixture(kind: CKind) -> (Sketch, Constraint) {
             SpecKind::Spline => Arg::Ent(EntRef::spline(sp)),
             // a point of `front` is on `front` by construction: a relation in space names the
             // other view
-            SpecKind::Plane if kind.spatial() => Arg::Ent(EntRef::plane(pb)),
-            SpecKind::Plane => Arg::Ent(EntRef::plane(pa)),
+            SpecKind::Plane if kind.spatial() => Arg::Ent(EntRef::frame(pb)),
+            SpecKind::Plane => Arg::Ent(EntRef::frame(pa)),
             SpecKind::Length => Arg::Num(12.0),
             SpecKind::Angle => Arg::Num(0.5),
             _ => Arg::Num(0.0),
@@ -475,10 +476,10 @@ fn fixture(kind: CKind) -> (Sketch, Constraint) {
     let mut used_plane = false;
     for (i, (_, k)) in spec.iter().enumerate() {
         args.push(match k {
-            SpecKind::Plane if used_plane => Arg::Ent(EntRef::plane(pa)),
+            SpecKind::Plane if used_plane => Arg::Ent(EntRef::frame(pa)),
             SpecKind::Plane if kind.spatial() => {
                 used_plane = true;
-                Arg::Ent(EntRef::plane(pb))
+                Arg::Ent(EntRef::frame(pb))
             }
             // a direction relation over an axis and a line, or two axes
             SpecKind::Axis | SpecKind::Direction if i == 0 => Arg::Ent(EntRef::new(EntKind::Axis, ra)),

@@ -73,6 +73,8 @@ pub struct Decl {
     pub normal: Option<syntax::Ref>,
     /// Which way an arc drawn in a plane turns (#363 S4, `syntax::Decl::sense`).
     pub sense: Option<syntax::Sense>,
+    /// A spatial frame declared bare (#383, `syntax::Decl::bare`).
+    pub bare: bool,
 }
 
 /// The same operands as syntax, with inline faces lowered to declarations of this stage.
@@ -116,6 +118,7 @@ impl From<syntax::Decl> for Decl {
             membership: d.membership,
             normal: d.normal,
             sense: d.sense,
+            bare: d.bare,
         }
     }
 }

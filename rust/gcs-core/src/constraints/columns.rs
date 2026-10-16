@@ -18,7 +18,7 @@ fn lifted_ends(sk: &Sketch, line: usize) -> Vec<u32> {
 /// A plane's columns as every kernel that reads one takes them: its origin, then its two axes'
 /// directions — nine Params, held or not.
 fn plane_columns(sk: &Sketch, p: usize) -> Vec<u32> {
-    let pl = &sk.planes[p];
+    let pl = &sk.frames[p];
     [pl.o, sk.axes[pl.u as usize].d, sk.axes[pl.v as usize].d].concat()
 }
 
@@ -354,7 +354,7 @@ impl Constraint {
                 [lift(c), vec![sk.round_radius(to) as u32], v].concat()
             }
             (false, crate::contact_rate::Word::Centre) => lift(to.i()),
-            (false, _) if to.kind == EntKind::Plane => plane_columns(sk, to.i())[3..].to_vec(),
+            (false, _) if to.kind == EntKind::Frame => plane_columns(sk, to.i())[3..].to_vec(),
             (false, _) => self.direction_columns(sk, 1),
         };
         let holder = self.rate_contact(sk);
@@ -617,7 +617,7 @@ impl Constraint {
             CKind::DragSeen => {
                 let i = e(0).i();
                 match (sk.points[i].z, sk.plane_of_origin(i)) {
-                    (None, Some(pl)) => sk.planes[pl].o.to_vec(),
+                    (None, Some(pl)) => sk.frames[pl].o.to_vec(),
                     _ => {
                         let p = &sk.points[i];
                         vec![p.x, p.y, p.z.expect("a point seen in space has its own z")]
@@ -815,7 +815,7 @@ impl Constraint {
             }
             // the first plane's origin and axes, then the second's origin
             CKind::PlaneDistance => {
-                [plane_columns(sk, e(0).i()), sk.planes[e(1).i()].o.to_vec()].concat()
+                [plane_columns(sk, e(0).i()), sk.frames[e(1).i()].o.to_vec()].concat()
             }
             CKind::AxisFoot => {
                 let r = &sk.axes[e(0).i()];
@@ -834,12 +834,19 @@ impl Constraint {
             // where the plane stands, in the point's place, and the axis's place and direction
             CKind::PlaneAxis => {
                 let r = &sk.axes[e(1).i()];
-                [sk.planes[e(0).i()].o.to_vec(), r.a.to_vec(), r.d.to_vec()].concat()
+                [sk.frames[e(0).i()].o.to_vec(), r.a.to_vec(), r.d.to_vec()].concat()
             }
             // the hidden point, the point as drawn, and its plane's origin and axes
             CKind::Lift => {
                 let l = &sk.lifts[sk.lift_of(e(0).i()).expect("a lift's point has one")];
                 [l.x.to_vec(), pt(0), plane_columns(sk, e(1).i())].concat()
+            }
+            // the same over a spatial frame's chart, the point's three numbers (#383)
+            CKind::ChartLift => {
+                let l = &sk.lifts[sk.lift_of(e(0).i()).expect("a lift's point has one")];
+                let q = &sk.points[e(0).i()];
+                let z = q.z.expect("a point in a spatial frame has three numbers");
+                [l.x.to_vec(), vec![q.x, q.y, z], plane_columns(sk, e(1).i())].concat()
             }
             // the hidden points, three columns each, in the order the operands name them
             CKind::Coincident3
@@ -1042,7 +1049,8 @@ impl Constraint {
     /// the plane a point is put on, the view a circle is drawn in.
     pub fn attitude_read(&self, sk: &Sketch) -> Option<usize> {
         match self.kind {
-            CKind::Lift | CKind::PointOnPlane | CKind::LineOnPlane => Some(self.args[1].ent().i()),
+            CKind::Lift | CKind::ChartLift | CKind::PointOnPlane | CKind::LineOnPlane =>
+                Some(self.args[1].ent().i()),
             CKind::PointOnCircle3 | CKind::PointAlongArc3 => {
                 sk.plane_of(sk.round_center(self.args[1].ent()))
             }

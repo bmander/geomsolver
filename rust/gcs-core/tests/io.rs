@@ -470,7 +470,7 @@ fn copy_takes_the_points_that_define_what_was_picked() {
     assert_eq!(clip.lines.len(), 1);
     // and the plane they are drawn in comes too, with its origin
     assert_eq!(clip.points.len(), 3);
-    assert_eq!(clip.planes.len(), 1);
+    assert_eq!(clip.frames.len(), 1);
     assert!(clip.circles.is_empty() && clip.arcs.is_empty());
 }
 
@@ -504,7 +504,7 @@ fn copy_is_the_other_half_of_deleting_the_rest() {
     // what is picked, and the plane it is drawn in, which a copy brings along
     let front = sk.points[sk.lines[0].p1 as usize].plane.unwrap() as usize;
     let mut kept = model::expand(&sk, &picked);
-    kept.extend(model::expand(&sk, &[EntRef::plane(front)]));
+    kept.extend(model::expand(&sk, &[EntRef::frame(front)]));
     let rest: Vec<EntRef> = sk.primitives().into_iter().filter(|e| !kept.contains(e)).collect();
     assert_eq!(io::dumps(&io::copy(&sk, &picked), Some(1)),
                io::dumps(&io::without(&sk, &rest, &[]), Some(1)));
@@ -765,10 +765,10 @@ fn a_paste_draws_in_the_plane_the_document_already_has() {
     let mut sk = e.sketch;
     let front = e.map.ent_named("std.front").unwrap().i();
     let clip = io::copy(&sk, &[EntRef::line(0)]);
-    assert_eq!(clip.planes.len(), 1, "the clipboard carries the plane its points are drawn in");
-    let (planes, axes) = (sk.planes.len(), sk.axes.len());
+    assert_eq!(clip.frames.len(), 1, "the clipboard carries the plane its points are drawn in");
+    let (planes, axes) = (sk.frames.len(), sk.axes.len());
     let made = io::paste(&mut sk, &clip, 10.0, 10.0);
-    assert_eq!((sk.planes.len(), sk.axes.len()), (planes, axes), "no second plane, nor its axes");
+    assert_eq!((sk.frames.len(), sk.axes.len()), (planes, axes), "no second plane, nor its axes");
     let pasted: Vec<usize> = made.iter().filter(|r| r.kind == EntKind::Point).map(|r| r.i()).collect();
     assert_eq!(pasted.len(), 2, "the line's two ends, and not a second origin");
     assert!(pasted.iter().all(|&p| sk.plane_of(p) == Some(front)), "drawn in the front");
@@ -776,5 +776,5 @@ fn a_paste_draws_in_the_plane_the_document_already_has() {
     // into a document of nothing, the plane comes along
     let mut empty = Sketch::new();
     io::paste(&mut empty, &clip, 0.0, 0.0);
-    assert_eq!(empty.planes.len(), 1);
+    assert_eq!(empty.frames.len(), 1);
 }

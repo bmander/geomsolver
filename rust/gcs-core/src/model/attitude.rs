@@ -18,7 +18,10 @@ impl Sketch {
     /// (parallel, or one of no length) read as the front plane's attitude at `o`, which a row
     /// over them will not leave standing.
     pub fn basis(&self, i: usize) -> crate::plane::Basis {
-        let p = &self.planes[i];
+        // a frame with no axes of its own reads as the world does (#383): along x, up y, out z
+        let Some(p) = self.frames[i].chart.as_ref() else {
+            return crate::plane::Basis { u: [1.0, 0.0, 0.0], v: [0.0, 1.0, 0.0], o: [0.0; 3] };
+        };
         let dir = |r: u32| self.axes[r as usize].d.map(|q| self.params[q as usize].value);
         let o = p.o.map(|q| self.params[q as usize].value);
         let page = crate::plane::Basis::page();
@@ -32,7 +35,8 @@ impl Sketch {
     /// projection's other plane is fixed too: `CKind::attitude_twin`).  What a statement asks at
     /// the add (`Sketch::add_quiet`); a `fix` is applied before any relation.
     pub fn plane_fixed(&self, i: usize) -> bool {
-        let p = &self.planes[i];
+        // a frame with no axes has nothing of its own to move
+        let Some(p) = self.frames[i].chart.as_ref() else { return true };
         let held = |q: u32| self.params[q as usize].fixed;
         [p.u, p.v].iter().all(|&r| self.axes[r as usize].d.iter().all(|&q| held(q)))
             && p.o.iter().all(|&q| held(q))
@@ -50,10 +54,21 @@ impl Sketch {
         [pt.x, pt.y].into_iter().chain(pt.z).all(|q| self.params[q as usize].fixed)
     }
 
+    /// The frames with axes of their own — every plane, and each spatial frame whose axes the
+    /// document reads (#383): what a walk over the frames' charts walks.
+    pub fn charted(&self) -> Vec<usize> {
+        (0..self.frames.len()).filter(|&i| self.frames[i].chart.is_some()).collect()
+    }
+
+    /// The frames whose `in` draws flat: the planes (#383).
+    pub fn planes(&self) -> Vec<usize> {
+        (0..self.frames.len()).filter(|&i| self.frames[i].planar()).collect()
+    }
+
     /// The plane point `p` is the origin of, if any: an origin is drawn in its own plane.
     pub fn plane_of_origin(&self, p: usize) -> Option<usize> {
         let pl = self.points[p].plane? as usize;
-        (self.planes.get(pl)?.origin as usize == p).then_some(pl)
+        (self.frames.get(pl)?.chart.as_ref()?.origin as usize == p).then_some(pl)
     }
 
     /// Turn axis `r` to drawn line `l` as it now stands, sense and all: the axis a plane holds
@@ -80,6 +95,22 @@ impl Sketch {
             return Some(k);
         }
         if let Some(z) = self.points[p].z {
+            // a point in a spatial frame's chart is lifted through it, as one in a plane is
+            if let Some(f) = self.points[p].chart {
+                let at = self.world_point(p);
+                let name = self.point_label(p).to_string();
+                let x = [0, 1, 2].map(|k| {
+                    self.param(at[k], false, &format!("{name}.lift.{}", ["x", "y", "z"][k])) as u32
+                });
+                self.lifts.push(LiftE { point: p as u32, x });
+                let mut c = Constraint::new(CKind::ChartLift, vec![
+                    crate::constraints::Arg::Ent(EntRef::point(p)),
+                    crate::constraints::Arg::Ent(EntRef::frame(f as usize)),
+                ]);
+                c.intrinsic = true;
+                self.add(c);
+                return Some(self.lifts.len() - 1);
+            }
             let pt = &self.points[p];
             self.lifts.push(LiftE { point: p as u32, x: [pt.x, pt.y, z] });
             return Some(self.lifts.len() - 1);
@@ -93,11 +124,17 @@ impl Sketch {
         self.lifts.push(LiftE { point: p as u32, x });
         let mut c = Constraint::new(CKind::Lift, vec![
             crate::constraints::Arg::Ent(EntRef::point(p)),
-            crate::constraints::Arg::Ent(EntRef::plane(v)),
+            crate::constraints::Arg::Ent(EntRef::frame(v)),
         ]);
         c.intrinsic = true;
         self.add(c);
         Some(self.lifts.len() - 1)
+    }
+
+    /// Whether point `p`'s hidden point in space is a point of its own, held to it by a row: one
+    /// drawn in a plane, or in a spatial frame's chart (#383) — not a point in space, its own lift.
+    pub fn lifted_off(&self, p: usize) -> bool {
+        self.points[p].z.is_none() || self.points[p].chart.is_some()
     }
 
     /// Whether point `p` has a place in space: drawn in a plane, or standing there itself — not a

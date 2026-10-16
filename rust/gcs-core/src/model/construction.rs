@@ -69,7 +69,7 @@ impl Sketch {
     pub fn point(&mut self, x: f64, y: f64, fixed: bool, name: &str) -> usize {
         let px = self.param(x, fixed, &format!("{name}.x"));
         let py = self.param(y, fixed, &format!("{name}.y"));
-        self.points.push(PointE { x: px as u32, y: py as u32, z: None, plane: None });
+        self.points.push(PointE { x: px as u32, y: py as u32, z: None, plane: None, chart: None });
         self.points.len() - 1
     }
 
@@ -78,6 +78,26 @@ impl Sketch {
         let p = self.point(at[0], at[1], fixed, name);
         self.give_place(p, at[2]);
         p
+    }
+
+    /// Make charted frame `f` spatial (#383): a point drawn in it has three numbers, and its
+    /// origin, drawn in it, is held at `(0, 0, 0)`.
+    pub fn spatial_chart(&mut self, f: usize) {
+        self.frames[f].planar = false;
+        let origin = self.frames[f].origin as usize;
+        self.points[origin].plane = None;
+        self.points[origin].chart = Some(f as u32);
+        self.give_place(origin, 0.0);
+        let z = self.points[origin].z.expect("given its place") as usize;
+        self.params[z].fixed = true;
+    }
+
+    /// Draw point `p` in spatial frame `f`'s chart (#383): its three numbers, `x` along `f.u`, `y`
+    /// up and `z` out, the third given with every point in space's (`give_place`).  A membership
+    /// and not a constraint: nothing moves, and its lift reads the chart (`lift_point`).
+    pub fn draw_in_chart(&mut self, p: usize, f: usize) {
+        debug_assert!(self.frames[f].chart.as_ref().is_some_and(|c| !c.planar));
+        self.points[p].chart = Some(f as u32);
     }
 
     /// Put point `p`, in no plane, in space at height `z`: its third coordinate — what the
@@ -332,10 +352,10 @@ impl Sketch {
                           class: Classes) -> usize {
         let pi = self.plane_over(u, v, o, origin, "");
         for k in 0..3 {
-            let q = self.planes[pi].o[k] as usize;
+            let q = self.frames[pi].o[k] as usize;
             self.params[q].fixed = held[k];
         }
-        self.planes[pi].class = class;
+        self.frames[pi].class = class;
         pi
     }
 
@@ -348,10 +368,10 @@ impl Sketch {
     /// Its axes pass through its origin: the intrinsic `PlaneAxis` rows, which read (and so place)
     /// both axes.
     fn push_plane(&mut self, u: usize, v: usize, op: [u32; 3], origin: usize) -> usize {
-        let pi = self.planes.len();
+        let pi = self.frames.len();
         self.points[origin].plane = Some(pi as u32);
-        self.planes.push(PlaneE { u: u as u32, v: v as u32, o: op, origin: origin as u32, normal: None,
-                                 class: Classes::default() });
+        self.frames.push(FrameE::charted(Chart { u: u as u32, v: v as u32, o: op, origin: origin as u32,
+                                                 normal: None, planar: true }));
         let o = op.map(|q| self.params[q as usize].value);
         for ax in [u, v] {
             // an axis this plane is the first to place starts through where the plane does
@@ -359,7 +379,7 @@ impl Sketch {
                 self.stand_axis_through(ax, o);
             }
             let mut c = Constraint::new(crate::constraints::CKind::PlaneAxis,
-                vec![Arg::Ent(EntRef::plane(pi)), Arg::Ent(EntRef::new(EntKind::Axis, ax))]);
+                vec![Arg::Ent(EntRef::frame(pi)), Arg::Ent(EntRef::new(EntKind::Axis, ax))]);
             c.intrinsic = true;
             self.add_quiet(c);
         }
@@ -373,7 +393,7 @@ impl Sketch {
     /// continuously, keeps it there.  Three unknowns and three rows for its direction, the unit
     /// row among them, and its place's two against `PlaneAxis`'s two: no freedom of its own.
     pub fn plane_normal(&mut self, pi: usize, name: &str) -> usize {
-        if let Some(n) = self.planes[pi].normal {
+        if let Some(n) = self.frames[pi].normal {
             return n as usize;
         }
         let n = self.axis(self.basis(pi).normal(), name);
@@ -385,15 +405,15 @@ impl Sketch {
     /// document reader calls with an axis already made.
     pub fn stand_normal(&mut self, pi: usize, n: usize) {
         use crate::constraints::{Arg, CKind};
-        self.planes[pi].normal = Some(n as u32);
-        let (u, v) = (self.planes[pi].u as usize, self.planes[pi].v as usize);
+        self.frames[pi].normal = Some(n as u32);
+        let (u, v) = (self.frames[pi].u as usize, self.frames[pi].v as usize);
         let axis = EntRef::new(EntKind::Axis, n);
         for side in [u, v] {
             let mut c = Constraint::two_line(CKind::Perpendicular3, axis, EntRef::new(EntKind::Axis, side));
             c.intrinsic = true;
             self.add_quiet(c);
         }
-        let mut c = Constraint::new(CKind::PlaneAxis, vec![Arg::Ent(EntRef::plane(pi)), Arg::Ent(axis)]);
+        let mut c = Constraint::new(CKind::PlaneAxis, vec![Arg::Ent(EntRef::frame(pi)), Arg::Ent(axis)]);
         c.intrinsic = true;
         self.add_quiet(c);
         self.seed_normal(pi);
@@ -403,13 +423,15 @@ impl Sketch {
     /// it stands — after anything that moves a plane's seed, since the normal's rows hold it
     /// square to the axes either way round.
     pub fn seed_normals(&mut self) {
-        for pi in 0..self.planes.len() {
+        for pi in 0..self.frames.len() {
             self.seed_normal(pi);
         }
     }
 
     fn seed_normal(&mut self, pi: usize) {
-        let Some(n) = self.planes[pi].normal.map(|n| n as usize) else { return };
+        let Some(n) = self.frames[pi].chart.as_ref().and_then(|c| c.normal).map(|n| n as usize) else {
+            return;
+        };
         let b = self.basis(pi);
         for (k, x) in b.normal().into_iter().enumerate() {
             let q = self.axes[n].d[k] as usize;
@@ -426,7 +448,7 @@ impl Sketch {
 
     /// The plane axis `r` is the normal of, where it is one.
     pub fn normal_of(&self, r: usize) -> Option<usize> {
-        self.planes.iter().position(|p| p.normal == Some(r as u32))
+        self.frames.iter().position(|p| p.chart.as_ref().is_some_and(|c| c.normal == Some(r as u32)))
     }
 
     /// Stand axis `r`'s line through `x`, its direction kept: its place is the foot of the
@@ -452,7 +474,7 @@ impl Sketch {
             r
         });
         let pi = self.plane(axes[0], axes[1], b.o, name);
-        for &p in &self.planes[pi].o {
+        for &p in &self.frames[pi].o {
             self.params[p as usize].fixed = true;
         }
         // its axes, stood through where it stands, held there
@@ -467,10 +489,10 @@ impl Sketch {
     /// a solve.
     pub fn set_plane_origin(&mut self, i: usize, o: [f64; 3]) {
         for k in 0..3 {
-            let p = self.planes[i].o[k] as usize;
+            let p = self.frames[i].o[k] as usize;
             self.params[p].value = o[k];
         }
-        let (u, v) = (self.planes[i].u as usize, self.planes[i].v as usize);
+        let (u, v) = (self.frames[i].u as usize, self.frames[i].v as usize);
         self.stand_axis_through(u, o);
         self.stand_axis_through(v, o);
     }

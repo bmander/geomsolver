@@ -307,7 +307,7 @@ fn the_names_match_the_parameters() {
         EntRef::line(l),
         EntRef::circle(ci),
         EntRef::arc(ar),
-        EntRef::plane(pl),
+        EntRef::frame(pl),
     ] {
         let names = e.kind.scalar_names("e").expect("a fixed number of coordinates");
         assert_eq!(

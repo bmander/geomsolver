@@ -228,7 +228,7 @@ fn the_station_is_never_drawn() {
         panic!("a face family");
     };
     let station = station.clone();
-    assert!(station.iter().any(|s| s.kind == EntKind::Plane), "the station's plane is its");
+    assert!(station.iter().any(|s| s.kind == EntKind::Frame), "the station's plane is its");
     let drawn = e.sketch.drawn();
     assert!(!drawn.iter().any(|d| station.contains(d)), "a station's entity is drawn");
     assert!(drawn.iter().any(|d| d.kind == EntKind::Line), "the guide is drawn");

@@ -65,7 +65,7 @@ fn basis(name: &str, models: &BTreeMap<String, Model<'_>>, span: Span) -> Result
             .expect("the built-in isometric axes span a plane")),
         _ => {
             let (_, path, model) = split(name, models, span)?;
-            let e = model.names.entity_path(model.sketch, path).filter(|e| e.kind == EntKind::Plane)
+            let e = model.names.entity_path(model.sketch, path).filter(|e| e.kind == EntKind::Frame)
                 .ok_or_else(|| error(span, format!("`{name}` is not a model plane")))?;
             return Ok(model.sketch.basis(e.i()));
         }
@@ -81,7 +81,7 @@ fn sketch_plane(name: &str, alias: &str, models: &BTreeMap<String, Model<'_>>, s
 {
     let target = if name == "front" { format!("{alias}.std.front") } else { name.to_string() };
     let (_, path, model) = split(&target, models, span)?;
-    match model.names.entity_path(model.sketch, path).filter(|e| e.kind == EntKind::Plane) {
+    match model.names.entity_path(model.sketch, path).filter(|e| e.kind == EntKind::Frame) {
         Some(e) => Ok(Some(e.i())),
         None if name == "front" => Ok(None),
         None => Err(error(span, format!("`{name}` is not a model plane"))),

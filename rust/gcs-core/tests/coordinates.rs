@@ -23,13 +23,13 @@ fn standard_datums_are_shared_fixed_and_built_whenever_std_is_used() {
     for name in ["std.front", "std.side", "std.top", "std.up"] {
         assert!(unused.map.ent_named(name).is_some(), "{name}");
     }
-    assert_eq!(unused.sketch.planes.len(), 4);
+    assert_eq!(unused.sketch.frames.len(), 4);
     let front = unused.map.ent_named("std.front").unwrap().i();
     assert_eq!(unused.sketch.plane_of(unused.map.ent_named("p").unwrap().i()), Some(front));
     let without = build("p := point\n");
-    assert!(without.sketch.planes.is_empty());
+    assert!(without.sketch.frames.is_empty());
     let explicit = build("use std\nstd := std.StandardDatums()\nin std.front {\na := point hint((3, 4))\na distance(3, along: u) std.front\na distance(4, along: v) std.front\n}\n");
-    assert_eq!(explicit.sketch.planes.len(), 4, "an explicit std binding is not duplicated");
+    assert_eq!(explicit.sketch.frames.len(), 4, "an explicit std binding is not duplicated");
     let mut e = build("\
 unit mm
 use std
@@ -46,7 +46,7 @@ c distance(8mm, along: v) std.front
 }
 ");
     solved(&mut e.sketch);
-    assert_eq!(e.sketch.planes.len(), 4);
+    assert_eq!(e.sketch.frames.len(), 4);
     assert_eq!(e.sketch.points.len(), 3 + STD_POINTS);
     close(e.sketch.point_xy(e.map.ent_named("a").unwrap().i()), (3.0, 4.0));
     // `std.up` is the front turned a quarter: its u is z, its v the x axis reversed

@@ -135,7 +135,7 @@ pub(crate) fn refused(
         // the circle about a point drawn in its plane: `P` a line, or the centre standing off it,
         // and the body says something else, which the set itself says when walked as one
         Form::Circle { plane } => {
-            let plane = plane.as_ref().and_then(&ent).filter(|e| e.kind == EntKind::Plane);
+            let plane = plane.as_ref().and_then(&ent).filter(|e| e.kind == EntKind::Frame);
             let circle = key(&l.key).filter(|e| e.kind == EntKind::Circle);
             plane.zip(circle).is_some_and(|(plane, k)| {
                 sk.plane_of(sk.circles[k.i()].center as usize) == Some(plane.i())

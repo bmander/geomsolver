@@ -42,7 +42,7 @@ fn point_to(sk: &Sketch, px: f64, py: f64, e: EntRef) -> f64 {
         }
         EntKind::Spline => crate::curve::distance_to(sk, e.i(), px, py),
         // a datum is not a figure: the place it stands at is its origin
-        EntKind::Plane => px.dhypot(py),
+        EntKind::Frame => px.dhypot(py),
     }
 }
 
@@ -94,7 +94,7 @@ pub fn point_to_drawn(sk: &Sketch, px: f64, py: f64, e: EntRef) -> f64 {
             point_to(sk, px, py, e)
         }
         // a plane is drawn as its glyph at its own origin, which is where it is taken hold of
-        EntKind::Plane => px.dhypot(py),
+        EntKind::Frame => px.dhypot(py),
     }
 }
 
@@ -162,7 +162,7 @@ fn measure_order(k: EntKind) -> u8 {
         EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Meshing | EntKind::Traced
         | EntKind::Axis => OFF_SHEET,
         // last, so any pair with a datum in it puts the datum second and one arm catches it
-        EntKind::Plane => 6,
+        EntKind::Frame => 6,
     }
 }
 
@@ -206,7 +206,7 @@ fn swept(sk: &Sketch, e: EntRef) -> Vec<(f64, f64)> {
         EntKind::Spline => crate::curve::sample(sk, e.i(), 64),
         EntKind::Curve => sk.curve_polyline(e.i()),
         // a datum is not a figure: the one place it stands at
-        EntKind::Plane => vec![(0.0, 0.0)],
+        EntKind::Frame => vec![(0.0, 0.0)],
         _ => Vec::new(),
     }
 }
@@ -241,7 +241,7 @@ pub fn distance_between(sk: &Sketch, first: EntRef, second: EntRef) -> f64 {
         // would ask a curve for a centre it does not have.
         _ if matches!(
             b.kind,
-            EntKind::Spline | EntKind::Curve | EntKind::Plane
+            EntKind::Spline | EntKind::Curve | EntKind::Frame
         ) => swept(sk, b)
             .into_iter()
             .map(|(x, y)| point_to(sk, x, y, a))

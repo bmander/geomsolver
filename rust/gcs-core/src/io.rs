@@ -114,7 +114,7 @@ fn arg_from_json(sk: &Sketch, kind: SpecKind, v: &Json) -> Result<Arg, String> {
             let e = ref_from_json(sk, v, "entity reference")?;
             // and it must be a kind the slot takes: a document is untrusted input, and every
             // reader past this one indexes the list its *spec* names (a projection's planes
-            // reach `sk.planes`), so a mismatch here is a panic there — an abort under wasm
+            // reach `sk.frames`), so a mismatch here is a panic there — an abort under wasm
             if !crate::constraints::kind_matches(kind, e.kind) {
                 return Err(format!("{} slot does not take {}", kind.a(), e.kind.a()));
             }
@@ -229,7 +229,7 @@ fn remap_early(
         EntKind::Circle => circle_map[e.i()].map(EntRef::circle),
         EntKind::Arc => arc_map[e.i()].map(EntRef::arc),
         EntKind::Spline => spline_map[e.i()].map(EntRef::spline),
-        EntKind::Plane => plane_map[e.i()].map(EntRef::plane),
+        EntKind::Frame => plane_map[e.i()].map(EntRef::frame),
         // a curve is never another curve's argument: nothing in the language says so, and a
         // face and a solid are built after every curve, so neither is one either
         EntKind::Curve | EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Meshing
@@ -249,6 +249,10 @@ pub fn to_json(sk: &Sketch) -> Json {
             }
             if let Some(z) = sk.points[i].z {
                 o.set("z", sk.params[z as usize].value.into());
+            }
+            // drawn in a spatial frame's chart, its three numbers along its axes (#383)
+            if let Some(f) = sk.points[i].chart {
+                o.set("chart", Json::Int(f as i64));
             }
             o
         })
@@ -307,9 +311,13 @@ pub fn to_json(sk: &Sketch) -> Json {
         })
         .collect();
     let planes: Vec<Json> = sk
-        .planes
+        .frames
         .iter()
-        .map(|p| {
+        .map(|f| {
+            // a frame declared bare owns nothing to write (#383)
+            let Some(p) = f.chart.as_ref() else {
+                return object([("bare", true.into()), ("class", class_json(&f.class))]);
+            };
             let g = |k: u32| &sk.params[k as usize];
             // where it stands under the field names, `EntKind::fields`'s
             let mut o = object([
@@ -320,11 +328,15 @@ pub fn to_json(sk: &Sketch) -> Json {
                 ("y", Json::Num(g(p.o[1]).value)),
                 ("z", Json::Num(g(p.o[2]).value)),
                 ("fixed", Json::Arr(p.o.iter().map(|&k| g(k).fixed.into()).collect())),
-                ("class", class_json(&p.class)),
+                ("class", class_json(&f.class)),
             ]);
             // its normal, by axis, only where one was read — a document with none dumps as it did
             if let Some(n) = p.normal {
                 o.set("normal", (n as i64).into());
+            }
+            // a spatial frame's chart: a point in it has three numbers
+            if !p.planar {
+                o.set("planar", false.into());
             }
             o
         })
@@ -593,6 +605,11 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
     let nr = sk.axes.len();
     let mut normals = Vec::new();
     for p in d.get("planes").unwrap_or(&empty).arr() {
+        // a frame declared bare (#383)
+        if p.get("bare").is_some_and(|v| v.as_bool()) {
+            sk.frames.push(crate::model::FrameE { class: read_class(p), ..crate::model::FrameE::bare() });
+            continue;
+        }
         let g = |key: &str, n: usize| index(p.get(key).map(|v| v.as_i64()).unwrap_or(0), n, key);
         let o = ["x", "y", "z"].map(|k| p.get(k).map(|v| v.as_f64()).unwrap_or(0.0));
         let fixed = p.get("fixed").map(|v| v.arr()).unwrap_or_default();
@@ -600,6 +617,12 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
         let pi = sk.plane_restored(g("u", nr)?, g("v", nr)?, o, held, g("origin", np)?, read_class(p));
         if p.get("normal").is_some() {
             normals.push((pi, g("normal", nr)?));
+        }
+        if p.get("planar").is_some_and(|v| !v.as_bool()) {
+            if sk.points[g("origin", np)?].z.is_none() {
+                return Err("a spatial frame's origin has three numbers".into());
+            }
+            sk.spatial_chart(pi);
         }
     }
     // each normal held to its plane, its rows the plane's own and never written (`stand_normal`)
@@ -614,7 +637,16 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
     for (i, pt) in d.get("points").unwrap_or(&empty).arr().iter().enumerate() {
         if let Some(v) = pt.get("plane") {
             if !omitted(Some(v)) {
-                sk.set_plane(i, Some(index(v.as_i64(), sk.planes.len(), "point.plane")?));
+                sk.set_plane(i, Some(index(v.as_i64(), sk.frames.len(), "point.plane")?));
+            }
+        }
+        if let Some(v) = pt.get("chart").filter(|v| !omitted(Some(v))) {
+            let f = index(v.as_i64(), sk.frames.len(), "point.chart")?;
+            if sk.frames[f].chart.as_ref().is_none_or(|c| c.planar) || sk.points[i].z.is_none() {
+                return Err("a point's chart is a spatial frame's, and the point has three numbers".into());
+            }
+            if sk.frames[f].origin as usize != i {
+                sk.draw_in_chart(i, f);
             }
         }
     }
@@ -809,22 +841,24 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
     // a paste onto a plane the document already has: one held where the clipboard's is held and
     // facing the same way *is* that plane, so what was drawn in it is drawn in it again and no
     // second plane stands on the first; its axes and its origin are the document's
-    let mut reuse: Vec<Option<usize>> = vec![None; src.planes.len()];
+    let mut reuse: Vec<Option<usize>> = vec![None; src.frames.len()];
     if !fresh {
         let same = |a: [f64; 3], b: [f64; 3]| (0..3).all(|k| (a[k] - b[k]).abs() < 1e-9);
         for (i, r) in reuse.iter_mut().enumerate() {
-            if !keep(EntRef::plane(i)) || !src.plane_fixed(i) {
+            if !keep(EntRef::frame(i)) || !src.plane_fixed(i) || src.frames[i].chart.is_none() {
                 continue;
             }
             let b = src.basis(i);
-            *r = (0..dst.planes.len()).find(|&j| {
+            let planar = src.frames[i].planar();
+            *r = dst.charted().into_iter().find(|&j| {
                 let c = dst.basis(j);
-                dst.plane_fixed(j) && same(b.u, c.u) && same(b.v, c.v) && same(b.o, c.o)
+                dst.frames[j].planar() == planar && dst.plane_fixed(j)
+                    && same(b.u, c.u) && same(b.v, c.v) && same(b.o, c.o)
             });
         }
     }
     let reused_origin: BTreeMap<usize, usize> = reuse.iter().enumerate()
-        .filter_map(|(i, r)| r.map(|j| (src.planes[i].origin as usize, dst.planes[j].origin as usize)))
+        .filter_map(|(i, r)| r.map(|j| (src.frames[i].origin as usize, dst.frames[j].origin as usize)))
         .collect();
     let mut keep_pts = Vec::new();
     let mut pt_map: Vec<Option<usize>> = vec![None; src.points.len()];
@@ -928,8 +962,8 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
     let mut axis_map: Vec<Option<usize>> = vec![None; src.axes.len()];
     for (i, r) in reuse.iter().enumerate() {
         if let Some(j) = r {
-            axis_map[src.planes[i].u as usize] = Some(dst.planes[*j].u as usize);
-            axis_map[src.planes[i].v as usize] = Some(dst.planes[*j].v as usize);
+            axis_map[src.frames[i].u as usize] = Some(dst.frames[*j].u as usize);
+            axis_map[src.frames[i].v as usize] = Some(dst.frames[*j].v as usize);
         }
     }
     let mut places = Vec::new();
@@ -946,16 +980,23 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         axis_map[i] = Some(ni);
         made.push(EntRef::new(EntKind::Axis, ni));
     }
-    let mut plane_map: Vec<Option<usize>> = vec![None; src.planes.len()];
-    for i in 0..src.planes.len() {
+    let mut plane_map: Vec<Option<usize>> = vec![None; src.frames.len()];
+    for i in 0..src.frames.len() {
         if let Some(j) = reuse[i] {
             plane_map[i] = Some(j);
             continue;
         }
-        if !keep(EntRef::plane(i)) {
+        if !keep(EntRef::frame(i)) {
             continue;
         }
-        let p = &src.planes[i];
+        // a frame declared bare comes as it is, owning nothing (#383)
+        let Some(p) = src.frames[i].chart.as_ref() else {
+            dst.frames.push(crate::model::FrameE { class: src.frames[i].class.clone(),
+                                                   ..crate::model::FrameE::bare() });
+            plane_map[i] = Some(dst.frames.len() - 1);
+            made.push(EntRef::frame(dst.frames.len() - 1));
+            continue;
+        };
         let (Some(u), Some(v), Some(origin)) =
             (axis_map[p.u as usize], axis_map[p.v as usize], pt_index(p.origin as usize))
         else {
@@ -963,9 +1004,12 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         };
         let ni = dst.plane_restored(u, v, p.o.map(|k| src.params[k as usize].value),
                                     p.o.map(|k| src.params[k as usize].fixed), origin,
-                                    p.class.clone());
+                                    src.frames[i].class.clone());
+        if !p.planar {
+            dst.spatial_chart(ni);
+        }
         plane_map[i] = Some(ni);
-        made.push(EntRef::plane(ni));
+        made.push(EntRef::frame(ni));
         // its normal, where it came along too
         if let Some(n) = p.normal.and_then(|n| axis_map[n as usize]) {
             dst.stand_normal(ni, n);
@@ -979,6 +1023,14 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
     for i in 0..src.points.len() {
         if let (Some(ni), Some(p)) = (pt_index(i), src.plane_of(i)) {
             dst.set_plane(ni, plane_map[p]);
+        }
+        // and a point drawn in a spatial frame's chart, its three numbers kept (#383)
+        if let (Some(ni), Some(f)) = (pt_index(i), src.points[i].chart) {
+            if let Some(g) = plane_map[f as usize].filter(|&g| !dst.frames[g].planar()
+                && dst.frames[g].chart.is_some() && dst.frames[g].origin as usize != ni)
+            {
+                dst.draw_in_chart(ni, g);
+            }
         }
     }
     // a hidden point comes with the point it lifts, seeded where that point lifts to now
@@ -1182,7 +1234,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             EntKind::Arc => arc_map[e.i()],
             EntKind::Spline => spline_map[e.i()],
             EntKind::Axis => axis_map[e.i()],
-            EntKind::Plane => plane_map[e.i()],
+            EntKind::Frame => plane_map[e.i()],
             EntKind::Curve => curve_map[e.i()],
             EntKind::Face => face_map[e.i()],
             _ => None,
@@ -1289,7 +1341,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
                 let ent = |e: EntRef| match e.kind {
                     EntKind::Point => pt_index(e.i()).map(EntRef::point),
                     EntKind::Line => line_map[e.i()].map(EntRef::line),
-                    EntKind::Plane => plane_map[e.i()].map(EntRef::plane),
+                    EntKind::Frame => plane_map[e.i()].map(EntRef::frame),
                     _ => None,
                 };
                 crate::model::SolidDef::Region {
@@ -1438,7 +1490,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             EntKind::Axis => axis_map[e.i()].map(|i| EntRef::new(EntKind::Axis, i)),
             EntKind::Arc => arc_map[e.i()].map(EntRef::arc),
             EntKind::Spline => spline_map[e.i()].map(EntRef::spline),
-            EntKind::Plane => plane_map[e.i()].map(EntRef::plane),
+            EntKind::Frame => plane_map[e.i()].map(EntRef::frame),
             EntKind::Curve => curve_map[e.i()].map(|i| EntRef::new(EntKind::Curve, i)),
             EntKind::Face => face_map[e.i()].map(EntRef::face),
             EntKind::Solid => solid_map[e.i()].map(EntRef::solid),
@@ -1536,7 +1588,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             CKind::Parallel3 | CKind::PointOnAxis => c.entities().iter()
                 .any(|e| e.kind == EntKind::Axis && along.contains(&e.i())),
             CKind::Coincident3 => src.plane_of_origin(c.args[0].ent().i()).is_some_and(|p| {
-                let pl = &src.planes[p];
+                let pl = &src.frames[p];
                 along.contains(&(pl.u as usize)) && along.contains(&(pl.v as usize))
             }),
             _ => false,
@@ -1551,10 +1603,10 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             // axes: they go, as `axes_along` takes them (its normal's stays)
             if c.kind == CKind::Coincident3 {
                 if let Some(p) = dst.plane_of_origin(ents[0].i()) {
-                    let (u, v) = (dst.planes[p].u as usize, dst.planes[p].v as usize);
+                    let (u, v) = (dst.frames[p].u as usize, dst.frames[p].v as usize);
                     let gone: Vec<u32> = dst.constraints.iter()
                         .filter(|d| d.intrinsic && d.kind == CKind::PlaneAxis)
-                        .filter(|d| d.args[0].ent() == EntRef::plane(p))
+                        .filter(|d| d.args[0].ent() == EntRef::frame(p))
                         .filter(|d| [u, v].contains(&d.args[1].ent().i()))
                         .map(|d| d.id)
                         .collect();
@@ -1642,7 +1694,7 @@ pub fn without(sk: &Sketch, entities: &[EntRef], constraints: &[u32]) -> Sketch 
         // a plane's origin is the plane's, and goes with it
         if e.kind == EntKind::Point {
             if let Some(pl) = sk.plane_of_origin(e.i()) {
-                if dead.contains(&EntRef::plane(pl)) {
+                if dead.contains(&EntRef::frame(pl)) {
                     return false;
                 }
             }
@@ -1666,7 +1718,7 @@ pub fn copy(sk: &Sketch, entities: &[EntRef]) -> Sketch {
         if !keep.insert(e) { continue; }
         pending.extend(sk.children(e));
         if e.kind == EntKind::Point {
-            if let Some(p) = sk.plane_of(e.i()) { pending.push(EntRef::plane(p)); }
+            if let Some(p) = sk.plane_of(e.i()) { pending.push(EntRef::frame(p)); }
         }
     }
     let mut candidates = sk.primitives();
@@ -1783,7 +1835,7 @@ impl Part {
         }
         // a plane is a wall when it cannot move: its axes held as well as where it stands
         let wall = |e: EntRef| match e.kind {
-            EntKind::Plane => sk.plane_fixed(e.i()),
+            EntKind::Frame => sk.plane_fixed(e.i()),
             // a plane's origin is held at its own (0, 0) and stands wherever the plane does: what
             // is tied to it moves with a plane that moves
             EntKind::Point if let Some(pl) = sk.plane_of_origin(e.i()) => sk.plane_fixed(pl),
@@ -1807,8 +1859,8 @@ impl Part {
             // a point comes with the plane it is drawn in, which places it in space — a held
             // point too, which is drawn there all the same
             if let Some(pl) = (e.kind == EntKind::Point).then(|| sk.plane_of(e.i())).flatten() {
-                if keep.insert(EntRef::plane(pl)) {
-                    queue.push(EntRef::plane(pl));
+                if keep.insert(EntRef::frame(pl)) {
+                    queue.push(EntRef::frame(pl));
                 }
             }
             if wall(e) {
@@ -1818,7 +1870,7 @@ impl Part {
                 // body traced in space owns no parameter and is read over what its component was
                 // given, so a station standing on one keeps that too (#363 S1).
                 let made_of = !sk.entity_params(e).is_empty() || e.kind == EntKind::Traced;
-                if e.kind != EntKind::Plane && made_of {
+                if e.kind != EntKind::Frame && made_of {
                     for c in sk.children(e) {
                         if keep.insert(c) {
                             queue.push(c);
@@ -1850,9 +1902,9 @@ impl Part {
             }
         }
         // a plane is rebuilt over its axes and its origin, wherever the walk stopped at it
-        for i in 0..sk.planes.len() {
-            if keep.contains(&EntRef::plane(i)) {
-                keep.extend(sk.children(EntRef::plane(i)));
+        for i in 0..sk.frames.len() {
+            if keep.contains(&EntRef::frame(i)) {
+                keep.extend(sk.children(EntRef::frame(i)));
             }
         }
         let mut sketch = Sketch::new();

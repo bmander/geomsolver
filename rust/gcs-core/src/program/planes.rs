@@ -41,7 +41,7 @@ pub(super) fn memberships(
                 fail(Code::E101, r.span, format!("no such entity: `{}`", r.root.text));
                 continue;
             }
-            Some(e) if e.kind != EntKind::Plane || !r.path.is_empty() => {
+            Some(e) if e.kind != EntKind::Frame || !r.path.is_empty() => {
                 fail(
                     Code::E040,
                     r.span,
@@ -57,6 +57,22 @@ pub(super) fn memberships(
             EntKind::Point => vec![me.i()],
             _ => sk.children(me).into_iter().map(|k| k.i()).collect(),
         };
+        // a spatial frame (#383): its points are read along its axes where it has them, and
+        // stand in space where it has none — drawn in its parent's coordinates, the world's
+        if !sk.frames[plane].planar() {
+            let charted = sk.frames[plane].chart.is_some();
+            for p in points {
+                if let Some(q) = sk.plane_of(p) {
+                    let who =
+                        |e: EntRef| map.name_of(e).cloned().unwrap_or_else(|| io::entity_name(e));
+                    fail(Code::E060, r.span, format!("`{}` is already in `{}`",
+                        who(EntRef::point(p)), who(EntRef::frame(q))));
+                } else if charted {
+                    sk.draw_in_chart(p, plane);
+                }
+            }
+            continue;
+        }
         for p in points {
             // a point drawn in this plane too is read here by its twin (§6.7)
             let twin = if me.kind == EntKind::Point { None } else { sk.twin_in(p, plane) };
@@ -74,7 +90,7 @@ pub(super) fn memberships(
                         format!(
                             "`{}` is already in `{}`",
                             who(EntRef::point(p)),
-                            who(EntRef::plane(q))
+                            who(EntRef::frame(q))
                         ),
                     );
                 }
@@ -141,8 +157,8 @@ pub(super) fn twin_parallel(sk: &Sketch, map: &SourceMap, p: usize, first: usize
         site.map(|s| s.stmt),
         format!(
             "`{}` and `{}` are parallel, and meet on no line `{}` could be on",
-            name(EntRef::plane(first)),
-            name(EntRef::plane(other)),
+            name(EntRef::frame(first)),
+            name(EntRef::frame(other)),
             name(EntRef::point(p)),
         ),
     ))
@@ -231,7 +247,9 @@ pub(super) fn incidences(
         // line said to be on it
         let (on, what) = if matches!(a.kind, EntKind::Point | EntKind::Line) { (b, a) } else { (a, b) };
         let plane = match on.kind {
-            EntKind::Plane => on.i(),
+            EntKind::Frame if sk.frames[on.i()].planar() => on.i(),
+            // a spatial frame is no set: the row's own refusal says so (#383)
+            EntKind::Frame => continue,
             // a curve standing for a surface (a prism's side) is met in space as it is
             EntKind::Curve if sk.curves[on.i()].extrusion => continue,
             _ => match drawn_plane(sk, on) {
@@ -270,7 +288,7 @@ pub(super) fn incidences(
                         name(EntRef::point(p)),
                         if what.kind == EntKind::Point { "point on" } else { "line tangent to" },
                         name(on),
-                        name(EntRef::plane(plane)),
+                        name(EntRef::frame(plane)),
                     ),
                 ));
                 refused.insert(i);
@@ -346,7 +364,7 @@ pub(super) fn face_planes(
             f.edges.iter().map(|n| ent(sk, res, n).and_then(|e| plane_of_entity(sk, e))).collect();
         match views.first().copied().flatten() {
             Some(p) if views.iter().all(|v| *v == Some(p)) => {
-                res.of.insert(f.key.clone(), EntRef::new(EntKind::Plane, p));
+                res.of.insert(f.key.clone(), EntRef::new(EntKind::Frame, p));
             }
             _ => diags.push(Diag::new(
                 Code::E040,

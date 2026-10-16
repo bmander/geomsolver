@@ -394,6 +394,8 @@ struct Known<'k> {
     unresolved: &'k std::cell::Cell<bool>,
     /// What each reference reading a member `normal` reads it of — see `Expansion::normals`.
     normals: &'k std::cell::RefCell<BTreeSet<String>>,
+    /// What each reference reading a frame's member reads it of — see `Expansion::charts`.
+    charts: &'k std::cell::RefCell<BTreeSet<String>>,
     /// Where a reference read through a name in `failed` — see `Expansion::quiet`.
     quiet: &'k std::cell::RefCell<BTreeSet<Span>>,
 }
@@ -424,7 +426,7 @@ fn rewrite(
     bad: &mut Vec<(Code, Span, String)>,
     seen: &std::cell::RefCell<Vec<Seen>>,
 ) {
-    let Known { look, sets, solids, failed, arguments, unresolved, normals, quiet } = known;
+    let Known { look, sets, solids, failed, arguments, unresolved, normals, charts, quiet } = known;
     // only a ring's representative is judged by what it reads (E021)
     let judged = sc.block.ring.as_ref().is_some_and(|r| !r.turned);
     // a member read already (a set's `ends`, `sets::measured_sets`) is kept; `surface` and
@@ -457,6 +459,13 @@ fn rewrite(
                 normals.borrow_mut().insert(std::iter::once(&abs).chain(of).cloned()
                     .collect::<Vec<_>>().join("."));
             }
+            // and a frame's axes and origin where they are read (#383)
+            if let Some((_, of)) = rest.split_last()
+                .filter(|(f, _)| ["u", "v", "origin", NORMAL].contains(&f.as_str()))
+            {
+                charts.borrow_mut().insert(std::iter::once(&abs).chain(of).cloned()
+                    .collect::<Vec<_>>().join("."));
+            }
             // a formal reads what its call was given, judged at the argument as written
             let was = (judged && !through_argument(r, sc, arguments)).then(|| ref_text(r));
             let member = member(r, &abs, &mut rest);
@@ -487,7 +496,13 @@ fn rewrite(
                 fix(r, bad);
             }
         }
-        StmtKind::Decl(d) => rewrite_decl(d, sc, look, solids, bad, &fix),
+        StmtKind::Decl(d) => {
+            rewrite_decl(d, sc, look, solids, bad, &fix);
+            // a seed at a place in a frame's coordinates reads its axes (#383)
+            if let Some(a) = d.seed_at.as_ref().filter(|a| a.x.is_some() || a.y.is_some() || a.z.is_some()) {
+                charts.borrow_mut().insert(ref_text(&a.what));
+            }
+        }
         // an energy names the curve it is over (#121)
         StmtKind::Minimize(m) => fix(&mut m.curve, bad),
         // a bound on measurements names what it measures, as a motion's numbers do (#183 F3)
@@ -509,7 +524,19 @@ fn rewrite(
                 fix(at, bad);
             }
         }
-        StmtKind::Relation(rel) => rewrite_relation(rel, sc, look, bad, &fix),
+        StmtKind::Relation(rel) => {
+            rewrite_relation(rel, sc, look, bad, &fix);
+            // an ordinate along a frame's axes reads them (#383)
+            if let Some(w) = rel.form.written() {
+                let along_chart = w.args.iter().any(|a| matches!(a,
+                    crate::syntax::OpArg::Named(n, crate::syntax::Arg::Ref(r))
+                        if n.text == "along" && r.path.is_empty()
+                            && ["u", "v", "n"].contains(&r.root.text.as_str())));
+                if along_chart {
+                    charts.borrow_mut().extend(w.ops.iter().map(ref_text));
+                }
+            }
+        }
         // a claim over a motion names the motion and, in its body, the solids it judges, each
         // as it would outside the block (`frame.body`); a free variable is no entity, and is
         // left as written for the claim's reader to find
@@ -1108,6 +1135,7 @@ impl<'a> Walk<'a> {
         }).collect();
         let mut flat = Vec::with_capacity(out.len());
         let normals = std::cell::RefCell::new(std::mem::take(&mut self.normals));
+        let charts = std::cell::RefCell::new(std::mem::take(&mut self.charts));
         let quiet = std::cell::RefCell::new(std::mem::take(&mut self.quiet));
         for (mut st, path, sc) in out {
             // a refused relation is not emitted; a declaration is (a plane whose fold misspells
@@ -1125,7 +1153,7 @@ impl<'a> Walk<'a> {
             let unresolved = std::cell::Cell::new(false);
             let known = Known {
                 look, sets, solids, failed, arguments,
-                unresolved: &unresolved, normals: &normals, quiet: &quiet,
+                unresolved: &unresolved, normals: &normals, charts: &charts, quiet: &quiet,
             };
             rewrite(&mut st.kind, &sc, known, &mut bad, &seen);
             if let StmtKind::Decl(d) = &st.kind {
@@ -1204,6 +1232,7 @@ impl<'a> Walk<'a> {
         }
         self.judge_arguments(&alias, &mut judged);
         self.normals = normals.into_inner();
+        self.charts = charts.into_inner();
         self.quiet = quiet.into_inner();
         self.judge_rings(&about, judged, &centres);
         (flat, alias)

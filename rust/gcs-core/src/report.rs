@@ -258,7 +258,7 @@ pub fn positions_where(sk: &Sketch, map: &crate::program::SourceMap, asked: &dyn
             }
             // **and how a plane turns in space**: its axes and its normal, as the solve left them
             // (where it stands is its own `x`, `y`, `z`, above)
-            if e.kind == crate::model::EntKind::Plane {
+            if e.kind == crate::model::EntKind::Frame {
                 let b = sk.basis(e.i());
                 for (key, w) in [("u", b.u), ("v", b.v), ("n", b.normal())] {
                     for (axis, x) in ["x", "y", "z"].iter().zip(w) {
@@ -695,7 +695,7 @@ fn view_code(v: Result<Option<usize>, ()>) -> i64 {
 pub fn workspace_json(sk: &Sketch) -> Json {
     use crate::model::EntKind;
     let views = crate::overview::workspace::Views::new(sk);
-    let all: Vec<Option<usize>> = std::iter::once(None).chain((0..sk.planes.len()).map(Some)).collect();
+    let all: Vec<Option<usize>> = std::iter::once(None).chain((0..sk.frames.len()).map(Some)).collect();
     let places = all.iter().map(|&v| Json::Int(view_code(Ok(views.place(v))))).collect();
     let looks = all
         .iter()

@@ -211,8 +211,8 @@ pub(crate) fn carry_legs(sk: &mut Sketch) {
                 params.extend(sk.lifts[k].x);
             }
         }
-        if e.kind == EntKind::Plane {
-            if let Some(n) = sk.planes[e.i()].normal {
+        if e.kind == EntKind::Frame {
+            if let Some(n) = sk.frames[e.i()].normal {
                 params.extend(sk.entity_params(EntRef::new(EntKind::Axis, n as usize)));
             }
         }
@@ -533,7 +533,7 @@ fn one_face(
 /// own axes; or nothing the solve moves places either, and it lies there now; or the solve may
 /// put it there, which the evaluation reads (`Sketch::revolve_axis`).
 fn axis_may_lie_in(sk: &Sketch, plane: Option<u32>, ax: usize) -> bool {
-    let own = plane.map(|p| &sk.planes[p as usize]);
+    let own = plane.map(|p| &sk.frames[p as usize]);
     if own.is_some_and(|pl| [pl.u, pl.v].contains(&(ax as u32))) {
         return true;
     }

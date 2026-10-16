@@ -193,7 +193,7 @@ impl Rated {
                     let (a, b) = (sk.lifted(l.p1 as usize), sk.lifted(l.p2 as usize));
                     crate::plane::unit(crate::space::sub(b, a))
                 }
-                EntKind::Plane => crate::plane::unit(sk.basis(e.i()).normal()),
+                EntKind::Frame => crate::plane::unit(sk.basis(e.i()).normal()),
                 _ => None,
             }
         };
@@ -230,7 +230,7 @@ impl Rated {
             let to = dir(r.to).ok_or_else(|| format!("`{}` is held against no direction", r.text))?;
             // square to `to` is one row along it; along it, two across it — and a plane's normal
             // the other way round
-            let plane = r.to.kind == EntKind::Plane;
+            let plane = r.to.kind == EntKind::Frame;
             let across = (r.word == RateWord::Parallel) != plane;
             let dirs: Vec<V> = if across { square_to(to).to_vec() } else { vec![to] };
             for e in dirs {

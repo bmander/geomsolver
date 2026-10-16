@@ -161,7 +161,7 @@ impl Drag {
         let eye = Some((right, up));
         let turning = match (sk.points[point].z, sk.plane_of_origin(point)) {
             (None, Some(pl)) => {
-                let p = &sk.planes[pl];
+                let p = &sk.frames[pl];
                 let d = [p.u, p.v].map(|r| sk.axes[r as usize].d);
                 d.into_iter().flatten().filter(|&q| !sk.params[q as usize].fixed).collect()
             }

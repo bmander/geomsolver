@@ -217,7 +217,7 @@ fn isometric_camera_matches_the_old_helper_plane_without_model_geometry() {
     assert_eq!(render(&plain, "isometric"), render(&with_helper, "m.iso"));
     assert_eq!(gcs_core::io::dumps(&plain.sketch, None), before);
     // the camera made no plane of the model's: only the standard ones `use std` brings
-    assert_eq!(plain.sketch.planes.len(), 4);
+    assert_eq!(plain.sketch.frames.len(), 4);
 }
 
 #[test]

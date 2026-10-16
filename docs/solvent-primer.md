@@ -1150,8 +1150,27 @@ in std.front {
 }
 ```
 
-`p` is still drawn in `std.front`; only the measurement is against the turned axes. No component
-has an implicit frame. **Model relationships, not coordinate tables**: a rectangle is perpendicular
+`p` is still drawn in `std.front`; only the measurement is against the turned axes.
+
+**A frame declared bare** (0.134): `f := frame` is a spatial frame that owns nothing until its
+axes are named. Name `f.u`, `f.v` or `f.origin` and it has them, seven numbers a plane's are, placed
+by relations; a point `in f` then has three numbers along them — `x` along `f.u`, `y` up, `z` out
+— and without them it is a point in space. `in (f := frame) { … }` declares it in the header. A
+frame is no set: `p coincident f` or `f distance(d) g` over one is E040, and an ordinate from its
+origin (`p distance(d, along: u) f`) is not. (Stage 2 of [the frames plan](frames-plan.md).)
+
+```sv
+f := frame
+fix(dir == (0, 1, 0)) f.u
+fix(dir == (0, 0, 1)) f.v                       // up is z, out is x
+fix(origin == (10, 20, 30)) f
+in f {
+  p := point
+  fix((1, 2, 3)) p                              // stands at (13, 21, 32)
+}
+```
+
+No component has an implicit frame. **Model relationships, not coordinate tables**: a rectangle is perpendicular
 sides, a width, a height and a position against a datum, not an ordinate for every corner; the
 library deliberately has no coordinate-placement helper. A stepped outline is a chain of runs
 (1.7), one number each, and not a table of corners.

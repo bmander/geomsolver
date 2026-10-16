@@ -138,7 +138,7 @@ impl<'a> Walk<'a> {
         // a point formal is drawn in a plane formal of the same component
         for f in &comp.formals {
             let Some(w) = &f.within else { continue };
-            let plane = Ty::Ent(crate::model::EntKind::Plane);
+            let plane = Ty::Ent(crate::model::EntKind::Frame);
             if !comp.formals.iter().any(|g| g.name.text == w.text && g.ty == plane) {
                 self.err(Code::E103, inst.span, format!(
                     "`{}` is drawn in `{}`, which is no `plane` formal of `{}`",
@@ -540,7 +540,7 @@ impl Walk<'_> {
         let mut out = Vec::new();
         for f in &comp.formals {
             // one drawn in no plane formal is refused at the call (`check_call`), and not made
-            let plane_ty = Ty::Ent(crate::model::EntKind::Plane);
+            let plane_ty = Ty::Ent(crate::model::EntKind::Frame);
             let Some(plane) = f.within.as_ref()
                 .filter(|w| comp.formals.iter().any(|g| g.name.text == w.text && g.ty == plane_ty))
             else {

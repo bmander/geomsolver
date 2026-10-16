@@ -71,7 +71,7 @@ fn projection_inputs_follow_view_poses_and_cutting_planes() {
     let picture = gcs_core::report::derived_json(&e.sketch, UNIT);
     let side = e.map.ent_named("std.side").unwrap().i();
     // along the side plane's u: out along its normal the picture would not move
-    let y = e.sketch.planes[side].o[1] as usize;
+    let y = e.sketch.frames[side].o[1] as usize;
     e.sketch.params[y].value += 5.0;
     let moved = hidden::inputs(&e.sketch);
     assert_ne!(moved, before);

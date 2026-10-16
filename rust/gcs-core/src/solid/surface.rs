@@ -148,7 +148,7 @@ impl RevolvedSurface {
             .find_map(|(e,n)| (*e == edge).then_some(n))
             .ok_or("the requested edge is not a boundary of this revolution's profile")?;
         let basis = if let Some(p) = face.plane {
-            sk.planes.get(p as usize).ok_or("no profile plane")?;
+            sk.frames.get(p as usize).ok_or("no profile plane")?;
             sk.basis(p as usize)
         } else { Basis::page() };
         let lift = |q: (f64,f64)| basis.lift(q.0,q.1);

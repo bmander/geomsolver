@@ -379,13 +379,13 @@ fn a_paste_converts_the_lengths_that_are_not_arguments() {
     // `f`, the one plane over an axis nothing holds — not a standard plane — where it stands and
     // its first axis
     let f = |sk: &Sketch| -> usize {
-        (0..sk.planes.len())
-            .rfind(|&i| sk.axes[sk.planes[i].u as usize].d.iter().all(|&k| !sk.params[k as usize].fixed))
+        (0..sk.frames.len())
+            .rfind(|&i| sk.axes[sk.frames[i].u as usize].d.iter().all(|&k| !sk.params[k as usize].fixed))
             .expect("f")
     };
     let place = |sk: &Sketch| -> f64 { sk.basis(f(sk)).o[0] };
     let axis = |sk: &Sketch| -> [f64; 3] {
-        let r = sk.planes[f(sk)].u as usize;
+        let r = sk.frames[f(sk)].u as usize;
         sk.axes[r].d.map(|k| sk.params[k as usize].value)
     };
     // the free variable `w`, which no argument holds

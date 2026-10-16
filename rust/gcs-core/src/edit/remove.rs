@@ -56,8 +56,13 @@ pub fn remove(
         )
     };
     let mut edits: Vec<Splice> = membership_splices(prog, &doomed, &names);
+    // a frame declared in a block's header (`in (f := frame) { … }`, #383) goes with the header,
+    // which the membership pass splices whole: its own statement's splice would overlap it
+    let headers: Vec<Span> = prog.in_blocks.iter()
+        .filter(|b| b.declares && names.contains(&b.plane.root.text)).map(|b| b.header).collect();
     for s in doomed_splices(prog.text(), &prog.root().body, &doomed) {
         match s {
+            Some(e) if headers.iter().any(|h| e.at.lo < h.hi && h.lo < e.at.hi) => {}
             Some(e) => edits.push(e),
             None => return refuse(),
         }

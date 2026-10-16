@@ -97,8 +97,8 @@ pub fn against_plane(sk: &Sketch, word: &str, p: EntRef, t: &Arg) -> bool {
     let Some(toward) = Toward::of(word).filter(|t| t.of_plane()) else { return false };
     let Some(pl) = sk.plane_of_origin(p.i()) else { return toward == Toward::PlaneN };
     match (toward, t) {
-        (Toward::PlaneU, Arg::Ent(t)) => *t == EntRef::axis(sk.planes[pl].u as usize),
-        (Toward::PlaneV, Arg::Ent(t)) => *t == EntRef::axis(sk.planes[pl].v as usize),
+        (Toward::PlaneU, Arg::Ent(t)) => *t == EntRef::axis(sk.frames[pl].u as usize),
+        (Toward::PlaneV, Arg::Ent(t)) => *t == EntRef::axis(sk.frames[pl].v as usize),
         (Toward::PlaneN, _) => true,
         _ => false,
     }
@@ -171,17 +171,17 @@ pub fn ordinate_form(sk: &Sketch, p: usize, q: usize, along: EntRef, word: &str)
     // two axes square — an axis written outright is read along itself, which `v̂` may not be
     let square = |pl: usize| {
         let d = |a: u32| sk.axes[a as usize].d;
-        let (du, dv) = (d(sk.planes[pl].u), d(sk.planes[pl].v));
+        let (du, dv) = (d(sk.frames[pl].u), d(sk.frames[pl].v));
         let held = du.iter().chain(&dv).all(|&k| sk.params[k as usize].fixed);
         let value = |p: [u32; 3]| p.map(|k| sk.params[k as usize].value);
         held && crate::space::dot(value(du), value(dv)).abs() <= 1e-12
     };
     let up = |pl: usize| matches!(toward, Some(Toward::PageV | Toward::PlaneV)) || square(pl);
     let axis = |pl: usize, u: bool| {
-        let a = if u { sk.planes[pl].u } else { sk.planes[pl].v };
+        let a = if u { sk.frames[pl].u } else { sk.frames[pl].v };
         along == EntRef::axis(a as usize)
     };
-    if along.kind == EntKind::Plane {
+    if along.kind == EntKind::Frame {
         return OrdinateForm::FrameN;
     }
     if let Some(v) = view {
@@ -237,7 +237,7 @@ pub fn ordinate_word(kind: CKind, args: &[Arg]) -> &str {
 /// cannot be made from the kinds alone.  `None` is "this word does not relate those two", which
 /// the caller reports with the kinds in it.
 pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option<String>) -> Option<CKind> {
-    use EntKind::{Arc, Circle, Curve, Envelope, Line, Meshing, Plane, Point, Axis, Spline, Traced};
+    use EntKind::{Arc, Circle, Curve, Envelope, Line, Meshing, Frame as Plane, Point, Axis, Spline, Traced};
     let round = |k: EntKind| matches!(k, Circle | Arc);
     // an axis is in space, so a direction relation naming one is the relation in space
     let axes = |a: EntKind, b: EntKind| matches!((a, b), (Axis, Axis | Line) | (Line, Axis));

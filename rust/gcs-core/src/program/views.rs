@@ -82,13 +82,13 @@ pub(crate) fn origins_on_axes(sk: &mut Sketch, map: &SourceMap) -> Vec<Diag> {
     };
     let tol = ON_PLANE * sk.extent().max(1.0);
     let mut out = Vec::new();
-    for p in 0..sk.planes.len() {
-        let pl = &sk.planes[p];
+    for p in sk.charted() {
+        let pl = &sk.frames[p];
         let (o, sides) = (pl.o, [(pl.u as usize, "u"), (pl.v as usize, "v")]);
         let lines = sides.map(|(r, _)| line(sk, r));
         let [(hu, au, du), (hv, av, dv)] = lines;
         let mut refuse = |message: String| {
-            let site = map.site_of(EntRef::plane(p));
+            let site = map.site_of(EntRef::frame(p));
             out.push(Diag::new(Code::E067, site.map(|s| s.span).unwrap_or_default(),
                             site.map(|s| s.stmt), message));
         };
@@ -141,8 +141,8 @@ pub(crate) fn origins_on_axes(sk: &mut Sketch, map: &SourceMap) -> Vec<Diag> {
 /// with it and needs no `hint` saying where it is.  An axis whose place a `fix` holds stays.
 pub(crate) fn stand_axes(sk: &mut Sketch) {
     let mut stood = vec![false; sk.axes.len()];
-    for p in 0..sk.planes.len() {
-        let pl = &sk.planes[p];
+    for p in sk.charted() {
+        let pl = &sk.frames[p];
         let o = pl.o.map(|q| sk.params[q as usize].value);
         for r in [pl.u as usize, pl.v as usize] {
             let free = sk.axes[r].placed && !sk.axes[r].a.iter().any(|&q| sk.params[q as usize].fixed);
@@ -184,7 +184,7 @@ pub(crate) fn coplanar(sk: &Sketch, map: &SourceMap) -> Vec<Diag> {
         if !sk.basis(i).coplanar(&sk.basis(j), tol) || !said.insert(j) {
             continue;
         }
-        let Some(site) = map.site_of(EntRef::plane(j)) else { continue };
+        let Some(site) = map.site_of(EntRef::frame(j)) else { continue };
         out.push(Diag::within(
             Code::W113,
             site.span,
@@ -205,7 +205,7 @@ pub(crate) fn coplanar(sk: &Sketch, map: &SourceMap) -> Vec<Diag> {
 fn points(sk: &Sketch, e: EntRef, out: &mut Vec<usize>, depth: u32) {
     match e.kind {
         EntKind::Point => out.push(e.i()),
-        EntKind::Plane | EntKind::Axis => {}
+        EntKind::Frame | EntKind::Axis => {}
         _ if depth < 4 => {
             for k in sk.children(e) {
                 points(sk, k, out, depth + 1);
@@ -240,7 +240,7 @@ pub(crate) fn place(sk: &mut Sketch) -> Vec<bool> {
     let reads = statements(sk);
     let mut taken: BTreeSet<u32> = BTreeSet::new();
     let along = along(sk);
-    for _ in 0..sk.planes.len() + sk.axes.len() + 1 {
+    for _ in 0..sk.frames.len() + sk.axes.len() + 1 {
         let newly = placed.carried(sk, &along);
         let before = taken.len();
         for r in &reads {
@@ -275,18 +275,19 @@ impl Placed {
     /// plane's axes) and the planes fixed.
     fn held(sk: &Sketch) -> Placed {
         let mut axes: Vec<bool> = (0..sk.axes.len()).map(|r| held(sk, &sk.axes[r].d)).collect();
-        for pl in &sk.planes {
+        for pl in sk.frames.iter().filter_map(|f| f.chart.as_ref()) {
             if let Some(n) = pl.normal {
                 axes[n as usize] = axes[pl.u as usize] && axes[pl.v as usize];
             }
         }
-        let planes = (0..sk.planes.len()).map(|p| sk.plane_fixed(p)).collect();
+        let planes = (0..sk.frames.len()).map(|p| sk.plane_fixed(p)).collect();
         Placed { axes, planes }
     }
 
     /// Which planes stand turned as the statements say: each plane both of whose axes are placed.
     fn turned(&self, sk: &Sketch) -> Vec<bool> {
-        sk.planes.iter().map(|pl| self.axes[pl.u as usize] && self.axes[pl.v as usize]).collect()
+        sk.frames.iter().map(|f| f.chart.as_ref()
+            .is_none_or(|pl| self.axes[pl.u as usize] && self.axes[pl.v as usize])).collect()
     }
 
     /// What a round places with nothing solved: an axis held along a line whose ends are placed
@@ -307,8 +308,8 @@ impl Placed {
                 newly = true;
             }
         }
-        for p in 0..sk.planes.len() {
-            let pl = &sk.planes[p];
+        for p in sk.charted() {
+            let pl = &sk.frames[p];
             if !self.planes[p] && held(sk, &pl.o) && self.axes[pl.u as usize] && self.axes[pl.v as usize] {
                 self.planes[p] = true;
                 newly = true;
@@ -343,9 +344,10 @@ struct Reads {
 /// point in space the drawing places.
 fn statements(sk: &Sketch) -> Vec<Reads> {
     let mut reads: Vec<Reads> = Vec::new();
-    let normals: BTreeSet<usize> = sk.planes.iter().filter_map(|p| p.normal.map(|n| n as usize)).collect();
+    let normals: BTreeSet<usize> = sk.frames.iter().filter_map(|f| f.chart.as_ref()?.normal.map(|n| n as usize))
+        .collect();
     for c in sk.constraints.iter().filter(|c| c.acts()) {
-        if matches!(c.kind, CKind::Lift | CKind::AxisUnit | CKind::AxisFoot | CKind::DragTarget
+        if matches!(c.kind, CKind::Lift | CKind::ChartLift | CKind::AxisUnit | CKind::AxisFoot | CKind::DragTarget
             | CKind::DragSeen) {
             continue;
         }
@@ -366,7 +368,7 @@ fn statements(sk: &Sketch) -> Vec<Reads> {
         for e in c.entities() {
             match e.kind {
                 EntKind::Axis => axes.push(e.i()),
-                EntKind::Plane => planes.push(e.i()),
+                EntKind::Frame => planes.push(e.i()),
                 _ => points(sk, e, &mut pts, 0),
             }
         }
@@ -385,7 +387,7 @@ fn statements(sk: &Sketch) -> Vec<Reads> {
             }
         }
         for &pl in &planes {
-            axes.extend([sk.planes[pl].u as usize, sk.planes[pl].v as usize]);
+            axes.extend([sk.frames[pl].u as usize, sk.frames[pl].v as usize]);
         }
         if drawing || axes.is_empty() && planes.is_empty() {
             continue;
@@ -415,13 +417,13 @@ fn solve_taken(sk: &mut Sketch, reads: &[Reads], taken: &BTreeSet<u32>, placed: 
             }
         }
         for &p in r.planes.iter().filter(|&&p| !placed.planes[p]) {
-            free.extend(sk.planes[p].o);
+            free.extend(sk.frames[p].o);
         }
     }
     let item: BTreeSet<u32> = free.clone();
     // the hidden points of the points read follow their planes; no other is in the part
     for l in &sk.lifts {
-        if sk.points[l.point as usize].z.is_none() && read.contains(&(l.point as usize)) {
+        if sk.lifted_off(l.point as usize) && read.contains(&(l.point as usize)) {
             free.extend(l.x);
         }
     }
@@ -434,7 +436,7 @@ fn solve_taken(sk: &mut Sketch, reads: &[Reads], taken: &BTreeSet<u32>, placed: 
     part.constraints.retain(|c| {
         taken.contains(&c.id)
             || match c.kind {
-                CKind::Lift => read.contains(&c.args[0].ent().i()),
+                CKind::Lift | CKind::ChartLift => read.contains(&c.args[0].ent().i()),
                 CKind::AxisUnit => any_free(&sk.axes[c.args[0].ent().i()].d),
                 CKind::AxisFoot => any_free(&sk.axes[c.args[0].ent().i()].a),
                 _ => false,
@@ -453,8 +455,8 @@ fn solve_taken(sk: &mut Sketch, reads: &[Reads], taken: &BTreeSet<u32>, placed: 
             placed.axes[k] = fixed(&sk.axes[k].d);
         }
     }
-    for p in 0..sk.planes.len() {
-        let pl = &sk.planes[p];
+    for p in sk.charted() {
+        let pl = &sk.frames[p];
         let o_ok = pl.o.iter().all(|q| !item.contains(q) || !under.contains(q))
             && (held(sk, &pl.o) || pl.o.iter().all(|q| item.contains(q)));
         if !placed.planes[p] {
@@ -491,7 +493,7 @@ fn along(sk: &Sketch) -> Vec<(usize, usize)> {
 pub(crate) fn relift(sk: &mut Sketch) {
     for k in 0..sk.lifts.len() {
         let p = sk.lifts[k].point as usize;
-        if sk.points[p].z.is_none() {
+        if sk.lifted_off(p) {
             let at = sk.world_point(p);
             for i in 0..3 {
                 let q = sk.lifts[k].x[i] as usize;

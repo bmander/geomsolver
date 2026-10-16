@@ -268,6 +268,7 @@ impl<'a> P<'a> {
             through,
             normal,
             sense,
+            bare: false,
         })
     }
 
@@ -336,6 +337,7 @@ impl<'a> P<'a> {
             through: None,
             normal: None,
             sense: None,
+            bare: false,
         });
     }
 
@@ -497,7 +499,7 @@ impl<'a> P<'a> {
         Some(match self.eat_hint_clause() {
             Some(lo) => {
                 // a plane's `u:` and `v:` are axes, seeded by their direction
-                let axis = kind == EntKind::Plane && match label {
+                let axis = kind == EntKind::Frame && match label {
                     Some(l) => l == "u" || l == "v",
                     None => positional < 2,
                 };
@@ -620,7 +622,8 @@ impl<'a> P<'a> {
         let mut texts: [Option<(String, Span, Span)>; 3] = [None, None, None];
         let mut coord: Option<Span> = None;
         // `x:` and `y:` as written, which beside `at:` a plane are a place in it
-        let mut xy: [Option<(String, Span)>; 2] = [None, None];
+        let mut xy: [Option<(String, Span)>; 3] = [None, None, None];
+        let mut z_at: Option<Span> = None;
         let mut other_coord: Option<Span> = None;
         for h in self.hint_body("x: 0, y: 0")? {
             if let Some(what) = h.place {
@@ -665,6 +668,12 @@ impl<'a> P<'a> {
             match h.key.as_str() {
                 "x" => xy[0] = Some((h.text.clone(), h.span)),
                 "y" => xy[1] = Some((h.text.clone(), h.span)),
+                // a place in a spatial frame has a third, out along it (#383) — beside the
+                // other two, never alone
+                "z" => {
+                    xy[2] = Some((h.text.clone(), h.span));
+                    z_at = Some(h.at);
+                }
                 _ => {
                     other_coord.get_or_insert(h.at);
                 }
@@ -672,6 +681,9 @@ impl<'a> P<'a> {
             seeds.seed[i] = h.value.unwrap_or(0.0);
             seeds.text[i] = (h.value.is_none()).then_some(h.text);
             seeds.spans[i] = h.span;
+        }
+        if xy[0].is_none() && xy[1].is_none() {
+            other_coord = other_coord.or(z_at);
         }
         let [bearing, by, turn] = texts;
         let key_at = |t: &Option<(String, Span, Span)>| t.as_ref().map(|t| t.2);
@@ -722,6 +734,7 @@ impl<'a> P<'a> {
                     turn: text(turn),
                     x: if in_plane { xy[0].take() } else { None },
                     y: if in_plane { xy[1].take() } else { None },
+                    z: if in_plane { xy[2].take() } else { None },
                 });
                 if in_plane {
                     // the place carries the numbers; the scalars stay unseeded
@@ -964,7 +977,7 @@ impl<'a> P<'a> {
             seed:vec![],seed_text:vec![],seed_spans:vec![],hint_span:None,knots:None,weights:None,curve:None,
             computed:None,class,class_span,seed_at:None,seed_names:vec![],sweep:None,motion:None,
             angular_span:Some(crate::syntax::AngularSpan {from,to,side,ease:None}),
-            membership:Membership::default(),list_span:Span::new(start.lo as usize,end),close:None,mint_close:None,through:None,normal:None,sense:None,
+            membership:Membership::default(),list_span:Span::new(start.lo as usize,end),close:None,mint_close:None,through:None,normal:None,sense:None,bare:false,
         })
     }
 
@@ -1044,7 +1057,65 @@ impl<'a> P<'a> {
             seed:vec![],seed_text:vec![],seed_spans:vec![],hint_span:None,knots:None,weights:None,curve:None,
             computed:None,class,class_span,seed_at:None,seed_names:vec![],sweep:None,motion:None,
             angular_span:Some(crate::syntax::AngularSpan {from,to,side:None,ease}),
-            membership:Membership::default(),list_span:Span::new(start.lo as usize,end),close:None,mint_close:None,through:None,normal:None,sense:None,
+            membership:Membership::default(),list_span:Span::new(start.lo as usize,end),close:None,mint_close:None,through:None,normal:None,sense:None,bare:false,
+        })
+    }
+
+    /// `f := frame` (#383): a spatial frame declared bare.  It is made of nothing, so it has no
+    /// brackets, no seed and no place in a plane: what it is, relations say after the fact —
+    /// its axes `f.u`, `f.v` and its origin `f.origin` are minted where they are named.  A class
+    /// is presentation, and taken.
+    pub(super) fn frame_decl(&mut self, name: DeclName) -> Option<Decl> {
+        if self.peek() == Some(&Tok::P('(')) {
+            self.fail("a frame is declared bare, `f := frame`, and constrained after the fact: \
+                       name its axes `f.u`, `f.v` and its origin `f.origin` in relations (a flat \
+                       frame over two axes is `plane(u: r1, v: r2)`)");
+            return None;
+        }
+        let kw = self.t.get(self.i.wrapping_sub(1)).map(|(_, s)| *s).unwrap_or_default();
+        let scalars: Vec<&str> = EntKind::Frame.fields().iter()
+            .filter(|(_, f)| *f == Field::Scalar).map(|(n, _)| *n).collect();
+        let mut seeds = Seeds {
+            seed: vec![0.0; scalars.len()],
+            text: vec![None; scalars.len()],
+            spans: vec![Span::default(); scalars.len()],
+        };
+        let Trailers { class, class_span, seed_at, membership, hint_span, insert, .. } =
+            self.decl_trailers(EntKind::Frame, &name, &mut seeds)?;
+        if !hint_span.is_empty() || seed_at.is_some() {
+            self.fail_at(hint_span, "a frame declared bare has no seed: hint its axes and its \
+                                     origin where they are named");
+            return None;
+        }
+        let fields = EntKind::Frame.fields().iter().filter(|(_, f)| *f != Field::Scalar).count();
+        Some(Decl {
+            annotations: Default::default(),
+            kind: EntKind::Frame,
+            name,
+            children: vec![Vec::new(); fields],
+            seed: seeds.seed,
+            seed_text: seeds.text,
+            seed_spans: seeds.spans,
+            hint_span: None,
+            knots: None,
+            weights: None,
+            curve: None,
+            computed: None,
+            class,
+            class_span: if class_span.is_empty() { Span::at(insert) } else { class_span },
+            seed_at: None,
+            seed_names: Vec::new(),
+            sweep: None,
+            motion: None,
+            angular_span: None,
+            membership,
+            list_span: Span::at(kw.hi as usize),
+            close: None,
+            mint_close: None,
+            through: None,
+            normal: None,
+            sense: None,
+            bare: true,
         })
     }
 
@@ -1097,7 +1168,7 @@ impl<'a> P<'a> {
             annotations:Default::default(),kind:EntKind::Motion,name,children:vec![vec![]],
             seed:vec![],seed_text:vec![],seed_spans:vec![],hint_span:None,knots:None,weights:None,curve:None,
             computed:None,class,class_span,seed_at:None,seed_names:vec![],sweep:None,motion:Some(spec),angular_span:None,membership:Membership::default(),
-            list_span:Span::new(start.lo as usize,end),close:None,mint_close:None,through:None,normal:None,sense:None,
+            list_span:Span::new(start.lo as usize,end),close:None,mint_close:None,through:None,normal:None,sense:None,bare:false,
         })
     }
 

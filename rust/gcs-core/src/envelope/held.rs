@@ -1050,7 +1050,7 @@ impl Parts {
                         let centre = sk.round_center(*edge);
                         let plane = sk.plane_of(centre)
                             .ok_or("a round profile edge in space is drawn in a plane")?;
-                        let pl = &sk.planes[plane];
+                        let pl = &sk.frames[plane];
                         cols.extend([Col::Lift(centre), Col::One(sk.round_radius(*edge) as u32),
                                      Col::Three(sk.axes[pl.u as usize].d), Col::Three(sk.axes[pl.v as usize].d)]);
                         Source::Round
@@ -1258,7 +1258,7 @@ fn motion(sk: &Sketch, m: usize, steps: &mut Vec<Step>, cols: &mut Vec<Col>,
             let view = sk.plane_of(centre as usize).ok_or_else(|| {
                 format!("`{}` turns about a point drawn in no view, so about no line in space", me.name)
             })?;
-            let pl = sk.planes.get(view).ok_or("no such view")?;
+            let pl = sk.frames.get(view).ok_or("no such view")?;
             cols.extend([Col::Lift(centre as usize), Col::Three(sk.axes[pl.u as usize].d),
                          Col::Three(sk.axes[pl.v as usize].d)]);
             Step::Turn { at, ratio, phase }

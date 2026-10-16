@@ -78,7 +78,7 @@ fn a_plane_on_two_lines_through_the_point_stands_at_it_once() {
     assert_eq!((d.dof, d.status), (0, State::Well));
     assert_eq!(d.n_params, d.n_equations, "nothing said twice");
     let h = ent(&e, "H").i();
-    let o = e.sketch.planes[h].o.map(|q| e.sketch.params[q as usize].value);
+    let o = e.sketch.frames[h].o.map(|q| e.sketch.params[q as usize].value);
     assert!(o.iter().all(|x| x.abs() < 1e-9), "H stands at O: {o:?}");
 }
 

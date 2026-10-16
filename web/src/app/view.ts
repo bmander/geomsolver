@@ -607,7 +607,7 @@ export class SketchView {
   /** The view a scene item belongs to, as a `Plane` — the other decode of the wire, for the pane
    *  `box3d` bolds as the plane being drawn on. */
   planeOf(it: Omit<Item, 'pts' | 'shade'>): Plane | null {
-    const p = it.plane !== undefined ? this.doc.entityOf({ kind: 'plane', index: it.plane }) : null;
+    const p = it.plane !== undefined ? this.doc.entityOf({ kind: 'frame', index: it.plane }) : null;
     return p instanceof Plane ? p : null;
   }
 
@@ -1348,6 +1348,8 @@ export class SketchView {
       if (pl instanceof Plane) offered.add(placeOf(ws, pl.index));
     }
     for (const pl of this.sketch.planes) {
+      // a frame declared bare draws in space, and is no place to draw flat (#383)
+      if (!pl.planar) continue;
       const n = this.doc.nameOf(pl);
       if (!n || (n.startsWith('std.') && !names.has(n) && offered.has(placeOf(ws, pl.index)))) continue;
       names.add(n);
@@ -1466,7 +1468,7 @@ export class SketchView {
     const ws = this.workspace();
     // anything standing elsewhere than the page's place — or across places, a projector — but a
     // plane's own origin, which stands wherever its plane does whether or not it is drawn on
-    const origins = new Set(this.sketch.planes.map((pl) => pl.origin.index));
+    const origins = new Set(this.sketch.planes.flatMap((pl) => (pl.origin ? [pl.origin.index] : [])));
     const off = Object.entries(ws.views).some(([kind, vs]) =>
       (vs as View[]).some((v, i) => !(kind === 'point' && origins.has(i)) && placeOf(ws, v) !== PAGE));
     return off || objects(this.sketch).length ? { ...THREE_QUARTER } : { ...FRONT };

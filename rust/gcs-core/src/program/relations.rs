@@ -161,7 +161,7 @@ pub(crate) fn settle(
         let on = w.ops.first().and_then(kind_of);
         let to = w.ops.get(1).and_then(kind_of);
         let said = match (word, on, to) {
-            ("tangent", _, Some(EntKind::Plane)) => "plane",
+            ("tangent", _, Some(EntKind::Frame)) => "plane",
             ("tangent", Some(EntKind::Envelope), _) => "in_plane",
             ("tangent", ..) => "tangent",
             ("perpendicular", ..) => "normal",
@@ -288,6 +288,15 @@ pub(super) fn constrain(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) -> Option<u3
     // **a point inside or outside a plane is a bound** (§9.6): the point's ordinate along the
     // plane's normal from its origin, at most or at least zero
     if let (Shape::PlaneSide, Some(w)) = (&shape, r.form.written()) {
+        let spatial = w.ops.iter().filter_map(|o| cx.res.entity(&cx.sk, o))
+            .find(|e| e.kind == EntKind::Frame && !cx.sk.frames[e.i()].planar());
+        if let Some(f) = spatial {
+            let name = cx.map.name_of(f).cloned().unwrap_or_else(|| crate::io::entity_name(f));
+            let message = format!("`{name}` is a frame, which is no set: nothing is inside or \
+                                   outside it (a plane is `plane(u: a, v: b)`)");
+            cx.diags.push(Diag::on(Code::E040, st, message));
+            return None;
+        }
         let lowered = side_of_plane(r, w);
         return constrain(cx, &lowered, st);
     }
@@ -356,6 +365,10 @@ pub(super) fn constrain(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) -> Option<u3
     }
     let spec = ckind.spec();
     let (mut args, mut left_out) = arguments(cx, &r, st)?;
+    if let Some(message) = spatial_as_set(&cx.sk, &cx.map, ckind, &args) {
+        cx.diags.push(Diag::on(Code::E040, st, message));
+        return None;
+    }
     // a plane's membership of what is drawn on it already holds by construction: no row.  The
     // point a plane touches a set at, and a set's body met by a point of the plane — the body is
     // a predicate, true of that point, where the same words said of it directly ask nothing
@@ -422,6 +435,25 @@ pub(super) fn constrain(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) -> Option<u3
     region_or_row(cx, &r, st, c, term_name)
 }
 
+/// **A spatial frame is no set** (#383): a plane is also a set the language relates — a point on
+/// it, a distance between two, two parallel — and a frame declared bare is not, whatever axes it
+/// has.  Why a relation naming one as a plane is refused, or `None`: an ordinate measured from a
+/// frame's origin along its axes reads its chart, and is no set's.
+fn spatial_as_set(sk: &Sketch, map: &SourceMap, kind: CKind, args: &[CArg]) -> Option<String> {
+    if kind.word_slot().is_some() {
+        return None;
+    }
+    kind.spec().iter().zip(args).find_map(|((_, k), a)| match a {
+        CArg::Ent(e) if *k == SpecKind::Plane && e.kind == EntKind::Frame && !sk.frames[e.i()].planar() => {
+            let name = map.name_of(*e).cloned().unwrap_or_else(|| crate::io::entity_name(*e));
+            Some(format!("`{name}` is a frame, which is no set: a point is drawn in it with \
+                          `in {name}`, and measured from its origin along its axes \
+                          (`p distance(d, along: u) {name}`); a plane is `plane(u: a, v: b)`"))
+        }
+        _ => None,
+    })
+}
+
 /// `rate(x over s) word y` (#339 D3), kept beside the constraints (`Sketch::rates`): a rate is
 /// of an axis's direction or of a point, and is held against a direction or a plane.
 fn rate_row(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) {
@@ -451,7 +483,7 @@ fn rate_row(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) {
         (Some(of), _) if !matches!(of.kind, EntKind::Axis | EntKind::Point) => refuse(format!(
             "`{text}`: a rate is of an axis's direction or of a point, and `{}` is {}",
             said(x), of.kind.a())),
-        (_, Some(to)) if !matches!(to.kind, EntKind::Axis | EntKind::Line | EntKind::Plane) => {
+        (_, Some(to)) if !matches!(to.kind, EntKind::Axis | EntKind::Line | EntKind::Frame) => {
             refuse(format!("`{text}`: a rate is held against a direction, an axis or a line, or \
                 a plane, and `{}` is {}", said(y), to.kind.a()))
         }
@@ -578,10 +610,10 @@ fn set_words(
     if let (Some(w), Some(found)) = (touching, word) {
         let set = &w.sets[0].1;
         let wrong = match (found.ops.first().map(|e| e.kind), w.args.is_empty()) {
-            (Some(EntKind::Plane), true) => Some(format!(
+            (Some(EntKind::Frame), true) => Some(format!(
                 "a plane touches a set at a point, which the word names: `P tangent(at: m) {set}`"
             )),
-            (Some(kind), false) if kind != EntKind::Plane => Some(format!(
+            (Some(kind), false) if kind != EntKind::Frame => Some(format!(
                 "a set is touched at a point by a plane, `P tangent({}) {set}`, not by {}",
                 w.args,
                 kind.a()
@@ -639,7 +671,7 @@ fn arguments(
         let kind = match (ckind.word_slot(), i, a) {
             (Some(_), 1, Arg::Ref(r))
                 if res.entity(sk, r)
-                    .is_some_and(|e| e.kind == EntKind::Plane) => &SpecKind::Plane,
+                    .is_some_and(|e| e.kind == EntKind::Frame) => &SpecKind::Plane,
             _ => kind,
         };
         match to_arg(sk, res, *kind, a) {
@@ -1112,7 +1144,7 @@ pub(in crate::program) fn shape(sk: &Sketch, res: &Resolver, w: &crate::syntax::
     let side = w.side().is_some();
     match of {
         Operand::Ends(edge) if side => Shape::Ends { point, edge },
-        Operand::Ent(e) if side && e.kind == EntKind::Plane => Shape::PlaneSide,
+        Operand::Ent(e) if side && e.kind == EntKind::Frame => Shape::PlaneSide,
         _ if matches!(w.word.text.as_str(), "inside" | "outside" | "distance" | "coincident") => {
             of.faces().map_or(Shape::Other, |face| Shape::Face { point, face })
         }
@@ -1231,7 +1263,7 @@ fn ordinate_operands(
     }
     // a direction written as a reference is one a line runs along; a plane's is said in its word
     if let CArg::Ent(t) = &args[2] {
-        if t.kind == EntKind::Plane {
+        if t.kind == EntKind::Frame {
             return Err((at_key, format!(
                 "a direction along a plane reads as one within it: its normal is `n`, against \
                  the plane — `p {} P`",
@@ -1240,7 +1272,7 @@ fn ordinate_operands(
         }
     }
     let plane = match &args[1] {
-        CArg::Ent(e) if e.kind == EntKind::Plane => Some(e.i()),
+        CArg::Ent(e) if e.kind == EntKind::Frame => Some(e.i()),
         _ => None,
     };
     match (plane, toward) {
@@ -1249,11 +1281,14 @@ fn ordinate_operands(
                 return Err((st.span, "a point level with a plane's origin along its normal is on \
                     the plane: `p coincident P`".to_string()));
             }
-            let p = &sk.planes[pl];
+            let Some(p) = sk.frames[pl].chart.as_ref() else {
+                return Err((at_key, "a frame with no axes of its own is measured along none: \
+                    name `f.u`, `f.v` or `f.origin` where they are placed".to_string()));
+            };
             let along = match t {
                 Toward::PlaneU => EntRef::axis(p.u as usize),
                 Toward::PlaneV => EntRef::axis(p.v as usize),
-                _ => EntRef::plane(pl),
+                _ => EntRef::frame(pl),
             };
             args[1] = args[0].clone();
             args[0] = CArg::Ent(EntRef::point(p.origin as usize));

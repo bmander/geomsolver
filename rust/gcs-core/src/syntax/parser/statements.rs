@@ -124,8 +124,18 @@ impl<'a> P<'a> {
             // points that are symmetric, since the predicate is about the *triangle* and not
             // about a pair with a decoration.  Spec §9.6 keeps the call for exactly that reason.
             "branch" => self.branch(),
-            "ellipse" | "frame" | "port" => {
+            "ellipse" | "port" => {
                 self.retired(&w);
+                None
+            }
+            // 0.15's `frame f(origin: o, toward: q)` (#47 folded it into `plane`); a frame is
+            // declared bare again, by definition (#383)
+            "frame" if matches!(self.t.get(self.i + 1).map(|(t, _)| t), Some(Tok::Ident(_))) => {
+                self.fail(
+                    "a frame is declared bare, `f := frame`, and constrained after the fact: \
+                     its axes `f.u`, `f.v` and its origin `f.origin` take relations, and a flat \
+                     frame over two axes is `f := plane(u: r1, v: r2)`",
+                );
                 None
             }
             b if BLOCKS.contains(&b) => {
@@ -233,14 +243,6 @@ impl<'a> P<'a> {
                      `e := Ellipse(c, a: …, b: …, tilt: 0deg).p over u in (0deg, 360deg)` about \
                      a centre `c` — `p coincident e`, `e tangent l` and `e curvature k` are the \
                      curve's contacts",
-                );
-            }
-            "frame" => {
-                // folded into `plane` (bmander/geomsolver#47, item 6; #81)
-                self.fail(
-                    "`frame` is folded into `plane`: write `f := plane(u: r1, v: r2)` over two \
-                     axes or lines, whose origin is `f.origin`, or turn a frame within a plane \
-                     with `std.Turned(o, t)`",
                 );
             }
             "port" => {
@@ -576,13 +578,7 @@ impl<'a> P<'a> {
         let Some(ty) = Ty::parse(&tname.text) else {
             self.errs.push(SynErr {
                 span: tname.span,
-                message: if tname.text.eq_ignore_ascii_case("frame") {
-                    "`frame` is folded into `plane`: a formal `f: plane` is the datum, \
-                     and offers `f.angle`"
-                        .to_string()
-                } else {
-                    format!("`{}` is not a type", tname.text)
-                },
+                message: format!("`{}` is not a type", tname.text),
             });
             return None;
         };
@@ -594,7 +590,7 @@ impl<'a> P<'a> {
     /// interface.  Whether the name is one is the flattener's to say, once modules are linked.
     fn formal_or_interface(&mut self) -> Option<(Ty, Option<Name>)> {
         let word = self.word_at(self.i).map(str::to_string);
-        if word.as_deref().is_some_and(|w| Ty::parse(w).is_some() || w.eq_ignore_ascii_case("frame")) {
+        if word.as_deref().is_some_and(|w| Ty::parse(w).is_some()) {
             return self.formal_type().map(|ty| (ty, None));
         }
         Some((Ty::Group, Some(self.component_name()?)))
@@ -714,6 +710,14 @@ impl<'a> P<'a> {
                     .collect();
                 self.end_of_stmt();
                 StmtKind::Group(crate::syntax::GroupDecl { name, fields })
+            }
+            // `f := frame` (#383): a frame declared bare — the word read so only as a definition's
+            // whole value, since `frame` is a name a document may give
+            Some("frame") if words::bare_frame_at(&self.t, self.i) || call => {
+                self.i += 1;
+                let d = self.frame_decl(DeclName::Written(name))?;
+                self.end_of_stmt();
+                StmtKind::Decl(d)
             }
             Some("view" | "section" | "dimensions") if call => {
                 self.derived(DeclName::Written(name))?
@@ -854,7 +858,9 @@ impl<'a> P<'a> {
         // `in top { … }` before anything else: `in` opens no chain and no statement of any
         // other kind, and no name may be called `in`
         if self.peek_word("in")
-            && matches!(self.t.get(self.i + 1).map(|(t, _)| t), Some(Tok::Ident(_)))
+            && (matches!(self.t.get(self.i + 1).map(|(t, _)| t), Some(Tok::Ident(_)))
+                || words::named_link_at(&self.t, self.i + 1)
+                || words::named_frame_at(&self.t, self.i + 1))
         {
             if !self.take_statement(self.here()) {
                 return None;
@@ -899,7 +905,38 @@ impl<'a> P<'a> {
     fn in_block(&mut self, next_id: &mut u32, out: &mut Vec<Stmt>) -> Option<()> {
         let lo = self.here().lo as usize;
         self.i += 1; // `in`
-        let plane = self.refr()?;
+        // `in (g := frame) { … }` (#383): the header declares the frame the block draws in,
+        // `g := frame` then `in g { … }` — its declaration a statement of its own, before the body
+        let declares = words::named_link_at(&self.t, self.i) || words::named_frame_at(&self.t, self.i);
+        let plane = if declares {
+            self.i += 1; // `(`
+            let n = self.ident()?;
+            self.i += 1; // `:=`
+            let bare = self.word_at(self.i) == Some("frame");
+            let kind = if bare { EntKind::Frame } else {
+                EntKind::parse(self.word_at(self.i)?).expect("named_link_at")
+            };
+            if kind != EntKind::Frame {
+                self.fail("an `in` block's header declares the frame it draws in: \
+                           `in (f := frame) { … }`, or a plane, `in (P := plane(u: a, v: b)) { … }`");
+                return None;
+            }
+            self.i += 1;
+            let decl = if bare {
+                self.frame_decl(DeclName::Written(n.clone()))?
+            } else {
+                self.decl(kind, Some(n.clone()))?
+            };
+            let span = Span::new(n.span.lo as usize, self.prev_hi());
+            if !self.want_p(')') {
+                return None;
+            }
+            let id = self.mint_stmt(next_id, span)?;
+            out.push(Stmt { id, kind: StmtKind::Decl(decl), span, chained: Chained::No });
+            Ref { span: n.span, root: n, path: Vec::new() }
+        } else {
+            self.refr()?
+        };
         self.skip_ends();
         if !matches!(self.peek(), Some(Tok::P('{'))) {
             self.fail("an `in` block is `in PLANE { … }`");
@@ -923,7 +960,7 @@ impl<'a> P<'a> {
         stamp_plane(&mut body, &plane, &mut self.errs);
         // recorded only where a deletion could reach it: a nested block is already an error
         if !nested {
-            self.in_blocks.push(InBlock { plane, header, close });
+            self.in_blocks.push(InBlock { plane, header, close, declares });
         }
         out.extend(body);
         Some(())
@@ -1091,6 +1128,7 @@ impl<'a> P<'a> {
             through: None,
             normal: None,
             sense: None,
+            bare: false,
         })
     }
 

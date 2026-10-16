@@ -4,6 +4,18 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.134] Frames: the bare frame.** A plane is a frame whose `in` draws flat, and `f := frame`
+declares a spatial one bare (§6.7): it owns nothing until the document names its axes `f.u`,
+`f.v` or its origin `f.origin`, which are then seven numbers placed by relations, as a plane's
+are. A point `in` a frame with axes has three numbers along them (`u`, up, out) — `hint((x, y,
+z))`, `hint(at: f, (x, y, z))`, `fix((x, y, z))` — and one in a frame with none is a point in
+space. `in (f := frame) { … }` declares the frame in the header. A spatial frame is no set:
+`p coincident f`, `f distance(d) g`, `f parallel g` and `p inside f` over one are E040. `frame` is
+a declaration only as a definition's whole value, so documents keep the name (`hub_motor`'s
+`frame := {…}`, `hypoid_drive`'s `frame := Frame(…)`); 0.15's `frame f(origin: o, …)` is refused
+naming `f := frame`, and a formal `f: frame` is the plane's kind. Through 0.133 `frame` was
+refused at a statement's start and as a formal's type. (Issue #383, stage 2.)
+
 **[0.133] Cauchy data on a drawn curve.** A body marched over two formals (§6.5, 0.121) may start
 its moved point on a curve the drawing has: `initially { p coincident(t == u) k }`, `k` a `curve`
 formal given a spline, a curve drawn in a held plane (a formula, a trace, an envelope) or a curve

@@ -445,19 +445,25 @@ the remaining documents read well.
 
 ## Open questions
 
-1. **`seen_from:`**, or another word for the observer. `in:` collides with membership.
-   Needed by stage 4.
-2. **`f.uv`**: does a spatial frame offer its coordinate planes as members, so that `in f.uv`
-   draws flat in it? Needed by stage 2, or deferred.
-3. **A plane's slots**: keep `plane(u: r1, v: r2)` as aliases of its axes (proposed: they name
-   members, as `circle(center: c)` does, and share unknowns rather than adding rows), or retire
-   them for `P.u coincident r1`? Needed by stage 2.
-4. **The std words' names and shapes**: `Turn` over a line and `Spin` over a point in a view, or
-   one word. Needed by stage 3.
-5. **`under:` on an operand that already rides**: refuse (proposed), or compose `under:`
-   outermost? Needed by stage 4.
-6. **Nesting order**: accept both orders of a jointed and a flat block (proposed), or require the
-   jointed one outermost? Needed by stage 4.
-7. **Equal rates**: `std.Rolls` needs "this rate is zero" over two directions, or a rate-equality
-   word. Is a zero `rate(X over t) distance(0mm, along: l)` per direction enough? Needed by
-   stage 5.
+Each is answered as built; the proposal stood unless it says otherwise.
+
+1. **`seen_from:`** is the word. It is written beside `under:` from stage 3, where
+   `relative_to:` goes, on every reading that names a motion: `coincident(under: m, seen_from:
+   g, t == τ)`, `envelope(…)`, `meshing(…)`, `solid(…)` and `claim … over m seen_from g`.
+2. **`f.uv`** is deferred: a spatial frame's chart has three numbers and no coordinate plane of
+   its own; a flat drawing in it is a `plane` declared in it.
+3. **A plane's slots** stay, aliases of its axes as proposed.
+4. **The std words** are three: `std.Turn(f, about: line, ratio:, advance: = 0mm)`, `std.Spin(f,
+   about: point, on: plane, ratio:)` — the plane named, since a component reads no point's plane
+   — and `std.Slide(f, along: line, advance:)`.
+5. **`under:` on an operand that already rides** is refused, as proposed.
+6. **Nesting order**: both orders are accepted, as proposed.
+7. **Equal rates**: a zero rate along each of two directions is enough; `std.Rolls` is written
+   with two (stage 5).
+
+**Two findings while building.** `frame` was not unused: documents name things `frame`
+(`hub_motor`'s groups, `hypoid_drive`'s `frame := Frame(…)`), so the word declares a frame only
+as a definition's whole value, `f := frame` (and in a block's header), and stays a name
+everywhere else. And a left-out `frame` formal is the instance's own frame, declared bare, at
+rest — what an observer formal needs where a component is called with a motion seen from the
+world.

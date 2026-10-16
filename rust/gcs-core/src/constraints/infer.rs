@@ -189,7 +189,7 @@ pub fn infer_entity(
         }
         (CKind::Project | CKind::ProjectSolved, 2 | 3) => {
             let p = args[i - 2].ent();
-            sk.plane_of(p.i()).map(EntRef::plane).ok_or_else(|| {
+            sk.plane_of(p.i()).map(EntRef::frame).ok_or_else(|| {
                 format!(
                     "{} is on no plane, so `project` cannot say which view it is in",
                     name(p)
@@ -208,8 +208,8 @@ pub fn infer_entity(
             })?;
             let (p, q) = (args[0].ent(), args[1].ent());
             match (toward.in_view(), shared_view(sk, p.i(), q.i())) {
-                (Some(Toward::PageV), Some(v)) => Ok(EntRef::axis(sk.planes[v].v as usize)),
-                (Some(_), Some(v)) => Ok(EntRef::axis(sk.planes[v].u as usize)),
+                (Some(Toward::PageV), Some(v)) => Ok(EntRef::axis(sk.frames[v].v as usize)),
+                (Some(_), Some(v)) => Ok(EntRef::axis(sk.frames[v].u as usize)),
                 (Some(_), None) => Err(format!(
                     "`{w}` is a direction of the view both points are drawn in, and {} and {} \
                      are not drawn in one: name the axis",
@@ -240,14 +240,14 @@ fn validate_ordinate(
     if let Some(toward) = Toward::of(word).filter(|t| t.of_plane()) {
         let datum = sk.plane_of_origin(p.i());
         let on = datum.is_some_and(|pl| match toward {
-            Toward::PlaneU => t == EntRef::axis(sk.planes[pl].u as usize),
-            Toward::PlaneV => t == EntRef::axis(sk.planes[pl].v as usize),
-            _ => t == EntRef::plane(pl),
+            Toward::PlaneU => t == EntRef::axis(sk.frames[pl].u as usize),
+            Toward::PlaneV => t == EntRef::axis(sk.frames[pl].v as usize),
+            _ => t == EntRef::frame(pl),
         });
         // or, `u` and `v` with no plane operand, the axis of the view both points are drawn in
         let in_view = shared_view(sk, p.i(), q.i()).is_some_and(|v| match toward {
-            Toward::PlaneU => t == EntRef::axis(sk.planes[v].u as usize),
-            Toward::PlaneV => t == EntRef::axis(sk.planes[v].v as usize),
+            Toward::PlaneU => t == EntRef::axis(sk.frames[v].u as usize),
+            Toward::PlaneV => t == EntRef::axis(sk.frames[v].v as usize),
             _ => false,
         });
         if !on && !in_view {
@@ -291,7 +291,7 @@ fn validate_ordinate(
     // cannot see
     if let Some(v) = shared_view(sk, p.i(), q.i()) {
         let square = match t.kind {
-            EntKind::Plane => t.i() == v,
+            EntKind::Frame => t.i() == v,
             EntKind::Axis => {
                 let d = &sk.axes[t.i()].d;
                 let held = d.iter().all(|&k| sk.params[k as usize].fixed) && sk.plane_fixed(v);
@@ -445,7 +445,7 @@ fn validate_rate(sk: &Sketch, kind: CKind, args: &[Arg], name: &dyn Fn(EntRef) -
         }
     }
     let against = match word {
-        Word::Plane => to.kind == EntKind::Plane,
+        Word::Plane => to.kind == EntKind::Frame,
         Word::Curvature => matches!(to.kind, EntKind::Circle | EntKind::Arc),
         Word::Centre => to.kind == EntKind::Point,
         _ => matches!(to.kind, EntKind::Line | EntKind::Axis),

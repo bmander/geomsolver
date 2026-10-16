@@ -284,7 +284,7 @@ fn derived(
                 continue;
             }
         };
-        let plane = match find(&d.plane, EntKind::Plane) {
+        let plane = match find(&d.plane, EntKind::Frame) {
             Ok(i) => i,
             Err((c, sp, m)) => {
                 say(c, sp, m);
@@ -293,7 +293,7 @@ fn derived(
         };
         let at = match &d.at {
             None => None,
-            Some(r) => match find(r, EntKind::Plane) {
+            Some(r) => match find(r, EntKind::Frame) {
                 Ok(i) => Some(i),
                 Err((c, sp, m)) => {
                     say(c, sp, m);

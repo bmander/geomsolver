@@ -34,13 +34,13 @@ fn place(sk: &Sketch, r: usize) -> [f64; 3] {
 
 /// Plane `pi`'s normal axis, which must have been minted.
 fn normal(sk: &Sketch, pi: usize) -> usize {
-    sk.planes[pi].normal.expect("the plane's normal was read, so it was minted") as usize
+    sk.frames[pi].normal.expect("the plane's normal was read, so it was minted") as usize
 }
 
 /// The normal stands along `u × v` — the sense the plane's `n` has — and through its origin.
 fn is_u_cross_v(sk: &Sketch, pi: usize) {
     let n = normal(sk, pi);
-    let pl = &sk.planes[pi];
+    let pl = &sk.frames[pi];
     let want = unit(cross(dir(sk, pl.u as usize), dir(sk, pl.v as usize)));
     assert!(norm(sub(unit(dir(sk, n)), want)) < 1e-8, "{:?} is not u × v, {want:?}", dir(sk, n));
     let o = pl.o.map(|q| sk.params[q as usize].value);
@@ -66,7 +66,7 @@ fn a_held_plane_has_its_normal_along_u_cross_v() {
     assert_eq!(ent(&e, "std.front.normal"), EntRef::new(EntKind::Axis, normal(&sk, front)));
     assert_eq!(dof(&e.sketch), dof(&without.sketch) - 2, "the parallel takes two, the normal none");
     // and a plane nothing reads the normal of mints none
-    assert!(without.sketch.planes.iter().all(|p| p.normal.is_none()));
+    assert!(without.sketch.frames.iter().all(|p| p.normal.is_none()));
 }
 
 /// A plane its relations turn carries its normal with it, square to both axes and on the side
@@ -131,10 +131,10 @@ R := plane(u: hint(dir: P.normal), v: hint(dir: P.n, turn: 90deg, about: P.u))
     let sk = solved(&e.sketch);
     let (p, q) = (ent(&e, "P").i(), ent(&e, "Q").i());
     is_u_cross_v(&sk, p);
-    assert_eq!(sk.planes[q].u as usize, normal(&sk, p), "Q's `u` is P's normal itself");
-    assert!(sk.planes[q].normal.is_none());
+    assert_eq!(sk.frames[q].u as usize, normal(&sk, p), "Q's `u` is P's normal itself");
+    assert!(sk.frames[q].normal.is_none());
     // read where P stands once the statements about the planes have placed it
-    let r = &e.sketch.planes[ent(&e, "R").i()];
+    let r = &e.sketch.frames[ent(&e, "R").i()];
     let n = unit(e.sketch.basis(p).normal());
     assert!(norm(sub(unit(dir(&e.sketch, r.u as usize)), n)) < 1e-9, "`normal` seeds as `n` does");
 
@@ -179,7 +179,7 @@ l parallel P.normal
     let before = dof(&e.sketch);
     let back = io::from_json(&io::to_json(&e.sketch)).expect("reads back");
     let pi = ent(&e, "P").i();
-    assert_eq!(back.planes[pi].normal, e.sketch.planes[pi].normal);
+    assert_eq!(back.frames[pi].normal, e.sketch.frames[pi].normal);
     assert_eq!(dof(&back), before);
     is_u_cross_v(&solved(&back), pi);
     let text = gcs_core::program::dumps(&e.sketch);

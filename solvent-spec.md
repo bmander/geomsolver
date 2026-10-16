@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.133 — October 2026**
+**Specification, Draft 0.134 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -587,6 +587,24 @@ A drawing's geometry is drawn in planes, each a plane in space, and **[0.42]** a
 none stands in space. A multiview drawing is several planes with one object's corners drawn in
 each, related by projection: the draughtsman's descriptive geometry, stated as such. A plane is a
 place to draw and nothing else; where its picture goes on paper is the drawing's (§6.11).
+
+**A frame** **[0.134]** is the one datum kind, a plane and (§6.14) a motion seen as one thing. A
+plane is a frame whose `in` draws flat. **`f := frame`** declares a spatial frame **bare**: it
+owns nothing — no axis, no place, no unknown — until the document names what it has. Its axes
+`f.u`, `f.v` and its origin `f.origin` are minted where a reference names them (or where `hint(at:
+f, …)` or an ordinate `along: u | v | n` against `f` reads them), seven numbers as a plane's are,
+placed by ordinary relations (`f.u parallel l`, `f.origin coincident p`, `fix(dir == …) f.u`,
+`fix(origin == …) f`). A point `in` a frame with axes has **three** numbers, `x` along `f.u`, `y`
+up (`out × u`) and `z` out (`u × v`), standing at `o + x·u + y·up + z·out`, seeded by
+`hint((x, y, z))` or `hint(at: f, (x, y, z))` and held by `fix((x, y, z))`; a point in a frame
+with none is a point in space, drawn in its parent's coordinates, the world's. **`in (f := frame)
+{ … }`** declares the frame in the block's header, `f := frame` then `in f { … }`. A frame takes no
+brackets and no seed (`frame(…)`, `frame hint(…)` are refused), and is no set: `p coincident f`,
+`f distance(d) g`, `f parallel g` and `p inside f` over a spatial frame are **E040**, which an
+ordinate measured from its origin along its axes is not. The word is read as a declaration only
+as a definition's whole value, so `frame` stays a name a document may give; 0.15's `frame
+f(origin: o, …)` is refused with the spelling it has now, and a formal `f: frame` takes a plane as
+well. Through 0.133 the word was refused everywhere.
 
 **A point in space** **[0.42]** is a point no `in` reaches. It has three coordinates in the
 world's axes, seeded by `hint((…, …, …))` and held by `fix((…, …, …)) p`; a

@@ -133,9 +133,12 @@ pub enum K {
     MappedCircle,
     // a line in space touching a round at a point of it (#363 S4)
     TangentCircleAt3,
+    // a hidden point held at the lift of a point drawn in a spatial frame's three coordinates
+    // (#383)
+    ChartLift,
 }
 
-pub const N_KERNELS: usize = 92;
+pub const N_KERNELS: usize = 93;
 
 #[derive(Clone, Copy)]
 pub struct Kernel {
@@ -2956,6 +2959,18 @@ fn lift_rows<T: Num>(v: &[T], _k: &[f64]) -> [T; 3] {
     [0, 1, 2].map(|t| x[t] - (o[t] + a * u[t] + b * w[t]))
 }
 
+/// Columns of `chart_lift` (#383): (X, p, o, du, dv) — a hidden point, the point it lifts as
+/// drawn in a spatial frame's three coordinates, and the frame's chart.  `X − (o + p.x·û +
+/// p.y·up + p.z·out)`, up and out read off the two axes as a plane's are: three rows over the
+/// hidden point's three Params, so net nothing.  Degree 1.
+fn chart_lift_rows<T: Num>(v: &[T], _k: &[f64]) -> [T; 3] {
+    let x = vec3(v, 0);
+    let (a, b, c) = (v[3], v[4], v[5]);
+    let o = vec3(v, 6);
+    let (u, w, n) = frame(vec3(v, 9), vec3(v, 12));
+    [0, 1, 2].map(|t| x[t] - (o[t] + a * u[t] + b * w[t] + c * n[t]))
+}
+
 /// Columns of `point_on_plane`: (X, o, du, dv).  `(X − o)·n̂`: a point on a plane in space.
 fn point_on_plane_rows<T: Num>(v: &[T], _k: &[f64]) -> [T; 1] {
     let (_, _, n) = frame(vec3(v, 6), vec3(v, 9));
@@ -3662,6 +3677,7 @@ pub static KERNELS: [Kernel; N_KERNELS] = [
     num_kernel!("mapped_similar", mapped_similar_rows, n_res: 2, n_par: 12, degree: 1, n_const: 1),
     num_kernel!("mapped_circle", mapped_circle_rows, n_res: 3, n_par: 14, degree: 1, n_const: 1),
     num_kernel!("tangent_circle_at3", tangent_circle_at3_rows, n_res: 2, n_par: 18, degree: 1, n_const: 0),
+    num_kernel!("chart_lift", chart_lift_rows, n_res: 3, n_par: 15, degree: 1, n_const: 0),
 ];
 
 /// One row of a kernel: residual and Jacobian for a single constraint's local values.  The

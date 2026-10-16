@@ -81,6 +81,7 @@ fn view_points(sk: &Sketch, kind: CKind, args: &[Arg]) -> Option<Vec<usize>> {
                 | CKind::DragTarget
                 | CKind::DragSeen
                 | CKind::Lift
+                | CKind::ChartLift
                 | CKind::AxisUnit
                 | CKind::AxisFoot
                 | CKind::PlaneAxis

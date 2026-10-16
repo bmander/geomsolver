@@ -451,7 +451,7 @@ impl<'v> Lowering<'v> {
                     EntRef::circle(sk.circle(c, 1.0, name))
                 }
                 // a plane: its attitude is no column of the curve, so the front plane's will do
-                EntKind::Plane => EntRef::plane(sk.fixed_plane(crate::plane::Basis::page(), name)),
+                EntKind::Frame => EntRef::frame(sk.fixed_plane(crate::plane::Basis::page(), name)),
                 other => {
                     return Err((
                         span,
@@ -986,7 +986,7 @@ fn trace_ordinate(
         (span, format!("`{w}` relates its operands in space, and a traced component places its \
             points in one plane"))
     };
-    let plane = ent(1).filter(|e| e.kind == EntKind::Plane);
+    let plane = ent(1).filter(|e| e.kind == EntKind::Frame);
     Ok(match (plane, word, ent(2)) {
         (Some(_), Some(Toward::PlaneU | Toward::PlaneV), _) => {
             let p = ent(0).filter(|e| e.kind == EntKind::Point).ok_or_else(in_space)?;

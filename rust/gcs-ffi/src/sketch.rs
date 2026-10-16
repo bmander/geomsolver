@@ -131,7 +131,7 @@ pub unsafe extern "C" fn gcs_sketch_counts(h: *mut Sketch, out: *mut i32) {
             s.curves.len(),
             // appended, never inserted: the positions above are what the bindings hard-code
             0,
-            s.planes.len(),
+            s.frames.len(),
             s.axes.len(),
         ];
         debug_assert_eq!(v.len(), N_COUNTS, "gcs_counts_len is what callers size their buffer by");
@@ -224,6 +224,17 @@ pub unsafe extern "C" fn gcs_sketch_plane(
     })
 }
 
+/// Whether frame `idx` draws flat (#383): 1 for a plane, whose points have its two coordinates,
+/// and 0 for a frame declared bare, whose points stand in space — along its axes where it has
+/// them.  -1 where there is no such frame.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_frame_planar(h: *mut Sketch, idx: i32) -> i32 {
+    guard(-1, move || match sk(h).frames.get(idx as usize) {
+        Some(f) => i32::from(f.planar()),
+        None => -1,
+    })
+}
+
 /// A plane's basis: six doubles, `u` then `v`.  Returns how many were written.
 #[no_mangle]
 pub unsafe extern "C" fn gcs_plane_basis(h: *mut Sketch, idx: i32, out: *mut f64) -> i32 {
@@ -287,7 +298,7 @@ pub unsafe extern "C" fn gcs_point_set_plane(h: *mut Sketch, idx: i32, plane: i3
     guard(-1, move || {
         let s = sk(h);
         let plane = index(plane);
-        if plane.is_some_and(|p| p >= s.planes.len()) {
+        if plane.is_some_and(|p| p >= s.frames.len()) {
             set_error("no such plane");
             return -1;
         }

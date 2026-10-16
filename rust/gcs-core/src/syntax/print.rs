@@ -322,6 +322,9 @@ fn write_decl(out: &mut String, d: &Decl) {
     }
     if let Some(c) = &d.curve {
         write_curve_spec(out, c);
+    } else if d.bare {
+        // a frame declared bare is its word alone (#383)
+        out.push_str("frame");
     } else {
         out.push_str(d.kind.as_str());
         // a declaration written with no `hint(…)` prints none: "no clause" is the empty span
@@ -682,7 +685,7 @@ pub(crate) fn hint_clause(d: &Decl, seed: &[f64]) -> String {
             || d.seed_spans.get(i).is_some_and(|s| !s.is_empty());
         // a number that is 0 where nobody wrote one says nothing: a point's height, an axis's
         // origin, where a plane stands — each 0 unless said
-        let optional = matches!(d.kind, EntKind::Point | EntKind::Plane) && *member == "z"
+        let optional = matches!(d.kind, EntKind::Point | EntKind::Frame) && *member == "z"
             || member.starts_with("origin.");
         if optional && !said && v == 0.0 {
             continue;
@@ -690,7 +693,7 @@ pub(crate) fn hint_clause(d: &Decl, seed: &[f64]) -> String {
         given.push(i);
     }
     // where a plane stands is said whole, as its origin, where any of it is
-    if d.kind == EntKind::Plane && !given.is_empty() {
+    if d.kind == EntKind::Frame && !given.is_empty() {
         given = vec![0, 1, 2];
     }
     if d.kind == EntKind::Axis && given.iter().any(|&i| i >= 3) {

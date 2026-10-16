@@ -1312,7 +1312,7 @@ impl Walk<'_> {
             }));
         }
         let planes: BTreeSet<String> = decls.iter()
-            .filter(|(_, d, _)| d.kind == EntKind::Plane)
+            .filter(|(_, d, _)| d.kind == EntKind::Frame)
             .map(|(key, ..)| key.clone())
             .collect();
         // each point its declaration draws in a plane, with every plane it is drawn in, first

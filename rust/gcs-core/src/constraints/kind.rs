@@ -186,6 +186,9 @@ pub enum CKind {
     /// `X − (o + p.x·û + p.y·v̂) = 0` over the plane's axes and origin.  Three rows over the
     /// hidden point's three Params, so net nothing.  Intrinsic, minted by `Sketch::lift_point`.
     Lift,
+    /// A hidden point held at the lift of a point drawn in a **spatial frame's** three coordinates
+    /// (#383): `(p, frame)`, intrinsic, minted by `Sketch::lift_point`.
+    ChartLift,
     /// **Relations in space** (`docs/spatial-constraints-plan.md`): statements between points
     /// and lines drawn in *different* views, read over the hidden points the views lift them to
     /// (`model::LiftE`).  Their slots name the drawn entities, as every relation's do;
@@ -422,7 +425,7 @@ impl FamilyKernel {
 }
 
 /// Every concrete constraint type, in the order the registry lists them.
-pub const ALL_KINDS: [CKind; 82] = [
+pub const ALL_KINDS: [CKind; 83] = [
     CKind::Coincident,
     CKind::Distance,
     CKind::Midpoint,
@@ -461,6 +464,7 @@ pub const ALL_KINDS: [CKind; 82] = [
     CKind::PointOnTraced,
     CKind::Project,
     CKind::Lift,
+    CKind::ChartLift,
     CKind::Coincident3,
     CKind::Distance3,
     CKind::PointLine3,
@@ -747,6 +751,7 @@ impl CKind {
             CKind::PlaneParallel => "PlaneParallel",
             CKind::PlaneDistance => "PlaneDistance",
             CKind::Lift => "Lift",
+            CKind::ChartLift => "ChartLift",
             CKind::Coincident3 => "Coincident3",
             CKind::Distance3 => "Distance3",
             CKind::PointLine3 => "PointLine3",
@@ -963,6 +968,7 @@ impl CKind {
             // point (`Sketch::lift_of`), and the plane is a real slot so a drag part, a
             // deletion and the topology key follow it
             CKind::Lift => &[("p", S::Point), ("plane", S::Plane)],
+            CKind::ChartLift => &[("p", S::Point), ("frame", S::Plane)],
             // the drawn entities, as every relation names them; the hidden points they read are
             // found by the points (`Sketch::lift_of`)
             CKind::Coincident3 => &[("p", S::Point), ("q", S::Point)],
@@ -1208,6 +1214,7 @@ impl CKind {
             CKind::DragTarget
             | CKind::DragSeen
             | CKind::Lift
+            | CKind::ChartLift
             // an energy, which is a statement of its own
             | CKind::Stationary
             // an axis's own algebra
@@ -1626,6 +1633,7 @@ impl CKind {
             | CKind::Project
             // a hidden point tied to the point it lifts: no contact
             | CKind::Lift
+            | CKind::ChartLift
             // incidence and measure in space: no double root the screen knows how to look for
             | CKind::Coincident3
             | CKind::Distance3
@@ -1771,6 +1779,7 @@ impl CKind {
             CKind::Level => K::Horizontal,
             CKind::Project => K::Project,
             CKind::Lift => K::Lift,
+            CKind::ChartLift => K::ChartLift,
             CKind::Coincident3 => K::Coincident3,
             CKind::Distance3 => K::Distance3,
             CKind::PointLine3 => K::PointLine3,
@@ -1897,6 +1906,7 @@ impl CKind {
             | CKind::Level
             | CKind::Project
             | CKind::Lift
+            | CKind::ChartLift
             | CKind::Coincident3
             | CKind::Perpendicular3
             | CKind::Parallel3

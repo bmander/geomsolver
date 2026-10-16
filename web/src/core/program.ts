@@ -15,7 +15,7 @@
  * column.
  */
 import { Constraint } from './constraints.js';
-import { Kind, KINDS, Plane, Primitive, Sketch } from './model.js';
+import { Kind, KINDS, Plane, Primitive, Sketch, fromWire } from './model.js';
 import type { Way } from './model.js';
 import { core, lastError, takeJson, takeStr, withBuf, withJson, withStr } from './wasm.js';
 
@@ -157,7 +157,7 @@ export class Document {
       // selection carried across a re-elaboration — inherits the rule rather than each
       // remembering to test for `''`
       entities: r.entities.map(([kind, index, name, lo, hi]) =>
-        ({ kind, index, name: name || undefined, lo: at.at(lo), hi: at.at(hi) })),
+        ({ kind: fromWire(kind), index, name: name || undefined, lo: at.at(lo), hi: at.at(hi) })),
       constraints: r.constraints.map(([id, lo, hi]) => ({ id, lo: at.at(lo), hi: at.at(hi) })),
     };
     this.byName.clear();

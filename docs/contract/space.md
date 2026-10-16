@@ -78,6 +78,31 @@ components.dims.vtwin_dims)` (`vtwin/components/cylinder.sv`'s preview). Retired
 datum rotor, `toward:`, `from:`, `fold:`, `offset:`, `through:`, `attitude: free`, quaternions,
 hinges, `against`, the role rule, page placement, `std.ThreeViews`.
 
+**A frame** ([0.134], #383, [frames plan](../frames-plan.md)): `EntKind::Plane` is
+`EntKind::Frame` (ABI id 6, `as_str` still `"plane"`), `Sketch::frames` of `FrameE { parent,
+chart: Option<Chart>, class }`; a chart is what a plane was (`u`, `v`, `o`, `origin`, `normal`)
+with `planar`, read through `FrameE`'s `Deref` — so only a frame with one is read as a chart, and
+every walk over the frames asks `Sketch::charted()` (or `planes()`, the flat ones) first;
+`Sketch::basis` of a bare frame is the world's, `plane_fixed` true, `children` none. `f := frame`
+(`syntax::Decl::bare`, `P::frame_decl`; `words::bare_frame_at`, the word read so only as a
+definition's whole value, and `named_frame_at` for `in (f := frame) { … }`, whose `InBlock::declares`
+lets `edit::remove` splice the header whole) builds `FrameE::bare()` unless the flattener saw its
+axes read (`Expansion::charts`: a reference ending `u`, `v`, `origin`, `normal`, a `hint(at: f, …)`
+place, an ordinate `along: u|v|n`), when `build_plane` mints them (its `v` seeded along `y`) and
+`Sketch::spatial_chart` makes the chart spatial, its origin `(0, 0, 0)` in it. A point `in` it is
+`PointE.chart` (`draw_in_chart`, in `planes::memberships`; `plane` stays `None`, so every reader
+of `plane_of` sees a point in space) with three numbers, `world_point` its `chart_lift`, its lift
+the intrinsic `ChartLift` row (`kernels::chart_lift`: X − (o + x·û + y·up + z·out)),
+`lifted_off` saying its lift is a point of its own (`relift`, `views::place`), `place_of` and the
+block solve's `place` reading back with `chart_coords`. A point in a frame with no chart is a point
+in space. `relations::spatial_as_set` (and the `PlaneSide` branch, and `incidences`) refuse a
+spatial frame read as a set, E040. JSON writes a bare frame `{"bare": true}`, a spatial chart
+`"planar": false` and a point's `"chart"`; `graft` and `lift` carry both. The binding's kind is
+`frame` (`KIND_ID`, `Frame` with `planar` by `gcs_frame_planar`, `Plane` its alias) and the
+choosers offer the planar ones. `tests/frames.rs` (stage 2) is the gate: a point lifting through
+a spatial chart, a bare frame's axes placed by relations, an unnamed frame owning no unknown, the
+words.
+
 **A plane's normal, `P.normal`** (0.89): an axis along `u × v` through the origin, no field of
 the declaration (`fields()` and the JSON keys stay three) but `PlaneE::normal`, minted only where
 a reference reads it — the flattener records each (`Expansion::normals`, in `rewrite`'s `fix`)
@@ -172,7 +197,8 @@ of 0°/180° is E040 by value (`program/relations.rs`). `tests/axis.rs` is the g
 - A **`plane`** (Solvent §6.7) is also a **view**: `Sketch::basis(P)` is `plane::Basis` `(u, v)`
   over its axes' directions, `n = u × v` toward the viewer, standing at `o`.  A point drawn in
   it is lifted into space by the intrinsic `lift` row (`kernels::lift`: X, p, o, d_u, d_v;
-  `Sketch::lift_point`, minted on request, never serialized).  `frame` is refused by the parser.
+  `Sketch::lift_point`, minted on request, never serialized).  `f := frame` declares a spatial
+  frame bare (above).
   A point's **membership** is `PointE.plane`, set by `a := point in top` (every point the
   declaration mints or names; filled by `program::memberships` after every kind is built, before
   any constraint); it moves nothing — only `Project` reads it.  `a project b` is one row over 12

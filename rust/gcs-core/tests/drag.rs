@@ -582,7 +582,7 @@ fn a_plane_follows_the_pointer_by_its_origin_where_the_eye_sees_it() {
     solve(&mut sk, SolveOpts::default());
     let v0 = crate::common::ent(&e, "v0").i();
     let p = crate::common::ent(&e, "p").i();
-    let origin = sk.planes[v0].origin as usize;
+    let origin = sk.frames[v0].origin as usize;
     assert!(sk.points[origin].z.is_none(), "an origin is drawn in its plane");
     let eye = (0.6, 0.4);
     let (start, toward) = seen_by(eye, sk.basis(v0).o);
@@ -611,7 +611,7 @@ fn a_plane_follows_the_pointer_by_its_origin_where_the_eye_sees_it() {
     d.end();
     assert!(sk.constraints.iter().all(|c| !c.soft), "the drag target left behind");
     let may_turn = |sk: &Sketch| {
-        let pl = &sk.planes[v0];
+        let pl = &sk.frames[v0];
         let d = [pl.u, pl.v].map(|r| sk.axes[r as usize].d);
         d.into_iter().flatten().any(|q| !sk.params[q as usize].fixed)
     };

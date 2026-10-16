@@ -60,6 +60,13 @@ fn all_constraints(seed: u32) -> Sketch {
     sk.set_plane(lq, Some(pb));
     sk.lift_point(lc).unwrap();
     sk.lift_point(lq).unwrap();
+    // a point drawn in a spatial frame's three coordinates, the frame free (#383): its lift's
+    // `ChartLift` row
+    let pf = free(&mut sk, &mut rng, "pf");
+    sk.spatial_chart(pf);
+    let cf = sk.point3(r3(&mut rng).map(|x| 5.0 * x), false, "cf");
+    sk.draw_in_chart(cf, pf);
+    sk.lift_point(cf).unwrap();
     // a point in space, its own lift
     let sp3 = sk.point3(r3(&mut rng).map(|x| 10.0 * x), false, "s3");
     // and entities drawn in those views for the relations in space to read: a line across two
@@ -91,7 +98,7 @@ fn all_constraints(seed: u32) -> Sketch {
     let lc2 = pt(&mut sk, &mut rng);
     sk.set_plane(lc2, Some(pc));
     let fold_line = EntRef::line(sk.line(lc, lc2));
-    let (pce, pbe, pae) = (EntRef::plane(pc), EntRef::plane(pb), EntRef::plane(pa));
+    let (pce, pbe, pae) = (EntRef::frame(pc), EntRef::frame(pb), EntRef::frame(pa));
     // and a held plane of its own for a projection to a free one, and one between two held
     let held = gcs_core::plane::Basis {
         u: [0.0, 0.6, 0.8], v: [1.0, 0.0, 0.0], o: r3(&mut rng),
@@ -106,13 +113,13 @@ fn all_constraints(seed: u32) -> Sketch {
     sk.set_plane(ia, Some(pa));
     sk.set_plane(ib, Some(pa));
     let in_pa = EntRef::line(sk.line(ia, ib));
-    let (pa_u, pa_v) = (EntRef::new(gcs_core::model::EntKind::Axis, sk.planes[pa].u as usize),
-        EntRef::new(gcs_core::model::EntKind::Axis, sk.planes[pa].v as usize));
+    let (pa_u, pa_v) = (EntRef::new(gcs_core::model::EntKind::Axis, sk.frames[pa].u as usize),
+        EntRef::new(gcs_core::model::EntKind::Axis, sk.frames[pa].v as usize));
     let cpbe = EntRef::point(cpb);
     // and the free plane's origin and axes, for an ordinate along its frame from its origin
-    let pc_o = EntRef::point(sk.planes[pc].origin as usize);
-    let (pc_u, pc_v) = (EntRef::new(gcs_core::model::EntKind::Axis, sk.planes[pc].u as usize),
-        EntRef::new(gcs_core::model::EntKind::Axis, sk.planes[pc].v as usize));
+    let pc_o = EntRef::point(sk.frames[pc].origin as usize);
+    let (pc_u, pc_v) = (EntRef::new(gcs_core::model::EntKind::Axis, sk.frames[pc].u as usize),
+        EntRef::new(gcs_core::model::EntKind::Axis, sk.frames[pc].v as usize));
     let worded = |mut c: Constraint, w: &str| {
         let i = c.kind.word_slot().expect("an ordinate");
         c.args[i] = Arg::Str(w.to_string());
@@ -277,7 +284,8 @@ fn all_constraints(seed: u32) -> Sketch {
         // a projection between two held planes, and the lift over a free plane and a held one
         Constraint::project(&sk, EntRef::point(dp), pe).expect("two images on two planes that fold"),
         Constraint::new(CKind::Lift, vec![e(EntRef::point(lc)), e(pce)]),
-        Constraint::new(CKind::Lift, vec![e(EntRef::point(dp)), e(EntRef::plane(pd))]),
+        Constraint::new(CKind::Lift, vec![e(EntRef::point(dp)), e(EntRef::frame(pd))]),
+        Constraint::new(CKind::ChartLift, vec![e(EntRef::point(cf)), e(EntRef::frame(pf))]),
         // the relations in space, over the hidden points `Sketch::add` mints for them — the two
         // that read a plane once over the solved view and once over a stated one
         Constraint::new(CKind::Coincident3, vec![e(pe), e(EntRef::point(lq))]),
@@ -329,7 +337,7 @@ fn all_constraints(seed: u32) -> Sketch {
         Constraint::new(CKind::PlaneParallel, vec![e(pae), e(pce)]),
         // a projection over a free plane
         Constraint::project(&sk, pe, qe).expect("two images on two planes that fold"),
-        Constraint::new(CKind::ProjectSolved, vec![e(EntRef::point(dp)), e(EntRef::point(lc)), e(EntRef::plane(pd)), e(pce)]),
+        Constraint::new(CKind::ProjectSolved, vec![e(EntRef::point(dp)), e(EntRef::point(lc)), e(EntRef::frame(pd)), e(pce)]),
         // every dimension again with its number written in terms of a free variable, which is
         // an unknown of the sketch rather than a constant — one more column, and (m, c) where
         // the number was.  A different name each time, so no two of them are tied together, and

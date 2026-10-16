@@ -113,7 +113,7 @@ claim a project b
         .replace("use std\n", "");
     assert_eq!(squash(&out), squash(&want));
     let e = read(src);
-    assert_eq!(e.sketch.planes.len(), 4 + 3);
+    assert_eq!(e.sketch.frames.len(), 4 + 3);
     assert_eq!(e.sketch.user_constraints().len(), 2);
     assert!(e.sketch.user_constraints()[1].claim);
 }
@@ -204,8 +204,8 @@ fn project_settles_refuses_and_claims() {
     let e = read(&format!("{VIEWS}a := point in front\nb := point in top\na project b\n"));
     let c = &e.sketch.user_constraints()[0];
     assert_eq!(c.kind, CKind::Project);
-    assert_eq!(c.entities()[2], EntRef::plane(at(&e, "front")));
-    assert_eq!(c.entities()[3], EntRef::plane(at(&e, "top")));
+    assert_eq!(c.entities()[2], EntRef::frame(at(&e, "front")));
+    assert_eq!(c.entities()[3], EntRef::frame(at(&e, "top")));
     // each refusal at the statement's own span
     let (prog, _, _) =
         gcs_core::library::parse_linked(&format!("{VIEWS}a := point in front\nb := point\na project b\n"));
@@ -250,7 +250,7 @@ N := plane(u: l, v: m)
 ";
     let mut e = read(src);
     let n = e.map.ent_named("N").unwrap();
-    let u = EntRef::new(EntKind::Axis, e.sketch.planes[n.i()].u as usize);
+    let u = EntRef::new(EntKind::Axis, e.sketch.frames[n.i()].u as usize);
     assert_eq!(e.map.ent_named("N.u"), Some(u), "the hidden axis is the plane's `u`");
     let out = reconciled(&mut e);
     assert!(!out.text.contains(":= axis"), "nothing was drawn: {}", out.text);
@@ -292,7 +292,7 @@ fn reconcile_writes_membership_a_plane_and_a_projection() {
     assert!(!out.text.contains("origin :="), "an origin is the plane's: {}", out.text);
     assert!(!out.text.contains("project("), "the planes are never spelled: {}", out.text);
     let back = read(&out.text);
-    assert_eq!(back.sketch.planes.len(), e.sketch.planes.len());
+    assert_eq!(back.sketch.frames.len(), e.sketch.frames.len());
     // a plane made through the edit API, over two axes and given a name
     let (prog, _, _) = gcs_core::library::parse_linked(VIEWS);
     let out = edit::add_plane(&prog, &["std.y".to_string(), "std.x".to_string()], Some("aux"));
@@ -314,7 +314,7 @@ fn commit_seeds_writes_a_rays_direction_and_a_planes_place() {
         sk.params[sk.axes[r].d[k] as usize].value = *x;
     }
     for (k, x) in [1.0, 2.0, 3.0].iter().enumerate() {
-        sk.params[sk.planes[p].o[k] as usize].value = *x;
+        sk.params[sk.frames[p].o[k] as usize].value = *x;
     }
     let out = edit::commit_seeds(&e, &sk, &e.program);
     assert_eq!(out.kind, Kind::Numeric);
@@ -342,7 +342,7 @@ a project b
     assert!(out.text.contains("b := point hint((5, 105))\n"), "the clause came out: {}", out.text);
     assert!(out.text.contains("a := point in front hint((3, 4))"), "{}", out.text);
     let back = read(&out.text);
-    assert_eq!(back.sketch.planes.len(), 4 + 2);
+    assert_eq!(back.sketch.frames.len(), 4 + 2);
     let b = at(&back, "b");
     assert!(back.sketch.points[b].z.is_some(), "a point in space now");
 }
@@ -539,7 +539,7 @@ t := Two(q, std.x, std.y) in front
     ));
     assert_eq!(e.sketch.plane_of(at(&e, "d1.c")), Some(at(&e, "front")));
     let f = at(&e, "d1.f");
-    assert_eq!(e.sketch.plane_of(e.sketch.planes[f].origin as usize), Some(f));
+    assert_eq!(e.sketch.plane_of(e.sketch.frames[f].origin as usize), Some(f));
 }
 
 #[test]
@@ -635,7 +635,7 @@ fn a_planes_place_survives_json_and_the_graft() {
     let text = io::dumps(&e.sketch, Some(1));
     let back = io::loads(&text).unwrap();
     assert_eq!(back.basis(q), b);
-    let copied = io::copy(&e.sketch, &[e.map.ent_named("a").unwrap(), EntRef::plane(q)]);
-    assert_eq!(copied.planes.len(), 1);
+    let copied = io::copy(&e.sketch, &[e.map.ent_named("a").unwrap(), EntRef::frame(q)]);
+    assert_eq!(copied.frames.len(), 1);
     assert_eq!(copied.basis(0), b);
 }

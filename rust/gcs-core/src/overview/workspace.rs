@@ -79,7 +79,7 @@ fn view_at(k: usize) -> Option<usize> {
 /// Where every view's page stands in space, the page first.
 fn placements(sk: &Sketch) -> Vec<Basis> {
     let mut all = vec![Basis::page()];
-    all.extend((0..sk.planes.len()).map(|i| sk.basis(i)));
+    all.extend((0..sk.frames.len()).map(|i| sk.basis(i)));
     all
 }
 
@@ -266,7 +266,7 @@ impl Projection {
                 let l = &sk.lines[e.i()];
                 vec![vec![self.point(sk, l.p1 as usize), self.point(sk, l.p2 as usize)]]
             }
-            EntKind::Plane => Vec::new(),
+            EntKind::Frame => Vec::new(),
             _ => {
                 let Ok(view) = self.views.entity_view(sk, e) else { return Vec::new() };
                 let m = self.map(view);
@@ -371,7 +371,7 @@ fn nearest_pane(sk: &Sketch, proj: &Projection, at: (f64, f64), tol: f64) -> Opt
     let places = super::places(sk);
     let least = sk.extent() * super::LEAST_SIDE;
     let mut best: Option<(f64, usize)> = None;
-    for i in (0..sk.planes.len()).filter(|&i| places[i] == Some(i) && pane_readable(proj, i)) {
+    for i in (0..sk.frames.len()).filter(|&i| places[i] == Some(i) && pane_readable(proj, i)) {
         let basis = sk.basis(i);
         let (x0, y0, x1, y1) = super::pane(sk, i, &views, &places, least);
         let c = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)].map(|(x, y)| proj.seen(basis.lift(x, y)));
@@ -381,7 +381,7 @@ fn nearest_pane(sk: &Sketch, proj: &Projection, at: (f64, f64), tol: f64) -> Opt
             best = Some((d, i));
         }
     }
-    best.map(|(_, i)| EntRef::plane(i))
+    best.map(|(_, i)| EntRef::frame(i))
 }
 
 /// The planes whose panes `at` on the eye's picture plane falls inside, the one nearest the eye
@@ -393,7 +393,7 @@ pub fn panes_at(sk: &Sketch, proj: &Projection, at: (f64, f64)) -> Vec<usize> {
     let least = sk.extent() * super::LEAST_SIDE;
     let toward = proj.toward();
     let mut hits: Vec<(f64, usize)> = Vec::new();
-    for i in 0..sk.planes.len() {
+    for i in 0..sk.frames.len() {
         // a face family's station plane has no pane (#243 L1)
         if !pane_readable(proj, i) || places[i].is_none() {
             continue;
@@ -820,7 +820,7 @@ pub fn bounds(sk: &Sketch, proj: &Projection, unit: f64) -> Option<Box2> {
         let views = super::views(sk);
         let places = super::places(sk);
         let least = sk.extent() * super::LEAST_SIDE;
-        for i in (0..sk.planes.len()).filter(|&i| places[i] == Some(i)) {
+        for i in (0..sk.frames.len()).filter(|&i| places[i] == Some(i)) {
             let basis = sk.basis(i);
             let (x0, y0, x1, y1) = super::pane(sk, i, &views, &places, least);
             for (x, y) in [(x0, y0), (x1, y0), (x1, y1), (x0, y1)] {

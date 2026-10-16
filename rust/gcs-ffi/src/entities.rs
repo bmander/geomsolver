@@ -185,7 +185,7 @@ pub(crate) fn kind_id(k: EntKind) -> i32 {
         // became library components (`std.Sphere`, `std.Cone`, `std.Cylinder`), and 12–15 when
         // the patch, the seam, the vertex and the edge left the language for the Rust API (#364)
         EntKind::Curve => 5,
-        EntKind::Plane => 6,
+        EntKind::Frame => 6,
         EntKind::Face => 7,
         EntKind::Solid => 8,
         EntKind::Surface => 9,
@@ -204,7 +204,7 @@ pub(crate) fn ent(kind: i32, idx: i32) -> EntRef {
         2 => EntKind::Circle,
         3 => EntKind::Arc,
         5 => EntKind::Curve,
-        6 => EntKind::Plane,
+        6 => EntKind::Frame,
         7 => EntKind::Face,
         8 => EntKind::Solid,
         9 => EntKind::Surface,
@@ -254,8 +254,8 @@ pub unsafe extern "C" fn gcs_entity_points(
                 vec![a.center as usize, a.start as usize, a.end as usize]
             }
             4 => s.splines[idx as usize].ctrl.iter().map(|&c| c as usize).collect(),
-            // a plane's one point is its origin
-            6 => vec![s.planes[idx as usize].origin as usize],
+            // a plane's one point is its origin; a frame declared bare has none (#383)
+            6 => s.frames[idx as usize].chart.iter().map(|c| c.origin as usize).collect(),
             _ => vec![idx as usize],
         };
         for (i, p) in v.iter().enumerate() {
@@ -328,7 +328,7 @@ pub unsafe extern "C" fn gcs_styles_json(h: *mut Sketch) -> *mut u8 {
             ("circle", of(EntKind::Circle)),
             ("arc", of(EntKind::Arc)),
             ("spline", of(EntKind::Spline)),
-            ("plane", of(EntKind::Plane)),
+            ("plane", of(EntKind::Frame)),
             ("curve", of(EntKind::Curve)),
         ])
     })
