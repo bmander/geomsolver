@@ -261,10 +261,6 @@ impl<'a> Body<'a> {
         }
         for (rows, reads) in [(&self.alg, false), (&self.init, false), (&self.rate, true)] {
             for r in rows.iter() {
-                if r.drawn.is_some() {
-                    return Err("a point on a curve the drawing has is Cauchy data, read in \
-                                `initially { … }` of a body marched over two formals".into());
-                }
                 let kn = KERNELS.get(r.kid).ok_or("no such kernel")?;
                 if kn.n_par != r.cols.len() || kn.n_const != r.consts.len() || kn.n_par > COLS
                     || kn.n_res > 8 || r.cols.iter().any(|&c| c >= width)

@@ -158,22 +158,22 @@ fn the_undercut_is_the_fold() {
             "{said}");
 }
 
-/// A front body in the top view's plane, its Cauchy data off `k` at `place`: `front.sv`'s, read
-/// off a curve.
-fn front_on(k: &str, place: &str, over: &str) -> String {
+/// A front in the top view's plane, `front.sv`'s with its Cauchy data read off `k` at `t == u`:
+/// moving at `speed` along its normal, whose far end is seeded at `toward` (which picks its side).
+fn front_on(k: &str, speed: f64, toward: &str, over: &str) -> String {
     format!("
 component Front(c: point, z1: point, k: curve, d: Length, u: Angle) {{
   za := line(c, z1)
   p := point hint((0, 0, 0))
-  m := point hint((0, 0, 0))
+  m := point hint({toward})
   nl := line(p, m)
   length(10mm) nl
   c distance(0mm, along: za) m
   nl perpendicular rate(p over u)
   rate(p over d) parallel nl
-  rate(p over d) distance(1, along: nl)
+  rate(p over d) distance({speed}, along: nl)
   initially {{
-    p coincident({place}) k
+    p coincident(t == u) k
   }}
 }}
 c := point hint((0, 0, 0))
@@ -205,7 +205,7 @@ in std.top {{
   fix((40, -5)) k4
   rim := spline(k0, k1, k2, k3, k4)
 }}
-{}", front_on("rim", "t == u", "(d in (0mm, 4mm), u in (0.1, 0.9))"));
+{}", front_on("rim", 1.0, "(0, 0, 0)", "(d in (0mm, 4mm), u in (0.1, 0.9))"));
     let e = build(&src);
     let sk = solved(&e);
     let (i, s) = (index(&e, "front"), index(&e, "rim"));
@@ -248,9 +248,8 @@ fix((0, 10, 0)) y1
 o1 := point hint((0, 0, 10))
 fix((0, 0, 10)) o1
 ring := Circle(o, x1, y1, o1, r: 20mm).q over u in (0deg, 360deg)
-{}", front_on("ring", "t == u", "(d in (0mm, 10mm), u in (20deg, 140deg))")
-        .replace("distance(1, along: nl)", "distance(-1, along: nl)")
-        .replace("m := point hint((0, 0, 0))", "m := point hint((50 * cos(u), 50 * sin(u), 0))"));
+{}", front_on("ring", -1.0, "(50 * cos(u), 50 * sin(u), 0)",
+                 "(d in (0mm, 10mm), u in (20deg, 140deg))"));
     let e = build(&src);
     assert_eq!(e.map.ent_named("ring").unwrap().kind, gcs_core::model::EntKind::Traced);
     let sk = solved(&e);
@@ -258,8 +257,8 @@ ring := Circle(o, x1, y1, o1, r: 20mm).q over u in (0deg, 360deg)
     for d in [0.0, 5.0, 10.0] {
         let worst = (0..=48).map(|k| {
             let u = 20.0 + 2.5 * k as f64;
-            let r = (20.0 - d) as f64;
-            far(at(&sk, i, d, u), [r * u.to_radians().cos(), r * u.to_radians().sin(), 0.0])
+            let (r, a) = (20.0 - d, u.to_radians());
+            far(at(&sk, i, d, u), [r * a.cos(), r * a.sin(), 0.0])
         }).fold(0.0, f64::max);
         assert!(worst < 1e-7, "at {d}: {worst:.1e}");
     }
@@ -299,16 +298,15 @@ h coincident pitch
     let v = contact.local_values(&sk);
     let rows = contact.n_residuals();
     let got = contact.jacobian(&sk, &v);
-    // the body's columns past the two fixed points' lifts are the profile's
-    let theta = v.len() - 3 - 2;
-    assert!(theta > 6, "{theta} columns");
-    // the point and the place, then the three columns of the profile the contact moves with
-    // most: each a march of its own
-    let mut profile: Vec<usize> = (3 + 2 + 6..v.len()).collect();
+    // the point and the place, then the body's columns: the two fixed points' lifts, and past
+    // them the profile's — of which the three the contact moves with most, each a march of its own
+    let (lead, profile_from) = (3 + 2, 3 + 2 + 6);
+    assert!(v.len() > profile_from, "{} columns", v.len());
+    let mut profile: Vec<usize> = (profile_from..v.len()).collect();
     let most = |k: &usize| (0..rows).map(|r| got[r * v.len() + k].abs()).fold(0.0, f64::max);
     profile.sort_by(|a, b| most(b).total_cmp(&most(a)));
     assert!(most(&profile[0]) > 1e-2, "no column of the profile moves the pitch curve");
-    for k in (0..5).chain(profile.into_iter().take(3)) {
+    for k in (0..lead).chain(profile.into_iter().take(3)) {
         let h = 1e-4 * v[k].abs().max(1.0);
         let (mut lo, mut hi) = (v.clone(), v.clone());
         lo[k] -= h;
@@ -333,24 +331,23 @@ fn errors(src: &str) -> Vec<String> {
 }
 
 /// **What is refused, saying why**: a point on the curve stated outside `initially` (Cauchy data
-/// alone), the curve read by any other relation, a surface handed as the curve, and a point on a
-/// curve in the `initially` of a body over one formal (no march, no first-order home).
+/// alone), the curve read by any other relation, a surface handed as the curve, and a curve given
+/// to a body over one formal (a curve of a plane, written over no curve).
 #[test]
 fn what_is_refused() {
     let initially = "  initially {\n    p coincident(t == 3 * u) k               // the Cauchy \
                      data: the apex's path\n  }\n";
     assert!(BORE.contains(initially));
     let cases = [
-        (initially.to_string(), "  p coincident(t == 3 * u) k\n".to_string(),
+        (initially, "  p coincident(t == 3 * u) k\n",
          "a point on `k` is Cauchy data: it is said in `initially { … }` of a body marched"),
-        ("  nl perpendicular rate(p over u)".to_string(),
-         "  nl perpendicular rate(p over u)\n  nl tangent k".to_string(),
+        ("  nl perpendicular rate(p over u)", "  nl perpendicular rate(p over u)\n  nl tangent k",
          "a marched body reads `k` as its Cauchy data alone"),
-        ("past := Bore(c, z1, trochoid)".to_string(), "past := Bore(c, z1, bore)".to_string(),
+        ("past := Bore(c, z1, trochoid)", "past := Bore(c, z1, bore)",
          "`k`: a surface is no curve"),
     ];
     for (from, to, said) in cases {
-        let errs = errors(&BORE.replace(&from, &to));
+        let errs = errors(&BORE.replace(from, to));
         assert!(errs.iter().any(|e| e.contains(said)), "{to}: {errs:?}");
     }
     // over one formal a body is a curve, and no curve is written over another

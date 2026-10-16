@@ -536,7 +536,7 @@ is `docs/contract/curves.md` ("Cauchy data on a drawn curve").
 | `bore.sv` against `housing.sv`, 73 places at d = 0 … 3 | the two marches 8.9e-14 / 6.3e-13 / 2.0e-12 / 3.6e-12 apart at d = 0 / 1 / 2 / 3; each 3.5e-6 from the closed form at 3 |
 | `bore.sv`'s `past` against `housing.sv`'s | refused at the waist at 14.5248 / 13.7196 / 13.9208 against 14.5250 / 13.7198 / 13.9208 on 16 / 32 / 64 pieces |
 | `pitch.sv`'s pitch curve against `pitch_rise` | 1.9e-11 from the profile at the home (between nodes), 8.0e-10 from the envelope of the roller's centre at d = 6 |
-| the three-lobed cam | a roller of 15 follows it (its parallel curve to 2e-6 at 15); one of 22 is refused at the hollow (u = 60°, radius 19.2) at 17.75 / 18.33 / 18.74 on 16 / 32 / 64 pieces |
+| the three-lobed cam | a roller of 15 follows it (its parallel curve to 2.5e-6 at 15); one of 22 is refused at the hollow (u = 60°, radius 19.2) at 17.75 / 18.33 / 18.74 on 16 / 32 / 64 pieces |
 | a spline's front, a traced circle's | the parallel curve (`d` off, square to the tangent, to 1e-7); the concentric circle of 20 − d |
 | a contact on the pitch curve | its Jacobian in the point, the place and the profile's three heaviest columns against central differences |
 | refusals | a point on the curve outside `initially`; the curve read by another relation; a surface as the curve; a curve given to a body over one formal |

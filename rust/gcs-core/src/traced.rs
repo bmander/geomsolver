@@ -217,7 +217,7 @@ fn spline_jets(v: &[Jet], k: &[f64], r: &mut [Jet]) -> Option<()> {
 /* -- a curve drawn in a plane, read in space (#376) --------------------------------------- */
 
 /// What a point on a drawn curve's constants open with: the body's code and the plane's basis.
-pub const CURVE_LEAD: usize = 1 + crate::kernels::EXTRUSION_FRAME;
+const CURVE_LEAD: usize = 1 + crate::kernels::EXTRUSION_FRAME;
 
 /// The contact kernel on a drawn curve's definition a row's widths and constants name, and how
 /// many columns the curve reads: `None` where they describe none.
@@ -279,11 +279,11 @@ fn curve_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
         let Some((_, jm)) = curve_at(v, k, true) else { j.fill(f64::NAN); continue };
         let (u, w) = (&k[1..4], &k[4..7]);
         // the contact's columns are ours less the point, past its own two
-        let wide = n_par - 1;
+        let row1 = n_par - 1;
         for t in 0..3 {
             let row = &mut j[t * n_par..(t + 1) * n_par];
             for c in 0..n_par - 3 {
-                row[c] = jm[2 + c] * u[t] + jm[wide + 2 + c] * w[t];
+                row[c] = jm[2 + c] * u[t] + jm[row1 + 2 + c] * w[t];
             }
             row[n_par - 3 + t] = 1.0;
         }
@@ -332,10 +332,13 @@ impl Body {
         // a point on a curve the drawing has is Cauchy data (#376): read at a marched body's home
         // to the first order, and nowhere else — a spline over points in space aside, which is a
         // body of its own (#363 S3)
+        let misplaced = |r: &Row| match r.kind {
+            RowKind::Spline => stated,
+            k => k.drawn(),
+        };
         let marched = stated && n_formals == 2;
-        let drawn = |r: &Row| r.kind.drawn() && (stated || r.kind != RowKind::Spline);
-        if rows.iter().chain(&rates.rows).any(drawn)
-            || rates.init.iter().any(|r| r.kind.drawn() && !marched) {
+        if rows.iter().chain(&rates.rows).any(misplaced)
+            || (!marched && rates.init.iter().any(|r| r.kind.drawn())) {
             return Err("a point on a curve the drawing has, `p coincident(t == u) k`, is Cauchy \
                 data: it is read in `initially { … }` of a body marched over two formals".into());
         }
