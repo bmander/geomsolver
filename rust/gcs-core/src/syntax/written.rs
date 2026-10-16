@@ -363,7 +363,21 @@ impl Written {
                         return Err((key.span, m));
                     }
                 }
-                tie.or_else(|| slot().next().cloned())
+                // a carried point's roll is its own unknown or the angle stated, `at: τ` (#366):
+                // one slot, said once
+                let stated = if kind.roll_slot() == Some(i) { self.dim() } else { None };
+                if stated.is_some() {
+                    if let Some((key, _)) =
+                        self.slots().find(|(k, _)| Self::slot_of(kind, &k.text) == *name)
+                    {
+                        let m = format!("`{}` is given twice: the roll is the relation's own `t` \
+                                         or the angle stated, `at:`", key.text);
+                        return Err((key.span, m));
+                    }
+                }
+                tie.or_else(|| slot().next().cloned()).or_else(|| {
+                    stated.map(|(t, span)| Arg::Dim { text: t.to_string(), span })
+                })
             } else if sk.is_dimension() {
                 // the number, wherever the dimension slot stands: a kind has at most one, so it
                 // is *the* number in the parentheses, and a selector may follow it in spec order

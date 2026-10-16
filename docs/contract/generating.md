@@ -34,7 +34,8 @@ the solve `program::motions` reads each joint's kind off its holding statements 
 pushes the `MotionDef` the readers know: a line with a ratio stated 0 `Translation`, a line
 `Rotation`, a
 view's point with the axis square to it `Turn`, anything else `Joint { axis, ratio, advance }`,
-which `Family::read` reads (ratio 0 a translation) and the planar program and held steps refuse.
+which `Family::read` reads (ratio 0 a translation), the held steps read about the joint's own axis
+as the solve places it (#366, [frames.md](frames.md)) and the planar program refuses.
 A joint's number no `fix` states is the solve's (stage 5); a measured one is E107.  The joint's
 `motion` is that node; a frame without a joint is the world.  `motions::reading_of` is every
 reading's one entry (`under:` on a solid, envelopes, meshings, held and planar and extruded
@@ -64,41 +65,19 @@ count the minted nodes (an inverse is as deep as what it undoes). `tests/frames.
 slide against the cycloid, coaxial screws read as one screw, 64 levels), with a `CarriedPoint`
 under a chain FD-checked over both axes in `tests/jacobians.rs`.
 
-**A frame that moves is a motion read at a roll** (#366, [0.138]) — one notion, wherever a frame
-moves as a number runs.  `X coincident(under: m, at: τ) x` is `x` carried by `m`'s pose at the roll
-`τ`, a **dimension** the statement states (`CKind::CarriedAt`; `t == τ` is the other form, the roll
-the relation's own unknown, `CarriedPoint`): three rows over both lifts and the motion's axes
-(`envelope::screw::Reading::At`, constants `[free, m, c, steps…]`, the roll `m·a + c` over a free
-variable's last column, so a roll may be an unknown the drawing solves); drawn in a plane,
-`program::reading` makes it `CarriedAtIn`, two rows along the plane's axes, as many as the point has
-numbers.  **A frame** is `n := base carried(under: m, at: τ)` (`syntax::Decl::carried`, kind
-`Frame`): the flattener writes it out where it walks the body (`flatten::carried`) — two points of
-`base` held ten along its axes, `base`'s origin and those carried to `τ`, the plane over the lines
-from the carried origin — so its `u`, `v` and normal are `base`'s carried, and the source prints the
-one statement.  Before the solve each carried point is seeded where its motion carries it
-(`Sketch::seed_carried`, from `program::place_planes`, the roll worked out over the held running
-number), so a plane drawn over carried points is turned along its lines however far round the roll
-is; a frame carried from one carried in turn is seeded round by round.  **The station words are
-motions read so** (`std.sv`): `Helix` is `base` carried by a frame's screw (`std.Turn` about a
-spindle line drawn along its normal, `advance: pitch`) at `360deg · turns · s`, and `axial` that
-frame turned a quarter about its `u`; `OnHelix` is `base` tilted about its `u` axis to the helix's
-start (a screw about that axis, read at its turn) and carried by the helix's screw; `Twisted`'s
-point is `reach` along `n.u` turned in `n` about its origin (`std.Spin`, `CarriedAtIn`) — no
-`cos`/`sin` of a running number, and every frame built from points placed before the solve, so no
-plane stands against its lines.  **A face family carried so is its motion's sweep**
-(`solid::family::stated_carry`): where every row reading the running number is a `CarriedAt` under
-one motion — one turn or screw about one axis (`Family::turning`) or one slide (`Family::sliding`) —
-at a roll affine in it, the recipe's `family` node carries that motion over the interval (`carry`,
-`Carry::Screw`/`Line`, written in millimetres) and `brep::family` builds the walls on the first rim
-so carried, every wall still held to the general sheets; read off the stations
-(`brep::family::carried`) only where no statement says.  So `lofts/spring.sv`'s wire and
+**A face family its statements say a frame carries is that motion's sweep** (#366, [0.138];
+what a frame read at a roll is, and the station words written so, are [frames.md](frames.md)'s):
+`solid::family::stated_carry` reads the rows of the station that read its running number, and
+where every one is a `CarriedPoint` at a stated roll under one motion — one turn or screw about one
+axis (`Family::turning`) or one slide (`Family::sliding`) — at a roll affine in it, the recipe's
+`family` node carries that motion over the interval (`carry`, `Carry::Screw`/`Line`, written in
+millimetres) and `brep::family` builds the walls on the first rim so carried, every wall still held
+to the general sheets; read off the stations (`brep::family::carried`) only where no statement
+says.  Recognised by what is stated, never by a word's name.  So `lofts/spring.sv`'s wire and
 `swept_spring.sv`'s ball are one tube on one screw (`Blend`), the canal's half balls the only
 difference, and both export alike.  A part walked for a station follows a motion to what it is
-written over (`io::Part::around_all`: a motion owns no number, so is never a wall), and a point
-hinted `along:` an axis (a view's normal) is seeded along it (`program::entities::step_ends`).  The
-gates: `tests/carried_frame.rs` (frames, points and the station words against `Family::at` and their
-closed forms to `EXACT`), `tests/carried_family.rs` (the springs, the screw's walls, a station read
-otherwise), `jacobians.rs`'s `carried_at_rows_agree_with_finite_differences`.
+written over (`io::Part::around_all`: a motion owns no number, so is never a wall).  The gate:
+`tests/carried_family.rs` (the springs, the screw's walls, a station read otherwise).
 
 **A frame's numbers are stated or solved** (#383 stages 3 and 5): a ratio or advance measured
 off the solved drawing (`ratio: -length(a) / length(b)`) is E107, as every measurement in a

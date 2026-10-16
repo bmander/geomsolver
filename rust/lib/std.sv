@@ -576,22 +576,13 @@ component On(g: path, up: axis, s: Scalar) {
 // axis, and a section drawn in it (a thread's) sweeps a thread.  The screw turns from `base.u`
 // toward `base.v` as it rises, right-handed for a positive pitch, left for a negative.
 component Helix(base: plane, pitch: Length, turns: Scalar, s: Scalar) {
-  // the screw: a frame turning about the line up `base`'s normal from its origin
-  private up := point hint(at: base.origin, along: base.normal, by: 10)
-  up coincident base.normal
-  base.origin distance(10mm, along: base.normal) up
-  private construction spindle := line(base.origin, up)
+  // the screw: a frame turning about `base`'s normal, rising `pitch` a turn
   private screw := frame
-  Turn(screw, about: spindle, ratio: 1, advance: pitch)
+  Turn(screw, about: base.normal, ratio: 1, advance: pitch)
   n := base carried(under: screw, at: 360deg * turns * s)
   // and `n` turned a quarter about its `u`
-  in n {
-    private x := point
-  }
-  fix((10, 0)) x
-  private construction out := line(n.origin, x)
   private stand := frame
-  Turn(stand, about: out, ratio: 1)
+  Turn(stand, about: n.u, ratio: 1)
   axial := n carried(under: stand, at: 90deg)
 }
 
@@ -605,20 +596,11 @@ component Helix(base: plane, pitch: Length, turns: Scalar, s: Scalar) {
 // there (#366), so its `normal` keeps its sense by the motions, never by continuity.
 component OnHelix(base: plane, r: Length, pitch: Length, turns: Scalar, s: Scalar) {
   // the helix's screw, as `Helix`'s
-  private up := point hint(at: base.origin, along: base.normal, by: 10)
-  up coincident base.normal
-  base.origin distance(10mm, along: base.normal) up
-  private construction spindle := line(base.origin, up)
   private screw := frame
-  Turn(screw, about: spindle, ratio: 1, advance: pitch)
+  Turn(screw, about: base.normal, ratio: 1, advance: pitch)
   // where the helix starts: `base` turned about its `u` axis and slid `r` out along it
-  in base {
-    private x := point
-  }
-  fix((10, 0)) x
-  private construction out := line(base.origin, x)
   private tilt := frame
-  Turn(tilt, about: out, ratio: 1, advance: r * 360deg / (90deg + atan2(pitch, 2 * pi * r)))
+  Turn(tilt, about: base.u, ratio: 1, advance: r * 360deg / (90deg + atan2(pitch, 2 * pi * r)))
   private start := base carried(under: tilt, at: 90deg + atan2(pitch, 2 * pi * r))
   n := start carried(under: screw, at: 360deg * turns * s)
 }

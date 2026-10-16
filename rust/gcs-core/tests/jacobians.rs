@@ -767,7 +767,7 @@ Z coincident(under: twirl, seen_from: spin, t == -35) q2
     let e = gcs_core::program::elaborate(&prog);
     assert!(e.ok(), "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
     let mut sk = e.sketch;
-    let read = |c: &&Constraint| c.kind.motion_reading().is_some() || c.rate_source().is_some();
+    let read = |c: &&Constraint| c.kind.reads_motion() || c.rate_source().is_some();
     assert_eq!(sk.constraints.iter().filter(read).count(), 24);
     assert!(sk.constraints.iter().any(|c| c.kind == CKind::RateDistance && c.free.is_some()),
             "a pitch left to the solve is read as a free column");
@@ -789,7 +789,8 @@ Z coincident(under: twirl, seen_from: spin, t == -35) q2
 /// A point carried to a stated roll (#366, `envelope::screw`'s `At` and `AtIn`): in space under a
 /// screw seen from a turn and under a screw about a line of its own, at a roll stated and at one a
 /// free variable names (the twin's last column); drawn in a view under a turn in it, its two rows
-/// along the view's axes — every axis free, so the motion's columns are differentiated too.
+/// along the view's axes — every axis free, so the motion's columns are differentiated too; and
+/// under a screw about a plane's normal, a joint's own axis its point and direction (#366).
 /// Checked at the seeds and at points knocked off them.
 #[test]
 fn carried_at_rows_agree_with_finite_differences() {
@@ -827,16 +828,20 @@ in std.top {
 twirl := frame
 std.Spin(twirl, about: o2, on: std.top, ratio: 0.7)
 T coincident(under: twirl, at: 60deg) q2
+up := frame
+std.Turn(up, about: std.top.normal, ratio: 0.9, advance: 3mm)
+V := point hint((1, 2, 3))
+V coincident(under: up, seen_from: spin, at: 50deg) x
 ";
     let (prog, errs) = crate::common::parse(SRC);
     assert!(errs.is_empty(), "{errs:?}");
     let e = gcs_core::program::elaborate(&prog);
     assert!(e.ok(), "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
     let mut sk = e.sketch;
-    let read = |c: &&Constraint| matches!(c.kind, CKind::CarriedAt | CKind::CarriedAtIn);
-    assert_eq!(sk.constraints.iter().filter(read).count(), 4);
-    assert!(sk.constraints.iter().any(|c| c.kind == CKind::CarriedAtIn));
-    assert!(sk.constraints.iter().any(|c| c.kind == CKind::CarriedAt && c.free.is_some()),
+    let read = |c: &&Constraint| c.kind.reads_motion() && c.stated_roll();
+    assert_eq!(sk.constraints.iter().filter(read).count(), 5);
+    assert!(sk.constraints.iter().any(|c| c.kind == CKind::CarriedPointIn));
+    assert!(sk.constraints.iter().any(|c| c.kind == CKind::CarriedPoint && c.free.is_some()),
             "a roll left to the solve is read as a free column");
     let mut rng = Rng::new(366);
     for round in 0..4 {

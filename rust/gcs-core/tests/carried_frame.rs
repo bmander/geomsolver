@@ -1,6 +1,7 @@
 //! **A frame another frame's motion carries** (#366 S1): `n := base carried(under: m, at: τ)` is
 //! the plane `base` carried by frame `m`'s pose at the roll `τ`, and `X coincident(under: m, at:
-//! τ) x` the point.  The roll is a number the statement states (`CKind::CarriedAt`), so a station
+//! τ) x` the point.  The roll is a number the statement states (`CKind::CarriedPoint`'s roll slot
+//! holding text, not an unknown: `Constraint::stated_roll`), so a station
 //! may be carried to one written over its running number.  Each is held here to the motion's own
 //! closed form, `motion::Family::at`, to `EXACT`: a frame's origin and axes, a point drawn in it, a
 //! frame carried twice and by a frame seen from another, a point drawn in a view held there in two
@@ -166,10 +167,104 @@ S coincident(under: lift, at: 290deg) x
     same(point("S"), at(&family(&e, "lift"), 290.0, point("x")), "up a plane's normal");
     assert!((rise - 4.0 * 290.0 / 360.0).abs() < EXACT, "risen {rise}");
     // the point in the view is held by as many rows as it has numbers; one in space by three
-    let rows = |k: CKind| e.sketch.constraints.iter().filter(|c| c.kind == k)
+    let rows = |k: CKind| e.sketch.constraints.iter().filter(|c| c.kind == k && c.stated_roll())
         .map(|c| c.rows_in(&e.sketch)).collect::<Vec<_>>();
-    assert_eq!(rows(CKind::CarriedAtIn), vec![2]);
-    assert_eq!(rows(CKind::CarriedAt), vec![3; 3]);
+    assert_eq!(rows(CKind::CarriedPointIn), vec![2]);
+    assert_eq!(rows(CKind::CarriedPoint), vec![3; 3]);
+}
+
+/// **A frame carried reads what its source rides on** (#366, #383): `base` drawn over points in
+/// the block of a jointed frame rides on it, so `n := base carried(at: τ)` is `base` carried by
+/// that frame's joint, as a point riding is (`X coincident(at: τ) x`) — the pose `Family::at`
+/// gives, to `EXACT`.  Naming the frame `under:` for a source that rides is refused, as on any
+/// reading, and a source riding on nothing must name one.
+#[test]
+fn a_frame_carried_reads_what_its_source_rides_on() {
+    let src = "\
+unit mm
+use std
+a0 := point hint((1, 2, 3))
+a1 := point hint((4, 3, 11))
+fix((1, 2, 3)) a0
+fix((4, 3, 11)) a1
+ax := line(a0, a1)
+in (screw := frame) {
+  o := point hint((9, -4, 6))
+  p := point hint((19, -4, 6))
+  q := point hint((9, 6, 6))
+  fix((9, -4, 6)) o
+  fix((19, -4, 6)) p
+  fix((9, 6, 6)) q
+  construction lu := line(o, p)
+  construction lv := line(o, q)
+  base := plane(u: lu, v: lv)
+}
+std.Turn(screw, about: ax, ratio: 1.5, advance: 7mm)
+n := base carried(at: 40deg)
+X := point
+X coincident(at: 40deg) q
+";
+    let e = solved(src);
+    let screw = family(&e, "screw");
+    let [o, u, v, _] = frame(&e, "n");
+    let [bo, bu, bv, _] = frame(&e, "base");
+    same(o, at(&screw, 40.0, bo), "the origin carried");
+    same(u, turned(&screw, 40.0, bu), "u carried");
+    same(v, turned(&screw, 40.0, bv), "v carried");
+    same(e.sketch.world_point(ent(&e, "X").i()), at(&screw, 40.0, [9.0, 6.0, 6.0]),
+         "a point riding, carried alike");
+    // `under:` on a source that rides is the reading's to infer, and refused
+    let (prog, errs) = crate::common::parse(&src.replace("base carried(at:",
+                                                         "base carried(under: screw, at:"));
+    assert!(errs.is_empty(), "{errs:?}");
+    let e = gcs_core::program::elaborate(&prog);
+    assert!(!e.ok(), "a riding source names no frame `under:`");
+    // and a source riding on nothing must name the frame it is carried by
+    let (prog, errs) = crate::common::parse(&format!("{src}m := std.front carried(at: 10deg)\n"));
+    assert!(errs.is_empty(), "{errs:?}");
+    let e = gcs_core::program::elaborate(&prog);
+    assert!(e.errors().any(|d| d.message.contains("rides on none: name the frame")),
+            "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
+}
+
+/// **A roll owned and a roll stated are one reading** (#366): `t == 40` (the relation's own
+/// unknown, pinned) and `at: 40deg` (the angle stated) are the one kind, `CarriedPoint`, at one
+/// place to `EXACT` — the first an unknown of its own, the second none — and saying both is
+/// refused, as any slot said twice is.
+#[test]
+fn a_roll_owned_and_a_roll_stated_are_one_reading() {
+    let src = "\
+unit mm
+use std
+a0 := point hint((1, 2, 3))
+a1 := point hint((4, 3, 11))
+fix((1, 2, 3)) a0
+fix((4, 3, 11)) a1
+ax := line(a0, a1)
+screw := frame
+std.Turn(screw, about: ax, ratio: 1.5, advance: 7mm)
+x := point hint((9, -4, 6))
+fix((9, -4, 6)) x
+P := point hint((9, -4, 6))
+P coincident(under: screw, t == 40) x
+Q := point hint((9, -4, 6))
+Q coincident(under: screw, at: 40deg) x
+";
+    let e = solved(src);
+    let carried: Vec<_> = e.sketch.constraints.iter().filter(|c| c.kind.reads_motion()).collect();
+    assert_eq!(carried.len(), 2);
+    assert!(carried.iter().all(|c| c.kind == CKind::CarriedPoint));
+    assert_eq!(carried.iter().filter(|c| c.stated_roll()).count(), 1);
+    assert_eq!(carried.iter().map(|c| c.aux_params().len()).sum::<usize>(), 1,
+               "the owned roll is an unknown, the stated one none");
+    let point = |n: &str| e.sketch.world_point(ent(&e, n).i());
+    same(point("P"), point("Q"), "one place");
+    same(point("Q"), at(&family(&e, "screw"), 40.0, point("x")), "the pose at 40°");
+    let (prog, errs) = crate::common::parse(&src.replace("at: 40deg", "t == 40, at: 40deg"));
+    assert!(errs.is_empty(), "{errs:?}");
+    let e = gcs_core::program::elaborate(&prog);
+    assert!(e.errors().any(|d| d.message.contains("is given twice: the roll")),
+            "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
 }
 
 /// **A roll may be an unknown the drawing solves for**: the stated roll names a free variable
@@ -190,7 +285,8 @@ X coincident(under: spin, at: theta) x
 std.origin distance(5mm, along: std.y) X
 ";
     let e = solved(src);
-    let c = e.sketch.constraints.iter().find(|c| c.kind == CKind::CarriedAt).unwrap();
+    let c = e.sketch.constraints.iter().find(|c| c.kind == CKind::CarriedPoint).unwrap();
+    assert!(c.stated_roll());
     let free = c.free.expect("the roll is the unknown's");
     let theta = free.m * e.sketch.params[free.param as usize].value + free.c;
     assert!((theta.to_degrees() - 30.0).abs() < 1e-9, "{}", theta.to_degrees());
@@ -287,7 +383,7 @@ P coincident(under: screw, at: 40deg) x
     // a frame with no roll says nothing of where it is carried
     let (_, errs) =
         crate::common::parse(&format!("{MOTIONS}n := std.front carried(under: screw)\n"));
-    assert!(errs.iter().any(|e| e.message.contains("carried by a frame's motion to a roll")),
+    assert!(errs.iter().any(|e| e.message.contains("carried to a roll by the frames it rides")),
             "{errs:?}");
     // a roll is an angle
     let (prog, errs) = crate::common::parse(&format!("{MOTIONS}x := point\nP := point\n\

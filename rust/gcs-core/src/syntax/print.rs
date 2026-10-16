@@ -900,7 +900,7 @@ pub fn operator_text(kind: CKind, args: &[Option<Arg>]) -> String {
         } else if sk.takes_ref() && *name == "under" {
             // and the motion a point is carried by (#326)
             parens.push(format!("under: {}", write_arg(name, *sk, a)));
-        } else if sk.is_dimension() && *name == "at" {
+        } else if kind.roll_slot() == Some(i) && matches!(a, Arg::Dim { .. }) {
             // and the roll it is carried to, stated after the motion by its label (#366)
             parens.push(format!("at: {}", dim_text(a)));
         } else if sk.takes_ref() {

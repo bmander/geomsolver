@@ -431,8 +431,9 @@ takes a layout naming the front datum, origin and reference axis.
   and each such edge names its swept face `side[k]` (`program::solids::faces::boundary_name`
   spells a copy's public path).  `tests/correspondence.rs` is the gate.  **A face carried
   whole** (`sec := prof mapped(…) in n`, #357) is such a block that makes no copies
-  (`Block::image`): see `solids.md`.  **A frame a motion carries** (`n := base carried(under: m,
-  at: τ)`, #366, [0.138]) is a declaration of kind `Frame` the parser marks (`Decl::carried`,
-  `statements::carried_frame`: `under:` and `at:` both, `seen_from:` if given, read as a carried
+  (`Block::image`): see `solids.md`.  **A frame carried** (`n := base carried(at: τ)`, #366,
+  [0.138]) is a declaration of kind `Frame` the parser marks (`Decl::carried`,
+  `statements::carried_frame`: `at:`, and `under:` and `seen_from:` if given, read as a carried
   point's arguments) and the flattener writes out where it walks the body (`flatten::carried`), so
-  the source keeps and prints the one statement (`print::write_decl`); see `generating.md`.
+  the source keeps and prints the one statement (`print::write_decl`); see
+  [frames.md](frames.md).

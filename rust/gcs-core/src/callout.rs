@@ -141,8 +141,7 @@ macro_rules! undrawn {
             // nor a point carried by a motion, at a roll it owns or one stated: a turn about
             // whatever the motion turns about, which no view of the drawing shows (#366)
             | CKind::CarriedPoint
-            | CKind::CarriedAt
-            | CKind::CarriedAtIn
+            | CKind::CarriedPointIn
             // nor a contact with a traced body: its curvature is the circle's own radius
             | CKind::PointOnTraced
             // a projection in space draws what `project` draws: nothing

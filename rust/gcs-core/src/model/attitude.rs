@@ -181,6 +181,13 @@ impl Sketch {
                         .unwrap_or([0.0, 0.0, 1.0]);
                     (self.world_point(centre as usize), n)
                 }
+                // a joint held to an axis no drawn line is — a frame's own, `std.Turn(f, about:
+                // P.normal)` — stands where that axis does, sense and all (#366)
+                MotionDef::Joint { axis, .. } => {
+                    let Some(o) = self.axis_held_to(axis as usize) else { continue };
+                    let v = |q: [u32; 3]| q.map(|i| self.params[i as usize].value);
+                    (v(self.axes[o].a), v(self.axes[o].d))
+                }
                 _ => continue,
             };
             let Some(d) = crate::space::normalised(dir) else { continue };
@@ -195,6 +202,17 @@ impl Sketch {
                 self.stand_axis_through(r, at);
             }
         }
+    }
+
+    /// The axis axis `r` is held coincident with (`CKind::AxisCoincident`), the first stated.
+    fn axis_held_to(&self, r: usize) -> Option<usize> {
+        use crate::constraints::{Arg, CKind};
+        self.constraints.iter().filter(|c| c.kind == CKind::AxisCoincident && !c.claim)
+            .find_map(|c| match (&c.args[0], &c.args[1]) {
+                (Arg::Ent(a), Arg::Ent(b)) if a.i() == r && b.i() != r => Some(b.i()),
+                (Arg::Ent(a), Arg::Ent(b)) if b.i() == r && a.i() != r => Some(a.i()),
+                _ => None,
+            })
     }
 
     /// The frames with axes of their own — every plane, and each spatial frame whose axes the

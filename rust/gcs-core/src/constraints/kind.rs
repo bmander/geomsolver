@@ -152,26 +152,24 @@ pub enum CKind {
     /// carried point's along a screw's axis, its advance.  One row; `d` stated or free; the same
     /// kernel as `Rate`'s.
     RateDistance,
-    /// **A point as a moving frame sees it** (#326, R4, `envelope::screw`): `X coincident(under:
-    /// m, t == τ) x`, `X` the point `x` carried by the motion's pose at the roll `τ` — `X =
-    /// Pose(τ)·x`, three rows over both points' lifts, the roll (the relation's own unknown, in
-    /// degrees, pinned or solved) and the motion's axes.  In a traced body, `τ` an expression in
-    /// the running formal: a contact seen from a turning member.
+    /// **A point as a moving frame sees it** (#326, R4, #366, `envelope::screw`): `X
+    /// coincident(under: m, t == τ) x`, `X` the point `x` carried by the motion's pose at the roll
+    /// `τ` — `X = Pose(τ)·x`, three rows over both points' lifts and the motion's axes.  The roll
+    /// is one slot read two ways (`Constraint::stated_roll`): **owned**, the relation's own
+    /// unknown in degrees, pinned or solved, a column of its own (`t == τ`); or **stated**, `at:
+    /// τ`, an angle the statement states — the slot holds the number or the text, not an unknown
+    /// (`Sketch::add` allocates none), so it may be written over a face family's running number
+    /// and read again at every station (`at: 360deg * turns * s`), and a free variable it names
+    /// is its twin's last column.  In a traced body, `τ` an expression in the running formal: a
+    /// contact seen from a turning member.  What a carried frame is made of (`n := base
+    /// carried(at: τ)`).
     CarriedPoint,
-    /// **A point a motion carries to a stated roll** (#366, `envelope::screw`): `X
-    /// coincident(under: m, at: τ) x`, `X = Pose(τ)·x` with `τ` a **dimension** — an angle the
-    /// statement states, not an unknown the relation owns — so it may be written over a face
-    /// family's running number and read again at every station (`at: 360deg * turns * s`), and it
-    /// may name a free variable (its twin is the same built kernel, the unknown its last column).
-    /// Three rows over both points' lifts and the motion's axes, `X` standing in space; drawn in a
-    /// plane, it is `CarriedAtIn`.  What a carried frame is made of (`n := base carried(under: m,
-    /// at: τ)`).
-    CarriedAt,
-    /// **`CarriedAt` read in the plane its point is drawn in** (#366): `X` drawn in `n` is held
-    /// where `n` sees the carried point — two rows, `(X − Pose(τ)·x)·n.u` and `·n.v`, the plane's
-    /// axes columns too — so a point turned within its own plane (`std.Twisted`'s) is held by
-    /// exactly as many rows as it has numbers.  `program::reading` turns a `CarriedAt` into it.
-    CarriedAtIn,
+    /// **`CarriedPoint` read in the plane its point is drawn in** (#366): at a stated roll, `X`
+    /// drawn in `n` is held where `n` sees the carried point — two rows, `(X − Pose(τ)·x)·n.u` and
+    /// `·n.v`, the plane's axes columns too — so a point turned within its own plane
+    /// (`std.Twisted`'s) is held by exactly as many rows as it has numbers.  `program::reading`
+    /// turns a `CarriedPoint` into it, as it turns a relation in space into its kind in a view.
+    CarriedPointIn,
     /// **A generated flank regular within its blank** (#345 S3, `envelope::regular`): `flank
     /// regular(>= m, by: tool) within blank`, the least area factor the flank — a held envelope,
     /// its source a face of `tool` — takes over the part of it the tool cuts within `blank`,
@@ -439,7 +437,7 @@ impl FamilyKernel {
 }
 
 /// Every concrete constraint type, in the order the registry lists them.
-pub const ALL_KINDS: [CKind; 85] = [
+pub const ALL_KINDS: [CKind; 84] = [
     CKind::Coincident,
     CKind::Distance,
     CKind::Midpoint,
@@ -523,8 +521,7 @@ pub const ALL_KINDS: [CKind; 85] = [
     CKind::Rate,
     CKind::RateDistance,
     CKind::TangentCircleAt3,
-    CKind::CarriedAt,
-    CKind::CarriedAtIn,
+    CKind::CarriedPointIn,
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -757,8 +754,7 @@ impl CKind {
             CKind::PointOnEnvelope => "PointOnEnvelope",
             CKind::PointOnMeshing => "PointOnMeshing",
             CKind::CarriedPoint => "CarriedPoint",
-            CKind::CarriedAt => "CarriedAt",
-            CKind::CarriedAtIn => "CarriedAtIn",
+            CKind::CarriedPointIn => "CarriedPointIn",
             CKind::RegularWithin => "RegularWithin",
             CKind::PointOnTraced => "PointOnTraced",
             CKind::Project => "Project",
@@ -967,10 +963,10 @@ impl CKind {
                 ("u1", S::Param), ("v1", S::Param), ("t1", S::Param),
                 ("u2", S::Param), ("v2", S::Param), ("t2", S::Param),
             ],
-            // the point carried, the point it is carried from, the motion and the roll
-            CKind::CarriedPoint => &[("p", S::Point), ("q", S::Point), ("under", S::Motion), ("t", S::Param)],
-            CKind::CarriedAt | CKind::CarriedAtIn => {
-                &[("p", S::Point), ("q", S::Point), ("under", S::Motion), ("at", S::Angle)]
+            // the point carried, the point it is carried from, the motion and the roll — owned or
+            // stated (#366)
+            CKind::CarriedPoint | CKind::CarriedPointIn => {
+                &[("p", S::Point), ("q", S::Point), ("under", S::Motion), ("t", S::Param)]
             }
             // the flank, the blank it is cut within, the tool whose face its source is, and the
             // least area factor (#345)
@@ -1112,7 +1108,7 @@ impl CKind {
             | CKind::PointAlongArc3
             => Some(Dim::SCALAR),
             // a roll in degrees, as a meshing's phase is
-            CKind::CarriedPoint => Some(Dim::SCALAR),
+            CKind::CarriedPoint | CKind::CarriedPointIn => Some(Dim::SCALAR),
             // a place on a traced body: its formals' numbers, as a curve's parameter is
             CKind::PointOnTraced => Some(Dim::SCALAR),
             _ => None,
@@ -1164,7 +1160,7 @@ impl CKind {
             CKind::Rate => ("parallel", Infix),
             CKind::RateDistance => ("distance", Infix),
             // a point as the moving frame sees it (#326), at a stated roll too (#366)
-            CKind::CarriedPoint | CKind::CarriedAt | CKind::CarriedAtIn => ("coincident", Infix),
+            CKind::CarriedPoint | CKind::CarriedPointIn => ("coincident", Infix),
             // a flank's regularity within a blank (#345): written `regular(…) within`
             CKind::RegularWithin => ("regular", Infix),
             // a body traced in space (#326): a point on it, and at a point already on it a line
@@ -1521,7 +1517,7 @@ impl CKind {
     /// names it, and nothing may ask `kernel()` for it.
     pub fn built(self) -> bool {
         matches!(self, CKind::SplineLength | CKind::Stationary | CKind::CurveTouchesLine
-                       | CKind::CarriedPoint | CKind::CarriedAt | CKind::CarriedAtIn
+                       | CKind::CarriedPoint | CKind::CarriedPointIn
                        | CKind::RegularWithin | CKind::Rate | CKind::RateDistance)
             || self.envelope_contact().is_some()
             || self.meshing_contact().is_some()
@@ -1538,16 +1534,17 @@ impl CKind {
         })
     }
 
-    /// What a relation reading a motion's twist states (#326): its kernel is built at its
-    /// operands' widths (`envelope::screw::kernel`).
-    pub fn motion_reading(self) -> Option<crate::envelope::screw::Reading> {
-        use crate::envelope::screw::Reading;
-        Some(match self {
-            CKind::CarriedPoint => Reading::Carried,
-            CKind::CarriedAt => Reading::At,
-            CKind::CarriedAtIn => Reading::AtIn,
-            _ => return None,
-        })
+    /// Whether a relation of this kind reads a motion's pose (#326): its kernel is built at its
+    /// operands' widths (`envelope::screw::kernel`), the reading its constraint's
+    /// (`Constraint::motion_reading`).
+    pub fn reads_motion(self) -> bool {
+        matches!(self, CKind::CarriedPoint | CKind::CarriedPointIn)
+    }
+
+    /// The slot holding a carried point's roll (#366): the relation's own unknown, or an angle
+    /// the statement states (`Constraint::stated_roll`).
+    pub fn roll_slot(self) -> Option<usize> {
+        self.reads_motion().then_some(3)
     }
 
     /// The envelope contact this kind states (#283), for the five over an envelope in space: its
@@ -1644,8 +1641,7 @@ impl CKind {
             | CKind::PointOnMeshing
             // a point a motion carries (#326), and a rate's distance (#365): no contact
             | CKind::CarriedPoint
-            | CKind::CarriedAt
-            | CKind::CarriedAtIn
+            | CKind::CarriedPointIn
             | CKind::RateDistance
             // a flank's regularity (#345): no contact
             | CKind::RegularWithin
@@ -1754,7 +1750,7 @@ impl CKind {
             CKind::RegularWithin => {
                 panic!("a flank's regularity is read by a kernel built at its operands' widths")
             }
-            CKind::CarriedPoint | CKind::CarriedAt | CKind::CarriedAtIn => {
+            CKind::CarriedPoint | CKind::CarriedPointIn => {
                 panic!("a point a motion carries is read by a kernel built at its operands' widths")
             }
             CKind::Rate | CKind::RateDistance => {
@@ -1922,8 +1918,7 @@ impl CKind {
             // nor a point a motion carries (#326), nor a rate: its free twin is its source's own
             // (#365), and a stated roll's its built kernel's, the unknown its last column (#366)
             | CKind::CarriedPoint
-            | CKind::CarriedAt
-            | CKind::CarriedAtIn
+            | CKind::CarriedPointIn
             | CKind::Rate
             | CKind::RateDistance
             | CKind::RegularWithin
@@ -1996,8 +1991,7 @@ impl CKind {
                 | CKind::PointOnEnvelope
                 | CKind::PointOnMeshing
                 | CKind::CarriedPoint
-                | CKind::CarriedAt
-                | CKind::CarriedAtIn
+                | CKind::CarriedPointIn
                 | CKind::RateDistance
                 | CKind::RegularWithin
                 | CKind::PointOnTraced

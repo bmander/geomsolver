@@ -1,8 +1,9 @@
 # Frames: joints, riding and readings
 
 The rules for frames that move (#383, [frames plan](../frames-plan.md)): a frame's joint, the
-`in` blocks that make a declaration ride on frames, and how a reading at a roll finds what it
-carries.  A frame as a place to draw — a plane, a spatial chart, `f := frame` — is
+`in` blocks that make a declaration ride on frames, how a reading at a roll finds what it carries,
+and a frame or a point read at a roll — owned or stated — with the station words written so
+(#366).  A frame as a place to draw — a plane, a spatial chart, `f := frame` — is
 [space.md](space.md)'s; the motion graph the readings lower to, and the generating classes that
 read it, are [generating.md](generating.md)'s.
 
@@ -73,6 +74,47 @@ other parts of the rate zero by construction for parallel or meeting shafts with
 of centres.  `tests/frames.rs` is the gate: a pair's ratio solved from rolling against `−R/r`,
 the centre distance solved from a stated ratio, a joint nothing holds reported free with its six
 numbers.  A joint stating no number is no longer refused (E080 through 0.136).
+
+**A frame that moves as a number runs is a frame read at a roll** (#366, [0.138]) — one notion,
+wherever a frame moves.  `X coincident(at: τ) x` is `x` carried to the roll `τ` by what it rides on
+(seen from what `X` rides on, or from `seen_from:`), or by the frame `under: m` names where `x`
+rides on none — the same reading as `t == τ`, one kind, `CKind::CarriedPoint`, whose roll slot is
+read two ways (`Constraint::stated_roll`): **owned**, `t == τ`, the relation's own unknown in
+degrees, a column, pinned or solved, which a rate runs over; **stated**, `at: τ`, the text the
+statement wrote, worked out as a dimension is (`Constraint::arg_kind` an angle, `expr::evaluate`),
+no unknown (`Sketch::add` allocates none), so it may be written over a face family's running number
+and is read again at every station, and a free variable it names is its twin's last column
+(`envelope::screw::Reading::At`, constants `[free, m, c, steps…]`, the roll `m·a + c`).  Saying
+both is refused (`Written::assemble`).  At a stated roll a point drawn in a plane is held where
+that plane sees it, two rows along the plane's axes (`CarriedPointIn`, `program::reading`, as a
+relation in space has its kind in a view) — as many rows as it has numbers.  A roll read where
+nothing rides and no frame is named is refused saying so (`relations::riding_point`).
+
+**A frame carried** is `n := base carried(at: τ)` (`syntax::Decl::carried`, kind `Frame`;
+`under:` and `seen_from:` as on a point): the flattener writes it out where it walks the body
+(`flatten::carried`) — three points drawn in `base` and held there (its origin and ten along each
+axis), riding as `base` does; each carried to `τ` into a point riding on nothing; the plane over the
+lines from the carried origin — so its carrier is found as a point's is, its `u`, `v` and normal
+are `base`'s carried, and the source prints the one statement.  `under:` on a `base` that rides is
+refused (`motions::under_riding`).  Before the solve each joint held to an axis is seeded on it
+and each point carried to a stated roll where its motion carries it, round by round with the planes
+placed over them (`Sketch::seed_joints`, `Sketch::seed_carried`, `program::place_planes`), so a
+plane drawn over carried points stands along its lines however far round the roll is.
+
+**A joint about a frame's own axis** (#366): `std.Turn(f, about: P.normal)`, or `P.u`, holds
+`f.axis` coincident with an axis no drawn line is — `Joint { axis }` — which the held steps read as
+a turn (a slide, its ratio stated 0) about the joint's axis as the solve places it, its point and
+its direction (`held::Step::Rotation { dir: true }`, codes 5 and 6), seeded where the axis it is
+held to stands.  **The station words are frames read so** (`std.sv`): `Helix` is `base` carried by
+the screw about `base.normal` (`advance: pitch`) to `360deg · turns · s`, and `axial` that frame
+turned a quarter about its `u`; `OnHelix` is `base` tilted about `base.u` to the helix's start (a
+screw about that axis, read at its turn) and carried by the helix's screw; `Twisted`'s point is
+`reach` along `n.u` turned in `n` about its origin (`std.Spin`, `CarriedPointIn`) — no `cos`/`sin`
+of a running number and no geometry drawn to hold an axis.  A family a station so carried sweeps is
+its motion's sweep ([generating.md](generating.md)).  The gates: `tests/carried_frame.rs` (frames,
+points and the station words against `Family::at` and their closed forms to `EXACT`, a roll owned
+and stated read alike, a frame carried by what its source rides on), `jacobians.rs`'s
+`carried_at_rows_agree_with_finite_differences` (a joint about a plane's normal among them).
 
 **Not built in stage 4**: the app offers only planar frames as places to draw (a spatial chart is
 drawn in text), and the printer writes no `in` blocks of its own, so the plan's "jointed frame

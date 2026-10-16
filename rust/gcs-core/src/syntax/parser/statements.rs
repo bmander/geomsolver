@@ -873,10 +873,12 @@ impl<'a> P<'a> {
         })
     }
 
-    /// `n := base carried(under: m, at: τ)` (#366): the plane `base` carried by the motion `m` to
-    /// the roll `τ`, its arguments read as a carried point's are (`under:` a reference, the roll
-    /// after `at:` the relation's number).  A plane declaration the flattener writes out as the
-    /// statements it stands for (`flatten::carried`).
+    /// `n := base carried(at: τ)` (#366): the plane `base` carried to the roll `τ` by the frames
+    /// it rides on, or by the frame `under: m` names where it rides on none — its arguments read
+    /// as a carried point's are (`under:` and `seen_from:` references, the roll after `at:` the
+    /// relation's number), so its carrier is found as theirs is (`relations::riding_point`).  A
+    /// plane declaration the flattener writes out as the statements it stands for
+    /// (`flatten::carried`).
     fn carried_frame(&mut self, name: Name) -> Option<Decl> {
         let source = self.refr()?;
         let word = self.ident()?;
@@ -886,9 +888,10 @@ impl<'a> P<'a> {
         let at = args.iter().filter(|a| matches!(a, OpArg::Dim(..))).count();
         let seen = args.iter().filter(|a| matches!(a, OpArg::Named(n, crate::syntax::Arg::Ref(_))
             if n.text == "seen_from")).count();
-        if under != 1 || at != 1 || seen > 1 || args.len() != 2 + seen {
-            self.fail("a frame is carried by a frame's motion to a roll: `n := base carried(under: \
-                       m, at: τ)`, seen from another `seen_from: g`");
+        if under > 1 || at != 1 || seen > 1 || args.len() != 1 + under + seen {
+            self.fail("a frame is carried to a roll by the frames it rides on: `n := base \
+                       carried(at: τ)`, by a frame it rides on none of `under: m`, seen from \
+                       another `seen_from: g`");
             return None;
         }
         self.end_of_stmt();

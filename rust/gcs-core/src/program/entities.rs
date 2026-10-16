@@ -1508,8 +1508,8 @@ impl Step {
 }
 
 /// The step a place takes from `e`: toward a point (`toward:`), a line's run (`along:` a line),
-/// an axis's direction (`along:` an axis, a unit a step), or along any other path (`along:` an
-/// arc, a circle, a spline, a curve, #243 L4, or a curve traced in space, #363 S1) — its rate along its own run where `e` meets it (the foot of `e` on
+/// or along any other path (`along:` an arc, a circle, a spline, a curve, #243 L4, or a curve
+/// traced in space, #363 S1) — its rate along its own run where `e` meets it (the foot of `e` on
 /// it, within its run), as a line's run is its rate from `p1` to `p2`: an arc's turned by its
 /// sweep and a circle's by a whole turn, counter-clockwise, a spline's and a curve's by its
 /// parameter, a traced curve's by its formal.  `None` where it takes no step.
@@ -1535,12 +1535,6 @@ fn step_ends(sk: &Sketch, res: &Resolver, e: EntRef, a: &AtRef)
                         return Err("a step along a path is taken from a point".to_string());
                     }
                     Some(Step::Along(rate_along(sk, l, sk.world_point(e.i()))?))
-                }
-                // along an axis, its direction: a plane's normal, a frame's axis (#366)
-                EntKind::Axis => {
-                    let d = sk.axes[l.i()].d.map(|q| sk.params[q as usize].value);
-                    Some(Step::Along(crate::space::normalised(d)
-                        .ok_or("the axis has no direction yet")?))
                 }
                 _ => {
                     return Err(format!("a step is taken along a line, not {}, or along a path",

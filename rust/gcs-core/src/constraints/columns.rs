@@ -84,8 +84,8 @@ impl Constraint {
         }
         // a motion's twist read: its steps (#326), after a stated roll's number or the map onto
         // the free variable it names (#366)
-        if let Some(r) = self.kind.motion_reading() {
-            let roll = match (self.free, self.kind.dimension_slot()) {
+        if let Some(r) = self.motion_reading() {
+            let roll = match (self.free, self.kind.roll_slot().filter(|_| self.stated_roll())) {
                 (Some(f), _) => [1.0, f.m, f.c],
                 (None, Some(i)) => [0.0, 0.0, self.args[i].num()],
                 (None, None) => [0.0; 3],
@@ -777,13 +777,13 @@ impl Constraint {
             }
             // a point a motion carries to a stated roll (#366): both points' lifts, the axes of
             // the plane the first is drawn in where it is read there, then the motion's axes
-            CKind::CarriedAt | CKind::CarriedAtIn => {
+            CKind::CarriedPoint | CKind::CarriedPointIn if self.stated_roll() => {
                 let lift = |p: usize| {
                     let k = sk.lift_of(p).expect("a relation in space is lifted at the add");
                     sk.lifts[k].x.to_vec()
                 };
                 let mut lead = [lift(e(0).i()), lift(e(1).i())].concat();
-                if self.kind == CKind::CarriedAtIn {
+                if self.kind == CKind::CarriedPointIn {
                     let pl = sk.plane_of(e(0).i()).and_then(|v| sk.frames[v].chart.as_ref());
                     lead.extend(pl.into_iter().flat_map(|pl| {
                         [sk.axes[pl.u as usize].d, sk.axes[pl.v as usize].d].concat()
@@ -793,8 +793,9 @@ impl Constraint {
                 [lead, parts].concat()
             }
             // a point a motion carries (#326, `envelope::screw`): both points' lifts and the roll,
-            // then the motion's axes
-            CKind::CarriedPoint => {
+            // then the motion's axes — a point drawn in a plane is read there at a stated roll
+            // alone, above
+            CKind::CarriedPoint | CKind::CarriedPointIn => {
                 let lift = |p: usize| {
                     let k = sk.lift_of(p).expect("a relation in space is lifted at the add");
                     sk.lifts[k].x.to_vec()
@@ -985,7 +986,7 @@ impl Constraint {
             // every point the envelope and the regions' terms read (#345)
             CKind::RegularWithin => self.regular_parts(sk).map(|p| p.lifted()).unwrap_or_default(),
             // both points, then every point the motion's axes read (#326, #366)
-            CKind::CarriedPoint | CKind::CarriedAt | CKind::CarriedAtIn => {
+            CKind::CarriedPoint | CKind::CarriedPointIn => {
                 let parts = self.motion_parts(sk).map(|p| p.lifted()).unwrap_or_default();
                 [vec![e(0).i(), e(1).i()], parts].concat()
             }

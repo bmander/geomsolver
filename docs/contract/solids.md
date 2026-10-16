@@ -370,13 +370,13 @@ placement carries inside the blank; CLI test readers zero the offset.
   off the exact B-rep to 1e-9.
 - **A screw is a motion read at a roll** (§6.9 [0.110], [0.138]; #243 L6, #366). `std.Helix(base,
   pitch:, turns:, s:)` is `base` carried by the screw about its normal through its origin (a frame's
-  `std.Turn` about a line along it, `advance: pitch`) to `360deg · turns · s`: `n` the base so
+  `std.Turn` about `base.normal`, `advance: pitch`) to `360deg · turns · s`: `n` the base so
   carried (a section in it sweeps a twisted prism), `axial` `n` turned a quarter about its `u` — `u`
   out along `n.u`, `v` up the axis (a thread's).  `std.OnHelix(base, r:, …)`'s `n` stands square to
   the helix of radius `r`, `v` up the axis leaned by the lead angle (a coil's wire): `base` tilted
-  about its `u` axis by `90deg + atan2(pitch, 2πr)` and slid `r` out (one screw about that axis,
+  about `base.u` by `90deg + atan2(pitch, 2πr)` and slid `r` out (one screw about that axis,
   read at its turn), then carried by the helix's screw.  Every frame is a carried one (`n := base
-  carried(under: m, at: τ)`, `generating.md`) over points placed before the solve, so **no direction
+  carried(under: m, at: τ)`, [frames.md](frames.md)) about its frames' own axes, so **no direction
   is held by a seed** and no plane stands against its lines — which the ordinates of 0.110–0.137 did
   not ensure: where the solve started decided whether a station's axes ran with their lines, and
   `lofts/spring.sv`'s, `ribbon.sv`'s and `l0/spring.sv`'s thread's drawn stations stood turned (the

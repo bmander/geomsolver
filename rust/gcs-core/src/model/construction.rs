@@ -447,7 +447,8 @@ impl Sketch {
     }
 
     /// **Every point a motion carries to a stated roll seeded where the motion carries it**
-    /// (#366, `CKind::CarriedAt`): in space at `Pose(τ)·x`, drawn in a plane at its shadow there.
+    /// (#366, a `CarriedPoint` at a stated roll): in space at `Pose(τ)·x`, drawn in a plane at its
+    /// shadow there.
     /// The rows are linear in the point, so the solve would find it from anywhere; but a plane
     /// drawn over carried points is turned along its lines before the solve (`views::align`), and
     /// a frame carried past a quarter turn would stand its axes against its lines from where it
@@ -471,8 +472,7 @@ impl Sketch {
         };
         for ci in 0..self.constraints.len() {
             let c = &self.constraints[ci];
-            if !matches!(c.kind, crate::constraints::CKind::CarriedAt
-                | crate::constraints::CKind::CarriedAtIn) || !c.states_rows() {
+            if !c.kind.reads_motion() || !c.stated_roll() || !c.states_rows() {
                 continue;
             }
             let (Arg::Ent(x), Arg::Ent(of), Arg::Ent(m)) = (&c.args[0], &c.args[1], &c.args[2])
@@ -762,6 +762,10 @@ impl Sketch {
         for (i, name) in c.kind.param_slots() {
             if matches!(c.args[i], Arg::Param(_)) {
                 continue;   // already allocated (a constraint moved between sketches)
+            }
+            // a carried point's roll the statement states is no unknown of its own (#366)
+            if c.kind.roll_slot() == Some(i) && matches!(c.args[i], Arg::Expr(_)) {
+                continue;
             }
             // a contact pinned to a face family's running number owns its parameter, held
             let held = match &c.args[i] {

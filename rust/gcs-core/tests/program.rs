@@ -115,7 +115,7 @@ fn every_constraint_type_is_printable() {
             // `tests/traced.rs` prints its contacts from a document
             continue;
         }
-        if kind.motion_reading().is_some() || kind == CKind::RateDistance {
+        if kind.reads_motion() || kind == CKind::RateDistance {
             // a point a motion carries, and its rate's distance, read off a motion declared in a
             // document; `tests/carried.rs` and `tests/rate_of_contact.rs` print them from one
             continue;

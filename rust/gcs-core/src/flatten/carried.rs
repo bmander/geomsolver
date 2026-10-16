@@ -1,12 +1,14 @@
-//! **A frame a motion carries** (#366, Solvent §6.14 [0.133]): `n := base carried(under: m, at:
-//! τ)` is the plane `base` carried by the motion `m`'s pose at the roll `τ`, its origin and its
-//! axes with it.  Written out here, where a body is walked, as the statements a person would
-//! write for it, so every reader after reads them as it reads any:
+//! **A frame a motion carries** (#366, Solvent §6.14 [0.138]): `n := base carried(at: τ)` is the
+//! plane `base` carried to the roll `τ` by the frames it rides on — or by the frame `under: m`
+//! names, where it rides on none — its origin and its axes with it.  Written out here, where a
+//! body is walked, as the statements a person would write for it, so every reader after reads
+//! them as it reads any, and finds the carrier as it finds a point's (`relations::riding_point`):
 //!
-//! * the source's frame, three points of it: its origin, and a point ten along each of its axes,
-//!   drawn in it (`n#su`, `n#sv`, held there by `fix`);
-//! * each carried to `τ` by the motion, a point in space (`n#o`, `n#u`, `n#v`): `X
-//!   coincident(under: m, at: τ) x` (`CKind::CarriedAt`) with the declaration's own arguments;
+//! * the source's frame, three points of it drawn in it and held there by `fix`, riding as it
+//!   does: its origin and a point ten along each of its axes (`n#so`, `n#su`, `n#sv`);
+//! * each carried to `τ`, a point in space riding on nothing (`n#o`, `n#u`, `n#v`): `X
+//!   coincident(at: τ) x` (`CKind::CarriedPoint` at a stated roll) with the declaration's own
+//!   arguments;
 //! * and the plane over the two lines from the carried origin, `n := plane(u: n#lu, v: n#lv)`.
 //!
 //! A rigid motion keeps lengths and angles, so the image is a frame as its source is, turned the
@@ -18,7 +20,7 @@
 
 use crate::semantics::{Annotations, GeometryRoles};
 use crate::syntax::{
-    Arg, Chained, Decl, DeclName, Kid, Membership, Name, OpArg, Ref, Relation, RelationForm, Seg,
+    Arg, Chained, Decl, DeclName, Kid, Membership, Name, OpArg, Ref, Relation, RelationForm,
     Span, Stmt, StmtKind, Written,
 };
 
@@ -70,16 +72,12 @@ fn frame(st: &Stmt, d: &Decl) -> Vec<Stmt> {
     let at = c.word.span;
     let key = |k: &str| DeclName::Key(Name { text: format!("{n}#{k}"), span: at });
     let local = |k: &str| Ref::dotted(&format!("{n}#{k}"), at);
-    let member = |m: &str| {
-        let mut r = c.source.clone();
-        r.path.push(Seg::Field(Name { text: m.to_string(), span: r.span }));
-        r
-    };
     let stmt = |kind: StmtKind| Stmt { id: st.id, kind, span: st.span, chained: Chained::No };
     let hidden = Annotations { private: true, roles: GeometryRoles::default() };
     let mut out = Vec::new();
-    // the source's frame: a point along each of its axes, drawn in it and held there
-    for (k, xy) in [("su", [REACH, 0.0]), ("sv", [0.0, REACH])] {
+    // the source's frame: its origin and a point along each of its axes, drawn in it and held
+    // there — riding where it rides, as its own origin is not (a minted point has no path)
+    for (k, xy) in [("so", [0.0, 0.0]), ("su", [REACH, 0.0]), ("sv", [0.0, REACH])] {
         let p = Decl {
             annotations: hidden,
             membership: Membership::written_at(c.source.clone(), at),
@@ -94,7 +92,7 @@ fn frame(st: &Stmt, d: &Decl) -> Vec<Stmt> {
         out.push(stmt(StmtKind::Relation(written("fix", Prefix, vec![local(k)], vec![place], at))));
     }
     // each carried to the roll, a point in space
-    for (k, of) in [("o", member("origin")), ("u", local("su")), ("v", local("sv"))] {
+    for (k, of) in [("o", local("so")), ("u", local("su")), ("v", local("sv"))] {
         let p = Decl { annotations: hidden, ..Decl::point(key(k), [0.0; 2], None) };
         out.push(stmt(StmtKind::Decl(p)));
         let ops = vec![local(k), of];

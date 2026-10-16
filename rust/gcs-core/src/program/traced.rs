@@ -854,6 +854,8 @@ impl<'v> Lowering<'v> {
         let place = match given {
             Some(Arg::Seed { value, pinned: true }) => self.constant(*value),
             Some(Arg::SeedExpr { text, pinned: true, span }) => self.tape(text, *span)?,
+            // a carried point's roll stated, `at: τ` (#366): its text, in degrees as `t` is
+            Some(Arg::Dim { text, span }) => self.tape(text, *span)?,
             Some(Arg::Tie { name, span, .. }) if self.vars.contains(name) => {
                 self.tape(name, *span)?
             }
@@ -1074,10 +1076,10 @@ impl<'v> Lowering<'v> {
                 f.map(|f| crate::envelope::held::Free { at: f.at + wu, ..f });
             let mut steps = su;
             steps.extend(sg.into_iter().map(|s| match s {
-                Step::Rotation { at, ratio, advance, free } =>
-                    Step::Rotation { at: at + wu, ratio, advance, free: shift(free) },
-                Step::Translation { at, advance, free } =>
-                    Step::Translation { at: at + wu, advance, free: shift(free) },
+                Step::Rotation { at, ratio, advance, free, dir } =>
+                    Step::Rotation { at: at + wu, ratio, advance, free: shift(free), dir },
+                Step::Translation { at, advance, free, dir } =>
+                    Step::Translation { at: at + wu, advance, free: shift(free), dir },
                 Step::Turn { at, ratio, free } =>
                     Step::Turn { at: at + wu, ratio, free: shift(free) },
                 Step::Relative { source, observer } =>

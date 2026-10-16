@@ -247,7 +247,6 @@ pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option
         "coincident" => match (a, b) {
             // a point as a moving frame sees it, carried by the motion `under:` names (#326): to
             // the roll stated, `at: τ` (#366), or to one the relation owns, `t == τ`
-            (Point, Point) if sel("under").is_some() && sel("stated").is_some() => CKind::CarriedAt,
             (Point, Point) if sel("under").is_some() => CKind::CarriedPoint,
             (Point, Point) => CKind::Coincident,
             // at a fraction of the way along where the place is written (`t == 0.25`, or a

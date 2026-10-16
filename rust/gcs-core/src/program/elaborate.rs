@@ -640,6 +640,8 @@ fn place_planes(
     // placed, and the planes drawn over such points placed again — a carried frame's over its
     // carried frame's in turn (#366)
     for _ in 0..4 {
+        // a joint held to a frame's axis turns about it as that frame now stands
+        cx.sk.seed_joints();
         if !cx.sk.seed_carried() {
             break;
         }

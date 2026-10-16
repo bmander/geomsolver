@@ -127,10 +127,12 @@ pub struct Free {
 /// One step of a motion, as its constants say it.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Step {
-    /// About the line whose lifted ends are motion columns `at..at + 6`.
-    Rotation { at: usize, ratio: f64, advance: f64, free: Option<Free> },
-    /// Along the line whose lifted ends are motion columns `at..at + 6`.
-    Translation { at: usize, advance: f64, free: Option<Free> },
+    /// About the line whose lifted ends are motion columns `at..at + 6` — or, `dir`, the axis
+    /// through the point at `at..at + 3` along the direction at `at + 3..at + 6`: a joint held to
+    /// an axis no drawn line is, a frame's own (#366).
+    Rotation { at: usize, ratio: f64, advance: f64, free: Option<Free>, dir: bool },
+    /// Along the line whose lifted ends are motion columns `at..at + 6`, or the axis `dir` says.
+    Translation { at: usize, advance: f64, free: Option<Free>, dir: bool },
     /// About the line through the lifted centre at motion columns `at..at + 3`, square to the
     /// view whose two axes' directions are columns `at + 3..at + 9`: a turn about a point of a
     /// view, as it reads in space (#326, read by `Moving::of_any` alone).
@@ -155,13 +157,13 @@ pub fn consts(lead: usize, source: Source, axis: u8, number: (f64, f64, bool), r
 pub fn encode_steps(steps: &[Step]) -> Vec<f64> {
     let free = |f: Option<Free>| f.map_or((0.0, 0.0), |f| ((f.at + 1) as f64, f.back as u8 as f64));
     steps.iter().flat_map(|s| match *s {
-        Step::Rotation { at, ratio, advance, free: f } => {
+        Step::Rotation { at, ratio, advance, free: f, dir } => {
             let (a, b) = free(f);
-            [1.0, at as f64, a, b, ratio, advance]
+            [if dir { 5.0 } else { 1.0 }, at as f64, a, b, ratio, advance]
         }
-        Step::Translation { at, advance, free: f } => {
+        Step::Translation { at, advance, free: f, dir } => {
             let (a, b) = free(f);
-            [2.0, at as f64, a, b, 0.0, advance]
+            [if dir { 6.0 } else { 2.0 }, at as f64, a, b, 0.0, advance]
         }
         Step::Turn { at, ratio, free: f } => {
             let (a, b) = free(f);
@@ -222,8 +224,10 @@ pub fn read_steps(k: &[f64]) -> Option<Vec<Step>> {
     for (i, s) in k.chunks(STEP).enumerate() {
         let idx = |x: f64| (x >= 0.0 && (x as usize) < i).then_some(x as usize);
         steps.push(match s[0] as i64 {
-            1 => Step::Rotation { at: s[1] as usize, ratio: s[4], advance: s[5], free: free(s)? },
-            2 => Step::Translation { at: s[1] as usize, advance: s[5], free: free(s)? },
+            c @ (1 | 5) => Step::Rotation { at: s[1] as usize, ratio: s[4], advance: s[5],
+                                            free: free(s)?, dir: c == 5 },
+            c @ (2 | 6) => Step::Translation { at: s[1] as usize, advance: s[5], free: free(s)?,
+                                               dir: c == 6 },
             4 => Step::Turn { at: s[1] as usize, ratio: s[4], free: free(s)? },
             3 => Step::Relative { source: idx(s[2])?, observer: idx(s[3])? },
             _ => return None,
@@ -633,9 +637,9 @@ fn poses<T: Num>(steps: &[Step], m: &[T], t: H2<T>) -> Vec<Pose<T>> {
             Step::Rotation { .. } | Step::Turn { .. } => {
                 let (ratio, advance) = s.numbers(m);
                 let (a, d) = match *s {
-                    Step::Rotation { at, .. } => {
+                    Step::Rotation { at, dir, .. } => {
                         let a = col3(m, at);
-                        (a, unit(vsub(col3(m, at + 3), a)))
+                        (a, unit(if dir { col3(m, at + 3) } else { vsub(col3(m, at + 3), a) }))
                     }
                     Step::Turn { at, .. } => {
                         (col3(m, at), unit(cross(col3(m, at + 3), col3(m, at + 6))))
@@ -657,10 +661,10 @@ fn poses<T: Num>(steps: &[Step], m: &[T], t: H2<T>) -> Vec<Pose<T>> {
                 let p = vadd(vsub(al, ra), vscale(lift(d), screw));
                 Pose { r, p }
             }
-            Step::Translation { at, .. } => {
+            Step::Translation { at, dir, .. } => {
                 let (_, advance) = s.numbers(m);
                 let a = col3(m, at);
-                let d = unit(vsub(col3(m, at + 3), a));
+                let d = unit(if dir { col3(m, at + 3) } else { vsub(col3(m, at + 3), a) });
                 let one = H2::cst(T::cst(1.0));
                 let o = H2::cst(zero());
                 let r = [[one, o, o], [o, one, o], [o, o, one]];
@@ -1313,12 +1317,12 @@ fn motion(sk: &Sketch, m: usize, steps: &mut Vec<Step>, cols: &mut Vec<Col>,
         MotionDef::Rotation { axis: l, .. } => {
             let (ratio, advance) = me.rotation(sk)?;
             axis(l)?;
-            Step::Rotation { at, ratio, advance, free: free(cols, 6) }
+            Step::Rotation { at, ratio, advance, free: free(cols, 6), dir: false }
         }
         MotionDef::Translation { axis: l, .. } => {
             let advance = me.advance(sk)?;
             axis(l)?;
-            Step::Translation { at, advance, free: free(cols, 6) }
+            Step::Translation { at, advance, free: free(cols, 6), dir: false }
         }
         MotionDef::Turn { centre, .. } if turns => {
             let (ratio, _) = me.rotation(sk)?;
@@ -1339,20 +1343,27 @@ fn motion(sk: &Sketch, m: usize, steps: &mut Vec<Step>, cols: &mut Vec<Col>,
             let observer = motion(sk, observer as usize, steps, cols, done, depth + 1, turns)?;
             Step::Relative { source, observer }
         }
-        MotionDef::Joint { .. } => {
-            return Err(format!("`{}`'s joint turns about an axis no drawn line holds: an envelope \
-                                the solve holds is generated under turns about lines, \
-                                `std.Turn(f, about: l, ratio: r)`", me.name))
+        // a joint about an axis no drawn line holds — a frame's own, `std.Turn(f, about:
+        // P.normal)` — turns about that axis as the solve places it: its point and its direction
+        // (#366); a ratio stated 0 slides along it
+        MotionDef::Joint { axis: x, ratio, advance } => {
+            let ax = sk.axes.get(x as usize).ok_or("no such motion axis")?;
+            cols.extend([Col::Three(ax.a), Col::Three(ax.d)]);
+            let free = free(cols, 6);
+            match ratio == 0.0 && me.numbers.is_none() {
+                true => Step::Translation { at, advance, free, dir: true },
+                false => Step::Rotation { at, ratio, advance, free, dir: true },
+            }
         }
         // a joint's inverse runs back over the same axis columns, a relative's swaps its sides
         MotionDef::Inverse { of } => {
             let k = motion(sk, of as usize, steps, cols, done, depth + 1, turns)?;
             let back = |f: Option<Free>| f.map(|f| Free { back: !f.back, ..f });
             match steps[k] {
-                Step::Rotation { at, ratio, advance, free } =>
-                    Step::Rotation { at, ratio: -ratio, advance: -advance, free: back(free) },
-                Step::Translation { at, advance, free } =>
-                    Step::Translation { at, advance: -advance, free: back(free) },
+                Step::Rotation { at, ratio, advance, free, dir } =>
+                    Step::Rotation { at, ratio: -ratio, advance: -advance, free: back(free), dir },
+                Step::Translation { at, advance, free, dir } =>
+                    Step::Translation { at, advance: -advance, free: back(free), dir },
                 Step::Turn { at, ratio, free } =>
                     Step::Turn { at, ratio: -ratio, free: back(free) },
                 Step::Relative { source, observer } => Step::Relative { source: observer, observer: source },

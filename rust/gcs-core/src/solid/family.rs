@@ -1402,8 +1402,8 @@ pub(crate) fn walls(sk: &Sketch, si: usize) -> Result<Walls, String> {
 }
 
 /// **A family its statements say a motion carries** (#366 S3): one whose every row reading its
-/// running number is a point carried by one motion (`CKind::CarriedAt`) to a roll affine in that
-/// number, the motion one turn or screw about one axis, or one slide — `std.Helix`'s,
+/// running number is a point carried by one motion (`CKind::CarriedPoint`) to a roll stated
+/// affine in that number, the motion one turn or screw about one axis, or one slide — `std.Helix`'s,
 /// `std.OnHelix`'s and any frame `carried(under: m, at: a·s + b)`.  It is that motion's sweep of
 /// its section: the carry over the family's interval, its first rim the start, which
 /// `brep::family` builds the walls on — exact by the statement, the axis, the turn and the rise the motion's own — where
@@ -1412,7 +1412,7 @@ pub(crate) fn walls(sk: &Sketch, si: usize) -> Result<Walls, String> {
 /// tied to something the motion does not carry is built wall by wall.  `None` for a family over
 /// a chain, one that states a rate, and one any other row reads the running number of.
 fn stated_carry(sk: &Sketch, si: usize) -> Option<crate::brep::geom::Carry> {
-    use crate::constraints::{Arg, CKind};
+    use crate::constraints::Arg;
     use crate::expr::Aff;
     let SolidDef::Family { held, from, to, legs, .. } = &sk.solids[si].def else { return None };
     if legs.len() > 1 || super::rated::states_rates(sk, held) {
@@ -1442,7 +1442,7 @@ fn stated_carry(sk: &Sketch, si: usize) -> Option<crate::brep::geom::Carry> {
         if !pinned && texts.is_empty() {
             continue;
         }
-        if pinned || c.free.is_some() || !matches!(c.kind, CKind::CarriedAt | CKind::CarriedAtIn) {
+        if pinned || c.free.is_some() || !c.kind.reads_motion() || !c.stated_roll() {
             return None;
         }
         let Arg::Ent(m) = c.args[2] else { return None };

@@ -455,7 +455,10 @@ the remaining documents read well.
 * **Several rolls:** independent rolls for carried points and placements only. Envelopes and
   sweeps keep one, since an envelope of a two-parameter family is a different object.
 * **Station frames:** a loft station's frame (`std.On`, `std.Minimal`, `std.Frenet`) is a frame
-  driven by a path parameter. It could join, with several rolls.
+  driven by a path parameter. It could join, with several rolls. A screw's and a twist's have
+  (#366, [frames.md](contract/frames.md)): `std.Helix`, `std.OnHelix` and `std.Twisted` are frames
+  carried to a roll stated over the running number (`at: τ`, each statement's own roll), which is
+  the several rolls this needs for readings at a stated roll; a guide's frame is a general drive.
 * **A product step** in `Family`, if lowering chains through inverses shows in a profile.
 * **An assembly solver** (§6.14's other "not yet"). Stage 5 solves a joint's *constants*. A
   frame still holds no state, and every reading names its roll.
