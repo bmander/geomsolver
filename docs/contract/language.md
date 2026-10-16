@@ -158,7 +158,7 @@ first (marched) in a relation — `rate(x over d) perpendicular rate(x over u)` 
 a relation reading only rates along the second is algebraic at each step, lowered with the body's
 other rows (`program::traced::Lowering::rate_relation`, `rated` keyed by point and formal);
 curves.md's "The method of lines" says what it may read, and its "Cauchy data on a drawn curve"
-(#376, [0.131]) what `initially` may read of a curve the body is written over.  A rate to the right of its word, `nl
+(#376, [0.132]) what `initially` may read of a curve the body is written over.  A rate to the right of its word, `nl
 perpendicular rate(p over u)`, is a relation, not a chain's link (`parser::chains::chain_starts`
 looks past the word for `rate(`).
 

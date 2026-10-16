@@ -39,11 +39,11 @@
 
 #[allow(unused_imports)]
 use crate::fmath::Det;
-use crate::kernels::KERNELS;
 use crate::ode;
 use crate::linalg::absmax;
 use crate::rates::{factor, jets, n_res, residual, Factored, Row};
-use crate::taylor::{self, Jet};
+use crate::taylor::Jet;
+use crate::traced::RowKind;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -142,27 +142,10 @@ impl<'a> Body<'a> {
             return Err("a marched body runs over two intervals".into());
         }
         let width = self.width();
+        // a point on a curve the drawing has is Cauchy data alone (#376)
         for (rows, cauchy) in [(&self.alg, false), (&self.rate, false), (&self.init, true)] {
             for r in rows.iter() {
-                // a point on a curve the drawing has is Cauchy data alone (#376): its home's
-                // implicit-function step reads it to the first order, and nothing reads more
-                if r.drawn.is_some() && !cauchy {
-                    return Err("a point on a curve the drawing has is read in `initially { … }` \
-                                alone".into());
-                }
-                let kn = match r.drawn {
-                    Some(kn) => kn,
-                    None => *KERNELS.get(r.kid).ok_or("no such kernel")?,
-                };
-                if kn.n_par != r.cols.len() || kn.n_const != r.consts.len()
-                    || (kn.n_par > COLS && r.drawn.is_none())
-                    || kn.n_res > 8 || r.cols.iter().any(|&c| c >= width) {
-                    return Err("rate row shape mismatch".into());
-                }
-                if r.drawn.is_none() && !taylor::has_form(r.kid) {
-                    return Err(format!("a body that states a rate reads its rows' derivatives \
-                                        exactly, and `{}` has no Taylor form", kn.name));
-                }
+                r.checked(width, cauchy)?;
             }
         }
         let all: Vec<usize> = (0..n).collect();
@@ -190,7 +173,7 @@ impl<'a> Body<'a> {
                         rates do not move".into());
         }
         let count =
-            |ks: &[usize]| ks.iter().map(|&k| self.alg[k].kn().n_res).sum::<usize>();
+            |ks: &[usize]| ks.iter().map(|&k| self.alg[k].kernel().n_res).sum::<usize>();
         if count(&alg_a) != a.len() {
             return Err(format!("the body's rows must place what its rates do not move: {} \
                 numbers against {} rows", a.len(), count(&alg_a)));
@@ -210,7 +193,7 @@ impl<'a> Body<'a> {
         let pick = |ks: &[usize]| ks.iter().map(|&k| self.alg[k].clone()).collect();
         // a `parallel` is read across the line that is no rate along the marched formal
         let across = self.rate.iter().map(|r| {
-            (r.kid == crate::kernels::K::Parallel3 as usize).then(|| {
+            (r.kind == RowKind::Kernel(crate::kernels::K::Parallel3 as usize)).then(|| {
                 let marched =
                     |at: usize| r.cols[at..at + 6].iter().any(|&c| (rd..rd + n).contains(&c));
                 if marched(0) { 6 } else { 0 }
@@ -258,7 +241,7 @@ fn jacobian_by(rows: &[Row], z: &[f64], n: usize, at: impl Fn(usize) -> Option<u
     // a drawn row is as wide as its curve (#376), read at the home alone
     let (mut wide_x, mut wide_jr) = (Vec::new(), Vec::new());
     for r in rows {
-        let kn = r.kn();
+        let kn = r.kernel();
         let (x, jr) = if r.cols.len() > COLS {
             wide_x.clear();
             wide_x.extend(r.cols.iter().map(|&c| z[c]));
@@ -592,8 +575,7 @@ impl<'a> Body<'a> {
 
     /// The rate rows over constants of a node's.
     fn rate_rows<'c>(rows: &[Row], consts: &'c [Vec<f64>]) -> Vec<Row<'c>> {
-        rows.iter().zip(consts).map(|(r, k)| Row { kid: r.kid, cols: r.cols.clone(), consts: k,
-                                                drawn: r.drawn })
+        rows.iter().zip(consts).map(|(r, k)| Row { kind: r.kind, cols: r.cols.clone(), consts: k })
             .collect()
     }
 

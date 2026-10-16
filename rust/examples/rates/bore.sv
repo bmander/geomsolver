@@ -1,11 +1,11 @@
 // A Wankel bore read off the apex's path: `housing.sv`'s front, its Cauchy data a curve the
-// drawing has rather than one written by its ordinates (#376).
+// drawing has — the apex's envelope — rather than the apex the motion carries at each node (#376).
 //
 // The motion is `wankel/wankel.sv`'s, drawn the same way: the rotor's centre `hub` rides an
 // eccentric `e` about the shaft, an apex stands `R` beyond it, and phasing gears turn the rotor a
 // third as fast as the shaft. The apex's envelope under the rotor's turn is its path — the
-// epitrochoid, which `housing.sv` writes out as e cos 3u + R cos u, e sin 3u + R sin u — and the
-// envelope's parameter is the shaft's roll, three times that eccentric angle.
+// epitrochoid e cos 3u + R cos u, e sin 3u + R sin u — and the envelope's parameter is the shaft's
+// roll, three times that eccentric angle, as `housing.sv`'s carried apex's is.
 //
 // `Bore` is `housing.sv`'s body with its Cauchy data read off the curve it is handed:
 //

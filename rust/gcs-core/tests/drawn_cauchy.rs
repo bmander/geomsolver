@@ -4,7 +4,7 @@
 //! march's sensitivities to the body's columns run through the curve's.
 //!
 //! The gate: `rates/bore.sv`, the Wankel bore read off the apex's envelope, is `housing.sv`'s
-//! written-out epitrochoid marched alike, and refused at its waist where `housing.sv`'s is;
+//! bore from the apex the motion carries, and refused at its waist where `housing.sv`'s is;
 //! `rates/pitch.sv`'s pitch curve marched from the heart cam's profile is the envelope of the
 //! roller's centre, and a drawn cam's roller larger than its hollow's radius of curvature is
 //! refused there.  Beside them a spline and a curve traced in space as Cauchy data, a contact's
@@ -54,12 +54,12 @@ fn folded(sk: &Sketch, i: usize, pieces: usize, to: f64) -> (f64, f64) {
 
 /// **The bore read off the apex's path is `housing.sv`'s.**  The envelope's parameter is the
 /// shaft's roll, three times the eccentric angle, and at every place read the front marched from
-/// it stands where the front marched from the written-out epitrochoid does — the two marches the
-/// same to rounding (4e-12), far inside either's own error from the closed form — and run past the
-/// waist's radius of curvature both are refused at the waist at the same place, on 16 pieces and
-/// on 32.
+/// it stands where the front marched from the apex the motion carries does (#377) — the two
+/// marches the same to rounding (5e-12), far inside either's own error from the closed form — and
+/// run past the waist's radius of curvature both are refused at the waist at the same place, on 16
+/// pieces and on 32.
 #[test]
-fn the_bore_read_off_the_apex_path_is_the_written_trochoids() {
+fn the_bore_read_off_the_apex_path_is_the_carried_apexs() {
     let (b, h) = (build(BORE), build(HOUSING));
     let (sb, sh) = (solved(&b), solved(&h));
     let (bore, written) = (index(&b, "bore"), index(&h, "bore"));

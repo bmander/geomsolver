@@ -4,16 +4,28 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
-**[0.131] Cauchy data on a drawn curve.** A body marched over two formals (§6.5, 0.121) may start
+**[0.132] Cauchy data on a drawn curve.** A body marched over two formals (§6.5, 0.121) may start
 its moved point on a curve the drawing has: `initially { p coincident(t == u) k }`, `k` a `curve`
 formal given a spline, a curve drawn in a held plane (a formula, a trace, an envelope) or a curve
 traced in space, `t` pinned to an expression over the formals. The body's columns are the curve's,
 so the march's sensitivities run through them. A cam's pitch curve is marched from its profile
 (`rates/pitch.sv`), its undercut the fold; the Wankel bore is read off the apex's envelope
 (`rates/bore.sv`). A body traced in space is written over curves now as well as points, lines and
-motions, and a `curve` formal of one takes a spline or a curve traced in space. Through 0.130 the
-Cauchy data were relations and expressions over the formals alone, and a curve given to a body
-traced in space was E103. (Issue #376.)
+motions, and a `curve` formal of one takes a spline or a curve traced in space. Through 0.131 the
+Cauchy data were relations and expressions over the formals and points a motion carries (0.131),
+and a curve given to a body traced in space was E103. (Issue #376.)
+
+**[0.131] A point a motion carries, in a body that states a rate.** `X coincident(under: m, t ==
+τ) x` (§9.3) is a relation without a rate in a body that states one (§6.5), over one formal or
+two: a row of the body, held everywhere, or in `initially { … }` a row of the home's alone — so
+a marched surface's Cauchy data may be a drawn point turned about an axis by the sampled formal
+(`rates/geodesic_circles.sv`'s starting circles, `p coincident(under: spin, t == u) s`) or the
+point a planar motion carries (`rates/housing.sv`'s trochoid, the apex `wankel.sv`'s rotor motion
+carries). Its rate is the row differentiated along the formal, and its sensitivities to the
+motion's axes and to the point it carries are exact. Through 0.130 such a body was E103 ("a body
+that states a rate reads no point a motion carries"), and each document wrote its starting curve
+as its ordinates. Both documents march the fronts they did, to the march's tolerance. (Issue
+#377.)
 
 **[0.130] The rate of a contact; a motion's twist read by rates.** `rate(p over t)` runs over the
 slot of the contact holding `p` (§6.5) — a curve's `t`, a traced curve's `u`, a meshing's phase,

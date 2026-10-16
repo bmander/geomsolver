@@ -43,9 +43,11 @@
 
 #[allow(unused_imports)]
 use crate::fmath::Det;
+use crate::envelope::held;
 use crate::kernels::{Kernel, KERNELS};
 use crate::ode;
 use crate::taylor::{self, Jet};
+use crate::traced::RowKind;
 
 /// The most coordinates a body that states a rate integrates.
 pub const MAX_Q: usize = 48;
@@ -65,29 +67,54 @@ const RESTARTS: usize = 8;
 
 /* -- the body ------------------------------------------------------------------------------- */
 
-/// One row of a body: a static kernel, the variable-table slot each column reads, its constants
-/// — or, `drawn`, a point on a curve the drawing has (#376: `p coincident(t == u) k` in a marched
-/// body's `initially`), whose kernel is built at its widths and read to the first order alone
-/// (`jets`), all its home's implicit-function step asks of it.
-#[derive(Clone)]
+/// One row of a body: what it states — a static kernel or, in space, a point a motion carries
+/// (#377), or in a marched body's `initially` a point on a curve the drawing has (#376) — the
+/// variable-table slot each column reads, and its constants.
+#[derive(Clone, Debug)]
 pub struct Row<'a> {
-    pub kid: usize,
+    pub kind: RowKind,
     pub cols: Vec<usize>,
     pub consts: &'a [f64],
-    pub drawn: Option<Kernel>,
-}
-
-impl std::fmt::Debug for Row<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Row").field("kernel", &self.kn().name).field("cols", &self.cols)
-            .field("consts", &self.consts).finish()
-    }
 }
 
 impl Row<'_> {
-    /// Its kernel: a drawn row's own, else the static one its id names.
-    pub(crate) fn kn(&self) -> Kernel {
-        self.drawn.unwrap_or_else(|| KERNELS[self.kid])
+    /// Its kernel at its widths.
+    pub(crate) fn kernel(&self) -> Kernel {
+        self.kind.at_widths(self.cols.len(), self.consts.len())
+    }
+
+    /// Its kernel, checked: its widths its kernel's, its columns within `width` and the buffers'
+    /// widths, and a form over jets to read its derivatives exactly by.  A point on a curve the
+    /// drawing has is read only where `cauchy` — a marched body's `initially`, whose home reads
+    /// it to the first order (#376) — and as wide as its curve.
+    pub(crate) fn checked(&self, width: usize, cauchy: bool) -> Result<Kernel, String> {
+        match self.kind {
+            RowKind::Kernel(k) => {
+                let kn = KERNELS.get(k).ok_or("no such kernel")?;
+                if !taylor::has_form(k) {
+                    return Err(format!("a body that states a rate reads its rows' derivatives \
+                                        exactly, and `{}` has no Taylor form", kn.name));
+                }
+            }
+            RowKind::Carried => {
+                let steps = held::read_steps(self.consts).ok_or("rate row shape mismatch")?;
+                if steps.is_empty() || self.cols.len() != 7 + held::steps_width(&steps) {
+                    return Err("rate row shape mismatch".into());
+                }
+            }
+            k if !cauchy => return Err(format!("a body that states a rate reads a point on {} \
+                in `initially {{ … }}` of a body marched over two formals alone",
+                if k == RowKind::Spline { "a spline" } else { "a curve the drawing has" })),
+            _ => {}
+        }
+        let kn = self.kernel();
+        if kn.n_par != self.cols.len() || kn.n_const != self.consts.len()
+            || (kn.n_par > COLS && !self.kind.drawn())
+            || kn.n_res > 8 || self.cols.iter().any(|&c| c >= width)
+        {
+            return Err("rate row shape mismatch".into());
+        }
+        Ok(kn)
     }
 }
 
@@ -111,7 +138,7 @@ pub struct Body<'a> {
 
 /// Residual rows a set of rows makes.
 pub fn n_res(rows: &[Row]) -> usize {
-    rows.iter().map(|r| r.kn().n_res).sum()
+    rows.iter().map(|r| r.kernel().n_res).sum()
 }
 
 /// Rows over plain numbers, into `out`.
@@ -119,7 +146,7 @@ pub(crate) fn residual(rows: &[Row], z: &[f64], out: &mut Vec<f64>) {
     out.clear();
     let mut x = [0.0f64; COLS];
     for r in rows {
-        let kn = r.kn();
+        let kn = r.kernel();
         let at = out.len();
         out.resize(at + kn.n_res, 0.0);
         // a drawn row is as wide as its curve (#376), read at the home alone
@@ -135,51 +162,29 @@ pub(crate) fn residual(rows: &[Row], z: &[f64], out: &mut Vec<f64>) {
     }
 }
 
-/// Rows over jets, into `out`; `false` where a row has no form.  A drawn row is read to the
-/// first order, its Jacobian along the jets' first (`first_order`): its higher orders are NaN, so
-/// nothing that reads them can take them for numbers.
+/// Rows over jets, into `out`; `false` where a row has no form.
 pub(crate) fn jets(rows: &[Row], z: &[Jet], out: &mut Vec<Jet>) -> bool {
     out.clear();
     let mut jrow = Vec::new();
     let mut v = [Jet::default(); COLS];
     for r in rows {
-        let kn = r.kn();
+        let kn = r.kernel();
         let at = out.len();
         out.resize(at + kn.n_res, Jet::default());
-        let ok = match r.drawn {
-            Some(kn) => {
-                let wide: Vec<Jet> = r.cols.iter().map(|&c| z[c]).collect();
-                first_order(&kn, &wide, r.consts, &mut out[at..])
+        let ok = if r.cols.len() > COLS {
+            let wide: Vec<Jet> = r.cols.iter().map(|&c| z[c]).collect();
+            r.kind.jets(&wide, r.consts, &mut out[at..], &mut jrow)
+        } else {
+            for (v, &c) in v.iter_mut().zip(&r.cols) {
+                *v = z[c];
             }
-            None => {
-                for (v, &c) in v.iter_mut().zip(&r.cols) {
-                    *v = z[c];
-                }
-                taylor::residual(r.kid, &v[..r.cols.len()], r.consts, &mut out[at..], &mut jrow)
-            }
+            r.kind.jets(&v[..r.cols.len()], r.consts, &mut out[at..], &mut jrow)
         };
         if !ok {
             return false;
         }
     }
     true
-}
-
-/// A row with no Taylor form over jets to the first order: its residual at the jets' values, and
-/// its Jacobian along their first order; every higher order NaN.
-fn first_order(kn: &Kernel, v: &[Jet], k: &[f64], out: &mut [Jet]) -> bool {
-    let x: Vec<f64> = v.iter().map(|j| j.0[0]).collect();
-    let (mut r, mut j) = (vec![0.0; kn.n_res], vec![0.0; kn.n_res * kn.n_par]);
-    (kn.res)(1, &x, k, &mut r);
-    kn.jac_into(&x, k, &mut j);
-    for (t, o) in out.iter_mut().enumerate() {
-        let d: f64 = (0..kn.n_par).map(|c| j[t * kn.n_par + c] * v[c].0[1]).sum();
-        let mut a = [f64::NAN; taylor::ORDER];
-        a[0] = r[t];
-        a[1] = d;
-        *o = Jet(a);
-    }
-    out.iter().all(|o| o.0[0].is_finite() && o.0[1].is_finite())
 }
 
 /// A matrix factorised with its rows scaled to unit length — by LU where it is square, by
@@ -261,16 +266,7 @@ impl<'a> Body<'a> {
         }
         for (rows, reads) in [(&self.alg, false), (&self.init, false), (&self.rate, true)] {
             for r in rows.iter() {
-                let kn = KERNELS.get(r.kid).ok_or("no such kernel")?;
-                if kn.n_par != r.cols.len() || kn.n_const != r.consts.len() || kn.n_par > COLS
-                    || kn.n_res > 8 || r.cols.iter().any(|&c| c >= width)
-                {
-                    return Err("rate row shape mismatch".into());
-                }
-                if !taylor::has_form(r.kid) {
-                    return Err(format!("a body that states a rate reads its rows' derivatives \
-                                        exactly, and `{}` has no Taylor form", kn.name));
-                }
+                r.checked(width, false)?;
                 if !reads && r.cols.iter().any(|&c| c >= self.r0()) {
                     return Err("only a rate row reads a rate".into());
                 }
@@ -320,7 +316,7 @@ impl<'a> Body<'a> {
         let mut x = [0.0f64; COLS];
         let mut jr = [0.0f64; COLS * 8];
         for r in rows {
-            let kn = r.kn();
+            let kn = r.kernel();
             for (x, &c) in x.iter_mut().zip(&r.cols) {
                 *x = z[c];
             }

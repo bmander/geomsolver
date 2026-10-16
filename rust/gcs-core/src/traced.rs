@@ -81,12 +81,35 @@ impl RowKind {
     fn kernel(self, n_par: usize, n_const: usize) -> Option<Kernel> {
         match self {
             RowKind::Kernel(k) => KERNELS.get(k).copied(),
-            RowKind::Carried => Some(screw::kernel(screw::Reading::Carried, n_par, n_const)),
-            RowKind::Spline => Some(Kernel { name: "spline_point3", n_res: 3, n_par, n_const,
-                degree: 1, res: spline_res, jac: spline_jac, const_jac: None, form: None }),
-            RowKind::Curve => Some(Kernel { name: "point_on_drawn", n_res: 3, n_par, n_const,
-                degree: 1, res: curve_res, jac: curve_jac, const_jac: None, form: None }),
-            RowKind::Traced => Some(kernel(Contact::Point, n_par, n_const)),
+            kind => Some(kind.at_widths(n_par, n_const)),
+        }
+    }
+
+    /// Its kernel at a row's widths, a static kernel's by its id (which must be one).
+    pub(crate) fn at_widths(self, n_par: usize, n_const: usize) -> Kernel {
+        match self {
+            RowKind::Kernel(k) => KERNELS[k],
+            RowKind::Carried => screw::kernel(screw::Reading::Carried, n_par, n_const),
+            RowKind::Spline => Kernel { name: "spline_point3", n_res: 3, n_par, n_const,
+                degree: 1, res: spline_res, jac: spline_jac, const_jac: None, form: None },
+            RowKind::Curve => Kernel { name: "point_on_drawn", n_res: 3, n_par, n_const,
+                degree: 1, res: curve_res, jac: curve_jac, const_jac: None, form: None },
+            RowKind::Traced => kernel(Contact::Point, n_par, n_const),
+        }
+    }
+
+    /// Its rows over jets (`v` its columns), into `r`: a static kernel's Taylor form, a carried
+    /// point's and a spline's rows read over jets as they are written, and a point on a curve
+    /// with no form to the first order (#376, `first_order`).  `false` where a row has no form or
+    /// its constants describe nothing.
+    pub(crate) fn jets(self, v: &[Jet], k: &[f64], r: &mut [Jet], jrow: &mut Vec<f64>) -> bool {
+        match self {
+            RowKind::Kernel(id) => taylor::residual(id, v, k, r, jrow),
+            RowKind::Carried => screw::rows(screw::Reading::Carried, v, k, r).is_some(),
+            RowKind::Spline => spline_jets(v, k, r).is_some(),
+            RowKind::Curve | RowKind::Traced => {
+                first_order(&self.at_widths(v.len(), k.len()), v, k, r)
+            }
         }
     }
 
@@ -127,9 +150,13 @@ pub struct Row {
 }
 
 impl Row {
-    /// How many residuals it states: none where its kernel is not one.
+    /// How many residuals it makes: its kernel's, three for a point a motion carries or a point
+    /// on a spline or a curve; none for an id no kernel has, which the encoding refuses.
     pub fn n_res(&self) -> usize {
-        self.kind.kernel(self.cols.len(), self.consts.len()).map_or(0, |k| k.n_res)
+        match self.kind {
+            RowKind::Kernel(k) => KERNELS.get(k).map_or(0, |kn| kn.n_res),
+            RowKind::Carried | RowKind::Spline | RowKind::Curve | RowKind::Traced => 3,
+        }
     }
 }
 
@@ -290,6 +317,24 @@ fn curve_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
     }
 }
 
+/// A row with no Taylor form over jets to the first order: its residual at the jets' values, and
+/// its Jacobian along their first order; every higher order NaN, so nothing that reads one can
+/// take it for a number.  All a marched body's home reads of a point on a curve (#376).
+fn first_order(kn: &Kernel, v: &[Jet], k: &[f64], out: &mut [Jet]) -> bool {
+    let x: Vec<f64> = v.iter().map(|j| j.0[0]).collect();
+    let (mut r, mut j) = (vec![0.0; kn.n_res], vec![0.0; kn.n_res * kn.n_par]);
+    (kn.res)(1, &x, k, &mut r);
+    kn.jac_into(&x, k, &mut j);
+    for (t, o) in out.iter_mut().enumerate() {
+        let d: f64 = (0..kn.n_par).map(|c| j[t * kn.n_par + c] * v[c].0[1]).sum();
+        let mut a = [f64::NAN; taylor::ORDER];
+        a[0] = r[t];
+        a[1] = d;
+        *o = Jet(a);
+    }
+    out.iter().all(|o| o.0[0].is_finite() && o.0[1].is_finite())
+}
+
 /// A compiled body, held only as its encoding — what rides in a contact's constants.  The
 /// variable table its rows index is `[formals, θ, values] ++ q ++ w`.
 #[derive(Clone, Debug, PartialEq)]
@@ -324,10 +369,6 @@ impl Body {
         if !stated && !rates.init.is_empty() {
             return Err("`initially { … }` says what holds at a home, and only a body that \
                 states a rate has one: its rates are integrated from it".into());
-        }
-        if stated && rows.iter().chain(&rates.rows).chain(&rates.init)
-            .any(|r| r.kind == RowKind::Carried) {
-            return Err("a body that states a rate reads no point a motion carries".into());
         }
         // a point on a curve the drawing has is Cauchy data (#376): read at a marched body's home
         // to the first order, and nowhere else — a spline over points in space aside, which is a
@@ -442,14 +483,13 @@ struct View<'a> {
     pieces: usize,
 }
 
-/// Rows as an integrator reads them: a rate body reads no carried point, so every row a kernel —
-/// but a point on a curve the drawing has, which a marched body's home reads (#376).
+/// Rows as an integrator reads them: a static kernel's, a point a motion carries (#377), or a
+/// point on a curve the drawing has, which a marched body's home reads (#376).
 fn rate_rows<'a>(rs: &[Decoded<'a>]) -> Vec<crate::rates::Row<'a>> {
-    rs.iter().map(|(kn, kind, cols, consts)| crate::rates::Row {
-        kid: kind.id().unwrap_or(usize::MAX),
+    rs.iter().map(|(_, kind, cols, consts)| crate::rates::Row {
+        kind: *kind,
         cols: cols.clone(),
         consts,
-        drawn: kind.drawn().then_some(*kn),
     }).collect()
 }
 
@@ -718,16 +758,8 @@ impl View<'_> {
             for (kn, kind, cols, consts) in &self.rows {
                 let v: Vec<Jet> = cols.iter().map(|&c| z[c]).collect();
                 let mut r = vec![Jet::default(); kn.n_res];
-                match kind {
-                    RowKind::Kernel(id) => {
-                        if !taylor::residual(*id, &v, consts, &mut r, &mut jrow) {
-                            return None;
-                        }
-                    }
-                    RowKind::Carried => screw::rows(screw::Reading::Carried, &v, consts, &mut r)?,
-                    RowKind::Spline => spline_jets(&v, consts, &mut r)?,
-                    // Cauchy data alone, which no body read here holds (`Body::new`)
-                    RowKind::Curve | RowKind::Traced => return None,
+                if !kind.jets(&v, consts, &mut r, &mut jrow) {
+                    return None;
                 }
                 rk.extend(r.iter().map(|j| -j.0[k]));
             }

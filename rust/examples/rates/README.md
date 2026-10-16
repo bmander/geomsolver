@@ -18,9 +18,9 @@ Read them in this order:
 | `pursuit.sv` | **Rates between moving points, and where they stop.** A dog runs at a hare twice as fast; the line between them is the direction, and where it vanishes the curve is refused: the capture. |
 | `geodesic.sv` | **In space, a rank and not a count.** A filament wound on a cone bends only toward the surface's normal; a `parallel` in space is two rows and the cone already implies one. Written in place, set off by `initially`. A straight line unrolled. |
 | `front.sv` | **Two formals: a first-order PDE.** An ellipse's points move inward at unit speed, square to the front — a law and a gauge — marched along how far it has moved, sampled along the ellipse by the method of lines; `initially` is the Cauchy data. The front is the ellipse offset, and where its least radius of curvature runs out it folds and is refused: `folded` runs it there, and `solventc` says where. A point held on the major axis is found on the surface at its place, and a claim says the surface stays in the ellipse's plane. Issue #339, item D4. |
-| `geodesic_circles.sv` | **A front on a surface.** A row over the moved point alone holds it to a sphere or a cone, and the front's normal is placed in the tangent plane. On the sphere the circles of latitude close on the antipode, where the front focuses and is refused; on the cone, unrolled, the fronts are circles about the apex. The starting circles are written by their own ordinates, the seeds are plain numbers that pick each root. Issue #370. |
-| `housing.sv` | **An offset with a design rule.** A Wankel bore is the epitrochoid's parallel curve at the apex seal's radius: the front moves outward from the curve the seal's centre runs on. Outward a front folds only where its curve is concave — at the trochoid's waist — so the seal's radius must stay below the waist's radius of curvature; run past it the march is refused there. Issue #370. |
-| `bore.sv` | **Cauchy data on a drawn curve.** `housing.sv`'s bore with its start read off the curve the drawing has — the apex's envelope under the rotor's turn, drawn as `wankel/wankel.sv` draws it — rather than written by its ordinates: `initially { p coincident(t == 3 * u) k }`, the envelope's parameter the shaft's roll. The same bore, refused at the same waist, and moved by the apex and the eccentric through the march's sensitivities. Issue #376. |
+| `geodesic_circles.sv` | **A front on a surface.** A row over the moved point alone holds it to a sphere or a cone, and the front's normal is placed in the tangent plane. On the sphere the circles of latitude close on the antipode, where the front focuses and is refused; on the cone, unrolled, the fronts are circles about the apex. The starting circle is a drawn point turned about the axis, a point a motion carries in `initially` (#377); the seeds are plain numbers that pick each root. Issue #370. |
+| `housing.sv` | **An offset with a design rule.** A Wankel bore is the epitrochoid's parallel curve at the apex seal's radius: the front moves outward from the curve the seal's centre runs on. Outward a front folds only where its curve is concave — at the trochoid's waist — so the seal's radius must stay below the waist's radius of curvature; run past it the march is refused there. The trochoid is the apex the rotor's motion carries, drawn and moved as `wankel.sv` does (#377). Issue #370. |
+| `bore.sv` | **Cauchy data on a drawn curve.** `housing.sv`'s bore with its start read off a curve the drawing has — the apex's envelope under the rotor's turn — rather than the apex the motion carries: `initially { p coincident(t == 3 * u) k }`, the envelope's parameter the shaft's roll. The same bore, refused at the same waist, and moved by the apex and the eccentric through the march's sensitivities. Issue #376. |
 | `pitch.sv` | **A pitch curve marched from a cam's profile.** The heart cam's rising profile, the envelope of its roller, marched out the roller's radius is the envelope of the roller's centre. A three-lobed cam drawn by its formula has hollows of radius 19.2: a roller of 15 follows it, one of 22 undercuts and its march is refused at the hollow — the undercut is the fold. Issue #376. |
 
 What the words are:
@@ -44,11 +44,10 @@ What the words are:
   given a spline, a curve of a held plane (a formula, a trace, an envelope) or a curve traced in
   space, `t` pinned to an expression over the formals. Only there, and only so.
 
-- **What a front cannot say yet** — its Cauchy data never read a point a motion carries, so a
-  starting circle about an axis is written by its ordinates, or drawn as a curve first; its speed
-  reads the formals and the given numbers, never its own point; and a surface is sampled on 32
-  pieces whatever its length, so a whole turn is resolved three times as coarsely as a third of
-  one (`housing.sv` and `bore.sv` march half their bore, the other half its mirror).
+- **What a front cannot say yet** — its speed reads the formals and the given numbers, never its
+  own point; and a surface is sampled on 32 pieces whatever its length, so a whole turn is
+  resolved three times as coarsely as a third of one (`housing.sv` and `bore.sv` march half their
+  bore, the other half its mirror).
 
 `solventc` says of each such curve how far it is integrated, or where it is refused. Each file's
 test is in `rust/gcs-core/tests/rate_examples.rs`, its curves against the closed forms in its
