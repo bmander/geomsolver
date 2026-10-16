@@ -368,7 +368,8 @@ steps_width` columns).  So every derivative the integrators read — the rows di
 the formal, the flow's Jacobian by polarisation, the higher orders, and the home's sensitivity to
 every `θ` column by the implicit function theorem (`lines::Body::cauchy`, `rates::Body::home`) —
 reads the carried row as it reads a kernel's, the motion's axes and the carried point among the
-columns.  A point on a spline is still refused in a rate body (`Row::checked`).  Gates:
+columns.  A point on a spline is still refused in a rate body (`Row::checked`) but as a marched body's
+Cauchy data (#376, below).  Gates:
 `tests/lines.rs` holds `geodesic_circles.sv` (each starting circle a drawn point turned about the
 axis) and `housing.sv` (the apex the rotor's motion carries) to the same documents with their
 Cauchy data written as ordinates — under 1e-11 at the home, 1e-8 at d = 70 on the sphere, a
@@ -376,6 +377,36 @@ hundredth of the error against the closed form — and a point held on the bore 
 and the motion's centres against central differences; `tests/traced_rates.rs` a helix, a point
 running up an axis carried about it in the body's rows and turned 30° in `initially`, against its
 closed form, its contact's Jacobian against differences.
+
+**Cauchy data on a drawn curve** (#376, [0.133], `program::traced::Drawn`, `Lowering::on_drawn`):
+a marched body's `initially` may hold a moved point on a curve the drawing has, `p coincident(t
+== u) k`, `k` an entity formal — `curve` takes a spline, a curve of a plane (`EntKind::Curve`: a
+formula, a trace, an envelope, a free curve) or a curve traced in space; `spline` a spline alone
+— and `t` pinned over the formals (`pinned`, a tape in `w`).  It lowers to one row of three
+residuals: a spline's `RowKind::Spline` over its control points' lifts; a curve of a plane's
+`RowKind::Curve` (`point_on_drawn`: the definition's own contact kernel at `[0, 0, t, θ…]` gives
+`−C` and its gradient, lifted through the plane's basis, which the constants carry and so must be
+held — `Sketch::plane_fixed`, E103 otherwise; a curve standing for a surface or a ring's turned
+copy is refused); a curve traced in space's `RowKind::Traced` (the `point_on_traced` contact, its
+second place a zero in `w`, its constants the curve's `consts_of`, read once it is compiled — a
+surface is refused).  The body's `θ` takes the curve's columns (`traced::columns`, `theta`,
+`lifted`: the control points' lifts, `Sketch::entity_params`, the traced curve's own), so a
+contact on the surface moves with the curve's geometry.  **These rows have no Taylor form**: they
+are Cauchy data alone (`RowKind::drawn`; `Body::new` refuses one anywhere but a two-formal body's
+`initially`, and `rates::Row::checked` where it is not told `cauchy`, as `lines::Body::plan` tells
+the initial rows alone), as wide as their curve (the integrators' row buffers give way to a
+vector past `COLS`), and the home's implicit-function step reads them **to the first order**
+(`RowKind::jets` → `first_order`: `J·v`, every higher order NaN so nothing can take one for a
+number) — all `cauchy` reads.
+A curve's constants (a trace's home and pose, an envelope's roll) are read when the body is
+compiled; its columns are live.  Any other relation reading `k`, or a point on it outside a
+marched body's `initially`, is E103 naming it.  `tests/drawn_cauchy.rs` is the gate: `rates/bore.sv`
+(the apex's envelope) marches to `housing.sv`'s (the apex the motion carries, #377) to 5e-12 and
+folds at its waist at the same place on 16 and 32 pieces; `rates/pitch.sv`'s pitch curve marched from the heart
+cam's profile is the envelope of the roller's centre to 8e-10, and a drawn three-lobed cam's
+roller of 22 is refused at its hollow (u = 60°, radius 19.2) at 17.7 / 18.3 on 16 / 32 pieces;
+a spline's front is its parallel curve, a traced circle's its concentric; a contact on the pitch
+curve has its Jacobian in the profile's columns against central differences; and the refusals.
 
 - A parametric curve (`curve.rs`) is *linear in its control points*, `C(t) = Σ Bᵢ(t) Pᵢ` (every
   B-spline).  A contact carries its own curve parameter as a `Param` slot and says

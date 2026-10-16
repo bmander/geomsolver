@@ -22,6 +22,14 @@ fn plane_columns(sk: &Sketch, p: usize) -> Vec<u32> {
     [pl.o, sk.axes[pl.u as usize].d, sk.axes[pl.v as usize].d].concat()
 }
 
+/// What a point on drawn curve `i` reads of it, wherever it is held: a contact's constants on it
+/// (`curve_consts`) — what a marched body's Cauchy data on the curve carries (#376).
+pub(crate) fn curve_contact_consts(sk: &Sketch, i: usize) -> Vec<f64> {
+    let c = Constraint::new(CKind::PointOnCurve, vec![Arg::Ent(EntRef::point(0)),
+        Arg::Ent(EntRef::new(EntKind::Curve, i)), Arg::Param(0)]);
+    c.curve_consts(sk, None).unwrap_or_default()
+}
+
 impl Constraint {
     /// The per-constraint constants the kernel needs (dimension values, chirality flags, and
     /// the local knot window of the span a curve contact sits on).

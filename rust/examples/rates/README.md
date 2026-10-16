@@ -21,6 +21,8 @@ Read them in this order:
 | `geodesic_circles.sv` | **A front on a surface.** A row over the moved point alone holds it to a sphere or a cone, and the front's normal is placed in the tangent plane. On the sphere the circles of latitude close on the antipode, where the front focuses and is refused; on the cone, unrolled, the fronts are circles about the apex. The starting circle is a drawn point turned about the axis, a point a motion carries in `initially` (#377); the seeds are plain numbers that pick each root. Issue #370. |
 | `housing.sv` | **An offset with a design rule.** A Wankel bore is the epitrochoid's parallel curve at the apex seal's radius: the front moves outward from the curve the seal's centre runs on. Outward a front folds only where its curve is concave — at the trochoid's waist — so the seal's radius must stay below the waist's radius of curvature; run past it the march is refused there. The trochoid is the apex the rotor's motion carries, drawn and moved as `wankel.sv` does (#377). Issue #370. |
 | `fisheye_fronts.sv` | **A speed that reads where the point is.** Light from a point source spreading through Maxwell's fish-eye, whose index falls off from its centre: the front moves at 1/n, and n is read at the moving point's own coordinates (`p.x`) — the eikonal equation in a graded medium. The fronts are circles (the lens is a sphere seen through a stereographic projection), and they close again on the point opposite the source, where the march is refused: the lens images perfectly. `../fisheye.sv`'s ray, a free curve, crosses every front square to it. Issue #378. |
+| `bore.sv` | **Cauchy data on a drawn curve.** `housing.sv`'s bore with its start read off a curve the drawing has — the apex's envelope under the rotor's turn — rather than the apex the motion carries: `initially { p coincident(t == 3 * u) k }`, the envelope's parameter the shaft's roll. The same bore, refused at the same waist, and moved by the apex and the eccentric through the march's sensitivities. Issue #376. |
+| `pitch.sv` | **A pitch curve marched from a cam's profile.** The heart cam's rising profile, the envelope of its roller, marched out the roller's radius is the envelope of the roller's centre. A three-lobed cam drawn by its formula has hollows of radius 19.2: a roller of 15 follows it, one of 22 undercuts and its march is refused at the hollow — the undercut is the fold. Issue #376. |
 
 What the words are:
 
@@ -43,12 +45,15 @@ What the words are:
   (`fisheye_fronts.sv`). Over two formals, in a rate row or a relation that places a point the
   rates do not move, never in `initially`.
 
-- **What a front cannot say yet** — its Cauchy data are written in `initially`, by relations,
-  expressions and points a motion carries (a starting circle a drawn point turned about an axis),
-  never read off a curve the drawing has (an envelope, a spline, another traced curve); and a
-  surface is sampled on 32 pieces whatever its length, so a whole turn is resolved three times as
-  coarsely as a third of one (`housing.sv` marches half its bore, the other half its mirror).
+- **Cauchy data on a drawn curve** — `initially { p coincident(t == u) k }`, `k` a `curve` formal
+  given a spline, a curve of a held plane (a formula, a trace, an envelope) or a curve traced in
+  space, `t` pinned to an expression over the formals. Only there, and only so.
+
+- **What a front cannot say yet** — a surface is sampled on 32 pieces whatever its length, so a
+  whole turn is resolved three times as coarsely as a third of one (`housing.sv` and `bore.sv`
+  march half their bore, the other half its mirror).
 
 `solventc` says of each such curve how far it is integrated, or where it is refused. Each file's
 test is in `rust/gcs-core/tests/rate_examples.rs`, its curves against the closed forms in its
-comments; `front.sv`'s is `rust/gcs-core/tests/lines.rs`, the method of lines' gate.
+comments; `front.sv`'s is `rust/gcs-core/tests/lines.rs`, the method of lines' gate, and `bore.sv`'s
+and `pitch.sv`'s `rust/gcs-core/tests/drawn_cauchy.rs`.

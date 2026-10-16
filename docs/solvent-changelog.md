@@ -4,6 +4,17 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.133] Cauchy data on a drawn curve.** A body marched over two formals (§6.5, 0.121) may start
+its moved point on a curve the drawing has: `initially { p coincident(t == u) k }`, `k` a `curve`
+formal given a spline, a curve drawn in a held plane (a formula, a trace, an envelope) or a curve
+traced in space, `t` pinned to an expression over the formals. The body's columns are the curve's,
+so the march's sensitivities run through them. A cam's pitch curve is marched from its profile
+(`rates/pitch.sv`), its undercut the fold; the Wankel bore is read off the apex's envelope
+(`rates/bore.sv`). A body traced in space is written over curves now as well as points, lines and
+motions, and a `curve` formal of one takes a spline or a curve traced in space. Through 0.132 the
+Cauchy data were relations and expressions over the formals and points a motion carries (0.131),
+and a curve given to a body traced in space was E103. (Issue #376.)
+
 **[0.132] A dimension that reads the body's own points.** In a body traced in space a dimension
 may read a coordinate of a point the body declares (`p.x`), not only the formals, the numbers it
 was given and the geometry it is written over (§6.5): a number the body places, held to the

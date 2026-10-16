@@ -68,8 +68,8 @@ const RESTARTS: usize = 8;
 /* -- the body ------------------------------------------------------------------------------- */
 
 /// One row of a body: what it states — a static kernel or, in space, a point a motion carries
-/// (#377) or a placed number (#378) — the variable-table slot each column reads, and its
-/// constants.
+/// (#377), a placed number (#378), or in a marched body's `initially` a point on a curve the
+/// drawing has (#376) — the variable-table slot each column reads, and its constants.
 #[derive(Clone, Debug)]
 pub struct Row<'a> {
     pub kind: RowKind,
@@ -84,8 +84,10 @@ impl Row<'_> {
     }
 
     /// Its kernel, checked: its widths its kernel's, its columns within `width` and the buffers'
-    /// widths, and a form over jets to read its derivatives exactly by.
-    pub(crate) fn checked(&self, width: usize) -> Result<Kernel, String> {
+    /// widths, and a form over jets to read its derivatives exactly by.  A point on a curve the
+    /// drawing has is read only where `cauchy` — a marched body's `initially`, whose home reads
+    /// it to the first order (#376) — and as wide as its curve.
+    pub(crate) fn checked(&self, width: usize, cauchy: bool) -> Result<Kernel, String> {
         match self.kind {
             RowKind::Kernel(k) => {
                 let kn = KERNELS.get(k).ok_or("no such kernel")?;
@@ -100,16 +102,19 @@ impl Row<'_> {
                     return Err("rate row shape mismatch".into());
                 }
             }
-            RowKind::Spline => return Err("a body that states a rate reads no point on a spline"
-                .into()),
             RowKind::Number => {
                 if !crate::traced::number_shape(self.cols.len(), self.consts) {
                     return Err("rate row shape mismatch".into());
                 }
             }
+            k if !cauchy => return Err(format!("a body that states a rate reads a point on {} \
+                in `initially {{ … }}` of a body marched over two formals alone",
+                if k == RowKind::Spline { "a spline" } else { "a curve the drawing has" })),
+            _ => {}
         }
         let kn = self.kernel();
-        if kn.n_par != self.cols.len() || kn.n_const != self.consts.len() || kn.n_par > COLS
+        if kn.n_par != self.cols.len() || kn.n_const != self.consts.len()
+            || (kn.n_par > COLS && !self.kind.drawn())
             || kn.n_res > 8 || self.cols.iter().any(|&c| c >= width)
         {
             return Err("rate row shape mismatch".into());
@@ -147,11 +152,17 @@ pub(crate) fn residual(rows: &[Row], z: &[f64], out: &mut Vec<f64>) {
     let mut x = [0.0f64; COLS];
     for r in rows {
         let kn = r.kernel();
+        let at = out.len();
+        out.resize(at + kn.n_res, 0.0);
+        // a drawn row is as wide as its curve (#376), read at the home alone
+        if r.cols.len() > COLS {
+            let wide: Vec<f64> = r.cols.iter().map(|&c| z[c]).collect();
+            (kn.res)(1, &wide, r.consts, &mut out[at..]);
+            continue;
+        }
         for (x, &c) in x.iter_mut().zip(&r.cols) {
             *x = z[c];
         }
-        let at = out.len();
-        out.resize(at + kn.n_res, 0.0);
         (kn.res)(1, &x[..r.cols.len()], r.consts, &mut out[at..]);
     }
 }
@@ -163,12 +174,18 @@ pub(crate) fn jets(rows: &[Row], z: &[Jet], out: &mut Vec<Jet>) -> bool {
     let mut v = [Jet::default(); COLS];
     for r in rows {
         let kn = r.kernel();
-        for (v, &c) in v.iter_mut().zip(&r.cols) {
-            *v = z[c];
-        }
         let at = out.len();
         out.resize(at + kn.n_res, Jet::default());
-        if !r.kind.jets(&v[..r.cols.len()], r.consts, &mut out[at..], &mut jrow) {
+        let ok = if r.cols.len() > COLS {
+            let wide: Vec<Jet> = r.cols.iter().map(|&c| z[c]).collect();
+            r.kind.jets(&wide, r.consts, &mut out[at..], &mut jrow)
+        } else {
+            for (v, &c) in v.iter_mut().zip(&r.cols) {
+                *v = z[c];
+            }
+            r.kind.jets(&v[..r.cols.len()], r.consts, &mut out[at..], &mut jrow)
+        };
+        if !ok {
             return false;
         }
     }
@@ -254,7 +271,7 @@ impl<'a> Body<'a> {
         }
         for (rows, reads) in [(&self.alg, false), (&self.init, false), (&self.rate, true)] {
             for r in rows.iter() {
-                r.checked(width)?;
+                r.checked(width, false)?;
                 if !reads && r.cols.iter().any(|&c| c >= self.r0()) {
                     return Err("only a rate row reads a rate".into());
                 }

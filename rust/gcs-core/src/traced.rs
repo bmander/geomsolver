@@ -70,6 +70,16 @@ pub enum RowKind {
     /// points is lowered to: the row it stands in reads `v` where it would read a tape over the
     /// formals alone.
     Number,
+    /// A point in space on a curve drawn in a plane (#376): `X − (o + Cₓ(t)·u + C_y(t)·v)`, its
+    /// columns `[t, θ…, X]` (`θ` the curve's own, `Sketch::entity_params`), its constants the
+    /// curve's body (`kernels::FORMULA`, `TRACE`, `ENVELOPE`, `EXTREMAL`), its plane's basis `u`,
+    /// `v`, `o`, then a contact's constants on it (`curve_res`, `curve_jac`).  It has no Taylor
+    /// form: Cauchy data of a marched body alone, which its home reads to the first order.
+    Curve,
+    /// A point on a curve traced in space (#376): the contact `point_on_traced`, its columns
+    /// `[X, t, s, θ…]` (`s` held at none), its constants the curve's (`consts_of`).  Cauchy data
+    /// alone, as `Curve` is.
+    Traced,
 }
 
 impl RowKind {
@@ -89,37 +99,54 @@ impl RowKind {
             RowKind::Spline => Kernel { name: "spline_point3", n_res: 3, n_par, n_const,
                 degree: 1, res: spline_res, jac: spline_jac, const_jac: None, form: None },
             RowKind::Number => number_kernel(n_par, n_const),
+            RowKind::Curve => Kernel { name: "point_on_drawn", n_res: 3, n_par, n_const,
+                degree: 1, res: curve_res, jac: curve_jac, const_jac: None, form: None },
+            RowKind::Traced => kernel(Contact::Point, n_par, n_const),
         }
     }
 
     /// Its rows over jets (`v` its columns), into `r`: a static kernel's Taylor form, a carried
-    /// point's, a spline's and a placed number's rows read over jets as they are written.  `false` where a row has
-    /// no form or its constants describe nothing.
+    /// point's, a spline's and a placed number's rows read over jets as they are written, and a
+    /// point on a curve with no form to the first order (#376, `first_order`).  `false` where a
+    /// row has no form or its constants describe nothing.
     pub(crate) fn jets(self, v: &[Jet], k: &[f64], r: &mut [Jet], jrow: &mut Vec<f64>) -> bool {
         match self {
             RowKind::Kernel(id) => taylor::residual(id, v, k, r, jrow),
             RowKind::Carried => screw::rows(screw::Reading::Carried, v, k, r).is_some(),
             RowKind::Spline => spline_jets(v, k, r).is_some(),
             RowKind::Number => number_jets(v, k, r).is_some(),
+            RowKind::Curve | RowKind::Traced => {
+                first_order(&self.at_widths(v.len(), k.len()), v, k, r)
+            }
         }
+    }
+
+    /// Whether it is a point on a curve the drawing has, which a marched body's `initially`
+    /// alone may read (#376).
+    pub fn drawn(self) -> bool {
+        matches!(self, RowKind::Spline | RowKind::Curve | RowKind::Traced)
     }
 
     /// Its kernel's id in `KERNELS`, where it is a static kernel's.
     pub fn id(self) -> Option<usize> {
         match self {
             RowKind::Kernel(k) => Some(k),
-            RowKind::Carried | RowKind::Spline | RowKind::Number => None,
+            RowKind::Carried | RowKind::Spline | RowKind::Number | RowKind::Curve
+            | RowKind::Traced => None,
         }
     }
 
     /// How it is written in the encoding: a kernel's id, `-1` a carried point, `-2` a point on a
-    /// spline, `-3` a placed number.
+    /// spline, `-3` a placed number, `-4` a point on a curve drawn in a plane, `-5` on a curve
+    /// traced in space.
     fn code(self) -> f64 {
         match self {
             RowKind::Kernel(k) => k as f64,
             RowKind::Carried => -1.0,
             RowKind::Spline => -2.0,
             RowKind::Number => -3.0,
+            RowKind::Curve => -4.0,
+            RowKind::Traced => -5.0,
         }
     }
 }
@@ -135,12 +162,12 @@ pub struct Row {
 
 impl Row {
     /// How many residuals it makes: its kernel's, three for a point a motion carries or a point
-    /// on a spline, one for a placed number; none for an id no kernel has, which the encoding
-    /// refuses.
+    /// on a spline or a curve, one for a placed number; none for an id no kernel has, which the
+    /// encoding refuses.
     pub fn n_res(&self) -> usize {
         match self.kind {
             RowKind::Kernel(k) => KERNELS.get(k).map_or(0, |kn| kn.n_res),
-            RowKind::Carried | RowKind::Spline => 3,
+            RowKind::Carried | RowKind::Spline | RowKind::Curve | RowKind::Traced => 3,
             RowKind::Number => 1,
         }
     }
@@ -227,6 +254,100 @@ fn spline_jets(v: &[Jet], k: &[f64], r: &mut [Jet]) -> Option<()> {
     Some(())
 }
 
+/* -- a curve drawn in a plane, read in space (#376) --------------------------------------- */
+
+/// What a point on a drawn curve's constants open with: the body's code and the plane's basis.
+const CURVE_LEAD: usize = 1 + crate::kernels::EXTRUSION_FRAME;
+
+/// The contact kernel on a drawn curve's definition a row's widths and constants name, and how
+/// many columns the curve reads: `None` where they describe none.
+fn curve_inner(n_par: usize, k: &[f64]) -> Option<(Kernel, usize)> {
+    use crate::kernels::{curve_kernel, point_on_body_kernel, ENVELOPE, EXTREMAL, FORMULA, TRACE};
+    let n_theta = n_par.checked_sub(4)?;
+    let n_const = k.len().checked_sub(CURVE_LEAD)?;
+    if n_const < 2 || !k[..CURVE_LEAD].iter().all(|x| x.is_finite()) {
+        return None;
+    }
+    let inner = match k[0] {
+        b if b == FORMULA as f64 => curve_kernel(n_theta, n_const),
+        b if [TRACE, ENVELOPE, EXTREMAL].iter().any(|&c| b == c as f64) => {
+            point_on_body_kernel(n_theta, n_const, k[0] as u8)
+        }
+        _ => return None,
+    };
+    Some((inner, n_theta))
+}
+
+/// The drawn curve's contact at `[0, 0, t, θ…]`: `−C(t)` and, where asked, its Jacobian (two rows
+/// over `[px, py, t, θ…]`).
+fn curve_at(v: &[f64], k: &[f64], jac: bool) -> Option<([f64; 2], Vec<f64>)> {
+    let (inner, n_theta) = curve_inner(v.len(), k)?;
+    let mut w = vec![0.0; 3 + n_theta];
+    w[2..].copy_from_slice(&v[..1 + n_theta]);
+    let kc = &k[CURVE_LEAD..];
+    let mut r = [0.0; 2];
+    (inner.res)(1, &w, kc, &mut r);
+    let mut j = Vec::new();
+    if jac {
+        j.resize(2 * inner.n_par, 0.0);
+        inner.jac_into(&w, kc, &mut j);
+    }
+    Some((r, j))
+}
+
+fn curve_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    let (n_par, n_const) = crate::kernels::curve_widths(n, v, k);
+    for i in 0..n {
+        let (v, k, r) = (&v[i * n_par..(i + 1) * n_par], &k[i * n_const..(i + 1) * n_const],
+                         &mut r[3 * i..3 * i + 3]);
+        let Some((m, _)) = curve_at(v, k, false) else { r.fill(f64::NAN); continue };
+        let (u, w, o) = (&k[1..4], &k[4..7], &k[7..10]);
+        let x = &v[n_par - 3..];
+        // `m` is `−C`: the point less where the curve stands in its plane
+        for t in 0..3 {
+            r[t] = x[t] - o[t] + m[0] * u[t] + m[1] * w[t];
+        }
+    }
+}
+
+fn curve_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    let (n_par, n_const) = crate::kernels::curve_widths(n, v, k);
+    for i in 0..n {
+        let (v, k) = (&v[i * n_par..(i + 1) * n_par], &k[i * n_const..(i + 1) * n_const]);
+        let j = &mut j[3 * n_par * i..3 * n_par * (i + 1)];
+        j.fill(0.0);
+        let Some((_, jm)) = curve_at(v, k, true) else { j.fill(f64::NAN); continue };
+        let (u, w) = (&k[1..4], &k[4..7]);
+        // the contact's columns are ours less the point, past its own two
+        let row1 = n_par - 1;
+        for t in 0..3 {
+            let row = &mut j[t * n_par..(t + 1) * n_par];
+            for c in 0..n_par - 3 {
+                row[c] = jm[2 + c] * u[t] + jm[row1 + 2 + c] * w[t];
+            }
+            row[n_par - 3 + t] = 1.0;
+        }
+    }
+}
+
+/// A row with no Taylor form over jets to the first order: its residual at the jets' values, and
+/// its Jacobian along their first order; every higher order NaN, so nothing that reads one can
+/// take it for a number.  All a marched body's home reads of a point on a curve (#376).
+fn first_order(kn: &Kernel, v: &[Jet], k: &[f64], out: &mut [Jet]) -> bool {
+    let x: Vec<f64> = v.iter().map(|j| j.0[0]).collect();
+    let (mut r, mut j) = (vec![0.0; kn.n_res], vec![0.0; kn.n_res * kn.n_par]);
+    (kn.res)(1, &x, k, &mut r);
+    kn.jac_into(&x, k, &mut j);
+    for (t, o) in out.iter_mut().enumerate() {
+        let d: f64 = (0..kn.n_par).map(|c| j[t * kn.n_par + c] * v[c].0[1]).sum();
+        let mut a = [f64::NAN; taylor::ORDER];
+        a[0] = r[t];
+        a[1] = d;
+        *o = Jet(a);
+    }
+    out.iter().all(|o| o.0[0].is_finite() && o.0[1].is_finite())
+}
+
 /// A compiled body, held only as its encoding — what rides in a contact's constants.  The
 /// variable table its rows index is `[formals, θ, values] ++ q ++ w`.
 #[derive(Clone, Debug, PartialEq)]
@@ -261,6 +382,19 @@ impl Body {
         if !stated && !rates.init.is_empty() {
             return Err("`initially { … }` says what holds at a home, and only a body that \
                 states a rate has one: its rates are integrated from it".into());
+        }
+        // a point on a curve the drawing has is Cauchy data (#376): read at a marched body's home
+        // to the first order, and nowhere else — a spline over points in space aside, which is a
+        // body of its own (#363 S3)
+        let misplaced = |r: &Row| match r.kind {
+            RowKind::Spline => stated,
+            k => k.drawn(),
+        };
+        let marched = stated && n_formals == 2;
+        if rows.iter().chain(&rates.rows).any(misplaced)
+            || (!marched && rates.init.iter().any(|r| r.kind.drawn())) {
+            return Err("a point on a curve the drawing has, `p coincident(t == u) k`, is Cauchy \
+                data: it is read in `initially { … }` of a body marched over two formals".into());
         }
         if !(1..=MAX_FORMALS).contains(&n_formals) || n_formals + n_theta > n_outer {
             return Err("a traced body runs over one formal or two".into());
@@ -362,8 +496,9 @@ struct View<'a> {
     pieces: usize,
 }
 
-/// Rows as an integrator reads them: a static kernel's, a point a motion carries (#377)
-/// or a placed number (#378).
+/// Rows as an integrator reads them: a static kernel's, a point a motion carries (#377), a
+/// placed number (#378), or a point on a curve the drawing has, which a marched body's home reads
+/// (#376).
 fn rate_rows<'a>(rs: &[Decoded<'a>]) -> Vec<crate::rates::Row<'a>> {
     rs.iter().map(|(_, kind, cols, consts)| crate::rates::Row {
         kind: *kind,
@@ -445,6 +580,8 @@ fn view(flat: &[f64]) -> Option<View<'_>> {
             -1.0 => RowKind::Carried,
             -2.0 => RowKind::Spline,
             -3.0 => RowKind::Number,
+            -4.0 => RowKind::Curve,
+            -5.0 => RowKind::Traced,
             _ => RowKind::Kernel(g(at)?),
         };
         let (n_cols, n_consts) = (g(at + 1)?, g(at + 2)?);
@@ -472,6 +609,16 @@ fn view(flat: &[f64]) -> Option<View<'_>> {
             }
             RowKind::Number => {
                 if !number_shape(n_cols, consts) {
+                    return None;
+                }
+            }
+            RowKind::Curve => {
+                curve_inner(n_cols, consts)?;
+            }
+            RowKind::Traced => {
+                let (_, _, inner) = parts(consts)?;
+                let iv = view(inner)?;
+                if iv.nf != 1 || n_cols != Contact::Point.lead() + PLACE + iv.n_theta {
                     return None;
                 }
             }
@@ -1264,6 +1411,9 @@ pub fn lifted(sk: &Sketch, t: &TracedE) -> Vec<usize> {
             vec![l.p1 as usize, l.p2 as usize]
         }
         EntKind::Motion => held::Moving::of_any(sk, e.i()).map(|m| m.lifted()).unwrap_or_default(),
+        // a spline's control points, and what a curve traced in space reads (#376)
+        EntKind::Spline => sk.splines[e.i()].ctrl.iter().map(|&p| p as usize).collect(),
+        EntKind::Traced => sk.traced.get(e.i()).map(|t| lifted(sk, t)).unwrap_or_default(),
         _ => Vec::new(),
     }).collect()
 }
@@ -1284,6 +1434,11 @@ pub fn columns(sk: &Sketch, t: &TracedE) -> Vec<u32> {
         EntKind::Motion => {
             held::Moving::of_any(sk, e.i()).map(|m| m.columns(sk)).unwrap_or_default()
         }
+        // a spline's control points' lifts, a drawn curve's own columns, and a curve traced in
+        // space's (#376)
+        EntKind::Spline => sk.splines[e.i()].ctrl.iter().flat_map(|&p| lift(p as usize)).collect(),
+        EntKind::Curve => sk.entity_params(*e),
+        EntKind::Traced => sk.traced.get(e.i()).map(|t| columns(sk, t)).unwrap_or_default(),
         _ => Vec::new(),
     }).collect()
 }
@@ -1299,6 +1454,13 @@ pub fn theta(sk: &Sketch, t: &TracedE) -> Vec<f64> {
         EntKind::Motion => {
             held::Moving::of_any(sk, e.i()).map(|m| m.values(sk)).unwrap_or_default()
         }
+        EntKind::Spline => {
+            sk.splines[e.i()].ctrl.iter().flat_map(|&p| sk.lifted(p as usize)).collect()
+        }
+        EntKind::Curve => {
+            sk.entity_params(*e).into_iter().map(|q| sk.params[q as usize].value).collect()
+        }
+        EntKind::Traced => sk.traced.get(e.i()).map(|t| theta(sk, t)).unwrap_or_default(),
         _ => Vec::new(),
     }).collect()
 }

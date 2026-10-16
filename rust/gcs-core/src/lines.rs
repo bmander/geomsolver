@@ -142,9 +142,10 @@ impl<'a> Body<'a> {
             return Err("a marched body runs over two intervals".into());
         }
         let width = self.width();
-        for rows in [&self.alg, &self.rate, &self.init] {
+        // a point on a curve the drawing has is Cauchy data alone (#376)
+        for (rows, cauchy) in [(&self.alg, false), (&self.rate, false), (&self.init, true)] {
             for r in rows.iter() {
-                r.checked(width)?;
+                r.checked(width, cauchy)?;
             }
         }
         let all: Vec<usize> = (0..n).collect();
@@ -237,14 +238,25 @@ fn jacobian_by(rows: &[Row], z: &[f64], n: usize, at: impl Fn(usize) -> Option<u
     let mut row = 0;
     let mut x = [0.0f64; COLS];
     let mut jr = [0.0f64; COLS * 8];
+    // a drawn row is as wide as its curve (#376), read at the home alone
+    let (mut wide_x, mut wide_jr) = (Vec::new(), Vec::new());
     for r in rows {
         let kn = r.kernel();
-        for (x, &c) in x.iter_mut().zip(&r.cols) {
-            *x = z[c];
-        }
-        let jr = &mut jr[..kn.n_res * kn.n_par];
-        jr.iter_mut().for_each(|v| *v = 0.0);
-        kn.jac_into(&x[..kn.n_par], r.consts, jr);
+        let (x, jr) = if r.cols.len() > COLS {
+            wide_x.clear();
+            wide_x.extend(r.cols.iter().map(|&c| z[c]));
+            wide_jr.clear();
+            wide_jr.resize(kn.n_res * kn.n_par, 0.0);
+            (&wide_x[..], &mut wide_jr[..])
+        } else {
+            for (x, &c) in x.iter_mut().zip(&r.cols) {
+                *x = z[c];
+            }
+            let jr = &mut jr[..kn.n_res * kn.n_par];
+            jr.iter_mut().for_each(|v| *v = 0.0);
+            (&x[..kn.n_par], jr)
+        };
+        kn.jac_into(x, r.consts, jr);
         for (c, &col) in r.cols.iter().enumerate() {
             if let Some(k) = at(col) {
                 for t in 0..kn.n_res {

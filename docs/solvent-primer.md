@@ -887,6 +887,33 @@ number the body places, solved and integrated with its points. Over two formals 
 row or a relation placing a point the rates do not move, and never in `initially`. A trace in a
 plane still reads only its formals and its geometry.
 
+**Over two formals [0.121]** a body in space is a surface **marched** along the first and sampled
+along the second (the method of lines): `front := Front(c, z1, k).p over (d in (0mm, 3mm), u in
+(0deg, 180deg))`. `initially { … }` is the Cauchy data where `d` starts, for every `u`; it may
+read a curve the drawing has **[0.133]** — `k: curve` given a spline, a curve of a held plane (a
+formula, a trace, an envelope) or a curve traced in space:
+
+```
+component Bore(c: point, z1: point, k: curve, d: Length, u: Angle) {
+  za := line(c, z1)
+  p := point hint((0, 0, 0))
+  m := point hint((0, 0, 0))
+  nl := line(p, m)
+  length(10mm) nl
+  c distance(0mm, along: za) m               // the normal, placed at every node...
+  nl perpendicular rate(p over u)            // ...square to the front
+  rate(p over d) parallel nl                 // the gauge
+  rate(p over d) distance(-1, along: nl)     // the law: unit speed, away from `nl`
+  initially {
+    p coincident(t == 3 * u) k               // starts on `k` where its parameter is 3u
+  }
+}
+```
+
+Read only there, and only as `p coincident(t == …) k`. A fold — a node's area `|x_d × x_u|` gone
+to a hundredth of its home's — is refused where it happens, which is a roller's undercut when the
+front is a cam's pitch curve marched from its profile (`rates/pitch.sv`, `rates/bore.sv`).
+
 **The ellipse** is `std.Ellipse(c: point, a: Length, b: Length, tilt: Angle, u: Angle)`:
 `e := std.Ellipse(c, a: 40, b: 25, tilt: 0deg).p over u in (0deg, 360deg)` is the rim. There is no
 `ellipse` element.
