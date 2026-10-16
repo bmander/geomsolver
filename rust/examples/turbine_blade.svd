@@ -1,0 +1,17 @@
+model m from "turbine_blade.sv"
+
+sheet blade {
+  size (420mm, 297mm)
+  label "HP TURBINE ROTOR BLADE" at (14mm, 18mm)
+  label "Circular-arc sections at hub, mean and tip / stacked on centroids / fir-tree root" at (14mm, 28mm)
+  label "SUCTION SIDE" at (30mm, 50mm)
+  label "LOOKING DOWNSTREAM" at (170mm, 50mm)
+  label "TIP" at (150mm, 222mm)
+  label "ISOMETRIC" at (280mm, 50mm)
+  view front(m.blade) from back at (75mm, 150mm) scale 2.2
+  view end(m.blade) from left at (195mm, 150mm) scale 2.2
+  view plan(m.blade) from top at (195mm, 250mm) scale 2.2
+  view iso(m.blade) from isometric at (330mm, 160mm) scale 2.2
+  style .hidden { color: #a1aab4; dash: 3 3 }
+  label "Edit the hub, mean and tip sections to redesign the airfoil." at (250mm, 270mm)
+}
