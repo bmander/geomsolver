@@ -18,14 +18,18 @@ clearance := configuration.clearance
 
 // -- the motion -------------------------------------------------------------------------------
 // Drawn in the top view, the rotor at the start of its turn: the shaft's centre, the rotor's `e`
-// from it, an apex `R` beyond that on the line of centres.
+// from it, and an apex of the rotor, riding its frame, `R` beyond that on the line of centres.
 in std.top {
   private centre := point
   centre coincident std.top.origin
   private hub := point hint((15, 0))
   hub right_of(d: e) centre
-  apex := point hint((120, 0))
-  apex right_of(d: R) hub
+}
+in (spin := frame) {
+  in std.top {
+    apex := point hint((120, 0))
+    apex right_of(d: R) hub
+  }
 }
 
 // The shaft's turn seen from the housing, backwards, and the rotor's turn about its centre
@@ -34,13 +38,12 @@ in std.top {
 // The rotor is `spin` seen from the housing, `counter`; the housing is `counter` seen from it.
 counter := frame
 std.Spin(counter, about: centre, on: std.top, ratio: -1)
-spin := frame
 std.Spin(spin, about: hub, on: std.top, ratio: -2 / 3)
 
 // -- the curves -------------------------------------------------------------------------------
 // The bore is where an apex goes over three turns of the shaft, one of the rotor; a flank is
 // where the bore touches the rotor as the housing turns about it, from one apex to the next.
-bore := envelope(apex, under: spin, seen_from: counter, from: 0deg, to: 1080deg)
+bore := envelope(apex, seen_from: counter, from: 0deg, to: 1080deg)
 flank := envelope(bore, under: counter, seen_from: spin, from: 10deg, to: 170deg)
 
 // -- the parts --------------------------------------------------------------------------------
@@ -76,6 +79,8 @@ swept cut rotor
 // A `ring` about the rotor's centre: each flank is the first turned a third of a turn, so one
 // apex, one crown and one arc are solved for. The apex stands on the line of centres; the crown
 // square across its chord from the centre (the seeds pick the side and the arc's centre beyond).
+// It is drawn in the rotor, which carries it.
+in spin {
 in std.top {
   ring 3 about hub {
     private tip := point hint(at: hub, toward: apex, by: (R - clearance) / R)
@@ -93,8 +98,9 @@ in std.top {
   hub horizontal tip[0]
   tip[0] distance(clearance, along: u) apex
 }
+}
 arc_rotor := solid(face(flank[0], flank[1], flank[2]), from: 0mm, to: W)
-arc_rotor_at := solid(arc_rotor, under: spin, seen_from: counter, at: 0deg)
+arc_rotor_at := solid(arc_rotor, seen_from: counter, at: 0deg)
 claim over spin seen_from counter in (0deg, 1080deg) {
   arc_rotor_at clear(clearance / 2) housing
 }

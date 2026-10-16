@@ -3,7 +3,12 @@
 **Status (2026-10-16): in progress**, issue #383. Stage 1 is built (`Sketch::chain`,
 `tests/frames.rs`), stage 2 (`EntKind::Frame`, `f := frame`, spec 0.134), stage 3 (joints as
 members, `std.Turn`/`Spin`/`Slide`, `seen_from:`, spec 0.135), stage 4 (riding, spec 0.136,
-[contract](contract/frames.md)) and stage 5 (joints in the solve, `std.Rolls`, spec 0.137). Stage 4
+[contract](contract/frames.md)), stage 5 (joints in the solve, `std.Rolls`, spec 0.137) and
+stage 6 as far as it reads better: `generation/rack_cut_gear.sv` draws its rack's tooth in the
+rack, `wankel/wankel.sv` its apex and its arc rotor in the rotor, and the primer's §2.11 its
+flank in the rack, each solving to the values it solved to written `under:`; where one drawn thing
+is read under several frames (the indexed copies, the housing swept seen from the rotor, the
+spiral bevel's members) `under:` stays. Stage 4
 leaves the app offering only planar frames as places to draw. Stage 5's `std.Rolls` holds one
 direction, not two (the other parts vanish for the pairs it is for), and a profile generated in
 the plane still needs its numbers stated. Two departures in stage 3: the
