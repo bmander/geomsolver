@@ -206,19 +206,23 @@ The five questions the issue left open are settled so:
    `X″`.  The same rows take the same Newton path, which matters where a solve settles something
    its rows leave free: `paths/frenet.sv`'s plane holds `u` only parallel to the line to the
    centre, so its sense is the path's (a meshing's frame reads its path a degree of the phase, as
-   its kernel did, a distance along it turned a radian's in the row).  So folding the kinds
-   changed no solved value: every document of `examples/` solves to the numbers it did on the
-   base, positions to 1e-9 mm, `phillips_pure.sv` and `contact.sv` bit for bit — but
-   `meshing_problem.sv`, to 8e-9 mm.  That is `reciprocal`'s, not the rate's: with `normal
-   reciprocal mesh` read as the distance it solves to, the document solves bit for bit as it did,
-   through the 100 iterations its solve stops at (residual 8e-13); `reciprocal` as `std.sv`'s word
-   is a carried point and its rate, four rows and three unknowns where the old kind was one row,
-   so the stalled solve stops elsewhere — within its own reach, the base's own answer moving
-   3e-7 mm between 100 iterations and 160.  A circle's or an arc's
+   its kernel did, a distance along it turned a radian's in the row).  **"No document changes
+   its solved values" means agreement to rounding**, what `tests/examples_sv.rs` holds a document
+   to — not bit for bit, which a word of `std.sv` standing for a retired kind cannot promise: its
+   rows read the same unknowns in a different order of arithmetic.  Held so against the base,
+   the 170 documents of `examples/` (#365): 167 solve bit for bit as they did; `rates/tractrix.sv`
+   differs by 4e-22 on values that are zero; `phillips.sv` in the last bit of its screw axis
+   `isa` (`isa.py` 57.6 against 57.600000000000001), which `std.Screw`'s rates now place where
+   `ScrewAxis` did; and `meshing_problem.sv` by 8e-9 mm.  That last is `reciprocal`'s, not the
+   rate's: with `normal reciprocal mesh` read as the distance it solves to, the document solves
+   bit for bit as it did, through the 100 iterations its solve stops at (residual 8e-13);
+   `reciprocal` as `std.sv`'s word is a carried point and its rate, four rows and three unknowns
+   where the old kind was one row, so the stalled solve stops elsewhere — within its own reach,
+   the base's own answer moving 3e-7 mm between 100 iterations and 160.  A circle's or an arc's
    tangent at a point (`TangentCircleAt`, `TangentLineCircleAt`, `TangentCircleAt3` in space, the
    radius square to the line, a degree-2 polynomial) stays its own kind: a point on a round owns
-   no slot, and the closed form is cheaper and better scaled than a velocity.  What a source has no frame for is refused (`validate_rate`):
-   a curve's normal, an envelope's rate.
+   no slot, and the closed form is cheaper and better scaled than a velocity.  What a source has
+   no frame for is refused (`validate_rate`): a curve's normal, an envelope's rate.
 3. **Second order is the frame's, not a second rate.**  A curve's centre of curvature reads the
    frame's second rate in its slot (`Frame::accel`, a traced curve's `X″`); a section's curvature
    reads the frame's second fundamental form, which each surface source gives (a traced surface's

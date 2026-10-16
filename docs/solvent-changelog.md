@@ -26,7 +26,10 @@ library says them with rates of carried points — `L reciprocal m` (import it, 
 claimed word makes what it declares all the same: the `coincident` placing it is stated, the rest
 judged. `screw(pitch == …)` is `std.Screw(isa, m, pitch: …)`; a twist is read of any motion, a
 relative of a relative too. Through 0.129 the twist was read by two relation words of its own and
-a rate ran only along a running formal. (Issue #365.)
+a rate ran only along a running formal. Every example solves to the values it did, to
+rounding: bit for bit but `phillips.sv`'s screw axis (its last bit), `meshing_problem.sv`
+(8e-9 mm, a solve that stops at its iteration limit, through `reciprocal`) and zeros at 4e-22.
+(Issue #365.)
 
 **[0.129] An arc walked from its end.** A chain may enter an arc at its end and walk it to its
 start, `-> tangent (k3 := arc(center: c2, start: f, end: e)) ->` entered at `e`, or the arc named
