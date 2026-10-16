@@ -160,7 +160,7 @@ other rows (`program::traced::Lowering::rate_relation`, `rated` keyed by point a
 curves.md's "The method of lines" says what it may read.  A rate to the right of its word, `nl
 perpendicular rate(p over u)`, is a relation, not a chain's link (`parser::chains::chain_starts`
 looks past the word for `rate(`).
-**A dimension that reads the body's own points** (§6.5 [0.131], #378) is written as any other:
+**A dimension that reads the body's own points** (§6.5 [0.132], #378) is written as any other:
 the symbolic expansion keeps a dotted name in a trace as text (`note_dim_reads` sets nothing aside
 there), and a body traced in space resolves `p.x` against the points it declares where it lowers
 the dimension (`program::traced::Lowering::dimension`); curves.md's "A number the body places"

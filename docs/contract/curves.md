@@ -322,7 +322,7 @@ pieces do not always bring it nearer: where a front closes on a point or a conca
 is not monotone in the pieces (the antipode 78.06 / 78.25 / 78.17 on 16 / 32 / 64, the waist
 14.52 / 13.72 / 13.92), so these gates bound it from below rather than hold it to converge.
 
-**A number the body places (#378, [0.131], `traced::RowKind::Number`):** a dimension of a body
+**A number the body places (#378, [0.132], `traced::RowKind::Number`):** a dimension of a body
 traced in space that reads a coordinate of a point the body declares (`p.x`) is not a tape of `w`
 — `w` is read over the outer variables alone, everywhere — but **one more coordinate of `q`**, held
 to the expression by a row of the body's algebraic rows: `v − f(x…)`, its columns `[v, x…]` (`x`
@@ -339,12 +339,12 @@ is), over one formal a coordinate of the state integrated through its row differ
 more row of `M`, so a speed `x/L` along a line is `x₀e^{s/L}`), over two formals a **placed**
 coordinate (`A`: no rate row reads its rate), solved at every node with the rest of `A` and
 differentiated by the implicit function theorem in the variational equations.  `rates::Row`
-carries it as `kid == rates::NUMBER`, its kernel built at its widths (`Row::kernel`, `n_res`,
-`has_form`, `jets`; its shape judged once, as the body is read, by `Row::checked`), so `rates.rs`
-and `lines.rs` read rows through those and never index `KERNELS` by a row's `kid`.  Over two formals
-`initially` cannot read one (it is the Cauchy data `A` is placed after) and a relation reading one
-must place another placed point or be a rate row (`Lowering::marched`: a row over moved points
-alone with a number would be placed and differentiated at once), each **E103**.
+carries it as its `RowKind` (#377, below): `RowKind::at_widths` its kernel at the row's widths,
+`RowKind::jets` its row over jets, `Row::checked` its shape (`number_shape`), judged once as the
+body is read.  Over two formals `initially` cannot read one (it is the Cauchy data `A` is placed
+after) and a relation reading one must place another placed point or be a rate row
+(`Lowering::marched`: a row over moved points alone with a number would be placed and
+differentiated at once), each **E103**.
 `tests/placed_numbers.rs` is the gate: a speed along a line growing as its distance (the
 exponential, a held point at `L ln 3`, its contact's Jacobian), a saddle curve with no rate (point,
 tangent and a tangent line exact), the fish-eye's front holding a point at the closed form's
@@ -356,6 +356,26 @@ its normal, from the closed form's circle at `s = 2` — every front the circle 
 past the line `x = 0` where the circle turns inside out; refused at 155.2, short of the source's
 conjugate at `πR` = 157.08 where the fronts refocus; and `fisheye.sv`'s free-curve ray crossing
 every front square to it (1e-6), at the optical length the closed form gives its point.
+
+**A point a motion carries, in a body that states a rate (#377, [0.131]):** `X coincident(under:
+m, t == τ) x` is a row like any of a rate body's, over one formal or two: `program::traced`'s
+`Lowering::carried` pushes it where its statement is (the body's rows or `initially`'s), and
+`rates::Row` carries a `traced::RowKind` rather than a kernel id — `RowKind::at_widths` its
+kernel (`screw::kernel` at the row's widths), `RowKind::jets` its rows over jets (`screw::rows`
+written once over `Num`, so the carried point's Taylor form is the row itself, exact to every
+order), `Row::checked` the shape both integrators check (the motion's steps read back, `7 +
+steps_width` columns).  So every derivative the integrators read — the rows differentiated along
+the formal, the flow's Jacobian by polarisation, the higher orders, and the home's sensitivity to
+every `θ` column by the implicit function theorem (`lines::Body::cauchy`, `rates::Body::home`) —
+reads the carried row as it reads a kernel's, the motion's axes and the carried point among the
+columns.  A point on a spline is still refused in a rate body (`Row::checked`).  Gates:
+`tests/lines.rs` holds `geodesic_circles.sv` (each starting circle a drawn point turned about the
+axis) and `housing.sv` (the apex the rotor's motion carries) to the same documents with their
+Cauchy data written as ordinates — under 1e-11 at the home, 1e-8 at d = 70 on the sphere, a
+hundredth of the error against the closed form — and a point held on the bore exact in the apex
+and the motion's centres against central differences; `tests/traced_rates.rs` a helix, a point
+running up an axis carried about it in the body's rows and turned 30° in `initially`, against its
+closed form, its contact's Jacobian against differences.
 
 - A parametric curve (`curve.rs`) is *linear in its control points*, `C(t) = Σ Bᵢ(t) Pᵢ` (every
   B-spline).  A contact carries its own curve parameter as a `Param` slot and says

@@ -77,10 +77,30 @@ impl RowKind {
     fn kernel(self, n_par: usize, n_const: usize) -> Option<Kernel> {
         match self {
             RowKind::Kernel(k) => KERNELS.get(k).copied(),
-            RowKind::Carried => Some(screw::kernel(screw::Reading::Carried, n_par, n_const)),
-            RowKind::Spline => Some(Kernel { name: "spline_point3", n_res: 3, n_par, n_const,
-                degree: 1, res: spline_res, jac: spline_jac, const_jac: None, form: None }),
-            RowKind::Number => Some(number_kernel(n_par, n_const)),
+            kind => Some(kind.at_widths(n_par, n_const)),
+        }
+    }
+
+    /// Its kernel at a row's widths, a static kernel's by its id (which must be one).
+    pub(crate) fn at_widths(self, n_par: usize, n_const: usize) -> Kernel {
+        match self {
+            RowKind::Kernel(k) => KERNELS[k],
+            RowKind::Carried => screw::kernel(screw::Reading::Carried, n_par, n_const),
+            RowKind::Spline => Kernel { name: "spline_point3", n_res: 3, n_par, n_const,
+                degree: 1, res: spline_res, jac: spline_jac, const_jac: None, form: None },
+            RowKind::Number => number_kernel(n_par, n_const),
+        }
+    }
+
+    /// Its rows over jets (`v` its columns), into `r`: a static kernel's Taylor form, a carried
+    /// point's, a spline's and a placed number's rows read over jets as they are written.  `false` where a row has
+    /// no form or its constants describe nothing.
+    pub(crate) fn jets(self, v: &[Jet], k: &[f64], r: &mut [Jet], jrow: &mut Vec<f64>) -> bool {
+        match self {
+            RowKind::Kernel(id) => taylor::residual(id, v, k, r, jrow),
+            RowKind::Carried => screw::rows(screw::Reading::Carried, v, k, r).is_some(),
+            RowKind::Spline => spline_jets(v, k, r).is_some(),
+            RowKind::Number => number_jets(v, k, r).is_some(),
         }
     }
 
@@ -90,21 +110,6 @@ impl RowKind {
             RowKind::Kernel(k) => Some(k),
             RowKind::Carried | RowKind::Spline | RowKind::Number => None,
         }
-    }
-
-    /// The residual rows it states.
-    pub fn n_res(self) -> usize {
-        match self {
-            RowKind::Kernel(k) => KERNELS.get(k).map_or(0, |kn| kn.n_res),
-            RowKind::Carried | RowKind::Spline => 3,
-            RowKind::Number => 1,
-        }
-    }
-
-    /// Whether an integrator reads it (`rates.rs`, `lines.rs`): a static kernel or a placed
-    /// number, never a carried point or a spline.
-    pub fn integrable(self) -> bool {
-        matches!(self, RowKind::Kernel(_) | RowKind::Number)
     }
 
     /// How it is written in the encoding: a kernel's id, `-1` a carried point, `-2` a point on a
@@ -126,6 +131,19 @@ pub struct Row {
     pub kind: RowKind,
     pub cols: Vec<u32>,
     pub consts: Vec<f64>,
+}
+
+impl Row {
+    /// How many residuals it makes: its kernel's, three for a point a motion carries or a point
+    /// on a spline, one for a placed number; none for an id no kernel has, which the encoding
+    /// refuses.
+    pub fn n_res(&self) -> usize {
+        match self.kind {
+            RowKind::Kernel(k) => KERNELS.get(k).map_or(0, |kn| kn.n_res),
+            RowKind::Carried | RowKind::Spline => 3,
+            RowKind::Number => 1,
+        }
+    }
 }
 
 /* -- a spline over points in space -------------------------------------------------------- */
@@ -244,10 +262,6 @@ impl Body {
             return Err("`initially { … }` says what holds at a home, and only a body that \
                 states a rate has one: its rates are integrated from it".into());
         }
-        if stated && rows.iter().chain(&rates.rows).chain(&rates.init)
-            .any(|r| !r.kind.integrable()) {
-            return Err("a body that states a rate reads no point a motion carries".into());
-        }
         if !(1..=MAX_FORMALS).contains(&n_formals) || n_formals + n_theta > n_outer {
             return Err("a traced body runs over one formal or two".into());
         }
@@ -348,14 +362,11 @@ struct View<'a> {
     pieces: usize,
 }
 
-/// Rows as an integrator reads them: a rate body reads no carried point, so every row a kernel
-/// or a placed number.
+/// Rows as an integrator reads them: a static kernel's, a point a motion carries (#377)
+/// or a placed number (#378).
 fn rate_rows<'a>(rs: &[Decoded<'a>]) -> Vec<crate::rates::Row<'a>> {
     rs.iter().map(|(_, kind, cols, consts)| crate::rates::Row {
-        kid: match kind {
-            RowKind::Number => crate::rates::NUMBER,
-            k => k.id().unwrap_or(usize::MAX),
-        },
+        kind: *kind,
         cols: cols.clone(),
         consts,
     }).collect()
@@ -659,15 +670,8 @@ impl View<'_> {
             for (kn, kind, cols, consts) in &self.rows {
                 let v: Vec<Jet> = cols.iter().map(|&c| z[c]).collect();
                 let mut r = vec![Jet::default(); kn.n_res];
-                match kind {
-                    RowKind::Kernel(id) => {
-                        if !taylor::residual(*id, &v, consts, &mut r, &mut jrow) {
-                            return None;
-                        }
-                    }
-                    RowKind::Carried => screw::rows(screw::Reading::Carried, &v, consts, &mut r)?,
-                    RowKind::Spline => spline_jets(&v, consts, &mut r)?,
-                    RowKind::Number => number_jets(&v, consts, &mut r)?,
+                if !kind.jets(&v, consts, &mut r, &mut jrow) {
+                    return None;
                 }
                 rk.extend(r.iter().map(|j| -j.0[k]));
             }
