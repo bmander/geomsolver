@@ -110,8 +110,44 @@ pub fn seed_param(sk: &Sketch, kind: CKind, args: &[Arg], i: usize) -> f64 {
             let (px, py) = sk.on_view_sheet(sk.world_point(args[0].ent().i()), view);
             arc_fraction((py - cy).datan2(px - cx), a0, a1 - a0)
         }
+        // a point a motion carries starts at the roll that carries its point nearest where it
+        // stands (#365), as a point on a curve starts where the curve passes nearest it: at roll
+        // 0 it starts on the point carried, which can be as far from the roll drawn as from its
+        // mirror — a rolling circle's point seen 50 out starts halfway between the epicycloid's
+        // two places there, and a whole solve holding it to the path too settles between them
+        // as readily as on the one drawn
+        (CKind::CarriedPoint, 3) => carried_roll(sk, args).unwrap_or(0.0),
         _ => 0.0,
     }
+}
+
+/// How many rolls over a whole turn a carried point's seed is sampled at (`carried_roll`).
+const ROLL_SAMPLES: usize = 720;
+
+/// The roll, in degrees within half a turn of 0, at which motion `args[2]` carries point
+/// `args[1]` nearest where `args[0]` stands, sampled `ROLL_SAMPLES` times over the turn — 0
+/// where no roll sampled is nearer.  `None` where the solve reads no such motion.
+fn carried_roll(sk: &Sketch, args: &[Arg]) -> Option<f64> {
+    use crate::envelope::held::{carried, Moving};
+    let (Some(Arg::Ent(p)), Some(Arg::Ent(q)), Some(Arg::Ent(m))) =
+        (args.first(), args.get(1), args.get(2)) else { return None };
+    let moving = Moving::of_any(sk, m.i()).ok()?;
+    let values = moving.values(sk);
+    let (at, x) = (sk.lifted(p.i()), sk.lifted(q.i()));
+    let gap = |deg: f64| {
+        carried(&moving.steps, &values, deg.to_radians(), x)
+            .map_or(f64::INFINITY, |(w, _)| crate::space::norm(crate::space::sub(w, at)))
+    };
+    let step = 360.0 / ROLL_SAMPLES as f64;
+    let (mut best, mut near) = (0.0, gap(0.0));
+    for k in 0..=ROLL_SAMPLES {
+        let t = -180.0 + k as f64 * step;
+        let g = gap(t);
+        if g < near {
+            (best, near) = (t, g);
+        }
+    }
+    near.is_finite().then_some(best)
 }
 
 /// **An arc's fraction is on the arc** (#248): its turn from `start` to `end` is all there is of

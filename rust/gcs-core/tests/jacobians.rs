@@ -515,15 +515,16 @@ fix((0, 30, 0)) a
 fix((10, 30, 2)) b
 gear_ax := line(a, b)
 cone := std.Cone(ax, half: hint(20deg))
-spin := motion(about: ax)
-gear_turn := motion(about: gear_ax, ratio: -0.5, advance: 2mm)
-mesh := motion(spin, relative_to: gear_turn)
-flank := envelope(cone, under: mesh, from: -30deg, to: 30deg)
+spin := frame
+std.Turn(spin, about: ax, ratio: 1)
+gear_turn := frame
+std.Turn(gear_turn, about: gear_ax, ratio: -0.5, advance: 2mm)
+flank := envelope(cone, under: spin, seen_from: gear_turn, from: -30deg, to: 30deg)
 c1 := point hint((30, 0, -5))
 c2 := point hint((31, 1, 5))
 cax := line(c1, c2)
 cyl := std.Cylinder(cax, r: hint(5mm))
-f2 := envelope(cyl, under: mesh, from: -30deg, to: 30deg)
+f2 := envelope(cyl, under: spin, seen_from: gear_turn, from: -30deg, to: 30deg)
 in std.front {
   e1 := point hint((6, 2))
   e2 := point hint((9, 7))
@@ -543,8 +544,8 @@ blade := solid(face(l1, l2, l3, l4), about: std.z)
 ring := solid(face(rim), about: rax)
 side := surface(blade, l1)
 round := surface(ring, rim)
-f3 := envelope(side, under: mesh, from: -30deg, to: 30deg)
-f4 := envelope(round, under: mesh, from: -30deg, to: 30deg)
+f3 := envelope(side, under: spin, seen_from: gear_turn, from: -30deg, to: 30deg)
+f4 := envelope(round, under: spin, seen_from: gear_turn, from: -30deg, to: 30deg)
 p := point hint((9, 3, 1))
 p coincident flank
 r := point hint((26, 2, 1))
@@ -621,16 +622,16 @@ fix((0, 30, 0)) a
 fix((10, 30, 2)) b
 gear_ax := line(a, b)
 cone := std.Cone(ax, half: hint(20deg))
-spin := motion(about: ax)
-gear_turn := motion(about: gear_ax, ratio: -0.5, advance: 2mm)
-mesh := motion(gear_turn, relative_to: spin)
-back := motion(spin, relative_to: gear_turn)
+spin := frame
+std.Turn(spin, about: ax, ratio: 1)
+gear_turn := frame
+std.Turn(gear_turn, about: gear_ax, ratio: -0.5, advance: 2mm)
 c1 := point hint((30, 0, -5))
 c2 := point hint((31, 1, 5))
 cax := line(c1, c2)
 cyl := std.Cylinder(cax, r: hint(5mm))
-pinion_flank := envelope(cyl, under: back, from: -30deg, to: 30deg)
-gear_flank := envelope(cone, under: mesh, from: -30deg, to: 30deg)
+pinion_flank := envelope(cyl, under: spin, seen_from: gear_turn, from: -30deg, to: 30deg)
+gear_flank := envelope(cone, under: gear_turn, seen_from: spin, from: -30deg, to: 30deg)
 in std.front {
   rc := point hint((20, 4))
   rim := circle(center: rc) hint(r: 2)
@@ -640,9 +641,12 @@ in std.front {
 }
 ring := solid(face(rim), about: rax)
 round := surface(ring, rim)
-formed := meshing(pinion_flank, cone, under: mesh, from: -20deg, to: 20deg)
-rounded := meshing(pinion_flank, round, under: mesh, from: -20deg, to: 20deg)
-both := meshing(pinion_flank, gear_flank, under: mesh, from: -20deg, to: 20deg)
+formed := meshing(pinion_flank, cone, under: gear_turn, seen_from: spin, from: -20deg,
+                  to: 20deg)
+rounded := meshing(pinion_flank, round, under: gear_turn, seen_from: spin, from: -20deg,
+                   to: 20deg)
+both := meshing(pinion_flank, gear_flank, under: gear_turn, seen_from: spin, from: -20deg,
+                to: 20deg)
 p := point hint((9, 3, 1))
 p coincident(t == 5deg) formed
 r := point hint((20, 3, 4))
@@ -662,10 +666,10 @@ param kp: Scalar hint(0.02)
 e0 := point hint((8, 2, 2))
 e1 := point hint((9, 3, 5))
 el := line(e0, e1)
-eased := meshing(pinion_flank, cone, under: mesh, from: -20deg, to: 20deg, ease: e0, along: el,
-                 profile: kp / 1mm, lengthwise: -0.01 / 1mm)
-standing := meshing(round, cone, under: mesh, from: -20deg, to: 20deg, ease: e1, along: el,
-                    profile: 0.03 / 1mm, lengthwise: kp / 1mm)
+eased := meshing(pinion_flank, cone, under: gear_turn, seen_from: spin, from: -20deg, to: 20deg,
+                 ease: e0, along: el, profile: kp / 1mm, lengthwise: -0.01 / 1mm)
+standing := meshing(round, cone, under: gear_turn, seen_from: spin, from: -20deg, to: 20deg,
+                    ease: e1, along: el, profile: 0.03 / 1mm, lengthwise: kp / 1mm)
 u := point hint((9, 3, 2))
 u coincident(t == 3deg) eased
 w := point hint((19, 3, 4))
@@ -722,39 +726,41 @@ gear_ax := line(a, b)
 s1 := point hint((2, 3, 4))
 s2 := point hint((5, 1, 9))
 rail := line(s1, s2)
-spin := motion(about: ax)
-gear_turn := motion(about: gear_ax, ratio: -0.5, advance: 2mm)
-mesh := motion(gear_turn, relative_to: spin)
-slide := motion(along: rail, advance: 40mm)
-rack := motion(slide, relative_to: spin)
+spin := frame
+std.Turn(spin, about: ax, ratio: 1)
+gear_turn := frame
+std.Turn(gear_turn, about: gear_ax, ratio: -0.5, advance: 2mm)
+slide := frame
+std.Slide(slide, along: rail, advance: 40mm)
+rest := frame
 l1 := point hint((3, 20, 1))
 l2 := point hint((9, 24, -4))
 L := line(l1, l2)
-L reciprocal mesh
-L reciprocal rack
+L reciprocal(seen_from: spin) gear_turn
+L reciprocal(seen_from: spin) slide
 k1 := point hint((-3, 8, 2))
 k2 := point hint((4, 6, 1))
 K := line(k1, k2)
-K reciprocal gear_turn
+K reciprocal(seen_from: rest) gear_turn
 isa := axis hint(dir: (0.3, -0.2, 0.9))
-sa := std.Screw(isa, mesh)
+sa := std.Screw(isa, gear_turn, seen_from: spin)
 jsa := axis hint(dir: (0.1, 0.9, 0.2))
-sb := std.Screw(jsa, rack)
+sb := std.Screw(jsa, slide, seen_from: spin)
 ksa := axis hint(dir: (0.8, 0.1, -0.5))
 sc := std.Screw(ksa, gear_turn, pitch: 3mm)
 x := point hint((3, -2, 5))
 X := point hint((1, 1, 1))
-X coincident(under: mesh, t == 20) x
+X coincident(under: gear_turn, seen_from: spin, t == 20) x
 Y := point hint((2, 1, 0))
-Y coincident(under: rack) x
+Y coincident(under: slide, seen_from: spin) x
 in std.top {
   o2 := point hint((1, 2))
   q2 := point hint((7, 3))
 }
-twirl := motion(about: o2, ratio: 0.7)
-roll := motion(twirl, relative_to: spin)
+twirl := frame
+std.Spin(twirl, about: o2, on: std.top, ratio: 0.7)
 Z := point hint((0, 4, 1))
-Z coincident(under: roll, t == -35) q2
+Z coincident(under: twirl, seen_from: spin, t == -35) q2
 ";
     let (prog, errs) = crate::common::parse(SRC);
     assert!(errs.is_empty(), "{errs:?}");
@@ -812,14 +818,17 @@ fn regularity_agrees_with_finite_differences() {
 fn a_point_carried_by_a_chain_agrees_with_finite_differences() {
     const SRC: &str = "\
 unit mm
+use std
 o := point hint((0, 0, 0))
 z := point hint((1, 0.5, 10))
 shaft := line(o, z)
 a := point hint((0, 30, 0))
 b := point hint((10, 30, 2))
 pin := line(a, b)
-arm := motion(about: shaft, ratio: 0.8, advance: 2mm)
-planet := motion(about: pin, ratio: -2.5)
+arm := frame
+std.Turn(arm, about: shaft, ratio: 0.8, advance: 2mm)
+planet := frame
+std.Turn(planet, about: pin, ratio: -2.5)
 x := point hint((3, -2, 5))
 X := point hint((1, 1, 1))
 ";

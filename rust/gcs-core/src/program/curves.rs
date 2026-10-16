@@ -1102,7 +1102,7 @@ pub(super) fn build_curve(
 ) -> Option<EntRef> {
     // a body traced in space is no curve of a plane (#326): built as what it is — over two
     // formals or a motion, compiled once the motions are built (`traced::traced_bodies`)
-    if super::traced::in_space_traced(res, d, insts) {
+    if super::traced::in_space_traced(sk, res, d, insts) {
         sk.traced.push(super::traced::placeholder(d));
         return Some(EntRef::new(EntKind::Traced, sk.traced.len() - 1));
     }

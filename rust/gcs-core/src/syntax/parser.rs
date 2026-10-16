@@ -83,6 +83,10 @@ struct P<'a> {
     in_preview: bool,
 }
 
+/// `relative_to:` where a reading is written, retired (#383) for the reading's own observer.
+const RELATIVE_TO: &str = "`relative_to:` is retired (#383): a reading names the frame it is \
+    seen from beside the one it is under, `under: a, seen_from: b`";
+
 /// Parse as much geometry as possible, reporting errors and resuming at statement terminators.
 pub fn parse(src: &str) -> (Program, Vec<SynErr>) {
     parse_with_limits(src, ParseLimits::default())

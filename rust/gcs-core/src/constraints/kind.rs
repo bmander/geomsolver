@@ -1050,6 +1050,9 @@ impl CKind {
                 ("origin.x", S::Param),
                 ("origin.y", S::Param),
                 ("origin.z", S::Param),
+                // a frame's joint, its turn a radian of the roll and its advance a turn (#383)
+                ("ratio", S::Param),
+                ("advance", S::Param),
             ],
             // the predicate is about the triangle, so all three stand in the parentheses
             CKind::Ccw | CKind::Cw => &[("a", S::Point), ("b", S::Point), ("c", S::Point)],

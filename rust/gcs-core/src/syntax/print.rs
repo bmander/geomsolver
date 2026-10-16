@@ -508,24 +508,9 @@ pub(crate) fn decl_args(d: &Decl) -> String {
             parts.push(format!("lengthwise: {}",dim(&x.lengthwise)));
         }
     }
-    if let Some(motion) = &d.motion {
-        use super::MotionSpec;
-        match motion {
-            MotionSpec::Rotation {axis,ratio,phase,advance} => {
-                parts.push(format!("about: {}",super::ref_text(axis)));
-                if let Some(a) = ratio { parts.push(format!("ratio: {}",dim(a))); }
-                if let Some(a) = phase { parts.push(format!("phase: {}",dim(a))); }
-                if let Some(a) = advance { parts.push(format!("advance: {}",dim(a))); }
-            }
-            MotionSpec::Translation {axis,advance} => {
-                parts.push(format!("along: {}",super::ref_text(axis)));
-                parts.push(format!("advance: {}",dim(advance)));
-            }
-            MotionSpec::Relative {source,observer} => {
-                parts.push(super::ref_text(source));
-                parts.push(format!("relative_to: {}",super::ref_text(observer)));
-            }
-        }
+    // the frame a motion is seen from, beside its `under:` (#383)
+    if let Some(g) = &d.seen_from {
+        parts.push(format!("seen_from: {}", super::ref_text(g)));
     }
     // and a face's loop seals last, where it was written (§6.8)
     if d.close.is_some() {

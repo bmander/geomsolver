@@ -88,6 +88,12 @@ fn program_signed(sk: &Sketch, m: usize, inverse: bool, steps: &mut Vec<Step>, a
         MotionDef::Inverse { of } => {
             program_signed(sk, of as usize, !inverse, steps, args, values, shape, depth + 1)?;
         }
+        MotionDef::Joint { .. } => {
+            return Err(format!("`{}`'s joint turns about an axis no centre of a view holds: a tool \
+                                of the sheet is carried by a turn in its view, `std.Spin(f, \
+                                about: o, on: P, ratio: r)`, or a slide along a drawn line, \
+                                `std.Slide`", me.name))
+        }
         MotionDef::Rotation { .. } => {
             return Err(format!("`{}` turns about a line in space: a tool of the sheet is carried \
                                 by a turn about a point of its view (a surface's envelope is \
@@ -235,10 +241,11 @@ pub(super) fn planar_envelopes(sk: &mut Sketch, res: &mut Resolver, map: &mut So
             _ => continue,
         };
         made.insert(st.id);
-        let motion_ref = operand(1);
-        let built = match motion_ref {
-            Some(Ok(e)) if e.kind == EntKind::Motion && e.i() < sk.motions.len() => profile(sk, d, tool, e.i()),
-            _ => Err("an envelope is generated `under:` a motion".into()),
+        // the frame it is generated under, seen from the one named (#383)
+        let built = match d.children.get(1).map(Vec::as_slice) {
+            Some([Kid::Ref(r)]) => super::motions::reading(sk, res, r, d.seen_from.as_ref())
+                .and_then(|m| profile(sk, d, tool, m)),
+            _ => Err("an envelope is generated `under:` a frame".into()),
         };
         bind(sk, res, map, st, d, built, diags);
     }
@@ -294,11 +301,15 @@ pub(super) fn extruded_envelopes(sk: &mut Sketch, res: &mut Resolver, map: &mut 
             (sd.children.first().map(Vec::as_slice), sd.children.get(1).map(Vec::as_slice)) else { continue };
         let prism = decl(&solid.root.text).is_some_and(|x| x.kind == EntKind::Solid && solid.path.is_empty()
             && matches!(x.sweep, Some(crate::syntax::Sweep::Depth { .. } | crate::syntax::Sweep::Prism { .. })));
+        if !prism {
+            continue;
+        }
         let motion = match d.children.get(1).map(Vec::as_slice) {
-            Some([Kid::Ref(r)]) => res.lookup(r).filter(|e| e.kind == EntKind::Motion && e.i() < sk.motions.len()),
+            Some([Kid::Ref(r)]) => super::motions::reading(sk, res, r, d.seen_from.as_ref()).ok()
+                .map(|m| EntRef::new(EntKind::Motion, m)),
             _ => None,
         };
-        let (true, Some(motion)) = (prism, motion) else { continue };
+        let Some(motion) = motion else { continue };
         // a turn about a line in space keeps no view: the spatial envelope's, after the solve
         if program(sk, motion.i(), &mut Vec::new(), &mut Vec::new(), &mut Vec::new(), &mut String::new(), 0).is_err() {
             continue;

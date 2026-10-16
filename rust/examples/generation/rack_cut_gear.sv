@@ -61,10 +61,14 @@ in std.front {
 tooth := face(t0, t1, t2, t3, -> close)
 construction rack_tooth := solid(tooth, from: -width - 2mm, to: 2mm)
 
-turn := motion(about: o, ratio: 1)
-rack := motion(along: slide, advance: 2 * pi * rp)
-cutting := motion(rack, relative_to: turn)
-construction space := solid(rack_tooth, under: cutting, through: gear)
+// The blank turns in the front view about its centre, and the rack slides along its pitch line
+// a pitch circle's turn a turn: the rack rolls on the pitch circle.  What it cuts is the rack seen
+// from the blank.
+turn := frame
+std.Spin(turn, about: o, on: std.front, ratio: 1)
+rack := frame
+std.Slide(rack, along: slide, advance: 2 * pi * rp)
+construction space := solid(rack_tooth, under: rack, seen_from: turn, through: gear)
 
 // The same motion draws on the sketch what it cuts in the solid: the envelope of the rack's flank
 // is the tooth's involute, and the envelope of its tip corner the root fillet, curves of the
@@ -72,8 +76,8 @@ construction space := solid(rack_tooth, under: cutting, through: gear)
 in std.front {
   rack_flank := line(t1, t2)
 }
-involute := envelope(rack_flank, under: cutting, from: -30deg, to: 30deg)
-fillet := envelope(t1, under: cutting, from: -30deg, to: 30deg)
+involute := envelope(rack_flank, under: rack, seen_from: turn, from: -30deg, to: 30deg)
+fillet := envelope(t1, under: rack, seen_from: turn, from: -30deg, to: 30deg)
 in std.front {
   base_c := circle(center: o) hint(r: 18.8)
   radius(rp * cos(alpha)) base_c

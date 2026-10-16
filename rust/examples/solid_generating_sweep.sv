@@ -3,7 +3,7 @@
 unit mm
 use std (on_u)
 
-component GeneratingCut(tool: solid, generating: motion, start: Angle, finish: Angle) {
+component GeneratingCut(tool: solid, generating: frame, start: Angle, finish: Angle) {
   body := solid(tool, under: generating, from: start, to: finish)
 }
 
@@ -22,7 +22,8 @@ in std.front {
   radius(1mm) meridian
 }
 construction tool := solid(face(meridian, diameter), about: diameter)
-generating := motion(about: spindle)
+generating := frame
+std.Turn(generating, about: spindle, ratio: 1)
 in std.front {
   removal := GeneratingCut(tool, generating, start: -60deg, finish: 60deg)
 }

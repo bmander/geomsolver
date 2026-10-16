@@ -410,6 +410,20 @@ impl Family {
                     source:visit(sk,source as usize,done,visiting,steps,depth+1)?,
                     observer:visit(sk,observer as usize,done,visiting,steps,depth+1)?,
                 },
+                // a joint about an axis as the solve leaves it (#383): a turn, a screw, or with no
+                // ratio a slide along its direction
+                MotionDef::Joint {axis,ratio,advance} => {
+                    let ax = sk.axes.get(axis as usize).ok_or("no such joint axis")?;
+                    let origin: [f64;3] = ax.a.map(|q| sk.params[q as usize].value);
+                    let d: [f64;3] = ax.d.map(|q| sk.params[q as usize].value);
+                    if !origin.iter().all(|x| x.is_finite()) || unit(d).is_none()
+                        || !ratio.is_finite() || !advance.is_finite() {
+                        return Err(format!("`{}` needs a finite nondegenerate axis and numbers",
+                            node.name));
+                    }
+                    if ratio == 0. { Step::Translation {axis:d,advance} }
+                    else { Step::Rotation {origin,axis:d,ratio,phase:0.,advance} }
+                }
                 // a joint's inverse turns and slides back, and a relative's swaps its sides
                 MotionDef::Inverse {of} => {
                     let k = visit(sk,of as usize,done,visiting,steps,depth+1)?;

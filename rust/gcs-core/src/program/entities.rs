@@ -145,13 +145,21 @@ pub(super) fn build(
     // and a plane's are two axes, and its origin is its own; a frame declared bare owns
     // nothing until its axes are read (#383)
     if d.kind == EntKind::Frame {
-        if d.bare && !res.charts.contains(&d.name.key().text) {
+        let e = if d.bare && !res.charts.contains(&d.name.key().text) {
             sk.frames.push(crate::model::FrameE::bare());
             let e = EntRef::frame(sk.frames.len() - 1);
             set_class(sk, e, d.class.clone());
-            return Some(e);
+            e
+        } else {
+            build_plane(sk, res, d, st, diags, anon, deferred)?
+        };
+        // its joint, where the document reads it (#383): `f.axis`, minted with it
+        if res.joints.contains(&d.name.key().text) {
+            let j = sk.mint_joint(e.i(), &shown(sk, d));
+            anon.push((format!("{}.axis", d.name.key().text),
+                EntRef::new(EntKind::Axis, j.axis as usize)));
         }
-        return build_plane(sk, res, d, st, diags, anon, deferred);
+        return Some(e);
     }
     // a seed named by a place (`hint(at: k, bearing: b)`) is a point's; every other kind has
     // a scalar of its own the clause seeds by name
@@ -1033,7 +1041,7 @@ pub(super) fn axes_along(sk: &mut Sketch, deferred: &[Deferred]) {
         return;
     }
     let ends = |sk: &Sketch, l: usize| [sk.lines[l].p1 as usize, sk.lines[l].p2 as usize];
-    for p in 0..sk.frames.len() {
+    for p in sk.charted() {
         let (u, v) = (sk.frames[p].u as usize, sk.frames[p].v as usize);
         let (lu, lv) = (along.get(&u).copied(), along.get(&v).copied());
         // the end the two lines share, if they meet at one: each line's own image of it, which

@@ -326,6 +326,14 @@ fn motion_reads(sk: &Sketch,motion: u32,values: &mut Vec<f64>) {
                 values.extend([4.,of as f64]);
                 pending.push(of);
             }
+            crate::model::MotionDef::Joint {axis,ratio,advance} => {
+                values.extend([5.,axis as f64,ratio,advance]);
+                match sk.axes.get(axis as usize) {
+                    Some(r) => values.extend(r.a.iter().chain(&r.d)
+                        .map(|&q| sk.params[q as usize].value)),
+                    None => values.push(UNREAD),
+                }
+            }
         }
     }
 }

@@ -31,16 +31,17 @@ in std.top {
 // The shaft's turn seen from the housing, backwards, and the rotor's turn about its centre
 // against it: the phasing gears, a pinion fixed to the housing twice the eccentric and the rotor's
 // ring gear three times it, turn the rotor two thirds of the way back.
-counter := motion(about: centre, ratio: -1)
-spin := motion(about: hub, ratio: -2 / 3)
-rotor_turn := motion(spin, relative_to: counter)      // the rotor, seen from the housing
-housing_turn := motion(counter, relative_to: spin)    // the housing, seen from the rotor
+// The rotor is `spin` seen from the housing, `counter`; the housing is `counter` seen from it.
+counter := frame
+std.Spin(counter, about: centre, on: std.top, ratio: -1)
+spin := frame
+std.Spin(spin, about: hub, on: std.top, ratio: -2 / 3)
 
 // -- the curves -------------------------------------------------------------------------------
 // The bore is where an apex goes over three turns of the shaft, one of the rotor; a flank is
 // where the bore touches the rotor as the housing turns about it, from one apex to the next.
-bore := envelope(apex, under: rotor_turn, from: 0deg, to: 1080deg)
-flank := envelope(bore, under: housing_turn, from: 10deg, to: 170deg)
+bore := envelope(apex, under: spin, seen_from: counter, from: 0deg, to: 1080deg)
+flank := envelope(bore, under: counter, seen_from: spin, from: 10deg, to: 170deg)
 
 // -- the parts --------------------------------------------------------------------------------
 // The housing: a disc with the bore through it, a hair proud of the rotor at each face.
@@ -60,7 +61,7 @@ in std.top {
   radius(R + e) blank_rim
 }
 private blank := solid(face(blank_rim), from: 0mm, to: W)
-construction swept := solid(housing, under: housing_turn, from: 0deg, to: 1080deg)
+construction swept := solid(housing, under: counter, seen_from: spin, from: 0deg, to: 1080deg)
 rotor := solid(blank)
 swept cut rotor
 
@@ -93,7 +94,7 @@ in std.top {
   tip[0] distance(clearance, along: u) apex
 }
 arc_rotor := solid(face(flank[0], flank[1], flank[2]), from: 0mm, to: W)
-arc_rotor_at := solid(arc_rotor, under: rotor_turn, at: 0deg)
-claim over rotor_turn in (0deg, 1080deg) {
+arc_rotor_at := solid(arc_rotor, under: spin, seen_from: counter, at: 0deg)
+claim over spin seen_from counter in (0deg, 1080deg) {
   arc_rotor_at clear(clearance / 2) housing
 }

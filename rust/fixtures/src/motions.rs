@@ -1,9 +1,14 @@
 //! The motions every case is written from, as Solvent lines appended to a
-//! tool. Each declares the motion under a fixed name; the sweep line names
-//! it with its interval.
+//! tool. Each declares a frame and its joint under a fixed name, and the sweep
+//! line reads it with its interval: a turn or a slide by its own name
+//! (`under: turn`, `under: feed`), and a roll — one frame seen from another —
+//! as `ROLLED` says, `under: spin, seen_from: observer`.
+
+/// How a roll (`roll`, `CROSSED_ROLL`, `cradle_roll`) is read: the spin seen from the observer.
+pub const ROLLED: &str = "under: spin, seen_from: observer";
 
 /// A turn about the spindle (world z through the origin).
-pub const TURN_SPINDLE: &str = "turn := motion(about: spindle)\n";
+pub const TURN_SPINDLE: &str = "turn := frame\nstd.Turn(turn, about: spindle, ratio: 1)\n";
 
 /// A turn about a vertical axis through (3, 0): the sphere's and cylinder's
 /// own axis, so their contact is motion-independent.
@@ -18,7 +23,8 @@ hub_up distance(3mm, along: u) std.front
 hub_up distance(5mm, along: v) std.front
 construction centerline own := line(hub, hub_up)
 }
-turn := motion(about: own)
+turn := frame
+std.Turn(turn, about: own, ratio: 1)
 ";
 
 /// A turn about the line y = 0 in the plane, through (3, 0) and (4, 0): a
@@ -34,7 +40,8 @@ hub_out distance(4mm, along: u) std.front
 hub_out level(v) std.front
 construction centerline tumbler := line(hub, hub_out)
 }
-turn := motion(about: tumbler)
+turn := frame
+std.Turn(turn, about: tumbler, ratio: 1)
 ";
 
 /// A turn about the vertical line through (2.5, 0): offset from the tools.
@@ -49,11 +56,14 @@ a1 distance(2.5mm, along: u) std.front
 a1 distance(5mm, along: v) std.front
 construction centerline pivot := line(a0, a1)
 }
-turn := motion(about: pivot)
+turn := frame
+std.Turn(turn, about: pivot, ratio: 1)
 ";
 
 /// A translation along the spindle by `advance` per full turn of the parameter.
-pub fn slide_z(advance_mm: f64) -> String { format!("feed := motion(along: spindle, advance: {advance_mm}mm)\n") }
+pub fn slide_z(advance_mm: f64) -> String {
+    format!("feed := frame\nstd.Slide(feed, along: spindle, advance: {advance_mm}mm)\n")
+}
 
 /// A translation along world x by `advance` per full turn.
 pub fn slide_x(advance_mm: f64) -> String {
@@ -65,13 +75,17 @@ rail_end distance(10mm, along: u) std.front
 rail_end level(v) std.front
 construction centerline rail := line(std.origin, rail_end)
 }}
-feed := motion(along: rail, advance: {advance_mm}mm)
+feed := frame
+std.Slide(feed, along: rail, advance: {advance_mm}mm)
 "))
 }
 
-/// The sweep line: `swept := solid(tool, under: NAME, from: A, to: B)`.
+/// The sweep line: `swept := solid(tool, under: NAME, from: A, to: B)`, `motion` the frame's name
+/// or a whole reading (`ROLLED`).
 pub fn swept(motion: &str,from_deg: f64,to_deg: f64) -> String {
-    format!("swept := solid(tool, under: {motion}, from: {from_deg}deg, to: {to_deg}deg)\n")
+    let reading = if motion.contains(':') { motion.to_string() }
+        else { format!("under: {motion}") };
+    format!("swept := solid(tool, {reading}, from: {from_deg}deg, to: {to_deg}deg)\n")
 }
 
 /// A turn about the line through the page points (u0, v0) and (u1, v1)
@@ -88,13 +102,14 @@ h1 distance({u1}mm, along: u) std.front
 h1 distance({v1}mm, along: v) std.front
 construction centerline hinge := line(h0, h1)
 }}
-turn := motion(about: hinge)
+turn := frame
+std.Turn(turn, about: hinge, ratio: 1)
 "))
 }
 
 /// A roll: the tool turned about the vertical through (3, 0) at `ratio` turns per turn of an
 /// observer turning about the spindle, so the two are near enough to beat against each other and
-/// a contact loop flickers open and closed.
+/// a contact loop flickers open and closed.  Read `ROLLED`.
 pub fn roll(ratio: f64) -> String {
     crate::levelled(format!("\
 use std
@@ -107,14 +122,15 @@ hub_up distance(3mm, along: u) std.front
 hub_up distance(5mm, along: v) std.front
 construction centerline own := line(hub, hub_up)
 }}
-private spin := motion(about: own, ratio: {ratio})
-private observer := motion(about: spindle)
-turn := motion(spin, relative_to: observer)
+private spin := frame
+std.Turn(spin, about: own, ratio: {ratio})
+private observer := frame
+std.Turn(observer, about: spindle, ratio: 1)
 "))
 }
 
 /// The tool spinning about its own vertical axis through (3, 0), seen from an observer turning
-/// about world x: crossed axes, as a generator's are.
+/// about world x: crossed axes, as a generator's are.  Read `ROLLED`.
 pub const CROSSED_ROLL: &str = "\
 use std
 in std.front {
@@ -130,9 +146,10 @@ xend distance(5mm, along: u) std.front
 xend level(v) std.front
 construction centerline xaxis := line(std.origin, xend)
 }
-private spin := motion(about: own, ratio: 0.25)
-private observer := motion(about: xaxis)
-turn := motion(spin, relative_to: observer)
+private spin := frame
+std.Turn(spin, about: own, ratio: 0.25)
+private observer := frame
+std.Turn(observer, about: xaxis, ratio: 1)
 ";
 
 /// Which axis a cradle roll's observer turns about.
@@ -151,7 +168,7 @@ pub enum Observer {
 /// A generator's roll: the tool (whose own axis is the vertical line through (3, 0)) carried
 /// about a vertical cradle axis through (2, 0) at `ratio` turns a turn, seen from an observer
 /// turning about another axis. A spin about the tool's own axis would change nothing of a
-/// revolution, leaving a single rotation.
+/// revolution, leaving a single rotation.  Read `ROLLED`.
 pub fn cradle_roll(ratio: f64,observer: Observer) -> String {
     let (axis,about) = match observer {
         Observer::Parallel => ("","spindle"),
@@ -192,8 +209,9 @@ hub_up distance(2mm, along: u) std.front
 hub_up distance(5mm, along: v) std.front
 construction centerline cradle := line(hub, hub_up)
 }}
-{axis}private spin := motion(about: cradle, ratio: {ratio})
-private observer := motion(about: {about})
-turn := motion(spin, relative_to: observer)
+{axis}private spin := frame
+std.Turn(spin, about: cradle, ratio: {ratio})
+private observer := frame
+std.Turn(observer, about: {about}, ratio: 1)
 "))
 }

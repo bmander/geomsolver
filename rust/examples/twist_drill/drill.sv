@@ -53,8 +53,10 @@ in std.front {
 }
 
 // the screw a wheel rides along, one lead a turn, and the turn from one flute to the next
-grind := motion(about: ax, advance: configuration.lead)
-index := motion(about: ax)
+grind := frame
+std.Turn(grind, about: ax, ratio: 1, advance: configuration.lead)
+index := frame
+std.Turn(index, about: ax, ratio: 1)
 // from a wheel's rim below the stock to past its top
 start := -360deg * configuration.flute_wheel.rim / configuration.lead
 finish := 360deg * (configuration.fluted_length + configuration.flute_wheel.rim) / configuration.lead
@@ -64,9 +66,16 @@ fluted := solid(stock)
 flute_wheel := wheel.GrindingWheel(side, setting: configuration.helix, wheel: configuration.flute_wheel)
 construction flute := solid(flute_wheel.body, under: grind, from: start, to: finish)
 
-clearance_grind := motion(about: ax, advance: configuration.lead, phase: configuration.clearance_phase)
-clearance_wheel := wheel.GrindingWheel(side, setting: configuration.helix, wheel: configuration.clearance_wheel)
-construction body_clearance := solid(clearance_wheel.body, under: clearance_grind, from: start, to: finish)
+// the clearance wheel rides the same screw turned `clearance_phase` on about the axis: drawn
+// turned, on the side datum turned so — a screw's roll 0 is as drawn, and a screw turned by a
+// phase is the screw of its wheel turned so, since turns and slides about one axis commute
+clearance_v := axis
+fix(dir == (-sin(configuration.clearance_phase), cos(configuration.clearance_phase), 0)) clearance_v
+clearance_side := plane(u: down, v: clearance_v)
+fix(origin == (0, 0, 0)) clearance_side
+clearance_wheel := wheel.GrindingWheel(clearance_side, setting: configuration.helix,
+                                       wheel: configuration.clearance_wheel)
+construction body_clearance := solid(clearance_wheel.body, under: grind, from: start, to: finish)
 
 repeat configuration.flutes as i {
   construction flute_at := solid(flute, under: index, at: i * 360deg / configuration.flutes)

@@ -170,7 +170,7 @@ fn solid_claim(
 
 /// The interval a swept claim runs over: a free variable of the drawing, and where it goes.
 fn sweep_of_claim(
-    sk: &Sketch,
+    sk: &mut Sketch,
     res: &Resolver,
     c: &crate::ir::ClaimOver,
     st: &Stmt,
@@ -185,8 +185,19 @@ fn sweep_of_claim(
         ));
     };
     let name = crate::syntax::ref_text(&c.formal);
-    // **a named motion's roll**: the claim read at every pose of the solids placed under it
-    let motion = res.lookup(&c.formal).filter(|e| e.kind == crate::model::EntKind::Motion && e.i() < sk.motions.len());
+    // **a frame's roll** (#383): the claim read at every pose of the solids placed under its
+    // motion, seen from the frame named where one is
+    let framed = res.lookup(&c.formal).is_some_and(|e| e.kind == crate::model::EntKind::Frame);
+    let motion = match framed {
+        false => None,
+        true => match crate::program::motions::reading(sk, res, &c.formal, c.seen_from.as_ref()) {
+            Ok(m) => Some(EntRef::new(crate::model::EntKind::Motion, m)),
+            Err(message) => {
+                say(Code::E040, c.formal.span, message);
+                return None;
+            }
+        },
+    };
     // **a free variable, and nothing else**: a `param` is a number the document already fixed,
     // and sweeping it would be sweeping a constant
     if motion.is_none() && !sk.free_vars.contains_key(&name) {
@@ -194,7 +205,7 @@ fn sweep_of_claim(
             say(
                 Code::E040,
                 c.formal.span,
-                format!("`{name}` is geometry, not a free variable or a motion"),
+                format!("`{name}` is geometry, not a free variable or a frame that moves"),
             );
         } else {
             say(

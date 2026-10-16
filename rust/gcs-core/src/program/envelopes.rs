@@ -42,8 +42,10 @@ pub(super) fn held_envelopes(sk: &mut Sketch, res: &mut Resolver, map: &mut Sour
                 _ => None,
             }
         };
-        let motion = operand(1).and_then(|r| res.lookup(r))
-            .filter(|e| e.kind == EntKind::Motion && e.i() < sk.motions.len());
+        // the frame it is generated under, seen from the one named (#383)
+        let motion = operand(1)
+            .and_then(|r| super::motions::reading(sk, res, r, d.seen_from.as_ref()).ok())
+            .map(|m| EntRef::new(EntKind::Motion, m));
         // a declaration that would not be built after the solve either is left to say so there —
         // its name, until then, naming nothing a relation could hold to
         let (Some(motion),Some(source),Ok(roll)) = (motion,operand(0),roll(sk,d)) else {
@@ -107,9 +109,10 @@ pub(super) fn held_meshings(sk: &mut Sketch, res: &mut Resolver, map: &mut Sourc
         };
         let built = (|| -> Result<MeshingE,String> {
             let flanks = [flank(sk,0)?,flank(sk,1)?];
-            let m = res.lookup(operand(2)?)
-                .filter(|e| e.kind == EntKind::Motion && e.i() < sk.motions.len())
-                .ok_or("a meshing turns its flanks `under:` a motion")?;
+            let m = super::motions::reading(sk, res, operand(2)?, d.seen_from.as_ref())
+                .map(|m| EntRef::new(EntKind::Motion, m))
+                .map_err(|why| format!("a meshing turns its flanks `under:` the second's frame \
+                    `seen_from:` the first's: {why}"))?;
             let ease = match d.angular_span.as_ref().and_then(|s| s.ease.as_deref()) {
                 Some(e) => {
                     if matches!(flanks[0],Flank::Traced(_)) {
@@ -331,6 +334,13 @@ pub(super) fn envelopes(sk: &mut Sketch, res: &mut Resolver, map: &mut SourceMap
     for st in body {
         let Operation::Decl(d) = &st.kind else { continue; };
         if d.kind != EntKind::Envelope || skip.contains(&st.id) { continue; }
+        // the frame it is generated under, seen from the one named (#383)
+        let motion = match d.children.get(1).map(Vec::as_slice) {
+            _ if held.contains(&st.id) => Err(String::new()),
+            Some([Kid::Ref(r)]) => super::motions::reading(sk, res, r, d.seen_from.as_ref())
+                .map(|m| m as u32),
+            _ => Err("an envelope names a surface and the frame it moves under".to_string()),
+        };
         let operand = |i: usize, kind: EntKind| -> Result<u32,String> {
             let group = d.children.get(i).ok_or("an envelope needs a surface and motion")?;
             let [Kid::Ref(r)] = group.as_slice() else {
@@ -355,7 +365,7 @@ pub(super) fn envelopes(sk: &mut Sketch, res: &mut Resolver, map: &mut SourceMap
             continue;
         }
         let build = || -> Result<EnvelopeE,String> {
-            Ok(EnvelopeE {surface:Some(operand(0,EntKind::Surface)?),motion:operand(1,EntKind::Motion)?,
+            Ok(EnvelopeE {surface:Some(operand(0,EntKind::Surface)?),motion:motion.clone()?,
                 roll:roll(sk,d)?,name:name.clone(),class:d.class.clone(),
                 held:Held::Not("its source and motion were not read before the relations".into())})
         };

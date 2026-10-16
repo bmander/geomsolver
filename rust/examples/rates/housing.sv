@@ -45,12 +45,13 @@ in std.top {
   apex := point hint((90, 0))
   apex right_of(d: R) hub
 }
-counter := motion(about: centre, ratio: -1)
-spin := motion(about: hub, ratio: -2 / 3)
-rotor_turn := motion(spin, relative_to: counter)      // the rotor, seen from the housing
+counter := frame
+std.Spin(counter, about: centre, on: std.top, ratio: -1)
+spin := frame
+std.Spin(spin, about: hub, on: std.top, ratio: -2 / 3)   // the rotor, seen from the housing
 
 // -- the bore -----------------------------------------------------------------------------------
-component Bore(c: point, z1: point, apex: point, m: motion, d: Length, u: Angle) {
+component Bore(c: point, z1: point, apex: point, m: frame, seen_from: frame, d: Length, u: Angle) {
   za := line(c, z1)
   p := point hint((0, 0, 0))
   k := point hint((0, 0, 0))
@@ -61,7 +62,8 @@ component Bore(c: point, z1: point, apex: point, m: motion, d: Length, u: Angle)
   rate(p over d) parallel nl                 // the gauge: square to itself
   rate(p over d) distance(-1, along: nl)     // the law: at unit speed, away from `nl`
   initially {
-    p coincident(under: m, t == 3 * u) apex  // the Cauchy data: the apex the rotor carries
+    // the Cauchy data: the apex the rotor carries
+    p coincident(under: m, seen_from: seen_from, t == 3 * u) apex
   }
 }
 
@@ -70,5 +72,5 @@ fix((0, 0, 0)) c
 z1 := point hint((0, 0, 10))
 fix((0, 0, 10)) z1
 
-bore := Bore(c, z1, apex, rotor_turn).p over (d in (0mm, s), u in (0deg, 180deg))
-past := Bore(c, z1, apex, rotor_turn).p over (d in (0mm, 20mm), u in (0deg, 180deg))
+bore := Bore(c, z1, apex, spin, counter).p over (d in (0mm, s), u in (0deg, 180deg))
+past := Bore(c, z1, apex, spin, counter).p over (d in (0mm, 20mm), u in (0deg, 180deg))

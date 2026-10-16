@@ -272,6 +272,11 @@ fn say_once(diags: &mut Vec<Diag>, span: Span, stmt: StmtId, message: String) {
 /// applied as a gauge, taken as a region's term, or refused, and no id. The steps below, in the
 /// order each may end it.
 pub(super) fn constrain(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) -> Option<u32> {
+    // a point a frame carries (#383): its `under:` and `seen_from:` read as the one motion node
+    // the carried point's slot names
+    if let Some(carried) = carried_motion(cx, r, st) {
+        return carried.and_then(|r| constrain(cx, &r, st));
+    }
     // a rate's relation is no row of the drawing, but what its family integrates by (#339 D3) —
     // but for a rate of a contact, which is a row like any other (#365)
     let contact_rate = r.form.written().is_some_and(|w| w.rates.iter().any(|x| x.slot));
@@ -433,6 +438,47 @@ pub(super) fn constrain(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) -> Option<u3
         derivative(cx, st, &mut c, found, used.unwrap_or(st.span))?;
     }
     region_or_row(cx, &r, st, c, term_name)
+}
+
+/// **A point a frame carries** (#383): `X coincident(under: f, seen_from: g, t == τ) x` is the
+/// carried point over the motion node of `f` seen from `g` (`motions::reading`) — bound under a
+/// key no source can spell, `#motion{n}`, so the slot reads it as the motion it is.  `None` for a
+/// relation naming no `under:`, `Some(None)` where the reading was refused (said here), else the
+/// relation as the slot reads it.
+fn carried_motion(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) -> Option<Option<Relation>> {
+    let w = r.form.written()?;
+    let named = |k: &str| w.args.iter().position(|a| matches!(a,
+        crate::syntax::OpArg::Named(n, Arg::Ref(_)) if n.text == k));
+    let under = named("under")?;
+    let crate::syntax::OpArg::Named(_, Arg::Ref(under_ref)) = &w.args[under] else { return None };
+    if under_ref.root.text.starts_with("#motion") {
+        return None;
+    }
+    let seen = named("seen_from");
+    let seen_ref = seen.and_then(|i| match &w.args[i] {
+        crate::syntax::OpArg::Named(_, Arg::Ref(g)) => Some(g.clone()),
+        _ => None,
+    });
+    let m = match super::motions::reading(&mut cx.sk, &cx.res, under_ref, seen_ref.as_ref()) {
+        Ok(m) => m,
+        Err(message) => {
+            cx.diags.push(Diag::within(Code::E040, under_ref.span, st.id, message));
+            return Some(None);
+        }
+    };
+    let key = format!("#motion{m}");
+    cx.res.of.insert(key.clone(), EntRef::new(EntKind::Motion, m));
+    let mut w = w.clone();
+    if let crate::syntax::OpArg::Named(_, Arg::Ref(u)) = &mut w.args[under] {
+        *u = Ref { root: crate::syntax::Name { text: key, span: u.root.span }, path: Vec::new(),
+                   span: u.span };
+    }
+    if let Some(i) = seen {
+        w.args.remove(i);
+    }
+    let mut out = r.clone();
+    out.form = RelationForm::Written(w);
+    Some(Some(out))
 }
 
 /// **A spatial frame is no set** (#383): a plane is also a set the language relates — a point on

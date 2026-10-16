@@ -26,10 +26,10 @@ use std::collections::BTreeMap;
 type Fail = (Code, Span, String);
 
 /// Whether a curve declaration is traced in space whatever its body says: two formals run, or
-/// the instance is given a motion.  A body over one formal and no motion is traced in its plane
-/// where it reads as one, and in space where it does not (`curves::build_curve`).
-pub(super) fn in_space_traced(res: &Resolver, d: &Decl, insts: &[crate::flatten::InstanceInfo])
-    -> bool {
+/// the instance is given a frame that moves (#383).  A body over one formal and no motion is traced
+/// in its plane where it reads as one, and in space where it does not (`curves::build_curve`).
+pub(super) fn in_space_traced(sk: &Sketch, res: &Resolver, d: &Decl,
+                              insts: &[crate::flatten::InstanceInfo]) -> bool {
     let Some(c) = d.curve.as_ref() else { return false };
     if c.second.is_some() {
         return true;
@@ -37,7 +37,8 @@ pub(super) fn in_space_traced(res: &Resolver, d: &Decl, insts: &[crate::flatten:
     let Some(of) = &c.of else { return false };
     let Some(info) = insts.iter().find(|i| i.prefix == of.instance) else { return false };
     info.ents.iter().filter_map(|(_, a)| a.as_ref()).filter_map(|a| res.of.get(a))
-        .any(|e| e.kind == EntKind::Motion)
+        .any(|e| e.kind == EntKind::Frame
+            && sk.frames.get(e.i()).is_some_and(|f| f.joint.is_some()))
 }
 
 /// A traced body's place in the sketch before what it is written over is all built: its name
@@ -140,14 +141,19 @@ pub(super) fn build_traced(sk: &Sketch, res: &Resolver, d: &Decl, st: &Stmt, pro
                         }
                         6
                     }
-                    EntKind::Motion => {
-                        let m = crate::envelope::held::Moving::of_any(sk, e.i())
-                            .map_err(|why| (Code::E103, st.span, why))?;
-                        let w = m.width();
-                        vars.extend((0..w).map(|i| format!("{name}#{i}")));
-                        steps = m.steps;
-                        w
-                    }
+                    // a frame its motion's steps (#383): its joint's, or none at rest — the world,
+                    // as an observer it leaves a reading alone
+                    EntKind::Frame => match sk.frames[e.i()].joint.as_ref().and_then(|j| j.motion) {
+                        Some(m) => {
+                            let m = crate::envelope::held::Moving::of_any(sk, m as usize)
+                                .map_err(|why| (Code::E103, st.span, why))?;
+                            let w = m.width();
+                            vars.extend((0..w).map(|i| format!("{name}#{i}")));
+                            steps = m.steps;
+                            w
+                        }
+                        None => 0,
+                    },
                     // a curve the drawing has, which a marched body's Cauchy data reads (#376)
                     EntKind::Spline | EntKind::Curve | EntKind::Traced => {
                         let d = Drawn::of(sk, e).map_err(|m| (Code::E103, st.span, format!(
@@ -367,8 +373,9 @@ impl Drawn {
 struct Lowering<'v> {
     sk: Sketch,
     scope: BTreeMap<String, EntRef>,
-    /// The motions it is written over, by name: their steps and where their columns start.
-    motions: BTreeMap<String, (Vec<crate::envelope::held::Step>, usize)>,
+    /// The frames it is written over, by name: their motions' steps and the columns they read —
+    /// none for a frame at rest — and a reading's frame seen from another (#383).
+    motions: BTreeMap<String, (Vec<crate::envelope::held::Step>, Vec<usize>)>,
     /// The curves it is written over (#376), by name: what a point on one reads, and where its
     /// columns start.
     drawn: BTreeMap<String, (Drawn, usize)>,
@@ -449,8 +456,9 @@ impl<'v> Lowering<'v> {
                     let b = point(&mut sk, &mut slot, f.at + 3, &f.name);
                     scope.insert(f.name.clone(), EntRef::line(sk.line(a, b)));
                 }
-                EntKind::Motion => {
-                    motions.insert(f.name, (f.steps, f.at));
+                EntKind::Frame => {
+                    let width = crate::envelope::held::steps_width(&f.steps);
+                    motions.insert(f.name, (f.steps, (f.at..f.at + width).collect()));
                 }
                 _ => {
                     if let Some(d) = f.drawn {
@@ -857,6 +865,8 @@ impl<'v> Lowering<'v> {
     }
 
     fn relation(&mut self, st: &Stmt, r: &crate::ir::Relation) -> Result<(), Fail> {
+        let seen = self.seen_from(r)?;
+        let r = seen.as_ref().unwrap_or(r);
         let (sk, scope, motions, drawn) = (&self.sk, &self.scope, &self.motions, &self.drawn);
         let r = r.resolve(&|rf| {
             let bare = rf.path.is_empty();
@@ -1037,6 +1047,53 @@ impl<'v> Lowering<'v> {
         Ok(())
     }
 
+    /// A carried point's `under: m, seen_from: g` over two frames the body is written over (#383):
+    /// `m`'s steps then `g`'s, `g`'s columns after `m`'s, and the relative of the two — kept under
+    /// a key no source spells, the relation returned reading it.  `None` for any other relation.
+    fn seen_from(&mut self, r: &crate::ir::Relation) -> Result<Option<crate::ir::Relation>, Fail> {
+        use crate::envelope::held::Step;
+        use crate::syntax::OpArg;
+        let Some(w) = r.form.written() else { return Ok(None) };
+        let named = |k: &str| w.args.iter().position(|a| matches!(a,
+            OpArg::Named(n, Arg::Ref(_)) if n.text == k));
+        let (Some(u), Some(g)) = (named("under"), named("seen_from")) else { return Ok(None) };
+        let (OpArg::Named(_, Arg::Ref(ur)), OpArg::Named(_, Arg::Ref(gr))) =
+            (&w.args[u], &w.args[g]) else { return Ok(None) };
+        let get = |r: &crate::syntax::Ref| self.motions.get(&r.root.text).cloned()
+            .ok_or((Code::E103, r.span,
+                format!("`{}` is no frame the traced component is written over", r.root.text)));
+        let ((su, cu), (sg, cg)) = (get(ur)?, get(gr)?);
+        if su.is_empty() {
+            return Err((Code::E103, ur.span, format!("`{}` does not move: a carried point is \
+                carried by a frame's joint", ur.root.text)));
+        }
+        let key = format!("#seen{}", self.motions.len());
+        let (steps, cols) = if sg.is_empty() { (su, cu) } else {
+            let (n, wu) = (su.len(), cu.len());
+            let mut steps = su;
+            steps.extend(sg.into_iter().map(|s| match s {
+                Step::Rotation { at, ratio, phase, advance } =>
+                    Step::Rotation { at: at + wu, ratio, phase, advance },
+                Step::Translation { at, advance } => Step::Translation { at: at + wu, advance },
+                Step::Turn { at, ratio, phase } => Step::Turn { at: at + wu, ratio, phase },
+                Step::Relative { source, observer } =>
+                    Step::Relative { source: source + n, observer: observer + n },
+            }));
+            steps.push(Step::Relative { source: n - 1, observer: steps.len() - 1 });
+            (steps, cu.into_iter().chain(cg).collect())
+        };
+        self.motions.insert(key.clone(), (steps, cols));
+        let mut w = w.clone();
+        if let OpArg::Named(_, Arg::Ref(ur)) = &mut w.args[u] {
+            ur.root.text = key;
+            ur.path.clear();
+        }
+        w.args.remove(g);
+        let mut out = r.clone();
+        out.form = crate::syntax::RelationForm::Written(w);
+        Ok(Some(out))
+    }
+
     /// `X coincident(under: m, t == τ) x`: the carried point's lift, the point's, the roll's tape
     /// and the motion's axes, its steps the constants.  In a body that states a rate (#377) it is
     /// one of the body's rows or, in `initially { … }`, of its home's.
@@ -1048,11 +1105,14 @@ impl<'v> Lowering<'v> {
                         "a carried point names the motion `under:` it".into()));
         };
         let (steps, from) = self.motions.get(&m.root.text).cloned().ok_or((Code::E103, m.span,
-            format!("`{}` is no motion the traced component is written over", m.root.text)))?;
+            format!("`{}` is no frame the traced component is written over", m.root.text)))?;
+        if steps.is_empty() {
+            return Err((Code::E103, m.span, format!("`{}` does not move: a carried point is \
+                carried by a frame's joint", m.root.text)));
+        }
         let t = self.pinned(r.args.get(3).and_then(|a| a.as_ref()), "t", st.span)?;
-        let width = crate::envelope::held::steps_width(&steps);
         let cols: Vec<u32> = x.into_iter().chain(at).chain([t as u32])
-            .chain((from..from + width).map(|c| c as u32)).collect();
+            .chain(from.iter().map(|&c| c as u32)).collect();
         self.push(crate::traced::Row { kind: crate::traced::RowKind::Carried, cols,
             consts: crate::envelope::held::encode_steps(&steps) }, st.span);
         Ok(())

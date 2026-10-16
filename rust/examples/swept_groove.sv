@@ -40,7 +40,8 @@ in std.front {
   centre right_of(d: arc_r) std.origin
   private ball := Sphere(centre, r: ball_r)
 }
-swing_about := motion(about: spindle)
+swing_about := frame
+std.Turn(swing_about, about: spindle, ratio: 1)
 construction groove := solid(ball.body, under: swing_about, from: -swing / 2, to: swing / 2)
 
 part := solid(block)

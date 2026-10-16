@@ -1,7 +1,15 @@
 # Frames: one declaration for planes and motions, constrained after the fact: plan
 
 **Status (2026-10-16): in progress**, issue #383. Stage 1 is built (`Sketch::chain`,
-`tests/frames.rs`). This version replaces the
+`tests/frames.rs`), stage 2 (`EntKind::Frame`, `f := frame`, spec 0.134) and stage 3 (joints as
+members, `std.Turn`/`Spin`/`Slide`, `seen_from:`, spec 0.135). Two departures in stage 3: the
+lowered motion graph (`Sketch::motions`, `EntKind::Motion` inside the core) stays as what a
+joint and a reading lower to, no longer a declaration or an ABI kind; and a measured ratio is
+refused already (E107) rather than carried into `fix`, the documents that measured one
+stating it from their own numbers. The corpus holds its solved positions to 1e-12 (`hypoid_drive`,
+which imports the hypoid pair, to 7e-11); a swept solid's meshed measures move by up to 1e-3,
+since its material field's mesh follows the solve's last bits, which the joints' axis unknowns
+change — the pre-rewrite binary moves them as much for one unrelated axis added. This version replaces the
 first one, which kept a menagerie of constructor labels on `frame(…)`. Decisions 1–3 were made in
 conversation. The rest are proposals, and [Open questions](#open-questions) lists what needs an
 answer before the stage that depends on it.

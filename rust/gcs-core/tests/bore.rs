@@ -1,33 +1,49 @@
-//! The Wankel's bore (#65): the envelope of a point is its path, so `envelope(apex, under:
-//! rotor_turn, from: 0deg, to: 1080deg)` is the epitrochoid, a closed curve of the drawing that
-//! stands alone in a face, and the housing is a disc less its prism.
-use gcs_core::{model::EntKind,program};
+//! The Wankel's bore (#65): the envelope of a point is its path, so `envelope(apex, under: spin,
+//! seen_from: counter, from: 0deg, to: 1080deg)` is the epitrochoid, a closed curve of the drawing
+//! that stands alone in a face, and the housing is a disc less its prism.
+use gcs_core::{model::{EntKind,MotionDef},program};
 
-/// The Wankel's planetary motion and its apex, drawn in the top plane: the rotor turns about its
-/// centre `hub`, `e` from the shaft's `centre`, at −2/3 against an
-/// observer turning the other way about the shaft, and the apex is `R` beyond the rotor's centre.
+/// The Wankel's planetary motion and its apex, drawn in the top plane: the rotor's frame `spin`
+/// turns about its centre `hub`, `e` from the shaft's `centre`, at −2/3, seen from the housing's,
+/// `counter`, turning the other way about the shaft, and the apex is `R` beyond the rotor's
+/// centre.  `seen_housing` reads the housing seen from the rotor, as the rotor's flanks are.
 pub fn wankel(r: f64, e: f64, extra: &str) -> String {
     format!("unit mm\nuse std\n\
         centre := point in std.top\n\
         centre level(u) std.top\ncentre level(v) std.top\n\
         hub := point in std.top\n\
         hub distance({e}mm, along: u) std.top\nhub level(v) std.top\n\
-        counter := motion(about: centre, ratio: -1)\n\
-        spin := motion(about: hub, ratio: -2/3)\n\
-        rotor_turn := motion(spin, relative_to: counter)\n\
-        housing_turn := motion(counter, relative_to: spin)\n\
+        counter := frame\nstd.Spin(counter, about: centre, on: std.top, ratio: -1)\n\
+        spin := frame\nstd.Spin(spin, about: hub, on: std.top, ratio: -2/3)\n\
         apex := point in std.top\n\
         apex distance({x}mm, along: u) std.top\napex level(v) std.top\n\
+        seen_housing := point\n\
+        seen_housing coincident(under: counter, seen_from: spin, t == 0deg) apex\n\
         {extra}\n",x = r+e)
 }
 
 /// A document elaborated with no error and solved.
 pub fn solved(src: &str) -> program::Elaborated { fixtures::read(src) }
 
+/// The motion node of frame `under` seen from frame `seen_from`, which a reading of it minted:
+/// the rotor (`"spin", "counter"`) or the housing seen from it (`"counter", "spin"`).
+pub fn seen(e: &program::Elaborated, under: &str, seen_from: &str) -> usize {
+    let joint = |n: &str| {
+        let f = e.map.ent_named(n).unwrap_or_else(|| panic!("no frame `{n}`"));
+        assert_eq!(f.kind,EntKind::Frame);
+        e.sketch.frames[f.i()].joint.as_ref().and_then(|j| j.motion).expect("a jointed frame")
+    };
+    let (s,o) = (joint(under),joint(seen_from));
+    e.sketch.motions.iter().position(|m| matches!(m.def,
+        MotionDef::Relative {source,observer} if source == s && observer == o))
+        .unwrap_or_else(|| panic!("no reading of `{under}` seen from `{seen_from}`"))
+}
+
 #[test]
 fn the_apex_under_the_rotors_motion_is_the_epitrochoid() {
     let (r,e) = (105.,15.);
-    let el = solved(&wankel(r,e,"bore := envelope(apex, under: rotor_turn, from: 0deg, to: 1080deg)"));
+    let el = solved(&wankel(r,e,
+        "bore := envelope(apex, under: spin, seen_from: counter, from: 0deg, to: 1080deg)"));
     let bore = el.map.ent_named("bore").unwrap();
     assert_eq!(bore.kind,EntKind::Curve);
     let sk = &el.sketch;
@@ -45,7 +61,8 @@ fn the_apex_under_the_rotors_motion_is_the_epitrochoid() {
 /// turns is a whole loop, as a circle is, so `face(bore)` sweeps to the pocket. The epitrochoid encloses π(R² + 3e²) (Green's
 /// theorem: the cross terms of e·e^{3it} + R·e^{it} integrate away), and the exact kernel reads it
 /// as the B-spline fitted within `FIT_MM`.
-pub const HOUSING: &str = "bore := envelope(apex, under: rotor_turn, from: 0deg, to: 1080deg)
+pub const HOUSING: &str = "bore := envelope(apex, under: spin, seen_from: counter, from: 0deg, \
+                           to: 1080deg)
     rim := circle(center: centre) in std.top hint(r: 170)
     radius(170mm) rim
     block := solid(face(rim), from: 0mm, to: 80mm)

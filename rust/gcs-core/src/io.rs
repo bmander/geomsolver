@@ -1178,6 +1178,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
                 line_map[axis as usize].is_some(),
             crate::model::MotionDef::Turn {centre,..} => pt_index(centre as usize).is_some(),
             crate::model::MotionDef::Relative {..} | crate::model::MotionDef::Inverse {..} => true,
+            crate::model::MotionDef::Joint {axis,..} => axis_map[axis as usize].is_some(),
         }
     }).collect();
     loop {
@@ -1220,10 +1221,29 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
                 },
             crate::model::MotionDef::Inverse {of} =>
                 crate::model::MotionDef::Inverse {of:motion_map[of as usize].unwrap() as u32},
+            crate::model::MotionDef::Joint {axis,ratio,advance} =>
+                crate::model::MotionDef::Joint {axis:axis_map[axis as usize].unwrap() as u32,
+                    ratio,advance},
         };
         let measured = measured_of(m).expect("a retained motion keeps what it measures");
         dst.motions.push(crate::model::MotionE {def,name:m.name.clone(),class:m.class.clone(),measured});
         made.push(EntRef::new(EntKind::Motion,next));
+    }
+    // each frame's joint (#383): its axis, its two numbers, and the node it was lowered to
+    for (i, f) in src.frames.iter().enumerate() {
+        let (Some(j), Some(ni)) = (f.joint.as_ref(), plane_map[i]) else { continue };
+        if reuse[i].is_some() || dst.frames[ni].joint.is_some() {
+            continue;
+        }
+        let Some(axis) = axis_map[j.axis as usize] else { continue };
+        let number = |dst: &mut Sketch, q: u32| {
+            let p = &src.params[q as usize];
+            dst.param(p.value, p.fixed, &p.name) as u32
+        };
+        let (ratio, advance) = (number(dst, j.ratio), number(dst, j.advance));
+        let motion = j.motion.and_then(|m| motion_map[m as usize]).map(|m| m as u32);
+        dst.frames[ni].joint =
+            Some(crate::model::Joint { axis: axis as u32, ratio, advance, motion });
     }
     // a face family's station as copied: its drawn geometry, `None` where some was left behind
     let station_ent = |e: EntRef| -> Option<EntRef> {

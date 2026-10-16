@@ -396,6 +396,11 @@ export class Frame extends Styled {
     return core().gcs_frame_planar(this.sketch.handle, this.index) === 1;
   }
 
+  /** Whether it moves: a joint the document holds, which `frameSample` evaluates. */
+  get moves(): boolean {
+    return core().gcs_frame_moves(this.sketch.handle, this.index) === 1;
+  }
+
   /** The point the plane stands at, held at its `(0, 0)`. */
   get origin(): Point {
     return this.children[0];

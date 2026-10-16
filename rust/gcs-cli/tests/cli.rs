@@ -33,8 +33,11 @@ fn a_continuous_boundary_exports_through_the_field_mesh() {
     // the ball slid along the spindle, not turned about it: a turned ball is its tube, built
     // exactly (#238, `solid::canal`), and a slid one is still the field's
     let source = dir.join("slid.sv");
-    std::fs::write(&source,include_str!("../../examples/solid_generating_sweep.sv")
-        .replace("generating := motion(about: spindle)","generating := motion(along: spindle, advance: 6mm)")).unwrap();
+    let turned = include_str!("../../examples/solid_generating_sweep.sv");
+    let (turn,slide) = ("std.Turn(generating, about: spindle, ratio: 1)",
+                        "std.Slide(generating, along: spindle, advance: 6mm)");
+    assert!(turned.contains(turn),"the sweep's turn moved");
+    std::fs::write(&source,turned.replace(turn,slide)).unwrap();
     let result = run(&[source.to_str().unwrap(),"--stl",output.to_str().unwrap(),
         "--solid","removal.body","--stl-backend","mesh","--no-diagnose"]);
     assert_eq!(result.status.code(),Some(0),"{}",String::from_utf8_lossy(&result.stderr));

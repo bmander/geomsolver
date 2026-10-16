@@ -316,9 +316,6 @@ impl<'a> Walk<'a> {
                 self.settle_arg(a, vals, scope);
             }
         }
-        if let Some(motion) = d2.motion.as_mut() {
-            for a in motion.args_mut() { self.settle_arg(a, vals, scope); }
-        }
         self.stamp_scope_plane(&mut d2, scope);
         let twins = self.twins_of(&d2, &d.name.key().text);
         let region: Vec<_> = match self.region_of(&mut d2, &d.name.key().text, scope) {

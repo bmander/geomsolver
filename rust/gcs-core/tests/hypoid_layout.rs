@@ -67,11 +67,39 @@ fn point(e: &Elaborated,name: &str) -> V {
     }
     e.sketch.world_point(index(e,name))
 }
-/// A motion of the pair by its name there (`crown_roll`, …: the recorded rows' labels).
-fn motion(e: &Elaborated,name: &str) -> usize {
-    let path = format!("pair.{name}");
-    e.sketch.motions.iter().position(|m| m.name == path)
-        .unwrap_or_else(|| panic!("no motion `{name}`"))
+/// The motion node of the pair's frame `name` (`crown_roll`, …): its joint's.
+fn joint(e: &Elaborated,name: &str) -> usize {
+    let f = index(e,&format!("pair.{name}"));
+    e.sketch.frames[f].joint.as_ref().and_then(|j| j.motion)
+        .unwrap_or_else(|| panic!("`{name}` has no joint")) as usize
+}
+/// A motion of the pair by the recorded rows' label, and the roll it is read from: a frame's
+/// joint at its own roll; a member's generation, the crown's roll seen from the member's (the
+/// node `under: crown_roll, seen_from: pinion_roll` minted); the crown's neighbour, the crown's
+/// roll read one crown pitch round, where the gear's space places its inner crown (`Space`'s
+/// `neighbor`).
+fn motion(e: &Elaborated,name: &str) -> (usize,f64) {
+    let seen = |member: &str| {
+        let (source,observer) = (joint(e,"crown_roll") as u32,joint(e,member) as u32);
+        e.sketch.motions.iter().position(|m| matches!(m.def,
+            gcs_core::model::MotionDef::Relative {source: s,observer: o}
+                if s == source && o == observer))
+            .unwrap_or_else(|| panic!("nothing reads the crown's roll seen from `{member}`"))
+    };
+    match name {
+        "pinion_generation" => (seen("pinion_roll"),0.),
+        "gear_generation" => (seen("gear_roll"),0.),
+        "crown_neighbor" => {
+            let s = e.sketch.solids.iter().find(|s| s.name == "pair.gear_space.neighbor")
+                .expect("the gear space's neighbour");
+            let gcs_core::model::SolidDef::Placed {motion,at,..} = &s.def else {
+                panic!("the neighbour is no placed solid")
+            };
+            assert_eq!(*motion as usize,joint(e,"crown_roll"));
+            (*motion as usize,at.value)
+        }
+        _ => (joint(e,name),0.),
+    }
 }
 
 /// What the plan's gate compares, read off one elaborated pair: numbers with a name.
@@ -208,15 +236,16 @@ fn read_pair(e: &Elaborated,probe: f64) -> Reading {
         corner(&mut out,format!("space inner {end}"),inner.as_ref().map_or(nowhere,|s| s.on_axis(face,(u0,up))));
     }
     // The motions: their numbers, and where they carry three points at two angles.
+    // A phase is the roll the motion is read from: roll 0 is as drawn.
     for label in MOTIONS {
-        let i = motion(e,label);
-        let (ratio,phase,advance) = e.sketch.motions[i].rotation(&e.sketch).unwrap_or_default();
+        let (i,phase) = motion(e,label);
+        let (ratio,_,advance) = e.sketch.motions[i].rotation(&e.sketch).unwrap_or_default();
         out.push(&format!("{label} ratio"),ratio);
         out.push(&format!("{label} phase"),phase);
         out.push(&format!("{label} advance"),advance);
         let family = motion::Family::read(&e.sketch,i).unwrap();
         for t in [-0.6,0.25] {
-            let pose = family.at(t).unwrap();
+            let pose = family.at(t+phase/if ratio == 0. { 1. } else { ratio }).unwrap();
             for (k,x) in [[0.,0.,0.],[1.,0.,0.],[0.3,-0.2,0.5]].iter().enumerate() {
                 out.point(&format!("{label}({t}) of {k}"),pose.point(x.map(|c| c*probe)));
             }
@@ -496,10 +525,10 @@ fn the_true_hypoid_is_square_offset_on_one_pitch_plane_and_rolls_at_the_tooth_ra
         }
         // the rolls: each member's ratio is the crown's tooth count over its own, and the crown's
         // neighbour is one crown pitch, 2 pi / N_c
-        let rotation = |name: &str| e.sketch.motions[motion(&e,name)].rotation(&e.sketch).unwrap();
+        let rotation = |name: &str| e.sketch.motions[joint(&e,name)].rotation(&e.sketch).unwrap();
         let pinion = rotation("pinion_roll").0;
         let gear = rotation("gear_roll").0;
-        let pitch = rotation("crown_neighbor").1;
+        let pitch = motion(&e,"crown_neighbor").1;
         println!("{label:24} pinion {pinion:.15} against {:.15}, gear {gear:.15} against {:.15}",
             ct/np,-ct/ng);
         assert!((pinion-ct/np).abs() < 1e-12*ct,"{label}: the pinion rolls at {pinion}");

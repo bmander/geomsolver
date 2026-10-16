@@ -259,7 +259,7 @@ pub(crate) fn lift_decl(sk: &Sketch, e: EntRef) -> Decl {
         class_span: Span::default(),
         seed_at: None,
         seed_names: Vec::new(),
-        sweep: None, motion: None, angular_span: None,
+        sweep: None, seen_from: None, angular_span: None,
         membership: lift_plane(sk, e),
         list_span: Span::default(),
         close: None,

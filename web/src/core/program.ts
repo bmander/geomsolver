@@ -226,9 +226,10 @@ export class Document {
       .map(e => ({ name: e.name!, index: e.index }));
   }
 
-  /** Named rigid motions, evaluated through motionSample in world coordinates. */
-  motions(): { name: string; index: number }[] {
-    return this.map.entities.filter(e => e.kind === 'motion' && e.name)
+  /** Named frames that move (#383), evaluated through `frameSample` in world coordinates. */
+  movingFrames(): { name: string; index: number }[] {
+    return this.map.entities.filter(e => e.kind === 'frame' && e.name
+      && this.sketch.frames[e.index]?.moves)
       .map(e => ({ name: e.name!, index: e.index }));
   }
 

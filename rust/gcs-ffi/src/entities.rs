@@ -147,17 +147,27 @@ pub unsafe extern "C" fn gcs_envelope_sample(h: *mut Sketch, idx: i32,
     })
 }
 
-/// Position and velocity of a fixed source point under a named motion. The angle is
-/// radians; velocity is distance per radian of that shared parameter. Six doubles.
+/// Position and velocity of a fixed source point carried by frame `idx`'s joint (#383). The
+/// angle is radians; velocity is distance per radian of that shared parameter. Six doubles; 0,
+/// saying why, for a frame that does not move.
 #[no_mangle]
-pub unsafe extern "C" fn gcs_motion_sample(h: *mut Sketch, idx: i32, angle: f64,
+pub unsafe extern "C" fn gcs_frame_sample(h: *mut Sketch, idx: i32, angle: f64,
     x: f64, y: f64, z: f64, out: *mut f64) -> i32 {
     guard(0, move || {
         if ![x,y,z].iter().all(|v| v.is_finite()) {
-            set_error("a motion sample point must be finite");
+            set_error("a frame sample point must be finite");
             return 0;
         }
-        match gcs_core::motion::evaluate(sk(h),idx as usize,angle) {
+        let s = sk(h);
+        let Some(frame) = usize::try_from(idx).ok().and_then(|i| s.frames.get(i)) else {
+            set_error("no such frame");
+            return 0;
+        };
+        let Some(m) = frame.joint.as_ref().and_then(|j| j.motion) else {
+            set_error("the frame does not move: it has no joint");
+            return 0;
+        };
+        match gcs_core::motion::evaluate(s,m as usize,angle) {
             Ok(m) => {
                 let values: Vec<_> = m.point([x,y,z]).into_iter().chain(m.velocity([x,y,z])).collect();
                 if !values.iter().all(|v| v.is_finite()) {
@@ -182,8 +192,10 @@ pub(crate) fn kind_id(k: EntKind) -> i32 {
         // the binding decodes an id through its own table (`model.ts`'s `KIND_ID`), so an id
         // keeps its number for good: the ellipse's (5) and the frame's (7) were taken up when
         // those kinds went (#47), and the sphere's, the cone's and the cylinder's when they
-        // became library components (`std.Sphere`, `std.Cone`, `std.Cylinder`), and 12–15 when
-        // the patch, the seam, the vertex and the edge left the language for the Rust API (#364)
+        // became library components (`std.Sphere`, `std.Cone`, `std.Cylinder`), 12–15 when
+        // the patch, the seam, the vertex and the edge left the language for the Rust API (#364),
+        // and the motion's (10) when a motion became a frame's joint (#383): a motion node is no
+        // entity a document declares, and the binding decodes it to nothing
         EntKind::Curve => 5,
         EntKind::Frame => 6,
         EntKind::Face => 7,
@@ -208,7 +220,6 @@ pub(crate) fn ent(kind: i32, idx: i32) -> EntRef {
         7 => EntKind::Face,
         8 => EntKind::Solid,
         9 => EntKind::Surface,
-        10 => EntKind::Motion,
         11 => EntKind::Envelope,
         16 => EntKind::Axis,
         17 => EntKind::Meshing,

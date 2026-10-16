@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.134 — October 2026**
+**Specification, Draft 0.135 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -1257,58 +1257,77 @@ An axis-crossing meridian or a query with no unique normal is refused by this ev
 This declaration provides named generating geometry. Motion families and envelopes are
 specified below; solids assembled from surface boundaries remain under development.
 
-### 6.14 Rigid motion families
+### 6.14 Rigid motion families: a frame's joint **[0.135]**
 
 ```
-crown := motion(about: crown_axis)
-blank := motion(about: blank_axis, ratio: 2, phase: 10deg)
-generating := motion(crown, relative_to: blank)
+crown := frame
+std.Turn(crown, about: crown_axis, ratio: 1)
+blank := frame
+std.Turn(blank, about: blank_axis, ratio: 2)
+flank := envelope(crown_flank, under: crown, seen_from: blank, from: -35deg, to: 35deg)
 ```
 
-A `motion` defines a family of rigid transformations over one shared angular parameter. It
-owns no solver unknowns and does not move the sketch. `about:` names a directed solved line
-in world space. Rotation is right handed about that line, through its first endpoint, by
-`phase + ratio * angle`. `ratio` is a bound scalar (default 1), and `phase` is a bound Angle
-(default 0deg). Reversing the line reverses the rotation. Axis geometry follows the current
-solved model, read where it stands in space. `advance` is a bound Length (default 0) travelled along the line per full turn of the parameter, so a rotation with an advance is a screw. `motion(along: l, advance: a)` is a slide: a translation along the directed line `l` by `a` per full turn, with no rotation, `ratio:` or `phase:`.
+**A motion is a frame's joint.** A frame (§6.7) owns a family of rigid transformations over one
+shared angular parameter, the **roll**, once the document names one of its joint's members:
+**`f.axis`**, a directed axis in space; **`f.ratio`**, a `Scalar`, radians the frame turns about
+the axis a radian of the roll; **`f.advance`**, a `Length`, travelled along the axis a full turn of
+the roll. The members are minted where a reference names them (`f.axis`, or a `fix` with a
+`ratio` or `advance` slot), and are held by ordinary relations: `l coincident f.axis` lays the
+axis on a line, `p coincident f.axis` passes it through a point, `f.axis parallel n` sets its
+direction, `fix(ratio == r, advance == a) f` states the numbers. At roll `t` the frame stands
+turned `ratio·t` right handed about its axis and moved `advance·t/2π` along it; a joint with ratio
+0 is a slide. Roll 0 is as drawn: a member that must stand turned there is drawn turned. A frame
+with no joint stands still: it is the world. A joint does not move the sketch.
 
-`relative := motion(source, relative_to: observer)` expresses the source motion in the moving
-observer's frame: `inverse(observer) * source`. `of:` may label `source`. Both dependencies
-read the same angular parameter. The derivative includes the observer's motion. This is a
-relationship between motions, not a sequence of commands that changes entity coordinates.
+The standard library (§8) states the joint the ways a designer does:
 
-Evaluation takes the shared angle in radians and returns an exact rigid pose and its first
-derivative per radian. A sampled source point returns world position and velocity per radian;
-velocity becomes velocity per second only after multiplying by an angular speed. Numeric
-arguments must be finite, and the solved axis must be nondegenerate. Cycles, missing motion
-references and dependency chains beyond 64 levels are errors. Forward references, `motion`
-component formals, privacy, and dependency-aware copy/delete are supported.
+* **`std.Turn(f, about: l, ratio: r, advance: a)`** — about the line `l`; `advance` defaults to
+  `0mm` (a turn), and given, the joint is a screw.
+* **`std.Spin(f, about: o, on: P, ratio: r)`** — about the point `o` of the view `P`, the axis
+  through `o` square to `P`, counter-clockwise as `P` is drawn. A turn in a view is how a planar
+  motion is written: what it generates in its view is a curve of the drawing (§6.15.1), with `o`'s
+  coordinates among that curve's columns.
+* **`std.Slide(f, along: l, advance: a)`** — along the directed line `l` by `a` a full turn of the
+  roll, turning not at all.
+
+**How it is read.** Before the solve the joint's kind is read off what holds it — an axis on a
+line with ratio 0 is a slide, on a line a turn or a screw, through a point of a view and square to
+it a turn in that view — and is otherwise a general joint, which only a reading in space takes. Its
+ratio and advance are numbers the document states; one nothing states is an error (the reference
+implementation's **E080**), and a measurement of the drawing there is **E107**. Axis geometry
+follows the current solved model, read where it stands in space.
+
+**Seen from another frame.** Every reading of a frame's motion — `under:` on a solid (§6.10), an
+envelope (§6.15), a meshing (§6.15.4), a point it carries (§6.15.3), a `claim over` — may name
+the frame it is seen from: **`under: m, seen_from: g`** is `inverse(g) · m`, `m`'s motion as `g`'s
+frame sees it, both at the same roll, its derivative including `g`'s motion. `seen_from:` left
+out is the world. This is a relationship between frames, not a sequence of commands that changes
+entity coordinates.
+
+**Formals.** A component that reads a motion takes the frame, `m: frame`, and where it needs one
+the observer as a second formal, `seen_from: frame`. A `frame` formal a call leaves out is the
+instance's own frame at rest, the world. A number formal may state its default, `advance: Length =
+0mm`, which a call that leaves it out binds.
+
+Evaluation takes the roll in radians and returns an exact rigid pose and its first derivative per
+radian. A sampled source point returns world position and velocity per radian; velocity becomes
+velocity per second only after multiplying by an angular speed. Numeric arguments must be finite,
+and the solved axis must be nondegenerate.
 
 These constant-ratio families provide relative generating kinematics. They do not yet specify
 arbitrary motion laws or an assembly-joint solver.
 
-**[0.37] A turn in a view.** `about:` may name a *point*: `cam := motion(about: o, ratio: 1,
-phase: 10deg)` turns the view about `o`, by `phase + ratio * angle`, counter-clockwise as the view
-is drawn — in space, the rotation about the line through `o` square to the view, toward its viewer.
-It takes no `advance:`. A turn is how a planar motion is written: what it generates in its view is
-a curve of the drawing (§6.15.1), with `o`'s coordinates among that curve's columns.
-
-**[0.27] A motion's numbers may measure the solved drawing.** A motion is read after the solve,
-so `ratio:`, `phase:` and `advance:` may call `length(l)` (a line's length, or an arc's along
-itself), `radius(c)` (a circle or an arc), `distance(a, b)` (two points, or a point
-and a line produced) and `angle(l1, l2)` (between two lines' directions, 0° to 180°), all in
-space: `pinion := motion(about: axis, ratio: -length(wheel_r) / length(pinion_r))`. The arguments
-are references, resolved as any reference in the statement's scope; a length reads as a `Length`,
-so the slot's dimension is checked as for any number. The
-value is worked out from the solved geometry each time the motion is read and adds no unknown or
-equation; a motion goes with what it measures under copy and delete. Every other context — a
-`param`, a seed, a constraint's number, a solid's extent or placement angle — is needed before
-the solve, and a measurement there is an error (the reference implementation's **E107**).
+**Retired spellings.** Through 0.134 a motion was a declaration of its own, `m := motion(about: l,
+ratio: r, phase: φ, advance: a)`, `motion(along: l, advance: a)`, `motion(source, relative_to:
+observer)`, with `m: motion` formals and its numbers allowed to measure the solved drawing
+**[0.27]**. Each is refused naming what it became: `motion(…)` the frame and `std.Turn`, `std.Spin`
+or `std.Slide`; `relative_to:` the reading's `seen_from:`; `phase:` a roll offset (a turn with
+phase φ and ratio r read at roll τ is the same turn read at τ + φ/r).
 
 ### 6.15 Generated envelopes
 
 ```
-flank := envelope(crown_flank, under: generating, from: -35deg, to: 35deg)
+flank := envelope(crown_flank, under: crown, seen_from: blank, from: -35deg, to: 35deg)
 ```
 
 An `envelope` is the implicit locus of a named `surface` under a named `motion` where the
@@ -1351,15 +1370,16 @@ patches, seams, corners, edges and face boundaries that check one are Rust API (
 #### 6.15.1 Envelopes in the plane **[0.37]**
 
 ```
-blank := motion(about: o, ratio: 1)
-rack := motion(along: slide, advance: 2 * pi * 30)
-cutting := motion(rack, relative_to: blank)
-flank := envelope(rack_flank, under: cutting, from: -25deg, to: 25deg)
+blank := frame
+std.Spin(blank, about: o, on: std.front, ratio: 1)
+rack := frame
+std.Slide(rack, along: slide, advance: 2 * pi * 30)
+flank := envelope(rack_flank, under: rack, seen_from: blank, from: -25deg, to: 25deg)
 profile := envelope(roller, under: follower_on_cam, from: 0deg, to: 360deg, side: near)
 ```
 
 The same word over a **tool of the sheet** — a point, line, circle, arc, a curve from a computed
-point, or a profile itself generated by a point, line, circle or arc — and a planar motion (built from turns about points, `along:` slides and `relative_to:`)
+point, or a profile itself generated by a point, line, circle or arc — and a planar motion (built from turns about points and slides, either seen from another)
 is a **curve of the drawing**, not a spatial envelope: the profile the tool cuts in the moving
 frame, as the roll runs over `[from, to]`. It is a curve like any other (§6.5): it is drawn, and
 `p coincident f`, `f tangent l` and `f curvature k` hold against it, each owning the roll at its contact
@@ -1372,10 +1392,9 @@ tool's normal there passes through the instant centre (the law of gearing). A po
 **What it is written over is solved for.** The tool's coordinates and the motion's — its turns'
 centres, its slides' lines — are columns of the curve, so a contact on a generated profile moves
 the tool and the motion to suit: a rack's pressure angle chosen so its cut passes a point, a
-cam's roller placed so the profile it cuts bends at a stated radius. The motion's ratios, phases
-and advances are numbers of the curve; a number written as a measurement (§6.14) is read after the
-solve and is an error here (**E080**), as are a rotation about a line in space, a traced tool, and a
-generated tool whose own tool is not a point, line, circle or arc. A generated tool must be
+cam's roller placed so the profile it cuts bends at a stated radius. The joints' ratios and advances
+are numbers of the curve. A rotation about a line in space, a traced tool, and a generated tool
+whose own tool is not a point, line, circle or arc are errors here (**E080**). A generated tool must be
 declared before the profile it cuts.
 
 **Exact orders.** `C`, `C'` and `C''` are exact: the root `s` and the cut are read in truncated
@@ -1400,7 +1419,7 @@ over whole turns that comes back is closed (§6.5) **[0.40]**, and stands alone 
 
 ```
 side := surface(rack_tooth, edge: rack_flank)
-flank := envelope(side, under: cutting, from: -30deg, to: 30deg)
+flank := envelope(side, under: rack, seen_from: blank, from: -30deg, to: 30deg)
 p := point in cut
 p coincident flank
 ```
@@ -1427,7 +1446,7 @@ read after the solve — and held to by it (§6.15.3).
 
 ```
 flank := std.Cone(spine, half: hint(20deg))
-pinion_flank := envelope(flank, under: mesh, from: -30deg, to: 30deg)
+pinion_flank := envelope(flank, under: gear_turn, seen_from: pinion_turn, from: -30deg, to: 30deg)
 M coincident pinion_flank
 pinion_flank perpendicular(at: M) normal
 pinion_flank tangent(at: M) along
@@ -1440,7 +1459,7 @@ a **set** — a cone (`std.Cone`, and `std.ConeThrough` with its lean stated), a
 (`std.Cylinder`) or a plane (`std.HalfSpace`'s face, a distance along a line from a point,
 **[0.104]**), the operand of `envelope` read as what its body states at its point (§6.21) —
 or a **named side of a revolution** turned from a line, an arc or a circle (`surface(rev, e)`),
-under a motion built of turns about lines, screws, slides along lines and `relative_to:`. Its
+under a motion built of turns about lines, screws and slides along lines, seen from any frame. Its
 numbers — the source's axis and edge, a cone's half or a cylinder's radius where that is an
 unknown of the drawing (`half: hint(20deg)`), and every axis the motion turns about or slides
 along — are columns of every relation holding something to it, so what makes the source solves
@@ -1485,7 +1504,7 @@ plane square to the line of action sliding along it as fast as the members move 
 from the member (`spiral_bevel/phillips.sv`).
 
 ```
-pinion_flank := envelope(gear_flank, under: mesh, from: -60deg, to: 60deg)
+pinion_flank := envelope(gear_flank, under: gear_turn, seen_from: pinion_turn, from: -60deg, to: 60deg)
 pinion_flank regular(by: gear_tooth) within pinion_blank          // no undercut
 pinion_flank regular(>= 0.3, by: gear_tooth) within pinion_blank  // and a margin from it
 ```
@@ -1516,15 +1535,15 @@ inside the blank, whatever the design, so the tool says where the flank is cut.
 #### 6.15.4 The meshing of two flanks **[0.94]**
 
 ```
-mesh := motion(gear_turn, relative_to: pinion_turn)
-contact := meshing(pinion_flank, gear_flank, under: mesh, from: -15deg, to: 15deg)
+contact := meshing(pinion_flank, gear_flank, under: gear_turn, seen_from: pinion_turn,
+                   from: -15deg, to: 15deg)
 Q coincident(t == 0deg) contact
 R coincident(t == 10deg, lag == 0.01) contact
 ```
 
-`meshing` is tooth contact analysis, a locus. Its first flank turns with `mesh`'s observer (the
-pinion's turn) and its second with its source (the gear's): the motion the pair runs at, which
-must be a relative one (**E080** otherwise). A flank is an envelope in space the solve holds to
+`meshing` is tooth contact analysis, a locus. Its first flank turns with the reading's observer
+(`seen_from:`, the pinion's frame) and its second with its source (`under:`, the gear's): the
+motion the pair runs at, which must be seen from a frame that moves (**E080** otherwise). A flank is an envelope in space the solve holds to
 (§6.15.3) — **generated** — or what such an envelope reads as its source, a cone, a cylinder or
 a plane set or a named side of a revolution, standing still in its member — **formed** — or a
 surface traced in space over two formals (§6.5), the flank as its member sees it — **traced**
@@ -1572,7 +1591,8 @@ statement it wants (**E040**), and may be written either way round (`along tange
 contact`).
 
 ```
-contact := meshing(pinion_flank, gear_flank, under: mesh, from: -15deg, to: 15deg,
+contact := meshing(pinion_flank, gear_flank, under: gear_turn, seen_from: pinion_turn,
+                   from: -15deg, to: 15deg,
                    ease: M, along: lengthwise, profile: 0.002 / 1mm, lengthwise: kl / 1mm)
 ```
 
@@ -2091,7 +2111,7 @@ Residual conventions: points are ℝ²; `×` is the scalar 2D cross product; `�
 | `tangent(S1, S2, at: m)` **[0.51]** | F₁,ₓ·wₖ and F₂,ₓ·wₖ at m, k = 0, 1, with w₀ = e_a + s₀ e_c and w₁ = e_b + s₁ e_c | 2 for two surfaces (four rows over s₀, s₁) | e_c the world axis the sets' normal at m runs most along, chosen once; `m coincident S1`, `m coincident S2` beside it |
 | `touches(k: free curve, L: Line)` **[0.59]** | inside `k`'s problem (§9.10): its arc ends at o + σ·d̂ on `L`, `H` unbroken there, and (λ⁺ − λ⁻)·d̂ | 0 in the drawing | σ and the place along `k` the problem's own; `L`'s points columns of `k`, as its ends are; written `k touches L` |
 | *across views* **[0.24]** | the relation over the lifts X, Y of its points: X − Y (3); ‖X − Y‖² − e² (1); the point–line magnitude (1); the signed common perpendicular (1); two components of (X − A) × (B − A) across the line (2, `coincident` a line); â·b̂ − cos e (1); â·b̂ (1); (â × b̂) across â (2, `parallel`); ‖B − A‖² − ‖D − C‖² (1, `equal`); ‖X − C‖ − r and n·(X − C) (2, `coincident` a circle); **[0.25]** X − (A + B)/2 (3, `midpoint`); Q + P − 2F, F the foot of P on the line (3, `symmetry`) | as listed | §9.2 |
-| ~~`reciprocal(L: Line, m: Motion)`~~ **[0.105]**, the standard library's word **[0.130]** | (B − A)·v(A), v(x) = v₀ + ω × x the twist of `m` a radian | 1 | a force along `L` does no work on `m` (Ball); `m` a turn, a screw or a slide about a fixed line, or one relative to another, whose twist is the source's less the observer's; for a mesh the meshing law of a line of action; written `L reciprocal mesh` |
+| ~~`reciprocal(L: Line, m: Motion)`~~ **[0.105]**, the standard library's word **[0.130]** | (B − A)·v(A), v(x) = v₀ + ω × x the twist of `m` a radian | 1 | a force along `L` does no work on `m` (Ball); `m` a turn, a screw or a slide about a fixed line, or one relative to another, whose twist is the source's less the observer's; for a mesh the meshing law of a line of action; written `L reciprocal(seen_from: pinion) gear` **[0.135]** |
 | ~~`screw(t: Axis, m: Motion)`~~ **[0.105]**, `std.Screw(t, m)` **[0.130]** | two components of d̂ across ω̂, scaled by L; two of A − c across ω̂; h − ω·v₀/‖ω‖² | 5 | `t` on `m`'s instantaneous screw axis, through c = ω × v₀/‖ω‖² along ω; h, the pitch, the relation's own unknown, a length a radian, pinned as `pitch == h`; L the motion's first axis as drawn; written `isa screw mesh`; a twist turning nothing has no axis |
 | `coincident(X, x, under: m, t)` **[0.106]** | X − Pose_m(t)·x | 3 | `X` is `x` as the moving frame sees it: carried by `m`'s pose at the roll `t`, in degrees, the relation's own unknown (pinned `t == τ`, or solved); X and x lifted; `m` any motion the solve reads, a turn about a point of a view read as the turn about the line through it square to the view; written `X coincident(under: m, t == τ) x` |
 | `parallel(rate(p over t), l)`, `perpendicular(…)` **[0.130]** | r = ∂X/∂t of the contact holding `p`, every other column held: of a curve in its view (r × (B − A))/‖B − A‖ and r·(B − A)/‖B − A‖; in space two components of r across l̂, and r·l̂ | 1 in a view; 2 parallel in space, 1 square | one kernel for every contact (§6.5); the contact's slot shared, its other unknowns columns; `g tangent(at: p) l` the same statement |
@@ -2210,7 +2230,7 @@ claim over crank.theta in (0deg, 360deg) {
 
 `claim over NAME in (A, B) { … }` judges every claim in its body as the drawing runs along `NAME`, and reports the **worst** pose reached.  It is Structure-class: it says how the claims inside it are judged and asserts nothing itself.
 
-- `NAME` MUST be an **unknown** of the drawing (§3.3, §6.3) — an input with no value, or a formal an instance left unbound — or **[0.40]** a named motion (§6.14), whose roll the claims run along: every solid placed under it (`solid(S, under: NAME, at: A)`) is read at its angle advanced by the roll, and nothing is solved again.  A value or an input with a value is a number the document already fixed and sweeping a constant is not a question; naming one, or naming other geometry, is **E040**.
+- `NAME` MUST be an **unknown** of the drawing (§3.3, §6.3) — an input with no value, or a formal an instance left unbound — or **[0.40]** a frame with a joint (§6.14), whose roll the claims run along: every solid placed under it (`solid(S, under: NAME, at: A)`) is read at its angle advanced by the roll, and nothing is solved again.  **[0.135]** `claim over NAME seen_from G in (A, B)` runs the roll of `NAME`'s motion as `G` sees it.  A value or an input with a value is a number the document already fixed and sweeping a constant is not a question; naming one, or naming other geometry, is **E040**.
 - `A` and `B` are read in the units the unknown's readers are written in: an interval of an angle is an angle, and one of a length is a length.
 - An implementation MUST state that its answer is by **sampling**, and how many poses it took. A pose that did not solve or produced invalid solid geometry cannot certify the claim; the report identifies those failed parameter values, and a sweep with unresolved poses cannot be reported as holding.  A claim that holds at every sample is a claim that held at every sample; a swept claim is honest about that in the way a faceted one is honest about its margin.
 
@@ -2952,7 +2972,7 @@ element        = ekw [ "(" ctor_arg { "," ctor_arg } ")" ] { trailer }
                | face_decl | solid_decl ;
 ekw            = "point" | "line" | "circle" | "arc" | "spline" | "plane" | "axis"  (* axis [0.42] *)
                | "face" | "solid"                                            (* §6.8, §6.9 [0.18] *)
-               | "surface" | "motion" | "envelope" ;                        (* §6.13–§6.15 *)
+               | "surface" | "envelope" ;                                   (* §6.13–§6.15 *)
 (* the trailing clauses are order-free: `hint(…)`, `knots […]`, `in REF`.  A
    place — `hint(at: t)`, `hint(at: c, bearing: …)` — is the same clause with `at:` and
    `bearing:` for keys, §6.4 [0.14] *)
@@ -2998,7 +3018,8 @@ body_rel       = ref ( "union" | "cut" | "common" ) ref ; (* the body rule, §6.
 (* §9.8 [0.18]: a claim about the object.  The three words are operators like any other, and a
    sweep says how the claims in its body are judged. *)
 solid_claim    = [ "claim" ] ref ( "clear" "(" expr ")" | "fits" "(" expr ")" | "inside" ) ref ;
-claim_over     = "claim" "over" ref "in" "(" expr "," expr ")" "{" { solid_claim } "}" ;
+claim_over     = "claim" "over" ref [ "seen_from" ref ] "in" "(" expr "," expr ")"
+                 "{" { solid_claim } "}" ;                                  (* seen_from [0.135] *)
 
 (* [0.20]: solid views, sections, and annotation requests belong to .svd. *)
 

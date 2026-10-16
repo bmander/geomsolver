@@ -249,6 +249,10 @@ impl<'a> P<'a> {
                 (Some(Tok::Ident(n)), Some(Tok::P(':'))) => {
                     let name = Name { text: n, span: self.here() };
                     self.i += 2;
+                    if name.text == "relative_to" {
+                        self.fail_at(name.span, super::RELATIVE_TO);
+                        return None;
+                    }
                     // a direction is a word (`along: u`) or what it names (`along: std.x`): a
                     // word of the table is a word, unless it opens a path — and no selector word
                     // is a path, so a path is a reference whatever its key (`at: v1.origin`)
@@ -261,7 +265,8 @@ impl<'a> P<'a> {
                         && name.text == "at" && matches!(self.peek(),
                         Some(Tok::Ident(w)) if !["start", "end", "p1", "p2"].contains(&w.as_str()));
                     // and `coincident(under: m)` names the motion carrying the point (#326)
-                    let motion = word == "coincident" && name.text == "under";
+                    let motion = word == "coincident"
+                        && (name.text == "under" || name.text == "seen_from");
                     let v = if self.path_ahead() || along || point || motion {
                         Arg::Ref(self.refr()?)
                     } else {

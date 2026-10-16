@@ -35,7 +35,7 @@ pub(super) fn build_solid(
         // a region: the bounds its set put on the probe, gathered as they were stated (§6.21)
         Sweep::Region { probe } => region(sk, res, probe, st, probes, &mut say)?,
         Sweep::Placed { .. } | Sweep::Swept { .. } | Sweep::Rolled { .. } => {
-            under_motion(sk, res, sweep, &ops, st, &mut say)?
+            under_motion(sk, res, sweep, d.seen_from.as_ref(), &ops, st, &mut say)?
         }
         Sweep::Through { body } => {
             let face = one_face(&ops, st, &mut say)?;
@@ -346,9 +346,10 @@ fn region(
 /// A solid under a named motion: placed at one pose (`at:`), swept over an interval, or rolled
 /// through a body's material (#271, found after the solve).
 fn under_motion(
-    sk: &Sketch,
+    sk: &mut Sketch,
     res: &Resolver,
     sweep: &Sweep,
+    seen_from: Option<&crate::syntax::Ref>,
     ops: &[EntRef],
     st: &Stmt,
     say: &mut impl FnMut(Code, Span, String),
@@ -359,11 +360,13 @@ fn under_motion(
         say(Code::E080,st.span,"a named motion needs one source solid".into());
         return None;
     }
-    let found = res.lookup(motion).and_then(|e|
-        super::super::resolve::follow_building(sk,res,e,motion).ok());
-    let Some(m) = found.filter(|e| e.kind == EntKind::Motion) else {
-        say(Code::E080,motion.span,"`under:` requires a named motion".into());
-        return None;
+    // the frame it is carried by, seen from the one named, where one is (#383)
+    let m = match super::super::motions::reading(sk, res, motion, seen_from) {
+        Ok(m) => EntRef::new(EntKind::Motion, m),
+        Err(message) => {
+            say(Code::E080, motion.span, message);
+            return None;
+        }
     };
     let angle = |a,what| extent(sk.units,a,what,crate::units::Dim::ANGLE)
         .map(|e| Extent {text:e.text,value:e.value.to_radians()});

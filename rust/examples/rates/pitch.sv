@@ -39,9 +39,10 @@ in std.front {
   path := line(s0, s1)                    // the follower's line, through the cam's centre
 }
 
-cam := motion(about: o, ratio: 1)
-out := motion(along: path, advance: 2 * lift)
-rise := motion(out, relative_to: cam)
+cam := frame
+std.Spin(cam, about: o, on: std.front, ratio: 1)
+out := frame
+std.Slide(out, along: path, advance: 2 * lift)      // the rise: `under: out, seen_from: cam`
 
 in std.front {
   c_rise := point hint((25, 0))
@@ -50,8 +51,8 @@ in std.front {
   radius(rr) roller
 }
 
-pitch_rise := envelope(c_rise, under: rise, from: 0deg, to: 180deg)
-cam_rise := envelope(roller, under: rise, from: 0deg, to: 180deg, side: near)
+pitch_rise := envelope(c_rise, under: out, seen_from: cam, from: 0deg, to: 180deg)
+cam_rise := envelope(roller, under: out, seen_from: cam, from: 0deg, to: 180deg, side: near)
 
 // a profile drawn by its formula, three lobes and three hollows
 component Lobed(c: point, u: Angle) {

@@ -176,7 +176,7 @@ pub(super) fn gesture_decl(kind: EntKind, name: &str, children: Vec<Vec<syntax::
         class_span: Span::default(),
         seed_at: None,
         seed_names: Vec::new(),
-        sweep: None, motion: None, angular_span: None,
+        sweep: None, seen_from: None, angular_span: None,
         membership: Default::default(),
         list_span: Span::default(),
         close: None,

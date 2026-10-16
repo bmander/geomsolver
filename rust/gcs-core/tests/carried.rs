@@ -1,6 +1,7 @@
 //! **A point as a moving frame sees it** (#326, R4): `X coincident(under: m, t == τ) x` holds `X`
-//! where the motion's pose at the roll `τ` carries `x`, `X = Pose(τ)·x`.  Under a motion relative
-//! to a turn, at `τ = −φ`, it is a point of the fixed frame as a member turned `φ` sees it.  Each
+//! where the frame's pose at the roll `τ` carries `x`, `X = Pose(τ)·x`.  Under a frame seen from a
+//! turning one (`under: m, seen_from: g`), at `τ = −φ`, it is a point of the fixed frame as a
+//! member turned `φ` sees it.  Each
 //! is held here to closed forms and to what the solve already knows of a motion apart from it: an
 //! epicycloid is a rolling circle's point seen by the fixed one, which is also the planar envelope
 //! of that point under the roll (§6.15.1), and a point carried by a screw about a skew line is on
@@ -12,7 +13,8 @@ use gcs_core::space::{add, cross, dot, norm, scale, sub, unit};
 
 /// A circle of radius 20 rolling round the outside of one of radius 40, drawn in the top view: the
 /// fixed circle turns about `o` with the roll, the rolling one about `c` twice as fast the other
-/// way, and `rolling` is the rolling circle seen from the fixed one.  `x` is the rolling circle's
+/// way, and the rolling circle seen from the fixed one is `under: rolling_turn, seen_from:
+/// fixed_turn`.  `x` is the rolling circle's
 /// point where the two touch at the start; `path`, its envelope under the roll, is its path there.
 const ROLLING: &str = "\
 unit mm
@@ -25,10 +27,11 @@ in std.top {
   x := point
   fix((40, 0)) x
 }
-fixed_turn := motion(about: o)
-rolling_turn := motion(about: c, ratio: -2)
-rolling := motion(rolling_turn, relative_to: fixed_turn)
-path := envelope(x, under: rolling, from: -180deg, to: 180deg)
+fixed_turn := frame
+std.Spin(fixed_turn, about: o, on: std.top, ratio: 1)
+rolling_turn := frame
+std.Spin(rolling_turn, about: c, on: std.top, ratio: -2)
+path := envelope(x, under: rolling_turn, seen_from: fixed_turn, from: -180deg, to: 180deg)
 ";
 
 /// The epicycloid of a circle of radius `b` rolling round one of radius `a`, at `θ`: the
@@ -56,13 +59,30 @@ fn at(e: &gcs_core::program::Elaborated, name: &str) -> [f64; 3] {
 /// circle's centre, is where the epicycloid is that far out: the two readings of one motion agree.
 #[test]
 fn a_rolling_circles_point_seen_by_the_fixed_one_is_on_the_epicycloid() {
-    let mut src = ROLLING.to_string();
     let rolls = [-150.0, -60.0, -15.0, 0.0, 30.0, 90.0, 170.0];
+    // wherever Y is hinted below the line of centres, its roll starts where the motion carries x
+    // nearest it (`infer::carried_roll`), not at 0, halfway between the two places 50 out
+    for hint in ["(49, -7)", "(50, -6)", "(45, -12)", "(30, -38)"] {
+        let mut src = ROLLING.to_string();
+        for (k, t) in rolls.iter().enumerate() {
+            src += &format!("in std.top {{\n  X{k} := point hint((50, 0))\n}}\n\
+                             X{k} coincident(under: rolling_turn, seen_from: fixed_turn, \
+                             t == {t}) x\n");
+        }
+        src += &format!("in std.top {{\n  Y := point hint({hint})\n}}\n\
+                         Y coincident(under: rolling_turn, seen_from: fixed_turn) x\n\
+                         Y distance(50mm) o\nY coincident path\n");
+        let y = at(&solved(&src), "Y");
+        assert!(norm(sub(y, [49.5763, -6.49519, 0.0])) < 1e-3, "hint {hint}: {y:?}");
+    }
+    let mut src = ROLLING.to_string();
     for (k, t) in rolls.iter().enumerate() {
         src += &format!("in std.top {{\n  X{k} := point hint((50, 0))\n}}\n\
-                         X{k} coincident(under: rolling, t == {t}) x\n");
+                         X{k} coincident(under: rolling_turn, seen_from: fixed_turn, \
+                         t == {t}) x\n");
     }
-    src += "in std.top {\n  Y := point hint((49, -7))\n}\nY coincident(under: rolling) x\n\
+    src += "in std.top {\n  Y := point hint((49, -7))\n}\n\
+            Y coincident(under: rolling_turn, seen_from: fixed_turn) x\n\
             Y distance(50mm) o\nY coincident path\n";
     let e = solved(&src);
     for (k, t) in rolls.iter().enumerate() {
@@ -103,15 +123,17 @@ b1 := point hint((-5, 9, 0))
 fix((-5, 0, 2)) b0
 fix((-5, 9, 0)) b1
 bx := line(b0, b1)
-screw := motion(about: ax, ratio: 1.5, advance: 7mm)
-turn := motion(about: bx, ratio: -0.4)
-seen := motion(screw, relative_to: turn)
+use std
+screw := frame
+std.Turn(screw, about: ax, ratio: 1.5, advance: 7mm)
+turn := frame
+std.Turn(turn, about: bx, ratio: -0.4)
 x := point hint((9, -4, 6))
 fix((9, -4, 6)) x
 P := point hint((9, -4, 6))
 P coincident(under: screw, t == 40) x
 Q := point hint((9, -4, 6))
-Q coincident(under: seen, t == -25) x
+Q coincident(under: screw, seen_from: turn, t == -25) x
 ";
     let e = solved(src);
     let (a0, d) = ([1.0, 2.0, 3.0], unit([3.0, 1.0, 8.0]));
@@ -130,25 +152,35 @@ Q coincident(under: seen, t == -25) x
     assert!(norm(sub(at(&e, "Q"), q)) < 1e-9, "{:?} against {q:?}", at(&e, "Q"));
 }
 
-/// The relation prints as it is written and reads back the same; `under:` names a motion, and
+/// The relation prints as it is written and reads back the same; `under:` names a frame, and
 /// anything else there is refused.
 #[test]
 fn a_carried_point_prints_back_and_names_a_motion() {
+    // the flat form prints no component instance: the joints are written out as `std.Spin`
+    // writes them
+    let spin = |f: &str, c: &str, r: i32| format!("{c} coincident {f}.axis\n\
+        {f}.axis parallel std.top.normal\nfix(ratio == {r}, advance == 0mm) {f}\n");
     let src = format!("{ROLLING}in std.top {{\n  X := point hint((50, 0))\n}}\n\
-                       X coincident(under: rolling, t == 30) x\n")
-        .replace("path := envelope(x, under: rolling, from: -180deg, to: 180deg)\n", "");
+                       X coincident(under: rolling_turn, seen_from: fixed_turn, t == 30) x\n")
+        .replace("std.Spin(fixed_turn, about: o, on: std.top, ratio: 1)\n",
+                 &spin("fixed_turn", "o", 1))
+        .replace("std.Spin(rolling_turn, about: c, on: std.top, ratio: -2)\n",
+                 &spin("rolling_turn", "c", -2))
+        .replace("path := envelope(x, under: rolling_turn, seen_from: fixed_turn, from: -180deg, \
+                  to: 180deg)\n", "");
     let (mut prog, errs) = crate::common::parse(&src);
     assert!(errs.is_empty(), "{errs:?}");
     let first = gcs_core::program::elaborate(&prog);
     assert!(first.ok(), "{:?}", first.errors().map(|d| &d.message).collect::<Vec<_>>());
     let printed = gcs_core::syntax::render_flat(&mut prog).unwrap().to_string();
-    assert!(printed.contains("X coincident(under: rolling, t == 30) x"), "{printed}");
+    let written = "X coincident(under: rolling_turn, seen_from: fixed_turn, t == 30) x";
+    assert!(printed.contains(written), "{printed}");
     let again = solved(&printed);
     let carried = again.sketch.constraints.iter().filter(|c| c.kind == CKind::CarriedPoint);
     assert_eq!(carried.count(), 1);
-    let (prog, errs) = crate::common::parse(&src.replace("under: rolling", "under: o"));
+    let (prog, errs) = crate::common::parse(&src.replace("under: rolling_turn", "under: o"));
     assert!(errs.is_empty(), "{errs:?}");
     let e = gcs_core::program::elaborate(&prog);
-    assert!(e.errors().any(|d| d.message.contains("a motion is wanted")),
+    assert!(e.errors().any(|d| d.message.contains("a motion is read off a frame")),
             "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
 }

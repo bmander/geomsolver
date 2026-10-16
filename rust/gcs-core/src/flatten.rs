@@ -256,6 +256,10 @@ pub struct Expansion {
     /// absolute (#383): a frame declared bare among them mints its axes as it is built, and
     /// one not among them owns nothing.
     pub charts: BTreeSet<String>,
+    /// What every reference reading a joint's member `axis`, `ratio` or `advance` reads it of, and
+    /// every frame a `fix` holds a ratio or an advance of, absolute (#383): a frame among them
+    /// mints its joint as it is built.
+    pub joints: BTreeSet<String>,
     /// Where a declaration reads through a name already said to name nothing — a formal its
     /// call gave nothing that is (#253): the elaborator, finding nothing there, says no more.
     pub quiet: BTreeSet<Span>,
@@ -435,6 +439,8 @@ struct Walk<'a> {
     normals: BTreeSet<String>,
     /// See `Expansion::charts`.
     charts: BTreeSet<String>,
+    /// See `Expansion::joints`.
+    joints: BTreeSet<String>,
     /// See `Expansion::quiet`.
     quiet: BTreeSet<Span>,
     /// The solids' faces read as sets and blocks over them — see `FaceState`.
@@ -661,6 +667,7 @@ impl<'a> Walk<'a> {
             twins: Vec::new(),
             normals: BTreeSet::new(),
             charts: BTreeSet::new(),
+            joints: BTreeSet::new(),
             quiet: BTreeSet::new(),
             faces: FaceState::default(),
             held: Held::default(),
@@ -732,6 +739,7 @@ impl<'a> Walk<'a> {
             twins: self.twins,
             normals: self.normals,
             charts: self.charts,
+            joints: self.joints,
             quiet: self.quiet,
             probes: self.sets.probes,
             face_repeats: self.faces.repeats,

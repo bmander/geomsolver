@@ -24,11 +24,28 @@ The analytic snapshots are made of parts too (`GeneratedEnvelope::new`, `Trimmed
 `BoundaryVertex::new`, `JunctionVertex::new`, `SpatialEdge::new`, `SpatialFaceBoundary::new`).
 `tests/swept_faces.rs` is the gate.
 
-**Named motions:** `turn := motion(about: axis, ratio: 2, phase: 10deg)`,
-`relative := motion(turn, relative_to: observer)`. `motion::evaluate` takes radians, returns exact
-pose and derivative via `Sketch::world_point`; relative is observer inverse times source. Spatial,
-ABI kind 10. Cycles and depth over 64 refused (checked with cached subgraphs too). Browser
-`core/motion.ts` (six doubles). `motion::Family::read` snapshots; re-read after axis edits.
+**A frame's joint is its motion** (#383 stage 3, [frames plan](../frames-plan.md)): a frame's
+`axis`, `ratio` and `advance` are minted where a reference names them (`Expansion::joints`, read in
+`program::entities` by `Sketch::mint_joint`: an `AxisE`, its direction seeded along z then by
+`seed_joints` from what holds it, and two parameters, ratio 1 and advance 0) and held by
+ordinary relations; `std.Turn`, `std.Spin` and `std.Slide` are the words that hold them.  Before
+the solve `program::motions` reads each joint's kind off its holding statements — `fix`'s
+`ratio`/`advance` slots, `coincident` with a line or point, `parallel` with a view's normal — and
+pushes the `MotionDef` the readers know: a line with ratio 0 `Translation`, a line `Rotation`, a
+view's point with the axis square to it `Turn`, anything else `Joint { axis, ratio, advance }`,
+which `Family::read` reads (ratio 0 a translation) and the planar program and held steps refuse.
+A joint whose ratio or advance no `fix` states is E080; a measured one is E107.  The joint's
+`motion` is that node; a frame without a joint is the world.  `motions::reading(sk, res, under,
+seen_from)` is every reading's one entry (`under:` on a solid, envelopes, meshings, held and
+planar and extruded envelopes, sweep claims, `under:` relations): the frame's node, or seen from
+another `relative(source, observer)` memoized as `"m seen from g"`; a frame with no joint read
+`under:` "does not move".  A traced body takes a frame formal as its motion's steps (no columns at
+rest), `seen_from` composing them, and `traced::{lifted, columns, theta}` read a frame argument's
+joint.  `motion::evaluate` takes radians, returns exact pose and derivative via
+`Sketch::world_point`; relative is observer inverse times source.  Cycles and depth over 64
+refused.  `gcs_frame_sample` (browser `core/frame.ts`, six doubles) samples a frame's joint and
+`gcs_frame_moves` says whether it has one.  `motion(…)`, `m: motion`, `relative_to:` and `phase:`
+are refused naming what they became.  `tests/frames.rs` is the gate.
 **A chain** (#383 stage 1, [frames plan](../frames-plan.md)): `Sketch::chain(outer, inner)` is the
 pose `outer(τ)·inner(τ)`, lowered as it is pushed and never evaluated as a new step: two joints
 over one axis entity (one line, one centre) whose numbers are stated fold to one joint, ratios,
@@ -43,10 +60,10 @@ count the minted nodes (an inverse is as deep as what it undoes). `tests/frames.
 slide against the cycloid, coaxial screws read as one screw, 64 levels), with a `CarriedPoint`
 under a chain FD-checked over both axes in `tests/jacobians.rs`.
 
-**Measurements read after the solve** (`measure.rs`, `expr::Measure`): `length(l)`, `radius(c)`,
-`distance(a, b)`, `angle(l1, l2)` only in a motion's `ratio:`/`phase:`/`advance:`; resolved by
-`rescope_measures`, held as text in `MotionE::measured`, evaluated by `MotionE::rotation`/`advance`
-on every read (`Family::read`, `solid::reads`), never stored. Elsewhere `expr::eval` refuses (E107).
+**A frame's numbers are stated** (#383 stage 3): a ratio or advance measured off the solved
+drawing (`ratio: -length(a) / length(b)`) is E107, as every measurement in a number is; documents
+state it from their own numbers (`lantern_generation.sv`'s `-wheel_pitch / pinion_pitch`).
+`measure.rs` and `MotionE::measured` stay until stage 5 retires them, always empty.
 
 **Solid placement:** `indexed := solid(source, under: indexing, at: 90deg)` places a solid at a
 motion's pose; `at:` is a constant Angle, not a hint or sweep. Repeatable, nestable, Boolean
@@ -61,8 +78,8 @@ old outputs; renames are atomic per file, not across files. Native-path tests mu
 mesh defects.
 
 **Planar generation (§6.15.1, #61):** `envelope(tool, under: m, from:, to:, side:)` over a tool of
-the sheet (point/line/circle/arc/formula curve) and a planar motion (`motion(about: point)` is
-`MotionDef::Turn`, a rotation square to its view in space) is a **curve** (`CurveBody::Envelope`,
+the sheet (point/line/circle/arc/formula curve) and a planar motion (`std.Spin`, a turn about a
+point of a view, is `MotionDef::Turn`, a rotation square to its view in space) is a **curve** (`CurveBody::Envelope`,
 `program/generated.rs`, built with motions after the primitives, before constraints):
 `F = X_s × X_t = 0` in the tool parameter, `C`..`C''` exact by `taylor::Jet`s, `C'''` and θ
 gradients by difference (`generate.rs`); tool and motion geometry are its columns (shared ones
@@ -165,7 +182,7 @@ the pair from the STLs.
 blanks and face mill and drops the crown from the pinion. The gear is formed: its blank less a
 space copied at every tooth with no roll (`Copied`, static placements, no sweep), every space
 flank one of the mill's cones. The pinion is its blank less the gear's tooth (`gear_tooth`,
-`hypoid.sv`'s `Tooth` region, the ring between those cones) swept under `motion(gear_turn, relative_to: pinion_turn)`, the ratio
+`hypoid.sv`'s `Tooth` region, the ring between those cones) swept `under: gear_turn, seen_from: pinion_turn`, the ratio
 the teeth — exactly conjugate at any offset, and in the generating class as the crown's sweep
 is. Two limits shaped it: the core sections a cutter only of revolutions about parallel lines
 (`brep::section`), so the pinion's cutter is one ring about one axis and the space, not the
@@ -177,7 +194,7 @@ reproduction). `tests/formate.rs` (the cutter and motion, admission);
 `build/exports/formate-{pinion,gear}.stl` and holds the pair to an unvarying clearance and to
 line contact through the mean section.
 
-**Screws, the constant-twist class (#64):** a sweep under `motion(about:, advance:)` is admitted by
+**Screws, the constant-twist class (#64):** a sweep under a screw (`std.Turn(…, advance:)`) is admitted by
 rows S1–S4 (`solid::constant_twist`, docs/generating-sweeps.md): the tool's characteristic (each
 ring's `A cos + B sin + C` roots under the screw's twist, fixed on the tool) walked through the blank,
 a coarse pass then `rows` across the reach; S3 is signed. Its sheet is exact, S(s, t) = M(t)·σ(s), rows

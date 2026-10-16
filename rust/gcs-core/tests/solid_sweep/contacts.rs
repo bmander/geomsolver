@@ -55,8 +55,8 @@ fn contact_coefficients_include_translation_and_both_moving_frames() {
 
 #[test]
 fn source_placements_and_boolean_sharing_preserve_contact_geometry() {
-    let src = format!("{SOURCE}\nindex := motion(about: ax,phase: 90deg)\n\
-        placed := solid(tool,under: index,at: 0deg)\n\
+    let src = format!("{SOURCE}\nindex := frame\nstd.Turn(index,about: ax,ratio: 1)\n\
+        placed := solid(tool,under: index,at: 90deg)\n\
         outside := solid(tool)\nplaced cut outside\n\
         lens := solid(tool)\noutside cut lens\n\
         swept := solid(lens,under: generating,from: -60deg,to: 60deg)\n");

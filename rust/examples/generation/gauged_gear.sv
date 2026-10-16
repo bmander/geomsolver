@@ -68,14 +68,15 @@ t2 symmetry(centre_line) t3
 tooth := face(t0, t1, rack_flank, t3, -> close)
 construction rack_tooth := solid(tooth, from: -width - 2mm, to: 2mm)
 
-turn := motion(about: o, ratio: 1)
-rack := motion(along: slide, advance: 2 * pi * rp)
-cutting := motion(rack, relative_to: turn)
-construction space := solid(rack_tooth, under: cutting, through: gear)
+turn := frame
+std.Spin(turn, about: o, on: std.front, ratio: 1)
+rack := frame
+std.Slide(rack, along: slide, advance: 2 * pi * rp)
+construction space := solid(rack_tooth, under: rack, seen_from: turn, through: gear)
 
 // the flank in space: the prism's side, and what it generates
 side := surface(rack_tooth, edge: rack_flank)
-flank := envelope(side, under: cutting, from: -30deg, to: 30deg)
+flank := envelope(side, under: rack, seen_from: turn, from: -30deg, to: 30deg)
 
 // the gauge, in a plane square to the front through the line 1.9 above the centre (its u the
 // front's x, its v the front's normal, into the face)

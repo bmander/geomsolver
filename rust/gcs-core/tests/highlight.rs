@@ -406,7 +406,7 @@ fn a_builtin_is_coloured() {
 Rr := max(R - 2, Rb * (1 + clear))
 r := sqrt(3) * pi
 q := point hint(at: o, toward: t, turn: 90deg)
-k := motion(about: o, ratio: -length(a) / length(b))
+k := point(x: -length(a) / length(b), y: 0)
 length(150mm) rope
 ";
     assert_eq!(tint_of(src, "max("), Some(Tint::Builtin));

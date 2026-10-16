@@ -387,9 +387,9 @@ c distance(1' 6 3/16") d            // one literal: spaces separate the parts, a
   it and ends up with two values: W112. Rename it.
 
 **Measurements of the solved drawing** — `length(l)`, `radius(c)`, `distance(a, b)`,
-`angle(l1, l2)` (0–180°) — are allowed **only** in a motion's `ratio:`, `phase:` and `advance:`
-(1.15), which are read after the solve. Anywhere else they are **E107**: the number is needed
-before there is a solve.
+`angle(l1, l2)` (0–180°) — are **E107** in a number: the number is needed before there is a solve.
+A frame's ratio is stated from the document's own numbers (`ratio: -wheel_pitch / pinion_pitch`,
+1.15), not measured off the drawing.
 
 ### 1.7 Chains and repetition
 
@@ -1686,27 +1686,43 @@ statements.
 | `x cut y` and `y cut x` | E041 at the second — "`x` would be made of itself" |
 | `x coincident y`, two solids | refused: material is added with `union` |
 
-### 1.15 Motions and generated geometry
+### 1.15 Frames that move, and generated geometry
 
-**Motions** are rigid families over one shared angle; a motion never moves the sketch:
+**A motion is a frame's joint.** A frame declared bare (`f := frame`, 1.4) is a rigid frame in
+space; its joint is an axis `f.axis`, a ratio `f.ratio` (radians a radian of the one shared roll)
+and an advance `f.advance` (along the axis a turn of the roll), held by relations like anything
+else. The standard library states them the ways a designer does:
 
 ```sv
-crown := motion(about: crown_axis)
-blank := motion(about: blank_axis, ratio: 2, phase: 10deg)   // twice the angle, plus 10°
-generating := motion(crown, relative_to: blank)              // crown seen from the blank
-tap := motion(about: hole_axis, advance: 1.5mm)              // a screw: 1.5 mm per turn
-plunge := motion(along: spindle, advance: 20mm)              // a translation
+crown := frame
+std.Turn(crown, about: crown_axis, ratio: 1)             // turns about a line
+blank := frame
+std.Turn(blank, about: blank_axis, ratio: 2)             // twice the angle
+tap := frame
+std.Turn(tap, about: hole_axis, ratio: 1, advance: 1.5mm)  // a screw: 1.5 mm per turn
+plunge := frame
+std.Slide(plunge, along: spindle, advance: 20mm)         // a translation
+wheel := frame
+std.Spin(wheel, about: o, on: std.front, ratio: 1)       // about a point of a view, square to it
 ```
 
-`motion(about: o)` over a point is a turn in its view. A ratio may **measure the drawing** (1.6),
-re-read whenever the motion is: `pinion := motion(about: ax, ratio: -length(wheel_radius) /
-length(pinion_radius))` turns at the solved ratio, and editing a radius re-times it (`ratio:` is
-`Scalar`, so a bare `length(…)` there is E080).
+Roll 0 is as drawn: a member that must stand turned there is drawn turned (there is no `phase:`).
+A motion never moves the sketch, and a frame with no joint stands still: the world. The ratio is
+`Scalar` and stated from the document's numbers (`ratio: -wheel_pitch / pinion_pitch`); a
+measurement of the drawing there is E107. A joint whose ratio or advance nothing states is E080.
+`motion(…)` and `m: motion` are refused naming these words.
 
-**A motion moves a solid**: `solid(tool, under: indexing, at: 90deg)` is one copy at a constant
+**Seen from another frame.** Every reading of a frame's motion — `under:` on a solid, an
+envelope, a meshing, a carried point — may say whose view it is in: `under: crown, seen_from:
+blank` is the crown as the blank sees it, which is what generates a gear. Left out, the observer is
+the world. A component that reads a motion takes the frame (`m: frame`) and, where it needs one,
+the observer as a second (`seen_from: frame`); a frame formal a call leaves out is the instance's
+own frame at rest, the world.
+
+**A frame's motion moves a solid**: `solid(tool, under: indexing, at: 90deg)` is one copy at a constant
 angle (`solid_indexed_pattern.sv`); `solid(tool, under: turn, from: -75deg, to: 75deg)` is the
 union of the tool over the whole interval, a continuous sweep meshed from its material field
-(`swept_torus.sv`). `solid(tool, under: generating, through: body)` rolls the tool over the whole
+(`swept_torus.sv`). `solid(tool, under: crown, seen_from: blank, through: body)` rolls the tool over the whole
 roll about 0 during which it meets `body`'s stock and additions (never its cuts, so it may cut
 `body`), found after the solve and clear of the body at both ends — a generating cut states no roll
 limit (`spiral_bevel/hypoid.sv`'s `Generated`). `at:`, `from:`/`to:` and `through:` are exclusive,
@@ -1717,8 +1733,8 @@ exact export a swept solid may only be `cut`. Exact exports cover the generating
 motion (`wankel/`).
 
 **Envelopes in the plane are curves the solve sees.** Over a tool of the sheet (a point, line,
-circle, arc or formula curve) and a planar motion, `flank := envelope(rack_flank, under: cutting,
-from: -25deg, to: 25deg)` is the profile the tool cuts in the moving frame. `coincident`, `tangent`
+circle, arc or formula curve) and a planar motion, `flank := envelope(rack_flank, under: rack,
+seen_from: blank, from: -25deg, to: 25deg)` is the profile the tool cuts in the moving frame. `coincident`, `tangent`
 and `curvature` hold against it, and the tool's and motion's geometry are its columns, so a
 conjugate is synthesised, not stated (2.11). `side: near|far` picks where a circle cuts twice (a
 cam). A point's envelope is its path: `bore := envelope(apex, under: rotor_turn, from: 0deg, to:
@@ -1735,19 +1751,20 @@ spatial envelope over it reads as its source, held to by the solve (below). Over
 a view it is the side its edge extrudes, a planar envelope's source:
 
 **A prism's side** is named as a revolution's is, `side := surface(rack_tooth, edge: rack_flank)`;
-under a motion keeping its view, `envelope(side, under: cutting, …)` is the planar envelope
+under a motion keeping its view, `envelope(side, under: rack, seen_from: blank, …)` is the planar envelope
 extruded, and `p coincident flank` from any view is one equation. Draw the prism's face `in` a view
 and name the edge in it.
 
 **An envelope in space is held to by the solve** where its source is a cone, a cylinder or a
 plane set (`std.Cone`, `std.ConeThrough` with its lean stated, `std.Cylinder`, `std.HalfSpace`) or
 a revolution's side turned
-from a line, an arc or a circle, under turns about lines, screws, slides and `relative_to:`
+from a line, an arc or a circle, under turns about lines, screws and slides, seen from the world or another frame
 (`spiral_bevel/mean_point.sv`):
 
 ```
 flank := std.Cone(spine, half: hint(20deg))           // the half an unknown
-pinion_flank := envelope(flank, under: mesh, from: -30deg, to: 30deg)
+pinion_flank := envelope(flank, under: gear_turn, seen_from: pinion_turn, from: -30deg,
+                         to: 30deg)
 M coincident pinion_flank                             // owns the place [u, v, roll]
 pinion_flank perpendicular(at: M) normal              // along its normal at M
 pinion_flank tangent(at: M) along                     // a line (or a plane) touching it there
@@ -1757,11 +1774,11 @@ pinion_flank curvature(at: M) profile                 // its section by profile'
 The source's geometry, its number and the motion's axes are columns, so the cone's half solves from
 what is stated at `M`. A plane sliding along its own normal relative to a turn sweeps an involute
 helicoid: `spiral_bevel/phillips.sv`'s rack, `std.HalfSpace(P, L, d: 0mm)` under
-`motion(slide, relative_to: pinion_turn)`. The `at:` relations read the place of the `coincident` holding `M`, which must
+`slide, seen_from: pinion_turn`. The `at:` relations read the place of the `coincident` holding `M`, which must
 be stated: each is that contact's frame at `M` — its normal, a plane or a line square to it, a
 section's second order — read by the one kernel a rate of a contact is (0.130). A set's envelope is only held to: it has no chart after the solve.
 
-**A point a motion carries**: `X coincident(under: m, t == τ) x` is `x` as the moving frame sees
+**A point a frame carries**: `X coincident(under: m, t == τ) x` is `x` as the moving frame sees
 it, carried by `m`'s pose at the roll `τ` (degrees; leave it unpinned and the solve finds it) — a
 rolling circle's point seen by the fixed one is an epicycloid.
 
@@ -1770,29 +1787,29 @@ rolling circle's point seen by the fixed one is an epicycloid.
 is held along a line or square to one, or measured along one:
 
 ```
-X coincident(under: mesh, t == 0deg) x
+X coincident(under: gear_turn, seen_from: pinion_turn, t == 0deg) x
 rate(X over t) parallel l                             // X moves along l
 rate(X over t) perpendicular l                        // … or square to it
 rate(X over t) distance(v, along: l)                  // its speed along l, a length a radian
 ```
 
 The standard library says the two things a gear designer reads of a twist this way (`use std
-(reciprocal)`): `L reciprocal mesh` — a force along `L` does no work on the motion, for a mesh the
-meshing law of a line of action (the members move as fast along `L`) — and `screw :=
-std.Screw(isa, mesh)`, the instantaneous screw axis `isa` and `screw.pitch`, its advance along
-`isa` a radian of the roll (give `pitch:` to pin it). Any motion the solve reads, a relative of a
-relative too (`spiral_bevel/phillips.sv`). A `claim L reciprocal m` carries its point all the same
+(reciprocal)`): `L reciprocal(seen_from: pinion_turn) gear_turn` — a force along `L` does no work
+on the motion, for a mesh the meshing law of a line of action (the members move as fast along `L`)
+— and `screw := std.Screw(isa, gear_turn, seen_from: pinion_turn)`, the instantaneous screw axis `isa` and `screw.pitch`, its advance along
+`isa` a radian of the roll (give `pitch:` to pin it). Any motion the solve reads, seen from any frame (`spiral_bevel/phillips.sv`); seen from the
+world, `seen_from:` names a frame at rest. A `claim L reciprocal(seen_from: g) m` carries its point all the same
 and judges the rate.
 
 **Two flanks meshing are a locus** (`spiral_bevel/contact.sv`): tooth contact analysis. The first
-flank turns with the pinion and the second with the gear — the mesh's observer and source — each an
+flank turns with the pinion and the second with the gear — the reading's observer and source — each an
 envelope in space as above or a cone, a cylinder or a revolution's side standing still (a formed
 gear's). At each phase of the pinion they touch with the gear turned to the ratio plus a **lag**,
 the transmission error:
 
 ```
-mesh := motion(gear_turn, relative_to: pinion_turn)
-bearing := meshing(pinion_flank, flank, under: mesh, from: -15deg, to: 15deg)
+bearing := meshing(pinion_flank, flank, under: gear_turn, seen_from: pinion_turn,
+                   from: -15deg, to: 15deg)
 Q coincident(t == 0deg) bearing                       // where they touch at phase 0
 R coincident(lag == 0.07) bearing                     // the phase the gear lags 0.07° at
 ```
@@ -1828,8 +1845,8 @@ lags by the relief:
 ```
 lengthwise := line(M, L)                              // the face mill's circle at M
 param kl: Scalar hint(0.001)
-bearing := meshing(pinion_flank, flank, under: mesh, from: -15deg, to: 15deg,
-                   ease: M, along: lengthwise, profile: 0.002 / 1mm, lengthwise: kl / 1mm)
+bearing := meshing(pinion_flank, flank, under: gear_turn, seen_from: pinion_turn,
+                   from: -15deg, to: 15deg, ease: M, along: lengthwise, profile: 0.002 / 1mm, lengthwise: kl / 1mm)
 Q coincident(t == 0deg) bearing                       // at M: no relief there, no lag
 R coincident(t == 15deg, lag == 0.047) bearing        // the transmission error solves kl
 ```
@@ -1843,7 +1860,8 @@ without sliding, 0 at a fold. It is read over the part the tool cuts within the 
 whose face the source is (`by:`), then the blank after `within`. Both are region solids:
 
 ```
-pinion_flank := envelope(mill.inner_flank, under: mesh, from: -60deg, to: 60deg)
+pinion_flank := envelope(mill.inner_flank, under: gear_turn, seen_from: pinion_turn,
+                         from: -60deg, to: 60deg)
 pinion_flank regular(by: gear_tooth.crown) within pinion_blank.material   // no fold: >= 0
 pinion_flank regular(>= 0.3, by: gear_tooth.crown) within pinion_blank.material
 pinion_flank regular(0.3, by: gear_tooth.crown) within pinion_blank.material  // solves a setting
@@ -2194,15 +2212,16 @@ in std.front {
   fix((30, 0)) rk0
   fix((30, 10)) rk1
   slide := line(rk0, rk1)
-  blank := motion(about: o, ratio: 1)                     // the gear blank turns...
-  rack := motion(along: slide, advance: 2 * pi * 30)      // ...as the rack rolls on its pitch circle
-  cutting := motion(rack, relative_to: blank)
+  blank := frame
+  std.Spin(blank, about: o, on: std.front, ratio: 1)      // the gear blank turns...
+  rack := frame
+  std.Slide(rack, along: slide, advance: 2 * pi * 30)     // ...as the rack rolls on its pitch circle
   f0 := point hint((30, 5))
   f1 := point hint((39.4, 8.4))
   flank := line(f0, f1)                                   // the rack's flank, at roll 0
   fix((30, 5)) f0
   f0 distance(10) f1
-  cut := envelope(flank, under: cutting, from: -25deg, to: 25deg)
+  cut := envelope(flank, under: rack, seen_from: blank, from: -25deg, to: 25deg)
   g := point
   fix((31.5, -3)) g
   g coincident cut hint(t: 5)                             // the cut must pass through g

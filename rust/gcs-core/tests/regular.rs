@@ -2,17 +2,18 @@
 //! the least area factor the flank takes over the part of it the tool cuts in the blank — found
 //! by search — held at or above a margin (a bound) or to it (an equation).  The pair is
 //! `spiral_bevel/formate.sv`'s, conjugate: the pinion the envelope of the gear tooth's inner cone
-//! under the mesh, cut within its blank.  Each number is held to the sweep's admission
-//! (`solid::admission`), which samples the generated surface's area factor by central differences
-//! over the tool's faces, its contacts in the blank, apart from `envelope::regular` — the fold
-//! check of the flank as it is exported.
+//! under the mesh (the gear's turn seen from the pinion's), cut within its blank.  Each number is
+//! held to the sweep's admission (`solid::admission`), which samples the generated surface's area
+//! factor by central differences over the tool's faces, its contacts in the blank, apart from
+//! `envelope::regular` — the fold check of the flank as it is exported.
 use gcs_core::constraints::CKind;
 use gcs_core::program::Elaborated;
 use gcs_core::solid::admission::{self, Condition, Error, Options};
 
 /// The pinion's flank a held envelope of the gear tooth's inner cone under the mesh.
 const FLANK: &str =
-    "pinion_flank := envelope(mill.inner_flank, under: mesh, from: -60deg, to: 60deg)";
+    "pinion_flank := envelope(mill.inner_flank, under: gear_turn, seen_from: pinion_turn, \
+     from: -60deg, to: 60deg)";
 
 /// No fold of the pinion's flank within its blank, where the gear's tooth cuts it.
 pub(crate) const REGULAR: &str =
@@ -27,8 +28,8 @@ pub(crate) fn regular(margin: &str) -> String {
 /// and `stmt` stated of it — the shift left to the solve, seeded at 10°, where `unknown`.
 pub(crate) fn pair(shift: f64, stmt: &str, unknown: bool) -> String {
     let text = fixtures::gear::design(&fixtures::gear::formate_source(), 25.0, shift, 25.0);
-    let anchor = "  mesh := motion(gear_turn, relative_to: pinion_turn)\n";
-    assert!(text.contains(anchor), "the pair's mesh is where it was");
+    let anchor = "  std.Turn(gear_turn, about: gear_cone.ax, ratio: -pinion_teeth / gear_teeth)\n";
+    assert!(text.contains(anchor), "the pair's gear turn is where it was");
     let text = text.replace(anchor, &format!("{anchor}  {FLANK}\n  {stmt}\n"));
     if !unknown {
         return text;

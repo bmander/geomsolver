@@ -30,7 +30,8 @@ fix((0, 0)) o
 fix((0, 10)) z
 ax := line(o, z)
 }
-turn := motion(about: ax)
+turn := frame
+std.Turn(turn, about: ax, ratio: 1)
 moved := solid(block, under: turn, at: 40deg)
 ";
 
@@ -184,7 +185,9 @@ fn block_field_has_the_box_sign_and_a_unit_lipschitz_bound() {
 fn placed_block_field_turns_with_its_motion() {
     let e = read(&format!("{BLOCK}{TURN}"));
     let moved = field(&e,"moved");
-    let pose = gcs_core::motion::Family::read(&e.sketch,e.map.ent_named("turn").unwrap().i())
+    let turn = e.map.ent_named("turn").unwrap().i();
+    let motion = e.sketch.frames[turn].joint.as_ref().unwrap().motion.unwrap() as usize;
+    let pose = gcs_core::motion::Family::read(&e.sketch,motion)
         .unwrap().at(40_f64.to_radians()).unwrap();
     // A world point is in the placed copy exactly when the pose's inverse puts it in the source.
     let closed_form = |p: [f64;3]| boxed(pose.inverse().point(p),60.,40.,30.);

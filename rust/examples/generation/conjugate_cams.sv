@@ -3,7 +3,7 @@
 // Two shafts turn at equal speeds in opposite senses, and a lobe on the first is to stay in
 // contact with a cam on the second all the way round, so the pair drives without slipping or
 // separating.  The second cam is generated, not designed: it is the envelope of the lobe carried
-// by the first shaft's turn as seen from the second (`motion(a, relative_to: b)`).
+// by the first shaft's turn as seen from the second (`under: shaft_a, seen_from: shaft_b`).
 //
 // The lobe is an ellipse written as a formula curve (a computed point, traced as its angle runs)
 // set off its shaft's centre, so nothing about the pair is symmetric or standard.  At every roll
@@ -33,7 +33,8 @@ in std.front {
 }
 
 lobe := Lobe(lc, a: a, b: b).p over u in (0, 360)
-shaft_a := motion(about: o1, ratio: 1)
-shaft_b := motion(about: o2, ratio: -1)
-seen := motion(shaft_a, relative_to: shaft_b)
-partner := envelope(lobe, under: seen, from: 0deg, to: 360deg)
+shaft_a := frame
+std.Spin(shaft_a, about: o1, on: std.front, ratio: 1)
+shaft_b := frame
+std.Spin(shaft_b, about: o2, on: std.front, ratio: -1)
+partner := envelope(lobe, under: shaft_a, seen_from: shaft_b, from: 0deg, to: 360deg)

@@ -341,12 +341,12 @@ in std.top {
   apex := point
   fix((120, 0)) apex
 }
-counter := motion(about: centre, ratio: -1)
-spin := motion(about: hub, ratio: -2 / 3)
-rotor_turn := motion(spin, relative_to: counter)
-housing_turn := motion(counter, relative_to: spin)
-bore := envelope(apex, under: rotor_turn, from: 0deg, to: 1080deg)
-flank := envelope(bore, under: housing_turn, from: 10deg, to: 170deg)
+counter := frame
+std.Spin(counter, about: centre, on: std.top, ratio: -1)
+spin := frame
+std.Spin(spin, about: hub, on: std.top, ratio: -2 / 3)
+bore := envelope(apex, under: spin, seen_from: counter, from: 0deg, to: 1080deg)
+flank := envelope(bore, under: counter, seen_from: spin, from: 10deg, to: 170deg)
 ");
     let top = plane(&e, "std.top");
     let views = gcs_core::overview::workspace::Views::new(&e.sketch);

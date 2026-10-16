@@ -212,7 +212,8 @@ component Ball(c: point, r: Length) {
   body := solid(ball)
 }
 component Swing(ax: line, a: point, b: point) {
-  spin := motion(about: ax)
+  spin := frame
+  std.Turn(spin, about: ax, ratio: 1)
   arm := Ball(a, r: 2mm)
   post := Ball(b, r: 3mm)
   swung := solid(arm.body, under: spin, at: 0deg)

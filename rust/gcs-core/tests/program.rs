@@ -387,7 +387,7 @@ fn a_name_declared_twice_is_an_error() {
             seed_at: None,
             seed_names: Vec::new(),
             sweep: None,
-            motion: None, angular_span: None,
+            seen_from: None, angular_span: None,
             membership: Default::default(),
             list_span: Default::default(),
             close: None,

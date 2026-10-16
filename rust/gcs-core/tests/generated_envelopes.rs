@@ -21,7 +21,8 @@ radius(1mm) meridian
 }
 ring := solid(face(meridian),about: ax)
 wall := surface(ring,meridian)
-roll := motion(about: spin_axis)
+roll := frame
+std.Turn(roll,about: spin_axis,ratio: 1)
 generated := envelope(wall,under: roll,from: -20deg,to: 20deg)
 ";
 fn near(a: [f64;3],b: [f64;3]) {
@@ -90,7 +91,9 @@ fn envelope_searches_respect_the_declared_source_span() {
 
 #[test]
 fn envelope_declarations_round_trip_and_follow_dependency_copy_delete() {
-    let e = solved(MODEL);
+    // the flat form prints no component instance: the joint written out as `std.Turn` writes it
+    let e = solved(&MODEL.replace("std.Turn(roll,about: spin_axis,ratio: 1)",
+        "spin_axis coincident roll.axis\nfix(ratio == 1, advance == 0mm) roll"));
     let mut p = e.program.clone();
     let text = syntax::render_flat(&mut p).unwrap().to_string();
     let again = solved(&text);
@@ -98,7 +101,12 @@ fn envelope_declarations_round_trip_and_follow_dependency_copy_delete() {
     let entity = e.map.ent_named("generated").unwrap();
     assert_eq!(entity.kind,EntKind::Envelope);
     assert!(e.sketch.entity_params(entity).is_empty());
-    assert_eq!(e.sketch.children(entity),[e.map.ent_named("wall").unwrap(),e.map.ent_named("roll").unwrap()]);
+    // its children are its surface and the motion node of the frame it is read under
+    let roll = e.map.ent_named("roll").unwrap();
+    assert_eq!(roll.kind,EntKind::Frame);
+    let motion = e.sketch.frames[roll.i()].joint.as_ref().unwrap().motion.unwrap() as usize;
+    assert_eq!(e.sketch.children(entity),
+        [e.map.ent_named("wall").unwrap(),gcs_core::model::EntRef::new(EntKind::Motion,motion)]);
     let clip = io::copy(&e.sketch,&[entity]);
     assert_eq!(clip.envelopes.len(),1);
     assert_eq!(clip.surfaces.len(),1);
@@ -111,7 +119,8 @@ fn envelope_declarations_round_trip_and_follow_dependency_copy_delete() {
     near(GeneratedEnvelope::named(&dst,1).unwrap().evaluate([0.125,0.,0.1]).unwrap().position,
         GeneratedEnvelope::named(&e.sketch,0).unwrap().evaluate([0.125,0.,0.1]).unwrap().position);
     for name in ["wall","roll","meridian","spin_axis"] {
-        assert!(io::without(&e.sketch,&[e.map.ent_named(name).unwrap()],&[]).envelopes.is_empty());
+        assert!(io::without(&e.sketch,&[e.map.ent_named(name).unwrap()],&[]).envelopes.is_empty(),
+            "{name}");
     }
     assert!(io::copy(&e.sketch,&[e.map.ent_named("o").unwrap()]).envelopes.is_empty());
 }
@@ -132,7 +141,7 @@ fn envelope_formals_alias_forward_source_dependencies_and_private_members() {
 fn envelopes_reject_invalid_dependencies_and_domains() {
     for (tail,want) in [
         ("bad := envelope(ax,roll,from: -1deg,to: 1deg)","a turn about a point"),
-        ("bad := envelope(wall,ax,from: -1deg,to: 1deg)","valid motion"),
+        ("bad := envelope(wall,ax,from: -1deg,to: 1deg)","a motion is read off a frame"),
         ("bad := envelope(wall,roll,from: 1mm,to: 2mm)","envelope bound"),
         ("bad := envelope(wall,roll,from: 1deg,to: 1deg)","increasing"),
         ("bad := envelope(wall,roll,from: 1deg,to: -1deg)","increasing"),
@@ -160,7 +169,8 @@ fn envelope_roots_on_domain_edges_are_reached_without_accepting_false_boundary_r
         Error::NotConverged);
     // A surface family with no motion has an identically zero equation; it does not
     // define an isolated characteristic, even though its initial residual is zero.
-    let e = solved(&MODEL.replace("roll := motion(about: spin_axis)","roll := motion(about: spin_axis,ratio: 0)"));
+    let e = solved(&MODEL.replace("std.Turn(roll,about: spin_axis,ratio: 1)",
+        "std.Turn(roll,about: spin_axis,ratio: 0)"));
     let stationary = GeneratedEnvelope::named(&e.sketch,0).unwrap();
     assert_eq!(stationary.intersect(|_,_| [0.,0.],[0.125,0.05,0.1],options).unwrap_err(),
         Error::SingularIntersection);

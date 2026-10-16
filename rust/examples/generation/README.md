@@ -22,10 +22,12 @@ Read them in this order:
 
 What the words are:
 
-- `motion(about: o)` turns about a point of the sheet; `motion(along: l, advance: d)` slides
-  along a line, `d` a turn; `motion(m, relative_to: n)` is `m` seen from `n`.
+- A motion is a frame's joint: `m := frame` declares the frame, `std.Spin(m, about: o, on: v,
+  ratio: r)` turns it about a point `o` drawn in the view `v`, `std.Turn(m, about: ax, ratio: r)`
+  about a line, and `std.Slide(m, along: l, advance: d)` slides it along a line, `d` a turn.
 - `envelope(tool, under: m, from: a, to: b)` is what a point, line, circle, arc, formula curve or
-  another envelope cuts. `side: near | far` picks a circle's side.
+  another envelope cuts. `seen_from: n` reads it as `m` seen from the frame `n`
+  (`under: rack, seen_from: blank`). `side: near | far` picks a circle's side.
 - `c tangent(t == s) l` pins a contact's place to an unknown, `param s: Angle hint(318)`: every
   contact on the same curve pinned to `s` shares that one place, seeded where `s` is declared.
 - `p over theta in (a, b)` traces a point of a drawn component as one of its numbers runs. A

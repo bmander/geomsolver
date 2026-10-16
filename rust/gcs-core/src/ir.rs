@@ -66,7 +66,7 @@ pub struct Decl {
     pub seed_at: Option<AtRef>,
     pub seed_names: Vec<(String, String)>,
     pub sweep: Option<Sweep>,
-    pub motion: Option<syntax::MotionSpec>,
+    pub seen_from: Option<syntax::Ref>,
     pub angular_span: Option<syntax::AngularSpan>,
     pub membership: Membership,
     /// A circle's normal, where its centre stands in space (#363 S6, `syntax::Decl::normal`).
@@ -113,7 +113,7 @@ impl From<syntax::Decl> for Decl {
             seed_at: d.seed_at,
             seed_names: d.seed_names,
             sweep: d.sweep,
-            motion: d.motion,
+            seen_from: d.seen_from,
             angular_span: d.angular_span,
             membership: d.membership,
             normal: d.normal,
@@ -153,6 +153,7 @@ pub(crate) struct ResolvedRelation<'a> {
 #[derive(Clone, Debug)]
 pub struct ClaimOver {
     pub formal: Ref,
+    pub seen_from: Option<Ref>,
     pub from: Arg,
     pub to: Arg,
     pub body: Vec<Statement>,
@@ -187,7 +188,7 @@ impl Statement {
             S::Minimize(m) => Operation::Minimize(m),
             S::Measured(m) => Operation::Measured(m),
             S::ClaimOver(c) => Operation::ClaimOver(ClaimOver {
-                formal: c.formal, from: c.from, to: c.to, span: c.span,
+                formal: c.formal, seen_from: c.seen_from, from: c.from, to: c.to, span: c.span,
                 body: c.body.into_iter().map(|s| Self::lower(s, path.clone())).collect::<Result<_, _>>()?,
             }),
             S::Param(_) | S::Group(_) | S::Instance(_) | S::Block(_) | S::Set(_) => return Err(crate::program::Diag {

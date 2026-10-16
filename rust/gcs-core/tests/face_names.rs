@@ -38,7 +38,7 @@ const PLACED: &str = "unit mm\nuse std (round)\nin std.front {\n\
     outline := face(south, east, north, west)\n\
     o := point\nz := point\nfix((0, 0)) o\nfix((0, 10)) z\nax := line(o, z)\n}\n\
     block := solid(outline, depth: 12mm)\n\
-    turn := motion(about: ax)\n\
+    turn := frame\nstd.Turn(turn, about: ax, ratio: 1)\n\
     moved := solid(block, under: turn, at: 180deg)\n\
     pad := solid(moved)\n";
 

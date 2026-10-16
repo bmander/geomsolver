@@ -10,7 +10,7 @@
 // action rolls on the base cone); the pinion's flank is the cone over the spherical involute of
 // its base cone.
 unit mm
-use std (on_u)
+use std (on_u, reciprocal)
 
 z1 := 20
 z2 := 40
@@ -18,7 +18,7 @@ alpha := 20deg
 delta1 := atan(z1 / z2)
 base1 := asin(sin(delta1) * cos(alpha))
 
-component Contact(P: plane, pinion: motion, mesh: motion, home: line, phi: Angle,
+component Contact(P: plane, pinion: frame, gear: frame, home: line, phi: Angle,
                   sigma: Scalar) {
   x := point
   x coincident P
@@ -30,11 +30,11 @@ component Contact(P: plane, pinion: motion, mesh: motion, home: line, phi: Angle
   length(10mm) nl
   k coincident P
   nl perpendicular rate(x over sigma)
-  rate(x over phi, relative_to: pinion) perpendicular nl
+  rate(x over phi, seen_from: pinion) perpendicular nl
   rate(x over phi) perpendicular rate(x over sigma)
-  claim nl reciprocal mesh
+  claim nl reciprocal(seen_from: pinion) gear
   X := point
-  X coincident x under(pinion, at: -phi)
+  X coincident(under: pinion, t == -phi) x
 }
 
 o := point
@@ -45,9 +45,10 @@ fix((10mm, 0mm, 0mm)) x1
 fix((0mm, 0mm, 10mm)) z2p
 shaft1 := line(o, x1)
 shaft2 := line(o, z2p)
-pinion := motion(about: shaft1)
-gear := motion(about: shaft2, ratio: -z1 / z2)
-mesh := motion(gear, relative_to: pinion)
+pinion := frame
+std.Turn(pinion, about: shaft1, ratio: 1)
+gear := frame
+std.Turn(gear, about: shaft2, ratio: -z1 / z2)       // the mesh: `gear` seen from `pinion`
 
 // the plane of action, as `places/spherical_contact.sv` draws it; the home line is the pitch
 // line from 30 to 50 from the apex
@@ -65,5 +66,5 @@ in P {
   home := line(i, j)
 }
 
-contact := Contact(P, pinion, mesh, home).x over (phi in (-30deg, 30deg), sigma in (0, 1))
-pinion_flank := Contact(P, pinion, mesh, home).X over (phi in (-30deg, 30deg), sigma in (0, 1))
+contact := Contact(P, pinion, gear, home).x over (phi in (-30deg, 30deg), sigma in (0, 1))
+pinion_flank := Contact(P, pinion, gear, home).X over (phi in (-30deg, 30deg), sigma in (0, 1))

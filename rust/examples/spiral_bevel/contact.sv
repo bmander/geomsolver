@@ -39,9 +39,11 @@ p1 := point hint((10, 72, 0))
 fix((0mm, rg + rp, 0mm)) p0
 fix((10mm, rg + rp, 0mm)) p1
 pinion_ax := line(p0, p1)
-gear_turn := motion(about: gear_ax, ratio: -pinion_teeth / gear_teeth)
-pinion_turn := motion(about: pinion_ax)
-mesh := motion(gear_turn, relative_to: pinion_turn)
+gear_turn := frame
+std.Turn(gear_turn, about: gear_ax, ratio: -pinion_teeth / gear_teeth)
+pinion_turn := frame
+std.Turn(pinion_turn, about: pinion_ax, ratio: 1)
+// the mesh is the gear's turn seen from the pinion's: `under: gear_turn, seen_from: pinion_turn`
 
 // -- the gear: formed by the face mill -----------------------------------------------------------
 M := point hint((0, 48, 0))
@@ -73,13 +75,15 @@ cut_spine := line(cut_apex, cut_top)
 cut_spine parallel spine
 cut_apex distance(10mm) cut_top
 cutter := std.Cone(cut_spine, half: pressure - tilt)
-cutting_turn := motion(about: gear_ax, ratio: -roll * pinion_teeth / gear_teeth)
-cutting := motion(cutting_turn, relative_to: pinion_turn)
-pinion_flank := envelope(cutter, under: cutting, from: -40deg, to: 40deg)
+cutting_turn := frame
+std.Turn(cutting_turn, about: gear_ax, ratio: -roll * pinion_teeth / gear_teeth)
+pinion_flank := envelope(cutter, under: cutting_turn, seen_from: pinion_turn, from: -40deg,
+                         to: 40deg)
 
 // -- the contact ---------------------------------------------------------------------------------
 // The two flanks turning with their members; Q, where they touch at the phase the pair is drawn
 // at. The trace over the phase is the bearing and the transmission error.
-bearing := meshing(pinion_flank, flank, under: mesh, from: -15deg, to: 15deg)
+bearing := meshing(pinion_flank, flank, under: gear_turn, seen_from: pinion_turn, from: -15deg,
+                   to: 15deg)
 Q := point hint((0, 48, 0))
 Q coincident(t == 0deg) bearing

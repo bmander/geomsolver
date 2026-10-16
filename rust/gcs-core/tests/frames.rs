@@ -26,8 +26,10 @@ in std.top {
   fix((40, 0)) x
   X := point hint((10, 17))
 }
-arm := motion(about: o, ratio: 1)
-planet := motion(about: c, ratio: -3)
+arm := frame
+std.Spin(arm, about: o, on: std.top, ratio: 1)
+planet := frame
+std.Spin(planet, about: c, on: std.top, ratio: -3)
 ";
 
 fn index(sk: &Sketch, name: &str) -> usize {
@@ -92,9 +94,12 @@ in std.top {
   x := point
   fix((42, -3)) x
 }
-first := motion(about: a, ratio: 0.5, phase: 10deg)
-second := motion(about: b, ratio: 2)
-third := motion(about: c, ratio: -1.5)
+first := frame
+std.Spin(first, about: a, on: std.top, ratio: 0.5)
+second := frame
+std.Spin(second, about: b, on: std.top, ratio: 2)
+third := frame
+std.Spin(third, about: c, on: std.top, ratio: -1.5)
 ";
     let mut e = build(src);
     let sk = &mut e.sketch;
@@ -107,7 +112,7 @@ third := motion(about: c, ratio: -1.5)
     let hand = |tau: f64| {
         let p = turn([35.0, -10.0], -1.5 * tau, [x[0], x[1]]);
         let p = turn([20.0, 5.0], 2.0 * tau, p);
-        let p = turn([0.0, 0.0], f64::to_radians(10.0) + 0.5 * tau, p);
+        let p = turn([0.0, 0.0], 0.5 * tau, p);
         [p[0], p[1], 0.0]
     };
     for m in [right, left] {
@@ -149,8 +154,10 @@ in std.top {
   rim := point
   fix((0, 0)) rim
 }
-slide := motion(along: ground, advance: 2 * pi * 8)
-roll := motion(about: hub, ratio: -1)
+slide := frame
+std.Slide(slide, along: ground, advance: 2 * pi * 8)
+roll := frame
+std.Spin(roll, about: hub, on: std.top, ratio: -1)
 ";
     let mut e = build(src);
     let sk = &mut e.sketch;
@@ -188,11 +195,16 @@ in std.top {
   c := point
   fix((3, 4)) c
 }
-lead := motion(about: shaft, ratio: 2, advance: 3mm)
-follow := motion(about: shaft, ratio: -0.5, advance: 1mm)
-skew := motion(about: other, ratio: 1, advance: 1mm)
-t1 := motion(about: c, ratio: 1)
-t2 := motion(about: c, ratio: 2, phase: 5deg)
+lead := frame
+std.Turn(lead, about: shaft, ratio: 2, advance: 3mm)
+follow := frame
+std.Turn(follow, about: shaft, ratio: -0.5, advance: 1mm)
+skew := frame
+std.Turn(skew, about: other, ratio: 1, advance: 1mm)
+t1 := frame
+std.Spin(t1, about: c, on: std.top, ratio: 1)
+t2 := frame
+std.Spin(t2, about: c, on: std.top, ratio: 2)
 ";
     let mut e = build(src);
     let sk = &mut e.sketch;
@@ -226,7 +238,7 @@ t2 := motion(about: c, ratio: 2, phase: 5deg)
     let turns = sk.chain(t1, t2, "turns").unwrap();
     match sk.motions[turns].def {
         MotionDef::Turn { ratio, phase, .. } => {
-            assert!((ratio - 3.0).abs() < 1e-15 && (phase - f64::to_radians(5.0)).abs() < 1e-15);
+            assert!((ratio - 3.0).abs() < 1e-15 && phase == 0.0);
         }
         ref d => panic!("two turns about one centre fold to a turn: {d:?}"),
     }
@@ -391,4 +403,172 @@ in (g := frame) {
         assert!(errs.iter().any(|e| e.message.contains(says)), "{src}: {:?}",
                 errs.iter().map(|e| &e.message).collect::<Vec<_>>());
     }
+}
+
+// -- stage 3: joints as members, stated --------------------------------------------------------
+
+/// The motion node frame `name`'s joint was lowered to.
+fn joint_of(e: &gcs_core::program::Elaborated, name: &str) -> usize {
+    let f = e.map.ent_named(name).unwrap_or_else(|| panic!("no frame `{name}`"));
+    assert_eq!(f.kind, EntKind::Frame);
+    let j = e.sketch.frames[f.i()].joint.as_ref()
+        .unwrap_or_else(|| panic!("`{name}` has no joint"));
+    j.motion.unwrap_or_else(|| panic!("`{name}`'s joint was not lowered")) as usize
+}
+
+/// **A joint's kind is read off the relations holding it**: `std.Turn` holds the axis on a line (a
+/// turn about it, its numbers stated: a screw where it advances), `std.Spin` through a point of a
+/// view square to it (a turn in that view about the point), `std.Slide` on a line with no ratio (a
+/// slide) — the motions the readers built with the drawing take; an axis held by anything else is a
+/// joint read after the solve, the axis where the solve leaves it.
+#[test]
+fn a_joints_kind_is_read_off_what_holds_it() {
+    let src = "\
+unit mm
+use std
+in std.top {
+  o := point
+  fix((0, 0)) o
+  q := point
+  fix((10, 0)) q
+  rail := line(o, q)
+}
+a := point
+fix((1, 2, 3)) a
+b := point
+fix((1, 2, 13)) b
+shaft := line(a, b)
+turned := frame
+std.Turn(turned, about: shaft, ratio: 2)
+screwed := frame
+std.Turn(screwed, about: shaft, ratio: 1, advance: 4mm)
+spun := frame
+std.Spin(spun, about: o, on: std.top, ratio: -1)
+slid := frame
+std.Slide(slid, along: rail, advance: 6mm)
+free := frame
+fix(dir == (0, 1, 0), origin == (5, 0, 0)) free.axis
+fix(ratio == 3, advance == 0mm) free
+";
+    let mut e = build(src);
+    assert!(solve::solve(&mut e.sketch, Default::default()).success);
+    let sk = &e.sketch;
+    let def = |n: &str| sk.motions[joint_of(&e, n)].def.clone();
+    assert!(matches!(def("turned"), MotionDef::Rotation { ratio, advance, .. }
+        if ratio == 2.0 && advance == 0.0));
+    assert!(matches!(def("screwed"), MotionDef::Rotation { ratio, advance, .. }
+        if ratio == 1.0 && advance == 4.0));
+    assert!(matches!(def("spun"), MotionDef::Turn { ratio, .. } if ratio == -1.0));
+    assert!(matches!(def("slid"), MotionDef::Translation { advance, .. } if advance == 6.0));
+    assert!(matches!(def("free"), MotionDef::Joint { ratio, .. } if ratio == 3.0));
+    // the screw is a screw (`Family::screw`, the generating classes'), and the free joint turns
+    // about its axis where it stands: (5, 0, 1) a quarter turn on over three radians a radian
+    assert!(Family::read(sk, joint_of(&e, "screwed")).unwrap().screw().is_some());
+    let free = Family::read(sk, joint_of(&e, "free")).unwrap();
+    let got = free.at(f64::to_radians(30.0)).unwrap().point([5.0, 0.0, 1.0]);
+    assert!(norm(sub(got, [6.0, 0.0, 0.0])) < 1e-12, "{got:?}");
+    // the joint's members are held: no freedom of theirs
+    let mut sk2 = e.sketch.clone();
+    assert_eq!(gcs_core::diagnose::diagnose(&mut sk2, Default::default()).dof, 0);
+}
+
+/// **`seen_from:` is the relative**: a point carried by one frame seen from another stands where
+/// the observer's inverse takes the carried point — `motion(a, relative_to: b)` said where it is
+/// read — and a frame at rest observes as the world does.
+#[test]
+fn a_reading_seen_from_a_frame_is_the_relative() {
+    let src = "\
+unit mm
+use std
+in std.top {
+  o := point
+  fix((0, 0)) o
+  c := point
+  fix((20, 0)) c
+  x := point
+  fix((30, 0)) x
+  X := point hint((25, 5))
+  Y := point hint((25, 5))
+  Z := point hint((25, 5))
+}
+ring := frame
+std.Spin(ring, about: o, on: std.top, ratio: 1)
+gear := frame
+std.Spin(gear, about: c, on: std.top, ratio: -2)
+rest := frame
+X coincident(under: gear, seen_from: ring, t == 40) x
+Y coincident(under: gear, seen_from: rest, t == 40) x
+Z coincident(under: gear, t == 40) x
+";
+    let mut e = build(src);
+    assert!(solve::solve(&mut e.sketch, Default::default()).success);
+    let tau = f64::to_radians(40.0);
+    // R_o(−τ)·R_c(−2τ)·x
+    let p = turn([0.0, 0.0], -tau, turn([20.0, 0.0], -2.0 * tau, [30.0, 0.0]));
+    let x = crate::common::at(&e, "X");
+    assert!(norm(sub(x, [p[0], p[1], 0.0])) < 1e-9, "{x:?} against {p:?}");
+    let (y, z) = (crate::common::at(&e, "Y"), crate::common::at(&e, "Z"));
+    let q = turn([20.0, 0.0], -2.0 * tau, [30.0, 0.0]);
+    assert!(norm(sub(y, [q[0], q[1], 0.0])) < 1e-9 && norm(sub(z, y)) < 1e-12, "{y:?} {z:?}");
+}
+
+/// **A component's numbers may default, and a frame formal left out is the world**: `std.Turn`
+/// with no `advance:` turns and screws nothing, and `std.Screw` with no `seen_from:` reads the
+/// frame's own motion.
+#[test]
+fn a_left_out_advance_is_none_and_a_left_out_observer_is_the_world() {
+    let src = "\
+unit mm
+use std
+a := point
+fix((0, 0, 0)) a
+b := point
+fix((0, 0, 10)) b
+shaft := line(a, b)
+spin := frame
+std.Turn(spin, about: shaft, ratio: 2, advance: 3mm)
+isa := axis hint(dir: (0.1, 0.1, 1))
+s := std.Screw(isa, spin)
+";
+    let mut e = build(src);
+    assert!(solve::solve(&mut e.sketch, Default::default()).success);
+    // the pitch: 3 mm a turn at two radians a radian, `3 / 2π` a radian of the roll
+    let d: [f64; 3] = e.sketch.axes[e.map.ent_named("isa").unwrap().i()].d
+        .map(|q| e.sketch.params[q as usize].value);
+    assert!(norm(gcs_core::space::cross(d, [0.0, 0.0, 1.0])) < 1e-9, "{d:?}");
+    let plain = build("unit mm\nuse std\na := point\nfix((0, 0, 0)) a\nb := point\n\
+                       fix((0, 0, 10)) b\nshaft := line(a, b)\nturn := frame\n\
+                       std.Turn(turn, about: shaft, ratio: 1)\n");
+    let def = plain.sketch.motions[joint_of(&plain, "turn")].def.clone();
+    assert!(matches!(def, MotionDef::Rotation { advance, .. } if advance == 0.0), "{def:?}");
+}
+
+/// **The retired spellings are refused saying what each is now**, and a frame read as a motion
+/// with no joint says how to turn it.
+#[test]
+fn the_motion_spellings_are_refused_with_what_they_became() {
+    for (src, says) in [
+        ("o := point\nm := motion(about: o, ratio: 2)\n", "std.Turn"),
+        ("l := line\nm := motion(along: l, advance: 2mm)\n", "std.Slide"),
+        ("m := motion(a, relative_to: b)\n", "seen_from:"),
+        ("o := point\nm := motion(about: o, phase: 10deg)\n", "roll"),
+        ("component C(m: motion) {\n  p := point\n}\n", "`m: frame`"),
+    ] {
+        let (_, errs) = crate::common::parse(&format!("unit mm\n{src}"));
+        assert!(errs.iter().any(|e| e.message.contains(says)), "{src}: {:?}",
+                errs.iter().map(|e| &e.message).collect::<Vec<_>>());
+    }
+    let (prog, errs) = crate::common::parse(
+        "unit mm\nuse std\nin std.top {\n  x := point\n  X := point\n}\n\
+         still := frame\nX coincident(under: still, t == 10) x\n");
+    assert!(errs.is_empty(), "{errs:?}");
+    let e = gcs_core::program::elaborate(&prog);
+    assert!(e.errors().any(|d| d.message.contains("does not move")),
+            "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
+    // a joint named but its numbers never stated
+    let (prog, _) =
+        crate::common::parse("unit mm\nuse std\nf := frame\nl := line\nl coincident f.axis\n");
+    let e = gcs_core::program::elaborate(&prog);
+    assert!(e.errors().any(|d| d.message.contains("states no ratio")),
+            "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
 }

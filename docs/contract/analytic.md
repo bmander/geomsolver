@@ -212,8 +212,8 @@ settings, not a feasibility bound.
 
 **The pair stated as its meshing problem (#345 S4):** `spiral_bevel/meshing_problem.sv` is
 `formate.sv`'s pair with the gear's concave flank eased: the meshing reads the face mill's inner
-cone eased about the mean contact T as the first flank, under `motion(pinion_turn, relative_to:
-gear_turn)`, and the pinion's envelope of the cone as the second. The pressure angle, the path's
+cone eased about the mean contact T as the first flank, under `under: pinion_turn, seen_from:
+gear_turn`, and the pinion's envelope of the cone as the second. The pressure angle, the path's
 angle at T, the lag at the start of the phase and no undercut are stated; the two curvatures are
 the unknowns (the block torn at fewer, `solver.md`). It adds no word: the gear's eased flank is
 cut by a blade the document draws (`EasedBlade`), an arc in the normal section bent from the
@@ -236,7 +236,12 @@ the concave side constant within the files' sag, no overlap.
 
 **A point a motion carries (#326, [0.106]):** `Reading::Carried` is `X − Pose(τ)·x`, the pose
 `held::carried` at `τ` degrees — any motion. `held::Step::Turn` (code 4, nine columns: a centre's lift, its view's `u` and `v`) is a turn
-about a point of a view as it reads in space; only `Moving::of_any` reads one.
+about a point of a view as it reads in space; only `Moving::of_any` reads one.  A roll left to
+the solve starts where the motion carries its point nearest the point held (`infer::carried_roll`,
+sampled over a turn), not at 0: from 0 a rolling circle's point seen 50 out starts halfway between
+the epicycloid's two places there, and a whole-system solve holding it to the path too settles
+between them as readily as on the one drawn (`carried::a_rolling_circles_point_seen_by_…`, the
+hint swept).
 
 **A motion's twist, read by rates (#326, #365, [0.130]):** a carried point's rate,
 `rate(X over t)` of `X coincident(under: m, t == τ) x`, is `∂(Pose(τ)·x)/∂τ` a radian

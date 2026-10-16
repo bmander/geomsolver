@@ -32,7 +32,7 @@ mod caches;
 
 pub use entities::{
     Param, EntKind, Ends, Run, Field, EntRef, PointE, LineE, CircleE, AxisE, ArcE, SplineE,
-    FrameE, Chart,
+    FrameE, Chart, Joint,
     LiftE, article,
 };
 pub use curves::{CURVE_STEPS, CurveDef, CurveBody, CurveE, Extremal, Home, Trim, extremal_def, whole};

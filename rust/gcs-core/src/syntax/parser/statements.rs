@@ -264,6 +264,8 @@ impl<'a> P<'a> {
         let lo = self.here().lo as usize;
         self.i += 2;
         let formal = self.refr()?;
+        // over a motion seen from another frame (#383): `claim over m seen_from g in (a, b)`
+        let seen_from = if self.eat_word("seen_from") { Some(self.refr()?) } else { None };
         if !self.peek_word("in") {
             self.fail("a swept claim runs `over NAME in (from, to)`");
             return None;
@@ -283,6 +285,7 @@ impl<'a> P<'a> {
         let (body, _) = self.braced_body(next_id)?;
         Some(StmtKind::ClaimOver(ClaimOver {
             formal,
+            seen_from,
             from: Arg::Dim { text: from, span: fs },
             to: Arg::Dim { text: to, span: ts },
             body,
@@ -572,13 +575,64 @@ impl<'a> P<'a> {
         Some(StmtKind::Param(ParamDecl { name, text, span, input: Some(Input { ty, seed }) }))
     }
 
+    /// `motion(…)` (#383), refused saying what each spelling is now — read past its brackets for
+    /// the labels it was written with: one refusal for the declaration, naming the new words.
+    fn retired_motion(&mut self) {
+        let at = self.here();
+        let mut labels: Vec<String> = Vec::new();
+        let mut depth = 0i32;
+        let mut j = self.i + 1;
+        while let Some((t, _)) = self.t.get(j) {
+            match t {
+                Tok::P('(') => depth += 1,
+                Tok::P(')') => {
+                    depth -= 1;
+                    if depth == 0 { break; }
+                }
+                Tok::Ident(w)
+                    if depth == 1 && matches!(self.t.get(j + 1), Some((Tok::P(':'), _))) => {
+                    labels.push(w.clone());
+                }
+                Tok::Nl if depth == 0 => break,
+                _ => {}
+            }
+            j += 1;
+        }
+        let has = |l: &str| labels.iter().any(|x| x == l);
+        let message = if has("relative_to") {
+            "`motion(a, relative_to: b)` is retired (#383): a motion seen from another is said \
+             where it is read, `under: a, seen_from: b` — on a carried point, an envelope, a \
+             meshing and a swept or placed solid"
+        } else if has("phase") {
+            "`phase:` is retired (#383): roll 0 is as drawn, so a motion that stood turned by φ is \
+             read at the roll shifted by φ / ratio (`t == τ + φ`, `from: start + φ`) — or its \
+             member drawn turned"
+        } else if has("along") {
+            "`motion(along: l, advance: a)` is retired (#383): declare a frame and slide it, \
+             `f := frame` then `std.Slide(f, along: l, advance: a)`"
+        } else {
+            "`motion(about: …)` is retired (#383): declare a frame and turn it, `f := frame` then \
+             `std.Turn(f, about: l, ratio: r)` (a screw: `advance: a`), or about a point of a view \
+             `std.Spin(f, about: o, on: P, ratio: r)`"
+        };
+        self.fail_at(at, message);
+        self.i = j.min(self.t.len());
+        if self.t.get(self.i).is_some() { self.i += 1; }
+    }
+
     /// A formal's type after its `:` — the word, read through `Ty::parse`.
     fn formal_type(&mut self) -> Option<Ty> {
         let tname = self.ident()?;
         let Some(ty) = Ty::parse(&tname.text) else {
             self.errs.push(SynErr {
                 span: tname.span,
-                message: format!("`{}` is not a type", tname.text),
+                message: if tname.text == "motion" {
+                    "a motion is a frame's now (#383): a formal `m: frame` is read `under: m`, and \
+                     one that was a relative motion takes its observer as a second, `seen_from: \
+                     frame`".to_string()
+                } else {
+                    format!("`{}` is not a type", tname.text)
+                },
             });
             return None;
         };
@@ -590,7 +644,8 @@ impl<'a> P<'a> {
     /// interface.  Whether the name is one is the flattener's to say, once modules are linked.
     fn formal_or_interface(&mut self) -> Option<(Ty, Option<Name>)> {
         let word = self.word_at(self.i).map(str::to_string);
-        if word.as_deref().is_some_and(|w| Ty::parse(w).is_some()) {
+        // `motion` was a type until 0.135, and is refused as one rather than read as a name
+        if word.as_deref().is_some_and(|w| Ty::parse(w).is_some() || w == "motion") {
             return self.formal_type().map(|ty| (ty, None));
         }
         Some((Ty::Group, Some(self.component_name()?)))
@@ -602,6 +657,7 @@ impl<'a> P<'a> {
         if !self.want_p(':') {
             return None;
         }
+        let frame = self.word_at(self.i) == Some("frame");
         let (ty, interface) = self.formal_or_interface()?;
         // a point formal may say the plane it is drawn in, which lets a call leave it out
         let within = if self.peek_word("in") {
@@ -616,8 +672,20 @@ impl<'a> P<'a> {
         } else {
             None
         };
+        // a number may say what it is where a call leaves it out (#383)
+        let default = if self.peek() == Some(&Tok::P('=')) {
+            let at = self.here();
+            self.i += 1;
+            if !ty.number() {
+                self.fail_at(at, "only a number formal has a default: `advance: Length = 0mm`");
+                return None;
+            }
+            Some(self.expr_until(',')?)
+        } else {
+            None
+        };
         let span = Span::new(name.span.lo as usize, self.prev_hi());
-        Some(Formal { name, ty, span, interface, within })
+        Some(Formal { name, ty, span, interface, within, default, frame })
     }
 
     /// `interface Gear { O: point, M: point, ax: line }` — a group's shape, named (§8.1 [0.84]):
@@ -718,6 +786,11 @@ impl<'a> P<'a> {
                 let d = self.frame_decl(DeclName::Written(name))?;
                 self.end_of_stmt();
                 StmtKind::Decl(d)
+            }
+            // `motion(…)` is retired (#383): what it said is a frame's joint, held by relations
+            Some("motion") if call => {
+                self.retired_motion();
+                return None;
             }
             Some("view" | "section" | "dimensions") if call => {
                 self.derived(DeclName::Written(name))?
@@ -1119,7 +1192,7 @@ impl<'a> P<'a> {
             seed_at: None,
             seed_names: Vec::new(),
             sweep: Some(crate::syntax::Sweep::Family(Box::new(spec))),
-            motion: None,
+            seen_from: None,
             angular_span: None,
             membership,
             list_span,

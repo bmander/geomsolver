@@ -1,5 +1,5 @@
 //! What a text's names are: the one scanner the lexer reads a name by, and the flattener's
-//! rewriting of a text (`flatten::values::substitute_with`, `map_measured`) reads names by too,
+//! rewriting of a text (`flatten::values::substitute_with`) reads names by too,
 //! so a rewrite finds the names the lexer will read.  Where a reader differs from the lexer it
 //! says how, in a `NameScan`, rather than in a lexer of its own.
 
@@ -20,7 +20,7 @@ pub struct NameScan {
     pub inner_keys: bool,
     /// A name may begin right after a name character or a dot: where the lexer has read a number
     /// first (`80mm`, its unit) or a path broke off (`a.5b`).  A reader that asks only after a
-    /// word standing on its own (`map_measured`) says not.
+    /// word standing on its own says not.
     pub glued: bool,
 }
 

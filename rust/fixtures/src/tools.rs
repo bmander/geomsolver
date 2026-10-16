@@ -359,7 +359,8 @@ private qa := line(q3, q0)
 }}
 construction ring_blank := solid(face(qb, qw, qt, qa), about: spindle)
 part := solid(ring_blank)
-index := motion(about: spindle)
+index := frame
+std.Turn(index, about: spindle, ratio: 1)
 in std.front {{
 repeat {count} as i {{
   indexed := solid(removal, under: index, at: i * 360deg / {count})

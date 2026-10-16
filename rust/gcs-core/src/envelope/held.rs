@@ -1272,6 +1272,11 @@ fn motion(sk: &Sketch, m: usize, steps: &mut Vec<Step>, cols: &mut Vec<Col>,
             let observer = motion(sk, observer as usize, steps, cols, done, depth + 1, turns)?;
             Step::Relative { source, observer }
         }
+        MotionDef::Joint { .. } => {
+            return Err(format!("`{}`'s joint turns about an axis no drawn line holds: an envelope \
+                                the solve holds is generated under turns about lines, \
+                                `std.Turn(f, about: l, ratio: r)`", me.name))
+        }
         // a joint's inverse runs back over the same axis columns, a relative's swaps its sides
         MotionDef::Inverse { of } => {
             let k = motion(sk, of as usize, steps, cols, done, depth + 1, turns)?;

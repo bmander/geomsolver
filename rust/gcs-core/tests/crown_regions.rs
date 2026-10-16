@@ -249,10 +249,12 @@ blank := solid(blank_region)
 ";
 
 const GENERATION: &str = "\
-crown_roll := motion(about: crown_ax)
-gear_roll := motion(about: gear_ax, ratio: -1.4142135623730951)
-generation := motion(crown_roll, relative_to: gear_roll)
-construction removal := solid(tool, under: generation, from: -40deg, to: 40deg)
+crown_roll := frame
+std.Turn(crown_roll, about: crown_ax, ratio: 1)
+gear_roll := frame
+std.Turn(gear_roll, about: gear_ax, ratio: -1.4142135623730951)
+construction removal := solid(tool, under: crown_roll, seen_from: gear_roll, from: -40deg, \
+  to: 40deg)
 part := solid(blank)
 removal cut part
 ";

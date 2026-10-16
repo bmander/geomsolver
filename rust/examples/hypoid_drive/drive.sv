@@ -98,8 +98,10 @@ claim gear_side.crank.handle clear(0.2mm) gear_side.crank.body
 claim gear_side.crank.handle clear(0.2mm) gear_side.crank.pin
 claim pinion_side.crank.handle clear(0.2mm) pinion_side.crank.body
 claim pinion_side.crank.handle clear(0.2mm) pinion_side.crank.pin
-gear_turn := motion(about: pair.gear_cone.ax)
-pinion_turn := motion(about: pair.pinion_cone.ax)
+gear_turn := frame
+std.Turn(gear_turn, about: pair.gear_cone.ax, ratio: 1)
+pinion_turn := frame
+std.Turn(pinion_turn, about: pair.pinion_cone.ax, ratio: 1)
 construction gear_crank_turned := solid(gear_side.crank.body, under: gear_turn, at: 0deg)
 construction pinion_crank_turned := solid(pinion_side.crank.body, under: pinion_turn, at: 0deg)
 claim over gear_turn in (0deg, 360deg) {
@@ -181,7 +183,8 @@ component Mount(ax: line, foot: point, inner: point, seat: set, member: solid, t
 // many keys.
 component Splined(ax: line, o: point, across: line, lo: Length, hi: Length, root: Length,
     tip: Length, width: Length, keys: Int) {
-  turn := motion(about: ax)
+  turn := frame
+  std.Turn(turn, about: ax, ratio: 1)
   core := { q | q inside std.Cylinder(ax, r: root); o distance(in: (lo, hi), along: ax) q }
   bar := { q | q inside std.Cylinder(ax, r: tip); o distance(in: (lo, hi), along: ax) q
                o distance(in: (-width / 2, width / 2), along: across) q }
@@ -200,7 +203,8 @@ component Splined(ax: line, o: point, across: line, lo: Length, hi: Length, root
 // half a turn over `bars`, so each bar is two spokes. A hub keeps what of them its core holds.
 component Spokes(ax: line, o: point, across: line, lo: Length, hi: Length, width: Length,
     reach: Length, bars: Int) {
-  turn := motion(about: ax)
+  turn := frame
+  std.Turn(turn, about: ax, ratio: 1)
   bar := { q | q inside std.Cylinder(ax, r: reach); o distance(in: (lo, hi), along: ax) q
                o distance(in: (-width / 2, width / 2), along: across) q }
   private construction bar_solid := solid(bar)

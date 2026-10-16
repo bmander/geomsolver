@@ -54,6 +54,73 @@ impl Sketch {
         [pt.x, pt.y].into_iter().chain(pt.z).all(|q| self.params[q as usize].fixed)
     }
 
+    /// Frame `f`'s own numbers (#383): where its chart stands, and its joint's ratio and advance,
+    /// each where it has one — in the order `frame_members` names them.
+    pub fn frame_params(&self, f: usize) -> Vec<u32> {
+        let fr = &self.frames[f];
+        fr.chart.iter().flat_map(|c| c.o).chain(fr.joint.iter().flat_map(|j| [j.ratio, j.advance]))
+            .collect()
+    }
+
+    /// The names of `frame_params`, as a `fix` holds them.
+    pub fn frame_members(&self, f: usize) -> Vec<&'static str> {
+        let fr = &self.frames[f];
+        let chart: &[&str] =
+            if fr.chart.is_some() { &["origin.x", "origin.y", "origin.z"] } else { &[] };
+        let joint: &[&str] = if fr.joint.is_some() { &["ratio", "advance"] } else { &[] };
+        chart.iter().chain(joint).copied().collect()
+    }
+
+    /// **Mint frame `f`'s joint** (#383): its axis `f.axis`, free and seeded along `z`, and its
+    /// two numbers, a ratio of 1 and no advance — what relations then hold.  Once.
+    pub fn mint_joint(&mut self, f: usize, name: &str) -> crate::model::Joint {
+        if let Some(j) = &self.frames[f].joint {
+            return j.clone();
+        }
+        let axis = self.axis([0.0, 0.0, 1.0], &format!("{name}.axis")) as u32;
+        let ratio = self.param(1.0, false, &format!("{name}.ratio")) as u32;
+        let advance = self.param(0.0, false, &format!("{name}.advance")) as u32;
+        let j = crate::model::Joint { axis, ratio, advance, motion: None };
+        self.frames[f].joint = Some(j.clone());
+        j
+    }
+
+    /// **Every joint's axis seeded where its kind puts it** (#383): along the line it turns about
+    /// or slides along and through its start, or square to the view it turns in and through its
+    /// centre — after the seeds and the planes are placed, so the solve starts with the axis on
+    /// what holds it: a `parallel` started square to its line has no gradient to turn it by.  A
+    /// direction or a place a `fix` holds stays.
+    pub fn seed_joints(&mut self) {
+        for f in 0..self.frames.len() {
+            let Some(j) = self.frames[f].joint.clone() else { continue };
+            let Some(m) = j.motion else { continue };
+            let (at, dir) = match self.motions[m as usize].def {
+                MotionDef::Rotation { axis, .. } | MotionDef::Translation { axis, .. } => {
+                    let l = &self.lines[axis as usize];
+                    let (a, b) = (self.world_point(l.p1 as usize), self.world_point(l.p2 as usize));
+                    (a, crate::space::sub(b, a))
+                }
+                MotionDef::Turn { centre, .. } => {
+                    let n = self.plane_of(centre as usize).map(|v| self.basis(v).normal())
+                        .unwrap_or([0.0, 0.0, 1.0]);
+                    (self.world_point(centre as usize), n)
+                }
+                _ => continue,
+            };
+            let Some(d) = crate::space::normalised(dir) else { continue };
+            let r = j.axis as usize;
+            for k in 0..3 {
+                let q = self.axes[r].d[k] as usize;
+                if !self.params[q].fixed {
+                    self.params[q].value = d[k];
+                }
+            }
+            if !self.axes[r].a.iter().any(|&q| self.params[q as usize].fixed) {
+                self.stand_axis_through(r, at);
+            }
+        }
+    }
+
     /// The frames with axes of their own — every plane, and each spatial frame whose axes the
     /// document reads (#383): what a walk over the frames' charts walks.
     pub fn charted(&self) -> Vec<usize> {

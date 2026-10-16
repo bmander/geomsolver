@@ -4,6 +4,21 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.135] Frames: a motion is a frame's joint.** `motion(…)` is retired (§6.14). A frame's joint
+is three members minted where a reference names them — `f.axis`, `f.ratio`, `f.advance` — held
+by relations, and the standard library states them: `std.Turn(f, about: l, ratio: r)` (with
+`advance: a` a screw), `std.Spin(f, about: o, on: P, ratio: r)` (a turn in a view) and
+`std.Slide(f, along: l, advance: a)`. A frame with no joint is the world. A reading names the
+frame it is seen from beside `under:`, `seen_from: g` — on `solid`, `envelope`, `meshing`, a
+carried `coincident`, `claim over m seen_from g in (…)`, `l reciprocal(seen_from: g) m`,
+`std.Screw(isa, m, seen_from: g)` — where 0.134 declared `motion(m, relative_to: g)`. `phase:` is
+gone: roll 0 is as drawn, and a phase φ at ratio r is the roll offset φ/r. A ratio or advance is
+stated from the document's numbers; a measurement there, allowed in a motion's numbers since
+[0.27], is E107. A formal `m: frame` takes a frame, a `frame` formal left out is the instance's
+own frame at rest, and a number formal may state a default, `advance: Length = 0mm`. `motion(…)`,
+`m: motion`, `relative_to:` and `phase:` are refused naming what they became. (Issue #383, stage
+3.)
+
 **[0.134] Frames: the bare frame.** A plane is a frame whose `in` draws flat, and `f := frame`
 declares a spatial one bare (§6.7): it owns nothing until the document names its axes `f.u`,
 `f.v` or its origin `f.origin`, which are then seven numbers placed by relations, as a plane's

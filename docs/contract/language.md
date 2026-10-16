@@ -212,7 +212,14 @@ describes it), in the formal's plane whatever plane the instance stands in, seed
 `center: hint((x, y))` (`seed_point`), which `edit::commit_seeds` writes back
 (`owned_splice`). A `within` naming no `plane` formal is E103 at the call (`check_call`); `in` on
 another type, or on an interface's member, does not parse. `tests/sets.rs` is the gate
-(`a_family_owns_a_point_formal_left_out`). **An
+(`a_family_owns_a_point_formal_left_out`). **A number formal may state its default** (#383,
+0.135), `advance: Length = 0mm` (`Formal::default`, a number type only, else a parse error), which
+`Walk::bind` binds where the call leaves the formal out; and **a `frame` formal left out**
+(`Formal::frame`) is the instance's own bare frame, declared by `owned_points` as `f := frame`
+would be: a frame with no joint, the world, so `seen_from:` left out of a call reads from rest.
+`m: motion` is refused naming `m: frame` (`formal_or_interface` keeps `motion` from being read as
+an interface's name). `tests/frames.rs` is the gate
+(`a_left_out_advance_is_none_and_a_left_out_observer_is_the_world`). **An
 instance's numbers are read by its name**: `Walk::instance_numbers` puts every numeric formal
 of every instance a body writes into its `vals` as `inst.formal` (the number bound, else the
 unknown `bind` names), before the statements, so `p distance(ball.r) ball.center` reads it and a

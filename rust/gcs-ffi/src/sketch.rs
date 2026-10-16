@@ -235,6 +235,16 @@ pub unsafe extern "C" fn gcs_frame_planar(h: *mut Sketch, idx: i32) -> i32 {
     })
 }
 
+/// Whether frame `idx` moves (#383): 1 where it has a joint the document holds, 0 where not, -1
+/// where there is no such frame.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_frame_moves(h: *mut Sketch, idx: i32) -> i32 {
+    guard(-1, move || match sk(h).frames.get(idx as usize) {
+        Some(f) => i32::from(f.joint.as_ref().is_some_and(|j| j.motion.is_some())),
+        None => -1,
+    })
+}
+
 /// A plane's basis: six doubles, `u` then `v`.  Returns how many were written.
 #[no_mangle]
 pub unsafe extern "C" fn gcs_plane_basis(h: *mut Sketch, idx: i32, out: *mut f64) -> i32 {

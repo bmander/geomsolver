@@ -36,12 +36,13 @@ in std.top {
   apex := point hint((90, 0))
   apex right_of(d: R) hub
 }
-counter := motion(about: centre, ratio: -1)
-spin := motion(about: hub, ratio: -2 / 3)
-rotor_turn := motion(spin, relative_to: counter)
+counter := frame
+std.Spin(counter, about: centre, on: std.top, ratio: -1)
+spin := frame
+std.Spin(spin, about: hub, on: std.top, ratio: -2 / 3)   // the rotor, seen from the housing
 
 // the curve the seal's centre runs on: the apex's path over half a turn of the rotor
-trochoid := envelope(apex, under: rotor_turn, from: 0deg, to: 540deg)
+trochoid := envelope(apex, under: spin, seen_from: counter, from: 0deg, to: 540deg)
 
 // -- the bore, marched from it ----------------------------------------------------------------
 component Bore(c: point, z1: point, k: curve, d: Length, u: Angle) {

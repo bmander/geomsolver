@@ -330,6 +330,8 @@ impl<'a> Walk<'a> {
                 Ty::Set => Some("set"),
                 Ty::Group => Some("group"),
                 Ty::Path => Some("path"),
+                // a `frame` formal left out is the instance's own, at rest (`owned_points`)
+                Ty::Ent(_) if f.frame => None,
                 Ty::Ent(k) if f.within.is_none() => Some(k.as_str()),
                 _ => None,
             };
@@ -340,6 +342,12 @@ impl<'a> Walk<'a> {
             // says nothing about which side, which is the magnitude form and a solution set of
             // both — so it is left out of the table and the body writes no side at all
             if !f.ty.number() || sub.contains_key(&f.name.text) {
+                continue;
+            }
+            // a number with a default (#383): what the call left out is that, and no unknown
+            if let Some((text, span)) = &f.default {
+                self.bind_value(&mut sub, f, f.ty, text, &BTreeMap::new(), scope, &inst.name.text,
+                    *span);
                 continue;
             }
             let name = formal_name(&prefix, &inst.name.text, &f.name.text);
@@ -539,6 +547,21 @@ impl Walk<'_> {
         use crate::syntax::{Chained, DeclName, InstVal, Membership};
         let mut out = Vec::new();
         for f in &comp.formals {
+            // a `frame` formal left out (#383): the instance's own frame, declared bare — at
+            // rest, and as an observer the world
+            if f.frame && arg_of(comp, inst, f).is_none() {
+                let at = Span::at(st.span.lo as usize);
+                let name = Name { text: f.name.text.clone(), span: at };
+                let mut d = Decl::point(DeclName::Written(name), [0.0; 2], None);
+                d.kind = crate::model::EntKind::Frame;
+                d.bare = true;
+                d.seed = vec![0.0; 3];
+                d.seed_text = vec![None; 3];
+                d.children = vec![Vec::new(); 3];
+                out.push(Stmt { id: st.id, kind: StmtKind::Decl(d), span: st.span,
+                    chained: Chained::No });
+                continue;
+            }
             // one drawn in no plane formal is refused at the call (`check_call`), and not made
             let plane_ty = Ty::Ent(crate::model::EntKind::Frame);
             let Some(plane) = f.within.as_ref()

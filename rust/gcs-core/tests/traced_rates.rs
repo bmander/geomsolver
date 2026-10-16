@@ -355,7 +355,7 @@ const HELIX: &str = "\
 unit mm
 use std
 
-component Wound(x0: point, vert: line, spin: motion, s: Length) {
+component Wound(x0: point, vert: line, spin: frame, s: Length) {
   x := point hint((20, 0, 0))
   X := point hint((20, 0, 0))
   rate(x over s) parallel vert
@@ -371,7 +371,8 @@ fix((0, 0, 0)) o
 top := point hint((0, 0, 10))
 fix((0, 0, 10)) top
 za := line(o, top)
-spin := motion(about: za)
+spin := frame
+std.Turn(spin, about: za, ratio: 1)
 x0 := point hint((20, 0, 0))
 fix((20, 0, 0)) x0
 helix := Wound(x0, za, spin, s: 0mm).X over s in (-60mm, 60mm)

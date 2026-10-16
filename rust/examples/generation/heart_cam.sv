@@ -6,8 +6,8 @@
 // round it: the envelope of the roller as the follower slides out along its line while the cam
 // turns under it.
 //
-// `rise` is the follower sliding out `lift` over half a turn, seen from the turning cam; `fall`
-// slides back in.  Each half of the profile is the envelope of the roller under one of them
+// `rise` is the follower sliding out `lift` over half a turn, read seen from the turning cam;
+// `fall` slides back in.  Each half of the profile is the envelope of the roller under one of them
 // (`side: near`, the side facing the cam's centre), and each half of the pitch curve, the path
 // the roller's centre takes, is the envelope of the centre itself.  The pitch curve's halves
 // meet at the heart's point and its cleft, where it turns corners, so the profile's halves part
@@ -33,11 +33,12 @@ in std.front {
   path := line(s0, s1)                    // the follower's line, through the cam's centre
 }
 
-cam := motion(about: o, ratio: 1)
-out := motion(along: path, advance: 2 * lift)     // out `lift` in half a turn...
-back := motion(along: path, advance: -2 * lift)   // ...and back in at the same rate
-rise := motion(out, relative_to: cam)
-fall := motion(back, relative_to: cam)
+cam := frame
+std.Spin(cam, about: o, on: std.front, ratio: 1)
+rise := frame
+std.Slide(rise, along: path, advance: 2 * lift)     // out `lift` in half a turn...
+fall := frame
+std.Slide(fall, along: path, advance: -2 * lift)    // ...and back in at the same rate
 
 // the roller where the rise starts, and where the fall would start if it began at no roll
 in std.front {
@@ -51,10 +52,10 @@ in std.front {
   radius(rr) roller_f
 }
 
-pitch_rise := envelope(c_rise, under: rise, from: 0deg, to: 180deg)
-pitch_fall := envelope(c_fall, under: fall, from: 180deg, to: 360deg)
-cam_rise := envelope(roller, under: rise, from: 0deg, to: 180deg, side: near)
-cam_fall := envelope(roller_f, under: fall, from: 180deg, to: 360deg, side: near)
+pitch_rise := envelope(c_rise, under: rise, seen_from: cam, from: 0deg, to: 180deg)
+pitch_fall := envelope(c_fall, under: fall, seen_from: cam, from: 180deg, to: 360deg)
+cam_rise := envelope(roller, under: rise, seen_from: cam, from: 0deg, to: 180deg, side: near)
+cam_fall := envelope(roller_f, under: fall, seen_from: cam, from: 180deg, to: 360deg, side: near)
 
 // how tightly the profile bends a quarter turn in
 in std.front {

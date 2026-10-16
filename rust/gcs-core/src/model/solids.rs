@@ -554,6 +554,12 @@ pub enum MotionDef {
     /// inverse turns and slides back (its ratio, phase and advance negated) and a relative's
     /// swaps its two sides, so every reader reads it as the steps it already knows.
     Inverse { of: u32 },
+    /// A frame's joint whose holding relations name no line or centre the kinds above are written
+    /// over (#383): turned `ratio` a radian about the axis `axis` (an `AxisE`) as the solve leaves
+    /// it, advancing `advance` along it a turn.  Read after the solve (`Family::read`); a reader
+    /// that needs a motion's kind before it (a profile in the plane, an envelope the solve holds)
+    /// refuses it, naming what would settle it.
+    Joint { axis: u32, ratio: f64, advance: f64 },
 }
 
 #[derive(Clone, Debug)]

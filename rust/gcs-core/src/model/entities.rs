@@ -151,7 +151,7 @@ impl EntKind {
             "face" => EntKind::Face,
             "solid" => EntKind::Solid,
             "surface" => EntKind::Surface,
-            "motion" => EntKind::Motion,
+            // a motion is no declaration (#383): a frame's joint, read where it is named
             "envelope" => EntKind::Envelope,
             "axis" => EntKind::Axis,
             "meshing" => EntKind::Meshing,
@@ -256,7 +256,8 @@ impl EntKind {
             EntKind::Point => &["x", "y", "z"],
             EntKind::Circle | EntKind::Arc => &["r"],
             EntKind::Axis => &["dir.x", "dir.y", "dir.z", "origin.x", "origin.y", "origin.z"],
-            EntKind::Frame => &["origin.x", "origin.y", "origin.z"],
+            // and a joint's two numbers, where it has one (#383, `Sketch::frame_members`)
+            EntKind::Frame => &["origin.x", "origin.y", "origin.z", "ratio", "advance"],
             EntKind::Line | EntKind::Spline | EntKind::Curve | EntKind::Face | EntKind::Solid
             | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Meshing
             | EntKind::Traced => &[],
@@ -513,17 +514,33 @@ pub struct FrameE {
     pub parent: Option<u32>,
     /// Its axes and place, where it has them: always for a plane.
     pub chart: Option<Chart>,
+    /// Its motion relative to its parent at rest (stage 3), where the document names it.
+    pub joint: Option<Joint>,
     pub class: Classes,
+}
+
+/// **A frame's joint** (#383): a constant twist relative to its parent at rest — it turns about
+/// `axis` (an `AxisE`, `f.axis`) at `ratio` radians a radian of the shared roll (`f.ratio`, a
+/// Scalar Param) and advances `advance` along it a turn (`f.advance`, a Length Param): every motion
+/// Solvent has, by Chasles.  Minted where the document names one of the three; held, like
+/// anything else, by relations (`std.Turn`, `std.Spin`, `std.Slide`).  `motion` is the node the
+/// elaborator lowers it to, read off the relations holding it (`program::motions`).
+#[derive(Clone, Debug)]
+pub struct Joint {
+    pub axis: u32,
+    pub ratio: u32,
+    pub advance: u32,
+    pub motion: Option<u32>,
 }
 
 impl FrameE {
     /// A plane's frame, or a spatial frame's once its axes are named.
     pub fn charted(chart: Chart) -> FrameE {
-        FrameE { parent: None, chart: Some(chart), class: Classes::default() }
+        FrameE { parent: None, chart: Some(chart), joint: None, class: Classes::default() }
     }
     /// A bare frame: no axes, no place, nothing of its own.
     pub fn bare() -> FrameE {
-        FrameE { parent: None, chart: None, class: Classes::default() }
+        FrameE { parent: None, chart: None, joint: None, class: Classes::default() }
     }
     /// Whether a point `in` it is drawn flat in its own two coordinates: a plane.
     pub fn planar(&self) -> bool {

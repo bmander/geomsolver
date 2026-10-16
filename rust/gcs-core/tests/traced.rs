@@ -40,8 +40,9 @@ component Helix(o: point, x: line, y: line, z: line, r: Length, lead: Length, u:
 k := Helix(o, xl, yl, zl, r: 5mm, lead: 3mm).p over u in (0deg, 720deg)
 s0 := point hint((5, 0, 0))
 fix((5, 0, 0)) s0
-screw := motion(about: zl, advance: 3mm)
-component Screwed(p0: point, m: motion, u: Angle) {
+screw := frame
+std.Turn(screw, about: zl, ratio: 1, advance: 3mm)
+component Screwed(p0: point, m: frame, u: Angle) {
   p := point hint((5, 0, 0))
   p coincident(under: m, t == u) p0
 }

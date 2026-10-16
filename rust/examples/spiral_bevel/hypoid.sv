@@ -83,30 +83,35 @@ component HypoidPair(P: plane, across: axis, up: axis, pinion_teeth: Int, gear_t
   // own. With the gear the crown rolls on its pitch cone; with the pinion, whose own cone, solved
   // off the bevel, would roll at another, it keeps the pair's ratio, so pinion and gear generated
   // by one crown run at their tooth counts. Nothing is read off the solved drawing, so the solve
-  // holds a contact to what either generates (`Balanced`). Indexing turns a member; the crown's
-  // neighbour is one crown pitch round, four quarter pitches of the mean pitch circle.
-  crown_roll := motion(about: gear_cone.crown_ax)
-  pinion_roll := motion(about: pinion_cone.ax, ratio: crown_teeth / pinion_teeth)
-  gear_roll := motion(about: gear_cone.ax, ratio: -crown_teeth / gear_teeth)
-  pinion_generation := motion(crown_roll, relative_to: pinion_roll)
-  gear_generation := motion(crown_roll, relative_to: gear_roll)
-  pinion_index := motion(about: pinion_cone.ax)
-  gear_index := motion(about: gear_cone.ax)
-  crown_neighbor := motion(about: gear_cone.crown_ax,
-    phase: -4 * length(mill.ahead) / radius(mill.ahead) * 1rad)
+  // holds a contact to what either generates (`Balanced`). A member's generation is the crown's
+  // roll seen from the member's (`under: crown_roll, seen_from: pinion_roll`). Indexing turns a
+  // member; the crown's neighbour is the crown's roll read one crown pitch round, 360° over the
+  // crown's tooth count: four of the quarter pitches the mill lays off on the mean pitch circle.
+  crown_roll := frame
+  std.Turn(crown_roll, about: gear_cone.crown_ax, ratio: 1)
+  pinion_roll := frame
+  std.Turn(pinion_roll, about: pinion_cone.ax, ratio: crown_teeth / pinion_teeth)
+  gear_roll := frame
+  std.Turn(gear_roll, about: gear_cone.ax, ratio: -crown_teeth / gear_teeth)
+  pinion_index := frame
+  std.Turn(pinion_index, about: pinion_cone.ax, ratio: 1)
+  gear_index := frame
+  std.Turn(gear_index, about: gear_cone.ax, ratio: 1)
+  crown_pitch := -360deg / crown_teeth
 
   tooth := Tooth(mill.inner_flank, mill.outer_flank, mill.tooth_base, mill.tooth_tip,
     grow: backlash / 4, r: rounding)
   construction gear_space := Space(mill.outer_flank, mill.inner_flank, mill.mate_tip,
-    mill.mate_base, mill.reach, crown_neighbor, grow: backlash / 4, r: rounding)
-  pinion := Member(pinion_blank.material, tooth.crown, pinion_generation, pinion_index,
+    mill.mate_base, mill.reach, crown_roll, pitch: crown_pitch, grow: backlash / 4, r: rounding)
+  pinion := Member(pinion_blank.material, tooth.crown, crown_roll, pinion_roll, pinion_index,
     n: pinion_teeth)
-  gear := Member(gear_blank.material, gear_space.body, gear_generation, gear_index, n: gear_teeth)
+  gear := Member(gear_blank.material, gear_space.body, crown_roll, gear_roll, gear_index,
+    n: gear_teeth)
 
   // The face mill's two settings, found: the pinion and the gear equally far from undercut, in the
   // normal section through M and in the one through the toe of the trace.
   balance := Balanced(P, gear_cone, trace, mill.ax, mill.inner_flank, mill.outer_flank,
-    pinion_generation, gear_generation, R: R, face: blank_design.width, depth: addendum,
+    crown_roll, pinion_roll, gear_roll, R: R, face: blank_design.width, depth: addendum,
     cutter_radius: cutter_radius)
 
   // The tip relief: a topping beside each crown flank, the kinks drawn in the normal section N
@@ -130,10 +135,10 @@ component HypoidPair(P: plane, across: axis, up: axis, pinion_teeth: Int, gear_t
       half: inner_half, opening: 180deg - inner_half)
     gear_top := std.HalfSpace(trace.C, mill.ax, d: addendum / 2)
     construction gear_topping := Space(gear_outer.cone, gear_inner.cone, gear_top,
-      mill.mate_base, mill.reach, crown_neighbor, grow: 0mm, r: rounding)
-    pinion_relief := Generated(pinion.body, pinion_topping.crown, pinion_generation,
+      mill.mate_base, mill.reach, crown_roll, pitch: crown_pitch, grow: 0mm, r: rounding)
+    pinion_relief := Generated(pinion.body, pinion_topping.crown, crown_roll, pinion_roll,
       pinion_index, n: pinion_teeth)
-    gear_relief := Generated(gear.body, gear_topping.body, gear_generation, gear_index,
+    gear_relief := Generated(gear.body, gear_topping.body, crown_roll, gear_roll, gear_index,
       n: gear_teeth)
   }
 }
@@ -315,8 +320,10 @@ component Tooth(a: set, b: set, lo: set, hi: set, grow: Length, r: Length) {
 // A crown space, tip down, the gear's generator: the tooth's mate on the same cones, so the two
 // crowns are complementary by construction — beyond `a` and within the cap, within `b` turned by
 // `step`, each cone grown by `grow`, above `lo` and below `hi`, its tips' edges rounded. The
-// outer mate is `outer_crown`, the inner `inner_crown`, turned `neighbor`.
-component Space(a: set, b: set, lo: set, hi: set, cap: set, step: motion, grow: Length, r: Length) {
+// outer mate is `outer_crown`, the inner `inner_crown`, turned `neighbor`: read `pitch` along
+// `step`.
+component Space(a: set, b: set, lo: set, hi: set, cap: set, step: frame, pitch: Angle,
+    grow: Length, r: Length) {
   inner := { q | q distance(<= grow, side: inside) a }
   outer := std.Offset(b, d: grow)
   tip := { q | q outside lo }
@@ -327,26 +334,28 @@ component Space(a: set, b: set, lo: set, hi: set, cap: set, step: motion, grow: 
   far := { p | p inside outer; p inside tip; p inside base; p inside outer_round }
   private construction outer_crown := solid(near)
   private construction inner_crown := solid(far)
-  private construction neighbor := solid(inner_crown, under: step, at: 0deg)
+  private construction neighbor := solid(inner_crown, under: step, at: pitch)
   body := solid(outer_crown)
   neighbor common body
 }
 
 // -- generation --------------------------------------------------------------------------------
-// A cut generated in `body`: `tool` swept under the generating roll `under` through `body` — the
-// whole roll about 0 during which it meets the body's material, clear of it at both ends, found
-// once the layout is solved — indexed by `index` at each of `n` teeth. A member is its blank less
-// its crown's cut.
-component Generated(body: solid, tool: solid, under: motion, index: motion, n: Int) {
-  construction removal := solid(tool, under: under, through: body)
+// A cut generated in `body`: `tool` swept under the generating roll `under`, seen from the
+// member's `seen_from`, through `body` — the whole roll about 0 during which it meets the body's
+// material, clear of it at both ends, found once the layout is solved — indexed by `index` at
+// each of `n` teeth. A member is its blank less its crown's cut.
+component Generated(body: solid, tool: solid, under: frame, seen_from: frame, index: frame,
+    n: Int) {
+  construction removal := solid(tool, under: under, seen_from: seen_from, through: body)
   repeat n as i {
     private construction indexed := solid(removal, under: index, at: i * 360deg / n)
     indexed cut body
   }
 }
-component Member(blank: solid, tool: solid, under: motion, index: motion, n: Int) {
+component Member(blank: solid, tool: solid, under: frame, seen_from: frame, index: frame,
+    n: Int) {
   body := solid(blank)
-  cut := Generated(body, tool, under, index, n: n)
+  cut := Generated(body, tool, under, seen_from, index, n: n)
 }
 
 // -- the tip relief ----------------------------------------------------------------------------
@@ -401,11 +410,12 @@ component Blade(about: line, q: point, half: Angle, opening: Angle) := { p |
 // whole face, and the seeds say which. The solve tears the two numbers out of the block that
 // holds them, solving the rest for each try (solver.md).
 component Balanced(P: plane, gear: Gear, trace: Trace, ax: line, inner: set, outer: set,
-    pinion_generation: motion, gear_generation: motion, R: Length, face: Length, depth: Length,
-    cutter_radius: Length) {
+    crown_roll: frame, pinion_roll: frame, gear_roll: frame, R: Length, face: Length,
+    depth: Length, cutter_radius: Length) {
   gear.M distance(>= R) trace.C
-  pinion_flank := envelope(inner, under: pinion_generation, from: -30deg, to: 30deg)
-  gear_flank := envelope(outer, under: gear_generation, from: -30deg, to: 30deg)
+  pinion_flank := envelope(inner, under: crown_roll, seen_from: pinion_roll, from: -30deg,
+    to: 30deg)
+  gear_flank := envelope(outer, under: crown_roll, seen_from: gear_roll, from: -30deg, to: 30deg)
   // the normal section through M, square to P on the trace normal, through the cutter's axis
   N := plane(u: trace.normal, v: ax)
   mean := Margins(N, gear.M, trace.normal, ax, trace.C, pinion_flank, gear_flank, depth: depth)

@@ -191,6 +191,7 @@ fn expand(
     cx.diags.extend(expansion.diagnostics.iter().cloned());
     cx.res.normals = expansion.normals.clone();
     cx.res.charts = expansion.charts.clone();
+    cx.res.joints = expansion.joints.clone();
     expansion
 }
 
@@ -659,6 +660,7 @@ fn place_planes(
     // a ring's copies where their representatives' seeds put them, whatever a seed said of a copy
     cx.sk.settle_turns();
     cx.sk.seed_normals();
+    cx.sk.seed_joints();
 }
 
 /// **Phase 3b: faces, then solids** (§6.8, §6.9).  **After every other kind and after the
