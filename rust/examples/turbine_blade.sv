@@ -212,7 +212,8 @@ in std.front {
               step(u: root_len / 2 - embed) (aw_top := line) ->
               step(v: -wing_z) (aw_root := line) -> close
 }
-index := motion(about: engine)
+index := frame
+std.Turn(index, about: engine, ratio: 1)
 // each swept one pitch from the front plane, then turned back half a pitch to stand centred
 platform_sector := solid(plat, about: engine, sweep: pitch_angle)
 wing_f_sector := solid(fwd_wing, about: engine, sweep: pitch_angle)
