@@ -499,7 +499,7 @@ D0's [`offset_front.sv`](d0/offset_front.sv) is kept as D0 proposed it, its head
   undercut a fold, and the Wankel bore read off `wankel.sv`'s envelope: Cauchy data on a drawn
   curve (`p coincident(t == u) k` in `initially`).
 - `fisheye.sv`'s and `projectile.sv`'s wavefronts, the eikonal marched: a speed that reads the
-  front's own point.
+  front's own point. The fish-eye's landed with #378 (below).
 - The bore drawn whole, and any front over a whole turn of a long curve: a pieces count per
   document, or pieces doubled until `lines::check` holds.
 
@@ -533,3 +533,69 @@ D0's [`offset_front.sv`](d0/offset_front.sv) is kept as D0 proposed it, its head
 
 **Not yet:** a point on a spline in a rate body (refused, `rates::Row::checked`), and the traced
 point carried in a marched surface: the split still asks that it be moved (D4's finding 4, D5's).
+
+## A speed that reads its own point (#378, 2026-10-16)
+
+**Landed:** a dimension of a body traced in space may read a coordinate of a point the body
+declares (0.132, §6.5), so a rate row's speed may read where the point is; the eikonal equation in
+a graded medium, [`fisheye_fronts.sv`](../../rust/examples/rates/fisheye_fronts.sv), gated in
+`tests/rate_examples.rs`; and the gate `tests/placed_numbers.rs`.  The rule is
+`docs/contract/curves.md` ("A number the body places").
+
+### What landed
+
+- **The spelling is today's:** `p.x` in a dimension's text, as `c.x` of a point the component is
+  written over already was. `rate(p over s) distance((1 + ((p.x - c.x)^2 + (p.y - c.y)^2 + (p.z -
+  c.z)^2) / R^2) / 2, along: nl)` moves the front at 1/n, n read at `p`.
+- **A placed number, not a new derivative.** The text cannot be a tape of `w`, which every
+  integrator reads over the outer variables alone. It is one more coordinate of `q`, held to the
+  text by a row of the body's own, `v − f(x…)` (`traced::RowKind::Number`), the row the dimension
+  stands in reading `v`. So nothing downstream learns of it. A plain body solves it with its points.
+  Over one formal it is a coordinate of the state, integrated through its row differentiated.
+  Over two it is placed at every node with the points the rates do not move, its sensitivities by
+  the implicit function theorem in the variational equations. The rates' system and the
+  polarised second derivatives carry it as they carry any row; the row over jets is the tape over
+  jets, exact to the third order as `w`'s is.
+- **Two refusals over two formals:** a number in `initially`, which is the Cauchy data the placed
+  points are solved after; and one in a row that places only the points the rates move, which would
+  be placed at each step and differentiated along the march at once.
+
+### The gate
+
+| item | result |
+|---|---|
+| the fish-eye's fronts from `a` = (−R, 0), R 50, against `cos(s/R)(x² + z²) + 2Rx + R² cos(s/R) = 0`, the arc u in (−120°, 120°), 32 pieces | 3e-12 at s = 2, 9e-10 at 40, 1.6e-8 at 100, 5e-8 at 150, through `x = 0` at s = πR/2 where the circle turns inside out; 2e-5 at 155 at the arc's ends, 1e-7 inside |
+| the refocus at a's conjugate (R, 0), s = πR = 157.08 | refused at 155.2, a node's area under a hundredth of its home's (the closed form's at 157.06), every node within the front's radius 2.1 of the conjugate at 155 |
+| `fisheye.sv`'s free-curve ray, 15 of its points | each on the fronts to 1e-9 by the march's own reading, at the closed form's optical length to 1e-6, the front square to the ray to 1e-6 |
+| a speed `x/L` along a line (one formal) | `x₀e^{s/L}` to 1e-10, its rate too; a point held 30 along at `L ln 3`; the contact's Jacobian against differences |
+| a saddle curve, `z = x·y/20` on a circle of 10, no rate | point and tangent exact to 1e-10 / 1e-12; a line along its tangent; both contacts' Jacobians |
+| a point held on the fish-eye's front (two formals) | at the closed form's optical length to 1e-7, on the axis' ray; its Jacobian through the variational equations against central differences, the centre the index reads among the columns |
+| refusals | a number in `initially` over two formals; one in a row placing only moved points |
+
+### Findings
+
+1. **A perfect focus is not resolved by more pieces.** On 16 / 32 / 64 pieces the fronts are 8e-7 /
+   1.6e-8 / 2.5e-10 off the circles at s = 100, but 1.3e-7 / 5e-8 / 4.7e-8 at 150, 7e-6 / 3e-6 /
+   4e-6 at 154 and 5e-5 / 2e-5 / 3e-5 at 155: near the conjugate the march's own error, amplified
+   by the focusing, outgrows the discretisation's. The check against twice the pieces says so,
+   1e-3 at 154 and 1e-2 at 155. Only 32 pieces are refused where the closed form folds: on 16 and
+   64 the open arc's end pieces spread instead of closing, `x_u` there turns and grows rather than
+   vanishing, and no node's area falls below the floor — the march runs on past πR, unrefused and
+   wrong (0.1–1 off at 156). A regularity read at each evaluation cannot see a focus the march does
+   not reach. (A sign of `x_d × x_u` kept along the branch was tried and does not help: the normal,
+   placed square to a vanishing `x_u`, takes its other root at the same step, so both turn.) The
+   document is held at its own 32 pieces, as `geodesic_circles.sv` and `housing.sv` bound their
+   folds from below.
+2. **A node's place errs more than the front's shape.** The check against twice the pieces at s =
+   100 is 2e-6 where the fronts are 1.6e-8 off their circles: a node slides along the front more
+   than the front leaves its circle.
+3. **A space `parallel` held along a world axis loses rank over one formal**, rates or no — D4's
+   finding 1, still open in the one-formal integrator: the line of the exponential gate runs off
+   the axes.
+
+### What waits
+
+- `projectile.sv`'s fronts: the same law over Jacobi's metric, `n = √(h − z)`, can now be written;
+  it has no closed form for its fronts to be held to but its rays.
+- A front from a point source written from the point: the Cauchy data is a circle by the closed
+  form a short way out, since a front at its source has no normal.

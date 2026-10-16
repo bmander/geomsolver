@@ -125,6 +125,14 @@ pub(crate) fn reads_var(flat: &[f64], k: usize) -> bool {
     flat.chunks_exact(WORD).any(|w| w[0] == code::VAR && w[1] as usize == k)
 }
 
+/// Whether a flat tape is whole instructions, every one finite, reading no variable at `n` or
+/// past it — what an encoding read back is checked for (a traced body's placed number, #378).
+pub(crate) fn reads_within(flat: &[f64], n: usize) -> bool {
+    flat.len() % WORD == 0 && flat.iter().all(|x| x.is_finite())
+        && flat.chunks_exact(WORD)
+            .all(|w| w[0] != code::VAR || (w[1] >= 0.0 && (w[1] as usize) < n))
+}
+
 /// Scratch a tape runs in: one value and one gradient per slot.  Held by the caller and reused,
 /// because a kernel evaluates the same tape for every constraint in its block and allocating per
 /// evaluation is the one thing the compile-to-plan seam exists to avoid.

@@ -4,6 +4,15 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.132] A dimension that reads the body's own points.** In a body traced in space a dimension
+may read a coordinate of a point the body declares (`p.x`), not only the formals, the numbers it
+was given and the geometry it is written over (§6.5): a number the body places, held to the
+expression by an equation of its own, so a rate row's speed may read where the point is — a front
+moving at `1 / n` with `n` read at its own point, the eikonal equation in a graded medium
+(`rates/fisheye_fronts.sv`, Maxwell's fish-eye). Over two formals it stands in a rate row or a
+relation placing a point the rates do not move, never in `initially` (E103). Through 0.131 such a
+text was E103 ("`p.x` is not something this curve can read"). (Issue #378.)
+
 **[0.131] A point a motion carries, in a body that states a rate.** `X coincident(under: m, t ==
 τ) x` (§9.3) is a relation without a rate in a body that states one (§6.5), over one formal or
 two: a row of the body, held everywhere, or in `initially { … }` a row of the home's alone — so

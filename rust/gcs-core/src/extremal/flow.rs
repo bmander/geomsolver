@@ -37,25 +37,17 @@ impl Lagrangian {
     pub fn compile(terms: &[(f64, &str)], maximize: bool, units: crate::units::Units) -> Result<Lagrangian, String> {
         let deg = Ast::Num(180.0 / std::f64::consts::PI, Dim::SCALAR);
         let angle = Ast::Bin(Op::Mul, Box::new(Ast::Var("th".into())), Box::new(deg));
-        fn rewrite(a: &Ast, angle: &Ast) -> Ast {
-            match a {
-                Ast::Var(v) => match v.as_str() {
-                    "p.x" => Ast::Var("x".into()),
-                    "p.y" => Ast::Var("y".into()),
-                    // the tapes' trigonometry is in degrees
-                    "t.x" => Ast::Call("cos".into(), vec![angle.clone()]),
-                    "t.y" => Ast::Call("sin".into(), vec![angle.clone()]),
-                    _ => a.clone(),
-                },
-                Ast::Neg(x) => Ast::Neg(Box::new(rewrite(x, angle))),
-                Ast::Bin(o, x, y) => Ast::Bin(*o, Box::new(rewrite(x, angle)), Box::new(rewrite(y, angle))),
-                Ast::Call(f, xs) => Ast::Call(f.clone(), xs.iter().map(|x| rewrite(x, angle)).collect()),
-                other => other.clone(),
-            }
-        }
+        let rewrite = |v: &str| match v {
+            "p.x" => Some(Ast::Var("x".into())),
+            "p.y" => Some(Ast::Var("y".into())),
+            // the tapes' trigonometry is in degrees
+            "t.x" => Some(Ast::Call("cos".into(), vec![angle.clone()])),
+            "t.y" => Some(Ast::Call("sin".into(), vec![angle.clone()])),
+            _ => None,
+        };
         let mut sum: Option<Ast> = None;
         for &(coef, text) in terms {
-            let body = rewrite(&crate::expr::parse_in(text, units)?.body, &angle);
+            let body = crate::expr::parse_in(text, units)?.body.map_vars(&rewrite);
             let c = if maximize { -coef } else { coef };
             let term = Ast::Bin(Op::Mul, Box::new(Ast::Num(c, Dim::SCALAR)), Box::new(body));
             sum = Some(match sum {

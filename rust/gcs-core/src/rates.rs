@@ -68,7 +68,8 @@ const RESTARTS: usize = 8;
 /* -- the body ------------------------------------------------------------------------------- */
 
 /// One row of a body: what it states — a static kernel or, in space, a point a motion carries
-/// (#377) — the variable-table slot each column reads, and its constants.
+/// (#377) or a placed number (#378) — the variable-table slot each column reads, and its
+/// constants.
 #[derive(Clone, Debug)]
 pub struct Row<'a> {
     pub kind: RowKind,
@@ -101,6 +102,11 @@ impl Row<'_> {
             }
             RowKind::Spline => return Err("a body that states a rate reads no point on a spline"
                 .into()),
+            RowKind::Number => {
+                if !crate::traced::number_shape(self.cols.len(), self.consts) {
+                    return Err("rate row shape mismatch".into());
+                }
+            }
         }
         let kn = self.kernel();
         if kn.n_par != self.cols.len() || kn.n_const != self.consts.len() || kn.n_par > COLS
