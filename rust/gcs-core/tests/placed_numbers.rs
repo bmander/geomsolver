@@ -28,16 +28,18 @@ ya := line(c, y1)
 za := line(c, z1)
 ";
 
-/// Every column of the sketch free and moved off the solution, and each contact's Jacobian (a
-/// rate of one too) against central differences.
-fn jacobians_hold(sk: &mut Sketch) {
-    for p in sk.params.iter_mut() {
-        p.fixed = false;
-    }
+/// Every column of the sketch free and moved off the solution.
+fn perturbed(sk: &mut Sketch) {
     let mut rng = gcs_core::rng::Rng::new(7);
     for p in sk.params.iter_mut() {
+        p.fixed = false;
         p.value += rng.uniform(-0.02, 0.02) * (1.0 + p.value.abs().min(10.0));
     }
+}
+
+/// Off the solution, each contact's Jacobian (a rate of one too) against central differences.
+fn jacobians_hold(sk: &mut Sketch) {
+    perturbed(sk);
     for c in sk.constraints.iter()
         .filter(|c| c.kind.traced_contact().is_some() || c.rate_source().is_some()) {
         gcs_core::fdcheck::check_constraint(sk, c, 1e-6, 1e-6)
@@ -192,13 +194,7 @@ fn a_front_holds_a_point_through_its_speed() {
     let place: Vec<f64> = contact.local_values(&sk)[3..5].to_vec();
     let sigma = 50.0 * (4000.0f64 / 4100.0).acos();
     assert!((place[0] - sigma).abs() < 1e-7 && place[1].abs() < 1e-6, "{place:?} against {sigma}");
-    for p in sk.params.iter_mut() {
-        p.fixed = false;
-    }
-    let mut rng = gcs_core::rng::Rng::new(7);
-    for p in sk.params.iter_mut() {
-        p.value += rng.uniform(-0.02, 0.02) * (1.0 + p.value.abs().min(10.0));
-    }
+    perturbed(&mut sk);
     let v = contact.local_values(&sk);
     let got = contact.jacobian(&sk, &v);
     // the lead, the place, then the centre's x (which the index reads) and the last axis's end

@@ -506,9 +506,9 @@ fn number_res(_: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
 }
 
 fn number_jac(_: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
-    let x: Vec<Dual<NUMBER_COLS>> =
-        v[1..].iter().enumerate().map(|(i, &x)| Dual::var(x, i)).collect();
-    let f = crate::tape::eval_num::<Dual<NUMBER_COLS>>(k, &x);
+    let x: [Dual<NUMBER_COLS>; NUMBER_COLS] =
+        std::array::from_fn(|i| Dual::var(v.get(i + 1).copied().unwrap_or(0.0), i));
+    let f = crate::tape::eval_num::<Dual<NUMBER_COLS>>(k, &x[..v.len() - 1]);
     j[0] = 1.0;
     for (i, j) in j[1..v.len()].iter_mut().enumerate() {
         *j = f.map_or(f64::NAN, |f| -f.g[i]);

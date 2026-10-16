@@ -324,11 +324,9 @@ struct Lowering<'v> {
     /// (#378).
     own: BTreeMap<String, usize>,
     seed_of: Vec<crate::expr::Ast>,
-    /// Each placed number by its text, its index past the declared coordinates; its seed and its
-    /// owner, its slot a placeholder (`NUMBER_BASE`) until `settle_numbers` puts it in `q`.
-    numbers: BTreeMap<String, usize>,
-    number_seeds: Vec<crate::tape::Tape>,
-    number_owner: Vec<String>,
+    /// Each placed number's text and seed, in the order of their slots past the declared
+    /// coordinates — placeholders (`NUMBER_BASE`) until `settle_numbers` puts them in `q`.
+    numbers: Vec<(String, crate::tape::Tape)>,
 }
 
 /// Where a placed number stands until `settle_numbers` puts it past the declared coordinates:
@@ -379,8 +377,7 @@ impl<'v> Lowering<'v> {
                    rates: Vec::new(), init: Vec::new(), rated: BTreeMap::new(), origin: None,
                    second: None, spans: Vec::new(), rate_spans: Vec::new(),
                    init_spans: Vec::new(), sampled: None, own: BTreeMap::new(),
-                   seed_of: Vec::new(), numbers: BTreeMap::new(), number_seeds: Vec::new(),
-                   number_owner: Vec::new() }
+                   seed_of: Vec::new(), numbers: Vec::new() }
     }
 
     /// A row, to the rows its relation is lowered to, with the statement it is of.
@@ -642,7 +639,7 @@ impl<'v> Lowering<'v> {
                 read over the formals and the geometry: a number that reads the body's own points \
                 is placed at each step, the points first".into()));
         }
-        if let Some(&j) = self.numbers.get(text) {
+        if let Some(j) = self.numbers.iter().position(|(t, _)| t == text) {
             return Ok(Dimension::Number(NUMBER_BASE + j));
         }
         let j = self.numbers.len();
@@ -665,12 +662,10 @@ impl<'v> Lowering<'v> {
         let tape = crate::tape::Tape::compile_wide(&ast.body, &names)
             .map_err(|e| (Code::E103, span, e))?;
         let seeded =
-            substituted(&ast.body, &|n| self.own.get(n).and_then(|&k| self.seed_of.get(k)));
+            ast.body.map_vars(&|n| self.own.get(n).and_then(|&k| self.seed_of.get(k)).cloned());
         let seed = crate::tape::Tape::compile_wide(&seeded, self.vars)
             .map_err(|e| (Code::E103, span, e))?;
-        self.number_seeds.push(seed);
-        self.number_owner.push(text.to_string());
-        self.numbers.insert(text.to_string(), j);
+        self.numbers.push((text.to_string(), seed));
         // the number holds everywhere, whatever row reads it
         self.rows.push(crate::traced::Row { kind: crate::traced::RowKind::Number, cols,
                                             consts: tape.flat });
@@ -695,8 +690,10 @@ impl<'v> Lowering<'v> {
             }
         }
         self.n_q += n;
-        self.seeds.append(&mut self.number_seeds);
-        self.owner.append(&mut self.number_owner);
+        for (text, seed) in self.numbers.iter().cloned() {
+            self.owner.push(text);
+            self.seeds.push(seed);
+        }
     }
 
     /// A declaration drawn in space: a point, its three numbers inner unknowns seeded by its
@@ -916,19 +913,3 @@ impl<'v> Lowering<'v> {
     }
 }
 
-/// `ast` with each name `f` answers written as its expression.
-fn substituted<'a>(ast: &crate::expr::Ast, f: &dyn Fn(&str) -> Option<&'a crate::expr::Ast>)
-                   -> crate::expr::Ast {
-    use crate::expr::Ast;
-    match ast {
-        Ast::Var(n) => f(n).cloned().unwrap_or_else(|| ast.clone()),
-        Ast::Neg(a) => Ast::Neg(Box::new(substituted(a, f))),
-        Ast::Bin(op, a, b) => {
-            Ast::Bin(*op, Box::new(substituted(a, f)), Box::new(substituted(b, f)))
-        }
-        Ast::Call(n, args) => {
-            Ast::Call(n.clone(), args.iter().map(|a| substituted(a, f)).collect())
-        }
-        Ast::Num(..) | Ast::Measure(..) => ast.clone(),
-    }
-}

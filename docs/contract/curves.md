@@ -329,7 +329,7 @@ to the expression by a row of the body's algebraic rows: `v − f(x…)`, its co
 the variable-table slots the text reads, outer or `q`, at most `NUMBER_COLS − 1`), its constants
 `f`'s tape compiled over those names (`program::traced::Lowering::dimension`; the row the
 dimension stands in reads `v` through its free twin where it would read `w`).  One text is one
-number.  Its seed is the text over the seeds of what it reads (`substituted`).  Numbers are
+number.  Its seed is the text over the seeds of what it reads (`expr::Ast::map_vars`).  Numbers are
 lowered as relations are, their slots placeholders past the table (`NUMBER_BASE`), and put past
 the declared coordinates once the body is lowered (`settle_numbers`, every `w` slot moving on by
 as many), so `owner` names each by its text.  Nothing else learns of it: it is an unknown of the
@@ -340,22 +340,22 @@ more row of `M`, so a speed `x/L` along a line is `x₀e^{s/L}`), over two forma
 coordinate (`A`: no rate row reads its rate), solved at every node with the rest of `A` and
 differentiated by the implicit function theorem in the variational equations.  `rates::Row`
 carries it as `kid == rates::NUMBER`, its kernel built at its widths (`Row::kernel`, `n_res`,
-`has_form`, `jets`), so `rates.rs` and `lines.rs` read rows through those and never index
-`KERNELS` by a row's `kid`.  Over two formals `initially` cannot read one (it is the Cauchy data
-`A` is placed after) and a relation reading one must place another placed point or be a rate row
-(`Lowering::marched`: a row over moved points alone with a number would be placed and
-differentiated at once), each **E103**.  `tests/placed_numbers.rs` is the gate: a speed along a line
-growing as its distance (the exponential, a held point at `L ln 3`, its contact's Jacobian), a
-saddle curve with no rate (point, tangent and a tangent line exact), the fish-eye's front holding a
-point at the closed form's optical length with its contact's Jacobian through the variational
-equations, and the two refusals.  **The eikonal in a graded medium** (`rates/fisheye_fronts.sv`,
-`tests/rate_examples.rs`): a front from a point source in Maxwell's fish-eye (`n = 2/(1 +
-r²/R²)`, R 50) moving at `1/n` along its normal, from the closed form's circle at `s = 2` — every
-front the circle `cos(s/R)(x² + z²) + 2Rx + R²cos(s/R) = 0` (the lens's sphere's geodesic circles,
-projected) to 1e-7 through `s = 150`, past the line `x = 0` where the circle turns inside out;
-refused at 155.2, short of the source's conjugate at `πR` = 157.08 where the fronts refocus; and
-`fisheye.sv`'s free-curve ray crossing every front square to it (1e-6), at the optical length the
-closed form gives its point.
+`has_form`, `jets`; its shape judged once, as the body is read, by `Row::checked`), so `rates.rs`
+and `lines.rs` read rows through those and never index `KERNELS` by a row's `kid`.  Over two formals
+`initially` cannot read one (it is the Cauchy data `A` is placed after) and a relation reading one
+must place another placed point or be a rate row (`Lowering::marched`: a row over moved points
+alone with a number would be placed and differentiated at once), each **E103**.
+`tests/placed_numbers.rs` is the gate: a speed along a line growing as its distance (the
+exponential, a held point at `L ln 3`, its contact's Jacobian), a saddle curve with no rate (point,
+tangent and a tangent line exact), the fish-eye's front holding a point at the closed form's
+optical length with its contact's Jacobian through the variational equations, and the two
+refusals.  **The eikonal in a graded medium** (`rates/fisheye_fronts.sv`, `tests/rate_examples.rs`):
+a front from a point source in Maxwell's fish-eye (`n = 2/(1 + r²/R²)`, R 50) moving at `1/n` along
+its normal, from the closed form's circle at `s = 2` — every front the circle `cos(s/R)(x² + z²) +
+2Rx + R²cos(s/R) = 0` (the lens's sphere's geodesic circles, projected) to 1e-7 through `s = 150`,
+past the line `x = 0` where the circle turns inside out; refused at 155.2, short of the source's
+conjugate at `πR` = 157.08 where the fronts refocus; and `fisheye.sv`'s free-curve ray crossing
+every front square to it (1e-6), at the optical length the closed form gives its point.
 
 - A parametric curve (`curve.rs`) is *linear in its control points*, `C(t) = Σ Bᵢ(t) Pᵢ` (every
   B-spline).  A contact carries its own curve parameter as a `Param` slot and says

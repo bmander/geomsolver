@@ -80,13 +80,23 @@ pub struct Row<'a> {
 pub const NUMBER: usize = usize::MAX - 1;
 
 impl Row<'_> {
-    /// Its kernel, at its widths where it is a placed number.
+    /// Its kernel, at its widths where it is a placed number (whose shape `checked` judges, once).
     pub(crate) fn kernel(&self) -> Option<crate::kernels::Kernel> {
         match self.kid {
-            NUMBER => crate::traced::number_shape(self.cols.len(), self.consts)
-                .then(|| crate::traced::number_kernel(self.cols.len(), self.consts.len())),
+            NUMBER => Some(crate::traced::number_kernel(self.cols.len(), self.consts.len())),
             k => KERNELS.get(k).copied(),
         }
+    }
+
+    /// Its kernel, where its columns and constants are the kernel's: what a body is checked
+    /// against as it is read (`Body::check`, `lines::Body::plan`).
+    pub(crate) fn checked(&self) -> Option<crate::kernels::Kernel> {
+        let kn = self.kernel()?;
+        let fits = match self.kid {
+            NUMBER => crate::traced::number_shape(self.cols.len(), self.consts),
+            _ => kn.n_par == self.cols.len() && kn.n_const == self.consts.len(),
+        };
+        fits.then_some(kn)
     }
 
     /// The residual rows it states.
@@ -247,10 +257,8 @@ impl<'a> Body<'a> {
         }
         for (rows, reads) in [(&self.alg, false), (&self.init, false), (&self.rate, true)] {
             for r in rows.iter() {
-                let kn = r.kernel().ok_or("no such kernel")?;
-                if kn.n_par != r.cols.len() || kn.n_const != r.consts.len() || kn.n_par > COLS
-                    || kn.n_res > 8 || r.cols.iter().any(|&c| c >= width)
-                {
+                let kn = r.checked().ok_or("no such kernel")?;
+                if kn.n_par > COLS || kn.n_res > 8 || r.cols.iter().any(|&c| c >= width) {
                     return Err("rate row shape mismatch".into());
                 }
                 if !r.has_form() {

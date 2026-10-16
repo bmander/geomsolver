@@ -270,6 +270,20 @@ pub struct Parsed {
 }
 
 impl Ast {
+    /// The expression with each name `f` answers written as what it answers, every other part as
+    /// it is.
+    pub fn map_vars(&self, f: &impl Fn(&str) -> Option<Ast>) -> Ast {
+        match self {
+            Ast::Var(v) => f(v).unwrap_or_else(|| self.clone()),
+            Ast::Neg(a) => Ast::Neg(Box::new(a.map_vars(f))),
+            Ast::Bin(o, a, b) => Ast::Bin(*o, Box::new(a.map_vars(f)), Box::new(b.map_vars(f))),
+            Ast::Call(n, args) => {
+                Ast::Call(n.clone(), args.iter().map(|a| a.map_vars(f)).collect())
+            }
+            Ast::Num(..) | Ast::Measure(..) => self.clone(),
+        }
+    }
+
     /// Every name the expression reads, once each, in name order.
     pub fn deps(&self) -> BTreeSet<String> {
         let mut out = BTreeSet::new();

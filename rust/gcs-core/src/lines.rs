@@ -143,9 +143,8 @@ impl<'a> Body<'a> {
         let width = self.width();
         for rows in [&self.alg, &self.rate, &self.init] {
             for r in rows.iter() {
-                let kn = r.kernel().ok_or("no such kernel")?;
-                if kn.n_par != r.cols.len() || kn.n_const != r.consts.len() || kn.n_par > COLS
-                    || kn.n_res > 8 || r.cols.iter().any(|&c| c >= width) {
+                let kn = r.checked().ok_or("no such kernel")?;
+                if kn.n_par > COLS || kn.n_res > 8 || r.cols.iter().any(|&c| c >= width) {
                     return Err("rate row shape mismatch".into());
                 }
                 if !r.has_form() {
