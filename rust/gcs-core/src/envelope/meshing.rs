@@ -534,11 +534,13 @@ pub(crate) fn frame(cols: &[f64], k: &[f64], grad: bool) -> Option<crate::contac
 }
 
 /// The frame from the contact's, read over numbers carrying their derivatives in the unknowns:
-/// the path a radian of the phase (the phase is in degrees).
+/// the path a degree of the phase, as the path-of-contact kernel read it, so a line held along it
+/// takes the solve it took (`contact_rate::Form::Path`, which turns a distance along it into a
+/// radian's).
 fn frame_of<T: Num>(f: &At<Fwd<T, UNKNOWNS>>) -> crate::contact_rate::Frame<T> {
     let mut out = crate::contact_rate::Frame::zero();
     out.x = f.x[0].map(|c| c.v);
-    out.rate = vscale(path_of(f), T::cst(180.0 / std::f64::consts::PI));
+    out.rate = path_of(f);
     out.across = f.along.map(|c| c.v);
     out.n = f.n[1].map(|c| c.v);
     out

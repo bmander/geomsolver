@@ -106,7 +106,8 @@ pub enum Form {
     /// rate (`screw::square_to`), or along it — cosines.
     Direction = 2,
     /// A meshing's path of contact: the same, the two directions square to the path across the
-    /// world axis it runs least along (`across_least`).
+    /// world axis it runs least along (`across_least`).  Its frame reads the path a degree of the
+    /// phase, as its kernel did, and a distance along it is turned into a radian's here.
     Path = 3,
 }
 
@@ -446,6 +447,9 @@ fn rows<T: Num>(w: Word, form: Form, lead: &[T], f: &Frame<T>, stated: T, out: &
         }
         Word::Square if form == Form::Velocity => out[0] = dot(f.rate, dir()),
         Word::Square => out[0] = dot(dir(), unit(f.rate)),
+        Word::Along if form == Form::Path => {
+            out[0] = dot(f.rate, dir()) * T::cst(180.0 / std::f64::consts::PI) - stated
+        }
         Word::Along => out[0] = dot(f.rate, dir()) - stated,
         Word::InPlane => out[0] = dot(dir(), f.n),
         Word::Normal | Word::Plane => {

@@ -205,10 +205,16 @@ The five questions the issue left open are settled so:
    plane against the normal, a curvature by Meusnier, a curve's centre of curvature from `X′` and
    `X″`.  The same rows take the same Newton path, which matters where a solve settles something
    its rows leave free: `paths/frenet.sv`'s plane holds `u` only parallel to the line to the
-   centre, so its sense is the path's.  So folding the kinds changed no solved value: every
-   document of `examples/` solves to the numbers it did on the base, positions to 1e-9 mm — but
-   `meshing_problem.sv`, whose solve stops at its iteration limit (residual 8e-13) on both, its
-   positions to 1e-8 mm and its meshed areas and volumes to 1e-5 relative.  A circle's or an arc's
+   centre, so its sense is the path's (a meshing's frame reads its path a degree of the phase, as
+   its kernel did, a distance along it turned a radian's in the row).  So folding the kinds
+   changed no solved value: every document of `examples/` solves to the numbers it did on the
+   base, positions to 1e-9 mm, `phillips_pure.sv` and `contact.sv` bit for bit — but
+   `meshing_problem.sv`, to 8e-9 mm.  That is `reciprocal`'s, not the rate's: with `normal
+   reciprocal mesh` read as the distance it solves to, the document solves bit for bit as it did,
+   through the 100 iterations its solve stops at (residual 8e-13); `reciprocal` as `std.sv`'s word
+   is a carried point and its rate, four rows and three unknowns where the old kind was one row,
+   so the stalled solve stops elsewhere — within its own reach, the base's own answer moving
+   3e-7 mm between 100 iterations and 160.  A circle's or an arc's
    tangent at a point (`TangentCircleAt`, `TangentLineCircleAt`, `TangentCircleAt3` in space, the
    radius square to the line, a degree-2 polynomial) stays its own kind: a point on a round owns
    no slot, and the closed form is cheaper and better scaled than a velocity.  What a source has no frame for is refused (`validate_rate`):
