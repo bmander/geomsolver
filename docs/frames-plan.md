@@ -173,7 +173,7 @@ carried that way at roll 60° solves to the closed form `R(τ)·(c + R(−3τ)(x
 So **a chain lowers to existing steps**, with no new evaluation code:
 
 * `A·B` is `Relative { source: B, observer: inv(A) }`;
-* the inverse of a joint negates its ratio and advance;
+* the inverse of a joint negates its ratio and advance (and, until stage 3 retires it, its phase);
 * the inverse of a relative swaps its two sides.
 
 Every reader of a `Relative` reads a chain on the first day: `Family::at` (with the derivative of
