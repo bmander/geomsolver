@@ -211,10 +211,10 @@ fix((39.396926207859084, 8.420201433256687)) f1
 }
 ";
 
-/// **The construct is the trace.**  `envelope(flank, under: rack, seen_from: blank)` — a straight
-/// flank carried by the rack seen from the blank — is the curve `RackFlank` states by hand: point
-/// for point, at the roll the blank has turned by, the same cut.  (The trace's roll is the pitch
-/// point's bearing in the blank, which runs the other way: `u = −t`.)
+/// **The construct is the trace.**  `envelope(flank over t in (a, b), under: rack, seen_from:
+/// blank)` — a straight flank carried by the rack seen from the blank — is the curve `RackFlank`
+/// states by hand: point for point, at the roll the blank has turned by, the same cut.  (The
+/// trace's roll is the pitch point's bearing in the blank, which runs the other way: `u = −t`.)
 #[test]
 fn an_envelope_of_a_rack_flank_is_the_traced_cut() {
     let src = format!(

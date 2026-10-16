@@ -3,12 +3,12 @@
 //! `flank := envelope(source over t in (a, b), under: m)` over a surface of revolution — a cone or
 //! a cylinder set (`std.Cone`, `std.ConeThrough`, `std.Cylinder`), or a line, arc or circle of a
 //! revolution's profile (`surface(rev, edge: e)`) — under a motion in space is the locus where the
-//! moving source's normal is square to its velocity, `n · ∂X/∂t = 0`. A point held to it, a line in
-//! its tangent plane or along its normal there, a plane touching it and a circle osculating it are
-//! rows of the drawing: each owns or shares a **place** `[u, v, t]` — along the source's meridian,
-//! round its axis, and the motion's roll — and reads the source's geometry and the motion's axes as
-//! columns, so the numbers that make the source (a cutter's lean, where its axis stands) solve from
-//! what the envelope is held to.
+//! moving source's normal is square to its velocity, `n · ∂X/∂t = 0`.  A point held to it, a line
+//! in its tangent plane or along its normal there, a plane touching it and a circle osculating it
+//! are rows of the drawing: each owns or shares a **place** `[u, v, t]` — along the source's
+//! meridian, round its axis, and the motion's roll — and reads the source's geometry and the
+//! motion's axes as columns, so the numbers that make the source (a cutter's lean, where its axis
+//! stands) solve from what the envelope is held to.
 //!
 //! The envelope's normal at a point is the moving source's normal there (the two touch), so its
 //! curvature needs no second solve: along a direction `w` in `ker ∇g` of the place, the shape

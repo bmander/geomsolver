@@ -258,19 +258,10 @@ impl<'a> P<'a> {
         let named_link = link_name.is_some();
         let mut links = vec![self.link(link_name)?];
         let (mut joints, close, open) = self.joints(&mut links)?;
-        // `X coincident x at τ` (#391 S2): the one relation's operand read at an instant, the
-        // frames it is read by on the `at`
+        // `X coincident x at τ` (#391 S2): the one relation's operand read at an instant
         if let [joint] = joints.as_mut_slice() {
             if let [(word, args, _)] = joint.words.as_mut_slice() {
-                if word == "coincident" && self.instant_ahead() {
-                    if args.iter().any(|a| matches!(a, OpArg::Named(n, _)
-                        if n.text == "under" || n.text == "seen_from")) {
-                        self.fail("a point read at an instant names its frames on the `at`: \
-                            `X coincident x at(under: m, seen_from: g) τ`");
-                        return None;
-                    }
-                    args.extend(self.instant()?);
-                }
+                self.coincident_at(word, args)?;
             }
         }
         // the trailing clauses a statement may carry — a lone infix operator is a one-joint

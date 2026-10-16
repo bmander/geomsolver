@@ -191,7 +191,7 @@ impl<'a> Walk<'a> {
         let c = d.carried.as_ref().expect("a reading at an instant");
         let k = self.readings.len();
         self.readings.push((c.source.clone(), scope.clone()));
-        for (s, read) in super::carried::readings(st, d) {
+        for (s, read) in super::carried::ways(st, d) {
             let sc = Scope { reading: Some((k, read)), ..scope.clone() };
             match &s.kind {
                 StmtKind::Decl(x) => self.walk_decl(x, &s, &sc, vals, path, prefix),
@@ -214,6 +214,8 @@ impl<'a> Walk<'a> {
         }
         let alias = self.alias_table();
         let mut read: Vec<Option<Read>> = vec![None; self.readings.len()];
+        // a source that is a reading waits for that one: round by round, until a round settles
+        // nothing more
         loop {
             let mut settled = false;
             for k in 0..read.len() {
@@ -221,38 +223,11 @@ impl<'a> Walk<'a> {
                     continue;
                 }
                 let (source, sc) = &self.readings[k];
-                let found = self.look(&alias).raw(source, sc);
-                let kind = match found {
-                    Some((abs, rest)) if rest.is_empty() => {
-                        let mut kind = Some(Read::Frame);
-                        for (st, _, sc) in &self.out {
-                            let StmtKind::Decl(d) = &st.kind else { continue };
-                            if d.name.key().text != abs {
-                                continue;
-                            }
-                            kind = match sc.reading {
-                                // the source is a reading too: what that one is, once it is known
-                                Some((j, way)) => match read[j] {
-                                    Some(r) if r == way => Some(r),
-                                    Some(_) => continue,
-                                    None => None,
-                                },
-                                None => Some(match d.kind {
-                                    crate::model::EntKind::Solid => Read::Solid,
-                                    crate::model::EntKind::Point => Read::Point,
-                                    _ => Read::Frame,
-                                }),
-                            };
-                            break;
-                        }
-                        kind
-                    }
+                read[k] = match self.look(&alias).raw(source, sc) {
+                    Some((abs, rest)) if rest.is_empty() => self.read_of(&abs, &read),
                     _ => Some(Read::Frame),
                 };
-                if kind.is_some() {
-                    read[k] = kind;
-                    settled = true;
-                }
+                settled |= read[k].is_some();
             }
             if !settled {
                 break;
@@ -274,6 +249,28 @@ impl<'a> Walk<'a> {
             sc.reading = None;
         }
         self.readings.clear();
+    }
+
+    /// What a reading of the declaration named `abs` is: what its kind makes it, or, where that
+    /// declaration is one way of writing out a reading, what that reading turned out to be —
+    /// `None` while it is not yet known.  A name nothing in the walk declares is a frame's.
+    fn read_of(&self, abs: &str, read: &[Option<super::carried::Read>])
+        -> Option<super::carried::Read> {
+        for (st, _, sc) in &self.out {
+            let StmtKind::Decl(d) = &st.kind else { continue };
+            if d.name.key().text != abs {
+                continue;
+            }
+            match sc.reading {
+                None => return Some(super::carried::Read::of(d.kind)),
+                Some((j, way)) => match read[j] {
+                    Some(r) if r == way => return Some(r),
+                    Some(_) => {}
+                    None => return None,
+                },
+            }
+        }
+        Some(super::carried::Read::Frame)
     }
 
     /// A named chain: its name made absolute under the scope, and stamped as its instances say.

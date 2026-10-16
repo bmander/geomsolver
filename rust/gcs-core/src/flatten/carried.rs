@@ -43,8 +43,19 @@ pub(super) enum Read {
     Point,
 }
 
-/// Every statement `n := x at τ` may stand for, each with what `x` must be for it to be the one.
-pub(super) fn readings(st: &Stmt, d: &Decl) -> Vec<(Stmt, Read)> {
+impl Read {
+    /// What a reading of a declaration of this kind makes.
+    pub(super) fn of(kind: crate::model::EntKind) -> Read {
+        match kind {
+            crate::model::EntKind::Solid => Read::Solid,
+            crate::model::EntKind::Point => Read::Point,
+            _ => Read::Frame,
+        }
+    }
+}
+
+/// Every way `n := x at τ` may be written out, each with what `x` must be for it to be the one.
+pub(super) fn ways(st: &Stmt, d: &Decl) -> Vec<(Stmt, Read)> {
     let mut out: Vec<(Stmt, Read)> = frame(st, d).into_iter().map(|s| (s, Read::Frame)).collect();
     out.push((solid(st, d), Read::Solid));
     out.extend(point(st, d).into_iter().map(|s| (s, Read::Point)));
@@ -128,7 +139,7 @@ fn written(word: &str, fixity: crate::constraints::Fixity, ops: Vec<Ref>, args: 
 }
 
 /// The statements one carried frame stands for.
-pub(super) fn frame(st: &Stmt, d: &Decl) -> Vec<Stmt> {
+fn frame(st: &Stmt, d: &Decl) -> Vec<Stmt> {
     use crate::constraints::Fixity::{Infix, Prefix};
     let c = d.carried.as_ref().expect("a carried frame");
     let n = d.name.key().text.clone();

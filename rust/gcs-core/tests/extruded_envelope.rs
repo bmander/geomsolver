@@ -1,10 +1,10 @@
-//! **A point in space held to a generated surface** (issue #70, part 1).  A prism's side
-//! generating under a motion that keeps the prism's view sweeps the surface its edge's planar
-//! envelope is extruded into, square to the view, so the drawing holds it: `flank :=
-//! envelope(side, under: rack, seen_from: turn, …)` over `side := surface(rack_tooth, edge:
-//! rack_flank)` is that envelope, marked an extrusion (`CurveE::extrusion`), and a point drawn in
-//! another view is `on` it by its place in the prism's view (`CKind::PointOnExtrusion`, its kernel
-//! the definition's).
+//! **A point in space held to a generated surface** (issue #70, part 1).  A prism's side generating
+//! under a motion that keeps the prism's view sweeps the surface its edge's planar envelope is
+//! extruded into, square to the view, so the drawing holds it: `flank := envelope(side over t in
+//! (a, b), under: rack, seen_from: turn)` over `side := surface(rack_tooth, edge: rack_flank)` is
+//! that envelope, marked an extrusion (`CurveE::extrusion`), and a point drawn in another view is
+//! `on` it by its place in the prism's view (`CKind::PointOnExtrusion`, its kernel the
+//! definition's).
 //!
 //! The fixture is `rack_cut.rs`'s tooth space drawn in `std.front`; the point stands in a view
 //! parallel to the page's horizontal, 1.9 above the gear's centre — across the flank of the tooth

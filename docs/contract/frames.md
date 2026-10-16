@@ -77,7 +77,7 @@ the centre distance solved from a stated ratio, a joint nothing holds reported f
 numbers.  A joint stating no number is no longer refused (E080 through 0.136).
 
 **A frame that moves as a number runs is a frame read at a roll** (#366, [0.138]) — one notion,
-wherever a frame moves. `X coincident x at τ` ([0.140]; `X coincident(at: τ) x` through 0.139) is
+wherever a frame moves.  `X coincident x at τ` ([0.140]; `X coincident(at: τ) x` through 0.139) is
 `x` carried to the roll `τ` by what it rides on (seen from what `X` rides on, or from `seen_from:`),
 or by the frame `under: m` names where `x` rides on none — the same reading as `t == τ`, one kind,
 `CKind::CarriedPoint`, whose roll slot is read two ways (`Constraint::stated_roll`): **owned**, `t
@@ -86,10 +86,10 @@ or by the frame `under: m` names where `x` rides on none — the same reading as
 (`Constraint::arg_kind` an angle, `expr::evaluate`), no unknown (`Sketch::add` allocates none), so
 it may be written over a face family's running number and is read again at every station, and a free
 variable it names is its twin's last column (`envelope::screw::Reading::At`, constants `[free, m, c,
-steps…]`, the roll `m·a + c`). Saying both is refused (`Written::assemble`). At a stated roll a
+steps…]`, the roll `m·a + c`).  Saying both is refused (`Written::assemble`).  At a stated roll a
 point drawn in a plane is held where that plane sees it, two rows along the plane's axes
 (`CarriedPointIn`, `program::reading`, as a relation in space has its kind in a view) — as many rows
-as it has numbers. A roll read where nothing rides and no frame is named is refused saying so
+as it has numbers.  A roll read where nothing rides and no frame is named is refused saying so
 (`relations::riding_point`).
 
 **A frame carried** is `n := base at τ` ([0.140]; `syntax::Decl::carried`, `at(under: m, seen_from:
@@ -98,9 +98,9 @@ placed, a point's a point held ([parameters.md](parameters.md)): the flattener w
 it walks the body (`flatten::carried`) — three points drawn in `base` and held there (its origin and
 ten along each axis), riding as `base` does; each carried to `τ` into a point riding on nothing; the
 plane over the lines from the carried origin — so its carrier is found as a point's is, its `u`, `v`
-and normal are `base`'s carried, and the source prints the one statement. `under:` on a `base` that
-rides is refused (`motions::under_riding`). Before the solve each joint held to an axis is seeded on
-it and each point carried to a stated roll where its motion carries it, round by round with the
+and normal are `base`'s carried, and the source prints the one statement.  `under:` on a `base` that
+rides is refused (`motions::under_riding`).  Before the solve each joint held to an axis is seeded
+on it and each point carried to a stated roll where its motion carries it, round by round with the
 planes placed over them (`Sketch::seed_joints`, `Sketch::seed_carried`, `program::place_planes`), so
 a plane drawn over carried points stands along its lines however far round the roll is.
 

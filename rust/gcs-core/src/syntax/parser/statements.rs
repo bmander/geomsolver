@@ -238,8 +238,8 @@ impl<'a> P<'a> {
                 self.fail(
                     "`ellipse` is a library component now: `use std`, then `e := \
                      trace(Ellipse(c, a: …, b: …, tilt: 0deg).p over u in (0deg, 360deg))` \
-                     about a centre `c` — `p coincident e`, `e tangent l` and `e curvature k` are the \
-                     curve's contacts",
+                     about a centre `c` — `p coincident e`, `e tangent l` and `e curvature k` are \
+                     the curve's contacts",
                 );
             }
             "port" => {
@@ -1214,9 +1214,9 @@ impl<'a> P<'a> {
     }
 
     /// What follows a face family's `sweep` (#391 S2): `(Component(args).face over IDENT in (a,
-    /// b))`, the instance written in place (#243 L1, finding 11). The instance's key is one the
-    /// source cannot write, as a curve's is; the face is read under it once the flattener has bound
-    /// it.
+    /// b))`, the instance written in place (#243 L1, finding 11).  The instance's key is one the
+    /// source cannot write, as a curve's is; the face is read under it once the flattener has
+    /// bound it.
     pub(super) fn family(&mut self, name: DeclName) -> Option<crate::syntax::Decl> {
         self.i += 1; // `sweep`
         let open = self.here().lo as usize;
@@ -1350,10 +1350,10 @@ impl<'a> P<'a> {
             return None;
         }
         let list_span = Span::new(open, self.prev_hi());
+        use crate::syntax::Sweep;
         let sweep = match (over, through) {
-            (Some((over, from, to)), None) => crate::syntax::Sweep::Swept { motion: under, from, to,
-                over },
-            (None, Some(body)) => crate::syntax::Sweep::Rolled { motion: under, body },
+            (Some((over, from, to)), None) => Sweep::Swept { motion: under, from, to, over },
+            (None, Some(body)) => Sweep::Rolled { motion: under, body },
             _ => {
                 self.fail("a sweep runs its tool over an interval of the roll, `sweep(tool over t \
                            in (a, b))`, or through a body, `sweep(tool, through: body)`");
@@ -1375,7 +1375,6 @@ impl<'a> P<'a> {
             children: vec![vec![crate::syntax::Kid::Ref(tool)]],
             seed: Vec::new(),
             seed_text: Vec::new(),
-            hint_span: None,
             class,
             class_span: if class_span.is_empty() { Span::at(end) } else { class_span },
             sweep: Some(sweep),

@@ -271,6 +271,12 @@ fn resweep(
     }
     let d = decl_of(prog, site).filter(|d| d.kind == EntKind::Solid && d.sweep.is_some())
         .ok_or("that solid is made of others, not swept from a face")?;
+    // a `sweep(…)` is a face family's or a motion's, written as no face's extent (#391 S2)
+    if matches!(d.sweep, Some(syntax::Sweep::Swept { .. } | syntax::Sweep::Rolled { .. }
+                              | syntax::Sweep::Family(_))) {
+        return Err("that solid is a sweep over a running number, not a face swept along or \
+                    about a line".into());
+    }
     let mut d2 = d.clone();
     d2.sweep = Some(with(d.sweep.as_ref().expect("a swept solid"))?);
     let args = syntax::decl_args(&d2);

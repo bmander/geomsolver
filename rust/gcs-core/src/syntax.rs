@@ -963,10 +963,10 @@ pub struct Decl {
     /// How a solid is swept (§6.9): a prism along the plane's normal, a revolution about a line
     /// in it, or a body over other solids.  `None` for every other kind.
     pub sweep: Option<Sweep>,
-    /// The frame a reading of a motion is seen from (#383): `envelope(tool, under: f, seen_from:
-    /// g, …)`, a meshing's and a swept or placed solid's — what `motion(f, relative_to: g)` was,
-    /// said where it is read.  `None` for every other declaration, and for a reading from the
-    /// world.
+    /// The frame a reading of a motion is seen from (#383): `envelope(tool over t in (a, b), under:
+    /// f, seen_from: g)`, a meshing's and a swept or placed solid's — what `motion(f, relative_to:
+    /// g)` was, said where it is read.  `None` for every other declaration, and for a reading from
+    /// the world.
     pub seen_from: Option<Ref>,
     /// A source surface's angular span, an envelope's roll interval or a meshing's phase
     /// interval, and what the declaration says besides (a planar envelope's side, a meshing's
@@ -1003,16 +1003,17 @@ pub struct Decl {
     /// document names what it has — where `plane(…)`, the same kind, is a flat frame over two
     /// axes.  False for every other declaration.
     pub bare: bool,
-    /// **A frame a motion carries** (#366), `n := base at(under: m) τ`: the plane the
-    /// motion's pose at the roll `τ` carries the plane `base` to, its axes and its origin with it.
-    /// The flattener writes the statements a person would (`flatten::carried`); the source keeps
-    /// the one.  `None` for every other declaration.
+    /// **A reading at an instant** (#366, #391 S2), `n := x at(under: m) τ`: `x` where the
+    /// motion's pose at the roll `τ` carries it — a frame carried, its axes and its origin with
+    /// it, a solid placed or a point held, as `x` is.  The flattener writes the statements a
+    /// person would (`flatten::carried`) once it knows which; the source keeps the one.  `None`
+    /// for every other declaration.
     pub carried: Option<CarriedFrame>,
 }
 
-/// What a carried frame is carried from and by (`Decl::carried`, #366): the plane it is the image
-/// of, the word as written, and its arguments as a carried point's are read — `under:` the motion,
-/// the roll after `at:` its number.
+/// What a reading at an instant reads and by what (`Decl::carried`, #366, #391 S2): the source,
+/// the `at` as written, and its arguments as a carried point's are held — `under:` and
+/// `seen_from:` the frames, the roll the number.
 #[derive(Clone, Debug)]
 pub struct CarriedFrame {
     pub source: Ref,

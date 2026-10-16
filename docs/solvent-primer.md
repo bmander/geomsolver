@@ -806,7 +806,7 @@ components.
 
 ```
 NAME := trace(INSTANCE.POINT over FORMAL in (A, B))          a drawn instance's point
-NAME := trace(Component(ARGS).POINT over FORMAL in (A, B))   an instance written in place, never drawn
+NAME := trace(Component(ARGS).POINT over FORMAL in (A, B))  an instance written in place, never drawn
 ```
 
 - **Over a drawn instance**, `path := trace(leg.toe over theta in (0, 360))` is where the drawn
@@ -1832,9 +1832,9 @@ spatial envelope over it reads as its source, held to by the solve (below). Over
 a view it is the side its edge extrudes, a planar envelope's source:
 
 **A prism's side** is named as a revolution's is, `side := surface(rack_tooth, edge: rack_flank)`;
-under a motion keeping its view, `envelope(side, under: rack, seen_from: blank, …)` is the planar envelope
-extruded, and `p coincident flank` from any view is one equation. Draw the prism's face `in` a view
-and name the edge in it.
+under a motion keeping its view, `envelope(side over t in (a, b), under: rack, seen_from: blank)` is
+the planar envelope extruded, and `p coincident flank` from any view is one equation. Draw the
+prism's face `in` a view and name the edge in it.
 
 **An envelope in space is held to by the solve** where its source is a cone, a cylinder or a
 plane set (`std.Cone`, `std.ConeThrough` with its lean stated, `std.Cylinder`, `std.HalfSpace`) or

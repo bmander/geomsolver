@@ -152,8 +152,8 @@ pub struct CurveE {
     pub unknowns: Vec<String>,
     pub values: Vec<f64>,
     /// What *this* curve runs over (#391 S1): its definition's swept formal — or, for an envelope
-    /// in the plane, the shared roll (`Running::roll`) — and the interval it is drawn over, the
-    /// piece of an involute between two circles rather than the whole spiral.
+    /// in the plane, the shared roll (named as its `over` names it) — and the interval it is drawn
+    /// over, the piece of an involute between two circles rather than the whole spiral.
     pub over: super::Running,
     /// The parameter value a trace is anchored at — the one place a block's orientation
     /// predicates are read (§6.5).  `Sketch::curve_home` reads it.

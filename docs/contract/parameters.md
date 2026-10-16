@@ -63,7 +63,7 @@ of it. An issue number (#n) or a spec version ([0.n], see the
     arguments join the relation's as `OpArg::Named` and `OpArg::Dim`, the `CarriedPoint` they
     always were; `under:` on the `coincident` itself is refused beside it. As a definition's value,
     `n := x at τ` is a `Decl` with `carried` set (`P::read_at`), and what it makes depends on what
-    `x` is, which the parser cannot see: `flatten::carried::readings` writes it out all three ways
+    `x` is, which the parser cannot see: `flatten::carried::ways` writes it out all three ways
     — a frame carried (`frame`), a solid placed (`solid`, `Sweep::Placed`), a point held (`point`,
     `X := point` and `X coincident x at τ`) — each statement walked with its `Scope::reading`
     tagged, and `Walk::settle_readings`, once every name is known (before `face_sets` and at the

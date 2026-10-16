@@ -375,7 +375,7 @@ pub struct SolidE {
     pub class: Classes,
 }
 
-/// A named implicit envelope, over an interval of the shared roll (`Running::roll`, #391 S1; its
+/// A named implicit envelope, over an interval of the shared roll (a `Running`, #391 S1; its
 /// ends in degrees, `radians` what the kernels read). Evaluated after solving
 /// (`envelope::GeneratedEnvelope`) where its source is a revolution's named side, and held to in
 /// the solve (`envelope::held`, #283) where the drawing says what its source is before the
@@ -395,10 +395,10 @@ pub struct EnvelopeE {
 
 /// **The meshing of two flanks** (#283, step 3): `contact := meshing(pinion_flank, gear_flank over
 /// t in (a, b), under: mesh)` — tooth contact analysis, the first flank turning with `mesh`'s
-/// observer (the pinion's turn), the second with its source (the gear's). Held to in the solve by a
-/// point on its path of contact (`CKind::PointOnMeshing`), which owns the phase, the lag and a
-/// place on each flank, and traced over the phase after it (`envelope::meshing::Meshing`). Its
-/// phase runs over an interval of the shared roll (`Running::roll`, #391 S1), in degrees.
+/// observer (the pinion's turn), the second with its source (the gear's).  Held to in the solve by
+/// a point on its path of contact (`CKind::PointOnMeshing`), which owns the phase, the lag and a
+/// place on each flank, and traced over the phase after it (`envelope::meshing::Meshing`).  Its
+/// phase runs over an interval of the shared roll (a `Running`, #391 S1), in degrees.
 #[derive(Clone, Debug)]
 pub struct MeshingE {
     pub flanks: [Flank; 2],

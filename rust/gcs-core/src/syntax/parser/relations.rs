@@ -56,17 +56,7 @@ impl<'a> P<'a> {
                     self.connective(&word.text)?;
                     let right = self.operand(1, &mut rates)?;
                     let mut args = args;
-                    // `X coincident x at τ` (#391 S2): `x` read at an instant of the roll, the
-                    // frames it is read by on the `at`
-                    if word.text == "coincident" && self.instant_ahead() {
-                        if args.iter().any(|a| matches!(a, OpArg::Named(n, _)
-                            if n.text == "under" || n.text == "seen_from")) {
-                            self.fail("a point read at an instant names its frames on the `at`: \
-                                `X coincident x at(under: m, seen_from: g) τ`");
-                            return None;
-                        }
-                        args.extend(self.instant()?);
-                    }
+                    self.coincident_at(&word.text, &mut args)?;
                     (word, Fixity::Infix, vec![left, right], args)
                 }
             }
@@ -344,6 +334,25 @@ impl<'a> P<'a> {
             self.i = end;
         }
         Some(out)
+    }
+
+    /// `X coincident x at τ` (#391 S2), the right operand just read: `x` read at an instant of
+    /// the roll, its arguments joining the relation's, the frames it is read by on the `at` and
+    /// never on the `coincident` beside it.  Nothing is read where `word` is another or no
+    /// instant follows.
+    pub(super) fn coincident_at(&mut self, word: &str, args: &mut Vec<OpArg>) -> Option<()> {
+        if word != "coincident" || !self.instant_ahead() {
+            return Some(());
+        }
+        let frames = |a: &OpArg| matches!(a, OpArg::Named(n, _)
+            if n.text == "under" || n.text == "seen_from");
+        if args.iter().any(frames) {
+            self.fail("a point read at an instant names its frames on the `at`: `X coincident x \
+                       at(under: m, seen_from: g) τ`");
+            return None;
+        }
+        args.extend(self.instant()?);
+        Some(())
     }
 
     /// Whether `at` here begins an instant (#391 S2) — `at τ` or `at(under: m) τ` — rather than

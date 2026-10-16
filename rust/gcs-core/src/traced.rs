@@ -3,7 +3,7 @@
 //!
 //! `k := trace(Helix(ax, r: 5, lead: 3).p over u in (0, 720))` is a **curve in space** and `S :=
 //! trace(Element(P, L, …).X over (phi in (a, b), s in (c, d)))` a **surface**: §6.5's curve, the
-//! component's body solved in space rather than in one plane, over one formal or two. The body is
+//! component's body solved in space rather than in one plane, over one formal or two.  The body is
 //! lowered once (`program::traced`) to **rows** — static kernels, each with a map from its columns
 //! into one variable table, as a planar trace's are (`locus.rs`) — over `[formals, θ, values] ++ q
 //! ++ w`: the running formals, the coordinates of the geometry the component is written over (each

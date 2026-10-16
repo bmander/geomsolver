@@ -1,7 +1,7 @@
-//! The meshing of two flanks (#283, step 3): tooth contact analysis as a locus. A point held to
+//! The meshing of two flanks (#283, step 3): tooth contact analysis as a locus.  A point held to
 //! `meshing(pinion_flank, gear_flank over t in (a, b), under: gear_turn, seen_from: pinion_turn)`
 //! owns the pinion's phase, the gear's lag and a place on each flank; after the solve the contact
-//! is traced over the phase. Each is held here to something worked out apart from
+//! is traced over the phase.  Each is held here to something worked out apart from
 //! `envelope::meshing`: closed forms (a conjugate pair transmits without error, a pair conjugate at
 //! another ratio at that ratio), and a gap between the two members closed by turning the gear,
 //! found with no normal and no row of the meshing.

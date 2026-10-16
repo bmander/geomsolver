@@ -105,9 +105,9 @@ point of a view, is `MotionDef::Turn`, a rotation square to its view in space) i
 (`CurveBody::Envelope`, `program/generated.rs`, built with motions after the primitives, before
 constraints): `F = X_s × X_t = 0` in the tool parameter, `C`..`C''` exact by `taylor::Jet`s, `C'''`
 and θ gradients by difference (`generate.rs`); tool and motion geometry are its columns (shared ones
-once; the motion's numbers ride past `tape::MAX_VARS` in `OUTER_MAX`). Analytic tools are exact to
+once; the motion's numbers ride past `tape::MAX_VARS` in `OUTER_MAX`).  Analytic tools are exact to
 `C'''`, so a profile they cut may cut in turn (`generate::Tool::Envelope`, read as its Taylor
-series); the encoding is `Generated::new` and `view` only. Kernels are generic over
+series); the encoding is `Generated::new` and `view` only.  Kernels are generic over
 `kernels::{FORMULA,TRACE,ENVELOPE}` and ask a body for the orders they `need`. `tests/generation.rs`
 is the gate.
 

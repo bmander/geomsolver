@@ -1109,6 +1109,7 @@ impl<'a> Walk<'a> {
             sc.access = access.clone();
             sc.typed = typed.clone();
         }
+        // and the readings at an instant the pending blocks walked since the first settling
         self.settle_readings();
         let alias = self.alias_table();
         self.faces_of_copies(&alias);

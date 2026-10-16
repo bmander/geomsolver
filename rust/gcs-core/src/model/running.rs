@@ -5,8 +5,8 @@ use crate::units::Dim;
 /// **A number that runs, and the interval it runs over** (#391 S1): a declared parameter
 /// (`param t: Angle over (0deg, 360deg)`, `Sketch::parameters`), a face family's running number
 /// (`SolidDef::Family::over`), a traced body's formals (`TracedE::over`, `CurveE::over`) and an
-/// interval of the shared roll a reading states (`Running::roll`: an envelope's, a meshing's, a
-/// sweep's, a claim's) — one type, so each is a use of it rather than its own mechanism.
+/// interval of the shared roll a reading runs over (an envelope's, a meshing's, a sweep's, a
+/// claim's) — one type, so each is a use of it rather than its own mechanism.
 ///
 /// The ends are in the units a person reads, **degrees for an angle**, as every named number of
 /// the core is (`HeldNumber`, `Declared`); a reader that works in radians asks `radians`, which
@@ -17,7 +17,8 @@ use crate::units::Dim;
 pub struct Running {
     /// What the number is called: a declared parameter's name, a face family's running number
     /// by its absolute name (`#f12.s`, its key in `Sketch::held`), a traced body's formal by its
-    /// name in the component, or `Running::ROLL`.
+    /// name in the component, or for an interval of the roll the parameter its reading names
+    /// (`over t in (a, b)`, #391 S2) — `Running::ROLL` where nothing names one.
     pub name: String,
     /// What it is: `Length`, `Angle` or a `Scalar`.
     pub dim: Dim,
@@ -27,8 +28,8 @@ pub struct Running {
 
 impl Running {
     /// The name of the one shared roll every joint reads (#383): a frame turns `ratio` radians a
-    /// radian of it.  No document declares it — it is there once anything moves — and a reading
-    /// at a roll states an interval of it.
+    /// radian of it.  No document need declare it — it is there once anything moves — and what a
+    /// reading over an interval of it names nothing by (one built in Rust) is called this.
     pub const ROLL: &'static str = "roll";
 
     pub fn new(name: impl Into<String>, dim: Dim, from: f64, to: f64) -> Running {
@@ -44,11 +45,6 @@ impl Running {
     /// reading in Rust.
     pub fn roll_radians([from, to]: [f64; 2]) -> Running {
         Running::roll(from.to_degrees(), to.to_degrees())
-    }
-
-    /// Whether this is an interval of the shared roll.
-    pub fn is_roll(&self) -> bool {
-        self.name == Running::ROLL
     }
 
     /// Whether the number is an angle, so a whole turn of it may close what it traces.

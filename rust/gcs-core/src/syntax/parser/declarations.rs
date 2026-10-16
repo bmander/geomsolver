@@ -13,9 +13,9 @@ use crate::syntax::{
 /// A solid's sweep arguments while the bracket list is being read.
 #[derive(Default)]
 pub(crate) struct SweepParts {
+    /// A reading of a frame's motion's words, `under:`, `seen_from:` and `at:`: read so that
+    /// their refusal names the reading that replaced them (#391 S2, `sweep_of`).
     pub(crate) under: Option<Ref>,
-    /// The frame the motion is seen from (#383), read off the solid's declaration as
-    /// `Decl::seen_from`.
     pub(crate) seen_from: Option<Ref>,
     pub(crate) at: Option<Arg>,
     pub(crate) from: Option<Arg>,
@@ -36,7 +36,7 @@ fn sweep_label(l: &str) -> bool {
 }
 
 /// `solid(tool, at: θ)`, retired (#391 S2) for the reading at an instant.
-pub(crate) const AT_RETIRED: &str = "`solid(tool, at: θ)` is retired (#391): a solid is read at \
+const AT_RETIRED: &str = "`solid(tool, at: θ)` is retired (#391): a solid is read at \
     an instant, `s := tool at θ`, its frames on the `at` (`tool at(under: m, seen_from: g) θ`)";
 
 /// `solid(tool, under: m, from: a, to: b)`, retired (#391 S2) for the sweep over an interval.
@@ -51,13 +51,6 @@ pub(crate) const ROLLED_RETIRED: &str = "a solid a motion rolls through a body i
 /// What the sweep arguments a bracket list carried come to.  A solid is a prism, a revolution,
 /// or a body over other solids — and a mixture is none of the three.
 pub(crate) fn sweep_of(p: SweepParts) -> Result<Sweep, String> {
-    // **draft** (#245) tapers a prism's sides from the plane its face is drawn in, the parting
-    // plane: nothing else is swept along a normal
-    if p.draft.is_some() && (p.under.is_some() || p.at.is_some()
-        || p.through.is_some() || p.about.is_some() || p.depth.is_none() && p.from.is_none() && p.to.is_none()) {
-        return Err("`draft:` tapers a prism's sides from its face's plane: say `from:`/`to:` or \
-                    `depth:`, and nothing else".into());
-    }
     // a solid a frame's motion moves is read at an instant or over an interval (#391 S2): the
     // `solid(…)` spellings of the readings are retired, each refused naming its own
     if p.at.is_some() {
@@ -65,6 +58,13 @@ pub(crate) fn sweep_of(p: SweepParts) -> Result<Sweep, String> {
     }
     if p.under.is_some() || p.seen_from.is_some() {
         return Err(if p.through.is_some() { ROLLED_RETIRED } else { SWEPT_RETIRED }.into());
+    }
+    // **draft** (#245) tapers a prism's sides from the plane its face is drawn in, the parting
+    // plane: nothing else is swept along a normal
+    if p.draft.is_some() && (p.through.is_some() || p.about.is_some()
+        || p.depth.is_none() && p.from.is_none() && p.to.is_none()) {
+        return Err("`draft:` tapers a prism's sides from its face's plane: say `from:`/`to:` or \
+                    `depth:`, and nothing else".into());
     }
     if let Some(body) = p.through {
         if p.from.is_some() || p.to.is_some() || p.depth.is_some() || p.about.is_some()
@@ -229,9 +229,6 @@ impl<'a> P<'a> {
             }
             _ => { self.fail("a surface span needs both `from:` and `to:` angles"); return None; }
         };
-        // `seen_from:` reads a motion, under the frame `under:` names or, left out, the one the
-        // tool rides on (#383)
-        let seen_from = swp.seen_from.clone();
         let sweep = if kind == EntKind::Solid {
             match sweep_of(swp) {
                 Ok(sw) => Some(sw),
@@ -269,7 +266,7 @@ impl<'a> P<'a> {
             seed_at,
             seed_names: Vec::new(),
             sweep,
-            seen_from, angular_span,
+            seen_from: None, angular_span,
             membership,
             list_span,
             close,
@@ -978,6 +975,11 @@ impl<'a> P<'a> {
             let label = self.slot_label();
             match label.as_deref() {
                 Some("surface") | Some("under") | Some("motion") | None => {
+                    let tool = match label.as_deref() {
+                        Some("surface") => true,
+                        None => surface.is_none(),
+                        _ => false,
+                    };
                     let slot = match label.as_deref() {
                         Some("surface") => &mut surface,
                         Some("under") | Some("motion") => &mut motion,
@@ -988,7 +990,7 @@ impl<'a> P<'a> {
                     *slot = Some(Kid::Ref(self.refr()?));
                     // the tool and the interval of the roll it runs over (#391 S2)
                     if self.peek_word("over") {
-                        if over.is_some() || motion.is_some() {
+                        if !tool || over.is_some() {
                             self.fail("an envelope runs its tool over the roll: `envelope(tool \
                                        over t in (a, b), …)`");
                             return None;

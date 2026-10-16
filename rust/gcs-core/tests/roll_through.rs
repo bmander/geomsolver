@@ -1,5 +1,5 @@
-//! **A sweep rolls through what it cuts** (#271, §6.9, `solid::roll`): `solid(tool, under: m,
-//! through: body)` rolls over the roll about 0 during which the tool meets the body's material,
+//! **A sweep rolls through what it cuts** (#271, §6.9, `solid::roll`): `sweep(tool, through:
+//! body, under: m)` rolls over the roll about 0 during which the tool meets the body's material,
 //! found after the solve. Held to a closed form (a ball turned past a ball: they part at
 //! `2 asin(r / R)`), never short of it and a small margin past; read alike by every reader; and the
 //! spiral bevel, which states no roll, admitted where its stated roll was refused (10:48).
