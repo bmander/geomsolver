@@ -39,11 +39,10 @@
 
 #[allow(unused_imports)]
 use crate::fmath::Det;
-use crate::kernels::KERNELS;
 use crate::ode;
 use crate::linalg::absmax;
 use crate::rates::{factor, jets, n_res, residual, Factored, Row};
-use crate::taylor::{self, Jet};
+use crate::taylor::Jet;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -144,12 +143,12 @@ impl<'a> Body<'a> {
         let width = self.width();
         for rows in [&self.alg, &self.rate, &self.init] {
             for r in rows.iter() {
-                let kn = KERNELS.get(r.kid).ok_or("no such kernel")?;
+                let kn = r.kernel().ok_or("no such kernel")?;
                 if kn.n_par != r.cols.len() || kn.n_const != r.consts.len() || kn.n_par > COLS
                     || kn.n_res > 8 || r.cols.iter().any(|&c| c >= width) {
                     return Err("rate row shape mismatch".into());
                 }
-                if !taylor::has_form(r.kid) {
+                if !r.has_form() {
                     return Err(format!("a body that states a rate reads its rows' derivatives \
                                         exactly, and `{}` has no Taylor form", kn.name));
                 }
@@ -180,7 +179,7 @@ impl<'a> Body<'a> {
                         rates do not move".into());
         }
         let count =
-            |ks: &[usize]| ks.iter().map(|&k| KERNELS[self.alg[k].kid].n_res).sum::<usize>();
+            |ks: &[usize]| ks.iter().map(|&k| self.alg[k].n_res()).sum::<usize>();
         if count(&alg_a) != a.len() {
             return Err(format!("the body's rows must place what its rates do not move: {} \
                 numbers against {} rows", a.len(), count(&alg_a)));
@@ -246,7 +245,7 @@ fn jacobian_by(rows: &[Row], z: &[f64], n: usize, at: impl Fn(usize) -> Option<u
     let mut x = [0.0f64; COLS];
     let mut jr = [0.0f64; COLS * 8];
     for r in rows {
-        let kn = &KERNELS[r.kid];
+        let Some(kn) = r.kernel() else { continue };
         for (x, &c) in x.iter_mut().zip(&r.cols) {
             *x = z[c];
         }

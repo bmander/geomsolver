@@ -10,7 +10,9 @@
 //! there), each mapped into the variable table `[formals, θ, values] ++ q ++ w`.  A dimension
 //! over the formals is a tape read by its row's free twin (`w`), a place pinned over them a tape
 //! too, and a point a motion carries (`X coincident(under: m, t == −phi) x`) a row of the
-//! motion's steps over its axes' columns.
+//! motion's steps over its axes' columns.  A dimension that reads the body's own points (`p.x`,
+//! #378) is a **placed number**: one of `q`'s own, held to its expression by a row
+//! (`traced::RowKind::Number`), read by the free twin where a tape would be.
 use super::reading::{in_space, Reader};
 use super::relations::{ent_arg, scalar_arg};
 use super::resolve::{follow, Resolver};
@@ -210,6 +212,7 @@ pub(super) fn build_traced(sk: &Sketch, res: &Resolver, d: &Decl, st: &Stmt, pro
                 "a traced component holds declarations and constraints only".into())),
         }
     }
+    low.settle_numbers();
     let at = vars.len() + low.n_q + low.w.len();
     super::curves::place_rates(low.rates.iter_mut().chain(&mut low.rows).map(|r| &mut r.cols), at,
                                low.n_q);
@@ -238,7 +241,7 @@ pub(super) fn build_traced(sk: &Sketch, res: &Resolver, d: &Decl, st: &Stmt, pro
     if !low.rates.is_empty() && low.second.is_some() {
         low.marched(at, t, comp.span)?;
     } else if !low.rates.is_empty() {
-        let n_res = |r: &crate::traced::Row| r.kind.id().map_or(0, |k| crate::kernels::KERNELS[k].n_res);
+        let n_res = |r: &crate::traced::Row| r.kind.n_res();
         let alg = super::curves::reach(low.rows.iter().map(|r| (n_res(r), &r.cols[..])),
                                        vars.len(), low.n_q);
         let rates = super::curves::reach(low.rates.iter().map(|r| (n_res(r), &r.cols[..])), at,
@@ -316,6 +319,27 @@ struct Lowering<'v> {
     rate_spans: Vec<Span>,
     init_spans: Vec<Span>,
     sampled: Option<Span>,
+    /// Each coordinate of a point the body declares, by name (`p.x`), and its seed as an
+    /// expression over the formals — what a placed number reads, and how its own seed is written
+    /// (#378).
+    own: BTreeMap<String, usize>,
+    seed_of: Vec<crate::expr::Ast>,
+    /// Each placed number by its text, its index past the declared coordinates; its seed and its
+    /// owner, its slot a placeholder (`NUMBER_BASE`) until `settle_numbers` puts it in `q`.
+    numbers: BTreeMap<String, usize>,
+    number_seeds: Vec<crate::tape::Tape>,
+    number_owner: Vec<String>,
+}
+
+/// Where a placed number stands until `settle_numbers` puts it past the declared coordinates:
+/// below the rates' placeholders (`curves::RATE_BASE`), above every slot of the table.
+const NUMBER_BASE: usize = 1 << 19;
+
+/// A dimension as a traced body reads it: a tape over the formals, the geometry and the given
+/// numbers (`w`), or a placed number, by its slot (#378).
+enum Dimension {
+    Tape(crate::tape::Tape),
+    Number(usize),
 }
 
 impl<'v> Lowering<'v> {
@@ -354,7 +378,9 @@ impl<'v> Lowering<'v> {
                    swept: String::new(), angle: false, target: super::curves::Target::Alg,
                    rates: Vec::new(), init: Vec::new(), rated: BTreeMap::new(), origin: None,
                    second: None, spans: Vec::new(), rate_spans: Vec::new(),
-                   init_spans: Vec::new(), sampled: None }
+                   init_spans: Vec::new(), sampled: None, own: BTreeMap::new(),
+                   seed_of: Vec::new(), numbers: BTreeMap::new(), number_seeds: Vec::new(),
+                   number_owner: Vec::new() }
     }
 
     /// A row, to the rows its relation is lowered to, with the statement it is of.
@@ -459,10 +485,20 @@ impl<'v> Lowering<'v> {
                     of a point the rates move", self.owner[k])));
             }
         }
+        // a placed number (#378) is placed, last of all, by its own row
+        let numbers: Vec<usize> = (n - self.numbers.len()..n).collect();
+        let others: Vec<usize> = placed.iter().copied().filter(|k| !numbers.contains(k)).collect();
         let mut over_moved = Vec::new();
         let mut places = 0;
         for (r, sp) in self.rows.iter().zip(&self.spans) {
-            let n_res = r.kind.id().map_or(0, |k| crate::kernels::KERNELS[k].n_res);
+            let n_res = r.kind.n_res();
+            if r.kind != crate::traced::RowKind::Number && any(&r.cols, n0, &numbers)
+                && !any(&r.cols, n0, &others) {
+                return Err((Code::E103, *sp, format!("this relation's dimension reads the points \
+                    the rates move, and it places only them: over two formals a number read at \
+                    each step stands in a rate row, or in a row that places a point no rate row \
+                    moves along `{d}`")));
+            }
             if any(&r.cols, n0, &placed) {
                 places += n_res;
             } else if any(&r.cols, at + n, &moved) {
@@ -494,7 +530,7 @@ impl<'v> Lowering<'v> {
             rows.iter().flat_map(|r| {
                 let cols: Vec<usize> =
                     r.cols.iter().filter_map(|&c| index(c as usize, from)).collect();
-                let n_res = r.kind.id().map_or(0, |k| crate::kernels::KERNELS[k].n_res);
+                let n_res = r.kind.n_res();
                 std::iter::repeat(cols).take(n_res)
             }).collect()
         };
@@ -505,7 +541,7 @@ impl<'v> Lowering<'v> {
             return Err((Code::E103, span, m));
         }
         let init: usize = self.init.iter().chain(over_moved.iter().copied())
-            .map(|r| r.kind.id().map_or(0, |k| crate::kernels::KERNELS[k].n_res)).sum();
+            .map(|r| r.kind.n_res()).sum();
         if init < moved.len() {
             return Err((Code::E103, span, format!("a marched body starts where `initially {{ … }}` \
                 says, at every `{u}`: {} places {} numbers against {init} rows", names(&moved),
@@ -589,6 +625,80 @@ impl<'v> Lowering<'v> {
         crate::tape::Tape::compile_wide(&ast, self.vars).expect("a number always compiles")
     }
 
+    /// A dimension's text: a tape over the formals, the geometry and the given numbers, or —
+    /// where it reads a coordinate of a point the body declares — a **placed number** (#378): one
+    /// of `q`'s own, seeded by the text over the seeds of what it reads, held to the text by a row
+    /// of the body's algebraic rows (`traced::RowKind::Number`, its columns the number and what
+    /// the text reads).  One text is one number, however many rows read it.
+    fn dimension(&mut self, text: &str, span: Span) -> Result<Dimension, Fail> {
+        let ast = crate::expr::parse_in(text, self.units).map_err(|e| (Code::E103, span, e))?;
+        let reads = ast.body.deps();
+        if !reads.iter().any(|n| self.own.contains_key(n)) {
+            return crate::tape::Tape::compile_wide(&ast.body, self.vars)
+                .map(Dimension::Tape).map_err(|e| (Code::E103, span, e));
+        }
+        if self.target == super::curves::Target::Init && self.second.is_some() {
+            return Err((Code::E103, span, "`initially { … }` is a marched body's Cauchy data, \
+                read over the formals and the geometry: a number that reads the body's own points \
+                is placed at each step, the points first".into()));
+        }
+        if let Some(&j) = self.numbers.get(text) {
+            return Ok(Dimension::Number(NUMBER_BASE + j));
+        }
+        let j = self.numbers.len();
+        let mut names = Vec::new();
+        let mut cols = vec![(NUMBER_BASE + j) as u32];
+        for n in &reads {
+            let slot = match (self.vars.iter().position(|v| v == n), self.own.get(n)) {
+                (Some(s), _) => s,
+                (None, Some(&k)) => self.n_outer + k,
+                (None, None) => return Err((Code::E103, span,
+                                            format!("`{n}` is not something this curve can read"))),
+            };
+            names.push(n.clone());
+            cols.push(slot as u32);
+        }
+        if cols.len() > crate::traced::NUMBER_COLS {
+            return Err((Code::E103, span, format!("a number a traced body places reads at most {} \
+                coordinates", crate::traced::NUMBER_COLS - 1)));
+        }
+        let tape = crate::tape::Tape::compile_wide(&ast.body, &names)
+            .map_err(|e| (Code::E103, span, e))?;
+        let seeded =
+            substituted(&ast.body, &|n| self.own.get(n).and_then(|&k| self.seed_of.get(k)));
+        let seed = crate::tape::Tape::compile_wide(&seeded, self.vars)
+            .map_err(|e| (Code::E103, span, e))?;
+        self.number_seeds.push(seed);
+        self.number_owner.push(text.to_string());
+        self.numbers.insert(text.to_string(), j);
+        // the number holds everywhere, whatever row reads it
+        self.rows.push(crate::traced::Row { kind: crate::traced::RowKind::Number, cols,
+                                            consts: tape.flat });
+        self.spans.push(span);
+        Ok(Dimension::Number(NUMBER_BASE + j))
+    }
+
+    /// The placed numbers put past the declared coordinates (#378): every slot past those moves
+    /// on by as many, and a placed number's placeholder lands at its slot.
+    fn settle_numbers(&mut self) {
+        let (n0, n) = (self.n_outer + self.n_q, self.numbers.len());
+        if n == 0 {
+            return;
+        }
+        let rows = self.rows.iter_mut().chain(&mut self.rates).chain(&mut self.init);
+        for c in rows.flat_map(|r| r.cols.iter_mut()) {
+            let s = *c as usize;
+            if (NUMBER_BASE..super::curves::RATE_BASE).contains(&s) {
+                *c = (n0 + s - NUMBER_BASE) as u32;
+            } else if (n0..NUMBER_BASE).contains(&s) {
+                *c = (s + n) as u32;
+            }
+        }
+        self.n_q += n;
+        self.seeds.append(&mut self.number_seeds);
+        self.owner.append(&mut self.number_owner);
+    }
+
     /// A declaration drawn in space: a point, its three numbers inner unknowns seeded by its
     /// hint; a line between two.
     fn declare(&mut self, st: &Stmt, d: &Decl) -> Result<(), Fail> {
@@ -601,11 +711,20 @@ impl<'v> Lowering<'v> {
                 let p = self.sk.point3([0.0; 3], false, &d.name.key().text);
                 self.sk.lift_point(p);
                 for (k, q) in self.sk.point_all_params(p).into_iter().enumerate() {
-                    let seed = match d.seed_text.get(k).and_then(|t| t.as_ref()) {
-                        Some(t) => self.tape(t, *d.seed_spans.get(k).unwrap_or(&st.span))?,
-                        None => self.constant(d.seed.get(k).copied().unwrap_or(0.0)),
+                    let at = *d.seed_spans.get(k).unwrap_or(&st.span);
+                    let ast = match d.seed_text.get(k).and_then(|t| t.as_ref()) {
+                        Some(t) => crate::expr::parse_in(t, self.units)
+                            .map_err(|e| (Code::E103, at, e))?.body,
+                        None => crate::expr::Ast::Num(d.seed.get(k).copied().unwrap_or(0.0),
+                                                      crate::units::Dim::SCALAR),
                     };
+                    let seed = crate::tape::Tape::compile_wide(&ast, self.vars)
+                        .map_err(|e| (Code::E103, at, e))?;
                     self.seeds.push(seed);
+                    self.seed_of.push(ast);
+                    if let Some(c) = ["x", "y", "z"].get(k) {
+                        self.own.insert(format!("{}.{c}", d.name.key().text), self.n_q);
+                    }
                     self.slot.insert(q, self.n_outer + self.n_q);
                     self.owner.push(d.name.key().text.clone());
                     self.n_q += 1;
@@ -672,7 +791,7 @@ impl<'v> Lowering<'v> {
                 crate::syntax::snake(r.kind.name()))));
         }
         let mut cargs: Vec<CArg> = Vec::with_capacity(spec.len());
-        let mut dim: Option<(SpecKind, crate::tape::Tape)> = None;
+        let mut dim: Option<(SpecKind, Dimension)> = None;
         let mut places: Vec<(usize, usize)> = Vec::new();
         for (i, (name, kind)) in spec.iter().enumerate() {
             let given = r.args.get(i).and_then(|a| a.as_ref());
@@ -686,7 +805,7 @@ impl<'v> Lowering<'v> {
                     cargs.push(ent_arg(&self.sk, found, *k, rf).map_err(|(c, m)| (c, rf.span, m))?);
                 }
                 (k, Some(Arg::Dim { text, span })) if k.is_dimension() => {
-                    dim = Some((*k, self.tape(text, *span)?));
+                    dim = Some((*k, self.dimension(text, *span)?));
                     cargs.push(CArg::Num(0.0));
                 }
                 (k, given) if k.is_param() => {
@@ -739,8 +858,13 @@ impl<'v> Lowering<'v> {
                     k => k.free_kernel(),
                 }.ok_or((Code::E103, st.span, format!("{} cannot be stated over the running \
                     formals here", crate::model::article(&crate::syntax::snake(kind.name())))))?;
-                cols.push((self.n_outer + self.n_q + self.w.len()) as u32);
-                self.w.push(t);
+                match t {
+                    Dimension::Tape(t) => {
+                        cols.push((self.n_outer + self.n_q + self.w.len()) as u32);
+                        self.w.push(t);
+                    }
+                    Dimension::Number(slot) => cols.push(slot as u32),
+                }
                 let sign = c.side().unwrap_or(1.0);
                 self.push(crate::traced::Row {
                     kind: crate::traced::RowKind::Kernel(twin as usize),
@@ -789,5 +913,22 @@ impl<'v> Lowering<'v> {
         self.rows.push(crate::traced::Row { kind: crate::traced::RowKind::Carried, cols,
             consts: crate::envelope::held::encode_steps(&steps) });
         Ok(())
+    }
+}
+
+/// `ast` with each name `f` answers written as its expression.
+fn substituted<'a>(ast: &crate::expr::Ast, f: &dyn Fn(&str) -> Option<&'a crate::expr::Ast>)
+                   -> crate::expr::Ast {
+    use crate::expr::Ast;
+    match ast {
+        Ast::Var(n) => f(n).cloned().unwrap_or_else(|| ast.clone()),
+        Ast::Neg(a) => Ast::Neg(Box::new(substituted(a, f))),
+        Ast::Bin(op, a, b) => {
+            Ast::Bin(*op, Box::new(substituted(a, f)), Box::new(substituted(b, f)))
+        }
+        Ast::Call(n, args) => {
+            Ast::Call(n.clone(), args.iter().map(|a| substituted(a, f)).collect())
+        }
+        Ast::Num(..) | Ast::Measure(..) => ast.clone(),
     }
 }

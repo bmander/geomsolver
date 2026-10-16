@@ -107,11 +107,13 @@ const projects: Example[] = [{
     + 'dragged by a string (the tractrix), a railway transition whose curvature grows with its '
     + 'length (the clothoid) eased into its bend, a hanging chain shot to its far end beside the '
     + 'free curve that hangs the same, a dog chasing a hare until it catches it, and a filament '
-    + 'wound on a cone — and four fronts moving square to themselves, surfaces marched by the '
+    + 'wound on a cone — and five fronts moving square to themselves, surfaces marched by the '
     + 'method of lines: an ellipse\'s moving inward until it folds, geodesic circles on a sphere '
-    + 'closing on its antipode and on a cone, and a Wankel bore, the trochoid\'s parallel curve, '
-    + 'refused past its waist. Each body states a rate, `rate(p over s)`, and is integrated from '
-    + 'where it is drawn; each is a closed form its file gives. The README says what each shows.',
+    + 'closing on its antipode and on a cone, a Wankel bore, the trochoid\'s parallel curve, '
+    + 'refused past its waist, and light spreading through Maxwell\'s fish-eye lens at a speed '
+    + 'read where it is, refocused at the far rim. Each body states a rate, `rate(p over s)`, and '
+    + 'is integrated from where it is drawn; each is a closed form its file gives. The README says '
+    + 'what each shows.',
   target: { kind: 'directory', path: 'rates', entry: 'tractrix.sv' },
 }, {
   label: 'Paths in space · guides that leave the plane', key: 'paths',

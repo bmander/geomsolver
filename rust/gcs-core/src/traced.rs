@@ -64,6 +64,12 @@ pub enum RowKind {
     /// `[u, P₀ … Pₙ₋₁, X]`, its constants the knot vector and the weights (`spline_res`,
     /// `spline_jets`).
     Spline,
+    /// **A number the body places** (#378), held to an expression over the formals, the geometry
+    /// and the body's own coordinates: `v − f(x…)`, its columns `[v, x…]`, its constants `f`'s
+    /// tape over `x` (`number_res`, `number_jets`).  What a dimension that reads the body's own
+    /// points is lowered to: the row it stands in reads `v` where it would read a tape over the
+    /// formals alone.
+    Number,
 }
 
 impl RowKind {
@@ -74,6 +80,7 @@ impl RowKind {
             RowKind::Carried => Some(screw::kernel(screw::Reading::Carried, n_par, n_const)),
             RowKind::Spline => Some(Kernel { name: "spline_point3", n_res: 3, n_par, n_const,
                 degree: 1, res: spline_res, jac: spline_jac, const_jac: None, form: None }),
+            RowKind::Number => Some(number_kernel(n_par, n_const)),
         }
     }
 
@@ -81,17 +88,33 @@ impl RowKind {
     pub fn id(self) -> Option<usize> {
         match self {
             RowKind::Kernel(k) => Some(k),
-            RowKind::Carried | RowKind::Spline => None,
+            RowKind::Carried | RowKind::Spline | RowKind::Number => None,
         }
     }
 
+    /// The residual rows it states.
+    pub fn n_res(self) -> usize {
+        match self {
+            RowKind::Kernel(k) => KERNELS.get(k).map_or(0, |kn| kn.n_res),
+            RowKind::Carried | RowKind::Spline => 3,
+            RowKind::Number => 1,
+        }
+    }
+
+    /// Whether an integrator reads it (`rates.rs`, `lines.rs`): a static kernel or a placed
+    /// number, never a carried point or a spline.
+    pub fn integrable(self) -> bool {
+        matches!(self, RowKind::Kernel(_) | RowKind::Number)
+    }
+
     /// How it is written in the encoding: a kernel's id, `-1` a carried point, `-2` a point on a
-    /// spline.
+    /// spline, `-3` a placed number.
     fn code(self) -> f64 {
         match self {
             RowKind::Kernel(k) => k as f64,
             RowKind::Carried => -1.0,
             RowKind::Spline => -2.0,
+            RowKind::Number => -3.0,
         }
     }
 }
@@ -221,7 +244,8 @@ impl Body {
             return Err("`initially { … }` says what holds at a home, and only a body that \
                 states a rate has one: its rates are integrated from it".into());
         }
-        if stated && rows.iter().chain(&rates.rows).chain(&rates.init).any(|r| r.kind.id().is_none()) {
+        if stated && rows.iter().chain(&rates.rows).chain(&rates.init)
+            .any(|r| !r.kind.integrable()) {
             return Err("a body that states a rate reads no point a motion carries".into());
         }
         if !(1..=MAX_FORMALS).contains(&n_formals) || n_formals + n_theta > n_outer {
@@ -324,10 +348,14 @@ struct View<'a> {
     pieces: usize,
 }
 
-/// Rows as an integrator reads them: a rate body reads no carried point, so every row a kernel.
+/// Rows as an integrator reads them: a rate body reads no carried point, so every row a kernel
+/// or a placed number.
 fn rate_rows<'a>(rs: &[Decoded<'a>]) -> Vec<crate::rates::Row<'a>> {
     rs.iter().map(|(_, kind, cols, consts)| crate::rates::Row {
-        kid: kind.id().unwrap_or(usize::MAX),
+        kid: match kind {
+            RowKind::Number => crate::rates::NUMBER,
+            k => k.id().unwrap_or(usize::MAX),
+        },
         cols: cols.clone(),
         consts,
     }).collect()
@@ -405,6 +433,7 @@ fn view(flat: &[f64]) -> Option<View<'_>> {
         let kind = match flat.get(at).copied()? {
             -1.0 => RowKind::Carried,
             -2.0 => RowKind::Spline,
+            -3.0 => RowKind::Number,
             _ => RowKind::Kernel(g(at)?),
         };
         let (n_cols, n_consts) = (g(at + 1)?, g(at + 2)?);
@@ -430,6 +459,11 @@ fn view(flat: &[f64]) -> Option<View<'_>> {
             RowKind::Spline => {
                 spline_shape(n_cols, n_consts, consts)?;
             }
+            RowKind::Number => {
+                if !number_shape(n_cols, consts) {
+                    return None;
+                }
+            }
         }
         all.push((kn, kind, cols, consts));
     }
@@ -447,6 +481,45 @@ fn view(flat: &[f64]) -> Option<View<'_>> {
     }
     Some(View { nf, n_outer, n_theta, n_q, traced, w, rows, seeds, rates, init, domain, second,
                 per, pieces })
+}
+
+/* -- a number the body places ------------------------------------------------------------- */
+
+/// The most columns a placed number's row reads, the number first.
+pub const NUMBER_COLS: usize = 16;
+
+/// A placed number's kernel at its widths: `v − f(x…)`, one row.
+pub(crate) fn number_kernel(n_par: usize, n_const: usize) -> Kernel {
+    Kernel { name: "placed_number", n_res: 1, n_par, n_const, degree: 1, res: number_res,
+             jac: number_jac, const_jac: None, form: None }
+}
+
+/// Whether a placed number's columns and constants describe one: the number and what its tape
+/// reads, within `NUMBER_COLS`, the tape whole instructions reading no variable past its columns.
+pub(crate) fn number_shape(n_par: usize, k: &[f64]) -> bool {
+    (1..=NUMBER_COLS).contains(&n_par) && !k.is_empty()
+        && crate::tape::reads_within(k, n_par - 1)
+}
+
+fn number_res(_: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    r[0] = v[0] - crate::tape::eval_num::<f64>(k, &v[1..]).unwrap_or(f64::NAN);
+}
+
+fn number_jac(_: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    let x: Vec<Dual<NUMBER_COLS>> =
+        v[1..].iter().enumerate().map(|(i, &x)| Dual::var(x, i)).collect();
+    let f = crate::tape::eval_num::<Dual<NUMBER_COLS>>(k, &x);
+    j[0] = 1.0;
+    for (i, j) in j[1..v.len()].iter_mut().enumerate() {
+        *j = f.map_or(f64::NAN, |f| -f.g[i]);
+    }
+}
+
+/// A placed number's row over jets: exact to the third order, as every tape over jets is
+/// (`tape::eval_num`).
+pub(crate) fn number_jets(v: &[Jet], k: &[f64], r: &mut [Jet]) -> Option<()> {
+    r[0] = v[0] - crate::tape::eval_num::<Jet>(k, &v[1..])?;
+    Some(())
 }
 
 /* -- solving the body at a place ---------------------------------------------------------- */
@@ -594,6 +667,7 @@ impl View<'_> {
                     }
                     RowKind::Carried => screw::rows(screw::Reading::Carried, &v, consts, &mut r)?,
                     RowKind::Spline => spline_jets(&v, consts, &mut r)?,
+                    RowKind::Number => number_jets(&v, consts, &mut r)?,
                 }
                 rk.extend(r.iter().map(|j| -j.0[k]));
             }

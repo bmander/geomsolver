@@ -65,12 +65,51 @@ const RESTARTS: usize = 8;
 
 /* -- the body ------------------------------------------------------------------------------- */
 
-/// One row of a body: a static kernel, the variable-table slot each column reads, its constants.
+/// One row of a body: a static kernel (or `NUMBER`), the variable-table slot each column reads,
+/// its constants.
 #[derive(Clone, Debug)]
 pub struct Row<'a> {
     pub kid: usize,
     pub cols: Vec<usize>,
     pub consts: &'a [f64],
+}
+
+/// A row's `kid` where it is a traced body's **placed number** (#378, `traced::RowKind::Number`):
+/// a number the body places, held to an expression over its own coordinates, its constants the
+/// expression's tape.
+pub const NUMBER: usize = usize::MAX - 1;
+
+impl Row<'_> {
+    /// Its kernel, at its widths where it is a placed number.
+    pub(crate) fn kernel(&self) -> Option<crate::kernels::Kernel> {
+        match self.kid {
+            NUMBER => crate::traced::number_shape(self.cols.len(), self.consts)
+                .then(|| crate::traced::number_kernel(self.cols.len(), self.consts.len())),
+            k => KERNELS.get(k).copied(),
+        }
+    }
+
+    /// The residual rows it states.
+    pub(crate) fn n_res(&self) -> usize {
+        match self.kid {
+            NUMBER => 1,
+            k => KERNELS[k].n_res,
+        }
+    }
+
+    /// Whether it is read over jets: a placed number always is, a kernel where it has a Taylor
+    /// form.
+    pub(crate) fn has_form(&self) -> bool {
+        self.kid == NUMBER || taylor::has_form(self.kid)
+    }
+
+    /// The row over jets, into `out` (`n_res` of them); `false` where it has no form.
+    pub(crate) fn jets(&self, v: &[Jet], out: &mut [Jet], jrow: &mut Vec<f64>) -> bool {
+        match self.kid {
+            NUMBER => crate::traced::number_jets(v, self.consts, out).is_some(),
+            k => taylor::residual(k, v, self.consts, out, jrow),
+        }
+    }
 }
 
 /// A body that states a rate, as its owner's encoding reads it (`locus::View`, `traced::View`).
@@ -93,7 +132,7 @@ pub struct Body<'a> {
 
 /// Residual rows a set of rows makes.
 pub fn n_res(rows: &[Row]) -> usize {
-    rows.iter().map(|r| KERNELS[r.kid].n_res).sum()
+    rows.iter().map(Row::n_res).sum()
 }
 
 /// Rows over plain numbers, into `out`.
@@ -101,7 +140,7 @@ pub(crate) fn residual(rows: &[Row], z: &[f64], out: &mut Vec<f64>) {
     out.clear();
     let mut x = [0.0f64; COLS];
     for r in rows {
-        let kn = &KERNELS[r.kid];
+        let Some(kn) = r.kernel() else { continue };
         for (x, &c) in x.iter_mut().zip(&r.cols) {
             *x = z[c];
         }
@@ -117,13 +156,12 @@ pub(crate) fn jets(rows: &[Row], z: &[Jet], out: &mut Vec<Jet>) -> bool {
     let mut jrow = Vec::new();
     let mut v = [Jet::default(); COLS];
     for r in rows {
-        let kn = &KERNELS[r.kid];
         for (v, &c) in v.iter_mut().zip(&r.cols) {
             *v = z[c];
         }
         let at = out.len();
-        out.resize(at + kn.n_res, Jet::default());
-        if !taylor::residual(r.kid, &v[..r.cols.len()], r.consts, &mut out[at..], &mut jrow) {
+        out.resize(at + r.n_res(), Jet::default());
+        if !r.jets(&v[..r.cols.len()], &mut out[at..], &mut jrow) {
             return false;
         }
     }
@@ -209,13 +247,13 @@ impl<'a> Body<'a> {
         }
         for (rows, reads) in [(&self.alg, false), (&self.init, false), (&self.rate, true)] {
             for r in rows.iter() {
-                let kn = KERNELS.get(r.kid).ok_or("no such kernel")?;
+                let kn = r.kernel().ok_or("no such kernel")?;
                 if kn.n_par != r.cols.len() || kn.n_const != r.consts.len() || kn.n_par > COLS
                     || kn.n_res > 8 || r.cols.iter().any(|&c| c >= width)
                 {
                     return Err("rate row shape mismatch".into());
                 }
-                if !taylor::has_form(r.kid) {
+                if !r.has_form() {
                     return Err(format!("a body that states a rate reads its rows' derivatives \
                                         exactly, and `{}` has no Taylor form", kn.name));
                 }
@@ -268,7 +306,7 @@ impl<'a> Body<'a> {
         let mut x = [0.0f64; COLS];
         let mut jr = [0.0f64; COLS * 8];
         for r in rows {
-            let kn = &KERNELS[r.kid];
+            let Some(kn) = r.kernel() else { continue };
             for (x, &c) in x.iter_mut().zip(&r.cols) {
                 *x = z[c];
             }

@@ -4,7 +4,9 @@
 //! its far end beside the free curve that hangs the same, a dog's pursuit refused where it catches
 //! the hare, and a geodesic wound on a cone.  And fronts marched by the method of lines (#370):
 //! geodesic circles on a sphere, refused where they focus, and on a cone, and a Wankel bore as the
-//! trochoid's parallel curve, refused at its waist.
+//! trochoid's parallel curve, refused at its waist.  And wavefronts in a graded medium (#378): a
+//! front whose speed reads its own point, in Maxwell's fish-eye, refocused at the source's
+//! conjugate and square to `fisheye.sv`'s free-curve ray.
 use gcs_core::diagnose::{diagnose, DiagnoseOptions};
 use gcs_core::program::Elaborated;
 
@@ -251,4 +253,94 @@ fn the_housing_is_the_trochoids_parallel_curve() {
     assert!(said.starts_with("past: a surface traced in space, marched from its home at 0, \
         refused at 13.7") && said.ends_with(": it folds there, near 90 along its second formal"),
             "{said}");
+}
+
+
+/// How far `(x, z)` is from the fish-eye front at optical length `s` from `a = (−R, 0)`, R 50: the
+/// circle `cos(s/R)(x² + z²) + 2R x + R² cos(s/R) = 0`, its residual over its gradient.
+fn off_the_front(s: f64, x: f64, z: f64) -> f64 {
+    let (r, c) = (50.0, (s / 50.0).cos());
+    let f = c * (x * x + z * z) + 2.0 * r * x + r * r * c;
+    f / (2.0 * c * x + 2.0 * r).hypot(2.0 * c * z)
+}
+
+/// **`fisheye_fronts.sv`**: a front whose speed is 1/n read at its own point (#378).  In Maxwell's
+/// fish-eye each front is the circle the lens's sphere has at that optical length from the
+/// source, out to past the rim and through the line `x = 0`, where the circle turns inside out;
+/// the fronts close on the source's conjugate, `(R, 0)`, where the march is refused, short of
+/// `πR`.  And `fisheye.sv`'s free-curve ray from the same source crosses every front square to it,
+/// at the optical length the closed form gives its point: the march and the extremal agree.
+#[test]
+fn fish_eye_fronts_refocus_square_to_the_rays() {
+    let e = determined(include_str!("../../examples/rates/fisheye_fronts.sv"));
+    let wave = index(&e, "wave");
+    let pi = std::f64::consts::PI;
+    let at = |s: f64, u: f64| {
+        gcs_core::traced::reading(&e.sketch, wave, [s, u], gcs_core::traced::Need::Point)
+            .unwrap_or_else(|| panic!("no reading at ({s}, {u})")).position
+    };
+    for s in [2.0, 20.0, 40.0, 60.0, 25.0 * pi, 100.0, 120.0, 140.0, 150.0] {
+        let far = (0..=48).map(|k| {
+            let x = at(s, -120.0 + 5.0 * k as f64);
+            off_the_front(s, x[0], x[2]).abs().max(x[1].abs())
+        }).fold(0.0, f64::max);
+        assert!(far < 1e-7, "at {s}: {far:.1e}");
+    }
+    // nearly there, every node within the front's radius R tan(π − s/R) of the conjugate
+    let image = [50.0, 0.0, 0.0];
+    let rho = 50.0 * (pi - 155.0 / 50.0).tan();
+    for k in 0..=48 {
+        let u = -120.0 + 5.0 * k as f64;
+        let x = at(155.0, u);
+        let d = (0..3).map(|i| (x[i] - image[i]).powi(2)).sum::<f64>().sqrt();
+        // the error grows as the front focuses, at the arc's ends first
+        assert!(d < rho + 0.05 && off_the_front(155.0, x[0], x[2]).abs() < 5e-5, "{u}: {x:?}");
+    }
+    let stop = match gcs_core::traced::lines_reached(&e.sketch, wave, 32, 160.0) {
+        Some(Err(Some((refusal, gcs_core::lines::Why::Fold { .. })))) => refusal.at(),
+        other => panic!("{other:?}"),
+    };
+    assert!(stop > 154.5 && stop < 50.0 * pi, "refused at {stop}");
+    let said = gcs_core::report::traced_text(&e.sketch, wave);
+    assert!(said.starts_with("wave: a surface traced in space, marched from its home at 2, \
+        refused at 155.") && said.contains(": it folds there"), "{said}");
+    // `fisheye.sv`'s ray, from the same source, drawn in the same plane
+    let f = crate::common::lenient::solved(gcs_core::examples::source("fisheye").unwrap());
+    let ray = |t: f64| -> [f64; 3] {
+        let (x, z) = f.sketch.curve_point(0, t);
+        [x, 0.0, z]
+    };
+    let dot = |p: &[f64], q: &[f64]| (0..3).map(|i| p[i] * q[i]).sum::<f64>();
+    for k in 1..16 {
+        let t = k as f64 / 16.0;
+        let x = ray(t);
+        // the optical length to it, a great circle's on the lens's sphere
+        let sigma = 50.0 * (-100.0 * x[0] / (2500.0 + x[0] * x[0] + x[2] * x[2])).acos();
+        // its place on the fronts, by Gauss–Newton from that length and the ray's own direction
+        let mut place = [sigma, 90.0];
+        let mut r = gcs_core::traced::reading(&e.sketch, wave, place,
+                                              gcs_core::traced::Need::Tangent).unwrap();
+        for _ in 0..12 {
+            let f: Vec<f64> = (0..3).map(|i| r.position[i] - x[i]).collect();
+            let (a, b) = (r.d[0], r.d[1]);
+            let (aa, ab, bb) = (dot(&a, &a), dot(&a, &b), dot(&b, &b));
+            let (fa, fb) = (dot(&f, &a), dot(&f, &b));
+            let det = aa * bb - ab * ab;
+            let step = [(bb * fa - ab * fb) / det, (aa * fb - ab * fa) / det];
+            place = [place[0] - step[0], place[1] - step[1]];
+            r = gcs_core::traced::reading(&e.sketch, wave, place, gcs_core::traced::Need::Tangent)
+                .unwrap();
+            if step[0].abs() + step[1].abs() < 1e-12 {
+                break;
+            }
+        }
+        let gap = (0..3).map(|i| (r.position[i] - x[i]).abs()).fold(0.0, f64::max);
+        assert!(gap < 1e-9, "the ray's point at {t} is {gap:.1e} off the fronts");
+        assert!((place[0] - sigma).abs() < 1e-6, "at {t}: s = {} against {sigma}", place[0]);
+        let (a, b) = (ray(t - 1e-6), ray(t + 1e-6));
+        let tangent: Vec<f64> = (0..3).map(|i| b[i] - a[i]).collect();
+        let xu = r.d[1];
+        let cos = dot(&xu, &tangent) / (dot(&xu, &xu) * dot(&tangent, &tangent)).sqrt();
+        assert!(cos.abs() < 1e-6, "at {t}: the front is {cos:.1e} off square to the ray");
+    }
 }

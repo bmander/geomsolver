@@ -20,6 +20,7 @@ Read them in this order:
 | `front.sv` | **Two formals: a first-order PDE.** An ellipse's points move inward at unit speed, square to the front — a law and a gauge — marched along how far it has moved, sampled along the ellipse by the method of lines; `initially` is the Cauchy data. The front is the ellipse offset, and where its least radius of curvature runs out it folds and is refused: `folded` runs it there, and `solventc` says where. A point held on the major axis is found on the surface at its place, and a claim says the surface stays in the ellipse's plane. Issue #339, item D4. |
 | `geodesic_circles.sv` | **A front on a surface.** A row over the moved point alone holds it to a sphere or a cone, and the front's normal is placed in the tangent plane. On the sphere the circles of latitude close on the antipode, where the front focuses and is refused; on the cone, unrolled, the fronts are circles about the apex. The starting circles are written by their own ordinates, the seeds are plain numbers that pick each root. Issue #370. |
 | `housing.sv` | **An offset with a design rule.** A Wankel bore is the epitrochoid's parallel curve at the apex seal's radius: the front moves outward from the curve the seal's centre runs on. Outward a front folds only where its curve is concave — at the trochoid's waist — so the seal's radius must stay below the waist's radius of curvature; run past it the march is refused there. Issue #370. |
+| `fisheye_fronts.sv` | **A speed that reads where the point is.** Light from a point source spreading through Maxwell's fish-eye, whose index falls off from its centre: the front moves at 1/n, and n is read at the moving point's own coordinates (`p.x`) — the eikonal equation in a graded medium. The fronts are circles (the lens is a sphere seen through a stereographic projection), and they close again on the point opposite the source, where the march is refused: the lens images perfectly. `../fisheye.sv`'s ray, a free curve, crosses every front square to it. Issue #378. |
 
 What the words are:
 
@@ -37,10 +38,14 @@ What the words are:
   nodes, a rate along either. A rate along the second is read off the nodes, of a point the rates
   move, in a relation that places a point they do not (the front's normal) or a rate row. Along an
   angle a rate is per radian.
+- **A number that reads the body's own points** — in a body traced in space a dimension may read
+  `p.x`, `p.y`, `p.z` of a point the body declares, so a speed may depend on where the point is
+  (`fisheye_fronts.sv`). Over two formals, in a rate row or a relation that places a point the
+  rates do not move, never in `initially`.
 
 - **What a front cannot say yet** — its Cauchy data are written in `initially`, by relations and
   expressions, never read off a curve the drawing has (an envelope, a spline, another traced
-  curve) nor a point a motion carries, so a starting circle is written by its ordinates; its speed reads the formals and the given numbers, never its own point; and a surface is
+  curve) nor a point a motion carries, so a starting circle is written by its ordinates; and a surface is
   sampled on 32 pieces whatever its length, so a whole turn is resolved three times as coarsely
   as a third of one (`housing.sv` marches half its bore, the other half its mirror).
 
