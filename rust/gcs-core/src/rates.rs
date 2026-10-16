@@ -43,9 +43,11 @@
 
 #[allow(unused_imports)]
 use crate::fmath::Det;
-use crate::kernels::KERNELS;
+use crate::envelope::held;
+use crate::kernels::{Kernel, KERNELS};
 use crate::ode;
 use crate::taylor::{self, Jet};
+use crate::traced::RowKind;
 
 /// The most coordinates a body that states a rate integrates.
 pub const MAX_Q: usize = 48;
@@ -65,12 +67,49 @@ const RESTARTS: usize = 8;
 
 /* -- the body ------------------------------------------------------------------------------- */
 
-/// One row of a body: a static kernel, the variable-table slot each column reads, its constants.
+/// One row of a body: what it states — a static kernel or, in space, a point a motion carries
+/// (#377) — the variable-table slot each column reads, and its constants.
 #[derive(Clone, Debug)]
 pub struct Row<'a> {
-    pub kid: usize,
+    pub kind: RowKind,
     pub cols: Vec<usize>,
     pub consts: &'a [f64],
+}
+
+impl Row<'_> {
+    /// Its kernel at its widths.
+    pub(crate) fn kernel(&self) -> Kernel {
+        self.kind.at_widths(self.cols.len(), self.consts.len())
+    }
+
+    /// Its kernel, checked: its widths its kernel's, its columns within `width` and the buffers'
+    /// widths, and a form over jets to read its derivatives exactly by.
+    pub(crate) fn checked(&self, width: usize) -> Result<Kernel, String> {
+        match self.kind {
+            RowKind::Kernel(k) => {
+                let kn = KERNELS.get(k).ok_or("no such kernel")?;
+                if !taylor::has_form(k) {
+                    return Err(format!("a body that states a rate reads its rows' derivatives \
+                                        exactly, and `{}` has no Taylor form", kn.name));
+                }
+            }
+            RowKind::Carried => {
+                let steps = held::read_steps(self.consts).ok_or("rate row shape mismatch")?;
+                if steps.is_empty() || self.cols.len() != 7 + held::steps_width(&steps) {
+                    return Err("rate row shape mismatch".into());
+                }
+            }
+            RowKind::Spline => return Err("a body that states a rate reads no point on a spline"
+                .into()),
+        }
+        let kn = self.kernel();
+        if kn.n_par != self.cols.len() || kn.n_const != self.consts.len() || kn.n_par > COLS
+            || kn.n_res > 8 || self.cols.iter().any(|&c| c >= width)
+        {
+            return Err("rate row shape mismatch".into());
+        }
+        Ok(kn)
+    }
 }
 
 /// A body that states a rate, as its owner's encoding reads it (`locus::View`, `traced::View`).
@@ -93,7 +132,7 @@ pub struct Body<'a> {
 
 /// Residual rows a set of rows makes.
 pub fn n_res(rows: &[Row]) -> usize {
-    rows.iter().map(|r| KERNELS[r.kid].n_res).sum()
+    rows.iter().map(|r| r.kernel().n_res).sum()
 }
 
 /// Rows over plain numbers, into `out`.
@@ -101,7 +140,7 @@ pub(crate) fn residual(rows: &[Row], z: &[f64], out: &mut Vec<f64>) {
     out.clear();
     let mut x = [0.0f64; COLS];
     for r in rows {
-        let kn = &KERNELS[r.kid];
+        let kn = r.kernel();
         for (x, &c) in x.iter_mut().zip(&r.cols) {
             *x = z[c];
         }
@@ -117,13 +156,13 @@ pub(crate) fn jets(rows: &[Row], z: &[Jet], out: &mut Vec<Jet>) -> bool {
     let mut jrow = Vec::new();
     let mut v = [Jet::default(); COLS];
     for r in rows {
-        let kn = &KERNELS[r.kid];
+        let kn = r.kernel();
         for (v, &c) in v.iter_mut().zip(&r.cols) {
             *v = z[c];
         }
         let at = out.len();
         out.resize(at + kn.n_res, Jet::default());
-        if !taylor::residual(r.kid, &v[..r.cols.len()], r.consts, &mut out[at..], &mut jrow) {
+        if !r.kind.jets(&v[..r.cols.len()], r.consts, &mut out[at..], &mut jrow) {
             return false;
         }
     }
@@ -209,16 +248,7 @@ impl<'a> Body<'a> {
         }
         for (rows, reads) in [(&self.alg, false), (&self.init, false), (&self.rate, true)] {
             for r in rows.iter() {
-                let kn = KERNELS.get(r.kid).ok_or("no such kernel")?;
-                if kn.n_par != r.cols.len() || kn.n_const != r.consts.len() || kn.n_par > COLS
-                    || kn.n_res > 8 || r.cols.iter().any(|&c| c >= width)
-                {
-                    return Err("rate row shape mismatch".into());
-                }
-                if !taylor::has_form(r.kid) {
-                    return Err(format!("a body that states a rate reads its rows' derivatives \
-                                        exactly, and `{}` has no Taylor form", kn.name));
-                }
+                r.checked(width)?;
                 if !reads && r.cols.iter().any(|&c| c >= self.r0()) {
                     return Err("only a rate row reads a rate".into());
                 }
@@ -268,7 +298,7 @@ impl<'a> Body<'a> {
         let mut x = [0.0f64; COLS];
         let mut jr = [0.0f64; COLS * 8];
         for r in rows {
-            let kn = &KERNELS[r.kid];
+            let kn = r.kernel();
             for (x, &c) in x.iter_mut().zip(&r.cols) {
                 *x = z[c];
             }

@@ -351,6 +351,80 @@ h distance(10mm) h2
     }
 }
 
+const HELIX: &str = "\
+unit mm
+use std
+
+component Wound(x0: point, vert: line, spin: motion, s: Length) {
+  x := point hint((20, 0, 0))
+  X := point hint((20, 0, 0))
+  rate(x over s) parallel vert
+  rate(x over s) distance(1, along: vert)
+  X coincident(under: spin, t == 3deg * s / 1mm) x
+  initially {
+    x coincident(under: spin, t == 30deg) x0
+  }
+}
+
+o := point hint((0, 0, 0))
+fix((0, 0, 0)) o
+top := point hint((0, 0, 10))
+fix((0, 0, 10)) top
+za := line(o, top)
+spin := motion(about: za)
+x0 := point hint((20, 0, 0))
+fix((20, 0, 0)) x0
+helix := Wound(x0, za, spin, s: 0mm).X over s in (-60mm, 60mm)
+";
+
+/// The helix of radius 20 about the axis, a turn each 120 up it, from 30° round at `s = 0`.
+fn helix(s: f64) -> [f64; 3] {
+    let a = (3.0 * s + 30.0).to_radians();
+    [20.0 * a.cos(), 20.0 * a.sin(), s]
+}
+
+/// **A point a motion carries, in a body that states a rate** (#377).  `x` runs up the axis at
+/// unit speed, and `X` is `x` turned about it three degrees a millimetre: a row of the body,
+/// integrated with the rest — its rate the carried row differentiated along `s` — and, in
+/// `initially`, the home's: `x` starts as `x0` turned 30°.  The curve is the helix; a point held
+/// at a height is where the helix is that high, and its Jacobian, through the carried rows'
+/// sensitivities to the axis and to `x0`, is its residual's own.
+#[test]
+fn a_point_a_motion_carries_is_a_row_of_a_rate_body() {
+    let src = format!("{HELIX}\
+h := point hint((1, 19, 31))
+h coincident helix
+o distance(20mm, along: za) h
+");
+    let e = build(&src);
+    let mut sk = solved(&e);
+    let r = e.map.ent_named("helix").unwrap();
+    for i in 0..=24 {
+        let s = -60.0 + 5.0 * i as f64;
+        let got = gcs_core::traced::reading(&sk, r.i(), [s, 0.0], gcs_core::traced::Need::Point)
+            .unwrap_or_else(|| panic!("no reading at {s}")).position;
+        let want = helix(s);
+        assert!((0..3).all(|k| (got[k] - want[k]).abs() < 1e-10),
+                "at {s}: {got:?} against {want:?}");
+    }
+    let h = sk.world_point(e.map.ent_named("h").unwrap().i());
+    let want = helix(20.0);
+    assert!((0..3).all(|k| (h[k] - want[k]).abs() < 1e-9), "{h:?} against {want:?}");
+    assert_eq!(gcs_core::report::traced_text(&sk, r.i()),
+               "helix: a curve traced in space, integrated from its home at 0 across (-60, 60)");
+    for p in sk.params.iter_mut() {
+        p.fixed = false;
+    }
+    let mut rng = gcs_core::rng::Rng::new(7);
+    for p in sk.params.iter_mut() {
+        p.value += rng.uniform(-0.02, 0.02) * (1.0 + p.value.abs().min(10.0));
+    }
+    for c in sk.constraints.iter().filter(|c| c.kind.traced_contact().is_some()) {
+        gcs_core::fdcheck::check_constraint(&sk, c, 1e-6, 1e-6)
+            .unwrap_or_else(|why| panic!("{:?}: {why}", c.kind));
+    }
+}
+
 /// The errors a document elaborates to, or those parsing it finds: a rate read by a word that
 /// reads no direction is refused as it is parsed.
 fn errors(src: &str) -> Vec<String> {

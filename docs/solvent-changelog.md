@@ -4,6 +4,18 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.131] A point a motion carries, in a body that states a rate.** `X coincident(under: m, t ==
+τ) x` (§9.3) is a relation without a rate in a body that states one (§6.5), over one formal or
+two: a row of the body, held everywhere, or in `initially { … }` a row of the home's alone — so
+a marched surface's Cauchy data may be a drawn point turned about an axis by the sampled formal
+(`rates/geodesic_circles.sv`'s starting circles, `p coincident(under: spin, t == u) s`) or the
+point a planar motion carries (`rates/housing.sv`'s trochoid, the apex `wankel.sv`'s rotor motion
+carries). Its rate is the row differentiated along the formal, and its sensitivities to the
+motion's axes and to the point it carries are exact. Through 0.130 such a body was E103 ("a body
+that states a rate reads no point a motion carries"), and each document wrote its starting curve
+as its ordinates. Both documents march the fronts they did, to the march's tolerance. (Issue
+#377.)
+
 **[0.130] The rate of a contact; a motion's twist read by rates.** `rate(p over t)` runs over the
 slot of the contact holding `p` (§6.5) — a curve's `t`, a traced curve's `u`, a meshing's phase,
 the roll of `p coincident(under: m, t == …) q` — where `t` names no formal in scope: the derivative

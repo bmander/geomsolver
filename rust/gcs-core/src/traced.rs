@@ -71,9 +71,28 @@ impl RowKind {
     fn kernel(self, n_par: usize, n_const: usize) -> Option<Kernel> {
         match self {
             RowKind::Kernel(k) => KERNELS.get(k).copied(),
-            RowKind::Carried => Some(screw::kernel(screw::Reading::Carried, n_par, n_const)),
-            RowKind::Spline => Some(Kernel { name: "spline_point3", n_res: 3, n_par, n_const,
-                degree: 1, res: spline_res, jac: spline_jac, const_jac: None, form: None }),
+            kind => Some(kind.at_widths(n_par, n_const)),
+        }
+    }
+
+    /// Its kernel at a row's widths, a static kernel's by its id (which must be one).
+    pub(crate) fn at_widths(self, n_par: usize, n_const: usize) -> Kernel {
+        match self {
+            RowKind::Kernel(k) => KERNELS[k],
+            RowKind::Carried => screw::kernel(screw::Reading::Carried, n_par, n_const),
+            RowKind::Spline => Kernel { name: "spline_point3", n_res: 3, n_par, n_const,
+                degree: 1, res: spline_res, jac: spline_jac, const_jac: None, form: None },
+        }
+    }
+
+    /// Its rows over jets (`v` its columns), into `r`: a static kernel's Taylor form, a carried
+    /// point's and a spline's rows read over jets as they are written.  `false` where a row has
+    /// no form or its constants describe nothing.
+    pub(crate) fn jets(self, v: &[Jet], k: &[f64], r: &mut [Jet], jrow: &mut Vec<f64>) -> bool {
+        match self {
+            RowKind::Kernel(id) => taylor::residual(id, v, k, r, jrow),
+            RowKind::Carried => screw::rows(screw::Reading::Carried, v, k, r).is_some(),
+            RowKind::Spline => spline_jets(v, k, r).is_some(),
         }
     }
 
@@ -103,6 +122,17 @@ pub struct Row {
     pub kind: RowKind,
     pub cols: Vec<u32>,
     pub consts: Vec<f64>,
+}
+
+impl Row {
+    /// How many residuals it makes: its kernel's, three for a point a motion carries or a point
+    /// on a spline; none for an id no kernel has, which the encoding refuses.
+    pub fn n_res(&self) -> usize {
+        match self.kind {
+            RowKind::Kernel(k) => KERNELS.get(k).map_or(0, |kn| kn.n_res),
+            RowKind::Carried | RowKind::Spline => 3,
+        }
+    }
 }
 
 /* -- a spline over points in space -------------------------------------------------------- */
@@ -221,9 +251,6 @@ impl Body {
             return Err("`initially { … }` says what holds at a home, and only a body that \
                 states a rate has one: its rates are integrated from it".into());
         }
-        if stated && rows.iter().chain(&rates.rows).chain(&rates.init).any(|r| r.kind.id().is_none()) {
-            return Err("a body that states a rate reads no point a motion carries".into());
-        }
         if !(1..=MAX_FORMALS).contains(&n_formals) || n_formals + n_theta > n_outer {
             return Err("a traced body runs over one formal or two".into());
         }
@@ -324,10 +351,10 @@ struct View<'a> {
     pieces: usize,
 }
 
-/// Rows as an integrator reads them: a rate body reads no carried point, so every row a kernel.
+/// Rows as an integrator reads them: a static kernel's or a point a motion carries (#377).
 fn rate_rows<'a>(rs: &[Decoded<'a>]) -> Vec<crate::rates::Row<'a>> {
     rs.iter().map(|(_, kind, cols, consts)| crate::rates::Row {
-        kid: kind.id().unwrap_or(usize::MAX),
+        kind: *kind,
         cols: cols.clone(),
         consts,
     }).collect()
@@ -586,14 +613,8 @@ impl View<'_> {
             for (kn, kind, cols, consts) in &self.rows {
                 let v: Vec<Jet> = cols.iter().map(|&c| z[c]).collect();
                 let mut r = vec![Jet::default(); kn.n_res];
-                match kind {
-                    RowKind::Kernel(id) => {
-                        if !taylor::residual(*id, &v, consts, &mut r, &mut jrow) {
-                            return None;
-                        }
-                    }
-                    RowKind::Carried => screw::rows(screw::Reading::Carried, &v, consts, &mut r)?,
-                    RowKind::Spline => spline_jets(&v, consts, &mut r)?,
+                if !kind.jets(&v, consts, &mut r, &mut jrow) {
+                    return None;
                 }
                 rk.extend(r.iter().map(|j| -j.0[k]));
             }

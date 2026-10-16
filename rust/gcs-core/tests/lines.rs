@@ -317,3 +317,209 @@ fn a_whole_turn_closes() {
 }
 
 
+
+/* -- Cauchy data a motion carries (#377) ------------------------------------------------------ */
+
+const CIRCLES: &str = include_str!("../../examples/rates/geodesic_circles.sv");
+const HOUSING: &str = include_str!("../../examples/rates/housing.sv");
+
+/// `geodesic_circles.sv` as it was written before a rate body read a carried point: each starting
+/// circle its own two ordinates, `r1·cos u` and `r1·sin u`, across the axis.
+const CIRCLES_WRITTEN: &str = "unit mm
+use std
+R := 30mm
+r1 := 15mm
+half := 30deg
+component OnSphere(c: point, x1: point, y1: point, R: Length, r1: Length, d: Length, u: Angle) {
+  xa := line(c, x1)
+  ya := line(c, y1)
+  p := point hint((0, 0, 30))
+  k := point hint((0, 0, -30))
+  rad := line(c, p)
+  nl := line(p, k)
+  c distance(R) p
+  length(10mm) nl
+  nl perpendicular rad
+  nl perpendicular rate(p over u)
+  rate(p over d) parallel nl
+  rate(p over d) distance(1, along: nl)
+  initially {
+    c distance(r1 * cos(u), along: xa) p
+    c distance(r1 * sin(u), along: ya) p
+  }
+}
+component OnCone(o: point, x1: point, y1: point, top: point, half: Angle, r1: Length, d: Length,
+                 u: Angle) {
+  xa := line(o, x1)
+  ya := line(o, y1)
+  ax := line(o, top)
+  p := point hint((0, 0, 30))
+  k := point hint((0, 0, 200))
+  w := point hint((0, 0, 50))
+  gen := line(o, p)
+  cn := line(p, w)
+  nl := line(p, k)
+  gen angle(half) ax
+  w coincident ax
+  cn perpendicular gen
+  length(10mm) nl
+  nl perpendicular cn
+  nl perpendicular rate(p over u)
+  rate(p over d) parallel nl
+  rate(p over d) distance(1, along: nl)
+  initially {
+    o distance(r1 * cos(u), along: xa) p
+    o distance(r1 * sin(u), along: ya) p
+  }
+}
+c := point hint((0, 0, 0))
+fix((0, 0, 0)) c
+x1 := point hint((10, 0, 0))
+fix((10, 0, 0)) x1
+y1 := point hint((0, 10, 0))
+fix((0, 10, 0)) y1
+top := point hint((0, 0, 10))
+fix((0, 0, 10)) top
+on_sphere := OnSphere(c, x1, y1, R: R, r1: r1).p over (d in (0mm, pi * R), u in (0deg, 360deg))
+on_cone := OnCone(c, x1, y1, top, half: half, r1: r1).p over (d in (0mm, 30mm),
+                                                            u in (0deg, 360deg))
+";
+
+/// `housing.sv` as it was written before: its Cauchy data the epitrochoid's two terms.
+const HOUSING_WRITTEN: &str = "unit mm
+use std
+R := 75mm
+e := 15mm
+s := 3mm
+component Bore(c: point, x1: point, y1: point, z1: point, R: Length, e: Length, d: Length,
+               u: Angle) {
+  xa := line(c, x1)
+  ya := line(c, y1)
+  za := line(c, z1)
+  p := point hint((0, 0, 0))
+  k := point hint((0, 0, 0))
+  nl := line(p, k)
+  length(10mm) nl
+  c distance(0mm, along: za) k
+  nl perpendicular rate(p over u)
+  rate(p over d) parallel nl
+  rate(p over d) distance(-1, along: nl)
+  initially {
+    c distance(e * cos(3 * u) + R * cos(u), along: xa) p
+    c distance(e * sin(3 * u) + R * sin(u), along: ya) p
+    c distance(0mm, along: za) p
+  }
+}
+c := point hint((0, 0, 0))
+fix((0, 0, 0)) c
+x1 := point hint((10, 0, 0))
+fix((10, 0, 0)) x1
+y1 := point hint((0, 10, 0))
+fix((0, 10, 0)) y1
+z1 := point hint((0, 0, 10))
+fix((0, 0, 10)) z1
+bore := Bore(c, x1, y1, z1, R: R, e: e).p over (d in (0mm, s), u in (0deg, 180deg))
+";
+
+/// The greatest distance between two surfaces, `name` in each document, at `d` over `u` every
+/// 2.5° of `(lo, hi)`: the point, `x_d` and `x_u`.
+fn apart(a: &gcs_core::model::Sketch, ea: &gcs_core::program::Elaborated,
+         b: &gcs_core::model::Sketch, eb: &gcs_core::program::Elaborated, name: &str, d: f64,
+         lo: f64, hi: f64) -> [f64; 3] {
+    let (i, j) = (ea.map.ent_named(name).unwrap().i(), eb.map.ent_named(name).unwrap().i());
+    let mut out = [0.0f64; 3];
+    let n = ((hi - lo) / 2.5) as usize;
+    for k in 0..=n {
+        let u = lo + 2.5 * k as f64;
+        let (r, s) = (gcs_core::traced::reading(a, i, [d, u], Need::Tangent).unwrap(),
+                      gcs_core::traced::reading(b, j, [d, u], Need::Tangent).unwrap());
+        out[0] = out[0].max(far(r.position, s.position));
+        out[1] = out[1].max(far(r.d[0], s.d[0]));
+        out[2] = out[2].max(far(r.d[1], s.d[1]));
+    }
+    out
+}
+
+/// **Cauchy data a motion carries is the data written out** (#377).  `geodesic_circles.sv`'s
+/// starting circles are a drawn point turned about the axis, and `housing.sv`'s trochoid the apex
+/// the rotor's motion carries; each surface, and both its derivatives, is the one its Cauchy data
+/// written as ordinates marches to — at the home to rounding, and after to the march's own
+/// tolerance, under a hundredth of the error against the closed form
+/// (`rate_examples::fronts_on_a_surface_are_geodesic_circles`).
+#[test]
+fn cauchy_data_a_motion_carries_is_the_data_written_out() {
+    let (ea, eb) = (build(CIRCLES), build(CIRCLES_WRITTEN));
+    let (a, b) = (solved(&ea), solved(&eb));
+    for (name, d, tol) in [("on_sphere", 0.0, 1e-11), ("on_sphere", 20.0, 1e-10),
+                           ("on_sphere", 40.0, 2e-10), ("on_sphere", 70.0, 1e-8),
+                           ("on_cone", 0.0, 1e-11), ("on_cone", 30.0, 1e-9)] {
+        let got = apart(&a, &ea, &b, &eb, name, d, 0.0, 360.0);
+        assert!(got.iter().all(|&x| x < tol), "{name} at {d}: {got:?}");
+    }
+    let (ea, eb) = (build(HOUSING), build(HOUSING_WRITTEN));
+    let (a, b) = (solved(&ea), solved(&eb));
+    for (d, tol) in [(0.0, 1e-11), (3.0, 1e-10)] {
+        let got = apart(&a, &ea, &b, &eb, "bore", d, 0.0, 180.0);
+        assert!(got.iter().all(|&x| x < tol), "the bore at {d}: {got:?}");
+    }
+}
+
+/// **A contact on a front from carried data reads its sensitivities exactly** (#377): the home's
+/// implicit-function step reads the carried point's row over jets, so a point held on the bore,
+/// off the solution, has a Jacobian in the apex and in the centres the motion turns about that is
+/// its residual's own, read against central differences, and each of them moves it.
+#[test]
+fn a_contact_on_carried_data_is_exact_in_its_columns() {
+    let w = [(2.0f64, 50.0f64)].map(|(d, u)| {
+        // the epitrochoid moved `d` along its outward normal (`rate_examples::housing`)
+        let (r, e, u) = (75.0f64, 15.0f64, u.to_radians());
+        let (x, y) = (e * (3.0 * u).cos() + r * u.cos(), e * (3.0 * u).sin() + r * u.sin());
+        let (tx, ty) = (-3.0 * e * (3.0 * u).sin() - r * u.sin(),
+                        3.0 * e * (3.0 * u).cos() + r * u.cos());
+        let l = tx.hypot(ty);
+        [x + d * ty / l, y - d * tx / l, 0.0]
+    })[0];
+    let src = format!("{HOUSING}
+h := point hint(({}, {}, 0))
+fix(({}, {}, {})) h
+h coincident bore
+", w[0], w[1], w[0], w[1], w[2]);
+    let e = build(&src);
+    let mut sk = e.sketch.clone();
+    let contact = sk.constraints.iter().rev()
+        .find(|c| c.kind == gcs_core::constraints::CKind::PointOnTraced).unwrap().clone();
+    let place: Vec<f64> = contact.local_values(&sk)[3..5].to_vec();
+    assert!((place[0] - 2.0).abs() < 0.2 && (place[1] - 50.0).abs() < 2.0, "seeded at {place:?}");
+    for p in sk.params.iter_mut() {
+        p.fixed = false;
+    }
+    let mut rng = gcs_core::rng::Rng::new(7);
+    for p in sk.params.iter_mut() {
+        p.value += rng.uniform(-0.02, 0.02) * (1.0 + p.value.abs().min(10.0));
+    }
+    let v = contact.local_values(&sk);
+    let rows = contact.n_residuals();
+    let got = contact.jacobian(&sk, &v);
+    // the lead (3), the place (2), then `θ`: `c`, `z1`, the apex, and the rotor's motion — the
+    // shaft's centre and its view's two directions, then the hub and its view's.  Each column of
+    // `θ` is a march of its own: the apex's three and each turn's centre along `x`
+    let theta = 5;
+    let cols: Vec<usize> =
+        (0..theta).chain(theta + 6..theta + 9).chain([theta + 9, theta + 18]).collect();
+    assert_eq!(v.len(), theta + 9 + 18);
+    for k in cols {
+        let h = 1e-4 * v[k].abs().max(1.0);
+        let (mut lo, mut hi) = (v.clone(), v.clone());
+        lo[k] -= h;
+        hi[k] += h;
+        let (a, b) = (contact.residual(&sk, &lo), contact.residual(&sk, &hi));
+        for r in 0..rows {
+            let fd = (b[r] - a[r]) / (2.0 * h);
+            let j = got[r * v.len() + k];
+            assert!((fd - j).abs() < 1e-6 * (1.0 + j.abs()),
+                    "row {r}, column {k}: {j} against {fd}");
+        }
+        // the carried data moves the surface: each of these columns moves the point held on it
+        assert!((0..rows).any(|r| got[r * v.len() + k].abs() > 1e-3), "column {k} moves nothing");
+    }
+}
