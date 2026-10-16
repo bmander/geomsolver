@@ -841,6 +841,9 @@ where `initially { … }` in the body says what holds there alone. The relations
 the rate rows must fix every rate — in the plane as many rows as the body places numbers; one short
 is refused naming the points it leaves free. A component handed the running formal as itself
 (`Drag(o, a: a, u: u)`) rates over the caller's; the formal must be a `Scalar` or a `Length`.
+A point a motion carries (`X coincident(under: m, t == τ) x`, below) is a relation like any here
+(0.131), in the body or in `initially`: a starting circle may be a drawn point turned about an
+axis, `initially { p coincident(under: spin, t == u) s }` (`rates/geodesic_circles.sv`).
 
 ```
 component Clothoid(A: Length, s: Length) {

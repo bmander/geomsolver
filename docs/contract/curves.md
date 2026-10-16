@@ -322,6 +322,26 @@ pieces do not always bring it nearer: where a front closes on a point or a conca
 is not monotone in the pieces (the antipode 78.06 / 78.25 / 78.17 on 16 / 32 / 64, the waist
 14.52 / 13.72 / 13.92), so these gates bound it from below rather than hold it to converge.
 
+**A point a motion carries, in a body that states a rate (#377, [0.131]):** `X coincident(under:
+m, t == τ) x` is a row like any of a rate body's, over one formal or two: `program::traced`'s
+`Lowering::carried` pushes it where its statement is (the body's rows or `initially`'s), and
+`rates::Row` carries a `traced::RowKind` rather than a kernel id — `RowKind::at_widths` its
+kernel (`screw::kernel` at the row's widths), `RowKind::jets` its rows over jets (`screw::rows`
+written once over `Num`, so the carried point's Taylor form is the row itself, exact to every
+order), `Row::checked` the shape both integrators check (the motion's steps read back, `7 +
+steps_width` columns).  So every derivative the integrators read — the rows differentiated along
+the formal, the flow's Jacobian by polarisation, the higher orders, and the home's sensitivity to
+every `θ` column by the implicit function theorem (`lines::Body::cauchy`, `rates::Body::home`) —
+reads the carried row as it reads a kernel's, the motion's axes and the carried point among the
+columns.  A point on a spline is still refused in a rate body (`Row::checked`).  Gates:
+`tests/lines.rs` holds `geodesic_circles.sv` (each starting circle a drawn point turned about the
+axis) and `housing.sv` (the apex the rotor's motion carries) to the same documents with their
+Cauchy data written as ordinates — under 1e-11 at the home, 1e-8 at d = 70 on the sphere, a
+hundredth of the error against the closed form — and a point held on the bore exact in the apex
+and the motion's centres against central differences; `tests/traced_rates.rs` a helix, a point
+running up an axis carried about it in the body's rows and turned 30° in `initially`, against its
+closed form, its contact's Jacobian against differences.
+
 - A parametric curve (`curve.rs`) is *linear in its control points*, `C(t) = Σ Bᵢ(t) Pᵢ` (every
   B-spline).  A contact carries its own curve parameter as a `Param` slot and says
   `p − C(t) = 0`: two residuals, one new unknown.  A contact kernel needs only the basis values

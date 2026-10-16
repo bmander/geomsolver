@@ -238,10 +238,9 @@ pub(super) fn build_traced(sk: &Sketch, res: &Resolver, d: &Decl, st: &Stmt, pro
     if !low.rates.is_empty() && low.second.is_some() {
         low.marched(at, t, comp.span)?;
     } else if !low.rates.is_empty() {
-        let n_res = |r: &crate::traced::Row| r.kind.id().map_or(0, |k| crate::kernels::KERNELS[k].n_res);
-        let alg = super::curves::reach(low.rows.iter().map(|r| (n_res(r), &r.cols[..])),
+        let alg = super::curves::reach(low.rows.iter().map(|r| (r.n_res(), &r.cols[..])),
                                        vars.len(), low.n_q);
-        let rates = super::curves::reach(low.rates.iter().map(|r| (n_res(r), &r.cols[..])), at,
+        let rates = super::curves::reach(low.rates.iter().map(|r| (r.n_res(), &r.cols[..])), at,
                                          low.n_q);
         if let Some(m) = super::curves::short(&low.swept, low.n_q, &alg, &rates, &low.owner, false)
         {
@@ -462,7 +461,7 @@ impl<'v> Lowering<'v> {
         let mut over_moved = Vec::new();
         let mut places = 0;
         for (r, sp) in self.rows.iter().zip(&self.spans) {
-            let n_res = r.kind.id().map_or(0, |k| crate::kernels::KERNELS[k].n_res);
+            let n_res = r.n_res();
             if any(&r.cols, n0, &placed) {
                 places += n_res;
             } else if any(&r.cols, at + n, &moved) {
@@ -494,7 +493,7 @@ impl<'v> Lowering<'v> {
             rows.iter().flat_map(|r| {
                 let cols: Vec<usize> =
                     r.cols.iter().filter_map(|&c| index(c as usize, from)).collect();
-                let n_res = r.kind.id().map_or(0, |k| crate::kernels::KERNELS[k].n_res);
+                let n_res = r.n_res();
                 std::iter::repeat(cols).take(n_res)
             }).collect()
         };
@@ -505,7 +504,7 @@ impl<'v> Lowering<'v> {
             return Err((Code::E103, span, m));
         }
         let init: usize = self.init.iter().chain(over_moved.iter().copied())
-            .map(|r| r.kind.id().map_or(0, |k| crate::kernels::KERNELS[k].n_res)).sum();
+            .map(|r| r.n_res()).sum();
         if init < moved.len() {
             return Err((Code::E103, span, format!("a marched body starts where `initially {{ … }}` \
                 says, at every `{u}`: {} places {} numbers against {init} rows", names(&moved),
@@ -758,7 +757,8 @@ impl<'v> Lowering<'v> {
     }
 
     /// `X coincident(under: m, t == τ) x`: the carried point's lift, the point's, the roll's tape
-    /// and the motion's axes, its steps the constants.
+    /// and the motion's axes, its steps the constants.  In a body that states a rate (#377) it is
+    /// one of the body's rows or, in `initially { … }`, of its home's.
     fn carried(&mut self, st: &Stmt, r: &crate::ir::ResolvedRelation<'_>) -> Result<(), Fail> {
         let point = |i: usize| -> Result<Vec<u32>, Fail> {
             let Some(Arg::Ref(rf)) = r.args.get(i).and_then(|a| a.as_ref()) else {
@@ -786,8 +786,8 @@ impl<'v> Lowering<'v> {
         let width = crate::envelope::held::steps_width(&steps);
         let cols: Vec<u32> = x.into_iter().chain(at).chain([t as u32])
             .chain((from..from + width).map(|c| c as u32)).collect();
-        self.rows.push(crate::traced::Row { kind: crate::traced::RowKind::Carried, cols,
-            consts: crate::envelope::held::encode_steps(&steps) });
+        self.push(crate::traced::Row { kind: crate::traced::RowKind::Carried, cols,
+            consts: crate::envelope::held::encode_steps(&steps) }, st.span);
         Ok(())
     }
 }

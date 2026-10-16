@@ -369,7 +369,7 @@ impl<'a> View<'a> {
     fn rate_body(&self) -> crate::rates::Body<'a> {
         let rows = |rs: &[(usize, &'a [f64], &'a [f64])]| -> Vec<crate::rates::Row<'a>> {
             rs.iter().map(|&(kid, cols, consts)| crate::rates::Row {
-                kid,
+                kind: crate::traced::RowKind::Kernel(kid),
                 cols: cols.iter().map(|&c| c as usize).collect(),
                 consts,
             }).collect()

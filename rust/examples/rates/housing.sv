@@ -7,12 +7,14 @@
 //
 // The body runs over `d`, how far the front has moved, marched, and `u`, the eccentric's angle,
 // sampled over half a turn: the bore is symmetric about the line of its lobes, and the other half
-// is this one's mirror. `initially` is the epitrochoid, x = e cos 3u + R cos u,
-// y = e sin 3u + R sin u, in the rotor's plane — the apex's path, which `wankel.sv` has the motion
-// carry the apex along, written out here: a body that states a rate does not yet read a point a
-// motion carries. `nl`, placed at every node square to `rate(p over u)`, is the curve's normal
-// toward the shaft, which its seed at the centre picks; the gauge is `front.sv`'s, and the law
-// moves the front away from `nl` at unit speed: outward.
+// is this one's mirror. `initially` is the Cauchy data, the apex's path: the apex as the rotor's
+// motion carries it (#377), drawn and moved as `wankel.sv` draws and moves it — the rotor's
+// centre `e` from the shaft's, the apex `R` beyond, the rotor turning a third as fast as the
+// shaft against it. Over a turn of the shaft `t` the apex runs the epitrochoid
+// x = e cos t + R cos(t/3), y = e sin t + R sin(t/3), so the eccentric's angle is `u = t/3`.
+// `nl`, placed at every node square to `rate(p over u)`, is the curve's normal toward the shaft,
+// which its seed at the centre picks; the gauge is `front.sv`'s, and the law moves the front away
+// from `nl` at unit speed: outward.
 //
 // Outward, a convex arc never folds: its parallel curves only grow. An epitrochoid with R/e
 // between 3 and 9 is not convex: its waist, at u = 90°, curves inward, its radius of curvature
@@ -28,16 +30,27 @@
 // turned clockwise, normalised): a point of the bore stands `s` from the curve the seal's centre
 // runs on, square to it. The fold at the waist, at d = (R − 3e)²/(9e − R) = 15.
 unit mm
-use std
+use std (right_of)
 
 R := 75mm                 // the generating radius, the rotor's centre to an apex
 e := 15mm                 // the eccentricity, the shaft's crank
 s := 3mm                  // the apex seal's tip radius
 
-component Bore(c: point, x1: point, y1: point, z1: point, R: Length, e: Length, d: Length,
-               u: Angle) {
-  xa := line(c, x1)
-  ya := line(c, y1)
+// -- the motion, as `wankel.sv` draws it --------------------------------------------------------
+in std.top {
+  private centre := point
+  centre coincident std.top.origin
+  private hub := point hint((15, 0))
+  hub right_of(d: e) centre
+  apex := point hint((90, 0))
+  apex right_of(d: R) hub
+}
+counter := motion(about: centre, ratio: -1)
+spin := motion(about: hub, ratio: -2 / 3)
+rotor_turn := motion(spin, relative_to: counter)      // the rotor, seen from the housing
+
+// -- the bore -----------------------------------------------------------------------------------
+component Bore(c: point, z1: point, apex: point, m: motion, d: Length, u: Angle) {
   za := line(c, z1)
   p := point hint((0, 0, 0))
   k := point hint((0, 0, 0))
@@ -48,20 +61,14 @@ component Bore(c: point, x1: point, y1: point, z1: point, R: Length, e: Length, 
   rate(p over d) parallel nl                 // the gauge: square to itself
   rate(p over d) distance(-1, along: nl)     // the law: at unit speed, away from `nl`
   initially {
-    c distance(e * cos(3 * u) + R * cos(u), along: xa) p   // the Cauchy data: the epitrochoid
-    c distance(e * sin(3 * u) + R * sin(u), along: ya) p
-    c distance(0mm, along: za) p
+    p coincident(under: m, t == 3 * u) apex  // the Cauchy data: the apex the rotor carries
   }
 }
 
 c := point hint((0, 0, 0))
 fix((0, 0, 0)) c
-x1 := point hint((10, 0, 0))
-fix((10, 0, 0)) x1
-y1 := point hint((0, 10, 0))
-fix((0, 10, 0)) y1
 z1 := point hint((0, 0, 10))
 fix((0, 0, 10)) z1
 
-bore := Bore(c, x1, y1, z1, R: R, e: e).p over (d in (0mm, s), u in (0deg, 180deg))
-past := Bore(c, x1, y1, z1, R: R, e: e).p over (d in (0mm, 20mm), u in (0deg, 180deg))
+bore := Bore(c, z1, apex, rotor_turn).p over (d in (0mm, s), u in (0deg, 180deg))
+past := Bore(c, z1, apex, rotor_turn).p over (d in (0mm, 20mm), u in (0deg, 180deg))
