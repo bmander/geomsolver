@@ -64,8 +64,12 @@ written, its tube at Pappus to 1e-9 and each bend's plane; a disc swept from a c
 line at πr²h; the refusals. `use std` gives axes
 `std.x/y/z/back`, planes `std.front` (x, z), `std.top` (x, y), `std.side` (y, z), `std.up` (z,
 back), and `std.origin` (in front, fixed) — flattened after the document, present whenever the
-document says `use std` (the workspace offers them as places to draw). `std.Turned(o, t)` is a
-frame turned within a plane (`.axes` the plane, `.u` the line o→t). No coordinate-placement
+document says `use std` (the workspace offers them as places to draw). **A plane may be carried**
+(#366, [0.138]): `n := base carried(under: m, at: τ)` is `base` where the motion's pose at the
+roll `τ` carries it, origin, axes and normal (`generating.md`) — a plane over the lines from its
+carried origin to its carried axes' points, each seeded where the motion carries it before the
+planes are placed (`Sketch::seed_carried`), so its axes run with their lines.  `std.Turned(o, t)`
+is a frame turned within a plane (`.axes` the plane, `.u` the line o→t). No coordinate-placement
 helper: model contours with alignments, incidences, symmetry and dimensions — `std`'s words
 `offset`, `right_of`/`left_of`/`above`/`below`, `coords`, `on_u`/`on_v` are pairs of those
 dimensions (an ordinate and an ordinate or a level) said as one statement, still dimensions;

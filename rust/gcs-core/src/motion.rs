@@ -248,6 +248,15 @@ impl Family {
         }
     }
 
+    /// The slide this motion is, where it is one translation: its unit direction and its advance a
+    /// turn of the parameter.
+    pub fn sliding(&self) -> Option<([f64;3],f64)> {
+        match *self.root() {
+            Step::Translation {axis,advance,..} => Some((unit(axis)?,advance)),
+            _ => None,
+        }
+    }
+
     /// The turn this motion is, where it is one rotation about one axis: a screw (`screw`), or a
     /// rotation with no advance (`advance` nothing) — what a ball under it sweeps is the tube about
     /// a helix or an arc of a circle (`solid::canal`, #238).

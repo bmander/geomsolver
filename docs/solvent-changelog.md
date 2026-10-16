@@ -4,6 +4,22 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.138] One notion of a moving frame: station words carried by a frame's motion.** A frame
+that moves as a number runs is a frame's motion read at a roll (§6.14). `X coincident(under: m,
+at: τ) x` carries a point to a roll the statement states — an Angle, so it may be written over a
+face family's running number and is read again at every station, or name an unknown the solve
+finds; drawn in a plane, the point is held there by two equations; `seen_from: g` reads it as `g`
+sees it. `n := base carried(under: m, at: τ)` carries a plane whole, its origin, axes and normal.
+The standard library's `Helix`, `OnHelix` and `Twisted` are written over frames so (`std.Turn`
+with `advance:` a screw, `std.Spin` a turn in a view), and contain no `cos` or `sin` of the
+running number; their stations are what they were, but the frames of `lofts/spring.sv`,
+`lofts/ribbon.sv` and `docs/lofts/l0/spring.sv`'s thread, which through 0.137 could stand turned
+against their own lines where the solve started them, now run with them. A face family every
+relation of whose station reading its running number is a point one frame's motion carries, at a
+roll affine in it, is that motion's sweep (§6.9): `lofts/spring.sv`'s wire and
+`swept_spring.sv`'s ball are one tube on one screw, and both export exactly. (No measurement in a
+motion's numbers, the issue's first stage, is 0.135's E107.) (Issue #366.)
+
 **[0.137] Frames: joints in the solve.** A frame's ratio or advance no `fix` states — `std.Turn`
 or `std.Spin` given no `ratio:`, a number pinned to an unknown — is an unknown of the solve, a
 column of every relation reading the motion, and a joint nothing holds is freedom the diagnosis

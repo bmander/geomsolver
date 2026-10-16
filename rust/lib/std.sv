@@ -568,57 +568,59 @@ component On(g: path, up: axis, s: Scalar) {
   }
 }
 
-// A screw's station (#243 L6): the frame of `base` turned `360deg · turns · s` about its normal
-// through its origin — the screw's axis — and risen `pitch · turns · s` along it.  `n` is `base`
-// so carried, square to the axis: a section drawn in it (an auger's flight, a helical gear's
-// tooth) sweeps a twisted prism.  `axial` is the plane through the axis, its `u` running out along
-// `n.u` and its `v` up the axis: a section drawn in it (a thread's) sweeps a thread.  Every
-// direction is an ordinate in `base`'s frame, so nothing is held by a seed: the screw turns from
-// `base.u` toward `base.v` as it rises, right-handed for a positive pitch, left for a negative.
+// A screw's station (#243 L6, #366): the frame of `base` carried by the screw about its normal
+// through its origin — turned `360deg · turns · s` and risen `pitch · turns · s` along it, a
+// motion read at a roll.  `n` is `base` so carried, square to the axis: a section drawn in it (an
+// auger's flight, a helical gear's tooth) sweeps a twisted prism.  `axial` is the plane through
+// the axis, `n` turned a quarter about its `u`: its `u` runs out along `n.u` and its `v` up the
+// axis, and a section drawn in it (a thread's) sweeps a thread.  The screw turns from `base.u`
+// toward `base.v` as it rises, right-handed for a positive pitch, left for a negative.
 component Helix(base: plane, pitch: Length, turns: Scalar, s: Scalar) {
-  private o := point
-  o coincident base.normal
-  base.origin distance(pitch * turns * s, along: base.normal) o
-  private a := point
-  a coords(du: 10mm * cos(360deg * turns * s), dv: 10mm * sin(360deg * turns * s)) base
-  base.origin distance(pitch * turns * s, along: base.normal) a
-  private b := point
-  b coords(du: -10mm * sin(360deg * turns * s), dv: 10mm * cos(360deg * turns * s)) base
-  base.origin distance(pitch * turns * s, along: base.normal) b
-  private c := point
-  c coincident base.normal
-  base.origin distance(pitch * turns * s + 10mm, along: base.normal) c
-  private construction out := line(o, a)
-  private construction across := line(o, b)
-  private construction rise := line(o, c)
-  n := plane(u: out, v: across)
-  axial := plane(u: out, v: rise)
+  // the screw: a frame turning about the line up `base`'s normal from its origin
+  private up := point hint(at: base.origin, along: base.normal, by: 10)
+  up coincident base.normal
+  base.origin distance(10mm, along: base.normal) up
+  private construction spindle := line(base.origin, up)
+  private screw := frame
+  Turn(screw, about: spindle, ratio: 1, advance: pitch)
+  n := base carried(under: screw, at: 360deg * turns * s)
+  // and `n` turned a quarter about its `u`
+  in n {
+    private x := point
+  }
+  fix((10, 0)) x
+  private construction out := line(n.origin, x)
+  private stand := frame
+  Turn(stand, about: out, ratio: 1)
+  axial := n carried(under: stand, at: 90deg)
 }
 
 // A helix's normal station: the plane square to the helix of radius `r` about `base`'s normal
 // (`Helix`'s screw), rising `pitch` a turn, at `turns · s` turns from `base.u`.  Its `u` runs out
 // from the axis and its `v` up the axis leaned back by the helix's lead angle, so a section drawn
-// in it (a spring's wire) is carried along the helix, square to it at every station.  Like
-// `Helix`, every direction is an ordinate in the drawn `base`'s frame: against `Helix`'s axial
-// plane, which moves, its `normal` would keep its sense only by continuity.
+// in it (a spring's wire) is carried along the helix, square to it at every station.  Where the
+// helix starts, the plane is `base` tilted about its `u` axis until `v` leans back from up the
+// axis by the lead angle — `90deg + atan2(pitch, 2 * pi * r)` from `base.v` — and slid `r` out
+// along it, a screw about that axis read at its turn; the screw about the normal carries it from
+// there (#366), so its `normal` keeps its sense by the motions, never by continuity.
 component OnHelix(base: plane, r: Length, pitch: Length, turns: Scalar, s: Scalar) {
-  // the helix's tangent is (2πr·t̂ + pitch·ẑ) / lead over a turn, t̂ the way the screw turns
-  private m := point
-  m coords(du: r * cos(360deg * turns * s), dv: r * sin(360deg * turns * s)) base
-  base.origin distance(pitch * turns * s, along: base.normal) m
-  private a := point
-  a coords(du: (r + 10mm) * cos(360deg * turns * s), dv: (r + 10mm) * sin(360deg * turns * s)) base
-  base.origin distance(pitch * turns * s, along: base.normal) a
-  private b := point
-  b coords(du: r * cos(360deg * turns * s)
-               + 10mm * pitch / hypot(2 * pi * r, pitch) * sin(360deg * turns * s),
-           dv: r * sin(360deg * turns * s)
-               - 10mm * pitch / hypot(2 * pi * r, pitch) * cos(360deg * turns * s)) base
-  base.origin distance(pitch * turns * s + 10mm * 2 * pi * r / hypot(2 * pi * r, pitch),
-                       along: base.normal) b
-  private construction out := line(m, a)
-  private construction lean := line(m, b)
-  n := plane(u: out, v: lean)
+  // the helix's screw, as `Helix`'s
+  private up := point hint(at: base.origin, along: base.normal, by: 10)
+  up coincident base.normal
+  base.origin distance(10mm, along: base.normal) up
+  private construction spindle := line(base.origin, up)
+  private screw := frame
+  Turn(screw, about: spindle, ratio: 1, advance: pitch)
+  // where the helix starts: `base` turned about its `u` axis and slid `r` out along it
+  in base {
+    private x := point
+  }
+  fix((10, 0)) x
+  private construction out := line(base.origin, x)
+  private tilt := frame
+  Turn(tilt, about: out, ratio: 1, advance: r * 360deg / (90deg + atan2(pitch, 2 * pi * r)))
+  private start := base carried(under: tilt, at: 90deg + atan2(pitch, 2 * pi * r))
+  n := start carried(under: screw, at: 360deg * turns * s)
 }
 
 // The rotation-minimising frame of a station (#339 D3, #243 L9): the plane `f` through `n`'s
@@ -768,14 +770,19 @@ component Similar(prof: face, from: point, to: point, n: plane, a: point, b: poi
 //   }
 
 // The point `reach` along the plane `n`'s `u` from its origin, turned `twist · s` about the origin
-// within it: where a section drawn once carries the second point of its frame, so the section
-// turns as it runs — `sec := prof mapped(o -> n.origin, x -> tw.t) in n`, `o` and `x` the
-// section's frame `reach` apart (#357).  At `s = 0` it stands on `n`'s own `u`, and the turn is
-// the angle itself, so a twist past a half turn is a twist past a half turn.
+// within it — a turn of `n` about its origin read at that roll (#366): where a section drawn once
+// carries the second point of its frame, so the section turns as it runs — `sec := prof mapped(o
+// -> n.origin, x -> tw.t) in n`, `o` and `x` the section's frame `reach` apart (#357).  At `s = 0`
+// it stands on `n`'s own `u`, and the turn is the angle itself, so a twist past a half turn is a
+// twist past a half turn.
 component Twisted(n: plane, twist: Angle, reach: Length, s: Scalar) {
+  private turn := frame
+  Spin(turn, about: n.origin, on: n, ratio: 1)
   in n {
+    private x := point
+    x on_u(d: reach) n
     t := point
-    t coords(du: reach * cos(twist * s), dv: reach * sin(twist * s)) n
+    t coincident(under: turn, at: twist * s) x
   }
 }
 

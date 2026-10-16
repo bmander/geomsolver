@@ -70,7 +70,12 @@ pub enum Node {
 /// each, how short an edge's run at an end is to have vanished there (mm), and per loop of its
 /// section, per edge in walk order, its wall.
 #[derive(Clone,Debug)]
-pub struct Family { pub spans: Vec<[f64;2]>,pub at: Vec<[f64;6]>,pub vanish: f64,pub loops: Vec<Vec<FamilyWall>> }
+pub struct Family { pub spans: Vec<[f64;2]>,pub at: Vec<[f64;6]>,pub vanish: f64,
+    pub loops: Vec<Vec<FamilyWall>>,
+    /// The motion that carries the section, where the station's statements say so (#366): every
+    /// row reading the running number a point carried by one motion to a roll affine in it.  Over
+    /// the family's whole interval, its first rim the start.  `None`, read off the stations.
+    pub carry: Option<crate::brep::geom::Carry> }
 
 /// A wall of a `Family`: its name, its edge's kind, whether that edge runs round alone, and its
 /// numbers at every station, piece by piece (`brep::family::Run`).
@@ -209,8 +214,17 @@ impl Family {
             Ok(FamilyWall {name:w.get("name").map_or("",Json::as_str).to_string(),run,
                 closed:matches!(field(w,"closed")?,Json::Bool(true)),nodes:field(w,"nodes")?.arr().iter().map(numbers).collect()})
         };
+        let carry = match n.get("carry") {
+            None => None,
+            Some(c) => Some(match field(c,"kind")?.as_str() {
+                "screw" => crate::brep::geom::Carry::Screw {center:point(c,"center")?,
+                    axis:point(c,"axis")?,angle:number(c,"angle")?,advance:number(c,"advance")?},
+                "line" => crate::brep::geom::Carry::Line {delta:point(c,"delta")?},
+                k => return Err(unread(format!("recipe: a family carried by a `{k}`"))),
+            }),
+        };
         Ok(Family {spans:field(n,"spans")?.arr().iter().map(pair).collect(),at,vanish:number(n,"vanish")?,
-            loops:each(field(n,"loops")?.arr(),|l| each(l.arr(),wall))?})
+            loops:each(field(n,"loops")?.arr(),|l| each(l.arr(),wall))?,carry})
     }
 }
 

@@ -155,6 +155,18 @@ beside the free curve, a pursuit refused at its capture, a geodesic on a cone in
 at the closed form its comments give and each claim a theorem, held by `tests/rate_examples.rs`;
 the app lists the folder as one project (`example-catalog.ts`, *Rates*).
 
+**A frame that moves is a motion read at a roll** (#366, [0.138]; the rule is `generating.md`'s):
+a station word's frame (`std.Helix`, `std.OnHelix`, `std.Twisted`) is a motion's pose at a roll
+written over the running number, `X coincident(under: m, at: τ) x` and `n := base carried(under:
+m, at: τ)` — never `cos`/`sin` ordinates of the running number.  The roll is a dimension: a
+station reads it again at every place (`expr::evaluate` over the held number), and one that
+states a rate leans on it as on any number written over its running number (`solid::rated`'s
+`Levers`: its free twin over the running number's column, the built kernel's last column), so a
+carried frame moves along the flow exactly.  `t == τ` is the contact form, its roll the
+relation's own unknown, which a rate runs over (below); a stated roll owns no slot, and a rate of
+a point carried to one runs along the formal its roll is written over.  A family whose station
+is carried so is its motion's sweep (`generating.md`).
+
 **The rate of a contact (#365, [0.130], `contact_rate.rs`, `CKind::Rate`,
 `CKind::RateDistance`):** a contact holds a point at its place, and every statement at that point
 reads the same thing — the contact's **frame** there, the derivative of its place in its slots —

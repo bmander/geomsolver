@@ -194,6 +194,16 @@ stands its planes on the lines between them; the axis is `base`'s normal. Nothin
 seed, and a negative pitch winds left-handed: the right-handed solid mirrored in the base plane.
 `Screwed` is retired (`Helix(…).axial` is its plane); `OnHelix` takes `base` alone.
 
+**Since #366 a screw's station is a motion read at a roll.** `Helix` is `base` carried by a frame's
+screw (`std.Turn` about a line along `base.normal`, `advance: pitch`) to `360deg · turns · s` (`n :=
+base carried(under: screw, at: …)`), `axial` that frame turned a quarter about its `u`, and
+`OnHelix` `base` tilted to the helix's start and carried by the same screw: no `cos` or `sin` of the
+turn is written, and every frame is built from points placed before the solve. The ordinates did not
+ensure what this paragraph said of them: a station's axes could still settle against their lines
+where the solve started them, and `spring.sv`'s and `ribbon.sv`'s drawn stations did. A family so
+carried is the screw's sweep by its statement (`solid::family::stated_carry`), before the fast path
+below reads one off the stations.
+
 **The fast path: a section carried rigidly** (`brep::family::carried`). Where every station is
 the first one moved by one screw (a turn alone and a step along a line included), read off the
 section's points at every node — never off the word — the solid is built exact throughout: each

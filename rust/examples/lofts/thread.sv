@@ -1,8 +1,8 @@
 // A screw thread and an auger's flight (#243 L6): a section carried along a screw.
-// `std.Helix(base, pitch:, turns:, s:)` turns `base`'s frame `360deg · turns · s` about its normal
-// and lifts it `pitch · turns · s` along it. A section drawn in its `axial` plane, through the
-// axis, sweeps a thread; one drawn in `n`, the base so carried, sweeps a twisted prism — a flight.
-// Every direction is an ordinate in `base`'s frame, so nothing is held by a seed, and a negative
+// `std.Helix(base, pitch:, turns:, s:)` carries `base` by the screw about its normal, turned
+// `360deg · turns · s` and lifted `pitch · turns · s` along it (#366). A section drawn in its
+// `axial` plane, through the axis, sweeps a thread; one drawn in `n`, the base so carried, sweeps
+// a twisted prism — a flight. Each is the screw's sweep of its section, exactly, and a negative
 // pitch winds left-handed.
 // Closed forms:
 //   thread: a 2 mm square centred 10 from the axis, 3 turns at a pitch of 4; an axial section

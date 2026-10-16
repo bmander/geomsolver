@@ -985,6 +985,21 @@ pub struct Decl {
     /// document names what it has — where `plane(…)`, the same kind, is a flat frame over two
     /// axes.  False for every other declaration.
     pub bare: bool,
+    /// **A frame a motion carries** (#366), `n := base carried(under: m, at: τ)`: the plane the
+    /// motion's pose at the roll `τ` carries the plane `base` to, its axes and its origin with it.
+    /// The flattener writes the statements a person would (`flatten::carried`); the source keeps
+    /// the one.  `None` for every other declaration.
+    pub carried: Option<CarriedFrame>,
+}
+
+/// What a carried frame is carried from and by (`Decl::carried`, #366): the plane it is the image
+/// of, the word as written, and its arguments as a carried point's are read — `under:` the motion,
+/// the roll after `at:` its number.
+#[derive(Clone, Debug)]
+pub struct CarriedFrame {
+    pub source: Ref,
+    pub word: Name,
+    pub args: Vec<OpArg>,
 }
 
 /// What a spline through a chain's corners names (`Decl::through`): the chain, and the lines (or
@@ -1028,6 +1043,7 @@ impl Decl {
             normal: None,
             sense: None,
             bare: false,
+            carried: None,
         }
     }
 
@@ -1074,6 +1090,7 @@ impl Decl {
             normal: None,
             sense: None,
             bare: false,
+            carried: None,
         }
     }
 }

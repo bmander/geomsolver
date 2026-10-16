@@ -446,6 +446,64 @@ impl Sketch {
         }
     }
 
+    /// **Every point a motion carries to a stated roll seeded where the motion carries it**
+    /// (#366, `CKind::CarriedAt`): in space at `Pose(τ)·x`, drawn in a plane at its shadow there.
+    /// The rows are linear in the point, so the solve would find it from anywhere; but a plane
+    /// drawn over carried points is turned along its lines before the solve (`views::align`), and
+    /// a frame carried past a quarter turn would stand its axes against its lines from where it
+    /// was seeded.  Whether any point moved; the caller puts the hidden points back and places
+    /// the planes again.
+    pub fn seed_carried(&mut self) -> bool {
+        use crate::expr::{self, Aff};
+        let mut moved = false;
+        // a roll written over a face family's running number is worked out at the station the
+        // sketch holds, before the document's expressions are (`expr::evaluate`), as they will be
+        self.refresh_held();
+        let held: BTreeMap<String, Aff> = self.held.iter()
+            .map(|(n, h)| (n.clone(), Aff::of_dim(self.params[h.param as usize].value, h.dim)))
+            .collect();
+        let stated = |a: &Arg| -> f64 {
+            let Arg::Expr(e) = a else { return a.num() };
+            expr::parse_in(&e.text, self.units).ok()
+                .and_then(|p| expr::eval(&p.body, &held).ok())
+                .and_then(|v| v.number())
+                .map_or(e.value, |v| expr::to_arg_units(crate::constraints::SpecKind::Angle, v))
+        };
+        for ci in 0..self.constraints.len() {
+            let c = &self.constraints[ci];
+            if !matches!(c.kind, crate::constraints::CKind::CarriedAt
+                | crate::constraints::CKind::CarriedAtIn) || !c.states_rows() {
+                continue;
+            }
+            let (Arg::Ent(x), Arg::Ent(of), Arg::Ent(m)) = (&c.args[0], &c.args[1], &c.args[2])
+            else { continue };
+            let roll = match c.free {
+                Some(f) => f.m * self.params[f.param as usize].value + f.c,
+                None => stated(&c.args[3]),
+            };
+            let Ok(family) = crate::motion::Family::read(self, m.i()) else { continue };
+            let Ok(pose) = family.at(roll) else { continue };
+            let to = pose.point(self.world_point(of.i()));
+            let p = &self.points[x.i()];
+            let seeds = match (p.z, p.plane) {
+                (Some(z), _) => vec![(p.x, to[0]), (p.y, to[1]), (z, to[2])],
+                (None, Some(pl)) => {
+                    let (a, b) = self.basis(pl as usize).view_coords(to);
+                    vec![(p.x, a), (p.y, b)]
+                }
+                _ => continue,
+            };
+            for (q, v) in seeds {
+                let q = &mut self.params[q as usize];
+                if !q.fixed && v.is_finite() && (q.value - v).abs() > 1e-12 * (1.0 + v.abs()) {
+                    q.value = v;
+                    moved = true;
+                }
+            }
+        }
+        moved
+    }
+
     /// The plane axis `r` is the normal of, where it is one.
     pub fn normal_of(&self, r: usize) -> Option<usize> {
         self.frames.iter().position(|p| p.chart.as_ref().is_some_and(|c| c.normal == Some(r as u32)))

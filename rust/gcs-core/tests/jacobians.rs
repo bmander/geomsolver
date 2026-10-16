@@ -786,6 +786,73 @@ Z coincident(under: twirl, seen_from: spin, t == -35) q2
     }
 }
 
+/// A point carried to a stated roll (#366, `envelope::screw`'s `At` and `AtIn`): in space under a
+/// screw seen from a turn and under a screw about a line of its own, at a roll stated and at one a
+/// free variable names (the twin's last column); drawn in a view under a turn in it, its two rows
+/// along the view's axes — every axis free, so the motion's columns are differentiated too.
+/// Checked at the seeds and at points knocked off them.
+#[test]
+fn carried_at_rows_agree_with_finite_differences() {
+    const SRC: &str = "\
+unit mm
+use std
+o := point hint((0, 0, 0))
+z := point hint((1, 0.5, 10))
+ax := line(o, z)
+a := point hint((0, 30, 0))
+b := point hint((10, 30, 2))
+gear_ax := line(a, b)
+c := point hint((0.5, -1, 0))
+d := point hint((0, -1.5, 10))
+lift_ax := line(c, d)
+spin := frame
+std.Turn(spin, about: ax, ratio: 1)
+gear_turn := frame
+std.Turn(gear_turn, about: gear_ax, ratio: -0.5, advance: 2mm)
+lift := frame
+std.Turn(lift, about: lift_ax, ratio: 1.3, advance: 5mm)
+param theta: Angle hint(25deg)
+x := point hint((3, -2, 5))
+X := point hint((1, 1, 1))
+X coincident(under: gear_turn, seen_from: spin, at: 35deg) x
+Y := point hint((2, 1, 0))
+Y coincident(under: lift, at: -110deg) x
+W := point hint((0, 2, 1))
+W coincident(under: gear_turn, seen_from: spin, at: theta) x
+in std.top {
+  o2 := point hint((1, 2))
+  q2 := point hint((7, 3))
+  T := point hint((4, 4))
+}
+twirl := frame
+std.Spin(twirl, about: o2, on: std.top, ratio: 0.7)
+T coincident(under: twirl, at: 60deg) q2
+";
+    let (prog, errs) = crate::common::parse(SRC);
+    assert!(errs.is_empty(), "{errs:?}");
+    let e = gcs_core::program::elaborate(&prog);
+    assert!(e.ok(), "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
+    let mut sk = e.sketch;
+    let read = |c: &&Constraint| matches!(c.kind, CKind::CarriedAt | CKind::CarriedAtIn);
+    assert_eq!(sk.constraints.iter().filter(read).count(), 4);
+    assert!(sk.constraints.iter().any(|c| c.kind == CKind::CarriedAtIn));
+    assert!(sk.constraints.iter().any(|c| c.kind == CKind::CarriedAt && c.free.is_some()),
+            "a roll left to the solve is read as a free column");
+    let mut rng = Rng::new(366);
+    for round in 0..4 {
+        if round > 0 {
+            for p in sk.params.iter_mut().filter(|p| !p.fixed) {
+                p.value += rng.uniform(-0.05, 0.05) * (1.0 + p.value.abs().min(10.0));
+            }
+        }
+        for c in sk.constraints.iter().filter(read) {
+            let err = check_constraint(&sk, c, 1e-6, 1e-7)
+                .unwrap_or_else(|e| panic!("round {round}: {e}"));
+            assert!(err.is_finite());
+        }
+    }
+}
+
 /// A flank's regularity within its blank (#345 S3, `envelope::regular`): the least area factor of
 /// the Formate pinion's flank where the gear's tooth cuts it in its blank — the inner cone's
 /// envelope, the cone's half an unknown, the worst point on the tool's round — against finite

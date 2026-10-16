@@ -13,10 +13,18 @@
 //! (`std.sv`'s `reciprocal`, a line a force along which does no work on the motion, and `Screw`,
 //! its instantaneous screw axis and its pitch).
 //!
+//! **At a stated roll** (#366), `X coincident(under: m, at: τ) x`: the same rows, `τ` a dimension
+//! the statement states (or a free variable's affine map), so a face family's station may be
+//! carried to a roll written over its running number and read again at every station — the
+//! station words of `std.sv` are motions read so.  Drawn in a plane, `X` is held where the plane
+//! sees the carried point: the two rows along the plane's axes.
+//!
 //! **Layout.** Columns `[X's lift, x's lift, τ, motion…]`, then two lifted ends per axis the motion
 //! turns about or slides along (`held::Moving`).  Constants: the motion's steps
-//! (`held::encode_steps`).  The rows are written once over `kernels::Num`, so the Jacobian is exact
-//! by forward differentiation.
+//! (`held::encode_steps`).  At a stated roll, no `τ` column: `[X's lift, x's lift, (X's plane's û,
+//! v̂), motion…, (a)]`, constants `[free, m, c, steps…]`, the roll `m·a + c` radians where a free
+//! variable `a` is the last column and `c` alone otherwise.  The rows are written once over
+//! `kernels::Num`, so the Jacobian is exact by forward differentiation.
 use super::held::{self, cross, vscale as scale, vsub, Step, STEP};
 use crate::kernels::{Kernel, KernelFn, Num};
 
@@ -25,18 +33,37 @@ use crate::kernels::{Kernel, KernelFn, Num};
 pub enum Reading {
     /// `X coincident(under: m, t == τ) x`: three rows.
     Carried = 0,
+    /// `X coincident(under: m, at: τ) x`, `X` in space: three rows.
+    At = 1,
+    /// The same, `X` drawn in a plane: two rows, along the plane's axes.
+    AtIn = 2,
 }
 
 impl Reading {
-    pub const ALL: [Reading; 1] = [Reading::Carried];
+    pub const ALL: [Reading; 3] = [Reading::Carried, Reading::At, Reading::AtIn];
 
     pub fn rows(self) -> usize {
-        3
+        match self {
+            Reading::Carried | Reading::At => 3,
+            Reading::AtIn => 2,
+        }
     }
 
     /// The columns before the motion's.
     pub fn lead(self) -> usize {
-        7
+        match self {
+            Reading::Carried => 7,
+            Reading::At => 6,
+            Reading::AtIn => 12,
+        }
+    }
+
+    /// The constants before the motion's steps: a stated roll's `[free, m, c]`.
+    pub fn lead_consts(self) -> usize {
+        match self {
+            Reading::Carried => 0,
+            Reading::At | Reading::AtIn => 3,
+        }
     }
 }
 
@@ -52,42 +79,70 @@ pub(crate) fn square_to<T: Num>(d: [T; 3]) -> ([T; 3], [T; 3]) {
 /// A reading's rows over its columns `cols` and the motion's steps `k`, into `out`.  `None` where
 /// the constants are no motion's steps over this many columns.
 pub(crate) fn rows<T: Num>(r: Reading, cols: &[T], k: &[f64], out: &mut [T]) -> Option<()> {
-    let steps = held::read_steps(k)?;
-    if cols.len() != r.lead() + held::steps_width(&steps) || out.len() != r.rows() {
+    let lead = r.lead_consts();
+    let steps = held::read_steps(k.get(lead..)?)?;
+    let width = held::steps_width(&steps);
+    // a stated roll's free variable is the last column
+    let free = lead > 0 && k[0] != 0.0;
+    if cols.len() != r.lead() + width + usize::from(free) || out.len() != r.rows() {
         return None;
     }
-    // `X − Pose(τ)·x`, the roll in degrees
-    let (x, at, t) = (held::col3(cols, 0), held::col3(cols, 3), cols[6]);
-    let deg = T::cst(std::f64::consts::PI / 180.0);
-    let (moved, _) = held::carried(&steps, &cols[r.lead()..], t * deg, at)?;
-    for i in 0..3 {
-        out[i] = x[i] - moved[i];
+    let (x, at) = (held::col3(cols, 0), held::col3(cols, 3));
+    // the roll in radians: the relation's own unknown in degrees, or the number stated
+    let t = match r {
+        Reading::Carried => cols[6] * T::cst(std::f64::consts::PI / 180.0),
+        Reading::At | Reading::AtIn if free => cols[r.lead() + width] * T::cst(k[1]) + T::cst(k[2]),
+        Reading::At | Reading::AtIn => T::cst(k[2]),
+    };
+    let (moved, _) = held::carried(&steps, &cols[r.lead()..r.lead() + width], t, at)?;
+    // `X − Pose(τ)·x`, whole in space or along the axes of the plane `X` is drawn in
+    let d: [T; 3] = std::array::from_fn(|i| x[i] - moved[i]);
+    match r {
+        Reading::Carried | Reading::At => out.copy_from_slice(&d),
+        Reading::AtIn => {
+            let (u, v) = (held::col3(cols, 6), held::col3(cols, 9));
+            out[0] = d[0] * u[0] + d[1] * u[1] + d[2] * u[2];
+            out[1] = d[0] * v[0] + d[1] * v[1] + d[2] * v[2];
+        }
     }
     Some(())
 }
 
-fn res(n: usize, v: &[f64], k: &[f64], out: &mut [f64]) {
-    let r = Reading::Carried;
+fn res_of<const R: usize>(n: usize, v: &[f64], k: &[f64], out: &mut [f64]) {
+    let r = Reading::ALL[R];
     held::block_res(n, v, k, out, r.rows(), |x, kc, o| rows(r, x, kc, o));
 }
 
-fn jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
-    let r = Reading::Carried;
+fn jac_of<const R: usize>(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    let r = Reading::ALL[R];
     held::block_jac(n, v, k, j, r.rows(), |x, kc, o| rows(r, x, kc, o));
 }
 
 /// The kernel of a reading at a block's widths (`system::build_kernel`).
-pub fn kernel(_: Reading, n_par: usize, n_const: usize) -> Kernel {
-    Kernel { name: "carried", n_res: 3, n_par, n_const, degree: 1, res: res as KernelFn,
-             jac: jac as KernelFn, const_jac: None, form: None }
+pub fn kernel(r: Reading, n_par: usize, n_const: usize) -> Kernel {
+    let (res, jac): (KernelFn, KernelFn) = match r {
+        Reading::Carried => (res_of::<0>, jac_of::<0>),
+        Reading::At => (res_of::<1>, jac_of::<1>),
+        Reading::AtIn => (res_of::<2>, jac_of::<2>),
+    };
+    let name = match r {
+        Reading::Carried => "carried",
+        Reading::At => "carried_at",
+        Reading::AtIn => "carried_at_in",
+    };
+    Kernel { name, n_res: r.rows(), n_par, n_const, degree: 1, res, jac, const_jac: None,
+             form: None }
 }
 
-/// The constants a reading of a motion with these steps takes.
-pub fn consts(steps: &[Step]) -> Vec<f64> {
-    held::encode_steps(steps)
+/// The constants a reading of a motion with these steps takes: a stated roll's `[free, m, c]`
+/// (`free` 0 or 1, the roll `m·a + c` radians over a free variable `a`, `c` where there is none),
+/// then the steps.
+pub fn consts(r: Reading, roll: [f64; 3], steps: &[Step]) -> Vec<f64> {
+    let lead = &roll[..r.lead_consts()];
+    [lead, &held::encode_steps(steps)[..]].concat()
 }
 
 /// How many constants a reading of `steps` takes.
-pub fn n_const(steps: &[Step]) -> usize {
-    STEP * steps.len()
+pub fn n_const(r: Reading, steps: &[Step]) -> usize {
+    r.lead_consts() + STEP * steps.len()
 }

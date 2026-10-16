@@ -130,7 +130,14 @@ came from.
   any motion `held::Moving::of_any` reads — a turn about a point of a view too (`Step::Turn`: the
   centre's lift and the view's two axes, the axis their cross), which an envelope in space still
   refuses (`Moving::of`).  `tests/carried.rs` is the gate (the epicycloid against its closed form
-  and the planar envelope, a screw's helix in space).
+  and the planar envelope, a screw's helix in space).  **At a stated roll** ([0.138], #366):
+  `coincident(under: m, at: τ)` — the parser reads the number after `at:` as the relation's own
+  (`op_args`, `OpArg::Dim`), `settle`'s selector `stated` says one stands, and `infix_op` makes it
+  `CKind::CarriedAt`, slots `(p, q, under: Motion, at: Angle)`: a dimension, re-read where a
+  held number is (a face family's station) and free where it names an unknown, undrawn
+  (`undrawn!`); a first point drawn in a plane is `CarriedAtIn` (`reading::in_space`).  Both print
+  `at:` after the motion (`written_parts`, `operator_text`).  What a frame that moves is
+  (`generating.md`).
   **A solid is an operand, and a word may take a connective** (#345 S3, [0.115]): `flank
   regular(>= m, by: tool) within blank` is `CKind::RegularWithin`, `(Envelope, Solid)`, slots
   `(flank: Envelope, blank: Solid, by: Solid, margin: Ratio)` — `SpecKind::Solid` the first solid

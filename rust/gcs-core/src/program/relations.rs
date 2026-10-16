@@ -87,6 +87,8 @@ pub(crate) fn settle(
                 w.sel(n)
                     .or_else(|| (n == "t" && place.is_some()).then(String::new))
                     .or_else(|| (n == "pairs").then(|| pairs.to_string()))
+                    // a number stated, which a carried point's roll is where it is one (#366)
+                    .or_else(|| (n == "stated" && w.dim().is_some()).then(String::new))
             };
             let circle = matches!((a, b), (EntKind::Point, EntKind::Circle) | (EntKind::Circle, EntKind::Point));
             if let (true, Some(at)) = (word == "coincident" && circle, place) {
@@ -497,7 +499,9 @@ fn carried_motion(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) -> Option<Option<R
 fn riding_point(cx: &mut Elab<'_>, r: &Relation, w: &crate::syntax::Written, seen: Option<usize>,
                 seen_ref: Option<&Ref>, st: &Stmt) -> Option<Option<Relation>> {
     use crate::syntax::OpArg;
-    let rolls = w.args.iter().any(|a| matches!(a, OpArg::Slot { key, .. } if key.text == "t"));
+    // a roll the relation owns, `t == τ`, or one it states, `at: τ` (#366)
+    let rolls = w.args.iter().any(|a| matches!(a, OpArg::Slot { key, .. } if key.text == "t")
+        || matches!(a, OpArg::Dim(..)));
     if w.word.text != "coincident" || w.ops.len() != 2 || !rolls {
         return None;
     }

@@ -418,11 +418,13 @@ impl Constraint {
             let (n_par, n_const) = parts.map_or((0, 0), |p| (p.width(), p.n_const()));
             return Key::Regular { n_par, n_const };
         }
-        // a motion's twist read, at its block's widths (#326)
+        // a motion's twist read, at its block's widths (#326) — a stated roll's free variable
+        // its last column (#366)
         if let Some(r) = self.kind.motion_reading() {
             let parts = self.motion_parts(sk);
+            let free = usize::from(self.free.is_some());
             let (n_par, n_const) = parts.map_or((0, 0), |p| {
-                (r.lead() + p.width(), crate::envelope::screw::n_const(&p.steps))
+                (r.lead() + p.width() + free, crate::envelope::screw::n_const(r, &p.steps))
             });
             return Key::Motion { reading: r as u8, n_par, n_const };
         }

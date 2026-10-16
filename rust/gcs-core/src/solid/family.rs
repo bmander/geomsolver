@@ -116,7 +116,7 @@ fn part_of(sk: &Sketch, face: u32, station: &[EntRef], prefix: &str) -> (Part, V
     // a plane's normal moves with its plane, though it is minted where something reads it, under
     // no name of the station's (`Sketch::plane_normal`)
     let normals = station.iter().filter(|e| e.kind == EntKind::Frame)
-        .filter_map(|e| sk.frames[e.i()].normal)
+        .filter_map(|e| sk.frames[e.i()].chart.as_ref()?.normal)
         .map(|n| EntRef::new(EntKind::Axis, n as usize));
     let inside: BTreeSet<EntRef> = station.iter().copied().chain(normals).collect();
     // what the station is made of moves with it, though something outside it shares it — a
@@ -139,8 +139,9 @@ fn part_of(sk: &Sketch, face: u32, station: &[EntRef], prefix: &str) -> (Part, V
         }
         let mut ps = sk.entity_params(e);
         ps.retain(|p| !own.contains(p));
-        if e.kind == EntKind::Frame {
-            let pl = &sk.frames[e.i()];
+        // a frame with axes is held by them and its place; a bare one has nothing to hold
+        if let Some(pl) = (e.kind == EntKind::Frame).then(|| sk.frames[e.i()].chart.as_ref())
+            .flatten() {
             ps.extend(pl.o);
             for ax in [pl.u, pl.v] {
                 ps.extend(sk.axes[ax as usize].a);
@@ -1397,7 +1398,86 @@ pub(crate) fn walls(sk: &Sketch, si: usize) -> Result<Walls, String> {
                 .collect(),
         }).collect()
     }).collect();
-    Ok(Walls { spans, at, vanish: fam.tol, loops })
+    Ok(Walls { spans, at, vanish: fam.tol, loops, carry: stated_carry(sk, si) })
+}
+
+/// **A family its statements say a motion carries** (#366 S3): one whose every row reading its
+/// running number is a point carried by one motion (`CKind::CarriedAt`) to a roll affine in that
+/// number, the motion one turn or screw about one axis, or one slide — `std.Helix`'s,
+/// `std.OnHelix`'s and any frame `carried(under: m, at: a·s + b)`.  It is that motion's sweep of
+/// its section: the carry over the family's interval, its first rim the start, which
+/// `brep::family` builds the walls on — exact by the statement, the axis, the turn and the rise the motion's own — where
+/// it reads the stations for one otherwise.  Recognised by what is stated, never by a word's
+/// name; every wall is still held to the general one there, so a section the statements leave
+/// tied to something the motion does not carry is built wall by wall.  `None` for a family over
+/// a chain, one that states a rate, and one any other row reads the running number of.
+fn stated_carry(sk: &Sketch, si: usize) -> Option<crate::brep::geom::Carry> {
+    use crate::constraints::{Arg, CKind};
+    use crate::expr::Aff;
+    let SolidDef::Family { held, from, to, legs, .. } = &sk.solids[si].def else { return None };
+    if legs.len() > 1 || super::rated::states_rates(sk, held) {
+        return None;
+    }
+    let hp = sk.held.get(held)?.param;
+    let env = |s: f64| -> BTreeMap<String, Aff> {
+        sk.held.iter().map(|(n, h)| {
+            let v = if n == held { s } else { sk.params[h.param as usize].value };
+            (n.clone(), Aff::of_dim(v, h.dim))
+        }).collect()
+    };
+    // the roll each carried row states, at the family's ends and its middle (radians)
+    let (a, b) = (from.value, to.value);
+    let ss = [a, (a + b) / 2.0, b];
+    let mut said: Option<(usize, [f64; 3])> = None;
+    for c in sk.constraints.iter().filter(|c| c.states_rows()) {
+        let pinned = c.args.iter().any(|x| *x == Arg::Param(hp))
+            || c.free.is_some_and(|f| f.param == hp);
+        let reads = |t: &&str| {
+            crate::expr::parse_in(t, sk.units).is_ok_and(|p| p.body.deps().contains(held))
+        };
+        let texts: Vec<&str> = c.args.iter().filter_map(|x| match x {
+            Arg::Expr(e) => Some(e.text.as_str()),
+            _ => None,
+        }).filter(reads).collect();
+        if !pinned && texts.is_empty() {
+            continue;
+        }
+        if pinned || c.free.is_some() || !matches!(c.kind, CKind::CarriedAt | CKind::CarriedAtIn) {
+            return None;
+        }
+        let Arg::Ent(m) = c.args[2] else { return None };
+        let body = crate::expr::parse_in(texts[0], sk.units).ok()?.body;
+        let mut roll = [0.0; 3];
+        for (r, &s) in roll.iter_mut().zip(&ss) {
+            let v = crate::expr::eval(&body, &env(s)).ok()?.number()?;
+            *r = crate::expr::to_arg_units(crate::constraints::SpecKind::Angle, v);
+        }
+        let alike = |p: &[f64; 3], q: &[f64; 3]| p.iter().zip(q)
+            .all(|(x, y)| (x - y).abs() <= 1e-12 * (1.0 + x.abs()));
+        match &said {
+            None => said = Some((m.i(), roll)),
+            Some((m0, r0)) if *m0 == m.i() && alike(r0, &roll) => {}
+            _ => return None,
+        }
+    }
+    let (m, roll) = said?;
+    // affine in the running number: the middle midway between the ends
+    if (roll[1] - (roll[0] + roll[2]) / 2.0).abs() > 1e-12 * (1.0 + roll[1].abs()) {
+        return None;
+    }
+    let turn = roll[2] - roll[0];
+    let motion = crate::motion::Family::read(sk, m).ok()?;
+    let tau = std::f64::consts::TAU;
+    if let Some(s) = motion.turning() {
+        return Some(crate::brep::geom::Carry::Screw {
+            center: s.origin,
+            axis: s.axis,
+            angle: s.ratio * turn,
+            advance: s.advance * turn / tau,
+        });
+    }
+    let (d, advance) = motion.sliding()?;
+    Some(crate::brep::geom::Carry::Line { delta: d.map(|x| x * advance * turn / tau) })
 }
 
 /// A face family's walls as the recipe writes them (`walls`): every point in millimetres about the
@@ -1429,9 +1509,25 @@ pub(crate) fn json(f: &Walls, w: &crate::brep::recipe::Writer) -> crate::json::J
         }
         o
     }).collect())).collect();
-    object([("kind", "family".into()),
+    let mut o = object([("kind", "family".into()),
         ("spans", Json::Arr(f.spans.iter().map(|s| list(s)).collect())),
         ("at", Json::Arr(f.at.iter().map(|s| list(s)).collect())),
         ("vanish", (f.vanish * w.scale).into()),
-        ("loops", Json::Arr(loops))])
+        ("loops", Json::Arr(loops))]);
+    // the motion carrying it, where the statements say one (#366): a point moved and scaled, a
+    // direction as it is, a length scaled
+    let v3 = |v: V| list(&v);
+    match f.carry {
+        Some(crate::brep::geom::Carry::Screw { center, axis, angle, advance }) => {
+            o.set("carry", object([("kind", "screw".into()),
+                ("center", v3(w.moved(center.map(|x| x * w.scale)))), ("axis", v3(axis)),
+                ("angle", angle.into()), ("advance", (advance * w.scale).into())]));
+        }
+        Some(crate::brep::geom::Carry::Line { delta }) => {
+            o.set("carry", object([("kind", "line".into()),
+                ("delta", v3(delta.map(|x| x * w.scale)))]));
+        }
+        None => {}
+    }
+    o
 }

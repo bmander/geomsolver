@@ -274,6 +274,7 @@ impl<'a> P<'a> {
             normal,
             sense,
             bare: false,
+            carried: None,
         })
     }
 
@@ -343,6 +344,7 @@ impl<'a> P<'a> {
             normal: None,
             sense: None,
             bare: false,
+            carried: None,
         });
     }
 
@@ -1001,7 +1003,7 @@ impl<'a> P<'a> {
             seed:vec![],seed_text:vec![],seed_spans:vec![],hint_span:None,knots:None,weights:None,curve:None,
             computed:None,class,class_span,seed_at:None,seed_names:vec![],sweep:None,seen_from,
             angular_span:Some(crate::syntax::AngularSpan {from,to,side,ease:None}),
-            membership:Membership::default(),list_span:Span::new(start.lo as usize,end),close:None,mint_close:None,through:None,normal:None,sense:None,bare:false,
+            membership:Membership::default(),list_span:Span::new(start.lo as usize,end),close:None,mint_close:None,through:None,normal:None,sense:None,bare:false,carried:None,
         })
     }
 
@@ -1089,7 +1091,7 @@ impl<'a> P<'a> {
             seed:vec![],seed_text:vec![],seed_spans:vec![],hint_span:None,knots:None,weights:None,curve:None,
             computed:None,class,class_span,seed_at:None,seed_names:vec![],sweep:None,seen_from,
             angular_span:Some(crate::syntax::AngularSpan {from,to,side:None,ease}),
-            membership:Membership::default(),list_span:Span::new(start.lo as usize,end),close:None,mint_close:None,through:None,normal:None,sense:None,bare:false,
+            membership:Membership::default(),list_span:Span::new(start.lo as usize,end),close:None,mint_close:None,through:None,normal:None,sense:None,bare:false,carried:None,
         })
     }
 
@@ -1148,6 +1150,7 @@ impl<'a> P<'a> {
             normal: None,
             sense: None,
             bare: true,
+            carried: None,
         })
     }
 

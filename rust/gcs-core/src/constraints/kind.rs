@@ -158,6 +158,20 @@ pub enum CKind {
     /// degrees, pinned or solved) and the motion's axes.  In a traced body, `τ` an expression in
     /// the running formal: a contact seen from a turning member.
     CarriedPoint,
+    /// **A point a motion carries to a stated roll** (#366, `envelope::screw`): `X
+    /// coincident(under: m, at: τ) x`, `X = Pose(τ)·x` with `τ` a **dimension** — an angle the
+    /// statement states, not an unknown the relation owns — so it may be written over a face
+    /// family's running number and read again at every station (`at: 360deg * turns * s`), and it
+    /// may name a free variable (its twin is the same built kernel, the unknown its last column).
+    /// Three rows over both points' lifts and the motion's axes, `X` standing in space; drawn in a
+    /// plane, it is `CarriedAtIn`.  What a carried frame is made of (`n := base carried(under: m,
+    /// at: τ)`).
+    CarriedAt,
+    /// **`CarriedAt` read in the plane its point is drawn in** (#366): `X` drawn in `n` is held
+    /// where `n` sees the carried point — two rows, `(X − Pose(τ)·x)·n.u` and `·n.v`, the plane's
+    /// axes columns too — so a point turned within its own plane (`std.Twisted`'s) is held by
+    /// exactly as many rows as it has numbers.  `program::reading` turns a `CarriedAt` into it.
+    CarriedAtIn,
     /// **A generated flank regular within its blank** (#345 S3, `envelope::regular`): `flank
     /// regular(>= m, by: tool) within blank`, the least area factor the flank — a held envelope,
     /// its source a face of `tool` — takes over the part of it the tool cuts within `blank`,
@@ -425,7 +439,7 @@ impl FamilyKernel {
 }
 
 /// Every concrete constraint type, in the order the registry lists them.
-pub const ALL_KINDS: [CKind; 83] = [
+pub const ALL_KINDS: [CKind; 85] = [
     CKind::Coincident,
     CKind::Distance,
     CKind::Midpoint,
@@ -509,6 +523,8 @@ pub const ALL_KINDS: [CKind; 83] = [
     CKind::Rate,
     CKind::RateDistance,
     CKind::TangentCircleAt3,
+    CKind::CarriedAt,
+    CKind::CarriedAtIn,
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -741,6 +757,8 @@ impl CKind {
             CKind::PointOnEnvelope => "PointOnEnvelope",
             CKind::PointOnMeshing => "PointOnMeshing",
             CKind::CarriedPoint => "CarriedPoint",
+            CKind::CarriedAt => "CarriedAt",
+            CKind::CarriedAtIn => "CarriedAtIn",
             CKind::RegularWithin => "RegularWithin",
             CKind::PointOnTraced => "PointOnTraced",
             CKind::Project => "Project",
@@ -951,6 +969,9 @@ impl CKind {
             ],
             // the point carried, the point it is carried from, the motion and the roll
             CKind::CarriedPoint => &[("p", S::Point), ("q", S::Point), ("under", S::Motion), ("t", S::Param)],
+            CKind::CarriedAt | CKind::CarriedAtIn => {
+                &[("p", S::Point), ("q", S::Point), ("under", S::Motion), ("at", S::Angle)]
+            }
             // the flank, the blank it is cut within, the tool whose face its source is, and the
             // least area factor (#345)
             CKind::RegularWithin => &[
@@ -1142,8 +1163,8 @@ impl CKind {
             // (`syntax::operator_text`), or as the tangent it is
             CKind::Rate => ("parallel", Infix),
             CKind::RateDistance => ("distance", Infix),
-            // a point as the moving frame sees it (#326)
-            CKind::CarriedPoint => ("coincident", Infix),
+            // a point as the moving frame sees it (#326), at a stated roll too (#366)
+            CKind::CarriedPoint | CKind::CarriedAt | CKind::CarriedAtIn => ("coincident", Infix),
             // a flank's regularity within a blank (#345): written `regular(…) within`
             CKind::RegularWithin => ("regular", Infix),
             // a body traced in space (#326): a point on it, and at a point already on it a line
@@ -1500,8 +1521,8 @@ impl CKind {
     /// names it, and nothing may ask `kernel()` for it.
     pub fn built(self) -> bool {
         matches!(self, CKind::SplineLength | CKind::Stationary | CKind::CurveTouchesLine
-                       | CKind::CarriedPoint | CKind::RegularWithin | CKind::Rate
-                       | CKind::RateDistance)
+                       | CKind::CarriedPoint | CKind::CarriedAt | CKind::CarriedAtIn
+                       | CKind::RegularWithin | CKind::Rate | CKind::RateDistance)
             || self.envelope_contact().is_some()
             || self.meshing_contact().is_some()
             || self.traced_contact().is_some()
@@ -1523,6 +1544,8 @@ impl CKind {
         use crate::envelope::screw::Reading;
         Some(match self {
             CKind::CarriedPoint => Reading::Carried,
+            CKind::CarriedAt => Reading::At,
+            CKind::CarriedAtIn => Reading::AtIn,
             _ => return None,
         })
     }
@@ -1621,6 +1644,8 @@ impl CKind {
             | CKind::PointOnMeshing
             // a point a motion carries (#326), and a rate's distance (#365): no contact
             | CKind::CarriedPoint
+            | CKind::CarriedAt
+            | CKind::CarriedAtIn
             | CKind::RateDistance
             // a flank's regularity (#345): no contact
             | CKind::RegularWithin
@@ -1729,7 +1754,7 @@ impl CKind {
             CKind::RegularWithin => {
                 panic!("a flank's regularity is read by a kernel built at its operands' widths")
             }
-            CKind::CarriedPoint => {
+            CKind::CarriedPoint | CKind::CarriedAt | CKind::CarriedAtIn => {
                 panic!("a point a motion carries is read by a kernel built at its operands' widths")
             }
             CKind::Rate | CKind::RateDistance => {
@@ -1895,8 +1920,10 @@ impl CKind {
             | CKind::PointOnEnvelope
             | CKind::PointOnMeshing
             // nor a point a motion carries (#326), nor a rate: its free twin is its source's own
-            // (#365)
+            // (#365), and a stated roll's its built kernel's, the unknown its last column (#366)
             | CKind::CarriedPoint
+            | CKind::CarriedAt
+            | CKind::CarriedAtIn
             | CKind::Rate
             | CKind::RateDistance
             | CKind::RegularWithin
@@ -1969,6 +1996,8 @@ impl CKind {
                 | CKind::PointOnEnvelope
                 | CKind::PointOnMeshing
                 | CKind::CarriedPoint
+                | CKind::CarriedAt
+                | CKind::CarriedAtIn
                 | CKind::RateDistance
                 | CKind::RegularWithin
                 | CKind::PointOnTraced

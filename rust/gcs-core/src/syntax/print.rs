@@ -315,6 +315,15 @@ fn write_decl(out: &mut String, d: &Decl) {
         out.push_str(&n.text);
         out.push_str(" := ");
     }
+    // a frame a motion carries is the image as written (#366)
+    if let Some(c) = &d.carried {
+        write_ref(out, &c.source);
+        out.push(' ');
+        out.push_str(&c.word.text);
+        let (parts, _) = written_parts(&c.args, false);
+        out.push_str(&format!("({})", parts.join(", ")));
+        return;
+    }
     // a computed point is its formula, and carries no clause a solve could write
     if let Some([(x, _), (y, _)]) = &d.computed {
         out.push_str(&format!("point(x: {x}, y: {y})"));
@@ -730,9 +739,13 @@ pub(crate) fn written_parts(args: &[OpArg], pairs: bool) -> (Vec<String>, Vec<St
     let mut source: Option<usize> = None;
     let mut hints: Vec<String> = Vec::new();
     let mut bound = None;
+    // a carried point's roll, stated, goes after the motion by its label (#366)
+    let under = args.iter().any(|a| matches!(a, OpArg::Named(n, _) if n.text == "under"));
+    let mut roll: Option<String> = None;
     for a in args {
         match a {
             OpArg::Bound { cmp, hi, .. } => bound = Some((*cmp, hi.as_ref().map(|h| &h.0))),
+            OpArg::Dim(t, _) if under => roll = Some(format!("at: {t}")),
             OpArg::Named(n, v) => parts.push(format!("{}: {}", n.text, sel_text(v))),
             OpArg::Ent(r) => {
                 let mut s = String::new();
@@ -763,6 +776,7 @@ pub(crate) fn written_parts(args: &[OpArg], pairs: bool) -> (Vec<String>, Vec<St
             }
         }
     }
+    parts.extend(roll);
     // a bound is said before its number, which leads the parentheses (§9.6)
     if let (Some((cmp, hi)), Some(d)) = (bound, parts.first_mut()) {
         *d = bound_text(cmp, d, hi.map(|h| h.as_str()));
@@ -883,6 +897,12 @@ pub fn operator_text(kind: CKind, args: &[Option<Arg>]) -> String {
         } else if sk.takes_ref() && *name == "by" {
             // and the tool a flank is cut by (#345)
             parens.push(format!("by: {}", write_arg(name, *sk, a)));
+        } else if sk.takes_ref() && *name == "under" {
+            // and the motion a point is carried by (#326)
+            parens.push(format!("under: {}", write_arg(name, *sk, a)));
+        } else if sk.is_dimension() && *name == "at" {
+            // and the roll it is carried to, stated after the motion by its label (#366)
+            parens.push(format!("at: {}", dim_text(a)));
         } else if sk.takes_ref() {
             ents.push(write_arg(name, *sk, a));
         } else if sk.is_param() {

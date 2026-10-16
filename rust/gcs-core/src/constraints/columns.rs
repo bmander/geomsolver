@@ -82,9 +82,15 @@ impl Constraint {
             let margin = self.kind.dimension_slot().map_or(0.0, |i| self.args[i].num());
             return self.regular_parts(sk).map(|p| p.consts(margin)).unwrap_or_default();
         }
-        // a motion's twist read: its steps (#326)
-        if self.kind.motion_reading().is_some() {
-            return self.motion_parts(sk).map(|p| crate::envelope::screw::consts(&p.steps))
+        // a motion's twist read: its steps (#326), after a stated roll's number or the map onto
+        // the free variable it names (#366)
+        if let Some(r) = self.kind.motion_reading() {
+            let roll = match (self.free, self.kind.dimension_slot()) {
+                (Some(f), _) => [1.0, f.m, f.c],
+                (None, Some(i)) => [0.0, 0.0, self.args[i].num()],
+                (None, None) => [0.0; 3],
+            };
+            return self.motion_parts(sk).map(|p| crate::envelope::screw::consts(r, roll, &p.steps))
                 .unwrap_or_default();
         }
         if self.kind == CKind::Stationary {
@@ -307,8 +313,10 @@ impl Constraint {
             RateSource::Traced => self.traced_of().and_then(|e| sk.traced.get(e.i()))
                 .map(crate::traced::consts_of),
             RateSource::Meshing => self.meshing_parts(sk).map(|p| p.consts(sk, 0)),
-            RateSource::Carried => self.motion_parts(sk)
-                .map(|p| crate::envelope::screw::consts(&p.steps)),
+            RateSource::Carried => self.motion_parts(sk).map(|p| {
+                crate::envelope::screw::consts(crate::envelope::screw::Reading::Carried, [0.0; 3],
+                                               &p.steps)
+            }),
             RateSource::Envelope => self.envelope_parts(sk).map(|p| p.consts_at(0)),
         };
         let source = match src {
@@ -767,6 +775,23 @@ impl Constraint {
             CKind::RegularWithin => {
                 self.regular_parts(sk).map(|p| p.columns(sk)).unwrap_or_default()
             }
+            // a point a motion carries to a stated roll (#366): both points' lifts, the axes of
+            // the plane the first is drawn in where it is read there, then the motion's axes
+            CKind::CarriedAt | CKind::CarriedAtIn => {
+                let lift = |p: usize| {
+                    let k = sk.lift_of(p).expect("a relation in space is lifted at the add");
+                    sk.lifts[k].x.to_vec()
+                };
+                let mut lead = [lift(e(0).i()), lift(e(1).i())].concat();
+                if self.kind == CKind::CarriedAtIn {
+                    let pl = sk.plane_of(e(0).i()).and_then(|v| sk.frames[v].chart.as_ref());
+                    lead.extend(pl.into_iter().flat_map(|pl| {
+                        [sk.axes[pl.u as usize].d, sk.axes[pl.v as usize].d].concat()
+                    }));
+                }
+                let parts = self.motion_parts(sk).map(|p| p.columns(sk)).unwrap_or_default();
+                [lead, parts].concat()
+            }
             // a point a motion carries (#326, `envelope::screw`): both points' lifts and the roll,
             // then the motion's axes
             CKind::CarriedPoint => {
@@ -959,8 +984,8 @@ impl Constraint {
             }
             // every point the envelope and the regions' terms read (#345)
             CKind::RegularWithin => self.regular_parts(sk).map(|p| p.lifted()).unwrap_or_default(),
-            // both points, then every point the motion's axes read (#326)
-            CKind::CarriedPoint => {
+            // both points, then every point the motion's axes read (#326, #366)
+            CKind::CarriedPoint | CKind::CarriedAt | CKind::CarriedAtIn => {
                 let parts = self.motion_parts(sk).map(|p| p.lifted()).unwrap_or_default();
                 [vec![e(0).i(), e(1).i()], parts].concat()
             }
