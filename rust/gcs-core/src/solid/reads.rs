@@ -297,8 +297,8 @@ fn motion_reads(sk: &Sketch,motion: u32,values: &mut Vec<f64>) {
         // when the solve moves it (`MotionE::rotation`)
         match m.def {
             crate::model::MotionDef::Rotation {axis,..} => {
-                let (ratio,phase,advance) = m.rotation(sk).unwrap_or((UNREAD,UNREAD,UNREAD));
-                values.extend([0.,axis as f64,ratio,phase,advance]);
+                let (ratio,advance) = m.rotation(sk).unwrap_or((UNREAD,UNREAD));
+                values.extend([0.,axis as f64,ratio,advance]);
                 if let Some(axis) = sk.lines.get(axis as usize) {
                     for p in [axis.p1,axis.p2] { values.extend(sk.world_point(p as usize)); }
                 } else { values.push(UNREAD); }
@@ -310,8 +310,8 @@ fn motion_reads(sk: &Sketch,motion: u32,values: &mut Vec<f64>) {
                 } else { values.push(UNREAD); }
             }
             crate::model::MotionDef::Turn {centre,..} => {
-                let (ratio,phase,_) = m.rotation(sk).unwrap_or((UNREAD,UNREAD,UNREAD));
-                values.extend([3.,centre as f64,ratio,phase]);
+                let (ratio,_) = m.rotation(sk).unwrap_or((UNREAD,UNREAD));
+                values.extend([3.,centre as f64,ratio]);
                 if (centre as usize) < sk.points.len() {
                     values.extend(sk.world_point(centre as usize));
                     let b = sk.plane_of(centre as usize).map(|i| sk.basis(i));

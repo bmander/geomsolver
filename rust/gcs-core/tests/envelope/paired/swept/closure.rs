@@ -23,8 +23,9 @@ impl GearSpace {
         let delta = -TAU/pair.teeth[0].hypot(pair.teeth[1]);
         let mut sk = pair.model.sketch.clone();
         let id = pair.model.map.ent_named("pair.crown_roll").unwrap().i();
-        let gcs_core::model::MotionDef::Rotation {axis,ratio,phase,..} = &mut sk.motions[id].def else { panic!() };
-        *ratio = 0.; *phase = delta;
+        // the neighbour is the crown's roll turned by `delta`: a turn at that ratio read at roll 1
+        let gcs_core::model::MotionDef::Rotation {axis,ratio,..} = &mut sk.motions[id].def else { panic!() };
+        *ratio = delta;
         let axis = &sk.lines[*axis as usize];
         let origin = sk.world_point(axis.p1 as usize);
         let end = sk.world_point(axis.p2 as usize);
@@ -32,7 +33,7 @@ impl GearSpace {
         let turn = format!("{{\"origin\":{origin:?},\"axis\":{axis:?},\"ratio\":0,\"phase\":{delta}}}");
         let neighbor = Family::read(&sk,id).unwrap();
         let field = SpatialField::from(outer).intersection(SpatialField::from(inner)
-            .transformed(&neighbor,0.).unwrap()).unwrap();
+            .transformed(&neighbor,1.).unwrap()).unwrap();
         Self {field,
             definition:format!("{{\"intersection\":[{a},{{\"under\":{turn},\"field\":{b}}}]}}")}
     }

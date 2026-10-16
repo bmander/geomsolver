@@ -31,26 +31,30 @@ The analytic snapshots are made of parts too (`GeneratedEnvelope::new`, `Trimmed
 ordinary relations; `std.Turn`, `std.Spin` and `std.Slide` are the words that hold them.  Before
 the solve `program::motions` reads each joint's kind off its holding statements — `fix`'s
 `ratio`/`advance` slots, `coincident` with a line or point, `parallel` with a view's normal — and
-pushes the `MotionDef` the readers know: a line with ratio 0 `Translation`, a line `Rotation`, a
+pushes the `MotionDef` the readers know: a line with a ratio stated 0 `Translation`, a line
+`Rotation`, a
 view's point with the axis square to it `Turn`, anything else `Joint { axis, ratio, advance }`,
 which `Family::read` reads (ratio 0 a translation) and the planar program and held steps refuse.
 A joint's number no `fix` states is the solve's (stage 5); a measured one is E107.  The joint's
-`motion` is that node; a frame without a joint is the world.  `motions::reading(sk, res, under,
-seen_from)` is every reading's one entry (`under:` on a solid, envelopes, meshings, held and
-planar and extruded envelopes, sweep claims, `under:` relations): the frame's node, or seen from
-another `relative(source, observer)` memoized as `"m seen from g"`; a frame with no joint read
-`under:` "does not move".  A traced body takes a frame formal as its motion's steps (no columns at
+`motion` is that node; a frame without a joint is the world.  `motions::reading_of` is every
+reading's one entry (`under:` on a solid, envelopes, meshings, held and planar and extruded
+envelopes, sweep claims, `under:` relations): the frame `under:` names (`reading`), or with
+`under:` left out what the tool rides on ([frames.md](frames.md)), seen from another frame as
+`relative(source, observer)`, memoized as `"m seen from g"`; a frame with no joint read `under:`
+"does not move".  A traced body takes a frame formal as its motion's steps (no columns at
 rest), `seen_from` composing them, and `traced::{lifted, columns, theta}` read a frame argument's
 joint.  `motion::evaluate` takes radians, returns exact pose and derivative via
 `Sketch::world_point`; relative is observer inverse times source.  Cycles and depth over 64
 refused.  `gcs_frame_sample` (browser `core/frame.ts`, six doubles) samples a frame's joint and
 `gcs_frame_moves` says whether it has one.  `motion(…)`, `m: motion`, `relative_to:` and `phase:`
-are refused naming what they became.  `tests/frames.rs` is the gate.
+are refused naming what they became, and no motion has a phase: `MotionDef`, the steps
+`motion::Family` and `envelope::held` read and the planar tape (`generate::Op::Turn`) turn by the
+ratio times the roll alone.  `tests/frames.rs` is the gate.
 **A chain** (#383 stage 1, [frames plan](../frames-plan.md)): `Sketch::chain(outer, inner)` is the
 pose `outer(τ)·inner(τ)`, lowered as it is pushed and never evaluated as a new step: two joints
-over one axis entity (one line, one centre) whose numbers are stated fold to one joint, ratios,
-phases and advances adding (so `Family::screw`/`turning` and the generating classes read a train
-on one shaft as its one turn); any other pair is `Relative { source: inner, observer: inv }` over a
+over one axis entity (one line, one centre) whose numbers are stated fold to one joint, ratios
+and advances adding (so `Family::screw`/`turning` and the generating classes read a train on one
+shaft as its one turn); any other pair is `Relative { source: inner, observer: inv }` over a
 minted `MotionDef::Inverse { of: outer }` — a joint's inverse runs back (numbers negated), a
 relative's swaps its sides — read so by `Family::read` (`Step::inverse`), the planar program
 (`generated::program_signed`) and the held steps (`envelope::held::motion`, the same axis columns).

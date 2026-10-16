@@ -1188,17 +1188,17 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
     for (i,m) in src.motions.iter().enumerate() {
         let Some(next) = motion_map[i] else { continue; };
         let def = match m.def {
-            crate::model::MotionDef::Rotation {axis,ratio,phase,advance} =>
+            crate::model::MotionDef::Rotation {axis,ratio,advance} =>
                 crate::model::MotionDef::Rotation {
-                    axis:line_map[axis as usize].unwrap() as u32,ratio,phase,advance,
+                    axis:line_map[axis as usize].unwrap() as u32,ratio,advance,
                 },
             crate::model::MotionDef::Translation {axis,advance} =>
                 crate::model::MotionDef::Translation {
                     axis:line_map[axis as usize].unwrap() as u32,advance,
                 },
-            crate::model::MotionDef::Turn {centre,ratio,phase} =>
+            crate::model::MotionDef::Turn {centre,ratio} =>
                 crate::model::MotionDef::Turn {
-                    centre:pt_index(centre as usize).unwrap() as u32,ratio,phase,
+                    centre:pt_index(centre as usize).unwrap() as u32,ratio,
                 },
             crate::model::MotionDef::Relative {source,observer} =>
                 crate::model::MotionDef::Relative {

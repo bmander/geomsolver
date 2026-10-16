@@ -543,15 +543,15 @@ pub struct SurfaceE {
 /// rotation, nonzero a screw, and a translation moves without turning.
 #[derive(Clone, Debug)]
 pub enum MotionDef {
-    Rotation { axis: u32, ratio: f64, phase: f64, advance: f64 },
-    /// A turn in a view about a point of it (`motion(about: c, …)`): a rotation about the line
-    /// through `centre` square to its view, which is what it reads as in space; in the plane its
-    /// centre is a column of whatever is generated under it (`generate.rs`).
-    Turn { centre: u32, ratio: f64, phase: f64 },
+    Rotation { axis: u32, ratio: f64, advance: f64 },
+    /// A turn in a view about a point of it (`std.Spin`): a rotation about the line through
+    /// `centre` square to its view, which is what it reads as in space; in the plane its centre is
+    /// a column of whatever is generated under it (`generate.rs`).
+    Turn { centre: u32, ratio: f64 },
     Translation { axis: u32, advance: f64 },
     Relative { source: u32, observer: u32 },
     /// The inverse of motion `of`, minted where a chain is lowered (`Sketch::chain`): a joint's
-    /// inverse turns and slides back (its ratio, phase and advance negated) and a relative's
+    /// inverse turns and slides back (its ratio and advance negated) and a relative's
     /// swaps its two sides, so every reader reads it as the steps it already knows.
     Inverse { of: u32 },
     /// A frame's joint whose holding relations name no line or centre the kinds above are written
@@ -575,19 +575,18 @@ pub struct MotionE {
 }
 
 impl MotionE {
-    /// A rotation's `(ratio, phase, advance)` — phase in radians — on the drawing as it now
-    /// stands: `def`'s numbers, or the joint's parameters where the solve finds them.  The one
-    /// reader of a rotation's numbers, so a snapshot and a cache key cannot disagree.
-    pub fn rotation(&self, sk: &crate::model::Sketch) -> Result<(f64, f64, f64), String> {
-        let (ratio, phase, advance) = match self.def {
-            MotionDef::Rotation { ratio, phase, advance, .. } => (ratio, phase, advance),
-            MotionDef::Turn { ratio, phase, .. } => (ratio, phase, 0.0),
+    /// A rotation's `(ratio, advance)` on the drawing as it now stands: `def`'s numbers, or the
+    /// joint's parameters where the solve finds them.  The one reader of a rotation's numbers, so
+    /// a snapshot and a cache key cannot disagree.  Roll 0 is as drawn: a rotation has no phase.
+    pub fn rotation(&self, sk: &crate::model::Sketch) -> Result<(f64, f64), String> {
+        let (ratio, advance) = match self.def {
+            MotionDef::Rotation { ratio, advance, .. } => (ratio, advance),
+            MotionDef::Turn { ratio, .. } => (ratio, 0.0),
             _ => return Err(format!("`{}` is not a rotation", self.name)),
         };
         Ok(match self.solved(sk) {
-            Some([r, a]) =>
-                (r, phase, if matches!(self.def, MotionDef::Turn { .. }) { 0.0 } else { a }),
-            None => (ratio, phase, advance),
+            Some([r, a]) => (r, if matches!(self.def, MotionDef::Turn { .. }) { 0.0 } else { a }),
+            None => (ratio, advance),
         })
     }
 
@@ -609,7 +608,7 @@ impl crate::model::Sketch {
     /// **A chain** of two motions (`docs/frames-plan.md`, stage 1): `inner` carried by `outer`,
     /// the pose `outer(τ)·inner(τ)` — a planet's turn on its arm's.  Lowered as it is pushed, so
     /// no reader learns a new step: two joints about one axis (one line, or one centre) whose
-    /// numbers are stated fold to one joint, their ratios, phases and advances adding — a gear
+    /// numbers are stated fold to one joint, their ratios and advances adding — a gear
     /// train on one shaft reads as the single turn `Family::screw` and the generating classes
     /// admit — and any other pair is the relative of `inner` seen from `outer`'s minted inverse,
     /// `inv(outer)⁻¹·inner`.  Returns the chain's index in `motions`.
@@ -621,12 +620,12 @@ impl crate::model::Sketch {
         let (a, b) = (&self.motions[outer], &self.motions[inner]);
         let plain = a.numbers.is_none() && b.numbers.is_none();
         let folded = match (&a.def, &b.def) {
-            (MotionDef::Rotation { axis: l, ratio: r1, phase: p1, advance: a1 },
-             MotionDef::Rotation { axis: k, ratio: r2, phase: p2, advance: a2 }) if plain && l == k =>
-                Some(MotionDef::Rotation { axis: *l, ratio: r1 + r2, phase: p1 + p2, advance: a1 + a2 }),
-            (MotionDef::Turn { centre: c, ratio: r1, phase: p1 },
-             MotionDef::Turn { centre: d, ratio: r2, phase: p2 }) if plain && c == d =>
-                Some(MotionDef::Turn { centre: *c, ratio: r1 + r2, phase: p1 + p2 }),
+            (MotionDef::Rotation { axis: l, ratio: r1, advance: a1 },
+             MotionDef::Rotation { axis: k, ratio: r2, advance: a2 }) if plain && l == k =>
+                Some(MotionDef::Rotation { axis: *l, ratio: r1 + r2, advance: a1 + a2 }),
+            (MotionDef::Turn { centre: c, ratio: r1 },
+             MotionDef::Turn { centre: d, ratio: r2 }) if plain && c == d =>
+                Some(MotionDef::Turn { centre: *c, ratio: r1 + r2 }),
             (MotionDef::Translation { axis: l, advance: a1 },
              MotionDef::Translation { axis: k, advance: a2 }) if plain && l == k =>
                 Some(MotionDef::Translation { axis: *l, advance: a1 + a2 }),

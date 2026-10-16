@@ -239,7 +239,7 @@ fn read_pair(e: &Elaborated,probe: f64) -> Reading {
     // A phase is the roll the motion is read from: roll 0 is as drawn.
     for label in MOTIONS {
         let (i,phase) = motion(e,label);
-        let (ratio,_,advance) = e.sketch.motions[i].rotation(&e.sketch).unwrap_or_default();
+        let (ratio,advance) = e.sketch.motions[i].rotation(&e.sketch).unwrap_or_default();
         out.push(&format!("{label} ratio"),ratio);
         out.push(&format!("{label} phase"),phase);
         out.push(&format!("{label} advance"),advance);

@@ -1074,12 +1074,12 @@ impl<'v> Lowering<'v> {
                 f.map(|f| crate::envelope::held::Free { at: f.at + wu, ..f });
             let mut steps = su;
             steps.extend(sg.into_iter().map(|s| match s {
-                Step::Rotation { at, ratio, phase, advance, free } =>
-                    Step::Rotation { at: at + wu, ratio, phase, advance, free: shift(free) },
+                Step::Rotation { at, ratio, advance, free } =>
+                    Step::Rotation { at: at + wu, ratio, advance, free: shift(free) },
                 Step::Translation { at, advance, free } =>
                     Step::Translation { at: at + wu, advance, free: shift(free) },
-                Step::Turn { at, ratio, phase, free } =>
-                    Step::Turn { at: at + wu, ratio, phase, free: shift(free) },
+                Step::Turn { at, ratio, free } =>
+                    Step::Turn { at: at + wu, ratio, free: shift(free) },
                 Step::Relative { source, observer } =>
                     Step::Relative { source: source + n, observer: observer + n },
             }));

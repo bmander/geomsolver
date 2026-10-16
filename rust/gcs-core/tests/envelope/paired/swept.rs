@@ -337,12 +337,13 @@ fn functional_motion_definition(pair: &Pair,member: usize) -> String {
     let member_name = ["pinion","gear"][member];
     let rotation = |name: &str| {
         let id = pair.model.map.ent_named(name).unwrap().i();
-        let gcs_core::model::MotionDef::Rotation {axis,ratio,phase,..} = pair.model.sketch.motions[id].def else { panic!() };
+        // roll 0 is as drawn: a frame's turn has no phase
+        let gcs_core::model::MotionDef::Rotation {axis,ratio,..} = pair.model.sketch.motions[id].def else { panic!() };
         let axis = &pair.model.sketch.lines[axis as usize];
         let origin = pair.model.sketch.world_point(axis.p1 as usize);
         let end = pair.model.sketch.world_point(axis.p2 as usize);
         let axis: [f64;3] = std::array::from_fn(|k| end[k]-origin[k]);
-        format!("{{\"origin\":{origin:?},\"axis\":{axis:?},\"ratio\":{ratio},\"phase\":{phase}}}")
+        format!("{{\"origin\":{origin:?},\"axis\":{axis:?},\"ratio\":{ratio},\"phase\":0}}")
     };
     format!("{{\"source\":{},\"observer\":{}}}",
         rotation("pair.crown_roll"),rotation(&format!("pair.{member_name}_roll")))

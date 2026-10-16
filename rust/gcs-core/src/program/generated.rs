@@ -37,7 +37,7 @@ fn tool_of(sk: &Sketch, e: EntRef) -> Result<Tool, String> {
 /// A step of the motion program before its columns are placed: which argument or value each
 /// number is read from.
 enum Step {
-    Turn { centre: usize, ratio: usize, phase: usize },
+    Turn { centre: usize, ratio: usize },
     Slide { line: usize, advance: usize },
     Relative,
 }
@@ -66,10 +66,10 @@ fn program_signed(sk: &Sketch, m: usize, inverse: bool, steps: &mut Vec<Step>, a
                             generated over stated ones: state its ratio and advance", me.name));
     }
     match me.def {
-        MotionDef::Turn { centre, ratio, phase } => {
+        MotionDef::Turn { centre, ratio } => {
             args.push(EntRef::point(centre as usize));
-            steps.push(Step::Turn { centre: args.len() - 1, ratio: values.len(), phase: values.len() + 1 });
-            values.extend([sign * ratio, sign * phase]);
+            steps.push(Step::Turn { centre: args.len() - 1, ratio: values.len() });
+            values.push(sign * ratio);
             shape.push('T');
         }
         MotionDef::Translation { axis, advance } => {
@@ -147,8 +147,7 @@ fn profile(sk: &mut Sketch, d: &Decl, tool: EntRef, motion: usize) -> Result<Cur
     }
     let value = |i: usize| 1 + n_theta + i;
     let ops: Vec<Op> = steps.iter().map(|s| match *s {
-        Step::Turn { centre, ratio, phase } =>
-            Op::Turn { centre: at[centre], ratio: value(ratio), phase: value(phase) },
+        Step::Turn { centre, ratio } => Op::Turn { centre: at[centre], ratio: value(ratio) },
         Step::Slide { line, advance } => Op::Slide { line: at[line], advance: value(advance) },
         Step::Relative => Op::Relative,
     }).collect();

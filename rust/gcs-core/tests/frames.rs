@@ -237,8 +237,8 @@ std.Spin(t2, about: c, on: std.top, ratio: 2)
     let (t1, t2) = (index(sk, "t1"), index(sk, "t2"));
     let turns = sk.chain(t1, t2, "turns").unwrap();
     match sk.motions[turns].def {
-        MotionDef::Turn { ratio, phase, .. } => {
-            assert!((ratio - 3.0).abs() < 1e-15 && phase == 0.0);
+        MotionDef::Turn { ratio, .. } => {
+            assert!((ratio - 3.0).abs() < 1e-15);
         }
         ref d => panic!("two turns about one centre fold to a turn: {d:?}"),
     }
@@ -821,7 +821,7 @@ fn a_gear_pairs_ratio_is_solved_from_rolling() {
     assert!((ratio + 3.0).abs() < 1e-9 && advance == 0.0, "{ratio}, {advance}");
     // and a placement under the pinion reads the ratio solved
     let m = e.sketch.frames[e.map.ent_named("pinion").unwrap().i()].joint.as_ref().unwrap().motion;
-    let (r, _, _) = e.sketch.motions[m.unwrap() as usize].rotation(&e.sketch).unwrap();
+    let (r, _) = e.sketch.motions[m.unwrap() as usize].rotation(&e.sketch).unwrap();
     assert!((r + 3.0).abs() < 1e-9, "{r}");
 }
 

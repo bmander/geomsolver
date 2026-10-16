@@ -118,12 +118,12 @@ fn a_stated_ratio_turns_as_the_number_it_states_and_follows_an_edit() {
         edited := frame\nstd.Turn(edited, about: ax, ratio: 2)\n";
     let src = format!("{DRAWING}{turns}");
     let e = read(&src);
-    let (ratio,phase,advance) = e.sketch.motions[joint(&e,"stated")].rotation(&e.sketch).unwrap();
-    assert!((ratio-3.).abs() < 1e-12 && phase == 0. && advance == 0.,"{ratio} {phase} {advance}");
+    let (ratio,advance) = e.sketch.motions[joint(&e,"stated")].rotation(&e.sketch).unwrap();
+    assert!((ratio-3.).abs() < 1e-12 && advance == 0.,"{ratio} {advance}");
     for t in [-1.3,0.,0.4,2.] { same_pose(&family(&e,"stated"),&family(&e,"plain"),t); }
     // a longer `small` re-times it: 30 / 15
     let e = read(&small_at(&src,15.));
-    let (ratio,_,_) = e.sketch.motions[joint(&e,"stated")].rotation(&e.sketch).unwrap();
+    let (ratio,_) = e.sketch.motions[joint(&e,"stated")].rotation(&e.sketch).unwrap();
     assert!((ratio-2.).abs() < 1e-12,"{ratio}");
     for t in [-1.3,0.,0.4,2.] { same_pose(&family(&e,"stated"),&family(&e,"edited"),t); }
     // the roll a phase stood at: 30° at ratio 3 is 10° of roll, the turn of `3 · 0.4 + 30°` that
@@ -157,7 +157,7 @@ fn a_joints_ratio_and_advance_are_stated_and_a_measured_one_is_refused() {
     let e = read(&format!("{DRAWING}screw := frame\n\
         std.Turn(screw, about: ax, ratio: {expect}, advance: 4mm)\n\
         slide := frame\nstd.Slide(slide, along: ax, advance: small_len / 2)\n"));
-    let (ratio,_,advance) = e.sketch.motions[joint(&e,"screw")].rotation(&e.sketch).unwrap();
+    let (ratio,advance) = e.sketch.motions[joint(&e,"screw")].rotation(&e.sketch).unwrap();
     assert!((ratio-expect).abs() < 1e-12 && (advance-4.).abs() < 1e-12,"{ratio} {advance}");
     let slide = &e.sketch.motions[joint(&e,"slide")];
     assert!(matches!(slide.def,MotionDef::Translation {..}),"{:?}",slide.def);

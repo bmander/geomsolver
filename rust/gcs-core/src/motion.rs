@@ -12,7 +12,7 @@ use crate::{envelope::Motion,model::{MotionDef,Sketch}};
 /// shared parameter, so a rotation with a nonzero advance is a screw.
 #[derive(Clone,Debug)]
 enum Step {
-    Rotation {origin:[f64;3],axis:[f64;3],ratio:f64,phase:f64,advance:f64},
+    Rotation {origin:[f64;3],axis:[f64;3],ratio:f64,advance:f64},
     Translation {axis:[f64;3],advance:f64},
     Relative {source:usize,observer:usize},
 }
@@ -22,8 +22,8 @@ impl Step {
     /// relative `observer⁻¹·source` undone as `source⁻¹·observer`.
     fn inverse(&self) -> Step {
         match *self {
-            Step::Rotation {origin,axis,ratio,phase,advance} =>
-                Step::Rotation {origin,axis,ratio:-ratio,phase:-phase,advance:-advance},
+            Step::Rotation {origin,axis,ratio,advance} =>
+                Step::Rotation {origin,axis,ratio:-ratio,advance:-advance},
             Step::Translation {axis,advance} => Step::Translation {axis,advance:-advance},
             Step::Relative {source,observer} => Step::Relative {source:observer,observer:source},
         }
@@ -58,11 +58,11 @@ pub enum PlaneRigid {
 }
 
 /// One step of a motion read in a plane it carries within itself (`Family::in_frame`): a turn
-/// about a point at a ratio and phase (radians), a slide along a unit direction by an advance a
+/// about a point at a ratio, a slide along a unit direction by an advance a
 /// turn, and the relative of the two steps before it.
 #[derive(Clone,Copy,Debug,PartialEq)]
 pub enum PlanarStep {
-    Turn { centre: [f64;2], ratio: f64, phase: f64 },
+    Turn { centre: [f64;2], ratio: f64 },
     Slide { direction: [f64;2], advance: f64 },
     Relative,
 }
@@ -94,8 +94,8 @@ impl Screw {
             })
     }
     /// `p` carried along its own path for a time `t`: turned `ratio·t` about the axis and slid
-    /// along it, as the screw's pose at `s + t` is its pose at `s` followed by this one, whatever
-    /// the motion's phase (turns and slides about one axis commute).
+    /// along it, as the screw's pose at `s + t` is its pose at `s` followed by this one (turns and
+    /// slides about one axis commute).
     pub fn carry(&self,p: [f64;3],t: f64) -> [f64;3] {
         let q = self.turn(crate::space::sub(p,self.origin),t);
         std::array::from_fn(|k| self.origin[k]+q[k]+self.advance*t/std::f64::consts::TAU*self.axis[k])
@@ -332,11 +332,11 @@ impl Family {
             let step = &family.steps[i];
             if !matches!(step,Step::Relative {..}) && !step.keeps(frame.z) { return None }
             match *step {
-                Step::Rotation {origin,axis,ratio,phase,..} => {
+                Step::Rotation {origin,axis,ratio,..} => {
                     // a turn about the plane's normal reversed is the opposite turn about it
                     let sign = crate::space::dot(axis,frame.z).signum();
                     let l = frame.local(origin.map(|v| v*scale));
-                    out.push(PlanarStep::Turn {centre:[l[0],l[1]],ratio:sign*ratio,phase:sign*phase});
+                    out.push(PlanarStep::Turn {centre:[l[0],l[1]],ratio:sign*ratio});
                 }
                 Step::Translation {axis,advance} => {
                     let d = frame.dir_local(axis);
@@ -371,29 +371,29 @@ impl Family {
             let value = match node.def {
                 MotionDef::Rotation {axis,..} => {
                     // a number written as a measurement is read off the drawing as it stands
-                    let (ratio,phase,advance) = node.rotation(sk)?;
+                    let (ratio,advance) = node.rotation(sk)?;
                     let axis = sk.lines.get(axis as usize).ok_or("no such motion axis")?;
                     let origin = sk.world_point(axis.p1 as usize);
                     let b = sk.world_point(axis.p2 as usize);
                     let axis = std::array::from_fn(|k| b[k]-origin[k]);
                     if !origin.iter().all(|x| x.is_finite()) || !advance.is_finite()
-                        || Motion::rotation(axis,phase,ratio).is_err() {
+                        || Motion::rotation(axis,0.,ratio).is_err() {
                         return Err(format!("`{}` needs a finite nondegenerate axis and angle",node.name));
                     }
-                    Step::Rotation {origin,axis,ratio,phase,advance}
+                    Step::Rotation {origin,axis,ratio,advance}
                 }
                 // a turn in a view is a rotation about the line through its centre square to
                 // the view
                 MotionDef::Turn {centre,..} => {
-                    let (ratio,phase,_) = node.rotation(sk)?;
+                    let (ratio,_) = node.rotation(sk)?;
                     if centre as usize >= sk.points.len() { return Err("no such motion centre".into()); }
                     let origin = sk.world_point(centre as usize);
                     let axis = sk.plane_of(centre as usize).map(|i| sk.basis(i))
                         .unwrap_or_else(crate::plane::Basis::page).normal();
-                    if !origin.iter().all(|x| x.is_finite()) || Motion::rotation(axis,phase,ratio).is_err() {
+                    if !origin.iter().all(|x| x.is_finite()) || Motion::rotation(axis,0.,ratio).is_err() {
                         return Err(format!("`{}` needs a finite centre and angle",node.name));
                     }
-                    Step::Rotation {origin,axis,ratio,phase,advance:0.}
+                    Step::Rotation {origin,axis,ratio,advance:0.}
                 }
                 MotionDef::Translation {axis,..} => {
                     let advance = node.advance(sk)?;
@@ -425,7 +425,7 @@ impl Family {
                             node.name));
                     }
                     if ratio == 0. { Step::Translation {axis:d,advance} }
-                    else { Step::Rotation {origin,axis:d,ratio,phase:0.,advance} }
+                    else { Step::Rotation {origin,axis:d,ratio,advance} }
                 }
                 // a joint's inverse turns and slides back, and a relative's swaps its sides
                 MotionDef::Inverse {of} => {
@@ -464,8 +464,8 @@ impl Family {
             else { spilled = vec![Motion::identity();self.steps.len()]; &mut spilled };
         for (n,step) in self.steps.iter().enumerate() {
             let value = match *step {
-                Step::Rotation {origin,axis,ratio,phase,advance} => {
-                    let rotation = Motion::rotation(axis,phase+ratio*angle,ratio)
+                Step::Rotation {origin,axis,ratio,advance} => {
+                    let rotation = Motion::rotation(axis,ratio*angle,ratio)
                         .map_err(|_| "a motion angle overflowed")?;
                     let pose = Motion::translation(origin.map(|v| -v),[0.;3]).unwrap()
                         .then(rotation).then(Motion::translation(origin,[0.;3]).unwrap());
@@ -533,9 +533,9 @@ impl Family {
         for (n,step) in self.steps.iter().enumerate() {
             let get = |k: usize,fixed: &[Pose;8],spilled: &Vec<Pose>| if many { spilled[k] } else { fixed[k] };
             let value = match *step {
-                Step::Rotation {origin,axis,ratio,phase,advance} => {
+                Step::Rotation {origin,axis,ratio,advance} => {
                     let a = unit(axis).ok_or("a motion needs a nondegenerate axis")?;
-                    let (s,c) = (phase+ratio*angle).dsin_cos();
+                    let (s,c) = (ratio*angle).dsin_cos();
                     let k = [[0.,-a[2],a[1]],[a[2],0.,-a[0]],[-a[1],a[0],0.]];
                     let r: [[f64;3];3] = std::array::from_fn(|i| std::array::from_fn(|j|
                         c*if i == j { 1. } else { 0. }+(1.-c)*a[i]*a[j]+s*k[i][j]));

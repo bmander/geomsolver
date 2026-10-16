@@ -525,12 +525,7 @@ fn riding_point(cx: &mut Elab<'_>, r: &Relation, w: &crate::syntax::Written, see
             Some(g) => super::motions::frame_motion(sk, &cx.res, g)?,
             None => super::motions::carried(sk, &observer)?,
         };
-        Ok::<_, String>(match (s, o) {
-            (Some(s), Some(o)) => Some(super::motions::relative(sk, s, o)),
-            (Some(s), None) => Some(s),
-            (None, Some(o)) => Some(super::motions::inverse(sk, o)),
-            (None, None) => None,
-        })
+        Ok::<_, String>(super::motions::seen(sk, s, o))
     })();
     let m = match m {
         Ok(Some(m)) => m,

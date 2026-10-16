@@ -66,12 +66,11 @@ impl Tool {
 }
 
 /// One step of the motion's postfix program, each number where it stands in the outer vector
-/// `[t, θ…, values…]`: a turn about a centre at a ratio and phase (radians), a slide along a
-/// line by an advance per turn, and the relative of the two before it (`of` the first,
-/// `relative_to` the second).
+/// `[t, θ…, values…]`: a turn about a centre at a ratio, a slide along a line by an advance
+/// per turn, and the relative of the two before it (the first seen from the second).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Op {
-    Turn { centre: usize, ratio: usize, phase: usize },
+    Turn { centre: usize, ratio: usize },
     Slide { line: usize, advance: usize },
     Relative,
 }
@@ -99,7 +98,7 @@ const MARCH: usize = 32;
 
 /// A compiled generated profile, held as its encoding — what rides in a contact's constants:
 /// `[n_theta, tool, side, n_ops, ops…, tool body…]`, written by `new` and read by `view` and
-/// nowhere else.  A turn is `[1, centre, ratio, phase]`, a slide `[2, line, advance]`, a
+/// nowhere else.  A turn is `[1, centre, ratio]`, a slide `[2, line, advance]`, a
 /// relative `[3]`.  A curve tool's body is `[n_theta, lx, ly, x…, y…, n_values, values…, from,
 /// to]`, a generated tool's `[n_theta, n_values, values…, anchor, from, to, len, flat…]`.
 #[derive(Clone, Debug)]
@@ -124,7 +123,7 @@ impl Generated {
         let mut f = vec![n_theta as f64, tool.code(), side, ops.len() as f64];
         for op in ops {
             match *op {
-                Op::Turn { centre, ratio, phase } => f.extend([1.0, centre as f64, ratio as f64, phase as f64]),
+                Op::Turn { centre, ratio } => f.extend([1.0, centre as f64, ratio as f64]),
                 Op::Slide { line, advance } => f.extend([2.0, line as f64, advance as f64]),
                 Op::Relative => f.push(3.0),
             }
@@ -207,7 +206,7 @@ fn view(flat: &[f64]) -> Option<View<'_>> {
     let mut ops = Vec::with_capacity(n_ops);
     for _ in 0..n_ops {
         let (op, len) = match g(at)? {
-            1.0 => (Op::Turn { centre: ix(at + 1)?, ratio: ix(at + 2)?, phase: ix(at + 3)? }, 4),
+            1.0 => (Op::Turn { centre: ix(at + 1)?, ratio: ix(at + 2)? }, 3),
             2.0 => (Op::Slide { line: ix(at + 1)?, advance: ix(at + 2)? }, 3),
             3.0 => (Op::Relative, 1),
             _ => return None,
@@ -254,9 +253,9 @@ fn motion(v: &View, outer: &[f64], t: Jet) -> Option<(Jet, [Jet; 2])> {
     let at = |i: usize| outer.get(i).copied();
     for op in &v.ops {
         let m = match *op {
-            Op::Turn { centre, ratio, phase } => {
+            Op::Turn { centre, ratio } => {
                 let (cx, cy) = (at(centre)?, at(centre + 1)?);
-                let phi = (t * (at(ratio)? * DEG)).shift(at(phase)?);
+                let phi = t * (at(ratio)? * DEG);
                 let (sn, cs) = phi.sin_cos();
                 // about the centre: R(c' − c) + c, so d = c − R c
                 (phi, [Jet::constant(cx) - (cs * cx - sn * cy), Jet::constant(cy) - (sn * cx + cs * cy)])
@@ -782,9 +781,9 @@ pub fn planar(tool: Tool, columns: &[f64], side: f64, program: &[crate::motion::
     for step in program {
         let at = outer.len();
         match *step {
-            PlanarStep::Turn { centre, ratio, phase } => {
-                outer.extend([centre[0], centre[1], ratio, phase]);
-                ops.push(Op::Turn { centre: at, ratio: at + 2, phase: at + 3 });
+            PlanarStep::Turn { centre, ratio } => {
+                outer.extend([centre[0], centre[1], ratio]);
+                ops.push(Op::Turn { centre: at, ratio: at + 2 });
             }
             PlanarStep::Slide { direction, advance } => {
                 outer.extend([0.0, 0.0, direction[0], direction[1], advance]);

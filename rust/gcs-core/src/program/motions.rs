@@ -1,16 +1,18 @@
-//! **Frames' joints** (#383, `docs/frames-plan.md` stage 3): a frame's motion is three members —
+//! **Frames' joints** (#383, `docs/frames-plan.md`): a frame's motion is three members —
 //! `f.axis`, `f.ratio`, `f.advance` — held by relations like anything else, and lowered here to the
 //! motion node every reader of a motion reads (`Sketch::motions`).  What kind of motion a joint is
 //! has to be known before the solve by the readers that build with the drawing (a profile in the
 //! plane, an envelope the solve holds), so it is read off **the statements holding its axis**, as
 //! `views::origins_on_axes` reads which axes are wholly held: the axis on a drawn line is a turn
-//! about that line (or with no ratio a slide along it); through a point of a view and parallel to
-//! the view's normal, a turn in that view about the point; anything else a joint about the axis
-//! as the solve leaves it, which only the readers after the solve take.  Its numbers are stated
-//! in this stage, by a `fix` (which `std.Turn`, `std.Spin` and `std.Slide` write).
+//! about that line (or with a ratio stated 0 a slide along it); through a point of a view and
+//! parallel to the view's normal, a turn in that view about the point; anything else a joint about
+//! the axis as the solve leaves it, which only the readers after the solve take.  Its numbers are
+//! what a `fix` states (which `std.Turn`, `std.Spin` and `std.Slide` write), and a number none
+//! states is the solve's to find (`MotionE::numbers`).
 //!
-//! A reading names a frame `under:` and, where it was a relative motion, one `seen_from:`
-//! (`reading`): the relative of the two frames' nodes, minted once.
+//! A reading names a frame `under:`, or leaves it out for what its tool rides on, and may name the
+//! frame it is seen from, `seen_from:` (`reading_of`): the relative of the two frames' nodes,
+//! minted once.
 use super::resolve::Resolver;
 use super::{Code, Diag, SourceMap};
 use crate::ir::{Operation, Statement};
@@ -111,14 +113,14 @@ pub(super) fn motions(sk: &mut Sketch, res: &Resolver, map: &SourceMap, body: &[
             (Some(l), _) if ratio == 0.0 && held.ratio.is_some() => {
                 MotionDef::Translation { axis: l as u32, advance }
             }
-            (Some(l), _) => MotionDef::Rotation { axis: l as u32, ratio, phase: 0.0, advance },
+            (Some(l), _) => MotionDef::Rotation { axis: l as u32, ratio, advance },
             (None, Some(_)) if advance != 0.0 || held.advance.is_none() => {
                 say(diags, format!("`{name}` turns in a view about a point of it, and a turn in a \
                     view has no advance: a screw turns about a line, `std.Turn(f, about: l, \
                     ratio: r, advance: a)`"));
                 continue;
             }
-            (None, Some(c)) => MotionDef::Turn { centre: c as u32, ratio, phase: 0.0 },
+            (None, Some(c)) => MotionDef::Turn { centre: c as u32, ratio },
             (None, None) => MotionDef::Joint { axis: joint.axis, ratio, advance },
         };
         let numbers = free.then_some([joint.ratio, joint.advance]);
@@ -204,14 +206,32 @@ pub(super) fn name_of(res: &Resolver, e: EntRef) -> String {
 pub(super) fn carriers(sk: &Sketch, res: &Resolver, e: EntRef) -> Result<Vec<u32>, String> {
     sk.carriers(e).map_err(|(a, b)| {
         let on = |x: EntRef| {
-            let frames: Vec<String> = sk.carriers(x).unwrap_or_default().iter()
-                .map(|&f| format!("`{}`", name_of(res, EntRef::frame(f as usize)))).collect();
-            if frames.is_empty() { "on nothing".to_string() }
-            else { format!("on {}", frames.join(" in ")) }
+            let path = sk.carriers(x).unwrap_or_default();
+            if path.is_empty() { "on nothing".to_string() }
+            else { format!("on {}", path_names(res, &path)) }
         };
         format!("`{}` rides {} and `{}` {}: what one reading carries rides on one path of frames",
                 name_of(res, a), on(a), name_of(res, b), on(b))
     })
+}
+
+/// The frames of `path` named for a refusal, outermost first: "`f` in `g`".
+fn path_names(res: &Resolver, path: &[u32]) -> String {
+    let frames: Vec<String> = path.iter()
+        .map(|&f| format!("`{}`", name_of(res, EntRef::frame(f as usize)))).collect();
+    frames.join(" in ")
+}
+
+/// Motion node `source` seen from `observer`: the relative of the two, `source` alone where the
+/// observer rests, the observer's inverse where the source rests, and `None` where both do.
+pub(super) fn seen(sk: &mut Sketch, source: Option<usize>, observer: Option<usize>)
+    -> Option<usize> {
+    match (source, observer) {
+        (Some(s), Some(o)) => Some(relative(sk, s, o)),
+        (Some(s), None) => Some(s),
+        (None, Some(o)) => Some(inverse(sk, o)),
+        (None, None) => None,
+    }
 }
 
 /// **A reading that leaves `under:` out** (#383): the motion of what `tool` rides on, seen from
@@ -221,9 +241,11 @@ pub(super) fn riding(sk: &mut Sketch, res: &Resolver, tool: EntRef, seen_from: O
     -> Result<Option<usize>, String> {
     let path = carriers(sk, res, tool)?;
     let Some(source) = carried(sk, &path)? else { return Ok(None) };
-    let Some(g) = seen_from else { return Ok(Some(source)) };
-    let Some(observer) = frame_motion(sk, res, g)? else { return Ok(Some(source)) };
-    Ok(Some(relative(sk, source, observer)))
+    let observer = match seen_from {
+        Some(g) => frame_motion(sk, res, g)?,
+        None => None,
+    };
+    Ok(seen(sk, Some(source), observer))
 }
 
 /// **Two flanks meshing, read on their frames** (#383): the second's frames seen from the
@@ -241,10 +263,7 @@ pub(super) fn meshing(sk: &mut Sketch, res: &Resolver, first: EntRef, second: En
             carried(sk, &o)?
         }
     };
-    Ok(match observer {
-        Some(o) => relative(sk, source, o),
-        None => source,
-    })
+    Ok(seen(sk, Some(source), observer).unwrap_or(source))
 }
 
 /// **What a reading of `tool` is under** (#383): the frame `under` names, seen from the one
@@ -274,11 +293,9 @@ pub(super) fn reading_of(sk: &mut Sketch, res: &Resolver, tool: Option<EntRef>,
 /// may be read under another frame.  Why, for `tool` riding.
 pub(super) fn under_riding(sk: &Sketch, res: &Resolver, tool: EntRef) -> Option<String> {
     let path = sk.drawn_carriers(tool).ok().filter(|p| !p.is_empty())?;
-    let frames: Vec<String> = path.iter()
-        .map(|&f| format!("`{}`", name_of(res, EntRef::frame(f as usize)))).collect();
     Some(format!("`{}` rides on {} already: a reading of it leaves `under:` out, and `under:` \
                   names the frame of what rides on none", name_of(res, tool),
-                 frames.join(" in ")))
+                 path_names(res, &path)))
 }
 
 /// The relative of motion nodes `source` seen from `observer`, `observer⁻¹·source`, minted the

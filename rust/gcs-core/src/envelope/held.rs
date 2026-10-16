@@ -20,8 +20,8 @@
 //! **Layout.** A contact's columns are `[lead…, u, v, t, source…, motion…]`: what the contact
 //! states about (a point's lift, a line's ends, a plane's axes, a circle), the place, the source
 //! (`Source`), and two lifted ends per axis the motion turns about or slides along.  Its constants
-//! are `[lead, source, axis, c, m, free, ref×3, steps, (code, at, source, observer, ratio,
-//! phase, advance)×steps]` (`HEADER`, `STEP`): the source's axis as two points (`axis` 0, a line's
+//! are `[lead, source, axis, c, m, free, ref×3, steps, (code, at, source | free, observer | back,
+//! ratio, advance)×steps]` (`HEADER`, `STEP`): the source's axis as two points (`axis` 0, a line's
 //! ends) or a point and a direction (1, an axis's), its number `c + m·x` (a cone's half angle, a
 //! cylinder's radius; `x` its last column where `free`), a direction its axis does not run along
 //! (`ref`, which fixes where a set's `v` starts), and the motion as the steps `motion::Family`
@@ -40,7 +40,7 @@ use std::ops::{Add, Mul, Sub};
 /// Constants before the motion's steps.
 pub const HEADER: usize = 10;
 /// Constants per step of the motion.
-pub const STEP: usize = 7;
+pub const STEP: usize = 6;
 
 /// What a source is a revolution of: the meridian element turned about the axis.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -128,13 +128,13 @@ pub struct Free {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Step {
     /// About the line whose lifted ends are motion columns `at..at + 6`.
-    Rotation { at: usize, ratio: f64, phase: f64, advance: f64, free: Option<Free> },
+    Rotation { at: usize, ratio: f64, advance: f64, free: Option<Free> },
     /// Along the line whose lifted ends are motion columns `at..at + 6`.
     Translation { at: usize, advance: f64, free: Option<Free> },
     /// About the line through the lifted centre at motion columns `at..at + 3`, square to the
     /// view whose two axes' directions are columns `at + 3..at + 9`: a turn about a point of a
     /// view, as it reads in space (#326, read by `Moving::of_any` alone).
-    Turn { at: usize, ratio: f64, phase: f64, free: Option<Free> },
+    Turn { at: usize, ratio: f64, free: Option<Free> },
     /// `observer⁻¹ ∘ source`, by step index.
     Relative { source: usize, observer: usize },
 }
@@ -155,19 +155,19 @@ pub fn consts(lead: usize, source: Source, axis: u8, number: (f64, f64, bool), r
 pub fn encode_steps(steps: &[Step]) -> Vec<f64> {
     let free = |f: Option<Free>| f.map_or((0.0, 0.0), |f| ((f.at + 1) as f64, f.back as u8 as f64));
     steps.iter().flat_map(|s| match *s {
-        Step::Rotation { at, ratio, phase, advance, free: f } => {
+        Step::Rotation { at, ratio, advance, free: f } => {
             let (a, b) = free(f);
-            [1.0, at as f64, a, b, ratio, phase, advance]
+            [1.0, at as f64, a, b, ratio, advance]
         }
         Step::Translation { at, advance, free: f } => {
             let (a, b) = free(f);
-            [2.0, at as f64, a, b, 0.0, 0.0, advance]
+            [2.0, at as f64, a, b, 0.0, advance]
         }
-        Step::Turn { at, ratio, phase, free: f } => {
+        Step::Turn { at, ratio, free: f } => {
             let (a, b) = free(f);
-            [4.0, at as f64, a, b, ratio, phase, 0.0]
+            [4.0, at as f64, a, b, ratio, 0.0]
         }
-        Step::Relative { source, observer } => [3.0, 0.0, source as f64, observer as f64, 0.0, 0.0, 0.0],
+        Step::Relative { source, observer } => [3.0, 0.0, source as f64, observer as f64, 0.0, 0.0],
     }).collect()
 }
 
@@ -222,10 +222,9 @@ pub fn read_steps(k: &[f64]) -> Option<Vec<Step>> {
     for (i, s) in k.chunks(STEP).enumerate() {
         let idx = |x: f64| (x >= 0.0 && (x as usize) < i).then_some(x as usize);
         steps.push(match s[0] as i64 {
-            1 => Step::Rotation { at: s[1] as usize, ratio: s[4], phase: s[5], advance: s[6],
-                free: free(s)? },
-            2 => Step::Translation { at: s[1] as usize, advance: s[6], free: free(s)? },
-            4 => Step::Turn { at: s[1] as usize, ratio: s[4], phase: s[5], free: free(s)? },
+            1 => Step::Rotation { at: s[1] as usize, ratio: s[4], advance: s[5], free: free(s)? },
+            2 => Step::Translation { at: s[1] as usize, advance: s[5], free: free(s)? },
+            4 => Step::Turn { at: s[1] as usize, ratio: s[4], free: free(s)? },
             3 => Step::Relative { source: idx(s[2])?, observer: idx(s[3])? },
             _ => return None,
         });
@@ -633,17 +632,17 @@ fn poses<T: Num>(steps: &[Step], m: &[T], t: H2<T>) -> Vec<Pose<T>> {
         let next = match *s {
             Step::Rotation { .. } | Step::Turn { .. } => {
                 let (ratio, advance) = s.numbers(m);
-                let (a, d, phase) = match *s {
-                    Step::Rotation { at, phase, .. } => {
+                let (a, d) = match *s {
+                    Step::Rotation { at, .. } => {
                         let a = col3(m, at);
-                        (a, unit(vsub(col3(m, at + 3), a)), phase)
+                        (a, unit(vsub(col3(m, at + 3), a)))
                     }
-                    Step::Turn { at, phase, .. } => {
-                        (col3(m, at), unit(cross(col3(m, at + 3), col3(m, at + 6))), phase)
+                    Step::Turn { at, .. } => {
+                        (col3(m, at), unit(cross(col3(m, at + 3), col3(m, at + 6))))
                     }
                     _ => unreachable!(),
                 };
-                let theta = H2::cst(T::cst(phase)) + t.scale(ratio);
+                let theta = t.scale(ratio);
                 let (st, ct) = theta.sin_cos();
                 let one_c = H2::cst(T::cst(1.0)) - ct;
                 let k = [[zero(), zero::<T>() - d[2], d[1]], [d[2], zero(), zero::<T>() - d[0]],
@@ -1312,9 +1311,9 @@ fn motion(sk: &Sketch, m: usize, steps: &mut Vec<Step>, cols: &mut Vec<Col>,
     });
     let step = match me.def {
         MotionDef::Rotation { axis: l, .. } => {
-            let (ratio, phase, advance) = me.rotation(sk)?;
+            let (ratio, advance) = me.rotation(sk)?;
             axis(l)?;
-            Step::Rotation { at, ratio, phase, advance, free: free(cols, 6) }
+            Step::Rotation { at, ratio, advance, free: free(cols, 6) }
         }
         MotionDef::Translation { axis: l, .. } => {
             let advance = me.advance(sk)?;
@@ -1322,14 +1321,14 @@ fn motion(sk: &Sketch, m: usize, steps: &mut Vec<Step>, cols: &mut Vec<Col>,
             Step::Translation { at, advance, free: free(cols, 6) }
         }
         MotionDef::Turn { centre, .. } if turns => {
-            let (ratio, phase, _) = me.rotation(sk)?;
+            let (ratio, _) = me.rotation(sk)?;
             let view = sk.plane_of(centre as usize).ok_or_else(|| {
                 format!("`{}` turns about a point drawn in no view, so about no line in space", me.name)
             })?;
             let pl = sk.frames.get(view).ok_or("no such view")?;
             cols.extend([Col::Lift(centre as usize), Col::Three(sk.axes[pl.u as usize].d),
                          Col::Three(sk.axes[pl.v as usize].d)]);
-            Step::Turn { at, ratio, phase, free: free(cols, 9) }
+            Step::Turn { at, ratio, free: free(cols, 9) }
         }
         MotionDef::Turn { .. } => {
             return Err(format!("`{}` turns about a point of a view: an envelope in space is \
@@ -1350,13 +1349,12 @@ fn motion(sk: &Sketch, m: usize, steps: &mut Vec<Step>, cols: &mut Vec<Col>,
             let k = motion(sk, of as usize, steps, cols, done, depth + 1, turns)?;
             let back = |f: Option<Free>| f.map(|f| Free { back: !f.back, ..f });
             match steps[k] {
-                Step::Rotation { at, ratio, phase, advance, free } =>
-                    Step::Rotation { at, ratio: -ratio, phase: -phase, advance: -advance,
-                        free: back(free) },
+                Step::Rotation { at, ratio, advance, free } =>
+                    Step::Rotation { at, ratio: -ratio, advance: -advance, free: back(free) },
                 Step::Translation { at, advance, free } =>
                     Step::Translation { at, advance: -advance, free: back(free) },
-                Step::Turn { at, ratio, phase, free } =>
-                    Step::Turn { at, ratio: -ratio, phase: -phase, free: back(free) },
+                Step::Turn { at, ratio, free } =>
+                    Step::Turn { at, ratio: -ratio, free: back(free) },
                 Step::Relative { source, observer } => Step::Relative { source: observer, observer: source },
             }
         }

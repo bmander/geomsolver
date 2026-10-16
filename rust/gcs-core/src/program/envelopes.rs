@@ -366,12 +366,24 @@ pub(super) fn envelopes(sk: &mut Sketch, res: &mut Resolver, map: &mut SourceMap
     for st in body {
         let Operation::Decl(d) = &st.kind else { continue; };
         if d.kind != EntKind::Envelope || skip.contains(&st.id) { continue; }
-        // the frame it is generated under, seen from the one named (#383)
+        // the frame it is generated under, seen from the one named — or, `under:` left out, what
+        // its surface rides on (#383)
         let motion = match d.children.get(1).map(Vec::as_slice) {
             _ if held.contains(&st.id) => Err(String::new()),
-            Some([Kid::Ref(r)]) => super::motions::reading(sk, res, r, d.seen_from.as_ref())
-                .map(|m| m as u32),
-            _ => Err("an envelope names a surface and the frame it moves under".to_string()),
+            under => {
+                let under = match under {
+                    Some([Kid::Ref(r)]) => Some(r),
+                    _ => None,
+                };
+                let tool = match d.children.first().map(Vec::as_slice) {
+                    Some([Kid::Ref(r)]) => {
+                        res.lookup(r).and_then(|e| follow_building(sk, res, e, r).ok())
+                    }
+                    _ => None,
+                };
+                super::motions::reading_of(sk, res, tool, under, d.seen_from.as_ref())
+                    .map(|m| m as u32)
+            }
         };
         let operand = |i: usize, kind: EntKind| -> Result<u32,String> {
             let group = d.children.get(i).ok_or("an envelope needs a surface and motion")?;
@@ -408,6 +420,8 @@ pub(super) fn envelopes(sk: &mut Sketch, res: &mut Resolver, map: &mut SourceMap
                 map.bind(&value.name,e,d.name.named());
                 map.record(st,Made::Ent(e));
                 sk.envelopes.push(value);
+                let rides = super::generated::observer_path(sk, res, d);
+                super::generated::ride_on(sk, res, d, rides);
             }
             Err(message) => {
                 diags.push(Diag::on(Code::E080, st, message));
