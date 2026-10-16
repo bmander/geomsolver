@@ -39,6 +39,10 @@ pub struct SourceMap {
     /// Each twin of a point drawn in several planes (§6.7), to the point: a twin is called by the
     /// point's name, and written by it, since a statement naming the point reads it there.
     pub(crate) twin_of: BTreeMap<EntRef, EntRef>,
+    /// The numbers held by a `fix` the root does not state at its top level — a component's,
+    /// `std.Turn` holding the joint of a frame the root declared: said where they are, so a
+    /// reconcile never writes them again at the root (`edit::reconcile`'s gauges).
+    pub(crate) held_within: BTreeSet<u32>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

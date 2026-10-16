@@ -211,7 +211,13 @@ came from.
   `commit_seeds` takes a held number out of a written clause (the whole clause
   where all are held) and writes it back when the hold goes.  `tests/seeds.rs::a_fix_is_its_own_seed`.
   `edit::reconcile` diffs holds per entity and field (`gauge_key`, `held_refs` over
-  `program::holds`) and appends a statement built by `program::lift_gauge` with the numbers; a root choice under a key no triple spells stays the
+  `program::holds`) and appends a statement built by `program::lift_gauge` with the numbers.  A
+  number held by a `fix` that is no top-level statement of the root (a component's: `std.Turn`
+  holding the joint of a frame the root declared) is recorded in `SourceMap::held_within` and
+  left out (`holds_except`): it is said where it is, and never written again at the root.  A
+  frame's holds are named by what it has (`Sketch::frame_members`: a joint alone is `ratio` and
+  `advance`).  `tests/gauges.rs::a_hold_a_component_says_is_not_written_again_at_the_root`.  A
+  root choice under a key no triple spells stays the
   `branch(KEY, ±1)` statement (`StmtKind::Branch`).
   Operand order carries meaning — `arc tangent line` is `TangentArcLine`, `line tangent circle`
   is `TangentLineCircle` — and a name that is also an element keyword cannot lead a statement

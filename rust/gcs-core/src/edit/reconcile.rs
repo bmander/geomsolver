@@ -45,7 +45,7 @@ fn reconciled(e: &mut Elaborated, sk: &Sketch, prog: &Program) -> Result<Edit, S
     // will have to name, and `gauges` writes those same holds out as statements further down.
     // Two walks were two readings of one question — and the walk is not cheap, `root_declared`
     // ending in a scan of the root body.
-    let held = held_refs(sk, &|r| root_declared(e, prog, r));
+    let held = held_refs(sk, &e.map.held_within, &|r| root_declared(e, prog, r));
     let mut needed = needed(e, sk, &minted, &held);
     let memberships = memberships(e, sk, prog, &mut needed)?;
     let (named, renamed) = name_anonymous(e, sk, prog, needed, &minted, &mut taken, &mut names)?;
@@ -594,15 +594,18 @@ fn gauge_key(r: &syntax::Relation) -> Option<GaugeKey> {
 /// field and at what — before any name is put to it.  **The one walk**, made once per
 /// reconcile: the anonymous-naming pass reads it to know what a gauge will have to name, and the
 /// gauge statements are written from the same list, so the two cannot disagree about what is
-/// held.  Names are put to it only at the second, by which point every hold has one.
+/// held.  Names are put to it only at the second, by which point every hold has one.  A number
+/// a component's `fix` holds is left out, though the root declared what it is of: the component
+/// says it (`std.Turn` holding a frame's joint), and a gauge at the root would say it twice.
 fn held_refs(
     sk: &Sketch,
+    within: &std::collections::BTreeSet<u32>,
     ours: &dyn Fn(EntRef) -> bool,
 ) -> Vec<(EntRef, Vec<(&'static str, f64)>)> {
     sk.primitives()
         .into_iter()
         .filter(|&r| ours(r))
-        .map(|r| (r, crate::program::holds(sk, r)))
+        .map(|r| (r, crate::program::holds_except(sk, r, within)))
         .filter(|(_, h)| !h.is_empty())
         .collect()
 }
