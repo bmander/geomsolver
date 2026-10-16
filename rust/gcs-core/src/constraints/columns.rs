@@ -270,7 +270,7 @@ impl Constraint {
                             k.push(0.0);
                             k.extend_from_slice(&l.flat);
                             let mut tail = vec![0.0; n_q];
-                            tail[..2].copy_from_slice(&[cv.domain.0, cv.domain.1]);
+                            tail[..2].copy_from_slice(&cv.over.span());
                             k.extend(tail);
                         }
                         Some(pose) => {

@@ -1239,6 +1239,10 @@ fn curve_entity(
         .collect::<Result<Vec<f64>, _>>()?;
     let num = |t: &str| crate::expr::literal(t);
     let domain = (num(&c.domain.0).unwrap_or(0.0), num(&c.domain.1).unwrap_or(1.0));
+    // the swept formal, one parameter axis (#391 S1)
+    let dim = comp.formals.iter().find(|f| f.name.text == swept)
+        .map_or(crate::units::Dim::SCALAR, |f| f.ty.dim());
+    let over = crate::model::Running::new(swept, dim, domain.0, domain.1);
     // the anchor: what the swept formal was given — a number, or the drawing's unknown a drawn
     // instance left it as — or the interval's start for an instance written in place
     let home = match info.values.get(swept).map(|a| (a.number(), &a.free)) {
@@ -1271,7 +1275,7 @@ fn curve_entity(
         args,
         unknowns,
         values,
-        domain,
+        over,
         home,
         pose,
         class: d.class.clone(),

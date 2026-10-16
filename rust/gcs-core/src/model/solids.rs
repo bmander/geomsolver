@@ -146,13 +146,10 @@ pub struct SolidBearing {
 }
 
 /// The interval a claim is swept over: a free variable of the drawing, or a named motion's roll
-/// (in degrees), and where it runs.
+/// (in degrees), and where it runs — one parameter axis (`Running`, #391 S1).
 #[derive(Clone, Debug)]
 pub struct Sweep {
-    pub(crate) name: String,
-    pub(crate) from: f64,
-    pub(crate) to: f64,
-    pub(crate) dimension: crate::units::Dim,
+    pub(crate) over: super::Running,
     /// The motion whose roll is swept, where it is one: every solid placed under it is read at
     /// its `at:` advanced by the roll, and nothing is solved again.
     pub(crate) motion: Option<u32>,
@@ -162,17 +159,21 @@ impl Sweep {
     pub fn motion(&self) -> Option<u32> {
         self.motion
     }
+    /// What runs, and over what.
+    pub fn over(&self) -> &super::Running {
+        &self.over
+    }
     pub fn name(&self) -> &str {
-        &self.name
+        &self.over.name
     }
     pub fn from(&self) -> f64 {
-        self.from
+        self.over.from
     }
     pub fn to(&self) -> f64 {
-        self.to
+        self.over.to
     }
     pub fn dimension(&self) -> crate::units::Dim {
-        self.dimension
+        self.over.dim
     }
     /// Convex interpolation avoids overflowing the difference of opposite extreme endpoints.
     pub fn sample(&self, index: usize, intervals: usize) -> Option<f64> {
@@ -180,16 +181,17 @@ impl Sweep {
             return None;
         }
         if index == 0 {
-            return Some(self.from);
+            return Some(self.from());
         }
         if index == intervals {
-            return Some(self.to);
+            return Some(self.to());
         }
         let t = index as f64 / intervals as f64;
-        let value = if self.from.signum() == self.to.signum() {
-            self.from + (self.to - self.from) * t
+        let (from, to) = self.over.pair();
+        let value = if from.signum() == to.signum() {
+            from + (to - from) * t
         } else {
-            self.from * (1.0 - t) + self.to * t
+            from * (1.0 - t) + to * t
         };
         Some(value)
     }
@@ -229,14 +231,15 @@ impl Extent {
     }
 }
 
-/// **How far a sweep rolls** (§6.9, #271): an interval of its motion's parameter stated (`from:`
-/// / `to:`, radians), or `through: body` — the roll about 0 during which the tool meets the body's
-/// material, its stock and additions (never its cuts, so a sweep cutting the body it rolls through
-/// is no cycle), found after the solve (`solid::roll`).  Every reader asks `solid::roll::interval`,
+/// **How far a sweep rolls** (§6.9, #271): an interval of the shared roll stated (`from:` /
+/// `to:`, a `Running::roll`, #391 S1: degrees as written, `radians` what is read), or `through:
+/// body` — the roll about 0 during which the tool meets the body's material, its stock and
+/// additions (never its cuts, so a sweep cutting the body it rolls through is no cycle), found
+/// after the solve (`solid::roll`).  Every reader asks `solid::roll::interval`,
 /// never the extents, so the exact construction, admission and the field read one interval.
 #[derive(Clone, Debug)]
 pub enum Roll {
-    Stated { from: Extent, to: Extent },
+    Stated(super::Running),
     Through { body: u32 },
 }
 
@@ -292,17 +295,18 @@ pub enum SolidDef {
     /// share one axis, so it is a revolution of one meridian region (`solid::region`).
     Region { probe: u32, terms: Vec<RegionTerm> },
     /// **A face family** (#243 L1, `solid(I(…).f over s in (a, b))`): the solid the face `face`
-    /// of a station sweeps as the running number `held` (`Sketch::held`) runs from `from` to
-    /// `to`.  The station is drawn once, hidden — `station`, every entity its instance made —
-    /// at the middle of the interval, and `solid::family` solves it again at every other.  Its
-    /// caps are `start` and `end`, its walls the section's edges by their paths in the instance.
+    /// of a station sweeps as its running number runs over `over` (#391 S1: its name the key in
+    /// `Sketch::held`, its dimension the formal's, its ends as written).  The station is drawn
+    /// once, hidden — `station`, every entity its instance made — at the middle of the interval,
+    /// and `solid::family` solves it again at every other.  Its caps are `start` and `end`, its
+    /// walls the section's edges by their paths in the instance.
     ///
     /// Over a chain (#243 L4) the station is drawn once per link the interval reaches, each a
-    /// leg (`legs`, in order; `face` and `held` the first's, `station` every leg's entities):
+    /// leg (`legs`, in order; `face` and `over.name` the first's, `station` every leg's
+    /// entities):
     /// link `k`'s while the running number is in `(k, k + 1)`, its own running number the place
     /// on that link's run.  Empty for a family over one path.
-    Family { face: u32, station: Vec<EntRef>, held: String, from: Extent, to: Extent,
-             legs: Vec<FamilyLeg> },
+    Family { face: u32, station: Vec<EntRef>, over: super::Running, legs: Vec<FamilyLeg> },
 }
 
 /// One leg of a face family over a chain (#243 L4): the face its station sweeps, its running
@@ -333,10 +337,10 @@ impl SolidDef {
     /// A face family's legs, in order of its running number: over one path the one leg, its
     /// interval the family's; over a chain each link's part of it, in the leg's own number.
     pub fn legs(&self) -> Vec<Leg<'_>> {
-        let SolidDef::Family { face, held, from, to, legs, .. } = self else { return Vec::new() };
-        let (a, b) = (from.value, to.value);
+        let SolidDef::Family { face, over, legs, .. } = self else { return Vec::new() };
+        let (a, b) = over.pair();
         if legs.is_empty() {
-            return vec![Leg { face: *face, held, at: 0.0, from: a, to: b }];
+            return vec![Leg { face: *face, held: &over.name, at: 0.0, from: a, to: b }];
         }
         legs.iter().map(|l| Leg {
             face: l.face,
@@ -371,7 +375,8 @@ pub struct SolidE {
     pub class: Classes,
 }
 
-/// A named implicit envelope. Roll bounds are radians. Evaluated after solving
+/// A named implicit envelope, over an interval of the shared roll (`Running::roll`, #391 S1; its
+/// ends in degrees, `radians` what the kernels read). Evaluated after solving
 /// (`envelope::GeneratedEnvelope`) where its source is a revolution's named side, and held to in
 /// the solve (`envelope::held`, #283) where the drawing says what its source is before the
 /// relations are stated (`held`).
@@ -381,7 +386,7 @@ pub struct EnvelopeE {
     /// before then, and for a set's envelope, which has no such side.
     pub surface: Option<u32>,
     pub motion: u32,
-    pub roll: [f64;2],
+    pub roll: super::Running,
     pub name: String,
     pub class: Classes,
     /// What a relation holding something to it reads its source as.
@@ -392,13 +397,13 @@ pub struct EnvelopeE {
 /// under: mesh, from: a, to: b)` — tooth contact analysis, the first flank turning with `mesh`'s
 /// observer (the pinion's turn), the second with its source (the gear's).  Held to in the solve by
 /// a point on its path of contact (`CKind::PointOnMeshing`), which owns the phase, the lag and a
-/// place on each flank, and traced over the phase after it (`envelope::meshing::Meshing`).  Phase
-/// bounds are radians.
+/// place on each flank, and traced over the phase after it (`envelope::meshing::Meshing`).  Its
+/// phase runs over an interval of the shared roll (`Running::roll`, #391 S1), in degrees.
 #[derive(Clone, Debug)]
 pub struct MeshingE {
     pub flanks: [Flank; 2],
     pub motion: u32,
-    pub roll: [f64;2],
+    pub roll: super::Running,
     pub name: String,
     pub class: Classes,
     /// The first flank's ease-off, where it is eased (#345).
@@ -441,9 +446,10 @@ pub struct TracedE {
     pub args: Vec<EntRef>,
     /// The constant numbers it was given, in the body's order.
     pub values: Vec<f64>,
-    /// The interval each formal runs over, as written (degrees for an angle); a curve's second
-    /// none.
-    pub domain: [[f64; 2]; 2],
+    /// The formals that run, in order — one for a curve, two for a surface — each a parameter
+    /// axis (#391 S1): its name in the component, its dimension, and the interval it runs over
+    /// as written (degrees for an angle).
+    pub over: Vec<super::Running>,
     /// Where a march to a place starts, the formals' anchor.
     pub home: [f64; 2],
     pub name: String,
@@ -454,6 +460,12 @@ impl TracedE {
     /// How many formals run: one for a curve, two for a surface.
     pub fn formals(&self) -> usize {
         self.body.n_formals()
+    }
+
+    /// Each formal's interval as written, in order; a curve's second none (`[0, 0]`): what a
+    /// contact's constants pack.
+    pub fn domain(&self) -> [[f64; 2]; 2] {
+        std::array::from_fn(|k| self.over.get(k).map_or([0.0; 2], |r| r.span()))
     }
 }
 

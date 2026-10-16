@@ -26,7 +26,7 @@ impl GeneratedEnvelope {
         let surface = e.surface.ok_or_else(|| format!("`{}` is the envelope of a set's surface, \
             which the solve holds points to and nothing reads after it",e.name))?;
         Self::new(e.name.clone(),RevolvedSurface::named(sk,surface as usize)?,
-            Family::read(sk,e.motion as usize)?,e.roll)
+            Family::read(sk,e.motion as usize)?,e.roll.radians())
     }
 
     /// The envelope of `surface` under `motion` over the roll `roll` (radians), made of its parts

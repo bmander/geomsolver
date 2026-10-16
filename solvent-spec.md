@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.138 — October 2026**
+**Specification, Draft 0.139 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -384,6 +384,8 @@ param beta: Angle hint(30deg)       // an input nothing binds: an unknown of the
 A definition whose value is a number introduces a named definitional value. Values are evaluated at elaboration time when all inputs are `Int`/literal, otherwise they are definitional scalars — affine in an unknown when they read one (`q := 2 * beta`).
 
 **[0.41]** `param` before a definition marks one of the document's **inputs**: the numbers it is drawn from, and the one kind a host may give another value. Its type (`Length`, `Angle`, `Scalar`, `Int`) is optional where it has a value, which is then checked against it and carries it (`param w: Length := 60` is a length); a mismatch is **E103**. An input with no value is an **unknown** of the drawing, as a component's unbound formal is: it MUST state its type, which is `Length`, `Angle` or `Scalar` (a count is never an unknown) — **E040** otherwise — and its seed is its own `hint(E)`, the one keyless hint clause, which a solve writes back as it writes a point's. A seed on an input with a value is **E040**. `param` stands at the top of a document or its `preview` (a component's inputs are its formals; a block's copies share the document's — both refused where written), and a module's input MUST have a value (**E040**): a module's numbers are read by documents that do not draw it. A value reads an input as it reads any value.
+
+**[0.139] A parameter that runs.** `param t: Angle over (A, B)` declares a **parameter**: a number that runs over the interval from `A` to `B`, neither a value nor an unknown. It MUST state its type, `Length`, `Angle` or `Scalar`, and MUST NOT have a value (`:=`) or a seed (`hint(…)`) — each a syntax error. `A` and `B` are numbers of that type, read over the values in scope as a value is, finite and not reading an unknown, and `A < B` (**E103** otherwise). It stands where an input stands (a module's is **E040**). A parameter contributes no unknown, and in this draft nothing reads one: a dimension reading it is **E103**, and the relation is not emitted. It is the one notion of which a face family's running number (§6.9), the formals a traced body runs over (§6.5) and the interval of a motion's roll a reading states (§6.14, §6.15) are uses — each as it was, its meaning unchanged.
 
 A value or an input is visible throughout the body that declares it and its repetition blocks. A file may read a used module's top-level parameters and groups (§14.4) in its root body, by the module's path (`engine.dims.bore`); a component receives external values through arguments (§8). A value MUST NOT read geometry (`a.x`): a value feeds constraints, and a number read off a seed would make the solution set depend on where a solve began (P3); a *seed* may (§6.4).
 

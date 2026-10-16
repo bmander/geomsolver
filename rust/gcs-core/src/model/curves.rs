@@ -151,9 +151,10 @@ pub struct CurveE {
     /// the curve is built.
     pub unknowns: Vec<String>,
     pub values: Vec<f64>,
-    /// The interval *this* curve is drawn over — the piece of an involute between two circles
-    /// rather than the whole spiral.
-    pub domain: (f64, f64),
+    /// What *this* curve runs over (#391 S1): its definition's swept formal — or, for an envelope
+    /// in the plane, the shared roll (`Running::roll`) — and the interval it is drawn over, the
+    /// piece of an involute between two circles rather than the whole spiral.
+    pub over: super::Running,
     /// The parameter value a trace is anchored at — the one place a block's orientation
     /// predicates are read (§6.5).  `Sketch::curve_home` reads it.
     pub home: Home,
@@ -315,9 +316,9 @@ impl Sketch {
         match cv.trim {
             Some(t) => match (self.contact_param(t.from, t.of), self.contact_param(t.to, t.of)) {
                 (Some(a), Some(b)) => (a, b),
-                _ => cv.domain,
+                _ => cv.over.pair(),
             },
-            None => cv.domain,
+            None => cv.over.pair(),
         }
     }
 
@@ -344,7 +345,7 @@ impl Sketch {
     /// body linear in its angle (an involute's string) comes back somewhere else and is open.
     pub fn curve_closed(&self, i: usize) -> bool {
         let cv = &self.curves[i];
-        let (a, b) = cv.domain;
+        let (a, b) = cv.over.pair();
         let turns = (b - a).abs() / 360.0;
         if cv.trim.is_some() || !self.curve_defs[cv.def as usize].turns
             || turns < 1.0 - 1e-12 || (turns - turns.round()).abs() > 1e-12
@@ -396,7 +397,7 @@ impl Sketch {
                 .free_vars
                 .get(n)
                 .map(|&p| self.params[p as usize].value)
-                .unwrap_or(cv.domain.0),
+                .unwrap_or(cv.over.from),
         }
     }
 

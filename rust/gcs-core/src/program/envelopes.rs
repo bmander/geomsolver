@@ -4,17 +4,19 @@
 use super::{resolve::{follow_building,Resolver},Code,Diag,Made,SourceMap};
 use crate::{constraints::{Arg as CArg,CKind,Constraint,SpecKind},
     ir::{Decl,Kid,Operation,Statement},
-    model::{EntKind,EntRef,EnvelopeE,Flank,Held,MeshingE,SetKind,SetShape,Sketch},
+    model::{EntKind,EntRef,EnvelopeE,Flank,Held,MeshingE,Running,SetKind,SetShape,Sketch},
     syntax::{Arg,StmtId}};
 use std::collections::{BTreeMap,BTreeSet};
 
-/// The roll an envelope's (or a meshing's) declaration states, in radians.
-fn roll(sk: &Sketch, d: &Decl) -> Result<[f64;2],String> {
+/// The interval of the shared roll an envelope's (or a meshing's) declaration states (#391 S1),
+/// its ends in degrees as written; the kernels read it in radians (`Running::radians`).
+fn roll(sk: &Sketch, d: &Decl) -> Result<Running,String> {
     let what = d.kind.as_str();
-    let angle = |a: &Arg| super::bound_angle(sk,a,&format!("{what} bound")).map(f64::to_radians);
+    let angle = |a: &Arg| super::bound_angle(sk,a,&format!("{what} bound"));
     let e = d.angular_span.as_ref().ok_or_else(|| format!("{} needs angular bounds",d.kind.a()))?;
-    let roll = [angle(&e.from)?,angle(&e.to)?];
-    if roll[0] >= roll[1] { return Err(format!("{} needs increasing roll bounds",d.kind.a())); }
+    let roll = Running::roll(angle(&e.from)?,angle(&e.to)?);
+    let [a,b] = roll.radians();
+    if a >= b { return Err(format!("{} needs increasing roll bounds",d.kind.a())); }
     Ok(roll)
 }
 

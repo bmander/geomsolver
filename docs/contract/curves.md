@@ -617,7 +617,9 @@ curve has its Jacobian in the profile's columns against central differences; and
 
 - **A body traced in space** (#326, [0.107], [0.108]; `traced.rs`, `program/traced.rs`) is
   `EntKind::Traced` (`TracedE`: the body, the entities its component was given — points, lines,
-  motions — its constant numbers, the formals' domain and home), built where a curve declaration
+  motions — its constant numbers, the formals that run (`TracedE::over`, one `model::Running`
+  each, [parameters.md](parameters.md); `TracedE::domain` packs their ends) and its home), built
+  where a curve declaration
   runs over two formals (`CurveSpec::second`, `over (a in (…), b in (…))`, its ends settled by the
   flattener as the first's) or is given a motion — a placeholder in the geometry phase, compiled by
   `traced_bodies` once the motions are, before the envelopes and meshings — or where its planar

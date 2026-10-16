@@ -893,7 +893,7 @@ impl Parts {
             let term = b.read(t, Side::Member).map_err(said)?;
             b.terms.push(term);
         }
-        Ok(Parts { held, roll: env.roll, terms: b.terms, cols: b.cols })
+        Ok(Parts { held, roll: env.roll.radians(), terms: b.terms, cols: b.cols })
     }
 
     /// The constants, the margin stated `margin`.

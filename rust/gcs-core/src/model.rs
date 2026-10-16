@@ -29,6 +29,7 @@ mod turns;
 mod duals;
 mod rates;
 mod caches;
+mod running;
 
 pub use entities::{
     Param, EntKind, Ends, Run, Field, EntRef, PointE, LineE, CircleE, AxisE, ArcE, SplineE,
@@ -49,6 +50,7 @@ pub use turns::{Turn, Derivation};
 pub use duals::{Dual, Move, Moves, Toward};
 pub use rates::{RateRow, RateWord};
 pub use caches::Caches;
+pub use running::Running;
 pub use geometry::{Box2, grow};
 pub use topology::{edge_ends, expand};
 pub(crate) use measure::polyline_distance;
@@ -222,6 +224,11 @@ pub struct Sketch {
     /// `expr::evaluate` when it allocates the unknown (its seed, its dimension).  Set by
     /// elaboration and never written to a document.
     pub declared: BTreeMap<String, Declared>,
+    /// **The parameter axes the source declares** (#391 S1), by name: `param t: Angle over
+    /// (0deg, 360deg)`, a number that runs over an interval rather than one the solve answers
+    /// for.  Represented once, as every running number is (`Running`); nothing reads one yet.
+    /// Set by elaboration and never written to a document, as `declared` is.
+    pub parameters: BTreeMap<String, Running>,
     /// What the sketch remembers and could work out again — polylines, evaluated and exact
     /// solids, regions' readings, bodies' faces — and what a clone keeps of it (`Caches`).
     pub caches: Caches,

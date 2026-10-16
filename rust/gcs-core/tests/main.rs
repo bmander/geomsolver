@@ -137,6 +137,7 @@ mod order;
 mod ordinate;
 mod overview;
 mod par;
+mod parameters;
 mod patches;
 mod path_examples;
 mod paths;

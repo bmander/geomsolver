@@ -766,10 +766,10 @@ fn twins(def: &SolidDef) -> Vec<Vec<(EntRef, EntRef)>> {
 /// the station there solved on both and kept once.
 fn march(sk: &Sketch, si: usize, unit: f64) -> Result<Family, String> {
     let def = &sk.solids[si].def;
-    let SolidDef::Family { station, from, to, .. } = def else {
+    let SolidDef::Family { station, over, .. } = def else {
         return Err("not a face family".into());
     };
-    let (a, b) = (from.value, to.value);
+    let (a, b) = over.pair();
     if !(a.is_finite() && b.is_finite() && a < b) {
         return Err("a face family needs a finite interval running forward".into());
     }
@@ -1414,7 +1414,8 @@ pub(crate) fn walls(sk: &Sketch, si: usize) -> Result<Walls, String> {
 fn stated_carry(sk: &Sketch, si: usize) -> Option<crate::brep::geom::Carry> {
     use crate::constraints::Arg;
     use crate::expr::Aff;
-    let SolidDef::Family { held, from, to, legs, .. } = &sk.solids[si].def else { return None };
+    let SolidDef::Family { over, legs, .. } = &sk.solids[si].def else { return None };
+    let held = &over.name;
     if legs.len() > 1 || super::rated::states_rates(sk, held) {
         return None;
     }
@@ -1426,7 +1427,7 @@ fn stated_carry(sk: &Sketch, si: usize) -> Option<crate::brep::geom::Carry> {
         }).collect()
     };
     // the roll each carried row states, at the family's ends and its middle (radians)
-    let (a, b) = (from.value, to.value);
+    let (a, b) = over.pair();
     let ss = [a, (a + b) / 2.0, b];
     let mut said: Option<(usize, [f64; 3])> = None;
     for c in sk.constraints.iter().filter(|c| c.states_rows()) {

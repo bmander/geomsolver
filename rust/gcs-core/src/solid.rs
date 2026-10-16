@@ -466,8 +466,9 @@ fn validate_at(sk: &Sketch, si: usize, unit: f64) -> Result<std::collections::BT
         let fail = |why: &str| format!("`{}`: {why}", s.name);
         let face = match &s.def {
             SolidDef::Swept { motion, roll, .. } => {
-                if let Roll::Stated { from, to } = roll {
-                    if !from.value.is_finite() || !to.value.is_finite() || from.value >= to.value {
+                if let Roll::Stated(r) = roll {
+                    let [from, to] = r.radians();
+                    if !from.is_finite() || !to.is_finite() || from >= to {
                         return Err(fail("a continuous motion sweep needs finite increasing angular bounds"));
                     }
                 }

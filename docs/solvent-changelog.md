@@ -4,6 +4,13 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.139] One parameter axis.** `param t: Angle over (a, b)` declares a number that runs over an
+interval (§6.3): it states its type (`Length`, `Angle` or `Scalar`), has no value and no seed, and
+its ends increase (E103 otherwise). Nothing reads one yet — a dimension reading it is E103. A face
+family's running number (§6.9), a traced body's formals (§6.5) and the interval of the roll a
+reading states (§6.14, §6.15) are represented as that one notion, with no change in what any
+document means and no solved value moved. (Issue #391, stage 1.)
+
 **[0.138] One notion of a moving frame: station words carried by a frame's motion.** A frame that
 moves as a number runs is a frame's motion read at a roll (§6.14). `X coincident(at: τ) x` carries a
 point to a roll the statement states, by what `x` rides on or the frame `under: m` names — an Angle,

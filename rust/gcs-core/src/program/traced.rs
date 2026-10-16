@@ -45,7 +45,7 @@ pub(super) fn in_space_traced(sk: &Sketch, res: &Resolver, d: &Decl,
 /// and class, its body compiled once the motions are (`traced_bodies`).
 pub(super) fn placeholder(d: &Decl) -> TracedE {
     TracedE { body: crate::traced::Body { flat: Vec::new() }, args: Vec::new(), values: Vec::new(),
-              domain: [[0.0; 2]; 2], home: [0.0; 2], name: d.name.key().text.clone(),
+              over: Vec::new(), home: [0.0; 2], name: d.name.key().text.clone(),
               class: d.class.clone() }
 }
 
@@ -247,6 +247,8 @@ pub(super) fn build_traced(sk: &Sketch, res: &Resolver, d: &Decl, st: &Stmt, pro
             written over, and does not move with what runs", of.point))),
     };
     let num = |t: &str| crate::expr::literal(t);
+    // each formal that runs, one parameter axis (#391 S1)
+    let mut over: Vec<crate::model::Running> = Vec::with_capacity(running.len());
     let mut domain = [[0.0, 0.0]; 2];
     for (k, (f, (a, b))) in running.iter().enumerate() {
         let (Some(lo), Some(hi)) = (num(a), num(b)) else {
@@ -257,6 +259,9 @@ pub(super) fn build_traced(sk: &Sketch, res: &Resolver, d: &Decl, st: &Stmt, pro
                         "a traced formal runs over an increasing interval".into()));
         }
         domain[k] = [lo, hi];
+        let dim = comp.formals.iter().find(|x| x.name.text == f.text)
+            .map_or(crate::units::Dim::SCALAR, |x| x.ty.dim());
+        over.push(crate::model::Running::new(f.text.clone(), dim, lo, hi));
     }
     if !low.rates.is_empty() && low.second.is_some() {
         low.marched(at, t, comp.span)?;
@@ -286,7 +291,7 @@ pub(super) fn build_traced(sk: &Sketch, res: &Resolver, d: &Decl, st: &Stmt, pro
         Some((f, _)) => info.values.get(&f.text).and_then(|a| a.number()).unwrap_or(domain[k][0]),
         None => 0.0,
     });
-    Ok(Some(TracedE { body: flat, args, values: numbers, domain, home,
+    Ok(Some(TracedE { body: flat, args, values: numbers, over, home,
         name: d.name.key().text.clone(), class: d.class.clone() }))
 }
 

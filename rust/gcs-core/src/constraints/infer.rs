@@ -24,7 +24,7 @@ pub fn seed_param(sk: &Sketch, kind: CKind, args: &[Arg], i: usize) -> f64 {
             return 0.0;
         };
         let Some(e) = sk.meshings.get(m.i()) else { return 0.0 };
-        let [a, b] = e.roll;
+        let [a, b] = e.roll.radians();
         let phase = match args.get(first) {
             Some(Arg::Seed { value, .. }) => *value,
             _ if a <= 0.0 && 0.0 <= b => 0.0,
@@ -814,7 +814,7 @@ fn envelope_place(sk: &Sketch, e: usize, p: usize) -> Option<[f64; 3]> {
     let k = parts.consts(Contact::Point);
     let values = parts.values(sk);
     let at = sk.lifted(p);
-    let roll = sk.envelopes[e].roll;
+    let roll = sk.envelopes[e].roll.radians();
     let key: Vec<f64> = k.iter().chain(&values).chain(&at).chain(&roll).copied().collect();
     if let Some(x) = SEEDS.with(|s| s.borrow().get(&key)) {
         return Some(x);
@@ -848,7 +848,7 @@ fn meshing_place(sk: &Sketch, m: usize, at: [f64; 3], phase: f64) -> Option<[f64
     let k = parts.consts(sk, 0);
     let values = parts.values(sk);
     let rolls = e.flanks.clone().map(|f| match f {
-        Flank::Envelope(v) => sk.envelopes[v as usize].roll,
+        Flank::Envelope(v) => sk.envelopes[v as usize].roll.radians(),
         Flank::Formed(_) | Flank::Traced(_) => [0.0; 2],
     });
     let key: Vec<f64> = k.iter().chain(&values).chain(&at).chain(rolls.iter().flatten())
@@ -856,7 +856,7 @@ fn meshing_place(sk: &Sketch, m: usize, at: [f64; 3], phase: f64) -> Option<[f64
     if let Some(x) = SEEDS.with(|s| s.borrow().get(&key)) {
         return Some(x);
     }
-    let mesh = Meshing::new(k, values, e.roll)?;
+    let mesh = Meshing::new(k, values, e.roll.radians())?;
     let x = seed(&mesh, rolls, at, phase)?.values();
     SEEDS.with(|s| s.borrow_mut().put(key, x));
     Some(x)

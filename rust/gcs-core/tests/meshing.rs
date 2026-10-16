@@ -484,7 +484,7 @@ fn a_meshing_prints_back_and_refuses_what_it_cannot_turn() {
     assert!(printed.contains("p coincident(t == 0deg, lag == 0) contact"), "{printed}");
     let again = build(&printed);
     let flanks = |e: &gcs_core::program::Elaborated| e.sketch.meshings.iter()
-        .map(|m| (m.name.clone(), m.flanks.clone(), m.roll)).collect::<Vec<_>>();
+        .map(|m| (m.name.clone(), m.flanks.clone(), m.roll.clone())).collect::<Vec<_>>();
     assert_eq!(flanks(&again), flanks(&first));
     let points = again.sketch.constraints.iter().filter(|c| c.kind == CKind::PointOnMeshing);
     assert_eq!(points.count(), 1);

@@ -109,7 +109,7 @@ fn build_free_curve(sk: &mut Sketch, res: &Resolver, d: &Decl, st: &Stmt, diags:
         args: ends,
         unknowns: Vec::new(),
         values: Vec::new(),
-        domain: (0.0, 1.0),
+        over: crate::model::Running::new("u", crate::units::Dim::SCALAR, 0.0, 1.0),
         home: crate::model::Home::At(0.0),
         pose: Vec::new(),
         class: d.class.clone(),
@@ -734,7 +734,9 @@ pub(super) fn splines_in_space(sk: &mut Sketch, res: &mut Resolver, map: &mut su
         let name = map.name_of(e).cloned().unwrap_or_else(|| io::entity_name(e));
         let t = crate::model::TracedE {
             body, args: s.ctrl.iter().map(|&p| EntRef::point(p as usize)).collect(),
-            values: Vec::new(), domain: [[lo, hi], [0.0, 0.0]], home: [0.5 * (lo + hi), 0.0],
+            values: Vec::new(),
+            over: vec![crate::model::Running::new("t", crate::units::Dim::SCALAR, lo, hi)],
+            home: [0.5 * (lo + hi), 0.0],
             name, class: s.class.clone(),
         };
         let traced = EntRef::new(EntKind::Traced, sk.traced.len());

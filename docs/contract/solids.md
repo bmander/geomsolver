@@ -203,7 +203,9 @@ placement carries inside the blank; CLI test readers zero the offset.
   to it, a seed reads it at the middle.  The elaborator holds each (`Sketch::hold`): a **fixed**
   parameter, which `expr::evaluate` reads as a number (no free variable, any arithmetic), which a
   contact pinned to it owns (`Sketch::add`), and which `owned_arg`/`graft` carry by name.
-  `SolidDef::Family { face, station, held, from, to }`: `station` is every entity the instance
+  `SolidDef::Family { face, station, over }`, `over` its running number as a parameter axis
+  (`model::Running`, [parameters.md](parameters.md): its name the key in `Sketch::held`, its
+  dimension the formal's, its ends as written): `station` is every entity the instance
   made (by key prefix, the face's edges and their children) — `Sketch::stations`, which
   `drawn()`, the panes, the pane picks and `callout::layout` leave out.  **The drawn station is
   solved with the drawing at the middle**, so the document's DOF and diagnosis are its too.
@@ -301,7 +303,7 @@ placement carries inside the blank; CLI test readers zero the offset.
   E103.  The running formal must be a `Scalar`, the interval within `(0, n)`, the chain open
   (E080).  The elaborator gives `SolidDef::Family` its `legs` (`FamilyLeg`: face, running number,
   link index, and the station's entities in the order of their names under the leg, so legs
-  correspond entry for entry); `face`/`held` are the first leg's and `station` every leg's.
+  correspond entry for entry); `face`/`over.name` are the first leg's and `station` every leg's.
   `SolidDef::legs` is the one reading: a family over one path is one leg.  `family::march` steps
   each leg over its own part (`leg_part`) — the first from its drawn station, **each later one
   from its first station, its part started where the last leg ended** (`carry_over`: points put

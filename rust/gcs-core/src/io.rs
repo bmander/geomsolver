@@ -1095,7 +1095,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             args,
             unknowns: cv.unknowns.clone(),
             values: cv.values.clone(),
-            domain: cv.domain,
+            over: cv.over.clone(),
             home: cv.home.clone(),
             pose: crate::model::whole(pose, cv.pose.len()),
             class: cv.class.clone(),
@@ -1313,7 +1313,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             crate::model::SolidDef::Prism { face: f, from, to, draft } => {
                 crate::model::SolidDef::Prism { face: face(*f), from: from.clone(), to: to.clone(), draft: draft.clone() }
             }
-            crate::model::SolidDef::Family { face: f, station, held, from, to, legs } => {
+            crate::model::SolidDef::Family { face: f, station, over, legs } => {
                 let station = station.iter()
                     .map(|&e| station_ent(e).expect("retention kept the whole station"))
                     .collect();
@@ -1324,8 +1324,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
                         .collect(),
                     ..l.clone()
                 }).collect();
-                crate::model::SolidDef::Family { face: face(*f), station, held: held.clone(),
-                    from: from.clone(), to: to.clone(), legs }
+                crate::model::SolidDef::Family { face: face(*f), station, over: over.clone(), legs }
             }
             crate::model::SolidDef::Through { face: f, body } => {
                 crate::model::SolidDef::Through { face: face(*f), body: sol(body) }
@@ -1448,7 +1447,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         let held = remap_held(&e.held);
         let next = dst.envelopes.len();
         dst.envelopes.push(crate::model::EnvelopeE {
-            surface,motion:motion as u32,roll:e.roll,
+            surface,motion:motion as u32,roll:e.roll.clone(),
             name:e.name.clone(),class:e.class.clone(),held,
         });
         envelope_map[i] = Some(next);
@@ -1497,8 +1496,8 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             None => None,
         };
         let next = dst.meshings.len();
-        dst.meshings.push(crate::model::MeshingE {flanks:[a,b],motion:motion as u32,roll:e.roll,
-            name:e.name.clone(),class:e.class.clone(),ease});
+        dst.meshings.push(crate::model::MeshingE {flanks:[a,b],motion:motion as u32,
+            roll:e.roll.clone(),name:e.name.clone(),class:e.class.clone(),ease});
         meshing_map[i] = Some(next);
         made.push(EntRef::new(EntKind::Meshing,next));
     }
@@ -2098,9 +2097,9 @@ pub fn describe_solid_claim(sk: &crate::model::Sketch, c: &crate::model::SolidCl
         None => String::new(),
         Some(s) => format!(
             "over {} in ({}, {}): ",
-            s.name,
-            crate::syntax::num(s.from),
-            crate::syntax::num(s.to)
+            s.name(),
+            crate::syntax::num(s.from()),
+            crate::syntax::num(s.to())
         ),
     };
     format!(
