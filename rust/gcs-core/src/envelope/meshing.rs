@@ -967,9 +967,16 @@ impl Meshing {
         if m.lead != 0 || parts.len() != m.width() - UNKNOWNS {
             return None;
         }
-        let ratio = match m.steps[m.source] {
-            Step::Rotation { ratio, advance, .. } if advance == 0.0 => Some(ratio),
-            Step::Turn { ratio, .. } => Some(ratio),
+        // the source's numbers as the parts stand: a joint's the solve found among them (#383)
+        let source = m.steps[m.source];
+        let numbers = source.free().map(|_| source.numbers(&parts[m.motion() - UNKNOWNS..]));
+        let ratio = match source {
+            Step::Rotation { ratio, advance, .. } => match numbers {
+                Some((r, a)) if a == 0.0 => Some(r),
+                None if advance == 0.0 => Some(ratio),
+                _ => None,
+            },
+            Step::Turn { ratio, .. } => Some(numbers.map_or(ratio, |(r, _)| r)),
             _ => None,
         };
         let scale = parts.iter().fold(0.0f64, |a, x| a.max(x.abs())).max(1.0);

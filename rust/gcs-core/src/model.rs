@@ -117,6 +117,11 @@ pub struct Sketch {
     /// `hold_twins`).  A reader drawn in a plane reads the point there by its twin
     /// (`Sketch::twin_in`).
     pub twins: BTreeMap<usize, Vec<usize>>,
+    /// **What rides on frames** (#383): a point drawn in nested `in` blocks, or an envelope or
+    /// a swept solid riding on its observer, to the frames of its path, outermost first — its
+    /// carriers are their joints (`Sketch::carriers`).  At rest it is drawn where it stands: the
+    /// path enters no row but a reading at a roll.
+    pub rides: BTreeMap<EntRef, Vec<u32>>,
     pub curves: Vec<CurveE>,
     /// The faces and solids the document names (§6.8, §6.9).  Built after every other kind,
     /// since a face is written over edges and a solid over faces and solids; evaluated after

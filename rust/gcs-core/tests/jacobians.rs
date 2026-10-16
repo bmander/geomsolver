@@ -861,3 +861,78 @@ X := point hint((1, 1, 1))
         }
     }
 }
+
+/// **A joint's numbers the solve finds are columns** (#383 stage 5): the spin's ratio left to the
+/// solve (`std.Turn` with no `ratio:`) and the gear's advance stated nowhere (its joint held flat),
+/// read by a point on an envelope, a point on a meshing, a carried point and its rate — each
+/// row's Jacobian checked over the joints' columns with the rest, at the seeds and knocked off.
+#[test]
+fn a_joints_free_numbers_agree_with_finite_differences() {
+    const SRC: &str = "\
+unit mm
+use std (reciprocal)
+o := point hint((0, 0, 0))
+z := point hint((1, 0.5, 10))
+ax := line(o, z)
+a := point hint((0, 30, 0))
+b := point hint((10, 30, 2))
+gear_ax := line(a, b)
+cone := std.Cone(ax, half: 20deg)
+spin := frame
+std.Turn(spin, about: ax)
+gear_turn := frame
+gear_ax coincident gear_turn.axis
+fix(ratio == -0.5) gear_turn
+flank := envelope(cone, under: spin, seen_from: gear_turn, from: -30deg, to: 30deg)
+p := point hint((9, 3, 1))
+p coincident flank
+c1 := point hint((30, 0, -5))
+c2 := point hint((31, 1, 5))
+cax := line(c1, c2)
+mated := std.Cone(cax, half: 15deg)
+both := meshing(flank, mated, under: gear_turn, seen_from: spin, from: -20deg, to: 20deg)
+q := point hint((20, 3, 4))
+q coincident both
+x := point hint((3, -2, 5))
+X := point hint((1, 1, 1))
+X coincident(under: gear_turn, seen_from: spin, t == 15deg) x
+m := point hint((15, 5, 4))
+nl := line(X, m)
+rate(X over t) perpendicular nl
+";
+    let (prog, errs) = crate::common::parse(SRC);
+    assert!(errs.is_empty(), "{errs:?}");
+    let e = gcs_core::program::elaborate(&prog);
+    assert!(e.ok(), "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
+    let mut sk = e.sketch;
+    let joint = |name: &str| {
+        let f = e.map.ent_named(name).unwrap();
+        sk.frames[f.i()].joint.clone().unwrap()
+    };
+    let (spin, gear) = (joint("spin"), joint("gear_turn"));
+    assert!(!sk.params[spin.ratio as usize].fixed && sk.params[spin.advance as usize].fixed);
+    assert!(sk.params[gear.ratio as usize].fixed && !sk.params[gear.advance as usize].fixed);
+    let free = [spin.ratio, gear.advance];
+    let read = |c: &&Constraint| c.kind.envelope_contact().is_some()
+        || c.kind.meshing_contact().is_some() || c.kind == CKind::CarriedPoint
+        || c.rate_source().is_some();
+    let rows: Vec<&Constraint> = sk.constraints.iter().filter(read).collect();
+    assert!(rows.len() >= 4);
+    for c in &rows {
+        let ps = c.params(&sk);
+        assert!(free.iter().all(|q| ps.contains(q)), "{:?} reads the joints' numbers", c.kind);
+    }
+    let mut rng = Rng::new(3835);
+    for round in 0..4 {
+        if round > 0 {
+            for p in sk.params.iter_mut().filter(|p| !p.fixed) {
+                p.value += rng.uniform(-0.05, 0.05) * (1.0 + p.value.abs().min(10.0));
+            }
+        }
+        for c in sk.constraints.iter().filter(read) {
+            let err = check_constraint(&sk, c, 1e-6, 1e-7)
+                .unwrap_or_else(|e| panic!("round {round}: {e}"));
+            assert!(err.is_finite());
+        }
+    }
+}

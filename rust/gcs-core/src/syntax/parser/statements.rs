@@ -34,15 +34,18 @@ fn stamp_initially(stmts: &mut [Stmt], errs: &mut Vec<SynErr>) {
 }
 
 /// Apply block membership recursively. Faces and solids inherit their geometry's plane;
-/// instances carry membership into expansion. Conflicting clauses are diagnosed here.
-fn stamp_plane(stmts: &mut [Stmt], plane: &Ref, errs: &mut Vec<SynErr>) {
+/// instances carry membership into expansion.  A statement already in a frame — a block inside
+/// this one, or its own clause — **rides** on this one too (#383): the path is kept, outermost
+/// first, and the elaborator draws it in the innermost frame of it with axes.  A frame declared
+/// here takes the path as where it rides.
+fn stamp_frame(stmts: &mut [Stmt], plane: &Ref, errs: &mut Vec<SynErr>) {
     for st in stmts {
         match &mut st.kind {
             StmtKind::Decl(d) => {
                 // Faces and solids use the planes of their constituent geometry, and a free curve
                 // the view of the points it runs between.
                 if d.kind.spatial() || (d.kind == EntKind::Curve && d.curve.is_none()) {
-                } else if !d.kind.bears_points() {
+                } else if !d.kind.bears_points() && d.kind != EntKind::Frame {
                     errs.push(SynErr {
                         span: st.span,
                         message: format!(
@@ -51,13 +54,10 @@ fn stamp_plane(stmts: &mut [Stmt], plane: &Ref, errs: &mut Vec<SynErr>) {
                         ),
                     });
                 } else if !d.membership.join(plane, Source::Block) {
-                    errs.push(SynErr {
-                        span: d.membership.span(),
-                        message: d.membership.cause().into(),
-                    });
+                    d.membership.ride_in(plane);
                 }
             }
-            StmtKind::Block(b) => stamp_plane(&mut b.body, plane, errs),
+            StmtKind::Block(b) => stamp_frame(&mut b.body, plane, errs),
             // a step measured in no frame of its own is measured in the view its line is drawn
             // in (#330): the block's plane, handed on as a reference — which no source writes,
             // a written `from:` being kept as its text — so the flattener tells the two apart
@@ -74,10 +74,7 @@ fn stamp_plane(stmts: &mut [Stmt], plane: &Ref, errs: &mut Vec<SynErr>) {
             // the instance joins whole: the flattener carries the plane into its expansion
             StmtKind::Instance(inst) => {
                 if !inst.membership.join(plane, Source::Block) {
-                    errs.push(SynErr {
-                        span: inst.membership.span(),
-                        message: inst.membership.cause().into(),
-                    });
+                    inst.membership.ride_in(plane);
                 }
             }
             _ => {}
@@ -1020,17 +1017,22 @@ impl<'a> P<'a> {
         // the plane is a formal, and nothing the document deletes reaches the header; inside a
         // root block a header buried in another statement's span is a splice no deletion
         // could compose, so there the clause is written per declaration
-        let nested = self.in_body > u32::from(self.in_preview);
+        // `in` inside `in` nests (#383): what is drawn there rides on both, so only the
+        // blocks that are no `in` count
+        let nested = self.in_body - self.in_in > u32::from(self.in_preview);
         if nested && !self.in_comp {
             self.fail(
-                "an `in` block stands at the top level or in a component; inside a block here, \
-                 write the clause on each declaration",
+                "an `in` block stands at the top level, in another `in` block or in a component; \
+                 inside a block here, write the clause on each declaration",
             );
         }
-        let (mut body, joint) = self.braced_body(next_id)?;
+        self.in_in += 1;
+        let got = self.braced_body(next_id);
+        self.in_in -= 1;
+        let (mut body, joint) = got?;
         self.no_open_joint(joint, "an `in` block");
         let close = self.t.get(self.i.wrapping_sub(1)).map(|(_, s)| *s).unwrap_or_default();
-        stamp_plane(&mut body, &plane, &mut self.errs);
+        stamp_frame(&mut body, &plane, &mut self.errs);
         // recorded only where a deletion could reach it: a nested block is already an error
         if !nested {
             self.in_blocks.push(InBlock { plane, header, close, declares });

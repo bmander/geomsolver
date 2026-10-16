@@ -218,10 +218,10 @@ std.Spin(t2, about: c, on: std.top, ratio: 2)
     let separate = {
         let inverse = sk.motions.len();
         sk.motions.push(gcs_core::model::MotionE { def: MotionDef::Inverse { of: lead as u32 },
-            name: "lead⁻".into(), class: Default::default(), measured: Vec::new() });
+            name: "lead⁻".into(), class: Default::default(), numbers: None });
         sk.motions.push(gcs_core::model::MotionE {
             def: MotionDef::Relative { source: follow as u32, observer: inverse as u32 },
-            name: "unfolded".into(), class: Default::default(), measured: Vec::new() });
+            name: "unfolded".into(), class: Default::default(), numbers: None });
         sk.motions.len() - 1
     };
     let (a, b) = (Family::read(sk, folded).unwrap(), Family::read(sk, separate).unwrap());
@@ -565,10 +565,300 @@ fn the_motion_spellings_are_refused_with_what_they_became() {
     let e = gcs_core::program::elaborate(&prog);
     assert!(e.errors().any(|d| d.message.contains("does not move")),
             "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
-    // a joint named but its numbers never stated
-    let (prog, _) =
-        crate::common::parse("unit mm\nuse std\nf := frame\nl := line\nl coincident f.axis\n");
+    // a joint's ratio pinned to a measurement of the drawing: none is read before the solve
+    let (prog, _) = crate::common::parse(
+        "unit mm\nuse std\na := point\nb := point\nl := line(a, b)\nf := frame\n\
+         std.Turn(f, about: l, ratio: length(l) / 1mm)\n");
     let e = gcs_core::program::elaborate(&prog);
-    assert!(e.errors().any(|d| d.message.contains("states no ratio")),
+    assert!(e.errors().any(|d| d.code.as_str() == "E107"),
             "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
+}
+
+/* -- stage 4: riding -------------------------------------------------------------------------- */
+
+/// **A planet rides on its arm** (#383 stage 4): drawn in nested `in` blocks, `x` rides on the
+/// planet and the planet, declared in the arm's block, on the arm — so `X coincident(t == τ) x`,
+/// `X` riding on nothing, is `x` carried by the chain `arm·planet` with no `under:` written, the
+/// closed form `R(τ)·(c + R(−3τ)(x − c))`; and `under: planet` of a point at rest is the same
+/// chain, since the planet's motion is its joint after its arm's.
+#[test]
+fn a_planet_drawn_in_its_arm_rides_on_both() {
+    let src = "\
+unit mm
+use std
+in std.top {
+  o := point
+  fix((0, 0)) o
+  X := point hint((10, 17))
+  Y := point hint((10, 17))
+  still := point
+  fix((40, 0)) still
+}
+in (arm := frame) {
+  in std.top {
+    c := point
+    fix((30, 0)) c
+  }
+  in (planet := frame) {
+    in std.top {
+      x := point
+      fix((40, 0)) x
+    }
+  }
+}
+std.Spin(arm, about: o, on: std.top, ratio: 1)
+std.Spin(planet, about: c, on: std.top, ratio: -3)
+X coincident(t == 60deg) x
+Y coincident(under: planet, t == 60deg) still
+";
+    let mut e = build(src);
+    assert!(e.diags.iter().all(|d| d.code.as_str() != "W115"), "one chart on each path");
+    assert!(solve::solve(&mut e.sketch, Default::default()).success);
+    let want = planet_at(f64::to_radians(60.0));
+    for name in ["X", "Y"] {
+        let got = crate::common::at(&e, name);
+        assert!(norm(sub(got, want)) < 1e-9, "{name}: {got:?} against {want:?}");
+    }
+    // at rest the riding point is drawn where it stands, as every relation naming no roll reads
+    assert!(norm(sub(crate::common::at(&e, "x"), [40.0, 0.0, 0.0])) < 1e-12);
+    let planet = e.map.ent_named("planet").unwrap();
+    let arm = e.map.ent_named("arm").unwrap();
+    assert_eq!(e.sketch.frames[planet.i()].rides, vec![arm.i() as u32]);
+    assert_eq!(e.sketch.carriers(e.map.ent_named("x").unwrap()).unwrap(),
+               vec![arm.i() as u32, planet.i() as u32]);
+}
+
+/// The primer's rack (§2.11) with the rack's flank drawn in the rack: the profile it cuts, read
+/// `seen_from: blank` with `under:` left out, is the one `under: rack` cuts from the same flank
+/// drawn at rest — the slope `g coincident cut` decides the same.
+#[test]
+fn a_rack_riding_its_frame_cuts_what_the_reading_under_it_cuts() {
+    let views = "\
+unit mm
+use std
+in std.front {
+  o := point
+  fix((0, 0)) o
+  rk0 := point
+  rk1 := point hint((30, 10))
+  fix((30, 0)) rk0
+  fix((30, 10)) rk1
+  slide := line(rk0, rk1)
+  g := point
+  fix((31.5, -3)) g
+}
+rack := frame
+blank := frame
+std.Spin(blank, about: o, on: std.front, ratio: 1)
+std.Slide(rack, along: slide, advance: 2 * pi * 30)
+";
+    let flank = "\
+    f0 := point hint((30, 5))
+    f1 := point hint((39.4, 8.4))
+    flank := line(f0, f1)
+    fix((30, 5)) f0
+    f0 distance(10) f1
+";
+    let riding = format!("{}in rack {{\n  in std.front {{\n{flank}  }}\n}}\n\
+        cut := envelope(flank, seen_from: blank, from: -25deg, to: 25deg)\n\
+        g coincident cut hint(t: 5)\n", views);
+    let under = format!("{}in std.front {{\n{flank}}}\n\
+        cut := envelope(flank, under: rack, seen_from: blank, from: -25deg, to: 25deg)\n\
+        g coincident cut hint(t: 5)\n", views);
+    let (mut a, mut b) = (build(&riding), build(&under));
+    assert!(solve::solve(&mut a.sketch, Default::default()).success);
+    assert!(solve::solve(&mut b.sketch, Default::default()).success);
+    let (fa, fb) = (crate::common::at(&a, "f1"), crate::common::at(&b, "f1"));
+    assert!(norm(sub(fa, fb)) < 1e-9, "{fa:?} against {fb:?}");
+    // the profile rides on its observer
+    let cut = a.map.ent_named("cut").unwrap();
+    let blank = a.map.ent_named("blank").unwrap();
+    assert_eq!(a.sketch.carriers(cut).unwrap(), vec![blank.i() as u32]);
+}
+
+/// **A solid riding on a frame is moved by it with no `under:`**: placed at a roll and swept
+/// over an interval, it is the solid the same tool drawn at rest makes `under:` the frame.
+#[test]
+fn a_tool_riding_its_frame_is_placed_and_swept_as_under_it() {
+    let head = "\
+unit mm
+use std
+in std.front {
+  o := point
+  z := point
+  fix((0, 0)) o
+  fix((0, 1)) z
+  ax := line(o, z)
+}
+turn := frame
+std.Turn(turn, about: ax, ratio: 1)
+";
+    let tool = "\
+    a := point
+    b := point
+    c := point
+    d := point
+    fix((2, 0)) a
+    fix((4, 0)) b
+    fix((4, 2)) c
+    fix((2, 2)) d
+    ab := line(a, b)
+    bc := line(b, c)
+    cd := line(c, d)
+    da := line(d, a)
+    profile := face(ab, bc, cd, da)
+";
+    let riding = format!("{head}in turn {{\n  in std.front {{\n{tool}  }}\n}}\n\
+        stock := solid(profile, from: 0mm, to: 2mm)\n\
+        placed := solid(stock, at: 30deg)\n\
+        swept := solid(stock, from: -20deg, to: 20deg)\n");
+    let under = format!("{head}in std.front {{\n{tool}}}\n\
+        stock := solid(profile, from: 0mm, to: 2mm)\n\
+        placed := solid(stock, under: turn, at: 30deg)\n\
+        swept := solid(stock, under: turn, from: -20deg, to: 20deg)\n");
+    let (mut a, mut b) = (build(&riding), build(&under));
+    assert!(solve::solve(&mut a.sketch, Default::default()).success);
+    assert!(solve::solve(&mut b.sketch, Default::default()).success);
+    let volume = |e: &gcs_core::program::Elaborated, name: &str| {
+        let i = e.sketch.solids.iter().position(|s| s.name == name).unwrap();
+        e.sketch.evaluated_solid(i, gcs_core::solid::ApproximationPolicy::Report).unwrap().volume()
+    };
+    for name in ["placed", "swept"] {
+        let (va, vb) = (volume(&a, name), volume(&b, name));
+        assert!((va - vb).abs() <= 1e-9 * vb, "{name}: {va} against {vb}");
+    }
+    assert!((volume(&a, "placed") - 8.0).abs() < 1e-9);
+}
+
+/// **What riding refuses**, each saying why: `under:` naming the frame of a point that rides
+/// already, a reading of a line whose ends ride on different frames, and two frames with axes
+/// nested — the inner draws, which is warned.
+#[test]
+fn riding_refuses_what_it_cannot_mean() {
+    let head = "\
+unit mm
+use std
+in std.top {
+  o := point
+  fix((0, 0)) o
+  c := point
+  fix((10, 0)) c
+  X := point hint((1, 1))
+}
+arm := frame
+std.Spin(arm, about: o, on: std.top, ratio: 1)
+other := frame
+std.Spin(other, about: c, on: std.top, ratio: 2)
+";
+    let errors = |src: &str| -> Vec<String> {
+        let (prog, errs) = crate::common::parse(src);
+        assert!(errs.is_empty(), "{errs:?}");
+        gcs_core::program::elaborate(&prog).errors().map(|d| d.message.clone()).collect()
+    };
+    let under = format!("{head}in arm {{\n  in std.top {{\n    x := point\n    \
+        fix((5, 0)) x\n  }}\n}}\n\
+        X coincident(under: arm, t == 10deg) x\n");
+    let errs = errors(&under);
+    assert!(errs.iter().any(|m| m.contains("rides on `arm` already")), "{errs:?}");
+    let mixed = format!("{head}in arm {{\n  in std.top {{\n    p := point\n    \
+        fix((5, 0)) p\n  }}\n}}\n\
+        in other {{\n  in std.top {{\n    q := point\n    fix((5, 3)) q\n  }}\n}}\n\
+        in std.top {{\n  l := line(p, q)\n}}\n\
+        e := envelope(l, from: -10deg, to: 10deg)\n");
+    let errs = errors(&mixed);
+    assert!(errs.iter().any(|m| m.contains("rides on `arm`") && m.contains("on `other`")),
+            "{errs:?}");
+    let (prog, _) = crate::common::parse("unit mm\nuse std\nin std.front {\n  in std.top {\n    \
+        p := point\n  }\n}\n");
+    let e = gcs_core::program::elaborate(&prog);
+    assert!(e.ok());
+    assert!(e.diags.iter().any(|d| d.code.as_str() == "W115" && d.message.contains("`std.top`")),
+            "{:?}", e.diags.iter().map(|d| &d.message).collect::<Vec<_>>());
+    assert_eq!(e.sketch.plane_of(e.map.ent_named("p").unwrap().i()),
+               Some(e.map.ent_named("std.top").unwrap().i()));
+}
+
+/* -- stage 5: joints in the solve ------------------------------------------------------------- */
+
+/// A frame's joint numbers as the solve leaves them.
+fn numbers(e: &gcs_core::program::Elaborated, name: &str) -> (f64, f64) {
+    let f = e.map.ent_named(name).unwrap_or_else(|| panic!("no frame `{name}`"));
+    let j = e.sketch.frames[f.i()].joint.as_ref().unwrap();
+    (e.sketch.params[j.ratio as usize].value, e.sketch.params[j.advance as usize].value)
+}
+
+/// Two pitch circles about `o` and `c`, the wheel's radius `R` and the pinion's `r`, touching at
+/// the pitch point `P` on the line of centres; they roll along the view's `v`, square to it.
+fn gears(c: &str, pinion: &str) -> String {
+    format!("\
+unit mm
+use std
+in std.top {{
+  o := point
+  fix((0, 0)) o
+  c := point {c}
+  P := point
+  fix((30, 0)) P
+}}
+wheel := frame
+std.Spin(wheel, about: o, on: std.top, ratio: 1)
+pinion := frame
+{pinion}
+std.Rolls(P, pinion, wheel, along: std.top.v)
+")
+}
+
+/// **A joint's ratio left to the solve is found by what holds it** (#383 stage 5): two pitch
+/// circles rolling at their pitch point without slipping (`std.Rolls`) turn at `−R/r` — the wheel
+/// 30 out at a radian a radian, the pinion 10 out three the other way.
+#[test]
+fn a_gear_pairs_ratio_is_solved_from_rolling() {
+    let mut e = build(&gears("hint((40, 0))\n  fix((40, 0)) c",
+                             "std.Spin(pinion, about: c, on: std.top)"));
+    let r = solve::solve(&mut e.sketch, Default::default());
+    assert!(r.success, "{r:?}");
+    let (ratio, advance) = numbers(&e, "pinion");
+    assert!((ratio + 3.0).abs() < 1e-9 && advance == 0.0, "{ratio}, {advance}");
+    // and a placement under the pinion reads the ratio solved
+    let m = e.sketch.frames[e.map.ent_named("pinion").unwrap().i()].joint.as_ref().unwrap().motion;
+    let (r, _, _) = e.sketch.motions[m.unwrap() as usize].rotation(&e.sketch).unwrap();
+    assert!((r + 3.0).abs() < 1e-9, "{r}");
+}
+
+/// **And a ratio stated places what it is stated of**: the pinion turning three times as fast the
+/// other way, its centre left free on the line of centres, solves 10 out past the pitch point.
+#[test]
+fn a_stated_ratio_solves_the_centre_distance() {
+    let mut e = build(&gears("hint((36, 0))\n  centres := line(o, P)\n  c coincident centres",
+                             "std.Spin(pinion, about: c, on: std.top, ratio: -3)"));
+    let r = solve::solve(&mut e.sketch, Default::default());
+    assert!(r.success, "{r:?}");
+    let c = crate::common::at(&e, "c");
+    assert!(norm(sub(c, [40.0, 0.0, 0.0])) < 1e-9, "{c:?}");
+}
+
+/// **A joint left free is reported free, with its numbers** (stage 5): a frame whose axis only a
+/// claim reads, place and direction, has the axis's four freedoms and its ratio and advance — six
+/// — and the diagnosis names each.  Its numbers stated, `std.Turn` with no ratio leaves the ratio
+/// alone free.
+#[test]
+fn a_free_joint_is_six_numbers_the_diagnosis_reports() {
+    use gcs_core::diagnose::{diagnose, DiagnoseOptions};
+    let head = "unit mm\nuse std\na := point\nb := point\nfix((0, 0, 0)) a\nfix((0, 0, 10)) b\n\
+                l := line(a, b)\nf := frame\n";
+    let names = |e: &mut gcs_core::program::Elaborated| {
+        let d = diagnose(&mut e.sketch, DiagnoseOptions::default());
+        let mut v: Vec<String> = d.under_params.iter()
+            .map(|&p| e.sketch.params[p as usize].name.clone()).collect();
+        v.sort();
+        (d.dof, v)
+    };
+    let mut e = build(&format!("{head}claim l coincident f.axis\n"));
+    let (dof, free) = names(&mut e);
+    assert_eq!(dof, 6, "{free:?}");
+    assert!(["f.ratio", "f.advance"].iter().all(|n| free.iter().any(|m| m == n)), "{free:?}");
+    assert!(free.iter().filter(|n| n.starts_with("f.axis")).count() >= 4, "{free:?}");
+    let mut e = build(&format!("{head}std.Turn(f, about: l)\n"));
+    let (dof, free) = names(&mut e);
+    assert_eq!((dof, free), (1, vec!["f.ratio".to_string()]));
 }

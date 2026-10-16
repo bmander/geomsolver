@@ -509,9 +509,9 @@ pub struct SplineE {
 /// as a chart, and a walk over every frame asks `chart` first.
 #[derive(Clone, Debug)]
 pub struct FrameE {
-    /// The frame it was declared in: the innermost of the `in` blocks around its declaration
-    /// (stage 4), `None` in the world's.
-    pub parent: Option<u32>,
+    /// The frames it rides on (#383): the `in` blocks around its declaration, outermost first,
+    /// empty in the world's.  Its joint is relative to them at rest.
+    pub rides: Vec<u32>,
     /// Its axes and place, where it has them: always for a plane.
     pub chart: Option<Chart>,
     /// Its motion relative to its parent at rest (stage 3), where the document names it.
@@ -536,11 +536,11 @@ pub struct Joint {
 impl FrameE {
     /// A plane's frame, or a spatial frame's once its axes are named.
     pub fn charted(chart: Chart) -> FrameE {
-        FrameE { parent: None, chart: Some(chart), joint: None, class: Classes::default() }
+        FrameE { rides: Vec::new(), chart: Some(chart), joint: None, class: Classes::default() }
     }
     /// A bare frame: no axes, no place, nothing of its own.
     pub fn bare() -> FrameE {
-        FrameE { parent: None, chart: None, joint: None, class: Classes::default() }
+        FrameE { rides: Vec::new(), chart: None, joint: None, class: Classes::default() }
     }
     /// Whether a point `in` it is drawn flat in its own two coordinates: a plane.
     pub fn planar(&self) -> bool {

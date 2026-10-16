@@ -1,8 +1,9 @@
 // A pinion rolled against a wheel blank, carrying one pin just inside its pitch circle: the pin
-// cuts the tooth space it would drive. The roll's ratio is stated, for now, from the two pitch
-// radii, the wheel's over the pinion's, so editing either radius re-times the roll and the cut
-// follows. The part is the blank with everything the pin passes through removed, meshed from its
-// material field (the glass box shows it refining).
+// cuts the tooth space it would drive. The roll's ratio is not stated: the pitch circles roll on
+// one another without slipping at the pitch point, which times it from the two pitch radii, so
+// editing either radius re-times the roll and the cut follows. The part is the blank with
+// everything the pin passes through removed, meshed from its material field (the glass box shows
+// it refining).
 
 unit mm
 use std (coords, on_u)
@@ -29,12 +30,14 @@ in std.front {
   construction pinion_radius := line(hub, pitch)
 }
 
-// The wheel turns once per turn of the shared angle; the pinion turns the other way at the
-// ratio of the pitch radii, stated from the two numbers for now.
+// The wheel turns once per turn of the shared angle; the pinion turns the other way, as fast as
+// the two pitch circles rolling at the pitch point make it — along the page's normal, where the
+// circles touch, the pinion's point there moves with the wheel's.
 wheel_turn := frame
 std.Turn(wheel_turn, about: spindle, ratio: 1)
 pinion_turn := frame
-std.Turn(pinion_turn, about: pinion_axis, ratio: -wheel_pitch / pinion_pitch)
+std.Turn(pinion_turn, about: pinion_axis)
+std.Rolls(pitch, pinion_turn, wheel_turn, along: std.front.normal)
 
 // The blank: a disc out to the addendum circle, turned about the spindle.
 in std.front {

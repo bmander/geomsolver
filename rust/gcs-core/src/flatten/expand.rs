@@ -11,9 +11,10 @@ type ChainArgument = (usize, Ref, Vec<(Ref, String)>);
 
 impl<'a> Walk<'a> {
     /// The view an enclosing instance is drawn `in`, put on one declaration its expansion
-    /// makes (§6.7).  A datum or a curve is left alone — it has no points of its own to put
-    /// there — and a declaration that already says which plane (a clause of its own, on a
-    /// plane the component declares) may not be told twice.
+    /// makes (§6.7).  A curve is left alone — it is its expressions — and a declaration that
+    /// already says which plane (a clause of its own, a block in the component) rides on the
+    /// instance's frame as well (#383): `rewrite_decl` puts it on its path, where it resolves.
+    /// A frame declared in the component takes the instance's as where it rides.
     pub(super) fn stamp_scope_plane(&mut self, d: &mut Decl, scope: &Scope) {
         d.annotations.roles = d.annotations.roles.union(scope.stamps.roles);
         // the instance's classes, over the declaration's own: what the assembly says of an
@@ -24,12 +25,10 @@ impl<'a> Walk<'a> {
             }
         }
         let Some(p) = &scope.stamps.plane else { return };
-        if !d.kind.bears_points() {
-            return; // a plane's origin is the plane's, and a curve is its expressions
+        if !d.kind.bears_points() && d.kind != crate::model::EntKind::Frame {
+            return; // a curve is its expressions
         }
-        if !d.membership.join(&p.plane, crate::syntax::Source::Instance) {
-            self.err(Code::E103, d.membership.span(), d.membership.cause().to_string());
-        }
+        d.membership.join(&p.plane, crate::syntax::Source::Instance);
     }
 
     /// Walk one body, in source order.
@@ -580,16 +579,17 @@ impl<'a> Walk<'a> {
         else {
             return ControlFlow::Continue(());
         };
-        // the instance's own `in`, or the one already in force around it — both at
-        // once is a plane given twice, which one statement may not do (§6.7)
+        // the instance's own `in`, or the one already in force around it — both at once
+        // nest (#383): the one around it is ridden on, as are the instance's further blocks
+        let mut rides = scope.stamps.rides.clone();
+        let here = |plane: &Ref| InPlane { owner: scope.owner.clone(), plane: plane.clone(),
+                                           prefixes: scope.prefixes.clone(), closed: scope.closed };
         let in_plane = match (inst.membership.plane(), &scope.stamps.plane) {
-            (Some(p), Some(_)) => {
-                self.err(Code::E103, p.span, inst.membership.cause().to_string());
-                scope.stamps.plane.clone()
-            }
             // written here, in this scope: it resolves against these prefixes
-            (Some(p), None) => {
-                Some(InPlane { owner: scope.owner.clone(), plane: p.clone(), prefixes: scope.prefixes.clone(), closed: scope.closed })
+            (Some(p), outer) => {
+                rides.extend(outer.iter().cloned());
+                rides.extend(inst.membership.rides().iter().map(here));
+                Some(here(p))
             }
             (None, q) => q.clone(),
         };
@@ -617,6 +617,7 @@ impl<'a> Walk<'a> {
             stamps: Stamps {
                 roles: scope.stamps.roles.union(inst.annotations.roles),
                 plane: in_plane,
+                rides,
                 class: {
                     let mut c = scope.stamps.class.clone();
                     c.0.extend(inst.class.0.iter().cloned());

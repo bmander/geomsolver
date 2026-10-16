@@ -367,24 +367,29 @@ fn dim(a: &Arg) -> String {
     }
 }
 
+/// `under: m`, as a sweep prints it.
+fn under(m: &Ref) -> String {
+    let mut text = String::from("under: ");
+    write_ref(&mut text,m);
+    text
+}
+
 /// Sweep arguments are document expressions, preserved through canonical printing.
 fn sweep_parts(s: &Sweep) -> Vec<String> {
     let mut parts = match s {
+        // the frame it is under, where it is written: left out, the tool's own (#383)
         Sweep::Swept {motion,from,to} => {
-            let mut text = String::from("under: ");
-            write_ref(&mut text,motion);
-            vec![text,format!("from: {}",dim(from)),format!("to: {}",dim(to))]
+            let mut out: Vec<String> = motion.iter().map(under).collect();
+            out.extend([format!("from: {}",dim(from)),format!("to: {}",dim(to))]);
+            out
         }
         Sweep::Rolled {motion,body} => {
-            let (mut under,mut through) = (String::from("under: "),String::from("through: "));
-            write_ref(&mut under,motion);
+            let mut through = String::from("through: ");
             write_ref(&mut through,body);
-            vec![under,through]
+            motion.iter().map(under).chain([through]).collect()
         }
         Sweep::Placed {motion,at} => {
-            let mut text = String::from("under: ");
-            write_ref(&mut text,motion);
-            vec![text,format!("at: {}",dim(at))]
+            motion.iter().map(under).chain([format!("at: {}",dim(at))]).collect()
         }
         // a region's operand is the set the flattener applied to its probe: nothing to print
         Sweep::Body | Sweep::Region { .. } => Vec::new(),

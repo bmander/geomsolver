@@ -4,6 +4,25 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.137] Frames: joints in the solve.** A frame's ratio or advance no `fix` states — `std.Turn`
+or `std.Spin` given no `ratio:`, a number pinned to an unknown — is an unknown of the solve, a
+column of every relation reading the motion, and a joint nothing holds is freedom the diagnosis
+reports. `std.Rolls(at, a, b, along: d)` holds two frames rolling on one another at a point
+without slipping along a direction, so a gear pair's ratio follows its pitch radii, or a stated
+ratio places the pitch point; `lantern_generation.sv` times its roll so. A profile generated in
+the plane is generated over stated numbers. Through 0.136 a joint stating no ratio was E080. (Issue
+#383, stage 5.)
+
+**[0.136] Frames: riding.** `in` nests in `in` (§6.14): a declaration in nested blocks rides on
+every frame of its path and is drawn in the innermost with axes (an outer one with axes is W115),
+and a frame declared in a block rides on the block's frame, its motion its joint after theirs. A
+reading at a roll that leaves `under:` out reads what its tool rides on — `X coincident(t == τ)
+x`, `envelope(tool, seen_from: G, …)`, `meshing(f1, f2, …)`, `solid(tool, at: θ)`, and over a
+riding solid `solid(tool, from: a, to: b)` and `through:` — and what it makes rides on its
+observer. `under:` on a tool that rides is refused, as is a tool whose parts ride on different
+frames. Through 0.135 an `in` block inside another was refused, and a plane given twice (a block
+and a clause, or two blocks) was an error, now a nesting. (Issue #383, stage 4.)
+
 **[0.135] Frames: a motion is a frame's joint.** `motion(…)` is retired (§6.14). A frame's joint
 is three members minted where a reference names them — `f.axis`, `f.ratio`, `f.advance` — held
 by relations, and the standard library states them: `std.Turn(f, about: l, ratio: r)` (with

@@ -80,14 +80,13 @@ impl Sketch {
             }
             // a traced body's: what its component was given
             EntKind::Traced => self.traced[e.i()].args.clone(),
-            // what a motion measures is what it is written over, as much as its axis is — and a
-            // joint's node is its frame's (#383), so deleting the frame takes what reads it
+            // what a motion is written over, its axis or its centre — and a joint's node is its
+            // frame's (#383), so deleting the frame takes what reads it
             EntKind::Motion => { let m = &self.motions[e.i()];
                 let mut kids: Vec<EntRef> = match m.def {
-                MotionDef::Rotation {axis,..} | MotionDef::Translation {axis,..} => std::iter::once(EntRef::line(axis as usize))
-                    .chain(m.measured.iter().flat_map(|x| x.value.ents.values().copied())).collect(),
-                MotionDef::Turn {centre,..} => std::iter::once(EntRef::point(centre as usize))
-                    .chain(m.measured.iter().flat_map(|x| x.value.ents.values().copied())).collect(),
+                MotionDef::Rotation {axis,..} | MotionDef::Translation {axis,..} =>
+                    vec![EntRef::line(axis as usize)],
+                MotionDef::Turn {centre,..} => vec![EntRef::point(centre as usize)],
                 MotionDef::Relative {source,observer} => [source,observer].map(|i| EntRef::new(EntKind::Motion,i as usize)).to_vec(),
                 MotionDef::Inverse {of} => vec![EntRef::new(EntKind::Motion,of as usize)],
                 MotionDef::Joint {axis,..} => vec![EntRef::new(EntKind::Axis,axis as usize)],

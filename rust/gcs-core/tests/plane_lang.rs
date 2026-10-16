@@ -387,10 +387,18 @@ fn an_in_block_refuses_what_it_cannot_mean() {
         "E060",
         "already in `front`",
     );
-    misparses("in front { f := plane(u: a, v: b) }\n", "has none of its own");
-    misparses("in front { a := point in front }\n", "already in a plane");
+    misparses("in front { ax := axis }\n", "has none of its own");
     misparses("cycle 2 { in front { a := point } }\n", "stands at the top level");
-    misparses("in front { in front { a := point } }\n", "stands at the top level");
+    // a block inside a block, or a clause inside one, nests (#383 stage 4): a plane declared in
+    // a block rides on it, and a point in one plane twice is in it once
+    for src in ["in front { f := plane(u: a, v: b) }\n", "in front { a := point in front }\n",
+                "in front { in front { a := point } }\n"] {
+        let (_, errs) = parse(src);
+        assert!(errs.is_empty(), "{src}: {errs:?}");
+    }
+    let e = read(&format!("{VIEWS}in front {{ in front {{ a := point }} }}\n"));
+    assert_eq!(e.sketch.plane_of(at(&e, "a")), Some(at(&e, "front")));
+    assert!(e.diags.iter().all(|d| d.code.as_str() != "W115"), "one plane, named twice");
     misparses("in front point a\n", "an `in` block is");
 }
 
@@ -514,25 +522,25 @@ fn an_instance_in_a_view_refuses_what_it_cannot_mean() {
         "E060",
         "already in `front`",
     );
-    // a plane given twice: a clause under an enclosing block, or under an outer instance
-    misparses(
-        &format!("{SLOT}q := point\nin front {{ s4 := Slot(q, w: 3) in front }}\n"),
-        "already in a plane",
-    );
-    refused(
-        &format!(
-            "{VIEWS}{SLOT}\
+    // a plane given twice nests (#383 stage 4): a clause under an enclosing block naming the
+    // same plane is in it once, and an inner instance's plane inside an outer instance's draws
+    // what is in it, the outer one only ridden on — which is warned (W115)
+    let e = read(&format!("{VIEWS}{SLOT}q := point\n\
+        in front {{ s4 := Slot(q, w: 3) in front }}\n"));
+    assert_eq!(e.sketch.plane_of(at(&e, "s4.a")), Some(at(&e, "front")));
+    let e = read(&format!(
+        "{VIEWS}{SLOT}\
 component Two(p: Point, a: axis, b: axis) {{
   mine := plane(u: a, v: b)
   inner := Slot(p, w: 4) in mine
 }}
-q := point hint((1, 1)) in front
+q := point hint((1, 1))
 t := Two(q, std.x, std.y) in front
 "
-        ),
-        "E103",
-        "already in a plane",
-    );
+    ));
+    assert_eq!(e.sketch.plane_of(at(&e, "t.inner.a")), Some(at(&e, "t.mine")));
+    assert!(e.diags.iter().any(|d| d.code.as_str() == "W115"),
+            "{:?}", e.diags.iter().map(|d| &d.message).collect::<Vec<_>>());
     // a plane inside is left alone: its origin is its own
     let e = read(&format!(
         "{VIEWS}component D(a: axis, b: axis) {{\n  f := plane(u: a, v: b)\n  c := point hint((1, 2))\n}}\nd1 := D(std.x, std.y) in front\n"

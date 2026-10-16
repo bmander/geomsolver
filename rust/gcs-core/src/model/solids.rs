@@ -567,32 +567,28 @@ pub struct MotionE {
     pub def: MotionDef,
     pub name: String,
     pub class: Classes,
-    /// The numbers written as measurements of the drawing (`ratio: length(a) / length(b)`),
-    /// worked out whenever the motion is read and standing in for `def`'s own: see
-    /// `MotionE::rotation`.  Empty for every motion whose numbers are plain.
-    pub measured: Vec<crate::measure::MotionMeasure>,
+    /// **A joint's numbers the solve finds** (#383 stage 5): its frame's ratio and advance
+    /// parameters, where either is an unknown — read wherever the motion is read and standing in
+    /// for `def`'s own (`MotionE::rotation`), and a column of every row reading the motion
+    /// (`envelope::held`).  `None` for a motion whose numbers are stated.
+    pub numbers: Option<[u32; 2]>,
 }
 
 impl MotionE {
     /// A rotation's `(ratio, phase, advance)` — phase in radians — on the drawing as it now
-    /// stands: `def`'s numbers, with each one written as a measurement worked out afresh.  The
-    /// one reader of a rotation's numbers, so a snapshot and a cache key cannot disagree.
+    /// stands: `def`'s numbers, or the joint's parameters where the solve finds them.  The one
+    /// reader of a rotation's numbers, so a snapshot and a cache key cannot disagree.
     pub fn rotation(&self, sk: &crate::model::Sketch) -> Result<(f64, f64, f64), String> {
         let (ratio, phase, advance) = match self.def {
             MotionDef::Rotation { ratio, phase, advance, .. } => (ratio, phase, advance),
             MotionDef::Turn { ratio, phase, .. } => (ratio, phase, 0.0),
             _ => return Err(format!("`{}` is not a rotation", self.name)),
         };
-        let mut out = (ratio, phase, advance);
-        for m in &self.measured {
-            let v = m.value.value(sk).map_err(|e| format!("`{}`: {e}", self.name))?;
-            match m.slot {
-                crate::measure::MotionSlot::Ratio => out.0 = v,
-                crate::measure::MotionSlot::Phase => out.1 = v.to_radians(),
-                crate::measure::MotionSlot::Advance => out.2 = v,
-            }
-        }
-        Ok(out)
+        Ok(match self.solved(sk) {
+            Some([r, a]) =>
+                (r, phase, if matches!(self.def, MotionDef::Turn { .. }) { 0.0 } else { a }),
+            None => (ratio, phase, advance),
+        })
     }
 
     /// A translation's advance, likewise.
@@ -600,10 +596,12 @@ impl MotionE {
         let MotionDef::Translation { advance, .. } = self.def else {
             return Err(format!("`{}` is not a translation", self.name));
         };
-        match self.measured.iter().find(|m| m.slot == crate::measure::MotionSlot::Advance) {
-            Some(m) => m.value.value(sk).map_err(|e| format!("`{}`: {e}", self.name)),
-            None => Ok(advance),
-        }
+        Ok(self.solved(sk).map_or(advance, |[_, a]| a))
+    }
+
+    /// The joint's ratio and advance as the solve leaves them, where it finds them.
+    fn solved(&self, sk: &crate::model::Sketch) -> Option<[f64; 2]> {
+        self.numbers.map(|q| q.map(|p| sk.params.get(p as usize).map_or(f64::NAN, |x| x.value)))
     }
 }
 
@@ -621,7 +619,7 @@ impl crate::model::Sketch {
             return Err("no such motion".into());
         }
         let (a, b) = (&self.motions[outer], &self.motions[inner]);
-        let plain = a.measured.is_empty() && b.measured.is_empty();
+        let plain = a.numbers.is_none() && b.numbers.is_none();
         let folded = match (&a.def, &b.def) {
             (MotionDef::Rotation { axis: l, ratio: r1, phase: p1, advance: a1 },
              MotionDef::Rotation { axis: k, ratio: r2, phase: p2, advance: a2 }) if plain && l == k =>
@@ -640,11 +638,11 @@ impl crate::model::Sketch {
             None => {
                 let inverse = self.motions.len();
                 self.motions.push(MotionE { def: MotionDef::Inverse { of: outer as u32 },
-                    name: format!("{name}⁻"), class: class.clone(), measured: Vec::new() });
+                    name: format!("{name}⁻"), class: class.clone(), numbers: None });
                 MotionDef::Relative { source: inner as u32, observer: inverse as u32 }
             }
         };
-        self.motions.push(MotionE { def, name: name.to_string(), class, measured: Vec::new() });
+        self.motions.push(MotionE { def, name: name.to_string(), class, numbers: None });
         Ok(self.motions.len() - 1)
     }
 }

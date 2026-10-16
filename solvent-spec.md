@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.135 — October 2026**
+**Specification, Draft 0.137 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -1291,11 +1291,21 @@ The standard library (§8) states the joint the ways a designer does:
   roll, turning not at all.
 
 **How it is read.** Before the solve the joint's kind is read off what holds it — an axis on a
-line with ratio 0 is a slide, on a line a turn or a screw, through a point of a view and square to
-it a turn in that view — and is otherwise a general joint, which only a reading in space takes. Its
-ratio and advance are numbers the document states; one nothing states is an error (the reference
-implementation's **E080**), and a measurement of the drawing there is **E107**. Axis geometry
-follows the current solved model, read where it stands in space.
+line with a ratio stated 0 is a slide, on a line a turn or a screw, through a point of a view and
+square to it a turn in that view — and is otherwise a general joint, which only a reading in space
+takes. A measurement of the drawing as its ratio or advance is **E107**. Axis geometry follows the
+current solved model, read where it stands in space.
+
+**Joints in the solve [0.137].** A ratio or an advance no `fix` states — a `std.Turn` given no
+`ratio:`, a number pinned to an unknown — is an **unknown** of the solve, as the axis is: every
+relation that reads the motion during the solve (a point it carries and its rate, a point on an
+envelope in space or on a meshing) reads it as a column, and what is built after the solve reads
+it where the solve left it. A profile generated in the plane (§6.15.1) is generated over stated
+numbers: one found by the solve is an error there. A joint whose numbers nothing holds is freedom,
+reported by the diagnosis like any other. **`std.Rolls(at, a, b, along: d)`** states that `a` and
+`b` roll on one another at the point `at` without slipping along the direction `d`: the point of
+`a`'s frame there, seen from `b`'s, does not move along `d`. Two pitch circles rolling at their
+pitch point turn at `−R/r`, the ratio found from the radii or, stated, placing the pitch point.
 
 **Seen from another frame.** Every reading of a frame's motion — `under:` on a solid (§6.10), an
 envelope (§6.15), a meshing (§6.15.4), a point it carries (§6.15.3), a `claim over` — may name
@@ -1303,6 +1313,23 @@ the frame it is seen from: **`under: m, seen_from: g`** is `inverse(g) · m`, `m
 frame sees it, both at the same roll, its derivative including `g`'s motion. `seen_from:` left
 out is the world. This is a relationship between frames, not a sequence of commands that changes
 entity coordinates.
+
+**Riding [0.136].** `in` blocks nest: `in (arm := frame) { in (planet := frame) { in std.top {
+x := point } } }`. What is declared in nested blocks **rides** on every frame of its path, and is
+drawn in the innermost frame of the path that has axes (a plane, or a frame whose `f.u`, `f.v` or
+`f.origin` is named); one with axes further out says nothing of where the declaration is drawn
+(a warning, W115). A frame declared in a block rides on the block's frame, and its motion is its
+joint after the joints of the frames it rides on: the pose of what rides is the product
+`J₁(τ)·…·Jₖ(τ)` of the jointed frames of its path, outermost first, each about its axis where it
+is drawn. Riding enters no relation that names no roll: everything is drawn, and related, as it
+stands at rest. A reading at a roll that leaves `under:` out reads what its tool rides on:
+`X coincident(t == τ) x` with `x` and `X` riding on different frames is `x` carried by
+`path(X)⁻¹·path(x)` at `τ`; `envelope(tool, seen_from: G, …)`, `meshing(f1, f2, …)` (the second
+flank's frames seen from the first's), `solid(tool, at: θ)`, and `solid(tool, from: a, to: b)` or
+`solid(tool, through: body)` over a solid that rides (a motion's words there, not a prism's).
+`under:` names the frame of a tool that rides on none; one naming a frame for a tool drawn riding
+is an error, as is a reading of a tool whose parts ride on different frames. What a reading makes
+rides on its observer: the profile a rack cuts `seen_from: blank` rides on the blank.
 
 **Formals.** A component that reads a motion takes the frame, `m: frame`, and where it needs one
 the observer as a second formal, `seen_from: frame`. A `frame` formal a call leaves out is the

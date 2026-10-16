@@ -587,6 +587,35 @@ fn rewrite_decl(
     for r in d.membership.also_mut() {
         fix(r, bad);
     }
+    // the frames it rides on (#383): its blocks', in this scope, and outside them every frame an
+    // instance around it is drawn in or rides on, each where it was written
+    for r in d.membership.rides_mut() {
+        fix(r, bad);
+    }
+    if d.kind.bears_points() || d.kind == crate::model::EntKind::Frame {
+        let own = !from_instance && d.membership.plane().is_some();
+        let around = sc.stamps.rides.iter().chain(sc.stamps.plane.iter().filter(|_| own));
+        let mut outer = Vec::new();
+        for ip in around {
+            let at = Scope { owner: ip.owner.clone(), prefixes: ip.prefixes.clone(),
+                closed: ip.closed, ..sc.clone() };
+            let mut r = ip.plane.clone();
+            match look.find(&r, &at) {
+                Some((abs, rest)) => {
+                    r.root = Name { text: abs, span: r.root.span };
+                    r.path = rest.into_iter().map(|f| Seg::Field(Name::new(f))).collect();
+                    outer.push(r);
+                }
+                None => {
+                    let (code, why) = look.missing(&r, &at);
+                    bad.push((code, r.span, why))
+                }
+            }
+        }
+        for r in outer.iter().rev() {
+            d.membership.ride_in(r);
+        }
+    }
     // a circle's normal is a name of the scope (#363 S6)
     if let Some(r) = d.normal.as_mut() {
         fix(r, bad);
@@ -1155,6 +1184,8 @@ impl<'a> Walk<'a> {
                         }
                     }
                     free.extend(d.membership.plane().map(|r| r.span));
+                    // and the frames it rides on carry every copy alike (#383)
+                    free.extend(d.membership.rides().iter().map(|r| r.span));
                 }
                 let mut seen = seen.into_inner();
                 seen.retain(|s| !free.contains(&s.span));

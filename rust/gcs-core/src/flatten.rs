@@ -145,6 +145,9 @@ struct Stamps {
     /// prefixes of the scope it was written in — `rewrite` resolves it there and not in the
     /// component's own chain, where a body declaration called `top` would take it (#45.4).
     plane: Option<InPlane>,
+    /// The frames further out that an enclosing instance rides on (#383), outermost first, each
+    /// as written where it was: what its statements ride on beyond `plane`.
+    rides: Vec<InPlane>,
     /// The classes every enclosing instance was given (`t2 := Throw(…) class phantom`), which
     /// every declaration emitted under them carries beneath its own (§13.2).
     class: crate::style::Classes,

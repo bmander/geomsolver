@@ -42,10 +42,12 @@ pub(super) fn held_envelopes(sk: &mut Sketch, res: &mut Resolver, map: &mut Sour
                 _ => None,
             }
         };
-        // the frame it is generated under, seen from the one named (#383)
-        let motion = operand(1)
-            .and_then(|r| super::motions::reading(sk, res, r, d.seen_from.as_ref()).ok())
-            .map(|m| EntRef::new(EntKind::Motion, m));
+        // the frame it is generated under, seen from the one named — or, `under:` left out,
+        // what its source rides on (#383)
+        let tool = operand(0).and_then(|r| ridden(sk, res, &decls, r));
+        let motion = super::motions::reading_of(sk, res, tool, operand(1), d.seen_from.as_ref())
+            .ok().map(|m| EntRef::new(EntKind::Motion, m));
+        let rides = super::generated::observer_path(sk, res, d);
         // a declaration that would not be built after the solve either is left to say so there —
         // its name, until then, naming nothing a relation could hold to
         let (Some(motion),Some(source),Ok(roll)) = (motion,operand(0),roll(sk,d)) else {
@@ -61,8 +63,24 @@ pub(super) fn held_envelopes(sk: &mut Sketch, res: &mut Resolver, map: &mut Sour
         map.bind(&name,e,d.name.named());
         map.record(st,Made::Ent(e));
         made.insert(st.id);
+        super::generated::ride_on(sk, res, d, rides);
     }
     made
+}
+
+/// What a reading's source rides as (#383): the entity it names, or for a revolution's named side
+/// — whose solid is built after the solve — the edge it is turned from.  `None` for a set applied
+/// to its hidden point, which rides on nothing.
+fn ridden(sk: &Sketch, res: &Resolver, decls: &BTreeMap<&str,&Decl>, r: &crate::syntax::Ref)
+    -> Option<EntRef> {
+    if let Some(sd) = decls.get(r.root.text.as_str()).filter(|sd| sd.kind == EntKind::Surface) {
+        let [Kid::Ref(edge)] = sd.children.get(1)?.as_slice() else { return None };
+        return res.lookup(edge).and_then(|e| follow_building(sk, res, e, edge).ok());
+    }
+    if crate::flatten::is_probe(&r.root.text) {
+        return None;
+    }
+    res.lookup(r).and_then(|e| follow_building(sk, res, e, r).ok())
 }
 
 /// Each meshing of two flanks (#283), built with the drawing — after the envelopes the solve holds,
@@ -109,8 +127,22 @@ pub(super) fn held_meshings(sk: &mut Sketch, res: &mut Resolver, map: &mut Sourc
         };
         let built = (|| -> Result<MeshingE,String> {
             let flanks = [flank(sk,0)?,flank(sk,1)?];
-            let m = super::motions::reading(sk, res, operand(2)?, d.seen_from.as_ref())
-                .map(|m| EntRef::new(EntKind::Motion, m))
+            // each flank read on its own frames where `under:` is left out (#383)
+            let m = match operand(2) {
+                Ok(u) => super::motions::reading(sk, res, u, d.seen_from.as_ref()),
+                Err(_) => {
+                    let rode = |sk: &Sketch, i: usize| match &flanks[i] {
+                        Flank::Envelope(k) => Some(EntRef::new(EntKind::Envelope, *k as usize)),
+                        _ => ridden(sk, res, &decls, operand(i).ok()?),
+                    };
+                    match (rode(sk, 0), rode(sk, 1)) {
+                        (Some(a), Some(b)) => super::motions::meshing(sk, res, a, b,
+                                                                       d.seen_from.as_ref()),
+                        _ => Err("a meshing names the frame its flanks turn under, `under:`"
+                            .into()),
+                    }
+                }
+            }.map(|m| EntRef::new(EntKind::Motion, m))
                 .map_err(|why| format!("a meshing turns its flanks `under:` the second's frame \
                     `seen_from:` the first's: {why}"))?;
             let ease = match d.angular_span.as_ref().and_then(|s| s.ease.as_deref()) {

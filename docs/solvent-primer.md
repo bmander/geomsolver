@@ -1708,9 +1708,21 @@ std.Spin(wheel, about: o, on: std.front, ratio: 1)       // about a point of a v
 
 Roll 0 is as drawn: a member that must stand turned there is drawn turned (there is no `phase:`).
 A motion never moves the sketch, and a frame with no joint stands still: the world. The ratio is
-`Scalar` and stated from the document's numbers (`ratio: -wheel_pitch / pinion_pitch`); a
-measurement of the drawing there is E107. A joint whose ratio or advance nothing states is E080.
-`motion(…)` and `m: motion` are refused naming these words.
+`Scalar`; a measurement of the drawing there is E107. `motion(…)` and `m: motion` are refused
+naming these words.
+
+**A ratio left out is the solve's** (0.137): `std.Turn(pinion, about: shaft)` with no `ratio:`
+leaves it an unknown, which a relation reading the motion holds. `std.Rolls` says the usual one —
+two pitch circles rolling at their pitch point without slipping along their common tangent:
+
+```sv
+std.Turn(wheel_turn, about: spindle, ratio: 1)
+std.Turn(pinion_turn, about: pinion_axis)                           // no ratio: found
+std.Rolls(pitch, pinion_turn, wheel_turn, along: std.front.normal)  // −R/r, from the radii
+```
+
+State the ratio instead and the same relation places the pitch point (`lantern_generation.sv`). A
+profile generated in the plane needs its numbers stated; a joint nothing holds is reported free.
 
 **Seen from another frame.** Every reading of a frame's motion — `under:` on a solid, an
 envelope, a meshing, a carried point — may say whose view it is in: `under: crown, seen_from:
@@ -1718,6 +1730,38 @@ blank` is the crown as the blank sees it, which is what generates a gear. Left o
 the world. A component that reads a motion takes the frame (`m: frame`) and, where it needs one,
 the observer as a second (`seen_from: frame`); a frame formal a call leaves out is the instance's
 own frame at rest, the world.
+
+**Riding** (0.136). Draw a part in the frame that carries it, and readings at a roll need no
+`under:`. `in` blocks nest; what is declared in nested blocks rides on every frame of the path and
+is drawn in the innermost one with axes (a view, usually), and a frame declared in a block rides
+on that block's frame:
+
+```sv
+in (arm := frame) {
+  in std.top {
+    c := point
+    fix((30, 0)) c
+  }
+  in (planet := frame) {
+    in std.top {
+      x := point
+      fix((40, 0)) x
+    }
+  }
+}
+std.Spin(arm, about: o, on: std.top, ratio: 1)
+std.Spin(planet, about: c, on: std.top, ratio: -3)   // its axis where it is drawn, at rest
+X coincident(t == 60deg) x                          // (10, 17.3205): the arm's turn, then the planet's
+```
+
+At rest everything stands as drawn, so a relation naming no roll never sees riding. A reading at
+a roll that leaves `under:` out reads what its tool rides on: `envelope(flank, seen_from: blank,
+…)` with `flank` drawn in the rack, `meshing(f1, f2, …)`, `solid(tool, at: 30deg)`, and over a
+riding solid `solid(tool, from: -20deg, to: 20deg)` and `through: body` (a motion's words there,
+not a prism's). `under:` stays for a tool that rides on nothing; naming it for one that rides is
+an error, as is a tool whose ends ride on different frames. What a reading makes rides on its
+observer (the profile a rack cuts rides on the blank). Two views nested draw in the inner one,
+with a warning (W115).
 
 **A frame's motion moves a solid**: `solid(tool, under: indexing, at: 90deg)` is one copy at a constant
 angle (`solid_indexed_pattern.sv`); `solid(tool, under: turn, from: -75deg, to: 75deg)` is the
@@ -2212,23 +2256,28 @@ in std.front {
   fix((30, 0)) rk0
   fix((30, 10)) rk1
   slide := line(rk0, rk1)
-  blank := frame
-  std.Spin(blank, about: o, on: std.front, ratio: 1)      // the gear blank turns...
-  rack := frame
-  std.Slide(rack, along: slide, advance: 2 * pi * 30)     // ...as the rack rolls on its pitch circle
-  f0 := point hint((30, 5))
-  f1 := point hint((39.4, 8.4))
-  flank := line(f0, f1)                                   // the rack's flank, at roll 0
-  fix((30, 5)) f0
-  f0 distance(10) f1
-  cut := envelope(flank, under: rack, seen_from: blank, from: -25deg, to: 25deg)
   g := point
   fix((31.5, -3)) g
-  g coincident cut hint(t: 5)                             // the cut must pass through g
 }
+in (rack := frame) {
+  in std.front {
+    f0 := point hint((30, 5))
+    f1 := point hint((39.4, 8.4))
+    flank := line(f0, f1)                                 // the rack's flank, riding the rack
+    fix((30, 5)) f0
+    f0 distance(10) f1
+  }
+}
+blank := frame
+std.Spin(blank, about: o, on: std.front, ratio: 1)        // the gear blank turns...
+std.Slide(rack, along: slide, advance: 2 * pi * 30)       // ...as the rack rolls on its pitch circle
+cut := envelope(flank, seen_from: blank, from: -25deg, to: 25deg)   // rides on the blank
+g coincident cut hint(t: 5)                               // the cut must pass through g
 ```
 
-The flank's slope is left free, and `g coincident cut` decides it: the solve turns the rack's flank
+The flank is drawn in the rack, so the envelope reads the rack's motion seen from the blank with
+no `under:` (`under: rack` over a flank drawn at rest says the same). The flank's slope is left
+free, and `g coincident cut` decides it: the solve turns the rack's flank
 until the involute it cuts passes through `g`. Nothing states an involute. A roller (`circle`) cuts
 a cam, a formula curve its conjugate tooth.
 

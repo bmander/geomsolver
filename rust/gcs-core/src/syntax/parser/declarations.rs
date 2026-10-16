@@ -45,7 +45,9 @@ pub(crate) fn sweep_of(p: SweepParts) -> Result<Sweep, String> {
         return Err("`draft:` tapers a prism's sides from its face's plane: say `from:`/`to:` or \
                     `depth:`, and nothing else".into());
     }
-    if p.under.is_some() || p.at.is_some() {
+    // a frame's motion, named `under:` or, left out, the one the tool rides on (#383): `at:`
+    // and `seen_from:` say it whatever else is written
+    if p.under.is_some() || p.at.is_some() || p.seen_from.is_some() {
         if p.depth.is_some() || p.about.is_some() || p.sweep.is_some()
             || p.sense.is_some() || p.through.is_some() && (p.at.is_some() || p.from.is_some() || p.to.is_some()) {
             return Err("a named motion uses `at:`, angular `from:`/`to:` or `through:` a body, without other \
@@ -53,15 +55,13 @@ pub(crate) fn sweep_of(p: SweepParts) -> Result<Sweep, String> {
         }
         // the roll the tool takes through a body's material (#271)
         if let Some(body) = p.through {
-            return match p.under {
-                Some(motion) => Ok(Sweep::Rolled {motion,body}),
-                None => Err("a named motion needs `under:`".into()),
-            };
+            return Ok(Sweep::Rolled {motion: p.under,body});
         }
         return match (p.under,p.at,p.from,p.to) {
-            (Some(motion),Some(at),None,None) => Ok(Sweep::Placed {motion,at}),
-            (Some(motion),None,Some(from),Some(to)) => Ok(Sweep::Swept {motion,from,to}),
-            _ => Err("a named motion needs `under:` and either `at:`, both `from:` and `to:`, or `through:`".into()),
+            (motion,Some(at),None,None) => Ok(Sweep::Placed {motion,at}),
+            (motion,None,Some(from),Some(to)) => Ok(Sweep::Swept {motion,from,to}),
+            _ => Err("a frame's motion moves a solid `at:` one roll, over `from:` and `to:`, or \
+                      `through:` a body".into()),
         };
     }
     if let Some(body) = p.through {
@@ -225,12 +225,9 @@ impl<'a> P<'a> {
             (Some(from),Some(to)) => Some(crate::syntax::AngularSpan {from,to,side:None,ease:None}),
             _ => { self.fail("a surface span needs both `from:` and `to:` angles"); return None; }
         };
-        let mut swp = swp;
-        let seen_from = swp.seen_from.take();
-        if seen_from.is_some() && swp.under.is_none() {
-            self.fail("`seen_from:` is the frame a motion is seen from, beside `under:`");
-            return None;
-        }
+        // `seen_from:` reads a motion, under the frame `under:` names or, left out, the one the
+        // tool rides on (#383)
+        let seen_from = swp.seen_from.clone();
         let sweep = if kind == EntKind::Solid {
             match sweep_of(swp) {
                 Ok(sw) => Some(sw),
@@ -992,14 +989,15 @@ impl<'a> P<'a> {
             }
             if self.peek() != Some(&Tok::P(')')) && !self.want_p(',') { return None; }
         }
-        let (Some(surface),Some(motion),Some(from),Some(to)) = (surface,motion,from,to) else {
+        // a tool that rides leaves `under:` out (#383): the elaborator reads what it rides on
+        let (Some(surface),Some(from),Some(to)) = (surface,from,to) else {
             self.fail("an envelope needs a surface, motion and two angular bounds"); return None;
         };
         let end = self.prev_hi();
         let (class,class_span) = self.class_clause(end);
         Some(Decl {
             annotations:Default::default(),kind:EntKind::Envelope,name,
-            children:vec![vec![surface],vec![motion]],
+            children:vec![vec![surface],motion.into_iter().collect()],
             seed:vec![],seed_text:vec![],seed_spans:vec![],hint_span:None,knots:None,weights:None,curve:None,
             computed:None,class,class_span,seed_at:None,seed_names:vec![],sweep:None,seen_from,
             angular_span:Some(crate::syntax::AngularSpan {from,to,side,ease:None}),
@@ -1068,7 +1066,8 @@ impl<'a> P<'a> {
             }
             if self.peek() != Some(&Tok::P(')')) && !self.want_p(',') { return None; }
         }
-        let (Some(first),Some(second),Some(motion),Some(from),Some(to)) = (first,second,motion,from,to) else {
+        // flanks that ride leave `under:` out (#383): each is read on its own frames
+        let (Some(first),Some(second),Some(from),Some(to)) = (first,second,from,to) else {
             self.fail("a meshing needs two flanks, a motion and two angular bounds"); return None;
         };
         let ease = match (about,along,profile,lengthwise) {
@@ -1086,7 +1085,7 @@ impl<'a> P<'a> {
         let (class,class_span) = self.class_clause(end);
         Some(Decl {
             annotations:Default::default(),kind:EntKind::Meshing,name,
-            children:vec![vec![first],vec![second],vec![motion]],
+            children:vec![vec![first],vec![second],motion.into_iter().collect()],
             seed:vec![],seed_text:vec![],seed_spans:vec![],hint_span:None,knots:None,weights:None,curve:None,
             computed:None,class,class_span,seed_at:None,seed_names:vec![],sweep:None,seen_from,
             angular_span:Some(crate::syntax::AngularSpan {from,to,side:None,ease}),

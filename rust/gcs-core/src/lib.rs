@@ -48,7 +48,6 @@ pub mod linalg;
 pub mod lines;
 pub mod locus;
 pub mod lowering;
-pub mod measure;
 pub mod model;
 pub mod modules;
 pub mod newton;

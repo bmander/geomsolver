@@ -71,6 +71,82 @@ impl Sketch {
         chart.iter().chain(joint).copied().collect()
     }
 
+    /// **The jointed frames a path of frames carries** (#383), outermost first: each frame after
+    /// the frames it rides on, every one once, the frames with no joint left out — what a thing
+    /// drawn in the path moves with.  Empty for the world.
+    pub fn carriers_of(&self, path: &[u32]) -> Vec<u32> {
+        fn visit(sk: &Sketch, f: u32, depth: usize, out: &mut Vec<u32>) {
+            let Some(frame) = sk.frames.get(f as usize) else { return };
+            if depth > 64 || out.contains(&f) {
+                return;
+            }
+            for &g in &frame.rides {
+                visit(sk, g, depth + 1, out);
+            }
+            if frame.joint.is_some() && !out.contains(&f) {
+                out.push(f);
+            }
+        }
+        let mut out = Vec::new();
+        for &f in path {
+            visit(self, f, 0, &mut out);
+        }
+        out
+    }
+
+    /// **What `e` rides on** (#383): the jointed frames carrying it, outermost first — a point
+    /// its path's (`rides`), a frame its own path's and itself, anything else what its parts ride
+    /// on, which must agree: `Err` names two parts that ride on different frames.  A motion, an
+    /// axis and a datum ride on nothing.
+    pub fn carriers(&self, e: EntRef) -> Result<Vec<u32>, (EntRef, EntRef)> {
+        self.carriers_within(e, true, 0).map(|(c, _)| c)
+    }
+
+    /// **What `e` rides on as drawn**: its points' paths alone, not the observer a reading gave
+    /// what it made — a generating cut rides on its blank, and may still be placed `under:` the
+    /// blank's index.
+    pub fn drawn_carriers(&self, e: EntRef) -> Result<Vec<u32>, (EntRef, EntRef)> {
+        self.carriers_within(e, false, 0).map(|(c, _)| c)
+    }
+
+    /// The same, with the part the carriers were found on, for naming a disagreement.
+    fn carriers_within(&self, e: EntRef, made: bool, depth: usize)
+        -> Result<(Vec<u32>, EntRef), (EntRef, EntRef)> {
+        // what is not built yet — a solid naming one after it, refused where it is built —
+        // rides on nothing
+        if e.i() >= self.count(e.kind) {
+            return Ok((Vec::new(), e));
+        }
+        if let Some(path) = self.rides.get(&e).filter(|_| made || e.kind == EntKind::Point) {
+            return Ok((self.carriers_of(path), e));
+        }
+        match e.kind {
+            EntKind::Frame => {
+                let mut path = self.frames[e.i()].rides.clone();
+                path.push(e.i() as u32);
+                Ok((self.carriers_of(&path), e))
+            }
+            _ if depth > 64 => Ok((Vec::new(), e)),
+            // drawn things ride as their points do, and a face or a solid as its edges
+            EntKind::Line | EntKind::Circle | EntKind::Arc | EntKind::Spline | EntKind::Face
+            | EntKind::Solid | EntKind::Surface => {
+                let mut found: Option<(Vec<u32>, EntRef)> = None;
+                for k in self.children(e) {
+                    let (c, at) = self.carriers_within(k, made, depth + 1)?;
+                    match &found {
+                        None => found = Some((c, at)),
+                        Some((f, _)) if *f == c => {}
+                        Some((_, other)) => return Err((*other, at)),
+                    }
+                }
+                Ok(found.unwrap_or((Vec::new(), e)))
+            }
+            // a point, a datum, a motion, a curve of expressions, or what is evaluated rides
+            // where it is said to (`rides`), and otherwise on nothing
+            _ => Ok((Vec::new(), e)),
+        }
+    }
+
     /// **Mint frame `f`'s joint** (#383): its axis `f.axis`, free and seeded along `z`, and its
     /// two numbers, a ratio of 1 and no advance — what relations then hold.  Once.
     pub fn mint_joint(&mut self, f: usize, name: &str) -> crate::model::Joint {

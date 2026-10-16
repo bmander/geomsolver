@@ -1157,23 +1157,9 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         face_map[i] = Some(dst.faces.len() - 1);
         made.push(EntRef::face(dst.faces.len() - 1));
     }
-    // what a motion's measured number reads, renumbered: the drawn kinds a measurement takes
-    let measured_ent = |e: EntRef| -> Option<EntRef> {
-        match e.kind {
-            EntKind::Point => pt_index(e.i()).map(EntRef::point),
-            EntKind::Line => line_map[e.i()].map(EntRef::line),
-            EntKind::Circle => circle_map[e.i()].map(EntRef::circle),
-            EntKind::Arc => arc_map[e.i()].map(EntRef::arc),
-            _ => None,
-        }
-    };
-    let measured_of = |m: &crate::model::MotionE| -> Option<Vec<crate::measure::MotionMeasure>> {
-        m.measured.iter().map(|x| x.value.remap(measured_ent)
-            .map(|value| crate::measure::MotionMeasure {slot:x.slot,value})).collect()
-    };
     let mut retained: Vec<bool> = src.motions.iter().enumerate().map(|(i,m)| {
-        // a motion goes with what it measures, as a constraint goes with its entities
-        keep(EntRef::new(EntKind::Motion,i)) && measured_of(m).is_some() && match m.def {
+        // a motion goes with what it is written over, as a constraint goes with its entities
+        keep(EntRef::new(EntKind::Motion,i)) && match m.def {
             crate::model::MotionDef::Rotation {axis,..} | crate::model::MotionDef::Translation {axis,..} =>
                 line_map[axis as usize].is_some(),
             crate::model::MotionDef::Turn {centre,..} => pt_index(centre as usize).is_some(),
@@ -1225,8 +1211,9 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
                 crate::model::MotionDef::Joint {axis:axis_map[axis as usize].unwrap() as u32,
                     ratio,advance},
         };
-        let measured = measured_of(m).expect("a retained motion keeps what it measures");
-        dst.motions.push(crate::model::MotionE {def,name:m.name.clone(),class:m.class.clone(),measured});
+        // a joint's numbers the solve finds are the frame's, renumbered with its joint below
+        dst.motions.push(crate::model::MotionE {def,name:m.name.clone(),class:m.class.clone(),
+                                                numbers:None});
         made.push(EntRef::new(EntKind::Motion,next));
     }
     // each frame's joint (#383): its axis, its two numbers, and the node it was lowered to
@@ -1244,6 +1231,9 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         let motion = j.motion.and_then(|m| motion_map[m as usize]).map(|m| m as u32);
         dst.frames[ni].joint =
             Some(crate::model::Joint { axis: axis as u32, ratio, advance, motion });
+        if let (Some(m), Some(n)) = (motion, j.motion.map(|m| &src.motions[m as usize])) {
+            dst.motions[m as usize].numbers = n.numbers.map(|_| [ratio, advance]);
+        }
     }
     // a face family's station as copied: its drawn geometry, `None` where some was left behind
     let station_ent = |e: EntRef| -> Option<EntRef> {
@@ -1400,6 +1390,16 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         surface_map[i] = Some(next);
         made.push(EntRef::new(EntKind::Surface,next));
     }
+    // a drawn entity, renumbered: a point, a line, a circle or an arc
+    let drawn_ent = |e: EntRef| -> Option<EntRef> {
+        match e.kind {
+            EntKind::Point => pt_index(e.i()).map(EntRef::point),
+            EntKind::Line => line_map[e.i()].map(EntRef::line),
+            EntKind::Circle => circle_map[e.i()].map(EntRef::circle),
+            EntKind::Arc => arc_map[e.i()].map(EntRef::arc),
+            _ => None,
+        }
+    };
     // what the solve reads of a source, in the copy's own geometry; a part left behind leaves
     // the copy with nothing it can read, said where a relation names it
     let remap_held = |h: &crate::model::Held| -> crate::model::Held {
@@ -1408,7 +1408,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         match h {
             crate::model::Held::Not(why) => crate::model::Held::Not(why.clone()),
             crate::model::Held::Revolution {axis,edge} => {
-                let edge = measured_ent(*edge);
+                let edge = drawn_ent(*edge);
                 let axis = match axis.kind {
                     EntKind::Line => line_map[axis.i()].map(EntRef::line),
                     EntKind::Axis => axis_map[axis.i()].map(EntRef::axis),

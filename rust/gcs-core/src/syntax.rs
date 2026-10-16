@@ -1086,6 +1086,10 @@ pub struct Membership {
     /// The further planes a point is drawn in (`point in P, G`, §6.7): it is on each, so where
     /// they meet, and drawn in each by a twin of its own (`Sketch::twins`).
     also: Vec<Ref>,
+    /// The frames of the further `in` blocks around it (#383), outermost first: it **rides**
+    /// on each (its carriers are their joints), and is drawn in the innermost of the path that
+    /// has axes — `plane` last.
+    rides: Vec<Ref>,
     /// Where the clause is, or an empty span where one would go — `class_span`'s idiom.
     span: Span,
     from: Source,
@@ -1106,7 +1110,8 @@ pub enum Source {
 impl Membership {
     /// The statement's own clause, as parsed.
     pub fn written_at(plane: Ref, span: Span) -> Membership {
-        Membership { plane: Some(plane), also: Vec::new(), span, from: Source::Written }
+        Membership { plane: Some(plane), also: Vec::new(), rides: Vec::new(), span,
+                     from: Source::Written }
     }
 
     /// The same, on further planes too (`in P, G`).
@@ -1122,6 +1127,27 @@ impl Membership {
     /// The same, to rescope.
     pub fn also_mut(&mut self) -> &mut [Ref] {
         &mut self.also
+    }
+
+    /// The frames of the blocks around it beyond its own plane (#383), outermost first.
+    pub fn rides(&self) -> &[Ref] {
+        &self.rides
+    }
+
+    /// The same, to rescope.
+    pub fn rides_mut(&mut self) -> &mut Vec<Ref> {
+        &mut self.rides
+    }
+
+    /// Ride on a frame around everything it is in already: an `in` block outside the one, or
+    /// the clause, that gave it its plane (#383).
+    pub fn ride_in(&mut self, frame: &Ref) {
+        self.rides.insert(0, frame.clone());
+    }
+
+    /// Every frame it is in, outermost first: the blocks' and then its plane.
+    pub fn path(&self) -> impl Iterator<Item = &Ref> {
+        self.rides.iter().chain(self.plane.as_ref())
     }
 
     /// A membership a *lift* gives a statement it is about to print — written, so it prints,
@@ -1242,12 +1268,12 @@ impl EaseSpec {
 #[derive(Clone, Debug)]
 pub enum Sweep {
     /// A solid placed at one angle of a named rigid motion.
-    Placed { motion: Ref, at: Arg },
+    Placed { motion: Option<Ref>, at: Arg },
     /// The continuous union of a solid under a finite motion interval.
-    Swept { motion: Ref, from: Arg, to: Arg },
+    Swept { motion: Option<Ref>, from: Arg, to: Arg },
     /// The same over the roll about 0 during which it meets `body`'s material (#271): `under: m,
     /// through: body`, the roll found after the solve as a `through:` prism's extent is.
-    Rolled { motion: Ref, body: Ref },
+    Rolled { motion: Option<Ref>, body: Ref },
     /// `from: a, to: b` — signed ordinates along the plane's normal; `draft: θ` tapers the sides
     /// from the face's own plane, the parting plane (#245).
     Prism { from: Arg, to: Arg, draft: Option<Arg> },
@@ -1329,8 +1355,9 @@ impl Sweep {
     /// that rewrite references.
     pub fn references_mut(&mut self) -> Vec<&mut Ref> {
         match self {
-            Sweep::Placed { motion, .. } | Sweep::Swept { motion, .. } => vec![motion],
-            Sweep::Rolled { motion, body } => vec![motion, body],
+            Sweep::Placed { motion, .. } | Sweep::Swept { motion, .. } =>
+                motion.iter_mut().collect(),
+            Sweep::Rolled { motion, body } => motion.iter_mut().chain([body]).collect(),
             Sweep::Revolve { axis, .. } => vec![axis],
             Sweep::Through { body } => vec![body],
             Sweep::Region { probe } => vec![probe],
@@ -1341,8 +1368,8 @@ impl Sweep {
 
     pub fn references(&self) -> Vec<&Ref> {
         match self {
-            Sweep::Placed { motion, .. } | Sweep::Swept { motion, .. } => vec![motion],
-            Sweep::Rolled { motion, body } => vec![motion, body],
+            Sweep::Placed { motion, .. } | Sweep::Swept { motion, .. } => motion.iter().collect(),
+            Sweep::Rolled { motion, body } => motion.iter().chain([body]).collect(),
             Sweep::Revolve { axis, .. } => vec![axis],
             Sweep::Through { body } => vec![body],
             Sweep::Region { probe } => vec![probe],

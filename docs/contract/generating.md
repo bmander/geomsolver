@@ -34,7 +34,7 @@ the solve `program::motions` reads each joint's kind off its holding statements 
 pushes the `MotionDef` the readers know: a line with ratio 0 `Translation`, a line `Rotation`, a
 view's point with the axis square to it `Turn`, anything else `Joint { axis, ratio, advance }`,
 which `Family::read` reads (ratio 0 a translation) and the planar program and held steps refuse.
-A joint whose ratio or advance no `fix` states is E080; a measured one is E107.  The joint's
+A joint's number no `fix` states is the solve's (stage 5); a measured one is E107.  The joint's
 `motion` is that node; a frame without a joint is the world.  `motions::reading(sk, res, under,
 seen_from)` is every reading's one entry (`under:` on a solid, envelopes, meshings, held and
 planar and extruded envelopes, sweep claims, `under:` relations): the frame's node, or seen from
@@ -60,10 +60,13 @@ count the minted nodes (an inverse is as deep as what it undoes). `tests/frames.
 slide against the cycloid, coaxial screws read as one screw, 64 levels), with a `CarriedPoint`
 under a chain FD-checked over both axes in `tests/jacobians.rs`.
 
-**A frame's numbers are stated** (#383 stage 3): a ratio or advance measured off the solved
-drawing (`ratio: -length(a) / length(b)`) is E107, as every measurement in a number is; documents
-state it from their own numbers (`lantern_generation.sv`'s `-wheel_pitch / pinion_pitch`).
-`measure.rs` and `MotionE::measured` stay until stage 5 retires them, always empty.
+**A frame's numbers are stated or solved** (#383 stages 3 and 5): a ratio or advance measured
+off the solved drawing (`ratio: -length(a) / length(b)`) is E107, as every measurement in a
+number is, and the measured motion numbers of 0.27 are gone (`measure.rs`, `MotionE::measured`).
+One no `fix` states is an unknown of the solve — [frames.md](frames.md)'s joints in the solve —
+read after the solve where the solve left it (`MotionE::rotation`, `advance`, `Family::read`'s
+`Joint`, `solid::reads`, so a cache key moves with it), and refused by the planar program
+(`generated::program_signed`), whose numbers are constants of its tape.
 
 **Solid placement:** `indexed := solid(source, under: indexing, at: 90deg)` places a solid at a
 motion's pose; `at:` is a constant Angle, not a hint or sweep. Repeatable, nestable, Boolean

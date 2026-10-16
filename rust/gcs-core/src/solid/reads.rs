@@ -293,8 +293,8 @@ fn motion_reads(sk: &Sketch,motion: u32,values: &mut Vec<f64>) {
         if !seen.insert(i) { continue; }
         let Some(m) = sk.motions.get(i as usize) else { values.push(UNREAD); continue; };
         values.push(i as f64);
-        // a number written as a measurement is read as it now comes to, so the key moves
-        // exactly when the measured geometry does (`MotionE::rotation`)
+        // a joint's number the solve finds is read as it now stands, so the key moves exactly
+        // when the solve moves it (`MotionE::rotation`)
         match m.def {
             crate::model::MotionDef::Rotation {axis,..} => {
                 let (ratio,phase,advance) = m.rotation(sk).unwrap_or((UNREAD,UNREAD,UNREAD));

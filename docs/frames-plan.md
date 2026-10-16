@@ -1,8 +1,12 @@
 # Frames: one declaration for planes and motions, constrained after the fact: plan
 
 **Status (2026-10-16): in progress**, issue #383. Stage 1 is built (`Sketch::chain`,
-`tests/frames.rs`), stage 2 (`EntKind::Frame`, `f := frame`, spec 0.134) and stage 3 (joints as
-members, `std.Turn`/`Spin`/`Slide`, `seen_from:`, spec 0.135). Two departures in stage 3: the
+`tests/frames.rs`), stage 2 (`EntKind::Frame`, `f := frame`, spec 0.134), stage 3 (joints as
+members, `std.Turn`/`Spin`/`Slide`, `seen_from:`, spec 0.135), stage 4 (riding, spec 0.136,
+[contract](contract/frames.md)) and stage 5 (joints in the solve, `std.Rolls`, spec 0.137). Stage 4
+leaves the app offering only planar frames as places to draw. Stage 5's `std.Rolls` holds one
+direction, not two (the other parts vanish for the pairs it is for), and a profile generated in
+the plane still needs its numbers stated. Two departures in stage 3: the
 lowered motion graph (`Sketch::motions`, `EntKind::Motion` inside the core) stays as what a
 joint and a reading lower to, no longer a declaration or an ABI kind; and a measured ratio is
 refused already (E107) rather than carried into `fix`, the documents that measured one

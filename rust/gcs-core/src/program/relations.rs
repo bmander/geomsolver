@@ -449,16 +449,24 @@ fn carried_motion(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) -> Option<Option<R
     let w = r.form.written()?;
     let named = |k: &str| w.args.iter().position(|a| matches!(a,
         crate::syntax::OpArg::Named(n, Arg::Ref(_)) if n.text == k));
-    let under = named("under")?;
-    let crate::syntax::OpArg::Named(_, Arg::Ref(under_ref)) = &w.args[under] else { return None };
-    if under_ref.root.text.starts_with("#motion") {
-        return None;
-    }
     let seen = named("seen_from");
     let seen_ref = seen.and_then(|i| match &w.args[i] {
         crate::syntax::OpArg::Named(_, Arg::Ref(g)) => Some(g.clone()),
         _ => None,
     });
+    let Some(under) = named("under") else {
+        return riding_point(cx, r, w, seen, seen_ref.as_ref(), st);
+    };
+    let crate::syntax::OpArg::Named(_, Arg::Ref(under_ref)) = &w.args[under] else { return None };
+    if under_ref.root.text.starts_with("#motion") {
+        return None;
+    }
+    // what rides already is read where it rides (#383)
+    let carried = w.ops.get(1).and_then(|o| cx.res.entity(&cx.sk, o));
+    if let Some(why) = carried.and_then(|x| super::motions::under_riding(&cx.sk, &cx.res, x)) {
+        cx.diags.push(Diag::within(Code::E040, under_ref.span, st.id, why));
+        return Some(None);
+    }
     let m = match super::motions::reading(&mut cx.sk, &cx.res, under_ref, seen_ref.as_ref()) {
         Ok(m) => m,
         Err(message) => {
@@ -476,6 +484,72 @@ fn carried_motion(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) -> Option<Option<R
     if let Some(i) = seen {
         w.args.remove(i);
     }
+    let mut out = r.clone();
+    out.form = RelationForm::Written(w);
+    Some(Some(out))
+}
+
+/// **A point read across frames at a roll** (#383): `X coincident(t == τ) x`, `x` and `X`
+/// riding on different paths of frames, is `x` carried as `X`'s frames see it — the carried
+/// point over `path(X)⁻¹·path(x)`, or over `x`'s path seen from the frame `seen_from:` names.
+/// `None` where it is no such relation (no roll named, an operand no point, both riding alike),
+/// which is then read as written.
+fn riding_point(cx: &mut Elab<'_>, r: &Relation, w: &crate::syntax::Written, seen: Option<usize>,
+                seen_ref: Option<&Ref>, st: &Stmt) -> Option<Option<Relation>> {
+    use crate::syntax::OpArg;
+    let rolls = w.args.iter().any(|a| matches!(a, OpArg::Slot { key, .. } if key.text == "t"));
+    if w.word.text != "coincident" || w.ops.len() != 2 || !rolls {
+        return None;
+    }
+    let ops: Vec<EntRef> = w.ops.iter().filter_map(|o| cx.res.entity(&cx.sk, o)).collect();
+    let [at, x] = ops[..] else { return None };
+    if at.kind != EntKind::Point || x.kind != EntKind::Point {
+        return None;
+    }
+    let paths = super::motions::carriers(&cx.sk, &cx.res, x)
+        .and_then(|p| Ok((p, super::motions::carriers(&cx.sk, &cx.res, at)?)));
+    let (source, observer) = match paths {
+        Ok(p) => p,
+        Err(message) => {
+            cx.diags.push(Diag::within(Code::E040, w.span, st.id, message));
+            return Some(None);
+        }
+    };
+    if seen_ref.is_none() && source == observer {
+        return None;
+    }
+    let sk = &mut cx.sk;
+    let m = (|| {
+        let s = super::motions::carried(sk, &source)?;
+        let o = match seen_ref {
+            Some(g) => super::motions::frame_motion(sk, &cx.res, g)?,
+            None => super::motions::carried(sk, &observer)?,
+        };
+        Ok::<_, String>(match (s, o) {
+            (Some(s), Some(o)) => Some(super::motions::relative(sk, s, o)),
+            (Some(s), None) => Some(s),
+            (None, Some(o)) => Some(super::motions::inverse(sk, o)),
+            (None, None) => None,
+        })
+    })();
+    let m = match m {
+        Ok(Some(m)) => m,
+        Ok(None) => return None,
+        Err(message) => {
+            cx.diags.push(Diag::within(Code::E040, w.span, st.id, message));
+            return Some(None);
+        }
+    };
+    let key = format!("#motion{m}");
+    cx.res.of.insert(key.clone(), EntRef::new(EntKind::Motion, m));
+    let mut w = w.clone();
+    if let Some(i) = seen {
+        w.args.remove(i);
+    }
+    let at = crate::syntax::Span::at(w.word.span.hi as usize);
+    w.args.insert(0, OpArg::Named(crate::syntax::Name { text: "under".into(), span: at },
+        Arg::Ref(Ref { root: crate::syntax::Name { text: key, span: at }, path: Vec::new(),
+                       span: at })));
     let mut out = r.clone();
     out.form = RelationForm::Written(w);
     Some(Some(out))

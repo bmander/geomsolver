@@ -103,6 +103,9 @@ pub enum Code {
     /// a free curve whose length nothing holds and no length makes its energy stationary in: it
     /// has no shape to settle on (§9.10)
     W114,
+    /// a declaration in two frames with axes at once, nested `in` blocks (#383): the inner one
+    /// draws it, and the outer is only ridden on
+    W115,
 }
 
 impl Code {
@@ -143,12 +146,13 @@ impl Code {
             Code::W112 => "W112",
             Code::W113 => "W113",
             Code::W114 => "W114",
+            Code::W115 => "W115",
         }
     }
 
     pub fn severity(self) -> Severity {
         match self {
-            Code::W110 | Code::W112 | Code::W113 | Code::W114 => Severity::Warning,
+            Code::W110 | Code::W112 | Code::W113 | Code::W114 | Code::W115 => Severity::Warning,
             _ => Severity::Error,
         }
     }

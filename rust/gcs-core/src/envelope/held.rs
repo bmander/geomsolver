@@ -115,17 +115,26 @@ impl Contact {
     }
 }
 
+/// **A joint's numbers the solve finds** (#383 stage 5): the motion columns `at..at + 2`, its
+/// ratio and its advance, read in place of a step's constants — negated where the step runs
+/// back, an inverse's.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Free {
+    pub at: usize,
+    pub back: bool,
+}
+
 /// One step of a motion, as its constants say it.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Step {
     /// About the line whose lifted ends are motion columns `at..at + 6`.
-    Rotation { at: usize, ratio: f64, phase: f64, advance: f64 },
+    Rotation { at: usize, ratio: f64, phase: f64, advance: f64, free: Option<Free> },
     /// Along the line whose lifted ends are motion columns `at..at + 6`.
-    Translation { at: usize, advance: f64 },
+    Translation { at: usize, advance: f64, free: Option<Free> },
     /// About the line through the lifted centre at motion columns `at..at + 3`, square to the
     /// view whose two axes' directions are columns `at + 3..at + 9`: a turn about a point of a
     /// view, as it reads in space (#326, read by `Moving::of_any` alone).
-    Turn { at: usize, ratio: f64, phase: f64 },
+    Turn { at: usize, ratio: f64, phase: f64, free: Option<Free> },
     /// `observer⁻¹ ∘ source`, by step index.
     Relative { source: usize, observer: usize },
 }
@@ -141,14 +150,58 @@ pub fn consts(lead: usize, source: Source, axis: u8, number: (f64, f64, bool), r
     k
 }
 
-/// A motion's steps as constants, `STEP` each.
+/// A motion's steps as constants, `STEP` each: a joint's free numbers as where their columns
+/// start, one past, and whether it runs back.
 pub fn encode_steps(steps: &[Step]) -> Vec<f64> {
+    let free = |f: Option<Free>| f.map_or((0.0, 0.0), |f| ((f.at + 1) as f64, f.back as u8 as f64));
     steps.iter().flat_map(|s| match *s {
-        Step::Rotation { at, ratio, phase, advance } => [1.0, at as f64, 0.0, 0.0, ratio, phase, advance],
-        Step::Translation { at, advance } => [2.0, at as f64, 0.0, 0.0, 0.0, 0.0, advance],
-        Step::Turn { at, ratio, phase } => [4.0, at as f64, 0.0, 0.0, ratio, phase, 0.0],
+        Step::Rotation { at, ratio, phase, advance, free: f } => {
+            let (a, b) = free(f);
+            [1.0, at as f64, a, b, ratio, phase, advance]
+        }
+        Step::Translation { at, advance, free: f } => {
+            let (a, b) = free(f);
+            [2.0, at as f64, a, b, 0.0, 0.0, advance]
+        }
+        Step::Turn { at, ratio, phase, free: f } => {
+            let (a, b) = free(f);
+            [4.0, at as f64, a, b, ratio, phase, 0.0]
+        }
         Step::Relative { source, observer } => [3.0, 0.0, source as f64, observer as f64, 0.0, 0.0, 0.0],
     }).collect()
+}
+
+impl Step {
+    /// The free numbers, where the solve finds them.
+    pub fn free(&self) -> Option<Free> {
+        match *self {
+            Step::Rotation { free, .. } | Step::Translation { free, .. }
+                | Step::Turn { free, .. } => free,
+            Step::Relative { .. } => None,
+        }
+    }
+
+    /// Its ratio and its advance over the motion's columns `m`: its constants, or its free
+    /// columns where it has them.
+    pub(crate) fn numbers<T: Num>(&self, m: &[T]) -> (T, T) {
+        let (ratio, advance) = match *self {
+            Step::Rotation { ratio, advance, .. } => (ratio, advance),
+            Step::Translation { advance, .. } => (0.0, advance),
+            Step::Turn { ratio, .. } => (ratio, 0.0),
+            Step::Relative { .. } => (0.0, 0.0),
+        };
+        match self.free() {
+            Some(f) => {
+                let k = T::cst(if f.back { -1.0 } else { 1.0 });
+                let ratio = if matches!(self, Step::Translation { .. }) { T::cst(0.0) }
+                    else { k * m[f.at] };
+                let advance = if matches!(self, Step::Turn { .. }) { T::cst(0.0) }
+                    else { k * m[f.at + 1] };
+                (ratio, advance)
+            }
+            None => (T::cst(ratio), T::cst(advance)),
+        }
+    }
 }
 
 /// Steps read back off `encode_steps`' constants: `None` where they are not steps, or a relative
@@ -158,12 +211,21 @@ pub fn read_steps(k: &[f64]) -> Option<Vec<Step>> {
         return None;
     }
     let mut steps = Vec::with_capacity(k.len() / STEP);
+    let free = |s: &[f64]| -> Option<Option<Free>> {
+        match s[2] {
+            a if a == 0.0 => Some(None),
+            a if a >= 1.0 && a.fract() == 0.0 =>
+                Some(Some(Free { at: a as usize - 1, back: s[3] != 0.0 })),
+            _ => None,
+        }
+    };
     for (i, s) in k.chunks(STEP).enumerate() {
         let idx = |x: f64| (x >= 0.0 && (x as usize) < i).then_some(x as usize);
         steps.push(match s[0] as i64 {
-            1 => Step::Rotation { at: s[1] as usize, ratio: s[4], phase: s[5], advance: s[6] },
-            2 => Step::Translation { at: s[1] as usize, advance: s[6] },
-            4 => Step::Turn { at: s[1] as usize, ratio: s[4], phase: s[5] },
+            1 => Step::Rotation { at: s[1] as usize, ratio: s[4], phase: s[5], advance: s[6],
+                free: free(s)? },
+            2 => Step::Translation { at: s[1] as usize, advance: s[6], free: free(s)? },
+            4 => Step::Turn { at: s[1] as usize, ratio: s[4], phase: s[5], free: free(s)? },
             3 => Step::Relative { source: idx(s[2])?, observer: idx(s[3])? },
             _ => return None,
         });
@@ -171,12 +233,15 @@ pub fn read_steps(k: &[f64]) -> Option<Vec<Step>> {
     Some(steps)
 }
 
-/// The columns a motion's steps read: six per axis.
+/// The columns a motion's steps read: six per axis, and two a joint whose numbers are free.
 pub fn steps_width(steps: &[Step]) -> usize {
-    steps.iter().filter_map(|s| match *s {
-        Step::Rotation { at, .. } | Step::Translation { at, .. } => Some(at + 6),
-        Step::Turn { at, .. } => Some(at + 9),
-        Step::Relative { .. } => None,
+    steps.iter().filter_map(|s| {
+        let axis = match *s {
+            Step::Rotation { at, .. } | Step::Translation { at, .. } => at + 6,
+            Step::Turn { at, .. } => at + 9,
+            Step::Relative { .. } => return None,
+        };
+        Some(axis.max(s.free().map_or(0, |f| f.at + 2)))
     }).max().unwrap_or(0)
 }
 
@@ -567,17 +632,18 @@ fn poses<T: Num>(steps: &[Step], m: &[T], t: H2<T>) -> Vec<Pose<T>> {
     for s in steps {
         let next = match *s {
             Step::Rotation { .. } | Step::Turn { .. } => {
-                let (a, d, ratio, phase, advance) = match *s {
-                    Step::Rotation { at, ratio, phase, advance } => {
+                let (ratio, advance) = s.numbers(m);
+                let (a, d, phase) = match *s {
+                    Step::Rotation { at, phase, .. } => {
                         let a = col3(m, at);
-                        (a, unit(vsub(col3(m, at + 3), a)), ratio, phase, advance)
+                        (a, unit(vsub(col3(m, at + 3), a)), phase)
                     }
-                    Step::Turn { at, ratio, phase } => {
-                        (col3(m, at), unit(cross(col3(m, at + 3), col3(m, at + 6))), ratio, phase, 0.0)
+                    Step::Turn { at, phase, .. } => {
+                        (col3(m, at), unit(cross(col3(m, at + 3), col3(m, at + 6))), phase)
                     }
                     _ => unreachable!(),
                 };
-                let theta = H2::cst(T::cst(phase)) + t.scale(T::cst(ratio));
+                let theta = H2::cst(T::cst(phase)) + t.scale(ratio);
                 let (st, ct) = theta.sin_cos();
                 let one_c = H2::cst(T::cst(1.0)) - ct;
                 let k = [[zero(), zero::<T>() - d[2], d[1]], [d[2], zero(), zero::<T>() - d[0]],
@@ -588,17 +654,18 @@ fn poses<T: Num>(steps: &[Step], m: &[T], t: H2<T>) -> Vec<Pose<T>> {
                 }));
                 let al = lift(a);
                 let ra: [H2<T>; 3] = std::array::from_fn(|i| r[i][0] * al[0] + r[i][1] * al[1] + r[i][2] * al[2]);
-                let screw = t.scale(T::cst(advance / tau));
+                let screw = t.scale(advance / T::cst(tau));
                 let p = vadd(vsub(al, ra), vscale(lift(d), screw));
                 Pose { r, p }
             }
-            Step::Translation { at, advance } => {
+            Step::Translation { at, .. } => {
+                let (_, advance) = s.numbers(m);
                 let a = col3(m, at);
                 let d = unit(vsub(col3(m, at + 3), a));
                 let one = H2::cst(T::cst(1.0));
                 let o = H2::cst(zero());
                 let r = [[one, o, o], [o, one, o], [o, o, one]];
-                Pose { r, p: vscale(lift(d), t.scale(T::cst(advance / tau))) }
+                Pose { r, p: vscale(lift(d), t.scale(advance / T::cst(tau))) }
             }
             Step::Relative { source, observer } => Pose::relative(&poses[source], &poses[observer]),
         };
@@ -1231,10 +1298,6 @@ fn motion(sk: &Sketch, m: usize, steps: &mut Vec<Step>, cols: &mut Vec<Col>,
         return Err("a motion nests too deeply".into());
     }
     let me = sk.motions.get(m).ok_or("no such motion")?;
-    if !me.measured.is_empty() {
-        return Err(format!("`{}`'s numbers are measured after the solve, and an envelope the solve \
-                            holds is generated within it: state them", me.name));
-    }
     // where the next axis's columns start in the motion's block: past every axis already read
     let at = steps_width(steps);
     let mut axis = |l: u32| -> Result<(), String> {
@@ -1242,16 +1305,21 @@ fn motion(sk: &Sketch, m: usize, steps: &mut Vec<Step>, cols: &mut Vec<Col>,
         cols.extend([Col::Lift(line.p1 as usize), Col::Lift(line.p2 as usize)]);
         Ok(())
     };
+    // a joint's numbers the solve finds are two columns past its axis's (#383 stage 5)
+    let free = |cols: &mut Vec<Col>, past: usize| me.numbers.map(|[r, a]| {
+        cols.extend([Col::One(r), Col::One(a)]);
+        Free { at: at + past, back: false }
+    });
     let step = match me.def {
         MotionDef::Rotation { axis: l, .. } => {
             let (ratio, phase, advance) = me.rotation(sk)?;
             axis(l)?;
-            Step::Rotation { at, ratio, phase, advance }
+            Step::Rotation { at, ratio, phase, advance, free: free(cols, 6) }
         }
         MotionDef::Translation { axis: l, .. } => {
             let advance = me.advance(sk)?;
             axis(l)?;
-            Step::Translation { at, advance }
+            Step::Translation { at, advance, free: free(cols, 6) }
         }
         MotionDef::Turn { centre, .. } if turns => {
             let (ratio, phase, _) = me.rotation(sk)?;
@@ -1261,7 +1329,7 @@ fn motion(sk: &Sketch, m: usize, steps: &mut Vec<Step>, cols: &mut Vec<Col>,
             let pl = sk.frames.get(view).ok_or("no such view")?;
             cols.extend([Col::Lift(centre as usize), Col::Three(sk.axes[pl.u as usize].d),
                          Col::Three(sk.axes[pl.v as usize].d)]);
-            Step::Turn { at, ratio, phase }
+            Step::Turn { at, ratio, phase, free: free(cols, 9) }
         }
         MotionDef::Turn { .. } => {
             return Err(format!("`{}` turns about a point of a view: an envelope in space is \
@@ -1280,11 +1348,15 @@ fn motion(sk: &Sketch, m: usize, steps: &mut Vec<Step>, cols: &mut Vec<Col>,
         // a joint's inverse runs back over the same axis columns, a relative's swaps its sides
         MotionDef::Inverse { of } => {
             let k = motion(sk, of as usize, steps, cols, done, depth + 1, turns)?;
+            let back = |f: Option<Free>| f.map(|f| Free { back: !f.back, ..f });
             match steps[k] {
-                Step::Rotation { at, ratio, phase, advance } =>
-                    Step::Rotation { at, ratio: -ratio, phase: -phase, advance: -advance },
-                Step::Translation { at, advance } => Step::Translation { at, advance: -advance },
-                Step::Turn { at, ratio, phase } => Step::Turn { at, ratio: -ratio, phase: -phase },
+                Step::Rotation { at, ratio, phase, advance, free } =>
+                    Step::Rotation { at, ratio: -ratio, phase: -phase, advance: -advance,
+                        free: back(free) },
+                Step::Translation { at, advance, free } =>
+                    Step::Translation { at, advance: -advance, free: back(free) },
+                Step::Turn { at, ratio, phase, free } =>
+                    Step::Turn { at, ratio: -ratio, phase: -phase, free: back(free) },
                 Step::Relative { source, observer } => Step::Relative { source: observer, observer: source },
             }
         }

@@ -81,6 +81,8 @@ struct P<'a> {
     /// not — a header buried in a root statement's span is a splice no deletion could compose.
     in_comp: bool,
     in_preview: bool,
+    /// How many of the braced bodies being read are `in` blocks (#383): one nests in another.
+    in_in: u32,
 }
 
 /// `relative_to:` where a reading is written, retired (#383) for the reading's own observer.
@@ -128,6 +130,7 @@ pub(crate) fn reference_at(text: &str, at: usize) -> Option<Ref> {
         in_blocks: Vec::new(),
         in_comp: false,
         in_preview: false,
+        in_in: 0,
     };
     let mut r = st.refr()?;
     if !st.done() || !st.errs.is_empty() {
@@ -216,6 +219,7 @@ fn parse_at(src: &str, base: usize, first_id: u32, limits: ParseLimits) -> (Prog
         in_blocks: Vec::new(),
         in_comp: false,
         in_preview: false,
+        in_in: 0,
     };
     let mut body: Vec<Stmt> = Vec::new();
     let mut comps: Vec<Component> = Vec::new();

@@ -413,6 +413,9 @@ impl Family {
                 // a joint about an axis as the solve leaves it (#383): a turn, a screw, or with no
                 // ratio a slide along its direction
                 MotionDef::Joint {axis,ratio,advance} => {
+                    // its numbers as the solve left them, where it found them (#383 stage 5)
+                    let [ratio,advance] = node.numbers.map_or([ratio,advance],
+                        |q| q.map(|p| sk.params.get(p as usize).map_or(f64::NAN,|x| x.value)));
                     let ax = sk.axes.get(axis as usize).ok_or("no such joint axis")?;
                     let origin: [f64;3] = ax.a.map(|q| sk.params[q as usize].value);
                     let d: [f64;3] = ax.d.map(|q| sk.params[q as usize].value);

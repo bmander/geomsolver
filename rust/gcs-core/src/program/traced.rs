@@ -1070,12 +1070,16 @@ impl<'v> Lowering<'v> {
         let key = format!("#seen{}", self.motions.len());
         let (steps, cols) = if sg.is_empty() { (su, cu) } else {
             let (n, wu) = (su.len(), cu.len());
+            let shift = |f: Option<crate::envelope::held::Free>|
+                f.map(|f| crate::envelope::held::Free { at: f.at + wu, ..f });
             let mut steps = su;
             steps.extend(sg.into_iter().map(|s| match s {
-                Step::Rotation { at, ratio, phase, advance } =>
-                    Step::Rotation { at: at + wu, ratio, phase, advance },
-                Step::Translation { at, advance } => Step::Translation { at: at + wu, advance },
-                Step::Turn { at, ratio, phase } => Step::Turn { at: at + wu, ratio, phase },
+                Step::Rotation { at, ratio, phase, advance, free } =>
+                    Step::Rotation { at: at + wu, ratio, phase, advance, free: shift(free) },
+                Step::Translation { at, advance, free } =>
+                    Step::Translation { at: at + wu, advance, free: shift(free) },
+                Step::Turn { at, ratio, phase, free } =>
+                    Step::Turn { at: at + wu, ratio, phase, free: shift(free) },
                 Step::Relative { source, observer } =>
                     Step::Relative { source: source + n, observer: observer + n },
             }));

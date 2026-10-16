@@ -817,6 +817,19 @@ component Slide(f: frame, along: line, advance: Length) {
   fix(ratio == 0, advance == advance) f
 }
 
+// `a` and `b` roll on one another at `at` without slipping along the direction `along` (#383):
+// the point of `a`'s frame there, seen from `b`'s, does not move along it — the rate of the point
+// `a` carries, seen from `b`, at roll 0, nothing along it.  A joint's ratio left out is found so:
+// two gears' pitch circles rolling at their pitch point turn at the ratio of their radii, and a
+// ratio stated places the pitch point.  For two shafts parallel, or meeting, and `at` on the line
+// of centres the rate has no other part, so one direction, the circles' common tangent there, says
+// it all.
+component Rolls(at: point, a: frame, b: frame, along: axis) {
+  private moved := point
+  moved coincident(under: a, seen_from: b, t == 0deg) at
+  rate(moved over t) distance(0mm, along: along)
+}
+
 // -- a motion's twist, read by rates (#326, #365) -------------------------------------------------
 //
 // A turn about a fixed line, a screw along one or a slide moves every point at a velocity, and so
