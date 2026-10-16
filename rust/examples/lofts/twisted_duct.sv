@@ -70,11 +70,11 @@ in std.top {
   length(length) guide3
 }
 // a quarter turn
-duct := solid(TwistedSquare(guide, std.z, square, o, x, reach: reach, twist: 90deg).sec
+duct := sweep(TwistedSquare(guide, std.z, square, o, x, reach: reach, twist: 90deg).sec
               over s in (0, 1))
 // three and a half turns: no pairing of two sections can say this
-auger := solid(TwistedSquare(guide2, std.z, square, o, x, reach: reach, twist: 1260deg).sec
+auger := sweep(TwistedSquare(guide2, std.z, square, o, x, reach: reach, twist: 1260deg).sec
                over s in (0, 1))
 // a quarter turn, eased in and out
-eased := solid(EasedSquare(guide3, std.z, square, o, x, reach: reach, twist: 90deg).sec
+eased := sweep(EasedSquare(guide3, std.z, square, o, x, reach: reach, twist: 90deg).sec
                over s in (0, 1))

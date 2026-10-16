@@ -80,12 +80,12 @@ std.Slide(feed, along: rail, advance: {advance_mm}mm)
 "))
 }
 
-/// The sweep line: `swept := solid(tool, under: NAME, from: A, to: B)`, `motion` the frame's name
+/// The sweep line: `swept := sweep(tool over t in (A, B), under: NAME)`, `motion` the frame's name
 /// or a whole reading (`ROLLED`).
 pub fn swept(motion: &str,from_deg: f64,to_deg: f64) -> String {
     let reading = if motion.contains(':') { motion.to_string() }
         else { format!("under: {motion}") };
-    format!("swept := solid(tool, {reading}, from: {from_deg}deg, to: {to_deg}deg)\n")
+    format!("swept := sweep(tool over t in ({from_deg}deg, {to_deg}deg), {reading})\n")
 }
 
 /// A turn about the line through the page points (u0, v0) and (u1, v1)

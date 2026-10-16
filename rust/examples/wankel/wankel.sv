@@ -43,8 +43,8 @@ std.Spin(spin, about: hub, on: std.top, ratio: -2 / 3)
 // -- the curves -------------------------------------------------------------------------------
 // The bore is where an apex goes over three turns of the shaft, one of the rotor; a flank is
 // where the bore touches the rotor as the housing turns about it, from one apex to the next.
-bore := envelope(apex, seen_from: counter, from: 0deg, to: 1080deg)
-flank := envelope(bore, under: counter, seen_from: spin, from: 10deg, to: 170deg)
+bore := envelope(apex over t in (0deg, 1080deg), seen_from: counter)
+flank := envelope(bore over t in (10deg, 170deg), under: counter, seen_from: spin)
 
 // -- the parts --------------------------------------------------------------------------------
 // The housing: a disc with the bore through it, a hair proud of the rotor at each face.
@@ -64,7 +64,7 @@ in std.top {
   radius(R + e) blank_rim
 }
 private blank := solid(face(blank_rim), from: 0mm, to: W)
-construction swept := solid(housing, under: counter, seen_from: spin, from: 0deg, to: 1080deg)
+construction swept := sweep(housing over t in (0deg, 1080deg), under: counter, seen_from: spin)
 rotor := solid(blank)
 swept cut rotor
 
@@ -100,7 +100,7 @@ in std.top {
 }
 }
 arc_rotor := solid(face(flank[0], flank[1], flank[2]), from: 0mm, to: W)
-arc_rotor_at := solid(arc_rotor, seen_from: counter, at: 0deg)
+arc_rotor_at := arc_rotor at(seen_from: counter) 0deg
 claim over spin seen_from counter in (0deg, 1080deg) {
   arc_rotor_at clear(clearance / 2) housing
 }

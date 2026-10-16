@@ -52,10 +52,10 @@ in std.front {
   radius(rr) roller_f
 }
 
-pitch_rise := envelope(c_rise, under: rise, seen_from: cam, from: 0deg, to: 180deg)
-pitch_fall := envelope(c_fall, under: fall, seen_from: cam, from: 180deg, to: 360deg)
-cam_rise := envelope(roller, under: rise, seen_from: cam, from: 0deg, to: 180deg, side: near)
-cam_fall := envelope(roller_f, under: fall, seen_from: cam, from: 180deg, to: 360deg, side: near)
+pitch_rise := envelope(c_rise over t in (0deg, 180deg), under: rise, seen_from: cam)
+pitch_fall := envelope(c_fall over t in (180deg, 360deg), under: fall, seen_from: cam)
+cam_rise := envelope(roller over t in (0deg, 180deg), under: rise, seen_from: cam, side: near)
+cam_fall := envelope(roller_f over t in (180deg, 360deg), under: fall, seen_from: cam, side: near)
 
 // how tightly the profile bends a quarter turn in
 in std.front {

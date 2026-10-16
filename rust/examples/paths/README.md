@@ -21,9 +21,9 @@ Read them in this order:
 
 What the words are:
 
-- **A curve traced in space as a path** — `g := Helix(…).p over u in (0, 1)` given to a `path`
-  formal: `m coincident(t == s) g` pins the contact's place, the trace's own formal; `hint(at: m,
-  along: g)` steps along it. A surface traced over two formals is no path.
+- **A curve traced in space as a path** — `g := trace(Helix(…).p over u in (0, 1))` given to a
+  `path` formal: `m coincident(t == s) g` pins the contact's place, the trace's own formal;
+  `hint(at: m, along: g)` steps along it. A surface traced over two formals is no path.
 - **`std.On(g, up:, s:)`** — the plane square to `g` where its parameter is `s`, its frame
   integrated from the family's home, where `n.u` is square to `up`; `up` is read there alone.
 - **`g curvature(at: m) c`** — of a curve traced in space and a point: `c` the centre of the

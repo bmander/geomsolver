@@ -219,7 +219,7 @@ fn a_curve_column_is_an_unknown_number_as_itself() {
         )
         .replace("  h := 65.7    // heel to toe\n", "")
         .replace("leg := Leg(axle, pivot)\n", "pair := Pair(axle, pivot)\n")
-        .replace("path := leg.toe", "path := pair.leg.toe")
+        .replace("path := trace(leg.toe", "path := trace(pair.leg.toe")
         + "component Pair(axle: point, pivot: point, k: Length) { leg := Leg(axle, pivot, h: 2 * k) }\n";
     let (prog, errs) = crate::common::parse(&doc);
     assert!(errs.is_empty(), "{errs:?}");

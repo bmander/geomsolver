@@ -33,4 +33,4 @@ in std.front {
   hang.p coincident a                        // the home: the chain leaves a
   b coincident(t == 150mm) chain             // ...and reaches b after its length
 }
-chain := hang.p over s in (0mm, 150mm)
+chain := trace(hang.p over s in (0mm, 150mm))

@@ -53,7 +53,7 @@ fn solid(e: &program::Elaborated,name: &str) -> std::rc::Rc<gcs_core::solid::Eva
 
 #[test]
 fn placed_solids_have_rotated_material_closed_meshes_and_face_names() {
-    let e = read(&format!("{SOURCE}moved := solid(stock, under: turn, at: 90deg)\n"));
+    let e = read(&format!("{SOURCE}moved := stock at(under: turn) 90deg\n"));
     let s = solid(&e,"moved");
     assert!((s.volume()-8.).abs() < 1e-9);
     assert!(s.contains_world(WorldPoint([1.,2.,1.])));
@@ -67,8 +67,8 @@ fn placed_solids_have_rotated_material_closed_meshes_and_face_names() {
 #[test]
 fn nested_placements_transform_composite_sources_and_invalidate_motion_caches() {
     let mut e = read(&format!("{SOURCE}\nbody := solid(stock)\n\
-        first := solid(body, under: turn, at: 45deg)\n\
-        moved := solid(first, under: turn, at: 45deg)\n"));
+        first := body at(under: turn) 45deg\n\
+        moved := first at(under: turn) 45deg\n"));
     let old = solid(&e,"moved");
     assert!(old.contains_world(WorldPoint([1.,2.,1.])));
     // three times as fast, each placement turns 135°
@@ -84,10 +84,10 @@ fn nested_placements_transform_composite_sources_and_invalidate_motion_caches() 
 
 #[test]
 fn placement_print_copy_and_paste_retain_source_and_motion_dependencies() {
-    let e = read(&format!("moved := solid(stock, under: turn, at: 90deg)\n{SOURCE}"));
+    let e = read(&format!("moved := stock at(under: turn) 90deg\n{SOURCE}"));
     let mut program = e.program.clone();
     let text = syntax::render_flat(&mut program).unwrap().to_string();
-    assert!(text.contains("under: turn, at: 90deg"),"{text}");
+    assert!(text.contains("moved := stock at(under: turn) 90deg"),"{text}");
     assert!(solid(&read(&text),"moved").contains_world(WorldPoint([1.,2.,1.])));
     let copied = io::copy(&e.sketch,&[e.map.ent_named("moved").unwrap()]);
     assert_eq!(copied.motions.len(),1);
@@ -126,10 +126,10 @@ fn indexed_pattern_stl_must_have_closed_encoded_topology() {
 
 #[test]
 fn malformed_placements_and_cycles_are_refused() {
-    for bad in ["bad := solid(stock, under: turn)","bad := solid(stock, at: 90deg)",
+    for bad in ["bad := solid(stock, under: turn)","bad := stock at 90deg",
         "bad := solid(stock, under: turn, at: 90deg, depth: 2mm)",
-        "bad := solid(stock, under: ax, at: 90deg)","bad := solid(stock, under: turn, at: 2mm)",
-        "bad := solid(profile, under: turn, at: 90deg)","bad := solid(bad, under: turn, at: 90deg)"] {
+        "bad := stock at(under: ax) 90deg","bad := stock at(under: turn) 2mm",
+        "bad := profile at(under: turn) 90deg","bad := bad at(under: turn) 90deg"] {
         let (p,errors) = crate::common::parse(&format!("{SOURCE}{bad}\n"));
         let e = program::elaborate(&p);
         assert!(!errors.is_empty() || !e.ok() ||
@@ -145,11 +145,11 @@ fn solids_bind_final_motion_indices_after_dependency_ordering() {
     let e = read(&format!("{SOURCE}\n\
         z_turn := frame\nax coincident z_turn.axis\nfix(ratio == 2,advance == 0mm) z_turn\n\
         component Copy(stock: solid,movement: frame,seen_from: frame) {{\n\
-          moved := solid(stock,under: movement,seen_from: seen_from,at: 90deg)\n\
-          swept := solid(stock,under: movement,seen_from: seen_from,from: -10deg,to: 10deg)\n\
+          moved := stock at(under: movement, seen_from: seen_from) 90deg\n\
+          swept := sweep(stock over t in (-10deg, 10deg), under: movement, seen_from: seen_from)\n\
         }}\n\
         copy := Copy(stock,z_turn,turn)\n\
-        direct := solid(stock,under: z_turn,at: 45deg)\n"));
+        direct := stock at(under: z_turn) 45deg\n"));
     use gcs_core::model::SolidDef;
     let (s,o) = (joint(&e,"z_turn") as u32,joint(&e,"turn") as u32);
     let relative = e.sketch.motions.iter().position(|m| matches!(m.def,
@@ -171,8 +171,8 @@ fn solids_bind_final_motion_indices_after_dependency_ordering() {
 #[test]
 fn a_placement_whose_motion_refuses_keys_its_solid_alike_each_read() {
     // a key over a number nothing reads must equal itself, or the solid is built at every ask
-    let mut e = read(&format!("{SOURCE}moved := solid(stock, under: turn, at: 90deg)\n\
-        swept := solid(stock, under: turn, from: -10deg, to: 10deg)\n"));
+    let mut e = read(&format!("{SOURCE}moved := stock at(under: turn) 90deg\n\
+        swept := sweep(stock over t in (-10deg, 10deg), under: turn)\n"));
     let m = joint(&e,"turn");
     let MotionDef::Rotation {axis,..} = &mut e.sketch.motions[m].def else { unreachable!() };
     *axis = u32::MAX;

@@ -34,4 +34,4 @@ in std.top {
   construction centerline guide := arc(center: turn_center, start: entry, end: exit)
   radius(bend_radius) guide
 }
-body := solid(Bend(guide, std.z, inlet: inlet_half, outlet: outlet_half, wall: wall).sec.profile over s in (0, 1))
+body := sweep(Bend(guide, std.z, inlet: inlet_half, outlet: outlet_half, wall: wall).sec.profile over s in (0, 1))

@@ -345,8 +345,8 @@ counter := frame
 std.Spin(counter, about: centre, on: std.top, ratio: -1)
 spin := frame
 std.Spin(spin, about: hub, on: std.top, ratio: -2 / 3)
-bore := envelope(apex, under: spin, seen_from: counter, from: 0deg, to: 1080deg)
-flank := envelope(bore, under: counter, seen_from: spin, from: 10deg, to: 170deg)
+bore := envelope(apex over t in (0deg, 1080deg), under: spin, seen_from: counter)
+flank := envelope(bore over t in (10deg, 170deg), under: counter, seen_from: spin)
 ");
     let top = plane(&e, "std.top");
     let views = gcs_core::overview::workspace::Views::new(&e.sketch);

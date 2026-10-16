@@ -61,7 +61,7 @@ in std.front {
 // pinned points of the path, and the claim says it is vertical — which nothing above states.
 // The diagnosis reports it a theorem; delete it and the drawing is unchanged, which is what a
 // claim promises.
-path := cell.pen over u in (60, 115)
+path := trace(cell.pen over u in (60, 115))
 
 in std.front {
   g1 := point hint((80, 51))

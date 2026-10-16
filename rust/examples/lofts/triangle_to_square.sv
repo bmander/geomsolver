@@ -39,4 +39,4 @@ in end_plane {
 }
 square := face(a0, a1, a2, a3, -> close)
 triangle := face(t0, t1, t2, m, -> close)
-body := solid(std.Ruled(square, triangle).f over s in (0, 1))
+body := sweep(std.Ruled(square, triangle).f over s in (0, 1))

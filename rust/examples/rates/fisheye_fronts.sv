@@ -71,4 +71,4 @@ image := point hint((50, 0, 0))
 fix((50, 0, 0)) image
 
 // run past the conjugate point
-wave := Wave(c, x1, y1, z1, R: R).p over (s in (2mm, 160mm), u in (-120deg, 120deg))
+wave := trace(Wave(c, x1, y1, z1, R: R).p over (s in (2mm, 160mm), u in (-120deg, 120deg)))

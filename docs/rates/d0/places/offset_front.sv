@@ -43,5 +43,5 @@ in std.front {
   claim path perpendicular te      // ...square to the ellipse...
   claim path perpendicular tm      // ...and so square to the front: the gauge
 }
-rim := std.Ellipse(c, a: a, b: b, tilt: 0deg).p over u in (0deg, 360deg)
-front := Front(c, a: a, b: b, d: d1).p over u in (0deg, 360deg)
+rim := trace(std.Ellipse(c, a: a, b: b, tilt: 0deg).p over u in (0deg, 360deg))
+front := trace(Front(c, a: a, b: b, d: d1).p over u in (0deg, 360deg))

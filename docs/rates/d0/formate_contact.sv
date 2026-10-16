@@ -63,5 +63,5 @@ line0 := Action(pair.mill.outer_flank, pair.gear_turn, pair.pinion_turn, phi: 0d
   over s in (-1, 1)
 flank := Contact(action, line0, pair.pinion_turn, pair.gear_turn).X
   over (phi in (-10deg, 10deg), sigma in (-1, 1))
-contact := meshing(flank, pair.gear_tooth.outer, under: pair.gear_turn,
-  seen_from: pair.pinion_turn, from: -10deg, to: 10deg)
+contact := meshing(flank, pair.gear_tooth.outer over t in (-10deg, 10deg), under: pair.gear_turn,
+  seen_from: pair.pinion_turn)

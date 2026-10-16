@@ -256,7 +256,7 @@ component Offset(S: set, d: Length) := { p | p distance(d, side: outside) S }
 //   in std.front {
 //     o := point hint((0, 0))
 //   }
-//   e := std.Ellipse(o, a: 40, b: 25, tilt: 0deg).p over u in (0, 360)
+//   e := trace(std.Ellipse(o, a: 40, b: 25, tilt: 0deg).p over u in (0, 360))
 //
 // The axes and the tilt are formals: leave one free and a dimension that reads the rim sizes it
 // (issue #47, item 4 — this replaces the entity kind the language once had, whose rim, tangent
@@ -482,7 +482,7 @@ component Chamfered(a: set, b: set, la: Length, lb: Length) := { p |
 // -- stations of a face family (#243 L3) --------------------------------------------------------
 //
 // A loft or a sweep is a face of a component as one of its numbers runs (§6.9):
-// `solid(I(…).f over s in (0, 1))`.  These words only say where a station stands on its path: a
+// `sweep(I(…).f over s in (0, 1))`.  These words only say where a station stands on its path: a
 // plane `n` square to the path where its parameter is `s`, its `v` along `up`.  What the section
 // is at that station — its shape, its twist, its scale, the rails it follows — is the writer's
 // component, drawn `in st.n` and reading `s` (the laws below run a twist or a scale):
@@ -491,7 +491,7 @@ component Chamfered(a: set, b: set, la: Length, lb: Length) := { p |
 //     st := std.OnLine(g, up: std.z, s: s)
 //     sec := Section(st.n.origin, size: inlet + (outlet - inlet) * s) in st.n
 //   }
-//   body := solid(Reducer(guide, inlet: 24mm, outlet: 12mm).sec.profile over s in (0, 1))
+//   body := sweep(Reducer(guide, inlet: 24mm, outlet: 12mm).sec.profile over s in (0, 1))
 //
 // The edge `ab` at one station is `ab` at every other, so two sections correspond by being one.
 
@@ -579,11 +579,11 @@ component Helix(base: plane, pitch: Length, turns: Scalar, s: Scalar) {
   // the screw: a frame turning about `base`'s normal, rising `pitch` a turn
   private screw := frame
   Turn(screw, about: base.normal, ratio: 1, advance: pitch)
-  n := base carried(under: screw, at: 360deg * turns * s)
+  n := base at(under: screw) 360deg * turns * s
   // and `n` turned a quarter about its `u`
   private stand := frame
   Turn(stand, about: n.u, ratio: 1)
-  axial := n carried(under: stand, at: 90deg)
+  axial := n at(under: stand) 90deg
 }
 
 // A helix's normal station: the plane square to the helix of radius `r` about `base`'s normal
@@ -601,8 +601,8 @@ component OnHelix(base: plane, r: Length, pitch: Length, turns: Scalar, s: Scala
   // where the helix starts: `base` turned about its `u` axis and slid `r` out along it
   private tilt := frame
   Turn(tilt, about: base.u, ratio: 1, advance: r * 360deg / (90deg + atan2(pitch, 2 * pi * r)))
-  private start := base carried(under: tilt, at: 90deg + atan2(pitch, 2 * pi * r))
-  n := start carried(under: screw, at: 360deg * turns * s)
+  private start := base at(under: tilt) 90deg + atan2(pitch, 2 * pi * r)
+  n := start at(under: screw) 360deg * turns * s
 }
 
 // The rotation-minimising frame of a station (#339 D3, #243 L9): the plane `f` through `n`'s
@@ -683,7 +683,7 @@ component Across(a: path, b: path, c: path, s: Scalar) {
 // two walks of different lengths are made alike by naming a point on an edge in the shorter one.
 // Nothing is inferred.  The first three corners must not stand in a line.
 //
-//   body := solid(std.Ruled(inlet, outlet).f over s in (0, 1))
+//   body := sweep(std.Ruled(inlet, outlet).f over s in (0, 1))
 component Ruled(a: face, b: face, s: Scalar) {
   cycle (ea, eb) in (a, b) {
     private construction rail := line(ea.p1, eb.p1)
@@ -764,7 +764,7 @@ component Twisted(n: plane, twist: Angle, reach: Length, s: Scalar) {
     private x := point
     x on_u(d: reach) n
     t := point
-    t coincident(under: turn, at: twist * s) x
+    t coincident x at(under: turn) twist * s
   }
 }
 

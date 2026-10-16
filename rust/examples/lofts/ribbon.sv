@@ -44,7 +44,7 @@ component Unturned(base: plane, r: Length, pitch: Length, turns: Scalar, w: Leng
   sec := Flat(rm.f, w: w, h: h)
 }
 
-facing := solid(Frenet(std.top, r: r, pitch: pitch, turns: turns, w: w, h: h).sec.f
+facing := sweep(Frenet(std.top, r: r, pitch: pitch, turns: turns, w: w, h: h).sec.f
                 over s in (0, 1))
-twisting := solid(Unturned(std.top, r: r, pitch: pitch, turns: turns, w: w, h: h).sec.f
+twisting := sweep(Unturned(std.top, r: r, pitch: pitch, turns: turns, w: w, h: h).sec.f
                   over s in (0, 1))

@@ -253,8 +253,7 @@ crown_roll := frame
 std.Turn(crown_roll, about: crown_ax, ratio: 1)
 gear_roll := frame
 std.Turn(gear_roll, about: gear_ax, ratio: -1.4142135623730951)
-construction removal := solid(tool, under: crown_roll, seen_from: gear_roll, from: -40deg, \
-  to: 40deg)
+construction removal := sweep(tool over t in (-40deg, 40deg), under: crown_roll, seen_from: gear_roll)
 part := solid(blank)
 removal cut part
 ";

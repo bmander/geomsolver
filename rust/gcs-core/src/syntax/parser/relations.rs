@@ -55,6 +55,8 @@ impl<'a> P<'a> {
                 } else {
                     self.connective(&word.text)?;
                     let right = self.operand(1, &mut rates)?;
+                    let mut args = args;
+                    self.coincident_at(&word.text, &mut args)?;
                     (word, Fixity::Infix, vec![left, right], args)
                 }
             }
@@ -246,12 +248,12 @@ impl<'a> P<'a> {
                     out.push(OpArg::Bound { cmp: Cmp::In, span, hi: Some(hi), grow: None });
                     out.push(OpArg::Dim(a, a_span));
                 }
-                // `coincident(under: m, at: τ)`: the roll a motion carries the point to, stated —
-                // the relation's number, written after its label (#366)
+                // `coincident(at: τ)` is retired (#391 S2): the instant is the operand's
                 (Some(Tok::Ident(n)), Some(Tok::P(':'))) if word == "coincident" && n == "at" => {
-                    self.i += 2;
-                    let (text, span) = self.raw_number()?;
-                    out.push(OpArg::Dim(text, span));
+                    self.fail("`coincident(at: τ)` is retired (#391): a point is read at an \
+                        instant where it is named, `X coincident x at τ`, its frames on the `at` \
+                        (`x at(under: m, seen_from: g) τ`)");
+                    return None;
                 }
                 (Some(Tok::Ident(n)), Some(Tok::P(':'))) => {
                     let name = Name { text: n, span: self.here() };
@@ -331,6 +333,94 @@ impl<'a> P<'a> {
             }
             self.i = end;
         }
+        Some(out)
+    }
+
+    /// `X coincident x at τ` (#391 S2), the right operand just read: `x` read at an instant of
+    /// the roll, its arguments joining the relation's, the frames it is read by on the `at` and
+    /// never on the `coincident` beside it.  Nothing is read where `word` is another or no
+    /// instant follows.
+    pub(super) fn coincident_at(&mut self, word: &str, args: &mut Vec<OpArg>) -> Option<()> {
+        if word != "coincident" || !self.instant_ahead() {
+            return Some(());
+        }
+        let frames = |a: &OpArg| matches!(a, OpArg::Named(n, _)
+            if n.text == "under" || n.text == "seen_from");
+        if args.iter().any(frames) {
+            self.fail("a point read at an instant names its frames on the `at`: `X coincident x \
+                       at(under: m, seen_from: g) τ`");
+            return None;
+        }
+        args.extend(self.instant()?);
+        Some(())
+    }
+
+    /// Whether `at` here begins an instant (#391 S2) — `at τ` or `at(under: m) τ` — rather than
+    /// a callout's placement, `at (t, r)`: two numbers in the brackets and nothing after.
+    pub(super) fn instant_ahead(&self) -> bool {
+        if !self.peek_word("at") {
+            return false;
+        }
+        let tok = |k: usize| self.t.get(self.i + k).map(|(t, _)| t);
+        if tok(1) != Some(&Tok::P('(')) {
+            return !matches!(tok(1), None | Some(Tok::Nl));
+        }
+        // `(`, then a signed number, `,`, a signed number, `)`: a placement
+        let mut k = 2;
+        for close in [',', ')'] {
+            if matches!(tok(k), Some(Tok::P('-' | '+'))) {
+                k += 1;
+            }
+            if !matches!(tok(k), Some(Tok::Num(_))) || tok(k + 1) != Some(&Tok::P(close)) {
+                return true;
+            }
+            k += 2;
+        }
+        false
+    }
+
+    /// **An instant** (#391 S2), `at` read past: `at τ`, or `at(under: m, seen_from: g) τ`
+    /// naming the frame the reading is under where what it reads rides on none, and the frame it
+    /// is seen from — as a carried point's arguments are held: the frames by their labels, the
+    /// roll the relation's number, written as a dimension is and read to the end of the
+    /// statement (or its `hint(…)`, `class` or placement).
+    pub(super) fn instant(&mut self) -> Option<Vec<OpArg>> {
+        self.i += 1; // `at`
+        let mut out = Vec::new();
+        let labelled = self.peek() == Some(&Tok::P('('))
+            && matches!(self.t.get(self.i + 2).map(|(t, _)| t), Some(Tok::P(':')));
+        if labelled {
+            self.i += 1;
+            while !self.eat_p(')') {
+                let Some(Tok::Ident(n)) = self.peek().cloned() else {
+                    self.fail("an instant names `under:` the frame it is read by and \
+                        `seen_from:` the one it is seen from");
+                    return None;
+                };
+                let name = Name { text: n, span: self.here() };
+                if !matches!(name.text.as_str(), "under" | "seen_from") {
+                    self.fail(&format!("an instant names `under:` the frame it is read by and \
+                        `seen_from:` the one it is seen from, not `{}:`", name.text));
+                    return None;
+                }
+                if out.iter().any(|a| matches!(a, OpArg::Named(m, _) if m.text == name.text)) {
+                    self.fail(&format!("`{}` is given twice", name.text));
+                    return None;
+                }
+                self.i += 2;
+                out.push(OpArg::Named(name, Arg::Ref(self.refr()?)));
+                if !self.eat_p(',') && self.peek() != Some(&Tok::P(')')) {
+                    self.fail("expected `,` or `)`");
+                    return None;
+                }
+            }
+        }
+        // a placement after it is the relation's, `at (t, r)`
+        let clause =
+            |t: &Tok| matches!(t, Tok::Ident(w) if w == "hint" || w == "class" || w == "at");
+        let (text, span) = self.raw_until(clause, "an instant states the roll it is read at: \
+            `at τ`")?;
+        out.push(OpArg::Dim(text, span));
         Some(out)
     }
 

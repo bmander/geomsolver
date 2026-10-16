@@ -17,7 +17,7 @@ pub use measured::{Measured, Measurement, Measuring};
 pub(crate) use highlight::with_comments;
 pub use names::{camel, entity_name, hidden, kind_initial, name_uses, num, one_of, snake, NameUse};
 pub use parser::{parse, parse_from, parse_legacy, parse_with_limits, ParseLimits};
-pub(crate) use parser::{reference_at, sweep_of, SweepParts};
+pub(crate) use parser::{reference_at, sweep_of, SweepParts, ROLLED_RETIRED, SWEPT_RETIRED};
 pub use print::{bounded, operator_text, render_flat, write_stmt_to, PrintError};
 pub(crate) use print::{sel_text, written_parts};
 pub use source::{line_col, Module, Name, Program, Span, StmtId, SynErr, Use, MAX_STMTS, MAX_TEXT};
@@ -963,10 +963,10 @@ pub struct Decl {
     /// How a solid is swept (§6.9): a prism along the plane's normal, a revolution about a line
     /// in it, or a body over other solids.  `None` for every other kind.
     pub sweep: Option<Sweep>,
-    /// The frame a reading of a motion is seen from (#383): `envelope(tool, under: f, seen_from:
-    /// g, …)`, a meshing's and a swept or placed solid's — what `motion(f, relative_to: g)` was,
-    /// said where it is read.  `None` for every other declaration, and for a reading from the
-    /// world.
+    /// The frame a reading of a motion is seen from (#383): `envelope(tool over t in (a, b), under:
+    /// f, seen_from: g)`, a meshing's and a swept or placed solid's — what `motion(f, relative_to:
+    /// g)` was, said where it is read.  `None` for every other declaration, and for a reading from
+    /// the world.
     pub seen_from: Option<Ref>,
     /// A source surface's angular span, an envelope's roll interval or a meshing's phase
     /// interval, and what the declaration says besides (a planar envelope's side, a meshing's
@@ -1003,16 +1003,17 @@ pub struct Decl {
     /// document names what it has — where `plane(…)`, the same kind, is a flat frame over two
     /// axes.  False for every other declaration.
     pub bare: bool,
-    /// **A frame a motion carries** (#366), `n := base carried(under: m, at: τ)`: the plane the
-    /// motion's pose at the roll `τ` carries the plane `base` to, its axes and its origin with it.
-    /// The flattener writes the statements a person would (`flatten::carried`); the source keeps
-    /// the one.  `None` for every other declaration.
+    /// **A reading at an instant** (#366, #391 S2), `n := x at(under: m) τ`: `x` where the
+    /// motion's pose at the roll `τ` carries it — a frame carried, its axes and its origin with
+    /// it, a solid placed or a point held, as `x` is.  The flattener writes the statements a
+    /// person would (`flatten::carried`) once it knows which; the source keeps the one.  `None`
+    /// for every other declaration.
     pub carried: Option<CarriedFrame>,
 }
 
-/// What a carried frame is carried from and by (`Decl::carried`, #366): the plane it is the image
-/// of, the word as written, and its arguments as a carried point's are read — `under:` the motion,
-/// the roll after `at:` its number.
+/// What a reading at an instant reads and by what (`Decl::carried`, #366, #391 S2): the source,
+/// the `at` as written, and its arguments as a carried point's are held — `under:` and
+/// `seen_from:` the frames, the roll the number.
 #[derive(Clone, Debug)]
 pub struct CarriedFrame {
     pub source: Ref,
@@ -1078,7 +1079,7 @@ impl Decl {
         }
     }
 
-    /// `k := leg.toe over theta in (0, 360)` — the declaration a curve definition makes.
+    /// `k := trace(leg.toe over theta in (0, 360))` — the declaration a curve definition makes.
     pub fn curve(name: DeclName, curve: CurveSpec, class: Classes, class_span: Span) -> Decl {
         Decl {
             annotations: Default::default(),
@@ -1269,12 +1270,34 @@ pub struct InBlock {
 pub struct AngularSpan {
     pub from: Arg,
     pub to: Arg,
+    /// The parameter a reading over an interval of the roll names (#391 S2): `envelope(tool
+    /// over t in (a, b))`, `meshing(f1, f2 over t in (a, b))`.  `None` for a surface's span,
+    /// which is an angle of a revolution and no reading.
+    pub over: Option<RunsOver>,
     /// Which cut a planar envelope takes where its tool cuts twice (`side: near | far` of the
     /// instant centre, §6.15.1); a word, checked where the envelope is built.
     pub side: Option<Name>,
     /// A meshing's first flank eased (§6.15.4, #345): `ease: M, along: l, profile: κₚ,
     /// lengthwise: κₗ`.
     pub ease: Option<Box<EaseSpec>>,
+}
+
+impl AngularSpan {
+    /// What the number the reading runs over is called (#391 S2): the parameter it names, or the
+    /// shared roll's name where it names none (a surface's span).
+    pub fn running(&self) -> &str {
+        self.over.as_ref().map_or(crate::model::Running::ROLL, |o| o.name.text.as_str())
+    }
+}
+
+/// **What a reading over an interval names it by** (#391 S2): `over t in (a, b)`, the parameter's
+/// name and its interval written in place — the ends the reading's `from`/`to` — or `over t`, a
+/// parameter the document declares (`param t: Angle over (a, b)`), whose ends the flattener
+/// writes in (`declared`).
+#[derive(Clone, Debug)]
+pub struct RunsOver {
+    pub name: Name,
+    pub declared: bool,
 }
 
 /// **Ease-off** as a meshing's declaration writes it (§6.15.4, #345): the point it is eased
@@ -1304,8 +1327,9 @@ impl EaseSpec {
 pub enum Sweep {
     /// A solid placed at one angle of a named rigid motion.
     Placed { motion: Option<Ref>, at: Arg },
-    /// The continuous union of a solid under a finite motion interval.
-    Swept { motion: Option<Ref>, from: Arg, to: Arg },
+    /// The continuous union of a solid under a finite motion interval: `sweep(tool over t in
+    /// (a, b))` (#391 S2).
+    Swept { motion: Option<Ref>, from: Arg, to: Arg, over: RunsOver },
     /// The same over the roll about 0 during which it meets `body`'s material (#271): `under: m,
     /// through: body`, the roll found after the solve as a `through:` prism's extent is.
     Rolled { motion: Option<Ref>, body: Ref },
@@ -1326,7 +1350,7 @@ pub enum Sweep {
     /// set, and made this by the flattener, which applies the set to the hidden `probe` point
     /// (`probe inside R`) and whose bounds the elaborator reads as the solid's terms.
     Region { probe: Ref },
-    /// `duct := solid(Station(guide).f over s in (0, 1))` — **a face family** (#243 L1): the
+    /// `duct := sweep(Station(guide).f over s in (0, 1))` — **a face family** (#243 L1): the
     /// solid a face of an instance sweeps as one of its numeric formals runs.  The instance is
     /// written in place and drawn once, hidden, at the middle of the interval; the family solves
     /// it again at every station (`solid::family`).

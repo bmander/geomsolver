@@ -17,4 +17,4 @@ in std.top {
   fix((0mm, 30mm)) e
   guide := line(o, e)
 }
-pyramid := solid(Shrinking(guide, std.z, size: 20mm).f over s in (0, 1))
+pyramid := sweep(Shrinking(guide, std.z, size: 20mm).f over s in (0, 1))

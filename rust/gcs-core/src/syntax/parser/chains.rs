@@ -257,7 +257,13 @@ impl<'a> P<'a> {
         };
         let named_link = link_name.is_some();
         let mut links = vec![self.link(link_name)?];
-        let (joints, close, open) = self.joints(&mut links)?;
+        let (mut joints, close, open) = self.joints(&mut links)?;
+        // `X coincident x at τ` (#391 S2): the one relation's operand read at an instant
+        if let [joint] = joints.as_mut_slice() {
+            if let [(word, args, _)] = joint.words.as_mut_slice() {
+                self.coincident_at(word, args)?;
+            }
+        }
         // the trailing clauses a statement may carry — a lone infix operator is a one-joint
         // chain, so it carries them here as it would anywhere else
         let tr = self.chain_trailers(!joints.is_empty())?;

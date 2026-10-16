@@ -83,11 +83,13 @@ component Element(P: point, L: line, across: line, normal: line, m: frame, v: Le
 }
 run := 40deg
 w := 15mm
-pinion_flank := Element(P, L, pin_across, pin_normal, pinion_turn, v: sigma).X over (phi in (-run, run), s in (-w, w))
-gear_flank := Element(P, L, gear_across, gear_normal, gear_turn, v: sigma).X over (phi in (-run, run), s in (-w, w))
+pinion_flank := trace(Element(P, L, pin_across, pin_normal, pinion_turn,
+                              v: sigma).X over (phi in (-run, run), s in (-w, w)))
+gear_flank := trace(Element(P, L, gear_across, gear_normal, gear_turn,
+                            v: sigma).X over (phi in (-run, run), s in (-w, w)))
 
 // -- the contact ---------------------------------------------------------------------------------
-bearing := meshing(pinion_flank, gear_flank, under: gear_turn, seen_from: pinion_turn,
-                   from: -15deg, to: 15deg)
+bearing := meshing(pinion_flank, gear_flank over t in (-15deg, 15deg), under: gear_turn,
+                   seen_from: pinion_turn)
 Q := point hint((0, 48, 0))
 Q coincident(t == 0deg) bearing

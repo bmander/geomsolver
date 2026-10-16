@@ -31,7 +31,7 @@ fixed_turn := frame
 std.Spin(fixed_turn, about: o, on: std.top, ratio: 1)
 rolling_turn := frame
 std.Spin(rolling_turn, about: c, on: std.top, ratio: -2)
-path := envelope(x, under: rolling_turn, seen_from: fixed_turn, from: -180deg, to: 180deg)
+path := envelope(x over t in (-180deg, 180deg), under: rolling_turn, seen_from: fixed_turn)
 ";
 
 /// The epicycloid of a circle of radius `b` rolling round one of radius `a`, at `θ`: the
@@ -166,8 +166,7 @@ fn a_carried_point_prints_back_and_names_a_motion() {
                  &spin("fixed_turn", "o", 1))
         .replace("std.Spin(rolling_turn, about: c, on: std.top, ratio: -2)\n",
                  &spin("rolling_turn", "c", -2))
-        .replace("path := envelope(x, under: rolling_turn, seen_from: fixed_turn, from: -180deg, \
-                  to: 180deg)\n", "");
+        .replace("path := envelope(x over t in (-180deg, 180deg), under: rolling_turn, seen_from: fixed_turn)\n", "");
     let (mut prog, errs) = crate::common::parse(&src);
     assert!(errs.is_empty(), "{errs:?}");
     let first = gcs_core::program::elaborate(&prog);

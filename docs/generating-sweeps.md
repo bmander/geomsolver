@@ -33,7 +33,8 @@ general project spent its effort.
 
 ## The class
 
-A sweep `removal := solid(tool, under: generating, from: a, to: b)`, or `through: body` over the
+A sweep `removal := sweep(tool over t in (a, b), under: generating)`, or `sweep(tool, through:
+body, …)` over the
 roll it takes through the body's material (`solid::roll::interval`, the one interval every reader
 asks), is **admitted** when all of
 the following hold. Each condition is a predicate evaluated on the solved model, and each

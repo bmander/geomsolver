@@ -77,13 +77,13 @@ cut_apex distance(10mm) cut_top
 cutter := std.Cone(cut_spine, half: pressure - tilt)
 cutting_turn := frame
 std.Turn(cutting_turn, about: gear_ax, ratio: -roll * pinion_teeth / gear_teeth)
-pinion_flank := envelope(cutter, under: cutting_turn, seen_from: pinion_turn, from: -40deg,
-                         to: 40deg)
+pinion_flank := envelope(cutter over t in (-40deg, 40deg), under: cutting_turn,
+                         seen_from: pinion_turn)
 
 // -- the contact ---------------------------------------------------------------------------------
 // The two flanks turning with their members; Q, where they touch at the phase the pair is drawn
 // at. The trace over the phase is the bearing and the transmission error.
-bearing := meshing(pinion_flank, flank, under: gear_turn, seen_from: pinion_turn, from: -15deg,
-                   to: 15deg)
+bearing := meshing(pinion_flank, flank over t in (-15deg, 15deg), under: gear_turn,
+                   seen_from: pinion_turn)
 Q := point hint((0, 48, 0))
 Q coincident(t == 0deg) bearing

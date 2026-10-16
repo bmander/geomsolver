@@ -87,7 +87,7 @@ read after the solve where the solve left it (`MotionE::rotation`, `advance`, `F
 `Joint`, `solid::reads`, so a cache key moves with it), and refused by the planar program
 (`generated::program_signed`), whose numbers are constants of its tape.
 
-**Solid placement:** `indexed := solid(source, under: indexing, at: 90deg)` places a solid at a
+**Solid placement:** `indexed := source at(under: indexing) 90deg` places a solid at a
 motion's pose; `at:` is a constant Angle, not a hint or sweep. Repeatable, nestable, Boolean
 operands; copy keeps source and motions. `make solventc OCCT=1` enables native STEP via a C ABI
 over OCCT; the core supplies construction data, the CLI owns shapes and catches exceptions. A
@@ -99,17 +99,17 @@ be meshed; `mesh::stl_shells` checks every component, cavities included, unwelde
 old outputs; renames are atomic per file, not across files. Native-path tests must not hide legacy
 mesh defects.
 
-**Planar generation (§6.15.1, #61):** `envelope(tool, under: m, from:, to:, side:)` over a tool of
-the sheet (point/line/circle/arc/formula curve) and a planar motion (`std.Spin`, a turn about a
-point of a view, is `MotionDef::Turn`, a rotation square to its view in space) is a **curve** (`CurveBody::Envelope`,
-`program/generated.rs`, built with motions after the primitives, before constraints):
-`F = X_s × X_t = 0` in the tool parameter, `C`..`C''` exact by `taylor::Jet`s, `C'''` and θ
-gradients by difference (`generate.rs`); tool and motion geometry are its columns (shared ones
+**Planar generation (§6.15.1, #61):** `envelope(tool over t in (a, b), under: m, side:)` over a tool
+of the sheet (point/line/circle/arc/formula curve) and a planar motion (`std.Spin`, a turn about a
+point of a view, is `MotionDef::Turn`, a rotation square to its view in space) is a **curve**
+(`CurveBody::Envelope`, `program/generated.rs`, built with motions after the primitives, before
+constraints): `F = X_s × X_t = 0` in the tool parameter, `C`..`C''` exact by `taylor::Jet`s, `C'''`
+and θ gradients by difference (`generate.rs`); tool and motion geometry are its columns (shared ones
 once; the motion's numbers ride past `tape::MAX_VARS` in `OUTER_MAX`).  Analytic tools are exact to
 `C'''`, so a profile they cut may cut in turn (`generate::Tool::Envelope`, read as its Taylor
 series); the encoding is `Generated::new` and `view` only.  Kernels are generic over
-`kernels::{FORMULA,TRACE,ENVELOPE}` and ask a body for the orders they `need`.
-`tests/generation.rs` is the gate.
+`kernels::{FORMULA,TRACE,ENVELOPE}` and ask a body for the orders they `need`. `tests/generation.rs`
+is the gate.
 
 **One engine for a prism's side (#70):** `side := surface(prism, edge: e)` names a prism's side
 too; its `envelope` under a motion keeping the prism's view is built with the drawing
@@ -138,29 +138,28 @@ plane through a sphere's parameter pole is a meeting this kernel's Booleans do n
 `swept_groove.sv`, `swept_spring.sv`, `solid_generating_sweep.sv`; `tests/canal.rs` (Pappus, to
 1e-9) is the gate. Field-path tests sweep the ball along a line instead (`solid_sweep.rs::slid`).
 
-**A sweep's roll through what it cuts** (#271, §6.9 [0.88]): `solid(tool, under: m, through: body)`
-is `SolidDef::Swept { roll: model::Roll::Through { body } }` (`Roll::Stated` is `from:`/`to:`, an
-interval of the shared roll, `Running::roll`: [parameters.md](parameters.md)),
-the roll about 0 during which the tool meets the body's material (`document::material_sources`:
-stock and additions, never cuts, so `removal` cutting `body` is no cycle; `evaluation_operands`
-reads them). **Every reader asks `solid::roll::interval`**, never the extents (admission's
-`SweepContacts`, the field's `SweptField`, `SweptCut` here and in the CLI, `faces::face_source`,
-`canal`, `planar_class`), memoised against `solid::reads` (`Caches::roll`). Found by
-marching out from 0 a `STEP` (1°) at a time, both ways and a few steps ahead on every core, to the
-first step the tool is proved clear over (`roll::clear`: the tool's support and the step split
-by branch and bound, a box dropped where the tool's field encloses it empty or the step's
-`Family::bounds` carry it where the body's field encloses it clear, the step halved where poses
-smear a box past its size; a centre in both at the middle pose ends a step early): conservative,
-a few degrees past first clearance, never short, so E1 holds by construction. The boxes are one
-tree whatever order they are walked in, so the answer is the order's to choose freely: each step
-walks first the halves toward where the way's step before ended (`roll::march`), and a step the
-tool has not cleared ends in a few dozen boxes, not hundreds (the same rolls, a fraction of the
-time; a document's workers each find them before their first surface). Refused naming why
-(no meeting at 0, not clear within two turns, a tool with no bounded support). The spiral bevel,
-the rack cuts and the lantern state no roll; the drill's flute and the Wankel's period are design.
-`fixtures::gear::roll` restates one member's roll (negative controls). `tests/roll_through.rs` is
-the gate (two balls parting at `2 asin(1/3)`; the pair at 10:48 admitted; in the slow tier each
-member built as its stated roll built it).
+**A sweep's roll through what it cuts** (#271, §6.9 [0.88]): `sweep(tool, through: body, under: m)`
+is `SolidDef::Swept { roll: model::Roll::Through { body } }` (`Roll::Stated` is `over t in (a, b)`,
+an interval of the shared roll, `Running::roll`: [parameters.md](parameters.md)), the roll about 0
+during which the tool meets the body's material (`document::material_sources`: stock and additions,
+never cuts, so `removal` cutting `body` is no cycle; `evaluation_operands` reads them). **Every
+reader asks `solid::roll::interval`**, never the extents (admission's `SweepContacts`, the field's
+`SweptField`, `SweptCut` here and in the CLI, `faces::face_source`, `canal`, `planar_class`),
+memoised against `solid::reads` (`Caches::roll`). Found by marching out from 0 a `STEP` (1°) at a
+time, both ways and a few steps ahead on every core, to the first step the tool is proved clear over
+(`roll::clear`: the tool's support and the step split by branch and bound, a box dropped where the
+tool's field encloses it empty or the step's `Family::bounds` carry it where the body's field
+encloses it clear, the step halved where poses smear a box past its size; a centre in both at the
+middle pose ends a step early): conservative, a few degrees past first clearance, never short, so E1
+holds by construction. The boxes are one tree whatever order they are walked in, so the answer is
+the order's to choose freely: each step walks first the halves toward where the way's step before
+ended (`roll::march`), and a step the tool has not cleared ends in a few dozen boxes, not hundreds
+(the same rolls, a fraction of the time; a document's workers each find them before their first
+surface). Refused naming why (no meeting at 0, not clear within two turns, a tool with no bounded
+support). The spiral bevel, the rack cuts and the lantern state no roll; the drill's flute and the
+Wankel's period are design. `fixtures::gear::roll` restates one member's roll (negative controls).
+`tests/roll_through.rs` is the gate (two balls parting at `2 asin(1/3)`; the pair at 10:48 admitted;
+in the slow tier each member built as its stated roll built it).
 
 **Generating sweeps and the native export** ([docs/generating-sweeps.md](../generating-sweeps.md)):
 `solventc --step/--stl` builds swept cuts only for the bevel/hypoid generating class.

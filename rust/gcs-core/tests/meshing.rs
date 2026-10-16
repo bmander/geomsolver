@@ -1,10 +1,10 @@
 //! The meshing of two flanks (#283, step 3): tooth contact analysis as a locus.  A point held to
-//! `meshing(pinion_flank, gear_flank, under: gear_turn, seen_from: pinion_turn, …)` owns the
-//! pinion's phase, the gear's lag and a place on each flank; after the solve the contact is traced
-//! over the phase.  Each is held here to something worked out apart from `envelope::meshing`:
-//! closed forms (a conjugate pair transmits without error, a pair conjugate at another ratio at
-//! that ratio), and a gap between the two members closed by turning the gear, found with no
-//! normal and no row of the meshing.
+//! `meshing(pinion_flank, gear_flank over t in (a, b), under: gear_turn, seen_from: pinion_turn)`
+//! owns the pinion's phase, the gear's lag and a place on each flank; after the solve the contact
+//! is traced over the phase.  Each is held here to something worked out apart from
+//! `envelope::meshing`: closed forms (a conjugate pair transmits without error, a pair conjugate at
+//! another ratio at that ratio), and a gap between the two members closed by turning the gear,
+//! found with no normal and no row of the meshing.
 use crate::common::build;
 use gcs_core::constraints::CKind;
 use gcs_core::envelope::meshing::{Meshing, Sample, Trace};
@@ -109,9 +109,8 @@ pub(super) fn holds_together(s: &Sample, apex: [f64; 3], axis: [f64; 3]) {
 #[test]
 fn a_conjugate_pair_transmits_without_error_and_one_cut_at_another_ratio_at_that_ratio() {
     let src = format!("{MESH}\
-pinion_flank := envelope(flank, under: gear_turn, seen_from: pinion_turn, from: -40deg, to: 40deg)
-contact := meshing(pinion_flank, flank, under: gear_turn, seen_from: pinion_turn, from: -20deg,
-  to: 20deg)
+pinion_flank := envelope(flank over t in (-40deg, 40deg), under: gear_turn, seen_from: pinion_turn)
+contact := meshing(pinion_flank, flank over t in (-20deg, 20deg), under: gear_turn, seen_from: pinion_turn)
 Q := point hint((0, 48, 0))
 Q coincident(t == 0deg) contact
 ");
@@ -128,10 +127,10 @@ Q coincident(t == 0deg) contact
     assert!(text.starts_with("contact: line contact; transmission error"), "{text}");
 
     let q = 1.01;
-    let cut = src.replace("pinion_flank := envelope(flank, under: gear_turn,",
+    let cut = src.replace("pinion_flank := envelope(flank over t in (-40deg, 40deg), under: gear_turn,",
         &format!("cutting_turn := frame\n\
                   std.Turn(cutting_turn, about: gear_ax, ratio: -0.5 * {q})\n\
-                  pinion_flank := envelope(flank, under: cutting_turn,"));
+                  pinion_flank := envelope(flank over t in (-40deg, 40deg), under: cutting_turn,"));
     let e = solved(&cut);
     let t = traced(&e.sketch, "contact", 24);
     assert_eq!(t.found().count(), 25);
@@ -163,10 +162,8 @@ apex2 distance(10mm) top2
 cutter := std.Cone(spine2, half: 15deg)
 cutting_turn := frame
 std.Turn(cutting_turn, about: gear_ax, ratio: -0.5 * {q})
-pinion_flank := envelope(cutter, under: cutting_turn, seen_from: pinion_turn, from: -40deg,
-  to: 40deg)
-contact := meshing(pinion_flank, flank, under: gear_turn, seen_from: pinion_turn, from: -20deg,
-  to: 20deg)
+pinion_flank := envelope(cutter over t in (-40deg, 40deg), under: cutting_turn, seen_from: pinion_turn)
+contact := meshing(pinion_flank, flank over t in (-20deg, 20deg), under: gear_turn, seen_from: pinion_turn)
 Q := point hint((1, 47, 1))
 Q coincident(t == 0deg) contact
 ");
@@ -325,8 +322,8 @@ pub(super) fn closing(point: &impl Fn(f64, f64, f64) -> ([f64; 3], f64),
 /// generating under the mesh, and Q held to the meshing where the pair is drawn.  The document, M,
 /// the gear's cone's apex and axis, and the cutter's apex and axis point.
 fn turned_cutter() -> (String, [[f64; 3]; 3], [[f64; 3]; 2]) {
-    let base = solved(&format!("{MESH}gear_flank := envelope(flank, under: gear_turn, \
-                                seen_from: pinion_turn, from: -40deg, to: 40deg)\n"));
+    let base = solved(&format!("{MESH}gear_flank := envelope(flank over t in (-40deg, 40deg), under: gear_turn, \
+                                seen_from: pinion_turn)\n"));
     let (m, apex, c) = (at(&base, "M"), at(&base, "apex"), at(&base, "C"));
     let axis = unit(sub(c, apex));
     let g = sub(m, apex);
@@ -341,9 +338,8 @@ cut_c := point hint(({}, {}, {}))
 fix({}) cut_c
 cut_spine := line(cut_apex, cut_c)
 cutter := std.Cone(cut_spine, half: 15deg)
-pinion_flank := envelope(cutter, under: gear_turn, seen_from: pinion_turn, from: -40deg, to: 40deg)
-contact := meshing(pinion_flank, flank, under: gear_turn, seen_from: pinion_turn, from: -15deg,
-  to: 15deg)
+pinion_flank := envelope(cutter over t in (-40deg, 40deg), under: gear_turn, seen_from: pinion_turn)
+contact := meshing(pinion_flank, flank over t in (-15deg, 15deg), under: gear_turn, seen_from: pinion_turn)
 Q := point hint((0, 48, 0))
 Q coincident(t == 0deg) contact
 ", a2[0], a2[1], a2[2], pt(a2), c2[0], c2[1], c2[2], pt(c2));
@@ -400,10 +396,8 @@ apex2 distance(10mm) top2
 cutter := std.Cone(spine2, half: 15deg)
 cutting_turn := frame
 std.Turn(cutting_turn, about: gear_ax, ratio: -0.5 * {q})
-pinion_flank := envelope(cutter, under: cutting_turn, seen_from: pinion_turn, from: -40deg,
-  to: 40deg)
-contact := meshing(pinion_flank, flank, under: gear_turn, seen_from: pinion_turn, from: -20deg,
-  to: 20deg)
+pinion_flank := envelope(cutter over t in (-40deg, 40deg), under: cutting_turn, seen_from: pinion_turn)
+contact := meshing(pinion_flank, flank over t in (-20deg, 20deg), under: gear_turn, seen_from: pinion_turn)
 Q := point hint((0, 48, 0))
 Q coincident(t == 0deg) contact
 R := point hint((1, 48, 1))
@@ -460,8 +454,8 @@ fix(ratio == 1, advance == 0mm) spin
 gear_turn := frame
 gear_ax coincident gear_turn.axis
 fix(ratio == -0.4, advance == 3mm) gear_turn
-f1 := envelope(side, under: spin, seen_from: gear_turn, from: -60deg, to: 60deg)
-contact := meshing(f1, side, under: spin, seen_from: gear_turn, from: -20deg, to: 20deg)
+f1 := envelope(side over t in (-60deg, 60deg), under: spin, seen_from: gear_turn)
+contact := meshing(f1, side over t in (-20deg, 20deg), under: spin, seen_from: gear_turn)
 p := point hint((3, 1, 8))
 p coincident(t == 0deg, lag == 0) contact
 ";
@@ -478,8 +472,7 @@ fn a_meshing_prints_back_and_refuses_what_it_cannot_turn() {
     assert!(first.ok(), "{:?}", first.errors().map(|d| &d.message).collect::<Vec<_>>());
     assert_eq!(first.sketch.meshings.len(), 1);
     let printed = gcs_core::syntax::render_flat(&mut prog).unwrap().to_string();
-    let said = "contact := meshing(first: f1, second: side, motion: spin, from: -20deg, \
-                to: 20deg, seen_from: gear_turn)";
+    let said = "contact := meshing(first: f1, second: side over t in (-20deg, 20deg), motion: spin, seen_from: gear_turn)";
     assert!(printed.contains(said), "{printed}");
     assert!(printed.contains("p coincident(t == 0deg, lag == 0) contact"), "{printed}");
     let again = build(&printed);
@@ -496,12 +489,11 @@ fn a_meshing_prints_back_and_refuses_what_it_cannot_turn() {
         assert!(e.errors().any(|d| d.message.contains(want)),
                 "{want}: {:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
     };
-    refused(&src.replace("meshing(f1, side, under: spin, seen_from: gear_turn,",
-                         "meshing(f1, side, under: gear_turn,"),
+    refused(&src.replace("under: spin, seen_from: gear_turn)", "under: gear_turn)"),
             "`gear_turn` is no relative motion");
-    refused(&src.replace("meshing(f1, side,", "meshing(f1, ax,"),
+    refused(&src.replace("meshing(f1, side over", "meshing(f1, ax over"),
             "`ax` is no flank the solve reads");
-    refused(&src.replace("from: -20deg, to: 20deg)", "from: 20deg, to: -20deg)"),
+    refused(&src.replace("in (-20deg, 20deg)", "in (20deg, -20deg)"),
             "a meshing needs increasing roll bounds");
 }
 

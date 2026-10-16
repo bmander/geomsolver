@@ -45,4 +45,4 @@ in tilted {
 }
 private observer := frame
 std.Turn(observer, about: kaxis, ratio: 1)
-tumbled := solid(torus, under: spin, seen_from: observer, from: -roll, to: roll)
+tumbled := sweep(torus over t in (-roll, roll), under: spin, seen_from: observer)

@@ -102,8 +102,8 @@ gear_turn := frame
 std.Turn(gear_turn, about: pair.gear_cone.ax, ratio: 1)
 pinion_turn := frame
 std.Turn(pinion_turn, about: pair.pinion_cone.ax, ratio: 1)
-construction gear_crank_turned := solid(gear_side.crank.body, under: gear_turn, at: 0deg)
-construction pinion_crank_turned := solid(pinion_side.crank.body, under: pinion_turn, at: 0deg)
+construction gear_crank_turned := gear_side.crank.body at(under: gear_turn) 0deg
+construction pinion_crank_turned := pinion_side.crank.body at(under: pinion_turn) 0deg
 claim over gear_turn in (0deg, 360deg) {
   gear_crank_turned clear(2mm) frame.body
   gear_crank_turned clear(2mm) pair.pinion_blank.material
@@ -193,7 +193,7 @@ component Splined(ax: line, o: point, across: line, lo: Length, hi: Length, root
   construction body := solid()
   core_solid union body
   repeat keys as i {
-    private construction turned := solid(bar_solid, under: turn, at: i * 180deg / keys)
+    private construction turned := bar_solid at(under: turn) i * 180deg / keys
     turned union body
   }
 }
@@ -210,7 +210,7 @@ component Spokes(ax: line, o: point, across: line, lo: Length, hi: Length, width
   private construction bar_solid := solid(bar)
   construction body := solid()
   repeat bars as i {
-    private construction turned := solid(bar_solid, under: turn, at: i * 180deg / bars)
+    private construction turned := bar_solid at(under: turn) i * 180deg / bars
     turned union body
   }
 }

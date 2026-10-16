@@ -317,7 +317,7 @@ fn removing_a_unary_constraint_and_updating_hints_preserve_modifiers() {
 fn private_points_cannot_be_selected_as_an_anonymous_curve_output() {
     private_error(
         "component Hidden(u: Angle) { private p := point(x: cos(u), y: sin(u)) }\n\
-                   c := Hidden(u: 0deg).p over u in (0deg, 360deg)",
+                   c := trace(Hidden(u: 0deg).p over u in (0deg, 360deg))",
     );
 }
 

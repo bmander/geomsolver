@@ -289,7 +289,7 @@ in std.top {{
   fix((40mm, 20mm)) q
   k := point
 }}
-path := Slider(p, q).m over u in (0, 1)
+path := trace(Slider(p, q).m over u in (0, 1))
 k coincident(t == {u}) path
 "));
         near(at(&e, "k"), want, &format!("u = {u}"));
@@ -312,7 +312,7 @@ in std.top {
   p := point
   q := point
 }
-path := Slider(p, q).m over u in (0mm, 1mm)
+path := trace(Slider(p, q).m over u in (0mm, 1mm))
 ");
     assert!(errs.is_empty(), "{errs:?}");
     let e = elaborate(&prog);

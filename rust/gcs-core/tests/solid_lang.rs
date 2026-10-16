@@ -1381,7 +1381,7 @@ in std.front {
 o := point
 fix((0mm, 0mm)) o
 }
-k := Par(o).p over u in (-2mm, 2mm)
+k := trace(Par(o).p over u in (-2mm, 2mm))
 in std.front {
 a := point hint(y: 1mm)
 b := point hint(y: 1mm)

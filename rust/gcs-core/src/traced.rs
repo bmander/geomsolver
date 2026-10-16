@@ -1,16 +1,16 @@
 //! **A traced body in space** (#326, R3 and R5): a point of a component as one or two of its
 //! numeric formals run, where the component states relations in space.
 //!
-//! `k := Helix(ax, r: 5, lead: 3).p over u in (0, 720)` is a **curve in space** and
-//! `S := Element(P, L, …).X over (phi in (a, b), s in (c, d))` a **surface**: §6.5's curve, the
+//! `k := trace(Helix(ax, r: 5, lead: 3).p over u in (0, 720))` is a **curve in space** and `S :=
+//! trace(Element(P, L, …).X over (phi in (a, b), s in (c, d)))` a **surface**: §6.5's curve, the
 //! component's body solved in space rather than in one plane, over one formal or two.  The body is
 //! lowered once (`program::traced`) to **rows** — static kernels, each with a map from its columns
 //! into one variable table, as a planar trace's are (`locus.rs`) — over `[formals, θ, values] ++ q
-//! ++ w`: the running formals, the coordinates of the geometry the component is written over
-//! (each point's lift, three numbers), the constants it was given, then the body's own points
-//! `q` and the numbers it reads over the formals `w` (a tape each, read by its row's free twin).
-//! A point a motion carries (`X coincident(under: m, t == −phi) x`, R4) is a row of its own, the
-//! motion's steps its constants and its axes columns of the variable table.
+//! ++ w`: the running formals, the coordinates of the geometry the component is written over (each
+//! point's lift, three numbers), the constants it was given, then the body's own points `q` and the
+//! numbers it reads over the formals `w` (a tape each, read by its row's free twin). A point a
+//! motion carries (`X coincident(under: m, t == −phi) x`, R4) is a row of its own, the motion's
+//! steps its constants and its axes columns of the variable table.
 //!
 //! **Its point is a small Newton solve**, started at the body's seeds (tapes over the formals) at
 //! the asked place and, where that fails, marched there from the body's home: no pose is

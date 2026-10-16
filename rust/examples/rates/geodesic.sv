@@ -67,7 +67,7 @@ y1 := point hint((0, 10, 0))
 fix((0, 10, 0)) y1
 ya := line(o, y1)
 zl := line(o, top)
-path := Started(o, top, ya, half: half, r0: r0, s: 0mm).g.p over s in (-60mm, 60mm)
+path := trace(Started(o, top, ya, half: half, r0: r0, s: 0mm).g.p over s in (-60mm, 60mm))
 
 h := point hint((7, 24, 43))
 h coincident path

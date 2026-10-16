@@ -72,7 +72,7 @@ construction rack_tooth := solid(tooth, from: -width - 2mm, to: 2mm)
 turn := frame
 std.Spin(turn, about: o, on: std.front, ratio: 1)
 std.Slide(rack, along: slide, advance: 2 * pi * rp)
-construction space := solid(rack_tooth, seen_from: turn, through: gear)
+construction space := sweep(rack_tooth, through: gear, seen_from: turn)
 
 // The same motion draws on the sketch what it cuts in the solid: the envelope of the rack's flank
 // is the tooth's involute, and the envelope of its tip corner the root fillet, curves of the
@@ -80,8 +80,8 @@ construction space := solid(rack_tooth, seen_from: turn, through: gear)
 in std.front {
   rack_flank := line(t1, t2)
 }
-involute := envelope(rack_flank, seen_from: turn, from: -30deg, to: 30deg)
-fillet := envelope(t1, seen_from: turn, from: -30deg, to: 30deg)
+involute := envelope(rack_flank over t in (-30deg, 30deg), seen_from: turn)
+fillet := envelope(t1 over t in (-30deg, 30deg), seen_from: turn)
 in std.front {
   base_c := circle(center: o) hint(r: 18.8)
   radius(rp * cos(alpha)) base_c
@@ -89,7 +89,7 @@ in std.front {
   gear := solid(blank)
   bore cut gear
   repeat N as i {
-    construction indexed := solid(space, under: turn, at: i * 360deg / N)
+    construction indexed := space at(under: turn) i * 360deg / N
     indexed cut gear
   }
 }

@@ -660,10 +660,10 @@ std.Slide(rack, along: slide, advance: 2 * pi * 30)
     f0 distance(10) f1
 ";
     let riding = format!("{}in rack {{\n  in std.front {{\n{flank}  }}\n}}\n\
-        cut := envelope(flank, seen_from: blank, from: -25deg, to: 25deg)\n\
+        cut := envelope(flank over t in (-25deg, 25deg), seen_from: blank)\n\
         g coincident cut hint(t: 5)\n", views);
     let under = format!("{}in std.front {{\n{flank}}}\n\
-        cut := envelope(flank, under: rack, seen_from: blank, from: -25deg, to: 25deg)\n\
+        cut := envelope(flank over t in (-25deg, 25deg), under: rack, seen_from: blank)\n\
         g coincident cut hint(t: 5)\n", views);
     let (mut a, mut b) = (build(&riding), build(&under));
     assert!(solve::solve(&mut a.sketch, Default::default()).success);
@@ -710,12 +710,12 @@ std.Turn(turn, about: ax, ratio: 1)
 ";
     let riding = format!("{head}in turn {{\n  in std.front {{\n{tool}  }}\n}}\n\
         stock := solid(profile, from: 0mm, to: 2mm)\n\
-        placed := solid(stock, at: 30deg)\n\
-        swept := solid(stock, from: -20deg, to: 20deg)\n");
+        placed := stock at 30deg\n\
+        swept := sweep(stock over t in (-20deg, 20deg))\n");
     let under = format!("{head}in std.front {{\n{tool}}}\n\
         stock := solid(profile, from: 0mm, to: 2mm)\n\
-        placed := solid(stock, under: turn, at: 30deg)\n\
-        swept := solid(stock, under: turn, from: -20deg, to: 20deg)\n");
+        placed := stock at(under: turn) 30deg\n\
+        swept := sweep(stock over t in (-20deg, 20deg), under: turn)\n");
     let (mut a, mut b) = (build(&riding), build(&under));
     assert!(solve::solve(&mut a.sketch, Default::default()).success);
     assert!(solve::solve(&mut b.sketch, Default::default()).success);
@@ -764,7 +764,7 @@ std.Spin(other, about: c, on: std.top, ratio: 2)
         fix((5, 0)) p\n  }}\n}}\n\
         in other {{\n  in std.top {{\n    q := point\n    fix((5, 3)) q\n  }}\n}}\n\
         in std.top {{\n  l := line(p, q)\n}}\n\
-        e := envelope(l, from: -10deg, to: 10deg)\n");
+        e := envelope(l over t in (-10deg, 10deg))\n");
     let errs = errors(&mixed);
     assert!(errs.iter().any(|m| m.contains("rides on `arm`") && m.contains("on `other`")),
             "{errs:?}");

@@ -19,7 +19,7 @@ in std.front {
 o := point
 base := circle(center: o) hint(r: 20)
 }
-inv := Involute(base, phase: 0).p over u in (10, 90)
+inv := trace(Involute(base, phase: 0).p over u in (10, 90))
 in std.front {
 radius(20) base
 fix((0, 0)) o
@@ -44,7 +44,7 @@ ax := point
 datum := line(o, ax)
 base := circle(center: o) hint(r: 20)
 }
-inv := Unwind(base, datum, phase: 0).p over u in (10, 90)
+inv := trace(Unwind(base, datum, phase: 0).p over u in (10, 90))
 in std.front {
 radius(20) base
 fix((0, 0)) o
@@ -199,7 +199,7 @@ component Slide(f: plane, g: plane, u: Length) {
   }
   p distance(u, along: n) g
 }
-s := Slide(std.front, std.top).p over u in (0, 10)
+s := trace(Slide(std.front, std.top).p over u in (0, 10))
 ";
     let (prog, errs) = parse(src);
     assert!(errs.is_empty(), "{errs:?}");

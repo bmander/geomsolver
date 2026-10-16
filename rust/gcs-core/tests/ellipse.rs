@@ -18,7 +18,7 @@ in std.front {
 o := point
 fix((10, 5)) o
 }
-e := std.Ellipse(o, a: 8, b: 3, tilt: 0deg).p over u in (0, 360)
+e := trace(std.Ellipse(o, a: 8, b: 3, tilt: 0deg).p over u in (0, 360))
 ";
 
 /// The contact's parameter — the one curve contact's.
@@ -161,7 +161,7 @@ use std
 in std.front {
 o := point hint((10, 5))
 }
-e := std.Ellipse(o, a: 8, tilt: 0deg).p over u in (0, 360)
+e := trace(std.Ellipse(o, a: 8, tilt: 0deg).p over u in (0, 360))
 ",
     );
     assert!(errs.is_empty());

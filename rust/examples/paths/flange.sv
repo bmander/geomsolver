@@ -38,7 +38,7 @@ component Tube(g: path, up: axis, r: Length, s: Scalar) {
   f := face(k)
 }
 
-stub := solid(Tube(ax, std.y, r: r).f over s in (0, 1))
+stub := sweep(Tube(ax, std.y, r: r).f over s in (0, 1))
 
 // the flange: a circle about the stub's top, square to its axis, swept back down it
 rim := circle(center: top, normal: ax)

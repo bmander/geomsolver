@@ -123,18 +123,18 @@ fn gauss5(f: impl Fn(f64) -> f64) -> f64 {
 #[test]
 fn a_twisted_extrusion_is_al_at_any_twist() {
     let e = with("
-none := solid(Square(straight, std.z, sq, po, px,
+none := sweep(Square(straight, std.z, sq, po, px,
     half: 10mm, twist: 0deg, scale: 1).f over s in (0, 1))
-quarter := solid(Square(straight, std.z, sq, po, px,
+quarter := sweep(Square(straight, std.z, sq, po, px,
     half: 10mm, twist: 90deg, scale: 1).f over s in (0, 1))
-back := solid(Square(straight, std.z, sq, po, px,
+back := sweep(Square(straight, std.z, sq, po, px,
     half: 10mm, twist: -450deg, scale: 1).f over s in (0, 1))",
         &[]);
     for name in ["none", "quarter", "back"] {
         near(exact(&e, name), 16000.0, 1e-9, name);
     }
     let e = with("
-eased := solid(Square(straight, std.z, sq, po, px,
+eased := sweep(Square(straight, std.z, sq, po, px,
     half: 10mm, twist: 90deg, scale: 1).f over s in (0, 1))",
         &[("* (1 + (scale - 1) * s), s: s)", "* (1 + (scale - 1) * s), s: 3 * s^2 - 2 * s^3)")]);
     near(exact(&e, "eased"), 16000.0, 1e-9, "an eased quarter turn");
@@ -146,9 +146,9 @@ eased := solid(Square(straight, std.z, sq, po, px,
 #[test]
 fn a_twisted_bend_is_pappus() {
     let e = with("
-bent := solid(Square(bend, std.z, sq, po, px,
+bent := sweep(Square(bend, std.z, sq, po, px,
     half: 5mm, twist: 0deg, scale: 1).f over s in (0, 1))
-turned := solid(Square(bend, std.z, sq, po, px,
+turned := sweep(Square(bend, std.z, sq, po, px,
     half: 5mm, twist: 180deg, scale: 1).f over s in (0, 1))",
         &[]);
     near(exact(&e, "bent"), 1500.0 * PI, 1e-9, "untwisted round the bend");
@@ -161,11 +161,11 @@ turned := solid(Square(bend, std.z, sq, po, px,
 #[test]
 fn a_linear_scale_is_a_frustum() {
     let e = with("
-frustum := solid(Square(straight, std.z, sq, po, px,
+frustum := sweep(Square(straight, std.z, sq, po, px,
     half: 10mm, twist: 0deg, scale: 0.5).f over s in (0, 1))
-twisted := solid(Square(straight, std.z, sq, po, px,
+twisted := sweep(Square(straight, std.z, sq, po, px,
     half: 10mm, twist: -270deg, scale: 0.5).f over s in (0, 1))
-cone := solid(Disc(straight, std.z, r: 10mm, scale: 0.5).f over s in (0, 1))",
+cone := sweep(Disc(straight, std.z, r: 10mm, scale: 0.5).f over s in (0, 1))",
         &[]);
     let square = 40.0 / 3.0 * (400.0 + 100.0 + 200.0);
     near(exact(&e, "frustum"), square, 1e-9, "a square frustum");
@@ -183,12 +183,12 @@ cone := solid(Disc(straight, std.z, r: 10mm, scale: 0.5).f over s in (0, 1))",
 #[test]
 fn a_nonlinear_scale_is_its_quadrature() {
     let e = with("
-swell := solid(Disc(straight, std.z, r: 10mm, scale: 1.3).f over s in (0, 1))",
+swell := sweep(Disc(straight, std.z, r: 10mm, scale: 1.3).f over s in (0, 1))",
         &[("scale: scale, s: s) k", "scale: scale, s: sin(180 * s)) k")]);
     near(exact(&e, "swell"), 4000.0 * PI * (1.0 + 1.2 / PI + 0.045), 1e-9, "a sine swell");
 
     let e = with("
-eased := solid(Square(straight, std.z, sq, po, px,
+eased := sweep(Square(straight, std.z, sq, po, px,
     half: 10mm, twist: 0deg, scale: 0.5).f over s in (0, 1))",
         &[("reach: half * (1 + (scale - 1) * s)",
            "reach: half * (1 + (scale - 1) * (3 * s^2 - 2 * s^3))")]);
@@ -203,7 +203,7 @@ eased := solid(Square(straight, std.z, sq, po, px,
 #[test]
 fn a_law_in_pieces_is_one_expression() {
     let e = with("
-piecewise := solid(Disc(straight, std.z, r: 10mm, scale: 1).f over s in (0, 1))",
+piecewise := sweep(Disc(straight, std.z, r: 10mm, scale: 1).f over s in (0, 1))",
         &[("scaled_radius(r: r, scale: scale, s: s) k", "radius(r * max(1 - s, 0.7)) k")]);
     let k3 = 0.7f64.powi(3);
     near(exact(&e, "piecewise"), 4000.0 * PI * ((1.0 - k3) / 3.0 + k3), 1e-9,
@@ -215,7 +215,7 @@ piecewise := solid(Disc(straight, std.z, r: 10mm, scale: 1).f over s in (0, 1))"
 #[test]
 fn a_when_over_the_running_number_is_refused() {
     let src = edited("
-w := solid(Disc(straight, std.z, r: 10mm, scale: 1).f over s in (0, 1))",
+w := sweep(Disc(straight, std.z, r: 10mm, scale: 1).f over s in (0, 1))",
         &[("    scaled_radius(r: r, scale: scale, s: s) k\n  }",
            "  }\n  when s < 0.5 {\n    radius(r) k\n  }\n  \
             when s >= 0.5 {\n    radius(r / 2) k\n  }")]);
@@ -251,8 +251,8 @@ component Pair(g: path, up: axis, scale: Scalar, s: Scalar) {
 #[test]
 fn a_station_with_two_faces_sweeps_either() {
     let e = with(&format!("{PAIR}
-cone := solid(Pair(straight, std.z, scale: 0.5).disc over s in (0, 1))
-prism := solid(Pair(straight, std.z, scale: 0.5).tri over s in (0, 1))"), &[]);
+cone := sweep(Pair(straight, std.z, scale: 0.5).disc over s in (0, 1))
+prism := sweep(Pair(straight, std.z, scale: 0.5).tri over s in (0, 1))"), &[]);
     near(exact(&e, "cone"), PI * 40.0 / 3.0 * 175.0, 1e-9, "the disc beside a triangle");
     near(exact(&e, "prism"), 40.0 * (1.0 - 0.5 + 1.0 / 12.0), 1e-9, "the triangle");
 }

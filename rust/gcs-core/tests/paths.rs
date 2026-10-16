@@ -89,7 +89,7 @@ in std.top {{
   fix((100mm, 30mm)) k3
   curvy := spline(k0, k1, k2, k3)
 }}
-tube := solid(Tube({guide}, std.z).f over s in (0, 1))
+tube := sweep(Tube({guide}, std.z).f over s in (0, 1))
 ")
 }
 
@@ -214,7 +214,7 @@ in std.top {
   ring := length(20mm) horizontal (ab := line(a, b)) -> vertical (bc := line(b, c)) ->
     horizontal (cd := line(c, d)) -> length(20mm) vertical (da := line(d, a)) -> close
 }
-body := solid(Tube(ring, std.z).f over s in (0, 4))
+body := sweep(Tube(ring, std.z).f over s in (0, 4))
 ";
     let said = refused(closed);
     assert!(said.iter().any(|m| m.contains("closed chain")), "{said:?}");

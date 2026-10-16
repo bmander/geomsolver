@@ -70,7 +70,7 @@ r.b distance(5) r.q[1]
 #[test]
 fn a_computed_point_is_a_declaration() {
     let ray = "component Ray(c: point, u: Angle) {\n  p := point(x: c.x + cos(u), y: c.y + sin(u))\n}\n";
-    let src = format!("{ray}o := point\nf := Ray(o).p over u in (0, 90)\nfix(x == 0, y == 0) o\n");
+    let src = format!("{ray}o := point\nf := trace(Ray(o).p over u in (0, 90))\nfix(x == 0, y == 0) o\n");
     let (prog, errs) = parse(&src);
     assert!(errs.is_empty(), "{errs:?}");
     let e = elaborate(&prog);

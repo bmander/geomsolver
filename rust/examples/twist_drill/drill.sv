@@ -64,7 +64,7 @@ finish := 360deg * (configuration.fluted_length + configuration.flute_wheel.rim)
 fluted := solid(stock)
 
 flute_wheel := wheel.GrindingWheel(side, setting: configuration.helix, wheel: configuration.flute_wheel)
-construction flute := solid(flute_wheel.body, under: grind, from: start, to: finish)
+construction flute := sweep(flute_wheel.body over t in (start, finish), under: grind)
 
 // the clearance wheel rides the same screw turned `clearance_phase` on about the axis: drawn
 // turned, on the side datum turned so — a screw's roll 0 is as drawn, and a screw turned by a
@@ -75,12 +75,12 @@ clearance_side := plane(u: down, v: clearance_v)
 fix(origin == (0, 0, 0)) clearance_side
 clearance_wheel := wheel.GrindingWheel(clearance_side, setting: configuration.helix,
                                        wheel: configuration.clearance_wheel)
-construction body_clearance := solid(clearance_wheel.body, under: grind, from: start, to: finish)
+construction body_clearance := sweep(clearance_wheel.body over t in (start, finish), under: grind)
 
 repeat configuration.flutes as i {
-  construction flute_at := solid(flute, under: index, at: i * 360deg / configuration.flutes)
+  construction flute_at := flute at(under: index) i * 360deg / configuration.flutes
   flute_at cut fluted
-  construction clearance_at := solid(body_clearance, under: index, at: i * 360deg / configuration.flutes)
+  construction clearance_at := body_clearance at(under: index) i * 360deg / configuration.flutes
   clearance_at cut fluted
 }
 
@@ -94,7 +94,7 @@ when configuration.point == 1 {
     tilt: configuration.tilt, height: configuration.apex_height, offset: configuration.apex_offset,
     reach: configuration.fluted_length + configuration.diameter)
   repeat configuration.flutes as i {
-    construction flank_at := solid(flank.body, under: index, at: lip_at_corner + i * 360deg / configuration.flutes)
+    construction flank_at := flank.body at(under: index) lip_at_corner + i * 360deg / configuration.flutes
     flank_at common fluted
   }
 }

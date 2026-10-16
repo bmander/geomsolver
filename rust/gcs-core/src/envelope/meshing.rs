@@ -1,6 +1,6 @@
 //! **The meshing of two flanks** (#283, step 3): tooth contact analysis as a locus.
 //!
-//! `contact := meshing(pinion_flank, gear_flank, under: mesh, from: a, to: b)` turns each flank
+//! `contact := meshing(pinion_flank, gear_flank over t in (a, b), under: mesh)` turns each flank
 //! with its own member — the first with the observer of `mesh := motion(gear_turn, relative_to:
 //! pinion_turn)`, the second with its source — and asks, at each **phase** `φ` of the pinion, how
 //! far the gear has turned when the two touch.  Conjugate flanks touch with the gear exactly where

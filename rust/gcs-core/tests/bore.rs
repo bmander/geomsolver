@@ -1,5 +1,5 @@
-//! The Wankel's bore (#65): the envelope of a point is its path, so `envelope(apex, under: spin,
-//! seen_from: counter, from: 0deg, to: 1080deg)` is the epitrochoid, a closed curve of the drawing
+//! The Wankel's bore (#65): the envelope of a point is its path, so `envelope(apex over t in (0deg,
+//! 1080deg), under: spin, seen_from: counter)` is the epitrochoid, a closed curve of the drawing
 //! that stands alone in a face, and the housing is a disc less its prism.
 use gcs_core::{model::{EntKind,MotionDef},program};
 
@@ -43,7 +43,7 @@ pub fn seen(e: &program::Elaborated, under: &str, seen_from: &str) -> usize {
 fn the_apex_under_the_rotors_motion_is_the_epitrochoid() {
     let (r,e) = (105.,15.);
     let el = solved(&wankel(r,e,
-        "bore := envelope(apex, under: spin, seen_from: counter, from: 0deg, to: 1080deg)"));
+        "bore := envelope(apex over t in (0deg, 1080deg), under: spin, seen_from: counter)"));
     let bore = el.map.ent_named("bore").unwrap();
     assert_eq!(bore.kind,EntKind::Curve);
     let sk = &el.sketch;
@@ -61,8 +61,7 @@ fn the_apex_under_the_rotors_motion_is_the_epitrochoid() {
 /// turns is a whole loop, as a circle is, so `face(bore)` sweeps to the pocket. The epitrochoid encloses π(R² + 3e²) (Green's
 /// theorem: the cross terms of e·e^{3it} + R·e^{it} integrate away), and the exact kernel reads it
 /// as the B-spline fitted within `FIT_MM`.
-pub const HOUSING: &str = "bore := envelope(apex, under: spin, seen_from: counter, from: 0deg, \
-                           to: 1080deg)
+pub const HOUSING: &str = "bore := envelope(apex over t in (0deg, 1080deg), under: spin, seen_from: counter)
     rim := circle(center: centre) in std.top hint(r: 170)
     radius(170mm) rim
     block := solid(face(rim), from: 0mm, to: 80mm)

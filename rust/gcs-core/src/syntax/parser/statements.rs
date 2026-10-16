@@ -236,10 +236,10 @@ impl<'a> P<'a> {
                 // a library component now (bmander/geomsolver#47, item 4): a computed point on
                 // a datum, traced as a curve, whose contacts are the curve's
                 self.fail(
-                    "`ellipse` is a library component now: `use std`, then \
-                     `e := Ellipse(c, a: …, b: …, tilt: 0deg).p over u in (0deg, 360deg)` about \
-                     a centre `c` — `p coincident e`, `e tangent l` and `e curvature k` are the \
-                     curve's contacts",
+                    "`ellipse` is a library component now: `use std`, then `e := \
+                     trace(Ellipse(c, a: …, b: …, tilt: 0deg).p over u in (0deg, 360deg))` \
+                     about a centre `c` — `p coincident e`, `e tangent l` and `e curvature k` are \
+                     the curve's contacts",
                 );
             }
             "port" => {
@@ -500,7 +500,7 @@ impl<'a> P<'a> {
     }
 
     /// Whether the brackets of the `solid(` at the cursor hold an `over` of their own: a face
-    /// family (#243 L1), `solid(Station(g).f over s in (0, 1))`.
+    /// family (#243 L1), `sweep(Station(g).f over s in (0, 1))`.
     fn family_ahead(&self) -> bool {
         let mut depth = 0i32;
         for (t, _) in self.t.iter().skip(self.i + 1) {
@@ -840,21 +840,38 @@ impl<'a> P<'a> {
             Some(_) if self.past_ref(self.i).is_some_and(|j| self.word_at(j) == Some("mapped")) => {
                 StmtKind::Block(self.mapped_face(name)?)
             }
-            // `n := base carried(under: m, at: τ)` — a frame a motion carries (#366)
+            // `n := base at τ` — a frame, a solid or a point read at an instant (#391 S2)
+            Some(_) if self.past_ref(self.i).is_some_and(|j| self.word_at(j) == Some("at")) => {
+                StmtKind::Decl(self.read_at(name)?)
+            }
+            // `carried(at: τ)` is retired (#391 S2) for the reading at an instant
             Some(_)
                 if self.past_ref(self.i).is_some_and(|j| self.word_at(j) == Some("carried")) =>
             {
-                StmtKind::Decl(self.carried_frame(name)?)
+                self.i = self.past_ref(self.i).unwrap_or(self.i);
+                self.fail("`carried(at: τ)` is retired (#391): a frame is read at an instant, \
+                           `n := base at τ`, its frames on the `at` (`base at(under: m, \
+                           seen_from: g) τ`)");
+                return None;
             }
-            // `duct := solid(Station(g).f over s in (0, 1))` — a face of a component as one of
-            // its formals runs, one dimension up from a curve (#243 L1)
+            // `duct := sweep(Station(g).f over s in (0, 1))` — a face of a component as one of
+            // its formals runs, one dimension up from a curve (#243 L1) — and `s := sweep(tool
+            // over t in (a, b))`, a solid a motion sweeps (#391 S2)
+            Some("sweep") if call => StmtKind::Decl(self.sweep_decl(DeclName::Written(name))?),
+            // `solid(… over s in (a, b))` is retired (#391 S2) for the sweep
             Some("solid") if call && self.family_ahead() => {
-                StmtKind::Decl(self.family(DeclName::Written(name))?)
+                self.fail("a face family is `sweep(Component(…).face over s in (a, b))` (#391): \
+                           `solid(… over …)` is retired");
+                return None;
             }
-            // `k := leg.toe over theta in (0, 360)` — a point of a component as one of its
-            // formals runs (§6.5); `over` is what says the value is a curve
-            _ if self.statement_has(|t| matches!(t, Tok::Ident(w) if w == "over")) => {
+            // `k := trace(leg.toe over theta in (0, 360))` — a point of a component as one of
+            // its formals runs (§6.5, #391 S2)
+            Some("trace") if call => {
+                self.i += 2; // `trace(`
                 let curve = self.curve_spec()?;
+                if !self.want_p(')') {
+                    return None;
+                }
                 let at = self.prev_hi();
                 let (class, class_span) = self.class_clause(at);
                 if self.peek_word("in") {
@@ -863,6 +880,13 @@ impl<'a> P<'a> {
                 }
                 self.end_of_stmt();
                 StmtKind::Decl(Decl::curve(DeclName::Written(name), curve, class, class_span))
+            }
+            // a curve written bare is retired (#391 S2) for the trace
+            _ if self.statement_has(|t| matches!(t, Tok::Ident(w) if w == "over")) => {
+                self.fail("a point of a component followed as one of its formals runs is \
+                           `trace(leg.toe over theta in (a, b))` (#391): `k := leg.toe over …` \
+                           is retired");
+                return None;
             }
             // a param may bear an element keyword's spelling (`face := -(fw + d)`), so arithmetic
             // after one is a number read, not a declaration
@@ -917,32 +941,25 @@ impl<'a> P<'a> {
         })
     }
 
-    /// `n := base carried(at: τ)` (#366): the plane `base` carried to the roll `τ` by the frames
-    /// it rides on, or by the frame `under: m` names where it rides on none — its arguments read
-    /// as a carried point's are (`under:` and `seen_from:` references, the roll after `at:` the
-    /// relation's number), so its carrier is found as theirs is (`relations::riding_point`).  A
-    /// plane declaration the flattener writes out as the statements it stands for
-    /// (`flatten::carried`).
-    fn carried_frame(&mut self, name: Name) -> Option<Decl> {
+    /// `n := x at τ` (#391 S2): `x` read at the instant `τ` of the roll, by the frames it rides
+    /// on, or by the frame `at(under: m)` names where it rides on none, seen from `seen_from: g`
+    /// — its arguments held as a carried point's are (`under:` and `seen_from:` references, the
+    /// roll the relation's number), so its carrier is found as theirs is
+    /// (`relations::riding_point`).  What it is the flattener says, once it knows what `x` is: a
+    /// frame (`flatten::carried`), a solid placed at that roll, or a point held to `x` there.
+    fn read_at(&mut self, name: Name) -> Option<Decl> {
         let source = self.refr()?;
-        let word = self.ident()?;
-        let args = self.op_args("coincident", crate::constraints::Fixity::Infix)?;
-        let under = args.iter().filter(|a| matches!(a, OpArg::Named(n, crate::syntax::Arg::Ref(_))
-            if n.text == "under")).count();
-        let at = args.iter().filter(|a| matches!(a, OpArg::Dim(..))).count();
-        let seen = args.iter().filter(|a| matches!(a, OpArg::Named(n, crate::syntax::Arg::Ref(_))
-            if n.text == "seen_from")).count();
-        if under > 1 || at != 1 || seen > 1 || args.len() != 1 + under + seen {
-            self.fail("a frame is carried to a roll by the frames it rides on: `n := base \
-                       carried(at: τ)`, by a frame it rides on none of `under: m`, seen from \
-                       another `seen_from: g`");
-            return None;
-        }
+        let word = Name { text: "at".into(), span: self.here() };
+        let args = self.instant()?;
+        let at = self.prev_hi();
+        let (class, class_span) = self.class_clause(at);
         self.end_of_stmt();
         Some(Decl {
             kind: EntKind::Frame,
             seed: vec![0.0; 3],
             seed_text: vec![None; 3],
+            class,
+            class_span,
             carried: Some(crate::syntax::CarriedFrame { source, word, args }),
             ..Decl::point(DeclName::Written(name), [0.0; 2], None)
         })
@@ -1196,11 +1213,12 @@ impl<'a> P<'a> {
         Some(CurveSpec { target, swept, domain, second, of: None })
     }
 
-    /// What follows a face family's `solid`: `(Component(args).face over IDENT in (a, b))`, the
-    /// instance written in place (#243 L1, finding 11).  The instance's key is one the source
-    /// cannot write, as a curve's is; the face is read under it once the flattener has bound it.
+    /// What follows a face family's `sweep` (#391 S2): `(Component(args).face over IDENT in (a,
+    /// b))`, the instance written in place (#243 L1, finding 11).  The instance's key is one the
+    /// source cannot write, as a curve's is; the face is read under it once the flattener has
+    /// bound it.
     pub(super) fn family(&mut self, name: DeclName) -> Option<crate::syntax::Decl> {
-        self.i += 1; // `solid`
+        self.i += 1; // `sweep`
         let open = self.here().lo as usize;
         if !self.want_p('(') {
             return None;
@@ -1208,7 +1226,7 @@ impl<'a> P<'a> {
         if self.call_at(self.i).is_none() {
             self.fail(
                 "a face family is the face of an instance written in place: \
-                 `solid(Component(…).face over s in (a, b))`",
+                 `sweep(Component(…).face over s in (a, b))`",
             );
             return None;
         }
@@ -1286,6 +1304,84 @@ impl<'a> P<'a> {
             sense: None,
             bare: false,
             carried: None,
+        })
+    }
+
+    /// What follows a definition's `sweep` (#391 S2): a face family, `sweep(Component(args).face
+    /// over s in (a, b))` (`family`), or a solid a frame's motion sweeps — `sweep(tool over t in
+    /// (a, b))` over an interval of the roll, `sweep(tool, through: body)` over the roll during
+    /// which it meets a body — with `under:` the frame it is swept by where it rides on none and
+    /// `seen_from:` the one it is seen from.
+    fn sweep_decl(&mut self, name: DeclName) -> Option<crate::syntax::Decl> {
+        if self.call_at(self.i + 2).is_some() {
+            return self.family(name);
+        }
+        self.i += 1; // `sweep`
+        let open = self.here().lo as usize;
+        if !self.want_p('(') {
+            return None;
+        }
+        let tool = self.refr()?;
+        let mut over = None;
+        if self.peek_word("over") {
+            over = Some(self.runs_over()?);
+        }
+        let (mut under, mut seen_from, mut through) = (None, None, None);
+        while self.eat_p(',') {
+            let label = self.slot_label();
+            let slot = match label.as_deref() {
+                Some("under") => &mut under,
+                Some("seen_from") => &mut seen_from,
+                Some("through") => &mut through,
+                _ => {
+                    self.fail("a sweep takes its tool over an interval of the roll, and `under:` \
+                               the frame it is swept by, `seen_from:` the one it is seen from, or \
+                               `through:` a body");
+                    return None;
+                }
+            };
+            if slot.is_some() {
+                self.fail(&format!("`{}` is given twice", label.unwrap_or_default()));
+                return None;
+            }
+            *slot = Some(self.refr()?);
+        }
+        if !self.want_p(')') {
+            return None;
+        }
+        let list_span = Span::new(open, self.prev_hi());
+        use crate::syntax::Sweep;
+        let sweep = match (over, through) {
+            (Some((over, from, to)), None) => Sweep::Swept { motion: under, from, to, over },
+            (None, Some(body)) => Sweep::Rolled { motion: under, body },
+            _ => {
+                self.fail("a sweep runs its tool over an interval of the roll, `sweep(tool over t \
+                           in (a, b))`, or through a body, `sweep(tool, through: body)`");
+                return None;
+            }
+        };
+        let at = self.prev_hi();
+        let (class, class_span) = self.class_clause(at);
+        if self.peek_word("in") || self.peek_word("hint") {
+            self.fail("a sweep stands where its motion puts it: it takes no `in` or `hint`");
+            return None;
+        }
+        self.end_of_stmt();
+        let end = self.prev_hi();
+        let mut membership = Membership::default();
+        membership.set_span(Span::at(end));
+        Some(crate::syntax::Decl {
+            kind: EntKind::Solid,
+            children: vec![vec![crate::syntax::Kid::Ref(tool)]],
+            seed: Vec::new(),
+            seed_text: Vec::new(),
+            class,
+            class_span: if class_span.is_empty() { Span::at(end) } else { class_span },
+            sweep: Some(sweep),
+            seen_from,
+            membership,
+            list_span,
+            ..crate::syntax::Decl::point(name, [0.0; 2], None)
         })
     }
 

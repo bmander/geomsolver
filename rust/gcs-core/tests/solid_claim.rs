@@ -216,7 +216,7 @@ component Swing(ax: line, a: point, b: point) {
   std.Turn(spin, about: ax, ratio: 1)
   arm := Ball(a, r: 2mm)
   post := Ball(b, r: 3mm)
-  swung := solid(arm.body, under: spin, at: 0deg)
+  swung := arm.body at(under: spin) 0deg
   claim over spin in (0deg, 360deg) { swung clear(1mm) post.body }
 }
 o := point

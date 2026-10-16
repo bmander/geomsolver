@@ -77,8 +77,7 @@ flank := std.Cone(spine, half: hint(20deg))
 // -- the contact ---------------------------------------------------------------------------------
 // The pinion's flank: the gear's generated under the mesh. M is on it, and its normal there leans
 // the pressure angle from the pitch plane.
-pinion_flank := envelope(flank, under: gear_turn, seen_from: pinion_turn, from: -30deg,
-                         to: 30deg)
+pinion_flank := envelope(flank over t in (-30deg, 30deg), under: gear_turn, seen_from: pinion_turn)
 M coincident pinion_flank
 n := point hint((7, 58, -7))
 contact_normal := line(M, n)

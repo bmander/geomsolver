@@ -82,11 +82,11 @@ A placed solid takes one pose of a motion, and a swept solid takes all of them o
 
 ```solvent
 repeat teeth as i {
-  indexed := solid(tool, under: indexing, at: i * 360deg / teeth)
+  indexed := tool at(under: indexing) i * 360deg / teeth
   indexed cut body
 }
 
-removal := solid(tool, under: generating, from: -30deg, to: 30deg)
+removal := sweep(tool over t in (-30deg, 30deg), under: generating)
 removal cut body
 ```
 

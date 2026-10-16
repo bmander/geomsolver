@@ -82,7 +82,7 @@ in std.front {
   // the leg, with its crank angle and its toe rod both left unbound
   leg := Leg(axle, pivot)
 }
-path := leg.toe over theta in (0, 360)
+path := trace(leg.toe over theta in (0, 360))
 
 // level ground of unstated height, touching the stride at its bottom
 in std.front {

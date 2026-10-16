@@ -52,7 +52,7 @@ in std.front {
   // the linkage, its crank angle and its coupler point's offset both left unbound
   bar := FourBar(o2, o4, r2: r2, r3: r3, r4: r4, beta: beta)
 }
-path := bar.P over theta in (0, 360)
+path := trace(bar.P over theta in (0, 360))
 
 // the dwell arc: a circle osculating the coupler curve at 170°, of the radius the link will have
 in std.front {

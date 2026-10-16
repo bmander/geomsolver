@@ -46,16 +46,6 @@ impl<'a> Walk<'a> {
             }
             return;
         }
-        // a frame a motion carries is the statements it stands for (#366)
-        let written;
-        let carried = |st: &Stmt| matches!(&st.kind, StmtKind::Decl(d) if d.carried.is_some());
-        let body = match body.iter().any(carried) {
-            true => {
-                written = super::carried::expand(body);
-                &written[..]
-            }
-            false => body,
-        };
         let prefix = scope.prefix().to_string();
         for st in body {
             let StmtKind::Group(g) = &st.kind else { continue };
@@ -133,6 +123,10 @@ impl<'a> Walk<'a> {
             }
             match &st.kind {
                 StmtKind::Chain(chain) => self.walk_chain(chain, st, scope, path, &prefix),
+                // a reading at an instant, every way it may be written out (#391 S2)
+                StmtKind::Decl(d) if d.carried.is_some() => {
+                    self.walk_reading_at(d, st, scope, vals, path, depth, &prefix)
+                }
                 StmtKind::Decl(d) => {
                     // a face family's station is drawn, hidden, before the solid it makes
                     if let Some(crate::syntax::Sweep::Family(f)) = &d.sweep {
@@ -178,6 +172,105 @@ impl<'a> Walk<'a> {
                 other => self.emit(other.clone(), st, scope, path),
             }
         }
+    }
+
+    /// **A reading at an instant** (#391 S2), `n := x at τ`: walked as each of what it may be — a
+    /// frame carried, a solid placed, a point held — every statement tagged with which, and
+    /// recorded with what it reads, for `settle_readings` to keep the one `x` is.
+    #[allow(clippy::too_many_arguments)]
+    fn walk_reading_at(
+        &mut self,
+        d: &Decl,
+        st: &Stmt,
+        scope: &Scope,
+        vals: &BTreeMap<String, Aff>,
+        path: &[PathStep],
+        depth: usize,
+        prefix: &str,
+    ) {
+        let c = d.carried.as_ref().expect("a reading at an instant");
+        let k = self.readings.len();
+        self.readings.push((c.source.clone(), scope.clone()));
+        for (s, read) in super::carried::ways(st, d) {
+            let sc = Scope { reading: Some((k, read)), ..scope.clone() };
+            match &s.kind {
+                StmtKind::Decl(x) => self.walk_decl(x, &s, &sc, vals, path, prefix),
+                // a set's body walked for what it makes states nothing
+                StmtKind::Relation(_) if matches!(scope.pred.pass, Pass::Made) => {}
+                StmtKind::Relation(r) => self.walk_relation(r, &s, &sc, vals, path, depth),
+                _ => unreachable!("a reading is written out as declarations and relations"),
+            }
+        }
+    }
+
+    /// **What each reading at an instant is** (#391 S2), once every name is known: the kind of
+    /// what its source names — a solid, a point, or anything else a frame (a datum the standard
+    /// library draws after the document is one) — and where the source is itself a reading,
+    /// what that one turned out to be.  The other ways it was written out are dropped.
+    pub(super) fn settle_readings(&mut self) {
+        use super::carried::Read;
+        if self.readings.is_empty() {
+            return;
+        }
+        let alias = self.alias_table();
+        let mut read: Vec<Option<Read>> = vec![None; self.readings.len()];
+        // a source that is a reading waits for that one: round by round, until a round settles
+        // nothing more
+        loop {
+            let mut settled = false;
+            for k in 0..read.len() {
+                if read[k].is_some() {
+                    continue;
+                }
+                let (source, sc) = &self.readings[k];
+                read[k] = match self.look(&alias).raw(source, sc) {
+                    Some((abs, rest)) if rest.is_empty() => self.read_of(&abs, &read),
+                    _ => Some(Read::Frame),
+                };
+                settled |= read[k].is_some();
+            }
+            if !settled {
+                break;
+            }
+        }
+        // a reading of itself, or of a reading of itself, reads nothing: refused, and written out
+        // no way at all
+        let cyclic: Vec<Ref> = self.readings.iter().zip(&read)
+            .filter(|(_, r)| r.is_none()).map(|((source, _), _)| source.clone()).collect();
+        for source in cyclic {
+            self.err(Code::E041, source.span, format!("`{}` is read at an instant of itself",
+                                                       ref_text(&source)));
+        }
+        self.out.retain(|(_, _, sc)| match sc.reading {
+            Some((k, way)) => read[k] == Some(way),
+            None => true,
+        });
+        for (_, _, sc) in &mut self.out {
+            sc.reading = None;
+        }
+        self.readings.clear();
+    }
+
+    /// What a reading of the declaration named `abs` is: what its kind makes it, or, where that
+    /// declaration is one way of writing out a reading, what that reading turned out to be —
+    /// `None` while it is not yet known.  A name nothing in the walk declares is a frame's.
+    fn read_of(&self, abs: &str, read: &[Option<super::carried::Read>])
+        -> Option<super::carried::Read> {
+        for (st, _, sc) in &self.out {
+            let StmtKind::Decl(d) = &st.kind else { continue };
+            if d.name.key().text != abs {
+                continue;
+            }
+            match sc.reading {
+                None => return Some(super::carried::Read::of(d.kind)),
+                Some((j, way)) => match read[j] {
+                    Some(r) if r == way => return Some(r),
+                    Some(_) => {}
+                    None => return None,
+                },
+            }
+        }
+        Some(super::carried::Read::Frame)
     }
 
     /// A named chain: its name made absolute under the scope, and stamped as its instances say.
@@ -243,7 +336,7 @@ impl<'a> Walk<'a> {
                     d.name.span(),
                     format!(
                         "`{n}` is a computed point, so its component is drawn only \
-                         as a curve: `e := Component(…).{n} over u in (a, b)`"
+                         as a curve: `e := trace(Component(…).{n} over u in (a, b))`"
                     ),
                 );
                 return;
@@ -311,6 +404,7 @@ impl<'a> Walk<'a> {
                 *slot = faces;
             }
         }
+        self.declared_interval(&mut d2, scope);
         self.settle_seeds(&mut d2, vals, scope, st.span);
         // and a solid's sweep, which is written in the same little language
         if let Some(sw) = d2.sweep.as_mut() {
@@ -340,6 +434,42 @@ impl<'a> Walk<'a> {
             self.emit(StmtKind::Decl(probe), st, scope, path);
             self.emit(StmtKind::Relation(inside), st, scope, path);
         }
+    }
+
+    /// **A reading over a declared parameter reads its interval** (#391 S2): `over t`, with no
+    /// `in (a, b)`, names a `param t: Angle over (a, b)` of the document, and its ends are that
+    /// declaration's — the roll is an angle, so a parameter of another type is refused, as is a
+    /// name the document declares no parameter by (a component's body sees none).
+    fn declared_interval(&mut self, d: &mut Decl, scope: &Scope) {
+        let (over, from, to) = match (&mut d.sweep, &mut d.angular_span) {
+            (Some(crate::syntax::Sweep::Swept { over, from, to, .. }), _) => (&*over, from, to),
+            (_, Some(crate::syntax::AngularSpan { over: Some(over), from, to, .. })) => {
+                (&*over, from, to)
+            }
+            _ => return,
+        };
+        if !over.declared {
+            return;
+        }
+        let name = &over.name;
+        let declared = (scope.module.is_none() && scope.prefix().is_empty())
+            .then(|| self.parameters.get(&name.text)).flatten();
+        let Some(running) = declared else {
+            let m = format!("`{}` names no parameter the document declares: a reading over the \
+                             roll states its interval, `over {} in (a, b)`, or runs over a \
+                             `param {}: Angle over (a, b)`", name.text, name.text, name.text);
+            self.err(Code::E103, name.span, m);
+            return;
+        };
+        if running.dim != crate::units::Dim::ANGLE {
+            let m = format!("`{}` is no angle: a reading over the roll runs over an angle",
+                            name.text);
+            self.err(Code::E103, name.span, m);
+            return;
+        }
+        let end = |v: f64| crate::syntax::Arg::Dim { text: format!("{}deg", crate::syntax::num(v)),
+                                                     span: name.span };
+        (*from, *to) = (end(running.from), end(running.to));
     }
 
     /// **A face family's station** (#243 L1): the instance written in place, drawn under a key
@@ -636,6 +766,7 @@ impl<'a> Walk<'a> {
                 anonymous: scope.stamps.anonymous || inst.name.text.starts_with('#'),
             },
             pred: PredWalk { pass: Pass::Itself, written: None, held: false },
+            reading: None,
         };
         // a component reached again while it is still being expanded recurses
         // (§8), ended by a `when` over its numbers: given the numbers it was given
@@ -951,7 +1082,7 @@ impl<'a> Walk<'a> {
                 expression in `{u}`, and a rate is read along a formal handed on as itself: give \
                 the component `{s}: {u}`"))),
             Some(_) => Err((Code::E040, format!("`{s}` is an unknown of the drawing: a rate runs \
-                along a face family's running number, `solid(I(…).f over s in (a, b))`, or a \
+                along a face family's running number, `sweep(I(…).f over s in (a, b))`, or a \
                 traced body's formal"))),
         }
     }
@@ -1206,6 +1337,7 @@ impl<'a> Walk<'a> {
                     written: None,
                     held: scope.pred.held,
                 },
+                reading: None,
             };
             let mut p2 = path.to_vec();
             p2.push(PathStep::Copy { block: st.id, index: k as u32 });

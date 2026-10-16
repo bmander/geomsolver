@@ -10,8 +10,8 @@ use gcs_core::solid::admission::{self,Condition,Error,Options};
 /// A tool, a motion named `motion`, the removal over [from, to] and the post it is cut from.
 /// The tool swept by `motion` read as `reading` (`under: turn`, or a roll's `ROLLED`).
 fn document(tool: &str,motion: &str,reading: &str,from: f64,to: f64) -> String {
-    format!("{tool}{motion}construction removal := solid(tool, {reading}, from: {from}deg, \
-        to: {to}deg)\n{}",centred_post())
+    format!("{tool}{motion}construction removal := sweep(tool over t in ({from}deg, {to}deg), \
+        {reading})\n{}",centred_post())
 }
 
 fn admit(source: &str) -> Result<admission::Admission,Error> {
@@ -35,8 +35,7 @@ fn refused(result: Result<admission::Admission,Error>) -> admission::Refusal {
 /// contact at every time: refused, found between samples (or inside a sample cell).
 #[test]
 fn a_ring_in_contact_at_every_time_is_refused() {
-    let source = format!("{}{CROSSED_ROLL}construction removal := solid(tool, under: spin, \
-        seen_from: observer, from: -60deg, to: 60deg)\n{}",
+    let source = format!("{}{CROSSED_ROLL}construction removal := sweep(tool over t in (-60deg, 60deg), under: spin, seen_from: observer)\n{}",
         torus(2.),tools::post(4.,0.4,-2.,2.));
     let r = refused(admit(&source));
     assert_eq!(r.condition,Condition::Stationary);
@@ -46,8 +45,7 @@ fn a_ring_in_contact_at_every_time_is_refused() {
 
 #[test]
 fn a_torus_rolled_about_a_skew_axis_through_a_post_is_admitted() {
-    let source = format!("{}{}construction removal := solid(tool, under: spin, \
-        seen_from: observer, from: -75deg, to: 75deg)\n{}",
+    let source = format!("{}{}construction removal := sweep(tool over t in (-75deg, 75deg), under: spin, seen_from: observer)\n{}",
         torus(2.),cradle_roll(0.25,Observer::Skew),skew_post(4.));
     let a = admit(&source).unwrap();
     let s = &a.sweeps()[0];
@@ -70,8 +68,7 @@ fn a_pole_in_contact_at_every_time_is_refused() {
 /// A tool that never meets the blank is no cut: refused, not admitted vacuously.
 #[test]
 fn a_sweep_that_reaches_nothing_is_refused() {
-    let source = format!("{}{}construction removal := solid(tool, under: spin, \
-        seen_from: observer, from: -75deg, to: 75deg)\n{}",
+    let source = format!("{}{}construction removal := sweep(tool over t in (-75deg, 75deg), under: spin, seen_from: observer)\n{}",
         torus(2.),cradle_roll(0.25,Observer::Skew),skew_post(13.));
     let r = refused(admit(&source));
     assert_eq!(r.condition,Condition::Reach);
@@ -111,9 +108,8 @@ fn a_roll_that_starts_in_the_blank_is_refused() {
 
 #[test]
 fn a_union_tool_is_refused() {
-    let tool = format!("{}construction twin := solid(tool, under: observer, at: 20deg)\nconstruction lump := solid(tool)\ntwin union lump\n",sphere(0.));
-    let source = format!("{tool}{}construction removal := solid(lump, under: spin, \
-        seen_from: observer, from: -60deg, to: 60deg)\n{}",motions::roll(0.25),centred_post());
+    let tool = format!("{}construction twin := tool at(under: observer) 20deg\nconstruction lump := solid(tool)\ntwin union lump\n",sphere(0.));
+    let source = format!("{tool}{}construction removal := sweep(lump over t in (-60deg, 60deg), under: spin, seen_from: observer)\n{}",motions::roll(0.25),centred_post());
     let r = refused(admit(&source));
     assert_eq!(r.condition,Condition::Tool);
     assert!(r.message.contains("adds solids"),"{}",r.message);
@@ -196,8 +192,7 @@ fn the_bevel_pinion_is_admitted_once_for_every_index() {
 /// placements are compared by sampling — and found alike. The verdicts are the same.
 #[test]
 fn an_indexed_ring_is_alike_by_its_revolution_and_a_boxed_ring_by_sampling() {
-    let ring = |extra: &str| format!("{}{}construction removal := solid(tool, under: spin, \
-        seen_from: observer, from: -35deg, to: 35deg)\n{}{extra}",
+    let ring = |extra: &str| format!("{}{}construction removal := sweep(tool over t in (-35deg, 35deg), under: spin, seen_from: observer)\n{}{extra}",
         sphere(2.),cradle_roll(2.5,Observer::Parallel),tools::indexed_ring(6,3.5,4.2,1.7,2.3));
     let boxed = "\
 use std
@@ -395,8 +390,7 @@ fn a_probe_through_another_face_is_withdrawn_nearer_the_mesh() {
 #[test]
 fn a_material_side_agrees_with_its_enclosure() {
     use gcs_core::interval::{Interval,minimum::{self,Stop}};
-    let source = format!("{}{}construction removal := solid(tool, under: spin, \
-        seen_from: observer, from: -75deg, to: 75deg)\n{}",
+    let source = format!("{}{}construction removal := sweep(tool over t in (-75deg, 75deg), under: spin, seen_from: observer)\n{}",
         torus(2.),cradle_roll(0.25,Observer::Skew),skew_post(4.));
     let e = fixtures::read(&source);
     let field = gcs_core::solid::MaterialField::read(&e.sketch,fixtures::solid(&e,"part"),1e-10).unwrap();
@@ -425,8 +419,7 @@ fn a_material_side_agrees_with_its_enclosure() {
 fn an_indexed_field_read_a_sector_at_a_time_decides_as_the_whole_field() {
     use gcs_core::interval::{Interval,minimum::{self,Stop}};
     use gcs_core::solid::{agreement,MaterialField};
-    let source = format!("{}{}construction removal := solid(tool, under: spin, \
-        seen_from: observer, from: -35deg, to: 35deg)\n{}",sphere(2.),
+    let source = format!("{}{}construction removal := sweep(tool over t in (-35deg, 35deg), under: spin, seen_from: observer)\n{}",sphere(2.),
         cradle_roll(2.5,Observer::Parallel),tools::indexed_ring(6,3.5,4.2,1.7,2.3));
     let e = fixtures::read(&source);
     let body = fixtures::solid(&e,"part");

@@ -57,4 +57,4 @@ in std.top {
   fix((0mm, length)) e
   guide := line(o, e)
 }
-transition := solid(Transition(guide, std.z, half: half).f over s in (0, 1))
+transition := sweep(Transition(guide, std.z, half: half).f over s in (0, 1))

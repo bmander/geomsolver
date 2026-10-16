@@ -184,7 +184,7 @@ c := point hint((0, 0, 0))
 fix((0, 0, 0)) c
 z1 := point hint((0, 0, 10))
 fix((0, 0, 10)) z1
-front := Front(c, z1, {k}).p over {over}
+front := trace(Front(c, z1, {k}).p over {over})
 ")
 }
 
@@ -251,7 +251,7 @@ y1 := point hint((0, 10, 0))
 fix((0, 10, 0)) y1
 o1 := point hint((0, 0, 10))
 fix((0, 0, 10)) o1
-ring := Circle(o, x1, y1, o1, r: 20mm).q over u in (0deg, 360deg)
+ring := trace(Circle(o, x1, y1, o1, r: 20mm).q over u in (0deg, 360deg))
 {}", front_on("ring", -1.0, "(50 * cos(u), 50 * sin(u), 0)",
                  "(d in (0mm, 10mm), u in (20deg, 140deg))"));
     let e = build(&src);
@@ -347,7 +347,7 @@ fn what_is_refused() {
          "a point on `k` is Cauchy data: it is said in `initially { … }` of a body marched"),
         ("  nl perpendicular rate(p over u)", "  nl perpendicular rate(p over u)\n  nl tangent k",
          "a marched body reads `k` as its Cauchy data alone"),
-        ("past := Bore(c, z1, trochoid)", "past := Bore(c, z1, bore)",
+        ("past := trace(Bore(c, z1, trochoid)", "past := trace(Bore(c, z1, bore)",
          "`k`: a surface is no curve"),
     ];
     for (from, to, said) in cases {
@@ -356,11 +356,11 @@ fn what_is_refused() {
     }
     // over one formal a body is a curve, and no curve is written over another
     let one = BORE
-        .replace("bore := Bore(c, z1, trochoid).p over (d in (0mm, s), u in (0deg, 180deg))\n", "")
-        .replace("past := Bore(c, z1, trochoid).p over (d in (0mm, 20mm), u in (0deg, 180deg))\n",
+        .replace("bore := trace(Bore(c, z1, trochoid).p over (d in (0mm, s), u in (0deg, 180deg)))\n", "")
+        .replace("past := trace(Bore(c, z1, trochoid).p over (d in (0mm, 20mm), u in (0deg, 180deg)))\n",
                  "")
         .replace("  nl perpendicular rate(p over u)            // ...square to the front\n", "")
-        + "line_of := Bore(c, z1, trochoid, u: 30deg).p over d in (0mm, 3mm)\n";
+        + "line_of := trace(Bore(c, z1, trochoid, u: 30deg).p over d in (0mm, 3mm))\n";
     let errs = errors(&one);
     assert!(errs.iter().any(|e| e.contains("a curve cannot be written over a curve")), "{errs:?}");
 }

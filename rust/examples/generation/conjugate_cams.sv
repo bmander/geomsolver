@@ -32,9 +32,9 @@ in std.front {
   lc right_of(d: off) o1
 }
 
-lobe := Lobe(lc, a: a, b: b).p over u in (0, 360)
+lobe := trace(Lobe(lc, a: a, b: b).p over u in (0, 360))
 shaft_a := frame
 std.Spin(shaft_a, about: o1, on: std.front, ratio: 1)
 shaft_b := frame
 std.Spin(shaft_b, about: o2, on: std.front, ratio: -1)
-partner := envelope(lobe, under: shaft_a, seen_from: shaft_b, from: 0deg, to: 360deg)
+partner := envelope(lobe over t in (0deg, 360deg), under: shaft_a, seen_from: shaft_b)

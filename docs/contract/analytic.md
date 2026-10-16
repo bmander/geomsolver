@@ -17,7 +17,7 @@ reversing normals; read `RevolvedSurface::domain` / `GeneratedEnvelope::domain` 
 / `envelopeDomain`), never assume [0,1]. Spans and roll bounds share `AngularSpan`; neither is a
 hint or unknown.
 
-**Named envelopes:** `flank := envelope(source, under: generating, from: -35deg, to: 35deg)`: a
+**Named envelopes:** `flank := envelope(source over t in (-35deg, 35deg), under: generating)`: a
 zero-normal-velocity locus over a finite increasing roll interval (ABI kind 11).
 `GeneratedEnvelope` intersects it with two section equations via the shared DogLeg loop. A nonzero
 trial residual is off the envelope; a local root certifies no global regularity or material side.
@@ -71,8 +71,9 @@ tangent and osculating circle against closed forms and a three-point section fit
 screw mesh, the mean-point lean (`spiral_bevel/mean_point.sv`) — with
 `jacobians::envelope_contacts_agree_with_finite_differences`.
 
-**The meshing of two flanks (#283 step 3, [0.94]):** `contact := meshing(a, b, under: mesh, from:,
-to:)` is `MeshingE` (ABI kind 17): two `Flank`s — `Envelope(i)`, a held envelope, or `Formed(Held)`,
+**The meshing of two flanks (#283 step 3, [0.94]):** `contact := meshing(a, b over t in (c, d),
+under: mesh)` is `MeshingE` (ABI kind 17): two `Flank`s — `Envelope(i)`, a held envelope, or
+`Formed(Held)`,
 a source read as an envelope's is (a set applied to its hidden point `{contact}#first#probe` /
 `#second#probe`, `set_shape` through `program::envelopes::Reader`; a revolution's side) — the
 motion and the phase, built with the held envelopes (`held_meshings`), refused (E080) where a flank

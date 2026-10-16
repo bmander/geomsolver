@@ -247,7 +247,7 @@ in std.front {
 o := point
 base := circle(center: o) hint(r: 20)
 }
-flank := Involute(base, phase: 0).p over u in (0, 60)
+flank := trace(Involute(base, phase: 0).p over u in (0, 60))
 
 in std.front {
 p := point hint((40, 40))
@@ -336,7 +336,7 @@ c := point hint((2, 1))
 d := point hint((3, 0))
 s := spline(a, b, c, d)
 }
-w := bad(s).p over u in (0, 1)
+w := trace(bad(s).p over u in (0, 1))
 ",
     );
     let e = gcs_core::program::elaborate(&prog);

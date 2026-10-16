@@ -36,4 +36,4 @@ in std.front {
   run.dog level(right) o                     // the home: the dog starts square to the line...
   o distance(a, along: up) run.dog           // ...a away
 }
-dog := run.dog over t in (0, 25)
+dog := trace(run.dog over t in (0, 25))

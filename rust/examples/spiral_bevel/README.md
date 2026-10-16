@@ -227,16 +227,15 @@ balance; `gcs-core/tests/hypoid_machine.rs` holds the found mill.
 
 ## Contact analysis: the meshing of two flanks
 
-Issue #283's step 3 makes the contact of a pair a locus.
-`meshing(pinion_flank, gear_flank, under: gear_turn, seen_from: pinion_turn, from:, to:)` turns the
-first flank with the pinion and the second with the gear, the observer (`seen_from:`) and the frame
-read (`under:`). Each flank is an envelope in space or a source standing still (a formed gear's
-cone). At each phase of the pinion it finds the turn of the gear at which the two share a point and
-a normal: the gear's **lag** behind the ratio is the transmission error. A point held to it owns the
-phase and the lag, both pinnable (`Q coincident(t == 0deg, lag == 0) contact`), so a stated
-transmission error is a row of the drawing. After the solve the contact is traced over the phase
-into the transmission error, the path of contact and the bearing on each flank; `solventc` reports
-it (the specification's §6.15.4).
+Issue #283's step 3 makes the contact of a pair a locus. `meshing(pinion_flank, gear_flank over t in
+(, ), under: gear_turn, seen_from: pinion_turn)` turns the first flank with the pinion and the
+second with the gear, the observer (`seen_from:`) and the frame read (`under:`). Each flank is an
+envelope in space or a source standing still (a formed gear's cone). At each phase of the pinion it
+finds the turn of the gear at which the two share a point and a normal: the gear's **lag** behind
+the ratio is the transmission error. A point held to it owns the phase and the lag, both pinnable
+(`Q coincident(t == 0deg, lag == 0) contact`), so a stated transmission error is a row of the
+drawing. After the solve the contact is traced over the phase into the transmission error, the path
+of contact and the bearing on each flank; `solventc` reports it (the specification's §6.15.4).
 
 **`contact.sv`** analyses a pair at the mean point. The mesh is `mean_point.sv`'s and the gear is
 formed by the face mill. The pinion is cut by a cutter `grown` times the gear's about M (the

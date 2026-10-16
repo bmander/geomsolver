@@ -8,7 +8,7 @@ mod minimize;
 mod relations;
 mod statements;
 
-pub(crate) use declarations::{sweep_of, SweepParts};
+pub(crate) use declarations::{sweep_of, SweepParts, ROLLED_RETIRED, SWEPT_RETIRED};
 
 use super::lexer::{lex, Tok};
 use super::words::{level_end, Brackets};
@@ -312,7 +312,7 @@ fn parse_at(src: &str, base: usize, first_id: u32, limits: ParseLimits) -> (Prog
                 message: "a curve family is a component now: write \
                           `component Name(c: circle, u: Angle) { … }` with the traced point \
                           inside it, and draw the curve as \
-                          `e := Name(c).point over u in (a, b)`"
+                          `e := trace(Name(c).point over u in (a, b))`"
                     .to_string(),
             });
             st.resync();

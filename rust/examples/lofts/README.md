@@ -1,7 +1,7 @@
 # Lofts and sweeps
 
 A loft or a sweep is a face of a component as one of its numbers runs:
-`solid(Station(…).f over s in (0, 1))`, the solid the face `f` sweeps as `s` runs from 0 to 1.
+`sweep(Station(…).f over s in (0, 1))`, the solid the face `f` sweeps as `s` runs from 0 to 1.
 The station is the writer's own component — where the section stands, how it turns, how it
 scales, which rails its corners follow — and the standard library's words say the common parts
 of it. Nothing about a loft is in the kernel but the face family itself; every wall here is built

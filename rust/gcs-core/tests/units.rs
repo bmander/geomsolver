@@ -453,7 +453,7 @@ in std.front {
 o := point hint((0, 0))
 c1 := circle(center: o) hint(r: 25)
 }
-w := slide(c1).p over u in (0, 1)
+w := trace(slide(c1).p over u in (0, 1))
 ",
     )
     .expect("a suffix in a curve body is read in the document's own unit");

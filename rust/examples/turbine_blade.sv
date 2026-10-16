@@ -187,7 +187,7 @@ tip0 := point
 fix((0mm, 0mm, 0mm)) foot0
 fix((0mm, 0mm, span)) tip0
 construction centerline stack := line(foot0, tip0)
-airfoil := solid(Station(stack, std.y, hub, mean, tip).sec.profile over s in (-embed / span, 1))
+airfoil := sweep(Station(stack, std.y, hub, mean, tip).sec.profile over s in (-embed / span, 1))
 
 // ---- the platform and the seal wings: sectors of the annulus about the engine's axis ----
 in std.front {
@@ -218,9 +218,9 @@ std.Turn(index, about: engine, ratio: 1)
 platform_sector := solid(plat, about: engine, sweep: pitch_angle)
 wing_f_sector := solid(fwd_wing, about: engine, sweep: pitch_angle)
 wing_a_sector := solid(aft_wing, about: engine, sweep: pitch_angle)
-platform := solid(platform_sector, under: index, at: -pitch_angle / 2)
-wing_f := solid(wing_f_sector, under: index, at: -pitch_angle / 2)
-wing_a := solid(wing_a_sector, under: index, at: -pitch_angle / 2)
+platform := platform_sector at(under: index) -pitch_angle / 2
+wing_f := wing_f_sector at(under: index) -pitch_angle / 2
+wing_a := wing_a_sector at(under: index) -pitch_angle / 2
 
 // ---- the shank and the fir tree: one section across the engine's axis, broached along it ----
 in std.side {

@@ -233,17 +233,17 @@ takes a layout naming the front datum, origin and reference axis.
   [0.29]).  `w := 100` is a value (`StmtKind::Param`), `c := circle(…)` a declaration, `t :=
   Tooth(…)` an instance, `dims := {…}` a group (a brace after `:=` is a list, lexed across lines),
   `profile := (ab := line(a, b)) -> line -> close` a chain whose link is named in place, `k :=
-  leg.toe over u in (a, b)` a curve (`S := C(…).p over (phi in (a, b), s in (c, d))`, two formals
-  running, a surface traced in space, #326 — `CurveSpec::second`, parsed by `curve_spec` after an
-  `over (`, printed by `write_curve_spec`, its ends settled by the flattener with the first's),
-  `p := point(x: e, y: e)` a computed point.  A dimension's
-  number defines no name (named dimensions are gone, [0.41]).  `:=` is `Tok::Define`; a lone `=` is
-  no token.  `:=` binds loosest, so a link is named in parentheses; with no `->` in the statement
-  the name goes to the one declaration (`l := horizontal line(a, b)`: a prefix word's value is its
-  operand).  `P::definition` lowers to the existing `StmtKind`s (`Param`, `Group`, `Instance`,
-  `Decl`, `Chain`), so nothing below the parser knows; `syntax::words::named_link_at` tells `(l :=
-  line)` from an operator's own parentheses.  `label:` never defines: it fills a slot.  A name in a
-  child slot (`line(a, q := hint(…))`) is not implemented yet.
+  trace(leg.toe over u in (a, b))` a curve ([0.140]; `S := trace(C(…).p over (phi in (a, b), s in
+  (c, d)))`, two formals running, a surface traced in space, #326 — `CurveSpec::second`, parsed by
+  `curve_spec` after an `over (`, printed by `write_curve_spec`, its ends settled by the flattener
+  with the first's), `p := point(x: e, y: e)` a computed point.  A dimension's number defines no
+  name (named dimensions are gone, [0.41]).  `:=` is `Tok::Define`; a lone `=` is no token.  `:=`
+  binds loosest, so a link is named in parentheses; with no `->` in the statement the name goes to
+  the one declaration (`l := horizontal line(a, b)`: a prefix word's value is its operand).
+  `P::definition` lowers to the existing `StmtKind`s (`Param`, `Group`, `Instance`, `Decl`,
+  `Chain`), so nothing below the parser knows; `syntax::words::named_link_at` tells `(l := line)`
+  from an operator's own parentheses.  `label:` never defines: it fills a slot.  A name in a child
+  slot (`line(a, q := hint(…))`) is not implemented yet.
 - **Every seed is written in one `hint(…)` clause, and nothing else is** (Solvent §4.3, §6.4): `p :=
   point hint((0, 0))`, `c := circle(center: o) hint(r: 25)`, `point_on_spline(p, s) hint(t:
   0.4)`.  Keys in any order, an omitted coordinate is 0 — an omitted *radius* is computed from the
@@ -431,7 +431,7 @@ takes a layout naming the front datum, origin and reference axis.
   and each such edge names its swept face `side[k]` (`program::solids::faces::boundary_name`
   spells a copy's public path).  `tests/correspondence.rs` is the gate.  **A face carried
   whole** (`sec := prof mapped(…) in n`, #357) is such a block that makes no copies
-  (`Block::image`): see `solids.md`.  **A frame carried** (`n := base carried(at: τ)`, #366,
+  (`Block::image`): see `solids.md`.  **A frame carried** (`n := base at τ`, #366,
   [0.138]) is a declaration of kind `Frame` the parser marks (`Decl::carried`,
   `statements::carried_frame`: `at:`, and `under:` and `seen_from:` if given, read as a carried
   point's arguments) and the flattener writes out where it walks the body (`flatten::carried`), so

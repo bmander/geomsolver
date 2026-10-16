@@ -72,5 +72,5 @@ fix((0, 0, 0)) c
 z1 := point hint((0, 0, 10))
 fix((0, 0, 10)) z1
 
-bore := Bore(c, z1, apex, spin, counter).p over (d in (0mm, s), u in (0deg, 180deg))
-past := Bore(c, z1, apex, spin, counter).p over (d in (0mm, 20mm), u in (0deg, 180deg))
+bore := trace(Bore(c, z1, apex, spin, counter).p over (d in (0mm, s), u in (0deg, 180deg)))
+past := trace(Bore(c, z1, apex, spin, counter).p over (d in (0mm, 20mm), u in (0deg, 180deg)))

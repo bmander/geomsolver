@@ -5,7 +5,7 @@
 // handed a run, a sweep or a plane; the tangent at a point of a spline is the target's,
 // `g tangent(at: m) tl` (#251).
 //
-// A loft is a face of a component as one of its numbers runs (`solid(I.f over s in (0, 1))`).
+// A loft is a face of a component as one of its numbers runs (`sweep(I.f over s in (0, 1))`).
 // The words here only say where a station stands on its path. What the section is at that station
 // (its shape, its twist, its scale, the rails it follows) is the writer's component, drawn in the
 // station's plane.

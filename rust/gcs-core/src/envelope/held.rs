@@ -1,7 +1,7 @@
 //! **An envelope the solve sees** (#283, step 2).
 //!
-//! `flank := envelope(source, under: m, from: a, to: b)` over a surface of revolution — a cone or a
-//! cylinder set (`std.Cone`, `std.ConeThrough`, `std.Cylinder`), or a line, arc or circle of a
+//! `flank := envelope(source over t in (a, b), under: m)` over a surface of revolution — a cone or
+//! a cylinder set (`std.Cone`, `std.ConeThrough`, `std.Cylinder`), or a line, arc or circle of a
 //! revolution's profile (`surface(rev, edge: e)`) — under a motion in space is the locus where the
 //! moving source's normal is square to its velocity, `n · ∂X/∂t = 0`.  A point held to it, a line
 //! in its tangent plane or along its normal there, a plane touching it and a circle osculating it

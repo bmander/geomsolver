@@ -64,13 +64,13 @@ screw := std.Screw(isa, gear_turn, seen_from: pinion_turn)
 rack := std.HalfSpace(P, L, d: 0mm)
 slide := frame
 std.Slide(slide, along: L, advance: 2 * pi * sigma)
-pinion_flank := envelope(rack, under: slide, seen_from: pinion_turn, from: -40deg, to: 40deg)
-gear_flank := envelope(rack, under: slide, seen_from: gear_turn, from: -40deg, to: 40deg)
+pinion_flank := envelope(rack over t in (-40deg, 40deg), under: slide, seen_from: pinion_turn)
+gear_flank := envelope(rack over t in (-40deg, 40deg), under: slide, seen_from: gear_turn)
 claim L reciprocal(seen_from: pinion_turn) slide
 claim L reciprocal(seen_from: gear_turn) slide
 
 // -- the contact ---------------------------------------------------------------------------------
-bearing := meshing(pinion_flank, gear_flank, under: gear_turn, seen_from: pinion_turn, from: -15deg,
-                   to: 15deg)
+bearing := meshing(pinion_flank, gear_flank over t in (-15deg, 15deg), under: gear_turn,
+                   seen_from: pinion_turn)
 Q := point hint((0, 48, 0))
 Q coincident(t == 0deg) bearing

@@ -43,5 +43,5 @@ in std.front {
   rope := curve(a, b)
   length(150mm) rope
 }
-chain := hang.p over s in (0mm, 150mm)
+chain := trace(hang.p over s in (0mm, 150mm))
 rope minimizes integral(p.y over p)

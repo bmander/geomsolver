@@ -65,7 +65,7 @@ line at πr²h; the refusals. `use std` gives axes
 `std.x/y/z/back`, planes `std.front` (x, z), `std.top` (x, y), `std.side` (y, z), `std.up` (z,
 back), and `std.origin` (in front, fixed) — flattened after the document, present whenever the
 document says `use std` (the workspace offers them as places to draw). **A plane may be carried**
-(#366, [0.138]): `n := base carried(at: τ)` is `base` where the pose at the roll `τ` of what it
+(#366, [0.138]): `n := base at τ` is `base` where the pose at the roll `τ` of what it
 rides on (or of the frame `under: m` names) carries it, origin, axes and normal
 ([frames.md](frames.md)) — a plane over the lines from its carried origin to its carried axes'
 points, each seeded where the motion carries it before the planes are placed

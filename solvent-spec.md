@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.139 — October 2026**
+**Specification, Draft 0.140 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -336,7 +336,7 @@ A bare declaration introduces an entity all of whose coordinates are unknowns.
 
 **The dotted path is the name.** An anonymous child has no name in the source, so `l.p1` *is* its name, and everything that identifies an entity by name MUST agree — a constraint written against it, a selection that outlives a re-elaboration, a diagnostic that reports it.
 
-**[0.9] The name itself is optional**, independently of everything after it: `line` alone is a syntactically valid statement — a line with no name, implicit children and no hint — and so are `line(p1, p2)`, `circle hint(r: 25)` and `arc(center: c)` — a line owns no scalar of its own, so its anonymous seeded form puts the seeds in the slots, `line(hint((0, 0)), hint((60, 20)))` (§6.2). The token after the kind keyword decides what the statement says next, so a trailing-clause word (`hint`, `knots`, `class`, `at`, `close`) can no longer be a declaration's name — the same reservation element keywords and operator words carry. A curve keeps requiring a name: its form is `NAME := REF over u in (a, b)` (§6.5), and the name is what the contact constraints address. **Identity is minted on demand.** Internally the statement suffices — an anonymous element parses, elaborates, draws, drags and deletes without ever being named. The moment the *source* must reference it (a constraint applied from a tool, a dimension stated on it), the implementation MUST splice a real name into the declaration — the same bargain §6.4's writeback strikes with an unwritten `hint(…)` clause. No hidden names: a name is what the source calls the thing, and an unnamed thing has none until the source needs one. Chains are in scope (§6.6): `line -> tangent arc -> tangent line` is a fully anonymous open contour, the corner-minting rule naming shared points by the parent's dotted path.
+**[0.9] The name itself is optional**, independently of everything after it: `line` alone is a syntactically valid statement — a line with no name, implicit children and no hint — and so are `line(p1, p2)`, `circle hint(r: 25)` and `arc(center: c)` — a line owns no scalar of its own, so its anonymous seeded form puts the seeds in the slots, `line(hint((0, 0)), hint((60, 20)))` (§6.2). The token after the kind keyword decides what the statement says next, so a trailing-clause word (`hint`, `knots`, `class`, `at`, `close`) can no longer be a declaration's name — the same reservation element keywords and operator words carry. A curve keeps requiring a name: its form is `NAME := trace(REF over u in (a, b))` (§6.5), and the name is what the contact constraints address. **Identity is minted on demand.** Internally the statement suffices — an anonymous element parses, elaborates, draws, drags and deletes without ever being named. The moment the *source* must reference it (a constraint applied from a tool, a dimension stated on it), the implementation MUST splice a real name into the declaration — the same bargain §6.4's writeback strikes with an unwritten `hint(…)` clause. No hidden names: a name is what the source calls the thing, and an unnamed thing has none until the source needs one. Chains are in scope (§6.6): `line -> tangent arc -> tangent line` is a fully anonymous open contour, the corner-minting rule naming shared points by the parent's dotted path.
 
 Where an unnamed and unseeded coordinate *starts* is not the language's business (§15). It is worth saying only that the obvious answer is wrong: two implicit endpoints both at the origin is a zero-length line, with no direction for `horizontal l` to bite on and a singular row for any tangency, so an implementation MUST NOT place them coincidently.
 
@@ -410,7 +410,7 @@ expressed in terms of a free unknown does not determine that scalar for this pur
 
 **[0.7] One clause for every seed.** `hint(…)` joins the trailing-clause loop, so it is order-free against `knots` exactly as those two already are against each other. A constraint's own unknown is written the same way — `p coincident s hint(t: 0.4)` — and the *pin* stays in the argument list, `p coincident(t == 0.4) s`: `hint` marks what a solve revises, and a pin is precisely what it does not.
 
-Two things that look like seeds and are not, and stay where they are. **`knots [...]`** is document data no solve moves. **A curve instance's values** — `e := Involute(base, phase: 0).p over u in (u0, u1)` — are numbers the family takes, not numbers the solve revises.
+Two things that look like seeds and are not, and stay where they are. **`knots [...]`** is document data no solve moves. **A curve instance's values** — `e := trace(Involute(base, phase: 0).p over u in (u0, u1))` — are numbers the family takes, not numbers the solve revises.
 
 **What `hint` marks is that a solve revises the number — not that the number is seed-class.** The two are not the same set, and the difference decides where the word belongs. Seed-class is §4.3's classification: inert under P3, so deleting it changes no solution set. That is true of a coordinate seed *and* of a callout placement (§13.1), which **[0.20]** lives in the `.svd` drawing (§13.1) and needs no `hint` even though it is every bit as inert. What separates them is who writes them. A coordinate seed is an input a solve overwrites, every time, which is the whole of what §6.4's writeback does. A placement is never touched by a solve at all: it is derived by the layout until somebody drags the callout, and from then on it records where that person put it. So a placement is not a guess about anything, and `at` there says what it means.
 
@@ -427,8 +427,8 @@ Two things that look like seeds and are not, and stay where they are. **`knots [
 A curve is **a point of a component, as one of the component's numeric formals runs over an interval**:
 
 ```
-NAME := REF over FORMAL in ( A, B )                    an instance's point
-NAME := Component(ARGS).REF over FORMAL in ( A, B )    an instance written in place
+NAME := trace(REF over FORMAL in ( A, B ))                    an instance's point
+NAME := trace(Component(ARGS).REF over FORMAL in ( A, B ))    an instance written in place
 ```
 
 `REF` names a point the component places — a declaration of its body or a nested instance's; a formal the component is written over does not move with the swept formal and is refused (**E103**). `FORMAL` is a numeric formal of that component, `Angle` or `Length` (**E040** otherwise); the interval's ends are expressions over the parameters in scope. A curve declares an entity and takes contacts like any other curve, each owning the curve's parameter — spelled `t`, as a spline's is, whatever the swept formal is called **[0.15]** (0.2–0.14 spelled it `u`, which an implementation SHOULD name when refusing the old key): `p coincident e hint(t: …)` says `p − C(t) = 0`, two residuals and one new unknown; `e tangent l` holds the line through `C(u)` along `C'(u)`, two residuals against the one unknown; `e curvature k` makes the circle the curve's osculating circle at `u`, three residuals against it. **[0.39]** Each contact owns its own parameter unless it is pinned to a name nothing defines (`e tangent(t == s) l`, `e curvature(t == s) k`, §9.2): then every contact on the curve pinned to that name owns the one unknown, so a line and a circle touching the curve *at the same place* are five residuals against one parameter. Stated instead as two contacts tied through other geometry — the circle tangent to the line — the condition holds to third order in the distance between their two parameters, and the solve is a degenerate root. A tangency needs `C'` and its derivatives in the geometry — second order — and a curvature `C''` and `C'''`: a computed point supplies them exactly from its expressions, and a locus supplies `C'` exactly (the implicit function theorem) and `C''`, `C'''` exactly as the implicit function's Taylor orders — each one more linear solve with the same Jacobian of the body, its rows read in truncated Taylor arithmetic — with their derivatives in the geometry by difference **[0.37]**. A body is read that way only through relations whose kernels an implementation has written in Taylor arithmetic; a curvature stated against a locus with any other relation in its body is an error (**E103**) naming the relation, since a residual by difference would solve to a slightly wrong circle and call it right. There is no separate curve family: 0.2's `curve NAME(FORMALS)(PARAM) = …` and 0.3's `trace POINT where { … }` are retired, and an implementation MUST refuse them with a message naming this form.
@@ -446,10 +446,10 @@ component Unwind(c: circle, datum: line, phase: Angle, u: Angle) {
   rad perpendicular s                          // perpendicular to the radius there,
   p distance(-(c.r * u / 1rad)) rad            // and taut: let out == arc unwound
 }
-e := Unwind(base, datum, phase: a0).p over u in (u0, u1)
+e := trace(Unwind(base, datum, phase: a0).p over u in (u0, u1))
 ```
 
-**Over a drawn instance.** `path := leg.toe over theta in (0, 360)` names a point of an instance the drawing holds. The trace is **anchored at the drawing**: the pose the instance stands in on the sheet is where evaluation begins, and the value the instance gave the swept formal is the anchor's parameter. An instance that leaves a numeric formal **unbound** makes it an unknown of the drawing (§3.3), named under the instance (`leg.theta`) so two instances leaving the same formal unbound have two unknowns — and the anchor then follows that unknown wherever the solve puts it. This is the form a mechanism is written in: drawn once with its crank free, and traced from the same statements. **[0.37]** Every other numeric formal a drawn instance leaves unbound is an unknown of the drawing in the same way (`leg.h`), and the curve is written over it as over the entities' coordinates: it is a **column** of the curve, so a contact against the curve may solve for it — a rod's length chosen so the stride touches the ground. Only the unknown itself: a formal given an expression in an unknown (`h: 2 * k`, inside an instance that left `k` unbound) is **E103**, and so is an unknown nothing on the sheet reads, which no solve could allocate.
+**Over a drawn instance.** `path := trace(leg.toe over theta in (0, 360))` names a point of an instance the drawing holds. The trace is **anchored at the drawing**: the pose the instance stands in on the sheet is where evaluation begins, and the value the instance gave the swept formal is the anchor's parameter. An instance that leaves a numeric formal **unbound** makes it an unknown of the drawing (§3.3), named under the instance (`leg.theta`) so two instances leaving the same formal unbound have two unknowns — and the anchor then follows that unknown wherever the solve puts it. This is the form a mechanism is written in: drawn once with its crank free, and traced from the same statements. **[0.37]** Every other numeric formal a drawn instance leaves unbound is an unknown of the drawing in the same way (`leg.h`), and the curve is written over it as over the entities' coordinates: it is a **column** of the curve, so a contact against the curve may solve for it — a rod's length chosen so the stride touches the ground. Only the unknown itself: a formal given an expression in an unknown (`h: 2 * k`, inside an instance that left `k` unbound) is **E103**, and so is an unknown nothing on the sheet reads, which no solve could allocate.
 
 **Closed curves [0.37].** A curve run over a whole turn of an `Angle` formal (`over theta in (0, 360)`) that comes back where it started — a crank's coupler curve, a cam's profile — is **closed**. A contact on it has no end to stop at: a parameter carried past the seam wraps round onto the interval and stays free, since the seam is only where the interval was written to begin. A curve that does not come back (an involute unwound a whole turn) is open, and a contact on it is held to its ends.
 
@@ -457,9 +457,9 @@ e := Unwind(base, datum, phase: a0).p over u in (u0, u1)
 
 **In space [0.107].** A body whose relations do not read in one plane is solved in space: its points are points in space, its words between them the relations in space (§9.2), and a point a motion carries, `X coincident(under: m, t == −u) x` (§9.3), one of its rows — the motion then given to the component as a formal of its own (`m: motion`). Such a curve is **a curve in space**: written in place, over points, lines, motions and numbers (and **[0.133]** curves, as a marched body's Cauchy data, below), it declares no curve of a plane but an entity held to in space. `p coincident k` holds a point in space to it (three rows against its place, net two) and `k tangent(at: p) l` a line along its tangent there (two rows). A body given a motion is solved in space whatever its relations; any other is a plane's where it reads as one (the `[0.42]` rule above), and in space only where it does not. Its derivatives are exact — every order the contacts read, along the formal and in every coordinate it is written over, by the Taylor series of the implicit function along any direction and polarisation across directions. Its seeds are numbers over the formals (`hint((r * cos(u), r * sin(u), lead * u / 360deg))`); a geometric seed, an instance drawn on the sheet and an unknown of the drawing given as a number are refused (**E103**): a body traced in space reads the drawing's unknowns through the geometry it is written over. **[0.122]** A curve in space is a **path** (§4.1): a `path` formal takes it, `p coincident(t == s) k` pins the contact's place — the body's own formal — to `s` as a spline's `t` is pinned (in a face family, to the running number), and a seed's step runs along it, `hint(at: p, along: k, by: f)` being `f` times `∂C/∂u` at the place nearest `p`. A surface is no path (**E103** at the argument). **[0.125]** At a point a contact holds on it, `k curvature(at: p) c`, `c` a point, puts `c` at the curve's **centre of curvature** there (three equations: `C + |C′|²·((C′ × C″) × C′)/|C′ × C″|²`), where a surface's `curvature` is a circle osculating a section; a curve with no curvature at the place (a straight run, an inflection) has no centre, and the equations lose their rank there. Of a surface it is **E040**: a surface has no one centre at a point.
 
-**Over two formals [0.108].** `S := C(ARGS).p over (phi in (A, B), s in (C, D))` is the same point as two formals run: **a surface** traced in space. `p coincident S` owns a place `[u, s]` (three rows, net one); at a point a contact holds there, `S tangent(at: p) l` puts a line in its tangent plane (one row), `S perpendicular(at: p) l` along its normal `C_φ × C_s` (two), `S tangent(at: p) P` a plane touching it (two), and `S curvature(at: p) k` the circle osculating its section by `k`'s plane (three, Meusnier, as an envelope's, §6.15.3). A place pinned is `p coincident(u == a, s == b) S`. A surface is **regular** where its two derivatives are independent; `solventc` says of each body traced in space whether it is regular over its domain or where it folds — of a flank seen from its member, the undercut. A traced surface is held to and read, not yet a face of a solid.
+**Over two formals [0.108].** `S := trace(C(ARGS).p over (phi in (A, B), s in (C, D)))` is the same point as two formals run: **a surface** traced in space. `p coincident S` owns a place `[u, s]` (three rows, net one); at a point a contact holds there, `S tangent(at: p) l` puts a line in its tangent plane (one row), `S perpendicular(at: p) l` along its normal `C_φ × C_s` (two), `S tangent(at: p) P` a plane touching it (two), and `S curvature(at: p) k` the circle osculating its section by `k`'s plane (three, Meusnier, as an envelope's, §6.15.3). A place pinned is `p coincident(u == a, s == b) S`. A surface is **regular** where its two derivatives are independent; `solventc` says of each body traced in space whether it is regular over its domain or where it folds — of a flank seen from its member, the undercut. A traced surface is held to and read, not yet a face of a solid.
 
-**Over two formals, marched [0.121].** A body traced over two formals may state a rate along either: `S := Front(c, a: 40mm, b: 25mm).p over (d in (0mm, 15mm), u in (-60deg, 60deg))` is an ellipse's offset front when `Front` says its point moves along its normal at unit speed, square to itself — a first-order PDE. The first formal is **marched**, the second **sampled**, and the surface is the **method of lines**: the second formal's interval is cut into 32 equal pieces of six Gauss–Lobatto nodes each, a joint node shared by the two pieces it ends — a whole turn of an `Angle` formal whose two ends meet is closed — the body's points at the nodes are one state integrated along the first formal from its home, a rate along the second is the derivative of the quintic through a piece's nodes (at a joint, the mean of the two pieces'), and between nodes the surface is that quintic. A rate along an `Angle` formal is per radian. **`initially { … }` is the Cauchy data**: what holds where the first formal starts, for every value of the second — **[0.131]** a point a motion carries among it, so a starting circle may be a drawn point turned about an axis by the second formal, `p coincident(under: spin, t == u) s`, and a trochoid the point a planar motion carries. The body's points are split by its rate rows: those whose rate along the first formal a rate row reads are **moved**, integrated; the rest are **placed**, solved at every node and step from where they last stood by the relations that read them, which must be exactly as many as their numbers (the front's normal `nl`, ten long, in its plane and square to `rate(p over u)`). So a rate along the second formal is of a moved point and is read by a rate row or by a relation that places a placed point — one over moved points alone would, differentiated along the first, tie every node of a piece together — a relation reads at most one rate along the first, and `initially` places moved points only: otherwise **E103**, naming the point. Rates that leave a freedom are **E103** naming it, as over one formal: the front's law alone leaves each node free to slide along the front, and the **gauge** that pins it — `rate(p over d) parallel nl`, square to itself — is the author's to state. At every node at every step the rates' rank is checked, and so is the surface's **regularity**, `rank [x_d, x_u] = 2`: where a node's area `|x_d × x_u|` falls below a hundredth of what it was at the home the characteristics are crossing — a **fold**, an undercut's kind — and the march is refused there; `solventc` says how far each such surface is marched, or where it folds and at which node. A march is held to the march on twice the pieces, the discretisation's error being amplified as a front focuses. Contacts own a place on the surface as on any traced one (§6.5 [0.108]); its point, tangent plane and normal are exact in the place and in the geometry (the variational equations), and its curvature is not yet read (**E103**). **Cauchy data on a drawn curve [0.133].** The moved point may start on a curve the drawing has: `initially { p coincident(t == u) k }`, `k` a formal `k: curve` given a spline, a curve drawn in a plane — a formula, a trace, an envelope — or a curve traced in space (a `spline` formal takes a spline alone), and `t` pinned to an expression over the formals (`t == 3 * u`) as any place is. At every node the point stands on `k` where its parameter is that number: three rows, the point less the curve's point there, a curve of a plane read in space through its plane's basis, which must be held (**E103** otherwise: `fix` its axes and origin). The body's columns are then the curve's — a spline's control points, a curve's own unknowns, a traced curve's columns — so the surface moves when they do, and the march's sensitivities run through the curve's. Only `initially` of a body over two formals reads such a curve, and only so: a point on it elsewhere in the body, the curve read by any other relation, or a surface given as `k`, is **E103**. A front marched out from a cam's profile by the roller's radius is its pitch curve, and its fold the roller's undercut (`rates/pitch.sv`); the Wankel bore read off the apex's envelope is `rates/bore.sv`.
+**Over two formals, marched [0.121].** A body traced over two formals may state a rate along either: `S := trace(Front(c, a: 40mm, b: 25mm).p over (d in (0mm, 15mm), u in (-60deg, 60deg)))` is an ellipse's offset front when `Front` says its point moves along its normal at unit speed, square to itself — a first-order PDE. The first formal is **marched**, the second **sampled**, and the surface is the **method of lines**: the second formal's interval is cut into 32 equal pieces of six Gauss–Lobatto nodes each, a joint node shared by the two pieces it ends — a whole turn of an `Angle` formal whose two ends meet is closed — the body's points at the nodes are one state integrated along the first formal from its home, a rate along the second is the derivative of the quintic through a piece's nodes (at a joint, the mean of the two pieces'), and between nodes the surface is that quintic. A rate along an `Angle` formal is per radian. **`initially { … }` is the Cauchy data**: what holds where the first formal starts, for every value of the second — **[0.131]** a point a motion carries among it, so a starting circle may be a drawn point turned about an axis by the second formal, `p coincident(under: spin, t == u) s`, and a trochoid the point a planar motion carries. The body's points are split by its rate rows: those whose rate along the first formal a rate row reads are **moved**, integrated; the rest are **placed**, solved at every node and step from where they last stood by the relations that read them, which must be exactly as many as their numbers (the front's normal `nl`, ten long, in its plane and square to `rate(p over u)`). So a rate along the second formal is of a moved point and is read by a rate row or by a relation that places a placed point — one over moved points alone would, differentiated along the first, tie every node of a piece together — a relation reads at most one rate along the first, and `initially` places moved points only: otherwise **E103**, naming the point. Rates that leave a freedom are **E103** naming it, as over one formal: the front's law alone leaves each node free to slide along the front, and the **gauge** that pins it — `rate(p over d) parallel nl`, square to itself — is the author's to state. At every node at every step the rates' rank is checked, and so is the surface's **regularity**, `rank [x_d, x_u] = 2`: where a node's area `|x_d × x_u|` falls below a hundredth of what it was at the home the characteristics are crossing — a **fold**, an undercut's kind — and the march is refused there; `solventc` says how far each such surface is marched, or where it folds and at which node. A march is held to the march on twice the pieces, the discretisation's error being amplified as a front focuses. Contacts own a place on the surface as on any traced one (§6.5 [0.108]); its point, tangent plane and normal are exact in the place and in the geometry (the variational equations), and its curvature is not yet read (**E103**). **Cauchy data on a drawn curve [0.133].** The moved point may start on a curve the drawing has: `initially { p coincident(t == u) k }`, `k` a formal `k: curve` given a spline, a curve drawn in a plane — a formula, a trace, an envelope — or a curve traced in space (a `spline` formal takes a spline alone), and `t` pinned to an expression over the formals (`t == 3 * u`) as any place is. At every node the point stands on `k` where its parameter is that number: three rows, the point less the curve's point there, a curve of a plane read in space through its plane's basis, which must be held (**E103** otherwise: `fix` its axes and origin). The body's columns are then the curve's — a spline's control points, a curve's own unknowns, a traced curve's columns — so the surface moves when they do, and the march's sensitivities run through the curve's. Only `initially` of a body over two formals reads such a curve, and only so: a point on it elsewhere in the body, the curve read by any other relation, or a surface given as `k`, is **E103**. A front marched out from a cam's profile by the roller's radius is its pitch curve, and its fold the roller's undercut (`rates/pitch.sv`); the Wankel bore read off the apex's envelope is `rates/bore.sv`.
 
 **Rates [0.119].** A body may state a condition on a **rate** along the formal it runs over: `rate(x over s)` is point `x`'s velocity as `s` runs — a vector of dimension `[x]/[s]`, so dimensionless along an arc length — and it stands where a direction is read: `parallel`, `perpendicular` or a directed `angle` with a line, and `rate(p over s) distance(k, along: l)`, the rate alone before the word, its component along `l`. A rate is never a place (`coincident`) and never a magnitude (`length(1) rate(p over s)` would be quadratic in the rate, leaving a root to choose at every step): either is **E103**, and so is a relation reading two rates. The formal is always named, since a component does not know which of its formals the call runs; a component handed it as itself (`Drag(o, a: a, u: u)`) reads its own rates over the caller's, and one given a number or an expression in it is **E103**. A body that states a rate is **integrated from its home** rather than solved again at each place: its relations without a rate hold everywhere, its **rate rows** together with them differentiated along the formal fix the rates — one linear system, square by count in a plane and, in space, where a `parallel` is two rows of which the body's own rows may imply one, of full rank — and the curve at `u` is that flow integrated from the home, to a tolerance well below "solved" (`ode.rs`). The system's rank is checked at every place the march reaches: where it is lost the curve is refused there, as is a march that will not meet its tolerance in bounded steps, and `solventc` says how far each such curve is integrated. A body short of rate rows is **E103**, naming the points whose rates the rows leave free. **The home is the initial value.** Over a drawn instance it is the instance as it stands on the sheet: its rate rows are no rows there, so the drawing holds the freedom they leave (`drag.p level(right) o`), and the instance's coordinates are columns of the curve, which moves when it does; while the drawing is not yet solved, the curve is the flow from the nearest point to the instance where its body's relations hold. Written in place, the home is the value the call gives the formal, or the interval's start, and what holds there alone is said in the body, **`initially { … }`**: relations that, with the body's others, place the instance at its home, and nowhere else — the block a face family's station says its home with (§6.9 **[0.116]**), its relations hoisted into the body, each marked; a rate in it is **E103**. **[0.131]** A point a motion carries, `X coincident(under: m, t == τ) x` (§9.3), is a relation without a rate like any, in the body or in `initially`: its rate is that row differentiated along the formal, read exactly. On the sheet an `initially` block's relations are ordinary ones, a drawn instance being its own home. A contact owns its place as on any curve, `C′` the rate itself and `C″`, `C‴` the solution's Taylor coefficients, exact, and every derivative in the geometry the flow's sensitivity, carried through the same integration. Over one formal a rate along an `Angle` formal, or of a direction (a line's or an axis's), is not yet read (**E103**); a face family's station reads an axis's (§6.9); over two, below.
 
@@ -481,7 +481,7 @@ in std.front {
   drag := Drag(o, a: 30mm, u: 0)
   drag.p level(right) o                        // the home: the string square to the line
 }
-tractrix := drag.p over u in (0, 3)
+tractrix := trace(drag.p over u in (0, 3))
 ```
 
 **Requirements.** An implementation MUST differentiate `C` with respect to the swept formal *and* with respect to every coordinate the component reads. `∂C/∂u` is which way a contact may slide; `∂C/∂θ` is how the curve moves when the geometry it is written over moves, and an implementation that computes only the first will solve a contact once and drop it the moment that geometry is dragged. For a computed point both are mechanical from the expressions; for a locus both come from the implicit function theorem at the body's solution. A name a computed point's expressions cannot reach is an error (**E103**), not a free variable: a curve is written over geometry that exists, and a misspelling there would quietly add a degree of freedom to every point on the curve. A dimension in a traced body MAY read a number of the geometry the component is written over (`c.r`, `k.center.x`): it is a column of the curve, and is differentiated with the rest. **[0.132]** In a body traced in space (§6.5 [0.107]) it MAY also read a coordinate of a point the body declares (`p.x`, `p.y`, `p.z`): the dimension is then a number the body places, held to its expression by an equation of the body's own and solved, integrated and differentiated with the body's points — so a rate row's speed may depend on where the point is (`rate(p over s) distance(1 / n, along: nl)`, `n` read at `p`: the eikonal equation in a graded medium). One text is one number, however many relations read it. Over two formals such a number is placed at every node with the points the rates do not move, so it stands in a rate row or in a relation that places such a point; read in `initially`, or by a relation that would place only points the rates move, it is **E103**. A trace in a plane reads only the formals and the geometry (**E103** otherwise). **[0.37] Outside a trace a dimension MUST NOT read geometry** (**E103**): the expression graph has no column for it, and minting a free variable named `k.r` would make a drawn instance of a component state something other than its own trace.
@@ -933,8 +933,8 @@ block := solid(face(mouth, side_r, lid, side_l), from: face, to: back)
 - **A prism** runs `from:` one signed ordinate `to:` another **along the face's own plane normal**. Those signs are arithmetic and not a convention (§9.2 **[0.17]**) — they are ordinates on an axis, and a document writes both. `depth: d` is the draughtsman's spelling of `from: -d, to: 0`, the material *behind* the face the view shows, and is therefore a **magnitude**. A prism swept nowhere (`from` equal to `to`) is **E080**.
 - **[0.80] A drafted prism** adds `draft: θ`, an `Angle`, to a prism's `from:`/`to:` or `depth:` and to nothing else (refused where written). Its sides lean by `θ` from the face's own plane, the **parting plane** (ordinate 0, wherever the prism's ordinates are): the section at ordinate `h` is the face's loops each moved `|h| tan θ` into the face's material, every side along its own normal — a line square to itself, a circle's radius less (a hole's more) — and each corner where the moved sides either side of it meet. So the section shrinks away from the parting plane on both sides of it, as a part comes out of a die split there; a negative `θ` leans the sides the other way. A straight side is a plane and a circle's side a cone. A side the move takes to nothing, or turns round, within the prism's ordinates refuses the solid where it is evaluated; `|θ|` of a right angle or more is **E080**. Faces keep the prism's names (`.near`, `.far`, a side per edge, §3.2): a side crossing the parting plane is two pieces under its one name, which a round over that side's faces (§6.21) takes as one face, so the crease between them stays sharp. A drafted side leans off its face's plane, so it is not yet a set to draw on (**E040**; its caps are).
 - **A through prism** is written `tool := solid(section, through: target)`. Its target MUST be a solid (**E080**); it spans the target in both directions along the section's own plane normal. The extent is evaluated after the sketch is solved: recursively collect the target's stock and additions, ignoring all cuts, project a conservative bound of that material along the normal, and pad both ends outside the material at the kernel's tolerance. The target may be a swept solid or a body. Changes to its material geometry or placement change the extent; subtractive tools do not enlarge it. `through:` cannot be mixed with any other sweep label, and does not itself subtract anything. Apply the tool separately with `tool cut body`.
-- **[0.88] A rolled sweep** is written `removal := solid(tool, under: m, through: body)`: the tool swept under the motion `m` (§6.14) over the whole roll about 0 during which it meets `body`'s material, `body` a solid (**E080**). As for a through prism, the material is the target's stock and additions, ignoring all cuts, so `removal` may cut `body` (placed copies included) without a cycle; using it as the body's stock or a `union` with it is **E041**. The roll is evaluated after the sketch is solved, marching out from 0 each way until the tool, over a whole step of the roll, is proved clear of the material: conservative, so it may run a little past where the tool first clears and never stops short, and at each end the tool is clear of the body. One where the tool does not meet the body at 0, or is not clear of it within two turns either way, or whose tool or body cannot be read as a static field with a bounded support, is refused where the solid is evaluated, naming why. A generating sweep's roll limit is then no design number: within the window that clears the blank at both ends, the cut does not depend on it. `from:`/`to:` remain for a roll stated outright (a sweep over a whole period, or a negative control), and cannot be mixed with `through:`. A placed copy (`solid(removal, under: index, at: θ)`) moves the sweep whose roll was found against `body` as it stands.
-- **[0.97] A face family** is written `duct := solid(Station(guide, …).f over s in (a, b))`: the
+- **[0.88] A rolled sweep** is written **[0.140]** `removal := sweep(tool, through: body, under: m)`: the tool swept under the motion `m` (§6.14) over the whole roll about 0 during which it meets `body`'s material, `body` a solid (**E080**). As for a through prism, the material is the target's stock and additions, ignoring all cuts, so `removal` may cut `body` (placed copies included) without a cycle; using it as the body's stock or a `union` with it is **E041**. The roll is evaluated after the sketch is solved, marching out from 0 each way until the tool, over a whole step of the roll, is proved clear of the material: conservative, so it may run a little past where the tool first clears and never stops short, and at each end the tool is clear of the body. One where the tool does not meet the body at 0, or is not clear of it within two turns either way, or whose tool or body cannot be read as a static field with a bounded support, is refused where the solid is evaluated, naming why. A generating sweep's roll limit is then no design number: within the window that clears the blank at both ends, the cut does not depend on it. `from:`/`to:` remain for a roll stated outright (a sweep over a whole period, or a negative control), and cannot be mixed with `through:`. A placed copy (`removal at(under: index) θ`) moves the sweep whose roll was found against `body` as it stands.
+- **[0.97] A face family** is written **[0.140]** `duct := sweep(Station(guide, …).f over s in (a, b))`: the
   solid the face `f` of an instance of `Station` sweeps as its numeric formal `s` runs from `a` to
   `b` — §6.5's curve one dimension up. The instance MUST be written in place (a drawn station is a
   syntax error), MUST leave `s` unbound (**E103**), and `s` MUST be one of its numeric formals
@@ -968,7 +968,7 @@ block := solid(face(mouth, side_r, lid, side_l), from: face, to: back)
   reads in space (a line, a spline, a traced curve), and `Helix` and `OnHelix` along a screw
   (0.110; through 0.109 `Screwed` and `OnHelix`, each about an axis given apart from its base).
   The section is the document's own component drawn `in st.n`, reading `s` where it runs (a size
-  `inlet + (outlet - inlet) * s`, a corner's coordinates, a turn): `duct := solid(Reducer(guide,
+  `inlet + (outlet - inlet) * s`, a corner's coordinates, a turn): `duct := sweep(Reducer(guide,
   std.z, inlet: 24mm, outlet: 12mm).sec.profile over s in (0, 1))`. Two
   sections correspond by being one, so no pairing rule is written anywhere. `solid(section,
   along: guide)` and `solid(start_section, end_section, along: guide)` — through 0.99 a section
@@ -1026,7 +1026,7 @@ block := solid(face(mouth, side_r, lid, side_l), from: face, to: back)
   along `n`'s `u` from its origin turned `twist · s` (`sec := prof mapped(o -> n.origin, x -> tw.t)
   in n`); through 0.117 it was a plane of axes `axes`, which a section was drawn on corner by
   corner; **[0.138]** it is the turn of `n` about its origin read at that roll (§6.14), `t
-  coincident(under: turn, at: twist * s) x`. A number given a formal — a component's or a relation
+  coincident x at(under: turn) twist * s`. A number given a formal — a component's or a relation
   word's — MAY be any expression in
   the running number, worked out at each station; it binds the formal, and is no unknown of the
   drawing. A `when` is made once, for the whole run (§12.9), so a condition reading the running
@@ -1277,7 +1277,7 @@ crown := frame
 std.Turn(crown, about: crown_axis, ratio: 1)
 blank := frame
 std.Turn(blank, about: blank_axis, ratio: 2)
-flank := envelope(crown_flank, under: crown, seen_from: blank, from: -35deg, to: 35deg)
+flank := envelope(crown_flank over t in (-35deg, 35deg), under: crown, seen_from: blank)
 ```
 
 **A motion is a frame's joint.** A frame (§6.7) owns a family of rigid transformations over one
@@ -1337,9 +1337,9 @@ joint after the joints of the frames it rides on: the pose of what rides is the 
 is drawn. Riding enters no relation that names no roll: everything is drawn, and related, as it
 stands at rest. A reading at a roll that leaves `under:` out reads what its tool rides on:
 `X coincident(t == τ) x` with `x` and `X` riding on different frames is `x` carried by
-`path(X)⁻¹·path(x)` at `τ`; `envelope(tool, seen_from: G, …)`, `meshing(f1, f2, …)` (the second
-flank's frames seen from the first's), `solid(tool, at: θ)`, and `solid(tool, from: a, to: b)` or
-`solid(tool, through: body)` over a solid that rides (a motion's words there, not a prism's).
+`path(X)⁻¹·path(x)` at `τ`; `envelope(tool over t in (a, b), seen_from: G)`, `meshing(f1, f2 over
+t in (a, b))` (the second flank's frames seen from the first's), `tool at θ`, `sweep(tool over t in
+(a, b))` and `sweep(tool, through: body)`.
 `under:` names the frame of a tool that rides on none; one naming a frame for a tool drawn riding
 is an error, as is a reading of a tool whose parts ride on different frames. What a reading makes
 rides on its observer: the profile a rack cuts `seen_from: blank` rides on the blank.
@@ -1364,7 +1364,7 @@ observer)`, with `m: motion` formals and its numbers allowed to measure the solv
 or `std.Slide`; `relative_to:` the reading's `seen_from:`; `phase:` a roll offset (a turn with
 phase φ and ratio r read at roll τ is the same turn read at τ + φ/r).
 
-**[0.138] A frame that moves is a frame read at a roll.** `X coincident(at: τ) x` is the point
+**[0.138] A frame that moves is a frame read at a roll.** `X coincident x at τ` is the point
 `x` carried by the pose at the roll `τ` of the frames it rides on (seen from those `X` rides on),
 or of the frame `under: m` names where `x` rides on none — `τ` an Angle the statement states:
 worked out where it is written (over a face family's running number it is read again at every
@@ -1373,7 +1373,7 @@ reading as `X coincident(t == τ) x` (§9.3), whose roll is the relation's own u
 solved, which a rate runs over; stating both is an error. `seen_from: g` reads it as `g` sees it,
 as on any reading. `X` in space is held by three equations; drawn in a plane, at a stated roll, by
 two, where that plane sees the carried point. A roll read where nothing rides and no frame is named
-is an error. A plane is carried whole: `n := base carried(at: τ)` (with `under: m` and `seen_from:
+is an error. A plane is carried whole: `n := base at τ` (with `under: m` and `seen_from:
 g` as on a point) is the plane `base` where the pose carries it — its origin, its `u` and `v` and
 its normal the pose's images of `base`'s — and anything drawn in `n` is drawn in the carried frame.
 A frame may turn about another frame's axis, `std.Turn(f, about: P.normal)` or `P.u`, as about a
@@ -1384,10 +1384,40 @@ plane about its origin (`std.Spin`, §6.9). Every frame that moves as a number r
 way: no frame of the language is written as `cos` and `sin` ordinates of the number it moves
 by.
 
+**[0.140] At an instant and over an interval.** Every reading of a frame's motion is one of two
+operations on what moves (issue #391, stage 2).
+
+- **`x at τ`, evaluation.** `NAME := x at τ` is `x` where the roll `τ` puts it, and what it makes
+  is what `x` is: a **frame** carried whole (above), a **solid** placed at that roll (one copy,
+  §6.9), or a **point** of its own held to `x` carried there (`NAME coincident x at τ`, drawn
+  where the declaration is). `X coincident x at τ` holds a point drawn elsewhere so. The frames
+  stand on the `at`, `x at(under: m, seen_from: g) τ`, as on any reading: `under:` where `x` rides
+  on none, `seen_from:` the observer. `τ` is an Angle dimension, read to the end of the statement
+  (or its `hint(…)`, `class` or placement).
+- **`over t in (a, b)`, the union over an interval.** After the operand that runs, it names the
+  parameter and the interval of the roll a reading runs over: `sweep(tool over t in (a, b))` the
+  solid `tool` sweeps (§6.9), `envelope(tool over t in (a, b))` what its boundary leaves (§6.15),
+  `meshing(f1, f2 over t in (a, b))` the contact as the first flank's phase runs (§6.15.4) — each
+  with `under:` and `seen_from:` beside it. `sweep(tool, through: body)` is the sweep over the roll
+  during which `tool` meets `body` (§6.9). **`over t`** with no interval names a parameter the
+  document declares (`param t: Angle over (a, b)`, §6.3) and reads its interval: a parameter of
+  another type, or a name nothing declares, is **E103**; a component sees no parameter, so its
+  readings state their intervals. The same word is a face family's (`sweep(Station(g).f over s in
+  (a, b))`, §6.9) and a traced curve's (`trace(leg.toe over theta in (a, b))`, §6.5).
+
+A sweep and an envelope are unions over the interval, so they read the path alone: the same
+interval reparametrised sweeps the same set. A meshing, a rate and a reading at an instant read the
+roll itself, so the timing between frames is theirs. The spellings these replace are refused, each
+naming its replacement: `solid(tool, at: θ)`, `solid(tool, under: m, from: a, to: b)` and
+`solid(tool, under: m, through: body)` (and over a solid that rides, `from:`/`to:` and `through:`
+in a `solid`'s brackets, **E080**), `n := base carried(at: τ)`, `X coincident(at: τ) x`, an
+envelope's and a meshing's `from:`/`to:`, `solid(I(…).f over s in (a, b))` and a curve written
+bare, `k := leg.toe over theta in (a, b)`.
+
 ### 6.15 Generated envelopes
 
 ```
-flank := envelope(crown_flank, under: crown, seen_from: blank, from: -35deg, to: 35deg)
+flank := envelope(crown_flank over t in (-35deg, 35deg), under: crown, seen_from: blank)
 ```
 
 An `envelope` is the implicit locus of a named `surface` under a named `motion` where the
@@ -1397,9 +1427,10 @@ moving surface normal has zero component along its relative velocity:
 F(u, v, roll) = normal(u, v, roll) · velocity(u, v, roll) = 0
 ```
 
-The source parameters `u` and `v` remain in `[0,1]`. `from:` and `to:` are required bound
-Angles specifying a finite increasing interval of the shared motion parameter. They are
-part of the geometric domain, not solver seeds. The interval is evaluated in radians;
+The source parameters `u` and `v` remain in `[0,1]`. **[0.140]** `over t in (a, b)` after the
+surface is required: bound Angles specifying a finite increasing interval of the shared motion
+parameter (or `over t`, a declared parameter's, §6.14). They are part of the geometric domain,
+not solver seeds. The interval is evaluated in radians;
 `F` has units of length per radian. Argument labels `surface:` and `motion:` are accepted,
 with `under:` an alias for `motion:`. The `surface` and `motion` fields alias the dependencies.
 
@@ -1434,8 +1465,8 @@ blank := frame
 std.Spin(blank, about: o, on: std.front, ratio: 1)
 rack := frame
 std.Slide(rack, along: slide, advance: 2 * pi * 30)
-flank := envelope(rack_flank, under: rack, seen_from: blank, from: -25deg, to: 25deg)
-profile := envelope(roller, under: follower_on_cam, from: 0deg, to: 360deg, side: near)
+flank := envelope(rack_flank over t in (-25deg, 25deg), under: rack, seen_from: blank)
+profile := envelope(roller over t in (0deg, 360deg), under: follower_on_cam, side: near)
 ```
 
 The same word over a **tool of the sheet** — a point, line, circle, arc, a curve from a computed
@@ -1479,7 +1510,7 @@ over whole turns that comes back is closed (§6.5) **[0.40]**, and stands alone 
 
 ```
 side := surface(rack_tooth, edge: rack_flank)
-flank := envelope(side, under: rack, seen_from: blank, from: -30deg, to: 30deg)
+flank := envelope(side over t in (-30deg, 30deg), under: rack, seen_from: blank)
 p := point in cut
 p coincident flank
 ```
@@ -1506,7 +1537,7 @@ read after the solve — and held to by it (§6.15.3).
 
 ```
 flank := std.Cone(spine, half: hint(20deg))
-pinion_flank := envelope(flank, under: gear_turn, seen_from: pinion_turn, from: -30deg, to: 30deg)
+pinion_flank := envelope(flank over t in (-30deg, 30deg), under: gear_turn, seen_from: pinion_turn)
 M coincident pinion_flank
 pinion_flank perpendicular(at: M) normal
 pinion_flank tangent(at: M) along
@@ -1549,7 +1580,7 @@ the statement it wants. `at:` names a point after `perpendicular` and `curvature
 `tangent`. The other operand may be written first: `l tangent(at: p) flank` is the same statement.
 
 A root is local, as a planar contact's is: the place starts where the envelope passes nearest
-the point and follows the solve; the roll is not held within `from:`/`to:`, which bound the
+the point and follows the solve; the roll is not held within the interval `over` states, which bounds the
 after-the-solve evaluation; and a place where the source's normal has no direction (a cone's
 apex) is degenerate, as a cone whose spine has no length is. A source the solve cannot read — a
 sphere, a region, an offset, a lean or a radius that is no number times one unknown plus a
@@ -1564,7 +1595,7 @@ plane square to the line of action sliding along it as fast as the members move 
 from the member (`spiral_bevel/phillips.sv`).
 
 ```
-pinion_flank := envelope(gear_flank, under: gear_turn, seen_from: pinion_turn, from: -60deg, to: 60deg)
+pinion_flank := envelope(gear_flank over t in (-60deg, 60deg), under: gear_turn, seen_from: pinion_turn)
 pinion_flank regular(by: gear_tooth) within pinion_blank          // no undercut
 pinion_flank regular(>= 0.3, by: gear_tooth) within pinion_blank  // and a margin from it
 ```
@@ -1595,8 +1626,8 @@ inside the blank, whatever the design, so the tool says where the flank is cut.
 #### 6.15.4 The meshing of two flanks **[0.94]**
 
 ```
-contact := meshing(pinion_flank, gear_flank, under: gear_turn, seen_from: pinion_turn,
-                   from: -15deg, to: 15deg)
+contact := meshing(pinion_flank, gear_flank over t in (-15deg, 15deg), under: gear_turn,
+                   seen_from: pinion_turn)
 Q coincident(t == 0deg) contact
 R coincident(t == 10deg, lag == 0.01) contact
 ```
@@ -1651,8 +1682,8 @@ statement it wants (**E040**), and may be written either way round (`along tange
 contact`).
 
 ```
-contact := meshing(pinion_flank, gear_flank, under: gear_turn, seen_from: pinion_turn,
-                   from: -15deg, to: 15deg,
+contact := meshing(pinion_flank, gear_flank over t in (-15deg, 15deg), under: gear_turn,
+                   seen_from: pinion_turn,
                    ease: M, along: lengthwise, profile: 0.002 / 1mm, lengthwise: kl / 1mm)
 ```
 
@@ -1670,7 +1701,7 @@ relief and its slope nothing there — and elsewhere at a point, the gear turned
 closes the relief: so the transmission error and the bearing are the designer's, and a lag stated
 of a point held to the contact solves a curvature (lags at two phases, both). A flank traced in space is not eased (**E080**).
 
-After the solve the contact is **traced** over `from:` … `to:`, walked out phase by phase from the
+After the solve the contact is **traced** over the interval `over` states, walked out phase by phase from the
 first point held to it: the lag over the phase is the transmission error, the contact's places the
 **path of contact** and, on each flank in its own member, the **bearing**. `solventc` says of each
 meshing whether it is a point or a line contact, the transmission error's range and how long the
@@ -2174,7 +2205,7 @@ Residual conventions: points are ℝ²; `×` is the scalar 2D cross product; `�
 | ~~`reciprocal(L: Line, m: Motion)`~~ **[0.105]**, the standard library's word **[0.130]** | (B − A)·v(A), v(x) = v₀ + ω × x the twist of `m` a radian | 1 | a force along `L` does no work on `m` (Ball); `m` a turn, a screw or a slide about a fixed line, or one relative to another, whose twist is the source's less the observer's; for a mesh the meshing law of a line of action; written `L reciprocal(seen_from: pinion) gear` **[0.135]** |
 | ~~`screw(t: Axis, m: Motion)`~~ **[0.105]**, `std.Screw(t, m)` **[0.130]** | two components of d̂ across ω̂, scaled by L; two of A − c across ω̂; h − ω·v₀/‖ω‖² | 5 | `t` on `m`'s instantaneous screw axis, through c = ω × v₀/‖ω‖² along ω; h, the pitch, the relation's own unknown, a length a radian, pinned as `pitch == h`; L the motion's first axis as drawn; written `isa screw mesh`; a twist turning nothing has no axis |
 | `coincident(X, x, under: m, t)` **[0.106]** | X − Pose_m(t)·x | 3 | `X` is `x` as the moving frame sees it: carried by `m`'s pose at the roll `t`, in degrees, the relation's own unknown (pinned `t == τ`, or solved); X and x lifted; `m` any motion the solve reads, a turn about a point of a view read as the turn about the line through it square to the view; written `X coincident(under: m, t == τ) x` |
-| `coincident(X, x, at: τ)` **[0.138]** | X − Pose_m(τ)·x; drawn in a plane, its components along the plane's `u` and `v` | 3; 2 | the same at a roll the statement states, an Angle dimension — read again where a running number is, an unknown where a free name is — owning no unknown; written `X coincident(under: m, at: τ) x` (§6.14) |
+| `coincident(X, x, at: τ)` **[0.138]** | X − Pose_m(τ)·x; drawn in a plane, its components along the plane's `u` and `v` | 3; 2 | the same at a roll the statement states, an Angle dimension — read again where a running number is, an unknown where a free name is — owning no unknown; written `X coincident x at(under: m) τ` (§6.14) |
 | `parallel(rate(p over t), l)`, `perpendicular(…)` **[0.130]** | r = ∂X/∂t of the contact holding `p`, every other column held: of a curve in its view (r × (B − A))/‖B − A‖ and r·(B − A)/‖B − A‖; in space two components of r across l̂, and r·l̂ | 1 in a view; 2 parallel in space, 1 square | one kernel for every contact (§6.5); the contact's slot shared, its other unknowns columns; `g tangent(at: p) l` the same statement |
 | `distance(rate(p over t), d, along: l)` **[0.130]** | r·l̂ − d | 1 | `d` stated or an unknown |
 | `perpendicular(S, l, at: p)`, `tangent(S, P, at: p)`, `tangent(S, l, at: p)`, `curvature(S, k, at: p)`, `curvature(k, c, at: p)` **[0.130]** | the contact's frame: l̂ against t̂ and n̂ × t̂; P's normal likewise; l̂·n̂; the circle by Meusnier; c − (X + ‖X′‖²·(b × X′)/‖b‖²), b = X′ × X″ | 2, 2, 1, 3, 3 | the same kernel as a rate's; a traced surface's, an envelope's, a meshing's normal; a traced curve's centre |
@@ -2291,7 +2322,7 @@ claim over crank.theta in (0deg, 360deg) {
 
 `claim over NAME in (A, B) { … }` judges every claim in its body as the drawing runs along `NAME`, and reports the **worst** pose reached.  It is Structure-class: it says how the claims inside it are judged and asserts nothing itself.
 
-- `NAME` MUST be an **unknown** of the drawing (§3.3, §6.3) — an input with no value, or a formal an instance left unbound — or **[0.40]** a frame with a joint (§6.14), whose roll the claims run along: every solid placed under it (`solid(S, under: NAME, at: A)`) is read at its angle advanced by the roll, and nothing is solved again.  **[0.135]** `claim over NAME seen_from G in (A, B)` runs the roll of `NAME`'s motion as `G` sees it.  A value or an input with a value is a number the document already fixed and sweeping a constant is not a question; naming one, or naming other geometry, is **E040**.
+- `NAME` MUST be an **unknown** of the drawing (§3.3, §6.3) — an input with no value, or a formal an instance left unbound — or **[0.40]** a frame with a joint (§6.14), whose roll the claims run along: every solid placed under it (`S at(under: NAME) A`) is read at its angle advanced by the roll, and nothing is solved again.  **[0.135]** `claim over NAME seen_from G in (A, B)` runs the roll of `NAME`'s motion as `G` sees it.  A value or an input with a value is a number the document already fixed and sweeping a constant is not a question; naming one, or naming other geometry, is **E040**.
 - `A` and `B` are read in the units the unknown's readers are written in: an interval of an angle is an angle, and one of a length is a length.
 - An implementation MUST state that its answer is by **sampling**, and how many poses it took. A pose that did not solve or produced invalid solid geometry cannot certify the claim; the report identifies those failed parameter values, and a sweep with unresolved poses cannot be reported as holding.  A claim that holds at every sample is a claim that held at every sample; a swept claim is honest about that in the way a faceted one is honest about its margin.
 
@@ -2873,7 +2904,7 @@ component Involute(c: circle, phase: Angle, u: Angle) {
 
 component Flank(base: circle, root: circle, tip: circle,
                 phase: Angle, u0: Angle, u1: Angle) {
-  e := Involute(base, phase: phase).p over u in (u0, u1)
+  e := trace(Involute(base, phase: phase).p over u in (u0, u1))
   lo := point
   hi := point
   lo coincident e hint(t: u0)
@@ -3057,9 +3088,8 @@ ctor_arg       = [ IDENT ":" ] ( ref | hint_clause )       (* what the thing is 
 (* §6.9 [0.18]: the sweep stands in the brackets with the face, being what the solid is made
    of; numeric extents are expressions and never unknowns. `through:` instead names a solid
    whose material bounds determine an extrusion after solving. `about:` is a revolution.
-   `under:` a motion places a solid at its pose `at:` an angle, or sweeps it over `from:`/`to:`,
-   or [0.88] `through:` a solid, over the roll during which it meets that solid's material. *)
-sweep_arg      = ( "from" | "to" | "depth" | "sweep" | "at" ) ":" expr
+   [0.140] a solid a motion moves is no `solid(…)`'s: `tool at θ` and `sweep(…)`, §6.14. *)
+sweep_arg      = ( "from" | "to" | "depth" | "sweep" ) ":" expr
                | ( "about" | "through" | "along" | "under" ) ":" ref
                | "sense" ":" ( "cw" | "ccw" ) ;
 

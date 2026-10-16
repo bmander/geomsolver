@@ -4,7 +4,7 @@ unit mm
 use std (on_u)
 
 component GeneratingCut(tool: solid, generating: frame, start: Angle, finish: Angle) {
-  body := solid(tool, under: generating, from: start, to: finish)
+  body := sweep(tool over t in (start, finish), under: generating)
 }
 
 in std.front {

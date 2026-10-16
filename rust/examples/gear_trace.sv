@@ -47,7 +47,7 @@ component Unwind(c: circle, datum: line, phase: Angle, u: Angle) {
 
 component Flank(base: circle, datum: line, root: circle, tip: circle,
                 phase: Angle, u0: Angle, u1: Angle) {
-  e := Unwind(base, datum, phase: phase).p over u in (u0, u1)
+  e := trace(Unwind(base, datum, phase: phase).p over u in (u0, u1))
   // Seeded at the centre, as gear.sv's are and for the same reason: from there the first step
   // puts each end on the flank at the roll its contact's `hint(t: …)` names.  Started a unit
   // or so off-centre, the solve reached the *mirror* branch of the string — the same radii,

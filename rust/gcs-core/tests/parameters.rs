@@ -4,7 +4,10 @@
 //! intervals of the shared roll a reading states (an envelope's in the plane and in space, a
 //! swept solid's, a claim's).  No new behaviour: the gate is that each use reads the one type,
 //! with the very numbers it read before (the corpus's own tests hold every solved value), and that
-//! a declared parameter is represented once and read by nothing yet.
+//! a declared parameter is represented once.  Stage 2's two operations on what moves: `x at τ`
+//! makes what `x` is — a point held, a solid placed, a frame carried — and a reading over the
+//! roll may name a declared parameter for its interval (`over t`); the spellings they replace are
+//! refused naming them.
 
 use gcs_core::model::{EntKind, Roll, Running, SolidDef};
 use gcs_core::program::{elaborate, Elaborated};
@@ -39,7 +42,7 @@ ring := solid(face(meridian),about: ax)
 wall := surface(ring,meridian)
 roll := frame
 std.Turn(roll,about: spin_axis,ratio: 1)
-generated := envelope(wall,under: roll,from: -20deg,to: 20deg)
+generated := envelope(wall over t in (-20deg, 20deg), under: roll)
 ";
 
 /// `src` linked against the library and elaborated: what was made, and the errors' codes and
@@ -159,18 +162,18 @@ fn a_traced_bodys_formals_are_running_numbers() {
 
 #[test]
 fn the_rolls_a_reading_states_are_intervals_of_the_shared_roll() {
-    // an envelope in the plane runs over the shared roll as written, in degrees
+    // an envelope in the plane runs over the shared roll as written, in degrees, named by the
+    // parameter its `over` names (#391 S2)
     let e = built(PITCH);
     let rise = e.map.ent_named("pitch_rise").expect("the pitch curve");
     assert_eq!(rise.kind, EntKind::Curve);
     let over = &e.sketch.curves[rise.i()].over;
-    assert_eq!(*over, Running::roll(0.0, 180.0));
-    assert!(over.is_roll() && over.name == Running::ROLL);
+    assert_eq!(*over, Running::new("t", Dim::ANGLE, 0.0, 180.0));
 
     // an envelope in space: the same interval, read by its kernels in radians to the bit
     let e = built(ENVELOPE);
     let roll = &e.sketch.envelopes[0].roll;
-    assert_eq!(*roll, Running::roll(-20.0, 20.0));
+    assert_eq!(*roll, Running::new("t", Dim::ANGLE, -20.0, 20.0));
     assert_eq!(roll.radians().map(f64::to_bits),
                [(-20f64).to_radians(), 20f64.to_radians()].map(f64::to_bits));
 
@@ -180,7 +183,7 @@ fn the_rolls_a_reading_states_are_intervals_of_the_shared_roll() {
     let SolidDef::Swept { roll: Roll::Stated(r), .. } = &e.sketch.solids[removal].def else {
         panic!("not a stated sweep: {:?}", e.sketch.solids[removal].def);
     };
-    assert_eq!(*r, Running::roll(-75.0, 75.0));
+    assert_eq!(*r, Running::new("t", Dim::ANGLE, -75.0, 75.0));
     let interval = gcs_core::solid::roll::interval(&e.sketch, removal).unwrap();
     assert_eq!(interval.map(f64::to_bits),
                [(-75f64).to_radians(), 75f64.to_radians()].map(f64::to_bits));
@@ -190,4 +193,132 @@ fn the_rolls_a_reading_states_are_intervals_of_the_shared_roll() {
     let sweep = e.sketch.solid_claims[0].over().expect("a swept claim");
     assert_eq!(*sweep.over(), Running::new("reach", Dim::LENGTH, 0.1, 0.9));
     assert_eq!((sweep.name(), sweep.from(), sweep.to()), ("reach", 0.1, 0.9));
+}
+
+/// A screw about a line in space and a point at rest, for the readings at an instant (#391 S2).
+const SCREW: &str = "\
+unit mm
+use std
+a0 := point hint((1, 2, 3))
+a1 := point hint((4, 3, 11))
+fix((1, 2, 3)) a0
+fix((4, 3, 11)) a1
+ax := line(a0, a1)
+screw := frame
+std.Turn(screw, about: ax, ratio: 1.5, advance: 7mm)
+x := point hint((9, -4, 6))
+fix((9, -4, 6)) x
+";
+
+/// `src` elaborated and solved, or the test fails saying why.
+fn solved(src: &str) -> Elaborated {
+    let mut e = built(src);
+    let r = gcs_core::solve::solve(&mut e.sketch, Default::default());
+    assert!(r.success, "{r:?}");
+    e
+}
+
+/// **`x at τ` makes what `x` is** (#391 S2): a point read at an instant is a point of its own held
+/// where the frame carries `x` — the place `X coincident x at τ` holds a point drawn elsewhere at,
+/// one `CarriedPoint` each at a stated roll — a solid read so is a solid placed at that roll, and
+/// a frame read so the frame carried.
+#[test]
+fn a_point_read_at_an_instant_is_held_where_its_frame_carries_it() {
+    let e = solved(&format!("{SCREW}X := x at(under: screw) 40deg\nP := point\n\
+        P coincident x at(under: screw) 40deg\nn := std.front at(under: screw) 40deg\n"));
+    let at = |n: &str| e.sketch.world_point(e.map.ent_named(n).unwrap().i());
+    let (x, p) = (at("X"), at("P"));
+    assert!((0..3).all(|k| (x[k] - p[k]).abs() < 1e-9), "{x:?} {p:?}");
+    assert!((0..3).any(|k| (x[k] - at("x")[k]).abs() > 1.0), "carried, not left at rest");
+    let carried = e.sketch.constraints.iter().filter(|c| c.kind.reads_motion());
+    assert!(carried.clone().all(|c| c.stated_roll()));
+    // the point and the frame's three are each held so: one row group apiece, and no other way
+    // of writing the reading out survives it
+    assert_eq!(carried.count(), 5);
+    assert_eq!(e.map.ent_named("X").unwrap().kind, EntKind::Point);
+    assert_eq!(e.map.ent_named("n").unwrap().kind, EntKind::Frame);
+    assert!(e.sketch.solids.is_empty());
+
+    // a solid read at an instant is placed there
+    let e = built(&SWEPT_TORUS.replace(
+        "construction removal := sweep(tool over t in (-75deg, 75deg), under: spin, seen_from: \
+         observer)",
+        "construction removal := tool at(under: spin, seen_from: observer) 30deg"));
+    let removal = e.map.ent_named("removal").expect("the placed tool");
+    assert_eq!(removal.kind, EntKind::Solid);
+    let SolidDef::Placed { at, .. } = &e.sketch.solids[removal.i()].def else {
+        panic!("not placed: {:?}", e.sketch.solids[removal.i()].def);
+    };
+    assert_eq!(at.value.to_bits(), 30f64.to_radians().to_bits());
+}
+
+/// **A reading over the roll reads a declared parameter** (#391 S2): `over t` takes the interval
+/// `param t: Angle over (a, b)` declares, the very `Running` `over t in (a, b)` states — and is
+/// printed as written; a parameter of another type, or a name nothing declares, is E103.
+#[test]
+fn a_reading_over_a_declared_parameter_reads_its_interval() {
+    let inline = "construction removal := sweep(tool over t in (-75deg, 75deg), under: spin, \
+                  seen_from: observer)";
+    assert!(SWEPT_TORUS.contains(inline));
+    let declared = SWEPT_TORUS.replace(inline, "param t: Angle over (-75deg, 75deg)\n\
+        construction removal := sweep(tool over t, under: spin, seen_from: observer)");
+    let roll = |e: &Elaborated| {
+        let i = e.map.ent_named("removal").unwrap().i();
+        let SolidDef::Swept { roll: Roll::Stated(r), .. } = &e.sketch.solids[i].def else {
+            panic!("not a stated sweep: {:?}", e.sketch.solids[i].def);
+        };
+        r.clone()
+    };
+    let (a, b) = (built(SWEPT_TORUS), built(&declared));
+    assert_eq!(roll(&a), roll(&b));
+    assert_eq!(roll(&b), b.sketch.parameters["t"]);
+
+    // an envelope in space over a declared parameter, the same — and printed as written, the
+    // joint written out as `std.Turn` writes it, since the flat form prints no instance
+    let env = ENVELOPE.replace("envelope(wall over t in (-20deg, 20deg), under: roll)",
+                               "envelope(wall over r, under: roll)");
+    let flat = format!("param r: Angle over (-20deg, 20deg)\n{}", env.replace(
+        "std.Turn(roll,about: spin_axis,ratio: 1)",
+        "spin_axis coincident roll.axis\nfix(ratio == 1, advance == 0mm) roll"));
+    let e = built(&flat);
+    assert_eq!(e.sketch.envelopes[0].roll, Running::new("r", Dim::ANGLE, -20.0, 20.0));
+    let (mut prog, errs) = parse(&flat);
+    assert!(errs.is_empty(), "{errs:?}");
+    let printed = gcs_core::syntax::render_flat(&mut prog).unwrap().to_string();
+    assert!(printed.contains("generated := envelope(surface: wall over r, motion: roll)"),
+            "{printed}");
+    assert_eq!(built(&printed).sketch.envelopes[0].roll, e.sketch.envelopes[0].roll);
+
+    let refused = |src: &str, want: &str| {
+        let (_, said) = read(src);
+        assert!(said.iter().any(|(c, m)| c == "E103" && m.contains(want)), "{said:?}");
+    };
+    refused(&format!("param r: Length over (0mm, 1mm)\n{env}"), "`r` is no angle");
+    refused(&env, "`r` names no parameter the document declares");
+}
+
+/// **The spellings `at` and `over` replace are refused, each naming its replacement** (#391 S2,
+/// decision 7): a reading at a roll in a `solid`'s, a `carried`'s or a `coincident`'s brackets, an
+/// envelope's or a meshing's `from:`/`to:`, a face family written `solid(…)` and a curve written
+/// bare.
+#[test]
+fn the_retired_reading_spellings_name_their_replacements() {
+    let syntax = |src: &str, want: &str| {
+        let (_, errs) = parse(&format!("{SCREW}{src}\n"));
+        assert!(errs.iter().any(|e| e.message.contains(want)), "{src}: {errs:?}");
+    };
+    syntax("P := point\nP coincident(under: screw, at: 40deg) x", "`X coincident x at τ`");
+    syntax("n := std.front carried(under: screw, at: 40deg)", "`n := base at τ`");
+    syntax("s := solid(tool, under: screw, at: 40deg)", "`s := tool at θ`");
+    syntax("s := solid(tool, under: screw, from: 0deg, to: 40deg)",
+           "`sweep(tool over t in (a, b), under: m, seen_from: g)`");
+    syntax("s := solid(tool, under: screw, through: body)", "`sweep(tool, through: body");
+    syntax("e := envelope(tool, under: screw, from: 0deg, to: 40deg)",
+           "`envelope(tool over t in (a, b), …)`");
+    syntax("m := meshing(f1, f2, under: screw, from: 0deg, to: 40deg)",
+           "`meshing(f1, f2 over t in (a, b), …)`");
+    syntax("d := solid(Station(g).f over s in (0, 1))", "`sweep(Component(…).face over s in");
+    syntax("k := leg.toe over u in (0, 360)", "`trace(leg.toe over theta in (a, b))`");
+    // and the frames of an instant stand on the `at`, not on the `coincident`
+    syntax("P := point\nP coincident(under: screw) x at 40deg", "names its frames on the `at`");
 }

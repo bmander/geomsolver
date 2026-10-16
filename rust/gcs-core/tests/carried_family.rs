@@ -1,6 +1,6 @@
 //! **A face family its statements say a motion carries is that motion's sweep** (#366 S3): every
 //! row of the station reading its running number a point carried by one motion to a roll affine
-//! in it (`std.Helix`, `std.OnHelix`, a frame `carried(under: m, at: a·s + b)`), so its walls are
+//! in it (`std.Helix`, `std.OnHelix`, a frame `at(under: m) a·s + b`), so its walls are
 //! the section's first rim carried by the motion's own screw — the carry the statement gives, not
 //! one read off the stations.  The two springs meet at one export: `lofts/spring.sv`'s wire drawn
 //! square to its helix and `swept_spring.sv`'s ball swept along it are one tube, carried by one

@@ -24,10 +24,8 @@ fn eased(profile: &str, lengthwise: &str) -> String {
 L := point hint((10, 48, 10))
 fix((10mm, 48mm, 10mm)) L
 lengthwise := line(M, L)
-pinion_flank := envelope(flank, under: gear_turn, seen_from: pinion_turn, from: -40deg,
-                         to: 40deg)
-contact := meshing(pinion_flank, flank, under: gear_turn, seen_from: pinion_turn, from: -20deg,
-                   to: 20deg, ease: M,
+pinion_flank := envelope(flank over t in (-40deg, 40deg), under: gear_turn, seen_from: pinion_turn)
+contact := meshing(pinion_flank, flank over t in (-20deg, 20deg), under: gear_turn, seen_from: pinion_turn, ease: M,
                    along: lengthwise, profile: {profile}, lengthwise: {lengthwise})
 Q := point hint((0, 48, 0))
 Q coincident(t == 0deg) contact
@@ -145,8 +143,8 @@ fn lags_stated_at_two_phases_solve_the_ease() {
 fn an_ease_prints_back_and_refuses_what_it_cannot_read() {
     // `tests/meshing.rs`'s revolution's side meshed with its envelope, the envelope eased about a
     // point of the gear's axis
-    let src = crate::meshing::SIDE_MESHING.replace("from: -20deg, to: 20deg)",
-        "from: -20deg, to: 20deg, ease: g1, along: gear_ax, profile: 0.002 / 1mm, \
+    let src = crate::meshing::SIDE_MESHING.replace("20deg), under: spin, seen_from: gear_turn)",
+        "20deg), under: spin, seen_from: gear_turn, ease: g1, along: gear_ax, profile: 0.002 / 1mm, \
          lengthwise: -0.0005 / 1mm)");
     let (mut prog, errs) = crate::common::parse(&src);
     assert!(errs.is_empty(), "{errs:?}");
@@ -154,7 +152,7 @@ fn an_ease_prints_back_and_refuses_what_it_cannot_read() {
     assert!(first.ok(), "{:?}", first.errors().map(|d| &d.message).collect::<Vec<_>>());
     let ease = |e: &gcs_core::program::Elaborated| e.sketch.meshings[0].ease.clone().unwrap();
     let printed = gcs_core::syntax::render_flat(&mut prog).unwrap().to_string();
-    let said = "to: 20deg, ease: g1, along: gear_ax, profile: 0.002 / 1mm, \
+    let said = "motion: spin, ease: g1, along: gear_ax, profile: 0.002 / 1mm, \
                 lengthwise: -0.0005 / 1mm";
     assert!(printed.contains(said), "{printed}");
     let again = build(&printed);
@@ -180,8 +178,8 @@ fn an_ease_prints_back_and_refuses_what_it_cannot_read() {
     refused(&src.replace("profile: 0.002 / 1mm", "profile: 2mm"), "profile curvature");
     // the bearing's bounds, the one place the document writes them
     let traced = include_str!("../../examples/spiral_bevel/phillips_pure.sv").replace(
-        "from: -15deg, to: 15deg)",
-        "from: -15deg, to: 15deg, ease: P, along: L, profile: 0.001 / 1mm, \
+        "seen_from: pinion_turn)",
+        "seen_from: pinion_turn, ease: P, along: L, profile: 0.001 / 1mm, \
          lengthwise: 0.001 / 1mm)");
     refused(&traced, "a surface traced in space, which is not eased");
 }

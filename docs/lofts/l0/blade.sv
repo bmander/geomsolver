@@ -41,4 +41,4 @@ in std.top {
   port_rail := line(l0, l1)
   starboard_rail := line(r0, r1)
 }
-blade := solid(Blade(spine, std.z, std.top, port_rail, starboard_rail, t: 3mm).f over s in (0, 1))
+blade := sweep(Blade(spine, std.z, std.top, port_rail, starboard_rail, t: 3mm).f over s in (0, 1))

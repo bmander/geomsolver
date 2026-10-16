@@ -218,7 +218,7 @@ two := Part()
     for src in [
         "unit mm\nuse std\ndims := {width: 20mm}\ncomponent Bad(d: group) { a := point\nb := point\na distance(d.width + 1deg) b }\nin std.front {\nb := Bad(dims)\n}\n",
         "unit mm\nuse std\ndims := {width: -8mm}\nin std.front {\na := point\nb := point\nax := line(a,b)\n}\ncomponent Bad(ax: line,d: group) { p := point\np distance(d.width) ax }\nin std.front {\nb := Bad(ax,dims)\n}\n",
-        "use std\ncomponent Bad(u: Angle) { p := point(x: std.origin.x + cos(u), y: sin(u)) }\nc := Bad().p over u in (0,90)",
+        "use std\ncomponent Bad(u: Angle) { p := point(x: std.origin.x + cos(u), y: sin(u)) }\nc := trace(Bad().p over u in (0,90))",
     ] { assert!(!build(src).ok(), "accepted invalid component: {src}"); }
 }
 

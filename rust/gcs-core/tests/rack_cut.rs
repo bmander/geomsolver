@@ -54,7 +54,7 @@ turn := frame
 std.Spin(turn, about: o, on: std.front, ratio: 1)
 rack := frame
 std.Slide(rack, along: slide, advance: 2 * pi * 20mm)
-construction space := solid(rack_tooth, under: rack, seen_from: turn, from: -60deg, to: 60deg)
+construction space := sweep(rack_tooth over t in (-60deg, 60deg), under: rack, seen_from: turn)
 gear := solid(blank)
 space cut gear
 ";
@@ -262,7 +262,7 @@ radius(6mm) bore_c
 construction bore := solid(face(bore_c), from: -8mm, to: 2mm)
 bore cut gear
 repeat {teeth} as i {{
-  construction indexed := solid(space, under: turn, at: i * 360deg / {teeth})
+  construction indexed := space at(under: turn) i * 360deg / {teeth}
   indexed cut gear
 }}
 }}
