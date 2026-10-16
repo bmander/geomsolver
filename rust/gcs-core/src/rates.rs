@@ -68,8 +68,8 @@ const RESTARTS: usize = 8;
 /* -- the body ------------------------------------------------------------------------------- */
 
 /// One row of a body: what it states — a static kernel or, in space, a point a motion carries
-/// (#377), or in a marched body's `initially` a point on a curve the drawing has (#376) — the
-/// variable-table slot each column reads, and its constants.
+/// (#377), a placed number (#378), or in a marched body's `initially` a point on a curve the
+/// drawing has (#376) — the variable-table slot each column reads, and its constants.
 #[derive(Clone, Debug)]
 pub struct Row<'a> {
     pub kind: RowKind,
@@ -99,6 +99,11 @@ impl Row<'_> {
             RowKind::Carried => {
                 let steps = held::read_steps(self.consts).ok_or("rate row shape mismatch")?;
                 if steps.is_empty() || self.cols.len() != 7 + held::steps_width(&steps) {
+                    return Err("rate row shape mismatch".into());
+                }
+            }
+            RowKind::Number => {
+                if !crate::traced::number_shape(self.cols.len(), self.consts) {
                     return Err("rate row shape mismatch".into());
                 }
             }

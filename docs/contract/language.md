@@ -158,9 +158,15 @@ first (marched) in a relation — `rate(x over d) perpendicular rate(x over u)` 
 a relation reading only rates along the second is algebraic at each step, lowered with the body's
 other rows (`program::traced::Lowering::rate_relation`, `rated` keyed by point and formal);
 curves.md's "The method of lines" says what it may read, and its "Cauchy data on a drawn curve"
-(#376, [0.132]) what `initially` may read of a curve the body is written over.  A rate to the right of its word, `nl
+(#376, [0.133]) what `initially` may read of a curve the body is written over.  A rate to the right of its word, `nl
 perpendicular rate(p over u)`, is a relation, not a chain's link (`parser::chains::chain_starts`
 looks past the word for `rate(`).
+**A dimension that reads the body's own points** (§6.5 [0.132], #378) is written as any other:
+the symbolic expansion keeps a dotted name in a trace as text (`note_dim_reads` sets nothing aside
+there), and a body traced in space resolves `p.x` against the points it declares where it lowers
+the dimension (`program::traced::Lowering::dimension`); curves.md's "A number the body places"
+says what it becomes.  A trace in a plane compiles its dimensions over the formals and the geometry
+alone, so there the name is still E103 ("not something this curve can read").
 
 **A component may instantiate itself** (§8, 0.75): a call back into one still being expanded
 is walked like any other (`Walk::instantiating` keeps each with the numbers it was given), each

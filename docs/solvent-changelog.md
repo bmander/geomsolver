@@ -4,16 +4,25 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
-**[0.132] Cauchy data on a drawn curve.** A body marched over two formals (§6.5, 0.121) may start
+**[0.133] Cauchy data on a drawn curve.** A body marched over two formals (§6.5, 0.121) may start
 its moved point on a curve the drawing has: `initially { p coincident(t == u) k }`, `k` a `curve`
 formal given a spline, a curve drawn in a held plane (a formula, a trace, an envelope) or a curve
 traced in space, `t` pinned to an expression over the formals. The body's columns are the curve's,
 so the march's sensitivities run through them. A cam's pitch curve is marched from its profile
 (`rates/pitch.sv`), its undercut the fold; the Wankel bore is read off the apex's envelope
 (`rates/bore.sv`). A body traced in space is written over curves now as well as points, lines and
-motions, and a `curve` formal of one takes a spline or a curve traced in space. Through 0.131 the
+motions, and a `curve` formal of one takes a spline or a curve traced in space. Through 0.132 the
 Cauchy data were relations and expressions over the formals and points a motion carries (0.131),
 and a curve given to a body traced in space was E103. (Issue #376.)
+
+**[0.132] A dimension that reads the body's own points.** In a body traced in space a dimension
+may read a coordinate of a point the body declares (`p.x`), not only the formals, the numbers it
+was given and the geometry it is written over (§6.5): a number the body places, held to the
+expression by an equation of its own, so a rate row's speed may read where the point is — a front
+moving at `1 / n` with `n` read at its own point, the eikonal equation in a graded medium
+(`rates/fisheye_fronts.sv`, Maxwell's fish-eye). Over two formals it stands in a rate row or a
+relation placing a point the rates do not move, never in `initially` (E103). Through 0.131 such a
+text was E103 ("`p.x` is not something this curve can read"). (Issue #378.)
 
 **[0.131] A point a motion carries, in a body that states a rate.** `X coincident(under: m, t ==
 τ) x` (§9.3) is a relation without a rate in a body that states one (§6.5), over one formal or

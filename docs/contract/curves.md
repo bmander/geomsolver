@@ -321,6 +321,42 @@ the pieces and on twice them.  A fold is refused *early*, by the march's own err
 pieces do not always bring it nearer: where a front closes on a point or a concave waist the place
 is not monotone in the pieces (the antipode 78.06 / 78.25 / 78.17 on 16 / 32 / 64, the waist
 14.52 / 13.72 / 13.92), so these gates bound it from below rather than hold it to converge.
+
+**A number the body places (#378, [0.132], `traced::RowKind::Number`):** a dimension of a body
+traced in space that reads a coordinate of a point the body declares (`p.x`) is not a tape of `w`
+— `w` is read over the outer variables alone, everywhere — but **one more coordinate of `q`**, held
+to the expression by a row of the body's algebraic rows: `v − f(x…)`, its columns `[v, x…]` (`x`
+the variable-table slots the text reads, outer or `q`, at most `NUMBER_COLS − 1`), its constants
+`f`'s tape compiled over those names (`program::traced::Lowering::dimension`; the row the
+dimension stands in reads `v` through its free twin where it would read `w`).  One text is one
+number.  Its seed is the text over the seeds of what it reads (`expr::Ast::map_vars`).  Numbers are
+lowered as relations are, their slots placeholders past the table (`NUMBER_BASE`), and put past
+the declared coordinates once the body is lowered (`settle_numbers`, every `w` slot moving on by
+as many), so `owner` names each by its text.  Nothing else learns of it: it is an unknown of the
+body like any coordinate, so **every derivative the integrators read carries it** — a plain body's
+Newton and its Taylor series (`number_jets`, the tape over jets exact to the third order, as `w`'s
+is), over one formal a coordinate of the state integrated through its row differentiated (one
+more row of `M`, so a speed `x/L` along a line is `x₀e^{s/L}`), over two formals a **placed**
+coordinate (`A`: no rate row reads its rate), solved at every node with the rest of `A` and
+differentiated by the implicit function theorem in the variational equations.  `rates::Row`
+carries it as its `RowKind` (#377, below): `RowKind::at_widths` its kernel at the row's widths,
+`RowKind::jets` its row over jets, `Row::checked` its shape (`number_shape`), judged once as the
+body is read.  Over two formals `initially` cannot read one (it is the Cauchy data `A` is placed
+after) and a relation reading one must place another placed point or be a rate row
+(`Lowering::marched`: a row over moved points alone with a number would be placed and
+differentiated at once), each **E103**.
+`tests/placed_numbers.rs` is the gate: a speed along a line growing as its distance (the
+exponential, a held point at `L ln 3`, its contact's Jacobian), a saddle curve with no rate (point,
+tangent and a tangent line exact), the fish-eye's front holding a point at the closed form's
+optical length with its contact's Jacobian through the variational equations, and the two
+refusals.  **The eikonal in a graded medium** (`rates/fisheye_fronts.sv`, `tests/rate_examples.rs`):
+a front from a point source in Maxwell's fish-eye (`n = 2/(1 + r²/R²)`, R 50) moving at `1/n` along
+its normal, from the closed form's circle at `s = 2` — every front the circle `cos(s/R)(x² + z²) +
+2Rx + R²cos(s/R) = 0` (the lens's sphere's geodesic circles, projected) to 1e-7 through `s = 150`,
+past the line `x = 0` where the circle turns inside out; refused at 155.2, short of the source's
+conjugate at `πR` = 157.08 where the fronts refocus; and `fisheye.sv`'s free-curve ray crossing
+every front square to it (1e-6), at the optical length the closed form gives its point.
+
 **A point a motion carries, in a body that states a rate (#377, [0.131]):** `X coincident(under:
 m, t == τ) x` is a row like any of a rate body's, over one formal or two: `program::traced`'s
 `Lowering::carried` pushes it where its statement is (the body's rows or `initially`'s), and
@@ -342,7 +378,7 @@ and the motion's centres against central differences; `tests/traced_rates.rs` a 
 running up an axis carried about it in the body's rows and turned 30° in `initially`, against its
 closed form, its contact's Jacobian against differences.
 
-**Cauchy data on a drawn curve** (#376, [0.132], `program::traced::Drawn`, `Lowering::on_drawn`):
+**Cauchy data on a drawn curve** (#376, [0.133], `program::traced::Drawn`, `Lowering::on_drawn`):
 a marched body's `initially` may hold a moved point on a curve the drawing has, `p coincident(t
 == u) k`, `k` an entity formal — `curve` takes a spline, a curve of a plane (`EntKind::Curve`: a
 formula, a trace, an envelope, a free curve) or a curve traced in space; `spline` a spline alone

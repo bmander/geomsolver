@@ -878,10 +878,19 @@ are found by its far end landing on `b` (`b coincident(t == 150mm) chain`). A ma
 its rates cannot be had — `solventc` says how far each curve is integrated, or where it is refused.
 The [rates](../rust/examples/rates/) series shows each idiom in a document of its own.
 
+**A speed that reads where the point is** (0.132). In a body traced in space a dimension may read
+a coordinate of a point the body declares (`p.x`, `p.y`, `p.z`) as well as the formals, the numbers
+and the geometry it is written over: `rate(p over s) distance((1 + ((p.x - c.x)^2 + (p.z -
+c.z)^2) / R^2) / 2, along: nl)` moves a front at `1/n`, the index `n` read at `p` — the eikonal in a
+graded medium ([`fisheye_fronts.sv`](../rust/examples/rates/fisheye_fronts.sv)). The text is a
+number the body places, solved and integrated with its points. Over two formals it stands in a rate
+row or a relation placing a point the rates do not move, and never in `initially`. A trace in a
+plane still reads only its formals and its geometry.
+
 **Over two formals [0.121]** a body in space is a surface **marched** along the first and sampled
 along the second (the method of lines): `front := Front(c, z1, k).p over (d in (0mm, 3mm), u in
 (0deg, 180deg))`. `initially { … }` is the Cauchy data where `d` starts, for every `u`; it may
-read a curve the drawing has **[0.132]** — `k: curve` given a spline, a curve of a held plane (a
+read a curve the drawing has **[0.133]** — `k: curve` given a spline, a curve of a held plane (a
 formula, a trace, an envelope) or a curve traced in space:
 
 ```
