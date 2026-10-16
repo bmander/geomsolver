@@ -557,6 +557,9 @@ impl<'a> Walk<'a> {
         if let Some(e) = reads.iter().find_map(reach) {
             return Err(e);
         }
+        if let Some(name) = reads.iter().find(|n| self.runs(n, vals)) {
+            return Err((Code::E103, runs_over(name)));
+        }
         if let Some(name) = reads.iter().find(|n| self.undeclared(n, vals, scope)) {
             return Err((Code::E101, undefined(name)));
         }
@@ -581,6 +584,12 @@ impl<'a> Walk<'a> {
             None => &self.held.texts,
         };
         scope.prefixes.iter().find_map(|p| texts.get(&format!("{p}{name}")).cloned())
+    }
+
+    /// Whether a bare name is a parameter axis the document declares (#391 S1) and nothing in
+    /// scope gives a number — read as a number, which it is not.
+    fn runs(&self, name: &str, vals: &BTreeMap<String, Aff>) -> bool {
+        self.parameters.contains_key(name) && !vals.contains_key(name)
     }
 
     /// Whether a bare name is one nothing in scope declares — no number or unknown of the scope,
@@ -611,7 +620,11 @@ impl<'a> Walk<'a> {
                 *text = t;
             }
             Err((code, e)) => {
-                if code == Code::E101 {
+                // a parameter axis read as a number is refused as a name nothing declares is,
+                // so it never becomes an unknown of its own making
+                let axis = || expr::parse_in(text, self.units)
+                    .is_ok_and(|p| p.body.deps().iter().any(|n| self.runs(n, vals)));
+                if code == Code::E101 || axis() {
                     self.checks.refused.push(span);
                 }
                 self.err(code, span, format!("`{text}`: {e}"))
@@ -778,6 +791,14 @@ impl<'a> Walk<'a> {
         if !self.work_out(&pending, vals, scope, &prefix) {
             return;
         }
+        // a parameter axis's interval may read any number the body defines (#391 S1)
+        for st in body {
+            if let StmtKind::Param(pd) = &st.kind {
+                if let Some(over) = pd.over() {
+                    self.parameter_axis(pd, over, vals, scope);
+                }
+            }
+        }
         for (name, reference) in references {
             if vals.contains_key(&name) { continue; }
             let abs = format!("{prefix}{name}");
@@ -843,6 +864,10 @@ impl<'a> Walk<'a> {
             let StmtKind::Param(pd) = &st.kind else { continue };
             if !here.insert(pd.name.text.clone()) {
                 self.err(Code::E001, pd.name.span, format!("`{}` is declared twice", pd.name.text));
+                continue;
+            }
+            // a parameter axis is no definition to work out: its interval is read once they are
+            if pd.over().is_some() {
                 continue;
             }
             let ty = pd.input.as_ref().and_then(|i| i.ty);
@@ -982,6 +1007,56 @@ impl<'a> Walk<'a> {
         true
     }
 
+    /// **A parameter axis** (#391 S1, `param t: Angle over (a, b)`): its interval worked out
+    /// over the numbers in scope — two numbers of the declared type, the first below the second
+    /// — and recorded once (`Expansion::parameters`).  Of the document, as an unknown is.
+    fn parameter_axis(
+        &mut self,
+        pd: &crate::syntax::ParamDecl,
+        over: &crate::syntax::Over,
+        vals: &BTreeMap<String, Aff>,
+        scope: &Scope,
+    ) {
+        let name = &pd.name.text;
+        if scope.module.is_some() || !scope.prefix().is_empty() {
+            let m = format!("`{name}` runs over an interval: a parameter belongs to the document \
+                             that draws it");
+            self.err(Code::E040, pd.name.span, m);
+            return;
+        }
+        // the parser said what is wrong with a type that is no number
+        let Some(ty @ (Ty::Length | Ty::Angle | Ty::Scalar)) = pd.input.as_ref().and_then(|i| i.ty)
+        else {
+            return;
+        };
+        let end = |(text, span): &(String, Span)| -> Result<f64, (Span, String)> {
+            let said = |e: String| (*span, format!("`{}`: {e}", text.trim()));
+            let a = value_aff(text, vals, self.units).and_then(|a| typed(a, ty, name))
+                .map_err(said)?;
+            match a.number() {
+                Some(v) if v.is_finite() => Ok(v),
+                Some(_) => Err(said("an end of a parameter's interval is finite".into())),
+                None => Err(said("an end of a parameter's interval is a number, and this reads \
+                                  an unknown of the drawing".into())),
+            }
+        };
+        let (from, to) = match (end(&over.from), end(&over.to)) {
+            (Ok(a), Ok(b)) => (a, b),
+            (Err((span, m)), _) | (_, Err((span, m))) => {
+                self.err(Code::E103, span, m);
+                return;
+            }
+        };
+        if from >= to {
+            let m = format!("`{name}` runs over an increasing interval: from `{}` to `{}`",
+                over.from.0.trim(), over.to.0.trim());
+            self.err(Code::E103, over.span, m);
+            return;
+        }
+        self.parameters.insert(name.clone(), crate::model::Running::new(name.clone(), ty.dim(),
+                                                                         from, to));
+    }
+
     /// `param beta: Angle hint(30deg)` — an input nothing binds: a free value in `vals`, named
     /// as written (the document's root has no prefix), and an entry in `unknowns`.
     fn unknown(
@@ -1038,6 +1113,12 @@ impl<'a> Walk<'a> {
         a.dim.require(ty.dim(), "a seed")?;
         a.number().ok_or_else(|| "a seed is a number".to_string())
     }
+}
+
+/// E103's words for a parameter axis read as a number (#391 S1).
+pub(super) fn runs_over(name: &str) -> String {
+    format!("`{name}` runs over an interval (`param {name}: … over (a, b)`), and is no number a \
+             dimension can read")
 }
 
 /// E101's words for a name nothing declares.

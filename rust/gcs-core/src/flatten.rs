@@ -246,6 +246,9 @@ pub struct Expansion {
     /// beta: Angle`) and a formal a call left unbound with a seed (`Wing(f, beta: hint(15deg))`)
     /// — what each is and where its solve begins (`model::Declared`).
     pub unknowns: BTreeMap<String, crate::model::Declared>,
+    /// Every parameter axis the document declared (`param t: Angle over (a, b)`, #391 S1), by
+    /// name: a number that runs over its interval, read by nothing yet.
+    pub parameters: BTreeMap<String, crate::model::Running>,
     /// Every `ring` expanded, its centre resolved — what the elaborator turns copies about.
     pub rings: Vec<RingInfo>,
     /// Every set drawn as an element, for the elaborator to judge (`lowering`, #105).
@@ -426,6 +429,8 @@ struct Walk<'a> {
     aside: Aside,
     /// The unknowns declared so far — see `Expansion::unknowns`.
     unknowns: BTreeMap<String, crate::model::Declared>,
+    /// The parameter axes declared so far — see `Expansion::parameters`.
+    parameters: BTreeMap<String, crate::model::Running>,
     /// The components being expanded, outermost first, each with the numbers it was given: a
     /// call to one already here is a component instantiating itself, walked like any other call
     /// (a `when` ends it, §12.9) unless it is given the numbers it was given there, which make
@@ -658,6 +663,7 @@ impl<'a> Walk<'a> {
             checks: Checks::default(),
             aside: Aside::default(),
             unknowns: BTreeMap::new(),
+            parameters: BTreeMap::new(),
             instantiating: Vec::new(),
             rings: Rings::default(),
             words: WordState::default(),
@@ -738,6 +744,7 @@ impl<'a> Walk<'a> {
             instances: self.instances,
             aliases,
             unknowns: self.unknowns,
+            parameters: self.parameters,
             rings: self.rings.infos,
             lowered,
             twins: self.twins,

@@ -133,6 +133,8 @@ pub fn to_program(sk: &Sketch) -> Program {
 
 /// `param beta: Angle hint(30)` for each unknown a dimension reads (`Sketch::free_vars`) and
 /// each place contacts share (`Sketch::shared`): an unknown is declared, never implied (§6.3).
+/// Then `param t: Angle over (0, 360)` for each parameter axis the sketch was declared with
+/// (`Sketch::parameters`, #391 S1).
 fn unknowns(sk: &Sketch, names: &BTreeMap<String, String>) -> Vec<StmtKind> {
     let free = sk.free_vars.iter().filter(|(_, &p)| !sk.params[p as usize].fixed).map(|(n, &p)| {
         (n, p, sk.free_dimensions.get(n).map_or(Ty::Scalar, |&d| Ty::of_dim(d)))
@@ -147,9 +149,24 @@ fn unknowns(sk: &Sketch, names: &BTreeMap<String, String>) -> Vec<StmtKind> {
                 input: Some(Input {
                     ty: Some(ty),
                     seed: Some((num(sk.params[p as usize].value), Span::default())),
+                    over: None,
                 }),
             })
         })
+        .chain(sk.parameters.values().map(|r| StmtKind::Param(ParamDecl {
+            name: Name::new(r.name.clone()),
+            text: String::new(),
+            span: Span::default(),
+            input: Some(Input {
+                ty: Some(Ty::of_dim(r.dim)),
+                seed: None,
+                over: Some(crate::syntax::Over {
+                    from: (num(r.from), Span::default()),
+                    to: (num(r.to), Span::default()),
+                    span: Span::default(),
+                }),
+            }),
+        })))
         .collect()
 }
 
@@ -313,7 +330,7 @@ fn lift_curve(sk: &Sketch, i: usize) -> crate::syntax::CurveSpec {
             Ref::new(def.port.clone()),
         ),
         swept: Name::new(def.param.clone()),
-        domain: (crate::syntax::num(cv.domain.0), crate::syntax::num(cv.domain.1)),
+        domain: (crate::syntax::num(cv.over.from), crate::syntax::num(cv.over.to)),
         second: None,
         of: None,
     }

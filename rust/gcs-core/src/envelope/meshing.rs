@@ -986,7 +986,7 @@ impl Meshing {
     /// Meshing `index` as the drawing stands, anchored where the first point held to it is.
     pub fn named(sk: &Sketch, index: usize) -> Result<Meshing, String> {
         let p = Parts::of(sk, index)?;
-        let mut m = Meshing::new(p.consts(sk, 0), p.values(sk), sk.meshings[index].roll)
+        let mut m = Meshing::new(p.consts(sk, 0), p.values(sk), sk.meshings[index].roll.radians())
             .ok_or("the meshing's parts are not a meshing")?;
         let mut points = sk.constraints.iter().filter(|c| c.kind == CKind::PointOnMeshing);
         m.anchor = points.find_map(|c| {

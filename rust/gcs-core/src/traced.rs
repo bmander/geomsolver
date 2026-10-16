@@ -1546,7 +1546,7 @@ pub fn lines_reached(sk: &Sketch, i: usize, pieces: usize, to: f64)
 /// Where point `p` (in space) sits nearest on traced body `i`, as the drawing stands.
 pub fn place_of(sk: &Sketch, i: usize, p: [f64; 3]) -> Option<[f64; 2]> {
     let t = sk.traced.get(i)?;
-    nearest(&consts_of(t), &theta(sk, t), p, t.domain)
+    nearest(&consts_of(t), &theta(sk, t), p, t.domain())
 }
 
 /* -- a traced surface as a meshing's flank --------------------------------------------------- */
@@ -1557,7 +1557,7 @@ pub const FLANK: f64 = 100.0;
 
 /// A meshing flank's constants over traced surface `t`: `[0, FLANK, domain×4, consts…]`.
 pub fn flank_consts(t: &TracedE) -> Vec<f64> {
-    let d = t.domain;
+    let d = t.domain();
     [vec![0.0, FLANK, d[0][0], d[0][1], d[1][0], d[1][1]], consts_of(t)].concat()
 }
 

@@ -313,7 +313,7 @@ const TRACED_DEPTH: u32 = 8;
 pub fn traced_polyline(sk: &Sketch, i: usize, unit: f64) -> Vec<[f64; 3]> {
     use crate::space::{add, distance, scale};
     let Some(t) = sk.traced.get(i).filter(|t| t.formals() == 1) else { return Vec::new() };
-    let [lo, hi] = t.domain[0];
+    let [lo, hi] = t.domain()[0];
     let at = |u: f64| crate::traced::reading(sk, i, [u, 0.0], crate::traced::Need::Point)
         .map(|r| r.position);
     let tol = crate::curve::flatness(unit);

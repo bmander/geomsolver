@@ -256,10 +256,7 @@ fn sweep_of_claim(
     };
     let (from, to) = (num(&c.from, "from")?, num(&c.to, "to")?);
     Some(crate::model::Sweep {
-        name,
-        from,
-        to,
-        dimension,
+        over: crate::model::Running::new(name, dimension, from, to),
         motion: motion.map(|e| e.idx),
     })
 }

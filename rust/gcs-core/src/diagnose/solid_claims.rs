@@ -207,10 +207,10 @@ fn poses_of(sk: &Sketch, c: &SolidClaim) -> Poses {
 fn sampled_pose(sk: &Sketch, c: &SolidClaim, sw: &Sweep, t: f64) -> SolidPose {
     let evaluate = || -> Result<clear::GeometricEvidence, String> {
         let mut scratch = sk.clone();
-        if scratch.free_dimensions.get(&sw.name) != Some(&sw.dimension) {
+        if scratch.free_dimensions.get(&sw.over.name) != Some(&sw.over.dim) {
             return Err("sweep parameter dimension changed since validation".into());
         }
-        let p = *scratch.free_vars.get(&sw.name).ok_or("sweep parameter no longer exists")?;
+        let p = *scratch.free_vars.get(sw.name()).ok_or("sweep parameter no longer exists")?;
         let p = scratch.params.get_mut(p as usize).ok_or("invalid sweep parameter reference")?;
         p.value = t;
         p.fixed = true;

@@ -985,17 +985,16 @@ pub fn meshing_text(sk: &Sketch, i: usize) -> String {
 /// flank seen from its member.
 pub fn traced_text(sk: &Sketch, i: usize) -> String {
     let t = &sk.traced[i];
+    let domain = t.domain();
     // a body that states a rate is integrated from its home, and says how far (#339 D2)
     if let Some(reach) = crate::traced::rate_reach(sk, i) {
-        let [lo, hi] = t.domain[0];
-        let said = reach_text(reach, t.home[0], (lo, hi));
+        let said = reach_text(reach, t.home[0], (domain[0][0], domain[0][1]));
         return format!("{}: a curve traced in space, {said}", t.name);
     }
     // over two formals, marched along the first by the method of lines (#339 D4)
     if let Some(reach) = crate::traced::lines_reach(sk, i) {
-        let [lo, hi] = t.domain[0];
         return format!("{}: a surface traced in space, {}", t.name,
-                       lines_text(reach, t.home[0], (lo, hi)));
+                       lines_text(reach, t.home[0], (domain[0][0], domain[0][1])));
     }
     let what = if t.formals() == 2 { "a surface" } else { "a curve" };
     let k = crate::traced::consts_of(t);
@@ -1006,7 +1005,7 @@ pub fn traced_text(sk: &Sketch, i: usize) -> String {
     let mut missed = 0;
     for a in 0..=n {
         for b in 0..=if t.formals() == 2 { n } else { 0 } {
-            let place = [grid(t.domain[0], a, n), grid(t.domain[1], b, n)];
+            let place = [grid(domain[0], a, n), grid(domain[1], b, n)];
             match crate::traced::regularity(&k, &theta, place) {
                 Some(r) if least.is_none_or(|(l, _)| r < l) => least = Some((r, place)),
                 Some(_) => {}
@@ -1040,8 +1039,8 @@ pub fn rates_text(sk: &Sketch, i: usize) -> Option<String> {
         return None;
     };
     let home = sk.curve_home(i);
-    let reach = crate::locus::rate_reach(&l.flat, &sk.curve_vars(i, home), home, cv.domain)?;
-    Some(reach_text(reach, home, cv.domain))
+    let reach = crate::locus::rate_reach(&l.flat, &sk.curve_vars(i, home), home, cv.over.pair())?;
+    Some(reach_text(reach, home, cv.over.pair()))
 }
 
 /// How far a surface's march reached each way from `home` across `domain` (#339 D4), in the

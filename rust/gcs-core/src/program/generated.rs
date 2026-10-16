@@ -201,7 +201,8 @@ fn profile(sk: &mut Sketch, d: &Decl, tool: EntRef, motion: usize) -> Result<Cur
         args,
         unknowns: Vec::new(),
         values,
-        domain: (from, to),
+        // the shared roll, over the interval the reading states (degrees)
+        over: crate::model::Running::roll(from, to),
         home: Home::At(from),
         pose: Vec::new(),
         class: d.class.clone(),

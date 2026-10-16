@@ -178,6 +178,9 @@ fn write_stmt(out: &mut String, k: &StmtKind) {
                     out.push_str(": ");
                     out.push_str(word);
                 }
+                if let Some(o) = &input.over {
+                    out.push_str(&format!(" over ({}, {})", o.from.0, o.to.0));
+                }
             } else {
                 out.push_str(&p.name.text);
             }

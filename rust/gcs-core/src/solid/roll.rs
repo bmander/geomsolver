@@ -35,7 +35,7 @@ pub fn interval(sk: &Sketch, swept: usize) -> Result<[f64; 2], String> {
         return Err(format!("`{}` is not a continuous motion sweep", s.name));
     };
     let body = match roll {
-        Roll::Stated { from, to } => return Ok([from.value, to.value]),
+        Roll::Stated(r) => return Ok(r.radians()),
         Roll::Through { body } => *body as usize,
     };
     sk.caches.roll.get_or(swept, super::MemoKey::of(sk, swept), || {

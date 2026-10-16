@@ -105,6 +105,7 @@ use NAME[.NAME...] [(NAME, ...)]        import a module                         
 unit NAME                               the unit the document's numbers are in       (1.6)
 NAME := EXPR                            a value                                      (1.6)
 param NAME[: TYPE] [:= EXPR] [hint(E)]  an input; with no value, an unknown          (1.6)
+param NAME: TYPE over (E, E)            a parameter that runs over an interval       (1.6)
 NAME := {LABEL: VALUE, ...}             a group: values and geometry as one argument (1.8)
 NAME := (E, E[, E])                     a vector, read as NAME.x, NAME.y             (1.4)
 [private] [construction] [NAME :=] KIND[(CHILD | hint(...), ...)] [hint(MEMBER: E, ...)]
@@ -347,6 +348,14 @@ contact's place (`t == s`, 1.5) or a value over it. The tie must be affine in on
 nothing declares is E101**, so a misspelling is never a degree of freedom. `param` stands at the
 top of a document (or its `preview`); a component's unknowns are the formals a call leaves unbound
 (1.8). To equate two angles, prefer `l1 angle(l3, l4) l2`.
+
+**Parameters that run** (0.139). `param t: Angle over (0deg, 360deg)` declares a number that runs
+over an interval: neither a value nor an unknown, so it has no `:=` and no `hint(…)`, and it says
+what it is (`Length`, `Angle` or `Scalar`). Its ends are numbers of that type and increase (E103
+otherwise). It is the one notion a face family's running number (`over s in (0, 1)`, 1.14), a
+traced body's formals (1.10) and the roll a reading states (`from:`/`to:`, 1.15) are now uses of,
+with no change in what they mean; **nothing reads a declared one yet** — a dimension reading it is
+E103 — until readings at an instant and over an interval of it arrive (issue #391).
 
 **Dimensions are checked.** Two base dimensions, length and angle. `*` and `/` derive, `+` and `-`
 demand agreement, and the result is checked against its slot: `a distance(45deg) b` is an error. A

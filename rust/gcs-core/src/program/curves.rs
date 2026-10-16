@@ -1238,13 +1238,17 @@ fn curve_entity(
         .map(|n| info.values.get(n).and_then(|a| a.number()).ok_or_else(|| missing(n)))
         .collect::<Result<Vec<f64>, _>>()?;
     let num = |t: &str| crate::expr::literal(t);
-    let domain = (num(&c.domain.0).unwrap_or(0.0), num(&c.domain.1).unwrap_or(1.0));
+    // the swept formal, one parameter axis (#391 S1)
+    let dim = comp.formals.iter().find(|f| f.name.text == swept)
+        .map_or(crate::units::Dim::SCALAR, |f| f.ty.dim());
+    let over = crate::model::Running::new(swept, dim, num(&c.domain.0).unwrap_or(0.0),
+                                          num(&c.domain.1).unwrap_or(1.0));
     // the anchor: what the swept formal was given — a number, or the drawing's unknown a drawn
     // instance left it as — or the interval's start for an instance written in place
     let home = match info.values.get(swept).map(|a| (a.number(), &a.free)) {
         Some((Some(v), _)) => crate::model::Home::At(v),
         Some((None, Some(n))) if info.drawn => crate::model::Home::Free(n.clone()),
-        _ => crate::model::Home::At(domain.0),
+        _ => crate::model::Home::At(over.from),
     };
     // the pose a drawn instance stands in, per inner unknown of the block — whole or nothing
     let pose: Vec<(EntRef, usize)> = if info.drawn {
@@ -1271,7 +1275,7 @@ fn curve_entity(
         args,
         unknowns,
         values,
-        domain,
+        over,
         home,
         pose,
         class: d.class.clone(),

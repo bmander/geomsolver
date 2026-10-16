@@ -602,13 +602,31 @@ pub struct Input {
     pub ty: Option<Ty>,
     /// `hint(30deg)`: the seed's text and span, only on an input nothing binds.
     pub seed: Option<(String, Span)>,
+    /// `over (0deg, 360deg)` (#391 S1): a **parameter axis**, a number that runs over the
+    /// interval rather than one the solve answers for — the two ends' text as written, and where
+    /// the word `over` stands.
+    pub over: Option<Over>,
+}
+
+/// The interval a declared parameter runs over (`param t: Angle over (a, b)`, #391 S1).
+#[derive(Clone, Debug)]
+pub struct Over {
+    pub from: (String, Span),
+    pub to: (String, Span),
+    /// The word `over`.
+    pub span: Span,
 }
 
 impl ParamDecl {
     /// Whether the definition gives the name a value — every plain definition does; an input
-    /// may not, and is then an unknown.
+    /// may not, and is then an unknown (or, running `over` an interval, a parameter axis).
     pub fn bound(&self) -> bool {
         !self.text.is_empty()
+    }
+
+    /// The interval a parameter axis runs over (#391 S1), where the declaration says `over`.
+    pub fn over(&self) -> Option<&Over> {
+        self.input.as_ref().and_then(|i| i.over.as_ref())
     }
 }
 

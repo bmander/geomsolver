@@ -166,13 +166,13 @@ fn family(
             }
         }
     }
-    let extent = |v: f64, t: &str| Extent { text: t.trim().to_string(), value: v };
+    // its running number, one parameter axis (#391 S1): the formal's dimension, held where the
+    // drawn station stands
+    let dim = sk.held.get(&held).map_or(crate::units::Dim::SCALAR, |h| h.dim);
     Some(SolidDef::Family {
         face,
         station: station.into_iter().collect(),
-        held,
-        from: extent(a, &f.domain.0),
-        to: extent(b, &f.domain.1),
+        over: crate::model::Running::new(held, dim, a, b),
         legs: legs(sk, res, &f.legs, &faces),
     })
 }
@@ -403,15 +403,19 @@ fn under_motion(
             SolidDef::Placed {source:ops[0].idx,motion:m.idx,at}
         }
         Sweep::Swept {from,to,..} => {
-            let (from,to) = match (angle(from,"from"),angle(to,"to")) {
-                (Ok(a),Ok(b)) if a.value < b.value => (a,b),
-                (Ok(_),Ok(_)) => {
-                    say(Code::E080,st.span,"a continuous motion sweep needs increasing angular bounds; use `at:` for one pose".into());
-                    return None;
-                }
+            // an interval of the shared roll (#391 S1), as written; read in radians
+            let degrees = |a,what| extent(sk.units,a,what,crate::units::Dim::ANGLE)
+                .map(|e| e.value);
+            let roll = match (degrees(from,"from"),degrees(to,"to")) {
+                (Ok(a),Ok(b)) => crate::model::Running::roll(a,b),
                 (Err(message),_) | (_,Err(message)) => { say(Code::E103,st.span,message); return None; }
             };
-            SolidDef::Swept {source:ops[0].idx,motion:m.idx,roll:crate::model::Roll::Stated {from,to}}
+            let [a,b] = roll.radians();
+            if a >= b {
+                say(Code::E080,st.span,"a continuous motion sweep needs increasing angular bounds; use `at:` for one pose".into());
+                return None;
+            }
+            SolidDef::Swept {source:ops[0].idx,motion:m.idx,roll:crate::model::Roll::Stated(roll)}
         }
         // the roll through a body's material (#271): found after the solve
         Sweep::Rolled {body,..} => {

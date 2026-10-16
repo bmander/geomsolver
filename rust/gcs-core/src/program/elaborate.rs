@@ -184,6 +184,7 @@ fn expand(
     let mut expansion = crate::flatten::expand_faces(cx.doc, cx.sk.units, refused, faces);
     cx.map.private_names = expansion.private_names.clone();
     cx.sk.declared = std::mem::take(&mut expansion.unknowns);
+    cx.sk.parameters = std::mem::take(&mut expansion.parameters);
     // each face family's running number, held where its drawn station stands (#243 L1)
     for (name, &(dim, at)) in &expansion.held {
         cx.sk.hold(name, at, dim);

@@ -63,12 +63,12 @@ fn retained_contacts_require_the_locus_and_keep_their_snapshot_domain() {
     for tolerance in [-1.,f64::NAN,f64::INFINITY] {
         assert_eq!(generated.at(on,tolerance).unwrap_err(),Error::InvalidOptions);
     }
-    e.sketch.envelopes[0].roll = [0.2,0.3];
+    e.sketch.envelopes[0].roll = gcs_core::model::Running::roll_radians([0.2,0.3]);
     assert_eq!(generated.domain(),domain);
     assert!(generated.at(on,1e-10).is_ok());
     let changed = GeneratedEnvelope::named(&e.sketch,0).unwrap();
     assert_eq!(changed.at(on,1e-10).unwrap_err(),Error::OutsideDomain);
-    e.sketch.envelopes[0].roll = [f64::NAN,0.3];
+    e.sketch.envelopes[0].roll = gcs_core::model::Running::roll_radians([f64::NAN,0.3]);
     assert!(GeneratedEnvelope::named(&e.sketch,0).is_err());
 }
 

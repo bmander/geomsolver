@@ -46,8 +46,9 @@ fn reads_where(sk: &Sketch, si: usize, unit: f64, skip: &dyn Fn(usize) -> bool) 
         v.push(s as f64);
         name_read(&sol.name, &mut v);
         match &sol.def {
-            SolidDef::Swept { source, motion, roll: Roll::Stated { from, to } } => {
-                v.extend([6.,*source as f64,*motion as f64,from.value,to.value]);
+            SolidDef::Swept { source, motion, roll: Roll::Stated(r) } => {
+                let [from, to] = r.radians();
+                v.extend([6.,*source as f64,*motion as f64,from,to]);
                 motion_reads(sk,*motion,&mut v);
             }
             // a roll through a body reads its material, never its cuts (`material_sources`)
@@ -107,9 +108,9 @@ fn reads_where(sk: &Sketch, si: usize, unit: f64, skip: &dyn Fn(usize) -> bool) 
             // a family reads what its stations are solved over: every parameter of the drawing
             // and every number a constraint states, since a dimension of the station's reads
             // the running number and so stands at none of the values it now holds
-            SolidDef::Family { face, station, held, from, to, legs } => {
-                v.extend([9.0, station.len() as f64, from.value, to.value, legs.len() as f64]);
-                name_read(held, &mut v);
+            SolidDef::Family { face, station, over, legs } => {
+                v.extend([9.0, station.len() as f64, over.from, over.to, legs.len() as f64]);
+                name_read(&over.name, &mut v);
                 face_reads(sk, *face, &mut v);
                 for l in legs {
                     v.extend([l.at, l.ents.len() as f64]);

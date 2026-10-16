@@ -545,6 +545,10 @@ impl<'a> P<'a> {
     /// with a value, a number a host may give another; without one, an unknown the solve
     /// answers for, seeded by its `hint`.  At the top of the document only: a component's
     /// inputs are its formals, and a block's copies share the document's.
+    ///
+    /// **`param NAME: Type over (A, B)`** (#391 S1) is a parameter axis: a number that runs over
+    /// the interval, neither a value nor an unknown, so it takes no `:=` and no `hint(…)`, and
+    /// says what it is.
     fn input(&mut self) -> Option<StmtKind> {
         let word = self.here();
         self.i += 1; // `param`
@@ -561,6 +565,10 @@ impl<'a> P<'a> {
         }
         let name = self.ident()?;
         let ty = if self.eat_p(':') { Some(self.number_type()?) } else { None };
+        let over = match self.peek_word("over") {
+            true => Some(self.param_over(&name, ty)?),
+            false => None,
+        };
         let (text, span) = if self.peek() == Some(&Tok::Define) {
             self.i += 1;
             self.value_after_define()?
@@ -568,8 +576,44 @@ impl<'a> P<'a> {
             (String::new(), Span::at(self.prev_hi()))
         };
         let seed = self.hint_value()?;
+        if let Some(o) = &over {
+            let said = if !text.is_empty() {
+                let ty = ty.and_then(|t| t.word()).unwrap_or("Angle");
+                Some(format!("`{}` runs over an interval, so it has no value: `param {}: {ty} \
+                              over (a, b)` and no `:=`", name.text, name.text))
+            } else {
+                seed.as_ref().map(|_| format!("`{}` runs over an interval and the solve never \
+                    answers for it: a seed is for an unknown", name.text))
+            };
+            if let Some(message) = said {
+                self.errs.push(SynErr { span: o.span, message });
+            }
+        }
         self.end_of_stmt();
-        Some(StmtKind::Param(ParamDecl { name, text, span, input: Some(Input { ty, seed }) }))
+        Some(StmtKind::Param(ParamDecl { name, text, span,
+                                         input: Some(Input { ty, seed, over }) }))
+    }
+
+    /// `over (A, B)` after a `param`'s type (#391 S1), the word not yet eaten: the interval a
+    /// parameter axis runs over, which says what it is (`Length`, `Angle` or `Scalar`).
+    fn param_over(&mut self, name: &Name, ty: Option<Ty>) -> Option<crate::syntax::Over> {
+        let span = self.here();
+        self.i += 1; // `over`
+        match ty {
+            Some(Ty::Length | Ty::Angle | Ty::Scalar) => {}
+            Some(_) => {
+                self.errs.push(SynErr { span, message: format!(
+                    "`{}` runs over an interval: a `Length`, an `Angle` or a `Scalar`",
+                    name.text) });
+            }
+            None => {
+                self.errs.push(SynErr { span, message: format!(
+                    "a parameter that runs says what it is: `param {}: Angle over (a, b)`",
+                    name.text) });
+            }
+        }
+        let [from, to] = self.pair()?;
+        Some(crate::syntax::Over { from, to, span })
     }
 
     /// `motion(…)` (#383), refused saying what each spelling is now — read past its brackets for
