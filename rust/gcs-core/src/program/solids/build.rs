@@ -164,27 +164,15 @@ fn family(
         true => vec![crate::model::station_prefix(&held)],
         false => f.legs.iter().map(|(h, _)| crate::model::station_prefix(h)).collect(),
     };
-    let mut station: BTreeSet<EntRef> = res.of.iter()
-        .filter(|(k, _)| prefixes.iter().any(|p| k.starts_with(p)))
-        .map(|(_, &e)| e)
-        .chain(faces.iter().flat_map(|&fc| sk.faces[fc as usize].boundaries()
-            .flat_map(|(edges, _)| edges.iter().copied())))
-        .filter(|e| !matches!(e.kind, EntKind::Face | EntKind::Solid))
-        .collect();
-    let mut stack: Vec<EntRef> = station.iter().copied().collect();
-    while let Some(e) = stack.pop() {
-        for c in sk.children(e) {
-            if !matches!(c.kind, EntKind::Face | EntKind::Solid) && station.insert(c) {
-                stack.push(c);
-            }
-        }
-    }
+    let made = res.of.iter().filter(|(k, _)| prefixes.iter().any(|p| k.starts_with(p)))
+        .map(|(_, &e)| e);
+    let station = station(sk, made, &faces);
     // its running number, one parameter axis (#391 S1): the formal's dimension, held where the
     // drawn station stands
     let dim = sk.held.get(&held).map_or(crate::units::Dim::SCALAR, |h| h.dim);
     Some(SolidDef::Family {
         face,
-        station: station.into_iter().collect(),
+        station,
         over: crate::model::Running::new(held, dim, a, b),
         legs: legs(sk, res, &f.legs, &faces),
     })
@@ -207,16 +195,19 @@ fn drawn_family(
                                            over.text));
         return None;
     };
-    if !sk.held.contains_key(&over.text) {
-        say(Code::E103, over.span, format!("`{}` is not held where the drawing stands",
-                                           over.text));
-        return None;
-    }
-    let station: BTreeSet<EntRef> = res.of.values().copied()
-        .chain(sk.faces[face as usize].boundaries().flat_map(|(edges, _)| edges.iter().copied()))
-        .filter(|e| !matches!(e.kind, EntKind::Face | EntKind::Solid | EntKind::Motion))
+    let made = res.of.values().copied().filter(|e| e.kind != EntKind::Motion);
+    Some(SolidDef::Family { face, station: station(sk, made, &[face]), over: running,
+                            legs: Vec::new() })
+}
+
+/// A family's station: the entities `made`, the edges of its faces, and what each is made of,
+/// each once and in order — never a face or a solid, which the family is read off.
+fn station(sk: &Sketch, made: impl Iterator<Item = EntRef>, faces: &[u32]) -> Vec<EntRef> {
+    let mut station: BTreeSet<EntRef> = made
+        .chain(faces.iter().flat_map(|&fc| sk.faces[fc as usize].boundaries()
+            .flat_map(|(edges, _)| edges.iter().copied())))
+        .filter(|e| !matches!(e.kind, EntKind::Face | EntKind::Solid))
         .collect();
-    let mut station = station;
     let mut stack: Vec<EntRef> = station.iter().copied().collect();
     while let Some(e) = stack.pop() {
         for c in sk.children(e) {
@@ -225,8 +216,7 @@ fn drawn_family(
             }
         }
     }
-    Some(SolidDef::Family { face, station: station.into_iter().collect(), over: running,
-                            legs: Vec::new() })
+    station.into_iter().collect()
 }
 
 /// A family's legs over a chain (#243 L4), each its station's entities in the order of their

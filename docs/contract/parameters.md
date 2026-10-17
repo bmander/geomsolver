@@ -384,7 +384,7 @@ where a rule came from.
   - **Stated as a joint held along a path**: `g coincident f.axis`, `g` an arc, a spline, a curve
     or a curve traced in space (`motions::motions`, `Held::guide`; a line is a turn's axis), with
     `fix(ratio == ρ, advance == 0mm) f`, `ρ` 0 or 1 (E080 otherwise, and for an advance), makes
-    `MotionDef::Guided { guide, frame, torsion: ρ }`; the statement states no row
+    `MotionDef::Guided { guide, frame, frenet: ρ == 1 }`; the statement states no row
     (`Resolver::guides`, skipped by `elaborate::constraints`) and the joint's axis is held where it
     stands.  `std.Along(f, g, up: u, home: h)` (ρ 0) and `std.AlongFrenet(f, g, home: h)` (ρ 1)
     draw the frame at its home square to the path and state the joint.

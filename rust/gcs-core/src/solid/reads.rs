@@ -335,8 +335,9 @@ fn motion_reads(sk: &Sketch,motion: u32,values: &mut Vec<f64>) {
                 pending.push(of);
             }
             // a frame along a path: the path's numbers and where the frame is drawn (#398 C)
-            crate::model::MotionDef::Guided {guide,frame,torsion} => {
-                values.extend([7.,guide.kind as u8 as f64,guide.i() as f64,frame as f64,torsion]);
+            crate::model::MotionDef::Guided {guide,frame,frenet} => {
+                values.extend([7.,guide.kind as u8 as f64,guide.i() as f64,frame as f64,
+                               f64::from(u8::from(frenet))]);
                 values.extend(sk.entity_params(guide).iter().map(|&q| sk.params[q as usize].value));
                 for e in sk.children(guide) {
                     values.extend(sk.entity_params(e).iter().map(|&q| sk.params[q as usize].value));

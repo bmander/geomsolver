@@ -16,11 +16,13 @@
 //! frame to the one at `u` and `o_h` the path's point at the home, so a frame drawn at its home
 //! stands at the path's frame wherever `u` runs, and the choice of its axes at the home (square
 //! to the tangent) moves nothing.  A path is read four ways — its point and its first three
-//! derivatives in its own parameter: a line's fraction of its run, an arc's of its turn, a
-//! spline's knot parameter (in a plane, or over points in space), a traced curve's formal.  Its
+//! derivatives in its own parameter (the third only for the path's own frame's rate): a line's
+//! fraction of its run, an arc's of its turn, a spline's knot parameter (in a plane, or over
+//! points in space), a traced curve's formal.  Its
 //! enclosures over a stretch (for `MotionBounds` and the speed bound) are rigorous where its
 //! derivatives have a bound — a line, an arc, a polynomial spline's hodographs — and fail closed
 //! for any other path, as a law does for a function it carries no enclosure of.
+use crate::interval::Interval as I;
 use crate::model::{EntKind, EntRef, Sketch};
 use crate::space::{add, cross, dot, norm, scale, sub};
 
@@ -50,7 +52,6 @@ enum Path {
 impl Path {
     /// The path `g` names, as the drawing stands.
     fn read(sk: &Sketch, g: EntRef) -> Result<Path, String> {
-        let unit = |v: V| crate::space::normalised(v);
         match g.kind {
             EntKind::Line => {
                 let l = sk.lines.get(g.i()).ok_or("no such line")?;
@@ -63,8 +64,8 @@ impl Path {
                     .unwrap_or_else(crate::plane::Basis::page);
                 let (a0, a1) = sk.arc_angles(g.i());
                 let c = sk.lifted(arc.center as usize);
-                let (u, v) = (unit(basis.u).ok_or("an arc's plane has no axes")?,
-                              unit(basis.v).ok_or("an arc's plane has no axes")?);
+                let axis = |a: V| crate::space::normalised(a).ok_or("an arc's plane has no axes");
+                let (u, v) = (axis(basis.u)?, axis(basis.v)?);
                 Ok(Path::Arc { c, u, v, r: sk.radius_value(g).abs(), a0, sweep: a1 - a0 })
             }
             EntKind::Spline => Ok(spline(sk, g.i())),
@@ -95,9 +96,10 @@ impl Path {
         }
     }
 
-    /// The point and its first three derivatives at `u`.  A traced curve's third is the
-    /// difference of its second, read exactly either side: what its frame's rate alone reads.
-    fn jet(&self, u: f64) -> Result<[V; 4], String> {
+    /// The point and its first three derivatives at `u`, the third only where `third` asks for it
+    /// (zero otherwise): a traced curve's is the difference of its second, read exactly either
+    /// side, and the path's own frame's rate alone reads it.
+    fn jet(&self, u: f64, third: bool) -> Result<[V; 4], String> {
         match self {
             Path::Line { a, d } => Ok([add(*a, scale(*d, u)), *d, [0.0; 3], [0.0; 3]]),
             Path::Arc { c, u: x, v: y, r, a0, sweep } => {
@@ -129,6 +131,9 @@ impl Path {
                 let read = |u: f64| crate::traced::at(k, theta, [u, 0.0], need)
                     .ok_or_else(|| format!("the traced curve has no point at {u}"));
                 let x = read(u)?;
+                if !third {
+                    return Ok([x.position, x.d[0], x.dd[0][0], [0.0; 3]]);
+                }
                 let h = 1e-4 * (domain.1 - domain.0);
                 let (lo, hi) = ((u - h).max(domain.0), (u + h).min(domain.1));
                 let (a, b) = (read(lo)?, read(hi)?);
@@ -138,19 +143,19 @@ impl Path {
         }
     }
 
-    /// Bounds on `|C′|`, `|C″|` and `|C‴|` over the whole path, where they are known for certain
-    /// — a line's and an arc's exactly, a polynomial spline's off its hodographs' control points
-    /// (each derivative inside their hull) — and `None` for a path with none.
-    fn derivative_bounds(&self) -> Option<[f64; 3]> {
+    /// Bounds on `|C′|` and `|C″|` over the whole path, where they are known for certain — a
+    /// line's and an arc's exactly, a polynomial spline's off its hodographs' control points (each
+    /// derivative inside their hull) — and `None` for a path with none.
+    fn derivative_bounds(&self) -> Option<[f64; 2]> {
         match self {
-            Path::Line { d, .. } => Some([norm(*d), 0.0, 0.0]),
+            Path::Line { d, .. } => Some([norm(*d), 0.0]),
             Path::Arc { r, sweep, .. } => {
                 let w = sweep.abs();
-                Some([r * w, r * w * w, r * w.powi(3)])
+                Some([r * w, r * w * w])
             }
             Path::Spline { ctrl, knots, weights: None } => {
                 let mut pts = ctrl.clone();
-                let mut out = [0.0; 3];
+                let mut out = [0.0; 2];
                 let p = crate::curve::DEGREE;
                 for (order, slot) in out.iter_mut().enumerate() {
                     let deg = p - order;
@@ -227,8 +232,8 @@ fn spun(w: V, m: &M) -> M {
 /// **A frame along a path, read** (`MotionDef::Guided`): the path, its home and the frame there,
 /// and for the rotation-minimising frame the grid it was integrated over.
 #[derive(Clone, Debug)]
-pub struct Guide {
-    pub name: String,
+pub(crate) struct Guide {
+    name: String,
     path: Path,
     frenet: bool,
     domain: (f64, f64),
@@ -239,23 +244,16 @@ pub struct Guide {
     /// The rotation-minimising frame at the grid's nodes, in order of the parameter: each its
     /// parameter, the path's point and the frame.
     nodes: Vec<(f64, V, Frame)>,
-    /// `|C′|`, `|C″|` and `|C‴|` bounded over the whole path, where they are known for certain.
-    bounds: Option<[f64; 3]>,
+    /// `|C′|` and `|C″|` bounded over the whole path, where they are known for certain.
+    bounds: Option<[f64; 2]>,
 }
 
 impl Guide {
-    /// The frame `frame` along the path `guide`, turning with `torsion` of its torsion (0 or 1):
-    /// its home where the frame's origin stands on the path.
-    pub fn read(sk: &Sketch, name: &str, guide: EntRef, frame: u32, torsion: f64)
+    /// The frame `frame` along the path `guide`, the path's own (`frenet`) or the
+    /// rotation-minimising one: its home where the frame's origin stands on the path.
+    pub(crate) fn read(sk: &Sketch, name: &str, guide: EntRef, frame: u32, frenet: bool)
         -> Result<Guide, String> {
         let path = Path::read(sk, guide).map_err(|m| format!("`{name}`: {m}"))?;
-        let frenet = match torsion {
-            t if t == 0.0 => false,
-            t if t == 1.0 => true,
-            t => return Err(format!("`{name}` turns {t} of its path's torsion: a frame along a \
-                path turns with none of it (ratio 0, the rotation-minimising frame) or all of it \
-                (ratio 1, the path's own)")),
-        };
         let domain = path.domain();
         if !(domain.0 < domain.1) {
             return Err(format!("`{name}`'s path runs over no interval"));
@@ -264,7 +262,7 @@ impl Guide {
             .ok_or_else(|| format!("`{name}` has no origin to stand on its path"))?;
         let o: V = chart.o.map(|q| sk.params[q as usize].value);
         let home = nearest(&path, domain, o)?;
-        let at = path.jet(home)?;
+        let at = path.jet(home, false)?;
         let gap = norm(sub(at[0], o));
         if gap > 1e-6 * (1.0 + norm(o)) {
             return Err(format!("`{name}` is not drawn on its path: its origin stands {} from it \
@@ -276,10 +274,9 @@ impl Guide {
         } else {
             let t = crate::space::normalised(at[1])
                 .ok_or_else(|| format!("`{name}`'s path has no tangent at its home"))?;
-            // any direction square to the tangent: the frame the turn is read from moves nothing
-            let side = if t[0].abs() < 0.9 { [1.0, 0.0, 0.0] } else { [0.0, 1.0, 0.0] };
-            let u = crate::space::normalised(sub(side, scale(t, dot(side, t)))).unwrap_or(side);
-            [t, u, cross(t, u)]
+            // any directions square to the tangent: the frame the turn is read from moves nothing
+            let (u, v) = crate::space::across(t);
+            [t, u, v]
         };
         let mut g = Guide { name: name.to_string(), bounds: path.derivative_bounds(), path, frenet,
                             domain, home, origin: at[0], home_frame, nodes: Vec::new() };
@@ -301,9 +298,8 @@ impl Guide {
                     true => to,
                     false => self.home + (to - self.home) * k as f64 / n as f64,
                 };
-                let x = self.path.jet(u)?;
-                let t = crate::space::normalised(x[1]).ok_or_else(|| format!(
-                    "`{}`'s path has no tangent at {}", self.name, crate::syntax::num(u)))?;
+                let x = self.path.jet(u, false)?;
+                let t = self.tangent(u, &x)?;
                 let (_, x0, f0) = out[k - 1];
                 out.push((u, x[0], reflected(&f0, x0, x[0], t)));
             }
@@ -317,25 +313,26 @@ impl Guide {
         Ok(())
     }
 
-    /// The parameter's interval.
-    pub fn domain(&self) -> (f64, f64) {
-        self.domain
+    /// The unit tangent at `u`, or why the path has none there.
+    fn tangent(&self, u: f64, x: &[V; 4]) -> Result<V, String> {
+        crate::space::normalised(x[1]).ok_or_else(|| format!(
+            "`{}`'s path has no tangent at {}", self.name, crate::syntax::num(u)))
     }
 
-    /// The frame at `u`, and the path's point and derivatives there.
-    fn frame(&self, u: f64) -> Result<(Frame, [V; 4]), String> {
+    /// The frame at `u`, and the path's point and derivatives there (the third where `third`
+    /// asks for it).
+    fn frame(&self, u: f64, third: bool) -> Result<(Frame, [V; 4]), String> {
         let (lo, hi) = self.domain;
         if !(u >= lo - 1e-12 * (hi - lo) && u <= hi + 1e-12 * (hi - lo)) {
             return Err(format!("`{}` runs along its path over ({}, {}), and {} is past it",
                                self.name, crate::syntax::num(lo), crate::syntax::num(hi),
                                crate::syntax::num(u)));
         }
-        let x = self.path.jet(u)?;
+        let x = self.path.jet(u, third)?;
         if self.frenet {
             return Ok((frenet_at(&self.name, u, x)?, x));
         }
-        let t = crate::space::normalised(x[1]).ok_or_else(|| format!(
-            "`{}`'s path has no tangent at {}", self.name, crate::syntax::num(u)))?;
+        let t = self.tangent(u, &x)?;
         let k = self.nodes.partition_point(|n| n.0 < u);
         let near = match (k.checked_sub(1).map(|j| &self.nodes[j]), self.nodes.get(k)) {
             (Some(a), Some(b)) => if u - a.0 <= b.0 - u { a } else { b },
@@ -360,8 +357,8 @@ impl Guide {
     }
 
     /// The pose at `u` and its rate: `x ↦ R (x − o_h) + c(u)`.
-    pub fn motion(&self, u: f64) -> Result<crate::envelope::Motion, String> {
-        let (f, x) = self.frame(u)?;
+    pub(crate) fn motion(&self, u: f64) -> Result<crate::envelope::Motion, String> {
+        let (f, x) = self.frame(u, self.frenet)?;
         let r = turn(&f, &self.home_frame);
         let dr = spun(self.spin(&f, &x), &r);
         let p = sub(x[0], mv(&r, self.origin));
@@ -370,8 +367,8 @@ impl Guide {
     }
 
     /// The pose at `u` alone.
-    pub fn pose(&self, u: f64) -> Result<super::Pose, String> {
-        let (f, x) = self.frame(u)?;
+    pub(crate) fn pose(&self, u: f64) -> Result<super::Pose, String> {
+        let (f, x) = self.frame(u, false)?;
         let r = turn(&f, &self.home_frame);
         Ok(super::Pose { r, p: sub(x[0], mv(&r, self.origin)) })
     }
@@ -382,8 +379,8 @@ impl Guide {
     /// frame's turn none (its speed reaching zero, or the path's own frame), so what reads it
     /// fails closed.  Read from samples a step `w` apart: every point within `w/2` of one, so off
     /// it by no more than `|C′| w / 2`, and every turn by no more than `|ω| w / 2`.
-    pub fn stretch(&self, a: f64, b: f64) -> Option<Stretch> {
-        let [d1, d2, _] = self.bounds?;
+    pub(crate) fn stretch(&self, a: f64, b: f64) -> Option<Stretch> {
+        let [d1, d2] = self.bounds?;
         if self.frenet || !(a <= b) {
             return None;
         }
@@ -396,7 +393,7 @@ impl Guide {
         let mut slow = f64::INFINITY;
         for j in 0..=SAMPLES {
             let u = if j == SAMPLES { b } else { a + w * j as f64 };
-            let (f, x) = self.frame(u).ok()?;
+            let (f, x) = self.frame(u, false).ok()?;
             let r = turn(&f, &self.home_frame);
             for k in 0..3 {
                 lo[k] = lo[k].min(x[0][k]);
@@ -417,18 +414,21 @@ impl Guide {
         let spin = if d2 == 0.0 { 0.0 } else { d2 / slowest };
         // outward: a sample's rounding, and what lies between the samples
         let pad = |x: f64| x.abs() * 1e-12 + 1e-15;
-        let reach = d1 * w / 2.0;
-        let turnable = spin * w / 2.0;
-        Some(Stretch {
-            point: std::array::from_fn(|k| [lo[k] - reach - pad(lo[k]),
-                                            hi[k] + reach + pad(hi[k])]),
-            turn: std::array::from_fn(|k| std::array::from_fn(|m| [
-                (rlo[k][m] - turnable - pad(rlo[k][m])).max(-1.0),
-                (rhi[k][m] + turnable + pad(rhi[k][m])).min(1.0)])),
-            speed: d1 * (1.0 + 1e-12),
-            spin: spin * (1.0 + 1e-12),
-            origin: self.origin,
-        })
+        let around = |lo: f64, hi: f64, by: f64, clamp: f64| {
+            I::new((lo - by - pad(lo)).max(-clamp), (hi + by + pad(hi)).min(clamp)).ok()
+        };
+        let (reach, turnable) = (d1 * w / 2.0, spin * w / 2.0);
+        let mut point = [I::ZERO; 3];
+        let mut turn = [[I::ZERO; 3]; 3];
+        for k in 0..3 {
+            point[k] = around(lo[k], hi[k], reach, f64::INFINITY)?;
+            for m in 0..3 {
+                // every entry of a turn lies within ±1
+                turn[k][m] = around(rlo[k][m], rhi[k][m], turnable, 1.0)?;
+            }
+        }
+        Some(Stretch { point, turn, speed: d1 * (1.0 + 1e-12), spin: spin * (1.0 + 1e-12),
+                       origin: self.origin })
     }
 }
 
@@ -436,12 +436,12 @@ impl Guide {
 /// path's point, the turn's entries, the path's speed and the frame's angular speed bounded, and
 /// the point at the home the turn is about.
 #[derive(Clone, Copy, Debug)]
-pub struct Stretch {
-    pub point: [[f64; 2]; 3],
-    pub turn: [[[f64; 2]; 3]; 3],
-    pub speed: f64,
-    pub spin: f64,
-    pub origin: V,
+pub(crate) struct Stretch {
+    pub(crate) point: [I; 3],
+    pub(crate) turn: [[I; 3]; 3],
+    pub(crate) speed: f64,
+    pub(crate) spin: f64,
+    pub(crate) origin: V,
 }
 
 /// The path's own frame at `u`, or why it has none.
@@ -458,14 +458,14 @@ fn nearest(path: &Path, (lo, hi): (f64, f64), o: V) -> Result<f64, String> {
     let mut best = (f64::INFINITY, lo);
     for k in 0..=n {
         let u = lo + (hi - lo) * k as f64 / n as f64;
-        let d = norm(sub(path.jet(u)?[0], o));
+        let d = norm(sub(path.jet(u, false)?[0], o));
         if d < best.0 {
             best = (d, u);
         }
     }
     let mut u = best.1;
     for _ in 0..50 {
-        let [c, d1, d2, _] = path.jet(u)?;
+        let [c, d1, d2, _] = path.jet(u, false)?;
         let e = sub(c, o);
         let (f, df) = (dot(e, d1), dot(d1, d1) + dot(e, d2));
         if df.abs() < 1e-300 {

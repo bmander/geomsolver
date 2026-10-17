@@ -17,9 +17,9 @@ use crate::syntax::OpArg;
 
 /// One plane a valued frame's block draws in, and the twin it is read as.
 struct Twin {
-    /// The valued frame and the plane, as written in the body.
-    frame: Ref,
-    plane: Ref,
+    /// The valued frame and the plane, by the segments the body writes them with.
+    frame: Vec<String>,
+    plane: Vec<String>,
     /// The twin's name, one the source cannot write (`#in12`).
     name: String,
 }
@@ -75,7 +75,6 @@ impl Walk<'_> {
         // each plane a declaration draws in inside a valued frame's block, once per frame
         let mut twins: Vec<Twin> = Vec::new();
         let mut out: Vec<Stmt> = Vec::new();
-        let mut minted: Vec<Stmt> = Vec::new();
         for st in body {
             let path = path_of(st);
             let frames: Vec<&Ref> = path.iter().filter(|r| is_valued(r)).collect();
@@ -100,49 +99,35 @@ impl Walk<'_> {
                 self.err(Code::E080, st.span, m);
                 continue;
             };
-            let known = twins.iter().any(|t| segments(&t.frame) == segments(frame)
-                && segments(&t.plane) == segments(plane));
-            if !known {
+            let (f, p) = (segments(frame), segments(plane));
+            if !twins.iter().any(|t| t.frame == f && t.plane == p) {
                 let name = format!("#in{}", plane.span.lo);
-                minted.push(twin_stmt(st, plane, frame, &name));
-                twins.push(Twin { frame: frame.clone(), plane: plane.clone(), name });
+                out.push(twin_stmt(st, plane, frame, &name));
+                twins.push(Twin { frame: f, plane: p, name });
             }
         }
+        // the body, what is drawn in a valued frame drawn in its twins
         for st in body {
             let path = path_of(st);
-            let Some(frame) = path.iter().find(|r| is_valued(r)) else {
+            let Some(frame) = path.iter().find(|r| is_valued(r)).map(segments) else {
                 out.push(st.clone());
                 continue;
             };
-            let mine: Vec<&Twin> = twins.iter()
-                .filter(|t| segments(&t.frame) == segments(frame)).collect();
-            let mut st = st.clone();
             let read = |r: &mut Ref| {
-                for t in &mine {
-                    carry(r, &segments(&t.plane), &t.name);
+                for t in twins.iter().filter(|t| t.frame == frame) {
+                    carry(r, &t.plane, &t.name);
                 }
             };
+            let mut st = st.clone();
             match &mut st.kind {
                 StmtKind::Decl(d) if d.kind != crate::model::EntKind::Frame => {
-                    unvalued(&mut d.membership, frame);
-                    if let Some(p) = d.membership.plane_mut() {
-                        read(p);
-                    }
-                    for r in d.membership.rides_mut() {
-                        read(r);
-                    }
+                    drawn_in_twin(&mut d.membership, &frame, &read);
                     for kid in d.children.iter_mut().flatten() {
                         kid.refs_mut().into_iter().for_each(read);
                     }
                 }
                 StmtKind::Instance(i) => {
-                    unvalued(&mut i.membership, frame);
-                    if let Some(p) = i.membership.plane_mut() {
-                        read(p);
-                    }
-                    for r in i.membership.rides_mut() {
-                        read(r);
-                    }
+                    drawn_in_twin(&mut i.membership, &frame, &read);
                     for a in &mut i.args {
                         if let crate::syntax::InstVal::Ref(r) = &mut a.value {
                             read(r);
@@ -150,7 +135,7 @@ impl Walk<'_> {
                     }
                 }
                 StmtKind::Relation(r) => {
-                    r.within.retain(|w| segments(w) != segments(frame));
+                    r.within.retain(|w| segments(w) != frame);
                     if let Some(w) = r.form.written_mut() {
                         super::words::refs_mut(w).into_iter().for_each(read);
                     }
@@ -159,24 +144,27 @@ impl Walk<'_> {
             }
             out.push(st);
         }
-        minted.extend(out);
-        Some(minted)
+        Some(out)
     }
 }
 
-/// A membership with the valued frame `frame` taken out of its path: what it draws stands where
-/// the value puts it, and rides on it no more.  Where the frame was its plane, the innermost of
-/// the frames it rides on takes its place.
-fn unvalued(m: &mut crate::syntax::Membership, frame: &Ref) {
-    let f = segments(frame);
-    m.rides_mut().retain(|r| segments(r) != f);
-    if m.plane().is_some_and(|p| segments(p) == f) {
+/// A membership drawn in its plane's twin: the valued frame `frame` taken out of its path — what
+/// it draws stands where the value puts it, and rides on it no more; where the frame was its
+/// plane, the innermost of the frames it rides on takes its place — and the frames left read
+/// through `read`.
+fn drawn_in_twin(m: &mut crate::syntax::Membership, frame: &[String], read: &impl Fn(&mut Ref)) {
+    m.rides_mut().retain(|r| segments(r) != frame);
+    if m.plane().is_some_and(|p| segments(p) == frame) {
         if let Some(inner) = m.rides_mut().pop() {
             if let Some(p) = m.plane_mut() {
                 *p = inner;
             }
         }
     }
+    if let Some(p) = m.plane_mut() {
+        read(p);
+    }
+    m.rides_mut().iter_mut().for_each(read);
 }
 
 /// The twin of `plane` drawn in `frame`, `#in12 := plane in frame`, made by `st`.

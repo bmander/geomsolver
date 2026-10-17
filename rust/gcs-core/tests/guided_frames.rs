@@ -97,20 +97,18 @@ fn brep(e: &Elaborated, name: &str) -> gcs_core::brep::topo::Brep {
     x.brep.clone()
 }
 
-/// The corners of the solid `name`'s two caps, sorted.
-fn caps(e: &Elaborated, name: &str) -> Vec<V> {
-    let mut out: Vec<V> = brep(e, name).vertices.iter().map(|v| v.p).collect();
-    out.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    out
-}
-
-/// Every corner of `a` within `tol` of one of `b`, and as many.
-fn same_corners(a: &[V], b: &[V], tol: f64, what: &str) {
-    assert_eq!(a.len(), b.len(), "{what}");
-    for p in a {
-        let d = b.iter().map(|q| norm(sub(*p, *q))).fold(f64::INFINITY, f64::min);
-        assert!(d < tol, "{what}: {p:?} stands {d} from every corner of the other");
+/// The solids `a` and `b` one solid: as many corners, each of `a`'s within 1e-9 of one of `b`'s
+/// (their caps' corners, where the stations stand at the ends), and their volumes within a part
+/// in 10⁹.
+fn same_solid(e: &Elaborated, a: &str, b: &str, what: &str) {
+    let (ba, bb) = (brep(e, a), brep(e, b));
+    assert_eq!(ba.vertices.len(), bb.vertices.len(), "{what}");
+    for p in &ba.vertices {
+        let d = bb.vertices.iter().map(|q| norm(sub(p.p, q.p))).fold(f64::INFINITY, f64::min);
+        assert!(d < 1e-9, "{what}: {:?} stands {d} from every corner of the other", p.p);
     }
+    let (va, vb) = (gcs_core::brep::props::volume(&ba), gcs_core::brep::props::volume(&bb));
+    assert!((va - vb).abs() <= 1e-9 * vb, "{what}: {va} against {vb}");
 }
 
 /// The motion of the frame named `name`.
@@ -127,14 +125,10 @@ fn motion(e: &Elaborated, name: &str) -> Family {
 /// family is, the middle of its interval.  Their volumes agree.
 #[test]
 fn a_tube_in_a_frame_along_a_spline_is_todays_stations() {
-    for (guide, home, up) in [("curvy", "", "std.z"), ("cubic", ", home: 0.5", "std.z")] {
-        let src = format!("{PATHS}{}today := sweep(Rider({guide}, {up}, w: 2mm, h: 1mm).f over s)\n",
-                          along("Along", guide, &format!(", up: {up}{home}")));
-        let e = determined(&src);
-        same_corners(&caps(&e, "along"), &caps(&e, "today"), 1e-9, guide);
-        let (va, vt) = (gcs_core::brep::props::volume(&brep(&e, "along")),
-                        gcs_core::brep::props::volume(&brep(&e, "today")));
-        assert!((va - vt).abs() <= 1e-9 * vt, "{guide}: {va} against {vt}");
+    for (guide, home) in [("curvy", ""), ("cubic", ", home: 0.5")] {
+        let today = format!("today := sweep(Rider({guide}, std.z, w: 2mm, h: 1mm).f over s)\n");
+        let src = format!("{PATHS}{}{today}", along("Along", guide, &format!(", up: std.z{home}")));
+        same_solid(&determined(&src), "along", "today", guide);
     }
 }
 
@@ -144,11 +138,7 @@ fn a_tube_in_a_frame_along_a_spline_is_todays_stations() {
 fn a_ribbon_in_a_frenet_frame_along_a_spline_is_todays_stations() {
     let src = format!("{PATHS}{}today := sweep(Ribbon(cubic, w: 2mm, h: 1mm).f over s)\n",
                       along("AlongFrenet", "cubic", ", home: 0.25"));
-    let e = determined(&src);
-    same_corners(&caps(&e, "along"), &caps(&e, "today"), 1e-9, "the ribbon");
-    let (va, vt) = (gcs_core::brep::props::volume(&brep(&e, "along")),
-                    gcs_core::brep::props::volume(&brep(&e, "today")));
-    assert!((va - vt).abs() <= 1e-9 * vt, "{va} against {vt}");
+    same_solid(&determined(&src), "along", "today", "the ribbon");
 }
 
 /// **The frame along a traced helix is the helix's rotation-minimising frame**: from its home at
@@ -259,8 +249,8 @@ fn a_frame_along_a_path_refuses_what_it_cannot_mean() {
     let frame = "n := plane(u: hint(dir: std.x), v: hint(dir: std.z))\n";
     let s = said(&format!("{frame}cubic coincident n.axis\nfix(ratio == 0.5, advance == 0mm) n\n\
         m := point\nm coincident(t == 0) cubic\nn.origin coincident m\n"));
-    assert!(s.iter().any(|m| m.starts_with("E080") && m.contains("turns 0.5 of its path's torsion")),
-            "{s:?}");
+    let torsion = |m: &String| m.starts_with("E080") && m.contains("turns 0.5 of its path's");
+    assert!(s.iter().any(torsion), "{s:?}");
     let s = said(&format!("{frame}cubic coincident n.axis\nfix(ratio == 0, advance == 2mm) n\n"));
     assert!(s.iter().any(|m| m.starts_with("E080") && m.contains("no advance")), "{s:?}");
     // where the frame stands is the solve's: said once it has solved

@@ -145,18 +145,11 @@ impl Family {
                 Step::Guided {ref guide,back} => {
                     let [lo,hi] = angle.bounds();
                     let g = guide.stretch(lo,hi).ok_or(Error::InvalidBounds)?;
-                    let iv = |[a,b]: [f64;2]| I::new(a,b);
-                    let mut r = [[I::ZERO;3];3];
-                    for (row,band) in r.iter_mut().zip(&g.turn) {
-                        for (x,&e) in row.iter_mut().zip(band) { *x = iv(e)?; }
-                    }
-                    let c = [iv(g.point[0])?,iv(g.point[1])?,iv(g.point[2])?];
-                    let forward = MotionBounds::new(r,sub(c,mv(r,vector(g.origin)?)?)?);
-                    if back {
-                        let t = transpose(forward.r);
-                        let p = mv(t,forward.p)?;
-                        MotionBounds::new(t,[p[0].neg(),p[1].neg(),p[2].neg()])
-                    } else { forward }
+                    let p = sub(g.point,mv(g.turn,vector(g.origin)?)?)?;
+                    let forward = MotionBounds::new(g.turn,p);
+                    // undone: the world seen from the frame along the path
+                    if back { MotionBounds::relative(MotionBounds::identity(),forward)? }
+                    else { forward }
                 }
             };
             values.push(value);

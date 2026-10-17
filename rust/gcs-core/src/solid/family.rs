@@ -295,6 +295,11 @@ struct Along {
     home: crate::motion::Pose,
 }
 
+/// A plane's basis carried by the pose `m`.
+fn moved(b: Basis, m: &crate::motion::Pose) -> Basis {
+    Basis { o: m.point(b.o), u: m.vector(b.u), v: m.vector(b.v) }
+}
+
 /// A frame's chart as a pose: its axes and normal the columns, its origin the offset.
 fn chart_pose(sk: &Sketch, f: usize) -> crate::motion::Pose {
     let b = sk.basis(f);
@@ -330,12 +335,10 @@ impl Reading {
             .collect();
         let mut basis = basis;
         if let Some(m) = self.carried(sk, s)? {
-            for ring in &mut world {
-                for p in ring.iter_mut() {
-                    *p = m.point(*p);
-                }
+            for p in world.iter_mut().flatten() {
+                *p = m.point(*p);
             }
-            basis = Basis { o: m.point(basis.o), u: m.vector(basis.u), v: m.vector(basis.v) };
+            basis = moved(basis, &m);
         }
         Ok(Station { s, basis, page, world, x: sk.get_x() })
     }
@@ -344,12 +347,8 @@ impl Reading {
     /// (#398 C): `M(s) · C_home · C(s)⁻¹` as one pose — `None` for a face that rides on none.
     fn carried(&self, sk: &Sketch, s: f64) -> Result<Option<crate::motion::Pose>, String> {
         let Some(a) = &self.along else { return Ok(None) };
-        let (to, back) = (a.motion.pose_at(s)?, chart_pose(sk, a.frame).inverse());
-        let map = |x: V| to.point(a.home.point(back.point(x)));
-        let p = map([0.0; 3]);
-        let col = |k: usize| { let mut e = [0.0; 3]; e[k] = 1.0; sub(map(e), p) };
-        let (x, y, z) = (col(0), col(1), col(2));
-        Ok(Some(crate::motion::Pose { r: std::array::from_fn(|i| [x[i], y[i], z[i]]), p }))
+        let here = chart_pose(sk, a.frame).inverse();
+        Ok(Some(here.then(a.home).then(a.motion.pose_at(s)?)))
     }
 
     /// Each edge's count raised to what the part, where it stands, needs of it.
@@ -659,10 +658,8 @@ struct LegPart {
 /// the flatness `tol`.
 fn leg_part(sk: &Sketch, station: &[EntRef], leg: &Leg, tol: f64) -> Result<LegPart, String> {
     // a declared parameter the drawing itself runs over (#398 B) stands under no instance
-    let prefix = match leg.held.contains('.') {
-        true => crate::model::station_prefix(leg.held),
-        false => String::new(),
-    };
+    let prefix = leg.held.contains('.').then(|| crate::model::station_prefix(leg.held))
+        .unwrap_or_default();
     let (part, outer) = part_of(sk, leg.face, station, &prefix);
     let pf = part.entity_in(EntRef::face(leg.face as usize))
         .ok_or("the station's face is not in its part")?.i();
@@ -1218,7 +1215,7 @@ fn numbers(sk: &Sketch, rd: &Reading, s: f64) -> Result<Numbers, String> {
     let plane = sk.faces[rd.face].plane;
     let basis = plane.map_or(Basis::page(), |p| sk.basis(p as usize));
     let basis = match rd.carried(sk, s)? {
-        Some(m) => Basis { o: m.point(basis.o), u: m.vector(basis.u), v: m.vector(basis.v) },
+        Some(m) => moved(basis, &m),
         None => basis,
     };
     let point = |q: (f64, f64)| basis.lift(q.0, q.1);

@@ -8,7 +8,7 @@ pub use contact::{NormalVelocity,ContactTime};
 mod law;
 pub use law::{Law, unread_drive};
 mod guide;
-pub use guide::{Guide, Stretch};
+use guide::{Guide, Stretch};
 
 use crate::{envelope::Motion,model::{MotionDef,Sketch}};
 
@@ -224,9 +224,6 @@ impl Family {
         }).collect::<Result<Vec<Option<Stretch>>,Error>>()?;
         // the farthest a box stands from the path over the stretch, or from the home
         let far = |g: &Stretch,b: [I;3]| -> Result<I,Error> {
-            let box_of = |c: [[f64;2];3]| -> Result<[I;3],Error> {
-                Ok([I::new(c[0][0],c[0][1])?,I::new(c[1][0],c[1][1])?,I::new(c[2][0],c[2][1])?]) };
-            let hull = box_of(g.point)?;
             let home = [I::point(g.origin[0])?,I::point(g.origin[1])?,I::point(g.origin[2])?];
             let reach = |c: [I;3]| -> Result<f64,Error> {
                 let d: [I;3] = [b[0].sub(c[0])?,b[1].sub(c[1])?,b[2].sub(c[2])?];
@@ -234,7 +231,7 @@ impl Family {
                     .map(|m| m*m).sum::<f64>();
                 Ok(s.sqrt()*(1.+1e-12))
             };
-            I::point(reach(hull)?.max(reach(home)?))
+            I::point(reach(g.point)?.max(reach(home)?))
         };
         // a step's own speed on a box, the same forward and inverse
         let own = |i: usize,b: [I;3]| -> Result<I,Error> {
@@ -282,9 +279,11 @@ impl Family {
                 Step::Guided {..} => {
                     let g = guided[i].as_ref().ok_or(Error::InvalidBounds)?;
                     let r = far(g,b)?.bounds()[1];
-                    let lo = |k: usize| g.point[k][0].min(g.origin[k]) - r;
-                    let hi = |k: usize| g.point[k][1].max(g.origin[k]) + r;
-                    Ok([I::new(lo(0),hi(0))?,I::new(lo(1),hi(1))?,I::new(lo(2),hi(2))?])
+                    let around = |k: usize| {
+                        let [lo,hi] = g.point[k].bounds();
+                        I::new(lo.min(g.origin[k])-r,hi.max(g.origin[k])+r)
+                    };
+                    Ok([around(0)?,around(1)?,around(2)?])
                 }
                 Step::Relative {..} => unreachable!("composed below"),
             }
@@ -539,8 +538,8 @@ impl Family {
                     }
                 }
                 // a frame along a path, read off the path as the solve left it (#398 C)
-                MotionDef::Guided {guide,frame,torsion} => {
-                    let read = Guide::read(sk,&node.name,guide,frame,torsion)?;
+                MotionDef::Guided {guide,frame,frenet} => {
+                    let read = Guide::read(sk,&node.name,guide,frame,frenet)?;
                     Step::Guided {guide:std::sync::Arc::new(read),back:false}
                 }
                 // a joint's inverse turns and slides back, and a relative's swaps its sides
@@ -633,7 +632,7 @@ impl Pose {
         std::array::from_fn(|i| self.r[i][0]*v[0]+self.r[i][1]*v[1]+self.r[i][2]*v[2])
     }
     /// Apply this pose, then `next`.
-    fn then(self,next: Pose) -> Pose {
+    pub(crate) fn then(self,next: Pose) -> Pose {
         Pose {r:std::array::from_fn(|i| std::array::from_fn(|j| next.r[i][0]*self.r[0][j]+next.r[i][1]*self.r[1][j]+next.r[i][2]*self.r[2][j])),
             p:next.point(self.p)}
     }

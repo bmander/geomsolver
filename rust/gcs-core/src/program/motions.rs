@@ -132,12 +132,12 @@ pub(super) fn motions(sk: &mut Sketch, res: &mut Resolver, map: &SourceMap, body
                     (ratio 1, the path's own)", crate::syntax::num(ratio)));
                 continue;
             }
-            let ax = &sk.axes[joint.axis as usize];
-            for q in ax.a.iter().chain(&ax.d).copied().collect::<Vec<_>>() {
+            let ax = sk.axes[joint.axis as usize].clone();
+            for q in ax.a.into_iter().chain(ax.d) {
                 sk.params[q as usize].fixed = true;
             }
             sk.motions.push(MotionE { def: MotionDef::Guided { guide, frame: f as u32,
-                                                               torsion: ratio },
+                                                               frenet: ratio == 1.0 },
                                       name: name.clone(), class: sk.frames[f].class.clone(),
                                       numbers: None });
             let m = sk.motions.len() - 1;

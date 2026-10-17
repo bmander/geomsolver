@@ -585,11 +585,11 @@ pub enum MotionDef {
     /// path `guide` (`g coincident f.axis`, `std.Along`), standing where the path's parameter puts
     /// it — its pose at `u` read off the guide after the solve, the frame square to the path's
     /// tangent there and turned as the path makes it from where the frame is drawn, its home.
-    /// `torsion` is how much of the path's torsion it turns with: 0 the rotation-minimising frame
-    /// (`std.On`'s, `std.Minimal`'s), 1 the path's own (`std.Frenet`'s).  Read after the solve
-    /// (`motion::Family`) by what rides on the frame and is swept as a parameter runs; a row reads
-    /// no guide (`envelope::held`).
-    Guided { guide: EntRef, frame: u32, torsion: f64 },
+    /// `frenet` says how much of the path's torsion it turns with: none, the rotation-minimising
+    /// frame (`std.On`'s, `std.Minimal`'s: the joint's ratio 0), or all, the path's own
+    /// (`std.Frenet`'s: ratio 1).  Read after the solve (`motion::Family`) by what rides on the
+    /// frame and is swept as a parameter runs; a row reads no guide (`envelope::held`).
+    Guided { guide: EntRef, frame: u32, frenet: bool },
 }
 
 #[derive(Clone, Debug)]
