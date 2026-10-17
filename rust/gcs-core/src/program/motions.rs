@@ -134,7 +134,7 @@ pub(super) fn motions(sk: &mut Sketch, res: &Resolver, map: &SourceMap, body: &[
         // a value written over a declared parameter drives the joint (#391 S5): minted beside it,
         // the node every reading over the roll reads
         if let Some((law, over)) = res.values.get(&f).and_then(|(text, _)| {
-            Some((text.clone(), drive_of(sk, text)?))
+            Some((text.clone(), runs(sk, text).into_iter().next()?))
         }) {
             sk.motions.push(MotionE { def: MotionDef::Driven { of: m as u32, law, over },
                                       name: format!("{name} driven"),
@@ -143,17 +143,18 @@ pub(super) fn motions(sk: &mut Sketch, res: &Resolver, map: &SourceMap, body: &[
     }
 }
 
-/// **The parameter a joint's value drives it by** (#391 S5): the declared parameter its text
-/// reads, where it reads one — `values` refuses one reading two.
-fn drive_of(sk: &Sketch, text: &str) -> Option<String> {
-    let parsed = crate::expr::parse_in(text, sk.units).ok()?;
-    parsed.body.deps().into_iter().find(|d| sk.parameters.contains_key(d))
+/// **The parameters a joint's value runs over** (#391 S5): the declared ones its text reads, in
+/// name order — the one that drives it, as `values` refuses one reading two.
+fn runs(sk: &Sketch, text: &str) -> Vec<String> {
+    crate::expr::parse_in(text, sk.units).map(|p| p.body.deps()).unwrap_or_default().into_iter()
+        .filter(|d| sk.parameters.contains_key(d)).collect()
 }
 
 /// The node a reading of joint node `m` reads: the drive minted beside it, where its frame's value
 /// drives it, else `m` itself.
 fn driven(sk: &Sketch, m: usize) -> usize {
-    sk.motions.iter().position(|x| matches!(x.def, MotionDef::Driven { of, .. } if of as usize == m))
+    sk.motions.iter()
+        .position(|x| matches!(x.def, MotionDef::Driven { of, .. } if of as usize == m))
         .unwrap_or(m)
 }
 
@@ -235,11 +236,10 @@ pub(super) fn values(sk: &Sketch, res: &mut Resolver, body: &[&Statement],
             continue;
         }
         // a drive runs over one parameter (#391 S5): the roll stands for one at a time
-        let runs: Vec<String> = crate::expr::parse_in(&text, sk.units).map(|p| p.body.deps())
-            .unwrap_or_default().into_iter().filter(|d| sk.parameters.contains_key(d)).collect();
-        if runs.len() > 1 {
+        let over = runs(sk, &text);
+        if over.len() > 1 {
             say(diags, Code::E103, format!("`{text}` reads {}: a joint's value is driven by one \
-                declared parameter, the one the roll stands for", runs.iter()
+                declared parameter, the one the roll stands for", over.iter()
                 .map(|r| format!("`{r}`")).collect::<Vec<_>>().join(" and ")));
             continue;
         }

@@ -128,7 +128,8 @@ fn a_station_read_otherwise_is_built_wall_by_wall() {
 fn a_law_reparametrises_its_screws_sweep() {
     let src = include_str!("../../examples/lofts/thread.sv").replace(
         "  st := std.Helix(base, pitch: pitch, turns: turns, s: s)\n  in st.n {",
-        "  private screw := frame\n  std.Turn(screw, about: base.normal, ratio: 1, advance: pitch)\n  \
+        "  private screw := frame\n  \
+         std.Turn(screw, about: base.normal, ratio: 1, advance: pitch)\n  \
          fix(value == 360deg * turns * s + 30deg * sin(360deg * s)) screw\n  \
          st_n := base in screw\n  in st_n {").replace(") st.n\n", ") st_n\n");
     assert!(src.contains("sin(360deg * s)") && !src.contains(") st.n\n"), "the flight moved");

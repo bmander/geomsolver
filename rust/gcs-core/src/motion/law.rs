@@ -1,13 +1,14 @@
 //! **A joint's drive** (#391 S5): its value written over a declared parameter, `fix(value ==
-//! 360deg * h(t)) f`, read as a function of the shared roll — the roll *is* that parameter while a
-//! reading runs over it (one clock), so the frame stands at its joint turned `ratio · value(θ)`
-//! and risen `advance · value(θ) / 360°` at the roll `θ`.  A value linear in its parameter is a
-//! constant twist; any other is a cam's law.
+//! 360deg * h(t)) f`, read as a function of the shared roll — the roll *is* that parameter while
+//! a reading runs over it (one clock), so the frame stands at its joint turned `ratio · value(θ)`
+//! and risen `advance · value(θ) / 360°` at the roll `θ`: a cam's law, or any other.  A drive is
+//! read as no constant twist even where its value is linear (`Family::screw` and its kin refuse
+//! it), so what is built under one is the field's.
 //!
 //! The text is compiled once over the drawing's held numbers (`tape::Tape`), the parameter among
 //! them, and read three ways: its value at a roll (`eval_num` over `f64`), its value and its rate
-//! there (`taylor::Jet`, `tape::derivatives_along` — nothing is differenced), and an enclosure of
-//! both over a stretch of the roll (`tape::eval_interval`), which is what keeps `MotionBounds`
+//! there (`eval_num` over `taylor::Jet` — nothing is differenced), and an enclosure of both over
+//! a stretch of the roll (`tape::eval_interval`), which is what keeps `MotionBounds`
 //! and the speed bound, and so the roll search and a swept field, conservative under a drive.
 //! Every number but the parameter is read where the drawing stands when the law is read, as a
 //! `motion::Family` reads its axes.
@@ -15,16 +16,25 @@ use crate::interval::{Error, Interval as I};
 use crate::model::Sketch;
 
 /// A joint's value as a function of the roll, in radians a radian.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct Law {
     /// The value as the `fix` wrote it.
-    pub text: String,
+    text: String,
     /// The declared parameter it runs over, which the roll stands for.
-    pub over: String,
+    over: String,
     flat: Vec<f64>,
     /// Every held number where it stands, in the tape's order; the parameter's slot is the roll's.
     x: Vec<f64>,
     at: usize,
+}
+
+/// Why a relation the solve holds cannot read the frame `f` driven by `over`: a row reads no law,
+/// so what is drawn in the frame is read at its value worked out, and the readings over the roll
+/// read the law after the solve.  The one wording, wherever the row is refused.
+pub fn unread_drive(f: &str, over: &str) -> String {
+    format!("`{f}` is driven by `{over}`, and a relation the solve holds reads no drive (#391): \
+             draw in it, `n := x in {f}`, which stands where its value puts it, or read it over \
+             the roll — a sweep, a placement")
 }
 
 /// Degrees a radian, enclosed.
@@ -38,7 +48,8 @@ impl Law {
     /// refused where `over` is no declared angle (the roll is one) or the text reads a name no
     /// held number is (an unknown, whose value is the solve's).
     pub fn read(sk: &Sketch, text: &str, over: &str) -> Result<Law, String> {
-        let p = sk.parameters.get(over).ok_or_else(|| format!("`{over}` is no declared parameter"))?;
+        let p = sk.parameters.get(over)
+            .ok_or_else(|| format!("`{over}` is no declared parameter"))?;
         if p.dim != crate::units::Dim::ANGLE {
             return Err(format!("`{over}` is a {}, and a drive read over the roll runs over an \
                                 angle", p.dim.name()));
@@ -69,14 +80,15 @@ impl Law {
 
     /// The value at `theta` and its rate a radian of the roll, read off a Taylor jet.
     pub fn jet(&self, theta: f64) -> Result<[f64; 2], String> {
-        let mut dir = vec![0.0; self.x.len()];
-        dir[self.at] = 1.0;
-        let d = crate::tape::derivatives_along(&self.flat, &self.at_roll(theta), &dir)
-            .filter(|d| d[0].is_finite() && d[1].is_finite())
+        use crate::taylor::Jet;
+        let mut x: Vec<Jet> = self.x.iter().map(|&v| Jet::constant(v)).collect();
+        x[self.at] = Jet::from(&[theta.to_degrees(), 1.0]);
+        let j = crate::tape::eval_num::<Jet>(&self.flat, &x)
+            .filter(|j| j.nth(0).is_finite() && j.nth(1).is_finite())
             .ok_or_else(|| format!("`{}` has no rate at {} = {}°", self.text, self.over,
                                    theta.to_degrees()))?;
         // degrees a degree is radians a radian
-        Ok([d[0].to_radians(), d[1]])
+        Ok([j.nth(0).to_radians(), j.nth(1)])
     }
 
     /// An enclosure of the value (radians) and of its rate (radians a radian) for every roll in

@@ -134,7 +134,8 @@ impl Family {
             let value = match *step {
                 Step::Rotation {origin,axis,ratio,advance,ref law} => {
                     let a = number(law)?;
-                    MotionBounds::rotation(origin,axis,I::point(ratio)?.mul(a)?)?.advanced(axis,advance,a)?
+                    MotionBounds::rotation(origin,axis,I::point(ratio)?.mul(a)?)?
+                        .advanced(axis,advance,a)?
                 }
                 Step::Translation {axis,advance,ref law} =>
                     MotionBounds::identity().advanced(axis,advance,number(law)?)?,

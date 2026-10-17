@@ -206,13 +206,14 @@ where a rule came from.
     instant onto a chosen branch, and the app's timeline (stage 6).
 - **General drives** (#391 S5, [0.143]): a joint's value that reads a declared parameter
   *drives* the frame by it — the value is a law, any expression of the parameter, and the frame
-  stands at its joint turned `ratio · law(θ)` and risen `advance · law(θ) / 360°` at the roll `θ`.
+  stands at its joint turned `ratio · law(θ)` and risen `advance · law(θ) / 360°` at the roll
+  `θ`.
   - **One clock**: a reading of the frame's motion over the roll reads the roll as that parameter,
     so the joint stands at the law's value of the roll rather than at the roll — a value of `t`
     alone is the frame undriven.  Stage 3's rule for a value that reads none stands: the joint
     runs with the roll, and the value is only where `x in f` puts what is drawn.
   - **The node** (`program::motions::motions`): where a frame's value reads a declared parameter
-    (`drive_of`, the parameter its text reads) a `MotionDef::Driven { of, law, over }` is minted
+    (`runs`, the declared parameter its text reads) a `MotionDef::Driven { of, law, over }` is minted
     beside the joint's own node; `motions::carried` hands every reading of the frame's motion the
     drive (`driven`), and `x in f` the joint itself (`undriven`: `relations::carried_motion` and
     `solids::build::under_motion`), read at the value worked out where the drawing stands
@@ -222,9 +223,10 @@ where a rule came from.
     nothing (`reading_of`, E080: the roll is an angle) and followed all the same.
   - **The law** (`motion::Law`): the value's text compiled once over the held numbers
     (`tape::Tape::compile_wide`, every name but the parameter where the drawing stands when the
-    motion is read, as `Family::read` reads its axes; a name no held number is is refused) and read
-    three ways — its value at a roll (`eval_num` over `f64`), its value and rate there off a Taylor
-    jet (`tape::derivatives_along`; nothing is differenced), and an enclosure of both over a stretch
+    motion is read, as `Family::read` reads its axes; a name no held number is is refused) and
+    read three ways — its value at a roll (`eval_num` over `f64`), its value and rate there off a
+    Taylor jet (`eval_num` over `taylor::Jet`; nothing is differenced), and an enclosure of both
+    over a stretch
     of the roll (`tape::eval_interval`, the fourth walker: forward duals over
     `interval::Interval`, failing closed for `tan`, the inverse trigonometry, `exp`/`ln`/`log`,
     the roundings, `atan2`, a power not a whole number, and a division, a root or a length's
@@ -243,15 +245,15 @@ where a rule came from.
   - **Refused** where a row would read it: `envelope::held::motion` (a carried point at a roll, a
     rate, a meshing; a relation held to an envelope under one, E061 where the solve is told it
     cannot hold to it), said first for a carried point by `relations::carried_motion` (E080,
-    naming `x in f`); `program::generated::program_signed` (a profile in the plane is
+    naming `x in f`), both in `motion::unread_drive`'s words; `program::generated::program_signed` (a profile in the plane is
     generated under joints at a constant rate).  A graft carries a drive with its joint
     (`io::graft`), its law reading the parameter by name.
   - **A constant twist by what is stated** (`expr::Ast::affine_in`): a face family's carried rows
     are its motion's sweep (`solid::family::stated_carry`) only where the roll they state is affine
     in the running number as written; through [0.142] three samples (the ends and the middle)
     decided it, which `900deg · s + 30deg · sin(360deg · s)` passes.  A single joint at a monotone
-    law sweeps the same surface at another pace (a sweep reads the path alone), and the B-rep
-    still reads such walls off the stations as their screw's (`tests/carried_family.rs`,
+    law sweeps the same surface at another pace (a sweep reads the path alone), and the B-rep still
+    reads such walls off the stations as their screw's (`tests/carried_family.rs`,
     `a_law_reparametrises_its_screws_sweep`).
   - **Gate**: `tests/drives.rs` — a radial cam: the follower's roller followed along `t` against
     its law at every station (1e-9); the follower's drive seen from the cam against the closed

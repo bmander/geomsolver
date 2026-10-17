@@ -6,7 +6,7 @@ pub use bounds::MotionBounds;
 mod contact;
 pub use contact::{NormalVelocity,ContactTime};
 mod law;
-pub use law::Law;
+pub use law::{Law, unread_drive};
 
 use crate::{envelope::Motion,model::{MotionDef,Sketch}};
 
@@ -198,27 +198,27 @@ impl Family {
                 I::point(origin[2])?.add(along.mul(I::point(a[2])?)?)?];
             Ok((foot,radius))
         };
-        // how far a joint's own number reaches over the domain and how fast it runs a radian
-        // of it: the roll's own reach at rate 1, or a drive's law enclosed over the domain
-        // (#391 S5), so a cam's speed and its throw bound what it carries
+        // how far each step's own number reaches over the domain and how fast it runs a radian
+        // of it, once for every box: the roll's own reach at rate 1, or a drive's law enclosed
+        // over the domain (#391 S5), so a cam's throw and its speed bound what it carries
         let magnitude = |x: I| { let [lo,hi] = x.bounds(); I::point(lo.abs().max(hi.abs())) };
-        let number = |law: &Option<Law>| -> Result<(I,I),Error> {
-            match law {
-                None => Ok((reach,I::ONE)),
-                Some(l) => { let [v,r] = l.enclose(domain)?; Ok((magnitude(v)?,magnitude(r)?)) }
+        let numbers = self.steps.iter().map(|step| match step {
+            Step::Rotation {law:Some(l),..} | Step::Translation {law:Some(l),..} => {
+                let [v,r] = l.enclose(domain)?;
+                Ok((magnitude(v)?,magnitude(r)?))
             }
-        };
+            _ => Ok((reach,I::ONE)),
+        }).collect::<Result<Vec<(I,I)>,Error>>()?;
         // a step's own speed on a box, the same forward and inverse
-        let own = |step: &Step,b: [I;3]| -> Result<I,Error> {
-            match *step {
-                Step::Rotation {origin,axis,ratio,advance,ref law} => {
+        let own = |i: usize,b: [I;3]| -> Result<I,Error> {
+            let (_,rate) = numbers[i];
+            match self.steps[i] {
+                Step::Rotation {origin,axis,ratio,advance,..} => {
                     let (_,radius) = about(origin,axis,b)?;
-                    let (_,rate) = number(law)?;
                     I::point(ratio.abs())?.mul(radius)?.add(I::point(advance.abs())?.div(tau)?)?
                         .mul(rate)
                 }
-                Step::Translation {advance,ref law,..} =>
-                    I::point(advance.abs())?.div(tau)?.mul(number(law)?.1),
+                Step::Translation {advance,..} => I::point(advance.abs())?.div(tau)?.mul(rate),
                 Step::Relative {..} => unreachable!("composed below"),
             }
         };
@@ -226,27 +226,28 @@ impl Family {
         // inverse: within the box's farthest distance of its foot on the
         // axis, and the advance's reach along it; no angle enters, so no
         // interval trigonometry limits the domain
-        let image = |step: &Step,b: [I;3]| -> Result<[I;3],Error> {
-            match *step {
-                Step::Rotation {origin,axis,advance,ref law,..} => {
+        let image = |i: usize,b: [I;3]| -> Result<[I;3],Error> {
+            let (reach,_) = numbers[i];
+            match self.steps[i] {
+                Step::Rotation {origin,axis,advance,..} => {
                     let a = unit(axis).ok_or(Error::InvalidBounds)?;
                     let (foot,radius) = about(origin,axis,b)?;
-                    let slide = I::point(advance.abs())?.div(tau)?.mul(number(law)?.0)?;
+                    let slide = I::point(advance.abs())?.div(tau)?.mul(reach)?;
                     let spread = radius.add(slide)?;
                     let _ = a;
                     Ok([foot[0].add(I::new(-spread.bounds()[1],spread.bounds()[1])?)?,foot[1].add(I::new(-spread.bounds()[1],spread.bounds()[1])?)?,
                         foot[2].add(I::new(-spread.bounds()[1],spread.bounds()[1])?)?])
                 }
-                Step::Translation {axis,advance,ref law} => {
+                Step::Translation {axis,advance,..} => {
                     let a = unit(axis).ok_or(Error::InvalidBounds)?;
-                    let slide = I::point(advance.abs())?.div(tau)?.mul(number(law)?.0)?.bounds()[1];
+                    let slide = I::point(advance.abs())?.div(tau)?.mul(reach)?.bounds()[1];
                     Ok([b[0].add(I::new(-slide*a[0].abs(),slide*a[0].abs())?)?,b[1].add(I::new(-slide*a[1].abs(),slide*a[1].abs())?)?,
                         b[2].add(I::new(-slide*a[2].abs(),slide*a[2].abs())?)?])
                 }
                 Step::Relative {..} => unreachable!("composed below"),
             }
         };
-        fn image_of(family: &Family,image: &dyn Fn(&Step,[I;3]) -> Result<[I;3],Error>,i: usize,b: [I;3],forward: bool) -> Result<[I;3],Error> {
+        fn image_of(family: &Family,image: &dyn Fn(usize,[I;3]) -> Result<[I;3],Error>,i: usize,b: [I;3],forward: bool) -> Result<[I;3],Error> {
             match family.steps[i] {
                 Step::Relative {source,observer} => {
                     // forward: x ↦ O⁻¹(S x); inverse: x ↦ S⁻¹(O x)
@@ -254,10 +255,10 @@ impl Family {
                     let moved = image_of(family,image,first,b,true)?;
                     image_of(family,image,second,moved,false)
                 }
-                ref step => image(step,b),
+                _ => image(i,b),
             }
         }
-        fn speed(family: &Family,own: &dyn Fn(&Step,[I;3]) -> Result<I,Error>,image: &dyn Fn(&Step,[I;3]) -> Result<[I;3],Error>,
+        fn speed(family: &Family,own: &dyn Fn(usize,[I;3]) -> Result<I,Error>,image: &dyn Fn(usize,[I;3]) -> Result<[I;3],Error>,
             i: usize,b: [I;3],forward: bool) -> Result<I,Error> {
             match family.steps[i] {
                 Step::Relative {source,observer} => {
@@ -266,7 +267,7 @@ impl Family {
                     let carried = image_of(family,image,first,b,true)?;
                     moved.add(speed(family,own,image,second,carried,false)?)
                 }
-                ref step => own(step,b),
+                _ => own(i,b),
             }
         }
         let root = self.steps.len()-1;

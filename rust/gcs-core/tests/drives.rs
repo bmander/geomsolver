@@ -10,7 +10,7 @@
 use gcs_core::interval::minimum::{Options, Status};
 use gcs_core::interval::Interval as I;
 use gcs_core::model::{EntKind, SolidDef};
-use gcs_core::motion::Family;
+use gcs_core::motion::{Family, Law};
 use gcs_core::program::Elaborated;
 use gcs_core::solid::MaterialField;
 
@@ -73,10 +73,10 @@ fn point(e: &Elaborated, sk: &gcs_core::model::Sketch, n: &str) -> [f64; 3] {
 }
 
 /// The swept solid's motion: the follower's drive seen from the cam.
-fn swept(e: &Elaborated) -> (usize, Family) {
+fn swept(e: &Elaborated) -> Family {
     let i = e.map.ent_named("cut").unwrap().i();
     let SolidDef::Swept { motion, .. } = e.sketch.solids[i].def else { panic!("not swept") };
-    (i, Family::read(&e.sketch, motion as usize).expect("the drive reads"))
+    Family::read(&e.sketch, motion as usize).expect("the drive reads")
 }
 
 #[test]
@@ -99,7 +99,7 @@ fn a_followers_lift_is_its_law_at_every_instant() {
 #[test]
 fn a_drive_seen_from_its_cam_is_its_law_turned_back() {
     let e = solved(&cam(""));
-    let (_, family) = swept(&e);
+    let family = swept(&e);
     let r0 = [0.0, 0.0, BASE];
     for k in 0..=72 {
         let t = 5.0 * k as f64;
@@ -126,7 +126,7 @@ fn a_drive_seen_from_its_cam_is_its_law_turned_back() {
 #[test]
 fn a_drives_bounds_enclose_its_poses_and_its_speed() {
     let e = solved(&cam(""));
-    let (_, family) = swept(&e);
+    let family = swept(&e);
     let r0 = [0.0, 0.0, BASE];
     let boxed = r0.map(|v| I::point(v).unwrap());
     for k in 0..24 {
@@ -150,48 +150,45 @@ fn a_drives_bounds_enclose_its_poses_and_its_speed() {
     }
 }
 
-#[test]
-fn a_cam_cut_is_the_ball_swept_along_its_law() {
-    let e = solved(&cam(""));
-    let (i, _) = swept(&e);
-    let mut query = MaterialField::read(&e.sketch, i, 1e-10).unwrap().evaluator(256);
-    // the distance from a point to the ball's path, by a fine search of the closed form
-    let distance = |p: [f64; 3]| {
-        let d = |t: f64| { let c = seen(t); ((0..3).map(|k| (p[k] - c[k]).powi(2)).sum::<f64>()).sqrt() };
-        let mut best = (0..=36000).map(|k| k as f64 / 100.0).fold((f64::INFINITY, 0.0), |b, t| {
-            let v = d(t);
-            if v < b.0 { (v, t) } else { b }
-        });
-        let mut h = 0.01;
-        while h > 1e-9 {
-            for t in [best.1 - h, best.1 + h] {
-                if d(t) < best.0 { best = (d(t), t); }
-            }
-            h *= 0.5;
-        }
-        best.0 - 1.0
-    };
-    // in the front view's (u, v), off it by `y`: on the path, inside and outside its envelope
-    for [u, v, y] in [[0.0, 20.0, 0.0], [7.0, 22.5, 0.0], [-24.0, -9.0, 0.3], [0.0, -30.0, 0.5],
-                      [12.0, 12.0, -0.4], [0.0, 17.5, 0.0], [3.0, -31.5, 0.0]] {
-        let p = [u, y, v];
-        let answer = query.bounds(p.map(|v| I::point(v).unwrap()),
-            Options { value_tolerance: 1e-6, max_evaluations: 200_000 }).unwrap();
-        assert!(answer.sweeps.iter().all(|s| s.minimum.status == Status::Converged));
-        let [lo, hi] = answer.value.bounds();
-        let want = distance(p);
-        assert!(lo - 1e-6 <= want && want <= hi + 1e-6, "at {p:?}: [{lo}, {hi}] against {want}");
-    }
-}
-
-
-/// Signed distance bounds of solid `name`'s material at `p`.
+/// The bounds a swept field's distance from solid `name`'s material at `p` is found within.
 fn material(e: &Elaborated, name: &str, p: [f64; 3]) -> [f64; 2] {
     let i = e.map.ent_named(name).unwrap_or_else(|| panic!("no `{name}`")).i();
     let mut query = MaterialField::read(&e.sketch, i, 1e-10).unwrap().evaluator(256);
     let answer = query.bounds(p.map(|v| I::point(v).unwrap()),
         Options { value_tolerance: 1e-6, max_evaluations: 200_000 }).unwrap();
+    assert!(answer.sweeps.iter().all(|s| s.minimum.status == Status::Converged));
     answer.value.bounds()
+}
+
+#[test]
+fn a_cam_cut_is_the_ball_swept_along_its_law() {
+    let e = solved(&cam(""));
+    // the distance from a point to the ball's path: the nearest of a fine grid of the closed
+    // form, refined by halving steps either side
+    let distance = |p: [f64; 3]| {
+        let d = |t: f64| {
+            let c = seen(t);
+            (0..3).map(|k| (p[k] - c[k]).powi(2)).sum::<f64>().sqrt()
+        };
+        let mut t = (0..36000).map(|k| k as f64 / 100.0).min_by(|a, b| d(*a).total_cmp(&d(*b)))
+            .unwrap();
+        let mut h = 0.01;
+        while h > 1e-9 {
+            for s in [t - h, t + h] {
+                if d(s) < d(t) { t = s }
+            }
+            h *= 0.5;
+        }
+        d(t) - 1.0
+    };
+    // in the front view's (u, v), off it by `y`: on the path, inside and outside its envelope
+    for [u, v, y] in [[0.0, 20.0, 0.0], [7.0, 22.5, 0.0], [-24.0, -9.0, 0.3], [0.0, -30.0, 0.5],
+                      [12.0, 12.0, -0.4], [0.0, 17.5, 0.0], [3.0, -31.5, 0.0]] {
+        let p = [u, y, v];
+        let [lo, hi] = material(&e, "cut", p);
+        let want = distance(p);
+        assert!(lo - 1e-6 <= want && want <= hi + 1e-6, "at {p:?}: [{lo}, {hi}] against {want}");
+    }
 }
 
 #[test]
@@ -264,16 +261,19 @@ fn a_drive_refuses_what_it_cannot_mean() {
 /// function the interval walker carries — and failing closed for one it does not.
 #[test]
 fn a_laws_jet_and_enclosure_agree_with_its_value() {
-    let e = solved(&format!("unit mm\nparam t: Angle over (-90deg, 400deg)\n{}",
-                            "use std\nin std.front {\n  o := point\n  fix((0, 0)) o\n}\n"));
+    let e = solved("unit mm\nparam t: Angle over (-90deg, 400deg)\nuse std\nin std.front {\n  \
+        o := point\n  fix((0, 0)) o\n}\n");
     let laws = ["5deg * (1 - cos(t))", "t + 20deg * sin(2 * t) - 3deg", "(t / 90deg) ^ 3 * 10deg",
-                "3 * sqrt(t * t + 1deg * 1deg)", "abs(t - 100deg) / 2", "max(t, 30deg) - min(t, 0deg)",
-                "hypot(t, 45deg)", "t / (2 + cos(t))", "(t / 10deg) ^ -2 * 1deg + t"];
+                "3 * sqrt(t * t + 1deg * 1deg)", "abs(t - 100deg) / 2",
+                "max(t, 30deg) - min(t, 0deg)", "hypot(t, 45deg)", "t / (2 + cos(t))",
+                "(t / 10deg) ^ -2 * 1deg + t"];
+    // where `abs`, `max` and `min` turn a corner, and their rate is one-sided
+    let kinks = [0.0, 30.0, 100.0].map(f64::to_radians);
     for text in laws {
-        let law = gcs_core::motion::Law::read(&e.sketch, text, "t").expect(text);
+        let law = Law::read(&e.sketch, text, "t").expect(text);
         for k in 0..49 {
             let [a, b] = [k, k + 1].map(|j| (-90.0 + 10.0 * j as f64).to_radians());
-            // a stretch the walker refuses (a power of a stretch reaching zero) is said, not guessed
+            // a stretch the walker refuses (a power of one reaching zero) is said, not guessed
             let Ok([v, r]) = law.enclose(I::new(a, b).unwrap()) else {
                 assert!(text.contains("^ -2") && a <= 0.0 && b >= 0.0, "{text} over [{a}, {b}]");
                 continue;
@@ -284,21 +284,20 @@ fn a_laws_jet_and_enclosure_agree_with_its_value() {
                 assert!((x - law.value(theta).unwrap()).abs() < 1e-12);
                 assert!(v.contains(x), "{text} at {theta}: {x} outside {v:?}");
                 let h = 1e-6;
-                let fd = (law.value(theta + h).unwrap() - law.value(theta - h).unwrap()) / (2.0 * h);
-                // a kink (abs, max, min) has a one-sided rate there; anywhere else they agree
-                let kinked = ["abs", "max"].iter().any(|f| text.contains(f));
+                let fd = (law.value(theta + h).unwrap() - law.value(theta - h).unwrap())
+                    / (2.0 * h);
+                let kinked = kinks.iter().any(|k| (theta - k).abs() < 2.0 * h);
                 assert!(kinked || (dx - fd).abs() < 1e-6 * (1.0 + dx.abs()), "{text}: {dx} {fd}");
                 assert!(r.contains(dx), "{text} at {theta}: rate {dx} outside {r:?}");
             }
         }
     }
     // no enclosure is carried of a tangent: the bound is refused, never guessed
-    let law = gcs_core::motion::Law::read(&e.sketch, "tan(t / 8)", "t").unwrap();
+    let law = Law::read(&e.sketch, "tan(t / 8)", "t").unwrap();
     assert!(law.enclose(I::new(0.0, 0.1).unwrap()).is_err());
     // a drive over the roll runs over an angle
     let scalar = solved("unit mm\nparam s: Scalar over (0, 1)\nuse std\nin std.front {\n  \
         o := point\n  fix((0, 0)) o\n}\n");
-    assert!(gcs_core::motion::Law::read(&scalar.sketch, "90deg * s", "s").unwrap_err()
-        .contains("an angle"));
+    assert!(Law::read(&scalar.sketch, "90deg * s", "s").unwrap_err().contains("an angle"));
 }
 

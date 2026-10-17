@@ -862,10 +862,6 @@ pub(crate) fn eval_interval(flat: &[f64], x: &[crate::interval::Interval], along
     use crate::interval::{Error, Interval as I};
     let k = std::f64::consts::PI / 180.0;
     let deg = I::new(k.next_down(), k.next_up())?;
-    let hull = |a: I, b: I| {
-        let ([p, q], [r, s]) = (a.bounds(), b.bounds());
-        I::new(p.min(r), q.max(s))
-    };
     let n_ops = flat.len() / WORD;
     let mut v: Vec<[I; 2]> = Vec::with_capacity(n_ops);
     for i in 0..n_ops {
@@ -915,13 +911,15 @@ pub(crate) fn eval_interval(flat: &[f64], x: &[crate::interval::Interval], along
             [value, slope.mul(da)?]
         } else if w[0] == code::CALL1 {
             let [a, da] = get(w[1])?;
+            let trig = || a.mul(deg)?.sin_cos_periodic();
             match fn1_of(w[2]) {
-                Fn1::Sin | Fn1::Cos => {
-                    let (s, c) = a.mul(deg)?.sin_cos_periodic()?;
-                    match fn1_of(w[2]) {
-                        Fn1::Sin => [s, c.mul(deg)?.mul(da)?],
-                        _ => [c, s.neg().mul(deg)?.mul(da)?],
-                    }
+                Fn1::Sin => {
+                    let (s, c) = trig()?;
+                    [s, c.mul(deg)?.mul(da)?]
+                }
+                Fn1::Cos => {
+                    let (s, c) = trig()?;
+                    [c, s.neg().mul(deg)?.mul(da)?]
                 }
                 Fn1::Sqrt => {
                     let r = a.sqrt()?;
@@ -944,14 +942,16 @@ pub(crate) fn eval_interval(flat: &[f64], x: &[crate::interval::Interval], along
             let ([a, da], [b, db]) = (get(w[1])?, get(w[2])?);
             let ([al, ah], [bl, bh]) = (a.bounds(), b.bounds());
             match fn2_of(w[3]) {
-                Fn2::Min | Fn2::Max => {
-                    let min = fn2_of(w[3]) == Fn2::Min;
+                f @ (Fn2::Min | Fn2::Max) => {
+                    let min = f == Fn2::Min;
                     let value = if min { I::new(al.min(bl), ah.min(bh))? }
                         else { I::new(al.max(bl), ah.max(bh))? };
                     // one operand wholly past the other is the one taken; otherwise either's slope
                     let first = if min { ah < bl } else { al > bh };
                     let second = if min { bh < al } else { bl > ah };
-                    [value, if first { da } else if second { db } else { hull(da, db)? }]
+                    let ([p, q], [r, t]) = (da.bounds(), db.bounds());
+                    let either = I::new(p.min(r), q.max(t))?;
+                    [value, if first { da } else if second { db } else { either }]
                 }
                 Fn2::Hypot => {
                     let h = a.square()?.add(b.square()?)?.sqrt()?;
