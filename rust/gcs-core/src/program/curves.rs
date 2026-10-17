@@ -1127,6 +1127,73 @@ pub(super) fn build_curve(
     }
 }
 
+/// **A point of the drawing traced as a declared parameter runs** (#391 S4, `trace(m over t)`):
+/// a curve of the point's view over the parameter's interval, or a stretch of it, whose points are
+/// wherever the drawing followed along the parameter puts the point (`CurveBody::Followed`).  One
+/// definition per parameter, shared by every point traced over it.  Refused: a name that is no
+/// point and a stretch outside the parameter's interval — and a point in space, a curve being a
+/// view's, once memberships are known (`entities::drawn_in_planes`).
+fn followed(
+    sk: &mut Sketch,
+    res: &Resolver,
+    d: &Decl,
+    c: &crate::syntax::CurveSpec,
+    point: &str,
+) -> Result<crate::model::CurveE, (Code, Span, String)> {
+    let swept = c.swept.text.as_str();
+    let span = c.swept.span;
+    let p = res.of.get(point).copied().filter(|e| e.kind == EntKind::Point).ok_or_else(|| {
+        (Code::E040, span, format!("`{point}` is traced as `{swept}` runs, and only a point is"))
+    })?;
+    let Some(running) = sk.parameters.get(swept).cloned() else {
+        return Err((Code::E103, span, format!("`{swept}` is no parameter the document declares")));
+    };
+    let num = |t: &str| crate::expr::literal(t);
+    let (from, to) = (num(&c.domain.0).unwrap_or(running.from), num(&c.domain.1)
+        .unwrap_or(running.to));
+    if from < running.from || to > running.to || from >= to {
+        return Err((Code::E103, span, format!("a trace over `{swept}` runs over an increasing \
+            stretch of its interval, `({}, {})`", crate::syntax::num(running.from),
+            crate::syntax::num(running.to))));
+    }
+    let key = format!("followed:{swept}");
+    let def = match sk.curve_defs.iter().position(|x| x.name == key) {
+        Some(i) => i,
+        None => {
+            sk.curve_defs.push(crate::model::CurveDef {
+                name: key,
+                component: String::new(),
+                port: String::new(),
+                formals: vec![("p".to_string(), EntKind::Point)],
+                columns: Vec::new(),
+                values: Vec::new(),
+                param: swept.to_string(),
+                turns: running.turns(),
+                vars: Vec::new(),
+                body: crate::model::CurveBody::Followed,
+                pose_of: Vec::new(),
+                home: false,
+            });
+            sk.curve_defs.len() - 1
+        }
+    };
+    Ok(crate::model::CurveE {
+        def: def as u32,
+        args: vec![p],
+        unknowns: Vec::new(),
+        values: Vec::new(),
+        over: crate::model::Running::new(swept, running.dim, from, to),
+        home: crate::model::Home::At(from),
+        pose: Vec::new(),
+        class: d.class.clone(),
+        trim: None,
+        extrusion: false,
+        length: None,
+        pegs: Vec::new(),
+        slides: Vec::new(),
+    })
+}
+
 /// The curve a declaration draws: its definition (compiled on first use, shared after), the
 /// entities and numbers the instance gave it, and where its trace is anchored.  `Ok(None)` when
 /// the flattener already reported what is wrong with it.
@@ -1148,6 +1215,9 @@ fn curve_entity(
     // the instance the point belongs to — found by the flattener, which reported it if it
     // found none
     let Some(of) = &c.of else { return Ok(None) };
+    if of.instance.is_empty() {
+        return followed(sk, res, d, c, &of.point).map(Some);
+    }
     let Some(info) = insts.iter().find(|i| i.prefix == of.instance) else { return Ok(None) };
     let comp = &prog.components[info.comp];
     let id = prog.component_id(info.comp);

@@ -74,6 +74,12 @@ pub struct Caches {
     /// unit it was stepped at: validation and the evaluation each ask it, and it is a solve a
     /// station.
     pub(crate) family: Memo<Result<Rc<crate::solid::family::Family>, String>>,
+    /// Each declared parameter's march (`follow::followed`, #391 S4), by its name, against every
+    /// number of the drawing: a trace over it and the report each read it, and it is a solve a
+    /// station.
+    #[allow(clippy::type_complexity)]
+    pub(crate) followed: RefCell<BTreeMap<String, (Vec<f64>, Rc<Result<crate::follow::Followed,
+                                                                       String>>)>>,
 }
 
 impl Caches {
@@ -90,5 +96,6 @@ impl Caches {
         self.roll.clear();
         self.faces.clear();
         self.family.clear();
+        self.followed.borrow_mut().clear();
     }
 }

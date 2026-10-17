@@ -214,7 +214,32 @@ pub fn diagnosis_json(sk: &Sketch, d: &Diagnosis) -> Json {
         ("structuralNRedundant", d.structural_n_redundant.into()),
         ("status", d.status.as_str().into()),
         ("summary", diag_summary(d).into()),
+        // what each declared parameter drives (#391 S4); how far the drawing is followed along
+        // it is a march, asked of `parameter_text` and not of every diagnosis
+        ("parameters", Json::Arr(d.parameters.iter().map(|p| object([
+            ("name", p.name.as_str().into()),
+            ("readers", ids(&p.readers)),
+            ("dof", p.dof.map(|n| n as i64).into()),
+        ])).collect())),
     ])
+}
+
+/// **How a drawing runs over its declared parameter `name`** (#391 S4), in a reader's words: how
+/// far it is followed (`follow::followed`) and, where the march stopped short, the singular
+/// instant it stopped at — or why it is not followed at all.
+pub fn parameter_text(sk: &Sketch, name: &str) -> String {
+    let followed = crate::follow::followed(sk, name);
+    match followed.as_ref() {
+        Err(why) => format!("{name}: not followed — {why}"),
+        Ok(f) => {
+            let at = |v: f64| crate::follow::reading(&f.over, v, sk.units);
+            let reach = format!("{name}: followed from {} to {}", at(f.over.from), at(f.reached()));
+            match &f.singular {
+                Some(s) => format!("{reach}, {}", s.text(&f.over, sk.units)),
+                None => reach,
+            }
+        }
+    }
 }
 
 /// **Where everything the source names has landed** (issue #48, item 3).

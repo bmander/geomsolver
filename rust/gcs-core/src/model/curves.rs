@@ -96,6 +96,10 @@ pub enum CurveBody {
     /// A free curve (`rope := curve(a, b)`, #144): the solution of its energy's Euler–Lagrange
     /// equation, from its first end to its second, of its own length (`extremal.rs`).
     Extremal(Extremal),
+    /// A point of the drawing itself as a declared parameter runs (`trace(m over t)`, #391 S4):
+    /// the curve's one argument, wherever the drawing followed along the definition's `param`
+    /// stands (`follow.rs`).  Drawn, and held to by nothing.
+    Followed,
 }
 
 /// A free curve's definition: its energy's Lagrangian — `None` until an energy is stated — how many
@@ -250,11 +254,18 @@ impl Sketch {
                 (v.x, v.y)
             }),
             CurveBody::Envelope(g) => crate::generate::point(&g.flat, &x, self.curve_home(i)),
+            CurveBody::Followed => self.followed_points(i, &[u]).pop().unwrap_or_default(),
             CurveBody::Extremal(_) => self
                 .curve_shape(i)
                 .and_then(|(lag, sh)| crate::extremal::shoot::position(&lag, &sh, u))
                 .map_or((f64::NAN, f64::NAN), |p| (p[0], p[1])),
         }
+    }
+
+    /// Whether curve `i` is a point of the drawing traced over a declared parameter
+    /// (`trace(m over t)`, #391 S4).
+    pub fn curve_followed(&self, i: usize) -> bool {
+        matches!(self.curve_defs[self.curves[i].def as usize].body, CurveBody::Followed)
     }
 
     /// Whether curve `i` is a free curve (`curve(a, b)`).
@@ -458,6 +469,10 @@ impl Sketch {
         let mut key = self.curve_vars(i, a);
         // and the definition, which a free curve's energy settles after it is built
         key.extend([b, self.curve_home(i), self.curves[i].def as f64]);
+        // a point followed along a parameter stands where the whole drawing puts it (#391 S4)
+        if let CurveBody::Followed = self.curve_defs[self.curves[i].def as usize].body {
+            key.extend(self.params.iter().map(|p| p.value));
+        }
         key.extend(self.curves[i].pegs.iter().flat_map(|&p| {
             let (x, y) = self.point_xy(p as usize);
             [x, y]
@@ -536,7 +551,34 @@ impl Sketch {
                 Some((lag, sh)) => crate::extremal::points(&lag, &sh, a, b, n),
                 None => Vec::new(),
             },
+            CurveBody::Followed => {
+                let at: Vec<f64> = (0..=n).map(|k| a + (b - a) * k as f64 / n as f64).collect();
+                self.followed_points(i, &at)
+            }
         }
+    }
+
+    /// Where the point a followed curve traces stands at each of `at` (#391 S4): the drawing
+    /// followed along its parameter (`follow::followed`, remembered) and stood at each, on the
+    /// branch the march carried — an instant past a singular one the march stopped at reads as
+    /// that one, so the curve ends there.  Empty where the drawing is not followed.
+    pub(crate) fn followed_points(&self, i: usize, at: &[f64]) -> Vec<(f64, f64)> {
+        let cv = &self.curves[i];
+        let Some(p) = cv.args.first().filter(|e| e.kind == EntKind::Point) else {
+            return Vec::new();
+        };
+        let name = &self.curve_defs[cv.def as usize].param;
+        let followed = crate::follow::followed(self, name);
+        let Ok(f) = followed.as_ref() else { return Vec::new() };
+        let mut sk = self.clone();
+        let mut out = Vec::with_capacity(at.len());
+        for &u in at {
+            if f.put(&mut sk, u.clamp(f.over.from, f.reached())).is_err() {
+                return Vec::new();
+            }
+            out.push(sk.point_xy(p.i()));
+        }
+        out
     }
 
     fn curve_polyline_uncached(&self, i: usize, a: f64, b: f64) -> Vec<(f64, f64)> {

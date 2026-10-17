@@ -1,8 +1,8 @@
 # Parameters: numbers that run
 
 Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you touch
-`model/running.rs`, a `param … over`, a face family's running number, a traced body's formals, or
-an interval of the roll a reading states. The direction is [#391](https://github.com/bmander/geomsolver/issues/391):
+`model/running.rs`, a `param … over`, a face family's running number, a traced body's formals, an
+interval of the roll a reading states, `follow.rs` (continuation), or `trace(m over t)`. The direction is [#391](https://github.com/bmander/geomsolver/issues/391):
 geometry over a parameter, trajectories rather than snapshots; this file holds what is built
 of it. An issue number (#n) or a spec version ([0.n], see the
 [language changelog](../solvent-changelog.md)) says where a rule came from.
@@ -27,14 +27,14 @@ of it. An issue number (#n) or a spec version ([0.n], see the
   name. **It is no unknown**: it makes no free value, no `Declared`, no column. `syntax::print`
   writes it as declared and `lift::unknowns` declares a sketch's again (ends as numbers in the
   document's units); `graft` carries none, as it carries no `declared`.
-- **A declared parameter is read by a reading over the roll, and by nothing else yet** (#391 S2,
-  [0.140]): `over t` with no interval (`syntax::RunsOver::declared`) names it, and
+- **A declared parameter is read by a reading over the roll** (#391 S2, [0.140]), and since S4
+  by the document's relations (below): `over t` with no interval (`syntax::RunsOver::declared`) names it, and
   `Walk::declared_interval` writes its ends into the reading's `from`/`to` before they are settled
   — a parameter of another type than `Angle`, or a name the document declares none by (a
-  component's body sees no parameter), is E103 at the name. Reading one in a dimension's text is
-  still E103 (`Walk::runs`, `values::runs`) and the relation is refused as for a name nothing
-  declares (`settle_dim`, `Checks::refused`), so no free variable is ever made of its name: a
-  relation that holds for every value of a parameter is stage 4's.
+  component's body sees no parameter), is E103 at the name.  Through S3 a dimension reading one
+  was E103 and the relation refused (`Walk::runs`, `values::runs`, `settle_dim`,
+  `Checks::refused`); that refusal now stands only where the document's relations are not — a
+  component's body (`out_of_reach` says it first) — so no free variable is ever made of its name.
 - **The three uses read it** (#391 S1): every number the language already ran over is a
   `Running`, with the meaning it had:
   - **a face family's running number** — `SolidDef::Family::over`, its name the absolute key the
@@ -126,6 +126,79 @@ of it. An issue number (#n) or a spec version ([0.n], see the
     on the one shared roll, a value is an instant of it, and what is drawn in `f`, read under `f` at
     `τ`, is the joint at `value + τ`; **rest** is each frame at its value, the shared roll at 0, so
     `Sketch::world_point` is the drawing as before and reads no joint.
-  - **Not built in stage 3**: a value written over a declared parameter (a relation holding for
-    every value of one is stage 4's), a value any but linear in its instant (stage 5), a frame
-    with a value riding on another, and a declaration drawn in a valued frame's own block.
+  - **Not built in stage 3**: a value written over a declared parameter (built in stage 4,
+    below), a value any but linear in its instant (stage 5), a frame with a value riding on
+    another, and a declaration drawn in a valued frame's own block.
+- **Relations over a parameter** (#391 S4, [0.142]): a relation reading a declared parameter holds
+  for every value of it, and the drawing is followed along it.
+  - **Read as a held number.** `Walk::parameter_axis` puts the parameter into the root's `vals` as
+    a free value and into `Held::names` at its interval's start, so a dimension's text keeps it by
+    name (`of_vals_in`) and `program::elaborate` holds it (`Sketch::hold`, `Sketch::held[t]`, a
+    fixed param `~t`) exactly as a face family's running number is held: no unknown, no column,
+    `expr::evaluate` reading it at whatever value the param stands at.  **The drawing stands at
+    the interval's start** (rest, the epic's question 2 for a declared parameter), so a document
+    reading one solves and draws as one instant of itself.  A value reading one is E103
+    (`work_out`, `running`: "a value is worked out once"), and a component's body sees none.  A
+    joint's value may read one (`motions::values` reads `Sketch::held`), so what is drawn in the
+    frame is a trajectory (`tests/parameters.rs`,
+    `a_joints_value_may_run_over_a_declared_parameter`, against the motion's closed form).
+  - **The default quantifier** (the epic's question 3, decided): no word.  Every relation of the
+    drawing holds at every value of every parameter, the ones reading none included — a relation
+    between geometry that does not move is the same row at every instant, and one between a moving
+    entity and a static one holds throughout, which is what a linkage's ground is.  A relation
+    holding *at* one instant (`at t0`) is not built.
+  - **Continuation** (`follow.rs`, the epic's question 6, decided): `follow::follow(sk, "t")`
+    solves the drawing at the start and marches to the end, each station the drawing's own solve
+    (`System::solve`) started where the secant through the two before carries it.  A step is kept
+    when it solves, when the solve moved the predicted station no more than `TURN` (0.1) of the
+    step's own motion in world length (`Param::scale`, over the unknowns; plus a floor of `1e-9`
+    of the extent), and when the **orientation** of the conditioned Jacobian (the sign of its
+    determinant by `linalg::lu_factor`, where it is square and at most `ORIENTED` wide) is the one
+    it had — an assembly mode keeps it, so a flip is a branch jump or a singular instant crossed.
+    Otherwise the step is halved; kept easily (`EASY`) it grows by `GROW` up to `COARSEST`
+    (1/128) of the interval.  **A singular instant** is where no step is kept at `FINEST` (1e-7)
+    of the interval — the solve fails or the orientation flips — or a kept station is short of
+    rank; `beyond` reads a solve `PROBE` (1e-4) of the interval past it: none stands there,
+    `Kind::Limit` (the motion turns back: a crank at its dead point), one does, `Kind::Branch`
+    (two branches cross: a four-bar at its change point).  The march stops at the last station
+    that stands and records the instant (`Followed::singular`).  A drawing short of rank at the
+    start is refused (`not_held`): its freedom is a free function of the parameter.  A drawing no
+    relation of which reads the parameter (`follow::readers`, the constraints whose `Arg::Expr`
+    text reads its name) is refused too.  `Followed::put` stands a drawing at any instant reached,
+    solved from the stations either side, on the branch carried.  `follow::followed` remembers a
+    march on the sketch (`Caches::followed`) against every parameter, every constraint's numbers
+    and the interval.
+  - **The ledger per parameter** (`Diagnosis::parameters`, `diagnose::Driven`): each declared
+    parameter's readers and the freedom they drive — the rank their rows add to the rest's, on the
+    conditioned Jacobian, `None` past the dense limit.  `summary` says `1 DOF over t` and, where
+    freedom is left, `each DOF left a free function of t`; `diagnosis_json` carries `parameters`
+    (name, readers, dof) but not the march, which is a solve a station: `report::parameter_text`
+    says how far the drawing is followed and where it stopped, and `solventc` prints it with the
+    readers (`driven by t: …`).
+  - **`trace(m over t)`**: a point of the drawing itself as `t` runs (§6.5).  The parser takes
+    `trace(REF over IDENT)` with no `in` (an empty domain), the flattener fills the parameter's
+    interval (E103 where the name is no declared parameter, or in a component), and `resolve`
+    gives a `CurveOf` with no instance where `owner_of` finds none and the name is a parameter.
+    `program::curves::followed` builds a `CurveE` over the point (`args[0]`) and the interval or a
+    stretch of it (E103 outside), its definition `CurveBody::Followed` (one per parameter,
+    `followed:t`); `Sketch::followed_points` stands a copy of the drawing at each instant asked
+    (`curve_sweep`, `curve_point`), clamped to what the march reached, so the curve ends at a
+    singular instant, and `curve_polyline`'s key reads every parameter.  It is a view's curve: a
+    point in space is E060 (`entities::drawn_in_planes`, once memberships are known).  Nothing
+    is held to it (`constraints::validate`, E061), it cuts nothing (`generated::tool_of`), no
+    envelope is read of it and no marched body starts on it.  `print` writes `trace(m over t)`;
+    `lift_curve` writes the point over its stretch.
+  - **Gate**: `tests/continuation.rs` — the four-bar's rocker pin and coupler midpoint at every
+    station against the closed form (`a_four_bars_coupler_curve_is_its_closed_form`, 1e-8); the
+    slider-crank's slider through both dead centres; a Grashof four-bar 1e-4 mm from its change
+    point held on its branch through the near-fold at 180°; a non-Grashof crank stopped at its
+    closed-form limit (`Kind::Limit`, 1e-3°) and a change-point four-bar at its fold
+    (`Kind::Branch`, 180°); a drawing not held, refused; the coupler curve as `trace(m over t)`
+    against the closed form, closed over the whole turn and ending at the limit; printing and the
+    refusals; the ledger (a four-bar's 1 DOF over `t`, a five-bar driven twice 2, the free function
+    left).
+  - **Not built in stage 4**: a relation holding at an instant (`at t0`), several parameters
+    followed together (each is followed alone, the others at their starts), a trace of a point in
+    space (a traced body in space is a component's, §6.5), a trace held to by a relation, a sweep
+    of a section over a declared parameter (`sweep(sec over s)`), continuation past a singular
+    instant onto a chosen branch, and the app's timeline (stage 6).

@@ -42,6 +42,7 @@ mod components;
 mod computed_point;
 mod conrod;
 mod contact_trace;
+mod continuation;
 mod coordinates;
 mod copies;
 mod correspondence;

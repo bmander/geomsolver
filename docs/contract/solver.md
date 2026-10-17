@@ -332,3 +332,10 @@ version ([0.n], see the [language changelog](../solvent-changelog.md)) says wher
   pass on an unsettled DogLeg: a failure from the start, kept if it succeeds; a limit stop from
   the stop, kept if it converges (status 0), else from the start, kept if it settles, else the
   first pass that settled, else the stop bit for bit. Drags (`retry` off) never see it.
+- **A drawing over a declared parameter is followed, not solved once** (#391 S4): continuation
+  (`follow.rs`) marches the drawing's own solve along the parameter from its interval's start, one
+  branch carried by the Jacobian's orientation and a bounded corrector step, and stops at a
+  singular instant, saying whether the motion turns back there or two branches cross. The
+  diagnosis counts per parameter the freedom it drives (`Diagnosis::parameters`). The contract —
+  step control, what is a branch jump, how a singular instant is reported — is
+  [parameters.md](parameters.md)'s.

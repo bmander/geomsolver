@@ -788,7 +788,12 @@ impl<'a> Walk<'a> {
         if !self.nested_members(&mut pending, vals, &mut here) {
             return;
         }
-        if !self.work_out(&pending, vals, scope, &prefix) {
+        // the parameters the body declares, which no value reads (#391 S4)
+        let running: BTreeSet<String> = body.iter().filter_map(|st| match &st.kind {
+            StmtKind::Param(pd) if pd.over().is_some() => Some(pd.name.text.clone()),
+            _ => None,
+        }).collect();
+        if !self.work_out(&pending, vals, scope, &prefix, &running) {
             return;
         }
         // a parameter axis's interval may read any number the body defines (#391 S1)
@@ -939,6 +944,7 @@ impl<'a> Walk<'a> {
         vals: &mut BTreeMap<String, Aff>,
         scope: &Scope,
         prefix: &str,
+        running: &BTreeSet<String>,
     ) -> bool {
         // the names each definition reads; a text that does not parse reads nothing, and is
         // worked out at once so the parse error is the one reported
@@ -993,6 +999,12 @@ impl<'a> Walk<'a> {
                     // a text a curve's variables leave no value to — kept, in the symbolic
                     // mode; a mistake, on the sheet
                     Err(e) => {
+                        // a value is worked out once, and a parameter runs: a relation reads it
+                        let e = match reads[i].iter().find(|n| running.contains(*n)) {
+                            Some(n) => format!("`{n}` runs over an interval, and a value is worked \
+                                out once: a relation reads it, and holds for every value of it"),
+                            None => e,
+                        };
                         let abs = format!("{prefix}{}", d.name);
                         let (text, name, span) = (d.text.clone(), d.name.clone(), d.span);
                         if !self.keep_text(abs, &text, span, vals, scope) {
@@ -1014,7 +1026,7 @@ impl<'a> Walk<'a> {
         &mut self,
         pd: &crate::syntax::ParamDecl,
         over: &crate::syntax::Over,
-        vals: &BTreeMap<String, Aff>,
+        vals: &mut BTreeMap<String, Aff>,
         scope: &Scope,
     ) {
         let name = &pd.name.text;
@@ -1055,6 +1067,11 @@ impl<'a> Walk<'a> {
         }
         self.parameters.insert(name.clone(), crate::model::Running::new(name.clone(), ty.dim(),
                                                                          from, to));
+        // a relation reading it holds for every value of it (#391 S4): it is read as a number
+        // held where the drawing stands, its interval's start, as a face family's station reads
+        // its running number — never an unknown, and never a value's
+        vals.insert(name.clone(), free(name.clone(), ty));
+        self.held.names.insert(name.clone(), (ty.dim(), from));
     }
 
     /// `param beta: Angle hint(30deg)` — an input nothing binds: a free value in `vals`, named
@@ -1115,10 +1132,11 @@ impl<'a> Walk<'a> {
     }
 }
 
-/// E103's words for a parameter axis read as a number (#391 S1).
+/// E103's words for a parameter axis read where the document's relations are not (#391 S1): a
+/// component's body sees none.
 pub(super) fn runs_over(name: &str) -> String {
-    format!("`{name}` runs over an interval (`param {name}: … over (a, b)`), and is no number a \
-             dimension can read")
+    format!("`{name}` runs over an interval (`param {name}: … over (a, b)`), and only the \
+             document's own relations read it")
 }
 
 /// E101's words for a name nothing declares.

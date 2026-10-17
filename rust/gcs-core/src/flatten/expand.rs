@@ -349,6 +349,19 @@ impl<'a> Walk<'a> {
             return;
         }
         if let Some(c) = d2.curve.as_mut() {
+            // a point traced over a declared parameter with no interval of its own runs over the
+            // parameter's (#391 S4); a component sees none
+            if c.domain.0.is_empty() {
+                let swept = &c.swept.text;
+                let Some(p) = self.parameters.get(swept).filter(|_| scope.prefix().is_empty())
+                else {
+                    self.err(Code::E103, c.swept.span, format!("`{swept}` is no parameter the \
+                        document declares: a curve says the interval its formal runs over, `in (a, \
+                        b)`, or runs over a declared `param {swept}: … over (a, b)`"));
+                    return;
+                };
+                c.domain = (crate::syntax::num(p.from), crate::syntax::num(p.to));
+            }
             // the interval is written over the parameters in scope, like a number
             let second = c.second.as_mut().map(|(_, d)| d);
             let ends = [&mut c.domain.0, &mut c.domain.1].into_iter()

@@ -304,6 +304,8 @@ fn write_curve_spec(out: &mut String, c: &CurveSpec) {
         }
     }
     match &c.second {
+        // over a declared parameter's own interval (#391 S4)
+        None if c.domain.0.is_empty() => out.push_str(&format!(" over {}", c.swept.text)),
         None => out.push_str(&format!(" over {} in ({}, {})", c.swept.text, c.domain.0, c.domain.1)),
         Some((s, (a, b))) => out.push_str(&format!(" over ({} in ({}, {}), {} in ({a}, {b}))",
             c.swept.text, c.domain.0, c.domain.1, s.text)),

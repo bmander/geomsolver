@@ -443,6 +443,11 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
             if !views.is_empty() {
                 println!("  free views: {}", views.join(", "));
             }
+            // each declared parameter: what reads it, and how far the drawing runs over it (#391)
+            for p in d.parameters.iter().filter(|p| !p.readers.is_empty()) {
+                report_set(&sk, &e.map, &format!("driven by {}", p.name), &p.readers);
+                println!("  {}", gcs_core::report::parameter_text(&sk, &p.name));
+            }
             report_set(&sk, &e.map, "conflict", d.conflicts.as_deref().unwrap_or(&[]));
             report_set(&sk, &e.map, "over", &d.over);
             report_set(&sk, &e.map, "implied", &d.implied);

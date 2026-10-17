@@ -156,6 +156,22 @@ pub struct Diagnosis {
     pub n_redundant: i64,
     pub structural_n_redundant: i64,
     pub status: State,
+    /// **The ledger per parameter** (#391 S4): each declared parameter the drawing's relations
+    /// read, what reads it and the freedom it drives.  Empty where the drawing declares none.
+    pub parameters: Vec<Driven>,
+}
+
+/// What a declared parameter drives (`Diagnosis::parameters`, #391 S4): the relations whose
+/// numbers read it (`follow::readers`), and the degrees of freedom they take up — the rank their
+/// rows add to every other row's, which is the freedom of the drawing the parameter moves: a
+/// four-bar's one, its crank's angle, `1 DOF over t`.  `None` where no numeric rank was read (past
+/// the dense limit).  A freedom left beside it (`Diagnosis::dof`) is a free *function* of the
+/// parameter, which nothing says how to move as it runs.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Driven {
+    pub name: String,
+    pub readers: Vec<u32>,
+    pub dof: Option<usize>,
 }
 
 /// **Which freedoms of a plane are left**, by the name the ledger gives them (§16.3):
@@ -187,6 +203,17 @@ pub fn summary(d: &Diagnosis) -> String {
         ),
         format!("DOF {}", d.dof),
     ];
+    // a drawing over a parameter: what each drives, and what is left a free function of them
+    let read: Vec<&Driven> = d.parameters.iter().filter(|p| !p.readers.is_empty()).collect();
+    for p in &read {
+        if let Some(n) = p.dof {
+            parts.push(format!("{n} DOF over {}", p.name));
+        }
+    }
+    if d.dof > 0 && !read.is_empty() {
+        let names: Vec<&str> = read.iter().map(|p| p.name.as_str()).collect();
+        parts.push(format!("each DOF left a free function of {}", names.join(", ")));
+    }
     if d.dof != d.structural_dof {
         parts.push(format!(
             "the matching alone would say DOF {} — {} equation(s) carry no information",
@@ -875,6 +902,7 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
         warnings.extend(w.warnings.iter().cloned());
     }
 
+    let parameters = driven(sk, sys, &row_c, want_numeric);
     // the structural matching is a *generic* upper bound on the rank; where the numeric
     // cross-check ran it is the truth at this configuration, and it is what decides what moves
     let effective_rank = numeric_rank.unwrap_or(dm.rank);
@@ -938,7 +966,27 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
         n_redundant,
         structural_n_redundant,
         status,
+        parameters,
     }
+}
+
+/// Each declared parameter's ledger (`Driven`): its readers, and — where the drawing is small
+/// enough to factor (`numeric`) — the rank their rows add to the rest's, read on the conditioned
+/// Jacobian where the drawing stands.
+fn driven(sk: &Sketch, sys: &mut System, row_c: &[u32], numeric: bool) -> Vec<Driven> {
+    let mut rank = None;
+    sk.parameters.keys().map(|name| {
+        let readers = crate::follow::readers(sk, name);
+        let dof = (numeric && !readers.is_empty() && sys.n_free > 0).then(|| {
+            let z = sys.z0(sk);
+            let j = sys.conditioned(&z);
+            let full = *rank.get_or_insert_with(|| j.rank_rrqr(RANK_TOL));
+            let rest: Vec<usize> = (0..j.rows()).filter(|&r| !readers.contains(&row_c[r]))
+                .collect();
+            full - j.select_rows(&rest).rank_rrqr(RANK_TOL)
+        });
+        Driven { name: name.clone(), readers, dof }
+    }).collect()
 }
 
 /// Minimal infeasible subset among `candidates` (default: all hard constraints); the rest stay in

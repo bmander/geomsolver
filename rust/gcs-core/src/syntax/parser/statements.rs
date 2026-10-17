@@ -1228,6 +1228,14 @@ impl<'a> P<'a> {
             let [(a, _), (b, _)] = p.pair()?;
             Some((swept, (a, b)))
         };
+        // a point of the drawing over a declared parameter may leave the interval to it (#391 S4):
+        // empty ends, which the flattener fills from the declaration
+        if !two && matches!(target, CurveTarget::Drawn(_))
+            && !matches!(self.t.get(self.i + 1), Some((Tok::Ident(w), _)) if w == "in") {
+            let swept = self.ident()?;
+            return Some(CurveSpec { target, swept, domain: Default::default(), second: None,
+                                    of: None });
+        }
         let (swept, domain) = formal(self)?;
         let second = if two {
             if !self.want_p(',') {
