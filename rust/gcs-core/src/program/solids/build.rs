@@ -386,10 +386,9 @@ fn under_motion(
     // drawn in a jointed frame (#391 S3), `tool in f`: placed by that frame at its value,
     // whatever the tool rides on
     let drawn_in = matches!(sweep, Sweep::Placed { at: crate::syntax::Arg::Word(w), .. }
-        if w == crate::flatten::DRAWN_IN);
-    let value = motion.as_ref().filter(|_| drawn_in).and_then(|f| res.entity(sk, f))
-        .filter(|f| f.kind == EntKind::Frame)
-        .map(|f| super::super::motions::value_of(res, f.i()))
+        if w == crate::syntax::DRAWN_IN);
+    let value = motion.as_ref().filter(|_| drawn_in)
+        .and_then(|f| super::super::motions::value_of(sk, res, f))
         .map(|(text, span)| crate::syntax::Arg::Dim { text, span });
     // the frame it is carried by — named, or the one it rides on — seen from the one named,
     // where one is (#383)

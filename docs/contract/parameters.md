@@ -103,14 +103,15 @@ of it. An issue number (#n) or a spec version ([0.n], see the
   value riding on another, and one something rides on (E080) — a declaration in its block would
   stand where it is drawn, not where the value puts it, so the refusal names `n := base in f`.
   - **`n := x in f`, drawn in a jointed frame** (`P::drawn_in`, a `Decl::carried` whose args are
-    `in: f`; the printer's `print::drawn_in`): `x` read at `f`'s value, the very statements `x
-    at(under: f) τ` writes out (`flatten::carried::ways`, settled as an instant is), so it makes
-    a frame, a solid or a point as `x` is.  The elaborator reads `in:` as `under:` with the
-    frame's value appended as the stated roll (`relations::carried_motion`), and a solid's
-    `Sweep::Placed { at: Arg::Word(DRAWN_IN) }` the same (`solids::build::under_motion`).  `x` is
-    carried from where it is drawn whatever it rides on (no `under_riding` refusal), and what it
-    makes rides on nothing, as a reading's product rides on its observer.  `p := point in P`
-    stays a membership: the parser takes `in` after a reference that is no kind word.
+    `in: f`; the printer's `print::frame_drawn_in`; the label `syntax::DRAWN_IN`): `x` read at `f`'s
+    value, the very statements `x at(under: f) τ` writes out (`flatten::carried::ways`, settled as
+    an instant is), so it makes a frame, a solid or a point as `x` is.  The elaborator reads `in:`
+    as `under:` with the frame's value appended as the stated roll (`relations::carried_motion`),
+    and a solid's `Sweep::Placed { at: Arg::Word(DRAWN_IN) }` the same
+    (`solids::build::under_motion`).  `x` is carried from where it is drawn whatever it rides on (no
+    `under_riding` refusal), and what it makes rides on nothing, as a reading's product rides on its
+    observer.  `p := point in P` stays a membership: the parser takes `in` after a reference that is
+    no kind word.
   - **The station words are frames whose value is written over `s`** (`std.sv`): `Helix`'s screw
     `fix(value == 360deg * turns * s)`, `n := base in screw`, `axial := n in stand` (a quarter
     turn's value); `OnHelix`'s `start := base in tilt` and `n := start in screw`; `Twisted`'s

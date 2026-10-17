@@ -1026,8 +1026,8 @@ block := solid(face(mouth, side_r, lid, side_l), from: face, to: back)
   along `n`'s `u` from its origin turned `twist · s` (`sec := prof mapped(o -> n.origin, x -> tw.t)
   in n`); through 0.117 it was a plane of axes `axes`, which a section was drawn on corner by
   corner; **[0.138]** it is the turn of `n` about its origin read at that roll (§6.14), **[0.141]**
-  `x` drawn in a turn whose value is `twist * s`, `t := x in turn`. A number given a formal — a component's or a relation
-  word's — MAY be any expression in
+  `x` drawn in a turn whose value is `twist * s`, `t := x in turn`. A number given a formal — a
+  component's or a relation word's — MAY be any expression in
   the running number, worked out at each station; it binds the formal, and is no unknown of the
   drawing. A `when` is made once, for the whole run (§12.9), so a condition reading the running
   number is **E040**, saying so; `min`, `max` and `abs` write a law in pieces.
@@ -1046,8 +1046,9 @@ block := solid(face(mouth, side_r, lid, side_l), from: face, to: back)
   the same screw; through 0.137 each was points placed by `cos` and `sin` ordinates in
   `base`'s frame. **[0.141]** The screw is a frame whose value is that roll, `fix(value == 360deg
   * turns * s) screw`, and `n` is `base` drawn in it, `n := base in screw` (§6.14); through 0.140
-  `n` was the reading `base at(under: screw) 360deg * turns * s`. `Screwed` (through 0.109 the plane through an axis given apart from `base`) is
-  retired; `Helix(…).axial` is that plane. **[0.138] A face family carried by a motion is that
+  `n` was the reading `base at(under: screw) 360deg * turns * s`. `Screwed` (through 0.109 the plane
+  through an axis given apart from `base`) is retired; `Helix(…).axial` is that plane. **[0.138] A
+  face family carried by a motion is that
   motion's sweep**: where every relation of the station that reads its running number is a point the
   one motion carries (§6.14) to a roll affine in it, and the motion is a turn or a screw about one
   axis or a slide along one line, the section at the interval's start carried by that motion over it

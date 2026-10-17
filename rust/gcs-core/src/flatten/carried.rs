@@ -27,21 +27,17 @@
 //! **Drawn in a jointed frame** (#391 S3), `n := x in f`, is written out the same three ways, its
 //! arguments `in: f` and no roll: the instant is the frame's value (`fix(value == τ) f`), which
 //! the elaborator appends where it reads the frame (`program::relations::carried_motion`, and for
-//! a solid `Sweep::Placed`'s `at`, `DRAWN_IN`).
+//! a solid `Sweep::Placed`'s `at`, the word `syntax::DRAWN_IN`).
 
 use crate::semantics::{Annotations, GeometryRoles};
 use crate::syntax::{
     Arg, Chained, Decl, DeclName, Kid, Membership, Name, OpArg, Ref, Relation, RelationForm,
-    Span, Stmt, StmtKind, Sweep, Written,
+    Span, Stmt, StmtKind, Sweep, Written, DRAWN_IN,
 };
 
 /// How far along each of the source's axes the frame's second and third points stand, in the
 /// document's unit: any length but none, since a rigid motion keeps it.
 const REACH: f64 = 10.0;
-
-/// The instant of a solid drawn in a jointed frame (#391 S3), `Sweep::Placed`'s `at`: the frame's
-/// value, read where the frame is known (`program::solids`).  No source writes a word there.
-pub(crate) const DRAWN_IN: &str = "in";
 
 /// What a reading at an instant turns out to be (#391 S2), once what it reads is known: the
 /// kind of the source, a solid or a point, and a frame for anything else.
@@ -85,7 +81,7 @@ fn solid(st: &Stmt, d: &Decl) -> Stmt {
     let c = d.carried.as_ref().expect("a reading at an instant");
     // drawn in a jointed frame (#391 S3), the frame named and its value the instant, which the
     // elaborator reads off the frame (`Sweep::Placed`'s `at` the word `in`)
-    let drawn = named(c, "in");
+    let drawn = named(c, DRAWN_IN);
     let at = c.args.iter().find_map(|a| match a {
         OpArg::Dim(text, span) => Some(Arg::Dim { text: text.clone(), span: *span }),
         _ => None,

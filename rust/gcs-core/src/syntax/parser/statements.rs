@@ -973,12 +973,12 @@ impl<'a> P<'a> {
     }
 
     /// `n := x in f` (#391 S3): `x` drawn in the jointed frame `f`, where `f`'s value puts it —
-    /// the reading at an instant whose instant is the frame's (`value(τ) f`) and not the
+    /// the reading at an instant whose instant is the frame's (`fix(value == τ) f`) and not the
     /// statement's, held as a carried point's arguments are, `in: f` naming the frame.  What it is
     /// the flattener says, as for `x at τ`: a frame, a solid or a point.
     fn drawn_in(&mut self, name: Name) -> Option<Decl> {
         let source = self.refr()?;
-        let word = Name { text: "in".into(), span: self.here() };
+        let word = Name { text: crate::syntax::DRAWN_IN.into(), span: self.here() };
         self.i += 1; // `in`
         let frame = self.refr()?;
         let args = vec![OpArg::Named(word.clone(), Arg::Ref(frame))];

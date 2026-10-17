@@ -351,9 +351,10 @@ placement carries inside the blank; CLI test readers zero the offset.
   the second point a section drawn once is carried to, `f := prof mapped(o -> n.origin, x ->
   tw.t) in n`; through 0.117 a plane of axes a section was drawn on corner by corner; since
   [0.138] a turn of `n` about its origin read at that roll, and since [0.141] `x` drawn in that
-  turn standing at `twist * s`, `t := x in turn`), `scaled` (a point at `(du, dv)` scaled `1 + (scale − 1) · s` about the
-  plane's origin) and `scaled_radius` take a total and run it linearly; any other law is the word
-  given another fraction (`s: 3 * s^2 - 2 * s^3`) or the writer's own expression.  **A number given
+  turn standing at `twist * s`, `t := x in turn`), `scaled` (a point at `(du, dv)` scaled `1 +
+  (scale − 1) · s` about the plane's origin) and `scaled_radius` take a total and run it linearly;
+  any other law is the word given another fraction (`s: 3 * s^2 - 2 * s^3`) or the writer's own
+  expression.  **A number given
   over `s` that is not affine in it is kept as text** (`Walk::held_text`), whichever formal it is
   given to: a component's (`keep_text`, into `held.texts`; `bind` then makes it no unknown, and
   `settle_text` reads the kept text before the closed scope's reach) or a relation word's

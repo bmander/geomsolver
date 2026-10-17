@@ -148,6 +148,11 @@ pub(super) fn motions(sk: &mut Sketch, res: &Resolver, map: &SourceMap, body: &[
 pub(super) fn values(sk: &Sketch, res: &mut Resolver, body: &[&Statement],
                      skip: &BTreeSet<StmtId>, diags: &mut Vec<Diag>) {
     use crate::constraints::JOINT_VALUE;
+    // the numbers a face family's stations hold, as an instant may read them
+    let held: BTreeMap<String, crate::expr::Aff> = sk.held.iter()
+        .map(|(n, h)| (n.clone(), crate::expr::Aff::of_dim(sk.params[h.param as usize].value,
+                                                           h.dim)))
+        .collect();
     for st in body.iter().filter(|st| !skip.contains(&st.id)) {
         let Operation::Relation(r) = &st.kind else { continue };
         let Some(w) = r.form.written().filter(|w| w.word.text == "fix") else { continue };
@@ -180,20 +185,17 @@ pub(super) fn values(sk: &Sketch, res: &mut Resolver, body: &[&Statement],
             continue;
         }
         // an instant, whatever reads it: said once, here, rather than at every reading
-        let held: BTreeMap<String, crate::expr::Aff> = sk.held.iter()
-            .map(|(n, h)| (n.clone(), crate::expr::Aff::of_dim(sk.params[h.param as usize].value,
-                                                               h.dim)))
-            .collect();
         let angle = crate::flatten::value_read(&text, &held, &sk.declared, sk.units)
             .and_then(|a| a.dim.require(crate::units::Dim::ANGLE, JOINT_VALUE));
         if let Err(m) = angle {
             say(diags, Code::E103, format!("`{text}`: {m}"));
             continue;
         }
-        if !sk.carriers_of(&sk.frames[f.i()].rides).is_empty() {
+        let carriers = sk.carriers_of(&sk.frames[f.i()].rides);
+        if !carriers.is_empty() {
             say(diags, Code::E080, format!("`{name}` rides on {}, and a frame with a value rides \
                 on none yet (#391): its value is an instant of its own joint alone",
-                path_names(res, &sk.carriers_of(&sk.frames[f.i()].rides))));
+                path_names(res, &carriers)));
             continue;
         }
         // what rides on it stands where it is drawn, which its value would contradict
@@ -232,10 +234,13 @@ pub(super) fn holding(r: &crate::ir::Relation) -> Option<Cow<'_, crate::ir::Rela
     Some(Cow::Owned(out))
 }
 
-/// The instant a reading of something drawn in the jointed frame `f` is read at (#391 S3): its
-/// value as stated, with where it was written, or the joint at rest, written nowhere.
-pub(super) fn value_of(res: &Resolver, f: usize) -> (String, crate::syntax::Span) {
-    res.values.get(&f).cloned().unwrap_or_else(|| ("0deg".into(), Default::default()))
+/// The instant a reading of something drawn in the frame `f` names is read at (#391 S3): its
+/// value as stated, with where it was written, or the joint at rest, written nowhere — `None`
+/// where `f` names no frame, which the reading refuses as it refuses any.
+pub(super) fn value_of(sk: &Sketch, res: &Resolver, f: &Ref)
+    -> Option<(String, crate::syntax::Span)> {
+    let f = res.entity(sk, f).filter(|e| e.kind == EntKind::Frame)?;
+    Some(res.values.get(&f.i()).cloned().unwrap_or_else(|| ("0deg".into(), Default::default())))
 }
 
 /// **A reading's motion** (#383): the frame named `under:`, seen from the one named `seen_from:`

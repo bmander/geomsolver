@@ -456,7 +456,7 @@ fn carried_motion(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) -> Option<Option<R
     });
     // drawn in a jointed frame (#391 S3), `x in f`: carried by that frame to its value, whatever
     // `x` rides on — its drawing is where it stands, and the frame carries that
-    let drawn_in = named("in");
+    let drawn_in = named(crate::syntax::DRAWN_IN);
     let Some(under) = named("under").or(drawn_in) else {
         return riding_point(cx, r, w, seen, seen_ref.as_ref(), st);
     };
@@ -473,9 +473,7 @@ fn carried_motion(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) -> Option<Option<R
         return Some(None);
     }
     // the instant is the frame's value
-    let value = drawn_in.and_then(|_| cx.res.entity(&cx.sk, under_ref))
-        .filter(|f| f.kind == EntKind::Frame)
-        .map(|f| super::motions::value_of(&cx.res, f.i()));
+    let value = drawn_in.and_then(|_| super::motions::value_of(&cx.sk, &cx.res, under_ref));
     let m = match super::motions::reading(&mut cx.sk, &cx.res, under_ref, seen_ref.as_ref()) {
         Ok(m) => m,
         Err(message) => {

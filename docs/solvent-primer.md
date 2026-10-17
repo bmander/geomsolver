@@ -1395,8 +1395,9 @@ k := trace(Par(o).p over u in (-2mm, 2mm))
   then the section drawn `in st.n`, its sizes and turns reading `s`. **A screw** (0.110, 0.138):
   `std.Helix(std.top, pitch: 4mm, turns: 3, s: s)` is `std.top` carried by the screw about its
   normal to `360deg · turns · s` — turned that much and lifted `pitch · turns · s` (`std.top`
-  drawn in a screw whose value is that roll, 1.15); draw a thread's section in its `axial` plane (through the axis, `u` out from it,
-  `v` up it) and an auger's flight in its `n` (the base carried); `std.OnHelix(std.top, r: 10mm,
+  drawn in a screw whose value is that roll, 1.15); draw a thread's section in its `axial` plane
+  (through the axis, `u` out from it, `v` up it) and an auger's flight in its `n` (the base
+  carried); `std.OnHelix(std.top, r: 10mm,
   pitch: 5mm, turns: 4, s: s)`'s `n` stands square to the helix of radius `r`, for a coil's wire. A
   negative pitch winds left-handed (`rust/gcs-core/tests/helix.rs`). A family a motion carries its
   station by this way is exported as that motion's sweep, exactly (`lofts/spring.sv` and

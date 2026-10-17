@@ -321,7 +321,7 @@ fn write_decl(out: &mut String, d: &Decl) {
     // a reading at an instant is its source and the instant, as written (#391 S2)
     if let Some(c) = &d.carried {
         write_ref(out, &c.source);
-        out.push_str(&match drawn_in(&c.args) {
+        out.push_str(&match frame_drawn_in(&c.args) {
             // and one drawn in a jointed frame, at the frame's value (#391 S3)
             Some(f) => format!(" in {}", super::ref_text(f)),
             None => instant_text(&c.args),
@@ -425,9 +425,9 @@ pub(crate) fn instant_text(args: &[OpArg]) -> String {
 }
 
 /// The jointed frame a reading draws its source in, `x in f` (#391 S3), where it is one.
-pub(crate) fn drawn_in(args: &[OpArg]) -> Option<&super::Ref> {
+fn frame_drawn_in(args: &[OpArg]) -> Option<&super::Ref> {
     args.iter().find_map(|a| match a {
-        OpArg::Named(n, Arg::Ref(r)) if n.text == "in" => Some(r),
+        OpArg::Named(n, Arg::Ref(r)) if n.text == super::DRAWN_IN => Some(r),
         _ => None,
     })
 }
