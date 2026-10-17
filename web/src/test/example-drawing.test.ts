@@ -30,6 +30,15 @@ test('a bare cylinder preview stands on a frame turned in the front', () => {
   } finally { doc.dispose(); }
 });
 
+test('a linkage followed over its parameter opens held, its coupler curve drawn', () => {
+  const doc = Document.read(files['mechanisms/four_bar.sv']);
+  try {
+    assert.ok(doc.ok, JSON.stringify(doc.diagnostics));
+    assert.ok(solve(doc.sketch).success);
+    assert.ok(doc.map.entities.some((e) => e.name === 'coupler' && e.kind === 'curve'));
+  } finally { doc.dispose(); }
+});
+
 test('menu examples open files or directories with one V-twin choice', async (t) => {
   t.mock.method(globalThis, 'fetch', staticFetch);
   const cases = exampleCases();
@@ -105,6 +114,12 @@ test('menu examples open files or directories with one V-twin choice', async (t)
   for (const name of ['README.md', 'coil.sv', 'frenet.sv', 'bent_pipe.sv', 'routed_line.sv',
     's_bend.sv', 'cable.sv', 'flange.sv']) {
     assert.ok(paths.files[`paths/${name}`], name);
+  }
+  const mechanisms = await remote.drawing('mechanisms');
+  assert.equal(mechanisms.source, 'mechanisms/four_bar.sv');
+  for (const name of ['README.md', 'four_bar.sv', 'slider_crank.sv', 'triple_rocker.sv',
+    'change_point.sv']) {
+    assert.ok(mechanisms.files[`mechanisms/${name}`], name);
   }
   const wankel = await remote.drawing('wankel');
   assert.equal(wankel.source, 'wankel/wankel.sv');

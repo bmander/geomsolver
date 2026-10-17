@@ -123,6 +123,7 @@ mod loft_examples;
 mod make_component;
 mod mapped;
 mod measurements;
+mod mechanism_examples;
 mod membership;
 mod mesh;
 mod millimetres;

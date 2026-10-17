@@ -29,7 +29,7 @@ fn at(sk: &Sketch, e: &gcs_core::program::Elaborated, n: &str) -> (f64, f64) {
 
 /// The four-bar's rocker pin at crank angle `t` (degrees), on the branch where `c` stands to the
 /// left of `b → d` (`side` 1) or to the right (`-1`): the two circles about `b` and `d` met.
-fn closed_c(g: f64, r: f64, l: f64, k: f64, t: f64, side: f64) -> Option<(f64, f64)> {
+pub(crate) fn closed_c(g: f64, r: f64, l: f64, k: f64, t: f64, side: f64) -> Option<(f64, f64)> {
     let (s, co) = t.to_radians().sin_cos();
     let b = (r * co, r * s);
     let (dx, dy) = (g - b.0, -b.1);
