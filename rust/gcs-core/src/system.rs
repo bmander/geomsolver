@@ -515,15 +515,16 @@ pub fn build_kernel(sk: &Sketch, key: KernelKey) -> Kernel {
                 crate::model::CurveBody::Exprs { x, y } => {
                     (3 + x.flat.len() + y.flat.len() + d.values.len(), kernels::FORMULA, true)
                 }
-                crate::model::CurveBody::Trace(l) => {
+                crate::model::CurveBody::Trace(l) | crate::model::CurveBody::Followed(Some(l)) => {
                     (3 + d.values.len() + l.flat.len() + l.n_q(), kernels::TRACE, l.without_form().is_none())
                 }
                 crate::model::CurveBody::Envelope(g) => {
                     (2 + d.values.len() + g.flat.len(), kernels::ENVELOPE, true)
                 }
                 crate::model::CurveBody::Extremal(x) => (x.n_const(), kernels::EXTREMAL, true),
-                crate::model::CurveBody::Followed => {
-                    unreachable!("nothing is held to a followed curve (`constraints::validate`)")
+                crate::model::CurveBody::Followed(None) => {
+                    unreachable!("nothing is held to a followed curve not lowered \
+                                  (`constraints::validate`)")
                 }
             };
             match (FamilyKernel::ALL[fk as usize], body) {

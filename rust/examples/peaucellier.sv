@@ -5,6 +5,9 @@
 
 use std
 
+// the crank's angle, a number that runs over the stretch the pen is traced on
+param t: Angle over (60deg, 115deg)
+
 // the three lengths the machine is built from; the pen draws the line x = (arm² − side²) / (2·crank)
 param arm := 100       // the long arms, o–c and o–d
 param side := 60       // the four sides of the kite, b–c–pen–d
@@ -12,9 +15,8 @@ param crank := 40      // the crank q–b, and the orbit its pin rides
 
 // The cell, once: a linkage posed at crank angle u, eight numbers against eight statements.
 // The ccw/cw lines pick the elbows — a seed repeating a predicate is the weaker of two
-// statements of one fact — and the seeds only start the solve near them.  Drawn below with `u`
-// left unbound, so the crank is the drawing's one freedom; traced below that, where the same
-// component is asked where `pen` goes as `u` runs.
+// statements of one fact — and the seeds only start the solve near them.  Drawn below at `t`, so
+// the drawing stands at `t = 60°` and is followed from there as `t` runs.
 component Cell(orbit: circle, datum: line, arm: Length, side: Length, u: Angle) {
   b := point   hint((50.4, 38.6))
   c := point   hint((30.4, 95.2))
@@ -51,17 +53,16 @@ in std.front {
   o coincident orbit
   fix((0, 0)) o
 
-  // the machine itself, at one pose — `u` unbound, so the crank angle is an unknown of the
-  // drawing and the pen may be dragged
-  cell := Cell(orbit, datum, arm: arm, side: side)
+  // the machine itself, its crank at `t`
+  cell := Cell(orbit, datum, arm: arm, side: side, u: t)
 }
 
-// Where the pen goes: the drawn cell's own `pen`, as its crank angle runs.  The drawing's pose
-// is where the trace is anchored, so it needs no seeds of its own.  `rail` runs through two
+// Where the pen goes: the drawn cell's own `pen`, as `t` runs.  The drawing's pose is where the
+// trace is anchored, so it needs no seeds of its own.  `rail` runs through two
 // pinned points of the path, and the claim says it is vertical — which nothing above states.
 // The diagnosis reports it a theorem; delete it and the drawing is unchanged, which is what a
 // claim promises.
-path := trace(cell.pen over u in (60, 115))
+path := trace(cell.pen over t)
 
 in std.front {
   g1 := point hint((80, 51))
@@ -73,5 +74,5 @@ in std.front {
   claim vertical rail
 }
 
-// Diagnosed: dof 1, Under — the crank — and the claim a theorem.  Drag `cell.pen`; the cell
-// folds and stretches to carry it along the line it cannot leave.
+// Diagnosed: DOF 0 and `1 DOF over t` — the crank — and the claim a theorem.  Followed from 60° to
+// 115°, the cell folds and stretches to carry the pen along the line it cannot leave.

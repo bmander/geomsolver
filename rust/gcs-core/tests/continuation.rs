@@ -243,10 +243,13 @@ fn a_trace_over_a_parameter_prints_back_and_refuses_what_it_cannot_mean() {
         let (_, said) = read(text);
         assert!(said.iter().any(|m| m.contains(want)), "{text}\n{said:?}");
     };
-    // nothing is held to it
-    refused(&format!("{bar}coupler := trace(m over t)\nin std.front {{\n  q := point\n  \
+    // held to, where what moves with `t` leaves a number free: the ground's far end, no longer
+    // fixed, but only at its distance (#398 A)
+    let loose = bar.replace("fix((40, 0)) d", "a distance(40) d");
+    refused(&format!("{loose}coupler := trace(m over t)\nin std.front {{\n  q := point\n  \
         q coincident coupler\n}}\n"),
-        "is traced as `t` runs: it is drawn, and nothing is held to it");
+        "is traced as `t` runs, and the solve cannot hold to it: the rows that move with `t` \
+         leave 1 of the numbers they place free");
     // a name no parameter, with no interval of its own
     refused(&format!("{bar}coupler := trace(m over u)\n"), "E103: `u` is no parameter the document \
         declares");

@@ -40,6 +40,27 @@ use crate::units::Units;
 use crate::syntax::num;
 use crate::system::System;
 
+thread_local! {
+    /// Whether this thread is in `followed`'s march.
+    static MARCHING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// `MARCHING` set while it lives, and cleared however the march ends (the ABI catches a panic).
+struct Marching;
+
+impl Marching {
+    fn start() -> Marching {
+        MARCHING.with(|m| m.set(true));
+        Marching
+    }
+}
+
+impl Drop for Marching {
+    fn drop(&mut self) {
+        MARCHING.with(|m| m.set(false));
+    }
+}
+
 /// The first step, the longest, and the shortest, as fractions of the interval.
 const FIRST_STEP: f64 = 1.0 / 256.0;
 const COARSEST: f64 = 1.0 / 128.0;
@@ -140,6 +161,11 @@ impl Followed {
 /// of the drawing and of its statements, and the parameter's interval (`Caches::followed`).
 pub fn followed(sk: &Sketch, name: &str) -> Rc<Result<Followed, String>> {
     use crate::constraints::Arg;
+    // a march's own station solve asks nothing of a march: a question that would reach one from
+    // inside it (a curve drawn from the drawing being followed) is answered that there is none
+    if MARCHING.with(|m| m.get()) {
+        return Rc::new(Err("the drawing is being followed".into()));
+    }
     let mut key = sk.get_x();
     key.extend(sk.parameters.get(name).map_or([0.0; 2], |p| [p.from, p.to]));
     key.extend(sk.constraints.iter().flat_map(|c| c.args.iter().filter_map(|a| match a {
@@ -152,7 +178,10 @@ pub fn followed(sk: &Sketch, name: &str) -> Rc<Result<Followed, String>> {
             return f.clone();
         }
     }
-    let f = Rc::new(follow(sk, name));
+    let f = {
+        let _marching = Marching::start();
+        Rc::new(follow(sk, name))
+    };
     sk.caches.followed.borrow_mut().insert(name.to_string(), (key, f.clone()));
     f
 }

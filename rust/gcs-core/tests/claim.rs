@@ -347,10 +347,11 @@ o distance(60) p
 //
 // `peaucellier.sv` ends on `claim vertical rail`.  What the diagnosis must say is *theorem* —
 // not `violated`, not `consuming`, and not `over` — and it must keep saying it when the rods
-// change length.  (`examples_sv.rs` pins what the library advertises: dof 1, Under.)
+// change length.  (`examples_sv.rs` pins what the library advertises: dof 0, Well — the crank is
+// driven by `t`, its freedom `1 DOF over t`.)
 
 /// Solve a cell built from the document's own three lengths, and hold the diagnosis to the
-/// theorem: dof 1 (the crank), state Under, and the claim judged a theorem.
+/// theorem: dof 0 (the crank runs with `t`), state Well, and the claim judged a theorem.
 fn straight_line_holds(arm: f64, side: f64, crank: f64, rail_x: f64) {
     let mut sk = gcs_core::examples::peaucellier(arm, side, crank);
     let r = gcs_core::solve::solve(&mut sk, gcs_core::solve::SolveOpts::default());
@@ -364,7 +365,9 @@ fn straight_line_holds(arm: f64, side: f64, crank: f64, rail_x: f64) {
     }
 
     let d = diagnose(&mut sk, DiagnoseOptions::default());
-    assert_eq!((d.dof, d.status), (1, State::Under), "over={:?} violated={:?}", d.over, d.violated);
+    assert_eq!((d.dof, d.status), (0, State::Well), "over={:?} violated={:?}", d.over, d.violated);
+    assert_eq!(d.parameters.iter().map(|p| (p.name.as_str(), p.dof)).collect::<Vec<_>>(),
+               vec![("t", Some(1))], "the crank is the freedom `t` drives");
     assert!(d.over.is_empty(), "a theorem painted as a surplus: {:?}", d.over);
 
     let claim = sk.constraints.iter().find(|c| c.kind == CKind::Vertical).unwrap();

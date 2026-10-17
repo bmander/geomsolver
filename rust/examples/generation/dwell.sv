@@ -5,17 +5,17 @@
 // barely moves while the point runs along the arc: the output dwells.  A designer wants the arc's
 // centre of curvature (where the dwell link's far end will sit) and its radius (the link's length).
 //
-// `path` is the coupler point's curve as the crank runs a whole turn, traced from the linkage
-// (`over theta in (0, 360)`); nothing writes a formula for it.  `osc` osculates it with the crank
-// at 170°, where the curve's curvature is stationary and the arc is longest: the circle's centre
-// is the curve's centre of curvature there, from the trace's exact second derivative (no
-// differences).  The coupler point's offset `ap` along the coupler is left unbound, so it is an
-// unknown of the drawing, and the stated radius of the dwell arc (25) is what fixes it: it solves
-// to about 25.5.
+// The crank's angle is `t`, a number that runs a whole turn, and `path` is the coupler point's
+// curve as it runs (`trace(bar.P over t)`); nothing writes a formula for it.  `osc` osculates it
+// with the crank at 170°, where the curve's curvature is stationary and the arc is longest: the
+// circle's centre is the curve's centre of curvature there, from the trace's exact second
+// derivative (no differences).  The coupler point's offset `ap` along the coupler is left unbound,
+// so it is an unknown of the drawing, a number that does not run with `t`, and the stated radius
+// of the dwell arc (25) is what fixes it: it solves to about 25.5.
 //
-// The crank is the drawing's one freedom: drag `bar.A` round and the coupler point runs along the
-// curve, close to `osc` from about 150° to 190°.  Edit the dwell radius, or `beta` (the coupler
-// point's angle off the coupler), and `ap` and the circle are solved again.
+// The drawing stands at `t = 0` and is followed round the turn (`1 DOF over t`): the coupler point
+// runs along the curve, close to `osc` from about 150° to 190°.  Edit the dwell radius, or `beta`
+// (the coupler point's angle off the coupler), and `ap` and the circle are solved again.
 
 use std
 
@@ -23,6 +23,8 @@ r2 := 10      // the crank
 r3 := 30      // the coupler
 r4 := 25      // the rocker
 beta := 50deg // the coupler point's angle off the coupler
+
+param t: Angle over (0deg, 360deg)
 
 component FourBar(o2: point, o4: point, r2: Length, r3: Length, r4: Length, beta: Angle,
                   theta: Angle, ap: Length) {
@@ -49,10 +51,10 @@ in std.front {
   fix((0, 0)) o2
   fix((30, 0)) o4
 
-  // the linkage, its crank angle and its coupler point's offset both left unbound
-  bar := FourBar(o2, o4, r2: r2, r3: r3, r4: r4, beta: beta)
+  // the linkage, its crank at `t` and its coupler point's offset left unbound
+  bar := FourBar(o2, o4, r2: r2, r3: r3, r4: r4, beta: beta, theta: t)
 }
-path := trace(bar.P over theta in (0, 360))
+path := trace(bar.P over t)
 
 // the dwell arc: a circle osculating the coupler curve at 170°, of the radius the link will have
 in std.front {

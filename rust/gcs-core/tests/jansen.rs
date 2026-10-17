@@ -1,5 +1,6 @@
 //! Jansen's linkage (`jansen.sv`): the leg assembles on the pose the machine is built to, and
-//! the toe's traced stride is the leg itself posed round the crank.
+//! the toe's stride is the leg itself followed round the crank (`trace(leg.toe over t)`), which
+//! relations hold to (#398 A).
 //!
 //! The reference is worked out here and not asked of the core: each joint is where two rods of
 //! stated length meet, so it is one of the two intersections of two circles, and which one is
@@ -65,8 +66,8 @@ fn close(a: P, b: P, tol: f64) -> bool {
     (a.0 - b.0).abs() < tol && (a.1 - b.1).abs() < tol
 }
 
-/// The drawing solves onto the built pose, the crank is its one freedom, and the pose is the
-/// one every `ccw`/`cw` line states.
+/// The drawing solves onto the built pose, the crank runs with `t` (its one freedom over `t`),
+/// and the pose is the one every `ccw`/`cw` line states.
 #[test]
 fn the_leg_assembles_on_the_stated_pose() {
     let (prog, errs) = crate::common::parse(examples::JANSEN);
@@ -76,7 +77,8 @@ fn the_leg_assembles_on_the_stated_pose() {
     let r = solve(&mut e.sketch, SolveOpts::default());
     assert!(r.success, "{}", r.message);
     let d = diagnose(&mut e.sketch, DiagnoseOptions::default());
-    assert_eq!((d.dof, d.status), (1, State::Under));
+    assert_eq!((d.dof, d.status), (0, State::Well));
+    assert_eq!(d.parameters.iter().map(|p| p.dof).collect::<Vec<_>>(), vec![Some(1)]);
 
     let pin = e.map.ent_named("leg.pin").unwrap();
     let (px, py) = e.sketch.point_xy(pin.i());
@@ -92,8 +94,8 @@ fn the_leg_assembles_on_the_stated_pose() {
     }
 }
 
-/// **The traced stride is the leg.**  `path` is a locus over a scratch copy of the linkage, and
-/// at every crank angle it puts the toe where the drawing's own rods would.
+/// **The traced stride is the leg.**  `path` is the drawing's own toe followed round the crank,
+/// and at every crank angle it is where the leg built from circle intersections puts it.
 #[test]
 fn the_stride_is_the_toe_round_the_crank() {
     let (prog, _) = crate::common::parse(examples::JANSEN);
@@ -166,16 +168,22 @@ fn grounded(edit: impl Fn(String) -> String) -> gcs_core::program::Elaborated {
     grounded_at(270.0, edit)
 }
 
+/// The jansen document with the pivot's height under the axle an unknown it declares, `l`: a
+/// number the stride is solved through, which does not run with `t`.
+fn unstated_height(d: String) -> String {
+    d.replace("l := 7.8 ", "param l: Length hint(7.8) ")
+}
+
 /// **The stride stands on the ground, and the frame is what moves.**  The ground is fixed and
 /// held tangent to the traced toe path, and the pivot's height under the axle — no longer
 /// stated — is what solves: the height at which the stride's lowest point just reaches it.
 #[test]
 fn the_frame_solves_for_the_stride_to_touch_the_ground() {
-    let mut e = grounded(|d| d.replace("axle offset(dx: a, dy: l) pivot\n", "pivot distance(a, along: u) axle\n"));
+    let mut e = grounded(unstated_height);
     let r = solve(&mut e.sketch, SolveOpts::default());
     assert!(r.success, "{}", r.message);
     let d = diagnose(&mut e.sketch, DiagnoseOptions::default());
-    assert_eq!((d.dof, d.status), (1, State::Under), "the crank is still the one freedom");
+    assert_eq!((d.dof, d.status), (0, State::Well), "the crank runs with `t`");
     let pivot = e.map.ent_named("pivot").unwrap();
     let got = -e.sketch.point_xy(pivot.i()).1;
     let want = reaching(-95.0, 5.0, 15.0, |l| lowest(l, H));
@@ -184,7 +192,7 @@ fn the_frame_solves_for_the_stride_to_touch_the_ground() {
 
 /// **A rod's length is what solves.**  The leg takes the heel-to-toe rod's length as a formal
 /// and the drawn leg leaves it unbound, so it is an unknown of the drawing (`leg.h`) and a
-/// column of the traced stride: it solves so the stride's lowest point reaches the ground.
+/// column of the stride: it solves so the stride's lowest point reaches the ground.
 #[test]
 fn a_rod_solves_for_the_stride_to_touch_the_ground() {
     let mut e = grounded(|d| {
@@ -197,7 +205,7 @@ fn a_rod_solves_for_the_stride_to_touch_the_ground() {
     let r = solve(&mut e.sketch, SolveOpts::default());
     assert!(r.success, "{}", r.message);
     let d = diagnose(&mut e.sketch, DiagnoseOptions::default());
-    assert_eq!((d.dof, d.status), (1, State::Under), "the crank is still the one freedom");
+    assert_eq!((d.dof, d.status), (0, State::Well), "the crank runs with `t`");
     let got = e.sketch.params[e.sketch.free_vars["leg.h"] as usize].value;
     let want = reaching(-95.0, 60.0, 75.0, |h| lowest(L, h));
     assert!((got - want).abs() < 1e-6, "the rod solved to {got}, the reference {want}");
@@ -207,9 +215,10 @@ fn a_rod_solves_for_the_stride_to_touch_the_ground() {
     assert!(((hx - tx).hypot(hy - ty) - got).abs() < 1e-6);
 }
 
-/// A number a drawn instance leaves unknown is a column of its curve only as itself: given an
-/// expression in another unknown (the enclosing instance's own `k`), the curve says so rather
-/// than carry a map no kernel reads.
+/// A number a drawn instance leaves unknown is a column of a curve traced from the component only
+/// as itself: given an expression in another unknown (the enclosing instance's own `k`), the
+/// curve says so rather than carry a map no kernel reads.  (A point followed along `t` reads it
+/// through its row's own map, as the drawing does.)
 #[test]
 fn a_curve_column_is_an_unknown_number_as_itself() {
     let doc = examples::JANSEN
@@ -218,8 +227,8 @@ fn a_curve_column_is_an_unknown_number_as_itself() {
             "component Leg(axle: point, pivot: point, theta: Angle, h: Length) {",
         )
         .replace("  h := 65.7    // heel to toe\n", "")
-        .replace("leg := Leg(axle, pivot)\n", "pair := Pair(axle, pivot)\n")
-        .replace("path := trace(leg.toe", "path := trace(pair.leg.toe")
+        .replace("leg := Leg(axle, pivot, theta: t)\n", "pair := Pair(axle, pivot)\n")
+        .replace("path := trace(leg.toe over t)", "path := trace(pair.leg.toe over theta in (0, 360))")
         + "component Pair(axle: point, pivot: point, k: Length) { leg := Leg(axle, pivot, h: 2 * k) }\n";
     let (prog, errs) = crate::common::parse(&doc);
     assert!(errs.is_empty(), "{errs:?}");
@@ -228,15 +237,15 @@ fn a_curve_column_is_an_unknown_number_as_itself() {
     assert!(said.iter().any(|m| m.contains("only as the number itself")), "{said:?}");
 }
 
-/// **The stride is closed, so a contact has no end to stop at.**  `over theta in (0, 360)` runs
-/// the crank a whole turn and the toe comes back where it began; the tangency's seed may sit
+/// **The stride is closed, so a contact has no end to stop at.**  `t` runs the crank a whole turn
+/// and the toe comes back where it began; the tangency's seed may sit
 /// either side of where the interval was written to start, and a solve walking past it wraps
 /// round rather than being pinned at the seam (where the drawing was once called a conflict).
 #[test]
 fn a_contact_on_a_closed_stride_wraps_round_the_seam() {
     let want = reaching(-95.0, 5.0, 15.0, |l| lowest(l, H));
     for seed in [0.0, 45.0, 90.0, 135.0, 225.0, 270.0, 340.0] {
-        let mut e = grounded_at(seed, |d| d.replace("axle offset(dx: a, dy: l) pivot\n", "pivot distance(a, along: u) axle\n"));
+        let mut e = grounded_at(seed, unstated_height);
         assert!(e.sketch.curve_closed(0), "the stride closes on itself");
         let r = solve(&mut e.sketch, SolveOpts::default());
         assert!(r.success, "seeded at {seed}: {}", r.message);
@@ -291,7 +300,7 @@ fn the_stride_stands_on_the_ground_twice() {
     let r = solve(&mut e.sketch, SolveOpts::default());
     assert!(r.success, "{}", r.message);
     let d = diagnose(&mut e.sketch, DiagnoseOptions::default());
-    assert_eq!((d.dof, d.status), (1, State::Under), "the crank is still the one freedom");
+    assert_eq!((d.dof, d.status), (0, State::Well), "the crank runs with `t`");
     // the reference: the rod at which the two dips are level, by bisection
     let want = crossing(65.6, 65.7, |m| dip(L, m, 35.0).1 < dip(L, m, 329.5).1);
     assert!((rod(&e) - want).abs() < 1e-6, "the rod solved to {}, the reference {want}", rod(&e));
@@ -332,7 +341,7 @@ radius(150) osc
     let r = solve(&mut e.sketch, SolveOpts::default());
     assert!(r.success, "{}", r.message);
     let d = diagnose(&mut e.sketch, DiagnoseOptions::default());
-    assert_eq!((d.dof, d.status), (1, State::Under), "the crank is still the one freedom");
+    assert_eq!((d.dof, d.status), (0, State::Well), "the crank runs with `t`");
     // one unknown, owned by both contacts
     let s = e.sketch.shared["s"].param;
     let owners = e.sketch.constraints.iter().filter(|c| c.owns(s)).count();

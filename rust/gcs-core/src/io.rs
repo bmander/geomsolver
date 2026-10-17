@@ -1066,10 +1066,24 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             continue;
         }
         let def = &src.curve_defs[cv.def as usize];
+        // a followed point's lowering is the whole drawing's (#398 A): it travels unlowered, as
+        // drawn, until the document it lands in is elaborated again
+        let lowered = matches!(def.body, crate::model::CurveBody::Followed(Some(_)));
+        let def = match lowered {
+            true => crate::model::CurveDef {
+                name: format!("followed:{}", def.param),
+                columns: Vec::new(),
+                values: Vec::new(),
+                vars: Vec::new(),
+                body: crate::model::CurveBody::Followed(None),
+                ..def.clone()
+            },
+            false => def.clone(),
+        };
         let at = match dst.curve_defs.iter().position(|d| d.name == def.name) {
             Some(k) => k,
             None => {
-                dst.curve_defs.push(def.clone());
+                dst.curve_defs.push(def);
                 dst.curve_defs.len() - 1
             }
         };
@@ -1093,11 +1107,11 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         dst.curves.push(crate::model::CurveE {
             def: at as u32,
             args,
-            unknowns: cv.unknowns.clone(),
-            values: cv.values.clone(),
+            unknowns: if lowered { Vec::new() } else { cv.unknowns.clone() },
+            values: if lowered { Vec::new() } else { cv.values.clone() },
             over: cv.over.clone(),
             home: cv.home.clone(),
-            pose: crate::model::whole(pose, cv.pose.len()),
+            pose: if lowered { Vec::new() } else { crate::model::whole(pose, cv.pose.len()) },
             class: cv.class.clone(),
             trim,
             extrusion: cv.extrusion,

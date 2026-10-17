@@ -33,6 +33,7 @@ pub mod fdcheck;
 pub mod fixtures;
 pub mod flatten;
 pub mod follow;
+pub mod followed;
 pub mod extremal;
 pub mod generate;
 pub mod gltf;

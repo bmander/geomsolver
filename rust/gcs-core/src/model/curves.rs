@@ -98,8 +98,20 @@ pub enum CurveBody {
     Extremal(Extremal),
     /// A point of the drawing itself as a declared parameter runs (`trace(m over t)`, #391 S4):
     /// the curve's one argument, wherever the drawing followed along the definition's `param`
-    /// stands (`follow.rs`).  Drawn, and held to by nothing.
-    Followed,
+    /// stands (`follow.rs`).  Drawn from the march; held to (#398 A) through the locus the
+    /// drawing's moving part is lowered to (`followed::lower`), `None` until it is lowered or
+    /// where it cannot be, which nothing is held to.
+    Followed(Option<crate::locus::Locus>),
+}
+
+impl CurveBody {
+    /// The locus a contact reads: a trace's block, or the one a followed drawing is lowered to.
+    pub fn locus(&self) -> Option<&crate::locus::Locus> {
+        match self {
+            CurveBody::Trace(l) | CurveBody::Followed(Some(l)) => Some(l),
+            _ => None,
+        }
+    }
 }
 
 /// A free curve's definition: its energy's Lagrangian — `None` until an energy is stated — how many
@@ -246,7 +258,10 @@ impl Sketch {
                 let mut s = crate::tape::Scratch::new();
                 (tx.eval(&x, &mut s).v, ty.eval(&x, &mut s).v)
             }
-            CurveBody::Trace(l) => MODEL_LOCUS.with(|s| {
+            // a followed point a relation holds to is read where its contacts read it, off the
+            // locus anchored where the drawing stands (#398 A): a solve asking where its curve
+            // closes, or where a contact starts, never marches the drawing it is solving
+            CurveBody::Trace(l) | CurveBody::Followed(Some(l)) => MODEL_LOCUS.with(|s| {
                 let s = &mut *s.borrow_mut();
                 let pose = self.curve_pose(i);
                 let anchor = crate::locus::Anchor { u: self.curve_home(i), pose: pose.as_deref() };
@@ -254,7 +269,7 @@ impl Sketch {
                 (v.x, v.y)
             }),
             CurveBody::Envelope(g) => crate::generate::point(&g.flat, &x, self.curve_home(i)),
-            CurveBody::Followed => self.followed_points(i, &[u]).pop().unwrap_or_default(),
+            CurveBody::Followed(None) => self.followed_points(i, &[u]).pop().unwrap_or_default(),
             CurveBody::Extremal(_) => self
                 .curve_shape(i)
                 .and_then(|(lag, sh)| crate::extremal::shoot::position(&lag, &sh, u))
@@ -265,7 +280,7 @@ impl Sketch {
     /// Whether curve `i` is a point of the drawing traced over a declared parameter
     /// (`trace(m over t)`, #391 S4).
     pub fn curve_followed(&self, i: usize) -> bool {
-        matches!(self.curve_defs[self.curves[i].def as usize].body, CurveBody::Followed)
+        matches!(self.curve_defs[self.curves[i].def as usize].body, CurveBody::Followed(_))
     }
 
     /// Whether curve `i` is a free curve (`curve(a, b)`).
@@ -399,9 +414,17 @@ impl Sketch {
 
     /// The parameter a curve's trace is anchored at — the drawing's unknown where the swept
     /// formal is one, else the number the instance gave.  An unknown no dimension has read yet
-    /// is not allocated, and the interval's start stands in until it is.
+    /// is not allocated, and the interval's start stands in until it is.  A point followed along a
+    /// declared parameter is anchored where the drawing stands, the instant the parameter is held
+    /// at (#398 A): its pose is the drawing there, at every station of a march.
     pub fn curve_home(&self, i: usize) -> f64 {
         let cv = &self.curves[i];
+        if self.curve_followed(i) {
+            let name = &self.curve_defs[cv.def as usize].param;
+            if let Some(h) = self.held.get(name) {
+                return self.params[h.param as usize].value;
+            }
+        }
         match &cv.home {
             Home::At(u) => *u,
             Home::Free(n) => self
@@ -551,7 +574,7 @@ impl Sketch {
                 Some((lag, sh)) => crate::extremal::points(&lag, &sh, a, b, n),
                 None => Vec::new(),
             },
-            CurveBody::Followed => {
+            CurveBody::Followed(_) => {
                 let at: Vec<f64> = (0..=n).map(|k| a + (b - a) * k as f64 / n as f64).collect();
                 self.followed_points(i, &at)
             }

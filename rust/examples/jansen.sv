@@ -7,12 +7,14 @@
 // in the proportions Jansen calls the holy numbers — so every joint is where two rods of
 // stated length meet, and each is one of two mirror poses.  The ccw/cw lines pick the pose the
 // machine is built to; the seeds only start the solve near it.  The component takes the crank
-// angle `theta` as a formal: drawn with it unbound, the crank is the drawing's one freedom
-// (dof 1, Under — drag `leg.pin` round its circle and the leg takes a step); asked for its
-// `toe` as `theta` runs, the same component is the stride, and the drawing's own pose is
-// where the trace is anchored.
+// angle `theta` as a formal, and the drawn leg is given `t`, the crank's angle declared as a
+// number that runs a whole turn: the leg is drawn at `t = 0` and followed round from there
+// (DOF 0, `1 DOF over t` — the crank, which is how a mechanism is counted).  The stride is the
+// drawing's own toe as `t` runs.
 
 use std (offset)
+
+param t: Angle over (0deg, 360deg)
 
 // the frame the leg hangs from: the crank's axle, and the pivot both triangles swing on
 a := 38      // the axle stands this far to the right of the pivot...
@@ -84,9 +86,9 @@ in std.front {
   fix((0, 0)) axle
   axle offset(dx: a, dy: l) pivot
 
-  // the leg, with its crank angle left unbound — the drawing's one freedom
-  leg := Leg(axle, pivot)
+  // the leg, its crank at `t`
+  leg := Leg(axle, pivot, theta: t)
 }
 
 // where the toe goes over a whole turn of the crank
-path := trace(leg.toe over theta in (0, 360))
+path := trace(leg.toe over t)

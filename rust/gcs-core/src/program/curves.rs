@@ -1170,7 +1170,7 @@ fn followed(
                 param: swept.to_string(),
                 turns: running.turns(),
                 vars: Vec::new(),
-                body: crate::model::CurveBody::Followed,
+                body: crate::model::CurveBody::Followed(None),
                 pose_of: Vec::new(),
                 home: false,
             });
