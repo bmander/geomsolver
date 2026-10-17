@@ -1098,6 +1098,13 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
                     .map(|r| (r, j))
             })
             .collect();
+        // a lowered followed point carries none of what it was lowered to
+        let (unknowns, values, pose) = match lowered {
+            true => Default::default(),
+            false => {
+                (cv.unknowns.clone(), cv.values.clone(), crate::model::whole(pose, cv.pose.len()))
+            }
+        };
         // a free curve's length is its own number, and comes as a circle's radius does; its
         // pegs are the energy's to settle again
         let length = cv.length.map(|l| {
@@ -1107,11 +1114,11 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         dst.curves.push(crate::model::CurveE {
             def: at as u32,
             args,
-            unknowns: if lowered { Vec::new() } else { cv.unknowns.clone() },
-            values: if lowered { Vec::new() } else { cv.values.clone() },
+            unknowns,
+            values,
             over: cv.over.clone(),
             home: cv.home.clone(),
-            pose: if lowered { Vec::new() } else { crate::model::whole(pose, cv.pose.len()) },
+            pose,
             class: cv.class.clone(),
             trim,
             extrusion: cv.extrusion,

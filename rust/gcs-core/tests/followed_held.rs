@@ -89,7 +89,8 @@ fn the_march_holds_the_relation_at_every_station() {
 fn a_followed_contacts_jacobian_is_its_derivative() {
     let e = solved(&passing());
     crate::common::fd_jacobian(&e.sketch, 1e-5);
-    let src = four_bar("in std.front {\n  g0 := point hint((0, 30))\n  g1 := point hint((10, 30))\n  \
+    let src = four_bar("in std.front {\n  g0 := point hint((0, 30))\n  \
+        g1 := point hint((10, 30))\n  \
         top := horizontal line(g0, g1)\n  fix(x == 0) g0\n  g0 distance(10, along: u) g1\n  \
         coupler tangent top hint(t: 100)\n  o := point hint((20, 0))\n  \
         osc := circle(center: o) hint(r: 20)\n  coupler curvature(t == 200) osc\n}\n");

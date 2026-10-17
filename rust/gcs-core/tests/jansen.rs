@@ -228,7 +228,8 @@ fn a_curve_column_is_an_unknown_number_as_itself() {
         )
         .replace("  h := 65.7    // heel to toe\n", "")
         .replace("leg := Leg(axle, pivot, theta: t)\n", "pair := Pair(axle, pivot)\n")
-        .replace("path := trace(leg.toe over t)", "path := trace(pair.leg.toe over theta in (0, 360))")
+        .replace("path := trace(leg.toe over t)",
+                 "path := trace(pair.leg.toe over theta in (0, 360))")
         + "component Pair(axle: point, pivot: point, k: Length) { leg := Leg(axle, pivot, h: 2 * k) }\n";
     let (prog, errs) = crate::common::parse(&doc);
     assert!(errs.is_empty(), "{errs:?}");

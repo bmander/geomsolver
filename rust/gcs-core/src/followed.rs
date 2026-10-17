@@ -26,10 +26,10 @@
 //!   free twin over a tape of its text (`w`), as a component trace's dimension over its formal is.
 //!
 //! **One solve** (the issue's order problem): the drawing stands at the instant the parameter is
-//! held at, and the locus is anchored there (`Sketch::curve_home`), its pose the drawing's own, read
-//! off the sheet at every compile and refresh.  So a solve holding a relation to the trace solves
-//! the drawing where it stands and the trace from where it stands together: the trace at `τ` is a
-//! march from the pose to `τ`, remembered per contact and resumed (`locus::eval_at`), its
+//! held at, and the locus is anchored there (`Sketch::curve_home`), its pose the drawing's own,
+//! read off the sheet at every compile and refresh.  So a solve holding a relation to the trace
+//! solves the drawing where it stands and the trace from where it stands together: the trace at `τ`
+//! is a march from the pose to `τ`, remembered per contact and resumed (`locus::eval_at`), its
 //! sensitivities columns of the contact's row, and none of the drawing's `q`.  A march of the
 //! drawing (`follow::follow`) solves the held relation at each station as a row like any other,
 //! anchored at that station — the same trace, read from where the drawing stands there.
@@ -48,18 +48,11 @@ use crate::model::{CurveBody, CurveDef, EntKind, EntRef, Sketch};
 const PLACE: u32 = u32::MAX;
 
 /// Whether constraint `c` holds to a point followed along a parameter.
-pub fn holds_followed(sk: &Sketch, c: &Constraint) -> bool {
+fn holds_followed(sk: &Sketch, c: &Constraint) -> bool {
     c.args.iter().any(|a| match a {
-        Arg::Ent(e) => e.kind == EntKind::Curve && e.i() < sk.curves.len() && sk.curve_followed(e.i()),
-        _ => false,
-    })
-}
-
-/// The dimension slot of `c` whose text reads the parameter `name`, where one does.
-fn reads(sk: &Sketch, c: &Constraint, name: &str) -> Option<usize> {
-    c.args.iter().position(|a| match a {
-        Arg::Expr(e) => crate::expr::parse_in(&e.text, sk.units)
-            .is_ok_and(|p| p.body.deps().iter().any(|d| d == name)),
+        Arg::Ent(e) => {
+            e.kind == EntKind::Curve && e.i() < sk.curves.len() && sk.curve_followed(e.i())
+        }
         _ => false,
     })
 }
@@ -145,7 +138,7 @@ pub fn lower(sk: &mut Sketch, i: usize) -> Result<(), String> {
     };
     // the columns, the free values the block reads, by name; and the values, the fixed numbers
     let mut columns: BTreeSet<&String> = BTreeSet::new();
-    let mut values: Vec<u32> = Vec::new();
+    let mut values: BTreeSet<u32> = BTreeSet::new();
     for &r in &block {
         for &p in &cols[r] {
             if derived.contains(&p) {
@@ -154,8 +147,8 @@ pub fn lower(sk: &mut Sketch, i: usize) -> Result<(), String> {
             }
             if let Some(n) = free.get(&p) {
                 columns.insert(n);
-            } else if !moved.contains(&p) && !values.contains(&p) {
-                values.push(p);
+            } else if !moved.contains(&p) {
+                values.insert(p);
             }
         }
     }
@@ -184,11 +177,11 @@ pub fn lower(sk: &mut Sketch, i: usize) -> Result<(), String> {
         }
         // a row reading the parameter is its kind's free twin over its text's tape, the text in
         // the units a person writes and `(m, c)` the conversion, as a component trace's is
-        let (c, tape) = match reads(sk, c, &name) {
+        let (c, tape) = match crate::follow::reading_slot(sk, c, &name) {
             Some(slot) => {
                 if c.kind.dimension_slot() != Some(slot) || c.kind.free_kernel().is_none() {
-                    return Err(format!("{} reads `{name}` where no number of it runs",
-                                       crate::model::article(&crate::syntax::snake(c.kind.name()))));
+                    let what = crate::model::article(&crate::syntax::snake(c.kind.name()));
+                    return Err(format!("{what} reads `{name}` where no number of it runs"));
                 }
                 let Arg::Expr(e) = &c.args[slot] else { unreachable!("`reads` finds a text") };
                 let ast = crate::expr::parse_in(&e.text, sk.units)?;
@@ -210,9 +203,11 @@ pub fn lower(sk: &mut Sketch, i: usize) -> Result<(), String> {
             row_cols.push(s as u32);
         }
         w.extend(tape);
-        lowered.push(crate::locus::Row { kid: c.kernel_id(), cols: row_cols, consts: c.consts_on(sk, None) });
+        let consts = c.consts_on(sk, None);
+        lowered.push(crate::locus::Row { kid: c.kernel_id(), cols: row_cols, consts });
     }
-    let seed = |v: f64| crate::tape::Tape::compile(&crate::expr::Ast::Num(v, crate::units::Dim::SCALAR), &vars)
+    let number = |v: f64| crate::expr::Ast::Num(v, crate::units::Dim::SCALAR);
+    let seed = |v: f64| crate::tape::Tape::compile(&number(v), &vars)
         .expect("a number always compiles");
     let seeds: Vec<crate::tape::Tape> = pose.iter()
         .map(|&(e, j)| seed(sk.own_param(e, j).map_or(0.0, |p| sk.params[p as usize].value)))
@@ -227,10 +222,6 @@ pub fn lower(sk: &mut Sketch, i: usize) -> Result<(), String> {
                             free: a number solved through the trace is a free value — declare \
                             {them} (`param l: Length`), or leave {them} an instance's unbound \
                             number"));
-    }
-    if n_res > n_q {
-        return Err(format!("the rows that move with `{name}` state {n_res} equations of the {n_q} \
-                            numbers they place"));
     }
     let rates = crate::locus::Rates { rows: Vec::new(), init: Vec::new(), pose: false };
     let locus = crate::locus::Locus::new(n_outer, columns.len(), n_q, traced, w, seeds, lowered,
