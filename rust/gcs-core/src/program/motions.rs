@@ -131,6 +131,52 @@ pub(super) fn motions(sk: &mut Sketch, res: &Resolver, map: &SourceMap, body: &[
         if let Some(j) = sk.frames[f].joint.as_mut() {
             j.motion = Some(m as u32);
         }
+        // a value written over a declared parameter drives the joint (#391 S5): minted beside it,
+        // the node every reading over the roll reads
+        if let Some((law, over)) = res.values.get(&f).and_then(|(text, _)| {
+            Some((text.clone(), drive_of(sk, text)?))
+        }) {
+            sk.motions.push(MotionE { def: MotionDef::Driven { of: m as u32, law, over },
+                                      name: format!("{name} driven"),
+                                      class: sk.frames[f].class.clone(), numbers: None });
+        }
+    }
+}
+
+/// **The parameter a joint's value drives it by** (#391 S5): the declared parameter its text
+/// reads, where it reads one — `values` refuses one reading two.
+fn drive_of(sk: &Sketch, text: &str) -> Option<String> {
+    let parsed = crate::expr::parse_in(text, sk.units).ok()?;
+    parsed.body.deps().into_iter().find(|d| sk.parameters.contains_key(d))
+}
+
+/// The node a reading of joint node `m` reads: the drive minted beside it, where its frame's value
+/// drives it, else `m` itself.
+fn driven(sk: &Sketch, m: usize) -> usize {
+    sk.motions.iter().position(|x| matches!(x.def, MotionDef::Driven { of, .. } if of as usize == m))
+        .unwrap_or(m)
+}
+
+/// The joint a drive was minted beside (#391 S5), or `m` where it is no drive: what `x in f`
+/// reads, at the value worked out where the drawing stands, so a row reads no law.
+pub(super) fn undriven(sk: &Sketch, m: usize) -> usize {
+    match sk.motions[m].def {
+        MotionDef::Driven { of, .. } => of as usize,
+        _ => m,
+    }
+}
+
+/// **The drive a motion node reads**, through relatives and inverses: the parameter it is driven
+/// by, which a relation the solve holds cannot read (#391 S5).
+pub(super) fn drive_in(sk: &Sketch, m: usize) -> Option<(String, String)> {
+    let node = sk.motions.get(m)?;
+    match &node.def {
+        MotionDef::Driven { of, over, .. } => Some((sk.motions[*of as usize].name.clone(),
+                                                    over.clone())),
+        MotionDef::Relative { source, observer } => drive_in(sk, *source as usize)
+            .or_else(|| drive_in(sk, *observer as usize)),
+        MotionDef::Inverse { of } => drive_in(sk, *of as usize),
+        _ => None,
     }
 }
 
@@ -144,15 +190,12 @@ pub(super) fn motions(sk: &mut Sketch, res: &Resolver, map: &SourceMap, body: &[
 /// `fix` holds (`holding`).  Refused: a value of anything but a jointed frame, one given twice,
 /// a frame with a value riding on another, and a frame with a value something rides on — what is
 /// drawn in its block stands where it is drawn, not where the value puts it, so the frame draws
-/// it as `n := base in f` instead.
+/// it as `n := base in f` instead.  A value reading a declared parameter is a law of it, which
+/// drives the frame (#391 S5, minted by `motions`), and reads one parameter alone.
 pub(super) fn values(sk: &Sketch, res: &mut Resolver, body: &[&Statement],
                      skip: &BTreeSet<StmtId>, diags: &mut Vec<Diag>) {
     use crate::constraints::JOINT_VALUE;
-    // the numbers a face family's stations hold, as an instant may read them
-    let held: BTreeMap<String, crate::expr::Aff> = sk.held.iter()
-        .map(|(n, h)| (n.clone(), crate::expr::Aff::of_dim(sk.params[h.param as usize].value,
-                                                           h.dim)))
-        .collect();
+    let held = held_now(sk);
     for st in body.iter().filter(|st| !skip.contains(&st.id)) {
         let Operation::Relation(r) = &st.kind else { continue };
         let Some(w) = r.form.written().filter(|w| w.word.text == "fix") else { continue };
@@ -191,6 +234,15 @@ pub(super) fn values(sk: &Sketch, res: &mut Resolver, body: &[&Statement],
             say(diags, Code::E103, format!("`{text}`: {m}"));
             continue;
         }
+        // a drive runs over one parameter (#391 S5): the roll stands for one at a time
+        let runs: Vec<String> = crate::expr::parse_in(&text, sk.units).map(|p| p.body.deps())
+            .unwrap_or_default().into_iter().filter(|d| sk.parameters.contains_key(d)).collect();
+        if runs.len() > 1 {
+            say(diags, Code::E103, format!("`{text}` reads {}: a joint's value is driven by one \
+                declared parameter, the one the roll stands for", runs.iter()
+                .map(|r| format!("`{r}`")).collect::<Vec<_>>().join(" and ")));
+            continue;
+        }
         let carriers = sk.carriers_of(&sk.frames[f.i()].rides);
         if !carriers.is_empty() {
             say(diags, Code::E080, format!("`{name}` rides on {}, and a frame with a value rides \
@@ -213,6 +265,23 @@ pub(super) fn values(sk: &Sketch, res: &mut Resolver, body: &[&Statement],
         }
         res.values.insert(f.i(), (text, span));
     }
+}
+
+/// The numbers the drawing holds where it stands — a face family's running numbers and the
+/// declared parameters, at the instant held — as an instant may read them.
+fn held_now(sk: &Sketch) -> BTreeMap<String, crate::expr::Aff> {
+    sk.held.iter()
+        .map(|(n, h)| (n.clone(), crate::expr::Aff::of_dim(sk.params[h.param as usize].value,
+                                                           h.dim)))
+        .collect()
+}
+
+/// A frame's value `text` worked out where the drawing stands (`held_now`), in degrees: the
+/// instant a solid drawn in it is placed at.
+pub(super) fn value_now(sk: &Sketch, text: &str) -> Result<f64, String> {
+    let a = crate::flatten::value_read(text, &held_now(sk), &sk.declared, sk.units)?;
+    a.dim.require(crate::units::Dim::ANGLE, crate::constraints::JOINT_VALUE)?;
+    a.number().ok_or_else(|| format!("`{text}` reads an unknown, and a solid is placed once"))
 }
 
 /// The relation a `fix` states of the numbers it holds (#391 S3): itself, or without a joint's
@@ -276,9 +345,10 @@ pub(super) fn frame_motion(sk: &mut Sketch, res: &Resolver, r: &Ref)
 /// **The motion of a path of carriers** (#383): their joints chained, outermost first —
 /// `outer(τ)·inner(τ)`, `Sketch::chain`, each pair minted once — `None` for the world.
 pub(super) fn carried(sk: &mut Sketch, carriers: &[u32]) -> Result<Option<usize>, String> {
+    // a driven joint's readings read its drive (#391 S5)
     let nodes: Vec<usize> = carriers.iter()
         .filter_map(|&f| sk.frames.get(f as usize)?.joint.as_ref()?.motion)
-        .map(|m| m as usize).collect();
+        .map(|m| driven(sk, m as usize)).collect();
     let Some((&first, rest)) = nodes.split_first() else { return Ok(None) };
     let mut m = first;
     for &n in rest {
@@ -381,6 +451,21 @@ pub(super) fn meshing(sk: &mut Sketch, res: &Resolver, first: EntRef, second: En
 /// rides on — refused where it rides on nothing that moves.
 pub(super) fn reading_of(sk: &mut Sketch, res: &Resolver, tool: Option<EntRef>,
                          under: Option<&Ref>, seen_from: Option<&Ref>) -> Result<usize, String> {
+    let m = read_under(sk, res, tool, under, seen_from)?;
+    // the roll is an angle, and a drive read over it runs over one (#391 S5)
+    if let Some((f, over)) = drive_in(sk, m) {
+        let dim = sk.parameters.get(&over).map(|p| p.dim);
+        if dim != Some(crate::units::Dim::ANGLE) {
+            return Err(format!("`{f}` is driven by `{over}`, {}, and a reading over the roll runs \
+                over an angle: draw in it, `n := x in {f}`, to follow it along `{over}`",
+                dim.map_or("no parameter".into(), |d| format!("a {}", d.name()))));
+        }
+    }
+    Ok(m)
+}
+
+fn read_under(sk: &mut Sketch, res: &Resolver, tool: Option<EntRef>, under: Option<&Ref>,
+              seen_from: Option<&Ref>) -> Result<usize, String> {
     let Some(tool) = tool else {
         return match under {
             Some(u) => reading(sk, res, u, seen_from),

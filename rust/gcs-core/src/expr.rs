@@ -284,6 +284,25 @@ impl Ast {
         }
     }
 
+    /// **Whether the expression is affine in `name`**, read off how it is written (#391 S5): a sum
+    /// of terms each `name` times a factor that does not read it, or reading it not at all.  What
+    /// a joint's value is recognised as a constant twist by — never by sampling, which a law
+    /// like `360deg * s + 30deg * sin(360deg * s)` passes at its ends and its middle.  `false` for
+    /// anything it cannot see is affine (`name` under a function or a power, divided by).
+    pub fn affine_in(&self, name: &str) -> bool {
+        let reads = |a: &Ast| a.deps().contains(name);
+        match self {
+            Ast::Num(..) | Ast::Var(_) | Ast::Measure(..) => true,
+            Ast::Neg(a) => a.affine_in(name),
+            Ast::Bin(Op::Add | Op::Sub, a, b) => a.affine_in(name) && b.affine_in(name),
+            Ast::Bin(Op::Mul, a, b) => {
+                a.affine_in(name) && b.affine_in(name) && !(reads(a) && reads(b))
+            }
+            Ast::Bin(Op::Div, a, b) => a.affine_in(name) && !reads(b),
+            Ast::Bin(Op::Pow, ..) | Ast::Call(..) => !reads(self),
+        }
+    }
+
     /// Every name the expression reads, once each, in name order.
     pub fn deps(&self) -> BTreeSet<String> {
         let mut out = BTreeSet::new();

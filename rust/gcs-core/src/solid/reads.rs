@@ -327,6 +327,13 @@ fn motion_reads(sk: &Sketch,motion: u32,values: &mut Vec<f64>) {
                 values.extend([4.,of as f64]);
                 pending.push(of);
             }
+            // a drive's law, and every held number it may read where it now stands (#391 S5)
+            crate::model::MotionDef::Driven {of,ref law,ref over} => {
+                values.extend([6.,of as f64]);
+                values.extend(law.bytes().chain([0]).chain(over.bytes()).map(f64::from));
+                values.extend(sk.held.values().map(|h| sk.params[h.param as usize].value));
+                pending.push(of);
+            }
             crate::model::MotionDef::Joint {axis,ratio,advance} => {
                 values.extend([5.,axis as f64,ratio,advance]);
                 match sk.axes.get(axis as usize) {

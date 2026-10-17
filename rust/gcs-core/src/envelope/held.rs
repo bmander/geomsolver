@@ -1355,6 +1355,14 @@ fn motion(sk: &Sketch, m: usize, steps: &mut Vec<Step>, cols: &mut Vec<Col>,
                 false => Step::Rotation { at, ratio, advance, free, dir: true },
             }
         }
+        // a row reads no law (#391 S5): a driven frame is read by what is drawn in it, `x in f`,
+        // at its value worked out, and by the readings over the roll built after the solve
+        MotionDef::Driven { of, ref over, .. } => {
+            let f = sk.motions.get(of as usize).map_or(me.name.as_str(), |j| j.name.as_str());
+            return Err(format!("`{f}` is driven by `{over}`, and a relation the solve holds reads \
+                no drive (#391): draw in the frame, `n := x in {f}`, or read it over the roll — a \
+                sweep, a placement"))
+        }
         // a joint's inverse runs back over the same axis columns, a relative's swaps its sides
         MotionDef::Inverse { of } => {
             let k = motion(sk, of as usize, steps, cols, done, depth + 1, turns)?;

@@ -2,7 +2,8 @@
 
 Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you touch
 `model/running.rs`, a `param … over`, a face family's running number, a traced body's formals, an
-interval of the roll a reading states, `follow.rs` (continuation), or `trace(m over t)`. The
+interval of the roll a reading states, `follow.rs` (continuation), `trace(m over t)`, or a drive
+(`motion/law.rs`, `MotionDef::Driven`, `tape::eval_interval`). The
 direction is [#391](https://github.com/bmander/geomsolver/issues/391): geometry over a
 parameter, trajectories rather than snapshots; this file holds what is built of it. An issue
 number (#n) or a spec version ([0.n], see the [language changelog](../solvent-changelog.md)) says
@@ -128,8 +129,8 @@ where a rule came from.
     `τ`, is the joint at `value + τ`; **rest** is each frame at its value, the shared roll at 0, so
     `Sketch::world_point` is the drawing as before and reads no joint.
   - **Not built in stage 3**: a value written over a declared parameter (built in stage 4,
-    below), a value any but linear in its instant (stage 5), a frame with a value riding on
-    another, and a declaration drawn in a valued frame's own block.
+    below), a value any but linear in its instant (built in stage 5, below), a frame with a value
+    riding on another, and a declaration drawn in a valued frame's own block.
 - **Relations over a parameter** (#391 S4, [0.142]): a relation reading a declared parameter holds
   for every value of it, and the drawing is followed along it.
   - **Read as a held number.** `Walk::parameter_axis` puts the parameter into the root's `vals` as
@@ -203,3 +204,71 @@ where a rule came from.
     space (a traced body in space is a component's, §6.5), a trace held to by a relation, a sweep
     of a section over a declared parameter (`sweep(sec over s)`), continuation past a singular
     instant onto a chosen branch, and the app's timeline (stage 6).
+- **General drives** (#391 S5, [0.143]): a joint's value that reads a declared parameter
+  *drives* the frame by it — the value is a law, any expression of the parameter, and the frame
+  stands at its joint turned `ratio · law(θ)` and risen `advance · law(θ) / 360°` at the roll `θ`.
+  - **One clock**: a reading of the frame's motion over the roll reads the roll as that parameter,
+    so the joint stands at the law's value of the roll rather than at the roll — a value of `t`
+    alone is the frame undriven.  Stage 3's rule for a value that reads none stands: the joint
+    runs with the roll, and the value is only where `x in f` puts what is drawn.
+  - **The node** (`program::motions::motions`): where a frame's value reads a declared parameter
+    (`drive_of`, the parameter its text reads) a `MotionDef::Driven { of, law, over }` is minted
+    beside the joint's own node; `motions::carried` hands every reading of the frame's motion the
+    drive (`driven`), and `x in f` the joint itself (`undriven`: `relations::carried_motion` and
+    `solids::build::under_motion`), read at the value worked out where the drawing stands
+    (`value_now`, `t` at the instant held) — so a row reads no law, and what is drawn in the frame
+    is followed along `t` as stage 4 follows it.  A value reading two parameters is E103
+    (`motions::values`); a drive over a parameter that is no `Angle` is read over the roll by
+    nothing (`reading_of`, E080: the roll is an angle) and followed all the same.
+  - **The law** (`motion::Law`): the value's text compiled once over the held numbers
+    (`tape::Tape::compile_wide`, every name but the parameter where the drawing stands when the
+    motion is read, as `Family::read` reads its axes; a name no held number is is refused) and read
+    three ways — its value at a roll (`eval_num` over `f64`), its value and rate there off a Taylor
+    jet (`tape::derivatives_along`; nothing is differenced), and an enclosure of both over a stretch
+    of the roll (`tape::eval_interval`, the fourth walker: forward duals over
+    `interval::Interval`, failing closed for `tan`, the inverse trigonometry, `exp`/`ln`/`log`,
+    the roundings, `atan2`, a power not a whole number, and a division, a root or a length's
+    derivative reaching zero).  Angles in radians a radian; the tape's own trigonometry stays in
+    degrees.
+  - **In `Family`** (`motion::Step::{Rotation, Translation}::law`, the joint's step with its law,
+    `MotionDef::Driven` read by `Family::read`): `at` stands the joint at the law's value and
+    carries its rate by the chain rule (`driven`), `pose_at` the value alone, `bounds` encloses
+    the joint over the law's enclosure of the interval (`MotionBounds::rotation`/`advanced` over
+    it), and `inverse_point_speed_bound_over` scales each driven step's speed by the bound on the
+    law's rate and its reach by the bound on its value — so the roll search through a body
+    (`solid::roll`) and a swept field's minimum stay conservative under a drive.  A drive is no
+    constant twist: `screw`, `turning`, `sliding`, `in_plane`, `in_frame` and `instantaneous`
+    refuse one, as does `NormalVelocity` (`motion::contact`) — what is built of a driven sweep is
+    the field's.  `solid::reads` keys a drive by its text and every held number.
+  - **Refused** where a row would read it: `envelope::held::motion` (a carried point at a roll, a
+    rate, a meshing; a relation held to an envelope under one, E061 where the solve is told it
+    cannot hold to it), said first for a carried point by `relations::carried_motion` (E080,
+    naming `x in f`); `program::generated::program_signed` (a profile in the plane is
+    generated under joints at a constant rate).  A graft carries a drive with its joint
+    (`io::graft`), its law reading the parameter by name.
+  - **A constant twist by what is stated** (`expr::Ast::affine_in`): a face family's carried rows
+    are its motion's sweep (`solid::family::stated_carry`) only where the roll they state is affine
+    in the running number as written; through [0.142] three samples (the ends and the middle)
+    decided it, which `900deg · s + 30deg · sin(360deg · s)` passes.  A single joint at a monotone
+    law sweeps the same surface at another pace (a sweep reads the path alone), and the B-rep
+    still reads such walls off the stations as their screw's (`tests/carried_family.rs`,
+    `a_law_reparametrises_its_screws_sweep`).
+  - **Gate**: `tests/drives.rs` — a radial cam: the follower's roller followed along `t` against
+    its law at every station (1e-9); the follower's drive seen from the cam against the closed
+    form, its pose and its rate against a difference of it (1e-9, 1e-6); `MotionBounds` holding
+    every sampled pose of every 15° stretch and the speed bound every sampled speed; the ball
+    swept along the law as the cam sees it, its field's distance against the closed form's at
+    points on, inside and outside the groove (1e-6); a tool placed at a roll and drawn in the
+    frame; a roll through a blank found never short of the closed form's and within three steps
+    of it; a law three ways (`a_laws_jet_and_enclosure_agree_with_its_value`, over every function
+    the walker carries); the refusals.  `tests/expr.rs`'s
+    `affinity_is_read_off_how_a_number_is_written`.
+  - **Not built in stage 5**: the guide-following station words as frames driven along a path —
+    a guide's frame (`std.On`, `std.Minimal`, `std.Frenet`) is no joint at any value, its pose read
+    off the guide's geometry and its derivatives (and for `On`/`Minimal`, integrated), so it
+    needs a motion of its own kind in `Family` (the guide enclosed over a stretch for its bounds)
+    and a sweep over a declared parameter that is no angle (`sweep(sec over s)`, left unbuilt by
+    stage 4); a relation the solve holds reading a drive (a law in a kernel's constants); a
+    profile in the plane generated under a drive; a slide's value written as a length (it is an
+    instant of the roll: `advance: 360mm` makes its degrees millimetres); and the app's timeline
+    (stage 6).

@@ -1938,6 +1938,22 @@ and nothing is drawn in its own block (E080, naming `n := base in f`: draw in th
 it). A value over a declared `param t: … over (a, b)` holds for every `t` (0.142, 1.6): what is
 drawn in the frame is a trajectory.
 
+**A value over a parameter is a drive** (0.143): any expression of it, a cam's law, and the frame
+stands at the law's value for every `t`. A reading of its motion over the roll reads the roll as
+`t`, so a follower's groove in its cam is the follower's roller swept as the cam sees it:
+
+```sv
+param t: Angle over (0deg, 360deg)
+follower := frame
+std.Slide(follower, along: stem, advance: 360mm)   // its value in degrees is its rise in mm
+fix(value == 5deg * (1 - cos(t))) follower
+roller := r0 in follower                           // where the law puts it at the held `t`
+groove := sweep(ball over t, under: follower, seen_from: cam)
+```
+
+A value reads one parameter. A relation the solve holds — a point carried by a driven frame at a
+roll, a rate of it, a meshing — reads no drive (E080): draw in the frame instead.
+
 **A motion's twist is read by rates** (0.130). The roll `t` is the slot of the `coincident` holding
 `X`, and `rate(X over t)` is how fast `X` runs a radian of it — the twist there. A rate of a contact
 is held along a line or square to one, or measured along one:

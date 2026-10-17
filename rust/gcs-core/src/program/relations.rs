@@ -481,6 +481,20 @@ fn carried_motion(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) -> Option<Option<R
             return Some(None);
         }
     };
+    // what is drawn in a driven frame is read at its value worked out, by the joint itself; a
+    // relation reading the frame's motion otherwise would read a law no row carries (#391 S5)
+    let m = match drawn_in {
+        Some(_) => super::motions::undriven(&cx.sk, m),
+        None => m,
+    };
+    if let Some((f, over)) = drawn_in.is_none().then(|| super::motions::drive_in(&cx.sk, m))
+        .flatten() {
+        cx.diags.push(Diag::within(Code::E080, under_ref.span, st.id, format!("`{f}` is driven \
+            by `{over}`, and a relation the solve holds reads no drive (#391): draw in it, `n := \
+            x in {f}`, which stands where its value puts it, or read it over the roll — a sweep, \
+            a placement")));
+        return Some(None);
+    }
     let key = format!("#motion{m}");
     cx.res.of.insert(key.clone(), EntRef::new(EntKind::Motion, m));
     let mut w = w.clone();

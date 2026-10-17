@@ -849,6 +849,124 @@ pub(crate) fn eval_num<T: TapeNum>(flat: &[f64], x: &[T]) -> Option<T> {
     v.last().copied().or(Some(T::cst(0.0)))
 }
 
+/// **A tape over intervals** (#391 S5): an enclosure of the value, and of its derivative in
+/// variable `along`, for every point of the boxes `x` — the fourth walker, forward-mode duals over
+/// `interval::Interval`, so a joint's drive bounds its pose and its speed over a stretch of the
+/// roll as `MotionBounds` and `Family::inverse_point_speed_bound_over` need, conservatively.  In
+/// the tape's own units (trigonometry in degrees).  It fails closed for what it carries no
+/// enclosure of — `tan`, the inverse trigonometry, `exp`, `ln`, `log`, the roundings, `atan2`, a
+/// power whose exponent varies or is not a whole number — and wherever a division, a root or a
+/// length's derivative reaches zero.
+pub(crate) fn eval_interval(flat: &[f64], x: &[crate::interval::Interval], along: usize)
+    -> Result<[crate::interval::Interval; 2], crate::interval::Error> {
+    use crate::interval::{Error, Interval as I};
+    let k = std::f64::consts::PI / 180.0;
+    let deg = I::new(k.next_down(), k.next_up())?;
+    let hull = |a: I, b: I| {
+        let ([p, q], [r, s]) = (a.bounds(), b.bounds());
+        I::new(p.min(r), q.max(s))
+    };
+    let n_ops = flat.len() / WORD;
+    let mut v: Vec<[I; 2]> = Vec::with_capacity(n_ops);
+    for i in 0..n_ops {
+        let w = &flat[i * WORD..i * WORD + WORD];
+        let get = |k: f64| -> Result<[I; 2], Error> {
+            v.get((k as usize).min(i.saturating_sub(1))).copied().ok_or(Error::InvalidBounds)
+        };
+        let out = if w[0] == code::CONST {
+            [I::point(w[1])?, I::ZERO]
+        } else if w[0] == code::VAR {
+            let j = w[1] as usize;
+            [*x.get(j).ok_or(Error::InvalidBounds)?, if j == along { I::ONE } else { I::ZERO }]
+        } else if w[0] == code::NEG {
+            let [a, da] = get(w[1])?;
+            [a.neg(), da.neg()]
+        } else if w[0] == code::ADD || w[0] == code::SUB {
+            let ([a, da], [b, db]) = (get(w[1])?, get(w[2])?);
+            if w[0] == code::ADD { [a.add(b)?, da.add(db)?] } else { [a.sub(b)?, da.sub(db)?] }
+        } else if w[0] == code::MUL {
+            let ([a, da], [b, db]) = (get(w[1])?, get(w[2])?);
+            [a.mul(b)?, da.mul(b)?.add(a.mul(db)?)?]
+        } else if w[0] == code::DIV {
+            let ([a, da], [b, db]) = (get(w[1])?, get(w[2])?);
+            let q = a.div(b)?;
+            [q, da.sub(q.mul(db)?)?.div(b)?]
+        } else if w[0] == code::POW {
+            let ([a, da], [e, de]) = (get(w[1])?, get(w[2])?);
+            let [p, hi] = e.bounds();
+            if p != hi || de != I::ZERO || p.fract() != 0.0 || p.abs() > 64.0 {
+                return Err(Error::OutsideDomain);
+            }
+            // a whole power: the square once for each pair, so an even one is never negative,
+            // and the base once more for an odd one
+            let power = |n: i64| -> Result<I, Error> {
+                let sq = a.square()?;
+                let mut r = if n % 2 == 1 { a } else { I::ONE };
+                for _ in 0..n / 2 { r = r.mul(sq)?; }
+                Ok(r)
+            };
+            let n = p as i64;
+            let value = if n >= 0 { power(n)? } else { I::ONE.div(power(-n)?)? };
+            let slope = match n {
+                0 => I::ZERO,
+                n if n > 0 => I::point(n as f64)?.mul(power(n - 1)?)?,
+                n => I::point(n as f64)?.div(power(1 - n)?)?,
+            };
+            [value, slope.mul(da)?]
+        } else if w[0] == code::CALL1 {
+            let [a, da] = get(w[1])?;
+            match fn1_of(w[2]) {
+                Fn1::Sin | Fn1::Cos => {
+                    let (s, c) = a.mul(deg)?.sin_cos_periodic()?;
+                    match fn1_of(w[2]) {
+                        Fn1::Sin => [s, c.mul(deg)?.mul(da)?],
+                        _ => [c, s.neg().mul(deg)?.mul(da)?],
+                    }
+                }
+                Fn1::Sqrt => {
+                    let r = a.sqrt()?;
+                    let d = if da == I::ZERO { I::ZERO }
+                        else { da.div(r.mul(I::point(2.0)?)?)? };
+                    [r, d]
+                }
+                Fn1::Abs => {
+                    let [lo, hi] = a.bounds();
+                    if lo >= 0.0 { [a, da] }
+                    else if hi <= 0.0 { [a.neg(), da.neg()] }
+                    else {
+                        let m = da.bounds()[0].abs().max(da.bounds()[1].abs());
+                        [I::new(0.0, lo.abs().max(hi))?, I::new(-m, m)?]
+                    }
+                }
+                _ => return Err(Error::OutsideDomain),
+            }
+        } else {
+            let ([a, da], [b, db]) = (get(w[1])?, get(w[2])?);
+            let ([al, ah], [bl, bh]) = (a.bounds(), b.bounds());
+            match fn2_of(w[3]) {
+                Fn2::Min | Fn2::Max => {
+                    let min = fn2_of(w[3]) == Fn2::Min;
+                    let value = if min { I::new(al.min(bl), ah.min(bh))? }
+                        else { I::new(al.max(bl), ah.max(bh))? };
+                    // one operand wholly past the other is the one taken; otherwise either's slope
+                    let first = if min { ah < bl } else { al > bh };
+                    let second = if min { bh < al } else { bl > ah };
+                    [value, if first { da } else if second { db } else { hull(da, db)? }]
+                }
+                Fn2::Hypot => {
+                    let h = a.square()?.add(b.square()?)?.sqrt()?;
+                    let d = if da == I::ZERO && db == I::ZERO { I::ZERO }
+                        else { a.mul(da)?.add(b.mul(db)?)?.div(h)? };
+                    [h, d]
+                }
+                Fn2::Atan2 => return Err(Error::OutsideDomain),
+            }
+        };
+        v.push(out);
+    }
+    Ok(v.last().copied().unwrap_or([I::ZERO, I::ZERO]))
+}
+
 /// A tape's value and its first three derivatives along `dir` at `x`, read by `eval_num` over
 /// Taylor jets: what a body traced in space reads its expressions as (#326), and what
 /// `tests/tape.rs` holds to the other two walkers.

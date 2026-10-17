@@ -126,10 +126,18 @@ impl Family {
     pub fn bounds(&self,angle: I) -> Result<MotionBounds,Error> {
         let mut values = Vec::with_capacity(self.steps.len());
         for step in &self.steps {
+            // a drive's joint stands at its law's value, enclosed over the interval (#391 S5)
+            let number = |law: &Option<super::Law>| match law {
+                None => Ok(angle),
+                Some(l) => l.enclose(angle).map(|[v,_]| v),
+            };
             let value = match *step {
-                Step::Rotation {origin,axis,ratio,advance} => MotionBounds::rotation(origin,axis,
-                    I::point(ratio)?.mul(angle)?)?.advanced(axis,advance,angle)?,
-                Step::Translation {axis,advance} => MotionBounds::identity().advanced(axis,advance,angle)?,
+                Step::Rotation {origin,axis,ratio,advance,ref law} => {
+                    let a = number(law)?;
+                    MotionBounds::rotation(origin,axis,I::point(ratio)?.mul(a)?)?.advanced(axis,advance,a)?
+                }
+                Step::Translation {axis,advance,ref law} =>
+                    MotionBounds::identity().advanced(axis,advance,number(law)?)?,
                 Step::Relative {source,observer} => MotionBounds::relative(values[source],values[observer])?,
             };
             values.push(value);

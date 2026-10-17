@@ -42,11 +42,15 @@ impl Family {
             Step::Translation {..} => return Err("temporal contacts require a rotation or two relative rotations".into()),
         };
         // a rack: a translation seen from a rotating blank
-        if let (&Step::Translation {axis,advance},Some(observer)) = (source,observer) {
+        if self.steps.iter().any(Step::is_driven) {
+            return Err("temporal contacts are read of constant rates, and a drive's law runs \
+                        at its own (#391)".into());
+        }
+        if let (&Step::Translation {axis,advance,..},Some(observer)) = (source,observer) {
             return rack(surface,axis,advance,observer);
         }
         // A screw's translation adds a term linear in the angle, not a harmonic.
-        let Step::Rotation {origin,axis,ratio,advance:0.} = *source else {
+        let Step::Rotation {origin,axis,ratio,advance:0.,..} = *source else {
             return Err("temporal contacts require a rotation or two relative rotations without advance".into());
         };
         let length = |v: [f64;3]| v[0].dhypot(v[1]).dhypot(v[2]);

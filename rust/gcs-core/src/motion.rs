@@ -5,16 +5,34 @@ mod bounds;
 pub use bounds::MotionBounds;
 mod contact;
 pub use contact::{NormalVelocity,ContactTime};
+mod law;
+pub use law::Law;
 
 use crate::{envelope::Motion,model::{MotionDef,Sketch}};
 
 /// `advance` is the length travelled along the unit axis per full turn of the
-/// shared parameter, so a rotation with a nonzero advance is a screw.
+/// shared parameter, so a rotation with a nonzero advance is a screw.  A joint **driven** by a law
+/// (#391 S5) stands at its law's value of the roll where an undriven one stands at the roll
+/// itself: turned `ratio · law(θ)`, risen `advance · law(θ) / τ`.
 #[derive(Clone,Debug)]
 enum Step {
-    Rotation {origin:[f64;3],axis:[f64;3],ratio:f64,advance:f64},
-    Translation {axis:[f64;3],advance:f64},
+    Rotation {origin:[f64;3],axis:[f64;3],ratio:f64,advance:f64,law:Option<Law>},
+    Translation {axis:[f64;3],advance:f64,law:Option<Law>},
     Relative {source:usize,observer:usize},
+}
+
+/// The joint's own number at the roll `angle` and its rate a radian of the roll: the law's where
+/// it is driven, the roll itself otherwise.
+fn driven(law: &Option<Law>,angle: f64) -> Result<(f64,f64),String> {
+    match law {
+        None => Ok((angle,1.)),
+        Some(l) => l.jet(angle).map(|[v,r]| (v,r)),
+    }
+}
+
+/// `driven`'s value alone, for a reading that needs no rate.
+fn driven_value(law: &Option<Law>,angle: f64) -> Result<f64,String> {
+    match law { None => Ok(angle), Some(l) => l.value(angle) }
 }
 
 impl Step {
@@ -22,11 +40,17 @@ impl Step {
     /// relative `observer⁻¹·source` undone as `source⁻¹·observer`.
     fn inverse(&self) -> Step {
         match *self {
-            Step::Rotation {origin,axis,ratio,advance} =>
-                Step::Rotation {origin,axis,ratio:-ratio,advance:-advance},
-            Step::Translation {axis,advance} => Step::Translation {axis,advance:-advance},
+            Step::Rotation {origin,axis,ratio,advance,ref law} =>
+                Step::Rotation {origin,axis,ratio:-ratio,advance:-advance,law:law.clone()},
+            Step::Translation {axis,advance,ref law} =>
+                Step::Translation {axis,advance:-advance,law:law.clone()},
             Step::Relative {source,observer} => Step::Relative {source:observer,observer:source},
         }
+    }
+
+    /// Whether this step is a joint driven by a law: no constant twist, whatever its numbers.
+    fn is_driven(&self) -> bool {
+        matches!(self,Step::Rotation {law:Some(_),..} | Step::Translation {law:Some(_),..})
     }
 
     /// Whether this step carries the plane with unit `normal` within itself: a turn about an axis
@@ -174,14 +198,27 @@ impl Family {
                 I::point(origin[2])?.add(along.mul(I::point(a[2])?)?)?];
             Ok((foot,radius))
         };
+        // how far a joint's own number reaches over the domain and how fast it runs a radian
+        // of it: the roll's own reach at rate 1, or a drive's law enclosed over the domain
+        // (#391 S5), so a cam's speed and its throw bound what it carries
+        let magnitude = |x: I| { let [lo,hi] = x.bounds(); I::point(lo.abs().max(hi.abs())) };
+        let number = |law: &Option<Law>| -> Result<(I,I),Error> {
+            match law {
+                None => Ok((reach,I::ONE)),
+                Some(l) => { let [v,r] = l.enclose(domain)?; Ok((magnitude(v)?,magnitude(r)?)) }
+            }
+        };
         // a step's own speed on a box, the same forward and inverse
         let own = |step: &Step,b: [I;3]| -> Result<I,Error> {
             match *step {
-                Step::Rotation {origin,axis,ratio,advance,..} => {
+                Step::Rotation {origin,axis,ratio,advance,ref law} => {
                     let (_,radius) = about(origin,axis,b)?;
-                    I::point(ratio.abs())?.mul(radius)?.add(I::point(advance.abs())?.div(tau)?)
+                    let (_,rate) = number(law)?;
+                    I::point(ratio.abs())?.mul(radius)?.add(I::point(advance.abs())?.div(tau)?)?
+                        .mul(rate)
                 }
-                Step::Translation {advance,..} => I::point(advance.abs())?.div(tau),
+                Step::Translation {advance,ref law,..} =>
+                    I::point(advance.abs())?.div(tau)?.mul(number(law)?.1),
                 Step::Relative {..} => unreachable!("composed below"),
             }
         };
@@ -191,18 +228,18 @@ impl Family {
         // interval trigonometry limits the domain
         let image = |step: &Step,b: [I;3]| -> Result<[I;3],Error> {
             match *step {
-                Step::Rotation {origin,axis,advance,..} => {
+                Step::Rotation {origin,axis,advance,ref law,..} => {
                     let a = unit(axis).ok_or(Error::InvalidBounds)?;
                     let (foot,radius) = about(origin,axis,b)?;
-                    let slide = I::point(advance.abs())?.div(tau)?.mul(reach)?;
+                    let slide = I::point(advance.abs())?.div(tau)?.mul(number(law)?.0)?;
                     let spread = radius.add(slide)?;
                     let _ = a;
                     Ok([foot[0].add(I::new(-spread.bounds()[1],spread.bounds()[1])?)?,foot[1].add(I::new(-spread.bounds()[1],spread.bounds()[1])?)?,
                         foot[2].add(I::new(-spread.bounds()[1],spread.bounds()[1])?)?])
                 }
-                Step::Translation {axis,advance} => {
+                Step::Translation {axis,advance,ref law} => {
                     let a = unit(axis).ok_or(Error::InvalidBounds)?;
-                    let slide = I::point(advance.abs())?.div(tau)?.mul(reach)?.bounds()[1];
+                    let slide = I::point(advance.abs())?.div(tau)?.mul(number(law)?.0)?.bounds()[1];
                     Ok([b[0].add(I::new(-slide*a[0].abs(),slide*a[0].abs())?)?,b[1].add(I::new(-slide*a[1].abs(),slide*a[1].abs())?)?,
                         b[2].add(I::new(-slide*a[2].abs(),slide*a[2].abs())?)?])
                 }
@@ -242,7 +279,7 @@ impl Family {
     /// A rotation without advance, a translation and a relative motion are none.
     pub fn screw(&self) -> Option<Screw> {
         match *self.root() {
-            Step::Rotation {origin,axis,ratio,advance,..} if advance != 0. && ratio != 0. =>
+            Step::Rotation {origin,axis,ratio,advance,law:None} if advance != 0. && ratio != 0. =>
                 Some(Screw {origin,axis:unit(axis)?,ratio,advance}),
             _ => None,
         }
@@ -252,7 +289,7 @@ impl Family {
     /// turn of the parameter.
     pub fn sliding(&self) -> Option<([f64;3],f64)> {
         match *self.root() {
-            Step::Translation {axis,advance,..} => Some((unit(axis)?,advance)),
+            Step::Translation {axis,advance,law:None} => Some((unit(axis)?,advance)),
             _ => None,
         }
     }
@@ -262,7 +299,7 @@ impl Family {
     /// a helix or an arc of a circle (`solid::canal`, #238).
     pub fn turning(&self) -> Option<Screw> {
         match *self.root() {
-            Step::Rotation {origin,axis,ratio,advance,..} if ratio != 0. => Some(Screw {origin,axis:unit(axis)?,ratio,advance}),
+            Step::Rotation {origin,axis,ratio,advance,law:None} if ratio != 0. => Some(Screw {origin,axis:unit(axis)?,ratio,advance}),
             _ => None,
         }
     }
@@ -275,6 +312,10 @@ impl Family {
     pub fn instantaneous(&self) -> Result<Isa,String> {
         let one = |s: &Step| -> Result<([f64;3],[f64;3]),String> {
             let tau = std::f64::consts::TAU;
+            if s.is_driven() {
+                return Err(format!("`{}` is driven by a law, whose screw moves as it runs: a \
+                    screw is read of turns, screws and slides at a constant rate",self.name));
+            }
             match *s {
                 Step::Rotation {origin,axis,ratio,advance,..} => {
                     let d = unit(axis).ok_or("a turn's axis has no direction")?;
@@ -282,7 +323,7 @@ impl Family {
                     let v = crate::space::cross(origin,w);
                     Ok((w,std::array::from_fn(|k| v[k]+d[k]*advance/tau)))
                 }
-                Step::Translation {axis,advance} => {
+                Step::Translation {axis,advance,..} => {
                     let d = unit(axis).ok_or("a slide's line has no direction")?;
                     Ok(([0.;3],d.map(|x| x*advance/tau)))
                 }
@@ -314,6 +355,7 @@ impl Family {
     pub fn in_plane(&self,normal: [f64;3],point: [f64;3]) -> Option<PlaneRigid> {
         use crate::space::dot;
         let normal = unit(normal)?;
+        if self.root().is_driven() { return None; }
         match *self.root() {
             ref step @ Step::Rotation {origin,axis,ratio,..} => {
                 let axis = unit(axis)?;
@@ -322,7 +364,7 @@ impl Family {
                 let along = dot([point[0]-origin[0],point[1]-origin[1],point[2]-origin[2]],axis);
                 Some(PlaneRigid::Turn {centre:std::array::from_fn(|k| origin[k]+along*axis[k]),axis,rate:ratio})
             }
-            ref step @ Step::Translation {axis,advance} => {
+            ref step @ Step::Translation {axis,advance,..} => {
                 let axis = unit(axis)?;
                 if !step.keeps(normal) || advance == 0. { return None; }
                 let rate = advance/std::f64::consts::TAU;
@@ -339,7 +381,7 @@ impl Family {
     pub fn in_frame(&self,frame: &crate::brep::geom::Frame,scale: f64) -> Option<Vec<PlanarStep>> {
         fn emit(family: &Family,i: usize,frame: &crate::brep::geom::Frame,scale: f64,out: &mut Vec<PlanarStep>) -> Option<()> {
             let step = &family.steps[i];
-            if !matches!(step,Step::Relative {..}) && !step.keeps(frame.z) { return None }
+            if !matches!(step,Step::Relative {..}) && !step.keeps(frame.z) || step.is_driven() { return None }
             match *step {
                 Step::Rotation {origin,axis,ratio,..} => {
                     // a turn about the plane's normal reversed is the opposite turn about it
@@ -347,7 +389,7 @@ impl Family {
                     let l = frame.local(origin.map(|v| v*scale));
                     out.push(PlanarStep::Turn {centre:[l[0],l[1]],ratio:sign*ratio});
                 }
-                Step::Translation {axis,advance} => {
+                Step::Translation {axis,advance,..} => {
                     let d = frame.dir_local(axis);
                     let length = d[0].dhypot(d[1]);
                     out.push(PlanarStep::Slide {direction:[d[0]/length,d[1]/length],advance:advance*scale});
@@ -389,7 +431,7 @@ impl Family {
                         || Motion::rotation(axis,0.,ratio).is_err() {
                         return Err(format!("`{}` needs a finite nondegenerate axis and angle",node.name));
                     }
-                    Step::Rotation {origin,axis,ratio,advance}
+                    Step::Rotation {origin,axis,ratio,advance,law:None}
                 }
                 // a turn in a view is a rotation about the line through its centre square to
                 // the view
@@ -402,7 +444,7 @@ impl Family {
                     if !origin.iter().all(|x| x.is_finite()) || Motion::rotation(axis,0.,ratio).is_err() {
                         return Err(format!("`{}` needs a finite centre and angle",node.name));
                     }
-                    Step::Rotation {origin,axis,ratio,advance:0.}
+                    Step::Rotation {origin,axis,ratio,advance:0.,law:None}
                 }
                 MotionDef::Translation {axis,..} => {
                     let advance = node.advance(sk)?;
@@ -413,7 +455,7 @@ impl Family {
                     if !axis.iter().all(|x| x.is_finite()) || unit(axis).is_none() || !advance.is_finite() {
                         return Err(format!("`{}` needs a finite nondegenerate axis and advance",node.name));
                     }
-                    Step::Translation {axis,advance}
+                    Step::Translation {axis,advance,law:None}
                 }
                 MotionDef::Relative {source,observer} => Step::Relative {
                     source:visit(sk,source as usize,done,visiting,steps,depth+1)?,
@@ -433,8 +475,20 @@ impl Family {
                         return Err(format!("`{}` needs a finite nondegenerate axis and numbers",
                             node.name));
                     }
-                    if ratio == 0. { Step::Translation {axis:d,advance} }
-                    else { Step::Rotation {origin,axis:d,ratio,advance} }
+                    if ratio == 0. { Step::Translation {axis:d,advance,law:None} }
+                    else { Step::Rotation {origin,axis:d,ratio,advance,law:None} }
+                }
+                // a joint driven by its frame's value (#391 S5): the joint's step, standing at the
+                // law's value of the roll
+                MotionDef::Driven {of,ref law,ref over} => {
+                    let k = visit(sk,of as usize,done,visiting,steps,depth+1)?;
+                    let law = Some(Law::read(sk,law,over).map_err(|m| format!("`{}`: {m}",node.name))?);
+                    match steps[k].clone() {
+                        Step::Rotation {origin,axis,ratio,advance,..} =>
+                            Step::Rotation {origin,axis,ratio,advance,law},
+                        Step::Translation {axis,advance,..} => Step::Translation {axis,advance,law},
+                        Step::Relative {..} => return Err(format!("`{}` drives no joint",node.name)),
+                    }
                 }
                 // a joint's inverse turns and slides back, and a relative's swaps its sides
                 MotionDef::Inverse {of} => {
@@ -473,22 +527,25 @@ impl Family {
             else { spilled = vec![Motion::identity();self.steps.len()]; &mut spilled };
         for (n,step) in self.steps.iter().enumerate() {
             let value = match *step {
-                Step::Rotation {origin,axis,ratio,advance} => {
-                    let rotation = Motion::rotation(axis,ratio*angle,ratio)
+                Step::Rotation {origin,axis,ratio,advance,ref law} => {
+                    // a drive's value and its rate by the chain rule (#391 S5)
+                    let (a,da) = driven(law,angle)?;
+                    let rotation = Motion::rotation(axis,ratio*a,ratio*da)
                         .map_err(|_| "a motion angle overflowed")?;
                     let pose = Motion::translation(origin.map(|v| -v),[0.;3]).unwrap()
                         .then(rotation).then(Motion::translation(origin,[0.;3]).unwrap());
                     if advance == 0. { pose } else {
                         let direction = unit(axis).ok_or("a motion needs a nondegenerate axis")?;
                         let rate = advance/std::f64::consts::TAU;
-                        pose.then(Motion::translation(direction.map(|v| v*rate*angle),direction.map(|v| v*rate))
+                        pose.then(Motion::translation(direction.map(|v| v*rate*a),direction.map(|v| v*rate*da))
                             .map_err(|_| "a motion advance overflowed")?)
                     }
                 }
-                Step::Translation {axis,advance} => {
+                Step::Translation {axis,advance,ref law} => {
+                    let (a,da) = driven(law,angle)?;
                     let direction = unit(axis).ok_or("a motion needs a nondegenerate axis")?;
                     let rate = advance/std::f64::consts::TAU;
-                    Motion::translation(direction.map(|v| v*rate*angle),direction.map(|v| v*rate))
+                    Motion::translation(direction.map(|v| v*rate*a),direction.map(|v| v*rate*da))
                         .map_err(|_| "a motion advance overflowed")?
                 }
                 Step::Relative {source,observer} => values[source].then(values[observer].inverse()),
@@ -542,7 +599,8 @@ impl Family {
         for (n,step) in self.steps.iter().enumerate() {
             let get = |k: usize,fixed: &[Pose;8],spilled: &Vec<Pose>| if many { spilled[k] } else { fixed[k] };
             let value = match *step {
-                Step::Rotation {origin,axis,ratio,advance} => {
+                Step::Rotation {origin,axis,ratio,advance,ref law} => {
+                    let angle = driven_value(law,angle)?;
                     let a = unit(axis).ok_or("a motion needs a nondegenerate axis")?;
                     let (s,c) = (ratio*angle).dsin_cos();
                     let k = [[0.,-a[2],a[1]],[a[2],0.,-a[0]],[-a[1],a[0],0.]];
@@ -556,7 +614,8 @@ impl Family {
                     }
                     Pose {r,p}
                 }
-                Step::Translation {axis,advance} => {
+                Step::Translation {axis,advance,ref law} => {
+                    let angle = driven_value(law,angle)?;
                     let a = unit(axis).ok_or("a motion needs a nondegenerate axis")?;
                     let rate = advance/std::f64::consts::TAU;
                     Pose {p:a.map(|v| v*rate*angle),..identity}

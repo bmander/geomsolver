@@ -1385,14 +1385,15 @@ pub(crate) fn walls(sk: &Sketch, si: usize) -> Result<Walls, String> {
 
 /// **A family its statements say a motion carries** (#366 S3): one whose every row reading its
 /// running number is a point carried by one motion (`CKind::CarriedPoint`) to a roll stated
-/// affine in that number, the motion one turn or screw about one axis, or one slide — `std.Helix`'s,
-/// `std.OnHelix`'s and any frame `at(under: m) a·s + b`.  It is that motion's sweep of
-/// its section: the carry over the family's interval, its first rim the start, which
-/// `brep::family` builds the walls on — exact by the statement, the axis, the turn and the rise the motion's own — where
-/// it reads the stations for one otherwise.  Recognised by what is stated, never by a word's
-/// name; every wall is still held to the general one there, so a section the statements leave
-/// tied to something the motion does not carry is built wall by wall.  `None` for a family over
-/// a chain, one that states a rate, and one any other row reads the running number of.
+/// affine in that number as it is written (`expr::Ast::affine_in`, #391 S5: never as sampled),
+/// the motion one turn or screw about one axis, or one slide — `std.Helix`'s, `std.OnHelix`'s and
+/// any frame `at(under: m) a·s + b`.  It is that motion's sweep of its section: the carry over the
+/// family's interval, its first rim the start, which `brep::family` builds the walls on — exact by
+/// the statement, the axis, the turn and the rise the motion's own — where it reads the stations
+/// for one otherwise.  Recognised by what is stated, never by a word's name; every wall is still
+/// held to the general one there, so a section the statements leave tied to something the motion
+/// does not carry is built wall by wall.  `None` for a family over a chain, one that states a
+/// rate, and one any other row reads the running number of.
 fn stated_carry(sk: &Sketch, si: usize) -> Option<crate::brep::geom::Carry> {
     use crate::constraints::Arg;
     use crate::expr::Aff;
@@ -1430,6 +1431,11 @@ fn stated_carry(sk: &Sketch, si: usize) -> Option<crate::brep::geom::Carry> {
         }
         let Arg::Ent(m) = c.args[2] else { return None };
         let body = crate::expr::parse_in(texts[0], sk.units).ok()?.body;
+        // affine in the running number as it is written (#391 S5): a law that is not — a cam's,
+        // however it reads at the ends and the middle — is no motion's own sweep
+        if !body.affine_in(held) {
+            return None;
+        }
         let mut roll = [0.0; 3];
         for (r, &s) in roll.iter_mut().zip(&ss) {
             let v = crate::expr::eval(&body, &env(s)).ok()?.number()?;
@@ -1444,10 +1450,6 @@ fn stated_carry(sk: &Sketch, si: usize) -> Option<crate::brep::geom::Carry> {
         }
     }
     let (m, roll) = said?;
-    // affine in the running number: the middle midway between the ends
-    if (roll[1] - (roll[0] + roll[2]) / 2.0).abs() > 1e-12 * (1.0 + roll[1].abs()) {
-        return None;
-    }
     let turn = roll[2] - roll[0];
     let motion = crate::motion::Family::read(sk, m).ok()?;
     let tau = std::f64::consts::TAU;

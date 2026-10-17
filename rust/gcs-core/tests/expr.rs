@@ -709,3 +709,18 @@ fn a_dotted_name_is_one_name_and_a_decimal_point_is_not() {
         assert_eq!(got, Some(want), "{text}");
     }
 }
+
+/// **Affine as it is written** (#391 S5): what a joint's value is recognised as a constant twist
+/// by — a sum of terms each the name times a factor not reading it — never by sampling.
+#[test]
+fn affinity_is_read_off_how_a_number_is_written() {
+    let affine = |t: &str| parse(t).unwrap().body.affine_in("s");
+    for t in ["360deg * turns * s", "-(2 * s - 1) / 4 + k", "a * (s + b) - s * 3", "w ^ 2 * s",
+              "sin(k) * s", "7"] {
+        assert!(affine(t), "{t}");
+    }
+    for t in ["900deg * s + 30deg * sin(360deg * s)", "s * s", "s ^ 2", "1 / s", "abs(s)",
+              "(s + 1) * (s - 1)", "min(s, 1)"] {
+        assert!(!affine(t), "{t}");
+    }
+}

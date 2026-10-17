@@ -1163,7 +1163,8 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             crate::model::MotionDef::Rotation {axis,..} | crate::model::MotionDef::Translation {axis,..} =>
                 line_map[axis as usize].is_some(),
             crate::model::MotionDef::Turn {centre,..} => pt_index(centre as usize).is_some(),
-            crate::model::MotionDef::Relative {..} | crate::model::MotionDef::Inverse {..} => true,
+            crate::model::MotionDef::Relative {..} | crate::model::MotionDef::Inverse {..}
+                | crate::model::MotionDef::Driven {..} => true,
             crate::model::MotionDef::Joint {axis,..} => axis_map[axis as usize].is_some(),
         }
     }).collect();
@@ -1172,7 +1173,8 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         for (i,m) in src.motions.iter().enumerate() {
             let needs: &[u32] = match m.def {
                 crate::model::MotionDef::Relative {ref source,ref observer} => &[*source,*observer],
-                crate::model::MotionDef::Inverse {ref of} => std::slice::from_ref(of),
+                crate::model::MotionDef::Inverse {ref of} | crate::model::MotionDef::Driven {ref of,..} =>
+                    std::slice::from_ref(of),
                 _ => &[],
             };
             if retained[i] && needs.iter().any(|&k| !retained[k as usize]) {
@@ -1210,6 +1212,10 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             crate::model::MotionDef::Joint {axis,ratio,advance} =>
                 crate::model::MotionDef::Joint {axis:axis_map[axis as usize].unwrap() as u32,
                     ratio,advance},
+            // its law reads the numbers it was written over by name, as a dimension's text does
+            crate::model::MotionDef::Driven {of,ref law,ref over} =>
+                crate::model::MotionDef::Driven {of:motion_map[of as usize].unwrap() as u32,
+                    law:law.clone(),over:over.clone()},
         };
         // a joint's numbers the solve finds are the frame's, renumbered with its joint below
         dst.motions.push(crate::model::MotionE {def,name:m.name.clone(),class:m.class.clone(),

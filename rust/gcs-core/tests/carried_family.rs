@@ -115,3 +115,31 @@ fn a_station_read_otherwise_is_built_wall_by_wall() {
     let duct = e.sketch.exact_solid(ent(&e, "duct").i()).unwrap();
     close(props::volume(&duct.brep), 16000.0);
 }
+
+/// **A law reparametrises its screw's sweep** (#391 S5): the flight's screw stood at `900deg · s +
+/// 30deg · sin(360deg · s)` rather than at `900deg · s` turns and rises at a pace that is not
+/// constant, but monotonically, and a sweep reads the path alone: the walls are the same screw's
+/// sweep of the section, two and a half turns rising 12 a turn, and the flight the same
+/// 8 · 30 = 240 mm³.  The value is not affine in `s` as it is written (`expr::Ast::affine_in`),
+/// so the statements do not say the carry (`solid::family::stated_carry`, which sampled the ends
+/// and the middle through 0.142 and read 0°, 450° and 900° there); the walls are read as carried
+/// off the stations.
+#[test]
+fn a_law_reparametrises_its_screws_sweep() {
+    let src = include_str!("../../examples/lofts/thread.sv").replace(
+        "  st := std.Helix(base, pitch: pitch, turns: turns, s: s)\n  in st.n {",
+        "  private screw := frame\n  std.Turn(screw, about: base.normal, ratio: 1, advance: pitch)\n  \
+         fix(value == 360deg * turns * s + 30deg * sin(360deg * s)) screw\n  \
+         st_n := base in screw\n  in st_n {").replace(") st.n\n", ") st_n\n");
+    assert!(src.contains("sin(360deg * s)") && !src.contains(") st.n\n"), "the flight moved");
+    let e = determined(&src);
+    let flight = e.sketch.exact_solid(ent(&e, "flight").i()).unwrap();
+    let walls = carries(&flight.brep);
+    assert_eq!(walls.len(), 4);
+    for c in walls {
+        let (center, axis, angle, advance) = screw(c);
+        assert!(center.iter().all(|v| v.abs() < 1e-9) && (axis[2] - 1.0).abs() < 1e-9, "{c:?}");
+        assert!((angle - TAU * 2.5).abs() < 1e-9 && (advance - 30.0).abs() < 1e-9, "{c:?}");
+    }
+    close(props::volume(&flight.brep), 240.0);
+}

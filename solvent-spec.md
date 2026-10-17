@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.142 — October 2026**
+**Specification, Draft 0.143 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -1446,6 +1446,34 @@ value rides on no frame, and nothing rides on it: a declaration in its `in` bloc
 where it is drawn and not where the value puts it, so it is **E080**, naming `n := base in f` — a
 frame drawn in it, in which the declaration is drawn instead. `p := point in P` remains a point's
 membership: `in` after a kind is the plane it is drawn in.
+
+**[0.143] A drive.** A value that reads a declared parameter (`param t: Angle over (a, b)`, §6.3)
+*drives* its frame by it: the value is the frame's **law**, any expression of the parameter — a
+cam's lift, a dwell, a value linear in `t` — and the frame stands where its joint carries it at
+the law's value for every value of the parameter. What is drawn in the frame (`x in f`) stands
+there at the instant the drawing is held at, followed along `t` (§6.3). A reading of the frame's
+motion over the roll — a solid swept (`sweep(tool over t, under: f, seen_from: g)`), placed (`tool
+at(under: f) θ`) or rolled through a body, an envelope in space — reads the roll as that
+parameter (one clock): at the roll `θ` the joint stands at the law's value of `θ`, not at `θ`
+itself, so a value of `t` alone is the frame undriven. A value reads one parameter (**E103**
+naming both otherwise), and a frame driven by a parameter of another type than `Angle` is
+followed but not read over the roll (**E080**). A relation the solve holds reads no drive: a point
+carried by the frame's motion at a roll (`X coincident x at(under: f) τ`), and so a rate of it, is
+**E080**, as is a profile in the plane generated under it (§6.15); a relation held to an envelope
+generated under it is **E061**, and a meshing read on it is refused likewise; draw in the frame
+instead. A value is a constant twist where it is affine in what it
+runs over as it is written — never by how it samples.
+
+```
+param t: Angle over (0deg, 360deg)
+cam := frame
+std.Spin(cam, about: o, on: std.front, ratio: 1)
+follower := frame
+std.Slide(follower, along: stem, advance: 360mm)        // its value in degrees is its rise in mm
+fix(value == 5deg * (1 - cos(t))) follower              // the cam's law
+roller := r0 in follower                                // at its rise where t is held
+groove := sweep(ball over t, under: follower, seen_from: cam)   // what the cam must not hold
+```
 
 ### 6.15 Generated envelopes
 
