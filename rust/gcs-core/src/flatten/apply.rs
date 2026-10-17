@@ -76,7 +76,7 @@ impl Application {
     /// A number the body reads by a name only the walk writes (`#grow`), worked out where the
     /// use is.
     pub(super) fn give(&mut self, name: &str, value: Aff) {
-        self.scope.vals.insert(name.to_string(), value);
+        std::rc::Rc::make_mut(&mut self.scope.vals).insert(name.to_string(), value);
     }
 }
 
@@ -174,7 +174,7 @@ impl<'a> Walk<'a> {
         path.push(PathStep::Instance(u.st.id));
         for pass in walks {
             scope.pred.pass = pass.clone();
-            let mut vals = scope.vals.clone();
+            let mut vals = (*scope.vals).clone();
             self.body(&body, &scope, &mut vals, &path, depth + 1);
         }
         // where the callout sits is the statement's: the relation it made, or the one of them that

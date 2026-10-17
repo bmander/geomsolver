@@ -86,7 +86,7 @@ impl<'a> Walk<'a> {
         self.instance_numbers(body, vals, scope);
         // Remember ambient numbers so accidental capture gets an explicit diagnostic.
         if depth == 0 {
-            self.file_vals = vals.clone();
+            self.file_vals = std::rc::Rc::new(vals.clone());
         }
         // and with them the numbers in force are complete for every statement of the body:
         // the enclosing ones the caller passed and the body's own — so that is the table each
@@ -98,7 +98,7 @@ impl<'a> Walk<'a> {
             StmtKind::Group(g) => Some(g.name.text.clone()),
             _ => None,
         }));
-        let scope = &Scope { vals: vals.clone(), groups, ..scope.clone() };
+        let scope = &Scope { vals: std::rc::Rc::new(vals.clone()), groups, ..scope.clone() };
         // what a frame with a value draws in its block, read where the value puts it (#398 B)
         let lowered = self.valued_blocks(body);
         let body: &[Stmt] = lowered.as_deref().unwrap_or(body);
@@ -801,7 +801,7 @@ impl<'a> Walk<'a> {
             }
             (None, q) => q.clone(),
         };
-        let forbidden = scope.vals.keys().chain(self.file_vals.keys()).cloned().collect();
+        let forbidden = Outside(vec![scope.vals.clone(), self.file_vals.clone()]);
         let sc = Scope {
             owner: key.clone(),
             access: scope.access.clone(),
@@ -810,7 +810,7 @@ impl<'a> Walk<'a> {
             closed: true,
             forbidden,
             groups: comp.formals.iter().filter(|f| matches!(f.ty, Ty::Group | Ty::Set)).map(|f| f.name.text.clone()).collect(),
-            vals: sub_vals.clone(),
+            vals: std::rc::Rc::new(sub_vals.clone()),
             // the sides this instance was given, and no others: a component reads a
             // side by the name of its own formal, as it reads every other argument
             sides,
@@ -1386,7 +1386,7 @@ impl<'a> Walk<'a> {
                 closed: scope.closed,
                 forbidden: scope.forbidden.clone(),
                 groups: scope.groups.clone(),
-                vals: sub.clone(),
+                vals: std::rc::Rc::new(sub.clone()),
                 sides: scope.sides.clone(),
                 module: scope.module,
                 block: InBlock {

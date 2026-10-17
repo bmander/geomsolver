@@ -807,11 +807,16 @@ impl<'a> Walk<'a> {
                 }
             }
         }
+        let mut at: Option<Scope> = None;
         for (name, reference) in references {
             if vals.contains_key(&name) { continue; }
             let abs = format!("{prefix}{name}");
             self.checks.group_fields.push((abs.clone(), reference.span));
-            self.aliases.push((abs, reference, Scope { vals: vals.clone(), ..scope.clone() }));
+            // one table for every alias the body makes, shared
+            let at = at.get_or_insert_with(|| {
+                Scope { vals: std::rc::Rc::new(vals.clone()), ..scope.clone() }
+            });
+            self.aliases.push((abs, reference, at.clone()));
         }
     }
 

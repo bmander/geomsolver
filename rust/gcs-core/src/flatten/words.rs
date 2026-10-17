@@ -391,7 +391,8 @@ impl<'a> Walk<'a> {
             }
         }
         let at = used.word.span;
-        let closure = Scope { closed: true, module: def.module, vals, ..Scope::default() };
+        let closure = Scope { closed: true, module: def.module, vals: std::rc::Rc::new(vals),
+                             ..Scope::default() };
         let u = Use { st, rel, path, scope, at };
         let app = self.begin(&u, &closure);
         for (operand, given) in def.operands.iter().zip(&used.ops) {
