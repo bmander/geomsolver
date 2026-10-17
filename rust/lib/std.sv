@@ -568,41 +568,45 @@ component On(g: path, up: axis, s: Scalar) {
   }
 }
 
-// A screw's station (#243 L6, #366): the frame of `base` carried by the screw about its normal
-// through its origin — turned `360deg · turns · s` and risen `pitch · turns · s` along it, a
-// motion read at a roll.  `n` is `base` so carried, square to the axis: a section drawn in it (an
-// auger's flight, a helical gear's tooth) sweeps a twisted prism.  `axial` is the plane through
-// the axis, `n` turned a quarter about its `u`: its `u` runs out along `n.u` and its `v` up the
+// A screw's station (#243 L6, #366, #391): the screw about `base`'s normal through its origin, a
+// frame whose value is `360deg · turns · s` — turned that much and risen `pitch · turns · s`
+// along it — and `n`, `base` drawn in it, square to the axis: a section drawn in `n` (an auger's
+// flight, a helical gear's tooth) sweeps a twisted prism.  `axial` is the plane through the axis,
+// `n` drawn in a turn a quarter about its `u`: its `u` runs out along `n.u` and its `v` up the
 // axis, and a section drawn in it (a thread's) sweeps a thread.  The screw turns from `base.u`
 // toward `base.v` as it rises, right-handed for a positive pitch, left for a negative.
 component Helix(base: plane, pitch: Length, turns: Scalar, s: Scalar) {
-  // the screw: a frame turning about `base`'s normal, rising `pitch` a turn
+  // the screw: a frame turning about `base`'s normal, rising `pitch` a turn, at its value
   private screw := frame
   Turn(screw, about: base.normal, ratio: 1, advance: pitch)
-  n := base at(under: screw) 360deg * turns * s
+  fix(value == 360deg * turns * s) screw
+  n := base in screw
   // and `n` turned a quarter about its `u`
   private stand := frame
   Turn(stand, about: n.u, ratio: 1)
-  axial := n at(under: stand) 90deg
+  fix(value == 90deg) stand
+  axial := n in stand
 }
 
 // A helix's normal station: the plane square to the helix of radius `r` about `base`'s normal
 // (`Helix`'s screw), rising `pitch` a turn, at `turns · s` turns from `base.u`.  Its `u` runs out
 // from the axis and its `v` up the axis leaned back by the helix's lead angle, so a section drawn
 // in it (a spring's wire) is carried along the helix, square to it at every station.  Where the
-// helix starts, the plane is `base` tilted about its `u` axis until `v` leans back from up the
-// axis by the lead angle — `90deg + atan2(pitch, 2 * pi * r)` from `base.v` — and slid `r` out
-// along it, a screw about that axis read at its turn; the screw about the normal carries it from
-// there (#366), so its `normal` keeps its sense by the motions, never by continuity.
+// helix starts, the plane is `base` drawn in a screw about its `u` axis whose value tilts `v` back
+// from up the axis by the lead angle — `90deg + atan2(pitch, 2 * pi * r)` from `base.v` — and
+// slides it `r` out along it; drawn in the screw about the normal, the helix's, it is carried
+// from there (#366, #391), so its `normal` keeps its sense by the motions, never by continuity.
 component OnHelix(base: plane, r: Length, pitch: Length, turns: Scalar, s: Scalar) {
   // the helix's screw, as `Helix`'s
   private screw := frame
   Turn(screw, about: base.normal, ratio: 1, advance: pitch)
+  fix(value == 360deg * turns * s) screw
   // where the helix starts: `base` turned about its `u` axis and slid `r` out along it
   private tilt := frame
   Turn(tilt, about: base.u, ratio: 1, advance: r * 360deg / (90deg + atan2(pitch, 2 * pi * r)))
-  private start := base at(under: tilt) 90deg + atan2(pitch, 2 * pi * r)
-  n := start at(under: screw) 360deg * turns * s
+  fix(value == 90deg + atan2(pitch, 2 * pi * r)) tilt
+  private start := base in tilt
+  n := start in screw
 }
 
 // The rotation-minimising frame of a station (#339 D3, #243 L9): the plane `f` through `n`'s
@@ -752,19 +756,19 @@ component Similar(prof: face, from: point, to: point, n: plane, a: point, b: poi
 //   }
 
 // The point `reach` along the plane `n`'s `u` from its origin, turned `twist · s` about the origin
-// within it — a turn of `n` about its origin read at that roll (#366): where a section drawn once
-// carries the second point of its frame, so the section turns as it runs — `sec := prof mapped(o
-// -> n.origin, x -> tw.t) in n`, `o` and `x` the section's frame `reach` apart (#357).  At `s = 0`
-// it stands on `n`'s own `u`, and the turn is the angle itself, so a twist past a half turn is a
-// twist past a half turn.
+// within it — drawn in a turn of `n` about its origin whose value is that angle (#366, #391):
+// where a section drawn once carries the second point of its frame, so the section turns as it
+// runs — `sec := prof mapped(o -> n.origin, x -> tw.t) in n`, `o` and `x` the section's frame
+// `reach` apart (#357).  At `s = 0` it stands on `n`'s own `u`, and the turn is the angle itself,
+// so a twist past a half turn is a twist past a half turn.
 component Twisted(n: plane, twist: Angle, reach: Length, s: Scalar) {
   private turn := frame
   Spin(turn, about: n.origin, on: n, ratio: 1)
+  fix(value == twist * s) turn
   in n {
     private x := point
     x on_u(d: reach) n
-    t := point
-    t coincident x at(under: turn) twist * s
+    t := x in turn
   }
 }
 

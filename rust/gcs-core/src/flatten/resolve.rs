@@ -496,12 +496,13 @@ fn rewrite(
         }
         StmtKind::Relation(rel) => {
             rewrite_relation(rel, sc, look, bad, &fix);
-            // an ordinate along a frame's axes reads them (#383), and a `fix` of a ratio or an
-            // advance its joint
+            // an ordinate along a frame's axes reads them (#383), and a `fix` of a ratio, an
+            // advance or a value its joint (#391 S3)
             if let Some(w) = rel.form.written() {
                 let numbers = w.word.text == "fix" && w.args.iter().any(|a| matches!(a,
                     crate::syntax::OpArg::Slot { key, .. }
-                        if key.text == "ratio" || key.text == "advance"));
+                        if key.text == "ratio" || key.text == "advance"
+                            || key.text == crate::constraints::JOINT_VALUE));
                 if numbers {
                     joints.borrow_mut().extend(w.ops.first().map(ref_text));
                 }

@@ -844,6 +844,13 @@ impl<'a> P<'a> {
             Some(_) if self.past_ref(self.i).is_some_and(|j| self.word_at(j) == Some("at")) => {
                 StmtKind::Decl(self.read_at(name)?)
             }
+            // `n := base in f` — a frame, a solid or a point drawn in a jointed frame, where the
+            // frame's value puts it (#391 S3); `p := point in P` is a declaration's membership
+            Some(w) if EntKind::parse(w).is_none()
+                && self.past_ref(self.i).is_some_and(|j| self.word_at(j) == Some("in")) =>
+            {
+                StmtKind::Decl(self.drawn_in(name)?)
+            }
             // `carried(at: τ)` is retired (#391 S2) for the reading at an instant
             Some(_)
                 if self.past_ref(self.i).is_some_and(|j| self.word_at(j) == Some("carried")) =>
@@ -951,6 +958,30 @@ impl<'a> P<'a> {
         let source = self.refr()?;
         let word = Name { text: "at".into(), span: self.here() };
         let args = self.instant()?;
+        let at = self.prev_hi();
+        let (class, class_span) = self.class_clause(at);
+        self.end_of_stmt();
+        Some(Decl {
+            kind: EntKind::Frame,
+            seed: vec![0.0; 3],
+            seed_text: vec![None; 3],
+            class,
+            class_span,
+            carried: Some(crate::syntax::CarriedFrame { source, word, args }),
+            ..Decl::point(DeclName::Written(name), [0.0; 2], None)
+        })
+    }
+
+    /// `n := x in f` (#391 S3): `x` drawn in the jointed frame `f`, where `f`'s value puts it —
+    /// the reading at an instant whose instant is the frame's (`value(τ) f`) and not the
+    /// statement's, held as a carried point's arguments are, `in: f` naming the frame.  What it is
+    /// the flattener says, as for `x at τ`: a frame, a solid or a point.
+    fn drawn_in(&mut self, name: Name) -> Option<Decl> {
+        let source = self.refr()?;
+        let word = Name { text: "in".into(), span: self.here() };
+        self.i += 1; // `in`
+        let frame = self.refr()?;
+        let args = vec![OpArg::Named(word.clone(), Arg::Ref(frame))];
         let at = self.prev_hi();
         let (class, class_span) = self.class_clause(at);
         self.end_of_stmt();

@@ -16,7 +16,8 @@
 //! **At a stated roll** (#366), `X coincident x at(under: m) τ`: the same rows, `τ` a dimension
 //! the statement states (or a free variable's affine map), so a face family's station may be
 //! carried to a roll written over its running number and read again at every station — the
-//! station words of `std.sv` are motions read so.  Drawn in a plane, `X` is held where the plane
+//! station words of `std.sv` are motions read so, each at its frame's value (`n := base in
+//! screw`, #391 S3).  Drawn in a plane, `X` is held where the plane
 //! sees the carried point: the two rows along the plane's axes.
 //!
 //! **Layout.** Columns `[X's lift, x's lift, τ, motion…]`, then two lifted ends per axis the motion

@@ -699,6 +699,12 @@ pub fn gauge_op(word: &str) -> Option<CKind> {
     })
 }
 
+/// **A joint's value** (#391 S3), the slot `fix(value == τ) f` holds beside its ratio and
+/// advance: the instant of the roll the frame stands at, which what is drawn in it is read at
+/// (`n := x in f`).  No number of the frame's own and no row: it is read off the statement
+/// (`program::motions::values`), and the `fix` holds the rest.
+pub const JOINT_VALUE: &str = "value";
+
 /// Whether a word is written as a call — every operand inside the parentheses.
 pub fn call_word(w: &str) -> bool {
     matches!(gauge_op(w).map(CKind::operator), Some(Some((_, Fixity::Call))))

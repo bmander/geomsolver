@@ -321,7 +321,11 @@ fn write_decl(out: &mut String, d: &Decl) {
     // a reading at an instant is its source and the instant, as written (#391 S2)
     if let Some(c) = &d.carried {
         write_ref(out, &c.source);
-        out.push_str(&instant_text(&c.args));
+        out.push_str(&match drawn_in(&c.args) {
+            // and one drawn in a jointed frame, at the frame's value (#391 S3)
+            Some(f) => format!(" in {}", super::ref_text(f)),
+            None => instant_text(&c.args),
+        });
         write_class(out, d);
         return;
     }
@@ -418,6 +422,14 @@ pub(crate) fn instant_text(args: &[OpArg]) -> String {
         _ => None,
     }).unwrap_or_default();
     format!(" at{} {roll}", frames_text(frame("under"), frame("seen_from")))
+}
+
+/// The jointed frame a reading draws its source in, `x in f` (#391 S3), where it is one.
+pub(crate) fn drawn_in(args: &[OpArg]) -> Option<&super::Ref> {
+    args.iter().find_map(|a| match a {
+        OpArg::Named(n, Arg::Ref(r)) if n.text == "in" => Some(r),
+        _ => None,
+    })
 }
 
 /// ` over t in (a, b)`, or ` over t` where it names a declared parameter (#391 S2).
@@ -1156,6 +1168,8 @@ fn slot_text(name: &str, a: &Arg) -> (Option<String>, Option<String>) {
             let hint = seed.map(|v| format!("{name}: {}", num(v)));
             return (Some(format!("{name} == {shared}")), hint);
         }
+        // a joint's value, an instant kept as the dimension it is (#391 S3)
+        Arg::Dim { text, .. } => (true, text.clone()),
         _ => return (None, None),
     };
     match pinned {

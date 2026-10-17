@@ -108,12 +108,15 @@ a plane drawn over carried points stands along its lines however far round the r
 `f.axis` coincident with an axis no drawn line is — `Joint { axis }` — which the held steps read as
 a turn (a slide, its ratio stated 0) about the joint's axis as the solve places it, its point and
 its direction (`held::Step::Rotation { dir: true }`, codes 5 and 6), seeded where the axis it is
-held to stands.  **The station words are frames read so** (`std.sv`): `Helix` is `base` carried by
-the screw about `base.normal` (`advance: pitch`) to `360deg · turns · s`, and `axial` that frame
-turned a quarter about its `u`; `OnHelix` is `base` tilted about `base.u` to the helix's start (a
-screw about that axis, read at its turn) and carried by the helix's screw; `Twisted`'s point is
-`reach` along `n.u` turned in `n` about its origin (`std.Spin`, `CarriedPointIn`) — no `cos`/`sin`
-of a running number and no geometry drawn to hold an axis.  A family a station so carried sweeps is
+held to stands.  **The station words are frames whose value is written over `s`** (`std.sv`,
+#391 S3 — a joint's value and `n := x in f`, drawn in a jointed frame, are
+[parameters.md](parameters.md)'s): `Helix`'s screw about `base.normal` (`advance: pitch`) stands
+at `360deg · turns · s`, `n` is `base` drawn in it, and `axial` is `n` drawn in a quarter turn
+about its `u`; `OnHelix` is `base` drawn in a screw about `base.u` standing at the helix's start,
+then in the helix's screw; `Twisted`'s point is `reach` along `n.u` drawn in a turn in `n` about
+its origin standing at `twist · s` (`std.Spin`, `CarriedPointIn`) — no `cos`/`sin` of a running
+number and no geometry drawn to hold an axis.  Each lowers to the reading at an instant it was
+written as through [0.140], row for row.  A family a station so carried sweeps is
 its motion's sweep ([generating.md](generating.md)).  The gates: `tests/carried_frame.rs` (frames,
 points and the station words against `Family::at` and their closed forms to `EXACT`, a roll owned
 and stated read alike, a frame carried by what its source rides on), `jacobians.rs`'s

@@ -18,7 +18,8 @@ use super::{Code, Diag, SourceMap};
 use crate::ir::{Operation, Statement};
 use crate::model::{EntKind, EntRef, MotionDef, MotionE, Sketch};
 use crate::syntax::{Arg, OpArg, Ref, StmtId};
-use std::collections::BTreeSet;
+use std::borrow::Cow;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// What the statements say of one joint: the numbers its `fix` states, and what its axis is held
 /// to.
@@ -131,6 +132,110 @@ pub(super) fn motions(sk: &mut Sketch, res: &Resolver, map: &SourceMap, body: &[
             j.motion = Some(m as u32);
         }
     }
+}
+
+/// **A joint's value** (#391 S3): `fix(value == τ) f` states the instant of the shared roll at
+/// which the jointed frame `f` stands — its joint turned `ratio · τ` and risen `advance · τ / 360°`
+/// from where it is drawn, so the value is linear in `τ` with the joint's ratio and advance as
+/// its slopes, and `0deg`, the joint at rest, where none is stated.  It is an angle worked out
+/// as a dimension is (the flattener settled it), so it may read a face family's running number
+/// and is read again at every station, or name an unknown the solve finds.  Recorded by the frame
+/// (`Resolver::values`) for what is drawn in it (`n := x in f`) to be read at, and no number the
+/// `fix` holds (`holding`).  Refused: a value of anything but a jointed frame, one given twice,
+/// a frame with a value riding on another, and a frame with a value something rides on — what is
+/// drawn in its block stands where it is drawn, not where the value puts it, so the frame draws
+/// it as `n := base in f` instead.
+pub(super) fn values(sk: &Sketch, res: &mut Resolver, body: &[&Statement],
+                     skip: &BTreeSet<StmtId>, diags: &mut Vec<Diag>) {
+    use crate::constraints::JOINT_VALUE;
+    for st in body.iter().filter(|st| !skip.contains(&st.id)) {
+        let Operation::Relation(r) = &st.kind else { continue };
+        let Some(w) = r.form.written().filter(|w| w.word.text == "fix") else { continue };
+        let value = w.args.iter().find_map(|a| match a {
+            OpArg::Slot { key, arg: Arg::Dim { text, span } } if key.text == JOINT_VALUE => {
+                Some((text.clone(), *span))
+            }
+            _ => None,
+        });
+        let Some((text, span)) = value else { continue };
+        let say = |diags: &mut Vec<Diag>, code: Code, message: String| {
+            diags.push(Diag::within(code, span, st.id, message));
+        };
+        let frame = w.ops.first().and_then(|o| res.entity(sk, o));
+        let Some(f) = frame.filter(|e| e.kind == EntKind::Frame && sk.frames[e.i()].joint.is_some())
+        else {
+            let name = w.ops.first().map(crate::syntax::ref_text).unwrap_or_default();
+            say(diags, Code::E080, format!("a value is a jointed frame's, the instant it stands \
+                at: `{name}` has no joint — `std.Turn(f, about: l, ratio: r)`, `std.Spin`, \
+                `std.Slide`"));
+            continue;
+        };
+        let name = name_of(res, f);
+        if r.claim {
+            say(diags, Code::E040, format!("`{name}`'s value is stated, not claimed"));
+            continue;
+        }
+        if res.values.contains_key(&f.i()) {
+            say(diags, Code::E040, format!("`{name}`'s value is given twice"));
+            continue;
+        }
+        // an instant, whatever reads it: said once, here, rather than at every reading
+        let held: BTreeMap<String, crate::expr::Aff> = sk.held.iter()
+            .map(|(n, h)| (n.clone(), crate::expr::Aff::of_dim(sk.params[h.param as usize].value,
+                                                               h.dim)))
+            .collect();
+        let angle = crate::flatten::value_read(&text, &held, &sk.declared, sk.units)
+            .and_then(|a| a.dim.require(crate::units::Dim::ANGLE, JOINT_VALUE));
+        if let Err(m) = angle {
+            say(diags, Code::E103, format!("`{text}`: {m}"));
+            continue;
+        }
+        if !sk.carriers_of(&sk.frames[f.i()].rides).is_empty() {
+            say(diags, Code::E080, format!("`{name}` rides on {}, and a frame with a value rides \
+                on none yet (#391): its value is an instant of its own joint alone",
+                path_names(res, &sk.carriers_of(&sk.frames[f.i()].rides))));
+            continue;
+        }
+        // what rides on it stands where it is drawn, which its value would contradict
+        let rides = |path: &[u32]| sk.carriers_of(path).contains(&(f.i() as u32));
+        let riding = sk.rides.iter().find(|(_, path)| rides(path)).map(|(e, _)| *e)
+            .or_else(|| (0..sk.frames.len()).find(|&g| rides(&sk.frames[g].rides))
+                .map(EntRef::frame));
+        if let Some(e) = riding {
+            say(diags, Code::E080, format!("{} rides on `{name}`, which has a value: what is drawn \
+                in its block stands where it is drawn, not yet where the value puts it (#391) — \
+                draw a frame in it, `n := base in {name}`, and draw in that",
+                match name_of(res, e) { n if n.starts_with('#') => "a point".into(),
+                                        n => format!("`{n}`") }));
+            continue;
+        }
+        res.values.insert(f.i(), (text, span));
+    }
+}
+
+/// The relation a `fix` states of the numbers it holds (#391 S3): itself, or without a joint's
+/// value, which holds none — `None` where the value was all it said.
+pub(super) fn holding(r: &crate::ir::Relation) -> Option<Cow<'_, crate::ir::Relation>> {
+    let Some(w) = r.form.written() else { return Some(Cow::Borrowed(r)) };
+    let value = |a: &OpArg| matches!(a, OpArg::Slot { key, .. }
+        if key.text == crate::constraints::JOINT_VALUE);
+    if !w.args.iter().any(value) {
+        return Some(Cow::Borrowed(r));
+    }
+    let mut w = w.clone();
+    w.args.retain(|a| !value(a));
+    if w.args.is_empty() {
+        return None;
+    }
+    let mut out = r.clone();
+    out.form = crate::syntax::RelationForm::Written(w);
+    Some(Cow::Owned(out))
+}
+
+/// The instant a reading of something drawn in the jointed frame `f` is read at (#391 S3): its
+/// value as stated, with where it was written, or the joint at rest, written nowhere.
+pub(super) fn value_of(res: &Resolver, f: usize) -> (String, crate::syntax::Span) {
+    res.values.get(&f).cloned().unwrap_or_else(|| ("0deg".into(), Default::default()))
 }
 
 /// **A reading's motion** (#383): the frame named `under:`, seen from the one named `seen_from:`

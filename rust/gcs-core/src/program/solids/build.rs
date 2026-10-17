@@ -383,10 +383,18 @@ fn under_motion(
             (a, b))`".into());
         return None;
     }
+    // drawn in a jointed frame (#391 S3), `tool in f`: placed by that frame at its value,
+    // whatever the tool rides on
+    let drawn_in = matches!(sweep, Sweep::Placed { at: crate::syntax::Arg::Word(w), .. }
+        if w == crate::flatten::DRAWN_IN);
+    let value = motion.as_ref().filter(|_| drawn_in).and_then(|f| res.entity(sk, f))
+        .filter(|f| f.kind == EntKind::Frame)
+        .map(|f| super::super::motions::value_of(res, f.i()))
+        .map(|(text, span)| crate::syntax::Arg::Dim { text, span });
     // the frame it is carried by — named, or the one it rides on — seen from the one named,
     // where one is (#383)
-    let m = match super::super::motions::reading_of(sk, res, Some(ops[0]), motion.as_ref(),
-                                                     seen_from) {
+    let tool = (!drawn_in).then_some(ops[0]);
+    let m = match super::super::motions::reading_of(sk, res, tool, motion.as_ref(), seen_from) {
         Ok(m) => EntRef::new(EntKind::Motion, m),
         Err(message) => {
             say(Code::E080, motion.as_ref().map_or(st.span, |m| m.span), message);
@@ -397,7 +405,7 @@ fn under_motion(
         .map(|e| Extent {text:e.text,value:e.value.to_radians()});
     Some(match sweep {
         Sweep::Placed {at,..} => {
-            let at = match angle(at,"at") {
+            let at = match angle(value.as_ref().unwrap_or(at),"at") {
                 Ok(at) => at,
                 Err(message) => { say(Code::E103,st.span,message); return None; }
             };

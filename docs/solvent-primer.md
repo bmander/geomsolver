@@ -122,6 +122,7 @@ NAME := sweep(Comp(ARGS).FACE over F in (E, E))   a face family: the face as the
 NAME := solid(SOLID) | solid(SET)       a body over a stock; the points of a region
 NAME := solid()                         an empty body: what is in `union` with it (0.99)
 NAME := REF at[(under: M, seen_from: G)] E   a frame, a solid or a point read at an instant (1.15)
+NAME := REF in F                        the same, drawn in the jointed frame F at its value (1.15)
 NAME := sweep(SOLID over t in (E, E) | SOLID, through: BODY[, under: M, seen_from: G])
                                         a solid a frame's motion sweeps                (1.15)
 REF union REF | REF cut REF | REF common REF  material added to, removed from, shared with a body
@@ -1393,8 +1394,8 @@ k := trace(Par(o).p over u in (-2mm, 2mm))
   arc, `std.OnSpline` a spline, `std.On` any of a line, an arc, a spline or a traced curve —
   then the section drawn `in st.n`, its sizes and turns reading `s`. **A screw** (0.110, 0.138):
   `std.Helix(std.top, pitch: 4mm, turns: 3, s: s)` is `std.top` carried by the screw about its
-  normal to `360deg · turns · s` — turned that much and lifted `pitch · turns · s` (a frame
-  carried, §6.14); draw a thread's section in its `axial` plane (through the axis, `u` out from it,
+  normal to `360deg · turns · s` — turned that much and lifted `pitch · turns · s` (`std.top`
+  drawn in a screw whose value is that roll, 1.15); draw a thread's section in its `axial` plane (through the axis, `u` out from it,
   `v` up it) and an auger's flight in its `n` (the base carried); `std.OnHelix(std.top, r: 10mm,
   pitch: 5mm, turns: 4, s: s)`'s `n` stands square to the helix of radius `r`, for a coil's wire. A
   negative pitch winds left-handed (`rust/gcs-core/tests/helix.rs`). A family a motion carries its
@@ -1867,9 +1868,26 @@ turns * s`) it is read again at every station, and over a `param` it is that unk
 plane, `X` is held where that plane sees the carried point (two rows). Leave `under:` out where `x`
 rides on a frame (`in f { … }`), as for any reading. **A frame carried**: `n := base at τ` —
 `at(under: m)` where `base` rides on nothing — is the plane `base` there, origin, axes and normal;
-every frame that moves is a frame read at a roll, and the station words `std.Helix`, `std.OnHelix`
-and `std.Twisted` are written so. A frame turns about another's axis as about a line:
-`std.Turn(screw, about: base.normal, ratio: 1, advance: pitch)`.
+every frame that moves is a frame read at a roll. A frame turns about another's axis as about a
+line: `std.Turn(screw, about: base.normal, ratio: 1, advance: pitch)`.
+
+**A joint's value** (0.141, issue #391): a jointed frame stands at an instant of the roll,
+`fix(value == τ) f` beside its ratio and advance — its joint turned `ratio · τ` and risen `advance
+· τ / 360°` from where it is drawn; with no value it stands at rest. `n := x in f` is `x` drawn in
+`f`, where its value puts it: the reading `x at(under: f) τ` with the frame's instant, a frame, a
+solid or a point as `x` is. The value is an angle worked out as a dimension is, so it may read a
+face family's running number (read again at every station) or name an unknown the solve finds:
+
+```sv
+screw := frame
+std.Turn(screw, about: base.normal, ratio: 1, advance: pitch)
+fix(value == 360deg * turns * s) screw
+n := base in screw                       // `std.Helix`'s station: base where the screw stands
+```
+
+`std.Helix`, `std.OnHelix` and `std.Twisted` are written so. A frame with a value rides on none,
+and nothing is drawn in its own block (E080, naming `n := base in f`: draw in the frame drawn in
+it). A value reading a declared `param t: … over (a, b)` is E103 (stage 4).
 
 **A motion's twist is read by rates** (0.130). The roll `t` is the slot of the `coincident` holding
 `X`, and `rate(X over t)` is how fast `X` runs a radian of it — the twist there. A rate of a contact

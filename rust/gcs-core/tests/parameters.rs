@@ -7,7 +7,8 @@
 //! a declared parameter is represented once.  Stage 2's two operations on what moves: `x at τ`
 //! makes what `x` is — a point held, a solid placed, a frame carried — and a reading over the
 //! roll may name a declared parameter for its interval (`over t`); the spellings they replace are
-//! refused naming them.
+//! refused naming them.  Stage 3's joint's value: `fix(value == τ) f`, the instant a jointed frame
+//! stands at, and `n := x in f`, `x` drawn where that value puts it.
 
 use gcs_core::model::{EntKind, Roll, Running, SolidDef};
 use gcs_core::program::{elaborate, Elaborated};
@@ -321,4 +322,155 @@ fn the_retired_reading_spellings_name_their_replacements() {
     syntax("k := leg.toe over u in (0, 360)", "`trace(leg.toe over theta in (a, b))`");
     // and the frames of an instant stand on the `at`, not on the `coincident`
     syntax("P := point\nP coincident(under: screw) x at 40deg", "names its frames on the `at`");
+}
+
+/// How near a frame's value puts what is drawn in it to the motion's closed form: the solve's own
+/// tolerance, as `tests/carried_frame.rs` holds a reading at an instant.
+const EXACT: f64 = 1e-10;
+
+/// The joint of the frame `name`, as the motion's closed form reads it.
+fn family(e: &Elaborated, name: &str) -> gcs_core::motion::Family {
+    let i = e.sketch.motions.iter().position(|m| m.name == name)
+        .unwrap_or_else(|| panic!("no motion `{name}`"));
+    gcs_core::motion::Family::read(&e.sketch, i).unwrap()
+}
+
+/// Plane `name`'s frame: its origin, `u`, `v` and normal.
+fn chart(e: &Elaborated, name: &str) -> [[f64; 3]; 4] {
+    let b = e.sketch.basis(e.map.ent_named(name).unwrap().i());
+    [b.o, b.u, b.v, b.normal()]
+}
+
+fn near(got: [f64; 3], want: [f64; 3], what: &str) {
+    let off = (0..3).map(|k| (got[k] - want[k]).abs()).fold(0.0, f64::max);
+    assert!(off < EXACT, "{what}: {got:?} against {want:?}");
+}
+
+/// **A joint's value puts what is drawn in its frame** (#391 S3): `fix(value == 40deg) screw` is
+/// the instant the screw stands at, so `n := std.front in screw` is the front plane where the
+/// screw's joint carries it at 40° — turned `1.5 · 40°` about its axis and risen `7mm · 40/360`
+/// along it, the value linear in the instant with the ratio and the advance its slopes, as the
+/// motion's closed form gives it — and `X := x in screw` the point.  Each is the reading at that
+/// instant, `x at(under: screw) 40deg`, row for row: no unknown of its own.  A frame stating no
+/// value stands at rest, and what is drawn in it where it is drawn.
+#[test]
+fn what_is_drawn_in_a_jointed_frame_stands_where_its_value_puts_it() {
+    let e = solved(&format!("{SCREW}fix(value == 40deg) screw\nn := std.front in screw\n\
+        X := x in screw\nm := std.front at(under: screw) 40deg\nY := x at(under: screw) 40deg\n\
+        still := frame\nstd.Turn(still, about: ax, ratio: 2)\nr := std.front in still\n"));
+    let screw = family(&e, "screw");
+    let pose = screw.at(40f64.to_radians()).unwrap();
+    let front = chart(&e, "std.front");
+    let [o, u, v, normal] = chart(&e, "n");
+    near(o, pose.point(front[0]), "the origin");
+    let turned = |d: [f64; 3]| {
+        let (a, b) = (pose.point(d), pose.point([0.0; 3]));
+        [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+    };
+    near(u, turned(front[1]), "u");
+    near(v, turned(front[2]), "v");
+    near(normal, turned(front[3]), "the normal");
+    let point = |n: &str| e.sketch.world_point(e.map.ent_named(n).unwrap().i());
+    near(point("X"), pose.point(point("x")), "a point");
+    // the reading at the value's instant, row for row
+    for k in 0..4 {
+        near(chart(&e, "n")[k], chart(&e, "m")[k], "the frame read at the instant");
+    }
+    near(point("X"), point("Y"), "the point read at the instant");
+    let carried: Vec<_> = e.sketch.constraints.iter().filter(|c| c.kind.reads_motion()).collect();
+    assert!(carried.iter().all(|c| c.stated_roll() && c.aux_params().is_empty()));
+    assert_eq!(carried.len(), 3 + 1 + 3 + 1 + 3);
+    // at rest: no value, the joint's at 0
+    for k in 0..4 {
+        near(chart(&e, "r")[k], front[k], "a frame at rest");
+    }
+
+    // a solid drawn in a frame is placed at its value
+    let placed = |src: &str| {
+        let e = built(src);
+        let i = e.map.ent_named("removal").expect("the placed tool").i();
+        let SolidDef::Placed { at, motion, .. } = &e.sketch.solids[i].def else {
+            panic!("not placed: {:?}", e.sketch.solids[i].def);
+        };
+        (at.value.to_bits(), e.sketch.motions[*motion as usize].name.clone())
+    };
+    let sweep = "construction removal := sweep(tool over t in (-75deg, 75deg), under: spin, \
+                 seen_from: observer)";
+    assert!(SWEPT_TORUS.contains(sweep));
+    let drawn = placed(&SWEPT_TORUS.replace(sweep, "fix(value == 30deg) spin\n\
+        construction removal := tool in spin"));
+    assert_eq!(drawn, placed(&SWEPT_TORUS.replace(sweep,
+        "construction removal := tool at(under: spin) 30deg")));
+    assert_eq!(drawn, (30f64.to_radians().to_bits(), "spin".to_string()));
+}
+
+/// **A value may be an unknown the drawing solves for** (#391 S3): the value names a free
+/// variable, read as a stated roll naming one is (its twin's last column), and the turn that puts
+/// the point drawn in the frame five above the world's `x` axis is the solve's — 30°, from a
+/// seed of 10°.  A value worked out over a face family's running number is the station words'
+/// (`tests/carried_frame.rs`, `tests/carried_family.rs`).
+#[test]
+fn a_joints_value_may_be_an_unknown_the_drawing_solves_for() {
+    let e = solved("\
+unit mm
+use std
+param theta: Angle hint(10deg)
+x := point hint((10, 0, 0))
+fix((10, 0, 0)) x
+spin := frame
+std.Spin(spin, about: std.top.origin, on: std.top, ratio: 1)
+fix(value == theta) spin
+X := x in spin
+std.origin distance(5mm, along: std.y) X
+");
+    let c = e.sketch.constraints.iter().find(|c| c.kind.reads_motion()).unwrap();
+    let free = c.free.expect("the value is the unknown's");
+    let theta = free.m * e.sketch.params[free.param as usize].value + free.c;
+    assert!((theta.to_degrees() - 30.0).abs() < 1e-9, "{}", theta.to_degrees());
+    let pose = family(&e, "spin").at(theta).unwrap();
+    near(e.sketch.world_point(e.map.ent_named("X").unwrap().i()), pose.point([10.0, 0.0, 0.0]),
+         "at the value solved");
+}
+
+/// **A value and what is drawn in its frame print as written** and read back the same; a value
+/// is a jointed frame's, stated once, an angle, never a declared parameter's (a relation holding
+/// for every value of one is stage 4's); and a frame with a value rides on none and carries
+/// nothing drawn in its block, which would stand where it is drawn and not where the value puts it.
+#[test]
+fn a_joints_value_prints_back_and_refuses_what_it_cannot_mean() {
+    // the flat form prints no instance: the joint written out as `std.Turn` writes it, its value
+    // beside its other numbers
+    let flat = SCREW.replace("std.Turn(screw, about: ax, ratio: 1.5, advance: 7mm)",
+        "ax coincident screw.axis\nfix(ratio == 1.5, advance == 7mm, value == 40deg) screw");
+    let src = format!("{flat}n := std.front in screw\nX := x in screw\n");
+    let (mut prog, errs) = parse(&src);
+    assert!(errs.is_empty(), "{errs:?}");
+    let printed = gcs_core::syntax::render_flat(&mut prog).unwrap().to_string();
+    for line in ["fix(ratio == 1.5, advance == 7mm, value == 40deg) screw",
+                 "n := std.front in screw", "X := x in screw"] {
+        assert!(printed.contains(line), "{line}: {printed}");
+    }
+    let (a, b) = (solved(&src), solved(&printed));
+    let stated = solved(&format!("{SCREW}fix(value == 40deg) screw\nn := std.front in screw\n"));
+    for k in 0..4 {
+        near(chart(&a, "n")[k], chart(&b, "n")[k], "read back");
+        near(chart(&a, "n")[k], chart(&stated, "n")[k], "the value beside the joint's numbers");
+    }
+
+    let refused = |src: &str, code: &str, want: &str| {
+        let (_, said) = read(&format!("{SCREW}{src}\n"));
+        assert!(said.iter().any(|(c, m)| c == code && m.contains(want)), "{src}: {said:?}");
+    };
+    refused("fix(value == 10deg) x", "E080", "a value is a jointed frame's");
+    refused("fix(value == 10deg) screw\nfix(value == 20deg) screw", "E040", "given twice");
+    refused("fix(value == 10mm) screw", "E103", "`value` is Angle, and this is Length");
+    refused("param t: Angle over (0deg, 360deg)\nfix(value == t) screw\nn := std.front in screw",
+            "E103", "`t` runs over an interval");
+    refused("fix(value == 10deg) screw\nin screw {\n  p := point\n}", "E080",
+            "rides on `screw`, which has a value");
+    refused("in (arm := frame) {\n  planet := frame\n}\nstd.Turn(arm, about: ax, ratio: 1)\n\
+             std.Turn(planet, about: ax, ratio: 2)\nfix(value == 10deg) planet", "E080",
+            "a frame with a value rides on none");
+    // and a frame drawn in one that does not move is drawn in nothing that carries it
+    refused("still := frame\nn := std.front in still", "E040", "does not move");
 }

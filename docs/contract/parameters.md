@@ -89,6 +89,42 @@ of it. An issue number (#n) or a spec version ([0.n], see the
     τ)`, `coincident(at: τ)`, an envelope's and a meshing's `from:`/`to:`, `solid(… over …)` and a
     curve written bare (`k := leg.toe over …`). The corpus is written in the new spellings and no
     solved value moved.
-- **An instant is not yet a parameter's own**: the roll `x at τ` reads is a number of the shared
-  roll as written, and a family's station value keeps its `HeldNumber`; a joint's value as a
-  function of a parameter is stage 3's.
+- **A joint's value** (#391 S3, [0.141]): a jointed frame stands at an instant of the roll,
+  `fix(value == τ) f` beside its ratio and advance (`constraints::JOINT_VALUE`; the parser keeps
+  the slot's text as `Arg::Dim`, so the flattener settles it as a dimension and it may read a face
+  family's running number, read again at every station, or a declared unknown).  Its joint is
+  turned `ratio · τ` and risen `advance · τ / 360°` from where it is drawn — linear in `τ`, ratio
+  and advance its slopes — and a frame stating none stands at rest, `0deg`
+  (`motions::value_of`).  The value is no number of the frame's and states no row:
+  `program::motions::values` reads it off the statement into `Resolver::values`, after the
+  memberships and before any reading is built, and `motions::holding` hands the `fix` the rest of
+  its slots.  An Angle, checked there once (E103, as is a declared parameter read in it);
+  refused: a value of anything but a jointed frame (E080), one given twice (E040), a frame with a
+  value riding on another, and one something rides on (E080) — a declaration in its block would
+  stand where it is drawn, not where the value puts it, so the refusal names `n := base in f`.
+  - **`n := x in f`, drawn in a jointed frame** (`P::drawn_in`, a `Decl::carried` whose args are
+    `in: f`; the printer's `print::drawn_in`): `x` read at `f`'s value, the very statements `x
+    at(under: f) τ` writes out (`flatten::carried::ways`, settled as an instant is), so it makes
+    a frame, a solid or a point as `x` is.  The elaborator reads `in:` as `under:` with the
+    frame's value appended as the stated roll (`relations::carried_motion`), and a solid's
+    `Sweep::Placed { at: Arg::Word(DRAWN_IN) }` the same (`solids::build::under_motion`).  `x` is
+    carried from where it is drawn whatever it rides on (no `under_riding` refusal), and what it
+    makes rides on nothing, as a reading's product rides on its observer.  `p := point in P`
+    stays a membership: the parser takes `in` after a reference that is no kind word.
+  - **The station words are frames whose value is written over `s`** (`std.sv`): `Helix`'s screw
+    `fix(value == 360deg * turns * s)`, `n := base in screw`, `axial := n in stand` (a quarter
+    turn's value); `OnHelix`'s `start := base in tilt` and `n := start in screw`; `Twisted`'s
+    `t := x in turn`, the turn's value `twist * s`.  Their readings at an instant are retired, and
+    their rows are the readings' row for row, so `tests/carried_frame.rs` (the stations against
+    their closed forms to `EXACT`) and `tests/carried_family.rs` (the two springs one tube on one
+    screw) pass unchanged.  `tests/parameters.rs` is the gate for the rest
+    (`what_is_drawn_in_a_jointed_frame_stands_where_its_value_puts_it`,
+    `a_joints_value_may_be_an_unknown_the_drawing_solves_for`,
+    `a_joints_value_prints_back_and_refuses_what_it_cannot_mean`).
+  - **Decided here** (the epic's open questions 2 and 4): **one clock** — every joint still runs
+    on the one shared roll, a value is an instant of it, and what is drawn in `f`, read under `f` at
+    `τ`, is the joint at `value + τ`; **rest** is each frame at its value, the shared roll at 0, so
+    `Sketch::world_point` is the drawing as before and reads no joint.
+  - **Not built in stage 3**: a value written over a declared parameter (a relation holding for
+    every value of one is stage 4's), a value any but linear in its instant (stage 5), a frame
+    with a value riding on another, and a declaration drawn in a valued frame's own block.
