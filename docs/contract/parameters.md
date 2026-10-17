@@ -3,8 +3,10 @@
 Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you touch
 `model/running.rs`, a `param … over`, a face family's running number, a traced body's formals, an
 interval of the roll a reading states, `follow.rs` (continuation), `trace(m over t)` and what is
-held to it (`followed.rs`), or a drive
-(`motion/law.rs`, `MotionDef::Driven`, `tape::eval_interval`). The
+held to it (`followed.rs`), a drive (`motion/law.rs`, `MotionDef::Driven`,
+`tape::eval_interval`), a face swept over a declared parameter or a valued frame's block
+(`flatten/valued.rs`, #398 B), or a frame along a path (`motion/guide.rs`, `MotionDef::Guided`,
+#398 C). The
 direction is [#391](https://github.com/bmander/geomsolver/issues/391): geometry over a
 parameter, trajectories rather than snapshots; this file holds what is built of it. An issue
 number (#n) or a spec version ([0.n], see the [language changelog](../solvent-changelog.md)) says
@@ -103,8 +105,9 @@ where a rule came from.
   memberships and before any reading is built, and `motions::holding` hands the `fix` the rest of
   its slots.  An Angle, checked there once (E103, as is a declared parameter read in it);
   refused: a value of anything but a jointed frame (E080), one given twice (E040), a frame with a
-  value riding on another, and one something rides on (E080) — a declaration in its block would
-  stand where it is drawn, not where the value puts it, so the refusal names `n := base in f`.
+  value riding on another, and one a frame rides on (E080, naming `n := base in f`).  What its
+  `in` block draws stands where the value puts it (#398 B, below); through [0.144] anything drawn
+  there was refused.
   - **`n := x in f`, drawn in a jointed frame** (`P::drawn_in`, a `Decl::carried` whose args are
     `in: f`; the printer's `print::frame_drawn_in`; the label `syntax::DRAWN_IN`): `x` read at `f`'s
     value, the very statements `x at(under: f) τ` writes out (`flatten::carried::ways`, settled as
@@ -131,7 +134,8 @@ where a rule came from.
     `Sketch::world_point` is the drawing as before and reads no joint.
   - **Not built in stage 3**: a value written over a declared parameter (built in stage 4,
     below), a value any but linear in its instant (built in stage 5, below), a frame with a value
-    riding on another, and a declaration drawn in a valued frame's own block.
+    riding on another, and a declaration drawn in a valued frame's own block (built by #398 B,
+    below).
 - **Relations over a parameter** (#391 S4, [0.142]): a relation reading a declared parameter holds
   for every value of it, and the drawing is followed along it.
   - **Read as a held number.** `Walk::parameter_axis` puts the parameter into the root's `vals` as
@@ -207,7 +211,8 @@ where a rule came from.
     followed together (each is followed alone, the others at their starts), a trace of a point in
     space (a traced body in space is a component's, §6.5), a trace held to by a relation (built
     by #398 A, below), a sweep
-    of a section over a declared parameter (`sweep(sec over s)`), continuation past a singular
+    of a section over a declared parameter (`sweep(sec over s)`, built by #398 B, below),
+    continuation past a singular
     instant onto a chosen branch, and the app's timeline (stage 6).
 - **Relations held to a followed trace** (#398 A, [0.144]): `trace(m over t)` is a curve the
   solve works through — a point on it at an instant, a line tangent to it, a circle osculating it,
@@ -317,7 +322,8 @@ where a rule came from.
     of it; a law three ways (`a_laws_jet_and_enclosure_agree_with_its_value`, over every function
     the walker carries); the refusals.  `tests/expr.rs`'s
     `affinity_is_read_off_how_a_number_is_written`.
-  - **Not built in stage 5**: the guide-following station words as frames driven along a path —
+  - **Not built in stage 5** (the first two built by #398 B and C, below): the guide-following
+    station words as frames driven along a path —
     a guide's frame (`std.On`, `std.Minimal`, `std.Frenet`) is no joint at any value, its pose read
     off the guide's geometry and its derivatives (and for `On`/`Minimal`, integrated), so it
     needs a motion of its own kind in `Family` (the guide enclosed over a stretch for its bounds)
@@ -326,3 +332,91 @@ where a rule came from.
     profile in the plane generated under a drive; a slide's value written as a length (it is an
     instant of the roll: `advance: 360mm` makes its degrees millimetres); and the app's timeline
     (stage 6).
+- **Faces swept over a declared parameter** (#398 B, [0.145]): one parameter axis for the face
+  families as for the drawing.
+  - **A face family reads its parameter as declared**: `sweep(Station(…).f over s)`, `s` a `param
+    s: … over (a, b)` of the document (`Walk::family_parameter`; a component's body sees none,
+    E103, so a family stands in the document), its interval the family's.  The formal that runs
+    is the one the call gives the parameter by name (`Tube(hose, std.x, r: r, s: s2).f over s2`:
+    the argument is taken off the call, the formal left unbound as before) or else the one named
+    as it, and it is of the parameter's kind (E103); the call gives it nothing else (E103).  The
+    flattener records the formal by the instance's key (`Held::formals`), and everything after it
+    is the family it was: the drawn station at the middle, `#f12.s` held, no solved value moved.
+    `over s in (a, b)` in a family's brackets is refused naming the new spelling (`P::family`),
+    and the printer writes `over s`.  A formal given a text kept over a family's running number
+    answers for its name before the document's parameter of that name does (`settle_text`): the
+    eased twist's `s: 3 * s^2 - 2 * s^3` reads `#f12.s` though the document declares `s`.
+  - **A face of the drawing itself**: `sweep(sec over s)`, the tool a face and no `under:` or
+    `seen_from:`, is `SolidDef::Family` over the parameter itself (`build::drawn_family`): its
+    `over` the declared `Running`, its station every entity of the drawing, the part its face
+    reaches what each station solves (`solid::family::leg_part`, the prefix empty for a name
+    under no instance), drawn where the parameter stands — the interval's start — and stepped from
+    there (`step`: the run down from the start is empty).  `Walk::declared_interval` writes a
+    non-angle parameter's ends for a sweep without refusing it; the elaborator refuses a solid
+    swept over one (E103: the roll is an angle).  A drive over a parameter that is no angle is
+    left out of the motions read after the solve (`program::solid_diagnostics`): no reading over
+    the roll reads it, and one that would is refused where it is made (`reading_of`).
+  - **Drawn in a frame with a value** (`flatten::valued`): a body's statements whose `in`-block
+    path names a frame the body gives a value (`fix(value == …) f`, matched by its text) are
+    lowered before the walk.  Each plane such a declaration or instance is drawn in (the innermost
+    frame of its path but the valued one) gets one twin per body, `#in<offset> := P in f`, walked
+    as a reading at an instant is; the declaration is drawn in the twin and rides on the valued
+    frame no more; and every reference to the plane (or a member of it) in a statement of the
+    block — a declaration's children and membership, an instance's arguments, a relation's
+    operands and arguments — reads the twin (`syntax::Relation::within`, stamped by the parser,
+    keeps the blocks around a relation).  The twin's rows are `x in f`'s, row for row: its value
+    read again at every station.  Refused: a declaration in two valued frames, one drawn in the
+    valued frame and no plane of it (E080).  A frame declared in the block is left to
+    `motions::values`'s refusal.  `std.Twisted` stays a point drawn in `n` (`t := x in turn`):
+    drawn in the block it would stand in the twin, and `mapped` reads its targets in one plane.
+  - **Gate**: `tests/swept_over_parameters.rs` — the epic's helix as written (its value in the
+    `fix` stage 3 settled on) against the screw's closed form at stations of the march along `s`
+    to `EXACT`, against Pappus off its exact B-rep, every wall the surface its first rim sweeps,
+    and corner for corner the thread `std.Helix`'s station sweeps; the block's relations holding
+    the drawing at rest at every station; the refusals.  `tests/face_family.rs`: a station drawn
+    in the document and given the parameter sweeps the reducer's 5120 mm³, and a family's
+    refusals.  The corpus is written over declared parameters (`lofts/`, `paths/`, the loose
+    families, `turbine_blade.sv`; `lofts/thread.sv`'s thread is the epic's helix;
+    `twist_drill/drill.sv`'s roll is a declared `t`) and every test of it passes unchanged in its
+    numbers.
+- **Frames along a path** (#398 C, [0.145], `motion/guide.rs`): a frame whose pose is read off its
+  guide at the path's parameter — a motion of its own kind.
+  - **Stated as a joint held along a path**: `g coincident f.axis`, `g` an arc, a spline, a curve
+    or a curve traced in space (`motions::motions`, `Held::guide`; a line is a turn's axis), with
+    `fix(ratio == ρ, advance == 0mm) f`, `ρ` 0 or 1 (E080 otherwise, and for an advance), makes
+    `MotionDef::Guided { guide, frame, torsion: ρ }`; the statement states no row
+    (`Resolver::guides`, skipped by `elaborate::constraints`) and the joint's axis is held where it
+    stands.  `std.Along(f, g, up: u, home: h)` (ρ 0) and `std.AlongFrenet(f, g, home: h)` (ρ 1)
+    draw the frame at its home square to the path and state the joint.
+  - **Read after the solve** (`motion::Guide`, `Step::Guided`): the path read four ways (`Path`: a
+    line's and an arc's fraction of the run exactly; a spline, in a plane lifted or over points in
+    space through `Sketch::spline_traced`, by its basis with three derivatives; a traced curve by
+    `traced::at`, its third derivative a difference of its exact second — what a Frenet frame's
+    rate alone reads); its home the parameter nearest the frame's origin (refused past 1e-6 of
+    it: drawn off its path); `M(u) x = R(u)(x − c(h)) + c(u)`, `R(u) = F(u) F(h)ᵀ`.  ρ 0: the
+    rotation-minimising frame integrated by double reflection over `GRID` steps laid from the
+    home, any `u` one step from its nearest node, `ω = T × T′`; ρ 1: the Frenet frame read
+    directly, `ω = T × T′ + τ T`.  `at` carries the rate (`envelope::Motion::of_parts`), `pose_at`
+    the pose; an inverse is the step undone (`back`).  No constant twist: `screw`, `turning`,
+    `sliding`, `in_plane`, `in_frame`, `instantaneous` and `NormalVelocity` refuse it.
+  - **Enclosed over a stretch** (`Guide::stretch`): samples a step `w` apart, every point within
+    `|C′|·w/2` of one and every turn within `|ω|·w/2`, `|C′|` and `|C″|` bounded over the whole
+    path for certain — a line's and an arc's exactly, a polynomial spline's off its hodographs'
+    control points — and `|ω| ≤ |C″| / min|C′|`; `MotionBounds` (`bounds`) and the speed bound
+    (`inverse_point_speed_bound_over`) read it.  It fails closed for a rational spline, a traced
+    curve, and the path's own frame (no bound on the torsion).
+  - **What reads it**: a face drawn in the frame and swept as a declared parameter runs
+    (`solid::family`, `Along`): at each station its samples and plane, and the exact walls' node
+    numbers, carried by `M(s) · C_home · C(s)⁻¹` — the frame's chart as the drawing has it and as
+    the part stands there — so a frame the station moves and one it does not are read alike.
+    Refused: a relation the solve holds reading it (`envelope::held::motion`, E080), a profile in
+    the plane generated under it; a graft carries none (`io::graft`).  Today's station words
+    (`std.On`, `std.Minimal`, `std.Frenet`) still solve a plane at every station; the corpus is
+    not moved onto the frames.
+  - **Gate**: `tests/guided_frames.rs` — a rectangle in `std.Along`'s frame swept over `s`
+    against the same rectangle in `std.On`'s plane, corner for corner and by volume to 1e-9, along
+    the planar spline (home-free) and the cubic in space (homed where `On`'s family is); the
+    ribbon in `std.AlongFrenet`'s frame against `std.Frenet`'s the same way; the frame along a
+    traced helix against the helix's rotation-minimising frame in closed form to 1e-9 and its rate
+    against a difference of its pose; `MotionBounds` holding every sampled pose of sixteen
+    stretches forward and back and the speed bound every sampled speed; the refusals.

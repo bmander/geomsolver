@@ -30,10 +30,12 @@ struct Held {
     line: Option<usize>,
     point: Option<usize>,
     parallel: Option<EntRef>,
+    /// The path the axis is held along, and the statement saying so (#398 C).
+    guide: Option<(EntRef, StmtId)>,
 }
 
 /// Every jointed frame's motion node, read off the statements that hold it.
-pub(super) fn motions(sk: &mut Sketch, res: &Resolver, map: &SourceMap, body: &[&Statement],
+pub(super) fn motions(sk: &mut Sketch, res: &mut Resolver, map: &SourceMap, body: &[&Statement],
                       skip: &BTreeSet<StmtId>, diags: &mut Vec<Diag>) {
     for f in 0..sk.frames.len() {
         let Some(joint) = sk.frames[f].joint.clone() else { continue };
@@ -79,7 +81,11 @@ pub(super) fn motions(sk: &mut Sketch, res: &Resolver, map: &SourceMap, body: &[
                         (Some(a), Some(b)) if b == axis => a,
                         _ => continue,
                     };
+                    let path = matches!(other.kind, EntKind::Arc | EntKind::Spline | EntKind::Curve)
+                        || super::relations::traced_curve(sk, other);
                     match (w.word.text.as_str(), other.kind) {
+                        // an axis held along a path: the frame rides along it (#398 C)
+                        ("coincident", _) if path => held.guide = Some((other, st.id)),
                         ("coincident", EntKind::Line) => held.line = Some(other.i()),
                         ("coincident", EntKind::Point) => held.point = Some(other.i()),
                         ("parallel", EntKind::Axis | EntKind::Line) => held.parallel = Some(other),
@@ -110,6 +116,36 @@ pub(super) fn motions(sk: &mut Sketch, res: &Resolver, map: &SourceMap, body: &[
             let normal = sk.frames[view].chart.as_ref()?.normal?;
             (held.parallel == Some(EntRef::new(EntKind::Axis, normal as usize))).then_some(p)
         });
+        // **a frame along a path** (#398 C): its pose read off the path, turning with none of
+        // its torsion (ratio 0) or all of it (1), its axis the path's tangent and no number of
+        // its own — what the axis is held to states no row
+        if let Some((guide, stmt)) = held.guide {
+            res.guides.insert(stmt);
+            if held.ratio.is_none() || held.advance.is_none() || advance != 0.0 {
+                say(diags, format!("`{name}` rides along a path, which says where it stands: its \
+                    joint states its ratio, 0 or 1, and no advance — `std.Along(f, g, up: u)`"));
+                continue;
+            }
+            if ratio != 0.0 && ratio != 1.0 {
+                say(diags, format!("`{name}` turns {} of its path's torsion: a frame along a path \
+                    turns with none of it (ratio 0, the rotation-minimising frame) or all of it \
+                    (ratio 1, the path's own)", crate::syntax::num(ratio)));
+                continue;
+            }
+            let ax = &sk.axes[joint.axis as usize];
+            for q in ax.a.iter().chain(&ax.d).copied().collect::<Vec<_>>() {
+                sk.params[q as usize].fixed = true;
+            }
+            sk.motions.push(MotionE { def: MotionDef::Guided { guide, frame: f as u32,
+                                                               torsion: ratio },
+                                      name: name.clone(), class: sk.frames[f].class.clone(),
+                                      numbers: None });
+            let m = sk.motions.len() - 1;
+            if let Some(j) = sk.frames[f].joint.as_mut() {
+                j.motion = Some(m as u32);
+            }
+            continue;
+        }
         let def = match (held.line, in_view) {
             (Some(l), _) if ratio == 0.0 && held.ratio.is_some() => {
                 MotionDef::Translation { axis: l as u32, advance }

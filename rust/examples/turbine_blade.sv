@@ -187,7 +187,8 @@ tip0 := point
 fix((0mm, 0mm, 0mm)) foot0
 fix((0mm, 0mm, span)) tip0
 construction centerline stack := line(foot0, tip0)
-airfoil := sweep(Station(stack, std.y, hub, mean, tip).sec.profile over s in (-embed / span, 1))
+param s: Scalar over (-embed / span, 1)
+airfoil := sweep(Station(stack, std.y, hub, mean, tip).sec.profile over s)
 
 // ---- the platform and the seal wings: sectors of the annulus about the engine's axis ----
 in std.front {

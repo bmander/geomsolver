@@ -96,6 +96,11 @@ fn program_signed(sk: &Sketch, m: usize, inverse: bool, steps: &mut Vec<Step>, a
                 generated under joints at a constant rate: a drive is read by a sweep or a \
                 placement (#391)", me.name))
         }
+        MotionDef::Guided { .. } => {
+            return Err(format!("`{}` rides along a path, its frame read off the path after the \
+                solve: a profile in the sheet is generated under joints at a constant rate",
+                me.name))
+        }
         MotionDef::Joint { .. } => {
             return Err(format!("`{}`'s joint turns about an axis no centre of a view holds: a tool \
                                 of the sheet is carried by a turn in its view, `std.Spin(f, \

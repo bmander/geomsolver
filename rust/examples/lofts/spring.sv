@@ -22,4 +22,5 @@ component Coil(base: plane, r: Length, wire: Length, pitch: Length, turns: Scala
   f := face(w)
 }
 
-spring := sweep(Coil(std.top, r: r, wire: wire, pitch: pitch, turns: turns).f over s in (0, 1))
+param s: Scalar over (0, 1)
+spring := sweep(Coil(std.top, r: r, wire: wire, pitch: pitch, turns: turns).f over s)

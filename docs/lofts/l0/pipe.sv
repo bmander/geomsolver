@@ -40,4 +40,5 @@ in std.top {
   radius(25mm) k1
   radius(25mm) k3
 }
-pipe := sweep(Tube(route, std.z, r: 4mm).f over s in (0, 5))
+param s: Scalar over (0, 5)
+pipe := sweep(Tube(route, std.z, r: 4mm).f over s)

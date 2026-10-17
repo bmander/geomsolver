@@ -34,6 +34,9 @@ pub(super) struct Resolver {
     /// states, as worked out text, and where it was written — what a reading of something drawn
     /// in the frame (`x in f`) is read at.  A frame stating none stands at rest, `0deg`.
     pub(super) values: BTreeMap<usize, (String, Span)>,
+    /// The statements holding a joint along a path (#398 C), `g coincident f.axis`: read as the
+    /// frame's motion (`motions::motions`, `MotionDef::Guided`) and stating no row.
+    pub(super) guides: std::collections::BTreeSet<crate::syntax::StmtId>,
 }
 
 /// A plane's member naming its normal, `P.normal`: `u × v`, an axis (`Sketch::plane_normal`).

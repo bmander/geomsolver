@@ -1,5 +1,8 @@
 //! **A face family** (#243 L1): the solid a face of a station sweeps as the station's running
-//! number runs, `sweep(I(…).f over s in (a, b))` — §6.5's curve one dimension up.
+//! number runs over a declared parameter, `sweep(I(…).f over s)` — §6.5's curve one dimension
+//! up — or a face of the drawing itself as the parameter runs, `sweep(sec over s)` (#398 B), its
+//! station the drawing, drawn where the parameter stands.  A face drawn in a frame along a path
+//! (#398 C) stands at each station where the frame's motion puts it (`Along`).
 //!
 //! The station is drawn once, hidden, at the middle of the interval (`flatten::Held`), and solved
 //! there with the drawing.  Here it is solved again at every other station: the part of the
@@ -276,6 +279,37 @@ struct Reading {
     /// integrated by from its home, marched once the home is solved (`start_flow`).
     rated: Option<String>,
     flow: std::cell::RefCell<super::rated::Shared>,
+    /// Where the face rides on a frame along a path (#398 C), what carries it: the frame's
+    /// motion, read off the drawing, the frame in the part, and its chart as the drawing has it.
+    along: Option<Along>,
+}
+
+/// **A face drawn in a frame along a path** (#398 C): at each station it stands where the frame
+/// does at the path's parameter, the station's running number — read off the station as drawn
+/// in the frame (its chart where the part stands there) and carried to the frame's pose,
+/// `M(s) · C_home · C(s)⁻¹`, so a frame that stands still in the part and one the station moves
+/// are read alike.
+struct Along {
+    motion: crate::motion::Family,
+    frame: usize,
+    home: crate::motion::Pose,
+}
+
+/// A frame's chart as a pose: its axes and normal the columns, its origin the offset.
+fn chart_pose(sk: &Sketch, f: usize) -> crate::motion::Pose {
+    let b = sk.basis(f);
+    let n = cross(b.u, b.v);
+    crate::motion::Pose { r: std::array::from_fn(|i| [b.u[i], b.v[i], n[i]]), p: b.o }
+}
+
+/// The frame along a path the face `fi` rides on, where it rides on one alone: its index and its
+/// motion's.
+fn along_of(sk: &Sketch, fi: usize) -> Option<(usize, usize)> {
+    let path = sk.carriers(EntRef::face(fi)).ok()?;
+    let [f] = path.as_slice() else { return None };
+    let m = sk.frames.get(*f as usize)?.joint.as_ref()?.motion? as usize;
+    matches!(sk.motions.get(m)?.def, crate::model::MotionDef::Guided { .. })
+        .then_some((*f as usize, m))
 }
 
 impl Reading {
@@ -291,10 +325,31 @@ impl Reading {
             }
             page.push(ring);
         }
-        let world = page.iter()
+        let mut world: Vec<Vec<V>> = page.iter()
             .map(|r| r.iter().map(|&(x, y)| basis.lift(x, y)).collect())
             .collect();
+        let mut basis = basis;
+        if let Some(m) = self.carried(sk, s)? {
+            for ring in &mut world {
+                for p in ring.iter_mut() {
+                    *p = m.point(*p);
+                }
+            }
+            basis = Basis { o: m.point(basis.o), u: m.vector(basis.u), v: m.vector(basis.v) };
+        }
         Ok(Station { s, basis, page, world, x: sk.get_x() })
+    }
+
+    /// Where a face drawn in a frame along a path stands at `s` against where the part draws it
+    /// (#398 C): `M(s) · C_home · C(s)⁻¹` as one pose — `None` for a face that rides on none.
+    fn carried(&self, sk: &Sketch, s: f64) -> Result<Option<crate::motion::Pose>, String> {
+        let Some(a) = &self.along else { return Ok(None) };
+        let (to, back) = (a.motion.pose_at(s)?, chart_pose(sk, a.frame).inverse());
+        let map = |x: V| to.point(a.home.point(back.point(x)));
+        let p = map([0.0; 3]);
+        let col = |k: usize| { let mut e = [0.0; 3]; e[k] = 1.0; sub(map(e), p) };
+        let (x, y, z) = (col(0), col(1), col(2));
+        Ok(Some(crate::motion::Pose { r: std::array::from_fn(|i| [x[i], y[i], z[i]]), p }))
     }
 
     /// Each edge's count raised to what the part, where it stands, needs of it.
@@ -603,7 +658,11 @@ struct LegPart {
 /// The part leg `leg` of family `si` is solved over, and what the family reads of it, stepped at
 /// the flatness `tol`.
 fn leg_part(sk: &Sketch, station: &[EntRef], leg: &Leg, tol: f64) -> Result<LegPart, String> {
-    let prefix = crate::model::station_prefix(leg.held);
+    // a declared parameter the drawing itself runs over (#398 B) stands under no instance
+    let prefix = match leg.held.contains('.') {
+        true => crate::model::station_prefix(leg.held),
+        false => String::new(),
+    };
     let (part, outer) = part_of(sk, leg.face, station, &prefix);
     let pf = part.entity_in(EntRef::face(leg.face as usize))
         .ok_or("the station's face is not in its part")?.i();
@@ -614,8 +673,18 @@ fn leg_part(sk: &Sketch, station: &[EntRef], leg: &Leg, tol: f64) -> Result<LegP
         return Err("its station states rows `initially` and no rate along its running number: \
                     only a station integrated from its home has one".into());
     }
+    // a face drawn in a frame along a path stands where the frame does (#398 C)
+    let along = match along_of(sk, leg.face as usize) {
+        Some((f, m)) => Some(Along {
+            motion: crate::motion::Family::read(sk, m)?,
+            frame: part.entity_in(EntRef::frame(f))
+                .ok_or("the face's frame is not in its part")?.i(),
+            home: chart_pose(sk, f),
+        }),
+        None => None,
+    };
     let rd = Reading { face: pf, held, loops, outer, tol, span: leg.to - leg.from, rated,
-                       flow: Default::default() };
+                       flow: Default::default(), along };
     Ok(LegPart { part, rd, names })
 }
 
@@ -1143,10 +1212,15 @@ fn runs(sk: &Sketch, rd: &Reading) -> Result<Runs, String> {
     })).collect()).collect()
 }
 
-/// Each edge's numbers where the part stands: on its plane's page, lifted.
-fn numbers(sk: &Sketch, rd: &Reading) -> Result<Numbers, String> {
+/// Each edge's numbers where the part stands at `s`: on its plane's page, lifted — and carried to
+/// where a frame along a path puts it (#398 C).
+fn numbers(sk: &Sketch, rd: &Reading, s: f64) -> Result<Numbers, String> {
     let plane = sk.faces[rd.face].plane;
     let basis = plane.map_or(Basis::page(), |p| sk.basis(p as usize));
+    let basis = match rd.carried(sk, s)? {
+        Some(m) => Basis { o: m.point(basis.o), u: m.vector(basis.u), v: m.vector(basis.v) },
+        None => basis,
+    };
     let point = |q: (f64, f64)| basis.lift(q.0, q.1);
     let vector = |x: f64, y: f64| sub(basis.lift(x, y), basis.lift(0.0, 0.0));
     Ok(rd.loops.iter().map(|walked| walked.iter().map(|w| {
@@ -1257,7 +1331,7 @@ fn pieces(sk: &mut Sketch, rd: &Reading, runs: &Runs, start: Node, to: f64, tol:
                     carry(sk, (a.s, &a.x), (last.s, &last.x), s);
                 }
                 match rd.settle(sk, s) {
-                    Ok(_) => nodes.push(Node { s, x: sk.get_x(), numbers: numbers(sk, rd)? }),
+                    Ok(_) => nodes.push(Node { s, x: sk.get_x(), numbers: numbers(sk, rd, s)? }),
                     // an end that will not solve is read as its limit
                     Err(_) if i == 5 && end == to && !limit => { limit = true; continue 'tries; }
                     Err(_) if step > finest && !limit => { h = step / 2.0; break 'tries None; }
@@ -1268,7 +1342,7 @@ fn pieces(sk: &mut Sketch, rd: &Reading, runs: &Runs, start: Node, to: f64, tol:
             let s = here.s + (reach - here.s) * CHECKED_AT;
             put(sk, &nodes[5].x);
             carry(sk, (nodes[4].s, &nodes[4].x), (nodes[5].s, &nodes[5].x), s);
-            let check = match rd.settle(sk, s).and_then(|_| numbers(sk, rd)) {
+            let check = match rd.settle(sk, s).and_then(|_| numbers(sk, rd, s)) {
                 Ok(c) => c,
                 Err(_) if step > finest => { h = step / 2.0; break 'tries None; }
                 Err(why) => return Err(format!("the station at {} {why}", num(s))),
@@ -1342,7 +1416,7 @@ pub(crate) fn walls(sk: &Sketch, si: usize) -> Result<Walls, String> {
             rd.settle(ps, first)
                 .map_err(|why| format!("the station at {} {why}", num(first + leg.at)))?;
         }
-        let centre = Node { s: first, x: ps.get_x(), numbers: numbers(ps, rd)? };
+        let centre = Node { s: first, x: ps.get_x(), numbers: numbers(ps, rd, first)? };
         let tol = EXACT * spread(&runs, &centre.numbers).max(f64::MIN_POSITIVE);
         let up = pieces(ps, rd, &runs, centre.clone(), leg.to, tol)?;
         let down = if carried { Vec::new() } else { pieces(ps, rd, &runs, centre, leg.from, tol)? };

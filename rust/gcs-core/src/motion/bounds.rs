@@ -140,6 +140,24 @@ impl Family {
                 Step::Translation {axis,advance,ref law} =>
                     MotionBounds::identity().advanced(axis,advance,number(law)?)?,
                 Step::Relative {source,observer} => MotionBounds::relative(values[source],values[observer])?,
+                // a frame along a path over a stretch of its parameter (#398 C): its turn's entries
+                // and the path's point enclosed, `x ↦ R (x − o_h) + c` — or no bound at all
+                Step::Guided {ref guide,back} => {
+                    let [lo,hi] = angle.bounds();
+                    let g = guide.stretch(lo,hi).ok_or(Error::InvalidBounds)?;
+                    let iv = |[a,b]: [f64;2]| I::new(a,b);
+                    let mut r = [[I::ZERO;3];3];
+                    for (row,band) in r.iter_mut().zip(&g.turn) {
+                        for (x,&e) in row.iter_mut().zip(band) { *x = iv(e)?; }
+                    }
+                    let c = [iv(g.point[0])?,iv(g.point[1])?,iv(g.point[2])?];
+                    let forward = MotionBounds::new(r,sub(c,mv(r,vector(g.origin)?)?)?);
+                    if back {
+                        let t = transpose(forward.r);
+                        let p = mv(t,forward.p)?;
+                        MotionBounds::new(t,[p[0].neg(),p[1].neg(),p[2].neg()])
+                    } else { forward }
+                }
             };
             values.push(value);
         }

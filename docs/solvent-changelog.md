@@ -4,6 +4,29 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.145] Faces swept over a declared parameter; frames along a path.** A face family runs over a
+declared parameter (§6.9): `param s: Scalar over (a, b)` and `sweep(Station(…).f over s)`, the
+station's formal that runs the one the call gives the parameter (`Tube(g, s: u)` over `u`) or else
+the one named as it, of the parameter's kind (E103 otherwise); `sweep(Station(…).f over s in (a,
+b))` is retired, refused naming the new spelling, and a component's body, which sees no parameter,
+holds no face family. A face of the drawing itself is swept as a declared parameter of any kind
+runs, `sweep(sec over s)`: a face family whose station is the drawing, drawn where the parameter
+stands (its start) and solved again at every other station; a solid swept over a parameter that is
+no angle is E103. What a jointed frame with a value draws in its `in` block stands where the value
+puts it (§6.14; through 0.144, E080): each plane the block draws in is read as that plane drawn in
+the frame (`P in f`), and a relation in the block reads it so, so the drawing at rest is carried
+whole — the epic's helix, `in screw { in std.front { … } }` swept over `s`, is written as shown; a
+declaration drawn in the valued frame and no plane of it is E080, and a frame declared in the block
+still is. A frame's joint held along a path (§6.14), `g coincident f.axis` beside `fix(ratio == 0,
+advance == 0mm) f` (`std.Along(f, g, up: …)`), or ratio 1 (`std.AlongFrenet(f, g)`), makes a frame
+along the path: its pose where the path's parameter is `u` read off the path after the solve, the
+rotation-minimising frame (ratio 0) or the path's own (ratio 1) carried from where the frame is
+drawn, its home; a face drawn in it and swept over a declared parameter stands where the frame
+does at every station. Any other ratio, an advance, a frame drawn off its path, and a relation the
+solve holds reading such a frame are refused (E080). The case library's face families are written
+over declared parameters, `lofts/thread.sv`'s thread as the epic's helix, and `twist_drill/`'s
+roll over a declared one; no solved value moved. (Issue #398, items B and C.)
+
 **[0.144] Relations held to a followed trace.** `trace(m over t)` (§6.5) is a curve a relation may
 hold to — a point on it at an instant, a line tangent to it, a circle osculating it — and a number
 of the drawing that does not run with `t` (a declared unknown, an instance's unbound number) may

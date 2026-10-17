@@ -39,6 +39,7 @@ mod steps;
 mod through;
 mod image;
 mod carried;
+mod valued;
 
 pub use faces::{FaceAxis, FacePlane};
 
@@ -317,6 +318,9 @@ struct Held {
     /// family's formal reads `k + s` there — and the absolute names of its links, one per chain
     /// run in step, on which a contact pinned to `s` reads the leg's own number.
     legs: BTreeMap<String, (f64, Vec<String>)>,
+    /// Each face family's running formal, by its instance's absolute key (#398 B): the one the
+    /// call gives the parameter it runs over, or the one named as it.
+    formals: BTreeMap<String, String>,
     /// The leg whose link the relation being settled names, where it names it: a pin to `s`
     /// there is the leg's running number (`settle_relation`).
     on_leg: Option<(String, f64)>,

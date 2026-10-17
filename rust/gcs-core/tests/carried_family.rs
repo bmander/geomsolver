@@ -104,9 +104,10 @@ fn a_helix_family_is_carried_by_its_screw() {
 #[test]
 fn a_station_read_otherwise_is_built_wall_by_wall() {
     let src = include_str!("../../examples/lofts/thread.sv")
-        .replace("sq := std.CenteredRectangle(c, w: size, h: size) in st.axial",
+        .replace("sq := std.CenteredRectangle(c, w: size, h: size) in std.front",
                  "sq := std.CenteredRectangle(c, w: size + s * 1mm, h: size + s * 1mm) \
-                  in st.axial");
+                  in std.front");
+    assert!(src.contains("size + s * 1mm"));
     let e = determined(&src);
     let thread = e.sketch.exact_solid(ent(&e, "thread").i()).unwrap();
     assert!(carries(&thread.brep).is_empty(), "a swelling section is carried by nothing");

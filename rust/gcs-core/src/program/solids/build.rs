@@ -49,6 +49,20 @@ pub(super) fn build_solid(
     let def = match sweep {
         // a region: the bounds its set put on the probe, gathered as they were stated (§6.21)
         Sweep::Region { probe } => region(sk, res, probe, st, probes, &mut say)?,
+        // a face of the drawing as a declared parameter runs (#398 B): a face family whose
+        // station is the drawing itself
+        Sweep::Swept { motion: None, over, .. } if over.declared && d.seen_from.is_none()
+            && ops.len() == 1 && ops[0].kind == EntKind::Face => {
+            drawn_family(sk, res, ops[0].idx, &over.name, &mut say)?
+        }
+        // the roll is an angle: a solid swept over a parameter of another kind is refused
+        Sweep::Swept { over, .. } if over.declared && sk.parameters.get(&over.name.text)
+            .is_some_and(|p| p.dim != crate::units::Dim::ANGLE) => {
+            say(Code::E103, over.name.span, format!("`{}` is no angle: a reading over the roll \
+                runs over an angle, and a face of the drawing swept over it is a face family, \
+                `sweep(face over {})`", over.name.text, over.name.text));
+            return None;
+        }
         Sweep::Placed { .. } | Sweep::Swept { .. } | Sweep::Rolled { .. } => {
             under_motion(sk, res, sweep, d.seen_from.as_ref(), &ops, st, &mut say)?
         }
@@ -174,6 +188,45 @@ fn family(
         over: crate::model::Running::new(held, dim, a, b),
         legs: legs(sk, res, &f.legs, &faces),
     })
+}
+
+/// **A face of the drawing swept as a declared parameter runs** (#398 B), `sweep(sec over s)`: a
+/// face family whose station is the drawing itself, its running number the parameter, held where
+/// the drawing stands — the interval's start (#391 S4) — and solved again at every other station.
+/// What the face is drawn of, and what that reads, is what moves: every entity of the drawing is
+/// the station's, and the part its face reaches is what each station solves (`solid::family`).
+fn drawn_family(
+    sk: &Sketch,
+    res: &Resolver,
+    face: u32,
+    over: &crate::syntax::Name,
+    say: &mut impl FnMut(Code, Span, String),
+) -> Option<SolidDef> {
+    let Some(running) = sk.parameters.get(&over.text).cloned() else {
+        say(Code::E103, over.span, format!("`{}` names no parameter the document declares",
+                                           over.text));
+        return None;
+    };
+    if !sk.held.contains_key(&over.text) {
+        say(Code::E103, over.span, format!("`{}` is not held where the drawing stands",
+                                           over.text));
+        return None;
+    }
+    let station: BTreeSet<EntRef> = res.of.values().copied()
+        .chain(sk.faces[face as usize].boundaries().flat_map(|(edges, _)| edges.iter().copied()))
+        .filter(|e| !matches!(e.kind, EntKind::Face | EntKind::Solid | EntKind::Motion))
+        .collect();
+    let mut station = station;
+    let mut stack: Vec<EntRef> = station.iter().copied().collect();
+    while let Some(e) = stack.pop() {
+        for c in sk.children(e) {
+            if !matches!(c.kind, EntKind::Face | EntKind::Solid) && station.insert(c) {
+                stack.push(c);
+            }
+        }
+    }
+    Some(SolidDef::Family { face, station: station.into_iter().collect(), over: running,
+                            legs: Vec::new() })
 }
 
 /// A family's legs over a chain (#243 L4), each its station's entities in the order of their
@@ -378,9 +431,8 @@ fn under_motion(
     let (Sweep::Placed { motion, .. } | Sweep::Swept { motion, .. } | Sweep::Rolled { motion, .. }) =
         sweep else { unreachable!() };
     if ops.len() != 1 || ops[0].kind != EntKind::Solid {
-        say(Code::E080,st.span,"a frame's motion moves one solid; a face swept as a formal runs is \
-            a face family, of an instance written in place: `sweep(Component(…).face over s in \
-            (a, b))`".into());
+        say(Code::E080,st.span,"a frame's motion moves one solid; a face swept as a parameter runs \
+            is a face family, `sweep(face over s)` over a declared `param s` (#398)".into());
         return None;
     }
     // drawn in a jointed frame (#391 S3), `tool in f`: placed by the frame's joint at its value,

@@ -34,4 +34,5 @@ in std.top {
   vertical guide
   length(length) guide
 }
-body := sweep(Twisted(guide, std.z, half: half, reach: reach).f over s in (0, 1))
+param s: Scalar over (0, 1)
+body := sweep(Twisted(guide, std.z, half: half, reach: reach).f over s)

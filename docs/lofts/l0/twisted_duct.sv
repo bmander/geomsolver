@@ -43,6 +43,7 @@ in std.top {
   vertical guide
   length(length) guide
 }
-duct := sweep(TwistedSquare(guide, std.z, square, o, x, twist: 90deg).f over s in (0, 1))
+param s: Scalar over (0, 1)
+duct := sweep(TwistedSquare(guide, std.z, square, o, x, twist: 90deg).f over s)
 // Three and a half turns: no pairing can say this.
-auger := sweep(TwistedSquare(guide, std.z, square, o, x, twist: 1260deg).f over s in (0, 1))
+auger := sweep(TwistedSquare(guide, std.z, square, o, x, twist: 1260deg).f over s)

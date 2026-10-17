@@ -62,6 +62,7 @@ fn stamp_frame(stmts: &mut [Stmt], plane: &Ref, errs: &mut Vec<SynErr>) {
             // in (#330): the block's plane, handed on as a reference — which no source writes,
             // a written `from:` being kept as its text — so the flattener tells the two apart
             StmtKind::Relation(r) => {
+                r.within.insert(0, plane.clone());
                 let Some(w) = r.form.written_mut() else { continue };
                 if !w.is_step()
                     || w.args.iter().any(|a| matches!(a, OpArg::Named(n, _) if n.text == "from"))
@@ -500,7 +501,7 @@ impl<'a> P<'a> {
     }
 
     /// Whether the brackets of the `solid(` at the cursor hold an `over` of their own: a face
-    /// family (#243 L1), `sweep(Station(g).f over s in (0, 1))`.
+    /// family (#243 L1), `sweep(Station(g).f over s)`.
     fn family_ahead(&self) -> bool {
         let mut depth = 0i32;
         for (t, _) in self.t.iter().skip(self.i + 1) {
@@ -861,13 +862,13 @@ impl<'a> P<'a> {
                            seen_from: g) τ`)");
                 return None;
             }
-            // `duct := sweep(Station(g).f over s in (0, 1))` — a face of a component as one of
+            // `duct := sweep(Station(g).f over s)` — a face of a component as one of
             // its formals runs, one dimension up from a curve (#243 L1) — and `s := sweep(tool
             // over t in (a, b))`, a solid a motion sweeps (#391 S2)
             Some("sweep") if call => StmtKind::Decl(self.sweep_decl(DeclName::Written(name))?),
             // `solid(… over s in (a, b))` is retired (#391 S2) for the sweep
             Some("solid") if call && self.family_ahead() => {
-                self.fail("a face family is `sweep(Component(…).face over s in (a, b))` (#391): \
+                self.fail("a face family is `sweep(Component(…).face over s)` (#391, #398): \
                            `solid(… over …)` is retired");
                 return None;
             }
@@ -1252,8 +1253,9 @@ impl<'a> P<'a> {
         Some(CurveSpec { target, swept, domain, second, of: None })
     }
 
-    /// What follows a face family's `sweep` (#391 S2): `(Component(args).face over IDENT in (a,
-    /// b))`, the instance written in place (#243 L1, finding 11).  The instance's key is one the
+    /// What follows a face family's `sweep` (#391 S2, #398 B): `(Component(args).face over IDENT)`,
+    /// the instance written in place (#243 L1, finding 11), `IDENT` a declared parameter whose
+    /// interval the family runs over.  The instance's key is one the
     /// source cannot write, as a curve's is; the face is read under it once the flattener has
     /// bound it.
     pub(super) fn family(&mut self, name: DeclName) -> Option<crate::syntax::Decl> {
@@ -1265,7 +1267,7 @@ impl<'a> P<'a> {
         if self.call_at(self.i).is_none() {
             self.fail(
                 "a face family is the face of an instance written in place: \
-                 `sweep(Component(…).face over s in (a, b))`",
+                 `sweep(Component(…).face over s)`",
             );
             return None;
         }
@@ -1278,15 +1280,19 @@ impl<'a> P<'a> {
         }
         let face = self.refr()?;
         if !self.eat_word("over") {
-            self.fail("a face family says which formal runs: `over s in (a, b)`");
+            self.fail("a face family says the parameter it runs over: `over s`, a `param s: \
+                       Scalar over (a, b)` of the document");
             return None;
         }
         let swept = self.ident()?;
-        if !self.eat_word("in") {
-            self.fail("a face family says the interval its formal runs over: `in (a, b)`");
+        // its interval is the declared parameter's (#398 B): `over s in (a, b)` is retired
+        if self.peek_word("in") {
+            self.fail(&format!("a face family runs over a declared parameter (#398): `param {0}: \
+                Scalar over (a, b)` and `sweep(Station(…).f over {0})` — `over {0} in (a, b)` is \
+                retired", swept.text));
             return None;
         }
-        let [(a, _), (b, _)] = self.pair()?;
+        let (a, b) = (String::new(), String::new());
         if !self.want_p(')') {
             return None;
         }
@@ -1347,7 +1353,7 @@ impl<'a> P<'a> {
     }
 
     /// What follows a definition's `sweep` (#391 S2): a face family, `sweep(Component(args).face
-    /// over s in (a, b))` (`family`), or a solid a frame's motion sweeps — `sweep(tool over t in
+    /// over s)` (`family`), or a solid a frame's motion sweeps — `sweep(tool over t in
     /// (a, b))` over an interval of the roll, `sweep(tool, through: body)` over the roll during
     /// which it meets a body — with `under:` the frame it is swept by where it rides on none and
     /// `seen_from:` the one it is seen from.

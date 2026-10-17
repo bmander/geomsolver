@@ -294,12 +294,14 @@ pub enum SolidDef {
     /// body applied to a hidden `probe` point, each bound it put there one of `terms`.  Its terms
     /// share one axis, so it is a revolution of one meridian region (`solid::region`).
     Region { probe: u32, terms: Vec<RegionTerm> },
-    /// **A face family** (#243 L1, `sweep(I(…).f over s in (a, b))`): the solid the face `face`
-    /// of a station sweeps as its running number runs over `over` (#391 S1: its name the key in
-    /// `Sketch::held`, its dimension the formal's, its ends as written).  The station is drawn
-    /// once, hidden — `station`, every entity its instance made — at the middle of the interval,
-    /// and `solid::family` solves it again at every other.  Its caps are `start` and `end`, its
-    /// walls the section's edges by their paths in the instance.
+    /// **A face family** (#243 L1, `sweep(I(…).f over s)`, #398 B): the solid the face `face` of
+    /// a station sweeps as its running number runs over `over` (#391 S1: its name the key in
+    /// `Sketch::held`, its dimension the formal's, its ends a declared parameter's).  The station
+    /// is drawn once, hidden — `station`, every entity its instance made — at the middle of the
+    /// interval, and `solid::family` solves it again at every other.  A face of the drawing itself
+    /// swept over a declared parameter (`sweep(sec over s)`) is one too: its station the drawing,
+    /// drawn where the parameter stands, its running number the parameter.  Its caps are `start`
+    /// and `end`, its walls the section's edges by their paths in the instance.
     ///
     /// Over a chain (#243 L4) the station is drawn once per link the interval reaches, each a
     /// leg (`legs`, in order; `face` and `over.name` the first's, `station` every leg's
@@ -579,6 +581,15 @@ pub enum MotionDef {
     /// this one (`motion::Law`).  A row the solve holds reads no law, so a relation reading it is
     /// refused (`envelope::held`, `program::relations`).
     Driven { of: u32, law: String, over: String },
+    /// **A frame along a path** (#398 C): the jointed frame `frame` whose joint is held along the
+    /// path `guide` (`g coincident f.axis`, `std.Along`), standing where the path's parameter puts
+    /// it — its pose at `u` read off the guide after the solve, the frame square to the path's
+    /// tangent there and turned as the path makes it from where the frame is drawn, its home.
+    /// `torsion` is how much of the path's torsion it turns with: 0 the rotation-minimising frame
+    /// (`std.On`'s, `std.Minimal`'s), 1 the path's own (`std.Frenet`'s).  Read after the solve
+    /// (`motion::Family`) by what rides on the frame and is swept as a parameter runs; a row reads
+    /// no guide (`envelope::held`).
+    Guided { guide: EntRef, frame: u32, torsion: f64 },
 }
 
 #[derive(Clone, Debug)]

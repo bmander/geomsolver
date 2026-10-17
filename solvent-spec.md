@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.144 — October 2026**
+**Specification, Draft 0.145 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -936,11 +936,20 @@ block := solid(face(mouth, side_r, lid, side_l), from: face, to: back)
 - **[0.80] A drafted prism** adds `draft: θ`, an `Angle`, to a prism's `from:`/`to:` or `depth:` and to nothing else (refused where written). Its sides lean by `θ` from the face's own plane, the **parting plane** (ordinate 0, wherever the prism's ordinates are): the section at ordinate `h` is the face's loops each moved `|h| tan θ` into the face's material, every side along its own normal — a line square to itself, a circle's radius less (a hole's more) — and each corner where the moved sides either side of it meet. So the section shrinks away from the parting plane on both sides of it, as a part comes out of a die split there; a negative `θ` leans the sides the other way. A straight side is a plane and a circle's side a cone. A side the move takes to nothing, or turns round, within the prism's ordinates refuses the solid where it is evaluated; `|θ|` of a right angle or more is **E080**. Faces keep the prism's names (`.near`, `.far`, a side per edge, §3.2): a side crossing the parting plane is two pieces under its one name, which a round over that side's faces (§6.21) takes as one face, so the crease between them stays sharp. A drafted side leans off its face's plane, so it is not yet a set to draw on (**E040**; its caps are).
 - **A through prism** is written `tool := solid(section, through: target)`. Its target MUST be a solid (**E080**); it spans the target in both directions along the section's own plane normal. The extent is evaluated after the sketch is solved: recursively collect the target's stock and additions, ignoring all cuts, project a conservative bound of that material along the normal, and pad both ends outside the material at the kernel's tolerance. The target may be a swept solid or a body. Changes to its material geometry or placement change the extent; subtractive tools do not enlarge it. `through:` cannot be mixed with any other sweep label, and does not itself subtract anything. Apply the tool separately with `tool cut body`.
 - **[0.88] A rolled sweep** is written **[0.140]** `removal := sweep(tool, through: body, under: m)`: the tool swept under the motion `m` (§6.14) over the whole roll about 0 during which it meets `body`'s material, `body` a solid (**E080**). As for a through prism, the material is the target's stock and additions, ignoring all cuts, so `removal` may cut `body` (placed copies included) without a cycle; using it as the body's stock or a `union` with it is **E041**. The roll is evaluated after the sketch is solved, marching out from 0 each way until the tool, over a whole step of the roll, is proved clear of the material: conservative, so it may run a little past where the tool first clears and never stops short, and at each end the tool is clear of the body. One where the tool does not meet the body at 0, or is not clear of it within two turns either way, or whose tool or body cannot be read as a static field with a bounded support, is refused where the solid is evaluated, naming why. A generating sweep's roll limit is then no design number: within the window that clears the blank at both ends, the cut does not depend on it. `from:`/`to:` remain for a roll stated outright (a sweep over a whole period, or a negative control), and cannot be mixed with `through:`. A placed copy (`removal at(under: index) θ`) moves the sweep whose roll was found against `body` as it stands.
-- **[0.97] A face family** is written **[0.140]** `duct := sweep(Station(guide, …).f over s in (a, b))`: the
-  solid the face `f` of an instance of `Station` sweeps as its numeric formal `s` runs from `a` to
-  `b` — §6.5's curve one dimension up. The instance MUST be written in place (a drawn station is a
-  syntax error), MUST leave `s` unbound (**E103**), and `s` MUST be one of its numeric formals
-  (**E103**); `a < b` (**E080**). The instance is never drawn: no stroke, pane or callout of it
+- **[0.97] A face family** is written **[0.145]** `duct := sweep(Station(guide, …).f over s)`, `s`
+  a parameter the document declares (`param s: Scalar over (a, b)`, §6.3; through 0.144 the
+  interval was written in place, `over s in (a, b)`, which MUST NOT parse and SHOULD be refused
+  naming this spelling): the solid the face `f` of an instance of `Station` sweeps as its numeric
+  formal runs over the parameter's interval — §6.5's curve one dimension up. The formal that runs
+  is the one the call gives the parameter (`Tube(g, s: u)` over `u`), or else the one named as
+  it; it MUST be one of its numeric formals of the parameter's kind (**E103**), and the call MUST
+  give it nothing else (**E103**). The instance MUST be written in place; a component's body sees
+  no parameter, so a face family stands in the document (**E103**). **[0.145]** A face of the
+  drawing itself — a station drawn in the document and given the parameter, a section drawn in a
+  frame with a value (§6.14) or in a frame along a path — is swept as a declared parameter of any
+  kind runs, `sweep(sec over s)`: a face family whose station is the drawing, drawn where the
+  parameter stands (its start) and solved again at every other station; a solid swept over a
+  parameter that is no angle is **E103** (the roll is an angle). The instance is never drawn: no stroke, pane or callout of it
   reaches a page. `s` is **held**, never an unknown of the drawing: the station is solved with
   the drawing at the middle of the interval, and at every other station `s` stands at its number
   and the instance alone is solved again, the drawing held where it stands, each station starting
@@ -971,7 +980,7 @@ block := solid(face(mouth, side_r, lid, side_l), from: face, to: back)
   (0.110; through 0.109 `Screwed` and `OnHelix`, each about an axis given apart from its base).
   The section is the document's own component drawn `in st.n`, reading `s` where it runs (a size
   `inlet + (outlet - inlet) * s`, a corner's coordinates, a turn): `duct := sweep(Reducer(guide,
-  std.z, inlet: 24mm, outlet: 12mm).sec.profile over s in (0, 1))`. Two
+  std.z, inlet: 24mm, outlet: 12mm).sec.profile over s)`, `param s: Scalar over (0, 1)`. Two
   sections correspond by being one, so no pairing rule is written anywhere. `solid(section,
   along: guide)` and `solid(start_section, end_section, along: guide)` — through 0.99 a section
   carried along a line or an arc, or two joined edge to edge in written order — MUST NOT parse;
@@ -1442,10 +1451,50 @@ reading `x at(under: f) τ` whose instant is the frame's value rather than the s
 makes what `x` is, as `x at τ` does: a frame carried whole, a solid placed, a point held. `x` is
 carried from where it is drawn, whatever it rides on, and what the reading makes rides on nothing.
 A value is a jointed frame's (**E080** otherwise) and is stated once (**E040**). A frame with a
-value rides on no frame, and nothing rides on it: a declaration in its `in` block would stand
-where it is drawn and not where the value puts it, so it is **E080**, naming `n := base in f` — a
-frame drawn in it, in which the declaration is drawn instead. `p := point in P` remains a point's
-membership: `in` after a kind is the plane it is drawn in.
+value rides on no frame, and no frame rides on it (**E080**, naming `n := base in f`).
+`p := point in P` remains a point's membership: `in` after a kind is the plane it is drawn in.
+
+**[0.145] Drawn in a frame with a value.** What a jointed frame with a value draws in its `in`
+block stands where the value puts it (through 0.144, **E080**): each plane the block draws in is
+read as that plane drawn in the frame, `P in f`, and so is every reference to it a relation of the
+block writes — the block is the drawing at rest, carried whole by the frame's joint at its value,
+read again wherever the value is (a station of a family). What it declares rides on nothing more.
+A declaration drawn in the valued frame and in no plane of it is **E080** (a value carries a
+plane), and a frame declared in the block still rides on the valued frame (**E080**). So the helix
+of issue #391 is written as it is drawn:
+
+```
+param s: Scalar over (0, 1)
+screw := frame
+std.Turn(screw, about: std.top.normal, ratio: 1, advance: pitch)
+fix(value == 360deg * turns * s) screw
+in screw {
+  in std.front {                        // the front plane as the screw carries it
+    c := point
+    c on_u(d: r) std.front
+  }
+  sq := std.CenteredRectangle(c, w: size, h: size) in std.front
+  sec := face(sq.loop)
+}
+thread := sweep(sec over s)             // §6.9: the drawing's face as `s` runs
+```
+
+**[0.145] A frame along a path.** A frame's joint may be held **along a path** — a line, an arc, a
+spline in a plane or over points in space, a curve traced in space — rather than about a line:
+`g coincident f.axis` beside `fix(ratio == ρ, advance == 0mm) f`. The frame then stands where the
+path's parameter `u` puts it (a line's and an arc's fraction of its run, a spline's parameter, a
+traced curve's formal): square to the path's tangent there, turned as the path makes it from where
+the frame is drawn, its **home** — the parameter where its origin stands on the path. `ρ` is how
+much of the path's torsion it turns with: 0, the **rotation-minimising** frame, whose axes square
+to the tangent turn only as the tangent does (`On`'s and `Minimal`'s, §6.9), and 1, the path's
+**own frame**, its `u` toward the centre of curvature (`Frenet`'s); any other is **E080**, as is
+an advance. The standard library's `std.Along(f, g, up: u, home: h)` and `std.AlongFrenet(f, g,
+home: h)` state it and draw the frame at its home. Its pose is read off the path after the solve,
+as a motion is (`x ↦ R(u) (x − c(h)) + c(u)`, `R(u)` the turn from the frame at the home to the one
+at `u`): a face drawn in it and swept as a declared parameter runs, `sweep(sec over s)` (§6.9),
+stands at every station where the frame does, `s` the path's parameter, and a frame drawn off its
+path is refused once the drawing has solved (**E080**). A relation the solve holds reads no frame
+along a path (**E080**): draw in it, and sweep what is drawn.
 
 **[0.143] A drive.** A value that reads a declared parameter (`param t: Angle over (a, b)`, §6.3)
 *drives* its frame by it: the value is the frame's **law**, any expression of the parameter — a

@@ -57,14 +57,15 @@ grind := frame
 std.Turn(grind, about: ax, ratio: 1, advance: configuration.lead)
 index := frame
 std.Turn(index, about: ax, ratio: 1)
-// from a wheel's rim below the stock to past its top
+// the roll each wheel runs over, from its rim below the stock to past its top (#398)
 start := -360deg * configuration.flute_wheel.rim / configuration.lead
 finish := 360deg * (configuration.fluted_length + configuration.flute_wheel.rim) / configuration.lead
+param t: Angle over (start, finish)
 
 fluted := solid(stock)
 
 flute_wheel := wheel.GrindingWheel(side, setting: configuration.helix, wheel: configuration.flute_wheel)
-construction flute := sweep(flute_wheel.body over t in (start, finish), under: grind)
+construction flute := sweep(flute_wheel.body over t, under: grind)
 
 // the clearance wheel rides the same screw turned `clearance_phase` on about the axis: drawn
 // turned, on the side datum turned so — a screw's roll 0 is as drawn, and a screw turned by a
@@ -75,7 +76,7 @@ clearance_side := plane(u: down, v: clearance_v)
 fix(origin == (0, 0, 0)) clearance_side
 clearance_wheel := wheel.GrindingWheel(clearance_side, setting: configuration.helix,
                                        wheel: configuration.clearance_wheel)
-construction body_clearance := sweep(clearance_wheel.body over t in (start, finish), under: grind)
+construction body_clearance := sweep(clearance_wheel.body over t, under: grind)
 
 repeat configuration.flutes as i {
   construction flute_at := flute at(under: index) i * 360deg / configuration.flutes

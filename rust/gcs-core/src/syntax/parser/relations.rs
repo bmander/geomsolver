@@ -184,6 +184,7 @@ impl<'a> P<'a> {
             along: None,
             space: false,
             initially: false,
+            within: Vec::new(),
         })
     }
 

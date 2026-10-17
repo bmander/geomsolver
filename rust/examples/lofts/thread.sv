@@ -1,8 +1,10 @@
 // A screw thread and an auger's flight (#243 L6): a section carried along a screw.
-// `std.Helix(base, pitch:, turns:, s:)` carries `base` by the screw about its normal, turned
-// `360deg · turns · s` and lifted `pitch · turns · s` along it (#366). A section drawn in its
-// `axial` plane, through the axis, sweeps a thread; one drawn in `n`, the base so carried, sweeps
-// a twisted prism — a flight. Each is the screw's sweep of its section, exactly, and a negative
+// The thread is the epic's helix (#391, #398): a frame turning about the top plane's normal and
+// rising `pitch` a turn, whose value is `360deg · turns · s`, and the square drawn in its block
+// on the front plane, through the axis — it stands where the value puts it, so swept as `s` runs
+// it sweeps a thread. The flight is `std.Helix(base, pitch:, turns:, s:)`'s station, `base`
+// carried by the same screw about its normal (#366): a section drawn in its `n`, square to the
+// axis, sweeps a twisted prism. Each is the screw's sweep of its section, exactly, and a negative
 // pitch winds left-handed.
 // Closed forms:
 //   thread: a 2 mm square centred 10 from the axis, 3 turns at a pitch of 4; an axial section
@@ -18,16 +20,6 @@ r := 10mm
 size := 2mm
 pitch := 4mm
 turns := 3
-
-component Thread(base: plane, r: Length, size: Length, pitch: Length, turns: Scalar, s: Scalar) {
-  st := std.Helix(base, pitch: pitch, turns: turns, s: s)
-  in st.axial {
-    c := point
-    c on_u(d: r) st.axial
-  }
-  sq := std.CenteredRectangle(c, w: size, h: size) in st.axial
-  f := face(sq.loop)
-}
 
 component Flight(base: plane, off: Length, w: Length, h: Length, pitch: Length, turns: Scalar,
                  s: Scalar) {
@@ -45,7 +37,20 @@ component Flight(base: plane, off: Length, w: Length, h: Length, pitch: Length, 
   f := face(a, b, c, d, -> close)
 }
 
-thread := sweep(Thread(std.top, r: r, size: size, pitch: pitch, turns: turns).f
-                over s in (0, 1))
+param s: Scalar over (0, 1)
+
+// the screw, at its value over `s`, and the square drawn in its block on the axial plane
+screw := frame
+std.Turn(screw, about: std.top.normal, ratio: 1, advance: pitch)
+fix(value == 360deg * turns * s) screw
+in screw {
+  in std.front {
+    c := point
+    c on_u(d: r) std.front
+  }
+  sq := std.CenteredRectangle(c, w: size, h: size) in std.front
+  sec := face(sq.loop)
+}
+thread := sweep(sec over s)
 flight := sweep(Flight(std.top, off: 6mm, w: 4mm, h: 2mm, pitch: 12mm, turns: 2.5).f
-                over s in (0, 1))
+                over s)

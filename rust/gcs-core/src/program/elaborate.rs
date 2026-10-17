@@ -550,7 +550,8 @@ fn constraints(
             continue;
         }
         let StmtKind::Relation(r) = &st.kind else { continue };
-        if gauges::is_fix(r) || drawn.contains(&i) || kept_off.contains(&i) {
+        if gauges::is_fix(r) || drawn.contains(&i) || kept_off.contains(&i)
+            || cx.res.guides.contains(&st.id) {
             continue;
         }
         // a relation reading a region's terms is stated once the solids hold them (#345)

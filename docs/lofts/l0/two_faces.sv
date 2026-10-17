@@ -36,4 +36,5 @@ in end_plane {
 }
 inlet := face(a0, a1, a2, a3, -> close)
 outlet := face(b0, b1, b2, b3, -> close)
-body := sweep(std.Ruled(inlet, outlet).f over s in (0, 1))
+param s: Scalar over (0, 1)
+body := sweep(std.Ruled(inlet, outlet).f over s)

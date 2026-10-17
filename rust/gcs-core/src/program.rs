@@ -50,7 +50,20 @@ pub fn solid_diagnostics(sk: &crate::model::Sketch, map: &SourceMap) -> Vec<Diag
         }
     }
     for i in 0..sk.motions.len() {
-        if let Err(message) = crate::motion::evaluate(sk,i,0.) {
+        // a drive over a number that is no angle is read over the roll by nothing (#398 B): a
+        // reading that would is refused where it is made (`motions::reading_of`), and what is
+        // drawn in the frame reads the joint at its value, followed as the number runs
+        if let crate::model::MotionDef::Driven { ref over, .. } = sk.motions[i].def {
+            if sk.parameters.get(over).is_some_and(|p| p.dim != crate::units::Dim::ANGLE) {
+                continue;
+            }
+        }
+        // a frame along a path is read over its path's parameter, which need not reach 0
+        let read = match sk.motions[i].def {
+            crate::model::MotionDef::Guided { .. } => crate::motion::Family::read(sk,i).map(|_| ()),
+            _ => crate::motion::evaluate(sk,i,0.).map(|_| ()),
+        };
+        if let Err(message) = read {
             let site = map.site_of(crate::model::EntRef::new(crate::model::EntKind::Motion,i));
             diags.push(Diag::new(Code::E080,site.map(|s| s.span).unwrap_or_default(),
                 site.map(|s| s.stmt),message));

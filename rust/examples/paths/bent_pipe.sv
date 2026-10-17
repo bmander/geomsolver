@@ -72,5 +72,6 @@ component Bar(g: path, up: axis, lo: Length, hi: Length, s: Scalar) {
   f := face(a, b, c, d, -> close)
 }
 
-pipe := sweep(Tube(route, std.z, r: r).f over s in (0, 5))
-bar := sweep(Bar(route, std.z, lo: -1mm, hi: 2mm).f over s in (0, 5))
+param s: Scalar over (0, 5)
+pipe := sweep(Tube(route, std.z, r: r).f over s)
+bar := sweep(Bar(route, std.z, lo: -1mm, hi: 2mm).f over s)

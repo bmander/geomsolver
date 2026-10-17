@@ -89,7 +89,8 @@ in std.top {{
   fix((100mm, 30mm)) k3
   curvy := spline(k0, k1, k2, k3)
 }}
-tube := sweep(Tube({guide}, std.z).f over s in (0, 1))
+param s: Scalar over (0, 1)
+tube := sweep(Tube({guide}, std.z).f over s)
 ")
 }
 
@@ -181,7 +182,7 @@ fn a_law_reads_the_chain_s_running_number() {
 /// the first bend to halfway along the second, half a bend, a straight and half a bend.
 #[test]
 fn part_of_a_chain_is_the_links_it_reaches() {
-    let e = determined(&PIPE.replace("over s in (0, 5)", "over s in (1.5, 3.5)"));
+    let e = determined(&PIPE.replace("param s: Scalar over (0, 5)", "param s: Scalar over (1.5, 3.5)"));
     near(exact(&e, "pipe"), 16.0 * PI * (20.0 + 25.0 * PI / 2.0), 1e-9, "half the U");
 }
 
@@ -190,7 +191,7 @@ fn part_of_a_chain_is_the_links_it_reaches() {
 /// that link's number plus its index.
 #[test]
 fn a_chain_family_refuses_what_it_cannot_run() {
-    let said = refused(&PIPE.replace("over s in (0, 5)", "over s in (0, 6)"));
+    let said = refused(&PIPE.replace("param s: Scalar over (0, 5)", "param s: Scalar over (0, 6)"));
     assert!(said.iter().any(|m| m.contains("has 5 links") && m.contains("within (0, 5)")),
             "{said:?}");
     let closed = "unit mm
@@ -214,7 +215,8 @@ in std.top {
   ring := length(20mm) horizontal (ab := line(a, b)) -> vertical (bc := line(b, c)) ->
     horizontal (cd := line(c, d)) -> length(20mm) vertical (da := line(d, a)) -> close
 }
-body := sweep(Tube(ring, std.z).f over s in (0, 4))
+param s: Scalar over (0, 4)
+body := sweep(Tube(ring, std.z).f over s)
 ";
     let said = refused(closed);
     assert!(said.iter().any(|m| m.contains("closed chain")), "{said:?}");

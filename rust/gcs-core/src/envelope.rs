@@ -82,6 +82,12 @@ impl Motion {
         Ok(Self { p: offset, dp: velocity, ..Self::identity() })
     }
 
+    /// A pose `x ↦ r·x + p` and its rate, `dr` and `dp`, given outright: a frame read off a path
+    /// (`motion::guide`, #398 C), whose turn is no rotation about one axis.
+    pub(crate) fn of_parts(r: M3, dr: M3, p: V3, dp: V3) -> Self {
+        Self { r, dr, p, dp }
+    }
+
     /// Apply this motion, then `next`: the resulting matrix is `next * self`.
     pub fn then(self, next: Self) -> Self {
         Self {

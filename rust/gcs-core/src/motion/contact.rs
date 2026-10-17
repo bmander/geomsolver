@@ -40,6 +40,8 @@ impl Family {
             Step::Rotation {..} => (self.steps.last().unwrap(),None),
             Step::Relative {source,observer} => (&self.steps[source],Some(&self.steps[observer])),
             Step::Translation {..} => return Err("temporal contacts require a rotation or two relative rotations".into()),
+            Step::Guided {..} => return Err("temporal contacts are read of constant rates, and a \
+                frame along a path turns as its path does (#398)".into()),
         };
         // a rack: a translation seen from a rotating blank
         if self.steps.iter().any(Step::is_driven) {
