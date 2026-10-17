@@ -70,17 +70,33 @@ fn a_profile_listed_out_of_order_is_walked() {
 
 /// A recipe: a ring about z (r 10–20, z 0–5) bounded by a ring about the parallel line through
 /// (3, 0) (r 8–15, z −1–6), that one drawn about z and placed there.
-fn rings() -> gcs_core::json::Json {
+fn rings() -> gcs_core::json::Json { rings_tilted(0.) }
+
+/// `rings`, the second ring's line also turned by `tilt` (radians) about x.
+fn rings_tilted(tilt: f64) -> gcs_core::json::Json {
+    let (c,s) = (tilt.cos(),tilt.sin());
     let rect = |r0: f64,r1: f64,z0: f64,z1: f64| format!(r#"{{"origin":[0,0,0],"normal":[0,1,0],"loops":[[
         {{"kind":"line","start":[{r0},0,{z0}],"end":[{r1},0,{z0}]}},{{"kind":"line","start":[{r1},0,{z0}],"end":[{r1},0,{z1}]}},
         {{"kind":"line","start":[{r1},0,{z1}],"end":[{r0},0,{z1}]}},{{"kind":"line","start":[{r0},0,{z1}],"end":[{r0},0,{z0}]}}]]}}"#);
     let text = format!(r#"{{"root":4,"nodes":[
         {{"id":1,"kind":"revolve","name":"a","origin":[0,0,0],"axis":[0,0,1],"angle":{tau},"profile":{a}}},
         {{"id":2,"kind":"revolve","name":"b","origin":[0,0,0],"axis":[0,0,1],"angle":{tau},"profile":{b}}},
-        {{"id":3,"kind":"placed","name":"b2","source":2,"matrix":[1,0,0,3, 0,1,0,0, 0,0,1,0]}},
+        {{"id":3,"kind":"placed","name":"b2","source":2,"matrix":[1,0,0,3, 0,{c},{n},0, 0,{s},{c},0]}},
         {{"id":4,"kind":"body","name":"body","stock":1,"on":[],"cut":[],"bound":[3]}}]}}"#,
-        tau=std::f64::consts::TAU,a=rect(10.,20.,0.,5.),b=rect(8.,15.,-1.,6.));
+        tau=std::f64::consts::TAU,a=rect(10.,20.,0.,5.),b=rect(8.,15.,-1.,6.),n=-s);
     gcs_core::json::parse(&text).unwrap()
+}
+
+/// A line parallel only to its rounding, as a solved one is (the cutter of an 18-tooth hypoid
+/// pair's gear, 2.7e-12 off), is read as parallel: the section moves by the tilt times the reach,
+/// within the recipe's tolerance. A tilt that moves it farther is still refused.
+#[test]
+fn a_line_parallel_within_the_tolerance_sections_as_parallel() {
+    use gcs_core::brep::section::Sectioned;
+    let s = Sectioned::read(&rings_tilted(1e-11)).unwrap();
+    close(s.section([1.,0.,0.]).unwrap().area(),5.*(18.-11.),1e-9);
+    let refused = Sectioned::read(&rings_tilted(1e-6)).err().unwrap();
+    assert!(refused.to_string().contains("not parallel to the first's"),"{refused}");
 }
 
 #[test]
@@ -173,4 +189,43 @@ fn a_chamfers_sum_of_distances_is_a_line_or_a_conic() {
     let ends = [conic.start(),conic.end()];
     assert!(ends.iter().any(|p| p[1].abs() < 1e-12 && (p[0]-(4.-la)).abs() < 1e-12));
     assert!(ends.iter().any(|p| (p[0].hypot(p[1])-4.).abs() < 1e-12 && (p[1]-lb).abs() < 1e-12));
+}
+
+/// Two rounded corners tangent to one line a hair apart, as a gear cutter's crown and its
+/// neighbour meet at an 18-tooth hypoid pair's tip: a stretch of one arc lies within the tolerance
+/// of the other at its middle but not at its end, so it is no stretch the two share, and the
+/// Common closes. `a` is [0, 10] × [0, 1] rounded at its top left, `b` [−10, 1 − δ] × [0, 1] at its
+/// top right, the arcs' tangent points δ apart on the top: the stretch between where they cross and
+/// `a`'s tangent point is δ²/2 off `b` at its middle and δ² at its end, either side of `tol`.
+#[test]
+fn near_tangent_corners_combine_and_close() {
+    let (r,d,tol) = (0.5,1e-3,7e-7);
+    let h = std::f64::consts::FRAC_PI_2;
+    let a = Region::plain(vec![vec![Seg::Line {a:[10.,0.],b:[10.,1.]},Seg::Line {a:[10.,1.],b:[r,1.]},
+        Seg::Arc {c:[r,1.-r],r,a0:h,sweep:h},Seg::Line {a:[0.,1.-r],b:[0.,0.]},Seg::Line {a:[0.,0.],b:[10.,0.]}]]);
+    let xb = r-d;
+    let b = Region::plain(vec![vec![Seg::Line {a:[-10.,0.],b:[xb+r,0.]},Seg::Line {a:[xb+r,0.],b:[xb+r,1.-r]},
+        Seg::Arc {c:[xb,1.-r],r,a0:0.,sweep:h},Seg::Line {a:[xb,1.],b:[-10.,1.]},Seg::Line {a:[-10.,1.],b:[-10.,0.]}]]);
+    // [0, 1 − δ] × [0, 1] rounded by both arcs, which cross at x = r − δ/2: nothing of the top
+    let common = boolean(&a,&b,Op::Common,tol).unwrap();
+    assert_eq!(common.loops.len(),1);
+    let mut sweep = 0.;
+    for s in &common.loops[0] {
+        match s.seg {
+            Seg::Arc {c,r: q,sweep: w,..} => {
+                close(q,r,1e-15); close(c[1],1.-r,1e-15);
+                assert!(c[0] == r || c[0] == xb,"an arc about {c:?}");
+                sweep += w.abs();
+            }
+            Seg::Line {a: p,b: q} => assert!(p[1].max(q[1]) < 1.-r+1e-12 || (p[0]-q[0]).abs() < 1e-15,"{p:?} {q:?}"),
+            Seg::Conic {..} => unreachable!("lines and arcs make no conic"),
+        }
+    }
+    let crossing = common.loops[0].iter().filter(|s| matches!(s.seg,Seg::Arc {..}))
+        .flat_map(|s| [s.start(),s.end()]).filter(|p| p[1] > 1.-r+0.1).collect::<Vec<_>>();
+    assert_eq!(crossing.len(),2);
+    for p in crossing { close(p[0],r-d/2.,1e-9); }
+    close(sweep,PI-2.*(d/2./r).asin(),1e-9);
+    // and their union closes too, one loop
+    assert_eq!(boolean(&a,&b,Op::Union,tol).unwrap().loops.len(),1);
 }

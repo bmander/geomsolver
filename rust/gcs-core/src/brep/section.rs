@@ -38,6 +38,16 @@ pub struct Sectioned { pub origin: V,pub axis: V,leaves: Vec<Leaf>,nodes: Vec<(i
 /// The tag a revolution's meridian step bounds: its revolution, loop and place.
 fn tag(leaf: usize,l: usize,k: usize) -> u32 { ((leaf as u32+1) << 16) | edge_tag(l,k) }
 
+/// How far a meridian `region` reaches from a point `at` from its line's origin: its farthest
+/// point in `(r, z)`, read at each step's ends and seven places between (an arc's farthest point
+/// between two of them at most 8% farther), plus `at`.
+fn reach(region: &Region,at: f64) -> f64 {
+    let far = region.loops.iter().flatten()
+        .flat_map(|st| (0..=8).map(move |i| st.point(i as f64/8.)))
+        .map(|p| p[0].hypot(p[1])).fold(0.,f64::max);
+    far+at
+}
+
 /// `tag`'s inverse: the revolution (`None` for no leaf's), loop and place.
 fn untag(tag: u32) -> (Option<usize>,usize,usize) {
     ((((tag >> 16) & 0x3ff) as usize).checked_sub(1),((tag >> 10) & 0x3f) as usize,(tag & 0x3ff) as usize)
@@ -85,7 +95,6 @@ impl Sectioned {
         let Some(&(origin,axis,..)) = profiles.first() else { return Err(refused("no revolution")) };
         let mut leaves = Vec::new();
         for (o,a,so,sa,profile,name) in profiles {
-            if norm(cross(a,axis)) > 1e-12 { return Err(refused("a revolution about a line not parallel to the first's")) }
             // the meridian in its own (r, z), read where it was drawn: a placement is rigid, and
             // moves only the line
             let loops = match meridian_of(&profile,so,sa,tol,false) {
@@ -96,6 +105,12 @@ impl Sectioned {
             };
             let region = Region::new(loops.into_iter().enumerate()
                 .map(|(li,l)| l.into_iter().enumerate().map(|(k,seg)| Step {seg,chart:None,tag:edge_tag(li,k)}).collect()).collect());
+            // parallel to the tolerance: read as about a line parallel to the first's, each point
+            // of the revolution moves by the sine between the lines times its reach from where they
+            // are compared — a solved line is parallel to its rounding, not exactly
+            if norm(cross(a,axis))*reach(&region,norm(sub(o,origin))) > tol {
+                return Err(refused("a revolution about a line not parallel to the first's"))
+            }
             leaves.push(Leaf {o,a,region,name,edges:profile.names.clone()});
         }
         Ok(Sectioned {origin,axis,leaves,nodes:out,root:recipe.root,tol})
