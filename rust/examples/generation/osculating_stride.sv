@@ -1,8 +1,8 @@
 // A Jansen leg whose stride bends at a stated radius where it touches the ground, its toe rod
 // solved.
 //
-// The leg and its traced stride are `stride.sv`'s: the heel-to-toe rod `h` is left unbound, so it
-// is an unknown of the drawing (`leg.h`) and a column of the stride.  Here the ground is level at a
+// The leg and its stride are `stride.sv`'s, the crank at `t`: the heel-to-toe rod `h` is left
+// unbound, so it is an unknown of the drawing (`leg.h`), which the stride is solved through.  Here the ground is level at a
 // height nobody states and touches the stride once, at its bottom; a circle of radius 150 osculates
 // the stride at that same place.  The rod solves so the stride is exactly that flat where it
 // stands: 66.869.
@@ -13,10 +13,12 @@
 // place, tied only by the circle touching the ground, the condition holds to third order in the
 // distance between the two places: a degenerate root, which solved 3.5e-4 of the rod off.
 //
-// The crank is still the drawing's one freedom.  Change `radius(150)` and the rod solves again;
-// the circle's centre stays straight above the stride's bottom.
+// The drawing is followed round the turn of `t` (`1 DOF over t`).  Change `radius(150)` and the
+// rod solves again; the circle's centre stays straight above the stride's bottom.
 
 use std (offset)
+
+param t: Angle over (0deg, 360deg)
 
 a := 38      // the axle stands this far to the right of the pivot...
 l := 7.8     // ...and this far above it
@@ -79,10 +81,10 @@ in std.front {
   fix((0, 0)) axle
   axle offset(dx: a, dy: l) pivot
 
-  // the leg, with its crank angle and its toe rod both left unbound
-  leg := Leg(axle, pivot)
+  // the leg, its crank at `t` and its toe rod left unbound
+  leg := Leg(axle, pivot, theta: t)
 }
-path := trace(leg.toe over theta in (0, 360))
+path := trace(leg.toe over t)
 
 // level ground of unstated height, touching the stride at its bottom
 in std.front {

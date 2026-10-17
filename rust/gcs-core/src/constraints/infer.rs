@@ -537,15 +537,17 @@ pub fn validate(
     args: &[Arg],
     name: &dyn Fn(EntRef) -> String,
 ) -> Result<(), String> {
-    // a point of the drawing followed along a parameter is drawn, and held to by nothing: where it
-    // is at any instant is the whole drawing's solve there (#391 S4)
-    let followed = |e: &EntRef| e.kind == EntKind::Curve && e.i() < sk.curves.len()
-        && sk.curve_followed(e.i());
+    // a point of the drawing followed along a parameter is held to through the locus its
+    // drawing's moving part is lowered to (#398 A, `followed::lower`): one not lowered is drawn,
+    // and held to by nothing
+    let unlowered = |e: &EntRef| e.kind == EntKind::Curve && e.i() < sk.curves.len()
+        && matches!(sk.curve_defs[sk.curves[e.i()].def as usize].body,
+                    crate::model::CurveBody::Followed(None));
     if let Some(e) = args.iter().filter_map(|a| match a { Arg::Ent(e) => Some(e), _ => None })
-        .find(|e| followed(e)) {
+        .find(|e| unlowered(e)) {
         let over = &sk.curve_defs[sk.curves[e.i()].def as usize].param;
-        return Err(format!("{} is traced as `{over}` runs: it is drawn, and nothing is held to \
-                            it (#391)", name(*e)));
+        return Err(format!("{} is traced as `{over}` runs, and is not lowered to a curve the \
+                            solve can hold to (#398)", name(*e)));
     }
     shared_on_one_curve(sk, kind, args, name)?;
     on_the_arc(kind, args, name)?;
@@ -595,7 +597,7 @@ pub fn validate(
         // would solve to a slightly wrong circle and call it right
         CKind::CurveCurvature => {
             let cv = &sk.curves[args[0].ent().i()];
-            if let crate::model::CurveBody::Trace(l) = &sk.curve_defs[cv.def as usize].body {
+            if let Some(l) = sk.curve_defs[cv.def as usize].body.locus() {
                 if let Some(kernel) = l.without_form() {
                     return Err(format!(
                         "{} is traced through a `{kernel}`, whose second derivative is not \

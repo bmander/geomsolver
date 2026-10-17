@@ -4,6 +4,15 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.144] Relations held to a followed trace.** `trace(m over t)` (§6.5) is a curve a relation may
+hold to — a point on it at an instant, a line tangent to it, a circle osculating it — and a number
+of the drawing that does not run with `t` (a declared unknown, an instance's unbound number) may
+solve through it; through 0.143 a relation naming it was E061. What moves with `t` must place
+every number it moves: where it leaves one free, or holds what such a curve cannot read yet, the
+relation is E061, saying why. The case library's mechanisms solved through a traced path
+(`stride.sv`, `osculating_stride.sv`, `dwell.sv`, `peaucellier.sv`) and `jansen.sv` are written
+over `param t`, to the same numbers. (Issue #398, item A.)
+
 **[0.143] General drives.** A joint's value that reads a declared parameter drives its frame by it
 (§6.14): the value is a law, any expression of the parameter (through 0.142 a value over one was
 read only by what is drawn in the frame, at the instant the drawing is held at), and every reading

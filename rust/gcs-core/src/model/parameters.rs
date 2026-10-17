@@ -298,8 +298,12 @@ impl Sketch {
             EntKind::Curve => {
                 let cv = &self.curves[e.i()];
                 let mut v = Vec::new();
-                for &a in &cv.args {
-                    v.extend(self.entity_params(a));
+                // a point followed along a parameter names the point it traces, which is the
+                // drawing's to place and no column of the curve (#398 A)
+                if !self.curve_followed(e.i()) {
+                    for &a in &cv.args {
+                        v.extend(self.entity_params(a));
+                    }
                 }
                 // the numbers left unknown, once the expression graph has allocated them
                 v.extend(cv.unknowns.iter().filter_map(|n| self.free_vars.get(n).copied()));

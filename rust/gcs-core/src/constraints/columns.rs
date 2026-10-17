@@ -254,8 +254,9 @@ impl Constraint {
                 // a trace contact adds the march's home — the parameter its instance is
                 // anchored at — and, for a curve of a drawn instance, the pose on the sheet
                 // the home solve starts from: instance data the way the values are, read off
-                // the sketch here so a refresh carries the pose the drawing has now
-                crate::model::CurveBody::Trace(l) => {
+                // the sketch here so a refresh carries the pose the drawing has now — a followed
+                // drawing's lowered as its own (#398 A), anchored where the drawing stands
+                crate::model::CurveBody::Trace(l) | crate::model::CurveBody::Followed(Some(l)) => {
                     let ci = curve.i();
                     let n_q = l.n_q();
                     let mut k = Vec::with_capacity(3 + cv.values.len() + l.flat.len() + n_q);
@@ -293,8 +294,8 @@ impl Constraint {
                 crate::model::CurveBody::Extremal(x) => {
                     sk.extremal_consts(curve.i()).unwrap_or_else(|| vec![0.0; x.n_const()])
                 }
-                // nothing is held to a point followed along a parameter (`validate`)
-                crate::model::CurveBody::Followed => Vec::new(),
+                // nothing is held to a followed point not lowered (`validate`)
+                crate::model::CurveBody::Followed(None) => Vec::new(),
             };
             // a point in space reads the curve's plane first: its basis in space, `u`, `v`, `o`
             if self.kind == CKind::PointOnExtrusion {
@@ -326,7 +327,9 @@ impl Constraint {
             RateSource::Curve => {
                 let def = sk.curves.get(self.args[0].ent().i()).map(|c| c.def as usize);
                 let body = match def.and_then(|d| sk.curve_defs.get(d)).map(|d| &d.body) {
-                    Some(crate::model::CurveBody::Trace(_)) => kernels::TRACE,
+                    Some(crate::model::CurveBody::Trace(_) | crate::model::CurveBody::Followed(_)) => {
+                        kernels::TRACE
+                    }
                     Some(crate::model::CurveBody::Envelope(_)) => kernels::ENVELOPE,
                     Some(crate::model::CurveBody::Extremal(_)) => kernels::EXTREMAL,
                     _ => kernels::FORMULA,

@@ -340,7 +340,7 @@ impl Drawn {
                     B::Trace(_) => crate::kernels::TRACE,
                     B::Envelope(_) => crate::kernels::ENVELOPE,
                     B::Extremal(_) => crate::kernels::EXTREMAL,
-                    B::Followed => return Err("a point traced over a parameter is drawn, and no \
+                    B::Followed(_) => return Err("a point traced over a parameter is drawn, and no \
                         marched body starts on it (#391)".into()),
                 };
                 if cv.extrusion || sk.curve_turn(i).is_some() {

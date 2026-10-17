@@ -86,12 +86,12 @@ pub(super) fn elaborate_in(
     let settled = seeds(&mut cx, &deferred, &held);
     let extruded = prism_sides(&mut cx, &flat);
     let (generated, held_in_space) = held_envelopes(&mut cx, &flat, &planar, &extruded);
-    let after_solids = constraints(&mut cx, &flat, &drawn, &kept_off);
+    let (after_solids, on_followed) = constraints(&mut cx, &flat, &drawn, &kept_off);
     walked(&mut cx, &deferred, &held);
     twins(&mut cx, &flat);
     place_planes(&mut cx, &deferred, &held, settled);
     solids_and_surfaces(&mut cx, &flat, faces, &generated, &held_in_space)?;
-    expressions(&mut cx, &flat);
+    expressions(&mut cx, &flat, &on_followed);
     regions_read(&mut cx, &flat, &after_solids);
     Ok(finish(cx, &flat))
 }
@@ -534,9 +534,10 @@ fn held_envelopes(
 /// the incidences drawn as memberships or kept in space (`memberships`).
 fn constraints(
     cx: &mut Elab<'_>, flat: &Flat<'_>, drawn: &BTreeSet<usize>, kept_off: &BTreeSet<usize>,
-) -> Vec<usize> {
+) -> (Vec<usize>, Vec<usize>) {
     let mut arrays = BTreeSet::new();
     let mut later = Vec::new();
+    let mut on_followed = Vec::new();
     for (i, st) in flat.stating.iter().enumerate() {
         // an energy's terms are constraints of their own, stationary together (#121)
         if let StmtKind::Minimize(m) = &st.kind {
@@ -557,9 +558,57 @@ fn constraints(
             later.push(i);
             continue;
         }
+        // a relation held to a point followed along a parameter is stated once the drawing it is
+        // followed with is lowered (#398 A, `held_to_followed`)
+        if !followed_operands(cx, r).is_empty() {
+            on_followed.push(i);
+            continue;
+        }
         state(cx, r, st, &mut arrays);
     }
-    later
+    (later, on_followed)
+}
+
+/// The points followed along a parameter (`trace(m over t)`) a relation names among its operands.
+fn followed_operands(cx: &Elab<'_>, r: &crate::ir::Relation) -> Vec<EntRef> {
+    let written = r.form.written().into_iter().flat_map(|w| w.ops.iter());
+    let canonical = r.form.canonical_args().iter().filter_map(|a| match a {
+        Some(crate::syntax::Arg::Ref(rf)) => Some(rf),
+        _ => None,
+    });
+    written.chain(canonical).filter_map(|rf| cx.res.entity(&cx.sk, rf))
+        .filter(|e| e.kind == EntKind::Curve && cx.sk.curve_followed(e.i()))
+        .collect()
+}
+
+/// **The relations held to a point followed along a parameter** (#398 A), once every other row of
+/// the drawing is stated and the unknowns their numbers read are bound: each followed point they
+/// name lowered to the locus the solve holds to (`followed::lower`), and each relation stated —
+/// or refused (E061), naming why its point could not be lowered.
+fn held_to_followed(cx: &mut Elab<'_>, flat: &Flat<'_>, on_followed: &[usize]) {
+    let mut lowered: BTreeMap<usize, Result<(), String>> = BTreeMap::new();
+    let mut arrays = BTreeSet::new();
+    for &i in on_followed {
+        let st = flat.stating[i];
+        let StmtKind::Relation(r) = &st.kind else { continue };
+        let mut refused = None;
+        for e in followed_operands(cx, r) {
+            let why = lowered.entry(e.i())
+                .or_insert_with(|| crate::followed::lower(&mut cx.sk, e.i()));
+            if let Err(m) = why {
+                refused.get_or_insert((e, m.clone()));
+            }
+        }
+        if let Some((e, m)) = refused {
+            let name = cx.map.name_of(e).cloned().unwrap_or_else(|| crate::io::entity_name(e));
+            let over = &cx.sk.curve_defs[cx.sk.curves[e.i()].def as usize].param;
+            let message = format!("{name} is traced as `{over}` runs, and the solve cannot hold to \
+                                   it: {m}");
+            cx.diags.push(Diag::on(Code::E061, st, message));
+            continue;
+        }
+        state(cx, r, st, &mut arrays);
+    }
 }
 
 /// A relation constrained, and what it made recorded against its statement.
@@ -716,9 +765,15 @@ fn solids_and_surfaces(
 /// would be quadratic in the expression count).  The claims about solids read the free variables
 /// `evaluate` allocates, so they come after it — the one pass of the elaboration that is *below*
 /// the expressions.
-fn expressions(cx: &mut Elab<'_>, flat: &Flat<'_>) {
+fn expressions(cx: &mut Elab<'_>, flat: &Flat<'_>, on_followed: &[usize]) {
+    let mut post_expr = expr::evaluate(&mut cx.sk);
+    // what is held to a followed point is lowered over the unknowns just bound, and its own
+    // numbers worked out with the rest's again
+    if !on_followed.is_empty() {
+        held_to_followed(cx, flat, on_followed);
+        post_expr = expr::evaluate(&mut cx.sk);
+    }
     let Elab { sk, res, map, diags, .. } = cx;
-    let post_expr = expr::evaluate(sk);
     // every free curve's energy, once every row it may be held by is stated — a length an
     // unknown sets included (#121, #144)
     variational::settle(sk, map, diags);

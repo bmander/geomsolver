@@ -608,8 +608,11 @@ curve has its Jacobian in the profile's columns against central differences; and
   traced (`build` refuses a drawn one, since on the sheet a seed is a number a solve writes).
   A traced body must be square — as many rows as inner coordinates — or elaboration refuses it.
   `tests/trace.rs` holds the taut-string involute against its closed form (seeds 3× wrong), a
-  gear on traced flanks, and the same parameters asked in three orders (guarding the resume);
-  `tests/jansen.rs` holds the drawn form against a circle-intersection model at 24 angles.
+  gear on traced flanks, and the same parameters asked in three orders (guarding the resume).
+  A point of the drawing followed along a declared parameter (`trace(m over t)`) a relation holds
+  to is lowered to a locus too, its block the drawing's moving part (`followed.rs`,
+  [parameters.md](parameters.md), #398 A); `tests/jansen.rs` holds Jansen's leg, so followed,
+  against a circle-intersection model at 24 angles.
 - A curve is *geometry*, laid out in the core and only stroked by the front end:
   `curve::tessellate` refines to `FLATNESS_PX` through `unit`, and `curve::closest` is the pick
   test and a fresh contact's seed.  No binding evaluates a basis function or writes the degree:

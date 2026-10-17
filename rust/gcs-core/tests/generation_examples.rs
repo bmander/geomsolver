@@ -52,11 +52,11 @@ fn turn(p: (f64, f64), c: (f64, f64), deg: f64) -> (f64, f64) {
 
 /// **`stride.sv`**: the toe rod solves so the ground stands on both dips, to Jansen's number within
 /// a twentieth (the bisection reference is `jansen.rs`'s `the_stride_stands_on_the_ground_twice`),
-/// the drawn leg's rod as long, the crank still free.
+/// the drawn leg's rod as long, the crank driven by `t`.
 #[test]
 fn the_stride_stands_on_level_ground() {
     let mut e = solved(include_str!("../../examples/generation/stride.sv"));
-    assert_eq!(dof(&mut e), (1, State::Under), "the crank is the one freedom");
+    assert_eq!(dof(&mut e), (0, State::Well), "the crank runs with `t`");
     let h = unknown(&e, "leg.h");
     assert!((h - 65.684).abs() < 1e-3, "the rod solved to {h}");
     let ((hx, hy), (tx, ty)) = (at(&e, "leg.heel"), at(&e, "leg.toe"));
@@ -69,7 +69,7 @@ fn the_stride_stands_on_level_ground() {
 #[test]
 fn the_stride_bends_at_a_stated_radius_where_it_stands() {
     let mut e = solved(include_str!("../../examples/generation/osculating_stride.sv"));
-    assert_eq!(dof(&mut e), (1, State::Under), "the crank is the one freedom");
+    assert_eq!(dof(&mut e), (0, State::Well), "the crank runs with `t`");
     let h = unknown(&e, "leg.h");
     assert!((h - 66.869).abs() < 1e-3, "the rod solved to {h}");
     let s = e.sketch.shared["s"].param;
@@ -96,11 +96,11 @@ fn coupler_point(deg: f64, ap: f64) -> (f64, f64) {
 
 /// **`dwell.sv`**: the osculating circle at 170° has the stated radius by the coupler curve's own
 /// differences, its centre the curve's centre of curvature, the coupler point where the linkage
-/// assembled here puts it; the crank still free.
+/// assembled here puts it; the crank driven by `t`.
 #[test]
 fn the_dwell_arc_has_its_stated_radius() {
     let mut e = solved(include_str!("../../examples/generation/dwell.sv"));
-    assert_eq!(dof(&mut e), (1, State::Under), "the crank is the one freedom");
+    assert_eq!(dof(&mut e), (0, State::Well), "the crank runs with `t`");
     let ap = unknown(&e, "bar.ap");
     assert!((ap - 25.5).abs() < 0.1, "the coupler point solved to {ap}");
     let r = radius_by_differences(|d| coupler_point(d, ap), 170., 1e-2);
@@ -176,49 +176,45 @@ fn the_pin_cuts_an_epicycloidal_flank() {
     }
 }
 
-/// Drag `point` of an example round a circle about `centre` (the crank's), frame by frame, and
-/// say where the unknown `held` and curve `curve` stand after each, and where `point` got to.
-fn drag_crank(e: &mut Elaborated, point: &str, centre: (f64, f64), held: &str, curve: &str)
-    -> Vec<(f64, (f64, f64), (f64, f64))> {
+/// The drawing of an example followed round the turn of `t`, and stood at each twelfth of it: what
+/// the unknown `held` is there, and where `point` stands.
+fn follow_crank(e: &Elaborated, point: &str, held: &str) -> Vec<(f64, f64, (f64, f64))> {
+    let followed = gcs_core::follow::followed(&e.sketch, "t");
+    let f = followed.as_ref().as_ref().expect("the drawing is followed");
+    assert!(f.singular.is_none() && f.reached() == 360., "the march stopped at {:?}", f.singular);
     let p = e.map.ent_named(point).unwrap().i();
-    let c = e.map.ent_named(curve).unwrap().i();
-    let (x0, y0) = e.sketch.point_xy(p);
-    let (r, a0) = ((x0 - centre.0).hypot(y0 - centre.1), (y0 - centre.1).atan2(x0 - centre.0));
-    let mut drag = gcs_core::decompose::PlanDrag::new(&e.sketch, p, x0, y0, None, 0.05);
+    let mut sk = e.sketch.clone();
     (1..=12).map(|k| {
-        let a = a0 - (10. * k as f64).to_radians();
-        let to = (centre.0 + r * a.cos(), centre.1 + r * a.sin());
-        let res = drag.move_to(&mut e.sketch, None, to.0, to.1);
-        assert!(res.success, "frame {k}: {}", res.message);
-        let got = e.sketch.point_xy(p);
-        assert!((got.0 - to.0).hypot(got.1 - to.1) < 1e-6, "frame {k}: the crank did not follow");
-        (unknown(e, held), e.sketch.curve_point(c, 90.), got)
+        let t = 30. * k as f64;
+        f.put(&mut sk, t).unwrap_or_else(|m| panic!("at {t}: {m}"));
+        (t, sk.params[sk.free_vars[held] as usize].value, sk.point_xy(p))
     }).collect()
 }
 
-/// **A drag of the crank leaves the curve where it is.**  The coupler curve is written over the
-/// coupler point's offset, an unknown its curvature contact holds: the drag's part of the
-/// document must reach that contact through the curve's column, or the offset slides and the
-/// curve with it (it did, by five millimetres over a quarter turn).
+/// **Followed round the turn, the drawing keeps what it was solved through.**  The coupler curve
+/// is held by the curvature contact through the coupler point's offset, a number that does not
+/// run with `t`: at every station the contact is a row like any other, so the offset stands
+/// where it was solved, and the coupler point is where the linkage assembled here puts it.
 #[test]
-fn dragging_the_dwell_crank_keeps_its_curve() {
-    let mut e = solved(include_str!("../../examples/generation/dwell.sv"));
-    let (ap, at) = (unknown(&e, "bar.ap"), e.sketch.curve_point(curve(&e, "path"), 90.));
-    for (k, (held, p, _)) in drag_crank(&mut e, "bar.A", (0., 0.), "bar.ap", "path").into_iter().enumerate() {
-        assert!((held - ap).abs() < 1e-9, "frame {k}: the offset moved to {held} from {ap}");
-        assert!((p.0 - at.0).hypot(p.1 - at.1) < 1e-9, "frame {k}: the curve moved");
+fn following_the_dwell_crank_keeps_its_offset() {
+    let e = solved(include_str!("../../examples/generation/dwell.sv"));
+    let ap = unknown(&e, "bar.ap");
+    for (t, held, p) in follow_crank(&e, "bar.P", "bar.ap") {
+        assert!((held - ap).abs() < 1e-8, "at {t}: the offset moved to {held} from {ap}");
+        let want = coupler_point(t, ap);
+        assert!((p.0 - want.0).hypot(p.1 - want.1) < 1e-6, "at {t}: {p:?} against {want:?}");
     }
 }
 
-/// The same of the stride: the toe rod is a column of the traced stride, held by the two
-/// tangencies to the ground, and walking the leg round does not change it.
+/// The same of the stride: the toe rod is held by the two tangencies to the ground, and walking
+/// the leg round does not change it, nor the ground.
 #[test]
-fn dragging_the_stride_crank_keeps_its_rod() {
-    let mut e = solved(include_str!("../../examples/generation/stride.sv"));
-    let (h, at) = (unknown(&e, "leg.h"), e.sketch.curve_point(curve(&e, "path"), 90.));
-    for (k, (held, p, _)) in drag_crank(&mut e, "leg.pin", (0., 0.), "leg.h", "path").into_iter().enumerate() {
-        assert!((held - h).abs() < 1e-9, "frame {k}: the rod moved to {held} from {h}");
-        assert!((p.0 - at.0).hypot(p.1 - at.1) < 1e-9, "frame {k}: the stride moved");
+fn following_the_stride_crank_keeps_its_rod() {
+    let e = solved(include_str!("../../examples/generation/stride.sv"));
+    let (h, g0) = (unknown(&e, "leg.h"), at(&e, "g0"));
+    for (t, held, p) in follow_crank(&e, "g0", "leg.h") {
+        assert!((held - h).abs() < 1e-8, "at {t}: the rod moved to {held} from {h}");
+        assert!((p.0 - g0.0).hypot(p.1 - g0.1) < 1e-8, "at {t}: the ground moved");
     }
 }
 

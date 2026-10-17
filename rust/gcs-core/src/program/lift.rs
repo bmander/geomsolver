@@ -298,7 +298,7 @@ fn lift_curve(sk: &Sketch, i: usize) -> crate::syntax::CurveSpec {
     let def = &sk.curve_defs[cv.def as usize];
     // a point of the drawing followed along a declared parameter (#391 S4): the point, over the
     // stretch it is traced on
-    if let (crate::model::CurveBody::Followed, Some(&p)) = (&def.body, cv.args.first()) {
+    if let (crate::model::CurveBody::Followed(_), Some(&p)) = (&def.body, cv.args.first()) {
         return CurveSpec {
             target: CurveTarget::Drawn(Ref::new(name(sk, p))),
             swept: Name::new(def.param.clone()),

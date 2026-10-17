@@ -2,7 +2,8 @@
 
 Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you touch
 `model/running.rs`, a `param … over`, a face family's running number, a traced body's formals, an
-interval of the roll a reading states, `follow.rs` (continuation), `trace(m over t)`, or a drive
+interval of the roll a reading states, `follow.rs` (continuation), `trace(m over t)` and what is
+held to it (`followed.rs`), or a drive
 (`motion/law.rs`, `MotionDef::Driven`, `tape::eval_interval`). The
 direction is [#391](https://github.com/bmander/geomsolver/issues/391): geometry over a
 parameter, trajectories rather than snapshots; this file holds what is built of it. An issue
@@ -186,9 +187,9 @@ where a rule came from.
     `followed:t`); `Sketch::followed_points` stands a copy of the drawing at each instant asked
     (`curve_sweep`, `curve_point`), clamped to what the march reached, so the curve ends at a
     singular instant, and `curve_polyline`'s key reads every parameter.  It is a view's curve: a
-    point in space is E060 (`entities::drawn_in_planes`, once memberships are known).  Nothing
-    is held to it (`constraints::validate`, E061), it cuts nothing (`generated::tool_of`), no
-    envelope is read of it and no marched body starts on it.  `print` writes `trace(m over t)`;
+    point in space is E060 (`entities::drawn_in_planes`, once memberships are known).  A relation
+    holds to it (#398 A, below); it cuts nothing (`generated::tool_of`), no envelope is read of
+    it and no marched body starts on it.  `print` writes `trace(m over t)`;
     `lift_curve` writes the point over its stretch.
   - **Gate**: `tests/continuation.rs` — the four-bar's rocker pin and coupler midpoint at every
     station against the closed form (`a_four_bars_coupler_curve_is_its_closed_form`, 1e-8); the
@@ -204,9 +205,57 @@ where a rule came from.
     at its limit and a four-bar stopped at its change point.
   - **Not built in stage 4**: a relation holding at an instant (`at t0`), several parameters
     followed together (each is followed alone, the others at their starts), a trace of a point in
-    space (a traced body in space is a component's, §6.5), a trace held to by a relation, a sweep
+    space (a traced body in space is a component's, §6.5), a trace held to by a relation (built
+    by #398 A, below), a sweep
     of a section over a declared parameter (`sweep(sec over s)`), continuation past a singular
     instant onto a chosen branch, and the app's timeline (stage 6).
+- **Relations held to a followed trace** (#398 A, [0.144]): `trace(m over t)` is a curve the
+  solve works through — a point on it at an instant, a line tangent to it, a circle osculating it,
+  a claim over it — and a number of the drawing that does not run with `t` solves through it.
+  - **Lowered to a locus** (`followed::lower`): the point, its derivatives in `t` and its
+    sensitivities to the drawing's unknowns are what a component's trace gives (`locus.rs`: the
+    implicit function theorem at the place, `C''` and `C'''` off the rows' Taylor forms), so the
+    followed drawing's moving part is lowered to one and held to by the curve contacts every trace
+    has (`CurveBody::Followed(Some(locus))`, a definition of its own per curve, `followed:t#i`;
+    `CurveBody::locus` is what the kernels, the constants and `validate` ask).  **What moves**:
+    the rows reading `t` (`follow::readers`) and every row joined to them through an unknown that
+    is no free value — not a row held to a followed point, nor a soft one, a claim or a bound —
+    their unknowns the locus's `q`, each an entity's own scalar (`CurveE::pose`, read off the
+    sheet).  **Its columns** are the free values those rows read (`CurveE::unknowns`, a declared
+    unknown or an instance's unbound number, `leg.h`): a free value joins no rows, since it holds
+    a number rather than moving it.  Its values are the fixed numbers they read (a fixed point's
+    coordinates, a held number), as they stand (`CurveE::values`).  A row reading `t` is its kind's free twin over a tape of its text, as a
+    component trace's dimension over its formal is.  The traced point is no column of the curve
+    (`Sketch::entity_params` leaves a followed curve's argument out).
+  - **One solve** (the issue's order question, decided): the locus is anchored where the drawing
+    stands, at the instant `t` is held (`Sketch::curve_home`), its pose the drawing's own, so a
+    solve holding a relation to the trace solves the drawing there and the trace from there
+    together; the trace at `τ` is the locus's march from the pose, remembered per contact and
+    resumed (`locus::eval_at`), and no row reads `Caches::followed`.  A march of the drawing
+    (`follow::follow`) solves the held relation at every station as a row like any other,
+    anchored at that station.  `Sketch::curve_point` of a lowered curve reads the locus too, so a
+    solve asking where the curve closes (`clamp_contacts`) marches nothing; its polyline is still
+    the march's, which agrees with it on the branch carried and ends at a singular instant.
+    `follow::followed` answers no march from inside its own (`MARCHING`).
+  - **Stated late** (`program::elaborate`'s `held_to_followed`): a relation naming a followed
+    point is stated after every other row, once `expr::evaluate` has bound the unknowns their
+    numbers read; the point is lowered then, and the numbers worked out again.  **Refused**
+    (E061, and `validate` wherever the curve is not lowered): what moves leaving free a number it
+    places (a coordinate solved through the trace is declared as a number instead, `param l:
+    Length`), stating more rows than it places, a row with no static kernel (a curve contact, a
+    derivative), a number no point, circle or arc owns, a turned copy's, a traced point that does
+    not move, nothing reading `t`, and more than `tape::MAX_VARS` outer numbers or the locus's own
+    bounds.  A graft carries a lowered curve unlowered (`io::graft`): its lowering is the whole
+    drawing's.
+  - **Gate**: the corpus rewritten onto `param t`, to the same numbers — `stride.sv`,
+    `osculating_stride.sv` and `dwell.sv` (`tests/generation_examples.rs`; the rod and the offset
+    unchanged at every station of the march), `peaucellier.sv` (`tests/claim.rs`, the claim a
+    theorem) and `jansen.sv` (`tests/jansen.rs`, the frame's height and the rod against the leg
+    built from circle intersections; `tests/examples_sv.rs`, DOF 0).  `tests/followed_held.rs`: a
+    four-bar's rocker solved so its coupler curve passes a point, against the closed form (1e-8);
+    the march holding it at every station; the point, tangent and curvature contacts' Jacobians
+    against differences of their residuals; printing; the refusals.  The drag that stepped
+    Jansen's leg went with its free crank (#398 L).
 - **General drives** (#391 S5, [0.143]): a joint's value that reads a declared parameter
   *drives* the frame by it — the value is a law, any expression of the parameter, and the frame
   stands at its joint turned `ratio · law(θ)` and risen `advance · law(θ) / 360°` at the roll

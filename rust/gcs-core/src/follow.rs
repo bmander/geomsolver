@@ -40,6 +40,20 @@ use crate::units::Units;
 use crate::syntax::num;
 use crate::system::System;
 
+thread_local! {
+    /// Whether this thread is in `followed`'s march.
+    static MARCHING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Clears `MARCHING` however the march ends (the ABI catches a panic).
+struct Marching;
+
+impl Drop for Marching {
+    fn drop(&mut self) {
+        MARCHING.set(false);
+    }
+}
+
 /// The first step, the longest, and the shortest, as fractions of the interval.
 const FIRST_STEP: f64 = 1.0 / 256.0;
 const COARSEST: f64 = 1.0 / 128.0;
@@ -140,6 +154,11 @@ impl Followed {
 /// of the drawing and of its statements, and the parameter's interval (`Caches::followed`).
 pub fn followed(sk: &Sketch, name: &str) -> Rc<Result<Followed, String>> {
     use crate::constraints::Arg;
+    // a march's own station solve asks nothing of a march: a question that would reach one from
+    // inside it (a curve drawn from the drawing being followed) is answered that there is none
+    if MARCHING.get() {
+        return Rc::new(Err("the drawing is being followed".into()));
+    }
     let mut key = sk.get_x();
     key.extend(sk.parameters.get(name).map_or([0.0; 2], |p| [p.from, p.to]));
     key.extend(sk.constraints.iter().flat_map(|c| c.args.iter().filter_map(|a| match a {
@@ -152,7 +171,11 @@ pub fn followed(sk: &Sketch, name: &str) -> Rc<Result<Followed, String>> {
             return f.clone();
         }
     }
-    let f = Rc::new(follow(sk, name));
+    let f = {
+        MARCHING.set(true);
+        let _marching = Marching;
+        Rc::new(follow(sk, name))
+    };
     sk.caches.followed.borrow_mut().insert(name.to_string(), (key, f.clone()));
     f
 }
@@ -253,12 +276,18 @@ pub fn follow(sk: &Sketch, name: &str) -> Result<Followed, String> {
 /// The ids of the constraints whose numbers read the declared parameter `name` (#391 S4): the
 /// relations that say how the drawing moves as it runs.
 pub fn readers(sk: &Sketch, name: &str) -> Vec<u32> {
+    sk.constraints.iter().filter(|c| reading_slot(sk, c, name).is_some()).map(|c| c.id).collect()
+}
+
+/// The slot of `c` whose text reads the declared parameter `name`, where one does.
+pub(crate) fn reading_slot(sk: &Sketch, c: &crate::constraints::Constraint, name: &str)
+    -> Option<usize> {
     use crate::constraints::Arg;
-    sk.constraints.iter().filter(|c| c.args.iter().any(|a| match a {
+    c.args.iter().position(|a| match a {
         Arg::Expr(e) => crate::expr::parse_in(&e.text, sk.units)
             .is_ok_and(|p| p.body.deps().iter().any(|d| d == name)),
         _ => false,
-    })).map(|c| c.id).collect()
+    })
 }
 
 /// The parameter's value as a reader reads it: `t = 30deg`.
