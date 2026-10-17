@@ -557,7 +557,10 @@ impl<'a> Walk<'a> {
         if let Some(e) = reads.iter().find_map(reach) {
             return Err(e);
         }
-        if let Some(name) = reads.iter().find(|n| self.runs(n, vals)) {
+        // a formal given a text over a face family's running number is that text, whatever the
+        // document declares by its name (#398 B)
+        let runs = |n: &&String| self.runs(n, vals) && self.kept(n, scope).is_none();
+        if let Some(name) = reads.iter().find(runs) {
             return Err((Code::E103, runs_over(name)));
         }
         if let Some(name) = reads.iter().find(|n| self.undeclared(n, vals, scope)) {

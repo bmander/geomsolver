@@ -128,6 +128,19 @@ its motion over the roll — the joint's node and a `MotionDef::Driven` beside i
 the one and every other reading the other; a relation the solve holds reads no drive
 ([parameters.md](parameters.md)).
 
+**Drawn in a frame with a value** (#398 B, [0.145]): what a valued frame's `in` block draws
+stands where the value puts it — the planes it draws in read as those planes drawn in the frame
+(`flatten::valued`, a twin `P in f` per plane), so it rides on the valued frame no more; the rules
+are [parameters.md](parameters.md)'s.  A frame declared in such a block still rides on it and is
+refused (`motions::values`).
+
+**A frame along a path** (#398 C, [0.145]): a joint held along a path, `g coincident f.axis`
+(`std.Along`, `std.AlongFrenet`), is no turn about a line but `MotionDef::Guided`, its pose read
+off the path after the solve (`motion::Guide`) — the rotation-minimising frame for ratio 0, the
+path's own for ratio 1, from where the frame is drawn.  What is drawn in it rides on it, and a face
+so drawn is swept as a declared parameter runs; a row reads no such motion.  The rules are
+[parameters.md](parameters.md)'s.
+
 **Not built in stage 4**: the app offers only planar frames as places to draw (a spatial chart is
 drawn in text), and the printer writes no `in` blocks of its own, so the plan's "jointed frame
 outermost" is the author's order.

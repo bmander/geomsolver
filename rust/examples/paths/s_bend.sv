@@ -51,4 +51,5 @@ component Tube(g: path, up: axis, r: Length, s: Scalar) {
   f := face(k)
 }
 
-tube := sweep(Tube(route, std.z, r: r).f over s in (0, 5))
+param s: Scalar over (0, 5)
+tube := sweep(Tube(route, std.z, r: r).f over s)

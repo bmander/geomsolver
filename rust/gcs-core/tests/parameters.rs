@@ -318,7 +318,8 @@ fn the_retired_reading_spellings_name_their_replacements() {
            "`envelope(tool over t in (a, b), …)`");
     syntax("m := meshing(f1, f2, under: screw, from: 0deg, to: 40deg)",
            "`meshing(f1, f2 over t in (a, b), …)`");
-    syntax("d := solid(Station(g).f over s in (0, 1))", "`sweep(Component(…).face over s in");
+    syntax("d := solid(Station(g).f over s)", "`sweep(Component(…).face over s)`");
+    syntax("d := sweep(Station(g).f over s in (0, 1))", "`over s in (a, b)` is retired");
     syntax("k := leg.toe over u in (0, 360)", "`trace(leg.toe over theta in (a, b))`");
     // and the frames of an instant stand on the `at`, not on the `coincident`
     syntax("P := point\nP coincident(under: screw) x at 40deg", "names its frames on the `at`");

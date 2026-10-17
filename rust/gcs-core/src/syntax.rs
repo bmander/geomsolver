@@ -1357,10 +1357,10 @@ pub enum Sweep {
     /// set, and made this by the flattener, which applies the set to the hidden `probe` point
     /// (`probe inside R`) and whose bounds the elaborator reads as the solid's terms.
     Region { probe: Ref },
-    /// `duct := sweep(Station(guide).f over s in (0, 1))` — **a face family** (#243 L1): the
-    /// solid a face of an instance sweeps as one of its numeric formals runs.  The instance is
-    /// written in place and drawn once, hidden, at the middle of the interval; the family solves
-    /// it again at every station (`solid::family`).
+    /// `duct := sweep(Station(guide).f over s)` — **a face family** (#243 L1): the solid a face of
+    /// an instance sweeps as one of its numeric formals runs over a declared parameter's interval
+    /// (#398 B).  The instance is written in place and drawn once, hidden, at the middle of the
+    /// interval; the family solves it again at every station (`solid::family`).
     Family(Box<FamilySpec>),
 }
 
@@ -1372,9 +1372,10 @@ pub struct FamilySpec {
     pub instance: Instance,
     /// The face's path inside it (`sec.profile`).
     pub face: Ref,
-    /// The numeric formal that runs — `s`.
+    /// The declared parameter it runs over, `over s` (#398 B): its formal that runs is the one
+    /// the call gives it (`s: u` over `u`), or else the one named as it.
     pub swept: Name,
-    /// `in (a, b)`, as written; numbers once the flattener has settled them.
+    /// The parameter's interval, empty as parsed; numbers once the flattener has settled them.
     pub domain: (String, String),
     /// The running number's absolute name once the flattener has bound it (`#f12.s`) — `None`
     /// until then, or where it could not.
@@ -1625,6 +1626,11 @@ pub struct Relation {
     /// Written inside `initially { … }` (#339 D2, D3): a row of a body's home alone — a traced
     /// body's or a face family's.  Stamped by the parser, which hoists the block's relations.
     pub initially: bool,
+    /// The frames of the `in` blocks written around it, outermost first (#398 B), as a
+    /// declaration's membership keeps them: inside a frame with a value, the planes the block
+    /// draws in are read where the value puts them, and a relation there reads them so too.
+    /// Stamped by the parser, which hoists the block's statements.
+    pub within: Vec<Ref>,
 }
 
 impl Relation {
@@ -1647,6 +1653,7 @@ impl Relation {
             along: None,
             space: false,
             initially: false,
+            within: Vec::new(),
         }
     }
 }

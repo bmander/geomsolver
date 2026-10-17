@@ -847,6 +847,7 @@ impl<'a> P<'a> {
                 along: None,
                 space: false,
                 initially: false,
+                within: Vec::new(),
             };
             let id = self.mint_stmt(next_id, sp)?;
             out.push(Stmt {
@@ -1128,6 +1129,7 @@ impl<'a> P<'a> {
                 along: None,
                 space: false,
                 initially: false,
+                within: Vec::new(),
             })
         };
         let end = |w: &str| {

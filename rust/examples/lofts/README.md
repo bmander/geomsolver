@@ -1,7 +1,9 @@
 # Lofts and sweeps
 
-A loft or a sweep is a face of a component as one of its numbers runs:
-`sweep(Station(…).f over s in (0, 1))`, the solid the face `f` sweeps as `s` runs from 0 to 1.
+A loft or a sweep is a face of a component as one of its numbers runs over a declared parameter:
+`param s: Scalar over (0, 1)` and `sweep(Station(…).f over s)`, the solid the face `f` sweeps as
+`s` runs from 0 to 1 — or a face of the drawing itself as the parameter runs, `sweep(sec over s)`
+(`thread.sv`'s thread, drawn in the block of a screw whose value runs over `s`).
 The station is the writer's own component — where the section stands, how it turns, how it
 scales, which rails its corners follow — and the standard library's words say the common parts
 of it. Nothing about a loft is in the kernel but the face family itself; every wall here is built

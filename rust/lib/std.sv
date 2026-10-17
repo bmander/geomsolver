@@ -481,17 +481,19 @@ component Chamfered(a: set, b: set, la: Length, lb: Length) := { p |
 
 // -- stations of a face family (#243 L3) --------------------------------------------------------
 //
-// A loft or a sweep is a face of a component as one of its numbers runs (§6.9):
-// `sweep(I(…).f over s in (0, 1))`.  These words only say where a station stands on its path: a
-// plane `n` square to the path where its parameter is `s`, its `v` along `up`.  What the section
-// is at that station — its shape, its twist, its scale, the rails it follows — is the writer's
-// component, drawn `in st.n` and reading `s` (the laws below run a twist or a scale):
+// A loft or a sweep is a face of a component as one of its numbers runs over a declared parameter
+// (§6.9, #398): `param s: Scalar over (0, 1)` and `sweep(I(…).f over s)`.  These words only say
+// where a station stands on its path: a plane `n` square to the path where its parameter is `s`,
+// its `v` along `up`.  What the section is at that station — its shape, its twist, its scale, the
+// rails it follows — is the writer's component, drawn `in st.n` and reading `s` (the laws below
+// run a twist or a scale):
 //
 //   component Reducer(g: line, inlet: Length, outlet: Length, s: Scalar) {
 //     st := std.OnLine(g, up: std.z, s: s)
 //     sec := Section(st.n.origin, size: inlet + (outlet - inlet) * s) in st.n
 //   }
-//   body := sweep(Reducer(guide, inlet: 24mm, outlet: 12mm).sec.profile over s in (0, 1))
+//   param s: Scalar over (0, 1)
+//   body := sweep(Reducer(guide, inlet: 24mm, outlet: 12mm).sec.profile over s)
 //
 // The edge `ab` at one station is `ab` at every other, so two sections correspond by being one.
 
@@ -650,6 +652,68 @@ component Frenet(g: path, s: Scalar) {
   n.v perpendicular n.u
 }
 
+// -- frames along a path (#398 C) ----------------------------------------------------------------
+//
+// A frame that rides along a path: its joint held along the path (`g coincident f.axis`, as a
+// turn's is held about a line), so its pose where the path's parameter is `u` is read off the
+// path after the solve — square to the path's tangent there, turned as the path makes it from
+// where the frame is drawn, its home.  What is drawn in it is drawn at the home, and a face drawn
+// there and swept as a declared parameter runs, `sweep(sec over s)`, stands at every station
+// where the frame does, `s` the path's own parameter (a line's and an arc's fraction of its run,
+// a spline's parameter, a traced curve's formal).  Where today's station words solve a plane at
+// every station (`On`, `Minimal` and `Frenet` above), this frame is a motion, read once.
+//
+//   param s: Scalar over (0, 1)
+//   n := plane(u: hint(dir: std.x), v: hint(dir: std.z))
+//   std.Along(n, g, up: std.z)
+//   in n {
+//     k := circle(center: n.origin)
+//     radius(2mm) k
+//   }
+//   sec := face(k)
+//   tube := sweep(sec over s)
+
+// `f` along `g`, its rotation-minimising frame (`On`'s and `Minimal`'s): drawn square to `g` where
+// its parameter is `home`, `v` leaning toward `up` and `u` square to it; its axes turn only as the
+// tangent does.  The joint turns with none of the path's torsion: its ratio 0.
+component Along(f: frame, g: path, up: axis, home: Scalar = 0) {
+  private m := point
+  m coincident(t == home) g
+  private q := point hint(at: m, along: g, by: 0.1)
+  private tl := line(m, q)
+  g tangent(at: m) tl
+  length(10mm) tl
+  f.origin coincident m
+  f.u perpendicular tl
+  f.v perpendicular tl
+  f.u perpendicular f.v
+  f.u perpendicular up
+  g coincident f.axis
+  fix(ratio == 0, advance == 0mm) f
+}
+
+// `f` along `g`, the path's own frame (`Frenet`'s): drawn square to `g` where its parameter is
+// `home`, `u` toward the centre of curvature there and `v` the binormal; it turns with the path's
+// torsion besides.  A path with no curvature somewhere has no such frame there.  The joint turns
+// with all of the path's torsion: its ratio 1.
+component AlongFrenet(f: frame, g: path, home: Scalar = 0) {
+  private m := point
+  m coincident(t == home) g
+  private q := point hint(at: m, along: g, by: 0.1)
+  private tl := line(m, q)
+  g tangent(at: m) tl
+  length(10mm) tl
+  private c := point
+  g curvature(at: m) c
+  private nl := line(m, c)
+  f.origin coincident m
+  f.u parallel nl
+  f.v perpendicular tl
+  f.v perpendicular f.u
+  g coincident f.axis
+  fix(ratio == 1, advance == 0mm) f
+}
+
 // A station with no guide (#243 L7): the plane through the places at `s` on three rails — a loft
 // that joins its sections in space directly.  Each rail runs through one corner of every
 // section: a chain of lines, one a link a pair of neighbouring sections (the ruled loft, a family
@@ -687,7 +751,8 @@ component Across(a: path, b: path, c: path, s: Scalar) {
 // two walks of different lengths are made alike by naming a point on an edge in the shorter one.
 // Nothing is inferred.  The first three corners must not stand in a line.
 //
-//   body := sweep(std.Ruled(inlet, outlet).f over s in (0, 1))
+//   param s: Scalar over (0, 1)
+//   body := sweep(std.Ruled(inlet, outlet).f over s)
 component Ruled(a: face, b: face, s: Scalar) {
   cycle (ea, eb) in (a, b) {
     private construction rail := line(ea.p1, eb.p1)

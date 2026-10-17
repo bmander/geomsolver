@@ -1,6 +1,6 @@
 //! **Today's loft is library words** (#243 L3): the reducer, the elbow, the narrowing bend and the
 //! square-to-diamond duct, each one section drawn at a station of its guide (`std.OnLine`,
-//! `std.OnArc`) and swept as the station runs — `sweep(I(…).f over s in (0, 1))` — at the volume
+//! `std.OnArc`) and swept as the station runs — `sweep(I(…).f over s)` — at the volume
 //! `solid(a[, b], along: g)` gave them, read off the exact B-rep to a part in 10⁹, and with its
 //! caps and its walls by name.  `along:` is retired, refused saying what to write; the station
 //! words stand on any path the family runs over (`std.On`, `std.OnSpline`).
@@ -144,7 +144,7 @@ fn along_is_retired_saying_what_to_write() {
     for src in ["body := solid(section, along: guide)\n", "body := solid(a, b, along: guide)\n"] {
         let (_, errs) = crate::common::parse(src);
         assert!(errs.iter().any(|e| e.message.contains("`along:` is retired")
-                && e.message.contains("over s in (0, 1)") && e.message.contains("std.OnLine")),
+                && e.message.contains("over s)") && e.message.contains("std.OnLine")),
                 "{src}: {errs:?}");
     }
 }
@@ -187,7 +187,8 @@ in std.top {{
   fix((100mm, 30mm)) k3
   curvy := spline(k0, k1, k2, k3)
 }}
-tube := sweep(Tube({guide}, std.z).f over s in (0, 1))
+param s: Scalar over (0, 1)
+tube := sweep(Tube({guide}, std.z).f over s)
 ")
 }
 

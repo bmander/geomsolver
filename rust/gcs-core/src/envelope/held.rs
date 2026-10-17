@@ -1355,6 +1355,12 @@ fn motion(sk: &Sketch, m: usize, steps: &mut Vec<Step>, cols: &mut Vec<Col>,
                 false => Step::Rotation { at, ratio, advance, free, dir: true },
             }
         }
+        // a row reads no guide (#398 C): a frame along a path is read off the path after the solve
+        MotionDef::Guided { .. } => {
+            return Err(format!("`{}` rides along a path, its frame read off the path after the \
+                solve: a relation the solve holds reads no frame along a path — sweep what rides \
+                on it as the parameter runs, `sweep(sec over s)`", me.name))
+        }
         // a row reads no law (#391 S5): a driven frame is read by what is drawn in it, `x in f`,
         // at its value worked out, and by the readings over the roll built after the solve
         MotionDef::Driven { of, ref over, .. } => {

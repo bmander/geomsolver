@@ -57,4 +57,5 @@ in std.front {
   sq := line(k0, k1) -> line(k1, k2) -> line(k2, k3) -> line(k3, k0) -> close
 }
 prof := face(sq)
-body := sweep(Tri(ra, rb, rc, prof, o, x, y).sec over s in (0, 1))
+param s: Scalar over (0, 1)
+body := sweep(Tri(ra, rb, rc, prof, o, x, y).sec over s)

@@ -193,8 +193,10 @@ placement carries inside the blank; CLI test readers zero the offset.
   longer has, E084 a section cut across its own view.
 
 - **A face family is a face that runs** (§6.9 [0.97], `solid/family.rs`; #243 L1).
-  `sweep(I(…).f over s in (a, b))` parses to `Sweep::Family(FamilySpec)` (`parser::family`, by
-  an `over` inside `solid(`'s own brackets, `family_ahead`); the flattener walks the instance
+  `sweep(I(…).f over s)` parses to `Sweep::Family(FamilySpec)` (`parser::family`, by an `over`
+  inside `solid(`'s own brackets, `family_ahead`), `s` a declared parameter whose interval it
+  runs over (#398 B, [0.145]: `Walk::family_parameter`, the formal the call gives it or the one
+  named as it, `Held::formals`; `over s in (a, b)` is refused); the flattener walks the instance
   **drawn**, under a key the source cannot write (`#f<offset>.`, so its declarations are
   anonymous), the running formal left unbound so `bind` makes it the free value `#f12.s` — and
   **held** (`flatten::Held`): a text affine in it carries it as any unknown's, its coefficient

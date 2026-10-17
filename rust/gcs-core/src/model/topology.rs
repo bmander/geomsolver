@@ -91,6 +91,7 @@ impl Sketch {
                 MotionDef::Inverse {of} | MotionDef::Driven {of,..} =>
                     vec![EntRef::new(EntKind::Motion,of as usize)],
                 MotionDef::Joint {axis,..} => vec![EntRef::new(EntKind::Axis,axis as usize)],
+                MotionDef::Guided {guide,..} => vec![guide],
             };
             kids.extend(self.frames.iter().enumerate()
                 .filter(|(_,f)| f.joint.as_ref().and_then(|j| j.motion) == Some(e.i() as u32))

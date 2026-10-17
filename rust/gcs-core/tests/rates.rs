@@ -161,9 +161,10 @@ fn wrapped(a: f64) -> f64 {
 #[test]
 fn a_minimal_frame_turns_against_frenet_at_the_torsion() {
     let e = with("
-minimal := sweep(Coil(std.top, r: 10mm, pitch: 5mm, turns: 1).f over s in (0, 1))
-frenet := sweep(Frenet(std.top, r: 10mm, pitch: 5mm, turns: 1).f over s in (0, 1))
-three_quarters := sweep(Coil(std.top, r: 10mm, pitch: 5mm, turns: 0.75).f over s in (0, 1))");
+param s: Scalar over (0, 1)
+minimal := sweep(Coil(std.top, r: 10mm, pitch: 5mm, turns: 1).f over s)
+frenet := sweep(Frenet(std.top, r: 10mm, pitch: 5mm, turns: 1).f over s)
+three_quarters := sweep(Coil(std.top, r: 10mm, pitch: 5mm, turns: 0.75).f over s)");
     let b = 5.0 / (2.0 * PI);
     let per_turn = -2.0 * PI * b / (100.0 + b * b).sqrt();
     assert!((per_turn.to_degrees() + 28.558).abs() < 1e-3, "{}", per_turn.to_degrees());
@@ -192,8 +193,9 @@ three_quarters := sweep(Coil(std.top, r: 10mm, pitch: 5mm, turns: 0.75).f over s
 #[test]
 fn a_tube_on_a_helix_is_its_section_along_its_length() {
     let e = with("
-minimal := sweep(Coil(std.top, r: 10mm, pitch: 5mm, turns: 4).f over s in (0, 1))
-frenet := sweep(Frenet(std.top, r: 10mm, pitch: 5mm, turns: 4).f over s in (0, 1))");
+param s: Scalar over (0, 1)
+minimal := sweep(Coil(std.top, r: 10mm, pitch: 5mm, turns: 4).f over s)
+frenet := sweep(Frenet(std.top, r: 10mm, pitch: 5mm, turns: 4).f over s)");
     let helix = 4.0 * (20.0 * PI).hypot(5.0);
     near(exact(&e, "minimal"), 2.0 * helix, 1e-9, "the minimal coil");
     near(exact(&e, "frenet"), 2.0 * helix, 1e-9, "the Frenet coil");
@@ -205,9 +207,10 @@ frenet := sweep(Frenet(std.top, r: 10mm, pitch: 5mm, turns: 4).f over s in (0, 1
 #[test]
 fn on_a_planar_guide_the_word_is_ons_frame() {
     let e = with("
-minimal := sweep(Tube(curvy, std.z).f over s in (0, 1))
-held := sweep(Held(curvy, std.z).f over s in (0, 1))
-algebraic := sweep(Algebraic(curvy, std.z).f over s in (0, 1))");
+param s: Scalar over (0, 1)
+minimal := sweep(Tube(curvy, std.z).f over s)
+held := sweep(Held(curvy, std.z).f over s)
+algebraic := sweep(Algebraic(curvy, std.z).f over s)");
     let corners = |name: &str| -> Vec<V> { brep(&e, name).vertices.iter().map(|v| v.p).collect() };
     // `std.On`'s frame is integrated too (#363 S2): over a planar guide it is the frame that
     // holds `v` along `up` at every station, `OnSpline`'s.  Corners paired by nearness: two may
@@ -259,7 +262,8 @@ component Loose(g: path, up: axis, s: Scalar) {{
   sec := Rect(f, off: 0mm, w: 2mm, h: 1mm)
   k := face(sec.a, sec.b, sec.c, sec.d, -> close)
 }}
-loose := sweep(Loose(curvy, std.z).k over s in (0, 1))
+param s: Scalar over (0, 1)
+loose := sweep(Loose(curvy, std.z).k over s)
 ");
     let said = refused(&short, "loose");
     assert!(said.contains("is short of rates: 2 degrees of freedom along its running number"),
@@ -273,7 +277,8 @@ component Homely(g: spline, up: axis, s: Scalar) {{
   sec := Rect(st.n, off: 0mm, w: 2mm, h: 1mm)
   k := face(sec.a, sec.b, sec.c, sec.d, -> close)
 }}
-homely := sweep(Homely(curvy, std.z).k over s in (0, 1))
+param s: Scalar over (0, 1)
+homely := sweep(Homely(curvy, std.z).k over s)
 ");
     let said = refused(&home, "homely");
     assert!(said.contains("`initially`"), "{said}");
@@ -287,7 +292,8 @@ component Round(g: path, up: axis, s: Scalar) {{
   rate(c over s) perpendicular up
   k := face(c)
 }}
-round := sweep(Round(curvy, std.z).k over s in (0, 1))
+param s: Scalar over (0, 1)
+round := sweep(Round(curvy, std.z).k over s)
 ");
     let said = refused(&circle, "round");
     assert!(said.contains("a rate is of an axis's direction or of a point"), "{said}");

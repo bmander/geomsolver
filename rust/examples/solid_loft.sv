@@ -29,4 +29,5 @@ in std.top {
   vertical guide
   length(length) guide
 }
-body := sweep(Reducer(guide, std.z, inlet: inlet_size, outlet: outlet_size, wall: wall).sec.profile over s in (0, 1))
+param s: Scalar over (0, 1)
+body := sweep(Reducer(guide, std.z, inlet: inlet_size, outlet: outlet_size, wall: wall).sec.profile over s)

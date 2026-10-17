@@ -487,13 +487,13 @@ fn sweep_parts(s: &Sweep) -> Vec<String> {
         Sweep::Swept { .. } | Sweep::Rolled { .. } | Sweep::Placed { .. } => Vec::new(),
         // a region's operand is the set the flattener applied to its probe: nothing to print
         Sweep::Body | Sweep::Region { .. } => Vec::new(),
-        // the face family is the whole of the brackets: `Station(g).f over s in (0, 1)`
+        // the face family is the whole of the brackets: `Station(g).f over s`, `s` declared
         Sweep::Family(f) => {
             let mut text = String::new();
             write_instance_call(&mut text, &f.instance);
             text.push('.');
             write_ref(&mut text, &f.face);
-            text.push_str(&format!(" over {} in ({}, {})", f.swept.text, f.domain.0, f.domain.1));
+            text.push_str(&format!(" over {}", f.swept.text));
             vec![text]
         }
         Sweep::Through { body } => {

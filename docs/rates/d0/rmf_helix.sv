@@ -51,4 +51,5 @@ component Tube(a: Length, b: Length, r: Length, up: axis, phi: Angle) {
   sec := face(c)
 }
 
-tube := sweep(Tube(a: 10mm, b: 5mm / (2 * pi), r: 1.5mm, up: std.z).sec over phi in (0deg, 720deg))
+param phi: Angle over (0deg, 720deg)
+tube := sweep(Tube(a: 10mm, b: 5mm / (2 * pi), r: 1.5mm, up: std.z).sec over phi)

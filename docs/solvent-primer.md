@@ -355,7 +355,7 @@ top of a document (or its `preview`); a component's unknowns are the formals a c
 **Parameters that run** (0.139). `param t: Angle over (0deg, 360deg)` declares a number that runs
 over an interval: neither a value nor an unknown, so it has no `:=` and no `hint(…)`, and it says
 what it is (`Length`, `Angle` or `Scalar`). Its ends are numbers of that type and increase (E103
-otherwise). It is the one notion a face family's running number (`over s in (0, 1)`, 1.14), a
+otherwise). It is the one notion a face family's running number (`over s`, a declared `s`, 1.14), a
 traced body's formals (1.10) and the roll a reading runs over (`over t in (a, b)`, 1.15) are uses
 of. **A reading over the roll reads it** (0.140): `envelope(tool over t)`, `sweep(tool over t)`
 and `meshing(f1, f2 over t)` take a declared `Angle`'s interval for their own, as `over t in (a,
@@ -1434,10 +1434,14 @@ k := trace(Par(o).p over u in (-2mm, 2mm))
   `sweep: 90deg` a partial one (caps `start` and `end`), `sense: cw` reverses it. An axis lies in
   the plane when it is one of the plane's own (`about: std.z` on `std.front`) or the solve puts it
   there (else E081).
-- **Face family** (0.97) — a loft, or a sweep along a path: `body := sweep(Reducer(guide, std.z,
-  inlet: 24mm, outlet: 12mm, wall: 2mm).sec.profile over s in (0, 1))` is the face `sec.profile` of
-  the instance as its formal `s` runs (`solid_loft`, `solid_elbow`, `solid_bend`, `solid_twist`).
-  There is no `along:` (0.100): a loft is written this way. The instance is written in place, leaves
+- **Face family** (0.97, 0.145) — a loft, or a sweep along a path: with `param s: Scalar over (0,
+  1)` declared, `body := sweep(Reducer(guide, std.z, inlet: 24mm, outlet: 12mm, wall:
+  2mm).sec.profile over s)` is the face `sec.profile` of the instance as its formal `s` runs over
+  the parameter's interval (`solid_loft`, `solid_elbow`, `solid_bend`, `solid_twist`). The formal
+  that runs is the one named as the parameter, or the one the call gives it (`Tube(hose, std.x, r:
+  r, s: s2).f over s2`, `paths/cable.sv`); `over s in (0, 1)` is retired (E001, naming this). There
+  is no `along:` (0.100): a loft is written this way. A family stands in the document (a
+  component sees no parameter). The instance is written in place, leaves
   `s` unbound and is never drawn; it is solved at every station, `s` a number there, so its body may
   use any expression in `s` and read a number of the geometry it was given (`rim.r`). Write *where
   the section stands* and *what it is* as constraints in the component: a station word of `std` for
@@ -1463,7 +1467,7 @@ k := trace(Par(o).p over u in (-2mm, 2mm))
   the family is drawn (the middle of its interval) and from there its frame turns only as the
   guide makes it (0.123): with `up` the normal of the guide's plane its `v` stays along `up`, and
   along a guide in space its plane stays square to the guide. **A named open chain of lines and arcs is one path**:
-  `sweep(Tube(route, std.z, r: 4mm).f over s in (0, 5))` runs the station over `route`'s
+  `sweep(Tube(route, std.z, r: 4mm).f over s)` over `param s: Scalar over (0, 5)` runs the station over `route`'s
   five links one after the next, link `k` while `s` is in `(k, k + 1)`; a law in `s` reads the
   chain's whole `s`, and the walls keep their names across the links (`docs/lofts/l0/pipe.sv`).
   **Several sections** (0.111) are joined by **rails**, one a corresponding corner — its places in
@@ -1476,7 +1480,7 @@ k := trace(Par(o).p over u in (-2mm, 2mm))
   rail, square to its end sections (or tangent to a neighbouring face's edge). With no guide,
   `std.Across(ra, rb, rc, s: s)` is the plane through three rails at `s`
   (`docs/lofts/l0/bottle.sv`, `rust/gcs-core/tests/sections.rs`). **Two faces drawn apart**
-  (0.113) are lofted by `sweep(std.Ruled(inlet, outlet).f over s in (0, 1))`: corner `k` of each
+  (0.113) are lofted by `sweep(std.Ruled(inlet, outlet).f over s)`: corner `k` of each
   walk joined to corner `k` of the other by a straight rail, the ends the faces themselves. The
   pairing is the written order — start a walk at another corner to connect it differently, and
   name a point on an edge (`m coincident(t == 0.5) half`, `face(t0, t1, t2, m, -> close)`) to give
@@ -1847,7 +1851,7 @@ the operand that runs: `sweep(tool over t in (-75deg, 75deg), under: turn)` is t
 sweeps, `envelope(tool over t in (a, b), …)` what its boundary leaves, `meshing(f1, f2 over t in
 (a, b), …)` the contact as the first flank's phase runs. `over t` alone names a declared `param t:
 Angle over (a, b)` (1.6) and reads its interval. The same word is a face family's and a traced
-curve's: `sweep(Station(g).f over s in (0, 1))` (1.14), `trace(leg.toe over theta in (0, 360))`
+curve's: `sweep(Station(g).f over s)` over a declared `s` (1.14, 0.145), `trace(leg.toe over theta in (0, 360))`
 (1.10). The spellings these replace — `solid(tool, at: θ)`, `solid(tool, under: m, from: a, to:
 b)` and `through:`, `n := base carried(at: τ)`, `X coincident(at: τ) x`, an envelope's and a
 meshing's `from:`/`to:`, `solid(… over …)` and a bare `k := leg.toe over …` — are refused, each
@@ -1938,9 +1942,42 @@ n := base in screw                       // `std.Helix`'s station: base where th
 ```
 
 `std.Helix`, `std.OnHelix` and `std.Twisted` are written so. A frame with a value rides on none,
-and nothing is drawn in its own block (E080, naming `n := base in f`: draw in the frame drawn in
-it). A value over a declared `param t: … over (a, b)` holds for every `t` (0.142, 1.6): what is
-drawn in the frame is a trajectory.
+and no frame rides on it. A value over a declared `param t: … over (a, b)` holds for every `t`
+(0.142, 1.6): what is drawn in the frame is a trajectory.
+
+**Drawn in a frame with a value** (0.145, issue #398): what its `in` block draws stands where the
+value puts it. Each plane the block draws in is read as that plane drawn in the frame (`P in f`),
+and so is the plane a relation in the block names, so the block is the drawing at rest carried
+whole; a face of it is swept as a declared parameter runs with `sweep(sec over s)` — a face family
+whose station is the drawing itself (`lofts/thread.sv`'s thread):
+
+```sv
+param s: Scalar over (0, 1)
+screw := frame
+std.Turn(screw, about: std.top.normal, ratio: 1, advance: pitch)
+fix(value == 360deg * turns * s) screw
+in screw {
+  in std.front {
+    c := point
+    c on_u(d: r) std.front                // the front plane as the screw carries it
+  }
+  sq := std.CenteredRectangle(c, w: size, h: size) in std.front
+  sec := face(sq.loop)
+}
+thread := sweep(sec over s)
+```
+
+Drawn in the valued frame and no plane of it is E080 (a value carries a plane); a frame declared
+in the block still rides on the frame with the value (E080).
+
+**A frame along a path** (0.145): a joint held along a path rather than about a line, `g
+coincident f.axis` with `fix(ratio == 0, advance == 0mm) f`, stands where the path's parameter puts
+it — square to the tangent, turned as the path makes it from its home (where it is drawn), the
+rotation-minimising frame for ratio 0 and the path's own (toward its centre of curvature) for
+ratio 1. `std.Along(n, g, up: std.z, home: 0)` and `std.AlongFrenet(n, g)` say it and draw `n` at
+its home; a face drawn in `n` and swept over a declared `s` stands at every station where the frame
+does, `s` the path's own parameter. Its pose is read off the path after the solve, so a relation the
+solve holds reads none (E080).
 
 **A value over a parameter is a drive** (0.143): any expression of it, a cam's law, and the frame
 stands at the law's value for every `t`. A reading of its motion over the roll reads the roll as

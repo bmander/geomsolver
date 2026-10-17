@@ -50,5 +50,7 @@ component Tube(g: path, up: axis, r: Length, s: Scalar) {
 }
 
 // the through-spline's parameter runs one a corner, the Bézier's from 0 to 1
-cable_tube := sweep(Tube(cable, std.x, r: r).f over s in (0, 3))
-hose_tube := sweep(Tube(hose, std.x, r: r).f over s in (0, 1))
+param s: Scalar over (0, 3)
+cable_tube := sweep(Tube(cable, std.x, r: r).f over s)
+param s2: Scalar over (0, 1)
+hose_tube := sweep(Tube(hose, std.x, r: r, s: s2).f over s2)

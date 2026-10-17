@@ -99,6 +99,9 @@ impl<'a> Walk<'a> {
             _ => None,
         }));
         let scope = &Scope { vals: vals.clone(), groups, ..scope.clone() };
+        // what a frame with a value draws in its block, read where the value puts it (#398 B)
+        let lowered = self.valued_blocks(body);
+        let body: &[Stmt] = lowered.as_deref().unwrap_or(body);
         for st in body {
             // a set's body walked again for a tangency states its relations' derivatives and
             // makes nothing a second time, and one walked for what it makes states nothing (§6.21)
@@ -389,16 +392,17 @@ impl<'a> Walk<'a> {
         // sweeps read under the instance `walk_family` drew (#243 L1)
         if let Some(crate::syntax::Sweep::Family(f)) = d2.sweep.as_mut() {
             let key = format!("{}{}", scope.prefix(), f.instance.name.text);
-            let held = format!("{key}.{}", f.swept.text);
+            // refused where the instance was walked: no solid
+            let Some(swept) = self.held.formals.get(&key).cloned() else { return };
+            let held = format!("{key}.{swept}");
             // over a chain, each leg's running number and the face it sweeps (#243 L4)
             let legs = self.held.chained.get(&key).cloned().unwrap_or_default();
-            // refused where the instance was walked: no solid
             if !self.held.names.contains_key(&held) && legs.is_empty() {
                 return;
             }
-            let end = |t: &str| value_of(t, vals, self.units);
-            if let (Ok(a), Ok(b)) = (end(&f.domain.0), end(&f.domain.1)) {
-                f.domain = (crate::syntax::num(a), crate::syntax::num(b));
+            // the declared parameter's interval (#398 B), which `walk_family` read
+            if let Some(r) = self.parameters.get(&f.swept.text) {
+                f.domain = (crate::syntax::num(r.from), crate::syntax::num(r.to));
             }
             let instances: Vec<String> = if legs.is_empty() {
                 vec![f.instance.name.text.clone()]
@@ -451,13 +455,16 @@ impl<'a> Walk<'a> {
 
     /// **A reading over a declared parameter reads its interval** (#391 S2): `over t`, with no
     /// `in (a, b)`, names a `param t: Angle over (a, b)` of the document, and its ends are that
-    /// declaration's — the roll is an angle, so a parameter of another type is refused, as is a
-    /// name the document declares no parameter by (a component's body sees none).
+    /// declaration's — the roll is an angle, so a parameter of another type is refused (a sweep's
+    /// by the elaborator, since a face of the drawing swept over one is a face family, #398 B), as
+    /// is a name the document declares no parameter by (a component's body sees none).
     fn declared_interval(&mut self, d: &mut Decl, scope: &Scope) {
-        let (over, from, to) = match (&mut d.sweep, &mut d.angular_span) {
-            (Some(crate::syntax::Sweep::Swept { over, from, to, .. }), _) => (&*over, from, to),
+        let (over, from, to, swept) = match (&mut d.sweep, &mut d.angular_span) {
+            (Some(crate::syntax::Sweep::Swept { over, from, to, .. }), _) => {
+                (&*over, from, to, true)
+            }
             (_, Some(crate::syntax::AngularSpan { over: Some(over), from, to, .. })) => {
-                (&*over, from, to)
+                (&*over, from, to, false)
             }
             _ => return,
         };
@@ -474,21 +481,28 @@ impl<'a> Walk<'a> {
             self.err(Code::E103, name.span, m);
             return;
         };
-        if running.dim != crate::units::Dim::ANGLE {
+        // a face of the drawing may be swept over a parameter of any kind (#398 B), a face
+        // family: the elaborator, which knows what the tool is, refuses a solid swept so
+        let angle = running.dim == crate::units::Dim::ANGLE;
+        if !angle && !swept {
             let m = format!("`{}` is no angle: a reading over the roll runs over an angle",
                             name.text);
             self.err(Code::E103, name.span, m);
             return;
         }
-        let end = |v: f64| crate::syntax::Arg::Dim { text: format!("{}deg", crate::syntax::num(v)),
-                                                     span: name.span };
+        let unit = if angle { "deg" } else { "" };
+        let end = |v: f64| crate::syntax::Arg::Dim {
+            text: format!("{}{unit}", crate::syntax::num(v)), span: name.span };
         (*from, *to) = (end(running.from), end(running.to));
     }
 
     /// **A face family's station** (#243 L1): the instance written in place, drawn under a key
     /// the source cannot write (`#f12.`) with the running formal left unbound, so it is the free
     /// value `bind` makes of one (`#f12.s`) — and that value *held* (`Held`): the drawn station
-    /// stands at the middle of the interval, the family solves it again at every other.
+    /// stands at the middle of the interval, the family solves it again at every other.  The
+    /// interval is a declared parameter's (#398 B), `over s` naming `param s: Scalar over (a, b)`,
+    /// and the formal that runs is the one the call gives it (`Tube(g, s: u)` over `u`), or else
+    /// the one named as it.
     fn walk_family(
         &mut self,
         f: &crate::syntax::FamilySpec,
@@ -506,9 +520,26 @@ impl<'a> Walk<'a> {
                 return ControlFlow::Continue(());
             }
         };
-        let (swept, cname) = (&f.swept.text, &inst.component.text);
-        let Some(formal) = comp.formals.iter().find(|fo| fo.name.text == *swept) else {
-            self.err(Code::E103, f.swept.span, format!("`{cname}` has no formal `{swept}` to run"));
+        let Some(running) = self.family_parameter(f, scope) else {
+            return ControlFlow::Continue(());
+        };
+        let (param, cname) = (&f.swept.text, &inst.component.text);
+        // the formal the call gives the parameter, or the one named as it
+        let given = inst.args.iter().position(|a| match &a.value {
+            crate::syntax::InstVal::Ref(r) => r.path.is_empty() && r.root.text == *param,
+            crate::syntax::InstVal::Expr(t) => t.trim() == param.as_str(),
+            _ => false,
+        });
+        let swept = match given {
+            Some(i) => match &inst.args[i].label {
+                Some(l) => l.text.clone(),
+                None => comp.formals.get(i).map(|fo| fo.name.text.clone()).unwrap_or_default(),
+            },
+            None => param.clone(),
+        };
+        let Some(formal) = comp.formals.iter().find(|fo| fo.name.text == swept) else {
+            self.err(Code::E103, f.swept.span, format!("`{cname}` has no formal `{swept}` to run \
+                over `{param}`: give it one, `{cname}(…, s: {param})`"));
             return ControlFlow::Continue(());
         };
         if !matches!(formal.ty, Ty::Scalar | Ty::Length | Ty::Angle) {
@@ -516,39 +547,63 @@ impl<'a> Walk<'a> {
             self.err(Code::E103, f.swept.span, m);
             return ControlFlow::Continue(());
         }
-        if inst.args.iter().any(|a| a.label.as_ref().is_some_and(|l| l.text == *swept)) {
-            let m = format!("`{swept}` runs over the family's interval, so the call leaves it \
-                             unbound");
+        if formal.ty.dim() != running.dim {
+            let m = format!("`{param}` is a {}, and `{cname}`'s `{swept}` a {}: a face family runs \
+                             its formal over a parameter of its kind", running.dim.name(),
+                            formal.ty.dim().name());
             self.err(Code::E103, f.swept.span, m);
             return ControlFlow::Continue(());
         }
-        let ends = [&f.domain.0, &f.domain.1].map(|t| {
-            value_of(t, vals, self.units).and_then(|v| v.is_finite().then_some(v)
-                .ok_or_else(|| "is not a finite number".to_string()))
-        });
-        let (a, b) = match ends {
-            [Ok(a), Ok(b)] => (a, b),
-            [Err(e), _] | [_, Err(e)] => {
-                self.err(Code::E103, st.span, format!("the family's interval: {e}"));
-                return ControlFlow::Continue(());
-            }
-        };
-        if a >= b {
-            let m = format!("a face family runs from its interval's start to a later end: `in ({}, \
-                             {})` runs nowhere or backwards", f.domain.0, f.domain.1);
-            self.err(Code::E080, st.span, m);
+        // what else the call gives the formal: it runs, so the call leaves it to the parameter
+        let bound = inst.args.iter().enumerate().any(|(i, a)| Some(i) != given
+            && a.label.as_ref().map_or_else(|| comp.formals.get(i).is_some_and(|fo|
+                fo.name.text == swept), |l| l.text == swept));
+        if bound {
+            let m = format!("`{swept}` runs over `{param}`, so the call gives it nothing else");
+            self.err(Code::E103, f.swept.span, m);
             return ControlFlow::Continue(());
         }
+        let mut inst = inst.clone();
+        if let Some(i) = given {
+            // the arguments after it keep their formals, labelled, once it is taken off the call
+            for (k, a) in inst.args.iter_mut().enumerate().skip(i + 1) {
+                if a.label.is_none() {
+                    a.label = comp.formals.get(k).map(|fo| Name { text: fo.name.text.clone(),
+                                                                  span: a.span });
+                }
+            }
+            inst.args.remove(i);
+        }
+        let (a, b) = (running.from, running.to);
+        let key = format!("{}{}", scope.prefix(), inst.name.text);
+        self.held.formals.insert(key, swept.clone());
         // a path given a named chain: one leg per link the interval reaches (#243 L4), every
         // chain the call gives run in step (L7)
-        let chains = self.chain_arguments(comp, inst, scope);
+        let chains = self.chain_arguments(comp, &inst, scope);
         if !chains.is_empty() {
-            return self.walk_legs(f, inst, chains, (a, b), formal.ty, st, scope, vals, path,
-                                  depth);
+            return self.walk_legs(f, &swept, &inst, chains, (a, b), formal.ty, st, scope, vals,
+                                  path, depth);
         }
         let held = format!("{}{}.{swept}", scope.prefix(), inst.name.text);
         self.held.names.insert(held, (formal.ty.dim(), 0.5 * (a + b)));
-        self.walk_instance(inst, st, scope, vals, path, depth)
+        self.walk_instance(&inst, st, scope, vals, path, depth)
+    }
+
+    /// **The parameter a face family runs over** (#398 B): `over s` names a `param s: … over (a,
+    /// b)` the document declares — a component's body sees none, so a family stands where its
+    /// parameter is declared.  Said and `None` where it names none.
+    pub(super) fn family_parameter(&mut self, f: &crate::syntax::FamilySpec, scope: &Scope)
+        -> Option<crate::model::Running> {
+        let name = &f.swept;
+        let declared = (scope.module.is_none() && scope.prefix().is_empty())
+            .then(|| self.parameters.get(&name.text).cloned()).flatten();
+        if declared.is_none() {
+            let m = format!("`{0}` names no parameter the document declares: a face family runs \
+                             over one, `param {0}: Scalar over (a, b)`, and stands where it is \
+                             declared", name.text);
+            self.err(Code::E103, name.span, m);
+        }
+        declared
     }
 
     /// **A face family over a chain** (#243 L4, finding 6): the path formal given a named open
@@ -566,6 +621,7 @@ impl<'a> Walk<'a> {
     fn walk_legs(
         &mut self,
         f: &crate::syntax::FamilySpec,
+        swept: &str,
         inst: &crate::syntax::Instance,
         chains: Vec<ChainArgument>,
         (a, b): (f64, f64),
@@ -576,7 +632,6 @@ impl<'a> Walk<'a> {
         path: &[PathStep],
         depth: usize,
     ) -> ControlFlow<()> {
-        let swept = &f.swept.text;
         let n = chains[0].2.len();
         if let Some((_, r, other)) = chains.iter().find(|(_, _, l)| l.len() != n) {
             let (first, m) = (ref_text(&chains[0].1), other.len());
@@ -1095,7 +1150,7 @@ impl<'a> Walk<'a> {
                 expression in `{u}`, and a rate is read along a formal handed on as itself: give \
                 the component `{s}: {u}`"))),
             Some(_) => Err((Code::E040, format!("`{s}` is an unknown of the drawing: a rate runs \
-                along a face family's running number, `sweep(I(…).f over s in (a, b))`, or a \
+                along a face family's running number, `sweep(I(…).f over s)`, or a \
                 traced body's formal"))),
         }
     }

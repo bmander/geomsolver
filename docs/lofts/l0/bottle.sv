@@ -39,4 +39,5 @@ in std.front {
   rims := line(r0, r1) -> line(r1, r2)
   rail := spline(through: rims, start: axis_line, end: axis_line)
 }
-bottle := sweep(Body(axis_line, std.y, std.front, rail).f over s in (0, 1))
+param s: Scalar over (0, 1)
+bottle := sweep(Body(axis_line, std.y, std.front, rail).f over s)
