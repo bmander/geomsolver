@@ -4,6 +4,20 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.142] Relations over a parameter.** A dimension of the document's own relations may read a
+declared `param t: Angle over (a, b)` (§6.3; through 0.141, E103), and the relation holds for every
+value of it, as every other relation of the drawing does: the drawing is a function of `t`, drawn
+at the interval's start. It is followed along `t` by continuation, one branch carried from the
+start, to the interval's end or to a singular instant, where the march stops saying whether the
+motion turns back there or two branches cross. A drawing not held at the start is not followed:
+the freedom left is a free function of `t`. The diagnosis counts the freedom each parameter drives
+(`1 DOF over t` for a four-bar's crank) and names what is left beside it a free function of it. A
+value reading a parameter is E103 (a value is worked out once). `trace(m over t)`, new, is a point
+of the drawing itself as `t` runs (§6.5): a curve of its view, over the parameter's interval or a
+stretch of it, ending where the march stops, drawn and held to by nothing (a relation naming it is
+E061). A joint's value may read a parameter (§6.14), so what is drawn in the frame is a trajectory.
+No existing document changes meaning. (Issue #391, stage 4.)
+
 **[0.141] A joint's value.** A jointed frame has a value, the instant of the roll it stands at
 (§6.14): `fix(value == τ) f`, beside its ratio and advance, turns its joint `ratio · τ` and raises
 it `advance · τ / 360°` from where it is drawn — linear in `τ`, the ratio and the advance its

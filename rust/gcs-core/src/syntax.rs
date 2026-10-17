@@ -47,7 +47,8 @@ pub struct CurveSpec {
 
 /// The instance a curve's point belongs to, resolved: the absolute prefix of the instance
 /// (`leg.`, or a phantom `#c12.` for one written in place), and the point's name under it
-/// (`toe`, `sub.pt`).
+/// (`toe`, `sub.pt`).  No instance (`""`) for a point of the drawing itself, followed along a
+/// declared parameter (#391 S4), its name absolute.
 #[derive(Clone, Debug)]
 pub struct CurveOf {
     pub instance: String,

@@ -999,7 +999,8 @@ pub(super) fn drawn_in_planes(sk: &Sketch, map: &super::SourceMap, diags: &mut V
         .chain((0..sk.arcs.len()).map(EntRef::arc))
         .chain((0..sk.splines.len()).filter(|&i| !sk.spline_traced.contains_key(&(i as u32)))
             .map(EntRef::spline))
-        .chain((0..sk.curves.len()).filter(|&i| sk.curve_extremal(i)).map(|i| EntRef::new(EntKind::Curve, i)));
+        .chain((0..sk.curves.len()).filter(|&i| sk.curve_extremal(i) || sk.curve_followed(i))
+            .map(|i| EntRef::new(EntKind::Curve, i)));
     for e in curves {
         let Some(&p) = sk.children(e).iter().find(|k| sk.plane_of(k.i()).is_none()) else { continue };
         let Some(site) = map.site_of(e) else { continue };
@@ -1013,6 +1014,7 @@ pub(super) fn drawn_in_planes(sk: &Sketch, map: &super::SourceMap, diags: &mut V
                 match e.kind {
                     EntKind::Arc => "an arc",
                     EntKind::Circle => "a circle",
+                    EntKind::Curve if sk.curve_followed(e.i()) => "a point traced over a parameter",
                     EntKind::Curve => "a free curve",
                     _ => "a spline",
                 },

@@ -293,6 +293,8 @@ impl Constraint {
                 crate::model::CurveBody::Extremal(x) => {
                     sk.extremal_consts(curve.i()).unwrap_or_else(|| vec![0.0; x.n_const()])
                 }
+                // nothing is held to a point followed along a parameter (`validate`)
+                crate::model::CurveBody::Followed => Vec::new(),
             };
             // a point in space reads the curve's plane first: its basis in space, `u`, `v`, `o`
             if self.kind == CKind::PointOnExtrusion {

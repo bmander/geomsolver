@@ -360,8 +360,50 @@ traced body's formals (1.10) and the roll a reading runs over (`over t in (a, b)
 of. **A reading over the roll reads it** (0.140): `envelope(tool over t)`, `sweep(tool over t)`
 and `meshing(f1, f2 over t)` take a declared `Angle`'s interval for their own, as `over t in (a,
 b)` states one in place (a parameter of another type, or a name nothing declares, is E103; a
-component, which sees no parameter, states its interval). A dimension reading one is still E103:
-a relation that holds for every value of it is issue #391's stage 4.
+component, which sees no parameter, states its interval).
+
+**A relation over a parameter holds for every value of it** (0.142). A dimension of the document's
+own relations may read `t`, and the drawing is then a function of `t`: drawn at the interval's
+start, and **followed** from there by continuation, one branch (a linkage's assembly mode) carried
+to the end or to a **singular instant**, where the march stops and says whether the motion turns
+back there or two branches cross. A four-bar driven round:
+
+```
+unit mm
+use std
+param t: Angle over (0deg, 360deg)
+in std.front {
+  a := point
+  d := point
+  b := point hint((10, 0))
+  c := point hint((40, 25))              // above the ground: the assembly mode carried
+  fix((0, 0)) a
+  fix((40, 0)) d
+  a distance(10) b
+  b distance(35) c
+  c distance(25) d
+  crank := line(a, b)
+  line(a, d) angle(t) crank              // the driver: held for every t
+  bc := line(b, c)
+  m := point
+  m midpoint bc
+}
+coupler := trace(m over t)               // the coupler curve (1.10)
+```
+
+`solventc` says what each parameter drives and how far the drawing runs over it:
+
+```
+  6 params, 6 equations, structural rank 6; DOF 0; 1 DOF over t; 3 rigid cluster(s) in the distance graph
+  driven by t: L1 angle(t = 0°) crank
+  t: followed from 0deg to 360deg
+```
+
+A crank that cannot turn round reports `t: followed from 0deg to 129.838deg, singular at t =
+129.838deg: no drawing stands past it, the motion turns back`. The drawing must be held at the
+start: a freedom left beside a parameter is a free *function* of it (`each DOF left a free function
+of t`), and nothing says how it moves, so it is not followed. A value reading a parameter is E103
+(a value is worked out once), and a component sees none.
 
 **Dimensions are checked.** Two base dimensions, length and angle. `*` and `/` derive, `+` and `-`
 demand agreement, and the result is checked against its slot: `a distance(45deg) b` is an error. A
@@ -815,6 +857,11 @@ NAME := trace(Component(ARGS).POINT over FORMAL in (A, B))  an instance written 
   crank is the drawing's freedom (2.10, `jansen.sv`, `peaucellier.sv`).
 - **Written in place**, `Involute(base, phase: a0).p over u in (…)` is anchored at the value the
   call gives the swept formal, or the interval's start.
+- **Over a declared parameter** (0.142), `coupler := trace(m over t)` is where a point of the
+  drawing itself goes as the drawing runs over `t` (1.6), over the parameter's interval or a
+  stretch of it (`over t in (30deg, 90deg)`), ending where the drawing stops at a singular
+  instant. It is a curve of the point's view (a point in space is E060), drawn and held to by
+  nothing: a relation naming it is E061.
 
 The point is placed one of two ways. **Computed**: `p := point(x: XEXPR, y: YEXPR)` over the
 formals; such a component can only be traced (2.8). **By constraints**: any point the body places,
@@ -1888,7 +1935,8 @@ n := base in screw                       // `std.Helix`'s station: base where th
 
 `std.Helix`, `std.OnHelix` and `std.Twisted` are written so. A frame with a value rides on none,
 and nothing is drawn in its own block (E080, naming `n := base in f`: draw in the frame drawn in
-it). A value reading a declared `param t: … over (a, b)` is E103 (stage 4).
+it). A value over a declared `param t: … over (a, b)` holds for every `t` (0.142, 1.6): what is
+drawn in the frame is a trajectory.
 
 **A motion's twist is read by rates** (0.130). The roll `t` is the slot of the `coincident` holding
 `X`, and `rate(X over t)` is how fast `X` runs a radian of it — the twist there. A rate of a contact

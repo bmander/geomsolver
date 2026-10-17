@@ -355,35 +355,17 @@ impl Reading {
     /// Solve the station at `s`, warm from wherever the part stands: the compiled system, or why
     /// it does not solve.
     fn solve(&self, sk: &mut Sketch, s: f64) -> Result<crate::system::System, String> {
-        sk.params[self.held as usize].value = s;
-        for item in crate::expr::evaluate(sk) {
-            if let Some(e) = item.error {
-                return Err(format!("`{}` does not work out there: {e}", item.text));
-            }
-        }
-        for n in &self.outer {
-            if let Some(&p) = sk.free_vars.get(n) {
-                sk.params[p as usize].fixed = true;
-            }
-        }
-        let mut sys = crate::system::System::new(sk);
-        if !sys.solve(sk, crate::solve::SolveOpts::default()).success {
-            return Err("does not solve".into());
-        }
-        Ok(sys)
+        crate::follow::settle(sk, self.held, s, &self.outer)
     }
 
     /// Whether the station `sys` solved is regular: of full column rank, no freedom left and no
     /// equation lost — asked only of a station the step keeps, since the rank is the dear part.
     fn regular(sys: &mut crate::system::System, sk: &Sketch) -> Result<(), String> {
-        let z = sys.z0(sk);
-        let rank = sys.rank(&z, crate::system::RANK_TOL, true);
-        if rank < sys.n_free {
-            let n = sys.n_free - rank;
-            let plural = if n == 1 { "" } else { "s" };
-            return Err(format!("is not held: {n} degree{plural} of freedom"));
+        match crate::follow::short(sys, sk) {
+            Some(n) => Err(format!("is not held: {n} degree{} of freedom",
+                                   if n == 1 { "" } else { "s" })),
+            None => Ok(()),
         }
-        Ok(())
     }
 }
 

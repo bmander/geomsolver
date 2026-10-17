@@ -537,6 +537,16 @@ pub fn validate(
     args: &[Arg],
     name: &dyn Fn(EntRef) -> String,
 ) -> Result<(), String> {
+    // a point of the drawing followed along a parameter is drawn, and held to by nothing: where it
+    // is at any instant is the whole drawing's solve there (#391 S4)
+    let followed = |e: &EntRef| e.kind == EntKind::Curve && e.i() < sk.curves.len()
+        && sk.curve_followed(e.i());
+    if let Some(e) = args.iter().filter_map(|a| match a { Arg::Ent(e) => Some(e), _ => None })
+        .find(|e| followed(e)) {
+        let over = &sk.curve_defs[sk.curves[e.i()].def as usize].param;
+        return Err(format!("{} is traced as `{over}` runs: it is drawn, and nothing is held to \
+                            it (#391)", name(*e)));
+    }
     shared_on_one_curve(sk, kind, args, name)?;
     on_the_arc(kind, args, name)?;
     // an envelope a contact holds to is one whose source and motion the solve can read (#283),

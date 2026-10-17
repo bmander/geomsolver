@@ -119,10 +119,10 @@ fn a_parameter_refuses_what_it_cannot_mean() {
     refused("param t: Angle over (0deg, 0deg)", "E103", "runs over an increasing interval");
     refused("param t: Angle over (0mm, 1mm)", "E103", "`0mm`");
     refused("param w: Length\nparam t: Length over (0mm, w)", "E103", "reads an unknown");
-    // read as a number it is refused, and the relation with it: no unknown is made of the name
-    let e = refused("param t: Angle over (0deg, 90deg)\nin std.front {\n  a := point\n  \
-        b := point\n  fix((1, 0)) a\n  a distance(t * 1mm / 1deg) b\n}",
-        "E103", "`t` runs over an interval");
+    // a value reading it is refused: a value is worked out once (a relation reads it, #391 S4)
+    let e = refused("param t: Angle over (0deg, 90deg)\nw := 2 * t\nin std.front {\n  \
+        a := point\n  b := point\n  fix((1, 0)) a\n  a distance(w * 1mm / 1deg) b\n}",
+        "E103", "`t` runs over an interval, and a value is worked out once");
     assert!(!e.sketch.free_vars.contains_key("t"), "{:?}", e.sketch.free_vars);
     // a name is declared once, whatever it is
     refused("param t: Angle over (0deg, 90deg)\nt := 3", "E001", "declared twice");
@@ -464,8 +464,6 @@ fn a_joints_value_prints_back_and_refuses_what_it_cannot_mean() {
     refused("fix(value == 10deg) x", "E080", "a value is a jointed frame's");
     refused("fix(value == 10deg) screw\nfix(value == 20deg) screw", "E040", "given twice");
     refused("fix(value == 10mm) screw", "E103", "`value` is Angle, and this is Length");
-    refused("param t: Angle over (0deg, 360deg)\nfix(value == t) screw\nn := std.front in screw",
-            "E103", "`t` runs over an interval");
     refused("fix(value == 10deg) screw\nin screw {\n  p := point\n}", "E080",
             "rides on `screw`, which has a value");
     refused("in (arm := frame) {\n  planet := frame\n}\nstd.Turn(arm, about: ax, ratio: 1)\n\
@@ -473,4 +471,27 @@ fn a_joints_value_prints_back_and_refuses_what_it_cannot_mean() {
             "a frame with a value rides on none");
     // and a frame drawn in one that does not move is drawn in nothing that carries it
     refused("still := frame\nn := std.front in still", "E040", "does not move");
+}
+
+/// **A joint's value over a declared parameter** (#391 S4): `fix(value == t) screw` holds for
+/// every `t`, so what is drawn in the screw is a trajectory — followed along `t`, the point drawn
+/// in it stands at each station where the motion's closed form carries it at that instant, and
+/// the drawing stands at the interval's start.
+#[test]
+fn a_joints_value_may_run_over_a_declared_parameter() {
+    let e = solved(&format!("{SCREW}param t: Angle over (-30deg, 400deg)\n\
+        fix(value == t) screw\nX := x in screw\n"));
+    let screw = family(&e, "screw");
+    let point = |sk: &gcs_core::model::Sketch, n: &str| {
+        sk.world_point(e.map.ent_named(n).unwrap().i())
+    };
+    let x = point(&e.sketch, "x");
+    near(point(&e.sketch, "X"), screw.at((-30f64).to_radians()).unwrap().point(x), "at rest");
+    let f = gcs_core::follow::follow(&e.sketch, "t").expect("followed");
+    assert!(f.singular.is_none() && f.reached() == 400.0, "{:?}", f.singular);
+    let mut sk = e.sketch.clone();
+    for s in &f.stations {
+        sk.set_x(&s.x);
+        near(point(&sk, "X"), screw.at(s.at.to_radians()).unwrap().point(x), "followed");
+    }
 }

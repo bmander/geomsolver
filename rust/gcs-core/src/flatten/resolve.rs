@@ -1217,6 +1217,12 @@ impl<'a> Walk<'a> {
                     let abs = ref_text(r);
                     match self.owner_of(&abs, &c.swept.text) {
                         Some(of) => c.of = Some(of),
+                        // a point of the drawing itself, followed along a declared parameter
+                        // (#391 S4): no instance
+                        None if self.parameters.contains_key(&c.swept.text) => {
+                            c.of = Some(crate::syntax::CurveOf { instance: String::new(),
+                                                                 point: abs });
+                        }
                         None => self.err(
                             Code::E103,
                             r.span,

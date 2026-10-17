@@ -102,6 +102,8 @@ impl Source {
                 generated profile, not yet of a traced curve",None)),
             CurveBody::Extremal(_) => Err(refuse(Condition::Envelope,"the inner envelope is read of a curve of a computed point or a \
                 generated profile, not of a free curve",None)),
+            CurveBody::Followed => Err(refuse(Condition::Envelope,"the inner envelope is read of a curve of a computed point or a \
+                generated profile, not of a point traced over a parameter",None)),
         }
     }
 
