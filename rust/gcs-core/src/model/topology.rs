@@ -88,7 +88,8 @@ impl Sketch {
                     vec![EntRef::line(axis as usize)],
                 MotionDef::Turn {centre,..} => vec![EntRef::point(centre as usize)],
                 MotionDef::Relative {source,observer} => [source,observer].map(|i| EntRef::new(EntKind::Motion,i as usize)).to_vec(),
-                MotionDef::Inverse {of} => vec![EntRef::new(EntKind::Motion,of as usize)],
+                MotionDef::Inverse {of} | MotionDef::Driven {of,..} =>
+                    vec![EntRef::new(EntKind::Motion,of as usize)],
                 MotionDef::Joint {axis,..} => vec![EntRef::new(EntKind::Axis,axis as usize)],
             };
             kids.extend(self.frames.iter().enumerate()

@@ -481,6 +481,17 @@ fn carried_motion(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) -> Option<Option<R
             return Some(None);
         }
     };
+    // what is drawn in a driven frame is read at its value worked out, by the joint itself; a
+    // relation reading the frame's motion otherwise would read a law no row carries (#391 S5)
+    let m = match (drawn_in, super::motions::drive_in(&cx.sk, m)) {
+        (Some(_), _) => super::motions::undriven(&cx.sk, m),
+        (None, Some((f, over))) => {
+            let message = crate::motion::unread_drive(&f, &over);
+            cx.diags.push(Diag::within(Code::E080, under_ref.span, st.id, message));
+            return Some(None);
+        }
+        (None, None) => m,
+    };
     let key = format!("#motion{m}");
     cx.res.of.insert(key.clone(), EntRef::new(EntKind::Motion, m));
     let mut w = w.clone();

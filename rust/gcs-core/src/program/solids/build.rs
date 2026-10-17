@@ -383,17 +383,19 @@ fn under_motion(
             (a, b))`".into());
         return None;
     }
-    // drawn in a jointed frame (#391 S3), `tool in f`: placed by that frame at its value,
-    // whatever the tool rides on
+    // drawn in a jointed frame (#391 S3), `tool in f`: placed by the frame's joint at its value,
+    // whatever the tool rides on — a driven frame's joint itself, the value worked out where the
+    // drawing stands (#391 S5); otherwise the frame it is carried by, named or the one it rides
+    // on, seen from the one named, where one is (#383)
     let drawn_in = matches!(sweep, Sweep::Placed { at: crate::syntax::Arg::Word(w), .. }
         if w == crate::syntax::DRAWN_IN);
-    let value = motion.as_ref().filter(|_| drawn_in)
-        .and_then(|f| super::super::motions::value_of(sk, res, f))
-        .map(|(text, span)| crate::syntax::Arg::Dim { text, span });
-    // the frame it is carried by — named, or the one it rides on — seen from the one named,
-    // where one is (#383)
-    let tool = (!drawn_in).then_some(ops[0]);
-    let m = match super::super::motions::reading_of(sk, res, tool, motion.as_ref(), seen_from) {
+    let read = match motion.as_ref().filter(|_| drawn_in) {
+        Some(f) => super::super::motions::reading(sk, res, f, seen_from)
+            .map(|m| super::super::motions::undriven(sk, m)),
+        None => super::super::motions::reading_of(sk, res, Some(ops[0]), motion.as_ref(),
+                                                   seen_from),
+    };
+    let m = match read {
         Ok(m) => EntRef::new(EntKind::Motion, m),
         Err(message) => {
             say(Code::E080, motion.as_ref().map_or(st.span, |m| m.span), message);
@@ -403,8 +405,18 @@ fn under_motion(
     let angle = |a,what| extent(sk.units,a,what,crate::units::Dim::ANGLE)
         .map(|e| Extent {text:e.text,value:e.value.to_radians()});
     Some(match sweep {
+        // the value worked out where the drawing stands: a parameter it reads at its instant
+        Sweep::Placed {..} if drawn_in => {
+            let value = motion.as_ref().and_then(|f| super::super::motions::value_of(sk,res,f));
+            let Some((text,_)) = value else { return None };
+            let at = match super::super::motions::value_now(sk,&text) {
+                Ok(v) => Extent {text:text.trim().to_string(),value:v.to_radians()},
+                Err(message) => { say(Code::E103,st.span,message); return None; }
+            };
+            SolidDef::Placed {source:ops[0].idx,motion:m.idx,at}
+        }
         Sweep::Placed {at,..} => {
-            let at = match angle(value.as_ref().unwrap_or(at),"at") {
+            let at = match angle(at,"at") {
                 Ok(at) => at,
                 Err(message) => { say(Code::E103,st.span,message); return None; }
             };

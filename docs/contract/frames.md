@@ -122,6 +122,12 @@ points and the station words against `Family::at` and their closed forms to `EXA
 and stated read alike, a frame carried by what its source rides on), `jacobians.rs`'s
 `carried_at_rows_agree_with_finite_differences` (a joint about a plane's normal among them).
 
+**A frame driven by a parameter** (#391 S5): a jointed frame whose value reads a declared
+parameter stands where its joint carries it at the law's value of the roll, for every reading of
+its motion over the roll — the joint's node and a `MotionDef::Driven` beside it, `x in f` reading
+the one and every other reading the other; a relation the solve holds reads no drive
+([parameters.md](parameters.md)).
+
 **Not built in stage 4**: the app offers only planar frames as places to draw (a spatial chart is
 drawn in text), and the printer writes no `in` blocks of its own, so the plan's "jointed frame
 outermost" is the author's order.

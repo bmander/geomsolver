@@ -91,6 +91,11 @@ fn program_signed(sk: &Sketch, m: usize, inverse: bool, steps: &mut Vec<Step>, a
         MotionDef::Inverse { of } => {
             program_signed(sk, of as usize, !inverse, steps, args, values, shape, depth + 1)?;
         }
+        MotionDef::Driven { ref over, .. } => {
+            return Err(format!("`{}` is driven by `{over}`, and a profile in the sheet is \
+                generated under joints at a constant rate: a drive is read by a sweep or a \
+                placement (#391)", me.name))
+        }
         MotionDef::Joint { .. } => {
             return Err(format!("`{}`'s joint turns about an axis no centre of a view holds: a tool \
                                 of the sheet is carried by a turn in its view, `std.Spin(f, \

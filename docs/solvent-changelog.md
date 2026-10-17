@@ -4,6 +4,17 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.143] General drives.** A joint's value that reads a declared parameter drives its frame by it
+(§6.14): the value is a law, any expression of the parameter (through 0.142 a value over one was
+read only by what is drawn in the frame, at the instant the drawing is held at), and every reading
+of the frame's motion over the roll — a sweep, a placement, a roll through a body, an envelope in
+space — reads the roll as that parameter, the joint at the law's value of it. A value reads one
+parameter (E103 otherwise); one over a parameter that is no `Angle` is followed but not read over
+the roll (E080); a relation the solve holds reading a drive, and a profile in the plane generated
+under one, are E080. A face family's frame is recognised as a constant twist where its value is
+affine in the running number as written, no longer where three samples of it are. A value of `t`
+alone is the frame undriven, and no existing document changes meaning. (Issue #391, stage 5.)
+
 **[0.142] Relations over a parameter.** A dimension of the document's own relations may read a
 declared `param t: Angle over (a, b)` (§6.3; through 0.141, E103), and the relation holds for every
 value of it, as every other relation of the drawing does: the drawing is a function of `t`, drawn

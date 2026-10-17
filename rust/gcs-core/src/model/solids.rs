@@ -572,6 +572,13 @@ pub enum MotionDef {
     /// that needs a motion's kind before it (a profile in the plane, an envelope the solve holds)
     /// refuses it, naming what would settle it.
     Joint { axis: u32, ratio: f64, advance: f64 },
+    /// **A joint driven by its frame's value** (#391 S5): the joint node `of` standing at `law`,
+    /// the value's text written over the declared parameter `over`, at every roll — the roll is
+    /// that parameter while a reading runs over it.  Minted beside the joint's own node, which
+    /// `x in f` reads at the value worked out; every other reading of the frame's motion reads
+    /// this one (`motion::Law`).  A row the solve holds reads no law, so a relation reading it is
+    /// refused (`envelope::held`, `program::relations`).
+    Driven { of: u32, law: String, over: String },
 }
 
 #[derive(Clone, Debug)]
