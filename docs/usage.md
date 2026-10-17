@@ -61,7 +61,7 @@ views. Open them from `File ▸ Open examples…`, or render a sheet with
 | [Hollow duct elbow](../rust/examples/solid_elbow.sv) | a hollow section carried round a constrained arc |
 | [Hollow reducer](../rust/examples/solid_loft.sv) | a hollow section run along a line, its size read from the station |
 | [Pocketed tray](../rust/examples/solid_tray.sv) | named contours, a blind pocket, nested bodies, repeated bosses |
-| [Indexed pattern](../rust/examples/solid_indexed_pattern.sv) | one cutter placed at the poses of a named motion |
+| [Indexed pattern](../rust/examples/solid_indexed_pattern.sv) | one cutter placed at the poses of a frame's turn |
 | [Generating sweep](../rust/examples/solid_generating_sweep.sv) | material removed over a continuous motion |
 
 ```sh
@@ -75,8 +75,8 @@ STEP and STL are built by the core's own B-rep kernel. The same code runs in the
 and browser exports are identical byte for byte. Building with `make solventc OCCT=1` (set
 `OCCT_ROOT` for a custom prefix) adds Open CASCADE as an oracle: `--kernel occt`, and
 `--verify-step full` to read the written STEP back. An export is checked before it replaces
-anything: a failed check leaves the old files in place. Export needs a solved model with explicit
-length units.
+anything: a failed check leaves the old files in place. Export needs a solved model; a document
+with no `unit` line is in millimetres.
 
 A placed solid takes one pose of a motion, and a swept solid takes all of them over an interval:
 

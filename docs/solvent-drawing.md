@@ -47,8 +47,8 @@ files or rendering edits; exports retain the authored paper size and layout.
 shared definitions in `components/`. File examples open their named source, with dependencies
 available in the file picker. The entry points live in `web/src/app/example-catalog.ts`.
 Choosing an example updates `?example=NAME`; choosing a file adds `&file=PATH`, so refreshing or
-sharing the URL reopens it. Browser Back and Forward follow example selections. Old links such
-as `?example=vtwin_piston` open that part inside the V-twin directory. Explicit file URLs such as
+sharing the URL reopens it. Browser Back and Forward follow example selections. A part's own slug,
+such as `?example=vtwin_piston`, opens that part inside the V-twin directory. Explicit file URLs such as
 `?example=rect_fillets.sv` open the editable model directly.
 Example sources are included in the static web build;
 the local demo server supplies fresh files when available. Parameterized URLs such as
@@ -56,8 +56,8 @@ the local demo server supplies fresh files when available. Parameterized URLs su
 
 ## Files and dependencies
 
-`model ALIAS from "PATH"` imports the root model in a `.sv` file. Model `use` statements still
-resolve through the existing module system. Model aliases are local to the drawing, and a
+`model ALIAS from "PATH"` imports the root model in a `.sv` file. The model's own `use`
+statements resolve through the module system as they do anywhere. Model aliases are local to the drawing, and a
 drawing can import multiple models. Repeated imports of the same canonical file share one
 solved snapshot. Unsolved or invalid models produce a drawing diagnostic.
 
@@ -82,8 +82,8 @@ and WebAssembly ABI accept a bundle of source texts and use the same compiler an
 * Page coordinates start at the upper left; x grows right and y grows down.
 * `at (X, Y)` places the projected coordinate origin. It does not automatically center or fit
   the geometry. This makes aligned projections predictable.
-* A model's declared units are converted to paper millimetres. For legacy unitless models,
-  one model unit is treated as one millimetre for drawing scale.
+* A model's units are converted to paper millimetres; a model with no `unit` line is in
+  millimetres.
 * Stroke widths, dash lengths, and lettering use CSS pixels (96 per inch), independently of
   model scale. Sizes and scales must be finite and positive.
 
@@ -106,7 +106,7 @@ It does not turn a component into a body. `from` accepts `front`, `back`, `right
 `top`, `bottom`, `isometric`, or a model plane path; omitted, it means `front`. Projection uses Solvent's
 world axes: the front plane has horizontal X and vertical Z. A section additionally names
 a cutting plane and must be viewed parallel to it. Views retain source face paths, distinguish
-hidden edges, and suppress tessellation seams through the existing renderer.
+hidden edges, and suppress tessellation seams.
 
 `isometric` is a drawing camera, with horizontal axis `(1, -1, 0)` and vertical axis
 `(1, 1, 2)`, both normalized. It needs no model point, ground constraint, or plane. Keep
@@ -185,15 +185,15 @@ Private member names cannot be used as drawing paths, including style selectors.
 whole model or a public component can still show its private geometry through these role selectors.
 Privacy alone does not control display.
 
-## Migrating existing source
+## What stays in the model
 
-`.sv` rejects `view`, `section`, `dimensions`, `style`, `class` clauses, and callout placements.
-Move output requests and styling to a drawing. Keep model planes needed by geometry, while
-replacing page-spacing constructions with drawing positions. The six `vtwin_*.svd` part sheets
-demonstrate this separation; a model's planes carry no place on paper at all (#81).
+`.sv` rejects `view`, `section`, `dimensions`, `style`, `class` clauses, and callout placements:
+output requests and styling are the drawing's. A model keeps the planes its geometry needs, and
+they carry no place on paper; spacing on the page is a drawing position. The V-twin's six part
+drawings (`rust/examples/vtwin/*.svd`) show the separation.
 
 Model serialization and editor reconciliation omit styles, classes, and callout placements,
-while preserving semantic geometry roles.
-The explicit `syntax::parse_legacy` reader remains for historical renderer/migration fixtures;
-it is not used to accept `.sv` source in the CLI or browser. Low-level rendering APIs retain
-their presentation structures as adapters, independently of the model language.
+while preserving semantic geometry roles (`construction`, `centerline`).
+`syntax::parse_legacy` reads presentation clauses for the core's own renderer fixtures; neither
+the CLI nor the browser accepts `.sv` source through it. Low-level rendering APIs keep their
+presentation structures as adapters, independently of the model language.
