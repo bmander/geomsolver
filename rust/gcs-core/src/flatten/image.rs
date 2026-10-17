@@ -232,7 +232,7 @@ impl Walk<'_> {
             ..Decl::point(DeclName::Written(img.name.clone()), [0.0; 2], None)
         };
         body.push(stmt(StmtKind::Decl(face)));
-        let mut vals = p.vals.clone();
+        let mut vals = (*p.scope.vals).clone();
         let outer = std::mem::take(&mut self.out);
         self.aside.held = outer.len();
         self.body(&body, &p.scope, &mut vals, &p.path, p.depth + 1);

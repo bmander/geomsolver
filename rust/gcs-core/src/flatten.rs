@@ -103,12 +103,15 @@ struct Scope {
     typed: std::rc::Rc<BTreeMap<String, String>>,
     prefixes: Vec<String>,
     closed: bool,
-    forbidden: BTreeSet<String>,
+    /// The names a closed component may not capture — see `Outside`.
+    forbidden: Outside,
     groups: BTreeSet<String>,
     /// The numbers in force where the statement was written — the enclosing counts, params and
     /// block binders.  An index (`p[i + 1]`) is an expression over exactly these, and references
     /// are resolved in a later pass where the walk's own environment is gone, so it travels here.
-    vals: BTreeMap<String, Aff>,
+    /// Shared and not copied: every statement of a body carries the body's table, and the root's
+    /// holds every instance's numbers (`P0.w`), so a copy per statement is quadratic (#403).
+    vals: std::rc::Rc<BTreeMap<String, Aff>>,
     /// The **sides** in force: a `Side` formal to the word it was given (`s` → `right`).  A side
     /// is a word and not a number (§9.2), so it travels in a table of its own rather than as a
     /// ±1 in `vals` — which is exactly the idiom issue #48's item 4 takes out of the helpers, and
@@ -127,6 +130,22 @@ struct Scope {
     /// way: the index into `Walk::readings` and what its source must be for this to be the one
     /// kept (`carried`, `Walk::settle_readings`).
     reading: Option<(usize, carried::Read)>,
+}
+
+/// The numbers in force outside a closed component's body (`Scope::forbidden`): the scope the
+/// instance was written in and the document's, which a body that reads one by name has captured
+/// rather than been handed (E103).  The tables themselves, shared, and asked at lookup: a set of
+/// their names built per instance is a copy of the root's table per instance (#403).
+#[derive(Clone, Default)]
+struct Outside {
+    around: std::rc::Rc<BTreeMap<String, Aff>>,
+    file: std::rc::Rc<BTreeMap<String, Aff>>,
+}
+
+impl Outside {
+    fn contains(&self, name: &str) -> bool {
+        self.around.contains_key(name) || self.file.contains_key(name)
+    }
 }
 
 /// The blocks a statement stands in (`Scope::block`).
@@ -366,7 +385,6 @@ pub struct InstanceInfo {
 struct Pending {
     st: Stmt,
     scope: Scope,
-    vals: BTreeMap<String, Aff>,
     path: Vec<PathStep>,
     depth: usize,
 }
@@ -413,7 +431,7 @@ struct Walk<'a> {
     /// `Some` while a component is expanded over its formals as variables — see `Sym`.
     sym: Option<Sym>,
     /// Root values, used to diagnose accidental capture by a closed component.
-    file_vals: BTreeMap<String, Aff>,
+    file_vals: std::rc::Rc<BTreeMap<String, Aff>>,
     /// Module values exported to importing root bodies; component bodies receive arguments.
     module_vals: Vec<Option<BTreeMap<String, Aff>>>,
     diagnostics: Vec<Diag>,
@@ -446,7 +464,7 @@ struct Walk<'a> {
     /// call to one already here is a component instantiating itself, walked like any other call
     /// (a `when` ends it, §12.9) unless it is given the numbers it was given there, which make
     /// the same choices again and so never end (E003).
-    instantiating: Vec<(&'a Component, BTreeMap<String, Aff>)>,
+    instantiating: Vec<(&'a Component, std::rc::Rc<BTreeMap<String, Aff>>)>,
     /// The rings expanded — see `Rings`.
     rings: Rings,
     /// The relation words applied and what applications bound — see `WordState`.
@@ -663,7 +681,7 @@ impl<'a> Walk<'a> {
             aliases: Vec::new(),
             instances: Vec::new(),
             sym,
-            file_vals: BTreeMap::new(),
+            file_vals: Default::default(),
             module_vals: vec![None; prog.modules.len()],
             diagnostics: Vec::new(),
             called: BTreeSet::new(),

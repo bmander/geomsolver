@@ -807,11 +807,17 @@ impl<'a> Walk<'a> {
                 }
             }
         }
+        let references: Vec<_> =
+            references.into_iter().filter(|(name, _)| !vals.contains_key(name)).collect();
+        if references.is_empty() {
+            return;
+        }
+        // one table for every alias the body makes, shared
+        let at = Scope { vals: std::rc::Rc::new(vals.clone()), ..scope.clone() };
         for (name, reference) in references {
-            if vals.contains_key(&name) { continue; }
             let abs = format!("{prefix}{name}");
             self.checks.group_fields.push((abs.clone(), reference.span));
-            self.aliases.push((abs, reference, Scope { vals: vals.clone(), ..scope.clone() }));
+            self.aliases.push((abs, reference, at.clone()));
         }
     }
 

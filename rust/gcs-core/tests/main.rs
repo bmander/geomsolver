@@ -123,6 +123,7 @@ mod drawn_cauchy;
 mod loft;
 mod loft_examples;
 mod make_component;
+mod many_instances;
 mod mapped;
 mod measurements;
 mod mechanism_examples;
