@@ -109,16 +109,16 @@ component FormatePair(P: plane, across: axis, up: axis, pinion_teeth: Int, gear_
     inner_half := pressure + pressure_shift + 30deg
     outer_half := pressure - pressure_shift + 30deg
     pinion_inner := Topping(gear_tooth.inner, mill.ax, N, mill.to_inner, height: -depth,
-      half: inner_half, opening: 180deg - inner_half)
+      half: inner_half, opens: 1)
     pinion_outer := Topping(gear_tooth.outer, mill.ax, N, mill.to_outer, height: -depth,
-      half: outer_half, opening: outer_half)
+      half: outer_half, opens: -1)
     pinion_top := std.HalfSpace(trace.C, mill.ax, d: -addendum / 2)
     construction pinion_topping := Tooth(pinion_inner.cone, pinion_outer.cone,
       mill.tooth_base, pinion_top, grow: 0mm, r: rounding)
     gear_outer := Topping(gear_space.convex, mill.ax, N, mill.to_outer, height: depth,
-      half: outer_half, opening: outer_half)
+      half: outer_half, opens: -1)
     gear_inner := Topping(gear_space.concave, mill.ax, N, mill.to_inner, height: depth,
-      half: inner_half, opening: 180deg - inner_half)
+      half: inner_half, opens: 1)
     gear_top := std.HalfSpace(trace.C, mill.ax, d: addendum / 2)
     construction gear_topping := Space(gear_outer.cone, gear_inner.cone, gear_top,
       mill.mate_base, clear_below, clear_above, mill.reach, gear_index, pitch: 360deg / gear_teeth,
