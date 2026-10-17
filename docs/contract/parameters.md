@@ -2,10 +2,11 @@
 
 Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you touch
 `model/running.rs`, a `param … over`, a face family's running number, a traced body's formals, an
-interval of the roll a reading states, `follow.rs` (continuation), or `trace(m over t)`. The direction is [#391](https://github.com/bmander/geomsolver/issues/391):
-geometry over a parameter, trajectories rather than snapshots; this file holds what is built
-of it. An issue number (#n) or a spec version ([0.n], see the
-[language changelog](../solvent-changelog.md)) says where a rule came from.
+interval of the roll a reading states, `follow.rs` (continuation), or `trace(m over t)`. The
+direction is [#391](https://github.com/bmander/geomsolver/issues/391): geometry over a
+parameter, trajectories rather than snapshots; this file holds what is built of it. An issue
+number (#n) or a spec version ([0.n], see the [language changelog](../solvent-changelog.md)) says
+where a rule came from.
 
 - **One type for a number that runs** (#391 stage 1): `model::Running { name, dim, from, to }`,
   a parameter and the interval it runs over. Its ends are in the units a person reads,
@@ -27,14 +28,14 @@ of it. An issue number (#n) or a spec version ([0.n], see the
   name. **It is no unknown**: it makes no free value, no `Declared`, no column. `syntax::print`
   writes it as declared and `lift::unknowns` declares a sketch's again (ends as numbers in the
   document's units); `graft` carries none, as it carries no `declared`.
-- **A declared parameter is read by a reading over the roll** (#391 S2, [0.140]), and since S4
-  by the document's relations (below): `over t` with no interval (`syntax::RunsOver::declared`) names it, and
-  `Walk::declared_interval` writes its ends into the reading's `from`/`to` before they are settled
-  — a parameter of another type than `Angle`, or a name the document declares none by (a
-  component's body sees no parameter), is E103 at the name.  Through S3 a dimension reading one
-  was E103 and the relation refused (`Walk::runs`, `values::runs`, `settle_dim`,
-  `Checks::refused`); that refusal now stands only where the document's relations are not — a
-  component's body (`out_of_reach` says it first) — so no free variable is ever made of its name.
+- **A declared parameter is read by a reading over the roll** (#391 S2, [0.140]), and since S4 by
+  the document's relations (below): `over t` with no interval (`syntax::RunsOver::declared`) names
+  it, and `Walk::declared_interval` writes its ends into the reading's `from`/`to` before they are
+  settled — a parameter of another type than `Angle`, or a name the document declares none by (a
+  component's body sees no parameter), is E103 at the name. Through S3 a dimension reading one was
+  E103 and the relation refused (`Walk::runs`, `values::runs`, `settle_dim`, `Checks::refused`);
+  that refusal now stands only where the document's relations are not — a component's body
+  (`out_of_reach` says it first) — so no free variable is ever made of its name.
 - **The three uses read it** (#391 S1): every number the language already ran over is a
   `Running`, with the meaning it had:
   - **a face family's running number** — `SolidDef::Family::over`, its name the absolute key the
@@ -147,27 +148,27 @@ of it. An issue number (#n) or a spec version ([0.n], see the
     between geometry that does not move is the same row at every instant, and one between a moving
     entity and a static one holds throughout, which is what a linkage's ground is.  A relation
     holding *at* one instant (`at t0`) is not built.
-  - **Continuation** (`follow.rs`, the epic's question 6, decided): `follow::follow(sk, "t")`
-    solves the drawing at the start and marches to the end, each station the drawing's own solve
-    (`System::solve`) started where the secant through the two before carries it.  A step is kept
-    when it solves, when the solve moved the predicted station no more than `TURN` (0.1) of the
-    step's own motion in world length (`Param::scale`, over the unknowns; plus a floor of `1e-9`
-    of the extent), and when the **orientation** of the conditioned Jacobian (the sign of its
+  - **Continuation** (`follow.rs`, the epic's question 6, decided): `follow::follow(sk, "t")` solves
+    the drawing at the start and marches to the end, each station the drawing's own solve started
+    where the secant through the two before carries it (`follow::settle`, the one station solve,
+    which a face family's stations share, as they share `follow::short`'s rank check). A step is
+    kept when it solves, when the solve moved the predicted station no more than `TURN` (0.1) of the
+    step's own motion in world length (`Param::scale`, over the unknowns; plus a floor of `1e-9` of
+    the extent), and when the **orientation** of the conditioned Jacobian (the sign of its
     determinant by `linalg::lu_factor`, where it is square and at most `ORIENTED` wide) is the one
     it had — an assembly mode keeps it, so a flip is a branch jump or a singular instant crossed.
-    Otherwise the step is halved; kept easily (`EASY`) it grows by `GROW` up to `COARSEST`
-    (1/128) of the interval.  **A singular instant** is where no step is kept at `FINEST` (1e-7)
-    of the interval — the solve fails or the orientation flips — or a kept station is short of
-    rank; `beyond` reads a solve `PROBE` (1e-4) of the interval past it: none stands there,
-    `Kind::Limit` (the motion turns back: a crank at its dead point), one does, `Kind::Branch`
-    (two branches cross: a four-bar at its change point).  The march stops at the last station
-    that stands and records the instant (`Followed::singular`).  A drawing short of rank at the
-    start is refused (`not_held`): its freedom is a free function of the parameter.  A drawing no
-    relation of which reads the parameter (`follow::readers`, the constraints whose `Arg::Expr`
-    text reads its name) is refused too.  `Followed::put` stands a drawing at any instant reached,
-    solved from the stations either side, on the branch carried.  `follow::followed` remembers a
-    march on the sketch (`Caches::followed`) against every parameter, every constraint's numbers
-    and the interval.
+    Otherwise the step is halved; kept easily (`EASY`) it grows by `GROW` up to `COARSEST` (1/128)
+    of the interval. **A singular instant** is where no step is kept at `FINEST` (1e-7) of the
+    interval — the solve fails or the orientation flips — or a kept station is short of rank;
+    `beyond` reads a solve `PROBE` (1e-4) of the interval past it: none stands there, `Kind::Limit`
+    (the motion turns back: a crank at its dead point), one does, `Kind::Branch` (two branches
+    cross: a four-bar at its change point). The march stops at the last station that stands and
+    records the instant (`Followed::singular`). A drawing short of rank at the start is refused
+    (`not_held`): its freedom is a free function of the parameter. A drawing no relation of which
+    reads the parameter (`follow::readers`, the constraints whose `Arg::Expr` text reads its name)
+    is refused too. `Followed::put` stands a drawing at any instant reached, solved from the
+    stations either side, on the branch carried. `follow::followed` remembers a march on the sketch
+    (`Caches::followed`) against every parameter, every constraint's numbers and the interval.
   - **The ledger per parameter** (`Diagnosis::parameters`, `diagnose::Driven`): each declared
     parameter's readers and the freedom they drive — the rank their rows add to the rest's, on the
     conditioned Jacobian, `None` past the dense limit.  `summary` says `1 DOF over t` and, where

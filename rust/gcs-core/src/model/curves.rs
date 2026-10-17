@@ -470,7 +470,7 @@ impl Sketch {
         // and the definition, which a free curve's energy settles after it is built
         key.extend([b, self.curve_home(i), self.curves[i].def as f64]);
         // a point followed along a parameter stands where the whole drawing puts it (#391 S4)
-        if let CurveBody::Followed = self.curve_defs[self.curves[i].def as usize].body {
+        if self.curve_followed(i) {
             key.extend(self.params.iter().map(|p| p.value));
         }
         key.extend(self.curves[i].pegs.iter().flat_map(|&p| {

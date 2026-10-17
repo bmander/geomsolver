@@ -974,16 +974,20 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
 /// enough to factor (`numeric`) — the rank their rows add to the rest's, read on the conditioned
 /// Jacobian where the drawing stands.
 fn driven(sk: &Sketch, sys: &mut System, row_c: &[u32], numeric: bool) -> Vec<Driven> {
-    let mut rank = None;
+    // the Jacobian and its rank, read once for every parameter that is read
+    let mut whole: Option<(crate::system::Conditioned, usize)> = None;
     sk.parameters.keys().map(|name| {
         let readers = crate::follow::readers(sk, name);
         let dof = (numeric && !readers.is_empty() && sys.n_free > 0).then(|| {
-            let z = sys.z0(sk);
-            let j = sys.conditioned(&z);
-            let full = *rank.get_or_insert_with(|| j.rank_rrqr(RANK_TOL));
+            let (j, full) = whole.get_or_insert_with(|| {
+                let z = sys.z0(sk);
+                let j = sys.conditioned(&z);
+                let full = j.rank_rrqr(RANK_TOL);
+                (j, full)
+            });
             let rest: Vec<usize> = (0..j.rows()).filter(|&r| !readers.contains(&row_c[r]))
                 .collect();
-            full - j.select_rows(&rest).rank_rrqr(RANK_TOL)
+            *full - j.select_rows(&rest).rank_rrqr(RANK_TOL)
         });
         Driven { name: name.clone(), readers, dof }
     }).collect()

@@ -132,7 +132,7 @@ impl Followed {
         let w = (t - a.at) / (b.at - a.at);
         let x: Vec<f64> = a.x.iter().zip(&b.x).map(|(p, q)| p + w * (q - p)).collect();
         sk.set_x(&x);
-        settle(sk, self.held, t).map(|_| ())
+        settle(sk, self.held, t, &[]).map(|_| ())
     }
 }
 
@@ -170,8 +170,8 @@ pub fn follow(sk: &Sketch, name: &str) -> Result<Followed, String> {
     let mut sk = sk.clone();
     let span = over.to - over.from;
     let (coarsest, finest) = (span * COARSEST, span * FINEST);
-    let mut sys = settle(&mut sk, held, over.from)
-        .map_err(|e| format!("at {}: {e}", at_text(&over, over.from, sk.units)))?;
+    let mut sys = settle(&mut sk, held, over.from, &[])
+        .map_err(|e| format!("the drawing at {}: {e}", at_text(&over, over.from, sk.units)))?;
     if let Some(n) = short(&mut sys, &sk) {
         return Err(not_held(&over, n, sk.units));
     }
@@ -211,7 +211,7 @@ pub fn follow(sk: &Sketch, name: &str) -> Result<Followed, String> {
             _ => prev.x.clone(),
         };
         sk.set_x(&predicted);
-        let solved = settle(&mut sk, held, t);
+        let solved = settle(&mut sk, held, t, &[]);
         let finest_step = step <= finest;
         let Ok(mut sys) = solved else {
             if finest_step {
@@ -277,7 +277,7 @@ pub fn reading(over: &Running, v: f64, units: Units) -> String {
 /// past them: where one goes on they cross, and where none does the motion turns back.
 fn beyond(sk: &mut Sketch, held: u32, prev: &Station, probe: f64) -> Kind {
     sk.set_x(&prev.x);
-    if settle(sk, held, probe).is_ok() { Kind::Branch } else { Kind::Limit }
+    if settle(sk, held, probe, &[]).is_ok() { Kind::Branch } else { Kind::Limit }
 }
 
 /// Why a drawing short of rank where it starts is not followed.
@@ -288,24 +288,34 @@ pub fn not_held(over: &Running, n: usize, units: Units) -> String {
              of `{t}`: nothing says how it moves as `{t}` runs")
 }
 
-/// Solve the drawing with its running number held at `t`, warm from where it stands: the
-/// compiled system, or why it does not solve.
-fn settle(sk: &mut Sketch, held: u32, t: f64) -> Result<System, String> {
+/// Solve the drawing with its running number held at `t`, warm from where it stands, the
+/// unknowns named `outer` held as they stand: the compiled system, or why it does not solve.  The
+/// one station solve of a march along a number, a declared parameter's here and a face family's
+/// (`solid::family`), whose station holds the drawing's unknowns it was handed.
+pub(crate) fn settle(sk: &mut Sketch, held: u32, t: f64, outer: &[String])
+    -> Result<System, String> {
     sk.params[held as usize].value = t;
     for item in crate::expr::evaluate(sk) {
         if let Some(e) = item.error {
-            return Err(format!("`{}` does not work out: {e}", item.text));
+            return Err(format!("`{}` does not work out there: {e}", item.text));
+        }
+    }
+    // after the texts are worked out, which free and hold the unknowns they read
+    for n in outer {
+        if let Some(&p) = sk.free_vars.get(n) {
+            sk.params[p as usize].fixed = true;
         }
     }
     let mut sys = System::new(sk);
     if !sys.solve(sk, crate::solve::SolveOpts::default()).success {
-        return Err("the drawing does not solve".into());
+        return Err("does not solve".into());
     }
     Ok(sys)
 }
 
-/// How many degrees of freedom the solved system `sys` leaves, where it leaves any.
-fn short(sys: &mut System, sk: &Sketch) -> Option<usize> {
+/// How many degrees of freedom the solved system `sys` leaves, where it leaves any: a station
+/// short of rank.
+pub(crate) fn short(sys: &mut System, sk: &Sketch) -> Option<usize> {
     let z = sys.z0(sk);
     let rank = sys.rank(&z, crate::system::RANK_TOL, true);
     (rank < sys.n_free).then(|| sys.n_free - rank)
