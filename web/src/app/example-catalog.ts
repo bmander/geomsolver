@@ -77,6 +77,15 @@ const projects: Example[] = [{
     + 'what each shows.',
   target: { kind: 'directory', path: 'generation', entry: 'stride.sv' },
 }, {
+  label: 'Mechanisms · followed over a parameter', key: 'mechanisms',
+  description: 'Linkages driven by a number that runs: the crank\'s angle declared as '
+    + '`param t: Angle over (0deg, 360deg)`, every relation held for every value of it, and the '
+    + 'drawing followed round by continuation on the assembly mode it is drawn in. A four-bar\'s '
+    + 'coupler curve over a whole turn, a slider-crank straight through its dead centres, a triple '
+    + 'rocker stopped where its motion turns back and a four-bar stopped at its change point, '
+    + 'where two branches cross. The README says what each shows.',
+  target: { kind: 'directory', path: 'mechanisms', entry: 'four_bar.sv' },
+}, {
   label: 'Rounds and chamfers · written in Solvent', key: 'rounds',
   description: 'A block with one rim rounded and the other chamfered, a pocket rounded inside, a '
     + 'boss filleted where it stands, and a disc whose round and chamfer are built exactly. None '

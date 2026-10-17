@@ -198,7 +198,10 @@ where a rule came from.
     (`Kind::Branch`, 180°); a drawing not held, refused; the coupler curve as `trace(m over t)`
     against the closed form, closed over the whole turn and ending at the limit; printing and the
     refusals; the ledger (a four-bar's 1 DOF over `t`, a five-bar driven twice 2, the free function
-    left).
+    left). The case library's documents over a parameter are the series
+    `rust/examples/mechanisms/`, each held to its closed form by `tests/mechanism_examples.rs`: a
+    four-bar round a whole turn, a slider-crank through its dead centres, a triple rocker stopped
+    at its limit and a four-bar stopped at its change point.
   - **Not built in stage 4**: a relation holding at an instant (`at t0`), several parameters
     followed together (each is followed alone, the others at their starts), a trace of a point in
     space (a traced body in space is a component's, §6.5), a trace held to by a relation, a sweep
