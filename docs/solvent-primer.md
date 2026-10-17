@@ -29,6 +29,8 @@ its geometry inside `in std.front { … }` (1.12). Values and solids may stand o
   [Solvent Drawing (`.svd`)](solvent-drawing.md). A dimension is a constraint in the model; its
   callout is the drawing's.
 - This primer is what the implementation accepts, and every quoted report came from `solventc`.
+  It describes the language as it is; what changed, and when, is the
+  [changelog](solvent-changelog.md)'s.
   [`solvent-spec.md`](../solvent-spec.md) is normative but specifies constructs that do not parse
   yet (`hint` as a statement, `path`). Section 1's examples are fragments unless they show a
   report; section 2's are complete.
@@ -120,13 +122,13 @@ NAME := face(EDGE, ..., holes: LOOP)    a planar region                         
 NAME := solid(FACE, SWEEP...)           a face swept: depth:/from:/to:/through:, about:
 NAME := sweep(Comp(ARGS).FACE over F in (E, E))   a face family: the face as the formal F runs
 NAME := solid(SOLID) | solid(SET)       a body over a stock; the points of a region
-NAME := solid()                         an empty body: what is in `union` with it (0.99)
+NAME := solid()                         an empty body: what is in `union` with it (1.14)
 NAME := REF at[(under: M, seen_from: G)] E   a frame, a solid or a point read at an instant (1.15)
 NAME := REF in F                        the same, drawn in the jointed frame F at its value (1.15)
 NAME := sweep(SOLID over t in (E, E) | SOLID, through: BODY[, under: M, seen_from: G])
                                         a solid a frame's motion sweeps                (1.15)
 REF union REF | REF cut REF | REF common REF  material added to, removed from, shared with a body
-NAME := motion | envelope | meshing | surface(...)                                  (1.15)
+NAME := envelope | meshing | surface(...)                                           (1.15)
 WORD[(ARGS)] REF | REF WORD[(ARGS)] REF [hint(SLOT: E, ...)]   a constraint          (1.5)
 claim CONSTRAINT                        judged, never solved for                     (1.11)
 fix((E, E[, E])) REF | fix(MEMBER == E, ...) REF   hold an entity's own numbers      (1.4)
@@ -139,8 +141,8 @@ repeat N [as i] { ... }                 N unrelated copies                      
 cycle N [as i] { ... }                  N copies that close; `next`, `prev` in scope
 ring N about C { ... }                  N copies, each the first turned about C
 repeat e in CHAIN [as i] { ... }        a copy per link of a named chain (`cycle e in` closes)
-repeat e in FACE [as i] { ... }         a copy per edge of a face's walk (0.113)
-cycle (a, b) in (W1, W2) { ... }        walks in step: link k of each in copy k (0.113)
+repeat e in FACE [as i] { ... }         a copy per edge of a face's walk          (1.7)
+cycle (a, b) in (W1, W2) { ... }        walks in step: link k of each in copy k   (1.7)
 repeat a in SOLID { ... }               a copy per face of a solid                   (1.14)
 when COND { ... }                       made once where COND holds, else not at all  (1.7)
 LHS <= RHS | LHS >= RHS                 in a set's body: a bound on measurements     (1.14)
@@ -198,7 +200,7 @@ for, one positive plain number per control point (else E103). With `w = (1 + sqr
 inner points where a quarter circle's end tangents meet the cubic's thirds, the curve *is* that
 quarter circle (`nurbs.sv`); every contact reads it as it is, and a solid swept from it is exact.
 
-**A spline through points** (0.111) names them as a chain: `rail := spline(through: rims, start:
+**A spline through points** names them as a chain: `rail := spline(through: rims, start:
 l, end: m)` is the cubic through the corners of the named open chain of lines `rims`, one span a
 link, so its `t` is `k` at corner `k`; at the first corner it runs along `start:` and at the last
 along `end:` (a line or an axis), and an end given neither runs straight out. Its control points
@@ -281,7 +283,7 @@ contacts on one curve share it: with `param s: Angle hint(318)`, `path tangent(t
 `path curvature(t == s) osc` make the circle osculate the path *where* it touches the ground (a
 `hint(t: …)` beside the pin, or a contact on another curve pinned to `s`, is E040).
 
-**A point at a fraction of a line or an arc** writes the same `t` (0.82): `m coincident(t == 0.25)
+**A point at a fraction of a line or an arc** writes the same `t`: `m coincident(t == 0.25)
 g` is a quarter of the way from `g.p1` to `g.p2`, and on an arc `t` is the fraction of its turn
 from `start` to `end` by angle. Without `t` the contact is plain `coincident` and owns nothing. A
 line's `t` runs on past its ends (`t == 1.5`, an external division); an arc's is held to `[0, 1]`
@@ -300,8 +302,8 @@ on `g`, says `l` runs along `g` there — one equation. Of a spline or a curve i
 the contact holding `m` (`m coincident g`, pinned or not; with none it is E040, naming it), so
 `m coincident(t == s) g` beside it determines the line where `g tangent(t == s) l` would restate the
 point; of a circle or an arc the radius to `m` is square to `l`; of a line it is `parallel`. Of a
-spline or a curve it is the **rate** of that contact along its place, `rate(m over t) parallel l`
-(0.130): `t` names the contact's own slot, and the rate is its derivative there with every other
+spline or a curve it is the **rate** of that contact along its place, `rate(m over t) parallel l`:
+`t` names the contact's own slot, and the rate is its derivative there with every other
 unknown held — never along a `param` (an unknown several contacts may read is refused).
 
 #### Across views, a word means space
@@ -352,17 +354,17 @@ nothing declares is E101**, so a misspelling is never a degree of freedom. `para
 top of a document (or its `preview`); a component's unknowns are the formals a call leaves unbound
 (1.8). To equate two angles, prefer `l1 angle(l3, l4) l2`.
 
-**Parameters that run** (0.139). `param t: Angle over (0deg, 360deg)` declares a number that runs
+**Parameters that run.** `param t: Angle over (0deg, 360deg)` declares a number that runs
 over an interval: neither a value nor an unknown, so it has no `:=` and no `hint(…)`, and it says
 what it is (`Length`, `Angle` or `Scalar`). Its ends are numbers of that type and increase (E103
 otherwise). It is the one notion a face family's running number (`over s`, a declared `s`, 1.14), a
 traced body's formals (1.10) and the roll a reading runs over (`over t in (a, b)`, 1.15) are uses
-of. **A reading over the roll reads it** (0.140): `envelope(tool over t)`, `sweep(tool over t)`
+of. **A reading over the roll reads it**: `envelope(tool over t)`, `sweep(tool over t)`
 and `meshing(f1, f2 over t)` take a declared `Angle`'s interval for their own, as `over t in (a,
 b)` states one in place (a parameter of another type, or a name nothing declares, is E103; a
 component, which sees no parameter, states its interval).
 
-**A relation over a parameter holds for every value of it** (0.142). A dimension of the document's
+**A relation over a parameter holds for every value of it.** A dimension of the document's
 own relations may read `t`, and the drawing is then a function of `t`: drawn at the interval's
 start, and **followed** from there by continuation, one branch (a linkage's assembly mode) carried
 to the end or to a **singular instant**, where the march stops and says whether the motion turns
@@ -608,7 +610,7 @@ holes.sv: solved
   #22.2.hole.r = 4
 ```
 
-**A face's walk, and walks in step** (0.113). `repeat e in f` runs over a face's edges in walk
+**A face's walk, and walks in step.** `repeat e in f` runs over a face's edges in walk
 order — a chain it is made of, the edges it names, or for a face of corners (`face(a, b, c, ->
 close)`) the straight run from each corner to the next, `e.p1` the corner it leaves. `cycle (ea,
 eb) in (a, b)` runs two walks (chains or faces) together, link `k` of each in copy `k`; the walks
@@ -857,11 +859,11 @@ NAME := trace(Component(ARGS).POINT over FORMAL in (A, B))  an instance written 
   crank is the drawing's freedom (2.10).
 - **Written in place**, `Involute(base, phase: a0).p over u in (…)` is anchored at the value the
   call gives the swept formal, or the interval's start.
-- **Over a declared parameter** (0.142), `coupler := trace(m over t)` is where a point of the
+- **Over a declared parameter**, `coupler := trace(m over t)` is where a point of the
   drawing itself goes as the drawing runs over `t` (1.6), over the parameter's interval or a
   stretch of it (`over t in (30deg, 90deg)`), ending where the drawing stops at a singular
   instant. It is a curve of the point's view (a point in space is E060). A relation holds to it
-  as to any curve (0.144), and a number that does not run with `t` solves through it: the
+  as to any curve, and a number that does not run with `t` solves through it: the
   drawing gives the leg `theta: t`, leaves its rod `h` unbound, and `path tangent ground` solves
   the rod (`stride.sv`, `jansen.sv`, `peaucellier.sv`, `dwell.sv`). What moves with `t` must
   place every number it moves: a coordinate it leaves free is E061, so declare the number to
@@ -881,7 +883,7 @@ constraint (a point-to-line distance's sign chooses a winding); an orientation p
 
 **In space.** A body whose relations do not read in one plane — ordinates along lines in space, a
 point a motion carries — is a curve **in space** (`p coincident k`, `k tangent(at: p) l`), and a
-`path` (0.122: `p coincident(t == 0.3) k` at its formal, a station's guide); over two formals, `S :=
+`path` (`p coincident(t == 0.3) k` at its formal, a station's guide); over two formals, `S :=
 trace(C(…).p over (phi in (a, b), s in (c, d)))`, a **surface** (`p coincident S`, and at a point
 held there `tangent`, `perpendicular` for its normal, `curvature`). Write it in place, seed its
 points with numbers over the formals, and give it points, lines, motions and numbers:
@@ -896,7 +898,7 @@ component Helix(o: point, x: line, y: line, z: line, r: Length, lead: Length, u:
 k := trace(Helix(o, xl, yl, zl, r: 5mm, lead: 3mm).p over u in (0deg, 720deg))
 ```
 
-**Rates [0.119].** A body may say how a point *moves* as the formal runs: `rate(p over s)` is
+**Rates.** A body may say how a point *moves* as the formal runs: `rate(p over s)` is
 `p`'s velocity, and it stands where a direction is read — `rate(p over s) parallel tl`,
 `perpendicular`, a directed `angle`, and alone before `distance(k, along: l)` for its component
 along `l` (`rate(p over s) distance(1, along: tl)` is unit speed, so `s` is arc length). Never
@@ -907,8 +909,8 @@ where `initially { … }` in the body says what holds there alone. The relations
 the rate rows must fix every rate — in the plane as many rows as the body places numbers; one short
 is refused naming the points it leaves free. A component handed the running formal as itself
 (`Drag(o, a: a, u: u)`) rates over the caller's; the formal must be a `Scalar` or a `Length`.
-A point a motion carries (`X coincident(under: m, t == τ) x`, below) is a relation like any here
-(0.131), in the body or in `initially`: a starting circle may be a drawn point turned about an
+A point a motion carries (`X coincident(under: m, t == τ) x`, below) is a relation like any here,
+in the body or in `initially`: a starting circle may be a drawn point turned about an
 axis, `initially { p coincident(under: spin, t == u) s }` (`rates/geodesic_circles.sv`).
 
 ```
@@ -944,7 +946,7 @@ are found by its far end landing on `b` (`b coincident(t == 150mm) chain`). A ma
 its rates cannot be had — `solventc` says how far each curve is integrated, or where it is refused.
 The [rates](../rust/examples/rates/) series shows each idiom in a document of its own.
 
-**A speed that reads where the point is** (0.132). In a body traced in space a dimension may read
+**A speed that reads where the point is.** In a body traced in space a dimension may read
 a coordinate of a point the body declares (`p.x`, `p.y`, `p.z`) as well as the formals, the numbers
 and the geometry it is written over: `rate(p over s) distance((1 + ((p.x - c.x)^2 + (p.z -
 c.z)^2) / R^2) / 2, along: nl)` moves a front at `1/n`, the index `n` read at `p` — the eikonal in a
@@ -953,10 +955,10 @@ number the body places, solved and integrated with its points. Over two formals 
 row or a relation placing a point the rates do not move, and never in `initially`. A trace in a
 plane still reads only its formals and its geometry.
 
-**Over two formals [0.121]** a body in space is a surface **marched** along the first and sampled
+**Over two formals** a body in space is a surface **marched** along the first and sampled
 along the second (the method of lines): `front := trace(Front(c, z1, k).p over (d in (0mm, 3mm), u
 in (0deg, 180deg)))`. `initially { … }` is the Cauchy data where `d` starts, for every `u`; it may
-read a curve the drawing has **[0.133]** — `k: curve` given a spline, a curve of a held plane (a
+read a curve the drawing has — `k: curve` given a spline, a curve of a held plane (a
 formula, a trace, an envelope) or a curve traced in space:
 
 ```
@@ -1030,7 +1032,7 @@ solve, count or conflict set; the drawing is identical with it deleted. The diag
 
 Use claims for what a figure was drawn to show (the altitudes concur; the traced path is straight).
 A claim may not own or read an unknown. `claim over rotor_turn in (0deg, 1080deg) { … }` judges at
-sampled poses of a named motion, reading solids placed under it, and reports the worst; over an
+sampled poses of a frame's motion, reading solids placed under it, and reports the worst; over an
 unknown (`claim over reach in (0.1mm, 0.9mm) { … }`) it solves at each sampled value.
 
 Three claim words apply only to solids: `claim bore inside stock`, `claim disc clear(2mm) cyl`,
@@ -1044,7 +1046,7 @@ round face is **undecided**:
 ```
 
 **A bound** is a dimension's number that adds no row: it says which of the drawing's solutions is
-meant, the job a seed did when it only picked a side.
+meant, which a seed could only pick by where it started.
 
 ```sv
 a distance(>= 0, along: up) p          // p at or above a
@@ -1079,14 +1081,14 @@ plane as an argument does not imply `in`.
 
 **Points in space.** A point no `in` reaches has three coordinates, seeded `hint((x, y, z))` and
 held `fix((x, y, z)) p`; a line between two is a line in space. An arc over points in space is
-drawn in the plane through its centre and its ends, the short way round (0.127), so a chain of
-lines and arcs may bend in any plane with none written; a circle about a point in space takes the
-axis it stands square to, `circle(center: o, normal: ax)` (with none it is E060). In a plane an
-arc runs counter-clockwise from its start; `arc(center: c, sense: cw)` runs clockwise, so a chain
-in a plane may turn right at it (0.128). A chain may also enter an arc at its end and walk it to
-its start — threaded with both ends written, `-> tangent (k := arc(center: c, start: f, end: e))
-->` entered at `e`, or the arc named there — and `k.start` is still `f` (0.129). A face over a point in space is E080; a spline over points in space is a curve in space (0.126):
-its contacts a traced curve's (`m coincident(t == 0.5) k`, `k tangent(at: m) l`), a `path`, and
+drawn in the plane through its centre and its ends, the short way round, so a chain of lines and
+arcs may bend in any plane with none written; a circle about a point in space takes the axis it
+stands square to, `circle(center: o, normal: ax)` (with none it is E060). In a plane an arc runs
+counter-clockwise from its start; `arc(center: c, sense: cw)` runs clockwise, so a chain in a
+plane may turn right at it. A chain may also enter an arc at its end and walk it to its start —
+threaded with both ends written, `-> tangent (k := arc(center: c, start: f, end: e)) ->` entered
+at `e`, or the arc named there — and `k.start` is still `f`. A face over a point in space is E080;
+a spline over points in space is a curve in space: its contacts a traced curve's (`m coincident(t == 0.5) k`, `k tangent(at: m) l`), a `path`, and
 `spline(through: rims)` over corners in space the cubic through them (it bounds no face; the
 workspace draws it in space, as an axis). In the workspace such points are dragged across the
 eye's picture plane; depth stays the constraints'.
@@ -1218,12 +1220,12 @@ in std.front {
 
 `p` is still drawn in `std.front`; only the measurement is against the turned axes.
 
-**A frame declared bare** (0.134): `f := frame` is a spatial frame that owns nothing until its
+**A frame declared bare**: `f := frame` is a spatial frame that owns nothing until its
 axes are named. Name `f.u`, `f.v` or `f.origin` and it has them, seven numbers a plane's are, placed
 by relations; a point `in f` then has three numbers along them — `x` along `f.u`, `y` up, `z` out
 — and without them it is a point in space. `in (f := frame) { … }` declares it in the header. A
 frame is no set: `p coincident f` or `f distance(d) g` over one is E040, and an ordinate from its
-origin (`p distance(d, along: u) f`) is not. (Stage 2 of [the frames plan](frames-plan.md).)
+origin (`p distance(d, along: u) f`) is not.
 
 ```sv
 f := frame
@@ -1434,87 +1436,8 @@ k := trace(Par(o).p over u in (-2mm, 2mm))
   `sweep: 90deg` a partial one (caps `start` and `end`), `sense: cw` reverses it. An axis lies in
   the plane when it is one of the plane's own (`about: std.z` on `std.front`) or the solve puts it
   there (else E081).
-- **Face family** (0.97, 0.145) — a loft, or a sweep along a path: with `param s: Scalar over (0,
-  1)` declared, `body := sweep(Reducer(guide, std.z, inlet: 24mm, outlet: 12mm, wall:
-  2mm).sec.profile over s)` is the face `sec.profile` of the instance as its formal `s` runs over
-  the parameter's interval (`solid_loft`, `solid_elbow`, `solid_bend`, `solid_twist`). The formal
-  that runs is the one named as the parameter, or the one the call gives it (`Tube(hose, std.x, r:
-  r, s: s2).f over s2`, `paths/cable.sv`); `over s in (0, 1)` is retired (E001, naming this). There
-  is no `along:` (0.100): a loft is written this way. A family stands in the document (a
-  component sees no parameter). The instance is written in place, leaves
-  `s` unbound and is never drawn; it is solved at every station, `s` a number there, so its body may
-  use any expression in `s` and read a number of the geometry it was given (`rim.r`). Write *where
-  the section stands* and *what it is* as constraints in the component: a station word of `std` for
-  the plane square to the guide at `s` — `std.OnLine(g, up: up, s: s)` on a line, `std.OnArc` an
-  arc, `std.OnSpline` a spline, `std.On` any of a line, an arc, a spline or a traced curve —
-  then the section drawn `in st.n`, its sizes and turns reading `s`. **A screw** (0.110, 0.138):
-  `std.Helix(std.top, pitch: 4mm, turns: 3, s: s)` is `std.top` carried by the screw about its
-  normal to `360deg · turns · s` — turned that much and lifted `pitch · turns · s` (`std.top`
-  drawn in a screw whose value is that roll, 1.15); draw a thread's section in its `axial` plane
-  (through the axis, `u` out from it, `v` up it) and an auger's flight in its `n` (the base
-  carried); `std.OnHelix(std.top, r: 10mm,
-  pitch: 5mm, turns: 4, s: s)`'s `n` stands square to the helix of radius `r`, for a coil's wire. A
-  negative pitch winds left-handed (`rust/gcs-core/tests/helix.rs`). A family a motion carries its
-  station by this way is exported as that motion's sweep, exactly (`lofts/spring.sv` and
-  `swept_spring.sv` are one tube). **A law is any expression in `s`** (0.103): draw the section once and carry it
-  whole (0.118), `tw := std.Twisted(st.n, twist: 90deg, reach: 10mm, s: s)` the point `tw.t`
-  turned `twist · s`, then `sec := prof mapped(o -> st.n.origin, x -> tw.t) in st.n`, `o` and `x`
-  the section's frame `reach` apart (a `reach` that runs with `s` scales it); for a section written
-  as coordinates, `p scaled(du: 10, dv: 5, scale: 0.5, s: s) st.n` places a corner shrinking to half, `scaled_radius(r: 8mm, scale: 2, s: s) k` a radius
-  (`use std (scaled, scaled_radius)`); each runs its total linearly, and the word given another
-  fraction runs another law (`s: 3 * s^2 - 2 * s^3` eases it). A `when` cannot read `s` (it is
-  made once); write a law in pieces with `min`, `max` or `abs`. `On`'s `v` leans toward `up` where
-  the family is drawn (the middle of its interval) and from there its frame turns only as the
-  guide makes it (0.123): with `up` the normal of the guide's plane its `v` stays along `up`, and
-  along a guide in space its plane stays square to the guide. **A named open chain of lines and arcs is one path**:
-  `sweep(Tube(route, std.z, r: 4mm).f over s)` over `param s: Scalar over (0, 5)` runs the station over `route`'s
-  five links one after the next, link `k` while `s` is in `(k, k + 1)`; a law in `s` reads the
-  chain's whole `s`, and the walls keep their names across the links (`docs/lofts/l0/pipe.sv`).
-  **Several sections** (0.111) are joined by **rails**, one a corresponding corner — its places in
-  order, one a section — the station's corner where its rail meets the plane: `rim := point in
-  st.n, front` and `rim coincident rail` (or `point in st.n` for a rail of lines in space). Every
-  chain a station is given runs **in step**, link by link (of as many links), so a guide cut at
-  the sections (`axis := line(base, shoulder) -> line(shoulder, top)`) and a chain of lines
-  through each corner (`rims := line(r0, r1) -> line(r1, r2)`) is a **ruled** loft, an edge at
-  each section; `spline(through: rims, start: axis_line, end: axis_line)` is the **smooth** one's
-  rail, square to its end sections (or tangent to a neighbouring face's edge). With no guide,
-  `std.Across(ra, rb, rc, s: s)` is the plane through three rails at `s`
-  (`docs/lofts/l0/bottle.sv`, `rust/gcs-core/tests/sections.rs`). **Two faces drawn apart**
-  (0.113) are lofted by `sweep(std.Ruled(inlet, outlet).f over s)`: corner `k` of each
-  walk joined to corner `k` of the other by a straight rail, the ends the faces themselves. The
-  pairing is the written order — start a walk at another corner to connect it differently, and
-  name a point on an edge (`m coincident(t == 0.5) half`, `face(t0, t1, t2, m, -> close)`) to give
-  a triangle a fourth corner for a square; keep the first three corners out of line.
-  `std.Apex(base, tip).f` lofts a face to a point. A profile drawn once is **held to its rails**
-  by `sec := std.Similar(prof, from, to, st.n, l, r)` — `from` and `to` carried to the station's
-  points `l` and `r` where two rails cross it, the profile turned and scaled with them — or by
-  `std.Affine(prof, from, to, third, st.n, a, b, c)` on three (`docs/lofts/l0/two_faces.sv`,
-  `rust/gcs-core/tests/correspondence.rs`). **A frame that does not twist** (0.116): along a
-  path that leaves its plane (a helix), `st := std.OnHelix(…)` turns with the path's Frenet frame;
-  `rm := std.Minimal(st.n, up: base.normal, s: s)` is the plane through the same place square to
-  the path whose axes turn only as the path makes them, so draw the section `in rm.f`. It states
-  its turn as a **rate**, `rate(f.u over s) perpendicular f.v`, and what holds where the family is
-  drawn (the middle of the interval) in `initially { f.u perpendicular up }`; the family
-  integrates it from there both ways (`rust/gcs-core/tests/rates.rs`). A rate is of an axis or a
-  point, against an axis, a line or a plane, by `perpendicular` or `parallel`, and names the
-  formal it runs over; give a word that states one the family's running number as that formal.
-  **A guide drawn in space** (0.122) is a curve traced in space handed to a `path` formal: `m
-  coincident(t == s) g` stands the station at the body's own formal `s` and `hint(at: m, along:
-  g)` steps along it; `std.On(g, up: std.z, s: s)` stands on it as on any path, its frame the
-  rotation-minimising one (`rust/gcs-core/tests/space_paths.rs`). A surface traced over two
-  formals is no path. **Frenet's frame** (0.125): `std.Frenet(g, s: s)` turns with the curve, `u`
-  toward its centre of curvature (`g curvature(at: m) c`, a point) and `v` the binormal; it is
-  refused where the curve runs straight.
-  A profile drawn once may also be **carried whole** by the map itself,
-  `sec := prof mapped(o -> st.n.origin, x -> t) in st.n` — every corner and edge of `prof` carried
-  into `st.n` by the similarity taking `o` and `x` to the origin and `t`, the edges keeping their
-  names (`sec.ab`), an arc or a circle its radius scaled (two pairs only); `mirror: true` gives a
-  handed pair's other hand, wound as its source (`lofts/tapered.sv`, `hub_motor/motor/cover.sv`).
-  A component is closed over its arguments, so the station's `up` (`std.z`) is passed in as an
-  `axis` formal. Every station inside the interval must solve to DOF 0 with the section's shape
-  intact; an end may shrink to a point (a pyramid's apex). Caps `start` and `end`, walls named by
-  the section's edges (`body.sec.ab`). Seed the section where it belongs at the middle of the
-  interval: a branch the drawn station takes is the one every station keeps (`docs/lofts/l0/`).
+- **Face family**: a loft, or a sweep along a path, is a face of an instance as a declared
+  parameter runs (below).
 
 ```
 unit mm
@@ -1556,6 +1479,99 @@ ring.sv: solved
 Pappus gives `2π · 12 · 24 = 1809.557`: a static solid's volume is its exact boundary's. With
 `sweep: 90deg` it is `452.389`.
 
+#### Face families: lofts and sweeps along a path
+
+**A face family is a face of an instance as a formal runs.** With `param s: Scalar over (0, 1)`
+declared, `body := sweep(Reducer(guide, std.z, inlet: 24mm, outlet: 12mm, wall:
+2mm).sec.profile over s)` is the face `sec.profile` of the instance as its formal `s` runs over the
+parameter's interval (`solid_loft`, `solid_elbow`, `solid_bend`, `solid_twist`). The formal that
+runs is the one named as the parameter, or the one the call gives it (`Tube(hose, std.x, r: r, s:
+s2).f over s2`, `paths/cable.sv`). A family stands in the document (a component sees no
+parameter). The instance is written in place, leaves `s` unbound and is never drawn; it is solved
+at every station, `s` a number there, so its body may use any expression in `s` and read a number
+of the geometry it was given (`rim.r`).
+
+- **Every station must solve** to DOF 0 with the section's shape intact; an end may shrink to a
+  point (a pyramid's apex). Caps are `start` and `end`, walls are named by the section's edges
+  (`body.sec.ab`).
+- **Seed the section where it belongs at the middle of the interval**: the branch the drawn station
+  takes is the one every station keeps (`docs/lofts/l0/`).
+- A component is closed over its arguments, so the station's `up` (`std.z`) is passed in as an
+  `axis` formal.
+
+**Where the section stands, and what it is**, are constraints in the component: a station word of
+`std` for the plane square to the guide at `s` — `std.OnLine(g, up: up, s: s)` on a line,
+`std.OnArc` an arc, `std.OnSpline` a spline, `std.On` any of a line, an arc, a spline or a traced
+curve — then the section drawn `in st.n`, its sizes and turns reading `s`. `On`'s `v` leans toward
+`up` where the family is drawn (the middle of its interval) and from there its frame turns only as
+the guide makes it: with `up` the normal of the guide's plane its `v` stays along `up`, and along a
+guide in space its plane stays square to the guide.
+
+**A law is any expression in `s`.** Draw the section once and carry it whole: `tw :=
+std.Twisted(st.n, twist: 90deg, reach: 10mm, s: s)` is the point `tw.t` turned `twist · s`, then
+`sec := prof mapped(o -> st.n.origin, x -> tw.t) in st.n` carries every corner and edge of `prof`
+into `st.n` by the similarity taking `o` and `x` (the section's frame, `reach` apart) to the
+origin and `tw.t`. A `reach` that runs with `s` scales it; the edges keep their names (`sec.ab`), an
+arc or a circle its radius scaled (two pairs only), and `mirror: true` gives a handed pair's other
+hand, wound as its source (`lofts/tapered.sv`, `hub_motor/motor/cover.sv`). For a section written
+as coordinates, `p scaled(du: 10, dv: 5, scale: 0.5, s: s) st.n` places a corner shrinking to half
+and `scaled_radius(r: 8mm, scale: 2, s: s) k` a radius (`use std (scaled, scaled_radius)`); each
+runs its total linearly, and the word given another fraction runs another law (`s: 3 * s^2 - 2 *
+s^3` eases it). A `when` cannot read `s` (it is made once); write a law in pieces with `min`, `max`
+or `abs`.
+
+**A screw.** `std.Helix(std.top, pitch: 4mm, turns: 3, s: s)` is `std.top` carried by the screw
+about its normal to `360deg · turns · s` — turned that much and lifted `pitch · turns · s`
+(`std.top` drawn in a screw whose value is that roll, 1.15). Draw a thread's section in its
+`axial` plane (through the axis, `u` out from it, `v` up it) and an auger's flight in its `n` (the
+base carried); `std.OnHelix(std.top, r: 10mm, pitch: 5mm, turns: 4, s: s)`'s `n` stands square to
+the helix of radius `r`, for a coil's wire. A negative pitch winds left-handed
+(`rust/gcs-core/tests/helix.rs`). A family whose station a motion carries this way is exported as
+that motion's sweep, exactly (`lofts/spring.sv` and `swept_spring.sv` are one tube).
+
+**A named open chain of lines and arcs is one path.** `sweep(Tube(route, std.z, r: 4mm).f over s)`
+over `param s: Scalar over (0, 5)` runs the station over `route`'s five links one after the next,
+link `k` while `s` is in `(k, k + 1)`; a law in `s` reads the chain's whole `s`, and the walls keep
+their names across the links (`docs/lofts/l0/pipe.sv`).
+
+**Several sections** are joined by **rails**, one a corresponding corner — its places in order, one
+a section — the station's corner where its rail meets the plane: `rim := point in st.n, front` and
+`rim coincident rail` (or `point in st.n` for a rail of lines in space). Every chain a station is
+given runs **in step**, link by link (of as many links), so a guide cut at the sections (`axis :=
+line(base, shoulder) -> line(shoulder, top)`) and a chain of lines through each corner (`rims :=
+line(r0, r1) -> line(r1, r2)`) is a **ruled** loft, an edge at each section; `spline(through:
+rims, start: axis_line, end: axis_line)` is the **smooth** one's rail, square to its end sections
+(or tangent to a neighbouring face's edge). With no guide, `std.Across(ra, rb, rc, s: s)` is the
+plane through three rails at `s` (`docs/lofts/l0/bottle.sv`, `rust/gcs-core/tests/sections.rs`).
+A profile drawn once is **held to its rails** by `sec := std.Similar(prof, from, to, st.n, l, r)`
+— `from` and `to` carried to the station's points `l` and `r` where two rails cross it, the
+profile turned and scaled with them — or by `std.Affine(prof, from, to, third, st.n, a, b, c)` on
+three (`docs/lofts/l0/two_faces.sv`, `rust/gcs-core/tests/correspondence.rs`).
+
+**Two faces drawn apart** are lofted by `sweep(std.Ruled(inlet, outlet).f over s)`: corner `k` of
+each walk joined to corner `k` of the other by a straight rail, the ends the faces themselves. The
+pairing is the written order — start a walk at another corner to connect it differently, and name a
+point on an edge (`m coincident(t == 0.5) half`, `face(t0, t1, t2, m, -> close)`) to give a
+triangle a fourth corner for a square; keep the first three corners out of line.
+`std.Apex(base, tip).f` lofts a face to a point.
+
+**A frame that does not twist.** Along a path that leaves its plane (a helix), `st :=
+std.OnHelix(…)` turns with the path's Frenet frame; `rm := std.Minimal(st.n, up: base.normal, s:
+s)` is the plane through the same place square to the path whose axes turn only as the path makes
+them, so draw the section `in rm.f`. It states its turn as a **rate**, `rate(f.u over s)
+perpendicular f.v`, and what holds where the family is drawn (the middle of the interval) in
+`initially { f.u perpendicular up }`; the family integrates it from there both ways
+(`rust/gcs-core/tests/rates.rs`). A rate is of an axis or a point, against an axis, a line or a
+plane, by `perpendicular` or `parallel`, and names the formal it runs over; give a word that states
+one the family's running number as that formal.
+
+**A guide drawn in space** is a curve traced in space handed to a `path` formal: `m coincident(t ==
+s) g` stands the station at the body's own formal `s` and `hint(at: m, along: g)` steps along it;
+`std.On(g, up: std.z, s: s)` stands on it as on any path, its frame the rotation-minimising one
+(`rust/gcs-core/tests/space_paths.rs`). A surface traced over two formals is no path. **Frenet's
+frame**: `std.Frenet(g, s: s)` turns with the curve, `u` toward its centre of curvature (`g
+curvature(at: m) c`, a point) and `v` the binormal; it is refused where the curve runs straight.
+
 **Writing a part.** Where a part's axis lies relative to its section decides the statement: the
 V-twin piston is a turn of its half-profile; the disc, flywheel and throttle have their axis
 through the section, so they are prisms with turned features (a radial set screw) only where the
@@ -1587,9 +1603,8 @@ bore cut body
 - **`cut` with `through:`**: `pinhole := solid(face(hole), through: body)` then `pinhole cut body`.
   `through:` only makes the cutter.
 - **`tip common body`** keeps only what the body has in common with `tip`. Union comes first;
-  `cut` and `common` commute. (Through 0.84 the word was `bound`, now refused: a bound is a
-  dimension that chooses a root, §1.11.)
-- **A pattern of solids** (0.99). A solid declared inside a `ring` is one solid a copy, each
+  `cut` and `common` commute.
+- **A pattern of solids.** A solid declared inside a `ring` is one solid a copy, each
   reached by its index (`peg[3]`), as a point of the ring is. To join every copy alike, start from
   an empty body — its first `union` is its stock — or cut each from the body:
 
@@ -1761,7 +1776,7 @@ statements.
 
 ### 1.15 Frames that move, and generated geometry
 
-**A motion is a frame's joint.** A frame declared bare (`f := frame`, 1.4) is a rigid frame in
+**A motion is a frame's joint.** A frame declared bare (`f := frame`, 1.12) is a rigid frame in
 space; its joint is an axis `f.axis`, a ratio `f.ratio` (radians a radian of the one shared roll)
 and an advance `f.advance` (along the axis a turn of the roll), held by relations like anything
 else. The standard library states them the ways a designer does:
@@ -1779,12 +1794,11 @@ wheel := frame
 std.Spin(wheel, about: o, on: std.front, ratio: 1)       // about a point of a view, square to it
 ```
 
-Roll 0 is as drawn: a member that must stand turned there is drawn turned (there is no `phase:`).
+Roll 0 is as drawn: a member that must stand turned there is drawn turned.
 A motion never moves the sketch, and a frame with no joint stands still: the world. The ratio is
-`Scalar`; a measurement of the drawing there is E107. `motion(…)` and `m: motion` are refused
-naming these words.
+`Scalar`; a measurement of the drawing there is E107.
 
-**A ratio left out is the solve's** (0.137): `std.Turn(pinion, about: shaft)` with no `ratio:`
+**A ratio left out is the solve's**: `std.Turn(pinion, about: shaft)` with no `ratio:`
 leaves it an unknown, which a relation reading the motion holds. `std.Rolls` says the usual one —
 two pitch circles rolling at their pitch point without slipping along their common tangent:
 
@@ -1804,7 +1818,7 @@ the world. A component that reads a motion takes the frame (`m: frame`) and, whe
 the observer as a second (`seen_from: frame`); a frame formal a call leaves out is the instance's
 own frame at rest, the world.
 
-**Riding** (0.136). Draw a part in the frame that carries it, and readings at a roll need no
+**Riding.** Draw a part in the frame that carries it, and readings at a roll need no
 `under:`. `in` blocks nest; what is declared in nested blocks rides on every frame of the path and
 is drawn in the innermost one with axes (a view, usually), and a frame declared in a block rides
 on that block's frame:
@@ -1835,7 +1849,7 @@ for a tool that rides on nothing; naming it for one that rides is an error, as i
 ends ride on different frames. What a reading makes rides on its observer (the profile a rack cuts
 rides on the blank). Two views nested draw in the inner one, with a warning (W115).
 
-**Two operations on what moves** (0.140, issue #391): every reading of a frame's motion is one of
+**Two operations on what moves**: every reading of a frame's motion is one of
 them. **At an instant**, `x at τ` is `x` where the roll `τ` puts it — one verb for a frame, a solid
 and a point — its frames on the `at`, `x at(under: m, seen_from: g) τ`, where `x` rides on none:
 
@@ -1851,11 +1865,8 @@ the operand that runs: `sweep(tool over t in (-75deg, 75deg), under: turn)` is t
 sweeps, `envelope(tool over t in (a, b), …)` what its boundary leaves, `meshing(f1, f2 over t in
 (a, b), …)` the contact as the first flank's phase runs. `over t` alone names a declared `param t:
 Angle over (a, b)` (1.6) and reads its interval. The same word is a face family's and a traced
-curve's: `sweep(Station(g).f over s)` over a declared `s` (1.14, 0.145), `trace(leg.toe over theta in (0, 360))`
-(1.10). The spellings these replace — `solid(tool, at: θ)`, `solid(tool, under: m, from: a, to:
-b)` and `through:`, `n := base carried(at: τ)`, `X coincident(at: τ) x`, an envelope's and a
-meshing's `from:`/`to:`, `solid(… over …)` and a bare `k := leg.toe over …` — are refused, each
-naming the one that replaced it.
+curve's: `sweep(Station(g).f over s)` over a declared `s` (1.14), `trace(leg.toe over theta in (0, 360))`
+(1.10).
 
 **A frame's motion moves a solid**: `tool at(under: indexing) 90deg` is one copy at a constant
 angle (`solid_indexed_pattern.sv`); `sweep(tool over t in (-75deg, 75deg), under: turn)` is the
@@ -1913,12 +1924,13 @@ what is stated at `M`. A plane sliding along its own normal relative to a turn s
 helicoid: `spiral_bevel/phillips.sv`'s rack, `std.HalfSpace(P, L, d: 0mm)` under
 `slide, seen_from: pinion_turn`. The `at:` relations read the place of the `coincident` holding `M`, which must
 be stated: each is that contact's frame at `M` — its normal, a plane or a line square to it, a
-section's second order — read by the one kernel a rate of a contact is (0.130). A set's envelope is only held to: it has no chart after the solve.
+section's second order — read by the one kernel a rate of a contact is. A set's envelope is only held to: it has no chart
+after the solve.
 
 **A point a frame carries**: `X coincident(under: m, t == τ) x` is `x` as the moving frame sees it,
 carried by `m`'s pose at the roll `τ` (degrees; leave it unpinned and the solve finds it) — a
-rolling circle's point seen by the fixed one is an epicycloid. **At a stated instant** (0.138,
-spelled 0.140), `X coincident x at(under: m) τ`, the roll is the relation's number, an angle — the
+rolling circle's point seen by the fixed one is an epicycloid. **At a stated instant**,
+`X coincident x at(under: m) τ`, the roll is the relation's number, an angle — the
 same reading as `t == τ`, never both: written over a face family's running number (`at 360deg *
 turns * s`) it is read again at every station, and over a `param` it is that unknown. Drawn in a
 plane, `X` is held where that plane sees the carried point (two rows). Leave `under:` out where `x`
@@ -1927,7 +1939,7 @@ rides on a frame (`in f { … }`), as for any reading. **A frame carried**: `n :
 every frame that moves is a frame read at a roll. A frame turns about another's axis as about a
 line: `std.Turn(screw, about: base.normal, ratio: 1, advance: pitch)`.
 
-**A joint's value** (0.141, issue #391): a jointed frame stands at an instant of the roll,
+**A joint's value**: a jointed frame stands at an instant of the roll,
 `fix(value == τ) f` beside its ratio and advance — its joint turned `ratio · τ` and risen `advance
 · τ / 360°` from where it is drawn; with no value it stands at rest. `n := x in f` is `x` drawn in
 `f`, where its value puts it: the reading `x at(under: f) τ` with the frame's instant, a frame, a
@@ -1943,9 +1955,9 @@ n := base in screw                       // `std.Helix`'s station: base where th
 
 `std.Helix`, `std.OnHelix` and `std.Twisted` are written so. A frame with a value rides on none,
 and no frame rides on it. A value over a declared `param t: … over (a, b)` holds for every `t`
-(0.142, 1.6): what is drawn in the frame is a trajectory.
+(1.6): what is drawn in the frame is a trajectory.
 
-**Drawn in a frame with a value** (0.145, issue #398): what its `in` block draws stands where the
+**Drawn in a frame with a value**: what its `in` block draws stands where the
 value puts it. Each plane the block draws in is read as that plane drawn in the frame (`P in f`),
 and so is the plane a relation in the block names, so the block is the drawing at rest carried
 whole; a face of it is swept as a declared parameter runs with `sweep(sec over s)` — a face family
@@ -1970,7 +1982,7 @@ thread := sweep(sec over s)
 Drawn in the valued frame and no plane of it is E080 (a value carries a plane); a frame declared
 in the block still rides on the frame with the value (E080).
 
-**A frame along a path** (0.145): a joint held along a path rather than about a line, `g
+**A frame along a path**: a joint held along a path rather than about a line, `g
 coincident f.axis` with `fix(ratio == 0, advance == 0mm) f`, stands where the path's parameter puts
 it — square to the tangent, turned as the path makes it from its home (where it is drawn), the
 rotation-minimising frame for ratio 0 and the path's own (toward its centre of curvature) for
@@ -1979,7 +1991,7 @@ its home; a face drawn in `n` and swept over a declared `s` stands at every stat
 does, `s` the path's own parameter. Its pose is read off the path after the solve, so a relation the
 solve holds reads none (E080).
 
-**A value over a parameter is a drive** (0.143): any expression of it, a cam's law, and the frame
+**A value over a parameter is a drive**: any expression of it, a cam's law, and the frame
 stands at the law's value for every `t`. A reading of its motion over the roll reads the roll as
 `t`, so a follower's groove in its cam is the follower's roller swept as the cam sees it:
 
@@ -1995,7 +2007,7 @@ groove := sweep(ball over t, under: follower, seen_from: cam)
 A value reads one parameter. A relation the solve holds — a point carried by a driven frame at a
 roll, a rate of it, a meshing — reads no drive (E080): draw in the frame instead.
 
-**A motion's twist is read by rates** (0.130). The roll `t` is the slot of the `coincident` holding
+**A motion's twist is read by rates.** The roll `t` is the slot of the `coincident` holding
 `X`, and `rate(X over t)` is how fast `X` runs a radian of it — the twist there. A rate of a contact
 is held along a line or square to one, or measured along one:
 
@@ -2033,9 +2045,9 @@ sees it, `X coincident(under: turn, t == -phi) x` in its body (`spiral_bevel/phi
 mismatched one at a point. After the solve the contact is traced over its interval from the first
 point held to it, and `solventc` reports the transmission error and the path of contact.
 
-At a point held to it (0.112), `bearing perpendicular(at: Q) l` holds a line along the two flanks'
+At a point held to it, `bearing perpendicular(at: Q) l` holds a line along the two flanks'
 common normal. The **path of contact** — where the contact moves in space as the pinion turns, not
-the bearing on either flank — is Q's rate along its phase, its lag and places following (0.130):
+the bearing on either flank — is Q's rate along its phase, its lag and places following:
 `rate(Q over t) parallel l`, or as the tangent it is, `bearing tangent(at: Q) l`. Both read Q's
 phase, lag and places, so they hold at any phase Q is at, and an angle stated of either solves a
 number:
@@ -2050,7 +2062,7 @@ path_q angle(2deg) std.x                              // R's phase, a cutter's n
 
 At a line contact the path has no direction and a line along it does not hold.
 
-A conjugate pair touches along a line; real pairs are mismatched on purpose. **Ease-off** (0.114)
+A conjugate pair touches along a line; real pairs are mismatched on purpose. **Ease-off**
 relieves the first flank along its normal by a parabola about a point — `lengthwise:` its curvature
 along a line, `profile:` across it, each per length — so the pair touches at a point and the gear
 lags by the relief:
@@ -2068,7 +2080,7 @@ R coincident(t == 15deg, lag == 0.047) bearing        // the transmission error 
 The relief runs along the flank's normal as the solve reads its source (for a cone, toward its
 axis); a negative curvature relieves the other way. A traced flank is not eased.
 
-**No undercut** (0.115). A generated flank folds where the tool's contact runs back on itself.
+**No undercut.** A generated flank folds where the tool's contact runs back on itself.
 `regular` reads the flank's least **area factor**, how much it scales the tool's area: 1 rolling
 without sliding, 0 at a fold. It is read over the part the tool cuts within the blank. Name the tool
 whose face the source is (`by:`), then the blank after `within`. Both are region solids:
@@ -2091,8 +2103,7 @@ their corners, edges and face boundaries add no unknown, no solve row reads them
 exports from them, so the language has no word for them: they are Rust API, made of the surfaces
 and envelopes a drawing names (`TrimmedPatch::of_envelope`, `EnvelopeSeam::new`,
 `SpatialFaceBoundary::new`, …), as the spiral bevel's checks make them from the faces its built
-members leave (`faces::face_source`, #212; [analytic face boundaries](analytic-face-boundaries.md)).
-`patch`, `seam` and `vertex` are no keywords, and a face takes no `on:` (spec 0.120, #364).
+members leave (`faces::face_source`; [analytic face boundaries](analytic-face-boundaries.md)).
 
 ### 1.16 Checking your work
 
@@ -2688,7 +2699,7 @@ land against the shore is an arc of a circle, `R sin α = 50`, `2Rα = 130`, to 
 6. On `conflict`, read the minimal set. On `over`, find the dimension the others imply. On
    `under`, ask what can still move.
 7. Prefer a word to an unknown: equal angles are `l1 angle(l3, l4) l2`, an arc's extent is
-   `length(L) a`, a motion's ratio may measure the drawing. An unknown you do need is declared,
+   `length(L) a`, a ratio left out of a turn is found by what reads the motion. An unknown you do need is declared,
    `param a: Length hint(…)`.
 8. In space, draw each thing in the plane that shows it true, relate across planes with ordinary
    words, build a plane the solve turns on axes, and check with `--where PLANE`.
