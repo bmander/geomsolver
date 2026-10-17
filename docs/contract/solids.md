@@ -350,10 +350,11 @@ placement carries inside the blank; CLI test readers zero the offset.
   `std.sv`'s `Twisted` (the point `reach` along the station's `u` turned `twist · s` — [0.118],
   the second point a section drawn once is carried to, `f := prof mapped(o -> n.origin, x ->
   tw.t) in n`; through 0.117 a plane of axes a section was drawn on corner by corner; since
-  [0.138] a turn of `n` about its origin read at that roll, `t coincident x at(under: turn) twist
-  * s`), `scaled` (a point at `(du, dv)` scaled `1 + (scale − 1) · s` about the
-  plane's origin) and `scaled_radius` take a total and run it linearly; any other law is the word
-  given another fraction (`s: 3 * s^2 - 2 * s^3`) or the writer's own expression.  **A number given
+  [0.138] a turn of `n` about its origin read at that roll, and since [0.141] `x` drawn in that
+  turn standing at `twist * s`, `t := x in turn`), `scaled` (a point at `(du, dv)` scaled `1 +
+  (scale − 1) · s` about the plane's origin) and `scaled_radius` take a total and run it linearly;
+  any other law is the word given another fraction (`s: 3 * s^2 - 2 * s^3`) or the writer's own
+  expression.  **A number given
   over `s` that is not affine in it is kept as text** (`Walk::held_text`), whichever formal it is
   given to: a component's (`keep_text`, into `held.texts`; `bind` then makes it no unknown, and
   `settle_text` reads the kept text before the closed scope's reach) or a relation word's
@@ -377,8 +378,10 @@ placement carries inside the blank; CLI test readers zero the offset.
   out along `n.u`, `v` up the axis (a thread's).  `std.OnHelix(base, r:, …)`'s `n` stands square to
   the helix of radius `r`, `v` up the axis leaned by the lead angle (a coil's wire): `base` tilted
   about `base.u` by `90deg + atan2(pitch, 2πr)` and slid `r` out (one screw about that axis,
-  read at its turn), then carried by the helix's screw.  Every frame is a carried one (`n := base
-  at(under: m) τ`, [frames.md](frames.md)) about its frames' own axes, so **no direction
+  read at its turn), then carried by the helix's screw.  Every frame is a carried one — since
+  [0.141] drawn in a frame whose value is the roll, `n := base in screw` with `fix(value ==
+  360deg * turns * s) screw` ([parameters.md](parameters.md)), through 0.140 `n := base
+  at(under: m) τ` ([frames.md](frames.md)) — about its frames' own axes, so **no direction
   is held by a seed** and no plane stands against its lines — which the ordinates of 0.110–0.137 did
   not ensure: where the solve started decided whether a station's axes ran with their lines, and
   `lofts/spring.sv`'s, `ribbon.sv`'s and `l0/spring.sv`'s thread's drawn stations stood turned (the

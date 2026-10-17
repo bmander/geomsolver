@@ -454,7 +454,10 @@ fn carried_motion(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) -> Option<Option<R
         crate::syntax::OpArg::Named(_, Arg::Ref(g)) => Some(g.clone()),
         _ => None,
     });
-    let Some(under) = named("under") else {
+    // drawn in a jointed frame (#391 S3), `x in f`: carried by that frame to its value, whatever
+    // `x` rides on — its drawing is where it stands, and the frame carries that
+    let drawn_in = named(crate::syntax::DRAWN_IN);
+    let Some(under) = named("under").or(drawn_in) else {
         return riding_point(cx, r, w, seen, seen_ref.as_ref(), st);
     };
     let crate::syntax::OpArg::Named(_, Arg::Ref(under_ref)) = &w.args[under] else { return None };
@@ -463,10 +466,14 @@ fn carried_motion(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) -> Option<Option<R
     }
     // what rides already is read where it rides (#383)
     let carried = w.ops.get(1).and_then(|o| cx.res.entity(&cx.sk, o));
-    if let Some(why) = carried.and_then(|x| super::motions::under_riding(&cx.sk, &cx.res, x)) {
+    let riding = carried.filter(|_| drawn_in.is_none())
+        .and_then(|x| super::motions::under_riding(&cx.sk, &cx.res, x));
+    if let Some(why) = riding {
         cx.diags.push(Diag::within(Code::E040, under_ref.span, st.id, why));
         return Some(None);
     }
+    // the instant is the frame's value
+    let value = drawn_in.and_then(|_| super::motions::value_of(&cx.sk, &cx.res, under_ref));
     let m = match super::motions::reading(&mut cx.sk, &cx.res, under_ref, seen_ref.as_ref()) {
         Ok(m) => m,
         Err(message) => {
@@ -477,13 +484,15 @@ fn carried_motion(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) -> Option<Option<R
     let key = format!("#motion{m}");
     cx.res.of.insert(key.clone(), EntRef::new(EntKind::Motion, m));
     let mut w = w.clone();
-    if let crate::syntax::OpArg::Named(_, Arg::Ref(u)) = &mut w.args[under] {
+    if let crate::syntax::OpArg::Named(n, Arg::Ref(u)) = &mut w.args[under] {
+        n.text = "under".into();
         *u = Ref { root: crate::syntax::Name { text: key, span: u.root.span }, path: Vec::new(),
                    span: u.span };
     }
     if let Some(i) = seen {
         w.args.remove(i);
     }
+    w.args.extend(value.map(|(text, span)| crate::syntax::OpArg::Dim(text, span)));
     let mut out = r.clone();
     out.form = RelationForm::Written(w);
     Some(Some(out))

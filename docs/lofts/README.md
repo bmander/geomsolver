@@ -195,7 +195,8 @@ seed, and a negative pitch winds left-handed: the right-handed solid mirrored in
 `Screwed` is retired (`Helix(…).axial` is its plane); `OnHelix` takes `base` alone.
 
 **Since #366 a screw's station is a motion read at a roll.** `Helix` is `base` carried by a frame's
-screw (`std.Turn` about `base.normal`, `advance: pitch`) to `360deg · turns · s` (`n := base
+screw (`std.Turn` about `base.normal`, `advance: pitch`) to `360deg · turns · s` (since #391's
+stage 3 a frame whose value is that roll, `n := base in screw`; through 0.140 `n := base
 at(under: screw) …`), `axial` that frame turned a quarter about its `u`, and `OnHelix`
 `base` tilted about `base.u` to the helix's start and carried by the same screw: no `cos` or `sin`
 of the turn is written, and no geometry is drawn to hold an axis. The ordinates did not

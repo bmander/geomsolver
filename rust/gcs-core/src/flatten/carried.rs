@@ -23,11 +23,16 @@
 //! every station; `std.sv`'s station words are motions read so.  The statements share the
 //! declaration's id, so whatever is said of one is said where it was written, and the source
 //! keeps the one statement (`syntax::Decl::carried`).
+//!
+//! **Drawn in a jointed frame** (#391 S3), `n := x in f`, is written out the same three ways, its
+//! arguments `in: f` and no roll: the instant is the frame's value (`fix(value == τ) f`), which
+//! the elaborator appends where it reads the frame (`program::relations::carried_motion`, and for
+//! a solid `Sweep::Placed`'s `at`, the word `syntax::DRAWN_IN`).
 
 use crate::semantics::{Annotations, GeometryRoles};
 use crate::syntax::{
     Arg, Chained, Decl, DeclName, Kid, Membership, Name, OpArg, Ref, Relation, RelationForm,
-    Span, Stmt, StmtKind, Sweep, Written,
+    Span, Stmt, StmtKind, Sweep, Written, DRAWN_IN,
 };
 
 /// How far along each of the source's axes the frame's second and third points stand, in the
@@ -74,10 +79,14 @@ fn named(c: &crate::syntax::CarriedFrame, label: &str) -> Option<Ref> {
 /// frame named or, left out, the one it rides on, seen from the one named.
 fn solid(st: &Stmt, d: &Decl) -> Stmt {
     let c = d.carried.as_ref().expect("a reading at an instant");
+    // drawn in a jointed frame (#391 S3), the frame named and its value the instant, which the
+    // elaborator reads off the frame (`Sweep::Placed`'s `at` the word `in`)
+    let drawn = named(c, DRAWN_IN);
     let at = c.args.iter().find_map(|a| match a {
         OpArg::Dim(text, span) => Some(Arg::Dim { text: text.clone(), span: *span }),
         _ => None,
-    }).expect("an instant states its roll");
+    }).or_else(|| drawn.is_some().then(|| Arg::Word(DRAWN_IN.into())))
+        .expect("an instant states its roll");
     let placed = Decl {
         annotations: d.annotations,
         kind: crate::model::EntKind::Solid,
@@ -86,7 +95,7 @@ fn solid(st: &Stmt, d: &Decl) -> Stmt {
         seed_text: Vec::new(),
         class: d.class.clone(),
         class_span: d.class_span,
-        sweep: Some(Sweep::Placed { motion: named(c, "under"), at }),
+        sweep: Some(Sweep::Placed { motion: named(c, "under").or(drawn), at }),
         seen_from: named(c, "seen_from"),
         list_span: Span::new(c.source.span.lo as usize, st.span.hi as usize),
         ..Decl::point(d.name.clone(), [0.0; 2], None)

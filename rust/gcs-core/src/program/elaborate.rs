@@ -460,8 +460,9 @@ fn holds(
     // applied, so neither statement order nor a second hold decides what is held (#113)
     for st in &flat.stating {
         let StmtKind::Relation(r) = &st.kind else { continue };
-        if gauges::is_fix(r) {
-            constrain(cx, r, st);
+        // a joint's value is read off the statement and holds no number (#391 S3)
+        if let Some(r) = gauges::is_fix(r).then(|| motions::holding(r)).flatten() {
+            constrain(cx, r.as_ref(), st);
         }
     }
     cx.gauges.hold_all(&mut cx.sk, &mut cx.diags);
@@ -489,6 +490,7 @@ fn holds(
 /// returned.
 fn motions(cx: &mut Elab<'_>, flat: &Flat<'_>) -> BTreeSet<StmtId> {
     let Elab { sk, res, map, diags, .. } = cx;
+    motions::values(sk, res, &flat.body, &flat.skip, diags);
     motions::motions(sk, res, map, &flat.body, &flat.skip, diags);
     generated::planar_envelopes(sk, res, map, &flat.body, &flat.skip, diags)
 }

@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.140 — October 2026**
+**Specification, Draft 0.141 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -1025,9 +1025,9 @@ block := solid(face(mouth, side_r, lid, side_l), from: face, to: back)
   station's (§6.8): `Twisted(n, twist:, reach:, s:)` is the one point that turn needs, `t`, `reach`
   along `n`'s `u` from its origin turned `twist · s` (`sec := prof mapped(o -> n.origin, x -> tw.t)
   in n`); through 0.117 it was a plane of axes `axes`, which a section was drawn on corner by
-  corner; **[0.138]** it is the turn of `n` about its origin read at that roll (§6.14), `t
-  coincident x at(under: turn) twist * s`. A number given a formal — a component's or a relation
-  word's — MAY be any expression in
+  corner; **[0.138]** it is the turn of `n` about its origin read at that roll (§6.14), **[0.141]**
+  `x` drawn in a turn whose value is `twist * s`, `t := x in turn`. A number given a formal — a
+  component's or a relation word's — MAY be any expression in
   the running number, worked out at each station; it binds the formal, and is no unknown of the
   drawing. A `when` is made once, for the whole run (§12.9), so a condition reading the running
   number is **E040**, saying so; `min`, `max` and `abs` write a law in pieces.
@@ -1044,8 +1044,11 @@ block := solid(face(mouth, side_r, lid, side_l), from: face, to: back)
   · turns · s`, `axial` that frame turned a quarter about its `u`, and `OnHelix`'s `n` the frame
   square to the helix where it starts — `base` turned about `base.u` and slid out `r` — carried by
   the same screw; through 0.137 each was points placed by `cos` and `sin` ordinates in
-  `base`'s frame. `Screwed` (through 0.109 the plane through an axis given apart from `base`) is
-  retired; `Helix(…).axial` is that plane. **[0.138] A face family carried by a motion is that
+  `base`'s frame. **[0.141]** The screw is a frame whose value is that roll, `fix(value == 360deg
+  * turns * s) screw`, and `n` is `base` drawn in it, `n := base in screw` (§6.14); through 0.140
+  `n` was the reading `base at(under: screw) 360deg * turns * s`. `Screwed` (through 0.109 the plane
+  through an axis given apart from `base`) is retired; `Helix(…).axial` is that plane. **[0.138] A
+  face family carried by a motion is that
   motion's sweep**: where every relation of the station that reads its running number is a point the
   one motion carries (§6.14) to a roll affine in it, and the motion is a turn or a screw about one
   axis or a slide along one line, the section at the interval's start carried by that motion over it
@@ -1380,7 +1383,8 @@ A frame may turn about another frame's axis, `std.Turn(f, about: P.normal)` or `
 line. The standard library's station words are frames read so: `std.Helix` is `base` carried by a
 screw about `base.normal` (`advance: pitch`) to `360deg · turns · s`, `std.OnHelix` the frame
 square to the helix where it starts carried by the same screw, `std.Twisted`'s point turned in its
-plane about its origin (`std.Spin`, §6.9). Every frame that moves as a number runs is said this
+plane about its origin (`std.Spin`, §6.9) — **[0.141]** each drawn in a frame whose value is that
+roll (`n := base in screw`, below). Every frame that moves as a number runs is said this
 way: no frame of the language is written as `cos` and `sin` ordinates of the number it moves
 by.
 
@@ -1413,6 +1417,32 @@ naming its replacement: `solid(tool, at: θ)`, `solid(tool, under: m, from: a, t
 in a `solid`'s brackets, **E080**), `n := base carried(at: τ)`, `X coincident(at: τ) x`, an
 envelope's and a meshing's `from:`/`to:`, `solid(I(…).f over s in (a, b))` and a curve written
 bare, `k := leg.toe over theta in (a, b)`.
+
+**[0.141] A joint's value.** A jointed frame has a value: the instant of the roll it stands at
+(issue #391, stage 3), held beside its other numbers, `fix(value == τ) f`. Its joint is then turned
+`ratio · τ` and risen `advance · τ / 360°` from where it is drawn — the value linear in `τ`, the
+ratio and the advance its slopes — and a frame stating none stands at rest, `0deg`. `τ` is an Angle
+dimension, worked out where it is written: over a face family's running number it is read again at
+every station (§6.9), and a free name in it is an unknown the solve finds; a declared parameter
+(`param t: … over (a, b)`) is no number it can read, **E103**. It holds no number of the frame's
+own and is drawn nowhere.
+
+```
+screw := frame
+std.Turn(screw, about: base.normal, ratio: 1, advance: pitch)
+fix(value == 360deg * turns * s) screw
+n := base in screw                      // `base` where the screw's value puts it
+```
+
+**`NAME := x in f`** is `x` drawn in the jointed frame `f`, where `f`'s value puts it — the
+reading `x at(under: f) τ` whose instant is the frame's value rather than the statement's, and it
+makes what `x` is, as `x at τ` does: a frame carried whole, a solid placed, a point held. `x` is
+carried from where it is drawn, whatever it rides on, and what the reading makes rides on nothing.
+A value is a jointed frame's (**E080** otherwise) and is stated once (**E040**). A frame with a
+value rides on no frame, and nothing rides on it: a declaration in its `in` block would stand
+where it is drawn and not where the value puts it, so it is **E080**, naming `n := base in f` — a
+frame drawn in it, in which the declaration is drawn instead. `p := point in P` remains a point's
+membership: `in` after a kind is the plane it is drawn in.
 
 ### 6.15 Generated envelopes
 

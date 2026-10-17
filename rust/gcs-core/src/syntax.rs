@@ -1013,13 +1013,19 @@ pub struct Decl {
 
 /// What a reading at an instant reads and by what (`Decl::carried`, #366, #391 S2): the source,
 /// the `at` as written, and its arguments as a carried point's are held — `under:` and
-/// `seen_from:` the frames, the roll the number.
+/// `seen_from:` the frames, the roll the number; or, drawn in a jointed frame (`x in f`, #391 S3),
+/// the word `in` and the one argument `in: f`, the instant the frame's value.
 #[derive(Clone, Debug)]
 pub struct CarriedFrame {
     pub source: Ref,
     pub word: Name,
     pub args: Vec<OpArg>,
 }
+
+/// The label of the frame a reading draws its source in, `x in f` (#391 S3): the `in: f` among a
+/// `CarriedFrame`'s arguments and the carried points' it is written out to.  A placed solid's
+/// `Sweep::Placed::at` is the word itself, its instant the frame's value.
+pub const DRAWN_IN: &str = "in";
 
 /// What a spline through a chain's corners names (`Decl::through`): the chain, and the lines (or
 /// axes) its tangents at its first and last corner run along, where they are written.

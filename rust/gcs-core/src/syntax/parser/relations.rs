@@ -463,6 +463,11 @@ impl<'a> P<'a> {
         // (`t == t0`), which `flatten` settles later, and taking only `value` here would pin
         // every one of them at 0.
         let (value, text, span) = self.value_text()?;
+        // a joint's value (#391 S3) is an instant worked out as a dimension is, so it may be
+        // written over a face family's running number and read again at every station
+        if name.text == crate::constraints::JOINT_VALUE {
+            return Some(OpArg::Slot { key: name, arg: Arg::Dim { text, span } });
+        }
         Some(OpArg::Slot { key: name, arg: seed_arg(value, text, span, true) })
     }
 

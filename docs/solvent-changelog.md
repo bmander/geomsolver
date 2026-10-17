@@ -4,6 +4,19 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.141] A joint's value.** A jointed frame has a value, the instant of the roll it stands at
+(§6.14): `fix(value == τ) f`, beside its ratio and advance, turns its joint `ratio · τ` and raises
+it `advance · τ / 360°` from where it is drawn — linear in `τ`, the ratio and the advance its
+slopes — and a frame stating none stands at rest. `τ` is an Angle worked out as a dimension is, so
+it may read a face family's running number or name an unknown, never a declared parameter (E103).
+`n := x in f`, new, is `x` drawn in `f`, where its value puts it: the reading `x at(under: f) τ`
+whose instant is the frame's, making a frame, a solid or a point as `x at τ` does. A frame with a
+value rides on none, and what its `in` block would draw is E080, naming `n := base in f`. The
+standard library's `Helix`, `OnHelix` and `Twisted` are frames whose value is written over `s`,
+their sections drawn in them (`n := base in screw`); their readings at an instant are retired, and
+every station is where it was, to the solve's tolerance, as are the two springs' one screw.
+(Issue #391, stage 3.)
+
 **[0.140] At an instant and over an interval.** Every reading of a frame's motion is one of two
 operations (§6.14). `x at τ` is `x` where the roll `τ` puts it, one verb whatever `x` is: `n :=
 base at τ` a frame carried (0.138's `n := base carried(at: τ)`), `s := tool at θ` a solid placed
