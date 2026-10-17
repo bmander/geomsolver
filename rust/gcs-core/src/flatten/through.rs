@@ -33,7 +33,6 @@ pub(super) struct Fit {
     pub(super) d: Decl,
     pub(super) st: Stmt,
     pub(super) scope: Scope,
-    pub(super) vals: BTreeMap<String, Aff>,
     pub(super) path: Vec<PathStep>,
     pub(super) prefix: String,
 }
@@ -114,7 +113,7 @@ impl Walk<'_> {
         d.annotations.private = private;
         d.annotations.roles.construction = private;
         d.membership = f.d.membership.clone();
-        self.walk_decl(&d, &f.st, &f.scope, &f.vals, &f.path, &f.prefix);
+        self.walk_decl(&d, &f.st, &f.scope, &f.scope.vals, &f.path, &f.prefix);
     }
 
     /// A point the spline makes, `name` under it, seeded at `seed`.
@@ -137,7 +136,7 @@ impl Walk<'_> {
 
     /// A relation the spline states, as its statement.
     fn stated(&mut self, f: &Fit, r: Relation) {
-        if let Some(r2) = self.settle_relation(&r, &f.vals, &f.scope) {
+        if let Some(r2) = self.settle_relation(&r, &f.scope.vals, &f.scope) {
             self.emit(StmtKind::Relation(r2), &f.st, &f.scope, &f.path);
         }
     }
@@ -176,7 +175,7 @@ impl Walk<'_> {
         let mut d = f.d.clone();
         d.children = vec![poles.iter().cloned().map(Kid::Ref).collect()];
         d.knots = None;
-        self.walk_decl(&d, &f.st, &f.scope, &f.vals, &f.path, &f.prefix);
+        self.walk_decl(&d, &f.st, &f.scope, &f.scope.vals, &f.path, &f.prefix);
         // each corner between the ends where the parameter is its index
         for (k, c) in corners.iter().enumerate().take(n - 1).skip(1) {
             let r = infix("coincident", [c.clone(), spline.clone()], vec![at_t(k as f64, at)], at);

@@ -1055,7 +1055,7 @@ impl<'a> Walk<'a> {
         let edges: Vec<(&Name, &[Link])> =
             vars.iter().zip(&walks).map(|(v, (l, _))| (v, l.as_slice())).collect();
         let n = walks[0].0.len();
-        self.copies(&b, &p.st, &p.scope, &p.vals, &p.path, p.depth, n, &edges);
+        self.copies(&b, &p.st, &p.scope, &p.scope.vals, &p.path, p.depth, n, &edges);
         let made = std::mem::replace(&mut self.out, outer);
         self.aside.held = 0;
         self.out.splice(at..at, made);

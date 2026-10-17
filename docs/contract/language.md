@@ -290,7 +290,8 @@ takes a layout naming the front datum, origin and reference axis.
   `Scope::vals` is shared (`Rc`) and never copied per statement; what a closed body may not
   capture (`Scope::forbidden`) is the outer tables themselves, asked at lookup (`Outside`), not a
   set of their names built per instance.  `tests/many_instances.rs` is the gate: the bytes
-  elaborating 200 plates allocates are under five times 50's (sixteen when a table was copied).
+  elaborating four times the plates allocates are about four times as many, counted by the
+  allocator it installs for the whole core suite (a per-thread tally beside `System`'s).
 - **A part is one component carrying `in view { … }` blocks** (Solvent §6.7, `P::in_comp`): the
   block form is allowed inside a component body (the plane is a formal) and still refused inside a
   root block.  With `when flag == 1 { … }` over a 0/1 `Int` formal for the views an instance does

@@ -137,11 +137,14 @@ struct Scope {
 /// rather than been handed (E103).  The tables themselves, shared, and asked at lookup: a set of
 /// their names built per instance is a copy of the root's table per instance (#403).
 #[derive(Clone, Default)]
-struct Outside(Vec<std::rc::Rc<BTreeMap<String, Aff>>>);
+struct Outside {
+    around: std::rc::Rc<BTreeMap<String, Aff>>,
+    file: std::rc::Rc<BTreeMap<String, Aff>>,
+}
 
 impl Outside {
     fn contains(&self, name: &str) -> bool {
-        self.0.iter().any(|vals| vals.contains_key(name))
+        self.around.contains_key(name) || self.file.contains_key(name)
     }
 }
 
@@ -382,7 +385,6 @@ pub struct InstanceInfo {
 struct Pending {
     st: Stmt,
     scope: Scope,
-    vals: BTreeMap<String, Aff>,
     path: Vec<PathStep>,
     depth: usize,
 }
@@ -462,7 +464,7 @@ struct Walk<'a> {
     /// call to one already here is a component instantiating itself, walked like any other call
     /// (a `when` ends it, §12.9) unless it is given the numbers it was given there, which make
     /// the same choices again and so never end (E003).
-    instantiating: Vec<(&'a Component, BTreeMap<String, Aff>)>,
+    instantiating: Vec<(&'a Component, std::rc::Rc<BTreeMap<String, Aff>>)>,
     /// The rings expanded — see `Rings`.
     rings: Rings,
     /// The relation words applied and what applications bound — see `WordState`.

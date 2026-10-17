@@ -85,9 +85,6 @@ impl<'a> Walk<'a> {
         // and every instance's numbers, by its name (`ball.r`), over the body's own
         self.instance_numbers(body, vals, scope);
         // Remember ambient numbers so accidental capture gets an explicit diagnostic.
-        if depth == 0 {
-            self.file_vals = std::rc::Rc::new(vals.clone());
-        }
         // and with them the numbers in force are complete for every statement of the body:
         // the enclosing ones the caller passed and the body's own — so that is the table each
         // statement is emitted with, which is what an index (`p[n - 1]`) is read against.  The
@@ -99,6 +96,9 @@ impl<'a> Walk<'a> {
             _ => None,
         }));
         let scope = &Scope { vals: std::rc::Rc::new(vals.clone()), groups, ..scope.clone() };
+        if depth == 0 {
+            self.file_vals = scope.vals.clone();
+        }
         // what a frame with a value draws in its block, read where the value puts it (#398 B)
         let lowered = self.valued_blocks(body);
         let body: &[Stmt] = lowered.as_deref().unwrap_or(body);
@@ -317,7 +317,6 @@ impl<'a> Walk<'a> {
                 d: d.clone(),
                 st: st.clone(),
                 scope: scope.clone(),
-                vals: vals.clone(),
                 path: path.to_vec(),
                 prefix: prefix.to_string(),
             });
@@ -801,7 +800,8 @@ impl<'a> Walk<'a> {
             }
             (None, q) => q.clone(),
         };
-        let forbidden = Outside(vec![scope.vals.clone(), self.file_vals.clone()]);
+        let forbidden = Outside { around: scope.vals.clone(), file: self.file_vals.clone() };
+        let given = std::rc::Rc::new(sub_vals.clone());
         let sc = Scope {
             owner: key.clone(),
             access: scope.access.clone(),
@@ -810,7 +810,7 @@ impl<'a> Walk<'a> {
             closed: true,
             forbidden,
             groups: comp.formals.iter().filter(|f| matches!(f.ty, Ty::Group | Ty::Set)).map(|f| f.name.text.clone()).collect(),
-            vals: std::rc::Rc::new(sub_vals.clone()),
+            vals: given.clone(),
             // the sides this instance was given, and no others: a component reads a
             // side by the name of its own formal, as it reads every other argument
             sides,
@@ -841,7 +841,7 @@ impl<'a> Walk<'a> {
         // there, every choice comes out the same and nothing ends it, so that, and
         // nesting past the cap, is E003, said once at the call closing the cycle
         let same = self.instantiating.iter()
-            .rposition(|(c, given)| std::ptr::eq(*c, comp) && *given == sub_vals);
+            .rposition(|(c, given)| std::ptr::eq(*c, comp) && **given == sub_vals);
         let deep = depth + 1 >= MAX_DEPTH
             && self.instantiating.iter().any(|(c, _)| std::ptr::eq(*c, comp));
         if same.is_some() || deep {
@@ -884,7 +884,7 @@ impl<'a> Walk<'a> {
             }
             None => Vec::new(),
         };
-        self.instantiating.push((comp, sub_vals.clone()));
+        self.instantiating.push((comp, given));
         // a point formal drawn in a plane and left out is the instance's own point there, made
         // by the call (§5 [0.95]) — in its formal's plane, whatever plane the instance is in
         let owned = self.owned_points(comp, inst, st, vals);
@@ -935,7 +935,6 @@ impl<'a> Walk<'a> {
             self.aside.blocks.push(Pending {
                 st: st.clone(),
                 scope: scope.clone(),
-                vals: vals.clone(),
                 path: path.to_vec(),
                 depth,
             });

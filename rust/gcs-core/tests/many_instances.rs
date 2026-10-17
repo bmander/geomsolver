@@ -5,15 +5,17 @@
 //! elaborated in under a second.  The measure is the bytes the elaboration allocates, counted on
 //! the thread doing it, which is deterministic where a clock is not.
 //!
-//! The count is this test binary's allocator: `System`'s, with a per-thread tally beside it.
+//! The count is the allocator of the whole core suite, which is one binary (`tests/main.rs`):
+//! `System`'s, with a per-thread tally beside it, so a test on another thread does not count.
 use gcs_core::{library, program};
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
+use std::fmt::Write;
 
 struct Counted;
 
 thread_local! {
-    // `const`, with no destructor: reading it allocates nothing, so the allocator may
+    // `const`, with no destructor: reading it allocates nothing, so the allocator may read it
     static ALLOCATED: Cell<usize> = const { Cell::new(0) };
 }
 
@@ -36,22 +38,24 @@ static COUNTED: Counted = Counted;
 
 /// `n` plates, each an instance of one component — a dimensioned rectangle with four equal
 /// holes, held by its own three numbers — and each placed off its neighbour: the issue's
-/// document, without its jitter.
+/// document, without its jitter.  Each instance is written and named by hand (`P0`, `P1`, …),
+/// not by a `repeat`: the root's table holds a named instance's numbers (`P0.w`), and that table
+/// is what was copied.
 fn plates(n: usize) -> String {
-    let (w, h, e, cols) = (80.0, 50.0, 10.0, 40);
-    let mut out = String::from("\
+    let (w, h, e, r, cols) = (80.0, 50.0, 10.0, 4.0, 40);
+    let mut out = format!("\
 use std
-w := 80
-h := 50
-e := 10
+w := {w}
+h := {h}
+e := {e}
 component Plate(a: point, b: point, c: point, d: point,
                 h1: circle, h2: circle, h3: circle, h4: circle,
-                w: Length, h: Length, e: Length) {
+                w: Length, h: Length, e: Length) {{
   horizontal (bot := line(a, b)) -> vertical (rt := line(b, c)) ->
     horizontal (top := line(c, d)) -> vertical (lf := line(d, a)) -> close
   length(w) bot
   length(h) rt
-  radius(4) h1
+  radius({r}) h1
   h2 equal h1
   h3 equal h1
   h4 equal h1
@@ -63,35 +67,41 @@ component Plate(a: point, b: point, c: point, d: point,
   h3.center distance(e) rt
   h4.center distance(e) top
   h4.center distance(e) lf
-}
-in std.front {
+}}
+in std.front {{
 ");
     for i in 0..n {
         let x0 = (i % cols) as f64 * (w + 20.0);
         let y0 = (i / cols) as f64 * (h + 20.0);
         let corners = [(x0, y0), (x0 + w, y0), (x0 + w, y0 + h), (x0, y0 + h)];
         for (k, (x, y)) in ["a", "b", "c", "d"].iter().zip(corners) {
-            out += &format!("  {k}{i} := point hint(({x}, {y}))\n");
+            writeln!(out, "  {k}{i} := point hint(({x}, {y}))").unwrap();
         }
         let holes = [(x0 + e, y0 + e), (x0 + w - e, y0 + e), (x0 + w - e, y0 + h - e),
                      (x0 + e, y0 + h - e)];
-        for (k, (x, y)) in holes.iter().enumerate().map(|(k, p)| (k + 1, p)) {
-            out += &format!("  c{i}_{k} := point hint(({x}, {y}))\n");
-            out += &format!("  h{i}_{k} := circle(c{i}_{k}) hint(r: 4)\n");
+        for (k, (x, y)) in (1..).zip(holes) {
+            writeln!(out, "  c{i}_{k} := point hint(({x}, {y}))").unwrap();
+            writeln!(out, "  h{i}_{k} := circle(c{i}_{k}) hint(r: {r})").unwrap();
         }
-        out += &format!("  P{i} := Plate(a{i}, b{i}, c{i}, d{i}, h{i}_1, h{i}_2, h{i}_3, h{i}_4, \
-                         w: w, h: h, e: e)\n");
-        out += &match i {
-            0 => "  fix((0, 0)) a0\n".to_string(),
-            _ if i % cols != 0 => format!("  a{} distance(100) a{i}\n  a{} level(right) a{i}\n",
-                                          i - 1, i - 1),
-            _ => format!("  a{} distance(70) a{i}\n  a{} level(up) a{i}\n", i - cols, i - cols),
-        };
+        writeln!(out, "  P{i} := Plate(a{i}, b{i}, c{i}, d{i}, h{i}_1, h{i}_2, h{i}_3, h{i}_4, \
+                       w: w, h: h, e: e)").unwrap();
+        if i == 0 {
+            writeln!(out, "  fix((0, 0)) a0").unwrap();
+        } else {
+            // off the plate before it in the row, or the one below it in the column
+            let (prev, gap, way) = match i % cols {
+                0 => (i - cols, h + 20.0, "up"),
+                _ => (i - 1, w + 20.0, "right"),
+            };
+            writeln!(out, "  a{prev} distance({gap}) a{i}\n  a{prev} level({way}) a{i}").unwrap();
+        }
     }
     out + "}\n"
 }
 
-/// The bytes the elaboration of `n` plates allocates, and how many unknowns it made.
+/// The bytes the elaboration of `n` plates allocates, and how many unknowns it made.  Parsed
+/// here rather than by `common::linked::build`, which parses and elaborates in one call: only the
+/// elaboration is counted.
 fn elaborated(n: usize) -> (usize, usize) {
     let (p, errors, linked) = library::parse_linked(&plates(n));
     assert!(errors.is_empty() && linked.is_empty(), "{errors:?} {linked:?}");
