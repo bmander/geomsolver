@@ -17,103 +17,111 @@
 // through the cylinder's pivot; the part sheet instances it once, upright.  The O-ring is a
 // #014, selected in `dims.sv`; its groove is derived below. Print it crown down.
 
-use std (vertical)
+use std (vertical, on_u)
 use components.dims
 use components.parts
 
 component Piston(f: group, dims: group) {
-  // The datum runs down the rod, from crown to pin.
-  rod := line(f.u.p2, f.u.p1)
   pw := dims.D / 2 - dims.clr
   // The selected O-ring and seal proportions determine the groove.
   grooveb := dims.D - 2 * (1 - dims.seal.squeeze) * dims.oring
   groovew := dims.seal.width_factor * dims.oring
   gb := grooveb / 2
 
-  // The crown is square to the datum, with its left and right stated explicitly.
-  cL := point hint(at: f.axes, (0mm, -pw))
-  cR := point hint(at: f.axes, (0mm, pw))
-  crownl := line(cR, cL)
-  // each side's profile: down to the groove, in to its bottom, along it, out, on to the skirt
-  g0L := point hint(at: f.axes, (dims.groove, -pw))
-  g1L := point hint(at: f.axes, (dims.groove, -gb))
-  g2L := point hint(at: f.axes, (dims.groove + groovew, -gb))
-  g3L := point hint(at: f.axes, (dims.groove + groovew, -pw))
-  sL := point hint(at: f.axes, (dims.ph, -pw))
-  g0R := point hint(at: f.axes, (dims.groove, pw))
-  g1R := point hint(at: f.axes, (dims.groove, gb))
-  g2R := point hint(at: f.axes, (dims.groove + groovew, gb))
-  g3R := point hint(at: f.axes, (dims.groove + groovew, pw))
-  sR := point hint(at: f.axes, (dims.ph, pw))
-  (pL0 := line(cL, g0L)) -> (pL1 := line(g0L, g1L)) -> (pL2 := line(g1L, g2L)) ->
-    (pL3 := line(g2L, g3L)) -> (pL4 := line(g3L, sL))
-  (pR0 := line(cR, g0R)) -> (pR1 := line(g0R, g1R)) -> (pR2 := line(g1R, g2R)) ->
-    (pR3 := line(g2R, g3R)) -> (pR4 := line(g3R, sR))
-  skirt := line(sL, sR)
-  // The crown is centered on the rod. The groove is a rectangular step in its left flank;
-  // symmetry determines the matching right flank from that one profile.
-  f.u.p1 midpoint crownl
-  crownl perpendicular rod
-  length(2 * pw) crownl
-  pL0 parallel rod
-  pL1 perpendicular rod
-  pL2 parallel rod
-  pL3 perpendicular rod
-  pL4 parallel rod
-  length(dims.groove) pL0
-  length(groovew) pL2
-  g1L distance(gb, side: left) rod
-  pL1 equal pL3
-  cL distance(dims.ph) sL
-  g0L symmetry(rod) g0R
-  g1L symmetry(rod) g1R
-  g2L symmetry(rod) g2R
-  g3L symmetry(rod) g3R
-  sL symmetry(rod) sR
+  // **Drawn in its own frame**: the crown's centre is the frame's origin and its u runs down the
+  // rod, so every number below is the part's own and the frame is all that moves.
+  in f.axes {
+    // The eye's centre, where the crank pin rides, `L` down the rod; the rod runs from it to the
+    // crown.
+    pin := point hint((dims.L, 0mm))
+    pin on_u(d: dims.L) f.axes
+    rod := line(pin, f.axes.origin)
 
-  // the eye about the pin, and the hole the pin's shank rides in
-  eye := circle(center: f.u.p2) hint(r: dims.reye)
-  radius(dims.reye) eye
-  hole := circle(center: f.u.p2) hint(r: dims.pinclr / 2)
-  radius(dims.pinclr / 2) hole
-  // the rod's two flanks, from the skirt to the eye
-  ra := point hint(at: f.axes, (dims.ph, -dims.rt / 2))
-  rc := point hint(at: f.axes, (dims.ph, dims.rt / 2))
-  rb := point hint(at: f.axes, (dims.L - dims.reye, 0mm))
-  rd := point hint(at: f.axes, (dims.L - dims.reye, 0mm))
-  rb coincident eye
-  rd coincident eye
-  fl parallel rod
-  fr parallel rod
-  fl := line(ra, rb)
-  fr := line(rc, rd)
-  ra coincident skirt
-  ra distance(dims.rt / 2, side: left) rod
-  ra symmetry(rod) rc
-  // -- what the solid is made of, and nothing a view reads ---------------------------------
-  // The piston is the *left* profile turned about the rod: a revolution takes one side of its
-  // axis, and the right-hand one is drawn because the section shows it.  The loop turns at
-  // three corners nothing draws — out to the rim at the crown, in to the axis at the skirt,
-  // and back up the axis, which the turn sweeps into nothing — so it says the corners and
-  // lets the face close itself.
-  s0 := point hint(at: f.axes, (dims.ph, 0mm))
-  s0 midpoint skirt
-  // the sizes a printer needs
-  claim cL distance(2 * pw) cR
-  claim cL distance(dims.ph) sL
-  claim cL distance(dims.groove) g0L
-  claim g1R distance(groovew) g2R
-  claim g1L distance(grooveb) g1R
-  claim f.u.p1 distance(dims.L) f.u.p2
-  claim radius(dims.reye) eye
-  claim radius(dims.pinclr / 2) hole
-  claim ra distance(dims.rt) rc
+    // The crown is square to the datum, with its left and right stated explicitly.
+    cL := point hint((0mm, -pw))
+    cR := point hint((0mm, pw))
+    crownl := line(cR, cL)
+    // each side's profile: down to the groove, in to its bottom, along it, out, on to the skirt
+    g0L := point hint((dims.groove, -pw))
+    g1L := point hint((dims.groove, -gb))
+    g2L := point hint((dims.groove + groovew, -gb))
+    g3L := point hint((dims.groove + groovew, -pw))
+    sL := point hint((dims.ph, -pw))
+    g0R := point hint((dims.groove, pw))
+    g1R := point hint((dims.groove, gb))
+    g2R := point hint((dims.groove + groovew, gb))
+    g3R := point hint((dims.groove + groovew, pw))
+    sR := point hint((dims.ph, pw))
+    (pL0 := line(cL, g0L)) -> (pL1 := line(g0L, g1L)) -> (pL2 := line(g1L, g2L)) ->
+      (pL3 := line(g2L, g3L)) -> (pL4 := line(g3L, sL))
+    (pR0 := line(cR, g0R)) -> (pR1 := line(g0R, g1R)) -> (pR2 := line(g1R, g2R)) ->
+      (pR3 := line(g2R, g3R)) -> (pR4 := line(g3R, sR))
+    skirt := line(sL, sR)
+    // The crown is centered on the rod. The groove is a rectangular step in its left flank;
+    // symmetry determines the matching right flank from that one profile.
+    f.axes.origin midpoint crownl
+    crownl perpendicular rod
+    length(2 * pw) crownl
+    pL0 parallel rod
+    pL1 perpendicular rod
+    pL2 parallel rod
+    pL3 perpendicular rod
+    pL4 parallel rod
+    length(dims.groove) pL0
+    length(groovew) pL2
+    g1L distance(gb, side: left) rod
+    pL1 equal pL3
+    cL distance(dims.ph) sL
+    g0L symmetry(rod) g0R
+    g1L symmetry(rod) g1R
+    g2L symmetry(rod) g2R
+    g3L symmetry(rod) g3R
+    sL symmetry(rod) sR
+
+    // the eye about the pin, and the hole the pin's shank rides in
+    eye := circle(center: pin) hint(r: dims.reye)
+    radius(dims.reye) eye
+    hole := circle(center: pin) hint(r: dims.pinclr / 2)
+    radius(dims.pinclr / 2) hole
+    // the rod's two flanks, from the skirt to the eye
+    ra := point hint((dims.ph, -dims.rt / 2))
+    rc := point hint((dims.ph, dims.rt / 2))
+    rb := point hint((dims.L - dims.reye, 0mm))
+    rd := point hint((dims.L - dims.reye, 0mm))
+    rb coincident eye
+    rd coincident eye
+    fl parallel rod
+    fr parallel rod
+    fl := line(ra, rb)
+    fr := line(rc, rd)
+    ra coincident skirt
+    ra distance(dims.rt / 2, side: left) rod
+    ra symmetry(rod) rc
+    // -- what the solid is made of, and nothing a view reads ---------------------------------
+    // The piston is the *left* profile turned about the rod: a revolution takes one side of its
+    // axis, and the right-hand one is drawn because the section shows it.  The loop turns at
+    // three corners nothing draws — out to the rim at the crown, in to the axis at the skirt,
+    // and back up the axis, which the turn sweeps into nothing — so it says the corners and
+    // lets the face close itself.
+    s0 := point hint((dims.ph, 0mm))
+    s0 midpoint skirt
+    // the sizes a printer needs
+    claim cL distance(2 * pw) cR
+    claim cL distance(dims.ph) sL
+    claim cL distance(dims.groove) g0L
+    claim g1R distance(groovew) g2R
+    claim g1L distance(grooveb) g1R
+    claim f.axes.origin distance(dims.L) pin
+    claim radius(dims.reye) eye
+    claim radius(dims.pinclr / 2) hole
+    claim ra distance(dims.rt) rc
+  }
 
   // -- the solid: the section's faces swept, and the body their one rule (§6.9) ----------------
   // The rod and the eye are half `rw` either side of the plane of swing, which is where the
   // section is drawn and where the crank pin's washers hold it; the piston needs no such
   // statement, being a turn about a line that lies in that plane.
-  pist := solid(face(f.u.p1, pL0, pL1, pL2, pL3, pL4, s0, -> close), about: rod)
+  pist := solid(face(f.axes.origin, pL0, pL1, pL2, pL3, pL4, s0, -> close), about: rod)
   // the rod between its flanks, closed across the skirt and across the eye
   shank := solid(face(fl, rd, fr, ra), from: -dims.rw / 2, to: dims.rw / 2)
   boss := solid(face(eye), from: -dims.rw / 2, to: dims.rw / 2)
@@ -133,6 +141,6 @@ preview {
     std.origin vertical pin
     std.origin distance(components.dims.L) pin
     piston_axes := std.Turned(std.origin, pin)
-    pis := Piston(piston_axes, dims: components.dims.vtwin_dims)
   }
+  pis := Piston(piston_axes, dims: components.dims.vtwin_dims)
 }

@@ -4,6 +4,17 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.147] Parts in frames of their own.** A drawing's `sketch` of a plane shows what is drawn in a
+plane lying in it and facing the same way, where it stands (§13.2): a part drawn `in` a frame of
+its own (`in f.axes { … }`) is drawn where the frame puts it; through 0.146 a sketch showed what
+was drawn in its own plane only. An overall extent `dimensions in VIEW` reads of a solid reaches a
+round outline's own edge. The V-twin is written so: each moving part — the crank disc, the
+cylinders, the pistons — drawn in its own frame, the frames placed by the kinematics, and the
+crank's angle a declared `param t` the drawing is followed along (`crank.theta`, the free
+unknown a drag turned, is gone, and with it the table's `theta0`); its sheet shows it `at t =
+180deg`, the drawing it showed before, to the number. The model language is unchanged. (Issue
+#398, item K.)
+
 **[0.146] The instant shown.** A drawing shows a model over a parameter at an instant of its
 march (§13.1): `model m from "four_bar.sv" at t = 90deg` (or `t=90deg`), the value in the model's
 units and of the parameter's dimension, stood on the branch the march carries; the same file at two

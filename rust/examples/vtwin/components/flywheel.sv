@@ -13,18 +13,21 @@ use std
 use components.dims
 use components.parts
 
+// f is the flywheel's own frame: origin on the shaft, u along the set screw's reference.  The
+// flywheel is drawn in it, so every number below is the part's own.
 component Flywheel(f: group, dims: group) {
-  rim := circle(center: f.u.p1) hint(r: dims.rfw)
-  radius(dims.rfw) rim
-  bore := circle(center: f.u.p1) hint(r: dims.dhub / 2)
-  radius(dims.dhub / 2) bore
-  se := point hint(at: f.axes, (0mm, -dims.rfw))
-  ssa := line(f.u.p1, se)
-  reference := line(f.u.p1, f.u.p2)
-  se coincident rim
-  ssa perpendicular reference
-  screw_axes := std.Turned(f.u.p1, se)
-  gs := components.parts.Grub(screw_axes, rin: dims.dhub / 2, rout: dims.rfw, dims: dims)
+  in f.axes {
+    rim := circle(center: f.axes.origin) hint(r: dims.rfw)
+    radius(dims.rfw) rim
+    bore := circle(center: f.axes.origin) hint(r: dims.dhub / 2)
+    radius(dims.dhub / 2) bore
+    se := point hint((0mm, -dims.rfw))
+    ssa := line(f.axes.origin, se)
+    se coincident rim
+    ssa perpendicular f.axes.u
+    screw_axes := std.Turned(f.axes.origin, se)
+    gs := components.parts.Grub(screw_axes, rin: dims.dhub / 2, rout: dims.rfw, dims: dims)
+  }
 
   // -- the solid: the section's faces swept, and the body their one rule (§6.9) ----------------
   plate := solid(face(rim), from: -dims.wfw / 2, to: dims.wfw / 2)
@@ -41,6 +44,6 @@ preview {
     up := point
     fix((0, 40)) up
     axes := std.Turned(std.origin, up)
-    fw := Flywheel(axes, dims: components.dims.vtwin_dims)
   }
+  fw := Flywheel(axes, dims: components.dims.vtwin_dims)
 }

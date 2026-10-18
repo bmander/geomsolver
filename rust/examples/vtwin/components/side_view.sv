@@ -28,7 +28,7 @@ component SideView(o: point, dims: group) {
   claim flywheel.a distance(dims.wfw) flywheel.b
   // the clevis pin at the height the front view puts it: its head in the disc's back, the two
   // eyes on its shank, a washer each side of them, the cotter outboard
-  pin_s := point hint((o.x, o.y + dims.R * cos(dims.theta0)))
+  pin_s := point hint((o.x, o.y + dims.R))
   o vertical pin_s
   head := components.parts.Box(pin_s, x0: -(dims.zdisc + dims.pinpocket), y0: -dims.pinhead / 2, x1: -(dims.zdisc + dims.pinpocket - dims.pinheadH), y1: dims.pinhead / 2)
   pin := components.parts.Box(pin_s, x0: -(dims.zdisc + dims.pinpocket + dims.pingrip + 7mm), y0: -dims.rpin, x1: -(dims.zdisc + dims.pinpocket), y1: dims.rpin)

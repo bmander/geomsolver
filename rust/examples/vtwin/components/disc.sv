@@ -13,31 +13,38 @@
 // its shank with a washer against the disc and one under the hairpin cotter, so the pin is
 // captured between its head and the cotter and nothing is threaded into plastic.
 
-use std (vertical)
+use std (vertical, on_u)
 use components.dims
 use components.parts
 
+// f is the disc's own frame: origin on the crank axis, u toward the pin.  The disc is drawn in it,
+// so every number below is the part's own and the frame is all that turns.
 component Disc(f: group, dims: group) {
   pinpocketd := dims.pinhead + 0.5mm   // diametral clearance around the clevis head
-  rim := circle(center: f.u.p1) hint(r: dims.rdisc)
-  radius(dims.rdisc) rim
-  bore := circle(center: f.u.p1) hint(r: dims.dhub / 2)
-  radius(dims.dhub / 2) bore
-  ph := circle(center: f.u.p2) hint(r: dims.pinclr / 2)
-  radius(dims.pinclr / 2) ph
-  pkt := circle(center: f.u.p2) hint(r: pinpocketd / 2)
-  radius(pinpocketd / 2) pkt
-  // the set screw, square to the arm so its pocket stays clear of the pin's
-  se := point hint(at: f.axes, (0mm, -dims.rdisc))
-  ssa := line(f.u.p1, se)
-  reference := line(f.u.p1, f.u.p2)
-  se coincident rim
-  ssa perpendicular reference
-  screw_axes := std.Turned(f.u.p1, se)
-  gs := components.parts.Grub(screw_axes, rin: dims.dhub / 2, rout: dims.rdisc, dims: dims)
-  claim radius(dims.dhub / 2) bore
-  claim radius(dims.pinclr / 2) ph
-  claim radius(pinpocketd / 2) pkt
+  in f.axes {
+    // the clevis pin's centre, the throw `R` along the arm
+    pin := point hint((dims.R, 0mm))
+    pin on_u(d: dims.R) f.axes
+    rim := circle(center: f.axes.origin) hint(r: dims.rdisc)
+    radius(dims.rdisc) rim
+    bore := circle(center: f.axes.origin) hint(r: dims.dhub / 2)
+    radius(dims.dhub / 2) bore
+    ph := circle(center: pin) hint(r: dims.pinclr / 2)
+    radius(dims.pinclr / 2) ph
+    pkt := circle(center: pin) hint(r: pinpocketd / 2)
+    radius(pinpocketd / 2) pkt
+    // the set screw, square to the arm so its pocket stays clear of the pin's
+    se := point hint((0mm, -dims.rdisc))
+    ssa := line(f.axes.origin, se)
+    reference := line(f.axes.origin, pin)
+    se coincident rim
+    ssa perpendicular reference
+    screw_axes := std.Turned(f.axes.origin, se)
+    gs := components.parts.Grub(screw_axes, rin: dims.dhub / 2, rout: dims.rdisc, dims: dims)
+    claim radius(dims.dhub / 2) bore
+    claim radius(dims.pinclr / 2) ph
+    claim radius(pinpocketd / 2) pkt
+  }
 
   // -- the solid: the section's faces swept, and the body their one rule (§6.9) ----------------
   // **The section is the disc's mid-plane**, and it is the set screw that says so: its hole is a
@@ -67,6 +74,6 @@ preview {
     std.origin vertical pin
     std.origin distance(components.dims.R) pin
     disc_axes := std.Turned(std.origin, pin)
-    disc := Disc(disc_axes, dims: components.dims.vtwin_dims)
   }
+  disc := Disc(disc_axes, dims: components.dims.vtwin_dims)
 }

@@ -28,9 +28,6 @@ H := 30mm          // crank axis to a cylinder's pivot, along the bank
 V := 90deg         // the included angle of the V
 alphaR := V / 2    // bank R leans this far clockwise of vertical; bank L the same the other way
 alphaL := -V / 2
-theta0 := 180deg   // where the crank *starts*: a seed, read by nothing but seeds.  The crank
-                        // angle itself is the drawing's one freedom, `crank.theta` — a name no
-                        // statement defines, so the solver answers for it and a drag turns it
 swing := asin(R / H)   // how far a cylinder rocks either side of its bank: 19.5°
 
 // -- the cylinder -----------------------------------------------------------------------------
@@ -172,7 +169,7 @@ vtwin_dims := {
   rbrg: rbrg, rdisc: rdisc, reye: reye, rfw: rfw, rman: rman,
   rpin: rpin, rpl: rpl, rshaft: rshaft, rstud: rstud, rt: rt,
   rw: rw, seal: hardware.seal_dims, shafthole: shafthole, spring: spring, studclr: studclr,
-  swing: swing, tback: tback, tdisc: tdisc, theta0: theta0, throttle: throttle,
+  swing: swing, tback: tback, tdisc: tdisc, throttle: throttle,
   tor: tor, torz: torz, tp: tp, trapfit: trapfit, traph: traph,
   trapz: trapz, tretain: tretain, wall: wall, wbrg: wbrg, wch: wch,
   wfw: wfw, wsh: wsh, zA: zA, zB: zB, zdisc: zdisc,

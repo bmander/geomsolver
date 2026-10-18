@@ -1,5 +1,6 @@
 // Presentation of assembly.sv. Model geometry is independent of this drawing.
-model m from "assembly.sv"
+// The engine is shown with the crank pin at the bottom, half a turn on from where it is drawn.
+model m from "assembly.sv" at t = 180deg
 
 sheet drawing {
   size (420mm, 297mm)

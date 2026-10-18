@@ -172,9 +172,11 @@ fn arc_path(
     let sweep = (a1 - a0).abs();
     let large = usize::from(sweep > std::f64::consts::PI);
     let ccw = a1 > a0;
-    // the radius in page units: the transform is a uniform scale, so a length converts like a
-    // point does, and asking `at` twice is one place fewer for the scale to be written down
-    let rr = (at((c.0 + r, c.1)).0 - at(c).0).abs();
+    // the radius in page units: the transform is a uniform scale (and perhaps a turn, for a plane
+    // lying in the one drawn), so a length converts like a point does, and asking `at` twice is
+    // one place fewer for the scale to be written down
+    let (p, q) = (at((c.0 + r, c.1)), at(c));
+    let rr = (p.0 - q.0).hypot(p.1 - q.1);
     // `fill="none"` on the path itself: a callout's arc is written outside the geometry's
     // `<g fill="none">`, and an unfilled-looking arc a browser fills black is a sector
     out.push_str(&format!(

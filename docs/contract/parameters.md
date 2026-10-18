@@ -161,8 +161,16 @@ where a rule came from.
     kept when it solves, when the solve moved the predicted station no more than `TURN` (0.1) of the
     step's own motion in world length (`Param::scale`, over the unknowns; plus a floor of `1e-9` of
     the extent), and when the **orientation** of the conditioned Jacobian (the sign of its
-    determinant by `linalg::lu_factor`, where it is square and at most `ORIENTED` wide) is the one
-    it had — an assembly mode keeps it, so a flip is a branch jump or a singular instant crossed.
+    determinant) is the one it had — an assembly mode keeps it, so a flip is a branch jump or a
+    singular instant crossed. **The Jacobian is read a block at a time** (`follow::Jacobian`, #398
+    K): the square blocks of its block-triangular order (`System::block_order`), each conditioned
+    and factored alone (`linalg::rrqr_with` for its rank, `lu_factor` for its sign). A
+    block-triangular matrix is singular exactly where a diagonal block is, and its determinant is
+    theirs times the order's sign, which every station shares (each compiles the same structure),
+    so the rank and the orientation cost a few small factorisations — the V-twin's march, 924
+    unknowns, went from 166 s to one. A block wider than `ORIENTED` (512) has no sign read; a
+    drawing whose order is not square (an over or an under part), or a block short of rank, is
+    read whole by the dense rank, which also counts what `not_held` says.
     Otherwise the step is halved; kept easily (`EASY`) it grows by `GROW` up to `COARSEST` (1/128)
     of the interval. **A singular instant** is where no step is kept at `FINEST` (1e-7) of the
     interval — the solve fails or the orientation flips — or a kept station is short of rank;
@@ -467,3 +475,21 @@ where a rule came from.
     envelope or a sweep re-read at the instant shown (a solid riding the drawing is evaluated
     where it stands, a swept field meshed at home), and a paper preview's own scrubber writing
     the `.svd`'s `at`.
+- **The V-twin over its crank angle** (#398 K, [0.147]): each moving part drawn in its own frame,
+  its pose a function of the crank angle.  `param t: Angle over (0deg, 360deg)` is bound to the
+  crank's arm (`Crank(layout, theta: t)`); each bank's two statements place its cylinder's frame
+  at the pivot and its piston's at the crown (`std.Turned`), and the disc's turns with the pin.
+  Each part is written `in f.axes { … }` in its own coordinates — the frame's origin
+  (`f.axes.origin`) its datum, its pin `on_u` — and called outside any `in` block, so it rides on
+  nothing (W115); `Crank` and `Bank` take the `layout` they draw their kinematics in, as `Frame`
+  does.  The drawing is held (DOF 0, `1 DOF over t`) and followed round the whole turn.
+  - **Gate**: `tests/coordinates.rs` (`vtwin_parts_follow_a_complete_crank_turn`): stood at every
+    eighth of the turn, the crank pin at `(R sin t, R cos t)` and each bank's crown, cylinder
+    corner, piston flank and eye where an oscillating cylinder's closed form puts them, read in the
+    front plane (1e-6); each part's body the volume it had; every part sheet's labels unchanged;
+    the assembly sheet at `t = 180deg` the sheet it was, number for number; `tests/examples_sv.rs`
+    the counts (the pins drawn in their parts' frames) and DOF 0.
+  - **Not built**: a part's solid evaluated in its own frame and placed by the frame's pose — the
+    bodies are evaluated where they stand, so a scrub re-evaluates every moving part's (about a
+    second an instant natively); and the march is taken again after every edit (1.3 s in the page
+    for the V-twin).
