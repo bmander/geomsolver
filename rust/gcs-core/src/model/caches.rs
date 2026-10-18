@@ -69,6 +69,13 @@ pub struct Caches {
     /// the stratum it reads: the recipe and the exact boundary each ask it, and its gate reads the
     /// field.
     pub(crate) lowering: Memo<Result<Rc<Vec<crate::solid::lowering::Piece>>, String>>,
+    /// The latest constructions a lowering's gate built and meshed (`solid::lowering::gated`),
+    /// each against the recipe node it was built from (and the stratum a rolled one rolls
+    /// against, by identity): the regions a round makes for each order of the faces it names,
+    /// where it does not state each once (#415, `lowering::GATED`), lower to one construction.
+    /// A few, oldest asked forgotten
+    /// first: a mesh fine enough to gate by is large.
+    pub(crate) gated: RefCell<Vec<Rc<crate::solid::lowering::Gated>>>,
     /// Each region solid in general position built as the common of its terms
     /// (`solid::bounded::built`, #238), against `solid::reads`: the sweep test, the recipe and
     /// the exact boundary each ask it, and its gate reads the field.
@@ -104,6 +111,7 @@ impl Caches {
         self.meridian.clear();
         self.general.clear();
         self.lowering.clear();
+        self.gated.borrow_mut().clear();
         self.bounded.clear();
         self.canal.clear();
         self.roll.clear();

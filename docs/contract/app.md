@@ -108,7 +108,8 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   (`finishCombine`) writes `tool word target` for every tool in one splice
   (`edit::add_body_word` takes a list), the target left picked; Escape lets the tools go, then the
   target.  **One step of the body rule**, `Sketch::join_body` (`as_body` moves a sweep to a
-  stock past the last, the tool joins `word`'s set, `solid::reaches` asked once it is in, since a
+  stock past the last, the tool joins `word`'s set — a tool already in it joins nothing more, #415 —
+  `solid::reaches` asked once it is in, since a
   `through:` reads only what its body adds; a cycle popped and refused, E041 **at that
   statement**), states each statement in `program/solids.rs` and each tool of the **preview**:
   `Sketch::preview_body` joins them on a clone (the caches' operands kept) and evaluates the

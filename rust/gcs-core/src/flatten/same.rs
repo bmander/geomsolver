@@ -5,75 +5,54 @@
 //! another of those orders, *is* that instance: the walk makes it a name for the first and expands
 //! nothing (`Walk::same_instance`).  A region solid of a set that is one made before is the solid
 //! made of it (`Walk::same_solid`), and a body statement over it that says what one over that solid
-//! already said says nothing more (`Walk::same_body`).  `round(r) X` reaches every edge of `X` in
-//! both orders and every corner in six: each is one set, one solid, one cut and one fill.
+//! already said joins nothing more (`Sketch::join_body`).  `round(r) X` reaches every edge of `X`
+//! in both orders and every corner in six: each is one set, one solid, one cut and one fill.
 //!
 //! Nothing here is a guess made after the fact: two instances are one only where the family says
 //! the order does not matter, and only by what their arguments stand for, worked out as a `when`
-//! works it out.  Where an argument cannot be told yet (a name not found, a number left unknown)
-//! the instance is its own.
+//! works it out, and only where the two are stamped alike (roles, classes): an instance stamped
+//! otherwise is its own.  Where an argument cannot be told yet (a name not found, a number left
+//! unknown) the instance is its own.  And only a block's copies share a solid: a solid the
+//! document names is its own statement, never taken for a copy's or a copy's for it.
 
 use super::*;
 
 /// What the walk found to be one thing named twice — see the module's words.
 #[derive(Default)]
 pub(super) struct Same {
-    /// Each symmetric family's instance made, by its component and its arguments in the order
-    /// the family's symmetry reads first (`canonical`), to the instance's absolute name.
-    instances: BTreeMap<(usize, Vec<String>), String>,
+    /// Each symmetric family's instance made, by its component, its arguments in the order the
+    /// family's symmetry sorts them to (`canonical`) and its stamps, to the instance's absolute
+    /// name.
+    instances: BTreeMap<(usize, Vec<String>, String), String>,
     /// An instance that is one made before, by its absolute name, to that one's.
     pub(super) sets: BTreeMap<String, String>,
-    /// The first region solid made of each set, by the set's absolute name, to the solid's.
+    /// The first region solid a block's copy made of each set, by the set's absolute name, to
+    /// the solid's.
     solids: BTreeMap<String, String>,
-    /// Those region solids, and the solids that are one of them: each to the one it is.
-    regions: BTreeMap<String, String>,
-    /// Each body statement over a region solid already made: its word, the solid, and what its
-    /// body stands for.
-    bodies: BTreeSet<(&'static str, String, String)>,
 }
 
-/// The orders `n` items can stand in, each as where item `i` takes its arguments from.
-fn orders(n: usize) -> Vec<Vec<usize>> {
-    if n == 0 {
-        return vec![Vec::new()];
-    }
-    let mut out = Vec::new();
-    for rest in orders(n - 1) {
-        for at in 0..=rest.len() {
-            let mut o = rest.clone();
-            o.insert(at, n - 1);
-            out.push(o);
-        }
-    }
-    out
-}
-
-/// The arguments `ids` (one per formal) in the order of the symmetry's that comes first: each
-/// order of the items moves every formal of an item into the matching place of another.
+/// The arguments `ids` (one per formal) with the symmetry's items in the order that sorts them:
+/// every order of the items, each moving all its formals into the places of another, comes to
+/// the same.
 fn canonical(ids: &[String], items: &[Vec<usize>]) -> Vec<String> {
-    let mut best: Option<Vec<String>> = None;
-    for order in orders(items.len()) {
-        let mut v = ids.to_vec();
-        for (to, &from) in order.iter().enumerate() {
-            for (k, &f) in items[to].iter().enumerate() {
-                v[f] = ids[items[from][k]].clone();
-            }
-        }
-        if best.as_ref().is_none_or(|b| v < *b) {
-            best = Some(v);
+    let mut each: Vec<Vec<&String>> =
+        items.iter().map(|item| item.iter().map(|&f| &ids[f]).collect()).collect();
+    each.sort();
+    let mut v = ids.to_vec();
+    for (item, from) in items.iter().zip(&each) {
+        for (&f, id) in item.iter().zip(from) {
+            v[f] = (*id).clone();
         }
     }
-    best.unwrap_or_else(|| ids.to_vec())
+    v
 }
-
-/// The most items a family may list: the orders of more are more than the walk asks after.
-const MAX_ITEMS: usize = 6;
 
 impl Walk<'_> {
     /// Whether the instance just bound under `key` (`{prefix}{name}.`) is one made before (#415):
     /// a symmetric family's, given what an earlier one was given in another order the family
     /// allows.  If so its name is made a name for that one, which is not made again; if not, it
-    /// is remembered for the instances after it.
+    /// is remembered for the instances after it.  What `stamps` names (the roles and classes its
+    /// parts would carry) is part of what it is: an instance stamped otherwise is its own.
     pub(super) fn same_instance(
         &mut self,
         comp: &Component,
@@ -81,11 +60,10 @@ impl Walk<'_> {
         scope: &Scope,
         given: &BTreeMap<String, Aff>,
         sides: &BTreeMap<String, String>,
-        drawn_in: bool,
+        stamps: &Stamps,
     ) -> bool {
-        if comp.symmetric.is_empty() || comp.set.is_none() || self.sym.is_some() || drawn_in
-            || comp.symmetric.len() > MAX_ITEMS
-        {
+        let drawn_in = stamps.plane.is_some() || !stamps.rides.is_empty();
+        if comp.symmetric.is_empty() || comp.set.is_none() || self.sym.is_some() || drawn_in {
             return false;
         }
         let Some(index) = self.instances.last().filter(|i| i.prefix == key).map(|i| i.comp) else {
@@ -118,7 +96,8 @@ impl Walk<'_> {
             ids.push(id);
         }
         let name = key.trim_end_matches('.').to_string();
-        let canon = (index, canonical(&ids, &items));
+        let stamped = format!("{:?} {:?} {}", stamps.roles, stamps.class.0, stamps.anonymous);
+        let canon = (index, canonical(&ids, &items), stamped);
         let Some(first) = self.same.instances.get(&canon).cloned() else {
             self.same.instances.insert(canon, name);
             return false;
@@ -128,60 +107,35 @@ impl Walk<'_> {
         self.group_names.remove(&name);
         self.instances.pop();
         let span = comp.name.as_ref().map_or(Span::default(), |n| n.span);
-        self.aliases.push((name.clone(), Ref::dotted(&first, span), Scope::absolute(scope.access.clone())));
+        let root = Scope::absolute(scope.access.clone());
+        self.aliases.push((name.clone(), Ref::dotted(&first, span), root));
         self.same.sets.insert(name, first);
         true
     }
 
     /// Whether region solid `abs` (`taken := solid(run)`), declared in a block's copy, is of a set
-    /// that is one made before, of which a solid is made already: then `abs` is a name for that
-    /// solid, and the declaration makes nothing.  A solid of a set made once is remembered as its
-    /// set's.
-    pub(super) fn same_solid(&mut self, d: &Decl, abs: &str, sc: &Scope) -> bool {
-        use crate::syntax::Sweep;
-        if d.kind != crate::model::EntKind::Solid || !matches!(d.sweep, Some(Sweep::Body)) {
-            return false;
-        }
-        let Some((_, set, through)) = self.set_named(d, 0, sc) else { return false };
-        match self.same.solids.get(&set).cloned() {
-            // only where the set is the same by symmetry, and the solid is a copy's, which a block
-            // reaches once for each order: two solids the document names of one set are two
-            // statements it made, which this says nothing about
-            Some(first) if through && sc.block.copies => {
+    /// that is one made before, of which a copy's solid is made already: then `abs` is a name for
+    /// that solid, and the declaration makes nothing.  A copy's solid of a set made once is
+    /// remembered as its set's.  `set` is the solid's set as `set_named` reads it.
+    pub(super) fn same_solid(&mut self, d: &Decl, abs: &str, set: Option<&(Ref, String, bool)>,
+                             sc: &Scope) -> bool {
+        // two solids the document names of one set are two statements it made, which this says
+        // nothing about, nor is one of them a copy's
+        let Some((_, set, through)) = set.filter(|_| sc.block.copies) else { return false };
+        match self.same.solids.get(set).cloned() {
+            // only where the set is the same by symmetry: a copy reaches it once for each order
+            Some(first) if *through => {
                 self.names.remove(abs);
                 let at = d.name.span();
                 self.aliases.push((abs.to_string(), Ref::dotted(&first, at),
                                    Scope::absolute(sc.access.clone())));
-                self.same.regions.insert(abs.to_string(), first);
                 true
             }
             Some(_) => false,
             None => {
-                self.same.solids.insert(set, abs.to_string());
-                self.same.regions.insert(abs.to_string(), abs.to_string());
+                self.same.solids.insert(set.clone(), abs.to_string());
                 false
             }
         }
-    }
-
-    /// Whether body statement `s` (`taken cut A.body`) says over a region solid what was said
-    /// over it already: its solid one of the same solid's names (`same_solid`), its word the
-    /// same and its body standing for the same.
-    pub(super) fn same_body(&mut self, s: &crate::syntax::SolidRel, sc: &Scope) -> bool {
-        if self.same.regions.is_empty() || !s.what.path.is_empty() {
-            return false;
-        }
-        // the name as the walk's names find it, innermost first: a solid only if a region one
-        let what = &s.what.root.text;
-        let Some(solid) = sc.prefixes.iter()
-            .map(|p| format!("{p}{what}"))
-            .find(|abs| self.names.contains(abs) || self.same.regions.contains_key(abs))
-            .and_then(|abs| self.same.regions.get(&abs).cloned())
-        else {
-            return false;
-        };
-        let alias = super::resolve::Lazy::new(self);
-        let Some(body) = self.stands_for(&s.body, sc, &alias) else { return false };
-        !self.same.bodies.insert((s.word.as_str(), solid, body))
     }
 }

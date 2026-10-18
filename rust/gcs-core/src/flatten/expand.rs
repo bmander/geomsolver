@@ -171,8 +171,6 @@ impl<'a> Walk<'a> {
                 }
                 // a claim over an interval: its numbers and its relations' worked out as above
                 StmtKind::ClaimOver(c) => self.walk_claim_over(c, st, scope, vals, path, depth),
-                // a body statement saying over a solid what was said over it (#415): said once
-                StmtKind::SolidRel(s) if self.same_body(s, scope) => {}
                 // a gauge or an orientation: kept as written, resolved later
                 other => self.emit(other.clone(), st, scope, path),
             }
@@ -438,12 +436,15 @@ impl<'a> Walk<'a> {
             }
         }
         self.stamp_scope_plane(&mut d2, scope);
-        // a region solid of a set that is one already a solid is that solid (#415)
-        if self.same_solid(&d2, &abs, scope) {
+        // a region solid's set, read once: a copy's solid of a set that is one already a copy's
+        // solid is that solid (#415), and any other makes its region of it
+        let set = self.region_set(&d2, scope);
+        if self.same_solid(&d2, &abs, set.as_ref(), scope) {
             return;
         }
         let twins = self.twins_of(&d2, &d.name.key().text);
-        let region: Vec<_> = match self.region_of(&mut d2, &d.name.key().text, scope) {
+        let set = set.map(|(set, _, _)| set);
+        let region: Vec<_> = match self.region_of(&mut d2, &d.name.key().text, set) {
             Some(r) => vec![r],
             None => self.envelope_of(&mut d2, &d.name.key().text, scope),
         };
@@ -808,8 +809,18 @@ impl<'a> Walk<'a> {
         };
         // a symmetric family's instance given what one before it was given, in another order it
         // allows, is that one (#415): a name for it, and nothing made again
-        let drawn_in = in_plane.is_some() || !rides.is_empty();
-        if self.same_instance(comp, &key, scope, &sub_vals, &sides, drawn_in) {
+        let stamps = Stamps {
+            roles: scope.stamps.roles.union(inst.annotations.roles),
+            plane: in_plane,
+            rides,
+            class: {
+                let mut c = scope.stamps.class.clone();
+                c.0.extend(inst.class.0.iter().cloned());
+                c
+            },
+            anonymous: scope.stamps.anonymous || inst.name.text.starts_with('#'),
+        };
+        if self.same_instance(comp, &key, scope, &sub_vals, &sides, &stamps) {
             return ControlFlow::Continue(());
         }
         let forbidden = Outside { around: scope.vals.clone(), file: self.file_vals.clone() };
@@ -834,17 +845,7 @@ impl<'a> Walk<'a> {
                 ring: scope.block.ring.clone(),
                 copies: scope.block.copies,
             },
-            stamps: Stamps {
-                roles: scope.stamps.roles.union(inst.annotations.roles),
-                plane: in_plane,
-                rides,
-                class: {
-                    let mut c = scope.stamps.class.clone();
-                    c.0.extend(inst.class.0.iter().cloned());
-                    c
-                },
-                anonymous: scope.stamps.anonymous || inst.name.text.starts_with('#'),
-            },
+            stamps,
             pred: PredWalk { pass: Pass::Itself, written: None, held: false },
             reading: None,
         };
@@ -1592,13 +1593,11 @@ impl Walk<'_> {
     /// the probe as any use applies it and the bounds it puts there are the solid's terms
     /// (`constrain`).
     /// `None` for any other declaration.
-    fn region_of(&mut self, d: &mut Decl, local: &str, sc: &Scope)
+    /// `set` is the solid's set (`region_set`).
+    fn region_of(&mut self, d: &mut Decl, local: &str, set: Option<Ref>)
         -> Option<(Decl, crate::syntax::Relation)> {
         use crate::syntax::Sweep;
-        if d.kind != crate::model::EntKind::Solid || !matches!(d.sweep, Some(Sweep::Body)) {
-            return None;
-        }
-        let set = self.set_operand(d, 0, sc)?;
+        let set = set?;
         let at = Span::at(d.name.span().lo as usize);
         let key = keys::probe(&d.name.key().text);
         self.names.insert(key.clone());
@@ -1634,6 +1633,15 @@ impl Walk<'_> {
             made.push((super::sets::probe(key, at), applied(&probe, set, "coincident", at)));
         }
         made
+    }
+
+    /// The set a region solid (`taken := solid(run)`) is of, where it is one (`set_named`).
+    fn region_set(&mut self, d: &Decl, sc: &Scope) -> Option<(Ref, String, bool)> {
+        use crate::syntax::Sweep;
+        if d.kind != crate::model::EntKind::Solid || !matches!(d.sweep, Some(Sweep::Body)) {
+            return None;
+        }
+        self.set_named(d, 0, sc)
     }
 
     /// The set a declaration's `i`th operand names, where it names one.

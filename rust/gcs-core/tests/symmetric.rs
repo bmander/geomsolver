@@ -5,6 +5,7 @@
 //! reaches every edge of `X` in both orders and every corner in six, states each once — and makes
 //! the same body as the words written without `symmetric`, which state each every time.
 use gcs_core::brep::{export, props, sweep::Say};
+use gcs_core::model::SolidDef;
 use gcs_core::program::Elaborated;
 
 use crate::common::{close, ent, parse, read, text::solved};
@@ -127,6 +128,73 @@ fn a_documents_own_solids_of_one_set_stay_two() {
     let e = solved(src);
     let named: Vec<&str> = e.sketch.solids.iter().map(|s| s.name.as_str()).collect();
     assert!(named.contains(&"sx") && named.contains(&"sy"), "{named:?}");
+}
+
+/// What body `name` of `e` takes away: its `cut` terms, by name.
+fn cut_terms(e: &Elaborated, name: &str) -> Vec<String> {
+    let SolidDef::Body { through, .. } = &e.sketch.solids[ent(e, name).i()].def else {
+        panic!("`{name}` is no body");
+    };
+    through.iter().map(|&t| e.sketch.solids[t as usize].name.clone()).collect()
+}
+
+/// A solid the document names is never taken for a copy's: `sx`, the document's own solid of the
+/// edge's set, stands apart while the round makes its own of that edge — it is no term of the
+/// block.
+#[test]
+fn a_documents_solid_is_never_a_copys() {
+    let block = BLOCK.replace("use std (round, chamfer)", "use std\nuse std (round)");
+    let src = format!("{block}x := std.Run(block.near, block.east, r: 2mm)\nsx := solid(x)\n\
+        round(r: 2mm) block\n");
+    let cut = cut_terms(&read(&src), "block");
+    assert!(!cut.is_empty() && !cut.iter().any(|t| t == "sx"), "{cut:?}");
+}
+
+/// A body reached by two words over one edge (the block rounded all over, then its near face's
+/// edges again) takes each solid away once: the second word's solids are the first's, and a cut
+/// already made is not made again.
+#[test]
+fn an_edge_rounded_twice_is_cut_once() {
+    let once = cut_terms(&read(&format!("{BLOCK}round(r: 2mm) block\n")), "block");
+    let twice = read(&format!("{BLOCK}round(r: 2mm) block\nblock.near round(r: 2mm) block\n"));
+    let twice = cut_terms(&twice, "block");
+    let mut distinct = twice.clone();
+    distinct.sort();
+    distinct.dedup();
+    assert_eq!(distinct.len(), twice.len(), "{twice:?}");
+    assert_eq!(once.len(), twice.len(), "{once:?} / {twice:?}");
+}
+
+/// The block's regions, past the block, of a word `body` written over every two of its faces
+/// `a` and `b` and stated over the block, under `head` (a family or nothing).
+fn over_pairs(head: &str, body: &str) -> usize {
+    let src = BLOCK.replace("use std (round, chamfer)", "use std");
+    let src = format!("{src}{head}A pairs() B := {{\n  repeat a in A {{\n    repeat b in B {{\n      \
+        when b != a {{\n{body}      }}\n    }}\n  }}\n}}\nblock pairs() block\n");
+    read(&src).sketch.solids.iter().filter(|s| s.name != "block").count()
+}
+
+/// Two instances given the same faces are one only where they are stamped alike: a flat over a
+/// pair's faces each way round, one of them `class phantom`, is two flats per pair — the plain
+/// one each way one, and the phantom one each way one.
+#[test]
+fn instances_stamped_otherwise_are_their_own() {
+    let body = "        one := std.Flat(a, b, la: 1mm, lb: 1mm)\n        taken := solid(one)\n        \
+        taken cut A.body\n        other := std.Flat(b, a, la: 1mm, lb: 1mm) class phantom\n        \
+        made := solid(other)\n        made cut A.body\n";
+    assert_eq!(over_pairs("", body), 30);
+}
+
+/// A family may list as many items as it has formals: eight faces that change places, each pair
+/// of the block's faces reached both ways one set.
+#[test]
+fn a_family_of_many_items_is_one_set_in_any_order() {
+    let head = "component Eight(a: face, b: face, c: face, d: face, e: face, f: face, g: face, \
+        h: face) symmetric(a, b, c, d, e, f, g, h) := { p |\n  p inside a\n  p inside b\n  \
+        p inside c\n  p inside d\n  p inside e\n  p inside f\n  p inside g\n  p inside h\n}\n";
+    let body = "        one := Eight(a, b, a, b, a, b, a, b)\n        taken := solid(one)\n        \
+        taken cut A.body\n";
+    assert_eq!(over_pairs(head, body), 15);
 }
 
 /// What `symmetric` may say, and what it may not, each refused where it is written.

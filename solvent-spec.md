@@ -1869,7 +1869,7 @@ in an order the family allows — its entities, faces, sets and groups standing 
 things, its numbers the same values — **is** that instance, the same set by another name. So
 `Run(b, a, r: r)` is `Run(a, b, r: r)`; a family that does not say so is a set per order, and an
 instance with a number left unknown is its own. *Non-normative:* an implementation reads such an
-instance as a name for the first, and a solid a block's copy makes of it, and what that solid is
+instance, stamped with the roles and classes the first was, as a name for the first, and a solid a block's copy makes of it, and what that solid is
 said to do to a body, as the first copy's (§12.1, §12.7), so a word reaching an edge both ways
 states it once.
 

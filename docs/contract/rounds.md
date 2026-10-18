@@ -101,10 +101,13 @@ pieces' B-rep held to the region's own field (`agreement`, by area; empty only w
 reads empty), and holding what the field reads just inside each edge (`beside_edges`: a probe of
 the boundary built sees nothing of a piece never built), before anything reads them. Memoised against the region's own terms (`solid::reads::reads_own`)
 and the stratum's `Arc` (`Caches::lowering`; a key over `solid::reads` walks every round of
-the body), asked once a recipe. The gate's construction — the pieces' B-rep and its mesh
-(`lowering::gated`) — is built for the region whose gate asks it and remembered by nothing else:
-the word states each edge and corner once (#415), so no two of a body's regions lower to the same
-pieces (the memo up to order that stood in for that, `Caches::gated`, went with it). `cad.rs` builds a body's lowered regions in one set as one recipe node, `"lowered"`
+the body), asked once a recipe. The gate's construction — the pieces' B-rep and its mesh — is
+remembered against the recipe node up to the order it lists things in (`lowering::gated`,
+`canonical`; a rolled one's stratum by identity; `Caches::gated`, the latest few): `std`'s words
+state each edge and corner once (#415), but a word that does not — a document's own written
+without `symmetric`, a round over faces drawn `in` a plane or riding a frame — makes a region for
+each order of the faces it names, and `Corner(a, b, c)` and `Corner(b, a, c)` lower to one
+construction, built and meshed once and held to each region's own field. `cad.rs` builds a body's lowered regions in one set as one recipe node, `"lowered"`
 (`assemble`: each distinct piece once, a run cut short at a corner's section and **glued** there,
 `boolean::glued`; the rest unioned — two runs crossing are a mitre), the first region standing for
 the rest; a region lowered to nothing is no operand; a body's face readers go in `"on_late"` /
