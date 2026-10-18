@@ -2,7 +2,9 @@
  *
  * Scrubbing it shows the drawing at that instant (`SketchView.showInstant`), on the branch the
  * core's march carries; past where the march stopped the track is hatched, and the singular
- * instant it stopped at is marked with what the core says it is.  The readout takes an instant as
+ * instant it stopped at is marked with what the core says it is.  Until the drawing has been
+ * followed since its last edit (#412) a row shows the interval alone, without a reach or a
+ * singular instant, and scrubbing or running it is what follows it.  The readout takes an instant as
  * written (`90deg`), read by the core; Run steps the drawing along the interval, and Home puts it
  * back where it is drawn.  All of it is presentation: the instant is view state, and an edit is
  * made at home.  Nothing here reads a number the core did not hand it. */
@@ -101,14 +103,16 @@ export class Timeline {
 
   private update(r: Row): void {
     const { p } = r;
-    const m = this.view.marchOf(p.name);
+    // not followed yet: the interval, live, without its reach
+    const m = this.view.followedMarch(p.name);
     const span = p.to - p.from;
     const frac = (v: number) => `${(100 * (v - p.from)) / span}%`;
     const shown = this.view.instant?.name === p.name ? this.view.instant.at : null;
     const at = shown ?? p.from;
     r.el.title = m?.text ?? '';
-    r.el.classList.toggle('tl-off', !m?.followed);
-    r.slider.disabled = !m?.followed;
+    const off = m !== undefined && !m.followed;
+    r.el.classList.toggle('tl-off', off);
+    r.slider.disabled = off;
     if (document.activeElement !== r.slider) r.slider.value = String(at);
     if (document.activeElement !== r.readout) {
       r.readout.value = this.view.reading(p.name, at);
@@ -127,7 +131,7 @@ export class Timeline {
     r.play.title = running ? 'Stop the drawing here'
       : `Run the drawing along ${p.name}, from ${p.fromText} to ${m?.followed ? m.reachedText
                                                                                  : p.toText}`;
-    r.play.disabled = !m?.followed;
+    r.play.disabled = off;
   }
 
   /** Run the drawing along `name`, round again from the start once it reaches the end. */

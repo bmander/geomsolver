@@ -26,6 +26,16 @@ use crate::solid::Memo;
 ///
 /// Not here: the surfaces a host supplies for swept solids (`Sketch::field_surfaces`), which no
 /// miss works out again, and where swept solids are meshed (`Sketch::field_meshing`), a setting.
+/// One evaluated solid remembered (`Caches::solid`): what it was built against and what it came
+/// to, and the last place it was asked for since it moved, so a solid asked again where it now
+/// stands is the one answer (its world box worked out once).
+#[derive(Clone, Debug)]
+pub struct SolidSlot {
+    pub key: crate::solid::ShapeKey,
+    pub built: Result<Rc<crate::solid::EvaluatedSolid>, String>,
+    pub moved: Option<(crate::plane::Basis, Rc<crate::solid::EvaluatedSolid>)>,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct Caches {
     /// Each curve's polyline, remembered against everything it was computed from
@@ -34,13 +44,12 @@ pub struct Caches {
     /// the gear, for a drawing that had not changed.
     pub polyline: RefCell<BTreeMap<usize, (Vec<f64>, Vec<(f64, f64)>)>>,
     /// Each solid's evaluated boundary, by solid and approximation, remembered against everything
-    /// it was computed from (`solid::reads`).  `polyline`'s bargain, for the same reason: a
+    /// it was computed from (`solid::ShapeKey`).  `polyline`'s bargain, for the same reason: a
     /// repaint asks every derived view for its edges, and a boundary is a sweep of
-    /// classifications over a drawing that has not changed.
-    #[allow(clippy::type_complexity)]
-    pub solid: RefCell<
-        BTreeMap<(usize, (u8, u64)), (Vec<f64>, Result<Rc<crate::solid::EvaluatedSolid>, String>)>,
-    >,
+    /// classifications over a drawing that has not changed.  Remembered by its *shape*, so a
+    /// solid that has only moved rigidly since is the same evaluation under a new placement
+    /// (#412): a part drawn in its own frame, scrubbed along a timeline, is built once.
+    pub solid: RefCell<BTreeMap<(usize, (u8, u64)), SolidSlot>>,
     /// Each static solid's exact B-rep (`solid::Exact`), remembered against `solid::reads` alone:
     /// it does not depend on an approximation, so it is built once for a geometry and only meshed
     /// again for each one the evaluated solids above ask for.

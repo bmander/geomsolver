@@ -45,6 +45,49 @@ export function mesh(sk: Sketch, idx: number, unit: number): Mesh {
   return { positions, normals, faces };
 }
 
+/** **A solid in its own coordinates** (#412): its mesh and its creases before its placement stands
+ *  it in the world.  A solid that has only moved since it was evaluated is the same evaluation,
+ *  so a host builds its geometry from this once and moves it by `placement` alone. */
+export interface Own extends Mesh {
+  /** The edges that are corners of the part and not a tessellation's seams: six doubles a
+   *  segment. */
+  creases: Float64Array;
+}
+
+/** Solid `idx` in its own coordinates, refined to `unit` as `mesh` is.  Throws with the core's
+ *  reason where it does not evaluate. */
+export function own(sk: Sketch, idx: number, unit: number): Own {
+  const faces = takeJson<Face[] | null>(core().gcs_solid_faces_json(sk.handle, idx, unit));
+  if (!faces) throw new Error(lastError());
+  const part = (what: number) => {
+    const n = core().gcs_solid_own(sk.handle, idx, unit, what, 0, 0);
+    if (n < 0) throw new Error(lastError());
+    return readInto(n, (p, cap) => core().gcs_solid_own(sk.handle, idx, unit, what, p, cap));
+  };
+  return { positions: part(0), normals: part(1), creases: part(2), faces };
+}
+
+/** Where a solid stands: which evaluation it is (`shape`, the same number exactly while it is the
+ *  same shape, however it has moved) and the 4×4 matrix, column-major, that places its own
+ *  coordinates in the world. */
+export interface Placement {
+  shape: number;
+  matrix: number[];
+}
+
+/** Where solid `idx` stands.  With `built`, only where the core already has its shape — moved or
+ *  not — and null where it would have to evaluate it: what a gesture asks, which must not build a
+ *  solid every frame.  Throws where the solid does not evaluate. */
+export function placement(sk: Sketch, idx: number, unit: number, built = false): Placement | null {
+  return withBuf(17, 8, (b) => {
+    const got = core().gcs_solid_placement(sk.handle, idx, unit, built ? 1 : 0, b.ptr, 17);
+    if (got === 0) return null;
+    if (got < 0) throw new Error(lastError());
+    const x = Array.from(b.f64.subarray(0, 17));
+    return { shape: x[0], matrix: x.slice(1) };
+  });
+}
+
 /** **What a Boolean would make of `target`** (indices into the sketch's solids): its mesh with
  *  `tools` joined by `word`, as the statements would make it, written nowhere — the core's
  *  `Sketch::preview_body`.  Throws with the cause where it is refused: where the statements

@@ -98,6 +98,9 @@ const THREE_QUARTER = { az: -Math.PI / 3, el: Math.PI / 6 };
 /** How long the eye takes to swing square on to a chosen plane. */
 const LOOK_MS = 260;
 
+/** How long after an edit, with the page otherwise quiet, its parameters are followed where the
+ *  page cannot say when it is idle (#412). */
+const IDLE_FOLLOW_MS = 200;
 const ANIM_DT = 0.03;        // seconds per animation tick
 const ANIM_PERIOD = 2.0;     // seconds spent on each degree of freedom
 
@@ -245,9 +248,13 @@ export class SketchView {
    *  (`afterEdit`); no seed is written from an instant (the core refuses).  View state: kept
    *  across an edit by the parameter's name, let go by a load, never saved. */
   instant: { name: string; at: number | null } | null = null;
-  /** How the drawing runs over each parameter it declares, as the core followed it after the
-   *  last edit — the timeline's reach and its singular instants.  Empty with no parameters. */
-  marches: March[] = [];
+  /** How the drawing runs over each parameter it declares, as the core followed it since the
+   *  last edit — the timeline's reach and its singular instants — or null where it has not been
+   *  followed since (#412): an edit returns without following anything, and the march is taken
+   *  when it is needed (`marches`) or once the page is idle after the edit. */
+  private followed: March[] | null = null;
+  /** The idle follow an edit asked for, while it is pending. */
+  private idleFollow: { cancel: () => void } | null = null;
 
   onChanged: () => void = () => {};
   /** The instant shown moved, or the parameters and their marches did (an edit, a load). */
@@ -1026,7 +1033,7 @@ export class SketchView {
     this.syncSource();        // the drawing changed, so the document has to say what it now says
     this.fields.start(this.doc);
     this.claims.start(this.doc);
-    this.followAgain();
+    this.followLater();
     if (!this.holding) this.onChanged();
     this.draw();
     return this.lastResult;
@@ -1139,15 +1146,68 @@ export class SketchView {
     return params.parameters(this.sketch);
   }
 
-  /** The march along `name`, as the core followed it after the last edit. */
+  /** **How the drawing runs over each parameter it declares**, followed now if it has not been
+   *  since the last edit: asked by what needs a march (an instant shown, the timeline scrubbed,
+   *  run or dragged, a point dragged along it).  Empty with no parameters. */
+  get marches(): March[] {
+    if (!this.followed) this.follow();
+    return this.followed!;
+  }
+
+  /** The march along `name`, followed now if it has not been since the last edit. */
   marchOf(name: string): March | undefined {
     return this.marches.find((m) => m.name === name);
   }
 
-  /** After an edit, at home: each parameter followed again, and the drawing stood back at the
+  /** The march along `name` if it has been followed since the last edit, and nothing is followed
+   *  to answer: what the timeline shows, the interval without its reach until it is. */
+  followedMarch(name: string): March | undefined {
+    return this.followed?.find((m) => m.name === name);
+  }
+
+  /** After an edit, at home.  Shown at an instant, the drawing is stood back there at once, as
+   *  near it as the march now reaches — which needs the march.  At home nothing is followed
+   *  until it is needed or the page is idle (#412): the timeline shows the interval meanwhile. */
+  private followLater(): void {
+    this.idleFollow?.cancel();
+    this.idleFollow = null;
+    this.followed = null;
+    if (this.instant?.at != null) {
+      this.follow();
+      return;
+    }
+    if (this.parameters().length === 0) {
+      this.followed = [];
+      this.onTimeline();
+      return;
+    }
+    this.onTimeline();
+    const doc = this.doc;
+    const run = () => {
+      this.idleFollow = null;
+      // a document since let go, or replaced, is not this one's to follow
+      if (this.doc === doc && doc.live && !this.followed) this.follow();
+    };
+    const idle = (globalThis as { requestIdleCallback?: (f: () => void) => number })
+      .requestIdleCallback;
+    if (idle) {
+      const id = idle(run);
+      this.idleFollow = {
+        cancel: () => (globalThis as { cancelIdleCallback?: (id: number) => void })
+          .cancelIdleCallback?.(id),
+      };
+    } else {
+      const id = setTimeout(run, IDLE_FOLLOW_MS);
+      this.idleFollow = { cancel: () => clearTimeout(id) };
+    }
+  }
+
+  /** **Each parameter followed**, now: the timeline's reach, and the drawing stood back at the
    *  instant it was shown at, as near it as the march now reaches. */
-  private followAgain(): void {
-    this.marches = this.parameters().map((p) => params.march(this.sketch, p.name));
+  follow(): void {
+    this.idleFollow?.cancel();
+    this.idleFollow = null;
+    this.followed = this.parameters().map((p) => params.march(this.sketch, p.name));
     const shown = this.instant;
     if (shown && !this.marchOf(shown.name)) this.instant = null;
     else if (shown?.at != null) this.showInstant(shown.name, shown.at, false);

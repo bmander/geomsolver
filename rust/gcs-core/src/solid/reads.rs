@@ -35,6 +35,84 @@ const UNREAD: f64 = f64::MAX;
 
 /// `reads`, leaving out every solid but `si` that `skip` says and what only they reach.
 fn reads_where(sk: &Sketch, si: usize, unit: f64, skip: &dyn Fn(usize) -> bool) -> Vec<f64> {
+    reads_with(sk, si, unit, skip, &mut Poses::World)
+}
+
+/// How a walk writes the pose of a plane it reads (#412).
+enum Poses {
+    /// In the world, with every other number: `reads`, the key every other cache keeps.
+    World,
+    /// Relative to the plane `to`, with `rigid` false once anything read stands in the world
+    /// itself: a `ShapeKey`'s.
+    Relative { to: Basis, rigid: bool },
+}
+
+impl Poses {
+    /// Something read stands in the world and not in a plane the walk reads (a region's points, a
+    /// motion's axis, a point in space): a rigid move of the planes does not carry it, so the
+    /// solid is not one that only moved.
+    fn world(&mut self) {
+        if let Poses::Relative { rigid, .. } = self {
+            *rigid = false;
+        }
+    }
+
+    /// Plane `b`'s pose into `v`: in the world, or relative to the reference.
+    fn plane(&mut self, b: &Basis, v: &mut Vec<f64>) {
+        match self {
+            Poses::World => {
+                v.extend(b.u);
+                v.extend(b.v);
+                v.extend(b.o);
+            }
+            Poses::Relative { to, .. } => {
+                let axes = [to.u, to.v, to.normal()];
+                let local = |x: [f64; 3]| axes.map(|a| crate::plane::dot(a, x));
+                v.extend(local(b.u));
+                v.extend(local(b.v));
+                v.extend(local(crate::space::sub(b.o, to.o)));
+            }
+        }
+    }
+}
+
+/// The plane face `f` is drawn in, in space: the page for a face of none.
+fn face_basis(sk: &Sketch, f: &crate::model::FaceE) -> Basis {
+    match f.plane.filter(|&p| (p as usize) < sk.frames.len()) {
+        Some(p) => sk.basis(p as usize),
+        None => Basis::page(),
+    }
+}
+
+/// **The reference plane of solid `si`** (#412): its first face's, found as its origin is
+/// (`frame_origin`) — what its shape key reads every other plane relative to, and what a rigid
+/// move of it is measured by.  The page for a solid with no face.
+fn reference(sk: &Sketch, si: usize) -> Basis {
+    let mut pending = vec![si];
+    let mut seen = std::collections::BTreeSet::new();
+    while let Some(i) = pending.pop() {
+        if !seen.insert(i) { continue; }
+        let Some(s) = sk.solids.get(i) else { continue };
+        if let SolidDef::Placed { source, .. } = &s.def {
+            pending.push(*source as usize);
+            continue;
+        }
+        if let Some(f) = s.face().and_then(|f| sk.faces.get(f as usize)) {
+            return face_basis(sk, f);
+        }
+        pending.extend(s.operands().into_iter().rev().map(|o| o as usize));
+    }
+    Basis::page()
+}
+
+/// Whether point `p` is drawn in `plane` (the page for none), its numbers that plane's own.
+fn drawn_in(sk: &Sketch, p: usize, plane: Option<u32>) -> bool {
+    sk.points.get(p).is_some_and(|q| q.z.is_none() && q.chart.is_none() && q.plane == plane)
+}
+
+/// `reads`, each plane's pose written as `poses` says.
+fn reads_with(sk: &Sketch, si: usize, unit: f64, skip: &dyn Fn(usize) -> bool, poses: &mut Poses)
+    -> Vec<f64> {
     let mut v = vec![unit];
     let mut seen = std::collections::BTreeSet::new();
     let mut stack = vec![si as u32];
@@ -47,12 +125,14 @@ fn reads_where(sk: &Sketch, si: usize, unit: f64, skip: &dyn Fn(usize) -> bool) 
         name_read(&sol.name, &mut v);
         match &sol.def {
             SolidDef::Swept { source, motion, roll: Roll::Stated(r) } => {
+                poses.world();
                 let [from, to] = r.radians();
                 v.extend([6.,*source as f64,*motion as f64,from,to]);
                 motion_reads(sk,*motion,&mut v);
             }
             // a roll through a body reads its material, never its cuts (`material_sources`)
             SolidDef::Swept { source, motion, roll: Roll::Through { body } } => {
+                poses.world();
                 v.extend([8.,*source as f64,*motion as f64,*body as f64]);
                 motion_reads(sk,*motion,&mut v);
                 match material_sources(sk, *body) {
@@ -61,6 +141,7 @@ fn reads_where(sk: &Sketch, si: usize, unit: f64, skip: &dyn Fn(usize) -> bool) 
                 }
             }
             SolidDef::Placed { source, motion, at } => {
+                poses.world();
                 v.extend([5.,*source as f64,*motion as f64,at.value]);
                 match crate::motion::Family::read(sk,*motion as usize).and_then(|m| m.at(at.value)) {
                     Ok(pose) => {
@@ -72,6 +153,7 @@ fn reads_where(sk: &Sketch, si: usize, unit: f64, skip: &dyn Fn(usize) -> bool) 
             }
             // a region: each term's numbers and where what it measures stands
             SolidDef::Region { terms, .. } => {
+                poses.world();
                 v.push(7.0);
                 for t in terms {
                     // no NaN for an end not written: a key must equal itself
@@ -109,13 +191,14 @@ fn reads_where(sk: &Sketch, si: usize, unit: f64, skip: &dyn Fn(usize) -> bool) 
             // and every number a constraint states, since a dimension of the station's reads
             // the running number and so stands at none of the values it now holds
             SolidDef::Family { face, station, over, legs } => {
+                poses.world();
                 v.extend([9.0, station.len() as f64, over.from, over.to, legs.len() as f64]);
                 name_read(&over.name, &mut v);
-                face_reads(sk, *face, &mut v);
+                face_reads(sk, *face, &mut v, poses);
                 for l in legs {
                     v.extend([l.at, l.ents.len() as f64]);
                     name_read(&l.held, &mut v);
-                    face_reads(sk, l.face, &mut v);
+                    face_reads(sk, l.face, &mut v, poses);
                 }
                 v.extend(station.iter().flat_map(|e| [e.kind as u32 as f64, e.i() as f64]));
                 v.extend(sk.params.iter().flat_map(|p| [p.value, f64::from(u8::from(p.fixed))]));
@@ -135,11 +218,11 @@ fn reads_where(sk: &Sketch, si: usize, unit: f64, skip: &dyn Fn(usize) -> bool) 
                 v.push(from.value);
                 v.push(to.value);
                 v.push(draft.as_ref().map_or(0.0, |d| d.value));
-                face_reads(sk, *face, &mut v);
+                face_reads(sk, *face, &mut v, poses);
             }
             SolidDef::Through { face, body } => {
                 v.extend([3.0, *body as f64]);
-                face_reads(sk, *face, &mut v);
+                face_reads(sk, *face, &mut v, poses);
                 // Read the material graph too, including changes to additions and placement.
                 stack.push(*body);
             }
@@ -147,9 +230,16 @@ fn reads_where(sk: &Sketch, si: usize, unit: f64, skip: &dyn Fn(usize) -> bool) 
                 v.extend([1.0, axis.kind as u8 as f64, axis.i() as f64]);
                 v.push(sweep.value);
                 v.push(if *sense == Sense::Cw { -1.0 } else { 1.0 });
-                face_reads(sk, *face, &mut v);
+                face_reads(sk, *face, &mut v, poses);
                 // a line's ends or an axis's direction and foot; the plane is the face's, read
                 v.extend(sk.entity_params(*axis).iter().map(|&p| sk.params[p as usize].value));
+                // an axis stands in space, and a line in another plane is read in that one's
+                let plane = sk.faces.get(*face as usize).and_then(|f| f.plane);
+                let ends = crate::model::edge_ends(sk, *axis);
+                if axis.kind != EntKind::Line
+                    || !ends.is_some_and(|(a, b)| [a, b].iter().all(|&p| drawn_in(sk, p as usize, plane))) {
+                    poses.world();
+                }
             }
             SolidDef::Body { stock, on, through, bound } => {
                 v.extend([2.0, *stock as f64, on.len() as f64]);
@@ -204,6 +294,64 @@ impl MemoKey {
     }
 }
 
+/// How near two keys' numbers must be, as a fraction of the larger (or of one, for a number
+/// smaller than one), to be one shape (#412).  Not to the bit: a plane's pose relative to the
+/// reference is worked through the world, and a drawing stood at an instant is settled there
+/// (`follow::stand`), which moves a part's own numbers by a rounding even where nothing of it
+/// moved.
+const NEAR: f64 = 1e-12;
+
+/// **What a solid reads, split into its shape and its pose** (#412): everything `reads` reads,
+/// but with every plane's pose rewritten relative to a reference plane (its first face's,
+/// `reference`) — the *shape* — and that reference plane's world pose.  Two keys of one shape are
+/// one solid moved rigidly: what was evaluated for one is the other's too, moved by the motion
+/// that carries one reference onto the other (`Rigid::between`).  A solid that reads anything
+/// standing in the world itself — a region's points, a face family's stations, a body placed or
+/// swept under a motion, a curve that may be traced through anything — has its pose in its shape
+/// as well, so it is the same shape only where it stands where it stood.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ShapeKey {
+    shape: Vec<f64>,
+    pose: Basis,
+}
+
+impl ShapeKey {
+    /// Solid `si`'s key, as the drawing stands.
+    pub fn of(sk: &Sketch, si: usize) -> ShapeKey {
+        let pose = reference(sk, si);
+        let mut poses = Poses::Relative { to: pose, rigid: true };
+        let mut shape = reads_with(sk, si, 0.0, &|_| false, &mut poses);
+        if let Poses::Relative { rigid: false, .. } = poses {
+            shape.extend(pose.u.iter().chain(&pose.v).chain(&pose.o));
+        }
+        ShapeKey { shape, pose }
+    }
+
+    /// Where its reference plane stands in the world.
+    pub fn pose(&self) -> Basis {
+        self.pose
+    }
+
+    /// Whether `other` is this solid's shape, wherever it stands: what was built against one, moved
+    /// from this pose to the other's, is what the other would build — every number the same
+    /// within `NEAR`.
+    pub fn same_shape(&self, other: &ShapeKey) -> bool {
+        self.shape.len() == other.shape.len() && near(&self.shape, &other.shape)
+    }
+
+    /// Whether `other` stands where this does, within `NEAR`: the same shape there is the same
+    /// solid, unmoved.
+    pub fn same_pose(&self, other: &ShapeKey) -> bool {
+        let numbers = |b: &Basis| [b.u, b.v, b.o].concat();
+        near(&numbers(&self.pose), &numbers(&other.pose))
+    }
+}
+
+/// Whether two lists of numbers are one within `NEAR`.
+fn near(a: &[f64], b: &[f64]) -> bool {
+    a.iter().zip(b).all(|(&a, &b)| a == b || (a - b).abs() <= NEAR * a.abs().max(b.abs()).max(1.0))
+}
+
 /// **A result per solid, remembered against what it was built from** (`MemoKey`):
 /// `curve_polyline`'s bargain, built again only where what it reads has moved.  Interior, so
 /// `&Sketch` readers share it; a cache and not state, since a miss builds what a hit remembers.
@@ -249,7 +397,7 @@ fn name_read(name: &str, v: &mut Vec<f64>) {
     v.extend(name.bytes().map(f64::from));
 }
 
-fn face_reads(sk: &Sketch, fi: u32, v: &mut Vec<f64>) {
+fn face_reads(sk: &Sketch, fi: u32, v: &mut Vec<f64>, poses: &mut Poses) {
     v.push(fi as f64);
     let Some(f) = sk.faces.get(fi as usize) else { return };
     v.extend([f.plane.map_or(-1.0, |p| p as f64), f.holes.len() as f64]);
@@ -268,6 +416,12 @@ fn face_reads(sk: &Sketch, fi: u32, v: &mut Vec<f64>) {
             // a curve's stretch moves with more than its arguments: the contacts its interval is
             // read from, the unknown its trace is anchored at, the pose it starts from, and the
             // points it runs between (what `Sketch::curve_polyline` keys on, and the ends)
+            // a point read in space or in another plane than the face's moves apart from it, and
+            // a curve may be traced through anything (#412)
+            if e.kind == EntKind::Curve || sk.children(*e).iter()
+                .any(|c| c.kind == EntKind::Point && !drawn_in(sk, c.i(), f.plane)) {
+                poses.world();
+            }
             if e.kind == EntKind::Curve {
                 let (a, b) = sk.curve_domain(e.i());
                 v.extend(sk.curve_vars(e.i(), a));
@@ -279,11 +433,10 @@ fn face_reads(sk: &Sketch, fi: u32, v: &mut Vec<f64>) {
             }
         }
     }
-    if let Some(p) = f.plane.filter(|&p| (p as usize) < sk.frames.len()) {
-        let basis = sk.basis(p as usize);
-        v.extend(basis.u);
-        v.extend(basis.v);
-        v.extend(basis.o);
+    // the page stands still, so a face of none reads no pose in the world: relative to the
+    // reference, it is one more plane that moves
+    if f.plane.is_some_and(|p| (p as usize) < sk.frames.len()) || !matches!(poses, Poses::World) {
+        poses.plane(&face_basis(sk, f), v);
     }
 }
 

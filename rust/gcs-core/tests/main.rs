@@ -179,6 +179,7 @@ mod relation_words;
 mod renderer;
 mod revolve;
 mod revolved_regions;
+mod rigid_solids;
 mod ring;
 mod roll_through;
 mod roots;

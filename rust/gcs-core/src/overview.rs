@@ -602,15 +602,17 @@ pub fn scene_with(sk: &Sketch, unit: f64, az: f64, el: f64, shaded: bool) -> Sce
         for &i in &shown {
             let Ok(solid) = sk.evaluated_solid(i, crate::solid::ApproximationPolicy::Mesh) else { continue };
             let renderer = crate::renderer::Renderer::prepare(&solid);
+            // the eye in the solid's own coordinates, where its edges and normals are
+            let along = solid.vector_to_local(dir);
             for e in solid.edges() {
                 if e.smooth {
-                    let (a, b) = (crate::plane::dot(e.na, dir), crate::plane::dot(e.nb, dir));
+                    let (a, b) = (crate::plane::dot(e.na, along), crate::plane::dot(e.nb, along));
                     if a * b > 0.0 || (a.abs() < 1e-12 && b.abs() < 1e-12) {
                         continue;
                     }
                 }
                 let m = [(e.a[0] + e.b[0]) / 2.0, (e.a[1] + e.b[1]) / 2.0, (e.a[2] + e.b[2]) / 2.0];
-                if renderer.occludes(crate::solid::LocalPoint(m), dir, None) {
+                if renderer.occludes(crate::solid::LocalPoint(m), along, None) {
                     continue;
                 }
                 items.push(Item {

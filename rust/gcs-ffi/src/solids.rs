@@ -28,9 +28,9 @@ pub unsafe extern "C" fn gcs_solid_mesh(
         if m.positions.len() > cap.max(0) as usize {
             return -1;
         }
-        let origin = solid.origin().0;
-        for (i, value) in m.positions.iter().enumerate() {
-            out.add(i).write(value + origin[i % 3]);
+        for (i, p) in m.positions.chunks_exact(3).enumerate() {
+            let w = solid.to_world(gcs_core::solid::LocalPoint([p[0], p[1], p[2]])).0;
+            for (k, value) in w.into_iter().enumerate() { out.add(3 * i + k).write(value); }
         }
         m.positions.len() as i32
     })
@@ -57,8 +57,84 @@ pub unsafe extern "C" fn gcs_solid_normals(
         if m.normals.len() > cap.max(0) as usize {
             return -1;
         }
-        std::ptr::copy_nonoverlapping(m.normals.as_ptr(), out, m.normals.len());
+        for (i, n) in m.normals.chunks_exact(3).enumerate() {
+            let w = solid.vector_to_world([n[0], n[1], n[2]]);
+            for (k, value) in w.into_iter().enumerate() { out.add(3 * i + k).write(value); }
+        }
         m.normals.len() as i32
+    })
+}
+
+/// **A solid in its own coordinates** (#412): what `gcs_solid_mesh` and `gcs_solid_normals` give
+/// in the world, before its placement (`gcs_solid_placement`) stands it there — `what` 0 for the
+/// positions, 1 for the normals, and 2 for its creases, the edges that are not a tessellation's
+/// seam, six doubles a segment.  A host keeps what it built from these while the solid's shape
+/// holds, and moves it by the placement alone.  Returns how many doubles there are, writing them
+/// only where `cap` holds them all (so a call with no buffer sizes one), or -1 where the solid
+/// does not evaluate (the reason in `gcs_last_error`).
+#[no_mangle]
+pub unsafe extern "C" fn gcs_solid_own(
+    h: *mut Sketch,
+    idx: i32,
+    unit: f64,
+    what: i32,
+    out: *mut f64,
+    cap: i32,
+) -> i32 {
+    guard(-1, move || {
+        let s = sk(h);
+        let Some(i) = solid_at(s, idx) else { return -1 };
+        let solid = match s.evaluated_solid(i, gcs_core::solid::ApproximationPolicy::from_unit(unit)) {
+            Ok(s) => s,
+            Err(message) => { set_error(message); return -1; }
+        };
+        let creases: Vec<f64>;
+        let values: &[f64] = match what {
+            0 => &solid.mesh().positions,
+            1 => &solid.mesh().normals,
+            2 => {
+                creases = solid.edges().iter().filter(|e| !e.smooth)
+                    .flat_map(|e| e.a.into_iter().chain(e.b)).collect();
+                &creases
+            }
+            _ => { set_error(format!("no part of a solid is numbered {what}")); return -1; }
+        };
+        if values.len() <= cap.max(0) as usize {
+            std::ptr::copy_nonoverlapping(values.as_ptr(), out, values.len());
+        }
+        values.len() as i32
+    })
+}
+
+/// **Where a solid stands** (#412), seventeen doubles: its shape's serial (the same exactly while
+/// the solid is the same evaluation, however it has moved, so a host keeps its geometry against
+/// it), then its placement as a 4×4 matrix, column-major, from its own coordinates
+/// (`gcs_solid_own`) to the world's.  With `built` nonzero, only where the core has the shape
+/// already (`Sketch::built_solid`), returning 0 where it would have to evaluate it — what a
+/// gesture asks.  Returns 17, or -1 where the solid does not evaluate or `cap` is short.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_solid_placement(
+    h: *mut Sketch,
+    idx: i32,
+    unit: f64,
+    built: i32,
+    out: *mut f64,
+    cap: i32,
+) -> i32 {
+    guard(-1, move || {
+        let s = sk(h);
+        let Some(i) = solid_at(s, idx) else { return -1 };
+        let policy = gcs_core::solid::ApproximationPolicy::from_unit(unit);
+        let solid = if built != 0 { s.built_solid(i, policy) } else { Some(s.evaluated_solid(i, policy)) };
+        let solid = match solid {
+            None => return 0,
+            Some(Ok(s)) => s,
+            Some(Err(message)) => { set_error(message); return -1; }
+        };
+        if cap < 17 { return -1; }
+        out.write(solid.shape_serial() as f64);
+        for (k, value) in solid.matrix().into_iter().enumerate() { out.add(1 + k).write(value); }
+        17
     })
 }
 

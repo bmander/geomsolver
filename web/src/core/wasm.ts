@@ -188,6 +188,8 @@ export interface Abi {
   gcs_solid_mesh(h: number, idx: number, unit: number, out: number, cap: number): number;
   gcs_solid_normals(h: number, idx: number, unit: number, out: number, cap: number): number;
   gcs_solid_faces_json(h: number, idx: number, unit: number): number;
+  gcs_solid_own(h: number, idx: number, unit: number, what: number, out: number, cap: number): number;
+  gcs_solid_placement(h: number, idx: number, unit: number, built: number, out: number, cap: number): number;
   gcs_solid_preview_json(h: number, p: number, n: number): number;
   gcs_sketch_defer_fields(h: number, on: number): void;
   gcs_sketch_field_jobs(h: number): number;

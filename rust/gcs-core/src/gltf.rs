@@ -43,7 +43,10 @@ pub fn glb(sk: &Sketch, solids: &[usize], unit: f64) -> Vec<u8> {
 pub fn checked_glb(sk: &Sketch, solids: &[usize], policy: crate::solid::ApproximationPolicy) -> Result<Vec<u8>, String> {
     let values = solids.iter().map(|&i| sk.evaluated_solid(i, policy)).collect::<Result<Vec<_>, _>>()?;
     for s in &values { s.finished()?; }
-    let parts: Vec<_> = solids.iter().zip(&values).map(|(&i, s)| (sk.solid_name(i), s.mesh(), s.origin().0)).collect();
+    // each turned as it stands, its translation the node's
+    let meshes: Vec<_> = values.iter().map(|s| s.oriented_mesh()).collect();
+    let parts: Vec<_> = solids.iter().zip(&values).zip(&meshes)
+        .map(|((&i, s), m)| (sk.solid_name(i), m.as_ref(), s.origin().0)).collect();
     let scale = sk.units.mm_per() / 1000.0;
     if !scale.is_finite() || scale <= 0.0 || parts.iter().flat_map(|(_, _, origin)| origin).any(|x| !(x * scale).is_finite()) {
         return Err("GLB placement or unit scale is not representable".into());

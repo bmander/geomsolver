@@ -248,10 +248,11 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   (`planes_in_one_place_are_one_pane`); the pane that bolds is the current plane's place.
   **The box shows the objects, not the features they are made of** — a solid is the object exactly
   when nothing else is made of it (`overview::objects`).  `box3d.ts` draws what `scene3d` says
-  stands in space — panes, axes, the object's creases (a `smooth` seam dropped: shading draws the
-  round), the axes and the curves traced in space (`IN_SPACE`: `axis`, `traced`; a spline over
-  points in space is one, #363 S3) — and every object's mesh
-  (`mesh::grouped`), computing no coordinate; an object that does not evaluate is left out, its
+  stands in space — panes, axes, the axes and the curves traced in space (`IN_SPACE`: `axis`,
+  `traced`; a spline over points in space is one, #363 S3) — and every object's creases (a
+  `smooth` seam dropped: shading draws the round) and mesh (`mesh::grouped`) in its own
+  coordinates, placed by the matrix the core gives (`core/mesh.ts::own`, `placement`; #412),
+  computing no coordinate; an object that does not evaluate is left out, its
   `mesh()` throwing the core's reason rather than stopping every paint, and **the banner says
   which and why** in the core's words (`overview::unbuilt`, after a conflict or an over-block;
   a swept object still being meshed is not one —
@@ -363,9 +364,14 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   home), carried across an edit by the parameter's name and let go by a load, never saved.
   `showInstant` clamps to the reach and stands the drawing (`follow::stand`).  **An edit is made
   at home**: `afterEdit` sends the drawing home before it solves, writes the seeds there
-  (`syncSource`), then follows each parameter again (`followAgain`, `SketchView.marches`) and
-  stands the drawing back at the instant shown; and the core writes no seed from a drawing
-  standing at an instant, whoever asks.  **Dragging a driven drawing scrubs it**: a press on a
+  (`syncSource`) and stands the drawing back at the instant shown, following each parameter
+  again to do it; and the core writes no seed from a drawing standing at an instant, whoever
+  asks.  **The march is off the edit path** (#412): an edit at home follows nothing before it
+  returns (`followLater`); the march is taken when it is needed — `SketchView.marches` and
+  `marchOf` follow then: an instant shown, the timeline scrubbed or run, a point dragged along
+  it — or once the page is idle after the edit (`requestIdleCallback`, else a timer).  Until
+  then the timeline reads `followedMarch` and shows the interval, live, without its reach or
+  singular instant.  **Dragging a driven drawing scrubs it**: a press on a
   point of a drawing with a followed parameter takes hold of its march (`gesture::takeScrub`,
   the parameter shown first; `Scrub` over `gcs_scrub_*`), and each move stands the drawing at
   the instant its point comes nearest the pointer — the crank turned by its pin.  A scrub is
@@ -376,4 +382,6 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   `web/src/test/timeline.test.ts`: `mechanisms/four_bar.sv` scrubbed to a quarter turn on its
   closed form and on the `.svd` stating that instant, home again with the source untouched; an
   edit at an instant stood back there with its seed written at home; the pin dragged round with
-  `Scrub.live` back to zero; the triple rocker's timeline clamped at its limit.
+  `Scrub.live` back to zero; the triple rocker's timeline clamped at its limit; an edit at home
+  followed only once idle or asked, and one at an instant stood back there; the V-twin scrubbed
+  with nothing cut again in the box.
