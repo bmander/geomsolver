@@ -844,6 +844,23 @@ fn finish(mut cx: Elab<'_>, flat: &Flat<'_>) -> Elaborated {
             cx.sk.roles.insert(entity, roles);
         }
     }
+    // a dimension a part's own file draws (`Constraint::elsewhere`): its statement, or an
+    // instance it is reached through, written in a module with a drawing of its own
+    let p = cx.doc;
+    let previewed = |span: crate::syntax::Span| {
+        matches!(p.source_at(span.lo as usize), (Some(k), _) if p.modules[k].previewed)
+    };
+    for (&id, site) in &cx.map.of_constraint {
+        let through = site.path.0.iter().filter_map(|s| match s {
+            crate::ir::PathStep::Instance(st) => p.stmt(*st).map(|st| st.span),
+            crate::ir::PathStep::Copy { .. } => None,
+        });
+        if previewed(site.span) || through.into_iter().any(previewed) {
+            if let Some(c) = cx.sk.constraint_mut(id) {
+                c.elsewhere = true;
+            }
+        }
+    }
     // a measurement read before the solve is one refusal wherever it stood — a param, a seed, a
     // constraint's number, an extent — and every one of those paths says it in the same words
     // (`expr::measure_refusal`), so the code is given once, here, the way the flattener sorts
@@ -857,7 +874,6 @@ fn finish(mut cx: Elab<'_>, flat: &Flat<'_>) -> Elaborated {
     // where the body reads it (#253): the argument is where the fault is
     let quiet = &flat.expansion.quiet;
     cx.diags.retain(|d| !(d.code == Code::E101 && d.stmt.is_some() && quiet.contains(&d.span)));
-    let p = cx.doc;
     crate::modules::localize(p, &mut cx.diags);
     Elaborated { sketch: cx.sk, map: cx.map, diags: cx.diags, program: p.clone(), taken: false }
 }

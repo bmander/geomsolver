@@ -14,7 +14,8 @@
 // and the plate, `components.frame`): this sheet draws the plate in all of them, since it stands
 // still, and the moving parts in the plane of swing only; each part's own sheet
 // (`cylinder.svd`, `piston.svd`, …) draws it upright in all three with the
-// dimensions a printer needs — `class detail`, which this sheet leaves hidden.  The side view is
+// dimensions a printer needs.  Each part's file has a `preview` of its own, so its dimensions are
+// drawn there and not here: this document draws only the numbers it states.  The side view is
 // what the assembly adds beyond its parts, with every height projected from the view along the
 // axis.
 //
@@ -24,7 +25,7 @@
 // cylinder's frame at the pivot and its piston's at the crown.  Every other relation holds for
 // every `t`, so the drawing is a function of `t`: drawn at `t = 0`, the pin straight up, and
 // followed round the turn.  In the app a timeline scrubs it and dragging the pin turns it, rocking
-// both cylinders and moving both pistons in both views; the arm's callout reads the instant shown.
+// both cylinders and moving both pistons in both views; the timeline reads the instant shown.
 // The assembly's sheet shows it at `t = 180deg`.  One lever angle in the table (`throttle`) turns
 // the throttle.  The two banks are one component instanced twice, which is why their
 // ports come out rotated rather than mirrored — the engine is one bank turned a quarter turn,

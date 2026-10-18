@@ -44,6 +44,15 @@ pub struct Constraint {
     /// that draws the same label; the full callout layout leaves it out, and asking for it by id
     /// (editing that one) still draws it.  Presentation, like `class`.
     pub repeated: bool,
+    /// A dimension **a part's own file draws** (§14.4): stated in a module with a `preview`, or
+    /// reached through an instance written in one — `components.cylinder`'s bore, in the
+    /// assembly that uses it.  The number is the part's, edited where the part is open, and a
+    /// document drawing every dimension of every part it imports is a thicket that says nothing
+    /// about the document.  A module with no drawing of its own is vocabulary (`std.Hex`,
+    /// `hardware.BoltPattern`), whose dimensions are drawn where the document uses it.  Set by the
+    /// elaborator (`program::elaborate`'s `finish`); the full callout layout leaves it out, as it
+    /// does a repeated copy, and asking for it by id still draws it.  Presentation, like `class`.
+    pub elsewhere: bool,
     /// The defined word the statement was written with (§9.9), where it was one: `a horizontal
     /// b` reaches the sketch as the `Level` its body states, and is described as written.
     /// Presentation, like `class`; `graft` carries it while its operands survive.
@@ -193,6 +202,7 @@ impl Constraint {
             class: Default::default(),
             written: None,
             repeated: false,
+            elsewhere: false,
             word: None,
             along: None,
             bound: None,

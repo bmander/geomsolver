@@ -2,7 +2,7 @@
 // and the arm from the axis to it, in the view `layout.front` along the crank axis.
 //
 // The arm stands at `theta` from the reference up the page, and its dimension reads it: the
-// assembly binds it to its crank angle `t`, so the callout shows whatever instant the drawing is
+// assembly binds it to its crank angle `t`, and its timeline shows whatever instant the drawing is
 // shown at.  The disc is drawn in its own frame, turned to the pin, and everything in both banks
 // follows from where the pin is.
 

@@ -124,7 +124,8 @@ pub fn link(prog: &mut Program, resolve: &mut dyn FnMut(&str) -> Option<String>)
             f.module = Some(k);
             f
         }));
-        prog.modules.push(Module { name, text, base, via, root, uses: mp.uses });
+        let previewed = mp.preview.is_some();
+        prog.modules.push(Module { name, text, base, via, root, uses: mp.uses, previewed });
     }
     localize(prog, &mut diags);
     diags
