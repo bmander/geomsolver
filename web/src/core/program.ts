@@ -188,6 +188,11 @@ export class Document {
     return ok;
   }
 
+  /** Whether it is still held: not yet let go (`dispose`). */
+  get live(): boolean {
+    return this.h !== 0;
+  }
+
   dispose(): void {
     if (this.h) core().gcs_elab_free(this.h);
     this.h = 0;

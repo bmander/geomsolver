@@ -55,7 +55,7 @@ pub use primitive::{prism,revolve};
 pub(crate) use primitive::area_vector;
 use primitive::{facet_normal,finish};
 pub use document::resolve;
-pub use reads::{reads,Memo,MemoKey};
+pub use reads::{reads,Memo,MemoKey,ShapeKey};
 mod static_boundary;
 pub use static_boundary::{static_solid,indexed,indexed_faces,primitive_triangles,StaticSolid,static_solid_at_unit};
 pub(crate) use document::{evaluation_operands,operand_paths,reaches};
@@ -91,6 +91,7 @@ pub use surface::{RegionLocation,RegionSample,RevolvedRegion,RevolvedSurface,
 pub(crate) use raycast::RayIndex;
 use section::face_polys;
 pub use evaluated::{ApproximationPolicy, EvaluatedSolid, LocalPoint, WorldPoint, PagePoint, PageFrame, RoundFeature};
+pub use evaluated::Rigid;
 
 use crate::model::{EntKind, EntRef, Roll, Sense, Sketch, SolidDef};
 use crate::plane::{self, Basis};

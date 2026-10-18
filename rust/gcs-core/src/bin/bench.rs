@@ -211,10 +211,43 @@ fn bench_meshing() {
     println!("contact         {w:>4} columns | residual {tr:8.2} µs | Jacobian {tj:8.2} µs");
 }
 
+/// **A scrub step of the V-twin** (#412): the stand at a crank angle against the objects asked
+/// for where it leaves them — moved, since each moving part is rigid in its frame — and against
+/// the same objects evaluated afresh there, which is what each step cost before.
+fn bench_scrub() {
+    println!("\n== a scrub step of the V-twin (#412): ms a step, median of 12 ==");
+    let mut sk = examples::case("vtwin").expect("the V-twin");
+    gcs_core::solve::solve(&mut sk, Default::default());
+    let objects = gcs_core::overview::objects(&sk);
+    let ask = |sk: &Sketch| for &i in &objects {
+        let policy = gcs_core::solid::ApproximationPolicy::Mesh;
+        std::hint::black_box(sk.evaluated_solid(i, policy).expect("evaluates").mesh());
+    };
+    ask(&sk);
+    gcs_core::follow::followed(&sk, "t");
+    let (mut stand, mut moved, mut built) = (Vec::new(), Vec::new(), Vec::new());
+    for k in 1..=12 {
+        let t0 = Instant::now();
+        gcs_core::follow::stand(&mut sk, "t", 30.0 * k as f64 - 7.0).expect("stood");
+        stand.push(ms(t0));
+        let t0 = Instant::now();
+        ask(&sk);
+        moved.push(ms(t0));
+        let fresh = sk.clone();
+        fresh.caches.clear();
+        let t0 = Instant::now();
+        ask(&fresh);
+        built.push(ms(t0));
+    }
+    println!("stand {:8.2} ms | {} objects moved {:8.2} ms | built afresh {:8.2} ms",
+             median(stand), objects.len(), median(moved), median(built));
+}
+
 fn main() {
     // `bench delaunay [case]`: the triangulation alone, or one of its cases (for timing a single
     // case's CPU from outside, as `/usr/bin/time` does when the machine is busy).
     if std::env::args().nth(1).as_deref() == Some("meshing") { bench_meshing(); return; }
+    if std::env::args().nth(1).as_deref() == Some("scrub") { bench_scrub(); return; }
     if std::env::args().nth(1).as_deref() == Some("delaunay") { bench_delaunay(std::env::args().nth(2).as_deref()); return; }
     let cases = cases();
 
@@ -292,5 +325,6 @@ fn main() {
         );
     }
     bench_meshing();
+    bench_scrub();
     bench_delaunay(None);
 }

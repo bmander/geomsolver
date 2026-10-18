@@ -438,11 +438,14 @@ pub fn pick_solid(sk: &Sketch, proj: &Projection, at: (f64, f64)) -> Option<Soli
         if !w.meets(foot, toward, f64::NEG_INFINITY) {
             continue;
         }
+        // the ray in the solid's own coordinates: a rigid motion keeps its depths
         let o = solid.to_local(crate::solid::WorldPoint(foot)).0;
+        let along = solid.vector_to_local(toward);
         let m = solid.mesh();
         for group in &m.groups {
             for t in group.start..group.start + group.count {
-                let Some(depth) = line_meets_triangle(o, toward, &m.positions[9 * t..9 * t + 9]) else {
+                let tri = &m.positions[9 * t..9 * t + 9];
+                let Some(depth) = line_meets_triangle(o, along, tri) else {
                     continue;
                 };
                 if best.as_ref().is_none_or(|b| depth > b.depth) {
@@ -495,15 +498,13 @@ pub fn pick_edge(sk: &Sketch, proj: &Projection, at: (f64, f64), tol: f64) -> Op
             continue;
         }
         let slack = 1e-3 * (0..3).fold(0f64, |m, k| m.max(w.hi[k] - w.lo[k]));
-        // the solid stands translated, and seeing is linear: its origin is seen once
-        let o = solid.origin().0;
-        let (ox, oy) = proj.seen(o);
+        let world = |p: [f64; 3]| solid.to_world(crate::solid::LocalPoint(p)).0;
         for e in solid.face_edges() {
             // the place on this edge nearest the pointer, as the eye sees it
             let mut best: Option<(f64, [f64; 3])> = None;
             for &[a, b] in &e.segs {
+                let (a, b) = (world(a), world(b));
                 let (sa, sb) = (proj.seen(a), proj.seen(b));
-                let (sa, sb) = ((sa.0 + ox, sa.1 + oy), (sb.0 + ox, sb.1 + oy));
                 let d = (sb.0 - sa.0, sb.1 - sa.1);
                 let len2 = d.0 * d.0 + d.1 * d.1;
                 let t = if len2 > 0.0 {
@@ -513,7 +514,7 @@ pub fn pick_edge(sk: &Sketch, proj: &Projection, at: (f64, f64), tol: f64) -> Op
                 };
                 let gap = (sa.0 + t * d.0 - at.0).dhypot(sa.1 + t * d.1 - at.1);
                 if gap <= tol && best.is_none_or(|(g, _)| gap < g) {
-                    best = Some((gap, crate::space::add(crate::space::lerp(a, b, t), o)));
+                    best = Some((gap, crate::space::lerp(a, b, t)));
                 }
             }
             if let Some((gap, p)) = best {

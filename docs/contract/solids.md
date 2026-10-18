@@ -85,6 +85,34 @@ placement carries inside the blank; CLI test readers zero the offset.
   every extent, and `unit`.  Every memo lives in `Sketch::caches` (`model::Caches`, one
   `clear()`); a clone keeps every entry, sharing the `Rc`/`Arc` results, and then remembers apart
   — what a copy read slightly changed (`preview_body`, a body's stratum) reuses for its operands.
+  **An evaluated solid is keyed on its shape, and a solid that only moved is moved** (#412):
+  `Caches::solid` keeps each evaluation against a `solid::ShapeKey` — what `reads` reads, but
+  every plane's pose rewritten relative to a reference plane (the first face's, found as
+  `frame_origin` finds the origin), and that plane's world pose apart.  Two keys of one shape
+  (`same_shape`: every number within `1e-12` of the larger, or of one — not to the bit, since a
+  nested frame's relative pose is worked through the world and a stand settles a part's own
+  numbers by a rounding) are one solid moved rigidly: `Sketch::evaluated_solid` hands back the
+  same `Shape` (`Rc`'d: boundary, mesh, edges, classifier) under the placement
+  `solid::Rigid::between` the two reference poses makes, never building it again; the same pose
+  within that tolerance is the evaluation itself.  **A solid reading anything in the world
+  itself has its pose in its shape** (`Poses::world`): a region's points, a face family's
+  stations, a body placed or swept under a motion, a revolution about an axis in space or a line
+  in another plane, a face's point in space or another plane, any curve — conservative, so such
+  a solid is reused only where it stands where it stood.  `EvaluatedSolid`'s placement is a
+  rotation and a translation (`to_world = R·p + origin`; `None` for a fresh one, bit for bit
+  what it was): its own outputs (`boundary`, `bounds`, `edges`, `mesh`, `face_edges`,
+  `round_features`) are the shape's; `local_basis` turns a view's plane in, so the renderer and
+  the dimensions need nothing else; the world outputs (`world_*`, `world_bounds` — the turned
+  boundary's own tight box — `stl`, a glTF node through `oriented_mesh`, the ABI's
+  `gcs_solid_mesh`/`gcs_solid_normals`) apply it, and a pick or a scene's edges turn the eye
+  in (`vector_to_local`).  `Sketch::built_solid` is the lookup without the build.
+  `tests/rigid_solids.rs` is the gate: the V-twin stood round its crank reuses the disc's,
+  cylinders' and pistons' evaluations, each equal to a fresh one where it stands (volume, faces,
+  bounds and round features, its boundary on the fresh one's within the two sags), the plate the
+  very solid it was, home again the evaluations built there, and a rim made larger built again.
+  `bench scrub` (in `make bench`) times a step: the stand against the objects asked for where it
+  leaves them and against the same built afresh — 5 ms, 1.5 ms and 507 ms on the V-twin when this
+  landed, so a step is the stand.
   **A boolean takes its operands whole and gives back what it did not cut whole** (`csg.rs`,
   #313).  Each operand's polygons are clipped against the *other's* tree, never handed back as
   their own tree cut them (a ring's inner wall's planes cross its caps: 3,600 facets came back as
@@ -166,7 +194,10 @@ placement carries inside the blank; CLI test readers zero the offset.
   **Grouping** is `mesh::grouped`: triangles in face-path order, a normal per vertex — the
   facet's own where flat, averaged where the face is `smooth`.  Across the ABI as **buffers plus a
   small table** (`gcs_solid_mesh`, `gcs_solid_normals`, `gcs_solid_faces_json`), all reading one
-  memoised `Want::Mesh`.  `Document.solids()` names them (a solid has no proxy).  `tests/mesh.rs`
+  memoised `Want::Mesh`; the same mesh and its creases in the solid's own coordinates
+  (`gcs_solid_own`, `core/mesh.ts::own`) and where it stands (`gcs_solid_placement`: the shape's
+  serial and a column-major 4×4, `placement`) are what the box builds from (#412).
+  `Document.solids()` names them (a solid has no proxy).  `tests/mesh.rs`
   is the gate and asserts the *before* as well as the after.
 - **A mesh is cut to the object and a volume to the report** (`solid::mesh_unit`, `MESH_SAGITTA`).
   `REPORT_UNIT` makes a *volume* good to 1e-4; a mesh is cut to a sagitta that fraction of the
@@ -179,8 +210,14 @@ placement carries inside the blank; CLI test readers zero the offset.
   drawn polylines, `0` for the object's edges), so `Box3D`'s rebuild key omits the zoom.  **It
   includes the pose** (a fingerprint of the parameters): a drag moves numbers inside one sketch,
   so the datums (`overview::Layer::Datums`: panes, their axes, axes in space) are rebuilt every
-  frame the pose moves, and the objects (`Layer::Objects`, creases and meshes) once it settles —
-  no gesture or wobble in flight.
+  frame the pose moves.  **An object is meshed once and moved by its matrix** (#412): each is a
+  group of its creases and faces in its own coordinates (`own`), kept while its shape's serial
+  holds (`placement`) and given its new matrix every frame the pose moves, a drag or a scrub
+  included; one whose shape changed is cut again, under a gesture or a wobble only where the core
+  has it already (`placement(…, built)`, else it waits for the gesture to be let go) or its shape
+  was changed in place (`shapeEpoch`).  `Box3D.sync` brings the scene up without rendering, and
+  `stats` counts what it cut and what it only moved: `timeline.test.ts` scrubs
+  `vtwin/assembly.sv` cutting nothing.
 - **A face is one loop and a solid's faces are named by path** (§6.8).  A face is a closed loop of
   edges on the one plane every point agrees about — *read* off the memberships, never written on
   the face.  There are **no holes**: a hole is a solid that `cut`s the body.  An `in` block leaves

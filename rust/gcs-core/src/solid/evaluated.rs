@@ -88,10 +88,33 @@ enum Surface {
     Brep { volume: f64 },
 }
 
+/// **An evaluated solid where it stands** (#412): its geometry (`Shape`), shared, and the rigid
+/// placement that stands it in the world — `to_world(p) = R·p + origin`.  A fresh evaluation has
+/// no rotation, its geometry the world's turned nowhere; a solid that has only moved rigidly since
+/// it was evaluated (`Sketch::evaluated_solid`, a hit on its shape) is the same `Shape` under the
+/// placement the move makes.  Everything this hands out in its own coordinates (`boundary`,
+/// `bounds`, `edges`, `mesh`, `face_edges`, `round_features`) is in the shape's; every world
+/// output (`world_*`, `stl`, a glTF's node) applies the placement.
 #[derive(Clone, Debug)]
 pub struct EvaluatedSolid {
-    name: String,
     origin: WorldPoint,
+    /// The placement's rotation, by rows; `None` for none, so a solid that never moved reads
+    /// bit for bit as it did before there was a rotation.
+    rotation: Option<[[f64; 3]; 3]>,
+    /// The world box, worked out once where the solid is turned (the shape's box turned is not
+    /// the tight box of what it bounds).
+    world_box: OnceCell<Box3>,
+    shape: std::rc::Rc<Shape>,
+}
+
+/// What an evaluation built, in its own coordinates: everything of an `EvaluatedSolid` but where
+/// it stands, so a solid moved rigidly shares it rather than building it again.
+#[derive(Debug)]
+struct Shape {
+    /// Which evaluation this is: a number no other shape in this process carries, so a host keeps
+    /// what it built from one (a page's geometry) exactly while it is the same shape (#412).
+    serial: u64,
+    name: String,
     policy: ApproximationPolicy,
     unit: f64,
     epsilon: f64,
@@ -115,6 +138,14 @@ pub struct EvaluatedSolid {
     ray_indices: OnceCell<Vec<RayIndex>>,
     /// Where its faces meet, read off its mesh (`mesh::face_edges`).
     face_edges: OnceCell<Vec<mesh::FaceEdge>>,
+}
+
+const IDENTITY: [[f64; 3]; 3] = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
+
+/// A serial no evaluation in this process has had (`Shape::serial`).
+fn next_serial() -> u64 {
+    static SERIAL: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    SERIAL.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
 
 impl EvaluatedSolid {
@@ -201,9 +232,9 @@ impl EvaluatedSolid {
             .map(|p| p.path.as_str())
             .collect();
         let round = round_features(sk, operands, &curved, origin)?;
-        Ok(Self {
+        Ok(Self::made(origin, Shape {
+            serial: next_serial(),
             name: sk.solid_name(si),
-            origin,
             policy,
             unit,
             epsilon,
@@ -220,7 +251,7 @@ impl EvaluatedSolid {
             mesh: OnceCell::new(),
             ray_indices: OnceCell::new(),
             face_edges: OnceCell::new(),
-        })
+        }))
     }
     /// A swept solid's boundary is its material field's surface, whatever approximation is asked
     /// for: one a host meshed elsewhere and supplied (`Sketch::supply_field`), none while the
@@ -313,9 +344,9 @@ impl EvaluatedSolid {
             boundary.iter().filter(|p| p.smooth).map(|p| p.path.as_str()).collect();
         let round = round_features(sk, operands, &curved, origin)?;
         let volume = crate::brep::props::volume(b) / (mm * mm * mm);
-        Ok(Self {
+        Ok(Self::made(origin, Shape {
+            serial: next_serial(),
             name,
-            origin,
             policy,
             unit,
             epsilon,
@@ -332,7 +363,7 @@ impl EvaluatedSolid {
             mesh: OnceCell::new(),
             ray_indices: OnceCell::new(),
             face_edges: OnceCell::new(),
-        })
+        }))
     }
     /// A swept solid from its field's surface (`field_mesh.rs`): the mesh stands in as one
     /// polyhedral primitive, so classification, edges and views read it as they read any other.
@@ -372,9 +403,9 @@ impl EvaluatedSolid {
         if !epsilon.is_finite() || epsilon <= 0.0 {
             return Err("solid scale is not representable".into());
         }
-        Ok(Self {
+        Ok(Self::made(origin, Shape {
+            serial: next_serial(),
             name,
-            origin,
             policy,
             unit,
             epsilon,
@@ -392,7 +423,7 @@ impl EvaluatedSolid {
             mesh: OnceCell::new(),
             ray_indices: OnceCell::new(),
             face_edges: OnceCell::new(),
-        })
+        }))
     }
     /// A swept solid from its exact B-rep's mesh, built elsewhere and supplied
     /// (`brep::export::Builder`): `from_brep`'s solid without the B-rep — one polyhedral primitive
@@ -449,9 +480,9 @@ impl EvaluatedSolid {
         let boundary: Vec<Piece> = prim.facets.iter().map(|f| Piece {
             pts: f.pts.clone(), n: f.n, path: path.clone(), prim: 0, smooth: f.smooth,
         }).collect();
-        Ok(Self {
+        Ok(Self::made(origin, Shape {
+            serial: next_serial(),
             name,
-            origin,
             policy,
             unit,
             epsilon,
@@ -468,32 +499,93 @@ impl EvaluatedSolid {
             mesh: OnceCell::new(),
             ray_indices: OnceCell::new(),
             face_edges: OnceCell::new(),
-        })
+        }))
     }
     /// A preview of a surface still being refined, which may be open.
     pub fn provisional(&self) -> bool {
-        self.surface == Surface::Field { provisional: true }
+        self.shape.surface == Surface::Field { provisional: true }
     }
     pub fn policy(&self) -> ApproximationPolicy {
-        self.policy
+        self.shape.policy
     }
     pub fn unit(&self) -> f64 {
-        self.unit
+        self.shape.unit
     }
     pub fn epsilon(&self) -> f64 {
-        self.epsilon
+        self.shape.epsilon
     }
     pub fn sagitta(&self) -> f64 {
-        crate::curve::flatness(self.unit)
+        crate::curve::flatness(self.shape.unit)
     }
+    /// Where the solid's own origin stands in the world: the placement's translation.
     pub fn origin(&self) -> WorldPoint {
         self.origin
     }
+    /// The placement's rotation, by rows (the identity for a solid that never moved).
+    pub fn rotation(&self) -> [[f64; 3]; 3] {
+        self.rotation.unwrap_or(IDENTITY)
+    }
+    /// The placement as a 4×4 matrix, column-major (a renderer's): local to world.
+    pub fn matrix(&self) -> [f64; 16] {
+        let (r, o) = (self.rotation(), self.origin.0);
+        let mut m = [0.0; 16];
+        for c in 0..3 {
+            for k in 0..3 { m[4 * c + k] = r[k][c]; }
+        }
+        m[12..15].copy_from_slice(&o);
+        m[15] = 1.0;
+        m
+    }
+    /// Which evaluation this is (`Shape::serial`): the same number exactly while the solid is the
+    /// same shape, however it has moved since — what a host keeps its own geometry against.
+    pub fn shape_serial(&self) -> u64 {
+        self.shape.serial
+    }
+    /// Whether two solids are one evaluation, wherever each stands: one moved rigidly since the
+    /// other was built shares its shape rather than building it again (#412).
+    pub fn same_shape(&self, other: &Self) -> bool {
+        std::rc::Rc::ptr_eq(&self.shape, &other.shape)
+    }
     pub fn to_world(&self, p: LocalPoint) -> WorldPoint {
-        WorldPoint(std::array::from_fn(|k| p.0[k] + self.origin.0[k]))
+        let q = self.vector_to_world(p.0);
+        WorldPoint(std::array::from_fn(|k| q[k] + self.origin.0[k]))
     }
     pub fn to_local(&self, p: WorldPoint) -> LocalPoint {
-        LocalPoint(std::array::from_fn(|k| p.0[k] - self.origin.0[k]))
+        LocalPoint(self.vector_to_local(std::array::from_fn(|k| p.0[k] - self.origin.0[k])))
+    }
+    /// A direction in the solid's own coordinates, in the world's: `R·v`.
+    pub fn vector_to_world(&self, v: [f64; 3]) -> [f64; 3] {
+        match &self.rotation {
+            None => v,
+            Some(r) => r.map(|row| plane::dot(row, v)),
+        }
+    }
+    /// A direction in the world, in the solid's own coordinates: `Rᵀ·v`.
+    pub fn vector_to_local(&self, v: [f64; 3]) -> [f64; 3] {
+        match &self.rotation {
+            None => v,
+            Some(r) => std::array::from_fn(|j| (0..3).map(|i| r[i][j] * v[i]).sum()),
+        }
+    }
+    /// **The same evaluation moved rigidly** by `motion` (#412): its shape shared, its placement
+    /// the motion's after its own.  What a solid that has only moved since it was evaluated is.
+    pub(crate) fn moved(&self, motion: &Rigid) -> Self {
+        let r = motion.r;
+        let own = self.rotation();
+        // a translation alone turns nothing: the placement stays exactly what it was turned
+        let rotation = (r != IDENTITY).then(|| std::array::from_fn(|i| std::array::from_fn(|j| {
+            (0..3).map(|k| r[i][k] * own[k][j]).sum()
+        }))).or(self.rotation);
+        Self {
+            origin: WorldPoint(motion.point(self.origin.0)),
+            rotation,
+            world_box: OnceCell::new(),
+            shape: self.shape.clone(),
+        }
+    }
+    /// A fresh evaluation's placement: at `origin`, turned nowhere.
+    fn made(origin: WorldPoint, shape: Shape) -> Self {
+        Self { origin, rotation: None, world_box: OnceCell::new(), shape: std::rc::Rc::new(shape) }
     }
     pub fn to_page(&self, p: LocalPoint, frame: PageFrame) -> PagePoint {
         // Subtract origins before adding local geometry, retaining small projected features.
@@ -506,39 +598,53 @@ impl EvaluatedSolid {
         let x = basis.lift(p.0, p.1);
         LocalPoint(std::array::from_fn(|k| x[k] + depth * basis.normal()[k]))
     }
+    /// A plane in space, in the solid's own coordinates: where a view or a cut of it is worked.
     pub(crate) fn local_basis(&self, mut basis: Basis) -> Basis {
         basis.o = self.to_local(WorldPoint(basis.o)).0;
+        basis.u = self.vector_to_local(basis.u);
+        basis.v = self.vector_to_local(basis.v);
         basis
     }
-    /// Boundary/bounds/edges/mesh are solid-local. Explicit world adapters are for legacy ABI output.
+    /// Boundary/bounds/edges/mesh are in the solid's own coordinates; the `world_*` adapters place
+    /// them.
     pub fn boundary(&self) -> &[Piece] {
-        self.boundary.get_or_init(|| self.field_pieces())
+        self.shape.boundary.get_or_init(|| self.field_pieces())
     }
     /// A field's surface as boundary pieces: one per facet of its one primitive, each its own
     /// smooth piece of the path `<solid>.surface`.
     fn field_pieces(&self) -> Vec<Piece> {
-        let prim = &self.csg.prims[0];
+        let prim = &self.shape.csg.prims[0];
         let path = format!("{}.surface", prim.of);
         prim.facets.iter().map(|f| Piece { pts: f.pts.clone(), n: f.n, path: path.clone(), prim: 0, smooth: true }).collect()
     }
     pub fn bounds(&self) -> Box3 {
-        self.bounds
+        self.shape.bounds
     }
     pub fn world_bounds(&self) -> Box3 {
-        if self.bounds.is_empty() {
-            self.bounds
+        if self.shape.bounds.is_empty() {
+            self.shape.bounds
+        } else if self.rotation.is_some() {
+            // the box of what it bounds, turned: tight, as a fresh evaluation's is
+            *self.world_box.get_or_init(|| {
+                let mut b = Box3::empty();
+                for p in self.boundary().iter().flat_map(|p| &p.pts) {
+                    b.add(self.to_world(LocalPoint(*p)).0);
+                }
+                b
+            })
         } else {
             Box3 {
-                lo: self.to_world(LocalPoint(self.bounds.lo)).0,
-                hi: self.to_world(LocalPoint(self.bounds.hi)).0,
+                lo: self.to_world(LocalPoint(self.shape.bounds.lo)).0,
+                hi: self.to_world(LocalPoint(self.shape.bounds.hi)).0,
             }
         }
     }
     pub fn contains(&self, p: LocalPoint) -> bool {
-        self.csg.inside_indexed(p.0, self.ray_indices())
+        self.shape.csg.inside_indexed(p.0, self.ray_indices())
     }
     fn ray_indices(&self) -> &[RayIndex] {
-        self.ray_indices.get_or_init(|| self.csg.prims.iter().map(RayIndex::new).collect())
+        let shape = &self.shape;
+        shape.ray_indices.get_or_init(|| shape.csg.prims.iter().map(RayIndex::new).collect())
     }
     pub fn contains_world(&self, p: WorldPoint) -> bool {
         self.contains(self.to_local(p))
@@ -546,30 +652,30 @@ impl EvaluatedSolid {
     /// `contains_world` by every ray of the solid's own term, no index: what the index must agree
     /// with.
     pub fn contains_exhaustive(&self, p: WorldPoint) -> bool {
-        self.csg.inside(self.to_local(p).0)
+        self.shape.csg.inside(self.to_local(p).0)
     }
     pub fn surviving_faces(&self) -> &BTreeSet<String> {
-        &self.surviving
+        &self.shape.surviving
     }
     pub fn round_features(&self) -> &[RoundFeature] {
-        &self.round
+        &self.shape.round
     }
     /// A face's path from this solid, from the path its boundary names it by (the primitive's own
     /// name first, `plate.near`): the route to that primitive, then the face — `plate.near` on a
     /// body made of `plate`, `near` on the primitive itself.  `None` for a face no primitive's
     /// name begins.
     pub fn face_route(&self, path: &str) -> Option<String> {
-        let (primitive, route) = self.paths.iter()
+        let (primitive, route) = self.shape.paths.iter()
             .filter(|(p, _)| path.strip_prefix(p.as_str()).is_some_and(|r| r.starts_with('.')))
             .max_by_key(|(p, _)| p.len())?;
         let face = &path[primitive.len() + 1..];
         Some(if route.is_empty() { face.to_string() } else { format!("{route}.{face}") })
     }
     pub fn provenance_paths(&self) -> &BTreeMap<String, String> {
-        &self.paths
+        &self.shape.paths
     }
     pub fn volume(&self) -> f64 {
-        match self.surface {
+        match self.shape.surface {
             Surface::Brep { volume } => volume,
             _ => mesh::volume(self.boundary()),
         }
@@ -583,20 +689,20 @@ impl EvaluatedSolid {
     /// normals at its corners — the curve the surface draws, within its sag, and not a zigzag of
     /// the mesh's seams, which the view then leaves out.
     pub fn silhouettes(&self, eye: [f64; 3]) -> Option<Vec<Edge>> {
-        if !matches!(self.surface, Surface::Brep { .. }) { return None; }
-        let prim = &self.csg.prims[0];
+        if !matches!(self.shape.surface, Surface::Brep { .. }) { return None; }
+        let prim = &self.shape.csg.prims[0];
         // a point interpolated on a chord stands inside the surface by up to the sag: put back on
         // it (where the B-rep is in hand), it is on the silhouette to second order, and a straight
         // one comes out straight
         let on = |k: usize, p: [f64; 3]| -> [f64; 3] {
-            let Some((exact, faces)) = &self.exact else { return p };
+            let Some((exact, faces)) = &self.shape.exact else { return p };
             let mm = exact.mm;
             let surface = &exact.brep.faces[faces[k] as usize].surface;
             let q = surface.point(surface.inverse(p.map(|x| x * mm))).map(|x| x / mm);
             if q.iter().all(|x| x.is_finite()) { q } else { p }
         };
         let mut out = Vec::new();
-        for (fi, (f, normals)) in prim.facets.iter().zip(&self.corner_normals).enumerate() {
+        for (fi, (f, normals)) in prim.facets.iter().zip(&self.shape.corner_normals).enumerate() {
             let Some(normals) = normals else { continue };
             let g = normals.map(|n| plane::dot(n, eye));
             let mut at = Vec::with_capacity(2);
@@ -618,13 +724,14 @@ impl EvaluatedSolid {
         Some(out)
     }
     pub fn edges(&self) -> &[Edge] {
-        self.edges
-            .get_or_init(|| csg::edges_indexed(&self.csg, self.epsilon, self.ray_indices()))
+        let shape = &self.shape;
+        shape.edges.get_or_init(|| csg::edges_indexed(&shape.csg, shape.epsilon, self.ray_indices()))
     }
     pub fn mesh(&self) -> &mesh::Mesh {
         // a field's surface came indexed, its corners shared exactly: nothing for a weld to do
-        self.mesh.get_or_init(|| match self.surface {
-            Surface::Field { .. } => mesh::grouped_welded(self.boundary.get().cloned().unwrap_or_else(|| self.field_pieces())),
+        self.shape.mesh.get_or_init(|| match self.shape.surface {
+            Surface::Field { .. } => mesh::grouped_welded(
+                self.shape.boundary.get().cloned().unwrap_or_else(|| self.field_pieces())),
             // the B-rep's mesh shares its points exactly too
             Surface::Brep { .. } => mesh::grouped_welded(self.boundary().to_vec()),
             Surface::Csg => mesh::grouped(self.boundary()),
@@ -633,10 +740,17 @@ impl EvaluatedSolid {
     /// Where two of its faces meet, by their paths, read off its mesh once (`mesh::face_edges`):
     /// what a round or a chamfer is written along.  In the solid's own coordinates.
     pub fn face_edges(&self) -> &[mesh::FaceEdge] {
-        self.face_edges.get_or_init(|| mesh::face_edges(self.mesh()))
+        self.shape.face_edges.get_or_init(|| mesh::face_edges(self.mesh()))
     }
     pub fn world_boundary(&self) -> Vec<Piece> {
-        translate_pieces(self.boundary(), self.origin.0)
+        if self.rotation.is_none() {
+            return translate_pieces(self.boundary(), self.origin.0);
+        }
+        self.boundary().iter().map(|p| Piece {
+            pts: p.pts.iter().map(|&x| self.to_world(LocalPoint(x)).0).collect(),
+            n: self.vector_to_world(p.n),
+            ..p.clone()
+        }).collect()
     }
     pub fn world_edges(&self) -> Vec<Edge> {
         self.edges()
@@ -644,60 +758,116 @@ impl EvaluatedSolid {
             .map(|e| Edge {
                 a: self.to_world(LocalPoint(e.a)).0,
                 b: self.to_world(LocalPoint(e.b)).0,
+                na: self.vector_to_world(e.na),
+                nb: self.vector_to_world(e.nb),
                 ..e.clone()
             })
             .collect()
     }
     pub fn world_mesh(&self) -> mesh::Mesh {
-        let mut m = self.mesh().clone();
+        let mut m = self.oriented_mesh().into_owned();
         for (i, v) in m.positions.iter_mut().enumerate() {
             *v += self.origin.0[i % 3];
         }
         m
     }
+    /// The mesh turned as the solid stands but not yet moved to its origin: the world's mesh less
+    /// the translation, which a file adds as it writes (`placed_stl`, a glTF node).  The mesh
+    /// itself for a solid that never turned.
+    pub fn oriented_mesh(&self) -> std::borrow::Cow<'_, mesh::Mesh> {
+        let m = self.mesh();
+        if self.rotation.is_none() {
+            return std::borrow::Cow::Borrowed(m);
+        }
+        let mut m = m.clone();
+        for v in m.positions.chunks_exact_mut(3).chain(m.normals.chunks_exact_mut(3)) {
+            let w = self.vector_to_world([v[0], v[1], v[2]]);
+            v.copy_from_slice(&w);
+        }
+        std::borrow::Cow::Owned(m)
+    }
     /// The surface as it stands even while it is still being refined (`mesh::preview_stl`): what a
     /// host offers when asked for a file before the refinement has finished.
     pub fn preview_stl(&self) -> Result<Vec<u8>, String> {
-        mesh::preview_stl(self.mesh(), self.origin.0, &self.name)
+        mesh::preview_stl(&self.oriented_mesh(), self.origin.0, &self.shape.name)
     }
     pub fn stl(&self) -> Result<Vec<u8>, String> {
         self.finished()?;
-        mesh::placed_stl(self.mesh(), self.origin.0, &self.name)
+        mesh::placed_stl(&self.oriented_mesh(), self.origin.0, &self.shape.name)
     }
     /// Refuse a surface still being refined: it may be open, and a file is a finished part.
     pub fn finished(&self) -> Result<(), String> {
-        if self.provisional() { Err(format!("`{}`: its surface is still being refined", self.name)) } else { Ok(()) }
+        if !self.provisional() { return Ok(()) }
+        Err(format!("`{}`: its surface is still being refined", self.shape.name))
     }
     pub(crate) fn classifier(&self) -> &Csg {
-        &self.csg
+        &self.shape.csg
     }
     /// Rebase another validated solid into this solid's frame for pairwise kernel queries, moved
     /// rigidly in space by `pose` first where one is given (a claim's roll, evaluated once).
     pub(crate) fn relative(&self, other: &Self, pose: Option<crate::envelope::Motion>) -> (Csg, Vec<Piece>) {
-        let mut csg = other.csg.clone();
-        let Some(pose) = pose else {
+        let mut csg = other.shape.csg.clone();
+        if pose.is_none() && self.rotation.is_none() && other.rotation.is_none() {
             let delta = std::array::from_fn(|k| other.origin.0[k] - self.origin.0[k]);
             translate_csg(&mut csg, delta);
             return (csg, translate_pieces(other.boundary(), delta));
-        };
+        }
+        // other's own coordinates to the world, moved there, and into this solid's own
         let point = |p: [f64; 3]| {
-            let w = pose.point(std::array::from_fn(|k| p[k] + other.origin.0[k]));
-            std::array::from_fn(|k| w[k] - self.origin.0[k])
+            let w = other.to_world(LocalPoint(p)).0;
+            let w = pose.as_ref().map_or(w, |m| m.point(w));
+            self.to_local(WorldPoint(w)).0
+        };
+        let vector = |n: [f64; 3]| {
+            let w = other.vector_to_world(n);
+            self.vector_to_local(pose.as_ref().map_or(w, |m| m.vector(w)))
         };
         for p in &mut csg.prims {
             p.bbox = Box3::empty();
             for f in &mut p.facets {
                 for x in &mut f.pts { *x = point(*x); p.bbox.add(*x); }
-                f.n = pose.vector(f.n);
+                f.n = vector(f.n);
             }
         }
         let pieces = other.boundary().iter().map(|q| Piece {
-            pts: q.pts.iter().map(|&x| point(x)).collect(), n: pose.vector(q.n), ..q.clone()
+            pts: q.pts.iter().map(|&x| point(x)).collect(), n: vector(q.n), ..q.clone()
         }).collect();
         (csg, pieces)
     }
 
 }
+
+/// A rigid motion of space, `x ↦ r·x + t`, `r` by rows: what carries a solid that has only moved
+/// since it was evaluated from where it was built to where it stands (#412).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Rigid {
+    pub r: [[f64; 3]; 3],
+    pub t: [f64; 3],
+}
+
+impl Rigid {
+    /// The motion carrying plane `from` onto plane `to`: its origin onto the other's, and its
+    /// axes and normal onto the other's.
+    pub fn between(from: &Basis, to: &Basis) -> Rigid {
+        // a plane moved without turning is moved by its translation, exactly
+        if (from.u, from.v) == (to.u, to.v) {
+            return Rigid { r: IDENTITY, t: std::array::from_fn(|k| to.o[k] - from.o[k]) };
+        }
+        let (n0, n1) = (from.normal(), to.normal());
+        let r: [[f64; 3]; 3] = std::array::from_fn(|i| std::array::from_fn(|j| {
+            to.u[i] * from.u[j] + to.v[i] * from.v[j] + n1[i] * n0[j]
+        }));
+        let moved = r.map(|row| plane::dot(row, from.o));
+        Rigid { r, t: std::array::from_fn(|k| to.o[k] - moved[k]) }
+    }
+    pub fn point(&self, x: [f64; 3]) -> [f64; 3] {
+        std::array::from_fn(|k| plane::dot(self.r[k], x) + self.t[k])
+    }
+    pub fn vector(&self, v: [f64; 3]) -> [f64; 3] {
+        self.r.map(|row| plane::dot(row, v))
+    }
+}
+
 /// The angle an exact solid's edge's chords may turn (radians): the sagitta decides on a large
 /// curve, and a small circle is cut in 64 steps a turn at least, as the facet term cuts one.
 const BREP_ANGULAR: f64 = std::f64::consts::TAU / 64.0;

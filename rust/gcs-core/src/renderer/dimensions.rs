@@ -75,7 +75,7 @@ pub fn generated(sk: &Sketch, unit: f64) -> Vec<(usize, Dim)> {
         }
         // and every round feature this view sees square on: a face that is one circle, whose
         // plane looks at the eye.  A hole is a size a printer needs and a machine can read
-        let eye = basis.normal();
+        let eye = local_basis.normal();
         for feature in solid.round_features() {
             if plane::dot(feature.normal, eye).abs() < 0.999_999 { continue; }
             let r = feature.radius;

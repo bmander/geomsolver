@@ -2,7 +2,8 @@
  * stood at an instant where the core's march puts it (its closed form, and the same instant a
  * `.svd` states); an edit made at home and the drawing stood back after it; the crank's pin
  * dragged along its march; and a march that stops at a singular instant stopping the timeline
- * there.  Nothing shown at an instant is written back. */
+ * there.  Nothing shown at an instant is written back.  An edit takes no march before it returns,
+ * and a scrub of the V-twin moves its parts in the 3D box rather than cutting them again (#412). */
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
@@ -25,6 +26,7 @@ const files: Record<string, string> =
   JSON.parse(await readFile(new URL('../examples/sources.json', import.meta.url), 'utf8'));
 const FOUR_BAR = files['mechanisms/four_bar.sv'];
 const TRIPLE_ROCKER = files['mechanisms/triple_rocker.sv'];
+const VTWIN = files['vtwin/assembly.sv'];
 
 /** The rocker pin of a four-bar (ground `g`, crank `r`, coupler `l`, rocker `k`) at crank angle
  *  `t` degrees, the coupler above the ground: the circles about the crank pin and the far pivot
@@ -143,4 +145,48 @@ test('a timeline stops at the singular instant its march stops at', (t) => {
                'singular at t = 129.838deg: no drawing stands past it, the motion turns back');
   assert.ok(view.showInstant('t', 200));
   assert.equal(view.instant?.at, m.reached, 'past the limit, the drawing stands at it');
+});
+
+test('an edit takes no march before it returns; the timeline gets its reach once followed',
+     async (t) => {
+  const view = opened(FOUR_BAR);
+  t.after(() => view.doc.dispose());
+  // `opened` is an edit: nothing followed, the timeline the interval alone
+  assert.equal(view.followedMarch('t'), undefined);
+  assert.deepEqual(view.parameters().map((p) => p.name), ['t']);
+  // the page idle, it is followed
+  await new Promise((done) => setTimeout(done, 400));
+  const m = view.followedMarch('t');
+  assert.ok(m?.followed);
+  assert.equal(m.reached, 360);
+  // another edit at home forgets it, and asking for it follows it then
+  view.afterEdit();
+  assert.equal(view.followedMarch('t'), undefined);
+  const asked = view.marchOf('t');
+  assert.ok(asked?.followed && asked.reached === 360);
+  assert.deepEqual(view.followedMarch('t'), asked);
+  // shown at an instant, an edit stands it back there: that needs the march, so it is taken
+  assert.ok(view.showInstant('t', 90));
+  view.afterEdit();
+  assert.ok(view.followedMarch('t')?.followed);
+  assert.deepEqual(view.instant, { name: 't', at: 90 });
+  near(at(view, 'c'), rockerPin(40, 10, 35, 25, 90), 1e-8, 'stood back a quarter turn on');
+});
+
+test('a scrub of the V-twin moves its parts in the box and cuts none of them again', (t) => {
+  assert.ok(VTWIN, 'vtwin/assembly.sv is packed');
+  const view = opened(VTWIN);
+  t.after(() => view.doc.dispose());
+  const box = view.box3d;
+  box.sync(view);
+  const cut = box.stats.cut;
+  assert.ok(cut >= 7, `every object cut once: ${cut}`);
+  const moved = box.stats.moved;
+  for (const deg of [30, 120, 250]) {
+    assert.ok(view.showInstant('t', deg));
+    box.sync(view);
+  }
+  assert.equal(box.stats.cut, cut, 'nothing cut again along the scrub');
+  assert.ok(box.stats.moved - moved >= 3 * cut,
+            `every object placed at every step: ${box.stats.moved}`);
 });

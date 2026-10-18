@@ -115,7 +115,7 @@ fn view_clipped(renderer: &Renderer<'_>, page: PageFrame, cut: Option<Basis>, se
 
 fn section(renderer: &Renderer<'_>, page: PageFrame, cut: Basis) -> Vec<Stroke> {
     let solid = renderer.solid;
-    let basis = page.basis();
+    let basis = solid.local_basis(page.basis());
     let eps = solid.epsilon();
     let n = basis.normal();
     let d = plane::dot(n, solid.local_basis(cut).o);

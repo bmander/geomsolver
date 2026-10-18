@@ -113,24 +113,59 @@ impl Sketch {
     pub fn evaluated_solid(
         &self, i: usize, policy: crate::solid::ApproximationPolicy,
     ) -> Result<std::rc::Rc<crate::solid::EvaluatedSolid>, String> {
-        // A swept solid's field mesh does not depend on the view's pixel length: one mesh
-        // serves every zoom, rather than a refinement per wheel tick.
-        let policy = if crate::solid::has_sweep(self, i) { crate::solid::ApproximationPolicy::Mesh } else { policy };
-        let key = crate::solid::reads(self, i, 0.0);
-        let slot = (i, policy.cache_key());
-        if let Some((old, value)) = self.caches.solid.borrow().get(&slot) {
-            if *old == key { return value.clone(); }
+        let (policy, slot) = self.solid_slot(i, policy);
+        let key = crate::solid::ShapeKey::of(self, i);
+        if let Some(found) = self.remembered(slot, &key) {
+            return found;
         }
         let value = crate::progress::during(|| crate::progress::Work::evaluate(self, i),
             || crate::solid::EvaluatedSolid::evaluate(self, i, policy).map(std::rc::Rc::new));
         let mut cache = self.caches.solid.borrow_mut();
-        cache.retain(|(index, _), (old, _)| *index != i || *old == key);
+        cache.retain(|(index, _), old| *index != i || old.key.same_shape(&key));
         // Bound zoom-history memory without evicting report and mesh entries.
         if cache.keys().filter(|(index, (kind, _))| *index == i && *kind == 2).count() >= 8 {
             cache.retain(|(index, (kind, _)), _| *index != i || *kind != 2);
         }
-        cache.insert(slot, (key, value.clone()));
+        cache.insert(slot, super::caches::SolidSlot { key, built: value.clone(), moved: None });
         value
+    }
+
+    /// **Solid `i` as already evaluated** (#412), moved where it has only moved since, and `None`
+    /// where it would have to be evaluated: what a gesture asks of a solid it must not build on
+    /// every frame.
+    pub fn built_solid(&self, i: usize, policy: crate::solid::ApproximationPolicy)
+        -> Option<Result<std::rc::Rc<crate::solid::EvaluatedSolid>, String>> {
+        self.remembered(self.solid_slot(i, policy).1, &crate::solid::ShapeKey::of(self, i))
+    }
+
+    /// The approximation solid `i` is evaluated at when `policy` is asked, and the slot of
+    /// `Caches::solid` it is remembered in.  A swept solid's field mesh does not depend on the
+    /// view's pixel length: one mesh serves every zoom, rather than a refinement per wheel tick.
+    fn solid_slot(&self, i: usize, policy: crate::solid::ApproximationPolicy)
+        -> (crate::solid::ApproximationPolicy, (usize, (u8, u64))) {
+        let policy = if crate::solid::has_sweep(self, i) { crate::solid::ApproximationPolicy::Mesh } else { policy };
+        (policy, (i, policy.cache_key()))
+    }
+
+    /// What `Caches::solid` holds for `slot` against `key`: the evaluation itself where the solid
+    /// stands where it was built, and moved where it is the same shape elsewhere (#412).
+    fn remembered(&self, slot: (usize, (u8, u64)), key: &crate::solid::ShapeKey)
+        -> Option<Result<std::rc::Rc<crate::solid::EvaluatedSolid>, String>> {
+        let mut cache = self.caches.solid.borrow_mut();
+        let found = cache.get_mut(&slot).filter(|f| f.key.same_shape(key))?;
+        if found.key.same_pose(key) {
+            return Some(found.built.clone());
+        }
+        // an evaluation refused is asked again where it now stands: a refusal may be of the place
+        let built = found.built.as_ref().ok()?;
+        let pose = key.pose();
+        if let Some((at, solid)) = &found.moved {
+            if *at == pose { return Some(Ok(solid.clone())); }
+        }
+        let motion = crate::solid::Rigid::between(&found.key.pose(), &pose);
+        let solid = std::rc::Rc::new(built.moved(&motion));
+        found.moved = Some((pose, solid.clone()));
+        Some(Ok(solid))
     }
 
     /// Solid `i`'s exact B-rep (`solid::Exact`), or why this kernel does not build it: built once

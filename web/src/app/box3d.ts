@@ -18,8 +18,8 @@ import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
 
-import { mesh, objects, preview } from '../core/mesh.js';
-import type { Face, Mesh } from '../core/mesh.js';
+import { objects, own, placement, preview } from '../core/mesh.js';
+import type { Face, Mesh, Placement } from '../core/mesh.js';
 import { overview3 } from '../core/overview.js';
 import { eyeFrame, placeOf, solidEdges } from '../core/workspace.js';
 import type { SolidEdge } from '../core/workspace.js';
@@ -61,16 +61,32 @@ const IN_SPACE = new Set(['axis', 'traced']);
  *  make a depth buffer slower than the painter it replaced.  The zoom is not in it either: the box
  *  is cut to the object rather than to the screen.  **The pose is**: a drag moves numbers inside
  *  the same sketch, and a plane held to a dragged point moves with it, so the datums follow the
- *  pose every frame and the objects once the gesture is let go. */
+ *  pose every frame.  An object follows it too, by its matrix alone while it is the same shape
+ *  (#412); one whose shape a gesture changes is cut again once the gesture is let go. */
 interface Built {
   sketch: unknown;
   solid: boolean;
-  /** The pose the datums were built at, and the one the objects were. */
+  /** The pose the datums were built at, and the one every object was placed at (`NaN` while one
+   *  waits on a gesture to end before it is cut again). */
   datums: number;
   objects: number;
   /** The sketch's `shapeEpoch` the objects were built at: a solid re-shaped in place (an
    *  extrusion being sized) is re-cut at once, gesture or no. */
   shape: number;
+}
+
+/** One object in the box: the evaluation its geometry was built from (`Placement.shape`), and
+ *  the group that geometry hangs in, placed by the object's matrix. */
+interface Placed {
+  shape: number;
+  group: THREE.Group;
+}
+
+/** What the box has done since it was made — read by the tests, which have no WebGL to look at:
+ *  how many objects it cut (built geometry for) and how many it only moved. */
+export interface BoxStats {
+  cut: number;
+  moved: number;
 }
 
 /** A fingerprint of where everything is: FNV-1a over the parameters' bits.  A drag frame changes
@@ -88,8 +104,11 @@ export class Box3D {
   private readonly camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -1e4, 1e4);
   /** The panes, the axes and what stands in space — rebuilt as the pose moves. */
   private readonly datums = new THREE.Group();
-  /** The objects' meshes and creases — rebuilt once the pose has settled. */
+  /** The objects' meshes and creases, a group each (`placed`), moved by their matrices. */
   private readonly objects = new THREE.Group();
+  /** Each object as the box holds it, by its index among the sketch's solids. */
+  private readonly placed = new Map<number, Placed>();
+  readonly stats: BoxStats = { cut: 0, moved: 0 };
   private built: Built | null = null;
   /** The panes' outlines and the views' geometry, kept by what they are *of* — because the two
    *  things the app says about them change with the pointer and not with the drawing: which pane
@@ -132,33 +151,7 @@ export class Box3D {
   paint(v: SketchView): void {
     const gl = this.start();
     if (!gl) return;
-    // **The zoom is the camera's business and not the scene's**, which is why nothing here is a
-    // function of `v.unit`: the scene and the mesh are both asked for at the *object's* own scale
-    // (`0`), so a wheel tick moves the camera and rebuilds nothing.  Asked at the sheet's zoom
-    // this re-evaluated the whole term on every tick — and finer without bound as you zoomed in,
-    // since a screen pixel is a smaller world length the closer you get
-    const pose = poseOf(v.sketch.getX());
-    const fresh = !this.built || this.built.sketch !== v.sketch || this.built.solid !== v.showSolid;
-    const shape = v.sketch.shapeEpoch;
-    const datums = fresh || this.built!.datums !== pose;
-    // an object is re-cut once the pose settles, not under every frame of a drag or a wobble —
-    // but at once where its shape was changed in place, which is what that gesture is for
-    const objects = fresh || this.built!.shape !== shape
-      || (this.built!.objects !== pose && !v.gesture && !v.anim);
-    if (datums || objects) {
-      if (datums) this.buildDatums(overview3(v.sketch, 0, 'datums'));
-      if (objects) {
-        this.buildObjects(v, overview3(v.sketch, 0, 'objects'));
-        this.preview.key = null;          // a preview is of the objects as they stood
-        this.forgetLit();                 // and so are the edges lit on them
-      }
-      this.built = {
-        sketch: v.sketch, solid: v.showSolid,
-        datums: datums ? pose : this.built!.datums,
-        objects: objects ? pose : this.built!.objects,
-        shape,
-      };
-    }
+    this.sync(v);
     const c = v.showSolid ? v.combining : null;
     const key = c && `${c.word} ${c.target.index} ${c.tools.map((t) => t.index).join(' ')}`;
     if (key !== this.preview.key) this.buildPreview(v, c, key);
@@ -173,6 +166,39 @@ export class Box3D {
     if (gl.getPixelRatio() !== dpr) gl.setPixelRatio(dpr);
     gl.setSize(v.width, v.height, false);
     gl.render(this.scene, this.camera);
+  }
+
+  /** **The scene brought up to the drawing**, nothing drawn: what `paint` does before it renders,
+   *  and what a test without WebGL asks to see what the box would hold. */
+  sync(v: SketchView): void {
+    // **The zoom is the camera's business and not the scene's**, which is why nothing here is a
+    // function of `v.unit`: the scene and the mesh are both asked for at the *object's* own scale
+    // (`0`), so a wheel tick moves the camera and rebuilds nothing.  Asked at the sheet's zoom
+    // this re-evaluated the whole term on every tick — and finer without bound as you zoomed in,
+    // since a screen pixel is a smaller world length the closer you get
+    const pose = poseOf(v.sketch.getX());
+    const fresh = !this.built || this.built.sketch !== v.sketch || this.built.solid !== v.showSolid;
+    const shape = v.sketch.shapeEpoch;
+    const datums = fresh || this.built!.datums !== pose;
+    const objects = fresh || this.built!.shape !== shape || this.built!.objects !== pose;
+    if (!datums && !objects) return;
+    if (datums) this.buildDatums(overview3(v.sketch, 0, 'datums'));
+    let placedAt = this.built?.objects ?? NaN;
+    if (objects) {
+      // an object is cut again under a gesture only where its shape was changed in place, which
+      // is what that gesture is for: one a drag re-shapes waits for the drag to be let go
+      const settled = fresh || this.built!.shape !== shape || (!v.gesture && !v.anim);
+      if (fresh) this.dropObjects();
+      placedAt = this.placeObjects(v, settled) ? pose : NaN;
+      this.preview.key = null;          // a preview is of the objects as they stood
+      this.forgetLit();                 // and so are the edges lit on them
+    }
+    this.built = {
+      sketch: v.sketch, solid: v.showSolid,
+      datums: datums ? pose : this.built!.datums,
+      objects: placedAt,
+      shape,
+    };
   }
 
   /** The drawing is the same object but what it shows changed (a swept solid's surface arrived):
@@ -271,35 +297,91 @@ export class Box3D {
     }
   }
 
-  /** The objects: their creases, which stand whether or not their surfaces are drawn — with the
-   *  surfaces they are the corners of a shaded part, and without them the wireframe — and, shown,
-   *  the surfaces. */
-  private buildObjects(v: SketchView, items: Item3[]): void {
-    this.faces.length = 0;
-    release(this.objects);
-    this.lines(this.objects, items.filter((i) => i.part === 'solid'), INK.edge, 1);
-    if (!v.showSolid) return;
-    // **the object itself, as a mesh** — every face of it a named child, so a later selection has
-    // something to name
-    for (const o of objects(v.sketch)) {
+  /** **The objects, each where it stands** (#412).  An object the box holds whose shape the core
+   *  still has — moved rigidly or not at all — keeps its geometry and takes its new matrix; any
+   *  other is cut: its creases, which stand whether or not its surfaces are drawn (with them the
+   *  corners of a shaded part, without them the wireframe), and, shown, its surfaces, all in its
+   *  own coordinates.  Unsettled (a gesture), an object the core would have to build is left as
+   *  it stood.  Whether every object is where the drawing now puts it. */
+  private placeObjects(v: SketchView, settled: boolean): boolean {
+    let current = true;
+    const now = objects(v.sketch);
+    const keep = new Set(now.map((o) => o.index));
+    for (const index of [...this.placed.keys()]) if (!keep.has(index)) this.unplace(index);
+    for (const o of now) {
       // **cut to the object and not to the zoom** — `0` asks the core for `solid::mesh_unit`,
       // a sagitta a fixed fraction of the solid's own diagonal.  Handed `v.unit` this re-cut the
       // whole boundary on every wheel tick, and finer without bound as you zoomed in: one tick
-      // on the V-twin cylinder locked the tab for the better part of a minute
-      // an object that does not evaluate (a revolution whose axis crosses its profile) is left
-      // out: thrown here, it stopped every paint before the drawing, and the page with it
-      let m: Mesh;
+      // on the V-twin cylinder locked the tab for the better part of a minute.  An object that
+      // does not evaluate (a revolution whose axis crosses its profile) is left out: thrown here,
+      // it stopped every paint before the drawing, and the page with it
+      let at: Placement | null;
       try {
-        m = mesh(v.sketch, o.index, 0);
+        at = placement(v.sketch, o.index, 0, !settled);
       } catch {
+        this.unplace(o.index);
         continue;
       }
-      for (const f of m.faces) {
-        const face = faceMesh(m, f);
-        this.objects.add(face);
-        this.faces.push({ solid: o.index, path: f.path, mesh: face });
+      if (!at) {
+        current = false;
+        continue;
       }
+      let held = this.placed.get(o.index);
+      if (held?.shape === at.shape) {
+        this.stats.moved++;
+      } else {
+        this.unplace(o.index);
+        held = { shape: at.shape, group: this.cut(v, o.index) };
+        this.placed.set(o.index, held);
+        this.objects.add(held.group);
+        this.stats.cut++;
+      }
+      held.group.matrix.fromArray(at.matrix);
+      held.group.matrixWorldNeedsUpdate = true;
     }
+    return current;
+  }
+
+  /** One object's geometry, in its own coordinates, in a group its matrix places. */
+  private cut(v: SketchView, solid: number): THREE.Group {
+    const group = new THREE.Group();
+    group.matrixAutoUpdate = false;
+    const m = own(v.sketch, solid, 0);
+    if (m.creases.length) {
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(Float32Array.from(m.creases), 3));
+      group.add(new THREE.LineSegments(g, new THREE.LineBasicMaterial({
+        color: INK.edge, transparent: true, opacity: 1,
+      })));
+    }
+    if (!v.showSolid) return group;
+    // **the object itself, as a mesh** — every face of it a named child, so a later selection has
+    // something to name
+    for (const f of m.faces) {
+      const face = faceMesh(m, f);
+      group.add(face);
+      this.faces.push({ solid, path: f.path, mesh: face });
+    }
+    return group;
+  }
+
+  /** Let one object's geometry go. */
+  private unplace(solid: number): void {
+    const held = this.placed.get(solid);
+    if (!held) return;
+    this.objects.remove(held.group);
+    for (let i = this.faces.length - 1; i >= 0; i--) {
+      if (this.faces[i].solid === solid) this.faces.splice(i, 1);
+    }
+    release(held.group);
+    this.placed.delete(solid);
+  }
+
+  /** Let every object's geometry go: a different drawing, or its surfaces shown or hidden. */
+  private dropObjects(): void {
+    this.faces.length = 0;
+    this.placed.clear();
+    release(this.objects);
   }
 
   /** The result of the Boolean being picked, from the core, standing where its target does. */
@@ -456,20 +538,23 @@ export class Box3D {
   private dispose(): void {
     this.frames.length = 0;
     this.panes.length = 0;
-    this.faces.length = 0;
     release(this.datums);
-    release(this.objects);
+    this.dropObjects();
     release(this.previewed);
     this.preview = { key: null, shown: false };
     this.forgetLit();
   }
 }
 
-/** Empty a group and free what it held.  A `Group` emptied is not a `Group` released: WebGL
- *  resources outlive the tree that named them. */
+/** Empty a group and free what it held, groups within it too.  A `Group` emptied is not a
+ *  `Group` released: WebGL resources outlive the tree that named them. */
 function release(g: THREE.Group): void {
   for (const o of [...g.children]) {
     g.remove(o);
+    if (o instanceof THREE.Group) {
+      release(o);
+      continue;
+    }
     const any = o as THREE.Mesh;
     any.geometry?.dispose?.();
     const m = any.material;
