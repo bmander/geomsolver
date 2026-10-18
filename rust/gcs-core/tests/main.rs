@@ -219,6 +219,7 @@ mod sundial;
 mod surfaces;
 mod swept_faces;
 mod swept_over_parameters;
+mod symmetric;
 mod tangent_at;
 mod tape;
 mod taylor;

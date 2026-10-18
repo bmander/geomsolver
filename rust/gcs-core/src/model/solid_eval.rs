@@ -63,7 +63,10 @@ impl Sketch {
     /// `body`'s that `word` fills (`body` made a body first, `as_body`).  Refused, with the cause
     /// and leaving the sets as they were, for a solid joined to itself and for a statement that
     /// would close a cycle (E041) — asked once the tool is in, since a `through:` reads only what
-    /// its body adds.  The elaborator states each statement by it and `preview_body` each tool.
+    /// its body adds.  A tool `word` already joins to `body` joins nothing more: a set taken away,
+    /// added or met twice is the same body (#415's copies, each order of an edge's faces a name for
+    /// one solid, say it once for each).  The elaborator states each statement by it and
+    /// `preview_body` each tool.
     pub fn join_body(&mut self, body: usize, word: crate::vocab::BodyWord, tool: usize)
         -> Result<(), String> {
         let name = |sk: &Sketch, i: usize| sk.solids[i].name.clone();
@@ -71,6 +74,9 @@ impl Sketch {
             return Err(format!("`{0} {1} {0}` joins a solid to itself", name(self, body), word.as_str()));
         }
         self.as_body(body);
+        if self.solids[body].def.body_set(word).expect("a body").contains(&(tool as u32)) {
+            return Ok(());
+        }
         self.solids[body].def.body_set(word).expect("a body").push(tool as u32);
         if crate::solid::reaches(self, body as u32, body as u32) {
             self.solids[body].def.body_set(word).expect("a body").pop();

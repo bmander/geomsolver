@@ -399,6 +399,11 @@ fn tint_inner(
     if prev == Some(&Tok::P('.')) && next == Some(&Tok::P('(')) {
         return (Some(Tint::Type), Next::Word);
     }
+    // `component Run(a: face, b: face) symmetric(a, b) := …` — the family's own clause, after
+    // its formals (#415), never a call
+    if w == "symmetric" && prev == Some(&Tok::P(')')) && next == Some(&Tok::P('(')) {
+        return (Some(Tint::Word), Next::Word);
+    }
     // `integral(p.y over p)` — a term of an energy (§9.10), read by the parser by name
     if w == "integral" && next == Some(&Tok::P('(')) {
         return (Some(Tint::Word), Next::Word);

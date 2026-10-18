@@ -1270,7 +1270,10 @@ to the drawing; it means what its uses say:
   plane at `m` (a pitch plane touching a pitch cone). Refused over a body making points.
 - A **family** is a component whose body is a set: `component Ball(center: point, r: Length) :=
   { p | p distance(r) center }`; an instance is the set, its formals read by its name. A component
-  takes a set as a **`set` formal**, by position.
+  takes a set as a **`set` formal**, by position. A family the same set in any order of some
+  formals says so before `:=`: `component Lens(a: point, b: point, r: Length) symmetric(a, b) :=
+  { … }`, or `symmetric((a, la), (b, lb))` for formals that change places together; then
+  `Lens(q, p, r: 5mm)` is `Lens(p, q, r: 5mm)`. Say it only where the body bears it out.
 - A point formal may name the plane formal it is drawn in, `center: point in on`, and a call may
   then leave it out: `k := Circle(std.front, r: 25)` owns its centre, `k.center`, drawn in the
   front (`fix((5, 5)) k.center`); `center: hint((40, 0))` seeds it. Any other entity left out of

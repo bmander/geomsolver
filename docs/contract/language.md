@@ -227,6 +227,25 @@ of every instance a body writes into its `vals` as `inst.formal` (the number bou
 unknown `bind` names), before the statements, so `p distance(ball.r) ball.center` reads it and a
 group argument carries it (`bind`'s group arm copies `{actual}.…`); body values are not. No
 solver state; member units survive substitution; missing members are errors.
+**A family the same set in any order** (#415, [0.148]): `component Run(a: face, b: face, r:
+Length) symmetric(a, b) := { p | … }` (`Component::symmetric`, items of one or more formals,
+`parser::statements::symmetric`; on no family, one item, a formal twice, items of unequal length
+or places of unequal type, a parse error).  `flatten::same`: `Walk::same_instance`, asked in
+`walk_instance` before anything is made, keys each such instance on its component, what each
+argument stands for (`stands_for` through the instance's own formal aliases, a number's value, a
+side's word; any of them unknown, or the instance drawn `in` a plane or riding a frame, or a
+curve's compile: no key) with the items in the order that sorts them (`canonical`, any number of
+items), and the roles and classes its parts would be stamped with (an instance stamped otherwise
+is its own); an instance whose key was made before is a name for that one (its name out of
+`names`, an alias to the first, its `InstanceInfo` popped; its formals' aliases and the call's
+checks stay) and its body is not walked.  A **copy's** region solid of such a name is the first
+copy's solid of that set (`Walk::same_solid`, through `set_named`, read once with the region
+`region_of` makes; only copies' solids are remembered, so a document's own solid is never taken
+for a copy's nor a copy's for it, and a document's own two solids of one set stay two).  Every
+body statement is emitted; one over such a solid saying what one over it said joins nothing more
+(`Sketch::join_body`: a tool a word already joins to a body is not joined again).
+`tests/symmetric.rs` is the gate, beside the closed forms of
+`tests/round_lowering.rs`.
 Curves need fixed scalar/entity formals. The V-twin and inline-four pass
 `components.dims.vtwin_dims` / `engine.dims.engine_dims` explicitly; `Frame(layout, dims: …)`
 takes a layout naming the front datum, origin and reference axis.

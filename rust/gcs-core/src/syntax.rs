@@ -79,6 +79,12 @@ pub struct Component {
     /// of sets (§6.21): an instance *is* the set, its formals its named parts.  The body is
     /// empty; what being on the set means is the literal's.
     pub set: Option<SetLit>,
+    /// `component Run(a: face, b: face, r: Length) symmetric(a, b) := { p | … }` (#415): a set
+    /// family that is **the same set whichever order its listed formals are given in** — each
+    /// item a formal, or a tuple of formals that change places together
+    /// (`symmetric((a, la), (b, lb))`).  Empty for a family that says no such thing, and for every
+    /// other component.  What the elaborator does with it is `flatten::same`.
+    pub symmetric: Vec<Vec<Name>>,
 }
 
 /// **A set, written as the points that satisfy a predicate** (§6.21): `{ p | p distance(12mm)

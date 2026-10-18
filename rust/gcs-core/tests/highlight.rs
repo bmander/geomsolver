@@ -107,6 +107,16 @@ fn a_seed_and_a_claim_are_told_apart() {
     assert_eq!(tint_of(src, "100"), Some(Tint::Num), "a param is not a seed");
 }
 
+/// A family's `symmetric` clause (#415) is a word of its definition, not a call — and a component
+/// named so and called is still a call.
+#[test]
+fn a_familys_symmetry_is_a_word() {
+    let src = "component Run(a: face, b: face, r: Length) symmetric(a, b) := { p | p inside a }";
+    assert_eq!(tint_of(src, "symmetric"), Some(Tint::Word));
+    let called = "x := symmetric(a, b)";
+    assert_ne!(tint_of(called, "symmetric"), Some(Tint::Word));
+}
+
 /// A computed point is arithmetic the parser never tokenizes — so the numbers in it are still
 /// numbers, and nothing there is mistaken for a word.
 #[test]

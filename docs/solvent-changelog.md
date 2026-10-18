@@ -4,6 +4,16 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.148] A family the same set in any order.** A set family may say, after its formals, that it
+is the same set whichever order some of them are given in (§6.21): `component Run(a: face, b:
+face, r: Length) symmetric(a, b) := { p | … }`, an item a formal or a tuple that changes places
+whole (`symmetric((a, la), (b, lb))`). An instance given what one before it was given, in an order
+the family allows, is that instance. The standard library's `Run`, `Fill`, `Corner`, `CornerFill`,
+`Flat` and `FlatFill` say so, so `round(r) X` and `chamfer(d) X`, which reach every edge in both
+orders of its faces and every corner in six, state each once: a body of nine faces rounded all over
+is 240 regions where it was 1152, and the same body. The word is contextual, read only there. No
+document changes; one defining such a family of its own may now say so. (Issue #415.)
+
 **[0.147] Parts in frames of their own.** A drawing's `sketch` of a plane shows what is drawn in a
 plane lying in it and facing the same way, where it stands (§13.2): a part drawn `in` a frame of
 its own (`in f.axes { … }`) is drawn where the frame puts it; through 0.146 a sketch showed what

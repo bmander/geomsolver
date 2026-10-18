@@ -450,9 +450,10 @@ fn canonical(node: &Json) -> String {
     out.dump(None)
 }
 
-/// How many constructions `Caches::gated` keeps, the latest asked: enough for the orders of
-/// `rounds/bores.sv`'s corners, met among nine distinct constructions.  It stands in for stating
-/// each edge and corner once (#415), and goes with it.
+/// How many constructions `Caches::gated` keeps, the latest asked: enough for the orders of a
+/// corner of nine faces, met among nine distinct constructions.  `std`'s words state each edge
+/// and corner once (#415); this is for the words that do not — a document's own written without
+/// `symmetric`, a round over faces drawn `in` a plane or riding a frame.
 const GATED: usize = 16;
 
 /// The pieces' boundary and its mesh, remembered against the recipe node they are built from up
