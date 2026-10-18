@@ -6,7 +6,7 @@
 //!
 //! The station is drawn once, hidden, at the middle of the interval (`flatten::Held`), and solved
 //! there with the drawing.  Here it is solved again at every other station: the part of the
-//! drawing it is (`io::Part`, everything else held where the drawing stands), its running number
+//! drawing it is (`graft::Part`, everything else held where the drawing stands), its running number
 //! moved (`Sketch::held`), its expressions worked out again (`expr::evaluate`) and its unknowns
 //! solved, **each station warm-started from its neighbour**, so the branch the drawing chose is
 //! the one carried — a step whose stations disagree with the chord between them more than the
@@ -31,10 +31,10 @@
 #[allow(unused_imports)]
 use crate::fmath::Det;
 use super::*;
-use crate::io::Part;
+use crate::graft::Part;
 use crate::model::Leg;
 use crate::space::sub;
-use crate::syntax::num;
+use crate::vocab::num;
 use plane::{cross, dot, norm};
 use crate::brep::family::Run;
 use crate::brep::recipe::{Family as Walls, FamilyWall};

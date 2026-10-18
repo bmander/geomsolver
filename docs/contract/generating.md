@@ -76,7 +76,7 @@ to the general sheets; read off the stations (`brep::family::carried`) only wher
 says.  Recognised by what is stated, never by a word's name.  So `lofts/spring.sv`'s wire and
 `swept_spring.sv`'s ball are one tube on one screw (`Blend`), the canal's half balls the only
 difference, and both export alike.  A part walked for a station follows a motion to what it is
-written over (`io::Part::around_all`: a motion owns no number, so is never a wall).  The gate:
+written over (`graft::Part::around_all`: a motion owns no number, so is never a wall).  The gate:
 `tests/carried_family.rs` (the springs, the screw's walls, a station read otherwise).
 
 **A frame's numbers are stated or solved** (#383 stages 3 and 5): a ratio or advance measured

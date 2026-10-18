@@ -64,7 +64,7 @@ impl Sketch {
     /// and leaving the sets as they were, for a solid joined to itself and for a statement that
     /// would close a cycle (E041) — asked once the tool is in, since a `through:` reads only what
     /// its body adds.  The elaborator states each statement by it and `preview_body` each tool.
-    pub fn join_body(&mut self, body: usize, word: crate::syntax::BodyWord, tool: usize)
+    pub fn join_body(&mut self, body: usize, word: crate::vocab::BodyWord, tool: usize)
         -> Result<(), String> {
         let name = |sk: &Sketch, i: usize| sk.solids[i].name.clone();
         if tool == body {
@@ -87,7 +87,7 @@ impl Sketch {
     /// of every operand.  Refused, with the cause, for an index out of range, no tool, a refused
     /// statement and wherever evaluation refuses — a body with a swept operand among them, whose
     /// surface is meshed elsewhere and never for a preview.
-    pub fn preview_body(&self, target: usize, word: crate::syntax::BodyWord, tools: &[usize])
+    pub fn preview_body(&self, target: usize, word: crate::vocab::BodyWord, tools: &[usize])
         -> Result<std::rc::Rc<crate::solid::EvaluatedSolid>, String> {
         let n = self.solids.len();
         if target >= n || tools.iter().any(|&t| t >= n) {
@@ -312,7 +312,7 @@ impl Sketch {
             Some(SolidDef::Revolve { sweep, sense: s, .. }) => {
                 *sweep = match how_far {
                     None => Extent { text: String::new(), value: std::f64::consts::TAU },
-                    Some(d) => Extent { text: crate::syntax::num(d), value: d.to_radians() },
+                    Some(d) => Extent { text: crate::vocab::num(d), value: d.to_radians() },
                 };
                 *s = sense;
                 self.shape_epoch = self.shape_epoch.wrapping_add(1);

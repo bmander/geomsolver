@@ -1005,7 +1005,7 @@ pub fn constraint_from_json(sk: &Sketch, v: &Json) -> Result<Constraint, String>
         });
     }
     // a hidden unknown nobody supplied starts where the geometry puts it
-    crate::io::seed_omitted(sk, kind, &mut args, |i| crate::io::omitted(raw.get(i)))?;
+    crate::constraints::seed_omitted(sk, kind, &mut args, |i| crate::io::omitted(raw.get(i)))?;
     // the tangencies read their branch off the sketch when none was supplied
     let omitted = raw.get(2).map(|x| matches!(x, Json::Null)).unwrap_or(true);
     if omitted && kind == CKind::TangentLineCircle {
@@ -1044,11 +1044,11 @@ pub fn meshing_text(sk: &Sketch, i: usize) -> String {
         l if l == n => "line contact",
         _ => "point and line contact",
     };
-    let deg = |v: f64| format!("{}°", crate::io::reading(SpecKind::Scalar, v));
+    let deg = |v: f64| format!("{}°", crate::expr::reading(SpecKind::Scalar, v));
     let ratio = t.found().any(|s| s.gear_error.is_some());
     let what = if ratio { "the gear's angle" } else { "the gear's lag" };
     let (first, last) = (t.phases[0], *t.phases.last().expect("a trace has a phase"));
-    let path = crate::io::reading(SpecKind::Length, t.path_length());
+    let path = crate::expr::reading(SpecKind::Length, t.path_length());
     let mut text = format!("{name}: {contact}; transmission error ({what}) {} … {} over the phase \
                             {} … {}, the path of contact {path} long", deg(lo), deg(hi), deg(first),
                            deg(last));
@@ -1093,7 +1093,7 @@ pub fn traced_text(sk: &Sketch, i: usize) -> String {
         }
     }
     let name = &t.name;
-    let deg = |v: f64| crate::io::reading(SpecKind::Scalar, v);
+    let deg = |v: f64| crate::expr::reading(SpecKind::Scalar, v);
     let mut text = match least {
         None => format!("{name}: {what} traced in space, not read anywhere over its domain"),
         Some((r, _)) if r > 1e-6 => format!("{name}: {what} traced in space, regular over its domain"),
@@ -1127,7 +1127,7 @@ pub fn rates_text(sk: &Sketch, i: usize) -> Option<String> {
 /// there — and at which node along the sampled formal.
 fn lines_text(reach: [crate::lines::Reached; 2], home: f64, domain: (f64, f64)) -> String {
     use crate::lines::Why;
-    let num = |v: f64| crate::io::reading(SpecKind::Scalar, v);
+    let num = |v: f64| crate::expr::reading(SpecKind::Scalar, v);
     let mut out = format!("marched from its home at {}", num(home));
     for r in reach {
         match r {
@@ -1157,7 +1157,7 @@ fn lines_text(reach: [crate::lines::Reached; 2], home: f64, domain: (f64, f64)) 
 
 /// How far a march reached each way from `home` across `domain`, in the CLI's words.
 fn reach_text(reach: [crate::rates::Reached; 2], home: f64, domain: (f64, f64)) -> String {
-    let num = |v: f64| crate::io::reading(SpecKind::Scalar, v);
+    let num = |v: f64| crate::expr::reading(SpecKind::Scalar, v);
     let mut out = format!("integrated from its home at {}", num(home));
     for r in reach {
         match r {

@@ -161,7 +161,7 @@ impl Dim {
     /// Spell an evaluated value without erasing its dimension during substitution.  The bases
     /// beyond length and angle are spelt in their SI units, which is what a value of theirs is in.
     pub(crate) fn number_text(self, value: f64, units: Units) -> String {
-        let number = crate::syntax::num(value);
+        let number = crate::vocab::num(value);
         if self.is_scalar() { return number; }
         if self == Self::LENGTH { return format!("{number}{}", units.name()); }
         if self == Self::ANGLE { return format!("{number}deg"); }

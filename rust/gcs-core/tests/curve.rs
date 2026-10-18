@@ -270,7 +270,7 @@ fn copying_a_spline_takes_its_contacts_and_gives_them_their_own_unknowns() {
     let p = sk.point(21.0, 30.0, false, "p");
     add(&mut sk, |doc| Constraint::point_on_spline(doc, EntRef::point(p), EntRef::spline(s)));
     let sel: Vec<EntRef> = vec![EntRef::spline(s), EntRef::point(p)];
-    let clip = gcs_core::io::copy(&sk, &sel);
+    let clip = gcs_core::graft::copy(&sk, &sel);
     assert_eq!(clip.splines.len(), 1);
     let c = clip.constraints.iter().find(|c| c.kind == CKind::PointOnSpline).unwrap();
     let owned = c.aux_params();
@@ -290,7 +290,7 @@ fn deleting_a_contact_takes_its_unknown_out_of_the_count() {
     sk.remove(id);
     assert_eq!(sk.free_indices().len(), free - 1, "an orphaned unknown is not a spare DOF");
     // and the rebuild walk reclaims the slot outright
-    let rebuilt = gcs_core::io::without(&sk, &[], &[]);
+    let rebuilt = gcs_core::graft::without(&sk, &[], &[]);
     assert_eq!(rebuilt.params.len(), sk.params.len() - 1);
 }
 
@@ -453,7 +453,7 @@ fn deleting_a_control_point_shortens_the_curve_instead_of_deleting_it() {
     add(&mut sk, |doc| Constraint::point_on_spline(doc, EntRef::point(p), EntRef::spline(s)));
     let victim = sk.splines[s].ctrl[3] as usize;
 
-    let out = gcs_core::io::without(&sk, &[EntRef::point(victim)], &[]);
+    let out = gcs_core::graft::without(&sk, &[EntRef::point(victim)], &[]);
     assert_eq!(out.splines.len(), 1, "the curve went with its control point");
     assert_eq!(out.splines[0].ctrl.len(), 6);
     assert!(curve::knots_valid(&out.splines[0].knots, 6));
@@ -467,7 +467,7 @@ fn a_curve_dies_when_too_few_control_points_are_left_to_draw_it() {
     let s = wave(&mut sk, 5);
     let doomed: Vec<EntRef> =
         (0..2).map(|i| EntRef::point(sk.splines[s].ctrl[i] as usize)).collect();
-    let out = gcs_core::io::without(&sk, &doomed, &[]);
+    let out = gcs_core::graft::without(&sk, &doomed, &[]);
     assert!(out.splines.is_empty(), "three control points cannot be a cubic");
 }
 
@@ -483,7 +483,7 @@ fn what_is_left_of_a_shortened_curve_still_solves() {
     assert!(solved(&mut sk));
     // drop a control point from the far end: the contact's parameter may now be past the end
     let victim = sk.splines[s].ctrl[7] as usize;
-    let mut out = gcs_core::io::without(&sk, &[EntRef::point(victim)], &[]);
+    let mut out = gcs_core::graft::without(&sk, &[EntRef::point(victim)], &[]);
     assert_eq!(out.splines[0].ctrl.len(), 7);
     assert!(solved(&mut out), "a shortened curve left the sketch unsolvable");
     let (x, y) = out.point_xy(out.points.len() - 1);
@@ -672,7 +672,7 @@ fn a_pin_survives_a_save_a_load_and_a_copy() {
     assert_eq!(gcs_core::diagnose::diagnose(&mut back.clone(), Default::default()).dof, 0);
 
     let all: Vec<EntRef> = sk.primitives();
-    let clip = gcs_core::io::copy(&sk, &all);
+    let clip = gcs_core::graft::copy(&sk, &all);
     assert_eq!(pinned(&clip), pts.len(), "the pins were lost on the way through a copy");
 }
 

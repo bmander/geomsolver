@@ -97,10 +97,10 @@ fn an_unmatched_class_is_not_an_error() {
 #[test]
 fn copy_and_paste_carry_classes() {
     let sk = read(PLAIN);
-    let clip = gcs_core::io::copy(&sk, &[EntRef::new(EntKind::Line, 0)]);
+    let clip = gcs_core::graft::copy(&sk, &[EntRef::new(EntKind::Line, 0)]);
     assert!(clip.lines[0].class.has("construction"));
     let mut dst = Sketch::new();
-    gcs_core::io::paste(&mut dst, &clip, 10.0, 10.0);
+    gcs_core::graft::paste(&mut dst, &clip, 10.0, 10.0);
     assert!(dst.lines[0].class.has("construction"));
 }
 
@@ -250,11 +250,11 @@ fn a_placement_dies_with_its_dimension() {
 #[test]
 fn copying_a_figure_brings_its_callouts() {
     let sk = read("a := point hint((0, 0))\nb := point hint((60, 0))\na distance(60) b at (12, -4)\n");
-    let clip = gcs_core::io::copy(&sk, &[EntRef::point(0), EntRef::point(1)]);
+    let clip = gcs_core::graft::copy(&sk, &[EntRef::point(0), EntRef::point(1)]);
     assert_eq!(clip.placements.len(), 1, "the callout came with the figure");
     let mut dst = Sketch::new();
-    gcs_core::io::paste(&mut dst, &clip, 0.0, 0.0);
-    gcs_core::io::paste(&mut dst, &clip, 100.0, 0.0);
+    gcs_core::graft::paste(&mut dst, &clip, 0.0, 0.0);
+    gcs_core::graft::paste(&mut dst, &clip, 100.0, 0.0);
     assert_eq!(dst.placements.len(), 2, "two pastes, two sets");
 }
 
@@ -295,7 +295,7 @@ fix((0, 0)) a
     assert!(dumped.contains("\"class\""), "{dumped}");
     let back = gcs_core::io::from_json(&gcs_core::json::parse(&dumped).unwrap()).expect("loads");
     assert!(back.constraints.iter().any(|c| c.class.has("shown")));
-    let copy = gcs_core::io::copy(&sk, &sk.primitives());
+    let copy = gcs_core::graft::copy(&sk, &sk.primitives());
     assert!(copy.constraints.iter().any(|c| c.class.has("shown")));
     // and prints back on the statement
     let (prog, _) = crate::common::parse_legacy(src);

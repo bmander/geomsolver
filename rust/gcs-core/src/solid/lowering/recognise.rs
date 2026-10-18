@@ -3,7 +3,7 @@
 //! which number, never by the word that wrote them.
 use super::Section;
 use crate::model::{FaceRef, RegionShape, RegionTerm, Sketch, Target};
-use crate::syntax::Cmp;
+use crate::vocab::Cmp;
 
 /// The faces a region rounds or cuts at, and whether it lies within all of them (a convex edge's
 /// material) or outside all of them (a concave edge's void).

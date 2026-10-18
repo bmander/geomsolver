@@ -369,3 +369,20 @@ pub fn to_user_units(kind: SpecKind, v: f64) -> f64 {
         v
     }
 }
+
+/// Significant digits a stored number is read to — on a callout, in a list, in a report.
+///
+/// **One constant, read through `reading`**, so `dimension_text` and `describe` cannot print
+/// one number two ways: a bare `Arg::Num` that a `param` substitution left at
+/// 49.99999999999999 is `50` on the drawing and `50` in the list (#43.15), where the list
+/// used to print the float and the callout four digits of it.  Six, because that is where a
+/// double's noise ends and a drawing's own numbers do not — `1234.5` keeps its half, which at
+/// four it did not.
+pub const READING_SIG: usize = 6;
+
+/// A stored number as a reader reads it: in the units they read (degrees for an angle), to
+/// `READING_SIG`.  Every place a constraint's number is turned into text for a person goes
+/// through here — the callout, the constraint list, the CLI's culprits.
+pub fn reading(kind: SpecKind, v: f64) -> String {
+    crate::json::fmt_g(to_user_units(kind, v), READING_SIG)
+}

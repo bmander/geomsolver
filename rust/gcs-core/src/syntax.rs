@@ -15,14 +15,16 @@ mod written;
 pub use highlight::{highlight, Tint};
 pub use measured::{Measured, Measurement, Measuring};
 pub(crate) use highlight::with_comments;
-pub use names::{camel, entity_name, hidden, kind_initial, name_uses, num, one_of, snake, NameUse};
+pub use names::{entity_name, hidden, name_uses, NameUse};
+pub use crate::model::kind_initial;
 pub use parser::{parse, parse_from, parse_legacy, parse_with_limits, ParseLimits};
 pub(crate) use parser::{reference_at, sweep_of, SweepParts, ROLLED_RETIRED, SWEPT_RETIRED};
 pub use print::{bounded, operator_text, render_flat, write_stmt_to, PrintError};
 pub(crate) use print::{sel_text, written_parts};
-pub use source::{line_col, Module, Name, Program, Span, StmtId, SynErr, Use, MAX_STMTS, MAX_TEXT};
+pub use source::{line_col, Module, Name, Program, StmtId, SynErr, Use, MAX_STMTS, MAX_TEXT};
 pub use words::{equal_kind, is_name, reserved_word};
-pub use written::{Cmp, OpArg, RateOf, Written};
+pub use written::{OpArg, RateOf, Written};
+pub use crate::vocab::{camel, num, one_of, snake, BodyWord, Cmp, Span};
 
 use crate::constraints::{CKind, Fixity};
 use crate::model::EntKind;
@@ -488,34 +490,6 @@ pub struct DerivedDecl {
     pub dims: bool,
     pub class: Classes,
     pub span: Span,
-}
-
-/// Which side of the body rule a statement fills.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum BodyWord {
-    /// `boss union cyl` — material.
-    Union,
-    /// `bore cut cyl` — the body rule's subtraction (§6.9). Relations are folded into
-    /// the stock body after declarations are built.
-    Cut,
-    /// `tip common cyl` — the body rule's intersection: the body keeps what it has in common
-    /// with every solid stated so.  Through 0.84 the word was `bound` (#270).
-    Common,
-}
-
-impl BodyWord {
-    /// The word as written, or `None` for one that is not a body word.
-    pub fn parse(w: &str) -> Option<BodyWord> {
-        [BodyWord::Union, BodyWord::Cut, BodyWord::Common].into_iter().find(|b| b.as_str() == w)
-    }
-
-    pub fn as_str(self) -> &'static str {
-        match self {
-            BodyWord::Union => "union",
-            BodyWord::Cut => "cut",
-            BodyWord::Common => "common",
-        }
-    }
 }
 
 /// A body operation (§6.9): `cut` subtracts, `union` unites, `common` intersects.

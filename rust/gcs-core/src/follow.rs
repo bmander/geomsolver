@@ -37,7 +37,7 @@ use std::rc::Rc;
 
 use crate::model::{Running, Sketch};
 use crate::units::Units;
-use crate::syntax::num;
+use crate::vocab::num;
 use crate::system::System;
 
 thread_local! {
@@ -259,7 +259,7 @@ impl Scrub {
             return Err(format!("there is no point {p}"));
         }
         let mut sketch = sk.clone();
-        let eye = eye.map(|(az, el)| crate::overview::eye(az, el));
+        let eye = eye.map(|(az, el)| crate::space::eye(az, el));
         let track: Vec<(f64, [f64; 2])> = f.stations.iter().map(|s| {
             sketch.set_x(&s.x);
             (s.at, seen(&sketch, p, eye))
@@ -551,9 +551,9 @@ fn at_text(over: &Running, v: f64, units: Units) -> String {
 }
 
 /// A value of the parameter `over` as a reader reads it, to the figures any reading is
-/// (`io::READING_SIG`) and in its own units: `129.838deg`.
+/// (`expr::READING_SIG`) and in its own units: `129.838deg`.
 pub fn reading(over: &Running, v: f64, units: Units) -> String {
-    let read = crate::io::reading(crate::constraints::SpecKind::Scalar, v).parse().unwrap_or(v);
+    let read = crate::expr::reading(crate::constraints::SpecKind::Scalar, v).parse().unwrap_or(v);
     over.dim.number_text(read, units)
 }
 

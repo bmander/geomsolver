@@ -295,7 +295,7 @@ fn a_copied_rope_hangs_again() {
         .map(EntRef::point)
         .chain((0..e.sketch.curves.len()).map(|i| EntRef::new(EntKind::Curve, i)))
         .collect();
-    let mut copied = gcs_core::io::copy(&e.sketch, &all);
+    let mut copied = gcs_core::graft::copy(&e.sketch, &all);
     let r = solve(&mut copied, SolveOpts::default());
     assert!(r.success, "{}", r.message);
     for (p, q) in samples(&copied, 0).into_iter().zip(samples(&e.sketch, 0)) {

@@ -142,7 +142,7 @@ pub struct SolidBearing {
     pub solid: u32,
     pub path: String,
     pub stmt: u32,
-    pub span: crate::syntax::Span,
+    pub span: crate::vocab::Span,
 }
 
 /// The interval a claim is swept over: a free variable of the drawing, or a named motion's roll
@@ -227,7 +227,7 @@ impl Extent {
     /// An extent nobody wrote: a caller building a solid in Rust, and what a gesture would
     /// splice.  The text is the number, printed as the source printer prints one.
     pub fn at(value: f64) -> Extent {
-        Extent { text: crate::syntax::num(value), value }
+        Extent { text: crate::vocab::num(value), value }
     }
 }
 
@@ -357,8 +357,8 @@ impl SolidDef {
 impl SolidDef {
     /// The set of a body's that `word` fills — `union`'s, `cut`'s or `common`'s — or `None` for a
     /// solid that is not a body.
-    pub fn body_set(&mut self, word: crate::syntax::BodyWord) -> Option<&mut Vec<u32>> {
-        use crate::syntax::BodyWord;
+    pub fn body_set(&mut self, word: crate::vocab::BodyWord) -> Option<&mut Vec<u32>> {
+        use crate::vocab::BodyWord;
         match (self, word) {
             (SolidDef::Body { on, .. }, BodyWord::Union) => Some(on),
             (SolidDef::Body { through, .. }, BodyWord::Cut) => Some(through),

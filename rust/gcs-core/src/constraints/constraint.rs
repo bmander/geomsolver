@@ -316,18 +316,18 @@ impl Constraint {
     }
 
     /// Two points as images of one point in space — the planes read off their memberships,
-    /// through the same seam the document readers use (`io::seed_omitted`), so a Rust caller
-    /// and a document are refused by one rule.
+    /// through the same seam the document readers use (`constraints::seed_omitted`), so a Rust
+    /// caller and a document are refused by one rule.
     pub fn project(sk: &Sketch, a: EntRef, b: EntRef) -> Result<Constraint, String> {
         let mut args = vec![Arg::Ent(a), Arg::Ent(b), Arg::Num(0.0), Arg::Num(0.0)];
-        crate::io::seed_omitted(sk, CKind::Project, &mut args, |i| i >= 2)?;
+        seed_omitted(sk, CKind::Project, &mut args, |i| i >= 2)?;
         Ok(Constraint::new(CKind::Project, args))
     }
 
     /// A relation in space over drawn entities: the number where the kind states one, and what
     /// the core reads off the geometry (a skew distance's side) filled in and checked through
-    /// `io::seed_omitted`, the one rule a document and a Rust caller are refused by.  The hidden
-    /// points are minted when the constraint is added.
+    /// `constraints::seed_omitted`, the one rule a document and a Rust caller are refused by.  The
+    /// hidden points are minted when the constraint is added.
     pub fn in_space(sk: &Sketch, kind: CKind, ents: &[EntRef], value: Option<f64>)
         -> Result<Constraint, String>
     {
@@ -341,7 +341,7 @@ impl Constraint {
                 _ => kind.default_arg(i),
             });
         }
-        crate::io::seed_omitted(sk, kind, &mut args, |i| kind.infers_arg(i))?;
+        seed_omitted(sk, kind, &mut args, |i| kind.infers_arg(i))?;
         Ok(Constraint::new(kind, args))
     }
 

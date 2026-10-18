@@ -10,7 +10,7 @@ pub enum CKind {
     DragTarget,
     /// **A point in space seen where the pointer is**: the soft target of a drag in the workspace,
     /// two rows over the point's three numbers, read along the eye's picture plane (`az`, `el`,
-    /// radians, as `overview::eye` reads them).  Internal and `soft`, as `DragTarget` is.
+    /// radians, as `space::eye` reads them).  Internal and `soft`, as `DragTarget` is.
     DragSeen,
     Horizontal,
     Vertical,
@@ -189,9 +189,9 @@ pub enum CKind {
     /// coordinates along the fold line the two planes share agree (`plane::fold_line`).  One
     /// row over both points, with the fold line as constants: both planes fixed (where either
     /// moves in the solve it is `ProjectSolved`).  The plane slots are **inferred** from the
-    /// points' memberships at `io::seed_omitted`'s seam — the source and the bindings write two
-    /// points — and refused when a point is on no plane, both are on one, or the planes are
-    /// parallel.  Not commutative: `same_args` swaps only the first two entity slots, so
+    /// points' memberships at `constraints::seed_omitted`'s seam — the source and the bindings
+    /// write two points — and refused when a point is on no plane, both are on one, or the planes
+    /// are parallel.  Not commutative: `same_args` swaps only the first two entity slots, so
     /// `b project a` reads as a second relation, which the diagnosis reports as implied.
     Project,
     /// A hidden point in space held at the lift of the point it stands for, drawn in a plane:

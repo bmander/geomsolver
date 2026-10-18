@@ -3,6 +3,7 @@
 use gcs_core::callout::{drag, grab, layout, pick, reset, Callout, CalloutKind, Seg};
 use gcs_core::constraints::{Arg, CKind, Constraint, ALL_KINDS};
 use gcs_core::examples;
+use gcs_core::graft;
 use gcs_core::io;
 use gcs_core::model::{EntRef, Sketch};
 use gcs_core::solve::{solve, SolveOpts};
@@ -605,7 +606,7 @@ fn a_placement_follows_its_dimension_through_a_deletion() {
     let mut sk = all_dimensions();
     let radius = sk.constraints.iter().find(|c| c.kind == CKind::Radius).unwrap().id;
     sk.placements.insert(radius, (0.9, 44.0));
-    let sk2 = io::without(&sk, &[EntRef::point(4)], &[]); // the free point, and its offset
+    let sk2 = graft::without(&sk, &[EntRef::point(4)], &[]); // the free point, and its offset
     let kept = sk2.constraints.iter().find(|c| c.kind == CKind::Radius).unwrap().id;
     assert_eq!(sk2.placements.get(&kept), Some(&(0.9, 44.0)));
     assert_eq!(sk2.placements.len(), 1);

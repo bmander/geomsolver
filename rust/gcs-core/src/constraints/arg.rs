@@ -81,14 +81,14 @@ impl Arg {
 /// interval's high end, in the number's own units.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Bound {
-    pub cmp: crate::syntax::Cmp,
+    pub cmp: crate::vocab::Cmp,
     pub hi: Option<f64>,
 }
 
 impl Bound {
     /// Whether a reading `m` keeps a bound whose low end is `lo`, within `tol`.
     pub fn holds(&self, lo: f64, m: f64, tol: f64) -> bool {
-        use crate::syntax::Cmp;
+        use crate::vocab::Cmp;
         match self.cmp {
             Cmp::Ge => m >= lo - tol,
             Cmp::Le => m <= lo + tol,
@@ -103,7 +103,7 @@ impl Bound {
     /// an aim past its limit is halfway from the edge to it, and the last, since one farther
     /// would be the same.  An interval aims at its middle alone.
     pub fn aims(&self, lo: f64, m: f64, range: (f64, f64)) -> Vec<f64> {
-        if self.cmp == crate::syntax::Cmp::In {
+        if self.cmp == crate::vocab::Cmp::In {
             return vec![(lo + self.hi.unwrap_or(lo)) / 2.0];
         }
         let first = 2.0 * lo - m;

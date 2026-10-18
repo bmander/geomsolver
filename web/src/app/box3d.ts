@@ -211,7 +211,7 @@ export class Box3D {
 
   /** **The camera three.js draws with is the camera the picking already assumes.**
    *
-   *  `overview::eye` gives the same right/up basis the core flattens with, and `camera.ts` maps
+   *  `space::eye` gives the same right/up basis the core flattens with, and `camera.ts` maps
    *  that plane to the screen.  Setting three's orthographic camera from the same two vectors and
    *  the same scale is what keeps a click landing on the thing under the cursor. */
   private aim(v: SketchView): void {

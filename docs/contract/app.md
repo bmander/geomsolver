@@ -24,8 +24,8 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   drawing** (that would invalidate a half-finished tool's proxies).  `retext` re-parses (same
   ids); `adopt` extends the map onto new statements.  `reconcile` reads only the *append* (past
   the map's high-water mark); it cannot follow a **renumbering**, so deletion is `edit::remove`
-  and not `io::without`.
-- Deletion, copy and paste are one rebuild walk (`io::graft`): every surviving entity is
+  and not `graft::without`.
+- Deletion, copy and paste are one rebuild walk (`graft`): every surviving entity is
   renumbered into the destination and every reference follows, and a constraint comes along
   exactly when all its entities did.  `without` keeps what is not deleted, `copy` keeps the
   selection (so a clipboard is an ordinary sketch document), `paste` grafts one sketch onto
@@ -138,7 +138,7 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
 - **The workspace** (`overview/workspace.rs`, `app/view.ts`) is the only model canvas: one scene
   in space, every sketch on its own plane, solids and panes drawn beneath by three.js
   (`app/box3d.ts`).  A view's page reaches the eye's picture plane by **one affine map**
-  (`workspace::Projection`: `Basis::lift`, the orthographic `overview::eye`), so
+  (`workspace::Projection`: `Basis::lift`, the orthographic `space::eye`), so
   `camera.ts` composes it with the eye's similarity (`Camera::through` → `ViewCam`) and no 3D
   arithmetic exists above the ABI.  **What is under the pointer is asked where the eye sees it**
   (`workspace::pick`, `nearest_point`, `overlapping`, `callout::pick_seen`): two views' coordinates
@@ -280,7 +280,7 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   in a list, entity index, type-and-arguments selector or minted id — each fails silently or
   collides.  A placement goes with its dimension (`Sketch::remove`; in the source, the splice).
   `io::from_json` *reads* the old position-keyed `placements` table and never writes one.
-  The stated number comes from `io::dimension_text`; a bare number is read through `io::reading`
+  The stated number comes from `io::dimension_text`; a bare number is read through `expr::reading`
   (`READING_SIG`, six digits) for the callout, `arg_text` and `describe`, since `syntax::num` is
   the *source* printer.  A literal naming its unit (`60deg`) is drawn as written with no second
   sign (`expr::names_unit`), but one past six significant digits reads at six in printed text

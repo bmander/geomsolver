@@ -3,7 +3,7 @@
 //! it may be (§9.6) — kept through resolution for printing and source edits, and assembled into a
 //! kind's arguments in spec order (`Written::assemble`).
 
-use super::{num, Arg, Name, Ref, Seg, Span};
+use super::{num, Arg, Cmp, Name, Ref, Seg, Span};
 use crate::constraints::{CKind, Fixity};
 
 /// One written operator argument: a selector, entity, owned slot, or dimension.
@@ -29,42 +29,6 @@ pub enum OpArg {
     /// an offset no source writes: a set's use (`p distance(<= d, side: outside) S`, §6.21) puts it
     /// on a cone's number, so the bound is on the distance from its surface (`model::RegionTerm`).
     Bound { cmp: Cmp, span: Span, hi: Option<(String, Span)>, grow: Option<(String, Span)> },
-}
-
-/// Which way a bound runs (§9.6).  Closed, every one: a solution may stand on its edge.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Cmp {
-    /// `>= d`
-    Ge,
-    /// `<= d`
-    Le,
-    /// `in: (a, b)`
-    In,
-}
-
-impl Cmp {
-    /// As written, and as a document stores it.
-    pub fn text(self) -> &'static str {
-        match self {
-            Cmp::Ge => ">=",
-            Cmp::Le => "<=",
-            Cmp::In => "in",
-        }
-    }
-
-    pub fn of(text: &str) -> Option<Cmp> {
-        [Cmp::Ge, Cmp::Le, Cmp::In].into_iter().find(|c| c.text() == text)
-    }
-
-    /// The other way: a bound on a measure, read on its negative.  `None` for an interval, which
-    /// is either side of it.
-    pub fn turned(self) -> Option<Cmp> {
-        match self {
-            Cmp::Ge => Some(Cmp::Le),
-            Cmp::Le => Some(Cmp::Ge),
-            Cmp::In => None,
-        }
-    }
 }
 
 /// An operator spelling retained through resolution, with operands and arguments

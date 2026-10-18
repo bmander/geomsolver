@@ -25,6 +25,7 @@ use crate::fmath::Det;
 use crate::linalg::{min_norm_solve, Mat};
 use crate::model::{grow, Box2, EntKind, EntRef, Sketch};
 use crate::plane::{dot, Basis};
+use crate::space::eye;
 use std::collections::BTreeMap;
 
 pub mod region;
@@ -923,11 +924,3 @@ pub(crate) fn axis_segment(sk: &Sketch, i: usize, reach: f64) -> Option<([f64; 3
     Some((add(p, scale(d, -reach)), add(p, scale(d, reach)), d))
 }
 
-pub(crate) fn eye(az: f64, el: f64) -> ([f64; 3], [f64; 3]) {
-    let (sa, ca) = az.dsin_cos();
-    let (se, ce) = el.dsin_cos();
-    // the viewer stands at (ca·ce, sa·ce, se) and looks back at the origin
-    let right = [-sa, ca, 0.0];
-    let up = [-ca * se, -sa * se, ce];
-    (right, up)
-}

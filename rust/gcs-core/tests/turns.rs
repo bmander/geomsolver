@@ -6,7 +6,8 @@
 use crate::common::fd_jacobian;
 use gcs_core::constraints::{Arg, CKind, Constraint};
 use gcs_core::diagnose::{diagnose, DiagnoseOptions};
-use gcs_core::io::{self, Part};
+use gcs_core::graft::{self, Part};
+use gcs_core::io;
 use gcs_core::model::{EntKind, EntRef, Sketch, Turn};
 use gcs_core::solve::{solve, SolveOpts};
 use gcs_core::system::System;
@@ -133,11 +134,11 @@ fn turns_are_saved_and_renumbered() {
     assert_eq!(back.turns, sk.turns);
     assert_eq!(System::new(&back).n_free, 6);
     // deleting what a copy is not worked out from keeps the turn, renumbered
-    let kept = io::without(&sk, &[EntRef::point(q)], &[]);
+    let kept = graft::without(&sk, &[EntRef::point(q)], &[]);
     assert_eq!(kept.turns.len(), 2);
     assert_eq!(kept.turns[0].copy, EntRef::point(p1 - 0));
     // deleting the representative leaves its copies standing free where they are
-    let freed = io::without(&sk, &[EntRef::point(p)], &[]);
+    let freed = graft::without(&sk, &[EntRef::point(p)], &[]);
     assert!(freed.turns.is_empty());
     assert_eq!(pt(&freed, p2 - 1), pt(&sk, p2));
 }

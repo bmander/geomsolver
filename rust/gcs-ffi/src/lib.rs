@@ -50,6 +50,7 @@ use gcs_core::decompose::{self, Plan, PlanDrag, PlanSolver};
 use gcs_core::diagnose::{self, DiagnoseOptions};
 use gcs_core::expr;
 use gcs_core::homotopy::{self, EnumerateOptions};
+use gcs_core::graft;
 use gcs_core::io;
 use gcs_core::json::{self, Json};
 use gcs_core::model::{self, EntKind, EntRef, Param, Sketch};

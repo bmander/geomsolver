@@ -247,7 +247,7 @@ fn a_minted_name_is_free() {
 }
 
 /// Deleting takes out the declaration and every statement that named it — the same rule
-/// `io::without` follows on a sketch, said about text.
+/// `graft::without` follows on a sketch, said about text.
 #[test]
 fn deleting_a_point_takes_what_named_it() {
     let prog = prog_of(DOC);

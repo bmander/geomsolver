@@ -1,4 +1,4 @@
-use gcs_core::{io,model::{EntKind,EntRef},solid::RevolvedSurface,syntax};
+use gcs_core::{graft,model::{EntKind,EntRef},solid::RevolvedSurface,syntax};
 use crate::common::parsed::{build, determined as solved};
 
 const MODEL: &str = "\
@@ -85,21 +85,22 @@ fn surface_references_survive_flat_printing_copy_paste_and_dependency_deletion()
     let again = solved(&text);
     assert_eq!(again.sketch.surfaces.len(),1);
     let surface = e.map.ent_named("wall").unwrap();
-    let clip = io::copy(&e.sketch,&[surface]);
+    let clip = graft::copy(&e.sketch,&[surface]);
     assert_eq!(clip.surfaces.len(),1);
     assert_eq!(clip.solids.len(),1);
     let original = RevolvedSurface::named(&clip,0).unwrap().at(0.3,0.4).unwrap().position;
     let mut dst = e.sketch.clone();
-    io::paste(&mut dst,&clip,0.,0.);
+    graft::paste(&mut dst,&clip,0.,0.);
     assert_eq!(dst.surfaces.len(),2);
     assert_eq!(dst.surfaces[1].solid,1);
     let pasted = RevolvedSurface::named(&dst,1).unwrap().at(0.3,0.4).unwrap().position;
     for i in 0..3 { assert!((original[i]-pasted[i]).abs() < 1e-10); }
-    assert!(io::without(&e.sketch,&[e.map.ent_named("meridian").unwrap()],&[]).surfaces.is_empty());
-    let without = io::without(&e.sketch,&[surface],&[]);
+    assert!(graft::without(&e.sketch,&[e.map.ent_named("meridian").unwrap()],&[])
+        .surfaces.is_empty());
+    let without = graft::without(&e.sketch,&[surface],&[]);
     assert!(without.surfaces.is_empty());
     assert_eq!(without.solids.len(),1);
-    assert!(io::copy(&e.sketch,&[EntRef::point(0)]).surfaces.is_empty());
+    assert!(graft::copy(&e.sketch,&[EntRef::point(0)]).surfaces.is_empty());
 }
 
 #[test]
@@ -145,10 +146,10 @@ fn angular_surface_spans_keep_source_parameters_and_finite_incidence() {
     let text = syntax::render_flat(&mut p).unwrap().to_string();
     let again = solved(&text);
     assert_eq!(RevolvedSurface::named(&again.sketch,0).unwrap().domain(),s.domain());
-    let clip = io::copy(&e.sketch,&[e.map.ent_named("wall").unwrap()]);
+    let clip = graft::copy(&e.sketch,&[e.map.ent_named("wall").unwrap()]);
     assert_eq!(RevolvedSurface::named(&clip,0).unwrap().domain(),s.domain());
     let mut pasted = e.sketch.clone();
-    io::paste(&mut pasted,&clip,0.,0.);
+    graft::paste(&mut pasted,&clip,0.,0.);
     assert_eq!(RevolvedSurface::named(&pasted,1).unwrap().domain(),s.domain());
 }
 

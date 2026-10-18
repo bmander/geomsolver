@@ -4,7 +4,7 @@ use gcs_core::constraints::Constraint;
 use gcs_core::decompose::{decompose, PlanDrag, PlanSolver};
 use gcs_core::model::{EntRef, Sketch};
 use gcs_core::{examples, fixtures};
-use gcs_core::io;
+use gcs_core::graft;
 use gcs_core::newton::Method;
 
 #[test]
@@ -255,7 +255,7 @@ fn deleting_a_point_carries_the_recorded_branches_with_the_renumbering() {
     assert!(!sk.branches.is_empty(), "the solve recorded no root choice");
     let before: Vec<(f64, f64)> = (0..sk.points.len()).map(|i| sk.point_xy(i)).collect();
 
-    let cut = io::without(&sk, &[EntRef::point(0)], &[]);
+    let cut = graft::without(&sk, &[EntRef::point(0)], &[]);
     assert_eq!(cut.points.len(), 4);
     // every key now names points that exist, shifted down by the one that went
     for k in cut.branches.keys() {

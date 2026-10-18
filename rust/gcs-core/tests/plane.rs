@@ -4,7 +4,7 @@ use gcs_core::constraints::{CKind, Constraint};
 use gcs_core::model::{EntRef, Sketch};
 use gcs_core::plane::{fold_line, Basis};
 use gcs_core::solve::{solve, SolveOpts};
-use gcs_core::{diagnose, io};
+use gcs_core::{diagnose, graft, io};
 use crate::common::near;
 
 fn top() -> Basis {
@@ -202,20 +202,20 @@ fn round_trips_through_json_and_the_graft() {
     assert_eq!(back.user_constraints()[0].entities().len(), 4);
     assert_eq!(io::dumps(&back, Some(1)), text);
     // a copy of everything keeps the projection; a copy of one view keeps its memberships
-    let all = io::copy(&sk, &sk.primitives());
+    let all = graft::copy(&sk, &sk.primitives());
     assert_eq!(all.user_constraints().len(), 1);
-    let one = io::copy(&sk, &[EntRef::frame(top), EntRef::point(pt)]);
+    let one = graft::copy(&sk, &[EntRef::frame(top), EntRef::point(pt)]);
     assert_eq!(one.frames.len(), 1);
     assert_eq!(one.plane_of(one.points.len() - 1), Some(0));
     assert!(one.user_constraints().is_empty(), "the other plane did not come");
     // deleting a plane drops the projection and clears the memberships that named it
-    let less = io::without(&sk, &[EntRef::frame(top)], &[]);
+    let less = graft::without(&sk, &[EntRef::frame(top)], &[]);
     assert_eq!(less.frames.len(), 2);
     assert!(less.user_constraints().is_empty());
     assert!(less.points.iter().all(|p| p.plane.map_or(true, |q| (q as usize) < 2)));
     assert_eq!(less.points.iter().filter(|p| p.plane.is_none()).count(), 1);
     // deleting a point drops the projection and keeps the planes
-    let less = io::without(&sk, &[EntRef::point(pf)], &[]);
+    let less = graft::without(&sk, &[EntRef::point(pf)], &[]);
     assert_eq!(less.frames.len(), 3);
     assert!(less.user_constraints().is_empty());
     let _ = id;
@@ -243,7 +243,7 @@ fn the_drag_part_reaches_the_planes() {
     sk.fix_point(pf, false);
     let c = Constraint::project(&sk, EntRef::point(pf), EntRef::point(pt)).unwrap();
     sk.add(c);
-    let part = io::Part::around(&sk, EntRef::point(pt));
+    let part = graft::Part::around(&sk, EntRef::point(pt));
     assert_eq!(part.sketch.frames.len(), 2, "both planes come with the projection");
     assert_eq!(part.sketch.user_constraints().len(), 1);
     let _ = (front, top);

@@ -149,9 +149,9 @@ pub(super) enum Reader {
 /// What a settled relation means once its operands' planes are read — and, a set's, once what
 /// the plane's kind says beyond the one in space is: `Ok(None)` is the kind as written, in one
 /// plane; `Ok(Some((k, args, left_out)))` the relation in space it is otherwise,
-/// its arguments in `k`'s spec order with the inferred slots left for `io::seed_omitted`; `Err`
-/// a word that has no meaning in space, or a selector that says nothing there, as (E040 or
-/// E062, the message).
+/// its arguments in `k`'s spec order with the inferred slots left for
+/// `constraints::seed_omitted`; `Err` a word that has no meaning in space, or a selector that says
+/// nothing there, as (E040 or E062, the message).
 pub(super) fn in_space(
     sk: &Sketch,
     kind: CKind,

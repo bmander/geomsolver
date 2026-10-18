@@ -5,7 +5,7 @@
 //! of the number re-times it, and a measured one is refused.  The motion that read its numbers
 //! after the solve, `motion(about: l, ratio: length(a) / length(b), phase: …)`, is retired, and
 //! refused naming the words that replace it.
-use gcs_core::{io,model::MotionDef,motion,program,
+use gcs_core::{graft,model::MotionDef,motion,program,
     solid::{ApproximationPolicy::Report,WorldPoint},solve,syntax};
 
 /// A stock beside an upright axis, and three lines: `big` `big_len` (30) long, `small`
@@ -200,7 +200,7 @@ fn a_placed_solids_motion_is_copied_with_it_and_goes_with_its_axis() {
     let e = read(&format!("{DRAWING}turn := frame\n\
         std.Turn(turn, about: ax, ratio: big_len / small_len)\n\
         moved := stock at(under: turn) 30deg\n"));
-    let copied = io::copy(&e.sketch,&[e.map.ent_named("moved").unwrap()]);
+    let copied = graft::copy(&e.sketch,&[e.map.ent_named("moved").unwrap()]);
     assert_eq!(copied.motions.len(),1);
     assert_eq!(copied.motions[0].rotation(&copied).unwrap().0,3.);
     let i = copied.solids.iter().position(|s| s.name == "moved").unwrap();
@@ -208,7 +208,7 @@ fn a_placed_solids_motion_is_copied_with_it_and_goes_with_its_axis() {
     assert!((copied.evaluated_solid(i,Report).unwrap().volume()-original.volume()).abs() < 1e-9);
     for name in ["ax","turn"] {
         let what = e.map.ent_named(name).unwrap();
-        let gone = io::without(&e.sketch,&[what],&[]);
+        let gone = graft::without(&e.sketch,&[what],&[]);
         assert!(gone.motions.is_empty() && !gone.solids.iter().any(|s| s.name == "moved"),"{name}");
         let edit = gcs_core::edit::remove(&e,&e.program,&e.sketch,&[what],&[]);
         assert!(edit.refused.is_none(),"{name}: {:?}",edit.refused);

@@ -3,7 +3,7 @@
 use crate::fmath::Det;
 use super::{SpatialField,MaterialField,SweptField,ExtrudedField,PlanarField,I,V};
 use crate::model::{EntKind,Sketch,SolidDef};
-use crate::{motion::Family,plane::Basis,syntax::BodyWord};
+use crate::{motion::Family,plane::Basis,vocab::BodyWord};
 use crate::solid::{surface::Edge,RevolvedRegion};
 use std::collections::BTreeMap;
 use std::f64::consts::TAU;

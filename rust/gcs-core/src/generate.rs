@@ -543,12 +543,14 @@ fn orders(v: &View, outer: &[f64], t: f64, s0: f64, need: usize, ts: &mut tape::
 const SEEN_MAX: usize = 4096;
 
 thread_local! {
-    static SEEN: std::cell::RefCell<std::collections::BTreeMap<(usize, usize), (f64, f64)>> =
-        std::cell::RefCell::new(std::collections::BTreeMap::new());
+    static SEEN: std::cell::RefCell<std::collections::BTreeMap<(usize, usize), (f64, f64)>> = {
+        crate::system::forget_at_compile(forget);
+        std::cell::RefCell::new(std::collections::BTreeMap::new())
+    };
     static SCRATCH: std::cell::RefCell<tape::Scratch> = std::cell::RefCell::new(tape::Scratch::new());
 }
 
-/// Forget every remembered root — `System::new` calls it, as it calls `locus::forget`.
+/// Forget every remembered root — every compile calls it, as it calls `locus::forget`.
 pub fn forget() {
     SEEN.with(|s| s.borrow_mut().clear());
 }

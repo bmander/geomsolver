@@ -138,7 +138,7 @@ impl Constraint {
                 vec![self.args[1].num(), self.args[2].num(), self.args[3].num()]
             }
             CKind::DragSeen => {
-                let (right, up) = crate::overview::eye(self.args[4].num(), self.args[5].num());
+                let (right, up) = crate::space::eye(self.args[4].num(), self.args[5].num());
                 let out = crate::space::cross(right, up);
                 [&[self.args[1].num(), self.args[2].num(), self.args[3].num()][..], &right, &up,
                  &out, &[self.args[6].num()]]
@@ -540,7 +540,7 @@ impl Constraint {
                     .to_string());
             }
         }
-        let what = || crate::model::article(&crate::syntax::snake(self.kind.name()));
+        let what = || crate::model::article(&crate::vocab::snake(self.kind.name()));
         if self.kind.family_kernel().is_some()
             || self.kind.built()
             || !crate::taylor::has_form(self.kernel_id())

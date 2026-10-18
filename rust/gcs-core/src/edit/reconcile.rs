@@ -19,7 +19,7 @@ use super::*;
 ///
 /// It reads *only* the append: entities and constraints are appended to their vectors, so anything
 /// past what the map accounts for is new, and anything the map names that is gone was removed.  A
-/// mutation that renumbers (a rebuild — `io::without`, `graft`) is **not** something this can
+/// mutation that renumbers (a rebuild — `graft::without`, `graft`) is **not** something this can
 /// follow, and the front end does not do one: deletion and paste are program edits of their own.
 ///
 /// **It applies itself.**  The drawing did not change here — it had already changed, and the

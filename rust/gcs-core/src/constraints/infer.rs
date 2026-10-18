@@ -165,7 +165,7 @@ pub fn on_the_arc(kind: CKind, args: &[Arg], name: &dyn Fn(EntRef) -> String) ->
             Err(format!(
                 "`t == {}` is off {}: a fraction of an arc's turn runs from 0 at its start to 1 \
                  at its end",
-                crate::syntax::num(*value),
+                crate::vocab::num(*value),
                 name(args[1].ent())
             ))
         }
@@ -240,7 +240,7 @@ pub fn infer_entity(
             let w = ordinate_word(kind, args);
             let toward = Toward::of(w).ok_or_else(|| {
                 format!("an ordinate names its direction: an axis, a line, or one of {}",
-                    crate::syntax::one_of(&ALONG_WORDS))
+                    crate::vocab::one_of(&ALONG_WORDS))
             })?;
             let (p, q) = (args[0].ent(), args[1].ent());
             match (toward.in_view(), shared_view(sk, p.i(), q.i())) {
@@ -477,7 +477,7 @@ fn validate_rate(sk: &Sketch, kind: CKind, args: &[Arg], name: &dyn Fn(EntRef) -
         let slots: &[&str] = if surface { &["u", "s"] } else { &[src.slot()] };
         if !slots.contains(&over) {
             return Err(format!("the contact holding {} on {} runs over {}, not `{over}`",
-                               name(at), name(on), crate::syntax::one_of(slots)));
+                               name(at), name(on), crate::vocab::one_of(slots)));
         }
     }
     let against = match word {
@@ -872,4 +872,48 @@ fn meshing_place(sk: &Sketch, m: usize, at: [f64; 3], phase: f64) -> Option<[f64
     let x = seed(&mesh, rolls, at, phase)?.values();
     SEEDS.with(|s| s.borrow_mut().put(key, x));
     Some(x)
+}
+
+/// Fill in what the caller left out, from the geometry — the hidden unknowns, and the entity
+/// slots the core infers (a projection's planes) — then whatever the kind refuses once its
+/// arguments are all in.  The one place the rule lives, shared by the elaborator, the document
+/// reader, the bindings' constraint records and the Rust constructors, so a constraint is
+/// refused by one rule wherever it comes from.  `Err` is the reason, in the caller's words.
+pub fn seed_omitted(
+    sk: &Sketch,
+    kind: CKind,
+    args: &mut [Arg],
+    left_out: impl Fn(usize) -> bool,
+) -> Result<(), String> {
+    seed_omitted_named(sk, kind, args, left_out, &crate::model::entity_name)
+}
+
+/// The same, a refusal naming entities by `name`: the elaborator's source names, where a reader
+/// with no source has only the minted label (`entity_name`).
+pub fn seed_omitted_named(
+    sk: &Sketch,
+    kind: CKind,
+    args: &mut [Arg],
+    left_out: impl Fn(usize) -> bool,
+    name: &dyn Fn(EntRef) -> String,
+) -> Result<(), String> {
+    for (i, _) in kind.param_slots() {
+        if left_out(i) {
+            args[i] = Arg::Num(crate::constraints::seed_param(sk, kind, args, i));
+        }
+    }
+    for (i, (_, k)) in kind.spec().iter().enumerate() {
+        if k.is_entity() && kind.infers_arg(i) && left_out(i) {
+            args[i] = Arg::Ent(crate::constraints::infer_entity(sk, kind, args, i, name)?);
+        }
+    }
+    // and a number the geometry decides — a skew distance's side — once the entities are in
+    for i in 0..args.len() {
+        if left_out(i) {
+            if let Some(a) = crate::constraints::infer_value(sk, kind, args, i) {
+                args[i] = a;
+            }
+        }
+    }
+    crate::constraints::validate(sk, kind, args, name)
 }

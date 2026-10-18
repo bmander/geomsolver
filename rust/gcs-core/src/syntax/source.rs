@@ -1,6 +1,6 @@
 //! Source text, byte spans, statement identities, and program traversal.
 
-use super::{Chained, Component, InBlock, Stmt, StmtKind, WordDef};
+use super::{Chained, Component, InBlock, Span, Stmt, StmtKind, WordDef};
 use crate::constraints::Fixity;
 
 /// How long a program may be.  A document is untrusted input and `wasm32-unknown-unknown` aborts
@@ -9,44 +9,6 @@ pub const MAX_TEXT: usize = 1 << 20;
 
 /// How many statements one may hold.
 pub const MAX_STMTS: usize = 100_000;
-
-/// A half-open byte range into the program text.
-///
-/// Bytes, not characters: the front end slices the same `&str` the core parsed, and a UTF-8
-/// boundary is the only thing the two ever have to agree about.  Line and column are *not* stored
-/// — `line_col` computes them on demand, so there is nothing to keep in step.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Span {
-    pub lo: u32,
-    pub hi: u32,
-}
-
-impl Span {
-    pub fn new(lo: usize, hi: usize) -> Span {
-        Span { lo: lo as u32, hi: hi as u32 }
-    }
-
-    /// The empty span at `at`: where something not written would go.
-    pub fn at(at: usize) -> Span {
-        Span::new(at, at)
-    }
-
-    pub fn slice(self, text: &str) -> &str {
-        text.get(self.lo as usize..self.hi as usize).unwrap_or("")
-    }
-
-    pub fn contains(self, off: u32) -> bool {
-        self.lo <= off && off < self.hi
-    }
-
-    pub fn len(self) -> u32 {
-        self.hi.saturating_sub(self.lo)
-    }
-
-    pub fn is_empty(self) -> bool {
-        self.len() == 0
-    }
-}
 
 /// 1-based line and column at a byte offset.  Columns count characters, not bytes, because that
 /// is what an editor's caret does.

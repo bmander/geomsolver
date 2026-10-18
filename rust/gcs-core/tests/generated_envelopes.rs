@@ -1,4 +1,4 @@
-use gcs_core::{envelope::{Error,GeneratedEnvelope,IntersectionOptions},io,
+use gcs_core::{envelope::{Error,GeneratedEnvelope,IntersectionOptions},graft,
     model::EntKind,syntax};
 use crate::common::parsed::{build, solved};
 
@@ -107,22 +107,22 @@ fn envelope_declarations_round_trip_and_follow_dependency_copy_delete() {
     let motion = e.sketch.frames[roll.i()].joint.as_ref().unwrap().motion.unwrap() as usize;
     assert_eq!(e.sketch.children(entity),
         [e.map.ent_named("wall").unwrap(),gcs_core::model::EntRef::new(EntKind::Motion,motion)]);
-    let clip = io::copy(&e.sketch,&[entity]);
+    let clip = graft::copy(&e.sketch,&[entity]);
     assert_eq!(clip.envelopes.len(),1);
     assert_eq!(clip.surfaces.len(),1);
     assert_eq!(clip.motions.len(),1);
     let mut dst = e.sketch.clone();
-    io::paste(&mut dst,&clip,0.,0.);
+    graft::paste(&mut dst,&clip,0.,0.);
     assert_eq!(dst.envelopes.len(),2);
     assert_eq!(dst.envelopes[1].surface,Some(1));
     assert_eq!(dst.envelopes[1].motion,1);
     near(GeneratedEnvelope::named(&dst,1).unwrap().evaluate([0.125,0.,0.1]).unwrap().position,
         GeneratedEnvelope::named(&e.sketch,0).unwrap().evaluate([0.125,0.,0.1]).unwrap().position);
     for name in ["wall","roll","meridian","spin_axis"] {
-        assert!(io::without(&e.sketch,&[e.map.ent_named(name).unwrap()],&[]).envelopes.is_empty(),
-            "{name}");
+        let without = graft::without(&e.sketch,&[e.map.ent_named(name).unwrap()],&[]);
+        assert!(without.envelopes.is_empty(),"{name}");
     }
-    assert!(io::copy(&e.sketch,&[e.map.ent_named("o").unwrap()]).envelopes.is_empty());
+    assert!(graft::copy(&e.sketch,&[e.map.ent_named("o").unwrap()]).envelopes.is_empty());
 }
 
 #[test]

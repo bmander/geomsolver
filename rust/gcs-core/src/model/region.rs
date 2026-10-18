@@ -155,7 +155,7 @@ impl FaceRef {
 
 impl RegionTerm {
     /// The one-sided bound `cmp` on `shape` at `lo`, of no set and no offset.
-    pub fn new(shape: RegionShape, cmp: crate::syntax::Cmp, lo: TermNumber) -> RegionTerm {
+    pub fn new(shape: RegionShape, cmp: crate::vocab::Cmp, lo: TermNumber) -> RegionTerm {
         RegionTerm { shape, cmp, lo, hi: None, grow: None, name: String::new() }
     }
 
@@ -195,7 +195,7 @@ impl RegionTerm {
 #[derive(Clone, Debug, PartialEq)]
 pub struct RegionTerm {
     pub shape: RegionShape,
-    pub cmp: crate::syntax::Cmp,
+    pub cmp: crate::vocab::Cmp,
     pub lo: TermNumber,
     pub hi: Option<f64>,
     pub grow: Option<TermNumber>,

@@ -7,6 +7,7 @@
 
 use gcs_core::diagnose::{diagnose, DiagnoseOptions};
 use gcs_core::examples;
+use gcs_core::graft;
 use gcs_core::io;
 use gcs_core::model::Sketch;
 use gcs_core::program::elaborate;
@@ -237,10 +238,10 @@ fn the_unit_round_trips() {
 #[test]
 fn a_paste_from_no_unit_converts_as_millimetres() {
     let plain = read(&format!("{PAIR}a distance(50.8) b\n")).expect("elaborates");
-    let clip = io::copy(&plain, &plain.primitives());
+    let clip = graft::copy(&plain, &plain.primitives());
     let mut inches =
         read("unit in\nuse std\nin std.front {\nz := point hint((0, 0))\n}\n").expect("elaborates");
-    io::paste(&mut inches, &clip, 0.0, 0.0);
+    graft::paste(&mut inches, &clip, 0.0, 0.0);
     let far = inches.points.iter().skip(1).map(|p| inches.params[p.x as usize].value)
         .fold(0.0, f64::max);
     assert!((far - 60.0 / 25.4).abs() < 1e-9, "60 mm is 2.362 in, got {far}");
@@ -251,11 +252,11 @@ fn a_paste_from_no_unit_converts_as_millimetres() {
 #[test]
 fn a_paste_between_units_converts() {
     let inches = read(&format!("unit in\n{PAIR}a distance(2) b\n")).expect("elaborates");
-    let clip = io::copy(&inches, &inches.primitives());
+    let clip = graft::copy(&inches, &inches.primitives());
     assert_eq!(clip.units.stated(), Some("in"), "a clipboard says what its numbers are in");
 
     let mut mm = read("unit mm\nuse std\nin std.front {\nz := point hint((0, 0))\n}\n").expect("elaborates");
-    io::paste(&mut mm, &clip, 0.0, 0.0);
+    graft::paste(&mut mm, &clip, 0.0, 0.0);
     let far = mm.points.iter().skip(1).map(|p| mm.params[p.x as usize].value).fold(0.0, f64::max);
     assert!((far - 60.0 * 25.4).abs() < 1e-6, "60 in is 1524 mm, got {far}");
     let cs = mm.user_constraints();
@@ -264,7 +265,7 @@ fn a_paste_between_units_converts() {
 
     // and into a document in the same units, nothing is scaled
     let mut same = read("unit in\nuse std\nin std.front {\nz := point hint((0, 0))\n}\n").expect("elaborates");
-    io::paste(&mut same, &clip, 0.0, 0.0);
+    graft::paste(&mut same, &clip, 0.0, 0.0);
     let far = same.points.iter().skip(1).map(|p| same.params[p.x as usize].value).fold(0.0, f64::max);
     assert!((far - 60.0).abs() < 1e-9, "got {far}");
 }
@@ -274,16 +275,16 @@ fn a_paste_between_units_converts() {
 #[test]
 fn a_pasted_formula_converts() {
     let inches = read(&format!("unit in\n{PAIR}a distance(40 / 2) b\n")).expect("elaborates");
-    let clip = io::copy(&inches, &inches.primitives());
+    let clip = graft::copy(&inches, &inches.primitives());
     let mut mm = read("unit mm\nuse std\nin std.front {\nz := point hint((0, 0))\n}\n").expect("elaborates");
-    io::paste(&mut mm, &clip, 0.0, 0.0);
+    graft::paste(&mut mm, &clip, 0.0, 0.0);
     let d = mm.user_constraints().into_iter().find(|c| c.kind == gcs_core::constraints::CKind::Distance);
     assert!((d.expect("came").args[2].num() - 508.0).abs() < 1e-9);
 
     let named = read(&format!("unit in\n{PAIR}a distance(1in + 1in) b\n")).expect("elaborates");
-    let clip = io::copy(&named, &named.primitives());
+    let clip = graft::copy(&named, &named.primitives());
     let mut mm = read("unit mm\nuse std\nin std.front {\nz := point hint((0, 0))\n}\n").expect("elaborates");
-    io::paste(&mut mm, &clip, 0.0, 0.0);
+    graft::paste(&mut mm, &clip, 0.0, 0.0);
     let d = mm.user_constraints().into_iter().find(|c| c.kind == gcs_core::constraints::CKind::Distance);
     assert!((d.expect("came").args[2].num() - 50.8).abs() < 1e-9);
 }
@@ -374,7 +375,7 @@ fn a_paste_converts_the_lengths_that_are_not_arguments() {
                a distance(w) b\n\
                f.origin distance(w / 2) a\n";
     let inches = read(src).expect("elaborates");
-    let clip = io::copy(&inches, &inches.primitives());
+    let clip = graft::copy(&inches, &inches.primitives());
 
     // `f`, the one plane over an axis nothing holds — not a standard plane — where it stands and
     // its first axis
@@ -397,7 +398,7 @@ fn a_paste_converts_the_lengths_that_are_not_arguments() {
     assert!((free(&clip) - 6.0).abs() < 1e-9, "`w` is 6 in, got {}", free(&clip));
 
     let mut mm = read("unit mm\nuse std\nin std.front {\nz := point hint((0, 0))\n}\n").expect("elaborates");
-    let made = io::paste(&mut mm, &clip, 0.0, 0.0);
+    let made = graft::paste(&mut mm, &clip, 0.0, 0.0);
     assert!(!made.is_empty());
 
     assert!((place(&mm) - 4.0 * 25.4).abs() < 1e-6, "the place converts: {}", place(&mm));
@@ -411,11 +412,11 @@ fn a_paste_converts_the_lengths_that_are_not_arguments() {
 fn a_paste_converts_a_placement() {
     let inches =
         read(&format!("unit in\n{PAIR}a distance(2) b at (3, 1)\n")).expect("elaborates");
-    let clip = io::copy(&inches, &inches.primitives());
+    let clip = graft::copy(&inches, &inches.primitives());
     assert_eq!(clip.placements.len(), 1, "the placement came along");
 
     let mut mm = read("unit mm\nuse std\nin std.front {\nz := point hint((0, 0))\n}\n").expect("elaborates");
-    io::paste(&mut mm, &clip, 0.0, 0.0);
+    graft::paste(&mut mm, &clip, 0.0, 0.0);
     let &(t, r) = mm.placements.values().next().expect("a placement");
     assert!((t - 3.0 * 25.4).abs() < 1e-6 && (r - 1.0 * 25.4).abs() < 1e-6, "got {t}, {r}");
 }

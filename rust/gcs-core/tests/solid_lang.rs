@@ -970,9 +970,9 @@ fn through_targets_resolve_inside_components_and_round_trip() {
     assert!(printed.contains("through: body") && printed.contains("tool cut body"));
     assert!((volume(&read(&printed), "body") - volume(&e, "body")).abs() < 1e-6);
     let body = e.map.ent_named("body").unwrap();
-    let copied = gcs_core::io::copy(&e.sketch, &[body]);
+    let copied = gcs_core::graft::copy(&e.sketch, &[body]);
     assert_eq!(copied.solids.len(), e.sketch.solids.len());
-    let deleted = gcs_core::io::without(&e.sketch, &[e.map.ent_named("hole").unwrap()], &[]);
+    let deleted = gcs_core::graft::without(&e.sketch, &[e.map.ent_named("hole").unwrap()], &[]);
     assert_eq!(deleted.solids.iter().map(|s| s.name.as_str()).collect::<Vec<_>>(), ["stock"],
         "losing a cutter must remove dependent bodies, not silently fill their holes");
     let i = copied.solids.iter().position(|s| s.name == "body").unwrap();
@@ -1027,7 +1027,7 @@ fn through_extent_uses_the_cutters_normal_and_target_world_placement() {
     };
     crate::common::move_space(&mut e.sketch, rotate, [0.0; 3]);
     assert!((volume(&e, "body") - want).abs() < 1e-6);
-    let copied = gcs_core::io::copy(&e.sketch, &[gcs_core::model::EntRef::solid(body)]);
+    let copied = gcs_core::graft::copy(&e.sketch, &[gcs_core::model::EntRef::solid(body)]);
     let copied_body = copied.solids.iter().position(|s| s.name == "body")
         .expect("copying a placed body must retain its planes and geometry");
     assert!((copied.evaluated_solid(copied_body, gcs_core::solid::ApproximationPolicy::Report)
@@ -1080,9 +1080,9 @@ fn section_holes_round_trip_copy_delete_and_invalidate() {
     let after = e.sketch.evaluated_solid(i, Report).unwrap();
     assert!(after.volume() < before.volume());
     assert!(!std::rc::Rc::ptr_eq(&before, &after));
-    let copy = gcs_core::io::copy(&e.sketch, &[EntRef::solid(i)]);
+    let copy = gcs_core::graft::copy(&e.sketch, &[EntRef::solid(i)]);
     assert!((copy.evaluated_solid(0, Report).unwrap().volume() - after.volume()).abs() < 1e-8);
-    let deleted = gcs_core::io::without(&e.sketch, &[hole], &[]);
+    let deleted = gcs_core::graft::without(&e.sketch, &[hole], &[]);
     assert!(deleted.faces.is_empty() && deleted.solids.is_empty());
 }
 
