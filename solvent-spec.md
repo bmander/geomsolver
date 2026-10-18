@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.147 — October 2026**
+**Specification, Draft 0.148 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -905,7 +905,9 @@ Faces that do not meet make nothing, so `block.near round(r: 2mm) block` rounds 
 alone, its runs mitred where they cross at the corners. Each is a relation word whose body makes
 solids from sets over the faces (`std.Run`, `std.Fill`, `std.Corner`, `std.CornerFill`,
 `std.Flat`, `std.FlatFill`) and joins them to the body the faces are of (§9.9), so a document may
-define its own the same way. **The stratum**: a term of a body that reads that body's faces reads
+define its own the same way. **[0.148]** Each of those sets is `symmetric` in its faces (§6.21),
+so the word, which reaches an edge as a face of `A` meeting one of `B` and again the other way
+round, states it once, and a corner once for its six orders. **The stratum**: a term of a body that reads that body's faces reads
 the body as its other terms make it — a round reads the faces as the cut it rounds left them,
 never its own or another round's — and acts on the body after them, what it adds and then what
 it takes; a body whose stock reads its own faces is refused where it is evaluated. In a region's
@@ -1854,6 +1856,22 @@ Name(FORMALS) := { p | … }`, it is a **family**: an instance is the set, its f
 call binds them (§4.1) and read by its name as an instance's are (`shaft.r`, `shaft.about`), a
 numeric formal left unbound an unknown of the drawing (§6.3). A set with no statement is a syntax
 error.
+
+**[0.148] A family may say it is the same set in any order of some of its formals**: `component
+Run(a: face, b: face, r: Length) symmetric(a, b) := { p | … }`, after the formals and before
+`:=`. Each item names a formal, or a tuple of formals that change places together —
+`symmetric((a, la), (b, lb))`, each face with the leg along it. There are two items or more,
+every item names as many formals as the first, the formals in each place are of one type, and no
+formal is named twice; anything else is a syntax error, as is `symmetric` on a component that is
+no family. It is a statement about the set, which the body's meaning MUST bear out, and nothing
+about how anything is worked out: an instance given what an instance of the same family was given,
+in an order the family allows — its entities, faces, sets and groups standing for the same
+things, its numbers the same values — **is** that instance, the same set by another name. So
+`Run(b, a, r: r)` is `Run(a, b, r: r)`; a family that does not say so is a set per order, and an
+instance with a number left unknown is its own. *Non-normative:* an implementation reads such an
+instance as a name for the first, and a solid a block's copy makes of it, and what that solid is
+said to do to a body, as the first copy's (§12.1, §12.7), so a word reaching an edge both ways
+states it once.
 
 **A set adds nothing to the drawing**: no unknown, no equation, nothing drawn. What it means is
 said where it is used, by two words:
@@ -3130,7 +3148,10 @@ word_def       = ( IDENT IDENT [ "(" IDENT { "," IDENT } ")" ] IDENT  (* infix, 
                  | IDENT [ "(" IDENT { "," IDENT } ")" ] IDENT )      (* prefix *)
                  ":=" ( relation | "{" { statement } "}" ) ;  (* several, §9.9 [0.50]; solids [0.69] *)
 component      = "component" IDENT "(" [ formals ] ")"
-                 ( "{" { statement } "}" | ":=" set_lit ) ;     (* a family of sets, §6.21 [0.49] *)
+                 ( "{" { statement } "}"
+                 | [ symmetric ] ":=" set_lit ) ;               (* a family of sets, §6.21 [0.49] *)
+symmetric      = "symmetric" "(" sym_item "," sym_item { "," sym_item } ")" ;   (* §6.21 [0.148] *)
+sym_item       = IDENT | "(" IDENT { "," IDENT } ")" ;
 set_lit        = "{" IDENT "|" statement { ( ";" | NEWLINE ) statement } "}" ;  (* §6.21 [0.49] *)
 formals        = formal { "," formal } ;
 formal         = IDENT ":" type [ "in" IDENT ] ; (* [0.95] a point formal's plane *)

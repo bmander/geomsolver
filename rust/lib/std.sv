@@ -299,14 +299,15 @@ component Hex(c: point, ref: line, af: Length, phase: Angle) {
 // surface's material side), the distance from a set, a bound on measurements, where an edge ends,
 // the material's angle at an edge, words that repeat over faces and make solids.  An evaluator
 // reads the sets (the field); a lowering may build an exact surface for a shape it recognises, and
-// says nothing these do not.
+// says nothing these do not.  Each is `symmetric` in its faces (#415): the edge of `a` and `b` is
+// the edge of `b` and `a`, so a word that reaches it both ways states it once.
 
 // What a ball of radius `r` rolled along the convex edge of faces `a` and `b` cannot reach: the
 // points within both faces' sides that no such ball within both covers; only where the point's
 // nearest point of the faces' meeting, short of where the edge ends, is on the edge (so surfaces
 // meeting where the body has no edge make nothing); so carried on past each end of the edge and
 // cut off there by the faces it ends on, however they stand.
-component Run(a: face, b: face, r: Length) := { p |
+component Run(a: face, b: face, r: Length) symmetric(a, b) := { p |
   p inside a
   p inside b
   angle(a, b, at: p) <= 180deg
@@ -320,7 +321,7 @@ component Run(a: face, b: face, r: Length) := { p |
 
 // The same at a concave edge, every side turned round: what the ball rolled outside both faces
 // cannot reach, added.
-component Fill(a: face, b: face, r: Length) := { p |
+component Fill(a: face, b: face, r: Length) symmetric(a, b) := { p |
   p outside a
   p outside b
   angle(a, b, at: p) >= 180deg
@@ -334,7 +335,7 @@ component Fill(a: face, b: face, r: Length) := { p |
 
 // Where three rounded convex edges meet at a corner of the body: what the ball touching all three
 // faces cannot reach, within the three edges' extents.
-component Corner(a: face, b: face, c: face, r: Length) := { p |
+component Corner(a: face, b: face, c: face, r: Length) symmetric(a, b, c) := { p |
   p inside a
   p inside b
   p inside c
@@ -356,7 +357,7 @@ component Corner(a: face, b: face, c: face, r: Length) := { p |
 }
 
 // `Corner` at a concave corner, every side turned round.
-component CornerFill(a: face, b: face, c: face, r: Length) := { p |
+component CornerFill(a: face, b: face, c: face, r: Length) symmetric(a, b, c) := { p |
   p outside a
   p outside b
   p outside c
@@ -380,7 +381,7 @@ component CornerFill(a: face, b: face, c: face, r: Length) := { p |
 // A chamfer's flat at a convex edge: the points within both faces nearer them than the flat
 // through each face's point its leg from the other face — `la` on `a`, `lb` on `b` (#183 X1's
 // finding 4).  Between planes the flat, about an axis a cone.
-component Flat(a: face, b: face, la: Length, lb: Length) := { p |
+component Flat(a: face, b: face, la: Length, lb: Length) symmetric((a, la), (b, lb)) := { p |
   p inside a
   p inside b
   angle(a, b, at: p) <= 180deg
@@ -392,7 +393,7 @@ component Flat(a: face, b: face, la: Length, lb: Length) := { p |
 }
 
 // `Flat` at a concave edge, every side turned round: what the flat adds.
-component FlatFill(a: face, b: face, la: Length, lb: Length) := { p |
+component FlatFill(a: face, b: face, la: Length, lb: Length) symmetric((a, la), (b, lb)) := { p |
   p outside a
   p outside b
   angle(a, b, at: p) >= 180deg

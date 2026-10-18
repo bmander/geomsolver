@@ -1515,6 +1515,20 @@ impl<'a> P<'a> {
                 }
             }
         }
+        // `symmetric(a, b)`: the set is the same whichever order those formals come in (#415)
+        let symmetric = if self.peek_word("symmetric") {
+            let at = self.here();
+            let items = self.symmetric(&formals)?;
+            if self.peek() != Some(&Tok::Define) {
+                self.fail_at(at, "only a set family is `symmetric`: an instance of any other \
+                    component draws what it makes under its own name, whatever order it is given \
+                    — `component Name(…) symmetric(a, b) := { p | … }`");
+                return None;
+            }
+            items
+        } else {
+            Vec::new()
+        };
         // `component Sphere(center: point, r: Length) := { p | … }` — a family of sets: the
         // instance is the set, and its body is the literal's (§6.21)
         if self.peek() == Some(&Tok::Define) {
@@ -1535,6 +1549,7 @@ impl<'a> P<'a> {
                 span: Span::new(lo, self.prev_hi()),
                 module: None,
                 set: Some(set),
+                symmetric,
             });
         }
         let was = std::mem::replace(&mut self.in_comp, true);
@@ -1549,7 +1564,79 @@ impl<'a> P<'a> {
             span: Span::new(lo, self.prev_hi()),
             module: None,
             set: None,
+            symmetric: Vec::new(),
         })
+    }
+
+    /// `symmetric(a, b, c)` or `symmetric((a, la), (b, lb))` after a family's formals (#415):
+    /// the items that may change places, each a formal or a tuple of formals that move together.
+    /// Two items at least, each formal of the list once, every item as long as the first and
+    /// each of its places of the type the first's is.
+    fn symmetric(&mut self, formals: &[Formal]) -> Option<Vec<Vec<Name>>> {
+        let lo = self.here();
+        self.i += 1; // `symmetric`
+        if !self.want_p('(') {
+            return None;
+        }
+        let mut items: Vec<Vec<Name>> = Vec::new();
+        while !self.eat_p(')') {
+            let item = if self.eat_p('(') {
+                let mut tuple = Vec::new();
+                while !self.eat_p(')') {
+                    tuple.push(self.ident()?);
+                    if !self.eat_p(',') && self.peek() != Some(&Tok::P(')')) {
+                        self.fail("expected `,` or `)`");
+                        return None;
+                    }
+                }
+                tuple
+            } else {
+                vec![self.ident()?]
+            };
+            items.push(item);
+            if !self.eat_p(',') && self.peek() != Some(&Tok::P(')')) {
+                self.fail("expected `,` or `)`");
+                return None;
+            }
+        }
+        let span = Span::new(lo.lo as usize, self.prev_hi());
+        if items.len() < 2 {
+            self.fail_at(span, "`symmetric` lists two or more formals that may change places: \
+                `symmetric(a, b)`");
+            return None;
+        }
+        let mut seen: Vec<&str> = Vec::new();
+        for n in items.iter().flatten() {
+            if !formals.iter().any(|f| f.name.text == n.text) {
+                self.fail_at(n.span, &format!("`{}` is no formal of this component", n.text));
+                return None;
+            }
+            if seen.contains(&n.text.as_str()) {
+                self.fail_at(n.span, &format!("`{}` is listed twice: each formal changes places \
+                    once", n.text));
+                return None;
+            }
+            seen.push(&n.text);
+        }
+        let ty = |n: &Name| formals.iter().find(|f| f.name.text == n.text).map(|f| f.ty);
+        let first = &items[0];
+        if first.is_empty() {
+            self.fail_at(span, "`()` changes no formal's place: name one or more in each item");
+            return None;
+        }
+        for item in &items[1..] {
+            if item.len() != first.len() {
+                self.fail_at(span, "every item of `symmetric` names as many formals: each takes \
+                    the place of another, all its formals at once");
+                return None;
+            }
+            if let Some((a, b)) = first.iter().zip(item).find(|(a, b)| ty(a) != ty(b)) {
+                self.fail_at(b.span, &format!("`{}` and `{}` change places, so they are of one \
+                    type", a.text, b.text));
+                return None;
+            }
+        }
+        Some(items)
     }
 
     /// Whether the statement from here uses a set written in place (#103): a reference, `coincident`

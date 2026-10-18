@@ -227,6 +227,21 @@ of every instance a body writes into its `vals` as `inst.formal` (the number bou
 unknown `bind` names), before the statements, so `p distance(ball.r) ball.center` reads it and a
 group argument carries it (`bind`'s group arm copies `{actual}.…`); body values are not. No
 solver state; member units survive substitution; missing members are errors.
+**A family the same set in any order** (#415, [0.148]): `component Run(a: face, b: face, r:
+Length) symmetric(a, b) := { p | … }` (`Component::symmetric`, items of one or more formals,
+`parser::statements::symmetric`; on no family, one item, a formal twice, items of unequal length
+or places of unequal type, a parse error).  `flatten::same`: `Walk::same_instance`, asked in
+`walk_instance` before anything is made, keys each such instance on its component and what each
+argument stands for (`stands_for` through the instance's own formal aliases, a number's value, a
+side's word; any of them unknown, or the instance drawn `in` a plane, or a curve's compile: no
+key) in the order of the family's symmetry that comes first (`canonical`, every order of the
+items); an instance whose key was made before is a name for that one (its name out of `names`,
+an alias to the first, its `InstanceInfo` popped) and its body is not walked.  A **copy's**
+region solid of such a name is the first's solid (`Walk::same_solid`, through `set_named`; a
+document's own two solids of one set stay two), and a body statement over it saying what one
+over that solid said — its word, and its body standing for the same — is dropped
+(`Walk::same_body`).  `tests/symmetric.rs` is the gate, beside the closed forms of
+`tests/round_lowering.rs`.
 Curves need fixed scalar/entity formals. The V-twin and inline-four pass
 `components.dims.vtwin_dims` / `engine.dims.engine_dims` explicitly; `Frame(layout, dims: …)`
 takes a layout naming the front datum, origin and reference axis.

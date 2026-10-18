@@ -20,6 +20,12 @@ origin; cached in `Caches::faces`); one naming nothing holds nowhere, and a regi
 `FlatFill` (sets over faces) and the words `A round(r: …) B`, `round(r: …) X`, `A chamfer(d: …) B`,
 `chamfer(d: …) X`; in a region's body `std.Rounded(a, b, r)` and `std.Chamfered(a, b, la, lb)`
 over two of its own sets (`set` formals, #191; `p inside S(…)` may be written in place).
+**Each edge and corner once** (#415, [0.148]): the six sets are `symmetric` in their faces
+(`Flat`'s each with its leg, `symmetric((a, la), (b, lb))`), so the words — which reach an edge
+as `(a, b)` and `(b, a)` and a corner in six orders — make one set, one solid and one cut or fill
+of each (`flatten::same`, [language.md](language.md)): `rounds/bores.sv` is 240 regions, not 1152.
+`tests/symmetric.rs` holds the count and the block rounded and chamfered all over to the words
+written without `symmetric`.
 A set's `S.surface` is the set with each bound made an equality (`Written::equality`,
 `sets::surface_of`; a grown side's is the offset surface); a distance from a one-bound region's
 surface reads it (`sets::one_bound`); a set measured from is applied under `PredWalk::held`, so each
@@ -95,12 +101,10 @@ pieces' B-rep held to the region's own field (`agreement`, by area; empty only w
 reads empty), and holding what the field reads just inside each edge (`beside_edges`: a probe of
 the boundary built sees nothing of a piece never built), before anything reads them. Memoised against the region's own terms (`solid::reads::reads_own`)
 and the stratum's `Arc` (`Caches::lowering`; a key over `solid::reads` walks every round of
-the body), asked once a recipe. The gate's construction — the pieces' B-rep and its mesh — is
-remembered against the recipe node up to the order it lists things in (`lowering::gated`,
-`canonical`; a rolled one's stratum by identity; `Caches::gated`, the latest few): a round over
-every edge is a region for each order of the faces it names, and `Corner(a, b, c)` and
-`Corner(b, a, c)` lower to one construction, built and meshed once and held to each region's own
-field — until the word states each edge and corner once (#415), when the memo goes. `cad.rs` builds a body's lowered regions in one set as one recipe node, `"lowered"`
+the body), asked once a recipe. The gate's construction — the pieces' B-rep and its mesh
+(`lowering::gated`) — is built for the region whose gate asks it and remembered by nothing else:
+the word states each edge and corner once (#415), so no two of a body's regions lower to the same
+pieces (the memo up to order that stood in for that, `Caches::gated`, went with it). `cad.rs` builds a body's lowered regions in one set as one recipe node, `"lowered"`
 (`assemble`: each distinct piece once, a run cut short at a corner's section and **glued** there,
 `boolean::glued`; the rest unioned — two runs crossing are a mitre), the first region standing for
 the rest; a region lowered to nothing is no operand; a body's face readers go in `"on_late"` /
@@ -144,7 +148,8 @@ is empty). Elaboration of many face-reading regions is linear: `flatten::Walk::r
 plain declared name without building the alias table, and
 `region::in_general_position`/`folded` key a face-reading region on `reads_own` and the strata
 (`faces::cached`'s `Arc`s), never `reads` (which walks the body's every other round). Nor is a
-body rounded all over quadratic in its rounds (`rounds/bores.sv`: nine faces, 1152 regions): a
+body rounded all over quadratic in its rounds (`rounds/bores.sv`: nine faces, 240 regions; 1152, one
+for each order of every pair and triple, before #415): a
 `when` reads only the aliases its condition names (`flatten::resolve::Lazy`, the table's own
 rule per key; each answer held to the whole table under debug assertions, on a walk of a few
 hundred aliases), and so does each pass over the blocks set aside; a

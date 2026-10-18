@@ -243,8 +243,8 @@ fn bench_scrub() {
              median(stand), objects.len(), median(moved), median(built));
 }
 
-/// **A body rounded all over** (`rounds/bores.sv`: nine faces, a region for each order of every
-/// pair and triple of them): its elaboration, its first evaluation — every region lowered and held
+/// **A body rounded all over** (`rounds/bores.sv`: nine faces, a region for each pair and triple
+/// of them, #415): its elaboration, its first evaluation — every region lowered and held
 /// to its field, the body built and meshed — and the solid asked for again, as a page asks it for
 /// each thing it draws of it.
 fn bench_rounded() {

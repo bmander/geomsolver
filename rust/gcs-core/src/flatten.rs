@@ -40,6 +40,7 @@ mod through;
 mod image;
 mod carried;
 mod valued;
+mod same;
 
 pub use faces::{FaceAxis, FacePlane};
 
@@ -488,6 +489,8 @@ struct Walk<'a> {
     faces: FaceState,
     /// The face families' running numbers — see `Held`.
     held: Held,
+    /// What the walk found to be one thing stated twice (#415) — see `same`.
+    same: same::Same,
 }
 
 /// What a binding or a read asks that only every name known can answer (`resolve`), and the
@@ -715,6 +718,7 @@ impl<'a> Walk<'a> {
             quiet: BTreeSet::new(),
             faces: FaceState::default(),
             held: Held::default(),
+            same: same::Same::default(),
         }
     }
 

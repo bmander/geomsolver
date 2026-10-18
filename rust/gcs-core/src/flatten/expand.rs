@@ -171,6 +171,8 @@ impl<'a> Walk<'a> {
                 }
                 // a claim over an interval: its numbers and its relations' worked out as above
                 StmtKind::ClaimOver(c) => self.walk_claim_over(c, st, scope, vals, path, depth),
+                // a body statement saying over a solid what was said over it (#415): said once
+                StmtKind::SolidRel(s) if self.same_body(s, scope) => {}
                 // a gauge or an orientation: kept as written, resolved later
                 other => self.emit(other.clone(), st, scope, path),
             }
@@ -323,7 +325,7 @@ impl<'a> Walk<'a> {
             return;
         }
         let mut d2 = d.clone();
-        d2.name = d.name.prefixed(abs, scope.block.copies);
+        d2.name = d.name.prefixed(abs.clone(), scope.block.copies);
         if scope.stamps.anonymous {
             d2.name = crate::syntax::DeclName::Key(d2.name.key().clone());
         }
@@ -436,6 +438,10 @@ impl<'a> Walk<'a> {
             }
         }
         self.stamp_scope_plane(&mut d2, scope);
+        // a region solid of a set that is one already a solid is that solid (#415)
+        if self.same_solid(&d2, &abs, scope) {
+            return;
+        }
         let twins = self.twins_of(&d2, &d.name.key().text);
         let region: Vec<_> = match self.region_of(&mut d2, &d.name.key().text, scope) {
             Some(r) => vec![r],
@@ -800,6 +806,12 @@ impl<'a> Walk<'a> {
             }
             (None, q) => q.clone(),
         };
+        // a symmetric family's instance given what one before it was given, in another order it
+        // allows, is that one (#415): a name for it, and nothing made again
+        let drawn_in = in_plane.is_some() || !rides.is_empty();
+        if self.same_instance(comp, &key, scope, &sub_vals, &sides, drawn_in) {
+            return ControlFlow::Continue(());
+        }
         let forbidden = Outside { around: scope.vals.clone(), file: self.file_vals.clone() };
         let given = std::rc::Rc::new(sub_vals.clone());
         let sc = Scope {
@@ -1626,29 +1638,42 @@ impl Walk<'_> {
 
     /// The set a declaration's `i`th operand names, where it names one.
     fn set_operand(&mut self, d: &Decl, i: usize, sc: &Scope) -> Option<Ref> {
+        self.set_named(d, i, sc).map(|(set, _, _)| set)
+    }
+
+    /// `set_operand`, with the set's absolute name and whether the name was found as an instance
+    /// that is one made before (`same`, #415), the absolute name then that one's.
+    pub(super) fn set_named(&mut self, d: &Decl, i: usize, sc: &Scope)
+        -> Option<(Ref, String, bool)> {
         let [Kid::Ref(set)] = d.children.get(i).map(Vec::as_slice).unwrap_or(&[]) else {
             return None;
         };
         // a plain name declared in scope, as a family's instance is (`taken := solid(run)`), is
         // read off the names without the alias table, which a region asked for per solid would
-        // build afresh each time (`Lookup::raw`'s order: each prefix, then the bare name)
+        // build afresh each time (`Lookup::raw`'s order: each prefix, then the bare name) — and
+        // so is one that is an instance made before
         let plain = set.path.is_empty() && !matches!(set.root.text.as_str(), "next" | "prev");
         let candidates = sc.prefixes.iter().map(|p| format!("{p}{}", set.root.text))
             .chain((!sc.closed).then(|| set.root.text.clone()));
-        let first = candidates.filter(|_| plain)
-            .find(|abs| self.names.contains(abs) || self.aliases.iter().any(|(k, _, _)| k == abs));
-        let found = match first {
-            Some(abs) if self.names.contains(&abs) => Some((abs, Vec::new())),
+        let first = candidates.filter(|_| plain).find(|abs| {
+            self.names.contains(abs) || self.same.sets.contains_key(abs)
+                || self.aliases.iter().any(|(k, _, _)| k == abs)
+        });
+        let (found, through) = match first {
+            Some(abs) if self.names.contains(&abs) => (Some((abs, Vec::new())), false),
+            Some(abs) if self.same.sets.contains_key(&abs) => {
+                (Some((self.same.sets[&abs].clone(), Vec::new())), true)
+            }
             _ => {
                 let alias = self.alias_table();
-                self.look(&alias).raw(set, sc)
+                (self.look(&alias).raw(set, sc), false)
             }
         };
         let Some((abs, rest)) = found else { return None };
         if !rest.is_empty() || !self.sets.made.contains_key(&abs) {
             return None;
         }
-        Some(set.clone())
+        Some((set.clone(), abs, through))
     }
 }
 
