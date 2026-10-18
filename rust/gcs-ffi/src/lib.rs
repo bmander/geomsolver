@@ -23,6 +23,7 @@ mod documents;
 mod systems;
 mod analysis;
 mod drags;
+mod parameters;
 mod solvent;
 mod editing;
 
@@ -37,6 +38,7 @@ pub use documents::*;
 pub use systems::*;
 pub use analysis::*;
 pub use drags::*;
+pub use parameters::*;
 pub use solvent::*;
 pub use editing::*;
 

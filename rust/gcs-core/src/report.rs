@@ -242,6 +242,60 @@ pub fn parameter_text(sk: &Sketch, name: &str) -> String {
     }
 }
 
+/// **The parameters a drawing declares** (#398 L), for a timeline: each by name, what it is and
+/// the interval it runs over, its ends in the units a person reads (degrees for an angle) and as
+/// read.  No march: that is `parameter_json`'s, asked of one parameter.
+pub fn parameters_json(sk: &Sketch) -> Json {
+    Json::Arr(sk.parameters.values().map(|p| {
+        let at = |v: f64| Json::from(crate::follow::reading(p, v, sk.units));
+        object([
+            ("name", p.name.as_str().into()),
+            ("dim", p.dim.name().into()),
+            ("from", p.from.into()),
+            ("to", p.to.into()),
+            ("fromText", at(p.from)),
+            ("toText", at(p.to)),
+        ])
+    }).collect())
+}
+
+/// **How a drawing runs over its declared parameter `name`** (#398 L), for a timeline: followed
+/// (`follow::followed`, remembered), from where and how far it reached and, where the march
+/// stopped short, the singular instant and what it is — every reading in the core's words,
+/// `parameter_text` the whole of it — or why it is not followed.
+pub fn parameter_json(sk: &Sketch, name: &str) -> Json {
+    let followed = crate::follow::followed(sk, name);
+    let text = parameter_text(sk, name);
+    match followed.as_ref() {
+        Err(why) => object([
+            ("name", name.into()),
+            ("followed", false.into()),
+            ("why", why.as_str().into()),
+            ("text", text.into()),
+        ]),
+        Ok(f) => {
+            let at = |v: f64| Json::from(crate::follow::reading(&f.over, v, sk.units));
+            let singular = f.singular.map_or(Json::Null, |s| object([
+                ("at", s.at.into()),
+                ("kind", match s.kind {
+                    crate::follow::Kind::Limit => "limit",
+                    crate::follow::Kind::Branch => "branch",
+                }.into()),
+                ("text", s.text(&f.over, sk.units).into()),
+            ]));
+            object([
+                ("name", name.into()),
+                ("followed", true.into()),
+                ("from", f.over.from.into()),
+                ("reached", f.reached().into()),
+                ("reachedText", at(f.reached())),
+                ("singular", singular),
+                ("text", text.into()),
+            ])
+        }
+    }
+}
+
 /// **Where everything the source names has landed** (issue #48, item 3).
 ///
 /// A report that says how many freedoms a drawing has and which statements fight, and never

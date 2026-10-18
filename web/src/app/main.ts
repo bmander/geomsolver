@@ -72,6 +72,7 @@ import { objectName, type Refining } from './field-preview.js';
 import type { Judging } from './claim-judging.js';
 import { Tool } from './view.js';
 import { meshing } from './loading.js';
+import { Timeline } from './timeline.js';
 
 /* -- toolbars ---------------------------------------------------------------- */
 
@@ -645,6 +646,10 @@ view.onPicked = refreshPanel;
 view.onProgram = () => { refreshProgram(); };
 view.onLoad = () => { if (resetProgramFiles()) leaveExample(); };
 view.onDragFrame = refreshStatus;
+const timeline = new Timeline(document.getElementById('timeline') as HTMLElement, view);
+// a constraint reading the parameter says the value it has at the instant shown (`t = 72°`)
+view.onTimeline = () => { timeline.refresh(); refresh(); };
+timeline.refresh();
 view.onStatus = toast;
 view.onRefine = (list) => { showRefining(list); meshing(list); };
 view.onClaims = showJudging;

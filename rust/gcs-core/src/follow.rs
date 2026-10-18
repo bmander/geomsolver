@@ -150,22 +150,274 @@ impl Followed {
     }
 }
 
+/// **Where a march stands the drawing** (#398 L, `Sketch::standing`): the parameter and its value
+/// there, and the drawing at home — every parameter and every constraint's numbers as they were
+/// before it was stood anywhere, which `put` moves (the numbers that read the parameter are worked
+/// out again at every instant).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Standing {
+    pub name: String,
+    pub at: f64,
+    pub home: Vec<f64>,
+    numbers: Vec<f64>,
+}
+
+/// Every number the drawing's constraints state, in order: what a march is a function of besides
+/// where the drawing stands.
+fn numbers(sk: &Sketch) -> Vec<f64> {
+    use crate::constraints::Arg;
+    sk.constraints.iter().flat_map(|c| c.args.iter().filter_map(|a| match a {
+        Arg::Num(v) => Some(*v),
+        Arg::Expr(e) => Some(e.value),
+        _ => None,
+    })).collect()
+}
+
+/// **Stand the drawing `sk` at `t`** of its declared parameter `name` (#398 L), on the branch its
+/// march carried (`Followed::put`), remembering home: what an app shows at an instant of a
+/// timeline.  Stood at one parameter, it is first sent home from any other, which stands at its
+/// start (each parameter is followed alone).  Where it cannot be stood there it is left at home,
+/// and why is said: the drawing is not followed, or `t` was not reached.
+pub fn stand(sk: &mut Sketch, name: &str, t: f64) -> Result<(), String> {
+    let march = followed(sk, name);
+    let f = march.as_ref().as_ref().map_err(|e| e.clone())?;
+    home(sk);
+    let standing = Standing {
+        name: name.to_string(),
+        at: t,
+        home: sk.get_x(),
+        numbers: numbers(sk),
+    };
+    let put = f.put(sk, t);
+    sk.standing = Some(standing);
+    if put.is_err() {
+        home(sk);
+    }
+    put
+}
+
+/// **An instant of the parameter `name` as written** (#398 L): `90deg` for an angle, `12mm` for a
+/// length, in the drawing's units and in the ones a person reads (degrees for an angle), as the
+/// interval's ends are — a number, of the parameter's dimension, finite.  What a drawing's `model m
+/// from "…" at t = 90deg` and a timeline's readout are read by.
+pub fn instant(sk: &Sketch, name: &str, text: &str) -> Result<f64, String> {
+    let over = sk.parameters.get(name)
+        .ok_or_else(|| format!("`{name}` is no parameter the drawing declares"))?;
+    let said = |e: String| format!("`{}`: {e}", text.trim());
+    let p = crate::expr::parse_in(text.trim(), sk.units).map_err(said)?;
+    let a = crate::expr::eval(&p.body, &Default::default()).map_err(|e| said(e.to_string()))?;
+    a.dim.require(over.dim, name).map_err(said)?;
+    match a.as_dim(over.dim).number() {
+        Some(v) if v.is_finite() => Ok(v),
+        _ => Err(said("an instant is a finite number".into())),
+    }
+}
+
+/// **Send the drawing `sk` home** (#398 L): where it was drawn before it was stood at an instant,
+/// its numbers worked out there again.  A drawing standing nowhere is home already.  One grown
+/// since it was stood (something drawn while it stood there: a sketch's parameters are only ever
+/// appended to) goes home with what was drawn left where it was put; one of fewer parameters is
+/// not the drawing home was taken of, and is only forgotten.
+pub fn home(sk: &mut Sketch) {
+    let Some(s) = sk.standing.take() else { return };
+    let mut x = sk.get_x();
+    let Some(prefix) = x.get_mut(..s.home.len()) else { return };
+    prefix.copy_from_slice(&s.home);
+    sk.set_x(&x);
+    // the texts that read the parameter, read at its start again
+    let _ = crate::expr::evaluate(sk);
+}
+
+/// **A drag along a march** (#398 L): a point of a followed drawing taken hold of, and the
+/// instant found where it comes nearest the pointer — the drawing driven by where its point is
+/// put, the way a crank is turned by its pin.  The point's track (where it stands at each station,
+/// seen where the pointer is read: in its own plane, or on the eye's picture plane for a point in
+/// space) is read once; each move walks it from the instant shown, downhill in distance to the
+/// pointer, so a track crossing itself is not jumped across and the instant found is one the
+/// march reached.  Over a whole turn of an angle whose track closes the walk goes on round.  The
+/// chord walked to is a first guess, and the instant is the nearest on the parabola in the
+/// parameter through its stations and the next: no solve, and at `COARSEST` a step a ten-thousandth
+/// of a degree from the track's own on a crank.
+#[derive(Clone, Debug)]
+pub struct Scrub {
+    pub name: String,
+    track: Vec<(f64, [f64; 2])>,
+    /// The segment of the track the instant shown lies on.
+    at: usize,
+    round: bool,
+}
+
+impl Scrub {
+    /// Take hold of point `p` of `sk`, followed along `name`, read in its own plane or, with
+    /// `eye` (bearing and elevation, radians), where the eye sees it — or why it is not dragged
+    /// along the march: the drawing is not followed, or the point does not move as it runs.
+    pub fn new(sk: &Sketch, name: &str, p: usize, eye: Option<(f64, f64)>)
+        -> Result<Scrub, String> {
+        let march = followed(sk, name);
+        let f = march.as_ref().as_ref().map_err(|e| e.clone())?;
+        if p >= sk.points.len() {
+            return Err(format!("there is no point {p}"));
+        }
+        let mut sketch = sk.clone();
+        let eye = eye.map(|(az, el)| crate::overview::eye(az, el));
+        let track: Vec<(f64, [f64; 2])> = f.stations.iter().map(|s| {
+            sketch.set_x(&s.x);
+            (s.at, seen(&sketch, p, eye))
+        }).collect();
+        let reach = track.iter().map(|(_, q)| q[0].hypot(q[1])).fold(0.0, f64::max);
+        let moves = track.windows(2).any(|w| {
+            (w[1].1[0] - w[0].1[0]).hypot(w[1].1[1] - w[0].1[1]) > 1e-9 * (1.0 + reach)
+        });
+        if track.len() < 2 || !moves {
+            return Err(format!("it does not move as `{name}` runs"));
+        }
+        let shown = sk.standing.as_ref().filter(|s| s.name == name).map_or(f.over.from, |s| s.at);
+        let at = track.partition_point(|s| s.0 <= shown).clamp(1, track.len() - 1) - 1;
+        let (a, b) = (track[0].1, track[track.len() - 1].1);
+        let whole_turn = f.over.turns() && (f.over.to - f.over.from - 360.0).abs() < 1e-9;
+        let round = whole_turn && f.singular.is_none()
+            && (a[0] - b[0]).hypot(a[1] - b[1]) <= 1e-6 * (1.0 + reach);
+        Ok(Scrub { name: name.to_string(), track, at, round })
+    }
+
+    /// The instant at which the point comes nearest (`x`, `y`), walked to from the one before.
+    pub fn to(&mut self, x: f64, y: f64) -> f64 {
+        let n = self.track.len() - 1;
+        // how far the pointer is from segment `k`'s chord
+        let seg = |k: usize| -> f64 {
+            let ((_, a), (_, b)) = (self.track[k], self.track[k + 1]);
+            let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
+            let len = dx * dx + dy * dy;
+            let w = if len > 0.0 {
+                (((x - a[0]) * dx + (y - a[1]) * dy) / len).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+            (x - a[0] - w * dx).hypot(y - a[1] - w * dy)
+        };
+        let step = |k: usize, up: bool| -> Option<usize> {
+            match (up, self.round) {
+                (true, _) if k + 1 < n => Some(k + 1),
+                (true, true) => Some(0),
+                (false, _) if k > 0 => Some(k - 1),
+                (false, true) => Some(n - 1),
+                _ => None,
+            }
+        };
+        let mut k = self.at;
+        // downhill, one way and then the other, and never round more than once
+        for up in [true, false] {
+            for _ in 0..n {
+                match step(k, up) {
+                    Some(j) if seg(j) < seg(k) => k = j,
+                    _ => break,
+                }
+            }
+        }
+        // the segment walked to or one either side: seen from outside a bend a chord's corner is
+        // nearer than its middle, so the walk may stop a segment short
+        let (mut best, mut t) = (f64::INFINITY, self.track[k].0);
+        for j in [step(k, false), Some(k), step(k, true)].into_iter().flatten() {
+            let (u, d) = self.nearest_on(j, n, x, y);
+            if d < best {
+                (best, t, self.at) = (d, u, j);
+            }
+        }
+        t
+    }
+
+    /// The instant on segment `k` of the track (of `n`) nearest (`x`, `y`), and how near: on the
+    /// parabola in the parameter through the segment's stations and the next, Lagrange's.
+    fn nearest_on(&self, k: usize, n: usize, x: f64, y: f64) -> (f64, f64) {
+        let (ta, tb) = (self.track[k].0, self.track[k + 1].0);
+        let j = if k + 2 <= n { k + 2 } else { k.saturating_sub(1) };
+        let ps = [self.track[k], self.track[k + 1], self.track[j]];
+        // the place, the velocity and the acceleration at `t`
+        let at = |t: f64| -> [[f64; 2]; 3] {
+            let mut out = [[0.0; 2]; 3];
+            if j == k {
+                // two stations only: the chord
+                let w = (t - ta) / (tb - ta);
+                for c in 0..2 {
+                    out[0][c] = ps[0].1[c] + w * (ps[1].1[c] - ps[0].1[c]);
+                    out[1][c] = (ps[1].1[c] - ps[0].1[c]) / (tb - ta);
+                }
+                return out;
+            }
+            for (i, &(ti, qi)) in ps.iter().enumerate() {
+                let (a, b) = match i {
+                    0 => (ps[1].0, ps[2].0),
+                    1 => (ps[0].0, ps[2].0),
+                    _ => (ps[0].0, ps[1].0),
+                };
+                let den = (ti - a) * (ti - b);
+                let (w, dw, ddw) = ((t - a) * (t - b) / den, (2.0 * t - a - b) / den, 2.0 / den);
+                for c in 0..2 {
+                    out[0][c] += w * qi[c];
+                    out[1][c] += dw * qi[c];
+                    out[2][c] += ddw * qi[c];
+                }
+            }
+            out
+        };
+        let far = |t: f64| {
+            let q = at(t)[0];
+            (q[0] - x).hypot(q[1] - y)
+        };
+        // Newton's from the nearest of the ends and the middle, kept to the segment
+        let mut t = [ta, 0.5 * (ta + tb), tb].into_iter()
+            .min_by(|&a, &b| far(a).total_cmp(&far(b))).unwrap_or(ta);
+        for _ in 0..8 {
+            let [q, d, dd] = at(t);
+            let r = [q[0] - x, q[1] - y];
+            let g = r[0] * d[0] + r[1] * d[1];
+            let h = d[0] * d[0] + d[1] * d[1] + r[0] * dd[0] + r[1] * dd[1];
+            if h <= 0.0 {
+                break;
+            }
+            let next = (t - g / h).clamp(ta, tb);
+            let done = (next - t).abs() <= 1e-12 * (tb - ta);
+            t = next;
+            if done {
+                break;
+            }
+        }
+        (t, far(t))
+    }
+}
+
+/// Where point `p` of `sk` is seen: in its own plane, or on the eye's picture plane (its right and
+/// up) for a point in space.
+fn seen(sk: &Sketch, p: usize, eye: Option<([f64; 3], [f64; 3])>) -> [f64; 2] {
+    match eye {
+        Some((r, u)) => {
+            let w = sk.world_point(p);
+            let dot = |a: [f64; 3]| a[0] * w[0] + a[1] * w[1] + a[2] * w[2];
+            [dot(r), dot(u)]
+        }
+        None => {
+            let (x, y) = sk.point_xy(p);
+            [x, y]
+        }
+    }
+}
+
 /// The drawing `sk` followed along its declared parameter `name`, remembered against every number
 /// of the drawing and of its statements, and the parameter's interval (`Caches::followed`).
 pub fn followed(sk: &Sketch, name: &str) -> Rc<Result<Followed, String>> {
-    use crate::constraints::Arg;
     // a march's own station solve asks nothing of a march: a question that would reach one from
     // inside it (a curve drawn from the drawing being followed) is answered that there is none
     if MARCHING.get() {
         return Rc::new(Err("the drawing is being followed".into()));
     }
-    let mut key = sk.get_x();
+    // the drawing at home, wherever it is shown standing: a march is of the drawing, not of an
+    // instant of it
+    let (mut key, numbers) = match &sk.standing {
+        Some(s) => (s.home.clone(), s.numbers.clone()),
+        None => (sk.get_x(), numbers(sk)),
+    };
     key.extend(sk.parameters.get(name).map_or([0.0; 2], |p| [p.from, p.to]));
-    key.extend(sk.constraints.iter().flat_map(|c| c.args.iter().filter_map(|a| match a {
-        Arg::Num(v) => Some(*v),
-        Arg::Expr(e) => Some(e.value),
-        _ => None,
-    })));
+    key.extend(numbers);
     if let Some((k, f)) = sk.caches.followed.borrow().get(name) {
         if *k == key {
             return f.clone();
@@ -191,6 +443,7 @@ pub fn follow(sk: &Sketch, name: &str) -> Result<Followed, String> {
         .filter(|_| !readers(sk, name).is_empty())
         .ok_or_else(|| format!("nothing the drawing states reads `{name}`"))?;
     let mut sk = sk.clone();
+    home(&mut sk);
     let span = over.to - over.from;
     let (coarsest, finest) = (span * COARSEST, span * FINEST);
     let mut sys = settle(&mut sk, held, over.from, &[])

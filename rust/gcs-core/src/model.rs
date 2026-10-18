@@ -229,6 +229,12 @@ pub struct Sketch {
     /// for.  Represented once, as every running number is (`Running`); nothing reads one yet.
     /// Set by elaboration and never written to a document, as `declared` is.
     pub parameters: BTreeMap<String, Running>,
+    /// **Where a declared parameter's march stands the drawing** (#398 L): the instant shown, and
+    /// the drawing at home, where it was drawn, to go back to (`follow::stand`, `follow::home`).
+    /// Presentation, as a wobble is: what is drawn moves and the document does not — a march
+    /// starts from home, and no seed is written back from an instant (`edit::commit_seeds`).
+    /// Never written to a document.
+    pub standing: Option<crate::follow::Standing>,
     /// What the sketch remembers and could work out again — polylines, evaluated and exact
     /// solids, regions' readings, bodies' faces — and what a clone keeps of it (`Caches`).
     pub caches: Caches,

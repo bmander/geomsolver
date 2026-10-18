@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.145 — October 2026**
+**Specification, Draft 0.146 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -2727,6 +2727,15 @@ model dimension or measures named geometry. Model source MUST NOT serialize a ca
 placement, and a drawing reference MUST NOT use a statement's position or an entity's internal
 index. Missing references MUST be diagnosed. Solver hints and recorded solution branches
 remain model state.
+
+**[0.146] The instant shown is drawing state.** A drawing of a model that declares a parameter
+(`param t: Angle over (0deg, 360deg)`, §6.5) MAY show it at an instant of its march, on the import:
+`model m from "four_bar.sv" at t = 90deg`. The value is read in the model's units and MUST be of
+the parameter's dimension and within what the march reached; otherwise the drawing is refused,
+saying why. The model is solved where it is drawn and stood at the instant on the branch its march
+carries; the same file imported at two instants is two snapshots. An editor's timeline is the
+same presentation: model source MUST NOT record an instant, and a seed MUST NOT be written back
+from a model shown at one — the seeds say where the drawing starts.
 
 ### 13.2 Presentation **[0.20]**
 

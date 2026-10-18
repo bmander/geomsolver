@@ -488,19 +488,26 @@ impl Sketch {
         // what the polyline is a function of: the curve's variables at the interval's start
         // (the parameter first, then every coordinate it reads), the interval, the anchor, its
         // definition, a free curve's pegs and the anchor pose — the same reading `curve_point`
-        // and `sweep` take
-        let mut key = self.curve_vars(i, a);
+        // and `sweep` take.  A point followed along a parameter stands where the whole drawing
+        // puts it (#391 S4), and is drawn from its march: the drawing at home, wherever it is
+        // shown standing (#398 L)
+        let followed = self.curve_followed(i);
+        let mut key: Vec<f64> = if followed {
+            let home = self.standing.as_ref().map_or_else(|| self.get_x(), |s| s.home.clone());
+            [a].into_iter().chain(home).collect()
+        } else {
+            self.curve_vars(i, a)
+        };
         // and the definition, which a free curve's energy settles after it is built
-        key.extend([b, self.curve_home(i), self.curves[i].def as f64]);
-        // a point followed along a parameter stands where the whole drawing puts it (#391 S4)
-        if self.curve_followed(i) {
-            key.extend(self.params.iter().map(|p| p.value));
-        }
+        let anchor = if followed { 0.0 } else { self.curve_home(i) };
+        key.extend([b, anchor, self.curves[i].def as f64]);
         key.extend(self.curves[i].pegs.iter().flat_map(|&p| {
             let (x, y) = self.point_xy(p as usize);
             [x, y]
         }));
-        key.extend(self.curve_pose(i).unwrap_or_default());
+        if !followed {
+            key.extend(self.curve_pose(i).unwrap_or_default());
+        }
         if let Some((k, poly)) = self.caches.polyline.borrow().get(&i) {
             if *k == key {
                 return poly.clone();

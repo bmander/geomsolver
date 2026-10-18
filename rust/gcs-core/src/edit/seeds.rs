@@ -25,6 +25,11 @@ use super::*;
 ///
 /// `Kind::Numeric`, always: a seed is not a statement, so nothing recompiles.
 pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
+    // a drawing shown at an instant of its march is not where it is drawn (#398 L): the seeds say
+    // where it starts, and what is shown is presentation
+    if sk.standing.is_some() {
+        return Edit::none(prog, None);
+    }
     // The walk is over the root component's own statements, which is the question `in_root` was
     // asking one statement at a time: a statement inside a component is written in the
     // component's terms, and a pose put there is a pose put on every instance of it.  What each

@@ -255,3 +255,40 @@ in std.top {
     let err = compile("sketch v(m) from m.f at (0mm, 0mm)").unwrap_err();
     assert!(err.message.contains("not a model plane"), "{err:?}");
 }
+
+/// **A model shown at an instant** (#398 L): `model m from "…" at t = 90deg` stands the drawing
+/// there, on the branch its march carries — presentation, so the same file is drawn at home under
+/// another alias — and an instant the drawing cannot be shown at is refused, said why.
+#[test]
+fn a_model_is_shown_at_the_instant_its_drawing_states() {
+    let model = include_str!("../../examples/mechanisms/four_bar.sv");
+    let compile = |text: &str| drawing::compile(text, "drawing.svd", None,
+        &mut |path, _| (path == "four_bar.sv").then(|| ("four_bar.sv".into(), model.into())));
+    let svg = compile("model home from \"four_bar.sv\"
+        model quarter from \"four_bar.sv\" at t = 90deg
+        sheet s {
+          sketch a(home) at (30mm, 40mm)
+          measure distance(home.a, home.c) in a
+          sketch b(quarter) at (130mm, 40mm)
+          measure distance(quarter.a, quarter.c) in b
+        }").unwrap();
+    // the rocker pin from the fixed pivot: 42.72 at home, 39.9994 a quarter turn on
+    assert!(svg.contains(">42.72</text>"), "{svg}");
+    assert!(svg.contains(">39.9994</text>"), "{svg}");
+    // one word, and the same instant again
+    assert_eq!(svg, compile("model home from \"four_bar.sv\"
+        model quarter from \"four_bar.sv\" at t=90deg
+        sheet s {
+          sketch a(home) at (30mm, 40mm)
+          measure distance(home.a, home.c) in a
+          sketch b(quarter) at (130mm, 40mm)
+          measure distance(quarter.a, quarter.c) in b
+        }").unwrap());
+    let refused = |at: &str| compile(&format!("model m from \"four_bar.sv\" at {at}
+        sheet s {{ sketch a(m) at (30mm, 40mm) }}")).unwrap_err().message;
+    assert_eq!(refused("t = 400deg"), "model `four_bar.sv` at `t`: 400 is not reached");
+    assert_eq!(refused("s = 1"), "model `four_bar.sv` at `s`: `s` is no parameter the drawing \
+               declares");
+    assert_eq!(refused("t = 5mm"), "model `four_bar.sv` at `t`: `5mm`: `t` is Angle, and this is \
+               Length");
+}

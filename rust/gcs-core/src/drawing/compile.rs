@@ -21,7 +21,13 @@ pub fn compile(
         let (path, text) = load(&m.path, source).ok_or_else(|| Error {
             span: m.span, message: format!("cannot load model `{}` from `{source}`", m.path),
         })?;
-        if !solved.contains_key(&path) {
+        // a model shown at an instant is a snapshot of its own, the same file's drawn at home and
+        // stood there (#398 L)
+        let key = match &m.at {
+            Some(at) => format!("{path}\u{0}{}={}", at.name, at.text.trim()),
+            None => path.clone(),
+        };
+        if !solved.contains_key(&key) {
             let fail = |message: String| Error { span: m.span, message: format!("model `{path}`: {message}") };
             let (mut p, errs) = crate::syntax::parse(&text);
             if let Some(e) = errs.first() { return Err(fail(e.message.clone())) }
@@ -42,12 +48,19 @@ pub fn compile(
             if let Some(d) = crate::program::solid_diagnostics(&e.sketch, &e.map).first() {
                 return Err(fail(d.message.clone()));
             }
-            solved.insert(path.clone(), e);
+            if let Some(at) = &m.at {
+                let fail = |message: String| Error {
+                    span: at.span, message: format!("model `{path}` at `{}`: {message}", at.name),
+                };
+                let t = crate::follow::instant(&e.sketch, &at.name, &at.text).map_err(fail)?;
+                crate::follow::stand(&mut e.sketch, &at.name, t).map_err(fail)?;
+            }
+            solved.insert(key.clone(), e);
         }
-        aliases.push((m.name.clone(), path));
+        aliases.push((m.name.clone(), key));
     }
-    let models = aliases.iter().map(|(name, path)| {
-        let e = &solved[path];
+    let models = aliases.iter().map(|(name, key)| {
+        let e = &solved[key];
         (name.clone(), Model { sketch: &e.sketch, names: &e.map })
     }).collect();
     render(&doc, &models, sheet)

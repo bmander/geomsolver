@@ -221,6 +221,7 @@ mod swept_over_parameters;
 mod tangent_at;
 mod tape;
 mod taylor;
+mod timeline;
 mod topology;
 mod trace;
 mod traced;
