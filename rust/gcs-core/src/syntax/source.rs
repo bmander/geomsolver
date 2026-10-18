@@ -101,6 +101,9 @@ pub struct Module {
     /// The modules this one `use`s, whose params its file reads in turn, and the names each
     /// imports bare.
     pub uses: Vec<Use>,
+    /// Whether the file has a `preview { … }`: a drawing of its own, where the dimensions its
+    /// components state are drawn rather than in a document using them (`Constraint::elsewhere`).
+    pub previewed: bool,
 }
 
 impl Program {

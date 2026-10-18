@@ -482,8 +482,10 @@ fn every_example_lays_out() {
         let dims = sk
             .constraints
             .iter()
-            // a block's later copies are the first copy's callout (`an_array_is_dimensioned_once`)
-            .filter(|c| !c.soft && !c.intrinsic && !c.repeated && c.kind.has_dimension())
+            // a block's later copies are the first copy's callout (`an_array_is_dimensioned_once`),
+            // and a part's are drawn in its own file (`a_part_is_dimensioned_in_its_own_file`)
+            .filter(|c| !c.soft && !c.intrinsic && !c.repeated && !c.elsewhere
+                && c.kind.has_dimension())
             .count();
         assert_eq!(ks.len(), dims, "{name}");
         for k in &ks {
@@ -775,6 +777,33 @@ fn elaborate(src: &str) -> Sketch {
     let e = gcs_core::program::elaborate(&p);
     assert!(e.ok(), "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
     e.sketch
+}
+
+/// A part's dimension is drawn in the part's own file (§14.4): the V-twin's assembly draws what
+/// it states, and not every number of the plate, the crank and both banks it imports — each a
+/// module with a `preview` of its own, which draws them, and `components.parts`' boxes reached
+/// through them.  A module with no drawing of its own is vocabulary, drawn where it is used.
+#[test]
+fn a_part_is_dimensioned_in_its_own_file() {
+    let sk = examples::vtwin();
+    let ks = layout(&sk, 0.2);
+    // `up above(d: 40) O`, and the side view's origin half the plate in front of its own
+    assert_eq!(texts(&ks), ["40", "tp / 2"]);
+    let elsewhere = sk.constraints.iter().filter(|c| c.elsewhere).count();
+    assert!(elsewhere > 200, "{elsewhere}");
+    // asking for one by id still draws it: the one being focused
+    let bore = sk.constraints.iter().find(|c| c.elsewhere && c.kind.has_dimension()).unwrap();
+    assert_eq!(gcs_core::callout::layout_selected(&sk, 0.2, Some(&[bore.id])).len(), 1);
+
+    // the part's own file states the same dimensions, and draws them
+    let part = examples::vtwin_cylinder();
+    assert!(part.constraints.iter().all(|c| !c.elsewhere));
+    assert!(layout(&part, 0.2).len() > 10);
+
+    // a library component the document calls is drawn where it is called: the flange's bolt
+    // pattern (`hardware.BoltPattern`) draws its holes' radius
+    let flange = examples::example("solid_flange").unwrap();
+    assert!(flange.constraints.iter().all(|c| !c.elsewhere));
 }
 
 /// A block's dimension is one statement, so it is one callout however many copies it makes:

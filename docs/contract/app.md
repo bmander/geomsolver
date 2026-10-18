@@ -288,6 +288,15 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   (`io::read_literals`): the flattener wrote it (`flatten::fold`: `13.333333333333334mm`).
   `callout::pick` owns what outranks a callout: a point within the tolerance beats its lines, but
   not the number's box, filled solid.
+- **A part's dimensions are drawn in the part's own file** (§14.4): a constraint stated in a
+  module with a `preview` (`Module::previewed`), or reached through an instance written in one, is
+  `Constraint::elsewhere`, set in `program::elaborate`'s `finish`, and the full callout layout
+  leaves it out as it does a `repeated` copy — asked for by id (focused) it is still drawn, and a
+  sheet's annotations and `dimensions` draw what they name.  The V-twin's assembly draws its own
+  two numbers, not the ~290 of the parts it imports; opening `components/cylinder.sv` draws the
+  cylinder's.  A module with no drawing of its own is vocabulary (`std.Hex`,
+  `hardware.BoltPattern`), drawn where the document calls it.  `tests/callout.rs`'s
+  `a_part_is_dimensioned_in_its_own_file` is the gate.
 - One straight dimension figure, `Pen::linear`, draws them all: it measures along a *given*
   direction, puts a head where each point falls on that line and runs an extension line out to
   each point.  `Pen::aligned` is the case where the direction is the pair's own; a run or a rise

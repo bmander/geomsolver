@@ -801,6 +801,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             nc.class = c.class.clone();
             nc.written = c.written.clone();
             nc.repeated = c.repeated;
+            nc.elsewhere = c.elsewhere;
             // the word it was written with, while every operand it named came along (§9.9)
             nc.word = c.word.as_ref().and_then(|w| {
                 let ops = w.ops.iter().map(|&e| remap(e)).collect::<Option<Vec<_>>>()?;

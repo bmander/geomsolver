@@ -252,8 +252,11 @@ pub fn render(doc: &Document, models: &BTreeMap<String, Model<'_>>, sheet: Optio
             if let Some(p) = a.at { sk.placements.insert(id, p); }
         }
         for c in &mut sk.constraints {
-            if !(chosen.contains(&c.id) || (v.sketch && v.dimensions
-                && c.entities().iter().any(|e| selected.contains(e)))) {
+            if chosen.contains(&c.id) || (v.sketch && v.dimensions
+                && c.entities().iter().any(|e| selected.contains(e))) {
+                // what the sheet asks for is drawn, a module's dimension too
+                c.elsewhere = false;
+            } else {
                 c.class.0.push("_svd_unselected".into());
             }
         }

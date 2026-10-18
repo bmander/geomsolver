@@ -54,7 +54,8 @@ is asked of every definition (`program/words.rs`) and blocks its expansion. A bo
 or several with their declarations (#103); none is defined in a body. `horizontal`/`vertical` between points live in `rust/lib/std.sv`; the printer
 writes `level(up)` (`print::ordinate_text`). `tests/relation_words.rs` is the gate. E071 is a
 component defined twice in one file, the document's own included (a value twice is E001). `std.front` needs the document's own `use std`. A drawn callout drops a
-module path (`relations::unqualified`).
+module path (`relations::unqualified`), and a module with a `preview` draws its own dimensions
+there and not in a document using it (`Constraint::elsewhere`, [app.md](app.md)).
 
 **Predicates, applied (§9.9, §6.21, 0.50, #103):** a relation word and a set are one predicate —
 parameters given at the call, **bound variables** (a word's operands, a set's point) filled at
