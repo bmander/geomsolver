@@ -427,6 +427,9 @@ struct Walk<'a> {
     /// A formal bound to an actual: one name for what another names.  Resolved transitively,
     /// after the walk.
     aliases: Vec<(String, Ref, Scope)>,
+    /// Each key of `aliases` with its entries' indices in order, kept up to as many of them as
+    /// `resolve::Lazy` last read (only ever added to, so brought up to date from there).
+    alias_keys: std::cell::RefCell<(usize, BTreeMap<String, Vec<usize>>)>,
     instances: Vec<InstanceInfo>,
     /// `Some` while a component is expanded over its formals as variables — see `Sym`.
     sym: Option<Sym>,
@@ -679,6 +682,7 @@ impl<'a> Walk<'a> {
                 }).collect()
             } else { BTreeSet::new() },
             aliases: Vec::new(),
+            alias_keys: Default::default(),
             instances: Vec::new(),
             sym,
             file_vals: Default::default(),

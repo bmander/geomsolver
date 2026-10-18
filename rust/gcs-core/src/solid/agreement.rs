@@ -104,15 +104,31 @@ pub fn of_triangles_parallel(vertices: &[V],triangles: &[[u32;3]],field: &super:
 /// disagrees, in the refusal.
 pub fn gate(field: &super::MaterialField,b: &crate::brep::topo::Brep,back: Option<(&dyn Fn(V) -> V,f64)>,
     what: &str) -> Result<(),String> {
+    gate_meshed(field,b,&gate_mesh(b)?,back,what)
+}
+
+/// `b` meshed as `gate` probes it: no coarser than a twentieth of the probes' offset.
+pub fn gate_mesh(b: &crate::brep::topo::Brep) -> Result<crate::brep::mesh::Mesh,String> {
     let size = b.size().max(f64::MIN_POSITIVE);
-    let mut offset = 2e-3*size;
-    let mut m = crate::brep::mesh::mesh(b,offset/20.0,crate::brep::export::ANGULAR)?;
-    if let Some((back,mm)) = back {
-        for p in &mut m.pts { *p = back(*p); }
-        offset /= mm;
-    }
+    crate::brep::mesh::mesh(b,2e-3*size/20.0,crate::brep::export::ANGULAR)
+}
+
+/// `gate` over `b` already meshed (`gate_mesh`): what a construction gated for several solids
+/// meshes once.
+pub fn gate_meshed(field: &super::MaterialField,b: &crate::brep::topo::Brep,m: &crate::brep::mesh::Mesh,
+    back: Option<(&dyn Fn(V) -> V,f64)>,what: &str) -> Result<(),String> {
+    let mut offset = 2e-3*b.size().max(f64::MIN_POSITIVE);
+    let moved: Vec<V>;
+    let pts = match back {
+        Some((back,mm)) => {
+            moved = m.pts.iter().map(|&p| back(p)).collect();
+            offset /= mm;
+            &moved
+        }
+        None => &m.pts,
+    };
     let options = Options {offset,confirm:offset/4.0,value_tolerance:offset/5.0,triangles:400,..Default::default()};
-    let report = of_triangles_parallel(&m.pts,&m.tris,field,1,&options)?;
+    let report = of_triangles_parallel(pts,&m.tris,field,1,&options)?;
     match report.disagreements.first() {
         None => Ok(()),
         Some(d) => Err(format!("{what} at [{:.6}, {:.6}, {:.6}] ({} of {} probes)",d.point[0],d.point[1],d.point[2],

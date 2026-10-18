@@ -735,7 +735,7 @@ impl<'a> Walk<'a> {
     /// written in.
     pub(super) fn chain_named(
         &self,
-        alias: &BTreeMap<String, String>,
+        alias: &dyn super::resolve::Aliases,
         r: &Ref,
         scope: &Scope,
     ) -> Option<(crate::syntax::NamedChain, Scope)> {
@@ -916,7 +916,7 @@ impl<'a> Walk<'a> {
         // it declares is named as if written beside it, and the numbers it defines
         // are its own
         if b.kind == BlockKind::When {
-            let names = Asked { walk: self, scope, alias: std::cell::OnceCell::new() };
+            let names = Asked::new(self, scope);
             match super::values::condition(&b.count, vals, scope, self.units, &names) {
                 Ok(true) => {
                     let mut sub = vals.clone();
@@ -1654,26 +1654,42 @@ impl Walk<'_> {
 
 /// What a `when` asks of names that are not numbers (#267), answered by the walk as it stands
 /// where the block is met: the aliases made so far — a face a copy runs over among them — read
-/// once, and only if a condition asks.
+/// only for the names a condition asks of (`resolve::Lazy`).
 struct Asked<'w, 'a> {
     walk: &'w Walk<'a>,
     scope: &'w Scope,
-    alias: std::cell::OnceCell<BTreeMap<String, String>>,
+    alias: super::resolve::Lazy<'w, 'a>,
 }
 
-impl Asked<'_, '_> {
-    fn alias(&self) -> &BTreeMap<String, String> {
-        self.alias.get_or_init(|| self.walk.alias_table())
+/// The most aliases a walk may have made for `Asked` to hold each answer to the walk's whole table
+/// under debug assertions: the documents of the suite, but not a body rounded all over, which the
+/// table per question would make quadratic again.
+const CHECKED: usize = 512;
+
+impl<'w, 'a> Asked<'w, 'a> {
+    fn new(walk: &'w Walk<'a>, scope: &'w Scope) -> Self {
+        Asked { walk, scope, alias: super::resolve::Lazy::new(walk) }
+    }
+
+    /// `ask` of `name`, through the aliases read lazily.
+    fn ask<T: PartialEq + std::fmt::Debug>(&self, name: &str,
+        ask: impl Fn(&Ref, &dyn super::resolve::Aliases) -> T) -> T {
+        let r = Ref::dotted(name, Span::default());
+        let found = ask(&r, &self.alias);
+        if cfg!(debug_assertions) && self.walk.aliases.len() <= CHECKED {
+            assert_eq!(found, ask(&r, &self.walk.alias_table()), "`{name}`");
+        }
+        found
     }
 }
 
 impl super::values::Names for Asked<'_, '_> {
     fn stands(&self, name: &str) -> Option<String> {
-        self.walk.stands_for(&Ref::dotted(name, Span::default()), self.scope, self.alias())
+        self.ask(name, |r, alias| self.walk.stands_for(r, self.scope, alias))
     }
 
     fn faces(&self, name: &str) -> Option<Vec<String>> {
-        self.walk.faces_named(&Ref::dotted(name, Span::default()), self.scope, self.alias())
+        self.ask(name, |r, alias| self.walk.faces_named(r, self.scope, alias))
     }
 
     fn running(&self, name: &str) -> bool {

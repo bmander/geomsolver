@@ -18,10 +18,13 @@ pub use path::{face_paths, face_source, FacePath, FaceSource};
 
 /// The region solids whose terms read the faces of `body`.
 pub fn readers_of(sk: &Sketch, body: usize) -> BTreeSet<usize> {
-    (0..sk.solids.len()).filter(|&i| match &sk.solids[i].def {
-        SolidDef::Region { terms, .. } => terms.iter().any(|t| reads_body(&t.shape, body)),
-        _ => false,
-    }).collect()
+    (0..sk.solids.len()).filter(|&i| reads_faces_of(sk, i, body)).collect()
+}
+
+/// Whether solid `i` is a region whose terms read the faces of `body` (`readers_of`'s test).
+fn reads_faces_of(sk: &Sketch, i: usize, body: usize) -> bool {
+    matches!(&sk.solids[i].def,
+        SolidDef::Region { terms, .. } if terms.iter().any(|t| reads_body(&t.shape, body)))
 }
 
 /// Whether a term's shape reads the faces of `body`: `body` among the solids of
@@ -106,7 +109,10 @@ pub fn terms_read_faces(terms: &[RegionTerm]) -> bool {
 /// `BodyFaces::read`, remembered against what it reads (`Caches::faces`): the stratum, so
 /// a round's own numbers do not build its body again.
 pub fn cached(sk: &Sketch, body: usize) -> Result<std::sync::Arc<BodyFaces>, String> {
-    let key = super::MemoKey::except(sk, body, &readers_of(sk, body));
+    // each solid the walk reaches asked whether it reads `body`'s faces, rather than every solid
+    // of the drawing gathered into a set first: a body rounded all over is asked this by each of
+    // its rounds
+    let key = super::MemoKey::except(sk, body, &|s| reads_faces_of(sk, s, body));
     sk.caches.faces.get_or(body, key, || BodyFaces::read(sk, body).map(std::sync::Arc::new))
 }
 
