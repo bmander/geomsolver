@@ -106,7 +106,11 @@ pub fn terms_read_faces(terms: &[RegionTerm]) -> bool {
 /// `BodyFaces::read`, remembered against what it reads (`Caches::faces`): the stratum, so
 /// a round's own numbers do not build its body again.
 pub fn cached(sk: &Sketch, body: usize) -> Result<std::sync::Arc<BodyFaces>, String> {
-    let key = super::MemoKey::except(sk, body, &readers_of(sk, body));
+    // each solid the walk reaches asked whether it reads `body`'s faces (`readers_of`'s test), not
+    // every solid of the drawing: a body rounded all over is asked this by each of its rounds
+    let reader = |s: usize| matches!(&sk.solids[s].def,
+        SolidDef::Region { terms, .. } if terms.iter().any(|t| reads_body(&t.shape, body)));
+    let key = super::MemoKey::except(sk, body, &reader);
     sk.caches.faces.get_or(body, key, || BodyFaces::read(sk, body).map(std::sync::Arc::new))
 }
 

@@ -33,7 +33,8 @@ pub fn reads_own(sk: &Sketch, si: usize, unit: f64) -> Vec<f64> {
 /// over one, which would build the solid again at every ask.
 const UNREAD: f64 = f64::MAX;
 
-/// `reads`, leaving out every solid but `si` that `skip` says and what only they reach.
+/// `reads`, leaving out every solid but `si` that `skip` says (asked only of solids in range) and
+/// what only they reach.
 fn reads_where(sk: &Sketch, si: usize, unit: f64, skip: &dyn Fn(usize) -> bool) -> Vec<f64> {
     reads_with(sk, si, unit, skip, &mut Poses::World)
 }
@@ -114,13 +115,14 @@ fn drawn_in(sk: &Sketch, p: usize, plane: Option<u32>) -> bool {
 fn reads_with(sk: &Sketch, si: usize, unit: f64, skip: &dyn Fn(usize) -> bool, poses: &mut Poses)
     -> Vec<f64> {
     let mut v = vec![unit];
-    let mut seen = std::collections::BTreeSet::new();
+    // a flag per solid: a body rounded all over has a term per edge and corner
+    let mut seen = vec![false; sk.solids.len()];
     let mut stack = vec![si as u32];
     while let Some(s) = stack.pop() {
-        if !seen.insert(s) || (s as usize != si && skip(s as usize)) {
+        let Some(sol) = sk.solids.get(s as usize) else { continue };
+        if std::mem::replace(&mut seen[s as usize], true) || (s as usize != si && skip(s as usize)) {
             continue;
         }
-        let Some(sol) = sk.solids.get(s as usize) else { continue };
         v.push(s as f64);
         name_read(&sol.name, &mut v);
         match &sol.def {
@@ -289,9 +291,10 @@ impl MemoKey {
         MemoKey { reads: reads_own(sk, si, 0.0), strata }
     }
 
-    /// What solid `si` reads but the solids `skip` (`reads_except`).
-    pub fn except(sk: &Sketch, si: usize, skip: &std::collections::BTreeSet<usize>) -> MemoKey {
-        MemoKey { reads: reads_except(sk, si, 0.0, skip), strata: Vec::new() }
+    /// What solid `si` reads but the solids `skip` says (`reads_except`), asked of each it
+    /// reaches.
+    pub fn except(sk: &Sketch, si: usize, skip: &dyn Fn(usize) -> bool) -> MemoKey {
+        MemoKey { reads: reads_where(sk, si, 0.0, skip), strata: Vec::new() }
     }
 }
 

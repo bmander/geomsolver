@@ -243,11 +243,39 @@ fn bench_scrub() {
              median(stand), objects.len(), median(moved), median(built));
 }
 
+/// **A body rounded all over** (`rounds/bores.sv`: nine faces, a region for each order of every
+/// pair and triple of them): its elaboration, its first evaluation — every region lowered and held
+/// to its field, the body built and meshed — and the solid asked for again, as a page asks it for
+/// each thing it draws of it.
+fn bench_rounded() {
+    println!("\n== a body rounded all over (rounds/bores.sv): ms ==");
+    let (prog, errs, _) =
+        gcs_core::library::parse_linked(include_str!("../../../examples/rounds/bores.sv"));
+    assert!(errs.is_empty(), "{errs:?}");
+    let t0 = Instant::now();
+    let mut sk = gcs_core::program::elaborate(&prog).sketch;
+    let elaborated = ms(t0);
+    gcs_core::solve::solve(&mut sk, Default::default());
+    let slab = sk.solids.iter().position(|s| s.name == "slab").expect("the slab");
+    let policy = gcs_core::solid::ApproximationPolicy::Mesh;
+    let t0 = Instant::now();
+    std::hint::black_box(sk.evaluated_solid(slab, policy).expect("evaluates"));
+    let first = ms(t0);
+    let again: Vec<f64> = (0..5).map(|_| {
+        let t0 = Instant::now();
+        std::hint::black_box(sk.evaluated_solid(slab, policy).expect("evaluates"));
+        ms(t0)
+    }).collect();
+    println!("{} solids: elaborate {elaborated:8.1} ms | first evaluation {first:8.1} ms | asked again {:6.2} ms",
+             sk.solids.len(), median(again));
+}
+
 fn main() {
     // `bench delaunay [case]`: the triangulation alone, or one of its cases (for timing a single
     // case's CPU from outside, as `/usr/bin/time` does when the machine is busy).
     if std::env::args().nth(1).as_deref() == Some("meshing") { bench_meshing(); return; }
     if std::env::args().nth(1).as_deref() == Some("scrub") { bench_scrub(); return; }
+    if std::env::args().nth(1).as_deref() == Some("rounded") { bench_rounded(); return; }
     if std::env::args().nth(1).as_deref() == Some("delaunay") { bench_delaunay(std::env::args().nth(2).as_deref()); return; }
     let cases = cases();
 
@@ -326,5 +354,6 @@ fn main() {
     }
     bench_meshing();
     bench_scrub();
+    bench_rounded();
     bench_delaunay(None);
 }

@@ -54,6 +54,9 @@ pub struct Caches {
     /// it does not depend on an approximation, so it is built once for a geometry and only meshed
     /// again for each one the evaluated solids above ask for.
     pub exact: Memo<Result<Rc<crate::solid::Exact>, String>>,
+    /// Whether each solid's boundary is the field's (`solid::has_sweep`), against `solid::reads`:
+    /// asked before every evaluation, a remembered one too, and it reads every operand's route.
+    pub(crate) swept: Memo<bool>,
     /// Each region solid's meridian (`solid::region::meridian`), against `solid::reads`: every
     /// evaluator, the validation and admission read it, and it is a fold of exact Booleans.
     pub meridian:
@@ -66,6 +69,14 @@ pub struct Caches {
     /// the stratum it reads: the recipe and the exact boundary each ask it, and its gate reads the
     /// field.
     pub(crate) lowering: Memo<Result<Rc<Vec<crate::solid::lowering::Piece>>, String>>,
+    /// The latest constructions a lowering's gate built and meshed (`solid::lowering::gated`),
+    /// each against the recipe node it was built from (and the stratum a rolled one rolls
+    /// against, by identity): the regions a round makes for each order of the faces it names
+    /// lower to one construction.  A few, oldest asked forgotten first: a mesh fine enough to
+    /// gate by is large.
+    #[allow(clippy::type_complexity)]
+    pub(crate) gated: RefCell<Vec<(String, Option<std::sync::Arc<crate::solid::faces::BodyFaces>>,
+                                   Rc<crate::solid::lowering::Gated>)>>,
     /// Each region solid in general position built as the common of its terms
     /// (`solid::bounded::built`, #238), against `solid::reads`: the sweep test, the recipe and
     /// the exact boundary each ask it, and its gate reads the field.
@@ -97,9 +108,11 @@ impl Caches {
         self.polyline.borrow_mut().clear();
         self.solid.borrow_mut().clear();
         self.exact.clear();
+        self.swept.clear();
         self.meridian.clear();
         self.general.clear();
         self.lowering.clear();
+        self.gated.borrow_mut().clear();
         self.bounded.clear();
         self.canal.clear();
         self.roll.clear();
