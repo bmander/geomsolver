@@ -479,7 +479,12 @@ pub fn boolean(a: &Region,b: &Region,op: Op,tol: f64) -> Result<Region,String> {
                 let piece = s.part(w[0],w[1]);
                 if piece.length() <= tol { continue }
                 let (m,d) = (piece.point(0.5),piece.tangent(0.5));
-                let keep = match other.along(m,d,tol) {
+                // on the other's boundary only if all of it is: its middle within `tol` of a step
+                // the other's boundary is near tangent to, a stretch its ends are not, is no
+                // stretch the two share
+                let on = |q: P| other.loops.iter().flatten().any(|o| o.distance(q) <= tol);
+                let along = other.along(m,d,tol).filter(|_| on(piece.start()) && on(piece.end()));
+                let keep = match along {
                     // on the other's boundary: one copy of a stretch both keep, from `a`
                     Some(same) => k == 0 && match op { Op::Union | Op::Common => same,Op::Cut => !same },
                     None => {

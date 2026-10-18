@@ -69,7 +69,10 @@ sector once (`mesh::mesh_with`) and shares seam points by index. Full verificati
 back by OCCT and measures it by `props` (1e-5; OCCT's volume held only to 1e-4).
 **Phases 3–5 (the gear without OCCT):** `brep::sweep` builds an admitted swept body: blank from its
 meridian region (`brep::planar`, `recipe::meridian`), cutters sectioned exactly (`brep::section`,
-`planar::Chart`), sheets traced and fitted (`sweep::sheet`, `nurbs::interpolate_net`; a fitted
+`planar::Chart`; revolutions about lines parallel within the recipe's `tol`, the sine between
+the lines times the meridian's reach, as a solved line is; a stretch of a planar Boolean's piece is
+on the other's boundary only if its middle and both its ends are, `planar.rs`), sheets traced and
+fitted (`sweep::sheet`, `nurbs::interpolate_net`; a fitted
 edge still in the blank between its nodes — a cutter's corner grazing it at stations where it is
 elsewhere a fan the rows stop before, `contact_trace::charted` — is carried on past it by its own
 surface, `Net::extended`, only where what that puts in the blank is within the fit's bar, else left
