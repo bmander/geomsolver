@@ -100,7 +100,7 @@ remembered against the recipe node up to the order it lists things in (`lowering
 `canonical`; a rolled one's stratum by identity; `Caches::gated`, the latest few): a round over
 every edge is a region for each order of the faces it names, and `Corner(a, b, c)` and
 `Corner(b, a, c)` lower to one construction, built and meshed once and held to each region's own
-field. `cad.rs` builds a body's lowered regions in one set as one recipe node, `"lowered"`
+field — until the word states each edge and corner once (#415), when the memo goes. `cad.rs` builds a body's lowered regions in one set as one recipe node, `"lowered"`
 (`assemble`: each distinct piece once, a run cut short at a corner's section and **glued** there,
 `boolean::glued`; the rest unioned — two runs crossing are a mitre), the first region standing for
 the rest; a region lowered to nothing is no operand; a body's face readers go in `"on_late"` /
@@ -145,8 +145,9 @@ plain declared name without building the alias table, and
 `region::in_general_position`/`folded` key a face-reading region on `reads_own` and the strata
 (`faces::cached`'s `Arc`s), never `reads` (which walks the body's every other round). Nor is a
 body rounded all over quadratic in its rounds (`rounds/bores.sv`: nine faces, 1152 regions): a
-`when` reads only the aliases its condition names (`flatten::resolve::Lazy`, each answer held to
-the whole table under debug assertions), and so does each pass over the blocks set aside; a
+`when` reads only the aliases its condition names (`flatten::resolve::Lazy`, the table's own
+rule per key; each answer held to the whole table under debug assertions, on a walk of a few
+hundred aliases), and so does each pass over the blocks set aside; a
 stratum's key (`faces::cached`) asks only the solids its walk reaches whether they read the body;
 and whether a body's boundary is the field's (`solid::has_sweep`, asked before every evaluation, a
 remembered one too) is remembered against `reads` (`Caches::swept`).

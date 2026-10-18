@@ -12,14 +12,7 @@ use super::document::material_sources;
 /// comparison.  Every scalar of every edge of every face the term reaches, each plane's pose,
 /// basis and origin, and every extent.
 pub fn reads(sk: &Sketch, si: usize, unit: f64) -> Vec<f64> {
-    reads_except(sk, si, unit, &std::collections::BTreeSet::new())
-}
-
-/// `reads`, with the solids `skip` and what only they reach left out: what a stratum reads
-/// (`faces::cached`).
-pub fn reads_except(sk: &Sketch, si: usize, unit: f64, skip: &std::collections::BTreeSet<usize>)
-    -> Vec<f64> {
-    reads_where(sk, si, unit, &|s| skip.contains(&s))
+    reads_where(sk, si, unit, &|_| false)
 }
 
 /// What solid `si` reads of its own, following no other solid it names: a region's terms read
@@ -291,8 +284,8 @@ impl MemoKey {
         MemoKey { reads: reads_own(sk, si, 0.0), strata }
     }
 
-    /// What solid `si` reads but the solids `skip` says (`reads_except`), asked of each it
-    /// reaches.
+    /// What solid `si` reads but the solids `skip` says and what only they reach (`reads_where`),
+    /// asked of each it reaches: what a stratum reads (`faces::cached`).
     pub fn except(sk: &Sketch, si: usize, skip: &dyn Fn(usize) -> bool) -> MemoKey {
         MemoKey { reads: reads_where(sk, si, 0.0, skip), strata: Vec::new() }
     }

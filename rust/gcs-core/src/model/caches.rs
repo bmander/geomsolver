@@ -72,11 +72,9 @@ pub struct Caches {
     /// The latest constructions a lowering's gate built and meshed (`solid::lowering::gated`),
     /// each against the recipe node it was built from (and the stratum a rolled one rolls
     /// against, by identity): the regions a round makes for each order of the faces it names
-    /// lower to one construction.  A few, oldest asked forgotten first: a mesh fine enough to
-    /// gate by is large.
-    #[allow(clippy::type_complexity)]
-    pub(crate) gated: RefCell<Vec<(String, Option<std::sync::Arc<crate::solid::faces::BodyFaces>>,
-                                   Rc<crate::solid::lowering::Gated>)>>,
+    /// lower to one construction (until #415 states each once).  A few, oldest asked forgotten
+    /// first: a mesh fine enough to gate by is large.
+    pub(crate) gated: RefCell<Vec<Rc<crate::solid::lowering::Gated>>>,
     /// Each region solid in general position built as the common of its terms
     /// (`solid::bounded::built`, #238), against `solid::reads`: the sweep test, the recipe and
     /// the exact boundary each ask it, and its gate reads the field.

@@ -104,7 +104,7 @@ pub fn of_triangles_parallel(vertices: &[V],triangles: &[[u32;3]],field: &super:
 /// disagrees, in the refusal.
 pub fn gate(field: &super::MaterialField,b: &crate::brep::topo::Brep,back: Option<(&dyn Fn(V) -> V,f64)>,
     what: &str) -> Result<(),String> {
-    gate_meshed(field,b.size(),&gate_mesh(b)?,back,what)
+    gate_meshed(field,b,&gate_mesh(b)?,back,what)
 }
 
 /// `b` meshed as `gate` probes it: no coarser than a twentieth of the probes' offset.
@@ -113,11 +113,11 @@ pub fn gate_mesh(b: &crate::brep::topo::Brep) -> Result<crate::brep::mesh::Mesh,
     crate::brep::mesh::mesh(b,2e-3*size/20.0,crate::brep::export::ANGULAR)
 }
 
-/// `gate` over a boundary already meshed (`gate_mesh`), `size` its own: what a construction
-/// gated for several solids meshes once.
-pub fn gate_meshed(field: &super::MaterialField,size: f64,m: &crate::brep::mesh::Mesh,back: Option<(&dyn Fn(V) -> V,f64)>,
-    what: &str) -> Result<(),String> {
-    let mut offset = 2e-3*size.max(f64::MIN_POSITIVE);
+/// `gate` over `b` already meshed (`gate_mesh`): what a construction gated for several solids
+/// meshes once.
+pub fn gate_meshed(field: &super::MaterialField,b: &crate::brep::topo::Brep,m: &crate::brep::mesh::Mesh,
+    back: Option<(&dyn Fn(V) -> V,f64)>,what: &str) -> Result<(),String> {
+    let mut offset = 2e-3*b.size().max(f64::MIN_POSITIVE);
     let moved: Vec<V>;
     let pts = match back {
         Some((back,mm)) => {

@@ -1654,33 +1654,42 @@ impl Walk<'_> {
 
 /// What a `when` asks of names that are not numbers (#267), answered by the walk as it stands
 /// where the block is met: the aliases made so far — a face a copy runs over among them — read
-/// only for the names a condition asks of (`resolve::Lazy`).  Under debug assertions each answer
-/// is held to the one the walk's whole table gives.
+/// only for the names a condition asks of (`resolve::Lazy`).
 struct Asked<'w, 'a> {
     walk: &'w Walk<'a>,
     scope: &'w Scope,
     alias: super::resolve::Lazy<'w, 'a>,
 }
 
+/// The most aliases a walk may have made for `Asked` to hold each answer to the walk's whole table
+/// under debug assertions: the documents of the suite, but not a body rounded all over, which the
+/// table per question would make quadratic again.
+const CHECKED: usize = 512;
+
 impl<'w, 'a> Asked<'w, 'a> {
     fn new(walk: &'w Walk<'a>, scope: &'w Scope) -> Self {
         Asked { walk, scope, alias: super::resolve::Lazy::new(walk) }
+    }
+
+    /// `ask` of `name`, through the aliases read lazily.
+    fn ask<T: PartialEq + std::fmt::Debug>(&self, name: &str,
+        ask: impl Fn(&Ref, &dyn super::resolve::Aliases) -> T) -> T {
+        let r = Ref::dotted(name, Span::default());
+        let found = ask(&r, &self.alias);
+        if cfg!(debug_assertions) && self.walk.aliases.len() <= CHECKED {
+            assert_eq!(found, ask(&r, &self.walk.alias_table()), "`{name}`");
+        }
+        found
     }
 }
 
 impl super::values::Names for Asked<'_, '_> {
     fn stands(&self, name: &str) -> Option<String> {
-        let r = Ref::dotted(name, Span::default());
-        let found = self.walk.stands_for(&r, self.scope, &self.alias);
-        debug_assert_eq!(found, self.walk.stands_for(&r, self.scope, &self.walk.alias_table()), "`{name}`");
-        found
+        self.ask(name, |r, alias| self.walk.stands_for(r, self.scope, alias))
     }
 
     fn faces(&self, name: &str) -> Option<Vec<String>> {
-        let r = Ref::dotted(name, Span::default());
-        let found = self.walk.faces_named(&r, self.scope, &self.alias);
-        debug_assert_eq!(found, self.walk.faces_named(&r, self.scope, &self.walk.alias_table()), "`{name}`");
-        found
+        self.ask(name, |r, alias| self.walk.faces_named(r, self.scope, alias))
     }
 
     fn running(&self, name: &str) -> bool {

@@ -158,13 +158,12 @@ impl Aliases for BTreeMap<String, String> {
 /// one of which the table resolves again: a table per `when` was most of the elaboration of
 /// `rounds/bores.sv`.  An entry reads as the table's first pass reads it — against the names and
 /// the entries made before it, a key's last entry that resolves standing — and is then followed
-/// where it lands, as the table's closure follows it.
+/// where it lands, as the table's closure follows it (`Walk::reading`, `Walk::moved`: one rule
+/// for both).
 pub(super) struct Lazy<'w, 'a> {
     walk: &'w Walk<'a>,
     /// Each entry's first-pass reading, by its index in `Walk::aliases`, once read.
     first: RefCell<BTreeMap<usize, Option<String>>>,
-    /// Each key's alias as the closure leaves it, once read.
-    closed: RefCell<BTreeMap<String, Option<String>>>,
 }
 
 /// The first pass as it stands on reaching entry `before`: the entries made before it.
@@ -181,26 +180,22 @@ impl Aliases for Before<'_, '_, '_> {
 
 impl Aliases for Lazy<'_, '_> {
     fn alias(&self, key: &str) -> Option<Cow<'_, str>> {
-        if let Some(v) = self.closed.borrow().get(key) {
-            return v.clone().map(Cow::Owned);
-        }
-        let v = self.close(key);
-        self.closed.borrow_mut().insert(key.to_string(), v.clone());
-        v.map(Cow::Owned)
+        self.close(key).map(Cow::Owned)
     }
 }
 
 impl<'w, 'a> Lazy<'w, 'a> {
     pub(super) fn new(walk: &'w Walk<'a>) -> Self {
         walk.index_aliases();
-        Lazy { walk, first: RefCell::default(), closed: RefCell::default() }
+        Lazy { walk, first: RefCell::default() }
     }
 
     /// The last of `key`'s entries before entry `before` that the first pass resolves, as it
     /// resolves it.
     fn first_before(&self, key: &str, before: usize) -> Option<String> {
-        let entries = self.walk.alias_keys.borrow().1.get(key)?.clone();
-        entries.into_iter().rev().filter(|&j| j < before).find_map(|j| self.first(j))
+        let keys = self.walk.alias_keys.borrow();
+        let entries = keys.1.get(key)?;
+        entries[..entries.partition_point(|&j| j < before)].iter().rev().find_map(|&j| self.first(j))
     }
 
     /// Entry `j` as the first pass reads it: what its reference finds among the names and the
@@ -210,10 +205,7 @@ impl<'w, 'a> Lazy<'w, 'a> {
             return v.clone();
         }
         let (_, r, sc) = &self.walk.aliases[j];
-        let before = Before { lazy: self, before: j };
-        let look = Lookup { names: &self.walk.names, alias: &before, units: self.walk.units };
-        let v = self.walk.found(look.raw(r, sc))
-            .map(|(target, rest)| std::iter::once(target).chain(rest).collect::<Vec<_>>().join("."));
+        let v = self.walk.reading(&Before { lazy: self, before: j }, r, sc);
         self.first.borrow_mut().insert(j, v.clone());
         v
     }
@@ -223,17 +215,17 @@ impl<'w, 'a> Lazy<'w, 'a> {
     fn close(&self, key: &str) -> Option<String> {
         let mut v = self.first_before(key, usize::MAX)?;
         let all = Before { lazy: self, before: usize::MAX };
-        let look = Lookup { names: &self.walk.names, alias: &all, units: self.walk.units };
         for _ in 0..MAX_DEPTH {
-            let Some((root, rest)) = look.alias_target(&v, &[]) else { break };
-            let next = std::iter::once(root).chain(rest).collect::<Vec<_>>().join(".");
-            if next == v {
-                break;
-            }
+            let Some(next) = self.walk.moved(&all, &v) else { break };
             v = next;
         }
         Some(v)
     }
+}
+
+/// A name and the field path left over, as one dotted name.
+fn dotted(root: String, rest: Vec<String>) -> String {
+    std::iter::once(root).chain(rest).collect::<Vec<_>>().join(".")
 }
 
 impl Lookup<'_> {
@@ -821,10 +813,7 @@ impl<'a> Walk<'a> {
     fn index_aliases(&self) {
         let mut index = self.alias_keys.borrow_mut();
         let (made, keys) = &mut *index;
-        if *made > self.aliases.len() {
-            *made = 0;
-            keys.clear();
-        }
+        debug_assert!(*made <= self.aliases.len(), "an alias was taken back");
         for (j, (key, _, _)) in self.aliases.iter().enumerate().skip(*made) {
             keys.entry(key.clone()).or_default().push(j);
         }
@@ -836,8 +825,7 @@ impl<'a> Walk<'a> {
     pub(super) fn alias_table(&self) -> BTreeMap<String, String> {
         let mut alias: BTreeMap<String, String> = BTreeMap::new();
         for (abs, r, sc) in &self.aliases {
-            if let Some((target, rest)) = self.found(self.look(&alias).raw(r, sc)) {
-                let to = std::iter::once(target).chain(rest).collect::<Vec<_>>().join(".");
+            if let Some(to) = self.reading(&alias, r, sc) {
                 alias.insert(abs.clone(), to);
             }
         }
@@ -845,17 +833,9 @@ impl<'a> Walk<'a> {
         for _ in 0..MAX_DEPTH {
             let mut moved = false;
             for k in &keys {
-                let v = &alias[k];
-                // a declared name is where `alias_target` lands at its first look: no move
-                if self.names.contains(v) {
-                    continue;
-                }
-                if let Some((root, rest)) = self.look(&alias).alias_target(v, &[]) {
-                    let next = std::iter::once(root).chain(rest).collect::<Vec<_>>().join(".");
-                    if next != *v {
-                        alias.insert(k.clone(), next);
-                        moved = true;
-                    }
+                if let Some(next) = self.moved(&alias, &alias[k]) {
+                    alias.insert(k.clone(), next);
+                    moved = true;
                 }
             }
             if !moved {
@@ -863,6 +843,23 @@ impl<'a> Walk<'a> {
             }
         }
         alias
+    }
+
+    /// An alias's reference as the table's first pass reads it, through `alias`: the name it
+    /// finds and the field path left over, as one name.
+    fn reading(&self, alias: &dyn Aliases, r: &Ref, sc: &Scope) -> Option<String> {
+        self.found(self.look(alias).raw(r, sc)).map(|(target, rest)| dotted(target, rest))
+    }
+
+    /// Where the table's closure moves an alias standing at `v`, through `alias`: `None` where it
+    /// stays.
+    fn moved(&self, alias: &dyn Aliases, v: &str) -> Option<String> {
+        // a declared name is where `alias_target` lands at its first look
+        if self.names.contains(v) {
+            return None;
+        }
+        let (root, rest) = self.look(alias).alias_target(v, &[])?;
+        Some(dotted(root, rest)).filter(|next| next != v)
     }
 
     /// What a reference was found to name, unless it is a field of a group or an instance that

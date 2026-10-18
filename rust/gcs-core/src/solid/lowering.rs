@@ -400,14 +400,17 @@ fn gate(sk: &Sketch, solid: usize, pieces: &[Piece], body: &std::sync::Arc<super
     }
     let back = |p: V| body.back(p);
     let back = mm.map(|mm| (&back as &dyn Fn(V) -> V, mm));
-    super::agreement::gate_meshed(&field, b.size(), &built.mesh, back, "its exact construction disagrees with the field")
+    super::agreement::gate_meshed(&field, b, &built.mesh, back, "its exact construction disagrees with the field")
 }
 
 /// **A gate's construction** (`gated`): the pieces' boundary — in model units, or a rolled one
 /// rolled against the stratum in millimetres (`mm` of them a model unit) — and its mesh as the
-/// gate probes it.
+/// gate probes it, with what it was built from: the node's text up to its order (`canonical`)
+/// and the stratum a rolled one rolls against.
 #[derive(Debug)]
 pub(crate) struct Gated {
+    key: String,
+    stratum: Option<std::sync::Arc<super::faces::BodyFaces>>,
     brep: crate::brep::topo::Brep,
     mesh: crate::brep::mesh::Mesh,
     mm: Option<f64>,
@@ -418,10 +421,10 @@ pub(crate) struct Gated {
 fn canonical(node: &Json) -> String {
     let dump = |j: &Json| j.dump(None);
     let corner = |c: &Json| {
-        let mut faces: Vec<String> = c.get("faces").map_or(&[][..], Json::arr).iter().map(dump).collect();
-        faces.sort();
+        let mut faces = c.get("faces").map_or(&[][..], Json::arr).to_vec();
+        faces.sort_by_cached_key(dump);
         let mut c = c.clone();
-        c.set("faces", Json::Arr(faces.into_iter().map(Json::Str).collect()));
+        c.set("faces", Json::Arr(faces));
         c.dump(None)
     };
     // in the order joins count them: runs and rings, then corners, then rolled runs
@@ -429,16 +432,17 @@ fn canonical(node: &Json) -> String {
     let each: Vec<String> = listed("pieces").iter().map(dump).chain(listed("corners").iter().map(corner))
         .chain(listed("rolled").iter().map(dump)).collect();
     let mut joins: Vec<[&str; 2]> = listed("joins").iter().map(|j| {
-        let mut pair = [0, 1].map(|k| each.get(j.arr().get(k).map_or(usize::MAX, |i| i.as_i64() as usize)).map_or("", String::as_str));
+        let at = |k: usize| j.arr().get(k).map_or(usize::MAX, |i| i.as_i64() as usize);
+        let mut pair = [0, 1].map(|k| each.get(at(k)).map_or("", String::as_str));
         pair.sort();
         pair
     }).collect();
     joins.sort();
     let mut sorted: Vec<&str> = each.iter().map(String::as_str).collect();
     sorted.sort();
-    let mut out = Json::Obj(vec![
-        ("each".into(), Json::Arr(sorted.into_iter().map(|t| Json::Str(t.into())).collect())),
-        ("joins".into(), Json::Arr(joins.into_iter().map(|p| Json::Arr(p.map(|t| Json::Str(t.into())).to_vec())).collect())),
+    let mut out = object([
+        ("each", Json::Arr(sorted.into_iter().map(|t| Json::Str(t.into())).collect())),
+        ("joins", Json::Arr(joins.into_iter().map(|p| Json::Arr(p.map(|t| Json::Str(t.into())).to_vec())).collect())),
     ]);
     if let Some(stratum) = node.get("stratum") {
         out.set("stratum", stratum.clone());
@@ -446,7 +450,9 @@ fn canonical(node: &Json) -> String {
     out.dump(None)
 }
 
-/// How many constructions `Caches::gated` keeps, the latest asked.
+/// How many constructions `Caches::gated` keeps, the latest asked: enough for the orders of
+/// `rounds/bores.sv`'s corners, met among nine distinct constructions.  It stands in for stating
+/// each edge and corner once (#415), and goes with it.
 const GATED: usize = 16;
 
 /// The pieces' boundary and its mesh, remembered against the recipe node they are built from up
@@ -456,43 +462,38 @@ const GATED: usize = 16;
 /// listed in another order — one point set, built and meshed once and held to each region's own
 /// field.
 fn gated(sk: &Sketch, pieces: &[Piece], body: &std::sync::Arc<super::faces::BodyFaces>) -> Result<Rc<Gated>, String> {
+    use crate::brep::recipe::Writer;
+    use std::sync::Arc;
     let rolled = pieces.iter().any(|p| matches!(p, Piece::Rolled(_)));
-    // the pieces' boundary in model units: a rolled one rolled against the stratum (millimetres,
-    // about its origin) and brought back
-    let (node, mm) = if !rolled { (assemble(pieces).node(&crate::brep::recipe::Writer::world(1.0))?, None) } else {
-        // in the stratum's own frame (millimetres about its origin), as the recipe builds it: the
-        // lowered node, rolled against the stratum standing in its built set
-        let (_, mm, origin) = body.brep();
-        let mut node = assemble(pieces).node(&crate::brep::recipe::Writer::about(mm, scale(origin, mm)))?;
+    // the pieces' boundary in model units; a rolled one in the stratum's own frame (millimetres
+    // about its origin), as the recipe builds it — the lowered node, rolled against the stratum
+    // standing in its built set — and brought back
+    let (_, by, origin) = body.brep();
+    let (writer, mm) =
+        if rolled { (Writer::about(by, scale(origin, by)), Some(by)) } else { (Writer::world(1.0), None) };
+    let mut node = assemble(pieces).node(&writer)?;
+    if rolled {
         node.set("stratum", object([("kind", "body".into()), ("stock", 0.into()), ("on", Json::Arr(vec![])),
             ("cut", Json::Arr(vec![])), ("bound", Json::Arr(vec![]))]));
-        (node, Some(mm))
-    };
-    let text = canonical(&node);
+    }
+    let key = canonical(&node);
     let stratum = rolled.then(|| body.clone());
-    let same = |(t, s, _): &(String, Option<std::sync::Arc<super::faces::BodyFaces>>, Rc<Gated>)| *t == text
-        && match (s, &stratum) { (None, None) => true, (Some(a), Some(b)) => std::sync::Arc::ptr_eq(a, b), _ => false };
+    let at = |s: &Option<Arc<super::faces::BodyFaces>>| s.as_ref().map(Arc::as_ptr);
     let mut cache = sk.caches.gated.borrow_mut();
-    if let Some(k) = cache.iter().position(same) {
-        let entry = cache.remove(k);
-        let found = entry.2.clone();
-        cache.push(entry);
+    if let Some(k) = cache.iter().position(|g| g.key == key && at(&g.stratum) == at(&stratum)) {
+        let found = cache.remove(k);
+        cache.push(found.clone());
         return Ok(found);
     }
     drop(cache);
-    let brep = match &stratum {
-        None => crate::brep::recipe::node_named(&node, &Default::default(), &Default::default(), 0.0)?,
-        Some(body) => {
-            let built = std::collections::BTreeMap::from([(0, body.brep().0.clone())]);
-            crate::brep::recipe::node_named(&node, &built, &Default::default(), 0.0)?
-        }
-    };
+    let built: std::collections::BTreeMap<_, _> = stratum.iter().map(|b| (0, b.brep().0.clone())).collect();
+    let brep = crate::brep::recipe::node_named(&node, &built, &Default::default(), 0.0)?;
     let mesh = super::agreement::gate_mesh(&brep)?;
-    let built = Rc::new(Gated { brep, mesh, mm });
+    let built = Rc::new(Gated { key, stratum, brep, mesh, mm });
     let mut cache = sk.caches.gated.borrow_mut();
     if cache.len() >= GATED {
         cache.remove(0);
     }
-    cache.push((text, stratum, built.clone()));
+    cache.push(built.clone());
     Ok(built)
 }
