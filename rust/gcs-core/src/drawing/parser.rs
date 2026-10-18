@@ -21,7 +21,9 @@ pub fn parse(text: &str) -> Result<Document> {
                 let name = p.name()?;
                 if !names.insert(name.clone()) { return p.fail("model alias declared twice"); }
                 p.want("from")?;
-                doc.models.push(ModelImport { name, path: p.string()?, span });
+                let path = p.string()?;
+                let at = if p.eat("at") { Some(p.instant()?) } else { None };
+                doc.models.push(ModelImport { name, path, at, span });
             }
             "use" => doc.imports.push(p.string()?),
             "style" => doc.styles.push(p.rule(span)?),
@@ -71,6 +73,23 @@ impl P {
         let Some(t) = self.tokens.get(self.i) else { return self.fail("expected a quoted string") };
         if !t.quoted { return self.fail("expected a quoted string") }
         let s = t.text.clone(); self.i += 1; Ok(s)
+    }
+    /// `t = 90deg`: a parameter's name and its value's text, which the model's own units read
+    /// (`follow::instant`) once it is loaded.  Written `t=90deg` it is one word.
+    fn instant(&mut self) -> Result<Instant> {
+        let span = self.span();
+        let word = self.word()?;
+        let (name, text) = match word.split_once('=') {
+            Some((n, v)) if !v.is_empty() => (n.to_string(), v.to_string()),
+            Some((n, _)) => (n.to_string(), self.word()?),
+            None if self.eat("=") => (word, self.word()?),
+            None => return self.fail("expected `=` and the instant: `at t = 90deg`"),
+        };
+        if !crate::syntax::is_name(&name) {
+            return Err(Error { span, message: format!("`{name}` is not a name") });
+        }
+        let hi = self.tokens[self.i - 1].span.hi as usize;
+        Ok(Instant { name, text, span: Span::new(span.lo as usize, hi) })
     }
     fn number(&mut self, length: bool) -> Result<f64> {
         let span = self.span();

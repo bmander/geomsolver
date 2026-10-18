@@ -5,8 +5,8 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
 interval of the roll a reading states, `follow.rs` (continuation), `trace(m over t)` and what is
 held to it (`followed.rs`), a drive (`motion/law.rs`, `MotionDef::Driven`,
 `tape::eval_interval`), a face swept over a declared parameter or a valued frame's block
-(`flatten/valued.rs`, #398 B), or a frame along a path (`motion/guide.rs`, `MotionDef::Guided`,
-#398 C). The
+(`flatten/valued.rs`, #398 B), a frame along a path (`motion/guide.rs`, `MotionDef::Guided`,
+#398 C), or a drawing stood at an instant of its march (`follow::stand`, `Scrub`, #398 L). The
 direction is [#391](https://github.com/bmander/geomsolver/issues/391): geometry over a
 parameter, trajectories rather than snapshots; this file holds what is built of it. An issue
 number (#n) or a spec version ([0.n], see the [language changelog](../solvent-changelog.md)) says
@@ -213,7 +213,7 @@ where a rule came from.
     by #398 A, below), a sweep
     of a section over a declared parameter (`sweep(sec over s)`, built by #398 B, below),
     continuation past a singular
-    instant onto a chosen branch, and the app's timeline (stage 6).
+    instant onto a chosen branch, and the app's timeline (stage 6, built by #398 L, below).
 - **Relations held to a followed trace** (#398 A, [0.144]): `trace(m over t)` is a curve the
   solve works through — a point on it at an instant, a line tangent to it, a circle osculating it,
   a claim over it — and a number of the drawing that does not run with `t` solves through it.
@@ -331,7 +331,7 @@ where a rule came from.
     stage 4); a relation the solve holds reading a drive (a law in a kernel's constants); a
     profile in the plane generated under a drive; a slide's value written as a length (it is an
     instant of the roll: `advance: 360mm` makes its degrees millimetres); and the app's timeline
-    (stage 6).
+    (stage 6, built by #398 L, below).
 - **Faces swept over a declared parameter** (#398 B, [0.145]): one parameter axis for the face
   families as for the drawing.
   - **A face family reads its parameter as declared**: `sweep(Station(…).f over s)`, `s` a `param
@@ -420,3 +420,50 @@ where a rule came from.
     traced helix against the helix's rotation-minimising frame in closed form to 1e-9 and its rate
     against a difference of its pose; `MotionBounds` holding every sampled pose of sixteen
     stretches forward and back and the speed bound every sampled speed; the refusals.
+- **A drawing shown at an instant** (#398 L, [0.146]): the app's timeline and a drawing's
+  `at t = 90deg`, one mechanism in the core.
+  - **Standing** (`follow::stand`, `follow::home`, `Sketch::standing`): the drawing stood at `t`
+    on the branch its march carried (`Followed::put`), remembering **home** — every parameter and
+    every constraint's numbers as they were (a put works out again the numbers that read `t`).
+    Stood at one parameter it is sent home from any other first (each is followed alone).  An
+    instant not reached, or a parameter not followed, is refused and the drawing left at home.
+    `home` puts the parameters back and works the texts out again; a sketch grown while it stood
+    (a parameter vector is only appended to in place) keeps what was drawn where it was put, and
+    one of fewer parameters is only forgotten.  **Standing is presentation**: `follow::followed`
+    keys and starts a march on the drawing at home (`Standing::home` and its numbers), and a
+    followed curve's polyline key reads home, so standing anywhere re-marches nothing and redraws
+    no trace; `edit::commit_seeds` writes no seed from a drawing standing at an instant.  Never
+    written to a document, never grafted.
+  - **An instant as written** (`follow::instant`): `90deg`, read in the drawing's units as the
+    interval's ends are — the parameter's dimension, finite.  A drawing's `model m from "…" at t =
+    90deg` (`drawing::Instant`, the parser's `instant`, one word as `t=90deg`) is a snapshot of its
+    own, keyed by the file and the instant, solved at home and stood there (`drawing::compile`);
+    refused at the import, saying why.
+  - **A drag along a march** (`follow::Scrub`): a point taken hold of, its track read once off the
+    stations (in its own plane, or on the eye's picture plane for a point in space), and each
+    pointer walked to from the instant shown, downhill in distance, so a track crossing itself is
+    not jumped and nothing past the march's reach is found; round a whole turn of an angle whose
+    track closes the walk wraps.  The segment walked to and one either side are each fitted with
+    the parabola in `t` through its stations and the next and the nearest instant on it taken (a
+    chord's corner is nearer than its middle from outside a bend): no solve, a ten-thousandth of
+    a degree on a crank at `COARSEST`.  A point that does not move as `t` runs is refused.
+  - **What a timeline is told** (`report::parameters_json`, `parameter_json`): each parameter's
+    name, dimension and ends, as numbers and as read; and a march's start and reach, its singular
+    instant (`at`, `kind`, the core's `Singular::text`) and `parameter_text`, or why it is not
+    followed.  The ABI is `gcs_parameters_json`,
+    `gcs_parameter_json`, `gcs_parameter_stand`/`_home`/`_instant`/`_reading` and
+    `gcs_scrub_new`/`_move`/`_free` (`gcs-ffi/src/parameters.rs`; a move stands the drawing at the
+    instant found); the binding `web/src/core/parameters.ts`.
+  - **Gate**: `tests/timeline.rs` — the four-bar stood at instants on its closed form (1e-8), its
+    march the same `Rc` and its trace the same polyline wherever it stands, home to the bit and
+    solving at `t = 0` again; an instant past the triple rocker's limit refused at home; no seed
+    from an instant; the crank's pin dragged round past a whole turn and the coupler's midpoint
+    finding their instants (1e-3°), a drag stopped at the limit, the fixed pivot refused; the
+    JSON in the core's words.  `tests/drawing.rs`
+    (`a_model_is_shown_at_the_instant_its_drawing_states`): a sheet measuring the rocker pin at
+    home and a quarter turn on, the one-word spelling, the refusals.  The web suite's
+    `timeline.test.ts` (the app's side, `app.md`).
+  - **Not built**: several parameters stood together (H), an instant past a singular one (J), an
+    envelope or a sweep re-read at the instant shown (a solid riding the drawing is evaluated
+    where it stands, a swept field meshed at home), and a paper preview's own scrubber writing
+    the `.svd`'s `at`.

@@ -32,6 +32,18 @@ pub struct Document {
 pub struct ModelImport {
     pub name: String,
     pub path: String,
+    /// The instant the model is shown at (`model m from "…" at t = 90deg`, #398 L): one of its
+    /// declared parameters and the value, as written.  Presentation: the model is drawn as it is
+    /// and stood there, on the branch its march carries.
+    pub at: Option<Instant>,
+    pub span: Span,
+}
+
+/// An instant of a model's declared parameter, as a drawing writes it.
+#[derive(Clone, Debug)]
+pub struct Instant {
+    pub name: String,
+    pub text: String,
     pub span: Span,
 }
 

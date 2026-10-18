@@ -5,6 +5,7 @@
 import * as dim from '../core/callout.js';
 import { Constraint } from '../core/constraints.js';
 import { PlanDrag } from '../core/decompose.js';
+import { Scrub } from '../core/parameters.js';
 import {
   Arc, Circle, Param, Plane, Point, Primitive, Spline,
 } from '../core/model.js';
@@ -444,6 +445,26 @@ function pressedApart(v: SketchView, e: PointerEvent, sp: [number, number], at: 
 
 /** The drag a press on an entity starts, where it can move at all. */
 function dragEntity(v: SketchView, sp: [number, number], ent: Primitive): void {
+  // a point of a drawing that runs over a parameter is dragged **along its march** (#398 L): the
+  // drawing driven by where its point is put, as a crank is turned by its pin
+  if (ent instanceof Point && v.marches.some((m) => m.followed)) {
+    const space = v.inSpace(ent);
+    const view = v.viewOf(ent);
+    if (space || readable(v, view)) {
+      const read = (at: [number, number]) => space ? v.eye(...at) : v.placeIn(view, ...at);
+      const taken = takeScrub(v, ent, space);
+      if (taken instanceof Scrub) {
+        v.gesture = scrubGesture(v, taken, read);
+        return;
+      }
+      // shown at an instant, nothing else of the drawing moves: what is drawn there is not
+      // where it is drawn
+      if (v.instant?.at != null) {
+        v.onStatus(`${v.doc.nameOf(ent) ?? 'that point'}: ${taken}`);
+        return;
+      }
+    }
+  }
   // a point in space stands in no view, so it is dragged **where the eye sees it**: across the
   // picture plane, its depth along the line of sight left to what else holds it
   if (ent instanceof Point && v.inSpace(ent)) {
@@ -590,6 +611,39 @@ export function pointGesture(v: SketchView, drag: PlanDrag,
     abandon: () => {
       drag.end();              // disposes the drag's own handles; no branches committed
     },
+  };
+}
+
+/** The scrub of `p` along the first followed parameter it moves under — the one shown first —
+ *  or why there is none. */
+function takeScrub(v: SketchView, p: Point, space: boolean): Scrub | string {
+  const shown = v.instant?.name;
+  const names = v.marches.filter((m) => m.followed).map((m) => m.name)
+    .sort((a, b) => Number(b === shown) - Number(a === shown));
+  let why = '';
+  for (const name of names) {
+    const s = Scrub.take(v.sketch, name, p, space ? v.orbit : null);
+    if (s instanceof Scrub) return s;
+    why ||= s.refused;
+  }
+  return why;
+}
+
+/** Drag a point along the march (#398 L): each move stands the drawing at the instant its point
+ *  comes nearest the pointer.  What is shown moves and the document does not, so it is
+ *  `transient` — nothing is written back, and nothing goes on the undo stack. */
+export function scrubGesture(v: SketchView, scrub: Scrub,
+                             read: (sp: [number, number]) => [number, number]): Gesture {
+  return {
+    transient: true,
+    move: (sp) => {
+      const r = scrub.move(...read(sp));
+      if ('at' in r) v.scrubbedTo(scrub.name, r.at);
+      else v.onStatus(r.refused);
+      v.onDragFrame();
+    },
+    end: () => scrub.end(),
+    abandon: () => scrub.end(),
   };
 }
 

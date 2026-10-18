@@ -61,6 +61,22 @@ statements resolve through the module system as they do anywhere. Model aliases 
 drawing can import multiple models. Repeated imports of the same canonical file share one
 solved snapshot. Unsolved or invalid models produce a drawing diagnostic.
 
+`model ALIAS from "PATH" at t = 90deg` shows a model that declares a parameter (`param t: Angle
+over (0deg, 360deg)`) at an instant of it: the model is solved where it is drawn, followed along
+`t`, and stood at 90° on the branch its march carries. The value is read in the model's own units
+(`12mm` for a length, a bare number for a scalar) and written `t=90deg` it is one word. The same
+file at two instants is two snapshots, so one sheet can show a mechanism in several positions:
+
+```
+model home from "four_bar.sv"
+model quarter from "four_bar.sv" at t = 90deg
+```
+
+An instant past where the march stopped (a singular instant: `400 is not reached`), a parameter
+the model does not declare, or a value of another dimension is an error on the import. The
+instant is presentation: it is never written into the model. The browser's timeline shows the
+model being edited at an instant the same way, as view state.
+
 `use "PATH"` imports styles, recursively. Such an import may contain other style imports but
 cannot contain models or sheets. Imports resolve relative to their importing file. Cycles,
 excessive nesting, missing files, and invalid source produce errors. Imported rules precede

@@ -19,6 +19,11 @@ Read them in this order:
 | `triple_rocker.sv` | **Where the motion turns back.** The same four rods in another proportion: no rod turns round, and the march stops at 129.838°, where the coupler and the rocker stand in line, saying no drawing stands past it. |
 | `change_point.sv` | **Where two branches cross.** A four-bar on the boundary of Grashof's condition folds flat at 180°, where its two assembly modes meet; the march stops there and says so. A rocker a ten-thousandth longer is carried through the near-fold round the turn. |
 
+In the app each opens with a timeline under the drawing: scrub `t` and the drawing stands at that
+instant, the singular instant marked where the march stopped; drag the crank's pin and the linkage
+turns with it. A drawing shows one at an instant with `model m from "four_bar.sv" at t = 90deg`.
+The instant is presentation, never written into the model.
+
 What is not here yet: these traces are drawn but nothing is held to them (a relation naming a
 followed trace is E061), so the series in `../generation/` that solves *through* a traced path —
 the Jansen stride standing on the ground, the dwell circle fitted by curvature — still traces a

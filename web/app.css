@@ -327,6 +327,37 @@ dialog input[type=search] {
 @keyframes loading-sweep { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
 
 /* the measurement readout: pinned to the canvas's lower right, only while two things are picked */
+/* the timeline (#398 L): a strip in the viewport's lower left, a row per parameter.  The track's
+   solid part is what the march reached; past it, hatched, no drawing was followed, and the mark
+   is the singular instant the march stopped at */
+#timeline {
+  position: absolute; left: 12px; bottom: 12px; z-index: 3;
+  display: flex; flex-direction: column; gap: 4px;
+  width: min(460px, calc(100% - 24px)); padding: 6px 9px;
+  border: 1px solid var(--line); border-radius: 7px;
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
+  box-shadow: 0 2px 10px rgba(0,0,0,.08);
+  font-size: 12px;
+}
+#timeline[hidden] { display: none; }
+.drawing-active #timeline { visibility: hidden; }
+.tl-row { display: flex; align-items: center; gap: 8px; }
+.tl-row.tl-off { color: var(--muted); }
+.tl-name { font-family: var(--mono); font-weight: 600; min-width: 1.5em; }
+.tl-track { position: relative; flex: 1; height: 18px; display: flex; align-items: center;
+  border-radius: 3px;
+  background: repeating-linear-gradient(135deg, transparent 0 4px, var(--line) 4px 6px); }
+.tl-reach { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 3px;
+  background: var(--panel); }
+.tl-singular { position: absolute; top: -2px; bottom: -2px; width: 3px; margin-left: -1.5px;
+  background: var(--danger); border-radius: 2px; z-index: 1; }
+.tl-singular[hidden] { display: none; }
+.tl-track input[type="range"] { position: relative; z-index: 2; width: 100%; margin: 0;
+  background: transparent; accent-color: var(--accent); }
+.tl-at { width: 9em; font-family: var(--mono); font-size: 12px; padding: 1px 4px;
+  border: 1px solid var(--line); border-radius: 4px; background: var(--bg); color: var(--text); }
+.tl-row.tl-shown .tl-at { border-color: var(--accent); color: var(--accent); }
+
 #measure {
   position: absolute; right: 12px; bottom: 12px; display: none;
   padding: 7px 11px; border: 1px solid var(--line); border-radius: 7px;

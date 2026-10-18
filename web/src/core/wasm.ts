@@ -353,6 +353,16 @@ export interface Abi {
   gcs_plan_drag_guards(d: number, h: number, out: number): number;
   gcs_plan_drag_end(d: number, h: number): void;
   gcs_plan_drag_free(d: number): void;
+  gcs_parameters_json(h: number): number;
+  gcs_parameter_json(h: number, np: number, nn: number): number;
+  gcs_parameter_stand(h: number, np: number, nn: number, t: number): number;
+  gcs_parameter_home(h: number): void;
+  gcs_parameter_instant(h: number, np: number, nn: number, tp: number, tn: number): number;
+  gcs_parameter_reading(h: number, np: number, nn: number, v: number): number;
+  gcs_scrub_new(h: number, np: number, nn: number, point: number, seen: number, az: number,
+                el: number): number;
+  gcs_scrub_move(s: number, h: number, x: number, y: number): number;
+  gcs_scrub_free(s: number): void;
 }
 
 let abi: Abi | null = null;

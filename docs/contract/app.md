@@ -354,3 +354,26 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   The source catches up at exactly two seams and **never per frame**: `syncSeeds` at the end of a
   drag (`gesture::endGesture`, guaranteed numeric) and `syncSource` at the end of `afterEdit`.
   The panel is wired to `onProgram`, never to `onDragFrame`.
+- **The timeline** (#398 L, [0.146]; `app/timeline.ts`, `SketchView.instant`, `showInstant`):
+  a row per declared parameter in the viewport's lower left, its interval a slider whose solid
+  part is what the march reached, hatched past it, the singular instant marked with the core's
+  words (`March.singular.text`); the readout takes an instant as written (`90deg`, read by
+  `follow::instant`); Run steps the drawing along the reach and round; Home puts it back.  **The
+  instant is presentation, as a wobble is**: view state (`instant: { name, at }`, `at` null at
+  home), carried across an edit by the parameter's name and let go by a load, never saved.
+  `showInstant` clamps to the reach and stands the drawing (`follow::stand`).  **An edit is made
+  at home**: `afterEdit` sends the drawing home before it solves, writes the seeds there
+  (`syncSource`), then follows each parameter again (`followAgain`, `SketchView.marches`) and
+  stands the drawing back at the instant shown; and the core writes no seed from a drawing
+  standing at an instant, whoever asks.  **Dragging a driven drawing scrubs it**: a press on a
+  point of a drawing with a followed parameter takes hold of its march (`gesture::takeScrub`,
+  the parameter shown first; `Scrub` over `gcs_scrub_*`), and each move stands the drawing at
+  the instant its point comes nearest the pointer — the crank turned by its pin.  A scrub is
+  `transient`: nothing is written back and nothing goes on the undo stack.  A point that does not
+  move as the parameter runs is dragged as before at home and, shown at an instant, not at all
+  (the status line says it does not move).  A constraint reading the parameter is listed at the
+  value it has at the instant shown (`onTimeline` refreshes the lists).  The gate is
+  `web/src/test/timeline.test.ts`: `mechanisms/four_bar.sv` scrubbed to a quarter turn on its
+  closed form and on the `.svd` stating that instant, home again with the source untouched; an
+  edit at an instant stood back there with its seed written at home; the pin dragged round with
+  `Scrub.live` back to zero; the triple rocker's timeline clamped at its limit.

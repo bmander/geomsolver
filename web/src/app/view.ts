@@ -28,6 +28,8 @@ import { PlanResult, PlanSolver, asSolveResult } from '../core/decompose.js';
 import { Diagnosis, diagnose } from '../core/diagnose.js';
 import * as io from '../core/io.js';
 import { Param, Plane, Point, Primitive, Sketch } from '../core/model.js';
+import * as params from '../core/parameters.js';
+import type { March, Parameter } from '../core/parameters.js';
 import { Document, Edit, fromSketch } from '../core/program.js';
 import type { BodyWord, Region } from '../core/program.js';
 import { Method, SolveResult, System } from '../core/system.js';
@@ -237,7 +239,19 @@ export class SketchView {
   lastResult: SolveResult | null = null;
   lastPlan: PlanResult | null = null;
 
+  /** **The instant the drawing is shown at** (#398 L): a parameter it declares and where along it
+   *  — `at` null at home, where it is drawn.  Presentation, as a wobble is: what is drawn moves
+   *  and the document does not.  An edit is made at home and the drawing stood back here after it
+   *  (`afterEdit`); no seed is written from an instant (the core refuses).  View state: kept
+   *  across an edit by the parameter's name, let go by a load, never saved. */
+  instant: { name: string; at: number | null } | null = null;
+  /** How the drawing runs over each parameter it declares, as the core followed it after the
+   *  last edit — the timeline's reach and its singular instants.  Empty with no parameters. */
+  marches: March[] = [];
+
   onChanged: () => void = () => {};
+  /** The instant shown moved, or the parameters and their marches did (an edit, a load). */
+  onTimeline: () => void = () => {};
   /** The active tool changed (including when Escape backs out of one). */
   onTool: (tool: Tool) => void = () => {};
   /** Orbit mode was put up or down — see `setOrbitMode`. */
@@ -770,6 +784,8 @@ export class SketchView {
     // a new document is looked at the way it is drawn: a flat one square on, one with solids or
     // with geometry off the front plane from three quarters
     if (fit && !carry) this.orbit = this.homeOrbit();
+    // another document runs over its own parameters, from its start
+    if (!carry) this.instant = null;
     this.highlight = [];
     this.litConstraint = null;
     this.pastes = 0;              // a fresh sheet: the next paste starts its cascade over
@@ -995,6 +1011,8 @@ export class SketchView {
       this.draw();
       return this.lastResult;
     }
+    // an edit is made where the drawing is drawn: home, whatever instant it is shown at
+    params.home(this.sketch);
     if (this.autoSolve) {
       const xBefore = this.sketch.getX();
       this.lastResult = this.solveOnce();
@@ -1008,6 +1026,7 @@ export class SketchView {
     this.syncSource();        // the drawing changed, so the document has to say what it now says
     this.fields.start(this.doc);
     this.claims.start(this.doc);
+    this.followAgain();
     if (!this.holding) this.onChanged();
     this.draw();
     return this.lastResult;
@@ -1111,6 +1130,61 @@ export class SketchView {
     this.anim = null;
     sketch.setX(x0);                  // the sketch it started on, whatever is on screen now
     this.draw();
+  }
+
+  // -- the timeline (#398 L) -------------------------------------------------
+
+  /** The parameters the drawing declares, each with the interval it runs over. */
+  parameters(): Parameter[] {
+    return params.parameters(this.sketch);
+  }
+
+  /** The march along `name`, as the core followed it after the last edit. */
+  marchOf(name: string): March | undefined {
+    return this.marches.find((m) => m.name === name);
+  }
+
+  /** After an edit, at home: each parameter followed again, and the drawing stood back at the
+   *  instant it was shown at, as near it as the march now reaches. */
+  private followAgain(): void {
+    this.marches = this.parameters().map((p) => params.march(this.sketch, p.name));
+    const shown = this.instant;
+    if (shown && !this.marchOf(shown.name)) this.instant = null;
+    else if (shown?.at != null) this.showInstant(shown.name, shown.at, false);
+    this.onTimeline();
+  }
+
+  /** **Show the drawing at `at` of `name`**, on the branch its march carries — null for home.
+   *  Clamped to what the march reached, so a timeline dragged past a singular instant stands
+   *  there.  Whether it could be; where not, it is left at home and the status line says why. */
+  showInstant(name: string, at: number | null, say = true): boolean {
+    const m = this.marchOf(name);
+    if (!m) return false;
+    this.stopAnimation();             // it restores into the pose it started from
+    params.home(this.sketch);
+    let why: string | null = null;
+    if (at !== null && m.followed) {
+      at = Math.min(Math.max(at, m.from), m.reached);
+      why = params.stand(this.sketch, name, at);
+    } else if (at !== null) {
+      why = m.text;
+    }
+    this.instant = { name, at: why ? null : at };
+    if (why && say) this.onStatus(why);
+    if (say) this.onTimeline();
+    this.draw();
+    return !why;
+  }
+
+  /** Where a drag along the march put the drawing (`gesture`'s scrub): the instant shown. */
+  scrubbedTo(name: string, at: number): void {
+    this.instant = { name, at };
+    this.onTimeline();
+  }
+
+  /** A value of `name` as a reader reads it, in the core's words: `129.838deg`. */
+  reading(name: string, v: number): string {
+    return params.reading(this.sketch, name, v);
   }
 
   private animTick(): void {

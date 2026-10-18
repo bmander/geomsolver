@@ -4,6 +4,14 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.146] The instant shown.** A drawing shows a model over a parameter at an instant of its
+march (§13.1): `model m from "four_bar.sv" at t = 90deg` (or `t=90deg`), the value in the model's
+units and of the parameter's dimension, stood on the branch the march carries; the same file at two
+instants is two snapshots, and an instant the march did not reach, a parameter the model does not
+declare or a value of another dimension is refused, saying why. The app's timeline shows the model
+it edits at an instant the same way, as view state; no instant is written into model source, and no
+seed is written back from one. The model language is unchanged. (Issue #398, item L.)
+
 **[0.145] Faces swept over a declared parameter; frames along a path.** A face family runs over a
 declared parameter (§6.9): `param s: Scalar over (a, b)` and `sweep(Station(…).f over s)`, the
 station's formal that runs the one the call gives the parameter (`Tube(g, s: u)` over `u`) or else
