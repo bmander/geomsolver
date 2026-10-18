@@ -73,7 +73,7 @@ const PROBE: f64 = 1e-4;
 /// way, would be ten million.
 const MAX_STATIONS: usize = 1 << 15;
 
-/// The most unknowns whose Jacobian's orientation is read (a dense factorisation a station).
+/// The widest block of the Jacobian whose determinant's sign is read (a dense factorisation).
 const ORIENTED: usize = 512;
 
 /// One station: the parameter's value there, in the units it is declared in (degrees for an
@@ -448,7 +448,8 @@ pub fn follow(sk: &Sketch, name: &str) -> Result<Followed, String> {
     let (coarsest, finest) = (span * COARSEST, span * FINEST);
     let mut sys = settle(&mut sk, held, over.from, &[])
         .map_err(|e| format!("the drawing at {}: {e}", at_text(&over, over.from, sk.units)))?;
-    if let Some(n) = short(&mut sys, &sk) {
+    let jac = Jacobian::read(&mut sys, &sk);
+    if let Some(n) = jac.short(&mut sys, &sk) {
         return Err(not_held(&over, n, sk.units));
     }
     // a motion too small to judge a turn by: the solve's own reach, in world length
@@ -459,7 +460,7 @@ pub fn follow(sk: &Sketch, name: &str) -> Result<Followed, String> {
     let apart = |x: &[f64], y: &[f64]| -> f64 {
         x.iter().zip(y).zip(&weights).map(|((a, b), w)| (w * (a - b)).powi(2)).sum::<f64>().sqrt()
     };
-    let mut sign = orientation(&mut sys, &sk);
+    let mut sign = jac.sign;
     let mut trail = vec![Station { at: over.from, x: sk.get_x() }];
     let mut h = span * FIRST_STEP;
     let stop = |trail: Vec<Station>, kind: Kind| {
@@ -499,7 +500,8 @@ pub fn follow(sk: &Sketch, name: &str) -> Result<Followed, String> {
         let x = sk.get_x();
         let moved = apart(&x, &prev.x);
         let off = apart(&x, &predicted);
-        let o = orientation(&mut sys, &sk);
+        let jac = Jacobian::read(&mut sys, &sk);
+        let o = jac.sign;
         if sign != 0 && o != sign {
             if finest_step {
                 let kind = beyond(&mut sk, held, &prev, (prev.at + span * PROBE).min(over.to));
@@ -512,7 +514,7 @@ pub fn follow(sk: &Sketch, name: &str) -> Result<Followed, String> {
             h = step / 2.0;
             continue;
         }
-        if short(&mut sys, &sk).is_some() {
+        if jac.short(&mut sys, &sk).is_some() {
             let kind = beyond(&mut sk, held, &prev, (t + span * PROBE).min(over.to));
             trail.push(Station { at: t, x });
             return stop(trail, kind);
@@ -598,23 +600,62 @@ pub(crate) fn settle(sk: &mut Sketch, held: u32, t: f64, outer: &[String])
 /// How many degrees of freedom the solved system `sys` leaves, where it leaves any: a station
 /// short of rank.
 pub(crate) fn short(sys: &mut System, sk: &Sketch) -> Option<usize> {
-    let z = sys.z0(sk);
-    let rank = sys.rank(&z, crate::system::RANK_TOL, true);
-    (rank < sys.n_free).then(|| sys.n_free - rank)
+    Jacobian::read(sys, sk).short(sys, sk)
 }
 
-/// The sign of the determinant of the drawing's Jacobian where it stands, its rows and columns
-/// conditioned (by positive scales, which keep the sign): `0` where it is singular, and where it
-/// is not square or too large to factor densely, so no orientation is asked of it.
-fn orientation(sys: &mut System, sk: &Sketch) -> i8 {
-    let z = sys.z0(sk);
-    let j = sys.conditioned(&z);
-    let n = j.cols();
-    if n == 0 || j.rows() != n || n > ORIENTED {
-        return 0;
+/// **The drawing's Jacobian where it stands, read a block at a time** (#398 L): the square
+/// blocks of its block-triangular order (`System::block_order`), each conditioned (by positive
+/// scales, which keep a determinant's sign).  A block-triangular matrix is singular exactly
+/// where a block on its diagonal is, and its determinant is theirs times the sign of the order,
+/// which is the same at every station of a march (each compiles the same structure) — so the
+/// rank and the orientation are a few small factorisations rather than one of the whole drawing,
+/// which on a drawing of a thousand unknowns was the march's whole cost.  A drawing whose order
+/// is not square (an over or an under part) is read whole.
+struct Jacobian {
+    /// Every block of full rank: the drawing is held.  `false` asks the whole matrix.
+    held: bool,
+    /// The sign of the determinant, up to the order's: `0` where it is singular, not square, or
+    /// has a block wider than `ORIENTED`, so no orientation is asked of it.
+    sign: i8,
+}
+
+impl Jacobian {
+    fn read(sys: &mut System, sk: &Sketch) -> Jacobian {
+        let order = sys.block_order();
+        let square = order.over_rows.is_empty() && order.over_cols.is_empty()
+            && order.under_rows.is_empty() && order.under_cols.is_empty();
+        if !square || sys.n_free == 0 {
+            return Jacobian { held: false, sign: 0 };
+        }
+        let z = sys.z0(sk);
+        let j = sys.conditioned_sparse(&z);
+        let mut sign = 1;
+        for b in &order.blocks {
+            let m = j.dense(&b.rows, &b.cols);
+            let n = b.cols.len();
+            let tol = crate::linalg::Tol::Abs(crate::system::RANK_TOL);
+            if crate::linalg::rrqr_with(&m, tol).0 < n {
+                return Jacobian { held: false, sign: 0 };
+            }
+            sign *= if n > ORIENTED { 0 } else { det_sign(n, m.data) };
+        }
+        Jacobian { held: true, sign }
     }
-    let m = j.as_mat();
-    let mut a: Vec<f64> = (0..n).flat_map(|r| m.row(r).to_vec()).collect();
+
+    /// How many degrees of freedom the drawing leaves, where it leaves any: none where every
+    /// block is of full rank, and otherwise the whole matrix's rank says how many.
+    fn short(&self, sys: &mut System, sk: &Sketch) -> Option<usize> {
+        if self.held {
+            return None;
+        }
+        let z = sys.z0(sk);
+        let rank = sys.rank(&z, crate::system::RANK_TOL, true);
+        (rank < sys.n_free).then(|| sys.n_free - rank)
+    }
+}
+
+/// The sign of the determinant of the `n`×`n` matrix `a` (row-major), `0` where it is singular.
+fn det_sign(n: usize, mut a: Vec<f64>) -> i8 {
     let mut piv = Vec::with_capacity(n);
     if !crate::linalg::lu_factor(n, &mut a, &mut piv) {
         return 0;

@@ -13,6 +13,13 @@ fn close(a: (f64, f64), b: (f64, f64)) {
     assert!((a.0 - b.0).hypot(a.1 - b.1) < 1e-6, "{a:?} != {b:?}");
 }
 
+/// Where the point `name` stands, read in `std.front`'s coordinates wherever it is drawn: a part
+/// of the V-twin is drawn in a frame of its own, lying in the front plane.
+fn in_front(e: &program::Elaborated, sk: &Sketch, name: &str) -> (f64, f64) {
+    let front = sk.basis(e.map.ent_named("std.front").unwrap().i());
+    front.view_coords(sk.world_point(e.map.ent_named(name).unwrap_or_else(|| panic!("{name}")).i()))
+}
+
 /// A document that says `use std` has the standard datums whether or not it names one yet — the
 /// workspace offers front, side and top as places to draw, as a CAD part has its origin planes —
 /// and one that does not say it has none.
@@ -235,32 +242,43 @@ fn coordinate_placement_is_not_a_standard_library_component() {
     assert!(!e.ok(), "the removed placement helper must not remain callable");
 }
 
+/// **Each moving part in its own frame, its pose a function of the crank angle** (#398 K): the
+/// V-twin followed along `t`, its crank angle, round the whole turn, and stood at every eighth of
+/// it — the crank pin where the angle puts it, and each bank's crown, cylinder corner and piston
+/// flank where the closed form of an oscillating cylinder puts them, read in the front plane
+/// whatever frame each is drawn in.
 #[test]
-fn vtwin_datums_follow_a_complete_crank_turn() {
+fn vtwin_parts_follow_a_complete_crank_turn() {
     let mut e = build(gcs_core::examples::source("vtwin").unwrap());
     solved(&mut e.sketch);
-    let theta = e.sketch.free_vars["crank.theta"] as usize;
-    e.sketch.params[theta].fixed = true;
-    let point = |e: &program::Elaborated, name: &str| {
-        e.sketch.point_xy(e.map.ent_named(name).unwrap().i())
-    };
+    let march = gcs_core::follow::followed(&e.sketch, "t");
+    let f = march.as_ref().as_ref().expect("followed");
+    assert_eq!((f.reached(), f.singular), (360.0, None));
+    let mut sk = e.sketch.clone();
+    let (r, l) = (10.0, 46.0);
     for step in 0..=8 {
-        e.sketch.params[theta].value = 180.0 + step as f64 * 45.0;
-        solved(&mut e.sketch);
-        let pin = point(&e, "crank.pin");
+        let t = step as f64 * 45.0;
+        gcs_core::follow::stand(&mut sk, "t", t).expect("reached");
+        let at = |name: &str| in_front(&e, &sk, name);
+        // the arm stands at `t` from the reference up the page, turning toward its right
+        let pin = at("crank.pin");
+        let (st, ct) = t.to_radians().sin_cos();
+        close(pin, (r * st, r * ct));
         for (bank, pivot) in [("bankR", "plate.r.piv"), ("bankL", "plate.l.piv")] {
-            let pivot = point(&e, pivot);
+            let pivot = at(pivot);
             let (dx, dy) = (pivot.0 - pin.0, pivot.1 - pin.1);
             let length = dx.hypot(dy);
             let (c, s) = (dx / length, dy / length);
-            let crown = (pin.0 + 46.0 * c, pin.1 + 46.0 * s);
-            close(point(&e, &format!("{bank}.crown")), crown);
+            let crown = (pin.0 + l * c, pin.1 + l * s);
+            close(at(&format!("{bank}.crown")), crown);
             // Cylinder mouth corner: eight below the pivot and twelve to its left.
-            close(point(&e, &format!("{bank}.cyl.k_bl")),
+            close(at(&format!("{bank}.cyl.k_bl")),
                   (pivot.0 - 8.0 * c - 12.0 * s, pivot.1 - 8.0 * s + 12.0 * c));
             // The left flank starts fourteen down from the crown, 2.5 left of the rod.
-            close(point(&e, &format!("{bank}.pis.ra")),
+            close(at(&format!("{bank}.pis.ra")),
                   (crown.0 - 14.0 * c - 2.5 * s, crown.1 - 14.0 * s + 2.5 * c));
+            // and the piston's eye is on the crank pin
+            close(at(&format!("{bank}.pis.pin")), pin);
         }
     }
 }
@@ -305,8 +323,9 @@ pivot := point hint((0mm, components.dims.H))
 std.origin vertical pivot
 std.origin distance(components.dims.H) pivot
 }
-bottom := components.bank.Bank(bottom_pin, pivot, fw: components.dims.fwA, dim: 0, dims: components.dims.vtwin_dims) in std.front
-top := components.bank.Bank(top_pin, pivot, fw: components.dims.fwA, dim: 0, dims: components.dims.vtwin_dims) in std.front
+layout := {front: std.front}
+bottom := components.bank.Bank(layout, bottom_pin, pivot, fw: components.dims.fwA, dim: 0, dims: components.dims.vtwin_dims)
+top := components.bank.Bank(layout, top_pin, pivot, fw: components.dims.fwA, dim: 0, dims: components.dims.vtwin_dims)
 ";
     for (before, after, wall) in [
         ("R := 10mm", "R := 12mm", 4.0),
@@ -316,7 +335,7 @@ top := components.bank.Bank(top_pin, pivot, fw: components.dims.fwA, dim: 0, dim
         ("wall := 4mm", "wall := 5mm", 5.0),
     ] {
         let e = vtwin_variant(src, &[("components.dims", before, after)]);
-        let at = |name| e.sketch.point_xy(e.map.ent_named(name).unwrap().i());
+        let at = |name| in_front(&e, &e.sketch, name);
         // At the two ends of travel, the skirt meets the mouth and the crown clears the head.
         close(at("bottom.pis.s0"), at("bottom.cyl.m0"));
         let crown = at("top.crown");

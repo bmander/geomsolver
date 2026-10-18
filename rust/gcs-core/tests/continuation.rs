@@ -153,6 +153,39 @@ fn a_singular_instant_is_reported_where_two_branches_cross() {
     assert_eq!(s.kind, Kind::Branch, "{s:?}");
 }
 
+/// `n` points that do not move, each where two distances from the ground's pivots put it: two
+/// unknowns and two rows apiece, a block of their own in the drawing's block-triangular order.
+fn standing_by(n: usize, g: f64) -> String {
+    (0..n).map(|i| {
+        let (x, y) = (i as f64 * 0.5, -60.0);
+        let (da, dd) = (x.hypot(y), (x - g).hypot(y));
+        format!("  q{i} := point hint(({x}, {y}))\n  q{i} distance({da}) a\n  \
+                 q{i} distance({dd}) d\n")
+    }).collect()
+}
+
+/// **A drawing of many unknowns is read a block at a time** (#398 L): the four-bars above, beside
+/// three hundred points that do not move — more unknowns than one dense factorisation is asked
+/// of — still followed to their singular instants, the fold a crossing and the limit a turn.
+#[test]
+fn a_large_drawings_singular_instants_are_read_by_its_blocks() {
+    let (g, r, l, k) = (40.0, 10.0, 30.0, 20.0);
+    let e = solved(&four_bar(g, r, l, k, "(0deg, 360deg)", &standing_by(300, g)));
+    assert!(e.sketch.free_indices().len() > 600);
+    let f = follow(&e.sketch, "t").expect("followed");
+    let s = f.singular.expect("the four-bar folds");
+    assert!((s.at - 180.0).abs() < 1e-2, "{s:?}");
+    assert_eq!(s.kind, Kind::Branch, "{s:?}");
+
+    let (g, r, l, k): (f64, f64, f64, f64) = (40.0, 20.0, 25.0, 30.0);
+    let limit = ((r * r + g * g - (l + k) * (l + k)) / (2.0 * r * g)).acos().to_degrees();
+    let e = solved(&four_bar(g, r, l, k, "(0deg, 360deg)", &standing_by(300, g)));
+    let f = follow(&e.sketch, "t").expect("followed");
+    let s = f.singular.expect("the crank stops");
+    assert_eq!(s.kind, Kind::Limit);
+    assert!((s.at - limit).abs() < 1e-3, "{} against {limit}", s.at);
+}
+
 #[test]
 fn a_drawing_not_held_is_not_followed() {
     // no rocker: the coupler swings free at every instant, a free function of `t`

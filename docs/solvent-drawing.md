@@ -132,7 +132,9 @@ A `sketch` presents the model's existing 2D coordinates. Its target can be a mod
 component/member scope, or an individual entity. It draws one plane: `from` names a model plane
 path, and omitted it means the model's `std.front`. Only the target's geometry drawn in that
 plane is shown, in that plane's own coordinates, so each view of a multiview model is its own
-`sketch` placed where the sheet wants it (`bracket.svd`). It has no arbitrary 3D viewing
+`sketch` placed where the sheet wants it (`bracket.svd`). Geometry drawn in another plane that
+lies in that one, facing the same way — a part drawn in a frame of its own, turned in the view, as
+each moving part of the V-twin is — is shown too, where it stands. It has no arbitrary 3D viewing
 direction.
 Points and plane glyphs are hidden by default; styles can show them. A bare `.sv` still gets an
 automatic editor preview without an authored drawing. The model canvas calls out every
@@ -151,7 +153,8 @@ label "Section A–A" at (20mm, 270mm)
 ```
 
 `dimensions in VIEW` selects automatic annotations: overall projected extents and surviving
-round-feature diameters for a solid, or constraint dimensions for a sketch. Solid measurements
+round-feature diameters for a solid, or constraint dimensions for a sketch. An extent reaches a
+round outline's own edge, not the corners its tessellation happens to put nearest it. Solid measurements
 refer to the target solid, including when its view is a section. Annotation layout reuses the
 core callout engine. Individual constraints are hidden until selected; `dimension m.width`
 selects the first of the model's top-level dimensions whose number is written `width` — `a

@@ -16,10 +16,17 @@
 // (`cylinder.svd`, `piston.svd`, …) draws it upright in all three with the
 // dimensions a printer needs — `class detail`, which this sheet leaves hidden.  The side view is
 // what the assembly adds beyond its parts, with every height projected from the view along the
-// axis.  The drawing has one degree of freedom and it is the crank angle: `crank.theta` is a
-// formal the call leaves unbound (§5), so dragging the pin rocks both cylinders and moves both
-// pistons in both views, and the arm's callout reads the angle it is at.  One lever angle in the table (`throttle`)
-// turns the throttle.  The two banks are one component instanced twice, which is why their
+// axis.
+//
+// **Each moving part is drawn in its own frame, and its pose is a function of the crank angle.**
+// `t` is that angle, a parameter the drawing runs over (§6.5): the crank's arm stands at `t` from
+// the reference, the disc's frame turns with it, and each bank's two statements place its
+// cylinder's frame at the pivot and its piston's at the crown.  Every other relation holds for
+// every `t`, so the drawing is a function of `t`: drawn at `t = 0`, the pin straight up, and
+// followed round the turn.  In the app a timeline scrubs it and dragging the pin turns it, rocking
+// both cylinders and moving both pistons in both views; the arm's callout reads the instant shown.
+// The assembly's sheet shows it at `t = 180deg`.  One lever angle in the table (`throttle`) turns
+// the throttle.  The two banks are one component instanced twice, which is why their
 // ports come out rotated rather than mirrored — the engine is one bank turned a quarter turn,
 // and the drawing cannot say otherwise.
 
@@ -31,6 +38,8 @@ use components.frame
 use components.crank
 use components.bank
 use components.side_view
+
+param t: Angle over (0deg, 360deg)   // the crank angle
 
 // the front plane is the view along the crank axis, where the V is; the side view is the side
 // plane, its origin the crank axis on the plate's front face
@@ -44,9 +53,9 @@ in std.front {
 
 layout := {front: std.front, origin: O, ax: ref}
 plate := components.frame.Frame(layout, dims: components.dims.vtwin_dims)
-crank := components.crank.Crank(O, ref, dims: components.dims.vtwin_dims) in std.front
-bankR := components.bank.Bank(crank.pin, plate.r.piv, fw: components.dims.fwB, dim: 1, dims: components.dims.vtwin_dims) in std.front
-bankL := components.bank.Bank(crank.pin, plate.l.piv, fw: components.dims.fwA, dim: 0, dims: components.dims.vtwin_dims) in std.front
+crank := components.crank.Crank(layout, dims: components.dims.vtwin_dims, theta: t)
+bankR := components.bank.Bank(layout, crank.pin, plate.r.piv, fw: components.dims.fwB, dim: 1, dims: components.dims.vtwin_dims)
+bankL := components.bank.Bank(layout, crank.pin, plate.l.piv, fw: components.dims.fwA, dim: 0, dims: components.dims.vtwin_dims)
 // **the plate's side view is asked for, not drawn** (§6.11) — the part is a solid, so the
 // assembly's side view of it is a reading of that solid and cannot disagree with the front view
 // about how thick the plate is or how far the bearing boss stands off it

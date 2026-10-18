@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.146 — October 2026**
+**Specification, Draft 0.147 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -2740,7 +2740,9 @@ from a model shown at one — the seeds say where the drawing starts.
 ### 13.2 Presentation **[0.20]**
 
 Styles and presentation classes are defined in [Solvent Drawing](docs/solvent-drawing.md).
-Model source MUST reject presentation statements and clauses. A renderer may assign implicit
+**[0.147]** A drawing's sketch of a plane MUST also show what is drawn in another plane lying in
+it and facing the same way, where it stands: a part drawn in a frame of its own is drawn where
+the frame puts it. Model source MUST reject presentation statements and clauses. A renderer may assign implicit
 roles such as hidden edges or closure lines without adding source-level classes to geometry.
 Model serialization and editor reconciliation MUST omit presentation state. An editor MAY
 provide an automatic preview for a model without a drawing file.

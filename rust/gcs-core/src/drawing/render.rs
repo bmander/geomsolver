@@ -73,6 +73,19 @@ fn basis(name: &str, models: &BTreeMap<String, Model<'_>>, span: Span) -> Result
     Ok(Basis { u, v, o: [0.; 3] })
 }
 
+/// The planes other than `p` lying in it and facing the same way, each with its map into `p`:
+/// its own basis to lift a point by, and `p`'s to read it in.  A plane facing the other way would
+/// draw its curves' turns backwards, and is left out as any other plane is.
+fn lying_in(sk: &Sketch, p: usize) -> BTreeMap<usize, (Basis, Basis)> {
+    let to = sk.basis(p);
+    let tol = 1e-9 * (1.0 + sk.extent());
+    (0..sk.frames.len()).filter(|&q| q != p && sk.frames[q].planar()).filter_map(|q| {
+        let from = sk.basis(q);
+        (from.coplanar(&to, tol) && crate::plane::dot(from.normal(), to.normal()) > 0.0)
+            .then_some((q, (from, to)))
+    }).collect()
+}
+
 /// The plane a sketch view draws: a model plane by its path, and `front` the model's
 /// `std.front` — or `None`, every plane's geometry, for a model that has no front plane (a
 /// sketch built in code).
@@ -128,14 +141,20 @@ pub fn render(doc: &Document, models: &BTreeMap<String, Model<'_>>, sheet: Optio
             .flat_map(|(_, ts)| ts.iter().map(|&t| EntRef::point(t)))
             .collect();
         selected.extend(twins);
-        if v.sketch {
-            // a sketch draws one plane's geometry in that plane's own coordinates: `from` names
-            // it, and the front plane is `std.front` where the model has one
-            let plane = sketch_plane(&v.direction, alias, models, v.span)?;
-            if let Some(p) = plane {
-                let sk = model.sketch;
-                selected.retain(|&e| crate::program::drawn_plane(sk, e) == Some(p));
-            }
+        // a sketch draws one plane's geometry in that plane's own coordinates: `from` names it,
+        // and the front plane is `std.front` where the model has one
+        let plane = if v.sketch {
+            sketch_plane(&v.direction, alias, models, v.span)?
+        } else {
+            None
+        };
+        // and what is drawn in a plane lying in it, facing the same way — a part drawn in its own
+        // frame, turned in the view — mapped into its coordinates, each plane's map read once
+        let lying = plane.map(|p| lying_in(model.sketch, p)).unwrap_or_default();
+        if let Some(p) = plane {
+            let sk = model.sketch;
+            selected.retain(|&e| crate::program::drawn_plane(sk, e)
+                .is_some_and(|q| q == p || lying.contains_key(&q)));
         }
         if selected.is_empty() { return Err(error(v.span, format!("no geometry named `{}`", v.target))) }
         let scale = v.scale.unwrap_or(s.scale) * model.sketch.units.mm_per() * PX_MM;
@@ -174,6 +193,10 @@ pub fn render(doc: &Document, models: &BTreeMap<String, Model<'_>>, sheet: Optio
             for e in sk.drawn().into_iter().filter(|e| wanted.contains(e)) {
                 let style = point_styles.get(&e).cloned().unwrap_or_else(|| sk.style_of(e));
                 if !style.shown() { continue }
+                let map = crate::program::drawn_plane(&sk, e).and_then(|q| lying.get(&q));
+                let at = |p: (f64, f64)| {
+                    at(map.map_or(p, |(from, to)| to.view_coords(from.lift(p.0, p.1))))
+                };
                 if e.kind == EntKind::Point {
                     let (x, y) = at(sk.point_xy(e.i()));
                     out.push_str(&format!("<circle cx=\"{}\" cy=\"{}\" r=\"2\" fill=\"{}\"/>\n",

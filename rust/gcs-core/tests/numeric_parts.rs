@@ -60,16 +60,18 @@ fn the_parts_read_the_large_cases_as_the_whole_does() {
     assert!(differ.is_empty(), "{}", differ.join("\n"));
 }
 
-/// **Past the dense limit the rank is read, not skipped** (#88): the V-twin's 925 free parameters
-/// are diagnosed part by part, its one freedom — the crank — found.
+/// **Past the dense limit the rank is read, not skipped** (#88): the V-twin's free parameters are
+/// diagnosed part by part and found held, its one freedom — the crank — driven by `t`.
 #[test]
 fn the_v_twin_is_read_past_the_dense_limit() {
     let mut sk = examples::case("vtwin").unwrap();
     solve(&mut sk, SolveOpts::default());
     let d = diagnose(&mut sk, DiagnoseOptions::default());
     assert!(d.n_params > NUMERIC_MAX && d.by_parts && !d.numeric_skipped);
-    assert_eq!((d.dof, d.numeric_rank.is_some()), (1, true));
+    assert_eq!((d.dof, d.numeric_rank.is_some()), (0, true));
     assert!(d.over.is_empty() && d.implied.is_empty(), "{:?} {:?}", d.over, d.implied);
+    assert_eq!(d.parameters.iter().map(|p| (p.name.as_str(), p.readers.len())).collect::<Vec<_>>(),
+               [("t", 1)]);
 }
 
 /// A cone touched by a plane at a point, its apex drawn there (#148), with `n` copies of a point

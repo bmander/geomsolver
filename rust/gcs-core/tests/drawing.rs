@@ -292,3 +292,39 @@ fn a_model_is_shown_at_the_instant_its_drawing_states() {
     assert_eq!(refused("t = 5mm"), "model `four_bar.sv` at `t`: `5mm`: `t` is Angle, and this is \
                Length");
 }
+
+/// **A sketch draws what lies in its plane** (#398 K): a part drawn in a frame of its own, the
+/// frame turned a quarter turn in the front plane, is drawn in a sketch of the front where it
+/// stands — its line up the page, and its arc as round as it is.
+#[test]
+fn a_sketch_draws_a_frame_lying_in_its_plane() {
+    let model = "unit mm\nuse std\nin std.front {\n  up := point\n  fix((0, 10)) up\n  \
+                 axes := std.Turned(std.origin, up)\n}\nin axes.axes {\n  a := point hint((10, 0))\n  \
+                 fix((10, 0)) a\n  stick := line(axes.axes.origin, a)\n  c := point hint((4, 0))\n  \
+                 fix((4, 0)) c\n  s := point hint((6, 0))\n  e := point hint((4, 2))\n  \
+                 bend := arc(c, s, e)\n  radius(2) bend\n  fix((6, 0)) s\n}\n";
+    let sheet = "model m from \"part.sv\"\nsheet s {\n  sketch a(m) at (100mm, 100mm)\n}\n";
+    let svg = drawing::compile(sheet, "drawing.svd", None,
+        &mut |path, _| (path == "part.sv").then(|| ("part.sv".into(), model.into()))).unwrap();
+    // 10mm up the page from (100mm, 100mm), in CSS pixels (96 an inch)
+    assert!(svg.contains("<line x1=\"377.953\" y1=\"377.953\" x2=\"377.953\" y2=\"340.157\""),
+            "{svg}");
+    // the arc about (0, 4)mm from its start 2mm above that to its end 2mm left, its radius 2mm
+    // whichever way its frame is turned
+    assert!(svg.contains("M 377.953 355.276 A 7.55906 7.55906 0 0 0 370.394 362.835"), "{svg}");
+}
+
+/// **A round outline's extent is its own** (#398 K): the crank disc, drawn in a frame of its own
+/// turned to its pin, is dimensioned across its rim at 36 — the circle's own reach, not the
+/// corners its tessellation happens to put nearest the extent.
+#[test]
+fn a_parts_extent_is_read_off_its_round_outline() {
+    let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../examples/vtwin/");
+    let text = std::fs::read_to_string(format!("{root}disc.svd")).unwrap();
+    let svg = drawing::compile(&text, "disc.svd", None, &mut |path, from| {
+        let p = drawing::relative_path(path, from);
+        std::fs::read_to_string(format!("{root}{p}")).ok().map(|t| (p, t))
+    }).unwrap();
+    assert_eq!(svg.matches(">36</text>").count(), 3, "{svg}");
+    assert!(!svg.contains(">35.9999</text>"), "{svg}");
+}

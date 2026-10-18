@@ -39,6 +39,21 @@ pub fn generated(sk: &Sketch, unit: f64) -> Vec<(usize, Dim)> {
             lo[0] = lo[0].min(v.0); lo[1] = lo[1].min(v.1);
             hi[0] = hi[0].max(v.0); hi[1] = hi[1].max(v.1);
         }
+        // and a round outline's own reach, exactly: a circle's tessellation has its corners where
+        // its frame starts it, so one turned in the view (a part drawn in a frame of its own)
+        // falls a sagitta short of the extent it bounds
+        for f in solid.round_features() {
+            let n = f.normal;
+            let nn = plane::dot(n, n).sqrt();
+            let c = local_basis.view_coords(f.center.0);
+            for (k, axis) in [(0, local_basis.u), (1, local_basis.v)] {
+                let along = if nn > 0.0 { plane::dot(n, axis) / nn } else { 0.0 };
+                let reach = f.radius * (1.0 - along * along).max(0.0).sqrt();
+                let at = if k == 0 { c.0 } else { c.1 };
+                lo[k] = lo[k].min(at - reach);
+                hi[k] = hi[k].max(at + reach);
+            }
+        }
         if !lo[0].is_finite() {
             continue;
         }
