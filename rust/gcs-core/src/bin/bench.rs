@@ -220,8 +220,8 @@ fn bench_scrub() {
     gcs_core::solve::solve(&mut sk, Default::default());
     let objects = gcs_core::overview::objects(&sk);
     let ask = |sk: &Sketch| for &i in &objects {
-        let s = sk.evaluated_solid(i, gcs_core::solid::ApproximationPolicy::Mesh).expect("evaluates");
-        std::hint::black_box(s.mesh());
+        let policy = gcs_core::solid::ApproximationPolicy::Mesh;
+        std::hint::black_box(sk.evaluated_solid(i, policy).expect("evaluates").mesh());
     };
     ask(&sk);
     gcs_core::follow::followed(&sk, "t");

@@ -444,7 +444,8 @@ pub fn pick_solid(sk: &Sketch, proj: &Projection, at: (f64, f64)) -> Option<Soli
         let m = solid.mesh();
         for group in &m.groups {
             for t in group.start..group.start + group.count {
-                let Some(depth) = line_meets_triangle(o, along, &m.positions[9 * t..9 * t + 9]) else {
+                let tri = &m.positions[9 * t..9 * t + 9];
+                let Some(depth) = line_meets_triangle(o, along, tri) else {
                     continue;
                 };
                 if best.as_ref().is_none_or(|b| depth > b.depth) {

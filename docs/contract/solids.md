@@ -196,7 +196,8 @@ placement carries inside the blank; CLI test readers zero the offset.
   small table** (`gcs_solid_mesh`, `gcs_solid_normals`, `gcs_solid_faces_json`), all reading one
   memoised `Want::Mesh`; the same mesh and its creases in the solid's own coordinates
   (`gcs_solid_own`, `core/mesh.ts::own`) and where it stands (`gcs_solid_placement`: the shape's
-  serial and a column-major 4×4, `placement`) are what the box builds from (#412).  `Document.solids()` names them (a solid has no proxy).  `tests/mesh.rs`
+  serial and a column-major 4×4, `placement`) are what the box builds from (#412).
+  `Document.solids()` names them (a solid has no proxy).  `tests/mesh.rs`
   is the gate and asserts the *before* as well as the after.
 - **A mesh is cut to the object and a volume to the report** (`solid::mesh_unit`, `MESH_SAGITTA`).
   `REPORT_UNIT` makes a *volume* good to 1e-4; a mesh is cut to a sagitta that fraction of the

@@ -113,11 +113,8 @@ impl Sketch {
     pub fn evaluated_solid(
         &self, i: usize, policy: crate::solid::ApproximationPolicy,
     ) -> Result<std::rc::Rc<crate::solid::EvaluatedSolid>, String> {
-        // A swept solid's field mesh does not depend on the view's pixel length: one mesh
-        // serves every zoom, rather than a refinement per wheel tick.
-        let policy = if crate::solid::has_sweep(self, i) { crate::solid::ApproximationPolicy::Mesh } else { policy };
+        let (policy, slot) = self.solid_slot(i, policy);
         let key = crate::solid::ShapeKey::of(self, i);
-        let slot = (i, policy.cache_key());
         if let Some(found) = self.remembered(slot, &key) {
             return found;
         }
@@ -138,8 +135,16 @@ impl Sketch {
     /// every frame.
     pub fn built_solid(&self, i: usize, policy: crate::solid::ApproximationPolicy)
         -> Option<Result<std::rc::Rc<crate::solid::EvaluatedSolid>, String>> {
+        self.remembered(self.solid_slot(i, policy).1, &crate::solid::ShapeKey::of(self, i))
+    }
+
+    /// The approximation solid `i` is evaluated at when `policy` is asked, and the slot of
+    /// `Caches::solid` it is remembered in.  A swept solid's field mesh does not depend on the
+    /// view's pixel length: one mesh serves every zoom, rather than a refinement per wheel tick.
+    fn solid_slot(&self, i: usize, policy: crate::solid::ApproximationPolicy)
+        -> (crate::solid::ApproximationPolicy, (usize, (u8, u64))) {
         let policy = if crate::solid::has_sweep(self, i) { crate::solid::ApproximationPolicy::Mesh } else { policy };
-        self.remembered((i, policy.cache_key()), &crate::solid::ShapeKey::of(self, i))
+        (policy, (i, policy.cache_key()))
     }
 
     /// What `Caches::solid` holds for `slot` against `key`: the evaluation itself where the solid

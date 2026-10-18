@@ -142,23 +142,10 @@ struct Shape {
 
 const IDENTITY: [[f64; 3]; 3] = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
 
-/// The serial the next evaluation is given (`Shape::serial`).
-static SERIAL: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
-
-/// `r·v`, for a rotation by rows; `v` where there is none.
-fn turn(r: &Option<[[f64; 3]; 3]>, v: [f64; 3]) -> [f64; 3] {
-    match r {
-        None => v,
-        Some(r) => r.map(|row| plane::dot(row, v)),
-    }
-}
-
-/// `rᵀ·v`: the rotation undone.
-fn unturn(r: &Option<[[f64; 3]; 3]>, v: [f64; 3]) -> [f64; 3] {
-    match r {
-        None => v,
-        Some(r) => std::array::from_fn(|j| (0..3).map(|i| r[i][j] * v[i]).sum()),
-    }
+/// A serial no evaluation in this process has had (`Shape::serial`).
+fn next_serial() -> u64 {
+    static SERIAL: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    SERIAL.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
 
 impl EvaluatedSolid {
@@ -246,7 +233,7 @@ impl EvaluatedSolid {
             .collect();
         let round = round_features(sk, operands, &curved, origin)?;
         Ok(Self::made(origin, Shape {
-            serial: 0,
+            serial: next_serial(),
             name: sk.solid_name(si),
             policy,
             unit,
@@ -358,7 +345,7 @@ impl EvaluatedSolid {
         let round = round_features(sk, operands, &curved, origin)?;
         let volume = crate::brep::props::volume(b) / (mm * mm * mm);
         Ok(Self::made(origin, Shape {
-            serial: 0,
+            serial: next_serial(),
             name,
             policy,
             unit,
@@ -417,7 +404,7 @@ impl EvaluatedSolid {
             return Err("solid scale is not representable".into());
         }
         Ok(Self::made(origin, Shape {
-            serial: 0,
+            serial: next_serial(),
             name,
             policy,
             unit,
@@ -494,7 +481,7 @@ impl EvaluatedSolid {
             pts: f.pts.clone(), n: f.n, path: path.clone(), prim: 0, smooth: f.smooth,
         }).collect();
         Ok(Self::made(origin, Shape {
-            serial: 0,
+            serial: next_serial(),
             name,
             policy,
             unit,
@@ -560,19 +547,25 @@ impl EvaluatedSolid {
         std::rc::Rc::ptr_eq(&self.shape, &other.shape)
     }
     pub fn to_world(&self, p: LocalPoint) -> WorldPoint {
-        let q = turn(&self.rotation, p.0);
+        let q = self.vector_to_world(p.0);
         WorldPoint(std::array::from_fn(|k| q[k] + self.origin.0[k]))
     }
     pub fn to_local(&self, p: WorldPoint) -> LocalPoint {
-        LocalPoint(unturn(&self.rotation, std::array::from_fn(|k| p.0[k] - self.origin.0[k])))
+        LocalPoint(self.vector_to_local(std::array::from_fn(|k| p.0[k] - self.origin.0[k])))
     }
-    /// A direction in the solid's own coordinates, in the world's.
+    /// A direction in the solid's own coordinates, in the world's: `R·v`.
     pub fn vector_to_world(&self, v: [f64; 3]) -> [f64; 3] {
-        turn(&self.rotation, v)
+        match &self.rotation {
+            None => v,
+            Some(r) => r.map(|row| plane::dot(row, v)),
+        }
     }
-    /// A direction in the world, in the solid's own coordinates.
+    /// A direction in the world, in the solid's own coordinates: `Rᵀ·v`.
     pub fn vector_to_local(&self, v: [f64; 3]) -> [f64; 3] {
-        unturn(&self.rotation, v)
+        match &self.rotation {
+            None => v,
+            Some(r) => std::array::from_fn(|j| (0..3).map(|i| r[i][j] * v[i]).sum()),
+        }
     }
     /// **The same evaluation moved rigidly** by `motion` (#412): its shape shared, its placement
     /// the motion's after its own.  What a solid that has only moved since it was evaluated is.
@@ -592,7 +585,6 @@ impl EvaluatedSolid {
     }
     /// A fresh evaluation's placement: at `origin`, turned nowhere.
     fn made(origin: WorldPoint, shape: Shape) -> Self {
-        let shape = Shape { serial: SERIAL.fetch_add(1, std::sync::atomic::Ordering::Relaxed), ..shape };
         Self { origin, rotation: None, world_box: OnceCell::new(), shape: std::rc::Rc::new(shape) }
     }
     pub fn to_page(&self, p: LocalPoint, frame: PageFrame) -> PagePoint {
@@ -613,7 +605,8 @@ impl EvaluatedSolid {
         basis.v = self.vector_to_local(basis.v);
         basis
     }
-    /// Boundary/bounds/edges/mesh are solid-local. Explicit world adapters are for legacy ABI output.
+    /// Boundary/bounds/edges/mesh are in the solid's own coordinates; the `world_*` adapters place
+    /// them.
     pub fn boundary(&self) -> &[Piece] {
         self.shape.boundary.get_or_init(|| self.field_pieces())
     }
@@ -650,7 +643,8 @@ impl EvaluatedSolid {
         self.shape.csg.inside_indexed(p.0, self.ray_indices())
     }
     fn ray_indices(&self) -> &[RayIndex] {
-        self.shape.ray_indices.get_or_init(|| self.shape.csg.prims.iter().map(RayIndex::new).collect())
+        let shape = &self.shape;
+        shape.ray_indices.get_or_init(|| shape.csg.prims.iter().map(RayIndex::new).collect())
     }
     pub fn contains_world(&self, p: WorldPoint) -> bool {
         self.contains(self.to_local(p))
@@ -730,13 +724,14 @@ impl EvaluatedSolid {
         Some(out)
     }
     pub fn edges(&self) -> &[Edge] {
-        self.shape.edges
-            .get_or_init(|| csg::edges_indexed(&self.shape.csg, self.shape.epsilon, self.ray_indices()))
+        let shape = &self.shape;
+        shape.edges.get_or_init(|| csg::edges_indexed(&shape.csg, shape.epsilon, self.ray_indices()))
     }
     pub fn mesh(&self) -> &mesh::Mesh {
         // a field's surface came indexed, its corners shared exactly: nothing for a weld to do
         self.shape.mesh.get_or_init(|| match self.shape.surface {
-            Surface::Field { .. } => mesh::grouped_welded(self.shape.boundary.get().cloned().unwrap_or_else(|| self.field_pieces())),
+            Surface::Field { .. } => mesh::grouped_welded(
+                self.shape.boundary.get().cloned().unwrap_or_else(|| self.field_pieces())),
             // the B-rep's mesh shares its points exactly too
             Surface::Brep { .. } => mesh::grouped_welded(self.boundary().to_vec()),
             Surface::Csg => mesh::grouped(self.boundary()),
@@ -777,8 +772,8 @@ impl EvaluatedSolid {
         m
     }
     /// The mesh turned as the solid stands but not yet moved to its origin: the world's mesh less
-    /// the translation, which a file adds as it writes (`placed_stl`, a glTF node).  The mesh itself
-    /// for a solid that never turned.
+    /// the translation, which a file adds as it writes (`placed_stl`, a glTF node).  The mesh
+    /// itself for a solid that never turned.
     pub fn oriented_mesh(&self) -> std::borrow::Cow<'_, mesh::Mesh> {
         let m = self.mesh();
         if self.rotation.is_none() {
@@ -802,7 +797,8 @@ impl EvaluatedSolid {
     }
     /// Refuse a surface still being refined: it may be open, and a file is a finished part.
     pub fn finished(&self) -> Result<(), String> {
-        if self.provisional() { Err(format!("`{}`: its surface is still being refined", self.shape.name)) } else { Ok(()) }
+        if !self.provisional() { return Ok(()) }
+        Err(format!("`{}`: its surface is still being refined", self.shape.name))
     }
     pub(crate) fn classifier(&self) -> &Csg {
         &self.shape.csg
@@ -871,6 +867,7 @@ impl Rigid {
         self.r.map(|row| plane::dot(row, v))
     }
 }
+
 /// The angle an exact solid's edge's chords may turn (radians): the sagitta decides on a large
 /// curve, and a small circle is cut in 64 steps a turn at least, as the facet term cuts one.
 const BREP_ANGULAR: f64 = std::f64::consts::TAU / 64.0;

@@ -7,6 +7,16 @@ use std::rc::Rc;
 
 use crate::solid::Memo;
 
+/// One evaluated solid remembered (`Caches::solid`): what it was built against and what it came
+/// to, and the last place it was asked for since it moved, so a solid asked again where it now
+/// stands is the one answer (its world box worked out once).
+#[derive(Clone, Debug)]
+pub struct SolidSlot {
+    pub key: crate::solid::ShapeKey,
+    pub built: Result<Rc<crate::solid::EvaluatedSolid>, String>,
+    pub moved: Option<(crate::plane::Basis, Rc<crate::solid::EvaluatedSolid>)>,
+}
+
 /// **The sketch's memos**: each result remembered against everything it was worked out from, so
 /// a miss works out what a hit remembers and none of it is state — a drawing reads the same with
 /// every one empty (`clear`). Interior, so `&Sketch` readers share them.
@@ -26,16 +36,6 @@ use crate::solid::Memo;
 ///
 /// Not here: the surfaces a host supplies for swept solids (`Sketch::field_surfaces`), which no
 /// miss works out again, and where swept solids are meshed (`Sketch::field_meshing`), a setting.
-/// One evaluated solid remembered (`Caches::solid`): what it was built against and what it came
-/// to, and the last place it was asked for since it moved, so a solid asked again where it now
-/// stands is the one answer (its world box worked out once).
-#[derive(Clone, Debug)]
-pub struct SolidSlot {
-    pub key: crate::solid::ShapeKey,
-    pub built: Result<Rc<crate::solid::EvaluatedSolid>, String>,
-    pub moved: Option<(crate::plane::Basis, Rc<crate::solid::EvaluatedSolid>)>,
-}
-
 #[derive(Clone, Debug, Default)]
 pub struct Caches {
     /// Each curve's polyline, remembered against everything it was computed from

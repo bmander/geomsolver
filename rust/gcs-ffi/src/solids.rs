@@ -125,7 +125,9 @@ pub unsafe extern "C" fn gcs_solid_placement(
         let s = sk(h);
         let Some(i) = solid_at(s, idx) else { return -1 };
         let policy = gcs_core::solid::ApproximationPolicy::from_unit(unit);
-        let solid = if built != 0 { s.built_solid(i, policy) } else { Some(s.evaluated_solid(i, policy)) };
+        let solid = if built != 0 { s.built_solid(i, policy) } else {
+            Some(s.evaluated_solid(i, policy))
+        };
         let solid = match solid {
             None => return 0,
             Some(Ok(s)) => s,

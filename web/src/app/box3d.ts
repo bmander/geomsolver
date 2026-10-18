@@ -19,7 +19,7 @@ import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
 
 import { objects, own, placement, preview } from '../core/mesh.js';
-import type { Face, Mesh } from '../core/mesh.js';
+import type { Face, Mesh, Placement } from '../core/mesh.js';
 import { overview3 } from '../core/overview.js';
 import { eyeFrame, placeOf, solidEdges } from '../core/workspace.js';
 import type { SolidEdge } from '../core/workspace.js';
@@ -183,20 +183,20 @@ export class Box3D {
     const objects = fresh || this.built!.shape !== shape || this.built!.objects !== pose;
     if (!datums && !objects) return;
     if (datums) this.buildDatums(overview3(v.sketch, 0, 'datums'));
-    let placed = this.built?.objects ?? NaN;
+    let placedAt = this.built?.objects ?? NaN;
     if (objects) {
       // an object is cut again under a gesture only where its shape was changed in place, which
       // is what that gesture is for: one a drag re-shapes waits for the drag to be let go
       const settled = fresh || this.built!.shape !== shape || (!v.gesture && !v.anim);
       if (fresh) this.dropObjects();
-      placed = this.placeObjects(v, settled) ? pose : NaN;
+      placedAt = this.placeObjects(v, settled) ? pose : NaN;
       this.preview.key = null;          // a preview is of the objects as they stood
       this.forgetLit();                 // and so are the edges lit on them
     }
     this.built = {
       sketch: v.sketch, solid: v.showSolid,
       datums: datums ? pose : this.built!.datums,
-      objects: placed,
+      objects: placedAt,
       shape,
     };
   }
@@ -307,12 +307,7 @@ export class Box3D {
     let current = true;
     const now = objects(v.sketch);
     const keep = new Set(now.map((o) => o.index));
-    for (const [index, held] of this.placed) {
-      if (keep.has(index)) continue;
-      this.objects.remove(held.group);
-      release(held.group);
-      this.placed.delete(index);
-    }
+    for (const index of [...this.placed.keys()]) if (!keep.has(index)) this.unplace(index);
     for (const o of now) {
       // **cut to the object and not to the zoom** — `0` asks the core for `solid::mesh_unit`,
       // a sagitta a fixed fraction of the solid's own diagonal.  Handed `v.unit` this re-cut the
@@ -320,7 +315,7 @@ export class Box3D {
       // on the V-twin cylinder locked the tab for the better part of a minute.  An object that
       // does not evaluate (a revolution whose axis crosses its profile) is left out: thrown here,
       // it stopped every paint before the drawing, and the page with it
-      let at;
+      let at: Placement | null;
       try {
         at = placement(v.sketch, o.index, 0, !settled);
       } catch {

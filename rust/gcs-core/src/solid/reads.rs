@@ -235,9 +235,10 @@ fn reads_with(sk: &Sketch, si: usize, unit: f64, skip: &dyn Fn(usize) -> bool, p
                 v.extend(sk.entity_params(*axis).iter().map(|&p| sk.params[p as usize].value));
                 // an axis stands in space, and a line in another plane is read in that one's
                 let plane = sk.faces.get(*face as usize).and_then(|f| f.plane);
-                let ends = crate::model::edge_ends(sk, *axis);
-                if axis.kind != EntKind::Line
-                    || !ends.is_some_and(|(a, b)| [a, b].iter().all(|&p| drawn_in(sk, p as usize, plane))) {
+                let in_face = |(a, b): (u32, u32)| {
+                    [a, b].iter().all(|&p| drawn_in(sk, p as usize, plane))
+                };
+                if axis.kind != EntKind::Line || !crate::model::edge_ends(sk, *axis).is_some_and(in_face) {
                     poses.world();
                 }
             }
@@ -303,8 +304,8 @@ const NEAR: f64 = 1e-12;
 
 /// **What a solid reads, split into its shape and its pose** (#412): everything `reads` reads,
 /// but with every plane's pose rewritten relative to a reference plane (its first face's,
-/// `reference`) — the *shape* — and that reference plane's world pose.  Two keys of one shape are
-/// one solid moved rigidly: what was evaluated for one is the other's too, moved by the motion
+/// `reference`) — the *shape* — and that reference plane's world pose.  Two keys of one shape
+/// are one solid moved rigidly: what was evaluated for one is the other's too, moved by the motion
 /// that carries one reference onto the other (`Rigid::between`).  A solid that reads anything
 /// standing in the world itself — a region's points, a face family's stations, a body placed or
 /// swept under a motion, a curve that may be traced through anything — has its pose in its shape

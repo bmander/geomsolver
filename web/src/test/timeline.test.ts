@@ -147,7 +147,8 @@ test('a timeline stops at the singular instant its march stops at', (t) => {
   assert.equal(view.instant?.at, m.reached, 'past the limit, the drawing stands at it');
 });
 
-test('an edit takes no march before it returns: the timeline gets its reach once followed', async (t) => {
+test('an edit takes no march before it returns; the timeline gets its reach once followed',
+     async (t) => {
   const view = opened(FOUR_BAR);
   t.after(() => view.doc.dispose());
   // `opened` is an edit: nothing followed, the timeline the interval alone
@@ -186,5 +187,6 @@ test('a scrub of the V-twin moves its parts in the box and cuts none of them aga
     box.sync(view);
   }
   assert.equal(box.stats.cut, cut, 'nothing cut again along the scrub');
-  assert.ok(box.stats.moved - moved >= 3 * cut, `every object placed at every step: ${box.stats.moved}`);
+  assert.ok(box.stats.moved - moved >= 3 * cut,
+            `every object placed at every step: ${box.stats.moved}`);
 });

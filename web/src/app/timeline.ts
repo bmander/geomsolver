@@ -4,9 +4,9 @@
  * core's march carries; past where the march stopped the track is hatched, and the singular
  * instant it stopped at is marked with what the core says it is.  Until the drawing has been
  * followed since its last edit (#412) a row shows the interval alone, without a reach or a
- * singular instant, and scrubbing or running it is what follows it.  The readout takes an instant as
- * written (`90deg`), read by the core; Run steps the drawing along the interval, and Home puts it
- * back where it is drawn.  All of it is presentation: the instant is view state, and an edit is
+ * singular instant, and scrubbing or running it is what follows it.  The readout takes an
+ * instant as written (`90deg`), read by the core; Run steps the drawing along the interval, and
+ * Home puts it back where it is drawn.  All of it is presentation: the instant is view state, and an edit is
  * made at home.  Nothing here reads a number the core did not hand it. */
 import { instant } from '../core/parameters.js';
 import type { Parameter } from '../core/parameters.js';

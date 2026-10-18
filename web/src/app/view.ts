@@ -101,6 +101,7 @@ const LOOK_MS = 260;
 /** How long after an edit, with the page otherwise quiet, its parameters are followed where the
  *  page cannot say when it is idle (#412). */
 const IDLE_FOLLOW_MS = 200;
+
 const ANIM_DT = 0.03;        // seconds per animation tick
 const ANIM_PERIOD = 2.0;     // seconds spent on each degree of freedom
 
@@ -1169,44 +1170,38 @@ export class SketchView {
    *  near it as the march now reaches — which needs the march.  At home nothing is followed
    *  until it is needed or the page is idle (#412): the timeline shows the interval meanwhile. */
   private followLater(): void {
-    this.idleFollow?.cancel();
-    this.idleFollow = null;
+    this.cancelFollow();
     this.followed = null;
-    if (this.instant?.at != null) {
-      this.follow();
-      return;
-    }
-    if (this.parameters().length === 0) {
-      this.followed = [];
-      this.onTimeline();
-      return;
-    }
+    if (this.instant?.at != null) return this.follow();
+    if (this.parameters().length === 0) this.followed = [];
     this.onTimeline();
+    if (this.followed) return;
     const doc = this.doc;
     const run = () => {
       this.idleFollow = null;
       // a document since let go, or replaced, is not this one's to follow
       if (this.doc === doc && doc.live && !this.followed) this.follow();
     };
-    const idle = (globalThis as { requestIdleCallback?: (f: () => void) => number })
-      .requestIdleCallback;
-    if (idle) {
-      const id = idle(run);
-      this.idleFollow = {
-        cancel: () => (globalThis as { cancelIdleCallback?: (id: number) => void })
-          .cancelIdleCallback?.(id),
-      };
+    // a page says when it is idle; node, where the tests run, does not
+    if (typeof requestIdleCallback === 'function') {
+      const id = requestIdleCallback(run);
+      this.idleFollow = { cancel: () => cancelIdleCallback(id) };
     } else {
       const id = setTimeout(run, IDLE_FOLLOW_MS);
       this.idleFollow = { cancel: () => clearTimeout(id) };
     }
   }
 
+  /** Let the idle follow an edit asked for go: the march was taken, or another edit came. */
+  private cancelFollow(): void {
+    this.idleFollow?.cancel();
+    this.idleFollow = null;
+  }
+
   /** **Each parameter followed**, now: the timeline's reach, and the drawing stood back at the
    *  instant it was shown at, as near it as the march now reaches. */
   follow(): void {
-    this.idleFollow?.cancel();
-    this.idleFollow = null;
+    this.cancelFollow();
     this.followed = this.parameters().map((p) => params.march(this.sketch, p.name));
     const shown = this.instant;
     if (shown && !this.marchOf(shown.name)) this.instant = null;

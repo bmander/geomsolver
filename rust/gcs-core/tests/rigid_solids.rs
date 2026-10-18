@@ -4,15 +4,23 @@
 //! where a fresh evaluation would.
 use std::rc::Rc;
 
-use gcs_core::model::{EntKind, Sketch};
+use gcs_core::model::Sketch;
+use gcs_core::program::Elaborated;
 use gcs_core::solid::{ApproximationPolicy, EvaluatedSolid, LocalPoint};
 use gcs_core::{examples, follow, overview, solve};
 
-fn vtwin() -> Sketch {
-    let mut sk = examples::case("vtwin").unwrap();
+/// The V-twin as written, and solved.
+fn vtwin() -> (Elaborated, Sketch) {
+    let e = crate::common::read(examples::source("vtwin").unwrap());
+    let mut sk = e.sketch.clone();
     let r = solve::solve(&mut sk, Default::default());
     assert!(r.success, "{}", r.message);
-    sk
+    (e, sk)
+}
+
+/// The index of what the V-twin calls `name`.
+fn named(e: &Elaborated, name: &str) -> usize {
+    e.map.ent_named(name).unwrap_or_else(|| panic!("{name}")).i()
 }
 
 /// Each object's evaluation, as the box asks for it.
@@ -78,8 +86,8 @@ fn agrees(name: &str, moved: &EvaluatedSolid, fresh: &EvaluatedSolid) {
     assert_eq!(moved.surviving_faces(), fresh.surviving_faces(), "{name}");
     let (bm, bf) = (moved.world_bounds(), fresh.world_bounds());
     for k in 0..3 {
-        assert!((bm.lo[k] - bf.lo[k]).abs() <= sag + 1e-9 && (bm.hi[k] - bf.hi[k]).abs() <= sag + 1e-9,
-                "{name}: bounds {bm:?} != {bf:?}");
+        let off = (bm.lo[k] - bf.lo[k]).abs().max((bm.hi[k] - bf.hi[k]).abs());
+        assert!(off <= sag + 1e-9, "{name}: bounds {bm:?} != {bf:?}");
     }
     let (rm, rf) = (moved.round_features(), fresh.round_features());
     assert_eq!(rm.len(), rf.len(), "{name}");
@@ -106,7 +114,7 @@ fn agrees(name: &str, moved: &EvaluatedSolid, fresh: &EvaluatedSolid) {
 /// evaluation where it now stands.  The plate stands still and is the very solid it was.
 #[test]
 fn the_vtwin_moves_its_parts_rather_than_building_them_again() {
-    let home = vtwin();
+    let (_, home) = vtwin();
     let first = evaluated(&home);
     let name = |i: usize| home.solid_name(i);
     let moving = |i: usize| ["disc", "cyl", "pis"].iter().any(|p| name(i).contains(p));
@@ -140,8 +148,8 @@ fn the_vtwin_moves_its_parts_rather_than_building_them_again() {
 /// its matrix, and an STL of it is where a fresh one's is.
 #[test]
 fn a_moved_solid_hands_out_the_world_through_its_placement() {
-    let home = vtwin();
-    let disc = overview::objects(&home).into_iter().find(|&i| home.solid_name(i).contains("disc")).unwrap();
+    let (e, home) = vtwin();
+    let disc = named(&e, "crank.disc.body");
     let was = home.evaluated_solid(disc, ApproximationPolicy::Mesh).unwrap();
     let mut sk = home.clone();
     follow::stand(&mut sk, "t", 90.0).unwrap();
@@ -153,7 +161,8 @@ fn a_moved_solid_hands_out_the_world_through_its_placement() {
     let world = now.world_mesh();
     let own = now.mesh();
     for (p, w) in own.positions.chunks_exact(3).zip(world.positions.chunks_exact(3)) {
-        let placed: [f64; 3] = std::array::from_fn(|k| m[k] * p[0] + m[4 + k] * p[1] + m[8 + k] * p[2] + m[12 + k]);
+        let placed: [f64; 3] =
+            std::array::from_fn(|k| m[k] * p[0] + m[4 + k] * p[1] + m[8 + k] * p[2] + m[12 + k]);
         assert!(norm(sub(placed, [w[0], w[1], w[2]])) < 1e-9);
         let back = now.to_local(now.to_world(LocalPoint([p[0], p[1], p[2]])));
         assert!(norm(sub(back.0, [p[0], p[1], p[2]])) < 1e-9);
@@ -179,18 +188,10 @@ fn a_moved_solid_hands_out_the_world_through_its_placement() {
 /// where the same rim turned with the crank was not.
 #[test]
 fn a_solid_whose_shape_changes_is_built_again() {
-    let mut sk = vtwin();
-    let disc = overview::objects(&sk).into_iter().find(|&i| sk.solid_name(i).contains("disc")).unwrap();
+    let (e, mut sk) = vtwin();
+    let disc = named(&e, "crank.disc.body");
     let was = sk.evaluated_solid(disc, ApproximationPolicy::Mesh).unwrap();
-    // the largest circle the disc's faces read is its rim
-    let rim = (0..sk.circles.len()).filter(|&c| {
-        sk.faces.iter().any(|f| f.edges.iter().any(|e| e.kind == EntKind::Circle && e.i() == c))
-            && sk.solid_name(disc).split('.').next().is_some_and(|p| sk.params[sk.circles[c].radius as usize]
-                .name.starts_with(p))
-    }).max_by(|&a, &b| {
-        let r = |c: usize| sk.params[sk.circles[c].radius as usize].value;
-        r(a).total_cmp(&r(b))
-    }).expect("the disc's rim");
+    let rim = named(&e, "crank.disc.rim");
     sk.params[sk.circles[rim].radius as usize].value += 1.0;
     let now = sk.evaluated_solid(disc, ApproximationPolicy::Mesh).unwrap();
     assert!(!now.same_shape(&was), "a larger rim is a new shape");
