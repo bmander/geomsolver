@@ -34,7 +34,7 @@ mod running;
 pub use entities::{
     Param, EntKind, Ends, Run, Field, EntRef, PointE, LineE, CircleE, AxisE, ArcE, SplineE,
     FrameE, Chart, Joint,
-    LiftE, article,
+    LiftE, article, entity_name, kind_initial,
 };
 pub use curves::{CURVE_STEPS, CurveDef, CurveBody, CurveE, Extremal, Home, Trim, extremal_def, whole};
 pub use solids::{
@@ -172,7 +172,7 @@ pub struct Sketch {
     /// The contact parameters several contacts own together, by the name they are pinned to
     /// (`path tangent(t == s) ground`) — allocated by `Sketch::add` for the first contact naming
     /// it and handed to the rest.  The constraints hold the index (`Arg::Param`), so this table
-    /// is what a rebuild (`io::graft`) and the document writer read the name back from.
+    /// is what a rebuild (`graft`) and the document writer read the name back from.
     pub shared: BTreeMap<String, SharedPlace>,
     /// **The face families' running numbers** (#243 L1), by name (`#f12.s`): each a *fixed*
     /// parameter, the station the family's instance is solved at.  `expr::evaluate` reads one

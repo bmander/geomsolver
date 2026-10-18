@@ -1,5 +1,5 @@
 use gcs_core::{
-    drawing, io, model::EntRef, program, semantics::GeometryRoles, solve, syntax,
+    drawing, graft, io, model::EntRef, program, semantics::GeometryRoles, solve, syntax,
 };
 use std::collections::BTreeMap;
 use crate::common::linked::build;
@@ -194,14 +194,14 @@ length(10) ax
     let again = good(text);
     assert_eq!(again.sketch.roles, restored.roles);
     // a copy renumbers its points, so the roles are compared entity by entity
-    let copied = io::copy(&e.sketch, &[EntRef::line(0)]);
+    let copied = graft::copy(&e.sketch, &[EntRef::line(0)]);
     assert_eq!(copied.roles.len(), e.sketch.roles.len());
     assert_eq!(copied.roles_of(EntRef::line(0)), e.sketch.roles_of(EntRef::line(0)));
     for (a, b) in copied.children(EntRef::line(0)).into_iter().zip(e.sketch.children(EntRef::line(0))) {
         assert_eq!(copied.roles_of(a), e.sketch.roles_of(b));
     }
     let mut destination = plain.sketch.clone();
-    io::paste(&mut destination, &copied, 20.0, 0.0);
+    graft::paste(&mut destination, &copied, 20.0, 0.0);
     assert_eq!(
         destination.roles_of(EntRef::line(0)),
         GeometryRoles::default()

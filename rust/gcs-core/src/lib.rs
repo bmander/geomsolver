@@ -37,6 +37,7 @@ pub mod followed;
 pub mod extremal;
 pub mod generate;
 pub mod gltf;
+pub mod graft;
 pub mod graph;
 pub mod hidden;
 pub mod homotopy;
@@ -86,6 +87,7 @@ pub mod edge;
 pub mod spatial_face;
 pub mod units;
 pub mod variational;
+pub mod vocab;
 pub mod witness;
 
 pub mod ir;

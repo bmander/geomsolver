@@ -16,7 +16,7 @@
 use super::resolve::Resolver;
 use super::{Code, Diag, SourceMap};
 use crate::ir::{Operation, Statement};
-use crate::model::{EntKind, EntRef, MotionDef, MotionE, Sketch};
+use crate::model::{entity_name, EntKind, EntRef, MotionDef, MotionE, Sketch};
 use crate::syntax::{Arg, OpArg, Ref, StmtId};
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
@@ -41,7 +41,7 @@ pub(super) fn motions(sk: &mut Sketch, res: &mut Resolver, map: &SourceMap, body
         let Some(joint) = sk.frames[f].joint.clone() else { continue };
         let frame = EntRef::frame(f);
         let axis = EntRef::new(EntKind::Axis, joint.axis as usize);
-        let name = map.name_of(frame).cloned().unwrap_or_else(|| crate::io::entity_name(frame));
+        let name = map.name_of(frame).cloned().unwrap_or_else(|| entity_name(frame));
         let mut held = Held::default();
         for st in body.iter().filter(|st| !skip.contains(&st.id)) {
             let Operation::Relation(r) = &st.kind else { continue };
@@ -415,7 +415,7 @@ pub(super) fn inverse(sk: &mut Sketch, m: usize) -> usize {
 /// A name for `e` in a refusal: the document's, where the resolver has one.
 pub(super) fn name_of(res: &Resolver, e: EntRef) -> String {
     res.of.iter().find(|(k, v)| **v == e && !k.starts_with('#')).map(|(k, _)| k.clone())
-        .unwrap_or_else(|| crate::io::entity_name(e))
+        .unwrap_or_else(|| entity_name(e))
 }
 
 /// The jointed frames `e` rides on, outermost first, or why its parts ride on different ones.

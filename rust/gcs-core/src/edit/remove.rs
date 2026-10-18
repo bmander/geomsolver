@@ -13,7 +13,7 @@ type Gone = std::collections::BTreeSet<String>;
 /// Take entities and constraints out of the source.
 ///
 /// A statement goes when it declares something being removed, or when it *mentions* one — which
-/// is the same rule `io::without` follows on a sketch, said about text instead: a constraint
+/// is the same rule `graft::without` follows on a sketch, said about text instead: a constraint
 /// comes along exactly when all its entities did.
 ///
 /// What was made inside a component or a block **stays**, and the rest goes: there is no one
@@ -180,7 +180,7 @@ fn doom_dependent(e: &Elaborated, prog: &Program, sk: &Sketch, doomed: &mut Doom
 
 /// And every statement whose *constraint* names one of the gone without its text doing so: a
 /// projection's planes are its points' memberships, inferred and never spelled, so the model
-/// drops it when a plane goes (`io::without`'s rule) and its statement goes with it.
+/// drops it when a plane goes (`graft::without`'s rule) and its statement goes with it.
 fn doom_inferred(e: &Elaborated, prog: &Program, sk: &Sketch, names: &Gone, doomed: &mut Doomed) {
     // only a kind with an inferred entity slot can be in that position, so a document with none
     // skips the walk — `user_constraints` and `entities` both allocate

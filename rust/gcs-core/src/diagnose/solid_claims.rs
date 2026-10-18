@@ -1,6 +1,7 @@
 //! Sample coverage and geometric evidence are retained; outcomes are always derived.
 use crate::{
     clear,
+    constraints::SpecKind,
     model::{Sketch, SolidClaim, Sweep},
 };
 
@@ -315,7 +316,7 @@ impl ClaimJudge {
         if self.poses.len() >= pose_count(c) {
             self.verdicts.push(SolidVerdict {
                 stmt: c.stmt,
-                text: crate::io::describe_solid_claim(sk, c),
+                text: describe_solid_claim(sk, c),
                 sweep: c.over.clone(),
                 poses: std::mem::take(&mut self.poses),
             });
@@ -343,7 +344,7 @@ impl ClaimJudge {
             claims: sk.solid_claims.len(),
             pose: self.poses.len(),
             poses: c.map_or(0, pose_count),
-            text: c.map(|c| crate::io::describe_solid_claim(sk, c)),
+            text: c.map(|c| describe_solid_claim(sk, c)),
             stmt: c.map(|c| c.stmt),
         }
     }
@@ -400,8 +401,50 @@ pub fn judge_solids(sk: &Sketch) -> Vec<SolidVerdict> {
     while !judge.done(sk) {
         let c = &sk.solid_claims[judge.claim];
         let judged =
-            || crate::progress::Work::claim(crate::io::describe_solid_claim(sk, c), c.stmt);
+            || crate::progress::Work::claim(describe_solid_claim(sk, c), c.stmt);
         crate::progress::during(judged, || judge.finish_claim(sk));
     }
     judge.into_verdicts()
+}
+
+/// **A claim about two solids, in the core's own words** (§9.8).
+///
+/// `io::describe`'s rule one stratum out: what a front end shows is what the core says, so a
+/// constraint list, a terminal report and a program panel cannot spell one statement three ways.
+pub fn describe_solid_claim(sk: &Sketch, c: &SolidClaim) -> String {
+    let name = |i: u32| {
+        sk.solids
+            .get(i as usize)
+            .map(|s| s.name.clone())
+            .unwrap_or_else(|| format!("#{i}"))
+    };
+    let gap = c
+        .requirement
+        .gap()
+        .map(|gap| {
+            format!(
+                "({})",
+                if gap.text().is_empty() {
+                    crate::expr::reading(SpecKind::Length, gap.value())
+                } else {
+                    gap.text().to_string()
+                }
+            )
+        })
+        .unwrap_or_default();
+    let head = match &c.over {
+        None => String::new(),
+        Some(s) => format!(
+            "over {} in ({}, {}): ",
+            s.name(),
+            crate::vocab::num(s.from()),
+            crate::vocab::num(s.to())
+        ),
+    };
+    format!(
+        "claim {head}{} {}{gap} {}",
+        name(c.a),
+        c.requirement.word().as_str(),
+        name(c.b)
+    )
 }

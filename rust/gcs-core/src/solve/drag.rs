@@ -155,7 +155,7 @@ impl Drag {
         guards: Vec<Triangle>,
         max_step_rel: f64,
     ) -> Drag {
-        let (right, up) = crate::overview::eye(az, el);
+        let (right, up) = crate::space::eye(az, el);
         let depth = crate::space::dot(crate::space::cross(right, up), sk.world_point(point));
         let target = Constraint::drag_seen(EntRef::point(point), x, y, weight, (az, el), depth);
         let eye = Some((right, up));

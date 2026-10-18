@@ -387,7 +387,7 @@ pub unsafe extern "C" fn gcs_entity_bounds(h: *mut Sketch, kind: i32, idx: i32, 
 #[no_mangle]
 pub extern "C" fn gcs_entity_name(kind: i32, idx: i32) -> *mut u8 {
     guard(std::ptr::null_mut(), move || {
-        out_str(io::entity_name(ent(kind, idx)))
+        out_str(gcs_core::model::entity_name(ent(kind, idx)))
     })
 }
 

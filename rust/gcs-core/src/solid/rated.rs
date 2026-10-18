@@ -25,7 +25,7 @@ use crate::linalg::{min_norm_lstsq, Mat};
 use crate::model::{EntKind, EntRef, RateRow, RateWord, Sketch};
 use crate::ode;
 use crate::system::System;
-use crate::syntax::num;
+use crate::vocab::num;
 
 type V = [f64; 3];
 

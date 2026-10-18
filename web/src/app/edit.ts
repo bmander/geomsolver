@@ -98,7 +98,7 @@ export function removeConstraint(v: SketchView, c: Constraint): void {
   v.afterEdit();
 }
 /** Delete what is selected — as a **source edit**: the statements that declare them go, and every
- *  statement that named one goes with them, which is the rule `io::without` follows on a sketch
+ *  statement that named one goes with them, which is the rule `graft::without` follows on a sketch
  *  said about text instead.  A rebuild would have been simpler and would have flattened the
  *  document to a list of points on the first deletion; this leaves everything else written.
  *

@@ -159,7 +159,7 @@ fn a_place_is_not_a_free_variable() {
     assert!(said.iter().any(|m| m.contains("is a place along a curve")), "{said:?}");
 }
 
-/// A copy and a document both keep the sharing: the rebuild walk (`io::graft`) and the JSON
+/// A copy and a document both keep the sharing: the rebuild walk (`graft`) and the JSON
 /// carry the name, so the contacts that owned one unknown own one again.
 #[test]
 fn a_copy_and_a_document_keep_the_place_shared() {
@@ -189,7 +189,7 @@ spl tangent(t == s) l
         assert!((sk.params[p as usize].value - 0.4).abs() < 1e-12, "{how}: the seed came along");
     };
     check(&e.sketch, "elaborated");
-    check(&gcs_core::io::copy(&e.sketch, &e.sketch.primitives()), "copied");
+    check(&gcs_core::graft::copy(&e.sketch, &e.sketch.primitives()), "copied");
     let doc = gcs_core::io::dumps(&e.sketch, None);
     assert!(doc.contains("\"shared\""), "{doc}");
     check(&gcs_core::io::loads(&doc).unwrap(), "reloaded");

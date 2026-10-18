@@ -6,7 +6,7 @@ use super::curves::build_curve;
 use super::resolve::{follow, follow_building, Resolver, NORMAL};
 use super::{Code, Diag};
 use crate::ir::{Decl, Kid, Statement as Stmt};
-use crate::model::{EntKind, EntRef, Field, Sketch};
+use crate::model::{entity_name, EntKind, EntRef, Field, Sketch};
 use crate::rng::Rng;
 use crate::style::Classes;
 use crate::syntax::{AtRef, DirRef, Program, Seg, Span, StmtId};
@@ -731,7 +731,7 @@ pub(super) fn splines_in_space(sk: &mut Sketch, res: &mut Resolver, map: &mut su
         else { continue };
         let (lo, hi) = curve::domain(sk, i);
         let e = EntRef::spline(i);
-        let name = map.name_of(e).cloned().unwrap_or_else(|| io::entity_name(e));
+        let name = map.name_of(e).cloned().unwrap_or_else(|| entity_name(e));
         let t = crate::model::TracedE {
             body, args: s.ctrl.iter().map(|&p| EntRef::point(p as usize)).collect(),
             values: Vec::new(),
@@ -819,7 +819,7 @@ pub(super) fn arcs_in_space(sk: &mut Sketch, map: &super::SourceMap, deferred: &
             diags.push(Diag::within(Code::E060, site.span, site.stmt, said.to_string()));
             continue;
         }
-        let name = map.name_of(arc).cloned().unwrap_or_else(|| io::entity_name(arc));
+        let name = map.name_of(arc).cloned().unwrap_or_else(|| entity_name(arc));
         let u = to_s.map(|x| x / norm(to_s));
         let w = cross(n, to_s);
         let v = w.map(|x| x / norm(w));
@@ -945,7 +945,7 @@ pub(super) fn circles_in_space(
         let v = cross(n, u);
         let at = sk.world_point(c);
         let name = map.name_of(EntRef::circle(i)).cloned()
-            .unwrap_or_else(|| io::entity_name(EntRef::circle(i)));
+            .unwrap_or_else(|| entity_name(EntRef::circle(i)));
         let (ua, va, _, origin) = round_plane(sk, &name, [u, v], at);
         // the gauge: the world's axis least along the normal, held, and taken again where a
         // solve leaves the normal near it (`Sketch::retake_round_gauges`)
@@ -1004,7 +1004,7 @@ pub(super) fn drawn_in_planes(sk: &Sketch, map: &super::SourceMap, diags: &mut V
     for e in curves {
         let Some(&p) = sk.children(e).iter().find(|k| sk.plane_of(k.i()).is_none()) else { continue };
         let Some(site) = map.site_of(e) else { continue };
-        let who = |r: EntRef| map.name_of(r).cloned().unwrap_or_else(|| io::entity_name(r));
+        let who = |r: EntRef| map.name_of(r).cloned().unwrap_or_else(|| entity_name(r));
         diags.push(Diag::within(
             Code::E060,
             site.span,

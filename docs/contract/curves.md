@@ -205,7 +205,7 @@ The five questions the issue left open are settled so:
    one contact's: `over` names a slot label, not a number; a name in scope (a `param`, a formal
    given a number, a face family's running number) is read as it always was, and a declared
    unknown is E040 ("an unknown of the drawing"); a point no contact holds with that slot, or two
-   contacts holding it with one, is E061 at `io::seed_omitted`, which infers the carrier
+   contacts holding it with one, is E061 at `constraints::seed_omitted`, which infers the carrier
    (`infer::rate_carriers`) — `g tangent(at: p) l` names the curve where two could.
 2. **Closed forms behind one surface.**  The words' rows are the source kernels' forms, kept, the
    source choosing (`contact_rate::Form`): a curve's in its view `(C′ × (B − A))/‖B − A‖`

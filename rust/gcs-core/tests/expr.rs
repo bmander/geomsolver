@@ -4,6 +4,7 @@ use gcs_core::constraints::{Arg, CKind, Constraint};
 use gcs_core::diagnose::{diagnose, DiagnoseOptions};
 use gcs_core::examples;
 use gcs_core::expr::{self, eval, parse, Expr};
+use gcs_core::graft;
 use gcs_core::io;
 use gcs_core::model::{EntRef, Sketch};
 use gcs_core::report;
@@ -302,19 +303,19 @@ fn describe_and_callout_text() {
 fn expressions_survive_rebuilds_and_a_paste() {
     let (sk, ids) = three(["1 + 2", "3 * 2", "6 + 1"]);
     // deleting one: the others keep their texts and numbers
-    let mut sk2 = io::without(&sk, &[], &[ids[0]]);
+    let mut sk2 = graft::without(&sk, &[], &[ids[0]]);
     assert_eq!(sk2.constraints.len(), 2);
     assert_eq!(sk2.constraints[0].args[2].num(), 6.0);
     assert!(expr::evaluate(&mut sk2).iter().all(|it| it.error.is_none()));
     // a copy of everything pasted back keeps them too
-    let clip = io::copy(&sk, &sk.primitives());
+    let clip = graft::copy(&sk, &sk.primitives());
     let mut doc = sk.clone();
-    io::paste(&mut doc, &clip, 100.0, 0.0);
+    graft::paste(&mut doc, &clip, 100.0, 0.0);
     assert_eq!(doc.constraints.len(), 6);
     assert!(expr::evaluate(&mut doc).iter().all(|it| it.error.is_none()));
     assert_eq!(doc.constraints[4].args[2].num(), 6.0);
     // the part a drag works on is a rebuild too: its expressions come along as numbers
-    let part = io::Part::around(&sk, EntRef::point(2));
+    let part = graft::Part::around(&sk, EntRef::point(2));
     assert_eq!(part.sketch.constraints[0].args[2].num(), 6.0);
 }
 
@@ -591,7 +592,7 @@ fn the_part_a_drag_works_on_follows_a_free_variable() {
     let (mut sk, _) = tied("q", "q", 30.0, 12.0);
     expr::evaluate(&mut sk);
     // the second segment shares no point with the first, and comes along regardless
-    let mut part = io::Part::around(&sk, EntRef::point(1));
+    let mut part = graft::Part::around(&sk, EntRef::point(1));
     assert_eq!(part.sketch.points.len(), 4);
     assert_eq!(part.sketch.free_vars.len(), 1);
     // the part starts where the document is, and what its solve makes of the variable comes back

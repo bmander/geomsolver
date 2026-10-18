@@ -209,11 +209,11 @@ of 0°/180° is E040 by value (`program/relations.rs`). `tests/axis.rs` is the g
   any constraint); it moves nothing — only `Project` reads it.  `a project b` is one row over 12
   columns (`kernels::project`) with the line the planes share as consts (`plane::fold_line`).  The two
   plane slots are real entity slots and **inferred**: `infers_arg` marks them, the registry
-  publishes null, and **`io::seed_omitted` is the one seam** that fills them
+  publishes null, and **`constraints::seed_omitted` is the one seam** that fills them
   (`constraints::infer_entity`) and refuses (`constraints::validate`: no plane, one plane,
   parallel planes) — so the elaborator (E061), `from_json`, `gcs_constraint_add` and
   `Constraint::project` share one rule.  `operator_text` skips an inferred slot (`a project b`).
-  A plane's minted label starts with `v` (`syntax::kind_initial`).  Its glyph (`plane::glyph`)
+  A plane's minted label starts with `v` (`model::kind_initial`).  Its glyph (`plane::glyph`)
   is drawn under the *implicit class* `.plane` (`EntKind::implicit_class`, resolved in `style_of`; JSON
   never writes it); in the workspace it is a pane, chosen in the plane chooser rather than picked.
   Deleting a plane (`edit::remove`) splices the `in` clause out of every

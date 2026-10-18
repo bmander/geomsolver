@@ -1,4 +1,4 @@
-use gcs_core::{io,model::{EntKind,EntRef,MotionDef,MotionE},motion,program,solve,syntax};
+use gcs_core::{graft,model::{EntKind,EntRef,MotionDef,MotionE},motion,program,solve,syntax};
 use gcs_core::program::Elaborated;
 use crate::common::parsed::{build, solved};
 
@@ -130,19 +130,19 @@ fn motions_round_trip_and_remap_transitive_dependencies() {
     assert_eq!(solved(&text).sketch.motions.len(),3);
     let relative = EntRef::new(EntKind::Motion,seen(&e,"turn","observer"));
     assert!(e.sketch.entity_params(relative).is_empty());
-    let clip = io::copy(&e.sketch,&[relative]);
+    let clip = graft::copy(&e.sketch,&[relative]);
     assert_eq!(clip.motions.len(),3);
     let mut dst = e.sketch.clone();
-    io::paste(&mut dst,&clip,0.,0.);
+    graft::paste(&mut dst,&clip,0.,0.);
     assert_eq!(dst.motions.len(),6);
     for i in 0..3 {
         near(motion::evaluate(&clip,i,0.3).unwrap().point([1.,2.,3.]),
             motion::evaluate(&dst,i+3,0.3).unwrap().point([1.,2.,3.]),1e-12);
     }
-    let deleted = io::without(&e.sketch,&[e.map.ent_named("ax").unwrap()],&[]);
+    let deleted = graft::without(&e.sketch,&[e.map.ent_named("ax").unwrap()],&[]);
     assert_eq!(deleted.motions.len(),1);
     assert!(matches!(deleted.motions[0].def,MotionDef::Rotation {..}));
-    assert!(io::copy(&e.sketch,&[e.map.ent_named("o").unwrap()]).motions.is_empty());
+    assert!(graft::copy(&e.sketch,&[e.map.ent_named("o").unwrap()]).motions.is_empty());
 }
 
 #[test]

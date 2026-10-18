@@ -1,5 +1,5 @@
 //! Rigid instances share a source definition, but own their placed geometry.
-use gcs_core::{io,model::MotionDef,program,solid::{ApproximationPolicy::Report,WorldPoint},solve,syntax};
+use gcs_core::{graft,model::MotionDef,program,solid::{ApproximationPolicy::Report,WorldPoint},solve,syntax};
 
 const SOURCE: &str = "\
 unit mm
@@ -89,13 +89,13 @@ fn placement_print_copy_and_paste_retain_source_and_motion_dependencies() {
     let text = syntax::render_flat(&mut program).unwrap().to_string();
     assert!(text.contains("moved := stock at(under: turn) 90deg"),"{text}");
     assert!(solid(&read(&text),"moved").contains_world(WorldPoint([1.,2.,1.])));
-    let copied = io::copy(&e.sketch,&[e.map.ent_named("moved").unwrap()]);
+    let copied = graft::copy(&e.sketch,&[e.map.ent_named("moved").unwrap()]);
     assert_eq!(copied.motions.len(),1);
     assert_eq!(copied.solids.len(),2);
     let i = copied.solids.iter().position(|s| s.name == "moved").unwrap();
     assert!(copied.evaluated_solid(i,Report).unwrap().contains_world(WorldPoint([1.,2.,1.])));
     let mut target = gcs_core::model::Sketch::new();
-    io::paste(&mut target,&copied,10.,20.);
+    graft::paste(&mut target,&copied,10.,20.);
     let i = target.solids.iter().position(|s| s.name == "moved").unwrap();
     assert!((target.evaluated_solid(i,Report).unwrap().volume()-8.).abs() < 1e-9);
 }

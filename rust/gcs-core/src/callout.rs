@@ -355,9 +355,9 @@ pub fn layout_selected(sk: &Sketch, unit: f64, ids: Option<&[u32]>) -> Vec<Callo
     for (k, d) in crate::renderer::generated(sk, u) {
         let id = GENERATED + k as u32;
         let text = if d.round {
-            format!("⌀{}", crate::io::reading(crate::constraints::SpecKind::Length, d.value))
+            format!("⌀{}", crate::expr::reading(crate::constraints::SpecKind::Length, d.value))
         } else {
-            crate::io::reading(crate::constraints::SpecKind::Length, d.value)
+            crate::expr::reading(crate::constraints::SpecKind::Length, d.value)
         };
         let dir = crate::callout::unit(d.dir).unwrap_or((1.0, 0.0));
         // an extent is measured between the corners it bounds and stood *off* the part; a
@@ -382,7 +382,7 @@ pub fn measurement(sk: &Sketch, u: f64, a: P, b: P, value: f64, offset: f64) -> 
     let d = unit(sub(b, a))?;
     let pen = Pen { sk, u, hub: ((a.0 + b.0) / 2.0, (a.1 + b.1) / 2.0),
         lanes: BTreeMap::new(), spins: BTreeMap::new() };
-    let text = crate::io::reading(crate::constraints::SpecKind::Length, value);
+    let text = crate::expr::reading(crate::constraints::SpecKind::Length, value);
     Some(pen.linear(GENERATED, a, b, d, (0.0, offset), &text))
 }
 

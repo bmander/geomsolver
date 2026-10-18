@@ -46,7 +46,7 @@ impl Sketch {
     }
 
     /// What an owned unknown travels as into another sketch, before `Sketch::add`: its number,
-    /// pinned where it was, or the name it is shared under — the one rule `io::graft` and the
+    /// pinned where it was, or the name it is shared under — the one rule `graft` and the
     /// printer's `lift` both read, so a copy and a printed statement own what the original did.
     pub fn owned_arg(&self, p: u32) -> Arg {
         let q = &self.params[p as usize];

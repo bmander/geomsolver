@@ -1353,8 +1353,8 @@ pub fn rate_reach(flat: &[f64], outer: &[f64], home: f64, domain: (f64, f64))
     Some(crate::rates::reaches(&v.rate_body(), flat, outer, home, ends))
 }
 
-/// Drop every remembered pose.  `System::new` calls it: a contact's constants are addressed by
-/// where they live, and a compile is the one thing that moves them.
+/// Drop every remembered pose.  Every compile calls it (`system::forget_at_compile`): a contact's
+/// constants are addressed by where they live, and a compile is the one thing that moves them.
 pub fn forget() {
     LOCUS_SCRATCH.with(|s| s.borrow_mut().seen.clear());
 }
@@ -1362,5 +1362,8 @@ pub fn forget() {
 thread_local! {
     /// Scratch the kernel path runs in — a kernel is a `fn` and cannot own state, and allocating
     /// per residual is the one thing the compile-to-plan seam exists to prevent.
-    static LOCUS_SCRATCH: std::cell::RefCell<Scratch> = std::cell::RefCell::new(Scratch::new());
+    static LOCUS_SCRATCH: std::cell::RefCell<Scratch> = {
+        crate::system::forget_at_compile(forget);
+        std::cell::RefCell::new(Scratch::new())
+    };
 }

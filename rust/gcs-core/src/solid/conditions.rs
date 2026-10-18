@@ -11,7 +11,7 @@
 use super::faces::{along_run, BodyFaces, Reading};
 use crate::model::{RegionShape, RegionTerm, Sketch, Target};
 use crate::space::{dot, norm, scale, sub};
-use crate::syntax::Cmp;
+use crate::vocab::Cmp;
 use std::sync::Arc;
 
 type V = [f64; 3];

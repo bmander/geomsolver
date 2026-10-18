@@ -52,7 +52,7 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   one literal** — `1' 6 3/16"` — so there is **no string literal** (`"` is the inch mark, a `Str`
   argument and a raw branch key are bare words).  `pi` is dimensionless and `tau`/`turn` a
   **turn**, so `tau == 2 * pi * 1rad`; radians are written `* 1rad`, not `* 180 / pi`.  Storing
-  the unit costs the solve nothing, and `io::paste` converts between documents' units
+  the unit costs the solve nothing, and `graft::paste` converts between documents' units
   (`Sketch::rescale`, written out by kind: a `Param` cannot say it is a length).
 - **A number is named one way, and an unknown is declared** (issue #77; Solvent §3.4, §5, §6.3,
   [0.41]).  `w := 60` is a value; `param w := 60` (`ParamDecl::input`, a modifier the parser reads
@@ -88,7 +88,7 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   count `topology_key` ends with does not move — and rewrites every binding (`Constraint::free`, at
   most one) from scratch each run.  It runs on `Sketch::add`, `remove`, `set_constraint_num`,
   `set_dimension`, `from_json`, `report::exprs_json`; a whole document uses `Sketch::add_quiet` and
-  evaluates once (`io::graft`, `io::from_json`), since per-add evaluation is quadratic. The tie is
+  evaluates once (`graft`, `io::from_json`), since per-add evaluation is quadratic. The tie is
   **affine in one free name** — `a`, `a / 2`, `2 * a + 5`, `value = m*a + c`, all a fixed-width
   block carries; `expr::eval` works in `Aff`, so `a * a`, `sin(a)` and two free names are errors by
   arithmetic, and an erroring dimension keeps its last number. Every `Length`/`Angle` type needs a
@@ -97,9 +97,9 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   last), `consts_on` returns `[m, c]` turned by `side:`, `along:` or `sense:` (a skew distance's by
   its pinned `sign`, with the pin beside them), `kernel_id` picks the twin.  A fresh one seeds from the stated number, else by
   Newton on its row (`expr::settle`).  A free dimension is `unsupported` in `cgraph`, never jittered
-  by the witness, part of `topology_key`, and joins `io::Part`'s walk.  `expr::sync_free` updates
+  by the witness, part of `topology_key`, and joins `graft::Part`'s walk.  `expr::sync_free` updates
   the numbers shown from every seam writing parameters directly — `Sketch::set_x`,
-  `io::Part::write_back`, the wave's writes.
+  `graft::Part::write_back`, the wave's writes.
 - **A held number is a number** (#243 L1, `Sketch::held`): a face family's running number
   (`#f12.s`) and each number of the geometry a station reads (`HeldNumber::reads`, refreshed from
   its scalar first) are fixed parameters `expr::evaluate` reads as numbers of their dimension, so
@@ -107,7 +107,7 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   minted for it.  A text affine in one carries its coefficient with the dimension the two differ
   by (`flatten::values::of_vals_in`), since the number reads the name as what it is.  A contact
   pinned to one (`t == s`) owns its parameter (`Sketch::add`), which travels by name
-  (`owned_arg`, `io::graft`); moving it moves every station's number at once (`solid::family`).
+  (`owned_arg`, `graft`); moving it moves every station's number at once (`solid::family`).
   **A station's number may read its given geometry non-affinely** (#243 L8): a relation word's
   argument or a component's formal written in a station that reads it (`i: (e.p1.x - from.x) *
   … / …`) is kept as text (`flatten::values::station_text`, from `words.rs` and `keep_text`)

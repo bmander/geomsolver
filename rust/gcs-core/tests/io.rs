@@ -1,6 +1,7 @@
 use gcs_core::constraints::{same_constraint, Arg, CKind, Constraint};
 use gcs_core::diagnose::{diagnose, DiagnoseOptions};
 use gcs_core::examples;
+use gcs_core::graft;
 use gcs_core::io;
 use gcs_core::json::{fmt_g, Json};
 use gcs_core::style::Classes;
@@ -24,7 +25,7 @@ fn without_removes_dependents() {
     let sk = examples::rect_fillets(100.0, 60.0, 10.0, 0.0);
     let n_arc_c = sk.constraints.iter().filter(|c| c.kind == CKind::TangentArcLine).count();
     let centre = EntRef::point(sk.arcs[0].center as usize);
-    let sk2 = io::without(&sk, &[centre], &[]);
+    let sk2 = graft::without(&sk, &[centre], &[]);
     assert_eq!(sk2.arcs.len(), 3);
     assert_eq!(
         sk2.constraints.iter().filter(|c| c.kind == CKind::TangentArcLine).count(),
@@ -37,7 +38,7 @@ fn without_removes_dependents() {
 fn without_a_line_keeps_its_points() {
     let sk = examples::truss(3, 20.0, 15.0, true);
     let n_pts = sk.points.len();
-    let sk2 = io::without(&sk, &[EntRef::line(0)], &[]);
+    let sk2 = graft::without(&sk, &[EntRef::line(0)], &[]);
     assert_eq!(sk2.points.len(), n_pts);
     assert_eq!(sk2.lines.len(), sk.lines.len() - 1);
 }
@@ -466,7 +467,7 @@ fn angle_between_and_on_radius_are_the_core_s() {
 fn copy_takes_the_points_that_define_what_was_picked() {
     let sk = examples::rect_fillets(100.0, 60.0, 10.0, 0.0);
     // one line, nothing else: its two endpoints have to come with it or it is not a line
-    let clip = io::copy(&sk, &[EntRef::line(0)]);
+    let clip = graft::copy(&sk, &[EntRef::line(0)]);
     assert_eq!(clip.lines.len(), 1);
     // and the plane they are drawn in comes too, with its origin
     assert_eq!(clip.points.len(), 3);
@@ -486,12 +487,12 @@ fn copy_keeps_a_constraint_only_when_both_ends_came() {
     sk.add(Constraint::one_line(CKind::Horizontal, EntRef::line(l1)));
     sk.add(Constraint::two_line(CKind::Perpendicular, EntRef::line(l1), EntRef::line(l2)));
 
-    let clip = io::copy(&sk, &[EntRef::line(l1)]);
+    let clip = graft::copy(&sk, &[EntRef::line(l1)]);
     let kinds: Vec<CKind> = clip.user_constraints().iter().map(|c| c.kind).collect();
     // Distance and Horizontal live entirely on l1; Perpendicular reaches l2, which did not come
     assert_eq!(kinds, vec![CKind::Distance, CKind::Horizontal]);
 
-    let both = io::copy(&sk, &[EntRef::line(l1), EntRef::line(l2)]);
+    let both = graft::copy(&sk, &[EntRef::line(l1), EntRef::line(l2)]);
     assert_eq!(both.user_constraints().len(), 3);
 }
 
@@ -506,8 +507,8 @@ fn copy_is_the_other_half_of_deleting_the_rest() {
     let mut kept = model::expand(&sk, &picked);
     kept.extend(model::expand(&sk, &[EntRef::frame(front)]));
     let rest: Vec<EntRef> = sk.primitives().into_iter().filter(|e| !kept.contains(e)).collect();
-    assert_eq!(io::dumps(&io::copy(&sk, &picked), Some(1)),
-               io::dumps(&io::without(&sk, &rest, &[]), Some(1)));
+    assert_eq!(io::dumps(&graft::copy(&sk, &picked), Some(1)),
+               io::dumps(&graft::without(&sk, &rest, &[]), Some(1)));
 }
 
 #[test]
@@ -520,7 +521,7 @@ fn copy_carries_the_flags_and_the_dimension_placements() {
     let id = sk.add(Constraint::distance(EntRef::point(a), EntRef::point(b), 10.0));
     sk.placements.insert(id, (1.5, -7.0));
 
-    let clip = io::copy(&sk, &[EntRef::line(l)]);
+    let clip = graft::copy(&sk, &[EntRef::line(l)]);
     assert!(clip.point_fixed(0), "a fixed point stays fixed");
     assert!(clip.lines[0].class.has("construction"), "reference geometry stays reference geometry");
     let kept = clip.user_constraints()[0].id;
@@ -534,9 +535,9 @@ fn paste_lands_beside_what_was_copied_and_brings_its_constraints() {
     // the drawing: its lines and arcs, which bring their points and the front they are drawn in
     let drawing: Vec<EntRef> = sk.primitives().into_iter()
         .filter(|e| matches!(e.kind, EntKind::Line | EntKind::Arc)).collect();
-    let clip = io::copy(&sk, &drawing);
+    let clip = graft::copy(&sk, &drawing);
     let own = clip.points.len() - 1;   // beside the front's origin
-    let made = io::paste(&mut sk, &clip, 5.0, -3.0);
+    let made = graft::paste(&mut sk, &clip, 5.0, -3.0);
 
     // the front is the document's: what was drawn in it is drawn in it again
     assert_eq!(sk.points.len(), before.0 + own);
@@ -565,8 +566,8 @@ fn a_pasted_copy_is_independent_of_the_original() {
     let a = sk.point(0.0, 0.0, false, "");
     let b = sk.point(10.0, 0.0, false, "");
     sk.add(Constraint::distance(EntRef::point(a), EntRef::point(b), 10.0));
-    let clip = io::copy(&sk, &sk.primitives());
-    io::paste(&mut sk, &clip, 0.0, 20.0);
+    let clip = graft::copy(&sk, &sk.primitives());
+    graft::paste(&mut sk, &clip, 0.0, 20.0);
 
     // the pasted Distance names the pasted points and nothing else
     let pasted = &sk.user_constraints()[1];
@@ -584,9 +585,9 @@ fn pasting_twice_gives_two_copies() {
     let a = sk.point(0.0, 0.0, false, "");
     let b = sk.point(10.0, 0.0, false, "");
     sk.add(Constraint::distance(EntRef::point(a), EntRef::point(b), 10.0));
-    let clip = io::copy(&sk, &sk.primitives());
-    io::paste(&mut sk, &clip, 0.0, 20.0);
-    io::paste(&mut sk, &clip, 0.0, 40.0);
+    let clip = graft::copy(&sk, &sk.primitives());
+    graft::paste(&mut sk, &clip, 0.0, 20.0);
+    graft::paste(&mut sk, &clip, 0.0, 40.0);
     assert_eq!(sk.points.len(), 6);
     assert_eq!(sk.user_constraints().len(), 3);
     assert_eq!(sk.point_xy(4), (0.0, 40.0));
@@ -597,9 +598,9 @@ fn pasting_twice_gives_two_copies() {
 fn copying_nothing_gives_an_empty_sketch_and_pastes_as_nothing() {
     let mut sk = examples::rect_fillets(100.0, 60.0, 10.0, 0.0);
     let before = io::dumps(&sk, Some(1));
-    let clip = io::copy(&sk, &[]);
+    let clip = graft::copy(&sk, &[]);
     assert!(clip.primitives().is_empty() && clip.constraints.is_empty());
-    assert!(io::paste(&mut sk, &clip, 5.0, 5.0).is_empty());
+    assert!(graft::paste(&mut sk, &clip, 5.0, 5.0).is_empty());
     assert_eq!(io::dumps(&sk, Some(1)), before);
 }
 
@@ -608,13 +609,13 @@ fn a_clipboard_is_a_document() {
     // the fragment is an ordinary sketch, so it saves, loads and pastes like one — which is what
     // makes a copied selection something you can keep
     let sk = examples::slotted_link(80.0, 15.0, 6.0);
-    let clip = io::copy(&sk, &sk.primitives());
+    let clip = graft::copy(&sk, &sk.primitives());
     let text = io::dumps(&clip, Some(1));
     let reloaded = io::loads(&text).unwrap();
     assert_eq!(io::dumps(&reloaded, Some(1)), text);
 
     let mut fresh = Sketch::new();
-    io::paste(&mut fresh, &reloaded, 0.0, 0.0);
+    graft::paste(&mut fresh, &reloaded, 0.0, 0.0);
     assert_eq!(fresh.points.len(), sk.points.len());
     assert_eq!(fresh.user_constraints().len(), sk.user_constraints().len());
 }
@@ -626,7 +627,7 @@ fn a_clipboard_is_a_document() {
 #[test]
 fn a_part_stops_at_a_wall_and_writes_back_only_itself() {
     use gcs_core::decompose::branch_key;
-    use gcs_core::io::Part;
+    use gcs_core::graft::Part;
     let mut sk = Sketch::new();
     let a = sk.point(0.0, 0.0, false, "a");
     let w = sk.point(10.0, 0.0, true, "w");
@@ -764,10 +765,10 @@ fn a_paste_draws_in_the_plane_the_document_already_has() {
         b := point hint((60, 0))\nab := line(a, b)\na distance(60) b\n}\n");
     let mut sk = e.sketch;
     let front = e.map.ent_named("std.front").unwrap().i();
-    let clip = io::copy(&sk, &[EntRef::line(0)]);
+    let clip = graft::copy(&sk, &[EntRef::line(0)]);
     assert_eq!(clip.frames.len(), 1, "the clipboard carries the plane its points are drawn in");
     let (planes, axes) = (sk.frames.len(), sk.axes.len());
-    let made = io::paste(&mut sk, &clip, 10.0, 10.0);
+    let made = graft::paste(&mut sk, &clip, 10.0, 10.0);
     assert_eq!((sk.frames.len(), sk.axes.len()), (planes, axes), "no second plane, nor its axes");
     let pasted: Vec<usize> = made.iter().filter(|r| r.kind == EntKind::Point).map(|r| r.i()).collect();
     assert_eq!(pasted.len(), 2, "the line's two ends, and not a second origin");
@@ -775,6 +776,6 @@ fn a_paste_draws_in_the_plane_the_document_already_has() {
     assert_eq!(sk.user_constraints().len(), 2, "the copy brought its own dimension");
     // into a document of nothing, the plane comes along
     let mut empty = Sketch::new();
-    io::paste(&mut empty, &clip, 0.0, 0.0);
+    graft::paste(&mut empty, &clip, 0.0, 0.0);
     assert_eq!(empty.frames.len(), 1);
 }

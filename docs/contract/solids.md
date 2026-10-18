@@ -213,7 +213,7 @@ placement carries inside the blank; CLI test readers zero the offset.
   solved with the drawing at the middle**, so the document's DOF and diagnosis are its too.
   **Evaluation re-solves it** (`family::built`, memoised in `Caches::family` against
   `MemoKey::at`, which reads every parameter and every constraint's number): the station's part
-  (`io::Part::around_all` from the face, every primitive, plane pose, lift and outer free
+  (`graft::Part::around_all` from the face, every primitive, plane pose, lift and outer free
   variable not the station's held fixed — a plane's origin is no wall while its plane moves, and
   a plane held along drawn lines keeps its intrinsic rows across `graft`), then a run from the
   middle to each end: the running number moved, `expr::evaluate`, a solve started where the

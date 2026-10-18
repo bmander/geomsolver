@@ -68,7 +68,8 @@ pub struct Component {
 mod parts;
 mod solid_claims;
 pub use solid_claims::{
-    judge_solids, ClaimJudge, ClaimProgress, SolidOutcome, SolidPose, SolidVerdict, SWEEP_STEPS,
+    describe_solid_claim, judge_solids, ClaimJudge, ClaimProgress, SolidOutcome, SolidPose,
+    SolidVerdict, SWEEP_STEPS,
 };
 
 #[derive(Clone, Debug)]

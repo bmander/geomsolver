@@ -111,9 +111,9 @@ came from.
   line or an axis; `parallel` and `perpendicular` with two operands, `distance` with one and
   `along:`; anything else E040.  `on`, the carrier — a spline, a curve, a traced body, a meshing,
   an envelope, or the motion of `X coincident(under: m)` (`SpecKind::Carrier`) — is inferred
-  (`infers_arg`) at `io::seed_omitted` from the contacts holding the point that own a slot by that
-  name (`infer::rate_carriers`): none is E061 ("`s` is no formal here, and no contact holding …"),
-  two E061 naming both.  `t` is the contact's first unknown, shared through
+  (`infers_arg`) at `constraints::seed_omitted` from the contacts holding the point that own a
+  slot by that name (`infer::rate_carriers`): none is E061 ("`s` is no formal here, and no
+  contact holding …"), two E061 naming both.  `t` is the contact's first unknown, shared through
   `tangent_at`/`share_place` ([3] of `Rate`, [4] of `RateDistance`; `holds_on` hands a
   `CarriedPoint`'s roll too), so a rate is claimable (`CKind::claimable`).  `validate`
   (`infer::validate_rate`) refuses a word the source has no frame for (a curve's normal, an

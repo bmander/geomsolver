@@ -14,8 +14,14 @@ Currently: **Stage 5 done, and Stage 7a/7b — solids**, in **one** implementati
   drag/solution management (`solve.rs`, `homotopy.rs`), dimension callouts (`callout.rs`), dimension
   expressions (`expr.rs`), parametric curves (`curve.rs`), **solids** (`solid.rs`, `csg.rs`,
   `mesh.rs`, `hidden.rs`), the **Solvent** language (`syntax.rs`, `flatten.rs`, `program.rs`,
-  `edit.rs`, `tape.rs`), JSON export (`io.rs`, `json.rs`) and the reference sketches (`examples.rs`,
-  over `rust/examples/`).
+  `edit.rs`, `tape.rs`), JSON export (`io.rs`, `json.rs`), the rebuild walk behind deletion, copy,
+  paste and a drag's part (`graft.rs`) and the reference sketches (`examples.rs`, over
+  `rust/examples/`).  **The solver is usable without the language** (#409): a sketch is built
+  from entities and constraint records, solved and diagnosed through the ABI with no document
+  (`gcs-ffi/tests/without_a_document.rs`), and the solver's modules import neither the parser nor
+  `io`: the words and types the model shares with the language (`Cmp`, `BodyWord`, `Span`,
+  `num`, `snake`, `one_of`) are defined below both in `vocab.rs`, which depends on nothing, and
+  `syntax` re-exports them.
 * **ABI** (`rust/gcs-ffi/`): one flat C ABI over the core, built twice — a self-contained
   `wasm32-unknown-unknown` module and a native `cdylib`, where the *panic boundary* is checked
   (`gcs-ffi/tests/panic_boundary.rs`): `guard`'s `catch_unwind` only catches on native (wasm

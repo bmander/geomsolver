@@ -173,14 +173,14 @@ pub fn lower(sk: &mut Sketch, i: usize) -> Result<(), String> {
         let c = &sk.constraints[rows[r]];
         if !matches!(c.kernel_key(sk), KernelKey::Static(_)) || c.along.is_some() {
             return Err(format!("it holds {}, which a curve held to cannot carry yet",
-                               crate::model::article(&crate::syntax::snake(c.kind.name()))));
+                               crate::model::article(&crate::vocab::snake(c.kind.name()))));
         }
         // a row reading the parameter is its kind's free twin over its text's tape, the text in
         // the units a person writes and `(m, c)` the conversion, as a component trace's is
         let (c, tape) = match crate::follow::reading_slot(sk, c, &name) {
             Some(slot) => {
                 if c.kind.dimension_slot() != Some(slot) || c.kind.free_kernel().is_none() {
-                    let what = crate::model::article(&crate::syntax::snake(c.kind.name()));
+                    let what = crate::model::article(&crate::vocab::snake(c.kind.name()));
                     return Err(format!("{what} reads `{name}` where no number of it runs"));
                 }
                 let Arg::Expr(e) = &c.args[slot] else { unreachable!("`reads` finds a text") };

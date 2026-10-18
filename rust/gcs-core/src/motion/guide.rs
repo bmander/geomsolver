@@ -267,7 +267,7 @@ impl Guide {
         if gap > 1e-6 * (1.0 + norm(o)) {
             return Err(format!("`{name}` is not drawn on its path: its origin stands {} from it \
                                 — draw it at its home there, `std.Along(f, g, up: …)`",
-                               crate::syntax::num(gap)));
+                               crate::vocab::num(gap)));
         }
         let home_frame = if frenet {
             frenet_at(name, home, at)?
@@ -316,7 +316,7 @@ impl Guide {
     /// The unit tangent at `u`, or why the path has none there.
     fn tangent(&self, u: f64, x: &[V; 4]) -> Result<V, String> {
         crate::space::normalised(x[1]).ok_or_else(|| format!(
-            "`{}`'s path has no tangent at {}", self.name, crate::syntax::num(u)))
+            "`{}`'s path has no tangent at {}", self.name, crate::vocab::num(u)))
     }
 
     /// The frame at `u`, and the path's point and derivatives there (the third where `third`
@@ -325,8 +325,8 @@ impl Guide {
         let (lo, hi) = self.domain;
         if !(u >= lo - 1e-12 * (hi - lo) && u <= hi + 1e-12 * (hi - lo)) {
             return Err(format!("`{}` runs along its path over ({}, {}), and {} is past it",
-                               self.name, crate::syntax::num(lo), crate::syntax::num(hi),
-                               crate::syntax::num(u)));
+                               self.name, crate::vocab::num(lo), crate::vocab::num(hi),
+                               crate::vocab::num(u)));
         }
         let x = self.path.jet(u, third)?;
         if self.frenet {
@@ -448,7 +448,7 @@ pub(crate) struct Stretch {
 fn frenet_at(name: &str, u: f64, x: [V; 4]) -> Result<Frame, String> {
     frenet(x).ok_or_else(|| format!("`{name}`'s path has no curvature at {}, so no frame of its \
         own there: a frame along a straight run turns with none of its torsion (ratio 0)",
-        crate::syntax::num(u)))
+        crate::vocab::num(u)))
 }
 
 /// The parameter where the path comes nearest `o`: the nearest of samples along it, then

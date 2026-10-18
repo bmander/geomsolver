@@ -82,9 +82,9 @@ one), and add a row here only for a new topic. Language changes are also recorde
   when the *surface* changes.  Geometry or numerics in TypeScript belong in Rust instead.
 - A new *entity* kind stops the build in the exhaustive `match e.kind` arms — `model.rs`
   (`entity_params`, `own_params`, `own_length_params`, `children`, `min_children`, `count`,
-  `bounds`, `distance_between`, `point_to_drawn`, `class_of`, `set_class`, `spatial`), `io::graft`'s
+  `bounds`, `distance_between`, `point_to_drawn`, `class_of`, `set_class`, `spatial`), `graft`'s
   remap, `overview::drawable`, `svg::entity`, `program`'s build and `set_class`,
-  `syntax::kind_initial` and the FFI's `ent`/`kind_id`.  Give it an arm in each; `primitives()`
+  `model::kind_initial` and the FFI's `ent`/`kind_id`.  Give it an arm in each; `primitives()`
   and `topology_key` are where it joins the document.  A kind **evaluated rather than drawn**
   (`Face`, `Solid`) answers `spatial()` and owns no parameter.
 - Every new constraint type = a vectorized kernel in `kernels.rs` (added to `KERNELS`; the

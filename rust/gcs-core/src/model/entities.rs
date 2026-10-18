@@ -592,6 +592,37 @@ pub struct LiftE {
     pub x: [u32; 3],
 }
 
+/// Prefix for generated entity names. Distinguish kinds whose keywords share an initial.
+pub fn kind_initial(k: EntKind) -> char {
+    match k {
+        EntKind::Frame => 'v',
+        EntKind::Curve => 'k',
+        // `face` and `solid` share an `s` with `spline`: a face's labels run `f0`, and a
+        // solid's `b0` — a *body*, since `s` is taken and a solid is what a body is
+        EntKind::Face => 'f',
+        EntKind::Solid => 'b',
+        EntKind::Surface => 't',
+        EntKind::Motion => 'm',
+        EntKind::Envelope => 'e',
+        EntKind::Meshing => 'g',
+        // a body traced in space: `t` and `l` are taken, so its `r`
+        EntKind::Traced => 'r',
+        // `a` is the arc's: an aXis
+        EntKind::Axis => 'x',
+        EntKind::Point | EntKind::Line | EntKind::Circle | EntKind::Arc | EntKind::Spline => {
+            k.as_str().chars().next().expect("every kind name has a letter")
+        }
+    }
+}
+
+/// `P0` / `L3` / `C1` / `A2` — the short label the UI and `describe` use.
+pub fn entity_name(e: EntRef) -> String {
+    // the same letter a minted name starts with, so the label on the drawing and the name in
+    // the program cannot disagree about which kind `V0` is
+    let c = kind_initial(e.kind).to_ascii_uppercase();
+    format!("{c}{}", e.idx)
+}
+
 /// A word with its indefinite article: `a line`, `an axis`, `an arc`.
 pub fn article(word: &str) -> String {
     let an = word.starts_with(|c: char| "aeiou".contains(c));

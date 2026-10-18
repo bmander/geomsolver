@@ -6,7 +6,7 @@ use gcs_core::model::{EntRef, Sketch};
 use gcs_core::plane::Basis;
 use gcs_core::space::cross;
 use gcs_core::solve::{solve, SolveOpts};
-use gcs_core::{diagnose, io};
+use gcs_core::{diagnose, graft, io};
 
 fn close3(a: [f64; 3], b: [f64; 3], tol: f64) -> bool {
     (0..3).all(|i| (a[i] - b[i]).abs() < tol)
@@ -133,7 +133,7 @@ fn a_plane_round_trips_through_json_and_a_copy() {
     assert_eq!(back.constraints.iter().filter(|c| c.kind == CKind::AxisUnit).count(), 4);
     assert!(back.lifts.is_empty(), "re-minted by whatever reads it, not by the reader");
     // a copy carries the plane, its axes and the hidden point
-    let copy = io::copy(&sk, &[EntRef::frame(pl), EntRef::frame(held), EntRef::point(a)]);
+    let copy = graft::copy(&sk, &[EntRef::frame(pl), EntRef::frame(held), EntRef::point(a)]);
     for p in [pl, held] {
         assert_eq!(bits(copy.basis(p)), bits(sk.basis(p)));
     }
@@ -144,7 +144,7 @@ fn a_plane_round_trips_through_json_and_a_copy() {
 fn a_drag_part_carries_the_plane_and_its_hidden_points() {
     let (mut sk, pl, [a, _]) = turned();
     sk.lift_point(a).unwrap();
-    let part = io::Part::around(&sk, EntRef::point(a));
+    let part = graft::Part::around(&sk, EntRef::point(a));
     assert_eq!(part.sketch.frames.len(), 1, "the plane came");
     assert_eq!(part.sketch.lifts.len(), 1);
     assert_eq!(bits(part.sketch.basis(0)), bits(sk.basis(pl)));
@@ -494,7 +494,7 @@ fn a_relation_in_space_round_trips() {
     assert_eq!(back.points[s].z.map(|z| back.params[z as usize].value), Some(3.0));
     let ll = back.constraints.iter().find(|c| c.kind == CKind::LineLine3).unwrap();
     assert_eq!(ll.args[3], sign);
-    let copy = io::copy(&sk, &[l1, l2]);
+    let copy = graft::copy(&sk, &[l1, l2]);
     assert_eq!(copy.constraints.iter().filter(|c| c.kind == CKind::LineLine3).count(), 1);
     assert_eq!(copy.lifts.len(), 4);
 }

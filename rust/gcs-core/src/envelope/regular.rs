@@ -44,7 +44,7 @@ use super::held::{self, dot, unit, vscale, vsub, Col, Layout};
 use crate::kernels::{Dual, Kernel, Num};
 use crate::model::{EntKind, Held, RegionShape, RegionTerm, SetKind, Sketch, SolidDef, Target,
                    TermNumber};
-use crate::syntax::Cmp;
+use crate::vocab::Cmp;
 
 /* -- the layout ------------------------------------------------------------------------------ */
 

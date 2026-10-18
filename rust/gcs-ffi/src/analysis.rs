@@ -48,7 +48,7 @@ pub unsafe extern "C" fn gcs_sketch_solid_claims_json(h: *mut Sketch) -> *mut u8
         let s = sk(h);
         Json::Arr(s.solid_claims.iter().map(|c| json::object([
             ("stmt", Json::Int(c.stmt() as i64)),
-            ("text", Json::Str(io::describe_solid_claim(s, c))),
+            ("text", Json::Str(gcs_core::diagnose::describe_solid_claim(s, c))),
         ])).collect())
     })
 }

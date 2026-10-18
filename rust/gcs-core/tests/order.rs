@@ -152,7 +152,7 @@ fn shuffle_points(doc: &Json, seed: u32) -> Json {
                 .collect(),
         )
     };
-    // a recorded root choice is keyed by a triple of point indices, and `io::graft` already has
+    // a recorded root choice is keyed by a triple of point indices, and `graft` already has
     // to renumber them by hand when points move — so a shuffle must too, or it is testing the
     // renumbering rather than the order
     let branches = |b: &Json| -> Json {
@@ -476,7 +476,7 @@ fn a_shuffled_document_keeps_its_root_choices() {
 /// **Renumbering the points changes nothing either** — the drawing lands in the same places and
 /// the recorded root choices still apply, *provided the branch keys are renumbered with the
 /// points*.  That proviso is the finding: `decompose::branch_key` names a construction by a
-/// **triple of point indices**, which is why `io::graft` already has to rewrite them by hand
+/// **triple of point indices**, which is why `graft` already has to rewrite them by hand
 /// whenever points move, and why it drops one whose point did not come along.
 ///
 /// A declaration's position is not something a reader would take to mean anything, so in a

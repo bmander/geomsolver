@@ -40,6 +40,19 @@ pub struct Block {
 /// sketch at every size.  The one number the diagnosis, the witness and `System::rank` share.
 pub const RANK_TOL: f64 = 1e-9;
 
+thread_local! {
+    /// What a compile makes stale on this thread: the `forget` of every cache keyed by where a
+    /// contact's constants live, each put here by the cache itself (`forget_at_compile`).
+    static FORGET: std::cell::RefCell<Vec<fn()>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Have every compile on this thread call `forget` (`System::new`).  A cache keyed by where a
+/// contact's constants live calls this once, from its own `thread_local!` initializer, so the
+/// solver need not name each feature that keeps one: a cache never touched has nothing to forget.
+pub fn forget_at_compile(forget: fn()) {
+    FORGET.with(|f| f.borrow_mut().push(forget));
+}
+
 /// `‖Jᵀr‖∞ / (‖J‖∞ ‖r‖∞)` below which a pose counts as stationary (`System::stationary`).  At
 /// a minimum the solvers actually reach, the ratio is rounding — 1e-12 and below; a solve
 /// that stopped short of one is off by orders of magnitude, so the line between them is wide.
@@ -568,8 +581,10 @@ impl System {
         // one moment those move: the blocks about to be built may take the memory a dropped
         // system's did, and a pose read back through a reused address would be another curve's.
         // Forgetting here is exact — nothing earlier is worth carrying past a recompile anyway.
-        crate::locus::forget();
-        crate::generate::forget();
+        // Copied out first: a `forget` reads its own cache, never this list.
+        for forget in FORGET.with(|f| f.borrow().clone()) {
+            forget();
+        }
         let n = sk.params.len();
         let free = sk.free_indices();
         let n_free = free.len();

@@ -9,7 +9,7 @@ use crate::brep::planar::{boolean, Op, Region, Seg};
 use crate::model::{RegionShape, RegionTerm, Sketch, SolidDef};
 use crate::solid::lowering::Section;
 use crate::space::{across, cross, dot, norm, normalised, scale, sub};
-use crate::syntax::Cmp;
+use crate::vocab::Cmp;
 use std::f64::consts::{FRAC_PI_2, PI};
 
 type V = [f64; 3];

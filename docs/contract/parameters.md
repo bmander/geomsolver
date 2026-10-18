@@ -250,7 +250,7 @@ where a rule came from.
     Length`), stating more rows than it places, a row with no static kernel (a curve contact, a
     derivative), a number no point, circle or arc owns, a turned copy's, a traced point that does
     not move, nothing reading `t`, and more than `tape::MAX_VARS` outer numbers or the locus's own
-    bounds.  A graft carries a lowered curve unlowered (`io::graft`): its lowering is the whole
+    bounds.  A graft carries a lowered curve unlowered (`graft`): its lowering is the whole
     drawing's.
   - **Gate**: the corpus rewritten onto `param t`, to the same numbers — `stride.sv`,
     `osculating_stride.sv` and `dwell.sv` (`tests/generation_examples.rs`; the rod and the offset
@@ -304,7 +304,7 @@ where a rule came from.
     cannot hold to it), said first for a carried point by `relations::carried_motion` (E080,
     naming `x in f`), both in `motion::unread_drive`'s words; `program::generated::program_signed` (a profile in the plane is
     generated under joints at a constant rate).  A graft carries a drive with its joint
-    (`io::graft`), its law reading the parameter by name.
+    (`graft`), its law reading the parameter by name.
   - **A constant twist by what is stated** (`expr::Ast::affine_in`): a face family's carried rows
     are its motion's sweep (`solid::family::stated_carry`) only where the roll they state is affine
     in the running number as written; through [0.142] three samples (the ends and the middle)
@@ -410,7 +410,7 @@ where a rule came from.
     numbers, carried by `M(s) · C_home · C(s)⁻¹` — the frame's chart as the drawing has it and as
     the part stands there — so a frame the station moves and one it does not are read alike.
     Refused: a relation the solve holds reading it (`envelope::held::motion`, E080), a profile in
-    the plane generated under it; a graft carries none (`io::graft`).  Today's station words
+    the plane generated under it; a graft carries none (`graft`).  Today's station words
     (`std.On`, `std.Minimal`, `std.Frenet`) still solve a plane at every station; the corpus is
     not moved onto the frames.
   - **Gate**: `tests/guided_frames.rs` — a rectangle in `std.Along`'s frame swept over `s`

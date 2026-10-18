@@ -135,7 +135,7 @@ fn a_claim_travels_like_any_flag() {
     let back = gcs_core::io::loads(&json).unwrap();
     assert_eq!(back.constraints.iter().filter(|c| c.claim).count(), 1);
     // the rebuild walk (deletion, copy, paste are all this walk)
-    let kept = gcs_core::io::without(&sk, &[], &[]);
+    let kept = gcs_core::graft::without(&sk, &[], &[]);
     assert_eq!(kept.constraints.iter().filter(|c| c.claim).count(), 1);
     // and the lifted program prints the word back
     let mut p = gcs_core::program::to_program(&back);
@@ -171,7 +171,7 @@ claim ab equal cd
 }
 ",
     );
-    let part = gcs_core::io::Part::around(&sk, gcs_core::model::EntRef::point(1));
+    let part = gcs_core::graft::Part::around(&sk, gcs_core::model::EntRef::point(1));
     // the part brings the plane its points are drawn in, and the plane its origin, as a wall
     let origins: Vec<u32> = part.sketch.frames.iter().map(|q| q.origin).collect();
     let drawn = (0..part.sketch.points.len() as u32).filter(|i| !origins.contains(i)).count();

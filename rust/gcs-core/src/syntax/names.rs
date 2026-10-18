@@ -1,109 +1,17 @@
 //! Name, reference, and numeric source spellings.
 
 use super::{DeclName, Name, Ref, Seg, Span};
-use crate::model::{EntKind, EntRef};
+use crate::model::{kind_initial, EntKind, EntRef};
 
 /// What the language calls an entity: the first letter of its kind and its index — `p0`, `l1`,
 /// `c0`, `a2`, `s0`, `e0`.  The six initials are distinct, which is the whole of why this works.
 ///
-/// Lowercase, unlike `io::entity_name`'s `P0`: that one labels a thing on a drawing, this one is
+/// Lowercase, unlike `model::entity_name`'s `P0`: that one labels a thing on a drawing, this one is
 /// an identifier in a program, and the two are read in different places.
 pub fn entity_name(e: EntRef) -> String {
     format!("{}{}", kind_initial(e.kind), e.idx)
 }
 
-/// Prefix for generated entity names. Distinguish kinds whose keywords share an initial.
-pub fn kind_initial(k: EntKind) -> char {
-    match k {
-        EntKind::Frame => 'v',
-        EntKind::Curve => 'k',
-        // `face` and `solid` share an `s` with `spline`: a face's labels run `f0`, and a
-        // solid's `b0` — a *body*, since `s` is taken and a solid is what a body is
-        EntKind::Face => 'f',
-        EntKind::Solid => 'b',
-        EntKind::Surface => 't',
-        EntKind::Motion => 'm',
-        EntKind::Envelope => 'e',
-        EntKind::Meshing => 'g',
-        // a body traced in space: `t` and `l` are taken, so its `r`
-        EntKind::Traced => 'r',
-        // `a` is the arc's: an aXis
-        EntKind::Axis => 'x',
-        EntKind::Point | EntKind::Line | EntKind::Circle | EntKind::Arc | EntKind::Spline => {
-            k.as_str().chars().next().expect("every kind name has a letter")
-        }
-    }
-}
-
-/// `PointOnLine` → `point_on_line`.  A run of capitals stays together, so `K33`-shaped names do
-/// not come apart, though none of the 32 has one.
-pub fn snake(name: &str) -> String {
-    let mut out = String::with_capacity(name.len() + 4);
-    let cs: Vec<char> = name.chars().collect();
-    for (i, &c) in cs.iter().enumerate() {
-        if c.is_ascii_uppercase() {
-            let starts_word = i > 0
-                && (!cs[i - 1].is_ascii_uppercase()
-                    || cs.get(i + 1).is_some_and(|n| n.is_ascii_lowercase()));
-            if starts_word {
-                out.push('_');
-            }
-            out.push(c.to_ascii_lowercase());
-        } else {
-            out.push(c);
-        }
-    }
-    out
-}
-
-/// `point_on_line` → `PointOnLine`, the inverse of `snake` on every name the registry holds —
-/// which `tests/syntax.rs` checks for all 32 rather than assuming.
-pub fn camel(name: &str) -> String {
-    let mut out = String::with_capacity(name.len());
-    let mut up = true;
-    for c in name.chars() {
-        if c == '_' {
-            up = true;
-        } else if up {
-            out.extend(c.to_uppercase());
-            up = false;
-        } else {
-            out.push(c);
-        }
-    }
-    out
-}
-
-/// `x` or `y`; `start`, `end` or `p1` — the words a key will take, as a reader reads a list.
-/// Every refusal that names a vocabulary comes through here, so two of them cannot punctuate the
-/// same list differently (issue #48, item 4).
-pub fn one_of(words: &[&str]) -> String {
-    match words {
-        [] => "nothing".to_string(),
-        [a] => format!("`{a}`"),
-        [rest @ .., last] => {
-            let head: Vec<String> = rest.iter().map(|w| format!("`{w}`")).collect();
-            format!("{} or `{last}`", head.join(", "))
-        }
-    }
-}
-
-/// A number as text: shortest round-trip, which is what a document needs.
-///
-/// Never `json::fmt_g` — that rounds for display, and a value rounded on the way out is a drawing
-/// that moved because somebody looked at it.
-pub fn num(v: f64) -> String {
-    if !v.is_finite() {
-        // a document should never hold one, and printing `inf` would produce a program that does
-        // not parse; 0 is wrong in a way somebody will notice, which is the point
-        return "0".to_string();
-    }
-    // a negative zero is zero: `-0` is a number nobody wrote, and an inverted map makes them
-    if v == 0.0 {
-        return "0".to_string();
-    }
-    format!("{v}")
-}
 /// How a message spells a declaration whose name is optional: the name where the source wrote
 /// one, and the bare kind where it did not.  Both the parser's errors and the elaborator's
 /// diagnostics ask, so an anonymous declaration is described one way and never by its key —

@@ -8,7 +8,7 @@ version ([0.n], see the [language changelog](../solvent-changelog.md)) says wher
   c)` ("c left of a→b") is the same fact as `ccw(a, c, b)` with the sign turned, so a record is
   **canonical**: point indices ascending, the sorting permutation's parity folded into the sign
   (else `apply_gauge` and `Step::stated` write different keys).  Every writer goes through
-  `branch_record` — the elaborator, the plan's `branches`/`apply_branches`, `io::graft`,
+  `branch_record` — the elaborator, the plan's `branches`/`apply_branches`, `graft`,
   `Part::branches_out` — and `io::from_json` **re-records** what it reads, so older documents
   migrate on load.  `tests/decompose.rs` and `tests/order.rs` are the gates.
 
@@ -117,7 +117,7 @@ version ([0.n], see the [language changelog](../solvent-changelog.md)) says wher
   x-axis's direction class, so a levelled pair decomposes rather than falling to the residue.
 
 - A **`claim`** (Solvent §9.7) is *judged, never solved for*: **no** `System` compiles a row for
-  it, and `cgraph`, `io::Part` and the witness's jitter skip it, so it never moves geometry,
+  it, and `cgraph`, `graft::Part` and the witness's jitter skip it, so it never moves geometry,
   welds drag parts, or paints Over or Conflict.  `Constraint::acts()` is the named half, asked by
   `hard_constraints`/`hard_ids`; seams needing a row index spell it out inline, as `soft` is.
   Anything learning what determines the drawing (`known_radii`, entity colouring, conflict
@@ -145,7 +145,7 @@ version ([0.n], see the [language changelog](../solvent-changelog.md)) says wher
   form's `bound`; checked by `relations::bound_of` (`CKind::boundable`: ordinate, distances; not a
   claim; E040). `Constraint::bound` compiles **no row**: `Constraint::states_rows()` (false for a
   claim or a bound) is what every seam that compiles, counts or welds rows asks (`System::new`,
-  `n_residuals`, `cgraph`, `witness`, `io::Part`), and `acts()` is `!soft && states_rows()`;
+  `n_residuals`, `cgraph`, `witness`, `graft::Part`), and `acts()` is `!soft && states_rows()`;
   callouts skip it, the witness drops it, `topology_key` marks it `~`. `Constraint::reading` is the number that
   would make the row hold (secant along the number); `solve::bound_reading` (with `bound_tol`) is
   the one verdict — holds, edge, aim — the steering, the elaborator and the diagnosis share.
@@ -208,7 +208,7 @@ version ([0.n], see the [language changelog](../solvent-changelog.md)) says wher
   sketch is on is "nearest the identity"; alternatives are applied by writing geometry, not by
   caching transforms.
 
-- A drag is an operation on the dragged point's *part* of the document (`io::Part`): what is
+- A drag is an operation on the dragged point's *part* of the document (`graft::Part`): what is
   reached through shared points and constraints, stopping at fixed entities.  `PlanDrag` builds its
   plan, systems and numeric fallback on that part alone and writes each frame back, so a drag
   costs the figure, never the document; anything exchanged by point index (guards, flips, branch

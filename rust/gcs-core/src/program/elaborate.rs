@@ -17,7 +17,7 @@ use super::{Again, Code, Diag, Elaborated, Made, SourceMap};
 use crate::expr;
 use crate::flatten::Expansion;
 use crate::ir::{Operation as StmtKind, Statement};
-use crate::model::{EntKind, EntRef, Sketch};
+use crate::model::{entity_name, EntKind, EntRef, Sketch};
 use crate::solid::faces::FacePath;
 use crate::syntax::{Program, StmtId};
 use std::collections::{BTreeMap, BTreeSet};
@@ -300,7 +300,7 @@ fn geometry(cx: &mut Elab<'_>, flat: &Flat<'_>) -> Vec<Deferred> {
     let Elab { doc: p, sk, res, map, diags, .. } = cx;
     let mut deferred: Vec<Deferred> = Vec::new();
     // `primitives()` order, and **curves last**: a curve is written over other entities, so
-    // every kind it may name has to exist before it does.  The same reason `io::graft` grafts
+    // every kind it may name has to exist before it does.  The same reason `graft` grafts
     // them last.
     for kind in [
         EntKind::Point,
@@ -601,7 +601,7 @@ fn held_to_followed(cx: &mut Elab<'_>, flat: &Flat<'_>, on_followed: &[usize]) {
             }
         }
         if let Some((e, m)) = refused {
-            let name = cx.map.name_of(e).cloned().unwrap_or_else(|| crate::io::entity_name(e));
+            let name = cx.map.name_of(e).cloned().unwrap_or_else(|| entity_name(e));
             let over = &cx.sk.curve_defs[cx.sk.curves[e.i()].def as usize].param;
             let message = format!("{name} is traced as `{over}` runs, and the solve cannot hold to \
                                    it: {m}");

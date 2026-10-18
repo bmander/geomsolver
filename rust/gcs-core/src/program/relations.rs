@@ -8,9 +8,9 @@ use super::regions::{
     written_number,
 };
 use super::{Code, Diag, Elab, SourceMap};
-use crate::constraints::{Arg as CArg, CKind, Constraint, SpecKind};
+use crate::constraints::{seed_omitted_named, Arg as CArg, CKind, Constraint, SpecKind};
 use crate::ir::{PathStep, Relation, ResolvedRelation, Statement as Stmt};
-use crate::model::{EntKind, EntRef, Sketch, Toward};
+use crate::model::{entity_name, EntKind, EntRef, Sketch, Toward};
 use crate::syntax::{Arg, Ref, RelationForm, Span, StmtId};
 use std::collections::BTreeSet;
 use crate::fmath::Det;
@@ -178,7 +178,8 @@ pub(crate) fn settle(
 
 /// **A rate of a contact** (#365): `rate(p over t) parallel l` and `perpendicular l` a `Rate`,
 /// `rate(p over t) distance(d, along: l)` a `RateDistance` — the point's, over the slot `t` of the
-/// contact holding it, which is what the contact holds it on (`io::seed_omitted` infers it).
+/// contact holding it, which is what the contact holds it on (`constraints::seed_omitted` infers
+/// it).
 fn settle_rate(
     w: &crate::syntax::Written,
     kind_of: &dyn Fn(&Ref) -> Option<EntKind>,
@@ -296,7 +297,7 @@ pub(super) fn constrain(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) -> Option<u3
         let spatial = w.ops.iter().filter_map(|o| cx.res.entity(&cx.sk, o))
             .find(|e| e.kind == EntKind::Frame && !cx.sk.frames[e.i()].planar());
         if let Some(f) = spatial {
-            let name = cx.map.name_of(f).cloned().unwrap_or_else(|| crate::io::entity_name(f));
+            let name = cx.map.name_of(f).cloned().unwrap_or_else(|| entity_name(f));
             let message = format!("`{name}` is a frame, which is no set: nothing is inside or \
                                    outside it (a plane is `plane(u: a, v: b)`)");
             cx.diags.push(Diag::on(Code::E040, st, message));
@@ -591,7 +592,7 @@ fn spatial_as_set(sk: &Sketch, map: &SourceMap, kind: CKind, args: &[CArg]) -> O
     }
     kind.spec().iter().zip(args).find_map(|((_, k), a)| match a {
         CArg::Ent(e) if *k == SpecKind::Plane && e.kind == EntKind::Frame && !sk.frames[e.i()].planar() => {
-            let name = map.name_of(*e).cloned().unwrap_or_else(|| crate::io::entity_name(*e));
+            let name = map.name_of(*e).cloned().unwrap_or_else(|| entity_name(*e));
             Some(format!("`{name}` is a frame, which is no set: a point is drawn in it with \
                           `in {name}`, and measured from its origin along its axes \
                           (`p distance(d, along: u) {name}`); a plane is `plane(u: a, v: b)`"))
@@ -1070,12 +1071,12 @@ fn inferred(
     left_out: &[bool],
 ) -> Option<Option<(crate::constraints::Bound, Option<Span>)>> {
     let (sk, map) = (&cx.sk, &cx.map);
-    let name = |e: EntRef| map.name_of(e).cloned().unwrap_or_else(|| io::entity_name(e));
+    let name = |e: EntRef| map.name_of(e).cloned().unwrap_or_else(|| entity_name(e));
     if let Err(message) = crate::constraints::on_the_arc(ckind, args, &name) {
         cx.diags.push(Diag::on(Code::E040, st, message));
         return None;
     }
-    if let Err(message) = io::seed_omitted_named(sk, ckind, args, |i| left_out[i], &name) {
+    if let Err(message) = seed_omitted_named(sk, ckind, args, |i| left_out[i], &name) {
         cx.diags.push(Diag::on(Code::E061, st, message));
         return None;
     }

@@ -114,7 +114,7 @@ fn weights_go_with_their_control_points() {
     assert_eq!(back.splines[s].weights, sk.splines[s].weights);
     // a control point deleted: its weight goes with it, the rest stay with theirs
     let gone = sk.splines[s].ctrl[2] as usize;
-    let less = gcs_core::io::without(&sk, &[EntRef::point(gone)], &[]);
+    let less = gcs_core::graft::without(&sk, &[EntRef::point(gone)], &[]);
     assert_eq!(less.splines[0].weights.as_deref(), Some(&[1.0, 2.5, 1.8, 0.9, 1.3][..]));
     // weights all 1 are the polynomial curve, stored without them
     let mut plain = Sketch::new();

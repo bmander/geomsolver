@@ -27,7 +27,7 @@ use gcs_core::model::Sketch;
 use gcs_core::program::{elaborate, Elaborated, Severity};
 use gcs_core::solve::{solve, SolveOpts};
 use gcs_core::syntax::{line_col, parse, Program, SynErr};
-use gcs_core::{io, json, progress, report};
+use gcs_core::{expr, io, json, progress, report};
 
 const USAGE: &str = "\
 solventc — check a Solvent document
@@ -494,7 +494,7 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
                 // a position is one of an entity's own numbers, which is `SpecKind::Scalar`
                 // exactly — so it is read to `READING_SIG` like every other number a person is
                 // shown, and converted by nothing: it is already in the units of the drawing
-                println!("  {n} = {}", io::reading(SpecKind::Scalar, v));
+                println!("  {n} = {}", expr::reading(SpecKind::Scalar, v));
             }
         }
     }

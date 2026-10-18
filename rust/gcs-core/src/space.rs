@@ -216,3 +216,15 @@ impl PackedGrid {
     /// The ids in the 27 cells round the one holding `p`, cell by cell.
     pub fn around(&self,p: V3,visit: impl FnMut(u32)) { let k = self.key(p); self.in_keys(k.map(|x| x-1),k.map(|x| x+1),visit); }
 }
+
+/// The picture plane of the eye at bearing `az` and elevation `el` (radians): its right and up.
+/// The viewer stands at `(cos az cos el, sin az cos el, sin el)` and looks back at the origin —
+/// the workspace's camera, and what a drag in space or a constraint read in it is seen through.
+pub(crate) fn eye(az: f64, el: f64) -> ([f64; 3], [f64; 3]) {
+    let (sa, ca) = az.dsin_cos();
+    let (se, ce) = el.dsin_cos();
+    // the viewer stands at (ca·ce, sa·ce, se) and looks back at the origin
+    let right = [-sa, ca, 0.0];
+    let up = [-ca * se, -sa * se, ce];
+    (right, up)
+}

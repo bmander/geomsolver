@@ -4,6 +4,7 @@
 //! an axis counts (a direction alone is two, and a place nothing reads is none), the refusal of an
 //! unsigned angle at 0 or half a turn, and an axis across JSON and a copy.
 use gcs_core::constraints::CKind;
+use gcs_core::graft;
 use gcs_core::io;
 use gcs_core::model::{EntKind, EntRef, Sketch};
 use gcs_core::space::{cross, dot, norm, sub};
@@ -121,7 +122,7 @@ fn an_axis_survives_json_and_a_copy() {
     let src = format!("{AXES}use std\nin std.front {{\n  p := point hint((10, 5))\n  fix((10, 5)) p\n}}\n\
                        t := axis hint(dir: (0.9, 0, 0.1))\nt parallel x_axis\np coincident t\n");
     let sk = solved(&read(&src));
-    for back in [io::from_json(&io::to_json(&sk)).expect("reads back"), io::copy(&sk, &sk.primitives())] {
+    for back in [io::from_json(&io::to_json(&sk)).expect("reads back"), graft::copy(&sk, &sk.primitives())] {
         assert_eq!(back.axes.len(), sk.axes.len());
         for i in 0..sk.axes.len() {
             let (e0, e1) = (EntRef::new(EntKind::Axis, i), EntRef::new(EntKind::Axis, i));

@@ -7,7 +7,7 @@
 use super::{Error, I, V};
 use crate::fmath::Det;
 use crate::space::{cross, dot, norm, sub};
-use crate::syntax::Cmp;
+use crate::vocab::Cmp;
 use std::f64::consts::FRAC_PI_2;
 use std::sync::Arc;
 

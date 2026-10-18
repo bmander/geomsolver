@@ -4,9 +4,8 @@ use super::resolve::Resolver;
 use super::{Code, Diag, SourceMap};
 use crate::ir::{Operation as StmtKind, Statement as Stmt};
 use crate::constraints::CKind;
-use crate::model::{EntKind, EntRef, Sketch};
+use crate::model::{entity_name, EntKind, EntRef, Sketch};
 use crate::syntax::{Span, StmtId};
-use crate::io;
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(super) fn memberships(
@@ -75,7 +74,7 @@ pub(super) fn memberships(
         let charts: Vec<(usize, Span)> =
             path.iter().copied().filter(|&(f, _)| charted(sk, f)).collect();
         if let [.., (outer, at), (inner, _)] = charts[..] {
-            let who = |e: EntRef| map.name_of(e).cloned().unwrap_or_else(|| io::entity_name(e));
+            let who = |e: EntRef| map.name_of(e).cloned().unwrap_or_else(|| entity_name(e));
             fail(Code::W115, at, format!(
                 "drawn in `{}`, so the `{}` around it says nothing of where: a frame with axes \
                  inside another draws what is in it, and the outer one is ridden on",
@@ -97,7 +96,7 @@ pub(super) fn memberships(
                 match sk.rides.get(&at) {
                     Some(was) if *was != frames => {
                         let who = |e: EntRef| map.name_of(e).cloned()
-                            .unwrap_or_else(|| io::entity_name(e));
+                            .unwrap_or_else(|| entity_name(e));
                         fail(Code::E060, r.span, format!("`{}` rides on frames of its own \
                             already: it is drawn once, where it is declared", who(at)));
                     }
@@ -115,7 +114,7 @@ pub(super) fn memberships(
             for p in points {
                 if let Some(q) = sk.plane_of(p) {
                     let who =
-                        |e: EntRef| map.name_of(e).cloned().unwrap_or_else(|| io::entity_name(e));
+                        |e: EntRef| map.name_of(e).cloned().unwrap_or_else(|| entity_name(e));
                     fail(Code::E060, r.span, format!("`{}` is already in `{}`",
                         who(EntRef::point(p)), who(EntRef::frame(q))));
                 } else if charted {
@@ -133,7 +132,7 @@ pub(super) fn memberships(
                 }
                 Some(q) if q != plane => {
                     let who =
-                        |e: EntRef| map.name_of(e).cloned().unwrap_or_else(|| io::entity_name(e));
+                        |e: EntRef| map.name_of(e).cloned().unwrap_or_else(|| entity_name(e));
                     fail(
                         Code::E060,
                         // the ref's own span: the clause's word, or the block header's
@@ -163,7 +162,7 @@ pub(super) fn tie_twins(sk: &mut Sketch, map: &SourceMap, diags: &mut Vec<Diag>)
             if plane.is_none() || planes.contains(&plane) {
                 let site = map.site_of(EntRef::point(p));
                 let who = map.name_of(EntRef::point(p)).cloned()
-                    .unwrap_or_else(|| io::entity_name(EntRef::point(p)));
+                    .unwrap_or_else(|| entity_name(EntRef::point(p)));
                 diags.push(Diag::new(
                     Code::E040,
                     site.map(|s| s.span).unwrap_or_default(),
@@ -201,7 +200,7 @@ pub(super) fn twin_parallel(sk: &Sketch, map: &SourceMap, p: usize, first: usize
         return None;
     }
     let site = map.site_of(EntRef::point(p));
-    let name = |e: EntRef| map.name_of(e).cloned().unwrap_or_else(|| io::entity_name(e));
+    let name = |e: EntRef| map.name_of(e).cloned().unwrap_or_else(|| entity_name(e));
     Some(Diag::new(
         Code::E061,
         site.map(|s| s.span).unwrap_or_default(),
@@ -323,7 +322,7 @@ pub(super) fn incidences(
             Some(_) if !on_curve => continue,
             // on a curve, which has no contact in space, it is refused here, said once
             Some((&p, why)) => {
-                let name = |e: EntRef| map.name_of(e).cloned().unwrap_or_else(|| io::entity_name(e));
+                let name = |e: EntRef| map.name_of(e).cloned().unwrap_or_else(|| entity_name(e));
                 let kind = match on.kind {
                     EntKind::Spline => "spline",
                     EntKind::Arc => "arc",

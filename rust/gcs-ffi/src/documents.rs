@@ -49,7 +49,7 @@ pub unsafe extern "C" fn gcs_without(
         let s = sk(h);
         let cv = as_json(cids, cids_len);
         let constraints: Vec<u32> = cv.arr().iter().map(|v| v.as_i64() as u32).collect();
-        Box::into_raw(Box::new(io::without(s, &ent_list(ents, ents_len), &constraints)))
+        Box::into_raw(Box::new(graft::without(s, &ent_list(ents, ents_len), &constraints)))
     })
 }
 
@@ -58,7 +58,7 @@ pub unsafe extern "C" fn gcs_without(
 #[no_mangle]
 pub unsafe extern "C" fn gcs_copy(h: *mut Sketch, ents: *const u8, ents_len: usize) -> *mut Sketch {
     guard(std::ptr::null_mut(), move || {
-        Box::into_raw(Box::new(io::copy(sk(h), &ent_list(ents, ents_len))))
+        Box::into_raw(Box::new(graft::copy(sk(h), &ent_list(ents, ents_len))))
     })
 }
 
@@ -68,7 +68,7 @@ pub unsafe extern "C" fn gcs_copy(h: *mut Sketch, ents: *const u8, ents_len: usi
 pub unsafe extern "C" fn gcs_paste(h: *mut Sketch, clip: *mut Sketch, dx: f64,
                                    dy: f64) -> *mut u8 {
     json_out(move || {
-        let made = io::paste(sk(h), &*clip, dx, dy);
+        let made = graft::paste(sk(h), &*clip, dx, dy);
         Json::Arr(made.into_iter().map(report::ent_json).collect())
     })
 }

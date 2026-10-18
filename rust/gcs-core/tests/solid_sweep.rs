@@ -1,4 +1,4 @@
-use gcs_core::{io,model::{MotionDef,SolidDef},program,solid::{self,MaterialField},solve,syntax,
+use gcs_core::{graft,model::{MotionDef,SolidDef},program,solid::{self,MaterialField},solve,syntax,
     interval::{Interval as I,minimum::{Options,Status}}};
 
 mod contacts;
@@ -109,15 +109,15 @@ fn sweep_print_copy_paste_and_delete_preserve_transitive_dependencies() {
     let restored = read(printed);
     let i = restored.map.ent_named("swept").unwrap().i();
     assert!(material(&restored.sketch,i,[3.,0.,0.])[1] < -0.99);
-    let copied = io::copy(&e.sketch,&[e.map.ent_named("swept").unwrap()]);
+    let copied = graft::copy(&e.sketch,&[e.map.ent_named("swept").unwrap()]);
     assert_eq!(copied.solids.len(),2); assert_eq!(copied.motions.len(),1);
     let i = copied.solids.iter().position(|s| s.name == "swept").unwrap();
     assert!(material(&copied,i,[3.,0.,0.])[1] < -0.99);
     let mut pasted = gcs_core::model::Sketch::new();
-    io::paste(&mut pasted,&copied,10.,20.);
+    graft::paste(&mut pasted,&copied,10.,20.);
     let i = pasted.solids.iter().position(|s| s.name == "swept").unwrap();
     assert!(material(&pasted,i,[13.,0.,20.])[1] < -0.99);
-    let removed = io::without(&e.sketch,&[e.map.ent_named("ax").unwrap()],&[]);
+    let removed = graft::without(&e.sketch,&[e.map.ent_named("ax").unwrap()],&[]);
     assert!(removed.motions.is_empty());
     assert_eq!(removed.solids.len(),1);
     assert_eq!(removed.solids[0].name,"tool");

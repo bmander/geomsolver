@@ -519,10 +519,10 @@ pub fn tangency_at(a: Touch, b: Touch) -> Option<TangentAt> {
 /// The words that say which side of a plane a point is on (§9.6), and the bound each is on the
 /// point's ordinate along the plane's normal: `inside` at most zero, behind the normal, and
 /// `outside` at least zero.  `inside` between solids is the claim `solid_word` reads instead.
-pub fn plane_side_word(w: &str) -> Option<crate::syntax::Cmp> {
+pub fn plane_side_word(w: &str) -> Option<crate::vocab::Cmp> {
     match w {
-        "inside" => Some(crate::syntax::Cmp::Le),
-        "outside" => Some(crate::syntax::Cmp::Ge),
+        "inside" => Some(crate::vocab::Cmp::Le),
+        "outside" => Some(crate::vocab::Cmp::Ge),
         _ => None,
     }
 }

@@ -12,7 +12,7 @@ use crate::brep::recipe::Writer;
 use crate::json::{object, Json};
 use crate::model::{RegionShape, Sketch, SolidDef};
 use crate::space::{add, dot, norm, scale, sub};
-use crate::syntax::Cmp;
+use crate::vocab::Cmp;
 use std::f64::consts::{FRAC_PI_2, TAU};
 use std::rc::Rc;
 

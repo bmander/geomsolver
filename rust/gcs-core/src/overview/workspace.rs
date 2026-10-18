@@ -17,9 +17,9 @@
 use crate::fmath::Det;
 use crate::model::{grow, polyline_distance, Box2, EntKind, EntRef, Sketch};
 use crate::plane::{cross, dot, Basis};
-use crate::space::sub;
+use crate::space::{eye, sub};
 
-use super::{drawable, eye, views};
+use super::{drawable, views};
 
 /// An affine map of a view's page coordinates onto the eye's picture plane:
 /// `(x, y) ↦ (m[0]·x + m[1]·y + m[2], m[3]·x + m[4]·y + m[5])`.

@@ -7,6 +7,7 @@
 //! plane), to the count a tangency must add (one condition, regular), to the exact Jacobian the
 //! derivative kernel writes, through a document, and to every refusal at its span.
 use gcs_core::diagnose::{diagnose, DiagnoseOptions};
+use gcs_core::graft;
 use gcs_core::io;
 use gcs_core::model::Sketch;
 use gcs_core::program::Elaborated;
@@ -626,7 +627,7 @@ fn a_tangency_travels_through_a_document() {
         let sk = solved(&read(&with(&src)));
         let along = |s: &Sketch| s.constraints.iter().filter_map(|c| c.along).collect::<Vec<_>>();
         assert!(!along(&sk).is_empty());
-        let copy = io::copy(&sk, &sk.primitives());
+        let copy = graft::copy(&sk, &sk.primitives());
         for mut back in [io::from_json(&io::to_json(&sk)).expect("reads back"), copy] {
             assert_eq!(along(&back), along(&sk), "{src}");
             assert_eq!(back.duals.len(), sk.duals.len(), "{src}");

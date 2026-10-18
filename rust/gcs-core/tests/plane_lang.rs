@@ -7,6 +7,7 @@ use gcs_core::plane::Basis;
 use gcs_core::program::{elaborate, Elaborated};
 use gcs_core::syntax::{highlight, write_stmt_to, Tint};
 use crate::common::{gestures::reconciled, parse};
+use gcs_core::graft;
 use gcs_core::io;
 
 use crate::common::read;
@@ -643,7 +644,7 @@ fn a_planes_place_survives_json_and_the_graft() {
     let text = io::dumps(&e.sketch, Some(1));
     let back = io::loads(&text).unwrap();
     assert_eq!(back.basis(q), b);
-    let copied = io::copy(&e.sketch, &[e.map.ent_named("a").unwrap(), EntRef::frame(q)]);
+    let copied = graft::copy(&e.sketch, &[e.map.ent_named("a").unwrap(), EntRef::frame(q)]);
     assert_eq!(copied.frames.len(), 1);
     assert_eq!(copied.basis(0), b);
 }

@@ -525,7 +525,7 @@ fn the_mean_points_bearing_runs_along_the_common_generator() {
         }
         let text = gcs_core::report::meshing_text(&e.sketch, 0);
         let scalar = gcs_core::constraints::SpecKind::Scalar;
-        let edge = gcs_core::io::reading(scalar, 0.5 * (roll - 1.0).abs() * 15.0);
+        let edge = gcs_core::expr::reading(scalar, 0.5 * (roll - 1.0).abs() * 15.0);
         let said = "bearing: point contact; transmission error (the gear's angle)";
         assert!(text.starts_with(said), "{text}");
         if roll != 1.0 {

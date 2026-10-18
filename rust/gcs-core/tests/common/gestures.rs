@@ -32,7 +32,7 @@ pub fn near(a: f64, b: f64, rel: f64) -> bool {
     (a - b).abs() <= rel * b.abs().max(1.0)
 }
 
-/// The eye's picture-plane coordinates of a point in space, written out from `overview::eye`'s
+/// The eye's picture-plane coordinates of a point in space, written out from `space::eye`'s
 /// convention: the viewer at (cos az cos el, sin az cos el, sin el), looking at the origin.
 pub fn seen(x: [f64; 3], az: f64, el: f64) -> (f64, f64) {
     let right = [-az.sin(), az.cos(), 0.0];

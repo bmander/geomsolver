@@ -694,7 +694,7 @@ impl Sketch {
     }
 
     /// `add` without the expression pass, for a caller adding a whole document one constraint at
-    /// a time and evaluating once at the end — `io::graft`, the rebuild walk behind deletion,
+    /// a time and evaluating once at the end — `graft`, the rebuild walk behind deletion,
     /// copying, pasting and the part a drag works on.  Evaluating per add would parse every
     /// expression in the document again for each one that carries text, and would make a
     /// dimension whose definition has not been grafted yet briefly a free variable — allocating
@@ -867,7 +867,7 @@ impl Sketch {
     /// Drop a constraint.  Its own unknowns stay in the parameter vector — every index above
     /// them names something — but are retired to `fixed`, since a free parameter no equation
     /// mentions is a degree of freedom the sketch does not actually have, and diagnosis would
-    /// report it.  The rebuild walk (`io::without`) is the path that reclaims the slots.
+    /// report it.  The rebuild walk (`graft::without`) is the path that reclaims the slots.
     pub fn remove(&mut self, id: u32) {
         let (expr, own) = self.constraint(id)
             .map_or((false, Vec::new()), |c| (crate::expr::has_expr(&c.args), c.aux_params()));

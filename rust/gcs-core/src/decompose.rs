@@ -25,7 +25,7 @@ use crate::cgraph::{
     build, line_normal, normal_of, remainder, ConstraintGraph, Edge, EdgeKind, El, ElKind, X_AXIS,
 };
 use crate::linalg::{absmax, min_norm_solve, rank_rrqr, Mat};
-use crate::io::Part;
+use crate::graft::Part;
 use crate::model::{increments, orientation, EntRef, Sketch};
 use crate::newton::{self, Method, Tol, TrustRegion};
 use crate::rng::Rng;
@@ -1838,7 +1838,7 @@ fn part_around(doc: &Sketch, point: usize) -> (Part, usize) {
 /// Made `on` the document's own plan — cached per topology by whoever owns the document — a drag
 /// starts in the time it takes to find the roots holding the point, and runs on the document
 /// directly.  Made with `new`, it builds its own: the dragged point's *part* of the document
-/// (`io::Part`), which is all a drag can move, and a plan over that, writing each frame back —
+/// (`graft::Part`), which is all a drag can move, and a plan over that, writing each frame back —
 /// so the document is never recompiled or restructured by a drag either way, and its unrelated
 /// figures cost the drag nothing.
 ///

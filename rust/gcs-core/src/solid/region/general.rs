@@ -6,7 +6,7 @@
 use crate::fmath::Det;
 use crate::model::{RegionShape, RegionTerm, Sketch, SolidDef};
 use crate::space::{across, dot, normalised, scale, sub};
-use crate::syntax::Cmp;
+use crate::vocab::Cmp;
 use std::f64::consts::FRAC_PI_2;
 
 type V = [f64; 3];
