@@ -115,7 +115,8 @@ one (`hypoid.sv`). `tests/when.rs` is the gate.
 `Walk::stands_for` resolves them — the absolute name through every alias, so a formal is what
 its call gave and a face repeat's binder its face — and `c in B` (`Cond::In`, made by
 `parse_condition_in` only) as `Walk::faces_named` lists `B`'s faces. The walk answers through
-`values::Names` (`expand::Asked`), building the alias table only if a condition asks. A number
+`values::Names` (`expand::Asked`), reading only the aliases a condition names (`resolve::Lazy`,
+as the whole table would resolve them, and held to it under debug assertions). A number
 against something drawn is E103, something drawn compared as a number E103, `in` over what
 names no faces E103, a name standing for nothing E101; `expr::decide` refuses `Cond::In`. So a
 block over faces has no filter of its own: `repeat b in B if …` is a syntax error naming
