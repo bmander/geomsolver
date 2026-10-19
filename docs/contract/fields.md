@@ -35,6 +35,24 @@ Newton, memoised. A `construction` solid is never an object. App example `spiral
 (`hypoid.sv`). `solventc --stl-backend refine` skips admission, gated by field agreement
 (`SOLVENT_FEATURES=field`).
 
+**An operand built exactly is read by its own boundary** (#419; `document.rs`'s `built`,
+`field/built.rs`): a body some of whose terms read its faces (the stratum's late ones: a round),
+with neither a sweep nor a region only the field builds among what it reads (`solid::has_sweep`),
+that `Sketch::exact_solid` builds with every face a plane, cylinder, cone, sphere or torus, is one
+leaf of another solid's field (`BuiltField`, `SpatialField`'s `Built`), none of its terms read:
+the signed distance from its B-rep (`BodyFaces::of` the whole body, `signed_distance`) — a face's
+foot on the face, signed by its side, else an edge's nearest point, outside a convex edge and
+inside a concave one (a ball in the material cannot touch a convex edge), by `Located::solid_place`
+where the edge is no corner or the point is at its end; edges no nearer than their faces' feet are
+not asked — one-Lipschitz, so a box's enclosure is its centre's value within the half-diagonal and
+the boundary's tolerance; its support the faces' boxes (`BodyFaces::reach`); its pieces its faces,
+each carried by its surface's side, so a crease is found as a region's terms' are. Never the solid
+read itself, nor a sweep's source the walk meets (a sweep reads it box by box over the roll); a
+placed copy is transformed as any leaf; anything else, or a body the kernel refuses, is composed
+of its terms as before. Remembered in `Caches::built` against `solid::reads`. Composed, a rounded
+operand reads a sheet of nothing where the round's cut lies on the face it rounds, which a spilled
+chamfer's flat crosses, ending one feature curve on another (`tests/composed_rounds.rs`).
+
 **Meshing speed (2026-09-25):** sweeps read from adaptive distance fields (`solid/field/adf.rs`,
 `SweptField::cached`, `Source::Cached`): an octree per sweep and `Resolution`, exact corners,
 trilinear between, split while wider than a facet or its centre reads off by over a tenth of the

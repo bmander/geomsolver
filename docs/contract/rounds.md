@@ -84,11 +84,12 @@ half circle) is the table's own going on into the next piece and refuses nothing
 holds the rest to the field as ever. A region of a body's faces the planes do not close is
 supported by the bodies it reads grown by `SUPPORT_REACH` of its longest length
 (`region::general`), so a fill the table refused is meshed. The field's composition of an operand
-rounded by a cut reads a sheet of nothing where the cut's face lies on the face it rounds; a fill
-whose flat crosses that sheet can end a feature curve on another the mesher cannot keep apart, and
-the mesh is refused, naming the two (`delaunay::refine::protect`; a boss on a plate drawn in a
-plane of its own, its chamfer onto the plate's rim round, is one such): reading an operand built
-exactly by its own boundary would remove the sheet, and is not done.
+rounded by a cut would read a sheet of nothing where the cut's face lies on the face it rounds,
+and a fill whose flat crosses that sheet ends a feature curve on another the mesher cannot keep
+apart (`delaunay::refine::protect`), so **an operand built exactly is read by its own boundary**
+(#419, [fields.md](fields.md)): a boss on a plate drawn in a plane of its own, its chamfer onto
+the plate's rim round, meshes (`tests/composed_rounds.rs`, the user's part at boss radii 21 to
+21.7, all but one in the slow tier).
 
 **Rounds built exactly: the lowering table** (#194, #183 L7, `solid::lowering`): a region over a
 body's faces is recognised by its terms' shapes (`recognised`: two or three `FaceSide`s alike, an

@@ -34,6 +34,8 @@ pub struct BodyFaces {
     edges: Vec<Vec<u32>>,
     /// The faces each edge bounds.
     bounding: Vec<Vec<usize>>,
+    /// A box holding every face (millimetres, about `origin`): its low corner and its high.
+    reach: (V, V),
 }
 
 impl BodyFaces {
@@ -57,6 +59,12 @@ impl BodyFaces {
         let paths = ex.named.iter().map(|(of, face)| {
             FacePath::new(routes.get(of).map_or(of.as_str(), String::as_str), face)
         }).collect();
+        Ok(BodyFaces::of(ex, paths))
+    }
+
+    /// An exact boundary's faces, each named by its path beside it (none: a boundary read whole,
+    /// `field::BuiltField`).
+    pub fn of(ex: crate::solid::Exact, paths: Vec<FacePath>) -> BodyFaces {
         let tol = 1e-9 * ex.brep.size().max(1.0);
         let (mm, origin) = (ex.mm, ex.origin);
         let loc = Located::owned(ex.brep, tol);
@@ -70,9 +78,17 @@ impl BodyFaces {
                 bounding[e as usize].push(fi);
             }
         }
-        let mut faces = BodyFaces { loc, mm, origin, paths, convex: Vec::new(), edges, bounding };
+        let mut reach = ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
+        for fi in 0..loc.b.faces.len() {
+            let (lo, hi) = loc.face_box(fi);
+            for k in 0..3 {
+                reach.0[k] = reach.0[k].min(lo[k]);
+                reach.1[k] = reach.1[k].max(hi[k]);
+            }
+        }
+        let mut faces = BodyFaces { loc, mm, origin, paths, convex: Vec::new(), edges, bounding, reach };
         faces.convex = (0..faces.loc.b.edges.len()).map(|e| faces.edge_convex(e as u32)).collect();
-        Ok(faces)
+        faces
     }
 
     /// Each face's name as the body names it, beside its boundary's faces (`brep`).
@@ -86,6 +102,73 @@ impl BodyFaces {
     pub fn bounds(&self) -> (V, V) {
         let (lo, hi) = self.loc.b.bounds();
         (self.back(lo), self.back(hi))
+    }
+
+    /// A box holding every face, its bulges included (model units): its low corner and its high.
+    pub fn reach(&self) -> (V, V) { (self.back(self.reach.0), self.back(self.reach.1)) }
+
+    /// How near a face a point is read as on it (model units): the boundary's tolerance.
+    pub fn tolerance(&self) -> f64 { self.loc.tol / self.mm }
+
+    /// The signed distance from the boundary (model units, positive outside) and the face it is
+    /// nearest.  The nearest point is a face's foot on its surface, where that lies on the face —
+    /// signed by the face's side — else an edge's nearest point: outside a convex edge and inside
+    /// a concave one (a ball within the material cannot touch a convex edge, nor one outside it a
+    /// concave edge), and by the boundary's ray classification where the edge is no corner or the
+    /// point is at its end (outside beyond every face's box).  Exact where each face's surface
+    /// foot is (`Surface::inverse`'s global foot: a plane, a cylinder, a sphere, a torus; a cone
+    /// along one generator).
+    pub fn signed_distance(&self, p: V) -> (f64, usize) {
+        use crate::brep::geom::Surface;
+        let q = self.q(p);
+        let b = &self.loc.b;
+        // each face's surface foot, nearest first: the first on its face is the nearest foot
+        let mut feet: Vec<(f64, usize, V)> = b.faces.iter().enumerate().map(|(fi, f)| {
+            let foot = f.surface.point(f.surface.inverse(q));
+            (distance(q, foot), fi, foot)
+        }).collect();
+        feet.sort_by(|a, c| a.0.total_cmp(&c.0));
+        let face = feet.iter().find(|&&(_, fi, foot)| self.loc.face_place(fi, foot) != Place::Out)
+            .map(|&(d, fi, _)| (d, fi));
+        // an edge lies on the surfaces of the faces it bounds, so is no nearer than their feet
+        // (but for a cone's, whose foot is on one generator)
+        let mut least = vec![0.0; b.faces.len()];
+        for &(d, fi, _) in &feet {
+            if !matches!(b.faces[fi].surface, Surface::Cone(..)) {
+                least[fi] = d;
+            }
+        }
+        let mut edge: Option<(u32, f64, f64)> = None;
+        for e in 0..b.edges.len() {
+            let below = self.bounding[e].iter().map(|&fi| least[fi]).fold(0.0, f64::max);
+            let best = edge.map_or(face.map_or(f64::INFINITY, |f| f.0), |(.., d)| d);
+            if below >= best {
+                continue;
+            }
+            let (t, d) = self.loc.nearest(e as u32, q);
+            if d < best {
+                edge = Some((e as u32, t, d));
+            }
+        }
+        let Some((e, t, d)) = edge else {
+            let Some((d, fi)) = face else { return (f64::INFINITY, 0) };
+            return (self.side(fi, p).signum() * d / self.mm, fi);
+        };
+        let span = b.edges[e as usize].t;
+        let sign = match self.convex(e) {
+            Some(convex) if t > span[0] && t < span[1] => if convex { 1.0 } else { -1.0 },
+            _ if (0..3).any(|k| q[k] < self.reach.0[k] || q[k] > self.reach.1[k]) => 1.0,
+            _ => match self.loc.solid_place(q) {
+                Place::Out => 1.0,
+                Place::In => -1.0,
+                Place::On => 0.0,
+            },
+        };
+        let v = sign * d / self.mm;
+        // the face the edge bounds whose surface reads nearest the distance
+        let off = |fi: usize| (self.side(fi, p) - v).abs();
+        let fi = self.faces_of(e).iter().copied().min_by(|&a, &c| off(a).total_cmp(&off(c))).unwrap_or(0);
+        (v, fi)
     }
 
     /// The faces a reference names, by its path (`FacePath::matches`).

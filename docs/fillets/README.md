@@ -766,4 +766,4 @@ renders with a ledge: the chamfer's flat stood on the far face's plane run on pa
   field's composition of a rounded operand reads a sheet of nothing where the cut's face lies on
   the face it rounds, which a spilled chamfer's flat crosses: the user's exact part is refused by
   the mesher, naming the two curves. Reading an exactly built operand by its own boundary is the
-  fix, not made here.
+  fix, made after (#419): the field reads the rounded plate as its B-rep, and the part meshes.
