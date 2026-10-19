@@ -306,14 +306,21 @@ impl Projection {
 /// The nearest point to `at` as the eye sees it, and how far that is.
 pub fn nearest_point(sk: &Sketch, proj: &Projection, at: (f64, f64)) -> (Option<usize>, f64) {
     let mut best = (None, f64::INFINITY);
-    for p in 0..sk.points.len() {
-        let (x, y) = proj.point(sk, p);
-        let d = (x - at.0).dhypot(y - at.1);
+    for (d, p) in point_gaps(sk, proj, at) {
         if d < best.1 {
             best = (Some(p), d);
         }
     }
     best
+}
+
+/// How far each point is from `at` as the eye sees it, with its index, in order.
+fn point_gaps<'a>(sk: &'a Sketch, proj: &'a Projection, at: (f64, f64))
+    -> impl Iterator<Item = (f64, usize)> + 'a {
+    (0..sk.points.len()).map(move |p| {
+        let (x, y) = proj.point(sk, p);
+        ((x - at.0).dhypot(y - at.1), p)
+    })
 }
 
 /// What a click at `at` on the eye's picture plane picks: `model::pick`'s rule, asked of the
@@ -453,21 +460,31 @@ pub struct SolidHit {
 /// picks.  Asked of each object's mesh (`ApproximationPolicy::Mesh`, the box's own), culled by its
 /// box: the ray is a line, since the eye is orthographic and stands outside everything.
 pub fn pick_solid(sk: &Sketch, proj: &Projection, at: (f64, f64)) -> Option<SolidHit> {
-    let mut best: Option<SolidHit> = None;
-    for hit in crossings(sk, proj, at) {
-        if best.as_ref().is_none_or(|b| hit.depth > b.depth) {
-            best = Some(hit);
+    let mut best: Option<(usize, String, f64)> = None;
+    crossings(sk, proj, at, |solid, face, depth| {
+        if best.as_ref().is_none_or(|(_, _, b)| depth > *b) {
+            best = Some((solid, face.to_string(), depth));
         }
-    }
-    best
+    });
+    best.map(|(solid, face, depth)| solid_hit(proj, at, solid, face, depth))
 }
 
-/// Every face of an object the eye's ray through `at` crosses, each where it crosses it nearest
-/// the viewer, object by object and face by face in the mesh's order.
-fn crossings(sk: &Sketch, proj: &Projection, at: (f64, f64)) -> Vec<SolidHit> {
+/// A face of object `solid` met at `depth` by the eye's ray through `at`.
+fn solid_hit(proj: &Projection, at: (f64, f64), solid: usize, face: String, depth: f64)
+    -> SolidHit {
+    let toward = proj.toward();
+    let at = std::array::from_fn(|k| at.0 * proj.right[k] + at.1 * proj.up[k] + depth * toward[k]);
+    SolidHit { solid, face, depth, at }
+}
+
+/// Every face of an object the eye's ray through `at` crosses, each handed to `visit` with how
+/// far toward the viewer it crosses it nearest — object by object and face by face in the mesh's
+/// order.  Each object's mesh is culled by its box: the ray is a line, since the eye is
+/// orthographic and stands outside everything.
+fn crossings(sk: &Sketch, proj: &Projection, at: (f64, f64),
+             mut visit: impl FnMut(usize, &str, f64)) {
     let toward = proj.toward();
     let foot = [0, 1, 2].map(|k| at.0 * proj.right[k] + at.1 * proj.up[k]);
-    let mut hits = Vec::new();
     for i in super::objects(sk) {
         let Ok(solid) = sk.evaluated_solid(i, crate::solid::ApproximationPolicy::Mesh) else { continue };
         let w = solid.world_bounds();
@@ -479,23 +496,14 @@ fn crossings(sk: &Sketch, proj: &Projection, at: (f64, f64)) -> Vec<SolidHit> {
         let along = solid.vector_to_local(toward);
         let m = solid.mesh();
         for group in &m.groups {
-            let mut best: Option<f64> = None;
-            for t in group.start..group.start + group.count {
-                let tri = &m.positions[9 * t..9 * t + 9];
-                let Some(depth) = line_meets_triangle(o, along, tri) else {
-                    continue;
-                };
-                if best.is_none_or(|b| depth > b) {
-                    best = Some(depth);
-                }
-            }
-            if let Some(depth) = best {
-                let at = std::array::from_fn(|k| foot[k] + depth * toward[k]);
-                hits.push(SolidHit { solid: i, face: group.path.clone(), depth, at });
+            let nearest = (group.start..group.start + group.count)
+                .filter_map(|t| line_meets_triangle(o, along, &m.positions[9 * t..9 * t + 9]))
+                .fold(f64::NEG_INFINITY, f64::max);
+            if nearest > f64::NEG_INFINITY {
+                visit(i, &group.path, nearest);
             }
         }
     }
-    hits
 }
 
 /// Where two faces of object `solid` meet, in space (`EvaluatedSolid::face_edges`): what the
@@ -590,11 +598,11 @@ pub enum Under {
     Drawn(EntRef),
     /// An edge of an object within the pick's reach, and whether the eye sees it there or it lies
     /// behind the material.
-    Edge { hit: EdgeHit, depth: f64, seen: bool },
+    Edge { hit: EdgeHit, seen: bool },
     /// A face of an object the ray crosses, where it crosses it nearest the viewer.
     Face(SolidHit),
-    /// An object the ray meets, whole, and how far toward the viewer it is met.
-    Object { solid: usize, depth: f64 },
+    /// An object the ray meets, whole.
+    Object(usize),
 }
 
 /// **Everything under the pointer**: each thing the eye's ray through `at` reaches, within `tol`
@@ -609,11 +617,8 @@ pub fn under(sk: &Sketch, proj: &Projection, at: (f64, f64), tol: f64, unit: f64
         v.sort_by(|a, b| a.0.total_cmp(&b.0));
         v.into_iter().map(|(_, e)| Under::Drawn(e)).collect::<Vec<_>>()
     };
-    let points = (0..sk.points.len()).filter_map(|p| {
-        let (x, y) = proj.point(sk, p);
-        let d = (x - at.0).dhypot(y - at.1);
-        (d <= tol).then_some((d, EntRef::point(p)))
-    }).collect();
+    let points = point_gaps(sk, proj, at).filter(|&(d, _)| d <= tol)
+        .map(|(d, p)| (d, EntRef::point(p))).collect();
     let figures = sk.drawn().into_iter().filter(|e| e.kind != EntKind::Point).filter_map(|e| {
         let d = proj.reach(sk, e, at, tol, unit);
         (d <= tol).then_some((d, e))
@@ -632,25 +637,24 @@ pub fn under(sk: &Sketch, proj: &Projection, at: (f64, f64), tol: f64, unit: f64
         .map(|(_, hit, slack)| {
             let depth = dot(hit.at, toward);
             let seen = edge_seen(sk, proj, &hit, slack);
-            (depth + slack, 0, Under::Edge { hit, depth, seen })
+            (depth + slack, 0, Under::Edge { hit, seen })
         })
         .collect();
-    parts.extend(crossings(sk, proj, at).into_iter().map(|hit| (hit.depth, 1, Under::Face(hit))));
+    crossings(sk, proj, at, |solid, face, depth| {
+        parts.push((depth, 1, Under::Face(solid_hit(proj, at, solid, face.to_string(), depth))));
+    });
     parts.sort_by(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1)));
-    // and each object met, at the nearest of its parts
-    let mut objects: Vec<(usize, f64)> = Vec::new();
-    for (depth, _, part) in &parts {
-        let solid = match part {
-            Under::Edge { hit, .. } => hit.solid,
-            Under::Face(hit) => hit.solid,
-            _ => continue,
-        };
-        if !objects.iter().any(|&(s, _)| s == solid) {
-            objects.push((solid, *depth));
+    // and each object met, in the order its nearest part was
+    let mut objects: Vec<usize> = Vec::new();
+    for (_, _, part) in &parts {
+        let (Under::Edge { hit: EdgeHit { solid, .. }, .. } | Under::Face(SolidHit { solid, .. }))
+            = part else { continue };
+        if !objects.contains(solid) {
+            objects.push(*solid);
         }
     }
     out.extend(parts.into_iter().map(|(_, _, part)| part));
-    out.extend(objects.into_iter().map(|(solid, depth)| Under::Object { solid, depth }));
+    out.extend(objects.into_iter().map(Under::Object));
     out
 }
 

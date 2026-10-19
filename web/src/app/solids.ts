@@ -7,17 +7,18 @@ import * as io from '../core/io.js';
 import { Axis, Line, Plane } from '../core/model.js';
 import type { Primitive } from '../core/model.js';
 import type { Edit, Region } from '../core/program.js';
-import { offsetHandle, roundSize, solidEdges } from '../core/workspace.js';
+import { offsetHandle, roundSize } from '../core/workspace.js';
 import {
   endExtent, extrudeHandleOf, offsetOf, solidIndex, tellExtent, turnHandleOf,
 } from './extent.js';
 import type { LiveExtent } from './extent.js';
-import { bodyOf, combines, partOf, roundsEdges } from './view.js';
+import { bodyOf, combines, objectsPicked, partOf, roundsEdges } from './view.js';
 import type { Combining, EdgeWord, Rounding, SketchView, SolidPick } from './view.js';
 
 /** What an edge tool has picked, said: `2 edges and 1 face` (`sep` between). */
 function picked(r: Rounding, sep: string): string {
   const count = (n: number, thing: string) => (n ? `${n} ${thing}${n === 1 ? '' : 's'}` : '');
+  if (r.whole) return 'every edge';
   return [count(r.edges.length, 'edge'), count(r.faces.length, 'face')].filter(Boolean).join(sep);
 }
 
@@ -143,13 +144,8 @@ export function finishCombine(v: SketchView): void {
 /** The selection as a Boolean tool takes it: each object picked once, whole, in the order its
  *  first part was picked — a face of a body selected stands for the body. */
 export function bodiesPicked(v: SketchView): void {
-  const bodies: SolidPick[] = [];
-  for (const s of v.selectedSolids) {
-    if (!bodies.some((b) => b.index === s.index)) bodies.push(bodyOf(s));
-  }
-  const picked = v.selectedSolids;
-  if (bodies.length < picked.length || picked.some((s) => partOf(s) !== 'body')) {
-    v.pickSolids(bodies);
+  if (v.selectedSolids.some((s) => partOf(s) !== 'body')) {
+    v.pickSolids(objectsPicked(v.selectedSolids));
   }
 }
 
@@ -202,32 +198,30 @@ export function roundPick(v: SketchView, pick: SolidPick): void {
   v.draw();
 }
 
+/** The parts of the one object picked last. */
+function lastObjectPicks(v: SketchView): SolidPick[] {
+  const last = v.selectedSolids.at(-1);
+  return last ? v.selectedSolids.filter((s) => s.index === last.index) : [];
+}
+
 /** The selection as an edge tool takes it: the parts of the one object picked last. */
 export function onePicked(v: SketchView): void {
-  const last = v.selectedSolids.at(-1);
-  if (last && v.selectedSolids.some((s) => s.index !== last.index)) {
-    v.pickSolids(v.selectedSolids.filter((s) => s.index === last.index));
-  }
+  const picks = lastObjectPicks(v);
+  if (picks.length < v.selectedSolids.length) v.pickSolids(picks);
 }
 
 /** What an edge tool would write over: the selection's faces and edges of one object (the one
- *  picked last), a body picked whole standing for its every face — or null for none. */
+ *  picked last), or the body whole where it was picked so — or null for none. */
 export function roundingOf(v: SketchView): Rounding | null {
-  const last = v.selectedSolids.at(-1);
-  if (!last) return null;
-  const picks = v.selectedSolids.filter((s) => s.index === last.index);
-  const faces: string[] = [];
-  const add = (f: string) => {
-    if (!faces.includes(f)) faces.push(f);
+  const picks = lastObjectPicks(v);
+  if (!picks.length) return null;
+  const { index: solid, name } = picks[0];
+  return {
+    solid, name,
+    faces: picks.flatMap((p) => partOf(p) === 'face' ? [p.face] : []),
+    edges: picks.flatMap((p) => p.edge ? [p.edge] : []),
+    whole: picks.some((p) => partOf(p) === 'body'),
   };
-  for (const p of picks) {
-    if (partOf(p) === 'face') add(p.face);
-    // a body whole: every face of it, which the core writes as the word over the body
-    if (partOf(p) === 'body') for (const e of solidEdges(v.sketch, p.index)) e.faces.forEach(add);
-  }
-  const edges = picks.flatMap((p) => p.edge ? [p.edge] : []);
-  return faces.length || edges.length
-    ? { solid: last.index, name: last.name, faces, edges } : null;
 }
 
 /** **Write what the edge tool picked** at `size` (the radius, or the flat's leg — what was
@@ -242,7 +236,7 @@ export function finishRound(v: SketchView, size?: string): string | null {
     return null;
   }
   const text = (size ?? '').trim() || roundOffer(v, word, r);
-  const e = v.doc.addRounds(r.solid, word, r.faces, r.edges, text);
+  const e = v.doc.addRounds(r.solid, word, r.faces, r.edges, text, r.whole);
   if (e.refused) {
     v.onStatus(e.refused);
     return e.refused;

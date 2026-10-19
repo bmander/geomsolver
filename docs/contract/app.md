@@ -128,7 +128,9 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   `selectedSolids`, `solids::roundingOf`): edges and faces selected before it was taken up are
   where it starts, and the number is asked at once; its clicks toggle edges, or a face (every
   edge of it), on one object (another object starts over; taken up, the selection keeps the
-  object picked last, `onePicked`), and a body picked whole is its every face.  The number is
+  object picked last, `onePicked`), and a body picked whole is its every edge (`add_rounds`'s
+  `whole`, the word over the body — so a body already rounded, whose round faces have no name,
+  is still a body).  The number is
   asked beside the last click (`dimbox`'s `roundBox`, focused, the pointer-down's default
   prevented so it keeps the keyboard); Escape lets the picks go, the tool still down; a write
   lets them go too.  Enter writes `edit::add_rounds`: the mesh's paths mapped to the document's
@@ -176,7 +178,9 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   `gcs_workspace_under_json`, `underSeen`; `SketchView.hitsAt`): what is drawn first (points,
   figures, axes, panes' frames, each by how near), then the objects' edges and faces nearest
   the eye first — an edge behind the material listed too, `seen: false`, said hidden — then the
-  objects whole; an edge tool lists only objects' parts, a Boolean only objects.  One is taken
+  objects whole; an edge tool lists only objects' parts, a Boolean only objects.  What a tool
+  picks is said once (`view.ts::picksAs`), and the hover, the list and the selection a tool is
+  taken up over all read it.  One is taken
   at once; several are handed to the shell (`onChoose`, `app/choose.ts`), each row lit as the
   pointer or the arrow keys are on it (`hoverHit`), the one chosen taken as a click on it would
   be (`takeHit`; shift adds).  `tests/edit_rounds.rs`'s

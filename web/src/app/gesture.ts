@@ -18,7 +18,7 @@ import { insertControl } from './edit.js';
 import { cancelTool, toolClick } from './tools.js';
 import { bodyAt, grabBody, grabHandle, handleAt } from './underlay.js';
 import { combinePick, roundPick, roundTarget } from './solids.js';
-import { bodyOf, choosesAmong, combines, roundsEdges, sweepsRegion } from './view.js';
+import { bodyOf, picksAs, roundsEdges, sweepsRegion, toggled } from './view.js';
 import type { Hit, SketchView, SolidPick } from './view.js';
 
 /** One pointer gesture in progress.  `move` gets canvas coordinates; `end` and `paint` are
@@ -362,7 +362,7 @@ function primaryTaken(v: SketchView, e: PointerEvent, sp: [number, number]): boo
   }
   if (v.liveExtent?.kind === 'offset') v.endExtent();
   // ⌘-click (Ctrl off a Mac): everything under the pointer, to choose among
-  if ((e.metaKey || e.ctrlKey) && choosesAmong(v.tool)) {
+  if ((e.metaKey || e.ctrlKey) && picksAs(v.tool)) {
     e.preventDefault();
     chooseAt(v, sp, e.shiftKey);
     return true;
@@ -405,13 +405,11 @@ function selectPress(v: SketchView, e: PointerEvent, sp: [number, number]): void
     // outside what is drawn on it, so a press there that moves is the band it would have been
     // on bare canvas, taking what it touches in place of the plane
     const base = e.shiftKey ? v.selected : [];
-    v.selected = !e.shiftKey ? [ent]
-      : v.selected.includes(ent) ? v.selected.filter((p) => p !== ent) : [...v.selected, ent];
+    v.selected = toggled(v.selected, ent, e.shiftKey);
     v.gesture = bandGesture(v, sp, base);
   } else if (e.shiftKey) {
     // assigned, never grown in place: the setter is where the other selections are let go
-    v.selected = v.selected.includes(ent)
-      ? v.selected.filter((p) => p !== ent) : [...v.selected, ent];
+    v.selected = toggled(v.selected, ent, true);
   } else {
     if (!v.selected.includes(ent)) v.selected = [ent];
     dragEntity(v, sp, ent);
@@ -471,23 +469,19 @@ export function chooseAt(v: SketchView, sp: [number, number], add: boolean): voi
  *  so; nothing is dragged. */
 export function takeHit(v: SketchView, hit: Hit, add: boolean): void {
   v.hovered = null;
-  if (hit.kind === 'solid' && roundsEdges(v.tool)) {
+  const takes = picksAs(v.tool);
+  if (hit.kind === 'solid' && takes === 'parts') {
     roundPick(v, hit.pick);
     return;
   }
-  if (hit.kind === 'solid' && combines(v.tool)) {
+  if (hit.kind === 'solid' && takes === 'bodies') {
     combinePick(v, bodyOf(hit.pick));
     return;
   }
-  if (v.tool !== 'select') return;
-  if (hit.kind === 'solid') {
-    v.pickSolid(hit.pick, add);
-  } else {
-    const ent = hit.ent;
-    // assigned, never grown in place: the setter is where the other selections are let go
-    v.selected = !add ? [ent]
-      : v.selected.includes(ent) ? v.selected.filter((p) => p !== ent) : [...v.selected, ent];
-  }
+  if (takes !== 'all') return;
+  // assigned, never grown in place: the setter is where the other selections are let go
+  if (hit.kind === 'solid') v.pickSolid(hit.pick, add);
+  else v.selected = toggled(v.selected, hit.ent, add);
   v.onSelect();
   v.onChanged();
   v.draw();
@@ -857,9 +851,10 @@ export function hover(v: SketchView, sp: [number, number]): void {
     return;
   }
   // an edge tool lights the edge or face a click would pick, a Boolean the body
-  if (roundsEdges(v.tool) || combines(v.tool)) {
-    const pick = roundsEdges(v.tool) ? roundTarget(v, sp[0], sp[1]) : v.solidAt(sp[0], sp[1]);
-    v.hovered = pick && { kind: 'solid', pick: combines(v.tool) ? bodyOf(pick) : pick };
+  const takes = picksAs(v.tool);
+  if (takes === 'parts' || takes === 'bodies') {
+    const pick = takes === 'parts' ? roundTarget(v, sp[0], sp[1]) : v.solidAt(sp[0], sp[1]);
+    v.hovered = pick && { kind: 'solid', pick: takes === 'bodies' ? bodyOf(pick) : pick };
     v.canvas.style.cursor = pick ? 'pointer' : '';
     return;
   }

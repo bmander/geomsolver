@@ -20,6 +20,7 @@ import {
 } from './shell.js';
 import { dragWindow, stats } from './ui.js';
 import { pickName } from './view.js';
+import type { SolidPick } from './view.js';
 
 /** The constraints the window was last built from, and the components it is open on: the list
  *  is rebuilt only when what it holds actually changed, or when `invalidateRows` says a number
@@ -220,8 +221,12 @@ function heldLine(): string {
   const u = view.underlay;
   if (u?.picked) return `image ${u.name} — ${Math.round(u.opacity * 100)}%   |   `;
   const solids = view.selectedSolids;
-  if (solids.length === 1) return `${pickName(solids[0])}   |   `;
-  if (solids.length) return `${solids.length} picked: ${solids.map(pickName).join(', ')}   |   `;
+  const said = (s: SolidPick) => {
+    const { kind, name } = pickName(s);
+    return `${kind} ${name}`;
+  };
+  if (solids.length === 1) return `${said(solids[0])}   |   `;
+  if (solids.length) return `${solids.length} picked: ${solids.map(said).join(', ')}   |   `;
   return '';
 }
 // where the window sits is the user's, not the layout's

@@ -230,6 +230,8 @@ pub struct RoundsRequest {
     pub word: EdgeWord,
     pub faces: Vec<String>,
     pub edges: Vec<(String, String)>,
+    /// The body picked whole: every edge of it.
+    pub whole: bool,
     pub size: String,
 }
 
@@ -248,6 +250,7 @@ impl RoundsRequest {
             word: parsed,
             faces: names(v, "faces"),
             edges,
+            whole: v.get("whole").is_some_and(|w| matches!(w, Json::Bool(true))),
             size: text(v, "size").unwrap_or_default(),
         })
     }

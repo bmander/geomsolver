@@ -155,9 +155,9 @@ export function pickEdgeSeen(sk: Sketch, az: number, el: number, x: number, y: n
 export type Under =
   | { kind: 'drawn'; ent: Primitive }
   | { kind: 'edge'; solid: number; faces: [string, string]; at: [number, number, number];
-      depth: number; seen: boolean }
-  | { kind: 'face'; solid: number; face: string; at: [number, number, number]; depth: number }
-  | { kind: 'object'; solid: number; depth: number };
+      seen: boolean }
+  | { kind: 'face'; solid: number; face: string; at: [number, number, number] }
+  | { kind: 'object'; solid: number };
 
 /** **Everything under the pointer** at `(x, y)` on the picture plane, within `tol` there for what
  *  is drawn and for edges: the drawing first, then the objects' edges and faces nearest the eye

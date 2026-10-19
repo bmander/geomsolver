@@ -348,11 +348,15 @@ impl EdgeWord {
 /// round(r: 2) block                  // every face: every edge, its corners a ball's
 /// ```
 ///
+/// `whole` is the body picked whole — every edge of it, the last form, whatever `faces` and
+/// `edges` say: a body already rounded has faces with no name to write, and is still a body.
+///
 /// Each face once and each edge no face already gives once, so a chain of edges is a statement a
 /// link; which way each turns (a convex edge cut, a concave one filled) is the word's to read.
 /// `use std` is brought in naming the word, or made to name it.  One splice, held to the
 /// elaborator: a face with no name the source can write, faces that do not meet, two objects, or
 /// a size the language refuses is refused in its words.
+#[allow(clippy::too_many_arguments)]
 pub fn add_rounds(
     prog: &Program,
     sk: &Sketch,
@@ -360,11 +364,13 @@ pub fn add_rounds(
     word: EdgeWord,
     faces: &[String],
     edges: &[(String, String)],
+    whole: bool,
     size: &str,
 ) -> Edit {
-    Edit::refused_or(prog, rounds_edit(prog, sk, solid, word, faces, edges, size))
+    Edit::refused_or(prog, rounds_edit(prog, sk, solid, word, faces, edges, whole, size))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn rounds_edit(
     prog: &Program,
     sk: &Sketch,
@@ -372,6 +378,7 @@ fn rounds_edit(
     word: EdgeWord,
     faces: &[String],
     edges: &[(String, String)],
+    whole: bool,
     size: &str,
 ) -> Result<Edit, String> {
     let object = sk.solids.get(solid).ok_or("there is no such solid")?;
@@ -383,7 +390,7 @@ fn rounds_edit(
             EdgeWord::Chamfer => "how far its flat runs along each face",
         }));
     }
-    if faces.is_empty() && edges.is_empty() {
+    if faces.is_empty() && edges.is_empty() && !whole {
         return Err(format!("nothing to {}: pick edges or faces of `{body}`", word.as_str()));
     }
     let evaluated = sk.evaluated_solid(solid, crate::solid::ApproximationPolicy::Mesh)?;
@@ -429,7 +436,7 @@ fn rounds_edit(
         }),
     ));
     let mut stmts: Vec<StmtKind> = Vec::new();
-    if all.iter().all(|(f, w)| w.is_none() || picked.iter().any(|(p, _)| p == f)) {
+    if whole || all.iter().all(|(f, w)| w.is_none() || picked.iter().any(|(p, _)| p == f)) {
         stmts.push(said(&[&body]));
     } else {
         stmts.extend(picked.iter().map(|(_, w)| said(&[w, &body])));

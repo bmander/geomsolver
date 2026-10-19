@@ -485,7 +485,14 @@ export class Box3D {
     // a face selected glows in the selection's ink, a body selected all over a little less; what
     // is under the pointer glows in the highlight's.  A Boolean being picked shows its result in
     // its target's place, and its tools as ghosts in the colour of what they do
-    const picked = v.selectedSolids;
+    // the selection by object, once a frame: the faces picked, and whether the body whole is
+    const picked = new Map<number, { faces: Set<string>; body: boolean }>();
+    for (const s of v.selectedSolids) {
+      const o = picked.get(s.index) ?? { faces: new Set<string>(), body: false };
+      if (s.face) o.faces.add(s.face);
+      o.body ||= partOf(s) === 'body';
+      picked.set(s.index, o);
+    }
     const h = v.hovered?.kind === 'solid' ? v.hovered.pick : null;
     for (const { solid, path, mesh: face } of this.faces) {
       const m = face.material as THREE.MeshStandardMaterial;
@@ -493,11 +500,11 @@ export class Box3D {
       face.visible = !(c && this.preview.shown && c.target.index === solid);
       ghost(m, !!tool);
       m.color.set(tool ? INK[c!.word] : INK.solid);
-      const mine = picked.filter((s) => s.index === solid);
+      const mine = picked.get(solid);
       const [ink, glow]: [string | number, number] = tool ? [INK[c!.word], 0.35]
-        : mine.some((s) => s.face === path) ? [COL.sel, GLOW.face]
+        : mine?.faces.has(path) ? [COL.sel, GLOW.face]
         : h?.index === solid && h.face === path ? [COL.highlight, GLOW.hover]
-        : mine.some((s) => partOf(s) === 'body') ? [COL.sel, GLOW.body]
+        : mine?.body ? [COL.sel, GLOW.body]
         : h?.index === solid && partOf(h) === 'body' ? [COL.highlight, GLOW.hoverBody]
         : [0x000000, 0];
       m.emissive.set(ink);

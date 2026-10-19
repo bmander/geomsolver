@@ -2538,8 +2538,6 @@ test('the Chamfer tool takes a face for every edge of it, at the size typed; Esc
   assert.ok(view.rounding);
 });
 
-/** The block's edges where the eye sees them from `view`'s orbit (`seen`), or where it does not
- *  (`hidden`), none of them under a line of the drawing: an edge a click picks as itself. */
 /** The part of an object under the pointer, lit, or null for none or something drawn. */
 function hoveredPick(view: SketchView): SolidPick | null {
   const h = view.hovered;
@@ -2551,6 +2549,8 @@ function picks(view: SketchView): readonly SolidPick[] {
   return view.selectedSolids;
 }
 
+/** The block's edges where the eye sees them from `view`'s orbit (`seen`), or where it does not
+ *  (`hidden`), none of them under a line of the drawing: an edge a click picks as itself. */
 function edgesOf(view: SketchView, seen: boolean): SolidEdge[] {
   const block = view.doc.solids().find((s) => s.name === 'block')!;
   const { az, el } = view.orbit;
@@ -2605,7 +2605,7 @@ test('the pointer lights what a click would take as it moves, and a click takes 
   assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
 });
 
-test('edges selected are where the Fillet tool starts, and a body selected is every face', () => {
+test('edges selected are where the Fillet tool starts, and a body selected is every edge', () => {
   const view = docView(BLOCK);
   view.orbit = { az: 0.6, el: 0.5 };
   const asked: (string | null)[] = [];
@@ -2632,7 +2632,7 @@ test('edges selected are where the Fillet tool starts, and a body selected is ev
   view.setTool('select');
   view.pickSolid({ name: 'block', index: block.index, face: '' });
   view.setTool('chamfer');
-  assert.equal(view.rounding?.faces.length, 6);
+  assert.equal(view.rounding?.whole, true);
   assert.equal(view.finishRound('1'), null);
   assert.ok(view.source.endsWith('\nchamfer(d: 1) block\n'), view.source);
   assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));

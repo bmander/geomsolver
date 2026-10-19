@@ -4,7 +4,7 @@
 import * as C from '../core/constraints.js';
 import { Line, Point, distanceBetween, onRadius } from '../core/model.js';
 import { bodiesPicked, onePicked } from './solids.js';
-import { combines, roundsEdges } from './view.js';
+import { combines, picksAs, roundsEdges } from './view.js';
 import type { Place, SketchView, Tool } from './view.js';
 
 export function setTool(v: SketchView, tool: Tool): void {
@@ -18,8 +18,9 @@ export function setTool(v: SketchView, tool: Tool): void {
   v.endRound();                              // an edge tool's number goes with it
   // the selection is where a picking tool starts: a Boolean's bodies, an edge tool's parts of
   // one object
-  if (combines(tool)) bodiesPicked(v);
-  else if (roundsEdges(tool)) onePicked(v);
+  const takes = picksAs(tool);
+  if (takes === 'bodies') bodiesPicked(v);
+  else if (takes === 'parts') onePicked(v);
   v.endExtent();                             // an extrusion being sized is done with the tool
   v.canvas.classList.toggle('select', tool === 'select');
   v.canvas.style.cursor = '';                // drop any hover affordance
