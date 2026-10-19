@@ -193,18 +193,14 @@ fn a_chamfer_short_of_the_seam_is_the_flats() {
     assert!((got - want).abs() <= 1e-9 * want, "{got} against {want}");
 }
 
-/// The user's part (#419): a plate of 33.54 its far rim rounded 3, a boss of radius `r` drawn in a
-/// plane of its own standing on the far face, its foot chamfered 2 against the far face — out past
-/// the seam onto the round, the region the field's (`lowering::seams_beside`).
+/// The user's part (#419, `rounds/spill.sv`) with a boss of radius `r`: a plate of 33.54 its far
+/// rim rounded 3, a boss drawn in a plane of its own standing on the far face, its foot chamfered
+/// 2 against the far face — out past the seam onto the round, the region the field's
+/// (`lowering::seams_beside`).
 fn spilled(r: f64) -> String {
-    format!("use std (round, chamfer)\n\
-             c0 := circle(center: std.front.origin) hint(r: 33.54) in std.front\nf0 := face(c0)\n\
-             b0 := solid(f0, depth: 20)\nb0.c0 round(r: 3) b0.far\n\
-             v0 := plane(u: hint(dir: (1, 0, 0)), v: hint(dir: (0, 0, 1))) \
-             hint(origin: (-0.110911353, 20, 8.93063091))\n\
-             v0.origin coincident b0.far.surface\nv0 tangent(at: v0.origin) b0.far.surface\n\
-             p0 := point hint((-8.4, -6.7)) in v0\nc1 := circle(center: p0) hint(r: {r}) in v0\n\
-             f1 := face(c1)\nb1 := solid(f1, depth: 10)\nb0 union b1\nb1.b0.far chamfer(d: 2) b1.c1\n")
+    let src = include_str!("../../examples/rounds/spill.sv");
+    assert!(src.contains("hint(r: 21.7)"));
+    src.replace("hint(r: 21.7)", &format!("hint(r: {r})"))
 }
 
 /// The volume a closed triangle mesh holds.
@@ -224,19 +220,19 @@ fn mesh_volume(s: &gcs_core::solid::FieldSurface) -> f64 {
 /// the round, within the chamfer's reach, is material.
 fn spilled_meshes(r: f64) {
     let e = solved(&spilled(r));
-    let i = ent(&e, "b1").i();
+    let i = ent(&e, "boss").i();
     let surface = gcs_core::solid::FieldMesher::new(&e.sketch, i).unwrap().finish()
         .unwrap_or_else(|why| panic!("r = {r}: {why}"));
     assert!(!surface.provisional);
     let got = mesh_volume(&surface);
-    let plate = volume(&e, "b0");
+    let plate = volume(&e, "plate");
     let boss = PI * r * r * 10.0;
     let ring = 2.0 * PI * (r + 2.0 / 3.0) * 2.0;
     assert!(got > plate + boss && got < plate + boss + ring, "r = {r}: {got} against {plate} + {boss} + {ring}");
     // out from the plate's axis through the boss's centre, 1.5 past its wall: over the round,
     // whose surface there is 17 + √(9 − (ρ − 30.54)²), and under the chamfer's flat
     let field = MaterialField::read(&e.sketch, i, 1e-10).unwrap();
-    let c = e.sketch.world_point(ent(&e, "p0").i());
+    let c = e.sketch.world_point(ent(&e, "centre").i());
     let out = c[0].hypot(c[2]);
     let rho = out + r + 1.5;
     let round = 17.0 + (9.0 - (rho - 30.54) * (rho - 30.54)).sqrt();
