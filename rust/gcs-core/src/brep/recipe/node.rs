@@ -97,7 +97,7 @@ pub struct Kept { pub node: Node,pub keep: bool }
 /// `stratum` is the body a rolled run is rolled against, where there is one.
 #[derive(Clone,Debug)]
 pub struct Lowered { pub pieces: Vec<Run>,pub corners: Vec<Corner>,pub rolled: Vec<Rolled>,pub joins: Vec<[usize;2]>,
-    pub stratum: Option<Body> }
+    pub stratum: Option<Body>,pub beyond: Vec<crate::brep::spill::Beyond> }
 
 /// A lowered run or ring: a prism or a revolution, cut off at a slant behind each `within` plane
 /// (through its `at`, its `normal` away from the run), and kept within or outside each solid a
@@ -240,7 +240,20 @@ impl Lowered {
             cuts:each(listed(k,"cuts"),|c| Ok((point(c,"at")?,point(c,"normal")?,number(c,"reach")?)))?}))?;
         let joins = field(n,"joins")?.arr().iter()
             .map(|j| { let j = j.arr(); [j[0].as_i64() as usize,j[1].as_i64() as usize] }).collect();
-        Ok(Lowered {pieces,corners,rolled,joins,stratum:n.get("stratum").map(Body::read).transpose()?})
+        // a ring's section beyond a seam's normal surface (#422), counted after the rolled runs
+        let beyond = each(listed(n,"beyond"),|b| {
+            let axis = field(b,"axis")?.arr();
+            let seam = field(b,"seam")?;
+            let ends = field(b,"ends")?.arr();
+            let sides = field(b,"sides")?.arr();
+            if axis.len() != 2 || ends.len() != 2 || sides.len() != 3 { return Err(unread("recipe: a piece beyond a seam, misread".into())) }
+            Ok(crate::brep::spill::Beyond {axis:[vec3(&axis[0]),vec3(&axis[1])],crease:(point(b,"crease")?,number(b,"radius")?),
+                toward:point(b,"toward")?,chain:surface(field(b,"chain")?)?,wall:surface(field(b,"wall")?)?,
+                split:surface(field(b,"split")?)?,sides:[sides[0].as_f64(),sides[1].as_f64(),sides[2].as_f64()],
+                seam:(point(seam,"centre")?,point(seam,"normal")?,number(seam,"radius")?),legs:pair(field(b,"legs")?),
+                radius:number(b,"ball")?,ends:[vec3(&ends[0]),vec3(&ends[1])]})
+        })?;
+        Ok(Lowered {pieces,corners,rolled,joins,stratum:n.get("stratum").map(Body::read).transpose()?,beyond})
     }
 }
 
@@ -254,6 +267,7 @@ fn surface(j: &Json) -> Read<Surface> {
         "cylinder" => Surface::Cylinder(Frame::about(point(j,"origin")?,point(j,"axis")?),number(j,"radius")?),
         "cone" => Surface::Cone(Frame::about(point(j,"origin")?,point(j,"axis")?),number(j,"radius")?,number(j,"half")?),
         "sphere" => Surface::Sphere(Frame::about(point(j,"origin")?,[0.,0.,1.]),number(j,"radius")?),
+        "torus" => Surface::Torus(Frame::about(point(j,"origin")?,point(j,"axis")?),number(j,"big")?,number(j,"tube")?),
         k => return Err(unread(format!("recipe: a face on a surface of kind `{k}`"))),
     })
 }

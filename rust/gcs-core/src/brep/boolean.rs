@@ -97,18 +97,38 @@ struct Arranged<'a> {
 pub fn glued(a: &Brep,b: &Brep,tol: f64) -> Option<Brep> {
     use super::geom::Surface;
     let near = |p: V,q: V| distance(p,q) <= tol;
-    let outward = |f: &Face| match f.surface { Surface::Plane(fr) => Some(if f.reversed { fr.z.map(|x| -x) } else { fr.z }),_ => None };
     let middle = |s: &Brep,e: usize| s.edges[e].point(0.5*(s.edges[e].t[0]+s.edges[e].t[1]),&s.vertices);
     let ends = |s: &Brep,e: usize| s.edges[e].v.map(|v| s.vertices[v as usize].p);
+    // a face's outward normal at `p` (on its surface): a plane's everywhere; a curved one's (the
+    // seam's normal cylinder two pieces of a chain's section share, #422) where it is read
+    let outward = |f: &Face,p: V| -> V {
+        let n = match f.surface { Surface::Plane(fr) => fr.z,_ => f.surface.gradient(p) };
+        if f.reversed { n.map(|x| -x) } else { n }
+    };
+    // a point of the face to read both faces' normals at: its first edge's middle
+    let at = |s: &Brep,f: &Face| f.loops.first().and_then(|l| l.first()).map(|c| middle(s,c.edge as usize));
+    // whether `p` lies on `a`'s edge `ea`, within its stretch: its middle where the two edges are
+    // parametrised alike, else its curve's nearest point (a traced meeting and a fitted one)
+    let on = |ea: usize,p: V| {
+        if near(middle(a,ea),p) { return true }
+        let e = &a.edges[ea];
+        let EdgeCurve::Curve(c) = &e.curve else { return false };
+        let mut t = c.inverse(p);
+        if let Some(period) = c.period() { t = super::geom::around(t,e.t[0],period); }
+        let slack = 1e-9*(e.t[1]-e.t[0]).abs().max(1.);
+        t >= e.t[0]-slack && t <= e.t[1]+slack && near(c.point(t),p)
+    };
     // each face of `b` the same as one of `a`: its edges matched to `a`'s, and whether each runs the
     // other way
     let (mut shared_a,mut shared_b) = (std::collections::BTreeSet::new(),std::collections::BTreeSet::new());
     let mut edge_of: BTreeMap<usize,(u32,bool)> = BTreeMap::new();
     for (i,fa) in a.faces.iter().enumerate() {
-        let Some(na) = outward(fa) else { continue };
+        let Some(p) = at(a,fa) else { continue };
+        let curved = !matches!(fa.surface,Surface::Plane(_));
         for (j,fb) in b.faces.iter().enumerate() {
-            let Some(nb) = outward(fb) else { continue };
-            if shared_b.contains(&j) || crate::space::dot(na,nb) > -1.+1e-9 { continue }
+            if shared_b.contains(&j) || curved != !matches!(fb.surface,Surface::Plane(_)) { continue }
+            let (na,nb) = (outward(fa,p),outward(fb,p));
+            if crate::space::dot(na,nb) > if curved { 0. } else { -1.+1e-9 } { continue }
             if !super::ssi::same(&fa.surface,&fb.surface,tol) { continue }
             let (la,lb): (Vec<usize>,Vec<usize>) = (fa.loops.iter().flatten().map(|c| c.edge as usize).collect(),
                 fb.loops.iter().flatten().map(|c| c.edge as usize).collect());
@@ -116,7 +136,7 @@ pub fn glued(a: &Brep,b: &Brep,tol: f64) -> Option<Brep> {
             let matched: Option<Vec<(usize,u32,bool)>> = lb.iter().map(|&eb| la.iter().find_map(|&ea| {
                 let ([a0,a1],[b0,b1]) = (ends(a,ea),ends(b,eb));
                 let flip = if near(a0,b0) && near(a1,b1) { false } else if near(a0,b1) && near(a1,b0) { true } else { return None };
-                near(middle(a,ea),middle(b,eb)).then_some((eb,ea as u32,flip))
+                on(ea,middle(b,eb)).then_some((eb,ea as u32,flip))
             })).collect();
             let Some(matched) = matched else { continue };
             shared_a.insert(i);

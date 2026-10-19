@@ -91,13 +91,16 @@ pub struct Run {
 /// A face's surface as a corner's cell or a piece's end reads it (model units): a plane through
 /// `origin`, its `normal` away from the material; a cylinder of `radius` about the line through
 /// `origin` along the unit `axis`; a cone about it, `radius` at `origin` and growing along `axis`
-/// by the tangent of `half` (a drafted eye's side, #245); or a sphere.
+/// by the tangent of `half` (a drafted eye's side, #245); or a sphere; or a torus about the line
+/// through `origin` along the unit `axis`, its tube of radius `tube` about the circle of radius
+/// `big` there (a rim's round a section reaches across, #422).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Surf {
     Plane { origin: V, normal: V },
     Cylinder { origin: V, axis: V, radius: f64 },
     Cone { origin: V, axis: V, radius: f64, half: f64 },
     Sphere { centre: V, radius: f64 },
+    Torus { origin: V, axis: V, big: f64, tube: f64 },
 }
 
 impl Surf {
@@ -109,8 +112,10 @@ impl Surf {
             Some(Surf::Cylinder { origin, axis, radius })
         } else if let Some((origin, axis, radius, half)) = body.cone(fi) {
             Some(Surf::Cone { origin, axis, radius, half })
+        } else if let Some((centre, radius)) = body.sphere(fi) {
+            Some(Surf::Sphere { centre, radius })
         } else {
-            body.sphere(fi).map(|(centre, radius)| Surf::Sphere { centre, radius })
+            body.torus(fi).map(|(origin, axis, big, tube)| Surf::Torus { origin, axis, big, tube })
         }
     }
 
@@ -120,6 +125,7 @@ impl Surf {
         match *self {
             Surf::Plane { origin, .. } | Surf::Cylinder { origin, .. } => origin,
             Surf::Sphere { centre, .. } => centre,
+            Surf::Torus { origin, axis, big, .. } => add(origin, scale(crate::brep::geom::Frame::about(origin, axis).x, big)),
             Surf::Cone { origin, axis, radius, half } => {
                 let slope = half.dtan();
                 if radius > 0.0 || slope.abs() < 1e-12 { origin }
@@ -133,6 +139,7 @@ impl Surf {
         match *self {
             Surf::Plane { normal, .. } => normal,
             Surf::Sphere { centre, .. } => normalised(sub(x, centre)).unwrap_or([0.0; 3]),
+            Surf::Torus { origin, axis, big, .. } => normalised(sub(x, Surf::tube_centre(origin, axis, big, x))).unwrap_or([0.0; 3]),
             _ => {
                 let (origin, axis, _, half) = self.axial().expect("a cylinder or a cone");
                 let w = sub(x, origin);
@@ -149,8 +156,17 @@ impl Surf {
         match *self {
             Surf::Cylinder { origin, axis, radius } => Some((origin, axis, radius, 0.0)),
             Surf::Cone { origin, axis, radius, half } => Some((origin, axis, radius, half)),
-            Surf::Plane { .. } | Surf::Sphere { .. } => None,
+            Surf::Plane { .. } | Surf::Sphere { .. } | Surf::Torus { .. } => None,
         }
+    }
+
+    /// The point of a torus's tube's centre circle nearest `x` (about the line through `origin`
+    /// along `axis`, of radius `big`).
+    fn tube_centre(origin: V, axis: V, big: f64, x: V) -> V {
+        let w = sub(x, origin);
+        let radial = sub(w, scale(axis, dot(w, axis)));
+        let out = normalised(radial).unwrap_or(crate::brep::geom::Frame::about(origin, axis).x);
+        add(origin, scale(out, big))
     }
 
     /// From `x` to the surface along its normal: positive on the side the plane's normal points
@@ -159,6 +175,7 @@ impl Surf {
         match *self {
             Surf::Plane { origin, normal } => dot(normal, sub(x, origin)),
             Surf::Sphere { centre, radius } => distance(x, centre) - radius,
+            Surf::Torus { origin, axis, big, tube } => distance(x, Surf::tube_centre(origin, axis, big, x)) - tube,
             _ => {
                 let (origin, axis, radius, half) = self.axial().expect("a cylinder or a cone");
                 let w = sub(x, origin);
@@ -175,7 +192,7 @@ impl Surf {
         // |w⊥ + s a⊥|² = (r + t (h + s a·axis))², the right side's root positive: a sphere's with
         // nothing taken off and no taper
         let (w, a, radius, t, k) = match *self {
-            Surf::Plane { .. } => return None,
+            Surf::Plane { .. } | Surf::Torus { .. } => return None,
             Surf::Sphere { centre, radius } => (sub(q, centre), along, radius, 0.0, 0.0),
             _ => {
                 let (origin, axis, radius, half) = self.axial().expect("a cylinder or a cone");
@@ -285,6 +302,44 @@ pub enum Piece {
     Ring(Ring),
     Corner(Corner),
     Rolled(Rolled),
+    Beyond(Beyond),
+}
+
+/// A ring's section beyond a seam's normal surface (#422, model units): where the ring's own face
+/// goes on tangent across a seam its section reaches, and the seam is no circle about the ring's
+/// axis (a boss near a plate's rounded rim), the ring is kept short of the seam's normal surface
+/// (its `Kept`) and this takes the rest — the section against the next face, in the half-planes
+/// through the ring's axis (`axis_origin`, `axis`), fitted (`brep::spill`) — glued to the ring on
+/// that surface.  The ring's edge is the circle `crease` (its centre and radius); `toward` the way
+/// from the ring's own face into the region; `chain` the next face's surface, `wall` the other
+/// face's, `split` the seam's normal surface, each with the way its signed distance runs toward
+/// the piece (`sides`, ±1); `seam` the seam's circle (centre, unit normal, radius); a chamfer's
+/// legs, on the chain from the wall and on the wall from the chain, or a round's `radius` (nothing
+/// for a chamfer); and `ends`, where the leg on the ring's own face crosses the seam — or where the
+/// ball touches it, a round's ring a stretch glued to this at both ends.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Beyond {
+    pub axis_origin: V,
+    pub axis: V,
+    pub crease: (V, f64),
+    pub toward: V,
+    pub chain: Surf,
+    pub wall: Surf,
+    pub split: Surf,
+    pub sides: [f64; 3],
+    pub seam: (V, V, f64),
+    pub legs: [f64; 2],
+    pub radius: f64,
+    pub ends: [V; 2],
+}
+
+impl Beyond {
+    /// The point of its edge, the crease, in the half-plane through its axis and `p`.
+    pub fn crease_at(&self, p: V) -> V {
+        let w = sub(p, self.crease.0);
+        let radial = normalised(sub(w, scale(self.axis, dot(w, self.axis)))).unwrap_or([0.0; 3]);
+        add(self.crease.0, scale(radial, self.crease.1))
+    }
 }
 
 /// A ball rolled along a run of edges no line or coaxial circle carries — a pipe tee's crotch, a
@@ -548,10 +603,11 @@ fn canonical(node: &Json) -> String {
         c.set("faces", Json::Arr(faces));
         c.dump(None)
     };
-    // in the order joins count them: runs and rings, then corners, then rolled runs
+    // in the order joins count them: runs and rings, then corners, then rolled runs, then the
+    // pieces beyond a seam's normal surface
     let listed = |key: &str| node.get(key).map_or(&[][..], Json::arr);
     let each: Vec<String> = listed("pieces").iter().map(dump).chain(listed("corners").iter().map(corner))
-        .chain(listed("rolled").iter().map(dump)).collect();
+        .chain(listed("rolled").iter().map(dump)).chain(listed("beyond").iter().map(dump)).collect();
     let mut joins: Vec<[&str; 2]> = listed("joins").iter().map(|j| {
         let at = |k: usize| j.arr().get(k).map_or(usize::MAX, |i| i.as_i64() as usize);
         let mut pair = [0, 1].map(|k| each.get(at(k)).map_or("", String::as_str));

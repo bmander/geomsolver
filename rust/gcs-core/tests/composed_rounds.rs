@@ -206,7 +206,7 @@ fn spilled(r: f64) -> String {
 /// **The reach measured, not doubled** (#422's rung 1): a boss of 19.5 — its foot 8.8 from the
 /// plate's axis, its chamfer's leg 2 out from it reaching 30.3, short of the seam at 30.54 though
 /// within twice the leg of it — is built exactly: the flat's ring by Pappus beside the plate
-/// and the boss.  One of 21.7, whose leg lands on the round, stays the field's.
+/// and the boss, as the table built it before any seam was read.
 #[test]
 fn a_chamfer_whose_leg_stays_short_of_the_seam_is_built() {
     let r = 19.5;
@@ -215,11 +215,6 @@ fn a_chamfer_whose_leg_stays_short_of_the_seam_is_built() {
     let ring = 2.0 * PI * (r + 2.0 / 3.0) * 2.0;
     let want = volume(&e, "plate") + PI * r * r * 10.0 + ring;
     assert!((got - want).abs() <= 1e-9 * want, "{got} against {want}");
-    let e = solved(&spilled(21.7));
-    let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
-    let refused = export::exact(&e.sketch, ent(&e, "boss").i(), None, None, &say).err()
-        .map(|r| format!("{r:?}")).unwrap_or_default();
-    assert!(refused.contains("reaches across the seam"), "{refused}");
 }
 
 /// The volume a closed triangle mesh holds.
@@ -276,18 +271,15 @@ fn a_chamfer_spilled_onto_a_rounded_plate_meshes_at_every_radius() {
     }
 }
 
-/// A block 40 × 24 × 12 (y from 0 to 12), its far face's north edge rounded 3 — the far face flat
-/// to z = 21, then the round, a cylinder about the line y = 9, z = 21 — and a rib 20 long, 4.5 wide
-/// and 6 tall standing on the far face along x, its north wall at z = 19.5; then `rest`.
+/// `rounds/ledge.sv` (#422): a block 40 × 24 × 12 (y from 0 to 12), its far face's north edge
+/// rounded 3 — the far face flat to z = 21, then the round, a cylinder about the line y = 9,
+/// z = 21 — and a rib 20 long, 4.5 wide and 6 tall standing on the far face along x, its north
+/// wall at z = 19.5; then `rest` in place of its chamfer.
 fn ledge(rest: &str) -> String {
-    format!("unit mm\nuse std (round, chamfer)\nin std.front {{\n  b0 := point\n  b1 := point\n  b2 := point\n  \
-        b3 := point\n  fix((0, 0)) b0\n  fix((40, 0)) b1\n  fix((40, 24)) b2\n  fix((0, 24)) b3\n  \
-        (south := line(b0, b1)) -> (east := line(b1, b2)) -> (north := line(b2, b3)) -> (west := line(b3, b0)) -> close\n  \
-        outline := face(south, east, north, west)\n  r0 := point\n  r1 := point\n  r2 := point\n  r3 := point\n  \
-        fix((10, 15)) r0\n  fix((30, 15)) r1\n  fix((30, 19.5)) r2\n  fix((10, 19.5)) r3\n  \
-        (rs := line(r0, r1)) -> (re := line(r1, r2)) -> (rn := line(r2, r3)) -> (rw := line(r3, r0)) -> close\n  \
-        ribbed := face(rs, re, rn, rw)\n}}\nblock := solid(outline, depth: 12mm)\nblock.north round(r: 3mm) block.far\n\
-        rib := solid(ribbed, from: -18mm, to: -12mm)\npart := solid(block)\nrib union part\n{rest}")
+    let src = include_str!("../../examples/rounds/ledge.sv");
+    let chamfer = "part.rib.rn chamfer(d: d) part.block.far\n";
+    assert!(src.contains(chamfer));
+    src.replace(chamfer, rest)
 }
 
 /// `∫ f` over `[a, b]` by Simpson's rule on `n` (even) stretches.
@@ -312,7 +304,7 @@ fn ledge_part() -> f64 {
 /// round (`c` its axis), down to the round at z = 21.5: built exactly, a prism of that section.
 #[test]
 fn a_chamfer_spilled_onto_a_round_along_a_straight_edge_is_built() {
-    let e = solved(&ledge("part.rib.rn chamfer(d: 2mm) part.block.far\n"));
+    let e = solved(&ledge("part.rib.rn chamfer(d: d) part.block.far\n"));
     let got = volume(&e, "part");
     let trapezoid = 1.5 * (2.0 + 0.5) / 2.0;
     let over = simpson(|z| ((24.5 - z) * (24.5 - z) - (z - 21.0) * (z - 21.0)).sqrt()
@@ -412,4 +404,289 @@ fn a_round_spilled_onto_a_round_about_one_axis_is_built() {
         + simpson(|rho| rho * (ball(rho) - chain(rho)), 27.0, touch, 20000);
     let want = volume(&e, "plate") + PI * 26.0 * 26.0 * 10.0 + 2.0 * PI * moment;
     assert!((got - want).abs() <= 1e-9 * want, "{got} against {want}");
+}
+
+
+/// The spilled chamfer's fill (#422), worked out from `std.FlatFill`'s own words over the part of
+/// `rounds/spill.sv` with a boss of `r`: in each half-plane through the boss's axis, between the
+/// chain (the far face's plane, then the rim's torus past the seam at 30.54 from the plate's axis)
+/// and where the distances from the chain and from the boss's wall, each over 2, sum to one —
+/// that height found by bisection, the area's moment about the axis by Gauss–Legendre between the
+/// wall, where the chain changes piece and the leg — turned about the axis by the trapezoid rule
+/// (each half-plane's moment periodic in its angle).  Nothing of the core is asked.
+fn spilled_fill(r: f64) -> f64 {
+    // the boss's axis on the far face, from `spill.sv`'s plane and its centre in it
+    let (cx, cz) = (-0.110911353 - 8.4, 8.93063091 - 6.7);
+    let (seam, tube, below) = (30.54, 3.0, 17.0);
+    let chain_distance = |rho: f64, y: f64| if rho <= seam { y - 20.0 } else { (rho - seam).hypot(y - below) - tube };
+    let chain_height = |rho: f64| if rho <= seam { Some(20.0) } else {
+        let d = rho - seam;
+        (d < tube).then(|| below + (tube * tube - d * d).sqrt())
+    };
+    let (nodes, weights): (Vec<f64>, Vec<f64>) = gauss(16);
+    let section = |phi: f64| -> f64 {
+        let (s, c) = phi.sin_cos();
+        let rho_of = |rb: f64| (cx + rb * c).hypot(cz + rb * s);
+        // how high the fill stands over the chain `rb` from the axis
+        let height = |rb: f64| -> f64 {
+            let rho = rho_of(rb);
+            let Some(base) = chain_height(rho) else { return 0.0 };
+            let over = |y: f64| chain_distance(rho, y) / 2.0 + (rb - r) / 2.0 - 1.0;
+            if over(base) >= 0.0 {
+                return 0.0;
+            }
+            let (mut lo, mut hi) = (base, base + 3.0);
+            for _ in 0..100 {
+                let m = 0.5 * (lo + hi);
+                if over(m) > 0.0 { hi = m } else { lo = m }
+            }
+            0.5 * (lo + hi) - base
+        };
+        // the leg: where the height comes to nothing; and where the chain changes piece
+        let (mut lo, mut hi) = (r, r + 2.5);
+        for _ in 0..100 {
+            let m = 0.5 * (lo + hi);
+            if height(m) > 0.0 { lo = m } else { hi = m }
+        }
+        let leg = 0.5 * (lo + hi);
+        let mut breaks = vec![r, leg];
+        // |c + rb u| = seam: rb² + 2 rb (c·u) + |c|² − seam² = 0
+        let (b, k) = (cx * c + cz * s, cx * cx + cz * cz - seam * seam);
+        let root = -b + (b * b - k).sqrt();
+        if root > r && root < leg {
+            breaks.insert(1, root);
+        }
+        breaks.windows(2).map(|w| {
+            let n = 32;
+            (0..n).map(|j| {
+                let (a, z) = (w[0] + (w[1] - w[0]) * j as f64 / n as f64, w[0] + (w[1] - w[0]) * (j + 1) as f64 / n as f64);
+                nodes.iter().zip(&weights).map(|(&x, &wt)| {
+                    let rb = 0.5 * (a + z) + 0.5 * (z - a) * x;
+                    0.5 * (z - a) * wt * rb * height(rb)
+                }).sum::<f64>()
+            }).sum::<f64>()
+        }).sum()
+    };
+    let n = 2880;
+    (0..n).map(|k| section(std::f64::consts::TAU * k as f64 / n as f64)).sum::<f64>() * std::f64::consts::TAU / n as f64
+}
+
+/// Gauss–Legendre's nodes and weights on `[-1, 1]`, by Newton's steps on the Legendre polynomial.
+fn gauss(n: usize) -> (Vec<f64>, Vec<f64>) {
+    let (mut xs, mut ws) = (Vec::new(), Vec::new());
+    for i in 0..n {
+        let mut x = (PI * (i as f64 + 0.75) / (n as f64 + 0.5)).cos();
+        let mut dp = 0.0;
+        for _ in 0..100 {
+            let (mut p0, mut p1) = (1.0, x);
+            for k in 2..=n {
+                let p2 = ((2 * k - 1) as f64 * x * p1 - (k - 1) as f64 * p0) / k as f64;
+                p0 = p1;
+                p1 = p2;
+            }
+            dp = n as f64 * (x * p1 - p0) / (x * x - 1.0);
+            let step = p1 / dp;
+            x -= step;
+            if step.abs() < 1e-16 {
+                break;
+            }
+        }
+        xs.push(x);
+        ws.push(2.0 / ((1.0 - x * x) * dp * dp));
+    }
+    (xs, ws)
+}
+
+/// The spilled part built exactly (#422's rung 2): the chamfer's ring kept short of the seam's
+/// normal surface — the cylinder through the seam along the far face's normal — glued there to the
+/// flat beyond it, against the round; its fill the quadrature's (`spilled_fill`) to a millionth.
+fn spilled_built(r: f64) {
+    let e = solved(&spilled(r));
+    let got = volume(&e, "boss") - volume(&e, "plate") - PI * r * r * 10.0;
+    let want = spilled_fill(r);
+    assert!((got - want).abs() <= 1e-6 * want, "r = {r}: {got} against {want}");
+}
+
+#[test]
+fn a_chamfer_spilled_onto_a_rounded_plate_is_built_exactly() {
+    spilled_built(21.7);
+}
+
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, a quadrature for each boss")]
+fn a_chamfer_spilled_onto_a_rounded_plate_is_built_exactly_at_every_radius() {
+    for k in 0..7 {
+        spilled_built(21.0 + 0.1 * k as f64);
+    }
+}
+
+/// **The exact part and the field's mesh agree** (#422): the mesh's volume within what its own
+/// triangles stand off the field's surface (the field's distance at each triangle's middle, over
+/// its area) of the part built exactly.
+#[test]
+fn a_spilled_chamfer_built_exactly_agrees_with_the_fields_mesh() {
+    let e = solved(&spilled(21.7));
+    let i = ent(&e, "boss").i();
+    let surface = gcs_core::solid::FieldMesher::new(&e.sketch, i).unwrap().finish().unwrap();
+    let field = MaterialField::read(&e.sketch, i, 1e-10).unwrap();
+    let off: f64 = surface.triangles.iter().map(|t| {
+        let [a, b, c] = t.map(|k| surface.vertices[k as usize]);
+        let (u, v) = ([b[0] - a[0], b[1] - a[1], b[2] - a[2]], [c[0] - a[0], c[1] - a[1], c[2] - a[2]]);
+        let n = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
+        let area = 0.5 * (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
+        let middle = [0, 1, 2].map(|k| (a[k] + b[k] + c[k]) / 3.0);
+        area * field.side(middle).abs()
+    }).sum();
+    let (exact, meshed) = (volume(&e, "boss"), mesh_volume(&surface));
+    assert!((exact - meshed).abs() <= 1.5 * off, "{exact} against the mesh's {meshed}, off by {off} at most");
+}
+
+/// `rounds/spill.sv` with a boss of `r`, its foot rounded `ball` in place of the chamfer.
+fn spilled_round(r: f64, ball: f64) -> String {
+    spilled(r).replace("boss.plate.far chamfer(d: 2mm) boss.foot", &format!("boss.plate.far round(r: {ball}mm) boss.foot"))
+}
+
+/// The spilled round's fill (#422's rung 3), worked out from `std.Fill`'s own words over the part
+/// of `rounds/spill.sv` with a boss of `r` rounded `ball`: a point beside the edge — above the
+/// chain (the far face, then the rim's torus past the seam at 30.54), outside the boss's wall — is
+/// the fill's where no ball of that radius whose centre stands at least `ball` from the chain and
+/// from the wall reaches it.  The nearest such centre is the point of the chain's offset or the
+/// wall's straight off it, where that one stands far enough from the other, or else a point of the
+/// curve where both offsets meet (the centre touching both: in the half-plane through the boss's
+/// axis at each angle, `ball` above the chain), found by Newton's steps along it.  In each
+/// half-plane the fill's height over the chain found by bisection and its moment about the axis by
+/// Gauss–Legendre between the wall (read as the square of the way from it, where the ball's arc
+/// meets the wall tangent), where the chain changes piece and where the ball touches it;
+/// over the angles where the ball touches the round (between where its centre's foot crosses the
+/// seam) and a tenth of a radian either side by Gauss–Legendre, the plain ring's section
+/// (`root_ring`) elsewhere.  Nothing of the core is asked.
+fn spilled_round_fill(r: f64, ball: f64) -> f64 {
+    let (cx, cz) = (-0.110911353 - 8.4, 8.93063091 - 6.7);
+    let (seam, tube, below) = (30.54, 3.0, 17.0);
+    let rho_at = |phi: f64, rb: f64| { let (s, c) = phi.sin_cos(); (cx + rb * c).hypot(cz + rb * s) };
+    let point = |phi: f64, rb: f64, y: f64| { let (s, c) = phi.sin_cos(); [cx + rb * c, y, cz + rb * s] };
+    // the chain's distance and its unit normal at a point; and the chain's height under it
+    let chain = |p: [f64; 3]| -> (f64, [f64; 3]) {
+        let rho = p[0].hypot(p[2]);
+        if rho <= seam { return (p[1] - 20.0, [0.0, 1.0, 0.0]) }
+        let (dr, dy) = (rho - seam, p[1] - below);
+        let d = dr.hypot(dy);
+        (d - tube, [p[0] / rho * dr / d, dy / d, p[2] / rho * dr / d])
+    };
+    let chain_height = |rho: f64| if rho <= seam { Some(20.0) } else {
+        let d = rho - seam;
+        (d < tube).then(|| below + (tube * tube - d * d).sqrt())
+    };
+    let wall = |p: [f64; 3]| -> (f64, [f64; 3]) {
+        let (dx, dz) = (p[0] - cx, p[2] - cz);
+        let rb = dx.hypot(dz);
+        (rb - r, [dx / rb, 0.0, dz / rb])
+    };
+    // the centre touching both, in the half-plane at `phi`
+    let spine = |phi: f64| -> [f64; 3] {
+        let rho = rho_at(phi, r + ball);
+        let y = if rho <= seam { 20.0 + ball } else { below + ((tube + ball).powi(2) - (rho - seam).powi(2)).sqrt() };
+        point(phi, r + ball, y)
+    };
+    let dist = |a: [f64; 3], b: [f64; 3]| ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)).sqrt();
+    // the distance from `p` (in the half-plane at `phi`) to the nearest centre
+    let reach = |phi: f64, p: [f64; 3]| -> f64 {
+        let (dc, nc) = chain(p);
+        let (dw, nw) = wall(p);
+        if dc >= ball && dw >= ball {
+            return 0.0;
+        }
+        let mut best = f64::INFINITY;
+        if dc < ball {
+            let c = [0, 1, 2].map(|k| p[k] + (ball - dc) * nc[k]);
+            if wall(c).0 >= ball { best = best.min(ball - dc) }
+        }
+        if dw < ball {
+            let c = [0, 1, 2].map(|k| p[k] + (ball - dw) * nw[k]);
+            if chain(c).0 >= ball { best = best.min(ball - dw) }
+        }
+        // the nearest point of the spine: Newton's steps on the distance's derivative
+        let f = |t: f64| dist(p, spine(t));
+        let (mut t, h) = (phi, 1e-5);
+        for _ in 0..30 {
+            let (d1, d2) = ((f(t + h) - f(t - h)) / (2.0 * h), (f(t + h) - 2.0 * f(t) + f(t - h)) / (h * h));
+            if !(d2 > 0.0) { break }
+            let step = d1 / d2;
+            t -= step;
+            if step.abs() < 1e-13 { break }
+        }
+        best.min(f(t))
+    };
+    let (nodes, weights) = gauss(8);
+    let gl = |a: f64, z: f64, n: usize, g: &dyn Fn(f64) -> f64| -> f64 {
+        (0..n).map(|j| {
+            let (lo, hi) = (a + (z - a) * j as f64 / n as f64, a + (z - a) * (j + 1) as f64 / n as f64);
+            nodes.iter().zip(&weights).map(|(&x, &w)| 0.5 * (hi - lo) * w * g(0.5 * (lo + hi) + 0.5 * (hi - lo) * x)).sum::<f64>()
+        }).sum()
+    };
+    let section = |phi: f64| -> f64 {
+        let height = |rb: f64| -> f64 {
+            let Some(base) = chain_height(rho_at(phi, rb)) else { return 0.0 };
+            let inside = |y: f64| reach(phi, point(phi, rb, y)) >= ball;
+            if !inside(base + 1e-12) {
+                return 0.0;
+            }
+            let (mut lo, mut hi) = (base, base + 2.0 * ball);
+            for _ in 0..60 {
+                let m = 0.5 * (lo + hi);
+                if inside(m) { lo = m } else { hi = m }
+            }
+            0.5 * (lo + hi) - base
+        };
+        let (mut lo, mut hi) = (r, r + 2.0 * ball);
+        for _ in 0..60 {
+            let m = 0.5 * (lo + hi);
+            if height(m) > 0.0 { lo = m } else { hi = m }
+        }
+        let touch = 0.5 * (lo + hi);
+        let mut breaks = vec![r, touch];
+        let (s, c) = phi.sin_cos();
+        let (b, k) = (cx * c + cz * s, cx * cx + cz * cz - seam * seam);
+        let root = -b + (b * b - k).sqrt();
+        if root > r && root < touch {
+            breaks.insert(1, root);
+        }
+        // (the ball's arc meets the wall tangent, its height a square root of the way from it: read
+        // as `rb = r + s²` from the wall)
+        let first = breaks[1] - r;
+        gl(0.0, 1.0, 4, &|t| { let rb = r + first * t * t; 2.0 * first * t * rb * height(rb) })
+            + breaks[1..].windows(2).map(|w| gl(w[0], w[1], 4, &|rb| rb * height(rb))).sum::<f64>()
+    };
+    // where the ball's centre's foot crosses the seam: |c + (r + ball) u| = seam
+    let (d, rc) = (cx.hypot(cz), r + ball);
+    let half = ((seam * seam - d * d - rc * rc) / (2.0 * d * rc)).acos();
+    let toward = (-cz).atan2(-cx) + PI;
+    let wedge = [toward - half - 0.1, toward + half + 0.1];
+    let ring = crate::common::rounds::root_ring(r, ball) / (2.0 * PI);
+    ring * (2.0 * PI - (wedge[1] - wedge[0]))
+        + gl(wedge[0], toward - half, 4, &section) + gl(toward - half, toward + half, 64, &section)
+        + gl(toward + half, wedge[1], 4, &section)
+}
+
+/// The spilled round built exactly (#422's rung 3): the ring a stretch between where its ball
+/// touches the seam, glued at both ends to the ball rolled against the rim's torus between;
+/// its fill the quadrature's (`spilled_round_fill`) to a millionth.
+fn spilled_round_built(r: f64) {
+    let e = solved(&spilled_round(r, 2.0));
+    let got = volume(&e, "boss") - volume(&e, "plate") - PI * r * r * 10.0;
+    let want = spilled_round_fill(r, 2.0);
+    assert!((got - want).abs() <= 1e-6 * want, "r = {r}: {got} against {want}");
+}
+
+#[test]
+fn a_round_spilled_onto_a_rounded_plate_is_built_exactly() {
+    spilled_round_built(21.7);
+}
+
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, a quadrature for each boss")]
+fn a_round_spilled_onto_a_rounded_plate_is_built_exactly_at_every_radius() {
+    for k in 0..7 {
+        spilled_round_built(21.0 + 0.1 * k as f64);
+    }
 }

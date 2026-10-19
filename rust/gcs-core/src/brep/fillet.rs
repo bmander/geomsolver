@@ -39,7 +39,7 @@ pub struct Rolled {
 
 
 /// Along the arc of the unit sphere from `a` to `b` (the short way), a fraction `v`.
-fn slerp(a: V,b: V,v: f64) -> V {
+pub(super) fn slerp(a: V,b: V,v: f64) -> V {
     let w = dot(a,b).clamp(-1.,1.).dacos();
     let s = w.dsin();
     if s < 1e-12 { return a }
@@ -155,7 +155,7 @@ fn meeting<'b>(b: &'b Brep,at: V,tol: f64) -> Result<Meeting<'b>,String> {
 /// chord length. A trace's own parameter turns at every point it was marched through, which no
 /// smooth fit follows; projected back point by point, the guide is exact and smooth between its
 /// ends.
-fn smooth_guide(c: &Curve,t0: f64,span: f64) -> Option<BSpline> {
+pub(super) fn smooth_guide(c: &Curve,t0: f64,span: f64) -> Option<BSpline> {
     let n = 256;
     let pts: Vec<V> = (0..=n).map(|k| c.point(t0+span*k as f64/n as f64)).collect();
     let mut ts = vec![0.];
@@ -703,7 +703,7 @@ pub(crate) fn across(p: V,[a,b]: [V;2],r: f64) -> V { add(p,scale(add(a,b),r/(1.
 
 /// The point where `meeting` (two surfaces' meeting) crosses the plane through `o` square to `n`,
 /// from `guess`: projected onto the meeting, then along its tangent to the plane, until it stays.
-fn crossing_plane(meeting: &super::geom::Traced,o: V,n: V,guess: V) -> V {
+pub(super) fn crossing_plane(meeting: &super::geom::Traced,o: V,n: V,guess: V) -> V {
     let mut k = meeting.project(guess);
     for _ in 0..32 {
         let t = cross(meeting.a.gradient(k),meeting.b.gradient(k));
@@ -817,7 +817,7 @@ fn trimmed(mut piece: Brep,trims: &[Trim]) -> Result<Brep,String> {
 }
 
 /// The net's iso curve along `u` at its `j`th column of poles.
-fn column(net: &Net,j: usize) -> Curve { Curve::BSpline(Arc::new(net.column(j))) }
+pub(super) fn column(net: &Net,j: usize) -> Curve { Curve::BSpline(Arc::new(net.column(j))) }
 
 /// The net's iso curve along `v` at its `i`th row of poles.
 fn row(net: &Net,i: usize) -> Curve {
@@ -870,7 +870,7 @@ fn surface_face_of(out: &mut Brep,net: &Net,contact: [&[(u32,[f64;2])];2],ends: 
 
 /// A face of `out` on `s` bounded by the one loop `es`, counter-clockwise in its parameters for
 /// its outward side `outward`.
-fn face_out(out: &mut Brep,s: Surface,outward: V,es: &[usize],name: &str) -> Result<(),String> {
+pub(super) fn face_out(out: &mut Brep,s: Surface,outward: V,es: &[usize],name: &str) -> Result<(),String> {
     let l = closed_loop(out,es,&s)?;
     let (_,su,sv) = s.d1(s.inverse(out.vertices[out.edges[es[0]].v[0] as usize].p));
     let reversed = dot(cross(su,sv),outward) < 0.;

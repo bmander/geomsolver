@@ -4,11 +4,16 @@
 // where the far face goes on tangent into the rim's round, so the leg runs on across the seam and
 // the flat lands on the round (std's sets stand against the face's smooth surface, `F.smooth`).
 //
-// The lowering table builds no flat whose face goes on tangent across a seam beside its edge, so
-// the chamfer is the field's, and the part is meshed rather than built exactly. The field reads
-// the rounded plate by its own exact boundary, not as its prism less the round, so no sheet of
-// nothing lies on the far face's plane over the round for the flat to cross, and the part meshes.
-// Edit the boss's radius (21 to 21.7 all mesh) and apply (⌘↵).
+// Built exactly (#422): the flat stands against whichever face of the chain is nearest, so it
+// changes face where it crosses the seam's normal surface — the cylinder through the seam along the
+// far face's normal. Short of it the chamfer is the ring it always was, a cone, kept within that
+// cylinder; beyond it the flat against the round, sectioned in the half-planes through the boss's
+// axis and fitted, glued to the ring on the cylinder. `solventc --step` writes a cone, one fitted
+// flat and the plate's and the boss's faces: 85358.075 mm³. Edit the boss's radius (21 to 21.7 all
+// build; at 19.7 or less the leg stays short of the seam and the chamfer is the ring alone) and
+// apply (⌘↵). Write `round(r: 2mm)` for the chamfer and the ball touches the round past where its
+// centre's foot crosses the seam: a ring's stretch, and between its ends the ball rolled against the
+// round, glued to it there.
 unit mm
 use std (round, chamfer)
 
