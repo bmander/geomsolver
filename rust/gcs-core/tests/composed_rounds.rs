@@ -836,3 +836,127 @@ fn a_chamfer_along_a_traced_edge_spilled_onto_a_round_is_built() {
     let want = tilted_fill();
     assert!((got - want).abs() <= 1e-8 * want, "{got} against {want}");
 }
+
+/// The tilted round's fill (#422's rung 5), worked out from `std.Fill`'s own words, as
+/// `spilled_round_fill` is: about the boss's axis (upright through (30, −12)), above the chain (the
+/// slope, then past its seam the round of 3 about the line through (37, 7.66) along y) and outside
+/// the wall, a point is the fill's where no ball of `ball` whose centre stands at least that far
+/// from the chain's nearest face and from the wall reaches it — the nearest centre straight off one
+/// face where it stands far enough from the other, or a point of the curve where both offsets meet
+/// (`ball` above the chain on the cylinder of `6 + ball` about the axis: the slope's offset, then
+/// the round's), found by Newton's steps.
+/// The fill's height at each angle and distance from the axis by bisection, its moment by
+/// Gauss–Legendre between the wall (read as the square of the way from it), where the chain changes
+/// face and where the ball touches it; the angles split where the centre's path crosses the seam's
+/// offset.  Nothing of the core is asked.
+fn tilted_round_fill(ball: f64) -> f64 {
+    let n1 = { let k = 1.0 / 17f64.sqrt(); [k, 4.0 * k] };
+    let (cx, cz) = (37.0, 10.0 + (-3.0 + 3.0 * n1[0]) / n1[1]);
+    let seam = [cx + 3.0 * n1[0], cz + 3.0 * n1[1]];
+    let along = [n1[1], -n1[0]];
+    let point = |phi: f64, rho: f64, z: f64| { let (s, c) = phi.sin_cos(); [30.0 + rho * c, -12.0 + rho * s, z] };
+    // the chain's nearest face's distance and its unit normal at a point; the chain's height
+    let chain = |p: [f64; 3]| -> (f64, [f64; 3]) {
+        let (x, z) = (p[0], p[2]);
+        if (x - seam[0]) * along[0] + (z - seam[1]) * along[1] <= 0.0 {
+            ((x - 40.0) * n1[0] + (z - 10.0) * n1[1], [n1[0], 0.0, n1[1]])
+        } else {
+            let d = (x - cx).hypot(z - cz);
+            (d - 3.0, [(x - cx) / d, 0.0, (z - cz) / d])
+        }
+    };
+    let chain_height = |x: f64| if x <= seam[0] { 20.0 - x / 4.0 } else { cz + (9.0 - (x - cx).powi(2)).max(0.0).sqrt() };
+    let wall = |p: [f64; 3]| -> (f64, [f64; 3]) {
+        let (dx, dy) = (p[0] - 30.0, p[1] + 12.0);
+        let rho = dx.hypot(dy);
+        (rho - 6.0, [dx / rho, dy / rho, 0.0])
+    };
+    // the centre touching both at the angle `phi`: `ball` above the chain, `6 + ball` from the axis
+    // (the slope's offset short of the seam's, the round's past it)
+    let spine = |phi: f64| -> [f64; 3] {
+        let x = point(phi, 6.0 + ball, 0.0)[0];
+        let z = if x <= seam[0] + ball * n1[0] { 10.0 + (ball - (x - 40.0) * n1[0]) / n1[1] }
+            else { cz + ((3.0 + ball).powi(2) - (x - cx).powi(2)).sqrt() };
+        point(phi, 6.0 + ball, z)
+    };
+    let dist = |a: [f64; 3], b: [f64; 3]| ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)).sqrt();
+    let reach = |phi: f64, p: [f64; 3]| -> f64 {
+        let (dc, nc) = chain(p);
+        let (dw, nw) = wall(p);
+        if dc >= ball && dw >= ball {
+            return 0.0;
+        }
+        let mut best = f64::INFINITY;
+        if dc < ball {
+            let c = [0, 1, 2].map(|k| p[k] + (ball - dc) * nc[k]);
+            if wall(c).0 >= ball { best = best.min(ball - dc) }
+        }
+        if dw < ball {
+            let c = [0, 1, 2].map(|k| p[k] + (ball - dw) * nw[k]);
+            if chain(c).0 >= ball { best = best.min(ball - dw) }
+        }
+        let f = |t: f64| dist(p, spine(t));
+        let (mut t, h) = (phi, 1e-5);
+        for _ in 0..30 {
+            let (d1, d2) = ((f(t + h) - f(t - h)) / (2.0 * h), (f(t + h) - 2.0 * f(t) + f(t - h)) / (h * h));
+            if !(d2 > 0.0) { break }
+            let step = d1 / d2;
+            t -= step;
+            if step.abs() < 1e-13 { break }
+        }
+        best.min(f(t))
+    };
+    let (nodes, weights) = gauss(8);
+    let gl = |a: f64, z: f64, n: usize, g: &dyn Fn(f64) -> f64| -> f64 {
+        (0..n).map(|j| {
+            let (lo, hi) = (a + (z - a) * j as f64 / n as f64, a + (z - a) * (j + 1) as f64 / n as f64);
+            nodes.iter().zip(&weights).map(|(&x, &w)| 0.5 * (hi - lo) * w * g(0.5 * (lo + hi) + 0.5 * (hi - lo) * x)).sum::<f64>()
+        }).sum()
+    };
+    let section = |phi: f64| -> f64 {
+        let height = |rho: f64| -> f64 {
+            let base = chain_height(point(phi, rho, 0.0)[0]);
+            let inside = |z: f64| reach(phi, point(phi, rho, z)) >= ball;
+            if !inside(base + 1e-12) {
+                return 0.0;
+            }
+            let (mut lo, mut hi) = (base, base + 3.0 * ball);
+            for _ in 0..60 {
+                let m = 0.5 * (lo + hi);
+                if inside(m) { lo = m } else { hi = m }
+            }
+            0.5 * (lo + hi) - base
+        };
+        let (mut lo, mut hi) = (6.0, 6.0 + 3.0 * ball);
+        for _ in 0..60 {
+            let m = 0.5 * (lo + hi);
+            if height(m) > 0.0 { lo = m } else { hi = m }
+        }
+        let touch = 0.5 * (lo + hi);
+        let mut breaks = vec![6.0, touch];
+        let kink = (seam[0] - 30.0) / phi.cos();
+        if phi.cos() > 0.0 && kink > 6.0 && kink < touch {
+            breaks.insert(1, kink);
+        }
+        let first = breaks[1] - 6.0;
+        gl(0.0, 1.0, 4, &|t| { let rho = 6.0 + first * t * t; 2.0 * first * t * rho * height(rho) })
+            + breaks[1..].windows(2).map(|w| gl(w[0], w[1], 4, &|rho| rho * height(rho))).sum::<f64>()
+    };
+    // where the centre's path crosses the seam's offset: 30 + (6 + ball) cos φ on the offset seam
+    let turn = ((seam[0] + ball * n1[0] - 30.0) / (6.0 + ball)).acos();
+    gl(-turn, turn, 8, &section) + gl(turn, 2.0 * PI - turn, 12, &section)
+}
+
+/// **A round along a traced edge spilled onto a round** (#422's rung 5): the boss's foot on the
+/// wedge's slope rounded 3 — beside the slope's low edge its ball touches the round past the seam.
+/// The ball is rolled along the foot (`fillet::roll`) with the stretch between the planes of its
+/// arc where it touches the seam cut away, and there the ball rolled against the round, sectioned
+/// square to the foot, glued at both: its fill the quadrature's to a millionth.
+#[test]
+fn a_round_along_a_traced_edge_spilled_onto_a_round_is_built() {
+    let e = solved(&tilted("part.boss round(r: 3mm) part.wedge.wt\n"));
+    let bare = solved(&tilted(""));
+    let got = volume(&e, "part") - volume(&bare, "part");
+    let want = tilted_round_fill(3.0);
+    assert!((got - want).abs() <= 1e-6 * want, "{got} against {want}");
+}

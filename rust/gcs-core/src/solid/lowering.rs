@@ -37,6 +37,8 @@
 //! | `Run` / `Fill` / `Flat` round a circle (or a stretch of one between seams) where a plane, a cylinder, a cone, a sphere or a torus meet about one axis | the section turned about the axis through the circle's angle (a torus face); in the meridian a sphere is a circle, a torus its tube's |
 //! | `Run` / `Fill` along an edge no line or coaxial circle carries (two pipes' saddle, a plane across a cylinder, a cone's generator) | the ball rolled along the run, traced, against the stratum (`brep::fillet::roll`): its canal fitted, carried past each end and cut off by the faces there |
 //! | `Flat` / `FlatFill` along such an edge | the flat sectioned square to the faces' meeting between its legs and fitted (`brep::fillet::flat_along`), its strips and ends as a rolled round's |
+//! | any of them where a face goes on tangent across a seam beside the edge the section reaches (`F.smooth`, #422): along a line seam, or round a circle seam about its axis | the section against the chain — the face's own trace to the seam, the next face's from there — the ball against the piece it touches, the flat each piece's sum of distances in turn (`chain`) |
+//! | the same round a circle seam off its axis, or along an edge no line or coaxial circle carries | the edge's own piece kept short of the seam's normal surface (a ring, a flat cut along the run) or with the stretch past the seam cut away (a ring's stretch, a ball rolled along the run), and the section against the next face beyond it, sectioned and fitted (`Beyond`, `brep::spill`), glued to it |
 //! | any of them where the faces meet nowhere, or an edge turns the other way | nothing |
 //!
 //! A region is its **pieces** (`Piece`: a run along an edge, a ball's cell at a corner), and the
@@ -375,6 +377,10 @@ pub struct Rolled {
     pub ends: Vec<V>,
     /// The seam's normal surface a flat is kept short of, a piece beyond it taking the rest (#422).
     pub kept: Vec<Kept>,
+    /// Where a round's ball crosses a seam a piece beyond takes it past (#422): the planes of its arc
+    /// at either end of that stretch, each a point (the ball's centre) and its normal into the
+    /// stretch; what lies on both normals' sides is cut away.
+    pub wedge: Vec<(V, V)>,
     /// The sections of the corners standing at its ends, each a point of it, the normal toward the
     /// run, and how far the corner's cell reaches from it: what lies on the corner's side within
     /// that reach is cut from the piece, the cell taking it (#218's 7).

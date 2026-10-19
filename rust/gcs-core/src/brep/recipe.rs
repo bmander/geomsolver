@@ -149,10 +149,24 @@ fn lowered_node(n: &Lowered,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i6
 /// chamfer's flat cut along it instead (#218's 6), cut at the section of each corner standing at
 /// an end of its run, which takes the rest (#218's 7).
 fn rolled_run(k: &Rolled,stratum: &Brep,tol: f64,floor: f64) -> Built {
+    let sub3 = |a: [f64;3],b: [f64;3]| [a[0]-b[0],a[1]-b[1],a[2]-b[2]];
     let mut piece = match k.flat {
         Some((legs,on)) => super::fillet::flat_along(stratum,k.at,legs,Some(on),tol).map_err(|e| format!("a flat along a run: {e}"))?,
-        None => super::fillet::roll(stratum,k.at,k.radius,tol).map_err(|e| format!("a rolled round: {e}"))?.piece,
+        None => super::fillet::roll_across(stratum,k.at,k.radius,tol,!k.wedge.is_empty())
+            .map_err(|e| format!("a rolled round: {e}"))?.piece,
     };
+    // the stretch a piece beyond a seam takes (#422): what lies past both planes of the wedge, cut
+    // away — a box about the piece kept past each
+    if !k.wedge.is_empty() {
+        let (lo,hi) = piece.bounds();
+        let (middle,half) = (crate::space::lerp(lo,hi,0.5),crate::space::distance(lo,hi));
+        let mut block = super::build::prism(&super::build::square(sub3(middle,[0.,0.,half]),[0.,0.,1.],half),0.,2.*half)?;
+        for &(at,normal) in &k.wedge {
+            block = kept(&block,at,normal,floor).map_err(|e| format!("a rolled round's wedge: {e}"))?;
+        }
+        piece = super::boolean::combined(&piece,&block,super::boolean::Op::Cut,floor)
+            .map_err(|e| format!("a rolled round cut short of a seam: {e}"))?;
+    }
     for &(at,normal,reach) in &k.cuts {
         piece = cut_before(&piece,at,normal,reach,floor).map_err(|e| format!("a rolled round cut at a corner: {e}"))?;
     }

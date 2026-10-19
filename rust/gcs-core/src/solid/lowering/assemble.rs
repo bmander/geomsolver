@@ -253,7 +253,9 @@ pub fn assemble<'a>(pieces: impl IntoIterator<Item = &'a Piece>) -> Assembly {
                 }
             }
             Along::Meeting { .. } => {
-                let rolled = out.rolled.iter().position(|j| j.kept.iter().any(|kept| kept.face == b.split));
+                let centres = b.ends.map(|q| add(q, scale(b.toward, b.radius)));
+                let rolled = out.rolled.iter().position(|j| j.kept.iter().any(|kept| kept.face == b.split)
+                    || b.radius > 0.0 && j.wedge.iter().any(|&(p, _)| centres.iter().any(|&c| near(p, c))));
                 if let Some(i) = rolled {
                     out.joins.push([out.runs.len() + out.rings.len() + out.corners.len() + i, first + k]);
                 }
@@ -316,6 +318,10 @@ impl Assembly {
             if !k.cuts.is_empty() {
                 o.set("cuts", Json::Arr(k.cuts.iter().map(|&(at, n, reach)| object([("at", w.at(scale(at, by))),
                     ("normal", vector(n)), ("reach", (reach * by).into())])).collect()));
+            }
+            if !k.wedge.is_empty() {
+                o.set("wedge", Json::Arr(k.wedge.iter().map(|&(at, n)| object([("at", w.at(scale(at, by))),
+                    ("normal", vector(n))])).collect()));
             }
             if !k.kept.is_empty() {
                 o.set("kept", Json::Arr(k.kept.iter().map(|kept| { let mut s = kept.face.json(w); s.set("inside", kept.inside.into()); s })

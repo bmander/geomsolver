@@ -167,7 +167,7 @@ fn run(body: &crate::solid::faces::BodyFaces, ga: &[usize], gb: &[usize], within
             let at = body.middle(e);
             let ends: Vec<V> = body.run_ends(&run).into_iter().map(|(v, ..)| v).collect();
             Ok(Piece::Rolled(match section {
-                Section::Round(r) => Rolled { at, r, flat: None, ends, cuts: Vec::new(), kept: Vec::new() },
+                Section::Round(r) => Rolled { at, r, flat: None, ends, cuts: Vec::new(), kept: Vec::new(), wedge: Vec::new() },
                 Section::Flat { la, lb } => {
                     let &[f0, f1] = body.faces_of(e) else {
                         return Err(unbuilt("an edge not between two faces"));
@@ -176,7 +176,8 @@ fn run(body: &crate::solid::faces::BodyFaces, ga: &[usize], gb: &[usize], within
                     let na = body.normal(fa, at);
                     let t = toward(body.normal(fb, at), within);
                     let w = normalised(sub(t, scale(na, dot(t, na)))).ok_or("faces meeting tangent")?;
-                    Rolled { at, r: 0.0, flat: Some(([la, lb], add(at, scale(w, 0.5 * la)))), ends, cuts: Vec::new(), kept: Vec::new() }
+                    Rolled { at, r: 0.0, flat: Some(([la, lb], add(at, scale(w, 0.5 * la)))), ends, cuts: Vec::new(),
+                        kept: Vec::new(), wedge: Vec::new() }
                 }
             }))
         }).collect();
@@ -446,15 +447,14 @@ fn beyond(body: &crate::solid::faces::BodyFaces, edge: u32, faces: [usize; 2], c
 /// line into a cylinder along it, or a circle into a torus about the plane's normal): the flat along
 /// the run kept short of the seam's normal surface (the plane through a line seam along the
 /// plane's normal, the cylinder through a circle one), and the piece beyond it, sectioned square to
-/// the run between where the leg on the plane crosses the seam (#422).  Refused by name for a round
-/// (its canal would leave the run between two of its own sections), or where the run, or the leg
-/// more than twice, crosses the seam's normal surface.
+/// the run between where the leg on the plane crosses the seam (#422); a round's ball rolled along
+/// the run with the stretch where it touches past the seam cut away — between the planes of its arc
+/// where it touches the seam — and the ball rolled against the next face there, glued at both.
+/// Refused by name where the run, or the leg more than twice, crosses the seam's normal surface.
 #[allow(clippy::too_many_arguments)]
 fn traced_beyond(body: &crate::solid::faces::BodyFaces, run: &[u32], faces: [&[usize]; 2], c: usize, p: usize,
     seams: &[(u32, usize)], within: bool, section: Section) -> Result<Vec<Piece>, String> {
-    let Section::Flat { la, lb } = section else {
-        return Err(spilled("along an edge no line or coaxial circle carries, a round"));
-    };
+    let (la, lb, r) = match section { Section::Flat { la, lb } => (la, lb, 0.0), Section::Round(r) => (r, r, r) };
     let Some((n, _)) = body.plane(p) else { return Err(spilled("from a face no plane, along a traced edge")) };
     let g = seams[0].1;
     if seams.iter().any(|&(_, h)| h != g) {
@@ -512,17 +512,19 @@ fn traced_beyond(body: &crate::solid::faces::BodyFaces, run: &[u32], faces: [&[u
             last = Some((s, side));
         }
     }
-    let [q0, q1] = ends[..] else { return Err(spilled("along a traced edge whose leg crosses the seam other than twice")) };
+    let [q0, q1] = ends[..] else {
+        return Err(spilled("along a traced edge whose section's footprint crosses the seam other than twice"))
+    };
     let wall = |fi: usize| Surf::of(body, fi);
     let w = fo(run[0]).ok_or_else(|| unbuilt("an edge not between two faces"))?;
     let wall = wall(w).ok_or_else(|| spilled("beside a face neither a plane, a cylinder, a cone nor a sphere"))?;
     let region = if within { -1.0 } else { 1.0 };
     let size = la.max(lb);
     let orient = |fi: usize, s: &Surf, q: V| region * s.side(add(q, scale(body.normal(fi, q), 1e-3 * size))).signum();
-    let legs = if c == 0 { [la, lb] } else { [lb, la] };
+    let legs = if r > 0.0 { [0.0; 2] } else if c == 0 { [la, lb] } else { [lb, la] };
     let beyond = Beyond {
         along: super::Along::Meeting { face: Surf::Plane { origin: at, normal: n } }, toward: toward(n, within), chain, wall,
-        split, sides: [orient(g, &chain, q0), orient(w, &wall, at), 1.0], seam, legs, radius: 0.0, ends: [q0, q1],
+        split, sides: [orient(g, &chain, q0), orient(w, &wall, at), 1.0], seam, legs, radius: r, ends: [q0, q1],
     };
     // the flat along the run, told its legs apart by a point beside the first group's face, from
     // its point furthest from the seam's normal surface (a closed run's flat is seamed where it
@@ -530,13 +532,25 @@ fn traced_beyond(body: &crate::solid::faces::BodyFaces, run: &[u32], faces: [&[u
     let (e, at) = run.iter().flat_map(|&e| (0..64).map(move |k| (e, body.along(e, k as f64 / 64.0))))
         .min_by(|x, y| split.side(x.1).total_cmp(&split.side(y.1))).expect("a run of edges");
     let ends_of: Vec<V> = body.run_ends(run).into_iter().map(|(v, ..)| v).collect();
+    if r > 0.0 {
+        // the ball's centres where it touches the seam, and the planes of its arc there, square to
+        // its centre's path (where the plane's offset meets the wall's), each's normal into the
+        // stretch between
+        let centres = [q0, q1].map(|q| add(q, scale(toward(n, within), r)));
+        let wedge: Vec<(V, V)> = (0..2).map(|k| {
+            let d = normalised(cross(n, wall.gradient(centres[k]))).ok_or("a wall along the plane's normal")?;
+            Ok((centres[k], if dot(d, sub(centres[1 - k], centres[k])) < 0.0 { scale(d, -1.0) } else { d }))
+        }).collect::<Result<_, String>>()?;
+        let ball = Rolled { at, r, flat: None, ends: ends_of, cuts: Vec::new(), kept: Vec::new(), wedge };
+        return Ok(vec![Piece::Rolled(ball), Piece::Beyond(beyond)]);
+    }
     let fa = body.faces_of(e).iter().copied().find(|f| faces[0].contains(f)).ok_or("an edge not between two faces")?;
     let fb = body.faces_of(e).iter().copied().find(|f| faces[1].contains(f)).ok_or("an edge not between two faces")?;
     let na = body.normal(fa, at);
     let t = toward(body.normal(fb, at), within);
     let wa = normalised(sub(t, scale(na, dot(t, na)))).ok_or("faces meeting tangent")?;
     let flat = Rolled { at, r: 0.0, flat: Some(([la, lb], add(at, scale(wa, 0.5 * la)))), ends: ends_of, cuts: Vec::new(),
-        kept: vec![Kept { face: split, inside: true }] };
+        kept: vec![Kept { face: split, inside: true }], wedge: Vec::new() };
     Ok(vec![Piece::Rolled(flat), Piece::Beyond(beyond)])
 }
 

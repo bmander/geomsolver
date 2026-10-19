@@ -72,17 +72,18 @@ struct Sections<'a> {
     ends: [V; 2],
 }
 
-/// `b`'s sections between its ends, the shorter stretch of its edge between them.
-fn sections<'a>(b: &'a Beyond, tol: f64) -> Result<Sections<'a>, String> {
+/// `b`'s sections between the two through `through` (its ends, or the ball's centres there; `ends`
+/// in their order), the shorter stretch of its edge between them.
+fn sections<'a>(b: &'a Beyond, through: [V; 2], tol: f64) -> Result<Sections<'a>, String> {
     match &b.along {
         Along::Ring { axis: [o, z], crease: (centre, radius) } => {
             let (o, z, centre, radius) = (*o, *z, *centre, *radius);
             let flat_of = move |p: V| { let w = sub(p, o); sub(w, scale(z, dot(w, z))) };
             // the sections' angles about the axis, from the ends' middle
-            let e1 = unit(flat_of(scale(add(b.ends[0], b.ends[1]), 0.5)));
+            let e1 = unit(flat_of(scale(add(through[0], through[1]), 0.5)));
             let e2 = cross(z, e1);
             let angle = |p: V| { let w = flat_of(p); dot(w, e2).datan2(dot(w, e1)) };
-            let (mut q, mut f) = (b.ends, b.ends.map(angle));
+            let (mut q, mut f) = (b.ends, through.map(angle));
             if f[0] > f[1] {
                 q.swap(0, 1);
                 f.swap(0, 1);
@@ -101,7 +102,7 @@ fn sections<'a>(b: &'a Beyond, tol: f64) -> Result<Sections<'a>, String> {
         }
         Along::Meeting { face } => {
             let meet = Traced { a: face.clone(), b: b.wall.clone(), pts: Vec::new(), closed: false };
-            let feet = b.ends.map(|q| meet.project(q));
+            let feet = through.map(|q| meet.project(q));
             let size = distance(b.ends[0], b.ends[1]) + b.legs[0].max(b.legs[1]) + b.radius;
             let curve = match super::ssi::intersect(face, &b.wall, tol) {
                 super::ssi::Ssi::Curves(cs) => cs,
@@ -118,8 +119,8 @@ fn sections<'a>(b: &'a Beyond, tol: f64) -> Result<Sections<'a>, String> {
             // the stretch between the ends' sections — each end's nearest point of the meeting, the
             // plane square to it there through the end — the one whose middle stands nearer the
             // ends'
-            let t = b.ends.map(|p| curve.inverse(p));
-            let mid = scale(add(b.ends[0], b.ends[1]), 0.5);
+            let t = through.map(|p| curve.inverse(p));
+            let mid = scale(add(through[0], through[1]), 0.5);
             let (t0, span) = match curve.period() {
                 Some(period) => {
                     let fwd = (t[1] - t[0]).rem_euclid(period);
@@ -172,7 +173,7 @@ fn seam_edge(out: &mut Brep, seam: Seam, q: [V; 2], vq: [u32; 2], near: V) -> us
 pub fn flat_beyond(b: &Beyond, tol: f64) -> Result<Brep, String> {
     let [sc, sw, ss] = b.sides;
     let [lc, lw] = b.legs;
-    let Sections { at: section, ends: q } = sections(b, tol)?;
+    let Sections { at: section, ends: q } = sections(b, b.ends, tol)?;
     let size = lc.max(lw);
     // the flat's sum of distances, nothing on it, and its gradient
     let dc = |p: V| sc * b.chain.implicit(p);
@@ -307,37 +308,28 @@ pub fn flat_beyond(b: &Beyond, tol: f64) -> Result<Brep, String> {
 /// the wall touches the chain's next face (the torus) where its centre stands past the seam's
 /// offset — between the half-planes through the ring's axis where the ball touches the seam
 /// (`ends`, its touches there) — and the ring's own face elsewhere, a ring's stretch glued to this at
-/// both ends.  Its centre runs where the wall's offset meets the torus's, read in each half-plane
-/// (the ring's sections: at its ends the ball's arc lies in them, its centre's path square to them
-/// there); its canal is the ball's arc between where it touches the torus and the wall, fitted.  The
-/// piece: the canal; on the torus the lens between the seam and the touch; on the ring's own face
-/// (a plane) the strip from the edge to the seam; on the wall the strip from the edge to the touch;
-/// and in each end's half-plane the ring's section, a cap.
+/// both ends — or along a traced edge, the ball rolled along it with that stretch cut away.  Its
+/// centre runs where the wall's offset meets the chain's, read in the edge's sections (a ring's
+/// half-planes, where at its ends the ball's arc lies, its centre's path square to them there; a
+/// traced edge's planes square to it through the centres there); its canal is the ball's arc
+/// between where it touches the chain and the wall, fitted.  The piece: the canal; on the chain's
+/// face the lens between the seam and the touch; on the edge's own face (a plane) the strip from
+/// the edge to the seam; on the wall the strip from the edge to the touch; and at each end the cap
+/// in the plane of the ball's arc, square to its centre's path.
 pub fn round_beyond(b: &Beyond, r: f64, tol: f64) -> Result<Brep, String> {
-    let Along::Ring { axis: [o, z], crease } = b.along else {
-        return Err("a round beyond a seam along an edge no circle carries".into());
-    };
     let [sc, sw, _] = b.sides;
-    let flat_of = |p: V| { let w = sub(p, o); sub(w, scale(z, dot(w, z))) };
-    let e1 = unit(flat_of(scale(add(b.ends[0], b.ends[1]), 0.5)));
-    let e2 = cross(z, e1);
-    let angle = |p: V| { let w = flat_of(p); dot(w, e2).datan2(dot(w, e1)) };
-    let (mut q, mut f) = (b.ends, b.ends.map(angle));
-    if f[0] > f[1] {
-        q.swap(0, 1);
-        f.swap(0, 1);
-    }
-    if !(f[1] - f[0] > 1e-9 && f[1] - f[0] < std::f64::consts::PI) {
-        return Err("a round beyond a seam whose ends stand at one section".into());
-    }
-    let radial = |phi: f64| { let (s, c) = phi.dsin_cos(); add(scale(e1, c), scale(e2, s)) };
-    let phi_at = |u: f64| f[0] + u * (f[1] - f[0]);
-    let (centre, radius) = crease;
-    // the ball's centre in the half-plane at `phi`: where the wall's offset meets the torus's, from
-    // the crease's point stepped off both faces
+    // the sections through the ball's centres at the ends: a ring's half-planes through its touches,
+    // a traced edge's planes square to it through the centres over the plane the edge stands on
+    let through = match b.along {
+        Along::Ring { .. } => b.ends,
+        Along::Meeting { .. } => b.ends.map(|q| add(q, scale(b.toward, r))),
+    };
+    let Sections { at: section, ends: q } = sections(b, through, tol)?;
+    // the ball's centre in the section at `u`: where the wall's offset meets the torus's, from the
+    // edge's point stepped off both faces
     let spine = Traced {
         a: b.wall.offset(sw * r).ok_or("a ball larger than the wall holds")?,
-        b: b.chain.offset(sc * r).ok_or("a ball larger than the torus holds")?,
+        b: b.chain.offset(sc * r).ok_or("a ball larger than the chain's face holds")?,
         pts: Vec::new(), closed: false,
     };
     let toward = |s: &Surface, side: f64, p: V| scale(unit(s.gradient(p)), -side);
@@ -347,15 +339,14 @@ pub fn round_beyond(b: &Beyond, r: f64, tol: f64) -> Result<Brep, String> {
         if let Some(&fr) = frames.borrow().get(&u.to_bits()) {
             return fr;
         }
-        let phi = phi_at(u);
-        let p = add(centre, scale(radial(phi), radius));
+        let (p, n) = section(u);
         let guess = add(add(p, scale(scale(unit(b.wall.gradient(p)), sw), r)), scale(b.toward, r));
-        let c = crossing_plane(&spine, o, cross(z, radial(phi)), guess);
+        let c = crossing_plane(&spine, p, n, guess);
         let fr = (c, [toward(&b.chain, sc, c), toward(&b.wall, sw, c)]);
         frames.borrow_mut().insert(u.to_bits(), fr);
         fr
     };
-    let size = r + radius;
+    let size = r + distance(q[0], q[1]);
     for (k, &end) in q.iter().enumerate() {
         let (c, [et, _]) = frame_at(k as f64);
         let touch = add(c, scale(et, r));
@@ -371,14 +362,32 @@ pub fn round_beyond(b: &Beyond, r: f64, tol: f64) -> Result<Brep, String> {
     }
     let [[u0, u1], [v0, v1]] = net.domain();
     let last_v = net.poles[0].len() - 1;
-    // the points: the crease's, the seam's touches and the wall's touches at each end
-    let crease = |k: usize| add(centre, scale(radial(f[k]), radius));
+    // each cap: the plane of the ball's arc at an end, square to its centre's path there
+    let caps_at: [(V, V); 2] = [0, 1].map(|k| {
+        let (c, _) = frame_at(k as f64);
+        let d = unit(cross(spine.a.gradient(c), spine.b.gradient(c)));
+        let ahead = sub(frame_at(if k == 0 { 1e-3 } else { 1.0 }).0, frame_at(if k == 0 { 0.0 } else { 1.0 - 1e-3 }).0);
+        (c, if dot(d, ahead) < 0.0 { scale(d, -1.0) } else { d })
+    });
+    // the edge's point in the plane through `c` square to `d`: where the face, the wall and that
+    // plane meet, from the corner the ball stands in
+    let plane_of = |p: V| dot(b.toward, sub(p, q[0]));
+    let crease_in = |c: V, d: V| -> Option<V> {
+        let (_, [_, ew]) = (c, [toward(&b.chain, sc, c), toward(&b.wall, sw, c)]);
+        let guess = sub(add(c, scale(ew, r)), scale(b.toward, r));
+        crate::roots::newton_onto::<3>(guess, r, |p| Some([
+            (b.toward, plane_of(p)), (b.wall.gradient(p), b.wall.implicit(p)), (d, dot(d, sub(p, c))),
+        ]), |at| at.iter().all(|(_, m)| m.abs() <= 1e-13 * (size + norm(c))))
+    };
+    let crease = [0, 1].map(|k| crease_in(caps_at[k].0, caps_at[k].1));
+    let [Some(k0), Some(k1)] = crease else { return Err("the round's caps meet no edge".into()) };
+    let crease = [k0, k1];
     let ends = [0, 1].map(|k| { let (c, e) = frame_at(k as f64); (c, add(c, scale(e[1], r))) });
     let mut out = Brep::default();
-    let vc = [0, 1].map(|k| out.vertex(crease(k)));
+    let vc = [0, 1].map(|k| out.vertex(crease[k]));
     let vq = [0, 1].map(|k| out.vertex(net.point([u0, u1][k], v0)));
     let vw = [0, 1].map(|k| out.vertex(net.point([u0, u1][k], v1)));
-    // the crease's arc and the seam's, each from the first end to the second the short way
+    // a circle's arc from `a` to `z_` the short way about `c`, turning about `n` or against it
     let arc = |out: &mut Brep, c: V, n: V, a: V, z_: V, va: u32, vz: u32| -> usize {
         let x = unit(sub(a, c));
         let n = if dot(cross(x, sub(z_, c)), n) < 0.0 { scale(n, -1.0) } else { n };
@@ -387,20 +396,56 @@ pub fn round_beyond(b: &Beyond, r: f64, tol: f64) -> Result<Brep, String> {
         let end = dot(w, frame.y).datan2(dot(w, frame.x));
         out.edge(EdgeCurve::Curve(Curve::Circle(frame, distance(a, c))), [0.0, end], [va, vz]) as usize
     };
-    let crease_arc = arc(&mut out, centre, z, crease(0), crease(1), vc[0], vc[1]);
-    let Seam::Circle(so, sn, _) = b.seam else { return Err("a round beyond a seam no circle".into()) };
-    let seam_arc = arc(&mut out, so, sn, q[0], q[1], vq[0], vq[1]);
+    // a curve through `at(s)` from its start to its end, fitted, its ends exactly those
+    let fitted = |out: &mut Brep, at: &dyn Fn(f64) -> V, va: u32, vz: u32| -> Result<(usize, f64), String> {
+        let (curve, err) = fit_curve(at, 3, 16, tol).ok_or("a round's edge could not be fitted")?;
+        let e = out.edge(EdgeCurve::Curve(Curve::BSpline(Arc::new(curve))), [0.0, 1.0], [va, vz]) as usize;
+        out.edges[e].tol = out.edges[e].tol.max(err);
+        Ok((e, err))
+    };
+    let mut fit_err: f64 = 0.0;
+    // the edge between the caps: a ring's arc, else the meeting read through the planes square to
+    // the centre's path along the way
+    let crease_edge = match b.along {
+        Along::Ring { axis: [_, z], crease: (o, _) } => arc(&mut out, o, z, crease[0], crease[1], vc[0], vc[1]),
+        Along::Meeting { .. } => {
+            let at = |s: f64| -> V {
+                if s <= 0.0 { return crease[0] }
+                if s >= 1.0 { return crease[1] }
+                let (c, _) = frame_at(s);
+                let (c1, _) = frame_at((s + 1e-4).min(1.0));
+                let (c0, _) = frame_at((s - 1e-4).max(0.0));
+                crease_in(c, unit(sub(c1, c0))).unwrap_or(c)
+            };
+            let (e, err) = fitted(&mut out, &at, vc[0], vc[1])?;
+            fit_err = fit_err.max(err);
+            e
+        }
+    };
+    let seam_arc = seam_edge(&mut out, b.seam, q, vq, section(0.5).0);
     let touch_chain = out.edge(EdgeCurve::Curve(column(&net, 0)), [u0, u1], vq) as usize;
     let touch_wall = out.edge(EdgeCurve::Curve(column(&net, last_v)), [u0, u1], vw) as usize;
-    // each cap: along the plane from the crease to the seam, the ball's arc, down the wall
+    // each cap: along the face from the edge to the seam, the ball's arc, back down the wall
     let mut caps = Vec::new();
     for k in 0..2 {
         let (c, w) = ends[k];
-        let bottom = out.edge(EdgeCurve::Curve(Curve::Line { p: crease(k), d: unit(sub(q[k], crease(k))) }),
-            [0.0, distance(crease(k), q[k])], [vc[k], vq[k]]) as usize;
-        let side = out.edge(EdgeCurve::Curve(Curve::Line { p: crease(k), d: unit(sub(w, crease(k))) }),
-            [0.0, distance(crease(k), w)], [vc[k], vw[k]]) as usize;
-        let ball = arc(&mut out, c, cross(z, radial(f[k])), q[k], w, vq[k], vw[k]);
+        let (_, d) = caps_at[k];
+        let bottom = out.edge(EdgeCurve::Curve(Curve::Line { p: crease[k], d: unit(sub(q[k], crease[k])) }),
+            [0.0, distance(crease[k], q[k])], [vc[k], vq[k]]) as usize;
+        let side = match (&b.along, &b.wall) {
+            (Along::Ring { .. }, _) | (_, Surface::Plane(_)) => out.edge(EdgeCurve::Curve(Curve::Line {
+                p: crease[k], d: unit(sub(w, crease[k])) }), [0.0, distance(crease[k], w)], [vc[k], vw[k]]) as usize,
+            _ => {
+                // where the cap's plane cuts the wall, from the edge to the wall's touch
+                let on = Traced { a: b.wall.clone(), b: Surface::Plane(Frame::about(c, d)), pts: Vec::new(), closed: false };
+                let at = |s: f64| on.project(crate::space::lerp(crease[k], w, s));
+                let (e, err) = fitted(&mut out, &|s: f64| if s <= 0.0 { crease[k] } else if s >= 1.0 { w } else { at(s) },
+                    vc[k], vw[k])?;
+                fit_err = fit_err.max(err);
+                e
+            }
+        };
+        let ball = arc(&mut out, c, d, q[k], w, vq[k], vw[k]);
         caps.push([bottom, ball, side]);
     }
     let middle = canal(0.5, 0.0);
@@ -409,22 +454,22 @@ pub fn round_beyond(b: &Beyond, r: f64, tol: f64) -> Result<Brep, String> {
     let chain = turned_from(&b.chain, middle);
     let sheet = Surface::BSpline(Frame::new([0.0; 3], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]), Arc::new(net));
     // outward from the piece at each face's first vertex
-    face_out(&mut out, plane, scale(b.toward, -1.0), &[crease_arc, caps[1][0], seam_arc, caps[0][0]], "a")?;
+    face_out(&mut out, plane, scale(b.toward, -1.0), &[crease_edge, caps[1][0], seam_arc, caps[0][0]], "a")?;
     face_out(&mut out, chain, toward(&b.chain, sc, q[0]), &[seam_arc, touch_chain], "a")?;
-    face_out(&mut out, wall, toward(&b.wall, sw, crease(0)), &[crease_arc, caps[1][2], touch_wall, caps[0][2]], "b")?;
+    face_out(&mut out, wall, toward(&b.wall, sw, crease[0]), &[crease_edge, caps[1][2], touch_wall, caps[0][2]], "b")?;
     let (c0, _) = frame_at(0.0);
     face_out(&mut out, sheet, sub(c0, q[0]), &[touch_chain, caps[1][1], touch_wall, caps[0][1]], "round")?;
     for k in 0..2 {
-        let n = cross(z, radial(f[k]));
-        let cap = Surface::Plane(Frame::about(crease(k), n));
-        face_out(&mut out, cap, if k == 0 { scale(n, -1.0) } else { n }, &caps[k], ["start", "end"][k])?;
+        let (c, d) = caps_at[k];
+        let cap = Surface::Plane(Frame::about(c, d));
+        face_out(&mut out, cap, if k == 0 { scale(d, -1.0) } else { d }, &caps[k], ["start", "end"][k])?;
     }
     out.measure_tolerances();
     for e in [touch_chain, touch_wall, caps[0][1], caps[1][1]] {
         let t = &mut out.edges[e].tol;
         *t = t.max(net_err);
     }
-    out.check(10.0 * tol.max(net_err)).map_err(|e| format!("the round beyond the seam: {e}"))?;
+    out.check(10.0 * tol.max(net_err).max(fit_err)).map_err(|e| format!("the round beyond the seam: {e}"))?;
     let _ = (v0, v1);
     Ok(out)
 }
