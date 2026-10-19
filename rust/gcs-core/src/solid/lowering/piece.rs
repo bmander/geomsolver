@@ -150,17 +150,24 @@ fn run(body: &crate::solid::faces::BodyFaces, ga: &[usize], gb: &[usize], within
         }),
     };
     if edges.iter().any(|&e| !carried(e)) {
-        if ga.iter().chain(gb).any(|f| spill.contains_key(f)) {
-            return Err(spilled("along an edge no line or coaxial circle carries"));
+        let spilt = [ga, gb].map(|g| g.iter().find_map(|f| spill.get(f).map(|seams| (*f, seams))));
+        let traced = body.runs(&edges).into_iter().filter(|run| body.convex(run[0]) == Some(within));
+        // a flat whose face goes on across a seam (#422): cut along the run short of the seam's
+        // normal surface, the piece beyond it taking the rest
+        if spilt.iter().any(Option::is_some) {
+            let c = match spilt { [Some(_), Some(_)] => return Err(spilled("on both sides of its edge")), [Some(_), _] => 0, _ => 1 };
+            let (p, seams) = spilt[c].expect("a face going on");
+            return traced.map(|run| traced_beyond(body, &run, [ga, gb], c, p, seams, within, section))
+                .collect::<Result<Vec<_>, String>>().map(|v| v.into_iter().flatten().collect());
         }
         // a piece for each run of them (two generators of a half cone: two runs): a ball rolled
         // along it, or a flat cut along it — its legs told apart by a point beside face `a`'s
-        return body.runs(&edges).into_iter().filter(|run| body.convex(run[0]) == Some(within)).map(|run| {
+        return traced.map(|run| {
             let e = run[0];
             let at = body.middle(e);
             let ends: Vec<V> = body.run_ends(&run).into_iter().map(|(v, ..)| v).collect();
             Ok(Piece::Rolled(match section {
-                Section::Round(r) => Rolled { at, r, flat: None, ends, cuts: Vec::new() },
+                Section::Round(r) => Rolled { at, r, flat: None, ends, cuts: Vec::new(), kept: Vec::new() },
                 Section::Flat { la, lb } => {
                     let &[f0, f1] = body.faces_of(e) else {
                         return Err(unbuilt("an edge not between two faces"));
@@ -169,7 +176,7 @@ fn run(body: &crate::solid::faces::BodyFaces, ga: &[usize], gb: &[usize], within
                     let na = body.normal(fa, at);
                     let t = toward(body.normal(fb, at), within);
                     let w = normalised(sub(t, scale(na, dot(t, na)))).ok_or("faces meeting tangent")?;
-                    Rolled { at, r: 0.0, flat: Some(([la, lb], add(at, scale(w, 0.5 * la)))), ends, cuts: Vec::new() }
+                    Rolled { at, r: 0.0, flat: Some(([la, lb], add(at, scale(w, 0.5 * la)))), ends, cuts: Vec::new(), kept: Vec::new() }
                 }
             }))
         }).collect();
@@ -413,9 +420,9 @@ fn beyond(body: &crate::solid::faces::BodyFaces, edge: u32, faces: [usize; 2], c
         Section::Round(r) => ([0.0; 2], r),
     };
     let beyond = Beyond {
-        axis_origin: centre, axis, crease: (centre, radius), toward: toward(n, within), chain, wall, split,
-        sides: [orient(g, &chain, ends[0]), orient(w, &wall, at), if inside { 1.0 } else { -1.0 }],
-        seam: (so, sn, sr), legs, radius: r, ends,
+        along: super::Along::Ring { axis_origin: centre, axis, crease: (centre, radius) }, toward: toward(n, within), chain,
+        wall, split, sides: [orient(g, &chain, ends[0]), orient(w, &wall, at), if inside { 1.0 } else { -1.0 }],
+        seam: super::Seam::Circle(so, sn, sr), legs, radius: r, ends,
     };
     if r == 0.0 {
         ring.section.kept.push(Kept { face: split, inside });
@@ -432,6 +439,105 @@ fn beyond(body: &crate::solid::faces::BodyFaces, edge: u32, faces: [usize; 2], c
     ring.section = super::assemble::turned(&ring.section, &crate::brep::geom::Rigid::turn(centre, axis, from));
     ring.angle = tau - span;
     Ok(beyond)
+}
+
+/// A flat cut along the traced `run` of edges between the groups `faces`, face `p` of group `c` — a
+/// plane — going on tangent across a seam its leg reaches (`seams`, each with the face beyond: a
+/// line into a cylinder along it, or a circle into a torus about the plane's normal): the flat along
+/// the run kept short of the seam's normal surface (the plane through a line seam along the
+/// plane's normal, the cylinder through a circle one), and the piece beyond it, sectioned square to
+/// the run between where the leg on the plane crosses the seam (#422).  Refused by name for a round
+/// (its canal would leave the run between two of its own sections), or where the run, or the leg
+/// more than twice, crosses the seam's normal surface.
+#[allow(clippy::too_many_arguments)]
+fn traced_beyond(body: &crate::solid::faces::BodyFaces, run: &[u32], faces: [&[usize]; 2], c: usize, p: usize,
+    seams: &[(u32, usize)], within: bool, section: Section) -> Result<Vec<Piece>, String> {
+    let Section::Flat { la, lb } = section else {
+        return Err(spilled("along an edge no line or coaxial circle carries, a round"));
+    };
+    let Some((n, _)) = body.plane(p) else { return Err(spilled("from a face no plane, along a traced edge")) };
+    let g = seams[0].1;
+    if seams.iter().any(|&(_, h)| h != g) {
+        return Err(spilled("into more than one face"));
+    }
+    let chain = Surf::of(body, g).ok_or_else(|| spilled("into a face neither a cylinder nor a torus"))?;
+    // the seam and its normal surface, the run's side of it within
+    let (seam, split) = match (body.segment(seams[0].0), body.circle(seams[0].0), chain) {
+        (Some([q0, q1]), _, Surf::Cylinder { axis, .. }) if norm(cross(axis, sub(q1, q0))) <= 1e-9 * distance(q0, q1) => {
+            let d = normalised(sub(q1, q0)).ok_or("a seam of no length")?;
+            let m = normalised(cross(d, n)).ok_or("a seam along the plane's normal")?;
+            (super::Seam::Line(q0, d), Surf::Plane { origin: q0, normal: m })
+        }
+        (_, Some((o, axis, r, _)), Surf::Torus { axis: ta, .. }) if norm(cross(axis, n)) <= 1e-9 && norm(cross(ta, n)) <= 1e-9 => {
+            (super::Seam::Circle(o, axis, r), Surf::Cylinder { origin: o, axis, radius: r })
+        }
+        _ => return Err(spilled("along a traced edge, into a face that is no cylinder along a straight seam nor torus about \
+            the plane's normal")),
+    };
+    let at = body.middle(run[0]);
+    let flip = if split.side(at) > 0.0 { -1.0 } else { 1.0 };
+    let split = match split {
+        Surf::Plane { origin, normal } => Surf::Plane { origin, normal: scale(normal, flip) },
+        s => s,
+    };
+    let samples: Vec<V> = run.iter().flat_map(|&e| (0..=64).map(move |k| (e, k as f64 / 64.0)))
+        .map(|(e, s)| body.along(e, s)).collect();
+    if samples.iter().any(|&q| split.side(q) >= 0.0) {
+        return Err(spilled("along a traced edge that crosses the seam's normal surface"));
+    }
+    // where the leg on the plane crosses the seam: its footprint read along the run, and bisected
+    let k = if c == 0 { 0 } else { 1 };
+    let o = 1 - c;
+    let fo = |e: u32| body.faces_of(e).iter().copied().find(|f| faces[o].contains(f));
+    let leg = |e: u32, s: f64| -> Option<V> { super::footprint(body, p, fo(e)?, body.along(e, s), within, section, k) };
+    let mut ends: Vec<V> = Vec::new();
+    for &e in run {
+        let n_ = 64;
+        let mut last: Option<(f64, f64)> = None;
+        for j in 0..=n_ {
+            let s = j as f64 / n_ as f64;
+            let Some(q) = leg(e, s) else { last = None; continue };
+            let side = split.side(q);
+            if let Some((s0, side0)) = last {
+                if (side0 < 0.0) != (side < 0.0) {
+                    let (mut a, mut z) = (s0, s);
+                    for _ in 0..60 {
+                        let m = 0.5 * (a + z);
+                        let Some(qm) = leg(e, m) else { break };
+                        if (split.side(qm) < 0.0) == (side0 < 0.0) { a = m } else { z = m }
+                    }
+                    ends.extend(leg(e, 0.5 * (a + z)));
+                }
+            }
+            last = Some((s, side));
+        }
+    }
+    let [q0, q1] = ends[..] else { return Err(spilled("along a traced edge whose leg crosses the seam other than twice")) };
+    let wall = |fi: usize| Surf::of(body, fi);
+    let w = fo(run[0]).ok_or_else(|| unbuilt("an edge not between two faces"))?;
+    let wall = wall(w).ok_or_else(|| spilled("beside a face neither a plane, a cylinder, a cone nor a sphere"))?;
+    let region = if within { -1.0 } else { 1.0 };
+    let size = la.max(lb);
+    let orient = |fi: usize, s: &Surf, q: V| region * s.side(add(q, scale(body.normal(fi, q), 1e-3 * size))).signum();
+    let legs = if c == 0 { [la, lb] } else { [lb, la] };
+    let beyond = Beyond {
+        along: super::Along::Meeting { face: Surf::Plane { origin: at, normal: n } }, toward: toward(n, within), chain, wall,
+        split, sides: [orient(g, &chain, q0), orient(w, &wall, at), 1.0], seam, legs, radius: 0.0, ends: [q0, q1],
+    };
+    // the flat along the run, told its legs apart by a point beside the first group's face, from
+    // its point furthest from the seam's normal surface (a closed run's flat is seamed where it
+    // starts: there, away from the piece beyond, which it is glued to whole)
+    let (e, at) = run.iter().flat_map(|&e| (0..64).map(move |k| (e, body.along(e, k as f64 / 64.0))))
+        .min_by(|x, y| split.side(x.1).total_cmp(&split.side(y.1))).expect("a run of edges");
+    let ends_of: Vec<V> = body.run_ends(run).into_iter().map(|(v, ..)| v).collect();
+    let fa = body.faces_of(e).iter().copied().find(|f| faces[0].contains(f)).ok_or("an edge not between two faces")?;
+    let fb = body.faces_of(e).iter().copied().find(|f| faces[1].contains(f)).ok_or("an edge not between two faces")?;
+    let na = body.normal(fa, at);
+    let t = toward(body.normal(fb, at), within);
+    let wa = normalised(sub(t, scale(na, dot(t, na)))).ok_or("faces meeting tangent")?;
+    let flat = Rolled { at, r: 0.0, flat: Some(([la, lb], add(at, scale(wa, 0.5 * la)))), ends: ends_of, cuts: Vec::new(),
+        kept: vec![Kept { face: split, inside: true }] };
+    Ok(vec![Piece::Rolled(flat), Piece::Beyond(beyond)])
 }
 
 /// Along a straight `edge`: the section beside it swept along it, carried on past each end until

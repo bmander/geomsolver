@@ -305,40 +305,57 @@ pub enum Piece {
     Beyond(Beyond),
 }
 
-/// A ring's section beyond a seam's normal surface (#422, model units): where the ring's own face
-/// goes on tangent across a seam its section reaches, and the seam is no circle about the ring's
-/// axis (a boss near a plate's rounded rim), the ring is kept short of the seam's normal surface
-/// (its `Kept`) and this takes the rest — the section against the next face, in the half-planes
-/// through the ring's axis (`axis_origin`, `axis`), fitted (`brep::spill`) — glued to the ring on
-/// that surface.  The ring's edge is the circle `crease` (its centre and radius); `toward` the way
-/// from the ring's own face into the region; `chain` the next face's surface, `wall` the other
-/// face's, `split` the seam's normal surface, each with the way its signed distance runs toward
-/// the piece (`sides`, ±1); `seam` the seam's circle (centre, unit normal, radius); a chamfer's
-/// legs, on the chain from the wall and on the wall from the chain, or a round's `radius` (nothing
-/// for a chamfer); and `ends`, where the leg on the ring's own face crosses the seam — or where the
-/// ball touches it, a round's ring a stretch glued to this at both ends.
+/// A section beyond a seam's normal surface (#422, model units): where an edge's face goes on
+/// tangent across a seam its section reaches, and the seam is no line along the edge nor circle
+/// about its axis (a boss near a plate's rounded rim; one standing through a slope near its rounded
+/// edge), the edge's own piece — a ring, or a flat cut along a traced run — is kept short of the
+/// seam's normal surface (its `Kept`) and this takes the rest: the section against the next face,
+/// in the edge's own sections (`along`), fitted (`brep::spill`), glued to it on that surface.
+/// `toward` is the way from the edge's face into the region; `chain` the next face's surface,
+/// `wall` the other face's, `split` the seam's normal surface, each with the way its signed
+/// distance runs toward the piece (`sides`, ±1); `seam` the seam; a chamfer's legs, on the chain
+/// from the wall and on the wall from the chain, or a round's `radius` (nothing for a chamfer);
+/// and `ends`, where the leg on the edge's face crosses the seam — or where the ball touches it, a
+/// round's ring a stretch glued to this at both ends.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Beyond {
-    pub axis_origin: V,
-    pub axis: V,
-    pub crease: (V, f64),
+    pub along: Along,
     pub toward: V,
     pub chain: Surf,
     pub wall: Surf,
     pub split: Surf,
     pub sides: [f64; 3],
-    pub seam: (V, V, f64),
+    pub seam: Seam,
     pub legs: [f64; 2],
     pub radius: f64,
     pub ends: [V; 2],
 }
 
+/// The edge a section beyond a seam is read along: a ring about the line through `axis_origin`
+/// along the unit `axis`, its edge the circle `crease` (centre, radius) — its sections the
+/// half-planes through the axis — or the meeting of the face `face` and the wall, its sections the
+/// planes square to it.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Along {
+    Ring { axis_origin: V, axis: V, crease: (V, f64) },
+    Meeting { face: Surf },
+}
+
+/// A seam a section reaches across: a circle (centre, unit normal, radius) or a line (a point of
+/// it, its unit direction).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Seam {
+    Circle(V, V, f64),
+    Line(V, V),
+}
+
 impl Beyond {
-    /// The point of its edge, the crease, in the half-plane through its axis and `p`.
-    pub fn crease_at(&self, p: V) -> V {
-        let w = sub(p, self.crease.0);
-        let radial = normalised(sub(w, scale(self.axis, dot(w, self.axis)))).unwrap_or([0.0; 3]);
-        add(self.crease.0, scale(radial, self.crease.1))
+    /// The point of a ring's edge, the crease, in the half-plane through its axis and `p`.
+    pub fn crease_at(&self, p: V) -> Option<V> {
+        let Along::Ring { axis, crease: (centre, radius), .. } = self.along else { return None };
+        let w = sub(p, centre);
+        let radial = normalised(sub(w, scale(axis, dot(w, axis)))).unwrap_or([0.0; 3]);
+        Some(add(centre, scale(radial, radius)))
     }
 }
 
@@ -356,6 +373,8 @@ pub struct Rolled {
     pub flat: Option<([f64; 2], V)>,
     /// Where its run ends (an open one's two vertices).
     pub ends: Vec<V>,
+    /// The seam's normal surface a flat is kept short of, a piece beyond it taking the rest (#422).
+    pub kept: Vec<Kept>,
     /// The sections of the corners standing at its ends, each a point of it, the normal toward the
     /// run, and how far the corner's cell reaches from it: what lies on the corner's side within
     /// that reach is cut from the piece, the cell taking it (#218's 7).

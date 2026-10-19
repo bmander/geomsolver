@@ -111,9 +111,11 @@ pub struct Corner { pub vertex: V,pub centre: V,pub radius: f64,pub faces: Vec<S
 
 /// A ball rolled along a traced run from `at`, of `radius` — or, where `flat` gives its legs and a
 /// point it lies `on`, a chamfer's flat cut along it — cut at each section of `cuts` (a point, the
-/// section's normal, its reach).
+/// section's normal, its reach), and kept within or outside each of `kept` (a seam's normal surface
+/// a piece beyond takes the rest past, #422: a plane's half-space, a curved face's solid).
 #[derive(Clone,Debug)]
-pub struct Rolled { pub at: V,pub radius: f64,pub flat: Option<([f64;2],V)>,pub cuts: Vec<(V,V,f64)> }
+pub struct Rolled { pub at: V,pub radius: f64,pub flat: Option<([f64;2],V)>,pub cuts: Vec<(V,V,f64)>,
+    pub kept: Vec<(Surface,bool)> }
 
 /// A profile as a recipe writes it (millimetres): its plane, through `origin` square to `normal`
 /// (as written, not made unit), and its loops of edges in written order.
@@ -237,20 +239,32 @@ impl Lowered {
             radius:number(c,"radius")?,faces:each(field(c,"faces")?.arr(),surface)?}))?;
         let rolled = each(listed(n,"rolled"),|k| Ok(Rolled {at:point(k,"at")?,radius:number(k,"radius")?,
             flat:match k.get("legs") { Some(legs) => Some((pair(legs),point(k,"on")?)),None => None },
-            cuts:each(listed(k,"cuts"),|c| Ok((point(c,"at")?,point(c,"normal")?,number(c,"reach")?)))?}))?;
+            cuts:each(listed(k,"cuts"),|c| Ok((point(c,"at")?,point(c,"normal")?,number(c,"reach")?)))?,
+            kept:each(listed(k,"kept"),|j| Ok((surface(j)?,matches!(field(j,"inside")?,Json::Bool(true)))))?}))?;
         let joins = field(n,"joins")?.arr().iter()
             .map(|j| { let j = j.arr(); [j[0].as_i64() as usize,j[1].as_i64() as usize] }).collect();
         // a ring's section beyond a seam's normal surface (#422), counted after the rolled runs
         let beyond = each(listed(n,"beyond"),|b| {
-            let axis = field(b,"axis")?.arr();
+            use crate::brep::spill::{Along,Seam};
             let seam = field(b,"seam")?;
             let ends = field(b,"ends")?.arr();
             let sides = field(b,"sides")?.arr();
-            if axis.len() != 2 || ends.len() != 2 || sides.len() != 3 { return Err(unread("recipe: a piece beyond a seam, misread".into())) }
-            Ok(crate::brep::spill::Beyond {axis:[vec3(&axis[0]),vec3(&axis[1])],crease:(point(b,"crease")?,number(b,"radius")?),
-                toward:point(b,"toward")?,chain:surface(field(b,"chain")?)?,wall:surface(field(b,"wall")?)?,
-                split:surface(field(b,"split")?)?,sides:[sides[0].as_f64(),sides[1].as_f64(),sides[2].as_f64()],
-                seam:(point(seam,"centre")?,point(seam,"normal")?,number(seam,"radius")?),legs:pair(field(b,"legs")?),
+            if ends.len() != 2 || sides.len() != 3 { return Err(unread("recipe: a piece beyond a seam, misread".into())) }
+            let along = match b.get("face") {
+                Some(face) => Along::Meeting {face:surface(face)?},
+                None => {
+                    let axis = field(b,"axis")?.arr();
+                    if axis.len() != 2 { return Err(unread("recipe: a piece beyond a seam, misread".into())) }
+                    Along::Ring {axis:[vec3(&axis[0]),vec3(&axis[1])],crease:(point(b,"crease")?,number(b,"radius")?)}
+                }
+            };
+            let seam = match seam.get("point") {
+                Some(_) => Seam::Line(point(seam,"point")?,point(seam,"direction")?),
+                None => Seam::Circle(point(seam,"centre")?,point(seam,"normal")?,number(seam,"radius")?),
+            };
+            Ok(crate::brep::spill::Beyond {along,toward:point(b,"toward")?,chain:surface(field(b,"chain")?)?,
+                wall:surface(field(b,"wall")?)?,split:surface(field(b,"split")?)?,
+                sides:[sides[0].as_f64(),sides[1].as_f64(),sides[2].as_f64()],seam,legs:pair(field(b,"legs")?),
                 radius:number(b,"ball")?,ends:[vec3(&ends[0]),vec3(&ends[1])]})
         })?;
         Ok(Lowered {pieces,corners,rolled,joins,stratum:n.get("stratum").map(Body::read).transpose()?,beyond})

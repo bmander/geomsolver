@@ -135,7 +135,7 @@ fn lowered_node(n: &Lowered,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i6
     // a ring's section beyond a seam's normal surface (#422), fitted: glued to its ring as a rolled
     // piece is to a corner's cell (a chamfer's on the seam's normal surface, a round's at its ends)
     for b in &n.beyond {
-        let tol = tolerance_over(1.+crate::space::norm(b.crease.0)+b.crease.1,floor);
+        let tol = tolerance_over(1.+crate::space::norm(b.ends[0])+b.legs[0].max(b.legs[1])+b.radius,floor);
         pieces.push(if b.radius > 0. {
             super::spill::round_beyond(b,b.radius,tol).map_err(|e| format!("a round beyond a seam: {e}"))?
         } else {
@@ -155,6 +155,13 @@ fn rolled_run(k: &Rolled,stratum: &Brep,tol: f64,floor: f64) -> Built {
     };
     for &(at,normal,reach) in &k.cuts {
         piece = cut_before(&piece,at,normal,reach,floor).map_err(|e| format!("a rolled round cut at a corner: {e}"))?;
+    }
+    // short of a seam's normal surface, a piece beyond taking the rest (#422)
+    for (surface,inside) in &k.kept {
+        piece = match surface {
+            super::geom::Surface::Plane(f) => kept(&piece,f.o,if *inside { f.z.map(|x| -x) } else { f.z },floor),
+            _ => kept_by_solid(&piece,surface,*inside,floor),
+        }.map_err(|e| format!("a flat along a run kept short of a seam: {e}"))?;
     }
     Ok(piece)
 }
