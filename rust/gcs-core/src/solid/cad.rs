@@ -123,7 +123,9 @@ fn recipe_with(sk: &Sketch,root: usize,static_only: bool,about: Option<[f64;3]>)
         let dependencies = match &sk.solids[i].def {
             SolidDef::Body {..} if !ready => walk.sets(i)?,
             SolidDef::Body {..} => Vec::new(),
-            _ => super::evaluation_operands(sk,i)?,
+            // a tool through a body reads its material, and a region lowered to nothing is none of
+            // it: a convex edge's fill beside a flat cut `through:` the body it rounds
+            _ => super::evaluation_operands(sk,i)?.into_iter().filter(|o| !walk.nowhere(o)).collect(),
         };
         if !ready {
             pending.push((i,true));

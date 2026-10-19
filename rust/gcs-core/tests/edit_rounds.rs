@@ -6,6 +6,7 @@ use gcs_core::edit::{self, EdgeWord};
 use gcs_core::overview::workspace::{pick_edge, solid_edges, under, Projection, Under};
 use gcs_core::solid::ApproximationPolicy::Report;
 use gcs_core::program;
+use gcs_core::brep::props;
 use crate::common::gestures::{build, seen};
 
 const BLOCK: &str = "\
@@ -240,4 +241,37 @@ fn what_the_language_would_refuse_is_refused_at_the_gesture() {
         .expect("an edge of the round's face");
     let why = refused(&next, "block", &[], &[made.faces.clone()], "1");
     assert!(why.contains("no name the document can write"), "{why}");
+}
+
+#[test]
+fn a_convex_edge_is_rounded_beside_a_tool_through_the_body() {
+    // a notch cut `through: block` reads the block's material, among it the fill the round makes
+    // at every edge it names, empty at a convex one: the empty fill is none of it (the hub
+    // motor's axle, its flats cut through it, a convex edge rounded)
+    let src = format!("{BLOCK}\
+in std.front {{
+  n0 := point
+  n1 := point
+  n2 := point
+  n3 := point
+  fix((34, 0)) n0
+  fix((40, 0)) n1
+  fix((40, 6)) n2
+  fix((34, 6)) n3
+  (ns := line(n0, n1)) -> (ne := line(n1, n2)) -> (nn := line(n2, n3)) ->
+    (nw := line(n3, n0)) -> close
+  notch_face := face(ns, ne, nn, nw)
+}}
+notch := solid(notch_face, through: block)
+notch cut block
+");
+    let e = build(&src);
+    let whole = 40.0 * 24.0 * 12.0 - 6.0 * 6.0 * 12.0;
+    assert!((volume(&e, "block") - whole).abs() < 1e-6, "{}", volume(&e, "block"));
+    let (_, next) = rounded(&e, "block", EdgeWord::Round, &[],
+                            &[pair("block.near", "block.north")], "2");
+    let taken = 4.0 * (1.0 - std::f64::consts::FRAC_PI_4) * 40.0;
+    assert!((volume(&next, "block") - (whole - taken)).abs() < 1e-6, "{}", volume(&next, "block"));
+    let exact = next.sketch.exact_solid(objects(&next, "block")).map(|x| props::volume(&x.brep));
+    assert!(exact.as_ref().is_ok_and(|v| (v - (whole - taken)).abs() < 1e-6), "{exact:?}");
 }

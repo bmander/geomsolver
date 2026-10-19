@@ -31,23 +31,38 @@ use std::sync::Arc;
 /// A chamfer's flat or a round beyond a seam's normal surface (all in the boundary's units): the
 /// face it stands on (`face`), whose meeting with the wall is the edge it runs along, read in the
 /// planes square to it; which way from that face the region lies (`toward`, unit); the chain's
-/// next face (`chain`), the other face (`wall`) and the seam's normal surface (`split`), with which
-/// way each one's signed distance runs toward the piece (`sides`, ±1); the seam (`seam`); a
-/// chamfer's legs — on the chain from the wall, on the wall from the chain — or a round's `radius`
-/// (nothing for a chamfer, `round_beyond`); and where the leg on the face it stands on crosses the
-/// seam, or where the ball touches it (`ends`).
+/// next face (`chain`) and the other face (`wall`), with which way each one's signed distance runs
+/// toward the piece (`sides`, ±1); the seam (`seam`); what it is across the seam (`section`); and
+/// where the leg on the face it stands on crosses the seam, or where the ball touches it (`ends`).
 #[derive(Clone, Debug)]
 pub struct Beyond {
     pub face: Surface,
     pub toward: V,
     pub chain: Surface,
     pub wall: Surface,
-    pub split: Surface,
-    pub sides: [f64; 3],
+    pub sides: [f64; 2],
     pub seam: Seam,
-    pub legs: [f64; 2],
-    pub radius: f64,
+    pub section: Across<Surface>,
     pub ends: [V; 2],
+}
+
+/// What a piece beyond a seam's normal surface is across the seam (#426), its surfaces `S` (the
+/// model's, or the boundary's): a chamfer's flat — its legs, on the chain from the wall and on the
+/// wall from the chain, and the seam's normal surface it starts at (`split`), whose signed distance
+/// runs from the edge's own piece toward it (a plane's normal turned so; the edge within a
+/// cylinder) — or a round's ball of `radius`, glued to the edge's own piece where it touches the
+/// seam (`round_beyond`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Across<S> {
+    Flat { legs: [f64; 2], split: S },
+    Round { radius: f64 },
+}
+
+impl<S> Across<S> {
+    /// Its size: a flat's longer leg, a round's radius.
+    pub fn size(&self) -> f64 {
+        match self { Across::Flat { legs, .. } => legs[0].max(legs[1]), Across::Round { radius } => *radius }
+    }
 }
 
 /// A seam a chain's face goes on across: a circle (centre, unit normal, radius) or a line (a point
@@ -74,7 +89,7 @@ fn sections<'a>(b: &'a Beyond, through: [V; 2], tol: f64) -> Result<Sections<'a>
     let face = &b.face;
     let meet = Traced { a: face.clone(), b: b.wall.clone(), pts: Vec::new(), closed: false };
     let feet = through.map(|q| meet.project(q));
-    let size = distance(b.ends[0], b.ends[1]) + b.legs[0].max(b.legs[1]) + b.radius;
+    let size = distance(b.ends[0], b.ends[1]) + b.section.size();
     let (curves, exact) = match super::ssi::intersect(face, &b.wall, tol) {
         super::ssi::Ssi::Curves(cs) => (cs, true),
         super::ssi::Ssi::Same => return Err("a face and a wall on one surface".into()),
@@ -180,10 +195,13 @@ fn seam_edge(out: &mut Brep, seam: Seam, q: [V; 2], vq: [u32; 2], near: V) -> us
     exact_edge(out, &curve, q, vq, near, f64::INFINITY).expect("a line's or a circle's stretch")
 }
 
-/// The piece of a chamfer's flat beyond the seam's normal surface (`Beyond`), fitted within `tol`.
+/// The piece of a chamfer's flat beyond the seam's normal surface (`Beyond`), fitted within `tol`;
+/// glued to the edge's own piece on that surface (`split`).
 pub fn flat_beyond(b: &Beyond, tol: f64) -> Result<Brep, String> {
-    let [sc, sw, ss] = b.sides;
-    let [lc, lw] = b.legs;
+    let Across::Flat { legs: [lc, lw], ref split } = b.section else {
+        return Err("a round's piece built as a flat's".into());
+    };
+    let [sc, sw] = b.sides;
     let Sections { at: section, ends: q, .. } = sections(b, b.ends, tol)?;
     let size = lc.max(lw);
     // the flat's sum of distances, nothing on it, and its gradient
@@ -259,7 +277,7 @@ pub fn flat_beyond(b: &Beyond, tol: f64) -> Result<Brep, String> {
     let crossing = |u: f64, guess: V| -> Option<V> {
         let (o, n) = section(u);
         crate::roots::newton_onto::<3>(guess, size, |p| Some([
-            (b.split.gradient(p), b.split.implicit(p)), (grad(p), sum(p)), (n, dot(n, sub(p, o))),
+            (split.gradient(p), split.implicit(p)), (grad(p), sum(p)), (n, dot(n, sub(p, o))),
         ]), settled)
     };
     let steps = 256;
@@ -300,12 +318,12 @@ pub fn flat_beyond(b: &Beyond, tol: f64) -> Result<Brep, String> {
     // each face's surface with its seam turned away from the piece
     let middle = flat(0.5, 0.0);
     let chain = turned_from(&b.chain, middle);
-    let split = turned_from(&b.split, middle);
+    let split_face = turned_from(split, middle);
     let sheet = Surface::BSpline(Frame::new([0.0; 3], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]), Arc::new(net));
     let p = q[0];
     face_out(&mut out, chain, scale(b.chain.gradient(p), -sc), &[seam, leg], "a")?;
     face_out(&mut out, sheet, grad(p), &[leg, cut], "flat")?;
-    face_out(&mut out, split, scale(b.split.gradient(p), -ss), &[cut, seam], "split")?;
+    face_out(&mut out, split_face, scale(split.gradient(p), -1.0), &[cut, seam], "split")?;
     out.measure_tolerances();
     for e in [leg, cut] {
         let t = &mut out.edges[e].tol;
@@ -315,7 +333,7 @@ pub fn flat_beyond(b: &Beyond, tol: f64) -> Result<Brep, String> {
     Ok(out)
 }
 
-/// **A round's piece beyond a seam's normal surface** (#422's rung 3): the ball of radius `r` beside
+/// **A round's piece beyond a seam's normal surface** (#422's rung 3): the ball of its `radius` beside
 /// the wall touches the chain's next face (the torus) where its centre stands past the seam's
 /// offset — between the sections through its centres where it touches the seam (over `ends`, its
 /// touches there) — and the edge's own face elsewhere: a ring's stretch glued to this at both
@@ -329,8 +347,9 @@ pub fn flat_beyond(b: &Beyond, tol: f64) -> Result<Brep, String> {
 /// to its centre's path.  The edge and each cap's line down the wall are the meetings
 /// `ssi::intersect` gives in closed form (a ring's circle, a line down a cylinder), fitted where
 /// it gives none.
-pub fn round_beyond(b: &Beyond, r: f64, tol: f64) -> Result<Brep, String> {
-    let [sc, sw, _] = b.sides;
+pub fn round_beyond(b: &Beyond, tol: f64) -> Result<Brep, String> {
+    let Across::Round { radius: r } = b.section else { return Err("a flat's piece built as a round's".into()) };
+    let [sc, sw] = b.sides;
     // the sections through the ball's centres at the ends, over the plane the edge stands on
     let through = b.ends.map(|q| add(q, scale(b.toward, r)));
     let Sections { at: section, ends: q, exact } = sections(b, through, tol)?;
