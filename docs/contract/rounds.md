@@ -128,6 +128,13 @@ any other, whose square planes are the half-planes through its axis. Its edges a
 its circle, a slope's an ellipse; a round cap's edge down the wall a line where its plane holds a
 cylinder's or a cone's axis, an ellipse where it cuts a cylinder aslant, a circle on a sphere),
 fitted only where the meeting must be traced; the seam is the circle or the line it is.
+A `Beyond` says by its type which it is (#426, in both layers, `spill::Across`): a chamfer's
+`Flat` — its legs and the seam's normal surface (`split`) it starts at, its signed distance
+negative on the edge's side — or a round's `Round` — its radius, nothing else; `size()` reads it.
+The ring off the seam's axis and the traced run classify the chain once between them
+(`piece::chain_seam`: the plane's normal, the face beyond, the seam and its normal surface) and
+build their piece with one constructor (`piece::beyond_of`), the legs on the chain from the wall
+first whichever face of the edge's the chain's is.
 `spill.sv`'s STEP is a cone, one fitted flat, and the plate's and the boss's faces. `assemble`
 glues a piece beyond to the ring whose own axis puts its section where the ball touches the seam
 (a round) or that is kept short of its `split` (a flat), else to a rolled run, until #423 pairs
@@ -135,8 +142,9 @@ them where they are made.
 
 The recipe's `"beyond"` (after the rolled runs in a lowered node's joins): the edge it runs
 `"along"` (the `"face"` it stands on, meeting the wall in that edge), `"toward"`, the
-`"chain"`'s face, the `"wall"` and the `"split"` surface with `"sides"`, the `"seam"` (a circle or a
-line), the `"legs"` or the ball's `"radius"`, and the `"ends"`; a rolled run's `"kept"` and `"wedge"`; all
+`"chain"`'s face and the `"wall"` with their `"sides"`, the `"seam"` (a circle or a line), a flat's
+`"legs"` and `"split"` surface or a round's `"radius"` alone (which of the two is read by the key),
+and the `"ends"`; a rolled run's `"kept"` and `"wedge"`; all
 written through the node's `Writer`, so `cad::recipe_about` carries them. `boolean::glued` glues on
 a curved face too, an edge matched by a point of it on the other's (a traced meeting and a fitted
 one). It is symmetric in its two pieces (#424): the shared faces' boundaries are paired run by run
@@ -150,11 +158,12 @@ goes on tangent into another …", the field reading the region): on both sides 
 more than one face; along a seam that is not along a straight edge, or a curved seam beside one;
 beside two seams; beside a seam running only part of its edge; past a face it goes on into across
 an edge no seam, or a chain of more than four; round a circle beside a chain whose further seam is
-not about its axis; off the seam's axis, round a stretch of a circle, from a face no plane, into a
-face no torus about the plane's normal, where the edge or the wall's strip crosses the seam's
-normal surface or the leg crosses no seam; along a traced edge, from a face no plane, into a face no
-cylinder along a straight seam nor torus about the plane's normal, where the run crosses the seam's
-normal surface or its footprint crosses the seam other than twice. The gate holds every one to the
+not about its axis; for a piece beyond (`chain_seam`, a ring's and a traced run's alike) from a face
+no plane, into a face no cylinder along a straight seam nor torus about the plane's normal, or
+beside a wall neither a plane, a cylinder, a cone nor a sphere; off the seam's axis, round a stretch
+of a circle, where the edge or the wall's strip crosses the seam's normal surface or the leg
+crosses no seam; along a traced edge, where the run crosses the seam's normal surface or its
+footprint crosses the seam other than twice. The gate holds every one to the
 field as ever. `tests/composed_rounds.rs` is the gate (each against a closed form or a quadrature
 of the set's own words: `spill.sv` at every boss radius from 21 to 21.7, chamfered and rounded, to
 1e-6, and its volume to the field's mesh within the mesh's own stand-off; the straight, coaxial and

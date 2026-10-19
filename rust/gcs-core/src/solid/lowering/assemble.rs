@@ -5,7 +5,7 @@
 use crate::fmath::Det;
 use crate::brep::recipe::Writer;
 use crate::json::{object, Json};
-use super::{Beyond, Corner, Piece, Ring, Rolled, Run, Seam, Stroke, Surf, V};
+use super::{Across, Beyond, Corner, Piece, Ring, Rolled, Run, Seam, Stroke, Surf, V};
 use crate::space::{add, cross, distance, dot, norm, normalised, scale, sub};
 
 impl Surf {
@@ -127,7 +127,7 @@ pub fn assemble<'a>(pieces: impl IntoIterator<Item = &'a Piece>) -> Assembly {
         Piece::Ring(g) => norm(g.section.origin) + norm(g.axis_origin),
         Piece::Corner(c) => norm(c.vertex) + c.r,
         Piece::Rolled(k) => norm(k.at) + k.r + k.flat.map_or(0.0, |([la, lb], _)| la.max(lb)),
-        Piece::Beyond(b) => norm(b.ends[0]) + b.legs[0].max(b.legs[1]) + b.radius,
+        Piece::Beyond(b) => norm(b.ends[0]) + b.section.size(),
     }).fold(1.0, f64::max);
     let near = |p: V, q: V| distance(p, q) <= 1e-9 * size;
     let mut out = Assembly::default();
@@ -144,7 +144,11 @@ pub fn assemble<'a>(pieces: impl IntoIterator<Item = &'a Piece>) -> Assembly {
                 out.rolled.push(k.clone());
             }
             Piece::Beyond(b) if !out.beyond.iter().any(|c| b.ends.iter().all(|&p| c.ends.iter().any(|&q| near(p, q)))
-                && (b.radius - c.radius).abs() <= 1e-9 * size)
+                && match (b.section, c.section) {
+                    (Across::Round { radius: x }, Across::Round { radius: y }) => (x - y).abs() <= 1e-9 * size,
+                    (Across::Flat { .. }, Across::Flat { .. }) => true,
+                    _ => false,
+                })
                 => out.beyond.push(b.clone()),
             _ => {}
         }
@@ -251,18 +255,21 @@ pub fn assemble<'a>(pieces: impl IntoIterator<Item = &'a Piece>) -> Assembly {
             let o = g.section.origin;
             normalised(off(p)).map(|radial| add(sub(o, off(o)), scale(radial, norm(off(o)))))
         };
-        let ring = out.rings.iter().position(|g| if b.radius > 0.0 {
-            b.ends.iter().any(|&p| crease(g, p).is_some_and(|q| near(g.section.origin, q)))
-        } else {
-            g.section.kept.iter().any(|kept| kept.face == b.split)
+        let ring = out.rings.iter().position(|g| match b.section {
+            Across::Round { .. } => b.ends.iter().any(|&p| crease(g, p).is_some_and(|q| near(g.section.origin, q))),
+            Across::Flat { split, .. } => g.section.kept.iter().any(|kept| kept.face == split),
         });
         if let Some(i) = ring {
             out.joins.push([out.runs.len() + i, first + k]);
             continue;
         }
-        let centres = b.ends.map(|q| add(q, scale(b.toward, b.radius)));
-        let rolled = out.rolled.iter().position(|j| j.kept.iter().any(|kept| kept.face == b.split)
-            || b.radius > 0.0 && j.wedge.iter().any(|&(p, _)| centres.iter().any(|&c| near(p, c))));
+        let rolled = out.rolled.iter().position(|j| match b.section {
+            Across::Round { radius } => {
+                let centres = b.ends.map(|q| add(q, scale(b.toward, radius)));
+                j.wedge.iter().any(|&(p, _)| centres.iter().any(|&c| near(p, c)))
+            }
+            Across::Flat { split, .. } => j.kept.iter().any(|kept| kept.face == split),
+        });
         if let Some(i) = rolled {
             out.joins.push([rolled_from + i, first + k]);
         }
@@ -335,17 +342,25 @@ impl Assembly {
             o
         }).collect();
         let beyond = self.beyond.iter().map(|b| {
-            object([
-                ("toward", vector(b.toward)), ("chain", b.chain.json(w)), ("wall", b.wall.json(w)), ("split", b.split.json(w)),
+            let mut o = object([
+                ("toward", vector(b.toward)), ("chain", b.chain.json(w)), ("wall", b.wall.json(w)),
                 ("sides", Json::Arr(b.sides.iter().map(|&x| x.into()).collect())),
                 ("seam", match b.seam {
                     Seam::Circle(c, n, r) => object([("centre", w.at(scale(c, by))), ("normal", vector(n)), ("radius", (r * by).into())]),
                     Seam::Line(p, d) => object([("point", w.line_origin(scale(p, by), d)), ("direction", vector(d))]),
                 }),
-                ("legs", Json::Arr(b.legs.iter().map(|&l| (l * by).into()).collect())), ("radius", (b.radius * by).into()),
                 ("ends", Json::Arr(b.ends.iter().map(|&p| w.at(scale(p, by))).collect())),
                 ("along", object([("face", b.face.json(w))])),
-            ])
+            ]);
+            // a flat's legs and the seam's normal surface it starts at, or a round's radius
+            match b.section {
+                Across::Flat { legs, split } => {
+                    o.set("legs", Json::Arr(legs.iter().map(|&l| (l * by).into()).collect()));
+                    o.set("split", split.json(w));
+                }
+                Across::Round { radius } => o.set("radius", (radius * by).into()),
+            }
+            o
         }).collect();
         let mut node = object([("kind", "lowered".into()), ("pieces", Json::Arr(pieces)), ("corners", Json::Arr(corners)),
             ("joins", Json::Arr(joins)), ("rolled", Json::Arr(rolled))]);
