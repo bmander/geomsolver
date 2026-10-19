@@ -180,18 +180,14 @@ fn through_range(basis: &Basis,supports: &[Option<V>]) -> Result<[f64;2],String>
 /// **An operand built exactly is read by its own boundary** (#419): a body some of whose terms
 /// read its faces (the stratum's late ones, `faces::stratum`: a round), with neither a sweep nor a
 /// region only the field builds among what it reads (`solid::has_sweep`), that this kernel builds
-/// (`Sketch::exact_solid`) — never a sweep's source, which a sweep reads box by box over its roll.
-/// Its terms composed read a sheet of nothing where a round's cut lies on the face it rounds; its
-/// boundary has none.  Anything else, or one refused, is composed of its terms.
+/// (`Sketch::exact_solid`).  Its terms composed read a sheet of nothing where a round's cut lies on
+/// the face it rounds; its boundary has none.  Anything else, or one refused, is composed of its
+/// terms.  Who reads it is `read`'s to judge: never the solid read, nor a sweep's source.
 fn built(sk: &Sketch,i: usize) -> Option<BuiltField> {
     let SolidDef::Body {on,through,..} = &sk.solids[i].def else { return None };
-    let [_,_,on_late,through_late] = crate::solid::faces::stratum(sk,i,on.iter().copied(),through.iter().copied());
-    if on_late.is_empty() && through_late.is_empty()
-        || sk.solids.iter().any(|s| matches!(s.def,SolidDef::Swept {source,..} if source as usize == i)) {
-        return None;
-    }
     sk.caches.built.get_or(i,crate::solid::MemoKey::of(sk,i),|| {
-        if crate::solid::has_sweep(sk,i) { return None }
+        let [_,_,on_late,through_late] = crate::solid::faces::stratum(sk,i,on.iter().copied(),through.iter().copied());
+        if on_late.is_empty() && through_late.is_empty() || crate::solid::has_sweep(sk,i) { return None }
         sk.exact_solid(i).ok().and_then(|e| BuiltField::new(&e))
     })
 }
@@ -203,13 +199,18 @@ fn read(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<Snapshot,String>
     let mut done: BTreeMap<usize,Snapshot> = BTreeMap::new();
     // the regions that hold nowhere (#183: a round over faces that never meet), no term of a body
     let mut empty: std::collections::BTreeSet<usize> = Default::default();
+    // the sources of the sweeps met, which a sweep reads box by box over its roll: never whole
+    let mut swept: std::collections::BTreeSet<usize> = Default::default();
     let mut pending = vec![(solid,false)];
     while let Some((i,ready)) = pending.pop() {
         if done.contains_key(&i) { continue; }
         let s = &sk.solids[i];
         if !ready {
+            if let SolidDef::Swept {source,..} = s.def { swept.insert(source as usize); }
             // an operand built exactly, read whole: none of its terms is read
-            if i != solid { if let Some(f) = built(sk,i) { done.insert(i,Snapshot::Static(f.into())); continue; } }
+            if i != solid && !swept.contains(&i) {
+                if let Some(f) = built(sk,i) { done.insert(i,Snapshot::Static(f.into())); continue; }
+            }
             pending.push((i,true));
             let operands = crate::solid::document::evaluation_operands(sk,i)?;
             pending.extend(operands.into_iter().rev().map(|o| (o as usize,false)));

@@ -396,6 +396,9 @@ impl<'a> Located<'a> {
         unwrap(f.surface.inverse_near(p,mid),mid,f.surface.periods())
     }
 
+    /// Face `fi`'s box in space (`face_box`).
+    pub(crate) fn face_box(&self,fi: usize) -> ([f64;3],[f64;3]) { self.space[fi] }
+
     /// The point of an edge nearest `p`: its parameter and distance.
     pub(crate) fn nearest(&self,e: u32,p: V) -> (f64,f64) {
         let e = &self.b.edges[e as usize];
