@@ -245,7 +245,8 @@ each order of the faces it names, and `Corner(a, b, c)` and `Corner(b, a, c)` lo
 construction, built and meshed once and held to each region's own field. `cad.rs` builds a body's lowered regions in one set as one recipe node, `"lowered"`
 (`assemble`: each distinct piece once, a run cut short at a corner's section and **glued** there,
 `boolean::glued`; the rest unioned — two runs crossing are a mitre), the first region standing for
-the rest; a region lowered to nothing is no operand; a body's face readers go in `"on_late"` /
+the rest; a region lowered to nothing is no operand, nor material a tool `through:` the body reads
+(a convex edge's fill, `edit_rounds.rs`); a body's face readers go in `"on_late"` /
 `"cut_late"`, applied after `bound` (`faces::stratum`, the one split the field and the recipe
 share; the native host applies them so too). `sweeps_among` sends a lowered region to the exact path. Kernel rules the stack found and
 this needs (ported from #79–#110): edges along a face cut where they cross its edges
