@@ -124,10 +124,14 @@ The recipe's `"beyond"` (after the rolled runs in a lowered node's joins): the e
 `"along"` (a ring's `"axis"` and `"crease"`, or the `"face"` it meets the wall in), `"toward"`, the
 `"chain"`'s face, the `"wall"` and the `"split"` surface with `"sides"`, the `"seam"` (a circle or a
 line), the `"legs"` or the ball's `"radius"`, and the `"ends"`; a rolled run's `"kept"` and `"wedge"`; all
-written through the node's `Writer`, so `cad::recipe_about` carries them. `boolean::glued` glues on
-a curved face too, an edge matched by a point of it on the other's (a traced meeting and a fitted
-one), or to a run of the other's end to end (a traced flat's crossing cut where that flat is
-seamed). **Refused by name** (`piece::spilled`: "its section reaches across the seam where a face
+written through the node's `Writer`, so `cad::recipe_about` carries them. **A piece beyond is held
+by the piece it is made with** (#423: `Ring::beyond`, `Rolled::beyond`), never a `Piece` of its
+own: `assemble` keeps it with its partner, drops it with its partner where another region names the
+same edge (two regions naming one edge in either order still make one pair, as `canonical` needs),
+and copies that join — no rule of geometry pairs them, so two runs kept short of one seam's normal
+surface are each glued to their own. `boolean::glued` glues on a curved face too, an edge matched
+by a point of it on the other's (a traced meeting and a fitted one), or to a run of the other's end
+to end (a traced flat's crossing cut where that flat is seamed). **Refused by name** (`piece::spilled`: "its section reaches across the seam where a face
 goes on tangent into another …", the field reading the region): on both sides of its edge; into
 more than one face; along a seam that is not along a straight edge, or a curved seam beside one;
 beside two seams; beside a seam running only part of its edge; past a face it goes on into across
@@ -140,9 +144,10 @@ normal surface or its footprint crosses the seam other than twice. The gate hold
 field as ever. `tests/composed_rounds.rs` is the gate (each against a closed form or a quadrature
 of the set's own words: `spill.sv` at every boss radius from 21 to 21.7, chamfered and rounded, to
 1e-6, and its volume to the field's mesh within the mesh's own stand-off; the straight, coaxial and
-three-face chains to 1e-9; the traced flat to 1e-8 and the traced round to 1e-6), `tests/brep.rs`
-the strip across a tangent seam unioned into its body (the kernel's touch across a tangent edge,
-before the lowering relied on it). `fillet_oracle` holds none of these yet: whether OCCT's fillet
+three-face chains to 1e-9; the traced flat to 1e-8 and the traced round to 1e-6; two bosses up
+through one slope, each chamfered over its round, to 1e-8), `tests/brep.rs` the strip across a
+tangent seam unioned into its body (the kernel's touch across a tangent edge, before the lowering
+relied on it). `fillet_oracle` holds none of these yet: whether OCCT's fillet
 overflowing onto a tangent face reads them as `std.sv` does is open. A region of a body's faces the planes do not close is
 supported by the bodies it reads grown by `SUPPORT_REACH` of its longest length
 (`region::general`), so a fill the table refused is meshed. The field's composition of an operand

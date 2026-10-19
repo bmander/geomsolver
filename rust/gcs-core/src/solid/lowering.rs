@@ -285,6 +285,9 @@ pub struct Ring {
     pub axis_origin: V,
     pub axis: V,
     pub angle: f64,
+    /// The section beyond a seam's normal surface the ring is kept short of, glued to it there
+    /// (#422): made with it, so it is joined to this ring and no other (#423).
+    pub beyond: Option<Beyond>,
 }
 
 impl Ring {
@@ -304,7 +307,6 @@ pub enum Piece {
     Ring(Ring),
     Corner(Corner),
     Rolled(Rolled),
-    Beyond(Beyond),
 }
 
 /// A section beyond a seam's normal surface (#422, model units): where an edge's face goes on
@@ -312,7 +314,9 @@ pub enum Piece {
 /// about its axis (a boss near a plate's rounded rim; one standing through a slope near its rounded
 /// edge), the edge's own piece — a ring, or a flat cut along a traced run — is kept short of the
 /// seam's normal surface (its `Kept`) and this takes the rest: the section against the next face,
-/// in the edge's own sections (`along`), fitted (`brep::spill`), glued to it on that surface.
+/// in the edge's own sections (`along`), fitted (`brep::spill`), glued to it on that surface.  It
+/// is held by the piece it is made with (`Ring::beyond`, `Rolled::beyond`), so the join is the
+/// one made there, never one found again by its geometry (#423).
 /// `toward` is the way from the edge's face into the region; `chain` the next face's surface,
 /// `wall` the other face's, `split` the seam's normal surface, each with the way its signed
 /// distance runs toward the piece (`sides`, ±1); `seam` the seam; a chamfer's legs, on the chain
@@ -346,16 +350,6 @@ pub enum Along {
 /// A seam a section reaches across (model units here, the recipe's in its own): a circle or a line.
 pub use crate::brep::spill::Seam;
 
-impl Beyond {
-    /// The point of a ring's edge, the crease, in the half-plane through its axis and `p`.
-    pub fn crease_at(&self, p: V) -> Option<V> {
-        let Along::Ring { axis, crease: (centre, radius), .. } = self.along else { return None };
-        let w = sub(p, centre);
-        let radial = normalised(sub(w, scale(axis, dot(w, axis)))).unwrap_or([0.0; 3]);
-        Some(add(centre, scale(radial, radius)))
-    }
-}
-
 /// A ball rolled along a run of edges no line or coaxial circle carries — a pipe tee's crotch, a
 /// bore's rim on a pipe's wall, a boss's root across a sloped face (model units): the ball of
 /// radius `r` touching both faces, rolled from where it stands over `at` on the run, its spine
@@ -376,6 +370,9 @@ pub struct Rolled {
     /// at either end of that stretch, each a point (the ball's centre) and its normal into the
     /// stretch; what lies on both normals' sides is cut away.
     pub wedge: Vec<(V, V)>,
+    /// The section beyond that seam's normal surface, glued to this (#422): made with it, so it is
+    /// joined to this run and no other kept short of the same surface (#423).
+    pub beyond: Option<Beyond>,
     /// The sections of the corners standing at its ends, each a point of it, the normal toward the
     /// run, and how far the corner's cell reaches from it: what lies on the corner's side within
     /// that reach is cut from the piece, the cell taking it (#218's 7).
