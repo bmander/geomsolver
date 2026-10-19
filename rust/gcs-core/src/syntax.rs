@@ -1611,6 +1611,11 @@ pub struct Relation {
     /// draws in are read where the value puts them, and a relation there reads them so too.
     /// Stamped by the parser, which hoists the block's statements.
     pub within: Vec<Ref>,
+    /// A defined word's use, named (`rim := b0.c0 round(r: 3mm) b0.far`): what its body makes
+    /// stands under the name, so a face of a solid it makes is read past the body as
+    /// `b0.rim.taken.round` (`flatten::keys::labelled`).  Only a word a file defines makes
+    /// anything, so a built-in relation named is refused where it is elaborated.
+    pub name: Option<Name>,
 }
 
 impl Relation {
@@ -1634,6 +1639,7 @@ impl Relation {
             space: false,
             initially: false,
             within: Vec::new(),
+            name: None,
         }
     }
 }
@@ -1793,6 +1799,9 @@ pub enum Member {
     Ends,
     Surface,
     Body,
+    /// `F.smooth` past a face (#183, [0.149]): its surface carried on across every seam where a
+    /// face of the body goes on from it tangent.
+    Smooth,
 }
 
 impl Member {
@@ -1802,13 +1811,14 @@ impl Member {
             Member::Ends => "ends",
             Member::Surface => "surface",
             Member::Body => "body",
+            Member::Smooth => "smooth",
         }
     }
 
     /// The member a last field is, where it is one (`surface`); whether it is read so is the
     /// flattener's, by what the name before it is.
     pub fn of(word: &str) -> Option<Member> {
-        [Member::Ends, Member::Surface, Member::Body].into_iter().find(|m| m.word() == word)
+        [Member::Ends, Member::Surface, Member::Body, Member::Smooth].into_iter().find(|m| m.word() == word)
     }
 
     /// Its spelling once resolved, where only text carries a name (a measurement's argument,

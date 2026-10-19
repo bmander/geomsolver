@@ -848,6 +848,7 @@ impl<'a> P<'a> {
                 space: false,
                 initially: false,
                 within: Vec::new(),
+                name: None,
             };
             let id = self.mint_stmt(next_id, sp)?;
             out.push(Stmt {
@@ -1130,6 +1131,7 @@ impl<'a> P<'a> {
                 space: false,
                 initially: false,
                 within: Vec::new(),
+                name: None,
             })
         };
         let end = |w: &str| {

@@ -160,6 +160,7 @@ impl Walk<'_> {
             space: false,
             initially: false,
             within: Vec::new(),
+            name: None,
         };
         let local = |text: &str| Ref::dotted(text, at);
         let key = |text: &str| DeclName::Key(Name { text: text.to_string(), span: at });

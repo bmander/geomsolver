@@ -39,6 +39,7 @@ mod chain_edges;
 mod claim;
 mod closed_scopes;
 mod components;
+mod composed_rounds;
 mod computed_point;
 mod conrod;
 mod contact_trace;

@@ -145,6 +145,7 @@ fn written(word: &str, fixity: crate::constraints::Fixity, ops: Vec<Ref>, args: 
         space: false,
         initially: false,
         within: Vec::new(),
+        name: None,
     }
 }
 

@@ -1001,7 +1001,8 @@ impl<'a> Walk<'a> {
     ) -> Option<Vec<String>> {
         let (abs, rest) = self.look(alias).find(r, sc)?;
         let all = self.faces.given.get(&abs)?;
-        Some(all.iter().filter(|f| f.matches(&rest)).map(|f| format!("{abs}.{}", f.text())).collect())
+        let at = sc.prefix();
+        Some(all.iter().filter(|f| f.listed_by(&rest, at)).map(|f| format!("{abs}.{}", f.text())).collect())
     }
 
     /// What a name stands for, as one absolute name: the entity or face it resolves to,
@@ -1024,17 +1025,18 @@ impl<'a> Walk<'a> {
         &self,
         p: &Pending,
         alias: &dyn Aliases,
-    ) -> Option<Result<Vec<(Vec<Link>, bool)>, (Span, String)>> {
+    ) -> Option<(Result<Vec<(Vec<Link>, bool)>, (Span, String)>, String)> {
         let StmtKind::Block(b) = &p.st.kind else { return None };
         let over = b.over.as_ref().filter(|o| o.zip.is_empty())?;
         let sc = self.pending_scope(p);
         let all = self.faces_named(&over.chain, &sc, alias)?;
+        let (abs, _) = self.look(alias).find(&over.chain, &sc)?;
         let links = all.iter().map(|f| {
             let r = Ref::dotted(f, over.chain.span);
             // an absolute name, read from the document's root
             Link::Edge(r, Scope::absolute(sc.access.clone()))
         }).collect();
-        Some(Ok(vec![(links, false)]))
+        Some((Ok(vec![(links, false)]), abs))
     }
 
     /// Expand every block over a chain's edges (`repeat e in rack.profile { … }`), each where
@@ -1054,9 +1056,16 @@ impl<'a> Walk<'a> {
                 .iter()
                 .enumerate()
                 .find_map(|(i, p)| {
-                    self.walks_of(p, &alias).or_else(|| self.face_links(p, &alias)).map(|c| (i, c))
+                    self.walks_of(p, &alias).map(|c| (c, None))
+                        .or_else(|| self.face_links(p, &alias).map(|(c, abs)| (c, Some(abs))))
+                        .map(|c| (i, c))
                 });
-            let Some((i, walks)) = found else { break };
+            let Some((i, (walks, over))) = found else { break };
+            // a block over a solid's faces names it however they were named: the elaborator
+            // names them again where its solids now give them otherwise ([0.149])
+            if let Some(abs) = over {
+                self.faces.repeats.insert(abs);
+            }
             let p = self.aside.blocks.remove(i);
             match walks {
                 Ok(walks) => self.expand_edges(p, walks),

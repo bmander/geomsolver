@@ -811,6 +811,10 @@ fn write_relation(out: &mut String, r: &Relation) {
     if r.claim {
         out.push_str("claim ");
     }
+    if let Some(n) = &r.name {
+        out.push_str(&n.text);
+        out.push_str(" := ");
+    }
     match &r.form {
         super::RelationForm::Written(w) => write_written(out, w),
         super::RelationForm::Canonical { kind, args, bound } => {

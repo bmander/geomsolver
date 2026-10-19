@@ -743,3 +743,27 @@ Two kernel rules the export needed:
   had run on along the band's extension and been read as on the face.
 - **A revolution about the axis is kept by the pattern's turns:** `brep::pattern`'s `Kept`. The
   band's two pieces had been taken for the sector's sides.
+
+## 0.149: rounds that know of one another (2026-10-19)
+
+X0's findings 2 (a round's faces need names) and 5 (a round against a round) were left open;
+the user's case was a chamfer at the foot of a boss standing near a plate's rounded rim, which
+renders with a ledge: the chamfer's flat stood on the far face's plane run on past the round.
+
+- **A use is named** (`rim := plate.c0 round(r: 3mm) plate.far`): X0's first option. Its faces are
+  `plate.rim.taken.round`, `plate.rim` all of them; written bare, two rounds' faces share
+  `taken.round` as before.
+- **The stratum stands in layers**: a round that names another's faces by its name reads the body
+  as that one leaves it. Order comes from names, never lines (P2 holds); a round naming nothing is
+  as blind as ever, which keeps finding 5's (i) for the con-rod and gives its (ii) by naming.
+  Built as nested bodies of the body's own name, so nothing below the elaborator learned anything.
+- **`F.smooth`**: a face's surface carried across its tangent seams. The six sets stand their
+  ball and flat against it, so the chamfer's leg lands on the round. Not lowered where the seam
+  runs beside the edge within the section's reach (the field reads it); unchanged where it does
+  not, every recorded volume included.
+- **Found**: a block over a solid's faces named its faces once, from the first pass, so a round
+  over an operand's rounds' faces made nothing; it now names them until they settle. And the
+  field's composition of a rounded operand reads a sheet of nothing where the cut's face lies on
+  the face it rounds, which a spilled chamfer's flat crosses: the user's exact part is refused by
+  the mesher, naming the two curves. Reading an exactly built operand by its own boundary is the
+  fix, not made here.

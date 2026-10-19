@@ -60,6 +60,24 @@ impl<'a> Walk<'a> {
                 self.err(Code::E001, g.name.span, format!("`{name}` is declared twice"));
             }
         }
+        // a named use's label is a name of the body like any other (§9.9, [0.149])
+        for (k, st) in body.iter().enumerate() {
+            let StmtKind::Relation(r) = &st.kind else { continue };
+            let Some(label) = &r.name else { continue };
+            let name = &label.text;
+            let conflicts = body.iter().enumerate().any(|(j, other)| match &other.kind {
+                StmtKind::Decl(d) => &d.name.key().text == name,
+                StmtKind::Param(p) => &p.name.text == name,
+                StmtKind::Group(g) => &g.name.text == name,
+                StmtKind::Instance(i) => &i.name.text == name,
+                StmtKind::Set(s) => &s.name.text == name,
+                StmtKind::Relation(o) => j < k && o.name.as_ref().is_some_and(|n| &n.text == name),
+                _ => false,
+            }) || vals.contains_key(name);
+            if conflicts {
+                self.err(Code::E001, label.span, format!("`{name}` is declared twice"));
+            }
+        }
         for st in body {
             if let StmtKind::Instance(inst) = &st.kind {
                 let name = format!("{prefix}{}", inst.name.text);
@@ -992,6 +1010,15 @@ impl<'a> Walk<'a> {
         }
         // a word a file defines is its body, applied where the statement stands
         if self.apply_word(st, rel, path, scope, depth) {
+            return;
+        }
+        // only a defined word's body makes anything a name could stand for
+        if let Some(n) = &rel.name {
+            let word = rel.form.written().map_or("this relation", |w| w.word.text.as_str());
+            self.err(Code::E001, n.span, format!(
+                "`{}` names what a word's body makes, and `{word}` makes nothing: name a use of a \
+                 word a file defines (`rim := a round(r: 3mm) b`), or write the relation bare",
+                n.text));
             return;
         }
         let Some(mut r2) = self.settle_relation(rel, vals, scope) else { return };

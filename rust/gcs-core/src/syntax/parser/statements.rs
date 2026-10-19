@@ -900,6 +900,13 @@ impl<'a> P<'a> {
             // after one is a number read, not a declaration
             Some(_) if matches!(self.t.get(self.i + 1).map(|(t, _)| t),
                 Some(Tok::P('+' | '-' | '*' | '/' | '^'))) => self.param(name)?,
+            // `rim := b0.c0 round(r: 3mm) b0.far` — a defined word's use, named: what its body
+            // makes stands under the name (§9.9, [0.149])
+            _ if self.named_relation_ahead() => {
+                let mut r = self.relation()?;
+                r.name = Some(name);
+                StmtKind::Relation(r)
+            }
             _ if dotted_call => StmtKind::Instance(self.instance(name, lo)?),
             _ if self.chain_starts() => return self.chain(next_id, out, Some(name)),
             Some(w) if call

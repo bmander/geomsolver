@@ -6,14 +6,17 @@
 //!
 //! **The stratum** (F6): a region that reads a body's faces and is a term of that body reads the
 //! body as made by the terms that do not read it, so a round never reads its own faces or
-//! another round's over the same body.
+//! another round's over the same body — but for one whose faces it names by the name its
+//! statement was given, which it reads the body as that one leaves it (`layers`, [0.149]).
 use crate::model::{FaceRef, RegionShape, RegionTerm, Sketch, SolidDef, Target};
 use std::collections::BTreeSet;
 
 mod body;
+mod layers;
 mod path;
 pub(crate) use body::along_run;
 pub use body::{reading, BodyFaces, Read, Reading};
+pub use layers::layer;
 pub use path::{face_paths, face_source, FacePath, FaceSource};
 
 /// The region solids whose terms read the faces of `body`.

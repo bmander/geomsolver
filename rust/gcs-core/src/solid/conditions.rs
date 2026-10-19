@@ -84,7 +84,7 @@ impl SetDistance {
             }
             let body = readings[0].body.clone();
             return Ok(match readings.as_slice() {
-                [one] => SetDistance::Patch(Arc::new(Reading { body, faces: one.faces.clone() })),
+                [one] => SetDistance::Patch(Arc::new(Reading { body, faces: one.faces.clone(), smooth: one.smooth })),
                 [a, b] => SetDistance::Edges {
                     edges: body.edges_between(&a.faces, &b.faces),
                     faces: a.faces.iter().chain(&b.faces).copied().collect(),

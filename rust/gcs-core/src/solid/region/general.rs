@@ -28,6 +28,9 @@ pub fn general(sk: &Sketch, solid: usize) -> Result<crate::solid::field::RegionF
     // the bodies whose faces it reads, each read once
     let mut read = Vec::new();
     let mut reads_faces = false;
+    // the longest length a term says (a radius, a leg), where a region of a body's faces finds
+    // its support from the bodies it reads
+    let mut reach_of_faces = 0.0f64;
     let named = |m: String| format!("{}: {m}", s.name);
     // the six planes of the cube about `c` reaching `r`
     let cube = |planes: &mut Vec<(V, f64)>, c: V, r: f64| {
@@ -82,6 +85,10 @@ pub fn general(sk: &Sketch, solid: usize) -> Result<crate::solid::field::RegionF
                     }
                 }
                 let n: f64 = of.iter().map(|&(_, c)| c.abs()).sum();
+                let least = of.iter().map(|&(_, c)| c.abs()).filter(|c| *c > 0.0).fold(f64::INFINITY, f64::min);
+                if least.is_finite() {
+                    reach_of_faces = reach_of_faces.max(((lo + grow).abs().max(t.hi.unwrap_or(lo).abs())) / least);
+                }
                 out.push(Term { measure: m, cmp: t.cmp, lo: lo / n, hi: t.hi.map(|h| h / n), grow: grow / n });
                 continue;
             }
@@ -159,9 +166,23 @@ pub fn general(sk: &Sketch, solid: usize) -> Result<crate::solid::field::RegionF
         out.push(Term { measure, cmp: t.cmp, lo, hi: t.hi, grow });
     }
     // a region of a body's faces has its support where its planes close it, and is otherwise
-    // read with none known: a cut needs none, and a box asked of it says so
+    // within the bodies it reads grown by a few of its longest lengths — what a round or a
+    // chamfer adds or takes is beside their edges, within its radius or legs of their faces,
+    // the gate's field reading one the table did not build ([0.149]) — or read with none
+    // known: a cut needs none, and a box asked of it says so
     let support = match polytope_box(&planes) {
         Some(b) => Some(b),
+        None if reads_faces && reach_of_faces > 0.0 && !read.is_empty() => {
+            let grow = SUPPORT_REACH * reach_of_faces;
+            let mut b = [[f64::INFINITY, f64::NEG_INFINITY]; 3];
+            for (_, body) in &read {
+                let (lo, hi) = body.bounds();
+                for k in 0..3 {
+                    b[k] = [b[k][0].min(lo[k] - grow), b[k][1].max(hi[k] + grow)];
+                }
+            }
+            b.iter().all(|r| r[0] < r[1]).then_some(b)
+        }
         None if reads_faces => None,
         None => {
             return Err(format!("`{}` has no end: bound it all round (a ball, two planes, …)", s.name))
@@ -169,6 +190,11 @@ pub fn general(sk: &Sketch, solid: usize) -> Result<crate::solid::field::RegionF
     };
     Ok(crate::solid::field::RegionField::new(out, support))
 }
+
+/// How many of its longest lengths a region of a body's faces is supported beyond the bodies it
+/// reads: a fill reaches its radius or its legs from both faces, and further from their edge only
+/// where they meet at a sharp angle (four reaches a corner of some fifteen degrees).
+const SUPPORT_REACH: f64 = 4.0;
 
 /// What a ball, a cylinder, a cone or a half-space measures (`None` for any other shape): the
 /// distance from its centre or its line, the angle off its axis, the ordinate along its normal.

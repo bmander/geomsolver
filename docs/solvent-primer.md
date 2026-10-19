@@ -1703,10 +1703,21 @@ pad.boss round(r: 3mm) pad.plate     // where the boss stands on the plate
 - `A` and `B` are **face paths**: `block` (every face), `block.near` (one), `pad.boss` (every face
   the boss gave), `pad.plate.near`, read from the solid through its operands' names, never by
   suffix. Faces that do not meet make nothing; a face a Boolean ate names nothing.
-- Each acts on the body after its other terms: a round reads the faces the cuts and unions left.
+- Each acts on the body after its other terms: a round reads the faces the cuts and unions left,
+  and not another round's — unless it names that round (below).
 - Where two faces meet tangent there is no edge: a chain of tangent edges (an obround's foot, a
   rounded pocket's rim) is rounded as one run. A run that ends on a face it does not round is
   carried on past its edge's end and cut off by that face, however the face stands.
+
+- **Name a round to compose over it** (0.149): `bevel := plate.rim chamfer(d: 4mm) plate.far` puts
+  its faces under the name (`plate.bevel.taken.flat`, `plate.bevel` every face it made), and a
+  round that names them reads the body as that one leaves it: `plate.bevel round(r: 1mm) plate`
+  rounds the two edges the chamfer made, whichever line comes first. Two named rounds' faces stay
+  apart; written bare, every round's are `taken.round`. Rounds that name each other are E041.
+- **The ball and the flat follow a face across a seam**: where the far face goes on tangent into
+  a rim's round, a chamfer at a boss standing near the rim lands its leg on the round
+  (`F.smooth`, a face's surface carried across its tangent seams). Where the leg or the ball
+  reaches such a seam beside its edge the round is read point by point, not built exactly.
 
 They are written in Solvent (`rust/lib/std.sv`), from region bodies you can write yourself
 (`rust/examples/rounds/by_hand.sv` rounds one edge in about twenty lines):
@@ -1714,6 +1725,7 @@ They are written in Solvent (`rust/lib/std.sv`), from region bodies you can writ
 | written | means |
 |---|---|
 | `p inside block.near`, `p distance(<= d, side: outside) block.near` | the material's side of the face's surface (grown by `d`) |
+| `p inside block.near.smooth`, `distance(p, block.near.smooth)` | the same of its surface carried on across every tangent seam, the nearest piece's |
 | `p distance(<= 1mm) block.near` | within 1 of the face, bounded by its edges |
 | `p distance(>= r) block.near.surface` | at least `r` from the whole surface |
 | `distance(p, f1) + distance(p, f2) <= 10mm` | a bound on measurements (an ellipsoid by its foci) |

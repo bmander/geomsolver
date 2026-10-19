@@ -36,6 +36,7 @@ pub(super) fn solids(
     faces(sk, res, map, body, skip, diags);
     build_solids(sk, res, map, body, skip, probes, diags);
     body_rule(sk, res, map, body, skip, diags);
+    layers(sk, map, diags);
     derived(sk, res, map, body, skip, diags);
     made_of_itself(sk, body, diags);
 }
@@ -206,6 +207,16 @@ fn body_rule(
         if let Err(why) = sk.join_body(b.i(), word, a.i()) {
             diags.push(Diag::within(Code::E041, at, st.id, why));
         }
+    }
+}
+
+/// **Strata in layers** (#183 F6, [0.149]): a body whose rounds name one another's faces laid
+/// out so each reads the body as the rounds it names leave it (`solid::faces::layer`); rounds that
+/// name each other said where the first of them is written.
+fn layers(sk: &mut Sketch, map: &SourceMap, diags: &mut Vec<Diag>) {
+    for (i, why) in crate::solid::faces::layer(sk) {
+        let at = map.site_of(EntRef::solid(i)).map(|s| s.span).unwrap_or_default();
+        diags.push(Diag::new(Code::E041, at, None, why));
     }
 }
 

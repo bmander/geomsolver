@@ -187,8 +187,12 @@ pub fn elaborate(p: &Program) -> Elaborated {
     // **a block over a solid's faces** (#183 F4) runs over them once the solid is built: its
     // faces named, and the document elaborated again
     let mut faces = BTreeMap::new();
+    // named again while a pass's solids give them otherwise — a round over another's faces, once
+    // that one is made (#183 F4, [0.149]) — but no more than a few times: rounds that name each
+    // other, refused, would give more every pass
+    let mut renamed = 0;
     loop {
-        match elaborate_in(p, &refused, &crossed, &faces) {
+        match elaborate_in(p, &refused, &crossed, &faces, renamed >= FACE_PASSES) {
             Ok(e) => {
                 if crossed.is_empty() {
                     crossed = crossed_seeds(&e);
@@ -199,10 +203,17 @@ pub fn elaborate(p: &Program) -> Elaborated {
                 return e;
             }
             Err(Again::Refused(more)) => refused.extend(more),
-            Err(Again::Faces(more)) => faces.extend(more),
+            Err(Again::Faces(more)) => {
+                renamed += more.keys().filter(|k| faces.contains_key(*k)).count().min(1);
+                faces.extend(more);
+            }
         }
     }
 }
+
+/// How many passes may name a solid's faces again (`elaborate`): one for each round over the faces
+/// of another, nested.
+const FACE_PASSES: usize = 8;
 
 /// Why a pass of `elaborate` ends before a drawing is made: sets drawn as elements that are
 /// none, or solids a block runs over the faces of, named.

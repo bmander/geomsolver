@@ -173,7 +173,8 @@ pub(crate) fn operand_primitives(sk: &Sketch, si: usize) -> BTreeMap<String, (St
             SolidDef::Body { .. } => {
                 for o in s.operands().into_iter().rev() {
                     let Some(operand) = sk.solids.get(o as usize) else { continue };
-                    let name = operand.name.rsplit('.').next().unwrap_or(&operand.name);
+                    let name = route_step(&operand.name);
+                    let name = name.as_str();
                     if let Some(source) = done.get(&o) {
                         for (primitive,(path,prim)) in source {
                             // a swept solid's own sweep, split off as its stock, is the solid
@@ -190,6 +191,29 @@ pub(crate) fn operand_primitives(sk: &Sketch, si: usize) -> BTreeMap<String, (St
         done.insert(i,paths);
     }
     done.remove(&(si as u32)).unwrap_or_default()
+}
+
+/// **The step a body's operand adds to a face's route** (#188, [0.149]): its own name, the last
+/// segment of its absolute name, under the label of each named use of a word it was made in
+/// (`rim#17`, `flatten::keys::labelled`) — `rim.taken` for the `taken` a round named `rim` made,
+/// so two named rounds' faces stay apart.  The one reading of a route's steps: the faces are
+/// named by it (`operand_primitives`, `brep::recipe`) and reached by it (`faces::face_source`,
+/// `carrier`).
+pub(crate) fn route_step(name: &str) -> String {
+    let segs: Vec<&str> = name.split('.').collect();
+    let Some((leaf, before)) = segs.split_last() else { return name.to_string() };
+    fn label<'s>(s: &&'s str) -> Option<&'s str> {
+        let (l, id) = s.split_once('#')?;
+        (!l.is_empty() && !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit())).then_some(l)
+    }
+    before.iter().filter_map(label).chain(std::iter::once(*leaf)).collect::<Vec<_>>().join(".")
+}
+
+/// Whether `route` begins with operand `name`'s step (`route_step`), and the rest of it past.
+pub(crate) fn past_step<'r, S: AsRef<str>>(name: &str, route: &'r [S]) -> Option<&'r [S]> {
+    let step = route_step(name);
+    let n = step.split('.').count();
+    (route.len() >= n && step.split('.').zip(route).all(|(a, b)| a == b.as_ref())).then(|| &route[n..])
 }
 
 pub(super) fn placed_name(name: &str,path: &str) -> String {
