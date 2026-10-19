@@ -1,7 +1,7 @@
 //! Immutable material snapshots of ordinary Solvent solid definitions.
 #[allow(unused_imports)]
 use crate::fmath::Det;
-use super::{SpatialField,MaterialField,SweptField,ExtrudedField,PlanarField,I,V};
+use super::{SpatialField,MaterialField,SweptField,ExtrudedField,PlanarField,BuiltField,I,V};
 use crate::model::{EntKind,Sketch,SolidDef};
 use crate::{motion::Family,plane::Basis,vocab::BodyWord};
 use crate::solid::{surface::Edge,RevolvedRegion};
@@ -177,6 +177,25 @@ fn through_range(basis: &Basis,supports: &[Option<V>]) -> Result<[f64;2],String>
     Ok([a-pad,b+pad])
 }
 
+/// **An operand built exactly is read by its own boundary** (#419): a body some of whose terms
+/// read its faces (the stratum's late ones, `faces::stratum`: a round), with neither a sweep nor a
+/// region only the field builds among what it reads (`solid::has_sweep`), that this kernel builds
+/// (`Sketch::exact_solid`) — never a sweep's source, which a sweep reads box by box over its roll.
+/// Its terms composed read a sheet of nothing where a round's cut lies on the face it rounds; its
+/// boundary has none.  Anything else, or one refused, is composed of its terms.
+fn built(sk: &Sketch,i: usize) -> Option<BuiltField> {
+    let SolidDef::Body {on,through,..} = &sk.solids[i].def else { return None };
+    let [_,_,on_late,through_late] = crate::solid::faces::stratum(sk,i,on.iter().copied(),through.iter().copied());
+    if on_late.is_empty() && through_late.is_empty()
+        || sk.solids.iter().any(|s| matches!(s.def,SolidDef::Swept {source,..} if source as usize == i)) {
+        return None;
+    }
+    sk.caches.built.get_or(i,crate::solid::MemoKey::of(sk,i),|| {
+        if crate::solid::has_sweep(sk,i) { return None }
+        sk.exact_solid(i).ok().and_then(|e| BuiltField::new(&e))
+    })
+}
+
 // Preserve static subgraphs as SpatialFields and promote only where a sweep
 // appears. Both public readers share dependency ordering, naming and refusals.
 fn read(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<Snapshot,String> {
@@ -189,6 +208,8 @@ fn read(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<Snapshot,String>
         if done.contains_key(&i) { continue; }
         let s = &sk.solids[i];
         if !ready {
+            // an operand built exactly, read whole: none of its terms is read
+            if i != solid { if let Some(f) = built(sk,i) { done.insert(i,Snapshot::Static(f.into())); continue; } }
             pending.push((i,true));
             let operands = crate::solid::document::evaluation_operands(sk,i)?;
             pending.extend(operands.into_iter().rev().map(|o| (o as usize,false)));

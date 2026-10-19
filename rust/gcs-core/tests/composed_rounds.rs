@@ -192,3 +192,71 @@ fn a_chamfer_short_of_the_seam_is_the_flats() {
     let want = PI * 1600.0 * 20.0 - rim + PI * 400.0 * 10.0 + ring;
     assert!((got - want).abs() <= 1e-9 * want, "{got} against {want}");
 }
+
+/// The user's part (#419): a plate of 33.54 its far rim rounded 3, a boss of radius `r` drawn in a
+/// plane of its own standing on the far face, its foot chamfered 2 against the far face — out past
+/// the seam onto the round, the region the field's (`lowering::seams_beside`).
+fn spilled(r: f64) -> String {
+    format!("use std (round, chamfer)\n\
+             c0 := circle(center: std.front.origin) hint(r: 33.54) in std.front\nf0 := face(c0)\n\
+             b0 := solid(f0, depth: 20)\nb0.c0 round(r: 3) b0.far\n\
+             v0 := plane(u: hint(dir: (1, 0, 0)), v: hint(dir: (0, 0, 1))) \
+             hint(origin: (-0.110911353, 20, 8.93063091))\n\
+             v0.origin coincident b0.far.surface\nv0 tangent(at: v0.origin) b0.far.surface\n\
+             p0 := point hint((-8.4, -6.7)) in v0\nc1 := circle(center: p0) hint(r: {r}) in v0\n\
+             f1 := face(c1)\nb1 := solid(f1, depth: 10)\nb0 union b1\nb1.b0.far chamfer(d: 2) b1.c1\n")
+}
+
+/// The volume a closed triangle mesh holds.
+fn mesh_volume(s: &gcs_core::solid::FieldSurface) -> f64 {
+    s.triangles.iter().map(|t| {
+        let [a, b, c] = t.map(|i| s.vertices[i as usize]);
+        (a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0])
+            + a[2] * (b[0] * c[1] - b[1] * c[0])) / 6.0
+    }).sum()
+}
+
+/// **An operand built exactly is read by its own boundary** (#419): the rounded plate is its
+/// B-rep in the field, not its prism less its round's region, so no sheet of nothing lies on the
+/// far face's plane over the round for the spilled chamfer's flat to cross, and the part meshes.
+/// What it holds is the plate and the boss built exactly and some of the chamfer's ring: more
+/// than the two, less than the two and the whole ring a flat on the plane would make.  Just over
+/// the round, within the chamfer's reach, is material.
+fn spilled_meshes(r: f64) {
+    let e = solved(&spilled(r));
+    let i = ent(&e, "b1").i();
+    let surface = gcs_core::solid::FieldMesher::new(&e.sketch, i).unwrap().finish()
+        .unwrap_or_else(|why| panic!("r = {r}: {why}"));
+    assert!(!surface.provisional);
+    let got = mesh_volume(&surface);
+    let plate = volume(&e, "b0");
+    let boss = PI * r * r * 10.0;
+    let ring = 2.0 * PI * (r + 2.0 / 3.0) * 2.0;
+    assert!(got > plate + boss && got < plate + boss + ring, "r = {r}: {got} against {plate} + {boss} + {ring}");
+    // out from the plate's axis through the boss's centre, 1.5 past its wall: over the round,
+    // whose surface there is 17 + √(9 − (ρ − 30.54)²), and under the chamfer's flat
+    let field = MaterialField::read(&e.sketch, i, 1e-10).unwrap();
+    let c = e.sketch.world_point(ent(&e, "p0").i());
+    let out = c[0].hypot(c[2]);
+    let rho = out + r + 1.5;
+    let round = 17.0 + (9.0 - (rho - 30.54) * (rho - 30.54)).sqrt();
+    assert!(round < 20.0 - 0.1, "r = {rho}: over the round");
+    let at = |y: f64| [c[0] / out * rho, y, c[2] / out * rho];
+    for y in [0.5 * (round + 20.0), 20.1] {
+        assert!(field.side(at(y)) < 0.0, "r = {r}: {:?} is the chamfer's", at(y));
+    }
+    assert!(field.side(at(round - 0.1)) < 0.0 && field.side(at(21.5)) > 0.0);
+}
+
+#[test]
+fn a_chamfer_spilled_onto_a_rounded_plate_meshes() {
+    spilled_meshes(21.7);
+}
+
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, a mesh for each boss")]
+fn a_chamfer_spilled_onto_a_rounded_plate_meshes_at_every_radius() {
+    for r in [21.0, 21.4, 21.6] {
+        spilled_meshes(r);
+    }
+}

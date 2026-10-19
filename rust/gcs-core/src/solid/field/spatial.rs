@@ -1,5 +1,5 @@
 //! Immutable spatial composition of analytic material fields.
-use super::{min,max,union_support,intersection_support,Error,I,V,RevolvedField,ExtrudedField,RegionField};
+use super::{min,max,union_support,intersection_support,Error,I,V,RevolvedField,ExtrudedField,RegionField,BuiltField};
 use crate::motion::{Family,MotionBounds};
 use std::{collections::HashMap,sync::Arc};
 
@@ -10,6 +10,7 @@ enum Node {
     Revolved(RevolvedField),
     Extruded(ExtrudedField),
     Region(RegionField),
+    Built(BuiltField),
     Transformed {source:SpatialField,pose:MotionBounds},
     Union(SpatialField,SpatialField),
     Intersection(SpatialField,SpatialField),
@@ -36,6 +37,9 @@ impl From<ExtrudedField> for SpatialField {
 impl From<RegionField> for SpatialField {
     fn from(source: RegionField) -> Self { Self {node:Arc::new(Node::Region(source)),depth:1,shares:false,leaves:1} }
 }
+impl From<BuiltField> for SpatialField {
+    fn from(source: BuiltField) -> Self { Self {node:Arc::new(Node::Built(source)),depth:1,shares:false,leaves:1} }
+}
 
 impl SpatialField {
     /// Conservative support of all regularized material. No query domain is
@@ -50,6 +54,7 @@ impl SpatialField {
             Node::Revolved(source) => source.support_bounds()?,
             Node::Extruded(source) => source.support_bounds()?,
             Node::Region(source) => source.support_bounds()?,
+            Node::Built(source) => source.support_bounds()?,
             Node::Transformed {source,pose} => source.support(cache)?.map(|b| pose.point(b)).transpose()?,
             Node::Union(a,b) => union_support(a.support(cache)?,b.support(cache)?),
             Node::Intersection(a,b) => intersection_support(a.support(cache)?,b.support(cache)?),
@@ -61,7 +66,7 @@ impl SpatialField {
     fn node(node: Node,depth: u8) -> Result<Self,Error> {
         if depth > 64 { return Err(Error::OutsideDomain); }
         let leaves = match &node {
-            Node::Revolved(_) | Node::Extruded(_) | Node::Region(_) => 1,
+            Node::Revolved(_) | Node::Extruded(_) | Node::Region(_) | Node::Built(_) => 1,
             Node::Transformed {source,..} => source.leaves,
             Node::Union(a,b) | Node::Intersection(a,b) | Node::Difference(a,b) => a.leaves+b.leaves,
         };
@@ -107,6 +112,7 @@ impl SpatialField {
             Node::Revolved(source) => source.value(p),
             Node::Extruded(source) => source.value(p),
             Node::Region(source) => source.value(p),
+            Node::Built(source) => source.value(p),
             Node::Transformed {source,pose} => source.value(pose.inverse_point_mid(p)),
             Node::Union(a,b) => a.value(p).min(b.value(p)),
             Node::Intersection(a,b) => a.value(p).max(b.value(p)),
@@ -119,7 +125,7 @@ impl SpatialField {
     pub fn reading(&self,p: [f64;3],q: &super::Query,first: usize) -> super::Reading {
         use super::reading::{higher,leaf,lower};
         match self.node.as_ref() {
-            Node::Revolved(_) | Node::Extruded(_) | Node::Region(_) => {
+            Node::Revolved(_) | Node::Extruded(_) | Node::Region(_) | Node::Built(_) => {
                 let l = self.leaf().unwrap();
                 leaf(|x| l.value(x),p,q.step,first,l.value_piece(p).1)
             }
@@ -139,12 +145,13 @@ impl SpatialField {
     /// How many leaves the field has, as `reading` numbers them.
     pub fn leaf_count(&self) -> usize { self.leaves }
 
-    /// This node as a leaf, of either kind.
+    /// This node as a leaf, of any kind.
     fn leaf(&self) -> Option<Leaf<'_>> {
         match self.node.as_ref() {
             Node::Revolved(source) => Some(Leaf::Revolved(source)),
             Node::Extruded(source) => Some(Leaf::Extruded(source)),
             Node::Region(source) => Some(Leaf::Region(source)),
+            Node::Built(source) => Some(Leaf::Built(source)),
             _ => None,
         }
     }
@@ -155,7 +162,7 @@ impl SpatialField {
     fn find_leaf(&self,p: [f64;3],target: usize,first: usize) -> Option<(Leaf<'_>,[f64;3],Vec<&MotionBounds>,bool)> {
         if target < first || target >= first+self.leaves { return None; }
         match self.node.as_ref() {
-            Node::Revolved(_) | Node::Extruded(_) | Node::Region(_) => Some((self.leaf().unwrap(),p,Vec::new(),false)),
+            Node::Revolved(_) | Node::Extruded(_) | Node::Region(_) | Node::Built(_) => Some((self.leaf().unwrap(),p,Vec::new(),false)),
             Node::Transformed {source,pose} => source.find_leaf(pose.inverse_point_mid(p),target,first)
                 .map(|(l,x,mut poses,negated)| { poses.push(pose); (l,x,poses,negated) }),
             Node::Union(a,b) | Node::Intersection(a,b) => if target < first+a.leaves { a.find_leaf(p,target,first) }
@@ -213,7 +220,7 @@ impl SpatialField {
             if seen.contains(&key) { return true; }
             seen.push(key);
             match f.node.as_ref() {
-                Node::Revolved(_) | Node::Extruded(_) | Node::Region(_) => false,
+                Node::Revolved(_) | Node::Extruded(_) | Node::Region(_) | Node::Built(_) => false,
                 Node::Transformed {source,..} => walk(source,seen),
                 Node::Union(a,b) | Node::Intersection(a,b) | Node::Difference(a,b) => walk(a,seen) || walk(b,seen),
             }
@@ -232,6 +239,7 @@ impl SpatialField {
             Node::Revolved(source) => source.bounds(p),
             Node::Extruded(source) => source.bounds(p),
             Node::Region(source) => source.bounds(p),
+            Node::Built(source) => source.bounds(p),
             Node::Transformed {source,pose} => source.evaluate(pose.inverse_point(p)?,cache),
             Node::Union(a,b) => Ok(min(a.evaluate(p,cache)?,b.evaluate(p,cache)?)),
             Node::Intersection(a,b) => Ok(max(a.evaluate(p,cache)?,b.evaluate(p,cache)?)),
@@ -242,21 +250,21 @@ impl SpatialField {
     }
 }
 
-/// A leaf of either kind, read alike.
+/// A leaf of any kind, read alike.
 #[derive(Clone,Copy)]
-enum Leaf<'a> { Revolved(&'a RevolvedField),Extruded(&'a ExtrudedField),Region(&'a RegionField) }
+enum Leaf<'a> { Revolved(&'a RevolvedField),Extruded(&'a ExtrudedField),Region(&'a RegionField),Built(&'a BuiltField) }
 
 impl Leaf<'_> {
     fn value(self,p: [f64;3]) -> f64 {
-        match self { Leaf::Revolved(l) => l.value(p),Leaf::Extruded(l) => l.value(p),Leaf::Region(l) => l.value(p) }
+        match self { Leaf::Revolved(l) => l.value(p),Leaf::Extruded(l) => l.value(p),Leaf::Region(l) => l.value(p),Leaf::Built(l) => l.value(p) }
     }
     fn value_piece(self,p: [f64;3]) -> (f64,usize) {
-        match self { Leaf::Revolved(l) => l.value_piece(p),Leaf::Extruded(l) => l.value_piece(p),Leaf::Region(l) => l.value_piece(p) }
+        match self { Leaf::Revolved(l) => l.value_piece(p),Leaf::Extruded(l) => l.value_piece(p),Leaf::Region(l) => l.value_piece(p),Leaf::Built(l) => l.value_piece(p) }
     }
     fn piece_count(self) -> usize {
-        match self { Leaf::Revolved(l) => l.piece_count(),Leaf::Extruded(l) => l.piece_count(),Leaf::Region(l) => l.piece_count() }
+        match self { Leaf::Revolved(l) => l.piece_count(),Leaf::Extruded(l) => l.piece_count(),Leaf::Region(l) => l.piece_count(),Leaf::Built(l) => l.piece_count() }
     }
     fn carrier(self,p: [f64;3],piece: usize) -> Option<f64> {
-        match self { Leaf::Revolved(l) => l.carrier(p,piece),Leaf::Extruded(l) => l.carrier(p,piece),Leaf::Region(l) => l.carrier(p,piece) }
+        match self { Leaf::Revolved(l) => l.carrier(p,piece),Leaf::Extruded(l) => l.carrier(p,piece),Leaf::Region(l) => l.carrier(p,piece),Leaf::Built(l) => l.carrier(p,piece) }
     }
 }

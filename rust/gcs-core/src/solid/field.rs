@@ -10,6 +10,8 @@ mod document;
 pub use document::CHORD_SLACK;
 pub mod region;
 pub use region::RegionField;
+mod built;
+pub use built::BuiltField;
 pub use spatial::SpatialField;
 mod swept;
 pub use swept::{SweptField,SweepEvaluator,SweepError,SIDE_EVALUATIONS};
