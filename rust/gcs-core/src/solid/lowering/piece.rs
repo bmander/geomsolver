@@ -249,50 +249,30 @@ fn ring_piece(body: &crate::solid::faces::BodyFaces, edge: u32, fa: usize, fb: u
     // beyond it taking the rest (#422)
     let (chain, askew) = match chain {
         Some((c, Round::Askew)) => (None, Some(c)),
-        Some((c, Round::About(o, r, g))) => (Some((c, (o, r, g))), None),
+        Some((c, Round::About(o, r, g))) => (Some((c, ((o, r), g))), None),
         None => (None, None),
     };
     // the section against the chain at the turn `t`, its seams each a circle (centre, radius) and
-    // the face going on across it; and its footprint on the chain
-    let against = |t: f64, c: usize, seams: &[(V, f64, usize)]| {
+    // the face going on across it (none: the corner of the edge's faces alone); and its footprint
+    // on the chain
+    let against = |t: f64, c: usize, seams: &[((V, f64), usize)]| {
         let p = add(centre, scale(radial_at(t), radius));
-        let next: Vec<Next> = seams.iter().map(|&(o, r, g)| {
+        let next: Vec<Next> = seams.iter().map(|&((o, r), g)| {
             let s = add(o, scale(radial_at(t), r));
             Next { seam: s, trace: trace(g, s) }
         }).collect();
         super::chain::cut_chain(p, cross(axis, radial_at(t)), [trace(fa, p), trace(fb, p)], (c, &next), within, section)
     };
-    // the chain from the edge's face on: each face the footprint lands past going on into the
-    // next across another seam about the axis
-    let chain = match chain {
-        None => None,
-        Some((c, first)) => {
-            let mut seams = vec![first];
-            let mut prev = [fa, fb][c];
-            loop {
-                let (_, foot) = against(t0, c, &seams)?;
-                let g = seams.last().expect("a seam").2;
-                let Some(h) = onto(body, prev, g, foot)? else { break };
-                if seams.len() >= CHAIN {
-                    return Err(spilled("past the faces it goes on into (a chain of more than four)"));
-                }
-                let across: Vec<(u32, usize)> = body.edges_between(&[g], &[h]).into_iter().map(|e| (e, h)).collect();
-                match seam_round(body, &across, centre, axis)? {
-                    Round::About(o, r, h) => seams.push((o, r, h)),
-                    Round::Askew => return Err(spilled("round a circle beside a chain whose further seam is not about its axis")),
-                }
-                prev = g;
-            }
-            Some((c, seams))
-        }
+    // the chain from the edge's face on, each further seam about the axis
+    let (c, seams) = match chain {
+        None => (0, Vec::new()),
+        Some((c, first)) => (c, chain_from(body, [fa, fb][c], first, |seams| against(t0, c, seams),
+            |across| match seam_round(body, across, centre, axis)? {
+                Round::About(o, r, h) => Ok(((o, r), h)),
+                Round::Askew => Err(spilled("round a circle beside a chain whose further seam is not about its axis")),
+            })?.0),
     };
-    let section_at = |t: f64| match &chain {
-        None => {
-            let p = add(centre, scale(radial_at(t), radius));
-            cut(p, cross(axis, radial_at(t)), [trace(fa, p), trace(fb, p)], within, section)
-        }
-        Some((c, seams)) => against(t, *c, seams).map(|(run, _)| run),
-    };
+    let section_at = |t: f64| against(t, c, &seams).map(|(run, _)| run);
     // at an end standing on a plane not through the axis (a D's round rim ending at its flat):
     // carried on round past it until the whole section has crossed that plane, and kept within
     // it (#218's 2) — each point of the section's hull turned to its first crossing (`n·x`
@@ -613,28 +593,19 @@ fn run_piece(body: &crate::solid::faces::BodyFaces, edge: u32, fa: usize, fb: us
     // slant as far past as the section reaches, kept within its half-space
     let (planes0, bent0) = ends_at(body, ends, p0)?;
     let (planes1, bent1) = ends_at(body, ends, p1)?;
+    // the section against the chain, its seams each a point of the section and the face going on
+    // across it (none: the corner of the edge's faces alone)
+    let against = |c: usize, seams: &[(V, usize)]| {
+        let next = seams.iter().map(|&(s, g)| Ok(Next { seam: s,
+            trace: trace(g, s).map_err(|_| spilled("into a face not turned about a line along its edge"))? }))
+            .collect::<Result<Vec<Next>, String>>()?;
+        super::chain::cut_chain(p0, along, traces, (c, &next), within, section)
+    };
+    // the chain from the edge's face on, each further seam along the edge
     let mut run = match chain {
-        None => cut(p0, along, traces, within, section)?,
-        Some((c, first)) => {
-            // the chain from the edge's face on: each face the footprint lands past going on into
-            // the next across another seam along the edge
-            let mut seams = vec![first];
-            let mut prev = [fa, fb][c];
-            loop {
-                let next = seams.iter().map(|&(s, g)| Ok(Next { seam: s,
-                    trace: trace(g, s).map_err(|_| spilled("into a face not turned about a line along its edge"))? }))
-                    .collect::<Result<Vec<Next>, String>>()?;
-                let (run, foot) = super::chain::cut_chain(p0, along, traces, (c, &next), within, section)?;
-                let g = seams.last().expect("a seam").1;
-                let Some(h) = onto(body, prev, g, foot)? else { break run };
-                if seams.len() >= CHAIN {
-                    return Err(spilled("past the faces it goes on into (a chain of more than four)"));
-                }
-                let across: Vec<(u32, usize)> = body.edges_between(&[g], &[h]).into_iter().map(|e| (e, h)).collect();
-                seams.push(seam_along(body, &across, p0, along, length)?);
-                prev = g;
-            }
-        }
+        None => against(0, &[])?.0,
+        Some((c, first)) => chain_from(body, [fa, fb][c], first, |seams| against(c, seams),
+            |across| seam_along(body, across, p0, along, length))?.1,
     };
     let outline = run.section_hull();
     run.span = [0.0, length];
@@ -711,6 +682,27 @@ fn toward_region(body: &crate::solid::faces::BodyFaces, fi: usize, s: &Surf, q: 
 
 /// How many faces a chain the section stands against may have past the edge's own.
 const CHAIN: usize = 4;
+
+/// The chain a section stands against from the edge's face `own`, going on across the seam `first`
+/// (what the section reads of it, and the face beyond): each face the section's footprint lands
+/// past going on into the next across another seam (`onto`), read off the edges between them by
+/// `seam`; the seams, and the section against them all (`against`).
+fn chain_from<S>(body: &crate::solid::faces::BodyFaces, own: usize, first: (S, usize),
+    against: impl Fn(&[(S, usize)]) -> Result<(Run, V), String>,
+    seam: impl Fn(&[(u32, usize)]) -> Result<(S, usize), String>) -> Result<(Vec<(S, usize)>, Run), String> {
+    let (mut seams, mut prev) = (vec![first], own);
+    loop {
+        let (run, foot) = against(&seams)?;
+        let g = seams.last().expect("a seam").1;
+        let Some(h) = onto(body, prev, g, foot)? else { return Ok((seams, run)) };
+        if seams.len() >= CHAIN {
+            return Err(spilled("past the faces it goes on into (a chain of more than four)"));
+        }
+        let across: Vec<(u32, usize)> = body.edges_between(&[g], &[h]).into_iter().map(|e| (e, h)).collect();
+        seams.push(seam(&across)?);
+        prev = g;
+    }
+}
 
 /// Where the section's footprint on the last face of a chain (`foot`, where its leg or its ball's
 /// touch is) lands, face `g` going on from `prev`: on it (none), or past a seam where it goes on
@@ -866,30 +858,14 @@ pub(super) enum Trace {
 
 impl Trace {
     pub(super) fn normal(self) -> V { match self { Trace::Line(n) | Trace::Circle { normal: n, .. } => n } }
-
-    /// From `from` to `to` along the face (both on it): a line, or the shorter arc of the circle.
-    fn stroke(self, from: V, to: V, along: V) -> Stroke {
-        match self {
-            Trace::Line(_) => Stroke::Line { from, to },
-            Trace::Circle { centre, radius, .. } => arc(centre, radius, from, to, along),
-        }
-    }
-}
-
-/// The shorter arc about `centre` from `from` to `to`, turning about the unit `along`.
-fn arc(centre: V, radius: f64, from: V, to: V, along: V) -> Stroke {
-    let x = scale(sub(from, centre), 1.0 / radius);
-    let to = sub(to, centre);
-    let phi = dot(to, cross(along, x)).datan2(dot(to, x));
-    Stroke::Arc { centre, radius, x, angles: if phi > 0.0 { [0.0, phi] } else { [phi, 0.0] } }
 }
 
 /// The section's corner as `brep::corners` reads a meridian's: in the plane square to `along` at
 /// `p0` (coordinates along `x` and `along × x`, so a turn to the left is one about `along`), face
 /// `a`'s trace a step arriving at the corner and `b`'s one leaving it, each `reach` long, and the
-/// side the region lies on (+1 the left of travel). A round or a flat there is then what it is in a
-/// meridian, by the same rule (`corners::ball`, `corners::sum`): between lines and circles, a
-/// circle's flat the conic its sum of distances makes.
+/// side the region lies on (+1 the left of travel). A round or a flat there (`chain::cut_chain`) is
+/// then what it is in a meridian, by the same rule (`corners::arc_between`, `corners::sum_between`):
+/// between lines and circles, a circle's flat the conic its sum of distances makes.
 pub(super) struct Corner2 {
     p0: V,
     x: V,
@@ -944,52 +920,4 @@ impl Corner2 {
             Seg::Conic { a, m, b, w } => Stroke::Conic { a: self.lift(a), m: self.lift(m), b: self.lift(b), w },
         }
     }
-
-    /// The ball of radius `r` in the corner: its centre, and where it touches `a` and `b`.
-    fn ball(&self, r: f64) -> Result<(V, V, V), String> {
-        let (ta, tb, arc) = crate::brep::corners::ball(&self.steps[0], &self.steps[1], self.side, r)
-            .map_err(|e| unbuilt(&e))?;
-        let crate::brep::planar::Seg::Arc { c, .. } = arc else { unreachable!("a ball's arc") };
-        Ok((self.lift(c), self.lift(self.steps[0].point(ta)), self.lift(self.steps[1].point(tb))))
-    }
-
-    /// The flat with legs `la` on `a` and `lb` on `b`, each from the other face's surface: its ends
-    /// on `a` and `b` and the stroke between them.
-    fn flat(&self, [la, lb]: [f64; 2]) -> Result<(V, V, Stroke), String> {
-        use crate::brep::planar::Seg;
-        // (a Cartesian oval is no construction left to make: no rational curve holds it)
-        let (ta, tb, cut) = crate::brep::corners::sum(&self.steps[0], &self.steps[1], self.side, [la, lb])
-            .map_err(|e| if e.contains("no rational curve") { e } else { unbuilt(&e) })?;
-        let (qa, qb) = (self.lift(self.steps[0].point(ta)), self.lift(self.steps[1].point(tb)));
-        Ok((qa, qb, match cut {
-            Seg::Conic { m, w, .. } => Stroke::Conic { a: qa, m: self.lift(m), b: qb, w },
-            _ => Stroke::Line { from: qa, to: qb },
-        }))
-    }
-}
-
-/// The section beside an edge at `p0`, in the plane square to the unit `along` there (its stretch
-/// nothing): between faces seen there as `traces` (normals away from the material, each square to
-/// `along`), on the region's side of both (`within`: the material's).
-fn cut(p0: V, along: V, traces: [Trace; 2], within: bool, section: Section) -> Result<Run, String> {
-    let (ua, ub) = (toward(traces[0].normal(), within), toward(traces[1].normal(), within));
-    if 1.0 + dot(ua, ub) <= 1e-9 {
-        return Err(unbuilt("faces folded back on one another"));
-    }
-    let size = section.size();
-    let corner = Corner2::new(p0, along, traces, [ua, ub], 8.0 * size)?;
-    let (ta, middle, tb) = match section {
-        // the ball's centre `r` from both faces, and where it touches each
-        Section::Round(r) => {
-            let (o, ta, tb) = corner.ball(r)?;
-            (ta, (arc(o, r, ta, tb, along), "round"), tb)
-        }
-        // along each face away from the edge, to where it stands its leg from the other face
-        Section::Flat { la, lb } => {
-            let (qa, qb, flat) = corner.flat([la, lb])?;
-            (qa, (flat, "flat"), qb)
-        }
-    };
-    let strokes = vec![(traces[0].stroke(p0, ta, along), "a"), middle, (traces[1].stroke(tb, p0, along), "b")];
-    Ok(Run { origin: p0, along, span: [0.0; 2], strokes, within: Vec::new(), kept: Vec::new() })
 }

@@ -94,7 +94,7 @@ is its distance from the seam, so the two are one set:
   (lines and circles, up to four past the edge's own, `piece::CHAIN`, each found where the last
   one's footprint lands past another seam, `piece::onto`); the ball against the piece whose touch
   lies on it, the flat a line between lines else a conic's arc over each piece in turn
-  (`corners::conic_between`; two circles with unequal legs a Cartesian oval, refused), changing
+  (`corners::sum_between`; two circles with unequal legs a Cartesian oval, refused), changing
   piece on the chain's normal at each seam it crosses. Swept or turned like any section: the strips
   on the chain's side split at the body's seams, the flat in pieces, the one over the face's own
   surface what the table built before (`rounds/ledge.sv`, a rib beside a block's rounded rim; a
@@ -192,7 +192,10 @@ within the whole run's ends, as the field reads them): `Run` (the section along 
 between planes, or a plane and a cylinder, or two cylinders, about lines along it — the section's
 `Trace`s lines and circles, the ball where their offsets meet (`twin.sv`), a chamfer's flat beside
 a circle the conic its sum of distances makes (the section read as a meridian's corner,
-`Corner2`, its round and its flat by `brep::corners::ball`/`sum`, the meridian's own rule;
+`Corner2`, its round and its flat by the meridian's own rule: `chain::cut_chain` with no seam,
+the ball's arc `brep::corners::arc_between` and the flat `corners::sum_between`, which
+`corners::ball`/`sum` call too — **one section builder** for every run and ring, with a chain or
+without, and one chain walk, `piece::chain_from`, #427;
 `Stroke::Conic`, a rational quadratic profile edge: an extrusion face; turned in a ring, a
 revolution's; between two circles a Cartesian oval, refused) — carried on past each end until the plane faces it
 ends on cut it off (#195's meaning: a square one is the prism's end, one at a slant a half-space it

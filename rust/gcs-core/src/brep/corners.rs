@@ -78,13 +78,19 @@ pub fn ball(s: &Seg, n: &Seg, side: f64, r: f64) -> Result<Cut, String> {
     let centre = cs.meet(cn).into_iter().min_by(|a, b| dist(*a, x).total_cmp(&dist(*b, x)))
         .ok_or("the faces' offsets do not meet")?;
     let (fs, fn_) = (Carrier::of(s).foot(centre), Carrier::of(n).foot(centre));
-    let a0 = (fs[1] - centre[1]).datan2(fs[0] - centre[0]);
-    let a1 = (fn_[1] - centre[1]).datan2(fn_[0] - centre[0]);
+    Ok((s.param(fs), n.param(fn_), arc_between(centre, r, fs, fn_, side)))
+}
+
+/// The ball's arc about `c` (radius `r`) from its foot `from` on the face arriving at a corner to
+/// its foot `to` on the face leaving it, turning to side `side` (+1 the left) as the corner does.
+pub fn arc_between(c: P, r: f64, from: P, to: P, side: f64) -> Seg {
+    let a0 = (from[1] - c[1]).datan2(from[0] - c[0]);
+    let a1 = (to[1] - c[1]).datan2(to[0] - c[0]);
     let mut sweep = (a1 - a0).rem_euclid(TAU);
     if side < 0.0 {
         sweep -= TAU;
     }
-    Ok((s.param(fs), n.param(fn_), Seg::Arc { c: centre, r, a0, sweep }))
+    Seg::Arc { c, r, a0, sweep }
 }
 
 /// The flat across the corner where `s` arrives and `n` leaves, its leg on `s` measured by
@@ -116,78 +122,67 @@ pub fn flat(s: &Seg, n: &Seg, side: f64, legs: [Leg; 2]) -> Result<Cut, String> 
 /// The curve `std.Chamfered` bounds at the corner where `s` arrives and `n`
 /// leaves: the points whose distances from the two carriers, each toward side `side`, make
 /// `d_s / legs[1] + d_n / legs[0]` one — through the ends `flat` finds with both legs measured from
-/// the other face.  Between lines the segment; between a line and a circle about `c` the conic
-/// `|q − c| = α + β d_L(q)` (`d_L` affine), focus `c`, eccentricity the legs' ratio, as the
-/// rational quadratic Bézier over its ends and where their tangents meet.  Between circles with
-/// equal legs a conic too, the centres its foci (`between_circles`); with unequal ones a Cartesian
-/// oval, refused.
+/// the other face (`sum_between`).
 pub fn sum(s: &Seg, n: &Seg, side: f64, legs: [f64; 2]) -> Result<Cut, String> {
-    let (t_s, t_n, chord) = flat(s, n, side, [Leg::FromOther(legs[0]), Leg::FromOther(legs[1])])?;
-    let (p0, p2) = (s.point(t_s), n.point(t_n));
-    // the line's carrier as `n · q − h`, positive toward `side`; the circle's centre, radius and
-    // which way its distance runs toward `side`
-    let (line, circle, l_line, l_circle) = match (s, n) {
-        (Seg::Line { .. }, Seg::Line { .. }) => return Ok((t_s, t_n, chord)),
-        (Seg::Line { a, b }, Seg::Arc { c, r, sweep, .. }) => {
-            ((*a, *b), (*c, *r, *sweep), legs[0], legs[1])
-        }
-        (Seg::Arc { c, r, sweep, .. }, Seg::Line { a, b }) => {
-            ((*a, *b), (*c, *r, *sweep), legs[1], legs[0])
-        }
-        (Seg::Arc { c: cs, r: rs, sweep: ws, .. }, Seg::Arc { c: cn, r: rn, sweep: wn, .. }) => {
-            return between_circles(t_s, t_n, p0, p2, [(*cs, *rs, *ws, legs[1]), (*cn, *rn, *wn, legs[0])], side);
-        }
-        _ => return Err("a flat between a conic and a face takes no cut".into()),
-    };
-    let nl = scale(left(unit(sub(line.1, line.0))), side);
-    let h = dot(nl, line.0);
-    let (c, r, sweep) = circle;
-    // d_C = k (r − |q − c|) = l_line (1 − d_L / l_circle): `l_line` the leg on the line, measured
-    // from the circle, and `l_circle` the leg on the circle
-    let k = side * sweep.signum();
-    let (alpha, beta) = (r - k * l_line, k * l_line / l_circle);
-    let f = |q: P| dist(q, c) - alpha - beta * (dot(nl, q) - h);
-    let grad = |q: P| sub(unit(sub(q, c)), scale(nl, beta));
-    // the tangents at the ends, and where they meet
-    let (g0, g2) = (grad(p0), grad(p2));
-    let (d0, d2) = (left(g0), left(g2));
-    let den = cross(d0, d2);
-    if den.abs() <= 1e-12 * norm(d0) * norm(d2) {
-        return Err("the flat's tangents at its ends do not meet".into());
-    }
-    let m = add(p0, scale(d0, cross(sub(p2, p0), d2) / den));
-    // the shoulder: where the conic crosses from the chord's middle toward `m`, a quadratic
-    // (nearly linear for a parabola, along its axis)
-    let mid = scale(add(p0, p2), 0.5);
-    let v = sub(m, mid);
-    let (e, rhs0, rhs1) = (sub(mid, c), alpha + beta * (dot(nl, mid) - h), beta * dot(nl, v));
-    let roots = crate::roots::quadratic(dot(v, v) - rhs1 * rhs1, 2.0 * (dot(e, v) - rhs0 * rhs1),
-        dot(e, e) - rhs0 * rhs0);
-    let shoulder = roots.into_iter()
-        .filter(|&u| u > 0.0 && u < 1.0 && rhs0 + u * rhs1 >= 0.0)
-        .min_by(|a, b| f(add(mid, scale(v, *a))).abs().total_cmp(&f(add(mid, scale(v, *b))).abs()))
-        .ok_or("the flat's conic leaves its control triangle")?;
-    let w = shoulder / (1.0 - shoulder);
-    Ok((t_s, t_n, Seg::Conic { a: p0, m, b: p2, w }))
+    let (t_s, t_n, _) = flat(s, n, side, [Leg::FromOther(legs[0]), Leg::FromOther(legs[1])])?;
+    let (ds, dn) = (Signed::of(s, side), Signed::of(n, side));
+    Ok((t_s, t_n, sum_between(s.point(t_s), n.point(t_n), ds, dn, [legs[1], legs[0]])?))
 }
 
-/// `sum` between two circles, each `(centre, radius, sweep, leg)` with the leg its distance is
-/// divided by: `Σ kᵢ (rᵢ − |q − cᵢ|) / legᵢ = 1`, `kᵢ` which way each distance runs toward `side`.
-/// Where the two are divided alike (equal legs) it is a conic with the centres its foci — an
-/// ellipse where the distances add, a hyperbola's branch where they differ — the rational quadratic
-/// Bézier over its ends, where their tangents meet, its middle weighed by the point it passes
-/// between the chord's middle and there. Else it is a Cartesian oval, a quartic of genus one, which
-/// no rational curve parametrises: refused.
-fn between_circles(t_s: f64, t_n: f64, p0: P, p2: P, circles: [(P, f64, f64, f64); 2], side: f64) -> Result<Cut, String> {
-    let weigh = |&(_, _, sweep, leg): &(P, f64, f64, f64)| -side * sweep.signum() / leg;
-    let (a, b) = (weigh(&circles[0]), weigh(&circles[1]));
-    if (a.abs() - b.abs()).abs() > 1e-12 * a.abs().max(b.abs()) {
-        return Err("a flat between two curved faces with unequal legs is a Cartesian oval, which no rational curve \
-            holds".into());
+/// A carrier's signed distance, positive toward one side of it: a line's `n · q − h` (`n` its unit
+/// normal that way), a circle's `k (|q − c| − r)` (`k` +1 where that side is outside it, −1 within).
+#[derive(Clone, Copy, Debug)]
+pub enum Signed {
+    Line { n: P, h: f64 },
+    Circle { c: P, r: f64, k: f64 },
+}
+
+impl Signed {
+    /// Step `s`'s carrier, its distance positive toward side `side` of its travel (+1 the left).
+    pub fn of(s: &Seg, side: f64) -> Signed {
+        let n = scale(left(unit(s.tangent(0.0))), side);
+        match *s {
+            Seg::Line { a, .. } => Signed::Line { n, h: dot(n, a) },
+            Seg::Arc { c, r, .. } => Signed::Circle { c, r, k: dot(n, unit(sub(s.start(), c))).signum() },
+            Seg::Conic { .. } => unreachable!("`corners` cuts no conic"),
+        }
     }
-    let f = |q: P| circles.iter().map(|&(c, r, sweep, leg)| side * sweep.signum() * (r - dist(q, c)) / leg).sum::<f64>() - 1.0;
-    let grad = |q: P| add(scale(unit(sub(q, circles[0].0)), a), scale(unit(sub(q, circles[1].0)), b));
-    Ok((t_s, t_n, conic_between(p0, p2, &f, &grad)?))
+
+    pub fn distance(self, q: P) -> f64 {
+        match self {
+            Signed::Line { n, h } => dot(n, q) - h,
+            Signed::Circle { c, r, k } => k * (dist(q, c) - r),
+        }
+    }
+
+    pub fn gradient(self, q: P) -> P {
+        match self {
+            Signed::Line { n, .. } => n,
+            Signed::Circle { c, k, .. } => scale(unit(sub(q, c)), k),
+        }
+    }
+}
+
+/// The curve from `p0` to `p2` (both on it) where `a`'s distance over `over[0]` and `b`'s over
+/// `over[1]` make one — `std.Chamfered`'s flat, each face's distance divided by the leg on the
+/// other.  Between lines the segment.  Between a line and a circle about `c` the conic `|q − c| =
+/// α + β d_L(q)` (`d_L` affine), focus `c`, eccentricity the legs' ratio; between circles divided
+/// alike (equal legs) a conic too, the centres its foci — an ellipse where the distances add, a
+/// hyperbola's branch where they differ: either the rational quadratic Bézier `conic_between`
+/// makes.  Between circles divided unlike it is a Cartesian oval, a quartic of genus one, which no
+/// rational curve parametrises: refused.
+pub fn sum_between(p0: P, p2: P, a: Signed, b: Signed, over: [f64; 2]) -> Result<Seg, String> {
+    match (a, b) {
+        (Signed::Line { .. }, Signed::Line { .. }) => return Ok(Seg::Line { a: p0, b: p2 }),
+        (Signed::Circle { .. }, Signed::Circle { .. }) if (over[0] - over[1]).abs() > 1e-12 * over[0].max(over[1]) => {
+            return Err("a flat between two curved faces with unequal legs is a Cartesian oval, which no rational curve \
+                holds".into());
+        }
+        _ => {}
+    }
+    let f = |q: P| a.distance(q) / over[0] + b.distance(q) / over[1] - 1.0;
+    let grad = |q: P| add(scale(a.gradient(q), 1.0 / over[0]), scale(b.gradient(q), 1.0 / over[1]));
+    conic_between(p0, p2, &f, &grad)
 }
 
 /// The arc from `p0` to `p2` of the conic where `f` is nothing (`grad` its gradient): the rational
