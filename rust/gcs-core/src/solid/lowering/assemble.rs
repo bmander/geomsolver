@@ -5,7 +5,7 @@
 use crate::fmath::Det;
 use crate::brep::recipe::Writer;
 use crate::json::{object, Json};
-use super::{Along, Beyond, Corner, Piece, Ring, Rolled, Run, Seam, Stroke, Surf, V};
+use super::{Beyond, Corner, Piece, Ring, Rolled, Run, Seam, Stroke, Surf, V};
 use crate::space::{add, cross, distance, dot, norm, normalised, scale, sub};
 
 impl Surf {
@@ -237,30 +237,34 @@ pub fn assemble<'a>(pieces: impl IntoIterator<Item = &'a Piece>) -> Assembly {
             out.joins.push([pieces_before + corners + i, pieces_before + j]);
         }
     }
-    // a piece beyond a seam's normal surface, glued to its edge's own piece there: the ring about
-    // its axis kept short of that surface (a flat), or a stretch of it ending at the piece's ends (a
-    // round); a flat cut along a traced run kept short of it
+    // a piece beyond a seam's normal surface, glued to its edge's own piece there: a ring kept
+    // short of that surface (a flat), or a stretch of one ending where the ball touches the seam,
+    // its section in the half-plane through the ring's own axis and an end (a round); else a run
+    // rolled along a traced edge, a flat kept short of it or a ball with the stretch between its
+    // centres there cut away
     let rolled_from = out.runs.len() + out.rings.len() + out.corners.len();
     let first = rolled_from + out.rolled.len();
     for (k, b) in out.beyond.iter().enumerate() {
-        match b.along {
-            Along::Ring { axis_origin, axis, .. } => {
-                let creases: Vec<V> = b.ends.iter().filter_map(|&p| b.crease_at(p)).collect();
-                let ring = out.rings.iter().position(|g| near(g.axis_origin, axis_origin) && near(g.axis, axis)
-                    && if b.radius > 0.0 { creases.iter().any(|&p| near(g.section.origin, p)) }
-                        else { g.section.kept.iter().any(|kept| kept.face == b.split) });
-                if let Some(i) = ring {
-                    out.joins.push([out.runs.len() + i, first + k]);
-                }
-            }
-            Along::Meeting { .. } => {
-                let centres = b.ends.map(|q| add(q, scale(b.toward, b.radius)));
-                let rolled = out.rolled.iter().position(|j| j.kept.iter().any(|kept| kept.face == b.split)
-                    || b.radius > 0.0 && j.wedge.iter().any(|&(p, _)| centres.iter().any(|&c| near(p, c))));
-                if let Some(i) = rolled {
-                    out.joins.push([rolled_from + i, first + k]);
-                }
-            }
+        // the point of ring `g`'s edge in the half-plane through its axis and `p`
+        let crease = |g: &Ring, p: V| {
+            let off = |q: V| { let w = sub(q, g.axis_origin); sub(w, scale(g.axis, dot(w, g.axis))) };
+            let o = g.section.origin;
+            normalised(off(p)).map(|radial| add(sub(o, off(o)), scale(radial, norm(off(o)))))
+        };
+        let ring = out.rings.iter().position(|g| if b.radius > 0.0 {
+            b.ends.iter().any(|&p| crease(g, p).is_some_and(|q| near(g.section.origin, q)))
+        } else {
+            g.section.kept.iter().any(|kept| kept.face == b.split)
+        });
+        if let Some(i) = ring {
+            out.joins.push([out.runs.len() + i, first + k]);
+            continue;
+        }
+        let centres = b.ends.map(|q| add(q, scale(b.toward, b.radius)));
+        let rolled = out.rolled.iter().position(|j| j.kept.iter().any(|kept| kept.face == b.split)
+            || b.radius > 0.0 && j.wedge.iter().any(|&(p, _)| centres.iter().any(|&c| near(p, c))));
+        if let Some(i) = rolled {
+            out.joins.push([rolled_from + i, first + k]);
         }
     }
     // a run and a stretch of a ring going on from one another (a round along an obround's flat
@@ -331,7 +335,7 @@ impl Assembly {
             o
         }).collect();
         let beyond = self.beyond.iter().map(|b| {
-            let mut o = object([
+            object([
                 ("toward", vector(b.toward)), ("chain", b.chain.json(w)), ("wall", b.wall.json(w)), ("split", b.split.json(w)),
                 ("sides", Json::Arr(b.sides.iter().map(|&x| x.into()).collect())),
                 ("seam", match b.seam {
@@ -340,15 +344,8 @@ impl Assembly {
                 }),
                 ("legs", Json::Arr(b.legs.iter().map(|&l| (l * by).into()).collect())), ("radius", (b.radius * by).into()),
                 ("ends", Json::Arr(b.ends.iter().map(|&p| w.at(scale(p, by))).collect())),
-            ]);
-            o.set("along", match &b.along {
-                Along::Ring { axis_origin, axis, crease } => object([
-                    ("axis", Json::Arr(vec![w.line_origin(scale(*axis_origin, by), *axis), vector(*axis)])),
-                    ("crease", object([("centre", w.at(scale(crease.0, by))), ("radius", (crease.1 * by).into())])),
-                ]),
-                Along::Meeting { face } => object([("face", face.json(w))]),
-            });
-            o
+                ("along", object([("face", b.face.json(w))])),
+            ])
         }).collect();
         let mut node = object([("kind", "lowered".into()), ("pieces", Json::Arr(pieces)), ("corners", Json::Arr(corners)),
             ("joins", Json::Arr(joins)), ("rolled", Json::Arr(rolled))]);
