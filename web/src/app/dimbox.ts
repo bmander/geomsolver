@@ -218,8 +218,7 @@ function finishRound(commit: boolean, keepOpen = false): void {
   const text = roundBox.text;
   if (!commit) {
     roundBox.close();
-    view.endRound();
-    view.tellRound();
+    view.cancelTool();                // the picks let go, the tool still down
     return;
   }
   if (!keepOpen) {

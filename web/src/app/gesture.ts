@@ -17,8 +17,9 @@ import { COL } from './paint.js';
 import { insertControl } from './edit.js';
 import { cancelTool, toolClick } from './tools.js';
 import { bodyAt, grabBody, grabHandle, handleAt } from './underlay.js';
-import { roundsEdges, sweepsRegion } from './view.js';
-import type { SketchView, SolidPick } from './view.js';
+import { combinePick, roundPick, roundTarget } from './solids.js';
+import { bodyOf, choosesAmong, combines, roundsEdges, sweepsRegion } from './view.js';
+import type { Hit, SketchView, SolidPick } from './view.js';
 
 /** One pointer gesture in progress.  `move` gets canvas coordinates; `end` and `paint` are
  *  optional because pan needs neither and the rubber band needs both. */
@@ -98,6 +99,12 @@ function bindPointer(v: SketchView, touch: TouchNavigation): void {
   });
   cv.addEventListener('pointercancel', finish);
   cv.addEventListener('lostpointercapture', finish);
+  // the pointer gone, nothing is under it: what it lit goes out
+  cv.addEventListener('pointerleave', () => {
+    if (v.gesture || !v.hovered) return;
+    v.hovered = null;
+    v.draw();
+  });
 }
 
 /** A double-click: a dimension's number edited, a handle put on a curve, a face drawn on, or a
@@ -354,6 +361,12 @@ function primaryTaken(v: SketchView, e: PointerEvent, sp: [number, number]): boo
     return true;
   }
   if (v.liveExtent?.kind === 'offset') v.endExtent();
+  // ⌘-click (Ctrl off a Mac): everything under the pointer, to choose among
+  if ((e.metaKey || e.ctrlKey) && choosesAmong(v.tool)) {
+    e.preventDefault();
+    chooseAt(v, sp, e.shiftKey);
+    return true;
+  }
   if (v.tool !== 'select') {
     // an edge tool's number keeps the keyboard across the clicks that pick more
     if (roundsEdges(v.tool)) e.preventDefault();
@@ -441,6 +454,43 @@ function pressedApart(v: SketchView, e: PointerEvent, sp: [number, number], at: 
     return true;
   }
   return false;
+}
+
+/** **A ⌘-click**: everything the eye's ray reaches under the pointer that the tool down could take
+ *  (`SketchView.hitsAt`) — the one there is taken as a click on it, several are handed to the
+ *  shell to list (`onChoose`), and where there is nothing, it says so. */
+export function chooseAt(v: SketchView, sp: [number, number], add: boolean): void {
+  const hits = v.hitsAt(sp[0], sp[1]);
+  if (hits.length === 1) takeHit(v, hits[0], add);
+  else if (hits.length) v.onChoose(hits, sp, add);
+  else v.onStatus('nothing is under the pointer here to choose');
+}
+
+/** **Take a hit as a click on it would**, with the tool down: selected (with `add`, toggled in the
+ *  selection), an edge tool's pick, a Boolean's body.  A row chosen from a ⌘-click's list is taken
+ *  so; nothing is dragged. */
+export function takeHit(v: SketchView, hit: Hit, add: boolean): void {
+  v.hovered = null;
+  if (hit.kind === 'solid' && roundsEdges(v.tool)) {
+    roundPick(v, hit.pick);
+    return;
+  }
+  if (hit.kind === 'solid' && combines(v.tool)) {
+    combinePick(v, bodyOf(hit.pick));
+    return;
+  }
+  if (v.tool !== 'select') return;
+  if (hit.kind === 'solid') {
+    v.pickSolid(hit.pick, add);
+  } else {
+    const ent = hit.ent;
+    // assigned, never grown in place: the setter is where the other selections are let go
+    v.selected = !add ? [ent]
+      : v.selected.includes(ent) ? v.selected.filter((p) => p !== ent) : [...v.selected, ent];
+  }
+  v.onSelect();
+  v.onChanged();
+  v.draw();
 }
 
 /** The drag a press on an entity starts, where it can move at all. */
@@ -747,16 +797,16 @@ type Target =
   | { kind: 'image' }
   | { kind: 'none' };
 
-function whatIsAt(v: SketchView, sp: [number, number], solids = true): Target {
+function whatIsAt(v: SketchView, sp: [number, number]): Target {
   const corner = handleAt(v, sp);
   if (corner >= 0) return { kind: 'handle', corner };
   const callout = v.pickCallout(sp[0], sp[1]);
   if (callout) return { kind: 'callout', callout };
   const ent = v.pick(sp[0], sp[1]);
   if (ent && !(ent instanceof Plane)) return { kind: 'entity', ent };
-  // beneath the drawing: an object's face, where the eye sees it — asked for a cursor too where
-  // a pane's frame would otherwise promise one
-  const pick = solids || ent ? v.solidAt(sp[0], sp[1]) : null;
+  // beneath the drawing: an object's edge the eye sees within reach, else its face, where the eye
+  // sees it — the smaller target first, as a point outranks a line
+  const pick = v.edgeAt(sp[0], sp[1]) ?? v.solidAt(sp[0], sp[1]);
   if (pick) return { kind: 'solid', pick };
   if (bodyAt(v, sp)) return { kind: 'image' };
   // and beneath everything, a pane's frame: a plane
@@ -784,8 +834,11 @@ function extentGesture(v: SketchView): Gesture {
   };
 }
 
-/** Cursor affordance: what a press here would grab. */
+/** **What a press here would take, streamed as the pointer moves**: lit where it is drawn
+ *  (`SketchView.hovered`) — the drawing's figure or point, an object's edge, face or body — and
+ *  the cursor's affordance for what a press would grab. */
 export function hover(v: SketchView, sp: [number, number]): void {
+  v.hovered = null;
   if (v.orbitMode) {
     v.canvas.style.cursor = 'grab';
     return;
@@ -803,9 +856,11 @@ export function hover(v: SketchView, sp: [number, number]): void {
     v.canvas.style.cursor = grab ? 'grab' : '';
     return;
   }
-  // an edge tool lights the edge a click would pick
-  if (roundsEdges(v.tool)) {
-    v.canvas.style.cursor = v.hoverRound(sp[0], sp[1]) ? 'pointer' : '';
+  // an edge tool lights the edge or face a click would pick, a Boolean the body
+  if (roundsEdges(v.tool) || combines(v.tool)) {
+    const pick = roundsEdges(v.tool) ? roundTarget(v, sp[0], sp[1]) : v.solidAt(sp[0], sp[1]);
+    v.hovered = pick && { kind: 'solid', pick: combines(v.tool) ? bodyOf(pick) : pick };
+    v.canvas.style.cursor = pick ? 'pointer' : '';
     return;
   }
   if (v.tool !== 'select') return;
@@ -813,8 +868,9 @@ export function hover(v: SketchView, sp: [number, number]): void {
     v.canvas.style.cursor = 'grab';
     return;
   }
-  // a solid promises no cursor of its own, so a pointer move does not cast a ray for one
-  const at = whatIsAt(v, sp, false);
+  const at = whatIsAt(v, sp);
+  v.hovered = at.kind === 'entity' ? { kind: 'entity', ent: at.ent }
+    : at.kind === 'solid' ? { kind: 'solid', pick: at.pick } : null;
   v.canvas.style.cursor =
       at.kind === 'handle' ? (at.corner % 2 ? 'nesw-resize' : 'nwse-resize')
     : at.kind === 'callout' || at.kind === 'image' ? 'move'

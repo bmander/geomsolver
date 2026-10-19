@@ -124,11 +124,15 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   edge, as the words read them), cached on `EvaluatedSolid::face_edges`.  `workspace::pick_edge`
   picks one where the eye sees it, never through the material (a ray at it meeting a face nearer
   the eye); `solid_edges` gives them in space for the box to light (`box3d`'s fat lines, drawn
-  over everything).  The tool's clicks toggle edges, or a face (every edge of it), on one object
-  (`SketchView.rounding`; another object starts over), the number asked beside the last click
-  (`dimbox`'s `roundBox`, focused, the pointer-down's default prevented so it keeps the
-  keyboard); Enter writes `edit::add_rounds`: the mesh's paths mapped to the document's through
-  the operand routes (`EvaluatedSolid::face_route`, the report's too; `plate.near` on `pad` is `pad.plate.near`, checked against `face_paths`; a
+  over everything).  **The tool's picks are the selection's** (`SketchView.rounding` is read off
+  `selectedSolids`, `solids::roundingOf`): edges and faces selected before it was taken up are
+  where it starts, and the number is asked at once; its clicks toggle edges, or a face (every
+  edge of it), on one object (another object starts over; taken up, the selection keeps the
+  object picked last, `onePicked`), and a body picked whole is its every face.  The number is
+  asked beside the last click (`dimbox`'s `roundBox`, focused, the pointer-down's default
+  prevented so it keeps the keyboard); Escape lets the picks go, the tool still down; a write
+  lets them go too.  Enter writes `edit::add_rounds`: the mesh's paths mapped to the document's
+  through the operand routes (`EvaluatedSolid::face_route`, the report's too; `plate.near` on `pad` is `pad.plate.near`, checked against `face_paths`; a
   round's own faces have no name to write), `F round(r: d) body` per face, `a round(r: d) b` per
   edge no face covers, `round(r: d) body` for every face, `use std` made to name the word — one
   splice, held to the elaborator over both places (the library's errors are said at the `use`).
@@ -156,10 +160,28 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   circumcentre, a fitted control polygon) and what a solve settles keep their digits.  Gates:
   `a_click_writes_the_digits_its_pixel_justifies`, and the app test beside it.  **An object's face is picked where the eye's ray meets it**
   (`workspace::pick_solid`, nearest the viewer over each object's mesh; the path is where the face
-  was made, so the object index rides beside it), beneath the drawing in `whatIsAt`'s order.  A
-  solid picked is a **third selection** (`SketchView.selectedSolids`, `pickSolid`), exclusive
-  with `selected` and the picture, carried across an edit by name; Delete removes it, `box3d`
-  lights the face and washes the rest.  **Axes are picked where the box draws them**
+  was made, so the object index rides beside it), beneath the drawing in `whatIsAt`'s order, an
+  edge the eye sees within the pick's reach (`pick_edge`) before the face it bounds.  **A part of
+  an object picked** — a face, an edge (`SolidPick.edge`, its two faces), or the body whole (no
+  face, no edge; `partOf`) — is a **third selection** (`SketchView.selectedSolids`,
+  `pickSolid`, toggled part by part), exclusive with `selected` and the picture, carried across
+  an edit by the object's name; Delete removes the objects it is of (a face or an edge has no
+  statement of its own), a Boolean tool takes each object once whole (`bodiesPicked`), and
+  `box3d` lights a face or an edge selected in the selection's ink, a body all over a little
+  less.  **The pointer lights what a click would take, as it moves** (`gesture::hover` →
+  `SketchView.hovered`, a `Hit`): `whatIsAt` asked on every move, a figure or point lit in the
+  highlight's ink (`SketchView.lit`), an object's edge, face or body in the box — an edge tool
+  its edge or face, a Boolean its body — and put out when the pointer leaves.  **⌘-click (Ctrl
+  off a Mac) lists everything under the pointer** (`workspace::under`, FFI
+  `gcs_workspace_under_json`, `underSeen`; `SketchView.hitsAt`): what is drawn first (points,
+  figures, axes, panes' frames, each by how near), then the objects' edges and faces nearest
+  the eye first — an edge behind the material listed too, `seen: false`, said hidden — then the
+  objects whole; an edge tool lists only objects' parts, a Boolean only objects.  One is taken
+  at once; several are handed to the shell (`onChoose`, `app/choose.ts`), each row lit as the
+  pointer or the arrow keys are on it (`hoverHit`), the one chosen taken as a click on it would
+  be (`takeHit`; shift adds).  `tests/edit_rounds.rs`'s
+  `everything_under_the_pointer_is_listed_the_drawing_first_then_nearest_the_eye` and the app
+  tests beside the Fillet tool's are the gates.  **Axes are picked where the box draws them**
   (`overview::axis_segment`, one rule for both), beneath every drawn figure and never seen end
   on; the TS `Axis` proxy is kind id 16 (`kindOf` decodes a pick).  **A plane is picked by its
   pane's frame** (`workspace::nearest_pane`), beneath the axes: the place's one pane, the frame

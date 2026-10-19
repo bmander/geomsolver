@@ -149,6 +149,32 @@ export function pickEdgeSeen(sk: Sketch, az: number, el: number, x: number, y: n
     core().gcs_workspace_pick_edge_json(sk.handle, az, el, x, y, tol));
 }
 
+/** One thing the eye's ray reaches under the pointer: something drawn (a figure, a point, an
+ *  axis, a pane's frame), an edge of an object — seen, or behind its material — a face it
+ *  crosses, or an object whole. */
+export type Under =
+  | { kind: 'drawn'; ent: Primitive }
+  | { kind: 'edge'; solid: number; faces: [string, string]; at: [number, number, number];
+      depth: number; seen: boolean }
+  | { kind: 'face'; solid: number; face: string; at: [number, number, number]; depth: number }
+  | { kind: 'object'; solid: number; depth: number };
+
+/** **Everything under the pointer** at `(x, y)` on the picture plane, within `tol` there for what
+ *  is drawn and for edges: the drawing first, then the objects' edges and faces nearest the eye
+ *  first, then the objects (`workspace::under`) — what a click there might have meant. */
+export function underSeen(sk: Sketch, unit: number, az: number, el: number, x: number, y: number,
+                          tol: number): Under[] {
+  type Wire = Exclude<Under, { kind: 'drawn' }> | { kind: 'drawn'; id: number; index: number };
+  const wire = takeJson<Wire[]>(
+    core().gcs_workspace_under_json(sk.handle, unit, az, el, x, y, tol));
+  return wire.flatMap((u): Under[] => {
+    if (u.kind !== 'drawn') return [u];
+    const kind = kindOf(u.id);
+    const ent = kind ? sk.entities(kind)[u.index] : undefined;
+    return ent ? [{ kind: 'drawn', ent }] : [];
+  });
+}
+
 /** Where two faces of an object meet: the faces, and the stretches of it in space, each six
  *  numbers (from, to). */
 export interface SolidEdge {

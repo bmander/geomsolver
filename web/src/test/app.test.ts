@@ -19,7 +19,8 @@ import type { PairDimension } from '../core/callout.js';
 import { PlanDrag } from '../core/decompose.js';
 import { solve } from '../core/system.js';
 import { DimAlt, SketchView } from '../app/view.js';
-import type { SolidPick } from '../app/view.js';
+import { hitName } from '../app/view.js';
+import type { Hit, SolidPick } from '../app/view.js';
 import { eyeFrame, pickEdgeSeen, roundSize, solidEdges } from '../core/workspace.js';
 import { overview3 } from '../core/overview.js';
 import type { SolidEdge } from '../core/workspace.js';
@@ -2535,6 +2536,175 @@ test('the Chamfer tool takes a face for every edge of it, at the size typed; Esc
   assert.ok(view.finishRound('2deg'));
   assert.equal(view.source, was);
   assert.ok(view.rounding);
+});
+
+/** The block's edges where the eye sees them from `view`'s orbit (`seen`), or where it does not
+ *  (`hidden`), none of them under a line of the drawing: an edge a click picks as itself. */
+/** The part of an object under the pointer, lit, or null for none or something drawn. */
+function hoveredPick(view: SketchView): SolidPick | null {
+  const h = view.hovered;
+  return h?.kind === 'solid' ? h.pick : null;
+}
+
+/** The parts of objects selected — read afresh, past what an assertion narrowed. */
+function picks(view: SketchView): readonly SolidPick[] {
+  return view.selectedSolids;
+}
+
+function edgesOf(view: SketchView, seen: boolean): SolidEdge[] {
+  const block = view.doc.solids().find((s) => s.name === 'block')!;
+  const { az, el } = view.orbit;
+  return solidEdges(view.sketch, block.index).filter((e) => {
+    const at = seenAt(view, middle(e));
+    const hit = pickEdgeSeen(view.sketch, az, el, ...view.eye(...at), view.world(view.pickPx));
+    return (hit?.faces.join() === e.faces.join()) === seen && !view.pick(...at);
+  });
+}
+
+test('the pointer lights what a click would take as it moves, and a click takes it', () => {
+  const view = docView(BLOCK);
+  view.orbit = { az: 0.6, el: 0.5 };
+  const cv = canvasOf(view);
+  const move = (at: [number, number]) => cv.fire('pointermove', pointer(...at, { buttons: 0 }));
+  // over the top face: the face, not yet the body
+  const top = seenAt(view, [10, 5, 0]);
+  move(top);
+  const face = hoveredPick(view)!;
+  assert.ok(face?.face.startsWith('block.') && !face.edge, JSON.stringify(view.hovered));
+  // over a line of the drawing: the line, lit in the highlight's ink
+  const ab = view.doc.entity('ab')!;
+  move(seenAt(view, [10, 0, 0]));
+  assert.deepEqual(view.hovered, { kind: 'entity', ent: ab });
+  assert.ok(view.lit.includes(ab));
+  // over an edge of the block no line is drawn on: the edge, by the two faces meeting there
+  const [e1, e2] = edgesOf(view, true);
+  assert.ok(e1 && e2, 'edges the eye sees, off the drawing');
+  move(seenAt(view, middle(e1)));
+  assert.deepEqual(hoveredPick(view)?.edge, e1.faces);
+  // nothing lit off everything, nor once the pointer has left
+  move(seenAt(view, [10, 80, 0]));
+  assert.equal(view.hovered, null);
+  move(top);
+  cv.fire('pointerleave', pointer(...top));
+  assert.equal(view.hovered, null);
+  // a click takes the edge, a shift-click adds the face beside it, again lets it go
+  clickSeen(view, middle(e1));
+  assert.deepEqual(view.selectedSolids.map((s) => [s.name, s.edge, s.face]),
+                   [['block', e1.faces, '']]);
+  cv.fire('pointerdown', pointer(...top, { shiftKey: true }));
+  cv.fire('pointerup', pointer(...top, { shiftKey: true }));
+  assert.deepEqual(view.selectedSolids.map((s) => s.face), ['', face.face]);
+  cv.fire('pointerdown', pointer(...top, { shiftKey: true }));
+  cv.fire('pointerup', pointer(...top, { shiftKey: true }));
+  assert.equal(view.selectedSolids.length, 1);
+  // an edge stands for its object where a statement is wanted: Delete takes the block, once
+  cv.fire('pointerdown', pointer(...top, { shiftKey: true }));
+  cv.fire('pointerup', pointer(...top, { shiftKey: true }));
+  view.deleteSelected();
+  assert.ok(!view.source.includes('block :='), view.source);
+  assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
+});
+
+test('edges selected are where the Fillet tool starts, and a body selected is every face', () => {
+  const view = docView(BLOCK);
+  view.orbit = { az: 0.6, el: 0.5 };
+  const asked: (string | null)[] = [];
+  view.onRound = (r, _at, size) => asked.push(r ? size : null);
+  const block = view.doc.solids().find((s) => s.name === 'block')!;
+  const size = io.fmt(roundSize(view.sketch, block.index)!, 6);
+  const [e1, e2] = edgesOf(view, true);
+  clickSeen(view, middle(e1));
+  const cv = canvasOf(view);
+  cv.fire('pointerdown', pointer(...seenAt(view, middle(e2)), { shiftKey: true }));
+  cv.fire('pointerup', pointer(...seenAt(view, middle(e2)), { shiftKey: true }));
+  view.setTool('fillet');
+  assert.deepEqual(view.rounding?.edges, [e1.faces, e2.faces]);
+  assert.equal(asked.at(-1), size, 'the number is asked at once');
+  view.finishCurve();                       // Enter
+  const face = (f: string) => `block.${f.split('.')[1]}`;
+  for (const e of [e1, e2]) {
+    assert.ok(view.source.includes(`\n${face(e.faces[0])} round(r: ${size}) ${face(e.faces[1])}\n`),
+              view.source);
+  }
+  assert.deepEqual(view.selectedSolids, [], 'what was rounded is let go');
+  view.undo();
+  // the body whole: the word over the body, every edge of it
+  view.setTool('select');
+  view.pickSolid({ name: 'block', index: block.index, face: '' });
+  view.setTool('chamfer');
+  assert.equal(view.rounding?.faces.length, 6);
+  assert.equal(view.finishRound('1'), null);
+  assert.ok(view.source.endsWith('\nchamfer(d: 1) block\n'), view.source);
+  assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
+});
+
+test('a ⌘-click lists everything under the pointer, and the one chosen is taken as a click', () => {
+  const view = docView(BLOCK);
+  view.orbit = { az: 0.6, el: 0.5 };
+  const lists: Hit[][] = [];
+  view.onChoose = (hits) => lists.push(hits);
+  const said: string[] = [];
+  view.onStatus = (m) => said.push(m);
+  const cv = canvasOf(view);
+  const choose = (at: [number, number], mods: Record<string, boolean> = { metaKey: true }) => {
+    cv.fire('pointerdown', pointer(...at, mods));
+    cv.fire('pointerup', pointer(...at, mods));
+    return lists.at(-1)!;
+  };
+  // on the line the block's top edge was drawn by: the line over everything, then the edge, the
+  // faces it bounds, and the block itself last
+  const ab = view.doc.entity('ab')!;
+  const hits = choose(seenAt(view, [10, 0, 0]));
+  const named = hits.map((h) => hitName(view.doc, h));
+  assert.deepEqual(hits[0], { kind: 'entity', ent: ab });
+  assert.deepEqual(named[0], { kind: 'line', name: 'ab', hidden: false });
+  assert.ok(named.some((n) => n.kind === 'edge' && !n.hidden), JSON.stringify(named));
+  assert.ok(named.filter((n) => n.kind === 'face').length >= 1, JSON.stringify(named));
+  assert.deepEqual(named.at(-1), { kind: 'body', name: 'block', hidden: false });
+  assert.deepEqual(view.selected, [], 'nothing is taken until one is chosen');
+  // the row pointed at is lit; the one chosen is taken, and with shift added
+  const edge = hits.find((h) => h.kind === 'solid' && h.pick.edge)!;
+  view.hoverHit(edge);
+  assert.equal(view.hovered, edge);
+  view.takeHit(edge);
+  assert.equal(view.hovered, null);
+  assert.equal(view.selectedSolids.length, 1);
+  assert.ok(view.selectedSolids[0].edge);
+  view.takeHit(hits.at(-1)!, true);
+  assert.deepEqual(view.selectedSolids.map((s) => s.edge ? 'edge' : s.face || 'body'),
+                   ['edge', 'body']);
+  view.takeHit(hits[0]);
+  assert.deepEqual(view.selected, [ab]);
+  assert.deepEqual(view.selectedSolids, []);
+  // an edge behind the material is listed too, said hidden, and can be chosen — Ctrl off a Mac
+  const [hidden] = edgesOf(view, false);
+  assert.ok(hidden, 'an edge the eye does not see');
+  const behind = choose(seenAt(view, middle(hidden)), { ctrlKey: true });
+  const back = behind.find((h) => h.kind === 'solid'
+    && h.pick.edge?.join() === hidden.faces.join());
+  assert.ok(back && hitName(view.doc, back).hidden,
+            JSON.stringify(behind.map((h) => hitName(view.doc, h))));
+  view.takeHit(back);
+  assert.deepEqual(picks(view)[0].edge, hidden.faces);
+  // with the Fillet tool down only the object's parts are listed, and the one chosen is picked
+  view.setTool('fillet');
+  const parts = choose(seenAt(view, [10, 0, 0]));
+  assert.ok(parts.length && parts.every((h) => h.kind === 'solid'), JSON.stringify(parts));
+  const top = parts.find((h) => h.kind === 'solid' && h.pick.face)!;
+  view.takeHit(top);
+  assert.ok(view.rounding?.faces.includes((top as { pick: SolidPick }).pick.face));
+  // and a Boolean only bodies: one alone is taken at once, as a click on it — the target
+  view.setTool('union');
+  const n0 = lists.length;
+  choose(seenAt(view, [10, 5, 0]));
+  assert.equal(lists.length, n0, 'nothing to choose among');
+  assert.deepEqual(picks(view).map((s) => [s.name, s.face, s.edge]), [['block', '', undefined]]);
+  // on nothing, it says so
+  view.setTool('select');
+  const n = lists.length;
+  choose(seenAt(view, [10, 80, 60]));
+  assert.equal(lists.length, n);
+  assert.match(said.at(-1)!, /nothing is under the pointer/);
 });
 
 test('in orbit mode a drag turns the workspace, whatever tool is down, and draws nothing', () => {

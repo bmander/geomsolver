@@ -3,6 +3,7 @@
  * the fit tool makes nothing until it finishes and takes its own there. */
 import * as C from '../core/constraints.js';
 import { Line, Point, distanceBetween, onRadius } from '../core/model.js';
+import { bodiesPicked, onePicked } from './solids.js';
 import { combines, roundsEdges } from './view.js';
 import type { Place, SketchView, Tool } from './view.js';
 
@@ -13,7 +14,12 @@ export function setTool(v: SketchView, tool: Tool): void {
   v.hoverRegion = null;
   v.pendingRevolve = null;
   v.highlight = [];
-  v.endRound();                              // what an edge tool picked goes with it
+  v.hovered = null;                          // what the next move lights is the new tool's
+  v.endRound();                              // an edge tool's number goes with it
+  // the selection is where a picking tool starts: a Boolean's bodies, an edge tool's parts of
+  // one object
+  if (combines(tool)) bodiesPicked(v);
+  else if (roundsEdges(tool)) onePicked(v);
   v.endExtent();                             // an extrusion being sized is done with the tool
   v.canvas.classList.toggle('select', tool === 'select');
   v.canvas.style.cursor = '';                // drop any hover affordance
@@ -127,9 +133,12 @@ export function cancelTool(v: SketchView): void {
     return;
   }
   // what an edge tool picked: let go, the tool still down
-  if (v.rounding) {
+  if (roundsEdges(v.tool) && v.selectedSolids.length) {
+    v.selected = [];
     v.endRound();
     v.tellRound();
+    v.onSelect();
+    v.onChanged();
     v.draw();
     return;
   }

@@ -19,6 +19,7 @@ import {
   currentConstraint, focusConstraint, footerEl, measureEl, view,
 } from './shell.js';
 import { dragWindow, stats } from './ui.js';
+import { pickName } from './view.js';
 
 /** The constraints the window was last built from, and the components it is open on: the list
  *  is rebuilt only when what it holds actually changed, or when `invalidateRows` says a number
@@ -219,11 +220,8 @@ function heldLine(): string {
   const u = view.underlay;
   if (u?.picked) return `image ${u.name} — ${Math.round(u.opacity * 100)}%   |   `;
   const solids = view.selectedSolids;
-  if (solids.length === 1) {
-    const face = solids[0].face ? ` · face ${solids[0].face}` : '';
-    return `solid ${solids[0].name}${face}   |   `;
-  }
-  if (solids.length) return `${solids.length} solids: ${solids.map((s) => s.name).join(' ')}   |   `;
+  if (solids.length === 1) return `${pickName(solids[0])}   |   `;
+  if (solids.length) return `${solids.length} picked: ${solids.map(pickName).join(', ')}   |   `;
   return '';
 }
 // where the window sits is the user's, not the layout's

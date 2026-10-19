@@ -7,13 +7,12 @@ import * as io from '../core/io.js';
 import { Axis, Line, Plane } from '../core/model.js';
 import type { Primitive } from '../core/model.js';
 import type { Edit, Region } from '../core/program.js';
-import { offsetHandle, pickEdgeSeen, roundSize } from '../core/workspace.js';
-import type { EdgeHit } from '../core/workspace.js';
+import { offsetHandle, roundSize, solidEdges } from '../core/workspace.js';
 import {
   endExtent, extrudeHandleOf, offsetOf, solidIndex, tellExtent, turnHandleOf,
 } from './extent.js';
 import type { LiveExtent } from './extent.js';
-import { combines, roundsEdges } from './view.js';
+import { bodyOf, combines, partOf, roundsEdges } from './view.js';
 import type { Combining, EdgeWord, Rounding, SketchView, SolidPick } from './view.js';
 
 /** What an edge tool has picked, said: `2 edges and 1 face` (`sep` between). */
@@ -92,11 +91,17 @@ export function revolveAt(v: SketchView, sx: number, sy: number, cut = false): v
  *  up are where it starts, and the box previews what it would write (`combining`). */
 export function combineAt(v: SketchView, sx: number, sy: number): void {
   const pick = v.solidAt(sx, sy);
-  const [target] = v.selectedSolids;
   if (!pick) {
     tellCombine(v);
     return;
   }
+  combinePick(v, bodyOf(pick));
+}
+
+/** A body taken by a Boolean tool — clicked, or chosen from what was under a ⌘-click: the
+ *  target, a tool, a tool let go, or the target again, which writes it. */
+export function combinePick(v: SketchView, pick: SolidPick): void {
+  const [target] = v.selectedSolids;
   if (target && pick.index === target.index) {
     finishCombine(v);
     return;
@@ -135,6 +140,19 @@ export function finishCombine(v: SketchView): void {
   v.draw();
 }
 
+/** The selection as a Boolean tool takes it: each object picked once, whole, in the order its
+ *  first part was picked — a face of a body selected stands for the body. */
+export function bodiesPicked(v: SketchView): void {
+  const bodies: SolidPick[] = [];
+  for (const s of v.selectedSolids) {
+    if (!bodies.some((b) => b.index === s.index)) bodies.push(bodyOf(s));
+  }
+  const picked = v.selectedSolids;
+  if (bodies.length < picked.length || picked.some((s) => partOf(s) !== 'body')) {
+    v.pickSolids(bodies);
+  }
+}
+
 /** Say what a Boolean tool wants next. */
 export function tellCombine(v: SketchView): void {
   const word = combines(v.tool);
@@ -149,47 +167,67 @@ export function tellCombine(v: SketchView): void {
 
 /** **Fillet, Chamfer**: a click with an edge tool down.  An edge the eye sees under the pointer
  *  is picked, else the face of a solid there — whole, its every edge — and a second click on
- *  either lets it go.  A pick on another object starts over on that one: the words are written
- *  over one body's faces.  The number is then asked beside the click (`onRound`), and Enter
- *  writes it (`finishRound`). */
+ *  either lets it go.  **The picks are the selection's**, so what was selected before the tool was
+ *  taken up is where it starts.  A pick on another object starts over on that one: the words are
+ *  written over one body's faces.  The number is then asked beside the click (`onRound`), and
+ *  Enter writes it (`finishRound`). */
 export function roundAt(v: SketchView, sx: number, sy: number): void {
-  const edge = edgeAt(v, sx, sy);
-  const face = edge ? null : v.solidAt(sx, sy);
-  const solid = edge?.solid ?? face?.index;
-  const name = face?.name
-    ?? (edge && v.doc.solids().find((s) => s.index === edge.solid)?.name);
-  if (solid === undefined || !name || (face && !face.face)) {
+  const pick = roundTarget(v, sx, sy);
+  if (!pick) {
     v.onStatus(`click an edge of a solid to ${roundsEdges(v.tool)} it, or a face for every `
                + 'edge of it');
     return;
   }
-  const was = v.rounding;
-  const r: Rounding = was && was.solid === solid
-    ? { ...was } : { solid, name, faces: [], edges: [] };
-  if (edge) {
-    const [a, b] = edge.faces;
-    const has = r.edges.some(([x, y]) => x === a && y === b);
-    r.edges = has ? r.edges.filter(([x, y]) => x !== a || y !== b) : [...r.edges, [a, b]];
-  } else {
-    const f = face!.face;
-    r.faces = r.faces.includes(f) ? r.faces.filter((x) => x !== f) : [...r.faces, f];
-  }
-  v.rounding = r.faces.length || r.edges.length ? r : null;
   v.roundClick = [sx, sy];
-  tellRound(v);
+  roundPick(v, pick);
+}
+
+/** What a click with an edge tool down would pick under a canvas point: an edge the eye sees
+ *  there, else the face of an object — or nothing. */
+export function roundTarget(v: SketchView, sx: number, sy: number): SolidPick | null {
+  const edge = v.edgeAt(sx, sy);
+  if (edge) return edge;
+  const face = v.solidAt(sx, sy);
+  return face?.face ? face : null;
+}
+
+/** A part of an object taken by an edge tool — clicked, or chosen from what was under a
+ *  ⌘-click: toggled in the selection, or on another object, the selection started over on it. */
+export function roundPick(v: SketchView, pick: SolidPick): void {
+  const other = v.selectedSolids.some((s) => s.index !== pick.index);
+  v.pickSolid(pick, !other);
+  v.onSelect();
+  v.onChanged();
+  tellRound(v);                   // last: its number takes the keyboard
   v.draw();
 }
 
-/** The edge a click would pick with an edge tool down, lit — or nothing. */
-export function hoverRound(v: SketchView, sx: number, sy: number): EdgeHit | null {
-  v.hoverEdge = roundsEdges(v.tool) ? edgeAt(v, sx, sy) : null;
-  return v.hoverEdge;
+/** The selection as an edge tool takes it: the parts of the one object picked last. */
+export function onePicked(v: SketchView): void {
+  const last = v.selectedSolids.at(-1);
+  if (last && v.selectedSolids.some((s) => s.index !== last.index)) {
+    v.pickSolids(v.selectedSolids.filter((s) => s.index === last.index));
+  }
 }
 
-/** The edge of an object the eye sees under a canvas point, within a pick's reach. */
-function edgeAt(v: SketchView, sx: number, sy: number): EdgeHit | null {
-  const { az, el } = v.orbit;
-  return pickEdgeSeen(v.sketch, az, el, ...v.eye(sx, sy), v.world(v.pickPx));
+/** What an edge tool would write over: the selection's faces and edges of one object (the one
+ *  picked last), a body picked whole standing for its every face — or null for none. */
+export function roundingOf(v: SketchView): Rounding | null {
+  const last = v.selectedSolids.at(-1);
+  if (!last) return null;
+  const picks = v.selectedSolids.filter((s) => s.index === last.index);
+  const faces: string[] = [];
+  const add = (f: string) => {
+    if (!faces.includes(f)) faces.push(f);
+  };
+  for (const p of picks) {
+    if (partOf(p) === 'face') add(p.face);
+    // a body whole: every face of it, which the core writes as the word over the body
+    if (partOf(p) === 'body') for (const e of solidEdges(v.sketch, p.index)) e.faces.forEach(add);
+  }
+  const edges = picks.flatMap((p) => p.edge ? [p.edge] : []);
+  return faces.length || edges.length
+    ? { solid: last.index, name: last.name, faces, edges } : null;
 }
 
 /** **Write what the edge tool picked** at `size` (the radius, or the flat's leg — what was
@@ -214,19 +252,19 @@ export function finishRound(v: SketchView, size?: string): string | null {
   if (!v.apply(e, `${r.name}: ${picked(r, ' and ')} ${done} at ${text}`)) {
     return null;
   }
+  // what was picked is rounded away: the edges are the round's faces' now
+  v.selected = [];
   endRound(v);
   v.onChanged();
   v.draw();
   return null;
 }
 
-/** Let what the edge tool picked go: its number's box closed, the tool still down. */
+/** The edge tool's number put away: its box closed, where it was asked forgotten.  What it was
+ *  asked over stays selected — letting that go is the caller's (Escape, a write). */
 export function endRound(v: SketchView): void {
-  const had = v.rounding;
-  v.rounding = null;
-  v.hoverEdge = null;
   v.roundClick = null;
-  if (had) v.onRound(null, null, '');
+  v.onRound(null, null, '');
 }
 
 /** The size an edge tool offers on object `r`: the last one written or left, else a tenth of
@@ -251,8 +289,9 @@ export function tellRound(v: SketchView): void {
   const size = word === 'round' ? 'the radius' : 'how far the flat runs along each face';
   v.onStatus(`${r.name}: ${picked(r, ', ')} — click more, then type ${size} and Enter `
              + '(Esc lets them go)');
-  const at = v.roundClick;
-  v.onRound(r, at && [at[0] + 12, at[1] + 12], roundOffer(v, word, r));
+  // beside the click that last picked, or — taken up over a selection — where the pointer is
+  const at = v.roundClick ?? v.cursor;
+  v.onRound(r, [at[0] + 12, at[1] + 12], roundOffer(v, word, r));
 }
 
 /** The name of what a revolution may turn about — a line or an axis, as the source calls it —

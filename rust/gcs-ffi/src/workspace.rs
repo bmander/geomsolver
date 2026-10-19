@@ -200,6 +200,48 @@ pub unsafe extern "C" fn gcs_workspace_pick_edge_json(h: *mut Sketch, az: f64, e
     })
 }
 
+/// **Everything under the pointer** at (x, y) on the eye's picture plane, within `tol` (an eye
+/// length) for what is drawn and for edges, in `workspace::under`'s order: `[{kind: "drawn", id,
+/// index} | {kind: "edge", solid, faces: [a, b], at, depth, seen} | {kind: "face", solid, face,
+/// at, depth} | {kind: "object", solid, depth}…]`, `id` the entity's kind id.  `unit` is the eye
+/// length of one screen pixel.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_workspace_under_json(h: *mut Sketch, unit: f64, az: f64, el: f64,
+                                                  x: f64, y: f64, tol: f64) -> *mut u8 {
+    json_out(move || {
+        use gcs_core::overview::workspace::{under, Under};
+        let (s, proj) = seen(h, az, el);
+        let xyz = |p: [f64; 3]| Json::Arr(p.iter().map(|&x| Json::Num(x)).collect());
+        Json::Arr(under(s, &proj, (x, y), tol, unit).into_iter().map(|u| match u {
+            Under::Drawn(e) => json::object([
+                ("kind", Json::Str("drawn".into())),
+                ("id", Json::Int(kind_id(e.kind) as i64)),
+                ("index", Json::Int(e.i() as i64)),
+            ]),
+            Under::Edge { hit, depth, seen } => json::object([
+                ("kind", Json::Str("edge".into())),
+                ("solid", Json::Int(hit.solid as i64)),
+                ("faces", Json::Arr(vec![Json::Str(hit.faces.0), Json::Str(hit.faces.1)])),
+                ("at", xyz(hit.at)),
+                ("depth", Json::Num(depth)),
+                ("seen", Json::Bool(seen)),
+            ]),
+            Under::Face(hit) => json::object([
+                ("kind", Json::Str("face".into())),
+                ("solid", Json::Int(hit.solid as i64)),
+                ("face", Json::Str(hit.face)),
+                ("at", xyz(hit.at)),
+                ("depth", Json::Num(hit.depth)),
+            ]),
+            Under::Object { solid, depth } => json::object([
+                ("kind", Json::Str("object".into())),
+                ("solid", Json::Int(solid as i64)),
+                ("depth", Json::Num(depth)),
+            ]),
+        }).collect())
+    })
+}
+
 /// A point on the eye's picture plane, `[x, y]`.
 fn pt(p: (f64, f64)) -> Json {
     Json::Arr(vec![Json::Num(p.0), Json::Num(p.1)])

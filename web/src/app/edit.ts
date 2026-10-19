@@ -114,8 +114,10 @@ export function deleteSelected(v: SketchView): void {
     v.removeImage();          // which says so itself, so the menu item and this agree
     return;
   }
-  // the solids, when they are what is selected — the selections being exclusive, again
-  const solids = v.selectedSolids;
+  // the solids, when they are what is selected — the selections being exclusive, again.  A face
+  // or an edge has no statement of its own: it stands for the object it is part of
+  const solids = v.selectedSolids
+    .filter((s, i, all) => all.findIndex((t) => t.index === s.index) === i);
   if (solids.length) {
     const refs = solids.map((s) => ({ ref: ['solid', s.index] as const }));
     const what = solids.length === 1 ? solids[0].name : `${solids.length} solids`;

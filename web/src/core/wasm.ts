@@ -238,6 +238,8 @@ export interface Abi {
   gcs_workspace_pick_edge_json(h: number, az: number, el: number, x: number, y: number,
                                tol: number): number;
   gcs_workspace_solid_edges_json(h: number, solid: number): number;
+  gcs_workspace_under_json(h: number, unit: number, az: number, el: number, x: number,
+                           y: number, tol: number): number;
   gcs_workspace_round_size(h: number, solid: number): number;
   gcs_workspace_nearest_point(h: number, az: number, el: number, x: number, y: number,
                               outDist: number): number;

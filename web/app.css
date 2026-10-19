@@ -588,3 +588,25 @@ dialog input[type=search] {
 @media (hover: none) and (pointer: coarse) {
   button kbd { display: none; }
 }
+
+/* What a ⌘-click had under it, to choose among (`choose.ts`): a row each, the one the pointer or
+   the keyboard is on lit where it is drawn */
+#canvas-wrap .chooser {
+  position: absolute; z-index: 7; display: flex; flex-direction: column;
+  min-width: 200px; max-width: min(420px, calc(100% - 8px)); max-height: 50vh; overflow-y: auto;
+  padding: 4px; font-size: 12px;
+  background: var(--bg); border: 1px solid var(--line); border-radius: 7px;
+  box-shadow: 0 4px 16px rgba(0,0,0,.18);
+}
+.chooser .chooser-head { color: var(--muted); padding: 2px 8px 4px; }
+.chooser button {
+  display: flex; gap: 10px; align-items: baseline; text-align: left;
+  border: none; background: none; padding: 4px 8px; border-radius: 4px;
+}
+.chooser button:hover, .chooser button:focus {
+  background: var(--accent-soft); color: var(--accent); outline: none;
+}
+.chooser .kind { color: var(--muted); min-width: 4.5em; }
+.chooser button:focus .kind { color: inherit; }
+.chooser .name { font-family: var(--mono); overflow: hidden; text-overflow: ellipsis; }
+.chooser .note { margin-left: auto; color: var(--muted); font-style: italic; }
