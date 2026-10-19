@@ -314,28 +314,27 @@ pub enum Piece {
 /// seam's normal surface (its `Kept`) and this takes the rest: the section against the next face,
 /// in the planes square to the edge — the meeting of the face it stands on (`face`) and the wall,
 /// a ring's half-planes through its axis — fitted (`brep::spill`), glued to it on that surface.
-/// `toward` is the way from the edge's face into the region; `chain` the next face's surface,
-/// `wall` the other face's, `split` the seam's normal surface, each with the way its signed
-/// distance runs toward the piece (`sides`, ±1); `seam` the seam; a chamfer's legs, on the chain
-/// from the wall and on the wall from the chain, or a round's `radius` (nothing for a chamfer);
-/// and `ends`, where the leg on the edge's face crosses the seam — or where the ball touches it, a
-/// round's ring a stretch glued to this at both ends.
+/// `toward` is the way from the edge's face into the region; `chain` the next face's surface and
+/// `wall` the other face's, each with the way its signed distance runs toward the piece (`sides`,
+/// ±1); `seam` the seam; `section` a chamfer's flat — its legs, on the chain from the wall and on
+/// the wall from the chain, and the seam's normal surface, the edge's side of it within — or a
+/// round's ball (#426); and `ends`, where the leg on the edge's face crosses the seam — or where
+/// the ball touches it, a round's ring a stretch glued to this at both ends.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Beyond {
     pub face: Surf,
     pub toward: V,
     pub chain: Surf,
     pub wall: Surf,
-    pub split: Surf,
-    pub sides: [f64; 3],
+    pub sides: [f64; 2],
     pub seam: Seam,
-    pub legs: [f64; 2],
-    pub radius: f64,
+    pub section: Across<Surf>,
     pub ends: [V; 2],
 }
 
-/// A seam a section reaches across (model units here, the recipe's in its own): a circle or a line.
-pub use crate::brep::spill::Seam;
+/// A seam a section reaches across (model units here, the recipe's in its own): a circle or a line;
+/// and what a piece beyond it is across it, a flat or a round.
+pub use crate::brep::spill::{Across, Seam};
 
 /// A ball rolled along a run of edges no line or coaxial circle carries — a pipe tee's crotch, a
 /// bore's rim on a pipe's wall, a boss's root across a sloped face (model units): the ball of
