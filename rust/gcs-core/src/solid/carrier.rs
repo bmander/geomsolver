@@ -25,7 +25,7 @@ pub fn carrier(sk: &Sketch, solid: usize, path: &str) -> Result<Carrier, String>
     let (face, through) = segs.split_last().ok_or_else(|| format!("`{path}` names no face"))?;
     // through bodies by their operands' names, and from a body to the stock it was swept as
     let mut at = solid;
-    let mut steps = through.iter();
+    let mut steps: &[&str] = through;
     loop {
         let s = &sk.solids[at];
         let SolidDef::Body { stock, .. } = &s.def else { break };
@@ -33,14 +33,16 @@ pub fn carrier(sk: &Sketch, solid: usize, path: &str) -> Result<Carrier, String>
             at = *stock as usize;
             continue;
         }
-        let Some(seg) = steps.next() else {
+        let Some(seg) = steps.first() else {
             return Err(format!("`{path}` names no face: `{}` is a body", s.name));
         };
-        let leaf = |o: &u32| sk.solids[*o as usize].name.rsplit('.').next() == Some(*seg);
-        at = s.operands().into_iter().find(leaf)
-            .ok_or_else(|| format!("`{path}` names no face: no `{seg}` in `{}`", s.name))? as usize;
+        let (o, rest) = s.operands().into_iter().find_map(|o| {
+            crate::solid::past_step(&sk.solids[o as usize].name, steps).map(|r| (o, r))
+        }).ok_or_else(|| format!("`{path}` names no face: no `{seg}` in `{}`", s.name))?;
+        at = o as usize;
+        steps = rest;
     }
-    if steps.next().is_some() {
+    if !steps.is_empty() {
         return Err(format!("`{path}` names no face"));
     }
     let SolidDef::Prism { face: fi, from, to, draft } = &sk.solids[at].def else {

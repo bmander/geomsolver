@@ -296,11 +296,17 @@ component Hex(c: point, ref: line, af: Length, phase: Angle) {
 //
 // What a round or a chamfer means is said here, over the language's own words: faces as sets (a
 // face is its patch, `q coincident a`; `a.surface` the whole surface it lies on; `p inside a` the
-// surface's material side), the distance from a set, a bound on measurements, where an edge ends,
-// the material's angle at an edge, words that repeat over faces and make solids.  An evaluator
+// surface's material side; `a.smooth` that surface carried on across every seam where a face of
+// the body goes on from it tangent), the distance from a set, a bound on measurements, where an
+// edge ends, the material's angle at an edge, words that repeat over faces and make solids.  An evaluator
 // reads the sets (the field); a lowering may build an exact surface for a shape it recognises, and
 // says nothing these do not.  Each is `symmetric` in its faces (#415): the edge of `a` and `b` is
 // the edge of `b` and `a`, so a word that reaches it both ways states it once.
+//
+// The ball and the flat stand against each face's smooth surface (0.149): where a face goes on
+// tangent into another — a round's own face, a fillet's run onto a bullnose — a ball rolled
+// against it, or a leg measured along it, follows it across the seam rather than its plane run on
+// into the air.  The edge itself is still the faces' own (`crease`, `meeting`).
 
 // What a ball of radius `r` rolled along the convex edge of faces `a` and `b` cannot reach: the
 // points within both faces' sides that no such ball within both covers; only where the point's
@@ -308,10 +314,11 @@ component Hex(c: point, ref: line, af: Length, phase: Angle) {
 // meeting where the body has no edge make nothing); so carried on past each end of the edge and
 // cut off there by the faces it ends on, however they stand.
 component Run(a: face, b: face, r: Length) symmetric(a, b) := { p |
-  p inside a
-  p inside b
+  p inside a.smooth
+  p inside b.smooth
   angle(a, b, at: p) <= 180deg
-  centres := { c | c inside a; c distance(>= r) a.surface; c inside b; c distance(>= r) b.surface }
+  centres := { c | c inside a.smooth; c distance(>= r) a.smooth; c inside b.smooth
+               c distance(>= r) b.smooth }
   crease := { q | q coincident a; q coincident b }
   meeting := { q | q coincident a.surface; q coincident b.surface; q inside crease.ends }
   distance(p, centres) >= r
@@ -322,10 +329,11 @@ component Run(a: face, b: face, r: Length) symmetric(a, b) := { p |
 // The same at a concave edge, every side turned round: what the ball rolled outside both faces
 // cannot reach, added.
 component Fill(a: face, b: face, r: Length) symmetric(a, b) := { p |
-  p outside a
-  p outside b
+  p outside a.smooth
+  p outside b.smooth
   angle(a, b, at: p) >= 180deg
-  centres := { c | c outside a; c distance(>= r) a.surface; c outside b; c distance(>= r) b.surface }
+  centres := { c | c outside a.smooth; c distance(>= r) a.smooth; c outside b.smooth
+               c distance(>= r) b.smooth }
   crease := { q | q coincident a; q coincident b }
   meeting := { q | q coincident a.surface; q coincident b.surface; q inside crease.ends }
   distance(p, centres) >= r
@@ -382,10 +390,10 @@ component CornerFill(a: face, b: face, c: face, r: Length) symmetric(a, b, c) :=
 // through each face's point its leg from the other face — `la` on `a`, `lb` on `b` (#183 X1's
 // finding 4).  Between planes the flat, about an axis a cone.
 component Flat(a: face, b: face, la: Length, lb: Length) symmetric((a, la), (b, lb)) := { p |
-  p inside a
-  p inside b
+  p inside a.smooth
+  p inside b.smooth
   angle(a, b, at: p) <= 180deg
-  distance(p, a.surface) / lb + distance(p, b.surface) / la <= 1
+  distance(p, a.smooth) / lb + distance(p, b.smooth) / la <= 1
   crease := { q | q coincident a; q coincident b }
   meeting := { q | q coincident a.surface; q coincident b.surface; q inside crease.ends }
   distance(p, crease) <= distance(p, meeting)
@@ -394,10 +402,10 @@ component Flat(a: face, b: face, la: Length, lb: Length) symmetric((a, la), (b, 
 
 // `Flat` at a concave edge, every side turned round: what the flat adds.
 component FlatFill(a: face, b: face, la: Length, lb: Length) symmetric((a, la), (b, lb)) := { p |
-  p outside a
-  p outside b
+  p outside a.smooth
+  p outside b.smooth
   angle(a, b, at: p) >= 180deg
-  distance(p, a.surface) / lb + distance(p, b.surface) / la <= 1
+  distance(p, a.smooth) / lb + distance(p, b.smooth) / la <= 1
   crease := { q | q coincident a; q coincident b }
   meeting := { q | q coincident a.surface; q coincident b.surface; q inside crease.ends }
   distance(p, crease) <= distance(p, meeting)

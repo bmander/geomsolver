@@ -69,7 +69,7 @@ impl Operand {
         match self {
             Operand::Face(f) => Some(f.clone()),
             Operand::Ent(e) if e.kind == EntKind::Solid => {
-                Some(FaceRef { solid: e.i() as u32, path: Vec::new(), surface: false })
+                Some(FaceRef { solid: e.i() as u32, path: Vec::new(), surface: false, smooth: false })
             }
             _ => None,
         }
@@ -196,6 +196,9 @@ fn operand_at(sk: &Sketch, e: EntRef, path: &[Seg]) -> Result<Operand, String> {
     match (e.kind, member) {
         (EntKind::Solid, Some(Member::Body)) => Ok(Operand::Body(e)),
         (EntKind::Solid, Some(Member::Surface)) => Ok(Operand::Face(face_ref(e, fields, true))),
+        (EntKind::Solid, Some(Member::Smooth)) => {
+            Ok(Operand::Face(FaceRef { smooth: true, ..face_ref(e, fields, true) }))
+        }
         (EntKind::Solid, None) if !fields.is_empty() => Ok(Operand::Face(face_ref(e, fields, false))),
         (EntKind::Point, Some(Member::Ends)) if fields.is_empty() => Ok(Operand::Ends(e)),
         (kind, Some(m)) => Err(format!("{} has no `{}`", kind.a(), m.word())),
@@ -210,7 +213,7 @@ fn face_ref(solid: EntRef, fields: &[Seg], surface: bool) -> FaceRef {
         Seg::Field(n) => Some(n.text.clone()),
         _ => None,
     }).collect();
-    FaceRef { solid: solid.i() as u32, path, surface }
+    FaceRef { solid: solid.i() as u32, path, surface, smooth: false }
 }
 
 /// Follow a reference's field path to the sub-entity it names — `root.center` is the circle's

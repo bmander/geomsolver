@@ -57,6 +57,21 @@ component defined twice in one file, the document's own included (a value twice 
 module path (`relations::unqualified`), and a module with a `preview` draws its own dimensions
 there and not in a document using it (`Constraint::elsewhere`, [app.md](app.md)).
 
+**A use named (§9.9, [0.149]):** `rim := A round(r) B` (and `rim := round(r) X`) parses as the
+relation with `Relation::name` (`parser/definitions.rs`' `named_relation_ahead`, asked in
+`definition` after the words read past a reference and ahead of the instance; a word of the
+language's own — `is_operator`, `reserved_word` — is no such use, read as the declaration it
+would name and refused there; `print::write_relation` writes the name back). Its application's
+prefix is `{scope}{label}#{statement}.{n}.` (`flatten::keys::labelled`, `Walk::begin_nth`): the
+label one segment with the statement, which no source name spells, so the steps a face's route is
+read by — `solid::route_step`, the one reading `operand_primitives`, `brep::recipe`,
+`faces::face_reach` and `carrier` share (`past_step`) — put each named use's label before its
+solid's own leaf (`plate.rim.taken.round`) and two named uses' faces stay apart; the recipe lumps
+lowered regions by their labels (`cad::Walk::lump`), so a named round's pieces keep its names. The
+label is the body's (`Walk::body`: a declaration, a param, a group, an instance, a set or another
+named use of it is E001), and a named relation no defined word expands is E001 at the name
+(`walk_relation`). `tests/composed_rounds.rs` is the gate.
+
 **Predicates, applied (§9.9, §6.21, 0.50, #103):** a relation word and a set are one predicate —
 parameters given at the call, **bound variables** (a word's operands, a set's point) filled at
 the use — applied by one routine, `flatten/apply.rs`: `begin` (an `Application`: the closure

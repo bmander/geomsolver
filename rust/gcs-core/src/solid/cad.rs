@@ -217,13 +217,25 @@ impl<'a> Walk<'a> {
     }
 
     /// A body's late set with its lowered regions built as one (`lowering::assemble`): the first
-    /// stands for the rest, which are no operands of their own.
+    /// stands for the rest, which are no operands of their own.  Lumped by the labels their faces
+    /// are named under (`route_step`, [0.149]): a named round's pieces stand apart from another's,
+    /// so each keeps its faces' names, and those of the rounds no name was given stand as one.
     fn lump(&mut self,v: Vec<u32>) -> Vec<u32> {
-        let low: BTreeSet<u32> = v.iter().copied()
-            .filter(|&o| self.users.get(&o) == Some(&1) && !self.pieces_of(o).is_empty()).collect();
-        let Some(&first) = low.first().filter(|_| low.len() > 1) else { return v };
-        self.groups.insert(first as usize,low.iter().copied().collect());
-        v.into_iter().filter(|o| *o == first || !low.contains(o)).collect()
+        let mut by: BTreeMap<String,BTreeSet<u32>> = BTreeMap::new();
+        for &o in &v {
+            if self.users.get(&o) == Some(&1) && !self.pieces_of(o).is_empty() {
+                let step = super::route_step(&self.sk.solids[o as usize].name);
+                let labels = step.rsplit_once('.').map_or("",|(l,_)| l).to_string();
+                by.entry(labels).or_default().insert(o);
+            }
+        }
+        let mut stood_for = BTreeSet::new();
+        for low in by.into_values() {
+            let Some(&first) = low.first().filter(|_| low.len() > 1) else { continue };
+            self.groups.insert(first as usize,low.iter().copied().collect());
+            stood_for.extend(low.into_iter().filter(|&o| o != first));
+        }
+        v.into_iter().filter(|o| !stood_for.contains(o)).collect()
     }
 
     /// Solid `i` written as its recipe node by `w`, every solid it depends on (`dependencies`)

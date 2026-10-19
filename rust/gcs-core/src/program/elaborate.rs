@@ -59,6 +59,7 @@ pub(super) fn elaborate_in(
     refused: &BTreeSet<String>,
     crossed: &BTreeMap<String, Vec<f64>>,
     faces: &BTreeMap<String, Vec<FacePath>>,
+    faces_settled: bool,
 ) -> Result<Elaborated, Again> {
     let mut cx = Elab {
         doc: p,
@@ -90,7 +91,7 @@ pub(super) fn elaborate_in(
     walked(&mut cx, &deferred, &held);
     twins(&mut cx, &flat);
     place_planes(&mut cx, &deferred, &held, settled);
-    solids_and_surfaces(&mut cx, &flat, faces, &generated, &held_in_space)?;
+    solids_and_surfaces(&mut cx, &flat, faces, faces_settled, &generated, &held_in_space)?;
     expressions(&mut cx, &flat, &on_followed);
     regions_read(&mut cx, &flat, &after_solids);
     Ok(finish(cx, &flat))
@@ -734,11 +735,14 @@ fn place_planes(
 /// unknown.  This is the stratification as a phase: everything above it is the drawing,
 /// everything below reads what the drawing came to.  (Motions were built with the primitives:
 /// solids retain their indices.)  Then the analytic surfaces and what is written over them; a
-/// pass ends where a block runs over faces not yet named.
+/// pass ends where a block runs over faces not yet named — or, until the faces have `settled`,
+/// over faces named before that the solids now give otherwise: a block over the faces a round
+/// makes runs over them once that round is made, a pass after it (#183 F4, [0.149]).
 fn solids_and_surfaces(
     cx: &mut Elab<'_>,
     flat: &Flat<'_>,
     faces: &BTreeMap<String, Vec<FacePath>>,
+    settled: bool,
     generated: &BTreeSet<StmtId>,
     held: &BTreeSet<StmtId>,
 ) -> Result<(), Again> {
@@ -748,11 +752,12 @@ fn solids_and_surfaces(
     super::solids::carry_legs(sk);
     // the faces of the solids a block runs over, named for the next pass (#183 F4)
     let unnamed: BTreeMap<String, Vec<FacePath>> = flat.expansion.face_repeats.iter()
-        .filter(|abs| !faces.contains_key(*abs))
+        .filter(|abs| !(settled && faces.contains_key(*abs)))
         .filter_map(|abs| {
             res.of.get(abs).filter(|e| e.kind == EntKind::Solid && e.i() < sk.solids.len())
                 .map(|e| (abs.clone(), crate::solid::faces::face_paths(sk, e.i())))
         })
+        .filter(|(abs, now)| faces.get(abs) != Some(now))
         .collect();
     if !unnamed.is_empty() {
         return Err(Again::Faces(unnamed));

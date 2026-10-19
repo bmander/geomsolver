@@ -47,6 +47,49 @@ legs, so a leg of nothing cuts nothing (a bound weighing every measurement by no
 everywhere, else E040, `measured_term`). `tests/rounds.rs` is the gate (X2's closed forms in the
 slow tier), `tests/offset_corners.rs` (Pappus, `rounds/blank.sv`) the offset cone's.
 
+**Rounds that know of one another** ([0.149], X0's findings 2 and 5): a named use's faces are
+under its label ([language.md](language.md)), and **the stratum stands in layers**
+(`solid::faces::layer`, run by `program::solids` after the body rule): a body's readers grouped
+by the use that made them (`faces::path::use_key`, the name up to its first `#` segment), each use
+one layer above the deepest use whose label one of its face references reaches
+(`path::names_use`: a path past the body reaching into the label, never the whole body's empty
+path nor a route through another operand), cycles E041 where the first is made. Layers below the
+top are bodies of their own, **of the body's name**, each the stock of the one above (a stock of
+its body's name adds no step to a route, as a swept solid's split-off sweep), their readers'
+references moved to them (`RegionTerm::remapped`); so each layer reads the body as its other terms
+and every layer beneath make it, and the field, the recipe and the native host apply it as late
+terms of its own body — nothing new below the elaborator. No body whose readers name nothing of
+each other changes. **The faces a block runs over** list a face a reader of the body (or of a
+layer beneath) made with that use (`FacePath::of`), listed only to a block whose path names the
+use's label and that stands outside it (`FacePath::listed_by`), so `round(r) block` never rounds its
+own faces; a region's bounds no set names (`p inside a`) are none of its faces there. A block over
+a solid's faces is recorded however it was named (`Walk::expand_pending`), and the elaborator names
+the faces again while a pass's solids give them otherwise (`elaborate`, at most `FACE_PASSES`
+times): a round over another's faces runs once that one is made, a round over an operand's
+rounds' faces included. `rounds/composed.sv`, `tests/composed_rounds.rs` are the gate (the
+chamfer's two edges rounded, the closed form's volume and the hand's intermediate's to 1e-9).
+
+**Against the smooth surface** ([0.149]): `F.smooth` (`Member::Smooth`, `FaceRef::smooth`, read
+with `surface`) is the faces named and every face going on from them tangent across a seam
+(`BodyFaces::smooth`: an edge two faces bound whose outward normals are one at its middle), a side
+of it or a distance from its surface the nearest patch's (`Reading::side`; `Reading::distance` of a
+smooth surface). `Run`, `Fill`, `Flat` and `FlatFill` read each face's side, its ball's centres'
+reach and its legs off it, the crease and the meeting off the faces themselves. The lowering table
+reads a smooth reference as its face (`recognise::same`, `side_of`) and builds the round or flat of
+the face's own surface, and **refuses** one whose face goes on tangent across a seam running
+beside the edge — sharing no vertex with it — within twice the section's size of it
+(`lowering::seams_beside`, `SEAM_REACH`): there the region is the field's, a chamfer's leg landing
+on the round past a plate's far face; a seam the edge runs into at its end (a slot's side into its
+half circle) is the table's own going on into the next piece and refuses nothing, and the gate
+holds the rest to the field as ever. A region of a body's faces the planes do not close is
+supported by the bodies it reads grown by `SUPPORT_REACH` of its longest length
+(`region::general`), so a fill the table refused is meshed. The field's composition of an operand
+rounded by a cut reads a sheet of nothing where the cut's face lies on the face it rounds; a fill
+whose flat crosses that sheet can end a feature curve on another the mesher cannot keep apart, and
+the mesh is refused, naming the two (`delaunay::refine::protect`; a boss on a plate drawn in a
+plane of its own, its chamfer onto the plate's rim round, is one such): reading an operand built
+exactly by its own boundary would remove the sheet, and is not done.
+
 **Rounds built exactly: the lowering table** (#194, #183 L7, `solid::lowering`): a region over a
 body's faces is recognised by its terms' shapes (`recognised`: two or three `FaceSide`s alike, an
 `Angle` gate per pair at a half turn, the common-part-against-meeting sum (the meeting cut or not

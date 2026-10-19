@@ -341,9 +341,48 @@ pub fn lowered(sk: &Sketch, solid: usize) -> Option<Result<Rc<Vec<Piece>>, Strin
     };
     let key = super::MemoKey::own(sk, solid, vec![body.clone()]);
     Some(sk.caches.lowering.get_or(solid, key, || piece::build(&body, &faces, section).and_then(|pieces| {
+        seams_beside(&body, &faces, section)?;
         gate(sk, solid, &pieces, &body, || beside_edges(&body, &faces, section))?;
         Ok(Rc::new(pieces))
     })))
+}
+
+/// How far beside the edge it rounds a section reaches, in its own size (`seams_beside`): a fill's
+/// point is within its radius or a leg of both faces, and further from their edge only where they
+/// meet sharply.
+const SEAM_REACH: f64 = 2.0;
+
+/// **A smooth surface the section reaches across** ([0.149]): the table builds the round or the
+/// flat of a face's own edge, against the face's own surface, so where the face goes on tangent
+/// into another (`F.smooth`) across a seam running beside the edge, within the section's reach of
+/// it — a chamfer's leg onto a round's face — the region is the field's.  A seam the edge runs
+/// into at its end (a slot's side going on into its end's half circle) is the table's own rule,
+/// a run going on into the next piece, and refuses nothing.
+fn seams_beside(body: &super::faces::BodyFaces, f: &Faces, section: Section) -> Result<(), String> {
+    let size = match section { Section::Round(r) => r, Section::Flat { la, lb } => la.max(lb) };
+    let groups: Vec<Vec<usize>> = f.faces.iter().map(|r| body.faces(r)).collect();
+    for (k, r) in f.faces.iter().enumerate().filter(|(_, r)| r.smooth) {
+        let chain = body.smooth(&groups[k]);
+        if chain.len() == groups[k].len() {
+            continue;
+        }
+        let beyond: Vec<usize> = chain.into_iter().filter(|fi| !groups[k].contains(fi)).collect();
+        let creases: Vec<u32> = f.pairs().iter().filter(|p| p.contains(&k))
+            .flat_map(|&[i, j]| body.edges_between(&groups[i], &groups[j])).collect();
+        let at: Vec<u32> = creases.iter().flat_map(|&e| body.ends(e)).collect();
+        for s in body.edges_between(&groups[k], &beyond) {
+            if body.ends(s).iter().any(|v| at.contains(v)) {
+                continue;
+            }
+            let near = (0..=16).filter_map(|j| body.nearest_edge(&creases, body.along(s, j as f64 / 16.0)))
+                .map(|(_, _, d)| d).fold(f64::INFINITY, f64::min);
+            if near < SEAM_REACH * size {
+                return Err(format!("its section reaches across the seam where `{}` goes on tangent into \
+                    another face, {near:.6} from the edge it rounds: the field reads it", r.path.join(".")));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Points just inside the corner along each edge the region rounds or cuts (a quarter, a half and

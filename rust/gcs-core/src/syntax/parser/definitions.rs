@@ -115,6 +115,29 @@ impl<'a> P<'a> {
         }
     }
 
+    /// **A definition whose value is a defined word's use** (§9.9, [0.149]): `rim := b0.c0
+    /// round(r: 3mm) b0.far`, or the prefix form `rim := round(r: 1mm) dish.pocket` — an operand,
+    /// a word that is neither an operator of the language nor one its grammar keeps, its
+    /// parentheses, and an operand that ends the statement.  Asked after the definitions that
+    /// read a word past a reference (`at`, `in`, `mapped`), ahead of the instance it would
+    /// otherwise be read as.
+    pub(super) fn named_relation_ahead(&self) -> bool {
+        if self.defined_prefix_ahead() {
+            return true;
+        }
+        let Some(j) = self.past_ref(self.i) else { return false };
+        let Some(w) = self.word_at(j) else { return false };
+        if is_operator(w) || reserved_word(w) {
+            return false;
+        }
+        let Some(end) = self.past_ref(past_args(&self.t, j)) else { return false };
+        match self.t.get(end).map(|(t, _)| t) {
+            None | Some(Tok::Nl) | Some(Tok::P('}')) => true,
+            Some(Tok::Ident(w)) => w == "class" || w == "at" || w == "hint",
+            _ => false,
+        }
+    }
+
     /// A defined word's parentheses (§9.9): its parameters given by label, each value kept as the
     /// text it was written as, since whether it is a number or a selector word is the
     /// definition's to say.  An unlabelled item is kept to be refused where the word is

@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.148 — October 2026**
+**Specification, Draft 0.149 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -910,7 +910,21 @@ so the word, which reaches an edge as a face of `A` meeting one of `B` and again
 round, states it once, and a corner once for its six orders. **The stratum**: a term of a body that reads that body's faces reads
 the body as its other terms make it — a round reads the faces as the cut it rounds left them,
 never its own or another round's — and acts on the body after them, what it adds and then what
-it takes; a body whose stock reads its own faces is refused where it is evaluated. In a region's
+it takes; a body whose stock reads its own faces is refused where it is evaluated. **[0.149]**
+**The stratum in layers**: a round's statement may be named (`bevel := plate.rim chamfer(d: 4mm)
+plate.far`, §9.9), its faces then past the body under the name (`plate.bevel.taken.flat`; the
+name alone, `plate.bevel`, every face it made). A round that names another's faces by that name
+(`plate.bevel round(r: 1mm) plate`) reads the body as that one leaves it and acts after it: each
+round stands one layer above the deepest it names, reads the body as its other terms and every
+layer beneath it make it, and acts on it after them — rounds of one layer, as ever, blind to each
+other. Nothing is ordered by where a statement stands, only by what it names; rounds that name
+each other are **E041**. A face a round of the body made is among the faces `repeat a in X` runs
+over only where `X` names that round by its name, so `round(r) block` never rounds its own faces
+or another round's. **[0.149]** **Against the smooth surface**: the ball and the flat stand
+against each face's `F.smooth` (§6.21), so where a face goes on tangent into another — the far
+face of a plate into its rim's round — a chamfer's leg, or a ball rolled along an edge on it,
+follows it across the seam, and what a concave chamfer adds rests on the round rather than on
+the plane run on into the air past it; the edge itself is the faces' own. In a region's
 own body a round or a chamfer between two of its bounds is one more bound on its point: `p inside
 std.Rounded(wall, top, r: 2mm)`, `p inside std.Chamfered(wall, bottom, la: 1mm, lb: 1mm)` (`la`
 along the first, `lb` along the second). Where the two are bounds the region states, at its
@@ -2029,7 +2043,10 @@ reached from the instance's solid by its route (`part.pad.plate.near`), and neve
 runs over the same names.
 
 **Members** **[0.70]**. `S.ends` (where the edge a set is ends, below), `F.surface` (a face's or a
-set's whole surface) and `A.body` (the solid a face path is of, §9.9) are no names: each is read
+set's whole surface), **[0.149]** `F.smooth` (a face's surface carried on across every seam where a
+face of its body goes on from it tangent — the faces named and those, each piece's surface
+beside it, a distance from it or a side of it the one of the piece whose patch is nearest) and
+`A.body` (the solid a face path is of, §9.9) are no names: each is read
 as the member only past a set or a solid, and only where the document declares no name so —
 `h.ends`, where the instance `h` declares a set `ends`, is that set, and `cyl.body`, where `cyl`
 declares a solid `body`, is that solid. Past a solid the member is read at the end of a path:
@@ -2472,6 +2489,14 @@ A **relation word** is defined at the top level of a file — never inside a bod
 - **An error inside the expansion is reported where the word is written**: every place in the body is the word's own place in the statement that writes it, and a dimension that is one of the word's parameters is the argument the statement gave it — so its callout shows that argument, and editing the callout edits it.
 - A word that is a word of the language's own — an element keyword, a trailing clause, a modifier, a body word, a word opening a statement — or a constraint word of the language **of the same fixity** is **E071**; so is a word defined twice in one file with one fixity. An infix word and a prefix word of one spelling are two words: `std`'s `a horizontal b` stands beside the language's `horizontal l` of a line.
 - A word nothing defines where it is written is **E102**, naming the `use` that would import it where a module defines it.
+- **A use may be named** **[0.149]**: `rim := plate.c0 round(r: 3mm) plate.far` (and the prefix
+  form, `rim := round(r: 1mm) dish.pocket`) is the use, what its body makes standing under the
+  name — a solid it makes is a face's route past the body by it (`plate.rim.taken.round`, the
+  name alone every face the use made), so two named uses' faces stay apart where two uses
+  written bare share their body's names. The name is the body's like any other: given twice, or
+  to a declaration beside it, it is **E001**. Only a word a file defines makes anything a name
+  stands for: a word of the language's own named is read as the declaration it would name, and
+  refused there.
 - The statement keeps its identity: its placement, classes and `claim` are the statement's, and a constraint the body states is **described in the word as written** (`p horizontal q`), not its expansion. A body states its relation alone: a placement or a class in it is a syntax error.
 
 **A body may be several statements** **[0.50]**: `l1 flush(d) l2 := { l1 parallel l2; l2.p1 distance(d) l1 }`, in braces, one per line, for one fact about the operands that takes several rows. It may declare the geometry its relations need (`private ab := line(a, b)`), which each use makes anew, under a name of the use's own, and read only what it declares besides its operands and parameters. Every relation a use makes is the statement's: deleted with it, described as it, a placement on it going to the one relation when it makes one. A body may write other words and use sets (§6.21), a set written in place included (`a orbits(r) o := a coincident std.Sphere(o, r: r)`). An infix word is a relation **between** its operands — distance, symmetry, flushness; that each stands on a third thing is said of each (`a coincident P`), not made a word.

@@ -104,13 +104,19 @@ impl RegionShape {
 /// solid `pad`'s faces that its operand `plate` gave it as its near cap; `pad.boss` every face
 /// `boss` gave it; `block` every face of `block`.  Read off the solid's exact boundary, as the
 /// faces stand in it (a boolean never renames).  `surface` reads the face's whole surface
-/// (`F.surface`), not its patch.  `path` is the segments written past the solid, matched
+/// (`F.surface`), not its patch; `smooth` that surface carried on across its tangent seams
+/// (`F.smooth`).  `path` is the segments written past the solid, matched
 /// against each face's `solid::faces::FacePath` (#188).
 #[derive(Clone, Debug, PartialEq)]
 pub struct FaceRef {
     pub solid: u32,
     pub path: Vec<String>,
     pub surface: bool,
+    /// `F.smooth` ([0.149]): the faces named and every face of the body going on from them
+    /// tangent across a seam, read as one smooth surface — a distance from it, or a side of it,
+    /// the one of the piece whose patch is nearest (`solid::faces::Reading`).  Read with
+    /// `surface`, the pieces' surfaces.
+    pub smooth: bool,
 }
 
 /// What a measurement of a region's probe measures the distance from (#183 F1–F3).

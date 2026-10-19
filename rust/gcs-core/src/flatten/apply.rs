@@ -100,7 +100,11 @@ impl<'a> Walk<'a> {
     /// in one body are applied apart.
     pub(super) fn begin_nth(&mut self, u: &Use, closure: &Scope, n: usize) -> Application {
         let id = u.scope.pred.written.unwrap_or(u.st.id);
-        let prefix = keys::application(u.scope.prefix(), id.0, n);
+        // a named use's (`rim := A round(r) B`) is under its label, which its faces' routes read
+        let prefix = match &u.rel.name {
+            Some(label) => keys::labelled(u.scope.prefix(), &label.text, id.0, n),
+            None => keys::application(u.scope.prefix(), id.0, n),
+        };
         let mut scope = closure.clone();
         scope.pred.written = None;
         scope.prefixes.insert(0, prefix.clone());

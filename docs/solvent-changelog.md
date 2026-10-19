@@ -4,6 +4,27 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.149] Rounds that know of one another.** A defined word's use may be named (§9.9): `rim :=
+plate.c0 round(r: 3mm) plate.far`, what its body makes standing under the name, so a round's
+faces are `plate.rim.taken.round` (the name alone every face it made) and two named rounds' faces
+stay apart, where written bare they share the body's `taken.round`. A round that names another's
+faces by that name reads the body as that one leaves it and acts after it (§6.9, the stratum in
+layers): `bevel := plate.rim chamfer(d: 4mm) plate.far` and `plate.bevel round(r: 1mm) plate`
+round the two edges the chamfer made, in either order of the lines — what `part :=
+solid(plate)` then `part.plate.bevel round(r: 1mm) part.plate` said by hand; rounds that name each
+other are E041. A face a body's round made is among those `repeat a in X` runs over only where
+`X` names that round, and a block over a solid's faces is run again while its solids give them
+otherwise, so a round of a body whose operand is rounded reads that operand's rounds' faces
+(through 0.148 it read the faces of the first pass, which had none, and made nothing). A face's
+`F.smooth` is its surface carried on across every seam where a face of its body goes on from it
+tangent (§6.21), and the standard library's `Run`, `Fill`, `Flat` and `FlatFill` stand their ball
+and flat against it: a chamfer whose leg runs past the far face of a plate onto its rim's round
+rests on the round, where through 0.148 its flat stood on the plane run on into the air and left
+a ledge over a gap. Where no face goes on tangent within the section's reach of its edge nothing
+changes; where one does the region is read point by point (the lowering table builds the round
+or the flat of the face's own surface, and refuses one that reaches across such a seam). No
+document changes but those that relied on either reading. (Issue #183, X0's findings 2 and 5.)
+
 **[0.148] A family the same set in any order.** A set family may say, after its formals, that it
 is the same set whichever order some of them are given in (§6.21): `component Run(a: face, b:
 face, r: Length) symmetric(a, b) := { p | … }`, an item a formal or a tuple that changes places

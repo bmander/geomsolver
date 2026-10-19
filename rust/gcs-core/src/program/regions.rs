@@ -402,7 +402,8 @@ pub(super) fn face_term(sk: &Sketch, res: &Resolver, w: &crate::syntax::Written,
     let made = (|| -> Result<RegionTerm, String> {
         // the signed distance from the face's surface toward its outside, bounded at its level
         if let Some((cmp, level)) = &side {
-            if face.surface {
+            // and off a smooth surface, the side of the piece nearest ([0.149])
+            if face.surface && !face.smooth {
                 return Err("a side is read off a face: name the face, not its surface".to_string());
             }
             let lo = match level {

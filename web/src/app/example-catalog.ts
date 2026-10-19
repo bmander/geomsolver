@@ -95,8 +95,9 @@ const projects: Example[] = [{
     + 'knob, a rail, a pipe tee\'s crotch, a drilled pipe\'s rim, tangent chains round a slot and '
     + 'a pocket, rounds that run out onto a face or into a post, the seams of two rods made one, '
     + 'a D-shaped shaft rounded all over, a groove rounded all round, a slab drilled twice and '
-    + 'half a frustum rounded all over, a tee\'s crotch chamfered and a boss rounded across a '
-    + 'bullnose\'s seam, all built exactly too. '
+    + 'half a frustum rounded all over, a tee\'s crotch chamfered, a boss rounded across a '
+    + 'bullnose\'s seam and a chamfer\'s edges rounded by a round that names it, all built '
+    + 'exactly too. '
     + 'The README says what each shows; the surfaces refine in the background as you watch.',
   target: { kind: 'directory', path: 'rounds', entry: 'block.sv' },
 }, {

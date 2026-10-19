@@ -40,9 +40,13 @@ fn plain(sk: &Sketch, t: &RegionTerm) -> Option<f64> {
     (t.hi.is_none() && t.grow.is_none()).then(|| t.lo.read(sk)).flatten()
 }
 
-/// Whether two face references name the same faces, the second of them its surface or not.
+/// Whether two face references name the same faces, the second of them its surface or not.  A
+/// smooth one (`F.smooth`, [0.149]) is read as its face where a side is (`x`) and as its surface
+/// where a distance is: the table builds the round of the face's own edge, and the gate holds it
+/// to the field, which finds where the smooth surface runs on across a seam into the section.
 fn same(x: &FaceRef, y: &FaceRef, surface: bool) -> bool {
-    x.solid == y.solid && x.path == y.path && !x.surface && y.surface == surface
+    x.solid == y.solid && x.path == y.path && (!x.surface || x.smooth)
+        && (y.surface == surface || y.smooth)
 }
 
 /// A term bounding the distance from one face (or its surface): the face, which way, its number.
@@ -81,7 +85,7 @@ fn meeting_of<'a>(sk: &Sketch, terms: &'a [RegionTerm]) -> Option<Vec<&'a FaceRe
 /// The face a term bounds the side of at nothing, and which way: `p inside f` or `p outside f`.
 fn side_of<'a>(sk: &Sketch, t: &'a RegionTerm) -> Option<(&'a FaceRef, Cmp)> {
     let RegionShape::FaceSide { face } = &t.shape else { return None };
-    (!face.surface && t.cmp != Cmp::In && plain(sk, t)? == 0.0).then_some((face, t.cmp))
+    ((!face.surface || face.smooth) && t.cmp != Cmp::In && plain(sk, t)? == 0.0).then_some((face, t.cmp))
 }
 
 /// The faces and the section a region's terms describe, where they are one of this table's: the

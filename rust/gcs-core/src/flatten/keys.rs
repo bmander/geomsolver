@@ -46,6 +46,13 @@ pub(super) fn application(prefix: &str, stmt: u32, n: usize) -> String {
     format!("{prefix}#{stmt}.{n}.")
 }
 
+/// The prefix of a named use's application (§9.9, [0.149]), `{where the use stands}{label}#{statement}.{n}.`:
+/// the label one segment with the statement, which no source name can spell, so a face's route
+/// reads it back (`solid::document::route_step`) and two uses of one label stay apart.
+pub(super) fn labelled(prefix: &str, label: &str, stmt: u32, n: usize) -> String {
+    format!("{prefix}{label}#{stmt}.{n}.")
+}
+
 /// The prefix a block's copies are made under, `{where the block stands}#{statement}.` — the
 /// copy's index and a `.` after it.
 pub(super) fn block(prefix: &str, stmt: u32) -> String {

@@ -262,10 +262,10 @@ impl Recipe {
                 Node::Lowered(_) => {}
                 Node::Body(body) => for id in std::iter::once(&body.stock).chain(body.sets().into_iter().flat_map(|(_,l)| l)) {
                     let Some((operand,paths)) = routes.get(id) else { continue };
-                    let short = operand.rsplit('.').next().unwrap_or(operand);
+                    let short = crate::solid::route_step(operand);
                     for (primitive,path) in paths {
                         // a swept solid's own sweep, split off as its stock, adds no step
-                        let route = if operand == name { path.clone() } else { placed_name(short,path) };
+                        let route = if operand == name { path.clone() } else { placed_name(&short,path) };
                         own.entry(primitive.clone()).or_insert(route);
                     }
                 },

@@ -82,6 +82,12 @@ impl BodyFaces {
     /// them a model unit.
     pub fn brep(&self) -> (&crate::brep::topo::Brep, f64, V) { (&self.loc.b, self.mm, self.origin) }
 
+    /// A box about the boundary (model units): its low corner and its high.
+    pub fn bounds(&self) -> (V, V) {
+        let (lo, hi) = self.loc.b.bounds();
+        (self.back(lo), self.back(hi))
+    }
+
     /// The faces a reference names, by its path (`FacePath::matches`).
     pub fn faces(&self, f: &FaceRef) -> Vec<usize> {
         (0..self.paths.len()).filter(|&i| self.paths[i].matches(&f.path)).collect()
@@ -157,6 +163,9 @@ impl BodyFaces {
 
     /// The faces edge `e` bounds.
     pub fn faces_of(&self, e: u32) -> &[usize] { &self.bounding[e as usize] }
+
+    /// Edge `e`'s vertices, first to last.
+    pub fn ends(&self, e: u32) -> [u32; 2] { self.loc.b.edges[e as usize].v }
 
     /// Whether edge `e` is convex: a point beside its middle within the first face's side and
     /// outside the second's is outside the material where the material is both sides' common
@@ -366,6 +375,31 @@ impl BodyFaces {
         sides
     }
 
+    /// `faces` and every face going on from one of them tangent across a seam, and from those
+    /// on (`F.smooth`, [0.149]): an edge two of the boundary's faces bound, where their outward
+    /// normals are one at its middle, is no edge but a seam.  In the faces' order, then as met.
+    pub fn smooth(&self, faces: &[usize]) -> Vec<usize> {
+        let mut out = faces.to_vec();
+        let mut k = 0;
+        while k < out.len() {
+            let fi = out[k];
+            for &e in &self.edges[fi] {
+                let [x, y] = *self.faces_of(e) else { continue };
+                let other = if x == fi { y } else { x };
+                if other == fi || out.contains(&other) {
+                    continue;
+                }
+                let edge = &self.loc.b.edges[e as usize];
+                let at = edge.point(0.5 * (edge.t[0] + edge.t[1]), &self.loc.b.vertices);
+                if norm(sub(self.outward(fi, at), self.outward(other, at))) < TANGENT {
+                    out.push(other);
+                }
+            }
+            k += 1;
+        }
+        out
+    }
+
     /// The faces at vertex `v` other than `not`.
     pub fn faces_at(&self, v: u32, not: &[usize]) -> Vec<usize> {
         (0..self.edges.len()).filter(|fi| {
@@ -377,10 +411,13 @@ impl BodyFaces {
 /// The bodies a reading has read, each once.
 pub type Read = Vec<(u32, std::sync::Arc<BodyFaces>)>;
 
-/// What a region term of a body's faces reads: the faces each reference names, resolved once.
+/// What a region term of a body's faces reads: the faces each reference names, resolved once —
+/// for `F.smooth`, carried on across their tangent seams (`BodyFaces::smooth`), and a distance
+/// from their surfaces read off the nearest piece's.
 pub struct Reading {
     pub body: std::sync::Arc<BodyFaces>,
     pub faces: Vec<usize>,
+    pub smooth: bool,
 }
 
 /// The faces `f` names, read off its solid (refused where it names none).
@@ -395,8 +432,8 @@ pub fn reading(sk: &Sketch, f: &FaceRef, read: &mut Read)
         }
     };
     // a face a boolean ate, or none of that name, is no point: what reads it holds nowhere
-    let faces = body.faces(f);
-    Ok(Reading { body, faces })
+    let faces = if f.smooth { body.smooth(&body.faces(f)) } else { body.faces(f) };
+    Ok(Reading { body, faces, smooth: f.smooth })
 }
 
 impl Reading {
@@ -412,8 +449,13 @@ impl Reading {
         self.faces.iter().map(|&fi| (self.body.patch_distance(fi, p), fi))
             .min_by(|a, b| a.0.total_cmp(&b.0)).map(|(_, fi)| fi)
     }
-    /// The distance from the faces' patches, or (`surface`) their surfaces.
+    /// The distance from the faces' patches, or (`surface`) their surfaces — a smooth surface's
+    /// the one of the piece whose patch is nearest, so it follows the faces across their seams
+    /// and runs on past their edges as the nearest piece's surface does.
     pub fn distance(&self, p: V, surface: bool) -> f64 {
+        if self.smooth && surface {
+            return self.side(p).abs();
+        }
         self.faces.iter().map(|&fi| {
             if surface { self.body.side(fi, p).abs() } else { self.body.patch_distance(fi, p) }
         }).fold(f64::INFINITY, f64::min)

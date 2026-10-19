@@ -58,6 +58,7 @@ fn a_placed_operands_faces_are_named_as_its_body_names_them() {
         solid: pad as u32,
         path: path.iter().map(|s| s.to_string()).collect(),
         surface: false,
+        smooth: false,
     });
     for p in &paths {
         let segs: Vec<&str> = p.segments().collect();
