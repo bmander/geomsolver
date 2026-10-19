@@ -69,19 +69,81 @@ times): a round over another's faces runs once that one is made, a round over an
 rounds' faces included. `rounds/composed.sv`, `tests/composed_rounds.rs` are the gate (the
 chamfer's two edges rounded, the closed form's volume and the hand's intermediate's to 1e-9).
 
-**Against the smooth surface** ([0.149]): `F.smooth` (`Member::Smooth`, `FaceRef::smooth`, read
+**Against the smooth surface** ([0.149], #422): `F.smooth` (`Member::Smooth`, `FaceRef::smooth`, read
 with `surface`) is the faces named and every face going on from them tangent across a seam
 (`BodyFaces::smooth`: an edge two faces bound whose outward normals are one at its middle), a side
 of it or a distance from its surface the nearest patch's (`Reading::side`; `Reading::distance` of a
 smooth surface). `Run`, `Fill`, `Flat` and `FlatFill` read each face's side, its ball's centres'
-reach and its legs off it, the crease and the meeting off the faces themselves. The lowering table
-reads a smooth reference as its face (`recognise::same`, `side_of`) and builds the round or flat of
-the face's own surface, and **refuses** one whose face goes on tangent across a seam running
-beside the edge — sharing no vertex with it — within twice the section's size of it
-(`lowering::seams_beside`, `SEAM_REACH`): there the region is the field's, a chamfer's leg landing
-on the round past a plate's far face; a seam the edge runs into at its end (a slot's side into its
-half circle) is the table's own going on into the next piece and refuses nothing, and the gate
-holds the rest to the field as ever. A region of a body's faces the planes do not close is
+reach and its legs off it, the crease and the meeting off the faces themselves. **The lowering
+table builds the section against the chain** (#422): it recognises a smooth reference as its face
+(`recognise::same`, `side_of`: what a region rounds is its own faces' edge) and reads the chain
+where the section reaches it (`lowering::seams_beside`): a seam where the face goes on tangent
+into another, running beside the edge — sharing no vertex with it — that the section's footprint
+on the face lands past (a flat's leg, where a ball touches it: `lowering::footprint`, Newton's
+steps in the plane square to the edge at points along it). A seam beyond the footprint is none of
+it (`rounds/spill.sv` with a boss of 19.5, its leg short of the seam: built as the ring alone), nor
+is one the edge runs into at its end (a slot's side into its half circle: the table's own going on
+into the next piece). The section against a chain is the one against whichever face of it is
+nearest: a round's ball touches the face its offset meets the other face's in, and changes face
+where it touches the seam; a flat is each face's own sum of distances with the other face, and
+changes face where it crosses the seam's normal surface — there a point's distance from either face
+is its distance from the seam, so the two are one set:
+- **along a straight edge beside a seam along it, or round a circle beside a seam about its axis**
+  (`lowering::chain`, `piece::seam_along`, `seam_round`): in the section the corner of the other
+  face's trace and a chain of the face's own trace to the seam and each next face's from its seam
+  (lines and circles, up to four past the edge's own, `piece::CHAIN`, each found where the last
+  one's footprint lands past another seam, `piece::onto`); the ball against the piece whose touch
+  lies on it, the flat a line between lines else a conic's arc over each piece in turn
+  (`corners::conic_between`; two circles with unequal legs a Cartesian oval, refused), changing
+  piece on the chain's normal at each seam it crosses. Swept or turned like any section: the strips
+  on the chain's side split at the body's seams, the flat in pieces, the one over the face's own
+  surface what the table built before (`rounds/ledge.sv`, a rib beside a block's rounded rim; a
+  boss centred on a rounded disc; a rib on a top going on through a round into a slope).
+- **round a circle beside a seam not about its axis** (a boss near a plate's rounded rim,
+  `rounds/spill.sv`; `piece::beyond`: the face a plane going on into a torus about its normal): a
+  flat's ring kept within the seam's normal surface — the cylinder through the seam along the
+  plane's normal (its `Kept`) — and beyond it the flat against the torus, sectioned in the
+  half-planes through the ring's axis between where the leg on the plane crosses the seam, fitted
+  (`brep::spill::flat_beyond`): a lens of the torus's strip, the fitted flat and the cap on the
+  normal cylinder, glued to the ring there. A round's ring a stretch between where its ball's touch
+  crosses the seam, and between them the ball rolled against the torus — its centre where the
+  wall's offset meets the torus's, its canal fitted — a piece of the canal, the plane's strip to
+  the seam, the torus's lens, the wall's strip and a cap at each end in the plane of the ball's
+  arc, glued to the stretch at both (`brep::spill::round_beyond`).
+- **along an edge no line or coaxial circle carries** (a boss up through a slope near its rounded
+  edge; `piece::traced_beyond`: the face a plane going on into a cylinder along a straight seam or a
+  torus about its normal): a flat cut along the run (`fillet::flat_along`) kept short of the seam's
+  normal surface — the plane through a straight seam along the face's normal (`Rolled::kept`) — and
+  the flat beyond it sectioned square to the run (`spill::Along::Meeting`) between where the leg
+  crosses the seam, found by bisecting the footprint along the run; a round's ball rolled along
+  the run (`fillet::roll_across`, its band let cross the tangent seam) with the stretch between
+  the planes of its arc where it touches the seam cut away (`Rolled::wedge`), and the ball rolled
+  against the next face there, glued at both.
+
+The recipe's `"beyond"` (after the rolled runs in a lowered node's joins): the edge it runs
+`"along"` (a ring's `"axis"` and `"crease"`, or the `"face"` it meets the wall in), `"toward"`, the
+`"chain"`'s face, the `"wall"` and the `"split"` surface with `"sides"`, the `"seam"` (a circle or a
+line), the `"legs"` or the ball's `"radius"`, and the `"ends"`; a rolled run's `"kept"` and `"wedge"`; all
+written through the node's `Writer`, so `cad::recipe_about` carries them. `boolean::glued` glues on
+a curved face too, an edge matched by a point of it on the other's (a traced meeting and a fitted
+one), or to a run of the other's end to end (a traced flat's crossing cut where that flat is
+seamed). **Refused by name** (`piece::spilled`: "its section reaches across the seam where a face
+goes on tangent into another …", the field reading the region): on both sides of its edge; into
+more than one face; along a seam that is not along a straight edge, or a curved seam beside one;
+beside two seams; beside a seam running only part of its edge; past a face it goes on into across
+an edge no seam, or a chain of more than four; round a circle beside a chain whose further seam is
+not about its axis; off the seam's axis, round a stretch of a circle, from a face no plane, into a
+face no torus about the plane's normal, where the edge or the wall's strip crosses the seam's
+normal surface or the leg crosses no seam; along a traced edge, from a face no plane, into a face no
+cylinder along a straight seam nor torus about the plane's normal, where the run crosses the seam's
+normal surface or its footprint crosses the seam other than twice. The gate holds every one to the
+field as ever. `tests/composed_rounds.rs` is the gate (each against a closed form or a quadrature
+of the set's own words: `spill.sv` at every boss radius from 21 to 21.7, chamfered and rounded, to
+1e-6, and its volume to the field's mesh within the mesh's own stand-off; the straight, coaxial and
+three-face chains to 1e-9; the traced flat to 1e-8 and the traced round to 1e-6), `tests/brep.rs`
+the strip across a tangent seam unioned into its body (the kernel's touch across a tangent edge,
+before the lowering relied on it). `fillet_oracle` holds none of these yet: whether OCCT's fillet
+overflowing onto a tangent face reads them as `std.sv` does is open. A region of a body's faces the planes do not close is
 supported by the bodies it reads grown by `SUPPORT_REACH` of its longest length
 (`region::general`), so a fill the table refused is meshed. The field's composition of an operand
 rounded by a cut would read a sheet of nothing where the cut's face lies on the face it rounds,
@@ -136,7 +198,9 @@ end's solid, or — where a face goes on tangent across a seam into another piec
 that piece ends at, refused where the ball crosses the seam elsewhere, `seam_aligned`:
 `bullnose.sv`); one per run of the region (`BodyFaces::runs`), winding round both faces or not,
 cut short at a corner's section (the plane of the ball's arc) and glued there (`frustum.sv`); a
-flat the same with a line for the arc, `fillet::flat_along` (`crotch.sv`); the recipe's
+flat the same with a line for the arc, `fillet::flat_along` (`crotch.sv`); `Beyond` (#422: a ring's
+or a traced run's section past a seam's normal surface, against the chain's next face, glued to the
+edge's own piece there — "Against the smooth surface" above); the recipe's
 `"rolled"` rolled against
 the body's stratum, rebuilt from the `"stratum"` terms `cad.rs` writes beside it, the gate's
 against `BodyFaces::brep` brought back by `BodyFaces::back`); no pieces where the faces never meet

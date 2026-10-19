@@ -39,7 +39,7 @@ pub struct Rolled {
 
 
 /// Along the arc of the unit sphere from `a` to `b` (the short way), a fraction `v`.
-fn slerp(a: V,b: V,v: f64) -> V {
+pub(super) fn slerp(a: V,b: V,v: f64) -> V {
     let w = dot(a,b).clamp(-1.,1.).dacos();
     let s = w.dsin();
     if s < 1e-12 { return a }
@@ -155,7 +155,7 @@ fn meeting<'b>(b: &'b Brep,at: V,tol: f64) -> Result<Meeting<'b>,String> {
 /// chord length. A trace's own parameter turns at every point it was marched through, which no
 /// smooth fit follows; projected back point by point, the guide is exact and smooth between its
 /// ends.
-fn smooth_guide(c: &Curve,t0: f64,span: f64) -> Option<BSpline> {
+pub(super) fn smooth_guide(c: &Curve,t0: f64,span: f64) -> Option<BSpline> {
     let n = 256;
     let pts: Vec<V> = (0..=n).map(|k| c.point(t0+span*k as f64/n as f64)).collect();
     let mut ts = vec![0.];
@@ -168,7 +168,12 @@ fn smooth_guide(c: &Curve,t0: f64,span: f64) -> Option<BSpline> {
 /// The ball of radius `r` rolled along the edge of `b` nearest `at`, the faces either side of it
 /// meeting on a closed loop; `tol` the boundary's tolerance, and the bar the canal and the spine
 /// are fitted within. `Err` says why it cannot be rolled exactly.
-pub fn roll(b: &Brep,at: V,r: f64,tol: f64) -> Result<Rolled,String> {
+pub fn roll(b: &Brep,at: V,r: f64,tol: f64) -> Result<Rolled,String> { roll_across(b,at,r,tol,&[]) }
+
+/// `roll`, its ball let cross a seam where one of the two faces goes on tangent into another within
+/// `wedge` (each a point and a normal, the wedge what stands on every normal's side): the stretch
+/// of the run a piece beyond that seam's normal surface takes, cut away from this one (#422).
+pub fn roll_across(b: &Brep,at: V,r: f64,tol: f64,wedge: &[(V,V)]) -> Result<Rolled,String> {
     let Meeting {uses,faces:[face_a,face_b],sides_faces,chain,stops,p,into:[da,db],theta,concave,sides,surfaces,
         names,..} = meeting(b,at,tol)?;
     let names = || names.clone();
@@ -307,7 +312,7 @@ pub fn roll(b: &Brep,at: V,r: f64,tol: f64) -> Result<Rolled,String> {
         // the corner stands `r / cos(w / 2)` from the centre, `w` the angle between the contacts
         reach = reach.max(r/(0.5*w).dcos());
     }
-    holds_ball(b,&uses,&sides_faces,&chain,&ends,&frame_at,&surfaces,sides,r,tol,&names())?;
+    holds_ball(b,&uses,&sides_faces,&chain,&ends,&frame_at,&surfaces,sides,r,tol,&names(),wedge)?;
     // fitted to the bar asked, or as near it as the densest net comes, no worse than a ten-millionth
     // of the boundary: its contacts are read at what was measured (`Edge::tol`)
     let bar = tol.max(1e-7*b.size());
@@ -354,7 +359,7 @@ pub fn roll(b: &Brep,at: V,r: f64,tol: f64) -> Result<Rolled,String> {
 /// the ball's centre and the directions to its contacts along the canal.
 #[allow(clippy::too_many_arguments)]
 fn holds_ball(b: &Brep,uses: &[Vec<(usize,usize,usize)>],sides_faces: &[Vec<usize>;2],chain: &[usize],ends: &[Stop],
-    frame_at: &dyn Fn(f64) -> (V,[V;2]),surfaces: &[Surface;2],sides: [f64;2],r: f64,tol: f64,names: &str)
+    frame_at: &dyn Fn(f64) -> (V,[V;2]),surfaces: &[Surface;2],sides: [f64;2],r: f64,tol: f64,names: &str,wedge: &[(V,V)])
     -> Result<(),String> {
     let names = || names.to_string();
     let ending: std::collections::BTreeSet<usize> = ends.iter().flat_map(|s| s.faces.iter().copied()).collect();
@@ -365,10 +370,20 @@ fn holds_ball(b: &Brep,uses: &[Vec<(usize,usize,usize)>],sides_faces: &[Vec<usiz
         let level = surfaces[o].offset(sides[o]*height).ok_or_else(|| format!("the band of {} cannot be read",names()))?;
         // an end's face cuts the fillet off: the ball crosses its edges with these two; and an
         // edge between two faces of one side is no edge to it
+        // (a seam where a face goes on tangent — their outward normals one at its middle — the ball
+        // may cross within the wedge a piece beyond takes, its arc's planes there a ball wide)
+        let in_wedge = |p: V| !wedge.is_empty() && wedge.iter().all(|&(o,n)| dot(sub(p,o),n) >= -r);
+        let tangent = |e: usize,x: usize,y: usize| {
+            let ed = &b.edges[e];
+            let p = ed.point(0.5*(ed.t[0]+ed.t[1]),&b.vertices);
+            let out = |f: usize| { let g = unit(b.faces[f].surface.gradient(p)); if b.faces[f].reversed { scale(g,-1.) } else { g } };
+            norm(sub(out(x),out(y))) < 1e-6
+        };
         let skip = |e: usize| match uses[e].as_slice() {
             [x,y] => ending.contains(&x.0) || ending.contains(&y.0) || sides_faces[k].contains(&x.0) && sides_faces[k].contains(&y.0),
             _ => false,
         };
+        let seam = |e: usize| !wedge.is_empty() && matches!(uses[e].as_slice(),[x,y] if tangent(e,x.0,y.0));
         for &fi in &sides_faces[k] {
             let face = &b.faces[fi];
             let seams = face.seams();
@@ -376,9 +391,11 @@ fn holds_ball(b: &Brep,uses: &[Vec<(usize,usize,usize)>],sides_faces: &[Vec<usiz
                 if chain.contains(&(c.edge as usize)) || seams.contains(&c.edge) || skip(c.edge as usize) { continue }
                 let g = &b.edges[c.edge as usize];
                 let EdgeCurve::Curve(gc) = &g.curve else { continue };
-                let at_start = sides[o]*surfaces[o].implicit(gc.point(g.t[0]));
+                let crossed = seam(c.edge as usize);
+                let start = gc.point(g.t[0]);
+                let at_start = if crossed && in_wedge(start) { 0. } else { sides[o]*surfaces[o].implicit(start) };
                 let crosses = match super::query::curve_surface(gc,g.t,&level,tol) {
-                    super::query::Meets::At(roots) => !roots.is_empty(),
+                    super::query::Meets::At(roots) => roots.iter().any(|&(t,_)| !(crossed && in_wedge(gc.point(t)))),
                     super::query::Meets::Along => true,
                 };
                 if crosses || (at_start > tol && at_start < height) {
@@ -703,7 +720,7 @@ pub(crate) fn across(p: V,[a,b]: [V;2],r: f64) -> V { add(p,scale(add(a,b),r/(1.
 
 /// The point where `meeting` (two surfaces' meeting) crosses the plane through `o` square to `n`,
 /// from `guess`: projected onto the meeting, then along its tangent to the plane, until it stays.
-fn crossing_plane(meeting: &super::geom::Traced,o: V,n: V,guess: V) -> V {
+pub(super) fn crossing_plane(meeting: &super::geom::Traced,o: V,n: V,guess: V) -> V {
     let mut k = meeting.project(guess);
     for _ in 0..32 {
         let t = cross(meeting.a.gradient(k),meeting.b.gradient(k));
@@ -817,7 +834,7 @@ fn trimmed(mut piece: Brep,trims: &[Trim]) -> Result<Brep,String> {
 }
 
 /// The net's iso curve along `u` at its `j`th column of poles.
-fn column(net: &Net,j: usize) -> Curve { Curve::BSpline(Arc::new(net.column(j))) }
+pub(super) fn column(net: &Net,j: usize) -> Curve { Curve::BSpline(Arc::new(net.column(j))) }
 
 /// The net's iso curve along `v` at its `i`th row of poles.
 fn row(net: &Net,i: usize) -> Curve {
@@ -870,7 +887,7 @@ fn surface_face_of(out: &mut Brep,net: &Net,contact: [&[(u32,[f64;2])];2],ends: 
 
 /// A face of `out` on `s` bounded by the one loop `es`, counter-clockwise in its parameters for
 /// its outward side `outward`.
-fn face_out(out: &mut Brep,s: Surface,outward: V,es: &[usize],name: &str) -> Result<(),String> {
+pub(super) fn face_out(out: &mut Brep,s: Surface,outward: V,es: &[usize],name: &str) -> Result<(),String> {
     let l = closed_loop(out,es,&s)?;
     let (_,su,sv) = s.d1(s.inverse(out.vertices[out.edges[es[0]].v[0] as usize].p));
     let reversed = dot(cross(su,sv),outward) < 0.;

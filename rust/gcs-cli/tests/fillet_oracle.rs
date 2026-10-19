@@ -75,7 +75,8 @@ fn edge_and_kind(p: &Piece) -> Option<(V,f64,bool,bool)> {
             Some((Rigid::turn(g.axis_origin,g.axis,0.5*g.angle).point(g.section.origin),s,chamfer,chamfer && curved(&g.section)))
         }
         Piece::Rolled(k) => Some(match k.flat { None => (k.at,k.r,false,false),Some(([la,_],_)) => (k.at,la,true,true) }),
-        Piece::Corner(_) => None,
+        // (a ring's piece beyond a seam's normal surface, #422: its ring says the edge)
+        Piece::Corner(_) | Piece::Beyond(_) => None,
     }
 }
 

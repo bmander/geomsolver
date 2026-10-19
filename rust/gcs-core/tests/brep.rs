@@ -1392,3 +1392,32 @@ fn a_spherical_corner_is_its_cell_less_the_ball() {
     let omega = 2.*(det(m[0],m[1],m[2]).abs()/(1.+dot(m[0],m[1])+dot(m[1],m[2])+dot(m[2],m[0]))).atan();
     close(volume(&slanted),cell-omega*r*r*r/3.);
 }
+
+/// **A strip across a tangent seam, glued into the body it lies on** (#422): a plate of 30 whose
+/// top's rim is rounded 3 — the top going on tangent into a torus at 27 — and a sector of a strip
+/// lying on both, from 25 out over the seam onto the torus to 30° round its tube, 1 tall over the
+/// top and a radian round.  Their union's faces meet the plate's where the strip's do, across the
+/// plate's tangent edge: a valid boundary, the plate's volume and the strip's.
+#[test]
+fn a_strip_across_a_tangent_seam_unions_into_its_body() {
+    use gcs_core::brep::boolean::{combined,Op};
+    let o = [0.;3];
+    let (big,r) = (27.,3.);
+    // in the plane of x and z: an arc's angles turn x toward −z, so the tube's top is −π/2
+    let plate = Profile {names:vec![],origin:o,normal:XZ,loops:vec![vec![
+        line([0.,0.,0.],[30.,0.,0.]),line([30.,0.,0.],[30.,0.,17.]),
+        arc([big,0.,17.],r,XZ,[1.,0.,0.],Some([-PI/2.,0.])),line([big,0.,20.],[0.,0.,20.]),line([0.,0.,20.],[0.,0.,0.])]]};
+    let plate = revolve(&plate,o,[0.,0.,1.],TAU).unwrap();
+    plate.check(1e-9).unwrap();
+    let a = PI/6.;
+    let foot = [big+r*a.sin(),0.,17.+r*a.cos()];
+    let strip = Profile {names:vec![],origin:o,normal:XZ,loops:vec![vec![
+        line([25.,0.,20.],[big,0.,20.]),arc([big,0.,17.],r,XZ,[1.,0.,0.],Some([-PI/2.,-PI/2.+a])),
+        line(foot,[foot[0],0.,21.]),line([foot[0],0.,21.],[25.,0.,21.]),line([25.,0.,21.],[25.,0.,20.])]]};
+    let strip = revolve(&strip,o,[0.,0.,1.],1.).unwrap();
+    strip.check(1e-9).unwrap();
+    let union = combined(&plate,&strip,Op::Union,0.).unwrap();
+    union.check(1e-7).unwrap();
+    let want = volume(&plate)+volume(&strip);
+    assert!((volume(&union)-want).abs() <= 1e-9*want,"{} against {want}",volume(&union));
+}

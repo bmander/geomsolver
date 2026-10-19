@@ -222,6 +222,19 @@ impl BodyFaces {
             / self.mm
     }
 
+    /// Where `p`'s foot on face `fi`'s surface lies off the face: the edge of the face nearest it
+    /// (`None` where it lies on the face).
+    pub fn off_face(&self, fi: usize, p: V) -> Option<u32> {
+        let q = self.q(p);
+        let f = &self.loc.b.faces[fi];
+        let foot = f.surface.point(f.surface.inverse(q));
+        if self.loc.face_place(fi, foot) != Place::Out {
+            return None;
+        }
+        self.edges[fi].iter().map(|&e| (self.loc.nearest(e, foot).1, e))
+            .min_by(|a, b| a.0.total_cmp(&b.0)).map(|(_, e)| e)
+    }
+
     /// The edges two groups of faces share: where a face of `a` meets a face of `b`.
     pub fn edges_between(&self, a: &[usize], b: &[usize]) -> Vec<u32> {
         let of = |fs: &[usize]| -> BTreeSet<u32> {
@@ -469,18 +482,22 @@ impl BodyFaces {
             for &e in &self.edges[fi] {
                 let [x, y] = *self.faces_of(e) else { continue };
                 let other = if x == fi { y } else { x };
-                if other == fi || out.contains(&other) {
-                    continue;
-                }
-                let edge = &self.loc.b.edges[e as usize];
-                let at = edge.point(0.5 * (edge.t[0] + edge.t[1]), &self.loc.b.vertices);
-                if norm(sub(self.outward(fi, at), self.outward(other, at))) < TANGENT {
+                if other != fi && !out.contains(&other) && self.seam(e) {
                     out.push(other);
                 }
             }
             k += 1;
         }
         out
+    }
+
+    /// Whether edge `e` is a seam: two faces bound it whose outward normals are one at its middle,
+    /// so they meet tangent there and it is no edge.
+    pub fn seam(&self, e: u32) -> bool {
+        let [x, y] = *self.faces_of(e) else { return false };
+        let edge = &self.loc.b.edges[e as usize];
+        let at = edge.point(0.5 * (edge.t[0] + edge.t[1]), &self.loc.b.vertices);
+        norm(sub(self.outward(x, at), self.outward(y, at))) < TANGENT
     }
 
     /// The faces at vertex `v` other than `not`.

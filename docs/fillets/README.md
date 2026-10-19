@@ -767,3 +767,43 @@ renders with a ledge: the chamfer's flat stood on the far face's plane run on pa
   the face it rounds, which a spilled chamfer's flat crosses: the user's exact part is refused by
   the mesher, naming the two curves. Reading an exactly built operand by its own boundary is the
   fix, made after (#419): the field reads the rounded plate as its B-rep, and the part meshes.
+
+## #422: a section against a smooth chain (2026-10-19)
+
+0.149 stood the sets' ball and flat against a face's smooth surface, but the lowering table
+refused a section reaching across the seam, so the user's spilled chamfer (`rounds/spill.sv`) was
+the field's: meshed, no STEP, no exact volume. The construction is one rule: **the section against
+a chain is the section against its nearest face**, changing face where a ball touches the seam or
+a flat crosses the seam's normal surface — where both faces' distances are the distance from the
+seam, so the two pieces are one set there and glue without a seam of material.
+
+1. **The reach measured, not doubled.** The refusal had stood within twice the section's size of
+   the edge. The footprint (a leg, a touch) is now solved in the section at points along the edge;
+   a seam beyond it is none of the section's. `spill.sv` with a boss of 19.5 builds as before.
+2. **A flat beside a chain, round a circle off its axis** (`spill.sv`): the ring's cone kept within
+   the seam's normal cylinder, and beyond it a lens — the torus's strip, the flat sectioned in the
+   half-planes through the boss's axis and fitted, the cap on the cylinder — glued on the cylinder.
+   Every boss radius from 21 to 21.7 builds; the fill agrees with a quadrature of `FlatFill`'s set
+   to 1e-6 (8 digits measured). The field's mesh is 110 mm³ under the exact volume at 21.7: its own
+   chordal deficit over the whole part, inside what its triangles stand off the field's surface.
+3. **A round** the same way: the ring a stretch between where its ball touches the seam, glued at
+   both ends to the ball rolled against the torus. A quadrature of `Fill`'s set (no ball whose
+   centre stands far enough from both faces reaches the point) agrees to 2.6e-8.
+4. **Straight edges and coaxial circles**: the section is one corner of a line or circle against a
+   chain of lines and circles, the flat a line then a conic, the ball against whichever piece; swept
+   or turned as ever (`rounds/ledge.sv`). Closed forms to 1e-9.
+5. **Traced edges and longer chains**: a flat cut along a run kept short of the normal plane of a
+   straight seam, the piece beyond sectioned square to the run; a round rolled along it with the
+   stretch past the seam cut away; chains of up to four faces past the edge's own in the section.
+
+Kernel rules it found:
+- **Gluing on a curved face.** The lens and the ring share a face on the seam's normal cylinder:
+  `boolean::glued` took planes only. An edge of one is matched to the other's by a point of it on
+  the other's curve (a traced meeting and a fitted one parametrise alike only at their ends), and a
+  traced flat's crossing, cut where that flat is seamed, matches a run of the other's edges.
+- **A recipe node with two keys of one name** reads the first: the beyond's crease and ball radius
+  were both `"radius"`, and the ball came out the boss's size. The edge is its own object,
+  `"along"`, as the seam is.
+- **Strips across the body's tangent edge** union with it cleanly (`tests/brep.rs`, a strip over a
+  plate's top and its rim's torus), the issue's worry about #218's touches: the coincident faces
+  and the edge lying on the body's seam are read as ever.

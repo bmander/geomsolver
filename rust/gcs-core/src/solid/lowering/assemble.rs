@@ -5,7 +5,7 @@
 use crate::fmath::Det;
 use crate::brep::recipe::Writer;
 use crate::json::{object, Json};
-use super::{Corner, Piece, Ring, Rolled, Run, Stroke, Surf, V};
+use super::{Along, Beyond, Corner, Piece, Ring, Rolled, Run, Seam, Stroke, Surf, V};
 use crate::space::{add, cross, distance, dot, norm, normalised, scale, sub};
 
 impl Surf {
@@ -22,6 +22,9 @@ impl Surf {
                 ("half", half.into())]),
             Surf::Sphere { centre, radius } => object([("kind", "sphere".into()),
                 ("origin", w.at(scale(centre, by))), ("radius", (radius * by).into())]),
+            Surf::Torus { origin, axis, big, tube } => object([("kind", "torus".into()),
+                ("origin", w.at(scale(origin, by))), ("axis", vector(axis)), ("big", (big * by).into()),
+                ("tube", (tube * by).into())]),
         }
     }
 }
@@ -38,7 +41,7 @@ fn ends_json(r: &Run, w: &Writer) -> [(&'static str, Json); 2] {
 
 /// A run's section moved by `m` (a turn about a ring's axis): its strokes, its origin and way; the
 /// faces it is kept within stand where they stood.
-fn turned(r: &Run, m: &crate::brep::geom::Rigid) -> Run {
+pub(super) fn turned(r: &Run, m: &crate::brep::geom::Rigid) -> Run {
     let stroke = |s: &Stroke| match *s {
         Stroke::Line { from, to } => Stroke::Line { from: m.point(from), to: m.point(to) },
         Stroke::Arc { centre, radius, x, angles } => Stroke::Arc { centre: m.point(centre), radius, x: m.vector(x), angles },
@@ -104,7 +107,8 @@ impl Run {
 
 /// Pieces as one construction: each distinct piece once, each run with the stretch of its edge it
 /// is built over (cut short at the section of a corner standing at either end), and which run is
-/// joined to which corner there (runs counted first, then rings, then corners, then rolled runs).
+/// joined to which corner there (runs counted first, then rings, then corners, then rolled runs,
+/// then the pieces beyond a seam's normal surface, each joined to its ring).
 #[derive(Clone, Debug, Default)]
 pub struct Assembly {
     pub runs: Vec<Run>,
@@ -112,6 +116,7 @@ pub struct Assembly {
     pub corners: Vec<Corner>,
     pub joins: Vec<[usize; 2]>,
     pub rolled: Vec<Rolled>,
+    pub beyond: Vec<Beyond>,
 }
 
 /// The union of `pieces` as one construction (`Assembly`).
@@ -122,6 +127,7 @@ pub fn assemble<'a>(pieces: impl IntoIterator<Item = &'a Piece>) -> Assembly {
         Piece::Ring(g) => norm(g.section.origin) + norm(g.axis_origin),
         Piece::Corner(c) => norm(c.vertex) + c.r,
         Piece::Rolled(k) => norm(k.at) + k.r + k.flat.map_or(0.0, |([la, lb], _)| la.max(lb)),
+        Piece::Beyond(b) => norm(b.ends[0]) + b.legs[0].max(b.legs[1]) + b.radius,
     }).fold(1.0, f64::max);
     let near = |p: V, q: V| distance(p, q) <= 1e-9 * size;
     let mut out = Assembly::default();
@@ -137,6 +143,9 @@ pub fn assemble<'a>(pieces: impl IntoIterator<Item = &'a Piece>) -> Assembly {
                 && j.flat.is_some() == k.flat.is_some()) => {
                 out.rolled.push(k.clone());
             }
+            Piece::Beyond(b) if !out.beyond.iter().any(|c| b.ends.iter().all(|&p| c.ends.iter().any(|&q| near(p, q)))
+                && (b.radius - c.radius).abs() <= 1e-9 * size)
+                => out.beyond.push(b.clone()),
             _ => {}
         }
     }
@@ -228,6 +237,32 @@ pub fn assemble<'a>(pieces: impl IntoIterator<Item = &'a Piece>) -> Assembly {
             out.joins.push([pieces_before + corners + i, pieces_before + j]);
         }
     }
+    // a piece beyond a seam's normal surface, glued to its edge's own piece there: the ring about
+    // its axis kept short of that surface (a flat), or a stretch of it ending at the piece's ends (a
+    // round); a flat cut along a traced run kept short of it
+    let rolled_from = out.runs.len() + out.rings.len() + out.corners.len();
+    let first = rolled_from + out.rolled.len();
+    for (k, b) in out.beyond.iter().enumerate() {
+        match b.along {
+            Along::Ring { axis_origin, axis, .. } => {
+                let creases: Vec<V> = b.ends.iter().filter_map(|&p| b.crease_at(p)).collect();
+                let ring = out.rings.iter().position(|g| near(g.axis_origin, axis_origin) && near(g.axis, axis)
+                    && if b.radius > 0.0 { creases.iter().any(|&p| near(g.section.origin, p)) }
+                        else { g.section.kept.iter().any(|kept| kept.face == b.split) });
+                if let Some(i) = ring {
+                    out.joins.push([out.runs.len() + i, first + k]);
+                }
+            }
+            Along::Meeting { .. } => {
+                let centres = b.ends.map(|q| add(q, scale(b.toward, b.radius)));
+                let rolled = out.rolled.iter().position(|j| j.kept.iter().any(|kept| kept.face == b.split)
+                    || b.radius > 0.0 && j.wedge.iter().any(|&(p, _)| centres.iter().any(|&c| near(p, c))));
+                if let Some(i) = rolled {
+                    out.joins.push([rolled_from + i, first + k]);
+                }
+            }
+        }
+    }
     // a run and a stretch of a ring going on from one another (a round along an obround's flat
     // side, then round its half circle): one section, where the ring's turn starts or ends
     for (i, r) in out.runs.iter().enumerate() {
@@ -285,10 +320,42 @@ impl Assembly {
                 o.set("cuts", Json::Arr(k.cuts.iter().map(|&(at, n, reach)| object([("at", w.at(scale(at, by))),
                     ("normal", vector(n)), ("reach", (reach * by).into())])).collect()));
             }
+            if !k.wedge.is_empty() {
+                o.set("wedge", Json::Arr(k.wedge.iter().map(|&(at, n)| object([("at", w.at(scale(at, by))),
+                    ("normal", vector(n))])).collect()));
+            }
+            if !k.kept.is_empty() {
+                o.set("kept", Json::Arr(k.kept.iter().map(|kept| { let mut s = kept.face.json(w); s.set("inside", kept.inside.into()); s })
+                    .collect()));
+            }
             o
         }).collect();
-        Ok(object([("kind", "lowered".into()), ("pieces", Json::Arr(pieces)), ("corners", Json::Arr(corners)),
-            ("joins", Json::Arr(joins)), ("rolled", Json::Arr(rolled))]))
+        let beyond = self.beyond.iter().map(|b| {
+            let mut o = object([
+                ("toward", vector(b.toward)), ("chain", b.chain.json(w)), ("wall", b.wall.json(w)), ("split", b.split.json(w)),
+                ("sides", Json::Arr(b.sides.iter().map(|&x| x.into()).collect())),
+                ("seam", match b.seam {
+                    Seam::Circle(c, n, r) => object([("centre", w.at(scale(c, by))), ("normal", vector(n)), ("radius", (r * by).into())]),
+                    Seam::Line(p, d) => object([("point", w.line_origin(scale(p, by), d)), ("direction", vector(d))]),
+                }),
+                ("legs", Json::Arr(b.legs.iter().map(|&l| (l * by).into()).collect())), ("radius", (b.radius * by).into()),
+                ("ends", Json::Arr(b.ends.iter().map(|&p| w.at(scale(p, by))).collect())),
+            ]);
+            o.set("along", match &b.along {
+                Along::Ring { axis_origin, axis, crease } => object([
+                    ("axis", Json::Arr(vec![w.line_origin(scale(*axis_origin, by), *axis), vector(*axis)])),
+                    ("crease", object([("centre", w.at(scale(crease.0, by))), ("radius", (crease.1 * by).into())])),
+                ]),
+                Along::Meeting { face } => object([("face", face.json(w))]),
+            });
+            o
+        }).collect();
+        let mut node = object([("kind", "lowered".into()), ("pieces", Json::Arr(pieces)), ("corners", Json::Arr(corners)),
+            ("joins", Json::Arr(joins)), ("rolled", Json::Arr(rolled))]);
+        if !self.beyond.is_empty() {
+            node.set("beyond", Json::Arr(beyond));
+        }
+        Ok(node)
     }
 
     /// Built by this kernel (lengths times `by`).

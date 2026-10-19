@@ -132,6 +132,16 @@ fn lowered_node(n: &Lowered,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i6
             pieces.push(rolled_run(k,&stratum,tol,floor)?);
         }
     }
+    // a ring's section beyond a seam's normal surface (#422), fitted: glued to its ring as a rolled
+    // piece is to a corner's cell (a chamfer's on the seam's normal surface, a round's at its ends)
+    for b in &n.beyond {
+        let tol = tolerance_over(1.+crate::space::norm(b.ends[0])+b.legs[0].max(b.legs[1])+b.radius,floor);
+        pieces.push(if b.radius > 0. {
+            super::spill::round_beyond(b,b.radius,tol).map_err(|e| format!("a round beyond a seam: {e}"))?
+        } else {
+            super::spill::flat_beyond(b,tol).map_err(|e| format!("a flat beyond a seam: {e}"))?
+        });
+    }
     chained(&pieces,&n.joins,first_rolled,floor)
 }
 
@@ -141,10 +151,30 @@ fn lowered_node(n: &Lowered,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i6
 fn rolled_run(k: &Rolled,stratum: &Brep,tol: f64,floor: f64) -> Built {
     let mut piece = match k.flat {
         Some((legs,on)) => super::fillet::flat_along(stratum,k.at,legs,Some(on),tol).map_err(|e| format!("a flat along a run: {e}"))?,
-        None => super::fillet::roll(stratum,k.at,k.radius,tol).map_err(|e| format!("a rolled round: {e}"))?.piece,
+        None => super::fillet::roll_across(stratum,k.at,k.radius,tol,&k.wedge)
+            .map_err(|e| format!("a rolled round: {e}"))?.piece,
     };
+    // the stretch a piece beyond a seam takes (#422): what lies past both planes of the wedge, cut
+    // away — a box about the piece kept past each
+    if !k.wedge.is_empty() {
+        let (lo,hi) = piece.bounds();
+        let (middle,half) = (crate::space::lerp(lo,hi,0.5),crate::space::distance(lo,hi));
+        let mut block = super::build::prism(&super::build::square(crate::space::sub(middle,[0.,0.,half]),[0.,0.,1.],half),0.,2.*half)?;
+        for &(at,normal) in &k.wedge {
+            block = kept(&block,at,normal,floor).map_err(|e| format!("a rolled round's wedge: {e}"))?;
+        }
+        piece = super::boolean::combined(&piece,&block,super::boolean::Op::Cut,floor)
+            .map_err(|e| format!("a rolled round cut short of a seam: {e}"))?;
+    }
     for &(at,normal,reach) in &k.cuts {
         piece = cut_before(&piece,at,normal,reach,floor).map_err(|e| format!("a rolled round cut at a corner: {e}"))?;
+    }
+    // short of a seam's normal surface, a piece beyond taking the rest (#422)
+    for (surface,inside) in &k.kept {
+        piece = match surface {
+            super::geom::Surface::Plane(f) => kept(&piece,f.o,if *inside { f.z.map(|x| -x) } else { f.z },floor),
+            _ => kept_by_solid(&piece,surface,*inside,floor),
+        }.map_err(|e| format!("a flat along a run kept short of a seam: {e}"))?;
     }
     Ok(piece)
 }

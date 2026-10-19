@@ -97,31 +97,73 @@ struct Arranged<'a> {
 pub fn glued(a: &Brep,b: &Brep,tol: f64) -> Option<Brep> {
     use super::geom::Surface;
     let near = |p: V,q: V| distance(p,q) <= tol;
-    let outward = |f: &Face| match f.surface { Surface::Plane(fr) => Some(if f.reversed { fr.z.map(|x| -x) } else { fr.z }),_ => None };
     let middle = |s: &Brep,e: usize| s.edges[e].point(0.5*(s.edges[e].t[0]+s.edges[e].t[1]),&s.vertices);
     let ends = |s: &Brep,e: usize| s.edges[e].v.map(|v| s.vertices[v as usize].p);
-    // each face of `b` the same as one of `a`: its edges matched to `a`'s, and whether each runs the
-    // other way
+    // a face's outward normal at `p` (on its surface): a plane's everywhere; a curved one's (the
+    // seam's normal cylinder two pieces of a chain's section share, #422) where it is read
+    let outward = |f: &Face,p: V| -> V {
+        let n = match f.surface { Surface::Plane(fr) => fr.z,_ => f.surface.gradient(p) };
+        if f.reversed { n.map(|x| -x) } else { n }
+    };
+    // a point of the face to read both faces' normals at: its first edge's middle
+    let at = |s: &Brep,f: &Face| f.loops.first().and_then(|l| l.first()).map(|c| middle(s,c.edge as usize));
+    // whether `p` lies on `s`'s edge `e`, within its stretch: its curve's nearest point (a traced
+    // meeting and a fitted one parametrise alike only at their ends)
+    let on_edge = |s: &Brep,e: usize,p: V| {
+        let e = &s.edges[e];
+        let EdgeCurve::Curve(c) = &e.curve else { return false };
+        let mut t = c.inverse(p);
+        if let Some(period) = c.period() { t = around(t,e.t[0],period); }
+        let slack = 1e-9*(e.t[1]-e.t[0]).abs().max(1.);
+        t >= e.t[0]-slack && t <= e.t[1]+slack && near(c.point(t),p)
+    };
+    // `p` on `a`'s edge `ea` (its middle where the two are parametrised alike); `a`'s edge `ea` on
+    // `b`'s edge `eb`
+    let on = |ea: usize,p: V| near(middle(a,ea),p) || on_edge(a,ea,p);
+    let on_b = |eb: usize,ea: usize| on_edge(b,eb,middle(a,ea));
+    let plane = |f: &Face| matches!(f.surface,Surface::Plane(_));
+    // each face of `b` the same as one of `a`: its edges matched to `a`'s — each to one, or to a run
+    // of them end to end where `a` has its edge in pieces (a fitted flat's crossing a traced flat
+    // cuts where that one is seamed, #422) — and whether each runs the other way
     let (mut shared_a,mut shared_b) = (std::collections::BTreeSet::new(),std::collections::BTreeSet::new());
-    let mut edge_of: BTreeMap<usize,(u32,bool)> = BTreeMap::new();
+    let mut edge_of: BTreeMap<usize,Vec<(u32,bool)>> = BTreeMap::new();
     for (i,fa) in a.faces.iter().enumerate() {
-        let Some(na) = outward(fa) else { continue };
+        let Some(p) = at(a,fa) else { continue };
+        let na = outward(fa,p);
         for (j,fb) in b.faces.iter().enumerate() {
-            let Some(nb) = outward(fb) else { continue };
-            if shared_b.contains(&j) || crate::space::dot(na,nb) > -1.+1e-9 { continue }
-            if !super::ssi::same(&fa.surface,&fb.surface,tol) { continue }
+            if shared_b.contains(&j) || plane(fa) != plane(fb) || !super::ssi::same(&fa.surface,&fb.surface,tol) { continue }
+            if crate::space::dot(na,outward(fb,p)) > if plane(fa) { -1.+1e-9 } else { 0. } { continue }
             let (la,lb): (Vec<usize>,Vec<usize>) = (fa.loops.iter().flatten().map(|c| c.edge as usize).collect(),
                 fb.loops.iter().flatten().map(|c| c.edge as usize).collect());
-            if la.len() != lb.len() { continue }
-            let matched: Option<Vec<(usize,u32,bool)>> = lb.iter().map(|&eb| la.iter().find_map(|&ea| {
+            if la.len() < lb.len() { continue }
+            let one = |eb: usize| la.iter().find_map(|&ea| {
                 let ([a0,a1],[b0,b1]) = (ends(a,ea),ends(b,eb));
                 let flip = if near(a0,b0) && near(a1,b1) { false } else if near(a0,b1) && near(a1,b0) { true } else { return None };
-                near(middle(a,ea),middle(b,eb)).then_some((eb,ea as u32,flip))
-            })).collect();
+                on(ea,middle(b,eb)).then_some(vec![(ea as u32,flip)])
+            });
+            // a run of `a`'s edges from `b`'s edge's start to its end, each lying on it
+            let run = |eb: usize| -> Option<Vec<(u32,bool)>> {
+                let [b0,b1] = ends(b,eb);
+                let (mut at,mut out) = (b0,Vec::new());
+                while !near(at,b1) || out.is_empty() {
+                    let next = la.iter().find_map(|&ea| {
+                        if out.iter().any(|&(e,_)| e as usize == ea) { return None }
+                        let [a0,a1] = ends(a,ea);
+                        let step = if near(a0,at) { (ea as u32,false,a1) } else if near(a1,at) { (ea as u32,true,a0) } else { return None };
+                        on_b(eb,ea).then_some(step)
+                    })?;
+                    out.push((next.0,next.1));
+                    at = next.2;
+                    if out.len() > la.len() { return None }
+                }
+                Some(out)
+            };
+            let matched: Option<Vec<(usize,Vec<(u32,bool)>)>> = lb.iter().map(|&eb| one(eb).or_else(|| run(eb)).map(|r| (eb,r))).collect();
             let Some(matched) = matched else { continue };
+            if matched.iter().map(|(_,r)| r.len()).sum::<usize>() != la.len() { continue }
             shared_a.insert(i);
             shared_b.insert(j);
-            for (eb,ea,flip) in matched { edge_of.insert(eb,(ea,flip)); }
+            for (eb,r) in matched { edge_of.insert(eb,r); }
         }
     }
     if shared_a.is_empty() { return None }
@@ -132,9 +174,9 @@ pub fn glued(a: &Brep,b: &Brep,tol: f64) -> Option<Brep> {
     let mut vertex_of: BTreeMap<u32,u32> = BTreeMap::new();
     let mut same = crate::graph::UnionFind::new(a.vertices.len());
     let mut merged = false;
-    for (&eb,&(ea,flip)) in &edge_of {
-        let (vb,va) = (b.edges[eb].v,a.edges[ea as usize].v);
-        let va = if flip { [va[1],va[0]] } else { va };
+    for (&eb,run) in &edge_of {
+        let end = |&(ea,flip): &(u32,bool),k: usize| { let v = a.edges[ea as usize].v; if flip { v[1-k] } else { v[k] } };
+        let (vb,va) = (b.edges[eb].v,[end(&run[0],0),end(&run[run.len()-1],1)]);
         for k in 0..2 {
             match vertex_of.get(&vb[k]) {
                 Some(&w) if same.find(w as usize) != same.find(va[k] as usize) => { same.union(w as usize,va[k] as usize); merged = true; }
@@ -151,36 +193,62 @@ pub fn glued(a: &Brep,b: &Brep,tol: f64) -> Option<Brep> {
         if !vertex_of.contains_key(&(i as u32)) { vertex_of.insert(i as u32,out.vertices.len() as u32); out.vertices.push(v.clone()); }
     }
     // `b`'s edges: a shared one is `a`'s (its tolerance the larger), the rest its own
-    let mut new_edge: Vec<(u32,bool)> = Vec::with_capacity(b.edges.len());
+    let mut new_edge: Vec<Vec<(u32,bool)>> = Vec::with_capacity(b.edges.len());
     for (i,e) in b.edges.iter().enumerate() {
-        if let Some(&(ea,flip)) = edge_of.get(&i) {
-            let t = &mut out.edges[ea as usize].tol;
-            *t = t.max(e.tol);
-            new_edge.push((ea,flip));
+        if let Some(run) = edge_of.get(&i) {
+            for &(ea,_) in run {
+                let t = &mut out.edges[ea as usize].tol;
+                *t = t.max(e.tol);
+            }
+            new_edge.push(run.clone());
         } else {
             let mut e = e.clone();
             e.v = e.v.map(|v| vertex_of[&v]);
             out.edges.push(e);
-            new_edge.push(((out.edges.len()-1) as u32,false));
+            new_edge.push(vec![((out.edges.len()-1) as u32,false)]);
         }
     }
     out.faces = a.faces.iter().enumerate().filter(|(i,_)| !shared_a.contains(i)).map(|(_,f)| f.clone()).collect();
     for (j,f) in b.faces.iter().enumerate() {
         if shared_b.contains(&j) { continue }
         let mut f = f.clone();
-        for c in f.loops.iter_mut().flatten() {
-            let (e,flip) = new_edge[c.edge as usize];
-            // a use of an edge now `a`'s: its pcurve by its ends (a pcurve read at its own edge's
-            // parameter reads another's wrongly), and from the other end where that runs the
-            // other way
-            if edge_of.contains_key(&(c.edge as usize)) && (flip || matches!(c.pcurve,Pcurve::Curve(_))) {
+        for l in f.loops.iter_mut() {
+            let mut walk = Vec::with_capacity(l.len());
+            for c in l.iter() {
+                let mut c = c.clone();
+                let run = &new_edge[c.edge as usize];
+                if let [(e,flip)] = run[..] {
+                    // a use of an edge now `a`'s: its pcurve by its ends (a pcurve read at its own
+                    // edge's parameter reads another's wrongly), and from the other end where that
+                    // runs the other way
+                    if edge_of.contains_key(&(c.edge as usize)) && (flip || matches!(c.pcurve,Pcurve::Curve(_))) {
+                        let old = &b.edges[c.edge as usize];
+                        let (u0,u1) = (c.pcurve.at(old.t[0],old,&f.surface,&b.vertices),c.pcurve.at(old.t[1],old,&f.surface,&b.vertices));
+                        let (a,z) = if flip { (u1,u0) } else { (u0,u1) };
+                        c.pcurve = match c.pcurve { Pcurve::Line {..} => Pcurve::Line {a,b:z},_ => Pcurve::Inverse {a,b:z} };
+                        c.reversed ^= flip;
+                    }
+                    c.edge = e;
+                    walk.push(c);
+                    continue;
+                }
+                // a use of an edge `a` has in pieces: a use of each, in the order the use walks,
+                // each one's pcurve its curve inverted between its ends, read near this one's
                 let old = &b.edges[c.edge as usize];
-                let (u0,u1) = (c.pcurve.at(old.t[0],old,&f.surface,&b.vertices),c.pcurve.at(old.t[1],old,&f.surface,&b.vertices));
-                let (a,z) = if flip { (u1,u0) } else { (u0,u1) };
-                c.pcurve = match c.pcurve { Pcurve::Line {..} => Pcurve::Line {a,b:z},_ => Pcurve::Inverse {a,b:z} };
-                c.reversed ^= flip;
+                let EdgeCurve::Curve(curve) = &old.curve else { return None };
+                let near_uv = |p: V| {
+                    let t = curve.inverse(p).clamp(old.t[0].min(old.t[1]),old.t[0].max(old.t[1]));
+                    let h = c.pcurve.at(t,old,&f.surface,&b.vertices);
+                    unwrap(f.surface.inverse_near(p,h),h,f.surface.periods())
+                };
+                let pieces: Vec<(u32,bool)> = if c.reversed { run.iter().rev().map(|&(e,fl)| (e,!fl)).collect() } else { run.clone() };
+                for (e,fl) in pieces {
+                    let edge = &out.edges[e as usize];
+                    let [p0,p1] = edge.v.map(|v| out.vertices[v as usize].p);
+                    walk.push(Coedge {edge:e,reversed:fl,pcurve:Pcurve::Inverse {a:near_uv(p0),b:near_uv(p1)}});
+                }
             }
-            c.edge = e;
+            *l = walk;
         }
         out.faces.push(f);
     }
