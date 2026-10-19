@@ -77,9 +77,13 @@ smooth surface). `Run`, `Fill`, `Flat` and `FlatFill` read each face's side, its
 reach and its legs off it, the crease and the meeting off the faces themselves. The lowering table
 reads a smooth reference as its face (`recognise::same`, `side_of`) and builds the round or flat of
 the face's own surface, and **refuses** one whose face goes on tangent across a seam running
-beside the edge — sharing no vertex with it — within twice the section's size of it
-(`lowering::seams_beside`, `SEAM_REACH`): there the region is the field's, a chamfer's leg landing
-on the round past a plate's far face; a seam the edge runs into at its end (a slot's side into its
+beside the edge — sharing no vertex with it — that the section reaches across (#422's rung 1,
+`lowering::seams_beside`): its footprint on the face — a flat's leg, where a ball touches it,
+`lowering::footprint`, solved by Newton's steps in the plane square to the edge at points along it
+— landing past the seam (there the region is the field's: a chamfer's leg on the round past a plate's
+far face); a seam beyond the
+footprint refuses nothing (`rounds/spill.sv` with a boss of 19.5, its leg short of the seam:
+`tests/composed_rounds.rs`); a seam the edge runs into at its end (a slot's side into its
 half circle) is the table's own going on into the next piece and refuses nothing, and the gate
 holds the rest to the field as ever. A region of a body's faces the planes do not close is
 supported by the bodies it reads grown by `SUPPORT_REACH` of its longest length

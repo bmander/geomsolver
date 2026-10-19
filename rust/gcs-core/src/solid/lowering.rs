@@ -347,19 +347,19 @@ pub fn lowered(sk: &Sketch, solid: usize) -> Option<Result<Rc<Vec<Piece>>, Strin
     })))
 }
 
-/// How far beside the edge it rounds a section reaches, in its own size (`seams_beside`): a fill's
-/// point is within its radius or a leg of both faces, and further from their edge only where they
-/// meet sharply.
-const SEAM_REACH: f64 = 2.0;
+/// How many points along each edge `seams_beside` stands a section at (and its ends).
+const SEAM_SAMPLES: usize = 32;
 
 /// **A smooth surface the section reaches across** ([0.149]): the table builds the round or the
 /// flat of a face's own edge, against the face's own surface, so where the face goes on tangent
-/// into another (`F.smooth`) across a seam running beside the edge, within the section's reach of
-/// it — a chamfer's leg onto a round's face — the region is the field's.  A seam the edge runs
-/// into at its end (a slot's side going on into its end's half circle) is the table's own rule,
-/// a run going on into the next piece, and refuses nothing.
+/// into another (`F.smooth`) across a seam running beside the edge and the section reaches across
+/// it — its footprint on the face (`footprint`: a flat's leg, where a ball touches it), stood at
+/// points along the edge, lands past that seam, a chamfer's leg onto a round's face — the region
+/// is the field's.  A seam beyond the section's reach refuses nothing: the region's points are
+/// over the face between its edge and its footprint, nearest the face's own surface.  A seam the
+/// edge runs into at its end (a slot's side going on into its end's half circle) is the table's
+/// own rule, a run going on into the next piece, and refuses nothing.
 fn seams_beside(body: &super::faces::BodyFaces, f: &Faces, section: Section) -> Result<(), String> {
-    let size = match section { Section::Round(r) => r, Section::Flat { la, lb } => la.max(lb) };
     let groups: Vec<Vec<usize>> = f.faces.iter().map(|r| body.faces(r)).collect();
     for (k, r) in f.faces.iter().enumerate().filter(|(_, r)| r.smooth) {
         let chain = body.smooth(&groups[k]);
@@ -367,22 +367,73 @@ fn seams_beside(body: &super::faces::BodyFaces, f: &Faces, section: Section) -> 
             continue;
         }
         let beyond: Vec<usize> = chain.into_iter().filter(|fi| !groups[k].contains(fi)).collect();
-        let creases: Vec<u32> = f.pairs().iter().filter(|p| p.contains(&k))
-            .flat_map(|&[i, j]| body.edges_between(&groups[i], &groups[j])).collect();
+        let others: Vec<usize> = f.pairs().iter().filter(|p| p.contains(&k))
+            .map(|&[i, j]| if i == k { j } else { i }).collect();
+        let creases: Vec<u32> = others.iter().flat_map(|&o| body.edges_between(&groups[k], &groups[o])).collect();
         let at: Vec<u32> = creases.iter().flat_map(|&e| body.ends(e)).collect();
-        for s in body.edges_between(&groups[k], &beyond) {
-            if body.ends(s).iter().any(|v| at.contains(v)) {
+        let seams: Vec<u32> = body.edges_between(&groups[k], &beyond).into_iter()
+            .filter(|&s| !body.ends(s).iter().any(|v| at.contains(v))).collect();
+        if seams.is_empty() {
+            continue;
+        }
+        for &e in &creases {
+            let &[x, y] = body.faces_of(e) else { continue };
+            // (an edge turning the other way holds nowhere: nothing of it reaches anywhere)
+            if body.convex(e) != Some(f.within) {
                 continue;
             }
-            let near = (0..=16).filter_map(|j| body.nearest_edge(&creases, body.along(s, j as f64 / 16.0)))
-                .map(|(_, _, d)| d).fold(f64::INFINITY, f64::min);
-            if near < SEAM_REACH * size {
-                return Err(format!("its section reaches across the seam where `{}` goes on tangent into \
-                    another face, {near:.6} from the edge it rounds: the field reads it", r.path.join(".")));
+            let (fk, fo) = if groups[k].contains(&x) { (x, y) } else { (y, x) };
+            for s in 0..=SEAM_SAMPLES {
+                let p = body.along(e, s as f64 / SEAM_SAMPLES as f64);
+                let Some(q) = footprint(body, fk, fo, p, f.within, section, k) else { continue };
+                if body.off_face(fk, q).is_some_and(|s| seams.contains(&s)) {
+                    return Err(format!("its section reaches across the seam where `{}` goes on tangent into \
+                        another face, its footprint {:.6} from the edge it rounds landing past it: the field reads it",
+                        r.path.join("."), distance(p, q)));
+                }
             }
         }
     }
     Ok(())
+}
+
+/// Where the section beside the edge of faces `fk` and `fo` at its point `p` reaches furthest
+/// along `fk` (the region's `k`th face): a flat's leg, the point of `fk`'s surface its leg from
+/// `fo`'s; a round's touch, where the ball `r` from both surfaces touches `fk`'s — on the region's
+/// side of both (`within`), in the plane through `p` square to the edge, by Newton's steps (none
+/// where they find none).
+fn footprint(body: &super::faces::BodyFaces, fk: usize, fo: usize, p: V, within: bool, section: Section, k: usize)
+    -> Option<V> {
+    let (nk, no) = (body.normal(fk, p), body.normal(fo, p));
+    let t = normalised(crate::space::cross(nk, no))?;
+    let want = if within { -1.0 } else { 1.0 };
+    let (into_k, into_o) = (toward(nk, within), toward(no, within));
+    let size = match section { Section::Round(r) => r, Section::Flat { la, lb } => la.max(lb) };
+    let settled = |at: &[(V, f64); 3]| at.iter().all(|(_, m)| m.abs() <= 1e-12 * (size + norm(p)));
+    let square = (t, dot(t, p));
+    match section {
+        Section::Flat { la, lb } => {
+            let l = if k == 0 { la } else { lb };
+            // along `fk` away from the edge, the way `fo`'s side grows toward the region
+            let w = normalised(sub(into_o, scale(nk, dot(into_o, nk))))?;
+            let start = add(p, scale(w, l / dot(w, into_o).max(0.1)));
+            crate::roots::newton_onto::<3>(start, size, |q| {
+                let (sk, gk) = body.side_grad(fk, q);
+                let (so, go) = body.side_grad(fo, q);
+                Some([(gk, sk), (go, so - want * l), (square.0, dot(square.0, q) - square.1)])
+            }, settled)
+        }
+        Section::Round(r) => {
+            let start = crate::brep::fillet::across(p, [into_k, into_o], r);
+            let c = crate::roots::newton_onto::<3>(start, size, |c| {
+                let (sk, gk) = body.side_grad(fk, c);
+                let (so, go) = body.side_grad(fo, c);
+                Some([(gk, sk - want * r), (go, so - want * r), (square.0, dot(square.0, c) - square.1)])
+            }, settled)?;
+            let (sk, gk) = body.side_grad(fk, c);
+            Some(sub(c, scale(gk, sk)))
+        }
+    }
 }
 
 /// Points just inside the corner along each edge the region rounds or cuts (a quarter, a half and

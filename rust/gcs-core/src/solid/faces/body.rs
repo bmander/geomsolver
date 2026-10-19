@@ -222,6 +222,19 @@ impl BodyFaces {
             / self.mm
     }
 
+    /// Where `p`'s foot on face `fi`'s surface lies off the face: the edge of the face nearest it
+    /// (`None` where it lies on the face).
+    pub fn off_face(&self, fi: usize, p: V) -> Option<u32> {
+        let q = self.q(p);
+        let f = &self.loc.b.faces[fi];
+        let foot = f.surface.point(f.surface.inverse(q));
+        if self.loc.face_place(fi, foot) != Place::Out {
+            return None;
+        }
+        self.edges[fi].iter().map(|&e| (self.loc.nearest(e, foot).1, e))
+            .min_by(|a, b| a.0.total_cmp(&b.0)).map(|(_, e)| e)
+    }
+
     /// The edges two groups of faces share: where a face of `a` meets a face of `b`.
     pub fn edges_between(&self, a: &[usize], b: &[usize]) -> Vec<u32> {
         let of = |fs: &[usize]| -> BTreeSet<u32> {

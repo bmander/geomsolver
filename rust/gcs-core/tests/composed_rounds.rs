@@ -203,6 +203,25 @@ fn spilled(r: f64) -> String {
     src.replace("hint(r: 21.7)", &format!("hint(r: {r})"))
 }
 
+/// **The reach measured, not doubled** (#422's rung 1): a boss of 19.5 — its foot 8.8 from the
+/// plate's axis, its chamfer's leg 2 out from it reaching 30.3, short of the seam at 30.54 though
+/// within twice the leg of it — is built exactly: the flat's ring by Pappus beside the plate
+/// and the boss.  One of 21.7, whose leg lands on the round, stays the field's.
+#[test]
+fn a_chamfer_whose_leg_stays_short_of_the_seam_is_built() {
+    let r = 19.5;
+    let e = solved(&spilled(r));
+    let got = volume(&e, "boss");
+    let ring = 2.0 * PI * (r + 2.0 / 3.0) * 2.0;
+    let want = volume(&e, "plate") + PI * r * r * 10.0 + ring;
+    assert!((got - want).abs() <= 1e-9 * want, "{got} against {want}");
+    let e = solved(&spilled(21.7));
+    let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
+    let refused = export::exact(&e.sketch, ent(&e, "boss").i(), None, None, &say).err()
+        .map(|r| format!("{r:?}")).unwrap_or_default();
+    assert!(refused.contains("reaches across the seam"), "{refused}");
+}
+
 /// The volume a closed triangle mesh holds.
 fn mesh_volume(s: &gcs_core::solid::FieldSurface) -> f64 {
     s.triangles.iter().map(|t| {
