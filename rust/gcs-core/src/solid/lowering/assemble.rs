@@ -5,7 +5,7 @@
 use crate::fmath::Det;
 use crate::brep::recipe::Writer;
 use crate::json::{object, Json};
-use super::{Along, Beyond, Corner, Piece, Ring, Rolled, Run, Seam, Stroke, Surf, V};
+use super::{Across, Beyond, Corner, Piece, Ring, Rolled, Run, Seam, Stroke, Surf, V};
 use crate::space::{add, cross, distance, dot, norm, normalised, scale, sub};
 
 impl Surf {
@@ -130,7 +130,7 @@ enum Partner {
 /// The union of `pieces` as one construction (`Assembly`).
 pub fn assemble<'a>(pieces: impl IntoIterator<Item = &'a Piece>) -> Assembly {
     let pieces: Vec<&Piece> = pieces.into_iter().collect();
-    let beyond_size = |b: &Option<Beyond>| b.as_ref().map_or(0.0, |b| norm(b.ends[0]) + b.legs[0].max(b.legs[1]) + b.radius);
+    let beyond_size = |b: &Option<Beyond>| b.as_ref().map_or(0.0, |b| norm(b.ends[0]) + b.section.size());
     let size = pieces.iter().map(|p| match p {
         Piece::Run(r) => norm(r.origin) + r.span[0].abs().max(r.span[1].abs()),
         Piece::Ring(g) => (norm(g.section.origin) + norm(g.axis_origin)).max(beyond_size(&g.beyond)),
@@ -334,22 +334,23 @@ impl Assembly {
         }).collect();
         let beyond = self.beyond.iter().map(|b| {
             let mut o = object([
-                ("toward", vector(b.toward)), ("chain", b.chain.json(w)), ("wall", b.wall.json(w)), ("split", b.split.json(w)),
+                ("toward", vector(b.toward)), ("chain", b.chain.json(w)), ("wall", b.wall.json(w)),
                 ("sides", Json::Arr(b.sides.iter().map(|&x| x.into()).collect())),
                 ("seam", match b.seam {
                     Seam::Circle(c, n, r) => object([("centre", w.at(scale(c, by))), ("normal", vector(n)), ("radius", (r * by).into())]),
                     Seam::Line(p, d) => object([("point", w.line_origin(scale(p, by), d)), ("direction", vector(d))]),
                 }),
-                ("legs", Json::Arr(b.legs.iter().map(|&l| (l * by).into()).collect())), ("radius", (b.radius * by).into()),
                 ("ends", Json::Arr(b.ends.iter().map(|&p| w.at(scale(p, by))).collect())),
+                ("along", object([("face", b.face.json(w))])),
             ]);
-            o.set("along", match &b.along {
-                Along::Ring { axis_origin, axis, crease } => object([
-                    ("axis", Json::Arr(vec![w.line_origin(scale(*axis_origin, by), *axis), vector(*axis)])),
-                    ("crease", object([("centre", w.at(scale(crease.0, by))), ("radius", (crease.1 * by).into())])),
-                ]),
-                Along::Meeting { face } => object([("face", face.json(w))]),
-            });
+            // a flat's legs and the seam's normal surface it starts at, or a round's radius
+            match b.section {
+                Across::Flat { legs, split } => {
+                    o.set("legs", Json::Arr(legs.iter().map(|&l| (l * by).into()).collect()));
+                    o.set("split", split.json(w));
+                }
+                Across::Round { radius } => o.set("radius", (radius * by).into()),
+            }
             o
         }).collect();
         let mut node = object([("kind", "lowered".into()), ("pieces", Json::Arr(pieces)), ("corners", Json::Arr(corners)),

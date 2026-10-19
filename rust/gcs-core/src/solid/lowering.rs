@@ -314,41 +314,31 @@ pub enum Piece {
 /// about its axis (a boss near a plate's rounded rim; one standing through a slope near its rounded
 /// edge), the edge's own piece — a ring, or a flat cut along a traced run — is kept short of the
 /// seam's normal surface (its `Kept`) and this takes the rest: the section against the next face,
-/// in the edge's own sections (`along`), fitted (`brep::spill`), glued to it on that surface.  It
+/// in the planes square to the edge — the meeting of the face it stands on (`face`) and the wall,
+/// a ring's half-planes through its axis — fitted (`brep::spill`), glued to it on that surface.  It
 /// is held by the piece it is made with (`Ring::beyond`, `Rolled::beyond`), so the join is the
 /// one made there, never one found again by its geometry (#423).
-/// `toward` is the way from the edge's face into the region; `chain` the next face's surface,
-/// `wall` the other face's, `split` the seam's normal surface, each with the way its signed
-/// distance runs toward the piece (`sides`, ±1); `seam` the seam; a chamfer's legs, on the chain
-/// from the wall and on the wall from the chain, or a round's `radius` (nothing for a chamfer);
-/// and `ends`, where the leg on the edge's face crosses the seam — or where the ball touches it, a
-/// round's ring a stretch glued to this at both ends.
+/// `toward` is the way from the edge's face into the region; `chain` the next face's surface and
+/// `wall` the other face's, each with the way its signed distance runs toward the piece (`sides`,
+/// ±1); `seam` the seam; `section` a chamfer's flat — its legs, on the chain from the wall and on
+/// the wall from the chain, and the seam's normal surface, the edge's side of it within — or a
+/// round's ball (#426); and `ends`, where the leg on the edge's face crosses the seam — or where
+/// the ball touches it, a round's ring a stretch glued to this at both ends.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Beyond {
-    pub along: Along,
+    pub face: Surf,
     pub toward: V,
     pub chain: Surf,
     pub wall: Surf,
-    pub split: Surf,
-    pub sides: [f64; 3],
+    pub sides: [f64; 2],
     pub seam: Seam,
-    pub legs: [f64; 2],
-    pub radius: f64,
+    pub section: Across<Surf>,
     pub ends: [V; 2],
 }
 
-/// The edge a section beyond a seam is read along: a ring about the line through `axis_origin`
-/// along the unit `axis`, its edge the circle `crease` (centre, radius) — its sections the
-/// half-planes through the axis — or the meeting of the face `face` and the wall, its sections the
-/// planes square to it.
-#[derive(Clone, Debug, PartialEq)]
-pub enum Along {
-    Ring { axis_origin: V, axis: V, crease: (V, f64) },
-    Meeting { face: Surf },
-}
-
-/// A seam a section reaches across (model units here, the recipe's in its own): a circle or a line.
-pub use crate::brep::spill::Seam;
+/// A seam a section reaches across (model units here, the recipe's in its own): a circle or a line;
+/// and what a piece beyond it is across it, a flat or a round.
+pub use crate::brep::spill::{Across, Seam};
 
 /// A ball rolled along a run of edges no line or coaxial circle carries — a pipe tee's crotch, a
 /// bore's rim on a pipe's wall, a boss's root across a sloped face (model units): the ball of

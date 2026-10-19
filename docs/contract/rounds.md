@@ -103,7 +103,8 @@ is its distance from the seam, so the two are one set:
   `rounds/spill.sv`; `piece::beyond`: the face a plane going on into a torus about its normal): a
   flat's ring kept within the seam's normal surface — the cylinder through the seam along the
   plane's normal (its `Kept`) — and beyond it the flat against the torus, sectioned in the
-  half-planes through the ring's axis between where the leg on the plane crosses the seam, fitted
+  half-planes through the ring's axis — the planes square to its circle, the face's meeting with
+  the wall — between where the leg on the plane crosses the seam, fitted
   (`brep::spill::flat_beyond`): a lens of the torus's strip, the fitted flat and the cap on the
   normal cylinder, glued to the ring there. A round's ring a stretch between where its ball's touch
   crosses the seam, and between them the ball rolled against the torus — its centre where the
@@ -114,33 +115,60 @@ is its distance from the seam, so the two are one set:
   edge; `piece::traced_beyond`: the face a plane going on into a cylinder along a straight seam or a
   torus about its normal): a flat cut along the run (`fillet::flat_along`) kept short of the seam's
   normal surface — the plane through a straight seam along the face's normal (`Rolled::kept`) — and
-  the flat beyond it sectioned square to the run (`spill::Along::Meeting`) between where the leg
-  crosses the seam, found by bisecting the footprint along the run; a round's ball rolled along
-  the run (`fillet::roll_across`, its band let cross the tangent seam) with the stretch between
-  the planes of its arc where it touches the seam cut away (`Rolled::wedge`), and the ball rolled
-  against the next face there, glued at both.
+  the flat beyond it sectioned square to the run between where the leg crosses the seam, found by
+  bisecting the footprint along the run; a round's ball rolled along the run
+  (`fillet::roll_across`, its band let cross the tangent seam) with the stretch between the planes
+  of its arc where it touches the seam cut away (`Rolled::wedge`), and the ball rolled against the
+  next face there, glued at both.
+
+`brep::spill` has **one section model** (#425): every piece beyond is read along the meeting of
+the face it stands on and the wall, in the planes square to it — a ring's circle a meeting like
+any other, whose square planes are the half-planes through its axis. Its edges are the meetings
+`ssi::intersect` gives in closed form wherever it gives one through their ends (a ring's crease
+its circle, a slope's an ellipse; a round cap's edge down the wall a line where its plane holds a
+cylinder's or a cone's axis, an ellipse where it cuts a cylinder aslant, a circle on a sphere),
+fitted only where the meeting must be traced; the seam is the circle or the line it is.
+A `Beyond` says by its type which it is (#426, in both layers, `spill::Across`): a chamfer's
+`Flat` — its legs and the seam's normal surface (`split`) it starts at, its signed distance
+negative on the edge's side — or a round's `Round` — its radius, nothing else; `size()` reads it.
+The ring off the seam's axis and the traced run classify the chain once between them
+(`piece::chain_seam`: the plane's normal, the face beyond, the seam and its normal surface) and
+build their piece with one constructor (`piece::beyond_of`), the legs on the chain from the wall
+first whichever face of the edge's the chain's is.
+`spill.sv`'s STEP is a cone, one fitted flat, and the plate's and the boss's faces. `assemble`
+glues a piece beyond to the ring whose own axis puts its section where the ball touches the seam
+(a round) or that is kept short of its `split` (a flat), else to a rolled run, until #423 pairs
+them where they are made.
 
 The recipe's `"beyond"` (after the rolled runs in a lowered node's joins): the edge it runs
-`"along"` (a ring's `"axis"` and `"crease"`, or the `"face"` it meets the wall in), `"toward"`, the
-`"chain"`'s face, the `"wall"` and the `"split"` surface with `"sides"`, the `"seam"` (a circle or a
-line), the `"legs"` or the ball's `"radius"`, and the `"ends"`; a rolled run's `"kept"` and `"wedge"`; all
+`"along"` (the `"face"` it stands on, meeting the wall in that edge), `"toward"`, the
+`"chain"`'s face and the `"wall"` with their `"sides"`, the `"seam"` (a circle or a line), a flat's
+`"legs"` and `"split"` surface or a round's `"radius"` alone (which of the two is read by the key),
+and the `"ends"`; a rolled run's `"kept"` and `"wedge"`; all
 written through the node's `Writer`, so `cad::recipe_about` carries them. **A piece beyond is held
 by the piece it is made with** (#423: `Ring::beyond`, `Rolled::beyond`), never a `Piece` of its
 own: `assemble` keeps it with its partner, drops it with its partner where another region names the
 same edge (two regions naming one edge in either order still make one pair, as `canonical` needs),
 and copies that join — no rule of geometry pairs them, so two runs kept short of one seam's normal
-surface are each glued to their own. `boolean::glued` glues on a curved face too, an edge matched
-by a point of it on the other's (a traced meeting and a fitted one), or to a run of the other's end
-to end (a traced flat's crossing cut where that flat is seamed). **Refused by name** (`piece::spilled`: "its section reaches across the seam where a face
+surface are each glued to their own. `boolean::glued` glues on
+a curved face too, an edge matched by a point of it on the other's (a traced meeting and a fitted
+one). It is symmetric in its two pieces (#424): the shared faces' boundaries are paired run by run
+between the vertices both have, each side's edges lying along the other's, and each side cut where
+the other has a vertex within a run, so either may hold an edge in pieces (a traced flat's or a
+round's crossing cut where its closed net is seamed) and the pieces are glued in either order
+(`solids_sharing_a_face_cut_differently_are_glued_either_way`). So `traced_beyond` starts its piece
+at the run's first edge's middle, as a run with no seam beyond it does, and nothing steers where
+its seam falls. **Refused by name** (`piece::spilled`: "its section reaches across the seam where a face
 goes on tangent into another …", the field reading the region): on both sides of its edge; into
 more than one face; along a seam that is not along a straight edge, or a curved seam beside one;
 beside two seams; beside a seam running only part of its edge; past a face it goes on into across
 an edge no seam, or a chain of more than four; round a circle beside a chain whose further seam is
-not about its axis; off the seam's axis, round a stretch of a circle, from a face no plane, into a
-face no torus about the plane's normal, where the edge or the wall's strip crosses the seam's
-normal surface or the leg crosses no seam; along a traced edge, from a face no plane, into a face no
-cylinder along a straight seam nor torus about the plane's normal, where the run crosses the seam's
-normal surface or its footprint crosses the seam other than twice. The gate holds every one to the
+not about its axis; for a piece beyond (`chain_seam`, a ring's and a traced run's alike) from a face
+no plane, into a face no cylinder along a straight seam nor torus about the plane's normal, or
+beside a wall neither a plane, a cylinder, a cone nor a sphere; off the seam's axis, round a stretch
+of a circle, where the edge or the wall's strip crosses the seam's normal surface or the leg
+crosses no seam; along a traced edge, where the run crosses the seam's normal surface or its
+footprint crosses the seam other than twice. The gate holds every one to the
 field as ever. `tests/composed_rounds.rs` is the gate (each against a closed form or a quadrature
 of the set's own words: `spill.sv` at every boss radius from 21 to 21.7, chamfered and rounded, to
 1e-6, and its volume to the field's mesh within the mesh's own stand-off; the straight, coaxial and
@@ -223,7 +251,8 @@ each order of the faces it names, and `Corner(a, b, c)` and `Corner(b, a, c)` lo
 construction, built and meshed once and held to each region's own field. `cad.rs` builds a body's lowered regions in one set as one recipe node, `"lowered"`
 (`assemble`: each distinct piece once, a run cut short at a corner's section and **glued** there,
 `boolean::glued`; the rest unioned — two runs crossing are a mitre), the first region standing for
-the rest; a region lowered to nothing is no operand; a body's face readers go in `"on_late"` /
+the rest; a region lowered to nothing is no operand, nor material a tool `through:` the body reads
+(a convex edge's fill, `edit_rounds.rs`); a body's face readers go in `"on_late"` /
 `"cut_late"`, applied after `bound` (`faces::stratum`, the one split the field and the recipe
 share; the native host applies them so too). `sweeps_among` sends a lowered region to the exact path. Kernel rules the stack found and
 this needs (ported from #79–#110): edges along a face cut where they cross its edges

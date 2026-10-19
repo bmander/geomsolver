@@ -6,7 +6,8 @@
 //! plane's and a torus's seam, along their common normal).  Short of that surface the ring stands
 //! against its own face, a revolution kept within it (`solid::lowering`'s `Ring` and its `Kept`);
 //! beyond it, the piece here: what the section sweeps against the next face, sectioned in the
-//! half-planes through the ring's axis — the ring's own sections — and fitted, as
+//! planes square to its edge — the face's meeting with the wall, whose square planes are a ring's
+//! half-planes through its axis where that meeting is the ring's circle — and fitted, as
 //! `fillet::flat_along` fits a flat along a traced run.  The two are glued on the normal surface
 //! (`boolean::glued`), where both are the same set: there a point's distance from either face is
 //! its distance from the seam.
@@ -15,7 +16,9 @@
 //! flat between the leg and its crossing with the normal surface, and on that surface the cap
 //! between the crossing and the seam, the three meeting where the leg on the ring's own face
 //! crosses the seam (`ends`).  What is only fitted is the flat beyond; the cap's and the strip's
-//! surfaces are the faces' own, and the seam is the circle it is.
+//! surfaces are the faces' own, and the seam is the circle it is.  An edge is kept exact wherever
+//! `ssi::intersect` gives the surfaces' meeting in closed form (a ring's crease its circle, a
+//! cap's line down a cylinder's wall), and fitted only where the meeting must be traced.
 #[allow(unused_imports)]
 use crate::fmath::Det;
 use super::fillet::{column, crossing_plane, face_out};
@@ -26,35 +29,40 @@ use crate::space::{add, cross, distance, dot, norm, scale, sub, unit};
 use std::sync::Arc;
 
 /// A chamfer's flat or a round beyond a seam's normal surface (all in the boundary's units): the
-/// edge it runs along (`along`, whose sections it is read in), which way from the face it stands on
-/// the region lies (`toward`, unit); the chain's next face (`chain`), the other face (`wall`) and
-/// the seam's normal surface (`split`), with which way each one's signed distance runs toward the
-/// piece (`sides`, ±1); the seam (`seam`); a chamfer's legs — on the chain from the wall, on the
-/// wall from the chain — or a round's `radius` (nothing for a chamfer, `round_beyond`); and where
-/// the leg on the face it stands on crosses the seam, or where the ball touches it (`ends`).
+/// face it stands on (`face`), whose meeting with the wall is the edge it runs along, read in the
+/// planes square to it; which way from that face the region lies (`toward`, unit); the chain's
+/// next face (`chain`) and the other face (`wall`), with which way each one's signed distance runs
+/// toward the piece (`sides`, ±1); the seam (`seam`); what it is across the seam (`section`); and
+/// where the leg on the face it stands on crosses the seam, or where the ball touches it (`ends`).
 #[derive(Clone, Debug)]
 pub struct Beyond {
-    pub along: Along,
+    pub face: Surface,
     pub toward: V,
     pub chain: Surface,
     pub wall: Surface,
-    pub split: Surface,
-    pub sides: [f64; 3],
+    pub sides: [f64; 2],
     pub seam: Seam,
-    pub legs: [f64; 2],
-    pub radius: f64,
+    pub section: Across<Surface>,
     pub ends: [V; 2],
 }
 
-/// The edge a section beyond a seam is read along, and so its sections.
-#[derive(Clone, Debug)]
-pub enum Along {
-    /// A ring about the line through `axis[0]` along the unit `axis[1]`, its edge the circle
-    /// `crease` about it (centre, radius): its sections the half-planes through the axis.
-    Ring { axis: [V; 2], crease: (V, f64) },
-    /// The meeting of the face the section stands on (`face`) and the wall, which no line or
-    /// coaxial circle carries: its sections the planes square to it, as `fillet::flat_along`'s.
-    Meeting { face: Surface },
+/// What a piece beyond a seam's normal surface is across the seam (#426), its surfaces `S` (the
+/// model's, or the boundary's): a chamfer's flat — its legs, on the chain from the wall and on the
+/// wall from the chain, and the seam's normal surface it starts at (`split`), whose signed distance
+/// runs from the edge's own piece toward it (a plane's normal turned so; the edge within a
+/// cylinder) — or a round's ball of `radius`, glued to the edge's own piece where it touches the
+/// seam (`round_beyond`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Across<S> {
+    Flat { legs: [f64; 2], split: S },
+    Round { radius: f64 },
+}
+
+impl<S> Across<S> {
+    /// Its size: a flat's longer leg, a round's radius.
+    pub fn size(&self) -> f64 {
+        match self { Across::Flat { legs, .. } => legs[0].max(legs[1]), Across::Round { radius } => *radius }
+    }
 }
 
 /// A seam a chain's face goes on across: a circle (centre, unit normal, radius) or a line (a point
@@ -66,114 +74,135 @@ pub enum Seam {
 }
 
 /// A piece's sections between its ends: each `u` in [0, 1] the edge's point and the unit normal of
-/// the section's plane through it (the way `u` runs), the ends in that order.
+/// the section's plane through it (the way `u` runs), the ends in that order; and the edge whole
+/// where `ssi::intersect` gives it in closed form (a ring's circle, a slope's ellipse).
 struct Sections<'a> {
     at: Box<dyn Fn(f64) -> (V, V) + 'a>,
     ends: [V; 2],
+    exact: Option<Curve>,
 }
 
 /// `b`'s sections between the two through `through` (its ends, or the ball's centres there; `ends`
-/// in their order), the shorter stretch of its edge between them.
+/// in their order): the planes square to the face's meeting with the wall, along the stretch of it
+/// between them whose middle stands nearer theirs.
 fn sections<'a>(b: &'a Beyond, through: [V; 2], tol: f64) -> Result<Sections<'a>, String> {
-    match &b.along {
-        Along::Ring { axis: [o, z], crease: (centre, radius) } => {
-            let (o, z, centre, radius) = (*o, *z, *centre, *radius);
-            let flat_of = move |p: V| { let w = sub(p, o); sub(w, scale(z, dot(w, z))) };
-            // the sections' angles about the axis, from the ends' middle
-            let e1 = unit(flat_of(scale(add(through[0], through[1]), 0.5)));
-            let e2 = cross(z, e1);
-            let angle = |p: V| { let w = flat_of(p); dot(w, e2).datan2(dot(w, e1)) };
-            let (mut q, mut f) = (b.ends, through.map(angle));
-            if f[0] > f[1] {
-                q.swap(0, 1);
-                f.swap(0, 1);
-            }
-            if !(f[1] - f[0] > 1e-9 && f[1] - f[0] < std::f64::consts::PI) {
-                return Err("a piece beyond a seam whose ends stand at one section".into());
-            }
-            let radial = move |phi: f64| { let (s, c) = phi.dsin_cos(); add(scale(e1, c), scale(e2, s)) };
-            Ok(Sections {
-                at: Box::new(move |u: f64| {
-                    let phi = f[0] + u * (f[1] - f[0]);
-                    (add(centre, scale(radial(phi), radius)), cross(z, radial(phi)))
-                }),
-                ends: q,
-            })
+    let face = &b.face;
+    let meet = Traced { a: face.clone(), b: b.wall.clone(), pts: Vec::new(), closed: false };
+    let feet = through.map(|q| meet.project(q));
+    let size = distance(b.ends[0], b.ends[1]) + b.section.size();
+    let (curves, exact) = match super::ssi::intersect(face, &b.wall, tol) {
+        super::ssi::Ssi::Curves(cs) => (cs, true),
+        super::ssi::Ssi::Same => return Err("a face and a wall on one surface".into()),
+        super::ssi::Ssi::Traced => {
+            let lo = [0, 1, 2].map(|k| feet[0][k].min(feet[1][k]) - 4.0 * size);
+            let hi = [0, 1, 2].map(|k| feet[0][k].max(feet[1][k]) + 4.0 * size);
+            (super::ssi::trace(face, &b.wall, &feet, lo, hi, tol)?, false)
         }
-        Along::Meeting { face } => {
-            let meet = Traced { a: face.clone(), b: b.wall.clone(), pts: Vec::new(), closed: false };
-            let feet = through.map(|q| meet.project(q));
-            let size = distance(b.ends[0], b.ends[1]) + b.legs[0].max(b.legs[1]) + b.radius;
-            let curve = match super::ssi::intersect(face, &b.wall, tol) {
-                super::ssi::Ssi::Curves(cs) => cs,
-                super::ssi::Ssi::Same => return Err("a face and a wall on one surface".into()),
-                super::ssi::Ssi::Traced => {
-                    let lo = [0, 1, 2].map(|k| feet[0][k].min(feet[1][k]) - 4.0 * size);
-                    let hi = [0, 1, 2].map(|k| feet[0][k].max(feet[1][k]) + 4.0 * size);
-                    super::ssi::trace(face, &b.wall, &feet, lo, hi, tol)?
-                }
-            }.into_iter().min_by(|x, y| {
-                let off = |c: &Curve| feet.iter().map(|&p| distance(c.point(c.inverse(p)), p)).sum::<f64>();
-                off(x).total_cmp(&off(y))
-            }).ok_or("a face and a wall that meet nowhere")?;
-            // the stretch between the ends' sections — each end's nearest point of the meeting, the
-            // plane square to it there through the end — the one whose middle stands nearer the
-            // ends'
-            let t = through.map(|p| curve.inverse(p));
-            let mid = scale(add(through[0], through[1]), 0.5);
-            let (t0, span) = match curve.period() {
-                Some(period) => {
-                    let fwd = (t[1] - t[0]).rem_euclid(period);
-                    let near = |t0: f64, span: f64| distance(meet.project(curve.point(t0 + 0.5 * span)), mid);
-                    if near(t[0], fwd) <= near(t[1], period - fwd) { (t[0], fwd) } else { (t[1], period - fwd) }
-                }
-                None => (t[0].min(t[1]), (t[1] - t[0]).abs()),
-            };
-            let q = if (t0 - t[0]).abs() <= 1e-12 * (1.0 + t0.abs()) { b.ends } else { [b.ends[1], b.ends[0]] };
-            let guide = super::fillet::smooth_guide(&curve, t0, span).ok_or("the meeting could not be read smoothly")?;
-            let (fa, wall) = (face.clone(), b.wall.clone());
-            Ok(Sections {
-                at: Box::new(move |u: f64| {
-                    let u = u.clamp(0.0, 1.0);
-                    let e = meet.project(guide.point(u));
-                    let d = cross(fa.gradient(e), wall.gradient(e));
-                    (e, if dot(d, guide.d2(u).1) < 0.0 { scale(unit(d), -1.0) } else { unit(d) })
-                }),
-                ends: q,
-            })
+    };
+    let curve = nearest(curves, &feet).ok_or("a face and a wall that meet nowhere")?;
+    // the stretch between the ends' sections — each end's nearest point of the meeting, the plane
+    // square to it there through the end — the one whose middle stands nearer the ends'
+    let t = through.map(|p| curve.inverse(p));
+    let mid = scale(add(through[0], through[1]), 0.5);
+    let (t0, span) = match curve.period() {
+        Some(period) => {
+            let fwd = (t[1] - t[0]).rem_euclid(period);
+            let near = |t0: f64, span: f64| distance(meet.project(curve.point(t0 + 0.5 * span)), mid);
+            if near(t[0], fwd) <= near(t[1], period - fwd) { (t[0], fwd) } else { (t[1], period - fwd) }
         }
+        None => (t[0].min(t[1]), (t[1] - t[0]).abs()),
+    };
+    if span <= 1e-9 * (1.0 + t0.abs()) {
+        return Err("a piece beyond a seam whose ends stand at one section".into());
     }
+    let q = if (t0 - t[0]).abs() <= 1e-12 * (1.0 + t0.abs()) { b.ends } else { [b.ends[1], b.ends[0]] };
+    let guide = super::fillet::smooth_guide(&curve, t0, span).ok_or("the meeting could not be read smoothly")?;
+    let (fa, wall) = (face.clone(), b.wall.clone());
+    Ok(Sections {
+        at: Box::new(move |u: f64| {
+            let u = u.clamp(0.0, 1.0);
+            let e = meet.project(guide.point(u));
+            let d = cross(fa.gradient(e), wall.gradient(e));
+            (e, if dot(d, guide.d2(u).1) < 0.0 { scale(unit(d), -1.0) } else { unit(d) })
+        }),
+        ends: q,
+        exact: exact.then_some(curve),
+    })
+}
+
+/// Of `curves`, the one passing nearest the points `by`.
+fn nearest(curves: Vec<Curve>, by: &[V]) -> Option<Curve> {
+    let off = |c: &Curve| by.iter().map(|&p| distance(c.point(c.inverse(p)), p)).sum::<f64>();
+    curves.into_iter().min_by(|x, y| off(x).total_cmp(&off(y)))
+}
+
+/// The stretch of the closed-form curve `c` from `a` to `z` as an edge of `out`, from `va` to `vz`:
+/// a line's segment, or a circle's or an ellipse's arc, the way round passing nearer `near`.
+/// Nothing for any other curve, or where `a` or `z` stands off it by more than `tol`.
+fn exact_edge(out: &mut Brep, c: &Curve, [a, z]: [V; 2], [va, vz]: [u32; 2], near: V, tol: f64)
+    -> Option<usize> {
+    if [a, z].iter().any(|&p| distance(c.point(c.inverse(p)), p) > tol) {
+        return None;
+    }
+    let tau = std::f64::consts::TAU;
+    // a frame turned over (its second and third axes reversed): the same conic run the other way
+    let over = |f: &Frame| Frame { o: f.o, x: f.x, y: scale(f.y, -1.0), z: scale(f.z, -1.0) };
+    let e = match *c {
+        Curve::Line { .. } => out.edge(EdgeCurve::Curve(Curve::Line { p: a, d: unit(sub(z, a)) }),
+            [0.0, distance(a, z)], [va, vz]),
+        Curve::Circle(f, r) => {
+            // from `a` itself: its frame's first axis through it
+            let x = unit(sub(a, f.o));
+            let f = Frame { o: f.o, x, y: cross(f.z, x), z: f.z };
+            let at = |f: &Frame| { let w = sub(z, f.o); dot(w, f.y).datan2(dot(w, f.x)).rem_euclid(tau) };
+            let off = |f: &Frame, t: f64| distance(f.at([r * t.dcos(), r * t.dsin(), 0.0]), near);
+            let f = if off(&f, 0.5 * at(&f)) <= off(&over(&f), 0.5 * at(&over(&f))) { f } else { over(&f) };
+            out.edge(EdgeCurve::Curve(Curve::Circle(f, r)), [0.0, at(&f)], [va, vz])
+        }
+        Curve::Ellipse(f, ma, mi) => {
+            let run = |f: Frame| {
+                let e = Curve::Ellipse(f, ma, mi);
+                let t0 = e.inverse(a);
+                let span = (e.inverse(z) - t0).rem_euclid(tau);
+                let off = distance(e.point(t0 + 0.5 * span), near);
+                (e, [t0, t0 + span], off)
+            };
+            let (fwd, back) = (run(f), run(over(&f)));
+            let (e, t, _) = if fwd.2 <= back.2 { fwd } else { back };
+            out.edge(EdgeCurve::Curve(e), t, [va, vz])
+        }
+        _ => return None,
+    };
+    Some(e as usize)
+}
+
+/// Where the surfaces `s` and `t` meet from `a` to `z`, as an edge of `out` from `va` to `vz`, the
+/// way passing nearer `near`: the meeting's closed form where `ssi::intersect` gives one through
+/// both, else nothing.
+fn exact_meeting(out: &mut Brep, s: &Surface, t: &Surface, ends: [V; 2], vs: [u32; 2], near: V, tol: f64)
+    -> Option<usize> {
+    let super::ssi::Ssi::Curves(cs) = super::ssi::intersect(s, t, tol) else { return None };
+    exact_edge(out, &nearest(cs, &ends)?, ends, vs, near, tol)
 }
 
 /// The seam's stretch between the ends `q` as an edge of `out`, from `vq[0]` to `vq[1]`: a circle's
 /// arc (the shorter, nearer the edge `near`), or a line's.
 fn seam_edge(out: &mut Brep, seam: Seam, q: [V; 2], vq: [u32; 2], near: V) -> usize {
-    match seam {
-        Seam::Line(..) => out.edge(EdgeCurve::Curve(Curve::Line { p: q[0], d: unit(sub(q[1], q[0])) }),
-            [0.0, distance(q[0], q[1])], vq) as usize,
-        Seam::Circle(sc_o, sc_n, sc_r) => {
-            let x = unit(sub(q[0], sc_o));
-            let circle = Frame { o: sc_o, x, y: cross(sc_n, x), z: sc_n };
-            let at = |p: V| { let w = sub(p, sc_o); dot(w, circle.y).datan2(dot(w, circle.x)).rem_euclid(std::f64::consts::TAU) };
-            let end = at(q[1]);
-            let off = |t: f64| distance(circle.at([sc_r * t.dcos(), sc_r * t.dsin(), 0.0]), near);
-            let (frame, t) = if off(0.5 * end) <= off(0.5 * end + std::f64::consts::PI) {
-                (circle, [0.0, end])
-            } else {
-                // the other way round: the frame turned over, so the arc still runs from the first end
-                let z = scale(sc_n, -1.0);
-                (Frame { o: sc_o, x, y: cross(z, x), z }, [0.0, std::f64::consts::TAU - end])
-            };
-            out.edge(EdgeCurve::Curve(Curve::Circle(frame, sc_r)), t, vq) as usize
-        }
-    }
+    let curve = match seam {
+        Seam::Line(p, d) => Curve::Line { p, d },
+        Seam::Circle(o, n, r) => Curve::Circle(Frame::about(o, n), r),
+    };
+    exact_edge(out, &curve, q, vq, near, f64::INFINITY).expect("a line's or a circle's stretch")
 }
 
-/// The piece of a chamfer's flat beyond the seam's normal surface (`Beyond`), fitted within `tol`.
+/// The piece of a chamfer's flat beyond the seam's normal surface (`Beyond`), fitted within `tol`;
+/// glued to the edge's own piece on that surface (`split`).
 pub fn flat_beyond(b: &Beyond, tol: f64) -> Result<Brep, String> {
-    let [sc, sw, ss] = b.sides;
-    let [lc, lw] = b.legs;
-    let Sections { at: section, ends: q } = sections(b, b.ends, tol)?;
+    let Across::Flat { legs: [lc, lw], ref split } = b.section else {
+        return Err("a round's piece built as a flat's".into());
+    };
+    let [sc, sw] = b.sides;
+    let Sections { at: section, ends: q, .. } = sections(b, b.ends, tol)?;
     let size = lc.max(lw);
     // the flat's sum of distances, nothing on it, and its gradient
     let dc = |p: V| sc * b.chain.implicit(p);
@@ -248,7 +277,7 @@ pub fn flat_beyond(b: &Beyond, tol: f64) -> Result<Brep, String> {
     let crossing = |u: f64, guess: V| -> Option<V> {
         let (o, n) = section(u);
         crate::roots::newton_onto::<3>(guess, size, |p| Some([
-            (b.split.gradient(p), b.split.implicit(p)), (grad(p), sum(p)), (n, dot(n, sub(p, o))),
+            (split.gradient(p), split.implicit(p)), (grad(p), sum(p)), (n, dot(n, sub(p, o))),
         ]), settled)
     };
     let steps = 256;
@@ -289,12 +318,12 @@ pub fn flat_beyond(b: &Beyond, tol: f64) -> Result<Brep, String> {
     // each face's surface with its seam turned away from the piece
     let middle = flat(0.5, 0.0);
     let chain = turned_from(&b.chain, middle);
-    let split = turned_from(&b.split, middle);
+    let split_face = turned_from(split, middle);
     let sheet = Surface::BSpline(Frame::new([0.0; 3], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]), Arc::new(net));
     let p = q[0];
     face_out(&mut out, chain, scale(b.chain.gradient(p), -sc), &[seam, leg], "a")?;
     face_out(&mut out, sheet, grad(p), &[leg, cut], "flat")?;
-    face_out(&mut out, split, scale(b.split.gradient(p), -ss), &[cut, seam], "split")?;
+    face_out(&mut out, split_face, scale(split.gradient(p), -1.0), &[cut, seam], "split")?;
     out.measure_tolerances();
     for e in [leg, cut] {
         let t = &mut out.edges[e].tol;
@@ -304,27 +333,26 @@ pub fn flat_beyond(b: &Beyond, tol: f64) -> Result<Brep, String> {
     Ok(out)
 }
 
-/// **A round's piece beyond a seam's normal surface** (#422's rung 3): the ball of radius `r` beside
+/// **A round's piece beyond a seam's normal surface** (#422's rung 3): the ball of its `radius` beside
 /// the wall touches the chain's next face (the torus) where its centre stands past the seam's
-/// offset — between the half-planes through the ring's axis where the ball touches the seam
-/// (`ends`, its touches there) — and the ring's own face elsewhere, a ring's stretch glued to this at
-/// both ends — or along a traced edge, the ball rolled along it with that stretch cut away.  Its
-/// centre runs where the wall's offset meets the chain's, read in the edge's sections (a ring's
-/// half-planes, where at its ends the ball's arc lies, its centre's path square to them there; a
-/// traced edge's planes square to it through the centres there); its canal is the ball's arc
-/// between where it touches the chain and the wall, fitted.  The piece: the canal; on the chain's
-/// face the lens between the seam and the touch; on the edge's own face (a plane) the strip from
-/// the edge to the seam; on the wall the strip from the edge to the touch; and at each end the cap
-/// in the plane of the ball's arc, square to its centre's path.
-pub fn round_beyond(b: &Beyond, r: f64, tol: f64) -> Result<Brep, String> {
-    let [sc, sw, _] = b.sides;
-    // the sections through the ball's centres at the ends: a ring's half-planes through its touches,
-    // a traced edge's planes square to it through the centres over the plane the edge stands on
-    let through = match b.along {
-        Along::Ring { .. } => b.ends,
-        Along::Meeting { .. } => b.ends.map(|q| add(q, scale(b.toward, r))),
-    };
-    let Sections { at: section, ends: q } = sections(b, through, tol)?;
+/// offset — between the sections through its centres where it touches the seam (over `ends`, its
+/// touches there) — and the edge's own face elsewhere: a ring's stretch glued to this at both
+/// ends, or along a traced edge the ball rolled along it with that stretch cut away.  Its centre runs
+/// where the wall's offset meets the chain's, read in the edge's sections (the planes square to
+/// it; a ring's half-planes through its axis, where at its ends the ball's arc lies, its centre's
+/// path square to them there); its canal is the ball's arc between where it touches the chain and
+/// the wall, fitted.  The piece: the canal; on the chain's face the lens between the seam and the
+/// touch; on the edge's own face (a plane) the strip from the edge to the seam; on the wall the
+/// strip from the edge to the touch; and at each end the cap in the plane of the ball's arc, square
+/// to its centre's path.  The edge and each cap's line down the wall are the meetings
+/// `ssi::intersect` gives in closed form (a ring's circle, a line down a cylinder), fitted where
+/// it gives none.
+pub fn round_beyond(b: &Beyond, tol: f64) -> Result<Brep, String> {
+    let Across::Round { radius: r } = b.section else { return Err("a flat's piece built as a round's".into()) };
+    let [sc, sw] = b.sides;
+    // the sections through the ball's centres at the ends, over the plane the edge stands on
+    let through = b.ends.map(|q| add(q, scale(b.toward, r)));
+    let Sections { at: section, ends: q, exact } = sections(b, through, tol)?;
     // the ball's centre in the section at `u`: where the wall's offset meets the torus's, from the
     // edge's point stepped off both faces
     let spine = Traced {
@@ -406,11 +434,11 @@ pub fn round_beyond(b: &Beyond, r: f64, tol: f64) -> Result<Brep, String> {
         Ok((e, err))
     };
     let mut fit_err: f64 = 0.0;
-    // the edge between the caps: a ring's arc, else the meeting read through the planes square to
-    // the centre's path along the way
-    let crease_edge = match b.along {
-        Along::Ring { axis: [_, z], crease: (o, _) } => arc(&mut out, o, z, crease[0], crease[1], vc[0], vc[1]),
-        Along::Meeting { .. } => {
+    // the edge between the caps: the meeting's closed form, else the meeting read through the
+    // planes square to the centre's path along the way
+    let crease_edge = match exact.and_then(|c| exact_edge(&mut out, &c, crease, vc, section(0.5).0, tol)) {
+        Some(e) => e,
+        None => {
             let at = |s: f64| -> V {
                 if s <= 0.0 { return crease[0] }
                 if s >= 1.0 { return crease[1] }
@@ -431,12 +459,13 @@ pub fn round_beyond(b: &Beyond, r: f64, tol: f64) -> Result<Brep, String> {
         let (c, w, d) = caps_at[k];
         let bottom = out.edge(EdgeCurve::Curve(Curve::Line { p: crease[k], d: unit(sub(q[k], crease[k])) }),
             [0.0, distance(crease[k], q[k])], [vc[k], vq[k]]) as usize;
-        let side = match (&b.along, &b.wall) {
-            (Along::Ring { .. }, _) | (_, Surface::Plane(_)) => out.edge(EdgeCurve::Curve(Curve::Line {
-                p: crease[k], d: unit(sub(w, crease[k])) }), [0.0, distance(crease[k], w)], [vc[k], vw[k]]) as usize,
-            _ => {
-                // where the cap's plane cuts the wall, from the edge to the wall's touch
-                let on = Traced { a: b.wall.clone(), b: Surface::Plane(Frame::about(c, d)), pts: Vec::new(), closed: false };
+        // where the cap's plane cuts the wall, from the edge to the wall's touch
+        let cap = Surface::Plane(Frame::about(c, d));
+        let mid = crate::space::lerp(crease[k], w, 0.5);
+        let side = match exact_meeting(&mut out, &b.wall, &cap, [crease[k], w], [vc[k], vw[k]], mid, tol) {
+            Some(e) => e,
+            None => {
+                let on = Traced { a: b.wall.clone(), b: cap, pts: Vec::new(), closed: false };
                 let at = |s: f64| on.project(crate::space::lerp(crease[k], w, s));
                 let (e, err) = fitted(&mut out, &|s: f64| if s <= 0.0 { crease[k] } else if s >= 1.0 { w } else { at(s) },
                     vc[k], vw[k])?;
