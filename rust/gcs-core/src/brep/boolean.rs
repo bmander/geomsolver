@@ -89,16 +89,24 @@ struct Arranged<'a> {
 }
 
 /// **Two solids sharing a face, joined there** (the pieces of a chain of fillets, each ending in
-/// the section the next begins in): where a plane face of `a` and one of `b` are the same face —
-/// one plane, material either side of it, every edge of the one an edge of the other, end for end
-/// and through the middle, within `tol` — the two faces go and their edges become one, used by
-/// the faces beside them. Nothing is intersected, so `a` and `b` must meet nowhere else: the
-/// caller's to know. `None` where they share no such face.
+/// the section the next begins in): where a face of `a` and one of `b` are the same face — one
+/// surface, material either side of it, their boundaries one curve within `tol` — the two faces go
+/// and their edges become one, used by the faces beside them. The boundaries are matched run by
+/// run, a run going from one vertex both have to the next: one edge each side (the common case),
+/// or edges one side holds in pieces, or both, cut at different points (a fitted net seamed where
+/// its loop starts, #424) — each side's edges lying along the other's, end for end and through the
+/// middle. Each side is cut where the other has a vertex within a run, so the two sides' edges
+/// pair one to one whichever of `a` and `b` holds the pieces. Nothing is intersected, so `a` and
+/// `b` must meet nowhere else: the caller's to know. `None` where they share no such face.
 pub fn glued(a: &Brep,b: &Brep,tol: f64) -> Option<Brep> {
     use super::geom::Surface;
+    // a run of a face's boundary: its edges in the order it walks them, each with whether it walks
+    // it along its curve
+    type Walk = Vec<(u32,bool)>;
     let near = |p: V,q: V| distance(p,q) <= tol;
     let middle = |s: &Brep,e: usize| s.edges[e].point(0.5*(s.edges[e].t[0]+s.edges[e].t[1]),&s.vertices);
-    let ends = |s: &Brep,e: usize| s.edges[e].v.map(|v| s.vertices[v as usize].p);
+    let start = |s: &Brep,(e,along): (u32,bool)| { let v = s.edges[e as usize].v; s.vertices[v[usize::from(!along)] as usize].p };
+    let end = |s: &Brep,(e,along): (u32,bool)| start(s,(e,!along));
     // a face's outward normal at `p` (on its surface): a plane's everywhere; a curved one's (the
     // seam's normal cylinder two pieces of a chain's section share, #422) where it is read
     let outward = |f: &Face,p: V| -> V {
@@ -108,8 +116,10 @@ pub fn glued(a: &Brep,b: &Brep,tol: f64) -> Option<Brep> {
     // a point of the face to read both faces' normals at: its first edge's middle
     let at = |s: &Brep,f: &Face| f.loops.first().and_then(|l| l.first()).map(|c| middle(s,c.edge as usize));
     // whether `p` lies on `s`'s edge `e`, within its stretch: its curve's nearest point (a traced
-    // meeting and a fitted one parametrise alike only at their ends)
+    // meeting and a fitted one parametrise alike only at their ends), or its middle where the two
+    // are parametrised alike (a pole's)
     let on_edge = |s: &Brep,e: usize,p: V| {
+        if near(middle(s,e),p) { return true }
         let e = &s.edges[e];
         let EdgeCurve::Curve(c) = &e.curve else { return false };
         let mut t = c.inverse(p);
@@ -117,71 +127,125 @@ pub fn glued(a: &Brep,b: &Brep,tol: f64) -> Option<Brep> {
         let slack = 1e-9*(e.t[1]-e.t[0]).abs().max(1.);
         t >= e.t[0]-slack && t <= e.t[1]+slack && near(c.point(t),p)
     };
-    // `p` on `a`'s edge `ea` (its middle where the two are parametrised alike); `a`'s edge `ea` on
-    // `b`'s edge `eb`
-    let on = |ea: usize,p: V| near(middle(a,ea),p) || on_edge(a,ea,p);
-    let on_b = |eb: usize,ea: usize| on_edge(b,eb,middle(a,ea));
     let plane = |f: &Face| matches!(f.surface,Surface::Plane(_));
-    // each face of `b` the same as one of `a`: its edges matched to `a`'s — each to one, or to a run
-    // of them end to end where `a` has its edge in pieces (a fitted flat's crossing a traced flat
-    // cuts where that one is seamed, #422) — and whether each runs the other way
+    let corners = |s: &Brep,f: &Face| -> Vec<V> { f.loops.iter().flatten().map(|c| start(s,(c.edge,!c.reversed))).collect() };
+    // a face's loops cut into runs at the vertices the other face has too; `None` where a loop has none
+    let runs = |s: &Brep,f: &Face,other: &[V]| -> Option<Vec<Walk>> {
+        let mut out = Vec::new();
+        for l in &f.loops {
+            let walk: Walk = l.iter().map(|c| (c.edge,!c.reversed)).collect();
+            let cut: Vec<bool> = walk.iter().map(|&w| other.iter().any(|&q| near(start(s,w),q))).collect();
+            let first = cut.iter().position(|&c| c)?;
+            let mut run = Vec::new();
+            for k in (first..walk.len()).chain(0..first) {
+                if cut[k] && !run.is_empty() { out.push(std::mem::take(&mut run)); }
+                run.push(walk[k]);
+            }
+            out.push(run);
+        }
+        Some(out)
+    };
+    // the way a closed run sets out from its vertex
+    let heading = |s: &Brep,(e,along): (u32,bool)| -> Option<V> {
+        let e = &s.edges[e as usize];
+        let EdgeCurve::Curve(c) = &e.curve else { return None };
+        let d = c.tangent(e.t[usize::from(!along)]);
+        Some(if along { d } else { d.map(|x| -x) })
+    };
+    // `a`'s run `ra` and `b`'s `rb` (walked the same way) one curve: from one end to the other,
+    // each one's vertices within it on an edge of the other's, where that one is cut (whose, which
+    // edge, the point), and each one's edges through the middle on the other's
+    let along = |ra: &Walk,rb: &Walk| -> Option<Vec<(usize,u32,V)>> {
+        let (a0,b0) = (start(a,ra[0]),start(b,rb[0]));
+        if !near(a0,b0) || !near(end(a,ra[ra.len()-1]),end(b,rb[rb.len()-1])) { return None }
+        if near(a0,end(a,ra[ra.len()-1])) && heading(a,ra[0]).zip(heading(b,rb[0])).is_some_and(|(p,q)| crate::space::dot(p,q) < 0.) {
+            return None
+        }
+        if let ([(ea,_)],[(eb,_)]) = (&ra[..],&rb[..]) { return on_edge(a,*ea as usize,middle(b,*eb as usize)).then(Vec::new) }
+        let mut cuts = Vec::new();
+        for (side,(s,r),(o,ro)) in [(0,(b,rb),(a,ra)),(1,(a,ra),(b,rb))] {
+            for &w in &r[1..] {
+                let p = start(s,w);
+                let &(e,_) = ro.iter().find(|&&(e,_)| on_edge(o,e as usize,p))?;
+                cuts.push((side,e,p));
+            }
+            if !r.iter().all(|&(e,_)| { let m = middle(s,e as usize); ro.iter().any(|&(f,_)| on_edge(o,f as usize,m)) }) { return None }
+        }
+        Some(cuts)
+    };
+    let reversed = |w: &Walk| -> Walk { w.iter().rev().map(|&(e,x)| (e,!x)).collect() };
+    // each face of `b` the same as one of `a`: its runs paired with that one's, each walked as `a`'s
+    // is, and where either side is to be cut
     let (mut shared_a,mut shared_b) = (std::collections::BTreeSet::new(),std::collections::BTreeSet::new());
-    let mut edge_of: BTreeMap<usize,Vec<(u32,bool)>> = BTreeMap::new();
+    let mut pairs: Vec<(Walk,Walk)> = Vec::new();
+    let mut cuts: [BTreeMap<u32,Vec<V>>;2] = Default::default();
     for (i,fa) in a.faces.iter().enumerate() {
         let Some(p) = at(a,fa) else { continue };
         let na = outward(fa,p);
         for (j,fb) in b.faces.iter().enumerate() {
             if shared_b.contains(&j) || plane(fa) != plane(fb) || !super::ssi::same(&fa.surface,&fb.surface,tol) { continue }
             if crate::space::dot(na,outward(fb,p)) > if plane(fa) { -1.+1e-9 } else { 0. } { continue }
-            let (la,lb): (Vec<usize>,Vec<usize>) = (fa.loops.iter().flatten().map(|c| c.edge as usize).collect(),
-                fb.loops.iter().flatten().map(|c| c.edge as usize).collect());
-            if la.len() < lb.len() { continue }
-            let one = |eb: usize| la.iter().find_map(|&ea| {
-                let ([a0,a1],[b0,b1]) = (ends(a,ea),ends(b,eb));
-                let flip = if near(a0,b0) && near(a1,b1) { false } else if near(a0,b1) && near(a1,b0) { true } else { return None };
-                on(ea,middle(b,eb)).then_some(vec![(ea as u32,flip)])
-            });
-            // a run of `a`'s edges from `b`'s edge's start to its end, each lying on it
-            let run = |eb: usize| -> Option<Vec<(u32,bool)>> {
-                let [b0,b1] = ends(b,eb);
-                let (mut at,mut out) = (b0,Vec::new());
-                while !near(at,b1) || out.is_empty() {
-                    let next = la.iter().find_map(|&ea| {
-                        if out.iter().any(|&(e,_)| e as usize == ea) { return None }
-                        let [a0,a1] = ends(a,ea);
-                        let step = if near(a0,at) { (ea as u32,false,a1) } else if near(a1,at) { (ea as u32,true,a0) } else { return None };
-                        on_b(eb,ea).then_some(step)
-                    })?;
-                    out.push((next.0,next.1));
-                    at = next.2;
-                    if out.len() > la.len() { return None }
-                }
-                Some(out)
-            };
-            let matched: Option<Vec<(usize,Vec<(u32,bool)>)>> = lb.iter().map(|&eb| one(eb).or_else(|| run(eb)).map(|r| (eb,r))).collect();
-            let Some(matched) = matched else { continue };
-            if matched.iter().map(|(_,r)| r.len()).sum::<usize>() != la.len() { continue }
+            let (Some(ra),Some(rb)) = (runs(a,fa,&corners(b,fb)),runs(b,fb,&corners(a,fa))) else { continue };
+            if ra.len() != rb.len() { continue }
+            let mut used = vec![false;ra.len()];
+            let mut found = Vec::with_capacity(rb.len());
+            for r in &rb {
+                // the faces facing apart, `b`'s run is most often walked the other way round
+                let hit = [reversed(r),r.clone()].into_iter().find_map(|w|
+                    (0..ra.len()).filter(|&k| !used[k]).find_map(|k| along(&ra[k],&w).map(|c| (k,c))).map(|(k,c)| (k,w,c)));
+                let Some((k,w,c)) = hit else { break };
+                used[k] = true;
+                found.push((k,w,c));
+            }
+            if found.len() != rb.len() { continue }
             shared_a.insert(i);
             shared_b.insert(j);
-            for (eb,r) in matched { edge_of.insert(eb,r); }
+            for (k,w,c) in found {
+                for (side,e,p) in c { cuts[side].entry(e).or_default().push(p); }
+                pairs.push((ra[k].clone(),w));
+            }
+            break;
         }
     }
     if shared_a.is_empty() { return None }
+    // each side cut where the other has a vertex within a run: then the runs pair edge for edge
     let mut out = a.clone();
+    let pieces_a = cut_at(&mut out,&cuts[0],tol)?;
+    let mut cut_b = std::borrow::Cow::Borrowed(b);
+    let pieces_b = if cuts[1].is_empty() { BTreeMap::new() } else { cut_at(cut_b.to_mut(),&cuts[1],tol)? };
+    let b = &*cut_b;
+    let expand = |w: &Walk,pieces: &BTreeMap<u32,Vec<u32>>| -> Walk {
+        w.iter().flat_map(|&(e,x)| {
+            let p = pieces.get(&e).map_or_else(|| vec![e],Vec::clone);
+            if x { p.into_iter().map(|e| (e,true)).collect::<Vec<_>>() } else { p.into_iter().rev().map(|e| (e,false)).collect() }
+        }).collect()
+    };
+    // each of `b`'s shared edges: `a`'s it is, whether it runs the other way, and whether either was
+    // in pieces
+    let mut edge_of: BTreeMap<usize,(u32,bool,bool)> = BTreeMap::new();
+    for (ra,rb) in &pairs {
+        let pieced = ra.len() > 1 || rb.len() > 1;
+        let (ra,rb) = (expand(ra,&pieces_a),expand(rb,&pieces_b));
+        if ra.len() != rb.len() { return None }
+        for (&(ea,xa),&(eb,xb)) in ra.iter().zip(&rb) {
+            if !near(end(&out,(ea,xa)),end(b,(eb,xb))) { return None }
+            edge_of.insert(eb as usize,(ea,xa != xb,pieced));
+        }
+    }
     // `b`'s vertices: those of a shared edge are `a`'s, the rest its own. A vertex of `b` met by
     // two of `a`'s (two pieces `b` joins, each with its own copy of the point it ends at) makes
     // them one
     let mut vertex_of: BTreeMap<u32,u32> = BTreeMap::new();
-    let mut same = crate::graph::UnionFind::new(a.vertices.len());
+    let mut same = crate::graph::UnionFind::new(out.vertices.len());
     let mut merged = false;
-    for (&eb,run) in &edge_of {
-        let end = |&(ea,flip): &(u32,bool),k: usize| { let v = a.edges[ea as usize].v; if flip { v[1-k] } else { v[k] } };
-        let (vb,va) = (b.edges[eb].v,[end(&run[0],0),end(&run[run.len()-1],1)]);
+    for (&eb,&(ea,flip,_)) in &edge_of {
+        let (vb,va) = (b.edges[eb].v,out.edges[ea as usize].v);
         for k in 0..2 {
+            let va = va[if flip { 1-k } else { k }];
             match vertex_of.get(&vb[k]) {
-                Some(&w) if same.find(w as usize) != same.find(va[k] as usize) => { same.union(w as usize,va[k] as usize); merged = true; }
+                Some(&w) if same.find(w as usize) != same.find(va as usize) => { same.union(w as usize,va as usize); merged = true; }
                 Some(_) => {}
-                None => { vertex_of.insert(vb[k],va[k]); }
+                None => { vertex_of.insert(vb[k],va); }
             }
         }
     }
@@ -190,69 +254,94 @@ pub fn glued(a: &Brep,b: &Brep,tol: f64) -> Option<Brep> {
         for v in vertex_of.values_mut() { *v = same.find(*v as usize) as u32; }
     }
     for (i,v) in b.vertices.iter().enumerate() {
-        if !vertex_of.contains_key(&(i as u32)) { vertex_of.insert(i as u32,out.vertices.len() as u32); out.vertices.push(v.clone()); }
+        if !vertex_of.contains_key(&(i as u32)) { vertex_of.insert(i as u32,out.vertices.len() as u32); out.vertices.push(*v); }
     }
     // `b`'s edges: a shared one is `a`'s (its tolerance the larger), the rest its own
-    let mut new_edge: Vec<Vec<(u32,bool)>> = Vec::with_capacity(b.edges.len());
+    let mut new_edge: Vec<u32> = Vec::with_capacity(b.edges.len());
     for (i,e) in b.edges.iter().enumerate() {
-        if let Some(run) = edge_of.get(&i) {
-            for &(ea,_) in run {
-                let t = &mut out.edges[ea as usize].tol;
-                *t = t.max(e.tol);
-            }
-            new_edge.push(run.clone());
+        if let Some(&(ea,..)) = edge_of.get(&i) {
+            let t = &mut out.edges[ea as usize].tol;
+            *t = t.max(e.tol);
+            new_edge.push(ea);
         } else {
             let mut e = e.clone();
             e.v = e.v.map(|v| vertex_of[&v]);
             out.edges.push(e);
-            new_edge.push(vec![((out.edges.len()-1) as u32,false)]);
+            new_edge.push((out.edges.len()-1) as u32);
         }
     }
-    out.faces = a.faces.iter().enumerate().filter(|(i,_)| !shared_a.contains(i)).map(|(_,f)| f.clone()).collect();
+    out.faces = std::mem::take(&mut out.faces).into_iter().enumerate().filter(|(i,_)| !shared_a.contains(i)).map(|(_,f)| f).collect();
     for (j,f) in b.faces.iter().enumerate() {
         if shared_b.contains(&j) { continue }
         let mut f = f.clone();
-        for l in f.loops.iter_mut() {
-            let mut walk = Vec::with_capacity(l.len());
-            for c in l.iter() {
-                let mut c = c.clone();
-                let run = &new_edge[c.edge as usize];
-                if let [(e,flip)] = run[..] {
-                    // a use of an edge now `a`'s: its pcurve by its ends (a pcurve read at its own
-                    // edge's parameter reads another's wrongly), and from the other end where that
-                    // runs the other way
-                    if edge_of.contains_key(&(c.edge as usize)) && (flip || matches!(c.pcurve,Pcurve::Curve(_))) {
-                        let old = &b.edges[c.edge as usize];
-                        let (u0,u1) = (c.pcurve.at(old.t[0],old,&f.surface,&b.vertices),c.pcurve.at(old.t[1],old,&f.surface,&b.vertices));
-                        let (a,z) = if flip { (u1,u0) } else { (u0,u1) };
-                        c.pcurve = match c.pcurve { Pcurve::Line {..} => Pcurve::Line {a,b:z},_ => Pcurve::Inverse {a,b:z} };
-                        c.reversed ^= flip;
-                    }
-                    c.edge = e;
-                    walk.push(c);
-                    continue;
-                }
-                // a use of an edge `a` has in pieces: a use of each, in the order the use walks,
-                // each one's pcurve its curve inverted between its ends, read near this one's
-                let old = &b.edges[c.edge as usize];
-                let EdgeCurve::Curve(curve) = &old.curve else { return None };
-                let near_uv = |p: V| {
-                    let t = curve.inverse(p).clamp(old.t[0].min(old.t[1]),old.t[0].max(old.t[1]));
-                    let h = c.pcurve.at(t,old,&f.surface,&b.vertices);
-                    unwrap(f.surface.inverse_near(p,h),h,f.surface.periods())
-                };
-                let pieces: Vec<(u32,bool)> = if c.reversed { run.iter().rev().map(|&(e,fl)| (e,!fl)).collect() } else { run.clone() };
-                for (e,fl) in pieces {
-                    let edge = &out.edges[e as usize];
-                    let [p0,p1] = edge.v.map(|v| out.vertices[v as usize].p);
-                    walk.push(Coedge {edge:e,reversed:fl,pcurve:Pcurve::Inverse {a:near_uv(p0),b:near_uv(p1)}});
+        for c in f.loops.iter_mut().flatten() {
+            // a use of an edge now `a`'s: its pcurve by its ends (a pcurve read at its own edge's
+            // parameter reads another's wrongly), from the other end where that runs the other
+            // way, and inverted between them where either was in pieces (a line in the face's
+            // parameters along one curve's parameter is none along the other's)
+            if let Some(&(_,flip,pieced)) = edge_of.get(&(c.edge as usize)) {
+                if flip || pieced || matches!(c.pcurve,Pcurve::Curve(_)) {
+                    let old = &b.edges[c.edge as usize];
+                    let (u0,u1) = (c.pcurve.at(old.t[0],old,&f.surface,&b.vertices),c.pcurve.at(old.t[1],old,&f.surface,&b.vertices));
+                    let (a,z) = if flip { (u1,u0) } else { (u0,u1) };
+                    c.pcurve = match c.pcurve { Pcurve::Line {..} if !pieced => Pcurve::Line {a,b:z},_ => Pcurve::Inverse {a,b:z} };
+                    c.reversed ^= flip;
                 }
             }
-            *l = walk;
+            c.edge = new_edge[c.edge as usize];
         }
         out.faces.push(f);
     }
     Some(out)
+}
+
+/// `s`'s edges cut at the points listed against each (on its curve, within its stretch; those
+/// within `tol` of one another one): each edge's pieces in order along it, the first keeping its
+/// index, and each use of it a use of each piece, its pcurve cut where the edge is. `None` where an
+/// edge so listed is a pole.
+fn cut_at(s: &mut Brep,cuts: &BTreeMap<u32,Vec<V>>,tol: f64) -> Option<BTreeMap<u32,Vec<u32>>> {
+    let mut pieces = BTreeMap::new();
+    for (&e,ps) in cuts {
+        let edge = s.edges[e as usize].clone();
+        let EdgeCurve::Curve(c) = &edge.curve else { return None };
+        let mut ts: Vec<f64> = ps.iter().map(|&p| { let t = c.inverse(p); c.period().map_or(t,|period| around(t,edge.t[0],period)) })
+            .filter(|&t| t > edge.t[0] && t < edge.t[1]).collect();
+        ts.sort_by(f64::total_cmp);
+        ts.dedup_by(|x,y| distance(c.point(*x),c.point(*y)) <= tol);
+        if ts.is_empty() { continue }
+        let t: Vec<f64> = std::iter::once(edge.t[0]).chain(ts.iter().copied()).chain([edge.t[1]]).collect();
+        let v: Vec<u32> = std::iter::once(edge.v[0]).chain(ts.iter().map(|&t| s.vertex(c.point(t)))).chain([edge.v[1]]).collect();
+        let mut ids = vec![e];
+        s.edges[e as usize].t = [t[0],t[1]];
+        s.edges[e as usize].v = [v[0],v[1]];
+        for k in 1..t.len()-1 {
+            s.edges.push(super::topo::Edge {curve:edge.curve.clone(),t:[t[k],t[k+1]],v:[v[k],v[k+1]],tol:edge.tol});
+            ids.push((s.edges.len()-1) as u32);
+        }
+        let Brep {vertices,faces,..} = s;
+        for f in faces.iter_mut() {
+            for l in f.loops.iter_mut() {
+                if !l.iter().any(|c| c.edge == e) { continue }
+                let mut walk = Vec::with_capacity(l.len()+ids.len());
+                for c in l.drain(..) {
+                    if c.edge != e { walk.push(c); continue }
+                    let uv: Vec<Uv> = match c.pcurve {
+                        Pcurve::Curve(_) => Vec::new(),
+                        _ => t.iter().map(|&t| c.pcurve.at(t,&edge,&f.surface,vertices)).collect(),
+                    };
+                    let piece = |k: usize| Coedge {edge:ids[k],reversed:c.reversed,pcurve:match &c.pcurve {
+                        Pcurve::Line {..} => Pcurve::Line {a:uv[k],b:uv[k+1]},
+                        Pcurve::Inverse {..} => Pcurve::Inverse {a:uv[k],b:uv[k+1]},
+                        Pcurve::Curve(p) => Pcurve::Curve(p.clone()),
+                    }};
+                    if c.reversed { walk.extend((0..ids.len()).rev().map(piece)) } else { walk.extend((0..ids.len()).map(piece)) }
+                }
+                *l = walk;
+            }
+        }
+        pieces.insert(e,ids);
+    }
+    Some(pieces)
 }
 
 /// One step of the body rule: `solid` combined with `operand` by `op`, to a tolerance of the two's

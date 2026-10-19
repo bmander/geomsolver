@@ -126,8 +126,13 @@ The recipe's `"beyond"` (after the rolled runs in a lowered node's joins): the e
 line), the `"legs"` or the ball's `"radius"`, and the `"ends"`; a rolled run's `"kept"` and `"wedge"`; all
 written through the node's `Writer`, so `cad::recipe_about` carries them. `boolean::glued` glues on
 a curved face too, an edge matched by a point of it on the other's (a traced meeting and a fitted
-one), or to a run of the other's end to end (a traced flat's crossing cut where that flat is
-seamed). **Refused by name** (`piece::spilled`: "its section reaches across the seam where a face
+one). It is symmetric in its two pieces (#424): the shared faces' boundaries are paired run by run
+between the vertices both have, each side's edges lying along the other's, and each side cut where
+the other has a vertex within a run, so either may hold an edge in pieces (a traced flat's or a
+round's crossing cut where its closed net is seamed) and the pieces are glued in either order
+(`solids_sharing_a_face_cut_differently_are_glued_either_way`). So `traced_beyond` starts its piece
+at the run's first edge's middle, as a run with no seam beyond it does, and nothing steers where
+its seam falls. **Refused by name** (`piece::spilled`: "its section reaches across the seam where a face
 goes on tangent into another …", the field reading the region): on both sides of its edge; into
 more than one face; along a seam that is not along a straight edge, or a curved seam beside one;
 beside two seams; beside a seam running only part of its edge; past a face it goes on into across

@@ -1323,6 +1323,30 @@ fn solids_sharing_a_face_are_glued_along_it() {
     assert!(glued(&straight,&block([5.,5.,5.],[6.,6.,6.]),1e-9).is_none());
 }
 
+/// Two solids sharing a face whose edges each holds in pieces of its own, cut at different points,
+/// are glued in either order (#424): one side runs whole where the other is in two, and both in two
+/// where they are cut apart; each is cut where the other is, its pieces shared.
+#[test]
+fn solids_sharing_a_face_cut_differently_are_glued_either_way() {
+    use gcs_core::brep::boolean::glued;
+    let at = |pts: &[[f64;2]],z: [f64;2]| {
+        let pts: Vec<V> = pts.iter().map(|&[x,y]| [x,y,0.]).collect();
+        prism(&Profile {names:vec![],origin:[0.;3],normal:XY,loops:vec![poly(&pts)]},z[0],z[1]).unwrap()
+    };
+    // below, the square's near side in two at x = 0.5; above, at x = 0.3, and its left side in two
+    let below = at(&[[0.,0.],[0.5,0.],[1.,0.],[1.,1.],[0.,1.]],[0.,1.]);
+    let above = at(&[[0.,0.],[0.3,0.],[1.,0.],[1.,1.],[0.,1.],[0.,0.6]],[1.,2.]);
+    for (a,b) in [(&below,&above),(&above,&below)] {
+        let g = glued(a,b,1e-9).expect("they share the square");
+        g.check(1e-9).unwrap();
+        close(volume(&g),2.);
+        assert_eq!(g.faces.len(),a.faces.len()+b.faces.len()-2);
+        // the square's sides, five edges below and six above, in seven pieces between them (the
+        // near side in three, the left in two), each used by a face either side
+        assert_eq!(g.edges.len(),a.edges.len()+b.edges.len()-5-6+7);
+    }
+}
+
 /// Where two faces touch at a point of both their boundaries and their meeting runs into neither
 /// beyond it, they meet there alone: a quarter torus whose start touches a block's side at its
 /// inner equator (the plane there crosses the torus in two branches, off both faces) is their
