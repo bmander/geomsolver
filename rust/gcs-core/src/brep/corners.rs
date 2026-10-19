@@ -187,6 +187,13 @@ fn between_circles(t_s: f64, t_n: f64, p0: P, p2: P, circles: [(P, f64, f64, f64
     }
     let f = |q: P| circles.iter().map(|&(c, r, sweep, leg)| side * sweep.signum() * (r - dist(q, c)) / leg).sum::<f64>() - 1.0;
     let grad = |q: P| add(scale(unit(sub(q, circles[0].0)), a), scale(unit(sub(q, circles[1].0)), b));
+    Ok((t_s, t_n, conic_between(p0, p2, &f, &grad)?))
+}
+
+/// The arc from `p0` to `p2` of the conic where `f` is nothing (`grad` its gradient): the rational
+/// quadratic Bézier over its ends and where their tangents meet, its middle weighed by the point
+/// it passes between the chord's middle and there.
+pub fn conic_between(p0: P, p2: P, f: &dyn Fn(P) -> f64, grad: &dyn Fn(P) -> P) -> Result<Seg, String> {
     let (d0, d2) = (left(grad(p0)), left(grad(p2)));
     let den = cross(d0, d2);
     if den.abs() <= 1e-12 * norm(d0) * norm(d2) {
@@ -202,7 +209,7 @@ fn between_circles(t_s: f64, t_n: f64, p0: P, p2: P, circles: [(P, f64, f64, f64
         return Err("the flat's conic leaves its control triangle".into());
     }
     let u = crate::roots::bracketed_root(|u| Some(along(u)), 0.0, f0, 1.0, f1, 1e-15);
-    Ok((t_s, t_n, Seg::Conic { a: p0, m, b: p2, w: u / (1.0 - u) }))
+    Ok(Seg::Conic { a: p0, m, b: p2, w: u / (1.0 - u) })
 }
 
 /// `region` with every corner where a step of `a` meets a step of `b` (either way round) cut by

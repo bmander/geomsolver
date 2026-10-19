@@ -275,3 +275,141 @@ fn a_chamfer_spilled_onto_a_rounded_plate_meshes_at_every_radius() {
         spilled_meshes(r);
     }
 }
+
+/// A block 40 × 24 × 12 (y from 0 to 12), its far face's north edge rounded 3 — the far face flat
+/// to z = 21, then the round, a cylinder about the line y = 9, z = 21 — and a rib 20 long, 4.5 wide
+/// and 6 tall standing on the far face along x, its north wall at z = 19.5; then `rest`.
+fn ledge(rest: &str) -> String {
+    format!("unit mm\nuse std (round, chamfer)\nin std.front {{\n  b0 := point\n  b1 := point\n  b2 := point\n  \
+        b3 := point\n  fix((0, 0)) b0\n  fix((40, 0)) b1\n  fix((40, 24)) b2\n  fix((0, 24)) b3\n  \
+        (south := line(b0, b1)) -> (east := line(b1, b2)) -> (north := line(b2, b3)) -> (west := line(b3, b0)) -> close\n  \
+        outline := face(south, east, north, west)\n  r0 := point\n  r1 := point\n  r2 := point\n  r3 := point\n  \
+        fix((10, 15)) r0\n  fix((30, 15)) r1\n  fix((30, 19.5)) r2\n  fix((10, 19.5)) r3\n  \
+        (rs := line(r0, r1)) -> (re := line(r1, r2)) -> (rn := line(r2, r3)) -> (rw := line(r3, r0)) -> close\n  \
+        ribbed := face(rs, re, rn, rw)\n}}\nblock := solid(outline, depth: 12mm)\nblock.north round(r: 3mm) block.far\n\
+        rib := solid(ribbed, from: -18mm, to: -12mm)\npart := solid(block)\nrib union part\n{rest}")
+}
+
+/// `∫ f` over `[a, b]` by Simpson's rule on `n` (even) stretches.
+fn simpson(f: impl Fn(f64) -> f64, a: f64, b: f64, n: usize) -> f64 {
+    let h = (b - a) / n as f64;
+    (0..=n).map(|k| {
+        let w = if k == 0 || k == n { 1.0 } else if k % 2 == 1 { 4.0 } else { 2.0 };
+        w * f(a + k as f64 * h)
+    }).sum::<f64>() * h / 3.0
+}
+
+/// The block rounded and the rib, built exactly.
+fn ledge_part() -> f64 {
+    let corner = 9.0 * (1.0 - PI / 4.0);
+    40.0 * 24.0 * 12.0 - 40.0 * corner + 20.0 * 4.5 * 6.0
+}
+
+/// **A chamfer whose leg spills onto a round, along a straight edge** (#422's rung 4): the rib's
+/// north foot chamfered 2 — its leg on the far face reaches z = 21.5, past the seam at 21, onto the
+/// round.  In the section the flat is the line `y + z = 33.5` over the face, to where it crosses
+/// the round's normal at the seam (z = 21, y = 12.5), then the conic `|q − c| = 24.5 − z` over the
+/// round (`c` its axis), down to the round at z = 21.5: built exactly, a prism of that section.
+#[test]
+fn a_chamfer_spilled_onto_a_round_along_a_straight_edge_is_built() {
+    let e = solved(&ledge("part.rib.rn chamfer(d: 2mm) part.block.far\n"));
+    let got = volume(&e, "part");
+    let trapezoid = 1.5 * (2.0 + 0.5) / 2.0;
+    let over = simpson(|z| ((24.5 - z) * (24.5 - z) - (z - 21.0) * (z - 21.0)).sqrt()
+        - (9.0 - (z - 21.0) * (z - 21.0)).sqrt(), 21.0, 21.5, 20000);
+    let want = ledge_part() + 20.0 * (trapezoid + over);
+    assert!((got - want).abs() <= 1e-9 * want, "{got} against {want}");
+}
+
+/// **A round whose ball spills onto a round, along a straight edge** (#422's rung 4): the rib's
+/// north foot rounded 2 — the ball beside the wall stands at z = 21.5, past the seam, so it touches
+/// the round (its centre 5 from the round's axis, at y = 9 + √24.75) and not the far face.
+#[test]
+fn a_round_spilled_onto_a_round_along_a_straight_edge_is_built() {
+    let e = solved(&ledge("part.rib.rn round(r: 2mm) part.block.far\n"));
+    let got = volume(&e, "part");
+    let yc = 9.0 + 24.75f64.sqrt();
+    // the ball's lower arc over the chain: the face to z = 21, the round to the touch at z = 21.3
+    let chain = |z: f64| if z <= 21.0 { 12.0 } else { 9.0 + (9.0 - (z - 21.0) * (z - 21.0)).sqrt() };
+    let area = simpson(|z| yc - (4.0 - (z - 21.5) * (z - 21.5)).sqrt() - chain(z), 19.5, 21.0, 20000)
+        + simpson(|z| yc - (4.0 - (z - 21.5) * (z - 21.5)).sqrt() - chain(z), 21.0, 21.3, 20000);
+    let want = ledge_part() + 20.0 * area;
+    assert!((got - want).abs() <= 1e-9 * want, "{got} against {want}");
+}
+
+/// **A cut whose leg spills onto a round** (#422's rung 4, convex): a pocket 20 × 4.5 × 4 sunk in
+/// the far face, its north wall at z = 19.5, its rim chamfered 2 — the leg on the far face past the
+/// seam, onto the round.  Within the material the flat is `y = z − 9.5` under the face, to the
+/// round's normal at the seam, then `|q − c| = z − 18.5` under the round, up to it at z = 21.5.
+#[test]
+fn a_chamfer_cut_spilled_onto_a_round_along_a_straight_edge_is_built() {
+    let src = ledge("").replace("rib := solid(ribbed, from: -18mm, to: -12mm)\npart := solid(block)\nrib union part\n",
+        "pocket := solid(ribbed, from: -12mm, to: -8mm)\npart := solid(block)\npocket cut part\n")
+        + "part.pocket.rn chamfer(d: 2mm) part.block.far\n";
+    let e = solved(&src);
+    let got = volume(&e, "part");
+    let under = 1.875 + simpson(|z| (9.0 - (z - 21.0) * (z - 21.0)).sqrt()
+        - ((z - 18.5) * (z - 18.5) - (z - 21.0) * (z - 21.0)).sqrt(), 21.0, 21.5, 20000);
+    let corner = 9.0 * (1.0 - PI / 4.0);
+    let want = 40.0 * 24.0 * 12.0 - 40.0 * corner - 20.0 * 4.5 * 4.0 - 20.0 * under;
+    assert!((got - want).abs() <= 1e-9 * want, "{got} against {want}");
+}
+
+/// The same chamfer with the faces named the other way round, and mirrored: the rib by the south
+/// edge, the south edge rounded.
+#[test]
+fn a_chamfer_spilled_onto_a_round_is_built_whichever_face_goes_on() {
+    let src = ledge("part.block.far chamfer(d: 2mm) part.rib.rs\n").replace("block.north round", "block.south round")
+        .replace("fix((10, 15)) r0", "fix((10, 4.5)) r0").replace("fix((30, 15)) r1", "fix((30, 4.5)) r1")
+        .replace("fix((30, 19.5)) r2", "fix((30, 9)) r2").replace("fix((10, 19.5)) r3", "fix((10, 9)) r3");
+    let e = solved(&src);
+    let got = volume(&e, "part");
+    let over = simpson(|z| ((24.5 - z) * (24.5 - z) - (z - 21.0) * (z - 21.0)).sqrt()
+        - (9.0 - (z - 21.0) * (z - 21.0)).sqrt(), 21.0, 21.5, 20000);
+    let want = ledge_part() + 20.0 * (1.875 + over);
+    assert!((got - want).abs() <= 1e-9 * want, "{got} against {want}");
+}
+
+/// A plate of 30 its far rim rounded 3 (the far face flat to 27, then a torus about its axis), a
+/// boss of 26 about the same axis standing on it from y = 20 to 30, and the boss's foot treated by
+/// `how` against the far face — 2 out from the boss, past the seam at 27.
+fn coaxial(how: &str) -> String {
+    format!("unit mm\nuse std (round, chamfer)\nin std.front {{\n  o := point\n  fix((0, 0)) o\n  \
+        rim := circle(center: o) hint(r: 30)\n  radius(30mm) rim\n  foot := circle(center: o) hint(r: 26)\n  \
+        radius(26mm) foot\n}}\nplate := solid(face(rim), depth: 20mm)\nplate.rim round(r: 3mm) plate.far\n\
+        boss := solid(face(foot), from: -30mm, to: -20mm)\npart := solid(plate)\nboss union part\n\
+        part.boss.foot {how} part.plate.far\n")
+}
+
+/// **A chamfer spilled onto a round about one axis** (#422's rung 2, coaxial): in the meridian the
+/// flat is the line `y = 48 − ρ` over the far face to the torus's normal at the seam (ρ = 27,
+/// y = 21), then `|q − c| = 31 − ρ` over the torus (`c` its tube's centre) down to it at ρ = 28,
+/// turned about the axis: Pappus over that section.
+#[test]
+fn a_chamfer_spilled_onto_a_round_about_one_axis_is_built() {
+    let e = solved(&coaxial("chamfer(d: 2mm)"));
+    let got = volume(&e, "part");
+    let tube = |rho: f64| 17.0 + (9.0 - (rho - 27.0) * (rho - 27.0)).sqrt();
+    let moment = simpson(|rho| rho * (28.0 - rho), 26.0, 27.0, 20000)
+        + simpson(|rho| rho * (17.0 + ((31.0 - rho) * (31.0 - rho) - (rho - 27.0) * (rho - 27.0)).sqrt() - tube(rho)),
+            27.0, 28.0, 20000);
+    let want = volume(&e, "plate") + PI * 26.0 * 26.0 * 10.0 + 2.0 * PI * moment;
+    assert!((got - want).abs() <= 1e-9 * want, "{got} against {want}");
+}
+
+/// **A round spilled onto a round about one axis** (#422's rung 3, coaxial): the ball of 2 beside
+/// the boss stands at ρ = 28, past the seam, so it touches the torus (its centre 5 from the tube's,
+/// at y = 17 + √24), turned about the axis.
+#[test]
+fn a_round_spilled_onto_a_round_about_one_axis_is_built() {
+    let e = solved(&coaxial("round(r: 2mm)"));
+    let got = volume(&e, "part");
+    let yc = 17.0 + 24.0f64.sqrt();
+    let touch = 27.0 + 3.0 / 5.0;
+    let chain = |rho: f64| if rho <= 27.0 { 20.0 } else { 17.0 + (9.0 - (rho - 27.0) * (rho - 27.0)).sqrt() };
+    let ball = |rho: f64| yc - (4.0 - (rho - 28.0) * (rho - 28.0)).sqrt();
+    let moment = simpson(|rho| rho * (ball(rho) - chain(rho)), 26.0, 27.0, 20000)
+        + simpson(|rho| rho * (ball(rho) - chain(rho)), 27.0, touch, 20000);
+    let want = volume(&e, "plate") + PI * 26.0 * 26.0 * 10.0 + 2.0 * PI * moment;
+    assert!((got - want).abs() <= 1e-9 * want, "{got} against {want}");
+}

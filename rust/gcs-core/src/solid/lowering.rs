@@ -54,6 +54,7 @@ use recognise::Faces;
 use std::rc::Rc;
 
 mod assemble;
+mod chain;
 mod piece;
 mod recognise;
 pub use assemble::{assemble, Assembly};
@@ -210,7 +211,7 @@ impl Kept {
 impl Run {
     /// A round's ball centre in the section at `origin`: its arc's.
     pub fn centre(&self) -> Option<V> {
-        self.strokes.iter().find_map(|(s, _)| match *s { Stroke::Arc { centre, .. } => Some(centre), _ => None })
+        self.strokes.iter().find_map(|(s, n)| match *s { Stroke::Arc { centre, .. } if *n == "round" => Some(centre), _ => None })
     }
 
     /// Points at both ends of the prism whose hull holds it (`section_hull`, at either end).
@@ -340,8 +341,10 @@ pub fn lowered(sk: &Sketch, solid: usize) -> Option<Result<Rc<Vec<Piece>>, Strin
         Err(e) => return Some(Err(e)),
     };
     let key = super::MemoKey::own(sk, solid, vec![body.clone()]);
-    Some(sk.caches.lowering.get_or(solid, key, || piece::build(&body, &faces, section).and_then(|pieces| {
-        seams_beside(&body, &faces, section)?;
+    Some(sk.caches.lowering.get_or(solid, key, || {
+        let spill = seams_beside(&body, &faces, section);
+        piece::build(&body, &faces, section, &spill)
+    }.and_then(|pieces| {
         gate(sk, solid, &pieces, &body, || beside_edges(&body, &faces, section))?;
         Ok(Rc::new(pieces))
     })))
@@ -350,18 +353,24 @@ pub fn lowered(sk: &Sketch, solid: usize) -> Option<Result<Rc<Vec<Piece>>, Strin
 /// How many points along each edge `seams_beside` stands a section at (and its ends).
 const SEAM_SAMPLES: usize = 32;
 
-/// **A smooth surface the section reaches across** ([0.149]): the table builds the round or the
-/// flat of a face's own edge, against the face's own surface, so where the face goes on tangent
-/// into another (`F.smooth`) across a seam running beside the edge and the section reaches across
-/// it — its footprint on the face (`footprint`: a flat's leg, where a ball touches it), stood at
-/// points along the edge, lands past that seam, a chamfer's leg onto a round's face — the region
-/// is the field's.  A seam beyond the section's reach refuses nothing: the region's points are
+/// The seams a section reaches across, by the face each goes on from: each seam's edge and the
+/// face going on across it.
+pub(crate) type Spill = std::collections::BTreeMap<usize, Vec<(u32, usize)>>;
+
+/// **A smooth surface the section reaches across** ([0.149], #422): the round or the flat stands
+/// against a face's smooth surface (`F.smooth`), so where the face goes on tangent into another
+/// across a seam running beside the edge and the section reaches across it — its footprint on the
+/// face (`footprint`: a flat's leg, where a ball touches it), stood at points along the edge, lands
+/// past that seam, a chamfer's leg onto a round's face — the section is against the chain of the
+/// two (`chain`), and what no construction of the table builds so is refused by name
+/// (`piece::spilled`).  A seam beyond the section's reach is none of it: the region's points are
 /// over the face between its edge and its footprint, nearest the face's own surface.  A seam the
 /// edge runs into at its end (a slot's side going on into its end's half circle) is the table's
-/// own rule, a run going on into the next piece, and refuses nothing.
-fn seams_beside(body: &super::faces::BodyFaces, f: &Faces, section: Section) -> Result<(), String> {
+/// own rule, a run going on into the next piece, and is none of it either.
+fn seams_beside(body: &super::faces::BodyFaces, f: &Faces, section: Section) -> Spill {
     let groups: Vec<Vec<usize>> = f.faces.iter().map(|r| body.faces(r)).collect();
-    for (k, r) in f.faces.iter().enumerate().filter(|(_, r)| r.smooth) {
+    let mut out = Spill::new();
+    for (k, _) in f.faces.iter().enumerate().filter(|(_, r)| r.smooth) {
         let chain = body.smooth(&groups[k]);
         if chain.len() == groups[k].len() {
             continue;
@@ -376,6 +385,7 @@ fn seams_beside(body: &super::faces::BodyFaces, f: &Faces, section: Section) -> 
         if seams.is_empty() {
             continue;
         }
+        let mut reached: Vec<(usize, u32)> = Vec::new();
         for &e in &creases {
             let &[x, y] = body.faces_of(e) else { continue };
             // (an edge turning the other way holds nowhere: nothing of it reaches anywhere)
@@ -386,15 +396,36 @@ fn seams_beside(body: &super::faces::BodyFaces, f: &Faces, section: Section) -> 
             for s in 0..=SEAM_SAMPLES {
                 let p = body.along(e, s as f64 / SEAM_SAMPLES as f64);
                 let Some(q) = footprint(body, fk, fo, p, f.within, section, k) else { continue };
-                if body.off_face(fk, q).is_some_and(|s| seams.contains(&s)) {
-                    return Err(format!("its section reaches across the seam where `{}` goes on tangent into \
-                        another face, its footprint {:.6} from the edge it rounds landing past it: the field reads it",
-                        r.path.join("."), distance(p, q)));
+                if let Some(seam) = body.off_face(fk, q).filter(|s| seams.contains(s)) {
+                    if !reached.contains(&(fk, seam)) {
+                        reached.push((fk, seam));
+                    }
+                }
+            }
+        }
+        // with each seam reached, the rest of the curve it lies on (a seam in pieces is one seam
+        // to the section)
+        let one = |a: u32, b: u32| match (body.segment(a), body.segment(b), body.circle(a), body.circle(b)) {
+            (Some([p, q]), Some([u, w]), ..) => {
+                let d = normalised(sub(q, p)).unwrap_or([0.0; 3]);
+                let off = |x: V| norm(crate::space::cross(sub(x, p), d));
+                off(u) <= 1e-9 * (1.0 + norm(u)) && off(w) <= 1e-9 * (1.0 + norm(w))
+            }
+            (_, _, Some((c, n, r, _)), Some((k, m, s, _))) => distance(c, k) <= 1e-9 * (1.0 + norm(c))
+                && norm(crate::space::cross(n, m)) <= 1e-9 && (r - s).abs() <= 1e-9 * (1.0 + r),
+            _ => a == b,
+        };
+        for &(fk, r) in &reached {
+            for &s in seams.iter().filter(|&&s| one(s, r) && body.faces_of(s).contains(&fk)) {
+                let next = body.faces_of(s).iter().copied().find(|g| !groups[k].contains(g));
+                let entry = out.entry(fk).or_default();
+                if let Some(g) = next.filter(|_| !entry.iter().any(|&(t, _)| t == s)) {
+                    entry.push((s, g));
                 }
             }
         }
     }
-    Ok(())
+    out
 }
 
 /// Where the section beside the edge of faces `fk` and `fo` at its point `p` reaches furthest
