@@ -515,11 +515,11 @@ fn traced_beyond(body: &crate::solid::faces::BodyFaces, run: &[u32], faces: [&[u
         along: super::Along::Meeting { face: Surf::Plane { origin: at, normal: n } }, toward: toward(n, within), chain, wall,
         split, sides: [orient(g, &chain, q0), orient(w, &wall, at), 1.0], seam, legs, radius: r, ends: [q0, q1],
     };
-    // the flat along the run, told its legs apart by a point beside the first group's face, from
-    // its point furthest from the seam's normal surface (a closed run's flat is seamed where it
-    // starts: there, away from the piece beyond, which it is glued to whole)
-    let (e, at) = run.iter().flat_map(|&e| (0..64).map(move |k| (e, body.along(e, k as f64 / 64.0))))
-        .min_by(|x, y| split.side(x.1).total_cmp(&split.side(y.1))).expect("a run of edges");
+    // the piece along the run from its first edge's middle, as a run's with no seam beyond it (a
+    // closed run's piece is seamed where it starts, which may cross the piece beyond: `glued`
+    // takes either side's crossing in pieces, #424), the flat's legs told apart by a point beside
+    // the first group's face there
+    let e = run[0];
     let ends_of: Vec<V> = body.run_ends(run).into_iter().map(|(v, ..)| v).collect();
     if r > 0.0 {
         // the ball's centres where it touches the seam, and the planes of its arc there, square to
