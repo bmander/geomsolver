@@ -240,7 +240,7 @@ fn spilled_meshes(r: f64) {
     let out = c[0].hypot(c[2]);
     let rho = out + r + 1.5;
     let round = 17.0 + (9.0 - (rho - 30.54) * (rho - 30.54)).sqrt();
-    assert!(round < 20.0 - 0.1, "r = {rho}: over the round");
+    assert!(round < 20.0 - 0.1, "r = {r}: ρ = {rho} is over the round");
     let at = |y: f64| [c[0] / out * rho, y, c[2] / out * rho];
     for y in [0.5 * (round + 20.0), 20.1] {
         assert!(field.side(at(y)) < 0.0, "r = {r}: {:?} is the chamfer's", at(y));
