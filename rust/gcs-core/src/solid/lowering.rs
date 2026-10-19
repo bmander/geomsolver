@@ -343,13 +343,8 @@ pub enum Along {
     Meeting { face: Surf },
 }
 
-/// A seam a section reaches across: a circle (centre, unit normal, radius) or a line (a point of
-/// it, its unit direction).
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Seam {
-    Circle(V, V, f64),
-    Line(V, V),
-}
+/// A seam a section reaches across (model units here, the recipe's in its own): a circle or a line.
+pub use crate::brep::spill::Seam;
 
 impl Beyond {
     /// The point of a ring's edge, the crease, in the half-plane through its axis and `p`.
@@ -401,6 +396,11 @@ pub(crate) enum Section {
 }
 
 impl Section {
+    /// Its size: a round's radius, a flat's longer leg.
+    fn size(self) -> f64 {
+        match self { Section::Round(r) => r, Section::Flat { la, lb } => la.max(lb) }
+    }
+
     /// The same section, its faces named the other way round.
     fn swapped(self) -> Section {
         match self { Section::Flat { la, lb } => Section::Flat { la: lb, lb: la }, s => s }
@@ -456,9 +456,8 @@ fn seams_beside(body: &super::faces::BodyFaces, f: &Faces, section: Section) -> 
             continue;
         }
         let beyond: Vec<usize> = chain.into_iter().filter(|fi| !groups[k].contains(fi)).collect();
-        let others: Vec<usize> = f.pairs().iter().filter(|p| p.contains(&k))
-            .map(|&[i, j]| if i == k { j } else { i }).collect();
-        let creases: Vec<u32> = others.iter().flat_map(|&o| body.edges_between(&groups[k], &groups[o])).collect();
+        let creases: Vec<u32> = f.pairs().iter().filter(|p| p.contains(&k))
+            .flat_map(|&[i, j]| body.edges_between(&groups[i], &groups[j])).collect();
         let at: Vec<u32> = creases.iter().flat_map(|&e| body.ends(e)).collect();
         let seams: Vec<u32> = body.edges_between(&groups[k], &beyond).into_iter()
             .filter(|&s| !body.ends(s).iter().any(|v| at.contains(v))).collect();
@@ -519,7 +518,7 @@ fn footprint(body: &super::faces::BodyFaces, fk: usize, fo: usize, p: V, within:
     let t = normalised(crate::space::cross(nk, no))?;
     let want = if within { -1.0 } else { 1.0 };
     let (into_k, into_o) = (toward(nk, within), toward(no, within));
-    let size = match section { Section::Round(r) => r, Section::Flat { la, lb } => la.max(lb) };
+    let size = section.size();
     let settled = |at: &[(V, f64); 3]| at.iter().all(|(_, m)| m.abs() <= 1e-12 * (size + norm(p)));
     let square = (t, dot(t, p));
     match section {

@@ -289,9 +289,10 @@ fn ring_piece(body: &crate::solid::faces::BodyFaces, edge: u32, fa: usize, fb: u
         }
     };
     let section_at = |t: f64| match &chain {
-        None => cut(add(centre, scale(radial_at(t), radius)), cross(axis, radial_at(t)),
-            [trace(fa, add(centre, scale(radial_at(t), radius))), trace(fb, add(centre, scale(radial_at(t), radius)))],
-            within, section),
+        None => {
+            let p = add(centre, scale(radial_at(t), radius));
+            cut(p, cross(axis, radial_at(t)), [trace(fa, p), trace(fb, p)], within, section)
+        }
         Some((c, seams)) => against(t, *c, seams).map(|(run, _)| run),
     };
     // at an end standing on a plane not through the axis (a D's round rim ending at its flat):
@@ -362,7 +363,7 @@ fn ring_piece(body: &crate::solid::faces::BodyFaces, edge: u32, fa: usize, fb: u
 #[allow(clippy::too_many_arguments)]
 fn beyond(body: &crate::solid::faces::BodyFaces, edge: u32, faces: [usize; 2], c: usize, (so, sn, sr): (V, V, f64),
     g: usize, within: bool, section: Section, ring: &mut Ring) -> Result<Beyond, String> {
-    let (la, lb) = match section { Section::Flat { la, lb } => (la, lb), Section::Round(r) => (r, r) };
+    let (la, lb, r) = match section { Section::Flat { la, lb } => (la, lb, 0.0), Section::Round(r) => (r, r, r) };
     if !body.closed(edge) {
         return Err(spilled("round a stretch of a circle off the seam's axis"));
     }
@@ -399,27 +400,18 @@ fn beyond(body: &crate::solid::faces::BodyFaces, edge: u32, faces: [usize; 2], c
     // seam
     let rl = off_axis(on_plane);
     let u = normalised(sub(so, centre)).ok_or_else(|| spilled("round a circle about the seam's axis"))?;
-    let a = (rl * rl - sr * sr + d * d) / (2.0 * d);
-    let h2 = rl * rl - a * a;
-    if !(h2 > 0.0) {
+    let crate::brep::plane2::Circles::Cross(a, h) = crate::brep::plane2::circles(d, rl, sr, crate::brep::plane2::Touch::Exact)
+    else {
         return Err(spilled("round a circle whose leg does not cross the seam"));
-    }
+    };
     let across = cross(axis, u);
     let mid = add(centre, scale(u, a));
-    let ends = [add(mid, scale(across, h2.sqrt())), add(mid, scale(across, -h2.sqrt()))];
-    // which way each surface's signed distance runs toward the region, read beside face `fi`
-    let region = if within { -1.0 } else { 1.0 };
+    let ends = [add(mid, scale(across, h)), add(mid, scale(across, -h))];
     let at = add(centre, scale(normalised(sub(on_plane, centre)).unwrap_or(u), radius));
-    let orient = |fi: usize, s: &Surf, q: V| {
-        let out = body.normal(fi, q);
-        region * s.side(add(q, scale(out, 1e-3 * size))).signum()
-    };
+    let orient = |fi: usize, s: &Surf, q: V| toward_region(body, fi, s, q, within, size);
     let split = Surf::Cylinder { origin: so, axis: sn, radius: sr };
     let inside = split.side(centre) < 0.0;
-    let (legs, r) = match section {
-        Section::Flat { .. } => (if c == 0 { [la, lb] } else { [lb, la] }, 0.0),
-        Section::Round(r) => ([0.0; 2], r),
-    };
+    let legs = if r > 0.0 { [0.0; 2] } else if c == 0 { [la, lb] } else { [lb, la] };
     let beyond = Beyond {
         along: super::Along::Ring { axis_origin: centre, axis, crease: (centre, radius) }, toward: toward(n, within), chain,
         wall, split, sides: [orient(g, &chain, ends[0]), orient(w, &wall, at), if inside { 1.0 } else { -1.0 }],
@@ -486,10 +478,9 @@ fn traced_beyond(body: &crate::solid::faces::BodyFaces, run: &[u32], faces: [&[u
         return Err(spilled("along a traced edge that crosses the seam's normal surface"));
     }
     // where the leg on the plane crosses the seam: its footprint read along the run, and bisected
-    let k = if c == 0 { 0 } else { 1 };
     let o = 1 - c;
     let fo = |e: u32| body.faces_of(e).iter().copied().find(|f| faces[o].contains(f));
-    let leg = |e: u32, s: f64| -> Option<V> { super::footprint(body, p, fo(e)?, body.along(e, s), within, section, k) };
+    let leg = |e: u32, s: f64| -> Option<V> { super::footprint(body, p, fo(e)?, body.along(e, s), within, section, c) };
     let mut ends: Vec<V> = Vec::new();
     for &e in run {
         let n_ = 64;
@@ -515,12 +506,10 @@ fn traced_beyond(body: &crate::solid::faces::BodyFaces, run: &[u32], faces: [&[u
     let [q0, q1] = ends[..] else {
         return Err(spilled("along a traced edge whose section's footprint crosses the seam other than twice"))
     };
-    let wall = |fi: usize| Surf::of(body, fi);
     let w = fo(run[0]).ok_or_else(|| unbuilt("an edge not between two faces"))?;
-    let wall = wall(w).ok_or_else(|| spilled("beside a face neither a plane, a cylinder, a cone nor a sphere"))?;
-    let region = if within { -1.0 } else { 1.0 };
+    let wall = Surf::of(body, w).ok_or_else(|| spilled("beside a face neither a plane, a cylinder, a cone nor a sphere"))?;
     let size = la.max(lb);
-    let orient = |fi: usize, s: &Surf, q: V| region * s.side(add(q, scale(body.normal(fi, q), 1e-3 * size))).signum();
+    let orient = |fi: usize, s: &Surf, q: V| toward_region(body, fi, s, q, within, size);
     let legs = if r > 0.0 { [0.0; 2] } else if c == 0 { [la, lb] } else { [lb, la] };
     let beyond = Beyond {
         along: super::Along::Meeting { face: Surf::Plane { origin: at, normal: n } }, toward: toward(n, within), chain, wall,
@@ -673,6 +662,13 @@ fn chained<T>(sides: [Result<Option<T>, String>; 2]) -> Result<Option<(usize, T)
     }
 }
 
+/// Which way surface `s` (face `fi`'s) runs toward the region beside it at `q` (±1): its side a
+/// step out of the face, the region within the material (`within`) or outside it.
+fn toward_region(body: &crate::solid::faces::BodyFaces, fi: usize, s: &Surf, q: V, within: bool, size: f64) -> f64 {
+    let region = if within { -1.0 } else { 1.0 };
+    region * s.side(add(q, scale(body.normal(fi, q), 1e-3 * size))).signum()
+}
+
 /// How many faces a chain the section stands against may have past the edge's own.
 const CHAIN: usize = 4;
 
@@ -681,9 +677,8 @@ const CHAIN: usize = 4;
 /// tangent into another (that face), the chain going on; refused past any other edge of it.
 fn onto(body: &crate::solid::faces::BodyFaces, prev: usize, g: usize, foot: V) -> Result<Option<usize>, String> {
     let Some(e) = body.off_face(g, foot) else { return Ok(None) };
-    let at = body.middle(e);
     match body.faces_of(e).iter().copied().find(|&h| h != g) {
-        Some(h) if h != prev && norm(sub(body.normal(g, at), body.normal(h, at))) < 1e-6 => Ok(Some(h)),
+        Some(h) if h != prev && body.seam(e) => Ok(Some(h)),
         _ => Err(spilled("past the face it goes on into, across an edge no seam")),
     }
 }
@@ -938,7 +933,7 @@ fn cut(p0: V, along: V, traces: [Trace; 2], within: bool, section: Section) -> R
     if 1.0 + dot(ua, ub) <= 1e-9 {
         return Err(unbuilt("faces folded back on one another"));
     }
-    let size = match section { Section::Round(r) => r, Section::Flat { la, lb } => la.max(lb) };
+    let size = section.size();
     let corner = Corner2::new(p0, along, traces, [ua, ub], 8.0 * size)?;
     let (ta, middle, tb) = match section {
         // the ball's centre `r` from both faces, and where it touches each

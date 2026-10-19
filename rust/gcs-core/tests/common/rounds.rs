@@ -480,7 +480,7 @@ pub fn sloped_flat(radius: f64, [cx, cy]: [f64; 2], [h0, s]: [f64; 2], leg: f64,
 }
 
 /// Gauss–Legendre's nodes and weights on (−1, 1).
-fn gauss_legendre(n: usize) -> Vec<(f64, f64)> {
+pub fn gauss_legendre(n: usize) -> Vec<(f64, f64)> {
     (0..n).map(|i| {
         let mut x = (PI * (i as f64 + 0.75) / (n as f64 + 0.5)).cos();
         let mut dp = 0.0;

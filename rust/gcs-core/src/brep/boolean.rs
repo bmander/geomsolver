@@ -107,27 +107,21 @@ pub fn glued(a: &Brep,b: &Brep,tol: f64) -> Option<Brep> {
     };
     // a point of the face to read both faces' normals at: its first edge's middle
     let at = |s: &Brep,f: &Face| f.loops.first().and_then(|l| l.first()).map(|c| middle(s,c.edge as usize));
-    // whether `p` lies on `a`'s edge `ea`, within its stretch: its middle where the two edges are
-    // parametrised alike, else its curve's nearest point (a traced meeting and a fitted one)
-    let on = |ea: usize,p: V| {
-        if near(middle(a,ea),p) { return true }
-        let e = &a.edges[ea];
-        let EdgeCurve::Curve(c) = &e.curve else { return false };
-        let mut t = c.inverse(p);
-        if let Some(period) = c.period() { t = super::geom::around(t,e.t[0],period); }
-        let slack = 1e-9*(e.t[1]-e.t[0]).abs().max(1.);
-        t >= e.t[0]-slack && t <= e.t[1]+slack && near(c.point(t),p)
-    };
-    // whether `a`'s edge `ea` lies on `b`'s edge `eb` (its middle on `b`'s curve, within its stretch)
-    let on_b = |eb: usize,ea: usize| {
-        let p = middle(a,ea);
-        let e = &b.edges[eb];
+    // whether `p` lies on `s`'s edge `e`, within its stretch: its curve's nearest point (a traced
+    // meeting and a fitted one parametrise alike only at their ends)
+    let on_edge = |s: &Brep,e: usize,p: V| {
+        let e = &s.edges[e];
         let EdgeCurve::Curve(c) = &e.curve else { return false };
         let mut t = c.inverse(p);
         if let Some(period) = c.period() { t = around(t,e.t[0],period); }
         let slack = 1e-9*(e.t[1]-e.t[0]).abs().max(1.);
-        t > e.t[0]-slack && t < e.t[1]+slack && near(c.point(t),p)
+        t >= e.t[0]-slack && t <= e.t[1]+slack && near(c.point(t),p)
     };
+    // `p` on `a`'s edge `ea` (its middle where the two are parametrised alike); `a`'s edge `ea` on
+    // `b`'s edge `eb`
+    let on = |ea: usize,p: V| near(middle(a,ea),p) || on_edge(a,ea,p);
+    let on_b = |eb: usize,ea: usize| on_edge(b,eb,middle(a,ea));
+    let plane = |f: &Face| matches!(f.surface,Surface::Plane(_));
     // each face of `b` the same as one of `a`: its edges matched to `a`'s — each to one, or to a run
     // of them end to end where `a` has its edge in pieces (a fitted flat's crossing a traced flat
     // cuts where that one is seamed, #422) — and whether each runs the other way
@@ -135,12 +129,10 @@ pub fn glued(a: &Brep,b: &Brep,tol: f64) -> Option<Brep> {
     let mut edge_of: BTreeMap<usize,Vec<(u32,bool)>> = BTreeMap::new();
     for (i,fa) in a.faces.iter().enumerate() {
         let Some(p) = at(a,fa) else { continue };
-        let curved = !matches!(fa.surface,Surface::Plane(_));
+        let na = outward(fa,p);
         for (j,fb) in b.faces.iter().enumerate() {
-            if shared_b.contains(&j) || curved != !matches!(fb.surface,Surface::Plane(_)) { continue }
-            let (na,nb) = (outward(fa,p),outward(fb,p));
-            if crate::space::dot(na,nb) > if curved { 0. } else { -1.+1e-9 } { continue }
-            if !super::ssi::same(&fa.surface,&fb.surface,tol) { continue }
+            if shared_b.contains(&j) || plane(fa) != plane(fb) || !super::ssi::same(&fa.surface,&fb.surface,tol) { continue }
+            if crate::space::dot(na,outward(fb,p)) > if plane(fa) { -1.+1e-9 } else { 0. } { continue }
             let (la,lb): (Vec<usize>,Vec<usize>) = (fa.loops.iter().flatten().map(|c| c.edge as usize).collect(),
                 fb.loops.iter().flatten().map(|c| c.edge as usize).collect());
             if la.len() < lb.len() { continue }
@@ -155,9 +147,10 @@ pub fn glued(a: &Brep,b: &Brep,tol: f64) -> Option<Brep> {
                 let (mut at,mut out) = (b0,Vec::new());
                 while !near(at,b1) || out.is_empty() {
                     let next = la.iter().find_map(|&ea| {
-                        if out.iter().any(|&(e,_)| e as usize == ea) || !on_b(eb,ea) { return None }
+                        if out.iter().any(|&(e,_)| e as usize == ea) { return None }
                         let [a0,a1] = ends(a,ea);
-                        if near(a0,at) { Some((ea as u32,false,a1)) } else if near(a1,at) { Some((ea as u32,true,a0)) } else { None }
+                        let step = if near(a0,at) { (ea as u32,false,a1) } else if near(a1,at) { (ea as u32,true,a0) } else { return None };
+                        on_b(eb,ea).then_some(step)
                     })?;
                     out.push((next.0,next.1));
                     at = next.2;

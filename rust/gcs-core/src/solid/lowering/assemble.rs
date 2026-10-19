@@ -240,7 +240,8 @@ pub fn assemble<'a>(pieces: impl IntoIterator<Item = &'a Piece>) -> Assembly {
     // a piece beyond a seam's normal surface, glued to its edge's own piece there: the ring about
     // its axis kept short of that surface (a flat), or a stretch of it ending at the piece's ends (a
     // round); a flat cut along a traced run kept short of it
-    let first = out.runs.len() + out.rings.len() + out.corners.len() + out.rolled.len();
+    let rolled_from = out.runs.len() + out.rings.len() + out.corners.len();
+    let first = rolled_from + out.rolled.len();
     for (k, b) in out.beyond.iter().enumerate() {
         match b.along {
             Along::Ring { axis_origin, axis, .. } => {
@@ -257,7 +258,7 @@ pub fn assemble<'a>(pieces: impl IntoIterator<Item = &'a Piece>) -> Assembly {
                 let rolled = out.rolled.iter().position(|j| j.kept.iter().any(|kept| kept.face == b.split)
                     || b.radius > 0.0 && j.wedge.iter().any(|&(p, _)| centres.iter().any(|&c| near(p, c))));
                 if let Some(i) = rolled {
-                    out.joins.push([out.runs.len() + out.rings.len() + out.corners.len() + i, first + k]);
+                    out.joins.push([rolled_from + i, first + k]);
                 }
             }
         }
@@ -337,17 +338,16 @@ impl Assembly {
                     Seam::Circle(c, n, r) => object([("centre", w.at(scale(c, by))), ("normal", vector(n)), ("radius", (r * by).into())]),
                     Seam::Line(p, d) => object([("point", w.line_origin(scale(p, by), d)), ("direction", vector(d))]),
                 }),
-                ("legs", Json::Arr(b.legs.iter().map(|&l| (l * by).into()).collect())), ("ball", (b.radius * by).into()),
+                ("legs", Json::Arr(b.legs.iter().map(|&l| (l * by).into()).collect())), ("radius", (b.radius * by).into()),
                 ("ends", Json::Arr(b.ends.iter().map(|&p| w.at(scale(p, by))).collect())),
             ]);
-            match &b.along {
-                Along::Ring { axis_origin, axis, crease } => {
-                    o.set("axis", Json::Arr(vec![w.line_origin(scale(*axis_origin, by), *axis), vector(*axis)]));
-                    o.set("crease", w.at(scale(crease.0, by)));
-                    o.set("radius", (crease.1 * by).into());
-                }
-                Along::Meeting { face } => o.set("face", face.json(w)),
-            }
+            o.set("along", match &b.along {
+                Along::Ring { axis_origin, axis, crease } => object([
+                    ("axis", Json::Arr(vec![w.line_origin(scale(*axis_origin, by), *axis), vector(*axis)])),
+                    ("crease", object([("centre", w.at(scale(crease.0, by))), ("radius", (crease.1 * by).into())])),
+                ]),
+                Along::Meeting { face } => object([("face", face.json(w))]),
+            });
             o
         }).collect();
         let mut node = object([("kind", "lowered".into()), ("pieces", Json::Arr(pieces)), ("corners", Json::Arr(corners)),

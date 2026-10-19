@@ -253,12 +253,13 @@ impl Lowered {
             let ends = field(b,"ends")?.arr();
             let sides = field(b,"sides")?.arr();
             if ends.len() != 2 || sides.len() != 3 { return Err(unread("recipe: a piece beyond a seam, misread".into())) }
-            let along = match b.get("face") {
+            let along = field(b,"along")?;
+            let along = match along.get("face") {
                 Some(face) => Along::Meeting {face:surface(face)?},
                 None => {
-                    let axis = field(b,"axis")?.arr();
+                    let (axis,crease) = (field(along,"axis")?.arr(),field(along,"crease")?);
                     if axis.len() != 2 { return Err(unread("recipe: a piece beyond a seam, misread".into())) }
-                    Along::Ring {axis:[vec3(&axis[0]),vec3(&axis[1])],crease:(point(b,"crease")?,number(b,"radius")?)}
+                    Along::Ring {axis:[vec3(&axis[0]),vec3(&axis[1])],crease:(point(crease,"centre")?,number(crease,"radius")?)}
                 }
             };
             let seam = match seam.get("point") {
@@ -268,7 +269,7 @@ impl Lowered {
             Ok(crate::brep::spill::Beyond {along,toward:point(b,"toward")?,chain:surface(field(b,"chain")?)?,
                 wall:surface(field(b,"wall")?)?,split:surface(field(b,"split")?)?,
                 sides:[sides[0].as_f64(),sides[1].as_f64(),sides[2].as_f64()],seam,legs:pair(field(b,"legs")?),
-                radius:number(b,"ball")?,ends:[vec3(&ends[0]),vec3(&ends[1])]})
+                radius:number(b,"radius")?,ends:[vec3(&ends[0]),vec3(&ends[1])]})
         })?;
         Ok(Lowered {pieces,corners,rolled,joins,stratum:n.get("stratum").map(Body::read).transpose()?,beyond})
     }

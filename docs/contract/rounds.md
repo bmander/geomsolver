@@ -120,10 +120,10 @@ is its distance from the seam, so the two are one set:
   the planes of its arc where it touches the seam cut away (`Rolled::wedge`), and the ball rolled
   against the next face there, glued at both.
 
-The recipe's `"beyond"` (after the rolled runs in a lowered node's joins): the edge (a ring's
-`"axis"`, `"crease"` and `"radius"`, or the `"face"` it meets the wall in), `"toward"`, the
+The recipe's `"beyond"` (after the rolled runs in a lowered node's joins): the edge it runs
+`"along"` (a ring's `"axis"` and `"crease"`, or the `"face"` it meets the wall in), `"toward"`, the
 `"chain"`'s face, the `"wall"` and the `"split"` surface with `"sides"`, the `"seam"` (a circle or a
-line), the `"legs"` or the `"ball"`, and the `"ends"`; a rolled run's `"kept"` and `"wedge"`; all
+line), the `"legs"` or the ball's `"radius"`, and the `"ends"`; a rolled run's `"kept"` and `"wedge"`; all
 written through the node's `Writer`, so `cad::recipe_about` carries them. `boolean::glued` glues on
 a curved face too, an edge matched by a point of it on the other's (a traced meeting and a fitted
 one), or to a run of the other's end to end (a traced flat's crossing cut where that flat is

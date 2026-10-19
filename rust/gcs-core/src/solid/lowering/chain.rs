@@ -98,7 +98,7 @@ pub(super) fn cut_chain(p0: V, along: V, traces: [Trace; 2], (c, next): (usize, 
     if 1.0 + crate::space::dot(ua, ub) <= 1e-9 {
         return Err(unbuilt("faces folded back on one another"));
     }
-    let size = match section { Section::Round(r) => r, Section::Flat { la, lb } => la.max(lb) };
+    let size = section.size();
     let reach = 8.0 * size;
     let corner = Corner2::new(p0, along, traces, [ua, ub], reach)?;
     let o = 1 - c;
@@ -143,7 +143,7 @@ pub(super) fn cut_chain(p0: V, along: V, traces: [Trace; 2], (c, next): (usize, 
         out.push(chain[i].seg.part(0.0, t));
         out
     };
-    let (mut walk_c, middle, walk_o, foot): (Vec<Seg>, Vec<(Seg, &'static str)>, Seg, P) = match section {
+    let (walk_c, mut middle, walk_o, foot): (Vec<Seg>, Vec<(Seg, &'static str)>, Seg, P) = match section {
         Section::Round(r) => {
             let (i, centre, tc, to) = ball(&chain, &other, r)?;
             let (fc, fo) = (chain[i].seg.point(tc), other.seg.point(to));
@@ -211,21 +211,17 @@ pub(super) fn cut_chain(p0: V, along: V, traces: [Trace; 2], (c, next): (usize, 
         }
     };
     // the loop: from the edge out along `a`, across, and back along `b`
-    let name = |k: usize| ["a", "b"][k];
     let lift = |g: &Seg| corner.stroke(g);
     let mut strokes: Vec<(Stroke, &'static str)> = Vec::new();
-    let back = |segs: &[Seg]| -> Vec<Seg> { segs.iter().rev().map(Seg::reversed).collect() };
-    let mut middle: Vec<(Seg, &'static str)> = middle;
     if c == 0 {
-        strokes.extend(walk_c.iter().map(|g| (lift(g), name(0))));
+        strokes.extend(walk_c.iter().map(|g| (lift(g), "a")));
         strokes.extend(middle.iter().map(|(g, n)| (lift(g), *n)));
-        strokes.push((lift(&walk_o.reversed()), name(1)));
+        strokes.push((lift(&walk_o.reversed()), "b"));
     } else {
-        strokes.push((lift(&walk_o), name(0)));
+        strokes.push((lift(&walk_o), "a"));
         middle.reverse();
         strokes.extend(middle.iter().map(|(g, n)| (lift(&g.reversed()), *n)));
-        walk_c = back(&walk_c);
-        strokes.extend(walk_c.iter().map(|g| (lift(g), name(1))));
+        strokes.extend(walk_c.iter().rev().map(|g| (lift(&g.reversed()), "b")));
     }
     Ok((Run { origin: p0, along, span: [0.0; 2], strokes, within: Vec::new(), kept: Vec::new() }, corner.lift(foot)))
 }

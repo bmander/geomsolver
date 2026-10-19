@@ -282,14 +282,6 @@ fn ledge(rest: &str) -> String {
     src.replace(chamfer, rest)
 }
 
-/// `∫ f` over `[a, b]` by Simpson's rule on `n` (even) stretches.
-fn simpson(f: impl Fn(f64) -> f64, a: f64, b: f64, n: usize) -> f64 {
-    let h = (b - a) / n as f64;
-    (0..=n).map(|k| {
-        let w = if k == 0 || k == n { 1.0 } else if k % 2 == 1 { 4.0 } else { 2.0 };
-        w * f(a + k as f64 * h)
-    }).sum::<f64>() * h / 3.0
-}
 
 /// The block rounded and the rib, built exactly.
 fn ledge_part() -> f64 {
@@ -307,8 +299,8 @@ fn a_chamfer_spilled_onto_a_round_along_a_straight_edge_is_built() {
     let e = solved(&ledge("part.rib.rn chamfer(d: d) part.block.far\n"));
     let got = volume(&e, "part");
     let trapezoid = 1.5 * (2.0 + 0.5) / 2.0;
-    let over = simpson(|z| ((24.5 - z) * (24.5 - z) - (z - 21.0) * (z - 21.0)).sqrt()
-        - (9.0 - (z - 21.0) * (z - 21.0)).sqrt(), 21.0, 21.5, 20000);
+    let over = crate::brep::simpson(21.0, 21.5, 20000, |z| ((24.5 - z) * (24.5 - z) - (z - 21.0) * (z - 21.0)).sqrt()
+        - (9.0 - (z - 21.0) * (z - 21.0)).sqrt());
     let want = ledge_part() + 20.0 * (trapezoid + over);
     assert!((got - want).abs() <= 1e-9 * want, "{got} against {want}");
 }
@@ -323,8 +315,8 @@ fn a_round_spilled_onto_a_round_along_a_straight_edge_is_built() {
     let yc = 9.0 + 24.75f64.sqrt();
     // the ball's lower arc over the chain: the face to z = 21, the round to the touch at z = 21.3
     let chain = |z: f64| if z <= 21.0 { 12.0 } else { 9.0 + (9.0 - (z - 21.0) * (z - 21.0)).sqrt() };
-    let area = simpson(|z| yc - (4.0 - (z - 21.5) * (z - 21.5)).sqrt() - chain(z), 19.5, 21.0, 20000)
-        + simpson(|z| yc - (4.0 - (z - 21.5) * (z - 21.5)).sqrt() - chain(z), 21.0, 21.3, 20000);
+    let area = crate::brep::simpson(19.5, 21.0, 20000, |z| yc - (4.0 - (z - 21.5) * (z - 21.5)).sqrt() - chain(z))
+        + crate::brep::simpson(21.0, 21.3, 20000, |z| yc - (4.0 - (z - 21.5) * (z - 21.5)).sqrt() - chain(z));
     let want = ledge_part() + 20.0 * area;
     assert!((got - want).abs() <= 1e-9 * want, "{got} against {want}");
 }
@@ -340,8 +332,8 @@ fn a_chamfer_cut_spilled_onto_a_round_along_a_straight_edge_is_built() {
         + "part.pocket.rn chamfer(d: 2mm) part.block.far\n";
     let e = solved(&src);
     let got = volume(&e, "part");
-    let under = 1.875 + simpson(|z| (9.0 - (z - 21.0) * (z - 21.0)).sqrt()
-        - ((z - 18.5) * (z - 18.5) - (z - 21.0) * (z - 21.0)).sqrt(), 21.0, 21.5, 20000);
+    let under = 1.875 + crate::brep::simpson(21.0, 21.5, 20000, |z| (9.0 - (z - 21.0) * (z - 21.0)).sqrt()
+        - ((z - 18.5) * (z - 18.5) - (z - 21.0) * (z - 21.0)).sqrt());
     let corner = 9.0 * (1.0 - PI / 4.0);
     let want = 40.0 * 24.0 * 12.0 - 40.0 * corner - 20.0 * 4.5 * 4.0 - 20.0 * under;
     assert!((got - want).abs() <= 1e-9 * want, "{got} against {want}");
@@ -356,8 +348,8 @@ fn a_chamfer_spilled_onto_a_round_is_built_whichever_face_goes_on() {
         .replace("fix((30, 19.5)) r2", "fix((30, 9)) r2").replace("fix((10, 19.5)) r3", "fix((10, 9)) r3");
     let e = solved(&src);
     let got = volume(&e, "part");
-    let over = simpson(|z| ((24.5 - z) * (24.5 - z) - (z - 21.0) * (z - 21.0)).sqrt()
-        - (9.0 - (z - 21.0) * (z - 21.0)).sqrt(), 21.0, 21.5, 20000);
+    let over = crate::brep::simpson(21.0, 21.5, 20000, |z| ((24.5 - z) * (24.5 - z) - (z - 21.0) * (z - 21.0)).sqrt()
+        - (9.0 - (z - 21.0) * (z - 21.0)).sqrt());
     let want = ledge_part() + 20.0 * (1.875 + over);
     assert!((got - want).abs() <= 1e-9 * want, "{got} against {want}");
 }
@@ -382,9 +374,8 @@ fn a_chamfer_spilled_onto_a_round_about_one_axis_is_built() {
     let e = solved(&coaxial("chamfer(d: 2mm)"));
     let got = volume(&e, "part");
     let tube = |rho: f64| 17.0 + (9.0 - (rho - 27.0) * (rho - 27.0)).sqrt();
-    let moment = simpson(|rho| rho * (28.0 - rho), 26.0, 27.0, 20000)
-        + simpson(|rho| rho * (17.0 + ((31.0 - rho) * (31.0 - rho) - (rho - 27.0) * (rho - 27.0)).sqrt() - tube(rho)),
-            27.0, 28.0, 20000);
+    let moment = crate::brep::simpson(26.0, 27.0, 20000, |rho| rho * (28.0 - rho))
+        + crate::brep::simpson(27.0, 28.0, 20000, |rho| rho * (17.0 + ((31.0 - rho) * (31.0 - rho) - (rho - 27.0) * (rho - 27.0)).sqrt() - tube(rho)));
     let want = volume(&e, "plate") + PI * 26.0 * 26.0 * 10.0 + 2.0 * PI * moment;
     assert!((got - want).abs() <= 1e-9 * want, "{got} against {want}");
 }
@@ -400,8 +391,8 @@ fn a_round_spilled_onto_a_round_about_one_axis_is_built() {
     let touch = 27.0 + 3.0 / 5.0;
     let chain = |rho: f64| if rho <= 27.0 { 20.0 } else { 17.0 + (9.0 - (rho - 27.0) * (rho - 27.0)).sqrt() };
     let ball = |rho: f64| yc - (4.0 - (rho - 28.0) * (rho - 28.0)).sqrt();
-    let moment = simpson(|rho| rho * (ball(rho) - chain(rho)), 26.0, 27.0, 20000)
-        + simpson(|rho| rho * (ball(rho) - chain(rho)), 27.0, touch, 20000);
+    let moment = crate::brep::simpson(26.0, 27.0, 20000, |rho| rho * (ball(rho) - chain(rho)))
+        + crate::brep::simpson(27.0, touch, 20000, |rho| rho * (ball(rho) - chain(rho)));
     let want = volume(&e, "plate") + PI * 26.0 * 26.0 * 10.0 + 2.0 * PI * moment;
     assert!((got - want).abs() <= 1e-9 * want, "{got} against {want}");
 }
@@ -423,7 +414,7 @@ fn spilled_fill(r: f64) -> f64 {
         let d = rho - seam;
         (d < tube).then(|| below + (tube * tube - d * d).sqrt())
     };
-    let (nodes, weights): (Vec<f64>, Vec<f64>) = gauss(16);
+    let rule = crate::common::rounds::gauss_legendre(16);
     let section = |phi: f64| -> f64 {
         let (s, c) = phi.sin_cos();
         let rho_of = |rb: f64| (cx + rb * c).hypot(cz + rb * s);
@@ -435,20 +426,10 @@ fn spilled_fill(r: f64) -> f64 {
             if over(base) >= 0.0 {
                 return 0.0;
             }
-            let (mut lo, mut hi) = (base, base + 3.0);
-            for _ in 0..100 {
-                let m = 0.5 * (lo + hi);
-                if over(m) > 0.0 { hi = m } else { lo = m }
-            }
-            0.5 * (lo + hi) - base
+            bisect(base, base + 3.0, |m| over(m) <= 0.0) - base
         };
         // the leg: where the height comes to nothing; and where the chain changes piece
-        let (mut lo, mut hi) = (r, r + 2.5);
-        for _ in 0..100 {
-            let m = 0.5 * (lo + hi);
-            if height(m) > 0.0 { lo = m } else { hi = m }
-        }
-        let leg = 0.5 * (lo + hi);
+        let leg = bisect(r, r + 2.5, |m| height(m) > 0.0);
         let mut breaks = vec![r, leg];
         // |c + rb u| = seam: rb² + 2 rb (c·u) + |c|² − seam² = 0
         let (b, k) = (cx * c + cz * s, cx * cx + cz * cz - seam * seam);
@@ -456,45 +437,28 @@ fn spilled_fill(r: f64) -> f64 {
         if root > r && root < leg {
             breaks.insert(1, root);
         }
-        breaks.windows(2).map(|w| {
-            let n = 32;
-            (0..n).map(|j| {
-                let (a, z) = (w[0] + (w[1] - w[0]) * j as f64 / n as f64, w[0] + (w[1] - w[0]) * (j + 1) as f64 / n as f64);
-                nodes.iter().zip(&weights).map(|(&x, &wt)| {
-                    let rb = 0.5 * (a + z) + 0.5 * (z - a) * x;
-                    0.5 * (z - a) * wt * rb * height(rb)
-                }).sum::<f64>()
-            }).sum::<f64>()
-        }).sum()
+        breaks.windows(2).map(|w| composite(&rule, w[0], w[1], 32, &|rb| rb * height(rb))).sum()
     };
     let n = 2880;
     (0..n).map(|k| section(std::f64::consts::TAU * k as f64 / n as f64)).sum::<f64>() * std::f64::consts::TAU / n as f64
 }
 
-/// Gauss–Legendre's nodes and weights on `[-1, 1]`, by Newton's steps on the Legendre polynomial.
-fn gauss(n: usize) -> (Vec<f64>, Vec<f64>) {
-    let (mut xs, mut ws) = (Vec::new(), Vec::new());
-    for i in 0..n {
-        let mut x = (PI * (i as f64 + 0.75) / (n as f64 + 0.5)).cos();
-        let mut dp = 0.0;
-        for _ in 0..100 {
-            let (mut p0, mut p1) = (1.0, x);
-            for k in 2..=n {
-                let p2 = ((2 * k - 1) as f64 * x * p1 - (k - 1) as f64 * p0) / k as f64;
-                p0 = p1;
-                p1 = p2;
-            }
-            dp = n as f64 * (x * p1 - p0) / (x * x - 1.0);
-            let step = p1 / dp;
-            x -= step;
-            if step.abs() < 1e-16 {
-                break;
-            }
-        }
-        xs.push(x);
-        ws.push(2.0 / ((1.0 - x * x) * dp * dp));
+/// `∫ g` over `[a, z]` by the Gauss–Legendre `rule` (`common::rounds::gauss_legendre`) on `n`
+/// equal stretches.
+fn composite(rule: &[(f64, f64)], a: f64, z: f64, n: usize, g: &dyn Fn(f64) -> f64) -> f64 {
+    (0..n).map(|j| {
+        let (lo, hi) = (a + (z - a) * j as f64 / n as f64, a + (z - a) * (j + 1) as f64 / n as f64);
+        rule.iter().map(|&(x, w)| 0.5 * (hi - lo) * w * g(0.5 * (lo + hi) + 0.5 * (hi - lo) * x)).sum::<f64>()
+    }).sum()
+}
+
+/// Where `below` turns false between `lo` (where it holds) and `hi`, by bisection.
+fn bisect(mut lo: f64, mut hi: f64, below: impl Fn(f64) -> bool) -> f64 {
+    for _ in 0..64 {
+        let m = 0.5 * (lo + hi);
+        if below(m) { lo = m } else { hi = m }
     }
-    (xs, ws)
+    0.5 * (lo + hi)
 }
 
 /// The spilled part built exactly (#422's rung 2): the chamfer's ring kept short of the seam's
@@ -588,7 +552,6 @@ fn spilled_round_fill(r: f64, ball: f64) -> f64 {
         let y = if rho <= seam { 20.0 + ball } else { below + ((tube + ball).powi(2) - (rho - seam).powi(2)).sqrt() };
         point(phi, r + ball, y)
     };
-    let dist = |a: [f64; 3], b: [f64; 3]| ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)).sqrt();
     // the distance from `p` (in the half-plane at `phi`) to the nearest centre
     let reach = |phi: f64, p: [f64; 3]| -> f64 {
         let (dc, nc) = chain(p);
@@ -606,7 +569,7 @@ fn spilled_round_fill(r: f64, ball: f64) -> f64 {
             if chain(c).0 >= ball { best = best.min(ball - dw) }
         }
         // the nearest point of the spine: Newton's steps on the distance's derivative
-        let f = |t: f64| dist(p, spine(t));
+        let f = |t: f64| gcs_core::space::distance(p, spine(t));
         let (mut t, h) = (phi, 1e-5);
         for _ in 0..30 {
             let (d1, d2) = ((f(t + h) - f(t - h)) / (2.0 * h), (f(t + h) - 2.0 * f(t) + f(t - h)) / (h * h));
@@ -617,13 +580,8 @@ fn spilled_round_fill(r: f64, ball: f64) -> f64 {
         }
         best.min(f(t))
     };
-    let (nodes, weights) = gauss(8);
-    let gl = |a: f64, z: f64, n: usize, g: &dyn Fn(f64) -> f64| -> f64 {
-        (0..n).map(|j| {
-            let (lo, hi) = (a + (z - a) * j as f64 / n as f64, a + (z - a) * (j + 1) as f64 / n as f64);
-            nodes.iter().zip(&weights).map(|(&x, &w)| 0.5 * (hi - lo) * w * g(0.5 * (lo + hi) + 0.5 * (hi - lo) * x)).sum::<f64>()
-        }).sum()
-    };
+    let rule = crate::common::rounds::gauss_legendre(8);
+    let gl = |a: f64, z: f64, n: usize, g: &dyn Fn(f64) -> f64| composite(&rule, a, z, n, g);
     let section = |phi: f64| -> f64 {
         let height = |rb: f64| -> f64 {
             let Some(base) = chain_height(rho_at(phi, rb)) else { return 0.0 };
@@ -631,19 +589,9 @@ fn spilled_round_fill(r: f64, ball: f64) -> f64 {
             if !inside(base + 1e-12) {
                 return 0.0;
             }
-            let (mut lo, mut hi) = (base, base + 2.0 * ball);
-            for _ in 0..60 {
-                let m = 0.5 * (lo + hi);
-                if inside(m) { lo = m } else { hi = m }
-            }
-            0.5 * (lo + hi) - base
+            bisect(base, base + 2.0 * ball, &inside) - base
         };
-        let (mut lo, mut hi) = (r, r + 2.0 * ball);
-        for _ in 0..60 {
-            let m = 0.5 * (lo + hi);
-            if height(m) > 0.0 { lo = m } else { hi = m }
-        }
-        let touch = 0.5 * (lo + hi);
+        let touch = bisect(r, r + 2.0 * ball, |m| height(m) > 0.0);
         let mut breaks = vec![r, touch];
         let (s, c) = phi.sin_cos();
         let (b, k) = (cx * c + cz * s, cx * cx + cz * cz - seam * seam);
@@ -726,28 +674,14 @@ fn a_chamfer_spilled_across_a_chain_of_three_faces_is_built() {
         if y <= y1 { z - 10.0 } else if dy <= dz { dy.hypot(dz) - 2.0 } else { (y + z - 30.0) / 2f64.sqrt() }
     };
     let top = |y: f64| {
-        let (mut lo, mut hi) = (chain(y), chain(y) + 5.0);
-        for _ in 0..100 {
-            let m = 0.5 * (lo + hi);
-            if distance(y, m) / 4.0 + (y - 17.0) / 4.0 > 1.0 { hi = m } else { lo = m }
-        }
-        0.5 * (lo + hi)
+        bisect(chain(y), chain(y) + 5.0, |m| distance(y, m) / 4.0 + (y - 17.0) / 4.0 <= 1.0)
     };
     // where the flat crosses the round's normal at its second seam
-    let (mut lo, mut hi) = (y1, 21.0);
-    for _ in 0..100 {
-        let m = 0.5 * (lo + hi);
-        if top(m) - c[1] > m - c[0] { lo = m } else { hi = m }
-    }
-    let yx = 0.5 * (lo + hi);
-    let (nodes, weights) = gauss(16);
+    let yx = bisect(y1, 21.0, |m| top(m) - c[1] > m - c[0]);
+    let rule = crate::common::rounds::gauss_legendre(16);
     let mut breaks = vec![17.0, y1, yx, y2, 21.0];
     breaks.sort_by(f64::total_cmp);
-    let area: f64 = breaks.windows(2).map(|w| (0..8).map(|j| {
-        let (a, z) = (w[0] + (w[1] - w[0]) * j as f64 / 8.0, w[0] + (w[1] - w[0]) * (j + 1) as f64 / 8.0);
-        nodes.iter().zip(&weights).map(|(&x, &wt)| { let y = 0.5 * (a + z) + 0.5 * (z - a) * x; 0.5 * (z - a) * wt * (top(y) - chain(y)) })
-            .sum::<f64>()
-    }).sum::<f64>()).sum();
+    let area: f64 = breaks.windows(2).map(|w| composite(&rule, w[0], w[1], 8, &|y| top(y) - chain(y))).sum();
     let want = volume(&e, "block") + 5.0 * 6.0 * 20.0 + 20.0 * area;
     assert!((got - want).abs() <= 1e-9 * want, "{got} against {want}");
 }
@@ -788,13 +722,8 @@ fn tilted_fill() -> f64 {
             (x - cx).hypot(z - cz) - 3.0
         }
     };
-    let (nodes, weights) = gauss(16);
-    let gl = |a: f64, z: f64, n: usize, g: &dyn Fn(f64) -> f64| -> f64 {
-        (0..n).map(|j| {
-            let (lo, hi) = (a + (z - a) * j as f64 / n as f64, a + (z - a) * (j + 1) as f64 / n as f64);
-            nodes.iter().zip(&weights).map(|(&t, &w)| 0.5 * (hi - lo) * w * g(0.5 * (lo + hi) + 0.5 * (hi - lo) * t)).sum::<f64>()
-        }).sum()
-    };
+    let rule = crate::common::rounds::gauss_legendre(16);
+    let gl = |a: f64, z: f64, n: usize, g: &dyn Fn(f64) -> f64| composite(&rule, a, z, n, g);
     let section = |phi: f64| -> f64 {
         let c = phi.cos();
         let height = |rho: f64| {
@@ -804,12 +733,7 @@ fn tilted_fill() -> f64 {
             if over(base) >= 0.0 {
                 return 0.0;
             }
-            let (mut lo, mut hi) = (base, base + 3.0);
-            for _ in 0..100 {
-                let m = 0.5 * (lo + hi);
-                if over(m) > 0.0 { hi = m } else { lo = m }
-            }
-            0.5 * (lo + hi) - base
+            bisect(base, base + 3.0, |m| over(m) <= 0.0) - base
         };
         let mut breaks = vec![6.0, 8.0];
         let kink = (seam[0] - 30.0) / c;
@@ -879,7 +803,6 @@ fn tilted_round_fill(ball: f64) -> f64 {
             else { cz + ((3.0 + ball).powi(2) - (x - cx).powi(2)).sqrt() };
         point(phi, 6.0 + ball, z)
     };
-    let dist = |a: [f64; 3], b: [f64; 3]| ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)).sqrt();
     let reach = |phi: f64, p: [f64; 3]| -> f64 {
         let (dc, nc) = chain(p);
         let (dw, nw) = wall(p);
@@ -895,7 +818,7 @@ fn tilted_round_fill(ball: f64) -> f64 {
             let c = [0, 1, 2].map(|k| p[k] + (ball - dw) * nw[k]);
             if chain(c).0 >= ball { best = best.min(ball - dw) }
         }
-        let f = |t: f64| dist(p, spine(t));
+        let f = |t: f64| gcs_core::space::distance(p, spine(t));
         let (mut t, h) = (phi, 1e-5);
         for _ in 0..30 {
             let (d1, d2) = ((f(t + h) - f(t - h)) / (2.0 * h), (f(t + h) - 2.0 * f(t) + f(t - h)) / (h * h));
@@ -906,13 +829,8 @@ fn tilted_round_fill(ball: f64) -> f64 {
         }
         best.min(f(t))
     };
-    let (nodes, weights) = gauss(8);
-    let gl = |a: f64, z: f64, n: usize, g: &dyn Fn(f64) -> f64| -> f64 {
-        (0..n).map(|j| {
-            let (lo, hi) = (a + (z - a) * j as f64 / n as f64, a + (z - a) * (j + 1) as f64 / n as f64);
-            nodes.iter().zip(&weights).map(|(&x, &w)| 0.5 * (hi - lo) * w * g(0.5 * (lo + hi) + 0.5 * (hi - lo) * x)).sum::<f64>()
-        }).sum()
-    };
+    let rule = crate::common::rounds::gauss_legendre(8);
+    let gl = |a: f64, z: f64, n: usize, g: &dyn Fn(f64) -> f64| composite(&rule, a, z, n, g);
     let section = |phi: f64| -> f64 {
         let height = |rho: f64| -> f64 {
             let base = chain_height(point(phi, rho, 0.0)[0]);
@@ -920,19 +838,9 @@ fn tilted_round_fill(ball: f64) -> f64 {
             if !inside(base + 1e-12) {
                 return 0.0;
             }
-            let (mut lo, mut hi) = (base, base + 3.0 * ball);
-            for _ in 0..60 {
-                let m = 0.5 * (lo + hi);
-                if inside(m) { lo = m } else { hi = m }
-            }
-            0.5 * (lo + hi) - base
+            bisect(base, base + 3.0 * ball, &inside) - base
         };
-        let (mut lo, mut hi) = (6.0, 6.0 + 3.0 * ball);
-        for _ in 0..60 {
-            let m = 0.5 * (lo + hi);
-            if height(m) > 0.0 { lo = m } else { hi = m }
-        }
-        let touch = 0.5 * (lo + hi);
+        let touch = bisect(6.0, 6.0 + 3.0 * ball, |m| height(m) > 0.0);
         let mut breaks = vec![6.0, touch];
         let kink = (seam[0] - 30.0) / phi.cos();
         if phi.cos() > 0.0 && kink > 6.0 && kink < touch {

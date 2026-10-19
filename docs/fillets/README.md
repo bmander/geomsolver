@@ -802,7 +802,8 @@ Kernel rules it found:
   the other's curve (a traced meeting and a fitted one parametrise alike only at their ends), and a
   traced flat's crossing, cut where that flat is seamed, matches a run of the other's edges.
 - **A recipe node with two keys of one name** reads the first: the beyond's crease and ball radius
-  were both `"radius"`, and the ball came out the boss's size. The ball is `"ball"`.
+  were both `"radius"`, and the ball came out the boss's size. The edge is its own object,
+  `"along"`, as the seam is.
 - **Strips across the body's tangent edge** union with it cleanly (`tests/brep.rs`, a strip over a
   plate's top and its rim's torus), the issue's worry about #218's touches: the coincident faces
   and the edge lying on the body's seam are read as ever.
