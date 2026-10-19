@@ -691,23 +691,36 @@ fn a_chamfer_spilled_across_a_chain_of_three_faces_is_built() {
 /// line — and a boss of 6 standing up through the slope about (30, −12), so its foot on the slope
 /// is an ellipse no line or coaxial circle carries; then `rest`.
 fn tilted(rest: &str) -> String {
+    tilted_with(24.0, &[(30.0, -12.0, 6.0)], rest)
+}
+
+/// The wedge of `tilted`, `depth` deep (y from −`depth` to 0), with a boss standing up through its
+/// slope about each (x, y) of `bosses`, of its radius — `boss`, then `boss2`, … — each unioned into
+/// `part`; then `rest`.
+fn tilted_with(depth: f64, bosses: &[(f64, f64, f64)], rest: &str) -> String {
+    let name = |k: usize| if k == 0 { "boss".to_string() } else { format!("boss{}", k + 1) };
+    let drawn: String = bosses.iter().enumerate().map(|(k, (x, y, r))| format!("  bc{k} := point\n  fix(({x}, {y})) bc{k}\n  \
+        {n}_k := circle(center: bc{k}) hint(r: {r})\n  radius({r}mm) {n}_k\n", n = name(k))).collect();
+    let solids: String = (0..bosses.len()).map(|k| format!("{n} := solid(face({n}_k), from: 0mm, to: 30mm)\n", n = name(k)))
+        .collect();
+    let unions: String = (0..bosses.len()).map(|k| format!("{} union part\n", name(k))).collect();
     format!("unit mm\nuse std (round, chamfer)\nin std.front {{\n  w0 := point\n  w1 := point\n  w2 := point\n  \
         w3 := point\n  fix((0, 0)) w0\n  fix((40, 0)) w1\n  fix((40, 10)) w2\n  fix((0, 20)) w3\n  \
         (wb := line(w0, w1)) -> (we := line(w1, w2)) -> (wt := line(w2, w3)) -> (ww := line(w3, w0)) -> close\n  \
-        side_f := face(wb, we, wt, ww)\n}}\nin std.top {{\n  bc := point\n  fix((30, -12)) bc\n  \
-        boss_k := circle(center: bc) hint(r: 6)\n  radius(6mm) boss_k\n}}\n\
-        wedge := solid(side_f, from: 0mm, to: 24mm)\nwedge.we round(r: 3mm) wedge.wt\n\
-        boss := solid(face(boss_k), from: 0mm, to: 30mm)\npart := solid(wedge)\nboss union part\n{rest}")
+        side_f := face(wb, we, wt, ww)\n}}\nin std.top {{\n{drawn}}}\n\
+        wedge := solid(side_f, from: 0mm, to: {depth}mm)\nwedge.we round(r: 3mm) wedge.wt\n\
+        {solids}part := solid(wedge)\n{unions}{rest}")
 }
 
-/// The tilted chamfer's fill (#422's rung 5), worked out from `std.FlatFill`'s own words: about the
-/// boss's axis (upright through (30, −12)), between the chain — the slope `z = 20 − x/4`, then past
-/// its seam at x ≈ 37.73 the round of 3 about the line through (37, 7.66) along y — and where the
-/// distances from the chain's nearest face and from the boss's wall, each over 2, sum to one: at
-/// each angle and distance from the axis (between the wall and 2 out from it, the leg) that height
-/// found by bisection, the moment by Gauss–Legendre split where the chain changes face, and the
-/// angles likewise split where that change comes within the leg.  Nothing of the core is asked.
-fn tilted_fill() -> f64 {
+/// The tilted chamfer's fill (#422's rung 5), worked out from `std.FlatFill`'s own words, for a boss
+/// of radius `rb` whose axis stands upright at `x0` (30 and 6 in `tilted`): about its axis, between
+/// the chain — the slope `z = 20 − x/4`, then past its seam at x ≈ 37.73 the round of 3 about the
+/// line through (37, 7.66) along y — and where the distances from the chain's nearest face and from
+/// the boss's wall, each over 2, sum to one: at each angle and distance from the axis (between the
+/// wall and 2 out from it, the leg) that height found by bisection, the moment by Gauss–Legendre
+/// split where the chain changes face, and the angles likewise split where that change comes within
+/// the leg.  Nothing of the core is asked.
+fn tilted_fill(x0: f64, rb: f64) -> f64 {
     let n1 = { let k = 1.0 / 17f64.sqrt(); [k, 4.0 * k] };
     // the round's centre, 3 inside both the slope and the east face
     let cx = 37.0;
@@ -727,22 +740,22 @@ fn tilted_fill() -> f64 {
     let section = |phi: f64| -> f64 {
         let c = phi.cos();
         let height = |rho: f64| {
-            let x = 30.0 + rho * c;
+            let x = x0 + rho * c;
             let base = chain(x);
-            let over = |z: f64| distance(x, z) / 2.0 + (rho - 6.0) / 2.0 - 1.0;
+            let over = |z: f64| distance(x, z) / 2.0 + (rho - rb) / 2.0 - 1.0;
             if over(base) >= 0.0 {
                 return 0.0;
             }
             bisect(base, base + 3.0, |m| over(m) <= 0.0) - base
         };
-        let mut breaks = vec![6.0, 8.0];
-        let kink = (seam[0] - 30.0) / c;
-        if c > 0.0 && kink > 6.0 && kink < 8.0 {
+        let mut breaks = vec![rb, rb + 2.0];
+        let kink = (seam[0] - x0) / c;
+        if c > 0.0 && kink > rb && kink < rb + 2.0 {
             breaks.insert(1, kink);
         }
         breaks.windows(2).map(|w| gl(w[0], w[1], 4, &|rho| rho * height(rho))).sum()
     };
-    let turn = ((seam[0] - 30.0) / 8.0).acos();
+    let turn = ((seam[0] - x0) / (rb + 2.0)).acos();
     gl(-turn, turn, 16, &section) + gl(turn, 2.0 * PI - turn, 32, &section)
 }
 
@@ -757,7 +770,7 @@ fn a_chamfer_along_a_traced_edge_spilled_onto_a_round_is_built() {
     let e = solved(&tilted("part.boss chamfer(d: 2mm) part.wedge.wt\n"));
     let bare = solved(&tilted(""));
     let got = volume(&e, "part") - volume(&bare, "part");
-    let want = tilted_fill();
+    let want = tilted_fill(30.0, 6.0);
     assert!((got - want).abs() <= 1e-8 * want, "{got} against {want}");
 }
 
@@ -868,3 +881,21 @@ fn a_round_along_a_traced_edge_spilled_onto_a_round_is_built() {
     let want = tilted_round_fill(3.0);
     assert!((got - want).abs() <= 1e-6 * want, "{got} against {want}");
 }
+
+/// **Two runs spilled over one seam, each glued to its own** (#423): the wedge 40 deep, two bosses
+/// of 6 up through its slope about (30, −11) and (30, −29), each foot chamfered 2 — both legs run
+/// past the one seam where the slope goes on into the round, so both flats are kept short of the
+/// same plane.  Each piece beyond is glued to the flat it was made with (not to the first kept
+/// short of that plane), and the part is built exactly: its fill each boss's quadrature
+/// (`tilted_fill`) to 1e-8.
+#[test]
+fn two_chamfers_along_traced_edges_spilled_over_one_seam_are_built() {
+    let bosses = [(30.0, -11.0, 6.0), (30.0, -29.0, 6.0)];
+    let chamfered = "part.boss chamfer(d: 2mm) part.wedge.wt\npart.boss2 chamfer(d: 2mm) part.wedge.wt\n";
+    let e = solved(&tilted_with(40.0, &bosses, chamfered));
+    let bare = solved(&tilted_with(40.0, &bosses, ""));
+    let got = volume(&e, "part") - volume(&bare, "part");
+    let want = 2.0 * tilted_fill(30.0, 6.0);
+    assert!((got - want).abs() <= 1e-8 * want, "{got} against {want}");
+}
+

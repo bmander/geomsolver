@@ -145,7 +145,12 @@ The recipe's `"beyond"` (after the rolled runs in a lowered node's joins): the e
 `"chain"`'s face and the `"wall"` with their `"sides"`, the `"seam"` (a circle or a line), a flat's
 `"legs"` and `"split"` surface or a round's `"radius"` alone (which of the two is read by the key),
 and the `"ends"`; a rolled run's `"kept"` and `"wedge"`; all
-written through the node's `Writer`, so `cad::recipe_about` carries them. `boolean::glued` glues on
+written through the node's `Writer`, so `cad::recipe_about` carries them. **A piece beyond is held
+by the piece it is made with** (#423: `Ring::beyond`, `Rolled::beyond`), never a `Piece` of its
+own: `assemble` keeps it with its partner, drops it with its partner where another region names the
+same edge (two regions naming one edge in either order still make one pair, as `canonical` needs),
+and copies that join — no rule of geometry pairs them, so two runs kept short of one seam's normal
+surface are each glued to their own. `boolean::glued` glues on
 a curved face too, an edge matched by a point of it on the other's (a traced meeting and a fitted
 one). It is symmetric in its two pieces (#424): the shared faces' boundaries are paired run by run
 between the vertices both have, each side's edges lying along the other's, and each side cut where
@@ -167,9 +172,10 @@ footprint crosses the seam other than twice. The gate holds every one to the
 field as ever. `tests/composed_rounds.rs` is the gate (each against a closed form or a quadrature
 of the set's own words: `spill.sv` at every boss radius from 21 to 21.7, chamfered and rounded, to
 1e-6, and its volume to the field's mesh within the mesh's own stand-off; the straight, coaxial and
-three-face chains to 1e-9; the traced flat to 1e-8 and the traced round to 1e-6), `tests/brep.rs`
-the strip across a tangent seam unioned into its body (the kernel's touch across a tangent edge,
-before the lowering relied on it). `fillet_oracle` holds none of these yet: whether OCCT's fillet
+three-face chains to 1e-9; the traced flat to 1e-8 and the traced round to 1e-6; two bosses up
+through one slope, each chamfered over its round, to 1e-8), `tests/brep.rs` the strip across a
+tangent seam unioned into its body (the kernel's touch across a tangent edge, before the lowering
+relied on it). `fillet_oracle` holds none of these yet: whether OCCT's fillet
 overflowing onto a tangent face reads them as `std.sv` does is open. A region of a body's faces the planes do not close is
 supported by the bodies it reads grown by `SUPPORT_REACH` of its longest length
 (`region::general`), so a fill the table refused is meshed. The field's composition of an operand

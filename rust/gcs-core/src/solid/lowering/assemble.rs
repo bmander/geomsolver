@@ -108,7 +108,8 @@ impl Run {
 /// Pieces as one construction: each distinct piece once, each run with the stretch of its edge it
 /// is built over (cut short at the section of a corner standing at either end), and which run is
 /// joined to which corner there (runs counted first, then rings, then corners, then rolled runs,
-/// then the pieces beyond a seam's normal surface, each joined to its ring).
+/// then the pieces beyond a seam's normal surface, each joined to the ring or rolled run it was
+/// made with).
 #[derive(Clone, Debug, Default)]
 pub struct Assembly {
     pub runs: Vec<Run>,
@@ -119,37 +120,52 @@ pub struct Assembly {
     pub beyond: Vec<Beyond>,
 }
 
+/// What a piece beyond a seam's normal surface is glued to: the ring, or the rolled run, it was
+/// made with (counted among its kind).
+enum Partner {
+    Ring(usize),
+    Rolled(usize),
+}
+
 /// The union of `pieces` as one construction (`Assembly`).
 pub fn assemble<'a>(pieces: impl IntoIterator<Item = &'a Piece>) -> Assembly {
     let pieces: Vec<&Piece> = pieces.into_iter().collect();
+    let beyond_size = |b: &Option<Beyond>| b.as_ref().map_or(0.0, |b| norm(b.ends[0]) + b.section.size());
     let size = pieces.iter().map(|p| match p {
         Piece::Run(r) => norm(r.origin) + r.span[0].abs().max(r.span[1].abs()),
-        Piece::Ring(g) => norm(g.section.origin) + norm(g.axis_origin),
+        Piece::Ring(g) => (norm(g.section.origin) + norm(g.axis_origin)).max(beyond_size(&g.beyond)),
         Piece::Corner(c) => norm(c.vertex) + c.r,
-        Piece::Rolled(k) => norm(k.at) + k.r + k.flat.map_or(0.0, |([la, lb], _)| la.max(lb)),
-        Piece::Beyond(b) => norm(b.ends[0]) + b.section.size(),
+        Piece::Rolled(k) => (norm(k.at) + k.r + k.flat.map_or(0.0, |([la, lb], _)| la.max(lb))).max(beyond_size(&k.beyond)),
     }).fold(1.0, f64::max);
     let near = |p: V, q: V| distance(p, q) <= 1e-9 * size;
     let mut out = Assembly::default();
+    // each piece beyond a seam's normal surface goes with the piece that holds it: kept with it,
+    // joined to it, and dropped with it where another region named the same edge
+    let mut partners = Vec::new();
     for p in pieces {
         match p {
             Piece::Run(r) if !out.runs.iter().any(|q| q.same(r, size)) => out.runs.push(r.clone()),
             Piece::Ring(g) if !out.rings.iter().any(|h| h.section.same(&g.section, size)
-                && (h.angle - g.angle).abs() <= 1e-12) => out.rings.push(g.clone()),
+                && (h.angle - g.angle).abs() <= 1e-12) => {
+                let mut g = g.clone();
+                if let Some(b) = g.beyond.take() {
+                    out.beyond.push(b);
+                    partners.push(Partner::Ring(out.rings.len()));
+                }
+                out.rings.push(g);
+            }
             Piece::Corner(c) if !out.corners.iter().any(|d| near(c.vertex, d.vertex) && near(c.centre, d.centre)) => {
                 out.corners.push(c.clone())
             }
             Piece::Rolled(k) if !out.rolled.iter().any(|j| near(j.at, k.at) && (j.r - k.r).abs() <= 1e-9 * size
                 && j.flat.is_some() == k.flat.is_some()) => {
-                out.rolled.push(k.clone());
+                let mut k = k.clone();
+                if let Some(b) = k.beyond.take() {
+                    out.beyond.push(b);
+                    partners.push(Partner::Rolled(out.rolled.len()));
+                }
+                out.rolled.push(k);
             }
-            Piece::Beyond(b) if !out.beyond.iter().any(|c| b.ends.iter().all(|&p| c.ends.iter().any(|&q| near(p, q)))
-                && match (b.section, c.section) {
-                    (Across::Round { radius: x }, Across::Round { radius: y }) => (x - y).abs() <= 1e-9 * size,
-                    (Across::Flat { .. }, Across::Flat { .. }) => true,
-                    _ => false,
-                })
-                => out.beyond.push(b.clone()),
             _ => {}
         }
     }
@@ -241,38 +257,13 @@ pub fn assemble<'a>(pieces: impl IntoIterator<Item = &'a Piece>) -> Assembly {
             out.joins.push([pieces_before + corners + i, pieces_before + j]);
         }
     }
-    // a piece beyond a seam's normal surface, glued to its edge's own piece there: a ring kept
-    // short of that surface (a flat), or a stretch of one ending where the ball touches the seam,
-    // its section in the half-plane through the ring's own axis and an end (a round); else a run
-    // rolled along a traced edge, a flat kept short of it or a ball with the stretch between its
-    // centres there cut away
+    // a piece beyond a seam's normal surface, glued to its edge's own piece there: the one it was
+    // made with, the ring or the rolled run kept short of that surface
     let rolled_from = out.runs.len() + out.rings.len() + out.corners.len();
     let first = rolled_from + out.rolled.len();
-    for (k, b) in out.beyond.iter().enumerate() {
-        // the point of ring `g`'s edge in the half-plane through its axis and `p`
-        let crease = |g: &Ring, p: V| {
-            let off = |q: V| { let w = sub(q, g.axis_origin); sub(w, scale(g.axis, dot(w, g.axis))) };
-            let o = g.section.origin;
-            normalised(off(p)).map(|radial| add(sub(o, off(o)), scale(radial, norm(off(o)))))
-        };
-        let ring = out.rings.iter().position(|g| match b.section {
-            Across::Round { .. } => b.ends.iter().any(|&p| crease(g, p).is_some_and(|q| near(g.section.origin, q))),
-            Across::Flat { split, .. } => g.section.kept.iter().any(|kept| kept.face == split),
-        });
-        if let Some(i) = ring {
-            out.joins.push([out.runs.len() + i, first + k]);
-            continue;
-        }
-        let rolled = out.rolled.iter().position(|j| match b.section {
-            Across::Round { radius } => {
-                let centres = b.ends.map(|q| add(q, scale(b.toward, radius)));
-                j.wedge.iter().any(|&(p, _)| centres.iter().any(|&c| near(p, c)))
-            }
-            Across::Flat { split, .. } => j.kept.iter().any(|kept| kept.face == split),
-        });
-        if let Some(i) = rolled {
-            out.joins.push([rolled_from + i, first + k]);
-        }
+    for (k, partner) in partners.iter().enumerate() {
+        let at = match *partner { Partner::Ring(i) => out.runs.len() + i, Partner::Rolled(i) => rolled_from + i };
+        out.joins.push([at, first + k]);
     }
     // a run and a stretch of a ring going on from one another (a round along an obround's flat
     // side, then round its half circle): one section, where the ring's turn starts or ends
