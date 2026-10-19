@@ -25,6 +25,7 @@ import { eyeFrame, placeOf, solidEdges } from '../core/workspace.js';
 import type { SolidEdge } from '../core/workspace.js';
 import type { Item3 } from '../core/overview.js';
 import { COL, chromeOf, inkOf } from './paint.js';
+import { partOf, samePick } from './view.js';
 import type { Combining, SketchView } from './view.js';
 
 /** The box's own ink.  Chrome, as the 2D painter's palette is: the core says how squarely a face
@@ -50,8 +51,12 @@ const GHOST = 0.4;
  *  `LineBasicMaterial` one pixel wide whatever it is asked, so a frame is a fat line. */
 const FRAME_PX = { plain: 1, current: 2.5 };
 
-/** An edge the Fillet or Chamfer tool has picked, or would pick under the pointer, in pixels. */
+/** An object's edge selected, or under the pointer, in pixels. */
 const EDGE_PX = { picked: 3.5, hover: 2.5 };
+
+/** How strongly a face glows in the ink of what is said of it: selected, its body selected, or
+ *  under the pointer (itself, or its body). */
+const GLOW = { face: 0.55, body: 0.3, hover: 0.35, hoverBody: 0.22 };
 
 /** The kinds that stand in space and on no one plane, so are this renderer's to draw. */
 const IN_SPACE = new Set(['axis', 'traced']);
@@ -127,8 +132,8 @@ export class Box3D {
    *  refused preview (a body with a swept operand, never previewed) leaves the target standing
    *  and the tools as ghosts, which say as much. */
   private preview: { key: string | null; shown: boolean } = { key: null, shown: false };
-  /** **The edges an edge tool has picked**, and the one under the pointer, lit over everything:
-   *  rebuilt when what is picked or hovered changes, or the objects are re-cut. */
+  /** **The edges selected**, and the one under the pointer, lit over everything: rebuilt when what
+   *  is picked or hovered changes, or the objects are re-cut. */
   private readonly litEdges = new THREE.Group();
   private litKey: string | null = null;
   /** Each object's edges, as the core gave them, kept until the objects are re-cut. */
@@ -155,10 +160,9 @@ export class Box3D {
     const c = v.showSolid ? v.combining : null;
     const key = c && `${c.word} ${c.target.index} ${c.tools.map((t) => t.index).join(' ')}`;
     if (key !== this.preview.key) this.buildPreview(v, c, key);
-    const r = v.rounding;
-    const hover = v.hoverEdge;
-    const lit = r || hover
-      ? JSON.stringify([r && [r.solid, r.edges], hover && [hover.solid, hover.faces]]) : null;
+    const picked = v.selectedSolids.filter((s) => s.edge).map((s) => [s.index, s.edge]);
+    const h = v.hovered?.kind === 'solid' && v.hovered.pick.edge ? v.hovered.pick : null;
+    const lit = picked.length || h ? JSON.stringify([picked, h && [h.index, h.edge]]) : null;
     if (lit !== this.litKey) this.buildLit(v, lit);
     this.aim(v);
     this.chrome(v, c);
@@ -406,8 +410,8 @@ export class Box3D {
     this.preview.shown = true;
   }
 
-  /** The edges an edge tool has picked, and the one under the pointer, as fat lines drawn over
-   *  the material: the core's stretches of each, read once per change. */
+  /** The edges selected, and the one under the pointer, as fat lines drawn over the material:
+   *  the core's stretches of each, read once per change. */
   private buildLit(v: SketchView, key: string | null): void {
     release(this.litEdges);
     this.litKey = key;
@@ -427,8 +431,16 @@ export class Box3D {
       line.renderOrder = 10;
       this.litEdges.add(line);
     };
-    if (v.rounding) draw(v.rounding.solid, v.rounding.edges, COL.sel, EDGE_PX.picked);
-    if (v.hoverEdge) draw(v.hoverEdge.solid, [v.hoverEdge.faces], COL.highlight, EDGE_PX.hover);
+    const picked = v.selectedSolids.filter((s) => s.edge);
+    for (const solid of new Set(picked.map((s) => s.index))) {
+      draw(solid, picked.filter((s) => s.index === solid).map((s) => s.edge!), COL.sel,
+           EDGE_PX.picked);
+    }
+    // under the pointer, unless it is selected: what is held keeps the selection's ink
+    const h = v.hovered?.kind === 'solid' ? v.hovered.pick : null;
+    if (h?.edge && !picked.some((s) => samePick(s, h))) {
+      draw(h.index, [h.edge], COL.highlight, EDGE_PX.hover);
+    }
   }
 
   /** The lit edges let go, with the edges they were read from: the objects were re-cut. */
@@ -444,7 +456,7 @@ export class Box3D {
    *  as on the canvas above. */
   private chrome(v: SketchView, c: Combining | null): void {
     const sel = new Set(v.selected);
-    const hl = new Set(v.highlight);
+    const hl = new Set(v.lit);
     // std's datums are the document's frame of reference, held outright: they keep their quiet
     // ink, so only what the drawing adds is coloured by its state
     const ink = (it: Item3, base: string | number): string | number => {
@@ -470,25 +482,33 @@ export class Box3D {
       m.linewidth = current ? FRAME_PX.current : FRAME_PX.plain;
       m.resolution.set(v.width, v.height);
     }
-    // a solid picked: the face the click landed on in the selection's ink, the rest of it washed.
-    // A Boolean being picked shows its result in its target's place, and its tools as ghosts in
-    // the colour of what they do
-    const picked = v.selectedSolids;
+    // a face selected glows in the selection's ink, a body selected all over a little less; what
+    // is under the pointer glows in the highlight's.  A Boolean being picked shows its result in
+    // its target's place, and its tools as ghosts in the colour of what they do
+    // the selection by object, once a frame: the faces picked, and whether the body whole is
+    const picked = new Map<number, { faces: Set<string>; body: boolean }>();
+    for (const s of v.selectedSolids) {
+      const o = picked.get(s.index) ?? { faces: new Set<string>(), body: false };
+      if (s.face) o.faces.add(s.face);
+      o.body ||= partOf(s) === 'body';
+      picked.set(s.index, o);
+    }
+    const h = v.hovered?.kind === 'solid' ? v.hovered.pick : null;
     for (const { solid, path, mesh: face } of this.faces) {
       const m = face.material as THREE.MeshStandardMaterial;
       const tool = c?.tools.some((t) => t.index === solid);
       face.visible = !(c && this.preview.shown && c.target.index === solid);
       ghost(m, !!tool);
-      const pick = picked.find((s) => s.index === solid);
       m.color.set(tool ? INK[c!.word] : INK.solid);
-      m.emissive.set(tool ? INK[c!.word] : pick ? COL.sel : 0x000000);
-      m.emissiveIntensity = tool ? 0.35 : !pick ? 0 : pick.face === path ? 0.55 : 0.18;
-      // a face an edge tool picked, whole — every edge of it
-      if (v.rounding?.solid === solid) {
-        const whole = v.rounding.faces.includes(path);
-        m.emissive.set(whole ? COL.sel : 0x000000);
-        m.emissiveIntensity = whole ? 0.55 : 0;
-      }
+      const mine = picked.get(solid);
+      const [ink, glow]: [string | number, number] = tool ? [INK[c!.word], 0.35]
+        : mine?.faces.has(path) ? [COL.sel, GLOW.face]
+        : h?.index === solid && h.face === path ? [COL.highlight, GLOW.hover]
+        : mine?.body ? [COL.sel, GLOW.body]
+        : h?.index === solid && partOf(h) === 'body' ? [COL.highlight, GLOW.hoverBody]
+        : [0x000000, 0];
+      m.emissive.set(ink);
+      m.emissiveIntensity = glow;
     }
     for (const line of this.litEdges.children as LineSegments2[]) {
       line.material.resolution.set(v.width, v.height);

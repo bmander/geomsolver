@@ -5,8 +5,11 @@
  *   Esc       stop a DOF animation, then drop the tool's pending points, then put the tool
  *             down — Select is not a tool, it is what no tool being held looks like, so it
  *             is also where clicking the pressed toolbar button leaves you
- *   select    click (shift = multi), or drag a box over empty canvas to take everything
- *             that lies entirely inside it
+ *   select    the pointer lights what a click would take — a figure or point, a solid's edge,
+ *             else its face — and a click takes it (shift = multi), or drag a box over empty
+ *             canvas to take everything that lies entirely inside it.  ⌘-click (Ctrl off a
+ *             Mac) lists everything under the pointer — what is drawn, the edges and faces
+ *             behind one another, the bodies — to choose the one meant
  *   constrain I coincident · D dimension — length, run, rise, radius, offset, ring, or a
  *             corner's angle
  *             H horizontal · V vertical · B parallel · ⇧L perpendicular · ⇧M midpoint
@@ -36,7 +39,9 @@
  *             projects two points, one in each of two views, onto one point in space
  *   solids    U extrude and Q revolve the region under a click; M union, Z cut and Y intersect
  *             take the body to change, then the bodies to change it with — the box shows the
- *             result before it is written — and a click back on the first (or Enter) writes it
+ *             result before it is written — and a click back on the first (or Enter) writes it.
+ *             ⇧F fillet and ⇧C chamfer the edges selected, or clicked — a face for every edge
+ *             of it, a body for every edge of the body — at the size typed
  *   menus     File/Edit/Insert/Solution/Help hold everything that is not a tool or a constraint;
  *             the solver's own switches are behind Solution ▸ Options
  *
@@ -56,6 +61,7 @@ import {
   about, alternatives, doOpen, flipBranch, insertComponent, insertPlane, leaveExample, openCase,
   openExample, options, report, reportSolve, showDiagnosis,
 } from './dialogs.js';
+import { closeChooser, onChoose } from './choose.js';
 import { editValue, onDimension, onExtent, onRound } from './dimbox.js';
 import { bindProgramPanel, openDrawing, refreshProgram, resetProgramFiles, saveProjectFile,
   showClaims, showStatementFor, toggleProgramPanel } from './program.js';
@@ -98,7 +104,8 @@ const ELEMENT_TOOLS = [
 const BOOLEAN = 'click the body to change, then each body to change it with; click the first '
   + 'again, or Enter, to write it.  ';
 const EDGES = 'click its edges — a chain of them, open or closed — or a face for every edge of '
-  + 'it; type the size and Enter to write it.  A concave edge is filled, a convex one cut.  ';
+  + 'it, or select them first (a body selected is every edge of it); type the size and Enter to '
+  + 'write it.  ⌘-click for an edge behind another.  A concave edge is filled, a convex one cut.  ';
 const SOLID_TOOLS = [
   ['Extrude', 'extrude', 'u'], ['Revolve', 'revolve', 'q'],
   ['Union', 'union', 'm', `Join bodies: ${BOOLEAN}`],
@@ -578,7 +585,7 @@ window.addEventListener('keydown', (e) => {
     return;
   }
   const k = e.key.toLowerCase();
-  if (k === 'escape') { if (!closeMenus()) view.cancelTool(); return; }
+  if (k === 'escape') { if (!closeChooser() && !closeMenus()) view.cancelTool(); return; }
   // the curve tools collect as many points as the user wants, and a Boolean as many bodies, so
   // they need a way to say "that is all" — the only tools whose click count is not known
   if (k === 'enter') { e.preventDefault(); view.finishCurve(); return; }
@@ -592,8 +599,10 @@ window.addEventListener('keydown', (e) => {
   // would insert the character, and would find a stray letter in it
   const action = ACTION_KEYS.get(e.shiftKey ? `⇧${k}` : k);
   if (action) { e.preventDefault(); action(); return; }
+  // and so is a tool's: an edge tool taken up over a selection asks its number at once, and the
+  // letter would land in it
   const tool = TOOL_KEYS[e.shiftKey ? `⇧${k}` : k];
-  if (tool) view.setTool(tool);
+  if (tool) { e.preventDefault(); view.setTool(tool); }
 });
 
 /* -- boot ------------------------------------------------------------------------- */
@@ -639,6 +648,7 @@ planeSelect.addEventListener('change', () => {
 view.onDimension = onDimension;
 view.onExtent = onExtent;
 view.onRound = onRound;
+view.onChoose = onChoose;
 view.onChanged = () => { refresh(); refreshProgram(); refreshPlanes(); };
 view.onPicked = refreshPanel;
 // the source changed without the drawing's structure doing so — a drag wrote its seeds back, or a

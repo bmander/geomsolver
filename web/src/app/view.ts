@@ -27,7 +27,7 @@ import { Constraint } from '../core/constraints.js';
 import { PlanResult, PlanSolver, asSolveResult } from '../core/decompose.js';
 import { Diagnosis, diagnose } from '../core/diagnose.js';
 import * as io from '../core/io.js';
-import { Param, Plane, Point, Primitive, Sketch } from '../core/model.js';
+import { Param, Plane, Point, Primitive, Sketch, toWire } from '../core/model.js';
 import * as params from '../core/parameters.js';
 import type { March, Parameter } from '../core/parameters.js';
 import { Document, Edit, fromSketch } from '../core/program.js';
@@ -40,7 +40,7 @@ import * as edit from './edit.js';
 import * as extent from './extent.js';
 import type { Handle, LiveExtent } from './extent.js';
 import * as dimension from './dimension.js';
-import { abandonGesture, bindEvents } from './gesture.js';
+import { abandonGesture, bindEvents, takeHit } from './gesture.js';
 import type { Gesture } from './gesture.js';
 import type { DimAlt, LiveDim } from './dimension.js';
 import { paint } from './paint.js';
@@ -50,20 +50,84 @@ import * as underlay from './underlay.js';
 import type { Bitmap, Underlay } from './underlay.js';
 import {
   NOWHERE, PAGE, boundsSeen, calloutSeen, lookOf, maps, nearestSeen, ofView, panesSeen, pickSeen,
-  pickSolidSeen, placeOf, spacePoints, workspace,
+  pickEdgeSeen, pickSolidSeen, placeOf, spacePoints, underSeen, workspace,
 } from '../core/workspace.js';
-import type { EdgeHit } from '../core/workspace.js';
 import type { View, Workspace } from '../core/workspace.js';
 
-/** A solid picked in the workspace: which (its name, and its index in the current sketch) and the
- *  face the click landed on, named where it was made. */
+/** **What of an object is picked**: which object (its name, and its index in the current sketch)
+ *  and the part of it — a face, named where it was made; an edge, by the two faces meeting
+ *  there; or, with neither, the object whole, a body. */
 export interface SolidPick {
   name: string;
   index: number;
+  /** The face picked, or '' for an edge or the body whole. */
   face: string;
-  /** Where in space the click met the face, for a sketch on it to start at. */
+  /** The edge picked: the two faces meeting there, by the paths its mesh names them by. */
+  edge?: [string, string];
+  /** Where in space the click met the face or the edge, for a sketch on it to start at. */
   at?: [number, number, number];
 }
+
+/** Which part of an object a pick is. */
+export function partOf(p: SolidPick): 'body' | 'face' | 'edge' {
+  return p.edge ? 'edge' : p.face ? 'face' : 'body';
+}
+
+/** Whether two picks are of the same part of the same object. */
+export function samePick(a: SolidPick, b: SolidPick): boolean {
+  return a.index === b.index && a.face === b.face
+    && (a.edge ?? []).join('\n') === (b.edge ?? []).join('\n');
+}
+
+/** The object a pick is of, picked whole. */
+export function bodyOf(p: SolidPick): SolidPick {
+  return { name: p.name, index: p.index, face: '' };
+}
+
+/** Each object the picks are of once, whole, in the order its first part was picked. */
+export function objectsPicked(picks: readonly SolidPick[]): SolidPick[] {
+  const bodies: SolidPick[] = [];
+  for (const s of picks) {
+    if (!bodies.some((b) => b.index === s.index)) bodies.push(bodyOf(s));
+  }
+  return bodies;
+}
+
+/** `list` with `x` toggled in it (`same` saying which are one), or — not adding — `x` alone:
+ *  what a click and a shift-click do to a selection. */
+export function toggled<T>(list: readonly T[], x: T, add: boolean,
+                           same: (a: T, b: T) => boolean = (a, b) => a === b): T[] {
+  if (!add) return [x];
+  return list.some((y) => same(y, x)) ? list.filter((y) => !same(y, x)) : [...list, x];
+}
+
+/** What a pick is called — its part, and the part's name: `face` `block.top`, `edge`
+ *  `block.near · block.north`, `body` `block` — a part named where it was made, on another
+ *  object, saying which (`stock.top on body`). */
+export function pickName(p: SolidPick): { kind: string; name: string } {
+  const on = (path: string) => path.split('.')[0] === p.name ? '' : ` on ${p.name}`;
+  const kind = partOf(p);
+  return {
+    kind,
+    name: p.edge ? `${p.edge[0]} · ${p.edge[1]}${on(p.edge[0])}`
+      : p.face ? `${p.face}${on(p.face)}` : p.name,
+  };
+}
+
+/** What a hit is called in a list to choose among: what kind of thing it is, and its name — the
+ *  source's, for something drawn — and whether it is behind the material. */
+export function hitName(doc: Document, hit: Hit): { kind: string; name: string; hidden: boolean } {
+  if (hit.kind === 'entity') {
+    return { kind: toWire(hit.ent.kind), name: doc.nameOf(hit.ent) ?? '(unnamed)', hidden: false };
+  }
+  return { ...pickName(hit.pick), hidden: !!hit.hidden };
+}
+
+/** **One thing under the pointer** that a click could take: something drawn, or a part of an
+ *  object — `hidden` where it is an edge behind the material, listed only to be chosen. */
+export type Hit =
+  | { kind: 'entity'; ent: Primitive }
+  | { kind: 'solid'; pick: SolidPick; hidden?: boolean };
 
 /* What is being sized, and its arrow, belong to `extent`; the view holds them. */
 export type { Handle, LiveExtent } from './extent.js';
@@ -150,12 +214,23 @@ export function roundsEdges(tool: Tool): EdgeWord | null {
 export type EdgeWord = 'round' | 'chamfer';
 
 /** What the Fillet or Chamfer tool has picked of one object: whole faces (every edge of each) and
- *  edges (the two faces meeting there), by the paths its mesh names them by, in click order. */
+ *  edges (the two faces meeting there), by the paths its mesh names them by, in click order — or
+ *  the body `whole`, every edge of it. */
 export interface Rounding {
   solid: number;
   name: string;
   faces: string[];
   edges: [string, string][];
+  whole: boolean;
+}
+
+/** **What a click with a tool down picks** — the one statement of it, read by the hover, a
+ *  ⌘-click's list and the selection a tool is taken up over: anything with the select tool, an
+ *  object's edges and faces (and a body whole) with an edge tool, bodies with a Boolean, and
+ *  nothing with a tool that draws. */
+export function picksAs(tool: Tool): 'all' | 'parts' | 'bodies' | null {
+  return tool === 'select' ? 'all' : roundsEdges(tool) ? 'parts' : combines(tool) ? 'bodies'
+    : null;
 }
 
 /** A Boolean about to be written: the body it is written on, its word and the tools it joins. */
@@ -313,12 +388,18 @@ export class SketchView {
   /** The region the Revolve tool's first click found, waiting for the line or axis to turn it
    *  about. */
   pendingRevolve: Region | null = null;
-  /** **What the Fillet or Chamfer tool has picked** — one object's faces and edges — or
-   *  null. */
-  rounding: Rounding | null = null;
-  /** The edge under the pointer while the Fillet or Chamfer tool is down, lit as a click would
-   *  pick it. */
-  hoverEdge: EdgeHit | null = null;
+  /** **What the Fillet or Chamfer tool would write over** — the selection's faces and edges of
+   *  one object, a body picked whole for every face of it — or null.  The tool's clicks are the
+   *  selection's, so what was selected before it was taken up is where it starts. */
+  get rounding(): Rounding | null { return solids.roundingOf(this); }
+  /** **What a click would take, under the pointer** — streamed as it moves (`gesture::hover`) and
+   *  lit where it is drawn, the drawing's in the highlight's ink and an object's part in the box —
+   *  or a row of the list a ⌘-click opened, while the pointer is on it.  View state. */
+  hovered: Hit | null = null;
+  /** **Several things are under a ⌘-click**: the shell lists them at `at` (canvas coordinates) to
+   *  choose among, each row lit as it is pointed at (`hoverHit`), the one chosen taken as a click
+   *  on it would be (`takeHit`, with `add` the click's shift). */
+  onChoose: (hits: Hit[], at: [number, number], add: boolean) => void = () => {};
   /** The size last written by the Fillet or Chamfer tool, or typed and left, by its word: where
    *  the next starts.  View state, never saved. */
   roundSize: Record<EdgeWord, string> = { round: '', chamfer: '' };
@@ -613,8 +694,9 @@ export class SketchView {
     this.orbitMode = on;
     this.onOrbitMode(on);
     // a press no longer reaches the tool, so the Extrude tool's wash promises nothing
-    if (this.hoverRegion) {
+    if (this.hoverRegion || this.hovered) {
       this.hoverRegion = null;
+      this.hovered = null;
       this.draw();
     }
   }
@@ -795,6 +877,7 @@ export class SketchView {
     // another document runs over its own parameters, from its start
     if (!carry) this.instant = null;
     this.highlight = [];
+    this.hovered = null;            // a proxy dies with its sketch, and the next move asks again
     this.litConstraint = null;
     this.pastes = 0;              // a fresh sheet: the next paste starts its cascade over
     this.releasePlan();
@@ -1287,18 +1370,73 @@ export class SketchView {
   solidAt(sx: number, sy: number): SolidPick | null {
     const { az, el } = this.orbit;
     const hit = pickSolidSeen(this.sketch, az, el, ...this.eye(sx, sy));
-    if (!hit) return null;
-    const name = this.doc.solids().find((s) => s.index === hit.solid)?.name;
-    return name ? { name, index: hit.solid, face: hit.face, at: hit.at } : null;
+    return hit && this.solidPick(hit.solid, { face: hit.face, at: hit.at });
   }
 
-  /** Select a solid, or with `add` toggle it in the selection.  It lets the drawing's selection
-   *  and the picture go, as selecting either of them lets the solids go. */
+  /** A part of object `index` picked — the object named as the source names it — or null for an
+   *  object with no name. */
+  solidPick(index: number,
+            part: Omit<SolidPick, 'name' | 'index'> = { face: '' }): SolidPick | null {
+    if (this.solidNames?.doc !== this.doc) {
+      const names = new Map(this.doc.solids().map((s) => [s.index, s.name]));
+      this.solidNames = { doc: this.doc, names };
+    }
+    const name = this.solidNames.names.get(index);
+    return name ? { name, index, ...part } : null;
+  }
+  /** The objects' names by index, read once per document: the hover asks every move. */
+  private solidNames: { doc: Document; names: Map<number, string> } | null = null;
+
+  /** Select a part of an object — a body, a face, an edge — or with `add` toggle it in the
+   *  selection.  It lets the drawing's selection and the picture go, as selecting either of them
+   *  lets the solids go. */
   pickSolid(pick: SolidPick, add = false): void {
-    const others = this._solids.filter((s) => s.index !== pick.index);
-    this._solids = !add ? [pick] : others.length < this._solids.length ? others : [...others, pick];
+    this.pickSolids(toggled(this._solids, pick, add, samePick));
+  }
+
+  /** Select these parts of objects, in this order. */
+  pickSolids(picks: SolidPick[]): void {
+    this._solids = picks;
     this._selected = [];
     this.dropImage();
+  }
+
+  /** The edge of an object the eye sees under the canvas point, within a pick's reach. */
+  edgeAt(sx: number, sy: number): SolidPick | null {
+    const { az, el } = this.orbit;
+    const hit = pickEdgeSeen(this.sketch, az, el, ...this.eye(sx, sy), this.world(this.pickPx));
+    return hit && this.solidPick(hit.solid, { face: '', edge: hit.faces, at: hit.at });
+  }
+
+  /** **Everything under the canvas point** a click with the tool down could take: what is drawn,
+   *  then the objects' edges and faces nearest the eye first — an edge behind the material too,
+   *  `hidden` — then the objects whole.  An edge tool takes only objects' parts, and a Boolean
+   *  only objects. */
+  hitsAt(sx: number, sy: number): Hit[] {
+    const { az, el } = this.orbit;
+    const takes = picksAs(this.tool);
+    return underSeen(this.sketch, this.unit, az, el, ...this.eye(sx, sy),
+                     this.world(this.pickPx)).flatMap((u): Hit[] => {
+      if (u.kind === 'drawn') return takes === 'all' ? [{ kind: 'entity', ent: u.ent }] : [];
+      if (takes === 'bodies' && u.kind !== 'object') return [];
+      const pick = this.solidPick(u.solid,
+        u.kind === 'edge' ? { face: '', edge: u.faces, at: u.at }
+        : u.kind === 'face' ? { face: u.face, at: u.at } : { face: '' });
+      return pick ? [{ kind: 'solid', pick, hidden: u.kind === 'edge' && !u.seen }] : [];
+    });
+  }
+
+  /** Light a hit as the pointer is on it — a row of the ⌘-click's list — or nothing. */
+  hoverHit(hit: Hit | null): void {
+    this.hovered = hit;
+    this.draw();
+  }
+
+  /** What is lit under the pointer, of the drawing's own: `highlight` and the hovered entity. */
+  get lit(): Primitive[] {
+    const h = this.hovered;
+    return h?.kind === 'entity' && !this.highlight.includes(h.ent)
+      ? [...this.highlight, h.ent] : this.highlight;
   }
 
   /** The plane whose pane is under the canvas point, nearest the eye, as the chooser names it — a
@@ -1447,7 +1585,8 @@ export class SketchView {
   get combining(): Combining | null { return solids.combining(this); }
   finishCombine(): void { solids.finishCombine(this); }
   roundAt(sx: number, sy: number): void { solids.roundAt(this, sx, sy); }
-  hoverRound(sx: number, sy: number): EdgeHit | null { return solids.hoverRound(this, sx, sy); }
+  /** A hit taken as a click on it would be — a row chosen from a ⌘-click's list. */
+  takeHit(hit: Hit, add = false): void { takeHit(this, hit, add); }
   finishRound(size?: string): string | null { return solids.finishRound(this, size); }
   endRound(): void { solids.endRound(this); }
   tellRound(): void { solids.tellRound(this); }

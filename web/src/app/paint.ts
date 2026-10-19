@@ -93,7 +93,7 @@ export function paint(v: SketchView): void {
   ctx.lineCap = 'round';
 
   const sel = new Set(v.selected);
-  const hl = new Set(v.highlight);
+  const hl = new Set(v.lit);
   paintFigures(v, sel, hl);
   paintSplines(v, sel, hl);
   // a plane is not stroked here: it is a pane of the workspace, drawn in space below, and the

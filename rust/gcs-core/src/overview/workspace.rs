@@ -306,14 +306,21 @@ impl Projection {
 /// The nearest point to `at` as the eye sees it, and how far that is.
 pub fn nearest_point(sk: &Sketch, proj: &Projection, at: (f64, f64)) -> (Option<usize>, f64) {
     let mut best = (None, f64::INFINITY);
-    for p in 0..sk.points.len() {
-        let (x, y) = proj.point(sk, p);
-        let d = (x - at.0).dhypot(y - at.1);
+    for (d, p) in point_gaps(sk, proj, at) {
         if d < best.1 {
             best = (Some(p), d);
         }
     }
     best
+}
+
+/// How far each point is from `at` as the eye sees it, with its index, in order.
+fn point_gaps<'a>(sk: &'a Sketch, proj: &'a Projection, at: (f64, f64))
+    -> impl Iterator<Item = (f64, usize)> + 'a {
+    (0..sk.points.len()).map(move |p| {
+        let (x, y) = proj.point(sk, p);
+        ((x - at.0).dhypot(y - at.1), p)
+    })
 }
 
 /// What a click at `at` on the eye's picture plane picks: `model::pick`'s rule, asked of the
@@ -333,8 +340,14 @@ pub fn pick(sk: &Sketch, proj: &Projection, at: (f64, f64), tol: f64, unit: f64)
 /// The axis whose drawn line, seen, passes nearest `at` within `tol`.  Two lying on one another
 /// (`std.back` is `std.x` reversed) are one distance but for rounding, so the first declared wins.
 fn nearest_axis(sk: &Sketch, proj: &Projection, at: (f64, f64), tol: f64) -> Option<EntRef> {
+    nearest(axes_near(sk, proj, at, tol), tol).map(|i| EntRef::new(EntKind::Axis, i))
+}
+
+/// Every axis whose drawn line, seen, passes within `tol` of `at`, with how near, in the order
+/// declared — along the line the box draws it as, and never one seen end on.
+fn axes_near(sk: &Sketch, proj: &Projection, at: (f64, f64), tol: f64) -> Vec<(f64, usize)> {
     let reach = super::axis_reach(sk);
-    let mut best: Option<(f64, usize)> = None;
+    let mut near = Vec::new();
     for i in (0..sk.axes.len()).filter(|&i| sk.normal_of(i).is_none()) {
         let Some((tail, tip, _)) = super::axis_segment(sk, i, reach) else { continue };
         let (a, b) = (proj.seen(tail), proj.seen(tip));
@@ -342,11 +355,23 @@ fn nearest_axis(sk: &Sketch, proj: &Projection, at: (f64, f64), tol: f64) -> Opt
             continue;
         }
         let d = crate::model::seg_distance(at, a, b);
-        if d <= tol && best.is_none_or(|(e, _)| d < e - 1e-9 * tol) {
+        if d <= tol {
+            near.push((d, i));
+        }
+    }
+    near
+}
+
+/// The nearest of `(distance, index)` pairs given in the order declared: two one distance but for
+/// rounding go to the first.
+fn nearest(near: Vec<(f64, usize)>, tol: f64) -> Option<usize> {
+    let mut best: Option<(f64, usize)> = None;
+    for (d, i) in near {
+        if best.is_none_or(|(e, _)| d < e - 1e-9 * tol) {
             best = Some((d, i));
         }
     }
-    best.map(|(_, i)| EntRef::new(EntKind::Axis, i))
+    best.map(|(_, i)| i)
 }
 
 /// How foreshortened a pane may be and still be landed on: `ViewCam::readable`'s default, a pane
@@ -367,21 +392,27 @@ fn pane_readable(proj: &Projection, i: usize) -> bool {
 /// (`overview::places`), and one seen edge on is no place to land (`panes_at`'s rule).  Two
 /// frames one distance apart but for rounding go to the first declared.
 fn nearest_pane(sk: &Sketch, proj: &Projection, at: (f64, f64), tol: f64) -> Option<EntRef> {
+    nearest(frames_near(sk, proj, at, tol), tol).map(EntRef::frame)
+}
+
+/// Every plane whose pane's frame, seen, passes within `tol` of `at`, with how near, in the order
+/// declared (`nearest_pane`'s panes).
+fn frames_near(sk: &Sketch, proj: &Projection, at: (f64, f64), tol: f64) -> Vec<(f64, usize)> {
     let views = super::views(sk);
     let places = super::places(sk);
     let least = sk.extent() * super::LEAST_SIDE;
-    let mut best: Option<(f64, usize)> = None;
+    let mut near = Vec::new();
     for i in (0..sk.frames.len()).filter(|&i| places[i] == Some(i) && pane_readable(proj, i)) {
         let basis = sk.basis(i);
         let (x0, y0, x1, y1) = super::pane(sk, i, &views, &places, least);
         let c = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)].map(|(x, y)| proj.seen(basis.lift(x, y)));
         let d = (0..4).map(|k| crate::model::seg_distance(at, c[k], c[(k + 1) % 4]))
             .fold(f64::INFINITY, f64::min);
-        if d <= tol && best.is_none_or(|(e, _)| d < e - 1e-9 * tol) {
-            best = Some((d, i));
+        if d <= tol {
+            near.push((d, i));
         }
     }
-    best.map(|(_, i)| EntRef::frame(i))
+    near
 }
 
 /// The planes whose panes `at` on the eye's picture plane falls inside, the one nearest the eye
@@ -429,9 +460,31 @@ pub struct SolidHit {
 /// picks.  Asked of each object's mesh (`ApproximationPolicy::Mesh`, the box's own), culled by its
 /// box: the ray is a line, since the eye is orthographic and stands outside everything.
 pub fn pick_solid(sk: &Sketch, proj: &Projection, at: (f64, f64)) -> Option<SolidHit> {
+    let mut best: Option<(usize, String, f64)> = None;
+    crossings(sk, proj, at, |solid, face, depth| {
+        if best.as_ref().is_none_or(|(_, _, b)| depth > *b) {
+            best = Some((solid, face.to_string(), depth));
+        }
+    });
+    best.map(|(solid, face, depth)| solid_hit(proj, at, solid, face, depth))
+}
+
+/// A face of object `solid` met at `depth` by the eye's ray through `at`.
+fn solid_hit(proj: &Projection, at: (f64, f64), solid: usize, face: String, depth: f64)
+    -> SolidHit {
+    let toward = proj.toward();
+    let at = std::array::from_fn(|k| at.0 * proj.right[k] + at.1 * proj.up[k] + depth * toward[k]);
+    SolidHit { solid, face, depth, at }
+}
+
+/// Every face of an object the eye's ray through `at` crosses, each handed to `visit` with how
+/// far toward the viewer it crosses it nearest — object by object and face by face in the mesh's
+/// order.  Each object's mesh is culled by its box: the ray is a line, since the eye is
+/// orthographic and stands outside everything.
+fn crossings(sk: &Sketch, proj: &Projection, at: (f64, f64),
+             mut visit: impl FnMut(usize, &str, f64)) {
     let toward = proj.toward();
     let foot = [0, 1, 2].map(|k| at.0 * proj.right[k] + at.1 * proj.up[k]);
-    let mut best: Option<SolidHit> = None;
     for i in super::objects(sk) {
         let Ok(solid) = sk.evaluated_solid(i, crate::solid::ApproximationPolicy::Mesh) else { continue };
         let w = solid.world_bounds();
@@ -443,19 +496,14 @@ pub fn pick_solid(sk: &Sketch, proj: &Projection, at: (f64, f64)) -> Option<Soli
         let along = solid.vector_to_local(toward);
         let m = solid.mesh();
         for group in &m.groups {
-            for t in group.start..group.start + group.count {
-                let tri = &m.positions[9 * t..9 * t + 9];
-                let Some(depth) = line_meets_triangle(o, along, tri) else {
-                    continue;
-                };
-                if best.as_ref().is_none_or(|b| depth > b.depth) {
-                    let at = std::array::from_fn(|k| foot[k] + depth * toward[k]);
-                    best = Some(SolidHit { solid: i, face: group.path.clone(), depth, at });
-                }
+            let nearest = (group.start..group.start + group.count)
+                .filter_map(|t| line_meets_triangle(o, along, &m.positions[9 * t..9 * t + 9]))
+                .fold(f64::NEG_INFINITY, f64::max);
+            if nearest > f64::NEG_INFINITY {
+                visit(i, &group.path, nearest);
             }
         }
     }
-    best
 }
 
 /// Where two faces of object `solid` meet, in space (`EvaluatedSolid::face_edges`): what the
@@ -485,6 +533,16 @@ pub struct EdgeHit {
 /// object's mesh, as `pick_solid` is: a place on an edge is hidden where the eye's ray through it
 /// meets a face nearer the viewer than it, by more than a thousandth of the object.
 pub fn pick_edge(sk: &Sketch, proj: &Projection, at: (f64, f64), tol: f64) -> Option<EdgeHit> {
+    let mut near = edges_near(sk, proj, at, tol);
+    near.sort_by(|a, b| a.0.total_cmp(&b.0));
+    near.into_iter().find(|(_, hit, slack)| edge_seen(sk, proj, hit, *slack)).map(|(_, hit, _)| hit)
+}
+
+/// Every edge of an object within `tol` of `at` on the eye's picture plane, seen or not: how near
+/// it comes, the place on it nearest the pointer, and the slack its object allows a depth (a
+/// thousandth of the object) — object by object, in the order its edges are read.
+fn edges_near(sk: &Sketch, proj: &Projection, at: (f64, f64), tol: f64)
+    -> Vec<(f64, EdgeHit, f64)> {
     let toward = proj.toward();
     let foot = [0, 1, 2].map(|k| at.0 * proj.right[k] + at.1 * proj.up[k]);
     let mut near: Vec<(f64, EdgeHit, f64)> = Vec::new();
@@ -522,12 +580,82 @@ pub fn pick_edge(sk: &Sketch, proj: &Projection, at: (f64, f64), tol: f64) -> Op
             }
         }
     }
-    near.sort_by(|a, b| a.0.total_cmp(&b.0));
-    near.into_iter().find(|(_, hit, slack)| {
-        let seen = proj.seen(hit.at);
-        let depth = dot(hit.at, toward);
-        pick_solid(sk, proj, seen).is_none_or(|nearest| nearest.depth <= depth + slack)
-    }).map(|(_, hit, _)| hit)
+    near
+}
+
+/// Whether the eye sees the place `hit` names on an edge: no face nearer the viewer than it, by
+/// more than `slack`, where the ray through it meets one.
+fn edge_seen(sk: &Sketch, proj: &Projection, hit: &EdgeHit, slack: f64) -> bool {
+    let depth = dot(hit.at, proj.toward());
+    pick_solid(sk, proj, proj.seen(hit.at)).is_none_or(|nearest| nearest.depth <= depth + slack)
+}
+
+/// One thing the eye's ray through a place on the picture plane reaches — what a front end offers
+/// to choose among where several lie under the pointer, one behind another.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Under {
+    /// Something drawn within the pick's reach: a figure or a point, an axis, a pane's frame.
+    Drawn(EntRef),
+    /// An edge of an object within the pick's reach, and whether the eye sees it there or it lies
+    /// behind the material.
+    Edge { hit: EdgeHit, seen: bool },
+    /// A face of an object the ray crosses, where it crosses it nearest the viewer.
+    Face(SolidHit),
+    /// An object the ray meets, whole.
+    Object(usize),
+}
+
+/// **Everything under the pointer**: each thing the eye's ray through `at` reaches, within `tol`
+/// on the picture plane for what is drawn and for an object's edges — what a click there might
+/// have meant, where `pick`, `pick_edge` and `pick_solid` each answer with the one they rank
+/// first.  The drawing first, as it is drawn over everything: points by how near, then figures,
+/// axes and panes' frames, each by how near (ties in the order declared); then the objects' edges
+/// and faces, nearest the viewer first, an edge before a face it bounds; then the objects
+/// themselves, nearest first.  `unit` is the eye length of one screen pixel.
+pub fn under(sk: &Sketch, proj: &Projection, at: (f64, f64), tol: f64, unit: f64) -> Vec<Under> {
+    let by_gap = |mut v: Vec<(f64, EntRef)>| {
+        v.sort_by(|a, b| a.0.total_cmp(&b.0));
+        v.into_iter().map(|(_, e)| Under::Drawn(e)).collect::<Vec<_>>()
+    };
+    let points = point_gaps(sk, proj, at).filter(|&(d, _)| d <= tol)
+        .map(|(d, p)| (d, EntRef::point(p))).collect();
+    let figures = sk.drawn().into_iter().filter(|e| e.kind != EntKind::Point).filter_map(|e| {
+        let d = proj.reach(sk, e, at, tol, unit);
+        (d <= tol).then_some((d, e))
+    }).collect();
+    let axes = axes_near(sk, proj, at, tol).into_iter()
+        .map(|(d, i)| (d, EntRef::new(EntKind::Axis, i))).collect();
+    let frames = frames_near(sk, proj, at, tol).into_iter().map(|(d, i)| (d, EntRef::frame(i)))
+        .collect();
+    let mut out: Vec<Under> =
+        [points, figures, axes, frames].into_iter().flat_map(by_gap).collect();
+    // an object's parts, nearest the viewer first — an edge ranked a little nearer than it is
+    // (its object's slack), so it comes before a face it bounds, met at its own depth but for
+    // rounding
+    let toward = proj.toward();
+    let mut parts: Vec<(f64, u8, Under)> = edges_near(sk, proj, at, tol).into_iter()
+        .map(|(_, hit, slack)| {
+            let depth = dot(hit.at, toward);
+            let seen = edge_seen(sk, proj, &hit, slack);
+            (depth + slack, 0, Under::Edge { hit, seen })
+        })
+        .collect();
+    crossings(sk, proj, at, |solid, face, depth| {
+        parts.push((depth, 1, Under::Face(solid_hit(proj, at, solid, face.to_string(), depth))));
+    });
+    parts.sort_by(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1)));
+    // and each object met, in the order its nearest part was
+    let mut objects: Vec<usize> = Vec::new();
+    for (_, _, part) in &parts {
+        let (Under::Edge { hit: EdgeHit { solid, .. }, .. } | Under::Face(SolidHit { solid, .. }))
+            = part else { continue };
+        if !objects.contains(solid) {
+            objects.push(*solid);
+        }
+    }
+    out.extend(parts.into_iter().map(|(_, _, part)| part));
+    out.extend(objects.into_iter().map(Under::Object));
+    out
 }
 
 /// Where the line `o + t·d` crosses the triangle `p` (nine doubles), as `t` — either side, its

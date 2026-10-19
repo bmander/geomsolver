@@ -273,8 +273,9 @@ pub unsafe extern "C" fn gcs_elab_add_body_word(h: *mut Elaborated, ptr: *const 
 }
 
 /// Round or chamfer edges of object `solid`, `{word: "round" | "chamfer", faces: [..], edges:
-/// [[a, b]..], size}` — faces and edges by the paths its mesh names them by — as the library's
-/// words, in one splice: `edit::add_rounds`, over the live drawing `s`.
+/// [[a, b]..], whole?, size}` — faces and edges by the paths its mesh names them by, `whole` the
+/// body picked whole — as the library's words, in one splice: `edit::add_rounds`, over the live
+/// drawing `s`.
 #[no_mangle]
 pub unsafe extern "C" fn gcs_elab_add_rounds(h: *mut Elaborated, s: *mut Sketch, solid: i32,
                                              ptr: *const u8, len: usize) -> *mut u8 {
@@ -287,7 +288,7 @@ pub unsafe extern "C" fn gcs_elab_add_rounds(h: *mut Elaborated, s: *mut Sketch,
             return std::ptr::null_mut();
         };
         out_edit(gcs_core::edit::add_rounds(&(*h).program, sk(s), solid, r.word, &r.faces,
-                                            &r.edges, &r.size))
+                                            &r.edges, r.whole, &r.size))
     })
 }
 

@@ -3,7 +3,7 @@
 //! and written as the library's words over face paths (`edit::add_rounds`).
 
 use gcs_core::edit::{self, EdgeWord};
-use gcs_core::overview::workspace::{pick_edge, solid_edges, Projection};
+use gcs_core::overview::workspace::{pick_edge, solid_edges, under, Projection, Under};
 use gcs_core::solid::ApproximationPolicy::Report;
 use gcs_core::program;
 use crate::common::gestures::{build, seen};
@@ -44,7 +44,8 @@ fn volume(e: &program::Elaborated, name: &str) -> f64 {
 fn rounded(e: &program::Elaborated, solid: &str, word: EdgeWord, faces: &[&str],
            edges: &[(String, String)], size: &str) -> (String, program::Elaborated) {
     let faces: Vec<String> = faces.iter().map(|f| f.to_string()).collect();
-    let out = edit::add_rounds(&e.program, &e.sketch, objects(e, solid), word, &faces, edges, size);
+    let out = edit::add_rounds(&e.program, &e.sketch, objects(e, solid), word, &faces, edges, false,
+                               size);
     assert_eq!(out.refused, None);
     assert_eq!(out.kind, edit::Kind::Structural);
     let next = build(&out.text);
@@ -55,7 +56,7 @@ fn refused(e: &program::Elaborated, solid: &str, faces: &[&str], edges: &[(Strin
            size: &str) -> String {
     let faces: Vec<String> = faces.iter().map(|f| f.to_string()).collect();
     let out = edit::add_rounds(&e.program, &e.sketch, objects(e, solid), EdgeWord::Round, &faces,
-                               edges, size);
+                               edges, false, size);
     assert_eq!(out.kind, edit::Kind::None, "{faces:?} {edges:?} {size}\n{}", out.text);
     assert_eq!(out.text, e.program.text());
     out.refused.expect("refused, saying why")
@@ -106,6 +107,43 @@ fn an_edge_is_picked_where_the_eye_sees_it_and_never_through_the_material() {
 }
 
 #[test]
+fn everything_under_the_pointer_is_listed_the_drawing_first_then_nearest_the_eye() {
+    let e = build(BLOCK);
+    let sk = &e.sketch;
+    let block = objects(&e, "block");
+    let (az, el) = (-1.0, 0.5);
+    let proj = Projection::new(sk, az, el);
+    let at = |x: [f64; 3]| under(sk, &proj, seen(x, az, el), 0.5, 0.05);
+    let faces = |u: &[Under]| -> Vec<String> {
+        u.iter().filter_map(|u| match u { Under::Face(h) => Some(h.face.clone()), _ => None })
+            .collect()
+    };
+    // the middle of the near face: the ray goes in there and out at the back, and the object
+    // met is listed after its faces
+    let mid = at([20.0, 0.0, 12.0]);
+    assert_eq!(faces(&mid).first().map(String::as_str), Some("block.near"), "{mid:?}");
+    assert_eq!(faces(&mid).len(), 2, "{mid:?}");
+    assert_eq!(mid.last(), Some(&Under::Object(block)), "{mid:?}");
+    assert!(!mid.iter().any(|u| matches!(u, Under::Drawn(_) | Under::Edge { .. })), "{mid:?}");
+    // on the near face's top edge: the line the block was drawn by is over everything, then the
+    // edge, seen, before the faces it bounds
+    let top = at([20.0, 0.0, 24.0]);
+    assert_eq!(top.first(), Some(&Under::Drawn(e.map.ent_named("north").unwrap())), "{top:?}");
+    let Some(Under::Edge { hit, seen: lit }) = top.get(1) else { panic!("{top:?}") };
+    assert_eq!((hit.solid, &hit.faces, *lit), (block, &pair("block.near", "block.north"), true));
+    // the far face's bottom edge is behind the block: `pick_edge` takes nothing there, and here
+    // it is listed, hidden, behind the near faces the ray crosses first
+    let behind = at([20.0, 12.0, 0.0]);
+    assert_eq!(pick_edge(sk, &proj, seen([20.0, 12.0, 0.0], az, el), 0.5), None);
+    let k = behind.iter().position(|u| matches!(u, Under::Edge { hit, seen: false, .. }
+                                              if hit.faces == pair("block.far", "block.south")))
+        .unwrap_or_else(|| panic!("{behind:?}"));
+    assert!(matches!(behind[0], Under::Face(_)) && k > 0, "{behind:?}");
+    // far from the object and the drawing, nothing
+    assert_eq!(at([20.0, 80.0, 60.0]), Vec::new());
+}
+
+#[test]
 fn an_edge_picked_is_rounded_by_the_two_faces_meeting_there() {
     let e = build(BLOCK);
     let whole = 40.0 * 24.0 * 12.0;
@@ -124,6 +162,19 @@ fn an_edge_picked_is_rounded_by_the_two_faces_meeting_there() {
     assert!(text.contains("\nblock.east chamfer(d: 1mm) block.north"), "{text}");
     assert!(text.contains("use std (chamfer)\n"), "{text}");
     assert!((volume(&next, "block") - (whole - 0.5 * 12.0)).abs() < 1e-6);
+}
+
+#[test]
+fn a_body_picked_whole_is_its_every_edge_even_rounded_already() {
+    let e = build(BLOCK);
+    let (_, rounded) = rounded(&e, "block", EdgeWord::Round, &[],
+                               &[pair("block.near", "block.north")], "2");
+    // the round's own faces have no name to write, and the body whole is still the one word
+    let out = edit::add_rounds(&rounded.program, &rounded.sketch, objects(&rounded, "block"),
+                               EdgeWord::Chamfer, &[], &[], true, "1");
+    assert_eq!(out.refused, None);
+    assert!(out.text.ends_with("\nchamfer(d: 1) block\n"), "{}", out.text);
+    assert!(build(&out.text).sketch.evaluated_solid(objects(&rounded, "block"), Report).is_ok());
 }
 
 #[test]

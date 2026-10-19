@@ -391,11 +391,12 @@ export class Document {
   }
 
   /** **Round or chamfer** edges of object `solid` (its index): whole faces (every edge of each)
-   *  and edges (the two faces meeting there), by the paths its mesh names them by, written as
-   *  the library's word over face paths at `size` (the radius, or the flat's leg, as typed). */
+   *  and edges (the two faces meeting there), by the paths its mesh names them by — or with
+   *  `whole` the body's every edge — written as the library's word over face paths at `size`
+   *  (the radius, or the flat's leg, as typed). */
   addRounds(solid: number, word: 'round' | 'chamfer', faces: string[], edges: [string, string][],
-            size: string): Edit {
-    return edit(withJson({ word, faces, edges, size },
+            size: string, whole = false): Edit {
+    return edit(withJson({ word, faces, edges, whole, size },
       (p, n) => core().gcs_elab_add_rounds(this.h, this.sketch.handle, solid, p, n)));
   }
 
