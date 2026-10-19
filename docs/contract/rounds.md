@@ -103,7 +103,8 @@ is its distance from the seam, so the two are one set:
   `rounds/spill.sv`; `piece::beyond`: the face a plane going on into a torus about its normal): a
   flat's ring kept within the seam's normal surface — the cylinder through the seam along the
   plane's normal (its `Kept`) — and beyond it the flat against the torus, sectioned in the
-  half-planes through the ring's axis between where the leg on the plane crosses the seam, fitted
+  half-planes through the ring's axis — the planes square to its circle, the face's meeting with
+  the wall — between where the leg on the plane crosses the seam, fitted
   (`brep::spill::flat_beyond`): a lens of the torus's strip, the fitted flat and the cap on the
   normal cylinder, glued to the ring there. A round's ring a stretch between where its ball's touch
   crosses the seam, and between them the ball rolled against the torus — its centre where the
@@ -114,14 +115,26 @@ is its distance from the seam, so the two are one set:
   edge; `piece::traced_beyond`: the face a plane going on into a cylinder along a straight seam or a
   torus about its normal): a flat cut along the run (`fillet::flat_along`) kept short of the seam's
   normal surface — the plane through a straight seam along the face's normal (`Rolled::kept`) — and
-  the flat beyond it sectioned square to the run (`spill::Along::Meeting`) between where the leg
-  crosses the seam, found by bisecting the footprint along the run; a round's ball rolled along
-  the run (`fillet::roll_across`, its band let cross the tangent seam) with the stretch between
-  the planes of its arc where it touches the seam cut away (`Rolled::wedge`), and the ball rolled
-  against the next face there, glued at both.
+  the flat beyond it sectioned square to the run between where the leg crosses the seam, found by
+  bisecting the footprint along the run; a round's ball rolled along the run
+  (`fillet::roll_across`, its band let cross the tangent seam) with the stretch between the planes
+  of its arc where it touches the seam cut away (`Rolled::wedge`), and the ball rolled against the
+  next face there, glued at both.
+
+`brep::spill` has **one section model** (#425): every piece beyond is read along the meeting of
+the face it stands on and the wall, in the planes square to it — a ring's circle a meeting like
+any other, whose square planes are the half-planes through its axis. Its edges are the meetings
+`ssi::intersect` gives in closed form wherever it gives one through their ends (a ring's crease
+its circle, a slope's an ellipse; a round cap's edge down the wall a line where its plane holds a
+cylinder's or a cone's axis, an ellipse where it cuts a cylinder aslant, a circle on a sphere),
+fitted only where the meeting must be traced; the seam is the circle or the line it is.
+`spill.sv`'s STEP is a cone, one fitted flat, and the plate's and the boss's faces. `assemble`
+glues a piece beyond to the ring whose own axis puts its section where the ball touches the seam
+(a round) or that is kept short of its `split` (a flat), else to a rolled run, until #423 pairs
+them where they are made.
 
 The recipe's `"beyond"` (after the rolled runs in a lowered node's joins): the edge it runs
-`"along"` (a ring's `"axis"` and `"crease"`, or the `"face"` it meets the wall in), `"toward"`, the
+`"along"` (the `"face"` it stands on, meeting the wall in that edge), `"toward"`, the
 `"chain"`'s face, the `"wall"` and the `"split"` surface with `"sides"`, the `"seam"` (a circle or a
 line), the `"legs"` or the ball's `"radius"`, and the `"ends"`; a rolled run's `"kept"` and `"wedge"`; all
 written through the node's `Writer`, so `cad::recipe_about` carries them. `boolean::glued` glues on

@@ -210,6 +210,16 @@ pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
             };
             Ssi::Curves(vec![Curve::Circle(Frame::new(sub(c.o,scale(pl.z,dist)),pl.z,pl.x),rho)])
         }
+        (Surface::Plane(_),Surface::Cone(..)) | (Surface::Cone(..),Surface::Plane(_)) => {
+            // a plane through the axis: the two lines through the apex, its meridian either side
+            let (pl,co) = if matches!(a,Surface::Plane(_)) { (f,b.clone()) } else { (g,a.clone()) };
+            let Surface::Cone(c,r,half) = co else { unreachable!() };
+            if dot(pl.z,c.z).abs() > 1e-12 || dot(pl.z,sub(c.o,pl.o)).abs() > tol { return Ssi::Traced }
+            let w = unit(cross(pl.z,c.z));
+            let (sa,ca) = half.dsin_cos();
+            Ssi::Curves([w,scale(w,-1.)].into_iter()
+                .map(|w| Curve::Line {p:add(c.o,scale(w,r)),d:unit(add(scale(w,sa),scale(c.z,ca)))}).collect())
+        }
         (Surface::Plane(_),Surface::Extrusion(..)) | (Surface::Extrusion(..),Surface::Plane(_))
             if norm(cross(f.z,g.z)) <= 1e-12 => {
             // a plane square to the sweep: the swept curve itself, moved along the sweep onto it

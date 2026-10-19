@@ -368,7 +368,7 @@ fn beyond(body: &crate::solid::faces::BodyFaces, edge: u32, faces: [usize; 2], c
         return Err(spilled("round a stretch of a circle off the seam's axis"));
     }
     let (p, w) = (faces[c], faces[1 - c]);
-    let Some((n, _)) = body.plane(p) else { return Err(spilled("from a face no plane, round a circle off the seam's axis")) };
+    let Some((n, o)) = body.plane(p) else { return Err(spilled("from a face no plane, round a circle off the seam's axis")) };
     let chain = match Surf::of(body, g) {
         Some(t @ Surf::Torus { axis, .. }) if norm(cross(axis, n)) <= 1e-9 && norm(cross(sn, n)) <= 1e-9 => t,
         _ => return Err(spilled("into a face no torus about the plane's normal")),
@@ -413,8 +413,8 @@ fn beyond(body: &crate::solid::faces::BodyFaces, edge: u32, faces: [usize; 2], c
     let inside = split.side(centre) < 0.0;
     let legs = if r > 0.0 { [0.0; 2] } else if c == 0 { [la, lb] } else { [lb, la] };
     let beyond = Beyond {
-        along: super::Along::Ring { axis_origin: centre, axis, crease: (centre, radius) }, toward: toward(n, within), chain,
-        wall, split, sides: [orient(g, &chain, ends[0]), orient(w, &wall, at), if inside { 1.0 } else { -1.0 }],
+        face: Surf::Plane { origin: o, normal: n }, toward: toward(n, within), chain, wall, split,
+        sides: [orient(g, &chain, ends[0]), orient(w, &wall, at), if inside { 1.0 } else { -1.0 }],
         seam: super::Seam::Circle(so, sn, sr), legs, radius: r, ends,
     };
     if r == 0.0 {
@@ -512,7 +512,7 @@ fn traced_beyond(body: &crate::solid::faces::BodyFaces, run: &[u32], faces: [&[u
     let orient = |fi: usize, s: &Surf, q: V| toward_region(body, fi, s, q, within, size);
     let legs = if r > 0.0 { [0.0; 2] } else if c == 0 { [la, lb] } else { [lb, la] };
     let beyond = Beyond {
-        along: super::Along::Meeting { face: Surf::Plane { origin: at, normal: n } }, toward: toward(n, within), chain, wall,
+        face: Surf::Plane { origin: at, normal: n }, toward: toward(n, within), chain, wall,
         split, sides: [orient(g, &chain, q0), orient(w, &wall, at), 1.0], seam, legs, radius: r, ends: [q0, q1],
     };
     // the flat along the run, told its legs apart by a point beside the first group's face, from

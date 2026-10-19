@@ -248,25 +248,17 @@ impl Lowered {
             .map(|j| { let j = j.arr(); [j[0].as_i64() as usize,j[1].as_i64() as usize] }).collect();
         // a ring's section beyond a seam's normal surface (#422), counted after the rolled runs
         let beyond = each(listed(n,"beyond"),|b| {
-            use crate::brep::spill::{Along,Seam};
+            use crate::brep::spill::Seam;
             let seam = field(b,"seam")?;
             let ends = field(b,"ends")?.arr();
             let sides = field(b,"sides")?.arr();
             if ends.len() != 2 || sides.len() != 3 { return Err(unread("recipe: a piece beyond a seam, misread".into())) }
-            let along = field(b,"along")?;
-            let along = match along.get("face") {
-                Some(face) => Along::Meeting {face:surface(face)?},
-                None => {
-                    let (axis,crease) = (field(along,"axis")?.arr(),field(along,"crease")?);
-                    if axis.len() != 2 { return Err(unread("recipe: a piece beyond a seam, misread".into())) }
-                    Along::Ring {axis:[vec3(&axis[0]),vec3(&axis[1])],crease:(point(crease,"centre")?,number(crease,"radius")?)}
-                }
-            };
+            let face = surface(field(field(b,"along")?,"face")?)?;
             let seam = match seam.get("point") {
                 Some(_) => Seam::Line(point(seam,"point")?,point(seam,"direction")?),
                 None => Seam::Circle(point(seam,"centre")?,point(seam,"normal")?,number(seam,"radius")?),
             };
-            Ok(crate::brep::spill::Beyond {along,toward:point(b,"toward")?,chain:surface(field(b,"chain")?)?,
+            Ok(crate::brep::spill::Beyond {face,toward:point(b,"toward")?,chain:surface(field(b,"chain")?)?,
                 wall:surface(field(b,"wall")?)?,split:surface(field(b,"split")?)?,
                 sides:[sides[0].as_f64(),sides[1].as_f64(),sides[2].as_f64()],seam,legs:pair(field(b,"legs")?),
                 radius:number(b,"radius")?,ends:[vec3(&ends[0]),vec3(&ends[1])]})
