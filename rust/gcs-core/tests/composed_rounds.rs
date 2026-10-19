@@ -690,3 +690,64 @@ fn a_round_spilled_onto_a_rounded_plate_is_built_exactly_at_every_radius() {
         spilled_round_built(21.0 + 0.1 * k as f64);
     }
 }
+
+/// A block drawn on the side plane (y across, z up) and 40 long in x: its top at z = 10 out to
+/// y = 20, then a slope down at 45° to y = 30, that edge rounded 2 — the top going on tangent into
+/// the round at y = 20 − 2 tan 22.5°, the round into the slope — and a rib 20 long on the top, its
+/// front wall at y = 17, 6 tall; then `rest`.
+fn sloped(rest: &str) -> String {
+    format!("unit mm\nuse std (round, chamfer)\nin std.side {{\n  b0 := point\n  b1 := point\n  b2 := point\n  \
+        b3 := point\n  fix((0, 0)) b0\n  fix((30, 0)) b1\n  fix((20, 10)) b2\n  fix((0, 10)) b3\n  \
+        (bottom := line(b0, b1)) -> (slope := line(b1, b2)) -> (top := line(b2, b3)) -> (back := line(b3, b0)) -> close\n  \
+        outline := face(bottom, slope, top, back)\n  r0 := point\n  r1 := point\n  r2 := point\n  r3 := point\n  \
+        fix((12, 10)) r0\n  fix((17, 10)) r1\n  fix((17, 16)) r2\n  fix((12, 16)) r3\n  \
+        (rb := line(r0, r1)) -> (rf := line(r1, r2)) -> (rt := line(r2, r3)) -> (rk := line(r3, r0)) -> close\n  \
+        ribbed := face(rb, rf, rt, rk)\n}}\nblock := solid(outline, from: 0mm, to: 40mm)\nblock.top round(r: 2mm) block.slope\n\
+        rib := solid(ribbed, from: 10mm, to: 30mm)\npart := solid(block)\nrib union part\n{rest}")
+}
+
+/// **A flat across a chain of three faces** (#422's rung 5): the rib's front foot chamfered 4 — its
+/// leg runs from the top across the round onto the slope (to y = 21).  In the section the flat is
+/// each face's sum of distances with the wall in turn — a line over the top, a parabola's arc over
+/// the round (`|q − c| = 23 − y`), a line over the slope — changing face on the chain's normal at
+/// each seam: a prism of five strokes over the chain's three, against a quadrature of the section
+/// read by the chain's nearest face.
+#[test]
+fn a_chamfer_spilled_across_a_chain_of_three_faces_is_built() {
+    let e = solved(&sloped("part.rib.rf chamfer(d: 4mm) part.block.top\n"));
+    let got = volume(&e, "part");
+    let t = (PI / 8.0).tan();
+    let (y1, c) = (20.0 - 2.0 * t, [20.0 - 2.0 * t, 8.0]);
+    let y2 = c[0] + 2.0 * (PI / 4.0).sin();
+    let chain = |y: f64| if y <= y1 { 10.0 } else if y <= y2 { c[1] + (4.0 - (y - c[0]).powi(2)).sqrt() } else { 30.0 - y };
+    // the distance from the chain's nearest face, above it
+    let distance = |y: f64, z: f64| {
+        let (dy, dz) = (y - c[0], z - c[1]);
+        if y <= y1 { z - 10.0 } else if dy <= dz { dy.hypot(dz) - 2.0 } else { (y + z - 30.0) / 2f64.sqrt() }
+    };
+    let top = |y: f64| {
+        let (mut lo, mut hi) = (chain(y), chain(y) + 5.0);
+        for _ in 0..100 {
+            let m = 0.5 * (lo + hi);
+            if distance(y, m) / 4.0 + (y - 17.0) / 4.0 > 1.0 { hi = m } else { lo = m }
+        }
+        0.5 * (lo + hi)
+    };
+    // where the flat crosses the round's normal at its second seam
+    let (mut lo, mut hi) = (y1, 21.0);
+    for _ in 0..100 {
+        let m = 0.5 * (lo + hi);
+        if top(m) - c[1] > m - c[0] { lo = m } else { hi = m }
+    }
+    let yx = 0.5 * (lo + hi);
+    let (nodes, weights) = gauss(16);
+    let mut breaks = vec![17.0, y1, yx, y2, 21.0];
+    breaks.sort_by(f64::total_cmp);
+    let area: f64 = breaks.windows(2).map(|w| (0..8).map(|j| {
+        let (a, z) = (w[0] + (w[1] - w[0]) * j as f64 / 8.0, w[0] + (w[1] - w[0]) * (j + 1) as f64 / 8.0);
+        nodes.iter().zip(&weights).map(|(&x, &wt)| { let y = 0.5 * (a + z) + 0.5 * (z - a) * x; 0.5 * (z - a) * wt * (top(y) - chain(y)) })
+            .sum::<f64>()
+    }).sum::<f64>()).sum();
+    let want = volume(&e, "block") + 5.0 * 6.0 * 20.0 + 20.0 * area;
+    assert!((got - want).abs() <= 1e-9 * want, "{got} against {want}");
+}

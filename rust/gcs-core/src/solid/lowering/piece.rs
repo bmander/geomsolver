@@ -238,7 +238,7 @@ fn ring_piece(body: &crate::solid::faces::BodyFaces, edge: u32, fa: usize, fb: u
     };
     // a face going on across a seam its section reaches (#422): a circle about the same axis, the
     // face beyond turned about it too, the section against the chain in every meridian
-    let chain = chained([fa, fb].map(|fi| seam_round(body, spill, fi, centre, axis)))?;
+    let chain = chained([fa, fb].map(|fi| spill.get(&fi).map(|seams| seam_round(body, seams, centre, axis)).transpose()))?;
     // one not about the ring's axis: the ring kept short of the seam's normal surface, the piece
     // beyond it taking the rest (#422)
     let (chain, askew) = match chain {
@@ -246,19 +246,45 @@ fn ring_piece(body: &crate::solid::faces::BodyFaces, edge: u32, fa: usize, fb: u
         Some((c, Round::About(o, r, g))) => (Some((c, (o, r, g))), None),
         None => (None, None),
     };
-    let section_at = |t: f64| {
+    // the section against the chain at the turn `t`, its seams each a circle (centre, radius) and
+    // the face going on across it; and its footprint on the chain
+    let against = |t: f64, c: usize, seams: &[(V, f64, usize)]| {
         let p = add(centre, scale(radial_at(t), radius));
-        let traces = [trace(fa, p), trace(fb, p)];
-        match chain {
-            None => cut(p, cross(axis, radial_at(t)), traces, within, section),
-            Some((c, (o, r, g))) => {
-                let s = add(o, scale(radial_at(t), r));
-                let next = Next { seam: s, trace: trace(g, s) };
-                let (run, foot) = super::chain::cut_chain(p, cross(axis, radial_at(t)), traces, (c, next), within, section)?;
-                onto(body, g, foot)?;
-                Ok(run)
+        let next: Vec<Next> = seams.iter().map(|&(o, r, g)| {
+            let s = add(o, scale(radial_at(t), r));
+            Next { seam: s, trace: trace(g, s) }
+        }).collect();
+        super::chain::cut_chain(p, cross(axis, radial_at(t)), [trace(fa, p), trace(fb, p)], (c, &next), within, section)
+    };
+    // the chain from the edge's face on: each face the footprint lands past going on into the
+    // next across another seam about the axis
+    let chain = match chain {
+        None => None,
+        Some((c, first)) => {
+            let mut seams = vec![first];
+            let mut prev = [fa, fb][c];
+            loop {
+                let (_, foot) = against(t0, c, &seams)?;
+                let g = seams.last().expect("a seam").2;
+                let Some(h) = onto(body, prev, g, foot)? else { break };
+                if seams.len() >= CHAIN {
+                    return Err(spilled("past the faces it goes on into (a chain of more than four)"));
+                }
+                let across: Vec<(u32, usize)> = body.edges_between(&[g], &[h]).into_iter().map(|e| (e, h)).collect();
+                match seam_round(body, &across, centre, axis)? {
+                    Round::About(o, r, h) => seams.push((o, r, h)),
+                    Round::Askew(..) => return Err(spilled("round a circle beside a chain whose further seam is not about its axis")),
+                }
+                prev = g;
             }
+            Some((c, seams))
         }
+    };
+    let section_at = |t: f64| match &chain {
+        None => cut(add(centre, scale(radial_at(t), radius)), cross(axis, radial_at(t)),
+            [trace(fa, add(centre, scale(radial_at(t), radius))), trace(fb, add(centre, scale(radial_at(t), radius)))],
+            within, section),
+        Some((c, seams)) => against(t, *c, seams).map(|(run, _)| run),
     };
     // at an end standing on a plane not through the axis (a D's round rim ending at its flat):
     // carried on round past it until the whole section has crossed that plane, and kept within
@@ -432,7 +458,7 @@ fn run_piece(body: &crate::solid::faces::BodyFaces, edge: u32, fa: usize, fb: us
     let traces = [trace(fa, p0)?, trace(fb, p0)?];
     // a face going on across a seam its section reaches (#422): a line along the edge, the face
     // beyond a plane or a cylinder along it too, the section against the chain all along
-    let chain = chained([fa, fb].map(|fi| seam_along(body, spill, fi, p0, along, length)))?;
+    let chain = chained([fa, fb].map(|fi| spill.get(&fi).map(|seams| seam_along(body, seams, p0, along, length)).transpose()))?;
     // carried on past each end until every face there, on the side the edge runs on, cuts it
     // off, however it stands (a run-out): a face square to the edge where the edge ends, one at a
     // slant as far past as the section reaches, kept within its half-space
@@ -440,11 +466,25 @@ fn run_piece(body: &crate::solid::faces::BodyFaces, edge: u32, fa: usize, fb: us
     let (planes1, bent1) = ends_at(body, ends, p1)?;
     let mut run = match chain {
         None => cut(p0, along, traces, within, section)?,
-        Some((c, (s, g))) => {
-            let next = Next { seam: s, trace: trace(g, s).map_err(|_| spilled("into a face not turned about a line along its edge"))? };
-            let (run, foot) = super::chain::cut_chain(p0, along, traces, (c, next), within, section)?;
-            onto(body, g, foot)?;
-            run
+        Some((c, first)) => {
+            // the chain from the edge's face on: each face the footprint lands past going on into
+            // the next across another seam along the edge
+            let mut seams = vec![first];
+            let mut prev = [fa, fb][c];
+            loop {
+                let next = seams.iter().map(|&(s, g)| Ok(Next { seam: s,
+                    trace: trace(g, s).map_err(|_| spilled("into a face not turned about a line along its edge"))? }))
+                    .collect::<Result<Vec<Next>, String>>()?;
+                let (run, foot) = super::chain::cut_chain(p0, along, traces, (c, &next), within, section)?;
+                let g = seams.last().expect("a seam").1;
+                let Some(h) = onto(body, prev, g, foot)? else { break run };
+                if seams.len() >= CHAIN {
+                    return Err(spilled("past the faces it goes on into (a chain of more than four)"));
+                }
+                let across: Vec<(u32, usize)> = body.edges_between(&[g], &[h]).into_iter().map(|e| (e, h)).collect();
+                seams.push(seam_along(body, &across, p0, along, length)?);
+                prev = g;
+            }
         }
     };
     let outline = run.section_hull();
@@ -513,23 +553,28 @@ fn chained<T>(sides: [Result<Option<T>, String>; 2]) -> Result<Option<(usize, T)
     }
 }
 
-/// Where the section's footprint on the next face of a chain (`foot`, where its leg or its ball's
-/// touch is) lands on face `g`: past it the chain goes on again, or ends, and no section of two
-/// pieces holds it.
-fn onto(body: &crate::solid::faces::BodyFaces, g: usize, foot: V) -> Result<(), String> {
-    match body.off_face(g, foot) {
-        None => Ok(()),
-        Some(_) => Err(spilled("past the face it goes on into (a chain of more than two faces)")),
+/// How many faces a chain the section stands against may have past the edge's own.
+const CHAIN: usize = 4;
+
+/// Where the section's footprint on the last face of a chain (`foot`, where its leg or its ball's
+/// touch is) lands, face `g` going on from `prev`: on it (none), or past a seam where it goes on
+/// tangent into another (that face), the chain going on; refused past any other edge of it.
+fn onto(body: &crate::solid::faces::BodyFaces, prev: usize, g: usize, foot: V) -> Result<Option<usize>, String> {
+    let Some(e) = body.off_face(g, foot) else { return Ok(None) };
+    let at = body.middle(e);
+    match body.faces_of(e).iter().copied().find(|&h| h != g) {
+        Some(h) if h != prev && norm(sub(body.normal(g, at), body.normal(h, at))) < 1e-6 => Ok(Some(h)),
+        _ => Err(spilled("past the face it goes on into, across an edge no seam")),
     }
 }
 
-/// The seam along a straight edge (from `p0` along the unit `along`, `length` long) where face `fi`
-/// goes on into the next face its section reaches (`spill`): its point in the section through
-/// `p0` — every piece of it a line along the edge, one line, running the whole edge — and that face.
-fn seam_along(body: &crate::solid::faces::BodyFaces, spill: &Spill, fi: usize, p0: V, along: V, length: f64)
-    -> Result<Option<(V, usize)>, String> {
-    let Some(seams) = spill.get(&fi) else { return Ok(None) };
-    let g = seams[0].1;
+/// The seam along a straight edge (from `p0` along the unit `along`, `length` long) where a face
+/// goes on into the next its section reaches (`seams`, its pieces, each with that face): its point
+/// in the section through `p0` — every piece of it a line along the edge, one line, running the
+/// whole edge — and that face.
+fn seam_along(body: &crate::solid::faces::BodyFaces, seams: &[(u32, usize)], p0: V, along: V, length: f64)
+    -> Result<(V, usize), String> {
+    let g = seams.first().ok_or_else(|| spilled("into a face it meets in no edge"))?.1;
     if seams.iter().any(|&(_, h)| h != g) {
         return Err(spilled("into more than one face"));
     }
@@ -559,16 +604,15 @@ fn seam_along(body: &crate::solid::faces::BodyFaces, spill: &Spill, fi: usize, p
     if reach < length - 1e-9 * size {
         return Err(spilled("beside a seam that runs only part of its edge"));
     }
-    Ok(at.map(|s| (s, g)))
+    Ok((at.expect("a seam"), g))
 }
 
-/// The seam round a circle (about `centre` on the unit `axis`) where face `fi` goes on into the next
-/// face its section reaches (`spill`): a circle about the same axis, whole, the face beyond turned
-/// about it too — its centre, radius and that face.
-fn seam_round(body: &crate::solid::faces::BodyFaces, spill: &Spill, fi: usize, centre: V, axis: V)
-    -> Result<Option<Round>, String> {
-    let Some(seams) = spill.get(&fi) else { return Ok(None) };
-    let g = seams[0].1;
+/// The seam round a circle (about `centre` on the unit `axis`) where a face goes on into the next
+/// its section reaches (`seams`, its pieces, each with that face): a circle, whole — about the same
+/// axis, the face beyond turned about it too, or not — and that face.
+fn seam_round(body: &crate::solid::faces::BodyFaces, seams: &[(u32, usize)], centre: V, axis: V)
+    -> Result<Round, String> {
+    let g = seams.first().ok_or_else(|| spilled("into a face it meets in no edge"))?.1;
     if seams.iter().any(|&(_, h)| h != g) {
         return Err(spilled("into more than one face"));
     }
@@ -590,7 +634,8 @@ fn seam_round(body: &crate::solid::faces::BodyFaces, spill: &Spill, fi: usize, c
     if turn < std::f64::consts::TAU - 1e-9 {
         return Err(spilled("beside a seam that runs only part of its edge"));
     }
-    Ok(circle.map(|(o, n, r)| if about { Round::About(o, r, g) } else { Round::Askew((o, n, r), g) }))
+    let (o, n, r) = circle.expect("a seam");
+    Ok(if about { Round::About(o, r, g) } else { Round::Askew((o, n, r), g) })
 }
 
 /// The seam round a circle a section reaches across: about the circle's own axis (its centre and

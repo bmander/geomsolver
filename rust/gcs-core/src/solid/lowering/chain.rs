@@ -89,10 +89,10 @@ impl Piece2 {
 fn within(t: f64) -> bool { (-1e-9..=1.0 + 1e-9).contains(&t) }
 
 /// The section beside an edge at `p0` (in the plane square to the unit `along`), between faces seen
-/// there as `traces`, face `c`'s going on across a seam into `next`'s: as `piece::cut`, with the
-/// ball or the flat against the chain's nearest piece; and the section's footprint on the chain
-/// (its leg, its ball's touch).
-pub(super) fn cut_chain(p0: V, along: V, traces: [Trace; 2], (c, next): (usize, Next), within_: bool, section: Section)
+/// there as `traces`, face `c`'s going on across a seam into the first of `next`, and each of those
+/// across another into the one after it: as `piece::cut`, with the ball or the flat against the
+/// chain's nearest piece; and the section's footprint on the chain (its leg, its ball's touch).
+pub(super) fn cut_chain(p0: V, along: V, traces: [Trace; 2], (c, next): (usize, &[Next]), within_: bool, section: Section)
     -> Result<(Run, V), String> {
     let (ua, ub) = (super::piece::toward(traces[0].normal(), within_), super::piece::toward(traces[1].normal(), within_));
     if 1.0 + crate::space::dot(ua, ub) <= 1e-9 {
@@ -105,26 +105,36 @@ pub(super) fn cut_chain(p0: V, along: V, traces: [Trace; 2], (c, next): (usize, 
     // each side's step outward from the edge, the region left of travel times `sigma`
     let outward = [corner.steps[0].reversed(), corner.steps[1]];
     let sigma = |k: usize| if k == 0 { -corner.side } else { corner.side };
-    let s = corner.at2(next.seam);
-    let ts = outward[c].param(s);
-    if !(ts > 0.0 && ts < 1.0) || dist(outward[c].point(ts), s) > 1e-9 * (size + norm(s)) {
-        return Err(unbuilt("a seam off the face it goes on from"));
-    }
-    let own = outward[c].part(0.0, ts);
-    let way = unit(own.tangent(1.0));
-    let onward = match next.trace {
-        Trace::Line(_) => Seg::Line { a: s, b: add(s, scale(way, reach)) },
-        Trace::Circle { centre, radius, .. } => {
-            let k = corner.at2(centre);
-            let from = sub(s, k);
-            if (norm(from) - radius).abs() > 1e-9 * (size + radius) || dot(unit(from), way).abs() > 1e-6 {
-                return Err(unbuilt("a seam where the faces do not go on tangent"));
-            }
-            let turn = cross(from, way).signum();
-            Seg::Arc { c: k, r: radius, a0: from[1].datan2(from[0]), sweep: turn * (reach / radius).min(0.5 * std::f64::consts::PI) }
+    // the chain's steps: each face's from the last seam (the edge) to the next, the last's on
+    // `reach` past its seam
+    let mut segs = vec![outward[c]];
+    let mut seams: Vec<P> = Vec::new();
+    for n in next {
+        let s = corner.at2(n.seam);
+        let last = *segs.last().expect("a step");
+        let ts = last.param(s);
+        if !(ts > 0.0 && ts < 1.0) || dist(last.point(ts), s) > 1e-9 * (size + norm(s)) {
+            return Err(unbuilt("a seam off the face it goes on from"));
         }
-    };
-    let chain = [Piece2::new(own, sigma(c)), Piece2::new(onward, sigma(c))];
+        let own = last.part(0.0, ts);
+        *segs.last_mut().expect("a step") = own;
+        let way = unit(own.tangent(1.0));
+        segs.push(match n.trace {
+            Trace::Line(_) => Seg::Line { a: s, b: add(s, scale(way, reach)) },
+            Trace::Circle { centre, radius, .. } => {
+                let k = corner.at2(centre);
+                let from = sub(s, k);
+                if (norm(from) - radius).abs() > 1e-9 * (size + radius) || dot(unit(from), way).abs() > 1e-6 {
+                    return Err(unbuilt("a seam where the faces do not go on tangent"));
+                }
+                let turn = cross(from, way).signum();
+                Seg::Arc { c: k, r: radius, a0: from[1].datan2(from[0]),
+                    sweep: turn * (reach / radius).min(0.5 * std::f64::consts::PI) }
+            }
+        });
+        seams.push(s);
+    }
+    let chain: Vec<Piece2> = segs.iter().map(|&g| Piece2::new(g, sigma(c))).collect();
     let other = Piece2::new(outward[o], sigma(o));
     // the chain's steps from the edge to piece `i`'s point at `t`, and the other side's from its
     // point at `t` back to the edge
@@ -149,14 +159,14 @@ pub(super) fn cut_chain(p0: V, along: V, traces: [Trace; 2], (c, next): (usize, 
             let legs = [la, lb];
             let (lc, lo) = (legs[c], legs[o]);
             // the leg on the chain: its point `lc` from the other face, nearest the edge
-            let (i, tc) = (0..2).find_map(|i| {
+            let (i, tc) = (0..chain.len()).find_map(|i| {
                 let crossings = other.offset(lc)
                     .and_then(|off| plane2::meet(chain[i].carrier(), off, Touch::Exact)).unwrap_or_default();
                 crossings.into_iter().map(|q| chain[i].seg.param(q)).filter(|&t| within(t))
                     .min_by(|a, b| a.total_cmp(b)).map(|t| (i, t))
             }).ok_or_else(|| unbuilt("a leg that reaches neither face of the chain"))?;
             // the leg on the other face: its point `lo` from the chain's nearest piece
-            let (j, to) = (0..2).filter_map(|j| {
+            let (j, to) = (0..chain.len()).filter_map(|j| {
                 let crossings = chain[j].offset(lo)
                     .and_then(|off| plane2::meet(other.carrier(), off, Touch::Exact)).unwrap_or_default();
                 crossings.into_iter().filter(|&q| within(chain[j].at(q))).map(|q| other.seg.param(q))
@@ -177,21 +187,26 @@ pub(super) fn cut_chain(p0: V, along: V, traces: [Trace; 2], (c, next): (usize, 
                 let grad = |q: P| add(scale(a.gradient(q), 1.0 / lo), scale(b.gradient(q), 1.0 / lc));
                 crate::brep::corners::conic_between(q0, q1, &f, &grad).map_err(|e| unbuilt(&e))
             };
-            let flats = if i == j {
-                vec![(over(i, pc, po)?, "flat")]
-            } else {
-                // where it changes piece: on the chain's normal at the seam, where both pieces'
-                // distances are the distance from the seam
-                let n = scale(left(unit(own.tangent(1.0))), sigma(c));
+            // where it changes piece: on the chain's normal at each seam between the legs' pieces,
+            // where both pieces' distances are the distance from the seam
+            let crossing = |m: usize| -> Result<P, String> {
+                let (s, n) = (seams[m - 1], scale(left(unit(chain[m - 1].seg.tangent(1.0))), sigma(c)));
                 let f = |u: f64| { let q = add(s, scale(n, u)); u / lo + other.distance(q) / lc - 1.0 };
                 let (f0, f1) = (f(0.0), f(lo));
                 if !(f0 < 0.0 && f1 >= 0.0) {
                     return Err(unbuilt("a flat that does not cross the chain's normal at its seam"));
                 }
-                let u = crate::roots::bracketed_root(|u| Some(f(u)), 0.0, f0, lo, f1, 1e-15);
-                let x = add(s, scale(n, u));
-                vec![(over(i, pc, x)?, "flat"), (over(j, x, po)?, "flat")]
+                Ok(add(s, scale(n, crate::roots::bracketed_root(|u| Some(f(u)), 0.0, f0, lo, f1, 1e-15))))
             };
+            // from the chain's leg to the other's, piece by piece
+            let order: Vec<usize> = if i >= j { (j..=i).rev().collect() } else { (i..=j).collect() };
+            let mut points = vec![pc];
+            for w in order.windows(2) {
+                points.push(crossing(w[0].max(w[1]))?);
+            }
+            points.push(po);
+            let flats = order.iter().zip(points.windows(2))
+                .map(|(&k, q)| Ok((over(k, q[0], q[1])?, "flat"))).collect::<Result<Vec<_>, String>>()?;
             (up_to(i, tc), flats, other.seg.part(0.0, to), pc)
         }
     };
@@ -218,7 +233,7 @@ pub(super) fn cut_chain(p0: V, along: V, traces: [Trace; 2], (c, next): (usize, 
 /// The ball of radius `r` touching the chain and the other face: which piece of the chain it
 /// touches, its centre, and where it touches that piece and the other face (along each); the one
 /// nearest the edge whose touches are on their pieces.
-fn ball(chain: &[Piece2; 2], other: &Piece2, r: f64) -> Result<(usize, P, f64, f64), String> {
+fn ball(chain: &[Piece2], other: &Piece2, r: f64) -> Result<(usize, P, f64, f64), String> {
     let mut best: Option<(f64, (usize, P, f64, f64))> = None;
     for (i, piece) in chain.iter().enumerate() {
         let (Some(a), Some(b)) = (piece.offset(r), other.offset(r)) else { continue };
