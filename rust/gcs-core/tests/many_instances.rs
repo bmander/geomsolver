@@ -10,8 +10,18 @@
 //! `param` with no value, made the work the plates times the copies, or the plates squared.
 //! Each adds a frame of its own over the table now, and a seed reads through it.
 //!
+//! The solve is then the cost (#440): the margin free is an unknown every plate reads, so a
+//! column of JᵀJ that touches four in five of the others, and reverse Cuthill–McKee searched
+//! through it, interleaving every plate with every other — a factor close to dense, and a solve
+//! that grew as the cube of the plates.  A dense column is ordered last now.  The measure is the
+//! entries of the factor, which is deterministic where a clock is not.
+//!
 //! The count is the allocator of the whole core suite, which is one binary (`tests/main.rs`):
 //! `System`'s, with a per-thread tally beside it, so a test on another thread does not count.
+use gcs_core::examples;
+use gcs_core::solve::{solve, SolveOpts};
+use gcs_core::sparse::Ata;
+use gcs_core::system;
 use gcs_core::{library, program};
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
@@ -195,5 +205,58 @@ fn blocks_beside_many_instances_elaborate_in_linear_work() {
         let ratio = large as f64 / small as f64;
         assert!(ratio < 5.0, "{block}: 200 plates and 200 copies allocate {ratio:.1}× what 50 \
                               and 50 do ({large} bytes, {small})");
+    }
+}
+
+/// The order `sk`'s normal equations are factored in: how many columns were ordered last as
+/// dense, and the entries of the factor below its diagonal.
+fn factored(sk: &gcs_core::model::Sketch) -> (usize, usize) {
+    let sys = system::System::new(sk);
+    let ata = Ata::new(sys.n_res, sys.n_free, &sys.csr_indptr, &sys.csr_indices);
+    (ata.dense, ata.factor_nnz())
+}
+
+/// `n` plates, with `beside` beside them, elaborated.
+fn sketch(n: usize, beside: Beside) -> gcs_core::model::Sketch {
+    let (p, errors, linked) = library::parse_linked(&plates(n, beside));
+    assert!(errors.is_empty() && linked.is_empty(), "{errors:?} {linked:?}");
+    let e = program::elaborate(&p);
+    assert!(e.ok(), "{:?}", e.diags);
+    e.sketch
+}
+
+/// **A free number every instance reads costs one row of the factor** (#440): with the margin a
+/// `param`, its column touched every plate's, and the order searched through it made the factor
+/// of 300 plates 6,077,969 entries against 30,847 with the margin fixed.  Ordered last, the
+/// margin's column adds a row, so the factor is the fixed plates' and the plates', at two sizes.
+#[test]
+fn a_free_number_every_instance_reads_is_factored_last() {
+    for n in [100, 200] {
+        let (fixed_dense, fixed) = factored(&sketch(n, Beside::Nothing));
+        let (free_dense, free) = factored(&sketch(n, Beside::FreeMargin));
+        assert_eq!((fixed_dense, free_dense), (0, 1), "{n} plates: only the margin is dense");
+        let ratio = free as f64 / fixed as f64;
+        assert!(ratio < 2.0, "{n} plates: the factor with the margin free is {ratio:.1}× the \
+                              fixed one's ({free} entries, {fixed})");
+        // and linear in the plates: a row of `n` columns, and a band of the plates
+        assert!(free < 200 * n, "{n} plates: {free} entries in the factor");
+    }
+    // which solves, as quickly as the order says
+    let mut sk = sketch(200, Beside::FreeMargin);
+    let r = solve(&mut sk, SolveOpts::default());
+    assert!(r.success, "{r:?}");
+}
+
+/// **An ordinary sketch keeps its order**: nothing in the library has a column dense enough to
+/// be ordered last, so each is factored in reverse Cuthill–McKee's order, as before #440.
+#[test]
+fn no_case_in_the_library_has_a_dense_column() {
+    for (_, key, _) in examples::CASES {
+        let sk = examples::case(key).unwrap_or_else(|| panic!("{key} is not a case"));
+        assert_eq!(factored(&sk).0, 0, "{key}");
+    }
+    for sk in [examples::truss(50, 20.0, 15.0, true), examples::polygon_chain(200, 50.0),
+               examples::zigzag(40, 10)] {
+        assert_eq!(factored(&sk).0, 0);
     }
 }

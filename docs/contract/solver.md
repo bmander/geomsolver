@@ -54,6 +54,15 @@ version ([0.n], see the [language changelog](../solvent-changelog.md)) says wher
   more than `REFINE_TOL` of `‖g‖`; a step ε barely touches is left to the bit, nothing is added
   along the null space, so the least change stands, and a drag (`SolveOpts::document` false) is
   never refined.
+- **A dense column is factored last** (#440, `sparse::order`).  `Ata` orders JᵀJ by reverse
+  Cuthill–McKee, which on a column touching most of the others (one unknown every instance
+  reads: a free margin, a pitch) puts all it touches in one level and interleaves every instance
+  with every other, a factor close to dense and a solve cubic in the instances.  A column of more
+  than `max(16, 10·√n)` neighbours (AMD's rule) is left out of the search and appended last in
+  index order, so it costs one row of L.  With no such column the order is RCM's on A as it
+  stands, and nothing in the library has one.  `tests/many_instances.rs` is the gate: the factor
+  of the plates with the margin free within 2× the fixed plates', at 100 and 200, and no case of
+  the library with a dense column.
 - "Solved" is `System::max_relative_residual <= 1e-6`: each row's residual over its own units
   (`extent^degree`).  Never one absolute threshold — kernels are of degree 1 and 2.  **The
   iteration sees the same vector**: `residuals_into` and `compute_csr` divide every row by
