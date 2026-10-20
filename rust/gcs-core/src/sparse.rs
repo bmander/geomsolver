@@ -1,7 +1,7 @@
 //! Sparse normal equations for the large-sketch path: JᵀJ assembled from the fixed CSR structure
-//! of the Jacobian, ordered by reverse Cuthill–McKee and factored by an up-looking LDLᵀ (Davis).
-//! Regularizing the diagonal keeps rank-deficient (under-constrained) systems solvable, which is
-//! the normal case while editing.
+//! of the Jacobian, ordered by reverse Cuthill–McKee with any dense column last, and factored by
+//! an up-looking LDLᵀ (Davis).  Regularizing the diagonal keeps rank-deficient
+//! (under-constrained) systems solvable, which is the normal case while editing.
 
 /// Reverse Cuthill–McKee on the pattern of A: short, and the sketch graphs this solver sees
 /// (trusses, chains, rings) are close to banded once relabelled this way.
@@ -55,6 +55,54 @@ fn rcm(n: usize, ap: &[i32], ai: &[i32]) -> (Vec<i32>, Vec<i32>) {
     (perm, iperm)
 }
 
+/// A column of A is dense when it touches more than `max(16, 10·√n)` others — AMD's rule for
+/// dense rows (Amestoy, Davis & Duff).  One unknown every instance of a component reads (a shared
+/// margin, a pitch) is such a column, and nothing of an ordinary truss, chain or ring is.
+fn dense_columns(n: usize, ap: &[i32]) -> Vec<bool> {
+    let limit = (10.0 * (n as f64).sqrt()).max(16.0);
+    // A holds its diagonal, which is not a neighbour
+    (0..n).map(|i| (ap[i + 1] - ap[i] - 1) as f64 > limit).collect()
+}
+
+/// The fill-reducing order: RCM on the columns that are not `dense`, then the dense ones last, in
+/// index order (#440).  A breadth-first search through a dense column puts every column it
+/// touches in one level, interleaving what was separate, and the factor of that order is close
+/// to dense; eliminated last, a dense column costs one row of L.  With no dense column this is
+/// `rcm` on A as it stands.
+fn order(n: usize, ap: &[i32], ai: &[i32], dense: &[bool]) -> (Vec<i32>, Vec<i32>) {
+    if !dense.contains(&true) {
+        return rcm(n, ap, ai);
+    }
+    // the pattern among the columns that are not dense, renumbered in index order
+    let mut local = vec![-1i32; n];
+    let mut kept: Vec<i32> = Vec::new();
+    for i in 0..n {
+        if !dense[i] {
+            local[i] = kept.len() as i32;
+            kept.push(i as i32);
+        }
+    }
+    let mut sp = vec![0i32; kept.len() + 1];
+    let mut si: Vec<i32> = Vec::new();
+    for (k, &i) in kept.iter().enumerate() {
+        for p in ap[i as usize]..ap[i as usize + 1] {
+            let j = local[ai[p as usize] as usize];
+            if j >= 0 {
+                si.push(j);
+            }
+        }
+        sp[k + 1] = si.len() as i32;
+    }
+    let (sub, _) = rcm(kept.len(), &sp, &si);
+    let mut perm: Vec<i32> = sub.iter().map(|&k| kept[k as usize]).collect();
+    perm.extend((0..n).filter(|&i| dense[i]).map(|i| i as i32));
+    let mut iperm = vec![0i32; n];
+    for i in 0..n {
+        iperm[perm[i] as usize] = i as i32;
+    }
+    (perm, iperm)
+}
+
 /// Davis's up-looking LDLᵀ: symbolic elimination tree and column counts.
 fn ldl_symbolic(
     n: usize,
@@ -97,6 +145,8 @@ fn ldl_symbolic(
 pub struct Ata {
     pub n: usize,
     pub nnz: usize,
+    /// The columns ordered last as dense (`dense_columns`): none, for an ordinary sketch.
+    pub dense: usize,
     ap: Vec<i32>,
     ai: Vec<i32>,
     ax: Vec<f64>,
@@ -155,8 +205,9 @@ impl Ata {
         let ai = ai_tmp;
         let ax = vec![0.0; nnz.max(1)];
 
+        let dense = dense_columns(n, &ap);
         let (perm, iperm, lp, parent, lnz) = if n > 0 {
-            let (perm, iperm) = rcm(n, &ap, &ai);
+            let (perm, iperm) = order(n, &ap, &ai, &dense);
             let (lp, parent, lnz) = ldl_symbolic(n, &ap, &ai, &perm, &iperm);
             (perm, iperm, lp, parent, lnz)
         } else {
@@ -166,6 +217,7 @@ impl Ata {
         Ata {
             n,
             nnz,
+            dense: dense.iter().filter(|&&d| d).count(),
             ap,
             ai,
             ax,
@@ -184,6 +236,11 @@ impl Ata {
             d: vec![0.0; n.max(1)],
             y: vec![0.0; n.max(1)],
         }
+    }
+
+    /// The entries of the factor L below its diagonal: the fill of the order chosen.
+    pub fn factor_nnz(&self) -> usize {
+        self.lp.last().map_or(0, |&k| k as usize)
     }
 
     /// A <- JᵀJ from the Jacobian's CSR values.
