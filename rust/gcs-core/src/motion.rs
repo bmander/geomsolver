@@ -11,8 +11,7 @@ mod guide;
 use guide::{Guide, Stretch};
 mod track;
 pub use track::Track;
-pub(crate) use track::window;
-use track::Ride;
+pub(crate) use track::{window, Ride};
 
 use crate::{envelope::Motion,model::{MotionDef,Sketch}};
 
@@ -58,6 +57,16 @@ impl Step {
             Step::Relative {source,observer} => Step::Relative {source:observer,observer:source},
             Step::Guided {ref guide,back} => Step::Guided {guide:guide.clone(),back:!back},
             Step::Followed {ref ride,back} => Step::Followed {ride:ride.clone(),back:!back},
+        }
+    }
+
+    /// A frame along a path's or a frame the drawing moves' stretch `[lo, hi]` of the roll,
+    /// enclosed forward (#398 C, F): `None` for any other step, and where it has no bound.
+    fn stretch(&self,lo: f64,hi: f64) -> Option<Stretch> {
+        match self {
+            Step::Guided {guide,..} => guide.stretch(lo,hi),
+            Step::Followed {ride,..} => ride.stretch(lo,hi),
+            _ => None,
         }
     }
 
@@ -227,9 +236,8 @@ impl Family {
         // point, its speed and its frame's angular speed, or no bound at all
         let (lo,hi) = { let [a,b] = domain.bounds(); (a,b) };
         let guided = self.steps.iter().map(|step| match step {
-            Step::Guided {guide,..} => guide.stretch(lo,hi).ok_or(Error::InvalidBounds).map(Some),
-            // a frame the drawing moves, over the stretch of its parameter (#398 F)
-            Step::Followed {ride,..} => ride.stretch(lo,hi).ok_or(Error::InvalidBounds).map(Some),
+            Step::Guided {..} | Step::Followed {..} =>
+                step.stretch(lo,hi).ok_or(Error::InvalidBounds).map(Some),
             _ => Ok(None),
         }).collect::<Result<Vec<Option<Stretch>>,Error>>()?;
         // the farthest a box stands from the path over the stretch, or from the home
@@ -645,6 +653,14 @@ impl Family {
 #[derive(Clone,Copy,Debug)]
 pub struct Pose { pub r: [[f64;3];3], pub p: [f64;3] }
 
+/// A frame's chart as a pose, as `sk` stands: its axes and normal the columns, its origin the
+/// offset.
+pub(crate) fn chart_pose(sk: &Sketch, f: usize) -> Pose {
+    let b = sk.basis(f);
+    let n = b.normal();
+    Pose { r: std::array::from_fn(|i| [b.u[i], b.v[i], n[i]]), p: b.o }
+}
+
 impl Pose {
     /// A gradient read at `self.point(x)` turned into the gradient at `x`: the rotation's
     /// transpose applied.
@@ -732,15 +748,14 @@ pub fn unread_march(f: &str, over: &str) -> String {
              itself, or read the frame over `{over}` — a sweep, a placement, an envelope")
 }
 
-/// **Motion node `m`, a frame the drawing moves, in the plane of `basis`** (#398 F): the table a
-/// profile generated in the plane reads it from (`generate::Op::Table`), or why it cannot be.
-pub(crate) fn planar_table(sk: &Sketch, m: usize, basis: &crate::plane::Basis)
-    -> Result<Vec<f64>, String> {
+/// **Motion node `m`, a frame the drawing moves, carried from where it stands** (#398 F): what a
+/// profile generated in the plane reads its table from (`Ride::planar`), or why it cannot be.
+pub(crate) fn ride_of(sk: &Sketch, m: usize) -> Result<Ride, String> {
     let node = sk.motions.get(m).ok_or("no such motion")?;
     let MotionDef::Followed {frame,ref over} = node.def else {
         return Err(format!("`{}` is no frame the drawing moves",node.name));
     };
-    Ride::read(sk,&node.name,frame,over)?.planar(basis)
+    Ride::read(sk,&node.name,frame,over)
 }
 
 /// Read and evaluate against the current solved geometry. Reuse `Family` for many samples

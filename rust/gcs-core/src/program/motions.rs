@@ -206,14 +206,22 @@ pub(super) fn undriven(sk: &Sketch, m: usize) -> usize {
 /// **The drive a motion node reads**, through relatives and inverses: the parameter it is driven
 /// by, which a relation the solve holds cannot read (#391 S5).
 pub(super) fn drive_in(sk: &Sketch, m: usize) -> Option<(String, String)> {
-    let node = sk.motions.get(m)?;
-    match &node.def {
+    read_in(sk, m, &|node| match &node.def {
         MotionDef::Driven { of, over, .. } => Some((sk.motions[*of as usize].name.clone(),
                                                     over.clone())),
-        MotionDef::Relative { source, observer } => drive_in(sk, *source as usize)
-            .or_else(|| drive_in(sk, *observer as usize)),
-        MotionDef::Inverse { of } => drive_in(sk, *of as usize),
         _ => None,
+    })
+}
+
+/// The first node `m` reads, through relatives and inverses, that `leaf` answers for.
+fn read_in(sk: &Sketch, m: usize, leaf: &dyn Fn(&MotionE) -> Option<(String, String)>)
+    -> Option<(String, String)> {
+    let node = sk.motions.get(m)?;
+    match &node.def {
+        MotionDef::Relative { source, observer } => read_in(sk, *source as usize, leaf)
+            .or_else(|| read_in(sk, *observer as usize, leaf)),
+        MotionDef::Inverse { of } => read_in(sk, *of as usize, leaf),
+        _ => leaf(node),
     }
 }
 
@@ -416,6 +424,11 @@ pub(super) fn declared(over: Option<&crate::syntax::RunsOver>) -> Option<&str> {
     over.filter(|o| o.declared).map(|o| o.name.text.as_str())
 }
 
+/// The declared parameter a declaration's reading over an interval names, where it names one.
+pub(super) fn declared_of(d: &crate::ir::Decl) -> Option<&str> {
+    declared(d.angular_span.as_ref().and_then(|s| s.over.as_ref()))
+}
+
 /// The one parameter the document declares, where it declares one: what a reading at an instant
 /// (`x at(under: f) τ`), which names none, reads a frame the drawing moves over (#398 F).
 pub(super) fn sole(sk: &Sketch) -> Option<String> {
@@ -429,14 +442,10 @@ pub(super) fn sole(sk: &Sketch) -> Option<String> {
 /// **A frame the drawing moves a motion node reads**, through relatives and inverses: the
 /// parameter it is read over, which a reading over the roll reads as an angle (#398 F).
 pub(super) fn followed_in(sk: &Sketch, m: usize) -> Option<(String, String)> {
-    let node = sk.motions.get(m)?;
-    match &node.def {
+    read_in(sk, m, &|node| match &node.def {
         MotionDef::Followed { over, .. } => Some((node.name.clone(), over.clone())),
-        MotionDef::Relative { source, observer } => followed_in(sk, *source as usize)
-            .or_else(|| followed_in(sk, *observer as usize)),
-        MotionDef::Inverse { of } => followed_in(sk, *of as usize),
         _ => None,
-    }
+    })
 }
 
 /// **The motion of a path of carriers** (#383): their joints chained, outermost first —
@@ -550,22 +559,24 @@ pub(super) fn reading_of(sk: &mut Sketch, res: &Resolver, tool: Option<EntRef>,
                          under: Option<&Ref>, seen_from: Option<&Ref>, over: Option<&str>)
     -> Result<usize, String> {
     let m = read_under(sk, res, tool, under, seen_from, over)?;
-    // and a frame the drawing moves is read over the roll as its parameter (#398 F)
-    if let Some((f, over)) = followed_in(sk, m) {
-        let dim = sk.parameters.get(&over).map(|p| p.dim);
-        if dim != Some(crate::units::Dim::ANGLE) {
-            return Err(format!("`{f}` stands where the drawing puts it as `{over}` runs, {}, and \
-                a reading over the roll runs over an angle", dim.map_or("no parameter".into(),
-                |d| format!("a {}", d.name()))));
+    // the roll is an angle, and a drive (#391 S5) or a frame the drawing moves (#398 F) read over
+    // it runs over one
+    let what = |sk: &Sketch, over: &str| {
+        match sk.parameters.get(over).map(|p| p.dim) {
+            Some(crate::units::Dim::ANGLE) => None,
+            dim => Some(dim.map_or("no parameter".into(), |d| format!("a {}", d.name()))),
+        }
+    };
+    if let Some((f, over)) = drive_in(sk, m) {
+        if let Some(dim) = what(sk, &over) {
+            return Err(format!("`{f}` is driven by `{over}`, {dim}, and a reading over the roll \
+                runs over an angle: draw in it, `n := x in {f}`, to follow it along `{over}`"));
         }
     }
-    // the roll is an angle, and a drive read over it runs over one (#391 S5)
-    if let Some((f, over)) = drive_in(sk, m) {
-        let dim = sk.parameters.get(&over).map(|p| p.dim);
-        if dim != Some(crate::units::Dim::ANGLE) {
-            return Err(format!("`{f}` is driven by `{over}`, {}, and a reading over the roll runs \
-                over an angle: draw in it, `n := x in {f}`, to follow it along `{over}`",
-                dim.map_or("no parameter".into(), |d| format!("a {}", d.name()))));
+    if let Some((f, over)) = followed_in(sk, m) {
+        if let Some(dim) = what(sk, &over) {
+            return Err(format!("`{f}` stands where the drawing puts it as `{over}` runs, {dim}, \
+                and a reading over the roll runs over an angle"));
         }
     }
     Ok(m)

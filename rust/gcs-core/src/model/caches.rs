@@ -106,7 +106,14 @@ pub struct Caches {
     /// by curve, against the march's key and its stretch: the scene in space draws it every time
     /// it is built, and it is a solve an instant.
     #[allow(clippy::type_complexity)]
-    pub(crate) traced3: RefCell<BTreeMap<usize, (Vec<f64>, Vec<[f64; 3]>)>>,
+    pub(crate) traced3: RefCell<BTreeMap<usize, (Rc<Result<crate::follow::Followed, String>>,
+                                                  [f64; 2], Vec<[f64; 3]>)>>,
+    /// Each profile generated under frames the drawing moves, its encoding with their tables
+    /// attached (`Sketch::generated_flat`, #398 F), by curve, against the rides it read and its
+    /// plane: a curve's every point reads it.
+    #[allow(clippy::type_complexity)]
+    pub(crate) generated: RefCell<BTreeMap<usize, (Vec<crate::motion::Ride>, [f64; 9],
+                                                    Rc<Vec<f64>>)>>,
     /// Each frame the drawing moves read as a motion (`motion::Track`, #398 F), by its parameter
     /// and its frame, against the march it was read off (by identity): a sweep and its bounds
     /// read it at every query, and it is a solve at every node it adds between the stations.
@@ -135,5 +142,6 @@ impl Caches {
         self.followed.borrow_mut().clear();
         self.tracks.borrow_mut().clear();
         self.traced3.borrow_mut().clear();
+        self.generated.borrow_mut().clear();
     }
 }

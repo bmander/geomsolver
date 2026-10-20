@@ -72,7 +72,7 @@ pub fn solid_diagnostics(sk: &crate::model::Sketch, map: &SourceMap) -> Vec<Diag
     for i in 0..sk.curves.len() {
         let crate::model::CurveBody::Envelope(g) = &sk.curve_defs[sk.curves[i].def as usize].body
         else { continue };
-        if let Err(message) = sk.generated_tables(i,&g.flat) {
+        if let Err(message) = sk.generated_flat(i,&g.flat) {
             let site = map.site_of(crate::model::EntRef::new(crate::model::EntKind::Curve,i));
             diags.push(Diag::new(Code::E080,site.map(|s| s.span).unwrap_or_default(),
                 site.map(|s| s.stmt),message));

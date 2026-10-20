@@ -520,16 +520,20 @@ where a rule came from.
     vec(q̇ q̄)`), `pose_at` the pose; no constant twist (`screw`, `turning`, `sliding`,
     `in_plane`, `in_frame`, `instantaneous`, `NormalVelocity` refuse it).  **Enclosed** span by
     span by the fit's Bernstein hulls (`Hull`: the origin's control points, the derivative's,
-    and the least the quaternion's length falls to): `Ride::stretch` is a `guide::Stretch` for
-    `MotionBounds`, and the speed bound reads `Ride::speed_over`, each span's origin speed plus
+    and the least the quaternion's length falls to), each whole span's worked out once when the
+    track is made (`Track::spans`) and only a stretch's partial end spans per query
+    (`Track::hulls`): `Ride::stretch` is a `guide::Stretch` for `MotionBounds`, built from its
+    samples' extremes as a frame along a path's is (`guide::Extremes`), one sample at an
+    instant, and the speed bound reads `Ride::speed_over`, each span's origin speed plus
     its angular speed times the farthest the box stands from its origin there or now — over a
     whole turn twice the true speed where one box over the turn was twelve times, which is what
     the roll search's evaluations go as.  `solid::reads` keys it by the march's key
     (`follow::march_key`) and where the frame stands.
   - **In the plane** (`generate::Op::Table`, #398 F): a profile generated under such a frame
     (`program::generated`, `Step::Table`, its node and whether it runs back, in the definition's
-    key) reads a table attached after the solve (`Sketch::generated_flat`, `generated_tables`,
-    `generate::with_tables`): `Ride::planar`, the turn now and the origin now, and at each node
+    key) reads a table attached after the solve (`Sketch::generated_flat`, remembered per curve
+    against the rides it read and its plane in `Caches::generated`; `generate::with_tables`):
+    `Ride::planar`, the turn now and the origin now, and at each node
     the parameter, the quaternion's scalar and its part along the plane's normal and the origin,
     in the plane — the same fit, read in `taylor::Jet`, `φ = 2 atan2(z, w)`.  A motion leaving the
     plane (a turn about another axis, the origin off its level) is E080 after the solve
@@ -539,7 +543,8 @@ where a rule came from.
     a profile generated under one (`constraints::validate`); a graft carries none.
   - **A trace in space**: `trace(m over t)` of a point in space is no longer E060
     (`entities::drawn_in_planes`): `Sketch::followed_world` is where the drawing puts it at
-    `CURVE_STEPS` instants, in the world (`Caches::traced3`, keyed as the march is), drawn by
+    `CURVE_STEPS` instants, in the world (`Caches::traced3`, against the march by identity and
+    the stretch), drawn by
     `overview::scene3d` and in no view (`followed_points` reads none); held to by nothing yet
     (`followed::lower`).
   - **Gate**: `tests/followed_frames.rs` — a frame on a four-bar's coupler carrying the coupler's

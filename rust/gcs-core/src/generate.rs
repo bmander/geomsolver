@@ -198,14 +198,12 @@ impl View<'_> {
     }
 }
 
-fn view(flat: &[f64]) -> Option<View<'_>> {
+/// The motion's program as the encoding writes it, and where what follows it starts.
+fn ops(flat: &[f64]) -> Option<(Vec<Op>, usize)> {
     let g = |i: usize| flat.get(i).copied().filter(|v| v.is_finite());
     let ix = |i: usize| g(i).filter(|&v| v >= 0.0).map(|v| v as usize);
-    let n_theta = ix(0)?;
-    let tool = Tool::of(g(1)?)?;
-    let side = g(2)?;
     let n_ops = ix(3)?;
-    if n_theta + 1 > tape::MAX_VARS || n_ops > 64 {
+    if n_ops > 64 {
         return None;
     }
     let mut at = 4usize;
@@ -221,6 +219,19 @@ fn view(flat: &[f64]) -> Option<View<'_>> {
         ops.push(op);
         at += len;
     }
+    Some((ops, at))
+}
+
+fn view(flat: &[f64]) -> Option<View<'_>> {
+    let g = |i: usize| flat.get(i).copied().filter(|v| v.is_finite());
+    let ix = |i: usize| g(i).filter(|&v| v >= 0.0).map(|v| v as usize);
+    let n_theta = ix(0)?;
+    let tool = Tool::of(g(1)?)?;
+    let side = g(2)?;
+    if n_theta + 1 > tape::MAX_VARS {
+        return None;
+    }
+    let (ops, mut at) = ops(flat)?;
     let curve = if tool == Tool::Curve {
         let (n_t, lx, ly) = (ix(at)?, ix(at + 1)?, ix(at + 2)?);
         at += 3;
@@ -269,21 +280,10 @@ fn view(flat: &[f64]) -> Option<View<'_>> {
 
 /// The motion nodes a profile's `Table` ops read (#398 F): what `with_tables` attaches, in order.
 pub fn tabled(flat: &[f64]) -> Vec<usize> {
-    let Some(n) = flat.get(3).map(|&v| v as usize) else { return Vec::new() };
-    let mut out = Vec::new();
-    let mut at = 4usize;
-    for _ in 0..n {
-        match flat.get(at).copied() {
-            Some(4.0) => {
-                out.extend(flat.get(at + 1).map(|&m| m as usize));
-                at += 3;
-            }
-            Some(3.0) => at += 1,
-            Some(_) => at += 3,
-            None => break,
-        }
-    }
-    out
+    ops(flat).map_or_else(Vec::new, |(ops, _)| ops.into_iter().filter_map(|o| match o {
+        Op::Table { motion, .. } => Some(motion),
+        _ => None,
+    }).collect())
 }
 
 /// A profile's encoding with the tables of the frames the drawing moves attached after it, one

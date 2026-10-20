@@ -19,14 +19,14 @@
 //! between stations is a few multiplications.
 //!
 //! **Enclosed over a stretch** (`Ride::stretch`) as a frame along a path is (`guide::Stretch`):
-//! samples a step `w` apart, every origin within `|ċ| w / 2` of one and every turn's entry within
-//! `|ω| w / 2`, with `|ċ|` and `|ω|` bounded over each span from the fit's own derivative
-//! weights — a bound on the fitted motion, which is the motion every reader reads.  It fails
-//! closed past what the march reached.
+//! the origin within each span's Bernstein hull (`Hull`, worked out once a span when the track is
+//! made), and every turn's entry within `|ω| w / 2` of samples a step `w` apart, `|ω|` bounded
+//! over each span by the hulls — a bound on the fitted motion, which is the motion every reader
+//! reads.  It fails closed past what the march reached.
 use std::rc::Rc;
 use std::sync::Arc;
 
-use super::guide::Stretch;
+use super::guide::{mv, spun, Extremes, Stretch};
 use crate::follow::Followed;
 use crate::interval::Interval as I;
 use crate::model::{Running, Sketch};
@@ -66,15 +66,10 @@ pub struct Track {
     nodes: Vec<Node>,
     /// The nodes' parameters, in order: what a fit's window is found in.
     ats: Vec<f64>,
+    /// Each span's fit enclosed whole, once the track is refined.
+    spans: Vec<Hull>,
     /// The frame's axes (as columns) at the first station: what each node's turn is from.
     reference: M,
-}
-
-/// The frame `f`'s axes as columns, `u`, `v` and their normal, and its origin, as `sk` stands.
-fn frame_of(sk: &Sketch, f: usize) -> (M, V) {
-    let b = sk.basis(f);
-    let n = cross(b.u, b.v);
-    (std::array::from_fn(|i| [b.u[i], b.v[i], n[i]]), b.o)
 }
 
 fn transpose(a: &M) -> M {
@@ -83,10 +78,6 @@ fn transpose(a: &M) -> M {
 
 fn mm(a: &M, b: &M) -> M {
     std::array::from_fn(|i| std::array::from_fn(|j| (0..3).map(|k| a[i][k] * b[k][j]).sum()))
-}
-
-fn mv(a: &M, v: V) -> V {
-    std::array::from_fn(|i| dot(a[i], v))
 }
 
 fn dot4(a: Q, b: Q) -> f64 {
@@ -127,12 +118,6 @@ fn omega([w, x, y, z]: Q, [dw, dx, dy, dz]: Q) -> V {
     std::array::from_fn(|k| 2.0 * (w * dv[k] - dw * v[k] + c[k]))
 }
 
-/// `[ω]× m`, the rate of a turn `m` turning at `ω`.
-fn spun(w: V, m: &M) -> M {
-    let k = [[0.0, -w[2], w[1]], [w[2], 0.0, -w[0]], [-w[1], w[0], 0.0]];
-    mm(&k, m)
-}
-
 /// The nodes the fit over span `k` (from node `k` to the next) reads: the four about it, fewer
 /// where the track has fewer.
 pub(crate) fn window(n: usize, k: usize) -> std::ops::Range<usize> {
@@ -165,12 +150,29 @@ fn weights(ts: &[f64], t: f64) -> ([f64; 4], [f64; 4]) {
 /// control points, its derivative's three): the origin's box, the most the origin runs and the
 /// quaternion turns a unit of the parameter, and the least the quaternion's length falls to — each
 /// a bound on the fit, which is a cubic there, for certain but for rounding.
+#[derive(Clone, Copy, Debug)]
 struct Hull {
     lo: V,
     hi: V,
     speed: f64,
     rate: f64,
     least: f64,
+}
+
+/// A cubic's Bernstein control points over a piece `h` long, from its value and rate at either
+/// end.
+fn controls<const N: usize>(p: [f64; N], d: [f64; N], q: [f64; N], e: [f64; N], h: f64)
+    -> [[f64; N]; 4] {
+    [p, std::array::from_fn(|k| p[k] + h / 3.0 * d[k]),
+     std::array::from_fn(|k| q[k] - h / 3.0 * e[k]), q]
+}
+
+/// The most a quadratic reaches in length, from its value at either end and the middle: the
+/// largest of its Bernstein control points (the middle one twice the middle value less half the
+/// ends').
+fn reach<const N: usize>(a: [f64; N], m: [f64; N], b: [f64; N]) -> f64 {
+    let mid: [f64; N] = std::array::from_fn(|k| 2.0 * m[k] - 0.5 * (a[k] + b[k]));
+    [a, mid, b].iter().map(|v| v.iter().map(|x| x * x).sum::<f64>().sqrt()).fold(0.0, f64::max)
 }
 
 /// The farthest any point of the box `[blo, bhi]` stands from any of `[clo, chi]`.
@@ -214,23 +216,24 @@ impl Track {
         let mut copy = sk.clone();
         crate::follow::home(&mut copy);
         copy.set_x(&first.x);
-        let (reference, origin) = frame_of(&copy, f);
+        let start = super::chart_pose(&copy, f);
+        let (reference, origin) = (start.r, start.p);
         let back = transpose(&reference);
         // the drawing's reach about the frame, where it starts: what a turn is weighed by
         let reach = 1.0 + (0..copy.points.len())
             .map(|p| norm(sub(copy.world_point(p), origin))).fold(0.0, f64::max);
         let node = |copy: &Sketch, at: f64| {
-            let (r, c) = frame_of(copy, f);
-            Node { at, q: quaternion(&mm(&r, &back)), c }
+            let now = super::chart_pose(copy, f);
+            Node { at, q: quaternion(&mm(&now.r, &back)), c: now.p }
         };
-        let mut nodes: Vec<Node> = march.stations.iter().map(|s| {
+        let nodes: Vec<Node> = march.stations.iter().map(|s| {
             copy.set_x(&s.x);
             node(&copy, s.at)
         }).collect();
         let mut track = Track { name: name.to_string(), over: march.over.clone(),
                                 reached: march.reached(), nodes: Vec::new(), ats: Vec::new(),
-                                reference };
-        track.set(std::mem::take(&mut nodes));
+                                spans: Vec::new(), reference };
+        track.set(nodes);
         // each span asked at its middle, and halved where the fit strays there
         let mut ask: Vec<usize> = (0..track.nodes.len() - 1).collect();
         let finest = (march.over.to - march.over.from) * crate::follow::FINEST;
@@ -268,6 +271,8 @@ impl Track {
             }).filter(|&k| k + 1 < track.nodes.len()).collect();
             ask.dedup();
         }
+        track.spans = (0..track.nodes.len() - 1)
+            .map(|k| track.hull(k, track.ats[k], track.ats[k + 1])).collect();
         Ok(track)
     }
 
@@ -317,20 +322,8 @@ impl Track {
         let (pa, dpa, ca, dca) = self.fit_on(k, a);
         let (pb, dpb, cb, dcb) = self.fit_on(k, b);
         let (pm, dpm, _, dcm) = self.fit_on(k, 0.5 * (a + b));
-        // the cubic's control points, and its derivative's (the middle one from the quadratic's
-        // value at the middle, a quarter of the outer two and half of it)
-        let controls = |p: &[f64], d: &[f64], q: &[f64], e: &[f64]| -> [Vec<f64>; 4] {
-            [p.to_vec(), p.iter().zip(d).map(|(x, y)| x + h / 3.0 * y).collect(),
-             q.iter().zip(e).map(|(x, y)| x - h / 3.0 * y).collect(), q.to_vec()]
-        };
-        let rates = |a: &[f64], m: &[f64], b: &[f64]| -> f64 {
-            let mid: Vec<f64> = (0..a.len()).map(|k| 2.0 * m[k] - 0.5 * (a[k] + b[k])).collect();
-            [a, &mid[..], b].iter().map(|v| v.iter().map(|x| x * x).sum::<f64>().sqrt())
-                .fold(0.0, f64::max)
-        };
-        let c = controls(&ca, &dca, &cb, &dcb);
         let (mut lo, mut hi) = ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
-        for v in &c {
+        for v in controls(ca, dca, cb, dcb, h) {
             for k in 0..3 {
                 lo[k] = lo[k].min(v[k]);
                 hi[k] = hi[k].max(v[k]);
@@ -338,23 +331,36 @@ impl Track {
         }
         // the quaternion's length is at least its hull's reach along where it points mid-piece
         let n = dot4(pm, pm).sqrt();
-        let least = controls(&pa, &dpa, &pb, &dpb).iter()
-            .map(|v| (0..4).map(|k| v[k] * pm[k]).sum::<f64>() / n).fold(f64::INFINITY, f64::min);
+        let least = controls(pa, dpa, pb, dpb, h).iter().map(|&v| dot4(v, pm) / n)
+            .fold(f64::INFINITY, f64::min);
         let pad = 1.0 + 1e-9;
-        Hull { lo, hi, speed: rates(&dca, &dcm, &dcb) * pad, rate: rates(&dpa, &dpm, &dpb) * pad,
+        Hull { lo, hi, speed: reach(dca, dcm, dcb) * pad, rate: reach(dpa, dpm, dpb) * pad,
                least: least / pad }
     }
 
-    /// The pieces of `[a, b]` (the parameter's units) each in one span, with their spans.
-    fn pieces(&self, a: f64, b: f64) -> Vec<(usize, f64, f64)> {
+    /// **Each piece of `[a, b]` (the parameter's units) in one span, enclosed**, handed to `each`:
+    /// a whole span's hull as the track was made, the ends' worked out — or `None` where the
+    /// quaternion's length may fall to nothing, so no turn is bounded.
+    fn hulls(&self, a: f64, b: f64, mut each: impl FnMut(&Hull)) -> Option<()> {
         let (first, last) = (self.span(a), self.span(b));
-        (first..=last.max(first)).map(|k| (k, a.max(self.ats[k]), b.min(self.ats[k + 1])))
-            .filter(|&(_, s, e)| s < e || a == b).collect()
+        for k in first..=last.max(first) {
+            let (s, e) = (a.max(self.ats[k]), b.min(self.ats[k + 1]));
+            if !(s < e || a == b) {
+                continue;
+            }
+            let whole = s == self.ats[k] && e == self.ats[k + 1];
+            let h = if whole { self.spans[k] } else { self.hull(k, s, e) };
+            if !(h.least > 0.0) {
+                return None;
+            }
+            each(&h);
+        }
+        Some(())
     }
 
     /// The parameter a radian of the roll: degrees for an angle.
     fn rate(&self) -> f64 {
-        if self.over.dim == crate::units::Dim::ANGLE { 180.0 / std::f64::consts::PI } else { 1.0 }
+        if self.over.dim == crate::units::Dim::ANGLE { 1f64.to_degrees() } else { 1.0 }
     }
 
     /// The parameter at the roll `angle` (radians for an angle), or why it is not reached.
@@ -373,7 +379,7 @@ impl Track {
 /// **A frame the drawing moves, carried from where it now stands** (`Step::Followed`): its track,
 /// the turn from the track's reference to the frame now undone (`F_ref F_nowᵀ`), and its origin
 /// now.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct Ride {
     track: Arc<Track>,
     turn: M,
@@ -384,9 +390,21 @@ impl Ride {
     /// The frame `frame` along `over`, carried from where it stands in `sk`.
     pub(crate) fn read(sk: &Sketch, name: &str, frame: u32, over: &str) -> Result<Ride, String> {
         let track = Track::cached(sk, name, frame, over)?;
-        let (now, origin) = frame_of(sk, frame as usize);
-        let turn = mm(&track.reference, &transpose(&now));
-        Ok(Ride { track, turn, origin })
+        let now = super::chart_pose(sk, frame as usize);
+        let turn = mm(&track.reference, &transpose(&now.r));
+        Ok(Ride { track, turn, origin: now.p })
+    }
+
+    /// Whether `other` is this ride: the same track, from the frame standing where it stands.
+    pub(crate) fn same(&self, other: &Ride) -> bool {
+        Arc::ptr_eq(&self.track, &other.track) && self.turn == other.turn
+            && self.origin == other.origin
+    }
+
+    /// The turn a fitted quaternion `p` (not yet unit) is, carried from the frame now.
+    fn turned(&self, p: Q) -> M {
+        let n = dot4(p, p).sqrt();
+        mm(&turn_of(p.map(|v| v / n)), &self.turn)
     }
 
     /// The unit quaternion, its rate a radian of the roll, the origin and its rate there.
@@ -418,8 +436,7 @@ impl Ride {
     pub(crate) fn pose(&self, angle: f64) -> Result<super::Pose, String> {
         let t = self.track.param(angle)?;
         let (p, _, c, _) = self.track.fit(t);
-        let n = dot4(p, p).sqrt();
-        let r = mm(&turn_of(p.map(|v| v / n)), &self.turn);
+        let r = self.turned(p);
         Ok(super::Pose { r, p: sub(c, mv(&r, self.origin)) })
     }
 
@@ -433,50 +450,23 @@ impl Ride {
         let (lo, hi) = (tr.param(a).ok()?, tr.param(b).ok()?);
         // the origin's box over every piece, and the most it runs and the frame turns, a unit of
         // the parameter: the angular speed `2 |q̇|` of a unit quaternion, `|q̇| ≤ |ṗ| / |p|`
+        let mut seen = Extremes::new();
         let (mut speed, mut spin) = (0.0_f64, 0.0_f64);
-        let (mut plo, mut phi) = ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
-        for (k, s, e) in tr.pieces(lo, hi) {
-            let h = tr.hull(k, s, e);
-            if !(h.least > 0.0) {
-                return None;
-            }
+        tr.hulls(lo, hi, |h| {
             speed = speed.max(h.speed);
             spin = spin.max(2.0 * h.rate / h.least);
-            for j in 0..3 {
-                plo[j] = plo[j].min(h.lo[j]);
-                phi[j] = phi[j].max(h.hi[j]);
-            }
-        }
+            seen.point(h.lo);
+            seen.point(h.hi);
+        })?;
+        // the turn sampled: once at an instant
+        let samples = if hi > lo { SAMPLES } else { 0 };
         let w = (hi - lo) / SAMPLES as f64;
-        let mut rlo = [[f64::INFINITY; 3]; 3];
-        let mut rhi = [[f64::NEG_INFINITY; 3]; 3];
-        for j in 0..=SAMPLES {
-            let t = if j == SAMPLES { hi } else { lo + w * j as f64 };
-            let p = tr.fit(t).0;
-            let n = dot4(p, p).sqrt();
-            let r = mm(&turn_of(p.map(|v| v / n)), &self.turn);
-            for k in 0..3 {
-                for m in 0..3 {
-                    rlo[k][m] = rlo[k][m].min(r[k][m]);
-                    rhi[k][m] = rhi[k][m].max(r[k][m]);
-                }
-            }
-        }
-        let pad = |x: f64| x.abs() * 1e-12 + 1e-15;
-        let around = |lo: f64, hi: f64, by: f64, clamp: f64| {
-            I::new((lo - by - pad(lo)).max(-clamp), (hi + by + pad(hi)).min(clamp)).ok()
-        };
-        let turnable = spin * w / 2.0;
-        let mut point = [I::ZERO; 3];
-        let mut turn = [[I::ZERO; 3]; 3];
-        for k in 0..3 {
-            point[k] = around(plo[k], phi[k], 0.0, f64::INFINITY)?;
-            for m in 0..3 {
-                turn[k][m] = around(rlo[k][m], rhi[k][m], turnable, 1.0)?;
-            }
+        for j in 0..=samples {
+            let t = if j == samples { hi } else { lo + w * j as f64 };
+            seen.turn(&self.turned(tr.fit(t).0));
         }
         let k = tr.rate();
-        Some(Stretch { point, turn, speed: speed * k, spin: spin * k, origin: self.origin })
+        seen.enclosed(0.0, spin * w / 2.0, speed * k, spin * k, self.origin)
     }
 
     /// **The frame in the plane of `basis`** (#398 F), as a profile generated in the plane reads
@@ -528,15 +518,12 @@ impl Ride {
         }
         let (lo, hi) = (tr.param(lo).ok()?, tr.param(hi).ok()?);
         let (blo, bhi): (V, V) = (b.map(|x| x.bounds()[0]), b.map(|x| x.bounds()[1]));
+        let now = farthest(blo, bhi, self.origin, self.origin);
         let mut out = 0.0_f64;
-        for (k, s, e) in tr.pieces(lo, hi) {
-            let h = tr.hull(k, s, e);
-            if !(h.least > 0.0) {
-                return None;
-            }
-            let far = farthest(blo, bhi, h.lo, h.hi).max(farthest(blo, bhi, self.origin, self.origin));
+        tr.hulls(lo, hi, |h| {
+            let far = farthest(blo, bhi, h.lo, h.hi).max(now);
             out = out.max(h.speed + 2.0 * h.rate / h.least * far);
-        }
+        })?;
         Some(out * (1.0 + 1e-9) * tr.rate())
     }
 }

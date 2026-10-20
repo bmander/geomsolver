@@ -273,7 +273,7 @@ pub(super) fn planar_envelopes(sk: &mut Sketch, res: &mut Resolver, map: &mut So
             _ => None,
         };
         let built = super::motions::reading_of(sk, res, Some(tool), under, d.seen_from.as_ref(),
-            super::motions::declared(d.angular_span.as_ref().and_then(|s| s.over.as_ref()))).and_then(|m| profile(sk, d, tool, m));
+            super::motions::declared_of(d)).and_then(|m| profile(sk, d, tool, m));
         let rides = observer_path(sk, res, d);
         bind(sk, res, map, st, d, built, diags);
         ride_on(sk, res, d, rides);
@@ -358,7 +358,7 @@ pub(super) fn extruded_envelopes(sk: &mut Sketch, res: &mut Resolver, map: &mut 
         // the prism the side is of rides as its face's points do (#383)
         let ridden = res.lookup(edge).and_then(|e| follow_building(sk, res, e, edge).ok());
         let motion = super::motions::reading_of(sk, res, ridden, under, d.seen_from.as_ref(),
-            super::motions::declared(d.angular_span.as_ref().and_then(|s| s.over.as_ref()))).ok()
+            super::motions::declared_of(d)).ok()
             .map(|m| EntRef::new(EntKind::Motion, m));
         let Some(motion) = motion else { continue };
         // a turn about a line in space keeps no view: the spatial envelope's, after the solve

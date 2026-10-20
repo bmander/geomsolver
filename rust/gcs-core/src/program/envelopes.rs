@@ -48,7 +48,7 @@ pub(super) fn held_envelopes(sk: &mut Sketch, res: &mut Resolver, map: &mut Sour
         // what its source rides on (#383)
         let tool = operand(0).and_then(|r| ridden(sk, res, &decls, r));
         let motion = super::motions::reading_of(sk, res, tool, operand(1), d.seen_from.as_ref(),
-            super::motions::declared(d.angular_span.as_ref().and_then(|s| s.over.as_ref())))
+            super::motions::declared_of(d))
             .ok().map(|m| EntRef::new(EntKind::Motion, m));
         let rides = super::generated::observer_path(sk, res, d);
         // a declaration that would not be built after the solve either is left to say so there —
@@ -385,7 +385,7 @@ pub(super) fn envelopes(sk: &mut Sketch, res: &mut Resolver, map: &mut SourceMap
                     _ => None,
                 };
                 super::motions::reading_of(sk, res, tool, under, d.seen_from.as_ref(),
-                    super::motions::declared(d.angular_span.as_ref().and_then(|s| s.over.as_ref()))).map(|m| m as u32)
+                    super::motions::declared_of(d)).map(|m| m as u32)
             }
         };
         let operand = |i: usize, kind: EntKind| -> Result<u32,String> {

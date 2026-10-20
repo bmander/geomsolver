@@ -268,9 +268,11 @@ impl Sketch {
                 let v = crate::locus::eval_flat(&l.flat, &x, anchor, s);
                 (v.x, v.y)
             }),
-            CurveBody::Envelope(g) => {
-                crate::generate::point(&self.generated_flat(i, &g.flat), &x, self.curve_home(i))
-            }
+            CurveBody::Envelope(g) => match self.generated_flat(i, &g.flat) {
+                Ok(None) => crate::generate::point(&g.flat, &x, self.curve_home(i)),
+                Ok(Some(flat)) => crate::generate::point(&flat, &x, self.curve_home(i)),
+                Err(_) => (f64::NAN, f64::NAN),
+            },
             CurveBody::Followed(None) => self.followed_points(i, &[u]).pop().unwrap_or_default(),
             CurveBody::Extremal(_) => self
                 .curve_shape(i)
@@ -280,32 +282,33 @@ impl Sketch {
     }
 
     /// **A generated profile's encoding as it is read** (#398 F): with the tables of the frames
-    /// the drawing moves it is cut under attached (`generate::with_tables`), read off the march
-    /// where the drawing now stands — or as written where it is cut under none, and empty where
-    /// one cannot be read in the curve's plane, which draws nothing (`generated_tables` says why).
-    pub(crate) fn generated_flat<'a>(&self, i: usize, flat: &'a [f64])
-        -> std::borrow::Cow<'a, [f64]> {
-        match self.generated_tables(i, flat) {
-            Ok(None) => std::borrow::Cow::Borrowed(flat),
-            Ok(Some(tables)) => std::borrow::Cow::Owned(crate::generate::with_tables(flat, &tables)),
-            Err(_) => std::borrow::Cow::Owned(Vec::new()),
-        }
-    }
-
-    /// The tables generated curve `i`'s encoding `flat` reads, one a frame the drawing moves it
-    /// is cut under, in the curve's plane — `None` where it is cut under none — or why one cannot
-    /// be read.
-    pub fn generated_tables(&self, i: usize, flat: &[f64])
-        -> Result<Option<Vec<(usize, Vec<f64>)>>, String> {
+    /// the drawing moves it is cut under attached (`generate::with_tables`), each read off the
+    /// march in the curve's plane from where the frame now stands (`Ride::planar`) and remembered
+    /// against those rides (`Caches::generated`) — `None` where it is cut under none, so it is
+    /// read as written, and why one cannot be read in the curve's plane.
+    pub fn generated_flat(&self, i: usize, flat: &[f64])
+        -> Result<Option<std::rc::Rc<Vec<f64>>>, String> {
         let mut motions = crate::generate::tabled(flat);
         if motions.is_empty() {
             return Ok(None);
         }
         motions.sort_unstable();
         motions.dedup();
+        let rides = motions.iter().map(|&m| crate::motion::ride_of(self, m))
+            .collect::<Result<Vec<_>, _>>()?;
         let basis = self.curve_view(i).map_or_else(crate::plane::Basis::page, |v| self.basis(v));
-        motions.into_iter().map(|m| crate::motion::planar_table(self, m, &basis).map(|t| (m, t)))
-            .collect::<Result<Vec<_>, _>>().map(Some)
+        let plane: [f64; 9] = std::array::from_fn(|k| [basis.o, basis.u, basis.v][k / 3][k % 3]);
+        if let Some((was, p, attached)) = self.caches.generated.borrow().get(&i) {
+            if *p == plane && was.len() == rides.len()
+                && was.iter().zip(&rides).all(|(a, b)| a.same(b)) {
+                return Ok(Some(attached.clone()));
+            }
+        }
+        let tables = motions.iter().zip(&rides).map(|(&m, r)| r.planar(&basis).map(|t| (m, t)))
+            .collect::<Result<Vec<_>, _>>()?;
+        let attached = std::rc::Rc::new(crate::generate::with_tables(flat, &tables));
+        self.caches.generated.borrow_mut().insert(i, (rides, plane, attached.clone()));
+        Ok(Some(attached))
     }
 
     /// Whether curve `i` is a point of the drawing traced over a declared parameter
@@ -606,8 +609,12 @@ impl Sketch {
                 crate::locus::sweep(&l.flat, &self.curve_vars(i, a), a, b, n, anchor, &mut s.borrow_mut())
             }),
             CurveBody::Envelope(g) => {
-                let flat = self.generated_flat(i, &g.flat);
-                crate::generate::sweep(&flat, &self.curve_vars(i, a), self.curve_home(i), a, b, n)
+                let attached = match self.generated_flat(i, &g.flat) {
+                    Ok(attached) => attached,
+                    Err(_) => return Vec::new(),
+                };
+                let flat = attached.as_deref().map_or(&g.flat[..], |v| &v[..]);
+                crate::generate::sweep(flat, &self.curve_vars(i, a), self.curve_home(i), a, b, n)
             }
             CurveBody::Extremal(_) => match self.curve_shape(i) {
                 Some((lag, sh)) => crate::extremal::points(&lag, &sh, a, b, n),
@@ -623,16 +630,51 @@ impl Sketch {
     /// Where the point a followed curve traces stands at each of `at` (#391 S4): the drawing
     /// followed along its parameter (`follow::followed`, remembered) and stood at each, on the
     /// branch the march carried — an instant past a singular one the march stopped at reads as
-    /// that one, so the curve ends there.  Empty where the drawing is not followed.
+    /// that one, so the curve ends there.  Empty where the drawing is not followed, and for a
+    /// point in space, which is traced in space (#398 F, `followed_world`) and no view draws.
     pub(crate) fn followed_points(&self, i: usize, at: &[f64]) -> Vec<(f64, f64)> {
-        let cv = &self.curves[i];
-        // a point in space is traced in space (#398 F, `followed_world`): no view draws it
-        let Some(p) = cv.args.first()
-            .filter(|e| e.kind == EntKind::Point && self.plane_of(e.i()).is_some()) else {
+        let Some(p) = self.followed_point(i).filter(|&p| self.plane_of(p).is_some()) else {
             return Vec::new();
         };
-        let name = &self.curve_defs[cv.def as usize].param;
-        let followed = crate::follow::followed(self, name);
+        let followed = crate::follow::followed(self, &self.curve_defs[self.curves[i].def as usize]
+            .param);
+        self.followed_at(&followed, at, |sk| sk.point_xy(p))
+    }
+
+    /// **A point in space traced over a parameter, in space** (#398 F): where the drawing followed
+    /// along the parameter puts the point at `CURVE_STEPS` instants over the curve's stretch, in
+    /// the world — remembered against the march and the stretch (`Caches::traced3`), as a view's
+    /// trace is (`curve_polyline`).  Empty where curve `i` traces no point in space, or the
+    /// drawing is not followed.
+    pub fn followed_world(&self, i: usize) -> Vec<[f64; 3]> {
+        let Some(p) = self.followed_point(i).filter(|&p| self.plane_of(p).is_none()) else {
+            return Vec::new();
+        };
+        let (a, b) = self.curve_domain(i);
+        let followed = crate::follow::followed(self, &self.curve_defs[self.curves[i].def as usize]
+            .param);
+        if let Some((march, span, pts)) = self.caches.traced3.borrow().get(&i) {
+            if std::rc::Rc::ptr_eq(march, &followed) && *span == [a, b] {
+                return pts.clone();
+            }
+        }
+        let at: Vec<f64> = (0..=CURVE_STEPS)
+            .map(|k| a + (b - a) * k as f64 / CURVE_STEPS as f64).collect();
+        let out = self.followed_at(&followed, &at, |sk| sk.world_point(p));
+        self.caches.traced3.borrow_mut().insert(i, (followed, [a, b], out.clone()));
+        out
+    }
+
+    /// The point followed curve `i` traces.
+    fn followed_point(&self, i: usize) -> Option<usize> {
+        let p = self.curves[i].args.first()?;
+        (p.kind == EntKind::Point && self.curve_followed(i)).then(|| p.i())
+    }
+
+    /// The march `followed` stood at each of `at` (clamped to what it reached) and read there by
+    /// `read`, or nothing where it is not followed or does not stand somewhere.
+    fn followed_at<T>(&self, followed: &Result<crate::follow::Followed, String>, at: &[f64],
+                      read: impl Fn(&Sketch) -> T) -> Vec<T> {
         let Ok(f) = followed.as_ref() else { return Vec::new() };
         let mut sk = self.clone();
         let mut out = Vec::with_capacity(at.len());
@@ -640,44 +682,8 @@ impl Sketch {
             if f.put(&mut sk, u.clamp(f.over.from, f.reached())).is_err() {
                 return Vec::new();
             }
-            out.push(sk.point_xy(p.i()));
+            out.push(read(&sk));
         }
-        out
-    }
-
-    /// **A point in space traced over a parameter, in space** (#398 F): where the drawing followed
-    /// along the parameter puts the point at `CURVE_STEPS` instants over the curve's stretch, in
-    /// the world — remembered against the drawing at home and the stretch (`Caches::traced3`),
-    /// as a view's trace is (`curve_polyline`).  Empty where curve `i` traces no point in space,
-    /// or the drawing is not followed.
-    pub fn followed_world(&self, i: usize) -> Vec<[f64; 3]> {
-        let cv = &self.curves[i];
-        let Some(p) = cv.args.first()
-            .filter(|e| e.kind == EntKind::Point && self.plane_of(e.i()).is_none()
-                && self.curve_followed(i)) else {
-            return Vec::new();
-        };
-        let (a, b) = self.curve_domain(i);
-        let name = &self.curve_defs[cv.def as usize].param;
-        let mut key = crate::follow::march_key(self, name);
-        key.extend([a, b]);
-        if let Some((k, pts)) = self.caches.traced3.borrow().get(&i) {
-            if *k == key {
-                return pts.clone();
-            }
-        }
-        let followed = crate::follow::followed(self, name);
-        let Ok(f) = followed.as_ref() else { return Vec::new() };
-        let mut sk = self.clone();
-        let mut out = Vec::with_capacity(CURVE_STEPS + 1);
-        for k in 0..=CURVE_STEPS {
-            let u = a + (b - a) * k as f64 / CURVE_STEPS as f64;
-            if f.put(&mut sk, u.clamp(f.over.from, f.reached())).is_err() {
-                return Vec::new();
-            }
-            out.push(sk.world_point(p.i()));
-        }
-        self.caches.traced3.borrow_mut().insert(i, (key, out.clone()));
         out
     }
 
