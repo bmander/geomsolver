@@ -32,7 +32,7 @@ const ALLOWED: &[(&str, &str, usize)] = &[];
 fn the_solver_does_not_import_the_language() {
     let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     for m in SOLVER.iter().chain(LANGUAGE) {
-        assert!(src.join(format!("{m}.rs")).is_file(), "no module `{m}` in src/: rename it here");
+        assert!(is_module(&src, m), "no module `{m}` in src/: rename it here");
     }
     let mut found: BTreeMap<(String, &str), Vec<usize>> = BTreeMap::new();
     for file in rust_files(&src) {
@@ -69,11 +69,13 @@ fn the_solver_does_not_import_the_language() {
 
 /// What the solver reaches through every module in between is not the language either: a solver
 /// module importing one that imports the parser links the parser as surely as importing it
-/// itself.  A failure names the shortest route, a `file:line` for each hop.
+/// itself.  A failure names the shortest route, a `file:line` for each hop.  The B-rep is on
+/// the way (`brep/mod.rs`): the reach reads a module written either way.
 #[test]
 fn the_solver_does_not_reach_the_language() {
     let names = imports(&Path::new(env!("CARGO_MANIFEST_DIR")).join("src"));
     let from = reached(&names, SOLVER);
+    assert!(from.contains_key("brep"), "the reach no longer passes the B-rep: read `is_module`");
     let wrong: Vec<String> = LANGUAGE.iter().filter(|m| from.contains_key(**m))
         .map(|m| route(&names, &from, m)).collect();
     assert!(wrong.is_empty(), "the solver reaches the language (#409):\n{}", wrong.join("\n"));
@@ -118,13 +120,19 @@ fn imports(src: &Path) -> Imports {
         let rel = file.strip_prefix(src).unwrap().to_str().unwrap().replace('\\', "/");
         let top = rel.split('/').next().unwrap().trim_end_matches(".rs").to_string();
         for (name, line) in crate_paths(&std::fs::read_to_string(&file).unwrap()) {
-            if name != top && src.join(format!("{name}.rs")).is_file() {
+            if name != top && is_module(src, &name) {
                 names.entry(top.clone()).or_default().entry(name)
                     .or_insert_with(|| format!("{rel}:{line}"));
             }
         }
     }
     names
+}
+
+/// Whether `name` is a top-level module of the crate, written as `name.rs` or as `name/mod.rs`
+/// (`brep`, `renderer`): a route through either is a route.
+fn is_module(src: &Path, name: &str) -> bool {
+    src.join(format!("{name}.rs")).is_file() || src.join(name).join("mod.rs").is_file()
 }
 
 /// Every module reached from `start`, breadth first, with the one it was reached from (`None`

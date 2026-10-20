@@ -35,8 +35,10 @@ Currently: **Stage 5 done, and Stage 7a/7b — solids**, in **one** implementati
   module.  So what the language and the solids share is defined below both: which solids are
   *objects* is the model's (`model::objects`, re-exported by `overview`), and an instance's
   public name the vocabulary's (`vocab::public_path`, re-exported by `program`).  The solver
-  still reaches the solids — evaluating them, generating motions, building the B-rep; whether
-  they leave the solve path is open (#409).
+  still reaches the solids, and **the solids are the solver's** (#409, step 6, decided): solid
+  evaluation, motions and the B-rep are what the model evaluates, so they sit on the solver's
+  side of the line, and the language above it.  The crate split (step 7) cuts there: the solver
+  set and everything it reaches below, the language and what is built on it above.
   **Presentation rides on the model as tags and an annex** (#409, step 5): an entity and a
   constraint carry their classes as names (`vocab::Classes`, re-exported by `style`), which
   nothing that solves reads; the document's sheet is on the sketch as `Sketch::presentation`, a
