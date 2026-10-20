@@ -219,12 +219,12 @@ fn turn(a: &Frame, b: &Frame) -> M {
     std::array::from_fn(|i| std::array::from_fn(|j| (0..3).map(|k| a[k][i] * b[k][j]).sum()))
 }
 
-fn mv(m: &M, v: V) -> V {
+pub(super) fn mv(m: &M, v: V) -> V {
     std::array::from_fn(|i| dot(m[i], v))
 }
 
 /// `[ω]× m`, the rate of a turn `m` turning at `ω`.
-fn spun(w: V, m: &M) -> M {
+pub(super) fn spun(w: V, m: &M) -> M {
     let k = [[0.0, -w[2], w[1]], [w[2], 0.0, -w[0]], [-w[1], w[0], 0.0]];
     std::array::from_fn(|i| std::array::from_fn(|j| (0..3).map(|q| k[i][q] * m[q][j]).sum()))
 }
@@ -386,23 +386,13 @@ impl Guide {
         }
         let (a, b) = (a.max(self.domain.0), b.min(self.domain.1));
         let w = (b - a) / SAMPLES as f64;
-        let mut lo = [f64::INFINITY; 3];
-        let mut hi = [f64::NEG_INFINITY; 3];
-        let mut rlo = [[f64::INFINITY; 3]; 3];
-        let mut rhi = [[f64::NEG_INFINITY; 3]; 3];
+        let mut seen = Extremes::new();
         let mut slow = f64::INFINITY;
         for j in 0..=SAMPLES {
             let u = if j == SAMPLES { b } else { a + w * j as f64 };
             let (f, x) = self.frame(u, false).ok()?;
-            let r = turn(&f, &self.home_frame);
-            for k in 0..3 {
-                lo[k] = lo[k].min(x[0][k]);
-                hi[k] = hi[k].max(x[0][k]);
-                for m in 0..3 {
-                    rlo[k][m] = rlo[k][m].min(r[k][m]);
-                    rhi[k][m] = rhi[k][m].max(r[k][m]);
-                }
-            }
+            seen.turn(&turn(&f, &self.home_frame));
+            seen.point(x[0]);
             slow = slow.min(norm(x[1]));
         }
         // the slowest the path runs over the stretch, and so the fastest the frame turns: the
@@ -412,23 +402,65 @@ impl Guide {
             return None;
         }
         let spin = if d2 == 0.0 { 0.0 } else { d2 / slowest };
-        // outward: a sample's rounding, and what lies between the samples
+        seen.enclosed(d1 * w / 2.0, spin * w / 2.0, d1 * (1.0 + 1e-12), spin * (1.0 + 1e-12),
+                      self.origin)
+    }
+}
+
+/// **What a stretch's samples reach**: the box of the points carried and every entry of the turn
+/// — enclosed (`enclosed`) by how far the motion can run and turn between two samples.  A frame
+/// along a path and a frame the drawing moves (`track::Ride`) are each enclosed so.
+#[derive(Clone, Copy)]
+pub(super) struct Extremes {
+    lo: V,
+    hi: V,
+    rlo: M,
+    rhi: M,
+}
+
+impl Extremes {
+    pub(super) fn new() -> Extremes {
+        Extremes { lo: [f64::INFINITY; 3], hi: [f64::NEG_INFINITY; 3],
+                   rlo: [[f64::INFINITY; 3]; 3], rhi: [[f64::NEG_INFINITY; 3]; 3] }
+    }
+
+    /// A point carried, taken in.
+    pub(super) fn point(&mut self, p: V) {
+        for k in 0..3 {
+            self.lo[k] = self.lo[k].min(p[k]);
+            self.hi[k] = self.hi[k].max(p[k]);
+        }
+    }
+
+    /// A turn, taken in.
+    pub(super) fn turn(&mut self, r: &M) {
+        for k in 0..3 {
+            for m in 0..3 {
+                self.rlo[k][m] = self.rlo[k][m].min(r[k][m]);
+                self.rhi[k][m] = self.rhi[k][m].max(r[k][m]);
+            }
+        }
+    }
+
+    /// The stretch: every point within `reach` of the box, every turn's entry within `turnable` of
+    /// what the samples reached, and outward by a sample's rounding; its speed, its angular speed
+    /// and the origin the turn is about as given.
+    pub(super) fn enclosed(&self, reach: f64, turnable: f64, speed: f64, spin: f64, origin: V)
+        -> Option<Stretch> {
         let pad = |x: f64| x.abs() * 1e-12 + 1e-15;
         let around = |lo: f64, hi: f64, by: f64, clamp: f64| {
             I::new((lo - by - pad(lo)).max(-clamp), (hi + by + pad(hi)).min(clamp)).ok()
         };
-        let (reach, turnable) = (d1 * w / 2.0, spin * w / 2.0);
         let mut point = [I::ZERO; 3];
         let mut turn = [[I::ZERO; 3]; 3];
         for k in 0..3 {
-            point[k] = around(lo[k], hi[k], reach, f64::INFINITY)?;
+            point[k] = around(self.lo[k], self.hi[k], reach, f64::INFINITY)?;
             for m in 0..3 {
                 // every entry of a turn lies within ±1
-                turn[k][m] = around(rlo[k][m], rhi[k][m], turnable, 1.0)?;
+                turn[k][m] = around(self.rlo[k][m], self.rhi[k][m], turnable, 1.0)?;
             }
         }
-        Some(Stretch { point, turn, speed: d1 * (1.0 + 1e-12), spin: spin * (1.0 + 1e-12),
-                       origin: self.origin })
+        Some(Stretch { point, turn, speed, spin, origin })
     }
 }
 

@@ -1131,8 +1131,8 @@ pub(super) fn build_curve(
 /// a curve of the point's view over the parameter's interval, or a stretch of it, whose points are
 /// wherever the drawing followed along the parameter puts the point (`CurveBody::Followed`).  One
 /// definition per parameter, shared by every point traced over it.  Refused: a name that is no
-/// point and a stretch outside the parameter's interval — and a point in space, a curve being a
-/// view's, once memberships are known (`entities::drawn_in_planes`).
+/// point and a stretch outside the parameter's interval.  A point in space is traced in space
+/// (#398 F, `Sketch::followed_world`), drawn in the scene and in no view.
 fn followed(
     sk: &mut Sketch,
     res: &Resolver,

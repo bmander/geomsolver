@@ -6,7 +6,8 @@ interval of the roll a reading states, `follow.rs` (continuation), `trace(m over
 held to it (`followed.rs`), a drive (`motion/law.rs`, `MotionDef::Driven`,
 `tape::eval_interval`), a face swept over a declared parameter or a valued frame's block
 (`flatten/valued.rs`, #398 B), a frame along a path (`motion/guide.rs`, `MotionDef::Guided`,
-#398 C), or a drawing stood at an instant of its march (`follow::stand`, `Scrub`, #398 L). The
+#398 C), a drawing stood at an instant of its march (`follow::stand`, `Scrub`, #398 L), or a frame
+the drawing moves read as a motion (`motion/track.rs`, `MotionDef::Followed`, #398 F). The
 direction is [#391](https://github.com/bmander/geomsolver/issues/391): geometry over a
 parameter, trajectories rather than snapshots; this file holds what is built of it. An issue
 number (#n) or a spec version ([0.n], see the [language changelog](../solvent-changelog.md)) says
@@ -493,3 +494,67 @@ where a rule came from.
     bodies are evaluated where they stand, so a scrub re-evaluates every moving part's (about a
     second an instant natively); and the march is taken again after every edit (1.3 s in the page
     for the V-twin).
+- **A frame the drawing moves** (#398 F, [0.150], `motion/track.rs`): a frame with axes and no
+  joint, riding on none, placed by relations on geometry the drawing moves as a declared parameter
+  runs (`coupler := std.Turned(b, c) in std.front`), is a motion over it — so a sweep, an envelope
+  and a placement read the followed drawing as they read a joint.
+  - **Minted where a reading runs over a declared parameter** (`motions::frame_motion`'s `over`,
+    `motions::followed`): `under:` or `seen_from:` naming such a frame in a reading whose `over`
+    names a declared parameter (`motions::declared`, a `RunsOver` the flattener filled) is
+    `MotionDef::Followed { frame, over }`, minted once; a placement at an instant and a point
+    carried at one name no parameter and read the document's one, where it declares one
+    (`motions::sole`).  Anywhere else the frame stands still, as every frame with no joint did.
+    The roll is the parameter (one clock, as for a drive), so it is an `Angle` (`reading_of`,
+    E080; the flattener's E103 says it first for a sweep).
+  - **The track** (`motion::Track`, `Caches::tracks` against the march by identity): the frame at
+    every station (`Sketch::basis`, its axes as columns) as its turn from the first station's, a
+    unit quaternion (each sign the nearer to the one before), and its origin; **fitted** between
+    nodes by the cubic through the four about the span (Lagrange's, over the nodes' own spacing),
+    the quaternion normalised, so a pose and its rate are a few multiplications and nothing is
+    differenced; **refined** where read: the drawing stood at the middle of each span
+    (`Followed::put`), the node kept where the fit strays there by more than `TOL` (1e-10) of the
+    drawing's reach about the frame (its origin, and its turn times the reach), until no span is
+    kept or `MAX_NODES`.  `Ride` carries it from where the frame now stands: `x ↦ R(t)(x − o) +
+    c(t)`, `R(t) = R(q(t)) F_ref F_nowᵀ`.  Past what the march reached it is refused.
+  - **In `Family`** (`Step::Followed`, `back` its inverse): `at` the pose and its rate (`ω = 2
+    vec(q̇ q̄)`), `pose_at` the pose; no constant twist (`screw`, `turning`, `sliding`,
+    `in_plane`, `in_frame`, `instantaneous`, `NormalVelocity` refuse it).  **Enclosed** span by
+    span by the fit's Bernstein hulls (`Hull`: the origin's control points, the derivative's,
+    and the least the quaternion's length falls to), each whole span's worked out once when the
+    track is made (`Track::spans`) and only a stretch's partial end spans per query
+    (`Track::hulls`): `Ride::stretch` is a `guide::Stretch` for `MotionBounds`, built from its
+    samples' extremes as a frame along a path's is (`guide::Extremes`), one sample at an
+    instant, and the speed bound reads `Ride::speed_over`, each span's origin speed plus
+    its angular speed times the farthest the box stands from its origin there or now — over a
+    whole turn twice the true speed where one box over the turn was twelve times, which is what
+    the roll search's evaluations go as.  `solid::reads` keys it by the march's key
+    (`follow::march_key`) and where the frame stands.
+  - **In the plane** (`generate::Op::Table`, #398 F): a profile generated under such a frame
+    (`program::generated`, `Step::Table`, its node and whether it runs back, in the definition's
+    key) reads a table attached after the solve (`Sketch::generated_flat`, remembered per curve
+    against the rides it read and its plane in `Caches::generated`; `generate::with_tables`):
+    `Ride::planar`, the turn now and the origin now, and at each node
+    the parameter, the quaternion's scalar and its part along the plane's normal and the origin,
+    in the plane — the same fit, read in `taylor::Jet`, `φ = 2 atan2(z, w)`.  A motion leaving the
+    plane (a turn about another axis, the origin off its level) is E080 after the solve
+    (`program::solid_diagnostics`), and draws nothing.
+  - **Refused**: a relation the solve holds reading it — a point carried at a roll (E080 in
+    `relations`, `envelope::held` behind it, `motion::unread_march`'s words), a relation held to
+    a profile generated under one (`constraints::validate`); a graft carries none.
+  - **A trace in space**: `trace(m over t)` of a point in space is no longer E060
+    (`entities::drawn_in_planes`): `Sketch::followed_world` is where the drawing puts it at
+    `CURVE_STEPS` instants, in the world (`Caches::traced3`, against the march by identity and
+    the stretch), drawn by
+    `overview::scene3d` and in no view (`followed_points` reads none); held to by nothing yet
+    (`followed::lower`).
+  - **Gate**: `tests/followed_frames.rs` — a frame on a four-bar's coupler carrying the coupler's
+    midpoint along the closed form (1e-8) and its direction with the coupler's, its rate against a
+    difference (1e-5); `MotionBounds` holding every sampled pose of 24 stretches and the speed
+    bound every sampled speed; a ball on the coupler swept along the coupler curve, its field's
+    distance against the closed form's (1e-6), cut from a plate; a ball placed at 90°; a roller on
+    the coupler, its envelope square to the coupler curve at its radius and on the near side of
+    the instant centre (1e-6); an RSSR's coupler midpoint traced in space against its closed form
+    (1e-8), drawn in the scene; the refusals.
+  - **Not built**: a frame the drawing moves read by a relation the solve holds, a roll through a
+    body under one (`sweep(tool, through: body)` reads the roll about 0), a frame riding on one, a
+    trace in space held to, and a meshing on one.

@@ -4,6 +4,18 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.150] A frame the drawing moves.** A frame with axes and no joint, placed by relations on
+geometry the drawing moves as a declared parameter runs — `coupler := std.Turned(b, c) in
+std.front` on a four-bar's coupler — is a motion over that parameter (§6.14): a reading over the
+parameter (`sweep(tool over t, under: coupler.axes)`, `envelope(k over t, under: coupler.axes)`,
+either's `seen_from:`) and a placement at an instant where the document declares one parameter
+(`tool at(under: coupler.axes) 90deg`) carry what they read from where the frame now stands to
+where the drawing followed along `t` puts it; through 0.149 such a frame stood still and `under:`
+it was refused ("does not move"). The parameter is an angle; a relation the solve holds reads no
+march (**E080**), and nothing is held to a profile generated under one. `trace(m over t)` of a
+point in space is a curve in space (§6.5), drawn in the workspace (through 0.149 **E060**). No
+document changes. (Issue #398, item F.)
+
 **[0.149] Rounds that know of one another.** A defined word's use may be named (§9.9): `rim :=
 plate.c0 round(r: 3mm) plate.far`, what its body makes standing under the name, so a round's
 faces are `plate.rim.taken.round` (the name alone every face it made) and two named rounds' faces

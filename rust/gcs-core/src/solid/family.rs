@@ -300,13 +300,6 @@ fn moved(b: Basis, m: &crate::motion::Pose) -> Basis {
     Basis { o: m.point(b.o), u: m.vector(b.u), v: m.vector(b.v) }
 }
 
-/// A frame's chart as a pose: its axes and normal the columns, its origin the offset.
-fn chart_pose(sk: &Sketch, f: usize) -> crate::motion::Pose {
-    let b = sk.basis(f);
-    let n = cross(b.u, b.v);
-    crate::motion::Pose { r: std::array::from_fn(|i| [b.u[i], b.v[i], n[i]]), p: b.o }
-}
-
 /// The frame along a path the face `fi` rides on, where it rides on one alone: its index and its
 /// motion's.
 fn along_of(sk: &Sketch, fi: usize) -> Option<(usize, usize)> {
@@ -347,7 +340,7 @@ impl Reading {
     /// (#398 C): `M(s) · C_home · C(s)⁻¹` as one pose — `None` for a face that rides on none.
     fn carried(&self, sk: &Sketch, s: f64) -> Result<Option<crate::motion::Pose>, String> {
         let Some(a) = &self.along else { return Ok(None) };
-        let here = chart_pose(sk, a.frame).inverse();
+        let here = crate::motion::chart_pose(sk, a.frame).inverse();
         Ok(Some(here.then(a.home).then(a.motion.pose_at(s)?)))
     }
 
@@ -676,7 +669,7 @@ fn leg_part(sk: &Sketch, station: &[EntRef], leg: &Leg, tol: f64) -> Result<LegP
             motion: crate::motion::Family::read(sk, m)?,
             frame: part.entity_in(EntRef::frame(f))
                 .ok_or("the face's frame is not in its part")?.i(),
-            home: chart_pose(sk, f),
+            home: crate::motion::chart_pose(sk, f),
         }),
         None => None,
     };

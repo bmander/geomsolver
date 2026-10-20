@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.149 — October 2026**
+**Specification, Draft 0.150 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -451,7 +451,9 @@ e := trace(Unwind(base, datum, phase: a0).p over u in (u0, u1))
 
 **Over a drawn instance.** `path := trace(leg.toe over theta in (0, 360))` names a point of an instance the drawing holds. The trace is **anchored at the drawing**: the pose the instance stands in on the sheet is where evaluation begins, and the value the instance gave the swept formal is the anchor's parameter. An instance that leaves a numeric formal **unbound** makes it an unknown of the drawing (§3.3), named under the instance (`leg.theta`) so two instances leaving the same formal unbound have two unknowns — and the anchor then follows that unknown wherever the solve puts it. This is the form a mechanism is written in: drawn once with its crank free, and traced from the same statements. **[0.37]** Every other numeric formal a drawn instance leaves unbound is an unknown of the drawing in the same way (`leg.h`), and the curve is written over it as over the entities' coordinates: it is a **column** of the curve, so a contact against the curve may solve for it — a rod's length chosen so the stride touches the ground. Only the unknown itself: a formal given an expression in an unknown (`h: 2 * k`, inside an instance that left `k` unbound) is **E103**, and so is an unknown nothing on the sheet reads, which no solve could allocate.
 
-**Over a declared parameter [0.142].** `coupler := trace(m over t)` names a point of the drawing itself, `t` a parameter the document declares (`param t: Angle over (a, b)`, §6.3): the curve is where the point stands as the drawing runs over `t`, every relation of the drawing holding at every value of it (§6.3), the drawing followed from the interval's start where it is drawn. Written with no interval it runs over the parameter's; `trace(m over t in (A, B))` runs over a stretch of it, `A < B` within it (**E103** otherwise). It is a curve of the point's view: a point in space is **E060**. Where the drawing stops at a singular instant (§6.3) the curve ends there. **[0.144]** A relation may hold to it as to any curve of a view — a point on it at an instant, a line tangent to it, a circle osculating it — and holds at every value of `t`, as every relation does: what moves with `t` (the relations reading it, and every relation joined to them through an unknown of the drawing) places the point at each instant, and a number of the drawing that does not run with `t` — a free value, a declared unknown or an instance's unbound number — may solve through it. Where what moves leaves free a number it places, or holds what such a curve cannot read yet, a relation naming it is **E061**, saying why (through 0.143 every relation naming it was). A curve over a whole turn of an `Angle` parameter that comes back where it started is closed, as a coupler curve is. A name that is neither a component's formal nor a declared parameter, written with no interval, is **E103**.
+**Over a declared parameter [0.142].** `coupler := trace(m over t)` names a point of the drawing itself, `t` a parameter the document declares (`param t: Angle over (a, b)`, §6.3): the curve is where the point stands as the drawing runs over `t`, every relation of the drawing holding at every value of it (§6.3), the drawing followed from the interval's start where it is drawn. Written with no interval it runs over the parameter's; `trace(m over t in (A, B))` runs over a stretch of it, `A < B` within it (**E103** otherwise). It is a curve of the point's view; **[0.150]** a point in space is traced in space, a curve in
+space as a traced body's is, drawn in the workspace and in no view, and held to by nothing yet
+(**E061**; through 0.149 it was **E060**). Where the drawing stops at a singular instant (§6.3) the curve ends there. **[0.144]** A relation may hold to it as to any curve of a view — a point on it at an instant, a line tangent to it, a circle osculating it — and holds at every value of `t`, as every relation does: what moves with `t` (the relations reading it, and every relation joined to them through an unknown of the drawing) places the point at each instant, and a number of the drawing that does not run with `t` — a free value, a declared unknown or an instance's unbound number — may solve through it. Where what moves leaves free a number it places, or holds what such a curve cannot read yet, a relation naming it is **E061**, saying why (through 0.143 every relation naming it was). A curve over a whole turn of an `Angle` parameter that comes back where it started is closed, as a coupler curve is. A name that is neither a component's formal nor a declared parameter, written with no interval, is **E103**.
 
 **Closed curves [0.37].** A curve run over a whole turn of an `Angle` formal (`over theta in (0, 360)`) that comes back where it started — a crank's coupler curve, a cam's profile — is **closed**. A contact on it has no end to stop at: a parameter carried past the seam wraps round onto the interval and stays free, since the seam is only where the interval was written to begin. A curve that does not come back (an involute unwound a whole turn) is open, and a contact on it is held to its ends.
 
@@ -1538,6 +1540,33 @@ std.Slide(follower, along: stem, advance: 360mm)        // its value in degrees 
 fix(value == 5deg * (1 - cos(t))) follower              // the cam's law
 roller := r0 in follower                                // at its rise where t is held
 groove := sweep(ball over t, under: follower, seen_from: cam)   // what the cam must not hold
+```
+
+**[0.150] A frame the drawing moves.** A frame with axes and no joint, riding on none, placed by
+relations on geometry the drawing moves as a declared parameter runs — a frame on a linkage's
+coupler, `coupler := std.Turned(b, c) in std.front` — is a motion over that parameter: read over
+the roll it stands where the drawing followed along the parameter (§6.3) puts it, the roll being
+the parameter (one clock, as for a drive), and it carries what it reads from where the frame now
+stands, `x ↦ R(t) (x − o) + c(t)`, `R(t)` the turn from the frame now to the frame at `t`, `o` its
+origin now and `c(t)` its origin at `t`. The frame is read so by a reading over a declared
+parameter — `sweep(tool over t, under: coupler.axes)`, `envelope(k over t, under: coupler.axes)`
+in the plane (§6.15.1) and in space, `seen_from:` on either — and by a placement at an instant,
+`tool at(under: coupler.axes) 90deg`, where the document declares one parameter; anywhere else
+such a frame stands still, as through 0.149 every frame with no joint did. Between the stations of
+the march the frame is fitted, and a reading past what the march reached (a singular instant) is
+refused. A frame with no axes has no pose to move. The parameter is an `Angle` (**E080**
+otherwise: the roll is one). A relation the solve holds reads no march: a point carried by such a
+frame at a roll is **E080**, and a relation held to a profile generated under it is refused naming
+why — it is read after the solve, drawn and swept, and a profile under one that leaves its plane is
+**E080**.
+
+```
+param t: Angle over (0deg, 360deg)
+in std.front { … the four-bar; m the coupler's midpoint; ball a unit ball about m … }
+coupler := std.Turned(b, c) in std.front                 // a frame on the coupler
+groove := sweep(ball over t, under: coupler.axes)        // the tube about the coupler curve
+in std.front { roller := circle(center: m); radius(3mm) roller }
+cut := envelope(roller over t, under: coupler.axes)      // what the roller clears
 ```
 
 ### 6.15 Generated envelopes

@@ -543,6 +543,15 @@ pub fn validate(
     let unlowered = |e: &EntRef| e.kind == EntKind::Curve && e.i() < sk.curves.len()
         && matches!(sk.curve_defs[sk.curves[e.i()].def as usize].body,
                     crate::model::CurveBody::Followed(None));
+    // a profile cut under a frame the drawing moves is read off the march after the solve (#398 F)
+    let tabled = |e: &EntRef| e.kind == EntKind::Curve && e.i() < sk.curves.len()
+        && matches!(&sk.curve_defs[sk.curves[e.i()].def as usize].body,
+                    crate::model::CurveBody::Envelope(g) if !crate::generate::tabled(&g.flat).is_empty());
+    if let Some(e) = args.iter().filter_map(|a| match a { Arg::Ent(e) => Some(e), _ => None })
+        .find(|e| tabled(e)) {
+        return Err(format!("{} is cut under a frame the drawing moves, read off its march after \
+                            the solve: a relation the solve holds reads no march (#398)", name(*e)));
+    }
     if let Some(e) = args.iter().filter_map(|a| match a { Arg::Ent(e) => Some(e), _ => None })
         .find(|e| unlowered(e)) {
         let over = &sk.curve_defs[sk.curves[e.i()].def as usize].param;

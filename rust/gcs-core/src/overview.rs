@@ -448,6 +448,14 @@ pub fn scene3d_of(sk: &Sketch, unit: f64, layer: Layer) -> Vec<Item3> {
             });
             continue;
         }
+        // a point in space traced over a parameter stands in space, in no view (#398 F)
+        if e.kind == EntKind::Curve {
+            let pts = sk.followed_world(e.i());
+            if pts.len() >= 2 {
+                items.push(Item3 { of: Some(e), in_plane: None, what: Part::Drawn, pts });
+                continue;
+            }
+        }
         for poly in drawable(sk, e, unit) {
             if poly.len() < 2 {
                 continue;

@@ -475,7 +475,9 @@ fn carried_motion(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) -> Option<Option<R
     }
     // the instant is the frame's value
     let value = drawn_in.and_then(|_| super::motions::value_of(&cx.sk, &cx.res, under_ref));
-    let m = match super::motions::reading(&mut cx.sk, &cx.res, under_ref, seen_ref.as_ref()) {
+    let sole = super::motions::sole(&cx.sk);
+    let m = match super::motions::reading(&mut cx.sk, &cx.res, under_ref, seen_ref.as_ref(),
+                                          sole.as_deref()) {
         Ok(m) => m,
         Err(message) => {
             cx.diags.push(Diag::within(Code::E040, under_ref.span, st.id, message));
@@ -493,6 +495,12 @@ fn carried_motion(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) -> Option<Option<R
         }
         (None, None) => m,
     };
+    // and a frame the drawing moves is read off its march after the solve (#398 F)
+    if let Some((f, over)) = super::motions::followed_in(&cx.sk, m) {
+        cx.diags.push(Diag::within(Code::E080, under_ref.span, st.id,
+                                   crate::motion::unread_march(&f, &over)));
+        return Some(None);
+    }
     let key = format!("#motion{m}");
     cx.res.of.insert(key.clone(), EntRef::new(EntKind::Motion, m));
     let mut w = w.clone();
@@ -554,7 +562,7 @@ fn riding_point(cx: &mut Elab<'_>, r: &Relation, w: &crate::syntax::Written, see
     let m = (|| {
         let s = super::motions::carried(sk, &source)?;
         let o = match seen_ref {
-            Some(g) => super::motions::frame_motion(sk, &cx.res, g)?,
+            Some(g) => super::motions::frame_motion(sk, &cx.res, g, None)?,
             None => super::motions::carried(sk, &observer)?,
         };
         Ok::<_, String>(super::motions::seen(sk, s, o))

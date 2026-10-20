@@ -42,6 +42,9 @@ enum Step {
     Turn { centre: usize, ratio: usize },
     Slide { line: usize, advance: usize },
     Relative,
+    /// A frame the drawing moves (#398 F): motion node `motion`, whose table is attached after the
+    /// solve, or its inverse where `back`.
+    Table { motion: usize, back: bool },
 }
 
 /// The motion as a postfix program, appending the geometry it is written over to `args`, its
@@ -100,6 +103,12 @@ fn program_signed(sk: &Sketch, m: usize, inverse: bool, steps: &mut Vec<Step>, a
             return Err(format!("`{}` rides along a path, its frame read off the path after the \
                 solve: a profile in the sheet is generated under joints at a constant rate",
                 me.name))
+        }
+        // a frame the drawing moves, read off the march after the solve (#398 F): run back, its
+        // inverse's node
+        MotionDef::Followed { .. } => {
+            steps.push(Step::Table { motion: m, back: inverse });
+            shape.push_str(&format!("F{m}{}", if inverse { "⁻" } else { "" }));
         }
         MotionDef::Joint { .. } => {
             return Err(format!("`{}`'s joint turns about an axis no centre of a view holds: a tool \
@@ -162,6 +171,7 @@ fn profile(sk: &mut Sketch, d: &Decl, tool: EntRef, motion: usize) -> Result<Cur
         Step::Turn { centre, ratio } => Op::Turn { centre: at[centre], ratio: value(ratio) },
         Step::Slide { line, advance } => Op::Slide { line: at[line], advance: value(advance) },
         Step::Relative => Op::Relative,
+        Step::Table { motion, back } => Op::Table { motion, back },
     }).collect();
     // a curve or generated tool carries its own constants and interval, so its curve is
     // its own: definitions are shared only between analytic tools
@@ -262,8 +272,8 @@ pub(super) fn planar_envelopes(sk: &mut Sketch, res: &mut Resolver, map: &mut So
             Some([Kid::Ref(r)]) => Some(r),
             _ => None,
         };
-        let built = super::motions::reading_of(sk, res, Some(tool), under, d.seen_from.as_ref())
-            .and_then(|m| profile(sk, d, tool, m));
+        let built = super::motions::reading_of(sk, res, Some(tool), under, d.seen_from.as_ref(),
+            super::motions::declared_of(d)).and_then(|m| profile(sk, d, tool, m));
         let rides = observer_path(sk, res, d);
         bind(sk, res, map, st, d, built, diags);
         ride_on(sk, res, d, rides);
@@ -347,7 +357,8 @@ pub(super) fn extruded_envelopes(sk: &mut Sketch, res: &mut Resolver, map: &mut 
         };
         // the prism the side is of rides as its face's points do (#383)
         let ridden = res.lookup(edge).and_then(|e| follow_building(sk, res, e, edge).ok());
-        let motion = super::motions::reading_of(sk, res, ridden, under, d.seen_from.as_ref()).ok()
+        let motion = super::motions::reading_of(sk, res, ridden, under, d.seen_from.as_ref(),
+            super::motions::declared_of(d)).ok()
             .map(|m| EntRef::new(EntKind::Motion, m));
         let Some(motion) = motion else { continue };
         // a turn about a line in space keeps no view: the spatial envelope's, after the solve

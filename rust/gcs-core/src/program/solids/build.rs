@@ -432,10 +432,17 @@ fn under_motion(
     let drawn_in = matches!(sweep, Sweep::Placed { at: crate::syntax::Arg::Word(w), .. }
         if w == crate::syntax::DRAWN_IN);
     let read = match motion.as_ref().filter(|_| drawn_in) {
-        Some(f) => super::super::motions::reading(sk, res, f, seen_from)
+        Some(f) => super::super::motions::reading(sk, res, f, seen_from, None)
             .map(|m| super::super::motions::undriven(sk, m)),
+        // a sweep over a declared parameter reads a frame the drawing moves as it runs (#398 F)
         None => super::super::motions::reading_of(sk, res, Some(ops[0]), motion.as_ref(),
-                                                   seen_from),
+            seen_from, match sweep {
+                Sweep::Swept { over, .. } => super::super::motions::declared(Some(over))
+                    .map(str::to_string),
+                // at an instant, the one parameter the document declares
+                Sweep::Placed { .. } => super::super::motions::sole(sk),
+                _ => None,
+            }.as_deref()),
     };
     let m = match read {
         Ok(m) => EntRef::new(EntKind::Motion, m),
