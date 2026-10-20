@@ -63,7 +63,7 @@ import {
 } from './dialogs.js';
 import { closeChooser, onChoose } from './choose.js';
 import { editValue, onDimension, onExtent, onRound } from './dimbox.js';
-import { bindProgramPanel, goToSource, openDrawing, refreshProgram, resetProgramFiles,
+import { bindProgramPanel, goToSource, onSide, openDrawing, refreshProgram, resetProgramFiles,
   saveProjectFile, showClaims, showStatementFor, toggleProgramPanel } from './program.js';
 import { OutlinePane } from './outline.js';
 import { closePanel, openPanel, refresh, refreshPanel, refreshStatus } from './lists.js';
@@ -614,9 +614,11 @@ window.addEventListener('keydown', (e) => {
 
 /* A canvas press takes the selection over from the constraint that had the focus — and one
  * that picked nothing shuts the constraints window, which is the only thing that does. */
-/* The model outline (#435): the document's instances as a tree, under the project's files. */
-const outline = new OutlinePane(document.getElementById('outline-pane')!,
-  document.getElementById('outline-tree')!, view, (row) => { if (row.span) goToSource(row.span); });
+/* The model outline (#435): the document's instances as a tree, one of the panel's panes. */
+const outline = new OutlinePane(document.getElementById('outline-tree')!, view,
+  (row) => { if (row.span) goToSource(row.span); },
+  document.getElementById('outline-isolate')!, document.getElementById('outline-show-all')!);
+onSide((side) => outline.show(side === 'outline'));
 view.onHidden = () => outline.paint();
 view.onSelect = () => {
   if (currentConstraint) focusConstraint(null);

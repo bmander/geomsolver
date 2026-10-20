@@ -1,6 +1,6 @@
 /* **The model outline pane** (#435): every instance the document makes and its members, as a
- * tree under the project's files, styled as that tree is — for finding the way round a large
- * document and taking things out of the way while working.
+ * tree, styled as a project's files are — for finding the way round a large document and taking
+ * things out of the way while working.
  *
  * The tree is the core's (`overview::outline`), and what a row does is `hidden.ts`'s: an eye that
  * hides or shows it, a click that selects, a hover that lights, a double-click that frames, and a
@@ -12,7 +12,7 @@ import {
   frameRow, hasEye, hoverRow, isHidden, partlyHidden, rowKey, rowSelected, selectRow,
   selectedKeys, selectionRow, toggleRow, walk,
 } from './hidden.js';
-import { bindPaneToggle } from './project-explorer.js';
+import { disclosure } from './project-explorer.js';
 import type { SketchView } from './view.js';
 
 /** A row's shape, which decides whether the tree is rebuilt: everything but where it is written. */
@@ -79,12 +79,12 @@ export class OutlinePane {
   /** The rows open, by key, kept across a rebuild. */
   private readonly open = new Set<string>();
 
-  constructor(private readonly pane: HTMLElement, private readonly tree: HTMLElement,
-    private readonly view: SketchView, private readonly toSource: (row: Row) => void) {
-    bindPaneToggle(pane, tree, pane.querySelector<HTMLButtonElement>('#outline-toggle')!,
-      'the model outline', () => this.refresh());
-    pane.querySelector('#outline-isolate')?.addEventListener('click', () => view.isolate());
-    pane.querySelector('#outline-show-all')?.addEventListener('click', () => view.showAll());
+  /** `isolate` and `showAll` are the buttons the panel's head shows beside the tree. */
+  constructor(private readonly tree: HTMLElement, private readonly view: SketchView,
+    private readonly toSource: (row: Row) => void,
+    isolate: HTMLElement, showAll: HTMLElement) {
+    isolate.addEventListener('click', () => view.isolate());
+    showAll.addEventListener('click', () => view.showAll());
     // **I isolates and ⇧I shows all** while the tree has the keys: the plain letter is
     // Coincident's everywhere else
     tree.addEventListener('keydown', (e) => {
@@ -94,6 +94,12 @@ export class OutlinePane {
       if (e.shiftKey) view.showAll();
       else view.isolate();
     });
+  }
+
+  /** The panel turned to the outline, or away from it: the tree is read only while it shows. */
+  show(shown: boolean): void {
+    this.tree.hidden = !shown;
+    if (shown) this.refresh();
   }
 
   /** Bring the tree up to the document: rebuilt where the outline's shape changed, its rows
@@ -190,7 +196,7 @@ export class OutlinePane {
     twist.type = 'button';
     twist.className = 'outline-twist';
     if (kids) {
-      twist.append(this.pane.querySelector('.project-disclosure')!.cloneNode(true));
+      twist.append(disclosure());
       twist.setAttribute('aria-label', 'Expand');
       twist.addEventListener('click', () => this.toggleOpen(i));
     } else {

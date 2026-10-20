@@ -39,12 +39,25 @@ const fileBar = document.getElementById('program-files') as HTMLElement;
 const programName = document.getElementById('program-name')!;
 const compileButton = document.getElementById('program-compile') as HTMLButtonElement;
 const foldButton = document.getElementById('ppanel-fold') as HTMLButtonElement;
-/** Narrow enough that the program is a drawer above the footer rather than a column beside the
+const sidePicker = document.getElementById('ppanel-side') as HTMLSelectElement;
+/** Narrow enough that the panel is a drawer above the footer rather than a column beside the
  *  drawing — the stylesheet's own breakpoint, asked of the same media query. */
 const narrow = matchMedia('(max-width: 720px)');
-const explorer = new ProjectExplorer(document.getElementById('project-pane')!,
-  document.getElementById('project-tree')!, document.getElementById('project-title')!,
-  (p) => void chooseFile(p));
+const explorer = new ProjectExplorer(document.getElementById('project-tree')!,
+  document.getElementById('project-title')!, (p) => {
+    // a file opened is shown where it is read and typed: the program's pane
+    showSide('program');
+    void chooseFile(p);
+  });
+/** The panel's panes, one shown at a time: the program, the model outline, a project's files. */
+export type Side = 'program' | 'outline' | 'project';
+let side: Side = 'program';
+let sideShown: (side: Side) => void = () => {};
+/** The chooser's Project, offered only while a folder is open: a lone drawing has no files. */
+const projectSide = new Option('Project', 'project');
+/** Where the code box was scrolled to when the panel turned from it: a box out of the layout is
+ *  free to forget. */
+let programScroll = { top: 0, left: 0 };
 let directory: string | undefined;
 let onProjectFile: ((path: string) => void) | undefined;
 let activeFile = '';
@@ -127,7 +140,7 @@ export function resetProgramFiles(): boolean {
   if (switching) return false;
   project = null;
   directory = undefined; onProjectFile = undefined;
-  explorer.show([]); programName.hidden = true;
+  explorer.show([]); offerProject(false); programName.hidden = true;
   showDrawing(null);
   activeFile = ''; modelFile = '';
   ped.plain = false;
@@ -158,7 +171,8 @@ export function openProject(bundle: DrawingBundle, options: {
     ...names.filter((p) => p !== main).map((p) => new Option(p, p)));
   filePicker.value = main;
   fileBar.hidden = directory !== undefined;
-  explorer.show(names, directory); explorer.select(main);
+  explorer.show(names, directory); offerProject(directory !== undefined);
+  explorer.select(main);
   activateProjectFile(main);
   revertProgram();
   if (bundle.source !== main && names.includes(bundle.source)) selectFile(bundle.source);
@@ -497,6 +511,8 @@ export function showStatementFor(): void {
 export function goToSource(span: SourceSpan): void {
   if (switching || drawingActive() || showingText()) return;
   if (ppanel.hidden) toggleProgramPanel();
+  showSide('program');
+  if (narrow.matches) fold(false);
   if (!project && activeFile) selectFile('');
   ptext.focus();
   ptext.setSelectionRange(span.lo, span.hi);
@@ -511,16 +527,55 @@ function lineAt(off: number): number {
   return line;
 }
 
-/** The drawer a narrow screen keeps the program in, above the footer: folded to its head it
- *  leaves the drawing the screen, and it opens folded there.  On a wide one the panel is the
- *  column beside the drawing and the head folds nothing.  The canvas is watched by a
+/** Be told each time the panel turns to a pane — the outline reads its tree only while shown. */
+export function onSide(shown: (side: Side) => void): void {
+  sideShown = shown;
+}
+
+/** Turn the panel to one of its panes, as its head's chooser does: the column (the drawer, on a
+ *  narrow screen) holds one at a time, all of its height the pane's.  Project falls back to the
+ *  program where no folder is open. */
+export function showSide(next: Side): void {
+  if (next === 'project' && !projectSide.parentElement) next = 'program';
+  sidePicker.value = next;
+  if (next === side) return;
+  if (side === 'program') {
+    // a draft turned away from is applied as a blur would apply it: out of sight is not undone
+    if (typed) applyProgram();
+    programScroll = { top: ptext.scrollTop, left: ptext.scrollLeft };
+  }
+  side = next;
+  ppanel.dataset.side = next;
+  if (next === 'program') {
+    ptext.scrollTop = programScroll.top;
+    ptext.scrollLeft = programScroll.left;
+    ptext.dispatchEvent(new Event('scroll'));
+  }
+  sideShown(next);
+}
+
+/** Offer the project's files in the chooser while a folder is open, and stop when it closes. */
+function offerProject(open: boolean): void {
+  if (open && !projectSide.parentElement) sidePicker.append(projectSide);
+  if (open) return;
+  projectSide.remove();
+  if (side === 'project') showSide('program');
+}
+
+/** Fold the drawer to its head, or open it again. */
+function fold(folded: boolean): void {
+  ppanel.classList.toggle('folded', folded);
+  foldButton.setAttribute('aria-expanded', String(!folded));
+  const says = folded ? 'Show the panel' : 'Fold the panel away';
+  foldButton.title = says;
+  foldButton.setAttribute('aria-label', says);
+}
+
+/** The drawer a narrow screen keeps the panel in, above the footer: folded to its head it leaves
+ *  the drawing the screen, and it opens folded there; choosing a pane opens it.  On a wide one
+ *  the panel is the column beside the drawing and nothing folds it.  The canvas is watched by a
  *  `ResizeObserver` (`main.ts`), so the view hears the room it gained or lost. */
 function bindDrawer(): void {
-  const fold = (folded: boolean): void => {
-    ppanel.classList.toggle('folded', folded);
-    foldButton.setAttribute('aria-expanded', String(!folded));
-    foldButton.title = folded ? 'Show the program' : 'Fold the program away';
-  };
   fold(narrow.matches);
   foldButton.addEventListener('click', () => {
     if (!narrow.matches) return;
@@ -528,6 +583,10 @@ function bindDrawer(): void {
     // a draft folded away is applied as a blur would apply it: out of sight is not undone
     if (folding && typed) applyProgram();
     fold(folding);
+  });
+  sidePicker.addEventListener('change', () => {
+    showSide(sidePicker.value as Side);
+    if (narrow.matches) fold(false);
   });
 }
 
