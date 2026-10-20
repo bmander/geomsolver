@@ -276,7 +276,7 @@ impl Lookup<'_> {
             if r.path[at + 1..].iter().any(|s| matches!(s, Seg::Index(_))) {
                 return None;
             }
-            let k = match value_of(text, &sc.vals, units) {
+            let k = match value_of(text, &*sc.vals, units) {
                 Ok(v) if v.is_finite() && v >= 0.0 && v.round() == v => v as usize,
                 _ => return None,
             };
@@ -1180,7 +1180,7 @@ impl<'a> Walk<'a> {
         let edges: Vec<(&Name, &[Link])> =
             vars.iter().zip(&walks).map(|(v, (l, _))| (v, l.as_slice())).collect();
         let n = walks[0].0.len();
-        self.copies(&b, &p.st, &p.scope, &p.scope.vals, &p.path, p.depth, n, &edges);
+        self.copies(&b, &p.st, &p.scope, &p.path, p.depth, n, &edges);
         let made = std::mem::replace(&mut self.out, outer);
         self.aside.held = 0;
         self.out.splice(at..at, made);

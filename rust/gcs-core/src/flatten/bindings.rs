@@ -90,7 +90,7 @@ impl<'a> Walk<'a> {
         &mut self,
         inst: &crate::syntax::Instance,
         scope: &Scope,
-        vals: &BTreeMap<String, Aff>,
+        vals: &Vals,
         drawn: bool,
     ) -> Option<(&'a Component, BTreeMap<String, Aff>, BTreeMap<String, String>, String)> {
         let index = match self.prog.resolve_component(&inst.component.text, scope.module) {
@@ -204,7 +204,7 @@ impl<'a> Walk<'a> {
         comp: &Component,
         inst: &crate::syntax::Instance,
         scope: &Scope,
-        vals: &BTreeMap<String, Aff>,
+        vals: &Vals,
     ) -> (BTreeMap<String, Aff>, BTreeMap<String, String>) {
         use crate::syntax::{InstVal, Ty};
         let prefix = scope.prefix().to_string();
@@ -346,7 +346,7 @@ impl<'a> Walk<'a> {
             }
             // a number with a default (#383): what the call left out is that, and no unknown
             if let Some((text, span)) = &f.default {
-                self.bind_value(&mut sub, f, f.ty, text, &BTreeMap::new(), scope, &inst.name.text,
+                self.bind_value(&mut sub, f, f.ty, text, &Vals::default(), scope, &inst.name.text,
                     *span);
                 continue;
             }
@@ -383,7 +383,7 @@ impl<'a> Walk<'a> {
         }
         let m = &self.prog.modules[k];
         let scope = Scope { prefixes: vec![format!("{}.", m.name)], module: Some(k), ..Scope::default() };
-        let mut vals: BTreeMap<String, Aff> = BTreeMap::new();
+        let mut vals = Vals::default();
         let (body, uses) = (m.root.body.clone(), m.uses.iter().map(|u| u.name.clone()).collect::<Vec<_>>());
         // the modules it uses first, under their paths, so its own params may read them
         let mut used = self.used_params(&uses);
@@ -394,7 +394,8 @@ impl<'a> Walk<'a> {
         self.params(&body, &mut vals, &scope);
         // and only its own go out: a file reaches another module's numbers through a `use` of
         // its own, so passing these on would only lengthen their names at every level
-        vals.retain(|name, _| !used.contains_key(name));
+        vals.retain(|name| !used.contains_key(name));
+        let vals = vals.into_own();
         if let Some(slot) = self.module_vals.get_mut(k) {
             *slot = Some(vals.clone());
         }
@@ -454,7 +455,7 @@ impl<'a> Walk<'a> {
     pub(super) fn instance_numbers(
         &self,
         body: &[Stmt],
-        vals: &mut BTreeMap<String, Aff>,
+        vals: &mut Vals,
         scope: &Scope,
     ) {
         use crate::syntax::InstVal;
@@ -483,7 +484,7 @@ impl<'a> Walk<'a> {
                 let v = given.remove(f.name.text.as_str()).unwrap_or_else(|| {
                     free(formal_name(scope.prefix(), &inst.name.text, &f.name.text), f.ty)
                 });
-                vals.entry(format!("{}.{}", inst.name.text, f.name.text)).or_insert(v);
+                vals.or_insert(format!("{}.{}", inst.name.text, f.name.text), v);
             }
         }
     }
@@ -499,7 +500,7 @@ impl<'a> Walk<'a> {
         f: &crate::syntax::Formal,
         ty: Ty,
         text: &str,
-        vals: &BTreeMap<String, Aff>,
+        vals: &Vals,
         scope: &Scope,
         inst: &str,
         span: Span,
@@ -543,7 +544,7 @@ impl Walk<'_> {
     /// formal's name, seeded by `center: hint((x, y))` in the plane's coordinates — and made by
     /// the call's own statement, so the call is what deletes and describes it.
     pub(super) fn owned_points(&mut self, comp: &Component, inst: &crate::syntax::Instance,
-        st: &Stmt, vals: &BTreeMap<String, Aff>) -> Vec<Stmt> {
+        st: &Stmt, vals: &Vals) -> Vec<Stmt> {
         use crate::syntax::{Chained, DeclName, InstVal, Membership};
         let mut out = Vec::new();
         for f in &comp.formals {
@@ -597,7 +598,7 @@ impl Walk<'_> {
     }
 
     /// A point's seed as a call writes it, `(x, y)`: two lengths in the plane it is drawn in.
-    fn seed_point(&self, text: &str, vals: &BTreeMap<String, Aff>) -> Result<[f64; 2], String> {
+    fn seed_point(&self, text: &str, vals: &Vals) -> Result<[f64; 2], String> {
         let said = "a point's seed is its place in its plane, `hint((x, y))`";
         let inner = text.trim().strip_prefix('(').and_then(|t| t.strip_suffix(')')).ok_or(said)?;
         // split at the commas outside any bracket an expression opens: two coordinates

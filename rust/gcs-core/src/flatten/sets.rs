@@ -282,7 +282,7 @@ impl<'a> Walk<'a> {
             StmtKind::Instance(inst) => (&inst.name, Some(inst)),
             _ => return false,
         };
-        let seed = value_aff(radius.text, &sc.vals, self.units).ok().and_then(|a| a.number())
+        let seed = value_aff(radius.text, &*sc.vals, self.units).ok().and_then(|a| a.number())
             .filter(|r| r.is_finite() && *r > 0.0);
         // a set written in place, or an unnamed call, is named nothing the source can say
         let name = if outer.stamps.anonymous || written.text.starts_with('#') {
@@ -877,7 +877,7 @@ impl<'a> Walk<'a> {
         // the distance, read where the use is — a length, which a bare number is taken as where
         // one is wanted (§3.3) — and signed toward the outside; a text the use's scope wrote over
         // an unknown reads it as declared
-        let d = match value_read(&text, &su.u.scope.vals, &self.unknowns, self.units) {
+        let d = match value_read(&text, &*su.u.scope.vals, &self.unknowns, self.units) {
             Ok(d) if d.dim.fits(crate::units::Dim::LENGTH) => d.as_dim(crate::units::Dim::LENGTH),
             Ok(_) => {
                 let m = format!("`{text}` is a distance from `{set}`, a length");
@@ -963,7 +963,7 @@ impl<'a> Walk<'a> {
             // the number moved, worked out where the set states it: added as numbers, an
             // unknown either reads keeps its dimension, which a text written over it would
             // lose (a free name in a text is a plain number until its slot says otherwise)
-            let moved = value_aff(t, &closure.vals, self.units).ok()
+            let moved = value_aff(t, &*closure.vals, self.units).ok()
                 .filter(|a| a.dim.fits(crate::units::Dim::LENGTH))
                 .and_then(|a| a.plus(&grow, 1.0).ok())
                 .map(|sum| sum.as_dim(crate::units::Dim::LENGTH));
