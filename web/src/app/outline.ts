@@ -9,9 +9,10 @@
  * when a row is first opened, so a ring of many copies, or the V-twin, stays cheap. */
 import type { Row } from '../core/outline.js';
 import {
-  frameRow, hideable, hoverRow, isHidden, partlyHidden, rowKey, rowSelected, selectRow,
-  selectionRow, toggleRow, walk,
+  frameRow, hasEye, hoverRow, isHidden, partlyHidden, rowKey, rowSelected, selectRow,
+  selectedKeys, selectionRow, toggleRow, walk,
 } from './hidden.js';
+import { bindPaneToggle } from './project-explorer.js';
 import type { SketchView } from './view.js';
 
 /** A row's shape, which decides whether the tree is rebuilt: everything but where it is written. */
@@ -65,27 +66,23 @@ interface Drawn {
 
 export class OutlinePane {
   private shape = '';
+  /** The outline as last read, so a refresh with nothing new to read only repaints. */
+  private rows: Row[] | null = null;
   /** The rows as last read, in tree order — a drawn row's `data-i` indexes it, so an edit that
-   *  moved only spans rebinds them without touching the DOM. */
+   *  moved only spans rebinds them without touching the DOM — and each row's place in it. */
   private flat: Row[] = [];
+  private index = new Map<Row, number>();
+  /** What the tree was last opened to show (`reveal`), so a band sweeping the drawing does not
+   *  open it again on every move. */
+  private revealed: Row | null = null;
   private readonly drawn = new Map<number, Drawn>();
   /** The rows open, by key, kept across a rebuild. */
   private readonly open = new Set<string>();
 
   constructor(private readonly pane: HTMLElement, private readonly tree: HTMLElement,
     private readonly view: SketchView, private readonly toSource: (row: Row) => void) {
-    const toggle = pane.querySelector<HTMLButtonElement>('#outline-toggle')!;
-    toggle.addEventListener('click', () => {
-      const collapsed = toggle.getAttribute('aria-expanded') === 'true';
-      toggle.setAttribute('aria-expanded', String(!collapsed));
-      toggle.title = `${collapsed ? 'Expand' : 'Collapse'} the model outline`;
-      pane.classList.toggle('collapsed', collapsed);
-      tree.hidden = collapsed;
-      if (!collapsed) this.refresh();
-    });
-    toggle.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' || e.key === ' ') e.stopPropagation();
-    });
+    bindPaneToggle(pane, tree, pane.querySelector<HTMLButtonElement>('#outline-toggle')!,
+      'the model outline', () => this.refresh());
     pane.querySelector('#outline-isolate')?.addEventListener('click', () => view.isolate());
     pane.querySelector('#outline-show-all')?.addEventListener('click', () => view.showAll());
     // **I isolates and ⇧I shows all** while the tree has the keys: the plain letter is
@@ -109,17 +106,23 @@ export class OutlinePane {
     } catch {
       rows = [];
     }
-    const shape = shapeOf(rows);
-    this.flat = [...walk(rows)].map(([r]) => r);
-    if (shape !== this.shape) {
-      this.shape = shape;
-      this.rebuild(rows);
+    if (rows !== this.rows) {
+      this.rows = rows;
+      this.revealed = null;
+      this.flat = [...walk(rows)].map(([r]) => r);
+      this.index = new Map(this.flat.map((r, i) => [r, i]));
+      const shape = shapeOf(rows);
+      if (shape !== this.shape) {
+        this.shape = shape;
+        this.rebuild(rows);
+      }
     }
     this.paint();
   }
 
   /** The eyes, the dimming under a hidden row and the rows marked current, on every row drawn. */
   paint(): void {
+    const selected = selectedKeys(this.view);
     for (const [i, d] of this.drawn) {
       const row = this.flat[i];
       if (!row) continue;
@@ -137,7 +140,7 @@ export class OutlinePane {
         d.eye.setAttribute('aria-pressed', String(own || under));
         d.eye.title = own || under ? 'Show' : 'Hide';
       }
-      if (rowSelected(this.view, row)) d.row.setAttribute('aria-current', 'true');
+      if (rowSelected(row, selected)) d.row.setAttribute('aria-current', 'true');
       else d.row.removeAttribute('aria-current');
     }
   }
@@ -147,14 +150,24 @@ export class OutlinePane {
     if (this.tree.hidden) return;
     this.refresh();
     const at = selectionRow(this.view);
+    if (at?.row === this.revealed) return;
+    this.revealed = at?.row ?? null;
     if (!at) return;
-    for (const r of at.above) this.expand(this.indexOf(r));
-    const d = this.drawn.get(this.indexOf(at.row));
-    d?.row.scrollIntoView({ block: 'nearest' });
+    for (const r of at.above) this.expand(this.indexOf(r), false);
+    this.paint();
+    this.drawn.get(this.indexOf(at.row))?.row.scrollIntoView({ block: 'nearest' });
   }
 
   private indexOf(row: Row): number {
-    return this.flat.indexOf(row);
+    return this.index.get(row) ?? -1;
+  }
+
+  /** Listen on a row's control for what it does to the row it now stands for. */
+  private on(el: HTMLElement, type: string, i: number, fn: (r: Row, e: Event) => void): void {
+    el.addEventListener(type, (e) => {
+      const r = this.flat[i];
+      if (r) fn(r, e);
+    });
   }
 
   private rebuild(rows: readonly Row[]): void {
@@ -185,32 +198,22 @@ export class OutlinePane {
       twist.tabIndex = -1;
     }
     let eye: HTMLButtonElement | null = null;
-    // an operand is listed to be found and has no eye, nor has anything under one
-    if (hideable(row) && !above.some((a) => a.operand)) {
+    if (hasEye(row, above)) {
       eye = document.createElement('button');
       eye.type = 'button';
       eye.className = 'outline-eye';
-      eye.addEventListener('click', (e) => {
+      this.on(eye, 'click', i, (r, e) => {
         e.stopPropagation();
-        const r = this.flat[i];
-        if (r) toggleRow(this.view, r);
+        toggleRow(this.view, r);
       });
-    } else {
-      eye = null;
     }
     const label = document.createElement('button');
     label.type = 'button';
     label.className = `outline-label kind-${row.kind}`;
     label.textContent = row.label;
     label.title = row.path || row.label;
-    label.addEventListener('click', (e) => {
-      const r = this.flat[i];
-      if (r) selectRow(this.view, r, e.shiftKey);
-    });
-    label.addEventListener('dblclick', () => {
-      const r = this.flat[i];
-      if (r) frameRow(this.view, r);
-    });
+    this.on(label, 'click', i, (r, e) => selectRow(this.view, r, (e as MouseEvent).shiftKey));
+    this.on(label, 'dblclick', i, (r) => frameRow(this.view, r));
     label.addEventListener('pointerenter', () => hoverRow(this.view, this.flat[i] ?? null));
     label.addEventListener('pointerleave', () => hoverRow(this.view, null));
     line.append(twist, ...(eye ? [eye] : [document.createElement('span')]), label);
@@ -221,10 +224,7 @@ export class OutlinePane {
       go.textContent = '↗';
       go.title = 'Go to source';
       go.setAttribute('aria-label', `Go to the source of ${row.label}`);
-      go.addEventListener('click', () => {
-        const r = this.flat[i];
-        if (r) this.toSource(r);
-      });
+      this.on(go, 'click', i, (r) => this.toSource(r));
       line.append(go);
     }
     if (eye) line.classList.add('has-eye');
@@ -233,7 +233,7 @@ export class OutlinePane {
     this.drawn.set(i, d);
     if (kids) {
       item.setAttribute('aria-expanded', 'false');
-      if (this.open.has(rowKey(row))) this.expand(i);
+      if (this.open.has(rowKey(row))) this.expand(i, false);
     }
     return item;
   }
@@ -246,13 +246,15 @@ export class OutlinePane {
       d.item.setAttribute('aria-expanded', 'false');
       if (d.group) d.group.hidden = true;
       this.open.delete(rowKey(row));
+      this.revealed = null;          // folded away: the next selection opens it again
     } else {
       this.expand(i);
     }
   }
 
-  /** Open row `i`, making its children the first time. */
-  private expand(i: number): void {
+  /** Open row `i`, making its children the first time — and painting them, unless the caller
+   *  opens several and paints once after. */
+  private expand(i: number, paint = true): void {
     const d = this.drawn.get(i);
     const row = this.flat[i];
     if (!d || !row || !row.children.length) return;
@@ -265,7 +267,7 @@ export class OutlinePane {
       const above = [...d.above, row];
       d.group.append(...row.children.map((c) => this.item(c, above)));
       d.item.append(d.group);
-      this.paint();
+      if (paint) this.paint();
     }
     d.group.hidden = false;
   }

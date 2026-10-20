@@ -2,6 +2,7 @@
  * the core's (`overview::outline`), read through `Document.outline`, which brings its spans onto
  * the string as every report's are.  Nothing here walks the source: a row says what it is, what
  * it is carried by and what it made. */
+import type { Ref } from './io.js';
 import type { Part } from './model.js';
 import type { SourceSpan } from './program.js';
 
@@ -20,7 +21,7 @@ export interface Row {
   /** Where its statement is in the document; none for a module's statement. */
   span?: SourceSpan;
   /** The entities the row itself stands for, by the core's kind word and index. */
-  ents: [string, number][];
+  ents: Ref[];
   /** A solid row's solid. */
   solid?: number;
   /** A feature or cutter listed under its object: there to be found, not to be hidden. */

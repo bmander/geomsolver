@@ -874,7 +874,7 @@ export class Sketch {
    *  workspace, still solved — and show the rest: view state, set whole on every drawing the view
    *  is handed (`gcs_sketch_set_hidden`). */
   setHidden(part: Part): void {
-    withStr(JSON.stringify(part), (p, n) => core().gcs_sketch_set_hidden(this.handle, p, n));
+    withJson(part, (p, n) => core().gcs_sketch_set_hidden(this.handle, p, n));
   }
 
   /** What a click at (x, y) picks: the nearest entity whose *drawn* figure comes within `tol`,

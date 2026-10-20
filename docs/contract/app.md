@@ -448,7 +448,7 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   selected deselects it; selecting a hidden row shows it (and only it: the rows above it shown,
   their other children hidden in their stead); choosing a hidden plane, or drawing on it, shows
   it.  The pane: an eye per row (dimmed under a hidden row, half where some row under it is
-  hidden); a click selects (⇧ adds), a hover lights as the ⌘-click list's rows do, a
+  hidden); a click selects (⇧ toggles), a hover lights as the ⌘-click list's rows do, a
   double-click frames the row's subtree (`workspace::bounds_of`, hidden or not, FFI
   `gcs_workspace_bounds_of`), ↗ puts the editor's caret on its span (`program.ts::goToSource`);
   **Isolate** hides all but the selection and the rows that made it and **Show all** clears it

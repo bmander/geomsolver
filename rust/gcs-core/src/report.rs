@@ -841,11 +841,7 @@ pub fn overview3d_json(sk: &Sketch, unit: f64, layer: crate::overview::Layer) ->
 /// document's bytes (`overview::outline`).
 pub fn outline_json(e: &crate::program::Elaborated, sk: &Sketch) -> Json {
     fn node(n: &crate::overview::outline::Node) -> Json {
-        let ents = n.ents.iter()
-            .map(|e| {
-                Json::Arr(vec![Json::Str(e.kind.as_str().to_string()), Json::Int(e.idx as i64)])
-            })
-            .collect();
+        let ents = n.ents.iter().map(|&e| ent_json(e)).collect();
         let mut o = object([
             ("label", Json::Str(n.label.clone())),
             ("kind", Json::Str(n.kind.as_str().to_string())),

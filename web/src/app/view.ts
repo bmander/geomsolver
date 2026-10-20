@@ -295,11 +295,11 @@ export class SketchView {
   /** **The outline's rows hidden** (#435), by the key each is carried by (`hidden.rowKey`): view
    *  state, as the orbit is — never saved, solved or undone, carried across an edit by path and
    *  let go by a load.  What they made is `hiddenEnts` and `hiddenSolids`, set on every drawing
-   *  the view is handed (`hidden.applyHidden`), and `hiddenKey` says when that changed. */
+   *  the view is handed (`hidden.applyHidden`), each time bumping `hiddenEpoch`. */
   hiddenRows = new Set<string>();
   hiddenEnts = new Set<Primitive>();
   hiddenSolids = new Set<number>();
-  hiddenKey = '';
+  hiddenEpoch = 0;
   /** The solids selected, each by the face the click landed on — the third selection, exclusive
    *  with the other two for the picture's reason: a solid is not a `Primitive`, nothing
    *  constrains one beside a point, and holding both would leave Delete ambiguous. */
@@ -775,12 +775,7 @@ export class SketchView {
 
   /** Project navigation starts a separate edit history; undo must never cross file boundaries. */
   openProjectFile(text: string): boolean {
-    const held = this.hiddenRows;
-    this.hiddenRows = new Set();
-    if (!this.reread(text, true, false)) {
-      this.hiddenRows = held;
-      return false;
-    }
+    if (!this.another(() => this.reread(text, true, false))) return false;
     this.undoStack = [];
     return true;
   }
@@ -798,11 +793,7 @@ export class SketchView {
    *  its own way and is not this. */
   load(text: string, fit = true): boolean {
     this.pushUndo();
-    // another document: nothing of it is hidden, and its rows are not this one's
-    const held = this.hiddenRows;
-    this.hiddenRows = new Set();
-    if (!this.reread(text, fit, false)) {
-      this.hiddenRows = held;
+    if (!this.another(() => this.reread(text, fit, false))) {
       this.dropUndo();
       return false;
     }
@@ -813,6 +804,16 @@ export class SketchView {
     }
     this.onLoad();
     return true;
+  }
+
+  /** Read another document: nothing of it is hidden, the outgoing rows not being its own — and
+   *  they are kept where the read is refused, the drawing staying as it was. */
+  private another(read: () => boolean): boolean {
+    const held = this.hiddenRows;
+    this.hiddenRows = new Set();
+    if (read()) return true;
+    this.hiddenRows = held;
+    return false;
   }
 
   /** File ▸ New: a fresh sheet that says `use std`, so the first thing drawn is drawn on the
@@ -1467,8 +1468,6 @@ export class SketchView {
   }
   private outlineCache: { doc: Document; text: string; rows: Row[] } | null = null;
 
-  /** Hide an outline row, or show it (`hidden.setRowHidden`). */
-  setRowHidden(row: Row, hide: boolean): void { hidden.setRowHidden(this, row, hide); }
   /** **Isolate** (`I`): everything hidden but the selection and the rows that made it. */
   isolate(): boolean { return hidden.isolate(this); }
   /** **Show all** (`⇧I`). */

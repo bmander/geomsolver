@@ -15,7 +15,8 @@
 use crate::ir::PathStep;
 use crate::model::{EntKind, EntRef, Sketch};
 use crate::program::{public_path, Elaborated};
-use crate::syntax::{Span, StmtId, StmtKind};
+use crate::syntax::{BlockKind, Span, StmtId, StmtKind};
+use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 
 /// What a row of the outline stands for.
@@ -117,10 +118,10 @@ pub fn outline_with(e: &Elaborated, sk: &Sketch) -> Vec<Node> {
         }
         ents.push(Placed { e: r, stmt: site.stmt, path: site.path.0.clone(), at: site.span.lo });
     }
-    let reader = Reader { e, made_pos };
+    let reader = Reader { e, made_pos, stmts: RefCell::new(BTreeMap::new()) };
     // what a module made at the root, beside no instance of the document's, is its datums
     let (datums, drawing): (Vec<Placed>, Vec<Placed>) = ents.into_iter()
-        .partition(|p| p.path.is_empty() && e.program.document_stmt(p.stmt).is_none());
+        .partition(|p| p.path.is_empty() && reader.span(p.stmt).is_none());
     let mut rows = reader.level(drawing, 0, "");
     let mut groups: BTreeMap<String, Vec<Placed>> = BTreeMap::new();
     for p in datums {
@@ -163,17 +164,28 @@ struct Reader<'a> {
     e: &'a Elaborated,
     /// Each entity's place among what its statement made: a declaration's own entity first.
     made_pos: BTreeMap<EntRef, usize>,
+    /// Each statement asked after: where it was written in the virtual text, and its span where
+    /// the document wrote it — found once, since finding one walks the program.
+    stmts: RefCell<BTreeMap<StmtId, (u32, Option<Span>)>>,
 }
 
 impl Reader<'_> {
+    /// Statement `s`: where it was written, and its span if the document wrote it.
+    fn stmt(&self, s: StmtId) -> (u32, Option<Span>) {
+        *self.stmts.borrow_mut().entry(s).or_insert_with(|| {
+            let p = &self.e.program;
+            (p.stmt(s).map_or(u32::MAX, |st| st.span.lo), p.document_stmt(s).map(|st| st.span))
+        })
+    }
+
     /// Where statement `s` was written, in the program's virtual text.
     fn at(&self, s: StmtId) -> u32 {
-        self.e.program.stmt(s).map_or(u32::MAX, |st| st.span.lo)
+        self.stmt(s).0
     }
 
     /// Statement `s`'s span, where the document wrote it.
     fn span(&self, s: StmtId) -> Option<Span> {
-        self.e.program.document_stmt(s).map(|st| st.span)
+        self.stmt(s).1
     }
 
     /// The rows of one level: `ents` all share their first `depth` path steps, which `prefix`
@@ -216,8 +228,7 @@ impl Reader<'_> {
         let path = carried(&inner);
         let label = match (&path, &component) {
             (p, Some(c)) if !p.is_empty() => format!("{} : {c}", tail(p, prefix)),
-            (_, Some(c)) if place(prefix).is_empty() => c.clone(),
-            (_, Some(c)) => format!("{c} in {}", place(prefix)),
+            (_, Some(c)) => in_place(c, &carried(prefix)),
             _ => "instance".to_string(),
         };
         let mut n = Node::new(label, NodeKind::Instance, path, self.span(s));
@@ -241,18 +252,23 @@ impl Reader<'_> {
             1 => names[0].clone(),
             _ => format!("{{{}}}", names.join(", ")),
         };
-        let path = if names.is_empty() { String::new() } else { names.join(",") };
-        let path = match carried(prefix) {
-            _ if prefix.is_empty() || path.is_empty() => path,
-            outer if outer.is_empty() => outer,
-            outer => format!("{outer}.{path}"),
+        // inside an instance the source cannot name, the block is carried by nothing either
+        let path = match (prefix.is_empty(), carried(prefix)) {
+            (true, _) => names.join(","),
+            (false, outer) if outer.is_empty() || names.is_empty() => String::new(),
+            (false, outer) => format!("{outer}.{}", names.join(",")),
         };
         let word = match self.e.program.stmt(s).map(|st| &st.kind) {
-            Some(StmtKind::Block(b)) => format!("{:?}", b.kind).to_lowercase(),
-            _ => "block".to_string(),
+            Some(StmtKind::Block(b)) => match b.kind {
+                BlockKind::Repeat => "repeat ",
+                BlockKind::Cycle => "cycle ",
+                BlockKind::Ring => "ring ",
+                BlockKind::When => "when ",
+            },
+            _ => "block ",
         };
-        let label = if base.is_empty() { format!("{word} [0‥{}]", count.saturating_sub(1)) }
-            else { format!("{base}[0‥{}]", count.saturating_sub(1)) };
+        let label = format!("{}[0‥{}]", if base.is_empty() { word } else { &base },
+                            count.saturating_sub(1));
         let span = self.span(s);
         let mut n = Node::new(label, NodeKind::Block, path.clone(), span);
         for (index, members) in copies {
@@ -308,30 +324,31 @@ impl Reader<'_> {
                 under[k] = first;
             }
         }
-        fn build(k: usize, members: &[Placed], names: &[String], under: &[Option<usize>],
-                 parent: &str, rd: &Reader, span: Option<Span>) -> Node {
+        let row = |k: usize, parent: &str| -> Node {
             let e = members[k].e;
             let path = names[k].clone();
-            let label = match (path.is_empty(), place(parent)) {
-                (false, _) => tail(&path, parent),
-                (true, at) if at.is_empty() => e.kind.as_str().to_string(),
-                (true, at) => format!("{} in {at}", e.kind.as_str()),
-            };
-            let mut n = Node::new(label, NodeKind::Entity, path.clone(), span);
+            let label = if path.is_empty() { in_place(e.kind.as_str(), &carried(parent)) }
+                else { tail(&path, parent) };
+            let mut n = Node::new(label, NodeKind::Entity, path, span);
             if e.kind == EntKind::Solid {
                 n.kind = NodeKind::Solid;
                 n.solid = Some(e.i());
             } else {
                 n.ents.push(e);
             }
-            let here = if path.is_empty() { parent.to_string() } else { path };
-            n.children = (0..members.len()).filter(|&j| under[j] == Some(k))
-                .map(|j| build(j, members, names, under, &here, rd, span)).collect();
+            n
+        };
+        fn hang(k: usize, parent: &str, names: &[String], under: &[Option<usize>],
+                row: &dyn Fn(usize, &str) -> Node) -> Node {
+            let mut n = row(k, parent);
+            let here = if names[k].is_empty() { parent } else { &names[k] };
+            n.children = (0..names.len()).filter(|&j| under[j] == Some(k))
+                .map(|j| hang(j, here, names, under, row)).collect();
             n
         }
         let parent = carried(prefix);
         (0..members.len()).filter(|&k| under[k].is_none())
-            .map(|k| build(k, &members, &names, &under, &parent, self, span))
+            .map(|k| hang(k, &parent, &names, &under, &row))
             .collect()
     }
 
@@ -366,9 +383,10 @@ fn tail(name: &str, parent: &str) -> String {
     }
 }
 
-/// The row an anonymous one says it is in: its named parent's name, or nothing at the root.
-fn place(prefix: &str) -> String {
-    carried(prefix)
+/// What an anonymous row is called: what it is, and the named row it is in (`line in pin`), or
+/// what it is alone at the root.
+fn in_place(what: &str, place: &str) -> String {
+    if place.is_empty() { what.to_string() } else { format!("{what} in {place}") }
 }
 
 /// **An object's operands under it.**  Each solid that is no object but some object's operand

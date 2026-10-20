@@ -8,7 +8,9 @@ import test from 'node:test';
 import type { Row } from '../core/outline.js';
 import { Point, fromWire } from '../core/model.js';
 import type { Primitive } from '../core/model.js';
-import { frameRow, isHidden, rowKey, selectRow, selectionRow, walk } from '../app/hidden.js';
+import {
+  frameRow, isHidden, rowKey, selectRow, selectionRow, setRowHidden, walk,
+} from '../app/hidden.js';
 import type { SketchView } from '../app/view.js';
 import { initCore } from '../core/wasm.js';
 import { docView } from './views.js';
@@ -68,7 +70,7 @@ test('a hidden member stays hidden by path across an edit and its undo', (t) => 
   assert.equal(v.pick(...v.seen(q)), q);
   // hiding something selected deselects it
   v.selected = [q];
-  v.setRowHidden(row(v, 'pin'), true);
+  setRowHidden(v, row(v, 'pin'), true);
   assert.deepEqual(v.selected, []);
   assert.ok(v.hiddenEnts.has(q) && v.hiddenEnts.has(ent(v, 'pin.arm')));
   assert.ok(!v.hiddenEnts.has(ent(v, 'hub')), 'what the instance reads is not what it made');
@@ -133,10 +135,10 @@ test('a hidden object leaves the box, and comes back', (t) => {
   const placed = () => (box as unknown as { placed: Map<number, unknown> }).placed.size;
   box.sync(v);
   assert.equal(placed(), 1);
-  v.setRowHidden(row(v, 'stock'), true);
+  setRowHidden(v, row(v, 'stock'), true);
   box.sync(v);
   assert.equal(placed(), 0);
-  v.setRowHidden(row(v, 'stock'), false);
+  setRowHidden(v, row(v, 'stock'), false);
   box.sync(v);
   assert.equal(placed(), 1);
 });
@@ -175,7 +177,7 @@ test('a selection in the workspace opens the tree to its row', (t) => {
 test('choosing a hidden plane shows it', (t) => {
   const v = docView(DOC);
   t.after(() => v.doc.dispose());
-  v.setRowHidden(row(v, 'std'), true);
+  setRowHidden(v, row(v, 'std'), true);
   assert.ok(v.hiddenEnts.has(ent(v, 'std.front')));
   v.choosePlane('std.front');
   assert.ok(!v.hiddenEnts.has(ent(v, 'std.front')));
@@ -185,8 +187,8 @@ test('choosing a hidden plane shows it', (t) => {
 test('a load lets what was hidden go', (t) => {
   const v = docView(DOC);
   t.after(() => v.doc.dispose());
-  v.setRowHidden(row(v, 'pin'), true);
-  v.setRowHidden(row(v, 'stock'), true);
+  setRowHidden(v, row(v, 'pin'), true);
+  setRowHidden(v, row(v, 'stock'), true);
   assert.ok(v.hiddenRows.size === 2);
   assert.ok(v.load(DOC));
   assert.equal(v.hiddenRows.size, 0);
