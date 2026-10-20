@@ -10,7 +10,7 @@
 //! (`Expansion::kinds`), as a `path` formal's is.  Structural, as the rest of the language is: an
 //! instance or a group conforms by having the members, never by saying so.
 
-use super::{typed, Code, Walk};
+use super::{typed, Code, Vals, Walk};
 use crate::expr::Aff;
 use crate::syntax::{Component, Formal, Name, Program, Ref, Seg, Span, Ty};
 use std::collections::{BTreeMap, BTreeSet};
@@ -128,7 +128,7 @@ impl<'a> Walk<'a> {
         shape: &Shape,
         actual: &str,
         formal: &str,
-        vals: &BTreeMap<String, Aff>,
+        vals: &Vals,
         sub: &mut BTreeMap<String, Aff>,
         span: Span,
     ) {

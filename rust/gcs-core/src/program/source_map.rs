@@ -342,6 +342,6 @@ fn reparse(text: &str, like: &Program) -> Option<Program> {
 
 /// Where every statement in a program sits, blocks included — a statement inside one is still
 /// reached by its id.
-fn spans(prog: &Program) -> BTreeMap<StmtId, Span> {
+pub(super) fn spans(prog: &Program) -> BTreeMap<StmtId, Span> {
     prog.stmts().map(|st| (st.id, st.span)).collect()
 }

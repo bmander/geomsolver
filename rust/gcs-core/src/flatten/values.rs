@@ -31,7 +31,7 @@ struct Def {
 /// handed as an argument (E103), or a group member the argument does not have, or its
 /// interface does not declare (E101) — or `None`.  Asked of a dimension's text (`settle_text`)
 /// and of a pin to a name (`t == s`) alike.
-fn out_of_reach(name: &str, vals: &BTreeMap<String, Aff>, scope: &Scope) -> Option<(Code, String)> {
+fn out_of_reach(name: &str, vals: &Vals, scope: &Scope) -> Option<(Code, String)> {
     if vals.contains_key(name) {
         return None;
     }
@@ -63,7 +63,7 @@ pub(super) trait Names {
 /// one of the faces `B` names.  A number on one side and geometry on the other is E103.
 pub(super) fn condition(
     text: &str,
-    env: &BTreeMap<String, Aff>,
+    env: &Vals,
     scope: &Scope,
     units: Units,
     names: &dyn Names,
@@ -78,7 +78,7 @@ pub(super) fn condition(
 /// short circuit would skip is still said.
 fn holds(
     c: &Cond,
-    env: &BTreeMap<String, Aff>,
+    env: &Vals,
     scope: &Scope,
     names: &dyn Names,
 ) -> Result<bool, (Code, String)> {
@@ -161,7 +161,7 @@ fn holds(
                     Some(None) => {}
                 }
             }
-            expr::decide(c, env).map_err(|e| {
+            expr::decide_in(c, env).map_err(|e| {
                 let code = if e.fault == expr::Fault::Measure { Code::E107 } else { Code::E103 };
                 (code, e.message)
             })?
@@ -176,7 +176,7 @@ fn holds(
 /// would give two units one name; units say which of the two each is (`expr::CONSTANTS`), so
 /// `pi` is the dimensionless constant and `tau` is an **angle**, and `tau == 2 * pi * 1rad`
 /// holds where it used to be a coincidence of the same digits.
-pub(super) fn value_of(text: &str, env: &BTreeMap<String, Aff>, units: Units) -> Result<f64, String> {
+pub(super) fn value_of<T: Table + ?Sized>(text: &str, env: &T, units: Units) -> Result<f64, String> {
     let a = value_aff(text, env, units)?;
     a.number().ok_or_else(|| {
         format!(
@@ -196,9 +196,9 @@ pub(super) fn value_of(text: &str, env: &BTreeMap<String, Aff>, units: Units) ->
 /// would forget that `m` was declared a `Length` and `Rt := R + m` would read as a plain
 /// number added to a length — the very thing the check exists to catch, missed because the check
 /// threw the answer away.
-pub(crate) fn value_aff(
+pub(crate) fn value_aff<T: Table + ?Sized>(
     text: &str,
-    env: &BTreeMap<String, Aff>,
+    env: &T,
     units: Units,
 ) -> Result<Aff, String> {
     value_read(text, env, &BTreeMap::new(), units)
@@ -206,10 +206,10 @@ pub(crate) fn value_aff(
 
 /// `value_aff`, where the text may be one a scope wrote over an unknown of the drawing (`(0.3 * m
 /// + 0.05mm)`, `of_vals`) and is read in a scope that binds none: each unknown it reads is what
-/// its declaration says, as it was where the text was written (`expr::with_declared`).
-pub(crate) fn value_read(
+/// its declaration says, as it was where the text was written (`expr::declared_reads`).
+pub(crate) fn value_read<T: Table + ?Sized>(
     text: &str,
-    env: &BTreeMap<String, Aff>,
+    env: &T,
     unknowns: &BTreeMap<String, crate::model::Declared>,
     units: Units,
 ) -> Result<Aff, String> {
@@ -218,17 +218,21 @@ pub(crate) fn value_read(
         return Err("nothing to work out".to_string());
     }
     let p = expr::parse_in(t, units)?;
-    let env = &*expr::with_declared(&p.body, env, unknowns);
-    let a = expr::eval(&p.body, env)?;
+    // each declared unknown it reads and `env` does not bind, read before `env` rather than
+    // added to a copy of it
+    let declared = expr::declared_reads(&p.body, |name| env.has(name), unknowns);
+    let a = expr::eval_in(&p.body, &Over { own: &declared, env })?;
     match (a.number(), &a.free) {
         (Some(v), _) if !v.is_finite() => Err(format!("comes to {v}")),
         // an unknown the scope *bound* — a formal left unbound, a param over one — carries on;
         // a name nothing binds is the document's, and a component's numbers cannot read it
-        (None, Some(n)) if !env.values().any(|b| b.free.as_deref() == Some(n)) => {
+        (None, Some(n)) if !declared.contains_key(n) && !env.binds(n) => {
             // a member a group or a vector does not have — `o.z` of `o := (1, 2)` — is said so
             if let Some((owner, member)) = n.rsplit_once('.') {
                 let prefix = format!("{owner}.");
-                let has: Vec<&str> = env
+                let mut under = env.under(&prefix);
+                under.extend(declared.under(&prefix));
+                let has: Vec<&str> = under
                     .keys()
                     .filter_map(|k| k.strip_prefix(&prefix))
                     .filter(|m| !m.contains('.'))
@@ -243,6 +247,18 @@ pub(crate) fn value_read(
             Err(format!("`{n}` is not a number here — nothing in scope gives it one"))
         }
         _ => Ok(a),
+    }
+}
+
+/// A few names of its own, read before a table: the declared unknowns `value_read` adds.
+struct Over<'a, T: ?Sized> {
+    own: &'a BTreeMap<String, Aff>,
+    env: &'a T,
+}
+
+impl<T: Table + ?Sized> expr::Env for Over<'_, T> {
+    fn value(&self, name: &str) -> Option<Aff> {
+        self.own.get(name).cloned().or_else(|| self.env.value(name))
     }
 }
 
@@ -301,9 +317,9 @@ fn fold(sub: &str, text: &str, units: Units) -> Result<String, String> {
 /// At identifier boundaries, so `flank` in `cos(flank)` is replaced and the `flank` inside
 /// `flank_out` is not; and parenthesised, so a negative value does not change what binds to what.
 /// `held` is what each face family's running number is (`Held`, `of_vals_in`).
-pub(super) fn substitute_in(
+pub(super) fn substitute_in<T: Table + ?Sized>(
     text: &str,
-    vals: &BTreeMap<String, Aff>,
+    vals: &T,
     units: Units,
     held: &BTreeMap<String, (crate::units::Dim, f64)>,
 ) -> String {
@@ -317,20 +333,20 @@ static NO_HELD: BTreeMap<String, (crate::units::Dim, f64)> = BTreeMap::new();
 /// drawing's unknown (a formal left unbound, or a `param` over one) as `(m * name + c)`, or
 /// the bare name when that is all it is.  `tau` and `turn` are `expr::CONSTANTS` now, and an
 /// angle rather than a number that happens to be 360, so they are left for the evaluator.
-fn of_vals(vals: &BTreeMap<String, Aff>, units: Units) -> impl Fn(&str) -> Option<String> + '_ {
+fn of_vals<T: Table + ?Sized>(vals: &T, units: Units) -> impl Fn(&str) -> Option<String> + '_ {
     of_vals_in(vals, units, &NO_HELD)
 }
 
 /// `of_vals`, knowing what each face family's running number is (`Held`): a value affine in one
 /// of another dimension (`24mm − 12mm·s`, `s` a plain number) writes its coefficient with the
 /// dimension the two differ by, since the number reads the name as what it is.
-fn of_vals_in<'a>(
-    vals: &'a BTreeMap<String, Aff>,
+fn of_vals_in<'a, T: Table + ?Sized>(
+    vals: &'a T,
     units: Units,
     held: &'a BTreeMap<String, (crate::units::Dim, f64)>,
 ) -> impl Fn(&str) -> Option<String> + 'a {
     move |w| {
-        let a = vals.get(w)?;
+        let a = vals.value(w)?;
         if let Some(v) = a.number() {
             // a number that knows what it is says so, or `phi + atan2(…)` would read a plain
             // number added to an angle once `phi: Angle` was written in as one
@@ -365,7 +381,7 @@ fn of_vals_in<'a>(
 /// unknown inside one would be a second thing to minimise over.
 pub(crate) fn settle_integrand(
     t: &crate::syntax::Integral,
-    vals: &BTreeMap<String, Aff>,
+    vals: &Vals,
     units: Units,
 ) -> Result<String, String> {
     let bound = |w: &str| -> Option<Result<String, String>> {
@@ -469,7 +485,8 @@ impl<'a> Walk<'a> {
     /// written in as well.  A kept text was itself substituted when it was kept, so one pass
     /// is the fixed point.  The identity outside the symbolic mode, but where a face family's
     /// station kept texts over its running number (`Held`), which are written in the same way.
-    pub(super) fn subst_sym(&self, text: &str, vals: &BTreeMap<String, Aff>, scope: &Scope) -> String {
+    pub(super) fn subst_sym<T: Table + ?Sized>(&self, text: &str, vals: &T, scope: &Scope)
+        -> String {
         if self.sym.is_none() && self.held.texts.is_empty() {
             return text.to_string();
         }
@@ -479,7 +496,7 @@ impl<'a> Walk<'a> {
 
     /// A text with the scope's numbers written in, where it then reads a face family's running
     /// number (`Held`).
-    pub(super) fn held_text(&self, text: &str, vals: &BTreeMap<String, Aff>, scope: &Scope)
+    pub(super) fn held_text(&self, text: &str, vals: &Vals, scope: &Scope)
         -> Option<String> {
         if self.held.names.is_empty() {
             return None;
@@ -504,7 +521,7 @@ impl<'a> Walk<'a> {
         &mut self,
         text: &str,
         span: Span,
-        vals: &BTreeMap<String, Aff>,
+        vals: &Vals,
         scope: &Scope,
     ) -> Option<String> {
         let station = self.held.names.keys()
@@ -546,7 +563,7 @@ impl<'a> Walk<'a> {
     pub(super) fn settle_text(
         &self,
         text: &str,
-        vals: &BTreeMap<String, Aff>,
+        vals: &Vals,
         scope: &Scope,
     ) -> Result<String, (Code, String)> {
         let reads: BTreeSet<String> =
@@ -591,14 +608,14 @@ impl<'a> Walk<'a> {
 
     /// Whether a bare name is a parameter axis the document declares (#391 S1) and nothing in
     /// scope gives a number — read as a number, which it is not.
-    fn runs(&self, name: &str, vals: &BTreeMap<String, Aff>) -> bool {
+    fn runs(&self, name: &str, vals: &Vals) -> bool {
         self.parameters.contains_key(name) && !vals.contains_key(name)
     }
 
     /// Whether a bare name is one nothing in scope declares — no number or unknown of the scope,
     /// no built-in, no text a trace kept — which is E101 wherever it is read.  A dotted name is
     /// `resolve`'s to judge.
-    fn undeclared(&self, name: &str, vals: &BTreeMap<String, Aff>, scope: &Scope) -> bool {
+    fn undeclared(&self, name: &str, vals: &Vals, scope: &Scope) -> bool {
         crate::syntax::is_name(name)
             && !vals.contains_key(name)
             && expr::builtin(name).is_none()
@@ -612,7 +629,7 @@ impl<'a> Walk<'a> {
         &mut self,
         text: &mut String,
         span: Span,
-        vals: &BTreeMap<String, Aff>,
+        vals: &Vals,
         scope: &Scope,
     ) {
         // what it reads is judged once names are known only where the text settles: one it
@@ -638,7 +655,7 @@ impl<'a> Walk<'a> {
     /// Set aside each dotted name a dimension's text reads that nothing numeric in scope answers
     /// to, as written, for `resolve` to judge (`Checks::dim_reads`).  Not in a trace, whose
     /// dimensions read the geometry's numbers as columns of the curve (§6.5).
-    pub(super) fn note_dim_reads(&mut self, text: &str, span: Span, vals: &BTreeMap<String, Aff>, scope: &Scope) {
+    pub(super) fn note_dim_reads(&mut self, text: &str, span: Span, vals: &Vals, scope: &Scope) {
         if self.sym.is_some() {
             return;
         }
@@ -660,7 +677,7 @@ impl<'a> Walk<'a> {
         abs: String,
         text: &str,
         span: Span,
-        vals: &BTreeMap<String, Aff>,
+        vals: &Vals,
         scope: &Scope,
     ) -> bool {
         if self.sym.is_some() {
@@ -690,7 +707,7 @@ impl<'a> Walk<'a> {
     pub(super) fn settle_arg(
         &mut self,
         a: &mut crate::syntax::Arg,
-        vals: &BTreeMap<String, Aff>,
+        vals: &Vals,
         scope: &Scope,
     ) {
         match a {
@@ -783,7 +800,7 @@ impl<'a> Walk<'a> {
     pub(super) fn params(
         &mut self,
         body: &[Stmt],
-        vals: &mut BTreeMap<String, Aff>,
+        vals: &mut Vals,
         scope: &Scope,
     ) {
         let prefix = scope.prefix().to_string();
@@ -828,7 +845,7 @@ impl<'a> Walk<'a> {
     fn definitions(
         &mut self,
         body: &[Stmt],
-        vals: &mut BTreeMap<String, Aff>,
+        vals: &mut Vals,
         scope: &Scope,
         prefix: &str,
     ) -> (Vec<Def>, Vec<(String, Ref)>, BTreeSet<String>) {
@@ -910,18 +927,21 @@ impl<'a> Walk<'a> {
     fn nested_members(
         &mut self,
         pending: &mut Vec<Def>,
-        vals: &BTreeMap<String, Aff>,
+        vals: &Vals,
         here: &mut BTreeSet<String>,
     ) -> bool {
         // A nested group exposes the selected group's numeric members, including forward
         // references. Keep ordinary dependency ordering for those members too.
         for depth in 0..MAX_DEPTH {
-            let keys: BTreeSet<String> =
-                vals.keys().cloned().chain(pending.iter().map(|d| d.name.clone())).collect();
             let mut extra = Vec::new();
             for d in pending.iter() {
                 if !d.group_ref { continue; }
                 let start = format!("{}.", d.text);
+                // what the group named holds: numbers in force, or defined beside it — read
+                // under its name, never by walking every number in force (#405)
+                let defined = pending.iter().map(|p| &p.name).filter(|n| n.starts_with(&start));
+                let keys: BTreeSet<String> =
+                    vals.under(&start).into_keys().chain(defined.cloned()).collect();
                 for key in &keys {
                     let Some(member) = key.strip_prefix(&start) else { continue };
                     let name = format!("{}.{member}", d.name);
@@ -950,7 +970,7 @@ impl<'a> Walk<'a> {
     fn work_out(
         &mut self,
         pending: &[Def],
-        vals: &mut BTreeMap<String, Aff>,
+        vals: &mut Vals,
         scope: &Scope,
         prefix: &str,
         running: &BTreeSet<String>,
@@ -1035,7 +1055,7 @@ impl<'a> Walk<'a> {
         &mut self,
         pd: &crate::syntax::ParamDecl,
         over: &crate::syntax::Over,
-        vals: &mut BTreeMap<String, Aff>,
+        vals: &mut Vals,
         scope: &Scope,
     ) {
         let name = &pd.name.text;
@@ -1089,7 +1109,7 @@ impl<'a> Walk<'a> {
         &mut self,
         pd: &crate::syntax::ParamDecl,
         input: &crate::syntax::Input,
-        vals: &mut BTreeMap<String, Aff>,
+        vals: &mut Vals,
         scope: &Scope,
     ) {
         let name = &pd.name.text;
@@ -1133,7 +1153,7 @@ impl<'a> Walk<'a> {
         &self,
         text: &str,
         ty: Ty,
-        vals: &BTreeMap<String, Aff>,
+        vals: &Vals,
     ) -> Result<f64, String> {
         let a = value_aff(text, vals, self.units)?;
         a.dim.require(ty.dim(), "a seed")?;

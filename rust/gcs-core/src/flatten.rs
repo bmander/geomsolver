@@ -41,6 +41,7 @@ mod image;
 mod carried;
 mod valued;
 mod same;
+mod table;
 
 pub use faces::{FaceAxis, FacePlane};
 
@@ -52,6 +53,7 @@ use crate::lowering::Lowered;
 pub(crate) use values::{substitute_with, value_aff, value_read};
 use values::{free, typed, value_of, reads_geometry};
 use resolve::Lookup;
+use table::{Table, Vals};
 use crate::syntax::ref_text;
 
 /// No set walked as a set for want of an element: `SetState::unlowered` where nothing was.
@@ -106,18 +108,21 @@ struct Scope {
     closed: bool,
     /// The names a closed component may not capture — see `Outside`.
     forbidden: Outside,
-    groups: BTreeSet<String>,
+    /// The group and set names in force, shared as `vals` is.
+    groups: std::rc::Rc<BTreeSet<String>>,
     /// The numbers in force where the statement was written — the enclosing counts, params and
     /// block binders.  An index (`p[i + 1]`) is an expression over exactly these, and references
     /// are resolved in a later pass where the walk's own environment is gone, so it travels here.
     /// Shared and not copied: every statement of a body carries the body's table, and the root's
-    /// holds every instance's numbers (`P0.w`), so a copy per statement is quadratic (#403).
-    vals: std::rc::Rc<BTreeMap<String, Aff>>,
+    /// holds every instance's numbers (`P0.w`), so a copy per statement is quadratic (#403) —
+    /// and a block's copy, a `when` or an application adds a frame over it, never a copy of it
+    /// (#405, `Vals`).
+    vals: std::rc::Rc<Vals>,
     /// The **sides** in force: a `Side` formal to the word it was given (`s` → `right`).  A side
     /// is a word and not a number (§9.2), so it travels in a table of its own rather than as a
     /// ±1 in `vals` — which is exactly the idiom issue #48's item 4 takes out of the helpers, and
     /// putting it back one level down would leave `s * 90deg` writable inside a body.
-    sides: BTreeMap<String, String>,
+    sides: std::rc::Rc<BTreeMap<String, String>>,
     /// The file the body being walked was written in — the document (`None`) or a module — which
     /// is what a call's component name is resolved from (`Program::resolve_component`).
     module: Option<usize>,
@@ -139,8 +144,8 @@ struct Scope {
 /// their names built per instance is a copy of the root's table per instance (#403).
 #[derive(Clone, Default)]
 struct Outside {
-    around: std::rc::Rc<BTreeMap<String, Aff>>,
-    file: std::rc::Rc<BTreeMap<String, Aff>>,
+    around: std::rc::Rc<Vals>,
+    file: std::rc::Rc<Vals>,
 }
 
 impl Outside {
@@ -229,10 +234,10 @@ impl Scope {
 
 /// Every number `{from}.…` in `vals`, copied into `sub` as `{to}.…`: what a group or a set
 /// argument carries into the body it is handed to.
-fn copy_members(vals: &BTreeMap<String, Aff>, from: &str, to: &str, sub: &mut BTreeMap<String, Aff>) {
+fn copy_members(vals: &Vals, from: &str, to: &str, sub: &mut BTreeMap<String, Aff>) {
     let start = format!("{from}.");
-    for (k, v) in vals.range(start.clone()..).take_while(|(k, _)| k.starts_with(&start)) {
-        sub.insert(format!("{to}.{}", &k[start.len()..]), v.clone());
+    for (k, v) in vals.under(&start) {
+        sub.insert(format!("{to}.{}", &k[start.len()..]), v);
     }
 }
 
@@ -435,7 +440,7 @@ struct Walk<'a> {
     /// `Some` while a component is expanded over its formals as variables — see `Sym`.
     sym: Option<Sym>,
     /// Root values, used to diagnose accidental capture by a closed component.
-    file_vals: std::rc::Rc<BTreeMap<String, Aff>>,
+    file_vals: std::rc::Rc<Vals>,
     /// Module values exported to importing root bodies; component bodies receive arguments.
     module_vals: Vec<Option<BTreeMap<String, Aff>>>,
     diagnostics: Vec<Diag>,
@@ -468,7 +473,7 @@ struct Walk<'a> {
     /// call to one already here is a component instantiating itself, walked like any other call
     /// (a `when` ends it, §12.9) unless it is given the numbers it was given there, which make
     /// the same choices again and so never end (E003).
-    instantiating: Vec<(&'a Component, std::rc::Rc<BTreeMap<String, Aff>>)>,
+    instantiating: Vec<(&'a Component, std::rc::Rc<Vals>)>,
     /// The rings expanded — see `Rings`.
     rings: Rings,
     /// The relation words applied and what applications bound — see `WordState`.
@@ -621,8 +626,7 @@ pub fn expand_faces(
         return w.finish();
     }
     let scope = Scope { prefixes: vec![String::new()], ..Scope::default() };
-    let mut vals: BTreeMap<String, Aff> = BTreeMap::new();
-    w.body(&root.body, &scope, &mut vals, &[], 0);
+    w.body(&root.body, &scope, &mut Vals::default(), &[], 0);
     w.finish()
 }
 
@@ -642,7 +646,7 @@ pub fn expand_component(prog: &Program, comp: &Component, units: Units) -> Expan
         module: comp.module,
         ..Scope::default()
     };
-    let mut vals: BTreeMap<String, Aff> = BTreeMap::new();
+    let mut vals = Vals::default();
     for f in &comp.formals {
         match f.ty {
             Ty::Ent(_) | Ty::Path | Ty::Group | Ty::Set => {
@@ -771,7 +775,7 @@ impl<'a> Walk<'a> {
             // them as places to draw.  They are ordinary library statements with their own spans.
             // They follow the document's own, so its points keep the indices they would have
             // without them; resolution is by name, so nothing reads them the worse for it.
-            let mut vals = self.module_params(comp.module.unwrap());
+            let mut vals = Vals::of(self.module_params(comp.module.unwrap()));
             self.body(&comp.body, &scope, &mut vals, &[], 1);
             self.expand_pending();
             let (mut datums, resolved) = self.resolve();

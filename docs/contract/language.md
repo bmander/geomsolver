@@ -328,6 +328,22 @@ takes a layout naming the front datum, origin and reference axis.
   set of their names built per instance.  `tests/many_instances.rs` is the gate: the bytes
   elaborating four times the plates allocates are about four times as many, counted by the
   allocator it installs for the whole core suite (a per-thread tally beside `System`'s).
+- **The numbers in force are frames, read outward** (#405, `flatten::table::Vals`).  A body, a
+  block's copy, a `when` that holds, a word's application and a number an application gives
+  (`Application::give`) each add a frame of only the names they make over the table around them,
+  shared by `Rc` and never copied: a copy of the root's (every instance's numbers) per block copy
+  or per `when` is the instances times the copies.  An inner frame's name hides an outer one's,
+  as an insert into a copy would.  An instance's table starts afresh with its call's numbers, so
+  the depth is the blocks nested inside one instance.  Nothing reads the whole table per
+  statement: a member is read under its prefix (`Table::under`), whether a value is affine in an
+  unknown is asked of each frame's index of them (`Table::binds`), and a seed reads the table
+  through `Seeded`, which answers a free value with where its unknown starts at the moment it
+  is asked, where it was a table of every number built per declaration as soon as one was free.
+  `groups` and `sides` are shared as `vals` is, `groups` copied only by a body declaring a group
+  of its own.  Outside the walk, the elaborator reads where an instance on a constraint's path is
+  written from the statements' spans gathered once (`source_map::spans`), asked only where some
+  module is previewed.  `tests/many_instances.rs` holds a free root number
+  and a root `repeat` and `when`s beside the plates to the same fourfold bound.
 - **A part is one component carrying `in view { … }` blocks** (Solvent §6.7, `P::in_comp`): the
   block form is allowed inside a component body (the plane is a formal) and still refused inside a
   root block.  With `when flag == 1 { … }` over a 0/1 `Int` formal for the views an instance does

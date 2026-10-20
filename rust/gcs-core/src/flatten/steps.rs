@@ -105,7 +105,7 @@ impl Walk<'_> {
         rel: &Relation,
         st: &Stmt,
         scope: &Scope,
-        vals: &BTreeMap<String, Aff>,
+        vals: &Vals,
         path: &[PathStep],
     ) -> bool {
         let Some(w) = rel.form.written().filter(|w| w.is_step()) else { return false };

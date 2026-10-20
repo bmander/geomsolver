@@ -36,7 +36,7 @@ impl<'a> Walk<'a> {
         &mut self,
         body: &[Stmt],
         scope: &Scope,
-        vals: &mut BTreeMap<String, Aff>,
+        vals: &mut Vals,
         path: &[PathStep],
         depth: usize,
     ) {
@@ -91,11 +91,11 @@ impl<'a> Walk<'a> {
         if depth == 0 {
             let uses: Vec<String> = self.prog.uses.iter().map(|u| u.name.clone()).collect();
             for (k, v) in self.used_params(&uses) {
-                vals.entry(k).or_insert(v);
+                vals.or_insert(k, v);
             }
             // and those it imports bare, by their own names (§14.4 [0.48])
             for (k, v) in self.imported_params(None) {
-                vals.entry(k).or_insert(v);
+                vals.or_insert(k, v);
             }
         }
         // every `param` of the body, whatever line it stands on — a body is a set (P2)
@@ -108,11 +108,15 @@ impl<'a> Walk<'a> {
         // statement is emitted with, which is what an index (`p[n - 1]`) is read against.  The
         // root's scope arrived with an empty one, and a top-level index could read a literal
         // and not a `param` (#45.2).
-        let mut groups = scope.groups.clone();
-        groups.extend(body.iter().filter_map(|st| match &st.kind {
+        let mine: Vec<String> = body.iter().filter_map(|st| match &st.kind {
             StmtKind::Group(g) => Some(g.name.text.clone()),
             _ => None,
-        }));
+        }).collect();
+        let groups = if mine.is_empty() {
+            scope.groups.clone()
+        } else {
+            std::rc::Rc::new(scope.groups.iter().cloned().chain(mine).collect())
+        };
         let scope = &Scope { vals: std::rc::Rc::new(vals.clone()), groups, ..scope.clone() };
         if depth == 0 {
             self.file_vals = scope.vals.clone();
@@ -204,7 +208,7 @@ impl<'a> Walk<'a> {
         d: &Decl,
         st: &Stmt,
         scope: &Scope,
-        vals: &BTreeMap<String, Aff>,
+        vals: &Vals,
         path: &[PathStep],
         depth: usize,
         prefix: &str,
@@ -322,7 +326,7 @@ impl<'a> Walk<'a> {
         d: &Decl,
         st: &Stmt,
         scope: &Scope,
-        vals: &BTreeMap<String, Aff>,
+        vals: &Vals,
         path: &[PathStep],
         prefix: &str,
     ) {
@@ -532,7 +536,7 @@ impl<'a> Walk<'a> {
         f: &crate::syntax::FamilySpec,
         st: &Stmt,
         scope: &Scope,
-        vals: &BTreeMap<String, Aff>,
+        vals: &Vals,
         path: &[PathStep],
         depth: usize,
     ) -> ControlFlow<()> {
@@ -652,7 +656,7 @@ impl<'a> Walk<'a> {
         ty: Ty,
         st: &Stmt,
         scope: &Scope,
-        vals: &BTreeMap<String, Aff>,
+        vals: &Vals,
         path: &[PathStep],
         depth: usize,
     ) -> ControlFlow<()> {
@@ -796,7 +800,7 @@ impl<'a> Walk<'a> {
         inst: &crate::syntax::Instance,
         st: &Stmt,
         scope: &Scope,
-        vals: &BTreeMap<String, Aff>,
+        vals: &Vals,
         path: &[PathStep],
         depth: usize,
     ) -> ControlFlow<()> {
@@ -806,7 +810,7 @@ impl<'a> Walk<'a> {
             self.once(Code::E103, st.span, format!("more than {MAX_FLAT} instances once expanded"));
             return ControlFlow::Break(());
         }
-        let Some((comp, mut sub_vals, sides, key)) =
+        let Some((comp, sub_vals, sides, key)) =
             self.bind_instance(inst, scope, vals, true)
         else {
             return ControlFlow::Continue(());
@@ -842,6 +846,7 @@ impl<'a> Walk<'a> {
             return ControlFlow::Continue(());
         }
         let forbidden = Outside { around: scope.vals.clone(), file: self.file_vals.clone() };
+        let mut sub_vals = Vals::of(sub_vals);
         let given = std::rc::Rc::new(sub_vals.clone());
         let sc = Scope {
             owner: key.clone(),
@@ -850,11 +855,11 @@ impl<'a> Walk<'a> {
             prefixes: vec![key],
             closed: true,
             forbidden,
-            groups: comp.formals.iter().filter(|f| matches!(f.ty, Ty::Group | Ty::Set)).map(|f| f.name.text.clone()).collect(),
+            groups: std::rc::Rc::new(comp.formals.iter().filter(|f| matches!(f.ty, Ty::Group | Ty::Set)).map(|f| f.name.text.clone()).collect()),
             vals: given.clone(),
             // the sides this instance was given, and no others: a component reads a
             // side by the name of its own formal, as it reads every other argument
-            sides,
+            sides: std::rc::Rc::new(sides),
             // and its body's calls name components from the file it was written in
             module: comp.module,
             block: InBlock {
@@ -872,7 +877,7 @@ impl<'a> Walk<'a> {
         // there, every choice comes out the same and nothing ends it, so that, and
         // nesting past the cap, is E003, said once at the call closing the cycle
         let same = self.instantiating.iter()
-            .rposition(|(c, given)| std::ptr::eq(*c, comp) && **given == sub_vals);
+            .rposition(|(c, given)| std::ptr::eq(*c, comp) && given.own() == sub_vals.own());
         let deep = depth + 1 >= MAX_DEPTH
             && self.instantiating.iter().any(|(c, _)| std::ptr::eq(*c, comp));
         if same.is_some() || deep {
@@ -939,7 +944,7 @@ impl<'a> Walk<'a> {
         b: &Block,
         st: &Stmt,
         scope: &Scope,
-        vals: &BTreeMap<String, Aff>,
+        vals: &Vals,
         path: &[PathStep],
         depth: usize,
     ) {
@@ -950,7 +955,8 @@ impl<'a> Walk<'a> {
             let names = Asked::new(self, scope);
             match super::values::condition(&b.count, vals, scope, self.units, &names) {
                 Ok(true) => {
-                    let mut sub = vals.clone();
+                    // a frame of its own over the numbers around it, which it shares (#405)
+                    let mut sub = Vals::over(scope.vals.clone());
                     self.body(&b.body, scope, &mut sub, path, depth + 1);
                 }
                 Ok(false) => {}
@@ -990,7 +996,7 @@ impl<'a> Walk<'a> {
                 return;
             }
         };
-        self.copies(b, st, scope, vals, path, depth, n, &[]);
+        self.copies(b, st, scope, path, depth, n, &[]);
     }
 
     /// A relation: a defined word's body applied, or its numbers worked out in the scope and
@@ -1000,7 +1006,7 @@ impl<'a> Walk<'a> {
         rel: &crate::syntax::Relation,
         st: &Stmt,
         scope: &Scope,
-        vals: &BTreeMap<String, Aff>,
+        vals: &Vals,
         path: &[PathStep],
         depth: usize,
     ) {
@@ -1045,7 +1051,7 @@ impl<'a> Walk<'a> {
         m: &crate::syntax::Minimize,
         st: &Stmt,
         scope: &Scope,
-        vals: &BTreeMap<String, Aff>,
+        vals: &Vals,
         path: &[PathStep],
     ) {
         let mut m2 = m.clone();
@@ -1070,7 +1076,7 @@ impl<'a> Walk<'a> {
         c: &crate::syntax::ClaimOver,
         st: &Stmt,
         scope: &Scope,
-        vals: &BTreeMap<String, Aff>,
+        vals: &Vals,
         path: &[PathStep],
         depth: usize,
     ) {
@@ -1103,7 +1109,7 @@ impl<'a> Walk<'a> {
 
     /// A relation's numbers worked out against the parameters in scope, in either of its
     /// representations, and the enclosing instances' classes stamped over its own.
-    pub(super) fn settle_relation(&mut self, rel: &crate::syntax::Relation, vals: &BTreeMap<String, Aff>, scope: &Scope)
+    pub(super) fn settle_relation(&mut self, rel: &crate::syntax::Relation, vals: &Vals, scope: &Scope)
         -> Option<crate::syntax::Relation> {
         let mut r2 = rel.clone();
         self.held.on_leg = self.leg_named(&r2, scope);
@@ -1172,7 +1178,7 @@ impl<'a> Walk<'a> {
     /// over.  A name nothing in scope is, outside a trace, is the slot of the contact holding the
     /// rate's point (#365): `Some("")`, found by the elaborator, which refuses it where no contact
     /// owns one.  Anything else is no number running, and refused.
-    fn rate_over(&self, s: &str, vals: &BTreeMap<String, Aff>)
+    fn rate_over(&self, s: &str, vals: &Vals)
         -> Result<Option<String>, (Code, String)> {
         let Some(a) = vals.get(s) else {
             if self.sym.is_none() && self.held.names.get(s).is_none() {
@@ -1217,54 +1223,57 @@ impl<'a> Walk<'a> {
     fn settle_seeds(
         &mut self,
         d: &mut Decl,
-        vals: &BTreeMap<String, Aff>,
+        vals: &Vals,
         scope: &Scope,
         span: Span,
     ) {
+        for (at, m) in self.seed_texts(d, vals, scope, span) {
+            self.err(Code::E103, at, m);
+        }
+    }
+
+    /// `settle_seeds`, the mistakes it finds handed back to be said.
+    fn seed_texts(&self, d: &mut Decl, vals: &Vals, scope: &Scope, span: Span) -> Vec<(Span, String)> {
         // An unbound numeric formal is a solver unknown, but a hint still needs a
         // starting value. Read it only in hints — where the unknown's own seed says it starts
         // (`lean: hint(20deg)`), else at zero; constraints keep the symbolic value. Traced
         // components retain their parameterized seeds.
-        let provisional;
-        let vals = if self.sym.is_none() && vals.values().any(|v| v.free.is_some()) {
-            // a face family's running number starts where its drawn station stands (#243 L1),
-            // and a text kept over it reads it there by its own name
-            let held = |n: &String| self.held.names.get(n).map(|&(_, v)| v);
-            provisional = vals.iter().map(|(name, value)| {
-                let seed = value.free.as_ref()
-                    .and_then(|n| self.unknowns.get(n).and_then(|d| d.seed).or_else(|| held(n)));
-                (name.clone(), Aff::of_dim(value.c + seed.map_or(0.0, |s| value.m * s), value.dim))
-            }).chain(self.held.names.iter().map(|(n, &(dim, v))| (n.clone(), Aff::of_dim(v, dim))))
-                .collect();
-            &provisional
+        let seeded;
+        let vals: &dyn Table = if self.sym.is_none() && vals.any_unknown() {
+            seeded = Seeded { vals, unknowns: &self.unknowns, held: &self.held.names };
+            &seeded
         } else {
             vals
         };
+        let mut faults = Vec::new();
         // a rational spline's weights: numbers over this scope's values, dimensionless
         for w in d.weights.iter_mut().flatten() {
             let Some(t) = w.text.take() else { continue };
             let t = self.subst_sym(&t, vals, scope);
             match super::values::value_aff(&t, vals, self.units) {
                 Ok(a) if a.free.is_none() && a.dim.is_scalar() => w.value = a.c,
-                Ok(_) => self.err(Code::E103, w.span, format!("a weight is a plain number, and `{t}` is not")),
-                Err(e) => self.err(Code::E103, w.span, format!("`{t}`: {e}")),
+                Ok(_) => faults.push((w.span, format!("a weight is a plain number, and `{t}` is not"))),
+                Err(e) => faults.push((w.span, format!("`{t}`: {e}"))),
             }
         }
-        for i in 0..d.seed_text.len() {
-            let Some(t) = d.seed_text[i].take() else { continue };
-            if let Some(v) = self.settle_seed(t, &mut d.seed_text[i], vals, scope, span) {
-                d.seed[i] = v;
+        // one seed's text settled into `seed`, or kept, or a mistake to say
+        let mut settle = |text: &mut Option<String>, seed: &mut f64| {
+            let Some(t) = text.take() else { return };
+            match self.settle_seed(t, text, vals, scope) {
+                Ok(Some(v)) => *seed = v,
+                Ok(None) => {}
+                Err(m) => faults.push((span, m)),
             }
+        };
+        for (text, seed) in d.seed_text.iter_mut().zip(d.seed.iter_mut()) {
+            settle(text, seed);
         }
         // a seed in a child slot — `line l(hint((w / 2, 0)), …)` — is the same clause one
         // level down, and is written over the same parameters
         for kid in d.children.iter_mut().flatten() {
             let crate::syntax::Kid::Hint(ks) = kid else { continue };
-            for i in 0..3 {
-                let Some(t) = ks.text[i].take() else { continue };
-                if let Some(v) = self.settle_seed(t, &mut ks.text[i], vals, scope, span) {
-                    ks.v[i] = v;
-                }
+            for (text, seed) in ks.text.iter_mut().zip(ks.v.iter_mut()) {
+                settle(text, seed);
             }
             // how far a direction read off geometry is turned: a number over the parameters in
             // scope, read by the build as a place's `turn:` is
@@ -1286,6 +1295,7 @@ impl<'a> Walk<'a> {
                 super::values::substitute_in(b, vals, self.units, &self.held.names)
             };
         }
+        faults
     }
 
     /// One seed's text, settled over the parameters in scope: the number it comes to, or —
@@ -1298,30 +1308,26 @@ impl<'a> Walk<'a> {
     /// works it out once every declaration has one (§6.4).  Any other failure is the error it
     /// always was.
     fn settle_seed(
-        &mut self,
+        &self,
         t: String,
         keep: &mut Option<String>,
-        vals: &BTreeMap<String, Aff>,
+        vals: &dyn Table,
         scope: &Scope,
-        span: Span,
-    ) -> Option<f64> {
+    ) -> Result<Option<f64>, String> {
         let t = self.subst_sym(&t, vals, scope);
         match value_of(&t, vals, self.units) {
-            Ok(v) => Some(v),
+            Ok(v) => Ok(Some(v)),
             Err(_) if self.sym.is_some() => {
                 *keep = Some(t);
-                None
+                Ok(None)
             }
             // the numbers in force written in, so what the build reads is geometry and nothing
             // of this scope's
             Err(_) if reads_geometry(&t, self.units) => {
                 *keep = Some(super::values::substitute_in(&t, vals, self.units, &self.held.names));
-                None
+                Ok(None)
             }
-            Err(e) => {
-                self.err(Code::E103, span, format!("`{t}`: {e}"));
-                None
-            }
+            Err(e) => Err(format!("`{t}`: {e}")),
         }
     }
 
@@ -1336,7 +1342,6 @@ impl<'a> Walk<'a> {
         b: &Block,
         st: &Stmt,
         scope: &Scope,
-        vals: &BTreeMap<String, Aff>,
         path: &[PathStep],
         depth: usize,
         n: usize,
@@ -1346,7 +1351,7 @@ impl<'a> Walk<'a> {
         // enclosing scope already has would read two ways in one body (E002): said once per block
         let binders = b.binder.iter().chain(edges.iter().map(|(v, _)| *v));
         for name in binders {
-            let taken = vals.contains_key(&name.text)
+            let taken = scope.vals.contains_key(&name.text)
                 || scope.groups.contains(&name.text)
                 || self.names.contains(&format!("{}{}", scope.prefix(), name.text));
             if taken && !self.diagnostics.iter().any(|d| d.code == Code::E002 && d.span == name.span) {
@@ -1389,7 +1394,9 @@ impl<'a> Walk<'a> {
         };
         let mut ranges: Vec<(usize, usize)> = Vec::new();
         for k in 0..n {
-            let mut sub = vals.clone();
+            // each copy a frame of its own — its binder, then what its body defines — over the
+            // numbers around the block, shared by every copy and never copied (#405)
+            let mut sub = Vals::over(scope.vals.clone());
             if let Some(i) = &b.binder {
                 sub.insert(i.text.clone(), Aff::num(k as f64));
             }
@@ -1768,4 +1775,53 @@ fn applied(probe: &str, set: Ref, word: &str, at: Span) -> crate::syntax::Relati
         rates: Vec::new(),
     };
     crate::syntax::Relation::of(crate::syntax::RelationForm::Written(written))
+}
+
+/// The numbers in force as a seed reads them (`settle_seeds`): a value affine in an unknown of
+/// the drawing at where that unknown starts — its own seed, or where a face family's station
+/// stands, else zero — and each running number where its station stands.  Asked name by name
+/// and never built: a table of them per declaration is a copy of the root's per declaration,
+/// quadratic in the assembly as soon as one number in it is free (#405).
+struct Seeded<'v> {
+    vals: &'v Vals,
+    unknowns: &'v BTreeMap<String, crate::model::Declared>,
+    held: &'v BTreeMap<String, (crate::units::Dim, f64)>,
+}
+
+impl Seeded<'_> {
+    fn seeded(&self, value: &Aff) -> Aff {
+        let start = |n: &String| {
+            self.unknowns.get(n).and_then(|d| d.seed).or_else(|| self.held.get(n).map(|&(_, v)| v))
+        };
+        let seed = value.free.as_ref().and_then(start);
+        Aff::of_dim(value.at(seed.unwrap_or(0.0)), value.dim)
+    }
+}
+
+impl expr::Env for Seeded<'_> {
+    fn value(&self, name: &str) -> Option<Aff> {
+        match self.held.get(name) {
+            Some(&(dim, v)) => Some(Aff::of_dim(v, dim)),
+            None => self.vals.get(name).map(|v| self.seeded(v)),
+        }
+    }
+}
+
+impl Table for Seeded<'_> {
+    fn has(&self, name: &str) -> bool {
+        self.held.contains_key(name) || self.vals.contains_key(name)
+    }
+
+    /// Every value here is a number.
+    fn binds(&self, _unknown: &str) -> bool {
+        false
+    }
+
+    fn under(&self, prefix: &str) -> BTreeMap<String, Aff> {
+        let mut out: BTreeMap<String, Aff> =
+            self.vals.under(prefix).into_iter().map(|(k, v)| (k, self.seeded(&v))).collect();
+        let held = super::table::prefixed(self.held, prefix);
+        out.extend(held.map(|(k, &(dim, v))| (k.clone(), Aff::of_dim(v, dim))));
+        out
+    }
 }

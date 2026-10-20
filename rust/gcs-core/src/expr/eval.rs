@@ -126,6 +126,24 @@ pub fn eval(ast: &Ast, env: &BTreeMap<String, Aff>) -> Result<Aff, ExprError> {
     ev(ast, env, None)
 }
 
+/// What an expression's names are read from: the value a name has, or `None` where it is free.
+/// A map is one; the elaborator's scopes are another, a table of frames read outward (#405), and
+/// a value is handed out rather than lent so that a reader may work one out as it is asked.
+pub trait Env {
+    fn value(&self, name: &str) -> Option<Aff>;
+}
+
+impl Env for BTreeMap<String, Aff> {
+    fn value(&self, name: &str) -> Option<Aff> {
+        self.get(name).cloned()
+    }
+}
+
+/// `eval` over any `Env`.
+pub fn eval_in(ast: &Ast, env: &dyn Env) -> Result<Aff, ExprError> {
+    ev(ast, env, None)
+}
+
 /// Whether a condition holds (#210), its names worked out from `env`.  Each comparison is
 /// between two plain numbers of one dimension, as `+` is between two operands (`Dim::agree`):
 /// `d > 0mm`, never `d > 0`.  Every comparison is worked out, under `and` and `or` too, so a
@@ -133,6 +151,11 @@ pub fn eval(ast: &Ast, env: &BTreeMap<String, Aff>) -> Result<Aff, ExprError> {
 /// for is refused here; the caller, which knows an unknown of the drawing from a name nothing
 /// declares, asks first.
 pub fn decide(c: &Cond, env: &BTreeMap<String, Aff>) -> Result<bool, ExprError> {
+    decide_in(c, env)
+}
+
+/// `decide` over any `Env`.
+pub fn decide_in(c: &Cond, env: &dyn Env) -> Result<bool, ExprError> {
     Ok(match c {
         Cond::Cmp(op, a, b) => {
             let (x, y) = (ev(a, env, None)?, ev(b, env, None)?);
@@ -155,14 +178,14 @@ pub fn decide(c: &Cond, env: &BTreeMap<String, Aff>) -> Result<bool, ExprError> 
             op.holds(number(&x)?, number(&y)?)
         }
         Cond::And(a, b) => {
-            let (p, q) = (decide(a, env)?, decide(b, env)?);
+            let (p, q) = (decide_in(a, env)?, decide_in(b, env)?);
             p && q
         }
         Cond::Or(a, b) => {
-            let (p, q) = (decide(a, env)?, decide(b, env)?);
+            let (p, q) = (decide_in(a, env)?, decide_in(b, env)?);
             p || q
         }
-        Cond::Not(a) => !decide(a, env)?,
+        Cond::Not(a) => !decide_in(a, env)?,
         Cond::In(a, b) => {
             return Err(ExprError::from(format!(
                 "`{a} in {b}` asks what `{a}` stands for, which is no number"
@@ -186,15 +209,15 @@ pub fn eval_measured(
 
 fn ev(
     ast: &Ast,
-    env: &BTreeMap<String, Aff>,
+    env: &dyn Env,
     ms: Option<Measurer>,
 ) -> Result<Aff, ExprError> {
     Ok(match ast {
         Ast::Num(v, d) => Aff::of_dim(*v, *d),
         Ast::Var(name) => match CONSTANTS.iter().find(|&&(n, _, _)| n == name) {
             Some(&(_, v, d)) => Aff::of_dim(v, d),
-            None => match env.get(name) {
-                Some(a) => a.clone(),
+            None => match env.value(name) {
+                Some(a) => a,
                 None => Aff::of(name),
             },
         },

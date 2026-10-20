@@ -5,6 +5,11 @@
 //! elaborated in under a second.  The measure is the bytes the elaboration allocates, counted on
 //! the thread doing it, which is deterministic where a clock is not.
 //!
+//! The table itself is then the cost (#405): a block's copy, a `when` and a seed read with any
+//! number in force free each built a copy of the root's, so a `repeat` beside the plates, or one
+//! `param` with no value, made the work the plates times the copies, or the plates squared.
+//! Each adds a frame of its own over the table now, and a seed reads through it.
+//!
 //! The count is the allocator of the whole core suite, which is one binary (`tests/main.rs`):
 //! `System`'s, with a per-thread tally beside it, so a test on another thread does not count.
 use gcs_core::{library, program};
@@ -36,18 +41,35 @@ unsafe impl GlobalAlloc for Counted {
 #[global_allocator]
 static COUNTED: Counted = Counted;
 
+/// What stands beside the plates (`with`).
+#[derive(Clone, Copy)]
+enum Beside {
+    /// Nothing: the plates alone.
+    Nothing,
+    /// The hole margin `e` a `param` with no value, so an unknown every plate reads.
+    FreeMargin,
+    /// A `repeat` of this many copies at the root, each a point.
+    Repeat(usize),
+    /// This many `when`s at the root, each holding and each a point.
+    Whens(usize),
+}
+
 /// `n` plates, each an instance of one component — a dimensioned rectangle with four equal
 /// holes, held by its own three numbers — and each placed off its neighbour: the issue's
 /// document, without its jitter.  Each instance is written and named by hand (`P0`, `P1`, …),
 /// not by a `repeat`: the root's table holds a named instance's numbers (`P0.w`), and that table
-/// is what was copied.
-fn plates(n: usize) -> String {
+/// is what was copied.  `beside` stands with them.
+fn plates(n: usize, beside: Beside) -> String {
     let (w, h, e, r, cols) = (80.0, 50.0, 10.0, 4.0, 40);
+    let margin = match beside {
+        Beside::FreeMargin => format!("param e: Length hint({e})"),
+        _ => format!("e := {e}"),
+    };
     let mut out = format!("\
 use std
 w := {w}
 h := {h}
-e := {e}
+{margin}
 component Plate(a: point, b: point, c: point, d: point,
                 h1: circle, h2: circle, h3: circle, h4: circle,
                 w: Length, h: Length, e: Length) {{
@@ -96,6 +118,18 @@ in std.front {{
             writeln!(out, "  a{prev} distance({gap}) a{i}\n  a{prev} level({way}) a{i}").unwrap();
         }
     }
+    match beside {
+        Beside::Repeat(k) => {
+            writeln!(out, "  repeat {k} as i {{\n    q := point hint((i * 5, -100))\n  }}").unwrap();
+        }
+        Beside::Whens(k) => {
+            for j in 0..k {
+                writeln!(out, "  when w > 0 {{\n    q{j} := point hint(({}, -100))\n  }}", j * 5)
+                    .unwrap();
+            }
+        }
+        Beside::Nothing | Beside::FreeMargin => {}
+    }
     out + "}\n"
 }
 
@@ -103,7 +137,12 @@ in std.front {{
 /// here rather than by `common::linked::build`, which parses and elaborates in one call: only the
 /// elaboration is counted.
 fn elaborated(n: usize) -> (usize, usize) {
-    let (p, errors, linked) = library::parse_linked(&plates(n));
+    elaborated_with(n, Beside::Nothing)
+}
+
+/// `elaborated`, with `beside` beside the plates.
+fn elaborated_with(n: usize, beside: Beside) -> (usize, usize) {
+    let (p, errors, linked) = library::parse_linked(&plates(n, beside));
     assert!(errors.is_empty() && linked.is_empty(), "{errors:?} {linked:?}");
     let before = ALLOCATED.with(Cell::get);
     let e = program::elaborate(&p);
@@ -124,4 +163,37 @@ fn many_instances_elaborate_in_linear_work() {
     assert_eq!(large_params, 20 * 200 - 2);
     let ratio = large as f64 / small as f64;
     assert!(ratio < 5.0, "200 plates allocate {ratio:.1}× what 50 do ({large} bytes, {small})");
+}
+
+/// **One free number at the root is not a copy of the root per declaration** (#405): with the
+/// margin a `param` with no value, every seed was read through a table built from the whole root
+/// — every plate's numbers — for every declaration, so four times the plates allocated sixteen
+/// times the bytes.
+#[test]
+fn a_free_number_at_the_root_elaborates_in_linear_work() {
+    let (small, small_params) = elaborated_with(50, Beside::FreeMargin);
+    let (large, large_params) = elaborated_with(200, Beside::FreeMargin);
+    // the margin is the drawing's one unknown more
+    assert_eq!(small_params, 20 * 50 - 1);
+    assert_eq!(large_params, 20 * 200 - 1);
+    let ratio = large as f64 / small as f64;
+    assert!(ratio < 5.0, "200 plates allocate {ratio:.1}× what 50 do ({large} bytes, {small})");
+}
+
+/// **A block beside the instances costs its copies, not its copies times the instances** (#405):
+/// each copy of a root `repeat`, and each root `when`, copied the root's table — every plate's
+/// numbers — so four times the plates and four times the copies allocated sixteen times the
+/// bytes.  Each is a frame over the root's table now.
+#[test]
+fn blocks_beside_many_instances_elaborate_in_linear_work() {
+    for (block, beside) in [("repeat", Beside::Repeat as fn(usize) -> Beside), ("when", Beside::Whens)] {
+        let (small, small_params) = elaborated_with(50, beside(50));
+        let (large, large_params) = elaborated_with(200, beside(200));
+        // a point of two unknowns per copy, beside the plates'
+        assert_eq!(small_params, 20 * 50 - 2 + 2 * 50, "{block}");
+        assert_eq!(large_params, 20 * 200 - 2 + 2 * 200, "{block}");
+        let ratio = large as f64 / small as f64;
+        assert!(ratio < 5.0, "{block}: 200 plates and 200 copies allocate {ratio:.1}× what 50 \
+                              and 50 do ({large} bytes, {small})");
+    }
 }

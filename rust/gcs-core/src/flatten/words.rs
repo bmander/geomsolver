@@ -318,8 +318,8 @@ impl<'a> Walk<'a> {
         for (name, (text, span)) in &values {
             let kind = kinds.get(name).copied().unwrap_or(Param::Number);
             let number = match kind {
-                Param::Number => Some(value_aff(text, &scope.vals, self.units)),
-                Param::Passed => value_aff(text, &scope.vals, self.units).ok().map(Ok),
+                Param::Number => Some(value_aff(text, &*scope.vals, self.units)),
+                Param::Passed => value_aff(text, &*scope.vals, self.units).ok().map(Ok),
                 _ => None,
             };
             match number {
@@ -392,7 +392,7 @@ impl<'a> Walk<'a> {
         }
         let at = used.word.span;
         let closure =
-            Scope { closed: true, module: def.module, vals: Rc::new(vals), ..Scope::default() };
+            Scope { closed: true, module: def.module, vals: Rc::new(Vals::of(vals)), ..Scope::default() };
         let u = Use { st, rel, path, scope, at };
         let app = self.begin(&u, &closure);
         for (operand, given) in def.operands.iter().zip(&used.ops) {

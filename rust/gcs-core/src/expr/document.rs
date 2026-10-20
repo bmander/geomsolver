@@ -107,24 +107,37 @@ struct Node {
     parsed: Result<Parsed, String>,
 }
 
-/// `env` with each declared unknown `ast` reads and `env` does not bind a free name of the
-/// dimension it was declared: how a text written over one (`(-1 * m + 0.2mm)`, `of_vals`) is read
-/// wherever it is read, the flattener's scopes and the sketch's alike.  `env` itself where the
-/// text reads none.
+/// Each declared unknown `ast` reads that `bound` says its scope does not bind, as a free name of
+/// the dimension it was declared: how a text written over one (`(-1 * m + 0.2mm)`, `of_vals`) is
+/// read wherever it is read, the flattener's scopes (`value_read`, read before them) and the
+/// sketch's (`with_declared`) alike.
+pub(crate) fn declared_reads(
+    ast: &Ast,
+    bound: impl Fn(&str) -> bool,
+    declared: &BTreeMap<String, Declared>,
+) -> BTreeMap<String, Aff> {
+    if declared.is_empty() {
+        return BTreeMap::new();
+    }
+    ast.deps().into_iter()
+        .filter_map(|name| Some((declared.get(&name)?.dim, name)))
+        .filter(|(_, name)| !bound(name))
+        .map(|(dim, name)| (name.clone(), Aff::free(name, dim)))
+        .collect()
+}
+
+/// `env` with `declared_reads` added: `env` itself where the text reads none.
 pub(crate) fn with_declared<'e>(
     ast: &Ast,
     env: &'e BTreeMap<String, Aff>,
     declared: &BTreeMap<String, Declared>,
 ) -> Cow<'e, BTreeMap<String, Aff>> {
-    let mut read = ast.deps().into_iter()
-        .filter_map(|name| Some((declared.get(&name)?.dim, name)))
-        .filter(|(_, name)| !env.contains_key(name))
-        .peekable();
-    if read.peek().is_none() {
+    let read = declared_reads(ast, |name| env.contains_key(name), declared);
+    if read.is_empty() {
         return Cow::Borrowed(env);
     }
     let mut env = env.clone();
-    env.extend(read.map(|(dim, name)| (name.clone(), Aff::free(name, dim))));
+    env.extend(read);
     Cow::Owned(env)
 }
 
