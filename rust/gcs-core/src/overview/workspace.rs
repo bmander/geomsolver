@@ -314,10 +314,11 @@ pub fn nearest_point(sk: &Sketch, proj: &Projection, at: (f64, f64)) -> (Option<
     best
 }
 
-/// How far each point is from `at` as the eye sees it, with its index, in order.
+/// How far each point is from `at` as the eye sees it, with its index, in order — every point
+/// the outline has not hidden (#435).
 fn point_gaps<'a>(sk: &'a Sketch, proj: &'a Projection, at: (f64, f64))
     -> impl Iterator<Item = (f64, usize)> + 'a {
-    (0..sk.points.len()).map(move |p| {
+    (0..sk.points.len()).filter(|&p| sk.shown(EntRef::point(p))).map(move |p| {
         let (x, y) = proj.point(sk, p);
         ((x - at.0).dhypot(y - at.1), p)
     })
@@ -330,7 +331,7 @@ fn point_gaps<'a>(sk: &'a Sketch, proj: &'a Projection, at: (f64, f64))
 /// **The drawing outranks a datum**: an axis, which has no figure, is picked only where nothing
 /// drawn is in reach — along the line the box draws it as, and never seen end on, where it
 /// would read as a dot under everything else.  A plane, beneath its axes, is picked by its pane's
-/// frame (`nearest_pane`).
+/// frame (`nearest_pane`).  What the outline hid is not picked (#435).
 pub fn pick(sk: &Sketch, proj: &Projection, at: (f64, f64), tol: f64, unit: f64) -> Option<EntRef> {
     crate::model::pick_by(sk, nearest_point(sk, proj, at), tol, |e| proj.reach(sk, e, at, tol, unit))
         .or_else(|| nearest_axis(sk, proj, at, tol))
@@ -348,7 +349,8 @@ fn nearest_axis(sk: &Sketch, proj: &Projection, at: (f64, f64), tol: f64) -> Opt
 fn axes_near(sk: &Sketch, proj: &Projection, at: (f64, f64), tol: f64) -> Vec<(f64, usize)> {
     let reach = super::axis_reach(sk);
     let mut near = Vec::new();
-    for i in (0..sk.axes.len()).filter(|&i| sk.normal_of(i).is_none()) {
+    for i in (0..sk.axes.len())
+        .filter(|&i| sk.normal_of(i).is_none() && sk.shown(EntRef::new(EntKind::Axis, i))) {
         let Some((tail, tip, _)) = super::axis_segment(sk, i, reach) else { continue };
         let (a, b) = (proj.seen(tail), proj.seen(tip));
         if (b.0 - a.0).dhypot(b.1 - a.1) < 2.0 * tol {
@@ -402,7 +404,8 @@ fn frames_near(sk: &Sketch, proj: &Projection, at: (f64, f64), tol: f64) -> Vec<
     let places = super::places(sk);
     let least = sk.extent() * super::LEAST_SIDE;
     let mut near = Vec::new();
-    for i in (0..sk.frames.len()).filter(|&i| places[i] == Some(i) && pane_readable(proj, i)) {
+    for i in (0..sk.frames.len())
+        .filter(|&i| places[i] == Some(i) && pane_readable(proj, i) && sk.shown(EntRef::frame(i))) {
         let basis = sk.basis(i);
         let (x0, y0, x1, y1) = super::pane(sk, i, &views, &places, least);
         let c = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)].map(|(x, y)| proj.seen(basis.lift(x, y)));
@@ -425,8 +428,8 @@ pub fn panes_at(sk: &Sketch, proj: &Projection, at: (f64, f64)) -> Vec<usize> {
     let toward = proj.toward();
     let mut hits: Vec<(f64, usize)> = Vec::new();
     for i in 0..sk.frames.len() {
-        // a face family's station plane has no pane (#243 L1)
-        if !pane_readable(proj, i) || places[i].is_none() {
+        // a face family's station plane has no pane (#243 L1), nor a plane hidden (#435)
+        if !pane_readable(proj, i) || places[i].is_none() || !sk.shown(EntRef::frame(i)) {
             continue;
         }
         let m = proj.map(Some(i));
@@ -485,7 +488,7 @@ fn crossings(sk: &Sketch, proj: &Projection, at: (f64, f64),
              mut visit: impl FnMut(usize, &str, f64)) {
     let toward = proj.toward();
     let foot = [0, 1, 2].map(|k| at.0 * proj.right[k] + at.1 * proj.up[k]);
-    for i in super::objects(sk) {
+    for i in super::shown_objects(sk) {
         let Ok(solid) = sk.evaluated_solid(i, crate::solid::ApproximationPolicy::Mesh) else { continue };
         let w = solid.world_bounds();
         if !w.meets(foot, toward, f64::NEG_INFINITY) {
@@ -546,7 +549,7 @@ fn edges_near(sk: &Sketch, proj: &Projection, at: (f64, f64), tol: f64)
     let toward = proj.toward();
     let foot = [0, 1, 2].map(|k| at.0 * proj.right[k] + at.1 * proj.up[k]);
     let mut near: Vec<(f64, EdgeHit, f64)> = Vec::new();
-    for i in super::objects(sk) {
+    for i in super::shown_objects(sk) {
         let Ok(solid) = sk.evaluated_solid(i, crate::solid::ApproximationPolicy::Mesh) else {
             continue;
         };
@@ -619,7 +622,7 @@ pub fn under(sk: &Sketch, proj: &Projection, at: (f64, f64), tol: f64, unit: f64
     };
     let points = point_gaps(sk, proj, at).filter(|&(d, _)| d <= tol)
         .map(|(d, p)| (d, EntRef::point(p))).collect();
-    let figures = sk.drawn().into_iter().filter(|e| e.kind != EntKind::Point).filter_map(|e| {
+    let figures = sk.seen().into_iter().filter(|e| e.kind != EntKind::Point).filter_map(|e| {
         let d = proj.reach(sk, e, at, tol, unit);
         (d <= tol).then_some((d, e))
     }).collect();
@@ -882,10 +885,11 @@ pub fn turn_at(sk: &Sketch, proj: &Projection, solid: usize, at: (f64, f64), nea
 
 /// Every entity whose figure touches the box `lo`–`hi` on the eye's picture plane — a rubber
 /// band's "crossing" selection, asked where the figures are seen: a point inside it, or a stroke
-/// passing through it.  What counts is what is drawn, so a box inside a circle's rim takes nothing.
+/// passing through it.  What counts is what is drawn, so a box inside a circle's rim takes nothing,
+/// and a band never takes what the outline hid (#435).
 pub fn overlapping(sk: &Sketch, proj: &Projection, lo: (f64, f64), hi: (f64, f64), unit: f64) -> Vec<EntRef> {
     let b = (lo.0.min(hi.0), lo.1.min(hi.1), lo.0.max(hi.0), lo.1.max(hi.1));
-    sk.drawn()
+    sk.seen()
         .into_iter()
         .filter(|&e| {
             proj.figure(sk, e, unit).iter().any(|poly| match poly.as_slice() {
@@ -926,36 +930,92 @@ fn segment_meets_box(p: (f64, f64), q: (f64, f64), (x0, y0, x1, y1): Box2) -> bo
 /// the profiles it is made from: a turned section draws half of what it makes.  A drawing with
 /// nothing drawn but at one place — a blank sheet's `std.origin` — is framed on its panes, the
 /// workspace (`overview::WORKSPACE_MM`), rather than on a point.  `None` when nothing is drawn
-/// and there is no pane.
+/// and there is no pane.  What the outline hid is not framed (#435).
 pub fn bounds(sk: &Sketch, proj: &Projection, unit: f64) -> Option<Box2> {
     let mut b: Box2 = (f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
-    for e in sk.drawn() {
+    for e in sk.seen() {
         for p in proj.figure(sk, e, unit).into_iter().flatten() {
             grow(&mut b, p);
         }
     }
-    for i in super::objects(sk) {
-        let Ok(solid) = sk.evaluated_solid(i, crate::solid::ApproximationPolicy::Mesh) else { continue };
-        let w = solid.world_bounds();
-        if w.is_empty() {
-            continue;
-        }
-        for k in 0..8 {
-            let pick = |a: usize| if k >> a & 1 == 0 { w.lo[a] } else { w.hi[a] };
-            grow(&mut b, proj.seen([pick(0), pick(1), pick(2)]));
-        }
+    for i in super::shown_objects(sk) {
+        grow_by_solid(sk, proj, i, &mut b);
     }
     if !(b.0 < b.2 || b.1 < b.3) {
         let views = super::views(sk);
         let places = super::places(sk);
         let least = sk.extent() * super::LEAST_SIDE;
-        for i in (0..sk.frames.len()).filter(|&i| places[i] == Some(i)) {
-            let basis = sk.basis(i);
-            let (x0, y0, x1, y1) = super::pane(sk, i, &views, &places, least);
-            for (x, y) in [(x0, y0), (x1, y0), (x1, y1), (x0, y1)] {
-                grow(&mut b, proj.seen(basis.lift(x, y)));
-            }
+        let shown = |i: usize| places[i] == Some(i) && sk.shown(EntRef::frame(i));
+        for i in (0..sk.frames.len()).filter(|&i| shown(i)) {
+            grow_by_pane(sk, proj, i, &views, &places, least, &mut b);
         }
+    }
+    (b.0 <= b.2).then_some(b)
+}
+
+/// Grow `b` by the box round solid `i` seen from here (its eight corners) — nothing for one that
+/// does not evaluate.
+fn grow_by_solid(sk: &Sketch, proj: &Projection, i: usize, b: &mut Box2) {
+    let Ok(solid) = sk.evaluated_solid(i, crate::solid::ApproximationPolicy::Mesh) else { return };
+    let w = solid.world_bounds();
+    if w.is_empty() {
+        return;
+    }
+    for k in 0..8 {
+        let pick = |a: usize| if k >> a & 1 == 0 { w.lo[a] } else { w.hi[a] };
+        grow(b, proj.seen([pick(0), pick(1), pick(2)]));
+    }
+}
+
+/// Grow `b` by plane `i`'s pane as the eye sees it — nothing for a plane with no place.
+fn grow_by_pane(sk: &Sketch, proj: &Projection, i: usize, views: &[Option<usize>],
+                places: &[Option<usize>], least: f64, b: &mut Box2) {
+    if places[i].is_none() {
+        return;
+    }
+    let basis = sk.basis(i);
+    let (x0, y0, x1, y1) = super::pane(sk, i, views, places, least);
+    for (x, y) in [(x0, y0), (x1, y0), (x1, y1), (x0, y1)] {
+        grow(b, proj.seen(basis.lift(x, y)));
+    }
+}
+
+/// **The extent of a part of the workspace** (#435), on the eye's picture plane: `bounds`'s
+/// subset form, what framing an outline row asks — the figures of `ents` (a point where it is
+/// seen, a plane by its pane, an axis by the line the box draws it as) and the box round each of
+/// `solids`, feature or object, seen from here.  Asked whether or not they are hidden, since a
+/// row is framed to be found.  `None` when the subset has no extent at all.
+pub fn bounds_of(sk: &Sketch, proj: &Projection, ents: &[EntRef], solids: &[usize], unit: f64)
+    -> Option<Box2> {
+    let mut b: Box2 = (f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
+    let views = super::views(sk);
+    let places = super::places(sk);
+    let least = sk.extent() * super::LEAST_SIDE;
+    let reach = super::axis_reach(sk);
+    let drawn: std::collections::BTreeSet<EntRef> = sk.drawn().into_iter().collect();
+    for &e in ents {
+        match e.kind {
+            EntKind::Frame if e.i() < sk.frames.len() => {
+                grow_by_pane(sk, proj, e.i(), &views, &places, least, &mut b)
+            }
+            EntKind::Axis => {
+                if let Some((tail, tip, _)) = super::axis_segment(sk, e.i(), reach) {
+                    grow(&mut b, proj.seen(tail));
+                    grow(&mut b, proj.seen(tip));
+                }
+            }
+            EntKind::Point if e.i() < sk.points.len() => grow(&mut b, proj.point(sk, e.i())),
+            EntKind::Solid if e.i() < sk.solids.len() => grow_by_solid(sk, proj, e.i(), &mut b),
+            _ if drawn.contains(&e) => {
+                for p in proj.figure(sk, e, unit).into_iter().flatten() {
+                    grow(&mut b, p);
+                }
+            }
+            _ => {}
+        }
+    }
+    for &i in solids.iter().filter(|&&i| i < sk.solids.len()) {
+        grow_by_solid(sk, proj, i, &mut b);
     }
     (b.0 <= b.2).then_some(b)
 }

@@ -336,6 +336,14 @@ pub fn layout_selected(sk: &Sketch, unit: f64, ids: Option<&[u32]>) -> Vec<Callo
         // row stated as its derivative (§6.21), whose number is its row's, nor a bound, which
         // says which root and states no size (§9.6)
         let asked = ids.map(|ids| ids.contains(&c.id));
+        // a dimension goes with what it reads, once the outline has hidden every entity of it
+        // (#435), unless it is the one asked for
+        if asked.is_none() && !sk.hidden.is_empty() {
+            let read = c.entities();
+            if !read.is_empty() && read.iter().all(|e| !sk.shown(*e)) {
+                continue;
+            }
+        }
         if asked == Some(false) || ((c.repeated || c.elsewhere) && asked.is_none()) || c.soft
             || c.intrinsic || c.along.is_some() || c.bound.is_some()
             || !style_of(sk, c).dimensioned() {

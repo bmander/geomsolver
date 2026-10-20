@@ -7,8 +7,8 @@
  * what is under the pointer is asked here, of the figures where the eye sees them: views that lie
  * on top of one another on the page are nowhere near one another in space. */
 import { KINDS, Plane, Point, Primitive, Sketch, fromWire, kindOf } from './model.js';
-import type { Kind, Way } from './model.js';
-import { core, takeJson, withBuf } from './wasm.js';
+import type { Kind, Part, Way } from './model.js';
+import { core, takeJson, withBuf, withJson } from './wasm.js';
 
 /** A view's page onto the eye's picture plane: `(x, y) ↦ (m0·x + m1·y + m2, m3·x + m4·y + m5)`. */
 export type Map = [number, number, number, number, number, number];
@@ -308,4 +308,13 @@ export function boundsSeen(sk: Sketch, unit: number, az: number,
                            el: number): [number, number, number, number] | null {
   return withBuf(4, 8, (b) => core().gcs_workspace_bounds(sk.handle, unit, az, el, b.ptr)
     ? [b.f64[0], b.f64[1], b.f64[2], b.f64[3]] : null);
+}
+
+/** The extent of a part of the workspace — an outline row's subtree — on the eye's picture
+ *  plane, hidden or not (`workspace::bounds_of`), or null for a part with no extent. */
+export function boundsOfSeen(sk: Sketch, unit: number, az: number, el: number,
+                             part: Part): [number, number, number, number] | null {
+  return withJson(part, (p, n) => withBuf(4, 8, (b) =>
+    core().gcs_workspace_bounds_of(sk.handle, unit, az, el, p, n, b.ptr)
+      ? [b.f64[0], b.f64[1], b.f64[2], b.f64[3]] : null));
 }

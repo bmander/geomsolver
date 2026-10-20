@@ -430,6 +430,61 @@ dialog input[type=search] {
 .project-file.drawing-file::before { content: '▤'; }
 .project-file.text-file::before { content: '¶'; }
 .project-file[aria-current] { background: var(--accent-soft); color: var(--accent); }
+/* The model outline (#435): a pane under the project's files, styled as their tree is — one row
+   per instance, copy, entity or object, an eye to hide it, its name to select it, and a way to its
+   statement.  Collapsed, it is its head alone. */
+#outline-pane { flex: none; height: 200px; min-height: 90px; max-height: 45%;
+  display: flex; flex-direction: column; overflow: hidden; resize: vertical;
+  border-bottom: 1px solid var(--line); background: var(--bg); }
+#outline-pane.collapsed { height: auto !important; min-height: 0; resize: none; }
+#ppanel #outline-pane h2 { display: flex; align-items: center; gap: 4px; padding: 0 6px 0 0; }
+#outline-toggle { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0;
+  padding: 7px 10px; border: 0; border-radius: 0; background: transparent; color: inherit;
+  font: inherit; text-transform: inherit; letter-spacing: inherit; text-align: left;
+  cursor: pointer; }
+#outline-toggle:hover { background: var(--accent-soft); }
+#outline-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+#outline-toggle[aria-expanded="true"] .project-disclosure,
+.outline-item[aria-expanded="true"] > .outline-row > .outline-twist > .project-disclosure {
+  transform: rotate(90deg); }
+#outline-isolate, #outline-show-all { flex: none; padding: 1px 6px; font-size: 11px;
+  text-transform: none; letter-spacing: 0; }
+#outline-pane.collapsed #outline-isolate, #outline-pane.collapsed #outline-show-all {
+  display: none; }
+#outline-tree { --tree-icon: 14px; --tree-gap: 4px; overflow: auto; flex: 1; min-height: 0;
+  padding: 5px; font-size: 12px; }
+#outline-tree[hidden] { display: none; }
+#outline-tree:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.outline-row { display: flex; align-items: center; gap: var(--tree-gap); border-radius: 3px;
+  padding: 1px 4px 1px calc(4px + var(--depth, 0) * (var(--tree-icon) + var(--tree-gap)));
+  white-space: nowrap; }
+.outline-row > span { flex: none; width: var(--tree-icon); }
+.outline-row button { border: 0; background: transparent; color: inherit; font: inherit;
+  padding: 0; cursor: pointer; }
+.outline-twist { flex: none; width: var(--tree-icon); height: var(--tree-icon);
+  color: var(--muted); }
+.outline-twist:disabled { visibility: hidden; }
+.outline-twist .project-disclosure { width: var(--tree-icon); height: var(--tree-icon); }
+.outline-eye { flex: none; width: var(--tree-icon); height: var(--tree-icon); color: var(--muted); }
+.outline-eye svg { display: block; width: 100%; height: 100%; }
+.outline-eye .lid { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round;
+  stroke-linejoin: round; }
+.outline-eye .pupil { fill: currentColor; }
+.outline-eye .faint { opacity: .3; }
+.outline-eye[data-state="shut"] { opacity: .6; }
+.outline-eye:hover { color: var(--accent); }
+.outline-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+  text-align: left; padding: 3px 2px !important; }
+.outline-label.kind-instance, .outline-label.kind-block, .outline-label.kind-datums {
+  color: var(--muted); }
+.outline-source { flex: none; visibility: hidden; color: var(--muted); }
+.outline-row:hover .outline-source, .outline-source:focus-visible { visibility: visible; }
+.outline-row:hover { background: var(--accent-soft); }
+.outline-row[aria-current] { background: var(--accent-soft); color: var(--accent); }
+.outline-row.operand .outline-label { font-style: italic; color: var(--muted); }
+/* hidden, and under a hidden row: the name stays, faded, so it can be found and shown again */
+.outline-row.hidden .outline-label, .outline-row.dimmed .outline-label { opacity: .45; }
+.outline-group[hidden] { display: none; }
 #program-name { padding: 6px 10px; font: 12px var(--mono); overflow: hidden;
   text-overflow: ellipsis; white-space: nowrap; border-bottom: 1px solid var(--line); }
 /* The partition.  `min-width`/`max-width` above are the whole of how far it may be dragged —
@@ -567,6 +622,7 @@ dialog input[type=search] {
   #ppanel.folded > :not(#ppanel-head) { display: none; }
   #ppanel.folded #ppanel-head { border-bottom: 0; }
   #project-pane { max-height: 35%; }
+  #outline-pane { max-height: 35%; }
   #plane-pick > span { display: none; }
 }
 

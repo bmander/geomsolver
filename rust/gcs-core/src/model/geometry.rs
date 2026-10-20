@@ -369,6 +369,29 @@ impl Sketch {
         v
     }
 
+    /// What is drawn and not hidden (#435): `drawn`, less what the outline has taken out — what
+    /// the workspace strokes, picks and frames.
+    pub fn seen(&self) -> Vec<EntRef> {
+        let mut v = self.drawn();
+        if !self.hidden.is_empty() {
+            v.retain(|e| !self.hidden.contains(e));
+        }
+        v
+    }
+
+    /// Whether an entity is shown: not hidden by the outline (#435).  A solid is
+    /// `EntRef::solid(i)`.
+    pub fn shown(&self, e: EntRef) -> bool {
+        !self.hidden.contains(&e)
+    }
+
+    /// Hide exactly these entities and solids, showing everything else (#435) — the whole of
+    /// the view state, set at once, so a front end re-applies it to a fresh drawing in one call.
+    pub fn set_hidden(&mut self, ents: impl IntoIterator<Item = EntRef>,
+                      solids: impl IntoIterator<Item = usize>) {
+        self.hidden = ents.into_iter().chain(solids.into_iter().map(EntRef::solid)).collect();
+    }
+
     /// Every entity a face family's station is made of (#243 L1): written in place, solved with
     /// the drawing at the middle of its interval and never drawn — no stroke, no pane and no
     /// callout.

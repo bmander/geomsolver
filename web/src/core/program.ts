@@ -17,6 +17,7 @@
 import { Constraint } from './constraints.js';
 import { Kind, KINDS, Plane, Primitive, Sketch, fromWire } from './model.js';
 import type { Way } from './model.js';
+import type { Row } from './outline.js';
 import { core, lastError, takeJson, takeStr, withBuf, withJson, withStr } from './wasm.js';
 
 /** Where a statement sits in the program text, plus the line and column the core worked out, so
@@ -288,6 +289,19 @@ export class Document {
     if (!span) return undefined;
     const at = new Offsets(this.text);
     return { lo: at.at(span[0]), hi: at.at(span[1]) };
+  }
+
+  /** **The model outline** (#435): every instance this document makes and its members, as the
+   *  core arranges them (`gcs_elab_outline_json`), each span brought onto the string. */
+  outline(): Row[] {
+    type Wire = Omit<Row, 'span' | 'children'> & { span?: [number, number]; children: Wire[] };
+    const at = new Offsets(this.text);
+    const row = (w: Wire): Row => {
+      const { span, children, ...rest } = w;
+      return { ...rest, ...(span ? { span: { lo: at.at(span[0]), hi: at.at(span[1]) } } : {}),
+               children: children.map(row) };
+    };
+    return takeJson<Wire[]>(core().gcs_elab_outline_json(this.h, this.sketch.handle)).map(row);
   }
 
   /* -- the edit verbs ------------------------------------------------------------------- */

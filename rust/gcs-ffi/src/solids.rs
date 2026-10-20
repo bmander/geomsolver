@@ -565,20 +565,24 @@ pub unsafe extern "C" fn gcs_solid_provisional(h: *mut Sketch, idx: i32) -> i32 
 /// bore is a hole in a part and not a part beside it, and this is the rule that says so.
 #[no_mangle]
 pub unsafe extern "C" fn gcs_solid_objects_json(h: *mut Sketch) -> *mut u8 {
-    json_out(move || {
-        let s = sk(h);
-        Json::Arr(
-            gcs_core::overview::objects(s)
-                .into_iter()
-                .map(|i| {
-                    Json::Obj(vec![
-                        ("name".into(), Json::Str(s.solid_name(i))),
-                        ("index".into(), Json::Int(i as i64)),
-                    ])
-                })
-                .collect(),
-        )
-    })
+    json_out(move || named_solids(sk(h), gcs_core::overview::objects(sk(h))))
+}
+
+/// The objects the workspace draws (`overview::shown_objects`): `gcs_solid_objects_json`'s, less
+/// what the model outline hid (#435).
+#[no_mangle]
+pub unsafe extern "C" fn gcs_solid_shown_json(h: *mut Sketch) -> *mut u8 {
+    json_out(move || named_solids(sk(h), gcs_core::overview::shown_objects(sk(h))))
+}
+
+/// Solids by name and index: `[{name, index}…]`.
+fn named_solids(s: &Sketch, solids: Vec<usize>) -> Json {
+    Json::Arr(solids.into_iter().map(|i| {
+        Json::Obj(vec![
+            ("name".into(), Json::Str(s.solid_name(i))),
+            ("index".into(), Json::Int(i as i64)),
+        ])
+    }).collect())
 }
 
 /// **The objects that are not drawn, and why** (`overview::unbuilt`):

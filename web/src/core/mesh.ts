@@ -119,6 +119,11 @@ export function objects(sk: Sketch): { name: string; index: number }[] {
   return takeJson<{ name: string; index: number }[]>(core().gcs_solid_objects_json(sk.handle));
 }
 
+/** The objects the workspace draws: `objects`, less what the model outline hid (#435). */
+export function shownObjects(sk: Sketch): { name: string; index: number }[] {
+  return takeJson<{ name: string; index: number }[]>(core().gcs_solid_shown_json(sk.handle));
+}
+
 /** The objects that are not drawn, and why: each one that does not evaluate, with the core's
  *  reason (`` `b1`: the revolution axis crosses the profile ``).  A swept object still being
  *  meshed in a worker is not one. */

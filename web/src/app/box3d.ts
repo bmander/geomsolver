@@ -18,7 +18,7 @@ import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
 
-import { objects, own, placement, preview } from '../core/mesh.js';
+import { own, placement, preview, shownObjects } from '../core/mesh.js';
 import type { Face, Mesh, Placement } from '../core/mesh.js';
 import { overview3 } from '../core/overview.js';
 import { eyeFrame, placeOf, solidEdges } from '../core/workspace.js';
@@ -78,6 +78,9 @@ interface Built {
   /** The sketch's `shapeEpoch` the objects were built at: a solid re-shaped in place (an
    *  extrusion being sized) is re-cut at once, gesture or no. */
   shape: number;
+  /** What the outline hid, as of `SketchView.hiddenEpoch`: a pane, an axis or an object hidden
+   *  or shown is taken out or put back, nothing cut again. */
+  hidden: number;
 }
 
 /** One object in the box: the evaluation its geometry was built from (`Placement.shape`), and
@@ -183,8 +186,9 @@ export class Box3D {
     const pose = poseOf(v.sketch.getX());
     const fresh = !this.built || this.built.sketch !== v.sketch || this.built.solid !== v.showSolid;
     const shape = v.sketch.shapeEpoch;
-    const datums = fresh || this.built!.datums !== pose;
-    const objects = fresh || this.built!.shape !== shape || this.built!.objects !== pose;
+    const shown = fresh || this.built!.hidden !== v.hiddenEpoch;
+    const datums = shown || this.built!.datums !== pose;
+    const objects = shown || this.built!.shape !== shape || this.built!.objects !== pose;
     if (!datums && !objects) return;
     if (datums) this.buildDatums(overview3(v.sketch, 0, 'datums'));
     let placedAt = this.built?.objects ?? NaN;
@@ -202,6 +206,7 @@ export class Box3D {
       datums: datums ? pose : this.built!.datums,
       objects: placedAt,
       shape,
+      hidden: v.hiddenEpoch,
     };
   }
 
@@ -309,7 +314,8 @@ export class Box3D {
    *  it stood.  Whether every object is where the drawing now puts it. */
   private placeObjects(v: SketchView, settled: boolean): boolean {
     let current = true;
-    const now = objects(v.sketch);
+    // what the outline hid is not drawn (#435)
+    const now = shownObjects(v.sketch);
     const keep = new Set(now.map((o) => o.index));
     for (const index of [...this.placed.keys()]) if (!keep.has(index)) this.unplace(index);
     for (const o of now) {

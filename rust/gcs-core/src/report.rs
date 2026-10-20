@@ -836,6 +836,36 @@ pub fn overview3d_json(sk: &Sketch, unit: f64, layer: crate::overview::Layer) ->
     Json::Arr(items)
 }
 
+/// **The model outline** (#435) over `sk`, the drawing `e` made: `[{label, kind, component?,
+/// path, span?: [lo, hi], ents: [[kind, index]…], solid?, operand?, children}…]`, the span in the
+/// document's bytes (`overview::outline`).
+pub fn outline_json(e: &crate::program::Elaborated, sk: &Sketch) -> Json {
+    fn node(n: &crate::overview::outline::Node) -> Json {
+        let ents = n.ents.iter().map(|&e| ent_json(e)).collect();
+        let mut o = object([
+            ("label", Json::Str(n.label.clone())),
+            ("kind", Json::Str(n.kind.as_str().to_string())),
+            ("path", Json::Str(n.path.clone())),
+            ("ents", Json::Arr(ents)),
+        ]);
+        if let Some(c) = &n.component {
+            o.set("component", Json::Str(c.clone()));
+        }
+        if let Some(sp) = n.span {
+            o.set("span", Json::Arr(vec![Json::Int(sp.lo as i64), Json::Int(sp.hi as i64)]));
+        }
+        if let Some(i) = n.solid {
+            o.set("solid", Json::Int(i as i64));
+        }
+        if n.operand {
+            o.set("operand", Json::Bool(true));
+        }
+        o.set("children", Json::Arr(n.children.iter().map(node).collect()));
+        o
+    }
+    Json::Arr(crate::overview::outline::outline_with(e, sk).iter().map(node).collect())
+}
+
 pub fn constraints_json(sk: &Sketch) -> Json {
     Json::Arr(sk.constraints.iter().map(|c| constraint_json(sk, c)).collect())
 }
