@@ -24,6 +24,7 @@
 use crate::fmath::Det;
 use crate::linalg::{min_norm_solve, Mat};
 use crate::model::{grow, Box2, EntKind, EntRef, Sketch};
+pub use crate::model::objects;
 use crate::plane::{dot, Basis};
 use crate::space::eye;
 use std::collections::BTreeMap;
@@ -768,33 +769,6 @@ fn axes(basis: &Basis, (x0, y0, x1, y1): Box2) -> [Vec<[f64; 3]>; 2] {
         vec![basis.lift(x0, 0.0), basis.lift(x1, 0.0)],
         vec![basis.lift(0.0, y0), basis.lift(0.0, y1)],
     ]
-}
-
-/// The screen axes of an orbit: where `right` and `up` point in space, looking from bearing
-/// `az` and elevation `el`.  Orthonormal, so the projection carries lengths faithfully in any
-/// plane facing the viewer — which is what makes the front view flatten to the sheet's own
-/// picture when the box is looked at square on.
-/// **The solids that are objects**: the ones nothing else is made of.
-///
-/// A part is written as a stock, the features cut out of it, and the body that is the term over
-/// them — four names for one thing plus three holes.  Only the body is an object, and the rule
-/// says so without the document having to: a solid named as another's operand is a *feature* of
-/// it.  A `construction` solid is scaffolding and never an object, used or not — a gear pair's
-/// crown cutters stand in the model for the analytic surfaces read off them, and drawn they
-/// would bury the gears.  Otherwise a document that names none — every solid an operand of some
-/// other — has a cycle, which the elaborator has already refused.
-pub fn objects(sk: &Sketch) -> Vec<usize> {
-    let mut used = vec![false; sk.solids.len()];
-    for s in &sk.solids {
-        for o in s.operands() {
-            if let Some(u) = used.get_mut(o as usize) {
-                *u = true;
-            }
-        }
-    }
-    (0..sk.solids.len())
-        .filter(|&i| !used[i] && !sk.roles_of(crate::model::EntRef::solid(i)).construction)
-        .collect()
 }
 
 /// The objects the outline has not hidden (#435): what the workspace draws, lights, picks and

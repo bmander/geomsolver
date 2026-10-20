@@ -205,20 +205,7 @@ impl SourceMap {
     }
 }
 
-/// Internal block identity is not part of a drawing reference. `#statement.copy.name`
-/// becomes `name[copy]`, which survives inserting or reordering unrelated statements.
-pub fn public_path(name: &str) -> String {
-    let mut parts = name.split('.');
-    let mut path = Vec::new();
-    while let Some(part) = parts.next() {
-        if part.strip_prefix('#').is_some_and(|id| !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit())) {
-            if let (Some(index), Some(name)) = (parts.next(), parts.next()) {
-                path.push(format!("{name}[{index}]"));
-            }
-        } else { path.push(part.to_string()); }
-    }
-    path.join(".")
-}
+pub use crate::vocab::public_path;
 
 /// A sketch, where each of its parts came from, and what was wrong with the program.
 #[derive(Default)]

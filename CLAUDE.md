@@ -13,6 +13,8 @@ files it lists are the contract, and `gcs-solver-program.md` is the staged progr
 
 * **core** (`rust/gcs-core/`): the whole engine in Rust, no dependencies — model, constraints,
   kernels, solvers, diagnosis, decomposition, the Solvent language, solids, the B-rep kernel.
+  Within it, the **solver** (model, constraints, kernels, solvers, diagnosis, decomposition, and
+  what they evaluate) neither imports nor reaches the language: `tests/layering.rs` holds it.
 * **ABI** (`rust/gcs-ffi/`): one flat C ABI over the core, built as a native `cdylib` and as a
   `wasm32-unknown-unknown` module.
 * **binding** (`web/src/core/`): thin TypeScript proxies over the wasm core. No algorithm.

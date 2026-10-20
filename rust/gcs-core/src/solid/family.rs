@@ -199,7 +199,7 @@ fn walk_face(sk: &Sketch, fi: usize, prefix: &str)
         for (i, (edge, from)) in ends.into_iter().enumerate() {
             let wall = names.len();
             let name = edge_names.get(i).cloned().unwrap_or_else(|| format!("e{wall}"));
-            names.push(crate::program::public_path(&format!("{under}{name}")));
+            names.push(crate::vocab::public_path(&format!("{under}{name}")));
             walked.push(Walked { edge, from, wall });
         }
         loops.push(walked);

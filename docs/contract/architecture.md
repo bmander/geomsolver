@@ -20,15 +20,23 @@ Currently: **Stage 5 done, and Stage 7a/7b — solids**, in **one** implementati
   from entities and constraint records, solved and diagnosed through the ABI with no document
   (`gcs-ffi/tests/without_a_document.rs`), and the solver's modules import neither the parser nor
   `io`: the words and types the model shares with the language (`Cmp`, `BodyWord`, `Span`,
-  `num`, `snake`, `one_of`) are defined below both in `vocab.rs`, which depends on nothing, and
-  `syntax` re-exports them.  **The solver does not import the language**, and a gate holds the
-  build to it (`tests/layering.rs`): no `crate::` path in a *solver* module (`model`,
+  `num`, `snake`, `one_of`, `public_path`) are defined below both in `vocab.rs`, which depends on
+  nothing, and `syntax` (or `program`, for `public_path`) re-exports them.  **The solver does
+  not import the language**, and a gate holds the build to it (`tests/layering.rs`): no
+  `crate::` path in a *solver* module (`model`,
   `constraints`, `kernels`, `system`, `newton`, `linalg`, `sparse`, `graph`, `cgraph`,
   `diagnose`, `decompose`, `witness`, `solve`, `homotopy`, `rng`, `fmath`, `graft`, `vocab`)
   names a *language* module (`syntax`, `flatten`, `program`, `modules`, `edit`, `style`,
-  `library`, `examples`, `overview`, `callout`, `svg`, `drawing`, `report`, `io`).  The edge
-  still standing — solid evaluation's call into `overview` — is listed there as a ratchet: a
-  new edge fails the gate, and so does a removed one still listed, so the list only shrinks.
+  `library`, `examples`, `overview`, `callout`, `svg`, `drawing`, `report`, `io`).  Its list of
+  edges still standing is empty (step 6) and stays a ratchet: a new edge fails the gate.  **Nor
+  does the solver reach the language**, through any module in between: the gate follows every
+  route from the solver set, through the curves, the solids, the motions and the B-rep that the
+  model evaluates, and fails with the route, a `file:line` a hop, if one arrives at a language
+  module.  So what the language and the solids share is defined below both: which solids are
+  *objects* is the model's (`model::objects`, re-exported by `overview`), and an instance's
+  public name the vocabulary's (`vocab::public_path`, re-exported by `program`).  The solver
+  still reaches the solids — evaluating them, generating motions, building the B-rep; whether
+  they leave the solve path is open (#409).
   **Presentation rides on the model as tags and an annex** (#409, step 5): an entity and a
   constraint carry their classes as names (`vocab::Classes`, re-exported by `style`), which
   nothing that solves reads; the document's sheet is on the sketch as `Sketch::presentation`, a

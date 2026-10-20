@@ -3,9 +3,11 @@
 //! `crate::` path at a time, until the crate is split and the compiler holds it instead.
 //!
 //! The edges left are listed in `ALLOWED`, and the list is a ratchet: a new edge fails the gate,
-//! and so does an edge removed but still listed, so the list only shrinks.
+//! and so does an edge removed but still listed, so the list only shrinks.  It is empty (#409,
+//! step 6), and the reach is gated too: no route from the solver through the modules between
+//! (the curves, the solids, the B-rep) arrives at the language.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::path::Path;
 
 /// The constraint solve: the model, its constraints and kernels, the solvers, diagnosis and
@@ -23,10 +25,8 @@ const LANGUAGE: &[&str] = &[
 ];
 
 /// The edges still standing, as (file under `src/`, language module, how many paths name it).
-/// Solids on the solve path are step 6.
-const ALLOWED: &[(&str, &str, usize)] = &[
-    ("model/solid_eval.rs", "overview", 1),
-];
+/// None since step 6: `objects` is the model's and `public_path` the vocabulary's.
+const ALLOWED: &[(&str, &str, usize)] = &[];
 
 #[test]
 fn the_solver_does_not_import_the_language() {
@@ -67,6 +67,35 @@ fn the_solver_does_not_import_the_language() {
         wrong.join("\n"));
 }
 
+/// What the solver reaches through every module in between is not the language either: a solver
+/// module importing one that imports the parser links the parser as surely as importing it
+/// itself.  A failure names the shortest route, a `file:line` for each hop.
+#[test]
+fn the_solver_does_not_reach_the_language() {
+    let names = imports(&Path::new(env!("CARGO_MANIFEST_DIR")).join("src"));
+    let from = reached(&names, SOLVER);
+    let wrong: Vec<String> = LANGUAGE.iter().filter(|m| from.contains_key(**m))
+        .map(|m| route(&names, &from, m)).collect();
+    assert!(wrong.is_empty(), "the solver reaches the language (#409):\n{}", wrong.join("\n"));
+}
+
+/// The reach follows a route of any length, and names each hop where it is written.
+#[test]
+fn reached_follows_a_route_through_the_modules_between() {
+    let mut names: Imports = BTreeMap::new();
+    let mut import = |a: &str, b: &str, at: &str| {
+        names.entry(a.to_string()).or_default().insert(b.to_string(), at.to_string());
+    };
+    import("model", "solid", "model.rs:3");
+    import("solid", "program", "solid/family.rs:7");
+    import("program", "syntax", "program.rs:1");
+    import("syntax", "model", "syntax.rs:2");
+    let from = reached(&names, &["model"]);
+    assert_eq!(from.keys().collect::<Vec<_>>(), ["model", "program", "solid", "syntax"]);
+    assert_eq!(route(&names, &from, "program"),
+        "model → solid (model.rs:3), solid → program (solid/family.rs:7)");
+}
+
 /// The scanner reads the forms the gate depends on: a path, a group, a nested group, a rename,
 /// and nothing in a comment.
 #[test]
@@ -78,6 +107,52 @@ fn crate_paths_reads_groups_and_skips_comments() {
                 fn f() { crate::report::json(); }\n";
     let expected = [("style", 1), ("vocab", 2), ("overview", 2), ("io", 2), ("report", 6)];
     assert_eq!(crate_paths(text), expected.map(|(n, l)| (n.to_string(), l)));
+}
+
+/// Each top-level module's imports of the others, with where the first is written.
+type Imports = BTreeMap<String, BTreeMap<String, String>>;
+
+fn imports(src: &Path) -> Imports {
+    let mut names: Imports = BTreeMap::new();
+    for file in rust_files(src) {
+        let rel = file.strip_prefix(src).unwrap().to_str().unwrap().replace('\\', "/");
+        let top = rel.split('/').next().unwrap().trim_end_matches(".rs").to_string();
+        for (name, line) in crate_paths(&std::fs::read_to_string(&file).unwrap()) {
+            if name != top && src.join(format!("{name}.rs")).is_file() {
+                names.entry(top.clone()).or_default().entry(name)
+                    .or_insert_with(|| format!("{rel}:{line}"));
+            }
+        }
+    }
+    names
+}
+
+/// Every module reached from `start`, breadth first, with the one it was reached from (`None`
+/// for a start): so the route back is a shortest one.
+fn reached(names: &Imports, start: &[&str]) -> BTreeMap<String, Option<String>> {
+    let mut from: BTreeMap<String, Option<String>> =
+        start.iter().map(|m| (m.to_string(), None)).collect();
+    let mut queue: VecDeque<String> = start.iter().map(|m| m.to_string()).collect();
+    while let Some(m) = queue.pop_front() {
+        for next in names.get(&m).into_iter().flat_map(|n| n.keys()) {
+            if !from.contains_key(next) {
+                from.insert(next.clone(), Some(m.clone()));
+                queue.push_back(next.clone());
+            }
+        }
+    }
+    from
+}
+
+/// The route `reached` found to `m`, hop by hop.
+fn route(names: &Imports, from: &BTreeMap<String, Option<String>>, m: &str) -> String {
+    let mut path = vec![m.to_string()];
+    while let Some(Some(prev)) = from.get(path.last().unwrap()) {
+        path.push(prev.clone());
+    }
+    path.reverse();
+    path.windows(2).map(|w| format!("{} → {} ({})", w[0], w[1], names[&w[0]][&w[1]]))
+        .collect::<Vec<_>>().join(", ")
 }
 
 fn rust_files(dir: &Path) -> Vec<std::path::PathBuf> {

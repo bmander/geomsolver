@@ -41,7 +41,7 @@ pub use solids::{
     FaceLoop, FaceE, Length, SolidRequirement, SolidClaim, SolidBearing, Sweep,
     DerivedE, Extent, Roll, Sense, SolidDef, SolidE, EnvelopeE,
     Ease, Flank, Held, MeshingE, SetKind, SetShape, SurfaceE, TracedE,
-    MotionDef, MotionE, station_prefix, FamilyLeg, Leg,
+    MotionDef, MotionE, station_prefix, FamilyLeg, Leg, objects,
 };
 pub use region::{RegionShape, RegionTerm, TermNumber, FaceRef, Target};
 pub use solid_eval::{Way, turn_of};

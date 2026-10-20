@@ -196,11 +196,11 @@ impl Sketch {
     }
 
     /// **What a host meshing swept solids elsewhere has to mesh** (`FieldMeshing::Deferred`): the
-    /// objects (`overview::objects`) with a continuous sweep among their operands, each with the
+    /// objects (`model::objects`) with a continuous sweep among their operands, each with the
     /// key of the drawing it is a surface of (`FieldJob`). A swept solid that is no object is left
     /// out: nothing shows or exports it, so its surface is never asked for.
     pub fn field_jobs(&self) -> Vec<crate::solid::FieldJob> {
-        crate::overview::objects(self).into_iter().filter(|&i| self.is_swept(i))
+        super::objects(self).into_iter().filter(|&i| self.is_swept(i))
             .map(|i| crate::solid::FieldJob {
                 solid: i, name: self.solids[i].name.clone(), key: crate::solid::field_key(self, i),
             })

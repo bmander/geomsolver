@@ -716,3 +716,27 @@ impl SolidE {
         }
     }
 }
+
+/// **The solids that are objects**: the ones nothing else is made of.
+///
+/// A part is written as a stock, the features cut out of it, and the body that is the term over
+/// them — four names for one thing plus three holes.  Only the body is an object, and the rule
+/// says so without the document having to: a solid named as another's operand is a *feature* of
+/// it.  A `construction` solid is scaffolding and never an object, used or not — a gear pair's
+/// crown cutters stand in the model for the analytic surfaces read off them, and drawn they
+/// would bury the gears.  Otherwise a document that names none — every solid an operand of some
+/// other — has a cycle, which the elaborator has already refused.  The model's own (#409): solid
+/// evaluation asks it of the sketch, and `overview` re-exports it.
+pub fn objects(sk: &Sketch) -> Vec<usize> {
+    let mut used = vec![false; sk.solids.len()];
+    for s in &sk.solids {
+        for o in s.operands() {
+            if let Some(u) = used.get_mut(o as usize) {
+                *u = true;
+            }
+        }
+    }
+    (0..sk.solids.len())
+        .filter(|&i| !used[i] && !sk.roles_of(EntRef::solid(i)).construction)
+        .collect()
+}
