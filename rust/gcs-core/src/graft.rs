@@ -25,7 +25,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         // a rebuild, a deletion and a copy all keep the document they came from — which is what
         // makes a clipboard say what its numbers are in, and `paste` able to convert them
         dst.units = src.units;
-        dst.sheet = src.sheet.clone();
+        dst.presentation = src.presentation.clone();
     }
     let mut made = Vec::new();
     // a face family's running numbers, before any contact pinned to one is added (#243 L1)

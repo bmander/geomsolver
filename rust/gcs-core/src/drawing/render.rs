@@ -164,25 +164,32 @@ pub fn render(doc: &Document, models: &BTreeMap<String, Model<'_>>, sheet: Optio
         // The existing sketch/callout painters take presentation on a Sketch. Adapt a private
         // snapshot; the model passed to us stays immutable, even when two drawings disagree.
         let mut sk = model.sketch.clone();
-        sk.derived.clear(); sk.placements.clear(); sk.sheet.clear();
-        sk.sheet.insert("point".into(), Style { display: Some(Display::None), ..Style::default() });
-        sk.sheet.insert("construction".into(), Style { display: Some(Display::None), ..Style::default() });
-        sk.sheet.insert("plane".into(), Style { display: Some(Display::None), ..Style::default() });
-        sk.sheet.insert("_svd_unselected".into(), Style { display: Some(Display::None), ..Style::default() });
+        sk.derived.clear(); sk.placements.clear();
+        let mut sheet = crate::style::Sheet::new();
+        sheet.insert("point".into(), Style { display: Some(Display::None), ..Style::default() });
+        sheet.insert("construction".into(), Style { display: Some(Display::None), ..Style::default() });
+        sheet.insert("plane".into(), Style { display: Some(Display::None), ..Style::default() });
+        sheet.insert("_svd_unselected".into(), Style { display: Some(Display::None), ..Style::default() });
         for r in &rules {
             if let Some(class) = r.selector.strip_prefix('.') {
-                sk.sheet.entry(class.into()).or_default().over(&r.style);
+                sheet.entry(class.into()).or_default().over(&r.style);
             }
         }
-        let mut point_styles = BTreeMap::<EntRef, Style>::new();
+        // the whole sheet before any entity is styled by it; a point never carries `_svd…`
+        let mut named = Vec::new();
         for (i, r) in rules.iter().enumerate().filter(|(_, r)| !r.selector.starts_with('.')) {
             let (owner, selector, _) = split(&r.selector, models, r.span)?;
             if owner != alias { continue }
             let class = format!("_svd{i}");
-            sk.sheet.insert(class.clone(), r.style.clone());
+            sheet.insert(class.clone(), r.style.clone());
+            named.push((class, selector, &r.style));
+        }
+        sk.set_sheet(sheet);
+        let mut point_styles = BTreeMap::<EntRef, Style>::new();
+        for (class, selector, style) in named {
             for e in entities(model, selector) {
                 if e.kind == EntKind::Point {
-                    point_styles.entry(e).or_insert_with(|| sk.style_of(e)).over(&r.style);
+                    point_styles.entry(e).or_insert_with(|| sk.style_of(e)).over(style);
                 } else { sk.set_class(e, &class, true); }
             }
         }
@@ -221,7 +228,7 @@ pub fn render(doc: &Document, models: &BTreeMap<String, Model<'_>>, sheet: Optio
                     let mut classes = Classes::one(if stroke.hidden { "hidden" } else { "visible" });
                     if cut.is_some() && !stroke.hidden { classes.0.push("section".into()); }
                     classes.0.extend(sk.class_of(e).0);
-                    let style = crate::style::resolve(&sk.sheet, &classes);
+                    let style = crate::style::resolve(sk.sheet(), &classes);
                     if !style.shown() { continue }
                     let pts: Vec<_> = stroke.pts.into_iter().map(|p| { let p = at(p); format!("{},{}", n(p.0), n(p.1)) }).collect();
                     out.push_str(&format!("<polyline data-path=\"{}\" points=\"{}\" stroke=\"{}\" stroke-width=\"{}\"",

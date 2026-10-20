@@ -1,10 +1,11 @@
 //! The few words and types the model shares with the language, defined below both.
 //!
-//! A bound's direction (`Cmp`), a body word (`BodyWord`), where a statement was written (`Span`)
-//! and the spelling helpers every message uses (`num`, `snake`, `one_of`) are read by the model,
-//! the constraints and the solids as much as by the parser.  They live here, depending on
-//! nothing, so the solver does not import the parser to name them; `syntax` re-exports each, and
-//! the language reads them there.
+//! A bound's direction (`Cmp`), a body word (`BodyWord`), where a statement was written (`Span`),
+//! the classes a declaration carries (`Classes`) and the spelling helpers every message uses
+//! (`num`, `snake`, `one_of`) are read by the model, the constraints and the solids as much as by
+//! the parser.  They live here, depending on nothing, so the solver does not import the parser to
+//! name them; `syntax` re-exports each (`style` re-exports `Classes`), and the language reads them
+//! there.
 
 /// A half-open byte range into the program text.
 ///
@@ -157,6 +158,41 @@ pub fn one_of(words: &[&str]) -> String {
         [rest @ .., last] => {
             let head: Vec<String> = rest.iter().map(|w| format!("`{w}`")).collect();
             format!("{} or `{last}`", head.join(", "))
+        }
+    }
+}
+
+/// The classes a declaration carries, in the order they were written: `class centerline heavy`.
+///
+/// Several, because one costs nothing now and forecloses nothing: on a conflicting property the
+/// later class wins, so `class centerline heavy` is a centreline drawn thick.
+///
+/// **Tags, to the model** (#409, step 5).  An entity and a constraint carry their classes as
+/// names and nothing else: what a class looks like is the sheet's (`style::Sheet`), resolved by
+/// `style`, and nothing that solves, diagnoses or decomposes reads one.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Classes(pub Vec<String>);
+
+impl Classes {
+    pub fn one(name: &str) -> Classes {
+        Classes(vec![name.to_string()])
+    }
+
+    pub fn has(&self, name: &str) -> bool {
+        self.0.iter().any(|c| c == name)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// Add or remove one class, keeping the order of the rest — which is what decides a
+    /// conflicting property, so a toggle must not reshuffle them.
+    pub fn set(&mut self, name: &str, on: bool) {
+        match (on, self.has(name)) {
+            (true, false) => self.0.push(name.to_string()),
+            (false, true) => self.0.retain(|c| c != name),
+            _ => {}
         }
     }
 }

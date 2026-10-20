@@ -23,10 +23,8 @@ const LANGUAGE: &[&str] = &[
 ];
 
 /// The edges still standing, as (file under `src/`, language module, how many paths name it).
-/// Presentation on the model is step 5; solids on the solve path, step 6.
+/// Solids on the solve path are step 6.
 const ALLOWED: &[(&str, &str, usize)] = &[
-    ("constraints/constraint.rs", "style", 1),
-    ("model.rs", "style", 7),
     ("model/solid_eval.rs", "overview", 1),
 ];
 

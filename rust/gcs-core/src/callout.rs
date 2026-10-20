@@ -302,7 +302,7 @@ pub fn style_of(sk: &Sketch, c: &crate::constraints::Constraint) -> crate::style
         classes.0.push("reference".to_string());
     }
     classes.0.extend(c.class.0.iter().cloned());
-    crate::style::resolve(&sk.sheet, &classes)
+    crate::style::resolve(sk.sheet(), &classes)
 }
 
 /// The drafting figure for every dimensioned constraint in the sketch, in world coordinates.

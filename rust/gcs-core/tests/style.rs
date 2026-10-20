@@ -65,6 +65,27 @@ fn overriding_a_class_changes_only_how_it_draws() {
     assert_eq!(s.color.as_deref(), Some("#888888"));
 }
 
+/// **The sheet rides on the sketch, held by the model and read only here** (#409, step 5): the
+/// rebuild walk keeps it, a copy shares it, and replacing it on one copy leaves the other as it
+/// was — `model::Annex` is replaced whole, never written through.
+#[test]
+fn the_sheet_rides_the_rebuild_and_a_copy_keeps_its_own() {
+    let sk = read(&format!("style .construction {{ dash: 2 2 }}\n{PLAIN}"));
+    let l = EntRef::new(EntKind::Line, 0);
+    let rebuilt = gcs_core::graft::copy(&sk, &sk.primitives());
+    assert_eq!(rebuilt.sheet(), sk.sheet());
+    assert_eq!(rebuilt.style_of(l).dash, Some(vec![2.0, 2.0]));
+
+    let mut other = sk.clone();
+    let epoch = other.style_epoch;
+    other.set_sheet(Default::default());
+    assert!(other.sheet().is_empty());
+    assert_ne!(other.style_epoch, epoch, "a new sheet is a new epoch");
+    assert_eq!(other.style_of(l).dash, Some(vec![7.0, 4.0]), "the base sheet is still under it");
+    assert_eq!(sk.style_of(l).dash, Some(vec![2.0, 2.0]), "the original keeps its own");
+    assert!(Sketch::new().sheet().is_empty(), "no sheet until elaboration sets one");
+}
+
 /// Several classes cascade, later over earlier, and only on the properties the later one states.
 #[test]
 fn a_later_class_wins_only_what_it_says() {

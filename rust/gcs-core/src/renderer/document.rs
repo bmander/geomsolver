@@ -96,7 +96,7 @@ pub fn layout_with_stats(sk: &Sketch, unit: f64) -> (Vec<Drawn>, RenderStats) {
                 path: s.path,
                 hidden: s.hidden,
                 silhouette: s.silhouette,
-                style: crate::style::resolve(&sk.sheet, &class),
+                style: crate::style::resolve(sk.sheet(), &class),
                 pts: s.pts,
             });
         }

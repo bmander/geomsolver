@@ -425,7 +425,7 @@ fn a_face_written_with_its_corners_is_the_face_written_with_its_edges() {
         .sketch
         .lines
         .iter()
-        .filter(|l| !gcs_core::style::resolve(&short.sketch.sheet, &l.class).shown())
+        .filter(|l| !gcs_core::style::resolve(short.sketch.sheet(), &l.class).shown())
         .count();
     assert_eq!(hidden, 2, "a minted run is not on the sheet");
     // a face of the solid is named for each, so the report can still spell every face

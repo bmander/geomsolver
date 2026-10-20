@@ -26,10 +26,15 @@ Currently: **Stage 5 done, and Stage 7a/7b — solids**, in **one** implementati
   `constraints`, `kernels`, `system`, `newton`, `linalg`, `sparse`, `graph`, `cgraph`,
   `diagnose`, `decompose`, `witness`, `solve`, `homotopy`, `rng`, `fmath`, `graft`, `vocab`)
   names a *language* module (`syntax`, `flatten`, `program`, `modules`, `edit`, `style`,
-  `library`, `examples`, `overview`, `callout`, `svg`, `drawing`, `report`, `io`).  The edges
-  still standing — the style sheet and classes on the model and its constraints, and solid
-  evaluation's call into `overview` — are listed there as a ratchet: a new edge fails the gate,
-  and so does a removed one still listed, so the list only shrinks.
+  `library`, `examples`, `overview`, `callout`, `svg`, `drawing`, `report`, `io`).  The edge
+  still standing — solid evaluation's call into `overview` — is listed there as a ratchet: a
+  new edge fails the gate, and so does a removed one still listed, so the list only shrinks.
+  **Presentation rides on the model as tags and an annex** (#409, step 5): an entity and a
+  constraint carry their classes as names (`vocab::Classes`, re-exported by `style`), which
+  nothing that solves reads; the document's sheet is on the sketch as `Sketch::presentation`, a
+  `model::Annex` the model clones and grafts and never reads, and `style` alone puts it there and
+  resolves it (`Sketch::sheet`, `set_sheet`, `style_of`, `style_named` are an `impl Sketch` in
+  `style.rs`).  The sketch stays the one document a handle names, so the ABI is unchanged.
 * **ABI** (`rust/gcs-ffi/`): one flat C ABI over the core, built twice — a self-contained
   `wasm32-unknown-unknown` module and a native `cdylib`, where the *panic boundary* is checked
   (`gcs-ffi/tests/panic_boundary.rs`): `guard`'s `catch_unwind` only catches on native (wasm

@@ -9,38 +9,10 @@
 //! already follows for everything drawn at a constant size (callout figures go through `unit`
 //! for the same reason).  A dashed line does not change its dash pattern when you zoom.
 
+use crate::model::{EntRef, Sketch};
 use std::collections::BTreeMap;
 
-/// The classes a declaration carries, in the order they were written: `class centerline heavy`.
-///
-/// Several, because one costs nothing now and forecloses nothing: on a conflicting property the
-/// later class wins, so `class centerline heavy` is a centreline drawn thick.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct Classes(pub Vec<String>);
-
-impl Classes {
-    pub fn one(name: &str) -> Classes {
-        Classes(vec![name.to_string()])
-    }
-
-    pub fn has(&self, name: &str) -> bool {
-        self.0.iter().any(|c| c == name)
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-
-    /// Add or remove one class, keeping the order of the rest — which is what decides a
-    /// conflicting property, so a toggle must not reshuffle them.
-    pub fn set(&mut self, name: &str, on: bool) {
-        match (on, self.has(name)) {
-            (true, false) => self.0.push(name.to_string()),
-            (false, true) => self.0.retain(|c| c != name),
-            _ => {}
-        }
-    }
-}
+pub use crate::vocab::Classes;
 
 /// What a class looks like.
 ///
@@ -264,4 +236,47 @@ pub fn resolve(sheet: &Sheet, classes: &Classes) -> Style {
         }
     }
     out
+}
+
+/// A sketch's sheet, kept on it as its `presentation` (`model::Annex`).  The model carries the
+/// sheet and never reads it; what it is, how it is written and how a class list is resolved
+/// against it are this module's (#409, step 5).
+impl Sketch {
+    /// The document's sheet: what each class looks like.  Empty until elaboration sets one.
+    pub fn sheet(&self) -> &Sheet {
+        static EMPTY: Sheet = Sheet::new();
+        self.presentation.get::<Sheet>().unwrap_or(&EMPTY)
+    }
+
+    /// The whole sheet, replaced.  Elaboration's write path, and the other half of the epoch.
+    pub fn set_sheet(&mut self, sheet: Sheet) {
+        self.presentation.set(sheet);
+        self.style_epoch = self.style_epoch.wrapping_add(1);
+    }
+
+    /// What an entity is drawn with: the base sheet under the document's, cascaded over its
+    /// classes.  **The core resolves; a front end strokes what it is handed** — the same seam
+    /// `callout.rs` and `curve::tessellate` sit on, so every front end draws one drawing alike.
+    pub fn style_of(&self, e: EntRef) -> Style {
+        // a kind may carry a class it was never given — a plane's datum glyph is `.plane` —
+        // under whatever the declaration says, so the document's rule still wins
+        let mut classes = self.class_of(e);
+        if let Some(c) = e.kind.implicit_class() {
+            classes.0.insert(0, c.to_string());
+        }
+        resolve(self.sheet(), &classes)
+    }
+
+    /// What a *named* class list comes to, spelled as a declaration spells one: `"dimension"`,
+    /// or `"dimension reference"`.  The drawing's chrome asks this — a dimension callout is not
+    /// an entity and carries no class of its own, but its ink is shared by every callout in the
+    /// document, which is exactly what a class is for.
+    ///
+    /// A list rather than one name because a claimed dimension *is* a dimension: it takes the
+    /// shared rule and then the one that says how it differs, which is how a caller gets a
+    /// document's `style .dimension` on a reference dimension too.
+    pub fn style_named(&self, classes: &str) -> Style {
+        let list = Classes(classes.split_whitespace().map(str::to_string).collect());
+        resolve(self.sheet(), &list)
+    }
 }

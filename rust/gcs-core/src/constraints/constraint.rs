@@ -28,7 +28,7 @@ pub struct Constraint {
     /// `.dimension`, and `display: none` on one leaves the callout out of the layout altogether.
     /// Presentation: nothing that solves, diagnoses or decomposes reads it, and `same_constraint`
     /// does not compare it.
-    pub class: crate::style::Classes,
+    pub class: crate::vocab::Classes,
     /// Its dimension **as the statement wrote it**, where that is not the text the number is
     /// worked out from: `l1 distance(w) r2` under `w := 100` reaches the sketch as `100`,
     /// since the flattener settles a `param` to its number, and the callout draws `w`.  Set by
