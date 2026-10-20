@@ -237,6 +237,14 @@ version ([0.n], see the [language changelog](../solvent-changelog.md)) says wher
 - `solve::Drag` is the one point-drag implementation (pull + polish), `RadiusDrag` its scalar
   counterpart for circle/arc radii (a `Radius` with `soft` set — its residual is already
   r − target, so no kernel of its own); the front end only translates coordinates.
+  `solve::TurnDrag` turns a body whole (a shift-drag): no soft row pulls a plane's attitude, so
+  every free number the body carries is **put** where the rigid turn of its start puts it — a
+  point's place, a frame's `o`, an axis's `d` and the foot `a` of the turned line — and the hard
+  rows polished alone, the turn taken in steps of at most `TURN_STEP`.  It turns in space when a
+  frame, an axis or a point in space is in the body (about the eye's up and right, `turn_seen`),
+  else in the plane its first entity is drawn in (`sweep`, the angle the pointer swept about the
+  pivot); the pivot is the middle of what the body holds, else of all it carries (a lone plane's
+  origin).  `tests/turn.rs` is the gate.
 
 - **Block-triangular solve** ([docs/block-triangular-solve-plan.md](../block-triangular-solve-plan.md)):
   `System::block_order` (memoised per compile) is the DM-matched square part in strongly

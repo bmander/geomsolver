@@ -58,7 +58,7 @@ use gcs_core::newton::{self, Method};
 use gcs_core::program::{self, Elaborated};
 use gcs_core::report;
 use gcs_core::syntax;
-use gcs_core::solve::{Drag, RadiusDrag, SolveOpts, SolveResult, Triangle};
+use gcs_core::solve::{Drag, RadiusDrag, SolveOpts, SolveResult, Triangle, TurnDrag, Turning};
 use gcs_core::system::System;
 use gcs_core::{examples, fdcheck, kernels, linalg, witness};
 use std::alloc::{alloc, dealloc, Layout};

@@ -9,7 +9,7 @@ import { Scrub } from '../core/parameters.js';
 import {
   Arc, Circle, Param, Plane, Point, Primitive, Spline,
 } from '../core/model.js';
-import { RadiusDrag } from '../core/system.js';
+import { RadiusDrag, TurnDrag } from '../core/system.js';
 import { overlappingSeen } from '../core/workspace.js';
 import type { View } from '../core/workspace.js';
 import { moveDimension, placeDimension } from './dimension.js';
@@ -408,8 +408,8 @@ function selectPress(v: SketchView, e: PointerEvent, sp: [number, number]): void
     v.selected = toggled(v.selected, ent, e.shiftKey);
     v.gesture = bandGesture(v, sp, base);
   } else if (e.shiftKey) {
-    // assigned, never grown in place: the setter is where the other selections are let go
-    v.selected = toggled(v.selected, ent, true);
+    // a shift-click toggles it in the selection; a shift-drag turns the body
+    v.gesture = toggleOrTurn(v, sp, ent);
   } else {
     if (!v.selected.includes(ent)) v.selected = [ent];
     dragEntity(v, sp, ent);
@@ -609,6 +609,81 @@ export function orbitGesture(v: SketchView, from: [number, number]): Gesture {
       };
       last = sp;
     },
+  };
+}
+
+/** How far the pointer goes before a shift-press on a figure is a turn rather than a click. */
+const TURN_SLOP_PX = 3;
+
+/** **A shift-press on a figure**: let go where it was pressed, it is a click, toggling the figure
+ *  in the selection; moved, it **turns the body** — the selection, where the figure is in it,
+ *  else the figure alone, taken as the selection.  The core says where it turns (`TurnDrag`): in
+ *  the plane it is drawn in, about its middle as the pointer sweeps round it; or, with a plane,
+ *  a frame, an axis or a point in space in it, in space, about its middle (a lone plane's own
+ *  origin) as a ball held there is pushed round — the way an unconstrained plane is stood where
+ *  it is wanted. */
+function toggleOrTurn(v: SketchView, from: [number, number], ent: Primitive): Gesture {
+  let turn: Gesture | null = null;
+  return {
+    move: (sp, mods) => {
+      if (!turn) {
+        if (Math.hypot(sp[0] - from[0], sp[1] - from[1]) < TURN_SLOP_PX) return;
+        if (!v.selected.includes(ent)) {
+          v.selected = [ent];
+          v.onSelect();
+        }
+        const body = [ent, ...v.selected.filter((e) => e !== ent)];
+        turn = turnGesture(v, body, from) ?? { transient: true, move: () => {} };
+      }
+      turn.move(sp, mods);
+    },
+    end: () => {
+      if (turn) {
+        turn.end?.();
+        return;
+      }
+      // assigned, never grown in place: the setter is where the other selections are let go
+      v.selected = toggled(v.selected, ent, true);
+      v.onSelect();
+    },
+    abandon: () => turn?.abandon?.(),
+    get movedGeometry() { return !!turn?.movedGeometry; },
+  };
+}
+
+/** Turn `body` as the pointer moves from `from`, or `null` — said on the status line — where
+ *  nothing of it is free to turn or the plane it turns in is seen edge on. */
+function turnGesture(v: SketchView, body: Primitive[], from: [number, number]): Gesture | null {
+  const drag = new TurnDrag(v.sketch, body);
+  if (!drag.carries) {
+    drag.end();
+    v.onStatus('nothing there is free to turn');
+    return null;
+  }
+  if (!drag.inSpace && !readable(v, drag.plane)) {
+    drag.end();
+    return null;
+  }
+  v.pushUndo();
+  let last = from;
+  let at = drag.inSpace ? from : v.s2wIn(drag.plane, ...from);
+  return {
+    movedGeometry: true,
+    move: (sp) => {
+      if (drag.inSpace) {
+        // pushed round as the workspace is orbited, the pointer's pixels turning it alike
+        v.lastResult = drag.turnSeen(v.orbit, (sp[0] - last[0]) * ORBIT_PER_PX,
+                                     (sp[1] - last[1]) * ORBIT_PER_PX);
+      } else {
+        const to = v.s2wIn(drag.plane, ...sp);
+        v.lastResult = drag.sweep(at, to);
+        at = to;
+      }
+      last = sp;
+      v.onDragFrame();
+    },
+    end: () => drag.end(),
+    abandon: () => drag.end(),
   };
 }
 

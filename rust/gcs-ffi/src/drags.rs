@@ -1,4 +1,4 @@
-//! Drags: a point, a radius, and a plan's.
+//! Drags: a point, a radius, a plan's, and a body turned whole.
 
 use super::*;
 
@@ -131,6 +131,85 @@ pub unsafe extern "C" fn gcs_radius_drag_end(d: *mut RadiusDrag, h: *mut Sketch)
 
 #[no_mangle]
 pub unsafe extern "C" fn gcs_radius_drag_free(d: *mut RadiusDrag) {
+    guard((), move || {
+        if !d.is_null() {
+            drop(Box::from_raw(d));
+        }
+    })
+}
+
+/// **A body turned whole** (a shift-drag): `body` is `n` (kind id, index) pairs, the selection.
+/// It turns in space or in a plane, which `gcs_turn_drag_plane` says.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_turn_drag_new(h: *mut Sketch, body: *const i32, n: i32) -> *mut TurnDrag {
+    guard(std::ptr::null_mut(), move || {
+        let ents: Vec<EntRef> = if body.is_null() || n <= 0 {
+            Vec::new()
+        } else {
+            let v = std::slice::from_raw_parts(body, 2 * n as usize);
+            v.chunks(2).map(|kv| ent(kv[0], kv[1])).collect()
+        };
+        Box::into_raw(Box::new(TurnDrag::new(sk(h), &ents)))
+    })
+}
+
+/// Where the body turns: -2 in space, -1 on a 2D sketch's page, else the plane it is drawn in.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_turn_drag_plane(d: *mut TurnDrag) -> i32 {
+    guard(-3, move || match (*d).turning {
+        Turning::InSpace => -2,
+        Turning::InPlane(p) => p.map_or(-1, |p| p as i32),
+    })
+}
+
+/// How many free numbers the turn carries: 0, and it can turn nothing.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_turn_drag_carries(d: *mut TurnDrag, h: *mut Sketch) -> i32 {
+    guard(0, move || (*d).carries(sk(h)) as i32)
+}
+
+/// Turned on in its plane by the angle the pointer swept about the pivot from (`fx`, `fy`) to
+/// (`tx`, `ty`), both on the plane's page.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn gcs_turn_drag_sweep(
+    d: *mut TurnDrag,
+    h: *mut Sketch,
+    fx: f64,
+    fy: f64,
+    tx: f64,
+    ty: f64,
+    out: *mut f64,
+) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        let r = (*d).sweep(sk(h), (fx, fy), (tx, ty));
+        write_result(&r, out);
+        out_str(r.message)
+    })
+}
+
+/// Turned on in space, seen by the eye at bearing `az` and elevation `el` (radians): `across`
+/// radians about the eye's up, `down` about its right.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn gcs_turn_drag_seen(
+    d: *mut TurnDrag,
+    h: *mut Sketch,
+    az: f64,
+    el: f64,
+    across: f64,
+    down: f64,
+    out: *mut f64,
+) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        let r = (*d).turn_seen(sk(h), (az, el), across, down);
+        write_result(&r, out);
+        out_str(r.message)
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn gcs_turn_drag_free(d: *mut TurnDrag) {
     guard((), move || {
         if !d.is_null() {
             drop(Box::from_raw(d));

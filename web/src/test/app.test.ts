@@ -2124,6 +2124,86 @@ test('a plane is picked by its pane\'s frame and dragged where the eye sees it, 
   assert.equal(view.plane, plane());
 });
 
+test('a shift-drag on a free plane\'s frame turns it in space about its origin, written back',
+     () => {
+  const view = docView(DATUMS);
+  view.choosePlane('std.front');
+  view.selected = [];
+  assert.ok(view.addDatum('plane'));
+  view.selected = [];
+  view.orbit = { az: 0.6, el: 0.5 };
+  const plane = (): Plane => view.doc.entity('v0') as Plane;
+  const pane = overview3(view.sketch, 0, 'datums')
+    .find((i) => i.part === 'face' && i.kind === 'plane' && i.index === plane().index)!;
+  const on = seenAt(view, pane.pts[2]);
+  const before = view.source;
+  const { u, v, o } = plane().frame3;
+  const cv = canvasOf(view);
+  cv.fire('pointerdown', pointer(...on, { shiftKey: true }));
+  for (let k = 1; k <= 6; k++) cv.fire('pointermove', pointer(on[0] + 10 * k, on[1], { shiftKey: true }));
+  cv.fire('pointerup', pointer(on[0] + 60, on[1], { shiftKey: true }));
+  assert.deepEqual(view.selected, [plane()], 'the plane turned is the selection');
+  assert.notEqual(view.source, before, 'the turn is written back as the plane\'s seeds');
+  const now = plane().frame3;
+  assert.ok(o.every((x, k) => Math.abs(x - now.o[k]) < 1e-6), `moved: ${o} to ${now.o}`);
+  // sixty pixels to the right: about the eye's up, by what an orbit that far turns
+  const { up } = eyeFrame(view.orbit.az, view.orbit.el);
+  const t = 60 * 0.008;
+  const turned = (a: number[]): number[] => {
+    const kxa = [up[1] * a[2] - up[2] * a[1], up[2] * a[0] - up[0] * a[2], up[0] * a[1] - up[1] * a[0]];
+    const ka = up[0] * a[0] + up[1] * a[1] + up[2] * a[2];
+    return a.map((x, k) => x * Math.cos(t) + kxa[k] * Math.sin(t) + up[k] * ka * (1 - Math.cos(t)));
+  };
+  for (const [a, b] of [[u, now.u], [v, now.v]]) {
+    const want = turned(a);
+    assert.ok(want.every((x, k) => Math.abs(x - b[k]) < 1e-6), `${b}, not ${want}`);
+  }
+  // and the text reads back to the attitude it was left at
+  const back = Document.read(view.source);
+  const again = (back.entity('v0') as Plane).frame3;
+  assert.ok(now.u.every((x, k) => Math.abs(x - again.u[k]) < 1e-6), `${again.u}`);
+});
+
+test('a shift-drag on a figure turns it in its plane about its middle; a shift-click toggles it',
+     () => {
+  const view = docView(`use std
+in std.front {
+a := point hint((0, 0))
+b := point hint((20, 0))
+l := line(a, b)
+c := point hint((0, 30))
+}
+`);
+  const [a, b, l, c] = ['a', 'b', 'l', 'c'].map((n) => view.doc.entity(n)!);
+  const cv = canvasOf(view);
+  const at = (x: number, z: number): [number, number] => seenAt(view, [x, 0, z]);
+  // a shift-click toggles, and a press that strays less than a few pixels is still a click
+  cv.fire('pointerdown', pointer(...at(0, 30), { shiftKey: true }));
+  cv.fire('pointerup', pointer(...at(0, 30), { shiftKey: true }));
+  assert.deepEqual(view.selected, [c]);
+  const p = at(5, 0);
+  cv.fire('pointerdown', pointer(...p, { shiftKey: true }));
+  cv.fire('pointermove', pointer(p[0] + 1, p[1], { shiftKey: true }));
+  cv.fire('pointerup', pointer(p[0] + 1, p[1], { shiftKey: true }));
+  assert.deepEqual(view.selected, [c, l]);
+  const before = view.source;
+  // a shift-drag on the line, not in the selection with it, turns it alone: the pointer swept a
+  // quarter clockwise round its middle, (10, 0)
+  view.selected = [];
+  cv.fire('pointerdown', pointer(...p, { shiftKey: true }));
+  for (let k = 1; k <= 12; k++) {
+    const s = Math.PI * (1 - k / 24);
+    cv.fire('pointermove', pointer(...at(10 + 5 * Math.cos(s), 5 * Math.sin(s)), { shiftKey: true }));
+  }
+  cv.fire('pointerup', pointer(...at(10, 5), { shiftKey: true }));
+  assert.deepEqual(view.selected, [l]);
+  const [pa, pb] = [a, b].map((e) => (e as Point).xy);
+  assert.ok(Math.hypot(pa[0] - 10, pa[1] - 10) < 1e-6, `a at ${pa}`);
+  assert.ok(Math.hypot(pb[0] - 10, pb[1] + 10) < 1e-6, `b at ${pb}`);
+  assert.deepEqual((c as Point).xy, [0, 30], 'what was not turned stays');
+  assert.notEqual(view.source, before, 'the turn is written back');
+});
+
 /* -- extrude (#162 F2) ------------------------------------------------------------------- */
 
 /** On the front: a 60 × 40 rectangle `ab…da` swept 5 behind as `block`, a circle `hole` inside it
