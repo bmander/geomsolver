@@ -456,8 +456,17 @@ dialog input[type=search] {
 .outline-eye .faint { opacity: .3; }
 .outline-eye[data-state="shut"] { opacity: .6; }
 .outline-eye:hover { color: var(--accent); }
-.outline-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+.outline-label { flex: 1; min-width: 0; display: flex; align-items: center; gap: 5px;
   text-align: left; padding: 3px 2px !important; }
+.outline-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* what the row is — a point, a line, a plane, an object, an instance — drawn in the tree's ink */
+.outline-icon { flex: none; width: var(--tree-icon); height: var(--tree-icon); color: var(--muted); }
+.outline-row[aria-current] .outline-icon, .outline-row:hover .outline-icon { color: inherit; }
+.outline-icon path { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round;
+  stroke-linejoin: round; }
+.outline-icon .fill { fill: currentColor; stroke: none; }
+.outline-icon .tint { fill: currentColor; fill-opacity: .25; }
+.outline-icon .dots { stroke-width: 2.5; stroke-dasharray: 0 4; }
 .outline-label.kind-instance, .outline-label.kind-block, .outline-label.kind-datums {
   color: var(--muted); }
 .outline-source { flex: none; visibility: hidden; color: var(--muted); }

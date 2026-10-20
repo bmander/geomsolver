@@ -11,6 +11,7 @@ import type { Primitive } from '../core/model.js';
 import {
   frameRow, isHidden, rowKey, selectRow, selectionRow, setRowHidden, walk,
 } from '../app/hidden.js';
+import { iconOf } from '../app/outline.js';
 import type { SketchView } from '../app/view.js';
 import { initCore } from '../core/wasm.js';
 import { docView } from './views.js';
@@ -60,6 +61,16 @@ test('the outline lists the document as it is written, std last', (t) => {
   assert.ok(pin.span);
   assert.equal(v.source.slice(pin.span.lo, pin.span.hi), 'pin := Pin(hub)');
   assert.equal(rows[9].span, undefined, "std's datums are not the document's to go to");
+});
+
+test('each row is drawn with an icon of what it is', (t) => {
+  const v = docView(DOC);
+  t.after(() => v.doc.dispose());
+  assert.deepEqual(v.outline().map(iconOf),
+    ['point', 'block', 'instance', 'point', 'circle', 'circle', 'line', 'line', 'solid', 'datums']);
+  assert.equal(iconOf(row(v, 'pin.arm')), 'line');
+  const std = v.outline()[9];
+  assert.ok(std.children.some((r) => iconOf(r) === 'plane'), 'a datum plane is a plane');
 });
 
 test('a hidden member stays hidden by path across an edit and its undo', (t) => {
