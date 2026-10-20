@@ -202,7 +202,18 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   keeps the depth the drag took hold at, so it is not slid along the line of sight, while a point
   held to a line or a sphere still slides.  The seeds land in `hint(origin: …)`.  Gates:
   `a_plane_follows_the_pointer_by_its_origin_where_the_eye_sees_it` (`tests/drag.rs`),
-  `a_plane_is_picked_by_its_panes_frame` (`tests/workspace.rs`), `app.test.ts`.  **Plane (`n`)
+  `a_plane_is_picked_by_its_panes_frame` (`tests/workspace.rs`), `app.test.ts`.  **A shift-drag
+  turns the body** (`gesture::toggleOrTurn`, `solve::TurnDrag`): a shift-press on a figure, a
+  point or a plane's frame let go within `TURN_SLOP_PX` is the click that toggles it in the
+  selection; moved, it turns the selection (the figure alone, selected, where it was not in it)
+  rigidly — in the plane it is drawn in, as the pointer sweeps round its middle, or, with a
+  plane, a frame, an axis or a point in space in it, in space, pushed round as the workspace is
+  orbited (`ORBIT_PER_PX` about the eye's up and right) about its middle or a lone plane's
+  origin.  What is drawn on a turned plane goes with it; the seeds land as a drag's do (a plane's
+  in `u: hint(dir: …)`, `v: hint(dir: …)`).  Shift is asked before whether a plane can be
+  dragged, so a plane held at its origin still turns there; on the frame of a plane nothing of
+  which turns, a shift-press that moves is the band (the plane toggled in its base), and on
+  anything else that cannot turn, the status line says so.  **Plane (`n`)
   and Axis (`x`) are buttons that drop a datum at once** (`SketchView.addDatum` →
   `edit::add_datum`, one checked splice): free with nothing selected (set off the plane being
   drawn on), else

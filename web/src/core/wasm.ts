@@ -352,6 +352,14 @@ export interface Abi {
   gcs_radius_drag_move(d: number, h: number, r: number, out: number): number;
   gcs_radius_drag_end(d: number, h: number): void;
   gcs_radius_drag_free(d: number): void;
+  gcs_turn_drag_new(h: number, body: number, len: number): number;
+  gcs_turn_drag_plane(d: number): number;
+  gcs_turn_drag_carries(d: number): number;
+  gcs_turn_drag_sweep(d: number, h: number, fx: number, fy: number, tx: number, ty: number,
+                      out: number): number;
+  gcs_turn_drag_seen(d: number, h: number, az: number, el: number, across: number, down: number,
+                     out: number): number;
+  gcs_turn_drag_free(d: number): void;
   gcs_plan_drag_new(h: number, ps: number, point: number, x: number, y: number, guards: number,
                     nGuards: number, maxStepRel: number): number;
   gcs_plan_drag_seen(h: number, ps: number, point: number, x: number, y: number, az: number,

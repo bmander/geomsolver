@@ -6,7 +6,8 @@
  */
 import { Constraint } from './constraints.js';
 import { Arc, Circle, KIND_ID, Point, Sketch } from './model.js';
-import { core, takeJson, takeStr, withBuf } from './wasm.js';
+import type { Primitive } from './model.js';
+import { core, takeJson, takeStr, withBuf, withJson } from './wasm.js';
 
 export type Method = 'dogleg' | 'lm';
 export const METHODS: Method[] = ['dogleg', 'lm'];
@@ -368,6 +369,58 @@ export class RadiusDrag {
     core().gcs_radius_drag_end(this.handle, this.sketch.handle);
     this.sketch.touch();
     core().gcs_radius_drag_free(this.handle);
+    this.handle = 0;
+  }
+}
+
+/** **A body turned whole** (a shift-drag): the selection rotated rigidly about its pivot — the
+ *  middle of what it holds, else of all it carries — then polished, as a drag's hard rows are.
+ *  The core says where it turns: in space when a plane, a frame, an axis or a point in space is
+ *  in it (`inSpace`), else in the plane its points are drawn in (`plane`, -1 a 2D sketch's
+ *  page). */
+export class TurnDrag {
+  private handle: number;
+  active = true;
+  readonly inSpace: boolean;
+  readonly plane: number;
+  /** How many free numbers it carries: none, and it turns nothing. */
+  readonly carries: number;
+
+  constructor(readonly sketch: Sketch, body: Primitive[]) {
+    this.handle = withJson(body.map((e) => e.ref),
+                           (p, n) => core().gcs_turn_drag_new(sketch.handle, p, n));
+    const at = core().gcs_turn_drag_plane(this.handle);
+    this.inSpace = at === -2;
+    this.plane = this.inSpace ? -1 : at;
+    this.carries = core().gcs_turn_drag_carries(this.handle);
+  }
+
+  /** Turned on in its plane by the angle the pointer swept about the pivot, `from` to `to` on
+   *  the plane's page. */
+  sweep(from: [number, number], to: [number, number]): SolveResult {
+    const t0 = now();
+    return withBuf(8, 8, (b) => {
+      const msg = takeStr(core().gcs_turn_drag_sweep(this.handle, this.sketch.handle,
+                                                     ...from, ...to, b.ptr));
+      return readResult(b.f64, msg, 'dogleg', t0);
+    });
+  }
+
+  /** Turned on in space as seen by the eye at `eye`: `across` radians about its up (the near
+   *  side swung right), `down` about its right (the near side swung down). */
+  turnSeen(eye: { az: number; el: number }, across: number, down: number): SolveResult {
+    const t0 = now();
+    return withBuf(8, 8, (b) => {
+      const msg = takeStr(core().gcs_turn_drag_seen(this.handle, this.sketch.handle, eye.az,
+                                                    eye.el, across, down, b.ptr));
+      return readResult(b.f64, msg, 'dogleg', t0);
+    });
+  }
+
+  end(): void {
+    if (!this.active) return;
+    this.active = false;
+    core().gcs_turn_drag_free(this.handle);
     this.handle = 0;
   }
 }

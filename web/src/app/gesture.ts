@@ -9,7 +9,7 @@ import { Scrub } from '../core/parameters.js';
 import {
   Arc, Circle, Param, Plane, Point, Primitive, Spline,
 } from '../core/model.js';
-import { RadiusDrag } from '../core/system.js';
+import { RadiusDrag, TurnDrag } from '../core/system.js';
 import { overlappingSeen } from '../core/workspace.js';
 import type { View } from '../core/workspace.js';
 import { moveDimension, placeDimension } from './dimension.js';
@@ -400,16 +400,15 @@ function selectPress(v: SketchView, e: PointerEvent, sp: [number, number]): void
     // clears the selection, because an empty box selects nothing.
     if (!e.shiftKey) v.selected = [];
     v.gesture = bandGesture(v, sp);
+  } else if (e.shiftKey) {
+    // a shift-click toggles it in the selection; a shift-drag turns the body
+    v.gesture = toggleOrTurn(v, sp, ent);
   } else if (ent instanceof Plane && !canMove(v, ent)) {
     // a plane held where it stands is picked by a click on its pane's frame — which runs just
     // outside what is drawn on it, so a press there that moves is the band it would have been
     // on bare canvas, taking what it touches in place of the plane
-    const base = e.shiftKey ? v.selected : [];
-    v.selected = toggled(v.selected, ent, e.shiftKey);
-    v.gesture = bandGesture(v, sp, base);
-  } else if (e.shiftKey) {
-    // assigned, never grown in place: the setter is where the other selections are let go
-    v.selected = toggled(v.selected, ent, true);
+    v.selected = [ent];
+    v.gesture = bandGesture(v, sp, []);
   } else {
     if (!v.selected.includes(ent)) v.selected = [ent];
     dragEntity(v, sp, ent);
@@ -609,6 +608,89 @@ export function orbitGesture(v: SketchView, from: [number, number]): Gesture {
       };
       last = sp;
     },
+  };
+}
+
+/** How far the pointer goes before a shift-press on a figure is a turn rather than a click. */
+const TURN_SLOP_PX = 3;
+
+/** **A shift-press on a figure**: let go where it was pressed, it is a click, toggling the figure
+ *  in the selection; moved, it **turns the body** — the selection, where the figure is in it,
+ *  else the figure alone, taken as the selection.  The core says where it turns (`TurnDrag`): in
+ *  the plane it is drawn in, about its middle as the pointer sweeps round it; or, with a plane,
+ *  a frame, an axis or a point in space in it, in space, about its middle (a lone plane's own
+ *  origin) as a ball held there is pushed round — the way an unconstrained plane is stood where
+ *  it is wanted.  On the frame of a plane nothing of which can turn, a press that moves is the
+ *  band it would have been on bare canvas, the plane toggled in its base. */
+function toggleOrTurn(v: SketchView, from: [number, number], ent: Primitive): Gesture {
+  let g: Gesture | null = null;
+  return {
+    move: (sp) => {
+      if (!g) {
+        if (Math.hypot(sp[0] - from[0], sp[1] - from[1]) < TURN_SLOP_PX) return;
+        g = taken(v, from, ent);
+      }
+      g.move(sp);
+    },
+    end: () => {
+      if (g) {
+        g.end?.();
+        return;
+      }
+      // assigned, never grown in place: the setter is where the other selections are let go
+      v.selected = toggled(v.selected, ent, true);
+      v.onSelect();
+    },
+    abandon: () => g?.abandon?.(),
+    get movedGeometry() { return !!g?.movedGeometry; },
+  };
+}
+
+/** What a shift-press on `ent` that moved takes up: the turn, else a held plane's band, else
+ *  nothing, said why. */
+function taken(v: SketchView, from: [number, number], ent: Primitive): Gesture {
+  const picked = v.selected.includes(ent);
+  const turn = turnGesture(v, picked ? [ent, ...v.selected.filter((e) => e !== ent)] : [ent], from);
+  if (turn) {
+    if (!picked) {
+      v.selected = [ent];
+      v.onSelect();
+    }
+    return turn;
+  }
+  if (ent instanceof Plane) {
+    const base = v.selected;
+    v.selected = toggled(base, ent, true);
+    v.onSelect();
+    return bandGesture(v, from, base);
+  }
+  v.onStatus('nothing there is free to turn');
+  return { transient: true, move: () => {} };
+}
+
+/** Turn `body` as the pointer moves from `from`, or `null` where nothing of it is free to turn
+ *  or the plane it turns in is seen edge on (said so). */
+function turnGesture(v: SketchView, body: Primitive[], from: [number, number]): Gesture | null {
+  const drag = new TurnDrag(v.sketch, body);
+  if (!drag.carries || (!drag.inSpace && !readable(v, drag.plane))) {
+    drag.end();
+    return null;
+  }
+  v.pushUndo();
+  let last = from;
+  return {
+    movedGeometry: true,
+    move: (sp) => {
+      // in space pushed round as the workspace is orbited, the pointer's pixels turning it alike;
+      // in its plane, by the angle the pointer swept round its middle there
+      v.lastResult = drag.inSpace
+        ? drag.turnSeen(v.orbit, (sp[0] - last[0]) * ORBIT_PER_PX, (sp[1] - last[1]) * ORBIT_PER_PX)
+        : drag.sweep(v.s2wIn(drag.plane, ...last), v.s2wIn(drag.plane, ...sp));
+      last = sp;
+      v.onDragFrame();
+    },
+    end: () => drag.end(),
+    abandon: () => drag.end(),
   };
 }
 
