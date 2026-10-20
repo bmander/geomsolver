@@ -855,18 +855,19 @@ fn finish(mut cx: Elab<'_>, flat: &Flat<'_>) -> Elaborated {
     let previewed = |span: crate::syntax::Span| {
         matches!(p.source_at(span.lo as usize), (Some(k), _) if p.modules[k].previewed)
     };
-    // the statements by id, gathered once: a search of the program per constraint is quadratic
-    // in an assembly's instances (#405) — and none at all where no module is previewed
-    let previewing = p.modules.iter().any(|m| m.previewed);
-    let stmts = if previewing { p.stmt_index() } else { BTreeMap::new() };
-    for (&id, site) in cx.map.of_constraint.iter().filter(|_| previewing) {
-        let through = site.path.0.iter().filter_map(|s| match s {
-            crate::ir::PathStep::Instance(st) => stmts.get(st).map(|st| st.span),
-            crate::ir::PathStep::Copy { .. } => None,
-        });
-        if previewed(site.span) || through.into_iter().any(previewed) {
-            if let Some(c) = cx.sk.constraint_mut(id) {
-                c.elsewhere = true;
+    // where each statement is, gathered once: a search of the program per constraint is
+    // quadratic in an assembly's instances (#405) — and nothing to ask where no module is previewed
+    if p.modules.iter().any(|m| m.previewed) {
+        let spans = super::source_map::spans(p);
+        for (&id, site) in &cx.map.of_constraint {
+            let through = site.path.0.iter().filter_map(|s| match s {
+                crate::ir::PathStep::Instance(st) => spans.get(st).copied(),
+                crate::ir::PathStep::Copy { .. } => None,
+            });
+            if previewed(site.span) || through.into_iter().any(previewed) {
+                if let Some(c) = cx.sk.constraint_mut(id) {
+                    c.elsewhere = true;
+                }
             }
         }
     }

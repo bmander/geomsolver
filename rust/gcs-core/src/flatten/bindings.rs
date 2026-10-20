@@ -394,8 +394,8 @@ impl<'a> Walk<'a> {
         self.params(&body, &mut vals, &scope);
         // and only its own go out: a file reaches another module's numbers through a `use` of
         // its own, so passing these on would only lengthen their names at every level
-        vals.retain(|name| !used.contains_key(name));
-        let vals = vals.into_own();
+        let mut vals = vals.into_own();
+        vals.retain(|name, _| !used.contains_key(name));
         if let Some(slot) = self.module_vals.get_mut(k) {
             *slot = Some(vals.clone());
         }

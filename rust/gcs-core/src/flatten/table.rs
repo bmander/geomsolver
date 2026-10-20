@@ -17,9 +17,7 @@ use std::rc::Rc;
 /// seed's view of it (`expand::Seeded`), or a plain map where a caller outside the walk has one.
 pub(crate) trait Table: expr::Env {
     /// Whether `name` has a value here.
-    fn has(&self, name: &str) -> bool {
-        self.value(name).is_some()
-    }
+    fn has(&self, name: &str) -> bool;
     /// Whether some value here is affine in the drawing's unknown `unknown` (a formal left
     /// unbound, a `param` with no value, or one written over either).
     fn binds(&self, unknown: &str) -> bool;
@@ -37,11 +35,16 @@ impl Table for BTreeMap<String, Aff> {
     }
 
     fn under(&self, prefix: &str) -> BTreeMap<String, Aff> {
-        self.range(prefix.to_string()..)
-            .take_while(|(k, _)| k.starts_with(prefix))
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect()
+        prefixed(self, prefix).map(|(k, v)| (k.clone(), v.clone())).collect()
     }
+}
+
+/// The entries of `m` whose names start with `prefix`, in order.
+pub(crate) fn prefixed<'m, V>(m: &'m BTreeMap<String, V>, prefix: &'m str)
+    -> impl Iterator<Item = (&'m String, &'m V)> {
+    use std::ops::Bound;
+    m.range::<str, _>((Bound::Included(prefix), Bound::Unbounded))
+        .take_while(move |(k, _)| k.starts_with(prefix))
 }
 
 /// The numbers in force: a frame of names of its own over the table it was made in.
@@ -120,30 +123,11 @@ impl Vals {
         self.own
     }
 
-    /// This frame's own names, those `keep` refuses taken out.
-    pub(crate) fn retain(&mut self, keep: impl Fn(&str) -> bool) {
-        let gone: Vec<String> = self.own.keys().filter(|k| !keep(k)).cloned().collect();
-        for k in gone {
-            self.forget(&k);
-        }
-    }
-
-    /// Whether `name` is hidden from this frame by one of the `inner` frames standing inside it.
-    fn hidden(inner: &[&Vals], name: &str) -> bool {
-        inner.iter().any(|t| t.own.contains_key(name))
-    }
-
-    /// Whether any value in force is affine in an unknown of the drawing.
+    /// Whether any value in force is affine in an unknown of the drawing: a name some frame
+    /// indexed as one, whose value here — a frame inside may hide it — still is.
     pub(crate) fn any_unknown(&self) -> bool {
-        let mut inner: Vec<&Vals> = Vec::new();
-        for t in self.frames() {
-            let shown = t.unknowns.values().flatten().any(|name| !Vals::hidden(&inner, name));
-            if shown {
-                return true;
-            }
-            inner.push(t);
-        }
-        false
+        self.frames().any(|t| t.unknowns.values().flatten()
+            .any(|name| self.get(name).is_some_and(|v| v.free.is_some())))
     }
 }
 
@@ -159,22 +143,14 @@ impl Table for Vals {
     }
 
     fn binds(&self, unknown: &str) -> bool {
-        let mut inner: Vec<&Vals> = Vec::new();
-        for t in self.frames() {
-            let names = t.unknowns.get(unknown).into_iter().flatten();
-            if names.into_iter().any(|name| !Vals::hidden(&inner, name)) {
-                return true;
-            }
-            inner.push(t);
-        }
-        false
+        self.frames().any(|t| t.unknowns.get(unknown).into_iter().flatten()
+            .any(|name| self.get(name).is_some_and(|v| v.free.as_deref() == Some(unknown))))
     }
 
     fn under(&self, prefix: &str) -> BTreeMap<String, Aff> {
         let mut out = BTreeMap::new();
         for t in self.frames() {
-            let names = t.own.range(prefix.to_string()..).take_while(|(k, _)| k.starts_with(prefix));
-            for (k, v) in names {
+            for (k, v) in prefixed(&t.own, prefix) {
                 out.entry(k.clone()).or_insert_with(|| v.clone());
             }
         }

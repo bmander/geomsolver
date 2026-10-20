@@ -2,7 +2,6 @@
 
 use super::{Chained, Component, InBlock, Span, Stmt, StmtKind, WordDef};
 use crate::constraints::Fixity;
-use std::collections::BTreeMap;
 
 /// How long a program may be.  A document is untrusted input and `wasm32-unknown-unknown` aborts
 /// rather than unwinding, so the size is checked here rather than left to an allocator.
@@ -355,24 +354,6 @@ impl Program {
     /// indexes that module's text and not the document's.
     pub fn document_stmt(&self, id: StmtId) -> Option<&Stmt> {
         Self::stmt_among(self.components.iter().filter(|c| c.module.is_none()), id)
-    }
-
-    /// Every statement `stmt` finds, by its id: built once where a statement is asked for per
-    /// constraint, since each `stmt` is a search of the whole program (#405).
-    pub fn stmt_index(&self) -> BTreeMap<StmtId, &Stmt> {
-        fn walk<'a>(st: &'a Stmt, out: &mut BTreeMap<StmtId, &'a Stmt>) {
-            out.entry(st.id).or_insert(st);
-            match &st.kind {
-                StmtKind::Block(b) => b.stmts().for_each(|inner| walk(inner, out)),
-                StmtKind::ClaimOver(c) => c.body.iter().for_each(|inner| walk(inner, out)),
-                _ => {}
-            }
-        }
-        let mut out = BTreeMap::new();
-        for st in self.components.iter().flat_map(|c| &c.body) {
-            walk(st, &mut out);
-        }
-        out
     }
 
     fn stmt_among<'a>(

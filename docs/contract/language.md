@@ -339,9 +339,10 @@ takes a layout naming the front datum, origin and reference axis.
   unknown is asked of each frame's index of them (`Table::binds`), and a seed reads the table
   through `Seeded`, which answers a free value with where its unknown starts at the moment it
   is asked, where it was a table of every number built per declaration as soon as one was free.
-  `groups` and `sides` are shared as `vals` is.  Outside the walk, the elaborator finds an
-  instance's statement on a constraint's path in an index built once (`Program::stmt_index`),
-  and only where some module is previewed.  `tests/many_instances.rs` holds a free root number
+  `groups` and `sides` are shared as `vals` is, `groups` copied only by a body declaring a group
+  of its own.  Outside the walk, the elaborator reads where an instance on a constraint's path is
+  written from the statements' spans gathered once (`source_map::spans`), asked only where some
+  module is previewed.  `tests/many_instances.rs` holds a free root number
   and a root `repeat` and `when`s beside the plates to the same fourfold bound.
 - **A part is one component carrying `in view { … }` blocks** (Solvent §6.7, `P::in_comp`): the
   block form is allowed inside a component body (the plane is a formal) and still refused inside a

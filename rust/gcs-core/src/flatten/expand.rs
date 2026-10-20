@@ -112,9 +112,10 @@ impl<'a> Walk<'a> {
             StmtKind::Group(g) => Some(g.name.text.clone()),
             _ => None,
         }).collect();
-        let groups = match mine.is_empty() {
-            true => scope.groups.clone(),
-            false => std::rc::Rc::new(scope.groups.iter().cloned().chain(mine).collect()),
+        let groups = if mine.is_empty() {
+            scope.groups.clone()
+        } else {
+            std::rc::Rc::new(scope.groups.iter().cloned().chain(mine).collect())
         };
         let scope = &Scope { vals: std::rc::Rc::new(vals.clone()), groups, ..scope.clone() };
         if depth == 0 {
@@ -1255,25 +1256,24 @@ impl<'a> Walk<'a> {
                 Err(e) => faults.push((w.span, format!("`{t}`: {e}"))),
             }
         }
-        for i in 0..d.seed_text.len() {
-            let Some(t) = d.seed_text[i].take() else { continue };
-            match self.settle_seed(t, &mut d.seed_text[i], vals, scope) {
-                Ok(Some(v)) => d.seed[i] = v,
+        // one seed's text settled into `seed`, or kept, or a mistake to say
+        let mut settle = |text: &mut Option<String>, seed: &mut f64| {
+            let Some(t) = text.take() else { return };
+            match self.settle_seed(t, text, vals, scope) {
+                Ok(Some(v)) => *seed = v,
                 Ok(None) => {}
                 Err(m) => faults.push((span, m)),
             }
+        };
+        for (text, seed) in d.seed_text.iter_mut().zip(d.seed.iter_mut()) {
+            settle(text, seed);
         }
         // a seed in a child slot — `line l(hint((w / 2, 0)), …)` — is the same clause one
         // level down, and is written over the same parameters
         for kid in d.children.iter_mut().flatten() {
             let crate::syntax::Kid::Hint(ks) = kid else { continue };
-            for i in 0..3 {
-                let Some(t) = ks.text[i].take() else { continue };
-                match self.settle_seed(t, &mut ks.text[i], vals, scope) {
-                    Ok(Some(v)) => ks.v[i] = v,
-                    Ok(None) => {}
-                    Err(m) => faults.push((span, m)),
-                }
+            for (text, seed) in ks.text.iter_mut().zip(ks.v.iter_mut()) {
+                settle(text, seed);
             }
             // how far a direction read off geometry is turned: a number over the parameters in
             // scope, read by the build as a place's `turn:` is
@@ -1794,7 +1794,7 @@ impl Seeded<'_> {
             self.unknowns.get(n).and_then(|d| d.seed).or_else(|| self.held.get(n).map(|&(_, v)| v))
         };
         let seed = value.free.as_ref().and_then(start);
-        Aff::of_dim(value.c + seed.map_or(0.0, |s| value.m * s), value.dim)
+        Aff::of_dim(value.at(seed.unwrap_or(0.0)), value.dim)
     }
 }
 
@@ -1820,7 +1820,7 @@ impl Table for Seeded<'_> {
     fn under(&self, prefix: &str) -> BTreeMap<String, Aff> {
         let mut out: BTreeMap<String, Aff> =
             self.vals.under(prefix).into_iter().map(|(k, v)| (k, self.seeded(&v))).collect();
-        let held = self.held.range(prefix.to_string()..).take_while(|(k, _)| k.starts_with(prefix));
+        let held = super::table::prefixed(self.held, prefix);
         out.extend(held.map(|(k, &(dim, v))| (k.clone(), Aff::of_dim(v, dim))));
         out
     }

@@ -206,7 +206,7 @@ pub(crate) fn value_aff<T: Table + ?Sized>(
 
 /// `value_aff`, where the text may be one a scope wrote over an unknown of the drawing (`(0.3 * m
 /// + 0.05mm)`, `of_vals`) and is read in a scope that binds none: each unknown it reads is what
-/// its declaration says, as it was where the text was written (`expr::with_declared`).
+/// its declaration says, as it was where the text was written (`expr::declared_reads`).
 pub(crate) fn value_read<T: Table + ?Sized>(
     text: &str,
     env: &T,
@@ -218,13 +218,9 @@ pub(crate) fn value_read<T: Table + ?Sized>(
         return Err("nothing to work out".to_string());
     }
     let p = expr::parse_in(t, units)?;
-    // each declared unknown it reads and `env` does not bind, under its declared dimension, read
-    // before `env` (`expr::with_declared`, without copying `env` to say so)
-    let declared: BTreeMap<String, Aff> = p.body.deps().into_iter()
-        .filter(|name| !env.has(name))
-        .filter_map(|name| Some((Aff::free(name.clone(), unknowns.get(&name)?.dim), name)))
-        .map(|(a, name)| (name, a))
-        .collect();
+    // each declared unknown it reads and `env` does not bind, read before `env` rather than
+    // added to a copy of it
+    let declared = expr::declared_reads(&p.body, |name| env.has(name), unknowns);
     let a = expr::eval_in(&p.body, &Over { own: &declared, env })?;
     match (a.number(), &a.free) {
         (Some(v), _) if !v.is_finite() => Err(format!("comes to {v}")),
