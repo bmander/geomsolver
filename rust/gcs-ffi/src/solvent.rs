@@ -224,6 +224,14 @@ pub unsafe extern "C" fn gcs_elab_report(h: *mut Elaborated) -> *mut u8 {
     })
 }
 
+/// **The model outline** (#435): every instance the document makes and its members, as a tree —
+/// `report::outline_json`, spans in the document's bytes.  The live sketch is `s`, the
+/// elaboration's own having been taken out into it.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_elab_outline_json(h: *mut Elaborated, s: *mut Sketch) -> *mut u8 {
+    json_out(move || report::outline_json(&*h, sk(s)))
+}
+
 /// Where statement `stmt` of the document (not of a module it uses) was written, as byte offsets
 /// `[lo, hi]` into `out`: 0, or −1 where the document has no such statement — a claim a module's
 /// component states, say, which has no place in this text.

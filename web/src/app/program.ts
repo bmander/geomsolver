@@ -492,6 +492,17 @@ export function showStatementFor(): void {
   if (document.activeElement !== ptext) ped.scrollToLine(lineAt(where.lo));
 }
 
+/** **Go to source** (#435): the program editor's caret on a span of the document — an outline
+ *  row's statement — the panel opened and the line brought on screen. */
+export function goToSource(span: SourceSpan): void {
+  if (switching || drawingActive() || showingText()) return;
+  if (ppanel.hidden) toggleProgramPanel();
+  if (!project && activeFile) selectFile('');
+  ptext.focus();
+  ptext.setSelectionRange(span.lo, span.hi);
+  ped.scrollToLine(lineAt(span.lo));
+}
+
 /** Which line an offset falls on.  Counted rather than sliced: `slice(0, off).split` builds the
  *  whole prefix and an array of every line in it, on every pick. */
 function lineAt(off: number): number {

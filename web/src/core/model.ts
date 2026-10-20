@@ -480,6 +480,13 @@ export function threePointArc(ax: number, ay: number, bx: number, by: number,
   });
 }
 
+/** A part of the drawing as the outline names it: entities by the core's kind word (`plane` for
+ *  a frame) and index, and solids by index — what `setHidden` hides and `boundsOfSeen` frames. */
+export interface Part {
+  ents: [string, number][];
+  solids: number[];
+}
+
 export class Sketch {
   readonly handle: number;
   private params_: Param[] = [];
@@ -861,6 +868,13 @@ export class Sketch {
    *  keys on. */
   get shapeEpoch(): number {
     return core().gcs_sketch_shape_epoch(this.handle);
+  }
+
+  /** **Hide exactly this part of the drawing** (#435) — not drawn, lit or picked by the
+   *  workspace, still solved — and show the rest: view state, set whole on every drawing the view
+   *  is handed (`gcs_sketch_set_hidden`). */
+  setHidden(part: Part): void {
+    withStr(JSON.stringify(part), (p, n) => core().gcs_sketch_set_hidden(this.handle, p, n));
   }
 
   /** What a click at (x, y) picks: the nearest entity whose *drawn* figure comes within `tol`,

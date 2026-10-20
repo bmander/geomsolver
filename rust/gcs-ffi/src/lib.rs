@@ -187,6 +187,22 @@ unsafe fn as_json(ptr: *const u8, len: usize) -> Json {
     json::parse(as_str(ptr, len)).unwrap_or(Json::Null)
 }
 
+/// `{ents: [[kind, idx]…], solids: [idx…]}` — a part of the drawing as the outline names it
+/// (`report::outline_json`), every kind spelled as `EntKind::as_str` spells it — as the entities
+/// and the solids, skipping a kind the model does not know.
+unsafe fn part_of(p: *const u8, len: usize) -> (Vec<EntRef>, Vec<usize>) {
+    let j = as_json(p, len);
+    let ents = j.get("ents").map(|v| v.arr()).unwrap_or(&[]).iter().filter_map(|v| {
+        let a = v.arr();
+        let word = a.first().map(|x| x.as_str()).unwrap_or("");
+        let kind = EntKind::ALL.into_iter().find(|k| k.as_str() == word)?;
+        Some(EntRef::new(kind, a.get(1)?.as_i64().max(0) as usize))
+    }).collect();
+    let solids = j.get("solids").map(|v| v.arr()).unwrap_or(&[]).iter()
+        .map(|v| v.as_i64()).filter(|&i| i >= 0).map(|i| i as usize).collect();
+    (ents, solids)
+}
+
 /// `[[kind, idx], ...]` as the entities it names, skipping any the model does not know.
 unsafe fn ent_list(p: *const u8, len: usize) -> Vec<EntRef> {
     as_json(p, len)

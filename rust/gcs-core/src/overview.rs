@@ -28,6 +28,7 @@ use crate::plane::{dot, Basis};
 use crate::space::eye;
 use std::collections::BTreeMap;
 
+pub mod outline;
 pub mod region;
 pub mod workspace;
 
@@ -383,8 +384,10 @@ pub fn scene3d_of(sk: &Sketch, unit: f64, layer: Layer) -> Vec<Item3> {
     let views = views(sk);
     let places = places(sk);
     let least = sk.extent() * LEAST_SIDE;
-    // one pane for each place, its first plane's
-    for i in (0..sk.frames.len()).filter(|&i| datums && places[i] == Some(i)) {
+    // one pane for each place, its first plane's — none for a plane the outline hid (#435), and
+    // none of what follows either
+    for i in (0..sk.frames.len())
+        .filter(|&i| datums && places[i] == Some(i) && sk.shown(EntRef::frame(i))) {
         let of = Some(EntRef::frame(i));
         let basis = sk.basis(i);
         let rect = pane(sk, i, &views, &places, least);
@@ -395,7 +398,7 @@ pub fn scene3d_of(sk: &Sketch, unit: f64, layer: Layer) -> Vec<Item3> {
     }
     // the axes already drawn, each as its line: a later one lying on one of them is not drawn again
     let mut lines: Vec<([f64; 3], [f64; 3])> = Vec::new();
-    for e in sk.drawn().into_iter().filter(|_| datums) {
+    for e in sk.seen().into_iter().filter(|_| datums) {
         if matches!(e.kind, EntKind::Point | EntKind::Frame) {
             continue;
         }
@@ -462,7 +465,7 @@ pub fn scene3d_of(sk: &Sketch, unit: f64, layer: Layer) -> Vec<Item3> {
         let stations = sk.stations();
         for i in 0..sk.traced.len() {
             let e = EntRef::new(EntKind::Traced, i);
-            if stations.contains(&e) {
+            if stations.contains(&e) || !sk.shown(e) {
                 continue;
             }
             let pts = traced_polyline(sk, i, unit);
@@ -479,7 +482,7 @@ pub fn scene3d_of(sk: &Sketch, unit: f64, layer: Layer) -> Vec<Item3> {
     // than tested against an eye direction, and no edge is hidden-line removed either — a depth
     // buffer settles that per pixel, which is the whole of why this path exists.
     //
-    for i in objects(sk).into_iter().filter(|_| objects_too) {
+    for i in shown_objects(sk).into_iter().filter(|_| objects_too) {
         let Ok(solid) = sk.evaluated_solid(i, crate::solid::ApproximationPolicy::Mesh) else { continue };
         for e in solid.world_edges() {
             if e.smooth {
@@ -792,6 +795,16 @@ pub fn objects(sk: &Sketch) -> Vec<usize> {
     (0..sk.solids.len())
         .filter(|&i| !used[i] && !sk.roles_of(crate::model::EntRef::solid(i)).construction)
         .collect()
+}
+
+/// The objects the outline has not hidden (#435): what the workspace draws, lights, picks and
+/// frames.  `objects` stays the document's — what is exported, reported and built.
+pub fn shown_objects(sk: &Sketch) -> Vec<usize> {
+    let mut v = objects(sk);
+    if !sk.hidden.is_empty() {
+        v.retain(|&i| sk.shown(EntRef::solid(i)));
+    }
+    v
 }
 
 /// **The objects that are not drawn, and why**: each object (`objects`) that does not evaluate

@@ -135,8 +135,9 @@ pub fn pick_by(
     }
     let mut best: Option<(EntRef, f64)> = None;
     // what is drawn, curves included: a pick measures the figure on the sheet, and a curve
-    // written in the language is one (`drawn`, where `primitives` stops short of it)
-    for e in sk.drawn() {
+    // written in the language is one (`drawn`, where `primitives` stops short of it) — and
+    // nothing the outline hid (#435)
+    for e in sk.seen() {
         if e.kind == EntKind::Point {
             continue;
         }

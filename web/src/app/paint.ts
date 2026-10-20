@@ -129,7 +129,7 @@ function paintFigures(v: SketchView, sel: Set<Primitive>, hl: Set<Primitive>): v
     strokeOf(v, sel, hl, base, ent, st);
   for (const ln of sk.lines) {
     const st = ln.style;
-    if (st.hidden) continue;
+    if (st.hidden || v.hiddenEnts.has(ln)) continue;
     const [col, lw] = strokeFor(COL.line, ln, st);
     ctx.strokeStyle = col;
     ctx.lineWidth = lw;
@@ -141,7 +141,7 @@ function paintFigures(v: SketchView, sel: Set<Primitive>, hl: Set<Primitive>): v
   }
   for (const c of sk.circles) {
     const st = c.style;
-    if (st.hidden) continue;
+    if (st.hidden || v.hiddenEnts.has(c)) continue;
     const [col, lw] = strokeFor(COL.circle, c, st);
     v.inView(v.viewOfEntity(c), () => {
       ctx.strokeStyle = col;
@@ -153,7 +153,7 @@ function paintFigures(v: SketchView, sel: Set<Primitive>, hl: Set<Primitive>): v
   }
   for (const a of sk.arcs) {
     const st = a.style;
-    if (st.hidden) continue;
+    if (st.hidden || v.hiddenEnts.has(a)) continue;
     const [col, lw] = strokeFor(COL.arc, a, st);
     v.inView(v.viewOfEntity(a), () => {
       ctx.strokeStyle = col;
@@ -167,7 +167,7 @@ function paintFigures(v: SketchView, sel: Set<Primitive>, hl: Set<Primitive>): v
   // B-spline, so the front end strokes what it is handed and evaluates no expression of its own
   for (const cv of sk.curves) {
     const st = cv.style;
-    if (st.hidden) continue;
+    if (st.hidden || v.hiddenEnts.has(cv)) continue;
     const [col, lw] = strokeFor(COL.spline, cv, st);
     v.inView(v.viewOfEntity(cv), () => {
       ctx.strokeStyle = col;
@@ -185,7 +185,7 @@ function paintSplines(v: SketchView, sel: Set<Primitive>, hl: Set<Primitive>): v
   const ctx = v.ctx;
   for (const sp of v.sketch.splines) {
     const st = sp.style;
-    if (st.hidden) continue;
+    if (st.hidden || v.hiddenEnts.has(sp)) continue;
     const [col, lw] = strokeOf(v, sel, hl, COL.spline, sp, st);
     v.inView(v.viewOfEntity(sp), () => {
       // the curve arrives as a polyline already refined to this zoom: `unit` is the eye length of
@@ -219,7 +219,8 @@ function paintPoints(v: SketchView, sel: Set<Primitive>, hl: Set<Primitive>): vo
   const sk = v.sketch;
   const hidePoints = sk.styleNamed('point').hidden;
   for (const p of sk.points) {
-    if (hidePoints && !sel.has(p) && !hl.has(p)) continue;
+    // what the outline hid is not drawn (#435), as a sheet's hidden points are not
+    if (v.hiddenEnts.has(p) || (hidePoints && !sel.has(p) && !hl.has(p))) continue;
     const [sx, sy] = v.seen(p);
     const col = chromeOf(sel, hl, p)?.[0] ?? (p.isFixed ? COL.fixed : stateInk(v, p) ?? COL.point);
     ctx.fillStyle = col;

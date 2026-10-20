@@ -63,8 +63,9 @@ import {
 } from './dialogs.js';
 import { closeChooser, onChoose } from './choose.js';
 import { editValue, onDimension, onExtent, onRound } from './dimbox.js';
-import { bindProgramPanel, openDrawing, refreshProgram, resetProgramFiles, saveProjectFile,
-  showClaims, showStatementFor, toggleProgramPanel } from './program.js';
+import { bindProgramPanel, goToSource, openDrawing, refreshProgram, resetProgramFiles,
+  saveProjectFile, showClaims, showStatementFor, toggleProgramPanel } from './program.js';
+import { OutlinePane } from './outline.js';
 import { closePanel, openPanel, refresh, refreshPanel, refreshStatus } from './lists.js';
 import {
   aboutBadge, barConstraints, barTools, canvas, currentConstraint, focusConstraint, hooks, menubar,
@@ -489,6 +490,10 @@ const MENUS: [string, (MenuItem | null)[]][] = [
       title: 'A copy of the clipboard, nudged clear and selected, joined to nothing' },
     null,
     { label: 'Fit to screen', onClick: () => view.fit() },
+    { label: 'Isolate', onClick: () => view.isolate(),
+      title: 'Hide everything but the selection and what made it — I in the model outline' },
+    { label: 'Show all', key: '⇧i', onClick: () => view.showAll(),
+      title: 'Show everything the model outline hid' },
     { label: 'Show solid', key: '⇧⌘b', onClick: () => view.setShowSolid(!view.showSolid),
       title: 'Fill each object\u2019s surfaces, not only its edges — off, a solid is a wireframe' },
     { label: 'Program', key: '⌘p', onClick: () => toggleProgramPanel(),
@@ -609,10 +614,15 @@ window.addEventListener('keydown', (e) => {
 
 /* A canvas press takes the selection over from the constraint that had the focus — and one
  * that picked nothing shuts the constraints window, which is the only thing that does. */
+/* The model outline (#435): the document's instances as a tree, under the project's files. */
+const outline = new OutlinePane(document.getElementById('outline-pane')!,
+  document.getElementById('outline-tree')!, view, (row) => { if (row.span) goToSource(row.span); });
+view.onHidden = () => outline.paint();
 view.onSelect = () => {
   if (currentConstraint) focusConstraint(null);
   if (!view.selected.length) closePanel();
   showStatementFor();
+  outline.reveal();
 };
 /* A dimension on the drawing and its row in the window are the same constraint, so clicking
  * either does the same thing — and double-clicking either opens the same number.  One clicked
@@ -649,11 +659,11 @@ view.onDimension = onDimension;
 view.onExtent = onExtent;
 view.onRound = onRound;
 view.onChoose = onChoose;
-view.onChanged = () => { refresh(); refreshProgram(); refreshPlanes(); };
+view.onChanged = () => { refresh(); refreshProgram(); refreshPlanes(); outline.refresh(); };
 view.onPicked = refreshPanel;
 // the source changed without the drawing's structure doing so — a drag wrote its seeds back, or a
 // number was spliced.  Never per frame: `onDragFrame` is the frame seam and this is not wired to it
-view.onProgram = () => { refreshProgram(); };
+view.onProgram = () => { refreshProgram(); outline.refresh(); };
 view.onLoad = () => { if (resetProgramFiles()) leaveExample(); };
 view.onDragFrame = refreshStatus;
 const timeline = new Timeline(document.getElementById('timeline') as HTMLElement, view);

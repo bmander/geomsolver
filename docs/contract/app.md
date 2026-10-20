@@ -421,3 +421,39 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   `Scrub.live` back to zero; the triple rocker's timeline clamped at its limit; an edit at home
   followed only once idle or asked, and one at an instant stood back there; the V-twin scrubbed
   with nothing cut again in the box.
+- **The model outline** (#435; `overview::outline`, FFI `gcs_elab_outline_json`,
+  `Document.outline`, `core/outline.ts`; the pane `app/outline.ts`, its verbs `app/hidden.ts`):
+  every instance the document makes and its members, as a tree — an *outline*, not a feature
+  tree, since Solvent has no ordered history.  **The tree is the core's**, read off the source
+  map: the root body's statements in source order; an instance `crank : Crank` with its members
+  under it; a block or ring `cyl[0‥2]` with a row per copy (a copy that made one row is that
+  row); what a statement made beside its own entity — a line's implicit ends, a plane's origin, a
+  sweep's face — under it; an object where it was made with its operands (features, cutters, a
+  sweep's stock) under it, `operand`, listed for navigation only and taken from where they were
+  written; and a module's datums (`use std`) one group, last.  A row's `path` is what it is
+  carried by — the source map's name, `public_path` for a copy — empty for an anonymous row
+  (`line in pin`), which is listed and not carried, as a selection of it is not; its `span` is
+  its statement's, none for a module's.  **Hidden is view state**, the orbit's kind: never
+  written to the source or the `.svd`, never saved, solved or undone; carried across an edit
+  and an undo **by path** (`SketchView.hiddenRows`, re-applied in `swap`: `hidden.carryHidden`)
+  and let go by a load.  Hiding a row takes out what it *made*, its subtree — a point declared
+  at the root and read by a hidden component's line stays — and still solves.  The core is told
+  whole (`Sketch::set_hidden`, `gcs_sketch_set_hidden`) and **hidden means not drawn, not lit and
+  not picked**: `scene3d_of` (panes, axes, traced curves, objects), `workspace::pick`,
+  `pick_solid`, `pick_edge`, `under`, `overlapping` (so a band or Delete never takes it),
+  `nearest_pane`, `nearest_point`, `panes_at` and `bounds` pass it by (`Sketch::seen`,
+  `overview::shown_objects`; `objects` stays the document's, what is exported), `paint.ts` skips
+  it, the box leaves out its objects, and a callout goes once every entity its constraint reads
+  is hidden.  Only objects are hidden of the solids; an operand has no eye.  Hiding what is
+  selected deselects it; selecting a hidden row shows it (and only it: the rows above it shown,
+  their other children hidden in their stead); choosing a hidden plane, or drawing on it, shows
+  it.  The pane: an eye per row (dimmed under a hidden row, half where some row under it is
+  hidden); a click selects (⇧ adds), a hover lights as the ⌘-click list's rows do, a
+  double-click frames the row's subtree (`workspace::bounds_of`, hidden or not, FFI
+  `gcs_workspace_bounds_of`), ↗ puts the editor's caret on its span (`program.ts::goToSource`);
+  **Isolate** hides all but the selection and the rows that made it and **Show all** clears it
+  — `I` and `⇧I` while the tree has the keys (`I` is Coincident's elsewhere), Edit ▸ Isolate, and
+  `⇧I` everywhere.  A selection made in the workspace opens the tree to its row
+  (`hidden.selectionRow`).  The tree is rebuilt only when the outline's shape changes (spans
+  aside, which every splice moves), never on a drag, and a row's children are made when it is
+  first opened.  Gates: `tests/outline.rs` and `web/src/test/outline.test.ts`.

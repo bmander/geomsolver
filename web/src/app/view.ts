@@ -38,6 +38,8 @@ import { Motion, WitnessReport, analyze } from '../core/witness.js';
 import { Camera, ViewCam } from './camera.js';
 import * as edit from './edit.js';
 import * as extent from './extent.js';
+import * as hidden from './hidden.js';
+import type { Row } from '../core/outline.js';
 import type { Handle, LiveExtent } from './extent.js';
 import * as dimension from './dimension.js';
 import { abandonGesture, bindEvents, takeHit } from './gesture.js';
@@ -290,6 +292,14 @@ export class SketchView {
     }
   }
   private _selected: Primitive[] = [];
+  /** **The outline's rows hidden** (#435), by the key each is carried by (`hidden.rowKey`): view
+   *  state, as the orbit is — never saved, solved or undone, carried across an edit by path and
+   *  let go by a load.  What they made is `hiddenEnts` and `hiddenSolids`, set on every drawing
+   *  the view is handed (`hidden.applyHidden`), and `hiddenKey` says when that changed. */
+  hiddenRows = new Set<string>();
+  hiddenEnts = new Set<Primitive>();
+  hiddenSolids = new Set<number>();
+  hiddenKey = '';
   /** The solids selected, each by the face the click landed on — the third selection, exclusive
    *  with the other two for the picture's reason: a solid is not a `Primitive`, nothing
    *  constrains one beside a point, and holding both would leave Delete ambiguous. */
@@ -347,6 +357,8 @@ export class SketchView {
   onProgram: () => void = () => {};
   /** A different document was opened, so source navigation starts at its main file. */
   onLoad: () => void = () => {};
+  /** Fired when what the outline hides changes, so its eyes follow. */
+  onHidden: () => void = () => {};
   /** Per gesture frame: the sketch's structure and the constraint list are unchanged, so
    *  only the status line needs updating (a drag's numbers, a band's selection count). */
   onDragFrame: () => void = () => {};
@@ -763,7 +775,12 @@ export class SketchView {
 
   /** Project navigation starts a separate edit history; undo must never cross file boundaries. */
   openProjectFile(text: string): boolean {
-    if (!this.reread(text, true, false)) return false;
+    const held = this.hiddenRows;
+    this.hiddenRows = new Set();
+    if (!this.reread(text, true, false)) {
+      this.hiddenRows = held;
+      return false;
+    }
     this.undoStack = [];
     return true;
   }
@@ -781,7 +798,11 @@ export class SketchView {
    *  its own way and is not this. */
   load(text: string, fit = true): boolean {
     this.pushUndo();
+    // another document: nothing of it is hidden, and its rows are not this one's
+    const held = this.hiddenRows;
+    this.hiddenRows = new Set();
     if (!this.reread(text, fit, false)) {
+      this.hiddenRows = held;
       this.dropUndo();
       return false;
     }
@@ -855,6 +876,8 @@ export class SketchView {
         return index === undefined ? [] : [{ ...s, index }];
       });
     }
+    // what the outline hid, by path, on the drawing just taken (a load emptied it first)
+    hidden.carryHidden(this);
     if (this.liveExtent && !extent.liveHandle(this)) this.endExtent();
     const again = heldPlane ? this.doc.entity(heldPlane) : undefined;
     this.plane = again instanceof Plane ? again : null;
@@ -1432,6 +1455,25 @@ export class SketchView {
     this.draw();
   }
 
+  /** **The model outline** (#435): every instance the document makes and its members, as the
+   *  core arranges them — read once per text, since a splice moves its spans and a tool's append
+   *  adds rows without a new drawing. */
+  outline(): Row[] {
+    const c = this.outlineCache;
+    if (c?.doc === this.doc && c.text === this.doc.text) return c.rows;
+    const rows = this.doc.outline();
+    this.outlineCache = { doc: this.doc, text: this.doc.text, rows };
+    return rows;
+  }
+  private outlineCache: { doc: Document; text: string; rows: Row[] } | null = null;
+
+  /** Hide an outline row, or show it (`hidden.setRowHidden`). */
+  setRowHidden(row: Row, hide: boolean): void { hidden.setRowHidden(this, row, hide); }
+  /** **Isolate** (`I`): everything hidden but the selection and the rows that made it. */
+  isolate(): boolean { return hidden.isolate(this); }
+  /** **Show all** (`⇧I`). */
+  showAll(): void { hidden.showAll(this); }
+
   /** What is lit under the pointer, of the drawing's own: `highlight` and the hovered entity. */
   get lit(): Primitive[] {
     const h = this.hovered;
@@ -1640,6 +1682,8 @@ export class SketchView {
   choosePlane(name: string, look = true): void {
     const found = this.doc.entity(name);
     if (found instanceof Plane) {
+      // **choosing a hidden plane shows it**
+      hidden.reveal(this, found);
       this.plane = found;
       this.pendingPlane = null;
     } else if ((STANDARD_PLANES as readonly string[]).includes(name)) {
@@ -1717,6 +1761,8 @@ export class SketchView {
    *  document gains `use std` (one undoable edit) and so the plane, which becomes current.
    *  True when the plane is ready to be drawn on. */
   ensurePlane(): boolean {
+    // drawing on a hidden plane shows it, as choosing it does
+    if (this.plane) hidden.reveal(this, this.plane);
     if (!this.pendingPlane) return true;
     const name = this.pendingPlane;
     if (!this.apply(this.doc.addUse('std'), `use std, for ${name}`)) return false;

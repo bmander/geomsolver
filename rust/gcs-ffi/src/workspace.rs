@@ -390,6 +390,25 @@ pub unsafe extern "C" fn gcs_workspace_bounds(h: *mut Sketch, unit: f64, az: f64
     })
 }
 
+/// The extent of a part of the workspace on the eye's picture plane — `{ents, solids}` as
+/// `gcs_sketch_set_hidden` takes it — into `out` as `[x0, y0, x1, y1]`: 1, or 0 where the part has
+/// no extent (`workspace::bounds_of`, what framing an outline row asks).
+#[no_mangle]
+pub unsafe extern "C" fn gcs_workspace_bounds_of(h: *mut Sketch, unit: f64, az: f64, el: f64,
+                                                 ptr: *const u8, len: usize, out: *mut f64) -> i32 {
+    guard(0, move || {
+        let (s, proj) = seen(h, az, el);
+        let (ents, solids) = part_of(ptr, len);
+        match gcs_core::overview::workspace::bounds_of(s, &proj, &ents, &solids, unit) {
+            Some((x0, y0, x1, y1)) => {
+                write(out, &[x0, y0, x1, y1]);
+                1
+            }
+            None => 0,
+        }
+    })
+}
+
 /// The entities a rubber band from (x0, y0) to (x1, y1) on the eye's picture plane touches.
 #[no_mangle]
 pub unsafe extern "C" fn gcs_workspace_overlapping_json(h: *mut Sketch, unit: f64, az: f64, el: f64,

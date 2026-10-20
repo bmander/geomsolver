@@ -166,6 +166,19 @@ pub unsafe extern "C" fn gcs_sketch_point_seen(h: *mut Sketch, az: f64, el: f64,
     })
 }
 
+/// **What the outline hides** (#435): `{ents: [[kind, idx]…], solids: [idx…]}`, exactly these
+/// and nothing else — not drawn, lit or picked by the workspace, still solved
+/// (`Sketch::set_hidden`).  View state, which the host re-applies to every drawing it is handed.
+/// Returns 0.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_sketch_set_hidden(h: *mut Sketch, ptr: *const u8, len: usize) -> i32 {
+    guard(-1, move || {
+        let (ents, solids) = part_of(ptr, len);
+        sk(h).set_hidden(ents, solids);
+        0
+    })
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn gcs_sketch_line(h: *mut Sketch, p1: i32, p2: i32) -> i32 {
     guard(-1, move || {

@@ -50,6 +50,7 @@ export interface Abi {
   gcs_elab_text(h: number): number;
   gcs_elab_report(h: number): number;
   gcs_elab_stmt_span(h: number, stmt: number, out: number): number;
+  gcs_elab_outline_json(h: number, s: number): number;
   gcs_elab_retext(h: number, p: number, n: number): number;
   gcs_elab_commit_seeds(h: number, sk: number): number;
   gcs_elab_describe(h: number, sk: number, id: number): number;
@@ -92,6 +93,7 @@ export interface Abi {
   gcs_sketch_point(h: number, x: number, y: number, fixed: number, name: number, nameLen: number): number;
   gcs_sketch_point_seen(h: number, az: number, el: number, x: number, y: number): number;
   gcs_sketch_line(h: number, p1: number, p2: number): number;
+  gcs_sketch_set_hidden(h: number, p: number, n: number): number;
   gcs_sketch_circle(h: number, center: number, r: number, name: number, nameLen: number): number;
   gcs_sketch_arc(h: number, c: number, s: number, e: number, name: number, nameLen: number): number;
   gcs_sketch_arc_through(h: number, s: number, e: number, tx: number, ty: number, name: number, nameLen: number): number;
@@ -230,6 +232,8 @@ export interface Abi {
   gcs_workspace_maps(h: number, az: number, el: number, out: number, cap: number): number;
   gcs_workspace_space_points(h: number, az: number, el: number, out: number, cap: number): number;
   gcs_workspace_bounds(h: number, unit: number, az: number, el: number, out: number): number;
+  gcs_workspace_bounds_of(h: number, unit: number, az: number, el: number, p: number, n: number,
+                          out: number): number;
   gcs_workspace_pick(h: number, unit: number, az: number, el: number, x: number, y: number,
                      tol: number, out: number): number;
   gcs_workspace_panes_at(h: number, az: number, el: number, x: number, y: number,

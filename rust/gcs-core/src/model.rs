@@ -235,6 +235,12 @@ pub struct Sketch {
     /// starts from home, and no seed is written back from an instant (`edit::commit_seeds`).
     /// Never written to a document.
     pub standing: Option<crate::follow::Standing>,
+    /// **What the outline has taken out of the drawing** (#435): entities and solids not drawn,
+    /// not lit and not picked — the workspace's figures, panes, axes and objects pass them by
+    /// (`Sketch::shown`, `seen`, `overview::shown_objects`).  View state, as the orbit is: it
+    /// still solves and still holds its constraints, is never saved, exported or undone, and
+    /// the front end sets it whole (`set_hidden`) on every drawing it is handed.
+    pub hidden: std::collections::BTreeSet<EntRef>,
     /// What the sketch remembers and could work out again — polylines, evaluated and exact
     /// solids, regions' readings, bodies' faces — and what a clone keeps of it (`Caches`).
     pub caches: Caches,
