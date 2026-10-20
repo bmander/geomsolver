@@ -57,44 +57,38 @@
     </div>
     <div id="psplit" role="separator" aria-orientation="vertical" tabindex="0"
          aria-label="Resize the program panel"></div>
-    <aside id="ppanel">
-      <section id="project-pane" aria-label="Project directory" hidden>
-        <h2><button id="project-toggle" type="button" aria-expanded="true"
-                    aria-controls="project-tree" title="Collapse file explorer">
+    <aside id="ppanel" data-side="program">
+      <!-- the panel's head: which one of its panes the column shows, and that pane's own buttons
+           (`program.ts::showSide`).  On a narrow screen the panel is a drawer above the footer,
+           and the head is what folds it (`program.ts::bindDrawer`) -->
+      <div id="ppanel-head">
+        <button id="ppanel-fold" type="button" aria-expanded="true" title="Fold the panel away"
+                aria-label="Fold the panel away">
           <svg class="project-disclosure" aria-hidden="true" viewBox="0 0 24 24">
             <path d="m9 5 7 7-7 7"/>
           </svg>
-          <span id="project-title">Project</span>
-        </button></h2>
+        </button>
+        <!-- Project is offered while one is open (`program.ts::offerProject`) -->
+        <select id="ppanel-side" aria-label="What the panel shows">
+          <option value="program">Program</option>
+          <option value="outline">Model</option>
+        </select>
+        <span id="ppanel-state"></span>
+        <button id="outline-isolate" class="side-outline" type="button"
+                title="Hide everything but the selection and what made it (I in the outline)">Isolate</button>
+        <button id="outline-show-all" class="side-outline" type="button"
+                title="Show everything again (⇧I)">Show all</button>
+        <button id="program-compile" class="side-program" type="button"
+                title="Compile the source and solve it again (⌘↵ while typing in it)">Compile</button>
+      </div>
+      <section id="project-pane" aria-label="Project directory">
+        <h2 id="project-title">Project</h2>
         <nav id="project-tree" aria-label="Project files"></nav>
       </section>
       <!-- every instance the document makes and its members: filled by `app/outline.ts` -->
-      <section id="outline-pane" class="collapsed" aria-label="Model outline">
-        <h2><button id="outline-toggle" type="button" aria-expanded="false"
-                    aria-controls="outline-tree" title="Expand the model outline">
-          <svg class="project-disclosure" aria-hidden="true" viewBox="0 0 24 24">
-            <path d="m9 5 7 7-7 7"/>
-          </svg>
-          <span>Model</span>
-        </button>
-        <button id="outline-isolate" type="button"
-                title="Hide everything but the selection and what made it (I in the outline)">Isolate</button>
-        <button id="outline-show-all" type="button" title="Show everything again (⇧I)">Show all</button></h2>
+      <section id="outline-pane" aria-label="Model outline">
         <div id="outline-tree" role="tree" aria-label="Model outline" tabindex="0" hidden></div>
       </section>
-      <!-- the program's head: on a narrow screen the panel is a drawer above the footer, and the
-           head is what folds it (`program.ts::bindDrawer`) -->
-      <div id="ppanel-head">
-        <h2><button id="ppanel-fold" type="button" aria-expanded="true" aria-controls="pcode"
-                    title="Fold the program away">
-          <svg class="project-disclosure" aria-hidden="true" viewBox="0 0 24 24">
-            <path d="m9 5 7 7-7 7"/>
-          </svg>
-          program<span id="ppanel-state"></span>
-        </button></h2>
-        <button id="program-compile" type="button"
-                title="Compile the source and solve it again (⌘↵ while typing in it)">Compile</button>
-      </div>
       <div id="program-name" hidden></div>
       <label id="program-files" hidden>File
         <select id="program-file" aria-label="Project file"></select>

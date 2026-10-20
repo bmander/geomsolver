@@ -342,7 +342,15 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   on purpose: no cluster element for the line they are measured from.
 
 - The page is the drawing *and the source it is written as*: the program panel is a permanent
-  second child of `<main>`; there is no other sidebar.  A component selected names itself in the
+  second child of `<main>`; there is no other sidebar.  **The panel shows one pane at a time**,
+  chosen on its head (`program.ts::showSide`, the `#ppanel-side` chooser): the program, the model
+  outline, or — offered only while a folder is open (`offerProject`) — the project's files; the
+  stylesheet hides the others by `#ppanel[data-side]`, and a head button belongs to the pane it
+  acts on (Compile, Isolate/Show all).  The outline reads its tree only while shown
+  (`OutlinePane.show`).  Turning from the program applies a draft as a blur does; a way to
+  source (`goToSource`) and a file picked in the project's tree turn the panel to the program.
+  On a narrow screen the panel is a drawer above the footer: the head's chevron folds it, and
+  choosing a pane opens it (`bindDrawer`).  A component selected names itself in the
   status line (`describeEntity`) and brings up one floating window listing the constraints that
   reach it, and only those, open on a `subject` — the selection, else what it was last opened on,
   so focusing a constraint does not pull it away.  `openPanel` is how a clicked callout or the
