@@ -21,7 +21,15 @@ Currently: **Stage 5 done, and Stage 7a/7b — solids**, in **one** implementati
   (`gcs-ffi/tests/without_a_document.rs`), and the solver's modules import neither the parser nor
   `io`: the words and types the model shares with the language (`Cmp`, `BodyWord`, `Span`,
   `num`, `snake`, `one_of`) are defined below both in `vocab.rs`, which depends on nothing, and
-  `syntax` re-exports them.
+  `syntax` re-exports them.  **The solver does not import the language**, and a gate holds the
+  build to it (`tests/layering.rs`): no `crate::` path in a *solver* module (`model`,
+  `constraints`, `kernels`, `system`, `newton`, `linalg`, `sparse`, `graph`, `cgraph`,
+  `diagnose`, `decompose`, `witness`, `solve`, `homotopy`, `rng`, `fmath`, `graft`, `vocab`)
+  names a *language* module (`syntax`, `flatten`, `program`, `modules`, `edit`, `style`,
+  `library`, `examples`, `overview`, `callout`, `svg`, `drawing`, `report`, `io`).  The edges
+  still standing — the style sheet and classes on the model and its constraints, and solid
+  evaluation's call into `overview` — are listed there as a ratchet: a new edge fails the gate,
+  and so does a removed one still listed, so the list only shrinks.
 * **ABI** (`rust/gcs-ffi/`): one flat C ABI over the core, built twice — a self-contained
   `wasm32-unknown-unknown` module and a native `cdylib`, where the *panic boundary* is checked
   (`gcs-ffi/tests/panic_boundary.rs`): `guard`'s `catch_unwind` only catches on native (wasm
