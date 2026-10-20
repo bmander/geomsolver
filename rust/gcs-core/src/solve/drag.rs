@@ -38,7 +38,7 @@ pub struct PullPolish {
 /// itself would leave `polish` on the old span, and `polish` rebuilding itself would pick up the
 /// soft drag target it is compiled to exclude.  The pair is re-homed together, below.
 const PAIRED: SolveOpts = SolveOpts { rehome: false, ..NO_REHOME };
-const NO_REHOME: SolveOpts = SolveOpts {
+pub(super) const NO_REHOME: SolveOpts = SolveOpts {
     method: Method::DogLeg,
     tol: 1e-14,
     acceptance_tol: 1e-6,
@@ -52,7 +52,7 @@ const NO_REHOME: SolveOpts = SolveOpts {
 };
 
 const PULL_ITER: i32 = 4; // the pull is a soft compromise; polish makes it exact
-const POLISH_ITER: i32 = 20;
+pub(super) const POLISH_ITER: i32 = 20;
 
 impl PullPolish {
     pub fn new(sk: &mut Sketch, target: Constraint, method: Method) -> PullPolish {

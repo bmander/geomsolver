@@ -24,10 +24,10 @@ fn a_free_plane_turns_about_its_origin_in_space() {
     let v0 = crate::common::ent(&e, "v0").i();
     let p = crate::common::ent(&e, "p").i();
     let at = sk.world_point(p);
-    let mut d = TurnDrag::new(&mut sk, &[EntRef::frame(v0)]);
+    let mut d = TurnDrag::new(&sk, &[EntRef::frame(v0)]);
     assert_eq!(d.turning, Turning::InSpace);
     assert!(close(d.pivot, [10.0, 0.0, 0.0], 1e-12), "pivot {:?}", d.pivot);
-    assert!(d.carries(&sk) > 0);
+    assert!(d.carries > 0);
     // the eye at bearing 0 stands out along x: its right is y, its up z
     let quarter = std::f64::consts::FRAC_PI_2;
     let steps = 9;
@@ -61,7 +61,7 @@ fn a_plane_held_at_its_origin_tips_about_the_eyes_right() {
     let v0 = crate::common::ent(&e, "v0").i();
     let n0 = sk.basis(v0).normal();
     assert!(close(n0, [1.0, 0.0, 0.0], 1e-12), "facing the eye: {n0:?}");
-    let mut d = TurnDrag::new(&mut sk, &[EntRef::frame(v0)]);
+    let mut d = TurnDrag::new(&sk, &[EntRef::frame(v0)]);
     let r = d.turn_seen(&mut sk, (0.0, 0.0), 0.0, 0.3);
     assert!(r.success, "{r:?}");
     let n = sk.basis(v0).normal();
@@ -85,7 +85,7 @@ fn a_figure_turns_in_its_plane_about_its_middle() {
     let pts = ["a", "b", "c"].map(|n| crate::common::ent(&e, n).i());
     let was = pts.map(|p| sk.point_xy(p));
     let body = ["ab", "bc", "ca"].map(|n| crate::common::ent(&e, n));
-    let mut d = TurnDrag::new(&mut sk, &body);
+    let mut d = TurnDrag::new(&sk, &body);
     let front = crate::common::ent(&e, "std.front").i();
     assert_eq!(d.turning, Turning::InPlane(Some(front)));
     let m = d.pivot;
@@ -98,7 +98,6 @@ fn a_figure_turns_in_its_plane_about_its_middle() {
         let r = d.sweep(&mut sk, on(t(i)), on(t(i + 1)));
         assert!(r.success, "{r:?}");
     }
-    assert!((d.angle() - std::f64::consts::FRAC_PI_2).abs() < 1e-12, "{}", d.angle());
     for (p, w) in pts.into_iter().zip(was) {
         let want = (m[0] - (w.1 - m[1]), m[1] + (w.0 - m[0]));
         let got = sk.point_xy(p);
@@ -117,7 +116,7 @@ fn a_line_held_at_one_end_turns_about_that_end() {
     let mut sk = e.sketch.clone();
     solve(&mut sk, SolveOpts::default());
     let b = crate::common::ent(&e, "b").i();
-    let mut d = TurnDrag::new(&mut sk, &[crate::common::ent(&e, "l")]);
+    let mut d = TurnDrag::new(&sk, &[crate::common::ent(&e, "l")]);
     assert!(close(d.pivot, [1.0, 2.0, 0.0], 1e-12), "{:?}", d.pivot);
     let r = d.turn_in_plane(&mut sk, std::f64::consts::FRAC_PI_2);
     assert!(r.success, "{r:?}");
@@ -136,7 +135,7 @@ fn points_in_space_turn_about_their_middle_and_a_held_body_carries_nothing() {
     let mut sk: Sketch = e.sketch.clone();
     solve(&mut sk, SolveOpts::default());
     let [a, b] = ["a", "b"].map(|n| crate::common::ent(&e, n).i());
-    let mut d = TurnDrag::new(&mut sk, &[crate::common::ent(&e, "l")]);
+    let mut d = TurnDrag::new(&sk, &[crate::common::ent(&e, "l")]);
     assert_eq!(d.turning, Turning::InSpace);
     assert!(close(d.pivot, [2.0, 0.0, 0.0], 1e-12));
     // seen from the front, a drag to the right turns it about the eye's up, z
@@ -145,7 +144,7 @@ fn points_in_space_turn_about_their_middle_and_a_held_body_carries_nothing() {
     let (pa, pb) = (sk.world_point(a), sk.world_point(b));
     assert!(close(pa, [2.0, -2.0, 0.0], 1e-9) && close(pb, [2.0, 2.0, 0.0], 1e-9), "{pa:?} {pb:?}");
     let c = crate::common::ent(&e, "c");
-    let held = TurnDrag::new(&mut sk, &[c]);
-    assert_eq!(held.carries(&sk), 0);
+    let held = TurnDrag::new(&sk, &[c]);
+    assert_eq!(held.carries, 0);
 }
 

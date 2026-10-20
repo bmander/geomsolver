@@ -138,18 +138,13 @@ pub unsafe extern "C" fn gcs_radius_drag_free(d: *mut RadiusDrag) {
     })
 }
 
-/// **A body turned whole** (a shift-drag): `body` is `n` (kind id, index) pairs, the selection.
+/// **A body turned whole** (a shift-drag): `body` is the selection, JSON `[[kind, index], …]`.
 /// It turns in space or in a plane, which `gcs_turn_drag_plane` says.
 #[no_mangle]
-pub unsafe extern "C" fn gcs_turn_drag_new(h: *mut Sketch, body: *const i32, n: i32) -> *mut TurnDrag {
+pub unsafe extern "C" fn gcs_turn_drag_new(h: *mut Sketch, body: *const u8, len: usize)
+    -> *mut TurnDrag {
     guard(std::ptr::null_mut(), move || {
-        let ents: Vec<EntRef> = if body.is_null() || n <= 0 {
-            Vec::new()
-        } else {
-            let v = std::slice::from_raw_parts(body, 2 * n as usize);
-            v.chunks(2).map(|kv| ent(kv[0], kv[1])).collect()
-        };
-        Box::into_raw(Box::new(TurnDrag::new(sk(h), &ents)))
+        Box::into_raw(Box::new(TurnDrag::new(sk(h), &ent_list(body, len))))
     })
 }
 
@@ -164,14 +159,13 @@ pub unsafe extern "C" fn gcs_turn_drag_plane(d: *mut TurnDrag) -> i32 {
 
 /// How many free numbers the turn carries: 0, and it can turn nothing.
 #[no_mangle]
-pub unsafe extern "C" fn gcs_turn_drag_carries(d: *mut TurnDrag, h: *mut Sketch) -> i32 {
-    guard(0, move || (*d).carries(sk(h)) as i32)
+pub unsafe extern "C" fn gcs_turn_drag_carries(d: *mut TurnDrag) -> i32 {
+    guard(0, move || (*d).carries as i32)
 }
 
 /// Turned on in its plane by the angle the pointer swept about the pivot from (`fx`, `fy`) to
 /// (`tx`, `ty`), both on the plane's page.
 #[no_mangle]
-#[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn gcs_turn_drag_sweep(
     d: *mut TurnDrag,
     h: *mut Sketch,
@@ -191,7 +185,6 @@ pub unsafe extern "C" fn gcs_turn_drag_sweep(
 /// Turned on in space, seen by the eye at bearing `az` and elevation `el` (radians): `across`
 /// radians about the eye's up, `down` about its right.
 #[no_mangle]
-#[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn gcs_turn_drag_seen(
     d: *mut TurnDrag,
     h: *mut Sketch,

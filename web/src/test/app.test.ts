@@ -2164,6 +2164,27 @@ test('a shift-drag on a free plane\'s frame turns it in space about its origin, 
   assert.ok(now.u.every((x, k) => Math.abs(x - again.u[k]) < 1e-6), `${again.u}`);
 });
 
+test('a shift-drag on the frame of a plane held at its origin still turns it there', () => {
+  const view = docView(`use std
+v0 := plane(u: hint(dir: (1, 0, 0)), v: hint(dir: (0, 0, 1))) hint(origin: (0, -10, 0))
+fix(origin == (0, -10, 0)) v0
+`);
+  view.orbit = { az: 0.6, el: 0.5 };
+  const plane = (): Plane => view.doc.entity('v0') as Plane;
+  const pane = overview3(view.sketch, 0, 'datums')
+    .find((i) => i.part === 'face' && i.kind === 'plane' && i.index === plane().index)!;
+  const on = seenAt(view, pane.pts[2]);
+  const { u, o } = plane().frame3;
+  const cv = canvasOf(view);
+  cv.fire('pointerdown', pointer(...on, { shiftKey: true }));
+  for (let k = 1; k <= 4; k++) cv.fire('pointermove', pointer(on[0], on[1] + 10 * k, { shiftKey: true }));
+  cv.fire('pointerup', pointer(on[0], on[1] + 40, { shiftKey: true }));
+  assert.deepEqual(view.selected, [plane()]);
+  const now = plane().frame3;
+  assert.ok(o.every((x, k) => Math.abs(x - now.o[k]) < 1e-9), `moved: ${now.o}`);
+  assert.ok(u.some((x, k) => Math.abs(x - now.u[k]) > 1e-3), `not turned: ${now.u}`);
+});
+
 test('a shift-drag on a figure turns it in its plane about its middle; a shift-click toggles it',
      () => {
   const view = docView(`use std

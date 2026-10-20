@@ -240,7 +240,9 @@ version ([0.n], see the [language changelog](../solvent-changelog.md)) says wher
   `solve::TurnDrag` turns a body whole (a shift-drag): no soft row pulls a plane's attitude, so
   every free number the body carries is **put** where the rigid turn of its start puts it — a
   point's place, a frame's `o`, an axis's `d` and the foot `a` of the turned line — and the hard
-  rows polished alone, the turn taken in steps of at most `TURN_STEP`.  It turns in space when a
+  rows polished alone (re-homing their contacts), the turn taken in steps of at most
+  `TURN_STEP`, over the part the body can move (`graft::Part`, as a drag's numeric fallback is),
+  written back once a move.  It turns in space when a
   frame, an axis or a point in space is in the body (about the eye's up and right, `turn_seen`),
   else in the plane its first entity is drawn in (`sweep`, the angle the pointer swept about the
   pivot); the pivot is the middle of what the body holds, else of all it carries (a lone plane's

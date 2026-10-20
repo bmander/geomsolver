@@ -7,7 +7,7 @@
 import { Constraint } from './constraints.js';
 import { Arc, Circle, KIND_ID, Point, Sketch } from './model.js';
 import type { Primitive } from './model.js';
-import { core, takeJson, takeStr, withBuf } from './wasm.js';
+import { core, takeJson, takeStr, withBuf, withJson } from './wasm.js';
 
 export type Method = 'dogleg' | 'lm';
 export const METHODS: Method[] = ['dogleg', 'lm'];
@@ -387,18 +387,12 @@ export class TurnDrag {
   readonly carries: number;
 
   constructor(readonly sketch: Sketch, body: Primitive[]) {
-    this.handle = withBuf(2 * body.length, 4, (b) => {
-      const v = b.i32;
-      body.forEach((e, i) => {
-        v[2 * i] = KIND_ID[e.kind];
-        v[2 * i + 1] = e.index;
-      });
-      return core().gcs_turn_drag_new(sketch.handle, b.ptr, body.length);
-    });
+    this.handle = withJson(body.map((e) => e.ref),
+                           (p, n) => core().gcs_turn_drag_new(sketch.handle, p, n));
     const at = core().gcs_turn_drag_plane(this.handle);
     this.inSpace = at === -2;
     this.plane = this.inSpace ? -1 : at;
-    this.carries = core().gcs_turn_drag_carries(this.handle, sketch.handle);
+    this.carries = core().gcs_turn_drag_carries(this.handle);
   }
 
   /** Turned on in its plane by the angle the pointer swept about the pivot, `from` to `to` on
