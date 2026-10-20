@@ -54,6 +54,61 @@ function eyeIcon(state: Eye): SVGSVGElement {
   return svg;
 }
 
+/** What a row's icon says it is: its row kind, or — for an entity — the core's kind word for
+ *  the entity it stands for (`plane` for a frame, as the wire writes it). */
+export function iconOf(row: Row): string {
+  if (row.kind !== 'entity') return row.kind;
+  const word = row.ents[0]?.[0];
+  return word && word in GLYPHS ? word : 'entity';
+}
+
+/** A dot of radius `r` at (`x`, `y`), as a path. */
+function dot(x: number, y: number, r: number): string {
+  return `M${x - r} ${y}a${r} ${r} 0 1 0 ${2 * r} 0a${r} ${r} 0 1 0 ${-2 * r} 0`;
+}
+
+/** Each icon on a 24-unit square, as paths by how they are inked: `ink` stroked, `fill` filled,
+ *  `tint` stroked over a faint fill (a face, a sheet), `dots` stroked as a dotted line. */
+type Ink = 'ink' | 'fill' | 'tint' | 'dots';
+const GLYPHS: Record<string, [Ink, string][]> = {
+  point: [['fill', dot(12, 12, 4)]],
+  line: [['ink', 'M6 18 18 6'], ['fill', dot(6, 18, 2.5)], ['fill', dot(18, 6, 2.5)]],
+  circle: [['ink', dot(12, 12, 8)], ['fill', dot(12, 12, 1.5)]],
+  arc: [['ink', 'M4 17a8 8 0 0 1 16 0'], ['fill', dot(4, 17, 2.5)], ['fill', dot(20, 17, 2.5)]],
+  spline: [['ink', 'M5 18C8 2 16 22 19 6'], ['fill', dot(5, 18, 2.5)], ['fill', dot(19, 6, 2.5)]],
+  curve: [['ink', 'M3 14q4.5-8 9 0t9 0']],
+  traced: [['dots', 'M3 14q4.5-8 9 0t9 0']],
+  plane: [['ink', 'M3 18 8 6h13l-5 12z']],
+  face: [['tint', 'M3 18 8 6h13l-5 12z']],
+  surface: [['tint', 'M3 8c5-5 13 3 18-2v10c-5 5-13-3-18 2z']],
+  axis: [['ink', 'M5 19 19 5M12 5h7v7']],
+  motion: [['ink', 'M19 12a7 7 0 1 1-7-7M9 2l3 3-3 3']],
+  envelope: [['ink', `${dot(7, 10, 3)}${dot(12, 10, 3)}${dot(17, 10, 3)}M2 13h20`]],
+  meshing: [['ink', `${dot(12, 12, 5)}M12 2v4m0 12v4M2 12h4m12 0h4M4.9 4.9l2.9 2.9m8.4 8.4 2.9 2.9`
+    + 'M4.9 19.1l2.9-2.9m8.4-8.4 2.9-2.9']],
+  solid: [['tint', 'M12 3l8 4.5v9L12 21l-8-4.5v-9z'], ['ink', 'M4 7.5l8 4.5 8-4.5M12 12v9']],
+  instance: [['ink', 'M7 3h13v18H7zM4 7h6v3H4zm0 7h6v3H4z']],
+  block: [['ink', 'M3 8h13v13H3zM8 3h13v13']],
+  copy: [['ink', 'M5 5h14v14H5z']],
+  datums: [['ink', 'M6 18V4m0 14h14M6 18l7-7'], ['fill', dot(6, 18, 2)]],
+  entity: [['ink', 'M12 4l8 8-8 8-8-8z']],
+};
+
+/** A row's icon, in the tree's ink, from `GLYPHS`. */
+function kindIcon(name: string): SVGSVGElement {
+  const svg = document.createElementNS(SVG, 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('class', `outline-icon icon-${name}`);
+  for (const [ink, d] of GLYPHS[name] ?? GLYPHS.entity) {
+    const p = document.createElementNS(SVG, 'path');
+    p.setAttribute('d', d);
+    p.setAttribute('class', ink);
+    svg.append(p);
+  }
+  return svg;
+}
+
 /** One row as drawn: its element, its children's container (made when first opened), and the
  *  rows above it. */
 interface Drawn {
@@ -216,7 +271,10 @@ export class OutlinePane {
     const label = document.createElement('button');
     label.type = 'button';
     label.className = `outline-label kind-${row.kind}`;
-    label.textContent = row.label;
+    const name = document.createElement('span');
+    name.className = 'outline-name';
+    name.textContent = row.label;
+    label.append(kindIcon(iconOf(row)), name);
     label.title = row.path || row.label;
     this.on(label, 'click', i, (r, e) => selectRow(this.view, r, (e as MouseEvent).shiftKey));
     this.on(label, 'dblclick', i, (r) => frameRow(this.view, r));
