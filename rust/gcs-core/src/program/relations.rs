@@ -475,7 +475,8 @@ fn carried_motion(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) -> Option<Option<R
     }
     // the instant is the frame's value
     let value = drawn_in.and_then(|_| super::motions::value_of(&cx.sk, &cx.res, under_ref));
-    let m = match super::motions::reading(&mut cx.sk, &cx.res, under_ref, seen_ref.as_ref()) {
+    let m = match super::motions::reading(&mut cx.sk, &cx.res, under_ref, seen_ref.as_ref(),
+                                          None) {
         Ok(m) => m,
         Err(message) => {
             cx.diags.push(Diag::within(Code::E040, under_ref.span, st.id, message));

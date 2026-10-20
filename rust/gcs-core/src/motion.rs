@@ -9,6 +9,10 @@ mod law;
 pub use law::{Law, unread_drive};
 mod guide;
 use guide::{Guide, Stretch};
+mod track;
+use track::Carried;
+pub(crate) use track::Track;
+pub use track::unread_march;
 
 use crate::{envelope::Motion,model::{MotionDef,Sketch}};
 
@@ -23,6 +27,9 @@ enum Step {
     Relative {source:usize,observer:usize},
     /// A frame along a path (#398 C), its pose at the path's parameter, or that pose undone.
     Guided {guide:std::sync::Arc<Guide>,back:bool},
+    /// A frame the drawing carries as it is followed along a declared parameter (#398 F), its
+    /// pose at the parameter's value, or that pose undone.
+    Followed {carried:std::sync::Arc<Carried>,back:bool},
 }
 
 /// The joint's own number at the roll `angle` and its rate a radian of the roll: the law's where
@@ -50,6 +57,8 @@ impl Step {
                 Step::Translation {axis,advance:-advance,law:law.clone()},
             Step::Relative {source,observer} => Step::Relative {source:observer,observer:source},
             Step::Guided {ref guide,back} => Step::Guided {guide:guide.clone(),back:!back},
+            Step::Followed {ref carried,back} =>
+                Step::Followed {carried:carried.clone(),back:!back},
         }
     }
 
@@ -66,7 +75,7 @@ impl Step {
             Step::Rotation {axis,advance,..} => advance == 0. && unit(axis).is_some_and(|a| norm(cross(a,normal)) <= 1e-9),
             Step::Translation {axis,..} => unit(axis).is_some_and(|a| dot(a,normal).abs() <= 1e-9),
             Step::Relative {..} => true,
-            Step::Guided {..} => false,
+            Step::Guided {..} | Step::Followed {..} => false,
         }
     }
 }
@@ -216,10 +225,13 @@ impl Family {
             _ => Ok((reach,I::ONE)),
         }).collect::<Result<Vec<(I,I)>,Error>>()?;
         // a frame along a path over the domain of its parameter, enclosed (#398 C): its path's
-        // point, its speed and its frame's angular speed, or no bound at all
+        // point, its speed and its frame's angular speed, or no bound at all; a frame the drawing
+        // carries the same, its origin for the path's point (#398 F)
         let (lo,hi) = { let [a,b] = domain.bounds(); (a,b) };
         let guided = self.steps.iter().map(|step| match step {
             Step::Guided {guide,..} => guide.stretch(lo,hi).ok_or(Error::InvalidBounds).map(Some),
+            Step::Followed {carried,..} =>
+                carried.stretch(lo,hi).ok_or(Error::InvalidBounds).map(Some),
             _ => Ok(None),
         }).collect::<Result<Vec<Option<Stretch>>,Error>>()?;
         // the farthest a box stands from the path over the stretch, or from the home
@@ -245,7 +257,7 @@ impl Family {
                 Step::Translation {advance,..} => I::point(advance.abs())?.div(tau)?.mul(rate),
                 // a point carried along a path moves as fast as the path runs, and turns about
                 // it at the frame's angular speed, the same forward and inverse
-                Step::Guided {..} => {
+                Step::Guided {..} | Step::Followed {..} => {
                     let g = guided[i].as_ref().ok_or(Error::InvalidBounds)?;
                     I::point(g.spin)?.mul(far(g,b)?)?.add(I::point(g.speed)?)
                 }
@@ -276,7 +288,7 @@ impl Family {
                 }
                 // carried along a path, a box stands within its farthest reach of the path's
                 // stretch, forward, and of the home, inverse
-                Step::Guided {..} => {
+                Step::Guided {..} | Step::Followed {..} => {
                     let g = guided[i].as_ref().ok_or(Error::InvalidBounds)?;
                     let r = far(g,b)?.bounds()[1];
                     let around = |k: usize| {
@@ -372,6 +384,9 @@ impl Family {
                 Step::Guided {..} => Err(format!("`{}` rides along a path, whose screw moves as it \
                     runs: a screw is read of turns, screws and slides at a constant rate",
                     self.name)),
+                Step::Followed {..} => Err(format!("`{}` is carried by the drawing as it is \
+                    followed, whose screw moves as it runs: a screw is read of turns, screws and \
+                    slides at a constant rate",self.name)),
                 Step::Relative {..} => Err(format!("`{}` is a motion relative to a relative one, whose \
                     screw moves as it runs: a screw is read of turns, screws and slides about fixed \
                     lines, and of one relative to another",self.name)),
@@ -439,7 +454,7 @@ impl Family {
                     let length = d[0].dhypot(d[1]);
                     out.push(PlanarStep::Slide {direction:[d[0]/length,d[1]/length],advance:advance*scale});
                 }
-                Step::Guided {..} => return None,
+                Step::Guided {..} | Step::Followed {..} => return None,
                 Step::Relative {source,observer} => {
                     emit(family,source,frame,scale,out)?;
                     emit(family,observer,frame,scale,out)?;
@@ -533,7 +548,7 @@ impl Family {
                         Step::Rotation {origin,axis,ratio,advance,..} =>
                             Step::Rotation {origin,axis,ratio,advance,law},
                         Step::Translation {axis,advance,..} => Step::Translation {axis,advance,law},
-                        Step::Relative {..} | Step::Guided {..} =>
+                        Step::Relative {..} | Step::Guided {..} | Step::Followed {..} =>
                             return Err(format!("`{}` drives no joint",node.name)),
                     }
                 }
@@ -541,6 +556,11 @@ impl Family {
                 MotionDef::Guided {guide,frame,frenet} => {
                     let read = Guide::read(sk,&node.name,guide,frame,frenet)?;
                     Step::Guided {guide:std::sync::Arc::new(read),back:false}
+                }
+                // a frame the drawing carries, read off its march along the parameter (#398 F)
+                MotionDef::Followed {frame,ref over} => {
+                    let read = Carried::read(sk,&node.name,frame,over);
+                    Step::Followed {carried:std::sync::Arc::new(read),back:false}
                 }
                 // a joint's inverse turns and slides back, and a relative's swaps its sides
                 MotionDef::Inverse {of} => {
@@ -555,10 +575,22 @@ impl Family {
             Ok(next)
         }
         visit(sk,index,&mut done,&mut visiting,&mut steps,0)?;
+        // a frame the drawing carries nothing of (no march, or one that leaves it still) is the
+        // world seen from, and is refused read itself (#398 F)
+        let still = |k: usize| match &steps[k] {
+            Step::Followed {carried,..} => carried.still(),
+            _ => None,
+        };
+        let read = std::iter::once(steps.len()-1).chain(steps.iter().filter_map(|s| match *s {
+            Step::Relative {source,..} => Some(source),
+            _ => None,
+        }));
+        if let Some(why) = read.into_iter().find_map(still) { return Err(why); }
         let mut heights: Vec<usize> = Vec::with_capacity(steps.len());
         for step in &steps {
             let height = match *step {
-                Step::Rotation {..} | Step::Translation {..} | Step::Guided {..} => 1,
+                Step::Rotation {..} | Step::Translation {..} | Step::Guided {..}
+                    | Step::Followed {..} => 1,
                 Step::Relative {source,observer} => 1+heights[source].max(heights[observer]),
             };
             if height > 64 { return Err("motion dependencies exceed 64 levels".into()); }
@@ -604,6 +636,11 @@ impl Family {
                 // the path's parameter is what the motion is read at (#398 C)
                 Step::Guided {ref guide,back} => {
                     let m = guide.motion(angle)?;
+                    if back { m.inverse() } else { m }
+                }
+                // the parameter's value is what a carried frame is read at (#398 F)
+                Step::Followed {ref carried,back} => {
+                    let m = carried.motion(angle)?;
                     if back { m.inverse() } else { m }
                 }
             };
@@ -680,6 +717,10 @@ impl Family {
                 Step::Relative {source,observer} => get(source,&fixed,&spilled).then(get(observer,&fixed,&spilled).inverse()),
                 Step::Guided {ref guide,back} => {
                     let p = guide.pose(angle)?;
+                    if back { p.inverse() } else { p }
+                }
+                Step::Followed {ref carried,back} => {
+                    let p = carried.pose(angle)?;
                     if back { p.inverse() } else { p }
                 }
             };

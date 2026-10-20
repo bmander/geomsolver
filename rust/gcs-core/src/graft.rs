@@ -383,8 +383,9 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             crate::model::MotionDef::Relative {..} | crate::model::MotionDef::Inverse {..}
                 | crate::model::MotionDef::Driven {..} => true,
             crate::model::MotionDef::Joint {axis,..} => axis_map[axis as usize].is_some(),
-            // a frame along a path is read off the whole drawing's path: a graft carries none
-            crate::model::MotionDef::Guided {..} => false,
+            // a frame along a path is read off the whole drawing's path, and a frame the drawing
+            // carries off the whole drawing's march: a graft carries neither
+            crate::model::MotionDef::Guided {..} | crate::model::MotionDef::Followed {..} => false,
         }
     }).collect();
     loop {
@@ -435,7 +436,8 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             crate::model::MotionDef::Driven {of,ref law,ref over} =>
                 crate::model::MotionDef::Driven {of:motion_map[of as usize].unwrap() as u32,
                     law:law.clone(),over:over.clone()},
-            crate::model::MotionDef::Guided {..} => unreachable!("a graft carries no guided frame"),
+            crate::model::MotionDef::Guided {..} | crate::model::MotionDef::Followed {..} =>
+                unreachable!("a graft carries no guided or carried frame"),
         };
         // a joint's numbers the solve finds are the frame's, renumbered with its joint below
         dst.motions.push(crate::model::MotionE {def,name:m.name.clone(),class:m.class.clone(),

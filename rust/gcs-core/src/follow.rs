@@ -410,14 +410,7 @@ pub fn followed(sk: &Sketch, name: &str) -> Rc<Result<Followed, String>> {
     if MARCHING.get() {
         return Rc::new(Err("the drawing is being followed".into()));
     }
-    // the drawing at home, wherever it is shown standing: a march is of the drawing, not of an
-    // instant of it
-    let (mut key, numbers) = match &sk.standing {
-        Some(s) => (s.home.clone(), s.numbers.clone()),
-        None => (sk.get_x(), numbers(sk)),
-    };
-    key.extend(sk.parameters.get(name).map_or([0.0; 2], |p| [p.from, p.to]));
-    key.extend(numbers);
+    let key = key(sk, name);
     if let Some((k, f)) = sk.caches.followed.borrow().get(name) {
         if *k == key {
             return f.clone();
@@ -430,6 +423,19 @@ pub fn followed(sk: &Sketch, name: &str) -> Rc<Result<Followed, String>> {
     };
     sk.caches.followed.borrow_mut().insert(name.to_string(), (key, f.clone()));
     f
+}
+
+/// What a march along `name` is of: the drawing at home, wherever it is shown standing (a march
+/// is of the drawing, not of an instant of it), the parameter's interval, and every number the
+/// drawing's statements state.
+pub(crate) fn key(sk: &Sketch, name: &str) -> Vec<f64> {
+    let (mut key, numbers) = match &sk.standing {
+        Some(s) => (s.home.clone(), s.numbers.clone()),
+        None => (sk.get_x(), numbers(sk)),
+    };
+    key.extend(sk.parameters.get(name).map_or([0.0; 2], |p| [p.from, p.to]));
+    key.extend(numbers);
+    key
 }
 
 /// **The drawing `sk` followed along its declared parameter `name`**, from the interval's start

@@ -42,6 +42,8 @@ impl Family {
             Step::Translation {..} => return Err("temporal contacts require a rotation or two relative rotations".into()),
             Step::Guided {..} => return Err("temporal contacts are read of constant rates, and a \
                 frame along a path turns as its path does (#398)".into()),
+            Step::Followed {..} => return Err("temporal contacts are read of constant rates, and a \
+                frame the drawing carries moves as the drawing does (#398)".into()),
         };
         // a rack: a translation seen from a rotating blank
         if self.steps.iter().any(Step::is_driven) {

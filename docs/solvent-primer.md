@@ -1810,7 +1810,8 @@ std.Spin(wheel, about: o, on: std.front, ratio: 1)       // about a point of a v
 ```
 
 Roll 0 is as drawn: a member that must stand turned there is drawn turned.
-A motion never moves the sketch, and a frame with no joint stands still: the world. The ratio is
+A motion never moves the sketch, and a frame with no joint stands still: the world — unless the
+drawing carries it as a declared parameter runs (below). The ratio is
 `Scalar`; a measurement of the drawing there is E107.
 
 **A ratio left out is the solve's**: `std.Turn(pinion, about: shaft)` with no `ratio:`
@@ -2021,6 +2022,29 @@ groove := sweep(ball over t, under: follower, seen_from: cam)
 
 A value reads one parameter. A relation the solve holds — a point carried by a driven frame at a
 roll, a rate of it, a meshing — reads no drive (E080): draw in the frame instead.
+
+**A frame the drawing carries**: a frame with no joint placed on what moves as a declared
+parameter runs — a four-bar's coupler — stands wherever the drawing followed along it puts it, and
+a reading over the parameter that names it reads that motion. A tool drawn on the coupler sweeps
+its coupler curve:
+
+```sv
+param t: Angle over (0deg, 360deg)
+in std.front {
+  …                                   // the four-bar, `ground angle(t) crank`
+  cpl := std.Turned(b, c)             // the coupler's frame, on its pins
+}
+in cpl.axes {
+  …                                   // a ball drawn on the coupler, in its coordinates
+}
+track := sweep(ball over t, under: cpl.axes)
+track cut blank
+```
+
+It is read from where the drawing stands, as far as the march reaches: a sweep past a singular
+instant is E080, as is one of a frame the march does not move, and an interval of the roll no
+parameter declares moves no frame without a joint. A relation the solve holds reads no such frame,
+and no profile in the plane is generated under one.
 
 **A motion's twist is read by rates.** The roll `t` is the slot of the `coincident` holding
 `X`, and `rate(X over t)` is how fast `X` runs a radian of it — the twist there. A rate of a contact

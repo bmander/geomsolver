@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.149 — October 2026**
+**Specification, Draft 0.150 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -1320,7 +1320,8 @@ axis on a line, `p coincident f.axis` passes it through a point, `f.axis paralle
 direction, `fix(ratio == r, advance == a) f` states the numbers. At roll `t` the frame stands
 turned `ratio·t` right handed about its axis and moved `advance·t/2π` along it; a joint with ratio
 0 is a slide. Roll 0 is as drawn: a member that must stand turned there is drawn turned. A frame
-with no joint stands still: it is the world. A joint does not move the sketch.
+with no joint stands still: it is the world — unless the drawing carries it as a declared
+parameter runs (**[0.150]**, §6.14). A joint does not move the sketch.
 
 The standard library (§8) states the joint the ways a designer does:
 
@@ -1538,6 +1539,31 @@ std.Slide(follower, along: stem, advance: 360mm)        // its value in degrees 
 fix(value == 5deg * (1 - cos(t))) follower              // the cam's law
 roller := r0 in follower                                // at its rise where t is held
 groove := sweep(ball over t, under: follower, seen_from: cam)   // what the cam must not hold
+```
+
+**[0.150] A frame the drawing carries.** A frame with no joint placed by relations on geometry
+that moves as a declared parameter runs (§6.3) — a four-bar's coupler, `cpl := std.Turned(b, c)`
+on its pins — stands wherever the drawing followed along the parameter puts it, so its pose is a
+function of the parameter: a motion like a joint's, read after the solve. A reading over the
+parameter that names the frame reads that motion: `sweep(tool over t, under: cpl.axes)` is the
+solid `tool` sweeps as the drawing runs over `t`, and `seen_from: g` a frame jointed or carried
+alike. Its **home** is the instant the drawing stands at (the interval's start, §6.3), so what
+is drawn where it stands is carried from there; it reaches as far as the drawing is followed, and
+a reading past a singular instant (§6.3) is **E080**, as is one under a frame the march does not
+move (seen from, such a frame is the world, as one with no joint is). An interval of the roll no parameter declares (`over s in (a, b)`) moves no frame without a
+joint (**E080**). A relation the solve holds reads no such frame, as it reads no drive, and no
+profile in the plane is generated under one (§6.15).
+
+```
+param t: Angle over (0deg, 360deg)
+in std.front {
+  …                                        // a four-bar driven by `ground angle(t) crank`
+  cpl := std.Turned(b, c)                  // the coupler's frame, on its pins
+}
+in cpl.axes {
+  …                                        // a ball drawn on the coupler
+}
+track := sweep(ball over t, under: cpl.axes)   // the tube about its coupler curve
 ```
 
 ### 6.15 Generated envelopes

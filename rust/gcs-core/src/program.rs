@@ -58,6 +58,9 @@ pub fn solid_diagnostics(sk: &crate::model::Sketch, map: &SourceMap) -> Vec<Diag
                 .is_some_and(|p| p.dim != crate::units::Dim::ANGLE) => continue,
             // a frame along a path is read over its path's parameter, which need not reach 0
             crate::model::MotionDef::Guided { .. } => crate::motion::Family::read(sk,i).map(|_| ()),
+            // a frame the drawing carries is read off its march (#398 F), taken where a reading of
+            // it is evaluated or validated (`solid::validate`) and not for every edit
+            crate::model::MotionDef::Followed { .. } => continue,
             _ => crate::motion::evaluate(sk,i,0.).map(|_| ()),
         };
         if let Err(message) = read {

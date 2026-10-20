@@ -4,6 +4,16 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.150] A frame the drawing carries.** A frame with no joint, placed by relations on geometry
+that moves as a declared parameter runs — a four-bar's coupler, `cpl := std.Turned(b, c)` — is
+read by a reading over that parameter as the drawing carries it (§6.14): `sweep(tool over t,
+under: cpl.axes)` is the solid `tool` sweeps as the linkage runs, its pose read off the march after
+the solve, from where the drawing stands. Through 0.149 such a frame stood still and the reading
+was refused (`does not move`). A reading past where the march stops, of a frame the march does not
+move, or over an interval of the roll no parameter declares is **E080**; a relation the solve
+holds reads no such frame, nor is a profile in the plane generated under one. No document
+changes. (Issue #398, F.)
+
 **[0.149] Rounds that know of one another.** A defined word's use may be named (§9.9): `rim :=
 plate.c0 round(r: 3mm) plate.far`, what its body makes standing under the name, so a round's
 faces are `plate.rim.taken.round` (the name alone every face it made) and two named rounds' faces

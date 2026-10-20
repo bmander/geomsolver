@@ -6,7 +6,8 @@ interval of the roll a reading states, `follow.rs` (continuation), `trace(m over
 held to it (`followed.rs`), a drive (`motion/law.rs`, `MotionDef::Driven`,
 `tape::eval_interval`), a face swept over a declared parameter or a valued frame's block
 (`flatten/valued.rs`, #398 B), a frame along a path (`motion/guide.rs`, `MotionDef::Guided`,
-#398 C), or a drawing stood at an instant of its march (`follow::stand`, `Scrub`, #398 L). The
+#398 C), a drawing stood at an instant of its march (`follow::stand`, `Scrub`, #398 L), or a
+frame the drawing carries (`motion/track.rs`, `MotionDef::Followed`, #398 F). The
 direction is [#391](https://github.com/bmander/geomsolver/issues/391): geometry over a
 parameter, trajectories rather than snapshots; this file holds what is built of it. An issue
 number (#n) or a spec version ([0.n], see the [language changelog](../solvent-changelog.md)) says
@@ -493,3 +494,58 @@ where a rule came from.
     bodies are evaluated where they stand, so a scrub re-evaluates every moving part's (about a
     second an instant natively); and the march is taken again after every edit (1.3 s in the page
     for the V-twin).
+- **A frame the drawing carries** (#398 F, [0.150], `motion/track.rs`): a frame with no joint,
+  placed by relations on what moves as a declared parameter runs (a four-bar's coupler, `cpl :=
+  std.Turned(b, c)`), is a motion — its pose wherever the march along the parameter puts it.
+  - **Minted by a reading over the parameter** (`motions::carried_by`): a solid swept over a
+    declared parameter (`sweep(tool over t, under: f)`, `build::under_motion`) naming a frame
+    `under:` or `seen_from:` that has no joint (`frame_motion` finds none) is
+    `MotionDef::Followed { frame, over }`, once a frame and a parameter (`motion_over`).  An
+    interval of the roll no parameter declares mints none, and the frame is refused as one that
+    does not move (E080); so is an envelope's (`generated`, `envelopes`: built with the drawing,
+    they pass no parameter).  Whether the march moves the frame is read after the solve:
+    **a frame it carries nothing of** (no march, or one leaving it still, `Carried::still`) is the
+    world seen from, as a frame with no joint is, and refused read itself — the reading's root or
+    a relative's source (`Family::read`).
+  - **Read off the march** (`Track::read`, remembered against the march by identity,
+    `Caches::tracks`): the frame's origin and axes (`Sketch::basis`) at every station, and at
+    instants between them stood on the branch carried (`Followed::put`) so no two nodes are
+    further apart than `NODES` (1/1024) of the interval.  Between nodes a cubic Hermite in the
+    parameter, the origin's coordinates and the turn as a unit quaternion (its sign kept nearer
+    the node before, its four coordinates fitted and normalised, so every pose is rigid), each
+    node's rate the derivative there of the quartic through the five nearest: no difference of a
+    solve.  `M(u) x = R(u) (x − o_h) + o(u)`, `R(u) = F(u) F(h)ᵀ`, the **home** the instant the
+    drawing stands at (`Standing::at` on this parameter, else the interval's start), so what is
+    drawn where it stands is carried from there and `M(h)` is the identity.  The roll is read in
+    the kernels' units (radians for an angle), as every motion is; past the march's reach (a
+    singular instant) there is no pose, said in the parameter's units.  Refused (`Family::read`,
+    E080 where `solid::validate` reads it): a frame with no axes, one no node of the march moves.
+  - **Enclosed over a stretch** (`Track::stretch`, the `Stretch` a frame along a path gives, so
+    `MotionBounds` and the speed bound read it as `Step::Guided`'s): each segment's speed and the
+    rate of its fitted quaternion bounded by the hulls of the cubics' Bernstein coefficients, the
+    quaternion's length bounded below by `1 − h |q′|`, `|ω| ≤ 2 |q′| / |q|`; samples a step `w`
+    apart, every pose within `|o′| w / 2` and `|ω| w / 2` of one.  Certain of the fitted motion —
+    not of the march's solve, as a joint's bound is not of the solve that placed its axis.
+  - **What reads it**: a solid swept over the parameter and placed by its motion (`SolidDef::Swept`,
+    the field's), seen from another frame jointed or carried; no constant twist (`screw`,
+    `turning`, `sliding`, `in_plane`, `in_frame`, `instantaneous` and `NormalVelocity` refuse it).
+    Refused: a relation the solve holds reading it (`envelope::held::motion`,
+    `motion::unread_march`), a profile in the plane generated under it (`program_signed`; none is
+    minted for one yet); a graft carries none.  `solid::reads` keys it by the march's key (`follow::key`) and the instant
+    stood at; `solid_diagnostics` leaves it to the readings that evaluate it, so an edit takes no
+    march for it.
+  - **Gate**: `tests/followed_frames.rs` — the frame on `mechanisms/four_bar.sv`'s coupler against
+    the closed form at every half degree (the pins and the midpoint to 1e-9, the coupler's
+    direction to 1e-10, the rate against a difference of the closed form to 1e-6, the pose alone
+    agreeing); `MotionBounds` holding every sampled pose of every 15° stretch, and the speed bound
+    every sampled speed, of a point on the coupler and one off it; a unit ball drawn on the coupler
+    swept round, its field's distance against the tube about the closed-form coupler curve on,
+    inside and outside it (1e-6), and cut through a plate, the path cut away and the plate beside
+    it kept; the coupler seen from the crank's frame (the pin held, turned by the coupler's angle
+    less the crank's) and from a frame the march leaves still (the world's view); the frame read
+    from where the drawing is stood; the refusals.
+  - **Not built**: an envelope under such a frame (a profile in the plane is a curve the solve
+    holds, generated under joints at a constant rate; a coupler-carried circle's envelope against
+    its closed form is the gate left), a trace of a point in space (E060), a reading at an instant
+    (`x at τ` names no parameter to be carried along), and a tool riding the frame read with
+    `under:` left out (a frame with no joint is no carrier).

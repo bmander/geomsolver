@@ -1361,6 +1361,11 @@ fn motion(sk: &Sketch, m: usize, steps: &mut Vec<Step>, cols: &mut Vec<Col>,
                 solve: a relation the solve holds reads no frame along a path — sweep what rides \
                 on it as the parameter runs, `sweep(sec over s)`", me.name))
         }
+        // a row reads no march (#398 F): a frame the drawing carries is read off the drawing
+        // followed, after the solve
+        MotionDef::Followed { ref over, .. } => {
+            return Err(crate::motion::unread_march(&me.name, over))
+        }
         // a row reads no law (#391 S5): a driven frame is read by what is drawn in it, `x in f`,
         // at its value worked out, and by the readings over the roll built after the solve
         MotionDef::Driven { of, ref over, .. } => {

@@ -497,6 +497,16 @@ fn motion_reads(sk: &Sketch,motion: u32,values: &mut Vec<f64>) {
                     None => values.push(UNREAD),
                 }
             }
+            // a frame the drawing carries: the frame, and everything its march is of — the
+            // drawing at home, its statements' numbers and the parameter's interval — and the
+            // instant it stands at (#398 F)
+            crate::model::MotionDef::Followed {frame,ref over} => {
+                values.extend([8.,frame as f64]);
+                values.extend(over.bytes().map(f64::from));
+                values.extend(crate::follow::key(sk,over));
+                values.push(sk.standing.as_ref().filter(|s| &s.name == over)
+                    .map_or(UNREAD,|s| s.at));
+            }
             crate::model::MotionDef::Joint {axis,ratio,advance} => {
                 values.extend([5.,axis as f64,ratio,advance]);
                 match sk.axes.get(axis as usize) {

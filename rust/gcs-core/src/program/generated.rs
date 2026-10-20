@@ -101,6 +101,11 @@ fn program_signed(sk: &Sketch, m: usize, inverse: bool, steps: &mut Vec<Step>, a
                 solve: a profile in the sheet is generated under joints at a constant rate",
                 me.name))
         }
+        MotionDef::Followed { ref over, .. } => {
+            return Err(format!("`{}` is carried by the drawing as it is followed along `{over}`, \
+                its pose read off the march after the solve: a profile in the sheet is generated \
+                under joints at a constant rate", me.name))
+        }
         MotionDef::Joint { .. } => {
             return Err(format!("`{}`'s joint turns about an axis no centre of a view holds: a tool \
                                 of the sheet is carried by a turn in its view, `std.Spin(f, \
@@ -262,7 +267,8 @@ pub(super) fn planar_envelopes(sk: &mut Sketch, res: &mut Resolver, map: &mut So
             Some([Kid::Ref(r)]) => Some(r),
             _ => None,
         };
-        let built = super::motions::reading_of(sk, res, Some(tool), under, d.seen_from.as_ref())
+        let built = super::motions::reading_of(sk, res, Some(tool), under, d.seen_from.as_ref(),
+                                               None)
             .and_then(|m| profile(sk, d, tool, m));
         let rides = observer_path(sk, res, d);
         bind(sk, res, map, st, d, built, diags);
@@ -347,7 +353,8 @@ pub(super) fn extruded_envelopes(sk: &mut Sketch, res: &mut Resolver, map: &mut 
         };
         // the prism the side is of rides as its face's points do (#383)
         let ridden = res.lookup(edge).and_then(|e| follow_building(sk, res, e, edge).ok());
-        let motion = super::motions::reading_of(sk, res, ridden, under, d.seen_from.as_ref()).ok()
+        let motion = super::motions::reading_of(sk, res, ridden, under, d.seen_from.as_ref(),
+                                                None).ok()
             .map(|m| EntRef::new(EntKind::Motion, m));
         let Some(motion) = motion else { continue };
         // a turn about a line in space keeps no view: the spatial envelope's, after the solve

@@ -351,17 +351,56 @@ pub(super) fn value_of(sk: &Sketch, res: &Resolver, f: &Ref)
 /// **A reading's motion** (#383): the frame named `under:`, seen from the one named `seen_from:`
 /// where one is — its node, or the relative of the two (`n⁻¹·m`, minted once).  A frame seen from
 /// one with no joint is seen from the world; one with no joint itself carries nothing, and is
-/// refused naming how to turn it.
-pub(super) fn reading(sk: &mut Sketch, res: &Resolver, under: &Ref, seen_from: Option<&Ref>)
-    -> Result<usize, String> {
-    let source = frame_motion(sk, res, under)?.ok_or_else(|| {
+/// refused naming how to turn it.  A reading over a declared parameter, `over` (#398 F), reads a
+/// frame with no joint as the drawing carries it along the parameter (`carried_by`).
+pub(super) fn reading(sk: &mut Sketch, res: &Resolver, under: &Ref, seen_from: Option<&Ref>,
+                      over: Option<&str>) -> Result<usize, String> {
+    let source = motion_over(sk, res, under, over)?.ok_or_else(|| {
         let name = crate::syntax::ref_text(under);
         format!("`{name}` does not move: a frame's motion is its joint, held by relations — \
-                 `std.Turn({name}, about: l, ratio: r)`, `std.Spin`, `std.Slide`")
+                 `std.Turn({name}, about: l, ratio: r)`, `std.Spin`, `std.Slide` — or, placed on \
+                 what moves as a declared parameter runs, it is read over that parameter, \
+                 `sweep(tool over t, under: {name})`")
     })?;
     let Some(g) = seen_from else { return Ok(source) };
-    let Some(observer) = frame_motion(sk, res, g)? else { return Ok(source) };
+    let Some(observer) = motion_over(sk, res, g, over)? else { return Ok(source) };
     Ok(relative(sk, source, observer))
+}
+
+/// The motion of the frame `r` names, its joint's (`frame_motion`) or, where it has none and a
+/// reading runs over a declared parameter `over`, the drawing's as it is followed along it.
+fn motion_over(sk: &mut Sketch, res: &Resolver, r: &Ref, over: Option<&str>)
+    -> Result<Option<usize>, String> {
+    match (frame_motion(sk, res, r)?, over) {
+        (None, Some(t)) => carried_by(sk, res, r, t),
+        (m, _) => Ok(m),
+    }
+}
+
+/// **A frame the drawing carries** (#398 F, [0.150]): the frame `r` names, which no joint moves,
+/// read over the declared parameter `over` — standing wherever the drawing followed along `over`
+/// puts it, its pose a function of the parameter (`MotionDef::Followed`, minted once a frame and
+/// a parameter).
+/// `None` where `over` is no parameter the document declares: an interval of the roll alone moves
+/// no frame that has no joint.  Whether the frame moves as `over` runs is read off the march,
+/// after the solve.
+fn carried_by(sk: &mut Sketch, res: &Resolver, r: &Ref, over: &str)
+    -> Result<Option<usize>, String> {
+    if !sk.parameters.contains_key(over) {
+        return Ok(None);
+    }
+    let e = res.lookup(r).and_then(|e| super::resolve::follow_building(sk, res, e, r).ok())
+        .ok_or_else(|| format!("no such frame: `{}`", crate::syntax::ref_text(r)))?;
+    let frame = e.i() as u32;
+    let found = sk.motions.iter().position(|m| matches!(&m.def,
+        MotionDef::Followed { frame: f, over: t } if *f == frame && t == over));
+    if let Some(i) = found {
+        return Ok(Some(i));
+    }
+    sk.motions.push(MotionE { def: MotionDef::Followed { frame, over: over.to_string() },
+                              name: name_of(res, e), class: sk.frames[e.i()].class.clone(),
+                              numbers: None });
+    Ok(Some(sk.motions.len() - 1))
 }
 
 /// The motion node of the frame `r` names: its joint's after the joints of the frames it rides
@@ -484,10 +523,12 @@ pub(super) fn meshing(sk: &mut Sketch, res: &Resolver, first: EntRef, second: En
 
 /// **What a reading of `tool` is under** (#383): the frame `under` names, seen from the one
 /// `seen_from` names (refused where `tool` rides already), or with `under:` left out what `tool`
-/// rides on — refused where it rides on nothing that moves.
+/// rides on — refused where it rides on nothing that moves.  `over` is the declared parameter the
+/// reading runs over, where it runs over one (#398 F).
 pub(super) fn reading_of(sk: &mut Sketch, res: &Resolver, tool: Option<EntRef>,
-                         under: Option<&Ref>, seen_from: Option<&Ref>) -> Result<usize, String> {
-    let m = read_under(sk, res, tool, under, seen_from)?;
+                         under: Option<&Ref>, seen_from: Option<&Ref>, over: Option<&str>)
+    -> Result<usize, String> {
+    let m = read_under(sk, res, tool, under, seen_from, over)?;
     // the roll is an angle, and a drive read over it runs over one (#391 S5)
     if let Some((f, over)) = drive_in(sk, m) {
         let dim = sk.parameters.get(&over).map(|p| p.dim);
@@ -501,17 +542,17 @@ pub(super) fn reading_of(sk: &mut Sketch, res: &Resolver, tool: Option<EntRef>,
 }
 
 fn read_under(sk: &mut Sketch, res: &Resolver, tool: Option<EntRef>, under: Option<&Ref>,
-              seen_from: Option<&Ref>) -> Result<usize, String> {
+              seen_from: Option<&Ref>, over: Option<&str>) -> Result<usize, String> {
     let Some(tool) = tool else {
         return match under {
-            Some(u) => reading(sk, res, u, seen_from),
+            Some(u) => reading(sk, res, u, seen_from, over),
             None => Err("a reading names the frame it is under, `under: f`".into()),
         };
     };
     match under {
         Some(u) => match under_riding(sk, res, tool) {
             Some(why) => Err(why),
-            None => reading(sk, res, u, seen_from),
+            None => reading(sk, res, u, seen_from, over),
         },
         None => riding(sk, res, tool, seen_from)?.ok_or_else(|| format!(
             "`{}` rides on no frame that moves: a reading of it names one, `under: f`, or it is \

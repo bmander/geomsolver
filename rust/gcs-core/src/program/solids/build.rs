@@ -431,11 +431,17 @@ fn under_motion(
     // on, seen from the one named, where one is (#383)
     let drawn_in = matches!(sweep, Sweep::Placed { at: crate::syntax::Arg::Word(w), .. }
         if w == crate::syntax::DRAWN_IN);
+    // a sweep over a declared parameter reads a frame with no joint as the drawing carries it
+    // along the parameter (#398 F)
+    let over = match sweep {
+        Sweep::Swept { over, .. } => Some(over.name.text.as_str()),
+        _ => None,
+    };
     let read = match motion.as_ref().filter(|_| drawn_in) {
-        Some(f) => super::super::motions::reading(sk, res, f, seen_from)
+        Some(f) => super::super::motions::reading(sk, res, f, seen_from, None)
             .map(|m| super::super::motions::undriven(sk, m)),
         None => super::super::motions::reading_of(sk, res, Some(ops[0]), motion.as_ref(),
-                                                   seen_from),
+                                                   seen_from, over),
     };
     let m = match read {
         Ok(m) => EntRef::new(EntKind::Motion, m),

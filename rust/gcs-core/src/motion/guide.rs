@@ -215,16 +215,16 @@ fn reflected(f: &Frame, x0: V, x1: V, t1: V) -> Frame {
 }
 
 /// `a · bᵀ` summed over the columns: the turn taking frame `b` to frame `a`.
-fn turn(a: &Frame, b: &Frame) -> M {
+pub(super) fn turn(a: &Frame, b: &Frame) -> M {
     std::array::from_fn(|i| std::array::from_fn(|j| (0..3).map(|k| a[k][i] * b[k][j]).sum()))
 }
 
-fn mv(m: &M, v: V) -> V {
+pub(super) fn mv(m: &M, v: V) -> V {
     std::array::from_fn(|i| dot(m[i], v))
 }
 
 /// `[ω]× m`, the rate of a turn `m` turning at `ω`.
-fn spun(w: V, m: &M) -> M {
+pub(super) fn spun(w: V, m: &M) -> M {
     let k = [[0.0, -w[2], w[1]], [w[2], 0.0, -w[0]], [-w[1], w[0], 0.0]];
     std::array::from_fn(|i| std::array::from_fn(|j| (0..3).map(|q| k[i][q] * m[q][j]).sum()))
 }
