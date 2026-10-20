@@ -2,10 +2,11 @@
 //!
 //! A bound's direction (`Cmp`), a body word (`BodyWord`), where a statement was written (`Span`),
 //! the classes a declaration carries (`Classes`) and the spelling helpers every message uses
-//! (`num`, `snake`, `one_of`) are read by the model, the constraints and the solids as much as by
-//! the parser.  They live here, depending on nothing, so the solver does not import the parser to
-//! name them; `syntax` re-exports each (`style` re-exports `Classes`), and the language reads them
-//! there.
+//! (`num`, `snake`, `one_of`, and `public_path`, an instance's name as a document writes it) are
+//! read by the model, the constraints and the solids as much as by the parser.  They live here,
+//! depending on nothing, so the solver does not import the parser to name them; `syntax`
+//! re-exports each (`style` re-exports `Classes`, `program` `public_path`), and the language
+//! reads them there.
 
 /// A half-open byte range into the program text.
 ///
@@ -212,4 +213,19 @@ pub fn num(v: f64) -> String {
         return "0".to_string();
     }
     format!("{v}")
+}
+
+/// Internal block identity is not part of a drawing reference. `#statement.copy.name`
+/// becomes `name[copy]`, which survives inserting or reordering unrelated statements.
+pub fn public_path(name: &str) -> String {
+    let mut parts = name.split('.');
+    let mut path = Vec::new();
+    while let Some(part) = parts.next() {
+        if part.strip_prefix('#').is_some_and(|id| !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit())) {
+            if let (Some(index), Some(name)) = (parts.next(), parts.next()) {
+                path.push(format!("{name}[{index}]"));
+            }
+        } else { path.push(part.to_string()); }
+    }
+    path.join(".")
 }
