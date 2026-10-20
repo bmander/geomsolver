@@ -311,7 +311,7 @@ fn a_printed_model_keeps_units_and_omits_the_sheet() {
     assert!(!text.contains("style "), "{text}");
     let back = read(&text).expect("reads back");
     assert_eq!(back.units.stated(), Some("in"));
-    assert!(back.sheet.is_empty());
+    assert!(back.sheet().is_empty());
 }
 
 /// The lexer has no string literal: a quote is the inch mark, and there is nothing else for one

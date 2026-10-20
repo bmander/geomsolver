@@ -10,7 +10,7 @@
 //! keep working across the FFI without any pointer ever leaving the core.
 
 use crate::constraints::Constraint;
-use crate::style::Classes;
+use crate::vocab::Classes;
 use std::collections::BTreeMap;
 
 // Private responsibility modules; existing model paths remain the public API.
@@ -251,11 +251,12 @@ pub struct Sketch {
     /// set by a host that meshes swept solids itself, a page with a worker — elsewhere, the solid
     /// refused until its surface is supplied rather than meshed on the thread that draws.
     pub field_meshing: std::cell::Cell<crate::solid::FieldMeshing>,
-    /// The document's style sheet: what each class looks like (`style.rs`).  Presentation, and
-    /// nothing the core computes reads it — it is here because it is document state, saved and
-    /// grafted with everything else, and because the core resolving it is what keeps two front
-    /// ends from disagreeing about how one drawing is drawn.
-    pub sheet: crate::style::Sheet,
+    /// The document's presentation: its style sheet, what each class looks like, which `style`
+    /// puts here and reads back (`Sketch::sheet`, `set_sheet`, `style_of`).  Carried, never read:
+    /// it is document state, grafted with everything else, and the core resolving it is what
+    /// keeps two front ends from disagreeing about how one drawing is drawn — but the model holds
+    /// it as an `Annex`, so the solver does not name the type (#409, step 5).
+    pub presentation: Annex,
     /// What the document's numbers are in (`units.rs`).  Storing it costs the solve nothing —
     /// every kernel is homogeneous in length, so scaling a whole sketch moves no residual, no
     /// tolerance and no rank — but it is what makes `80mm` mean something and what lets a paste
@@ -272,12 +273,39 @@ pub struct Sketch {
     next_cid: u32,
 }
 
+/// What a layer above the model keeps on a sketch and the model only carries: cloned with it,
+/// grafted with it, never read by it.  The style sheet is the one there is (`style::Sheet`), and
+/// the module that owns its type is the one that puts it here and reads it back — so the model
+/// holds a document's presentation without importing it (#409, step 5).
+///
+/// Shared on clone and replaced whole on write, so a copy of the sketch costs a count, and a
+/// writer changing what it holds builds a new value (`Sketch::set_sheet`).
+#[derive(Clone, Default)]
+pub struct Annex(Option<std::rc::Rc<dyn std::any::Any>>);
+
+impl Annex {
+    /// What it holds, if it holds a `T`.
+    pub fn get<T: 'static>(&self) -> Option<&T> {
+        self.0.as_deref()?.downcast_ref()
+    }
+
+    pub fn set<T: 'static>(&mut self, value: T) {
+        self.0 = Some(std::rc::Rc::new(value));
+    }
+}
+
+impl std::fmt::Debug for Annex {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(if self.0.is_some() { "Annex(..)" } else { "Annex(empty)" })
+    }
+}
+
 impl Sketch {
     pub fn new() -> Sketch {
         Sketch::default()
     }
 
-    // -- presentation (`style.rs`) ------------------------------------------
+    // -- presentation: roles and classes, as tags (`style.rs` resolves them) ----
 
     /// Semantic intent of this entity, independent of its drawing style.
     pub fn roles_of(&self, e: EntRef) -> crate::semantics::GeometryRoles {
@@ -330,38 +358,6 @@ impl Sketch {
             c.set(name, on);
             self.style_epoch = self.style_epoch.wrapping_add(1);
         }
-    }
-
-    /// The whole sheet, replaced.  Elaboration's write path, and the other half of the epoch.
-    pub fn set_sheet(&mut self, sheet: crate::style::Sheet) {
-        self.sheet = sheet;
-        self.style_epoch = self.style_epoch.wrapping_add(1);
-    }
-
-    /// What an entity is drawn with: the base sheet under the document's, cascaded over its
-    /// classes.  **The core resolves; a front end strokes what it is handed** — the same seam
-    /// `callout.rs` and `curve::tessellate` sit on, so every front end draws one drawing alike.
-    pub fn style_of(&self, e: EntRef) -> crate::style::Style {
-        // a kind may carry a class it was never given — a plane's datum glyph is `.plane` —
-        // under whatever the declaration says, so the document's rule still wins
-        let mut classes = self.class_of(e);
-        if let Some(c) = e.kind.implicit_class() {
-            classes.0.insert(0, c.to_string());
-        }
-        crate::style::resolve(&self.sheet, &classes)
-    }
-
-    /// What a *named* class list comes to, spelled as a declaration spells one: `"dimension"`,
-    /// or `"dimension reference"`.  The drawing's chrome asks this — a dimension callout is not
-    /// an entity and carries no class of its own, but its ink is shared by every callout in the
-    /// document, which is exactly what a class is for.
-    ///
-    /// A list rather than one name because a claimed dimension *is* a dimension: it takes the
-    /// shared rule and then the one that says how it differs, which is how a caller gets a
-    /// document's `style .dimension` on a reference dimension too.
-    pub fn style_named(&self, classes: &str) -> crate::style::Style {
-        let list = Classes(classes.split_whitespace().map(str::to_string).collect());
-        crate::style::resolve(&self.sheet, &list)
     }
 
     /// What the document calls a plane.  A plane carries no name of its own — the source map
