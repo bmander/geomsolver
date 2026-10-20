@@ -67,12 +67,15 @@ impl Tool {
 
 /// One step of the motion's postfix program, each number where it stands in the outer vector
 /// `[t, θ…, values…]`: a turn about a centre at a ratio, a slide along a line by an advance
-/// per turn, and the relative of the two before it (the first seen from the second).
+/// per turn, and the relative of the two before it (the first seen from the second).  A frame
+/// the drawing moves (#398 F) is `Table`, motion node `motion`'s: its numbers are the drawing's
+/// march, which no row reads, attached after the solve (`with_tables`).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Op {
     Turn { centre: usize, ratio: usize },
     Slide { line: usize, advance: usize },
     Relative,
+    Table { motion: usize, back: bool },
 }
 
 /// What a curve or generated tool carries besides its columns.
@@ -126,6 +129,7 @@ impl Generated {
                 Op::Turn { centre, ratio } => f.extend([1.0, centre as f64, ratio as f64]),
                 Op::Slide { line, advance } => f.extend([2.0, line as f64, advance as f64]),
                 Op::Relative => f.push(3.0),
+                Op::Table { motion, back } => f.extend([4.0, motion as f64, f64::from(u8::from(back))]),
             }
         }
         match body {
@@ -162,6 +166,8 @@ struct View<'a> {
     ops: Vec<Op>,
     curve: Option<CurveTool<'a>>,
     inner: Option<Box<InnerTool<'a>>>,
+    /// Each `Table` op's motion node and its table, where they are attached (`with_tables`).
+    tables: Vec<(usize, &'a [f64])>,
 }
 
 struct CurveTool<'a> {
@@ -209,6 +215,7 @@ fn view(flat: &[f64]) -> Option<View<'_>> {
             1.0 => (Op::Turn { centre: ix(at + 1)?, ratio: ix(at + 2)? }, 3),
             2.0 => (Op::Slide { line: ix(at + 1)?, advance: ix(at + 2)? }, 3),
             3.0 => (Op::Relative, 1),
+            4.0 => (Op::Table { motion: ix(at + 1)?, back: g(at + 2)? != 0.0 }, 3),
             _ => return None,
         };
         ops.push(op);
@@ -226,7 +233,9 @@ fn view(flat: &[f64]) -> Option<View<'_>> {
         if 1 + n_t + nv > tape::MAX_VARS {
             return None;
         }
-        Some(CurveTool { n_theta: n_t, x, y, values, domain: (g(at)?, g(at + 1)?) })
+        let domain = (g(at)?, g(at + 1)?);
+        at += 2;
+        Some(CurveTool { n_theta: n_t, x, y, values, domain })
     } else {
         None
     };
@@ -239,11 +248,98 @@ fn view(flat: &[f64]) -> Option<View<'_>> {
         if !view.tool.analytic() || view.n_theta != n_t {
             return None;
         }
+        at += 4 + len;
         Some(Box::new(InnerTool { view, values, anchor, domain: (from, to) }))
     } else {
         None
     };
-    Some(View { n_theta, tool, side, ops, curve, inner })
+    // the tables a frame the drawing moves is read from, after everything else
+    let mut tables = Vec::new();
+    if ops.iter().any(|o| matches!(o, Op::Table { .. })) {
+        let n = ix(at)?;
+        at += 1;
+        for _ in 0..n {
+            let (motion, len) = (ix(at)?, ix(at + 1)?);
+            tables.push((motion, flat.get(at + 2..at + 2 + len)?));
+            at += 2 + len;
+        }
+    }
+    Some(View { n_theta, tool, side, ops, curve, inner, tables })
+}
+
+/// The motion nodes a profile's `Table` ops read (#398 F): what `with_tables` attaches, in order.
+pub fn tabled(flat: &[f64]) -> Vec<usize> {
+    let Some(n) = flat.get(3).map(|&v| v as usize) else { return Vec::new() };
+    let mut out = Vec::new();
+    let mut at = 4usize;
+    for _ in 0..n {
+        match flat.get(at).copied() {
+            Some(4.0) => {
+                out.extend(flat.get(at + 1).map(|&m| m as usize));
+                at += 3;
+            }
+            Some(3.0) => at += 1,
+            Some(_) => at += 3,
+            None => break,
+        }
+    }
+    out
+}
+
+/// A profile's encoding with the tables of the frames the drawing moves attached after it, one
+/// per motion node (`Ride::planar`'s): what `view` reads a `Table` op from.
+pub fn with_tables(flat: &[f64], tables: &[(usize, Vec<f64>)]) -> Vec<f64> {
+    let mut out = flat.to_vec();
+    out.push(tables.len() as f64);
+    for (m, t) in tables {
+        out.extend([*m as f64, t.len() as f64]);
+        out.extend_from_slice(t);
+    }
+    out
+}
+
+/// **A frame the drawing moves, in the plane, at the roll `t`** (degrees, a jet): its table,
+/// `[φ_now, o_x, o_y, n, (t, w, z, c_x, c_y)…]` — the turn now, the origin now, and at each node
+/// the parameter, the quaternion's scalar and its part along the plane's normal (from the first
+/// station's frame) and the origin — fitted by the cubic through the four nodes about `t`, as
+/// `motion::Track` fits it: `X = R(φ(t) − φ_now)(T − o) + c(t)`, `φ = 2 atan2(z, w)`.
+fn table(data: &[f64], t: Jet) -> Option<(Jet, [Jet; 2])> {
+    let (phi_now, ox, oy) = (*data.first()?, *data.get(1)?, *data.get(2)?);
+    let n = *data.get(3)? as usize;
+    let node = |j: usize| data.get(4 + 5 * j..9 + 5 * j);
+    if n < 2 || node(n - 1).is_none() {
+        return None;
+    }
+    let tv = t.0[0];
+    let (first, last) = (node(0)?[0], node(n - 1)?[0]);
+    let slack = 1e-9 * (last - first);
+    if !(tv >= first - slack && tv <= last + slack) {
+        return None;
+    }
+    // the span `t` lies in: the first node past it, found by halving
+    let (mut lo, mut hi) = (0usize, n);
+    while lo < hi {
+        let mid = (lo + hi) / 2;
+        if node(mid)?[0] > tv { hi = mid } else { lo = mid + 1 }
+    }
+    let k = lo.clamp(1, n - 1) - 1;
+    let r = crate::motion::window(n, k);
+    let (mut w, mut z, mut cx, mut cy) = (Jet::default(), Jet::default(), Jet::default(), Jet::default());
+    for i in r.clone() {
+        let ni = node(i)?;
+        let mut l = Jet::constant(1.0);
+        for j in r.clone().filter(|&j| j != i) {
+            let tj = node(j)?[0];
+            l = l * ((t - Jet::constant(tj)) * (1.0 / (ni[0] - tj)));
+        }
+        w = w + l * ni[1];
+        z = z + l * ni[2];
+        cx = cx + l * ni[3];
+        cy = cy + l * ni[4];
+    }
+    let phi = Jet::atan2(z, w) * 2.0 - Jet::constant(phi_now);
+    let (sn, cs) = phi.sin_cos();
+    Some((phi, [cx - (cs * ox - sn * oy), cy - (sn * ox + cs * oy)]))
 }
 
 /// The motion at the roll `t` (degrees, a jet), as `(Φ, d)`: `X = R(Φ)·T + d`.
@@ -269,6 +365,17 @@ fn motion(v: &View, outer: &[f64], t: Jet) -> Option<(Jet, [Jet; 2])> {
                 // `advance` per whole turn of the roll
                 let k = at(advance)? / 360.0 / len;
                 (Jet::constant(0.0), [t * ((bx - ax) * k), t * ((by - ay) * k)])
+            }
+            Op::Table { motion, back } => {
+                let data = v.tables.iter().find(|(m, _)| *m == motion)?.1;
+                let (phi, d) = table(data, t)?;
+                if back {
+                    // undone: `T = R(−Φ)(X − d)`
+                    let (sn, cs) = (-phi).sin_cos();
+                    (-phi, [-(cs * d[0] - sn * d[1]), -(sn * d[0] + cs * d[1])])
+                } else {
+                    (phi, d)
+                }
             }
             Op::Relative => {
                 if depth < 2 {

@@ -47,7 +47,8 @@ pub(super) fn held_envelopes(sk: &mut Sketch, res: &mut Resolver, map: &mut Sour
         // the frame it is generated under, seen from the one named — or, `under:` left out,
         // what its source rides on (#383)
         let tool = operand(0).and_then(|r| ridden(sk, res, &decls, r));
-        let motion = super::motions::reading_of(sk, res, tool, operand(1), d.seen_from.as_ref())
+        let motion = super::motions::reading_of(sk, res, tool, operand(1), d.seen_from.as_ref(),
+            super::motions::declared(d.angular_span.as_ref().and_then(|s| s.over.as_ref())))
             .ok().map(|m| EntRef::new(EntKind::Motion, m));
         let rides = super::generated::observer_path(sk, res, d);
         // a declaration that would not be built after the solve either is left to say so there —
@@ -131,7 +132,7 @@ pub(super) fn held_meshings(sk: &mut Sketch, res: &mut Resolver, map: &mut Sourc
             let flanks = [flank(sk,0)?,flank(sk,1)?];
             // each flank read on its own frames where `under:` is left out (#383)
             let m = match operand(2) {
-                Ok(u) => super::motions::reading(sk, res, u, d.seen_from.as_ref()),
+                Ok(u) => super::motions::reading(sk, res, u, d.seen_from.as_ref(), None),
                 Err(_) => {
                     let rode = |sk: &Sketch, i: usize| match &flanks[i] {
                         Flank::Envelope(k) => Some(EntRef::new(EntKind::Envelope, *k as usize)),
@@ -383,8 +384,8 @@ pub(super) fn envelopes(sk: &mut Sketch, res: &mut Resolver, map: &mut SourceMap
                     }
                     _ => None,
                 };
-                super::motions::reading_of(sk, res, tool, under, d.seen_from.as_ref())
-                    .map(|m| m as u32)
+                super::motions::reading_of(sk, res, tool, under, d.seen_from.as_ref(),
+                    super::motions::declared(d.angular_span.as_ref().and_then(|s| s.over.as_ref()))).map(|m| m as u32)
             }
         };
         let operand = |i: usize, kind: EntKind| -> Result<u32,String> {

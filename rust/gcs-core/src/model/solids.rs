@@ -590,6 +590,13 @@ pub enum MotionDef {
     /// (`std.Frenet`'s: ratio 1).  Read after the solve (`motion::Family`) by what rides on the
     /// frame and is swept as a parameter runs; a row reads no guide (`envelope::held`).
     Guided { guide: EntRef, frame: u32, frenet: bool },
+    /// **A frame the drawing moves** (#398 F): the frame `frame`, with no joint of its own, placed
+    /// by relations on geometry the drawing moves as the declared parameter `over` runs — a
+    /// coupler's frame, `std.Turned(b, c)` — standing where the drawing followed along `over`
+    /// puts it (`follow::followed`), carried from where it now stands.  Read after the solve
+    /// (`motion::Family`, the stations fitted between) by a sweep, a placement and an envelope
+    /// over the roll, the roll that parameter; a row reads no march (`envelope::held`).
+    Followed { frame: u32, over: String },
 }
 
 #[derive(Clone, Debug)]

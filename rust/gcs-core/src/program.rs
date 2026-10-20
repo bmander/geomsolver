@@ -58,10 +58,22 @@ pub fn solid_diagnostics(sk: &crate::model::Sketch, map: &SourceMap) -> Vec<Diag
                 .is_some_and(|p| p.dim != crate::units::Dim::ANGLE) => continue,
             // a frame along a path is read over its path's parameter, which need not reach 0
             crate::model::MotionDef::Guided { .. } => crate::motion::Family::read(sk,i).map(|_| ()),
+            // a frame the drawing moves is read over its parameter, which need not reach 0
+            crate::model::MotionDef::Followed { .. } => crate::motion::Family::read(sk,i).map(|_| ()),
             _ => crate::motion::evaluate(sk,i,0.).map(|_| ()),
         };
         if let Err(message) = read {
             let site = map.site_of(crate::model::EntRef::new(crate::model::EntKind::Motion,i));
+            diags.push(Diag::new(Code::E080,site.map(|s| s.span).unwrap_or_default(),
+                site.map(|s| s.stmt),message));
+        }
+    }
+    // a profile cut under a frame the drawing moves, read in its plane (#398 F)
+    for i in 0..sk.curves.len() {
+        let crate::model::CurveBody::Envelope(g) = &sk.curve_defs[sk.curves[i].def as usize].body
+        else { continue };
+        if let Err(message) = sk.generated_tables(i,&g.flat) {
+            let site = map.site_of(crate::model::EntRef::new(crate::model::EntKind::Curve,i));
             diags.push(Diag::new(Code::E080,site.map(|s| s.span).unwrap_or_default(),
                 site.map(|s| s.stmt),message));
         }

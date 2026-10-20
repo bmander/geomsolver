@@ -1356,6 +1356,10 @@ fn motion(sk: &Sketch, m: usize, steps: &mut Vec<Step>, cols: &mut Vec<Col>,
             }
         }
         // a row reads no guide (#398 C): a frame along a path is read off the path after the solve
+        // a row reads no march (#398 F): a frame the drawing moves is read off it after the solve
+        MotionDef::Followed { ref over, .. } => {
+            return Err(crate::motion::unread_march(&me.name, over))
+        }
         MotionDef::Guided { .. } => {
             return Err(format!("`{}` rides along a path, its frame read off the path after the \
                 solve: a relation the solve holds reads no frame along a path — sweep what rides \

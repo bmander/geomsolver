@@ -862,7 +862,8 @@ NAME := trace(Component(ARGS).POINT over FORMAL in (A, B))  an instance written 
 - **Over a declared parameter**, `coupler := trace(m over t)` is where a point of the
   drawing itself goes as the drawing runs over `t` (1.6), over the parameter's interval or a
   stretch of it (`over t in (30deg, 90deg)`), ending where the drawing stops at a singular
-  instant. It is a curve of the point's view (a point in space is E060). A relation holds to it
+  instant. It is a curve of the point's view; a point in space is traced in space, drawn in the
+  workspace and in no view, and held to by nothing yet. A relation holds to a view's trace
   as to any curve, and a number that does not run with `t` solves through it: the
   drawing gives the leg `theta: t`, leaves its rod `h` unbound, and `path tangent ground` solves
   the rod (`stride.sv`, `jansen.sv`, `peaucellier.sv`, `dwell.sv`). What moves with `t` must
@@ -2021,6 +2022,24 @@ groove := sweep(ball over t, under: follower, seen_from: cam)
 
 A value reads one parameter. A relation the solve holds — a point carried by a driven frame at a
 roll, a rate of it, a meshing — reads no drive (E080): draw in the frame instead.
+
+**A frame the drawing moves**: a frame with axes and no joint, placed on geometry that moves as a
+declared parameter runs, is read over that parameter as a motion — where the drawing followed along
+it puts the frame, carried from where the frame now stands. So a tool on a linkage's coupler is
+swept, placed and cuts a profile as one on a joint does:
+
+```sv
+param t: Angle over (0deg, 360deg)
+// … a four-bar in std.front, its coupler b–c, a ball and a circle `roller` about a point of it
+coupler := std.Turned(b, c) in std.front          // a frame on the coupler
+groove := sweep(ball over t, under: coupler.axes)  // the tube about the coupler curve
+cut := envelope(roller over t, under: coupler.axes) // what the roller clears, in the plane
+held := ball at(under: coupler.axes) 90deg         // at an instant: the document's one parameter
+```
+
+The reading must run over the declared parameter (`over t`, an angle); over an interval of the roll
+that names none the frame stands still. Nothing the solve holds reads it: a point carried by it is
+E080, and the envelope is drawn and swept but held to by nothing.
 
 **A motion's twist is read by rates.** The roll `t` is the slot of the `coincident` holding
 `X`, and `rate(X over t)` is how fast `X` runs a radian of it — the twist there. A rate of a contact

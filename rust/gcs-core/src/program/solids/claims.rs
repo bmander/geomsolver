@@ -190,7 +190,7 @@ fn sweep_of_claim(
     let framed = res.lookup(&c.formal).is_some_and(|e| e.kind == crate::model::EntKind::Frame);
     let motion = match framed {
         false => None,
-        true => match crate::program::motions::reading(sk, res, &c.formal, c.seen_from.as_ref()) {
+        true => match crate::program::motions::reading(sk, res, &c.formal, c.seen_from.as_ref(), None) {
             Ok(m) => Some(EntRef::new(crate::model::EntKind::Motion, m)),
             Err(message) => {
                 say(Code::E040, c.formal.span, message);

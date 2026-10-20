@@ -66,6 +66,10 @@ pub fn lower(sk: &mut Sketch, i: usize) -> Result<(), String> {
     let Some(&point) = cv.args.first().filter(|e| e.kind == EntKind::Point) else {
         return Err("a followed curve traces a point".into());
     };
+    if sk.plane_of(point.i()).is_none() {
+        return Err("the point it traces stands in space, and a trace in space is held to by \
+                    nothing yet (#398): hold the relation to the drawing itself".into());
+    }
     let name = sk.curve_defs[cv.def as usize].param.clone();
     let held = sk.held.get(&name).map(|h| h.param)
         .ok_or_else(|| format!("`{name}` is no parameter the drawing holds"))?;

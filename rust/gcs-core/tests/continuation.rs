@@ -289,9 +289,10 @@ fn a_trace_over_a_parameter_prints_back_and_refuses_what_it_cannot_mean() {
     // a stretch outside the parameter's interval
     refused(&format!("{bar}coupler := trace(m over t in (-10deg, 90deg))\n"),
             "runs over an increasing stretch of its interval, `(0, 360)`");
-    // a point in space
-    refused(&format!("{bar}s := point hint((1, 2, 3))\nfix((1, 2, 3)) s\nk := trace(s over t)\n"),
-            "a point traced over a parameter is drawn in a plane, and `s` stands in space");
+    // held to, a point in space: traced in space (#398 F), and held to by nothing yet
+    refused(&format!("{bar}s := point hint((1, 2, 3))\ns distance(3) m\nk := trace(s over t)\n\
+        q := point hint((1, 2, 3))\nq coincident k\n"),
+            "the point it traces stands in space, and a trace in space is held to by nothing yet");
 }
 
 /// The diagnosis of `src`, read and solved.

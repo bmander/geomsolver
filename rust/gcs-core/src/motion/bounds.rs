@@ -151,6 +151,15 @@ impl Family {
                     if back { MotionBounds::relative(MotionBounds::identity(),forward)? }
                     else { forward }
                 }
+                // a frame the drawing moves, the same way over its parameter (#398 F)
+                Step::Followed {ref ride,back} => {
+                    let [lo,hi] = angle.bounds();
+                    let g = ride.stretch(lo,hi).ok_or(Error::InvalidBounds)?;
+                    let p = sub(g.point,mv(g.turn,vector(g.origin)?)?)?;
+                    let forward = MotionBounds::new(g.turn,p);
+                    if back { MotionBounds::relative(MotionBounds::identity(),forward)? }
+                    else { forward }
+                }
             };
             values.push(value);
         }

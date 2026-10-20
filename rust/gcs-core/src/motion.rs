@@ -9,6 +9,10 @@ mod law;
 pub use law::{Law, unread_drive};
 mod guide;
 use guide::{Guide, Stretch};
+mod track;
+pub use track::Track;
+pub(crate) use track::window;
+use track::Ride;
 
 use crate::{envelope::Motion,model::{MotionDef,Sketch}};
 
@@ -23,6 +27,9 @@ enum Step {
     Relative {source:usize,observer:usize},
     /// A frame along a path (#398 C), its pose at the path's parameter, or that pose undone.
     Guided {guide:std::sync::Arc<Guide>,back:bool},
+    /// A frame the drawing moves (#398 F), carried from where it stands to where the drawing
+    /// followed along its parameter puts it, or that carriage undone.
+    Followed {ride:std::sync::Arc<Ride>,back:bool},
 }
 
 /// The joint's own number at the roll `angle` and its rate a radian of the roll: the law's where
@@ -50,6 +57,7 @@ impl Step {
                 Step::Translation {axis,advance:-advance,law:law.clone()},
             Step::Relative {source,observer} => Step::Relative {source:observer,observer:source},
             Step::Guided {ref guide,back} => Step::Guided {guide:guide.clone(),back:!back},
+            Step::Followed {ref ride,back} => Step::Followed {ride:ride.clone(),back:!back},
         }
     }
 
@@ -66,7 +74,7 @@ impl Step {
             Step::Rotation {axis,advance,..} => advance == 0. && unit(axis).is_some_and(|a| norm(cross(a,normal)) <= 1e-9),
             Step::Translation {axis,..} => unit(axis).is_some_and(|a| dot(a,normal).abs() <= 1e-9),
             Step::Relative {..} => true,
-            Step::Guided {..} => false,
+            Step::Guided {..} | Step::Followed {..} => false,
         }
     }
 }
@@ -220,6 +228,8 @@ impl Family {
         let (lo,hi) = { let [a,b] = domain.bounds(); (a,b) };
         let guided = self.steps.iter().map(|step| match step {
             Step::Guided {guide,..} => guide.stretch(lo,hi).ok_or(Error::InvalidBounds).map(Some),
+            // a frame the drawing moves, over the stretch of its parameter (#398 F)
+            Step::Followed {ride,..} => ride.stretch(lo,hi).ok_or(Error::InvalidBounds).map(Some),
             _ => Ok(None),
         }).collect::<Result<Vec<Option<Stretch>>,Error>>()?;
         // the farthest a box stands from the path over the stretch, or from the home
@@ -249,6 +259,9 @@ impl Family {
                     let g = guided[i].as_ref().ok_or(Error::InvalidBounds)?;
                     I::point(g.spin)?.mul(far(g,b)?)?.add(I::point(g.speed)?)
                 }
+                // a frame the drawing moves, span by span (#398 F)
+                Step::Followed {ref ride,..} =>
+                    I::point(ride.speed_over(b,lo,hi).ok_or(Error::InvalidBounds)?),
                 Step::Relative {..} => unreachable!("composed below"),
             }
         };
@@ -276,7 +289,7 @@ impl Family {
                 }
                 // carried along a path, a box stands within its farthest reach of the path's
                 // stretch, forward, and of the home, inverse
-                Step::Guided {..} => {
+                Step::Guided {..} | Step::Followed {..} => {
                     let g = guided[i].as_ref().ok_or(Error::InvalidBounds)?;
                     let r = far(g,b)?.bounds()[1];
                     let around = |k: usize| {
@@ -372,6 +385,9 @@ impl Family {
                 Step::Guided {..} => Err(format!("`{}` rides along a path, whose screw moves as it \
                     runs: a screw is read of turns, screws and slides at a constant rate",
                     self.name)),
+                Step::Followed {..} => Err(format!("`{}` stands where the drawing puts it as its \
+                    parameter runs, whose screw moves as it runs: a screw is read of turns, screws \
+                    and slides at a constant rate",self.name)),
                 Step::Relative {..} => Err(format!("`{}` is a motion relative to a relative one, whose \
                     screw moves as it runs: a screw is read of turns, screws and slides about fixed \
                     lines, and of one relative to another",self.name)),
@@ -439,7 +455,7 @@ impl Family {
                     let length = d[0].dhypot(d[1]);
                     out.push(PlanarStep::Slide {direction:[d[0]/length,d[1]/length],advance:advance*scale});
                 }
-                Step::Guided {..} => return None,
+                Step::Guided {..} | Step::Followed {..} => return None,
                 Step::Relative {source,observer} => {
                     emit(family,source,frame,scale,out)?;
                     emit(family,observer,frame,scale,out)?;
@@ -533,7 +549,7 @@ impl Family {
                         Step::Rotation {origin,axis,ratio,advance,..} =>
                             Step::Rotation {origin,axis,ratio,advance,law},
                         Step::Translation {axis,advance,..} => Step::Translation {axis,advance,law},
-                        Step::Relative {..} | Step::Guided {..} =>
+                        Step::Relative {..} | Step::Guided {..} | Step::Followed {..} =>
                             return Err(format!("`{}` drives no joint",node.name)),
                     }
                 }
@@ -541,6 +557,11 @@ impl Family {
                 MotionDef::Guided {guide,frame,frenet} => {
                     let read = Guide::read(sk,&node.name,guide,frame,frenet)?;
                     Step::Guided {guide:std::sync::Arc::new(read),back:false}
+                }
+                // a frame the drawing moves, read off its march as the solve left it (#398 F)
+                MotionDef::Followed {frame,ref over} => {
+                    let ride = Ride::read(sk,&node.name,frame,over)?;
+                    Step::Followed {ride:std::sync::Arc::new(ride),back:false}
                 }
                 // a joint's inverse turns and slides back, and a relative's swaps its sides
                 MotionDef::Inverse {of} => {
@@ -558,7 +579,8 @@ impl Family {
         let mut heights: Vec<usize> = Vec::with_capacity(steps.len());
         for step in &steps {
             let height = match *step {
-                Step::Rotation {..} | Step::Translation {..} | Step::Guided {..} => 1,
+                Step::Rotation {..} | Step::Translation {..} | Step::Guided {..}
+                    | Step::Followed {..} => 1,
                 Step::Relative {source,observer} => 1+heights[source].max(heights[observer]),
             };
             if height > 64 { return Err("motion dependencies exceed 64 levels".into()); }
@@ -604,6 +626,11 @@ impl Family {
                 // the path's parameter is what the motion is read at (#398 C)
                 Step::Guided {ref guide,back} => {
                     let m = guide.motion(angle)?;
+                    if back { m.inverse() } else { m }
+                }
+                // the roll is the drawing's parameter (#398 F)
+                Step::Followed {ref ride,back} => {
+                    let m = ride.motion(angle)?;
                     if back { m.inverse() } else { m }
                 }
             };
@@ -682,6 +709,10 @@ impl Family {
                     let p = guide.pose(angle)?;
                     if back { p.inverse() } else { p }
                 }
+                Step::Followed {ref ride,back} => {
+                    let p = ride.pose(angle)?;
+                    if back { p.inverse() } else { p }
+                }
             };
             if many { spilled.push(value) } else { fixed[n] = value }
         }
@@ -690,6 +721,26 @@ impl Family {
         if !pose.r.iter().flatten().chain(&pose.p).all(|v| v.is_finite()) { return Err("a motion pose overflowed".into()); }
         Ok(pose)
     }
+}
+
+/// Why a relation the solve holds cannot read the frame `f` the drawing moves as `over` runs: a
+/// row reads no march, which is the drawing's own solve at every instant.  The one wording,
+/// wherever the row is refused (#398 F).
+pub fn unread_march(f: &str, over: &str) -> String {
+    format!("`{f}` stands where the drawing puts it as `{over}` runs, read off the march after the \
+             solve, and a relation the solve holds reads no march (#398): hold it to the drawing \
+             itself, or read the frame over `{over}` — a sweep, a placement, an envelope")
+}
+
+/// **Motion node `m`, a frame the drawing moves, in the plane of `basis`** (#398 F): the table a
+/// profile generated in the plane reads it from (`generate::Op::Table`), or why it cannot be.
+pub(crate) fn planar_table(sk: &Sketch, m: usize, basis: &crate::plane::Basis)
+    -> Result<Vec<f64>, String> {
+    let node = sk.motions.get(m).ok_or("no such motion")?;
+    let MotionDef::Followed {frame,ref over} = node.def else {
+        return Err(format!("`{}` is no frame the drawing moves",node.name));
+    };
+    Ride::read(sk,&node.name,frame,over)?.planar(basis)
 }
 
 /// Read and evaluate against the current solved geometry. Reuse `Family` for many samples
