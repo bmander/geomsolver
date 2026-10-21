@@ -7,8 +7,8 @@
 //! step takes a node of least approximate degree — an upper bound on its true external degree,
 //! got from the set differences |Le \ Lk| in time proportional to the pattern — and merges
 //! nodes found indistinguishable (equal adjacency, by hash) into supervariables, eliminated
-//! together.  A node touching more than `max(16, 10·√n)` others is *dense*: left out of the
-//! search and ordered last, the rule `sparse::dense_columns` borrows.  The result is a
+//! together.  A node touching more than `sparse::dense_limit` others is *dense*: left out of
+//! the search and ordered last, as `sparse::Ata` orders a dense column.  The result is a
 //! postorder of the assembly tree.
 //!
 //! On the meshes of a solid this is the order that keeps the factor near `n log n`, where a
@@ -72,7 +72,7 @@ pub fn order(n: usize, ap: &[usize], ai: &[usize]) -> Vec<usize> {
     }
     // C: the pattern without its diagonal, with elbow room for the elements' lists
     let mut cp = vec![0isize; n + 1];
-    let mut ci: Vec<isize> = Vec::with_capacity(ap[n]);
+    let mut ci: Vec<isize> = Vec::with_capacity(ap[n] + ap[n] / 5 + 2 * n);
     for j in 0..n {
         for p in ap[j]..ap[j + 1] {
             if ai[p] != j {
@@ -86,7 +86,7 @@ pub fn order(n: usize, ap: &[usize], ai: &[usize]) -> Vec<usize> {
     ci.resize(nzmax as usize, 0);
 
     let ni = n as isize;
-    let dense = ((10.0 * (n as f64).sqrt()) as isize).max(16).min(ni - 2);
+    let dense = crate::sparse::dense_limit(n);
     let mut p_out = vec![0isize; n + 1];
     let mut len = vec![0isize; n + 1];
     let mut nv = vec![1isize; n + 1];
@@ -121,7 +121,7 @@ pub fn order(n: usize, ap: &[usize], ai: &[usize]) -> Vec<usize> {
             nel += 1;
             cp[i] = -1;
             w[i] = 0;
-        } else if d > dense {
+        } else if d as f64 > dense {
             nv[i] = 0;
             elen[i] = -1;
             nel += 1;

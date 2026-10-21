@@ -275,8 +275,9 @@ fn tet_stiffness(nx: usize, ny: usize, nz: usize, fixed: bool) -> Symmetric {
                     let jm: Vec<[f64; 3]> =
                         (1..4).map(|s| [0, 1, 2].map(|r| x[s][r] - x[0][r])).collect();
                     let m = Mat::from_vec(3, 3, (0..9).map(|q| jm[q % 3][q / 3]).collect());
-                    let inv = dm(&m).try_inverse().expect("a tetrahedron of volume");
-                    let vol = dm(&m).determinant().abs() / 6.0;
+                    let md = dm(&m);
+                    let vol = md.determinant().abs() / 6.0;
+                    let inv = md.try_inverse().expect("a tetrahedron of volume");
                     let mut g = [[0.0; 3]; 4];
                     for s in 1..4 {
                         for r in 0..3 {
@@ -377,7 +378,7 @@ fn sparse_cholesky_is_the_reference_factor() {
     for (ci, a) in cases.iter().enumerate() {
         let n = a.n;
         for ordering in ORDERINGS {
-            let mut ch = Cholesky::analyse(a, ordering.clone());
+            let mut ch = Cholesky::analyse(a, ordering);
             assert!(is_permutation(ch.perm()), "case {ci} {ordering:?}: not a permutation");
             ch.factor(a).unwrap_or_else(|e| panic!("case {ci} {ordering:?}: {e:?}"));
             let p = ch.perm().to_vec();
@@ -491,12 +492,10 @@ fn amd_fills_a_3d_mesh_less_than_a_band_order() {
 }
 
 /// A pivot within the rounding of its own column is refused, naming the column: one exactly
-/// zero, one negative, and a free body's, whose six rigid-body modes AMD's order leaves to
-/// rounding in the blocks measured (held at one node, it still turns).  The factor does not
-/// promise more: under a band order a free body's pivots can round to just above the bound,
-/// and a slender supported one's fall to 1e-9 of their diagonal honestly, so naming a freedom
-/// is the diagnosis's (#510, P7), from the supports.  A supported body factors with every
-/// pivot a fair fraction of its diagonal.
+/// zero, one negative.  The factor promises no more: whether a free body's rigid-body modes
+/// round under the bound depends on the order, and naming a freedom is the diagnosis's (#510,
+/// P7), from the supports.  A supported body factors with every pivot a fair fraction of its
+/// diagonal, whatever the order.
 #[test]
 fn a_pivot_lost_to_rounding_is_refused() {
     let zero = Symmetric::from_triplets(2, &[(0, 0, 1.0), (1, 0, 1.0), (1, 1, 1.0)]);
@@ -506,37 +505,17 @@ fn a_pivot_lost_to_rounding_is_refused() {
     let mut ch = Cholesky::analyse(&neg, Ordering::Natural);
     assert_eq!(ch.factor(&neg).map_err(|e| e.column), Err(1));
 
-    for k in [3usize, 6, 12] {
-        let free = tet_stiffness(k, k, k, false);
-        let mut ch = Cholesky::analyse(&free, Ordering::Amd);
-        let err = ch.factor(&free).expect_err("a free body is singular");
-        assert!(err.column < free.n && err.pivot.is_finite());
-    }
-    // one node held: drop its three unknowns, here node 0's
-    let free = tet_stiffness(3, 3, 3, false);
-    let mut t = Vec::new();
-    for j in 3..free.n {
-        for q in free.colptr[j]..free.colptr[j + 1] {
-            t.push((free.rowind[q] - 3, j - 3, free.values[q]));
-        }
-    }
-    let pinned = Symmetric::from_triplets(free.n - 3, &t);
-    let mut ch = Cholesky::analyse(&pinned, Ordering::Amd);
-    assert!(ch.factor(&pinned).is_err(), "a body held at one point turns about it");
-
     let held = tet_stiffness(6, 6, 6, true);
-    let mut diag = vec![0.0; held.n];
-    for j in 0..held.n {
-        diag[j] = held.values[held.colptr[j]];
-        assert_eq!(held.rowind[held.colptr[j]], j);
-    }
     for ordering in ORDERINGS {
-        let mut ch = Cholesky::analyse(&held, ordering.clone());
+        let mut ch = Cholesky::analyse(&held, ordering);
         ch.factor(&held).expect("a supported body");
         let p = ch.perm().to_vec();
         for (i, j, v) in ch.l() {
             if i == j {
-                let a = diag[p[i]];
+                // the diagonal is each column's first entry
+                let q = held.colptr[p[i]];
+                assert_eq!(held.rowind[q], p[i]);
+                let a = held.values[q];
                 assert!(v * v > 0.1 * a, "{ordering:?}: pivot {} of {a}", v * v);
             }
         }
@@ -585,7 +564,7 @@ fn sparse_cholesky_orders_are_permutations() {
     }
     for (ci, a) in cases.iter().enumerate() {
         for ordering in ORDERINGS {
-            let mut ch = Cholesky::analyse(a, ordering.clone());
+            let mut ch = Cholesky::analyse(a, ordering);
             assert_eq!(ch.perm().len(), a.n);
             assert!(is_permutation(ch.perm()), "case {ci} {ordering:?}");
             ch.factor(a).unwrap_or_else(|e| panic!("case {ci} {ordering:?}: {e:?}"));

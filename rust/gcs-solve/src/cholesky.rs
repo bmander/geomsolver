@@ -76,43 +76,17 @@ impl Symmetric {
 
     /// The pattern with both triangles, by column: what an ordering reads.
     fn full_pattern(&self) -> (Vec<usize>, Vec<usize>) {
-        let n = self.n;
-        let mut cnt = vec![0usize; n + 1];
-        for j in 0..n {
-            for q in self.colptr[j]..self.colptr[j + 1] {
-                let i = self.rowind[q];
-                cnt[j + 1] += 1;
-                if i != j {
-                    cnt[i + 1] += 1;
-                }
-            }
-        }
-        for j in 0..n {
-            cnt[j + 1] += cnt[j];
-        }
-        let mut at = cnt.clone();
-        let mut ai = vec![0usize; cnt[n]];
-        for j in 0..n {
-            for q in self.colptr[j]..self.colptr[j + 1] {
-                let i = self.rowind[q];
-                ai[at[j]] = i;
-                at[j] += 1;
-                if i != j {
-                    ai[at[i]] = j;
-                    at[i] += 1;
-                }
-            }
-        }
-        (cnt, ai)
+        bucket(self, self.n, |i, j, _| [Some((j, i)), (i != j).then_some((i, j))])
     }
 }
 
 /// The fill-reducing order the analysis starts from, before its postorder.
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Ordering {
     /// Approximate minimum degree: the order for a mesh.
     Amd,
-    /// Reverse Cuthill–McKee, `sparse::Ata`'s order, kept to measure AMD against.
+    /// Reverse Cuthill–McKee, the band order `sparse::Ata` takes on a pattern with no dense
+    /// column, kept to measure AMD against.
     Rcm,
     /// The matrix's own order.
     Natural,
@@ -142,16 +116,12 @@ const NONE: usize = usize::MAX;
 #[derive(Clone, Debug)]
 pub struct Cholesky {
     n: usize,
-    /// `perm[k]` is the column of A eliminated k-th; `iperm` its inverse.
+    /// `perm[k]` is the column of A eliminated k-th.
     perm: Vec<usize>,
-    iperm: Vec<usize>,
-    /// The pattern analysed, to hold `factor` to it.
-    colptr: Vec<usize>,
-    rowind: Vec<usize>,
-    /// The lower triangle of PAPᵀ by column: rows `ci`, each taken from `values[cs]` of A.
-    cp: Vec<usize>,
-    ci: Vec<usize>,
-    cs: Vec<usize>,
+    /// A's entries gathered into the panels, supernode by supernode: those of supernode `s` are
+    /// `gather[gp[s]..gp[s + 1]]`, each `(q, at)` putting `values[q]` of A at `lx[at]`.
+    gp: Vec<usize>,
+    gather: Vec<(usize, usize)>,
     /// Supernode `s` is the columns `first[s]..first[s + 1]`; `snode[j]` the one holding `j`.
     first: Vec<usize>,
     snode: Vec<usize>,
@@ -164,10 +134,8 @@ pub struct Cholesky {
     /// Each row's count in L, its diagonal counted, in the numbering of PAPᵀ: the terms its
     /// pivot sums, so the rounding it carries.
     rcount: Vec<usize>,
-    /// Entries of L, its diagonal counted, and the multiply-adds of its factor, `Σ c_j²` over
-    /// the column counts.
+    /// Entries of L, its diagonal counted.
     nnz_l: usize,
-    flops: f64,
     factored: bool,
 }
 
@@ -186,32 +154,27 @@ impl Cholesky {
             }
             Ordering::Natural => (0..n).collect(),
         };
-        // the order's elimination tree, postordered: the same fill, its supernodes consecutive
-        let (rp0, ri0) = upper_rows(a, &inverse(&order));
+        // the order's elimination tree, postordered: the same fill and the same tree relabelled,
+        // its supernodes consecutive
+        let (rp0, ri0) = lower_rows(a, &inverse(&order));
         let parent0 = etree(n, &rp0, &ri0);
         let post = postorder(&parent0);
+        let ipost = inverse(&post);
         let perm: Vec<usize> = post.iter().map(|&k| order[k]).collect();
+        let relabel = |k: usize| if parent0[k] == NONE { NONE } else { ipost[parent0[k]] };
+        let parent: Vec<usize> = post.iter().map(|&k| relabel(k)).collect();
         let iperm = inverse(&perm);
-        let (rowp, rowi) = upper_rows(a, &iperm);
-        let parent = etree(n, &rowp, &rowi);
+        let (rowp, rowi) = lower_rows(a, &iperm);
 
         // column counts, by each row's subtree: row k of L reaches from the columns of row k of
         // C up the tree to k
         let mut count = vec![1usize; n];
         let mut rcount = vec![1usize; n];
         let mut flag = vec![NONE; n];
-        for k in 0..n {
-            flag[k] = k;
-            for &j0 in &rowi[rowp[k]..rowp[k + 1]] {
-                let mut j = j0;
-                while flag[j] != k {
-                    count[j] += 1;
-                    rcount[k] += 1;
-                    flag[j] = k;
-                    j = parent[j];
-                }
-            }
-        }
+        row_subtrees(&rowp, &rowi, &parent, &mut flag, |j, k| {
+            count[j] += 1;
+            rcount[k] += 1;
+        });
 
         // supernodes: j + 1 joins j's when it is j's parent and holds j's rows but j
         let mut first = Vec::new();
@@ -239,23 +202,15 @@ impl Cholesky {
             at[s] = rp[s] + first[s + 1] - first[s];
         }
         let mut sflag = vec![NONE; ns];
-        flag.iter_mut().for_each(|f| *f = NONE);
-        for k in 0..n {
-            flag[k] = k;
-            for &j0 in &rowi[rowp[k]..rowp[k + 1]] {
-                let mut j = j0;
-                while flag[j] != k {
-                    let s = snode[j];
-                    if k >= first[s + 1] && sflag[s] != k {
-                        sflag[s] = k;
-                        rows[at[s]] = k;
-                        at[s] += 1;
-                    }
-                    flag[j] = k;
-                    j = parent[j];
-                }
+        flag.fill(NONE);
+        row_subtrees(&rowp, &rowi, &parent, &mut flag, |j, k| {
+            let s = snode[j];
+            if k >= first[s + 1] && sflag[s] != k {
+                sflag[s] = k;
+                rows[at[s]] = k;
+                at[s] += 1;
             }
-        }
+        });
         debug_assert!((0..ns).all(|s| at[s] == rp[s + 1]));
 
         let mut xp = vec![0usize; ns + 1];
@@ -263,41 +218,32 @@ impl Cholesky {
             xp[s + 1] = xp[s] + (rp[s + 1] - rp[s]) * (first[s + 1] - first[s]);
         }
 
-        // the lower triangle of PAPᵀ, each entry pointing at its value in A
-        let mut cp = vec![0usize; n + 1];
-        for j in 0..n {
-            for q in a.colptr[j]..a.colptr[j + 1] {
-                let (pi, pj) = (iperm[a.rowind[q]], iperm[j]);
-                cp[pi.min(pj) + 1] += 1;
+        // where each entry of A lands: the lower triangle of PAPᵀ by column, so by supernode
+        let (cp, ce) = bucket(a, n, |i, j, q| {
+            let (pi, pj) = (iperm[i], iperm[j]);
+            [Some((pi.min(pj), (pi.max(pj), q))), None]
+        });
+        let mut map = vec![0usize; n];
+        let mut gp = vec![0usize; ns + 1];
+        let mut gather = Vec::with_capacity(ce.len());
+        for s in 0..ns {
+            let (f, nrow) = (first[s], rp[s + 1] - rp[s]);
+            for (p, &r) in rows[rp[s]..rp[s + 1]].iter().enumerate() {
+                map[r] = p;
             }
-        }
-        for j in 0..n {
-            cp[j + 1] += cp[j];
-        }
-        let mut cat = cp.clone();
-        let mut entries = vec![(0usize, 0usize); cp[n]];
-        for j in 0..n {
-            for q in a.colptr[j]..a.colptr[j + 1] {
-                let (pi, pj) = (iperm[a.rowind[q]], iperm[j]);
-                let col = pi.min(pj);
-                entries[cat[col]] = (pi.max(pj), q);
-                cat[col] += 1;
+            for j in f..first[s + 1] {
+                for &(r, q) in &ce[cp[j]..cp[j + 1]] {
+                    gather.push((q, xp[s] + (j - f) * nrow + map[r]));
+                }
             }
+            gp[s + 1] = gather.len();
         }
-        for j in 0..n {
-            entries[cp[j]..cp[j + 1]].sort_unstable();
-        }
-        let (ci, cs) = entries.into_iter().unzip();
 
         Cholesky {
             n,
             perm,
-            iperm,
-            colptr: a.colptr.clone(),
-            rowind: a.rowind.clone(),
-            cp,
-            ci,
-            cs,
+            gp,
+            gather,
             first,
             snode,
             rp,
@@ -306,23 +252,13 @@ impl Cholesky {
             xp,
             rcount,
             nnz_l: count.iter().sum(),
-            flops: count.iter().map(|&c| (c * c) as f64).sum(),
             factored: false,
         }
-    }
-
-    pub fn n(&self) -> usize {
-        self.n
     }
 
     /// Entries of L, its diagonal counted: the fill of the order chosen.
     pub fn factor_nnz(&self) -> usize {
         self.nnz_l
-    }
-
-    /// The multiply-adds the factor costs, `Σ c_j²` over its column counts: what an order buys.
-    pub fn flops(&self) -> f64 {
-        self.flops
     }
 
     pub fn supernodes(&self) -> usize {
@@ -334,76 +270,75 @@ impl Cholesky {
         &self.perm
     }
 
-    /// Factor `a`, which must have the pattern analysed.  On a pivot not positive the factor is
-    /// left unusable and the column named.
+    fn panel(&self, s: usize) -> (usize, usize, &[usize], usize) {
+        self.shape().panel(s)
+    }
+
+    fn shape(&self) -> Shape<'_> {
+        Shape { first: &self.first, rp: &self.rp, rows: &self.rows, xp: &self.xp }
+    }
+
+    /// Factor `a`, which must have the pattern analysed (its order of entries too: it is
+    /// gathered by position).  On a pivot not positive the factor is left unusable and the
+    /// column named.
     pub fn factor(&mut self, a: &Symmetric) -> Result<(), NotPositive> {
         assert!(
-            a.n == self.n && a.colptr == self.colptr && a.rowind == self.rowind,
+            a.n == self.n && a.values.len() == self.gather.len(),
             "Cholesky::factor: not the pattern analysed"
         );
         self.factored = false;
-        let ns = self.first.len() - 1;
+        let ns = self.supernodes();
+        let shape = Shape { first: &self.first, rp: &self.rp, rows: &self.rows, xp: &self.xp };
+        let lx = &mut self.lx;
         let mut map = vec![0usize; self.n];
+        let mut rel: Vec<usize> = Vec::new();
         let mut head = vec![NONE; ns];
         let mut next = vec![NONE; ns];
         // the position in each supernode's rows of the first not yet applied to an ancestor
         let mut ptr = vec![0usize; ns];
-        let mut tmp: Vec<f64> = Vec::new();
+        let mut acc: Vec<f64> = Vec::new();
         let mut diag: Vec<f64> = Vec::new();
-        self.lx.iter_mut().for_each(|v| *v = 0.0);
         for s in 0..ns {
-            let (f, l) = (self.first[s], self.first[s + 1]);
-            let ncol = l - f;
-            let rows = &self.rows[self.rp[s]..self.rp[s + 1]];
-            let nrow = rows.len();
-            let base = self.xp[s];
+            let (f, ncol, rows, base) = shape.panel(s);
+            let (l, nrow) = (f + ncol, rows.len());
             for (p, &r) in rows.iter().enumerate() {
                 map[r] = p;
             }
-            // gather A's columns
-            diag.clear();
-            diag.resize(ncol, 0.0);
-            for c in 0..ncol {
-                let col = base + c * nrow;
-                for q in self.cp[f + c]..self.cp[f + c + 1] {
-                    let v = a.values[self.cs[q]];
-                    self.lx[col + map[self.ci[q]]] = v;
-                    if self.ci[q] == f + c {
-                        diag[c] = v;
-                    }
-                }
+            // gather A's columns, the panel zeroed as it is reached
+            lx[base..base + ncol * nrow].fill(0.0);
+            for &(q, at) in &self.gather[self.gp[s]..self.gp[s + 1]] {
+                lx[at] = a.values[q];
             }
-            // the descendants whose rows reach s: `L_d[p0.., :] · L_d[p0..p0 + m1, :]ᵀ` each
+            diag.clear();
+            diag.extend((0..ncol).map(|c| lx[base + c * nrow + c]));
+            // the descendants whose rows reach s, each `L_d[p0.., :] · L_d[p0..p0 + m1, :]ᵀ`,
+            // a column of the update at a time
             let mut d = head[s];
             head[s] = NONE;
             while d != NONE {
                 let dn = next[d];
-                let drows = &self.rows[self.rp[d]..self.rp[d + 1]];
+                let (_, dncol, drows, dbase) = shape.panel(d);
                 let dnrow = drows.len();
-                let dncol = self.first[d + 1] - self.first[d];
                 let p0 = ptr[d];
                 let m2 = dnrow - p0;
                 let m1 = drows[p0..].iter().take_while(|&&r| r < l).count();
-                tmp.clear();
-                tmp.resize(m1 * m2, 0.0);
-                let dbase = self.xp[d];
-                for k in 0..dncol {
-                    let colk = &self.lx[dbase + k * dnrow + p0..dbase + (k + 1) * dnrow];
-                    for j in 0..m1 {
-                        let ljk = colk[j];
-                        if ljk == 0.0 {
-                            continue;
-                        }
-                        let t = &mut tmp[j * m2..(j + 1) * m2];
-                        for i in j..m2 {
-                            t[i] += colk[i] * ljk;
+                rel.clear();
+                rel.extend(drows[p0..].iter().map(|&r| map[r]));
+                for j in 0..m1 {
+                    acc.clear();
+                    acc.resize(m2 - j, 0.0);
+                    for k in 0..dncol {
+                        let colk = &lx[dbase + k * dnrow + p0 + j..dbase + (k + 1) * dnrow];
+                        let ljk = colk[0];
+                        if ljk != 0.0 {
+                            for (t, &v) in acc.iter_mut().zip(colk) {
+                                *t += v * ljk;
+                            }
                         }
                     }
-                }
-                for j in 0..m1 {
                     let col = base + (drows[p0 + j] - f) * nrow;
-                    for i in j..m2 {
-                        self.lx[col + map[drows[p0 + i]]] -= tmp[j * m2 + i];
+                    for (&t, &r) in acc.iter().zip(&rel[j..]) {
+                        lx[col + r] -= t;
                     }
                 }
                 ptr[d] = p0 + m1;
@@ -415,29 +350,28 @@ impl Cholesky {
                 d = dn;
             }
             // the dense panel
-            let panel = &mut self.lx[base..base + ncol * nrow];
+            let panel = &mut lx[base..base + ncol * nrow];
             for c in 0..ncol {
                 let (done, rest) = panel.split_at_mut(c * nrow);
-                let colc = &mut rest[..nrow];
+                let colc = &mut rest[c..nrow];
                 for k in 0..c {
-                    let colk = &done[k * nrow..(k + 1) * nrow];
-                    let lck = colk[c];
-                    if lck == 0.0 {
-                        continue;
-                    }
-                    for r in c..nrow {
-                        colc[r] -= colk[r] * lck;
+                    let colk = &done[k * nrow + c..(k + 1) * nrow];
+                    let lck = colk[0];
+                    if lck != 0.0 {
+                        for (x, &v) in colc.iter_mut().zip(colk) {
+                            *x -= v * lck;
+                        }
                     }
                 }
-                let pivot = colc[c];
+                let pivot = colc[0];
                 let rounding = self.rcount[f + c] as f64 * f64::EPSILON * diag[c];
                 if !(diag[c] > 0.0 && pivot > rounding) || !pivot.is_finite() {
                     return Err(NotPositive { column: self.perm[f + c], pivot });
                 }
                 let root = pivot.sqrt();
-                colc[c] = root;
-                for r in c + 1..nrow {
-                    colc[r] /= root;
+                colc[0] = root;
+                for x in &mut colc[1..] {
+                    *x /= root;
                 }
             }
             if nrow > ncol {
@@ -454,15 +388,12 @@ impl Cholesky {
     /// Solve `A x = b` in place with the last factor.
     pub fn solve(&self, b: &mut [f64]) {
         assert!(self.factored, "Cholesky::solve: no factor");
-        let n = self.n;
-        let mut y: Vec<f64> = (0..n).map(|k| b[self.perm[k]]).collect();
-        let ns = self.first.len() - 1;
-        for s in 0..ns {
-            let (f, ncol) = (self.first[s], self.first[s + 1] - self.first[s]);
-            let rows = &self.rows[self.rp[s]..self.rp[s + 1]];
+        let mut y: Vec<f64> = self.perm.iter().map(|&i| b[i]).collect();
+        for s in 0..self.supernodes() {
+            let (f, ncol, rows, base) = self.panel(s);
             let nrow = rows.len();
             for c in 0..ncol {
-                let col = &self.lx[self.xp[s] + c * nrow..self.xp[s] + (c + 1) * nrow];
+                let col = &self.lx[base + c * nrow..base + (c + 1) * nrow];
                 y[f + c] /= col[c];
                 let yj = y[f + c];
                 for r in c + 1..nrow {
@@ -470,12 +401,11 @@ impl Cholesky {
                 }
             }
         }
-        for s in (0..ns).rev() {
-            let (f, ncol) = (self.first[s], self.first[s + 1] - self.first[s]);
-            let rows = &self.rows[self.rp[s]..self.rp[s + 1]];
+        for s in (0..self.supernodes()).rev() {
+            let (f, ncol, rows, base) = self.panel(s);
             let nrow = rows.len();
             for c in (0..ncol).rev() {
-                let col = &self.lx[self.xp[s] + c * nrow..self.xp[s] + (c + 1) * nrow];
+                let col = &self.lx[base + c * nrow..base + (c + 1) * nrow];
                 let mut sum = y[f + c];
                 for r in c + 1..nrow {
                     sum -= col[r] * y[rows[r]];
@@ -483,8 +413,8 @@ impl Cholesky {
                 y[f + c] = sum / col[c];
             }
         }
-        for k in 0..n {
-            b[self.perm[k]] = y[k];
+        for (k, &i) in self.perm.iter().enumerate() {
+            b[i] = y[k];
         }
     }
 
@@ -492,23 +422,65 @@ impl Cholesky {
     pub fn l(&self) -> Vec<(usize, usize, f64)> {
         assert!(self.factored, "Cholesky::l: no factor");
         let mut out = Vec::with_capacity(self.nnz_l);
-        for s in 0..self.first.len() - 1 {
-            let f = self.first[s];
-            let rows = &self.rows[self.rp[s]..self.rp[s + 1]];
+        for s in 0..self.supernodes() {
+            let (f, ncol, rows, base) = self.panel(s);
             let nrow = rows.len();
-            for c in 0..self.first[s + 1] - f {
+            for c in 0..ncol {
                 for r in c..nrow {
-                    out.push((rows[r], f + c, self.lx[self.xp[s] + c * nrow + r]));
+                    out.push((rows[r], f + c, self.lx[base + c * nrow + r]));
                 }
             }
         }
         out
     }
+}
 
-    /// The row of A that is row `k` of PAPᵀ, inverse to `perm`.
-    pub fn iperm(&self) -> &[usize] {
-        &self.iperm
+/// The supernodes' layout, borrowed apart from the panels' values so `factor` can write them.
+struct Shape<'a> {
+    first: &'a [usize],
+    rp: &'a [usize],
+    rows: &'a [usize],
+    xp: &'a [usize],
+}
+
+impl<'a> Shape<'a> {
+    /// Supernode `s` as (its first column, its width, its rows, where its panel starts in `lx`).
+    fn panel(&self, s: usize) -> (usize, usize, &'a [usize], usize) {
+        let f = self.first[s];
+        (f, self.first[s + 1] - f, &self.rows[self.rp[s]..self.rp[s + 1]], self.xp[s])
     }
+}
+
+/// One counting sort over A's lower triangle: each entry `q` (row `i`, column `j`) emits up to
+/// two `(bucket, payload)`s, and the buckets come out in order, `out[ptr[b]..ptr[b + 1]]`, each
+/// in A's order.  The orderings' pattern, the rows of PAPᵀ and the gather are all one.
+fn bucket<T: Copy + Default>(
+    a: &Symmetric,
+    nb: usize,
+    emit: impl Fn(usize, usize, usize) -> [Option<(usize, T)>; 2],
+) -> (Vec<usize>, Vec<T>) {
+    let mut ptr = vec![0usize; nb + 1];
+    for j in 0..a.n {
+        for q in a.colptr[j]..a.colptr[j + 1] {
+            for (b, _) in emit(a.rowind[q], j, q).into_iter().flatten() {
+                ptr[b + 1] += 1;
+            }
+        }
+    }
+    for b in 0..nb {
+        ptr[b + 1] += ptr[b];
+    }
+    let mut at = ptr.clone();
+    let mut out = vec![T::default(); ptr[nb]];
+    for j in 0..a.n {
+        for q in a.colptr[j]..a.colptr[j + 1] {
+            for (b, t) in emit(a.rowind[q], j, q).into_iter().flatten() {
+                out[at[b]] = t;
+                at[b] += 1;
+            }
+        }
+    }
+    (ptr, out)
 }
 
 fn inverse(perm: &[usize]) -> Vec<usize> {
@@ -521,33 +493,34 @@ fn inverse(perm: &[usize]) -> Vec<usize> {
 
 /// The rows of the lower triangle of PAPᵀ (`iperm` the inverse order), each as the columns
 /// before its diagonal: row k's are `rowi[rowp[k]..rowp[k + 1]]`.
-fn upper_rows(a: &Symmetric, iperm: &[usize]) -> (Vec<usize>, Vec<usize>) {
-    let n = a.n;
-    let mut rowp = vec![0usize; n + 1];
-    for j in 0..n {
-        for q in a.colptr[j]..a.colptr[j + 1] {
-            let (pi, pj) = (iperm[a.rowind[q]], iperm[j]);
-            if pi != pj {
-                rowp[pi.max(pj) + 1] += 1;
+fn lower_rows(a: &Symmetric, iperm: &[usize]) -> (Vec<usize>, Vec<usize>) {
+    bucket(a, a.n, |i, j, _| {
+        let (pi, pj) = (iperm[i], iperm[j]);
+        [(pi != pj).then_some((pi.max(pj), pi.min(pj))), None]
+    })
+}
+
+/// Each row's subtree of the elimination tree: row k of L holds column j for every `j` on the
+/// paths up from the columns of row k of the matrix to k.  `visit(j, k)` once for each.  `flag`
+/// is n long and holds no row's mark on entry.
+fn row_subtrees(
+    rowp: &[usize],
+    rowi: &[usize],
+    parent: &[usize],
+    flag: &mut [usize],
+    mut visit: impl FnMut(usize, usize),
+) {
+    for k in 0..parent.len() {
+        flag[k] = k;
+        for &j0 in &rowi[rowp[k]..rowp[k + 1]] {
+            let mut j = j0;
+            while flag[j] != k {
+                visit(j, k);
+                flag[j] = k;
+                j = parent[j];
             }
         }
     }
-    for k in 0..n {
-        rowp[k + 1] += rowp[k];
-    }
-    let mut at = rowp.clone();
-    let mut rowi = vec![0usize; rowp[n]];
-    for j in 0..n {
-        for q in a.colptr[j]..a.colptr[j + 1] {
-            let (pi, pj) = (iperm[a.rowind[q]], iperm[j]);
-            if pi != pj {
-                let k = pi.max(pj);
-                rowi[at[k]] = pi.min(pj);
-                at[k] += 1;
-            }
-        }
-    }
-    (rowp, rowi)
 }
 
 /// The elimination tree from the rows below the diagonal (Liu, with path compression):

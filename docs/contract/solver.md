@@ -94,10 +94,11 @@ changelog](../solvent-changelog.md)) says where a rule came from.
 - **A mesh's system is factored by supernodal Cholesky** (#510, P1; `cholesky.rs`, `amd.rs`).
   `Ata`'s band order fills a tetrahedral mesh like `n^{5/3}`; `Cholesky` orders a symmetric
   positive definite `Symmetric` (its lower triangle by column; an assembly's upper entries are
-  ignored) by approximate minimum degree (Davis's `cs_amd`, its dense rule the one `Ata` borrows),
-  postorders the elimination tree (the same fill, the supernodes consecutive) and factors
-  `PAPᵀ = LLᵀ` left-looking, a dense panel per supernode.  `analyse` reads the pattern only and
-  `factor` the values, held to that pattern, so a mesh moved within a solve refactors without its
+  ignored) by approximate minimum degree (Davis's `cs_amd`, a column dense by
+  `sparse::dense_limit`, `Ata`'s rule), postorders the elimination tree (the same fill, the
+  supernodes consecutive) and factors `PAPᵀ = LLᵀ` left-looking, a dense panel per supernode.
+  `analyse` reads the pattern only and `factor` the values, gathered by position into the
+  panels, so a mesh moved within a solve refactors without its
   analysis.  A pivot within the rounding of its own computation (`r_j·ε·a_jj`, `r_j` row j's
   count in L: Cholesky's backward error) or not positive is `NotPositive`, naming the column of
   A.  That is all the factor promises: a free body's rigid-body modes fall under it in AMD's
@@ -108,7 +109,8 @@ changelog](../solvent-changelog.md)) says where a rule came from.
   every order, with the property `PAPᵀ ≈ LLᵀ`; a stiffness of linear tetrahedra solved against
   the reference's dense solve, refactored on the same pattern; AMD's fill under half RCM's on a
   20³ grid, the gap widening with the block, and under 0.85 of it on the 3630-unknown block; a
-  zero, a negative, a free and a pinned pivot refused; a dense hub ordered last, unfilled.
+  zero and a negative pivot refused, a supported body's pivots all fair; a dense hub ordered
+  last, unfilled.
 - "Solved" is `System::max_relative_residual <= 1e-6`: each row's residual over its own units,
   its kernel's power of **its own size** (#492, `system::Sizes`, `System::row_size`): the longest
   side of the box round the points it reads, or its largest radius, at least a tenth of the
