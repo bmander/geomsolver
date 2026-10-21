@@ -244,6 +244,7 @@ mod two_planes;
 mod uniqueness;
 mod units;
 mod unseeded;
+mod unsettled;
 mod vectors;
 mod wankel;
 mod weighted_spline;

@@ -5,7 +5,8 @@
 import { Constraint } from './constraints.js';
 import { Point, Sketch } from './model.js';
 import {
-  Drag, Method, SolveResult, System, Triangle, guardBuffer, now, readFlips,
+  Drag, Method, RESULT_LEN, SolveResult, System, Triangle, guardBuffer, now, readFlips,
+  readResult,
 } from './system.js';
 import { core, takeJson, takeStr, withBuf } from './wasm.js';
 
@@ -63,7 +64,7 @@ export interface PlanResult {
 export function asSolveResult(pr: PlanResult): SolveResult {
   if (pr.numeric) return pr.numeric;
   return {
-    success: pr.success, status: 0, message: 'plan',
+    success: pr.success, settled: pr.success, status: 0, message: 'plan',
     residualNorm: pr.maxResidual, maxResidual: pr.maxResidual,
     nfev: pr.nSteps, njev: 0, timeS: pr.timeS, method: 'plan', iterations: 0, rank: null,
   };
@@ -228,14 +229,9 @@ export class PlanDrag {
 
   move(x: number, y: number): SolveResult {
     const t0 = now();
-    return withBuf(8, 8, (b) => {
+    return withBuf(RESULT_LEN, 8, (b) => {
       const msg = takeStr(core().gcs_plan_drag_move(this.handle, this.sketch.handle, x, y, b.ptr));
-      const v = b.f64;
-      return {
-        success: v[0] !== 0, status: v[1], message: msg,
-        residualNorm: v[2], maxResidual: v[3], nfev: v[4], njev: v[5],
-        iterations: v[6], rank: v[7] < 0 ? null : v[7], timeS: now() - t0, method: 'plan',
-      };
+      return readResult(b.f64, msg, 'plan', t0);
     });
   }
 

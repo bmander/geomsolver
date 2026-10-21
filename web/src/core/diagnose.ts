@@ -74,6 +74,9 @@ export interface DiagnoseOptions {
   /** Whether the claims about solids are judged (the default).  A page leaves them to a worker
    *  (`core/claims.ts`): they enter nothing else the diagnosis says, and take seconds. */
   solidClaims?: boolean;
+  /** Whether the pose is a solve's answer (`SolveResult.settled`, the default).  Not, no claim
+   *  is judged on it and a drawing whose rows read as holding is `unsolved` (#449). */
+  settled?: boolean;
 }
 
 interface RawDiagnosis {
@@ -172,6 +175,7 @@ export function diagnose(sketch: Sketch, opts: DiagnoseOptions = {}): Diagnosis 
     tol: opts.tol ?? 1e-6,
     numericMax: opts.numericMax ?? NUMERIC_MAX,
     solidClaims: opts.solidClaims ?? true,
+    settled: opts.settled ?? true,
   };
   const sys = opts.system && opts.system.sketch === sketch ? opts.system : null;
   const raw = withJson(payload, (p, n) => takeJson<RawDiagnosis>(

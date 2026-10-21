@@ -62,7 +62,7 @@ fn a_sketch_built_from_records_solves_and_is_diagnosed() {
                 .unwrap(),
         ];
 
-        let mut result = [0.0f64; 8];
+        let mut result = [0.0f64; 9];
         take(gcs_solve(h, 0, 1e-10, 100, 1000, -1, result.as_mut_ptr()));
         assert_eq!(result[0], 1.0, "the solve succeeds");
         assert!(result[3] < 1e-9, "max residual {}", result[3]);

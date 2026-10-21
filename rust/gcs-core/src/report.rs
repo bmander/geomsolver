@@ -63,6 +63,8 @@ pub fn el_from_json(v: &Json) -> Option<El> {
 pub fn solve_result_json(r: &SolveResult) -> Json {
     object([
         ("success", r.success.into()),
+        ("settled", r.settled().into()),
+        ("outcome", r.outcome().into()),
         ("status", (r.status as i64).into()),
         ("message", r.message.clone().into()),
         ("residualNorm", r.residual_norm.into()),
