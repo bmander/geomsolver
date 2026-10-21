@@ -50,14 +50,24 @@ pub(crate) const PLANE: &str = "plane";
 /// The plane point `p` is drawn in, or why it has none: a point standing in space, or one not yet
 /// placed — read before the memberships are in, where a declaration names it.
 fn drawn_in(sk: &Sketch, p: usize) -> Result<usize, String> {
-    let pt = &sk.points[p];
-    match (sk.plane_of(p), pt.z.is_some() || pt.chart.is_some()) {
+    match (sk.plane_of(p), in_space(sk, p)) {
         (Some(f), _) => Ok(f),
         (None, true) => Err("a point standing in space is drawn in no plane, so it has no \
             `plane`: name the plane itself".to_string()),
         (None, false) => Err("where a point is drawn is known once every `in` is read, after \
             the declarations: name the plane itself".to_string()),
     }
+}
+
+/// Whether point `p` stands in space: three numbers, its own or along a spatial frame's axes.
+fn in_space(sk: &Sketch, p: usize) -> bool {
+    sk.points[p].z.is_some() || sk.points[p].chart.is_some()
+}
+
+/// Whether point `p` has a place yet — drawn in a plane, or standing in space — so the plane it
+/// is drawn in, `p.plane`, can be read or said to be none (`drawn_in`).
+pub(super) fn placed(sk: &Sketch, p: usize) -> bool {
+    sk.plane_of(p).is_some() || in_space(sk, p)
 }
 
 /// **What an operand names, resolved once** (#188): an entity, its fields followed; the faces of

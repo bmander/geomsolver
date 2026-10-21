@@ -1497,7 +1497,7 @@ impl PlanSolver {
         self.system.refresh_consts(sk);
         let z = self.system.z0(sk);
         let mut mx = self.system.max_hard_residual(&z);
-        let mut rel = self.system.max_relative_residual(&z);
+        let mut rel = mx;
         let mut numeric = None;
         let mut fell_back = false;
         // a root the plan chose that breaks a bound is steered by the numeric solve, as any

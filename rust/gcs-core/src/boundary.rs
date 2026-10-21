@@ -894,7 +894,7 @@ fn world_text(world: &[(Reads, String)]) -> String {
 }
 
 /// `1 root`, `2 roots`.
-fn count(n: usize, what: &str) -> String {
+pub(crate) fn count(n: usize, what: &str) -> String {
     match n {
         1 => format!("1 {what}"),
         _ => format!("{n} {what}s"),
@@ -902,7 +902,7 @@ fn count(n: usize, what: &str) -> String {
 }
 
 /// The first `most`, and how many more.
-fn list(xs: &[String], most: usize) -> String {
+pub(crate) fn list(xs: &[String], most: usize) -> String {
     let shown = xs.iter().take(most).cloned().collect::<Vec<_>>().join(", ");
     match xs.len().saturating_sub(most) {
         0 => shown,

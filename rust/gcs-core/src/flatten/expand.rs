@@ -852,13 +852,7 @@ impl<'a> Walk<'a> {
         // its other numbers out of reach as the caller's are
         let (constants, unknowns) = self.file_numbers(comp.module);
         let forbidden = Outside { around: scope.vals.clone(), file: self.file_vals.clone(), unknowns };
-        let mut sub_vals = {
-            let mut t = Vals::over(constants);
-            for (k, v) in sub_vals {
-                t.insert(k, v);
-            }
-            t
-        };
+        let mut sub_vals = Vals::over_with(constants, sub_vals);
         let given = std::rc::Rc::new(sub_vals.clone());
         let sc = Scope {
             owner: key.clone(),

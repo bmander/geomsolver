@@ -33,7 +33,7 @@
 //! scattered starts, come to another pose its stated `ccw`/`cw` admit leaves which it takes to
 //! its seeds — **W207**, advisory, since a root not found is not shown absent.
 
-use crate::boundary::{columns, reduced, split, World};
+use crate::boundary::{columns, count, list, split, World};
 use crate::constraints::{Constraint, SpecKind};
 use crate::diagnose::Diagnosis;
 use crate::graph::dulmage_mendelsohn;
@@ -58,16 +58,17 @@ struct Read<'e> {
     inputs: BTreeSet<u32>,
 }
 
-/// Every drawn instance of a part in `sk`, read.
-fn instances<'e>(e: &'e Elaborated, sk: &Sketch) -> Vec<Read<'e>> {
+/// Every drawn instance of a part in `sk`, read, with the reading of the document they share —
+/// or `None` where the program defines no part.
+fn instances<'e>(e: &'e Elaborated, sk: &Sketch) -> Option<(World, Vec<Read<'e>>)> {
     let prog = &e.program;
     if !prog.components.iter().any(|c| c.part) {
-        return Vec::new();
+        return None;
     }
     let world = World::of(sk, &e.map);
     let by_id: BTreeMap<u32, &Constraint> = sk.constraints.iter().map(|c| (c.id, c)).collect();
     let zero = sk.zero;
-    e.map.instances.iter().filter(|i| i.drawn && prog.components[i.comp].part).map(|inst| {
+    let read = e.map.instances.iter().filter(|i| i.drawn && prog.components[i.comp].part).map(|inst| {
         let comp = &prog.components[inst.comp];
         let s = split(&e.map, sk, &world, inst);
         let rows: BTreeSet<u32> = s.kept.iter().copied()
@@ -76,38 +77,35 @@ fn instances<'e>(e: &'e Elaborated, sk: &Sketch) -> Vec<Read<'e>> {
         let formals: BTreeSet<String> =
             comp.formals.iter().map(|f| format!("{}{}", inst.prefix, f.name.text)).collect();
         let mut own = s.own;
-        own.extend(sk.free_vars.iter()
-            .filter(|(k, _)| k.starts_with(&inst.prefix) && !formals.contains(*k))
+        own.extend(sk.free_vars.range(inst.prefix.clone()..)
+            .take_while(|(k, _)| k.starts_with(&inst.prefix))
+            .filter(|(k, _)| !formals.contains(*k))
             .map(|(_, &p)| p));
         let inputs = rows.iter().filter_map(|id| by_id.get(id))
             .flat_map(|c| columns(sk, c))
             .filter(|p| !own.contains(p) && Some(*p) != zero)
             .collect();
         Read { inst, own, rows, inputs }
-    }).collect()
+    }).collect();
+    Some((world, read))
 }
 
-/// The document with only part `r`'s rows, its inputs held.
-fn alone(sk: &Sketch, r: &Read) -> Sketch {
-    reduced(sk, &r.rows, |p, fixed| fixed || !r.own.contains(&p))
+/// What the document calls entity `r`.
+fn ent_name(e: &Elaborated, r: EntRef) -> String {
+    e.map.name_of(r).cloned().unwrap_or_else(|| entity_name(r))
 }
 
 /// The entity that owns parameter `p`, by the document's name, or the free variable it is.
 fn owner_name(e: &Elaborated, sk: &Sketch, world: &World, p: u32) -> Option<String> {
     if let Some(&r) = world.owner.get(&p) {
-        return Some(e.map.name_of(r).cloned().unwrap_or_else(|| entity_name(r)));
+        return Some(ent_name(e, r));
     }
     sk.free_vars.iter().find(|(_, &q)| q == p).map(|(k, _)| k.clone())
 }
 
 /// `items` as a list, the first `NAMED` of them and how many more.
 fn listed(items: Vec<String>) -> String {
-    let n = items.len();
-    let mut out = items.into_iter().take(NAMED).collect::<Vec<_>>().join(", ");
-    if n > NAMED {
-        out.push_str(&format!(" and {} more", n - NAMED));
-    }
-    out
+    list(&items, NAMED)
 }
 
 /// What is wrong with each part the document instantiates, as diagnostics (PT2, PT3).
@@ -115,11 +113,7 @@ pub fn check(e: &Elaborated) -> Vec<Diag> {
     let prog = &e.program;
     let sk = &e.sketch;
     let map = &e.map;
-    let read = instances(e, sk);
-    if read.is_empty() {
-        return Vec::new();
-    }
-    let world = World::of(sk, map);
+    let Some((world, read)) = instances(e, sk) else { return Vec::new() };
     let name_of = |r: EntRef| map.name_of(r).cloned();
     // the document's structure, compiled once: each part's is its rows' over its own columns
     let sys = System::new(sk);
@@ -219,13 +213,9 @@ pub struct Reading {
 /// the solve settled: a part is judged singular only at a pose that is one.
 pub fn read(e: &Elaborated, sk: &Sketch, d: &Diagnosis, settled: bool) -> Reading {
     let prog = &e.program;
-    let read = instances(e, sk);
+    let Some((world, read)) = instances(e, sk) else { return Reading::default() };
     let mut out = Reading { instances: read.len(), ..Reading::default() };
-    if read.is_empty() {
-        return out;
-    }
     out.definitions = read.iter().map(|r| r.inst.comp).collect::<BTreeSet<_>>().len();
-    let world = World::of(sk, &e.map);
     let name_of = |r: EntRef| e.map.name_of(r).cloned();
     let text = |id: u32| {
         sk.constraint(id).map(|c| format!("`{}`", crate::io::describe_with(c, &name_of)))
@@ -289,7 +279,7 @@ pub fn read(e: &Elaborated, sk: &Sketch, d: &Diagnosis, settled: bool) -> Readin
             if !seen.insert(ent) {
                 continue;
             }
-            let n = e.map.name_of(ent).cloned().unwrap_or_else(|| entity_name(ent));
+            let n = ent_name(e, ent);
             let v = |x: f64| crate::expr::reading(SpecKind::Scalar, x);
             at.push(match ent.kind {
                 EntKind::Point => {
@@ -303,17 +293,29 @@ pub fn read(e: &Elaborated, sk: &Sketch, d: &Diagnosis, settled: bool) -> Readin
             there: {}", label(r), listed(rows), listed(at)));
     }
 
-    // D3: a part its rows do not place at its inputs as they stand
+    // D3: a part its rows do not place at its inputs as they stand — the document's Jacobian at
+    // the pose, conditioned once, and each part's rows over its own columns ranked from it
     if settled {
+        let mut sys = System::new(sk);
+        let z = sys.z0(sk);
+        let hard = sys.hard_rows();
+        let jac = sys.conditioned(&z);
+        let mut rows_of: BTreeMap<u32, Vec<usize>> = BTreeMap::new();
+        for (k, &row) in hard.iter().enumerate() {
+            let (b, i) = sys.instance_of(row);
+            rows_of.entry(sys.blocks[b].cids[i]).or_default().push(k);
+        }
         for r in &read {
-            let alone = alone(sk, r);
-            let mut sys = System::new(&alone);
-            let n = sys.n_free;
-            if n == 0 || sys.hard_rows().is_empty() {
+            let cols: Vec<usize> = r.own.iter()
+                .filter_map(|&p| usize::try_from(sys.col_of[p as usize]).ok())
+                .collect::<BTreeSet<usize>>().into_iter().collect();
+            let rows: Vec<usize> =
+                r.rows.iter().flat_map(|id| rows_of.get(id).into_iter().flatten().copied()).collect();
+            let n = cols.len();
+            if n == 0 || rows.is_empty() {
                 continue;
             }
-            let z = sys.z0(&alone);
-            let rank = sys.conditioned(&z).rank_and_nullspace(RANK_TOL).rank.min(n);
+            let rank = jac.select(&rows, &cols).rank_and_nullspace(RANK_TOL).rank.min(n);
             if rank < n {
                 out.singular.push(format!("{} is singular at what it is given: its rows place \
                     {rank} of its {n} own unknowns here, so a small change to its inputs may move \
@@ -329,9 +331,8 @@ pub fn text(r: &Reading) -> Vec<String> {
     if r.instances == 0 {
         return Vec::new();
     }
-    let mut out = vec![format!("parts: {} instance{} of {} definition{}", r.instances,
-        if r.instances == 1 { "" } else { "s" }, r.definitions,
-        if r.definitions == 1 { "" } else { "s" })];
+    let mut out = vec![format!("parts: {} of {}", count(r.instances, "instance"),
+        count(r.definitions, "definition"))];
     out.extend(r.over.iter().map(|l| format!("part conflict: {l}")));
     out.extend(r.unmet.iter().map(|l| format!("part unmet: {l}")));
     out.extend(r.singular.iter().map(|l| format!("part singular: {l}")));

@@ -690,9 +690,8 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
             }
         }
     }
-    for (field, stated) in [("branches", false), ("orientations", true)] {
+    for (field, to) in [("branches", &mut sk.branches), ("orientations", &mut sk.orientations)] {
         let Some(Json::Obj(kv)) = d.get(field) else { continue };
-        let to = if stated { &mut sk.orientations } else { &mut sk.branches };
         for (k, v) in kv {
             let v = v.as_i64() as i32;
             // a root choice is *one* record of a triangle, in ascending order with the sign read

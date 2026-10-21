@@ -243,8 +243,9 @@ pub fn orientation_text(
 ) -> Option<String> {
     let t = crate::solve::orientation_triangle(sk, key)?;
     let word = if *sk.orientations.get(key)? >= 0 { "ccw" } else { "cw" };
-    let names: Vec<String> =
-        t.iter().map(|&p| name(EntRef::point(p)).unwrap_or_else(|| format!("point {p}"))).collect();
+    let names: Vec<String> = t.iter()
+        .map(|&p| name(EntRef::point(p)).unwrap_or_else(|| crate::model::entity_name(EntRef::point(p))))
+        .collect();
     Some(format!("{word}({})", names.join(", ")))
 }
 

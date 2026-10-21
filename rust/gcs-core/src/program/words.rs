@@ -46,6 +46,8 @@ pub(super) fn check(p: &Program, diags: &mut Vec<Diag>) {
     };
     // every definition: what is wrong with it as written, and one defined twice in one file
     let mut first: BTreeMap<(Option<usize>, &str, bool), Span> = BTreeMap::new();
+    // each file's numbers, read once for every word it defines
+    let mut numbers: BTreeMap<Option<usize>, BTreeSet<String>> = BTreeMap::new();
     for d in &p.words {
         let key = (d.module, d.word.text.as_str(), d.fixity == crate::constraints::Fixity::Infix);
         if let Some(&was) = first.get(&key) {
@@ -54,8 +56,9 @@ pub(super) fn check(p: &Program, diags: &mut Vec<Diag>) {
             continue;
         }
         first.insert(key, d.word.span);
-        let numbers = crate::flatten::file_numbers(p, d.module);
-        for (code, span, message) in crate::flatten::word_faults(d, &numbers) {
+        let numbers = numbers.entry(d.module)
+            .or_insert_with(|| crate::flatten::file_number_names(p, d.module));
+        for (code, span, message) in crate::flatten::word_faults(d, numbers) {
             say(code, span, message);
         }
     }

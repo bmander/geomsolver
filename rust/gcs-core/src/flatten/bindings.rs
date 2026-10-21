@@ -430,21 +430,18 @@ impl<'a> Walk<'a> {
             }
             None => {
                 let prog = self.prog;
-                let preview = prog.preview;
-                let mut not: Vec<String> = Vec::new();
+                let mut not: BTreeSet<String> = BTreeSet::new();
                 for st in &prog.root().body {
-                    let shown = preview.is_some_and(|p| p.lo <= st.span.lo && st.span.hi <= p.hi);
+                    let shown = super::words::previewed(prog, st);
                     match &st.kind {
-                        StmtKind::Instance(i) => not.push(i.name.text.clone()),
-                        StmtKind::Param(p) if shown => not.push(p.name.text.clone()),
-                        StmtKind::Group(g) if shown => not.push(g.name.text.clone()),
-                        _ => {}
-                    }
+                        StmtKind::Instance(i) => not.insert(i.name.text.clone()),
+                        StmtKind::Param(p) if shown => not.insert(p.name.text.clone()),
+                        StmtKind::Group(g) if shown => not.insert(g.name.text.clone()),
+                        _ => false,
+                    };
                 }
-                let mut t = self.file_vals.flat();
-                t.retain(|k, _| !not.iter().any(|n| {
-                    k == n || k.strip_prefix(n.as_str()).is_some_and(|r| r.starts_with('.'))
-                }));
+                let mut t = self.file_vals.under("");
+                t.retain(|k, _| !super::words::among(&not, k));
                 t
             }
         };

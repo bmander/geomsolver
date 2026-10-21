@@ -292,7 +292,7 @@ call's numbers over the constants of its component's file (`walk_instance`), and
 closure its parameters over its word's file's (`flatten/words.rs`), so a formal hides a constant;
 the rest join `Outside::unknowns`, out of reach with their own E103 (`values::out_of_reach`: "an
 unknown of the drawing, and a definition reads only constants"). A word's definition is judged as
-written against its file's numbers by name (`flatten::file_numbers`, `faults`). The gates are
+written against its file's numbers by name (`flatten::file_number_names`, `faults`). The gates are
 `tests/closed_scopes.rs` (`a_definition_reads_the_constants_of_its_file`, `a_formal_hides_a_constant`,
 `a_definition_reads_no_unknown_no_instance_number_and_no_preview_value`) and `tests/modules.rs`
 (`a_definition_reads_the_constants_of_the_modules_its_file_uses`,

@@ -10,19 +10,6 @@ use crate::model::{orientation, EntRef, Sketch};
 
 use super::bounds::{bound_tol, carry};
 
-/// A stated orientation as the drawing reads it (§9.6): what the steering, the elaborator and the
-/// diagnosis all ask, from one reading.
-#[derive(Clone, Debug)]
-pub struct OrientationReading {
-    /// Whether it holds: the triangle turns the stated way, its least height more than the
-    /// solve's own tolerance (`bound_tol`).  A triangle flat within it turns neither way, so a
-    /// stated orientation of three points the drawing puts on one line does not hold.
-    pub holds: bool,
-    /// The triangle's least height, signed by the way it turns: positive counter-clockwise in
-    /// the order the record keys it (`decompose::branch_record`).
-    pub height: f64,
-}
-
 /// The three points a stated orientation names, ascending as the record keys them; `None` for a
 /// key no triple of the sketch's points spells (a document's raw `branch` key, or one naming a
 /// point the sketch does not have).
@@ -37,20 +24,19 @@ fn apart(sk: &Sketch, a: usize, b: usize) -> f64 {
     (bx - ax).dhypot(by - ay)
 }
 
-/// How the stated orientation `key` (`sign` +1 counter-clockwise in the key's order, −1
-/// clockwise) reads on the drawing, `tol` the solve's own (`bound_tol`); `None` for a key that
-/// names no triangle of the sketch.
-pub fn orientation_reading(
-    sk: &Sketch,
-    key: &str,
-    sign: i32,
-    tol: f64,
-) -> Option<OrientationReading> {
+/// **Whether the stated orientation `key` holds** on the drawing (§9.6): what the steering, the
+/// elaborator and the diagnosis all ask.  It holds where the triangle turns the stated way (the
+/// record's sign, +1 counter-clockwise in the key's order, −1 clockwise), its least height more
+/// than `tol`, the solve's own (`bound_tol`): a triangle flat within it turns neither way, so a
+/// stated orientation of three points the drawing puts on one line does not hold.  `None` for a
+/// key the record does not state, or one naming no triangle of the sketch.
+pub fn holds(sk: &Sketch, key: &str, tol: f64) -> Option<bool> {
+    let sign = *sk.orientations.get(key)?;
     let [a, b, c] = triangle(sk, key)?;
     let longest = apart(sk, a, b).max(apart(sk, b, c)).max(apart(sk, c, a));
     // twice the area over the longest side: the least of the triangle's three heights
     let height = if longest > 0.0 { orientation(sk, a, b, c) / longest } else { 0.0 };
-    Some(OrientationReading { holds: sign.signum() as f64 * height > tol, height })
+    Some(sign.signum() as f64 * height > tol)
 }
 
 /// Whether every stated orientation holds on the drawing as it stands (§9.6).
@@ -62,7 +48,7 @@ pub fn orientations_hold(sk: &Sketch) -> bool {
 pub fn broken(sk: &Sketch) -> Vec<String> {
     let tol = bound_tol(sk);
     sk.orientations.iter()
-        .filter(|(k, &v)| orientation_reading(sk, k, v, tol).is_some_and(|r| !r.holds))
+        .filter(|(k, _)| holds(sk, k, tol) == Some(false))
         .map(|(k, _)| k.clone())
         .collect()
 }

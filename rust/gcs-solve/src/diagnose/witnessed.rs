@@ -69,7 +69,8 @@ pub(super) fn judge(
     let sizes = Sizes::of(sk);
     if unknowns.is_empty() {
         let mine = sk.constraints.iter().filter(|c| c.witness == Some(w));
-        if !mine.clone().all(|c| claim_holds(sk, c, tol, extent, &sizes)) {
+        let x = sk.get_x();
+        if !mine.clone().all(|c| claim_holds(sk, &x, c, tol, extent, &sizes)) {
             return Verdict::Violated;
         }
     } else {
@@ -87,7 +88,8 @@ pub(super) fn judge(
             p.fixed = unknowns.binary_search(&(i as u32)).is_err();
         }
         System::new(&scratch).solve(&mut scratch, SolveOpts::default());
-        if !scratch.constraints.iter().all(|c| claim_holds(&scratch, c, tol, extent, &sizes)) {
+        let x = scratch.get_x();
+        if !scratch.constraints.iter().all(|c| claim_holds(&scratch, &x, c, tol, extent, &sizes)) {
             return Verdict::Violated;
         }
         for &p in &unknowns {

@@ -941,9 +941,10 @@ impl System {
             row_scaled,
             jac_scale,
             sizes: Sizes::of(sk),
-            compiled_size: vec![extent.max(1.0); n_res],
-            row_size: vec![extent.max(1.0); n_res],
-            judged: vec![1.0; n_res],
+            // each row's own size and what it is judged over, read by `take_sizes` below
+            compiled_size: vec![0.0; n_res],
+            row_size: vec![0.0; n_res],
+            judged: vec![0.0; n_res],
             hard,
             blocks,
             cids,
@@ -990,10 +991,9 @@ impl System {
                 let ps = b.gidx[i * kn.n_par..(i + 1) * kn.n_par].iter().map(|&p| p as usize);
                 let r0 = b.row0 + i * kn.n_res;
                 let l = self.sizes.size(&self.x, ps, self.extent).max(self.compiled_size[r0]);
-                let f = self.row_scale[r0] / l.dpowi(kn.degree as i32);
                 for r in r0..r0 + kn.n_res {
                     self.row_size[r] = l;
-                    self.judged[r] = f;
+                    self.judged[r] = judged(self.row_scale[r], l, kn.degree);
                 }
             }
         }
@@ -1012,7 +1012,7 @@ impl System {
             let degree = self.kernels[b.kid].degree as i32;
             for r in b.row0..b.row0 + b.count * self.kernels[b.kid].n_res {
                 self.row_scale[r] = if own { self.row_size[r] } else { whole }.dpowi(degree);
-                self.judged[r] = self.row_scale[r] / self.row_size[r].dpowi(degree);
+                self.judged[r] = judged(self.row_scale[r], self.row_size[r], degree as u32);
             }
         }
         self.row_scaled = self.row_scale.iter().any(|&s| s != 1.0);
@@ -1697,4 +1697,10 @@ impl System {
     pub(crate) fn j_mul_sparse(&self, v: &[f64], out: &mut [f64]) {
         csr_mul(&self.csr_indptr, &self.csr_indices, &self.csr_data, v, out);
     }
+}
+
+/// What a row's residual over its `row_scale` is multiplied by to be over its own size `size` to
+/// its kernel's power `degree` (#492): the one rule `size_rows` and `scale_rows` both keep.
+fn judged(row_scale: f64, size: f64, degree: u32) -> f64 {
+    row_scale / size.dpowi(degree as i32)
 }

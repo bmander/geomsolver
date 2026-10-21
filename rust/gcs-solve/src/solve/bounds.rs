@@ -116,9 +116,7 @@ impl Choice {
             Choice::Bound(ci) => {
                 bound_reading(sk, &sk.constraints[*ci], tol).is_some_and(|r| r.holds)
             }
-            Choice::Orientation(k) => sk.orientations.get(k).is_some_and(|&v| {
-                orientations::orientation_reading(sk, k, v, tol).is_some_and(|r| r.holds)
-            }),
+            Choice::Orientation(k) => orientations::holds(sk, k, tol).unwrap_or(false),
         }
     }
 }

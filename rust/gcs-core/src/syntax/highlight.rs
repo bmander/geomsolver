@@ -320,9 +320,7 @@ fn tint_start(
         return (Some(Tint::Word), Next::Def);
     }
     // `part Arm(…) {` (#461), and only there: `part` is a name a document may give too
-    if w == "part" && matches!(next, Some(Tok::Ident(_)))
-        && matches!(toks.get(i + 2).map(|(t, _)| t), Some(Tok::P('(')))
-    {
+    if super::words::part_at(toks, i) {
         return (Some(Tint::Word), Next::Def);
     }
     if w == "use" {

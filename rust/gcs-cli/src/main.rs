@@ -440,20 +440,16 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
     let r = progress::during(solving, || solve(&mut sk, SolveOpts::default()));
     // a solve that stopped on its iteration limit is no answer, whatever its residual (#449)
     let solved = r.settled();
-    let invalid = gcs_core::program::solid_diagnostics(&sk, &e.map);
+    let mut invalid = gcs_core::program::solid_diagnostics(&sk, &e.map);
+    let failed = invalid.iter().any(|d| d.severity() == Severity::Error);
+    // a part that leaves its root to its seeds, read at the solved pose (#461 PT5)
+    if opts.lint && !failed {
+        invalid.extend(gcs_core::parts::roots(&e, &sk));
+    }
     if !opts.json {
         for d in &invalid { say(s, d.span.lo, severity(d.severity()), d.code.as_str(), &d.message); }
     }
-    let failed = invalid.iter().any(|d| d.severity() == Severity::Error);
     e.diags.extend(invalid);
-    // a part that leaves its root to its seeds, read at the solved pose (#461 PT5)
-    if opts.lint && !failed {
-        let roots = gcs_core::parts::roots(&e, &sk);
-        if !opts.json {
-            for d in &roots { say(s, d.span.lo, severity(d.severity()), d.code.as_str(), &d.message); }
-        }
-        e.diags.extend(roots);
-    }
     if failed {
         return (1, opts.json.then(|| doc_json(s, &[], Some(&r), None, &e, Json::Null, Json::Null)));
     }

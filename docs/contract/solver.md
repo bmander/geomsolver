@@ -19,7 +19,7 @@ version ([0.n], see the [language changelog](../solvent-changelog.md)) says wher
   `"orientations"`, only where there is one) and grafted beside `branches`.  Only `orientations`
   is enforced, so no drawing whose cache disagrees with its seeds changes.  It is held as a bound
   is, by the same machinery (`solve/orientations.rs` over `bounds::carry`, the Newton crossing
-  `across` is): `orientation_reading` is the verdict — the triangle's least height (twice its
+  `across` is): `orientations::holds` is the verdict — the triangle's least height (twice its
   signed area over its longest side), signed by its turn, holds only beyond `bound_tol`, so three
   points the drawing puts on one line turn neither way and break it; `cross_bounds` carries the
   point of a broken one on the seeds (the last of the three, in the key's order, with a coordinate

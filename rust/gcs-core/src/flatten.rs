@@ -45,7 +45,7 @@ mod table;
 
 pub use faces::{FaceAxis, FacePlane};
 
-pub(crate) use words::{faults as word_faults, file_numbers};
+pub(crate) use words::{faults as word_faults, file_number_names};
 pub(crate) use interfaces::check as interface_faults;
 pub(crate) use keys::is_probe;
 use crate::lowering::Lowered;

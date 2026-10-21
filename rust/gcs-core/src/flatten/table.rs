@@ -65,7 +65,16 @@ impl Vals {
 
     /// A table of `own` and nothing further out: an instance's, given its call's numbers.
     pub(crate) fn of(own: BTreeMap<String, Aff>) -> Vals {
-        let mut t = Vals::default();
+        Vals::given(Vals::default(), own)
+    }
+
+    /// `own` in a frame over `outer`: a body's numbers over the constants of its file (#461).
+    pub(crate) fn over_with(outer: Rc<Vals>, own: BTreeMap<String, Aff>) -> Vals {
+        Vals::given(Vals::over(outer), own)
+    }
+
+    /// `t` with `own` put in its frame.
+    fn given(mut t: Vals, own: BTreeMap<String, Aff>) -> Vals {
         for (k, v) in own {
             t.insert(k, v);
         }
@@ -121,17 +130,6 @@ impl Vals {
     /// `own`, taken.
     pub(crate) fn into_own(self) -> BTreeMap<String, Aff> {
         self.own
-    }
-
-    /// Every name in force and the value it has here, an inner frame's hiding an outer one's.
-    pub(crate) fn flat(&self) -> BTreeMap<String, Aff> {
-        let mut out: BTreeMap<String, Aff> = BTreeMap::new();
-        for t in self.frames() {
-            for (k, v) in &t.own {
-                out.entry(k.clone()).or_insert_with(|| v.clone());
-            }
-        }
-        out
     }
 
     /// Whether any value in force is affine in an unknown of the drawing: a name some frame

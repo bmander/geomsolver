@@ -62,14 +62,9 @@ fn waits(sk: &Sketch, res: &Resolver, st: &Stmt) -> bool {
         r.path.iter().enumerate().any(|(k, seg)| {
             matches!(seg, crate::syntax::Seg::Field(f) if f.text == super::resolve::PLANE)
                 && super::resolve::follow(sk, e, &r.path[..k])
-                    .is_ok_and(|p| p.kind == EntKind::Point && !drawn(sk, p.i()))
+                    .is_ok_and(|p| p.kind == EntKind::Point && !super::resolve::placed(sk, p.i()))
         })
     })
-}
-
-/// Whether point `p` is drawn somewhere yet: in a plane, or standing in space.
-fn drawn(sk: &Sketch, p: usize) -> bool {
-    sk.plane_of(p).is_some() || sk.points[p].z.is_some() || sk.points[p].chart.is_some()
 }
 
 /// The frame a membership's reference names: a frame, or the plane a point it reaches is drawn
@@ -80,13 +75,6 @@ fn frame_of(sk: &Sketch, res: &Resolver, r: &crate::syntax::Ref, last: bool)
     let Some(e) = res.lookup(r) else {
         return Err((Code::E101, format!("no such entity: `{}`", r.root.text)));
     };
-    if r.path.is_empty() {
-        return match e.kind {
-            EntKind::Frame => Ok(e.i()),
-            _ => Err((Code::E040,
-                format!("`{}` is {}, and `in` names a plane", r.root.text, e.kind.a()))),
-        };
-    }
     let name = crate::syntax::ref_text(r);
     match super::resolve::follow(sk, e, &r.path) {
         Ok(f) if f.kind == EntKind::Frame => Ok(f.i()),
@@ -109,118 +97,116 @@ fn member(
     last: bool,
     diags: &mut Vec<Diag>,
 ) {
-    {
-        let StmtKind::Decl(d) = &st.kind else { return };
-        let Some(r) = d.membership.plane() else { return };
-        if skip.contains(&st.id) {
-            return;
-        }
-        let mut fail = |code: Code, span: Span, message: String| {
-            diags.push(Diag::within(code, span, st.id, message));
-        };
-        // every frame it is in, outermost first (#383): the blocks around it and its plane
-        let mut path: Vec<(usize, Span)> = Vec::new();
-        let mut bad = false;
-        for r in d.membership.path() {
-            match frame_of(sk, res, r, last) {
-                Err((code, message)) => {
-                    fail(code, r.span, message);
-                    bad = true;
-                }
-                Ok(f) if !path.iter().any(|&(g, _)| g == f) => path.push((f, r.span)),
-                Ok(_) => {}
+    let StmtKind::Decl(d) = &st.kind else { return };
+    let Some(r) = d.membership.plane() else { return };
+    if skip.contains(&st.id) {
+        return;
+    }
+    let mut fail = |code: Code, span: Span, message: String| {
+        diags.push(Diag::within(code, span, st.id, message));
+    };
+    // every frame it is in, outermost first (#383): the blocks around it and its plane
+    let mut path: Vec<(usize, Span)> = Vec::new();
+    let mut bad = false;
+    for r in d.membership.path() {
+        match frame_of(sk, res, r, last) {
+            Err((code, message)) => {
+                fail(code, r.span, message);
+                bad = true;
             }
+            Ok(f) if !path.iter().any(|&(g, _)| g == f) => path.push((f, r.span)),
+            Ok(_) => {}
         }
-        if bad {
-            return;
-        }
-        // a declaration that could not be built made nothing to put anywhere
-        let Some(me) = res.of.get(&d.name.key().text).copied() else { return };
-        let frames: Vec<u32> = path.iter().map(|&(f, _)| f as u32).collect();
-        // a frame declared in a block rides on the block's frames
-        if me.kind == EntKind::Frame {
-            sk.frames[me.i()].rides =
-                frames.into_iter().filter(|&f| f as usize != me.i()).collect();
-            return;
-        }
-        // it is drawn in the innermost frame of the path with axes; one further out with axes
-        // says nothing, which is said
-        let charted = |sk: &Sketch, f: usize| sk.frames[f].planar() || sk.frames[f].chart.is_some();
-        let charts: Vec<(usize, Span)> =
-            path.iter().copied().filter(|&(f, _)| charted(sk, f)).collect();
-        if let [.., (outer, at), (inner, _)] = charts[..] {
-            let who = |e: EntRef| map.name_of(e).cloned().unwrap_or_else(|| entity_name(e));
-            fail(Code::W115, at, format!(
-                "drawn in `{}`, so the `{}` around it says nothing of where: a frame with axes \
-                 inside another draws what is in it, and the outer one is ridden on",
-                who(EntRef::frame(inner)), who(EntRef::frame(outer))));
-        }
-        let (plane, r_span) = charts.last().copied()
-            .or_else(|| path.last().copied()).expect("a membership names a frame");
-        let r = &crate::syntax::Ref { span: r_span, ..r.clone() };
-        let rides = path.len() > 1 || !sk.carriers_of(&frames).is_empty();
-        let points: Vec<usize> = match me.kind {
-            EntKind::Point => vec![me.i()],
-            _ => sk.children(me).into_iter().map(|k| k.i()).collect(),
-        };
-        // what it rides on, kept for the readings at a roll: a point declared elsewhere keeps
-        // the path it was drawn with
-        if rides {
-            for &p in &points {
-                let at = EntRef::point(p);
-                match sk.rides.get(&at) {
-                    Some(was) if *was != frames => {
-                        let who = |e: EntRef| map.name_of(e).cloned()
-                            .unwrap_or_else(|| entity_name(e));
-                        fail(Code::E060, r.span, format!("`{}` rides on frames of its own \
-                            already: it is drawn once, where it is declared", who(at)));
-                    }
-                    Some(_) => {}
-                    None => {
-                        sk.rides.insert(at, frames.clone());
-                    }
+    }
+    if bad {
+        return;
+    }
+    // a declaration that could not be built made nothing to put anywhere
+    let Some(me) = res.of.get(&d.name.key().text).copied() else { return };
+    let frames: Vec<u32> = path.iter().map(|&(f, _)| f as u32).collect();
+    // a frame declared in a block rides on the block's frames
+    if me.kind == EntKind::Frame {
+        sk.frames[me.i()].rides =
+            frames.into_iter().filter(|&f| f as usize != me.i()).collect();
+        return;
+    }
+    // it is drawn in the innermost frame of the path with axes; one further out with axes
+    // says nothing, which is said
+    let charted = |sk: &Sketch, f: usize| sk.frames[f].planar() || sk.frames[f].chart.is_some();
+    let charts: Vec<(usize, Span)> =
+        path.iter().copied().filter(|&(f, _)| charted(sk, f)).collect();
+    if let [.., (outer, at), (inner, _)] = charts[..] {
+        let who = |e: EntRef| map.name_of(e).cloned().unwrap_or_else(|| entity_name(e));
+        fail(Code::W115, at, format!(
+            "drawn in `{}`, so the `{}` around it says nothing of where: a frame with axes \
+             inside another draws what is in it, and the outer one is ridden on",
+            who(EntRef::frame(inner)), who(EntRef::frame(outer))));
+    }
+    let (plane, r_span) = charts.last().copied()
+        .or_else(|| path.last().copied()).expect("a membership names a frame");
+    let r = &crate::syntax::Ref { span: r_span, ..r.clone() };
+    let rides = path.len() > 1 || !sk.carriers_of(&frames).is_empty();
+    let points: Vec<usize> = match me.kind {
+        EntKind::Point => vec![me.i()],
+        _ => sk.children(me).into_iter().map(|k| k.i()).collect(),
+    };
+    // what it rides on, kept for the readings at a roll: a point declared elsewhere keeps
+    // the path it was drawn with
+    if rides {
+        for &p in &points {
+            let at = EntRef::point(p);
+            match sk.rides.get(&at) {
+                Some(was) if *was != frames => {
+                    let who = |e: EntRef| map.name_of(e).cloned()
+                        .unwrap_or_else(|| entity_name(e));
+                    fail(Code::E060, r.span, format!("`{}` rides on frames of its own \
+                        already: it is drawn once, where it is declared", who(at)));
+                }
+                Some(_) => {}
+                None => {
+                    sk.rides.insert(at, frames.clone());
                 }
             }
         }
-        // a spatial frame (#383): its points are read along its axes where it has them, and
-        // stand in space where it has none — drawn in its parent's coordinates, the world's
-        if !sk.frames[plane].planar() {
-            let charted = sk.frames[plane].chart.is_some();
-            for p in points {
-                if let Some(q) = sk.plane_of(p) {
-                    let who =
-                        |e: EntRef| map.name_of(e).cloned().unwrap_or_else(|| entity_name(e));
-                    fail(Code::E060, r.span, format!("`{}` is already in `{}`",
-                        who(EntRef::point(p)), who(EntRef::frame(q))));
-                } else if charted {
-                    sk.draw_in_chart(p, plane);
-                }
-            }
-            return;
-        }
+    }
+    // a spatial frame (#383): its points are read along its axes where it has them, and
+    // stand in space where it has none — drawn in its parent's coordinates, the world's
+    if !sk.frames[plane].planar() {
+        let charted = sk.frames[plane].chart.is_some();
         for p in points {
-            // a point drawn in this plane too is read here by its twin (§6.7)
-            let twin = if me.kind == EntKind::Point { None } else { sk.twin_in(p, plane) };
-            match sk.plane_of(p) {
-                Some(q) if q != plane && twin.is_some() => {
-                    sk.replace_point(me, p, twin.expect("matched"));
-                }
-                Some(q) if q != plane => {
-                    let who =
-                        |e: EntRef| map.name_of(e).cloned().unwrap_or_else(|| entity_name(e));
-                    fail(
-                        Code::E060,
-                        // the ref's own span: the clause's word, or the block header's
-                        r.span,
-                        format!(
-                            "`{}` is already in `{}`",
-                            who(EntRef::point(p)),
-                            who(EntRef::frame(q))
-                        ),
-                    );
-                }
-                _ => sk.set_plane(p, Some(plane)),
+            if let Some(q) = sk.plane_of(p) {
+                let who =
+                    |e: EntRef| map.name_of(e).cloned().unwrap_or_else(|| entity_name(e));
+                fail(Code::E060, r.span, format!("`{}` is already in `{}`",
+                    who(EntRef::point(p)), who(EntRef::frame(q))));
+            } else if charted {
+                sk.draw_in_chart(p, plane);
             }
+        }
+        return;
+    }
+    for p in points {
+        // a point drawn in this plane too is read here by its twin (§6.7)
+        let twin = if me.kind == EntKind::Point { None } else { sk.twin_in(p, plane) };
+        match sk.plane_of(p) {
+            Some(q) if q != plane && twin.is_some() => {
+                sk.replace_point(me, p, twin.expect("matched"));
+            }
+            Some(q) if q != plane => {
+                let who =
+                    |e: EntRef| map.name_of(e).cloned().unwrap_or_else(|| entity_name(e));
+                fail(
+                    Code::E060,
+                    // the ref's own span: the clause's word, or the block header's
+                    r.span,
+                    format!(
+                        "`{}` is already in `{}`",
+                        who(EntRef::point(p)),
+                        who(EntRef::frame(q))
+                    ),
+                );
+            }
+            _ => sk.set_plane(p, Some(plane)),
         }
     }
 }

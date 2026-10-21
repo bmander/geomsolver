@@ -528,11 +528,12 @@ impl Default for DiagnoseOptions {
 /// Structural (and optionally numeric) diagnosis of a sketch at its current configuration.
 /// Whether a claim's row holds (§9.7): the rule `violated_constraints` states against a compiled
 /// system, in the units the row carries — the residual over its own size to its kernel's power
-/// (`Sizes`, #492), no larger than `extent`, never a NaN.
-fn claim_holds(sk: &Sketch, c: &Constraint, tol: f64, extent: f64, sizes: &Sizes) -> bool {
+/// (`Sizes`, #492), no larger than `extent`, never a NaN.  `x` is the drawing's numbers, read
+/// once by the caller for every claim it asks of.
+fn claim_holds(sk: &Sketch, x: &[f64], c: &Constraint, tol: f64, extent: f64, sizes: &Sizes)
+    -> bool {
     let e = c.error(sk);
-    let x: Vec<f64> = sk.params.iter().map(|p| p.value).collect();
-    let size = sizes.size(&x, c.params(sk).into_iter().map(|p| p as usize), extent);
+    let size = sizes.size(x, c.params(sk).into_iter().map(|p| p as usize), extent);
     !e.is_nan() && e <= tol * size.dpowi(c.kernel_in(sk).degree as i32)
 }
 
@@ -776,10 +777,10 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
     if !claims.is_empty() && opts.settled {
         // "does it hold?" is the same rule `violated_constraints` states against a compiled
         // system, in the units the row carries: the residual over its own size^degree
-        let (extent, sizes) = (sk.extent(), Sizes::of(sk));
+        let (extent, sizes, x) = (sk.extent(), Sizes::of(sk), sk.get_x());
         let held: BTreeSet<u32> = claims
             .iter()
-            .filter(|c| claim_holds(sk, c, opts.tol, extent, &sizes))
+            .filter(|c| claim_holds(sk, &x, c, opts.tol, extent, &sizes))
             .map(|c| c.id)
             .collect();
         // The rank question is the numeric cross-check's kind of question, and is gated the same

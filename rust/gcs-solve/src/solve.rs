@@ -18,8 +18,7 @@ pub use bounds::cross_bounds;
 pub use bounds::{bound_reading, bound_tol, bounds_hold, BoundReading};
 pub use drag::{Drag, PullPolish, RadiusDrag, Triangle};
 pub use orientations::{
-    broken as orientations_broken, orientation_reading, orientations_hold,
-    triangle as orientation_triangle, OrientationReading,
+    broken as orientations_broken, orientations_hold, triangle as orientation_triangle,
 };
 pub use through::{
     solve_through, Boundaries, Boundary, Evaluation, Failure, Reason, Through, Times,
