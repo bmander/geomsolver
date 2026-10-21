@@ -164,6 +164,8 @@ struct Factor {
     pattern: Vec<i32>,
     d: Vec<f64>,
     y: Vec<f64>,
+    /// The least pivot of the last factorisation as a fraction of its diagonal (`least_pivot`).
+    least: f64,
 }
 
 impl Factor {
@@ -187,6 +189,7 @@ impl Factor {
             pattern: vec![0i32; n],
             d: vec![0.0; n],
             y: vec![0.0; n],
+            least: 1.0,
         }
     }
 
@@ -199,6 +202,7 @@ impl Factor {
     fn numeric(&mut self, a: &Sym, damp: Option<&[f64]>) -> bool {
         let (ap, ai, ax) = (&a.ap, &a.ai, &a.ax);
         let n = self.perm.len();
+        self.least = 1.0;
         for k in 0..n {
             self.y[k] = 0.0;
             let mut top = n;
@@ -224,7 +228,9 @@ impl Factor {
                     self.pattern[top] = self.pattern[len];
                 }
             }
-            self.d[k] = self.y[k] + damp.map_or(0.0, |d| d[kk]);
+            // the diagonal entry of A + diag(damp), what elimination takes the pivot from
+            let diag = self.y[k] + damp.map_or(0.0, |d| d[kk]);
+            self.d[k] = diag;
             self.y[k] = 0.0;
             while top < n {
                 let i = self.pattern[top] as usize;
@@ -242,6 +248,7 @@ impl Factor {
                 self.lx[p2] = lki;
                 self.lnz[i] += 1;
             }
+            self.least = self.least.min(if diag > 0.0 { self.d[k].max(0.0) / diag } else { 0.0 });
             if self.d[k] == 0.0 {
                 return false;
             }
@@ -361,6 +368,14 @@ impl Ata {
         }
         self.resolve(b);
         true
+    }
+
+    /// The least pivot of the last factorisation, as a fraction of its column's diagonal in
+    /// `A + diag(damp)`, recorded as it was made: in (0, 1] for a positive definite matrix, at
+    /// rounding's size where it is singular in exact arithmetic but no pivot came out exactly
+    /// zero, and 0 where one did.
+    pub fn least_pivot(&self) -> f64 {
+        self.factor.least
     }
 
     /// Solve again, in place, with the factorisation the last `solve` that succeeded left: the

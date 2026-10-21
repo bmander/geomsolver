@@ -33,6 +33,7 @@ pub mod graft;
 pub mod graph;
 pub mod homotopy;
 pub mod integral;
+pub mod interior;
 pub mod interval;
 pub mod json;
 pub mod kernels;
