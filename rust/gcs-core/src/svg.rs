@@ -20,7 +20,7 @@ use crate::fmath::Det;
 use crate::callout::{self, Callout};
 use crate::json::fmt_g;
 use crate::model::{grow, EntKind, EntRef, Sketch};
-use crate::style::Style;
+use crate::style::{Presented, Style};
 
 /// White space round the drawing, in screen pixels.
 const MARGIN_PX: f64 = 24.0;

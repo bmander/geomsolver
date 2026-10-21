@@ -75,7 +75,9 @@ Install the locked web dependencies with `npm --prefix web ci`. Keep `rust/targe
 
 ```sh
 /usr/bin/time -p make test
-touch rust/gcs-core/src/lib.rs
+touch rust/gcs-core/src/lib.rs      # an edit to the language: gcs-core and what is built on it
+/usr/bin/time -p make test
+touch rust/gcs-solve/src/lib.rs     # an edit to the solver: both crates
 /usr/bin/time -p make test
 make bench
 ```

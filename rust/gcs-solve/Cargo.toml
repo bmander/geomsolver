@@ -1,0 +1,15 @@
+[package]
+name = "gcs-solve"
+version = "0.1.0"
+edition = "2021"
+description = "Geometric constraint solver without the language: model, kernels, solvers, diagnosis, decomposition, and the solids, motions and B-rep the model evaluates."
+
+# Like the core, no dependencies.  Its tests are the core's suite (`gcs-core/tests`), which
+# reaches everything here through the core's re-exports.
+[dependencies]
+
+[lib]
+name = "gcs_solve"
+path = "src/lib.rs"
+test = false
+

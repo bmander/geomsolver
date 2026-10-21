@@ -8,87 +8,44 @@
 //! One implementation of everything: the model, the numerics, structural diagnosis, cluster
 //! decomposition, witness analysis and solution management.  The TypeScript package is a thin
 //! binding over the flat C ABI in `gcs-ffi`; there is no second copy of any algorithm.
-pub mod callout;
-pub mod brep;
+//!
+//! The solver and what the model evaluates are `gcs-solve`, which knows no Solvent (#409, step
+//! 7); this crate is the language and what is built on it.  The solver's modules are re-exported
+//! here under their own names, so `crate::model` and `gcs_core::model` name what they always did.
+pub use gcs_solve::{
+    brep, cgraph, clear, clock, complex, constraints, contact_rate, csg, curve, decompose,
+    delaunay, diagnose, envelope, expr, extremal, fmath, follow, generate, graft, graph,
+    homotopy, integral, interval, json, kernels, linalg, lines, locus, mesh, model, motion,
+    newton, ode, par, plane, progress, rates, rng, roots, semantics, solid, solve, space, sparse,
+    system, tape, taylor, topology, traced, units, variational, vocab, witness,
+};
+pub(crate) use gcs_solve::{bvh, intersection};
+
 pub mod boundary;
-pub mod cgraph;
-pub mod clear;
-pub mod complex;
-pub mod constraints;
-pub mod contact_rate;
-pub mod curve;
-pub mod decompose;
-pub mod delaunay;
-pub mod diagnose;
+pub mod callout;
 pub mod drawing;
+pub mod edge;
 pub mod edit;
-pub(crate) mod bvh;
-pub mod envelope;
-mod intersection;
-pub mod patch;
-pub mod seam;
-pub mod motion;
 pub mod examples;
-pub mod expr;
 pub mod fdcheck;
 pub mod fixtures;
 pub mod flatten;
-pub mod follow;
 pub mod followed;
-pub mod extremal;
-pub mod generate;
 pub mod gltf;
-pub mod graft;
-pub mod graph;
 pub mod hidden;
-pub mod homotopy;
 pub mod io;
-pub mod integral;
-pub mod interval;
-pub mod json;
-pub mod kernels;
+pub mod ir;
 pub mod library;
-pub mod linalg;
-pub mod lines;
-pub mod locus;
 pub mod lowering;
-pub mod model;
 pub mod modules;
-pub mod newton;
-pub mod ode;
 pub mod overview;
-pub mod par;
-pub mod clock;
-pub mod fmath;
-pub mod plane;
+pub mod patch;
 pub mod program;
-pub mod rates;
-pub mod progress;
-pub mod report;
 pub mod renderer;
-pub mod rng;
-pub mod solid;
-pub mod roots;
-pub mod space;
-pub mod solve;
-pub mod sparse;
-pub mod csg;
-pub mod mesh;
+pub mod report;
+pub mod seam;
+pub mod spatial_face;
 pub mod style;
-pub mod semantics;
 pub mod svg;
 pub mod syntax;
-pub mod system;
-pub mod tape;
-pub mod taylor;
-pub mod topology;
-pub mod traced;
 pub mod vertex;
-pub mod edge;
-pub mod spatial_face;
-pub mod units;
-pub mod variational;
-pub mod vocab;
-pub mod witness;
-
-pub mod ir;

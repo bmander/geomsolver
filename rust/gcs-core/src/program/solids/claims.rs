@@ -158,13 +158,8 @@ fn solid_claim(
             return;
         }
     };
-    sk.solid_claims.push(crate::model::SolidClaim {
-        requirement,
-        a: ends[0],
-        b: ends[1],
-        over: over.cloned(),
-        stmt: st.id.0,
-    });
+    sk.solid_claims.push(crate::model::SolidClaim::new(requirement, ends[0], ends[1],
+        over.cloned(), st.id.0));
     map.record(st, Made::Gauge);
 }
 
@@ -255,8 +250,6 @@ fn sweep_of_claim(
         }
     };
     let (from, to) = (num(&c.from, "from")?, num(&c.to, "to")?);
-    Some(crate::model::Sweep {
-        over: crate::model::Running::new(name, dimension, from, to),
-        motion: motion.map(|e| e.idx),
-    })
+    Some(crate::model::Sweep::new(crate::model::Running::new(name, dimension, from, to),
+        motion.map(|e| e.idx)))
 }

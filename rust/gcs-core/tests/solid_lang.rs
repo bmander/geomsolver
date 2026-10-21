@@ -5,6 +5,7 @@
 //! every way of writing it wrong is refused where it is written.
 
 use gcs_core::program::{elaborate, Code, Elaborated};
+use gcs_core::style::Presented;
 use crate::common::{parse, parsed::read};
 
 /// A document refused, with the code and the words it is refused in — a message is part of the
