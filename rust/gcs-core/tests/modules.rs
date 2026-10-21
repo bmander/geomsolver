@@ -52,6 +52,11 @@ fn shelf() -> BTreeMap<&'static str, &'static str> {
     m.insert("lib.loop_b", "use lib.loop_a\npb := 2\ncomponent B(p: point) { }\n");
     m.insert("lib.over", "use lib.rung\ntwice := 2 * lib.rung.len\ncomponent Long(a: point, b: point, twice: Length) { a distance(twice) b }\n");
     m.insert("lib.units", "size := 10mm\ncomponent UnitLink(a: point, b: point, size: Length) { a distance(size) b }\n");
+    m.insert("lib.table", "unit mm\nL := 150mm\nhalf := L / 2\nsizes := {gap: 5mm}\n");
+    m.insert("lib.arm", "unit mm\nuse lib.table (half)\nreach := lib.table.L - half\n\
+        a near b := a distance(lib.table.sizes.gap) b\n\
+        component Arm(a: point, b: point) { a distance(reach + lib.table.sizes.gap) b }\n\
+        component Theirs(a: point, b: point) { a distance(mine) b }\n");
     m
 }
 
@@ -345,4 +350,64 @@ fn the_library_resolves_the_shipped_engine() {
     assert!(errs.is_empty() && linked.is_empty(), "{errs:?} {linked:?}");
     assert!(prog.modules.len() >= 6, "{:?}", prog.modules.iter().map(|m| &m.name).collect::<Vec<_>>());
     assert!(elaborate(&prog).ok());
+}
+
+/// **A definition reads the constants of its file** (#461 PC1): a module's component reads its
+/// own file's values and those of the modules its file `use`s, by the names the file reads them
+/// by (`lib.table.L`, `half` where the `use` lists it) — with nothing handed in at the call, and
+/// to the number one handed in would have given.
+#[test]
+fn a_definition_reads_the_constants_of_the_modules_its_file_uses() {
+    let (e, linked) = read("\
+unit mm
+use std
+use lib.arm
+in std.front {
+  a := point
+  b := point hint((70, 0))
+  fix((0, 0)) a
+  fix(y == 0) b
+}
+arm := lib.arm.Arm(a, b)
+");
+    assert!(linked.is_empty() && e.ok(), "{linked:?} {:?}", e.diags);
+    let mut sk = e.sketch.clone();
+    assert!(gcs_core::solve::solve(&mut sk, Default::default()).success);
+    let b = sk.point_xy(e.map.ent_named("b").unwrap().i());
+    assert!((b.0 - 80.0).abs() < 1e-9, "{b:?}");
+}
+
+/// **Only its own file's** (#461 PC1): the document's numbers are no module definition's — a
+/// module's component means the same whoever uses it — and a module's word reads its own file's
+/// as its components do.
+#[test]
+fn a_definition_reads_no_number_of_its_caller() {
+    let (e, _) = read("\
+unit mm
+use std
+use lib.arm
+mine := 3mm
+in std.front {
+  a := point
+  b := point
+}
+c := lib.arm.Theirs(a, b)
+");
+    assert!(e.errors().any(|d| d.message.contains("mine")), "{:?}", e.diags);
+    let (e, linked) = read("\
+unit mm
+use std
+use lib.arm (near)
+in std.front {
+  a := point
+  b := point hint((4, 0))
+  fix((0, 0)) a
+  fix(y == 0) b
+  a near b
+}
+");
+    assert!(linked.is_empty() && e.ok(), "{linked:?} {:?}", e.diags);
+    let mut sk = e.sketch.clone();
+    assert!(gcs_core::solve::solve(&mut sk, Default::default()).success);
+    assert!((sk.point_xy(e.map.ent_named("b").unwrap().i()).0 - 5.0).abs() < 1e-9);
 }

@@ -2,19 +2,24 @@
 //!
 //! `System::solve` is a document's solve: a minimisation (`System::solve_compiled`, retried by
 //! `RETRIES`), its curve contacts re-homed, its constants read again where it ends, a failure
-//! recovered by `RECOVERIES`, and a bound it breaks steered (`bounds`).  The block-triangular
+//! recovered by `RECOVERIES`, and a bound it breaks steered (`bounds`), as is an orientation the
+//! document states (`orientations`, #157).  The block-triangular
 //! pass and its root search are `blocks`; the drags `drag`, and a body turned whole `turn`; a
 //! parent solved through instances it treats as functions of their inputs, `through` (#454).
 
 mod blocks;
 mod bounds;
 mod drag;
+mod orientations;
 mod through;
 mod turn;
 
 pub use bounds::cross_bounds;
 pub use bounds::{bound_reading, bound_tol, bounds_hold, BoundReading};
 pub use drag::{Drag, PullPolish, RadiusDrag, Triangle};
+pub use orientations::{
+    broken as orientations_broken, orientations_hold, triangle as orientation_triangle,
+};
 pub use through::{
     solve_through, Boundaries, Boundary, Evaluation, Failure, Reason, Through, Times,
 };
@@ -31,6 +36,10 @@ pub const BOUND_BROKEN: i32 = 5;
 /// A `SolveResult::status` of its own: every row holds, and a line a tangency, `parallel` or
 /// `perpendicular` reads only by its direction has no length (#479, `collapsed`).
 pub const COLLAPSED: i32 = 6;
+
+/// A `SolveResult::status` of its own: every row holds, and an orientation the document states
+/// does not (§9.6, #157).
+pub const ORIENTATION_BROKEN: i32 = 7;
 
 /// How short, over the drawing's extent, a line a row reads by its direction may be and still be
 /// a line (`collapsed`): the solve's own relative tolerance, as a bound's.
@@ -74,7 +83,7 @@ pub fn collapsed(sk: &Sketch) -> Vec<u32> {
 
 /// `res` judged as a document's answer: one that holds every row with a line a row reads by its
 /// direction of no length is no solution (`collapsed`).
-fn judged(sk: &Sketch, mut res: SolveResult) -> SolveResult {
+fn unless_collapsed(sk: &Sketch, mut res: SolveResult) -> SolveResult {
     if res.success && !collapsed(sk).is_empty() {
         res.success = false;
         res.status = COLLAPSED;
@@ -290,11 +299,12 @@ impl System {
     fn solve_steered(&mut self, sk: &mut Sketch, opts: SolveOpts) -> SolveResult {
         // a document solve over bounds starts where it may be steered back to (§9.6), and one
         // that fails is tried again from there (`RECOVERIES`)
-        let steers = opts.document() && sk.constraints.iter().any(|c| c.bound.is_some());
+        let steers = opts.document()
+            && (sk.constraints.iter().any(|c| c.bound.is_some()) || !sk.orientations.is_empty());
         let start = if opts.document() { sk.get_x() } else { Vec::new() };
         let mut res = self.solve_unsteered(sk, opts);
         if opts.document() {
-            res = judged(sk, res);
+            res = unless_collapsed(sk, res);
             for recovery in RECOVERIES {
                 if res.success {
                     break;
@@ -304,11 +314,14 @@ impl System {
                 }
             }
         }
+        if opts.document() && !res.success {
+            res = self.at_own_sizes(sk, opts, res);
+        }
         // what the recoveries leave is judged already; a steer moves it again.  The lines are
         // named where it is reported (`Diagnosis::collapsed`), not here
         if steers && res.success {
             let steered = self.steer(sk, opts, start, res);
-            res = judged(sk, steered);
+            res = unless_collapsed(sk, steered);
         }
         res
     }
@@ -351,13 +364,14 @@ impl System {
     }
 
     /// A system compiled where `sk` stands — as the recovery left it — then solved on from the
-    /// recovery's start: kept where that settles (`SolveResult::settled`) uncollapsed (`judged`),
-    /// else the system that was is put back, the sketch it stood on with it, and `res` stands.  A stop on the iteration
-    /// limit is not kept even under the acceptance (#449): a recompile changes the yardstick, and
-    /// a solve that ran a point off to infinity is compiled at the extent the runaway left —
-    /// two equal circles' external tangents held to meet, every row then over a drawing ten
-    /// kilometres across, read a contact 0.13 mm off its 20 mm circle as 3e-8 and the drawing as
-    /// solved.  Compiled at its own size from an unseeded start, a drawing converges there.
+    /// recovery's start: kept where that settles (`SolveResult::settled`) uncollapsed
+    /// (`unless_collapsed`), else the system that was is put back, the sketch it stood on with
+    /// it, and `res` stands.  A stop on the iteration limit is not kept even under the acceptance
+    /// (#449): a recompile changes the yardstick, and a solve that ran a point off to infinity is
+    /// compiled at the extent the runaway left — two equal circles' external tangents held to
+    /// meet, every row then over a drawing ten kilometres across, read a contact 0.13 mm off its
+    /// 20 mm circle as 3e-8 and the drawing as solved.  Compiled at its own size from an unseeded
+    /// start, a drawing converges there.
     fn recompiled(
         &mut self,
         sk: &mut Sketch,
@@ -370,7 +384,7 @@ impl System {
             sk.set_x(from);
         }
         let solved = self.solve_unsteered(sk, opts);
-        let solved = judged(sk, solved);
+        let solved = unless_collapsed(sk, solved);
         if solved.settled() {
             return solved;
         }
@@ -382,6 +396,47 @@ impl System {
             Back::Sketch(before) => *sk = *before,
         }
         self.resync(sk);
+        res
+    }
+
+    /// **A drawing is solved at its rows' own sizes** (#492): a failed document solve whose
+    /// every row holds over the drawing's extent, and not over its own size (`System::row_size`),
+    /// stopped where the extent, stretched by a point far out, read the rows it left as solved —
+    /// a DogLeg ending on its gradient after one step, `1e-16 / extent` with the extent at 1e6,
+    /// its contacts on a 20 mm circle a micrometre off, or on its residual at once, `1e-14` of
+    /// a squared extent.  It is solved on from where it stands with every row over its own size
+    /// for the iteration as well (`System::scale_rows`), and kept where that settles nearer to
+    /// holding than it was, no more than `RESIZE` times as wide as it began: a solve that runs a
+    /// point off to infinity reads as holding there at any measure — two parallel tangents meet
+    /// within 1e-14 of a 20 mm circle some 1e16 out.  Its rows are put back over the extent
+    /// either way, which a rank is judged at.  A solve the extent's measure calls failed too,
+    /// and every solve that succeeds, never sees it; one that ends collapsed is not kept
+    /// (`unless_collapsed`).
+    fn at_own_sizes(&mut self, sk: &mut Sketch, opts: SolveOpts, res: SolveResult) -> SolveResult {
+        let z = self.z0(sk);
+        let r = self.residuals(&z);
+        let rows = self.hard_rows();
+        if !rows.iter().all(|&i| r[i].abs() < opts.acceptance_tol) {
+            return res;
+        }
+        let (x, wide, compiled) = (sk.get_x(), RESIZE * sk.extent(), self.compiled_size.clone());
+        // its rows' sizes where it stopped, which is where it is solved on from
+        self.take_sizes();
+        let own = rows.iter().map(|&i| self.judged(i, r[i])).fold(0.0, f64::max);
+        self.scale_rows(true);
+        let solved = self.solve_unsteered(sk, opts);
+        // every row holding where a line it reads by direction has none is still no answer
+        let solved = unless_collapsed(sk, solved);
+        if solved.settled() && solved.max_residual < own && sk.extent() <= wide {
+            self.scale_rows(false);
+            self.resync(sk);
+            return solved;
+        }
+        sk.set_x(&x);
+        self.compiled_size = compiled;
+        self.scale_rows(false);
+        self.resync(sk);
+        self.size_rows();
         res
     }
 
@@ -557,6 +612,7 @@ impl System {
             z,
         );
         let r = self.residuals(z);
+        self.size_rows();
         let mut n2 = 0.0;
         let mut rel = 0.0f64;
         // NaN is not "no error", and `f64::max` would drop it: track it and let it win at the end
@@ -564,7 +620,9 @@ impl System {
         for i in 0..r.len() {
             n2 += r[i] * r[i];
             if self.hard[i] {
-                let a = r[i].abs();
+                // over the row's own size (#492): the iteration's `row_scale` is the drawing's
+                // extent, which one far-out point stretches
+                let a = self.judged(i, r[i]);
                 if a.is_nan() {
                     nan = true;
                 } else {

@@ -39,6 +39,7 @@ pub mod library;
 pub mod lowering;
 pub mod modules;
 pub mod overview;
+pub mod parts;
 pub mod patch;
 pub mod program;
 pub mod renderer;

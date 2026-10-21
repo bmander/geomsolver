@@ -133,10 +133,11 @@ WORD[(ARGS)] REF | REF WORD[(ARGS)] REF [hint(SLOT: E, ...)]   a constraint     
 claim CONSTRAINT                        judged, never solved for                     (1.11)
 claim { DECL* CONSTRAINT* }             a claim with witnesses of its own              (1.11)
 fix((E, E[, E])) REF | fix(MEMBER == E, ...) REF   hold an entity's own numbers      (1.4)
-ccw(a, b, c) | cw(a, b, c)              record a root choice; adds no equation       (1.5)
+ccw(a, b, c) | cw(a, b, c)              choose a root; adds no equation              (1.5)
 K minimizes E | K maximizes E           a free curve's energy                        (1.10)
 [NAME :=] Component(ARGS) [in REF]      an instance                                  (1.8)
 component NAME(FORMALS) { statement* }  a component definition (not a value)
+part NAME(FORMALS) { statement* }       a component that is a function of its inputs  (1.8)
 a WORD(PARAMS) b := RELATION | { ... }  a relation word                              (1.9)
 repeat N [as i] { ... }                 N unrelated copies                           (1.7)
 cycle N [as i] { ... }                  N copies that close; `next`, `prev` in scope
@@ -248,7 +249,7 @@ whichever is written first (`l tangent g` is `g tangent l`).
 | `project` | infix | two points in two planes: two images of one point in space (1.12) |
 | `mapped(from -> a, …)` | infix | `q mapped(from -> a, to -> b, third -> c) p`: `q` where the affine map taking the three sources to the three targets carries `p`; two pairs the similarity, `mirror: true` reversing its turn. Sources in one plane, `q` and targets in one (may differ). Two circles under two pairs: centre carried, radius scaled |
 | `fix` | prefix | an entity's own numbers, whole or by member (1.4) |
-| `ccw(a, b, c)`, `cw(a, b, c)` | call | `c` left (right) of ray `a → b`: a root choice, no equation |
+| `ccw(a, b, c)`, `cw(a, b, c)` | call | `c` left (right) of ray `a → b`: a root choice, no equation, held as a bound is (1.11) |
 
 #### Which way: directions are words
 
@@ -661,9 +662,14 @@ t0 := Rung(l0, r0, len: 50)
 - **An instance's numbers are read by its name**: every numeric formal, bound or not, is
   `inst.formal` — `p distance(ball.r) ball.center` — and travels with an instance passed as a
   `group`. Values a body declares are not read this way.
-- **Scope is closed.** A body sees only its formals and its own declarations: root values,
-  geometry and standard datums must be passed in. Component definitions and built-in functions
-  remain callable. Repetition blocks share the enclosing scope.
+- **Scope is closed.** A body sees only its formals and its own declarations: geometry, standard
+  datums and the document's unknowns must be passed in. Component definitions and built-in
+  functions remain callable. Repetition blocks share the enclosing scope.
+- **A body reads its file's constants**: the values its file states at the top and those of the
+  modules the file `use`s (`engine.dims.L`, or `L` with `use engine.dims (L)`), with nothing passed
+  at the call. A number a parent should be able to vary or solve for — a crank's angle, a ratio — is
+  a formal; a number the part's design fixes is a constant. A `param` with no value is an unknown,
+  never a constant (E103 in a body). The same holds in a relation word's body.
 - **Everything an instance makes is public by dotted name** (`t0.e`, `five.s[0].p1`) unless
   declared `private`. `construction` marks purpose, independently: shown in the editor, hidden on
   sheets unless styled. A private entity may still be passed explicitly to another component.
@@ -766,6 +772,30 @@ steps read one another so (`gear: Gear, trace: Trace` in `spiral_bevel/hypoid.sv
 
 **Derive, don't restate**: keep a few design inputs and derive the rest, so changing one carries
 its dependents (the V-twin derives its cylinder, pockets and grooves from bore, throw and wall).
+
+**A part is a component that promises to be a function of what it is given**: `part Name(…) {
+… }`, written where `component` would be. The elaborator holds it to two rules, over each
+instance:
+- its own rows place everything it makes, or **E108** names what they leave free;
+- it states nothing about its operands alone, or **E109** names the row.
+
+A freedom it leaves is a formal the call leaves unbound (`Crank(o, d, theta: hint(30deg))`), which
+the parent places. A parent may relate a part's outputs (`r distance(10mm) a.tip`), but such a
+statement is the parent's and never completes the part. Choose a root with `ccw`/`cw` (held by the
+solve), not with a seed: `solventc --lint` names a part whose rows have another pose its stated
+choices admit (W207, advice). A part is solved like any component. Use one for anything a parent should
+be able to trust as a unit: a pulley, a rod on its pin, a belt run.
+
+```
+part Crank(o: point, datum: line, theta: Angle) {
+  in o.plane {
+    tip := point hint((20, 20))
+    arm := line(o, tip)
+    o distance(30mm) tip
+    datum angle(theta) arm
+  }
+}
+```
 
 ### 1.9 Modules, relation words and previews
 
@@ -1094,6 +1124,15 @@ from it following; off the solution the solve looks for a root where it holds, e
 bound does not hold`. The diagnosis lists violated and *active* bounds. Not on a `claim`, and not
 the only reader of an unknown. Inside a set's body a bound makes a region (1.13).
 
+**An orientation is held the same way.** `ccw(a, b, x)` adds no row and chooses the root with `x`
+left of `a → b` (`cw`, right): a point of the triangle seeded on the other side is carried across
+the line through the other two before the solve, a solution on the other side is steered to the
+root that turns the stated way, and where none is found the solve fails with `a stated orientation
+does not hold` (`orientation broken: ccw(a, b, x)`). Three points the drawing puts on one line
+turn neither way, so they break it. A point 5 from `a` at `(0, 0)` and from `b` at `(6, 0)` comes
+to `(3, 4)` under `ccw(a, b, x)` whatever its seed. Inside a traced body it is read at the anchor
+instead, and continuity carries it (1.10).
+
 **Words, not seeds.** A bound chooses the root of each block of the solve's block-triangular order
 it decides, so a drawing whose bounds, senses and signed ordinates say every root needs no seed at
 all: the solve constructs it a block at a time, searching a block's roots for the one its bounds
@@ -1231,7 +1270,10 @@ Views carry no place on paper: the `.svd` places each.
 - **`in top { … }`** writes membership once for every declaration inside. An instance joins a view
   whole: `t := Tooth(…) in top`. Inside a component, `in view { … }` over plane formals lets a part
   carry its own views (`engine/conrod.sv`), and `when flag == 1 { … }` over a 0/1 `Int` formal
-  omits a view an instance does not show in.
+  omits a view an instance does not show in. A body may instead draw in the plane an operand is
+  drawn in, `in pin.plane { … }` (or `in pin.end.plane`, through a member): no view is handed to
+  it, and it is drawn wherever what it is mated to is. A point standing in space has no plane
+  (E040 at the reference).
 - A view's attitude may be an unknown: build it on axes the solve turns (2.13, 2.14). Planes and
   axes are settled before the main solve and still move with it.
 
@@ -2222,7 +2264,7 @@ mean the model is fully constrained: read the diagnosis — parameter and equati
 | `under` | DOF > 0 | add a constraint or a gauge, or leave a mechanism's freedom on purpose |
 | `over` | a dimension takes part in a consistent redundancy | remove one `over:` line; editing it would be the next conflict |
 | `conflict` | statements that cannot all hold | the `conflict:` lines are the *minimal* disagreeing set |
-| `unsolved` | the solver stopped short | check the model, then reseed nearer the intended branch |
+| `unsolved` | the solver stopped short, or no root keeps a bound or a `ccw` | check the model and the `bound broken:`/`orientation broken:` lines, then reseed nearer the intended branch |
 
 A redundancy among pure relations (a fourth `perpendicular` round a rectangle) is a theorem, listed
 `implied:`, never an error.
@@ -2233,8 +2275,9 @@ number (`--where body.volume`). Under `--json` they are a `positions` table. It 
 `claim` for testing a position.
 
 Two habits: **fix something** (a figure nothing holds is under by three however determined its
-shape), and **seed for the branch** (the solver finds the solution nearest its start, so an arc
-seeded on the wrong side comes out mirrored).
+shape), and **say the branch** — with a bound or a `ccw` where a side matters, since the solver
+otherwise finds the solution nearest its start, so an arc seeded on the wrong side comes out
+mirrored.
 
 ---
 

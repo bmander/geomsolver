@@ -264,6 +264,97 @@ fn a_point_in_space_has_no_plane() {
     );
 }
 
+/* -- a body drawn in the plane its operand is drawn in (#461) ------------------------------- */
+
+/// A part of two views, `Arm`: what it draws, it draws in the plane its pin is drawn in — read off
+/// the operand, `in pin.plane { … }` — so no view is handed to it, and it is drawn wherever its pin
+/// is.  The instance is written before the pin, so the plane is read once the pin is drawn.
+const ARM: &str = "\
+unit mm
+use std (horizontal)
+component Arm(pin: point) {
+  in pin.plane {
+    tip := point hint((40, 3))
+    pin distance(30mm) tip
+    pin horizontal tip
+  }
+}
+a := Arm(o)
+in std.side {
+  o := point
+  fix((10, 20)) o
+}
+";
+
+/// **A body draws in the plane its operand is drawn in** (#461 PV2): `in pin.plane` is `std.side`
+/// here, read off the pin wherever it is declared, and the tip is drawn there, 30 along its `u`.
+#[test]
+fn a_body_draws_in_the_plane_its_operand_is_drawn_in() {
+    let e = read(ARM);
+    let side = ent(&e, "std.side").i();
+    assert_eq!(e.sketch.plane_of(ent(&e, "o").i()), Some(side));
+    assert_eq!(e.sketch.plane_of(ent(&e, "a.tip").i()), Some(side));
+    let at = solved_at(&e, &["o", "a.tip"]);
+    let gap: f64 = (0..3).map(|i| (at[1][i] - at[0][i]).powi(2)).sum::<f64>().sqrt();
+    assert!((gap - 30.0).abs() < 1e-9, "{at:?}");
+}
+
+/// The plane is read through what the operand reaches — an interface's member, a line's end — and
+/// a body drawn in a plane so read may hand its own point on, so one body's view is read off
+/// another body's point, round by round.  `k` itself is drawn in no plane: its end `b.tip` is.
+#[test]
+fn a_plane_is_read_through_a_path_and_from_a_point_read_so() {
+    let e = read("\
+unit mm
+use std
+interface Pin { end: point }
+component Arm(pin: Pin) {
+  in pin.end.plane {
+    tip := point
+    pin.end distance(30mm) tip
+  }
+}
+component Rod(l: line) {
+  in l.p1.plane {
+    m := point
+    l.p1 distance(5mm) m
+  }
+}
+pa := {end: o}
+pb := {end: a.tip}
+a := Arm(pa)
+b := Arm(pb)
+r := Rod(k)
+in std.top {
+  o := point
+  fix((0, 0)) o
+}
+k := line(b.tip, hint((50, 50)))
+");
+    let top = ent(&e, "std.top").i();
+    for n in ["a.tip", "b.tip", "r.m"] {
+        assert_eq!(e.sketch.plane_of(ent(&e, n).i()), Some(top), "{n}");
+    }
+}
+
+/// A point standing in space is drawn in no plane, so `in o.plane` over one is refused at the
+/// reference (E040), as `o.plane` is in a word; and what reaches no point is said for what it is.
+#[test]
+fn in_the_plane_of_a_point_in_space_is_refused() {
+    refused(
+        "unit mm\nuse std\ncomponent C(o: point) {\n  in o.plane {\n    p := point\n    p distance(5mm) o\n  }\n}\no := point hint((1, 2, 3))\nfix((1, 2, 3)) o\nc := C(o)\n",
+        "E040",
+        "drawn in no plane",
+        "o.plane",
+    );
+    refused(
+        "unit mm\nuse std\ncomponent C(k: circle) {\n  in k.center.plane {\n    p := point\n  }\n  in k.plane {\n    q := point\n  }\n}\nin std.front {\n  k := circle\n}\nc := C(k)\n",
+        "E040",
+        "",
+        "k.plane",
+    );
+}
+
 #[test]
 fn an_error_inside_the_expansion_is_said_at_the_word() {
     // the body's relation does not relate a point and a line: said where `above` is written

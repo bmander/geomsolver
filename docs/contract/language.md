@@ -53,7 +53,12 @@ definition's file, a cycle is E003, an unknown word E102 naming the import. **A 
 ([0.152], #463): `o.plane` is the frame a point is drawn in (`program::resolve::follow`, `PLANE`,
 `drawn_in`), so a word about a point in a view reads the view from its operand and stays closed;
 `o.plane.normal` is minted once the memberships are in (`planes::drawn_normals`, over the
-flattener's `normals`). A point standing in space is E040 at the operand, or at the use where the
+flattener's `normals`). **An `in` reads it too** ([0.159], #461): `in pin.plane { … }`, through any
+path to a point (`in pin.end.plane`), is that point's plane, so a body draws where its operand is
+drawn with no plane formal. `planes::memberships` reads every other membership first and then
+those reading a point's plane round by round, each once its point is drawn (`waits`, `frame_of`);
+one whose point is drawn nowhere after the last round is E040 at the reference, as a point in space
+is. `tests/relation_words.rs` (`a_body_draws_in_the_plane_its_operand_is_drawn_in`) is the gate. A point standing in space is E040 at the operand, or at the use where the
 operand is a word's body's — a relation that cannot settle says first why an operand whose name is
 found names nothing past it (`relations::constrain`), rather than that it has no kind; before the
 memberships (a declaration's child) it is refused as not yet known. `Relation::word` (`Worded`) rides to
@@ -214,6 +219,42 @@ the dimension (`program::traced::Lowering::dimension`); curves.md's "A number th
 says what it becomes.  A trace in a plane compiles its dimensions over the formals and the geometry
 alone, so there the name is still E103 ("not something this curve can read").
 
+**A part is a component held to being a function of what it is given** (§8.2, [0.162], #461,
+[plan](../parts-plan.md)).  `part Name(…) {` parses as `component` does with `Component::part`
+set; the parser reads the word so only where a definition's shape follows it (`part_ahead`: a
+name, a bracketed list, then `{`), so `part := solid(…)` and `part above(7) q` stay statements, and
+`highlight` tints it only there.  `parts::check` runs once `program::elaborate` has a document
+that elaborated with no error.  It reads each drawn instance of a part as the classifier reads one
+(`boundary::split`).  Its own unknowns are what it made, the numbers no entity owns that its rows
+read, and the free variables under its prefix that are no formal of its own.  Its rows are the
+acting ones among those kept.  Its inputs, held, are every other column (`boundary::reduced`).  Two
+rules are judged over the compiled structure of those rows (`System::structure`,
+`graph::dulmage_mendelsohn`):
+- **E108** at the definition's name: an own column the matching leaves unmatched, named by its
+  entity or its free variable;
+- **E109** at the row's site: a row of no own column, or one of the over-determined block, worded
+  by whether it reads an own unknown at all.
+
+Each fault is said once a definition (`said`), against the first instance it is found in.  The
+structure only, so it is deterministic and decided before the solve; nothing changes a row.
+**PT5 is advice** (`parts::roots`, **W207**): `solventc --lint` asks, of the solved sketch, the
+classifier's root search for each part's first instance (`boundary::classify`), and names a part
+classed *locally determined, branch not chosen* — its scattered starts came to another pose its
+stated `ccw`/`cw` admit.  Not in `DRIFT`, which reads text alone; `parts::roots` is its gate's.
+**The diagnosis is read through the parts** (#461 D1–D3, the diagnostic half of #455, from the flat
+solve): `parts::read` takes the solved sketch and its `Diagnosis`, and `solventc` prints
+`parts::text` after the diagnosis's own lines (and `--json` writes `"parts"` where the document
+has any).
+- **D1:** a conflict (`Diagnosis::conflicts`, else `over`) holding a part's rows and a row outside
+  it over the part's own unknowns names that row as the one to remove, the part's rows and its
+  inputs as why.
+- **D2:** a part whose rows `violated` holds is named with its rows and its inputs' places, the
+  innermost only, and not where D1 already said why.
+- **D3:** a settled solve's part whose rows, alone with its inputs held, have numeric rank
+  (`System::conditioned`, `RANK_TOL`) short of its own unknowns is said singular with the rank.
+
+`tests/parts.rs` is the gate.
+
 **A component may instantiate itself** (§8, 0.75): a call back into one still being expanded
 is walked like any other (`Walk::instantiating` keeps each with the numbers it was given), each
 level an instance under the last (`d.s.s.m`), ended by a `when` over its numbers. E003 at the
@@ -242,7 +283,20 @@ reads silenced (`read_through`); a relation reading one is not stated. Text faul
 `tests/interfaces.rs` is the gate.
 
 **Closed components:** model dependencies enter through arguments, standard datums included.
-Definitions and built-ins stay callable. A component scope holds only its formals and
+Definitions and built-ins stay callable. **A definition reads the constants of its file**
+([0.160], #461 PC1, PC2): `Walk::file_numbers` works out, once a file, the numbers the file reads at
+its top — a module's own and its `use`s' (`used_params`, `imported_params`, `module_params`), the
+document's from its root table less its root instances' numbers and its `preview`'s — and splits
+them into constants (no unknown, `Aff::free` none) and the rest. Every instance's table is its
+call's numbers over the constants of its component's file (`walk_instance`), and every word's
+closure its parameters over its word's file's (`flatten/words.rs`), so a formal hides a constant;
+the rest join `Outside::unknowns`, out of reach with their own E103 (`values::out_of_reach`: "an
+unknown of the drawing, and a definition reads only constants"). A word's definition is judged as
+written against its file's numbers by name (`flatten::file_number_names`, `faults`). The gates are
+`tests/closed_scopes.rs` (`a_definition_reads_the_constants_of_its_file`, `a_formal_hides_a_constant`,
+`a_definition_reads_no_unknown_no_instance_number_and_no_preview_value`) and `tests/modules.rs`
+(`a_definition_reads_the_constants_of_the_modules_its_file_uses`,
+`a_definition_reads_no_number_of_its_caller`). A component scope holds only its formals and
 declarations; repetitions share it. `dims := {width: 20mm, origin: o}` bundles values and
 geometry aliases; `dims: group` is a required formal. Groups nest, by name or in place
 (`{bar: {at: o}}`, `InstVal::Group`, flattened to dotted members by `members_of`, each nested
@@ -290,9 +344,9 @@ body statement is emitted; one over such a solid saying what one over it said jo
 (`Sketch::join_body`: a tool a word already joins to a body is not joined again).
 `tests/symmetric.rs` is the gate, beside the closed forms of
 `tests/round_lowering.rs`.
-Curves need fixed scalar/entity formals. The V-twin and inline-four pass
-`components.dims.vtwin_dims` / `engine.dims.engine_dims` explicitly; `Frame(layout, dims: …)`
-takes a layout naming the front datum, origin and reference axis.
+Curves need fixed scalar/entity formals. The V-twin passes `components.dims.vtwin_dims`
+explicitly, a table its parts could read as constants instead ([0.160]), as the inline four's
+do; `Frame(layout, dims: …)` takes a layout naming the front datum, origin and reference axis.
 
 - **A name is defined one way, `NAME := VALUE`** ([plan](../definitions-plan.md), Solvent §5,
   [0.29]).  `w := 100` is a value (`StmtKind::Param`), `c := circle(…)` a declaration, `t :=
@@ -348,8 +402,8 @@ takes a layout naming the front datum, origin and reference axis.
   argument (`check_aliases`; `unseen` names the component that cannot see it and the formal it
   was for, #253), and not where the callee reads the formal: a relation reading it is not
   stated, and a declaration's reference to it is `Expansion::quiet`, which the elaborator's E101
-  there yields to. `module_params` exports values to importing root bodies, to
-  be passed explicitly. `tests/seeds.rs` and `tests/closed_scopes.rs` are the gates.
+  there yields to. `module_params` exports values to importing root bodies, and they
+  are constants of the importing file's definitions ([0.160]). `tests/seeds.rs` and `tests/closed_scopes.rs` are the gates.
 - **Elaboration is linear in the instances** (#403).  The root's numbers in force hold every
   instance's by name (`P0.w`), and every statement emitted carries the table of its body, so
   `Scope::vals` is shared (`Rc`) and never copied per statement; what a closed body may not
@@ -373,12 +427,15 @@ takes a layout naming the front datum, origin and reference axis.
   written from the statements' spans gathered once (`source_map::spans`), asked only where some
   module is previewed.  `tests/many_instances.rs` holds a free root number
   and a root `repeat` and `when`s beside the plates to the same fourfold bound.
-- **A part is one component carrying `in view { … }` blocks** (Solvent §6.7, `P::in_comp`): the
-  block form is allowed inside a component body (the plane is a formal) and still refused inside a
-  root block.  With `when flag == 1 { … }` over a 0/1 `Int` formal for the views an instance does
-  not show in, a part's whole design is one module (`engine/block.sv`, `engine/head.sv`,
-  `engine/crankshaft.sv`, `engine/conrod.sv`); view modules hold only what the assembly adds.
-  Instances inside a block copy are indexed like declarations (`cyl[0].small`, `copy_of`).
+- **A part carries its views in `in view { … }` blocks** (Solvent §6.7, `P::in_comp`): the block
+  form is allowed inside a component body (the plane a formal, or since [0.159] the plane an
+  operand is drawn in, `in pin.end.plane`) and still refused inside a root block.  A part makes
+  every view it defines, every time; which a sheet shows, and how, is the drawing's (`style
+  m.rod2 in end { … }`, [solvent-drawing.md](../solvent-drawing.md)).  So a part's whole design is
+  one module (`engine/block.sv`, `engine/head.sv`, `engine/crankshaft.sv`, `engine/conrod.sv`,
+  every definition of the engine a `part` reading `engine.dims` as constants, #461); view modules
+  hold only what the assembly adds.  Instances inside a block copy are indexed like declarations
+  (`cyl[0].small`, `copy_of`).
 
 - **A name declared over a built-in is said** (Solvent §3.3, §5; `program::shadowing`, W112).
   `expr::eval` knows `expr::CONSTANTS` and `FUNCTIONS` before the document and

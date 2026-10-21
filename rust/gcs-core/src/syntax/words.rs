@@ -196,6 +196,17 @@ pub(super) fn past_bracket(toks: &[(Tok, Span)], open: usize, brackets: Brackets
     }
 }
 
+/// **`part Name(…) {` at `i`** (#461): a part's definition — the one place `part` is a word, so
+/// it stays a name a document may give (`part := solid(…)`, `part above(7) q`).  The parser and
+/// the colouring both ask it.
+pub(super) fn part_at(toks: &[(Tok, Span)], i: usize) -> bool {
+    let at = |k: usize| toks.get(k).map(|(t, _)| t);
+    matches!(at(i), Some(Tok::Ident(w)) if w == "part")
+        && matches!(at(i + 1), Some(Tok::Ident(_)))
+        && at(i + 2) == Some(&Tok::P('('))
+        && at(past_bracket(toks, i + 2, Brackets::Round)) == Some(&Tok::P('{'))
+}
+
 /// Skip an operator and its optional parentheses for parser and highlighter lookahead.
 /// Stop at a statement boundary if the list is unclosed; parsing reports the error.
 pub(super) fn past_args(toks: &[(Tok, Span)], i: usize) -> usize {

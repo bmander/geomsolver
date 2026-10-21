@@ -268,10 +268,13 @@ impl Gauges {
         }
     }
 
-    /// Record every root choice its statements agree on.
+    /// Record every root choice its statements agree on: in `Sketch::branches`, which the plan
+    /// replays, and as stated (`Sketch::orientations`), which a document solve holds the drawing
+    /// to (§9.6, #157).
     pub(super) fn choose_all(&mut self, sk: &mut Sketch, diags: &mut Vec<Diag>) {
         for (key, choices) in std::mem::take(&mut self.branches) {
             if choices.iter().all(|c| c.0 == choices[0].0) {
+                sk.orientations.insert(key.clone(), choices[0].0);
                 sk.branches.insert(key, choices[0].0);
                 continue;
             }

@@ -197,6 +197,29 @@ fn styles_can_show_one_point_and_hide_selected_dimensions() {
     assert!(!svg.contains("<text"), "{svg}");
 }
 
+/// **A style for one view** (#461): `style SELECTOR in VIEW { … }` in a sheet styles that view of
+/// the sheet alone, so one part may be ghosted in one view and drawn plainly in another; a view
+/// the sheet does not have, or such a rule outside a sheet, is refused.
+#[test]
+fn a_style_may_be_for_one_view_of_its_sheet() {
+    let e = solved();
+    let models = BTreeMap::from([("m".into(), drawing::Model { sketch: &e.sketch, names: &e.map })]);
+    let doc = drawing::parse("sheet s { sketch a(m) at (30,40)
+        sketch b(m) at (130,40)
+        style m.rim in a { color: #ff0000 }
+    }").unwrap();
+    let svg = drawing::render(&doc, &models, None).unwrap();
+    let view = |name: &str| {
+        let lo = svg.find(&format!("<g id=\"{name}\"")).unwrap();
+        svg[lo..lo + svg[lo..].find("</g>").unwrap()].to_string()
+    };
+    assert!(view("a").contains("#ff0000") && !view("b").contains("#ff0000"), "{svg}");
+    let at = |src: &str| drawing::parse(src).err().map(|e| e.message).unwrap_or_default();
+    assert_eq!(at("sheet s { sketch a(m) at (30,40)\n style m.rim in c { color: #ff0000 } }"),
+        "no view named `c`");
+    assert!(at("style m.rim in a { color: #ff0000 }").contains("stands in that view's sheet"));
+}
+
 #[test]
 fn isometric_camera_matches_the_old_helper_plane_without_model_geometry() {
     let plain = solved();

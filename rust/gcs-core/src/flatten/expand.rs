@@ -848,8 +848,11 @@ impl<'a> Walk<'a> {
         if self.same_instance(comp, &key, scope, &sub_vals, &sides, &stamps) {
             return ControlFlow::Continue(());
         }
-        let forbidden = Outside { around: scope.vals.clone(), file: self.file_vals.clone() };
-        let mut sub_vals = Vals::of(sub_vals);
+        // the call's numbers over the constants of the file the component is written in (#461),
+        // its other numbers out of reach as the caller's are
+        let (constants, unknowns) = self.file_numbers(comp.module);
+        let forbidden = Outside { around: scope.vals.clone(), file: self.file_vals.clone(), unknowns };
+        let mut sub_vals = Vals::over_with(constants, sub_vals);
         let given = std::rc::Rc::new(sub_vals.clone());
         let sc = Scope {
             owner: key.clone(),

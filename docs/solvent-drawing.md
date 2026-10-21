@@ -181,6 +181,12 @@ style m.linkage.axis { color: #999999; width: 0.5 }
 style m.linkage { display: none }
 ```
 
+A rule in a sheet may style one of its views alone: `style m.rod2 in end { color: #888888; dash:
+6 3 }` ghosts rod 2 in the end view and leaves it drawn plainly in every other, as `dimensions in
+VIEW` asks for one view's dimensions. The view must be one of the sheet's, and a rule outside a
+sheet styles every view. A part makes everything it is (`docs/parts-plan.md` §5), so this is how
+a drawing shows one of its views and not another.
+
 Class selectors refer to renderer-provided roles, such as `.visible`, `.hidden`, `.section`,
 `.dimension`, `.reference`, `.point`, `.closure`, `.construction`, and `.centerline`. Geometry selectors name an entity or a
 component/member scope. Explicit geometry selectors must resolve; a misspelling is an error.

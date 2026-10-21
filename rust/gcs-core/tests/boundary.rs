@@ -69,7 +69,7 @@ two := Paged(std.front, a, b)
 }
 
 /// With `ccw(a, b, x)` stated, one of the two roots is refused by the choice the body states: the
-/// branch is chosen, by a heuristic and by a choice the solve does not yet enforce (#157).  With
+/// branch is chosen, by a heuristic and by a choice the document's solve holds it to (#157).  With
 /// `b` on `a` the two circles are one, and `x` slides round it: rank 1 at the instance's own
 /// inputs, though 2 at a generic input, where its roots are searched for.
 #[test]

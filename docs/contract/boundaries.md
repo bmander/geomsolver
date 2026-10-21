@@ -114,6 +114,14 @@ The gate is `rust/gcs-core/tests/boundary_solve.rs` unless a rule names another.
   an edit to one drive solves every run again; and a boundary's derivative grows as the inverse
   square root of the distance to a fold, past which the boundary is named.
 
+- **A declared part is what a boundary is named from, and the diagnosis reads it from the flat
+  solve** (#461). `part Name(…) { … }` holds a component to FR1, FR2 and DT1's structure while
+  elaborating (`parts::check`, E108, E109), and `parts::read` says a conflict through a part's
+  outputs, a part left unmet and a part singular at its inputs, with no solve through boundaries
+  (#455's diagnostic half). Nothing marks a part to be solved through: `solve::through` is named
+  from Rust still, for a part whose evaluation is expensive, measured first. The rules are
+  [language.md](language.md)'s; `tests/parts.rs` is the gate.
+
 - **Within the solver.** `solve/through.rs` is in `gcs-solve` and imports nothing of the
   language; only `boundary::instance` reads the source map, on the language's side, in
   `gcs-core` (the crate boundary holds it, #409).

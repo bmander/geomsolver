@@ -45,7 +45,7 @@ mod table;
 
 pub use faces::{FaceAxis, FacePlane};
 
-pub(crate) use words::faults as word_faults;
+pub(crate) use words::{faults as word_faults, file_number_names};
 pub(crate) use interfaces::check as interface_faults;
 pub(crate) use keys::is_probe;
 use crate::lowering::Lowered;
@@ -146,11 +146,21 @@ struct Scope {
 struct Outside {
     around: std::rc::Rc<Vals>,
     file: std::rc::Rc<Vals>,
+    /// The numbers of the file the body is written in that are or read an unknown, and so are
+    /// no constants of it (#461 PC2): out of reach, said so (`Walk::file_numbers`).
+    unknowns: std::rc::Rc<BTreeSet<String>>,
 }
 
 impl Outside {
     fn contains(&self, name: &str) -> bool {
-        self.around.contains_key(name) || self.file.contains_key(name)
+        self.around.contains_key(name) || self.file.contains_key(name) || self.unknown(name)
+    }
+
+    /// Whether `name` is a number of the body's file, or of the document's, that is or reads an
+    /// unknown.
+    fn unknown(&self, name: &str) -> bool {
+        self.unknowns.contains(name)
+            || self.file.get(name).or_else(|| self.around.get(name)).is_some_and(|v| v.free.is_some())
     }
 }
 
@@ -449,6 +459,10 @@ struct Walk<'a> {
     file_vals: std::rc::Rc<Vals>,
     /// Module values exported to importing root bodies; component bodies receive arguments.
     module_vals: Vec<Option<BTreeMap<String, Aff>>>,
+    /// The constants each file's definitions read (#461 PC1), by the file (`None` the
+    /// document's), worked out once each, with the names of its numbers that are none: what
+    /// `file_numbers` gives.
+    constants: BTreeMap<Option<usize>, (std::rc::Rc<Vals>, std::rc::Rc<BTreeSet<String>>)>,
     diagnostics: Vec<Diag>,
     /// Every call already read for how its arguments are written (`check_call`), by where it is
     /// written.  The question is about the *text* — which formal a written argument lands on — so
@@ -701,6 +715,7 @@ impl<'a> Walk<'a> {
             sym,
             file_vals: Default::default(),
             module_vals: vec![None; prog.modules.len()],
+            constants: BTreeMap::new(),
             diagnostics: Vec::new(),
             called: BTreeSet::new(),
             standard_datums,

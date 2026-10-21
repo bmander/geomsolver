@@ -403,6 +403,56 @@ impl<'a> Walk<'a> {
         vals
     }
 
+    /// **The constants a definition reads** (#461 PC1, PC2): the numbers of the file it is written
+    /// in that are worked out while elaborating and read no unknown — its own top-level values
+    /// and groups, and those of the modules it `use`s, by the names the file reads them by
+    /// (`engine.dims.L`, or `L` where `use engine.dims (L)` lists it).  A definition is a
+    /// function of its formals, and a constant is part of what it *is*, as a number written in
+    /// its body is; a value that is or reads an unknown (`param c: Length`) is no constant and
+    /// stays out of reach (`out_of_reach`).  The document's are its root's, less the numbers of
+    /// its root's instances (`ball.r`) and what its `preview` states, which a document using it
+    /// would not have: so a definition means the same opened and used.  Read under every
+    /// instance's call numbers and every word's parameters, which hide them.
+    /// Beside them, the names of the file's numbers that are no constants.
+    pub(super) fn file_numbers(&mut self, module: Option<usize>)
+        -> (std::rc::Rc<Vals>, std::rc::Rc<BTreeSet<String>>) {
+        if let Some(t) = self.constants.get(&module) {
+            return t.clone();
+        }
+        let table: BTreeMap<String, Aff> = match module {
+            Some(k) => {
+                let uses: Vec<String> =
+                    self.prog.modules[k].uses.iter().map(|u| u.name.clone()).collect();
+                let mut t = self.used_params(&uses);
+                t.extend(self.imported_params(Some(k)));
+                t.extend(self.module_params(k));
+                t
+            }
+            None => {
+                let prog = self.prog;
+                let mut not: BTreeSet<String> = BTreeSet::new();
+                for st in &prog.root().body {
+                    let shown = super::words::previewed(prog, st);
+                    match &st.kind {
+                        StmtKind::Instance(i) => not.insert(i.name.text.clone()),
+                        StmtKind::Param(p) if shown => not.insert(p.name.text.clone()),
+                        StmtKind::Group(g) if shown => not.insert(g.name.text.clone()),
+                        _ => false,
+                    };
+                }
+                let mut t = self.file_vals.under("");
+                t.retain(|k, _| !super::words::among(&not, k));
+                t
+            }
+        };
+        let (table, unknown): (BTreeMap<String, Aff>, BTreeMap<String, Aff>) =
+            table.into_iter().partition(|(_, v)| v.free.is_none());
+        let t = (std::rc::Rc::new(Vals::of(table)),
+                 std::rc::Rc::new(unknown.into_keys().collect::<BTreeSet<String>>()));
+        self.constants.insert(module, t.clone());
+        t
+    }
+
     /// **The values and groups a file imports bare** (§14.4 [0.48]): `use components.dims
     /// (vtwin_dims)` reads `vtwin_dims` and its members as the module's, beside their full path.
     /// A group so imported is an alias of the module's, so a call is handed it by either name.

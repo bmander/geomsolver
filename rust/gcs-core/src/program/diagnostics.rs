@@ -93,6 +93,12 @@ pub enum Code {
     /// the solve: a `param`, a seed, a constraint's number, a solid's extent or placement angle,
     /// a frame's ratio or advance (§6.14 [0.135])
     E107,
+    /// a part that leaves an unknown of its own free: its rows do not reach everything it makes,
+    /// so a parent would have to place it from outside (#461 PT2)
+    E108,
+    /// a part stating a fact about what it is given rather than about what it makes: a row of
+    /// none of its own unknowns, or past what they take (#461 PT3)
+    E109,
     /// an expression that would not compute — the last number stands
     W110,
     /// a declaration over a built-in name (§3.3, §5): the built-in is what an expression reads
@@ -121,6 +127,10 @@ pub enum Code {
     W205,
     /// a `group` formal handed on whole and never read through
     W206,
+    /// a part whose rows have another pose its stated root choices admit: which it takes is the
+    /// seeds' choice (#461 PT5).  Asked by `solventc --lint` of the solved drawing, never raised
+    /// by elaboration
+    W207,
 }
 
 impl Code {
@@ -157,6 +167,8 @@ impl Code {
             Code::E105 => "E105",
             Code::E106 => "E106",
             Code::E107 => "E107",
+            Code::E108 => "E108",
+            Code::E109 => "E109",
             Code::W110 => "W110",
             Code::W112 => "W112",
             Code::W113 => "W113",
@@ -168,13 +180,15 @@ impl Code {
             Code::W204 => "W204",
             Code::W205 => "W205",
             Code::W206 => "W206",
+            Code::W207 => "W207",
         }
     }
 
     pub fn severity(self) -> Severity {
         match self {
             Code::W110 | Code::W112 | Code::W113 | Code::W114 | Code::W115 | Code::W201
-            | Code::W202 | Code::W203 | Code::W204 | Code::W205 | Code::W206 => Severity::Warning,
+            | Code::W202 | Code::W203 | Code::W204 | Code::W205 | Code::W206
+            | Code::W207 => Severity::Warning,
             _ => Severity::Error,
         }
     }
