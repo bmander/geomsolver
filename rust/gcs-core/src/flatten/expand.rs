@@ -332,6 +332,9 @@ impl<'a> Walk<'a> {
     ) {
         let abs = format!("{prefix}{}", d.name.key().text);
         self.names.insert(abs.clone());
+        if d.kind == crate::model::EntKind::Solid {
+            self.solid_names.insert(abs.clone());
+        }
         if d.annotations.private { self.private_names.insert(abs.clone(), scope.owner.clone()); }
         // a spline through a chain's corners waits for every chain (#243 L7, `through`)
         if d.through.is_some() {
@@ -1552,8 +1555,10 @@ impl Walk<'_> {
             return; // a traced body is solved for its point, never drawn
         }
         let units = self.units;
+        // a plane or a point is never a face's name past a solid
+        let solids = BTreeSet::new();
         let at = |r: &Ref, sc: &Scope, names: &BTreeSet<String>| {
-            Lookup { names, alias, units }.find(r, sc)
+            Lookup { names, solids: &solids, alias, units }.find(r, sc)
                 .and_then(|(abs, rest)| rest.is_empty().then_some(abs))
         };
         // every declaration walked, by its absolute name, and the standard datums, walked after

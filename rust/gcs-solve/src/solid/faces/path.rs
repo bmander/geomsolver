@@ -48,10 +48,12 @@ impl FacePath {
     /// this face's — `plate` every face `plate` gave the body, `plate.near` its near cap, the
     /// empty path every face.  Never by a suffix: `near` alone is the body's own sweep's cap,
     /// and an instance's operand is reached from the instance's solid by its route
-    /// (`pad.plate.near` is `pad`'s `plate.near`, whatever `plate`'s absolute name).
+    /// (`pad.plate.near` is `pad`'s `plate.near`, whatever `plate`'s absolute name).  A segment
+    /// a copy's edge named (`hole[1]`) is named by its index or, written without one, with every
+    /// other copy's (`flange.drill.hole` is each hole the drills cut).
     pub fn matches<S: AsRef<str>>(&self, path: &[S]) -> bool {
         let mine: Vec<&str> = self.segments().collect();
-        path.len() <= mine.len() && path.iter().zip(&mine).all(|(a, b)| a.as_ref() == *b)
+        path.len() <= mine.len() && path.iter().zip(&mine).all(|(a, b)| same_step(a.as_ref(), b))
     }
 
     /// As written in a path (`plate.near`).
@@ -102,6 +104,14 @@ pub fn face_paths(sk: &Sketch, i: usize) -> Vec<FacePath> {
         own(p as usize).into_iter().filter(move |_| !unnamed)
             .map(move |f| FacePath { of: of.clone(), ..FacePath::new(&route, &f) })
     }).collect()
+}
+
+/// Whether segment `written` of a face path names segment `mine` of a face's name: the same, or
+/// `mine` a copy of it (`hole` names `hole[1]`; `hole[1]` names only itself).
+fn same_step(written: &str, mine: &str) -> bool {
+    let copy = |k: &str| !k.is_empty() && k.bytes().all(|b| b.is_ascii_digit());
+    written == mine || mine.strip_prefix(written).and_then(|r| r.strip_prefix('['))
+        .and_then(|r| r.strip_suffix(']')).is_some_and(copy)
 }
 
 /// The solids that read body `i`'s faces, and those of each layer it stands on (a stock of its

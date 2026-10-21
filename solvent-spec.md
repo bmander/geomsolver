@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.155 — October 2026**
+**Specification, Draft 0.156 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -2086,7 +2086,10 @@ the solid names every face whose name it begins: `pad` every face, `pad.plate` e
 gave it, `pad.plate.near` one. It is read from the solid, so an operand an instance made is
 reached from the instance's solid by its route (`part.pad.plate.near`), and never by a suffix:
 `pad.near` names a cap of `pad`'s own sweep and nothing of its operands'. `repeat a in X` (§12.8)
-runs over the same names.
+runs over the same names. **[0.156]** A side whose edge is a copy's (§12.1) is named with the
+copy's index, as the report writes it (`plate.drill.hole[1]`, the hole a `repeat`'s second drill
+cut): written so, the index is the face's name and not a copy of a declaration, and the path
+names that face; written without it (`plate.drill.hole`), every copy's.
 
 **Members** **[0.70]**. `S.ends` (where the edge a set is ends, below), `F.surface` (a face's or a
 set's whole surface), **[0.149]** `F.smooth` (a face's surface carried on across every seam where a

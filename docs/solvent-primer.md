@@ -1737,6 +1737,10 @@ pad.boss round(r: 3mm) pad.plate     // where the boss stands on the plate
 - `A` and `B` are **face paths**: `block` (every face), `block.near` (one), `pad.boss` (every face
   the boss gave), `pad.plate.near`, read from the solid through its operands' names, never by
   suffix. Faces that do not meet make nothing; a face a Boolean ate names nothing.
+- **One copy of a pattern** (0.156): a side whose edge is a copy's carries the copy's index, as
+  `--where` reports it — the hole the second drill of a `repeat` cut is `flange.drill.hole[1]`.
+  Write that name to reach the one hole (`flange.cd chamfer(d: 1mm) flange.drill.hole[1]`, or
+  `hole[i]` in a `repeat`); `flange.drill.hole` (or `flange.drill`) is every copy's.
 - Each acts on the body after its other terms: a round reads the faces the cuts and unions left,
   and not another round's — unless it names that round (below).
 - Where two faces meet tangent there is no edge: a chain of tangent edges (an obround's foot, a

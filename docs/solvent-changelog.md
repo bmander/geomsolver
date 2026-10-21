@@ -4,6 +4,16 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.156] One copy of a pattern, by its face's name.** A side whose edge is a copy's is named
+with the copy's index (§6.21), and a face path may now be written with it: past a solid,
+`plate.drill.hole[1]` — the name the report gives the hole the second copy of `repeat 3 { … drill
+:= solid(face(hole), through: plate) … }` cut — is that face, so `plate.near chamfer(d: 1mm)
+plate.drill.hole[1]` chamfers one hole of the pattern; the index may be any whole number the
+scope reads (`hole[i + 1]`). Written without the index, `plate.drill.hole` names every copy's.
+Through 0.155 the index was read as a copy of a declaration and the path was **E101** ("no such
+entity"), and the path without it named nothing. A cap is named by no edge, so the caps of a
+ring's or a repeat's copies (`pegs.peg.near`) are still one name. No document changes.
+
 **[0.155] A profile in the plane generated under a drive.** A joint driven by its frame's value
 (§6.14, [0.143]) carries a tool of the sheet into a planar envelope (§6.15.1) as a constant-rate
 joint does, standing at the law's value of the roll: `fix(value == 180deg - abs(180deg - t))

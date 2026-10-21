@@ -203,7 +203,8 @@ reference (`model::FaceRef { solid, path, surface }`: `pad.plate.near`, `pad.bos
 `solid::faces::FacePath` (route through the operands, `document::operand_primitives`, the walk
 `exact::build` names faces by, placed copies included — `Exact::named` keeps each face's two
 halves — then the face's own name); `FacePath::matches` (segments from the first, never a
-suffix) is the one rule, read by `BodyFaces::faces` and the flattener's `face_links`, and
+suffix; [0.156] a segment written without an index naming a copy's, `hole` for `hole[1]`,
+`same_step`) is the one rule, read by `BodyFaces::faces` and the flattener's `face_links`, and
 `face_paths` enumerates the same walk with `SolidE::caps`, the one cap table. The members
 `ends`, `surface`, `body` are `syntax::Member`, written as `Seg::Member` by the flattener only
 past a set or a solid where no declared name swallows the field (`rewrite`'s `fix` over
@@ -212,7 +213,11 @@ past a set or a solid where no declared name swallows the field (`rewrite`'s `fi
 an operand once into `resolve::Operand` (`Ent`, `Face`, `Ends`, `Body`; `entity` for the
 entity-only readers, `operand_named` for text), so `follow` never meets a solid's fields, and
 `relations::shape` (`Shape::Face`/`Ends`/`PlaneSide`/`Other`) is the one classifier `constrain`
-and the claims about solids ask. `tests/face_names.rs` is the gate.
+and the claims about solids ask. **An index past a solid is a face's name** ([0.156]): where
+`p[k]` picks no copy of a declaration, `Lookup::face_of_copy` reads it into the segment
+(`flange.drill.hole[1]`, a copy's edge's name, `boundary_name`) and keeps the reading only where
+it reaches a solid (`Walk::solid_names`), so a word's argument and a block over faces read it as
+written. `tests/face_names.rs` is the gate.
 
 **One meaning, two representations** ([0.68]): a face path is the face, bounded by its edges,
 and `.surface` the surface it lies on, whoever reads it. A region's point reads either here,
