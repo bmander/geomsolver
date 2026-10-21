@@ -16,7 +16,9 @@ parameter keeps the selected file. Every parsed file has an anonymous root; comp
 are not instances. A file-level `preview { … }` adds root statements when opened as a model (also
 via `.svd`) and is omitted entirely on `use` (units and params included). Each V-twin part's setup
 is its component's `preview` block (the plate's in `vtwin/components/frame.sv`); only the assembly
-has a top-level `.sv`. Source edits add geometry inside the preview, reusable definitions outside.
+has a top-level `.sv`. Each of the engine's part files (`engine/*.sv` but its table) previews its
+part about the world's origin as `engine.sv` places it, solid included (`tests/engine.rs`).
+Source edits add geometry inside the preview, reusable definitions outside.
 Hosts look for modules beside the model, then its ancestors, then the library.
 `web/tools/copy-examples.js` packages sources for static hosts; live files override them.
 

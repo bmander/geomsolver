@@ -128,6 +128,16 @@ part Crankshaft(o: point, ax: line, o_s: point, theta: Angle) {
     radius(R) path
     t1 := Throw(o, ax, theta: theta, shape: throw_dims)
     t2 := Throw(o, ax, theta: theta + 180deg, shape: throw_dims)
+    // what the shaft is turned to at either end, seen end on: the nose, the seal journal, the
+    // flange and the flywheel, which the solid sweeps along the axis
+    construction nose_c := circle(center: o) hint(r: rnose)
+    construction seal_c := circle(center: o) hint(r: rseal)
+    construction flange_c := circle(center: o) hint(r: rflange)
+    construction flywheel_c := circle(center: o) hint(r: rfw)
+    radius(rnose) nose_c
+    radius(rseal) seal_c
+    radius(rflange) flange_c
+    radius(rfw) flywheel_c
   }
 
   // -- across the axis: the whole shaft edge on ------------------------------------------
@@ -186,4 +196,53 @@ part Crankshaft(o: point, ax: line, o_s: point, theta: Angle) {
   pin2 := {end: t2.pin, side: pin_s[1]}
   pin3 := {end: t2.pin, side: pin_s[2]}
   pin4 := {end: t1.pin, side: pin_s[3]}
+
+  // -- the shaft as a solid: each piece the end section draws, swept along the axis over the
+  // stretch the side section gives it (the end view's normal runs along the axis, from the front)
+  shaft := solid()
+  repeat 5 as j {
+    private journal_b := solid(face(main), from: front + 25mm + j * P - wj / 2,
+                               to: front + 25mm + j * P + wj / 2)
+    journal_b union shaft
+  }
+  repeat 4 as i {
+    xw := front + 25mm + P / 2 + i * P
+    // cylinders 1 and 4 on the first throw, 2 and 3 on the second
+    when i * (3 - i) == 0 {
+      private pin_b := solid(face(t1.kp), from: xw - wpin / 2, to: xw + wpin / 2)
+      private web_l := solid(face(t1.eye, t1.fl, t1.rim, t1.fr), from: xw - P / 2 + wj / 2,
+                             to: xw - wpin / 2)
+      private web_r := solid(face(t1.eye, t1.fl, t1.rim, t1.fr), from: xw + wpin / 2,
+                             to: xw + P / 2 - wj / 2)
+    }
+    when i * (3 - i) != 0 {
+      private pin_b := solid(face(t2.kp), from: xw - wpin / 2, to: xw + wpin / 2)
+      private web_l := solid(face(t2.eye, t2.fl, t2.rim, t2.fr), from: xw - P / 2 + wj / 2,
+                             to: xw - wpin / 2)
+      private web_r := solid(face(t2.eye, t2.fl, t2.rim, t2.fr), from: xw + wpin / 2,
+                             to: xw + P / 2 - wj / 2)
+    }
+    pin_b union shaft
+    web_l union shaft
+    web_r union shaft
+  }
+  nose_b := solid(face(nose_c), from: front - 70mm, to: front + 25mm - wj / 2)
+  seal_b := solid(face(seal_c), from: back - 25mm + wj / 2, to: back + 8mm)
+  flange_b := solid(face(flange_c), from: back + 8mm, to: back + 8mm + wflange)
+  flywheel := solid(face(flywheel_c), from: back + 8mm + wflange, to: back + 8mm + wflange + wfw)
+  nose_b union shaft
+  seal_b union shaft
+  flange_b union shaft
+  flywheel union shaft
+}
+
+// Open this file to preview the crankshaft alone: the end section's throws, turned from the bore
+// axis to the table's crank angle, the whole shaft edge on, and the shaft as a solid.
+preview {
+  unit mm
+  in std.side {
+    top := engine.parts.At(std.side.origin, dx: 0mm, dy: 100mm)
+    bore := line(std.side.origin, top.p)
+  }
+  crank := Crankshaft(std.side.origin, bore, std.origin, theta: engine.dims.theta)
 }

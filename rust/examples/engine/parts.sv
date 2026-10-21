@@ -57,6 +57,16 @@ part Piston(small: point, pin: Int) {
   cl distance(6, along: down) r1.p2
   cl distance(12, along: down) r2.p1
   cl distance(12, along: down) r2.p2
+  // seen edge on, the piston stands at its own station along the crank axis, so that picture is
+  // the one turned into a solid: the half right of the bore axis, turned about it
+  when pin == 0 {
+    construction ct := point hint((small.x, small.y + ch))
+    construction sk := point hint((small.x, small.y + ch - ph))
+    ct midpoint crown
+    sk midpoint skirt
+    construction centre := line(sk, ct)
+    body := solid(face(ct, cr, sr, sk, -> close), about: centre)
+  }
 }
 
 // A point placed from `o` by two ordinates — the corner of an outline, a centre on a pitch.
@@ -77,4 +87,19 @@ part Box(o: point, x0: Length, y0: Length, x1: Length, y1: Length) {
   b offset(dx: x1, dy: y0) o
   c offset(dx: x1, dy: y1) o
   d offset(dx: x0, dy: y1) o
+}
+
+// Open this file to preview cylinder 1's piston at top dead centre: on its small end in the end
+// section, its pin seen end on, and edge on in the side section, where it is turned into a solid.
+preview {
+  unit mm
+  in std.side {
+    small := At(std.side.origin, dx: 0mm, dy: engine.dims.R + engine.dims.L)
+    piston := Piston(small.p, pin: 1)
+  }
+  in std.front {
+    small_s := At(std.origin, dx: engine.dims.front + 25mm + engine.dims.P / 2,
+                  dy: engine.dims.R + engine.dims.L)
+    piston_s := Piston(small_s.p, pin: 0)
+  }
 }

@@ -44,6 +44,15 @@ What the work found:
   still DOF 0, well constrained.
 * **Cost.** Checking 225 part instances adds about a quarter to the engine's elaboration, the
   structure compiled once for the document and read per part.
+* **The engine as solids.** Each part makes its own solid from the views it draws, so the
+  assembly shows a solid engine with nothing added at the root: the block and head are their end
+  sections run along the crank axis (the block less its bores, the crankcase bays between its
+  bulkheads and the main-bearing bore, the head less its camshaft tunnels), the sump the end
+  view's pan `common` with the side view's floor, the crankshaft a union of the end section's
+  journal, pins, webs and turned ends over the stretches the side view gives them, each rod its
+  end outline `common` with its edge-on outline, and each piston its side view's half turned
+  about the bore axis. Each part's file opens alone from a `preview` placing it as `engine.sv`
+  does; `tests/engine.rs` holds the solids to the table and each preview to the assembly's.
 
 PT5's advice is built: `solventc --lint` names a part whose rows, from scattered starts, come to
 another pose its stated choices admit (**W207**, `parts::roots`). Five of the engine's parts drew
