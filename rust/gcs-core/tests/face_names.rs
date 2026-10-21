@@ -54,7 +54,7 @@ const DRILLED: &str = "unit mm\nuse std (chamfer)\nin std.front {\n\
 
 type Areas = std::collections::BTreeMap<String, f64>;
 
-/// **One copy of a pattern** ([0.156]): a solid the document writes in a `repeat`'s body is a
+/// **One copy of a pattern** ([0.157]): a solid the document writes in a `repeat`'s body is a
 /// step of its own in a body's faces' names, with its index (`plate.drill[1].hole`, the hole the
 /// second drill cut), so a face path names one copy's faces — `plate.drill[1]`, as a reference
 /// to the copy is written — where `plate.drill` names them all.  A word's solids are not: the

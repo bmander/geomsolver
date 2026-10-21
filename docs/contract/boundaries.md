@@ -12,7 +12,10 @@ The gate is `rust/gcs-core/tests/boundary_solve.rs` unless a rule names another.
   made and what it states exactly as the classifier reads them (`boundary.rs`'s `split`: every
   entity sited under its path and a twin of one, the numbers no entity owns that its rows read,
   the rows no statement owns that reach only those). No syntax marks a boundary until #461
-  decides on #459's evidence.
+  decides on #459's evidence. `boundary::instances` names many at once, the document read once
+  for all of them: every entity and statement indexed by the instance path it is sited under
+  (`World`), an instance's own a range of each, so naming N instances is not N readings of the
+  document (2,000 runs: 21 s before, 34 ms after).
 
 - **A boundary is square** (FR1, FR3). As many rows as unknowns of its own, so `F_y` is square and
   its derivative `−F_y⁻¹F_x` is never a minimum-norm choice. One that is not is refused by
@@ -66,13 +69,29 @@ The gate is `rust/gcs-core/tests/boundary_solve.rs` unless a rule names another.
   are the parent's coupled system: their rows and unknowns go back to the parent, solved flat, and
   `Through::inlined` names them (`boundaries_that_read_each_other_are_solved_in_the_parent`).
 
+- **The parent is sparse, and steps as the flat solve does** (#459). Each boundary's `dy/dz` is
+  over the parent unknowns it moves with alone (`Inner::dep`: those it reads, and those of each
+  boundary it reads), chained in evaluation order; the parent's Jacobian through the boundaries,
+  `P_z + P_y·dy/dz`, is compressed rows whose structure is fixed when the boundaries are taken out
+  (`Boundaries::reduce`). To `DENSE_MAX` unknowns (or `SolveOpts::dense`) its step is the dense
+  minimum-norm step, above it the normal equations of those entries (`sparse::Ata`, refined for a
+  document), as `newton::JacCtx` steps a flat system. A drive's rows read only its own drive's
+  unknowns, so the entries grow as N (`Through::parent_entries`), and both steps come to one pose
+  (`the_parent_is_sparse_and_steps_as_the_dense_one_does`, `tests/boundary_measure.rs`).
+
 - **Solved means what it means flat** (FL1–FL3). A solve through boundaries is judged on the flat
   document's rows at the pose it ends on (`max_relative_residual < acceptance_tol`), not on the
   parent's rows alone. For every case in the gate, the pose it reaches is the flat solve's to
   1e-9 (1e-8 for the common perpendicular in space), the flat solve started there does not move,
   and the flat numeric rank is the boundaries' own unknowns plus the rank of the parent's rows
   over its own unknowns through the boundaries' derivatives, conditioned as the diagnosis
-  conditions a system (`Through::reduced_rank`, `System::conditioned_of`). The direction paper's
+  conditions a system (`Through::reduced_rank`, `System::conditioned_of`). That rank is found part
+  by part: parts that share no column are blocks of a block-diagonal matrix, whose rank is theirs
+  summed. A column every part reads (one unknown every drive's centre distance is) joins them into
+  one, so while a part is over `DENSE_MAX` columns the column the most rows read is held out (to
+  32): each part is factored on its own, and the rank of what of the held columns no part spans is
+  added (a block QR, `Conditioned::rank_and_rest`;
+  `a_shared_unknown_is_held_out_of_the_rank_and_the_rank_adds_up`). The direction paper's
   belt drive (§6.1, turning frames left out) solves with both runs as boundaries to the flat
   answer, its runs crossing at x = −96 (`the_belt_drive_solves_through_its_runs_to_the_flat_answer`).
 
@@ -80,11 +99,12 @@ The gate is `rust/gcs-core/tests/boundary_solve.rs` unless a rule names another.
   machine: the inner solves each boundary made (`Through::evaluations`), the Newton iterations
   they took (`inner_iterations`, each one assembly and LU of an `F_y`), the evaluations answered
   from the last one at the same inputs with no solve (`answered_again`), and the size of what is
-  factored: the dense parent, `parent_rows × parent_unknowns`, and the largest boundary
-  (`largest_boundary`).  The benchmark's documents and the counts it reads are
-  `boundary::measure`, its timings `bench boundaries`, and its results the plan's §18. The gate is
-  `rust/gcs-core/tests/boundary_measure.rs`: N identical drives cost N times one, inner solve for
-  inner solve (`identical_drives_cost_n_times_one_and_the_parent_is_dense`); a shared unknown
+  factored: the parent, `parent_rows × parent_unknowns` with `parent_entries` of them read, and
+  the largest boundary (`largest_boundary`). The benchmark's documents and the counts it reads
+  are `boundary::measure` (with `run_error`, how far a belt document's tangent points stand from
+  the closed form), its timings `bench boundaries`, and its results the plan's §18 and §19. The
+  gate is `rust/gcs-core/tests/boundary_measure.rs`: N identical drives cost N times one, inner
+  solve for inner solve (`identical_drives_cost_n_times_one`); a shared unknown
   solves every child at every step; a loop is one block flat and a chain of 2 × 2 solves through;
   an edit to one drive solves every run again; and a boundary's derivative grows as the inverse
   square root of the distance to a fold, past which the boundary is named.

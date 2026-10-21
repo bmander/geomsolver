@@ -374,7 +374,7 @@ impl Lookup<'_> {
         Some((abs, rest))
     }
 
-    /// **One copy's faces, past a solid** (`flange.drill[1]`, [0.156]): where an index picks no
+    /// **One copy's faces, past a solid** (`flange.drill[1]`, [0.157]): where an index picks no
     /// copy of a declaration, it is read as part of the segment it stands on, as the faces are
     /// named (`SolidE::step`, `solid::faces::FacePath`) — a reference that, so read, reaches no
     /// solid is none.

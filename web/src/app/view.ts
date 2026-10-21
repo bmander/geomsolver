@@ -1103,11 +1103,12 @@ export class SketchView {
     return this.lastResult;
   }
 
-  private rediagnose(system: System | null): void {
+  private rediagnose(system: System | null, settled: boolean): void {
     // the claims about solids are the worker's (`claims`): judged here they held the thread
-    // for seconds an edit, and nothing else the diagnosis says reads them
+    // for seconds an edit, and nothing else the diagnosis says reads them; and a pose no solve
+    // settled at is judged for nothing (#449)
     this.diagnosis = this.sketch.constraints.length
-      ? diagnose(this.sketch, { system, solidClaims: false }) : null;
+      ? diagnose(this.sketch, { system, solidClaims: false, settled }) : null;
     this.staleDiagnosis = false;
   }
 
@@ -1128,16 +1129,20 @@ export class SketchView {
     }
     // an edit is made where the drawing is drawn: home, whatever instant it is shown at
     params.home(this.sketch);
+    // whether the pose diagnosed is this edit's answer: a failed solve's pose is put back to the
+    // last good geometry, which this drawing does not hold
+    let settled = true;
     if (this.autoSolve) {
       const xBefore = this.sketch.getX();
       this.lastResult = this.solveOnce();
       if (!this.lastResult.success) this.sketch.setX(xBefore);
+      settled = this.lastResult.settled;
     }
     // with auto-solve off nothing has recompiled since the edit, so the System we still hold was
     // built from a sketch that no longer exists: diagnosing against it names dead constraints
     const fresh = this.systemKey === this.sketch.topologyKey();
     if (!fresh) this.releaseSystem();
-    this.rediagnose(fresh ? this.lastSystem : null);
+    this.rediagnose(fresh ? this.lastSystem : null, settled);
     this.syncSource();        // the drawing changed, so the document has to say what it now says
     this.fields.start(this.doc);
     this.claims.start(this.doc);

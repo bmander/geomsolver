@@ -437,6 +437,8 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
     // named from the elaborated sketch, which `sk` is a copy of, so only when somebody listens
     let solving = || progress::Work::solve(&e.sketch);
     let r = progress::during(solving, || solve(&mut sk, SolveOpts::default()));
+    // a solve that stopped on its iteration limit is no answer, whatever its residual (#449)
+    let solved = r.settled();
     let invalid = gcs_core::program::solid_diagnostics(&sk, &e.map);
     if !opts.json {
         for d in &invalid { say(s, d.span.lo, severity(d.severity()), d.code.as_str(), &d.message); }
@@ -448,13 +450,15 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
     }
     let diagnosing = || progress::Work::diagnose(&s.name);
     let d = (!opts.no_diagnose)
-        .then(|| progress::during(diagnosing, || diagnose(&mut sk, DiagnoseOptions::default())));
+        .then(|| progress::during(diagnosing, || {
+            diagnose(&mut sk, DiagnoseOptions { settled: solved, ..DiagnoseOptions::default() })
+        }));
     // read at the solved pose, before anything below builds or exports
     let components = opts.components.then(|| gcs_core::boundary::classify(&e, &sk));
 
     if !opts.json {
-        println!("{}: {}", s.name, if r.success { "solved" } else { "did not solve" });
-        if !r.success {
+        println!("{}: {}", s.name, r.outcome());
+        if !solved {
             println!("  {} (max residual {:.3e})", r.message, r.max_residual);
         }
         if let Some(d) = &d {
@@ -525,7 +529,7 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
             println!("  {line}");
         }
     }
-    let mut code = if r.success || opts.allow_unsolved { 0 } else { 2 };
+    let mut code = if solved || opts.allow_unsolved { 0 } else { 2 };
     let mut stl = opts.stl.clone();
     let mut step = opts.step.clone();
     // A body with swept cuts is built only when every sweep is in the generating class
@@ -536,7 +540,7 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
     // A native export admits the body itself, beside the first of its construction.
     let native = cfg!(feature="occt") && !cad::rust_kernel() && (step.is_some() || (stl.is_some() && opts.native_stl && !opts.refine));
     let mut body = None;
-    if (step.is_some() || (stl.is_some() && !opts.refine)) && r.success {
+    if (step.is_some() || (stl.is_some() && !opts.refine)) && solved {
         if let Ok(i) = pick_solid(&sk,opts.solid.as_deref()) {
             let mut b = cad::Body::read(&sk,i);
             if b.swept() && !native {
@@ -550,7 +554,7 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
             body = Some(b);
         }
     }
-    if let Some(path) = stl.clone().filter(|_| opts.refine && r.success) {
+    if let Some(path) = stl.clone().filter(|_| opts.refine && solved) {
         #[cfg(feature="occt")]
         if let Ok(i) = pick_solid(&sk,opts.solid.as_deref()) {
             if let Err(refusal) = cad::field_mesh::export_refine(&sk,i,&path) {
@@ -563,7 +567,7 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
         stl = None;
     }
     if step.is_some() || (stl.is_some() && opts.native_stl) {
-        match (r.success,pick_solid(&sk,opts.solid.as_deref())) {
+        match (solved,pick_solid(&sk,opts.solid.as_deref())) {
             (false,_) => {
                 let message = "native STEP/STL export requires a solved model".to_string();
                 eprintln!("solventc: {message}");
@@ -657,7 +661,7 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
     }
     // measured after anything written, so one run may export a file and measure it
     for path in &opts.measure {
-        let lines = if r.success { pick_solid(&sk,opts.solid.as_deref()).and_then(|i| {
+        let lines = if solved { pick_solid(&sk,opts.solid.as_deref()).and_then(|i| {
             let t = tolerance(&sk,opts)?.map(|t| t.millimetres);
             cad::measure::report(&sk,i,path,opts.measure_samples,t)
         }) }

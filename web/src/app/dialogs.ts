@@ -251,7 +251,8 @@ export async function alternatives(): Promise<void> {
 
 export function reportSolve(): void {
   const r = view.lastResult;
-  if (r) toast(`${r.success ? 'solved' : 'NOT CONVERGED'} — max|r| = ${r.maxResidual.toExponential(1)} in ${(r.timeS * 1e3).toFixed(1)} ms`);
+  // a stop on the iteration limit is said in the core's words (#449)
+  if (r) toast(`${r.settled ? 'solved' : r.success ? r.message : 'NOT CONVERGED'} — max|r| = ${r.maxResidual.toExponential(1)} in ${(r.timeS * 1e3).toFixed(1)} ms`);
 }
 
 export async function showDiagnosis(): Promise<void> {

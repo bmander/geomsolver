@@ -126,8 +126,9 @@ and stated read alike, a frame carried by what its source rides on), `jacobians.
 **A frame driven by a parameter** (#391 S5): a jointed frame whose value reads a declared
 parameter stands where its joint carries it at the law's value of the roll, for every reading of
 its motion over the roll — the joint's node and a `MotionDef::Driven` beside it, `x in f` reading
-the one and every other reading the other; a relation the solve holds reads no drive
-([parameters.md](parameters.md)).
+the one and every other reading the other; a relation the solve holds reads a drive only as a
+point carried to a roll and its rate, the law carried in the row's constants (#398 G,
+[parameters.md](parameters.md)).
 
 **Drawn in a frame with a value** (#398 B, [0.145]): what a valued frame's `in` block draws
 stands where the value puts it — the planes it draws in read as those planes drawn in the frame

@@ -203,7 +203,7 @@ reference (`model::FaceRef { solid, path, surface }`: `pad.plate.near`, `pad.bos
 `solid::faces::FacePath` (route through the operands, `document::operand_primitives`, the walk
 `exact::build` names faces by, placed copies included — `Exact::named` keeps each face's two
 halves — then the face's own name); `FacePath::matches` (segments from the first, never a
-suffix; [0.156] a step written without an index naming a copy's, `drill` for `drill[1]`,
+suffix; [0.157] a step written without an index naming a copy's, `drill` for `drill[1]`,
 `same_step`) is the one rule, read by `BodyFaces::faces` and the flattener's `face_links`, and
 `face_paths` enumerates the same walk with `SolidE::caps`, the one cap table. The members
 `ends`, `surface`, `body` are `syntax::Member`, written as `Seg::Member` by the flattener only
@@ -214,7 +214,7 @@ an operand once into `resolve::Operand` (`Ent`, `Face`, `Ends`, `Body`; `entity`
 entity-only readers, `operand_named` for text), so `follow` never meets a solid's fields, and
 `relations::shape` (`Shape::Face`/`Ends`/`PlaneSide`/`Other`) is the one classifier `constrain`
 and the claims about solids ask. **A copy the document wrote is a step with its index**
-([0.156]): `SolidE::copy`, set where the program builds a solid the document wrote in a block's
+([0.157]): `SolidE::copy`, set where the program builds a solid the document wrote in a block's
 body itself (`copy_written`: a `DeclName::Copy` whose statement's last path step is the copy; a
 word's solids are `DeclName::Key`, and an instance's in a copy end on the instance), makes its step `drill[1]` (`SolidE::step`, read by `operand_primitives`, `past_step`
 and the recipe's `step`), and a face's edges are named from the scope it is declared in

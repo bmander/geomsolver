@@ -283,7 +283,10 @@ version ([0.n], see the [language changelog](../solvent-changelog.md)) says wher
 - **Block-triangular solve** ([docs/block-triangular-solve-plan.md](../block-triangular-solve-plan.md)):
   `System::block_order` (memoised per compile) is the DM-matched square part in strongly
   connected blocks (`graph::blocks`: Tarjan, lowest row first), over/under parts beside it.
-  `System::subset` evaluates through the whole system's helpers, so its numbers match to the bit;
+  `System::subset` evaluates through the whole system's helpers, so its numbers match to the bit,
+  and writes only the free columns its rows read (`Subset::reads`, `System::apply_cols`): every
+  parameter it reads is held, free among them or derived from bases among them, so the bits are
+  `apply_z`'s, and a block of four rows costs four columns, not a document's every one (#459);
   `BlockTr` minimises one block with `newton::dogleg`, compiling no `System`.
   `SolveOpts::blocks`: `Rescue` (default) runs the pass and a whole-system DogLeg polish after a
   failed DogLeg, before LM, only with `retry` and ≥2 blocks, kept only if it solves; `First` is
@@ -374,6 +377,20 @@ version ([0.n], see the [language changelog](../solvent-changelog.md)) says wher
   pass on an unsettled DogLeg: a failure from the start, kept if it succeeds; a limit stop from
   the stop, kept if it converges (status 0), else from the start, kept if it settles, else the
   first pass that settled, else the stop bit for bit. Drags (`retry` off) never see it.
+  **Only a settled solve is an answer** (#449): a recovery of a failed document solve
+  (`RECOVERIES`, `System::recompiled`) is kept only where it settles, since a recompile changes
+  the yardstick — a point run off towards infinity (two equal circles' parallel tangents held to
+  meet) widens the extent `resized` compiles at until a contact 0.13 mm off its 20 mm circle
+  reads as 3e-8, and was accepted on the iteration limit.  `SolveResult::outcome` is the one
+  wording — *solved*, *stopped at the iteration limit*, *did not solve* — that `solventc`
+  prints and the report's JSON carries (`settled`, `outcome`); its exit code and its exports
+  read `settled`; the ABI's result is nine numbers, `settled` last (`write_result`, the
+  binding's `RESULT_LEN`).  The diagnosis cannot tell from a pose whether a solve settled there,
+  so the caller says (`DiagnoseOptions::settled`, true by default; `solventc` and the page pass
+  the solve's): where not, no claim is judged on the pose (no list holds it), the conflict
+  search runs even where every row reads as holding, and a drawing it finds no conflict in is
+  `Unsolved`.  The diagnosis's own scratch solve (`stationary` above) counts only where it
+  settles.  `tests/unsettled.rs` is the gate.
 - **A drawing over a declared parameter is followed, not solved once** (#391 S4): continuation
   (`follow.rs`) marches the drawing's own solve along the parameter from its interval's start, one
   branch carried by the Jacobian's orientation and a bounded corrector step, and stops at a

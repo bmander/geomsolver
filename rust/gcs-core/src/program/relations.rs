@@ -498,13 +498,16 @@ fn carried_motion(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) -> Option<Option<R
         }
     };
     // what is drawn in a driven frame is read at its value worked out, by the joint itself; a
-    // relation reading the frame's motion otherwise would read a law no row carries (#391 S5)
+    // point carried to a roll reads the frame's motion, the law carried in the row's constants
+    // (#398 G) where it reads stated numbers alone
     let m = match (drawn_in, super::motions::drive_in(&cx.sk, m)) {
         (Some(_), _) => super::motions::undriven(&cx.sk, m),
-        (None, Some((f, over))) => {
-            let message = crate::motion::unread_drive(&f, &over);
-            cx.diags.push(Diag::within(Code::E080, under_ref.span, st.id, message));
-            return Some(None);
+        (None, Some(_)) => {
+            if let Err(message) = crate::envelope::held::Moving::driven(&cx.sk, m) {
+                cx.diags.push(Diag::within(Code::E080, under_ref.span, st.id, message));
+                return Some(None);
+            }
+            m
         }
         (None, None) => m,
     };

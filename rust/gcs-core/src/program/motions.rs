@@ -203,7 +203,7 @@ pub(super) fn undriven(sk: &Sketch, m: usize) -> usize {
 }
 
 /// **The drive a motion node reads**, through relatives and inverses: the parameter it is driven
-/// by, which a relation the solve holds cannot read (#391 S5).
+/// by, which a relation the solve holds reads only as a point carried to a roll (#391 S5, #398 G).
 pub(super) fn drive_in(sk: &Sketch, m: usize) -> Option<(String, String)> {
     read_in(sk, m, &|node| match &node.def {
         MotionDef::Driven { of, over, .. } => Some((sk.motions[*of as usize].name.clone(),

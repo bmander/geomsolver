@@ -29,13 +29,14 @@ pub struct Law {
     at: usize,
 }
 
-/// Why a relation the solve holds cannot read the frame `f` driven by `over`: a row reads no law,
-/// so what is drawn in the frame is read at its value worked out, and the readings over the roll
-/// read the law after the solve.  The one wording, wherever the row is refused.
+/// Why a relation the solve holds cannot read the frame `f` driven by `over`: an envelope's or a
+/// meshing's row reads no law (a point carried to a roll does, #398 G), so what is drawn in the
+/// frame is read at its value worked out, and the readings over the roll read the law after the
+/// solve.  The one wording, wherever the row is refused.
 pub fn unread_drive(f: &str, over: &str) -> String {
-    format!("`{f}` is driven by `{over}`, and a relation the solve holds reads no drive (#391): \
-             draw in it, `n := x in {f}`, which stands where its value puts it, or read it over \
-             the roll — a sweep, a placement")
+    format!("`{f}` is driven by `{over}`, and a relation held to what is generated under it reads \
+             no drive (#391): draw in it, `n := x in {f}`, which stands where its value puts it, \
+             or read it over the roll — a sweep, a placement")
 }
 
 /// Degrees a radian, enclosed.
@@ -57,6 +58,10 @@ impl Law {
         }
         let parsed = crate::expr::parse_in(text, sk.units)?;
         let deps = parsed.body.deps();
+        if let Some(d) = deps.iter().find(|d| !sk.held.contains_key(*d)) {
+            return Err(format!("`{text}` reads `{d}`, which the drawing does not state (an \
+                                unknown is the solve's), and a law is read over stated numbers"));
+        }
         let names: Vec<String> = sk.held.keys().filter(|n| *n == over || deps.contains(*n))
             .cloned().collect();
         let at = names.iter().position(|n| n == over)
@@ -71,11 +76,22 @@ impl Law {
     /// where the text reads a number of the geometry (`HeldNumber::reads`), which the solve moves
     /// while a profile's constants stand still.
     pub fn carried(sk: &Sketch, text: &str, over: &str) -> Result<Law, String> {
+        Law::stated(sk, text, over, "a profile in the plane is generated over stated numbers")
+    }
+
+    /// **The law as a relation the solve holds carries it** (#398 G, `envelope::held::Moving::
+    /// driven`): a point carried to a roll under a drive, its rate.  Refused, as a profile's, where
+    /// the text reads a number of the geometry.
+    pub fn held(sk: &Sketch, text: &str, over: &str) -> Result<Law, String> {
+        Law::stated(sk, text, over, "a relation the solve holds reads a law over stated numbers")
+    }
+
+    fn stated(sk: &Sketch, text: &str, over: &str, why: &str) -> Result<Law, String> {
         let law = Law::read(sk, text, over)?;
         let deps = crate::expr::parse_in(text, sk.units)?.body.deps();
         if let Some(d) = deps.iter().find(|d| sk.held.get(*d).is_some_and(|h| h.reads.is_some())) {
             return Err(format!("`{text}` reads `{d}`, a number of the geometry the solve moves, \
-                                and a profile in the plane is generated over stated numbers"));
+                                and {why}"));
         }
         Ok(law)
     }
