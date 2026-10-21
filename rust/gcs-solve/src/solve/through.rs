@@ -128,7 +128,11 @@ struct Inner {
     /// The unknowns the document started them at: a fresh evaluation's start.
     start: Vec<f64>,
     last: Option<Seen>,
+    /// Inner solves made, the Newton iterations they took (each one assembly and LU of `F_y`),
+    /// and evaluations asked again at the last one's inputs and answered from it.
     evaluations: usize,
+    iterations: usize,
+    again: usize,
     r: Vec<f64>,
     j: Vec<f64>,
 }
@@ -221,6 +225,8 @@ impl Boundaries {
                 xcols,
                 last: None,
                 evaluations: 0,
+                iterations: 0,
+                again: 0,
                 r: Vec::new(),
                 j: Vec::new(),
             };
@@ -396,6 +402,7 @@ struct Block<'a> {
     cols: &'a [usize],
     r: &'a mut Vec<f64>,
     j: &'a mut Vec<f64>,
+    iterations: &'a mut usize,
 }
 
 impl Square for Block<'_> {
@@ -418,6 +425,7 @@ impl Square for Block<'_> {
         // `absmax` is NaN where a row is, and a NaN is no convergence
         let worst = absmax(self.r);
         if jac && worst.is_finite() {
+            *self.iterations += 1;
             self.sys.subset_csr(self.sub, self.z);
             self.j.resize(n * n, 0.0);
             self.sub.dense_into(0, n, self.j);
@@ -443,6 +451,7 @@ fn evaluate(sys: &mut System, z: &mut [f64], b: &mut Inner, w: &mut SquareWork)
         for (&c, &v) in b.ycols.iter().zip(&s.y) {
             z[c] = v;
         }
+        b.again += 1;
         return Ok(());
     }
     b.evaluations += 1;
@@ -455,7 +464,15 @@ fn evaluate(sys: &mut System, z: &mut [f64], b: &mut Inner, w: &mut SquareWork)
     for (&c, &v) in b.ycols.iter().zip(predicted.as_ref().unwrap_or(&b.start)) {
         z[c] = v;
     }
-    let mut block = Block { sys, sub: &mut b.sub, z, cols: &b.ycols, r: &mut b.r, j: &mut b.j };
+    let mut block = Block {
+        sys,
+        sub: &mut b.sub,
+        z,
+        cols: &b.ycols,
+        r: &mut b.r,
+        j: &mut b.j,
+        iterations: &mut b.iterations,
+    };
     if !newton::square(&mut block, w, SquareTol::BLOCK) {
         return Err(Reason::Unsettled);
     }
@@ -566,11 +583,23 @@ pub struct Through {
     pub rejected: usize,
     /// Each boundary solved through and how many inner solves it made, in evaluation order.
     pub evaluations: Vec<(String, usize)>,
+    /// The Newton iterations of every inner solve, each one assembly and LU of a block's `F_y`
+    /// (the derivative's own LU, one per accepted solve, not counted).
+    pub inner_iterations: usize,
+    /// Evaluations asked again at the inputs of a boundary's last one and answered from it, no
+    /// solve made: the parent's Jacobian read where its residual just was, and every boundary
+    /// whose inputs a step left where they were.
+    pub answered_again: usize,
     /// The boundaries that read each other round a cycle and were solved in the parent (IO4).
     pub inlined: Vec<String>,
     /// The parent's own unknowns, and every boundary's.
     pub parent_unknowns: usize,
     pub boundary_unknowns: usize,
+    /// The parent's rows: its Jacobian through the boundaries is a dense `parent_rows ×
+    /// parent_unknowns`, factored at every step (`Boundaries::reduced`).
+    pub parent_rows: usize,
+    /// The most unknowns one boundary has: the largest `F_y` an inner solve factors.
+    pub largest_boundary: usize,
     /// The rank of the parent's rows over its own unknowns through the boundaries' derivatives,
     /// conditioned as the diagnosis conditions a system, at the pose it ended on (FL3).
     pub reduced_rank: usize,
@@ -637,9 +666,13 @@ pub fn solve_through(sk: &mut Sketch, bounds: &[Boundary], opts: SolveOpts)
         failure,
         rejected,
         evaluations: b.inner.iter().map(|i| (i.name.clone(), i.evaluations)).collect(),
+        inner_iterations: b.inner.iter().map(|i| i.iterations).sum(),
+        answered_again: b.inner.iter().map(|i| i.again).sum(),
         inlined: b.inlined.clone(),
         parent_unknowns: b.zcols.len(),
         boundary_unknowns: b.inner.iter().map(|i| i.ycols.len()).sum(),
+        parent_rows: b.parent.rows.len(),
+        largest_boundary: b.inner.iter().map(|i| i.ycols.len()).max().unwrap_or(0),
         reduced_rank,
     })
 }
