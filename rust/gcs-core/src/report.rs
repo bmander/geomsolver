@@ -296,6 +296,20 @@ pub fn material_text(sk: &Sketch, name: &str) -> String {
     }
 }
 
+/// **What each load scenario's diagnosis says** (#510 P7) at the solved drawing `sk`: per
+/// scenario, its name and its words (`diagnose::analysis::scenario_words`) — the motions its
+/// supports leave free, and each re-entrant edge where a `safety` it states is unbounded; none
+/// where all is well.
+pub fn scenarios_json(sk: &Sketch, scenarios: &[crate::program::Stated]) -> Json {
+    Json::Arr(scenarios.iter().map(|s| {
+        let words = crate::diagnose::analysis::scenario_words(sk, &s.scenario);
+        object([
+            ("name", s.scenario.name.as_str().into()),
+            ("words", Json::Arr(words.into_iter().map(Json::Str).collect())),
+        ])
+    }).collect())
+}
+
 /// **The parameters a drawing declares** (#398 L), for a timeline: each by name, what it is and
 /// the interval it runs over, its ends in the units a person reads (degrees for an angle) and as
 /// read.  No march: that is `parameter_json`'s, asked of one parameter.

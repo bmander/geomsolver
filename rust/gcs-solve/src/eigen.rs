@@ -75,8 +75,9 @@ const BREAKDOWN: f64 = 1e-12;
 /// rounding instead of never.
 const FLOOR: f64 = 1e-4;
 /// Sylvester's count is taken this far above the highest value found, relative to its distance
-/// from the shift: values closer than that are one repeated value.
-const GAP: f64 = 1e-6;
+/// from the shift: values closer than that are one repeated value (`diagnose::analysis::repeated`
+/// reads the same).
+pub(crate) const GAP: f64 = 1e-6;
 /// The shift's first distance below zero, relative to the least diagonal ratio `L_ii / R_ii`.
 const SHIFT: f64 = 1e-6;
 

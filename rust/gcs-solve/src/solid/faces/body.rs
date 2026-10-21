@@ -42,14 +42,21 @@ impl BodyFaces {
     /// Solid `body`'s faces, as made by the terms that do not read them.
     pub fn read(sk: &Sketch, body: usize) -> Result<BodyFaces, String> {
         let readers = readers_of(sk, body);
-        let name = sk.solids.get(body).ok_or("no such solid")?.name.clone();
-        let stratum;
-        let from = if readers.is_empty() {
-            sk
-        } else {
-            stratum = without(sk, &readers)?;
-            &stratum
-        };
+        if readers.is_empty() {
+            return BodyFaces::built(sk, body);
+        }
+        BodyFaces::built(&without(sk, &readers)?, body)
+    }
+
+    /// Solid `body`'s faces as the drawing finishes it, the terms that read them made too (its
+    /// rounds): what an analysis reads (#510 P7), where `read` is what those terms read.
+    pub fn whole(sk: &Sketch, body: usize) -> Result<BodyFaces, String> {
+        BodyFaces::built(sk, body)
+    }
+
+    /// Solid `body`'s faces in `from`, every term of it made.
+    fn built(from: &Sketch, body: usize) -> Result<BodyFaces, String> {
+        let name = from.solids.get(body).ok_or("no such solid")?.name.clone();
         // each face named by its document path (`pocket.near`), as `solid::exact` names them —
         // a swept body's by its blank's primitives and the cutter's faces its cuts left (#212)
         let swept = crate::solid::cad::contains_sweep(from, body);
@@ -256,6 +263,9 @@ impl BodyFaces {
             (e, at, d / self.mm)
         }).min_by(|a, b| a.2.total_cmp(&b.2))
     }
+
+    /// Face `fi`'s edges, once each.
+    pub fn face_edges(&self, fi: usize) -> &[u32] { &self.edges[fi] }
 
     /// The faces edge `e` bounds.
     pub fn faces_of(&self, e: u32) -> &[usize] { &self.bounding[e as usize] }
