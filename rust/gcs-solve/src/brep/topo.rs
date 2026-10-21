@@ -121,8 +121,8 @@ impl Face {
 /// How `Brep::check` opens a refusal of an edge used as often each way, but more than once: the
 /// boundary is no manifold there (two pieces touching along it, or a face kept twice).
 const NOT_MANIFOLD: &str = "not a manifold: ";
-/// And of one used more often one way than the other: the boundary is open there (a face of it
-/// missing, or one too many).
+/// And of one used more often one way than the other, or by no face: the boundary is open there
+/// (a face of it missing, or one too many).
 const OPEN: &str = "not closed: ";
 
 /// A solid's boundary: one or more closed shells, its faces in any order.
@@ -206,7 +206,7 @@ impl Brep {
     /// on its surface along the edge; every face's loops turning the way its sense says; every
     /// non-degenerate edge used twice, once each way, and every degenerate one once. An edge used
     /// as often each way, more than once, is a `Kind::NotManifold` refusal (`NOT_MANIFOLD` opens
-    /// what it says); one used more often one way is `Kind::Open` (`OPEN`).
+    /// what it says); one used more often one way, or never, is `Kind::Open` (`OPEN`).
     pub fn check(&self,tol: f64) -> Result<(),super::KernelError> {
         let mut uses = vec![(0usize,0usize);self.edges.len()];
         for (i,e) in self.edges.iter().enumerate() {
@@ -255,7 +255,7 @@ impl Brep {
             match e.curve {
                 EdgeCurve::Degenerate => if u.0+u.1 != 1 { return Err(format!("degenerate edge {i} used {} times",u.0+u.1).into()) },
                 EdgeCurve::Curve(_) => if *u != (1,1) {
-                    let (kind,says) = if u.0 == u.1 { (super::Kind::NotManifold,NOT_MANIFOLD) } else { (super::Kind::Open,OPEN) };
+                    let (kind,says) = if u.0 == u.1 && u.0 > 1 { (super::Kind::NotManifold,NOT_MANIFOLD) } else { (super::Kind::Open,OPEN) };
                     return Err(super::KernelError::new(kind,
                         format!("{says}edge {i} ({}) near {:?} used {} times along and {} against",
                         if let EdgeCurve::Curve(c) = &e.curve { c.kind() } else { "" },

@@ -37,7 +37,7 @@ or field is one arm of `Node::read` and of each match. Every writer writes its p
 `recipe::Writer` (millimetres, about the world's origin or `cad::recipe_about`'s). **A kernel error
 has a kind** (`brep::KernelError`, `Kind`): `Brep::check`'s edge used as often each way, more than
 once, is `NotManifold` (material touching along it: what `boolean::combined` and the body's
-stratum act on), one used more often one way `Open` (a face missing: the kernel's own failure,
+stratum act on), one used more often one way or never `Open` (a face missing: the kernel's own failure,
 which the stratum never reads as rounds meeting; `brep::an_edge_used_twice_each_way_touches_and_one_used_once_is_open`), a recipe of another kind
 than a route builds (`Recipe::meridian`, `Sectioned`) is `Refused` (its caller builds it
 another way), an unreadable recipe `Recipe`; its message is all it says, and it becomes a `String`

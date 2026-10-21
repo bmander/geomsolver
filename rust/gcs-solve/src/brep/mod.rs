@@ -42,8 +42,8 @@ pub enum Kind {
     /// A boundary that is no manifold: an edge used as often along as against, more than once
     /// (`topo::Brep::check`), as where two pieces of material touch along it.
     NotManifold,
-    /// A boundary that does not close: an edge used more often one way than the other
-    /// (`topo::Brep::check`), where a face is missing — never what two bodies touching leave, so
+    /// A boundary that does not close: an edge used more often one way than the other, or by no
+    /// face (`topo::Brep::check`), where a face is missing — never what two bodies touching leave, so
     /// the kernel's own failure.
     Open,
     /// A recipe of another kind than a route builds (`recipe::Recipe::meridian`,

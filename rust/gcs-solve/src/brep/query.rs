@@ -329,8 +329,9 @@ pub fn curve_surface_within(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol
 /// chords until every chord's middle, carried onto the surface, lies within a bar of the edge in
 /// space (at least four chords an edge, at most 2²⁰). **The one drawing of a boundary a point is
 /// read against** (`Located`, and `boolean`'s pieces and holes): it carries `sag`, how far its
-/// chords stray from the edges at most, so that whatever reads its winding knows how near the
-/// edges it may not be trusted.
+/// chords' middles stray from the edges at most, so that whatever reads its winding knows how
+/// near the edges it may not be trusted (sampled at the middles, as `ssi`'s traces are: the
+/// chords are short enough that a middle's is a chord's).
 #[derive(Clone,Debug)]
 pub struct Outline { loops: Vec<Vec<Uv>>,sag: f64 }
 
@@ -340,17 +341,21 @@ impl Outline {
     /// run ended to where the next begins.
     pub fn of<F: Fn(f64) -> (Uv,V)>(surface: &Surface,bar: f64,loops: impl IntoIterator<Item=impl IntoIterator<Item=F>>) -> Outline {
         let mut sag = 0f64;
+        let mut stack = Vec::new();
         let loops = loops.into_iter().map(|l| {
             let mut pts = Vec::new();
             for run in l {
-                let mut stack = vec![(0.,1.,0)];
-                pts.push(run(0.).0);
+                // each chord its ends' fractions and parameters, so a point is read once: the
+                // middle a chord is cut at is the end of both halves
+                let (u0,u1) = (run(0.).0,run(1.).0);
+                pts.push(u0);
+                stack.push((0.,u0,1.,u1,0));
                 // bisected the first way round first, so the chords come in order
-                while let Some((a,z,depth)) = stack.pop() {
-                    let ((ua,_),(uz,_)) = (run(a),run(z));
+                while let Some((a,ua,z,uz,depth)) = stack.pop() {
                     let m = (a+z)/2.;
-                    let off = distance(surface.point([(ua[0]+uz[0])/2.,(ua[1]+uz[1])/2.]),run(m).1);
-                    if depth < 2 || (off > bar && depth < 20) { stack.push((m,z,depth+1)); stack.push((a,m,depth+1)); }
+                    let (um,pm) = run(m);
+                    let off = distance(surface.point([(ua[0]+uz[0])/2.,(ua[1]+uz[1])/2.]),pm);
+                    if depth < 2 || (off > bar && depth < 20) { stack.push((m,um,z,uz,depth+1)); stack.push((a,ua,m,um,depth+1)); }
                     else { sag = sag.max(off); if z < 1. { pts.push(uz); } }
                 }
             }
@@ -364,6 +369,11 @@ impl Outline {
 
     /// How far a chord's middle strays from its edge in space, at most.
     pub fn sag(&self) -> f64 { self.sag }
+
+    /// The loops' signed area in the parameters, counter-clockwise positive.
+    pub fn area(&self) -> f64 {
+        self.loops.iter().map(|l| (0..l.len()).map(|i| { let (a,b) = (l[i],l[(i+1)%l.len()]); a[0]*b[1]-a[1]*b[0] }).sum::<f64>()).sum::<f64>()/2.
+    }
 
     /// How many times the loops wind about `p`, counter-clockwise in the parameters.
     pub fn winding(&self,p: Uv) -> i32 {
@@ -386,9 +396,10 @@ impl Outline {
         let (mut vlo,mut vhi) = (f64::INFINITY,f64::NEG_INFINITY);
         for p in self.loops.iter().flatten() { vlo = vlo.min(p[1]); vhi = vhi.max(p[1]); }
         let mut found: Vec<(f64,Uv)> = Vec::new();
+        let mut xs: Vec<f64> = Vec::new();
         for k in 1..16 {
             let v = vlo+(vhi-vlo)*(k as f64+0.37)/16.;
-            let mut xs: Vec<f64> = Vec::new();
+            xs.clear();
             for p in &self.loops {
                 for i in 0..p.len() {
                     let (a,b) = (p[i],p[(i+1)%p.len()]);
@@ -405,9 +416,18 @@ impl Outline {
     }
 }
 
+/// Whether `uv` lies on the material's side of a use of an edge through `q`, going `dq` in face
+/// `f`'s parameters: its left, mirrored where the face is reversed, read on `q`'s branch of the
+/// surface's periods (`Located::face_place` and `boolean`'s pieces, one rule).
+pub(crate) fn beside(f: &Face,q: Uv,dq: Uv,uv: Uv) -> bool {
+    let w = unwrap(uv,q,f.surface.periods());
+    (dq[0]*(w[1]-q[1])-dq[1]*(w[0]-q[0]) > 0.) != f.reversed
+}
+
 /// The point of an edge's stretch `t` of `curve` nearest `p`: its parameter and distance (a
-/// closed curve read on the representative nearest the stretch).
-pub(crate) fn nearest_on(curve: &Curve,t: [f64;2],p: V) -> (f64,f64) {
+/// closed curve read on the representative nearest the stretch; a degenerate edge is its `pole`).
+pub(crate) fn nearest_on(curve: &EdgeCurve,t: [f64;2],pole: V,p: V) -> (f64,f64) {
+    let EdgeCurve::Curve(curve) = curve else { return (t[0],distance(p,pole)) };
     let mut s = curve.inverse(p);
     if let Some(period) = curve.period() {
         let mid = (t[0]+t[1])/2.;
@@ -430,7 +450,7 @@ pub struct Located<'a> {
     /// twice the outline's `sag`).
     coarse: f64,
     /// Each face's loops drawn in its parameters, to an eighth of `coarse`.
-    polys: Vec<Outline>,
+    outlines: Vec<Outline>,
     /// Each face's parameter box.
     boxes: Vec<[Uv;2]>,
     /// Each face's box in space (`face_box`).
@@ -442,12 +462,12 @@ pub struct Located<'a> {
 impl<'a> Located<'a> {
     /// A located boundary that keeps its own copy.
     pub fn owned(b: Brep,tol: f64) -> Located<'static> {
-        let (tol,coarse,polys,boxes,space,seams) = { let l = Located::new(&b,tol); (l.tol,l.coarse,l.polys,l.boxes,l.space,l.seams) };
-        Located {b:std::borrow::Cow::Owned(b),tol,coarse,polys,boxes,space,seams}
+        let (tol,coarse,outlines,boxes,space,seams) = { let l = Located::new(&b,tol); (l.tol,l.coarse,l.outlines,l.boxes,l.space,l.seams) };
+        Located {b:std::borrow::Cow::Owned(b),tol,coarse,outlines,boxes,space,seams}
     }
     pub fn new(b: &'a Brep,tol: f64) -> Located<'a> {
         let coarse = (1e-4*b.size()).max(tol*8.);
-        let mut polys = Vec::new();
+        let mut outlines = Vec::new();
         let mut boxes = Vec::new();
         for f in &b.faces {
             let outline = Outline::of(&f.surface,coarse/8.,f.loops.iter().map(|l| l.iter().map(|c| {
@@ -459,12 +479,12 @@ impl<'a> Located<'a> {
             })));
             let mut bx = [[f64::INFINITY;2],[f64::NEG_INFINITY;2]];
             for p in outline.loops().iter().flatten() { for k in 0..2 { bx[0][k] = bx[0][k].min(p[k]); bx[1][k] = bx[1][k].max(p[k]); } }
-            polys.push(outline);
+            outlines.push(outline);
             boxes.push(bx);
         }
         let space = (0..b.faces.len()).map(|fi| face_box(b,fi)).collect();
         let seams = b.faces.iter().map(Face::seams).collect();
-        Located {b:std::borrow::Cow::Borrowed(b),tol,coarse,polys,boxes,space,seams}
+        Located {b:std::borrow::Cow::Borrowed(b),tol,coarse,outlines,boxes,space,seams}
     }
 
     /// The parameters of a point of face `fi`'s surface, on the branch of its periods its loops
@@ -482,8 +502,7 @@ impl<'a> Located<'a> {
     /// The point of an edge nearest `p`: its parameter and distance.
     pub(crate) fn nearest(&self,e: u32,p: V) -> (f64,f64) {
         let e = &self.b.edges[e as usize];
-        let EdgeCurve::Curve(c) = &e.curve else { return (e.t[0],distance(p,self.b.vertices[e.v[0] as usize].p)) };
-        nearest_on(c,e.t,p)
+        nearest_on(&e.curve,e.t,self.b.vertices[e.v[0] as usize].p,p)
     }
 
     /// Where a point of face `fi`'s surface stands against the face: `On` within `tol` of its
@@ -503,7 +522,7 @@ impl<'a> Located<'a> {
         if d <= self.tol { return Place::In }
         let uv = self.uv(fi,p);
         let e = &self.b.edges[c.edge as usize];
-        if d <= self.coarse.max(2.*self.polys[fi].sag()) && t > e.t[0] && t < e.t[1] {
+        if d <= self.coarse.max(2.*self.outlines[fi].sag()) && t > e.t[0] && t < e.t[1] {
             // near one edge's interior: which side of it, in the face's parameters — the point
             // on the branch beside each use of the edge (a seam is used twice, once each side of
             // the face), inside if beside any use it is on the face's side
@@ -513,13 +532,11 @@ impl<'a> Located<'a> {
                 let q = u.pcurve.at(t,e,&f.surface,&self.b.vertices);
                 let mut dq = u.pcurve.derivative(t,e,&f.surface,&self.b.vertices);
                 if u.reversed { dq = [-dq[0],-dq[1]]; }
-                let near = unwrap(raw,q,f.surface.periods());
-                let left = dq[0]*(near[1]-q[1])-dq[1]*(near[0]-q[0]) > 0.;
-                left != f.reversed
+                beside(f,q,dq,raw)
             });
             return if inside { Place::In } else { Place::Out }
         }
-        let winding = self.polys[fi].winding(uv);
+        let winding = self.outlines[fi].winding(uv);
         // a reversed face's loops turn the other way round
         let inside = if f.reversed { winding < 0 } else { winding > 0 };
         if inside { Place::In } else { Place::Out }
