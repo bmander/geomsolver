@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.162 — October 2026**
+**Specification, Draft 0.163 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -2414,6 +2414,7 @@ Residual conventions: points are ℝ²; `×` is the scalar 2D cross product; `�
 | `angle(L1, L2) == angle(L3, L4)` **[0.27]** | wrap(∠(dir(L1), dir(L2)) − s·∠(dir(L3), dir(L4))) | 1 | written `l1 angle(l3, l4) l2`; s = −1 under `sense: cw`; §9.4 |
 | `length(A: Arc) == e` **[0.27]** | A.r·θ − e | 1 | θ the sweep counter-clockwise from `start` to `end`, in (0, 2π]; a magnitude |
 | `parallel(L1, L2)` | sin(L1.dir − L2.dir) | 1 | |
+| `perpendicular(L1, L2, sense: s)` **[0.163]** | wrap(∠(dir(L1), dir(L2)) − s·π/2) | 1 | written `l1 perpendicular(sense: ccw) l2`; s = −1 under `cw`; no number, no callout; in a plane only (**E040**); §9.4 |
 | `perpendicular(L1, L2)` | cos(L1.dir − L2.dir) | 1 | |
 | `tangent(C1, C2)` | ‖c1−c2‖ − (r1 + r2) *or* ‖c1−c2‖ − \|r1 − r2\| | 1 | branch by decoration, §9.5 |
 | `tangent(C, L)` | dist(C.center, L) − side·C.r | 1 | `side: left \| right` **[0.17]** |
@@ -2462,6 +2463,8 @@ Implementations MAY extend this library. Extensions MUST document residuals and 
 `angle(L1, L2)` between two lines is likewise directed: `∠(dir(L1), dir(L2))`, the signed turn from `L1`'s direction (p1→p2) to `L2`'s, positive counterclockwise, in (−π, π] as everywhere else in this section. It is NOT a statement mod a half turn — the residual pins which side, so a bearing needs no orientation predicate beside it — and it is therefore sensitive to the order of the two lines and to the endpoint order each was declared with. Equating it to `e` compares the two mod 2π, so `e` may be written on any lap: 270° and −90° state the same thing, and an implementation MUST NOT treat a stated angle outside (−π, π] as an error.
 
 **[0.27]** The number may be another such angle: `l1 angle(l3, l4) l2` states `∠(L1, L2) = ∠(L3, L4)`, both directed, compared mod 2π, and `sense: cw` equates the first with the second's negative — its mirror image. A statement holds at most one number, so two unlabelled items in `angle`'s parentheses are the second pair or an error. It relates turns in a plane and has no reading across views (**E062**).
+
+**[0.163]** `perpendicular` says which way the same way: `l1 perpendicular(sense: ccw) l2` states that `L2`'s direction is a quarter turn counter-clockwise of `L1`'s, the directed angle of a quarter turn (`cw` the other quarter), where `perpendicular` alone is square either way and has both. It states no number, so it is no dimension and is drawn as `perpendicular` is. Two lines in space turn neither way, so a sense there is **E040** at the key. A frame built as a line and a second square to it and as long (`std.Turned`) states its handedness this way: square and equal alone have its mirror image as a second root, as near as the first wherever the two lines start as one.
 
 ### 9.5 Branch decorations are constraints
 

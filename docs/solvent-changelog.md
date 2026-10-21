@@ -4,6 +4,16 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.163] A perpendicular that says which way.** `l1 perpendicular(sense: ccw) l2` (§9.3, §9.4)
+states that `l2` is a quarter turn counter-clockwise of `l1`, as `angle` counts, and `sense: cw`
+the other quarter; `perpendicular` with no sense is square either way, as before. It is a
+relation and states no number, so it draws no callout. In space it is **E040** at the key.
+`std.Turned` states its turn this way, so its `v` is a quarter turn *anticlockwise* of its `u`
+from any start: through 0.162 it was square and equal to `u`, which has the mirrored frame as a
+second root, and a datum turned a quarter or more in one solve could land on it (`t` from `(14, 23)` to `(7,
+24)` about `o = (10, 20)`, and further). A drawing whose `Turned` frames were right-handed is
+unchanged. (Issue #497.)
+
 **[0.162] Parts.** `part Name(…) { … }` (§8.2) is a component declared a function of what it is
 given. It is held to two rules, judged on each instance's rows with its inputs held:
 - its rows place everything it makes, or **E108** at the definition names what they leave free;

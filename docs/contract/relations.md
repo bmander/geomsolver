@@ -17,6 +17,14 @@ came from.
   takes a side as `Ty::Side` — a word in `Scope::sides`, never a ±1 in `vals`.  `cgraph`'s PL edge
   asks `Constraint::signed_gap`: the word where pinned, the *pose* where not. `tests/refusals.rs` is
   the gate.
+- **A perpendicular says which way the same way** ([0.163], #497).  `perpendicular` between two
+  lines takes `sense: ccw|cw` (`CKind::Perpendicular`'s third slot, in `side_words`); unsaid it
+  is the square either way (`K::Perpendicular`), said it is `angle`'s kernel at `±π/2`
+  (`Constraint::kernel`, `own_consts_on`), one root and a gradient where the lines start as one.
+  No number, so no dimension and no callout.  A sided pair is not `commutative` (swapped, it is
+  its mirror), so `compare::matches` swaps only unsided ones; in space it is E040 at the key
+  (`reading::in_space`).  `std.Turned` states its turn so.  `tests/angle_and_arc_words.rs` and
+  `coordinates::a_turned_frame_keeps_its_handedness_however_far_its_datum_turns` are the gates.
 - **A selector says what it means, or it is refused** (Solvent §9.2). `CKind::words(slot)` is the
   vocabulary a `Str` slot takes (`at: start|end`, `at: p1|p2`) and `constraints::ALONG` the one
   table `along:` is read by (choice and message).  A key naming no slot, a word outside a slot's
