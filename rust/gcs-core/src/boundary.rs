@@ -40,6 +40,8 @@ use crate::syntax::{Program, Stmt, StmtKind, Ty};
 use crate::system::{System, RANK_TOL};
 use std::collections::{BTreeMap, BTreeSet};
 
+pub mod measure;
+
 /// How many inputs moved from the instance's the rank is read at, beside the instance's own.
 pub const PERTURBED: usize = 3;
 /// How many scattered starts the second root is looked for from.

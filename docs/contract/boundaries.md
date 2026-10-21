@@ -76,6 +76,19 @@ The gate is `rust/gcs-core/tests/boundary_solve.rs` unless a rule names another.
   belt drive (§6.1, turning frames left out) solves with both runs as boundaries to the flat
   answer, its runs crossing at x = −96 (`the_belt_drive_solves_through_its_runs_to_the_flat_answer`).
 
+- **A solve through boundaries says what it cost** (#459), in counts that do not depend on the
+  machine: the inner solves each boundary made (`Through::evaluations`), the Newton iterations
+  they took (`inner_iterations`, each one assembly and LU of an `F_y`), the evaluations answered
+  from the last one at the same inputs with no solve (`answered_again`), and the size of what is
+  factored: the dense parent, `parent_rows × parent_unknowns`, and the largest boundary
+  (`largest_boundary`).  The benchmark's documents and the counts it reads are
+  `boundary::measure`, its timings `bench boundaries`, and its results the plan's §18. The gate is
+  `rust/gcs-core/tests/boundary_measure.rs`: N identical drives cost N times one, inner solve for
+  inner solve (`identical_drives_cost_n_times_one_and_the_parent_is_dense`); a shared unknown
+  solves every child at every step; a loop is one block flat and a chain of 2 × 2 solves through;
+  an edit to one drive solves every run again; and a boundary's derivative grows as the inverse
+  square root of the distance to a fold, past which the boundary is named.
+
 - **Within the solver.** `solve/through.rs` is in `gcs-solve` and imports nothing of the
   language; only `boundary::instance` reads the source map, on the language's side, in
   `gcs-core` (the crate boundary holds it, #409).

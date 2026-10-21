@@ -1,7 +1,8 @@
 # A reusable solve boundary: the contract
 
 **Status (2026-10-21): a design for review (#451); the advisory classifier (#452) built, §16; the
-prototype (#454) built, §17, its rules kept in [`contract/boundaries.md`](contract/boundaries.md).** It states what a component
+prototype (#454) built, §17, its rules kept in [`contract/boundaries.md`](contract/boundaries.md);
+the benchmark (#459) run, §18: no syntax now, and a sparse parent before a cache.** It states what a component
 must satisfy for a parent to treat it as a **reusable solve boundary**: a function of its inputs,
 solved once per distinct input and consumed through its interface. It is the first step of track A
 of epic #465, written before the classifier (#452), the uniqueness spike (#453) and the prototype
@@ -700,11 +701,12 @@ says otherwise.
 
 * **Total work.** A parent summing 1,000 distinct children's outputs makes 1,000 evaluations per
   iteration (the review's §3). The contract bounds what one parent step factorises, through
-  squareness and the derivative of DD1, and lets reuse follow dependencies (DP3). #459 measures the
-  rest.
+  squareness and the derivative of DD1, and lets reuse follow dependencies (DP3). #459 measured
+  the rest (§18): with a dense parent, one step's factorisation is the whole cost.
 * **Uniqueness below DT3.** DT1 is isolation. DT2 is the author's claim, refuted where it can be.
 * **That a boundary beats the flat solve.** The flat solve already decomposes the graph it is given
-  (`decompose`, `block_order`). Whether boundaries pay, and where, is #459's question.
+  (`decompose`, `block_order`). Whether boundaries pay, and where, was #459's question; on the
+  prototype they did not (§18).
 * **Solids.** DD6.
 * **Anything about syntax.** `given`, `context`, binding by value and a domain clause are #461's,
   after #459.
@@ -778,4 +780,166 @@ The rules it keeps are [`contract/boundaries.md`](contract/boundaries.md); the g
   estimate a condition or refuse below `τ` (DD2), state a domain (DD4, DD5) or check path
   independence (DT6), all #455's; start a fresh evaluation from seeds stated relative to its
   inputs or share a value between instances (DT4, #456); run the diagnosis through boundaries
-  (IO2, CM1); enforce a root choice (#157). It is a solve, not yet a benchmark: #459 measures it.
+  (IO2, CM1); enforce a root choice (#157). It is a solve, not a fast one: #459 measures it (§18).
+
+## 18. The benchmark (#459)
+
+**Verdict: on every case measured, the prototype's boundaries cost more than the flat solve, and
+what they cost is the parent, not the children.** The flat solve already decomposes a document of
+N drives into blocks of four columns and solves it in time linear in N; the parent through the
+boundaries is one dense matrix of eight columns a drive, factored at every step. A cache (#456) or
+per-output invalidation (#457) saves inner solves, and the inner solves are not where the time
+goes. Boundaries do find two things the flat solve does not say: a run at the edge of its domain is
+named, and the solve stops in a few steps rather than a hundred. That is diagnosis, and it does
+not need a boundary solve.
+
+**How it was measured.** `cargo run --release -p gcs-core --bin bench boundaries [most]` (through
+solves to `most` drives, 100 by default; the flat solve to 1000), on a 4-core 2.1 GHz Xeon
+container, release build. Times are medians of 7 runs (3 at N = 30, 1 at N ≥ 100), each a compile
+and a solve from the document's seeds, flat (`solve`, a document's solve) and through
+(`solve_through`). The documents and counts are `boundary::measure`; the counts that do not depend
+on the machine are held at small sizes by `tests/boundary_measure.rs`. *Inner solves*: Newton
+solves of one boundary (`Through::evaluations`); *inner it*: their iterations, each one assembly and
+LU of a block's `F_y`; *largest*: the most columns the flat solve's block-triangular order puts in
+one block; *parent*: the dense Jacobian through the boundaries, rows × columns. Every through solve
+below ends at the flat solve's pose, to 1e-12 for small documents and to 1e-7 at the largest (the
+parent's DogLeg stops at its tolerance on rows at the document's scale).
+
+### Repeated and distinct parts
+
+N belt drives (§6.1, `boundary_solve.rs`'s), each with both runs as boundaries. *Identical*: N
+copies standing apart. *Distinct*: the large pulley's radius differs in each, so no two runs are
+asked the same question. *One unknown*: distinct, and every drive's centre distance is one declared
+unknown that the first drive's crossing settles: one parent unknown read by every child.
+
+| case | N | flat ms | flat it | largest | through ms | it | inner solves | inner it | parent |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| identical | 1 | 0.2 | 4 | 4 | 0.1 | 4 | 10 | 30 | 32 × 8 |
+| identical | 10 | 0.6 | 4 | 4 | 4.3 | 4 | 100 | 290 | 104 × 80 |
+| identical | 30 | 1.8 | 4 | 4 | 82.7 | 4 | 300 | 720 | 264 × 240 |
+| identical | 100 | 6.9 | 4 | 4 | 3,675 | 4 | 1,000 | 2,300 | 824 × 800 |
+| identical | 300 | 17.9 | 4 | 4 | 647,157 † | 4 | 3,000 | 6,600 | 2,424 × 2,400 |
+| identical | 1,000 | 85.4 | 3 | 4 | not run | | | | 8,024 × 8,000 |
+| distinct | 100 | 4.3 | 4 | 4 | 3,678 | 4 | 1,000 | 2,299 | 824 × 800 |
+| distinct | 1,000 | 88.1 | 3 | 4 | not run | | | | |
+| one unknown | 10 | 0.5 | 4 | 13 | 3.1 | 4 | 100 | 248 | 106 × 82 |
+| one unknown | 100 | 5.0 | 4 | 13 | 2,494 | 3 | 800 | 2,099 | 826 × 802 |
+| one unknown | 1,000 | 196 | 10 | 13 | not run | | | | |
+
+† one run, beside the 19.5 ms flat solve of the same run.
+
+* **The parent is the cost.** Through is 7× the flat time at N = 10, 46× at 30, 530× at 100 and
+  about 33,000× at 300: the time grows as N³ to N⁴, the dense parent's factorisation (and the rank
+  read at the end), while the inner work grows as N. One whole drive solved through its runs takes
+  0.1 ms, parent included, so the hundred drives' inner solves are at most 10 ms of the 3.7 s.
+* **Nothing is shared.** N identical drives make exactly N times one drive's inner solves and
+  iterations (held). Every copy is asked the same question at every step, so a placement-independent
+  cache would answer all but one: 10 inner solves instead of 1,000, against 3.7 s of parent.
+* **Distinct parts cost what identical ones do**, and no cache could answer one. With one shared
+  unknown every run is solved again at every residual the parent asks for (held: each run's count
+  is the parent's `nfev`), the case the review's §3 named.
+* The flat solve's largest block stays four columns at every N (thirteen with the shared unknown,
+  which welds the first drive's crossing to its shaft), and its time is linear: 85 ms for 16,000
+  unknowns. Below `DENSE_MAX` (120 columns) it is dense, which is why three drives take longer
+  than ten.
+* Naming the boundaries (`boundary::instance`, reading the source map once an instance) is
+  quadratic: 0.2 s at 100 drives, 2 s at 300.
+
+### A closed loop
+
+A crank and a chain of `k` two-root points, each over the last joint and its own pivot, closed by
+the last joint's distance from the crank (`measure::dyads`). Flat, the closure couples the whole
+chain into one block of 2k + 2 columns. Through, the parent is the crank's two unknowns over a
+chain of 2 × 2 solves, evaluated in order (IO4).
+
+| k | flat ms | flat it | largest | through ms | it | inner solves | inner it | parent |
+|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| 4 | 0.0 | 4 | 10 | 0.1 | 4 | 20 | 41 | 26 × 2 |
+| 16 | 0.3 | 4 | 34 | 0.1 | 4 | 80 | 128 | 26 × 2 |
+| 32 | 1.2 | 4 | 66 | 0.3 | 4 | 160 | 248 | 26 × 2 |
+| 64 | 0.3 | 4 | 130 | 0.8 | 4 | 320 | 463 | 26 × 2 |
+| 256 | 1.4 | 4 | 514 | 4.9 | 3 | 1,024 | 1,143 | 26 × 2 |
+
+This is the one case where a boundary's structure is a real one: it tears a coupled block at the
+crank. Both grow linearly. Through is faster only where the flat block is dense and large (from
+16 links to 59, the last under `DENSE_MAX`); above it the flat sparse solve is three times faster. The flat block pass
+already tears a block at its declared unknowns (#283, `System::tearing`), so tearing a loop is
+within reach of the flat solve, with no syntax. Seeded relative to the joint before, a chain of 32
+fails both ways (the seeds drift onto the other root), so every joint is seeded in coordinates.
+
+### Branch and singular inputs
+
+Each input swept, every solve started where the last ended, flat and through alike.
+*|dy/dx|* is the largest entry of the boundaries' derivative at the pose reached, and *FD* its worst
+disagreement with a central difference (DD1's measure, a step of 1e-6 of each input).
+
+| sweep | value | flat | through | \|dy/dx\| | FD |
+|---|---:|---|---|---:|---:|
+| centres (edge 25) | 120 | 4 it | 4 it | 1.08 | 8e-7 |
+| | 25.1 | 7 it | 3 it | 20.0 | 8e-7 |
+| | 25.01 | 10 it | 5 it, 1 rejected | 63.6 | 3e-6 |
+| | 25.001 | 10 it | 5 it, 1 rejected | 201 | 3e-4 |
+| | 25.0001 | 10 it | 5 it, 1 rejected | 636 | 3e-2 |
+| | 25 | solved, 19 it | solved, 42 it, 21 rejected | (the difference crosses the edge) | |
+| | 24.9 | **fails**, 100 it, 6e-4 off | **fails**, 16 it: `upper_0` branch changed | | |
+| x² = u (fold at 40) | 39.9 | 6 it | 5 it, 1 rejected | 6.15 | 5e-6 |
+| | 39.99 | 6 it | 5 it, 1 rejected | 19.4 | 7e-8 |
+| | 39.9999 | 5 it | 5 it, 1 rejected | 194 | 7e-4 |
+| | 39.99999 | 5 it | 4 it, 1 rejected | 612 | 1e-1 |
+| | 40 | solved, 12 it | solved, 45 it, 22 rejected | (`one` unsettled) | |
+| | 40.1 | **fails**, 100 it, 1e-3 off | **fails**, 24 it: `one` branch changed | | |
+| radii equal (r₁ 20) | 20.1 | 98 it | 16 it | 1.00 | 3e-7 |
+| | 20.001 | solved, crossing at −4.6e5 | solved, crossing at −2.4e6 (true: −2.4e6) | 1.00 | 3e-7 |
+| | 20.0001 | solved, crossing at −4.6e5 | solved, crossing at −1.5e7 (true: −2.4e7) | 1.00 | 3e-7 |
+| | 20 | **solved**, no crossing exists | **solved**, no crossing exists | 1.00 | 3e-7 |
+
+* **Past a domain's edge, through says which boundary and stops** in 16 to 24 iterations, where
+  the flat solve takes its hundred and ends off. At the edge itself both report solved: through
+  only after twenty rejected steps, since nothing yet refuses a nearly singular `F_y` (DD2, #455).
+* **The derivative is the implicit function theorem's to the edge**, growing as the inverse square
+  root of the distance to it (√10 a decade, held at the fold). A central difference at a fixed step
+  loses it first, once the step is within two orders of the distance: DD1's check, not the
+  derivative, is what fails there.
+* **A singularity in the parent is not the boundaries' to see.** As the radii go equal, the runs
+  stay well conditioned (|dy/dx| = 1) and their crossing, the parent's, runs off. Each solve in
+  turn stops short of it and reports solved: the flat solve from r = 20.001 (its crossing at −4.6e5
+  where the true one is at −2.4e6, which through reaches), through a decade later. Both report
+  solved at equal radii, where no crossing exists: #449, independent of boundaries.
+
+### Invalidation: an edit to one drive
+
+N identical drives solved, then one drive's centres moved from 120 to 125 and the document solved
+again from the solved pose.
+
+| N | flat ms | flat it | through ms | it | inner solves | runs re-solved | drives moved |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 0.10 | 3 | 0.07 | 3 | 8 | 2 of 2 | 1 of 1 |
+| 10 | 0.39 | 3 | 2.2 | 3 | 80 | 20 of 20 | 10 of 10 |
+| 100 | 6.3 | 3 | 2,847 | 3 | 800 | 200 of 200 | 100 of 100 |
+
+The prototype keeps nothing between solves, so every run is solved afresh; and the parent's dense
+step corrects every drive's residual noise, so every drive moves in its last bits (within 1e-9,
+held). Per-output invalidation would save 2N − 2 inner solves, a few milliseconds at N = 100,
+against the parent's 2.8 s.
+
+### Recommendation
+
+1. **#461: no syntax for boundaries now.** Nothing measured here pays for it. The flat solve,
+   with its block-triangular decomposition, is linear and at least as fine-grained on repeated
+   and distinct parts; on a loop the two are within a small factor either way, and the flat
+   solve's tearing reaches the same structure without a mark in the source.
+2. **#456 and #457 wait.** They optimise inner solves, which are under 1% of a through solve's
+   time here. Neither can help while the parent is dense. If Track A goes on for scale, the next
+   experiment is a **sparse parent**: `P_z + P_y·dy/dz` kept block-sparse (it is block-diagonal
+   for independent drives) and solved by the flat solve's sparse path, measured again on these
+   documents. Only then can a cache's or invalidation's savings show.
+3. **Where boundaries could pay** is a component whose interior is expensive and whose interface
+   is narrow: many rows or a costly kernel inside (a trace, an envelope, a solid's evaluation)
+   against a few outputs, read many times with equal inputs. The corpus has few such candidates
+   (#452: 8 of 158), and the locus already solves a trace's block this way. A sketch-level part,
+   whose rows are as cheap as the parent's, is not one.
+4. **Keep #455's diagnostic half.** Naming the component at a domain's edge, and stopping at it
+   rather than spending the iteration limit, is the one thing boundaries gave here that the flat
+   solve does not. It can be had from the flat solve, by reading a failing block's rows back to
+   the instance that states them (the classifier's `split`), with no boundary solve. #449 stands
+   on its own: both solves report an infeasible document solved.
