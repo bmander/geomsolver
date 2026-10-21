@@ -209,7 +209,7 @@ impl Constraint {
                 [e1.to_vec(), e2.to_vec(), vec![sk.extent().max(1.0)]].concat()
             }
             // two directions across the plane's normal as it stands now
-            CKind::AxisPerpendicularPlane => {
+            CKind::AxisPerpendicularPlane | CKind::LinePerpendicularPlane => {
                 let (e1, e2) = across(sk.basis(self.args[1].ent().i()).normal());
                 [e1, e2].concat()
             }
@@ -835,6 +835,10 @@ impl Constraint {
             CKind::AxisParallelPlane | CKind::AxisPerpendicularPlane => {
                 [sk.axes[e(0).i()].d.to_vec(), plane_columns(sk, e(1).i())[3..].to_vec()].concat()
             }
+            // the line's ends lifted, then the plane's axes
+            CKind::LinePerpendicularPlane => {
+                [self.lifted_columns(sk), plane_columns(sk, e(1).i())[3..].to_vec()].concat()
+            }
             // each plane's two axis directions
             CKind::PlaneParallel => {
                 [plane_columns(sk, e(0).i())[3..].to_vec(), plane_columns(sk, e(1).i())[3..].to_vec()].concat()
@@ -941,7 +945,9 @@ impl Constraint {
             | CKind::AxisPerpendicularPlane
             | CKind::PlaneParallel
             | CKind::PlaneDistance => Vec::new(),
-            CKind::LineOnPlane | CKind::LineOnAxis => ends(0).to_vec(),
+            CKind::LineOnPlane | CKind::LineOnAxis | CKind::LinePerpendicularPlane => {
+                ends(0).to_vec()
+            }
             CKind::PointOnCircle3 | CKind::PointAlongArc3 => vec![e(0).i(), sk.round_center(e(1))],
             CKind::TangentCircleAt3 => {
                 [vec![e(2).i(), sk.round_center(e(0))], ends(1).to_vec()].concat()

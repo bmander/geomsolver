@@ -4,6 +4,12 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.153] A line square to a plane.** `perpendicular` relates a drawn line and a plane, written
+either way round: `P perpendicular l` turns `P`'s normal along `l` in space, whatever view the line
+is drawn in — two rows across the normal over the line's ends' places, as an axis square to a
+plane is (`LinePerpendicularPlane`). Through 0.152 only an axis was (`t perpendicular P`), and a
+line was **E040** ("`perpendicular` does not relate a plane to a line"). No document changes.
+
 **[0.152] A word's one number bare, and the plane its operand is drawn in.** A relation word of
 one parameter may be given it unlabelled, as a constraint word of the language takes its one
 number (§9.9): `r above(7mm) q` is `r above(d: 7mm) q`, and passed on bare inside a body (`a

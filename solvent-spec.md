@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.152 — October 2026**
+**Specification, Draft 0.153 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -724,7 +724,8 @@ held where its held axes are not, are **E067**.
 
 Every plane has three members. `P.u` and `P.v` are its axes, axes through its origin. `P.origin`
 is a point drawn in `P` and held at its `(0, 0)`, which a component may be handed and a relation
-may place. An axis square to `P` is `t perpendicular P`. **[0.89]** A fourth, `P.normal`, is the
+may place. An axis square to `P` is `t perpendicular P`, and **[0.153]** a line drawn in any view
+square to it `l perpendicular P`. **[0.89]** A fourth, `P.normal`, is the
 axis along `u × v` through its origin: square to both axes, on the side `u × v` is, standing where
 the plane stands, and read wherever an axis is (`l parallel P.normal`, `plane(u: P.normal, …)`,
 `hint(dir: P.normal)`). It is the plane's, never a freedom of its own, and is not declared: a
@@ -2314,7 +2315,7 @@ What goes in the parentheses is a short list:
 | `angle` | infix | (line, line); **[0.27]** (line, line) with a second pair in the parentheses, `l1 angle(l3, l4) l2` (§9.4); **[0.42]** (axis, axis \| line), (line, axis), the unsigned angle in space |
 | `radius` | prefix | a circle or an arc |
 | `length` | prefix | **[0.90]** a line: the distance between its own ends; **[0.27]** an arc: its length along itself; **[0.53]** a spline: its whole length; a free curve: its own. **[0.90]** `distance` relates two things and `length` measures one: so a word over `g: path` states `g`'s length whatever `g` is given, and `distance(d) l` on a line, the spelling through 0.89, is **E040** naming `length(d) l` |
-| `midpoint`, `parallel`, `perpendicular`, `symmetry` | infix | one each; **[0.42]** `parallel` and `perpendicular` also take an axis beside an axis or a line, in space, and (axis, plane) — along the plane, and square to it — either way round; **[0.43]** `parallel` takes (plane, plane): the two face alike, either way (two rows over their normals; neither's place nor its turn within itself); **[0.90]** `perpendicular` takes (envelope in space, line or axis) +`at: m`, the line along its normal at a point held on it (§6.15.3) |
+| `midpoint`, `parallel`, `perpendicular`, `symmetry` | infix | one each; **[0.42]** `parallel` and `perpendicular` also take an axis beside an axis or a line, in space, and (axis, plane) — along the plane, and square to it — either way round; **[0.153]** `perpendicular` takes (line, plane), either way round: the line, drawn in any view, along the plane's normal in space; **[0.43]** `parallel` takes (plane, plane): the two face alike, either way (two rows over their normals; neither's place nor its turn within itself); **[0.90]** `perpendicular` takes (envelope in space, line or axis) +`at: m`, the line along its normal at a point held on it (§6.15.3) |
 | `regular` | infix | **[0.115]** (envelope in space, solid) +`by:` a solid, written `flank regular(…, by: tool) within blank`: the flank's least area factor where the tool cuts it in the blank, a bound or an equation (§6.15.3) |
 | `project` | infix | (point, point), each `in` a plane — the two planes are read off the memberships and never written (§6.7) **[0.10]** |
 | `mapped` | infix | **[0.117]** (point, point), its **pairs** in the parentheses, each a point of the source, `->`, and where it goes: `q mapped(from -> a, to -> b, third -> c) p` holds `q` where the affine map taking `from`, `to` and `third` to `a`, `b` and `c` carries `p`, `q = a + i·(b − a) + j·(c − a)` with `p = from + i·(to − from) + j·(third − from)`. Two pairs are the similarity keeping the turn (`to` turned a quarter about `from` goes to `b` turned a quarter about `a`), `mirror: true` the one reversing it; three pairs say their turn by where their targets stand. Each side is read in its own plane — `q` and the targets in one, `p` and the sources in one, which may be another (**E062** where either is not) — so a point drawn in one view is carried into another. Three sources standing in a line, or two that are one, are **E061** naming them, where they are held; other than two or three pairs, and `mirror:` with three, are **E040**. **[0.118]** (circle, circle) under two pairs: the circle about the image of the other's centre, its radius scaled by `|b − a| / |to − from|`; under three pairs **E040** (an ellipse). A face carried whole is §6.8. No number: not a dimension |
@@ -2371,6 +2372,7 @@ Residual conventions: points are ℝ²; `×` is the scalar 2D cross product; `�
 | `coincident(l: Line, t: Axis)` **[0.44]** | two components of (X − A) × d̂ across the axis, for X each of the line's ends | 4 | A the axis's place, d̂ its direction; a line of no length is still on it |
 | `coincident(t: Axis, P: Plane)` **[0.42]** | n̂_P·(A − o_P), n̂_P·(A + L·d̂ − o_P) | 2 | the axis lies in `P`: two of its points, L the drawing's extent apart |
 | `parallel(t: Axis, P: Plane)`, `perpendicular(t, P)` **[0.42]** | n̂_P·d̂; (n̂_P × d̂) across n̂_P | 1; 2 | along `P`, and square to it |
+| `perpendicular(l: Line, P: Plane)` **[0.153]** | ((B − A)^ × n̂_P) across n̂_P | 2 | A, B the line's ends in space, drawn in any view |
 | `coincident(t: Axis, s: Axis)` **[0.43]** | two components of (d̂_s × d̂_t) across `t`, scaled by L; two components of (A_s − A_t) × d̂_t across `t` | 4 | one line, either sense; L the drawing's extent |
 | `parallel(P: Plane, Q: Plane)` **[0.43]** | two components of n̂_Q × n̂_P across n̂_P | 2 | either way round; neither plane's place nor its turn within itself |
 | `coincident(L, P: Plane)` **[0.24]** | n̂_P·(A − o_P), n̂_P·(B − o_P) | 2 | A, B the line's two ends, lifted |

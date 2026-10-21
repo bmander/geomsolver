@@ -272,6 +272,9 @@ pub enum CKind {
     /// `t perpendicular P`: an axis along a plane's normal — two rows across the normal, as
     /// `parallel3` states two lines parallel.
     AxisPerpendicularPlane,
+    /// `l perpendicular P`: a line, drawn in any view, along a plane's normal in space — its
+    /// ends' hidden points, two rows across the normal as `AxisPerpendicularPlane`'s.
+    LinePerpendicularPlane,
     /// `P parallel Q`: two planes facing alike, either way — their normals parallel, two rows
     /// across the first's, as `parallel3` states two lines parallel.  Says nothing of where
     /// either stands, or of how either is turned within itself.
@@ -437,7 +440,7 @@ impl FamilyKernel {
 }
 
 /// Every concrete constraint type, in the order the registry lists them.
-pub const ALL_KINDS: [CKind; 84] = [
+pub const ALL_KINDS: [CKind; 85] = [
     CKind::Coincident,
     CKind::Distance,
     CKind::Midpoint,
@@ -503,6 +506,7 @@ pub const ALL_KINDS: [CKind; 84] = [
     CKind::AxisCoincident,
     CKind::AxisParallelPlane,
     CKind::AxisPerpendicularPlane,
+    CKind::LinePerpendicularPlane,
     CKind::PlaneParallel,
     CKind::PlaneDistance,
     CKind::DragSeen,
@@ -762,6 +766,7 @@ impl CKind {
             CKind::AxisCoincident => "AxisCoincident",
             CKind::AxisParallelPlane => "AxisParallelPlane",
             CKind::AxisPerpendicularPlane => "AxisPerpendicularPlane",
+            CKind::LinePerpendicularPlane => "LinePerpendicularPlane",
             CKind::PlaneParallel => "PlaneParallel",
             CKind::PlaneDistance => "PlaneDistance",
             CKind::Lift => "Lift",
@@ -817,6 +822,7 @@ impl CKind {
                 | CKind::PlaneAxis
                 | CKind::AxisCoincident
                 | CKind::AxisPerpendicularPlane
+                | CKind::LinePerpendicularPlane
                 | CKind::PlaneParallel
         )
     }
@@ -1009,7 +1015,9 @@ impl CKind {
             CKind::EqualLength3 => &[("l1", S::Line), ("l2", S::Line)],
             CKind::Midpoint3 => &[("p", S::Point), ("line", S::Line)],
             CKind::Symmetric3 => &[("p", S::Point), ("q", S::Point), ("line", S::Line)],
-            CKind::LineOnPlane => &[("line", S::Line), ("plane", S::Plane)],
+            CKind::LineOnPlane | CKind::LinePerpendicularPlane => {
+                &[("line", S::Line), ("plane", S::Plane)]
+            }
             // the two planes are real slots — so the drag part, the topology key, the graft
             // and a deletion follow them — and inferred ones, so nobody writes them
             CKind::Project | CKind::ProjectSolved => {
@@ -1245,7 +1253,9 @@ impl CKind {
                 ("coincident", Infix)
             }
             CKind::AxisParallelPlane | CKind::PlaneParallel => ("parallel", Infix),
-            CKind::AxisPerpendicularPlane => ("perpendicular", Infix),
+            CKind::AxisPerpendicularPlane | CKind::LinePerpendicularPlane => {
+                ("perpendicular", Infix)
+            }
             CKind::PlaneDistance => ("distance", Infix),
         })
     }
@@ -1685,6 +1695,7 @@ impl CKind {
             | CKind::AxisCoincident
             | CKind::AxisParallelPlane
             | CKind::AxisPerpendicularPlane
+            | CKind::LinePerpendicularPlane
             | CKind::PlaneParallel
             | CKind::PlaneDistance
             // an affine combination of points: algebra, no contact
@@ -1828,6 +1839,7 @@ impl CKind {
             CKind::AxisCoincident => K::AxisCoincident,
             CKind::AxisParallelPlane => K::AxisParallelPlane,
             CKind::AxisPerpendicularPlane => K::AxisPerpendicularPlane,
+            CKind::LinePerpendicularPlane => K::LinePerpendicularPlane,
             CKind::PlaneParallel => K::PlaneParallel,
             CKind::PlaneDistance => K::PlaneDistance,
             CKind::Mapped => K::Mapped,
@@ -1953,6 +1965,7 @@ impl CKind {
             | CKind::AxisCoincident
             | CKind::AxisParallelPlane
             | CKind::AxisPerpendicularPlane
+            | CKind::LinePerpendicularPlane
             | CKind::PlaneParallel
             // a map states no number
             | CKind::Mapped
@@ -2001,6 +2014,7 @@ impl CKind {
                 | CKind::AxisCoincident
                 | CKind::AxisParallelPlane
                 | CKind::AxisPerpendicularPlane
+                | CKind::LinePerpendicularPlane
                 | CKind::PlaneParallel
                 | CKind::PlaneDistance
         )
