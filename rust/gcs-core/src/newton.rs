@@ -230,6 +230,133 @@ pub(crate) fn dense_gn_step(j: &crate::linalg::Mat, r: &[f64], p: &mut [f64], rc
     p.copy_from_slice(&step);
 }
 
+/* -- a square block, by plain Newton ----------------------------------------------------------- */
+
+/// A block with as many rows as unknowns, solved by `square` — a trace block at one place along
+/// its curve (`locus.rs`) and an instance a parent solves through (`solve/through.rs`).  Its rows
+/// are judged in their own units, so one tolerance serves a block at any size.
+pub trait Square {
+    /// Unknowns, and rows.
+    fn n(&self) -> usize;
+    /// The unknowns as they stand, into `q`.
+    fn get(&self, q: &mut Vec<f64>);
+    /// Set the unknowns.
+    fn put(&mut self, q: &[f64]);
+    /// The residuals at the unknowns as they stand and, with `jac`, the Jacobian against them
+    /// (`n × n`, row-major), read back through `residual` and `jacobian`.  Returns the worst
+    /// residual in its own row's units; anything not finite where a row cannot be read.
+    fn assemble(&mut self, jac: bool) -> f64;
+    fn residual(&self) -> &[f64];
+    fn jacobian(&self) -> &[f64];
+}
+
+/// When `square` stops, each in the rows' own units.
+#[derive(Clone, Copy, Debug)]
+pub struct SquareTol {
+    /// Below this the block is solved outright.
+    pub done: f64,
+    /// A solve that ran out of downhill or of step is still accepted under this.
+    pub ok: f64,
+    /// A stall above this is a failure; at or below it the block is as solved as it need be.
+    pub stall: f64,
+    /// A step smaller than this fraction of the unknowns is no step.
+    pub step_min: f64,
+    pub max_iter: usize,
+}
+
+impl SquareTol {
+    /// A trace block's and a boundary's: `ok` comfortably inside the outer system's own 1e-6, so
+    /// a contact never reads as satisfied off the back of a sloppy inner solve.
+    pub const BLOCK: SquareTol =
+        SquareTol { done: 1e-12, ok: 1e-8, stall: 1e-10, step_min: 1e-14, max_iter: 30 };
+}
+
+/// A resumed solve's correction against the tangent that predicted it.  Below this fraction of
+/// the predicted move the step is the continuation of the pose it started from; above it, the
+/// step is something else.
+pub const PREDICTED: f64 = 0.5;
+
+/// Whether a resumed solve *continues* the pose it started from, or is a different branch Newton
+/// happened to fall into: the correction it made against the move the tangent predicted (both
+/// lengths), the one absolute term the inner solve's own accuracy at `scale`.  On the same branch
+/// the correction is second order in the step; onto another it is the distance between them.
+pub fn continues(corrected: f64, predicted: f64, scale: f64) -> bool {
+    corrected <= PREDICTED * predicted + SquareTol::BLOCK.ok * scale
+}
+
+/// What `square` works in, held by the caller and reused, so a solve allocates nothing once warm.
+#[derive(Default)]
+pub struct SquareWork {
+    lu: Vec<f64>,
+    piv: Vec<usize>,
+    rhs: Vec<f64>,
+    q: Vec<f64>,
+    trial: Vec<f64>,
+}
+
+/// Solve a square block by Newton from the unknowns it holds, each step backtracked when the
+/// full one overshoots.  `true` when it converged; the unknowns are then the solution.
+///
+/// Not `dogleg`: the block is square, so the plain Newton step *is* the Gauss–Newton step; it
+/// runs per residual evaluation inside a kernel (a trace contact), where dogleg's per-call
+/// allocations are what `SquareWork` exists to avoid; and its convergence test is unit-relative
+/// where dogleg's is absolute.
+pub fn square<T: Square + ?Sized>(t: &mut T, w: &mut SquareWork, tol: SquareTol) -> bool {
+    let n = t.n();
+    let mut last = f64::INFINITY;
+    for _ in 0..tol.max_iter {
+        // the one full assembly per iteration; the trial steps below need only residuals
+        let norm = t.assemble(true);
+        if !norm.is_finite() {
+            return false;
+        }
+        if norm <= tol.done {
+            return true;
+        }
+        // solve J Δ = -r
+        w.lu.clear();
+        w.lu.extend_from_slice(t.jacobian());
+        w.rhs.clear();
+        w.rhs.extend(t.residual().iter().map(|&x| -x));
+        if !crate::linalg::lu_factor(n, &mut w.lu, &mut w.piv) {
+            return false;
+        }
+        crate::linalg::lu_apply(n, &w.lu, &w.piv, &mut w.rhs);
+        // backtrack when a full step overshoots — the block is small, so a residual evaluation
+        // costs less than a wasted outer iteration
+        t.get(&mut w.q);
+        let mut step = 1.0;
+        let mut best = f64::INFINITY;
+        for _ in 0..8 {
+            w.trial.clear();
+            w.trial.extend((0..n).map(|i| w.q[i] + step * w.rhs[i]));
+            t.put(&w.trial);
+            let nn = t.assemble(false);
+            if nn.is_finite() && nn < norm {
+                best = nn;
+                break;
+            }
+            step *= 0.5;
+        }
+        if best.is_infinite() {
+            // no step down from here: converged as far as it goes
+            t.put(&w.q);
+            return norm <= tol.ok;
+        }
+        let dq: f64 = w.rhs.iter().map(|d| d * d * step * step).sum::<f64>().sqrt();
+        let qn: f64 = w.q.iter().map(|x| x * x).sum::<f64>().sqrt();
+        if dq <= tol.step_min * (1.0 + qn) {
+            return best <= tol.ok;
+        }
+        if best >= last * 0.999999 && best > tol.stall {
+            // stalled without converging
+            return false;
+        }
+        last = best;
+    }
+    last <= tol.stall
+}
+
 /// The stopping tolerances a trust-region run is given.
 #[derive(Clone, Copy, Debug)]
 pub struct Tol {
