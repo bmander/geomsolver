@@ -2,29 +2,29 @@
 // Instantiated by Bank in the assembly; the preview below sets up the part drawing.
 
 use std (on_u)
-use components.dims
+use components.dims (D, H, L, R, a, boltac, boltaf, dport, head, ph, trapfit, traph, trapz, wall)
 
 // f is the cylinder's own frame: origin at the pivot, u toward the head, v to the left.  The part
 // is drawn in it, so every number below is the part's own and the frame is all that moves; fw is
 // the plate-side wall thickness.
-component Cylinder(f: group, fw: Length, dims: group) {
+part Cylinder(f: group, fw: Length) {
   // The skirt reaches the bore mouth at bottom dead centre.
-  mouth_u := dims.L - dims.R - dims.ph - dims.H
-  hw := dims.D / 2 + dims.wall
-  head_u := dims.head - dims.H
-  top_u := head_u + dims.wall
+  mouth_u := L - R - ph - H
+  hw := D / 2 + wall
+  head_u := head - H
+  top_u := head_u + wall
   trap_clearance := 0.3mm
-  trapw := dims.boltaf + trap_clearance
-  trapd := dims.boltac / 2 + trap_clearance
+  trapw := boltaf + trap_clearance
+  trapd := boltac / 2 + trap_clearance
 
   // Depths normal to the section, measured from the bore centre plane.
-  face := -(fw + dims.D / 2)
-  back := dims.D / 2 + dims.wall
+  face := -(fw + D / 2)
+  back := D / 2 + wall
 
   in f.axes {
     // The bore's axis, through the pivot and the air port `a` along it.
-    pt := point hint((dims.a, 0mm))
-    pt on_u(d: dims.a) f.axes
+    pt := point hint((a, 0mm))
+    pt on_u(d: a) f.axes
     ax := line(f.axes.origin, pt)
 
     // Body outline, from the open mouth to the head.
@@ -36,10 +36,10 @@ component Cylinder(f: group, fw: Length, dims: group) {
       (side_l := line(k_tl, k_bl)) -> close
 
     // Both bore walls appear in section; only one half is revolved into the cut.
-    b_bl := point hint((mouth_u, dims.D / 2))
-    b_br := point hint((mouth_u, -dims.D / 2))
-    b_tr := point hint((head_u, -dims.D / 2))
-    b_tl := point hint((head_u, dims.D / 2))
+    b_bl := point hint((mouth_u, D / 2))
+    b_br := point hint((mouth_u, -D / 2))
+    b_tr := point hint((head_u, -D / 2))
+    b_tl := point hint((head_u, D / 2))
     bore_l := line(b_bl, b_tl)
     bore_r := line(b_br, b_tr)
     hd := line(b_tl, b_tr)
@@ -47,13 +47,13 @@ component Cylinder(f: group, fw: Length, dims: group) {
     hx := point hint((head_u, 0mm))
 
     // The air port and pivot shank enter through the plate-side face.
-    port := circle(center: pt) hint(r: dims.dport / 2)
-    radius(dims.dport / 2) port
-    shank := circle(center: f.axes.origin) hint(r: dims.trapfit / 2)
-    radius(dims.trapfit / 2) shank
+    port := circle(center: pt) hint(r: dport / 2)
+    radius(dport / 2) port
+    shank := circle(center: f.axes.origin) hint(r: trapfit / 2)
+    radius(trapfit / 2) shank
 
     // The bolt head slides in from the left; the slot holds it against the face wall.
-    pkt := std.Hex(f.axes.origin, ax, af: dims.boltaf, phase: 90deg)
+    pkt := std.Hex(f.axes.origin, ax, af: boltaf, phase: 90deg)
     t0 := point hint((trapw / 2, hw))
     t1 := point hint((trapw / 2, -trapd))
     t2 := point hint((-trapw / 2, -trapd))
@@ -63,7 +63,7 @@ component Cylinder(f: group, fw: Length, dims: group) {
     trap2 := line(t2, t3)
 
     // Witness point for the head and side wall thicknesses.
-    h0 := point hint((top_u, dims.D / 2))
+    h0 := point hint((top_u, D / 2))
 
     // The outside is a rectangle centered on the bore axis. One axial dimension locates its mouth.
     mouth perpendicular ax
@@ -81,9 +81,9 @@ component Cylinder(f: group, fw: Length, dims: group) {
     bore_l parallel ax
     bore_r parallel ax
     hd perpendicular ax
-    k_bl distance(dims.wall) b_bl
-    k_br distance(dims.wall) b_br
-    b_tl distance(dims.wall) lid
+    k_bl distance(wall) b_bl
+    k_br distance(wall) b_br
+    b_tl distance(wall) lid
     hx midpoint hd
     // The head slot is rectangular and opens on the left body wall.
     trap0 perpendicular ax
@@ -96,17 +96,25 @@ component Cylinder(f: group, fw: Length, dims: group) {
     t0 distance(trapw / 2, along: u) f.axes
     h0 coincident lid
     h0 coincident bore_l
+    // which way round each of those is: the left wall on the left, the head beyond the mouth, the
+    // bore inside the walls and below the lid, and the slot running in from the left wall
+    k_br distance(>= 0, along: v) k_bl
+    k_bl distance(>= 0, along: u) k_tl
+    b_bl distance(>= 0, along: v) k_bl
+    k_br distance(>= 0, along: v) b_br
+    b_tl distance(>= 0, along: u) k_tl
+    t2 distance(>= 0, along: u) t1
 
     claim k_bl distance(top_u - mouth_u) k_tl
     claim b_br distance(head_u - mouth_u) b_tr
-    claim b_tl distance(dims.D) b_tr
+    claim b_tl distance(D) b_tr
     claim k_tl distance(2 * hw) k_tr
-    claim f.axes.origin distance(dims.a) pt
+    claim f.axes.origin distance(a) pt
     claim m0 distance(-mouth_u) f.axes.origin
-    claim b_tl distance(dims.wall) h0
-    claim k_tl distance(hw - dims.D / 2) h0
-    claim radius(dims.dport / 2) port
-    claim radius(dims.trapfit / 2) shank
+    claim b_tl distance(wall) h0
+    claim k_tl distance(hw - D / 2) h0
+    claim radius(dport / 2) port
+    claim radius(trapfit / 2) shank
     claim t0 distance(trapw) t3
     claim t1 distance(hw + trapd) t0
   }
@@ -115,8 +123,8 @@ component Cylinder(f: group, fw: Length, dims: group) {
   block := solid(face(mouth, side_r, lid, side_l), from: face, to: back)
   bore := solid(face(m0, b_br, bore_r, hx, -> close), about: ax)
   passage := solid(face(port), from: face, to: 0mm)
-  hole := solid(face(shank), from: face, to: face + dims.trapz)
-  trap := solid(face(trap0, trap1, trap2, -> close), from: face + dims.trapz, to: face + dims.trapz + dims.traph)
+  hole := solid(face(shank), from: face, to: face + trapz)
+  trap := solid(face(trap0, trap1, trap2, -> close), from: face + trapz, to: face + trapz + traph)
   body := solid(block)
   bore cut body
   passage cut body
@@ -133,5 +141,5 @@ preview {
     fix((0, 40)) up
     axes := std.Turned(std.origin, up)
   }
-  cyl := Cylinder(axes, fw: components.dims.fwA, dims: components.dims.vtwin_dims)
+  cyl := Cylinder(axes, fw: components.dims.fwA)
 }

@@ -1328,7 +1328,7 @@ fn throttle_revolution_matches_the_extruded_design_in_both_placements() {
             fix(dir == (0, 0, 1)) front.v\n\
             in front {{\nO := point\nfix((0, 0)) O\nc := components.parts.At(O, dx: 0mm, dy: {height}mm)\naxes := components.parts.Axes(O)\n\
             core := circle(center: c.p) hint(r: torgb / 2)\nradius(torgb / 2) core\n}}\n\
-            thr := components.throttle.Throttle(front, c.p, axes.ax, phi: {phi}deg, dims: components.dims.vtwin_dims)\n\
+            thr := components.throttle.Throttle(c.p, axes.ax, phi: {phi}deg)\n\
             old_barrel := solid(face(thr.barrel), from: -(components.dims.bossz / 2 + components.dims.tback), to: components.dims.bossz / 2)\n\
             old_hub := solid(face(thr.hub), from: components.dims.bossz / 2, to: components.dims.bossz / 2 + components.dims.levw)\n\
             groove_section := face(thr.barrel, holes: core)\n\

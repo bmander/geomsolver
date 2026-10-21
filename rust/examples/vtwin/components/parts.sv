@@ -1,16 +1,17 @@
 // What every view draws with.
 
 use std (horizontal, vertical, above, offset)
-use components.dims
+use components.dims (grub, nutT, nutaf, nutin)
 
 // A point placed from `o` by two ordinates.
-component At(o: point, dx: Length, dy: Length) {
+part At(o: point, dx: Length, dy: Length) {
   p := point hint((o.x + dx, o.y + dy))
-  p offset(dx: dx, dy: dy) o
+  o distance(dx, along: u) p
+  o distance(dy, along: v) p
 }
 
 // An axis-aligned rectangle about `o`: `a` is its lower-left corner, offset from `o`.
-component Box(o: point, x0: Length, y0: Length, x1: Length, y1: Length) {
+part Box(o: point, x0: Length, y0: Length, x1: Length, y1: Length) {
   a := point hint((o.x + x0, o.y + y0))
   b := point hint((o.x + x1, o.y + y0))
   c := point hint((o.x + x1, o.y + y1))
@@ -24,7 +25,7 @@ component Box(o: point, x0: Length, y0: Length, x1: Length, y1: Length) {
 
 // A rectangle between `x0` and `x1` whose top and bottom are the heights of two points another
 // view placed — the side view's reading of a part the front view designs.
-component Slab(o: point, x0: Length, x1: Length, top: point, bottom: point) {
+part Slab(o: point, x0: Length, x1: Length, top: point, bottom: point) {
   a := point hint((o.x + x0, bottom.y))
   b := point hint((o.x + x1, bottom.y))
   c := point hint((o.x + x1, top.y))
@@ -42,7 +43,7 @@ component Slab(o: point, x0: Length, x1: Length, top: point, bottom: point) {
 
 // The same the other way up: a rectangle between `y0` and `y1` whose left and right are the
 // widths of two points another view placed — the top view's reading of the front's.
-component Wide(o: point, y0: Length, y1: Length, left: point, right: point) {
+part Wide(o: point, y0: Length, y1: Length, left: point, right: point) {
   a := point hint((left.x, o.y + y0))
   b := point hint((right.x, o.y + y0))
   c := point hint((right.x, o.y + y1))
@@ -59,7 +60,7 @@ component Wide(o: point, y0: Length, y1: Length, left: point, right: point) {
 }
 
 // A part sheet's datum: the part's axis up the page through `o`.
-component Axes(o: point) {
+part Axes(o: point) {
   up := point hint((o.x, o.y + 40mm))
   up above(d: 40) o
   ax := line(o, up)
@@ -69,18 +70,18 @@ component Axes(o: point) {
 // A set screw into the shaft: its clearance hole from the bore at `rin` out to the rim at
 // `rout`, and the pocket the nut is trapped in, `nutin` out from the bore.  Written in the
 // datum `f` along the screw's axis.  Drawn on the part's sheet only.
-component Grub(f: group, rin: Length, rout: Length, dims: group) {
+part Grub(f: group, rin: Length, rout: Length) {
   ax := line(f.u.p1, f.u.p2)
-  h0 := point hint(at: f.axes, (rin, dims.grub / 2))
-  h1 := point hint(at: f.axes, (rout, dims.grub / 2))
-  h2 := point hint(at: f.axes, (rin, -dims.grub / 2))
-  h3 := point hint(at: f.axes, (rout, -dims.grub / 2))
+  h0 := point hint(at: f.axes, (rin, grub / 2))
+  h1 := point hint(at: f.axes, (rout, grub / 2))
+  h2 := point hint(at: f.axes, (rin, -grub / 2))
+  h3 := point hint(at: f.axes, (rout, -grub / 2))
   s0 := line(h0, h1)
   s1 := line(h2, h3)
-  n0 := point hint(at: f.axes, (rin + dims.nutin, dims.nutaf / 2))
-  n1 := point hint(at: f.axes, (rin + dims.nutin + dims.nutT, dims.nutaf / 2))
-  n2 := point hint(at: f.axes, (rin + dims.nutin + dims.nutT, -dims.nutaf / 2))
-  n3 := point hint(at: f.axes, (rin + dims.nutin, -dims.nutaf / 2))
+  n0 := point hint(at: f.axes, (rin + nutin, nutaf / 2))
+  n1 := point hint(at: f.axes, (rin + nutin + nutT, nutaf / 2))
+  n2 := point hint(at: f.axes, (rin + nutin + nutT, -nutaf / 2))
+  n3 := point hint(at: f.axes, (rin + nutin, -nutaf / 2))
   q0 := line(n0, n1)
   q1 := line(n1, n2)
   q2 := line(n2, n3)
@@ -89,7 +90,7 @@ component Grub(f: group, rin: Length, rout: Length, dims: group) {
   s0 parallel ax
   h0 symmetry(ax) h2
   h1 symmetry(ax) h3
-  h0 distance(dims.grub / 2, side: left) ax
+  h0 distance(grub / 2, side: left) ax
   h0 distance(rin, along: u) f.axes
   h1 distance(rout, along: u) f.axes
   // The nut pocket is a centered rectangle, dimensioned by the selected nut.
@@ -97,10 +98,13 @@ component Grub(f: group, rin: Length, rout: Length, dims: group) {
   q1 perpendicular ax
   q2 parallel ax
   q3 perpendicular ax
-  length(dims.nutT) q0
-  length(dims.nutaf) q1
-  n0 distance(dims.nutaf / 2, side: left) ax
-  n0 distance(rin + dims.nutin, along: u) f.axes
+  length(nutT) q0
+  length(nutaf) q1
+  n0 distance(nutaf / 2, side: left) ax
+  n0 distance(rin + nutin, along: u) f.axes
+  // the pocket runs out along the screw, from its left side to its right
+  n0 distance(>= 0, along: ax) n1
+  cw(f.u.p1, f.u.p2, n2)
   // **the screw's hole is a solid; its nut's pocket is not, and that is a limit of the language
   // and not of the design.**  The hole is a turn of the half-section above about the screw's own
   // line, which lies in this plane — `about:` takes exactly such a line.  The pocket is a *hex*
@@ -116,7 +120,7 @@ component Grub(f: group, rin: Length, rout: Length, dims: group) {
   a0 midpoint entry
   a1 midpoint exit
   bore := solid(bore_f, about: ax)
-  claim h0 distance(dims.grub) h2
-  claim n0 distance(dims.nutT) n1
-  claim n0 distance(dims.nutaf) n3
+  claim h0 distance(grub) h2
+  claim n0 distance(nutT) n1
+  claim n0 distance(nutaf) n3
 }

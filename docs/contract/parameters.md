@@ -483,12 +483,13 @@ where a rule came from.
     the `.svd`'s `at`.
 - **The V-twin over its crank angle** (#398 K, [0.147]): each moving part drawn in its own frame,
   its pose a function of the crank angle.  `param t: Angle over (0deg, 360deg)` is bound to the
-  crank's arm (`Crank(layout, theta: t)`); each bank's two statements place its cylinder's frame
+  crank's arm (`Crank(O, ref, theta: t)`); each bank's two statements place its cylinder's frame
   at the pivot and its piston's at the crown (`std.Turned`), and the disc's turns with the pin.
   Each part is written `in f.axes { … }` in its own coordinates — the frame's origin
   (`f.axes.origin`) its datum, its pin `on_u` — and called outside any `in` block, so it rides on
-  nothing (W115); `Crank` and `Bank` take the `layout` they draw their kinematics in, as `Frame`
-  does.  The drawing is held (DOF 0, `1 DOF over t`) and followed round the whole turn.
+  nothing (W115); `Crank`, `Bank` and `Frame` draw their kinematics in the plane their operands
+  are drawn in (`in o.plane`, #501).  The drawing is held (DOF 0, `1 DOF over t`) and followed
+  round the whole turn.
   - **Gate**: `tests/coordinates.rs` (`vtwin_parts_follow_a_complete_crank_turn`): stood at every
     eighth of the turn, the crank pin at `(R sin t, R cos t)` and each bank's crown, cylinder
     corner, piston flank and eye where an oscillating cylinder's closed form puts them, read in the

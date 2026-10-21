@@ -323,9 +323,8 @@ pivot := point hint((0mm, components.dims.H))
 std.origin vertical pivot
 std.origin distance(components.dims.H) pivot
 }
-layout := {front: std.front}
-bottom := components.bank.Bank(layout, bottom_pin, pivot, fw: components.dims.fwA, dim: 0, dims: components.dims.vtwin_dims)
-top := components.bank.Bank(layout, top_pin, pivot, fw: components.dims.fwA, dim: 0, dims: components.dims.vtwin_dims)
+bottom := components.bank.Bank(bottom_pin, pivot, z: components.dims.zA)
+top := components.bank.Bank(top_pin, pivot, z: components.dims.zA)
 ";
     for (before, after, wall) in [
         ("R := 10mm", "R := 12mm", 4.0),

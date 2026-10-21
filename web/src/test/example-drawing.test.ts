@@ -19,7 +19,7 @@ const staticFetch = async (path: string | URL | Request) =>
 test('a bare cylinder preview stands on a frame turned in the front', () => {
   const text = 'unit mm\nuse std\nuse components.dims\nuse components.cylinder\n'
     + 'preview {\nin std.front {\nup := point\nfix((0, 40)) up\naxes := std.Turned(std.origin, up)\n'
-    + 'components.cylinder.Cylinder(axes, fw: 12mm, dims: components.dims.vtwin_dims)\n}\n}\n';
+    + 'components.cylinder.Cylinder(axes, fw: 12mm)\n}\n}\n';
   const doc = Document.read(text);
   try {
     assert.ok(doc.ok, JSON.stringify(doc.diagnostics));

@@ -9,7 +9,8 @@
 // for the crank pin, a 1/4"-20 hex bolt, spring and nylon-insert nut for each pivot, an O-ring a
 // piston, three on the throttle, #8-32 set screws in trapped nuts on the disc and the flywheel.
 //
-// The dimension table is `components.dims`.  Each part is a component of its own with its own three
+// The dimension table is `components.dims`, whose numbers each part reads as constants of its own
+// definition.  Each part is a `part`, a function of what it is mated to, with its own three
 // views (`components.cylinder`, `components.piston`, `components.disc`, `components.flywheel`, `components.throttle`,
 // and the plate, `components.frame`): this sheet draws the plate in all of them, since it stands
 // still, and the moving parts in the plane of swing only; each part's own sheet
@@ -27,7 +28,7 @@
 // followed round the turn.  In the app a timeline scrubs it and dragging the pin turns it, rocking
 // both cylinders and moving both pistons in both views; the timeline reads the instant shown.
 // The assembly's sheet shows it at `t = 180deg`.  One lever angle in the table (`throttle`) turns
-// the throttle.  The two banks are one component instanced twice, which is why their
+// the throttle.  The two banks are one part instanced twice, which is why their
 // ports come out rotated rather than mirrored — the engine is one bank turned a quarter turn,
 // and the drawing cannot say otherwise.
 
@@ -52,11 +53,12 @@ in std.front {
   ref := line(O, up)
 }
 
-layout := {front: std.front, origin: O, ax: ref}
-plate := components.frame.Frame(layout, dims: components.dims.vtwin_dims)
-crank := components.crank.Crank(layout, dims: components.dims.vtwin_dims, theta: t)
-bankR := components.bank.Bank(layout, crank.pin, plate.pivots.r, fw: components.dims.fwB, dim: 1, dims: components.dims.vtwin_dims)
-bankL := components.bank.Bank(layout, crank.pin, plate.pivots.l, fw: components.dims.fwA, dim: 0, dims: components.dims.vtwin_dims)
+// every part is drawn in the plane its operands are drawn in: the plate, the crank and both banks
+// in the view along the crank axis, where `O` and the pin are
+plate := components.frame.Frame(O, ref)
+crank := components.crank.Crank(O, ref, theta: t)
+bankR := components.bank.Bank(crank.pin, plate.pivots.r, z: components.dims.zB)
+bankL := components.bank.Bank(crank.pin, plate.pivots.l, z: components.dims.zA)
 // **the plate's side view is asked for, not drawn** (§6.11) — the part is a solid, so the
 // assembly's side view of it is a reading of that solid and cannot disagree with the front view
 // about how thick the plate is or how far the bearing boss stands off it
@@ -68,18 +70,9 @@ bankL := components.bank.Bank(layout, crank.pin, plate.pivots.l, fw: components.
 // derived view stands where its plane's origin is
 so := point hint((-components.dims.tp / 2, 0)) in std.side
 so left_of(d: components.dims.tp / 2) std.side.origin  // the same height: the crank axis
-side := components.side_view.SideView(so, dims: components.dims.vtwin_dims) in std.side
 
-// the two views agree: every height the side view shows is the front view's
-crank.pin project side.pin_s               // the pin
-plate.pivots.r project side.pv             // a pivot
-bankR.corners.k_tl project side.cyB_top    // bank R (bank B, the thicker) is nearest in the side view
-bankR.corners.k_br project side.cyB_bot
-bankL.corners.k_tr project side.cyA_top
-bankL.corners.k_bl project side.cyA_bot
-bankR.corners.b_tl project side.boB_top    // and each bore's, which is a rod further from the plate on B
-bankR.corners.b_br project side.boB_bot
-bankL.corners.b_tr project side.boA_top
-bankL.corners.b_bl project side.boA_bot
-
-// how it looks
+// the two views agree: every height the side view shows is the front view's, and it is given the
+// points whose heights it shows — the pin, a pivot, and each cylinder's highest and lowest
+// corners, outside and in the bore.  Bank R (bank B, the thicker) is nearest in the side view,
+// and its bore a rod further from the plate than bank L's
+side := components.side_view.SideView(so, crank.pin, plate.pivots.r, bankR.span_cw, bankL.span_ccw)

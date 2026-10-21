@@ -128,7 +128,7 @@ pub struct Analysis {
     pub counts: Vec<String>,
     /// The root search, where it ran.
     pub roots: Option<Roots>,
-    /// How many root choices (`ccw`, `cw`) its body states.
+    /// How many root choices (`ccw`, `cw`, a bound) its body states.
     pub stated: usize,
     /// What it reads of the world, each in words, by how it reads it.
     pub world: Vec<(Reads, String)>,
@@ -240,6 +240,9 @@ pub(crate) struct World {
     lengths: BTreeSet<u32>,
     /// The free variables' parameters.
     free: BTreeSet<u32>,
+    /// The numbers an entity has beyond its own parameters, made with it and sited nowhere: a
+    /// plane's axes, and a point's hidden point in space (`Sketch::lifts`).
+    with: BTreeMap<EntRef, Vec<u32>>,
     /// Every entity and every statement (by its index among the sketch's) by the instance path
     /// it is sited under, ascending, and the statements sited nowhere: what an instance made and
     /// states are a range of each (`under`), not a reading of the whole document per instance.
@@ -264,6 +267,31 @@ impl World {
                 owner.entry(p).or_insert(e);
             }
         }
+        // a plane's axes are the plane's, and a point's hidden point the point's: what a lift
+        // reads of the plane a point is drawn in, or of a point an instance is given, is given
+        // with them, though a row of the instance's reads it in space
+        let mut with: BTreeMap<EntRef, Vec<u32>> = BTreeMap::new();
+        for &e in map.of_entity.keys().filter(|e| e.kind == EntKind::Frame) {
+            let f = &sk.frames[e.i()];
+            let axes = f.chart.iter().flat_map(|c| [Some(c.u), Some(c.v), c.normal])
+                .chain([f.joint.as_ref().map(|j| j.axis)])
+                .flatten();
+            for a in axes {
+                let axis = EntRef::new(EntKind::Axis, a as usize);
+                with.entry(e).or_default().extend(sk.own_params(axis));
+            }
+        }
+        for l in &sk.lifts {
+            let pt = EntRef::point(l.point as usize);
+            if map.of_entity.contains_key(&pt) {
+                with.entry(pt).or_default().extend(l.x);
+            }
+        }
+        for (&e, ps) in &with {
+            for &p in ps {
+                owner.entry(p).or_insert(e);
+            }
+        }
         let mut lengths = BTreeSet::new();
         for i in 0..sk.points.len() {
             lengths.extend(sk.point_all_params(i));
@@ -285,7 +313,7 @@ impl World {
             }
         }
         cons.sort();
-        World { owner, lengths, free, ents, cons, unsited }
+        World { owner, lengths, free, with, ents, cons, unsited }
     }
 }
 
@@ -315,11 +343,17 @@ pub(crate) fn split(map: &SourceMap, sk: &Sketch, world: &World, inst: &Instance
             made.insert(twin);
         }
     }
-    let mine: BTreeSet<u32> = made.iter().flat_map(|&e| sk.own_params(e)).collect();
-    // its rows, the numbers no entity owns that they read (a contact's place, a lift) — its own
-    // too — and the rows no statement owns that reach only those or what it made (a lift's, an
-    // arc's radius, a twin's tie).  A lift of a point drawn in its plane that none of its rows
-    // reads is the document's, though its row reads the plane.
+    // the point a plane it made stands at is made with it: the row holding it there is the plane's
+    let origins: BTreeSet<EntRef> = made.iter().filter(|e| e.kind == EntKind::Frame)
+        .filter_map(|e| sk.frames[e.i()].chart.as_ref().map(|c| EntRef::point(c.origin as usize)))
+        .collect();
+    let mine: BTreeSet<u32> = made.iter()
+        .flat_map(|&e| sk.own_params(e).into_iter().chain(world.with.get(&e).into_iter().flatten()
+            .copied()))
+        .collect();
+    // its rows, the numbers no entity owns that they read (a contact's place, a twin's lift) —
+    // its own too — and the rows no statement owns that reach only those or what it made (a
+    // lift's, an arc's radius, a twin's tie)
     let zero = sk.zero;
     let nobodys = |p: u32| !world.owner.contains_key(&p) && !world.free.contains(&p);
     let unowned = |p: u32| nobodys(p) && Some(p) != zero && !sk.params[p as usize].fixed;
@@ -339,9 +373,12 @@ pub(crate) fn split(map: &SourceMap, sk: &Sketch, world: &World, inst: &Instance
             let cols = columns(sk, c);
             // an arc's, an axis's or a plane's own rows (its ends at its radius, a unit
             // direction, a plane through its axes) are what it made, whatever else they read: an
-            // arc about an operand's centre places its ends from it (#461)
+            // arc about an operand's centre places its ends from it (#461); and so is a point's
+            // lift, which reads the plane it is drawn in
+            let lift = matches!(c.kind, CKind::Lift | CKind::ChartLift);
             let own_row = c.intrinsic && c.entities().iter()
-                .any(|e| e.kind != EntKind::Point && made.contains(e));
+                .any(|e| (lift || e.kind != EntKind::Point) && made.contains(e)
+                    || origins.contains(e));
             let ours = inside(c.id) || map.site_of_constraint(c.id).is_none() && (
                 own_row
                 || cols.iter().any(|p| aux.contains(p))
@@ -487,11 +524,18 @@ fn analyse(
             Some((k, crate::decompose::branch_key_points(k)?, *sk.orientations.get(k)?))
         })
         .collect();
-    a.stated = choices.len();
+    // and the bounds it states (§9.6), which choose a root as an orientation does
+    let bounds: BTreeSet<u32> =
+        rows.iter().filter(|c| inside(c.id) && c.bound.is_some()).map(|c| c.id).collect();
+    a.stated = choices.len() + bounds.len();
     if a.rank == a.unknowns && a.unknowns > 0 && a.unknowns <= SEARCHED {
         let admits = |s: &Sketch| choices.iter().all(|&(_, [p, q, r], v)| {
             crate::model::orientation(s, p, q, r) * v as f64 > 0.0
-        });
+        }) && {
+            let tol = crate::solve::bound_tol(s);
+            s.constraints.iter().filter(|c| bounds.contains(&c.id))
+                .all(|c| crate::solve::bound_reading(s, c, tol).is_none_or(|r| r.holds))
+        };
         let mut roots = search(&mut alone, &own, &made, world, size, &admits);
         roots.moved = generic != base;
         a.roots = Some(roots);
@@ -640,7 +684,7 @@ fn size_of(sk: &Sketch, own: &BTreeSet<u32>, inputs: &BTreeSet<u32>) -> f64 {
 /// The figure an instance made, as numbers two roots are compared by: each point where it stands
 /// in space, each radius's size and each axis's direction and place.  Not its parameters: an
 /// angle a turn on, or a frame's attitude written the other way, is the same figure.
-fn figure(sk: &Sketch, made: &BTreeSet<EntRef>) -> Vec<f64> {
+fn figure(sk: &Sketch, made: &BTreeSet<EntRef>, along: &BTreeMap<usize, usize>) -> Vec<f64> {
     let mut out = Vec::new();
     for e in made {
         match e.kind {
@@ -650,13 +694,35 @@ fn figure(sk: &Sketch, made: &BTreeSet<EntRef>) -> Vec<f64> {
             EntKind::Axis => {
                 let r = &sk.axes[e.i()];
                 let d = r.d.map(|p| sk.params[p as usize].value);
-                out.extend(space::normalised(d).unwrap_or(d));
+                let mut d = space::normalised(d).unwrap_or(d);
+                // held along a drawn line, an axis runs the line's way (`views::align`), so a
+                // probe that turns it back has found no other root
+                if let Some(&l) = along.get(&e.i()) {
+                    let ln = &sk.lines[l];
+                    let w = space::sub(sk.world_point(ln.p2 as usize),
+                        sk.world_point(ln.p1 as usize));
+                    if space::dot(d, w) < 0.0 {
+                        d = d.map(|x| -x);
+                    }
+                }
+                out.extend(d);
                 out.extend(r.a.map(|p| sk.params[p as usize].value));
             }
             _ => {}
         }
     }
     out
+}
+
+/// The axes held along drawn lines, each to its line (`views::along`).
+fn held_along(sk: &Sketch) -> BTreeMap<usize, usize> {
+    sk.constraints.iter()
+        .filter(|c| c.intrinsic && c.along.is_none() && c.kind == CKind::Parallel3)
+        .filter_map(|c| match (c.args[0].ent(), c.args[1].ent()) {
+            (r, l) if r.kind == EntKind::Axis && l.kind == EntKind::Line => Some((r.i(), l.i())),
+            _ => None,
+        })
+        .collect()
 }
 
 /// DT2 by refutation: `STARTS` starts scattered about the instance's solution at twice its size,
@@ -673,7 +739,8 @@ fn search(
     let base = sk.get_x();
     let free: Vec<u32> = sk.free_indices().into_iter().map(|p| p as u32)
         .filter(|p| own.contains(p)).collect();
-    let mut roots: Vec<(Vec<f64>, bool)> = vec![(figure(sk, made), admits(sk))];
+    let along = held_along(sk);
+    let mut roots: Vec<(Vec<f64>, bool)> = vec![(figure(sk, made, &along), admits(sk))];
     let mut out = Roots { starts: STARTS, ..Roots::default() };
     for k in 0..STARTS {
         sk.set_x(&base);
@@ -684,7 +751,7 @@ fn search(
             continue;
         }
         out.solved += 1;
-        let y = figure(sk, made);
+        let y = figure(sk, made, &along);
         // lengths at the instance's size, a direction's parts as if it were a length
         let tol = 1e-4 * size.max(1.0);
         let apart = |r: &Vec<f64>| r.iter().zip(&y).any(|(a, b)| (a - b).abs() > tol);

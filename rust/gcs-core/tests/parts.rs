@@ -343,8 +343,8 @@ x := Apex(o, q)
 }
 
 /// **PT5, which root a part takes is stated** (W207, by `--lint`): a point 5 from two points 6
-/// apart has two poses; the part that leaves the choice to its seed is named, and the one that
-/// states it with `ccw` is not.
+/// apart has two poses; the part that leaves the choice to its seed is named, and the ones that
+/// state it, with `ccw` or with a bound (#501), are not.
 #[test]
 fn a_part_that_leaves_its_root_to_its_seeds_is_named() {
     let e = read("\
@@ -365,6 +365,14 @@ part Chosen(a: point, b: point) {
     ccw(a, b, m)
   }
 }
+part Bounded(a: point, b: point) {
+  in a.plane {
+    m := point hint((3, 4))
+    m distance(5mm) a
+    m distance(5mm) b
+    a distance(>= 0, along: v) m
+  }
+}
 in std.front {
   o := point
   fix((0, 0)) o
@@ -373,6 +381,7 @@ in std.front {
 }
 x := Apex(o, q)
 y := Chosen(o, q)
+z := Bounded(o, q)
 ");
     let mut sk = e.sketch.clone();
     assert!(gcs_core::solve::solve(&mut sk, Default::default()).success);
@@ -380,4 +389,52 @@ y := Chosen(o, q)
         .map(|d| (d.code.as_str().to_string(), d.span.slice(e.text()).to_string()))
         .collect();
     assert_eq!(said, [("W207".to_string(), "Apex".to_string())]);
+}
+
+/// **What a lift reads is its point's and its plane's** (#501): a point drawn in a plane and read
+/// in space gets a hidden point, held to it by a row over the plane's axes and origin, and the
+/// plane's axes are numbers of their own.  None of that is the instance's that happened to read
+/// it.  `Mark` measures along a frame it turns through its operands, so their hidden points are
+/// read; `two` turns its frame through `one`'s mark, which `one` lifted for itself, and `disc`
+/// draws in a frame the parent turned, its own frame turned in that one.  Every instance is a
+/// part: the parent's frame is placed by the parent's rows, `one`'s mark by `one`'s.
+#[test]
+fn a_part_reading_its_operands_in_space_is_given_their_lifts() {
+    let e = read("\
+unit mm
+use std
+part Mark(a: point, b: point) {
+  in a.plane {
+    t := std.Turned(a, b)
+    m := point hint(at: t.axes, (4mm, 1mm))
+    m distance(4mm, along: u) t.axes
+    m distance(1mm, along: v) t.axes
+  }
+}
+part Disc(f: group) {
+  in f.axes {
+    se := point hint((3mm, -4mm))
+    f.axes.origin distance(3mm, along: u) se
+    se distance(4mm, along: v) f.axes.origin
+    screw := Mark(f.axes.origin, se)
+  }
+}
+in std.front {
+  o := point
+  fix((0, 0)) o
+  q := point
+  fix((10, 10)) q
+  f := std.Turned(o, q)
+}
+one := Mark(o, q)
+two := Mark(one.m, o)
+disc := Disc(f)
+");
+    assert!(e.diags.is_empty(), "{:?}", e.diags.iter().map(|d| &d.message).collect::<Vec<_>>());
+    let mut e = e;
+    assert!(gcs_core::solve::solve(&mut e.sketch, Default::default()).success);
+    // `one`'s mark 4 along the line from `o` to `q` and 1 to its left
+    let (c, s) = (0.5_f64.sqrt(), 0.5_f64.sqrt());
+    let m = at(&e, "one.m");
+    assert!((m[0] - (4.0 * c - s)).abs() < 1e-9 && (m[2] - (4.0 * s + c)).abs() < 1e-9, "{m:?}");
 }

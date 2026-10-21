@@ -119,6 +119,7 @@ component Turned(o: point, t: point) {
   private construction v := line(o, q)
   v perpendicular u
   v equal u
+  ccw(o, t, q)       // a quarter turn on, never back: the axes are right-handed
   axes := plane(u: u, v: v)
 }
 
