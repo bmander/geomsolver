@@ -128,7 +128,7 @@ fn layers_of(sk: &Sketch, b: usize, readers: &BTreeSet<usize>)
 fn stack(sk: &mut Sketch, b: usize, of: &BTreeMap<usize, usize>) {
     let SolidDef::Body { stock, on, through, bound } = sk.solids[b].def.clone() else { return };
     let top = of.values().copied().max().unwrap_or(0);
-    let (name, class) = (sk.solids[b].name.clone(), sk.solids[b].class.clone());
+    let SolidE { name, class, copy, .. } = sk.solids[b].clone();
     let at = |o: &u32| of.get(&(*o as usize)).copied();
     let mut below: Option<u32> = None;
     for k in 0..top {
@@ -140,7 +140,7 @@ fn stack(sk: &mut Sketch, b: usize, of: &BTreeMap<usize, usize>) {
             Some(s) => SolidDef::Body { stock: s, on: pick(&on, false), through: pick(&through, false), bound: Vec::new() },
         };
         let layer = sk.solids.len();
-        sk.solids.push(SolidE { def, name: name.clone(), class: class.clone() });
+        sk.solids.push(SolidE { def, name: name.clone(), class: class.clone(), copy });
         // the layer's readers read the body it is
         let to = |e: EntRef| Some(if e.kind == EntKind::Solid && e.i() == b { EntRef::solid(layer) } else { e });
         for (&r, _) in of.iter().filter(|(_, &l)| l == k) {

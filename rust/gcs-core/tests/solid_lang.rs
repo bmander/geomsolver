@@ -322,9 +322,11 @@ fn an_empty_body_is_what_is_in_union_with_it() {
     // the unions are a set: written before the body, they make the same one
     let before = format!("{PEGS}repeat 6 as i {{\npeg[i] union pegs\n}}\npegs := solid()\n");
     assert_volume_near(volume(&read(&before), "pegs"), volume(&e, "pegs"));
-    // its faces are reached through the copies, as through any operand
+    // its faces are reached through the copies, each by its index ([0.156])
     let p = gcs_core::report::positions(&e.sketch, &e.map);
-    assert!(p.iter().any(|(k, _)| k == "pegs.peg.near.area"), "{p:?}");
+    for k in 0..6 {
+        assert!(p.iter().any(|(n, _)| *n == format!("pegs.peg[{k}].near.area")), "{p:?}");
+    }
     // and it is cut as any body is: the disc takes the bottom half of every peg
     let cut = read(&format!("{empty}disc cut pegs\n"));
     assert_volume_near(volume(&cut, "pegs"), 3.0 * one);

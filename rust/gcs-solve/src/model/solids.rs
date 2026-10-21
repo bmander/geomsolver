@@ -386,6 +386,11 @@ pub struct SolidE {
     /// What the document calls it — see `FaceE::name`.
     pub name: String,
     pub class: Classes,
+    /// The copy it is, where the document wrote it in a `repeat`'s or a `ring`'s body itself
+    /// (`drill` of `repeat 6 { … }`, named `#7.1.drill`): the step its faces are named by
+    /// through a body carries the index, `drill[1]` (`step`).  `None` for any other solid, a
+    /// word's (a round's `taken`) among them, whose copies' faces are named as one.
+    pub copy: Option<u32>,
 }
 
 /// A named implicit envelope, over an interval of the shared roll (a `Running`, #391 S1; its
@@ -695,6 +700,16 @@ impl crate::model::Sketch {
 }
 
 impl SolidE {
+    /// The step it adds to the route of a face of a body it is an operand of
+    /// (`solid::route_step`): its name's, with the copy it is (`drill[1]`).
+    pub fn step(&self) -> String {
+        let step = crate::solid::route_step(&self.name);
+        match self.copy {
+            Some(k) => format!("{step}[{k}]"),
+            None => step,
+        }
+    }
+
     /// Boolean operands only; a through-extent target is a separate evaluation dependency.
     pub fn operands(&self) -> Vec<u32> {
         match &self.def {

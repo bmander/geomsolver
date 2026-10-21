@@ -34,10 +34,11 @@ fn pair(j: &Json) -> [f64;2] { [j.arr()[0].as_f64(),j.arr()[1].as_f64()] }
 #[derive(Clone,Debug)]
 pub struct Recipe { pub root: i64,pub nodes: Vec<Named> }
 
-/// A node of a recipe's list: its id, its name (the solid's, as the document spells it) and what
-/// it is.
+/// A node of a recipe's list: its id, its name (the solid's, as the document spells it), the
+/// step it adds to a face's route through a body (`SolidE::step`: `step` where the solid is a
+/// copy the document wrote, else its name's) and what it is.
 #[derive(Clone,Debug)]
-pub struct Named { pub id: i64,pub name: String,pub node: Node }
+pub struct Named { pub id: i64,pub name: String,pub step: String,pub node: Node }
 
 /// What a node makes.
 #[derive(Clone,Debug)]
@@ -140,8 +141,11 @@ pub enum Stroke {
 impl Recipe {
     /// A recipe's JSON read, or an error naming the first field it lacks.
     pub fn read(j: &Json) -> Read<Recipe> {
-        let nodes = each(field(j,"nodes")?.arr(),|n| Ok(Named {id:field(n,"id")?.as_i64(),
-            name:n.get("name").map_or("",Json::as_str).to_string(),node:Node::read(n)?}))?;
+        let nodes = each(field(j,"nodes")?.arr(),|n| {
+            let name = n.get("name").map_or("",Json::as_str).to_string();
+            let step = n.get("step").map_or_else(|| crate::solid::route_step(&name),|s| s.as_str().to_string());
+            Ok(Named {id:field(n,"id")?.as_i64(),name,step,node:Node::read(n)?})
+        })?;
         Ok(Recipe {root:field(j,"root")?.as_i64(),nodes})
     }
 }

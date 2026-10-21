@@ -374,9 +374,10 @@ impl Lookup<'_> {
         Some((abs, rest))
     }
 
-    /// **A face a copy's edge named, past a solid** (`flange.drill.hole[1]`): where an index picks
-    /// no copy of a declaration, it is read as part of the name, as the face was given it
-    /// (`solid::faces::FacePath`) — a reference that, so read, reaches no solid is none.
+    /// **One copy's faces, past a solid** (`flange.drill[1]`, [0.156]): where an index picks no
+    /// copy of a declaration, it is read as part of the segment it stands on, as the faces are
+    /// named (`SolidE::step`, `solid::faces::FacePath`) — a reference that, so read, reaches no
+    /// solid is none.
     fn face_of_copy(&self, r: &Ref, sc: &Scope) -> Option<(String, Vec<String>)> {
         let mut path: Vec<Seg> = Vec::with_capacity(r.path.len());
         for s in &r.path {

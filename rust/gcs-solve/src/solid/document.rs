@@ -3,6 +3,7 @@
 #[allow(unused_imports)]
 use crate::fmath::Det;
 use super::*;
+use crate::model::SolidE;
 
 // -- resolving a document's solids into terms ---------------------------------------------------
 
@@ -173,7 +174,7 @@ pub(crate) fn operand_primitives(sk: &Sketch, si: usize) -> BTreeMap<String, (St
             SolidDef::Body { .. } => {
                 for o in s.operands().into_iter().rev() {
                     let Some(operand) = sk.solids.get(o as usize) else { continue };
-                    let name = route_step(&operand.name);
+                    let name = operand.step();
                     let name = name.as_str();
                     if let Some(source) = done.get(&o) {
                         for (primitive,(path,prim)) in source {
@@ -198,7 +199,7 @@ pub(crate) fn operand_primitives(sk: &Sketch, si: usize) -> BTreeMap<String, (St
 /// (`rim#17`, `flatten::keys::labelled`) — `rim.taken` for the `taken` a round named `rim` made,
 /// so two named rounds' faces stay apart.  The one reading of a route's steps: the faces are
 /// named by it (`operand_primitives`, `brep::recipe`) and reached by it (`faces::face_source`,
-/// `carrier`).
+/// `carrier`), a copy the document wrote with its index past it (`SolidE::step`, [0.156]).
 pub fn route_step(name: &str) -> String {
     let segs: Vec<&str> = name.split('.').collect();
     let Some((leaf, before)) = segs.split_last() else { return name.to_string() };
@@ -209,11 +210,13 @@ pub fn route_step(name: &str) -> String {
     before.iter().filter_map(label).chain(std::iter::once(*leaf)).collect::<Vec<_>>().join(".")
 }
 
-/// Whether `route` begins with operand `name`'s step (`route_step`), and the rest of it past.
-pub fn past_step<'r, S: AsRef<str>>(name: &str, route: &'r [S]) -> Option<&'r [S]> {
-    let step = route_step(name);
+/// Whether `route` begins with `operand`'s step (`SolidE::step`), and the rest of it past: a
+/// step written without the copy's index is any copy's (`faces::same_step`).
+pub fn past_step<'r, S: AsRef<str>>(operand: &SolidE, route: &'r [S]) -> Option<&'r [S]> {
+    let step = operand.step();
     let n = step.split('.').count();
-    (route.len() >= n && step.split('.').zip(route).all(|(a, b)| a == b.as_ref())).then(|| &route[n..])
+    let same = |(a, b): (&str, &S)| super::faces::same_step(b.as_ref(), a);
+    (route.len() >= n && step.split('.').zip(route).all(same)).then(|| &route[n..])
 }
 
 pub(super) fn placed_name(name: &str,path: &str) -> String {

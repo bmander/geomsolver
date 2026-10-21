@@ -4,15 +4,17 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
-**[0.156] One copy of a pattern, by its face's name.** A side whose edge is a copy's is named
-with the copy's index (§6.21), and a face path may now be written with it: past a solid,
-`plate.drill.hole[1]` — the name the report gives the hole the second copy of `repeat 3 { … drill
-:= solid(face(hole), through: plate) … }` cut — is that face, so `plate.near chamfer(d: 1mm)
-plate.drill.hole[1]` chamfers one hole of the pattern; the index may be any whole number the
-scope reads (`hole[i + 1]`). Written without the index, `plate.drill.hole` names every copy's.
-Through 0.155 the index was read as a copy of a declaration and the path was **E101** ("no such
-entity"), and the path without it named nothing. A cap is named by no edge, so the caps of a
-ring's or a repeat's copies (`pegs.peg.near`) are still one name. No document changes.
+**[0.156] One copy of a pattern, by its index.** An operand the document wrote in a `repeat`'s or
+a `ring`'s body is a step of its body's faces' names with its copy's index, as a reference to the
+copy is written (§6.21): the hole the second drill of `repeat 3 { … drill := solid(face(hole),
+through: plate) … }` cuts is `plate.drill[1].hole`, so `plate.near chamfer(d: 1mm) plate.drill[1]`
+chamfers that hole alone (`drill[i + 1]`, any whole number the scope reads), and `plate.drill`
+names every copy's faces, as it did. An edge drawn in the copy is named as the copy names it:
+the hole's side is `hole`, not `hole[1]`. A ring's copies' caps, one name through 0.155
+(`pegs.peg.near`), are each the copy's (`pegs.peg[3].near`). Through 0.155 every copy's faces had
+one step (`plate.drill.hole[1]`) and an index on it was **E101** ("no such entity"). A word's
+solids are no copies a document wrote and keep their names (`plate.taken.flat`). Reported face
+names of copies change; no document's text does.
 
 **[0.155] A profile in the plane generated under a drive.** A joint driven by its frame's value
 (§6.14, [0.143]) carries a tool of the sheet into a planar envelope (§6.15.1) as a constant-rate

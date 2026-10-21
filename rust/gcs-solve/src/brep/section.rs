@@ -65,7 +65,7 @@ impl Sectioned {
         let mut placed: BTreeMap<i64,usize> = BTreeMap::new();
         let mut profiles: Vec<(V,V,V,V,Profile,String)> = Vec::new();
         let mut out: Vec<(i64,Term)> = Vec::new();
-        for Named {id,name,node} in &recipe.nodes {
+        for Named {id,name,node,..} in &recipe.nodes {
             match node {
                 Node::Revolve {profile,origin,axis,angle} => {
                     whole_turn(*angle,name)?;

@@ -433,8 +433,8 @@ struct Walk<'a> {
     /// resolve references afterwards, so forward reference works — which spec P2 requires, since
     /// a body is a set and a set has no "before".
     names: BTreeSet<String>,
-    /// Those of them a solid's declaration makes: a reference past one may name a face a copy's
-    /// edge named (`flange.drill.hole[1]`, `Lookup::face_of_copy`).
+    /// Those of them a solid's declaration makes: a reference past one may name one copy's faces
+    /// (`flange.drill[1]`, `Lookup::face_of_copy`).
     solid_names: BTreeSet<String>,
     /// A formal bound to an actual: one name for what another names.  Resolved transitively,
     /// after the walk.

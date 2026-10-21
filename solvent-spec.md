@@ -2086,10 +2086,12 @@ the solid names every face whose name it begins: `pad` every face, `pad.plate` e
 gave it, `pad.plate.near` one. It is read from the solid, so an operand an instance made is
 reached from the instance's solid by its route (`part.pad.plate.near`), and never by a suffix:
 `pad.near` names a cap of `pad`'s own sweep and nothing of its operands'. `repeat a in X` (§12.8)
-runs over the same names. **[0.156]** A side whose edge is a copy's (§12.1) is named with the
-copy's index, as the report writes it (`plate.drill.hole[1]`, the hole a `repeat`'s second drill
-cut): written so, the index is the face's name and not a copy of a declaration, and the path
-names that face; written without it (`plate.drill.hole`), every copy's.
+runs over the same names. **[0.156]** An operand the document wrote in a `repeat`'s or a `ring`'s
+body (§12.1) is a step with its copy's index, as a reference to the copy is written: the hole the
+second drill of `repeat 3 { … drill := solid(face(hole), through: plate) … }` cuts is
+`plate.drill[1].hole` (an edge drawn in the copy is named as the copy names it, `hole`), so
+`plate.drill[1]` names that drill's faces and `plate.drill` every copy's. A word's solids (a
+round's, §9.9) are no copies a document wrote, and are named as before.
 
 **Members** **[0.70]**. `S.ends` (where the edge a set is ends, below), `F.surface` (a face's or a
 set's whole surface), **[0.149]** `F.smooth` (a face's surface carried on across every seam where a

@@ -123,6 +123,7 @@ pub(super) fn build_solid(
     };
     let i = sk.solid(def, &d.name.key().text);
     sk.solids[i].class = d.class.clone();
+    sk.solids[i].copy = copy_written(&d.name);
     // a sweep rides on its observer (#383): the material a generating cut leaves is the blank's
     if matches!(sweep, Sweep::Swept { .. } | Sweep::Rolled { .. }) {
         if let Some(path) = super::super::generated::observer_path(sk, res, d) {
@@ -643,4 +644,16 @@ fn axis_may_lie_in(sk: &Sketch, plane: Option<u32>, ax: usize) -> bool {
     let still = held(sk, &x.d) && held(sk, &x.a)
         && plane.is_none_or(|p| sk.plane_fixed(p as usize));
     !still || sk.axis_in(plane, ax).is_some()
+}
+
+/// The copy a solid is, where the document wrote it in a block's body itself (`drill` in `repeat
+/// 6 { … }`, its key `…#7.1.drill`): what its faces are named by through a body (`SolidE::copy`).
+/// A word's solid (`DeclName::Key`) is none, nor one an instance in a copy holds (`#7.1.b.s`).
+fn copy_written(name: &crate::syntax::DeclName) -> Option<u32> {
+    let crate::syntax::DeclName::Copy(n) = name else { return None };
+    let mut segs = n.text.rsplit('.');
+    let (_leaf, k, block) = (segs.next()?, segs.next()?, segs.next()?);
+    let id = block.strip_prefix('#')?;
+    (!id.is_empty() && id.bytes().all(|b| b.is_ascii_digit())).then_some(())?;
+    k.parse().ok()
 }
