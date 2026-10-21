@@ -109,9 +109,10 @@ fn the_dwell_arc_has_its_stated_radius() {
     assert!(((p.0 - k.0).hypot(p.1 - k.1) - 25.).abs() < 1e-6, "the centre is not the centre of curvature");
 }
 
-/// **`heart_cam.sv`**: the pitch curve is the uniform-rise spiral, its halves meet, the profile's
-/// halves touch the roller there, and the osculating circle's radius is the spiral's radius of
-/// curvature less the roller's.
+/// **`heart_cam.sv`**: one law drives the follower (#398 G), and the pitch curve is the
+/// uniform-rise spiral, its halves meet, the profile's halves touch the roller there along
+/// different normals (each half reads the law's corner on its own side), and the osculating
+/// circle's radius is the spiral's radius of curvature less the roller's.
 #[test]
 fn the_heart_cam_rises_and_falls_uniformly() {
     let mut e = solved(include_str!("../../examples/generation/heart_cam.sv"));
@@ -128,10 +129,15 @@ fn the_heart_cam_rises_and_falls_uniformly() {
     let point = e.sketch.curve_point(rise, 180.);
     let q = e.sketch.curve_point(fall, 180.);
     assert!((point.0 - q.0).hypot(point.1 - q.1) < 1e-9, "the pitch curve parts at the heart's point");
-    for half in ["cam_rise", "cam_fall"] {
+    let ends = ["cam_rise", "cam_fall"].map(|half| {
         let a = e.sketch.curve_point(curve(&e, half), 180.);
         assert!(((a.0 - point.0).hypot(a.1 - point.1) - 6.).abs() < 1e-9, "{half} leaves the roller");
-    }
+        a
+    });
+    // the spiral's normal either side of the point leans atan(b / r) off the radius, b = 15/π
+    let lean = (15. / std::f64::consts::PI / 40_f64).atan();
+    let apart = (ends[0].0 - ends[1].0).hypot(ends[0].1 - ends[1].1);
+    assert!((apart - 12. * lean.sin()).abs() < 1e-9, "the halves part by {apart} at the point");
     // r = 25 + b·θ with b = 15/π a radian; at a quarter turn r = 32.5
     let (r, b) = (32.5_f64, 15. / std::f64::consts::PI);
     let rho = (r * r + b * b).powf(1.5) / (r * r + 2. * b * b) - 6.;

@@ -6,22 +6,27 @@
 // round it: the envelope of the roller as the follower slides out along its line while the cam
 // turns under it.
 //
-// `rise` is the follower sliding out `lift` over half a turn, read seen from the turning cam;
-// `fall` slides back in.  Each half of the profile is the envelope of the roller under one of them
-// (`side: near`, the side facing the cam's centre), and each half of the pitch curve, the path
-// the roller's centre takes, is the envelope of the centre itself.  The pitch curve's halves
-// meet at the heart's point and its cleft, where it turns corners, so the profile's halves part
-// there: across the point the roller's own arc bridges them, and in the cleft they cross.
+// The follower is driven by one law of the cam's turn `t`: its value climbs with `t` for half a
+// turn and comes back down for the other half, `180deg - abs(180deg - t)`, and its slide carries
+// it out `lift` in half a turn of that value.  Read seen from the turning cam, the follower's
+// roller cuts the cam.  Each half of the profile is the envelope of the roller over its half of
+// the turn (`side: near`, the side facing the cam's centre), and each half of the pitch curve,
+// the path the roller's centre takes, is the envelope of the centre itself.  The law turns a
+// corner at the half turn, and the pitch curve turns one with it, at the heart's point and its
+// cleft, so the profile's halves part there: across the point the roller's own arc bridges them,
+// and in the cleft they cross.  Each half reads the law on its own side of the corner.
 //
 // A circle osculates the rising half at 90° into the turn: its radius, which the solve works out,
 // is how tightly the profile bends there (it must stay larger than a grinding wheel's).  Edit
-// `lift`, `base` or the roller's radius and the cam is cut again.
+// `lift`, `base` or the roller's radius, or the law, and the cam is cut again.
 
 use std (right_of, spins, slides)
 
 base := 25    // the roller centre's nearest approach to the cam's centre
 lift := 15    // how far the follower rises
 rr := 6       // the roller
+
+param t: Angle over (0deg, 360deg)          // the cam's turn
 
 in std.front {
   o := point
@@ -35,27 +40,22 @@ in std.front {
 
 cam := frame
 cam spins(1) o
-rise := frame
-rise slides(2 * lift) path                          // out `lift` in half a turn...
-fall := frame
-fall slides(-2 * lift) path                         // ...and back in at the same rate
+follower := frame
+follower slides(2 * lift) path                      // out `lift` in half a turn of its value...
+fix(value == 180deg - abs(180deg - t)) follower     // ...which rises and falls uniformly
 
-// the roller where the rise starts, and where the fall would start if it began at no roll
+// the roller where the rise starts
 in std.front {
-  c_rise := point hint((25, 0))
-  c_fall := point hint((55, 0))
-  c_rise right_of(d: base) o
-  c_fall right_of(d: base + 2 * lift) o
-  roller := circle(center: c_rise) hint(r: 6)
-  roller_f := circle(center: c_fall) hint(r: 6)
+  c := point hint((25, 0))
+  c right_of(d: base) o
+  roller := circle(center: c) hint(r: 6)
   radius(rr) roller
-  radius(rr) roller_f
 }
 
-pitch_rise := envelope(c_rise over t in (0deg, 180deg), under: rise, seen_from: cam)
-pitch_fall := envelope(c_fall over t in (180deg, 360deg), under: fall, seen_from: cam)
-cam_rise := envelope(roller over t in (0deg, 180deg), under: rise, seen_from: cam, side: near)
-cam_fall := envelope(roller_f over t in (180deg, 360deg), under: fall, seen_from: cam, side: near)
+pitch_rise := envelope(c over t in (0deg, 180deg), under: follower, seen_from: cam)
+pitch_fall := envelope(c over t in (180deg, 360deg), under: follower, seen_from: cam)
+cam_rise := envelope(roller over t in (0deg, 180deg), under: follower, seen_from: cam, side: near)
+cam_fall := envelope(roller over t in (180deg, 360deg), under: follower, seen_from: cam, side: near)
 
 // how tightly the profile bends a quarter turn in
 in std.front {

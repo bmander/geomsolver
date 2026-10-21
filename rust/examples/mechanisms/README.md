@@ -27,6 +27,7 @@ The instant is presentation, never written into the model.
 What is not here yet: these traces are drawn but nothing is held to them (a relation naming a
 followed trace is E061), so the series in `../generation/` that solves *through* a traced path —
 the Jansen stride standing on the ground, the dwell circle fitted by curvature — still traces a
-component's formal (`trace(leg.toe over theta in (0, 360))`). A cam driven by a law of `t` is
-followed and swept in space (`tests/drives.rs`), but a profile in the plane is not generated under
-a drive, so `../generation/heart_cam.sv` keeps its two constant-rate slides.
+component's formal (`trace(leg.toe over theta in (0, 360))`).
+
+A cam driven by a law of `t` is followed and swept in space (`tests/drives.rs`), and a profile in the plane is generated under
+one: `../generation/heart_cam.sv` is cut from a single law, `180deg - abs(180deg - t)`.

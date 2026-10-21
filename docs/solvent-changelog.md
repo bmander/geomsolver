@@ -4,6 +4,19 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.155] A profile in the plane generated under a drive.** A joint driven by its frame's value
+(§6.14, [0.143]) carries a tool of the sheet into a planar envelope (§6.15.1) as a constant-rate
+joint does, standing at the law's value of the roll: `fix(value == 180deg - abs(180deg - t))
+follower` and `envelope(roller over t in (0deg, 180deg), under: follower, seen_from: cam, side:
+near)` cut a heart cam's rising half from one law. The law is a constant of the curve, compiled
+over the numbers it names as they are stated (one the solve moves is **E080**) and read in Taylor
+arithmetic, so the profile is exact to the order it was at a constant rate and `p coincident f`,
+`f tangent l` and `f curvature k` hold against it. Where the law turns a corner each profile reads
+it on the side its own interval runs over. Through 0.154 the profile was **E080** ("a profile in
+the sheet is generated under joints at a constant rate"). `generation/heart_cam.sv` is rewritten
+over `param t` with one law in place of its two constant-rate slides, and no solved value moved.
+(Issue #398 G.)
+
 **[0.154] A frame's joint is said in words.** `std.sv` states a joint as relation words (§6.14),
 the frame the subject and what it moves about or along the object, each of one number given bare
 (§9.9, [0.152]): `f turns(r) l` about a line, `r` radians a radian of the roll; `f screws(a) l` a
