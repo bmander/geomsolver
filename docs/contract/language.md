@@ -384,15 +384,18 @@ takes a layout naming the front datum, origin and reference axis.
   are no call); **W202** a component call standing as a statement; **W203** a component that makes
   nothing a parent can read (everything it declares is `private` or a claim's witness) and states
   relations; **W204** a path reading through an instance into its instance (`pair.gear_cone.ax`,
-  the instances known by their statements; a path through an index or a formal is not followed);
+  the instances known by their statements, a block's next copy's too, `next.t.r.lo`; a path
+  through an index or a formal is not followed);
   **W205** an `Int` formal read only by `when` conditions; **W206** a `group` formal handed on whole
   and never read through.  Asked of the **document's own text** (its components and root, not a
   module it reads, which is linted as a document of its own), and never by `elaborate`: only
   `solventc --lint` adds the warnings, which fail nothing.  `tests/drift.rs` holds each pattern to
   one document that trips it and one that does not, and holds the corpus (`rust/examples`,
   `rust/lib`) to `ALLOWED`, a list that only shrinks, for the patterns in `GATED` (W204, W206),
-  each of which the language can say another way today (an instance names what a parent reads of
-  its instance as a group of aliases, `ends := {tip: arm.tip}`).  The rest are said, not held:
+  each of which the language can say another way today: an instance names what a parent reads of
+  its instance as a group of aliases (`HypoidPair`'s `gear_member := {ax: gear_cone.ax, …}`,
+  `Tooth`'s `left` and `right`), or the parent reads it off a member one level down
+  (`inlet.tbore.center`, a set's `flank.apex`).  The list is empty.  The rest are said, not held:
   W201 waits on a word's unlabelled measure (#463), W202 on the motion words (#464), W203 on a
   word that may leave a number to the solve (`std.Screw`'s pitch, a joint's ratio: a word's
   parameter left out is E040); W205 is a heuristic, since a flag chooses a model as often as a

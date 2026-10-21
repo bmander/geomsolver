@@ -223,8 +223,9 @@ fn asserting(c: &Component, out: &mut Vec<Diag>) {
 
 /// **W204: a path reaching more than one level into another instance** (`pair.gear_cone.ax`): a
 /// statement coupled to the inside of a level that is not its own (direction N4).  An instance
-/// is known by its statement in this body and the component it calls, and a path through an
-/// index (`cyl[0].small.p`) or a formal is not followed.
+/// is known by its statement in this body and the component it calls, read in a block's next or
+/// previous copy too (`next.t.r.lo`); a path through an index (`cyl[0].small.p`) or a formal is
+/// not followed.
 fn deep(p: &Program, c: &Component, read: &[(Vec<(String, Span)>, &Piece)],
     inside: &mut BTreeMap<usize, BTreeSet<String>>, out: &mut Vec<Diag>) {
     let instances = |body: &[Stmt], from: Option<usize>| {
@@ -239,7 +240,13 @@ fn deep(p: &Program, c: &Component, read: &[(Vec<(String, Span)>, &Piece)],
         found
     };
     let here = instances(&c.body, c.module);
-    for (parts, piece) in read.iter().filter(|(parts, _)| parts.len() >= 3) {
+    for (written, piece) in read {
+        // a copy's sibling is the same body's instance, one copy on
+        let copy = matches!(written.first(), Some((w, _)) if w == "next" || w == "prev");
+        let parts = &written[copy as usize..];
+        if parts.len() < 3 {
+            continue;
+        }
         let Some(&Some(k)) = here.get(&parts[0].0) else { continue };
         let callee = &p.components[k];
         let subs = inside.entry(k).or_insert_with(|| instances(&callee.body, callee.module)
@@ -247,8 +254,8 @@ fn deep(p: &Program, c: &Component, read: &[(Vec<(String, Span)>, &Piece)],
         if !subs.contains(&parts[1].0) {
             continue;
         }
-        let path: Vec<&str> = parts.iter().map(|(n, _)| n.as_str()).collect();
-        let at = Span { lo: parts[0].1.lo, hi: parts[parts.len() - 1].1.hi };
+        let path: Vec<&str> = written.iter().map(|(n, _)| n.as_str()).collect();
+        let at = Span { lo: written[0].1.lo, hi: written[written.len() - 1].1.hi };
         out.push(Diag::new(Code::W204, at, Some(piece.stmt), format!(
             "`{}` reads through `{}` into its instance `{}`: a statement coupled to the inside of \
              another level.  Relate what `{}` itself makes (direction N4)",

@@ -130,6 +130,20 @@ in std.front {{
 }}
 ");
     assert!(of("W204", &src).is_empty(), "{:?}", lint(&src));
+    // a block's next copy is the same body's: its instance's instance is as deep
+    let src = format!("{ARM}component Pair(o: point) {{
+  arm := Arm(o)
+}}
+in std.front {{
+  o := point
+  cycle 3 {{
+    pair := Pair(o)
+    span := line(pair.arm.tip, next.pair.arm.tip)
+  }}
+}}
+");
+    assert_eq!(of("W204", &src), ["W204: pair.arm.tip", "W204: next.pair.arm.tip"], "{:?}",
+        lint(&src));
 }
 
 #[test]
@@ -241,17 +255,9 @@ const GATED: [&str; 2] = ["W204", "W206"];
 
 /// The findings standing of the gated patterns, as (file under `rust/`, code, how many).  A
 /// ratchet: a new finding fails the gate, and so does one removed but still listed, so the list
-/// only shrinks.
-const ALLOWED: &[(&str, &str, usize)] = &[
-    ("examples/engine.sv", "W204", 5),
-    ("examples/gear.sv", "W204", 1),
-    ("examples/gear_trace.sv", "W204", 1),
-    ("examples/hypoid_drive/drive.sv", "W204", 34),
-    ("examples/solid_tooth.sv", "W204", 6),
-    ("examples/spiral_bevel/meshing_problem.sv", "W204", 1),
-    ("examples/vtwin/assembly.sv", "W204", 11),
-    ("examples/vtwin/components/frame.sv", "W204", 5),
-];
+/// only shrinks.  None since the corpus was brought to it: each instance read through names what
+/// is read of its own (`HypoidPair`'s `gear_member`, `Tooth`'s `left` and `right`).
+const ALLOWED: &[(&str, &str, usize)] = &[];
 
 #[test]
 fn the_corpus_drifts_no_further() {

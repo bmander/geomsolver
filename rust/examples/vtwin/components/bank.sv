@@ -34,6 +34,9 @@ component Bank(layout: group, pin: point, piv: point, fw: Length, dim: Int, dims
   }
   cyl := components.cylinder.Cylinder(cylinder_axes, fw: fw, dims: dims)
   pis := components.piston.Piston(piston_axes, dims: dims)
+  // the corners of the cylinder's outline and of its bore, for a view that carries their heights
+  corners := {k_tl: cyl.k_tl, k_tr: cyl.k_tr, k_bl: cyl.k_bl, k_br: cyl.k_br, b_tl: cyl.b_tl,
+    b_tr: cyl.b_tr, b_bl: cyl.b_bl, b_br: cyl.b_br}
 
   // the dimensions, on one bank
   when dim == 1 {
