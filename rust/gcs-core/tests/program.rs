@@ -397,6 +397,7 @@ fn a_name_declared_twice_is_an_error() {
             sense: None,
             bare: false,
             carried: None,
+            material: None,
         }));
     }
     render_flat(&mut p).unwrap();

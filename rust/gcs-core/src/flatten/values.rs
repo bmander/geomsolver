@@ -830,6 +830,14 @@ impl<'a> Walk<'a> {
                 }
             }
         }
+        // a material's properties, read as one once they are worked out (#510 P3)
+        for st in body {
+            if let StmtKind::Group(g) = &st.kind {
+                if g.material.is_some() {
+                    self.material(g, vals, &prefix);
+                }
+            }
+        }
         let references: Vec<_> =
             references.into_iter().filter(|(name, _)| !vals.contains_key(name)).collect();
         if references.is_empty() {
@@ -1107,6 +1115,71 @@ impl<'a> Walk<'a> {
         // its running number — never an unknown, and never a value's
         vals.insert(name.clone(), free(name.clone(), ty));
         self.held.names.insert(name.clone(), (ty.dim(), from));
+    }
+
+    /// `steel := material(E: 200GPa, nu: 0.3)` (#510 P3): a group whose members, worked out as
+    /// any group's are, are a material's properties — each one a material has, of its dimension
+    /// and in its range (`model::Property::read`), never an unknown of the drawing — stated under
+    /// its absolute name, or refused there with what is wrong said where it is written.
+    fn material(&mut self, g: &crate::syntax::GroupDecl, vals: &Vals, prefix: &str) {
+        use crate::model::{Material, Property};
+        let abs = format!("{prefix}{}", g.name.text);
+        if self.materials.contains_key(&abs) {
+            return; // a body walked again (§6.21) declares nothing twice
+        }
+        let mut props = std::collections::BTreeMap::new();
+        let mut stated = true;
+        for f in &g.fields {
+            let Some(label) = &f.label else { continue }; // the parser said
+            let Some(p) = Property::parse(&label.text) else {
+                let m = format!("`{}` is no property of a material: {}", label.text,
+                                Property::names());
+                self.err(Code::E103, label.span, m);
+                stated = false;
+                continue;
+            };
+            if props.contains_key(&p) {
+                self.err(Code::E001, label.span, format!("`{}` is given twice", label.text));
+                stated = false;
+                continue;
+            }
+            if matches!(f.value, crate::syntax::InstVal::Group(_)) {
+                let m = format!("`{}` is a number, and a material's property is no group",
+                                p.name());
+                self.err(Code::E103, f.span, m);
+                stated = false;
+                continue;
+            }
+            // a member that did not work out was said where it did not
+            let Some(a) = vals.get(&format!("{}.{}", g.name.text, label.text)) else {
+                stated = false;
+                continue;
+            };
+            let read = match a.number() {
+                Some(v) => p.read(v, a.dim, self.units),
+                None => Err(format!("`{}` is a number the drawing is made of, and this reads an \
+                                     unknown of the drawing", p.name())),
+            };
+            match read {
+                Ok(v) => { props.insert(p, v); }
+                Err(m) => {
+                    self.err(Code::E103, f.span, m);
+                    stated = false;
+                }
+            }
+        }
+        let material = if stated {
+            match Material::new(abs.clone(), props) {
+                Ok(m) => Some(m),
+                Err(m) => {
+                    self.err(Code::E103, g.name.span, m);
+                    None
+                }
+            }
+        } else {
+            None
+        };
+        self.materials.insert(abs, material);
     }
 
     /// `param beta: Angle hint(30deg)` — an input nothing binds: a free value in `vals`, named

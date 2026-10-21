@@ -760,6 +760,10 @@ fn rewrite_decl(
     if let Some(g) = d.seen_from.as_mut() {
         fix(g, bad);
     }
+    // what a solid is made of, a material of the scope (#510 P3)
+    if let Some(m) = d.material.as_mut() {
+        fix(m, bad);
+    }
     if let Some(crate::syntax::CurveSpec { target: CurveTarget::Drawn(r), .. }) =
         d.curve.as_mut()
     {

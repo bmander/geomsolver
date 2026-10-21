@@ -70,6 +70,10 @@ pub fn to_program(sk: &Sketch) -> Program {
     for st in unknowns(sk, &names) {
         p.push(st);
     }
+    // the materials it states (#510 P3), under a name a program can declare
+    for st in materials(sk) {
+        p.push(st);
+    }
     // a plane's origin is the plane's own, minted with it and never declared apart — minted with
     // the points, in statement order, so the plane is written where its origin stands among them
     for e in sk.primitives() {
@@ -168,6 +172,25 @@ fn unknowns(sk: &Sketch, names: &BTreeMap<String, String>) -> Vec<StmtKind> {
             }),
         })))
         .collect()
+}
+
+/// `steel := material(E: 200GPa, nu: 0.3)` for each material the sketch states (#510 P3), its
+/// properties in SI as Solvent writes them (`Property::source`); one inside an instance
+/// (`p.steel`) under a name a program can declare (`p_steel`).  A lifted program has no solids,
+/// so nothing is made of one.
+fn materials(sk: &Sketch) -> Vec<StmtKind> {
+    use crate::syntax::{GroupDecl, InstArg, InstVal};
+    sk.materials.values().map(|m| {
+        let name: String =
+            m.name.chars().map(|c| if c.is_alphanumeric() || c == '_' { c } else { '_' }).collect();
+        let fields = m.props.iter().map(|(p, &v)| InstArg {
+            label: Some(Name::new(p.name())),
+            value: InstVal::Expr(p.source(v)),
+            span: Span::default(),
+        }).collect();
+        let material = Some(Span::default());
+        StmtKind::Group(GroupDecl { name: Name::new(name), fields, material })
+    }).collect()
 }
 
 /// What a lifted program calls each unknown whose name no program can declare — an instance's
@@ -286,6 +309,7 @@ pub(crate) fn lift_decl(sk: &Sketch, e: EntRef) -> Decl {
         sense: None,
         bare: e.kind == EntKind::Frame && !sk.frames[e.i()].planar(),
         carried: None,
+        material: None,
     }
 }
 

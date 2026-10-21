@@ -184,6 +184,18 @@ component Reads(o: point, dims: group) {
     assert_eq!(said.iter().map(line).collect::<Vec<_>>(), [4], "{said:?}");
 }
 
+/// A group a solid is made of is read whole where it is used, as a material (#510 P3): no W206.
+#[test]
+fn a_group_a_solid_is_made_of_is_read() {
+    let src = "\
+component Plate(c: point, m: group) {
+  rim := circle(center: c) hint(r: 5)
+  body := solid(face(rim), depth: 2mm) of m
+}
+";
+    assert!(of("W206", src).is_empty(), "{:?}", lint(src));
+}
+
 /// Advisory: elaboration never raises a pattern, so a document that trips every one elaborates as
 /// it would without the lint; and a module the document reads is not the document's text.
 #[test]

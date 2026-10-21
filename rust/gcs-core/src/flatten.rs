@@ -289,6 +289,10 @@ pub struct Expansion {
     /// Every parameter axis the document declared (`param t: Angle over (a, b)`, #391 S1), by
     /// name: a number that runs over its interval, read by nothing yet.
     pub parameters: BTreeMap<String, crate::model::Running>,
+    /// Every material the document declared (`steel := material(E: 200GPa, …)`, #510 P3), by
+    /// absolute name: the material stated, or `None` where one of its properties was refused —
+    /// said where it was written, so a solid made of it says nothing more.
+    pub materials: BTreeMap<String, Option<crate::model::Material>>,
     /// Every `ring` expanded, its centre resolved — what the elaborator turns copies about.
     pub rings: Vec<RingInfo>,
     /// Every set drawn as an element, for the elaborator to judge (`lowering`, #105).
@@ -486,6 +490,8 @@ struct Walk<'a> {
     unknowns: BTreeMap<String, crate::model::Declared>,
     /// The parameter axes declared so far — see `Expansion::parameters`.
     parameters: BTreeMap<String, crate::model::Running>,
+    /// The materials declared so far — see `Expansion::materials`.
+    materials: BTreeMap<String, Option<crate::model::Material>>,
     /// Every reading at an instant walked and not yet settled (#391 S2): what it reads, and the
     /// scope that names it in — see `carried`.
     readings: Vec<(Ref, Scope)>,
@@ -726,6 +732,7 @@ impl<'a> Walk<'a> {
             aside: Aside::default(),
             unknowns: BTreeMap::new(),
             parameters: BTreeMap::new(),
+            materials: BTreeMap::new(),
             readings: Vec::new(),
             instantiating: Vec::new(),
             rings: Rings::default(),
@@ -812,6 +819,7 @@ impl<'a> Walk<'a> {
             aliases,
             unknowns: self.unknowns,
             parameters: self.parameters,
+            materials: self.materials,
             rings: self.rings.infos,
             lowered,
             twins: self.twins,

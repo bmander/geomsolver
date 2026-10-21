@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.163 — October 2026**
+**Specification, Draft 0.164 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -131,7 +131,7 @@ Implementations **MUST** check dimensions in expressions and constraints, and MU
 
 **Two base dimensions**, because two is what the language has: a **length** and an **angle**. A quantity is a rational power of each — rational, because `sqrt` halves one and `sqrt(area)` is a length.
 
-**[0.98] Three more for values: a mass, a time and a current.** A machine's sizing lives in the same table as its geometry, and its figures check as its lengths do: `torque := power / omega` is a torque because the arithmetic says so, and `torque + power` is an error. The three are enough to derive every unit of §3.3.1. **No slot is of them** — every slot of §9.3 is a length, an angle or a plain number — so a figure carrying one reaches a constraint only divided by its unit (`torque / 1Nm`), as an angle reaches a length slot only through a function of it. A number of mass, time or current is in kilograms, seconds and amperes, and a length in it in the document's unit (§3.3.2): a watt in a millimetre document is 10⁶ kg·mm²/s³, and `1W / (1kg * (1m)^2 / (1s)^3)` is 1 in every document. A diagnostic names a dimension by its bases' powers and, where an SI unit is that dimension, the unit: `Length^2·Mass·Time^-3 (W)`.
+**[0.98] Three more for values: a mass, a time and a current.** A machine's sizing lives in the same table as its geometry, and its figures check as its lengths do: `torque := power / omega` is a torque because the arithmetic says so, and `torque + power` is an error. The three are enough to derive every unit of §3.3.1. **No slot of a relation is of them** — every slot of §9.3 is a length, an angle or a plain number; **[0.164]** a material's properties (§6.9) are the one place a pressure and a density are asked for, and there a bare number is refused — so a figure carrying one reaches a constraint only divided by its unit (`torque / 1Nm`), as an angle reaches a length slot only through a function of it. A number of mass, time or current is in kilograms, seconds and amperes, and a length in it in the document's unit (§3.3.2): a watt in a millimetre document is 10⁶ kg·mm²/s³, and `1W / (1kg * (1m)^2 / (1s)^3)` is 1 in every document. A diagnostic names a dimension by its bases' powers and, where an SI unit is that dimension, the unit: `Length^2·Mass·Time^-3 (W)`.
 
 - `*` and `/` **derive**: the exponents add and subtract.
 - `+` and `-` **demand agreement**, and so do `min`, `max`, `hypot` and `atan2`'s two arguments.
@@ -1190,6 +1190,8 @@ recess cut body       // block − (pocket − boss), which the flat rule cannot
 **A solid's faces are reached by path, never by index** (§3.2). A prism's caps are `.far` and `.near`, the lower and the higher of its two ordinates along the normal, so `depth: d` leaves `.near` the face the view shows; each side is named by the edge it was swept from (**[0.80]** a drafted side crossing its parting plane, in two pieces of that name), in the name the *source* wrote (`block.side_l`). A revolution names its wall by the edge likewise and its caps `.start` and `.end` where the turn is partial. **[0.100]** A face family has `.start` and `.end` caps and walls named by its section's edges under the instance. Through a body the operand keeps its own name (`body.block.near`). An implementation MUST NOT name a face by its position in anything: that is §13.1's rule, and a boolean is exactly the operation that would renumber one.
 
 What a report says about a solid (§16.3) is therefore `NAME.volume`, `NAME.area`, `NAME.bounds.{x,y,z}{0,1}`, and `PATH.area` for each of its faces that survived — a bore that ate a cap leaves a name the document still writes and no area behind it, which is a fact and not an error. Those numbers MUST be taken at a faceting the **document** fixes and never at the screen's: a volume that changed with the zoom is a number nobody could quote.
+
+**[0.164] What a solid is made of.** `steel := material(E: 200GPa, nu: 0.3, rho: 7850kg / 1m^3, yield: 250MPa)` declares a **material**, and `arm := solid(sec, depth: 4mm) of steel` says the solid is made of it. A material is a group (§8.1) whose members are the properties of an isotropic linear-elastic solid, each optional and none given twice (**E001**): `E`, Young's modulus, and `yield`, the yield strength, each a pressure (`Length^-1·Mass·Time^-2`, §3.3); `nu`, Poisson's ratio, a plain number in (−1, 0.5); and `rho`, the density, a mass over a volume. A property the language has not got, a value of another dimension, one out of its range, one that reads an unknown of the drawing, and a material stating nothing are each **E103** where they are written. **A bare number is refused for a dimensioned property**: the document's unit of pressure is a kilogram a millimetre-second² in a millimetre document, which nobody means by `200000`, so the property says its unit. The members read as any group's do (`steel.E / 1GPa` is 200), and a material is handed to a component as a group (`Plate(m: group)`, then `of m`). What a material is does not change with the document's unit: an implementation holds it in SI, so the same text in an inch document states the same pascals. `of` is a trailer of a `solid(…)` declaration, once, order-free with the others, and names a material of the scope: a name that is no material is **E103**, a name that is nothing **E101**; on any other kind it is refused where it stands. The material is the solid's the document named — a swept solid made a body by a `cut` keeps it, the sweep that becomes its stock carries none — and nothing is solved for it: no analysis reads a material yet (#510). `material` is a word only as a definition's call, `m := material(…)`; `of` is reserved, a trailer as `in` is.
 
 **A solid stands on no plane.** It bears no points, so `in` on one is refused where it stands and an `in … { }` block leaves it alone (§6.8). It is not picked, dragged or dimensioned on the sheet, and it is evaluated after the drawing is solved (§1.2, §3.1).
 
@@ -3334,8 +3336,10 @@ unit_decl      = "unit" IDENT ;                                           (* §3
 (* §5 [0.29]: a name is defined by `NAME := VALUE` and in no other way, and what stands after
    `:=` says what the name is.  An element or an instance may also be written with no name. *)
 definition     = { role } [ IDENT ":=" ] ( chain | instance )
-               | IDENT ":=" ( expr | group | vector | curve | set_lit ) ;
-                 (* a value, a group, a vector, a curve, a set (§6.21 [0.49]) *)
+               | IDENT ":=" ( expr | group | vector | curve | set_lit | material ) ;
+                 (* a value, a group, a vector, a curve, a set (§6.21 [0.49]), a material *)
+material       = "material" "(" [ member { "," member } ] ")" ;   (* §6.9 [0.164]: members
+                                                     `E`, `nu`, `rho`, `yield`; none is E103 *)
 role           = "private" | "construction" | "centerline" ;      (* once each, §13.3 *)
 input          = "param" IDENT [ ":" num_type ] [ ":=" expr ] [ hint_clause ] ;
                  (* §6.3 [0.41]: with no value an unknown, its type stated, seeded by `hint(E)` *)
@@ -3371,7 +3375,8 @@ ekw            = "point" | "line" | "circle" | "arc" | "spline" | "plane" | "axi
    `l.p1`.  A slot is a name, a seed, or implicit; only an overfull list is E103. *)
 trailer        = hint_clause
                | "knots" "[" number { "," number } "]"
-               | "in" ref { "," ref } ;      (* membership of a plane, §6.7; several: a point [0.58] *)
+               | "in" ref { "," ref }        (* membership of a plane, §6.7; several: a point [0.58] *)
+               | "of" ref ;                  (* a solid's material, once, §6.9 [0.164] *)
 hint_clause    = ( "hint" | "~" ) "(" ( expr | hint_item { "," hint_item } ) ")" ;
                  (* SEEDS, §4.3; `~` [0.44]; one keyless expr seeds an unknown, §6.3 [0.41] *)
 hint_item      = member_key ":" ( expr | vector ) | vector  (* `(3, 4)`, `dir: (1, 0, 0)` [0.45] *)

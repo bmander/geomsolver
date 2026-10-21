@@ -267,6 +267,32 @@ pub fn parameter_text(sk: &Sketch, name: &str) -> String {
     }
 }
 
+/// **The materials a drawing states** (#510 P3): each as the document JSON holds it
+/// (`io::material_json`, its properties in SI), its `text` in the core's words, and `solids`, the
+/// indices of the solids made of it.
+pub fn materials_json(sk: &Sketch) -> Json {
+    Json::Arr(sk.materials.values().map(|m| {
+        let mut o = crate::io::material_json(m);
+        o.set("text", Json::Str(material_text(sk, &m.name)));
+        let of = sk.solids.iter().enumerate()
+            .filter(|(_, s)| s.material.as_deref() == Some(m.name.as_str()));
+        o.set("solids", Json::Arr(of.map(|(i, _)| Json::Int(i as i64)).collect()));
+        o
+    }).collect())
+}
+
+/// A material as a reader reads it, and what is made of it: `steel: E 200GPa, nu 0.3, of arm`.
+pub fn material_text(sk: &Sketch, name: &str) -> String {
+    let Some(m) = sk.materials.get(name) else { return format!("{name}: no material") };
+    let of: Vec<&str> = sk.solids.iter()
+        .filter(|s| s.material.as_deref() == Some(name)).map(|s| s.name.as_str()).collect();
+    if of.is_empty() {
+        format!("{}, of no solid", m.text())
+    } else {
+        format!("{}, of {}", m.text(), of.join(", "))
+    }
+}
+
 /// **The parameters a drawing declares** (#398 L), for a timeline: each by name, what it is and
 /// the interval it runs over, its ends in the units a person reads (degrees for an angle) and as
 /// read.  No march: that is `parameter_json`'s, asked of one parameter.

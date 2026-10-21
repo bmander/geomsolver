@@ -126,6 +126,10 @@ impl Dim {
     pub const MASS: Dim = Dim::of(0, 0, 1, 0, 0);
     pub const TIME: Dim = Dim::of(0, 0, 0, 1, 0);
     pub const CURRENT: Dim = Dim::of(0, 0, 0, 0, 1);
+    /// A force over an area: a material's stiffness and strength (#510).
+    pub const PRESSURE: Dim = Dim::of(-1, 0, 1, -2, 0);
+    /// A mass over a volume: a material's density (#510).
+    pub const DENSITY: Dim = Dim::of(-3, 0, 1, 0, 0);
 
     /// Whole powers of length, angle, mass, time and current, in that order: what the unit
     /// table is written in.
@@ -292,7 +296,8 @@ const SI: &[(&str, Dim)] = &[
     ("W", Dim::of(2, 0, 1, -3, 0)),
     ("V", Dim::of(2, 0, 1, -3, -1)),
     ("ohm", Dim::of(2, 0, 1, -3, -2)),
-    ("Pa", Dim::of(-1, 0, 1, -2, 0)),
+    ("Pa", Dim::PRESSURE),
+    ("kg/m^3", Dim::DENSITY),
     ("Wb", Dim::of(2, 0, 1, -2, -1)),
     ("T", Dim::of(0, 0, 1, -2, -1)),
 ];
@@ -424,6 +429,20 @@ impl Units {
             return v * u.per;
         }
         v * u.per / self.length.1.powf(len.value())
+    }
+
+    /// A value of dimension `dim` in the document's own units (a length in its length unit, a
+    /// mass in kilograms…), in SI: its length in metres to whatever power `dim` carries one.
+    /// What a model value that outlives the document's unit is kept in (a material, #510), so a
+    /// pascal is a pascal in a millimetre document and in an inch one.  Angles are not SI's to
+    /// say: `dim` carries none.
+    pub fn to_si(&self, v: f64, dim: Dim) -> f64 {
+        v * (self.length.1 / M).powf(dim.len.value())
+    }
+
+    /// `to_si`'s inverse: an SI value in the document's own units.
+    pub fn from_si(&self, v: f64, dim: Dim) -> f64 {
+        v / (self.length.1 / M).powf(dim.len.value())
     }
 }
 

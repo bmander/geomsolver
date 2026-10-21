@@ -75,6 +75,8 @@ pub struct Decl {
     pub sense: Option<syntax::Sense>,
     /// A spatial frame declared bare (#383, `syntax::Decl::bare`).
     pub bare: bool,
+    /// What a solid is made of (#510 P3, `syntax::Decl::material`).
+    pub material: Option<syntax::Ref>,
 }
 
 /// The same operands as syntax, with inline faces lowered to declarations of this stage.
@@ -119,6 +121,7 @@ impl From<syntax::Decl> for Decl {
             normal: d.normal,
             sense: d.sense,
             bare: d.bare,
+            material: d.material,
         }
     }
 }

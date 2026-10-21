@@ -243,7 +243,14 @@ fn write_stmt(out: &mut String, k: &StmtKind) {
         }
         StmtKind::Group(g) => {
             out.push_str(&format!("{} := ", g.name.text));
-            write_members(out, &g.fields);
+            if g.material.is_some() {
+                out.push_str("material");
+                let mut members = String::new();
+                write_members(&mut members, &g.fields);
+                out.push_str(&format!("({})", &members[1..members.len() - 1]));
+            } else {
+                write_members(out, &g.fields);
+            }
         }
         StmtKind::Unit(n) => out.push_str(&format!("unit {}", n.text)),
         StmtKind::Style(r) => {
@@ -429,6 +436,11 @@ fn write_decl(out: &mut String, d: &Decl) {
         out.push_str(" weights [");
         out.push_str(&w.iter().map(|w| w.text.clone().unwrap_or_else(|| num(w.value))).collect::<Vec<_>>().join(", "));
         out.push(']');
+    }
+    // what a solid is made of (#510 P3)
+    if let Some(m) = &d.material {
+        out.push_str(" of ");
+        write_ref(out, m);
     }
     if !d.class.is_empty() {
         out.push_str(" class ");

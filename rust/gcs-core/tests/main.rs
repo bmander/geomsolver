@@ -138,6 +138,7 @@ mod loft_examples;
 mod make_component;
 mod many_instances;
 mod mapped;
+mod materials;
 mod measurements;
 mod mechanism_examples;
 mod membership;
