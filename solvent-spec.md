@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.161 — October 2026**
+**Specification, Draft 0.162 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -311,7 +311,7 @@ no one pose to record.
 - **[0.29] A name is defined by `NAME := VALUE` and in no other way** (formals and block binders aside). The value decides what the name is: a number (a value, or under `param` an input, §6.3), an element (§6), a chain joined by `->` (§6.6), an instance (§8), a group (§8.1), a curve (§6.5). `(NAME := VALUE)` is the value, so it may stand where the value may: a chain link, `(ab := line(a, b)) -> …`. **[0.41]** A constraint's number defines no name. `:=` binds loosest. An input with no value, `param beta: Angle`, declares an unknown (§3.3, §6.3). A `label:` fills a slot and defines nothing in the caller's scope.
 - Redeclaration of a name within one body is an error (**E001**), whether the two are values, inputs or one of each.
 - Instance members are accessed by dotted paths: `t.lead`, `g.hub.origin` — an unknown an instance left unbound included: `t.w` (**[0.41]** a dotted name nothing made is **E101**, as a bare one is).
-- **Components have closed model scope.** A body reads its formals and its own declarations. It may call visible component definitions and use built-in functions and constants, but cannot capture geometry, parameters or groups from the root, an importing module, or an enclosing component. Pass those dependencies as arguments. This includes `std.front` and the other standard datums. **[0.159]** A body — a component's, or a relation word's (§9.9) — does read the **constants of the file it is written in**: the file's own top-level values and groups' numbers (a document's outside its `preview`), and those of the modules the file `use`s, by the names the file reads them by (`engine.dims.L`, or `L` under `use engine.dims (L)`). A constant is worked out while elaborating and reads no unknown, so it is part of what the definition is, as a number written in its body is; a formal or a number of the body by the same name hides it. A value that is or reads an unknown (`param c: Length`) is no constant and is **E103** where a body reads it; the numbers of the root's instances (`ball.r`), and anything of the file that uses the module, are out of reach as before.
+- **Components have closed model scope.** A body reads its formals and its own declarations. It may call visible component definitions and use built-in functions and constants, but cannot capture geometry, parameters or groups from the root, an importing module, or an enclosing component. Pass those dependencies as arguments. This includes `std.front` and the other standard datums. **[0.160]** A body — a component's, or a relation word's (§9.9) — does read the **constants of the file it is written in**: the file's own top-level values and groups' numbers (a document's outside its `preview`), and those of the modules the file `use`s, by the names the file reads them by (`engine.dims.L`, or `L` under `use engine.dims (L)`). A constant is worked out while elaborating and reads no unknown, so it is part of what the definition is, as a number written in its body is; a formal or a number of the body by the same name hides it. A value that is or reads an unknown (`param c: Length`) is no constant and is **E103** where a body reads it; the numbers of the root's instances (`ball.r`), and anything of the file that uses the module, are out of reach as before.
 - **[0.41]** An undeclared numeric name is **E101**. A component's unknowns are its numeric formals a call leaves unbound, each the instance's own (`t1.w`, `t2.w`); a call may seed one by leaving it unbound with `hint(…)` in its place (`T(a, b, w: hint(60))`). **[0.95]** Only a number may be left out: a call that gives no entity, path, group or set for a formal of that type is **E103** at the call, a set family's instance included, which would otherwise say nothing until something was put on it — but for **a point formal drawn in a plane formal**, `center: point in on`, which the instance then owns: a call that leaves it out makes a point of the instance's own, drawn in the plane it gave `on` (whatever plane the instance stands in), named under the instance (`k.center`) and read and held by that name, as if the body began `center := point in on`; `center: hint((x, y))` seeds it at its place in that plane, and a solve writes it back there. Given a point, the formal is that point, as any entity formal is. So `component Circle(on: plane, center: point in on, r: Length) := { p | p coincident on; p distance(r) center }` is called `Circle(std.front, o, r: 25)` or `Circle(std.front, r: 25)`, and both are the circle. `in` names a `plane` formal of the same component (**E103** at the call otherwise) and follows only a `point` formal. A reference to a known ambient value without an argument is an error, rather than an implicit capture. Inside a repetition, a name declared by the block belongs to each copy; other names resolve in the enclosing component. `next` and `prev` belong to the lexical cycle, and can be passed to a nested component as arguments.
 - Inside `repeat`/`cycle`/`ring` blocks, the index binder (`as i`) and the pseudo-instances `next` / `prev` are in scope (§12).
 - There is no shadowing: a block binder that collides with an outer name is an error (**E002**).
@@ -796,7 +796,7 @@ across the axis being measured.
 
 — one equation: two images of one point agree on their coordinate along the fold line their planes share, and on nothing else, each measured from its own plane's origin. **[0.42]** Where the two origins coincide the last term is zero, and a plane moved square to the fold line — along its projectors — leaves the row as it was, carrying everything drawn in it: the free spacing between a drawing's views is a floating plane's origin. Where either plane is solved for, the row is the projector rule in space over the two lifts, `(n̂_A × n̂_B)·(X_A − X_B) = 0`, and two planes that *come out* parallel are **E065** after the solve. `project` is claimable (§9.7): `claim a project b` asks whether two views are consistent. It is not commutative.
 
-**The block form writes the clause once.** `in top { … }` marks every declaration in its body `in top`; **[0.12]** it stands at the top level of a document and inside a *component* body — over a plane the component was handed, or **[0.158]** the plane an operand is drawn in (`in pin.plane { … }`, read once that point is drawn; a point standing in space is **E040** at the reference), which is how a part carries its geometry for each view in one place, its own `project` statements tying them — and not inside a root block, where a header buried in another statement's span would be a splice no deletion could compose; a `repeat`, `cycle` or `ring` inside it marks the declarations of every copy, so a contour drawn as a chain round a cycle is drawn in the view. The statements are ordinary statements of the enclosing body, and an implementation MUST treat them exactly as if each had written the clause itself — they splice, diagnose and delete as themselves, only the header and the closing brace are the block's, and deleting the plane removes exactly those, leaving the statements standing in space. The block stands at the top level of a document or of a component body (inside a root block, the clause says it one declaration at a time); a declaration inside that writes its own `in`, and a kind with no points of its own, are refused where they stand.
+**The block form writes the clause once.** `in top { … }` marks every declaration in its body `in top`; **[0.12]** it stands at the top level of a document and inside a *component* body — over a plane the component was handed, or **[0.159]** the plane an operand is drawn in (`in pin.plane { … }`, read once that point is drawn; a point standing in space is **E040** at the reference), which is how a part carries its geometry for each view in one place, its own `project` statements tying them — and not inside a root block, where a header buried in another statement's span would be a splice no deletion could compose; a `repeat`, `cycle` or `ring` inside it marks the declarations of every copy, so a contour drawn as a chain round a cycle is drawn in the view. The statements are ordinary statements of the enclosing body, and an implementation MUST treat them exactly as if each had written the clause itself — they splice, diagnose and delete as themselves, only the header and the closing brace are the block's, and deleting the plane removes exactly those, leaving the statements standing in space. The block stands at the top level of a document or of a component body (inside a root block, the clause says it one declaration at a time); a declaration inside that writes its own `in`, and a kind with no points of its own, are refused where they stand.
 
 **An instance joins a view whole.** `t := Tooth(…) in top` puts every point-bearing declaration the instance's expansion makes — through nested components and blocks — on the plane: the block's rule, over the statements one statement stands for. A plane, an axis or a curve inside is left alone, having no points of its own to put there. A point aliased in through an argument joins through any body declaration that names it, and one already on another plane is E060; an expansion given two planes — a clause of its own under an enclosing `in` — is refused. An instance inside an `in { … }` block takes the block's plane the same way.
 
@@ -1542,9 +1542,11 @@ joint stands at the law's value of `τ`, seen from another frame as any carried 
 of it reads the law's rate: the law is a constant of the relation, read over the numbers it names
 where they are stated, so a law naming a number the drawing does not state (an unknown) is
 **E080**. A roll the relation owns may be left to the solve, which finds the instant a condition
-holds through the law (through 0.155 such a point, and its rate, was **E080**). A relation held to
-an envelope in space generated under a drive is **E061**, and a meshing read on one is refused
-likewise; draw in the frame instead. **[0.155]** A profile in the plane
+holds through the law (through 0.155 such a point, and its rate, was **E080**). **[0.158]** An
+envelope in space generated under a drive (§6.15) is held to as any envelope in space, the joint
+standing at the law's value of the roll where the source touches its envelope; the law reads the
+numbers it names where they are stated, as a carried point's (through 0.157, **E061**). A meshing
+read on a drive is **E061**; draw in the frame instead. **[0.155]** A profile in the plane
 generated under it (§6.15.1) is a curve as any other, its joint standing at the law's value of the
 roll: the law is a constant of the curve, read over the numbers it names where they are stated,
 and a relation holds to the profile as to one cut at a constant rate (through 0.154, **E080**). At
@@ -1727,7 +1729,9 @@ a **set** — a cone (`std.Cone`, and `std.ConeThrough` with its lean stated), a
 (`std.Cylinder`) or a plane (`std.HalfSpace`'s face, a distance along a line from a point,
 **[0.104]**), the operand of `envelope` read as what its body states at its point (§6.21) —
 or a **named side of a revolution** turned from a line, an arc or a circle (`surface(rev, e)`),
-under a motion built of turns about lines, screws and slides along lines, seen from any frame. Its
+under a motion built of turns about lines (a turn about a point of a view is the turn about the
+line through it square to the view, **[0.158]**), screws and slides along lines, a joint among them
+driven by a law of the roll or not (§6.14), seen from any frame. Its
 numbers — the source's axis and edge, a cone's half or a cylinder's radius where that is an
 unknown of the drawing (`half: hint(20deg)`), and every axis the motion turns about or slides
 along — are columns of every relation holding something to it, so what makes the source solves
@@ -2290,7 +2294,7 @@ fixed coordinate layout, so its needed members must be passed individually to a 
 
 ---
 
-### 8.2 Parts **[0.161]**
+### 8.2 Parts **[0.162]**
 
 ```solvent
 part CommonTangent(a: circle, b: circle) {
@@ -2474,7 +2478,7 @@ A selector left unwritten is read off the seed (§9.2): the branch the seeded po
 
 Inequalities contribute no equations; they select among the discrete solution components of the equality system. Solvers MUST verify them on candidate solutions and MUST NOT report a solution violating one. There are two kinds: the orientation predicates (`ccw`, `cw`), and bounds.
 
-**An orientation predicate** **[0.160]** stated in a document is held as a bound is (below): it is read on the seeds first — a triangle whose seeds turn the other way has a point carried across the line through the other two, as if it had been seeded there — then checked on the solution, where a solver looks for the root that turns the stated way, from the seeds and from the solution, and fails the solve where none is found (`a stated orientation does not hold`). A triangle whose three points the solution puts on one line turns neither way and does not hold. The root choices an implementation records of its own (a construction replayed as its seeds turned) are no statement and are not held. Inside a traced body the predicate is read at the anchor (§6.5.1).
+**An orientation predicate** **[0.161]** stated in a document is held as a bound is (below): it is read on the seeds first — a triangle whose seeds turn the other way has a point carried across the line through the other two, as if it had been seeded there — then checked on the solution, where a solver looks for the root that turns the stated way, from the seeds and from the solution, and fails the solve where none is found (`a stated orientation does not hold`). A triangle whose three points the solution puts on one line turns neither way and does not hold. The root choices an implementation records of its own (a construction replayed as its seeds turned) are no statement and are not held. Inside a traced body the predicate is read at the anchor (§6.5.1).
 
 **A bound** **[0.60]** is a dimension whose number says how far the measure may go rather than what it is:
 
@@ -3133,8 +3137,8 @@ The numerical method is unspecified. Whatever the method, a conforming solver:
 | E103 | a shape or a number the model cannot build: more children than the kind has slots (§6.1), an input whose value is not its type (§6.3), a seed reading a scalar that is not there (§6.4), a curve the model cannot trace (§6.5), an extent of the wrong dimension (§6.9), iteration over what is not a named chain (§12.8), **[0.84]** a group or an instance given where an interface asks for a member it lacks or holds of another type, and an interface's `Side` member (§8.1) |
 | E105 | a `fix` of a number the entity does not have (§13) **[0.34]** |
 | E107 | a measurement of the solved drawing where a number is needed before the solve (§6.14) **[0.27]** |
-| E108 | a part whose rows leave one of its own unknowns free, so that a parent would have to place it from outside (§8.2) **[0.161]** |
-| E109 | a part stating a fact about what it is given rather than about what it makes: a row of none of its own unknowns, or past what they take (§8.2) **[0.161]** |
+| E108 | a part whose rows leave one of its own unknowns free, so that a parent would have to place it from outside (§8.2) **[0.162]** |
+| E109 | a part stating a fact about what it is given rather than about what it makes: a row of none of its own unknowns, or past what they take (§8.2) **[0.162]** |
 
 **[0.18]** The reference implementation raises all four (**[0.42]** E083 is gone, with `against`). A negative sweep and a picture asked of the wrong kind are **E040** by the rules those codes already state (a magnitude written with a sign, §9.2 **[0.17]**; a kind mismatch, §14.1), and an unresolved name in any of these statements is **E101**, so no new code is spent on either.
 

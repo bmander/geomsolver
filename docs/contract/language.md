@@ -53,7 +53,7 @@ definition's file, a cycle is E003, an unknown word E102 naming the import. **A 
 ([0.152], #463): `o.plane` is the frame a point is drawn in (`program::resolve::follow`, `PLANE`,
 `drawn_in`), so a word about a point in a view reads the view from its operand and stays closed;
 `o.plane.normal` is minted once the memberships are in (`planes::drawn_normals`, over the
-flattener's `normals`). **An `in` reads it too** ([0.158], #461): `in pin.plane { … }`, through any
+flattener's `normals`). **An `in` reads it too** ([0.159], #461): `in pin.plane { … }`, through any
 path to a point (`in pin.end.plane`), is that point's plane, so a body draws where its operand is
 drawn with no plane formal. `planes::memberships` reads every other membership first and then
 those reading a point's plane round by round, each once its point is drawn (`waits`, `frame_of`);
@@ -219,7 +219,7 @@ the dimension (`program::traced::Lowering::dimension`); curves.md's "A number th
 says what it becomes.  A trace in a plane compiles its dimensions over the formals and the geometry
 alone, so there the name is still E103 ("not something this curve can read").
 
-**A part is a component held to being a function of what it is given** (§8.2, [0.161], #461,
+**A part is a component held to being a function of what it is given** (§8.2, [0.162], #461,
 [plan](../parts-plan.md)).  `part Name(…) {` parses as `component` does with `Component::part`
 set; the parser reads the word so only where a definition's shape follows it (`part_ahead`: a
 name, a bracketed list, then `{`), so `part := solid(…)` and `part above(7) q` stay statements, and
@@ -284,7 +284,7 @@ reads silenced (`read_through`); a relation reading one is not stated. Text faul
 
 **Closed components:** model dependencies enter through arguments, standard datums included.
 Definitions and built-ins stay callable. **A definition reads the constants of its file**
-([0.159], #461 PC1, PC2): `Walk::file_numbers` works out, once a file, the numbers the file reads at
+([0.160], #461 PC1, PC2): `Walk::file_numbers` works out, once a file, the numbers the file reads at
 its top — a module's own and its `use`s' (`used_params`, `imported_params`, `module_params`), the
 document's from its root table less its root instances' numbers and its `preview`'s — and splits
 them into constants (no unknown, `Aff::free` none) and the rest. Every instance's table is its
@@ -345,7 +345,7 @@ body statement is emitted; one over such a solid saying what one over it said jo
 `tests/symmetric.rs` is the gate, beside the closed forms of
 `tests/round_lowering.rs`.
 Curves need fixed scalar/entity formals. The V-twin passes `components.dims.vtwin_dims`
-explicitly, a table its parts could read as constants instead ([0.159]), as the inline four's
+explicitly, a table its parts could read as constants instead ([0.160]), as the inline four's
 do; `Frame(layout, dims: …)` takes a layout naming the front datum, origin and reference axis.
 
 - **A name is defined one way, `NAME := VALUE`** ([plan](../definitions-plan.md), Solvent §5,
@@ -403,7 +403,7 @@ do; `Frame(layout, dims: …)` takes a layout naming the front datum, origin and
   was for, #253), and not where the callee reads the formal: a relation reading it is not
   stated, and a declaration's reference to it is `Expansion::quiet`, which the elaborator's E101
   there yields to. `module_params` exports values to importing root bodies, and they
-  are constants of the importing file's definitions ([0.159]). `tests/seeds.rs` and `tests/closed_scopes.rs` are the gates.
+  are constants of the importing file's definitions ([0.160]). `tests/seeds.rs` and `tests/closed_scopes.rs` are the gates.
 - **Elaboration is linear in the instances** (#403).  The root's numbers in force hold every
   instance's by name (`P0.w`), and every statement emitted carries the table of its body, so
   `Scope::vals` is shared (`Rc`) and never copied per statement; what a closed body may not
@@ -428,7 +428,7 @@ do; `Frame(layout, dims: …)` takes a layout naming the front datum, origin and
   module is previewed.  `tests/many_instances.rs` holds a free root number
   and a root `repeat` and `when`s beside the plates to the same fourfold bound.
 - **A part carries its views in `in view { … }` blocks** (Solvent §6.7, `P::in_comp`): the block
-  form is allowed inside a component body (the plane a formal, or since [0.158] the plane an
+  form is allowed inside a component body (the plane a formal, or since [0.159] the plane an
   operand is drawn in, `in pin.end.plane`) and still refused inside a root block.  A part makes
   every view it defines, every time; which a sheet shows, and how, is the drawing's (`style
   m.rod2 in end { … }`, [solvent-drawing.md](../solvent-drawing.md)).  So a part's whole design is

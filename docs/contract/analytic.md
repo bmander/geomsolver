@@ -42,7 +42,10 @@ second-order Taylor arithmetic (`H2`), the source a revolution of a meridian ele
 line, cone, cylinder, round) or a plane (`Source::Plane`, columns `[a, b, o]`: the point `o + x·d`
 moved `u` and `v` along `across(d, ref)` and `d ×` it — no turn, both lengths; the seeds' grid
 samples `v` as `u` there, `held::turn_spans`, and reaches from `o`, `held::reach`) and the motion the steps `motion::Family` reads (rotations, screws,
-translations, relatives; a planar turn and a measured number refused), so a residual is exact and
+translations, relatives; a turn about a point of a view read as the turn about the line through it
+square to the view, `Step::Turn`, as a carried point reads one, #398 G; a driven joint at its law's
+value of the roll, the law in the constants past the steps, parameters.md; a measured number
+refused), so a residual is exact and
 a Jacobian exact by forward differentiation (`kernels::Dual`, eight columns a pass). `Parts::of`
 reads the columns (lifts, an axis's place and direction, a free number) and constants (`Layout`,
 `HEADER`, `STEP`); a set's turn starts at `SetShape::reference`, read once — before the solve

@@ -29,14 +29,14 @@ pub struct Law {
     at: usize,
 }
 
-/// Why a relation the solve holds cannot read the frame `f` driven by `over`: an envelope's or a
-/// meshing's row reads no law (a point carried to a roll does, #398 G), so what is drawn in the
-/// frame is read at its value worked out, and the readings over the roll read the law after the
-/// solve.  The one wording, wherever the row is refused.
+/// Why a relation the solve holds cannot read the frame `f` driven by `over`: a meshing's or a
+/// traced body's row reads no law (a point carried to a roll and an envelope in space do, #398
+/// G), so what is drawn in the frame is read at its value worked out, and the readings over the
+/// roll read the law after the solve.  The one wording, wherever the row is refused.
 pub fn unread_drive(f: &str, over: &str) -> String {
-    format!("`{f}` is driven by `{over}`, and a relation held to what is generated under it reads \
-             no drive (#391): draw in it, `n := x in {f}`, which stands where its value puts it, \
-             or read it over the roll — a sweep, a placement")
+    format!("`{f}` is driven by `{over}`, and a relation held to a meshing or a traced body under \
+             it reads no drive (#391): draw in it, `n := x in {f}`, which stands where its value \
+             puts it, or read it over the roll — a sweep, a placement")
 }
 
 /// Degrees a radian, enclosed.

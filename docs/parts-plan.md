@@ -16,11 +16,11 @@ is left to the lint.
 
 | step | what landed | spec | gate |
 |---|---|---|---|
-| 0 | #157: a stated `ccw`/`cw` is checked and steered by the default solve | 0.160 | `tests/orientation.rs` |
+| 0 | #157: a stated `ccw`/`cw` is checked and steered by the default solve | 0.161 | `tests/orientation.rs` |
 | 0 | #492: each row judged at its own size, so a far point no longer loosens every row and "solved" means solved | — | `tests/far_seed.rs` |
-| 1 | `in pin.plane { … }` (PV2) | 0.158 | `tests/relation_words.rs` |
-| 2 | constants of the definition (PC1–PC2) | 0.159 | `tests/closed_scopes.rs`, `tests/modules.rs` |
-| 3 | `part`, E108 and E109 (PT1–PT4); W207 by `--lint` (PT5) | 0.161 | `tests/parts.rs` |
+| 1 | `in pin.plane { … }` (PV2) | 0.159 | `tests/relation_words.rs` |
+| 2 | constants of the definition (PC1–PC2) | 0.160 | `tests/closed_scopes.rs`, `tests/modules.rs` |
+| 3 | `part`, E108 and E109 (PT1–PT4); W207 by `--lint` (PT5) | 0.162 | `tests/parts.rs` |
 | 4 | diagnosis through parts (D1–D3), `solventc` and `--json`'s `"parts"` | — | `tests/parts.rs` |
 | 5 | the engine as parts; `style SELECTOR in VIEW` in a drawing | — | `tests/examples_sv.rs`, `tests/drawing.rs` |
 

@@ -63,7 +63,7 @@ can say which parts they keep and which they change.
   it holds only by the pose, and *violated* if it does not hold.
 * **Root choices.** A bound (spec §9.6) chooses the root and is verified: the seed is carried across
   it, `steer` acts, the block pass searches, and a bound still broken ends with `BOUND_BROKEN`. On
-  the sheet, `ccw`/`cw` stated in the document is held the same way since 0.160 (#157: carried on
+  the sheet, `ccw`/`cw` stated in the document is held the same way since 0.161 (#157: carried on
   the seeds, steered, `ORIENTATION_BROKEN`), apart from the choices the constructive plan records,
   which are not held; the block pass's search reads bounds only.
 * **"Solved"** is `max_relative_residual ≤ 1e-6` (each row over `extent^degree`), and **settled**

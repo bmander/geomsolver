@@ -11,7 +11,7 @@ version ([0.n], see the [language changelog](../solvent-changelog.md)) says wher
   `branch_record` — the elaborator, the plan's `branches`/`apply_branches`, `graft`,
   `Part::branches_out` — and `io::from_json` **re-records** what it reads, so older documents
   migrate on load.  `tests/decompose.rs` and `tests/order.rs` are the gates.
-- **A stated root choice is enforced; a recorded one is not** (§9.6, #157, [0.160]).
+- **A stated root choice is enforced; a recorded one is not** (§9.6, #157, [0.161]).
   `Sketch::branches` mixes what the document states with what the plan records (a non-sticky
   replay reads the seeds' turn and writes it back), so the elaborator writes each agreed
   `ccw`/`cw` twice (`Gauges::choose_all`): into `branches`, which the plan replays, and into

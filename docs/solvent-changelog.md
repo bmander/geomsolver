@@ -4,7 +4,7 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
-**[0.161] Parts.** `part Name(…) { … }` (§8.2) is a component declared a function of what it is
+**[0.162] Parts.** `part Name(…) { … }` (§8.2) is a component declared a function of what it is
 given. It is held to two rules, judged on each instance's rows with its inputs held:
 - its rows place everything it makes, or **E108** at the definition names what they leave free;
 - no row is about its operands alone, or **E109** at the row.
@@ -14,20 +14,20 @@ statement over a part's outputs is the parent's row and never completes it. A pa
 as a component is. `part` is a word only before a definition's shape, `part Name(…) {`, so the
 documents that name a thing `part` are unchanged. No document changes. (Issue #461.)
 
-**[0.160] A stated orientation is held.** `ccw(a, b, c)` and `cw(a, b, c)` written in a
+**[0.161] A stated orientation is held.** `ccw(a, b, c)` and `cw(a, b, c)` written in a
 document (§9.6) are checked on the solution and the solve is steered to them, as a bound is
 ([0.60]): a triangle whose seeds turn the other way has a point carried across the line through
 the other two before the solve, everything seeded from it following; a solution that turns the
 other way is steered to the root that turns the stated way; and where none is found the solve
 fails (`a stated orientation does not hold`) and the diagnosis names the statement. Three points
 the drawing puts on one line turn neither way and break it. A point 5 from each of `(0, 0)` and
-`(6, 0)` under `ccw(a, b, x)` is `(3, 4)` from any seed; through 0.159 a seed below the line gave
+`(6, 0)` under `ccw(a, b, x)` is `(3, 4)` from any seed; through 0.160 a seed below the line gave
 `(3, −4)`, reported solved, and the statement was read only by a plan replaying its closed-form
 construction. What the document states is kept apart from the root choices a plan records of its
 seeds, and only it is held. Inside a traced body an orientation is read at the anchor, as before
 (§6.5.1). A drawing whose solution kept its orientations is unchanged. (Issue #157.)
 
-**[0.159] A definition reads the constants of its file.** A component's or a relation word's
+**[0.160] A definition reads the constants of its file.** A component's or a relation word's
 body (§8) reads the numbers its file states at the top and those of the modules the file `use`s,
 by the names the file reads them by (`engine.dims.L`, `L` under `use engine.dims (L)`), where it was
 **E103** ("outside this component; pass it as an argument"). Only constants: a value that is or
@@ -37,13 +37,25 @@ A formal, or a number of the body, by the same name hides the constant. So a dim
 read where it is needed rather than threaded through every call as a `group`. No document changes.
 (Issue #461.)
 
-**[0.158] A body drawn in the plane its operand is drawn in.** `in pin.plane { … }` (§6.7) reads
+**[0.159] A body drawn in the plane its operand is drawn in.** `in pin.plane { … }` (§6.7) reads
 the plane a point is drawn in (`o.plane`, [0.152]) as the frame of an `in` block, through any path
 that reaches a point (`in pin.end.plane`, `in l.p1.plane`): a component draws where what it is
 handed is drawn, with no plane formal, and the plane is read once that point is drawn, wherever
 either is declared. A point standing in space is drawn in no plane, **E040** at the reference.
-Through 0.157 any path in an `in` was **E040** ("`o` is a point, and `in` names a plane"). No
+Through 0.158 any path in an `in` was **E040** ("`o` is a point, and `in` names a plane"). No
 document changes. (Issue #461.)
+**[0.158] An envelope in space generated under a drive, held.** A relation holds to an envelope
+in space (§6.15) generated under a driven frame (§6.14, [0.143]) as to one generated at a constant
+rate, the joint standing at the law's value of the roll: with `tube := envelope(skin over t, under:
+follower, seen_from: cam)`, `P coincident tube` holds `P` on the tube the follower's ball sweeps as
+the cam sees it, and the ball's radius solves through it; its normal, a plane or a line touching it
+and its curvature at `P` read the same law. The law is a constant of the relation, read in Taylor
+arithmetic, so the rows and their Jacobian are exact through it. A turn about a point of a view
+(`std.Spin(cam, about: std.origin, on: std.front)`) is read in such a motion as the turn about the
+line through the point square to the view, as a carried point reads it. Through 0.157 such a
+relation was **E061** ("a relation held to what is generated under it reads no drive", and a spin
+in a view "an envelope in space is generated under turns about lines"); a meshing on a drive still
+is. No document changes. (Issue #398 G.)
 
 **[0.157] One copy of a pattern, by its index.** An operand the document wrote in a `repeat`'s or
 a `ring`'s body is a step of its body's faces' names with its copy's index, as a reference to the
