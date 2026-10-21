@@ -128,7 +128,8 @@ fn layers_of(sk: &Sketch, b: usize, readers: &BTreeSet<usize>)
 fn stack(sk: &mut Sketch, b: usize, of: &BTreeMap<usize, usize>) {
     let SolidDef::Body { stock, on, through, bound } = sk.solids[b].def.clone() else { return };
     let top = of.values().copied().max().unwrap_or(0);
-    let SolidE { name, class, copy, .. } = sk.solids[b].clone();
+    let s = &sk.solids[b];
+    let (name, class, copy) = (s.name.clone(), s.class.clone(), s.copy);
     let at = |o: &u32| of.get(&(*o as usize)).copied();
     let mut below: Option<u32> = None;
     for k in 0..top {

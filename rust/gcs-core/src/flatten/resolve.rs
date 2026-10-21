@@ -379,6 +379,9 @@ impl Lookup<'_> {
     /// named (`SolidE::step`, `solid::faces::FacePath`) — a reference that, so read, reaches no
     /// solid is none.
     fn face_of_copy(&self, r: &Ref, sc: &Scope) -> Option<(String, Vec<String>)> {
+        if self.solids.is_empty() {
+            return None;
+        }
         let mut path: Vec<Seg> = Vec::with_capacity(r.path.len());
         for s in &r.path {
             let Seg::Index(text) = s else {

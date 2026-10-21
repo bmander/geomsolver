@@ -86,7 +86,7 @@ fn a_swept_bodys_faces_lie_on_what_their_names_say() {
         let named: Vec<String> = faces.paths().iter().map(|p| p.text()).collect();
         // every face the build named, and the definitions name it too
         let structural: Vec<String> = face_paths(sk,body).iter().map(|p| p.text()).collect();
-        for face in cut.iter().map(|f| format!("indexed.{f}")).chain(["tip","heel","toe","back"].map(|f| format!("material.{f}"))) {
+        for face in cut.iter().map(|f| format!("indexed[0].{f}")).chain(["tip","heel","toe","back"].map(|f| format!("material.{f}"))) {
             assert!(named.contains(&face),"{member}: no `{face}` among {named:?}");
             assert!(structural.contains(&face),"{member}: `{face}` is not among the definitions' {structural:?}");
         }
