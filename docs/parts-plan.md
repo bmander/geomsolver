@@ -6,6 +6,50 @@ language rather than on what it costs the solver. The rules a boundary must keep
 used here by name. The style goals come from [the direction paper](solvent-direction.md). Nothing
 here is built yet: a line marked `[new]` does not parse today.
 
+## Status
+
+Implemented on `claude/nice-euler-6w9el9`, each step with its tests and its spec, primer,
+contract and changelog rows. §11's review questions were taken at the defaults this document
+recommends: the word is `part`, a definition reads its own file's values as well as its modules',
+PT2 is structural (a part singular at its pose is D3's warning), and a `when` over view switches
+is left to the lint.
+
+| step | what landed | spec | gate |
+|---|---|---|---|
+| 0 | #157: a stated `ccw`/`cw` is checked and steered by the default solve | 0.160 | `tests/orientation.rs` |
+| 0 | #492: in progress separately (the yardstick a far point stretches) | — | — |
+| 1 | `in pin.plane { … }` (PV2) | 0.158 | `tests/relation_words.rs` |
+| 2 | constants of the definition (PC1–PC2) | 0.159 | `tests/closed_scopes.rs`, `tests/modules.rs` |
+| 3 | `part`, E108 and E109 (PT1–PT4) | 0.161 | `tests/parts.rs` |
+| 4 | diagnosis through parts (D1–D3), `solventc` and `--json`'s `"parts"` | — | `tests/parts.rs` |
+| 5 | the engine as parts; `style SELECTOR in VIEW` in a drawing | — | `tests/examples_sv.rs`, `tests/drawing.rs` |
+
+What the work found:
+
+* **The classifier's "leaves freedoms" was mostly a bug.** `boundary::split` dropped an arc's own
+  rows (its ends at its radius) when the arc's centre was an operand, so every arc about a pin or
+  an axis read as two free numbers. `Throw`, `ConRod`, `EngineBlock` and `CylinderHead` were
+  reported so for that reason alone. With the arc's rows counted as the instance's that made it,
+  **every one of the engine's 18 definitions is a part** as it stands (225 instances), and #452's
+  "the large assemblies are not boundary-shaped yet" is narrower than it read.
+* **The engine as parts** (§8): every `component` in `engine/` is a `part`. The rod is
+  `ConRod(crank.pin1, end.bore)`, drawing in the planes its pin is drawn in, making its own
+  side-view small end and the plane its section A-A is cut in. The crankshaft takes `theta` and
+  exports `pin1`…`pin4`. The phantom rod, the three `project` statements reaching into rods,
+  `secA`, the `draw_*` flags and every `dims:` argument are gone, and `--lint` says nothing of it.
+  Every position the old and new documents share agrees to 3e-13 (3,142 numbers); the side
+  pistons, now on the rods' small ends, to 9e-14; section A-A is the same shape about its new
+  origin. The shape the library advertises grows (740 points, 538 lines, 47 circles, 29 arcs from
+  633, 467, 43, 11) because rods 2 to 4 draw their own end views and every rod its section; it is
+  still DOF 0, well constrained.
+* **Cost.** Checking 225 part instances adds about a quarter to the engine's elaboration, the
+  structure compiled once for the document and read per part.
+
+Not done: PT5's lint (a part whose probes find a second root its stated choices admit) is not
+built, and several engine parts still leave their root to their seeds (`ConRod`'s small end above
+or below its pin, for one); a `ccw` would choose it, now that #157 holds one. The V-twin and the
+hub motor still thread their tables.
+
 ## Summary
 
 #459 asked whether solving through boundaries pays, and the answer is settled (plan §18–§20). The

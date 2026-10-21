@@ -341,8 +341,8 @@ body statement is emitted; one over such a solid saying what one over it said jo
 `tests/symmetric.rs` is the gate, beside the closed forms of
 `tests/round_lowering.rs`.
 Curves need fixed scalar/entity formals. The V-twin passes `components.dims.vtwin_dims`
-explicitly, a table its parts could read as constants instead ([0.159]); `Frame(layout, dims: …)`
-takes a layout naming the front datum, origin and reference axis.
+explicitly, a table its parts could read as constants instead ([0.159]), as the inline four's
+do; `Frame(layout, dims: …)` takes a layout naming the front datum, origin and reference axis.
 
 - **A name is defined one way, `NAME := VALUE`** ([plan](../definitions-plan.md), Solvent §5,
   [0.29]).  `w := 100` is a value (`StmtKind::Param`), `c := circle(…)` a declaration, `t :=
@@ -423,12 +423,15 @@ takes a layout naming the front datum, origin and reference axis.
   written from the statements' spans gathered once (`source_map::spans`), asked only where some
   module is previewed.  `tests/many_instances.rs` holds a free root number
   and a root `repeat` and `when`s beside the plates to the same fourfold bound.
-- **A part is one component carrying `in view { … }` blocks** (Solvent §6.7, `P::in_comp`): the
-  block form is allowed inside a component body (the plane is a formal) and still refused inside a
-  root block.  With `when flag == 1 { … }` over a 0/1 `Int` formal for the views an instance does
-  not show in, a part's whole design is one module (`engine/block.sv`, `engine/head.sv`,
-  `engine/crankshaft.sv`, `engine/conrod.sv`); view modules hold only what the assembly adds.
-  Instances inside a block copy are indexed like declarations (`cyl[0].small`, `copy_of`).
+- **A part carries its views in `in view { … }` blocks** (Solvent §6.7, `P::in_comp`): the block
+  form is allowed inside a component body (the plane a formal, or since [0.158] the plane an
+  operand is drawn in, `in pin.end.plane`) and still refused inside a root block.  A part makes
+  every view it defines, every time; which a sheet shows, and how, is the drawing's (`style
+  m.rod2 in end { … }`, [solvent-drawing.md](../solvent-drawing.md)).  So a part's whole design is
+  one module (`engine/block.sv`, `engine/head.sv`, `engine/crankshaft.sv`, `engine/conrod.sv`,
+  every definition of the engine a `part` reading `engine.dims` as constants, #461); view modules
+  hold only what the assembly adds.  Instances inside a block copy are indexed like declarations
+  (`cyl[0].small`, `copy_of`).
 
 - **A name declared over a built-in is said** (Solvent §3.3, §5; `program::shadowing`, W112).
   `expr::eval` knows `expr::CONSTANTS` and `FUNCTIONS` before the document and

@@ -9,147 +9,147 @@
 // every width in the plan is the end view's, by projection, inside the part; every length is the
 // side view's.
 
-use engine.dims
+use engine.dims (D, P, back, bulk, capd, deck, front, hw, kw, rail, rj, rmb, sump, wall, wmb)
 use engine.parts
 use std (horizontal, offset)
 
 // A main bearing edge on, at the axis point `jc`: the shell above and below the journal, the
 // bulkhead rising from the shell to the cylinder walls, the cap hung below it.
-component MainBearingSide(jc: point, dims: group) {
-  upper := engine.parts.Box(jc, x0: -dims.wmb / 2, y0: dims.rj, x1: dims.wmb / 2, y1: dims.rmb)
-  lower := engine.parts.Box(jc, x0: -dims.wmb / 2, y0: -dims.rmb, x1: dims.wmb / 2, y1: -dims.rj)
-  web := engine.parts.Box(jc, x0: -dims.bulk / 2, y0: dims.rmb, x1: dims.bulk / 2, y1: dims.deck - dims.wall)
-  cap := engine.parts.Box(jc, x0: -dims.wmb / 2, y0: -(dims.rmb + dims.capd), x1: dims.wmb / 2, y1: -dims.rmb)
+part MainBearingSide(jc: point) {
+  upper := engine.parts.Box(jc, x0: -wmb / 2, y0: rj, x1: wmb / 2, y1: rmb)
+  lower := engine.parts.Box(jc, x0: -wmb / 2, y0: -rmb, x1: wmb / 2, y1: -rj)
+  web := engine.parts.Box(jc, x0: -bulk / 2, y0: rmb, x1: bulk / 2, y1: deck - wall)
+  cap := engine.parts.Box(jc, x0: -wmb / 2, y0: -(rmb + capd), x1: wmb / 2, y1: -rmb)
 }
 
-component EngineBlock(end: plane, side: plane, top: plane, o: point, o_s: point, o_t: point, dims: group) {
+part EngineBlock(end: plane, side: plane, top: plane, o: point, o_s: point, o_t: point) {
   // -- along the axis: the section through cylinder 1 -------------------------------------
   in end {
     // the bore's walls, `wall` deep below the deck
-    bl0 := point hint((o.x - dims.D / 2, o.y + dims.deck))
-    br0 := point hint((o.x + dims.D / 2, o.y + dims.deck))
-    bl1 := engine.parts.At(o, dx: -dims.D / 2, dy: dims.deck - dims.wall)
-    br1 := engine.parts.At(o, dx: dims.D / 2, dy: dims.deck - dims.wall)
+    bl0 := point hint((o.x - D / 2, o.y + deck))
+    br0 := point hint((o.x + D / 2, o.y + deck))
+    bl1 := engine.parts.At(o, dx: -D / 2, dy: deck - wall)
+    br1 := engine.parts.At(o, dx: D / 2, dy: deck - wall)
     wall_l := line(bl0, bl1.p)
     wall_r := line(br0, br1.p)
-    bl0 offset(dx: -dims.D / 2, dy: dims.deck) o
-    o distance(dims.deck, along: v) br0
-    bl0 distance(dims.D) br0
+    bl0 offset(dx: -D / 2, dy: deck) o
+    o distance(deck, along: v) br0
+    bl0 distance(D) br0
     // the outline: deck, walls, skirt, pan rail
-    d_l := point hint((o.x - dims.hw, o.y + dims.deck))
-    d_r := point hint((o.x + dims.hw, o.y + dims.deck))
-    s_l := engine.parts.At(o, dx: -dims.hw, dy: 110mm)
-    s_r := engine.parts.At(o, dx: dims.hw, dy: 110mm)
-    k_l := engine.parts.At(o, dx: -dims.kw, dy: 30mm)
-    k_r := engine.parts.At(o, dx: dims.kw, dy: 30mm)
-    pr_l := point hint((o.x - dims.kw, o.y + dims.rail))
-    pr_r := point hint((o.x + dims.kw, o.y + dims.rail))
+    d_l := point hint((o.x - hw, o.y + deck))
+    d_r := point hint((o.x + hw, o.y + deck))
+    s_l := engine.parts.At(o, dx: -hw, dy: 110mm)
+    s_r := engine.parts.At(o, dx: hw, dy: 110mm)
+    k_l := engine.parts.At(o, dx: -kw, dy: 30mm)
+    k_r := engine.parts.At(o, dx: kw, dy: 30mm)
+    pr_l := point hint((o.x - kw, o.y + rail))
+    pr_r := point hint((o.x + kw, o.y + rail))
     (deckline := line(d_l, d_r)) -> (b_r := line(d_r, s_r.p)) -> (sk_r := line(s_r.p, k_r.p)) ->
       (kr := line(k_r.p, pr_r)) -> (railline := line(pr_r, pr_l)) -> (kl := line(pr_l, k_l.p)) ->
       (sk_l := line(k_l.p, s_l.p)) -> (b_l := line(s_l.p, d_l)) -> close
-    d_l offset(dx: -dims.hw, dy: dims.deck) o
-    o distance(dims.deck, along: v) d_r
-    d_l distance(2 * dims.hw) d_r
-    pr_l offset(dx: -dims.kw, dy: dims.rail) o
-    o distance(dims.rail, along: v) pr_r
-    pr_l distance(2 * dims.kw) pr_r
+    d_l offset(dx: -hw, dy: deck) o
+    o distance(deck, along: v) d_r
+    d_l distance(2 * hw) d_r
+    pr_l offset(dx: -kw, dy: rail) o
+    o distance(rail, along: v) pr_r
+    pr_l distance(2 * kw) pr_r
     // the main bearing behind the section: the shell round the journal, hidden, and the cap
     // below the parting line at the crank's axis
-    shell := circle(center: o) hint(r: dims.rmb)
-    radius(dims.rmb) shell
-    c_l := point hint((o.x - (dims.rmb + dims.capd), o.y))
-    c_r := point hint((o.x + (dims.rmb + dims.capd), o.y))
-    cap := arc(center: o, start: c_l, end: c_r) hint(r: dims.rmb + dims.capd)
-    radius(dims.rmb + dims.capd) cap
+    shell := circle(center: o) hint(r: rmb)
+    radius(rmb) shell
+    c_l := point hint((o.x - (rmb + capd), o.y))
+    c_r := point hint((o.x + (rmb + capd), o.y))
+    cap := arc(center: o, start: c_l, end: c_r) hint(r: rmb + capd)
+    radius(rmb + capd) cap
     parting := line(c_l, c_r)
     o horizontal c_l
     o horizontal c_r
     // the sump
-    sh_l := engine.parts.At(o, dx: -dims.kw, dy: dims.rail - 30mm)
-    sh_r := engine.parts.At(o, dx: dims.kw, dy: dims.rail - 30mm)
-    sp_l := point hint((o.x - 60mm, o.y + dims.sump))
-    sp_r := point hint((o.x + 60mm, o.y + dims.sump))
+    sh_l := engine.parts.At(o, dx: -kw, dy: rail - 30mm)
+    sh_r := engine.parts.At(o, dx: kw, dy: rail - 30mm)
+    sp_l := point hint((o.x - 60mm, o.y + sump))
+    sp_r := point hint((o.x + 60mm, o.y + sump))
     (su_r := line(pr_r, sh_r.p)) -> (ss_r := line(sh_r.p, sp_r)) -> (sb := line(sp_r, sp_l)) ->
       (ss_l := line(sp_l, sh_l.p)) -> (su_l := line(sh_l.p, pr_l))
-    sp_l offset(dx: -60, dy: dims.sump) o
+    sp_l offset(dx: -60, dy: sump) o
     o distance(60, along: u) sp_r
-    sp_r distance(-dims.sump, along: v) o
+    sp_r distance(-sump, along: v) o
   }
 
   // -- across the axis: the casting edge on -----------------------------------------------
   in side {
-    bfl := point hint((o_s.x + dims.front, o_s.y + dims.deck))
-    bfr := point hint((o_s.x + dims.back, o_s.y + dims.deck))
-    rfl := point hint((o_s.x + dims.front, o_s.y + dims.rail))
-    rfr := point hint((o_s.x + dims.back, o_s.y + dims.rail))
+    bfl := point hint((o_s.x + front, o_s.y + deck))
+    bfr := point hint((o_s.x + back, o_s.y + deck))
+    rfl := point hint((o_s.x + front, o_s.y + rail))
+    rfr := point hint((o_s.x + back, o_s.y + rail))
     dl := line(bfl, bfr)
     blockfront := line(bfl, rfl)
     blockback := line(bfr, rfr)
     rl := line(rfl, rfr)
-    o_s distance(dims.front, along: u) bfl
-    o_s distance(dims.front, along: u) rfl
-    o_s distance(dims.back, along: u) rfr
+    o_s distance(front, along: u) bfl
+    o_s distance(front, along: u) rfl
+    o_s distance(back, along: u) rfr
     horizontal dl
     horizontal rl
-    bfl distance(dims.back - dims.front) bfr
+    bfl distance(back - front) bfr
     // the sump: shallow at the front, deep at the back
-    q_a := point hint((o_s.x + dims.front + 15mm, o_s.y + dims.rail))
-    q_b := point hint((o_s.x + dims.front + 45mm, o_s.y + dims.sump + 45mm))
-    q_c := point hint((o_s.x + dims.front + 150mm, o_s.y + dims.sump))
-    q_d := point hint((o_s.x + dims.back - 40mm, o_s.y + dims.sump))
-    q_e := point hint((o_s.x + dims.back - 10mm, o_s.y + dims.rail))
+    q_a := point hint((o_s.x + front + 15mm, o_s.y + rail))
+    q_b := point hint((o_s.x + front + 45mm, o_s.y + sump + 45mm))
+    q_c := point hint((o_s.x + front + 150mm, o_s.y + sump))
+    q_d := point hint((o_s.x + back - 40mm, o_s.y + sump))
+    q_e := point hint((o_s.x + back - 10mm, o_s.y + rail))
     (s1 := line(q_a, q_b)) -> (s2 := line(q_b, q_c)) -> (s3 := line(q_c, q_d)) -> (s4 := line(q_d, q_e))
     q_a coincident rl
     q_e coincident rl
-    o_s distance(dims.front + 15mm, along: u) q_a
-    o_s distance(dims.back - 10mm, along: u) q_e
-    o_s distance(dims.front + 45mm, along: u) q_b
+    o_s distance(front + 15mm, along: u) q_a
+    o_s distance(back - 10mm, along: u) q_e
+    o_s distance(front + 45mm, along: u) q_b
     q_d distance(45, along: v) q_b
-    o_s distance(dims.front + 150mm, along: u) q_c
-    o_s distance(dims.back - 40mm, along: u) q_d
+    o_s distance(front + 150mm, along: u) q_c
+    o_s distance(back - 40mm, along: u) q_d
     horizontal s3
     // the four bores, their walls down from the deck
     repeat 4 as i {
-      ax := engine.parts.At(o_s, dx: dims.front + 25mm + dims.P / 2 + i * dims.P, dy: 0mm)
-      wl0 := point hint((ax.p.x - dims.D / 2, ax.p.y + dims.deck))
-      wr0 := point hint((ax.p.x + dims.D / 2, ax.p.y + dims.deck))
-      wl1 := point hint((ax.p.x - dims.D / 2, ax.p.y + dims.deck - dims.wall))
-      wr1 := point hint((ax.p.x + dims.D / 2, ax.p.y + dims.deck - dims.wall))
+      ax := engine.parts.At(o_s, dx: front + 25mm + P / 2 + i * P, dy: 0mm)
+      wl0 := point hint((ax.p.x - D / 2, ax.p.y + deck))
+      wr0 := point hint((ax.p.x + D / 2, ax.p.y + deck))
+      wl1 := point hint((ax.p.x - D / 2, ax.p.y + deck - wall))
+      wr1 := point hint((ax.p.x + D / 2, ax.p.y + deck - wall))
       wall_l := line(wl0, wl1)
       wall_r := line(wr0, wr1)
       wl0 coincident dl
       wr0 coincident dl
-      ax.p distance(-dims.D / 2, along: u) wl0
-      ax.p distance(dims.D / 2, along: u) wr0
-      ax.p distance(-dims.D / 2, along: u) wl1
-      ax.p distance(dims.D / 2, along: u) wr1
-      wl0 distance(-dims.wall, along: v) wl1
-      wr0 distance(-dims.wall, along: v) wr1
+      ax.p distance(-D / 2, along: u) wl0
+      ax.p distance(D / 2, along: u) wr0
+      ax.p distance(-D / 2, along: u) wl1
+      ax.p distance(D / 2, along: u) wr1
+      wl0 distance(-wall, along: v) wl1
+      wr0 distance(-wall, along: v) wr1
     }
     // the five bulkheads and their main bearings
     repeat 5 as j {
-      jc := engine.parts.At(o_s, dx: dims.front + 25mm + j * dims.P, dy: 0mm)
-      bearing := MainBearingSide(jc.p, dims: dims)
+      jc := engine.parts.At(o_s, dx: front + 25mm + j * P, dy: 0mm)
+      bearing := MainBearingSide(jc.p)
     }
-    claim ax[0].p distance(dims.P) ax[1].p
+    claim ax[0].p distance(P) ax[1].p
   }
 
   // -- from above: the deck and the bores -----------------------------------------------
   in top {
-    fl := point hint((o_t.x + dims.front, o_t.y - dims.hw))
-    fr := point hint((o_t.x + dims.back, o_t.y - dims.hw))
-    br := point hint((o_t.x + dims.back, o_t.y + dims.hw))
-    bl := point hint((o_t.x + dims.front, o_t.y + dims.hw))
+    fl := point hint((o_t.x + front, o_t.y - hw))
+    fr := point hint((o_t.x + back, o_t.y - hw))
+    br := point hint((o_t.x + back, o_t.y + hw))
+    bl := point hint((o_t.x + front, o_t.y + hw))
     (e1 := line(fl, fr)) -> (e2 := line(fr, br)) -> (e3 := line(br, bl)) -> (e4 := line(bl, fl)) -> close
     horizontal e1
     vertical e2
     horizontal e3
     vertical e4
     repeat 4 as i {
-      c := point hint((o_t.x + dims.front + 25mm + dims.P / 2 + i * dims.P, o_t.y))
+      c := point hint((o_t.x + front + 25mm + P / 2 + i * P, o_t.y))
       o_t horizontal c
-      bore := circle(center: c) hint(r: dims.D / 2)
-      radius(dims.D / 2) bore
+      bore := circle(center: c) hint(r: D / 2)
+      radius(D / 2) bore
     }
   }
 
