@@ -232,9 +232,9 @@ pub fn classify(e: &Elaborated, solved: &Sketch) -> Vec<Classified> {
 }
 
 /// What every instance's reading shares: which parameters are whose, which are where a point is.
-struct World {
+pub(crate) struct World {
     /// Each parameter an entity with a site owns, to that entity.
-    owner: BTreeMap<u32, EntRef>,
+    pub(crate) owner: BTreeMap<u32, EntRef>,
     /// The parameters that are a place or a length: a point's coordinates, a radius, an axis's
     /// origin — moved by a length, where every other number is moved by its own size.
     lengths: BTreeSet<u32>,
@@ -257,7 +257,7 @@ fn under<'a, T: Copy>(list: &'a [(InstPath, T)], at: &'a InstPath)
 }
 
 impl World {
-    fn of(sk: &Sketch, map: &SourceMap) -> World {
+    pub(crate) fn of(sk: &Sketch, map: &SourceMap) -> World {
         let mut owner = BTreeMap::new();
         for &e in map.of_entity.keys() {
             for p in sk.own_params(e) {
@@ -290,7 +290,7 @@ impl World {
 }
 
 /// Every column a row reads: its kernel's, and the free variable its number is written in.
-fn columns(sk: &Sketch, c: &Constraint) -> Vec<u32> {
+pub(crate) fn columns(sk: &Sketch, c: &Constraint) -> Vec<u32> {
     let mut cols = c.params(sk);
     cols.extend(c.free.as_ref().map(|f| f.param));
     cols
@@ -298,15 +298,15 @@ fn columns(sk: &Sketch, c: &Constraint) -> Vec<u32> {
 
 /// What an instance made and what it states, set apart from the document: every entity sited
 /// under it (and a twin of one), its own unknowns, and its rows.
-struct Split {
-    made: BTreeSet<EntRef>,
+pub(crate) struct Split {
+    pub(crate) made: BTreeSet<EntRef>,
     /// The numbers of what it made, with the numbers no entity owns that its rows read.
-    own: BTreeSet<u32>,
+    pub(crate) own: BTreeSet<u32>,
     /// Its rows, by constraint id.
-    kept: BTreeSet<u32>,
+    pub(crate) kept: BTreeSet<u32>,
 }
 
-fn split(map: &SourceMap, sk: &Sketch, world: &World, inst: &Instanced) -> Split {
+pub(crate) fn split(map: &SourceMap, sk: &Sketch, world: &World, inst: &Instanced) -> Split {
     let inside = |id: u32| map.site_of_constraint(id).is_some_and(|s| inst.contains(&s.path));
     // what it made: every entity sited under it, and a twin of one
     let mut made: BTreeSet<EntRef> = under(&world.ents, &inst.path).collect();
@@ -542,7 +542,8 @@ fn probe() -> SolveOpts {
 
 /// The document with only the rows `kept`, each parameter held as `fixed` says from its index
 /// and whether the document held it.
-fn reduced(sk: &Sketch, kept: &BTreeSet<u32>, fixed: impl Fn(u32, bool) -> bool) -> Sketch {
+pub(crate) fn reduced(sk: &Sketch, kept: &BTreeSet<u32>, fixed: impl Fn(u32, bool) -> bool)
+    -> Sketch {
     let mut out = sk.clone();
     out.constraints.retain(|c| kept.contains(&c.id));
     out.solid_claims.clear();

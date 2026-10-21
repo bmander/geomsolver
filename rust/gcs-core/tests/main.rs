@@ -155,6 +155,7 @@ mod ordinate;
 mod overview;
 mod par;
 mod parameters;
+mod parts;
 mod patches;
 mod path_examples;
 mod paths;

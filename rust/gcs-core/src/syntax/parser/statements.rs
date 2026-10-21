@@ -1562,9 +1562,36 @@ impl<'a> P<'a> {
         Some(Use { name, span: Span::new(lo, self.prev_hi()), names })
     }
 
+    /// Whether `part Name(…) {` stands here (#461): the word is a part's only where a
+    /// definition's shape follows it, so `part` stays a name a document may give
+    /// (`part := solid(…)`, `part.rod round(r: 1) part.plate`, `part above(7) q`).
+    pub(super) fn part_ahead(&self) -> bool {
+        let at = |k: usize| self.t.get(self.i + k).map(|(t, _)| t);
+        if !self.peek_word("part") || !matches!(at(1), Some(Tok::Ident(_))) || at(2) != Some(&Tok::P('('))
+        {
+            return false;
+        }
+        let mut depth = 0usize;
+        for (k, (t, _)) in self.t.iter().enumerate().skip(self.i + 2) {
+            match t {
+                Tok::P('(') => depth += 1,
+                Tok::P(')') => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return self.t.get(k + 1).map(|(t, _)| t) == Some(&Tok::P('{'));
+                    }
+                }
+                Tok::Nl if depth == 0 => return false,
+                _ => {}
+            }
+        }
+        false
+    }
+
     pub(super) fn component(&mut self, next_id: &mut u32) -> Option<Component> {
         let lo = self.here().lo as usize;
-        self.i += 1; // `component`
+        let part = self.peek_word("part");
+        self.i += 1; // `component`, or `part`
         let name = self.ident()?;
         let mut formals = Vec::new();
         if self.eat_p('(') {
@@ -1611,6 +1638,7 @@ impl<'a> P<'a> {
                 module: None,
                 set: Some(set),
                 symmetric,
+                part: false,
             });
         }
         let was = std::mem::replace(&mut self.in_comp, true);
@@ -1626,6 +1654,7 @@ impl<'a> P<'a> {
             module: None,
             set: None,
             symmetric: Vec::new(),
+            part,
         })
     }
 

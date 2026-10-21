@@ -208,12 +208,18 @@ pub fn elaborate(p: &Program) -> Elaborated {
     let mut renamed = 0;
     loop {
         match elaborate_in(p, &refused, &crossed, &faces, renamed >= FACE_PASSES) {
-            Ok(e) => {
+            Ok(mut e) => {
                 if crossed.is_empty() {
                     crossed = crossed_seeds(&e);
                     if !crossed.is_empty() {
                         continue;
                     }
+                }
+                // a part is held to being a function of what it is given (#461), judged on a
+                // document that elaborated: over one that did not, its rows are not all there
+                if e.ok() {
+                    let faults = crate::parts::check(&e);
+                    e.diags.extend(faults);
                 }
                 return e;
             }
