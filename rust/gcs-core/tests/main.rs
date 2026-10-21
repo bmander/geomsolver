@@ -32,6 +32,7 @@ mod brep;
 mod brep_census;
 mod brep_export;
 mod callout;
+mod cams;
 mod canal;
 mod carried;
 mod carried_family;
