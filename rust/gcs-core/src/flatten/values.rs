@@ -822,20 +822,17 @@ impl<'a> Walk<'a> {
         if !self.work_out(&pending, vals, scope, &prefix, &running) {
             return;
         }
-        // a parameter axis's interval may read any number the body defines (#391 S1)
+        // a parameter axis's interval may read any number the body defines (#391 S1), and a
+        // material's properties are read as one once they are worked out (#510 P3)
         for st in body {
-            if let StmtKind::Param(pd) = &st.kind {
-                if let Some(over) = pd.over() {
-                    self.parameter_axis(pd, over, vals, scope);
+            match &st.kind {
+                StmtKind::Param(pd) => {
+                    if let Some(over) = pd.over() {
+                        self.parameter_axis(pd, over, vals, scope);
+                    }
                 }
-            }
-        }
-        // a material's properties, read as one once they are worked out (#510 P3)
-        for st in body {
-            if let StmtKind::Group(g) = &st.kind {
-                if g.material.is_some() {
-                    self.material(g, vals, &prefix);
-                }
+                StmtKind::Group(g) if g.material.is_some() => self.material(g, vals, &prefix),
+                _ => {}
             }
         }
         let references: Vec<_> =
@@ -1127,48 +1124,36 @@ impl<'a> Walk<'a> {
         if self.materials.contains_key(&abs) {
             return; // a body walked again (§6.21) declares nothing twice
         }
+        // each field states one property or is said to be wrong, so every one stated is all
         let mut props = std::collections::BTreeMap::new();
-        let mut stated = true;
         for f in &g.fields {
             let Some(label) = &f.label else { continue }; // the parser said
-            let Some(p) = Property::parse(&label.text) else {
-                let m = format!("`{}` is no property of a material: {}", label.text,
-                                Property::names());
-                self.err(Code::E103, label.span, m);
-                stated = false;
-                continue;
+            let p = match Property::named(&label.text) {
+                Ok(p) => p,
+                Err(m) => { self.err(Code::E103, label.span, m); continue; }
             };
             if props.contains_key(&p) {
                 self.err(Code::E001, label.span, format!("`{}` is given twice", label.text));
-                stated = false;
                 continue;
             }
             if matches!(f.value, crate::syntax::InstVal::Group(_)) {
                 let m = format!("`{}` is a number, and a material's property is no group",
                                 p.name());
                 self.err(Code::E103, f.span, m);
-                stated = false;
                 continue;
             }
             // a member that did not work out was said where it did not
-            let Some(a) = vals.get(&format!("{}.{}", g.name.text, label.text)) else {
-                stated = false;
-                continue;
-            };
-            let read = match a.number() {
-                Some(v) => p.read(v, a.dim, self.units),
-                None => Err(format!("`{}` is a number the drawing is made of, and this reads an \
-                                     unknown of the drawing", p.name())),
-            };
+            let Some(a) = vals.get(&format!("{}.{}", g.name.text, label.text)) else { continue };
+            let read = a.number()
+                .ok_or_else(|| format!("`{}` is a number the drawing is made of, and this reads \
+                                        an unknown of the drawing", p.name()))
+                .and_then(|v| p.read(v, a.dim, self.units));
             match read {
                 Ok(v) => { props.insert(p, v); }
-                Err(m) => {
-                    self.err(Code::E103, f.span, m);
-                    stated = false;
-                }
+                Err(m) => self.err(Code::E103, f.span, m),
             }
         }
-        let material = if stated {
+        let material = if props.len() == g.fields.len() {
             match Material::new(abs.clone(), props) {
                 Ok(m) => Some(m),
                 Err(m) => {

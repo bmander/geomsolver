@@ -36,8 +36,10 @@ impl Property {
         }
     }
 
-    pub fn parse(s: &str) -> Option<Property> {
+    /// The property `s` names, or the complaint that it names none.
+    pub fn named(s: &str) -> Result<Property, String> {
         Property::ALL.into_iter().find(|p| p.name() == s)
+            .ok_or_else(|| format!("`{s}` is no property of a material: {}", Property::names()))
     }
 
     /// What a reader calls it.
@@ -70,15 +72,11 @@ impl Property {
     /// kilogram a millimetre-second², which no one means by `200000`, so the text says its unit.
     pub fn read(self, value: f64, dim: Dim, units: Units) -> Result<f64, String> {
         let want = self.dim();
-        if dim != want {
-            return Err(if dim.is_scalar() {
-                format!("`{}` is {}, {}: a bare number says no unit, so write one ({})",
-                        self.name(), self.what(), want.name(), self.example())
-            } else {
-                format!("`{}` is {}, {}, and this is {}", self.name(), self.what(), want.name(),
-                        dim.name())
-            });
+        if dim.is_scalar() && !want.is_scalar() {
+            return Err(format!("`{}` is {}, {}: a bare number says no unit, so write one ({})",
+                               self.name(), self.what(), want.name(), self.example()));
         }
+        dim.require(want, self.name())?;
         let si = units.to_si(value, want);
         self.admits(si)?;
         Ok(si)
@@ -116,25 +114,19 @@ impl Property {
     /// An SI value as Solvent writes it, `200GPa`, `0.3`, `7850kg / 1m^3`: what a program lifted
     /// from a sketch states (`program::to_program`), each figure shortest round-trip.
     pub fn source(self, v: f64) -> String {
-        let num = crate::vocab::num;
-        match self {
-            Property::E | Property::Yield => {
-                let prefixed = [(1e9, "GPa"), (1e6, "MPa"), (1e3, "kPa")];
-                match prefixed.iter().find(|(per, _)| v.abs() >= *per) {
-                    Some((per, unit)) => format!("{}{unit}", num(v / per)),
-                    None => format!("{}Pa", num(v)),
-                }
-            }
-            Property::Nu => num(v),
-            Property::Rho => format!("{}kg / 1m^3", num(v)),
-        }
+        self.spell(v, crate::vocab::num, "kg / 1m^3")
     }
 
     /// An SI value as a reader reads it: `200GPa`, `0.3`, `7850kg/m^3` — to twelve figures, which
     /// is a report's to round, since `7850kg / 1m^3` worked out in millimetres comes back a hair
     /// under 7850 (the value kept is the value worked out).
     pub fn text(self, v: f64) -> String {
-        let num = |v: f64| crate::json::fmt_g(v, 12);
+        self.spell(v, |v| crate::json::fmt_g(v, 12), "kg/m^3")
+    }
+
+    /// An SI value with its unit, a pressure under the largest prefix it reaches: `source` and
+    /// `text`, which differ in how a figure is written and how a density's unit is.
+    fn spell(self, v: f64, num: impl Fn(f64) -> String, density: &str) -> String {
         match self {
             Property::E | Property::Yield => {
                 let prefixed = [(1e9, "GPa"), (1e6, "MPa"), (1e3, "kPa")];
@@ -144,7 +136,7 @@ impl Property {
                 }
             }
             Property::Nu => num(v),
-            Property::Rho => format!("{}kg/m^3", num(v)),
+            Property::Rho => format!("{}{density}", num(v)),
         }
     }
 }
@@ -178,12 +170,6 @@ impl Material {
     /// A property, in SI, where the material states it.
     pub fn get(&self, p: Property) -> Option<f64> {
         self.props.get(&p).copied()
-    }
-
-    /// A property in the document's units, where it is stated: what an analysis over the
-    /// drawing's lengths reads.
-    pub fn in_units(&self, p: Property, units: Units) -> Option<f64> {
-        self.get(p).map(|v| units.from_si(v, p.dim()))
     }
 
     /// It, as a reader reads it: `steel: E 200GPa, nu 0.3, rho 7850kg/m^3, yield 250MPa`.

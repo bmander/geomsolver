@@ -124,19 +124,9 @@ pub(super) fn build_solid(
     let i = sk.solid(def, &d.name.key().text);
     sk.solids[i].class = d.class.clone();
     sk.solids[i].copy = copy_written(d, st);
-    // what it is made of (#510 P3): a material of the document — one refused, or a name that
-    // names nothing, already said so
-    if let Some(m) = &d.material {
-        let name = crate::syntax::ref_text(m);
-        let said = diags.iter().any(|g| g.code == Code::E101 && g.span == m.span);
-        if sk.materials.contains_key(&name) {
-            sk.solids[i].material = Some(name);
-        } else if !res.materials.contains(&name) && !said {
-            diags.push(Diag::within(Code::E103, m.span, st.id, format!("`{}` is no material: a \
-                solid is made of one the document states, `steel := material(E: 200GPa, nu: \
-                0.3)`", m.root.text)));
-        }
-    }
+    // what it is made of (#510 P3), where the flattener found it a material it stated
+    sk.solids[i].material = d.material.as_ref().map(crate::syntax::ref_text)
+        .filter(|m| sk.materials.contains_key(m));
     // a sweep rides on its observer (#383): the material a generating cut leaves is the blank's
     if matches!(sweep, Sweep::Swept { .. } | Sweep::Rolled { .. }) {
         if let Some(path) = super::super::generated::observer_path(sk, res, d) {

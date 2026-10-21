@@ -52,9 +52,6 @@ fn a_material_is_a_model_value_in_si() {
     assert!(close(m.get(Property::Nu).unwrap(), 0.3), "{m:?}");
     assert!(close(m.get(Property::Rho).unwrap(), 7850.0), "{m:?}");
     assert!(close(m.get(Property::Yield).unwrap(), 250e6), "{m:?}");
-    // and in the document's own units, what an analysis over its lengths reads: N/mm² = MPa·1000
-    // kg/(mm·s²), so 200GPa is 2e8 there
-    assert!(close(m.in_units(Property::E, e.sketch.units).unwrap(), 2e8), "{m:?}");
     assert_eq!(m.text(), "steel: E 200GPa, nu 0.3, rho 7850kg/m^3, yield 250MPa");
     // the solid names it, and nothing else does
     let sk = &e.sketch;
@@ -107,8 +104,8 @@ fn a_property_is_checked_where_it_is_written() {
     let cases: [(&str, &str); 8] = [
         ("m := material(E: 200000)", "E103: `E` is Young's modulus, Length^-1·Mass·Time^-2 (Pa): a \
           bare number says no unit, so write one (`200GPa`)"),
-        ("m := material(rho: 7850kg)", "E103: `rho` is a density, Length^-3·Mass (kg/m^3), and \
-          this is Mass (kg)"),
+        ("m := material(rho: 7850kg)", "E103: `rho` is Length^-3·Mass (kg/m^3), and this is \
+          Mass (kg)"),
         ("m := material(nu: 0.5)", "E103: `nu` is Poisson's ratio, which lies between -1 and 0.5, \
           and this is 0.5"),
         ("m := material(E: -1GPa)", "E103: `E` is Young's modulus, which is positive, and this is \

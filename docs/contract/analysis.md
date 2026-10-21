@@ -18,16 +18,15 @@ added here as their stages land.
   the gate.
 - **A material is held in SI** (`Units::to_si`): pascals, and kilograms per cubic metre.  The
   same text states the same material in any document unit, inch or millimetre
-  (`a_material_is_the_same_in_any_unit`).  An analysis over the drawing's lengths reads the
-  material in the document's own units with `Material::in_units`.  The stored value is the
-  value worked out (`7850kg / 1m^3` in millimetres comes back a hair under 7850).  Only a report
+  (`a_material_is_the_same_in_any_unit`).  The stored value is the value worked out (`7850kg / 1m^3` in millimetres comes back a hair under 7850).  Only a report
   rounds, `Property::text` to twelve figures.
 - **`steel := material(E: …)` is a group with a material head** (`syntax::GroupDecl::material`).
   Its members are worked out as any group's, so `steel.E` reads as a number with its dimension.
   A material is handed to a component as a `group` formal.  `flatten::values::material` reads the
-  members once they are worked out, checks each with `Property::read`, and records the result in
-  `Expansion::materials`.  A material whose properties fail any check is recorded as `None`.  Every
-  complaint is E103 at the property, or E001 for a property given twice:
+  members once they are worked out and checks each with `Property::read`.  A material whose
+  properties all pass is stated in `Expansion::materials`.  One that fails any check is still
+  a name a solid's `of` may give, but nothing more is said of that solid.  Every complaint is
+  E103 at the property, or E001 for a property given twice:
   - a label that is no property;
   - a value of another dimension;
   - a bare number for a dimensioned property;
@@ -40,11 +39,16 @@ added here as their stages land.
   `Property::admits` holds the ranges: `E`, `rho` and `yield` are positive, and `nu` lies in
   (-1, 0.5).  The JSON reader holds the same ranges.
 - **`of` names a material** (`syntax::Decl::material`, a trailer of `solid(…)`, reserved like
-  `in`).  The flattener resolves it as any reference; `build_solid` attaches it.  Each outcome:
-  - a name that is no material is E103 (`` `rim` is no material``);
-  - a material that was refused says nothing more (`Resolver::materials` holds every material
-    declared, stated or not);
-  - a name of nothing is the flattener's E101 alone.
+  `in`).  The flattener resolves it and judges it in `flatten::resolve::rewrite`, where it
+  knows whether the name resolved.  `build_solid` only attaches a material that was stated.
+  Each outcome:
+  - a name that resolves to something that is no material is E103 (`` `rim` is no material``);
+  - a material that was refused says nothing more;
+  - a name of nothing is E101 alone, and one read through a name already said to be nothing
+    says nothing.
+
+  A group read whole is "handed on" for the W206 lint only inside an argument of a call
+  (`program::drift`), so `of m` reads its group formal.
 
   The material belongs to the solid the document named.  When `Sketch::as_body` turns a cut
   solid into a body, the body keeps the material and the sweep moved to its stock carries none.

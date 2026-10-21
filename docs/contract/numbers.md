@@ -38,8 +38,8 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   **A material's properties are the one place a pressure and a density are asked for** (#510 P3,
   [0.164], `Dim::PRESSURE`, `Dim::DENSITY`), and there a bare number is refused rather than
   read in the document's unit (`model::Property::read`; the rule is
-  [analysis.md](analysis.md)'s).  `Units::to_si` and `from_si` move a value between the
-  document's units and SI by its powers of length alone.  `*` and `/` derive,
+  [analysis.md](analysis.md)'s).  `Units::to_si` moves a value from the document's units to SI
+  by its powers of length alone.  `*` and `/` derive,
   `+` and `-` demand agreement, `^` takes a whole power on a dimensioned base, and the result is
   checked against its slot (`SpecKind::dim()`).  `Aff` carries the dimension beside the value.
   **The asymmetry between `Dim::fits` and `Dim::agree` is the design.**  A *context* (a slot, a

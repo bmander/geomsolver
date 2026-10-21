@@ -274,18 +274,21 @@ pub fn materials_json(sk: &Sketch) -> Json {
     Json::Arr(sk.materials.values().map(|m| {
         let mut o = crate::io::material_json(m);
         o.set("text", Json::Str(material_text(sk, &m.name)));
-        let of = sk.solids.iter().enumerate()
-            .filter(|(_, s)| s.material.as_deref() == Some(m.name.as_str()));
-        o.set("solids", Json::Arr(of.map(|(i, _)| Json::Int(i as i64)).collect()));
+        let of = made_of(sk, &m.name).map(|i| Json::Int(i as i64));
+        o.set("solids", Json::Arr(of.collect()));
         o
     }).collect())
+}
+
+/// The solids made of material `name`, by index.
+fn made_of<'a>(sk: &'a Sketch, name: &'a str) -> impl Iterator<Item = usize> + 'a {
+    (0..sk.solids.len()).filter(move |&i| sk.solids[i].material.as_deref() == Some(name))
 }
 
 /// A material as a reader reads it, and what is made of it: `steel: E 200GPa, nu 0.3, of arm`.
 pub fn material_text(sk: &Sketch, name: &str) -> String {
     let Some(m) = sk.materials.get(name) else { return format!("{name}: no material") };
-    let of: Vec<&str> = sk.solids.iter()
-        .filter(|s| s.material.as_deref() == Some(name)).map(|s| s.name.as_str()).collect();
+    let of: Vec<&str> = made_of(sk, name).map(|i| sk.solids[i].name.as_str()).collect();
     if of.is_empty() {
         format!("{}, of no solid", m.text())
     } else {

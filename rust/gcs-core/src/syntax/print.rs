@@ -244,10 +244,9 @@ fn write_stmt(out: &mut String, k: &StmtKind) {
         StmtKind::Group(g) => {
             out.push_str(&format!("{} := ", g.name.text));
             if g.material.is_some() {
-                out.push_str("material");
-                let mut members = String::new();
-                write_members(&mut members, &g.fields);
-                out.push_str(&format!("({})", &members[1..members.len() - 1]));
+                out.push_str("material(");
+                write_fields(out, &g.fields);
+                out.push(')');
             } else {
                 write_members(out, &g.fields);
             }
@@ -311,12 +310,18 @@ fn labels_children(k: EntKind) -> bool {
 /// `{bore: 16mm, cyl: {axis: datum}}` — a group's members, nested groups in their braces.
 fn write_members(out: &mut String, fields: &[InstArg]) {
     out.push('{');
+    write_fields(out, fields);
+    out.push('}');
+}
+
+/// `bore: 16mm, cyl: {axis: datum}` — a group's members, or a material's properties, between
+/// whatever brackets hold them.
+fn write_fields(out: &mut String, fields: &[InstArg]) {
     for (i, f) in fields.iter().enumerate() {
         if i > 0 { out.push_str(", "); }
         if let Some(label) = &f.label { out.push_str(&format!("{}: ", label.text)); }
         write_inst_val(out, &f.value);
     }
-    out.push('}');
 }
 
 fn write_inst_val(out: &mut String, v: &InstVal) {

@@ -355,10 +355,10 @@ pub const UNITS: &[(&str, Unit)] = &[
     ("mV", Unit { dim: Dim::of(2, 0, 1, -3, -1), per: 1e-3 * M * M }),
     ("kV", Unit { dim: Dim::of(2, 0, 1, -3, -1), per: 1e3 * M * M }),
     ("ohm", Unit { dim: Dim::of(2, 0, 1, -3, -2), per: M * M }),
-    ("Pa", Unit { dim: Dim::of(-1, 0, 1, -2, 0), per: 1.0 / M }),
-    ("kPa", Unit { dim: Dim::of(-1, 0, 1, -2, 0), per: 1e3 / M }),
-    ("MPa", Unit { dim: Dim::of(-1, 0, 1, -2, 0), per: 1e6 / M }),
-    ("GPa", Unit { dim: Dim::of(-1, 0, 1, -2, 0), per: 1e9 / M }),
+    ("Pa", Unit { dim: Dim::PRESSURE, per: 1.0 / M }),
+    ("kPa", Unit { dim: Dim::PRESSURE, per: 1e3 / M }),
+    ("MPa", Unit { dim: Dim::PRESSURE, per: 1e6 / M }),
+    ("GPa", Unit { dim: Dim::PRESSURE, per: 1e9 / M }),
     ("Wb", Unit { dim: Dim::of(2, 0, 1, -2, -1), per: M * M }),
     ("mWb", Unit { dim: Dim::of(2, 0, 1, -2, -1), per: 1e-3 * M * M }),
     ("T", Unit { dim: Dim::of(0, 0, 1, -2, -1), per: 1.0 }),
@@ -438,11 +438,6 @@ impl Units {
     /// say: `dim` carries none.
     pub fn to_si(&self, v: f64, dim: Dim) -> f64 {
         v * (self.length.1 / M).powf(dim.len.value())
-    }
-
-    /// `to_si`'s inverse: an SI value in the document's own units.
-    pub fn from_si(&self, v: f64, dim: Dim) -> f64 {
-        v / (self.length.1 / M).powf(dim.len.value())
     }
 }
 

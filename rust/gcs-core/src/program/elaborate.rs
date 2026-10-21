@@ -219,10 +219,7 @@ fn expand(
         .collect();
     cx.sk.declared = std::mem::take(&mut expansion.unknowns);
     cx.sk.parameters = std::mem::take(&mut expansion.parameters);
-    // the materials stated (#510 P3); one refused is still a name a solid's `of` may read
-    let materials = std::mem::take(&mut expansion.materials);
-    cx.res.materials = materials.keys().cloned().collect();
-    cx.sk.materials = materials.into_iter().filter_map(|(k, m)| Some((k, m?))).collect();
+    cx.sk.materials = std::mem::take(&mut expansion.materials);
     // each face family's running number, held where its drawn station stands (#243 L1)
     for (name, &(dim, at)) in &expansion.held {
         cx.sk.hold(name, at, dim);

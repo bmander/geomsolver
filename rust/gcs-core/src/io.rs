@@ -421,9 +421,7 @@ pub fn material_from_json(j: &Json) -> Result<crate::model::Material, String> {
     }
     let mut props = std::collections::BTreeMap::new();
     for (k, v) in kv.iter().filter(|(k, _)| k != "name") {
-        let p = Property::parse(k).ok_or_else(|| {
-            format!("`{k}` is no property of a material: {}", Property::names())
-        })?;
+        let p = Property::named(k)?;
         if !matches!(v, Json::Num(_) | Json::Int(_)) {
             return Err(format!("`{name}`'s `{k}` is a number"));
         }
