@@ -241,9 +241,9 @@ Parameters are passed by name or position at instantiation. A parameter of entit
 
 **Labels are mandatory for numbers and sides.** A positional argument MUST bind an entity,
 group or set formal and MUST precede every labelled argument; either violation is **E004**.
-An argument MUST NOT be supplied twice. For example, `Frame(layout, dims: vtwin_dims)` passes
-a layout positionally and a dimension group by label, while `Cylinder(axes, fw: 12mm,
-dims: vtwin_dims)` labels the numeric face-wall thickness.
+An argument MUST NOT be supplied twice. For example, `Bank(crank.pin, plate.pivots.r, z: zB)`
+passes the two points it is mated to positionally and a length by label, and `Cylinder(axes, fw:
+12mm)` labels the numeric face-wall thickness.
 
 ### 4.2 Statement classes
 
@@ -3005,7 +3005,7 @@ use std (horizontal, vertical)
 
 A **module** is a Solvent document read for its components and relation words. `use NAME` at the top level of a document — never inside a body — asks for one; `NAME` is a dotted path, and **what it resolves to is the host's question**: an implementation with a working directory resolves `engine.parts` to `engine/parts.sv` beside the document, one without a filesystem resolves it against whatever library it carries, and both fall through to the other in that order. The core takes text and never opens a file. A module contributes exactly its **component definitions**, its **relation words** (§9.9) and its top-level **values, inputs and groups** (§6.3, §8.1), available at the importing root; its own loose statements — its drawing — are not drawn, so a document that is also a library (`gear.sv`) is a module as it stands. A module's own `use`s are followed the same way, each module linked once however many times it is asked for, so a diamond is one copy and a cycle terminates. A module a host cannot resolve is **E070**, at the `use`.
 
-**[0.30] [0.48] Nothing is imported bare unless the `use` names it.** A file reaches a module's component, relation word, param or group by the module's **full path**, as its `use` spells it: `engine.parts.Crank(…)`, `engine.dims.bore`, `components.dims.vtwin_dims` — or bare, where its `use` lists the name in brackets:
+**[0.30] [0.48] Nothing is imported bare unless the `use` names it.** A file reaches a module's component, relation word, param or group by the module's **full path**, as its `use` spells it: `engine.parts.Crank(…)`, `engine.dims.bore`, `components.dims.fwA` — or bare, where its `use` lists the name in brackets:
 
 ```
 use std (horizontal, vertical)
@@ -3040,7 +3040,7 @@ preview {
     up := point
     fix((0, 40)) up
     axes := std.Turned(std.origin, up)
-    cyl := Cylinder(axes, fw: components.dims.fwA, dims: components.dims.vtwin_dims)
+    cyl := Cylinder(axes, fw: components.dims.fwA)
   }
 }
 ```

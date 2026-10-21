@@ -782,9 +782,9 @@ instance:
 A freedom it leaves is a formal the call leaves unbound (`Crank(o, d, theta: hint(30deg))`), which
 the parent places. A parent may relate a part's outputs (`r distance(10mm) a.tip`), but such a
 statement is the parent's and never completes the part. Choose a root with `ccw`/`cw` or a bound
-(each held by the solve), not with a seed: `solventc --lint` names a part whose rows have another
-pose its stated choices admit (W207, advice). A part is solved like any component. Use one for anything a parent should
-be able to trust as a unit: a pulley, a rod on its pin, a belt run.
+(1.11, held by the solve), not with a seed: `solventc --lint` names a part whose rows have another
+pose its stated choices admit (W207, advice). A part is solved like any component. Use one for
+anything a parent should be able to trust as a unit: a pulley, a rod on its pin, a belt run.
 
 ```
 part Crank(o: point, datum: line, theta: Angle) {
@@ -871,7 +871,7 @@ preview {
     up := point
     fix((0, 40)) up
     axes := std.Turned(std.origin, up)
-    cyl := Cylinder(axes, fw: components.dims.fwA, dims: components.dims.vtwin_dims)
+    cyl := Cylinder(axes, fw: components.dims.fwA)
   }
 }
 ```

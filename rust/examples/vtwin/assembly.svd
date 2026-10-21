@@ -91,7 +91,6 @@ sheet drawing {
   style m.plate.thr.x1 { display: none }
   style m.plate.thr.x2 { display: none }
   style m.plate.thr.x3 { display: none }
-  style m.plate.thr.datum_up { display: none }
   style m.plate.thr.section_center { display: none }
   style m.plate.thr.back_axis.p { display: none }
   style m.plate.thr.back.p { display: none }
@@ -322,7 +321,6 @@ sheet drawing {
   style m.plate.thr.hax { display: none }
   style m.plate.thr.lv_a { color: #2a7ab0; width: 1.4 }
   style m.plate.thr.lv_c { color: #2a7ab0; width: 1.4 }
-  style m.plate.thr.datum { display: none }
   style m.plate.thr.ax { display: none }
   style m.crank.arm { color: #888888; width: 0.5; dash: 14 3 2 3 }
   style m.crank.disc.ssa { display: none }

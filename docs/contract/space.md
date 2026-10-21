@@ -78,8 +78,8 @@ dimensions (an ordinate and an ordinate or a level) said as one statement, still
 statements a plane square to a line takes (#250). Components have no
 implicit frame; `instance := Part(f) in view` supplies membership. Aliases keep subentity paths
 (`f.origin`). Calls may omit `name :=`; anonymous keys stay out of user-facing names. E.g. `cyl
-:= Cylinder(std.Turned(std.origin, up), fw: components.dims.fwA, dims:
-components.dims.vtwin_dims)` (`vtwin/components/cylinder.sv`'s preview). Retired: the
+:= Cylinder(std.Turned(std.origin, up), fw: components.dims.fwA)`
+(`vtwin/components/cylinder.sv`'s preview). Retired: the
 datum rotor, `toward:`, `from:`, `fold:`, `offset:`, `through:`, `attitude: free`, quaternions,
 hinges, `against`, the role rule, page placement, `std.ThreeViews`.
 

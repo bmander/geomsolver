@@ -71,8 +71,7 @@ it, and each now states its root (#503) with `ccw`/`cw`, so the engine lints cle
   the follower face. The lift slides the valve along its axis and turns none of them.
 `ConRod` has more unknowns than the search takes (`boundary::SEARCHED`), so it is not asked.
 Every position agrees with the drawing before the change to 7e-13 at 81 cycle angles over the
-whole 720°. Each of those solves, and every stated choice holds at each one. The V-twin still
-threads its table, its own issue (§9).
+whole 720°. Each of those solves, and every stated choice holds at each one.
 
 **The hub motor as parts** (#502): every definition in `hub_motor/motor/` is a `part` reading
 `motor.dims` as constants, and the `motor_dims` group and every `dims:` argument are gone. The
@@ -86,6 +85,36 @@ along: sc) a`), not at the line's crossing behind it. W207 now reads a part's bo
 choices, as its remedy says (`boundary::analyse`); it read only its orientations. All 6,607
 geometric numbers agree with the old document to 1.4e-14, the solids' volumes exactly, and the
 four sheets render the same coordinates; the advertised shape is unchanged.
+
+**The V-twin as parts** (#501): all 21 definitions in `vtwin/components/` are parts. The
+assembly has 95 instances of 18 of them, and `--lint` says nothing of any file.
+* **The table and the views.** Each part reads `components.dims` as constants named in its file's
+  `use`, and draws in the plane its operands are drawn in. `vtwin_dims`, `layout` and every
+  `dims:` argument are gone.
+* **The flag.** `dim` chose which bank's claims a preview calls out in the editor. No sheet draws
+  them, so both banks now state them.
+* **The side view and the banks.** `SideView` is given the points whose heights it shows, the
+  pin, a pivot and each cylinder's `Span`, and ties them inside itself; the ten `project`
+  statements reaching into it are gone. `Bank` is placed by where its rod rides the pin
+  (`z: zB`), its cylinder's face wall following.
+* **The throttle.** Its section plane stands at the barrel's centre rather than the frame's
+  origin. That is the same plane in space, so the claimed vertical datum tying them is gone.
+* **Making them parts found two faults in the classifier, not the document.**
+  * A point's hidden point and a plane's axes were nobody's numbers. A part that read an
+    operand in space (the disc's set screw, measured along a frame turned inside the disc's
+    frame) took the parent's frame rows as its own, and a part whose point another part's
+    frame passed through (the crank pin, under each bank's piston frame) took that frame's.
+    Each was E109 over rows it never wrote.
+  * The root search counted an axis held along a drawn line as a second root when turned back.
+
+  Every root is now stated, by 22 bounds and three orientations in the parts, beside
+  `std.Turned`'s own turn (#497). 41 other roots are found and refused.
+* **What moved.** Read by the same core, every number the old and new assemblies share agrees
+  within 1e-12 (2,826 places, areas and volumes at `t = 0`), and the part sheets' previews
+  exactly. The throttle's section, its other 23, is the same shape 72 along its plane, about its
+  new origin. The advertised shape loses the datum's point and line (327, 320, 27, 4). Every
+  sheet renders byte for byte as before but the plate's, whose hidden edges are split
+  differently where they coincide (314 pixels of 127,438 inked, in dash phase).
 
 #492 meets its acceptance but for one bench row: at r₂ = 20.001 the flat solve reports "ok" 2e-3
 of the extent off the true crossing, every row holding to 2.1e-7 of its own size while the
@@ -538,7 +567,7 @@ Each step is its own issue under #465, with its own tests in `rust/gcs-core/test
    * `tests/examples_sv.rs` holding every advertised answer;
    * a reading of the result on #461 against §2's table.
 
-   The V-twin and the hub motor follow, each with its own issue.
+   The V-twin (#501, done) and the hub motor follow, each with its own issue.
 
 ## 10. What this does not decide
 

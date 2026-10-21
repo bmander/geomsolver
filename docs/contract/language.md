@@ -24,7 +24,7 @@ Hosts look for modules beside the model, then its ancestors, then the library.
 
 **Nothing is imported bare unless the `use` names it (Solvent §14.4, [0.30], [0.48], #94):** a
 used module's component, relation word, param or group is written by full path —
-`engine.parts.Rod(…)`, `hardware.nut14_af`, `components.dims.vtwin_dims` — only through the
+`engine.parts.Rod(…)`, `hardware.nut14_af`, `components.dims.D` — only through the
 file's own `use`, or bare where it lists the name: `use std (horizontal, vertical)` (`Use::names`;
 `Module::uses` keeps each module's `Use`s). `Program::imported` is the one lookup;
 `resolve_component`/`resolve_word` consult it after the file's own; `Walk::imported_params` puts
@@ -229,7 +229,14 @@ name, a bracketed list, then `{`), so `part := solid(…)` and `part above(7) q`
 that elaborated with no error.  It reads each drawn instance of a part as the classifier reads one
 (`boundary::split`).  Its own unknowns are what it made, the numbers no entity owns that its rows
 read, and the free variables under its prefix that are no formal of its own.  Its rows are the
-acting ones among those kept.  Its inputs, held, are every other column (`boundary::reduced`).  Two
+acting ones among those kept.  Its inputs, held, are every other column (`boundary::reduced`).
+**What a lift reads is its point's and its plane's** (#501, `World::with`): a plane's axes are the
+plane's numbers and a point's hidden point (`Sketch::lifts`) the point's, so a part reading an
+operand in space — measuring along a frame it turns through it, or drawing in a frame the parent
+turned — takes the operand's hidden point and the frame's placement as inputs, and the lift of a
+point it made, with its row, as its own; the point a plane it made stands at is the plane's, its
+row too.  Before, those numbers were no entity's, so whichever part read one first took it, and
+with it every row the document placed the parent's frame by (E109 over rows it never wrote).  Two
 rules are judged over the compiled structure of those rows (`System::structure`,
 `graph::dulmage_mendelsohn`):
 - **E108** at the definition's name: an own column the matching leaves unmatched, named by its
@@ -243,7 +250,10 @@ structure only, so it is deterministic and decided before the solve; nothing cha
 classifier's root search for each part's first instance (`boundary::classify`), and names a part
 classed *locally determined, branch not chosen* — its scattered starts came to another pose its
 stated `ccw`/`cw` and its bounds admit (a bound sited under the instance is among the rows `split`
-keeps, read by `bounds_hold` on each probe's root, as the orientations are by `orientation`).  Not in `DRIFT`, which reads text alone; `parts::roots` is its gate's.
+keeps, read by `bounds_hold` on each probe's root, as the orientations are by `orientation`).  An
+axis held along a drawn line is compared with the line's sense (`boundary::figure`), which
+`views::align` gives it and no seed does (#501).  Not in `DRIFT`, which reads text alone;
+`parts::roots` is its gate's.
 **The diagnosis is read through the parts** (#461 D1–D3, the diagnostic half of #455, from the flat
 solve): `parts::read` takes the solved sketch and its `Diagnosis`, and `solventc` prints
 `parts::text` after the diagnosis's own lines (and `--json` writes `"parts"` where the document
@@ -347,9 +357,10 @@ body statement is emitted; one over such a solid saying what one over it said jo
 (`Sketch::join_body`: a tool a word already joins to a body is not joined again).
 `tests/symmetric.rs` is the gate, beside the closed forms of
 `tests/round_lowering.rs`.
-Curves need fixed scalar/entity formals. The V-twin passes `components.dims.vtwin_dims`
-explicitly, a table its parts could read as constants instead ([0.160]), as the inline four's
-and the hub motor's do; `Frame(layout, dims: …)` takes a layout naming the front datum, origin and reference axis.
+Curves need fixed scalar/entity formals. The V-twin's parts, as the inline four's and the hub
+motor's, read `components.dims` as constants of their definitions ([0.160], #501), each drawing
+in the plane its operands are drawn in: `Frame(O, ref)`, `Bank(crank.pin, plate.pivots.r, z:
+components.dims.zB)`.
 
 - **A name is defined one way, `NAME := VALUE`** ([plan](../definitions-plan.md), Solvent §5,
   [0.29]).  `w := 100` is a value (`StmtKind::Param`), `c := circle(…)` a declaration, `t :=
@@ -436,7 +447,8 @@ and the hub motor's do; `Frame(layout, dims: …)` takes a layout naming the fro
   every view it defines, every time; which a sheet shows, and how, is the drawing's (`style
   m.rod2 in end { … }`, [solvent-drawing.md](../solvent-drawing.md)).  So a part's whole design is
   one module (`engine/block.sv`, `engine/head.sv`, `engine/crankshaft.sv`, `engine/conrod.sv`,
-  every definition of the engine a `part` reading `engine.dims` as constants, #461); view modules
+  every definition of the engine a `part` reading `engine.dims` as constants, #461, and every one
+  of the V-twin's, `vtwin/components/`, #501); view modules
   hold only what the assembly adds.  The hub motor's parts (`hub_motor/motor/`, #502) take no
   plane either: each is given `motor.parts.Datums`, the axle's centre and centreline in its two
   views, and draws `in f.o.plane` and `in f.so.plane`.  Instances inside a block copy are indexed like declarations

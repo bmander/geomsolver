@@ -14,35 +14,36 @@
 // captured between its head and the cotter and nothing is threaded into plastic.
 
 use std (vertical, on_u)
-use components.dims
+use components.dims (R, dhub, pinclr, pinhead, pinpocket, rdisc, tdisc)
 use components.parts
 
 // f is the disc's own frame: origin on the crank axis, u toward the pin.  The disc is drawn in it,
 // so every number below is the part's own and the frame is all that turns.
-component Disc(f: group, dims: group) {
-  pinpocketd := dims.pinhead + 0.5mm   // diametral clearance around the clevis head
+part Disc(f: group) {
+  pinpocketd := pinhead + 0.5mm   // diametral clearance around the clevis head
   in f.axes {
     // the clevis pin's centre, the throw `R` along the arm
-    pin := point hint((dims.R, 0mm))
-    pin on_u(d: dims.R) f.axes
-    rim := circle(center: f.axes.origin) hint(r: dims.rdisc)
-    radius(dims.rdisc) rim
-    bore := circle(center: f.axes.origin) hint(r: dims.dhub / 2)
-    radius(dims.dhub / 2) bore
-    ph := circle(center: pin) hint(r: dims.pinclr / 2)
-    radius(dims.pinclr / 2) ph
+    pin := point hint((R, 0mm))
+    pin on_u(d: R) f.axes
+    rim := circle(center: f.axes.origin) hint(r: rdisc)
+    radius(rdisc) rim
+    bore := circle(center: f.axes.origin) hint(r: dhub / 2)
+    radius(dhub / 2) bore
+    ph := circle(center: pin) hint(r: pinclr / 2)
+    radius(pinclr / 2) ph
     pkt := circle(center: pin) hint(r: pinpocketd / 2)
     radius(pinpocketd / 2) pkt
     // the set screw, square to the arm so its pocket stays clear of the pin's
-    se := point hint((0mm, -dims.rdisc))
+    se := point hint((0mm, -rdisc))
     ssa := line(f.axes.origin, se)
     reference := line(f.axes.origin, pin)
     se coincident rim
     ssa perpendicular reference
+    cw(f.axes.origin, pin, se)
     screw_axes := std.Turned(f.axes.origin, se)
-    gs := components.parts.Grub(screw_axes, rin: dims.dhub / 2, rout: dims.rdisc, dims: dims)
-    claim radius(dims.dhub / 2) bore
-    claim radius(dims.pinclr / 2) ph
+    gs := components.parts.Grub(screw_axes, rin: dhub / 2, rout: rdisc)
+    claim radius(dhub / 2) bore
+    claim radius(pinclr / 2) ph
     claim radius(pinpocketd / 2) pkt
   }
 
@@ -54,10 +55,10 @@ component Disc(f: group, dims: group) {
   // thickness either way, and the pin's head sits in a pocket `pinpocket` deep in the back —
   // the face toward the plate, which a view from the right sees on its own right.
   // Each circle is a loop by itself.
-  plate := solid(face(rim), from: -dims.tdisc / 2, to: dims.tdisc / 2)
-  hub := solid(face(bore), from: -dims.tdisc / 2, to: dims.tdisc / 2)
-  pinhole := solid(face(ph), from: -dims.tdisc / 2, to: dims.tdisc / 2)
-  pinpkt := solid(face(pkt), from: -dims.tdisc / 2, to: -dims.tdisc / 2 + dims.pinpocket)
+  plate := solid(face(rim), from: -tdisc / 2, to: tdisc / 2)
+  hub := solid(face(bore), from: -tdisc / 2, to: tdisc / 2)
+  pinhole := solid(face(ph), from: -tdisc / 2, to: tdisc / 2)
+  pinpkt := solid(face(pkt), from: -tdisc / 2, to: -tdisc / 2 + pinpocket)
   body := solid(plate)
   hub cut body
   pinhole cut body
@@ -75,5 +76,5 @@ preview {
     std.origin distance(components.dims.R) pin
     disc_axes := std.Turned(std.origin, pin)
   }
-  disc := Disc(disc_axes, dims: components.dims.vtwin_dims)
+  disc := Disc(disc_axes)
 }
